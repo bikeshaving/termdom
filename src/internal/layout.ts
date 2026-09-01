@@ -72,7 +72,7 @@ import {
  * container's lines.
  */
 type Align =
-	| "auto" |
+	"auto" |
 	"flex-start" |
 	"center" |
 	"flex-end" |
@@ -84,7 +84,7 @@ type Align =
 	"normal";
 
 type Justify =
-	| "flex-start" |
+	"flex-start" |
 	"center" |
 	"flex-end" |
 	"space-between" |
@@ -102,7 +102,7 @@ type Gutter = "column" | "row" | "all";
 
 /** How a layout node lays its own children out. */
 type LayoutMode =
-	| "flex" |
+	"flex" |
 	"none" |
 	"block" |
 	"table" |
@@ -147,7 +147,7 @@ type Edge = keyof Edges<unknown>;
  * `expandEdge` is where the one becomes the other.
  */
 type EdgeShorthand =
-	| Edge |
+	Edge |
 	"start" |
 	"end" |
 	"horizontal" |
@@ -280,7 +280,7 @@ function resolveMargin(value: Value, ownerWidth: number): number {
  * length; the three keywords are intrinsic, and size from the items in them.
  */
 export type TrackBreadth =
-	| {kind: "length"; value: Value} |
+	{kind: "length"; value: Value} |
 	{kind: "flex"; factor: number} |
 	{kind: "auto"} |
 	{kind: "min-content"} |
@@ -318,7 +318,7 @@ export interface TrackRepeat {
 }
 
 export type TrackListPart =
-	| {type: "track"; track: TrackListTrack} |
+	{type: "track"; track: TrackListTrack} |
 	{type: "repeat"; repeat: TrackRepeat};
 
 /** A `<track-list>`: the tracks of one axis, with the lines named between them. */
@@ -3987,7 +3987,7 @@ function collectLineNames(
 
 /** One `<grid-line>`, resolved as far as it can be without its opposite end. */
 type ResolvedLine =
-	| {kind: "auto"} |
+	{kind: "auto"} |
 	{kind: "line"; index: number} |
 	{kind: "span"; count: number} |
 	{kind: "spanName"; name: string; count: number};
@@ -4979,7 +4979,7 @@ function sizeTracks(sizing: TrackSizing): void {
  * (css-align-3 §12.8).
  */
 type ContentAlign =
-	| "start" |
+	"start" |
 	"center" |
 	"end" |
 	"space-between" |
@@ -6683,7 +6683,7 @@ function createTreeWalker(
  * question below already treated an empty string as.
  */
 type Position =
-	| "static" |
+	"static" |
 	"relative" |
 	"absolute" |
 	"fixed" |
@@ -6751,7 +6751,7 @@ function dissolvesIntoChildren(node: Node): boolean {
 
 /** The computed `display` values this engine lays out. */
 type Display =
-	| "none" |
+	"none" |
 	"contents" |
 	"block" |
 	"inline" |

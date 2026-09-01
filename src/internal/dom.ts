@@ -8602,7 +8602,7 @@ installArrayIteration(NamedNodeMap.prototype, false);
 /* ---------------------------------------------------------------- elements */
 
 type CustomElementState =
-	| "uncustomized" |
+	"uncustomized" |
 	"undefined" |
 	"failed" |
 	"custom" |
@@ -10323,7 +10323,7 @@ Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
 export interface HTMLElement
 	extends Pick<
 		globalThis.HTMLElement,
-		| Extract<keyof globalThis.HTMLElement, `on${string}`> |
+		Extract<keyof globalThis.HTMLElement, `on${string}`> |
 		"accessKey" |
 		"autofocus" |
 		"dir" |
@@ -21652,7 +21652,7 @@ export class Document extends Node implements globalThis.Document {
 	 */
 	get defaultView(): (globalThis.Window & typeof globalThis) | null {
 		return this[kDefaultView]! as
-			| (globalThis.Window & typeof globalThis) |
+			(globalThis.Window & typeof globalThis) |
 			null;
 	}
 
@@ -22762,7 +22762,7 @@ export class Document extends Node implements globalThis.Document {
  */
 function isPotentiallyScrollable(body: Element): boolean {
 	const view = body.ownerDocument?.defaultView as
-		| {
+		{
 			getComputedStyle?(element: Element): {
 				getPropertyValue(p: string): string;
 			};
@@ -22820,7 +22820,7 @@ Object.defineProperty(Document.prototype, Symbol.toStringTag, {
 export interface Document
 	extends Pick<
 		globalThis.Document,
-		| Extract<keyof globalThis.Document, `on${string}`> |
+		Extract<keyof globalThis.Document, `on${string}`> |
 		ParentNodeMixin |
 		// DECLARED, never installed, and the difference matters. document.all
 		// is specified to be a FALSY object, which JavaScript cannot make --
@@ -24945,7 +24945,7 @@ class Range extends AbstractRange implements globalThis.Range {
 					start :
 						(start.ownerDocument as Document | null);
 			context = (document?.body ?? document?.documentElement ?? null) as
-			| Element |
+			Element |
 			null;
 		}
 		if (context === null) {
@@ -29515,7 +29515,7 @@ installEventHandlers(Window.prototype, WINDOW_EVENT_HANDLERS);
 
 /** RUNTIME: the Node interface constants, installed on prototypes at load. */
 type NodeConstants =
-	| "ELEMENT_NODE" |
+	"ELEMENT_NODE" |
 	"ATTRIBUTE_NODE" |
 	"TEXT_NODE" |
 	"CDATA_SECTION_NODE" |
@@ -29536,7 +29536,7 @@ type NodeConstants =
 
 /** RUNTIME: the ChildNode mixin, installed from the tables. */
 type ChildNodeMixin =
-	| "after" |
+	"after" |
 	"before" |
 	"remove" |
 	"replaceWith" |
@@ -29545,7 +29545,7 @@ type ChildNodeMixin =
 
 /** RUNTIME: the ParentNode mixin, installed from the tables. */
 type ParentNodeMixin =
-	| "childElementCount" |
+	"childElementCount" |
 	"children" |
 	"firstElementChild" |
 	"lastElementChild" |
@@ -29557,7 +29557,7 @@ type ParentNodeMixin =
 
 /** RUNTIME: the ARIA reflection surface, installed from the tables. */
 type ARIAReflection =
-	| "role" |
+	"role" |
 	`aria${string}`;
 
 /** RUNTIME: selector engine entries, installed from the tables. */
