@@ -6885,7 +6885,7 @@ const kPositionedElements = Symbol("positionedElements");
 // Only an out-of-flow box is asked where it would have been, so only it
 // carries the static-position function.
 function styleNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 	flexNode: LayoutNode,
 ): void {
@@ -6999,7 +6999,7 @@ const kDerivedContainers = Symbol("derivedContainers");
 // mutation drops the container from kDerivedContainers. The boxes
 // themselves are reconciled, not remade.
 function containerBox(
-	layout: LayoutEngine,
+	layout: Layout,
 	container: Element,
 ): Box {
 	const box = principalBox(layout, container);
@@ -7087,7 +7087,7 @@ function containerBox(
 const kBoxes = Symbol("boxes");
 
 function principalBox(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 	parent: Box | null = null,
 ): Box {
@@ -7105,7 +7105,7 @@ function principalBox(
 const kNodeMap = Symbol("nodeMap");
 
 function containerFlexNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	container: Element,
 ): LayoutNode | undefined {
 	return (
@@ -7119,7 +7119,7 @@ const kMeasureNodes = Symbol("measureNodes");
 // The children are severed first. They belong to other DOM nodes, which
 // keep pointing at them.
 function retireFlexNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): void {
 	const flexNode = layout[kNodeMap].get(node);
@@ -7139,7 +7139,7 @@ function retireFlexNode(
 // vs boxes of its own, and hidden vs not. Neither is fixable by
 // re-measuring.
 function boxKindMatches(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 	flexNode: LayoutNode,
 ): boolean {
@@ -7155,7 +7155,7 @@ function boxKindMatches(
 const kAnonymousBoxes = Symbol("anonymousBoxes");
 
 function retireAnonymousBox(
-	layout: LayoutEngine,
+	layout: Layout,
 	box: Box,
 ): void {
 	const flexNode = box.layoutNode;
@@ -7172,7 +7172,7 @@ function retireAnonymousBox(
 }
 
 function getBox(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): Box | null {
 	const entry = getBoxEntry(layout, node);
@@ -7180,7 +7180,7 @@ function getBox(
 }
 
 function getBoxEntry(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): Box | null {
 	if (!flatIsConnected(node)) {
@@ -7222,7 +7222,7 @@ function getBoxEntry(
 }
 
 function laidOutBy(
-	layout: LayoutEngine,
+	layout: Layout,
 	box: Box,
 ): LayoutNode | null {
 	if (box.kind === "anonymous") {
@@ -7232,7 +7232,7 @@ function laidOutBy(
 }
 
 function runFlexNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): LayoutNode | undefined {
 	const box = getBox(layout, node);
@@ -7243,7 +7243,7 @@ function runFlexNode(
 }
 
 function runBreakResult(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): BreakResult | undefined {
 	const box = getBox(layout, node);
@@ -7257,13 +7257,13 @@ const kDirtyRunContainers = Symbol("dirtyRunContainers");
 const kDOMRect = Symbol("DOMRect");
 const kRootElement = Symbol("rootElement");
 const kViewportRoot = Symbol("viewportRootNode");
-const kEngineWindow = Symbol("window");
+const kWindow = Symbol("window");
 
 // Bring a container's layout children into line with its box list.
 // Positions are counted, not searched. A box sits after every earlier
 // box of the container that reached the layout tree.
 function syncContainerRuns(
-	layout: LayoutEngine,
+	layout: Layout,
 	container: Element,
 ): void {
 	layout[kDirtyRunContainers].delete(container);
@@ -7371,7 +7371,7 @@ function syncContainerRuns(
 // is laid out. This is also the only path that finds an out-of-flow box
 // written among them.
 function syncRunMembers(
-	layout: LayoutEngine,
+	layout: Layout,
 	run: Box,
 ): void {
 	for (const member of run.members) {
@@ -7401,7 +7401,7 @@ function boxParentElement(node: Node): Element | null {
 }
 
 function getRunContainer(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): Element | null {
 	const parent = boxParentElement(node);
@@ -7418,7 +7418,7 @@ function getRunContainer(
 // node. This is how a removed node, with no parent left to climb from,
 // is handled.
 function runContainerFrom(
-	layout: LayoutEngine,
+	layout: Layout,
 	box: Element,
 	startsOwnRun: boolean,
 ): Element | null {
@@ -7462,7 +7462,7 @@ function climbsTo(
 }
 
 function addNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 	parentFlexNode: LayoutNode | null = null,
 ): void {
@@ -7577,7 +7577,7 @@ function addNode(
 }
 
 function addElementNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 	parentFlexNode: LayoutNode | null = null,
 ): void {
@@ -7664,7 +7664,7 @@ function addElementNode(
 }
 
 function addTextNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	text: Text,
 	parentFlexNode: LayoutNode | null = null,
 ): void {
@@ -7704,7 +7704,7 @@ function addTextNode(
 // fragment's run. <a href><div>card</div></a> is this shape. Without the
 // split, everything from the block onward rendered as nothing.
 function flowChildren(
-	layout: LayoutEngine,
+	layout: Layout,
 	container: Element,
 	into: Node[] = [],
 	root = container,
@@ -7732,7 +7732,7 @@ function flowChildren(
 // own measurement. Only the run that placed the box knows its content
 // edge.
 function syncContentRoot(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 ): void {
 	const box = principalBox(layout, element);
@@ -7808,7 +7808,7 @@ function retireContentRoot(box: Box): void {
 // while the subtree was visible goes on returning stale geometry from
 // getRect until retired.
 function retireHiddenContent(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 ): void {
 	retireContainerBoxes(layout, element);
@@ -7827,7 +7827,7 @@ function retireHiddenContent(
 
 // A box list left in place is what the next read uses.
 function retireContainerBoxes(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 ): void {
 	const box = layout[kBoxes].get(element);
@@ -7849,7 +7849,7 @@ function retireContainerBoxes(
 // alone: out-of-flow boxes (hoisted instead) and atomic inlines with
 // content roots.
 function retireRunContent(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 ): void {
 	if (layout[kBoxes].get(element)?.contentRoot) {
@@ -7881,7 +7881,7 @@ function retireRunContent(
 // place is laid out from a shape the container no longer has. Only
 // those elements are descended into.
 function retireSteppedOver(
-	layout: LayoutEngine,
+	layout: Layout,
 	parent: Element,
 ): void {
 	const walker = createTreeWalker(parent);
@@ -7908,7 +7908,7 @@ function retireSteppedOver(
 // unaffected. The stacking-context painter never uses flex order for
 // positioned boxes.
 function containingBlockFlexNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 ): LayoutNode | null {
 	for (
@@ -7947,7 +7947,7 @@ function hiddenByAncestor(node: Node): boolean {
 // nearest one. An out-of-flow descendant hangs from its containing block
 // instead.
 function documentPosition(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 	flexNode: LayoutNode,
 ): {x: number; y: number} {
@@ -8027,7 +8027,7 @@ function skipSubtree(walker: TreeWalker): boolean {
 }
 
 function trackNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	domNode: Node,
 	flexNode: LayoutNode,
 ): void {
@@ -8036,7 +8036,7 @@ function trackNode(
 }
 
 function untrackNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	domNode: Node,
 ): void {
 	const flexNode = layout[kNodeMap].get(domNode);
@@ -8094,7 +8094,7 @@ function isRowFlexItem(element: Element): boolean {
 // change needs. Sites that only dirty would otherwise rebuild a correct
 // enumeration per mutation.
 function restageContainer(
-	layout: LayoutEngine,
+	layout: Layout,
 	container: Element,
 ): void {
 	layout[kDerivedContainers].delete(container);
@@ -8102,7 +8102,7 @@ function restageContainer(
 }
 
 function restageBox(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): void {
 	const container = getRunContainer(layout, node);
@@ -8114,7 +8114,7 @@ function restageBox(
 // For an inline, this is the block container around it. An inline's
 // children belong to the run the inline is on.
 function restageChildren(
-	layout: LayoutEngine,
+	layout: Layout,
 	parent: Element,
 ): void {
 	let box: Element | null = parent;
@@ -8132,7 +8132,7 @@ function restageChildren(
 }
 
 function restageSubtree(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): void {
 	restageBox(layout, node);
@@ -8155,7 +8155,7 @@ function restageSubtree(
 	}
 }
 
-function invalidateInlineRun(layout: LayoutEngine, node: Node): void {
+function invalidateInlineRun(layout: Layout, node: Node): void {
 	const entry = getBoxEntry(layout, node);
 	if (!entry) {
 		return;
@@ -8176,7 +8176,7 @@ function invalidateInlineRun(layout: LayoutEngine, node: Node): void {
 }
 
 function invalidateNode(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): void {
 	layout[kInvalidatedNodes].add(node);
@@ -8222,7 +8222,7 @@ function invalidateNode(
 }
 
 function invalidateNodeChildren(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 ): void {
 	const walker = flowWalker(element);
@@ -8235,7 +8235,7 @@ function invalidateNodeChildren(
 }
 
 function clearBreakResultCache(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): void {
 	const entry = getBoxEntry(layout, node);
@@ -8252,7 +8252,7 @@ function clearBreakResultCache(
 // them, including, under a content root, the box whose measure is the
 // only thing that ever lays that content out.
 function invalidateBox(
-	layout: LayoutEngine,
+	layout: Layout,
 	box: Box,
 ): void {
 	box.layoutNode?.markDirty();
@@ -8266,7 +8266,7 @@ function invalidateBox(
 // momentarily detached would report that it is in no tree at all,
 // leaving the only measure that ever runs it un-dirtied.
 function enclosingContentRoot(
-	layout: LayoutEngine,
+	layout: Layout,
 	from: Element | null,
 ): Element | null {
 	for (let current = from; current; current = boxParentElement(current)) {
@@ -8281,7 +8281,7 @@ function enclosingContentRoot(
 // reshapes the others, and a cleared result on a clean node is never
 // recomputed: the box lays out at the right rect and paints nothing.
 function invalidateContainerBoxes(
-	layout: LayoutEngine,
+	layout: Layout,
 	container: Element,
 ): void {
 	for (const entry of containerBox(layout, container).children!) {
@@ -8299,7 +8299,7 @@ function invalidateContainerBoxes(
 // child under a measure-function node. Walks to the nearest ancestor
 // that owns one.
 function invalidateEnclosingMeasure(
-	layout: LayoutEngine,
+	layout: Layout,
 	node: Node,
 ): void {
 	// A restyle may have given the node a box or taken one away. The
@@ -8372,7 +8372,7 @@ const kRestyled = Symbol("restyled");
 // Nothing above the box ever visits those nodes, so the cleared break
 // result is never rebuilt and the run paints nothing.
 function markRunMeasureDirty(
-	layout: LayoutEngine,
+	layout: Layout,
 	runHead: Node,
 ): void {
 	const flexNode = layout[kNodeMap].get(runHead);
@@ -8544,7 +8544,7 @@ function prefixWidths(
 // a result about a box nothing was laid out in, and painting them
 // rendered a stretched item at its narrowest.
 function measureInlineRun(
-	layout: LayoutEngine,
+	layout: Layout,
 	box: Box,
 	width: number,
 	widthMode: MeasureMode,
@@ -8567,7 +8567,7 @@ function measureInlineRun(
 // The members are the box's own, so nothing here decides where a run
 // ends, and a member that has left the tree is not among them.
 function collectLeafNodes(
-	layout: LayoutEngine,
+	layout: Layout,
 	source: Box,
 	availableWidth: number,
 	availableWidthMode: MeasureMode = "unconstrained",
@@ -8634,7 +8634,7 @@ function collectLeafNodes(
 }
 
 function collectLeavesUnder(
-	layout: LayoutEngine,
+	layout: Layout,
 	root: Node,
 	start: Node,
 	stopsAtFlexItems: boolean,
@@ -8989,7 +8989,7 @@ function collectLeavesUnder(
 }
 
 function breakNodes(
-	layout: LayoutEngine,
+	layout: Layout,
 	source: Box,
 	width: number,
 	widthMode: MeasureMode,
@@ -9078,7 +9078,7 @@ function breakNodes(
 const kRenderedLeaves = Symbol("renderedLeaves");
 
 function renderLeaf(
-	layout: LayoutEngine,
+	layout: Layout,
 	textNode: Text,
 	whiteSpace: string,
 ): {text: string; offsets: Int32Array | null} {
@@ -9097,7 +9097,7 @@ function renderLeaf(
 }
 
 function processWhitespace(
-	layout: LayoutEngine,
+	layout: Layout,
 	leafNodes: Leaf[],
 ): ProcessedContent {
 	const items: ProcessedContent["items"] = [];
@@ -9281,7 +9281,7 @@ function findBreakPoints(
 }
 
 function buildLines(
-	layout: LayoutEngine,
+	layout: Layout,
 	content: ProcessedContent,
 	breaks: BreakPoint[],
 	maxWidth: number,
@@ -9427,7 +9427,7 @@ const kMoved = Symbol("moved");
 // and re-split segments, losing the leaf identity painting, hit-testing
 // and selection key on.
 function toVisualLine(
-	layout: LayoutEngine,
+	layout: Layout,
 	segments: LineResult["segments"],
 	lineWidth: number,
 	base: "ltr" | "rtl",
@@ -9544,12 +9544,12 @@ function findInlineBlockSegment(
 // descendants, not itself. Applied in this one function so paint,
 // getRect, hit-testing and Range geometry all inherit it at once.
 function absolutePosition(
-	layout: LayoutEngine,
+	layout: Layout,
 	flexNode: LayoutNode,
 ): {x: number; y: number} {
 	// The document roots' scroll IS the camera, applied once at paint. Only
 	// per-element scroll belongs in this document-space geometry.
-	const document = layout[kEngineWindow].document;
+	const document = layout[kWindow].document;
 	const root = document.documentElement;
 	const body = document.body;
 	let x = 0;
@@ -9578,7 +9578,7 @@ function absolutePosition(
 }
 
 function breakResultTextIndex(
-	layout: LayoutEngine,
+	layout: Layout,
 	breakResult: BreakResult,
 ): Map<Text, TextFragmentEntry[]> {
 	let index = layout[kRectTextIndices].get(breakResult);
@@ -9630,7 +9630,7 @@ function breakResultTextIndex(
 // Children are probed in REVERSE tree order (last-painted wins).
 // Positioned children are skipped. Their context probes them.
 function hitTestInFlow(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 	x: number,
 	y: number,
@@ -9683,7 +9683,7 @@ function hitTestInFlow(
 // is not final, but it appears in both sums and cancels in the
 // difference.
 function staticPosition(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 	containingBlock: LayoutNode,
 ): {left: number; top: number} | null {
@@ -9904,14 +9904,14 @@ function isPointInRects(
 	});
 }
 
-function layoutRect(engine: LayoutEngine, element: Element): DOMRect | null {
+function layoutRect(engine: Layout, element: Element): DOMRect | null {
 	return element.isConnected ? engine.getRect(element) : null;
 }
 
-export class LayoutEngine {
+export class Layout {
 	declare [kDOMRect]: typeof DOMRect;
 	declare [kRootElement]: Element;
-	declare [kEngineWindow]: EngineWindow;
+	declare [kWindow]: EngineWindow;
 
 	// The terminal-sized root every box hangs from. It has no DOM node.
 	declare [kViewportRoot]: LayoutNode;
@@ -10001,7 +10001,7 @@ export class LayoutEngine {
 				offsets: Int32Array | null;
 			}
 		>();
-		this[kEngineWindow] = window;
+		this[kWindow] = window;
 		this[kDOMRect] = window.DOMRect;
 		this[kRootElement] = window.document.documentElement;
 		this[kNodeMap] = new Map<Node, LayoutNode>();
@@ -10387,7 +10387,7 @@ export class LayoutEngine {
 				return ancestor;
 			}
 		}
-		const body = this[kEngineWindow].document.body ?? null;
+		const body = this[kWindow].document.body ?? null;
 		return body === element ? null : body;
 	}
 
@@ -10465,7 +10465,7 @@ export class LayoutEngine {
 		if (!flexNode) {
 			return 0;
 		}
-		const document = this[kEngineWindow].document;
+		const document = this[kWindow].document;
 		const root = document.documentElement;
 		const body = document.body;
 		let rows = 0;
@@ -10741,7 +10741,7 @@ export class LayoutEngine {
 			{neg: Element[]; zero: Element[]; pos: Element[]}
 		>();
 		// A stray frame can fire after the window is torn down.
-		const body = this[kEngineWindow].document?.body;
+		const body = this[kWindow].document?.body;
 		if (!body) {
 			return layers;
 		}
@@ -10809,7 +10809,7 @@ export class LayoutEngine {
 		cameraScrollTop: number,
 	): Element | null {
 		const layers = this.collectStackingLayers(topLayer);
-		const document = this[kEngineWindow].document;
+		const document = this[kWindow].document;
 		if (!document?.body) {
 			return null;
 		}
@@ -10913,7 +10913,7 @@ function wasBlockified(element: Element): boolean {
 }
 
 function unionRects(
-	layout: LayoutEngine,
+	layout: Layout,
 	rects: readonly DOMRect[],
 ): DOMRect {
 	if (rects.length === 0) {
@@ -10933,7 +10933,7 @@ function unionRects(
 }
 
 function pruneDisconnectedNodes(
-	layout: LayoutEngine,
+	layout: Layout,
 ): void {
 	// A box outlives the nodes that pass through it, but not its
 	// container.
@@ -10963,7 +10963,7 @@ function pruneDisconnectedNodes(
 // an element may no longer match the enumeration, and what the element
 // now generates is derived where every box is derived.
 function applyRestyles(
-	layout: LayoutEngine,
+	layout: Layout,
 ): void {
 	while (layout[kRestyled].size > 0) {
 		const restyled = [...layout[kRestyled]];
@@ -10988,7 +10988,7 @@ function applyRestyles(
 // Nothing here builds a box. A mutation says only which containers no
 // longer hold the boxes their enumeration names.
 function restageForRecord(
-	layout: LayoutEngine,
+	layout: Layout,
 	record: MutationRecord,
 ): void {
 	// A record on a shadow root describes the HOST's composed children.
@@ -11050,7 +11050,7 @@ function* textNodesUnder(root: Node): Generator<Text> {
 // descending there, `<div style="display:inline-block"><input></div>`
 // paints nothing.
 function inlineBlockRect(
-	layout: LayoutEngine,
+	layout: Layout,
 	element: Element,
 ): DOMRect | null {
 	// Climb to the nearest run actually laid out on its own. One measured
@@ -11155,7 +11155,7 @@ function inlineBlockRect(
 }
 
 function rangeTextNodes(
-	layout: LayoutEngine,
+	layout: Layout,
 	range: Range,
 ): Text[] {
 	if (range.collapsed) {
@@ -11169,9 +11169,9 @@ function rangeTextNodes(
 		return [root as Text];
 	}
 	const nodes: Text[] = [];
-	const walker = layout[kEngineWindow].document.createTreeWalker(
+	const walker = layout[kWindow].document.createTreeWalker(
 		root,
-		layout[kEngineWindow].NodeFilter.SHOW_TEXT,
+		layout[kWindow].NodeFilter.SHOW_TEXT,
 	);
 	let node: Node | null;
 	while ((node = walker.nextNode())) {
@@ -11183,7 +11183,7 @@ function rangeTextNodes(
 }
 
 function caretRect(
-	layout: LayoutEngine,
+	layout: Layout,
 	textNode: Text,
 	offset: number,
 ): DOMRect | null {
@@ -11256,7 +11256,7 @@ function offsetInFragment(
 // The text is included because the only way to restyle a cell is to
 // redraw its glyph.
 function selectionRuns(
-	layout: LayoutEngine,
+	layout: Layout,
 	textNode: Text,
 	from: number,
 	to: number,
@@ -11304,7 +11304,7 @@ function selectionRuns(
 }
 
 function hitTestContext(
-	layout: LayoutEngine,
+	layout: Layout,
 	root: Element,
 	x: number,
 	y: number,
@@ -11353,7 +11353,7 @@ function hitTestContext(
 // Nothing outside layout may reason about processed text. Geometry
 // consumers read getRects, getRangeRects or lineFragments, whose
 // fragments carry data offsets a consumer can render for itself.
-function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
+function getRectTexts(layout: Layout, node: Node): RectText[] {
 	if (node.nodeType === node.ELEMENT_NODE) {
 		const element = node as Element;
 		const display = computedDisplay(element);
@@ -11687,13 +11687,13 @@ function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
 	return rectTexts;
 }
 
-function documentContentHeight(engine: LayoutEngine): number {
+function documentContentHeight(engine: Layout): number {
 	const bodyRect = engine.getRect(engine[kRootElement].ownerDocument?.body);
 	return bodyRect ? Math.ceil(bodyRect.height) : 0;
 }
 
 function contentBoxSize(
-	engine: LayoutEngine,
+	engine: Layout,
 	element: Element,
 ): {width: number; height: number} | null {
 	const rect = layoutRect(engine, element);
@@ -11709,15 +11709,15 @@ function contentBoxSize(
 
 // html and body scroll the document itself: one viewport, however
 // reached.
-function isRootBox(engine: LayoutEngine, element: Element): boolean {
-	const document = engine[kEngineWindow].document;
+function isRootBox(engine: Layout, element: Element): boolean {
+	const document = engine[kWindow].document;
 	return element === document.documentElement || element === document.body;
 }
 
 // Document-relative rects on both sides: the element wherever its
 // current offsets put it, against the scroller's padding box.
 function revealInPort(
-	engine: LayoutEngine,
+	engine: Layout,
 	element: Element,
 	scroller: Element,
 ): void {
@@ -11750,7 +11750,7 @@ function scrollsAt(overflow: string): boolean {
 // Every entry that moves geometry announces it here, and the pass
 // itself moves nothing unannounced. That is what lets a frame that ran
 // a pass and found nothing changed skip its paint.
-function changed(layout: LayoutEngine): void {
+function changed(layout: Layout): void {
 	const document = layout[kRootElement].ownerDocument;
 	if (document === null) {
 		return;

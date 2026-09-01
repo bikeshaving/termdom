@@ -1,10 +1,10 @@
 import {
+	type Cascade,
 	cssColorToNumber,
 	getBoxModel,
 	getComputedValue,
 	isTransparentColor,
 	resolveBorderSides,
-	type StyleManager,
 } from "./cssom.js";
 import {
 	type EngineWindow,
@@ -20,7 +20,7 @@ import {
 	flowWalker,
 	formsStackingContext,
 	isPositioned,
-	type LayoutEngine,
+	type Layout,
 	renderTextFragment,
 } from "./layout.js";
 import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.js";
@@ -206,7 +206,7 @@ function applyTextTransform(text: string, transform: string): string {
 const kWindow = Symbol("window");
 const kDocument = Symbol("document");
 const kLayout = Symbol("layout");
-const kStyleManager = Symbol("styleManager");
+const kCascade = Symbol("cascade");
 const kScreen = Symbol("screen");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
@@ -216,8 +216,8 @@ const kScrolledRows = Symbol("scrolledRows");
 export class Painter {
 	declare [kWindow]: EngineWindow;
 	declare [kDocument]: Document;
-	declare [kLayout]: LayoutEngine;
-	declare [kStyleManager]: StyleManager;
+	declare [kLayout]: Layout;
+	declare [kCascade]: Cascade;
 	declare [kScreen]: Screen;
 	declare [kTopLayer]: Set<Element>;
 	// Each list marker paints at most once per frame.
@@ -228,8 +228,8 @@ export class Painter {
 
 	constructor(
 		document: Document,
-		layout: LayoutEngine,
-		styleManager: StyleManager,
+		layout: Layout,
+		cascade: Cascade,
 		screen: Screen,
 	) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
@@ -237,7 +237,7 @@ export class Painter {
 		this[kWindow] = document.defaultView as unknown as EngineWindow;
 		this[kDocument] = document;
 		this[kLayout] = layout;
-		this[kStyleManager] = styleManager;
+		this[kCascade] = cascade;
 		this[kScreen] = screen;
 		this[kTopLayer] = getTopLayer(document) as unknown as Set<Element>;
 	}
@@ -684,7 +684,7 @@ function renderOutsideMarker(
 	}
 	painter[kRenderedOutsideMarkers].add(element);
 
-	const markerContent = painter[kStyleManager].getMarkerContent(element);
+	const markerContent = painter[kCascade].getMarkerContent(element);
 	if (!markerContent) {
 		return;
 	}
@@ -813,7 +813,7 @@ function selectionRangeFor(
 	if (!selectionParent) {
 		return null;
 	}
-	if (!painter[kStyleManager].isSelectable(selectionParent)) {
+	if (!painter[kCascade].isSelectable(selectionParent)) {
 		return null;
 	}
 	// Narrowed to this node. ::selection resolves per parent.

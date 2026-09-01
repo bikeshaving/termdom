@@ -38,7 +38,7 @@ import {
 	styleElementCount,
 	TransitionEvent,
 } from "./dom.js";
-import type {LayoutEngine} from "./layout.js";
+import type {Layout} from "./layout.js";
 import {LINE_STYLES, type LineStyle} from "./screen.js";
 import {stringWidth} from "./text.js";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
@@ -2217,9 +2217,9 @@ const DEFAULT_LIST_GUTTER = 4;
 const listGutterInProgress = new WeakSet<Element>();
 
 // The entry point for every read of the cascade from a node, including
-// reads deep inside the cascade itself that have no StyleManager in
+// reads deep inside the cascade itself that have no Cascade in
 // hand.
-const documentManagers = new WeakMap<object, StyleManager>();
+const documentCascades = new WeakMap<object, Cascade>();
 
 // A marker is separated from its item's text by one cell.
 function withMarkerSeparator(marker: string): string {
@@ -2296,15 +2296,15 @@ function getListGutterWidth(listElement: Element): number {
 	}
 	listGutterInProgress.add(listElement);
 	try {
-		const styleManager = documentManagers.get(listElement.ownerDocument);
+		const cascade = documentCascades.get(listElement.ownerDocument);
 
 		let widest = 0;
 		for (const child of Array.from(listElement.children)) {
 			if (child.tagName !== "LI") {
 				continue;
 			}
-			const marker = styleManager
-				? styleManager.getMarkerContent(child)
+			const marker = cascade
+				? cascade.getMarkerContent(child)
 				: withMarkerSeparator(getListMarker(child, listElement));
 			if (!marker) {
 				continue;
@@ -3683,9 +3683,9 @@ function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 			declarations["transition-delay"] !== undefined)
 	) {
 		const document = style[kElement]!.ownerDocument;
-		const manager = document ? documentManagers.get(document) : undefined;
-		if (manager) {
-			manager[kTransitionsExist] = true;
+		const cascade = document ? documentCascades.get(document) : undefined;
+		if (cascade) {
+			cascade[kTransitionsExist] = true;
 		}
 	}
 
@@ -7124,17 +7124,17 @@ function sheetFor(element: Element): CSSStyleSheet {
 	if (!sheet) {
 		sheet = new CSSStyleSheet({}, element);
 		sheetNotifiers.set(sheet, () => {
-			const manager = managerForTree(element);
-			if (!manager) {
+			const cascade = getTreeCascade(element);
+			if (!cascade) {
 				return;
 			}
 			// A shadow sheet's change refreshes its root. Only a document
 			// sheet's change rebuilds the document cascade.
 			const root = asShadowRoot(element.getRootNode());
 			if (root) {
-				manager[kRefreshShadowRoot](root);
+				cascade[kRefreshShadowRoot](root);
 			} else {
-				manager.refreshStylesheets();
+				cascade.refreshStylesheets();
 			}
 		});
 		elementSheets.set(element, sheet);
@@ -7161,12 +7161,12 @@ function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 	return [...declaredStyleSheets(root), ...(adoptedSheets.get(root) ?? [])];
 }
 
-function managerForTree(tree: Node): StyleManager | undefined {
+function getTreeCascade(tree: Node): Cascade | undefined {
 	const document =
 		tree.nodeType === tree.DOCUMENT_NODE
 			? (tree as Document)
 			: tree.ownerDocument;
-	return document ? documentManagers.get(document) : undefined;
+	return document ? documentCascades.get(document) : undefined;
 }
 
 function checkAdoptable(tree: Node, sheet: unknown): CSSStyleSheet {
@@ -7180,7 +7180,7 @@ function checkAdoptable(tree: Node, sheet: unknown): CSSStyleSheet {
 			sheet,
 		);
 	}
-	sheetNotifiers.set(sheet, () => managerForTree(tree)?.refreshStylesheets());
+	sheetNotifiers.set(sheet, () => getTreeCascade(tree)?.refreshStylesheets());
 	return sheet;
 }
 
@@ -7231,7 +7231,7 @@ function observableAdopted(
 		return proxy;
 	}
 	const changed = (): void => {
-		managerForTree(target)?.refreshStylesheets();
+		getTreeCascade(target)?.refreshStylesheets();
 	};
 	// Assignment to arbitrary indices of adoptedStyleSheets must be
 	// observed.
@@ -7339,15 +7339,15 @@ function usedLength(cells: number): string {
 	return `${Math.round(cells * 1000) / 1000}px`;
 }
 
-const kManager = Symbol("manager");
-const kLayoutEngine = Symbol("layoutEngine");
+const kCascade = Symbol("cascade");
+const kLayout = Symbol("layout");
 
 // A pseudo-element's declaration resolves through a view whose
 // [kElement] is the pseudo-element's own node, so there is one copy of
 // the measurement arithmetic.
 interface MeasuredDeclaration {
 	[kElement]: Element;
-	[kManager]: StyleManager | null;
+	[kCascade]: Cascade | null;
 	getComputedValue(property: string): string;
 	getPropertyValue(property: string): string;
 }
@@ -7426,24 +7426,24 @@ export function getComputedValue(
 	const host = getPseudoHost<Element>(element);
 	if (host !== null) {
 		const name = getPseudoName(element) as string;
-		const manager = host.ownerDocument
-			? documentManagers.get(host.ownerDocument)
+		const cascade = host.ownerDocument
+			? documentCascades.get(host.ownerDocument)
 			: undefined;
-		return manager
-			? pseudoDeclarationFor(manager, host, name).nodeValue(property)
+		return cascade
+			? pseudoDeclarationFor(cascade, host, name).nodeValue(property)
 			: getComputedValue(host, property, name);
 	}
 	const document = element.ownerDocument;
 	if (!document) {
 		return "";
 	}
-	const manager = documentManagers.get(document);
-	if (!manager) {
+	const cascade = documentCascades.get(document);
+	if (!cascade) {
 		return "";
 	}
 	const declaration = pseudoElement
-		? pseudoDeclarationFor(manager, element, pseudoElement)
-		: manager.declarationFor(element);
+		? pseudoDeclarationFor(cascade, element, pseudoElement)
+		: cascade.declarationFor(element);
 	return declaration.getComputedValue(property);
 }
 
@@ -7472,7 +7472,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
 	declare [kCSSRules]: ParsedCSSRule[];
 
-	declare [kManager]: StyleManager | null;
+	declare [kCascade]: Cascade | null;
 
 	// Computed strings, memoized once per property per resolution, ""
 	// results included. An inherited property re-resolved on every read
@@ -7486,17 +7486,17 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	constructor(
 		element: Element,
 		cssRules: ParsedCSSRule[] = [],
-		manager?: StyleManager,
+		cascade?: Cascade,
 	) {
 		super();
-		this[kManager] = null;
+		this[kCascade] = null;
 		this[kResolved] = new Map<string, string>();
 		this[kCustom] = null;
 		this[kElement] = element;
 		this[kCSSRules] = cssRules;
-		if (manager) {
-			this[kManager] = manager;
-			manager[kCurrentDeclarations].add(this);
+		if (cascade) {
+			this[kCascade] = cascade;
+			cascade[kCurrentDeclarations].add(this);
 		}
 	}
 
@@ -7517,15 +7517,15 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 
 	getComputedValue(property: string): string {
-		const current = this[kManager]?.[kCurrentDeclarations];
+		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			this[kRefresh]();
 		}
 		const value = this[kBaseValue](property);
-		const manager = this[kManager];
-		if (manager !== null && manager[kActiveTransitions].size > 0) {
+		const cascade = this[kCascade];
+		if (cascade !== null && cascade[kActiveTransitions].size > 0) {
 			const transitional = getTransitionValue(
-				manager,
+				cascade,
 				this[kElement]!,
 				"",
 				property,
@@ -7543,22 +7543,22 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// The author's read describes the DOM as it currently is. The engine
 		// reads through getComputedValue, which does not flush, because style
 		// is resolved from inside layout, which a flush would re-enter.
-		this[kManager]?.[kFlushStyle]();
-		const current = this[kManager]?.[kCurrentDeclarations];
+		this[kCascade]?.[kFlushStyle]();
+		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			this[kRefresh]();
 		}
 		// A flow-relative longhand resolves as the physical longhand it maps
 		// to: same slot, same measurement, same result.
 		property = toPhysicalProperty(this, property);
-		if (this[kManager] && USED_VALUE_PROPERTIES.has(property)) {
+		if (this[kCascade] && USED_VALUE_PROPERTIES.has(property)) {
 			return this[kUsedValue](property);
 		}
-		if (this[kManager] && MIN_SIZE_PROPERTIES.has(property)) {
+		if (this[kCascade] && MIN_SIZE_PROPERTIES.has(property)) {
 			return resolvedMinSize(this, this.getComputedValue(property));
 		}
-		if (this[kManager] && USED_TRACK_PROPERTIES.has(property)) {
-			const tracks = this[kManager][kUsedGridTracks](
+		if (this[kCascade] && USED_TRACK_PROPERTIES.has(property)) {
+			const tracks = this[kCascade][kUsedGridTracks](
 				this[kElement]!,
 				property === "grid-template-rows",
 			);
@@ -7624,10 +7624,10 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 
 	// Measured through the same flush a geometry read takes, and memoized
 	// behind it, so a property-heavy caller measures once per layout. The
-	// memo belongs to the manager, which lets a flush drop every one.
+	// memo belongs to the cascade, which lets a flush drop every one.
 	[kUsedValue](property: string): string {
-		const manager = this[kManager]!;
-		const used = getUsedValues(manager, this);
+		const cascade = this[kCascade]!;
+		const used = getUsedValues(cascade, this);
 		const memoized = used.get(property);
 		if (memoized !== undefined) {
 			return memoized;
@@ -7656,32 +7656,32 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return value;
 	}
 
-	// Reads call this only when the manager no longer vouches for this
+	// Reads call this only when the cascade no longer vouches for this
 	// declaration. It runs under every property read of every element.
 	[kRefresh](): void {
-		if (!this[kManager]) {
+		if (!this[kCascade]) {
 			return;
 		}
 		// Before the work, because resolving below reads back through this
 		// declaration.
-		this[kManager][kCurrentDeclarations].add(this);
-		this[kCSSRules] = this[kManager][kMatchingRules](this[kElement]!);
+		this[kCascade][kCurrentDeclarations].add(this);
+		this[kCSSRules] = this[kCascade][kMatchingRules](this[kElement]!);
 		this[kCustom] = null;
 		storeTransitionFallback(
-			this[kManager],
+			this[kCascade],
 			this[kElement]!,
 			"",
 			this[kResolved],
 		);
 		this[kResolved] = new Map();
-		dropUsedValues(this[kManager], this);
+		dropUsedValues(this[kCascade], this);
 		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
 			syncIndexed(this);
 		}
 		// The re-resolution is a style change event. Whatever changed against
 		// the last snapshot starts, retargets or cancels transitions.
 		processTransitionStyle(
-			this[kManager],
+			this[kCascade],
 			this[kElement]!,
 			(property) => this[kBaseValue](property),
 			"",
@@ -7727,8 +7727,8 @@ function lengthContext(
 			: INITIAL_FONT_SIZE
 		: getFontSize(declaration.getComputedValue("font-size"));
 	const root = rootFontSize(declaration, own);
-	const manager = declaration[kManager];
-	const block = manager ? manager[kLayoutEngine].initialContainingBlock : null;
+	const cascade = declaration[kCascade];
+	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
 	return {
 		font,
 		root,
@@ -7807,7 +7807,7 @@ function measure(
 		return computed;
 	}
 
-	const rect = usedRect(declaration[kManager]!, declaration[kElement]!);
+	const rect = usedRect(declaration[kCascade]!, declaration[kElement]!);
 	// No box (display:none, or a tree layout never reached), so the
 	// computed value is the result, exactly as CSSOM says.
 	if (!rect) {
@@ -7964,7 +7964,7 @@ function getBox(
 	element: Element,
 	content: boolean,
 ): DOMRect | null {
-	const rect = usedRect(declaration[kManager]!, element);
+	const rect = usedRect(declaration[kCascade]!, element);
 	if (!rect) {
 		return null;
 	}
@@ -7992,8 +7992,8 @@ function getBox(
 function viewportBox(
 	declaration: MeasuredDeclaration,
 ): DOMRect | null {
-	const block = declaration[kManager]![kLayoutEngine].initialContainingBlock;
-	const rect = usedRect(declaration[kManager]!, declaration[kElement]!);
+	const block = declaration[kCascade]![kLayout].initialContainingBlock;
+	const rect = usedRect(declaration[kCascade]!, declaration[kElement]!);
 	if (!rect) {
 		return null;
 	}
@@ -8050,7 +8050,7 @@ function autoMargin(
 	rect: DOMRect,
 ): number {
 	const parent = flatParentElement<Element>(declaration[kElement]!);
-	const parentRect = parent ? usedRect(declaration[kManager]!, parent) : null;
+	const parentRect = parent ? usedRect(declaration[kCascade]!, parent) : null;
 	if (!parent || !parentRect) {
 		return 0;
 	}
@@ -8088,7 +8088,7 @@ function containingWidth(
 	if (!parent) {
 		return null;
 	}
-	const rect = usedRect(declaration[kManager]!, parent);
+	const rect = usedRect(declaration[kCascade]!, parent);
 	return rect ? rect.width : null;
 }
 
@@ -8362,7 +8362,7 @@ function resolvePropertyValueRaw(
 function customNames(
 	computed: ComputedStyleDeclaration,
 ): string[] {
-	const current = computed[kManager]?.[kCurrentDeclarations];
+	const current = computed[kCascade]?.[kCurrentDeclarations];
 	if (current !== undefined && !current.has(computed)) {
 		computed[kRefresh]();
 	}
@@ -8375,7 +8375,7 @@ function customNames(
 		element;
 		element = flatParentElement<Element>(element)
 	) {
-		const declaration = computed[kManager]?.declarationFor(element);
+		const declaration = computed[kCascade]?.declarationFor(element);
 		for (const name of declaration?.declaredCustomProperties() ?? []) {
 			names.add(name);
 		}
@@ -8439,17 +8439,17 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// Absent on the engine's own reads (the ::selection and ::marker
 	// painters), which want the cascade's declarations and never a used
 	// value. Their declarations are passed in whole and are not the
-	// manager's to recompute.
+	// cascade's to recompute.
 	declare [kElement]: Element | null;
 	declare [kPseudoElement]: string;
-	declare [kManager]: StyleManager | null;
+	declare [kCascade]: Cascade | null;
 
 	declare [kNodeResolved]: Map<string, string>;
 	declare [kBoxView]: MeasuredDeclaration | null;
 	constructor(
 		declarations: Record<string, string>,
 		element?: Element,
-		manager?: StyleManager,
+		cascade?: Cascade,
 		pseudoElement = "",
 	) {
 		super();
@@ -8459,9 +8459,9 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		this[kPseudoDeclarations] = declarations;
 		this[kElement] = element ?? null;
 		this[kPseudoElement] = pseudoElement;
-		this[kManager] = manager ?? null;
-		if (manager) {
-			manager[kCurrentDeclarations].add(this);
+		this[kCascade] = cascade ?? null;
+		if (cascade) {
+			cascade[kCurrentDeclarations].add(this);
 		}
 	}
 
@@ -8481,7 +8481,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// pseudo-element, which is what the ::selection and ::marker painters
 	// check.
 	getComputedValue(property: string): string {
-		const current = this[kManager]?.[kCurrentDeclarations];
+		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			this[kRefresh]();
 		}
@@ -8494,7 +8494,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// completed with initial values, so a box is never laid out without a
 	// `display`.
 	nodeValue(property: string): string {
-		const current = this[kManager]?.[kCurrentDeclarations];
+		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			this[kRefresh]();
 		}
@@ -8510,11 +8510,11 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override getPropertyValue(property: string): string {
-		this[kManager]?.[kFlushStyle]();
+		this[kCascade]?.[kFlushStyle]();
 		const computed =
 			this.getComputedValue(property) ||
 			computedValue(property, getInitialStyle(null, property));
-		if (this[kManager] && USED_VALUE_PROPERTIES.has(property)) {
+		if (this[kCascade] && USED_VALUE_PROPERTIES.has(property)) {
 			return this[kUsedValue](property, computed);
 		}
 		return computed;
@@ -8539,14 +8539,14 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	[kRefresh](): void {
 		// Before the work, because resolving below reads back through this
 		// declaration.
-		this[kManager]?.[kCurrentDeclarations].add(this);
-		if (this[kManager] && this[kElement] && this[kPseudoElement]) {
-			this[kPseudoDeclarations] = this[kManager][kPseudoDeclarationsFor](
+		this[kCascade]?.[kCurrentDeclarations].add(this);
+		if (this[kCascade] && this[kElement] && this[kPseudoElement]) {
+			this[kPseudoDeclarations] = this[kCascade][kPseudoDeclarationsFor](
 				this[kElement]!,
 				this[kPseudoElement],
 			);
 			storeTransitionFallback(
-				this[kManager],
+				this[kCascade],
 				this[kElement]!,
 				this[kPseudoElement],
 				this[kResolved],
@@ -8557,9 +8557,9 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
 			syncIndexed(this);
 		}
-		if (this[kManager] && this[kElement] && this[kPseudoElement]) {
+		if (this[kCascade] && this[kElement] && this[kPseudoElement]) {
 			processTransitionStyle(
-				this[kManager],
+				this[kCascade],
 				this[kElement]!,
 				(property) => this[kBaseValue](property),
 				this[kPseudoElement],
@@ -8597,13 +8597,13 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// box it would be in.
 	[kUsedValue](property: string, computed: string): string {
 		const originating = this[kElement]!;
-		const manager = this[kManager];
-		if (originating && manager) {
+		const cascade = this[kCascade];
+		if (originating && cascade) {
 			// Flush before the node lookup. The composition pass that runs
 			// under the flush is what creates a pseudo-element's node, so a
 			// lookup taken first would report "no box" for a box one render
 			// away.
-			usedRect(manager, originating);
+			usedRect(cascade, originating);
 			const node = pseudoElement<Element>(
 				originating,
 				this[kPseudoElement],
@@ -8629,7 +8629,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		) {
 			host = flatParentElement<Element>(host);
 		}
-		const box = host && this[kManager]![kContentBox](host);
+		const box = host && this[kCascade]![kContentBox](host);
 		if (!box) {
 			return computed;
 		}
@@ -8646,16 +8646,16 @@ function pseudoTransitionValue(
 	declaration: PseudoStyleDeclaration,
 	property: string,
 ): string | null {
-	const manager = declaration[kManager];
+	const cascade = declaration[kCascade];
 	if (
-		manager === null ||
+		cascade === null ||
 		declaration[kElement] === null ||
-		manager[kActiveTransitions].size === 0
+		cascade[kActiveTransitions].size === 0
 	) {
 		return null;
 	}
 	return getTransitionValue(
-		manager,
+		cascade,
 		declaration[kElement]!,
 		declaration[kPseudoElement],
 		property,
@@ -8674,7 +8674,7 @@ function getBoxView(
 	if (!view || view[kElement] !== node) {
 		view = {
 			[kElement]: node,
-			[kManager]: declaration[kManager],
+			[kCascade]: declaration[kCascade],
 			getComputedValue: (property: string): string =>
 				declaration.nodeValue(property),
 			getPropertyValue: (property: string): string =>
@@ -9164,12 +9164,12 @@ function selects(
 }
 
 function shouldCreatePseudoElement(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudoType: string,
 ): boolean {
 	if (pseudoType === "::marker") {
-		const computedStyle = manager.declarationFor(element);
+		const computedStyle = cascade.declarationFor(element);
 		const display = computedStyle.getComputedValue("display");
 		const listStylePosition =
 			computedStyle.getComputedValue("list-style-position") || "outside";
@@ -9179,7 +9179,7 @@ function shouldCreatePseudoElement(
 		}
 	}
 
-	const styles = computePseudoElementStyle(manager, element, pseudoType);
+	const styles = computePseudoElementStyle(cascade, element, pseudoType);
 	const content = styles.content;
 	return !!(content && content !== "none" && content !== "normal");
 }
@@ -9188,26 +9188,26 @@ const kCounterScopes = Symbol("counterScopes");
 
 // The entry point for mutations.
 function attachPseudoElementsToElement(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 ): void {
 	// If no pseudo rule names this element's type, no counter scope reaches
 	// it, and it has no pseudo-element to reconsider, everything below would
 	// return no, at the cost of one matches() call per rule.
-	const tags = pseudoSubjects(manager);
+	const tags = pseudoSubjects(cascade);
 	if (
 		tags !== null &&
 		!tags.has(element.tagName) &&
 		pseudoElementCount(element) === 0 &&
-		!manager[kCounterScopes].has(element.parentElement!) &&
+		!cascade[kCounterScopes].has(element.parentElement!) &&
 		!(element.getAttribute("style") ?? "").includes("list-item")
 	) {
 		return;
 	}
-	initializeCounters(manager, element);
+	initializeCounters(cascade, element);
 
 	for (const pseudoType of PSEUDO_ELEMENT_NAMES) {
-		attachPseudoElementToElementForType(manager, element, pseudoType);
+		attachPseudoElementToElementForType(cascade, element, pseudoType);
 	}
 }
 
@@ -9270,7 +9270,7 @@ const kTransitionTimer = Symbol("transitionTimer");
 const kTransitionEvents = Symbol("transitionEvents");
 const kTransitionFlushQueued = Symbol("transitionFlushQueued");
 
-export class StyleManager {
+export class Cascade {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
 
 	// Every declaration resolved against the current cascade. Dropping one,
@@ -9368,7 +9368,7 @@ export class StyleManager {
 	// Fixed for the window's lifetime, so held directly.
 	declare [kDocument]: Document;
 	declare [kWindow]: EngineWindow;
-	declare [kLayoutEngine]: LayoutEngine;
+	declare [kLayout]: Layout;
 
 	declare [kFlushing]: boolean;
 
@@ -9393,7 +9393,7 @@ export class StyleManager {
 	// chain.
 	declare [kPseudoSubjectTags]: Set<string> | null | undefined;
 
-	constructor(window: EngineWindow, layoutEngine: LayoutEngine) {
+	constructor(window: EngineWindow, layout: Layout) {
 		this[kComputedStyleCache] = new WeakMap<
 			Element,
 			ComputedStyleDeclaration
@@ -9435,10 +9435,10 @@ export class StyleManager {
 		this[kTransitionEvents] = [];
 		this[kTransitionFlushQueued] = false;
 		this[kWindow] = window;
-		this[kLayoutEngine] = layoutEngine;
+		this[kLayout] = layout;
 		this[kDocument] = window.document;
 
-		documentManagers.set(this[kDocument], this);
+		documentCascades.set(this[kDocument], this);
 		window.getComputedStyle = (
 			element: Element,
 			pseudoElt?: string | null,
@@ -9632,7 +9632,7 @@ export class StyleManager {
 		invalidateSubtree(this, element);
 		// No mutation record describes the change, so the frame that decides
 		// whether anything needs painting is notified here.
-		this[kLayoutEngine].invalidateFrame();
+		this[kLayout].invalidateFrame();
 	}
 
 	// The same staleness a focus move leaves, scoped to the symmetric
@@ -9766,7 +9766,7 @@ export class StyleManager {
 		// Stylesheet changes are rare.
 		const body = this[kDocument].body;
 		if (body) {
-			this[kLayoutEngine].invalidate(body);
+			this[kLayout].invalidate(body);
 		}
 	}
 
@@ -9813,7 +9813,7 @@ export class StyleManager {
 		if (!usedRect(this, element)) {
 			return null;
 		}
-		return this[kLayoutEngine].contentRect(element);
+		return this[kLayout].contentRect(element);
 	}
 
 	// Null for a box that generated no grid. The resolved value then stays
@@ -9822,7 +9822,7 @@ export class StyleManager {
 		if (!usedRect(this, element)) {
 			return null;
 		}
-		return this[kLayoutEngine].gridTracks(element, rows);
+		return this[kLayout].gridTracks(element, rows);
 	}
 
 	// Re-parse ONE shadow root's sheets in place. Only trees the root's
@@ -9992,45 +9992,45 @@ export class StyleManager {
 // The flush runs once per change, not once per read. A caller reading
 // four properties off two hundred elements pays one flush, not eight
 // hundred. Nothing under the flush can call back into this.
-function usedRect(manager: StyleManager, element: Element): DOMRect | null {
-	if (manager[kUsedStale]) {
-		flushLayout(manager[kDocument]);
-		manager[kUsedStale] = false;
-		manager[kUsedValues] = new WeakMap();
+function usedRect(cascade: Cascade, element: Element): DOMRect | null {
+	if (cascade[kUsedStale]) {
+		flushLayout(cascade[kDocument]);
+		cascade[kUsedStale] = false;
+		cascade[kUsedValues] = new WeakMap();
 	}
-	return manager[kLayoutEngine].getRect(element);
+	return cascade[kLayout].getRect(element);
 }
 
 // A pseudo-element's declaration, on the same internal read path.
 function pseudoDeclarationFor(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudoElement: string,
 ): PseudoStyleDeclaration {
-	const cached = manager[kPseudoElementStyleCache]
+	const cached = cascade[kPseudoElementStyleCache]
 		.get(element)
 		?.get(pseudoElement);
 	if (cached) {
 		return cached;
 	}
-	const declarations = manager[kPseudoDeclarationsFor](element, pseudoElement);
+	const declarations = cascade[kPseudoDeclarationsFor](element, pseudoElement);
 	const declaration = new PseudoStyleDeclaration(
 		declarations,
 		element,
-		manager,
+		cascade,
 		pseudoElement,
 	);
 	// The cache is fetched HERE, not before the work. Resolving the host's
 	// style can reparse the stylesheets, which replaces every cache on this
-	// manager, and a map fetched before that would be orphaned.
-	let elementCache = manager[kPseudoElementStyleCache].get(element);
+	// cascade, and a map fetched before that would be orphaned.
+	let elementCache = cascade[kPseudoElementStyleCache].get(element);
 	if (!elementCache) {
 		elementCache = new Map();
-		manager[kPseudoElementStyleCache].set(element, elementCache);
+		cascade[kPseudoElementStyleCache].set(element, elementCache);
 	}
 	elementCache.set(pseudoElement, declaration);
 	processTransitionStyle(
-		manager,
+		cascade,
 		element,
 		(property) => declaration[kBaseValue](property),
 		pseudoElement,
@@ -10040,10 +10040,10 @@ function pseudoDeclarationFor(
 
 // Driven from the rules rather than the tree, so the walk costs what
 // the sheets ask for rather than what the document holds.
-function attachPseudoElementsToDocument(manager: StyleManager): void {
+function attachPseudoElementsToDocument(cascade: Cascade): void {
 	const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 
-	for (const rule of manager[kParsedRules]) {
+	for (const rule of cascade[kParsedRules]) {
 		if (
 			rule.pseudoElement &&
 			rule.pseudoElement !== "::placeholder" &&
@@ -10062,7 +10062,7 @@ function attachPseudoElementsToDocument(manager: StyleManager): void {
 		for (const rule of rules) {
 			// Within the rule's own tree scope. A :host rule reaches the one
 			// element outside it.
-			const scope = (rule.scope ?? manager[kDocument]) as Node;
+			const scope = (rule.scope ?? cascade[kDocument]) as Node;
 			for (const element of selectForRule(scope, rule)) {
 				matchingElements.add(element);
 			}
@@ -10075,46 +10075,46 @@ function attachPseudoElementsToDocument(manager: StyleManager): void {
 		}
 
 		for (const element of matchingElements) {
-			attachPseudoElementToElementForType(manager, element, pseudoType);
+			attachPseudoElementToElementForType(cascade, element, pseudoType);
 		}
 	}
 
 	// A ::marker needs no rule to exist, since list-style-type gives it
 	// content on its own, so the items are found by tag as well.
-	const listItems = manager[kDocument].querySelectorAll(
+	const listItems = cascade[kDocument].querySelectorAll(
 		'[style*="list-item"], li',
 	);
 	for (const element of listItems) {
-		const computedStyle = manager.declarationFor(element);
+		const computedStyle = cascade.declarationFor(element);
 		const display = computedStyle.getComputedValue("display");
 		const listStylePosition =
 			computedStyle.getComputedValue("list-style-position") || "outside";
 
 		if (display === "list-item" && listStylePosition !== "outside") {
-			attachPseudoElementToElementForType(manager, element, "::marker");
+			attachPseudoElementToElementForType(cascade, element, "::marker");
 		}
 	}
 }
 
-function invalidateElement(manager: StyleManager, element: Element): void {
+function invalidateElement(cascade: Cascade, element: Element): void {
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade changed rather than merely dropped.
-	const dropped = manager[kComputedStyleCache].get(element);
+	const dropped = cascade[kComputedStyleCache].get(element);
 	if (dropped) {
-		manager[kCurrentDeclarations].delete(dropped);
-		storeTransitionFallback(manager, element, "", dropped[kResolved]);
+		cascade[kCurrentDeclarations].delete(dropped);
+		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
-	manager[kComputedStyleCache].delete(element);
-	manager[kPseudoElementStyleCache].delete(element);
+	cascade[kComputedStyleCache].delete(element);
+	cascade[kPseudoElementStyleCache].delete(element);
 	// A style change can flip display: contents, which moves the node's
 	// flat-tree BOX parent, so every box enumeration is stale.
-	manager[kLayoutEngine].invalidateFrame();
+	cascade[kLayout].invalidateFrame();
 }
 
 // The parent's scope is read, never built. Building it recursively up a
 // deep tree is what this avoids.
-function initializeCounters(manager: StyleManager, element: Element): void {
-	if (manager[kCounterScopes].has(element)) {
+function initializeCounters(cascade: Cascade, element: Element): void {
+	if (cascade[kCounterScopes].has(element)) {
 		return;
 	}
 
@@ -10123,20 +10123,20 @@ function initializeCounters(manager: StyleManager, element: Element): void {
 	// li > div > ol keeps its inheritance path unbroken.
 	const tag = element.tagName;
 	if (
-		!manager[kCounterRulesExist] &&
+		!cascade[kCounterRulesExist] &&
 		tag !== "OL" &&
 		tag !== "UL" &&
 		tag !== "LI" &&
 		!(
 			element.parentElement &&
-			manager[kCounterScopes].has(element.parentElement)
+			cascade[kCounterScopes].has(element.parentElement)
 		) &&
 		!(element.getAttribute("style") ?? "").includes("counter")
 	) {
 		return;
 	}
 
-	const computedStyle = manager.declarationFor(element);
+	const computedStyle = cascade.declarationFor(element);
 	const counterReset = computedStyle.getComputedValue("counter-reset");
 	const counterIncrement = computedStyle.getComputedValue(
 		"counter-increment",
@@ -10144,7 +10144,7 @@ function initializeCounters(manager: StyleManager, element: Element): void {
 
 	const parentElement = element.parentElement;
 	const parentScope = parentElement
-		? manager[kCounterScopes].get(parentElement)
+		? cascade[kCounterScopes].get(parentElement)
 		: undefined;
 
 	const scope: CounterScope = {
@@ -10152,7 +10152,7 @@ function initializeCounters(manager: StyleManager, element: Element): void {
 		counters: {},
 		parent: parentScope,
 	};
-	manager[kCounterScopes].set(element, scope);
+	cascade[kCounterScopes].set(element, scope);
 
 	if (counterReset && counterReset !== "none") {
 		parseCounterReset(scope, counterReset);
@@ -10168,11 +10168,11 @@ function initializeCounters(manager: StyleManager, element: Element): void {
 	}
 
 	if (counterIncrement && counterIncrement !== "none") {
-		parseCounterIncrement(manager, scope, counterIncrement);
+		parseCounterIncrement(cascade, scope, counterIncrement);
 	}
 
 	if (element.tagName === "LI") {
-		incrementCounter(manager, scope, "list-item", 1);
+		incrementCounter(cascade, scope, "list-item", 1);
 	}
 }
 
@@ -10195,19 +10195,19 @@ function blockified(display: string): string {
 }
 
 function getUsedValues(
-	manager: StyleManager,
+	cascade: Cascade,
 	declaration: object,
 ): Map<string, string> {
-	let values = manager[kUsedValues].get(declaration);
+	let values = cascade[kUsedValues].get(declaration);
 	if (!values) {
 		values = new Map();
-		manager[kUsedValues].set(declaration, values);
+		cascade[kUsedValues].set(declaration, values);
 	}
 	return values;
 }
 
-function dropUsedValues(manager: StyleManager, declaration: object): void {
-	manager[kUsedValues].delete(declaration);
+function dropUsedValues(cascade: Cascade, declaration: object): void {
+	cascade[kUsedValues].delete(declaration);
 }
 
 // What window.getComputedStyle returns: CSSOM's RESOLVED value, which
@@ -10215,12 +10215,12 @@ function dropUsedValues(manager: StyleManager, declaration: object): void {
 // layout. The platform method is misnamed, and this is the one place the
 // engine uses that name.
 function getResolvedStyle(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudoElt?: string | null,
 ): globalThis.CSSStyleDeclaration {
-	manager[kFlushStyle]();
-	parseStylesheetsIfStale(manager);
+	cascade[kFlushStyle]();
+	parseStylesheetsIfStale(cascade);
 	// An element out of the document, or out of the flat tree it composes,
 	// has no style to report. Only an author read comes through here.
 	if (!isBeingRendered(element)) {
@@ -10242,12 +10242,12 @@ function getResolvedStyle(
 
 	if (pseudoElement) {
 		return indexedDeclaration(
-			pseudoDeclarationFor(manager, element, pseudoElement),
+			pseudoDeclarationFor(cascade, element, pseudoElement),
 		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
 	return indexedDeclaration(
-		manager.declarationFor(element),
+		cascade.declarationFor(element),
 	) as unknown as globalThis.CSSStyleDeclaration;
 }
 
@@ -10339,7 +10339,7 @@ const TRANSITIONABLE_ALL = [
 // transition lands AFTER the invalidation that drops the values it
 // transitions from.
 function storeTransitionFallback(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudo: string,
 	resolved: Map<string, string>,
@@ -10347,10 +10347,10 @@ function storeTransitionFallback(
 	if (resolved.size === 0) {
 		return;
 	}
-	let byPseudo = manager[kTransitionFallback].get(element);
+	let byPseudo = cascade[kTransitionFallback].get(element);
 	if (!byPseudo) {
 		byPseudo = new Map();
-		manager[kTransitionFallback].set(element, byPseudo);
+		cascade[kTransitionFallback].set(element, byPseudo);
 	}
 	byPseudo.set(pseudo, resolved);
 }
@@ -10419,25 +10419,25 @@ function matchedTransitions(
 // snapshot; start, retarget or cancel; store the new snapshot. The early
 // returns are all each style change in a transition-free document pays.
 function processTransitionStyle(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	read: (property: string) => string,
 	pseudo: string,
 ): void {
-	const active = manager[kActiveTransitions].get(element)?.get(pseudo);
-	if (!manager[kTransitionsExist] && !active) {
+	const active = cascade[kActiveTransitions].get(element)?.get(pseudo);
+	if (!cascade[kTransitionsExist] && !active) {
 		// An inline transition written right before this event may not have
 		// parsed yet. The attribute text is the one place it already shows.
 		const attribute = element.getAttribute("style");
 		if (!attribute || !attribute.includes("transition")) {
 			return;
 		}
-		manager[kTransitionsExist] = true;
+		cascade[kTransitionsExist] = true;
 	}
 	const candidates = matchedTransitions(read);
-	let snapshots = manager[kTransitionSnapshots].get(element);
+	let snapshots = cascade[kTransitionSnapshots].get(element);
 	const previous = snapshots?.get(pseudo);
-	const fallbacks = manager[kTransitionFallback].get(element);
+	const fallbacks = cascade[kTransitionFallback].get(element);
 	const fallback = fallbacks?.get(pseudo);
 	if (fallback) {
 		fallbacks!.delete(pseudo);
@@ -10458,14 +10458,14 @@ function processTransitionStyle(
 		const running = active?.get(property);
 		if (running) {
 			if (!runnable) {
-				cancelTransition(manager, element, pseudo, property, now);
+				cancelTransition(cascade, element, pseudo, property, now);
 				continue;
 			}
 			if (after === running.to) {
 				continue;
 			}
 			const current = currentTransitionValue(running, now);
-			cancelTransition(manager, element, pseudo, property, now);
+			cancelTransition(cascade, element, pseudo, property, now);
 			if (current === after) {
 				continue;
 			}
@@ -10485,7 +10485,7 @@ function processTransitionStyle(
 				);
 				duration *= factor;
 			}
-			startTransition(manager, element, pseudo, property, {
+			startTransition(cascade, element, pseudo, property, {
 				from: current,
 				to: after,
 				timing: {...timing, duration},
@@ -10510,7 +10510,7 @@ function processTransitionStyle(
 		) {
 			continue;
 		}
-		startTransition(manager, element, pseudo, property, {
+		startTransition(cascade, element, pseudo, property, {
 			from: before,
 			to: after,
 			timing: timing!,
@@ -10526,7 +10526,7 @@ function processTransitionStyle(
 		}
 		if (!snapshots) {
 			snapshots = new Map();
-			manager[kTransitionSnapshots].set(element, snapshots);
+			cascade[kTransitionSnapshots].set(element, snapshots);
 		}
 		snapshots.set(pseudo, snapshot);
 	} else if (previous) {
@@ -10535,7 +10535,7 @@ function processTransitionStyle(
 }
 
 function startTransition(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudo: string,
 	property: string,
@@ -10548,10 +10548,10 @@ function startTransition(
 		reversingShorteningFactor: number;
 	},
 ): void {
-	let byPseudo = manager[kActiveTransitions].get(element);
+	let byPseudo = cascade[kActiveTransitions].get(element);
 	if (!byPseudo) {
 		byPseudo = new Map();
-		manager[kActiveTransitions].set(element, byPseudo);
+		cascade[kActiveTransitions].set(element, byPseudo);
 	}
 	let transitions = byPseudo.get(pseudo);
 	if (!transitions) {
@@ -10572,13 +10572,13 @@ function startTransition(
 		reversingShorteningFactor: options.reversingShorteningFactor,
 	};
 	transitions.set(property, transition);
-	manager[kTransitionClock] = now;
+	cascade[kTransitionClock] = now;
 	// A negative delay starts partway in, which is what elapsedTime
 	// reports.
 	const elapsed =
 		Math.min(Math.max(-timing.delay, 0), timing.duration) / 1000;
 	queueTransitionEvent(
-		manager,
+		cascade,
 		element,
 		"transitionrun",
 		property,
@@ -10587,7 +10587,7 @@ function startTransition(
 	);
 	if (transition.started) {
 		queueTransitionEvent(
-			manager,
+			cascade,
 			element,
 			"transitionstart",
 			property,
@@ -10595,17 +10595,17 @@ function startTransition(
 			pseudo,
 		);
 	}
-	scheduleTransitionTick(manager);
+	scheduleTransitionTick(cascade);
 }
 
 function cancelTransition(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudo: string,
 	property: string,
 	now: number,
 ): void {
-	const byPseudo = manager[kActiveTransitions].get(element);
+	const byPseudo = cascade[kActiveTransitions].get(element);
 	const transitions = byPseudo?.get(pseudo);
 	const transition = transitions?.get(property);
 	if (!transition || !transitions || !byPseudo) {
@@ -10616,14 +10616,14 @@ function cancelTransition(
 		byPseudo.delete(pseudo);
 	}
 	if (byPseudo.size === 0) {
-		manager[kActiveTransitions].delete(element);
+		cascade[kActiveTransitions].delete(element);
 	}
 	const elapsed = Math.min(
 		Math.max((now - transition.start - transition.delay) / 1000, 0),
 		transition.duration / 1000,
 	);
 	queueTransitionEvent(
-		manager,
+		cascade,
 		element,
 		"transitioncancel",
 		property,
@@ -10668,21 +10668,21 @@ function currentTransitionValue(
 	);
 }
 
-// Interpolates against the manager's clock rather than the wall clock.
+// Interpolates against the cascade's clock rather than the wall clock.
 // The clock moves once per tick, so a frame's reads agree with each
 // other and with what the painter draws.
 function getTransitionValue(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudo: string,
 	property: string,
 ): string | null {
-	const transitions = manager[kActiveTransitions].get(element)?.get(pseudo);
+	const transitions = cascade[kActiveTransitions].get(element)?.get(pseudo);
 	const transition = transitions ? transitions.get(property) : undefined;
 	if (!transition) {
 		return null;
 	}
-	return currentTransitionValue(transition, manager[kTransitionClock]);
+	return currentTransitionValue(transition, cascade[kTransitionClock]);
 }
 
 // Numbers with a shared unit interpolate numerically, colors by
@@ -10967,36 +10967,36 @@ function cubicBezierEasing(
 }
 
 function queueTransitionEvent(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	type: string,
 	propertyName: string,
 	elapsedTime: number,
 	pseudoElement: string,
 ): void {
-	manager[kTransitionEvents].push({
+	cascade[kTransitionEvents].push({
 		element,
 		type,
 		propertyName,
 		elapsedTime,
 		pseudoElement,
 	});
-	if (manager[kTransitionFlushQueued]) {
+	if (cascade[kTransitionFlushQueued]) {
 		return;
 	}
-	manager[kTransitionFlushQueued] = true;
+	cascade[kTransitionFlushQueued] = true;
 	// Style change events run under layout, and a listener can mutate the
 	// DOM, so dispatch waits for the stack that queued it to unwind.
-	queueMicrotask(() => flushTransitionEvents(manager));
+	queueMicrotask(() => flushTransitionEvents(cascade));
 }
 
-function flushTransitionEvents(manager: StyleManager): void {
-	manager[kTransitionFlushQueued] = false;
-	if (manager[kTransitionEvents].length === 0) {
+function flushTransitionEvents(cascade: Cascade): void {
+	cascade[kTransitionFlushQueued] = false;
+	if (cascade[kTransitionEvents].length === 0) {
 		return;
 	}
-	const queued = manager[kTransitionEvents];
-	manager[kTransitionEvents] = [];
+	const queued = cascade[kTransitionEvents];
+	cascade[kTransitionEvents] = [];
 	for (const item of queued) {
 		const event = new TransitionEvent(item.type, {
 			bubbles: true,
@@ -11009,31 +11009,31 @@ function flushTransitionEvents(manager: StyleManager): void {
 	}
 }
 
-function scheduleTransitionTick(manager: StyleManager): void {
+function scheduleTransitionTick(cascade: Cascade): void {
 	if (
-		manager[kTransitionTimer] !== null ||
-		manager[kActiveTransitions].size === 0
+		cascade[kTransitionTimer] !== null ||
+		cascade[kActiveTransitions].size === 0
 	) {
 		return;
 	}
-	manager[kTransitionTimer] = setTimeout(() => {
-		manager[kTransitionTimer] = null;
-		tickTransitions(manager);
+	cascade[kTransitionTimer] = setTimeout(() => {
+		cascade[kTransitionTimer] = null;
+		tickTransitions(cascade);
 	}, 16);
 }
 
 // Promote delayed transitions, finish elapsed ones, cancel those whose
 // element left the document, then invalidate so the next read returns
 // the new interpolated values.
-function tickTransitions(manager: StyleManager): void {
+function tickTransitions(cascade: Cascade): void {
 	const now = performance.now();
-	manager[kTransitionClock] = now;
-	for (const [element, byPseudo] of [...manager[kActiveTransitions]]) {
+	cascade[kTransitionClock] = now;
+	for (const [element, byPseudo] of [...cascade[kActiveTransitions]]) {
 		const disconnected = !element.isConnected;
 		for (const [pseudo, transitions] of [...byPseudo]) {
 			for (const [property, transition] of [...transitions]) {
 				if (disconnected) {
-					cancelTransition(manager, element, pseudo, property, now);
+					cancelTransition(cascade, element, pseudo, property, now);
 					continue;
 				}
 				if (
@@ -11042,7 +11042,7 @@ function tickTransitions(manager: StyleManager): void {
 				) {
 					transition.started = true;
 					queueTransitionEvent(
-						manager,
+						cascade,
 						element,
 						"transitionstart",
 						property,
@@ -11057,7 +11057,7 @@ function tickTransitions(manager: StyleManager): void {
 				) {
 					transitions.delete(property);
 					queueTransitionEvent(
-						manager,
+						cascade,
 						element,
 						"transitionend",
 						property,
@@ -11071,23 +11071,23 @@ function tickTransitions(manager: StyleManager): void {
 			}
 		}
 		if (byPseudo.size === 0) {
-			manager[kActiveTransitions].delete(element);
+			cascade[kActiveTransitions].delete(element);
 		}
-		invalidateElementCaches(manager, element);
+		invalidateElementCaches(cascade, element);
 	}
-	manager[kLayoutEngine].invalidateFrame();
-	flushTransitionEvents(manager);
+	cascade[kLayout].invalidateFrame();
+	flushTransitionEvents(cascade);
 	// A window no engine set up has no requestAnimationFrame, and its reads
 	// interpolate on their own.
 	const raf = (
-		manager[kWindow] as {
+		cascade[kWindow] as {
 			requestAnimationFrame?: (cb: () => void) => number;
 		}
 	).requestAnimationFrame;
 	if (typeof raf === "function") {
-		raf.call(manager[kWindow], () => {});
+		raf.call(cascade[kWindow], () => {});
 	}
-	scheduleTransitionTick(manager);
+	scheduleTransitionTick(cascade);
 }
 
 // The document counts <style> elements as they join and leave, so this
@@ -11095,65 +11095,65 @@ function tickTransitions(manager: StyleManager): void {
 // sheet appended in the same tick, before the mutation observer
 // delivers.
 function styleSheetCount(
-	manager: StyleManager,
+	cascade: Cascade,
 ): number {
-	return styleElementCount(manager[kDocument] as unknown as DOMDocument);
+	return styleElementCount(cascade[kDocument] as unknown as DOMDocument);
 }
 
-function parseStylesheetsIfStale(manager: StyleManager): void {
+function parseStylesheetsIfStale(cascade: Cascade): void {
 	if (
-		manager[kStylesheetsDirty] ||
-		styleSheetCount(manager) !== manager[kParsedStyleSheetCount]
+		cascade[kStylesheetsDirty] ||
+		styleSheetCount(cascade) !== cascade[kParsedStyleSheetCount]
 	) {
-		parseStylesheets(manager);
+		parseStylesheets(cascade);
 	}
 }
 
 // Descendants and the hosted shadow tree too, since inheritance crosses
 // that boundary.
 function invalidateSubtree(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 ): void {
-	invalidateElementCaches(manager, element);
-	attachPseudoElementsToElement(manager, element);
+	invalidateElementCaches(cascade, element);
+	attachPseudoElementsToElement(cascade, element);
 	for (const descendant of element.querySelectorAll("*")) {
-		invalidateElementCaches(manager, descendant);
-		attachPseudoElementsToElement(manager, descendant);
+		invalidateElementCaches(cascade, descendant);
+		attachPseudoElementsToElement(cascade, descendant);
 	}
 	const root = element.shadowRoot;
 	if (root) {
 		for (const descendant of root.querySelectorAll("*")) {
-			invalidateSubtree(manager, descendant);
+			invalidateSubtree(cascade, descendant);
 		}
 	}
 }
 
 function invalidateElementCaches(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 ): void {
 	// The one place an element's computed style goes stale, so the one
 	// place layout, which measured it under the style being dropped, is
 	// notified.
-	manager[kLayoutEngine].styleInvalidated(element);
+	cascade[kLayout].styleInvalidated(element);
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade changed rather than merely dropped.
-	const dropped = manager[kComputedStyleCache].get(element);
+	const dropped = cascade[kComputedStyleCache].get(element);
 	if (dropped) {
-		manager[kCurrentDeclarations].delete(dropped);
-		storeTransitionFallback(manager, element, "", dropped[kResolved]);
+		cascade[kCurrentDeclarations].delete(dropped);
+		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
-	manager[kComputedStyleCache].delete(element);
-	const droppedPseudos = manager[kPseudoElementStyleCache].get(element);
+	cascade[kComputedStyleCache].delete(element);
+	const droppedPseudos = cascade[kPseudoElementStyleCache].get(element);
 	if (droppedPseudos) {
 		for (const [name, declaration] of droppedPseudos) {
-			manager[kCurrentDeclarations].delete(declaration);
-			storeTransitionFallback(manager, element, name, declaration[kResolved]);
+			cascade[kCurrentDeclarations].delete(declaration);
+			storeTransitionFallback(cascade, element, name, declaration[kResolved]);
 		}
 	}
-	manager[kPseudoElementStyleCache].delete(element);
-	manager[kCounterScopes].delete(element);
+	cascade[kPseudoElementStyleCache].delete(element);
+	cascade[kCounterScopes].delete(element);
 }
 
 // The list's padding-left is a function of its items' markers and
@@ -11161,11 +11161,11 @@ function invalidateElementCaches(
 // TODO(box-tree): the gutter is a layout question answered here in the
 // cascade. Computing it during block layout deletes this.
 function invalidateEnclosingList(
-	manager: StyleManager,
+	cascade: Cascade,
 	target: Node,
 ): void {
 	let element: Element | null =
-		target.nodeType === manager[kWindow].Node.ELEMENT_NODE
+		target.nodeType === cascade[kWindow].Node.ELEMENT_NODE
 			? (target as Element)
 			: target.parentElement;
 
@@ -11174,10 +11174,10 @@ function invalidateEnclosingList(
 			continue;
 		}
 
-		invalidateElementCaches(manager, element);
-		manager[kLayoutEngine].invalidate(element);
+		invalidateElementCaches(cascade, element);
+		cascade[kLayout].invalidate(element);
 		for (const item of Array.from(element.children)) {
-			invalidateElementCaches(manager, item);
+			invalidateElementCaches(cascade, item);
 		}
 		return;
 	}
@@ -11187,68 +11187,68 @@ function invalidateEnclosingList(
 // declaration built before this parse was resolved against rules that
 // no longer describe the cascade, and nothing else would tell it.
 function parseStylesheets(
-	manager: StyleManager,
+	cascade: Cascade,
 ): void {
-	const document = manager[kDocument];
-	manager[kParsedRules] = [];
-	manager[kSelectorsReachSiblings] = false;
-	manager[kSelectorsReachAncestors] = false;
-	manager[kReachingClasses].clear();
-	manager[kReachingIds].clear();
-	manager[kReachingAttributes].clear();
-	manager[kReachingStates] = false;
-	manager[kPseudoRulesByType] = new Map();
-	manager[kPseudoSubjectTags] = undefined;
-	manager[kCounterRulesExist] = false;
-	manager[kListItemRulesExist] = false;
-	manager[kScopedRulesExist] = false;
-	manager[kHasRulesExist] = false;
-	manager[kHoverRulesExist] = false;
-	manager[kStylesheetsDirty] = false;
-	manager[kLayerPaths] = [];
-	manager[kAnonymousLayers] = 0;
-	manager[kParsedStyleSheetCount] = styleSheetCount(manager);
+	const document = cascade[kDocument];
+	cascade[kParsedRules] = [];
+	cascade[kSelectorsReachSiblings] = false;
+	cascade[kSelectorsReachAncestors] = false;
+	cascade[kReachingClasses].clear();
+	cascade[kReachingIds].clear();
+	cascade[kReachingAttributes].clear();
+	cascade[kReachingStates] = false;
+	cascade[kPseudoRulesByType] = new Map();
+	cascade[kPseudoSubjectTags] = undefined;
+	cascade[kCounterRulesExist] = false;
+	cascade[kListItemRulesExist] = false;
+	cascade[kScopedRulesExist] = false;
+	cascade[kHasRulesExist] = false;
+	cascade[kHoverRulesExist] = false;
+	cascade[kStylesheetsDirty] = false;
+	cascade[kLayerPaths] = [];
+	cascade[kAnonymousLayers] = 0;
+	cascade[kParsedStyleSheetCount] = styleSheetCount(cascade);
 
 	// Origin ordering, not source order, keeps the UA sheet beneath every
 	// author rule.
-	parseStyleSheet(manager, uaStyleSheet(), undefined, true);
+	parseStyleSheet(cascade, uaStyleSheet(), undefined, true);
 
 	for (const sheet of documentStyleSheets(document)) {
-		parseStyleSheet(manager, sheet);
+		parseStyleSheet(cascade, sheet);
 	}
 
 	// Disconnected roots parse too. attach-populate-connect is the standard
 	// order, and a scope-gated rule matches nothing until its tree renders.
-	for (const root of manager[kShadowRoots]) {
+	for (const root of cascade[kShadowRoots]) {
 		for (const sheet of shadowStyleSheets(root)) {
-			parseStyleSheet(manager, sheet, root);
+			parseStyleSheet(cascade, sheet, root);
 		}
 	}
 
-	const layerRanks = rankLayers(manager);
-	for (const rule of manager[kParsedRules]) {
+	const layerRanks = rankLayers(cascade);
+	for (const rule of cascade[kParsedRules]) {
 		rule.layerRank =
 			rule.layer === null
-				? manager[kUnlayeredRank]
-				: (layerRanks.get(rule.layer) ?? manager[kUnlayeredRank]);
+				? cascade[kUnlayeredRank]
+				: (layerRanks.get(rule.layer) ?? cascade[kUnlayeredRank]);
 	}
 
-	sortRulesForCascade(manager);
-	manager[kClearCache]();
+	sortRulesForCascade(cascade);
+	cascade[kClearCache]();
 	// Only now, because invalidated layout re-derives boxes by asking the
 	// cascade for display, and the result must come from the rules just
 	// parsed.
-	manager[kLayoutEngine].invalidate();
-	attachPseudoElements(manager);
+	cascade[kLayout].invalidate();
+	attachPseudoElements(cascade);
 }
 
 // Origin first (UA below every author rule, later wins), then layer,
 // then specificity, then the order the rules were read in.
-function sortRulesForCascade(manager: StyleManager): void {
+function sortRulesForCascade(cascade: Cascade): void {
 	const sourceOrder = new Map(
-		manager[kParsedRules].map((rule, index) => [rule, index] as const),
+		cascade[kParsedRules].map((rule, index) => [rule, index] as const),
 	);
-	manager[kParsedRules].sort((a, b) => {
+	cascade[kParsedRules].sort((a, b) => {
 		if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
 			return a.uaOrigin ? -1 : 1;
 		}
@@ -11264,7 +11264,7 @@ function sortRulesForCascade(manager: StyleManager): void {
 
 // Declare a layer and every layer its path nests inside.
 function declareLayer(
-	manager: StyleManager,
+	cascade: Cascade,
 	outer: string | null,
 	name: string,
 ): string {
@@ -11272,8 +11272,8 @@ function declareLayer(
 	const segments = path.split(".");
 	for (let depth = 1; depth <= segments.length; depth++) {
 		const prefix = segments.slice(0, depth).join(".");
-		if (!manager[kLayerPaths].includes(prefix)) {
-			manager[kLayerPaths].push(prefix);
+		if (!cascade[kLayerPaths].includes(prefix)) {
+			cascade[kLayerPaths].push(prefix);
 		}
 	}
 	return path;
@@ -11283,10 +11283,10 @@ function declareLayer(
 // relation unlayered rules have to layers, one level down. The important
 // cascade reads the same order backwards.
 function rankLayers(
-	manager: StyleManager,
+	cascade: Cascade,
 ): Map<string, number> {
 	const nested = new Map<string, string[]>();
-	for (const path of manager[kLayerPaths]) {
+	for (const path of cascade[kLayerPaths]) {
 		const dot = path.lastIndexOf(".");
 		const outer = dot === -1 ? "" : path.slice(0, dot);
 		const siblings = nested.get(outer);
@@ -11307,7 +11307,7 @@ function rankLayers(
 		}
 	};
 	rank("");
-	manager[kUnlayeredRank] = next;
+	cascade[kUnlayeredRank] = next;
 	return ranks;
 }
 
@@ -11317,7 +11317,7 @@ function rankLayers(
 // that applies too widely is one an author can see, and one that
 // vanishes with the whole at-rule is not.
 function parseStyleSheet(
-	manager: StyleManager,
+	cascade: Cascade,
 	container: CSSStyleSheet | CSSGroupingRule,
 	scope?: Node,
 	uaOrigin?: boolean,
@@ -11327,36 +11327,36 @@ function parseStyleSheet(
 		if (container.disabled) {
 			return;
 		}
-		if (!manager.mediaQueryMatches(container.media.mediaText)) {
+		if (!cascade.mediaQueryMatches(container.media.mediaText)) {
 			return;
 		}
 	}
 	for (const rule of container.cssRules) {
 		if (rule instanceof CSSStyleRule) {
-			parseStyleRule(manager, rule, scope, uaOrigin, context);
+			parseStyleRule(cascade, rule, scope, uaOrigin, context);
 		} else if (rule instanceof CSSMediaRule) {
-			if (manager.mediaQueryMatches(rule.conditionText)) {
-				parseStyleSheet(manager, rule, scope, uaOrigin, context);
+			if (cascade.mediaQueryMatches(rule.conditionText)) {
+				parseStyleSheet(cascade, rule, scope, uaOrigin, context);
 			}
 		} else if (rule instanceof CSSSupportsRule) {
-			parseStyleSheet(manager, rule, scope, uaOrigin, context);
+			parseStyleSheet(cascade, rule, scope, uaOrigin, context);
 		} else if (rule instanceof CSSLayerStatementRule) {
 			// `@layer a, b;` declares layer order and nothing else.
 			for (const name of rule.nameList) {
-				declareLayer(manager, context.layer, name);
+				declareLayer(cascade, context.layer, name);
 			}
 		} else if (rule instanceof CSSLayerBlockRule) {
 			// An unnamed block opens a layer nothing else can name or reach.
 			const layer = rule.name
-				? declareLayer(manager, context.layer, rule.name)
+				? declareLayer(cascade, context.layer, rule.name)
 				: declareLayer(
-					manager,
+					cascade,
 					context.layer,
-					` ${manager[kAnonymousLayers]++}`,
+					` ${cascade[kAnonymousLayers]++}`,
 				);
-			parseStyleSheet(manager, rule, scope, uaOrigin, {...context, layer});
+			parseStyleSheet(cascade, rule, scope, uaOrigin, {...context, layer});
 		} else if (rule instanceof CSSScopeRule) {
-			parseStyleSheet(manager, rule, scope, uaOrigin, {
+			parseStyleSheet(cascade, rule, scope, uaOrigin, {
 				...context,
 				scopes: [...context.scopes, readScopeCondition(rule)],
 			});
@@ -11367,7 +11367,7 @@ function parseStyleSheet(
 			// permanently, so it never reaches the cascade.
 			continue;
 		} else if (rule instanceof CSSGroupingRule) {
-			parseStyleSheet(manager, rule, scope, uaOrigin, context);
+			parseStyleSheet(cascade, rule, scope, uaOrigin, context);
 		}
 	}
 }
@@ -11375,13 +11375,13 @@ function parseStyleSheet(
 // Only `all` and `screen` name this screen, so `print`, `speech` and
 // the deprecated types match nothing.
 function mediaQueryNodeMatches(
-	manager: StyleManager,
+	cascade: Cascade,
 	query: MediaQueryNode,
 ): boolean {
 	const type = (query.mediaType ?? "").toLowerCase();
 	let matches = type === "" || type === "all" || type === "screen";
 	if (matches && query.condition) {
-		matches = mediaConditionMatches(manager, query.condition);
+		matches = mediaConditionMatches(cascade, query.condition);
 	}
 	return (query.modifier ?? "").toLowerCase() === "not" ? !matches : matches;
 }
@@ -11389,7 +11389,7 @@ function mediaQueryNodeMatches(
 // A word where neither a joiner nor a negation belongs leaves the
 // condition unevaluated, and so matching.
 function mediaConditionMatches(
-	manager: StyleManager,
+	cascade: Cascade,
 	condition: MediaConditionNode,
 ): boolean {
 	let matches: boolean | null = null;
@@ -11407,7 +11407,7 @@ function mediaConditionMatches(
 			}
 			continue;
 		}
-		let operand = mediaOperandMatches(manager, part);
+		let operand = mediaOperandMatches(cascade, part);
 		if (negate) {
 			operand = !operand;
 			negate = false;
@@ -11423,30 +11423,30 @@ function mediaConditionMatches(
 }
 
 function mediaOperandMatches(
-	manager: StyleManager,
+	cascade: Cascade,
 	part: MediaConditionNode,
 ): boolean {
 	if (part.type === "Condition") {
-		return mediaConditionMatches(manager, part);
+		return mediaConditionMatches(cascade, part);
 	}
 	if (part.type === "Feature") {
-		return mediaFeatureMatches(manager, part);
+		return mediaFeatureMatches(cascade, part);
 	}
 	if (part.type === "FeatureRange") {
-		return mediaFeatureRangeMatches(manager, part);
+		return mediaFeatureRangeMatches(cascade, part);
 	}
 	return true;
 }
 
 function viewportLength(
-	manager: StyleManager,
+	cascade: Cascade,
 	dimension: string,
 ): number | null {
 	if (dimension === "width") {
-		return manager[kWindow].innerWidth;
+		return cascade[kWindow].innerWidth;
 	}
 	if (dimension === "height") {
-		return manager[kWindow].innerHeight;
+		return cascade[kWindow].innerHeight;
 	}
 	return null;
 }
@@ -11493,7 +11493,7 @@ function mediaComparison(
 // A feature this engine does not track returns true, the permissive
 // default, as does a value outside the grammar.
 function mediaFeatureMatches(
-	manager: StyleManager,
+	cascade: Cascade,
 	feature: MediaConditionNode,
 ): boolean {
 	const name = (feature.name ?? "").toLowerCase();
@@ -11517,7 +11517,7 @@ function mediaFeatureMatches(
 				? "max"
 				: null;
 	const actual = viewportLength(
-		manager,
+		cascade,
 		bound === null ? name : name.slice(4),
 	);
 	const length = mediaLength(value);
@@ -11536,13 +11536,13 @@ function mediaFeatureMatches(
 // The feature name is in the middle of a two-sided range, and opposite
 // the value in a one-sided one.
 function mediaFeatureRangeMatches(
-	manager: StyleManager,
+	cascade: Cascade,
 	range: MediaConditionNode,
 ): boolean {
 	const named = (node: CSSNode | null | undefined): string =>
 		node?.type === "Identifier" ? (node.name ?? "").toLowerCase() : "";
 	if (range.right) {
-		const actual = viewportLength(manager, named(range.middle));
+		const actual = viewportLength(cascade, named(range.middle));
 		const low = mediaLength(range.left);
 		const high = mediaLength(range.right);
 		if (actual === null || low === null || high === null) {
@@ -11554,7 +11554,7 @@ function mediaFeatureRangeMatches(
 		);
 	}
 	const leftName = named(range.left);
-	const actual = viewportLength(manager, leftName || named(range.middle));
+	const actual = viewportLength(cascade, leftName || named(range.middle));
 	const length = mediaLength(leftName ? range.middle : range.left);
 	if (actual === null || length === null) {
 		return true;
@@ -11583,7 +11583,7 @@ function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
 }
 
 function parseStyleRule(
-	manager: StyleManager,
+	cascade: Cascade,
 	styleRule: CSSStyleRule,
 	scope?: Node,
 	uaOriginSheet?: boolean,
@@ -11595,7 +11595,7 @@ function parseStyleRule(
 	const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
 	for (const selector of splitSelectorList(styleRule.selectorText)) {
 		parseSelector(
-			manager,
+			cascade,
 			selector,
 			block,
 			scope,
@@ -11610,7 +11610,7 @@ function parseStyleRule(
 // or on a rule declaring an INHERITED property. In neither position, it
 // changes nothing but the element's own box.
 function indexReachingKeys(
-	manager: StyleManager,
+	cascade: Cascade,
 	reading: SelectorReading,
 	declarations: Record<string, string>,
 ): void {
@@ -11633,16 +11633,16 @@ function indexReachingKeys(
 	for (let i = 0; i < last; i++) {
 		const keys = compounds[i];
 		for (const name of keys.classes) {
-			manager[kReachingClasses].add(name);
+			cascade[kReachingClasses].add(name);
 		}
 		for (const name of keys.ids) {
-			manager[kReachingIds].add(name);
+			cascade[kReachingIds].add(name);
 		}
 		for (const name of keys.attributes) {
-			manager[kReachingAttributes].add(name);
+			cascade[kReachingAttributes].add(name);
 		}
 		if (keys.states) {
-			manager[kReachingStates] = true;
+			cascade[kReachingStates] = true;
 		}
 	}
 }
@@ -11667,7 +11667,7 @@ function compileRuleSelector(
 }
 
 function parseSelector(
-	manager: StyleManager,
+	cascade: Cascade,
 	selector: string,
 	block: DeclarationBlock,
 	scope?: Node,
@@ -11682,22 +11682,22 @@ function parseSelector(
 		declarations["transition-duration"] ||
 		declarations["transition-delay"]
 	) {
-		manager[kTransitionsExist] = true;
+		cascade[kTransitionsExist] = true;
 	}
 	const layer = context.layer;
 	// A :has() rule reads DOWN the tree, the one relational direction the
 	// per-target invalidation cannot see, so the flag enables the ancestor
 	// sweep only for documents that need it.
 	if (selector.includes(":has(")) {
-		manager[kHasRulesExist] = true;
+		cascade[kHasRulesExist] = true;
 	}
 	if (selector.includes(":hover")) {
-		manager[kHoverRulesExist] = true;
+		cascade[kHoverRulesExist] = true;
 	}
 	let scopes: readonly ScopeCondition[] | undefined;
 	if (context.scopes.length > 0) {
 		scopes = context.scopes;
-		manager[kScopedRulesExist] = true;
+		cascade[kScopedRulesExist] = true;
 	}
 	let namespaces: SelectorNamespaces | undefined;
 	if (sheetNamespaces !== NO_NAMESPACES) {
@@ -11710,22 +11710,22 @@ function parseSelector(
 		return;
 	}
 	if (selector.includes("+") || selector.includes("~")) {
-		manager[kSelectorsReachSiblings] = true;
+		cascade[kSelectorsReachSiblings] = true;
 	}
 	if (selector.includes(":has")) {
-		manager[kSelectorsReachAncestors] = true;
+		cascade[kSelectorsReachAncestors] = true;
 	}
 	const reading = readSelector(selector);
-	indexReachingKeys(manager, reading, declarations);
+	indexReachingKeys(cascade, reading, declarations);
 	if (
 		declarations["counter-reset"] ||
 		declarations["counter-increment"] ||
 		declarations["content"]?.includes("counter")
 	) {
-		manager[kCounterRulesExist] = true;
+		cascade[kCounterRulesExist] = true;
 	}
 	if (declarations["display"] === "list-item") {
-		manager[kListItemRulesExist] = true;
+		cascade[kListItemRulesExist] = true;
 	}
 	const specificity = reading.specificity;
 	const uaOrigin = Boolean(
@@ -11763,15 +11763,15 @@ function parseSelector(
 			layerRank: 0,
 			scopes,
 		};
-		manager[kParsedRules].push(rule);
-		const byType = manager[kPseudoRulesByType].get(pseudoElement);
+		cascade[kParsedRules].push(rule);
+		const byType = cascade[kPseudoRulesByType].get(pseudoElement);
 		if (byType) {
 			byType.push(rule);
 		} else {
-			manager[kPseudoRulesByType].set(pseudoElement, [rule]);
+			cascade[kPseudoRulesByType].set(pseudoElement, [rule]);
 		}
 	} else {
-		manager[kParsedRules].push({
+		cascade[kParsedRules].push({
 			...compileRuleSelector(selector, namespaces, scopes),
 			subjectTag,
 			declarations,
@@ -11789,7 +11789,7 @@ function parseSelector(
 }
 
 function getMatchingRules(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 ): ParsedCSSRule[] {
 	// A UA shadow part IS the element its part pseudo styles. The host's
@@ -11801,7 +11801,7 @@ function getMatchingRules(
 	const partNames = (element.getAttribute("part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
-	const matched = manager[kParsedRules].filter((rule) => {
+	const matched = cascade[kParsedRules].filter((rule) => {
 		if (rule.pseudoElement) {
 			// ::part(name) matches the shadow's HOST, and its declarations
 			// cascade onto the part element. This is the standard CSS Shadow
@@ -11827,7 +11827,7 @@ function getMatchingRules(
 	// (css-cascade-6 §3.1.3), and unlike either it depends on THIS element.
 	// The sort is stable, so a comparison that only compares proximity
 	// leaves every other tier as it was.
-	if (!manager[kScopedRulesExist]) {
+	if (!cascade[kScopedRulesExist]) {
 		return matched;
 	}
 	const proximity = new Map(
@@ -12005,12 +12005,12 @@ function ruleMatches(
 }
 
 function computePseudoElementStyle(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudoElement: string,
 ): Record<string, string> {
 	const pseudoRoot = element.getRootNode() as unknown as Node;
-	const matchingRules = manager[kParsedRules].filter((rule) => {
+	const matchingRules = cascade[kParsedRules].filter((rule) => {
 		if (rule.pseudoElement !== pseudoElement) {
 			return false;
 		}
@@ -12036,7 +12036,7 @@ function computePseudoElementStyle(
 			) {
 				continue;
 			}
-			direction ??= manager
+			direction ??= cascade
 				.declarationFor(element)
 				.getComputedValue("direction");
 			for (const other of slotNames(name, direction)) {
@@ -12049,15 +12049,15 @@ function computePseudoElementStyle(
 }
 
 function pseudoContentFor(
-	manager: StyleManager,
+	cascade: Cascade,
 	hostElement: Element,
 	pseudoType: string,
 ): string | null {
-	const styles = computePseudoElementStyle(manager, hostElement, pseudoType);
+	const styles = computePseudoElementStyle(cascade, hostElement, pseudoType);
 	let content = styles.content;
 
 	if (pseudoType === "::marker") {
-		const computedStyle = manager.declarationFor(hostElement);
+		const computedStyle = cascade.declarationFor(hostElement);
 		const display = computedStyle.getComputedValue("display");
 
 		if (display === "list-item") {
@@ -12080,42 +12080,42 @@ function pseudoContentFor(
 
 	const textContent = unquoteContent(content);
 
-	return manager[kResolveCounterFunction](hostElement, textContent);
+	return cascade[kResolveCounterFunction](hostElement, textContent);
 }
 
 function attachPseudoElements(
-	manager: StyleManager,
+	cascade: Cascade,
 ): void {
 	// Preserve identity, never clear wholesale. Layout keys a
 	// pseudo-element's boxes by node instance, and a fresh node per refresh
 	// orphans every mapped one.
-	if (!manager[kDocument].documentElement) {
+	if (!cascade[kDocument].documentElement) {
 		return;
 	}
-	const walker = manager[kDocument].createTreeWalker(
-		manager[kDocument].documentElement,
-		manager[kWindow].NodeFilter.SHOW_ELEMENT,
+	const walker = cascade[kDocument].createTreeWalker(
+		cascade[kDocument].documentElement,
+		cascade[kWindow].NodeFilter.SHOW_ELEMENT,
 		null,
 	);
 	let element = walker.nextNode() as Element;
 	while (element) {
 		if (pseudoElementCount(element) > 0) {
-			attachPseudoElementsToElement(manager, element);
+			attachPseudoElementsToElement(cascade, element);
 		}
 		element = walker.nextNode() as Element;
 	}
 
-	attachPseudoElementsToDocument(manager);
+	attachPseudoElementsToDocument(cascade);
 }
 
 function pseudoSubjects(
-	manager: StyleManager,
+	cascade: Cascade,
 ): Set<string> | null {
-	if (manager[kPseudoSubjectTags] !== undefined) {
-		return manager[kPseudoSubjectTags];
+	if (cascade[kPseudoSubjectTags] !== undefined) {
+		return cascade[kPseudoSubjectTags];
 	}
-	if (manager[kCounterRulesExist] || manager[kListItemRulesExist]) {
-		return (manager[kPseudoSubjectTags] = null);
+	if (cascade[kCounterRulesExist] || cascade[kListItemRulesExist]) {
+		return (cascade[kPseudoSubjectTags] = null);
 	}
 	// A list carries the one counter no rule declares, and its items carry
 	// the markers that counter numbers.
@@ -12124,14 +12124,14 @@ function pseudoSubjects(
 	// list items, handled above, and ::placeholder, ::selection and ::part
 	// live on nodes the widget trees already hold.
 	for (const type of ["::before", "::after"]) {
-		for (const rule of manager[kPseudoRulesByType].get(type) ?? []) {
+		for (const rule of cascade[kPseudoRulesByType].get(type) ?? []) {
 			if (!rule.subjectTag) {
-				return (manager[kPseudoSubjectTags] = null);
+				return (cascade[kPseudoSubjectTags] = null);
 			}
 			tags.add(rule.subjectTag.toUpperCase());
 		}
 	}
-	return (manager[kPseudoSubjectTags] = tags);
+	return (cascade[kPseudoSubjectTags] = tags);
 }
 
 // A few matches() calls instead of building the full pseudo-element
@@ -12139,7 +12139,7 @@ function pseudoSubjects(
 // safe. The win is the early false for a document with no pseudo rules
 // beyond the UA button brackets.
 function pseudoRuleCouldMatch(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudoType: string,
 ): boolean {
@@ -12147,11 +12147,11 @@ function pseudoRuleCouldMatch(
 		// Markers exist only on display:list-item boxes.
 		return (
 			element.tagName === "LI" ||
-			manager[kListItemRulesExist] ||
+			cascade[kListItemRulesExist] ||
 			(element.getAttribute("style") ?? "").includes("list-item")
 		);
 	}
-	const rules = manager[kPseudoRulesByType].get(pseudoType);
+	const rules = cascade[kPseudoRulesByType].get(pseudoType);
 	if (!rules) {
 		return false;
 	}
@@ -12164,24 +12164,24 @@ function pseudoRuleCouldMatch(
 }
 
 function attachPseudoElementToElementForType(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudoType: string,
 ): void {
 	// An attached pseudo-element still takes the full path, so a rule that
 	// STOPPED matching removes it.
 	if (
-		!pseudoRuleCouldMatch(manager, element, pseudoType) &&
+		!pseudoRuleCouldMatch(cascade, element, pseudoType) &&
 		!pseudoElement(element, pseudoType)
 	) {
 		return;
 	}
 
 	// counter() in a content value reads these, so they must exist first.
-	initializeCounters(manager, element);
+	initializeCounters(cascade, element);
 
 	if (pseudoType === "::marker") {
-		const computedStyle = manager.declarationFor(element);
+		const computedStyle = cascade.declarationFor(element);
 		const display = computedStyle.getComputedValue("display");
 		const listStylePosition =
 			computedStyle.getComputedValue("list-style-position") || "outside";
@@ -12191,13 +12191,13 @@ function attachPseudoElementToElementForType(
 		}
 
 		if (listStylePosition === "outside") {
-			removePseudoElement(manager, element, "::marker");
+			removePseudoElement(cascade, element, "::marker");
 			return;
 		}
 	}
 
-	const content = shouldCreatePseudoElement(manager, element, pseudoType)
-		? pseudoContentFor(manager, element, pseudoType)
+	const content = shouldCreatePseudoElement(cascade, element, pseudoType)
+		? pseudoContentFor(cascade, element, pseudoType)
 		: null;
 	const existing = pseudoElement<Element>(element, pseudoType);
 
@@ -12207,7 +12207,7 @@ function attachPseudoElementToElementForType(
 	// changes.
 	if (content === null) {
 		if (existing) {
-			removePseudoElement(manager, element, pseudoType);
+			removePseudoElement(cascade, element, pseudoType);
 		}
 		return;
 	}
@@ -12215,18 +12215,18 @@ function attachPseudoElementToElementForType(
 		const text = existing.firstChild as Text;
 		if (text.data !== content) {
 			text.data = content;
-			manager[kLayoutEngine].invalidate(element);
+			cascade[kLayout].invalidate(element);
 		}
 		return;
 	}
 	const node = ensurePseudoElement<Element>(element, pseudoType);
 	node.appendChild(element.ownerDocument.createTextNode(content));
-	manager[kLayoutEngine].invalidate();
-	manager[kLayoutEngine].invalidate(element);
+	cascade[kLayout].invalidate();
+	cascade[kLayout].invalidate(element);
 }
 
 function removePseudoElement(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 	pseudoType: string,
 ): void {
@@ -12234,8 +12234,8 @@ function removePseudoElement(
 		return;
 	}
 	clearPseudoElement(element, pseudoType);
-	manager[kLayoutEngine].invalidate();
-	manager[kLayoutEngine].invalidate(element);
+	cascade[kLayout].invalidate();
+	cascade[kLayout].invalidate(element);
 }
 
 const CSSOM_WINDOW_GLOBALS = {
@@ -12270,11 +12270,11 @@ const CSSOM_WINDOW_GLOBALS = {
 };
 
 function setupInvalidationHooks(
-	manager: StyleManager,
+	cascade: Cascade,
 ): void {
 	// An error thrown out of a constructed sheet belongs to this realm.
-	cssomWindow = manager[kWindow];
-	Object.assign(manager[kWindow], CSSOM_WINDOW_GLOBALS);
+	cssomWindow = cascade[kWindow];
+	Object.assign(cascade[kWindow], CSSOM_WINDOW_GLOBALS);
 }
 
 // Each identifier opens a pair. A counter written without a number
@@ -12308,17 +12308,17 @@ function parseCounterReset(scope: CounterScope, counterReset: string): void {
 }
 
 function parseCounterIncrement(
-	manager: StyleManager,
+	cascade: Cascade,
 	scope: CounterScope,
 	counterIncrement: string,
 ): void {
 	for (const [name, increment] of counterPairs(counterIncrement, 1)) {
-		incrementCounter(manager, scope, name, increment);
+		incrementCounter(cascade, scope, name, increment);
 	}
 }
 
 function incrementCounter(
-	manager: StyleManager,
+	cascade: Cascade,
 	scope: CounterScope,
 	counterName: string,
 	increment: number,
@@ -12327,7 +12327,7 @@ function incrementCounter(
 	// Siblings share one list, and each scope only ever holds its own
 	// element's value.
 	if (counterName === "list-item" && scope.element.tagName === "LI") {
-		const currentValue = getListItemCounterValue(manager, scope.element);
+		const currentValue = getListItemCounterValue(cascade, scope.element);
 		scope.counters[counterName] = currentValue + increment;
 	} else {
 		const currentValue = counterValueInScope(scope.parent, counterName);
@@ -12338,7 +12338,7 @@ function incrementCounter(
 // The list's start value plus the items before this one. Siblings
 // share one counter, and each scope holds only its own element's value.
 function getListItemCounterValue(
-	manager: StyleManager,
+	cascade: Cascade,
 	element: Element,
 ): number {
 	let parent = element.parentElement;
@@ -12350,7 +12350,7 @@ function getListItemCounterValue(
 		return 0;
 	}
 
-	const parentScope = manager[kCounterScopes].get(parent);
+	const parentScope = cascade[kCounterScopes].get(parent);
 	let currentValue = parentScope?.counters["list-item"] ?? 0;
 
 	const siblings = Array.from(parent.children);
@@ -12418,7 +12418,7 @@ export function adoptedStyleSheetsOf(tree: Node): globalThis.CSSStyleSheet[] {
 
 export function adoptStyleSheets(tree: Node, sheets: unknown): void {
 	adopt(tree, sheets);
-	managerForTree(tree)?.refreshStylesheets();
+	getTreeCascade(tree)?.refreshStylesheets();
 }
 
 /** A style element's sheet. Null outside a tree, as in a browser. */
@@ -12439,9 +12439,9 @@ export function styleAttributeChanged(
 	localName: string,
 ): void {
 	if (localName === "style" || localName === "class" || localName === "id") {
-		const manager = documentManagers.get(element.ownerDocument as object);
-		if (manager) {
-			invalidateElement(manager, element);
+		const cascade = documentCascades.get(element.ownerDocument as object);
+		if (cascade) {
+			invalidateElement(cascade, element);
 		}
 	}
 }
@@ -12451,15 +12451,15 @@ export function styleAttributeChanged(
  * stale.
  */
 export function usedValuesChanged(document: object): void {
-	const manager = documentManagers.get(document);
-	if (manager !== undefined) {
-		manager[kUsedStale] = true;
+	const cascade = documentCascades.get(document);
+	if (cascade !== undefined) {
+		cascade[kUsedStale] = true;
 	}
 }
 
 /** A shadow root registers with the cascade the moment it attaches. */
 export function styleShadowAttached(root: ShadowRoot): void {
-	documentManagers
+	documentCascades
 		.get((root.host as Element).ownerDocument as object)
 		?.registerShadowRoot(root);
 }

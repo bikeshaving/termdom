@@ -1,4 +1,4 @@
-import type {EventHandler} from "./input.js";
+import type {Input} from "./input.js";
 import {
 	closeTermDOM,
 	commandStartDetected,
@@ -603,7 +603,7 @@ const kWidthStarvationWait = Symbol("widthStarvationWait");
  * query is bounded by a timer, since most terminals reply with nothing.
  * Silence means the terminal has no opinion and ours holds.
  */
-export class TerminalExchange {
+export class Exchange {
 	// A terminal replying late is still replying. Only one that never
 	// replies at all stops probing.
 	static readonly [kWidthProbeTimeout] = 2000;
@@ -623,7 +623,7 @@ export class TerminalExchange {
 	// began is abandoned. Null between bursts.
 	declare [kSettlingResize]: object | null;
 	declare [kTransportClosed]: boolean;
-	declare [kInput]: EventHandler | null;
+	declare [kInput]: Input | null;
 	declare [kWriter]: WritableStreamDefaultWriter<string> | null;
 	declare [kReader]: ReadableStreamDefaultReader<string> | null;
 	declare [kResizeReader]: ReadableStreamDefaultReader<TerminalSize> | null;
@@ -825,7 +825,7 @@ export class TerminalExchange {
 		terminalResized(this[kTermDOM], transport.cols, transport.rows);
 	}
 
-	start(input: EventHandler): void {
+	start(input: Input): void {
 		if (this[kStarted]) {
 			return;
 		}
@@ -968,7 +968,7 @@ export class TerminalExchange {
 		abandonClipboardQuery(this);
 		return nextReply(this, "clipboard", {
 			ask: CLIPBOARD_QUERY,
-			timeoutMs: TerminalExchange[kClipboardQueryTimeout],
+			timeoutMs: Exchange[kClipboardQueryTimeout],
 			absent: null,
 			clipboard: true,
 			read: ({text}) => text,
@@ -1159,7 +1159,7 @@ function freshWidthProbes(probing: boolean): WidthProbes {
 // Starvation is found mid-frame, past where the train would have gone.
 // A document still painting carries it on the next frame for free. Only
 // a quiet one needs a frame requested.
-function requestStarvationFrame(session: TerminalExchange): void {
+function requestStarvationFrame(session: Exchange): void {
 	const widths = session[kWidths];
 	if (widths.starvationTimer !== null) {
 		return;
@@ -1170,11 +1170,11 @@ function requestStarvationFrame(session: TerminalExchange): void {
 			return;
 		}
 		probesStarved(session[kTermDOM]);
-	}, TerminalExchange[kWidthStarvationWait]);
+	}, Exchange[kWidthStarvationWait]);
 }
 
 // One deadline, timed from the oldest outstanding probe.
-function armWidthProbeTimer(session: TerminalExchange): void {
+function armWidthProbeTimer(session: Exchange): void {
 	const widths = session[kWidths];
 	if (widths.timer !== null) {
 		return;
@@ -1185,13 +1185,13 @@ function armWidthProbeTimer(session: TerminalExchange): void {
 	}
 	const remaining = Math.max(
 		0,
-		oldest.sentAt + TerminalExchange[kWidthProbeTimeout] - Date.now(),
+		oldest.sentAt + Exchange[kWidthProbeTimeout] - Date.now(),
 	);
 	widths.timer = setTimeout(() => {
 		widths.timer = null;
 		// An abandoned probe leaves the queue that matches replies. Its cluster
 		// keeps the tables' width and is not probed again.
-		const deadline = Date.now() - TerminalExchange[kWidthProbeTimeout];
+		const deadline = Date.now() - Exchange[kWidthProbeTimeout];
 		let expired = 0;
 		while (
 			expired < widths.pending.length &&
@@ -1215,7 +1215,7 @@ function armWidthProbeTimer(session: TerminalExchange): void {
 // The reply's column minus the cluster's start column is the advance,
 // corrected by the drift the run's earlier clusters introduced.
 function settleWidthProbe(
-	session: TerminalExchange,
+	session: Exchange,
 	probe: {
 		cluster: string;
 		run: number;
@@ -1260,7 +1260,7 @@ function settleWidthProbe(
 }
 
 async function readLoop(
-	session: TerminalExchange,
+	session: Exchange,
 	reader: ReadableStreamDefaultReader<string>,
 ): Promise<void> {
 	try {
@@ -1288,7 +1288,7 @@ async function readLoop(
 }
 
 async function resizeLoop(
-	session: TerminalExchange,
+	session: Exchange,
 	reader: ReadableStreamDefaultReader<TerminalSize>,
 ): Promise<void> {
 	try {
@@ -1312,7 +1312,7 @@ const RESIZE_DEBOUNCE_MS = 40;
 // junk in the scrollback, so the burst becomes one redraw. Renders are
 // suppressed from the first SIGWINCH, or animation ticks paint at the
 // stale anchor.
-function scheduleResize(session: TerminalExchange): void {
+function scheduleResize(session: Exchange): void {
 	session[kSettlingResize] = {};
 	if (session[kResizeTimer] !== null) {
 		clearTimeout(session[kResizeTimer]);
@@ -1329,7 +1329,7 @@ function scheduleResize(session: TerminalExchange): void {
 // rewrapped height is computable: cursor row minus that height is the
 // new top. A terminal that does not reply gets the computed re-anchor,
 // exact for height changes.
-function handleResize(session: TerminalExchange): void {
+function handleResize(session: Exchange): void {
 	const termDOM = session[kTermDOM];
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
 	terminalResized(termDOM, newWidth, newHeight);
@@ -1387,7 +1387,7 @@ function handleResize(session: TerminalExchange): void {
 
 // Contiguous keystrokes are one dispatch. Everything else is dispatched
 // in place, so a report glued to fast keystrokes eats neither side.
-function route(session: TerminalExchange, chunk: string): void {
+function route(session: Exchange, chunk: string): void {
 	let keys: WireKey[] = [];
 	const input = session[kInput]!;
 	const flushKeys = () => {
@@ -1428,7 +1428,7 @@ type ReplyOf<K extends WireItem["kind"]> = Extract<WireItem, {kind: K}>;
 // in stream order. `absent` is the value silence produces. The cursor
 // questions have none and reject instead.
 function nextReply<K extends WireItem["kind"], T>(
-	session: TerminalExchange,
+	session: Exchange,
 	kind: K,
 	options: {
 		ask: string;
@@ -1471,7 +1471,7 @@ function nextReply<K extends WireItem["kind"], T>(
 	});
 }
 
-function abandonClipboardQuery(session: TerminalExchange): void {
+function abandonClipboardQuery(session: Exchange): void {
 	const pending = session[kPendingReplies];
 	const index = pending.findIndex((entry) => entry.clipboard);
 	if (index !== -1) {
@@ -1482,7 +1482,7 @@ function abandonClipboardQuery(session: TerminalExchange): void {
 
 // A cursor report goes to whichever of the anchor queries and the width
 // probes was sent first, because a terminal replies to DSR in ask order.
-function dispatchReply(session: TerminalExchange, item: WireItem): void {
+function dispatchReply(session: Exchange, item: WireItem): void {
 	const pending = session[kPendingReplies];
 	let index = -1;
 	for (let i = 0; i < pending.length; i++) {
@@ -1520,7 +1520,7 @@ function dispatchReply(session: TerminalExchange, item: WireItem): void {
 // recognised, 1 set, 2 reset, 3 permanently set, 4 permanently reset.
 // Null when the terminal says nothing.
 function queryMode(
-	session: TerminalExchange,
+	session: Exchange,
 	mode: string,
 	prelude: string,
 ): Promise<number | null> {

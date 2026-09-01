@@ -13,7 +13,7 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import type {TerminalExchange} from "../src/internal/exchange.js";
+import type {Exchange} from "../src/internal/exchange.js";
 import {Screen} from "../src/internal/screen.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {recordClusterAdvance, stringWidth} from "../src/internal/text.js";
@@ -29,7 +29,7 @@ function recordingMeasurer(starved = new Set<string>()): {
 	}>;
 	deferred: string[];
 	starved: Set<string>;
-	measurer: TerminalExchange;
+	measurer: Exchange;
 } {
 	const probes: Array<{
 		cluster: string;
@@ -64,7 +64,7 @@ function recordingMeasurer(starved = new Set<string>()): {
 				probes.push({cluster, run, column, width});
 				return "\x1b[6n";
 			},
-		} as unknown as TerminalExchange,
+		} as unknown as Exchange,
 	};
 }
 
@@ -130,7 +130,7 @@ function emit(
 	rows: number,
 	cols: number,
 	cells: Array<[number, string]>,
-	measurer: TerminalExchange,
+	measurer: Exchange,
 ): string {
 	const screen = new Screen(rows, cols, "rgb", measurer);
 	const context = screen.beginFrame({offset: 0});

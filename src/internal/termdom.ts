@@ -1,4 +1,4 @@
-import {getBoxModel, StyleManager} from "./cssom.js";
+import {Cascade, getBoxModel} from "./cssom.js";
 import * as DOM from "./dom.js";
 import {
 	createDocumentWindow,
@@ -7,14 +7,14 @@ import {
 	flushObservers,
 } from "./dom.js";
 import {
+	Exchange,
 	type TerminalCloseInfo,
-	TerminalExchange,
 	type TerminalSize,
 	type TerminalTransport,
 	transportFromProcess,
 } from "./exchange.js";
-import {EventHandler} from "./input.js";
-import {LayoutEngine} from "./layout.js";
+import {Input} from "./input.js";
+import {Layout} from "./layout.js";
 import {Painter} from "./painter.js";
 import {Screen} from "./screen.js";
 
@@ -31,15 +31,15 @@ export interface TermDOMOptions {
 }
 
 const kScreen = Symbol("screen");
-const kLayoutEngine = Symbol("layoutEngine");
-const kStyleManager = Symbol("styleManager");
+const kLayout = Symbol("layout");
+const kCascade = Symbol("cascade");
 const kPainter = Symbol("painter");
 const kSealed = Symbol("sealed");
 const kRenderQueued = Symbol("renderQueued");
 const kOnAltScreen = Symbol("onAltScreen");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
-const kEventHandler = Symbol("eventHandler");
+const kInput = Symbol("input");
 const kAttachReady = Symbol("attachReady");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
@@ -56,8 +56,8 @@ export class TermDOM {
 	readonly window: EngineWindow;
 
 	declare [kScreen]: Screen;
-	declare [kLayoutEngine]: LayoutEngine;
-	declare [kStyleManager]: StyleManager;
+	declare [kLayout]: Layout;
+	declare [kCascade]: Cascade;
 	declare [kPainter]: Painter;
 	// document.close() sealed the document into the scrollback. The next
 	// mutation starts a fresh one below it.
@@ -71,7 +71,7 @@ export class TermDOM {
 	declare [kRenderInFlight]: Promise<void> | null;
 	// Timestamps observer entries.
 	declare [kRenderCount]: number;
-	declare [kEventHandler]: EventHandler;
+	declare [kInput]: Input;
 	// Construction never touches the terminal. attach() does, and dispose()
 	// ends the instance for good.
 	declare [kLifecycle]: Lifecycle;
@@ -85,7 +85,7 @@ export class TermDOM {
 		null;
 
 	declare [kTransport]: TerminalTransport;
-	declare [kExchange]: TerminalExchange;
+	declare [kExchange]: Exchange;
 	// Resolves once the session is established and the first frame written.
 	declare [kAttachReady]: Promise<void>;
 	// Resolves once attach()'s begin phase has run. Awaited only while
@@ -151,12 +151,12 @@ export class TermDOM {
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
 
-		this[kLayoutEngine] = new LayoutEngine(
+		this[kLayout] = new Layout(
 			this.window,
 			this[kTransport].cols,
 			this[kTransport].rows,
 		);
-		this[kStyleManager] = new StyleManager(this.window, this[kLayoutEngine]);
+		this[kCascade] = new Cascade(this.window, this[kLayout]);
 
 		// The screen measures widths over the exchange's probe channel.
 		this[kExchange] = buildExchange(this);
@@ -170,22 +170,22 @@ export class TermDOM {
 		DOM.attachDocument(
 			document,
 			this,
-			this[kLayoutEngine],
-			this[kStyleManager],
+			this[kLayout],
+			this[kCascade],
 			this[kExchange],
 			this[kScreen],
 		);
 
-		this[kEventHandler] = new EventHandler(
+		this[kInput] = new Input(
 			this,
-			this[kLayoutEngine],
-			this[kStyleManager],
+			this[kLayout],
+			this[kCascade],
 			this[kScreen],
 		);
 		this[kPainter] = new Painter(
 			this.document,
-			this[kLayoutEngine],
-			this[kStyleManager],
+			this[kLayout],
+			this[kCascade],
 			this[kScreen],
 		);
 
@@ -241,7 +241,7 @@ export class TermDOM {
 				return;
 			}
 
-			this[kExchange].start(this[kEventHandler]);
+			this[kExchange].start(this[kInput]);
 			if (this[kTransport].interactive) {
 				this[kExchange].setMode("bracketedPaste", true);
 				// So dispose can restore the title.
@@ -332,14 +332,14 @@ export class TermDOM {
 
 		this[kExchange].dispose();
 
-		this[kEventHandler].dispose();
+		this[kInput].dispose();
 
 		if (this[kStaticSibling]) {
 			void this[kStaticSibling].dispose();
 			this[kStaticSibling] = null;
 		}
-		this[kStyleManager].dispose();
-		this[kLayoutEngine].dispose();
+		this[kCascade].dispose();
+		this[kLayout].dispose();
 		disconnectObservers(this.document);
 		return this[kExchange].flush();
 	}
@@ -394,9 +394,9 @@ export function terminalResized(
 	// A SIGWINCH with an unchanged size still redraws but fires no event.
 	const sizeChanged = width !== screen.cols || height !== screen.rows;
 	screen.resize(height, width);
-	termDOM[kLayoutEngine].resize(width, height);
+	termDOM[kLayout].resize(width, height);
 	// A size change can flip any @media result and every vw/vh value.
-	termDOM[kStyleManager].refreshStylesheets();
+	termDOM[kCascade].refreshStylesheets();
 	if (sizeChanged) {
 		const window = termDOM.window;
 		DOM.dispatchAsUserAgent(window, new window.Event("resize"));
@@ -413,7 +413,7 @@ export function frameStanding(
 	wrappedRowsAbove: number | null;
 	documentTop: number;
 } {
-	const layout = termDOM[kLayoutEngine];
+	const layout = termDOM[kLayout];
 	layout.calculateLayout();
 	return {
 		contentHeight: layout.documentPaintHeight(),
@@ -440,7 +440,7 @@ export function commandStartDetected(termDOM: TermDOM, row: number): void {
 }
 
 export function terminalReorders(termDOM: TermDOM): void {
-	termDOM[kLayoutEngine].adoptTerminalReordering();
+	termDOM[kLayout].adoptTerminalReordering();
 }
 
 /** Starved width probes go out with the next frame even if nothing changed. */
@@ -456,7 +456,7 @@ export function probesStarved(termDOM: TermDOM): void {
  * corrected measurements.
  */
 export function widthsCorrected(termDOM: TermDOM): void {
-	termDOM[kLayoutEngine].invalidateTextMeasurement();
+	termDOM[kLayout].invalidateTextMeasurement();
 	termDOM[kScreen].repaintAll();
 	void render(termDOM);
 }
@@ -474,8 +474,8 @@ export function sealTermDOM(termDOM: TermDOM): void {
 
 function buildExchange(
 	termdom: TermDOM,
-): TerminalExchange {
-	return new TerminalExchange(termdom[kTransport], termdom);
+): Exchange {
+	return new Exchange(termdom[kTransport], termdom);
 }
 
 /**
@@ -502,7 +502,7 @@ function updateMouseReporting(
 	const wanted =
 		isAttached(termdom) &&
 		termdom[kTransport].interactive &&
-		!termdom[kEventHandler].mouseCaptureYielded;
+		!termdom[kInput].mouseCaptureYielded;
 	if (wanted === termdom[kMouseReportingEnabled]) {
 		return;
 	}
@@ -519,7 +519,7 @@ function hoverObserved(
 ): boolean {
 	return (
 		DOM.hoverListenerCount(termdom.document) > 0 ||
-		termdom[kStyleManager].hoverRulesExist()
+		termdom[kCascade].hoverRulesExist()
 	);
 }
 
@@ -609,7 +609,7 @@ function documentFlowHeight(
 	termdom: TermDOM,
 ): number {
 	const rect =
-		termdom[kLayoutEngine].getRect(termdom.document.documentElement);
+		termdom[kLayout].getRect(termdom.document.documentElement);
 	return rect ? Math.ceil(rect.height) : 0;
 }
 
@@ -662,7 +662,7 @@ function caretRectFor(
 	const range = element.ownerDocument.createRange();
 	range.setStart(node, Math.min(focus, node.data.length));
 	range.collapse(true);
-	const rects = termdom[kLayoutEngine].getRangeRects(range);
+	const rects = termdom[kLayout].getRangeRects(range);
 	if (rects.length === 0) {
 		return null;
 	}
@@ -678,7 +678,7 @@ function scrollCaretIntoView(
 	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): void {
 	DOM.flushLayout(termdom.document);
-	const rect = termdom[kLayoutEngine].getRect(element);
+	const rect = termdom[kLayout].getRect(element);
 	if (!rect) {
 		return;
 	}
@@ -733,12 +733,12 @@ function resolveScrollBand(
 		journal.frameScroll !== 0 ||
 		// The rows the terminal would shift are not the rows the last frame
 		// painted.
-		termdom[kLayoutEngine].moved ||
+		termdom[kLayout].moved ||
 		!record.element.isConnected
 	) {
 		return null;
 	}
-	const engine = termdom[kLayoutEngine];
+	const engine = termdom[kLayout];
 	const rect = engine.getRect(record.element);
 	if (rect === null) {
 		return null;
@@ -789,7 +789,7 @@ function afterRender(
 	);
 	flushObservers(
 		termdom.document,
-		termdom[kLayoutEngine],
+		termdom[kLayout],
 		viewport,
 		termdom[kRenderCount],
 	);
@@ -805,14 +805,14 @@ async function printStatic(
 ): Promise<void> {
 	DOM.applyMutations(termdom.document);
 
-	termdom[kLayoutEngine].calculateLayout();
+	termdom[kLayout].calculateLayout();
 
 	const context = termdom[kScreen].beginStatic({
-		rows: termdom[kLayoutEngine].documentPaintHeight(),
+		rows: termdom[kLayout].documentPaintHeight(),
 	});
 	termdom[kPainter].paint(context);
 	const output = termdom[kScreen].endFrame();
-	termdom[kLayoutEngine].framePainted();
+	termdom[kLayout].framePainted();
 
 	if (output) {
 		await termdom[kExchange].write(output);
@@ -853,7 +853,7 @@ function renderStatic(
 	lineEnding: "\n" | "\r\n",
 ): string {
 	DOM.flushLayout(termdom.document);
-	const contentHeight = termdom[kLayoutEngine].documentPaintHeight();
+	const contentHeight = termdom[kLayout].documentPaintHeight();
 	if (contentHeight === 0) {
 		return "";
 	}
@@ -911,11 +911,11 @@ async function renderInteractive(
 	}
 
 	// First, so a hover listener's mutations join the records taken below.
-	termdom[kEventHandler].resolvePendingHover();
+	termdom[kInput].resolvePendingHover();
 
 	DOM.applyMutations(termdom.document);
 
-	termdom[kLayoutEngine].calculateLayout();
+	termdom[kLayout].calculateLayout();
 	DOM.clampScrollOffsets(termdom.document);
 
 	// Skipped if focus has moved on. Revealing a field the user left would
@@ -937,7 +937,7 @@ async function renderInteractive(
 	const journal = termdom[kScreen].journal;
 	if (
 		!journal.dirty &&
-		!termdom[kLayoutEngine].moved &&
+		!termdom[kLayout].moved &&
 		journal.frameScroll === 0 &&
 		journalled === null &&
 		!journal.needsRepaint
@@ -954,7 +954,7 @@ async function renderInteractive(
 	const fullscreen = isFullscreen(termdom);
 	const contentHeight = fullscreen
 		? termdom[kScreen].rows
-		: termdom[kLayoutEngine].documentPaintHeight();
+		: termdom[kLayout].documentPaintHeight();
 	const regionHeight = Math.min(
 		contentHeight,
 		termdom[kScreen].rows,
@@ -983,7 +983,7 @@ async function renderInteractive(
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
-	termdom[kLayoutEngine].framePainted();
+	termdom[kLayout].framePainted();
 
 	// The cursor stays hidden while a frame paints and between frames. It
 	// is parked for resize bookkeeping, and a cursor blinking there is not

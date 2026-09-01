@@ -167,7 +167,7 @@ test("inserting a node in the middle of an already-laid-out list lands at the ri
 
 test("scrolling a long list paints the correct visible rows at every offset", async () => {
 	// #renderElement's child-gathering has a fast path that binary-searches
-	// straight to the visible range (LayoutEngine#visibleChildrenInBand)
+	// straight to the visible range (Layout#visibleChildrenInBand)
 	// instead of walking every sibling to rule it out -- this is the
 	// correctness half of that: the camera moving mid-list has to land on
 	// exactly the rows in view, not an off-by-one range from a binary search

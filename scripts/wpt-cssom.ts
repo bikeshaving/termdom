@@ -3,7 +3,7 @@
  *
  * Each test is a testharness.js document of this engine's own DOM, attached
  * in a window with the engine's CSSOM, which the styles module defines on
- * the DOM's own prototypes at load, plus the StyleManager a TermDOM builds. Its harness scripts are evaluated in
+ * the DOM's own prototypes at load, plus the Cascade a TermDOM builds. Its harness scripts are evaluated in
  * document order, at the global scope of a realm of the file's own whose
  * global is that window, because nothing here runs a document's scripts on
  * its own.

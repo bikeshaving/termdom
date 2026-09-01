@@ -1,4 +1,4 @@
-import type {ColorDepth, TerminalExchange} from "./exchange.js";
+import type {ColorDepth, Exchange} from "./exchange.js";
 import {
 	graphemeSegmenter,
 	PRINTABLE_ASCII,
@@ -1502,7 +1502,7 @@ function generateANSI(
 	grid: CellGrid,
 	writer: FrameWriter,
 	renderedLines: Set<number>,
-	measurer?: TerminalExchange,
+	measurer?: Exchange,
 ): string {
 	const {rows, cols, char, border} = grid;
 
@@ -1727,7 +1727,7 @@ export class Screen {
 	// contentful row as its cover even if nothing changed.
 	declare [kRideProbeTrain]: boolean;
 	// Null for a headless render.
-	declare [kMeasurer]: TerminalExchange | null;
+	declare [kMeasurer]: Exchange | null;
 	declare [kResetAtRow]: number;
 	declare [kRows]: number;
 	declare [kCols]: number;
@@ -1745,7 +1745,7 @@ export class Screen {
 		rows: number,
 		cols: number,
 		colorDepth: ColorDepth = "rgb",
-		measurer: TerminalExchange | null = null,
+		measurer: Exchange | null = null,
 	) {
 		this[kRideProbeTrain] = false;
 		this[kMeasurer] = measurer;
@@ -2358,6 +2358,6 @@ function takeGrid(screen: Screen, rows: number, cols: number): CellGrid {
 	return new CellGrid(rows, cols);
 }
 
-function probingTeaches(exchange: TerminalExchange): boolean {
+function probingTeaches(exchange: Exchange): boolean {
 	return exchange.probing() && !exchange.clusterWidthsNegotiated();
 }

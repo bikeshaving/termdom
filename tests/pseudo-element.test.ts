@@ -180,7 +180,7 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
 	expect(output).not.toContain("div: Test message");
 	expect(output).not.toContain("content: Test message");
 
-	// Verify StyleManager cascade resolution
+	// Verify Cascade cascade resolution
 	const beforeStyle = termdom.window.getComputedStyle(element, "::before");
 	expect(beforeStyle.getPropertyValue("content")).toBe('"special: "');
 });
@@ -336,7 +336,7 @@ test.todo(
 		}
 
 		// Verify pseudo-elements are included in traversal
-		// Note: This depends on ExpandedTreeWalker being integrated with StyleManager
+		// Note: This depends on ExpandedTreeWalker being integrated with Cascade
 		// The exact order may vary based on implementation, but pseudo-element content should be present
 		const allContent = traversedContent.join("");
 		expect(allContent).toContain("BEFORE");

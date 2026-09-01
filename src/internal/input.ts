@@ -1,4 +1,4 @@
-import {getComputedValue, type StyleManager} from "./cssom.js";
+import {type Cascade, getComputedValue} from "./cssom.js";
 import {
 	closeTopmost,
 	dispatchAsUserAgent,
@@ -18,7 +18,7 @@ import {
 	topmostModalDialog,
 } from "./dom.js";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.js";
-import type {LayoutEngine} from "./layout.js";
+import type {Layout} from "./layout.js";
 import type {Screen} from "./screen.js";
 import {render, type TermDOM} from "./termdom.js";
 
@@ -104,7 +104,7 @@ function getTabIndex(element: Element): number {
 // Every stop under the root, barred ones included, in scoped tab order.
 function sequentialFocusEntries(
 	root: Document | Element,
-	layoutEngine: LayoutEngine,
+	layout: Layout,
 ): SequentialEntry[] {
 	const isRendered = (element: Element): boolean => {
 		// A hidden element must not swallow a Tab press invisibly.
@@ -118,7 +118,7 @@ function sequentialFocusEntries(
 			}
 		}
 		try {
-			return layoutEngine.getRects(element).length > 0;
+			return layout.getRects(element).length > 0;
 		} catch (_err) {
 			return false;
 		}
@@ -225,7 +225,7 @@ function sequentialFocusEntries(
 
 const kTermDOM = Symbol("termDOM");
 const kLayout = Symbol("layout");
-const kStyles = Symbol("styles");
+const kCascade = Symbol("cascade");
 const kScreen = Symbol("screen");
 
 const kDocument = Symbol("document");
@@ -234,12 +234,12 @@ const kDocument = Symbol("document");
 // not take the wheel) that can still move in the tick's direction, or
 // null when the tick chains to the camera.
 function wheelScrollerFor(
-	handler: EventHandler,
+	input: Input,
 	target: Element,
 	deltaY: number,
 ): Element | null {
-	const document = handler[kDocument];
-	const layout = handler[kLayout];
+	const document = input[kDocument];
+	const layout = input[kLayout];
 	for (
 		let element: Element | null = target;
 		element &&
@@ -286,7 +286,7 @@ const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 const kDblclickIntervalMs = Symbol("dblclickIntervalMs");
 
-export class EventHandler {
+export class Input {
 	// Reclaims a yield no keystroke reclaimed. A flat window from the
 	// yield, not a debounce. Wheel activity while yielded produces no
 	// signal, and a gap between ticks longer than this would re-yield on
@@ -296,8 +296,8 @@ export class EventHandler {
 	declare [kDocument]: Document;
 	declare [kWindow]: EngineWindow;
 	declare [kTermDOM]: TermDOM;
-	declare [kLayout]: LayoutEngine;
-	declare [kStyles]: StyleManager;
+	declare [kLayout]: Layout;
+	declare [kCascade]: Cascade;
 	declare [kScreen]: Screen;
 	// What movementX/movementY measure from.
 	declare [kLastMouse]: {x: number; y: number} | null;
@@ -335,15 +335,15 @@ export class EventHandler {
 
 	constructor(
 		termDOM: TermDOM,
-		layout: LayoutEngine,
-		styles: StyleManager,
+		layout: Layout,
+		styles: Cascade,
 		screen: Screen,
 	) {
 		this[kDocument] = termDOM.document;
 		this[kWindow] = termDOM.document.defaultView as unknown as EngineWindow;
 		this[kTermDOM] = termDOM;
 		this[kLayout] = layout;
-		this[kStyles] = styles;
+		this[kCascade] = styles;
 		this[kScreen] = screen;
 		this[kLastMouse] = null;
 		this[kPendingHover] = null;
@@ -399,7 +399,7 @@ export class EventHandler {
 		if (target !== previous) {
 			this[kHoverElement] = target;
 			setHoveredElement(this[kDocument], target);
-			this[kStyles].handleHoverChange(previous, target);
+			this[kCascade].handleHoverChange(previous, target);
 			const chainOf = (element: Element | null): Element[] => {
 				const chain: Element[] = [];
 				for (
@@ -492,7 +492,7 @@ export class EventHandler {
 }
 
 function deliverMouseReport(
-	handler: EventHandler,
+	input: Input,
 	{button: code, col, row, release: isRelease}: WireMouse,
 ): void {
 	const {
@@ -506,13 +506,13 @@ function deliverMouseReport(
 		buttons,
 	} = decodeMouseReport(code, isRelease);
 
-	const {x, y, inDocument} = documentPointAt(handler, col, row);
+	const {x, y, inDocument} = documentPointAt(input, col, row);
 
 	// A report arrives per cell crossed, so motion is coalesced to one
 	// hit-test per frame. A drag's motion also falls through. Its mousemove
 	// and selection updates are per report.
 	if (isMotion) {
-		handler[kPendingHover] = {
+		input[kPendingHover] = {
 			x,
 			y,
 			shiftKey,
@@ -521,19 +521,19 @@ function deliverMouseReport(
 			quiet: base <= 2,
 		};
 		if (base > 2) {
-			void render(handler[kTermDOM]);
+			void render(input[kTermDOM]);
 			return;
 		}
 	}
 
 	const target =
-		(inDocument && elementAtDocumentPoint(handler[kDocument], x, y)) ||
-		handler[kDocument].body;
+		(inDocument && elementAtDocumentPoint(input[kDocument], x, y)) ||
+		input[kDocument].body;
 
 	if (wheelDeltaY !== null) {
 		const notCanceled = dispatchAsUserAgent(
 			target,
-			new handler[kWindow].WheelEvent("wheel", {
+			new input[kWindow].WheelEvent("wheel", {
 				deltaY: wheelDeltaY,
 				deltaMode: 1,
 				clientX: x,
@@ -545,19 +545,19 @@ function deliverMouseReport(
 				cancelable: true,
 			}),
 		);
-		if (notCanceled && scrollByWheel(handler, target, wheelDeltaY)) {
+		if (notCanceled && scrollByWheel(input, target, wheelDeltaY)) {
 			// Scroll chaining. The parent scroller is the terminal's own
 			// scrollback, so the mouse is yielded to it. preventDefault on the
 			// wheel event opts out, as in a browser.
-			handler[kMouseCaptureYielded] = true;
-			void render(handler[kTermDOM]);
-			if (handler[kScrollChainTimer] !== null) {
-				clearTimeout(handler[kScrollChainTimer]);
+			input[kMouseCaptureYielded] = true;
+			void render(input[kTermDOM]);
+			if (input[kScrollChainTimer] !== null) {
+				clearTimeout(input[kScrollChainTimer]);
 			}
-			handler[kScrollChainTimer] = setTimeout(() => {
-				handler[kScrollChainTimer] = null;
-				reclaimMouseCapture(handler);
-			}, EventHandler[kScrollChainTimeoutMs]);
+			input[kScrollChainTimer] = setTimeout(() => {
+				input[kScrollChainTimer] = null;
+				reclaimMouseCapture(input);
+			}, Input[kScrollChainTimeoutMs]);
 		}
 		return;
 	}
@@ -567,7 +567,7 @@ function deliverMouseReport(
 	if (base > 2) {
 		return;
 	}
-	const last = handler[kLastMouse];
+	const last = input[kLastMouse];
 	const eventInit = {
 		button,
 		buttons,
@@ -581,40 +581,40 @@ function deliverMouseReport(
 		bubbles: true,
 		cancelable: true,
 	};
-	handler[kLastMouse] = {x, y};
+	input[kLastMouse] = {x, y};
 
 	if (isMotion) {
 		dispatchAsUserAgent(
 			target,
-			new handler[kWindow].MouseEvent("mousemove", eventInit),
+			new input[kWindow].MouseEvent("mousemove", eventInit),
 		);
-		dragTo(handler, x, y, inDocument);
+		dragTo(input, x, y, inDocument);
 		return;
 	}
 
 	if (!isRelease) {
-		press(handler, target, base, x, y, inDocument, eventInit);
+		press(input, target, base, x, y, inDocument, eventInit);
 		return;
 	}
 
-	release(handler, target, eventInit);
+	release(input, target, eventInit);
 }
 
-function deliverPaste(handler: EventHandler, text: string): void {
+function deliverPaste(input: Input, text: string): void {
 	// A terminal pastes line breaks as CR (tmux documents the replacement).
 	// The DOM's paste carries LF.
 	text = text.replace(/\r\n?/g, "\n");
-	const focused = handler[kDocument].activeElement;
+	const focused = input[kDocument].activeElement;
 	const target =
-		focused && focused !== handler[kDocument].body
+		focused && focused !== input[kDocument].body
 			? focused
-			: handler[kDocument].body;
-	const clipboardData = new handler[kWindow].DataTransfer();
+			: input[kDocument].body;
+	const clipboardData = new input[kWindow].DataTransfer();
 	clipboardData.setData("text/plain", text);
 	lockDataTransfer(clipboardData);
 	const proceed = dispatchAsUserAgent(
 		target,
-		new handler[kWindow].ClipboardEvent("paste", {
+		new input[kWindow].ClipboardEvent("paste", {
 			clipboardData,
 			bubbles: true,
 			cancelable: true,
@@ -624,7 +624,7 @@ function deliverPaste(handler: EventHandler, text: string): void {
 	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
 		dispatchAsUserAgent(
 			target,
-			new handler[kWindow].InputEvent("beforeinput", {
+			new input[kWindow].InputEvent("beforeinput", {
 				inputType: "insertFromPaste",
 				data: text,
 				bubbles: true,
@@ -632,17 +632,17 @@ function deliverPaste(handler: EventHandler, text: string): void {
 			}),
 		);
 	}
-	void render(handler[kTermDOM]);
+	void render(input[kTermDOM]);
 }
 
 // A keystroke also means the terminal has snapped back to the live
 // screen.
-function deliverKeys(handler: EventHandler, keys: WireKey[]): void {
-	if (handler[kMouseCaptureYielded]) {
-		reclaimMouseCapture(handler);
+function deliverKeys(input: Input, keys: WireKey[]): void {
+	if (input[kMouseCaptureYielded]) {
+		reclaimMouseCapture(input);
 	}
 	for (const key of keys) {
-		dispatchKey(handler, key);
+		dispatchKey(input, key);
 	}
 }
 
@@ -683,7 +683,7 @@ function decodeMouseReport(code: number, isRelease: boolean): {
 }
 
 function documentPointAt(
-	handler: EventHandler,
+	input: Input,
 	col: number,
 	row: number,
 ): {
@@ -692,9 +692,9 @@ function documentPointAt(
 	// False above the painted region, meaning a shell prompt's rows.
 	inDocument: boolean;
 } {
-	const screen = handler[kScreen];
+	const screen = input[kScreen];
 	const documentRow =
-		handler[kDocument].fullscreenElement !== null
+		input[kDocument].fullscreenElement !== null
 			? row - 1 + screen.anchorScrollTop
 			: row - 1 - screen.documentTop + screen.scrollTop;
 	const inDocument = documentRow >= 0;
@@ -703,46 +703,46 @@ function documentPointAt(
 
 // True when the tick escaped past every scroller and the camera.
 function scrollByWheel(
-	handler: EventHandler,
+	input: Input,
 	target: Element,
 	deltaY: number,
 ): boolean {
-	const scroller = wheelScrollerFor(handler, target, deltaY);
+	const scroller = wheelScrollerFor(input, target, deltaY);
 	if (scroller) {
 		scroller.scrollTop += deltaY;
 		return false;
 	}
-	const termDOM = handler[kTermDOM];
+	const termDOM = input[kTermDOM];
 	if (
 		deltaY < 0 &&
-		handler[kScreen].scrollTop === 0 &&
-		handler[kDocument].fullscreenElement === null
+		input[kScreen].scrollTop === 0 &&
+		input[kDocument].fullscreenElement === null
 	) {
 		return true;
 	}
-	handler[kScreen].scrollTo(handler[kScreen].scrollTop + deltaY);
+	input[kScreen].scrollTo(input[kScreen].scrollTop + deltaY);
 	void render(termDOM);
 	return false;
 }
 
-function reclaimMouseCapture(handler: EventHandler): void {
-	if (handler[kScrollChainTimer] !== null) {
-		clearTimeout(handler[kScrollChainTimer]);
-		handler[kScrollChainTimer] = null;
+function reclaimMouseCapture(input: Input): void {
+	if (input[kScrollChainTimer] !== null) {
+		clearTimeout(input[kScrollChainTimer]);
+		input[kScrollChainTimer] = null;
 	}
-	handler[kMouseCaptureYielded] = false;
-	void render(handler[kTermDOM]);
+	input[kMouseCaptureYielded] = false;
+	void render(input[kTermDOM]);
 }
 
 function dragTo(
-	handler: EventHandler,
+	input: Input,
 	x: number,
 	y: number,
 	inDocument: boolean,
 ): void {
 	// Clamped into the field, whichever element the pointer is over now.
-	if (handler[kFieldDragAnchor] && inDocument) {
-		const {element: fieldElement, offset: anchor} = handler[kFieldDragAnchor];
+	if (input[kFieldDragAnchor] && inDocument) {
+		const {element: fieldElement, offset: anchor} = input[kFieldDragAnchor];
 		const focus = fieldCaretOffset(fieldElement, x, y);
 		if (focus !== null) {
 			setUASelection(
@@ -751,18 +751,18 @@ function dragTo(
 				Math.max(anchor, focus),
 				focus < anchor ? "backward" : "forward",
 			);
-			void render(handler[kTermDOM]);
+			void render(input[kTermDOM]);
 		}
 		return;
 	}
 	// Over a textless stretch or user-select: none, the focus stays put.
 	if (
-		handler[kSelectionDragAnchor] && handler[kMouseDownTarget] && inDocument
+		input[kSelectionDragAnchor] && input[kMouseDownTarget] && inDocument
 	) {
-		const focus = textPositionAt(handler, x, y);
-		if (focus && selectable(handler, focus)) {
-			const anchor = handler[kSelectionDragAnchor];
-			handler[kWindow]
+		const focus = textPositionAt(input, x, y);
+		if (focus && selectable(input, focus)) {
+			const anchor = input[kSelectionDragAnchor];
+			input[kWindow]
 				.getSelection()
 				?.setBaseAndExtent(
 					anchor.node,
@@ -770,13 +770,13 @@ function dragTo(
 					focus.node,
 					focus.offset,
 				);
-			void render(handler[kTermDOM]);
+			void render(input[kTermDOM]);
 		}
 	}
 }
 
 function press(
-	handler: EventHandler,
+	input: Input,
 	target: Element,
 	base: number,
 	x: number,
@@ -784,33 +784,33 @@ function press(
 	inDocument: boolean,
 	eventInit: object,
 ): void {
-	handler[kMouseDownTarget] = target;
+	input[kMouseDownTarget] = target;
 	// Light dismiss is a press and a release in the same place, so a drag
 	// out of a popover does not close it.
-	handler[kPopoverPressTarget] = lightDismissPress(target);
-	handler[kFieldDragAnchor] = null;
-	if (setDocumentFocusVisible(handler[kDocument], false)) {
-		handler[kStyles].handleFocusChange(
-			handler[kDocument].activeElement,
+	input[kPopoverPressTarget] = lightDismissPress(target);
+	input[kFieldDragAnchor] = null;
+	if (setDocumentFocusVisible(input[kDocument], false)) {
+		input[kCascade].handleFocusChange(
+			input[kDocument].activeElement,
 		);
-		void render(handler[kTermDOM]);
+		void render(input[kTermDOM]);
 	}
 	const notCanceled = dispatchAsUserAgent(
 		target,
-		new handler[kWindow].MouseEvent("mousedown", eventInit),
+		new input[kWindow].MouseEvent("mousedown", eventInit),
 	);
 	if (!notCanceled) {
 		return;
 	}
 	// Default action: focus the nearest focusable ancestor, or blur.
 	const focusable = target.closest(FOCUSABLE_SELECTOR);
-	const active = handler[kDocument].activeElement;
+	const active = input[kDocument].activeElement;
 	if (focusable && focusable !== active) {
 		(focusable as HTMLElement).focus();
-		void render(handler[kTermDOM]);
-	} else if (!focusable && active && active !== handler[kDocument].body) {
+		void render(input[kTermDOM]);
+	} else if (!focusable && active && active !== input[kDocument].body) {
 		(active as HTMLElement).blur();
-		void render(handler[kTermDOM]);
+		void render(input[kTermDOM]);
 	}
 
 	// Default action: a press in a field places the caret and anchors a
@@ -818,28 +818,28 @@ function press(
 	const parked =
 		base === 0 && inDocument ? parkFieldCaret(target, x, y) : null;
 	if (parked) {
-		handler[kFieldDragAnchor] = {
+		input[kFieldDragAnchor] = {
 			element: parked.field as HTMLInputElement | HTMLTextAreaElement,
 			offset: parked.offset,
 		};
 		// The document selection still clears, as in a browser.
-		const docSelection = handler[kWindow].getSelection();
+		const docSelection = input[kWindow].getSelection();
 		if (docSelection && !docSelection.isCollapsed) {
 			docSelection.removeAllRanges();
 		}
-		void render(handler[kTermDOM]);
+		void render(input[kTermDOM]);
 	}
 
 	// Default action: collapse the document selection at the press and
 	// anchor a drag there. Left button only. preventDefault opts out.
-	const selection = handler[kWindow].getSelection();
-	if (base === 0 && selection && !handler[kFieldDragAnchor]) {
-		let anchor = inDocument ? textPositionAt(handler, x, y) : null;
-		if (anchor && !selectable(handler, anchor)) {
+	const selection = input[kWindow].getSelection();
+	if (base === 0 && selection && !input[kFieldDragAnchor]) {
+		let anchor = inDocument ? textPositionAt(input, x, y) : null;
+		if (anchor && !selectable(input, anchor)) {
 			anchor = null;
 		}
 		const hadSelection = !selection.isCollapsed;
-		handler[kSelectionDragAnchor] = anchor;
+		input[kSelectionDragAnchor] = anchor;
 		if (anchor) {
 			selection.setBaseAndExtent(
 				anchor.node,
@@ -851,28 +851,28 @@ function press(
 			selection.removeAllRanges();
 		}
 		if (hadSelection) {
-			void render(handler[kTermDOM]);
+			void render(input[kTermDOM]);
 		}
 	}
 }
 
 function release(
-	handler: EventHandler,
+	input: Input,
 	target: Element,
 	eventInit: object,
 ): void {
 	dispatchAsUserAgent(
 		target,
-		new handler[kWindow].MouseEvent("mouseup", eventInit),
+		new input[kWindow].MouseEvent("mouseup", eventInit),
 	);
 	// Before the click, as in a browser.
-	lightDismissRelease(target, handler[kPopoverPressTarget]);
-	handler[kPopoverPressTarget] = null;
+	lightDismissRelease(target, input[kPopoverPressTarget]);
+	input[kPopoverPressTarget] = null;
 	let selectedByDrag = false;
-	handler[kFieldDragAnchor] = null;
-	if (handler[kSelectionDragAnchor]) {
-		handler[kSelectionDragAnchor] = null;
-		const text = handler[kWindow].getSelection()?.toString() ?? "";
+	input[kFieldDragAnchor] = null;
+	if (input[kSelectionDragAnchor]) {
+		input[kSelectionDragAnchor] = null;
+		const text = input[kWindow].getSelection()?.toString() ?? "";
 		if (text.length > 0) {
 			selectedByDrag = true;
 		}
@@ -881,75 +881,75 @@ function release(
 	// would toggle its checkbox and a framework's re-render would destroy
 	// the selection just made.
 	if (selectedByDrag) {
-		handler[kMouseDownTarget] = null;
+		input[kMouseDownTarget] = null;
 		return;
 	}
-	if (handler[kMouseDownTarget] === target) {
+	if (input[kMouseDownTarget] === target) {
 		dispatchAsUserAgent(
 			target,
-			new handler[kWindow].MouseEvent("click", {...eventInit, buttons: 0}),
+			new input[kWindow].MouseEvent("click", {...eventInit, buttons: 0}),
 		);
 		// A label's click focuses its control (the browser's focusing steps,
 		// which activation alone does not do), and a .checked flip is a
 		// property change no mutation record repaints.
 		const isCheckable = (el: unknown): el is HTMLInputElement =>
-			el instanceof (handler[kWindow] as any).HTMLInputElement &&
+			el instanceof (input[kWindow] as any).HTMLInputElement &&
 			((el as HTMLInputElement).type === "checkbox" ||
 				(el as HTMLInputElement).type === "radio");
 		const control = isCheckable(target)
 			? target
-			: target instanceof (handler[kWindow] as any).HTMLLabelElement &&
+			: target instanceof (input[kWindow] as any).HTMLLabelElement &&
 				isCheckable((target as any).control)
 				? ((target as any).control as HTMLInputElement)
 				: null;
 		if (control) {
 			control.focus();
-			void render(handler[kTermDOM]);
+			void render(input[kTermDOM]);
 		}
 
 		// In addition to its own click. Reset so a third click starts a pair.
 		const now = performance.now();
 		if (
-			handler[kLastClickTarget] === target &&
-			now - handler[kLastClickTime] <= EventHandler[kDblclickIntervalMs]
+			input[kLastClickTarget] === target &&
+			now - input[kLastClickTime] <= Input[kDblclickIntervalMs]
 		) {
 			dispatchAsUserAgent(
 				target,
-				new handler[kWindow].MouseEvent("dblclick", {
+				new input[kWindow].MouseEvent("dblclick", {
 					...eventInit,
 					buttons: 0,
 				}),
 			);
-			handler[kLastClickTarget] = null;
-			handler[kLastClickTime] = 0;
+			input[kLastClickTarget] = null;
+			input[kLastClickTime] = 0;
 		} else {
-			handler[kLastClickTarget] = target;
-			handler[kLastClickTime] = now;
+			input[kLastClickTarget] = target;
+			input[kLastClickTime] = now;
 		}
 	}
-	handler[kMouseDownTarget] = null;
+	input[kMouseDownTarget] = null;
 }
 
-function dispatchKey(handler: EventHandler, stroke: WireKey): void {
+function dispatchKey(input: Input, stroke: WireKey): void {
 	const {key: keyName, char, shiftKey, ctrlKey, altKey, metaKey} = stroke;
 	const keyCode = legacyKeyCode(keyName);
 
-	if (setDocumentFocusVisible(handler[kDocument], true)) {
-		handler[kStyles].handleFocusChange(
-			handler[kDocument].activeElement,
+	if (setDocumentFocusVisible(input[kDocument], true)) {
+		input[kCascade].handleFocusChange(
+			input[kDocument].activeElement,
 		);
-		void render(handler[kTermDOM]);
+		void render(input[kTermDOM]);
 	}
 
 	// A fullscreen element is usually not focusable, so keydown falls back
 	// to it before the body.
-	const active = handler[kDocument].activeElement;
+	const active = input[kDocument].activeElement;
 	const targetElement =
-		active && active !== handler[kDocument].body
+		active && active !== input[kDocument].body
 			? active
-			: handler[kDocument].fullscreenElement || handler[kDocument].body;
+			: input[kDocument].fullscreenElement || input[kDocument].body;
 
-	const keydownEvent = new handler[kWindow].KeyboardEvent("keydown", {
+	const keydownEvent = new input[kWindow].KeyboardEvent("keydown", {
 		key: keyName,
 		code: domCodeFor(keyName),
 		keyCode,
@@ -970,15 +970,15 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	// nothing from the user, and terminal convention gives Escape to the
 	// app.
 	if (keyName === "Escape") {
-		if (closeTopmost(handler[kDocument])) {
-			void render(handler[kTermDOM]);
+		if (closeTopmost(input[kDocument])) {
+			void render(input[kTermDOM]);
 			return;
 		}
 	}
 
 	if (notCanceled) {
 		if (keyName === "Tab") {
-			moveFocus(handler, shiftKey);
+			moveFocus(input, shiftKey);
 		}
 
 		// Field editing is each widget's own keydown listener, run above.
@@ -991,13 +991,13 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 				// A trusted click, so the full activation behavior runs.
 				dispatchAsUserAgent(
 					targetElement,
-					new handler[kWindow].PointerEvent("click", {
+					new input[kWindow].PointerEvent("click", {
 						bubbles: true,
 						cancelable: true,
 						composed: true,
 					}),
 				);
-				void render(handler[kTermDOM]);
+				void render(input[kTermDOM]);
 			}
 		}
 	}
@@ -1006,7 +1006,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	// input event follows keypress, as in a browser.
 	if (notCanceled && char !== "") {
 		const charCode = char.codePointAt(0)!;
-		const keypressEvent = new handler[kWindow].KeyboardEvent("keypress", {
+		const keypressEvent = new input[kWindow].KeyboardEvent("keypress", {
 			key: char,
 			code: domCodeFor(char),
 			keyCode: charCode,
@@ -1020,11 +1020,11 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 			cancelable: true,
 		});
 		if (dispatchAsUserAgent(targetElement, keypressEvent)) {
-			insertText(handler, targetElement, char);
+			insertText(input, targetElement, char);
 		}
 	}
 
-	const keyupEvent = new handler[kWindow].KeyboardEvent("keyup", {
+	const keyupEvent = new input[kWindow].KeyboardEvent("keyup", {
 		key: keyName,
 		code: domCodeFor(keyName),
 		keyCode,
@@ -1041,7 +1041,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 }
 
 function insertText(
-	handler: EventHandler,
+	input: Input,
 	target: Element,
 	text: string,
 ): void {
@@ -1051,7 +1051,7 @@ function insertText(
 	}
 	dispatchAsUserAgent(
 		target,
-		new handler[kWindow].InputEvent("beforeinput", {
+		new input[kWindow].InputEvent("beforeinput", {
 			inputType: "insertText",
 			data: text,
 			bubbles: true,
@@ -1060,16 +1060,16 @@ function insertText(
 	);
 }
 
-function moveFocus(handler: EventHandler, reverse: boolean): void {
+function moveFocus(input: Input, reverse: boolean): void {
 	// Tab cannot leave a modal dialog.
-	const scope = topmostModalDialog(handler[kDocument]) ?? handler[kDocument];
+	const scope = topmostModalDialog(input[kDocument]) ?? input[kDocument];
 	const entries = sequentialFocusEntries(
 		scope,
-		handler[kLayout],
+		input[kLayout],
 	);
 
 	// activeElement retargets to the shadow host. Follow it down.
-	let current = handler[kDocument].activeElement;
+	let current = input[kDocument].activeElement;
 	while (current !== null) {
 		const shadow = getShadowRoot<ShadowRoot>(current);
 		const inner = shadow?.activeElement ?? null;
@@ -1179,17 +1179,17 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 	next.focus();
 	next.scrollIntoView({block: "nearest"});
 	// No mutation record describes a focus move.
-	void render(handler[kTermDOM]);
+	void render(input[kTermDOM]);
 }
 
 // Null over a form control. Its value is not document text.
 function textPositionAt(
-	handler: EventHandler,
+	input: Input,
 	x: number,
 	y: number,
 ): {node: Text; offset: number} | null {
-	const window = handler[kWindow];
-	const element = elementAtDocumentPoint(handler[kDocument], x, y);
+	const window = input[kWindow];
+	const element = elementAtDocumentPoint(input[kDocument], x, y);
 	if (
 		!element ||
 		element instanceof (window as any).HTMLInputElement ||
@@ -1197,7 +1197,7 @@ function textPositionAt(
 	) {
 		return null;
 	}
-	return handler[kLayout].caretPositionFromPoint(
+	return input[kLayout].caretPositionFromPoint(
 		x,
 		y,
 		element,
@@ -1205,10 +1205,10 @@ function textPositionAt(
 }
 
 function selectable(
-	handler: EventHandler,
+	input: Input,
 	position: {node: Text; offset: number},
 ): boolean {
 	const parent = flatParentElement<Element>(position.node);
 	return parent === null ||
-		handler[kStyles].isSelectable(parent);
+		input[kCascade].isSelectable(parent);
 }

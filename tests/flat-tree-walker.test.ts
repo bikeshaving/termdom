@@ -783,7 +783,7 @@ test("flat-tree walker reaches ::after in the layout engine's pattern", () => {
 	quote.textContent = "Hello World";
 	document.body.appendChild(quote);
 
-	// Set up pseudo-elements using StyleManager pattern
+	// Set up pseudo-elements using Cascade pattern
 	attachPseudo(quote, "::before", '"');
 	attachPseudo(quote, "::after", '"');
 

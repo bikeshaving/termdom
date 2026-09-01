@@ -5,15 +5,15 @@ import * as Parse5 from "parse5";
 import {
 	adoptedStyleSheetsOf,
 	adoptStyleSheets,
+	type Cascade,
 	getBoxModel,
 	inlineStyleOf,
 	styleAttributeChanged,
 	styleElementSheet,
-	type StyleManager,
 	styleShadowAttached,
 	styleSheetsOf,
 } from "./cssom.js";
-import type {TerminalExchange} from "./exchange.js";
+import type {Exchange} from "./exchange.js";
 import {
 	ARIA_ELEMENT_REFLECTIONS,
 	ARIA_STRING_REFLECTIONS,
@@ -28,7 +28,7 @@ import {
 	type ReflectSpec,
 	WINDOW_EVENT_HANDLERS,
 } from "./htmltables.js";
-import type {LayoutEngine} from "./layout.js";
+import type {Layout} from "./layout.js";
 import type {Screen} from "./screen.js";
 import {
 	closeTermDOM,
@@ -204,7 +204,7 @@ export function fieldValueText(field: globalThis.Element): globalThis.Text |
 
 const kTermDOM = Symbol("termDOM");
 const kLayout = Symbol("layout");
-const kStyles = Symbol("styles");
+const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kScreen = Symbol("screen");
 
@@ -669,7 +669,7 @@ function buildUARoot(
 	// first and populating after left the cascade to notice the sheet by count
 	// drift, which forced a full rebuild of every sheet per widget.
 	root.appendChild(uaStyleElement(host, styles));
-	attached[kStyles].registerShadowRoot(root);
+	attached[kCascade].registerShadowRoot(root);
 	return root;
 }
 
@@ -8287,7 +8287,7 @@ export class Element extends Node implements globalThis.Element {
 			// The root's <style> elements join the cascade, scoped to this
 			// tree. The refresh happens on the STYLE mutation records the
 			// observer registration above will deliver.
-			attached[kStyles].registerShadowRoot(root);
+			attached[kCascade].registerShadowRoot(root);
 			// attachShadow is not a DOM mutation, so no observer record fires
 			// for it. But on a CONNECTED host the composed tree just changed
 			// wholesale: light children stop rendering as soon as the root
@@ -8328,7 +8328,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 		// The element's UA styles changed (it now fills the viewport) and
 		// neither a mutation nor a focus move fired to notify the cascade.
-		attached[kStyles].handleFocusChange(this);
+		attached[kCascade].handleFocusChange(this);
 		attached[kLayout].invalidate(this);
 		// The screen switch happens on the next frame so no frame straddles it.
 		// The promise resolves once that frame is written.
@@ -9440,7 +9440,7 @@ export class HTMLElement extends Element {
 		// :focus rules match live and a focus move is not a mutation, so both
 		// elements' resolved styles are stale whether or not a listener changes
 		// anything.
-		attached[kStyles].handleFocusChange(previous, this);
+		attached[kCascade].handleFocusChange(previous, this);
 		attached[kScreen].invalidate();
 		void render(attached[kTermDOM]);
 		// The body holds focus whenever nothing else does, so moving focus off
@@ -9475,7 +9475,7 @@ export class HTMLElement extends Element {
 		if (attached === undefined) {
 			return;
 		}
-		attached[kStyles].handleFocusChange(this, null);
+		attached[kCascade].handleFocusChange(this, null);
 		attached[kScreen].invalidate();
 		void render(attached[kTermDOM]);
 		dispatchAsUserAgent(
@@ -9646,7 +9646,7 @@ export interface HTMLElement
 // undefined when there is nothing to measure (a headless document, or an
 // element outside one), and every caller then falls back to the zero the
 // spec gives an element with no box.
-function settledLayout(element: Element): LayoutEngine | undefined {
+function settledLayout(element: Element): Layout | undefined {
 	const attached = getAttachedDocument(element);
 	if (attached === undefined || !element.isConnected) {
 		return undefined;
@@ -17136,7 +17136,7 @@ function textareaLineAt(
 // read `lineFragments` or a `Range` directly.
 function textareaVisualLines(
 	field: HTMLTextAreaElement,
-	layout: LayoutEngine,
+	layout: Layout,
 ): {value: string; lines: TextareaVisualLine[]} | null {
 	const valueText = fieldValueText(field);
 	if (!valueText) {
@@ -17308,7 +17308,7 @@ function popoverStateChanged(element: Element): void {
 	if (attached === undefined) {
 		return;
 	}
-	attached[kStyles].handleStateChange(element);
+	attached[kCascade].handleStateChange(element);
 	attached[kScreen].invalidate();
 	void render(attached[kTermDOM]);
 }
@@ -19567,7 +19567,7 @@ const documentObservers = new WeakMap<object, Set<AnyObserver>>();
  */
 export function flushObservers(
 	document: globalThis.Document,
-	layoutEngine: LayoutEngine,
+	layout: Layout,
 	viewport: globalThis.DOMRect,
 	frame: number,
 ): void {
@@ -19579,7 +19579,7 @@ export function flushObservers(
 	// set mid-iteration would visit a new observer against a layout it has
 	// not been measured for, or skip one that is still live.
 	for (const observer of [...observers]) {
-		checkObserver(observer, layoutEngine, viewport, frame);
+		checkObserver(observer, layout, viewport, frame);
 	}
 }
 
@@ -19654,7 +19654,7 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	abstract [kMeasure](
 		target: globalThis.Element,
 		last: TState | null,
-		layoutEngine: LayoutEngine,
+		layout: Layout,
 		viewport: globalThis.DOMRect,
 		frame: number,
 		options: TOptions | undefined,
@@ -19672,7 +19672,7 @@ function getObservers(document: globalThis.Document): Set<AnyObserver> {
 
 function checkObserver<TState, TEntry, TOptions = void>(
 	observer: LayoutObserver<TState, TEntry, TOptions>,
-	layoutEngine: LayoutEngine,
+	layout: Layout,
 	viewport: globalThis.DOMRect,
 	frame: number,
 ): void {
@@ -19681,7 +19681,7 @@ function checkObserver<TState, TEntry, TOptions = void>(
 		const result = observer[kMeasure](
 			target,
 			observation.last,
-			layoutEngine,
+			layout,
 			viewport,
 			frame,
 			observation.options,
@@ -19762,7 +19762,7 @@ class ResizeObserver extends LayoutObserver<
 	[kMeasure](
 		target: globalThis.Element,
 		last: ResizeSize | null,
-		layoutEngine: LayoutEngine,
+		layout: Layout,
 		_viewport: globalThis.DOMRect,
 		_frame: number,
 		options: ResizeObserverOptions | undefined,
@@ -19771,14 +19771,14 @@ class ResizeObserver extends LayoutObserver<
 		// that size is zero. Reporting it is how the DOM lets a component
 		// notice it has been hidden. Skipping it left the last size it ever had
 		// stuck.
-		const content = getContentBox(target, layoutEngine) ?? {
+		const content = getContentBox(target, layout) ?? {
 			width: 0,
 			height: 0,
 			top: 0,
 			left: 0,
 		};
 
-		const border = layoutEngine.getRect(target);
+		const border = layout.getRect(target);
 		// device-pixel-content-box is the content box. A cell is the device
 		// pixel here, so the two can never differ.
 		const watched =
@@ -19829,10 +19829,10 @@ class ResizeObserver extends LayoutObserver<
 // or detached). The observer turns that into an all-zero rect.
 function getContentBox(
 	element: globalThis.Element,
-	layoutEngine: LayoutEngine,
+	layout: Layout,
 ): ContentBox | null {
-	const border = layoutEngine.getRect(element);
-	const content = layoutEngine.contentRect(element);
+	const border = layout.getRect(element);
+	const content = layout.contentRect(element);
 	if (!border || !content) {
 		return null;
 	}
@@ -19901,11 +19901,11 @@ class IntersectionObserver extends LayoutObserver<
 	[kMeasure](
 		target: globalThis.Element,
 		last: number | null,
-		layoutEngine: LayoutEngine,
+		layout: Layout,
 		viewport: globalThis.DOMRect,
 		frame: number,
 	): {state: number; entry: IntersectionObserverEntry} | null {
-		const box = layoutEngine.getRect(target);
+		const box = layout.getRect(target);
 		if (!box) {
 			return null;
 		}
@@ -19915,7 +19915,7 @@ class IntersectionObserver extends LayoutObserver<
 		// lets a list start loading a row before it scrolls into view.
 		const rootBox =
 			this[kIntersectionRoot]!
-				? layoutEngine.getRect(this[kIntersectionRoot]!)
+				? layout.getRect(this[kIntersectionRoot]!)
 				: viewport;
 		if (!rootBox) {
 			return null;
@@ -20088,9 +20088,9 @@ export class Document extends Node implements globalThis.Document {
 	// headless document has none and behaves as a document with no browsing
 	// context.
 	[kTermDOM]?: TermDOM;
-	[kLayout]?: LayoutEngine;
-	[kStyles]?: StyleManager;
-	[kExchange]?: TerminalExchange;
+	[kLayout]?: Layout;
+	[kCascade]?: Cascade;
+	[kExchange]?: Exchange;
 	[kScreen]?: Screen;
 
 	declare [kImplementation]?: DOMImplementation | null;
@@ -20630,7 +20630,7 @@ export class Document extends Node implements globalThis.Document {
 		}
 		const exiting = leaveFullscreen(this);
 		if (exiting) {
-			attached[kStyles].handleFocusChange(exiting);
+			attached[kCascade].handleFocusChange(exiting);
 			attached[kLayout].invalidate(exiting);
 		}
 		return frameSettled(this, attached);
@@ -24265,7 +24265,7 @@ interface SelectionLine {
 
 function paintsText(
 	node: Text,
-	layout: LayoutEngine | null,
+	layout: Layout | null,
 ): boolean {
 	if (node[kData]!.length === 0) {
 		return false;
@@ -24297,7 +24297,7 @@ function selectionTextNodes(
 			if (child.nodeType === TEXT_NODE) {
 				if (
 					paintsText(child as Text, layout) &&
-					(attached === undefined || attached[kStyles].isSelectable(node))
+					(attached === undefined || attached[kCascade].isSelectable(node))
 				) {
 					nodes.push(child as Text);
 				}
@@ -24383,7 +24383,7 @@ function selectionPointAt(
 // nodes they came from, so lines are keyed by row.
 function selectionLines(
 	run: SelectionText,
-	layout: LayoutEngine,
+	layout: Layout,
 ): SelectionLine[] {
 	const rows = new Map<number, SelectionLine>();
 	for (const part of run.parts) {
@@ -24424,7 +24424,7 @@ function selectionLineAt(lines: SelectionLine[], index: number): number {
 
 function getCaretColumn(
 	document: Document,
-	layout: LayoutEngine,
+	layout: Layout,
 	point: [Node, number],
 ): number | null {
 	const range = document.createRange();
@@ -24441,7 +24441,7 @@ function getCaretColumn(
 function selectionLineMove(
 	document: Document,
 	run: SelectionText,
-	layout: LayoutEngine,
+	layout: Layout,
 	index: number,
 	forward: boolean,
 ): [Node, number] | null {
@@ -26948,9 +26948,9 @@ export function refreshMediaQueries(document: globalThis.Document): void {
 export function attachDocument(
 	document: globalThis.Document,
 	termDOM: TermDOM,
-	layout: LayoutEngine,
-	styles: StyleManager,
-	exchange: TerminalExchange,
+	layout: Layout,
+	styles: Cascade,
+	exchange: Exchange,
 	screen: Screen,
 ): void {
 	const attached = document as Document;
@@ -26959,7 +26959,7 @@ export function attachDocument(
 	}
 	attached[kTermDOM] = termDOM;
 	attached[kLayout] = layout;
-	attached[kStyles] = styles;
+	attached[kCascade] = styles;
 	attached[kExchange] = exchange;
 	attached[kScreen] = screen;
 	hoverListenerCounts.set(
@@ -27035,7 +27035,7 @@ function handleMutationRecords(
 			upgradeUAWidgetsIn(added);
 		}
 	}
-	attached[kStyles].handleMutations(relevant);
+	attached[kCascade].handleMutations(relevant);
 	attached[kLayout].handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
 	dropUnfocusableFocus(document, attached);
@@ -27091,7 +27091,7 @@ function dropUnfocusableFocus(
 	) {
 		if (
 			node.hasAttribute("inert") ||
-			attached[kStyles]
+			attached[kCascade]
 				.declarationFor(node as Element)
 				.getComputedValue("display") === "none"
 		) {
@@ -27154,9 +27154,9 @@ export function hoverListenerCount(document: globalThis.Document): number {
 // renders through.
 type AttachedDocument = Document & {
 	[kTermDOM]: TermDOM;
-	[kLayout]: LayoutEngine;
-	[kStyles]: StyleManager;
-	[kExchange]: TerminalExchange;
+	[kLayout]: Layout;
+	[kCascade]: Cascade;
+	[kExchange]: Exchange;
 	[kScreen]: Screen;
 };
 
@@ -27316,7 +27316,7 @@ class Clipboard extends EventTarget {
 // and an event the application dispatched itself are all outside it.
 // Every caller is async, so the throw reaches the page as the rejection
 // the Clipboard API specifies.
-function reachClipboard(document: Document, what: string): TerminalExchange {
+function reachClipboard(document: Document, what: string): Exchange {
 	const attached = getAttachedDocument(document);
 	if (
 		attached === undefined ||
@@ -27854,7 +27854,7 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		const matches = (): boolean =>
 			attached !== undefined &&
-			attached[kStyles].mediaQueryMatches(media);
+			attached[kCascade].mediaQueryMatches(media);
 		const list = new EventTarget();
 		// `matches` reads live. This holds the value the last "change" event
 		// reported.
