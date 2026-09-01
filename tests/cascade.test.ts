@@ -1,26 +1,19 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
 import {CSS_SHORTHANDS} from "../src/generated/cssproperties.js";
-import {StyleManager} from "../src/internal/cssom.js";
-import {createDocumentWindow} from "../src/internal/dom.js";
-import {LayoutEngine} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-/** A document of this DOM, from markup, displayed in a window of its own. */
-function documentWindow(html: string): {
-	window: ReturnType<typeof createDocumentWindow>;
-} {
-	return {window: createDocumentWindow(html)};
+/** This markup in a DOM of its own, over a terminal nothing reads. */
+function domFor(html: string): TermDOM {
+	return new TermDOM({html, transport: new MockProcess().transport});
 }
 
 describe("getComputedStyle - What We Support", () => {
 	test("CSS spec defaults", () => {
-		const dom = documentWindow(
+		const dom = domFor(
 			"<!DOCTYPE html><html><body><div id=\"test\"></div></body></html>",
 		);
-		const layoutEngine = new LayoutEngine(dom.window);
-		new StyleManager(dom.window, layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -36,12 +29,14 @@ describe("getComputedStyle - What We Support", () => {
 		expect(styles.getPropertyValue("font-size")).toBe("1px");
 		expect(styles.getPropertyValue("white-space")).toBe("normal");
 		expect(styles.getPropertyValue("position")).toBe("static");
-		expect(styles.getPropertyValue("width")).toBe("auto");
-		expect(styles.getPropertyValue("height")).toBe("auto");
+		// width and height are resolved-value properties: a rendered box
+		// answers with the used length, and a block fills its containing block.
+		expect(styles.getPropertyValue("width")).toBe("80px");
+		expect(styles.getPropertyValue("height")).toBe("0px");
 	});
 
 	test("terminal element defaults", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="div"></div>
@@ -54,8 +49,6 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const layoutEngine = new LayoutEngine(dom.window);
-		new StyleManager(dom.window, layoutEngine);
 
 		// Block elements
 		expect(
@@ -117,15 +110,13 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("inline styles override defaults", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: red; margin: 10px; display: flex;"></div>
 				</body>
 			</html>
 		`);
-		const layoutEngine = new LayoutEngine(dom.window);
-		new StyleManager(dom.window, layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -137,15 +128,13 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSS keywords - initial", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: initial; margin: initial;"></div>
 				</body>
 			</html>
 		`);
-		const layoutEngine = new LayoutEngine(dom.window);
-		new StyleManager(dom.window, layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -155,15 +144,13 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSS keywords - unset, revert, revert-layer", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: unset; margin: revert; padding: revert-layer;"></div>
 				</body>
 			</html>
 		`);
-		const layoutEngine = new LayoutEngine(dom.window);
-		new StyleManager(dom.window, layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -174,7 +161,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("property inheritance", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="parent" style="color: blue; font-size: 16px; margin: 20px;">
@@ -184,8 +171,6 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const layoutEngine = new LayoutEngine(dom.window);
-		new StyleManager(dom.window, layoutEngine);
 
 		const child = dom.window.document.getElementById("child")!;
 		const childStyles = dom.window.getComputedStyle(child);
@@ -209,15 +194,13 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSSStyleDeclaration interface compatibility", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: red; margin: 10px;"></div>
 				</body>
 			</html>
 		`);
-		const layoutEngine = new LayoutEngine(dom.window);
-		new StyleManager(dom.window, layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -235,7 +218,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("box model properties", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="
@@ -248,16 +231,17 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const layoutEngine = new LayoutEngine(dom.window);
-		new StyleManager(dom.window, layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
 		expect(styles.getPropertyValue("margin")).toBe("5px 10px 15px 20px");
 		expect(styles.getPropertyValue("padding")).toBe("1px 2px 3px 4px");
 		expect(styles.getPropertyValue("border")).toBe("2px solid rgb(0, 0, 0)");
-		expect(styles.getPropertyValue("width")).toBe("100px");
-		expect(styles.getPropertyValue("height")).toBe("50px");
+		// The declared 100 and 50 are border-box lengths (box-sizing starts at
+		// border-box here), and the resolved value is the content box inside
+		// them: 100 less two 2px borders and 2+4 of padding, 50 less the rest.
+		expect(styles.getPropertyValue("width")).toBe("90px");
+		expect(styles.getPropertyValue("height")).toBe("42px");
 	});
 });
 
@@ -786,9 +770,7 @@ test("every CSS shorthand is expanded or listed as unexpanded", () => {
 	// The property table is generated from mdn-data, so a shorthand the
 	// platform adds arrives here on its own. It is handled or it is named --
 	// and either way somebody looked at it.
-	const probe = createDocumentWindow(
-		"<div></div>",
-	).document.querySelector("div")!;
+	const probe = domFor("<div></div>").document.querySelector("div")!;
 	for (const shorthand of Object.keys(CSS_SHORTHANDS)) {
 		const expanded = shorthand in EXPANDED_SHORTHANDS;
 		const unexpanded = shorthand in UNEXPANDED_SHORTHANDS;

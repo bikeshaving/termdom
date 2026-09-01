@@ -1,7 +1,6 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {
-	createDocumentWindow,
 	ensurePseudoElement,
 	getPseudoHost,
 	getPseudoName,
@@ -9,24 +8,23 @@ import {
 } from "../src/internal/dom.js";
 import {flowWalker} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
+
+/** A rule the head carries, so a div can be a list item like an li. */
+const LIST_ITEM_RULE =
+	"<style>li, [data-list-item] { display: list-item; }</style>";
 
 /**
- * A document of this DOM, from markup, displayed in a window of its own, with
- * a cascade over it that knows only what a list item is. The walkers here
- * come from layout, which dissolves `display: contents`. The pseudo-elements
- * are the test's own, put straight in their slots; a cascade would own them
- * instead.
+ * A document of this DOM, from markup, with a cascade over it that knows what
+ * a list item is. The walkers here come from layout, which dissolves
+ * `display: contents`. The pseudo-elements are the test's own, put straight in
+ * their slots; a cascade would own them instead.
  */
-function documentWindow(html: string): {
-	window: ReturnType<typeof createDocumentWindow>;
-} {
-	const window = createDocumentWindow(html);
-	const style = window.document.createElement("style");
-	style.textContent = "li, [data-list-item] { display: list-item; }";
-	window.document.head.appendChild(style);
-	styleManagerFor({window});
-	return {window};
+function documentWindow(html: string): TermDOM {
+	return new TermDOM({
+		html: html.replace("<body>", `${LIST_ITEM_RULE}<body>`),
+		transport: new MockProcess().transport,
+	});
 }
 
 /**
@@ -501,7 +499,7 @@ test("A bare document - flat-tree walker complex nested scenario with pseudo-ele
 // TermDOM Integration Tests
 
 test("TermDOM - flat-tree walker basic functionality", () => {
-	const {document} = createDocumentWindow("<!DOCTYPE html><body></body>");
+	const {document} = documentWindow("<!DOCTYPE html><body></body>");
 
 	const div = document.createElement("div");
 	div.textContent = "Hello World";
@@ -522,7 +520,7 @@ test("TermDOM - flat-tree walker basic functionality", () => {
 });
 
 test("TermDOM - flat-tree walker with shadow DOM", () => {
-	const {document} = createDocumentWindow("<!DOCTYPE html><body></body>");
+	const {document} = documentWindow("<!DOCTYPE html><body></body>");
 
 	// Create a custom element with shadow DOM
 	class TestElement extends (document.defaultView as any).HTMLElement {
@@ -571,7 +569,7 @@ test("TermDOM - flat-tree walker with shadow DOM", () => {
 });
 
 test("TermDOM - flat-tree walker basic traversal", () => {
-	const {document} = createDocumentWindow("<!DOCTYPE html><body></body>");
+	const {document} = documentWindow("<!DOCTYPE html><body></body>");
 
 	const div = document.createElement("div");
 	div.textContent = "Hello";

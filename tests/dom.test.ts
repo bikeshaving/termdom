@@ -14,12 +14,10 @@ import {
 	type Document,
 	CustomEvent as DOMCustomEvent,
 	Event as DOMEvent,
-	DOMParser,
 	HTMLElement,
 	MutationObserver,
 	NodeFilter,
 	Text,
-	Window,
 } from "../src/internal/dom.js";
 
 // The door a test document comes through. The parser is the one that hands
@@ -32,7 +30,10 @@ function createHTMLDocument(title?: string): Document {
 	).document as unknown as Document;
 }
 
-const customElements = new Window(createHTMLDocument()).customElements;
+// The interfaces script sees are the window's, so the tests take them from
+// one: a parser, a Window of its own, and the realm's element registry.
+const realm = createDocumentWindow("<!doctype html>");
+const customElements = realm.customElements;
 
 function make(): any {
 	const document = createHTMLDocument("") as any;
@@ -51,7 +52,10 @@ test("a node cannot be inserted into itself or its descendant", () => {
 });
 
 test("a document takes one element child and one doctype, in that order", () => {
-	const document = new DOMParser().parseFromString("", "text/html") as any;
+	const document = new realm.DOMParser().parseFromString(
+		"",
+		"text/html",
+	) as any;
 	const bare = document.implementation.createDocument(null, null, null);
 	const first = bare.createElement("first");
 	bare.appendChild(first);
@@ -965,7 +969,7 @@ test("observing a node twice replaces the options it was observed with", async (
 /* -------------------------------------------------------------- serializing */
 
 test("a document parsed from a string keeps its URL and content type", () => {
-	const document = new DOMParser().parseFromString(
+	const document = new realm.DOMParser().parseFromString(
 		"<!doctype html><title>t</title>",
 		"text/html",
 	);
@@ -1145,7 +1149,6 @@ test("a shadow root is cloned with its host only when it is clonable", () => {
 
 test("a reaction runs after the mutation that enqueued it, in tree order", () => {
 	const document = make();
-	new Window(document);
 	const order: string[] = [];
 	customElements.define(
 		"order-one",
@@ -1169,7 +1172,6 @@ test("a reaction runs after the mutation that enqueued it, in tree order", () =>
 
 test("an attribute reaction is enqueued only for an observed name", () => {
 	const document = make();
-	new Window(document);
 	const seen: unknown[][] = [];
 	customElements.define(
 		"order-two",
@@ -1194,7 +1196,6 @@ test("an attribute reaction is enqueued only for an observed name", () => {
 
 test("an upgrade replays the attributes and the connection it missed", () => {
 	const document = make();
-	new Window(document);
 	const seen: string[] = [];
 	const element = document.createElement("order-three");
 	element.setAttribute("a", "1");
@@ -1236,7 +1237,6 @@ test("a definition is rejected by name and by a constructor already used", () =>
 
 test("a constructor called on its own builds an element of its own name", () => {
 	const document = make();
-	new Window(document);
 
 	class OrderSix extends HTMLElement {}
 
@@ -1252,7 +1252,6 @@ test("a constructor called on its own builds an element of its own name", () => 
 /** A document with a paragraph of two text nodes, and a range over it. */
 function withRange(): any {
 	const document = make();
-	new Window(document);
 	const paragraph = document.createElement("p");
 	paragraph.appendChild(document.createTextNode("abcdef"));
 	paragraph.appendChild(document.createElement("b"));
@@ -1842,7 +1841,7 @@ test("a value that is not an object is null, per the callback's legacy rule", ()
 });
 
 test("a body's window handlers are its window's, and are dropped without one", () => {
-	const document = new DOMParser().parseFromString(
+	const document = new realm.DOMParser().parseFromString(
 		"<!doctype html><title></title>",
 		"text/html",
 	) as any;
@@ -1857,7 +1856,7 @@ test("a body's window handlers are its window's, and are dropped without one", (
 	expect(body.onload).toBe(null);
 
 	const handler = () => {};
-	const view: any = new Window(document);
+	const view: any = new (realm as any).Window(document);
 	body.onload = handler;
 	expect(view.onload).toBe(handler);
 	expect(body.onload).toBe(handler);

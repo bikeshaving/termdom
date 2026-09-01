@@ -8,15 +8,17 @@ import {expect, test} from "@b9g/libuild/test";
 import {
 	createDocumentWindow,
 	type Document,
-	DOMParser,
 	HTMLElement,
-	Window,
 } from "../src/internal/dom.js";
+
+// The realm the tests reach constructors through: a window of this DOM
+// exposes them, as the platform does.
+const realm = createDocumentWindow("<!doctype html>");
 
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.
 function createHTMLDocument(title?: string): Document {
-	return new DOMParser().parseFromString(
+	return new realm.DOMParser().parseFromString(
 		title === undefined
 			? "<!doctype html>"
 			: `<!doctype html><title>${title}</title>`,
@@ -24,7 +26,7 @@ function createHTMLDocument(title?: string): Document {
 	) as unknown as Document;
 }
 
-const customElements = new Window(createHTMLDocument()).customElements;
+const customElements = realm.customElements;
 
 test("an attribute joins the document of the element it lands on", () => {
 	const document = createHTMLDocument("") as any;

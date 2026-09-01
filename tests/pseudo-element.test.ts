@@ -3,7 +3,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {pseudoElement} from "../src/internal/dom.js";
 import {flowWalker} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();
@@ -35,7 +35,7 @@ test("::before and ::after content rendering", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Test basic quote wrapper
 	const quote = document.createElement("div");
@@ -99,7 +99,7 @@ test("::marker pseudo-element with lists", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Test custom arrow markers
 	const customList = document.createElement("ul");
@@ -130,22 +130,22 @@ test("::marker pseudo-element with lists", async () => {
 	const output = terminal.getPlainText();
 
 	// Verify custom markers appear in output (outside positioning is the default)
-	expect(output).toContain("→");
-	expect(output).toContain("First item");
-	expect(output).toContain("Second item");
-	expect(output).toContain("🔥");
-	expect(output).toContain("Fire item");
+	expect(output).toContain("→ First item");
+	expect(output).toContain("→ Second item");
+	expect(output).toContain("🔥 Fire item");
 
-	// Verify StyleManager can get marker content for outside positioning
-	const styleManager = styleManagerFor(termdom);
-
-	const markerContent = styleManager.getMarkerContent(item1);
-	expect(markerContent).not.toBeNull();
-	expect(markerContent).toBe("→ ");
-
-	const emojiMarkerContent = styleManager.getMarkerContent(emojiItem);
-	expect(emojiMarkerContent).not.toBeNull();
-	expect(emojiMarkerContent).toBe("🔥 ");
+	// The marker's content is the cascade's answer for the ::marker pseudo.
+	expect(
+		termdom
+			.window
+			.getComputedStyle(item1, "::marker")
+			.getPropertyValue("content"),
+	).toBe('"→ "');
+	expect(
+		termdom.window
+			.getComputedStyle(emojiItem, "::marker")
+			.getPropertyValue("content"),
+	).toBe('"🔥 "');
 });
 
 test("Pseudo-element cascade and specificity in rendering", async () => {
@@ -162,7 +162,7 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Element that matches all three selectors
 	const element = document.createElement("div");
@@ -204,7 +204,7 @@ test.todo(
   `;
 		document.head.appendChild(style);
 
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		await nextFrame(termdom);
 
 		// Test different content scenarios
 		const quotesEl = document.createElement("div");
@@ -260,7 +260,7 @@ test("Pseudo-elements with inline styles override", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const element = document.createElement("div");
 	element.className = "base";
@@ -300,7 +300,7 @@ test.todo(
   `;
 		document.head.appendChild(style);
 
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		await nextFrame(termdom);
 
 		// Create test structure
 		const container = document.createElement("div");

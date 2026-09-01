@@ -470,25 +470,25 @@ test("keyboard system works with mock TTY", async () => {
 
 	// Test letter key
 	(mockProcess.stdin as any).emit("data", Buffer.from("a"));
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Test number key
 	(mockProcess.stdin as any).emit("data", Buffer.from("5"));
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Test special keys
 	(mockProcess.stdin as any).emit("data", Buffer.from("\r")); // Enter
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	(mockProcess.stdin as any).emit("data", Buffer.from("\t")); // Tab
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Test arrow keys
 	(mockProcess.stdin as any).emit("data", Buffer.from("\x1b[A")); // ArrowUp
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	(mockProcess.stdin as any).emit("data", Buffer.from("\x1b[B")); // ArrowDown
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Verify we got keyboard events
 	expect(events.length).toBeGreaterThan(0);

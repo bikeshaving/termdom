@@ -25,8 +25,7 @@ test("CSS specificity calculation", async () => {
   `;
 	document.head.appendChild(style);
 
-	// Wait for MutationObserver to parse styles
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Specificity is verified through the cascade -- the most specific matching
 	// rule wins in getComputedStyle -- rather than by reading the parser's table.
@@ -126,7 +125,7 @@ test("selector-list pseudo-classes weigh their most specific argument", async ()
 		.has-target.a.b { color: blue; }
 	`;
 	document.head.appendChild(style);
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const host = document.createElement("div");
 	host.innerHTML =
@@ -164,7 +163,7 @@ test("the CSS 2 pseudo-element spelling weighs as an element", async () => {
 		.legacy::before { content: "x"; color: blue; }
 	`;
 	document.head.appendChild(style);
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const element = document.createElement("div");
 	element.className = "legacy";
@@ -192,7 +191,7 @@ test("attribute values do not affect selector specificity", async () => {
 	`;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const element = document.createElement("div");
 	element.className = "target";
@@ -219,7 +218,7 @@ test("CSS cascade resolution", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Test element with multiple applicable rules
 	const div = document.createElement("div");
@@ -258,7 +257,7 @@ test("Pseudo-element CSS support", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const div = document.createElement("div");
 	div.className = "test";
@@ -294,7 +293,7 @@ test("Pseudo-element specificity", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const div = document.createElement("div");
 	div.className = "class";
@@ -327,8 +326,7 @@ test("StyleManager auto-refresh on DOM changes", async () => {
 	style.textContent = ".test { color: red; }";
 	document.head.appendChild(style);
 
-	// Wait for MutationObserver to trigger
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Should automatically pick up new styles
 	computedStyle = termdom.window.getComputedStyle(div);
@@ -337,8 +335,7 @@ test("StyleManager auto-refresh on DOM changes", async () => {
 	// Modify stylesheet content
 	style.textContent = ".test { color: blue; }";
 
-	// Wait for change detection
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Should pick up modified styles
 	computedStyle = termdom.window.getComputedStyle(div);

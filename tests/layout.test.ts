@@ -1,147 +1,132 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
-import {StyleManager} from "../src/internal/cssom.js";
-import {createDocumentWindow} from "../src/internal/dom.js";
-import {
-	LayoutEngine,
-} from "../src/internal/layout.js";
 import {renderTextFragment} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-/**
- * A target's laid-out lines with their text, read through the public
- * fragment walk: the fragments of the target's first text descendant, and
- * the slice of its data each fragment's offsets name.
- */
-function lineTexts(
-	layoutEngine: {
-		lineFragments(node: Text): Array<{
-			rect: DOMRect;
-			startOffset: number;
-			endOffset: number;
-			visualBase: "ltr" | "rtl" | null;
-		}>;
-	},
-	target: Node,
-): Array<{
+/** One laid-out line of a text node, as an author can read it back. */
+interface Line {
 	rect: DOMRect;
 	startOffset: number;
 	endOffset: number;
-	visualBase: "ltr" | "rtl" | null;
 	text: string;
-}> {
+}
+
+/**
+ * The lines a text node was broken into. A Range over a single character
+ * reports the rect of the line that character landed on, so the characters
+ * sharing a line are that line's own: the range of the node's data the line
+ * renders, and the rect a Range over just that range measures.
+ */
+function lineFragments(node: Text): Line[] {
+	const document = node.ownerDocument!;
+	const rectsOver = (start: number, end: number): DOMRect[] => {
+		const range = document.createRange();
+		range.setStart(node, start);
+		range.setEnd(node, end);
+		return Array.from(range.getClientRects());
+	};
+	const lines: Array<{startOffset: number; endOffset: number; y: number}> = [];
+	for (let offset = 0; offset < node.data.length; offset++) {
+		const [rect] = rectsOver(offset, offset + 1);
+		// A character the white-space processing collapsed paints nothing, and
+		// so lands on no line.
+		if (rect === undefined) {
+			continue;
+		}
+		const line = lines[lines.length - 1];
+		if (line !== undefined && line.y === rect.y) {
+			line.endOffset = offset + 1;
+		} else {
+			lines.push({startOffset: offset, endOffset: offset + 1, y: rect.y});
+		}
+	}
+	return lines.map((line) => ({
+		rect: rectsOver(line.startOffset, line.endOffset)[0],
+		startOffset: line.startOffset,
+		endOffset: line.endOffset,
+		text: node.data.slice(line.startOffset, line.endOffset),
+	}));
+}
+
+/** The same, for the first text a target holds. */
+function lineTexts(target: Node): Line[] {
 	let node: Node | null = target;
 	while (node !== null && node.nodeType !== 3) {
 		node = node.firstChild;
 	}
-	if (node === null) {
-		return [];
-	}
-	const text = node as Text;
-	return layoutEngine.lineFragments(text).map((fragment) => ({
-		...fragment,
-		text: text.data.slice(fragment.startOffset, fragment.endOffset),
-	}));
+	return node === null ? [] : lineFragments(node as Text);
 }
 
-/** A document of this DOM, from markup, displayed in a window of its own. */
-function documentWindow(html: string): {
-	window: ReturnType<typeof createDocumentWindow>;
-} {
-	return {window: createDocumentWindow(html)};
+/** The box an element paints, or null where it generates none. */
+function boxOf(element: Element): DOMRect | null {
+	return element.getClientRects().length === 0
+		? null
+		: element.getBoundingClientRect();
 }
 
-function createLayoutEngine(html = "<div></div>"): {
-	dom: ReturnType<typeof documentWindow>;
-	layoutEngine: LayoutEngine;
-	observer: MutationObserver;
-	processMutationsAndLayout: () => void;
-} {
-	const dom = documentWindow(`<!DOCTYPE html><html><head><style>
-		* { margin: 0; padding: 0; box-sizing: border-box; }
-		html, body { width: 100%; }
-		body { min-height: 100%; }
-	</style></head><body>${html}</body></html>`);
-	// Setup terminal-specific getComputedStyle
-	const layoutEngine = new LayoutEngine(dom.window);
-	const styleManager = new StyleManager(dom.window, layoutEngine);
-
-	// Setup MutationObserver to simulate TermDOM behavior
-	const observer = new dom.window.MutationObserver((mutations) => {
-		styleManager.handleMutations(mutations);
-		layoutEngine.handleMutations(mutations);
+/**
+ * This markup in a DOM 300 cells wide and 200 tall, with the UA's own box
+ * model out of the way -- the viewport every measurement here is stated
+ * against.
+ */
+function layoutDOM(html = "<div></div>"): TermDOM {
+	return new TermDOM({
+		html: `<!DOCTYPE html><html><head><style>
+			* { margin: 0; padding: 0; box-sizing: border-box; }
+			html, body { width: 100%; }
+			body { min-height: 100%; }
+		</style></head><body>${html}</body></html>`,
+		transport: new MockProcess({cols: 300, rows: 200}).transport,
 	});
-
-	observer.observe(dom.window.document.documentElement, {
-		childList: true,
-		subtree: true,
-		attributes: true,
-		characterData: true,
-	});
-
-	// Set initial size and calculate layout
-	layoutEngine.resize(300, 200);
-
-	// Helper function to process pending mutations and calculate layout
-	const processMutationsAndLayout = () => {
-		const pendingMutations = observer.takeRecords();
-		if (pendingMutations.length > 0) {
-			styleManager.handleMutations(pendingMutations);
-			layoutEngine.handleMutations(pendingMutations);
-		}
-		layoutEngine.calculateLayout();
-	};
-
-	return {dom, layoutEngine, observer, processMutationsAndLayout};
 }
 
 // CSS properties reaching the layout engine
 test("a pixel width and height size the box", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div style=\"width: 100px; height: 50px;\"></div>",
 	);
-	const div = dom.window.document.querySelector("div")!;
-	const rect = layoutEngine.getRect(div);
+	const div = dom.document.querySelector("div")!;
+	const rect = boxOf(div);
 
 	expect([rect!.width, rect!.height]).toEqual([100, 50]);
 });
 
 test("a percentage width resolves against the container", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div style=\"width: 50%;\"></div>",
 	);
-	const div = dom.window.document.querySelector("div")!;
-	const rect = layoutEngine.getRect(div);
+	const div = dom.document.querySelector("div")!;
+	const rect = boxOf(div);
 
-	// Half of the 300 the engine was resized to.
+	// Half of the 300 columns the viewport has.
 	expect(rect!.width).toBe(150);
 });
 
 test("a margin offsets the box and takes room from its width", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div style=\"margin: 10px;\"></div>",
 	);
-	const div = dom.window.document.querySelector("div")!;
-	const rect = layoutEngine.getRect(div);
+	const div = dom.document.querySelector("div")!;
+	const rect = boxOf(div);
 
 	// Pushed in by 10 on each side, leaving 280 of the 300.
 	expect([rect!.left, rect!.top, rect!.width]).toEqual([10, 10, 280]);
 });
 
 test("flex factors divide the container between the children", () => {
-	const {dom, layoutEngine} = createLayoutEngine(`
+	const dom = layoutDOM(`
 		<div style="display: flex;">
 			<div style="flex: 1;"></div>
 			<div style="flex: 2;"></div>
 		</div>
 	`);
 
-	const container = dom.window.document.querySelector("div")!;
+	const container = dom.document.querySelector("div")!;
 	const children = Array.from(container.children);
 
-	const child1Rect = layoutEngine.getRect(children[0] as Element);
-	const child2Rect = layoutEngine.getRect(children[1] as Element);
+	const child1Rect = boxOf(children[0] as Element);
+	const child2Rect = boxOf(children[1] as Element);
 
 	// One share and two shares of 300.
 	expect([child1Rect!.left, child1Rect!.width]).toEqual([0, 100]);
@@ -150,149 +135,147 @@ test("flex factors divide the container between the children", () => {
 
 // Tree construction tests
 test("addNode - basic element creation", () => {
-	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
-	const div = dom.window.document.createElement("div");
-	dom.window.document.body.appendChild(div);
-
-	// Process mutations and calculate layout
-	processMutationsAndLayout();
+	const dom = layoutDOM();
+	const div = dom.document.createElement("div");
+	dom.document.body.appendChild(div);
 
 	// Should create rect after mutation
-	const rect = layoutEngine.getRect(div);
+	const rect = boxOf(div);
 	expect(rect).not.toBeNull();
 });
 
 test("addNode - nested elements", () => {
-	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
-	const parent = dom.window.document.createElement("div");
-	const child = dom.window.document.createElement("span");
+	const dom = layoutDOM();
+	const parent = dom.document.createElement("div");
+	const child = dom.document.createElement("span");
 
 	parent.appendChild(child);
-	dom.window.document.body.appendChild(parent);
+	dom.document.body.appendChild(parent);
 
-	// Process mutations and calculate layout
-	processMutationsAndLayout();
-
-	// Both should have rects
-	expect(layoutEngine.getRect(parent)).not.toBeNull();
-	expect(layoutEngine.getRect(child)).not.toBeNull();
+	// Both are in the layout: the parent has a box, and the empty inline
+	// measures zero inside it rather than the container's width.
+	expect(boxOf(parent)).not.toBeNull();
+	expect(child.getBoundingClientRect().width).toBe(0);
 });
 
 test("addNode - text nodes", () => {
-	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
-	const div = dom.window.document.createElement("div");
+	const dom = layoutDOM();
+	const div = dom.document.createElement("div");
 	div.textContent = "Hello world";
-	dom.window.document.body.appendChild(div);
-
-	// Process mutations and calculate layout
-	processMutationsAndLayout();
+	dom.document.body.appendChild(div);
 
 	// Text nodes don't get rects directly, but the container should
-	const rect = layoutEngine.getRect(div);
+	const rect = boxOf(div);
 	expect(rect).not.toBeNull();
 });
 
 // Inline run tests
 test("inline elements join runs correctly", () => {
-	const {dom, layoutEngine} = createLayoutEngine(`
+	const dom = layoutDOM(`
 		<div>
 			<span>first</span><span>second</span>
 		</div>
 	`);
 
-	const container = dom.window.document.querySelector("div")!;
+	const container = dom.document.querySelector("div")!;
 
 	// Container should have rect
-	expect(layoutEngine.getRect(container)).not.toBeNull();
+	expect(boxOf(container)).not.toBeNull();
 
 	// Inline spans join runs, so they may not have individual rects
 	// This is correct behavior - they'll be handled during text measurement
 });
 
 test("block elements have separate yoga nodes", () => {
-	const {dom, layoutEngine} = createLayoutEngine(`
+	const dom = layoutDOM(`
 		<div>
 			<div>first block</div>
 			<div>second block</div>
 		</div>
 	`);
 
-	const divs = Array.from(dom.window.document.querySelectorAll("div"));
+	const divs = Array.from(dom.document.querySelectorAll("div"));
 	const innerDivs = divs.slice(1); // Skip the container div
 
 	// Each block div should have its own rect
-	expect(layoutEngine.getRect(innerDivs[0])).not.toBeNull();
-	expect(layoutEngine.getRect(innerDivs[1])).not.toBeNull();
+	expect(boxOf(innerDivs[0])).not.toBeNull();
+	expect(boxOf(innerDivs[1])).not.toBeNull();
 });
 
 // Mutation handling tests
 test("style changes trigger layout updates", () => {
-	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div style=\"width: 100px;\"></div>",
 	);
-	const div = dom.window.document.querySelector("div")!;
+	const div = dom.document.querySelector("div")!;
 
 	// Initial rect
-	let rect = layoutEngine.getRect(div);
+	let rect = boxOf(div);
 	expect(rect?.width).toBe(100);
 
 	// Change style
 	div.style.width = "200px";
-	processMutationsAndLayout(); // Process mutations
 
 	// Updated rect
-	rect = layoutEngine.getRect(div);
+	rect = boxOf(div);
 	expect(rect?.width).toBe(200);
 });
 
 test("element removal cleans up yoga nodes", () => {
-	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><span>test</span></div>",
 	);
-	const div = dom.window.document.querySelector("div")!;
-	const span = dom.window.document.querySelector("span")!;
+	const div = dom.document.querySelector("div")!;
+	const span = dom.document.querySelector("span")!;
 
 	// Both should have rects initially
-	expect(layoutEngine.getRect(div)).not.toBeNull();
-	expect(layoutEngine.getRect(span)).not.toBeNull();
+	expect(boxOf(div)).not.toBeNull();
+	expect(boxOf(span)).not.toBeNull();
 
 	// Remove span
 	span.remove();
-	processMutationsAndLayout(); // Process mutations
 
 	// Span should no longer have rect
-	expect(layoutEngine.getRect(span)).toBeNull();
-	expect(layoutEngine.getRect(div)).not.toBeNull(); // Parent still exists
+	expect(boxOf(span)).toBeNull();
+	expect(boxOf(div)).not.toBeNull(); // Parent still exists
 });
 
 // Edge cases
 test("display none elements", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div style=\"display: none;\"></div>",
 	);
-	const div = dom.window.document.querySelector("div")!;
+	const div = dom.document.querySelector("div")!;
 
 	// A display:none element generates no box, so there is no geometry to
 	// report: an empty client rect, and resolved values that are the computed
 	// ones.
-	expect(layoutEngine.getRect(div)).toBeNull();
+	expect(boxOf(div)).toBeNull();
 });
 
-test("resize updates layout", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div style=\"width: 100%;\"></div>",
-	);
-	const div = dom.window.document.querySelector("div")!;
+test("resize updates layout", async () => {
+	const terminal = new MockProcess({cols: 200, rows: 100});
+	const dom = new TermDOM({
+		html: "<!DOCTYPE html><html><body><div style=\"width: 100%;\"></div></body></html>",
+		transport: terminal.transport,
+	});
+	const div = dom.document.querySelector("div")!;
+	await nextFrame(dom);
 
 	// Initial size
-	layoutEngine.resize(200, 100);
-	let rect = layoutEngine.getRect(div);
-	expect(rect?.width).toBe(200);
+	expect(boxOf(div)?.width).toBe(200);
 
-	// Resize
-	layoutEngine.resize(400, 200);
-	rect = layoutEngine.getRect(div);
-	expect(rect?.width).toBe(400);
+	// Resize: the terminal is the viewport, and it says so with SIGWINCH.
+	terminal.resize(400, 200);
+	(terminal as any).emit("SIGWINCH");
+	const deadline = Date.now() + 2000;
+	while (dom.window.innerWidth !== 400 && Date.now() < deadline) {
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	await nextFrame(dom);
+
+	expect(boxOf(div)?.width).toBe(400);
+	dom.dispose();
 });
 
 // === INLINE RUN LOGIC TESTS ===
@@ -300,23 +283,21 @@ test("resize updates layout", () => {
 // === MUTATION TESTS ===
 
 test("a run whose first node is removed re-measures from the next", () => {
-	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><span>head</span><span>second</span><span>third</span></div>",
 	);
-	const container = dom.window.document.querySelector("div")!;
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	processMutationsAndLayout();
+	const container = dom.document.querySelector("div")!;
+	const spans = Array.from(dom.document.querySelectorAll("span"));
 
 	// Remove head element
 	spans[0].remove();
-	processMutationsAndLayout();
 
 	// The box the run laid out in is the same one, measured from the node
 	// that opens it now: the text that remains starts at the container's
 	// content edge rather than where "head" left off.
 
-	const containerRect = layoutEngine.getRect(container)!;
-	const fragments = lineTexts(layoutEngine, container.firstChild!);
+	const containerRect = boxOf(container)!;
+	const fragments = lineTexts(container.firstChild!);
 	expect(fragments.length).toBe(1);
 	expect(fragments[0].text).toBe("second");
 	expect(fragments[0].rect.x).toBe(containerRect.x);
@@ -324,16 +305,16 @@ test("a run whose first node is removed re-measures from the next", () => {
 });
 
 test("emoji line fragments preserve character boundaries", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<span>🎨 Colorful Text 🌈</span>",
 	);
 
-	const span = dom.window.document.querySelector("span")!;
+	const span = dom.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
 	const originalText = textNode.textContent!;
 
 	// Walk the line fragments and rebuild the text from their offsets
-	const fragments = layoutEngine.lineFragments(textNode);
+	const fragments = lineFragments(textNode);
 
 	// Test that the fragments cover the original
 	let reconstructedText = "";
@@ -354,17 +335,17 @@ test("emoji line fragments preserve character boundaries", () => {
 });
 
 test("line fragment slicing mismatch with whitespace", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div style=\"width: 20ch;\"><span>Hello   </span><span>World</span></div>",
 	);
 
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.document.querySelectorAll("span"));
 	const firstSpan = spans[0];
 	const secondSpan = spans[1];
 
 	// Get RectTexts for both spans
-	const rectTexts1 = lineTexts(layoutEngine, firstSpan.firstChild as Text);
-	const rectTexts2 = lineTexts(layoutEngine, secondSpan.firstChild as Text);
+	const rectTexts1 = lineTexts(firstSpan.firstChild as Text);
+	const rectTexts2 = lineTexts(secondSpan.firstChild as Text);
 
 	// The original DOM text vs processed text difference
 	const originalText1 = firstSpan.textContent!; // "Hello   " (8 chars)
@@ -385,7 +366,7 @@ test("line fragment slicing mismatch with whitespace", () => {
 test("whitespace processing produces correct measurements", () => {
 	// Test that our whitespace processing fixes work correctly
 	// Use regular block layout to avoid flexbox complexity
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		`<div>
 			<span>Text </span>
 			<span>🚀</span>
@@ -394,8 +375,8 @@ test("whitespace processing produces correct measurements", () => {
 	);
 
 	// The container should have a valid rect since it contains the inline content
-	const container = dom.window.document.querySelector("div")!;
-	const containerRect = layoutEngine.getRect(container);
+	const container = dom.document.querySelector("div")!;
+	const containerRect = boxOf(container);
 
 	// The inline content should be measured correctly by our fixed whitespace processing
 	// We don't test individual span rects (they're part of inline flow),
@@ -405,44 +386,44 @@ test("whitespace processing produces correct measurements", () => {
 });
 
 test("inline-block elements should get individual rects", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		`<div>
 			<div style="display: inline-block;">Block1</div>
 			<div style="display: inline-block;">Block2</div>
 		</div>`,
 	);
 
-	const container = dom.window.document.querySelector("div")!;
+	const container = dom.document.querySelector("div")!;
 	const inlineBlocks = Array.from(
-		dom.window.document.querySelectorAll("div"),
+		dom.document.querySelectorAll("div"),
 	).slice(1);
 
 	// Container should have a rect
-	expect(layoutEngine.getRect(container)).not.toBeNull();
+	expect(boxOf(container)).not.toBeNull();
 
 	// Each inline-block should also have its own rect (unlike regular inline elements)
-	expect(layoutEngine.getRect(inlineBlocks[0])).not.toBeNull();
-	expect(layoutEngine.getRect(inlineBlocks[1])).not.toBeNull();
+	expect(boxOf(inlineBlocks[0])).not.toBeNull();
+	expect(boxOf(inlineBlocks[1])).not.toBeNull();
 
 	// Both elements should have width equal to their content (6 chars each)
-	const rect1 = layoutEngine.getRect(inlineBlocks[0]);
-	const rect2 = layoutEngine.getRect(inlineBlocks[1]);
+	const rect1 = boxOf(inlineBlocks[0]);
+	const rect2 = boxOf(inlineBlocks[1]);
 	expect(rect1!.width).toBe(6); // "Block1" = 6 chars
 	expect(rect2!.width).toBe(6); // "Block2" = 6 chars
 });
 
 test("inline head element gets incorrect rect from yoga node", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><span>Head</span><span>Tail</span></div>",
 	);
 
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.document.querySelectorAll("span"));
 
 	// The head should report width of just its content (4), not the entire run
 	// (8) -- but it reports the run's width, because both spans share the one
 	// layout node their inline run was laid out as.
-	const headRect = layoutEngine.getRect(spans[0]);
-	const tailRect = layoutEngine.getRect(spans[1]);
+	const headRect = boxOf(spans[0]);
+	const tailRect = boxOf(spans[1]);
 
 	// This test demonstrates the bug: head element reports container width instead of content width
 	// Expected: head should report width 4 ("Head"), tail should report width 4 ("Tail")
@@ -452,7 +433,7 @@ test("inline head element gets incorrect rect from yoga node", () => {
 });
 
 test("inline run with mixed content - whitespace handling", () => {
-	const {dom, layoutEngine: _layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div>Start <span>middle  </span> <em>end</em></div>",
 	);
 
@@ -462,25 +443,25 @@ test("inline run with mixed content - whitespace handling", () => {
 
 	// Test passes if no errors are thrown during layout calculation
 	// This demonstrates that the whitespace processing works correctly
-	const container = dom.window.document.querySelector("div")!;
+	const container = dom.document.querySelector("div")!;
 	expect(container).not.toBeNull(); // Layout calculation completed successfully
 });
 
 test("text truncation due to fragment offset accumulation error", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		`<div style="width: 12ch;">
 			<span>First   </span><span>Second   </span><span>Third</span>
 		</div>`,
 	);
 
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.document.querySelectorAll("span"));
 
 	// Each span's trailing spaces get trimmed in processing
 	// This creates an accumulating error in width calculations
 	// Later spans might get truncated due to insufficient allocated space
 
 	spans.forEach((span, _i) => {
-		const rectTexts = lineTexts(layoutEngine, span.firstChild as Text);
+		const rectTexts = lineTexts(span.firstChild as Text);
 		const originalLength = span.textContent!.length;
 		const processedLength = rectTexts.reduce(
 			(sum, rt) => sum + rt.text.length,
@@ -498,12 +479,12 @@ test("text truncation due to fragment offset accumulation error", () => {
 // === GETRECTEXTS WITH INLINE-BLOCK TESTS ===
 
 test("line fragments - regular inline element (baseline)", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><span>RegularInline</span></div>",
 	);
 
-	const span = dom.window.document.querySelector("span")!;
-	const rectTexts = lineTexts(layoutEngine, span);
+	const span = dom.document.querySelector("span")!;
+	const rectTexts = lineTexts(span);
 
 	// Regular inline elements should work
 	expect(rectTexts).toHaveLength(1);
@@ -512,13 +493,13 @@ test("line fragments - regular inline element (baseline)", () => {
 });
 
 test("line fragments - text node in regular inline element", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><span>TextContent</span></div>",
 	);
 
-	const span = dom.window.document.querySelector("span")!;
+	const span = dom.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
-	const rectTexts = lineTexts(layoutEngine, textNode);
+	const rectTexts = lineTexts(textNode);
 
 	// Text nodes should work
 	expect(rectTexts).toHaveLength(1);
@@ -526,12 +507,12 @@ test("line fragments - text node in regular inline element", () => {
 });
 
 test("line fragments - element inside inline-block container", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><div style=\"display: inline-block;\"><span>InsideBlock</span></div></div>",
 	);
 
-	const span = dom.window.document.querySelector("span")!;
-	const rectTexts = lineTexts(layoutEngine, span);
+	const span = dom.document.querySelector("span")!;
+	const rectTexts = lineTexts(span);
 
 	// This was the main broken case - should now work
 	expect(rectTexts).toHaveLength(1);
@@ -540,13 +521,13 @@ test("line fragments - element inside inline-block container", () => {
 });
 
 test("line fragments - text node inside inline-block container", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><div style=\"display: inline-block;\"><span>BlockText</span></div></div>",
 	);
 
-	const span = dom.window.document.querySelector("span")!;
+	const span = dom.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
-	const rectTexts = lineTexts(layoutEngine, textNode);
+	const rectTexts = lineTexts(textNode);
 
 	// Text nodes inside inline-blocks should work
 	expect(rectTexts).toHaveLength(1);
@@ -554,12 +535,12 @@ test("line fragments - text node inside inline-block container", () => {
 });
 
 test("line fragments - nested elements inside inline-block", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><div style=\"display: inline-block;\"><span><em>Nested</em></span></div></div>",
 	);
 
-	const em = dom.window.document.querySelector("em")!;
-	const rectTexts = lineTexts(layoutEngine, em);
+	const em = dom.document.querySelector("em")!;
+	const rectTexts = lineTexts(em);
 
 	// Nested elements inside inline-blocks should work
 	expect(rectTexts).toHaveLength(1);
@@ -567,13 +548,13 @@ test("line fragments - nested elements inside inline-block", () => {
 });
 
 test("line fragments - multiple children in inline-block", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><div style=\"display: inline-block;\"><span>First</span><span>Second</span></div></div>",
 	);
 
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	const firstRects = lineTexts(layoutEngine, spans[0]);
-	const secondRects = lineTexts(layoutEngine, spans[1]);
+	const spans = Array.from(dom.document.querySelectorAll("span"));
+	const firstRects = lineTexts(spans[0]);
+	const secondRects = lineTexts(spans[1]);
 
 	// Both children should work independently
 	expect(firstRects).toHaveLength(1);
@@ -583,7 +564,7 @@ test("line fragments - multiple children in inline-block", () => {
 });
 
 test("line fragments - deeply nested inline-block", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		`<div>
 			<div style="display: inline-block;">
 				<div><span><em>DeepNested</em></span></div>
@@ -591,8 +572,8 @@ test("line fragments - deeply nested inline-block", () => {
 		</div>`,
 	);
 
-	const em = dom.window.document.querySelector("em")!;
-	const rectTexts = lineTexts(layoutEngine, em);
+	const em = dom.document.querySelector("em")!;
+	const rectTexts = lineTexts(em);
 
 	// Deep nesting should work
 	expect(rectTexts).toHaveLength(1);
@@ -600,7 +581,7 @@ test("line fragments - deeply nested inline-block", () => {
 });
 
 test("line fragments - inline-block with mixed content", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		`<div>
 			<div style="display: inline-block;">
 				Text <span>element</span> more text
@@ -608,8 +589,8 @@ test("line fragments - inline-block with mixed content", () => {
 		</div>`,
 	);
 
-	const span = dom.window.document.querySelector("span")!;
-	const rectTexts = lineTexts(layoutEngine, span);
+	const span = dom.document.querySelector("span")!;
+	const rectTexts = lineTexts(span);
 
 	// Element in mixed content should work
 	expect(rectTexts).toHaveLength(1);
@@ -617,16 +598,16 @@ test("line fragments - inline-block with mixed content", () => {
 });
 
 test("line fragments - multiple inline-blocks", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		`<div>
 			<div style="display: inline-block;"><span>Block1</span></div>
 			<div style="display: inline-block;"><span>Block2</span></div>
 		</div>`,
 	);
 
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	const rects1 = lineTexts(layoutEngine, spans[0]);
-	const rects2 = lineTexts(layoutEngine, spans[1]);
+	const spans = Array.from(dom.document.querySelectorAll("span"));
+	const rects1 = lineTexts(spans[0]);
+	const rects2 = lineTexts(spans[1]);
 
 	// Elements in separate inline-blocks should work
 	expect(rects1).toHaveLength(1);
@@ -636,12 +617,12 @@ test("line fragments - multiple inline-blocks", () => {
 });
 
 test("line fragments - inline-block container element itself", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div><div style=\"display: inline-block;\">Container</div></div>",
 	);
 
-	const inlineBlock = dom.window.document.querySelector("div[style]")!;
-	const rectTexts = lineTexts(layoutEngine, inlineBlock);
+	const inlineBlock = dom.document.querySelector("div[style]")!;
+	const rectTexts = lineTexts(inlineBlock);
 
 	// Inline-block container itself should work (all its text content)
 	expect(rectTexts).toHaveLength(1);
@@ -649,7 +630,7 @@ test("line fragments - inline-block container element itself", () => {
 });
 
 test("line fragments - position accuracy in inline-block", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		`<div>
 			<div style="display: inline-block; padding: 2px;">
 				<span>Padded</span>
@@ -657,8 +638,8 @@ test("line fragments - position accuracy in inline-block", () => {
 		</div>`,
 	);
 
-	const span = dom.window.document.querySelector("span")!;
-	const rectTexts = lineTexts(layoutEngine, span);
+	const span = dom.document.querySelector("span")!;
+	const rectTexts = lineTexts(span);
 
 	// Should work and have reasonable position (accounting for padding)
 	expect(rectTexts).toHaveLength(1);
@@ -668,7 +649,7 @@ test("line fragments - position accuracy in inline-block", () => {
 });
 
 test("line fragments - maintains backward compatibility", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		`<div>
 			<span>Regular</span>
 			<div style="display: inline-block;"><span>InBlock</span></div>
@@ -676,10 +657,10 @@ test("line fragments - maintains backward compatibility", () => {
 		</div>`,
 	);
 
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	const regularRects = lineTexts(layoutEngine, spans[0]); // Regular inline
-	const blockRects = lineTexts(layoutEngine, spans[1]); // Inside inline-block
-	const normalRects = lineTexts(layoutEngine, spans[2]); // Regular inline
+	const spans = Array.from(dom.document.querySelectorAll("span"));
+	const regularRects = lineTexts(spans[0]); // Regular inline
+	const blockRects = lineTexts(spans[1]); // Inside inline-block
+	const normalRects = lineTexts(spans[2]); // Regular inline
 
 	// All should work correctly
 	expect(regularRects).toHaveLength(1);
@@ -693,13 +674,13 @@ test("line fragments - maintains backward compatibility", () => {
 // === LINE FRAGMENT DATA RANGES ===
 
 test("line fragment offsets render back to the text the line was broken into", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		`<div style="width: 12ch;">The   quick
 			brown fox jumps over it</div>`,
 	);
 
-	const textNode = dom.window.document.querySelector("div")!.firstChild as Text;
-	const fragments = layoutEngine.lineFragments(textNode);
+	const textNode = dom.document.querySelector("div")!.firstChild as Text;
+	const fragments = lineFragments(textNode);
 	expect(
 		fragments.map((fragment) =>
 			renderTextFragment(
@@ -707,7 +688,6 @@ test("line fragment offsets render back to the text the line was broken into", (
 				"normal",
 				fragment.startOffset,
 				fragment.endOffset,
-				fragment.visualBase,
 			),
 		),
 	).toEqual(["The quick ", "brown fox ", "jumps over ", "it"]);
@@ -736,19 +716,15 @@ describe("white-space rendering round-trips through fragments", () => {
 	]) {
 		for (const [name, data] of cases) {
 			test(`${whiteSpace}: ${name}`, () => {
-				const {layoutEngine, dom, processMutationsAndLayout} =
-					createLayoutEngine(
-						`<div style="width: 6ch; white-space: ${whiteSpace};"></div>`,
-					);
-				const document = dom.window.document;
+				const dom = layoutDOM(
+					`<div style="width: 6ch; white-space: ${whiteSpace};"></div>`,
+				);
+				const document = dom.document;
 				const div = document.querySelector("div")!;
 				const textNode = document.createTextNode(data);
 				div.appendChild(textNode);
-				// The observer delivers on a microtask, so laying out without
-				// draining it first lays out a document with no text in it.
-				processMutationsAndLayout();
 
-				const fragments = layoutEngine.lineFragments(textNode);
+				const fragments = lineFragments(textNode);
 				expect(fragments.length).toBeGreaterThan(0);
 				let reconstructed = "";
 				for (const fragment of fragments) {
@@ -759,7 +735,6 @@ describe("white-space rendering round-trips through fragments", () => {
 						whiteSpace,
 						fragment.startOffset,
 						fragment.endOffset,
-						fragment.visualBase,
 					);
 				}
 				// Every fragment renders back to characters the full
@@ -789,12 +764,12 @@ describe("white-space rendering round-trips through fragments", () => {
 });
 
 test("line fragment offsets render back under pre-wrap", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div style=\"width: 10ch; white-space: pre-wrap;\">a  b\nlong  line here</div>",
 	);
 
-	const textNode = dom.window.document.querySelector("div")!.firstChild as Text;
-	const fragments = lineTexts(layoutEngine, textNode);
+	const textNode = dom.document.querySelector("div")!.firstChild as Text;
+	const fragments = lineTexts(textNode);
 	expect(fragments.length).toBeGreaterThan(1);
 	for (const fragment of fragments) {
 		expect(
@@ -803,24 +778,23 @@ test("line fragment offsets render back under pre-wrap", () => {
 				"pre-wrap",
 				fragment.startOffset,
 				fragment.endOffset,
-				fragment.visualBase,
 			),
 		).toBe(fragment.text);
 	}
 });
 
 test("a Range over a text node reports the rects of its line fragments", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div style=\"width: 12ch;\">wrapping prose across several lines</div>",
 	);
 
-	const textNode = dom.window.document.querySelector("div")!.firstChild as Text;
-	const range = dom.window.document.createRange();
+	const textNode = dom.document.querySelector("div")!.firstChild as Text;
+	const range = dom.document.createRange();
 	range.setStart(textNode, 0);
 	range.setEnd(textNode, textNode.data.length);
 
-	const fragments = layoutEngine.lineFragments(textNode);
-	const rects = layoutEngine.getRangeRects(range);
+	const fragments = lineFragments(textNode);
+	const rects = Array.from(range.getClientRects());
 	expect(rects).toHaveLength(fragments.length);
 	for (let i = 0; i < rects.length; i++) {
 		expect(rects[i].x).toBe(fragments[i].rect.x);
@@ -1209,19 +1183,17 @@ test("Complex inline run with mixed content types", async () => {
 // These tests document the core issue affecting nested lists and other content
 
 test("Block child positioned after parent text content", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div>Parent text<div>Child content</div></div>",
 	);
 
-	layoutEngine.calculateLayout();
-
-	const parent = dom.window.document.querySelector("div")!;
+	const parent = dom.document.querySelector("div")!;
 	const child = parent.querySelector("div")!;
 	const textNode = parent.firstChild!;
 
-	const parentRect = layoutEngine.getRect(parent)!;
-	const childRect = layoutEngine.getRect(child)!;
-	const textRects = lineTexts(layoutEngine, textNode);
+	const parentRect = boxOf(parent)!;
+	const childRect = boxOf(child)!;
+	const textRects = lineTexts(textNode);
 
 	// Parent should have height for text + child
 	expect(parentRect.height).toBe(2);
@@ -1512,31 +1484,13 @@ test("a resolved value measures the layout the last style write asked for", asyn
 // These tests verify that DOM mutations are properly handled by the MutationObserver,
 // which automatically triggers layout invalidation when elements are added/removed.
 
-function createTermDOM(html = "<div></div>"): {
-	document: Document;
-	layoutEngine: LayoutEngine;
-	frame: () => void;
-} {
-	const {layoutEngine, dom, processMutationsAndLayout} =
-		createLayoutEngine(html);
-	return {
-		document: dom.window.document as unknown as Document,
-		layoutEngine,
-		frame: processMutationsAndLayout,
-	};
-}
-
-function getPosition(layoutEngine: any, element: Element): number {
-	try {
-		const rects = lineTexts(layoutEngine, element);
-		return rects[0]?.rect.x ?? -1;
-	} catch (_err) {
-		return -1;
-	}
+/** Where an element's first line sits, or -1 where it lays out nowhere. */
+function getPosition(element: Element): number {
+	return lineTexts(element)[0]?.rect.x ?? -1;
 }
 
 test("inline element removal preserves positioning", async () => {
-	const {document, layoutEngine, frame} = createTermDOM();
+	const {document} = layoutDOM();
 
 	// Create inline run: A B C
 	const container = document.createElement("div");
@@ -1553,28 +1507,24 @@ test("inline element removal preserves positioning", async () => {
 	container.appendChild(span3);
 	document.body.appendChild(container);
 
-	// Initial render
-	frame();
-	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
-	expect(getPosition(layoutEngine, span2)).toBe(1); // B at x=1
-	expect(getPosition(layoutEngine, span3)).toBe(2); // C at x=2
+	expect(getPosition(span1)).toBe(0); // A at x=0
+	expect(getPosition(span2)).toBe(1); // B at x=1
+	expect(getPosition(span3)).toBe(2); // C at x=2
 
 	// Remove middle element
 	container.removeChild(span2);
-	frame();
-	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
-	expect(getPosition(layoutEngine, span3)).toBe(1); // C at x=1 (moved left)
+	expect(getPosition(span1)).toBe(0); // A at x=0
+	expect(getPosition(span3)).toBe(1); // C at x=1 (moved left)
 
 	// Re-add at end
 	container.appendChild(span2);
-	frame();
-	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
-	expect(getPosition(layoutEngine, span3)).toBe(1); // C at x=1
-	expect(getPosition(layoutEngine, span2)).toBe(2); // B at x=2 (at end)
+	expect(getPosition(span1)).toBe(0); // A at x=0
+	expect(getPosition(span3)).toBe(1); // C at x=1
+	expect(getPosition(span2)).toBe(2); // B at x=2 (at end)
 });
 
 test("inline element removal in same position preserves layout", async () => {
-	const {document, layoutEngine, frame} = createTermDOM();
+	const {document} = layoutDOM();
 
 	// Create inline run: A B C
 	const container = document.createElement("div");
@@ -1591,30 +1541,26 @@ test("inline element removal in same position preserves layout", async () => {
 	container.appendChild(span3);
 	document.body.appendChild(container);
 
-	// Initial render
-	frame();
 	const initialPositions = [
-		getPosition(layoutEngine, span1),
-		getPosition(layoutEngine, span2),
-		getPosition(layoutEngine, span3),
+		getPosition(span1),
+		getPosition(span2),
+		getPosition(span3),
 	];
 
 	// Remove middle element and re-add in exact same position
 	const nextSibling = span2.nextSibling;
 	container.removeChild(span2);
-	frame();
 
 	container.insertBefore(span2, nextSibling);
-	frame();
 
 	// Positions should be identical to initial state
-	expect(getPosition(layoutEngine, span1)).toBe(initialPositions[0]);
-	expect(getPosition(layoutEngine, span2)).toBe(initialPositions[1]);
-	expect(getPosition(layoutEngine, span3)).toBe(initialPositions[2]);
+	expect(getPosition(span1)).toBe(initialPositions[0]);
+	expect(getPosition(span2)).toBe(initialPositions[1]);
+	expect(getPosition(span3)).toBe(initialPositions[2]);
 });
 
 test("run head removal transfers to next inline element", async () => {
-	const {document, layoutEngine, frame} = createTermDOM();
+	const {document} = layoutDOM();
 
 	// Create inline run where first element is run head
 	const container = document.createElement("div");
@@ -1628,35 +1574,31 @@ test("run head removal transfers to next inline element", async () => {
 	container.appendChild(span2);
 	document.body.appendChild(container);
 
-	frame();
-
 	// Verify span1 is the run head initially
 
 	// Remove the run head
 	container.removeChild(span1);
-	frame();
 
 	// span2 should become the new run head and have correct position
-	const rects = lineTexts(layoutEngine, span2);
+	const rects = lineTexts(span2);
 	expect(rects.length).toBeGreaterThan(0);
 	expect(rects[0].text).toBe("SECOND");
 	expect(rects[0].rect.x).toBe(0); // Should start at position 0
 
 	// Re-add original run head at beginning
 	container.insertBefore(span1, span2);
-	frame();
 
 	// span1 should become run head again with both elements correctly positioned
 
-	const rects1 = lineTexts(layoutEngine, span1);
-	const rects2 = lineTexts(layoutEngine, span2);
+	const rects1 = lineTexts(span1);
+	const rects2 = lineTexts(span2);
 
 	expect(rects1[0].rect.x).toBe(0); // FIRST at x=0
 	expect(rects2[0].rect.x).toBe(5); // SECOND at x=5 (after "FIRST")
 });
 
 test("block element removal merges adjacent inline runs", async () => {
-	const {document, layoutEngine, frame} = createTermDOM();
+	const {document} = layoutDOM();
 
 	// Create: span1 - div - span2 (separate inline runs)
 	const container = document.createElement("div");
@@ -1673,21 +1615,18 @@ test("block element removal merges adjacent inline runs", async () => {
 	container.appendChild(span2);
 	document.body.appendChild(container);
 
-	frame();
-
 	// Remove block element
 	container.removeChild(blockDiv);
-	frame();
 
 	// Now span1 and span2 should share the same run head (span1)
 
 	// Both should be positioned correctly in the merged run
-	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
-	expect(getPosition(layoutEngine, span2)).toBe(1); // B at x=1
+	expect(getPosition(span1)).toBe(0); // A at x=0
+	expect(getPosition(span2)).toBe(1); // B at x=1
 });
 
 test("text node removal invalidates inline runs", async () => {
-	const {document, layoutEngine, frame} = createTermDOM();
+	const {document} = layoutDOM();
 
 	// Create inline run with text node
 	const container = document.createElement("div");
@@ -1700,25 +1639,22 @@ test("text node removal invalidates inline runs", async () => {
 	container.appendChild(textNode);
 	document.body.appendChild(container);
 
-	frame();
-
 	// Both should be positioned correctly
-	expect(getPosition(layoutEngine, span)).toBe(0);
-	const spanRects = lineTexts(layoutEngine, span);
+	expect(getPosition(span)).toBe(0);
+	const spanRects = lineTexts(span);
 	expect(spanRects[0].text).toBe("SPAN");
 
 	// Remove text node
 	container.removeChild(textNode);
-	frame();
 
 	// Span should still work correctly
-	expect(getPosition(layoutEngine, span)).toBe(0);
-	const newSpanRects = lineTexts(layoutEngine, span);
+	expect(getPosition(span)).toBe(0);
+	const newSpanRects = lineTexts(span);
 	expect(newSpanRects[0].text).toBe("SPAN");
 });
 
 test("multiple element removal handles invalidation correctly", async () => {
-	const {document, layoutEngine, frame} = createTermDOM();
+	const {document} = layoutDOM();
 
 	// Create inline run: A B C D E
 	const container = document.createElement("div");
@@ -1731,22 +1667,19 @@ test("multiple element removal handles invalidation correctly", async () => {
 	}
 	document.body.appendChild(container);
 
-	frame();
-
 	// Verify initial positions
 	spans.forEach((span, i) => {
-		expect(getPosition(layoutEngine, span)).toBe(i);
+		expect(getPosition(span)).toBe(i);
 	});
 
 	// Remove multiple elements (B and D)
 	container.removeChild(spans[1]); // Remove B
 	container.removeChild(spans[3]); // Remove D
-	frame();
 
 	// Remaining elements should be positioned correctly: A C E
-	expect(getPosition(layoutEngine, spans[0])).toBe(0); // A at x=0
-	expect(getPosition(layoutEngine, spans[2])).toBe(1); // C at x=1
-	expect(getPosition(layoutEngine, spans[4])).toBe(2); // E at x=2
+	expect(getPosition(spans[0])).toBe(0); // A at x=0
+	expect(getPosition(spans[2])).toBe(1); // C at x=1
+	expect(getPosition(spans[4])).toBe(2); // E at x=2
 });
 
 // These tests verify that the layout invalidation logic works correctly. A DOM
@@ -1828,15 +1761,15 @@ test("an empty inline element measures zero, not its container's width", async (
 	// used to fall through to the layout node and report the containing block's
 	// width. `<div style="width:30ch"><span></span></div>` measured the span at
 	// 30 columns instead of 0.
-	const {dom, layoutEngine} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div style=\"width:30ch\"><span id=\"e\"></span><span id=\"n\"><b>hi</b></span></div>",
 	);
-	const empty = dom.window.document.getElementById("e")!;
-	const nested = dom.window.document.getElementById("n")!;
+	const empty = dom.document.getElementById("e")!;
+	const nested = dom.document.getElementById("n")!;
 
-	expect(layoutEngine.getRect(empty)?.width).toBe(0);
+	expect(empty.getBoundingClientRect().width).toBe(0);
 	// An inline whose text lives in a nested inline still measures that text.
-	expect(layoutEngine.getRect(nested)?.width).toBe(2);
+	expect(nested.getBoundingClientRect().width).toBe(2);
 });
 
 describe("width sizing keywords", () => {
@@ -1911,12 +1844,11 @@ test("white space beside an out-of-flow box collapses as if it were absent", () 
 	// beside, so the container has no line to be one row tall for. The
 	// collapsing test read the COMPUTED display, where the <b> is still an
 	// inline, rather than the used one, where it has blockified.
-	const {layoutEngine, dom, processMutationsAndLayout} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<div id=\"host\">   <b style=\"position: absolute\"></b></div>",
 	);
-	processMutationsAndLayout();
-	const host = dom.window.document.getElementById("host")!;
-	expect(layoutEngine.getRect(host)!.height).toBe(0);
+	const host = dom.document.getElementById("host")!;
+	expect(boxOf(host)!.height).toBe(0);
 });
 
 test("a broken inline is not sized by an out-of-flow descendant", () => {
@@ -1925,12 +1857,11 @@ test("a broken inline is not sized by an out-of-flow descendant", () => {
 	// against its containing block and is no part of them, so the union is
 	// empty -- the walk that gathers the fragments was descending into the
 	// child on its computed display.
-	const {layoutEngine, dom, processMutationsAndLayout} = createLayoutEngine(
+	const dom = layoutDOM(
 		"<b id=\"split\"><div></div>" +
 		"<div style=\"display: inline-block; position: absolute\">t000</div></b>",
 	);
-	processMutationsAndLayout();
-	const split = dom.window.document.getElementById("split")!;
-	const rect = layoutEngine.getRect(split);
+	const split = dom.document.getElementById("split")!;
+	const rect = boxOf(split);
 	expect(rect === null || rect.width === 0).toBe(true);
 });

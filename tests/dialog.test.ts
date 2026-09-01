@@ -7,7 +7,6 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {DOMParser} from "../src/internal/dom.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -251,7 +250,10 @@ test("close falls back to the body when the opener left the document", async () 
 });
 
 test("a headless document moves focus state through show and close", () => {
-	const document = new DOMParser().parseFromString(
+	// A parser is a window's, and the document it hands back has a window of
+	// neither its own nor anyone else's -- which is the case under test.
+	const {window} = new TermDOM({transport: new MockProcess().transport});
+	const document = new window.DOMParser().parseFromString(
 		"<!doctype html><button id=\"page\">page</button>" +
 		"<dialog><button id=\"ok\">OK</button></dialog>",
 		"text/html",

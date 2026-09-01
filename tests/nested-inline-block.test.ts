@@ -5,28 +5,24 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {StyleManager} from "../src/internal/cssom.js";
-import {createDocumentWindow} from "../src/internal/dom.js";
-import {LayoutEngine} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils";
 
 /**
- * The breaker under test, over a document of the test's own: build the
- * tree, then lay it out with an engine the test constructs -- the same
- * two public classes the real engine wires together.
+ * The lines a text node was broken into, as an author reads them: a Range
+ * over the node reports one rect per line fragment.
  */
-function layOut(window: ReturnType<typeof createDocumentWindow>): LayoutEngine {
-	const layoutEngine = new LayoutEngine(window);
-	const styleManager = new StyleManager(window, layoutEngine);
-	styleManager.refreshStylesheets();
-	layoutEngine.calculateLayout();
-	return layoutEngine;
+function lineRects(node: Text): DOMRect[] {
+	const range = node.ownerDocument!.createRange();
+	range.setStart(node, 0);
+	range.setEnd(node, node.data.length);
+	return Array.from(range.getClientRects());
 }
 
 test("line fragments should work for text nodes in nested inline-blocks", async () => {
-	const window = createDocumentWindow("<!DOCTYPE html><body></body>");
-	const {document} = window;
+	const terminal = new MockProcess({cols: 50, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
 
 	const outer = document.createElement("div");
 	outer.style.display = "inline-block";
@@ -41,31 +37,21 @@ test("line fragments should work for text nodes in nested inline-blocks", async 
 	inner.textContent = "Second";
 	outer.appendChild(inner);
 
-	const layoutEngine = layOut(window);
+	await nextFrame(dom);
 
 	// Test the fragment walk on individual text nodes
-	const spanTextNode = span.firstChild as Text;
-	const innerTextNode = inner.firstChild as Text;
-
-	const spanRects = layoutEngine.lineFragments(spanTextNode);
-	const innerRects = layoutEngine.lineFragments(innerTextNode);
+	const spanRects = lineRects(span.firstChild as Text);
+	const innerRects = lineRects(inner.firstChild as Text);
 
 	// Both text nodes should return valid rects
 	expect(spanRects).toHaveLength(1);
-	expect(
-		spanTextNode.data.slice(spanRects[0].startOffset, spanRects[0].endOffset),
-	).toBe("First ");
-
 	expect(innerRects).toHaveLength(1);
-	expect(
-		innerTextNode.data.slice(
-			innerRects[0].startOffset,
-			innerRects[0].endOffset,
-		),
-	).toBe("Second");
 
 	// Positions should be different (side by side)
-	expect(innerRects[0].rect.x).toBeGreaterThan(spanRects[0].rect.x);
+	expect(innerRects[0].x).toBeGreaterThan(spanRects[0].x);
+	expect(terminal.getVisibleText()).toContain("First Second");
+
+	dom.dispose();
 });
 
 test("nested inline-block should render both texts", async () => {
@@ -109,8 +95,9 @@ test("nested inline-block should render both texts", async () => {
 });
 
 test("deeply nested inline-blocks should work", async () => {
-	const window = createDocumentWindow("<!DOCTYPE html><body></body>");
-	const {document} = window;
+	const terminal = new MockProcess({cols: 50, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
 
 	// Create: outer > middle > inner structure
 	const outer = document.createElement("div");
@@ -127,19 +114,16 @@ test("deeply nested inline-blocks should work", async () => {
 	inner.textContent = "Inner";
 	middle.appendChild(inner);
 
-	const layoutEngine = layOut(window);
+	await nextFrame(dom);
 
 	// Test the fragment walk on the deepest text node
-	const innerTextNode = inner.firstChild as Text;
-	const innerRects = layoutEngine.lineFragments(innerTextNode);
+	const innerRects = lineRects(inner.firstChild as Text);
 
 	expect(innerRects).toHaveLength(1);
-	expect(
-		innerTextNode.data.slice(
-			innerRects[0].startOffset,
-			innerRects[0].endOffset,
-		),
-	).toBe("Inner");
+	expect(innerRects[0].width).toBe("Inner".length);
+	expect(terminal.getVisibleText()).toContain("Middle Inner");
+
+	dom.dispose();
 });
 
 test("mixed content in nested inline-blocks", async () => {

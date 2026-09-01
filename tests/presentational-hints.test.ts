@@ -15,19 +15,19 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {StyleManager} from "../src/internal/cssom.js";
-import {createDocumentWindow} from "../src/internal/dom.js";
-import {LayoutEngine} from "../src/internal/layout.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {UA_DOCUMENT_STYLES} from "../src/internal/useragent.js";
+import {MockProcess} from "./test-utils.js";
 
 /** The computed value of a property on the element an id names. */
 function computed(html: string, id: string, property: string): string {
-	const window = createDocumentWindow(
-		`<!DOCTYPE html><html><body>${html}</body></html>`,
-	);
-	new StyleManager(window, new LayoutEngine(window));
-	const element = window.document.getElementById(id)!;
-	return window.getComputedStyle(element).getPropertyValue(property);
+	const {window, document} = new TermDOM({
+		html: `<!DOCTYPE html><html><body>${html}</body></html>`,
+		transport: new MockProcess().transport,
+	});
+	return window
+		.getComputedStyle(document.getElementById(id)!)
+		.getPropertyValue(property);
 }
 
 /**

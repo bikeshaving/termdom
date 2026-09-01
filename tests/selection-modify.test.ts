@@ -7,25 +7,16 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {type Document, DOMParser, Window} from "../src/internal/dom.js";
-
-// The door a test document comes through. The parser is the one that hands
-// a document the realm's custom element registry, as it does the engine's.
-function createHTMLDocument(title?: string): Document {
-	return new DOMParser().parseFromString(
-		title === undefined
-			? "<!doctype html>"
-			: `<!doctype html><title>${title}</title>`,
-		"text/html",
-	) as unknown as Document;
-}
-
+import {createDocumentWindow} from "../src/internal/dom.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
+// The door a test document comes through: a document of this DOM, in the
+// window whose selection the tests move, and with no terminal behind it.
 function withText(html: string): any {
-	const document = createHTMLDocument("") as any;
-	new Window(document);
+	const {document} = createDocumentWindow(
+		"<!doctype html><title></title>",
+	) as any;
 	document.body.innerHTML = html;
 	return document;
 }

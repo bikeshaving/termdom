@@ -35,6 +35,14 @@ function send(proc: MockProcess, data: string): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/** Wait until the session's write queue has carried `marker` to the wire. */
+async function flushed(written: () => string, marker: string): Promise<void> {
+	const deadline = Date.now() + 2000;
+	while (!written().includes(marker) && Date.now() < deadline) {
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+}
+
 test("no motion reporting for an app that never observes hover", async () => {
 	const {written, termdom, document} = makeApp();
 	const div = document.createElement("div");
@@ -64,8 +72,7 @@ test("a :hover rule turns motion reporting on; removing it turns it off", async 
 
 	style.remove();
 	await nextFrame(termdom);
-	// The disable rides the session's write queue; let it flush.
-	await new Promise((r) => setTimeout(r, 50));
+	await flushed(written, MOTION_OFF);
 	expect(written()).toContain(MOTION_OFF);
 	termdom.dispose();
 });
@@ -85,8 +92,7 @@ test("a hover-family listener turns motion reporting on; removal turns it off", 
 
 	document.removeEventListener("mousemove", listener);
 	await nextFrame(termdom);
-	// The disable rides the session's write queue; let it flush.
-	await new Promise((r) => setTimeout(r, 0));
+	await flushed(written, MOTION_OFF);
 	expect(written()).toContain(MOTION_OFF);
 	termdom.dispose();
 });
@@ -99,12 +105,11 @@ test("a window mouseover listener counts as observing hover", async () => {
 	const listener = () => {};
 	(termdom.window as any).addEventListener("mouseover", listener);
 	await nextFrame(termdom);
-	// The enable rides the session's write queue; let it flush.
-	await new Promise((r) => setTimeout(r, 50));
+	await flushed(written, MOTION_ON);
 	expect(written()).toContain(MOTION_ON);
 	(termdom.window as any).removeEventListener("mouseover", listener);
 	await nextFrame(termdom);
-	await new Promise((r) => setTimeout(r, 50));
+	await flushed(written, MOTION_OFF);
 	expect(written()).toContain(MOTION_OFF);
 	termdom.dispose();
 });
@@ -279,6 +284,6 @@ test("dispose turns motion reporting off", async () => {
 	expect(written()).toContain(MOTION_ON);
 
 	termdom.dispose();
-	await new Promise((r) => setTimeout(r, 0));
+	await flushed(written, MOTION_OFF);
 	expect(written()).toContain(MOTION_OFF);
 });
