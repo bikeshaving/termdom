@@ -1055,14 +1055,6 @@ export class TerminalExchange {
 	}
 
 	/**
-	 * Record an engagement whose set bytes ride another write -- frames hide
-	 * the cursor as part of painting -- so the restore still covers it.
-	 */
-	markModeEngaged(name: ModeName): void {
-		this[kEngagedModes].add(name);
-	}
-
-	/**
 	 * Reset the engaged modes, in the table's order. The orderly half of the
 	 * restore guarantee; the panic paths write the blanket union instead.
 	 */
@@ -1256,8 +1248,10 @@ export class TerminalExchange {
 		);
 		// 1 = set (it agrees now), 3 = permanently set (it always did).
 		this[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
+		// The set rode the query's own write; a terminal that ignored it must
+		// not see the reset, so only an agreed offer is engaged.
 		if (this[kGraphemeClustersNegotiated]) {
-			this.markModeEngaged("clusterWidths");
+			this[kEngagedModes].add("clusterWidths");
 		}
 	}
 
