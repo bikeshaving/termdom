@@ -176,8 +176,6 @@ interface Size {
 type MeasureFunction = (
 	width: number,
 	widthMode: MeasureMode,
-	height: number,
-	heightMode: MeasureMode,
 	performLayout: boolean,
 ) => Size;
 
@@ -374,7 +372,6 @@ interface LayoutResult {
 	height: number;
 	margin: Edges<number>;
 	padding: Edges<number>;
-	border: Edges<number>;
 	computedFlexBasis: number;
 
 	/** css-flexbox-1 §4.5 automatic minimum size, along the parent's main axis. */
@@ -1098,7 +1095,6 @@ function createLayout(): LayoutResult {
 		height: NaN,
 		margin: {left: 0, top: 0, right: 0, bottom: 0},
 		padding: {left: 0, top: 0, right: 0, bottom: 0},
-		border: {left: 0, top: 0, right: 0, bottom: 0},
 		computedFlexBasis: NaN,
 		autoMinMain: NaN,
 		gridColumns: null,
@@ -1439,13 +1435,7 @@ function layoutMeasureNode(
 		return;
 	}
 
-	const measured = node.measureFunc!(
-		innerWidth,
-		widthMode,
-		innerHeight,
-		heightMode,
-		performLayout,
-	);
+	const measured = node.measureFunc!(innerWidth, widthMode, performLayout);
 
 	const width =
 		widthMode === "exactly"
@@ -6331,11 +6321,6 @@ function layoutNodeImpl(
 	node.layout.padding.right = getPadding(node, "right", ownerWidth);
 	node.layout.padding.bottom = getPadding(node, "bottom", ownerWidth);
 
-	node.layout.border.left = node.style.border.left;
-	node.layout.border.top = node.style.border.top;
-	node.layout.border.right = node.style.border.right;
-	node.layout.border.bottom = node.style.border.bottom;
-
 	resolveNodeMargins(node, ownerWidth);
 
 	// A box that is not a block container escapes no margins: only block layout
@@ -8362,9 +8347,8 @@ function syncContainerRuns(
 				if (styledFrom) {
 					styleFlexNode(styledFrom, flexNode, layout[kPositionedElements]);
 				}
-				flexNode.setMeasureFunc(
-					(width, widthMode, _height, _heightMode, placing) =>
-						measureInlineRun(layout, entry, width, widthMode, placing),
+				flexNode.setMeasureFunc((width, widthMode, placing) =>
+					measureInlineRun(layout, entry, width, widthMode, placing),
 				);
 				layout[kMeasureNodes].add(flexNode);
 				layout[kAnonymousBoxes].set(flexNode, entry);
@@ -8728,7 +8712,7 @@ function addElementNode(
 		return;
 	} else if (asRun) {
 		const box = principalBox(layout, element);
-		flexNode.setMeasureFunc((width, widthMode, _height, _heightMode, placing) =>
+		flexNode.setMeasureFunc((width, widthMode, placing) =>
 			measureInlineRun(layout, box, width, widthMode, placing),
 		);
 		layout[kMeasureNodes].add(flexNode);
@@ -8811,7 +8795,7 @@ function addTextNode(
 	}
 
 	const own = principalBox(layout, text);
-	flexNode.setMeasureFunc((width, widthMode, _height, _heightMode, placing) =>
+	flexNode.setMeasureFunc((width, widthMode, placing) =>
 		measureInlineRun(layout, own, width, widthMode, placing),
 	);
 	layout[kMeasureNodes].add(flexNode);
@@ -11167,10 +11151,10 @@ function staticPosition(
 	const offsetTop = origin.y - containingOrigin.y;
 	// The flow starts inside the container's border and padding.
 	const contentLeft =
-		containerNode.layout.border.left +
+		containerNode.style.border.left +
 		containerNode.layout.padding.left;
 	const contentTop =
-		containerNode.layout.border.top +
+		containerNode.style.border.top +
 		containerNode.layout.padding.top;
 
 	const box = containerBox(layout, container);

@@ -106,9 +106,6 @@ const kTransport = Symbol("transport");
 export const kExchange = Symbol("exchange");
 const kStaticSibling = Symbol("staticSibling");
 
-const kOnDisclosureToggle = Symbol("onDisclosureToggle");
-const kOnFieldEditEvent = Symbol("onFieldEditEvent");
-
 /**
  * One document on one terminal: the object an application holds.
  *
@@ -187,21 +184,6 @@ export class TermDOM {
 	// grapheme clusters) queries whose replies arrive interleaved with typing.
 	declare [kExchange]: TerminalExchange;
 
-	/**
-	 * Reveal what a disclosure opened. A details that closes has taken content
-	 * away rather than added it, so there is nothing to bring into view.
-	 */
-	declare [kOnDisclosureToggle]: (event: Event) => void;
-
-	/**
-	 * Keep a focused field's caret in view and repaint, on the standard
-	 * input/select/change events its own edit fires. Scoped to the active
-	 * field: an event from elsewhere (a select commit, an author's dispatch on
-	 * an unfocused control, a text input's change on blur) must not yank the
-	 * camera to it.
-	 */
-	declare [kOnFieldEditEvent]: (event: Event) => void;
-
 	// What attach() hands back and hands back again: resolved once the session
 	// is established and the first frame written.
 	declare [kAttachReady]: Promise<void>;
@@ -232,7 +214,10 @@ export class TermDOM {
 		this[kMouseReportingEnabled] = false;
 		this[kHoverReportingEnabled] = false;
 		this[kPendingCaretReveal] = null;
-		this[kOnDisclosureToggle] = (event: Event): void => {
+		// Reveal what a disclosure opened. A details that closes has taken
+		// content away rather than added it, so there is nothing to bring into
+		// view.
+		const onDisclosureToggle = (event: Event): void => {
 			const details = event.target as HTMLElement | null;
 			if (details === null || !("open" in details)) {
 				return;
@@ -242,7 +227,12 @@ export class TermDOM {
 			}
 			details.scrollIntoView({block: "nearest"});
 		};
-		this[kOnFieldEditEvent] = (event: Event): void => {
+		// Keep a focused field's caret in view and repaint, on the standard
+		// input/select/change events its own edit fires. Scoped to the active
+		// field: an event from elsewhere (a select commit, an author's dispatch
+		// on an unfocused control, a text input's change on blur) must not yank
+		// the camera to it.
+		const onFieldEditEvent = (event: Event): void => {
 			const target = event.target;
 			if (
 				target !== this.document.activeElement ||
@@ -308,18 +298,18 @@ export class TermDOM {
 		// announces itself with standard events. The render loop keeps the caret
 		// in view and repaints in response to those, rather than each edit path
 		// reaching back into it. Capture, so it lands however the event bubbles.
-		this.document.addEventListener("input", this[kOnFieldEditEvent], true);
-		this.document.addEventListener("select", this[kOnFieldEditEvent], true);
-		this.document.addEventListener("change", this[kOnFieldEditEvent], true);
+		this.document.addEventListener("input", onFieldEditEvent, true);
+		this.document.addEventListener("select", onFieldEditEvent, true);
+		this.document.addEventListener("change", onFieldEditEvent, true);
 		this.document.addEventListener(
 			"selectionchange",
-			this[kOnFieldEditEvent],
+			onFieldEditEvent,
 			true,
 		);
 		// A disclosure that opens has just put its contents on the page, and a
 		// terminal's page is one screen tall: what it revealed is often below
 		// the fold that hid it. Bring it into view, the way moving focus does.
-		this.document.addEventListener("toggle", this[kOnDisclosureToggle], true);
+		this.document.addEventListener("toggle", onDisclosureToggle, true);
 	}
 
 	/**

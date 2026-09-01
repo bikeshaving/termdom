@@ -29,5 +29,5 @@ Generated, never edited:
 
 ```sh
 npm run support                                               # regenerate
-bun scripts/support-matrix.ts --check # CI runs this
+bun scripts/support-matrix.ts --check                         # verify it is current
 ```

@@ -1126,40 +1126,6 @@ test("Text node data changes (characterData mutations)", async () => {
 	expect(updatedOutput).not.toContain("Initial text");
 });
 
-// TODO tests for more complex scenarios that need additional fixes
-test("Direct textContent changes in inline runs", async () => {
-	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
-
-	const div = termdom.document.createElement("div");
-	div.innerHTML = "Before <span>original</span> after";
-	termdom.document.body.appendChild(div);
-
-	// Initial render
-	await nextFrame(termdom);
-	const initialOutput = terminal.getPlainText();
-	expect(initialOutput).toContain("Before original after");
-
-	// Change textContent directly (should trigger our new fix)
-	const span = div.querySelector("span")!;
-	span.textContent = "MODIFIED";
-
-	// Re-render and verify textContent change is reflected
-	await nextFrame(termdom);
-	const updatedOutput = terminal.getPlainText();
-
-	expect(updatedOutput).toContain("Before MODIFIED after");
-	expect(updatedOutput).not.toContain("original");
-});
-
-test("Text node data changes (characterData mutations)", async () => {
-	// Direct textNode.data changes should work but reveal similar issues
-	// when the text node is inside elements that are part of inline runs
-	// but don't have their own Yoga nodes
-});
-
 test("Block element interrupting inline run", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({

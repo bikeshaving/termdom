@@ -716,7 +716,7 @@ describe("what a measurement produced, not only how big it was", () => {
 		placed: {lines: string[] | null},
 	): LayoutNode {
 		const item = box(parent);
-		item.setMeasureFunc((width, widthMode, _height, _heightMode, placing) => {
+		item.setMeasureFunc((width, widthMode, placing) => {
 			const limit =
 				widthMode === "unconstrained"
 					? Number.MAX_SAFE_INTEGER

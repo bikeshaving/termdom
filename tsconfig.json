@@ -27,5 +27,5 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true
   },
-  "include": ["src", "tests", "examples", "scripts"]
+  "include": ["src", "tests", "fuzz", "examples", "scripts"]
 }

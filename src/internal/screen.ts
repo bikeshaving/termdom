@@ -1785,10 +1785,6 @@ export class Screen {
 		return this[kScrollTop];
 	}
 
-	set scrollTop(rows: number) {
-		this[kScrollTop] = rows;
-	}
-
 	/** Camera rows moved since the last painted frame. */
 	get frameScroll(): number {
 		return this[kFrameScroll];

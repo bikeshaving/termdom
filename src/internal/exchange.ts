@@ -48,10 +48,6 @@ export interface TerminalCloseInfo {
 	 * process.exit; an SSH wrapper sends it as exit-status.
 	 */
 	status?: number;
-
-	/** The signal that ended the session ("SIGHUP", "SIGTERM"), when one did. */
-	signal?: string;
-	reason?: string;
 }
 
 /**
@@ -995,11 +991,6 @@ export class TerminalExchange {
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
 		this[kTransportClosed] = false;
-	}
-
-	/** Whether command-start anchoring runs: the default process transport only. */
-	get anchorDetectionEnabled(): boolean {
-		return this[kAnchorDetectionEnabled];
 	}
 
 	/** Whether the transport takes input -- a pipe does not. */
@@ -2306,7 +2297,7 @@ export function transportFromProcess(
 				// the process runtime handling the actual termination.
 				const closeOn = (signal: ProcessSignal, exitAfter: boolean) => {
 					const listener = () => {
-						closedResolve({reason: signal});
+						closedResolve({});
 						if (exitAfter) {
 							setImmediate(() => proc.exit(0));
 						}
