@@ -39,8 +39,8 @@ import {
 	HTML_ELEMENT_TAGS,
 	HTML_INTERFACES,
 	HTML_UNKNOWN_TAGS,
-	WINDOW_EVENT_HANDLERS,
 	type ReflectSpec,
+	WINDOW_EVENT_HANDLERS,
 } from "./htmltables.js";
 import {
 	asciiLowercase,
@@ -58,12 +58,12 @@ import {
 } from "./useragent.js";
 import type {LayoutEngine} from "./layout.js";
 import {
-	type StyleManager,
-	adoptStyleSheets,
 	adoptedStyleSheetsOf,
+	adoptStyleSheets,
 	inlineStyleOf,
 	styleAttributeChanged,
 	styleElementSheet,
+	type StyleManager,
 	styleShadowAttached,
 	styleSheetsOf,
 } from "./cssom.js";

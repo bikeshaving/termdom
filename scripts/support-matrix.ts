@@ -24,7 +24,7 @@
  * hangs says which feature did it rather than dying silently.
  */
 
-import {writeFileSync, readFileSync} from "node:fs";
+import {readFileSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
 import properties from "mdn-data/css/properties.json" with {type: "json"};
 import {TermDOM} from "../src/internal/termdom.js";

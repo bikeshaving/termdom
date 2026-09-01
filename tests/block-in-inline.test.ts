@@ -9,7 +9,7 @@
  * nothing at all.
  */
 
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
 

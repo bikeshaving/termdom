@@ -8,9 +8,9 @@
  */
 
 import {
-	Screen,
-	type ColorDepth,
 	type CellStyle,
+	type ColorDepth,
+	Screen,
 } from "../src/internal/screen.js";
 import type {CellContext} from "../src/internal/screen.js";
 import {renderFrame, renderStatic} from "./test-utils.js";

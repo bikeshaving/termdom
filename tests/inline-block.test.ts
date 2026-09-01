@@ -4,7 +4,7 @@
  * Tests for inline and inline-block element rendering in the terminal.
  */
 
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 

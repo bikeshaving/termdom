@@ -1,8 +1,8 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 import {
-	Screen,
 	type CellContext,
 	type LineStyle,
+	Screen,
 } from "../src/internal/screen.js";
 import {renderFrame, stripControlCodes} from "./test-utils.js";
 

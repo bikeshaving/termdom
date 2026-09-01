@@ -4,8 +4,8 @@
  * emits Graphviz instead.
  */
 
-import {readFileSync, readdirSync} from "node:fs";
-import {join, relative, resolve, dirname} from "node:path";
+import {readdirSync, readFileSync} from "node:fs";
+import {dirname, join, relative, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 
 const ROOT = fileURLToPath(new URL("../src", import.meta.url));

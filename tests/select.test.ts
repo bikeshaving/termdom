@@ -6,7 +6,7 @@
  * and change like a browser's closed select. Options never render: the
  * shadow tree replaces the light children in composition.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

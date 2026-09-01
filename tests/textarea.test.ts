@@ -5,7 +5,7 @@
  * What stays native is exactly what a browser also keeps native: caret
  * parking and key handling. The tree is as closed as an input's.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

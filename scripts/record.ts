@@ -10,7 +10,7 @@
  *   bun scripts/record.ts animated > animated.cast
  */
 import {EventEmitter} from "node:events";
-import {TermDOM, transportFromProcess, type ProcessLike} from "../src/index.js";
+import {type ProcessLike, TermDOM, transportFromProcess} from "../src/index.js";
 
 const COLS = 78;
 const ROWS = 24;

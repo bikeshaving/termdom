@@ -26,7 +26,7 @@
 import {test} from "@b9g/libuild/test";
 import fc from "fast-check";
 import {expect} from "@b9g/libuild/test";
-import {documentArbitrary, makeDOM, settle, type Scene} from "./scenes.js";
+import {documentArbitrary, makeDOM, type Scene, settle} from "./scenes.js";
 
 type Document = {html: string; tokens: string[]};
 

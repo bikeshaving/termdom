@@ -8,7 +8,7 @@
  * (standard web components), the symbol slot is reserved for UA-internal
  * widget trees (closed to DOM APIs, like a browser input's own internals).
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

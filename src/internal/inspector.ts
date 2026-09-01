@@ -8,13 +8,13 @@
 
 import {
 	Comment,
-	DOMRect,
 	Document,
 	DocumentFragment,
+	DOMRect,
 	Element,
+	type Node,
 	NodeList,
 	Text,
-	type Node,
 } from "./dom.js";
 
 const colors = {

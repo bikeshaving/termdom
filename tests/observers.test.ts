@@ -4,7 +4,7 @@
  * Both read boxes the layout engine already produces each frame, so the tests
  * drive real renders and assert the callbacks fire with the right values.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

@@ -8,7 +8,7 @@
  * the escapes an attribute needs, the end tag a void element must not have --
  * shows up here as a corpus entry that drifts on the second pass.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {type Document, parseHTMLDocument} from "../src/internal/dom.js";
 
 // The door a test document comes through. The parser is the one that hands

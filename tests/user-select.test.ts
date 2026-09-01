@@ -4,7 +4,7 @@
  * highlight over it. `auto` resolves through the parent; a `text` descendant
  * inside a `none` ancestor selects again.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

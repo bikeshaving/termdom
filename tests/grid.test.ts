@@ -11,7 +11,7 @@
  * track has to round to edges that still meet), and that a grid built by
  * mutation lands where the same grid built at once does.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

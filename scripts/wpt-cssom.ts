@@ -22,8 +22,8 @@ import {getBoxModel, MediaList, StyleManager} from "../src/internal/cssom.ts";
 import {LayoutEngine} from "../src/internal/layout.ts";
 import {
 	createDocumentWindow,
-	mount,
 	type EngineWindow,
+	mount,
 } from "../src/internal/dom.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));

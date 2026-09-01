@@ -15,7 +15,7 @@
  *
  * `FC_NUM_RUNS=500` widens the search, `FC_SEED=...` replays one.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import fc from "fast-check";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";

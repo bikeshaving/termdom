@@ -5,7 +5,7 @@
  * tested on a bare document. A line is a laid-out line, so the line
  * granularities are tested against text wrapped by a real terminal width.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {type Document, parseHTMLDocument, Window} from "../src/internal/dom.js";
 
 // The door a test document comes through. The parser is the one that hands

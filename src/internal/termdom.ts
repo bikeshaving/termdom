@@ -13,20 +13,20 @@ import "./inspector.js";
 import {
 	createDocumentWindow,
 	disconnectObservers,
-	flushObservers,
 	type EngineWindow,
+	flushObservers,
 } from "./dom.js";
 import {LayoutEngine} from "./layout.js";
 import {Painter} from "./painter.js";
 import {
-	TerminalExchange,
 	type TerminalCloseInfo,
+	TerminalExchange,
 	type TerminalSize,
 	type TerminalTransport,
 	transportFromProcess,
 } from "./exchange.js";
 import {Screen} from "./screen.js";
-import {StyleManager, getBoxModel} from "./cssom.js";
+import {getBoxModel, StyleManager} from "./cssom.js";
 import {EventHandler} from "./input.js";
 
 export interface TermDOMOptions {

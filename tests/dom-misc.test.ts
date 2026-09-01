@@ -3,10 +3,10 @@
  * what a registry reads off a constructor and when, and which exception a
  * member throws.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {
-	HTMLElement,
 	type Document,
+	HTMLElement,
 	parseHTMLDocument,
 	Window,
 } from "../src/internal/dom.js";

@@ -1,4 +1,4 @@
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {transportFromProcess} from "../src/internal/exchange.js";
 import {nextFrame} from "./test-utils.js";

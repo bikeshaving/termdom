@@ -5,20 +5,20 @@
 
 import {
 	type ProcessLike,
-	type TTYWriteStream,
-	type TTYReadStream,
 	transportFromProcess,
+	type TTYReadStream,
+	type TTYWriteStream,
 } from "../src/internal/exchange.js";
 import type {TerminalTransport} from "../src/internal/exchange.js";
 import {EventEmitter} from "events";
 import xtermPkg from "@xterm/headless";
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
-import {Screen, type ColorDepth} from "../src/internal/screen.js";
+import {type ColorDepth, Screen} from "../src/internal/screen.js";
 import {stringWidth} from "../src/internal/text.js";
 import {StyleManager} from "../src/internal/cssom.js";
 import {LayoutEngine} from "../src/internal/layout.js";
-import {writeFileSync, mkdirSync, existsSync} from "fs";
+import {existsSync, mkdirSync, writeFileSync} from "fs";
 import {join} from "path";
 
 /**

@@ -6,7 +6,7 @@
  * The transport here records everything written and can be fed input by hand,
  * which is what a gesture is at this layer -- decoded stdin.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {
 	transportFromProcess,

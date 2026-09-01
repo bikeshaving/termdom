@@ -13,9 +13,9 @@
  * These tests assert that property and the things that follow from it. The
  * expectations come from CSS table semantics, not from the implementation.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, stripControlCodes, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 interface Box {
 	left: number;

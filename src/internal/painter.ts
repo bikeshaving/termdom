@@ -9,28 +9,28 @@
  */
 import {
 	type EngineWindow,
+	fieldSelectionRange,
 	fieldValueText,
 	flatParentElement,
-	fieldSelectionRange,
 	getShadowRoot,
 	renderedTopLayer,
 	selectionRecordOf,
 } from "./dom.js";
 import {
-	type LayoutEngine,
 	flowWalker,
 	isPositioned,
+	type LayoutEngine,
 	renderTextFragment,
 } from "./layout.js";
 import {
-	type StyleManager,
-	getComputedValue,
-	getBoxModel,
-	resolveBorderSides,
 	cssColorToNumber,
+	getBoxModel,
+	getComputedValue,
 	isTransparentColor,
+	resolveBorderSides,
+	type StyleManager,
 } from "./cssom.js";
-import type {CellStyle, CellContext, LineStyle} from "./screen.js";
+import type {CellContext, CellStyle, LineStyle} from "./screen.js";
 
 /**
  * A clip as edges, stored rather than derived: an axis nothing clips runs

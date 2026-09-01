@@ -8,10 +8,10 @@
  * object can see, and the answer is shadow-including: a tree reached through a
  * host of one's own is a tree one is inside.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {
-	FocusEvent,
 	type Document,
+	FocusEvent,
 	parseHTMLDocument,
 } from "../src/internal/dom.js";
 

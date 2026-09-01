@@ -11,7 +11,7 @@
  * is what used to happen: nothing checked stdout.isTTY, while the README promised
  * TermDOM "works in interactive terminals or piped output".
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

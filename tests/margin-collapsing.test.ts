@@ -6,7 +6,7 @@
  * blockquote whose border must start at its first text row), and the
  * conditions that stop a collapse (border, padding, a BFC, a flex parent).
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 

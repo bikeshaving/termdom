@@ -3,7 +3,7 @@
  * Specifically testing fragment-walk logic
  */
 
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
 import {StyleManager} from "../src/internal/cssom.js";
 import {LayoutEngine} from "../src/internal/layout.js";

@@ -7,9 +7,9 @@
  *
  * z-index was parsed and then never read.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, stripControlCodes, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 async function renderRows(html: string, cols = 30): Promise<string[]> {
 	const terminal = new MockProcess({cols, rows: 8});

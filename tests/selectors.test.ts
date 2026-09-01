@@ -7,18 +7,18 @@
  * around it.
  */
 
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {
+	closestSelector,
 	type Document,
 	type Element,
-	type Node,
-	SelectorError,
-	closestSelector,
 	matchesSelector,
+	type Node,
 	parseHTMLDocument,
 	parseSelectorList,
 	selectAll,
 	selectFirst,
+	SelectorError,
 	setDocumentFocusVisible,
 	setHoveredElement,
 } from "../src/internal/dom.js";

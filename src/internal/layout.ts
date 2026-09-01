@@ -20,7 +20,9 @@ import {
 	writeClusterWidths,
 } from "./text.js";
 import {
+	type BoxModel,
 	getBoxModel,
+	getComputedValue,
 	parseAspectRatio,
 	parseBorderWidthValue,
 	parseGridAreas,
@@ -28,23 +30,21 @@ import {
 	parseSignedUnitValue,
 	parseTrackList,
 	parseTrackSizeList,
-	type BoxModel,
-	getComputedValue,
 	parseUnitValue,
 	type Unit,
 } from "./cssom.js";
 import {
 	DOMRectList,
+	type EngineWindow,
 	flatIsConnected,
 	flatParentElement,
-	NodeFilter,
-	pseudoElementCount,
 	getShadowRoot,
 	isModalDialog,
+	NodeFilter,
+	pseudoElementCount,
 	renderedTopLayer,
 	SHOW_FLAT,
 	TreeWalker,
-	type EngineWindow,
 } from "./dom.js";
 
 // ---------------------------------------------------------------------------

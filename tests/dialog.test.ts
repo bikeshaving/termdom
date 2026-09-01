@@ -5,7 +5,7 @@
  * clicks and the keys the page would have had, and gives all of it back on
  * close.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {parseHTMLDocument} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";

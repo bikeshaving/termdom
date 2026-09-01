@@ -7,15 +7,15 @@
  * live collection sees mid-mutation, and the cases a browsing context would
  * normally be needed to set up.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {
+	type Document,
 	CustomEvent as DOMCustomEvent,
-	DOMParser,
 	Event as DOMEvent,
+	DOMParser,
 	HTMLElement,
 	MutationObserver,
 	NodeFilter,
-	type Document,
 	parseHTMLDocument,
 	Text,
 	Window,

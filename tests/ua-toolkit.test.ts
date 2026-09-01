@@ -2,7 +2,7 @@
  * The user-agent surface of the DOM module: the things an engine does that
  * the DOM API gives an author no way to do.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {getShadowRoot, mount, selectionRecordOf} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";

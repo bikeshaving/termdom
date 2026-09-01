@@ -36,6 +36,15 @@ export default [
 			"termdom/member-visibility-order": "error",
 			"termdom/helper-below-class": "error",
 			"termdom/symbol-before-use": "error",
+			// The names inside one import's braces read in a fixed order; the
+			// imports themselves stay in the order they were written.
+			"sort-imports": [
+				"error",
+				{
+					ignoreCase: true,
+					ignoreDeclarationSort: true,
+				},
+			],
 		},
 	},
 	{

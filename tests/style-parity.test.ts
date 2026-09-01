@@ -6,7 +6,7 @@
  * This sweep turns parity into an invariant: add a declaration here when a
  * new one is supported.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 

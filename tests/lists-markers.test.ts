@@ -11,7 +11,7 @@
  * marker in the list's padding, so the item text starts at the content edge and
  * the marker sits immediately before it, separated by exactly one cell.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {stripControlCodes} from "./test-utils.js";
