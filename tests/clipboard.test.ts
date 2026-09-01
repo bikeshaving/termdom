@@ -10,7 +10,6 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {
 	transportFromProcess,
-	WireReader,
 } from "../src/internal/exchange.js";
 import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
@@ -660,61 +659,56 @@ test("permissions.query refuses a name that is not one", async () => {
 	dom.dispose();
 });
 
-test("the wire's base64 tolerates what terminals send", () => {
-	const replyText = (reply: string) => {
-		const [item] = new WireReader().feed(reply);
-		if (item?.kind !== "clipboard") {
-			throw new Error(`${JSON.stringify(reply)} did not read as a clipboard`);
-		}
-		return item.text;
-	};
-	const read = (payload: string) => replyText(`\x1b]52;c;${payload}\x07`);
-	expect(read("aGk=")).toBe("hi");
-	expect(read("aGk")).toBe("hi");
-	expect(read("aG\r\nk=")).toBe("hi");
-	expect(read("=aGk=")).toBe("hi");
-	expect(read("")).toBe("");
+/**
+ * Ask the terminal for its clipboard from inside a keystroke, then answer
+ * the query with these raw chunks, and return what the page read.
+ */
+async function readReply(chunks: string[]): Promise<string> {
+	const {proc, dom} = await mount();
+	let reading: Promise<string> | null = null;
+	dom.document.addEventListener("keydown", () => {
+		reading ??= dom.window.navigator.clipboard.readText();
+	});
+	await proc.stdin.send("v");
+	for (const chunk of chunks) {
+		await proc.stdin.send(chunk);
+	}
+	const text = await reading!;
+	dom.dispose();
+	return text;
+}
+
+test("the wire's base64 tolerates what terminals send", async () => {
+	const read = (payload: string) => readReply([`\x1b]52;c;${payload}\x07`]);
+	expect(await read("aGk=")).toBe("hi");
+	expect(await read("aGk")).toBe("hi");
+	expect(await read("aG\r\nk=")).toBe("hi");
+	expect(await read("=aGk=")).toBe("hi");
+	expect(await read("")).toBe("");
 	// A payload no reading rescues answers as an empty clipboard: OSC 52
 	// has no channel for saying more.
-	expect(read("A")).toBe("");
-	expect(read("aGkAB")).toBe("");
+	expect(await read("A")).toBe("");
+	expect(await read("aGkAB")).toBe("");
 	const long = "x".repeat(300);
-	expect(read(Buffer.from(long, "utf8").toString("base64"))).toBe(long);
+	expect(await read(Buffer.from(long, "utf8").toString("base64"))).toBe(long);
 });
 
-test("a reply cut inside its own opening still reads as a reply", () => {
-	const reader = new WireReader();
-	expect(reader.feed("\x1b]5")).toEqual([]);
-	expect(reader.feed("2;c;aGk=\x07")).toEqual([
-		{kind: "clipboard", text: "hi"},
-	]);
-	// Every cut past the escape itself, and one opening that only looks like
-	// this one.
+test("a reply cut inside its own opening still reads as a reply", async () => {
+	const reply = "\x1b]52;c;aGk=\x07";
+	// Every cut past the escape itself.
 	for (const at of [2, 3, 4, 5, 6, 7, 8]) {
-		const split = new WireReader();
-		const reply = "\x1b]52;c;aGk=\x07";
-		const items = [
-			...split.feed(reply.slice(0, at)),
-			...split.feed(reply.slice(at)),
-		];
-		expect(items).toEqual([{kind: "clipboard", text: "hi"}]);
+		expect(await readReply([reply.slice(0, at), reply.slice(at)])).toBe("hi");
 	}
-	const other = new WireReader();
-	expect(other.feed("\x1b]2").map((item) => item.kind)).toEqual([
-		"key",
-		"key",
-		"key",
-	]);
-	// A bare trailing ESC is the Escape key, held for nothing.
-	expect(new WireReader().feed("\x1b")).toEqual([
-		{
-			kind: "key",
-			key: "Escape",
-			char: "",
-			shiftKey: false,
-			ctrlKey: false,
-			altKey: false,
-			metaKey: false,
-		},
-	]);
+	// An opening that only looks like a reply is keys, and a bare trailing
+	// ESC is the Escape key, held for nothing.
+	const {proc, dom} = await mount();
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (event: any) => {
+		keys.push(event.key);
+	});
+	await proc.stdin.send("\x1b]2");
+	expect(keys).toEqual(["Escape", "]", "2"]);
+	await proc.stdin.send("\x1b");
+	expect(keys.slice(3)).toEqual(["Escape"]);
+	dom.dispose();
 });

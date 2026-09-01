@@ -306,7 +306,7 @@ const MODE_RESTORE_ORDER = Object.keys(MODE_SPELLINGS) as ModeName[];
  * a no-op on a terminal the mode never touched. A mode whose ordinary reset
  * is not that no-op carries its own panic spelling instead.
  */
-export const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
+const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 	(name) => MODE_SPELLINGS[name].panic,
 ).map((name) => {
 	const {panic, reset} = MODE_SPELLINGS[name];
@@ -588,7 +588,7 @@ const kReplyLimit = Symbol("replyLimit");
  * One is built bare, with no session behind it, wherever a chunk needs
  * reading on its own.
  */
-export class WireReader {
+class WireReader {
 	// An incomplete CSI or SS3 at a chunk's end, held for the next chunk.
 	declare [kTail]: string;
 	// The body of an open paste; null when no paste is in flight.

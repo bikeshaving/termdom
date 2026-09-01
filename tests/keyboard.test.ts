@@ -1,9 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {
-	transportFromProcess,
-	WireReader,
-} from "../src/internal/exchange.js";
+import {transportFromProcess} from "../src/internal/exchange.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
@@ -2526,19 +2523,6 @@ test("a non-ASCII printable key fires keypress and is inserted", async () => {
 });
 
 test("an astral character is one keystroke, not two halves", async () => {
-	const items = new WireReader().feed("😀");
-	expect(items).toEqual([
-		{
-			kind: "key",
-			key: "😀",
-			char: "😀",
-			shiftKey: false,
-			ctrlKey: false,
-			altKey: false,
-			metaKey: false,
-		},
-	]);
-
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = "<input id=\"a\" type=\"text\" autofocus>";

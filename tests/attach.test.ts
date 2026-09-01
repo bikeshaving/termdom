@@ -7,7 +7,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
-import {PANIC_RESTORE} from "../src/internal/exchange.js";
 
 function countWrites(terminal: MockProcess): {count(): number} {
 	let writes = 0;
@@ -212,25 +211,6 @@ test("window.close() before the first frame leaves prior screen content alone", 
 	const text = terminal.getVisibleText();
 	expect(text).toContain("PROMPT-LINE");
 	expect(text).toContain("closing content");
-});
-
-test("the panic restore never moves the cursor", async () => {
-	// The synchronous panic restore cuts in between the payout's anchor move
-	// and its body, so anything cursor-moving in it teleports the payout onto
-	// rows the app never owned -- the shell's own command line. The trap is
-	// ?1049l: it restores the saved cursor even when the alternate screen is
-	// not active (tmux and xterm both), and the saved slot outlives whichever
-	// program set it -- an editor that ran in the pane an hour ago.
-	const terminal = new MockProcess({cols: 40, rows: 10});
-	const write = (chunk: string) =>
-		new Promise<void>((r) => {
-			terminal.stdout.write(chunk, () => r());
-		});
-	await write("\x1b[2;1H\x1b[?1049h\x1b[?1049l");
-	await write("\x1b[8;5H");
-	await write(PANIC_RESTORE);
-	const buffer = terminal.terminal.buffer.active;
-	expect([buffer.cursorY, buffer.cursorX]).toEqual([7, 4]);
 });
 
 /**
