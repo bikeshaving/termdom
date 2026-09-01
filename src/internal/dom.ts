@@ -9054,7 +9054,7 @@ function toViewportRect(
 }
 
 // The geometry surface. The APIs are the DOM's, the measurements come from the
-// layout engine, and the document scroll converts between them. Writable so a
+// layout, and the document scroll converts between them. Writable so a
 // test can stub a measurement, as on the platform.
 Object.defineProperties(Element.prototype, {
 	getBoundingClientRect: {

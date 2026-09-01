@@ -443,7 +443,7 @@ export function terminalReorders(termDOM: TermDOM): void {
 	termDOM[kLayout].adoptTerminalReordering();
 }
 
-/** Starved width probes go out with the next frame even if nothing changed. */
+/** Deferred width probes go out with the next frame even if nothing changed. */
 export function probesDeferred(termDOM: TermDOM): void {
 	termDOM[kScreen].flushProbes();
 	void render(termDOM);

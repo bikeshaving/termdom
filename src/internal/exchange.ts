@@ -717,7 +717,7 @@ export class Exchange {
 	 * room.
 	 */
 	deferredWidths(): ReadonlySet<string> {
-		return this[kWidths].starved;
+		return this[kWidths].deferred;
 	}
 
 	/**
@@ -727,10 +727,10 @@ export class Exchange {
 	 */
 	deferWidth(cluster: string): void {
 		const widths = this[kWidths];
-		if (widths.asked.has(cluster) || widths.starved.has(cluster)) {
+		if (widths.asked.has(cluster) || widths.deferred.has(cluster)) {
 			return;
 		}
-		widths.starved.add(cluster);
+		widths.deferred.add(cluster);
 		requestDeferredProbeFrame(this);
 	}
 
@@ -752,7 +752,7 @@ export class Exchange {
 		}
 		const widths = this[kWidths];
 		widths.asked.add(cluster);
-		widths.starved.delete(cluster);
+		widths.deferred.delete(cluster);
 		widths.pending.push({
 			cluster,
 			run,
@@ -1120,7 +1120,7 @@ interface WidthProbes {
 	// cluster.
 	asked: Set<string>;
 	// Turned away by the margin and never probed. Waiting for a pending probes.
-	starved: Set<string>;
+	deferred: Set<string>;
 	deferralTimer: ReturnType<typeof setTimeout> | null;
 	// False for good once the terminal proves it does not reply.
 	probing: boolean;
@@ -1143,7 +1143,7 @@ function createWidthProbes(probing: boolean): WidthProbes {
 		pending: [],
 		settled: new Set(),
 		asked: new Set(),
-		starved: new Set(),
+		deferred: new Set(),
 		deferralTimer: null,
 		probing,
 		answered: false,
@@ -1156,7 +1156,7 @@ function createWidthProbes(probing: boolean): WidthProbes {
 	};
 }
 
-// Starvation is found mid-frame, past where the pending probes would have gone.
+// Deferral is found mid-frame, past where the pending probes would have gone.
 // A document still painting carries it on the next frame for free. Only
 // a quiet one needs a frame requested.
 function requestDeferredProbeFrame(session: Exchange): void {
@@ -1166,7 +1166,7 @@ function requestDeferredProbeFrame(session: Exchange): void {
 	}
 	widths.deferralTimer = setTimeout(() => {
 		widths.deferralTimer = null;
-		if (session[kDisposed] || widths.starved.size === 0) {
+		if (session[kDisposed] || widths.deferred.size === 0) {
 			return;
 		}
 		probesDeferred(session[kTermDOM]);
@@ -1204,7 +1204,7 @@ function armWidthProbeTimer(session: Exchange): void {
 		if (expired > 0 && !widths.answered) {
 			widths.probing = false;
 			widths.pending.length = 0;
-			widths.starved.clear();
+			widths.deferred.clear();
 			return;
 		}
 		widths.pending.splice(0, expired);

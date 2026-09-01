@@ -1527,15 +1527,15 @@ function generateANSI(
 	// painted row covers, and that row's own content lands on top of it in
 	// this same write, so nothing of it is ever on screen.
 	if (measurer !== undefined) {
-		const starving = measurer.deferredWidths();
-		if (starving.size > 0) {
+		const deferred = measurer.deferredWidths();
+		if (deferred.size > 0) {
 			const cell = safeProbeCell(grid);
 			if (cell !== null) {
 				output += moveCursor(writer, 0, 0, cell.row, 0);
 				cursorRow = cell.row;
 				cursorCol = 0;
 				// probe() takes the cluster out of the set being iterated.
-				for (const cluster of [...starving]) {
+				for (const cluster of [...deferred]) {
 					writer.carriageReturn();
 					if (cell.col > 0) {
 						writer.cursorForward(cell.col);

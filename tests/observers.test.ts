@@ -267,7 +267,7 @@ test("ResizeObserver reports 0x0 when an element is hidden", async () => {
 });
 
 test("display:none stops taking up rows", async () => {
-	// Not an observer bug: styleFlexNode set DISPLAY_NONE and then a later branch
+	// Not an observer bug: styleLayoutNode set DISPLAY_NONE and then a later branch
 	// reset it to flex, so a hidden element stopped painting but kept its space.
 	const {dom, terminal, document} = make(8, 30) as any;
 	document.body.innerHTML = "<div id=\"a\" style=\"height:3px\">AAA</div><div>after</div>";

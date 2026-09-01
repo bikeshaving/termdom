@@ -228,7 +228,7 @@ test("a block between two runs does not blank the earlier one", async () => {
 	await nextFrame(dom);
 
 	// Attaching the input's UA shadow tree cleared every break result in the
-	// body -- including this text's, whose flex node stayed clean and so never
+	// body -- including this text's, whose layout node stayed clean and so never
 	// re-measured. It laid out at the right rect and painted nothing.
 	const lines = terminal.getVisibleText().split("\n");
 	expect(lines[0]).toContain("heading");
