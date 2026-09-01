@@ -40,6 +40,8 @@ import {
 	NodeFilter,
 	pseudoElementCount,
 	getShadowRoot,
+	isModalDialog,
+	renderedTopLayer,
 	SHOW_FLAT,
 	TreeWalker,
 	type EngineWindow,
@@ -12917,6 +12919,38 @@ export class LayoutEngine {
 	 * percentage resolves against are the same four numbers, and were four
 	 * spellings of the same arithmetic.
 	 */
+	/**
+	 * The paint height of the document: the root box's laid-out height,
+	 * extended to cover top-layer boxes -- hoisted under the root, they
+	 * contribute nothing to the flow's height, and a picker opening at the
+	 * bottom edge must still get rows to paint into. A modal's ::backdrop
+	 * paints the whole viewport, so the frame emits that many rows whatever
+	 * the dialog's own box says: reserving less lets the frame's last rows
+	 * push the terminal past its bottom, a physical scroll no bookkeeping
+	 * records.
+	 *
+	 * The root, not body's scroll height: an inline body is a run member
+	 * whose block children are hoisted out and laid out beside it, so its
+	 * own box measures one line however many rows they paint.
+	 */
+	documentPaintHeight(): number {
+		const root = this[kRootElement];
+		const rootRect = this.getRect(root);
+		let height = rootRect ? Math.ceil(rootRect.height) : 0;
+		const rendered = renderedTopLayer(
+			root.ownerDocument!) as unknown as Element[];
+		for (const element of rendered) {
+			if (isModalDialog(element)) {
+				return this[kViewportRoot].style.height.value;
+			}
+			const rect = this.getRect(element);
+			if (rect) {
+				height = Math.max(height, Math.ceil(rect.bottom));
+			}
+		}
+		return height;
+	}
+
 	contentRect(element: Element): DOMRect | null {
 		const rect = this.getRect(element);
 		if (!rect) {

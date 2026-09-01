@@ -20,7 +20,7 @@
  */
 
 import {recordClusterAdvance} from "./text.js";
-import {getMount} from "./dom.js";
+import {dispatchAsUserAgent, getMount, refreshMediaQueries} from "./dom.js";
 import type {EventHandler} from "./input.js";
 
 /* -------------------------------------------------- the transport contract */
@@ -714,16 +714,6 @@ class WireReader {
 /* ------------------------------------------------------------ the exchange */
 
 /**
- * What only the engine can answer about the terminal's side of the
- * conversation: a resize, which it debounces into a reflow, and the
- * transport closing, which ends it.
- */
-interface ExchangeHandlers {
-	onResize(): void;
-	onClosed(info: TerminalCloseInfo): void;
-}
-
-/**
  * One question awaiting its answer: the kind of item that carries the reply,
  * the deadline, and for cursor questions the DSR send order that keeps them
  * and the width probes from taking each other's replies. Oldest first: the
@@ -750,7 +740,9 @@ const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
 const kEngagedModes = Symbol("engagedModes");
 const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
-const kHandlers = Symbol("handlers");
+const kResizeTimer = Symbol("resizeTimer");
+const kSettlingResize = Symbol("settlingResize");
+const kTransportClosed = Symbol("transportClosed");
 const kDocument = Symbol("document");
 const kInput = Symbol("input");
 
@@ -818,8 +810,14 @@ export class TerminalExchange {
 	// The modes currently set on the terminal, the source restore derives from.
 	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
-	declare [kHandlers]: ExchangeHandlers;
 	declare [kDocument]: Document;
+	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
+	/**
+	 * A resize is settling: a token per burst, so a redraw that lands after
+	 * a newer burst began knows to stand down. Null between bursts.
+	 */
+	declare [kSettlingResize]: object | null;
+	declare [kTransportClosed]: boolean;
 	declare [kInput]: EventHandler | null;
 
 	declare [kWriter]: WritableStreamDefaultWriter<string> | null;
@@ -1029,11 +1027,7 @@ export class TerminalExchange {
 		return CURSOR_QUERY;
 	}
 
-	constructor(deps: {
-		transport: TerminalTransport;
-		document: Document;
-		handlers: ExchangeHandlers;
-	}) {
+	constructor(deps: {transport: TerminalTransport; document: Document}) {
 		const interactive = deps.transport.interactive;
 		this[kWriter] = null;
 		this[kReader] = null;
@@ -1068,9 +1062,11 @@ export class TerminalExchange {
 		// A shared screen is one with a shell's rows above ours, which is what
 		// there is an anchor to find; a terminal that answers nothing has none.
 		this[kAnchorDetectionEnabled] = deps.transport.sharesScreen && interactive;
-		this[kHandlers] = deps.handlers;
 		this[kDocument] = deps.document;
 		this[kInput] = null;
+		this[kResizeTimer] = null;
+		this[kSettlingResize] = null;
+		this[kTransportClosed] = false;
 	}
 
 	/**
@@ -1129,19 +1125,6 @@ export class TerminalExchange {
 	}
 
 	/**
-	 * Whether command start was resolved. The resize re-anchor saves this,
-	 * clears it across its redraw so the frame is placed by the screen reset
-	 * rather than a stale detection, then restores it.
-	 */
-	get hasDetectedCommandStart(): boolean {
-		return this[kHasDetectedCommandStart];
-	}
-
-	set hasDetectedCommandStart(value: boolean) {
-		this[kHasDetectedCommandStart] = value;
-	}
-
-	/**
 	 * Queue output on the transport, in order. The writer engages lazily on
 	 * the first write. Returns the chunk's flush promise; flush() awaits the
 	 * queue's tail.
@@ -1188,6 +1171,17 @@ export class TerminalExchange {
 		this[kInteractive] = transport.interactive;
 		this[kAnchorDetectionEnabled] =
 			transport.sharesScreen && transport.interactive;
+		applyTerminalSize(this);
+	}
+
+	/** Whether a resize is settling, during which no frame may paint. */
+	get resizing(): boolean {
+		return this[kSettlingResize] !== null;
+	}
+
+	/** Whether the terminal went away on its own, so there is nothing to close. */
+	get transportClosed(): boolean {
+		return this[kTransportClosed];
 	}
 
 	/**
@@ -1207,9 +1201,10 @@ export class TerminalExchange {
 		this[kResizeReader] = this[kTransport].resizes.getReader();
 		void resizeLoop(this, this[kResizeReader]);
 
-		void this[kTransport].closed.then((info) => {
+		void this[kTransport].closed.then(() => {
 			if (!this[kDisposed]) {
-				this[kHandlers].onClosed(info);
+				this[kTransportClosed] = true;
+				getMount(this[kDocument])?.close();
 			}
 		});
 	}
@@ -1496,6 +1491,12 @@ export class TerminalExchange {
 		}
 		this[kDisposed] = true;
 		this[kProbingEnded] = true;
+		// A pending resize redraw would paint a disposed engine's frame, and
+		// its timer would hold the event loop open.
+		if (this[kResizeTimer] !== null) {
+			clearTimeout(this[kResizeTimer]);
+			this[kResizeTimer] = null;
+		}
 
 		// We asked for explicit bidi on the way in; give the terminal back the
 		// mode it reported, so the next command inherits its own settings rather
@@ -1741,11 +1742,158 @@ async function resizeLoop(
 				return;
 			}
 			if (value) {
-				session[kHandlers].onResize();
+				scheduleResize(session);
 			}
 		}
 	} catch (_err) {
 		// As above: teardown, not error.
+	}
+}
+
+const RESIZE_DEBOUNCE_MS = 40;
+
+/**
+ * Coalesce a burst of resize events into a single redraw.
+ *
+ * Dragging a terminal's edge fires a SIGWINCH for every width it passes
+ * through -- dozens in one drag. Redrawing on each leaves a little reflowed
+ * crud in the scrollback every time (see handleResize), so the crud grows
+ * with the length of the drag rather than the fact that it happened. Waiting
+ * for the drag to settle turns the whole gesture into one redraw, and one lot
+ * of crud. Renders are suppressed from the very first SIGWINCH, before the
+ * debounce settles, so a drag's worth of animation ticks cannot paint at the
+ * stale anchor while the terminal is rewrapping under us.
+ */
+function scheduleResize(session: TerminalExchange): void {
+	session[kSettlingResize] = {};
+	if (session[kResizeTimer] !== null) {
+		clearTimeout(session[kResizeTimer]);
+	}
+	session[kResizeTimer] = setTimeout(() => {
+		session[kResizeTimer] = null;
+		handleResize(session);
+	}, RESIZE_DEBOUNCE_MS);
+}
+
+/**
+ * Adopt the transport's size as the document's: the screen and the layout
+ * root take it, the stylesheets re-parse against it (a viewport change can
+ * flip any @media answer, and retires every viewport-relative value), the
+ * window hears "resize" if the size changed, and each live MediaQueryList
+ * re-evaluates and fires "change" if it flipped. A SIGWINCH reporting an
+ * unchanged size still redraws but fires no resize event, so the comparison
+ * is against the size the screen holds.
+ */
+function applyTerminalSize(session: TerminalExchange): void {
+	const mount = getMount(session[kDocument]);
+	if (mount === undefined) {
+		return;
+	}
+	const {cols: width, rows: height} = session[kTransport];
+	const sizeChanged = width !== mount.screen.cols ||
+		height !== mount.screen.rows;
+	mount.screen.resize(height, width);
+	mount.layout.resize(width, height);
+	mount.styles.refreshStylesheets();
+	if (sizeChanged) {
+		const window = session[kDocument].defaultView!;
+		dispatchAsUserAgent(window, new window.Event("resize"));
+	}
+	refreshMediaQueries(session[kDocument]);
+}
+
+/**
+ * Re-anchor and redraw after a resize settles. The terminal has already
+ * rewrapped everything on screen -- including our old frame -- and how far
+ * our content moved depends on text above us that we do not own. But two
+ * facts make its new position exactly recoverable:
+ *
+ *   1. The cursor is parked on our content's bottom row after every frame,
+ *      and it rides its line through the rewrap.
+ *   2. Every row we paint is a hard line, so the old frame's rewrapped
+ *      height is computable from the previous frame's own line lengths.
+ *
+ * So: ask the terminal where the cursor is (DSR), subtract the rewrapped
+ * height, and that is our frame's new top row -- ground truth, immune to
+ * whatever the shell prompt above did. Anything that ballooned past the
+ * screen top is in the scrollback, beyond rewriting; the redraw's erase
+ * covers everything from the recovered top down, so the visible screen
+ * carries exactly one copy. If the terminal does not answer, fall back to
+ * the computed vertical re-anchor (exact for height changes, approximate
+ * for width).
+ */
+function handleResize(session: TerminalExchange): void {
+	const mount = getMount(session[kDocument]);
+	if (mount === undefined) {
+		return;
+	}
+	applyTerminalSize(session);
+	const {cols: newWidth, rows: newHeight} = session[kTransport];
+	mount.layout.calculateLayout();
+	const contentHeight = mount.layout.documentPaintHeight();
+	const wrappedRowsAbove = mount.screen.wrappedRowsAbovePark(newWidth);
+	const settling = session[kSettlingResize];
+
+	const redraw = (startRow: number) => {
+		// The recovered row is where the frame stands; whether it still
+		// FITS below that row at the new height is the frame's problem,
+		// which it solves the only permissible way -- scrolling earlier
+		// output up into the scrollback, never painting over it. Clamping
+		// startRow upward to force a fit instead would plant the frame on
+		// top of the shell prompt above it.
+		mount.screen.documentTop = startRow;
+		mount.screen.anchorScrollTop = -startRow;
+		mount.screen.replaced(startRow);
+
+		// Everything suppressed since the first SIGWINCH may paint again. The
+		// frame is placed by the screen reset, not by cursor detection, which
+		// stands down until that frame is written.
+		session[kSettlingResize] = null;
+		const wasDetected = session[kHasDetectedCommandStart];
+		session[kHasDetectedCommandStart] = false;
+		mount.render();
+		session[kDocument].defaultView!.requestAnimationFrame(() => {
+			session[kHasDetectedCommandStart] = wasDetected;
+		});
+	};
+
+	const computedReanchor = () => {
+		const previousStart = mount.screen.documentTop;
+		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
+		return Math.max(0, previousStart - scrolledUp);
+	};
+
+	// The anchor is trustworthy exactly while the frame still FITS below it.
+	// When it does, no room-making scroll happens and the redraw is precise,
+	// so the prompt above is left alone. When it does not, the terminal
+	// scrolled the frame by an amount a same-cursor DSR cannot report, and
+	// making room on top of that mis-anchor is what strands a copy of our
+	// own rows -- an intermittent race we cannot win. There, clear the whole
+	// screen and start at the top: the erase covers every row the old frame
+	// could hold, so no fragment survives. It costs the output above us,
+	// which is the trade for a screen that is always legible.
+	const place = (startRow: number) => {
+		redraw(startRow + contentHeight <= newHeight ? startRow : 0);
+	};
+
+	if (session[kAnchorDetectionEnabled] && wrappedRowsAbove !== null) {
+		session
+			.queryCursorRow()
+			.then((cursorRow) => {
+				// A newer resize superseded this one; its handler will redraw.
+				if (settling !== session[kSettlingResize]) {
+					return;
+				}
+				place(Math.max(0, cursorRow - wrappedRowsAbove));
+			})
+			.catch(() => {
+				if (settling !== session[kSettlingResize]) {
+					return;
+				}
+				place(computedReanchor());
+			});
+	} else {
+		place(computedReanchor());
 	}
 }
 

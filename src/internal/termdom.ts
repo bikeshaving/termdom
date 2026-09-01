@@ -79,9 +79,6 @@ const kRenderCount = Symbol("renderCount");
 
 const kEventHandler = Symbol("eventHandler");
 
-const kResizeTimer = Symbol("resizeTimer");
-const kSettlingResize = Symbol("settlingResize");
-
 const kLifecycle = Symbol("lifecycle");
 const kAttachBegun = Symbol("attachBegun");
 const kAttachReady = Symbol("attachReady");
@@ -155,7 +152,6 @@ export class TermDOM {
 	// Timers that must be torn down in dispose(), or they keep the process
 	// alive after the app is done -- which, across a test suite, piles up
 	// into a hang.
-	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
 	// The resize being settled: a fresh object from the first SIGWINCH of a
 	// resize until the re-anchored redraw, and null between resizes. While one
 	// is set, render() bails: the terminal has rewrapped the screen and our
@@ -165,7 +161,6 @@ export class TermDOM {
 	// through. The redraw waits on an async cursor query, so it holds the
 	// object it was scheduled for and drops its answer if another SIGWINCH has
 	// replaced it -- the newer resize's own redraw is the one that lands.
-	declare [kSettlingResize]: object | null;
 	// How far we have gone in taking hold of the terminal: raw mode, signal
 	// handlers, the stdin listener and the cursor query. Construction never
 	// touches the process -- attach() does, lazily on the first render or
@@ -235,8 +230,6 @@ export class TermDOM {
 		this[kOnAltScreen] = false;
 		this[kRenderInFlight] = null;
 		this[kRenderCount] = 0;
-		this[kResizeTimer] = null;
-		this[kSettlingResize] = null;
 		this[kLifecycle] = "detached";
 
 		this[kMouseReportingEnabled] = false;
@@ -499,13 +492,6 @@ export class TermDOM {
 		// tty back.
 		this[kExchange].dispose();
 
-		// Tear down the rest of what holds the event loop open. Without this a
-		// disposed TermDOM keeps the process alive via the resize timers, and
-		// across a whole test suite those accumulate until nothing can exit.
-		if (this[kResizeTimer] !== null) {
-			clearTimeout(this[kResizeTimer]);
-			this[kResizeTimer] = null;
-		}
 		this[kEventHandler].dispose();
 
 		if (this[kStaticSibling]) {
@@ -540,14 +526,16 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 			void render(termDOM);
 		},
 		close() {
-			const wasAttached = isAttached(termDOM);
+			// A terminal that went away on its own has nothing to drain and
+			// nothing to close; the engine just ends.
+			const live = isAttached(termDOM) && !termDOM[kExchange].transportClosed;
 			// An immediate close must not tear down mid-establishment: wait
 			// for attach to finish (anchor found, first frame painted) so the
 			// payout lands where the frame was, not at a stale row 0. Then
 			// everything dispose queued must reach the wire before the
 			// transport acts on the close (a process transport exits).
 			void (async () => {
-				if (wasAttached) {
+				if (live) {
 					await termDOM[kAttachReady];
 					// The last frames' DSR queries -- width probes above all
 					// -- have replies on the wire. Consume them while the
@@ -556,7 +544,7 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 					await termDOM[kExchange].drainQueries(200);
 				}
 				await termDOM.dispose();
-				if (wasAttached) {
+				if (live) {
 					termDOM[kTransport].close({status: 0});
 				}
 			})();
@@ -591,14 +579,6 @@ function buildExchange(
 	return new TerminalExchange({
 		transport: termdom[kTransport],
 		document: termdom.document,
-		handlers: {
-			onResize: () => {
-				scheduleResize(termdom);
-			},
-			onClosed: () => {
-				termdom.dispose();
-			},
-		},
 	});
 }
 
@@ -613,9 +593,8 @@ function rebindTransport(
 	transport: TerminalTransport,
 ): void {
 	termdom[kTransport] = transport;
-	termdom[kExchange].rebind(transport);
 	termdom[kScreen].rebind(transport.colorDepth);
-	applyTerminalSize(termdom, transport.cols, transport.rows);
+	termdom[kExchange].rebind(transport);
 }
 
 /**
@@ -633,44 +612,6 @@ function adoptTerminalSize(
 	// screen exists and builds it at this size right after.
 	termdom[kScreen]?.resize(height, width);
 	termdom[kLayoutEngine].resize(width, height);
-}
-
-/**
- * Adopt a new terminal size: update the reported dimensions, re-parse the
- * stylesheets and re-evaluate media queries against them (a viewport change
- * can flip any @media answer), and resize the layout. The screen is left to
- * the caller -- a resize resizes it in place, a rebind replaces it.
- */
-function applyTerminalSize(
-	termdom: TermDOM,
-	newWidth: number,
-	newHeight: number,
-): void {
-	// A SIGWINCH reporting an unchanged size still redraws but fires no
-	// resize event, so the comparison is against the size the document holds,
-	// not the one the transport is reporting.
-	const screen = termdom[kScreen];
-	const sizeChanged = newWidth !== screen.cols || newHeight !== screen.rows;
-
-	// Before any style is resolved: `vw` and `@media` are answered from here
-	// through the window, and the layout engine is handed the same size to
-	// lay the viewport root out at.
-	adoptTerminalSize(termdom, newWidth, newHeight);
-
-	// The viewport changed, so every @media answer may have: re-parse the
-	// stylesheets against the new size (they were parsed against the old one
-	// and would stay stale), then let each live MediaQueryList re-evaluate
-	// and fire "change" if it flipped. The re-parse also drops what the style
-	// manager still resolves for, which retires the viewport-relative values
-	// every computed style resolved under the old size.
-	termdom[kStyleManager].refreshStylesheets();
-
-	// Per the rendering steps, resize fires before media query "change"
-	// events, and everything a listener reads already has the new size.
-	if (sizeChanged) {
-		DOM.dispatchAsUserAgent(termdom.window, new termdom.window.Event("resize"));
-	}
-	DOM.refreshMediaQueries(termdom.document);
 }
 
 /**
@@ -747,9 +688,9 @@ async function render(
 		return;
 	}
 
-	// A resize is settling: suppress every render until handleResize issues the
-	// single re-anchored redraw. See settlingResize.
-	if (termdom[kSettlingResize] !== null) {
+	// A resize is settling: suppress every render until the exchange issues
+	// the single re-anchored redraw.
+	if (termdom[kExchange].resizing) {
 		return;
 	}
 
@@ -814,41 +755,6 @@ async function renderOnce(
 	}
 
 	await renderInteractive(termdom);
-}
-
-/**
- * The paint height of the document: the root box's laid-out height,
- * extended to cover top-layer boxes -- hoisted under the root, they
- * contribute nothing to the flow's height, and a picker opening at the
- * bottom edge must still get rows to paint into.
- *
- * The root, not body's scroll height: an inline body is a run member
- * whose block children are hoisted out and laid out beside it, so its own
- * box measures one line however many rows they paint. The root box holds
- * those hoisted boxes and reports the rows the flow occupies.
- */
-function documentPaintHeight(
-	termdom: TermDOM,
-): number {
-	let height = documentFlowHeight(termdom);
-	const rendered =
-		DOM.renderedTopLayer(termdom.document) as unknown as Element[];
-	for (const element of rendered) {
-		// A modal's ::backdrop paints the whole viewport, so the frame
-		// emits that many rows whatever the dialog's own box says. The
-		// reserve must match what the emitter writes: reserving less
-		// lets the frame's last rows push the terminal past its bottom,
-		// a physical scroll no bookkeeping records -- and from then on
-		// the anchor lies by that many rows.
-		if (DOM.isModalDialog(element)) {
-			return termdom[kScreen].rows;
-		}
-		const rect = termdom[kLayoutEngine].getRect(element);
-		if (rect) {
-			height = Math.max(height, Math.ceil(rect.bottom));
-		}
-	}
-	return height;
 }
 
 /**
@@ -1045,132 +951,6 @@ function resolveScrollBand(
 	return {delta: record.delta, top, end};
 }
 
-const RESIZE_DEBOUNCE_MS = 40;
-
-/**
- * Coalesce a burst of resize events into a single redraw.
- *
- * Dragging a terminal's edge fires a SIGWINCH for every width it passes
- * through -- dozens in one drag. Redrawing on each leaves a little reflowed
- * crud in the scrollback every time (see handleResize), so the crud grows with
- * the length of the drag rather than the fact that it happened. Waiting for the
- * drag to settle turns the whole gesture into one redraw, and one lot of crud.
- */
-function scheduleResize(
-	termdom: TermDOM,
-): void {
-	// Suppress renders from the very first SIGWINCH, before the debounce
-	// settles, so a drag's worth of animation ticks cannot paint at the stale
-	// anchor while the terminal is rewrapping under us.
-	termdom[kSettlingResize] = {};
-	if (termdom[kResizeTimer] !== null) {
-		clearTimeout(termdom[kResizeTimer]);
-	}
-	termdom[kResizeTimer] = setTimeout(() => {
-		termdom[kResizeTimer] = null;
-		handleResize(termdom);
-	}, RESIZE_DEBOUNCE_MS);
-}
-
-function handleResize(
-	termdom: TermDOM,
-): void {
-	const newWidth = termdom[kTransport].cols;
-	const newHeight = termdom[kTransport].rows;
-
-	applyTerminalSize(termdom, newWidth, newHeight);
-
-	// Re-anchor and redraw. The terminal has already rewrapped everything on
-	// screen -- including our old frame -- and how far our content moved depends
-	// on text above us that we do not own. But two facts make its new position
-	// exactly recoverable:
-	//
-	//   1. The cursor is parked on our content's bottom row after every frame,
-	//      and it rides its line through the rewrap.
-	//   2. Every row we paint is a hard line, so the old frame's rewrapped
-	//      height is computable from the previous frame's own line lengths.
-	//
-	// So: ask the terminal where the cursor is (DSR), subtract the rewrapped
-	// height, and that is our frame's new top row -- ground truth, immune to
-	// whatever the shell prompt above did. Anything that ballooned past the
-	// screen top is in the scrollback, beyond rewriting; the redraw's erase
-	// covers everything from the recovered top down, so the visible screen
-	// carries exactly one copy.
-	//
-	// The settling resize has suppressed every animation tick since the first
-	// SIGWINCH, so nothing paints at a stale anchor while the query is in
-	// flight. If the terminal does not answer, fall back to the computed
-	// vertical re-anchor (exact for height changes, approximate for width).
-	termdom[kLayoutEngine].calculateLayout();
-	const contentHeight = documentPaintHeight(termdom);
-	const wrappedRowsAbove = termdom[kScreen].wrappedRowsAbovePark(newWidth);
-	const settling = termdom[kSettlingResize];
-
-	const redraw = (startRow: number) => {
-		// The recovered row is where the frame stands; whether it still
-		// FITS below that row at the new height is reserveRows' problem,
-		// which solves it the only permissible way -- scrolling earlier
-		// output up into the scrollback, never painting over it. Clamping
-		// startRow upward to force a fit instead would plant the frame on
-		// top of the shell prompt above it.
-		termdom[kScreen].documentTop = startRow;
-		termdom[kScreen].anchorScrollTop = -startRow;
-		termdom[kScreen].replaced(startRow);
-
-		// Everything suppressed since the first SIGWINCH may paint again. The
-		// frame is placed by the screen reset, not by cursor detection.
-		termdom[kSettlingResize] = null;
-		const wasDetected = termdom[kExchange].hasDetectedCommandStart;
-		termdom[kExchange].hasDetectedCommandStart = false;
-		render(termdom).then(() => {
-			termdom[kExchange].hasDetectedCommandStart = wasDetected;
-		});
-	};
-
-	const computedReanchor = () => {
-		const previousStart = termdom[kScreen].documentTop;
-		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
-		return Math.max(0, previousStart - scrolledUp);
-	};
-
-	// The anchor is trustworthy exactly while the frame still FITS below it.
-	// When it does, no room-making scroll happens and the redraw is precise,
-	// so the prompt above is left alone. When it does not, the terminal
-	// scrolled the frame by an amount a same-cursor DSR cannot report, and
-	// making room on top of that mis-anchor is what strands a copy of our
-	// own rows -- an intermittent race we cannot win. There, clear the whole
-	// screen and start at the top: the erase covers every row the old frame
-	// could hold, so no fragment survives. It costs the output above us,
-	// which is the trade for a screen that is always legible.
-	const place = (startRow: number) => {
-		if (startRow + contentHeight <= newHeight) {
-			redraw(startRow);
-		} else {
-			redraw(0);
-		}
-	};
-
-	if (termdom[kExchange].anchorDetectionEnabled && wrappedRowsAbove !== null) {
-		termdom[kExchange]
-			.queryCursorRow()
-			.then((cursorRow) => {
-				// A newer resize superseded this one; its handler will redraw.
-				if (settling !== termdom[kSettlingResize]) {
-					return;
-				}
-				place(Math.max(0, cursorRow - wrappedRowsAbove));
-			})
-			.catch(() => {
-				if (settling !== termdom[kSettlingResize]) {
-					return;
-				}
-				place(computedReanchor());
-			});
-	} else {
-		place(computedReanchor());
-	}
-}
-
 /**
  * Run the observers against the layout just produced.
  *
@@ -1218,7 +998,7 @@ async function printStatic(
 	termdom[kLayoutEngine].calculateLayout();
 
 	const context = termdom[kScreen].beginStatic({
-		rows: documentPaintHeight(termdom),
+		rows: termdom[kLayoutEngine].documentPaintHeight(),
 	});
 	termdom[kPainter].paint(context);
 	const output = termdom[kScreen].endFrame();
@@ -1284,7 +1064,7 @@ function renderStatic(
 	lineEnding: "\n" | "\r\n",
 ): string {
 	DOM.flushLayout(termdom.document);
-	const contentHeight = documentPaintHeight(termdom);
+	const contentHeight = termdom[kLayoutEngine].documentPaintHeight();
 	if (contentHeight === 0) {
 		return "";
 	}
@@ -1413,7 +1193,7 @@ async function renderInteractive(
 	const fullscreen = isFullscreen(termdom);
 	const contentHeight = fullscreen ?
 		termdom[kScreen].rows :
-			documentPaintHeight(termdom);
+			termdom[kLayoutEngine].documentPaintHeight();
 	const regionHeight = Math.min(
 		contentHeight,
 		termdom[kScreen].rows,

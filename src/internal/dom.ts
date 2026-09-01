@@ -28453,7 +28453,10 @@ export interface Mount {
 	screen: Screen;
 	/** Schedule a frame, and drain what awaited it once it is written. */
 	render(): void;
-	/** End the session: the window closed and the beforeunload gate agreed. */
+	/**
+	 * End the session: the window closed and the beforeunload gate agreed,
+	 * or the terminal went away.
+	 */
 	close(): void;
 	/** Seal what the document painted into the terminal's scrollback. */
 	seal(): void;
