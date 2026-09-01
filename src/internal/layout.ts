@@ -1409,9 +1409,6 @@ function layoutMeasureNode(
 	const innerWidth = isDefined(availableWidth)
 		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
 		: NaN;
-	const innerHeight = isDefined(availableHeight)
-		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
-		: NaN;
 
 	if (
 		widthMode === "exactly" &&
@@ -12366,24 +12363,6 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * Whether an element establishes a stacking context: the paint-atomic unit
-	 * of CSS layering. Terminal-relevant predicate: positioned with a non-auto
-	 * z-index. The root context belongs to <body>, the paint root. (opacity/
-	 * transform/filter have no terminal meaning here.)
-	 */
-	formsStackingContext(element: Element): boolean {
-		if (element === this[kEngineWindow].document.body) {
-			return true;
-		}
-		if (
-			getComputedValue(element, "isolation") === "isolate"
-		) {
-			return true;
-		}
-		return isPositioned(element) && getZIndexValue(element) !== "auto";
-	}
-
-	/**
 	 * Group every connected positioned element under its nearest
 	 * stacking-context ancestor, bucketed into the CSS paint layers: negative-z
 	 * contexts, the z:auto/0 layer, positive-z contexts. Walks only the
@@ -12421,7 +12400,7 @@ export class LayoutEngine {
 				ancestor;
 				ancestor = flatParentElement<Element>(ancestor)
 			) {
-				if (this.formsStackingContext(ancestor)) {
+				if (formsStackingContext(ancestor)) {
 					root = ancestor;
 					break;
 				}
@@ -12589,6 +12568,22 @@ function getZIndexValue(element: Element): number | "auto" {
 	}
 	const value = parseInt(zIndex, 10);
 	return Number.isFinite(value) ? value : "auto";
+}
+
+/**
+ * Whether an element establishes a stacking context: the paint-atomic unit
+ * of CSS layering. Terminal-relevant predicate: positioned with a non-auto
+ * z-index. The root context belongs to <body>, the paint root. (opacity/
+ * transform/filter have no terminal meaning here.)
+ */
+export function formsStackingContext(element: Element): boolean {
+	if (element === element.ownerDocument.body) {
+		return true;
+	}
+	if (getComputedValue(element, "isolation") === "isolate") {
+		return true;
+	}
+	return isPositioned(element) && getZIndexValue(element) !== "auto";
 }
 
 /**
@@ -13065,7 +13060,7 @@ function hitTestContext(
 		// a property of the containing-block CHAIN, so the check walks
 		// ancestors -- an absolute box inside a fixed bar lives there too.
 		const probeY = layout.isInFixedSpace(element) ? y - cameraScrollTop : y;
-		return layout.formsStackingContext(element)
+		return formsStackingContext(element)
 			? hitTestContext(layout, element, x, probeY, layers, cameraScrollTop)
 			: hitTestInFlow(layout, element, x, probeY);
 	};

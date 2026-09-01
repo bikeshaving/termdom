@@ -27,6 +27,7 @@ import {
 } from "./dom.js";
 import {
 	flowWalker,
+	formsStackingContext,
 	isPositioned,
 	type LayoutEngine,
 	renderTextFragment,
@@ -799,7 +800,7 @@ function renderStackingContext(
 			ctx.viewportOffset = previousOffset + painter[kScreen].scrollTop;
 		}
 		try {
-			if (painter[kLayout].formsStackingContext(element)) {
+			if (formsStackingContext(element)) {
 				renderStackingContext(painter, element, ctx, layers);
 			} else {
 				renderElement(painter, element, ctx);

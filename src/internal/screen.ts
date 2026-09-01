@@ -1684,6 +1684,33 @@ const kLayoutMoved = Symbol("layoutMoved");
 const kDocumentTop = Symbol("documentTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
 
+/**
+ * What the frame has to say for itself, weighed as one by the render gate:
+ * the three facts the frame journals and endFrame clears, plus the pending
+ * repaint, which is derived from state that outlives the frame.
+ */
+interface FrameJournal {
+
+	/** A paint was asked for by hand since the last frame. */
+	readonly dirty: boolean;
+
+	/**
+	 * The layout engine moved geometry since the last frame: the rows that
+	 * frame painted no longer describe the document.
+	 */
+	readonly layoutMoved: boolean;
+
+	/** Camera rows moved since the last painted frame. */
+	readonly frameScroll: number;
+
+	/**
+	 * A reset or clear is pending: the next frame must actually paint. Read
+	 * off the screen's own pending state rather than journalled, so endFrame
+	 * has nothing to clear here -- whoever answers the reset clears it.
+	 */
+	readonly needsRepaint: boolean;
+}
+
 export class Screen {
 	declare [kPrev]: CellGrid | null;
 	// Retired grids kept for the next frame that wants their size: the frame
@@ -1778,17 +1805,22 @@ export class Screen {
 		return this[kScrollTop];
 	}
 
-	/** Camera rows moved since the last painted frame. */
-	get frameScroll(): number {
-		return this[kFrameScroll];
-	}
-
-	get dirty(): boolean {
-		return this[kDirty];
-	}
-
-	get layoutMoved(): boolean {
-		return this[kLayoutMoved];
+	/**
+	 * Everything the next frame's paint-or-skip decision rests on, in one
+	 * reading. A caller that wants one fact still takes the whole record: the
+	 * facts are only meaningful together, and reading them apart invites a
+	 * gate that half-believes a frame.
+	 */
+	get journal(): FrameJournal {
+		return {
+			dirty: this[kDirty],
+			layoutMoved: this[kLayoutMoved],
+			frameScroll: this[kFrameScroll],
+			needsRepaint:
+				this[kNeedsScreenReset] ||
+				this[kNeedsFullClear] ||
+				this[kRideProbeTrain],
+		};
 	}
 
 	/** The screen row the document's first row is anchored to. */
@@ -1807,15 +1839,6 @@ export class Screen {
 
 	set anchorScrollTop(row: number) {
 		this[kAnchorScrollTop] = row;
-	}
-
-	/** A reset or clear is pending: the next frame must actually paint. */
-	get needsRepaint(): boolean {
-		return (
-			this[kNeedsScreenReset] ||
-			this[kNeedsFullClear] ||
-			this[kRideProbeTrain]
-		);
 	}
 
 	resize(rows: number, cols: number): void {

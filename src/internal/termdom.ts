@@ -869,15 +869,16 @@ function resolveScrollBand(
 	regionHeight: number,
 	record: {element: Element; delta: number} | null,
 ): {delta: number; top: number; end: number} | null {
+	const journal = termdom[kScreen].journal;
 	if (
 		record === null ||
 		record.delta === 0 ||
 		// The camera owns the frame it moved in: one band per frame, and the
 		// region it shifts already contains this box.
-		termdom[kScreen].frameScroll !== 0 ||
+		journal.frameScroll !== 0 ||
 		// Anything the layout derives a frame from has moved, so the rows the
 		// terminal would shift are not the rows the last frame painted.
-		termdom[kScreen].layoutMoved ||
+		journal.layoutMoved ||
 		!record.element.isConnected
 	) {
 		return null;
@@ -1136,12 +1137,13 @@ async function renderInteractive(
 		element: Element;
 		delta: number;
 	} | null;
+	const journal = termdom[kScreen].journal;
 	if (
-		!termdom[kScreen].dirty &&
-		!termdom[kScreen].layoutMoved &&
-		termdom[kScreen].frameScroll === 0 &&
+		!journal.dirty &&
+		!journal.layoutMoved &&
+		journal.frameScroll === 0 &&
 		journalled === null &&
-		!termdom[kScreen].needsRepaint
+		!journal.needsRepaint
 	) {
 		// Skip the paint, not the frame: observers still run, so a fresh
 		// observe() gets its initial entry on the next tick.
@@ -1183,11 +1185,14 @@ async function renderInteractive(
 	// and DECSTBM margins hold there like anywhere else -- a full-width pane
 	// scrolls under fixed chrome the terminal never touches.
 	const band = resolveScrollBand(termdom, regionHeight, journalled);
+	// The clamp above goes through the camera, so the delta this frame is
+	// spelled with is read after it -- not from the gate's earlier reading.
+	const clamped = termdom[kScreen].journal;
 	const context = termdom[kScreen].beginFrame({
 		offset: -termdom[kScreen].scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
-		delta: band ? band.delta : fullscreen ? 0 : termdom[kScreen].frameScroll,
+		delta: band ? band.delta : fullscreen ? 0 : clamped.frameScroll,
 		band: band ?? undefined,
 	});
 	termdom[kPainter].paint(context);
