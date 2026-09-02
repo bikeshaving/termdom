@@ -9707,8 +9707,16 @@ function hitTestInFlow(
 			return null;
 		}
 	}
+	// A plain vertical stack knows which children reach the row, so a
+	// long list is not walked whole for every pointer move. Paint extents
+	// are unscrolled document rows, so only an unscrolled element asks.
+	const candidates =
+		layout.scrolledAncestorRows(element) === 0 &&
+		(element.scrollTop || 0) === 0
+			? layout.getVisibleChildren(element, y, y + 1)
+			: null;
 	const children: Element[] = [];
-	for (const child of flowContent(element)) {
+	for (const child of candidates ?? flowContent(element)) {
 		if (child.nodeType !== 1) {
 			continue;
 		}
@@ -11046,12 +11054,45 @@ function applyRestyles(
 			if (!flatIsConnected(element)) {
 				continue;
 			}
-			// A restyle that left every property layout reads as it was (a
-			// color, a decoration) changes no box and no measurement, and
-			// rebuilding would restyle every descendant for nothing. A child
-			// whose own style changed is in this set itself.
-			if (isLayoutStyleUnchanged(layout, element)) {
-				continue;
+			const layoutNode = layout[kNodeMap].get(element);
+			// A pseudo-element's style is the host's to change, and its box is
+			// the host's child, so a host with any takes the full path.
+			const probe =
+				layoutNode !== undefined && pseudoElementCount(element) === 0
+					? probeLayoutStyle(element)
+					: null;
+			if (probe !== null) {
+				// A restyle that left every property layout reads as it was (a
+				// color, a decoration) changes no box and no measurement, and
+				// rebuilding would restyle every descendant for nothing. A
+				// child whose own style changed is in this set itself.
+				if (
+					probe.measureKey === layoutNode!.measureKey &&
+					isSameValue(probe.style, layoutNode!.style)
+				) {
+					continue;
+				}
+				// The same kind of box as before takes its parent's box list as
+				// it stands: the node reads its new style, and only a display
+				// or measurement change re-derives its own children.
+				if (
+					isBoxKindMatch(layout, element, layoutNode!) &&
+					!isDisplayContents(element) &&
+					probe.style.positionType === layoutNode!.style.positionType
+				) {
+					const displayChanged =
+						probe.style.displayType !== layoutNode!.style.displayType;
+					const measureChanged = probe.measureKey !== layoutNode!.measureKey;
+					styleNode(layout, element, layoutNode!);
+					if (displayChanged || measureChanged) {
+						invalidateChildDerivation(layout, element);
+						if (layout[kBoxes].get(element)?.children) {
+							invalidateContainerBoxes(layout, element);
+							layout[kDirtyRunContainers].add(element);
+						}
+					}
+					continue;
+				}
 			}
 			invalidateBoxDerivation(layout, element);
 			invalidateEnclosingMeasure(layout, element);
@@ -11066,25 +11107,12 @@ function applyRestyles(
 	}
 }
 
-// Whether the element's layout style, recomputed from the cascade, is
-// the one its layout node already holds. Only an element with a node
-// can answer; one without takes the full path.
-function isLayoutStyleUnchanged(layout: Layout, element: Element): boolean {
-	const layoutNode = layout[kNodeMap].get(element);
-	if (layoutNode === undefined) {
-		return false;
-	}
-	// A pseudo-element's style is the host's to change, and its box is the
-	// host's child, so a host with any takes the full path.
-	if (pseudoElementCount(element) > 0) {
-		return false;
-	}
+// The element's layout style recomputed from the cascade into a node of
+// its own, to compare with what the element's node holds.
+function probeLayoutStyle(element: Element): LayoutNode {
 	const probe = new LayoutNode();
 	styleLayoutNodeProperties(element, probe, new Set());
-	return (
-		probe.measureKey === layoutNode.measureKey &&
-		isSameValue(probe.style, layoutNode.style)
-	);
+	return probe;
 }
 
 function isSameValue(a: unknown, b: unknown): boolean {

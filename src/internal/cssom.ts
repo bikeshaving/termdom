@@ -3442,6 +3442,9 @@ function camelCaseProperty(property: string, lowercaseFirst = false): string {
 
 const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 
+const kLayout = Symbol("layout");
+const kStylesheetsDirty = Symbol("stylesheetsDirty");
+const kParsing = Symbol("parsing");
 const kElement = Symbol("element");
 const kParentRule = Symbol("parentRule");
 const kOnChange = Symbol("onChange");
@@ -7430,7 +7433,6 @@ function getUsedLength(cells: number): string {
 }
 
 const kCascade = Symbol("cascade");
-const kLayout = Symbol("layout");
 
 // A pseudo-element's declaration resolves through a view whose
 // [kElement] is the pseudo-element's own node, so there is one copy of
@@ -9339,7 +9341,6 @@ const kDocument = Symbol("document");
 const kAttributeReachesDescendants = Symbol("attributeReachesDescendants");
 const kDropCache = Symbol("clearCache");
 const kResolveCounterFunction = Symbol("resolveCounterFunction");
-const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
 const kFlushing = Symbol("flushing");
 const kUsedValues = Symbol("usedValues");
@@ -9389,6 +9390,7 @@ export class Cascade {
 
 	declare [kParsedRules]: ParsedCSSRule[];
 	declare [kStylesheetsDirty]: boolean;
+	declare [kParsing]: boolean;
 
 	// Whether any parsed selector can reach OUTSIDE a mutated element's
 	// subtree. Sibling combinators reach following siblings, and :has()
@@ -9512,6 +9514,7 @@ export class Cascade {
 		>();
 		this[kParsedRules] = [];
 		this[kStylesheetsDirty] = false;
+		this[kParsing] = false;
 		this[kSelectorsReachSiblings] = false;
 		this[kSelectorsReachAncestors] = false;
 		this[kReachingClasses] = new Set<string>();
@@ -9878,6 +9881,11 @@ export class Cascade {
 	}
 
 	syncStylesheets(): void {
+		// A sheet materializing its rules under the parse in progress
+		// notifies once per rule; that parse reads them.
+		if (this[kParsing]) {
+			return;
+		}
 		parseStylesheets(this);
 
 		// Boxes may have been built under the pre-parse styles. A
@@ -11436,6 +11444,21 @@ function invalidateEnclosingList(
 function parseStylesheets(
 	cascade: Cascade,
 ): void {
+	// Materializing a sheet's rules notifies the sheet once per rule, and
+	// each notification asked for a parse from inside this one. The parse
+	// under way reads those rules itself.
+	if (cascade[kParsing]) {
+		return;
+	}
+	cascade[kParsing] = true;
+	try {
+		parseStylesheetsNow(cascade);
+	} finally {
+		cascade[kParsing] = false;
+	}
+}
+
+function parseStylesheetsNow(cascade: Cascade): void {
 	const document = cascade[kDocument];
 	cascade[kParsedRules] = [];
 	cascade[kSelectorsReachSiblings] = false;
