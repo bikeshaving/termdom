@@ -20385,9 +20385,7 @@ function collectInputValidity(
 	if (PATTERN_INPUT_TYPES.has(type) && input[kDirtyValue]) {
 		collectLengthValidity(input, value, flags);
 	}
-	if (type === "number" || type === "range") {
-		collectRangeValidity(input, value, flags);
-	}
+	collectRangeValidity(input, value, flags);
 }
 
 function isRadioGroupChecked(input: HTMLInputElement): boolean {
@@ -20449,17 +20447,75 @@ function parseNumberAttribute(element: Element, name: string): number | null {
 	return value.trim() !== "" && Number.isFinite(parsed) ? parsed : null;
 }
 
+// The number a value stands for, on the scale its type steps in: number
+// and range as themselves, date and datetime-local and week in
+// milliseconds, month in months, time in milliseconds since midnight. A
+// value that has been sanitized is in its canonical form, so each parses
+// by position.
+function getInputValueNumber(type: string, value: string): number | null {
+	if (value === "") {
+		return null;
+	}
+	let number: number;
+	switch (type) {
+		case "number":
+		case "range":
+			number = Number(value);
+			break;
+		case "date":
+			number = Date.parse(`${value}T00:00:00Z`);
+			break;
+		case "month": {
+			const [year, month] = value.split("-").map(Number);
+			number = (year - 1970) * 12 + (month - 1);
+			break;
+		}
+		case "week":
+			number = parseWeekString(value)?.getTime() ?? NaN;
+			break;
+		case "time":
+			number = Date.parse(`1970-01-01T${value}Z`);
+			break;
+		case "datetime-local":
+			number = Date.parse(`${value}Z`);
+			break;
+		default:
+			return null;
+	}
+	return Number.isFinite(number) ? number : null;
+}
+
+// HTML's step scale factor and default step, per type, and the default
+// step base, which is the first Monday for weeks and zero otherwise.
+const STEP_RULES: Record<
+	string,
+	{scale: number; defaultStep: number; defaultBase: number}
+> = {
+	number: {scale: 1, defaultStep: 1, defaultBase: 0},
+	range: {scale: 1, defaultStep: 1, defaultBase: 0},
+	date: {scale: 86400000, defaultStep: 1, defaultBase: 0},
+	month: {scale: 1, defaultStep: 1, defaultBase: 0},
+	week: {scale: 604800000, defaultStep: 1, defaultBase: -259200000},
+	time: {scale: 1000, defaultStep: 60, defaultBase: 0},
+	"datetime-local": {scale: 1000, defaultStep: 60, defaultBase: 0},
+};
+
 function collectRangeValidity(
 	input: HTMLInputElement,
 	value: string,
 	flags: ValidityFlags,
 ): void {
-	const number = value === "" ? NaN : Number(value);
-	if (!Number.isFinite(number)) {
+	const type = input.type;
+	const rules = STEP_RULES[type];
+	if (rules === undefined) {
 		return;
 	}
-	const min = parseNumberAttribute(input, "min");
-	const max = parseNumberAttribute(input, "max");
+	const number = getInputValueNumber(type, value);
+	if (number === null) {
+		return;
+	}
+	const min = getInputValueNumber(type, input.getAttribute("min") ?? "");
+	const max = getInputValueNumber(type, input.getAttribute("max") ?? "");
 	flags.rangeUnderflow = min !== null && number < min;
 	flags.rangeOverflow = max !== null && number > max;
 	const stepAttribute = input.getAttribute("step");
@@ -20467,8 +20523,13 @@ function collectRangeValidity(
 		return;
 	}
 	const parsedStep = parseNumberAttribute(input, "step");
-	const step = parsedStep !== null && parsedStep > 0 ? parsedStep : 1;
-	const base = min ?? 0;
+	const step =
+		(parsedStep !== null && parsedStep > 0 ? parsedStep : rules.defaultStep) *
+		rules.scale;
+	const base =
+		min ??
+		getInputValueNumber(type, input.getAttribute("value") ?? "") ??
+		rules.defaultBase;
 	const quotient = (number - base) / step;
 	flags.stepMismatch =
 		Math.abs(quotient - Math.round(quotient)) >
