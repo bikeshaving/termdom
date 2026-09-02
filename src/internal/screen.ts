@@ -877,12 +877,12 @@ function joinTouchingBorders(grid: CellGrid): void {
 }
 
 function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
-	const getRowStart = row * grid.cols;
+	const rowStart = row * grid.cols;
 	// A file should not be padded out to the terminal width, so stop at the
 	// last cell that actually holds something.
 	let lastCol = -1;
 	for (let col = grid.cols - 1; col >= 0; col--) {
-		if (grid.cluster[getRowStart + col] !== 0) {
+		if (grid.cluster[rowStart + col] !== 0) {
 			lastCol = col;
 			break;
 		}
@@ -890,7 +890,7 @@ function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 
 	let previous = -1;
 	for (let col = 0; col <= lastCol; col++) {
-		const index = getRowStart + col;
+		const index = rowStart + col;
 		if (grid.cluster[index] === 0) {
 			writer.text(" ");
 			continue;
@@ -921,9 +921,9 @@ function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 }
 
 function getLineLength(grid: CellGrid, row: number): number {
-	const getRowStart = row * grid.cols;
+	const rowStart = row * grid.cols;
 	for (let col = grid.cols - 1; col >= 0; col--) {
-		const index = getRowStart + col;
+		const index = rowStart + col;
 		if (grid.cluster[index] !== 0) {
 			return col + Math.max(1, grid.widthAt(index));
 		}
@@ -1472,13 +1472,13 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 	}
 
 	for (let row = 0; row < rows; row++) {
-		const getRowStart = row * cols;
+		const rowStart = row * cols;
 		let spanStart = -1;
 		let col = 0;
 		let rowHasContent = false;
 
 		while (col < cols) {
-			const index = getRowStart + col;
+			const index = rowStart + col;
 			if (cluster[index] === 0) {
 				spanStart = -1;
 				col++;
@@ -1565,14 +1565,14 @@ function generateANSI(
 	}
 
 	for (let row = 0; row < rows; row++) {
-		const getRowStart = row * cols;
+		const rowStart = row * cols;
 		let rowHasContent = false;
 		let rowHasANSI = false;
 		let isFirstRenderOfLine = false;
 		unknownInRow = 0;
 
 		for (let col = 0; col < cols; col++) {
-			if (cluster[getRowStart + col] !== 0) {
+			if (cluster[rowStart + col] !== 0) {
 				rowHasContent = true;
 				break;
 			}
@@ -1586,7 +1586,7 @@ function generateANSI(
 		}
 
 		for (let col = 0; col < cols; col++) {
-			const index = getRowStart + col;
+			const index = rowStart + col;
 
 			if (cluster[index] === 0) {
 				continue;
@@ -2136,16 +2136,16 @@ export class Screen {
 				const regionHeight = (regionRows ?? this[kRows]) - anchorRow;
 				const seedRows = Math.min(frameRows, this[kRows], regionHeight);
 				for (let row = 0; row < seedRows; row++) {
-					const getRowStart = row * cols;
+					const rowStart = row * cols;
 					let empty = true;
 					for (let col = 0; col < cols; col++) {
-						if (diff.cluster[getRowStart + col] !== 0) {
+						if (diff.cluster[rowStart + col] !== 0) {
 							empty = false;
 							break;
 						}
 					}
 					if (empty) {
-						diff.setBlank(getRowStart);
+						diff.setBlank(rowStart);
 					}
 				}
 			}
@@ -2168,9 +2168,9 @@ export class Screen {
 				this[kFlushProbes] = false;
 				if (measurer !== undefined && !hasContent) {
 					for (let row = 0; row < frameRows && !hasContent; row++) {
-						const getRowStart = row * cols;
+						const rowStart = row * cols;
 						for (let col = 0; col < cols; col++) {
-							const index = getRowStart + col;
+							const index = rowStart + col;
 							if (next.cluster[index] !== 0) {
 								diff.setFrom(index, next, index);
 								hasContent = true;

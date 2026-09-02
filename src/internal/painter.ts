@@ -813,8 +813,8 @@ function getPaintSelectionRange(
 	if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
 		return null;
 	}
-	const getDocumentRange = selection.getRangeAt(0);
-	if (!getDocumentRange.intersectsNode(textNode)) {
+	const documentRange = selection.getRangeAt(0);
+	if (!documentRange.intersectsNode(textNode)) {
 		return null;
 	}
 	const selectionParent = flatParentElement(textNode);
@@ -826,12 +826,12 @@ function getPaintSelectionRange(
 	}
 	// Narrowed to this node. ::selection resolves per parent.
 	const from =
-		getDocumentRange.startContainer === textNode
-			? getDocumentRange.startOffset
+		documentRange.startContainer === textNode
+			? documentRange.startOffset
 			: 0;
 	const to =
-		getDocumentRange.endContainer === textNode
-			? getDocumentRange.endOffset
+		documentRange.endContainer === textNode
+			? documentRange.endOffset
 			: textNode.data.length;
 	if (to <= from) {
 		return null;

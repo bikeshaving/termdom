@@ -6922,15 +6922,15 @@ const kPrefix = Symbol("prefix");
 
 function createTagNameCollection(
 	root: Node,
-	getQualifiedName: string,
+	qualifiedName: string,
 ): HTMLCollection {
 	const cache = getCollectionCache(root);
-	const key = `tag:${getQualifiedName}`;
+	const key = `tag:${qualifiedName}`;
 	let collection = cache.get(key);
 	if (collection === undefined) {
-		const lowered = toASCIILowercase(getQualifiedName);
+		const lowered = toASCIILowercase(qualifiedName);
 		collection = new MatchingCollection(root, null, (element) => {
-			if (getQualifiedName === "*") {
+			if (qualifiedName === "*") {
 				return true;
 			}
 			const name =
@@ -6939,7 +6939,7 @@ function createTagNameCollection(
 					: `${element[kPrefix]}:${element[kLocalName]}`;
 			return element[kNamespace] === HTML_NAMESPACE
 				? name === lowered
-				: name === getQualifiedName;
+				: name === qualifiedName;
 		});
 		ensureList(collection);
 		cache.set(key, collection);
@@ -7936,9 +7936,9 @@ function queueAttributeMutationRecord(
 
 function getAttributeByName(
 	element: Element,
-	getQualifiedName: string,
+	qualifiedName: string,
 ): Attr | null {
-	let name = getQualifiedName;
+	let name = qualifiedName;
 	if (
 		element[kNamespace] === HTML_NAMESPACE &&
 		isHTMLDocument(element[kDocument])
@@ -8040,8 +8040,8 @@ class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
 		return at < items.length ? (items[at] as Attr) : null;
 	}
 
-	getNamedItem(getQualifiedName: string): Attr | null {
-		return getAttributeByName(this[kElement], String(getQualifiedName));
+	getNamedItem(qualifiedName: string): Attr | null {
+		return getAttributeByName(this[kElement], String(qualifiedName));
 	}
 
 	getNamedItemNS(namespace: string | null, localName: string): Attr | null {
@@ -8060,10 +8060,10 @@ class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
 		return setAttributeNode(this[kElement], attr);
 	}
 
-	removeNamedItem(getQualifiedName: string): Attr {
+	removeNamedItem(qualifiedName: string): Attr {
 		const attribute = getAttributeByName(
 			this[kElement],
-			String(getQualifiedName),
+			String(qualifiedName),
 		);
 		if (attribute === null) {
 			throw notFoundError("There is no such attribute");
@@ -8506,8 +8506,8 @@ export class Element extends Node implements globalThis.Element {
 		return this[kAttributeList].map((attribute) => attribute[kQualifiedName]);
 	}
 
-	getAttribute(getQualifiedName: string): string | null {
-		const attribute = getAttributeByName(this, String(getQualifiedName));
+	getAttribute(qualifiedName: string): string | null {
+		const attribute = getAttributeByName(this, String(qualifiedName));
 		return attribute === null ? null : attribute[kValue];
 	}
 
@@ -8520,11 +8520,11 @@ export class Element extends Node implements globalThis.Element {
 		return attribute === null ? null : attribute[kValue];
 	}
 
-	setAttribute(getQualifiedName: string, value: string): void {
+	setAttribute(qualifiedName: string, value: string): void {
 		if (arguments.length < 2) {
 			throw new TypeError("setAttribute needs a name and a value");
 		}
-		let name = String(getQualifiedName);
+		let name = String(qualifiedName);
 		validateAttributeLocalName(name);
 		if (
 			this[kNamespace] === HTML_NAMESPACE &&
@@ -8546,7 +8546,7 @@ export class Element extends Node implements globalThis.Element {
 
 	setAttributeNS(
 		namespace: string | null,
-		getQualifiedName: string,
+		qualifiedName: string,
 		value: string,
 	): void {
 		if (arguments.length < 3) {
@@ -8554,7 +8554,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 		const extracted = validateAndExtract(
 			namespace == null ? null : String(namespace),
-			String(getQualifiedName),
+			String(qualifiedName),
 			true,
 		);
 		setAttributeValue(
@@ -8566,8 +8566,8 @@ export class Element extends Node implements globalThis.Element {
 		);
 	}
 
-	removeAttribute(getQualifiedName: string): void {
-		const attribute = getAttributeByName(this, String(getQualifiedName));
+	removeAttribute(qualifiedName: string): void {
+		const attribute = getAttributeByName(this, String(qualifiedName));
 		if (attribute !== null) {
 			removeAttributeNode(this, attribute);
 		}
@@ -8584,8 +8584,8 @@ export class Element extends Node implements globalThis.Element {
 		}
 	}
 
-	toggleAttribute(getQualifiedName: string, force?: boolean): boolean {
-		let name = String(getQualifiedName);
+	toggleAttribute(qualifiedName: string, force?: boolean): boolean {
+		let name = String(qualifiedName);
 		validateAttributeLocalName(name);
 		if (
 			this[kNamespace] === HTML_NAMESPACE &&
@@ -8610,8 +8610,8 @@ export class Element extends Node implements globalThis.Element {
 		return true;
 	}
 
-	hasAttribute(getQualifiedName: string): boolean {
-		let name = String(getQualifiedName);
+	hasAttribute(qualifiedName: string): boolean {
+		let name = String(qualifiedName);
 		if (
 			this[kNamespace] === HTML_NAMESPACE &&
 			isHTMLDocument(this[kDocument])
@@ -8630,10 +8630,10 @@ export class Element extends Node implements globalThis.Element {
 		return getAttributeByNamespace(this, namespace, String(localName)) !== null;
 	}
 
-	getAttributeNode(getQualifiedName: string): globalThis.Attr | null {
+	getAttributeNode(qualifiedName: string): globalThis.Attr | null {
 		return getAttributeByName(
 			this,
-			String(getQualifiedName),
+			String(qualifiedName),
 		) as unknown as globalThis.Attr |
 		null;
 	}
@@ -8676,28 +8676,28 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	getElementsByTagName<K extends keyof globalThis.HTMLElementTagNameMap>(
-		getQualifiedName: K,
+		qualifiedName: K,
 	): HTMLCollectionOf<globalThis.HTMLElementTagNameMap[K]>;
 	getElementsByTagName<K extends keyof globalThis.SVGElementTagNameMap>(
-		getQualifiedName: K,
+		qualifiedName: K,
 	): HTMLCollectionOf<globalThis.SVGElementTagNameMap[K]>;
 	getElementsByTagName<K extends keyof globalThis.MathMLElementTagNameMap>(
-		getQualifiedName: K,
+		qualifiedName: K,
 	): HTMLCollectionOf<globalThis.MathMLElementTagNameMap[K]>;
 	getElementsByTagName<
 		K extends keyof globalThis.HTMLElementDeprecatedTagNameMap,
 	>(
-		getQualifiedName: K,
+		qualifiedName: K,
 	): HTMLCollectionOf<globalThis.HTMLElementDeprecatedTagNameMap[K]>;
-	getElementsByTagName(getQualifiedName: string): HTMLCollectionOf<
+	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<
 		globalThis.Element
 	>;
-	getElementsByTagName(getQualifiedName: string): HTMLCollectionOf<
+	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<
 		globalThis.Element
 	> {
 		return createTagNameCollection(
 			this,
-			String(getQualifiedName),
+			String(qualifiedName),
 		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
 
@@ -22320,28 +22320,28 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	getElementsByTagName<K extends keyof globalThis.HTMLElementTagNameMap>(
-		getQualifiedName: K,
+		qualifiedName: K,
 	): HTMLCollectionOf<globalThis.HTMLElementTagNameMap[K]>;
 	getElementsByTagName<K extends keyof globalThis.SVGElementTagNameMap>(
-		getQualifiedName: K,
+		qualifiedName: K,
 	): HTMLCollectionOf<globalThis.SVGElementTagNameMap[K]>;
 	getElementsByTagName<K extends keyof globalThis.MathMLElementTagNameMap>(
-		getQualifiedName: K,
+		qualifiedName: K,
 	): HTMLCollectionOf<globalThis.MathMLElementTagNameMap[K]>;
 	getElementsByTagName<
 		K extends keyof globalThis.HTMLElementDeprecatedTagNameMap,
 	>(
-		getQualifiedName: K,
+		qualifiedName: K,
 	): HTMLCollectionOf<globalThis.HTMLElementDeprecatedTagNameMap[K]>;
 	getElementsByTagName(
-		getQualifiedName: string,
+		qualifiedName: string,
 	): HTMLCollectionOf<globalThis.Element>;
 	getElementsByTagName(
-		getQualifiedName: string,
+		qualifiedName: string,
 	): HTMLCollectionOf<globalThis.Element> {
 		return createTagNameCollection(
 			this,
-			String(getQualifiedName),
+			String(qualifiedName),
 		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
 
@@ -22511,7 +22511,7 @@ export class Document extends Node implements globalThis.Document {
 	): globalThis.Element;
 	createElementNS(
 		namespace: string | null,
-		getQualifiedName: string,
+		qualifiedName: string,
 		options?: {is?: string; customElementRegistry?: unknown} | string,
 	): globalThis.Element {
 		if (arguments.length < 2) {
@@ -22519,7 +22519,7 @@ export class Document extends Node implements globalThis.Document {
 		}
 		const extracted = validateAndExtract(
 			namespace == null ? null : String(namespace),
-			String(getQualifiedName),
+			String(qualifiedName),
 			false,
 		);
 		return createElementInternal(
@@ -22652,14 +22652,14 @@ export class Document extends Node implements globalThis.Document {
 
 	createAttributeNS(
 		namespace: string | null,
-		getQualifiedName: string,
+		qualifiedName: string,
 	): globalThis.Attr {
 		if (arguments.length < 2) {
 			throw new TypeError("createAttributeNS needs a namespace and a name");
 		}
 		const extracted = validateAndExtract(
 			namespace == null ? null : String(namespace),
-			String(getQualifiedName),
+			String(qualifiedName),
 			true,
 		);
 		const attribute = new Attr(
@@ -23282,14 +23282,14 @@ class DOMImplementation {
 	}
 
 	createDocumentType(
-		getQualifiedName: string,
+		qualifiedName: string,
 		publicId: string,
 		systemId: string,
 	): DocumentType {
 		if (arguments.length < 3) {
 			throw new TypeError("createDocumentType needs three arguments");
 		}
-		const name = String(getQualifiedName);
+		const name = String(qualifiedName);
 		validateDoctypeName(name);
 		const doctype = new DocumentType(name, String(publicId), String(systemId));
 		doctype[kDocument] = this[kDocument];
@@ -23298,7 +23298,7 @@ class DOMImplementation {
 
 	createDocument(
 		namespace: string | null,
-		getQualifiedName: string | null,
+		qualifiedName: string | null,
 		doctype: globalThis.DocumentType | null = null,
 	): XMLDocument {
 		if (arguments.length < 2) {
@@ -23308,7 +23308,7 @@ class DOMImplementation {
 		document[kType] = "xml";
 		document[kContentType] = "application/xml";
 		let element: Element | null = null;
-		const name = getQualifiedName === null ? "" : String(getQualifiedName);
+		const name = qualifiedName === null ? "" : String(qualifiedName);
 		if (name !== "") {
 			element = document.createElementNS(
 				namespace == null ? null : String(namespace),
@@ -27717,25 +27717,25 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 	// An element takes the default namespace. An unprefixed attribute takes
 	// none.
 	function resolveQualifiedName(
-		getQualifiedName: string,
+		qualifiedName: string,
 		scope: XMLNamescope,
 		forAttribute: boolean,
 	): {namespace: string | null; prefix: string | null; localName: string} {
-		const colon = getQualifiedName.indexOf(":");
+		const colon = qualifiedName.indexOf(":");
 		if (colon === -1) {
 			if (forAttribute) {
-				return {namespace: null, prefix: null, localName: getQualifiedName};
+				return {namespace: null, prefix: null, localName: qualifiedName};
 			}
 			return {
 				namespace: lookupXMLPrefix(scope, "") ?? null,
 				prefix: null,
-				localName: getQualifiedName,
+				localName: qualifiedName,
 			};
 		}
-		const prefix = getQualifiedName.slice(0, colon);
-		const localName = getQualifiedName.slice(colon + 1);
+		const prefix = qualifiedName.slice(0, colon);
+		const localName = qualifiedName.slice(colon + 1);
 		if (prefix === "" || localName === "" || localName.includes(":")) {
-			fail(`"${getQualifiedName}" is not a valid qualified name`);
+			fail(`"${qualifiedName}" is not a valid qualified name`);
 		}
 		if (prefix === "xmlns") {
 			fail("The xmlns prefix is reserved for namespace declarations");
@@ -27944,9 +27944,9 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 	}
 
 	function parseElement(parent: Node, parentScope: XMLNamescope): void {
-		const getQualifiedName = scanName();
+		const qualifiedName = scanName();
 		interface ParsedAttribute {
-			getQualifiedName: string;
+			qualifiedName: string;
 			value: string;
 		}
 		const attributes: ParsedAttribute[] = [];
@@ -27961,7 +27961,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 				break;
 			}
 			if (pos >= input.length) {
-				fail(`The <${getQualifiedName}> tag is missing its closing >`);
+				fail(`The <${qualifiedName}> tag is missing its closing >`);
 			}
 			if (!spaced) {
 				fail("Attributes must be separated by space");
@@ -27974,23 +27974,23 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 			skipWhitespace();
 			const value = parseAttributeValue();
 			for (const attribute of attributes) {
-				if (attribute.getQualifiedName === attributeName) {
+				if (attribute.qualifiedName === attributeName) {
 					fail(`The attribute "${attributeName}" is repeated`);
 				}
 			}
-			attributes.push({getQualifiedName: attributeName, value});
+			attributes.push({qualifiedName: attributeName, value});
 		}
 		let scope = parentScope;
 		const bindings = new Map<string, string | null>();
 		for (const attribute of attributes) {
 			let boundPrefix: string | null = null;
-			if (attribute.getQualifiedName === "xmlns") {
+			if (attribute.qualifiedName === "xmlns") {
 				boundPrefix = "";
-			} else if (attribute.getQualifiedName.startsWith("xmlns:")) {
-				boundPrefix = attribute.getQualifiedName.slice("xmlns:".length);
+			} else if (attribute.qualifiedName.startsWith("xmlns:")) {
+				boundPrefix = attribute.qualifiedName.slice("xmlns:".length);
 				if (boundPrefix === "" || boundPrefix.includes(":")) {
 					fail(
-						`"${attribute.getQualifiedName}" is not a namespace declaration`,
+						`"${attribute.qualifiedName}" is not a namespace declaration`,
 					);
 				}
 			} else {
@@ -28019,7 +28019,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		if (bindings.size > 0) {
 			scope = {parent: parentScope, bindings};
 		}
-		const resolved = resolveQualifiedName(getQualifiedName, scope, false);
+		const resolved = resolveQualifiedName(qualifiedName, scope, false);
 		const element = createElementInternal(
 			document,
 			resolved.localName,
@@ -28033,16 +28033,16 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		for (const attribute of attributes) {
 			let namespace: string | null = null;
 			let prefix: string | null = null;
-			let localName = attribute.getQualifiedName;
-			if (attribute.getQualifiedName === "xmlns") {
+			let localName = attribute.qualifiedName;
+			if (attribute.qualifiedName === "xmlns") {
 				namespace = XMLNS_NAMESPACE;
-			} else if (attribute.getQualifiedName.startsWith("xmlns:")) {
+			} else if (attribute.qualifiedName.startsWith("xmlns:")) {
 				namespace = XMLNS_NAMESPACE;
 				prefix = "xmlns";
-				localName = attribute.getQualifiedName.slice("xmlns:".length);
+				localName = attribute.qualifiedName.slice("xmlns:".length);
 			} else {
 				const extracted = resolveQualifiedName(
-					attribute.getQualifiedName,
+					attribute.qualifiedName,
 					scope,
 					true,
 				);
@@ -28067,15 +28067,15 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		}
 		parseContent(element, scope);
 		if (pos >= input.length) {
-			fail(`The <${getQualifiedName}> element is never closed`);
+			fail(`The <${qualifiedName}> element is never closed`);
 		}
 		const closing = scanName();
-		if (closing !== getQualifiedName) {
-			fail(`</${closing}> does not match the open <${getQualifiedName}>`);
+		if (closing !== qualifiedName) {
+			fail(`</${closing}> does not match the open <${qualifiedName}>`);
 		}
 		skipWhitespace();
 		if (!eat(">")) {
-			fail(`The </${getQualifiedName}> tag is missing its closing >`);
+			fail(`The </${qualifiedName}> tag is missing its closing >`);
 		}
 	}
 
@@ -30861,6 +30861,12 @@ function matchNothing(): boolean {
 
 interface MatchState {
 
+	// Each parent's element children, gathered once per query, with each
+	// child's index and the children by type. :nth-child and the of-type
+	// tests read a candidate's siblings, and a query over a long list asked
+	// for the same list, and counted through it, once per candidate.
+	siblings: Map<Node, SiblingIndex>;
+
 	// The node `:scope` refers to, or null when the selector uses none.
 	scope: Node | null;
 
@@ -31270,7 +31276,7 @@ interface QualifiedName {
 	local: string | null;
 }
 
-function getQualifiedName(
+function qualifiedName(
 	name: string,
 	namespaces: SelectorNamespaces | null,
 	attribute: boolean,
@@ -31311,7 +31317,7 @@ function compileType(name: string, compiling: Compiling): Predicate {
 	const {
 		namespace,
 		local,
-	} = getQualifiedName(name, compiling.namespaces, false);
+	} = qualifiedName(name, compiling.namespaces, false);
 	const folded = local === null ? null : toASCIILowercase(local);
 	return (element) => {
 		if (element.nodeType !== ELEMENT_NODE) {
@@ -31393,7 +31399,7 @@ function compileAttribute(
 	compiling: Compiling,
 ): Predicate {
 	const qualified = (part.name as {name?: string} | undefined)?.name;
-	const {namespace, local} = getQualifiedName(
+	const {namespace, local} = qualifiedName(
 		String(qualified ?? ""),
 		compiling.namespaces,
 		true,
@@ -31588,16 +31594,20 @@ function compilePseudoClass(
 			);
 			return;
 		case "first-of-type":
-			compound.tests.push((element) => getOfTypeIndex(element, false) === 1);
+			compound.tests.push(
+				(element, state) => getOfTypeIndex(element, false, state) === 1,
+			);
 			return;
 		case "last-of-type":
-			compound.tests.push((element) => getOfTypeIndex(element, true) === 1);
+			compound.tests.push(
+				(element, state) => getOfTypeIndex(element, true, state) === 1,
+			);
 			return;
 		case "only-of-type":
 			compound.tests.push(
-				(element) =>
-					getOfTypeIndex(element, false) === 1 &&
-					getOfTypeIndex(element, true) === 1,
+				(element, state) =>
+					getOfTypeIndex(element, false, state) === 1 &&
+					getOfTypeIndex(element, true, state) === 1,
 			);
 			return;
 		case "nth-child":
@@ -31888,24 +31898,33 @@ function compileNth(
 		if (element.nodeType !== ELEMENT_NODE) {
 			return false;
 		}
-		const siblings = getElementSiblings(element);
-		const counted = siblings.filter((sibling) => {
-			if (ofType) {
-				return (
-					sibling.localName === element.localName &&
-					sibling.namespaceURI === element.namespaceURI
-				);
-			}
-			if (filter === null) {
-				return true;
-			}
-			return filter.some((complex) =>
-				matchComplex(complex, sibling, state, false),
+		// The plain forms read the element's place in a list built once per
+		// parent. An `of S` list is filtered per candidate, since which
+		// siblings match S is not known until each is tried.
+		let index: number;
+		let count: number;
+		if (filter !== null) {
+			const counted = getSiblingIndex(element, state).elements.filter(
+				(sibling) =>
+					filter.some((complex) =>
+						matchComplex(complex, sibling, state, false),
+					),
 			);
-		});
-		const ordered = fromEnd ? counted.reverse() : counted;
-		const index = ordered.indexOf(element);
-		return index !== -1 && matchesAnPlusB(step, index + 1);
+			index = counted.indexOf(element);
+			count = counted.length;
+		} else if (ofType) {
+			const siblings = getTypeSiblings(element, state);
+			index = siblings.indexOf(element);
+			count = siblings.length;
+		} else {
+			const siblings = getSiblingIndex(element, state);
+			index = siblings.index.get(element) ?? -1;
+			count = siblings.elements.length;
+		}
+		if (index === -1) {
+			return false;
+		}
+		return matchesAnPlusB(step, (fromEnd ? count - index - 1 : index) + 1);
 	};
 }
 
@@ -32473,9 +32492,42 @@ function parentElement(node: Node): Element | null {
 	return parent !== null && isElement(parent) ? parent : null;
 }
 
-function getElementSiblings(element: Element): Element[] {
+interface SiblingIndex {
+	elements: Element[];
+	index: Map<Element, number>;
+	byType: Map<string, Element[]>;
+}
+
+function getSiblingIndex(element: Element, state: MatchState): SiblingIndex {
 	const parent = element[kParent];
-	return parent === null ? [element] : getElementChildren(parent);
+	const key = parent ?? element;
+	let siblings = state.siblings.get(key);
+	if (siblings === undefined) {
+		const elements = parent === null ? [element] : getElementChildren(parent);
+		siblings = {
+			elements,
+			index: new Map(elements.map((child, i) => [child, i])),
+			byType: new Map(),
+		};
+		state.siblings.set(key, siblings);
+	}
+	return siblings;
+}
+
+// The siblings of the element's type and namespace, in order.
+function getTypeSiblings(element: Element, state: MatchState): Element[] {
+	const siblings = getSiblingIndex(element, state);
+	const key = `${element.namespaceURI ?? ""}|${element.localName}`;
+	let ofType = siblings.byType.get(key);
+	if (ofType === undefined) {
+		ofType = siblings.elements.filter(
+			(sibling) =>
+				sibling.localName === element.localName &&
+				sibling.namespaceURI === element.namespaceURI,
+		);
+		siblings.byType.set(key, ofType);
+	}
+	return ofType;
 }
 
 function getPreviousElement(element: Element): Element | null {
@@ -32496,12 +32548,12 @@ function getNextElement(element: Element): Element | null {
 	return null;
 }
 
-function getOfTypeIndex(element: Element, fromEnd: boolean): number {
-	const siblings = getElementSiblings(element).filter(
-		(sibling) =>
-			sibling.localName === element.localName &&
-			sibling.namespaceURI === element.namespaceURI,
-	);
+function getOfTypeIndex(
+	element: Element,
+	fromEnd: boolean,
+	state: MatchState,
+): number {
+	const siblings = getTypeSiblings(element, state);
 	const index = siblings.indexOf(element);
 	if (index === -1) {
 		return 0;
@@ -32583,6 +32635,7 @@ function createMatchState(options: MatchOptions): MatchState {
 		// A relative selector hangs from the scoping root, which is also what
 		// `:scope` refers to. Inside `:has()` both become the anchor instead.
 		anchor: options.scope ?? null,
+		siblings: new Map(),
 	};
 }
 

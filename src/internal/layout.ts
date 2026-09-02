@@ -3082,7 +3082,7 @@ function layoutTable(
 		previousVisible = true;
 	}
 
-	const getRowStart = (index: number) => rowTops[index];
+	const rowStart = (index: number) => rowTops[index];
 	const spanHeight = (index: number, span: number) => {
 		const last = Math.min(index + span, rows.length) - 1;
 		return rowTops[last] + rowHeights[last] - rowTops[index];
@@ -3120,8 +3120,8 @@ function layoutTable(
 	rows.forEach((row, index) => {
 		row.node.layout.left = row.group ? 0 : leftPaddingBorder;
 		row.node.layout.top = row.group
-			? getRowStart(index)
-			: gridTop + getRowStart(index);
+			? rowStart(index)
+			: gridTop + rowStart(index);
 		row.node.layout.width = contentWidth;
 		row.node.layout.height = rowHeights[index];
 	});
@@ -3181,7 +3181,7 @@ interface GridItem {
 	// Track indices once the implicit grid is normalized to start at 0.
 	columnStart: number;
 	columnEnd: number;
-	getRowStart: number;
+	rowStart: number;
 	rowEnd: number;
 }
 
@@ -3731,7 +3731,7 @@ function getItemTrackRange(sizing: TrackSizing, item: GridItem): [
 ] {
 	return sizing.columns
 		? [item.columnStart, item.columnEnd]
-		: [item.getRowStart, item.rowEnd];
+		: [item.rowStart, item.rowEnd];
 }
 
 function getTrackSpan(
@@ -3807,11 +3807,11 @@ function measureBaselineShims(
 		if (getGridSelfAlign(node, item.node, false) !== "baseline") {
 			continue;
 		}
-		const group = rows.get(item.getRowStart);
+		const group = rows.get(item.rowStart);
 		if (group) {
 			group.push(item);
 		} else {
-			rows.set(item.getRowStart, [item]);
+			rows.set(item.rowStart, [item]);
 		}
 	}
 
@@ -4576,11 +4576,11 @@ function alignGridBaselines(
 		if (getGridSelfAlign(node, item.node, false) !== "baseline") {
 			continue;
 		}
-		const group = rows.get(item.getRowStart);
+		const group = rows.get(item.rowStart);
 		if (group) {
 			group.push(item);
 		} else {
-			rows.set(item.getRowStart, [item]);
+			rows.set(item.rowStart, [item]);
 		}
 	}
 	for (const group of rows.values()) {
@@ -4733,7 +4733,7 @@ function layoutGrid(
 		),
 		columnStart: 0,
 		columnEnd: 0,
-		getRowStart: 0,
+		rowStart: 0,
 		rowEnd: 0,
 	}));
 
@@ -4761,8 +4761,8 @@ function layoutGrid(
 	for (const item of items) {
 		item.columnStart = item.column.start! - columnBase;
 		item.columnEnd = item.columnStart + item.column.span;
-		item.getRowStart = item.row.start! - rowBase;
-		item.rowEnd = item.getRowStart + item.row.span;
+		item.rowStart = item.row.start! - rowBase;
+		item.rowEnd = item.rowStart + item.row.span;
 	}
 
 	const buildTracks = (
@@ -4815,7 +4815,7 @@ function layoutGrid(
 		for (let i = item.columnStart; i < item.columnEnd; i++) {
 			occupiedColumns.add(i);
 		}
-		for (let i = item.getRowStart; i < item.rowEnd; i++) {
+		for (let i = item.rowStart; i < item.rowEnd; i++) {
 			occupiedRows.add(i);
 		}
 	}
@@ -4992,7 +4992,7 @@ function layoutGrid(
 	for (const item of items) {
 		const areaLeft = lineStart(columnTracks, item.columnStart);
 		const areaRight = lineEnd(columnTracks, item.columnEnd);
-		const areaTop = lineStart(rowTracks, item.getRowStart);
+		const areaTop = lineStart(rowTracks, item.rowStart);
 		const areaBottom = lineEnd(rowTracks, item.rowEnd);
 
 		layoutGridItem(
@@ -6000,7 +6000,7 @@ function isFlexContainer(element: Element): boolean {
 	return display === "flex" || display === "inline-flex";
 }
 
-// Each child gets a box of its own, getBlockifiedDisplay. No inline run gathers
+// Each child gets a box of its own, blockified. No inline run gathers
 // across them (css-display-3 §2.7).
 function hasItemChildren(display: Display): boolean {
 	return display === "flex" || isGridDisplay(display);
@@ -6044,13 +6044,13 @@ function isInlineLevel(node: Node): boolean {
 }
 
 // Computed display, not used. A flex item's inline-block is
-// getBlockifiedDisplay off its line but still measures its content as one unit
+// blockified off its line but still measures its content as one unit
 // under a root of its own, and the used display would take that root away.
 function establishesIndependentFormattingContext(element: Element): boolean {
 	return isAtomicInline(getComputedDisplay(element));
 }
 
-// A getBlockifiedDisplay inline holding block-level content is a block
+// A blockified inline holding block-level content is a block
 // container. Measured as a run, its content would end at the first
 // block inside it. One holding only inline content still measures as a
 // run, which is what gives a flex item its intrinsic size.
@@ -6576,7 +6576,7 @@ function styleLayoutNodeProperties(
 	}
 
 	const display = getComputedDisplay(element);
-	// A getBlockifiedDisplay inline's width applies like any block's. Forced
+	// A blockified inline's width applies like any block's. Forced
 	// auto, `<span style="width:30ch">` in a flex row came out as wide as its
 	// text.
 	const parentIsFlex = hasItemParent(element);

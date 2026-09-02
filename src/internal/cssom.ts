@@ -1294,18 +1294,18 @@ function expandGridPlacementPair(
 // it by the same custom-ident rule.
 function expandGridArea(value: string): Record<string, string> {
 	const groups = splitSlashGroups(value);
-	const getRowStart = groups[0] || "auto";
+	const rowStart = groups[0] || "auto";
 	const fallback = (index: number, from: string): string =>
 		groups.length > index && groups[index]
 			? groups[index]
 			: isCustomIdent(from)
 				? from
 				: "auto";
-	const columnStart = fallback(1, getRowStart);
-	const rowEnd = fallback(2, getRowStart);
+	const columnStart = fallback(1, rowStart);
+	const rowEnd = fallback(2, rowStart);
 	const columnEnd = fallback(3, columnStart);
 	return {
-		"grid-row-start": getRowStart,
+		"grid-row-start": rowStart,
 		"grid-column-start": columnStart,
 		"grid-row-end": rowEnd,
 		"grid-column-end": columnEnd,
@@ -12063,7 +12063,7 @@ function getMatchingRules(
 	const root = element.getRootNode();
 	const rootNode = root as unknown as Node;
 	const shadowHost = isShadowRoot(root) ? root.host : null;
-	const getPartNames = (element.getAttribute("part") ?? "")
+	const partNames = (element.getAttribute("part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
 	const matched = cascade[kParsedRules].filter((rule) => {
@@ -12075,7 +12075,7 @@ function getMatchingRules(
 			if (partArg) {
 				return (
 					shadowHost !== null &&
-					getPartNames.includes(partArg[1].trim()) &&
+					partNames.includes(partArg[1].trim()) &&
 					isRuleMatch(shadowHost, rule)
 				);
 			}
