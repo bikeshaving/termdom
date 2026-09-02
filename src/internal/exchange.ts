@@ -103,6 +103,33 @@ function encode64(bytes: Uint8Array): string {
 	return out;
 }
 
+// Tolerant, since terminals differ. Bytes outside the alphabet are
+// skipped and an unpadded tail decodes. Null when the digit count
+// carries no byte.
+function decode64(text: string): Uint8Array | null {
+	const bytes = new Uint8Array((text.length * 3) >> 2);
+	let held = 0;
+	let bits = 0;
+	let length = 0;
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i);
+		const value = code < 128 ? BASE64_CODES[code] : -1;
+		if (value < 0) {
+			continue;
+		}
+		held = (held << 6) | value;
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			bytes[length++] = (held >> bits) & 0xff;
+		}
+	}
+	if (bits >= 6) {
+		return null;
+	}
+	return bytes.subarray(0, length);
+}
+
 const CURSOR_QUERY = "\x1b[6n";
 const CLIPBOARD_QUERY = "\x1b]52;c;?\x07";
 // BDSM (mode 8). Reset means the application orders bidi text. Set
@@ -530,33 +557,6 @@ class WireReader {
 		}
 		return items;
 	}
-}
-
-// Tolerant, since terminals differ. Bytes outside the alphabet are
-// skipped and an unpadded tail decodes. Null when the digit count
-// carries no byte.
-function decode64(text: string): Uint8Array | null {
-	const bytes = new Uint8Array((text.length * 3) >> 2);
-	let held = 0;
-	let bits = 0;
-	let length = 0;
-	for (let i = 0; i < text.length; i++) {
-		const code = text.charCodeAt(i);
-		const value = code < 128 ? BASE64_CODES[code] : -1;
-		if (value < 0) {
-			continue;
-		}
-		held = (held << 6) | value;
-		bits += 6;
-		if (bits >= 8) {
-			bits -= 8;
-			bytes[length++] = (held >> bits) & 0xff;
-		}
-	}
-	if (bits >= 6) {
-		return null;
-	}
-	return bytes.subarray(0, length);
 }
 
 // The length of an incomplete CSI, SS3 or clipboard-reply opening at
