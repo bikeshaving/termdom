@@ -385,12 +385,12 @@ test("a meter's level reads its value against low, high and optimum", async () =
 test("a fieldset draws a border its legend interrupts", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 24});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = "<fieldset><legend>Legend</legend>textControl body</fieldset>";
+	dom.document.body.innerHTML = "<fieldset><legend>Legend</legend>field body</fieldset>";
 	await nextFrame(dom);
 
 	expect(terminal.getPlainText()).toBe(
 		"┌─ Legend ─────────────┐\n" +
-		"│ textControl body           │\n" +
+		"│ field body           │\n" +
 		"└──────────────────────┘\n",
 	);
 

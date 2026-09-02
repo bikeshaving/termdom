@@ -1,5 +1,5 @@
 // Node's inspect hook, so console.log(element) shows markup rather than a
-// textControl dump. Importing the module installs the hooks.
+// text control dump. Importing the module installs the hooks.
 import {
 	Comment,
 	Document,

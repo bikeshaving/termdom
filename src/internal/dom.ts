@@ -208,18 +208,18 @@ export function getSelectionFocus(element: globalThis.Element): number | null {
 }
 
 /**
- * The value offset under a document-space point in a text textControl. Accounts
+ * The value offset under a document-space point in a text text control. Accounts
  * for cell widths and clamps to the nearest offset, so a drag that leaves
- * the textControl still resolves. That matches browsers: a selection started in
- * a textControl belongs to the textControl until release.
+ * the text control still resolves. That matches browsers: a selection started in
+ * a text control belongs to the text control until release.
  */
 export function getTextControlCaretOffset(
 	element: globalThis.Element,
 	x: number,
 	y: number,
 ): number | null {
-	// Measure against the value's own text. For a password textControl that text
-	// is the bullets, which is what was painted, so that is what the point
+	// Measure against the value's own text. For a password text control that
+	// text is the bullets, which is what was painted, so that is what the point
 	// lands on.
 	const valueText = getTextControlValueText(element);
 	if (!valueText) {
@@ -242,9 +242,9 @@ export function getTextControlCaretOffset(
 }
 
 /**
- * The mousedown default action in a text textControl: put the caret at the
- * pressed character. Returns the textControl and the offset so the caller can
- * use them as a drag anchor, or null if the press was not on a textControl.
+ * The mousedown default action in a text text control: put the caret at the
+ * pressed character. Returns the text control and the offset so the caller can
+ * use them as a drag anchor, or null if the press was not on a text control.
  * checkbox, radio and hidden render no text, so a press on them returns
  * null.
  */
@@ -265,7 +265,7 @@ export function placeTextControlCaret(
 }
 
 /**
- * The focused text textControl's selection over this text node, or null. Per
+ * The focused text text control's selection over this text node, or null. Per
  * spec a control's selection is invisible to getSelection(), so this is
  * the only way the highlight can find it. The range refers to the text
  * node the control renders its value through, so a node identity check is
@@ -563,7 +563,7 @@ function applySharedTextControlEdit(
 }
 
 // Called from beforeinput, as in a browser: insertion is the keypress
-// default action, and the textControl's input event follows.
+// default action, and the text control's input event follows.
 function printableTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	text: string,
@@ -643,7 +643,10 @@ function applyTextControlEdit(
 	}
 }
 
-/** Add a span with a `part` attribute and one empty text node to a UA shadow tree. */
+/**
+ * Add a span with a `part` attribute and one empty text node to a UA shadow
+ * tree.
+ */
 function addPart(
 	root: globalThis.ShadowRoot,
 	part: string,
@@ -3493,8 +3496,8 @@ function invokeEventHandler(
 	if (callback === null) {
 		return;
 	}
-	// A window's error handler receives the ErrorEvent's text controls as separate
-	// arguments and returns true to cancel, the inverse of every other
+	// A window's error handler receives the ErrorEvent's text controls as
+	// separate arguments and returns true to cancel, the inverse of every other
 	// handler. A document's or element's error handler is an ordinary one.
 	const errorHandling =
 		type === "error" && !(target instanceof Node) && isErrorEvent(event);
@@ -4222,9 +4225,7 @@ function reportError(error: unknown): void {
 }
 
 const kSync = Symbol("resynchronize own properties");
-const kChildrenChangedSteps = Symbol(
-	"resynchronize after a change to a tree's structure",
-);
+const kChildrenChangedSteps = Symbol("children changed steps");
 const kAttributeSync = Symbol("resynchronize after an attribute change");
 
 interface LiveCollection {
@@ -13443,9 +13444,9 @@ class HTMLInputElement extends HTMLElement {
 	declare [kPreviouslyIndeterminate]?: boolean;
 	declare [kPreviousRadio]?: HTMLInputElement | null;
 
-	// The rendered tree and what it was built for: "textControl" for a text-like
-	// input, "toggle" for checkbox/radio, null until built. The two are
-	// different trees, so a type change rebuilds.
+	// The rendered tree and what it was built for: "text control" for a
+	// text-like input, "toggle" for checkbox/radio, null until built. The two
+	// are different trees, so a type change rebuilds.
 	declare [kUpgraded]?: boolean;
 	declare [kKind]?: "textControl" | "toggle" | null;
 	declare [kRoot]?: globalThis.ShadowRoot | null;
@@ -13458,9 +13459,9 @@ class HTMLInputElement extends HTMLElement {
 	// value sanitization). A toggle accepts neither, since it holds no text.
 	declare [kOnBeforeInput]?: (event: InputEvent) => void;
 
-	// A checkbox or radio activates on Space or Enter and never accepts
-	// typed text. Home and End move to the ends of the whole value, since an
-	// input has no visual lines. Everything else is the shared textControl logic.
+	// A checkbox or radio activates on Space or Enter and never accepts typed
+	// text. Home and End move to the ends of the whole value, since an input
+	// has no visual lines. Everything else is the shared text control logic.
 	declare [kOnKeydown]?: (event: KeyboardEvent) => void;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -13648,8 +13649,8 @@ class HTMLInputElement extends HTMLElement {
 	}
 
 	// NaN when the value does not parse. Only the numeric types return a
-	// number. Assigning NaN empties the textControl. Assigning a non-finite number
-	// throws the TypeError the spec requires.
+	// number. Assigning NaN empties the text control. Assigning a non-finite
+	// number throws the TypeError the spec requires.
 	get valueAsNumber(): number {
 		if (this.type !== "number" && this.type !== "range") {
 			return NaN;
@@ -13751,8 +13752,8 @@ class HTMLInputElement extends HTMLElement {
 	}
 
 	// The value the UA shadow tree renders and edits. The IDL attribute above
-	// returns an attribute for the types that have no value of their own.
-	// Those types render no textControl, so their value here is the empty string a
+	// returns an attribute for the types that have no value of their own. Those
+	// types render no text control, so their value here is the empty string a
 	// caret would sit in.
 	get [kUAValue](): string {
 		return getInputValueMode(this.type) === "value" ? this[kValue]! : "";
@@ -13839,9 +13840,9 @@ class HTMLInputElement extends HTMLElement {
 	}
 
 	// The selection APIs work for the five types the HTML Standard lists and
-	// throw for the rest. But the caret in an email or number textControl is real,
-	// and the UA shadow tree behind the control edits through it. This is the same
-	// algorithm without the type check an author gets.
+	// throw for the rest. But the caret in an email or number text control is
+	// real, and the UA shadow tree behind the control edits through it. This is
+	// the same algorithm without the type check an author gets.
 	[kUASelection]?(): {start: number; end: number; direction: string} {
 		return {
 			start: this[kSelectionStart]!,
@@ -14001,7 +14002,7 @@ class HTMLInputElement extends HTMLElement {
 
 // A number input's text can be any prefix of a valid floating-point
 // number and nothing else. An insertion that would break the grammar is
-// refused whole, the way a browser's number textControl refuses a second
+// refused whole, the way a browser's number text control refuses a second
 // decimal point. Deletions are never blocked, so text a deletion leaves
 // outside the grammar can always be cleared.
 function insertTextControlText(
@@ -14104,7 +14105,7 @@ function getInputKind(
 	return type === "checkbox" || type === "radio" ? "toggle" : "textControl";
 }
 
-// The textControl tree has value and placeholder parts. The toggle tree has a
+// The text control tree has value and placeholder parts. The toggle tree has a
 // single glyph part the painter fills from live `.checked`, because a
 // radio's group exclusivity unchecks siblings with no hook to sync
 // on.
@@ -14230,9 +14231,9 @@ function stepInput(input: HTMLInputElement, steps: number): void {
 // `min` anchors (zero when there is no min), clamped to [min, max]. A
 // value between grid points moves to the nearest point in the direction
 // of travel. Returns null when there is nowhere to go, so the caller can
-// leave the textControl untouched. An out-of-range value steps to the nearest
+// leave the text control untouched. An out-of-range value steps to the nearest
 // bound whichever way it was pushed, which is how a browser's up/down
-// buttons pull a textControl into range.
+// buttons pull a text control into range.
 function getSteppedValue(
 	input: HTMLInputElement,
 	steps: number,
@@ -15793,9 +15794,9 @@ class HTMLSelectElement extends HTMLElement {
 		this.options.remove(toLong(index));
 	}
 
-	// A select's selection record is always collapsed at the label's start,
-	// so the caret placement path can treat a select like a textControl. The caret
-	// is the focus of the selection.
+	// A select's selection record is always collapsed at the label's start, so
+	// the caret placement path can treat a select like a text control. The
+	// caret is the focus of the selection.
 	[kUASelection]?(): {start: number; end: number; direction: string} {
 		return {start: 0, end: 0, direction: "none"};
 	}
@@ -15884,8 +15885,8 @@ class HTMLSelectElement extends HTMLElement {
 
 		syncPickerRows(this, picker);
 
-		// Anchor below the textControl in DOCUMENT coordinates (the picker's
-		// containing block is the ICB), matching the textControl's width.
+		// Anchor below the text control in DOCUMENT coordinates (the picker's
+		// containing block is the ICB), matching the text control's width.
 		const rect = attached[kLayout].getRect(this);
 		if (rect) {
 			const top = `${Math.round(rect.bottom)}px`;
@@ -15905,8 +15906,8 @@ class HTMLSelectElement extends HTMLElement {
 			picker.style.display = "block";
 		}
 		// An open picker paints in the top layer, over following content. The
-		// UA shadow tree owns the membership together with the display flip, as one
-		// intent.
+		// UA shadow tree owns the membership together with the display flip, as
+		// one intent.
 		getTopLayer(this[kDocument]!).add(picker as unknown as Element);
 	}
 }
@@ -16769,7 +16770,7 @@ class HTMLTextAreaElement extends HTMLElement {
 
 	// Enter inserts a newline. The vertical arrows and Home/End move by
 	// VISUAL line (soft wraps count, as in a browser). Every other editing
-	// key is the shared textControl logic. This reads laid-out geometry, so it
+	// key is the shared text control logic. This reads laid-out geometry, so it
 	// flushes layout first.
 	declare [kOnKeydown]?: (event: KeyboardEvent) => void;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -16825,8 +16826,8 @@ class HTMLTextAreaElement extends HTMLElement {
 			if (key === "Enter" || (ctrlKey && key === "j")) {
 			// Insert a newline like any typed character, replacing the
 			// selection. A terminal sends line feed for Ctrl+J, which is the
-			// chord that reaches a textControl whose Enter an application has taken
-			// over.
+			// chord that reaches a text control whose Enter an application has
+			// taken over.
 				const next = value.slice(0, start) + "\n" + value.slice(end);
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
@@ -16955,8 +16956,8 @@ class HTMLTextAreaElement extends HTMLElement {
 		);
 	}
 
-	// The value the UA shadow tree renders and edits: the raw value once the dirty
-	// flag is set, the child text until then.
+	// The value the UA shadow tree renders and edits: the raw value once the
+	// dirty flag is set, the child text until then.
 	get [kUAValue](): string {
 		return this[kDirty]!
 			? this[kValue]!
@@ -17210,7 +17211,7 @@ function getTextareaLine(
 	return lines.length - 1;
 }
 
-// A thin textControl-specific view over the shared `lineFragments` primitive,
+// A thin text control-specific view over the shared `lineFragments` primitive,
 // including the empty and trailing-newline lines. Used only by the
 // control's own Home/End and vertical-motion editing. Geometry consumers
 // read `lineFragments` or a `Range` directly.
@@ -22155,7 +22156,7 @@ const scrolledElements = new WeakMap<Document, Set<Element>>();
 // paints on the cell grid, like the document document scroll), clamps into the
 // range layout reports for the box, stores the value, and tells the
 // engine what moved so the frame journal can price it. A box whose
-// extent layout cannot report (a textControl's value span, an opaque measured
+// extent layout cannot report (a text control's value span, an opaque measured
 // run) stores the write unclamped; the caret-reveal code owns those
 // offsets and keeps them sane. On a headless document the write is
 // stored and read back, and nothing moves.
@@ -25080,7 +25081,7 @@ export class TreeWalker implements globalThis.TreeWalker {
 }
 
 // A walk's whatToShow never changes after construction, so the choice
-// is made once, there, and every hop below is a textControl read.
+// is made once, there, and every hop below is a text control read.
 function getTreeLinks(whatToShow: number): TreeLinks {
 	return (whatToShow & SHOW_FLAT) !== 0 ? FLAT_LINKS : NODE_LINKS;
 }

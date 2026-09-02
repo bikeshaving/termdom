@@ -323,8 +323,8 @@ export class Input {
 	declare [kPopoverPressTarget]: Element | null;
 	// The document selection's anchor while a left-button drag selects.
 	declare [kSelectionDragAnchor]: {node: Text; offset: number} | null;
-	// A drag begun in a textControl extends the textControl's own bounded selection,
-	// not the document's. The two never merge.
+	// A drag begun in a text control extends the text control's own bounded
+	// selection, not the document's. The two never merge.
 	declare [kTextControlDragAnchor]: {
 		element: HTMLInputElement | HTMLTextAreaElement;
 		offset: number;
@@ -740,7 +740,7 @@ function dragTo(
 	y: number,
 	isInDocument: boolean,
 ): void {
-	// Clamped into the textControl, whichever element the pointer is over now.
+	// Clamped into the text control, whichever element the pointer is over now.
 	if (input[kTextControlDragAnchor] && isInDocument) {
 		const {
 			element: textControlElement,
@@ -816,8 +816,9 @@ function dispatchPress(
 		void render(input[kTermDOM]);
 	}
 
-	// Default action: a press in a textControl places the caret and anchors a
-	// textControl drag. The select UA shadow tree's own mousedown listener ran above.
+	// Default action: a press in a text control places the caret and anchors a
+	// text control drag. The select UA shadow tree's own mousedown listener ran
+	// above.
 	const parked =
 		base === 0 && isInDocument ? placeTextControlCaret(target, x, y) : null;
 	if (parked) {
@@ -984,7 +985,8 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 			moveFocus(input, shiftKey);
 		}
 
-		// Field editing is each UA shadow tree's own keydown listener, run above.
+		// Field editing is each UA shadow tree's own keydown listener, run
+		// above.
 		const activation = getKeyboardActivation(targetElement);
 		if (activation) {
 			if (
@@ -1005,7 +1007,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		}
 	}
 
-	// Inserting the character is keypress's default action, so a textControl's
+	// Inserting the character is keypress's default action, so a text control's
 	// input event follows keypress, as in a browser.
 	if (notCanceled && char !== "") {
 		const charCode = char.codePointAt(0)!;

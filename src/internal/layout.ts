@@ -1114,9 +1114,9 @@ function constrainMaxSizeForMode(
 		mode.mode === "shrink-to-fit"
 	) {
 		// A max caps the size without making it indefinite. Downgrading
-		// `definite` to `shrink-to-fit` tells an empty box it is shrink-wrapped,
-		// and it collapses to zero instead of taking the size flex just
-		// resolved for it.
+		// `definite` to `shrink-to-fit` tells an empty box it is
+		// shrink-wrapped, and it collapses to zero instead of taking the size
+		// flex just resolved for it.
 		mode.value = isDefined(mode.value) ? Math.min(mode.value, max) : max;
 	} else {
 		mode.value = max;
@@ -8840,9 +8840,9 @@ function collectLeaves(
 				// max-width caps the width the content BREAKS at, not just the
 				// reported box. Otherwise it wraps at its natural width and
 				// overflows the capped box. A percentage resolves against the
-				// run's available width, or `max-width: 100%` (every text
-				// textControl's value part) broke at its natural width and overflowed
-				// its textControl.
+				// run's available width, or `max-width: 100%` (every text text
+				// control's value part) broke at its natural width and
+				// overflowed its text control.
 				const maxWidthValue = parseUnitValue(
 					getComputedValue(element, "max-width"),
 				);
@@ -8912,9 +8912,9 @@ function collectLeaves(
 				}
 
 				// And the REPORTED box. Content that cannot wrap (a single-line
-				// textControl's pre text) overflows and is clipped rather than
-				// stretching the box, or the textControl's horizontal scroll has
-				// nothing to window.
+				// text control's pre text) overflows and is clipped rather than
+				// stretching the box, or the text control's horizontal scroll
+				// has nothing to window.
 				if (maxWidthCap !== undefined) {
 					finalContentWidth = Math.min(
 						finalContentWidth,
@@ -8928,9 +8928,10 @@ function collectLeaves(
 				}
 
 				// rows floor the content height (spec default 2). A floor, not
-				// a height: the textControl grows with its content, where a browser
-				// would scroll inside a fixed box. cols fix the reported width.
-				// The box is attribute-sized however short the value is.
+				// a height: the text control grows with its content, where a
+				// browser would scroll inside a fixed box. cols fix the
+				// reported width. The box is attribute-sized however short the
+				// value is.
 				if (element.tagName === "TEXTAREA") {
 					if (boxModel.height === undefined) {
 						const rows = parseInt(element.getAttribute("rows") ?? "", 10);
@@ -10695,7 +10696,7 @@ export class Layout {
 			});
 		}
 		// Empty text's one line sits at the containing block's content-box
-		// origin, where a caret rests in an empty textControl.
+		// origin, where a caret rests in an empty text control.
 		if (lines.length === 0) {
 			const parent = textNode.parentElement;
 			const content = parent && this.contentRect(parent);
@@ -10721,7 +10722,7 @@ export class Layout {
 	// a column into an offset, correct over collapsing white space. Landing
 	// past the last character means "after it", so a drag selects through
 	// end-of-line. With clampToNearestLine a point on no line resolves to
-	// the nearest, so a drag that leaves a textControl still tracks it.
+	// the nearest, so a drag that leaves a text control still tracks it.
 	caretPositionFromPoint(
 		x: number,
 		y: number,
@@ -11599,9 +11600,9 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		const parent = flatParentElement<Element>(currentNode)!;
 
 		if (establishesIndependentFormattingContext(parent)) {
-			// A textControl's windowed value shifts its content by its own scroll, so
-			// the caret stays in view, independent of whether its segment is
-			// found below.
+			// A text control's windowed value shifts its content by its own
+			// scroll, so the caret stays in view, independent of whether its
+			// segment is found below.
 			accumulatedOffsetX -= (parent as Element).scrollLeft || 0;
 			accumulatedOffsetY -= (parent as Element).scrollTop || 0;
 			let found = false;

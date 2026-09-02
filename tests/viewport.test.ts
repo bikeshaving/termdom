@@ -1104,7 +1104,7 @@ test("a height shrink past the fit point repaints one whole frame", async () => 
 	// the terminal scrolled is unrecoverable -- a same-cursor DSR reports the
 	// frame did not move even when it did, and making room on top of that
 	// mis-anchor strands a copy of the frame's own top rows (the duplicated
-	// header the commit-editor showed on a vertical shrink). A focused textControl
+	// header the commit-editor showed on a vertical shrink). A focused field
 	// is the load-bearing ingredient: it parks the cursor at the caret,
 	// mid-frame, so the recovery answers a mid-frame row. The engine resolves
 	// it by clearing the whole screen and painting from the top -- exactly one

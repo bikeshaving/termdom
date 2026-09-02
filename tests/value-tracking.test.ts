@@ -54,32 +54,32 @@ function trackAccessor(node: any, property: "value" | "checked"): {
 	};
 }
 
-/** A focused textControl in a running terminal, ready to be typed into. */
+/** A focused field in a running terminal, ready to be typed into. */
 async function textControlFixture(tag: "input" | "textarea"): Promise<
-	{terminal: MockProcess; dom: TermDOM; textControl: any}
+	{terminal: MockProcess; dom: TermDOM; field: any}
 > {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	await new Promise((resolve) => setTimeout(resolve, 0));
-	const textControl = dom.document.createElement(tag) as any;
-	dom.document.body.appendChild(textControl);
-	textControl.focus();
+	const field = dom.document.createElement(tag) as any;
+	dom.document.body.appendChild(field);
+	field.focus();
 	await nextFrame(dom);
-	return {terminal, dom, textControl};
+	return {terminal, dom, field};
 }
 
 /* ------------------------------------------- the user's edit, not the page's */
 
 test("typing an input never runs the page's value setter", async () => {
-	const {terminal, dom, textControl} = await textControlFixture("input");
-	const tracker = trackAccessor(textControl, "value");
+	const {terminal, dom, field} = await textControlFixture("input");
+	const tracker = trackAccessor(field, "value");
 	const events: string[] = [];
-	textControl.addEventListener("input", () => events.push("input"));
+	field.addEventListener("input", () => events.push("input"));
 
 	await type(terminal, "hi");
 
-	expect(textControl.value).toBe("hi");
+	expect(field.value).toBe("hi");
 	expect(tracker.assigned).toEqual([]);
 	expect(tracker.drifted()).toBe(true);
 	expect(events).toEqual(["input", "input"]);
@@ -88,31 +88,31 @@ test("typing an input never runs the page's value setter", async () => {
 });
 
 test("backspace and paste stay off the page's value setter", async () => {
-	const {terminal, dom, textControl} = await textControlFixture("input");
+	const {terminal, dom, field} = await textControlFixture("input");
 	await type(terminal, "abc");
-	const tracker = trackAccessor(textControl, "value");
+	const tracker = trackAccessor(field, "value");
 
 	await type(terminal, "\x7f");
-	expect(textControl.value).toBe("ab");
+	expect(field.value).toBe("ab");
 	// A bracketed paste is one atomic insert.
 	await type(terminal, "\x1b[200~xyz\x1b[201~");
-	expect(textControl.value).toBe("abxyz");
+	expect(field.value).toBe("abxyz");
 	expect(tracker.assigned).toEqual([]);
 
 	dom.dispose();
 });
 
 test("typing a textarea never runs the page's value setter", async () => {
-	const {terminal, dom, textControl} = await textControlFixture("textarea");
-	const tracker = trackAccessor(textControl, "value");
+	const {terminal, dom, field} = await textControlFixture("textarea");
+	const tracker = trackAccessor(field, "value");
 	const events: string[] = [];
-	textControl.addEventListener("input", () => events.push("input"));
+	field.addEventListener("input", () => events.push("input"));
 
 	await type(terminal, "ab");
 	await type(terminal, "\r");
 	await type(terminal, "c");
 
-	expect(textControl.value).toBe("ab\nc");
+	expect(field.value).toBe("ab\nc");
 	expect(tracker.assigned).toEqual([]);
 	expect(tracker.drifted()).toBe(true);
 	expect(events.length).toBe(4);
@@ -143,12 +143,12 @@ test("clicking a checkbox never runs the page's checked setter", async () => {
 });
 
 test("the page's own assignment still runs its wrapped setter", async () => {
-	const {dom, textControl} = await textControlFixture("input");
-	const tracker = trackAccessor(textControl, "value");
+	const {dom, field} = await textControlFixture("input");
+	const tracker = trackAccessor(field, "value");
 
-	textControl.value = "written";
+	field.value = "written";
 
-	expect(textControl.value).toBe("written");
+	expect(field.value).toBe("written");
 	expect(tracker.assigned).toEqual(["written"]);
 	expect(tracker.drifted()).toBe(false);
 
@@ -156,14 +156,14 @@ test("the page's own assignment still runs its wrapped setter", async () => {
 });
 
 test("a page assignment after typing runs the setter, and wins", async () => {
-	const {terminal, dom, textControl} = await textControlFixture("input");
+	const {terminal, dom, field} = await textControlFixture("input");
 	await type(terminal, "typed");
-	const tracker = trackAccessor(textControl, "value");
+	const tracker = trackAccessor(field, "value");
 
-	textControl.value = "typed!";
+	field.value = "typed!";
 	await type(terminal, "?");
 
-	expect(textControl.value).toBe("typed!?");
+	expect(field.value).toBe("typed!?");
 	expect(tracker.assigned).toEqual(["typed!"]);
 
 	dom.dispose();
@@ -172,18 +172,18 @@ test("a page assignment after typing runs the setter, and wins", async () => {
 /* ------------------------------------------------------ the dirty value flag */
 
 test("typing sets an input's dirty value flag", async () => {
-	const {terminal, dom, textControl} = await textControlFixture("input");
-	textControl.setAttribute("value", "default");
-	expect(textControl.value).toBe("default");
+	const {terminal, dom, field} = await textControlFixture("input");
+	field.setAttribute("value", "default");
+	expect(field.value).toBe("default");
 
 	await type(terminal, "!");
 
 	// The attribute stops feeding the value once the user has edited it, and
 	// keeps answering for the default.
-	expect(textControl.value).toBe("!default");
-	textControl.setAttribute("value", "ignored now");
-	expect(textControl.value).toBe("!default");
-	expect(textControl.defaultValue).toBe("ignored now");
+	expect(field.value).toBe("!default");
+	field.setAttribute("value", "ignored now");
+	expect(field.value).toBe("!default");
+	expect(field.defaultValue).toBe("ignored now");
 
 	dom.dispose();
 });
@@ -220,16 +220,16 @@ test("a form reset clears the flag a user edit set", async () => {
 });
 
 test("typing sets a textarea's dirty value flag", async () => {
-	const {terminal, dom, textControl} = await textControlFixture("textarea");
-	textControl.appendChild(dom.document.createTextNode("child"));
-	expect(textControl.value).toBe("child");
+	const {terminal, dom, field} = await textControlFixture("textarea");
+	field.appendChild(dom.document.createTextNode("child"));
+	expect(field.value).toBe("child");
 
 	await type(terminal, "!");
 
-	expect(textControl.value).toBe("!child");
-	textControl.firstChild.data = "ignored now";
-	expect(textControl.value).toBe("!child");
-	expect(textControl.defaultValue).toBe("ignored now");
+	expect(field.value).toBe("!child");
+	field.firstChild.data = "ignored now";
+	expect(field.value).toBe("!child");
+	expect(field.defaultValue).toBe("ignored now");
 
 	dom.dispose();
 });
@@ -237,9 +237,9 @@ test("typing sets a textarea's dirty value flag", async () => {
 /* ------------------------------------------------- what the widget renders */
 
 test("a user edit reaches the rendered value, not only the IDL attribute", async () => {
-	const {terminal, dom, textControl} = await textControlFixture("input");
-	// A page that replaces the accessor outright still sees its textControl paint.
-	Object.defineProperty(textControl, "value", {
+	const {terminal, dom, field} = await textControlFixture("input");
+	// A page that replaces the accessor outright still sees its field paint.
+	Object.defineProperty(field, "value", {
 		configurable: true,
 		get: () => "not the value",
 		set: () => {},

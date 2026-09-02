@@ -223,7 +223,7 @@ test("a widget alone inside an inline-block paints where the box measured it", a
 test("a block between two runs does not blank the earlier one", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = "heading<div>middle</div><input value=\"textControl\">";
+	dom.document.body.innerHTML = "heading<div>middle</div><input value=\"field\">";
 
 	await nextFrame(dom);
 
@@ -233,7 +233,7 @@ test("a block between two runs does not blank the earlier one", async () => {
 	const lines = terminal.getVisibleText().split("\n");
 	expect(lines[0]).toContain("heading");
 	expect(lines[1]).toContain("middle");
-	expect(lines[2]).toContain("textControl");
+	expect(lines[2]).toContain("field");
 
 	dom.dispose();
 });

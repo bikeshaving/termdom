@@ -303,12 +303,12 @@ test("Field and ButtonFace clear to the terminal's default background", async ()
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML =
-		"<div style=\"background-color: Field; display: block\">textControl row</div>" +
+		"<div style=\"background-color: Field; display: block\">field row</div>" +
 		"<div style=\"background-color: ButtonFace; display: block\">button row</div>";
 	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
 
-	expect(snapshot).toContain("textControl row");
+	expect(snapshot).toContain("field row");
 	expect(snapshot).toContain("button row");
 	expect(snapshot).not.toMatch(/48;2;/);
 

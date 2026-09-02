@@ -1809,7 +1809,7 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
 // element's viewport block, a select sized to its widest option label so
-// the textControl never jumps, the size attribute driving an input's width.
+// the text control never jumps, the size attribute driving an input's width.
 // Everything expressible as CSS lives in UA_ELEMENT_STYLES.
 function getElementDefaults(
 	element: Element,
@@ -8433,8 +8433,8 @@ function isBeingRendered(element: Element): boolean {
 		node = host;
 	}
 	// A light-DOM child an open shadow root never slots is outside the flat
-	// tree. A closed root is this engine's own UA shadow tree internals, whose parts
-	// the UA shadow tree itself reads styles for.
+	// tree. A closed root is this engine's own UA shadow tree internals, whose
+	// parts the UA shadow tree itself reads styles for.
 	for (
 		let child: Element | null = element;
 		child;
@@ -9485,8 +9485,8 @@ export class Cascade {
 			return;
 		}
 		this[kShadowRoots].add(root);
-		// Incrementally. Rebuilding every sheet per UA shadow tree upgrade made a
-		// document of n UA shadow trees reparse everything n times.
+		// Incrementally. Rebuilding every sheet per UA shadow tree upgrade made
+		// a document of n UA shadow trees reparse everything n times.
 		this[kSyncShadowRoot](root);
 	}
 
@@ -9892,8 +9892,8 @@ export class Cascade {
 				invalidateSubtree(this, child);
 			}
 		}
-		// The UA shadow trees' sheets have no pseudo-generating rules, so the attach
-		// sweep runs only for an author shadow root that does.
+		// The UA shadow trees' sheets have no pseudo-generating rules, so the
+		// attach sweep runs only for an author shadow root that does.
 		if (
 			fresh.some(
 				(rule) =>

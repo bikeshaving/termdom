@@ -283,13 +283,13 @@ test("Enter on a button is a gesture, through the click it generates", async () 
 	dom.dispose();
 });
 
-test("a paste fires at the focused textControl and inserts by default", async () => {
+test("a paste fires at the focused field and inserts by default", async () => {
 	const {proc, dom} = await mount();
 	const {document} = dom;
-	document.body.innerHTML = "<input id=\"textControl\">";
+	document.body.innerHTML = "<input id=\"field\">";
 	await nextFrame(dom);
-	const textControl = document.getElementById("textControl") as any;
-	textControl.focus();
+	const field = document.getElementById("field") as any;
+	field.focus();
 	await nextFrame(dom);
 	const seen: Array<{target: string; text: string; trusted: boolean}> = [];
 	document.addEventListener("paste", (event: any) => {
@@ -301,8 +301,8 @@ test("a paste fires at the focused textControl and inserts by default", async ()
 	});
 	await send(proc, "\x1b[200~hello\x1b[201~");
 	await nextFrame(dom);
-	expect(seen).toEqual([{target: "textControl", text: "hello", trusted: true}]);
-	expect(textControl.value).toBe("hello");
+	expect(seen).toEqual([{target: "field", text: "hello", trusted: true}]);
+	expect(field.value).toBe("hello");
 	dom.dispose();
 });
 
@@ -325,13 +325,13 @@ test("a paste with nothing focused fires at the body", async () => {
 test("preventing the paste suppresses the insert", async () => {
 	const {proc, dom} = await mount();
 	const {document} = dom;
-	document.body.innerHTML = "<input id=\"textControl\">";
+	document.body.innerHTML = "<input id=\"field\">";
 	await nextFrame(dom);
-	const textControl = document.getElementById("textControl") as any;
-	textControl.focus();
+	const field = document.getElementById("field") as any;
+	field.focus();
 	await nextFrame(dom);
 	const inputTypes: string[] = [];
-	textControl.addEventListener("beforeinput", (event: any) => {
+	field.addEventListener("beforeinput", (event: any) => {
 		inputTypes.push(event.inputType);
 	});
 	document.addEventListener("paste", (event: any) => {
@@ -340,7 +340,7 @@ test("preventing the paste suppresses the insert", async () => {
 	await send(proc, "\x1b[200~blocked\x1b[201~");
 	await nextFrame(dom);
 	expect(inputTypes).toEqual([]);
-	expect(textControl.value).toBe("");
+	expect(field.value).toBe("");
 	dom.dispose();
 });
 

@@ -77,7 +77,7 @@ export class TermDOM {
 	declare [kLifecycle]: Lifecycle;
 	declare [kMouseReportingEnabled]: boolean;
 	declare [kHoverReportingEnabled]: boolean;
-	// The textControl whose caret the next frame reveals. The last edit before
+	// The text control whose caret the next frame reveals. The last edit before
 	// the frame wins.
 	declare [kPendingCaretReveal]: HTMLInputElement |
 		HTMLTextAreaElement |
@@ -118,8 +118,8 @@ export class TermDOM {
 			}
 			details.scrollIntoView({block: "nearest"});
 		};
-		// Only the active textControl. A select commit or an author's dispatch on an
-		// unfocused control must not move the document scroll.
+		// Only the active text control. A select commit or an author's dispatch
+		// on an unfocused control must not move the document scroll.
 		const onTextControlEditEvent = (event: Event): void => {
 			const target = event.target;
 			if (
@@ -672,7 +672,7 @@ function getCaretRect(
 
 /**
  * Keeps the caret inside the document scroll on edits only. Wheel-scrolling away
- * from a focused textControl stays allowed.
+ * from a focused text control stays allowed.
  */
 function scrollCaretIntoView(
 	termdom: TermDOM,
@@ -688,7 +688,7 @@ function scrollCaretIntoView(
 	if (caret !== null) {
 		caretY = caret.y;
 	}
-	// Widened to the textControl's edge when the caret is on its first or last
+	// Widened to the text control's edge when the caret is on its first or last
 	// row, so the border shows instead of a cropped box.
 	const boxModel = getBoxModel(element);
 	let revealTop = caretY;
@@ -920,8 +920,8 @@ async function renderInteractive(
 	termdom[kLayout].performLayout();
 	DOM.clampScrollOffsets(termdom.document);
 
-	// Skipped if focus has moved on. Revealing a textControl the user left would
-	// yank the document scroll back.
+	// Skipped if focus has moved on. Revealing a text control the user left
+	// would yank the document scroll back.
 	if (termdom[kPendingCaretReveal]) {
 		const reveal = termdom[kPendingCaretReveal];
 		termdom[kPendingCaretReveal] = null;
@@ -989,7 +989,7 @@ async function renderInteractive(
 
 	// The cursor stays hidden while a frame paints and between frames. It
 	// is parked for resize bookkeeping, and a cursor blinking there is not
-	// UI. A focused textControl shows it on its caret, where IME composition
+	// UI. A focused text control shows it on its caret, where IME composition
 	// anchors.
 	if (ansi) {
 		termdom[kExchange].setDisplayType("cursorHidden", true);

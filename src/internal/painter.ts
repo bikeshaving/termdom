@@ -809,7 +809,7 @@ function getPaintSelectionRange(
 		textNode,
 	);
 	if (textControl) {
-		// ::selection resolves on the textControl, not the shadow value span.
+		// ::selection resolves on the text control, not the shadow value span.
 		return {range: textControl.range, selectionParent: textControl.textControl};
 	}
 

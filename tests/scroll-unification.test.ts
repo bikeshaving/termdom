@@ -140,7 +140,7 @@ test("a scroll repaint keeps the legend on the fieldset's border row", async () 
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		"<div>l0</div><div>l1</div><div>l2</div><div>l3</div>" +
-		"<fieldset><legend>Legend</legend><div>textControl body</div></fieldset>" +
+		"<fieldset><legend>Legend</legend><div>field body</div></fieldset>" +
 		"<div>t0</div><div>t1</div><div>t2</div><div>t3</div>" +
 		"<div>t4</div><div>t5</div><div>t6</div><div>t7</div>";
 	await nextFrame(dom);
