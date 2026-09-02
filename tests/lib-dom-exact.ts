@@ -505,7 +505,17 @@ type Map4<T> =
 																										DOM.Location
 																									> extends true
 																										? globalThis.Location
-																										: T;
+																										: Identical<
+																											T,
+																											DOM.Window
+																										> extends true
+																											? globalThis.Window
+																											: Identical<
+																												T,
+																												DOM.Storage
+																											> extends true
+																												? globalThis.Storage
+																												: T;
 type ToPlatform<T> = T extends unknown
 	? T extends DOM.NodeListOf<infer U>
 		? Identical<T, DOM.NodeListOf<U>> extends true
@@ -1176,3 +1186,12 @@ export type DOMStringListDrift = Drift<
 	globalThis.DOMStringList
 >;
 export type LocationDrift = Drift<DOM.Location, globalThis.Location>;
+// lib.dom types `window` and `self` as the browser's global object
+// (Window & typeof globalThis). This window is an object a caller holds,
+// not a global, so those two are the plain Window.
+export type WindowDrift = Drift<
+	DOM.Window,
+	globalThis.Window,
+	"window" | "self"
+>;
+export type StorageDrift = Drift<DOM.Storage, globalThis.Storage>;

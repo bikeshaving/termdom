@@ -29286,10 +29286,112 @@ export function runFrameCallbacks(document: globalThis.Document): boolean {
 	return state.held.size > 0;
 }
 
+const kStorageItems = Symbol("storage items");
+
+interface Storage {
+	[name: string]: any;
+}
+
+// One in-memory area per window, kept for the session the way a private
+// browsing window keeps its storage: nothing is written to disk.
+class Storage {
+	declare [kStorageItems]?: Map<string, string>;
+
+	constructor() {
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kStorageItems] = new Map();
+	}
+
+	get length(): number {
+		return this[kStorageItems]!.size;
+	}
+
+	clear(): void {
+		this[kStorageItems]!.clear();
+	}
+
+	getItem(key: string): string | null {
+		return this[kStorageItems]!.get(String(key)) ?? null;
+	}
+
+	key(index: number): string | null {
+		const keys = [...this[kStorageItems]!.keys()];
+		const at = toUnsignedLong(index);
+		return at < keys.length ? keys[at] : null;
+	}
+
+	removeItem(key: string): void {
+		this[kStorageItems]!.delete(String(key));
+	}
+
+	setItem(key: string, value: string): void {
+		this[kStorageItems]!.set(String(key), String(value));
+	}
+}
+
+Object.defineProperty(Storage.prototype, Symbol.toStringTag, {
+	value: "Storage",
+	configurable: true,
+});
+
+const BAR_PROP: globalThis.BarProp = Object.freeze({visible: false});
+
+const EXTERNAL: globalThis.External = Object.freeze({
+	AddSearchProvider(): void {},
+	IsSearchProviderInstalled(): void {},
+});
+
+function createHistory(): globalThis.History {
+	let state: any = null;
+	return {
+		get length(): number {
+			return 1;
+		},
+		scrollRestoration: "auto",
+		get state(): any {
+			return state;
+		},
+		back(): void {},
+		forward(): void {},
+		go(_delta?: number): void {},
+		pushState(data: any, _unused: string, _url?: string | URL | null): void {
+			state = structuredClone(data);
+		},
+		replaceState(data: any, _unused: string, _url?: string | URL | null): void {
+			state = structuredClone(data);
+		},
+	};
+}
+
+function noWindowFeature(what: string): never {
+	throw domError("NotSupportedError", `A terminal has no ${what}`);
+}
+
+const kClosed = Symbol("closed");
+const kHistory = Symbol("history");
+const kLocalStorage = Symbol("local storage");
+const kSessionStorage = Symbol("session storage");
+const kScreenInfo = Symbol("screen");
+const kWindowName = Symbol("window name");
+const kWindowStatus = Symbol("window status");
+const kIdleTimers = Symbol("idle timers");
+const kNextIdleHandle = Symbol("next idle handle");
+
 export class Window extends EventTarget {
 	readonly document: Document;
 	declare [kNavigator]?: Navigator | undefined;
 	declare [kWindowLocation]?: Location | undefined;
+	declare [kClosed]?: boolean;
+	declare [kHistory]?: globalThis.History;
+	declare [kLocalStorage]?: Storage;
+	declare [kSessionStorage]?: Storage;
+	declare [kScreenInfo]?: globalThis.Screen;
+	declare [kWindowName]?: string;
+	declare [kWindowStatus]?: string;
+	declare [kIdleTimers]?: Map<number, ReturnType<typeof setTimeout>>;
+	declare [kNextIdleHandle]?: number;
 	constructor(document: Document) {
 		super();
 		this.document = document;
@@ -29392,6 +29494,234 @@ export class Window extends EventTarget {
 		return navigator;
 	}
 
+	get clientInformation(): Navigator {
+		return this.navigator;
+	}
+
+	get closed(): boolean {
+		return this[kClosed] === true;
+	}
+
+	get cookieStore(): globalThis.CookieStore {
+		return noWindowFeature("cookie store");
+	}
+
+	get devicePixelRatio(): number {
+		return 1;
+	}
+
+	get event(): globalThis.Event | undefined {
+		return undefined;
+	}
+
+	get external(): globalThis.External {
+		return EXTERNAL;
+	}
+
+	get frameElement(): globalThis.Element | null {
+		return null;
+	}
+
+	get frames(): Window {
+		return this;
+	}
+
+	get history(): globalThis.History {
+		let history = this[kHistory];
+		if (history === undefined) {
+			history = createHistory();
+			this[kHistory] = history;
+		}
+		return history;
+	}
+
+	get length(): number {
+		return 0;
+	}
+
+	get locationbar(): globalThis.BarProp {
+		return BAR_PROP;
+	}
+
+	get menubar(): globalThis.BarProp {
+		return BAR_PROP;
+	}
+
+	get personalbar(): globalThis.BarProp {
+		return BAR_PROP;
+	}
+
+	get scrollbars(): globalThis.BarProp {
+		return BAR_PROP;
+	}
+
+	get statusbar(): globalThis.BarProp {
+		return BAR_PROP;
+	}
+
+	get toolbar(): globalThis.BarProp {
+		return BAR_PROP;
+	}
+
+	get name(): string {
+		return this[kWindowName] ?? "";
+	}
+
+	set name(value: string) {
+		this[kWindowName] = String(value);
+	}
+
+	get opener(): any {
+		return null;
+	}
+
+	set opener(_value: any) {}
+
+	get orientation(): number {
+		return 0;
+	}
+
+	get originAgentCluster(): boolean {
+		return false;
+	}
+
+	get parent(): Window {
+		return this;
+	}
+
+	// The terminal is the screen. Color depth is what a truecolor terminal
+	// shows; the engine does not read the terminal's actual depth.
+	get screen(): globalThis.Screen {
+		let screen = this[kScreenInfo];
+		if (screen === undefined) {
+			const window = this;
+			screen = {
+				get availWidth(): number {
+					return window.innerWidth;
+				},
+				get availHeight(): number {
+					return window.innerHeight;
+				},
+				get width(): number {
+					return window.innerWidth;
+				},
+				get height(): number {
+					return window.innerHeight;
+				},
+				colorDepth: 24,
+				pixelDepth: 24,
+				get orientation(): globalThis.ScreenOrientation {
+					return noWindowFeature("screen orientation");
+				},
+			};
+			this[kScreenInfo] = screen;
+		}
+		return screen;
+	}
+
+	get screenLeft(): number {
+		return 0;
+	}
+
+	get screenX(): number {
+		return 0;
+	}
+
+	get screenY(): number {
+		return this.screenTop;
+	}
+
+	get speechSynthesis(): globalThis.SpeechSynthesis {
+		return noWindowFeature("speech synthesis");
+	}
+
+	get status(): string {
+		return this[kWindowStatus] ?? "";
+	}
+
+	set status(value: string) {
+		this[kWindowStatus] = String(value);
+	}
+
+	get top(): Window | null {
+		return this;
+	}
+
+	get visualViewport(): globalThis.VisualViewport | null {
+		return null;
+	}
+
+	get caches(): globalThis.CacheStorage {
+		return noWindowFeature("cache storage");
+	}
+
+	get crossOriginIsolated(): boolean {
+		return false;
+	}
+
+	get indexedDB(): globalThis.IDBFactory {
+		return noWindowFeature("indexed database");
+	}
+
+	get isSecureContext(): boolean {
+		return true;
+	}
+
+	get origin(): string {
+		const url = URL.parse(this.document.URL);
+		return url === null ? "null" : url.origin;
+	}
+
+	get localStorage(): Storage {
+		let storage = this[kLocalStorage];
+		if (storage === undefined) {
+			storage = constructInternal(() => new Storage());
+			this[kLocalStorage] = storage;
+		}
+		return storage;
+	}
+
+	get sessionStorage(): Storage {
+		let storage = this[kSessionStorage];
+		if (storage === undefined) {
+			storage = constructInternal(() => new Storage());
+			this[kSessionStorage] = storage;
+		}
+		return storage;
+	}
+
+	get crypto(): globalThis.Crypto {
+		return globalThis.crypto;
+	}
+
+	get performance(): globalThis.Performance {
+		return globalThis.performance;
+	}
+
+	get trustedTypes(): globalThis.TrustedTypePolicyFactory | undefined {
+		return undefined;
+	}
+
+	get TrustedHTML(): globalThis.Window["TrustedHTML"] {
+		return noWindowFeature("trusted types");
+	}
+
+	get TrustedScript(): globalThis.Window["TrustedScript"] {
+		return noWindowFeature("trusted types");
+	}
+
+	get TrustedScriptURL(): globalThis.Window["TrustedScriptURL"] {
+		return noWindowFeature("trusted types");
+	}
+
+	get TrustedTypePolicy(): globalThis.Window["TrustedTypePolicy"] {
+		return noWindowFeature("trusted types");
+	}
+
+	get TrustedTypePolicyFactory(): globalThis.Window["TrustedTypePolicyFactory"] {
+		return noWindowFeature("trusted types");
+	}
+
 	// scrollTo/scroll set the document scroll to an absolute position, the same
 	// state scrollY reads and scrollBy moves relatively. documentElement and
 	// body's scrollTop expose the same value, as in standard DOM
@@ -29434,6 +29764,8 @@ export class Window extends EventTarget {
 		super.removeEventListener(type, listener, options);
 	}
 
+	scrollTo(options?: globalThis.ScrollToOptions): void;
+	scrollTo(x: number, y: number): void;
 	scrollTo(xOrOptions?: number | ScrollToOptions, y?: number): void {
 		const attached = getAttachedDocument(this.document);
 		if (attached === undefined) {
@@ -29447,10 +29779,14 @@ export class Window extends EventTarget {
 		void render(attached[kTermDOM]);
 	}
 
+	scroll(options?: globalThis.ScrollToOptions): void;
+	scroll(x: number, y: number): void;
 	scroll(xOrOptions?: number | ScrollToOptions, y?: number): void {
 		this.scrollTo(xOrOptions, y);
 	}
 
+	scrollBy(options?: globalThis.ScrollToOptions): void;
+	scrollBy(x: number, y: number): void;
 	scrollBy(xOrOptions?: number | ScrollToOptions, y?: number): void {
 		const attached = getAttachedDocument(this.document);
 		if (attached === undefined) {
@@ -29562,7 +29898,129 @@ export class Window extends EventTarget {
 			return;
 		}
 		closeTermDOM(attached[kTermDOM]);
+		this[kClosed] = true;
 	}
+
+	alert(_message?: any): void {}
+
+	blur(): void {}
+
+	cancelIdleCallback(handle: number): void {
+		const timers = this[kIdleTimers];
+		const timer = timers?.get(handle);
+		if (timer !== undefined) {
+			clearTimeout(timer);
+			timers!.delete(handle);
+		}
+	}
+
+	captureEvents(): void {}
+
+	confirm(_message?: string): boolean {
+		return false;
+	}
+
+	createImageBitmap(
+		image: globalThis.ImageBitmapSource,
+		options?: globalThis.ImageBitmapOptions,
+	): Promise<globalThis.ImageBitmap>;
+	createImageBitmap(
+		image: globalThis.ImageBitmapSource,
+		sx: number,
+		sy: number,
+		sw: number,
+		sh: number,
+		options?: globalThis.ImageBitmapOptions,
+	): Promise<globalThis.ImageBitmap>;
+	createImageBitmap(): Promise<globalThis.ImageBitmap> {
+		return Promise.reject(
+			domError("NotSupportedError", "A terminal has no bitmaps"),
+		);
+	}
+
+	focus(): void {}
+
+	moveBy(_x: number, _y: number): void {}
+
+	moveTo(_x: number, _y: number): void {}
+
+	open(
+		_url?: string | URL,
+		_target?: string,
+		_features?: string,
+	): Window | null {
+		return null;
+	}
+
+	// The message lands on this same window, as it would on a window that
+	// posts to itself: there is no other window to post to.
+	postMessage(
+		message: any,
+		targetOrigin: string,
+		transfer?: globalThis.Transferable[],
+	): void;
+	postMessage(message: any, options?: globalThis.WindowPostMessageOptions): void;
+	postMessage(message: any): void {
+		const data = structuredClone(message);
+		const origin = this.origin;
+		globalThis.setTimeout(() => {
+			dispatch(
+				this,
+				new MessageEvent("message", {
+					data,
+					origin,
+					source: this as unknown as globalThis.MessageEventSource,
+				}),
+			);
+		}, 0);
+	}
+
+	print(): void {}
+
+	prompt(_message?: string, _default?: string): string | null {
+		return null;
+	}
+
+	releaseEvents(): void {}
+
+	reportError(e: any): void {
+		globalThis.setTimeout(() => {
+			throw e;
+		}, 0);
+	}
+
+	requestIdleCallback(
+		callback: globalThis.IdleRequestCallback,
+		options?: globalThis.IdleRequestOptions,
+	): number {
+		if (typeof callback !== "function") {
+			throw new TypeError("requestIdleCallback needs a callback");
+		}
+		let timers = this[kIdleTimers];
+		if (timers === undefined) {
+			timers = new Map();
+			this[kIdleTimers] = timers;
+			this[kNextIdleHandle] = 1;
+		}
+		const handle = this[kNextIdleHandle]!++;
+		const timer = globalThis.setTimeout(() => {
+			timers.delete(handle);
+			const start = globalThis.performance.now();
+			callback({
+				didTimeout: false,
+				timeRemaining: () =>
+					Math.max(0, 50 - (globalThis.performance.now() - start)),
+			});
+		}, options?.timeout ?? 0);
+		timers.set(handle, timer);
+		return handle;
+	}
+
+	resizeBy(_x: number, _y: number): void {}
+
+	resizeTo(_width: number, _height: number): void {}
+
+	stop(): void {}
 }
 
 function createBeforeUnloadEvent(): BeforeUnloadEvent {
@@ -29584,6 +30042,12 @@ function watchMediaQuery(document: Document, update: () => void): void {
 // this engine fires them.
 installEventHandlers(Window.prototype, GLOBAL_EVENT_HANDLERS);
 installEventHandlers(Window.prototype, WINDOW_EVENT_HANDLERS);
+installEventHandlers(Window.prototype, [
+	"ondevicemotion",
+	"ondeviceorientation",
+	"ondeviceorientationabsolute",
+	"onorientationchange",
+]);
 
 // RUNTIME: installed on prototypes at load.
 type NodeConstants =
@@ -29804,22 +30268,35 @@ type WindowEventHandlerAttributes = Omit<
  * APIs an author reaches for through `window`. The member types are the
  * host's, which is how a caller outside this file sees them.
  */
-export interface Window extends WindowEventHandlerAttributes {
+export interface Window
+	extends WindowEventHandlerAttributes,
+	Pick<
+		globalThis.Window,
+		"ondevicemotion" |
+		"ondeviceorientation" |
+		"ondeviceorientationabsolute" |
+		"onorientationchange"
+	> {
+	[index: number]: Window;
 	// An overload with the host's event type, so a caller holding a Window
 	// can dispatch a platform event as it would to any EventTarget.
 	dispatchEvent(event: globalThis.Event): boolean;
 	readonly window: Window;
 	readonly self: Window;
+	atob: globalThis.Window["atob"];
+	btoa: globalThis.Window["btoa"];
+	fetch: globalThis.Window["fetch"];
+	structuredClone: globalThis.Window["structuredClone"];
 
 	getComputedStyle(
 		element: globalThis.Element,
 		pseudoElement?: string | null,
 	): globalThis.CSSStyleDeclaration;
-	setTimeout: typeof globalThis.setTimeout;
-	clearTimeout: typeof globalThis.clearTimeout;
-	setInterval: typeof globalThis.setInterval;
-	clearInterval: typeof globalThis.clearInterval;
-	queueMicrotask: typeof globalThis.queueMicrotask;
+	setTimeout: globalThis.Window["setTimeout"];
+	clearTimeout: globalThis.Window["clearTimeout"];
+	setInterval: globalThis.Window["setInterval"];
+	clearInterval: globalThis.Window["clearInterval"];
+	queueMicrotask: globalThis.Window["queueMicrotask"];
 
 	readonly NodeFilter: typeof globalThis.NodeFilter;
 
@@ -29916,6 +30393,10 @@ function buildWindow(document: Document): Window {
 		setInterval: globalThis.setInterval.bind(globalThis),
 		clearInterval: globalThis.clearInterval.bind(globalThis),
 		queueMicrotask: globalThis.queueMicrotask.bind(globalThis),
+		atob: globalThis.atob.bind(globalThis),
+		btoa: globalThis.btoa.bind(globalThis),
+		fetch: globalThis.fetch.bind(globalThis),
+		structuredClone: globalThis.structuredClone.bind(globalThis),
 	});
 	window.window = window;
 	window.self = window;
@@ -32046,6 +32527,7 @@ function walkElements(
 // Type-only exports of every class, so the lib.dom drift check can map
 // each one to the platform interface it implements.
 export type {
+	Storage,
 	NodeListOf,
 	HTMLCollectionOf,
 	EventTarget,
