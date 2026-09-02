@@ -7,6 +7,7 @@ import {
 	type Cascade,
 	getAdoptedStyleSheets,
 	getBoxModel,
+	getComputedValue,
 	getInlineStyle,
 	getStyleSheets,
 	styleAttributeChanged,
@@ -20777,6 +20778,67 @@ export function* flatDescendants(
 			yield node;
 		}
 	}
+}
+
+// The flow is the flat tree seen through style: a `display: contents`
+// element is not a box, so the flow passes through it to its children.
+function isDisplayContents(node: globalThis.Node): boolean {
+	return getComputedValue(node as Element, "display") === "contents";
+}
+
+/**
+ * An element's content as the flow sees it: its flat children that are
+ * elements or text, with a `display: contents` element dissolved into
+ * its own children.
+ */
+export function* flowContent(
+	parent: globalThis.Node,
+): Generator<globalThis.Node> {
+	for (const child of flatChildren(parent)) {
+		if (child.nodeType === ELEMENT_NODE && isDisplayContents(child)) {
+			yield* flowContent(child);
+		} else {
+			yield child;
+		}
+	}
+}
+
+/** Every node under `root` in flow order. */
+export function* flowDescendants(
+	root: globalThis.Node,
+): Generator<globalThis.Node> {
+	for (
+		let node = flowNext(root, root, false);
+		node !== null;
+		node = flowNext(node, root, false)
+	) {
+		yield node;
+	}
+}
+
+/**
+ * The next node in flow order after `node`, within `root`: depth first
+ * over the flat tree, only nodes that generate boxes, a `display:
+ * contents` element passed through to its children. `skipChildren` steps
+ * past node's subtree.
+ */
+export function flowNext(
+	node: globalThis.Node,
+	root: globalThis.Node,
+	skipChildren: boolean,
+): globalThis.Node | null {
+	let next = flatStep(node, root, skipChildren);
+	while (next !== null) {
+		if (next.nodeType === TEXT_NODE) {
+			return next;
+		}
+		if (next.nodeType === ELEMENT_NODE && !isDisplayContents(next)) {
+			return next;
+		}
+		// A dissolved element is entered; anything else is stepped over.
+		next = flatStep(next, root, next.nodeType !== ELEMENT_NODE);
+	}
+	return null;
 }
 
 function getPseudoSlot(element: Element, name: string): Element | null {

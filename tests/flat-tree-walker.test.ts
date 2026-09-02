@@ -3,11 +3,12 @@ import {expect, test} from "@b9g/libuild/test";
 import {
 	ensurePseudoElement,
 	flatParentElement,
+	flowContent,
+	flowNext,
 	getPseudoHost,
 	getPseudoName,
 	pseudoElement,
 } from "../src/internal/dom.js";
-import {flowContent, flowNext} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

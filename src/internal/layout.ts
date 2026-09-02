@@ -30,7 +30,8 @@ import {
 	flatDescendants,
 	flatIsConnected,
 	flatParentElement,
-	flatStep,
+	flowContent,
+	flowNext,
 	getShadowRoot,
 	isModalDialog,
 	pseudoElementCount,
@@ -5866,57 +5867,6 @@ function roundValue(
 
 function approximatelyEqual(a: number, b: number): boolean {
 	return Math.abs(a - b) < 0.0001;
-}
-
-/**
- * An element's content as the flow sees it: its flat children that are
- * elements or text, with a `display: contents` element dissolved into
- * its own children.
- */
-export function* flowContent(parent: Node): Generator<Node> {
-	for (const child of flatChildren(parent)) {
-		if (child.nodeType === child.ELEMENT_NODE && isDisplayContents(child)) {
-			yield* flowContent(child);
-		} else {
-			yield child;
-		}
-	}
-}
-
-/** Every node under `root` in flow order. */
-export function* flowDescendants(root: Node): Generator<Node> {
-	for (
-		let node = flowNext(root, root, false);
-		node !== null;
-		node = flowNext(node, root, false)
-	) {
-		yield node;
-	}
-}
-
-/**
- * The next node in flow order after `node`, within `root`: depth first
- * over the flat tree, only nodes that generate boxes, a `display:
- * contents` element passed through to its children. `skipChildren` steps
- * past node's subtree.
- */
-export function flowNext(
-	node: Node,
-	root: Node,
-	skipChildren: boolean,
-): Node | null {
-	let next = flatStep(node, root, skipChildren);
-	while (next !== null) {
-		if (next.nodeType === next.TEXT_NODE) {
-			return next;
-		}
-		if (next.nodeType === next.ELEMENT_NODE && !isDisplayContents(next)) {
-			return next;
-		}
-		// A dissolved element is entered; anything else is stepped over.
-		next = flatStep(next, root, next.nodeType !== next.ELEMENT_NODE);
-	}
-	return null;
 }
 
 type Position =

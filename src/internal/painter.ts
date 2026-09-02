@@ -8,6 +8,7 @@ import {
 } from "./cssom.js";
 import {
 	flatParentElement,
+	flowContent,
 	getSelectionRecord,
 	getShadowRoot,
 	getTextControlSelectionRange,
@@ -18,7 +19,6 @@ import {
 	type Window,
 } from "./dom.js";
 import {
-	flowContent,
 	isPositioned,
 	isStackingContext,
 	type Layout,

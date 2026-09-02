@@ -1,7 +1,6 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {pseudoElement} from "../src/internal/dom.js";
-import {flowDescendants} from "../src/internal/layout.js";
+import {flowDescendants, pseudoElement} from "../src/internal/dom.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
