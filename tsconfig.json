@@ -27,5 +27,9 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true
   },
-  "include": ["src", "tests", "fuzz", "examples", "scripts"]
+  "include": ["src", "tests", "fuzz", "examples", "scripts"],
+	// The drift ledger instantiates every class against lib.dom, which is
+	// sixty seconds and three gigabytes the ordinary typecheck does not need.
+	// scripts/lib-dom-drift.ts checks it in a program of its own.
+	"exclude": ["scripts/lib-dom-exact.ts"]
 }

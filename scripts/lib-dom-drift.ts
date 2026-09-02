@@ -1,12 +1,12 @@
-// Resolves every Drift alias in tests/lib-dom-exact.ts and prints the members
+// Resolves every Drift alias in scripts/lib-dom-exact.ts and prints the members
 // each names. Exits nonzero when any class drifts from lib.dom.
 import ts from "typescript";
 
 const cfg = ts.readConfigFile("tsconfig.json", ts.sys.readFile);
 const parsed = ts.parseJsonConfigFileContent(cfg.config, ts.sys, ".");
-const program = ts.createProgram(["tests/lib-dom-exact.ts"], parsed.options);
+const program = ts.createProgram(["scripts/lib-dom-exact.ts"], parsed.options);
 const checker = program.getTypeChecker();
-const sf = program.getSourceFile("tests/lib-dom-exact.ts")!;
+const sf = program.getSourceFile("scripts/lib-dom-exact.ts")!;
 
 function members(t: ts.Type): string[] {
 	if (t.flags & ts.TypeFlags.Never) {

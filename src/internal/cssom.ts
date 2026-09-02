@@ -4056,7 +4056,7 @@ const kIndexCount = Symbol("index count");
 interface IndexedCollection {
 	readonly length: number;
 	item(index: number): unknown;
-	[kIndexCount]: number;
+	[kIndexCount]?: number;
 	[index: number]: unknown;
 }
 

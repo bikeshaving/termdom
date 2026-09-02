@@ -29,6 +29,9 @@ jobs:
       - name: Typecheck
         run: bun typecheck
 
+      - name: lib.dom drift
+        run: bun drift
+
       - name: Lint
         run: bun lint
 

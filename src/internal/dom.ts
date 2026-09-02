@@ -281,7 +281,9 @@ export function getTextControlSelectionRange(
 	if (!active || !isTextControl(active)) {
 		return null;
 	}
-	const range = (active as Element)[kUASelectionRange]?.() ?? null;
+	const range = (active as HTMLInputElement |
+		HTMLTextAreaElement)[kUASelectionRange]?.() ??
+		null;
 	if (!range || range.startContainer !== textNode) {
 		return null;
 	}
@@ -3400,8 +3402,8 @@ function getDefaultPassiveValue(type: string, target: EventTarget): boolean {
 	const document = target[kDocument];
 	return (
 		target === (document as EventTarget) ||
-		target === (document.documentElement as EventTarget | null) ||
-		target === (document.body as EventTarget | null)
+		target === (document.documentElement as unknown as EventTarget | null) ||
+		target === (document.body as unknown as EventTarget | null)
 	);
 }
 
@@ -14682,8 +14684,8 @@ export class HTMLInputElement extends HTMLElement {
 			this[kValueText].data = shown;
 			changed = true;
 		}
-		if (this[kPlaceholderText].data !== placeholder) {
-			this[kPlaceholderText].data = placeholder;
+		if (this[kPlaceholderText]!.data !== placeholder) {
+			this[kPlaceholderText]!.data = placeholder;
 			changed = true;
 		}
 		// Exactly one occupies the slot: the value when present, else the
@@ -14691,7 +14693,7 @@ export class HTMLInputElement extends HTMLElement {
 		const valueDisplay = value ? "inline-block" : "none";
 		const placeholderDisplay = value ? "none" : "inline-block";
 		const valueSpan = this[kValueText].parentElement!;
-		const placeholderSpan = this[kPlaceholderText].parentElement!;
+		const placeholderSpan = this[kPlaceholderText]!.parentElement!;
 		if (valueSpan.style.display !== valueDisplay) {
 			valueSpan.style.display = valueDisplay;
 			changed = true;
@@ -15838,7 +15840,7 @@ class HTMLMeterElement extends HTMLElement {
 		if (!this[kUpgraded]) {
 			return;
 		}
-		const bar = this[kBar];
+		const bar = this[kBar]!;
 		const min = this.min;
 		const span = this.max - min;
 		setGaugeFill(bar, span > 0 ? (this.value - min) / span : 0);
@@ -16420,7 +16422,7 @@ class HTMLProgressElement extends HTMLElement {
 			return;
 		}
 		const position = this.position;
-		setGaugeFill(this[kBar], position < 0 ? null : position);
+		setGaugeFill(this[kBar]!, position < 0 ? null : position);
 	}
 
 	override [kAttributeChangeSteps](
@@ -16626,7 +16628,7 @@ export class HTMLSelectElement extends HTMLElement {
 				return;
 			}
 			const {clientX: x, clientY: y} = event;
-			const picker = this[kPicker];
+			const picker = this[kPicker]!;
 			const row = (Array.from(
 				picker.childNodes,
 			) as globalThis.HTMLElement[]).find((node) => {
@@ -16887,8 +16889,8 @@ export class HTMLSelectElement extends HTMLElement {
 		const selectedIndex = this.selectedIndex;
 		const selected = selectedIndex >= 0 ? options[selectedIndex] : null;
 		const label = selected ? selected.label : "";
-		if (this[kValueText].data !== label) {
-			this[kValueText].data = label;
+		if (this[kValueText]!.data !== label) {
+			this[kValueText]!.data = label;
 			attached[kLayout].invalidate(this);
 		}
 
@@ -18162,17 +18164,17 @@ export class HTMLTextAreaElement extends HTMLElement {
 		const value = this[kUAValue];
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		let changed = false;
-		if (this[kValueText].data !== value) {
-			this[kValueText].data = value;
+		if (this[kValueText]!.data !== value) {
+			this[kValueText]!.data = value;
 			changed = true;
 		}
-		if (this[kPlaceholderText].data !== placeholder) {
-			this[kPlaceholderText].data = placeholder;
+		if (this[kPlaceholderText]!.data !== placeholder) {
+			this[kPlaceholderText]!.data = placeholder;
 			changed = true;
 		}
 		const placeholderDisplay = value ? "none" : "";
-		if (this[kPlaceholderSpan].style.display !== placeholderDisplay) {
-			this[kPlaceholderSpan].style.display = placeholderDisplay;
+		if (this[kPlaceholderSpan]!.style.display !== placeholderDisplay) {
+			this[kPlaceholderSpan]!.style.display = placeholderDisplay;
 			changed = true;
 		}
 		if (!changed) {
@@ -21593,11 +21595,11 @@ export class Document extends Node implements globalThis.Document {
 	// What an attached document renders through, set by attachDocument. A
 	// headless document has none and behaves as a document with no browsing
 	// context.
-	[kTermDOM]: TermDOM;
-	[kLayout]: Layout;
-	[kCascade]: Cascade;
-	[kExchange]: Exchange;
-	[kScreen]: Screen;
+	declare [kTermDOM]: TermDOM;
+	declare [kLayout]: Layout;
+	declare [kCascade]: Cascade;
+	declare [kExchange]: Exchange;
+	declare [kScreen]: Screen;
 
 	declare [kImplementation]: DOMImplementation | null;
 
@@ -22981,9 +22983,9 @@ export function elementAtDocumentPoint(
 	// The DOM cannot hand out a pseudo-element, so a hit on the content it
 	// generates is a hit on the element it originates from.
 	for (
-		let host = element && element[kPseudoHost];
+		let host = element && (element as Element)[kPseudoHost];
 		host;
-		host = element![kPseudoHost]
+		host = (element as Element)[kPseudoHost]
 	) {
 		element = host;
 	}
@@ -23044,7 +23046,7 @@ Object.defineProperties(Document.prototype, {
 					: elementAtDocumentPoint(this, x, y + attached[kScreen].scrollTop);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
-				hit = getFlatTreeParent(hit);
+				hit = getFlatTreeParent(hit as unknown as Element);
 			}
 			return stack;
 		},
@@ -29873,7 +29875,11 @@ export class Window extends EventTarget {
 	scroll(options?: globalThis.ScrollToOptions): void;
 	scroll(x: number, y: number): void;
 	scroll(xOrOptions?: number | ScrollToOptions, y?: number): void {
-		this.scrollTo(xOrOptions, y);
+		if (typeof xOrOptions === "number") {
+			this.scrollTo(xOrOptions, y ?? 0);
+		} else {
+			this.scrollTo(xOrOptions);
+		}
 	}
 
 	scrollBy(options?: globalThis.ScrollToOptions): void;
