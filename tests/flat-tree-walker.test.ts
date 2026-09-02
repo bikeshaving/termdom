@@ -2,7 +2,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {
 	ensurePseudoElement,
-	getFlatParent,
+	flatParentElement,
 	getPseudoHost,
 	getPseudoName,
 	pseudoElement,
@@ -53,7 +53,7 @@ function flowWalker(root: Node): {
 			if (walker.currentNode === root) {
 				return null;
 			}
-			const parent = getFlatParent(walker.currentNode);
+			const parent = flatParentElement(walker.currentNode);
 			if (parent === null) {
 				return null;
 			}
@@ -71,7 +71,7 @@ function flowWalker(root: Node): {
 			if (walker.currentNode === root) {
 				return null;
 			}
-			const parent = getFlatParent(walker.currentNode);
+			const parent = flatParentElement(walker.currentNode);
 			if (parent !== null) {
 				walker.currentNode = parent;
 			}

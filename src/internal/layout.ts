@@ -26,11 +26,11 @@ import {
 } from "./cssom.js";
 import {
 	DOMRectList,
+	flatChildren,
+	flatDescendants,
 	flatIsConnected,
 	flatParentElement,
-	getFlatFirstChild,
-	getFlatNextSibling,
-	getFlatParent,
+	flatStep,
 	getShadowRoot,
 	isModalDialog,
 	pseudoElementCount,
@@ -5868,69 +5868,10 @@ function approximatelyEqual(a: number, b: number): boolean {
 	return Math.abs(a - b) < 0.0001;
 }
 
-// The engine walks the flat tree through the DOM's three hops. Only
-// elements and text generate boxes; a comment or processing instruction
-// is stepped over and must not hide the content around it.
-function generatesBox(node: Node): boolean {
-	return (
-		node.nodeType === node.ELEMENT_NODE || node.nodeType === node.TEXT_NODE
-	);
-}
-
-/** The flat children that generate boxes. */
-function* flatChildren(parent: Node): Generator<Node> {
-	for (
-		let child = getFlatFirstChild(parent);
-		child !== null;
-		child = getFlatNextSibling(child)
-	) {
-		if (generatesBox(child)) {
-			yield child;
-		}
-	}
-}
-
 /**
- * The node after `node` in the flat tree, depth first and within `root`,
- * or null at the end. `skipChildren` steps past node's subtree.
- */
-function flatStep(node: Node, root: Node, skipChildren: boolean): Node | null {
-	if (!skipChildren) {
-		const child = getFlatFirstChild(node);
-		if (child !== null) {
-			return child;
-		}
-	}
-	for (
-		let current: Node | null = node;
-		current !== null && current !== root;
-		current = getFlatParent(current)
-	) {
-		const sibling = getFlatNextSibling(current);
-		if (sibling !== null) {
-			return sibling;
-		}
-	}
-	return null;
-}
-
-/** Every descendant that generates a box, depth first over the flat tree. */
-function* flatDescendants(root: Node): Generator<Node> {
-	for (
-		let node = flatStep(root, root, false);
-		node !== null;
-		node = flatStep(node, root, false)
-	) {
-		if (generatesBox(node)) {
-			yield node;
-		}
-	}
-}
-
-/**
- * An element's content as the flow sees it: its flat children that
- * generate boxes, with a `display: contents` element dissolved into its
- * own children.
+ * An element's content as the flow sees it: its flat children that are
+ * elements or text, with a `display: contents` element dissolved into
+ * its own children.
  */
 export function* flowContent(parent: Node): Generator<Node> {
 	for (const child of flatChildren(parent)) {

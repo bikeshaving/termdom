@@ -20713,24 +20713,70 @@ export function flatIsConnected(target: globalThis.Node): boolean {
 
 // The flat-tree hops: shadow content in its slot's place, and
 // pseudo-element nodes among the children they belong beside. Neither is
-// a link a node stores, so each hop computes its result. The layout
-// engine walks this tree through the three hops exported below; the
-// DOM's own TreeWalker never does.
+// a link a node stores, so each hop computes its result. The engine
+// walks this tree through the three traversals exported below; the DOM's
+// own TreeWalker never does.
 
-export function getFlatFirstChild(
-	node: globalThis.Node,
-): globalThis.Node | null {
-	return flatFirstChild(node as Node) as unknown as globalThis.Node | null;
+function isElementOrText(node: Node): boolean {
+	return node.nodeType === ELEMENT_NODE || node.nodeType === TEXT_NODE;
 }
 
-export function getFlatNextSibling(
-	node: globalThis.Node,
-): globalThis.Node | null {
-	return flatNextSibling(node as Node) as unknown as globalThis.Node | null;
+/** The flat children that are elements or text. */
+export function* flatChildren(
+	parent: globalThis.Node,
+): Generator<globalThis.Node> {
+	for (
+		let child = flatFirstChild(parent as Node);
+		child !== null;
+		child = flatNextSibling(child)
+	) {
+		if (isElementOrText(child)) {
+			yield child as unknown as globalThis.Node;
+		}
+	}
 }
 
-export function getFlatParent(node: globalThis.Node): globalThis.Node | null {
-	return flatParentNode(node as Node) as unknown as globalThis.Node | null;
+/**
+ * The node after `node` in the flat tree, depth first and within `root`,
+ * or null at the end. `skipChildren` steps past node's subtree.
+ */
+export function flatStep(
+	node: globalThis.Node,
+	root: globalThis.Node,
+	skipChildren: boolean,
+): globalThis.Node | null {
+	if (!skipChildren) {
+		const child = flatFirstChild(node as Node);
+		if (child !== null) {
+			return child as unknown as globalThis.Node;
+		}
+	}
+	for (
+		let current: Node | null = node as Node;
+		current !== null && current !== (root as Node);
+		current = flatParentNode(current)
+	) {
+		const sibling = flatNextSibling(current);
+		if (sibling !== null) {
+			return sibling as unknown as globalThis.Node;
+		}
+	}
+	return null;
+}
+
+/** Every descendant that is an element or text, depth first over the flat tree. */
+export function* flatDescendants(
+	root: globalThis.Node,
+): Generator<globalThis.Node> {
+	for (
+		let node = flatStep(root, root, false);
+		node !== null;
+		node = flatStep(node, root, false)
+	) {
+		if (isElementOrText(node as Node)) {
+			yield node;
+		}
+	}
 }
 
 function getPseudoSlot(element: Element, name: string): Element | null {
