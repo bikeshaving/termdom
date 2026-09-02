@@ -7,6 +7,9 @@ import {
 	getShadowRoot,
 	getTextControlCaretOffset,
 	handleCloseRequest,
+	HTMLInputElement,
+	HTMLLabelElement,
+	HTMLTextAreaElement,
 	lightDismissPress,
 	lightDismissRelease,
 	lockDataTransfer,
@@ -897,14 +900,12 @@ function dispatchRelease(
 		// which activation alone does not do), and a .checked flip is a
 		// property change no mutation record repaints.
 		const isCheckable = (el: unknown): el is HTMLInputElement =>
-			el instanceof (input[kWindow] as any).HTMLInputElement &&
-			((el as HTMLInputElement).type === "checkbox" ||
-				(el as HTMLInputElement).type === "radio");
+			el instanceof HTMLInputElement &&
+			(el.type === "checkbox" || el.type === "radio");
 		const control = isCheckable(target)
 			? target
-			: target instanceof (input[kWindow] as any).HTMLLabelElement &&
-				isCheckable((target as any).control)
-				? ((target as any).control as HTMLInputElement)
+			: target instanceof HTMLLabelElement && isCheckable(target.control)
+				? target.control
 				: null;
 		if (control) {
 			control.focus();
@@ -1193,12 +1194,11 @@ function getTextPosition(
 	x: number,
 	y: number,
 ): {node: Text; offset: number} | null {
-	const window = input[kWindow];
 	const element = elementAtDocumentPoint(input[kDocument], x, y);
 	if (
 		!element ||
-		element instanceof (window as any).HTMLInputElement ||
-		element instanceof (window as any).HTMLTextAreaElement
+		element instanceof HTMLInputElement ||
+		element instanceof HTMLTextAreaElement
 	) {
 		return null;
 	}

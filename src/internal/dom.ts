@@ -3283,7 +3283,7 @@ class EventTarget implements globalThis.EventTarget {
 	}
 
 	// A bare event target ends the path. A node returns its parent.
-	[kGetTheParent]?(_event: Event): EventTarget | null {
+	[kGetTheParent](_event: Event): EventTarget | null {
 		return null;
 	}
 }
@@ -3881,7 +3881,7 @@ function dispatch(
 		if (isActivationEvent && hasActivationBehavior(eventTarget)) {
 			activationTarget = eventTarget;
 		}
-		let parent = eventTarget[kGetTheParent]!(event);
+		let parent = eventTarget[kGetTheParent](event);
 		while (parent !== null) {
 			if (slottable !== null) {
 				slottable = null;
@@ -3931,7 +3931,7 @@ function dispatch(
 				);
 			}
 			if (parent !== null) {
-				parent = parent[kGetTheParent]!(event);
+				parent = parent[kGetTheParent](event);
 			}
 			slotInClosedTree = false;
 		}
@@ -4267,13 +4267,13 @@ const kChildrenChangedSteps = Symbol("children changed steps");
 const kAttributeSync = Symbol("resynchronize after an attribute change");
 
 interface LiveCollection {
-	[kSync]?(): void;
-	[kChildrenChangedSteps]?(
+	[kSync](): void;
+	[kChildrenChangedSteps](
 		point: Node,
 		changed: readonly Node[] | null,
 		added: boolean,
 	): void;
-	[kAttributeSync]?(element: Element, localName: string): void;
+	[kAttributeSync](element: Element, localName: string): void;
 }
 
 const kDocumentWideLists = Symbol("live collections over a whole document");
@@ -4393,14 +4393,14 @@ function syncAttributeCollections(element: Element, localName: string): void {
 				continue;
 			}
 			for (const collection of held) {
-				collection[kAttributeSync]!(element, localName);
+				collection[kAttributeSync](element, localName);
 			}
 		}
 	}
 	const wide = element[kDocument][kDocumentWideLists];
 	if (wide !== null) {
 		for (const collection of wide) {
-			collection[kAttributeSync]!(element, localName);
+			collection[kAttributeSync](element, localName);
 		}
 	}
 }
@@ -4806,22 +4806,22 @@ export class Node extends EventTarget implements globalThis.Node {
 
 	// An assigned slottable overrides this to return its slot, where the
 	// composed tree continues.
-	override [kGetTheParent]?(_event: Event): EventTarget | null {
+	override [kGetTheParent](_event: Event): EventTarget | null {
 		return this[kParent];
 	}
 
 	// The spec's per-node steps. Subclasses override them; the algorithms
 	// call them.
 
-	[kInsertionSteps]?(): void {}
+	[kInsertionSteps](): void {}
 
-	[kRemovingSteps]?(_oldParent: Node): void {}
+	[kRemovingSteps](_oldParent: Node): void {}
 
-	[kAdoptingSteps]?(_oldDocument: Document): void {}
+	[kAdoptingSteps](_oldDocument: Document): void {}
 
-	[kCloningSteps]?(_copy: Node, _document: Document, _deep: boolean): void {}
+	[kCloningSteps](_copy: Node, _document: Document, _deep: boolean): void {}
 
-	[kCloneSingle]?(_document: Document): Node {
+	[kCloneSingle](_document: Document): Node {
 		throw domError("NotSupportedError", "That node cannot be cloned");
 	}
 }
@@ -5377,7 +5377,7 @@ function insertNode(
 		}
 		for (const descendant of shadowIncludingInclusiveDescendants(inserted)) {
 			descendant[kConnected] = connected;
-			descendant[kInsertionSteps]!();
+			descendant[kInsertionSteps]();
 			if (!connected) {
 				continue;
 			}
@@ -5641,7 +5641,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 	const parentWasConnected = parent[kConnected];
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		descendant[kConnected] = false;
-		descendant[kRemovingSteps]!(parent);
+		descendant[kRemovingSteps](parent);
 		if (
 			parentWasConnected &&
 			descendant.nodeType === ELEMENT_NODE &&
@@ -5693,7 +5693,7 @@ function adoptNode(node: Node, document: Document): void {
 				document,
 			]);
 		}
-		descendant[kAdoptingSteps]!(oldDocument);
+		descendant[kAdoptingSteps](oldDocument);
 	}
 }
 
@@ -6309,9 +6309,9 @@ abstract class LiveList implements LiveCollection {
 
 	// The list cannot tell its members moved, because a splice moves them
 	// within the one array the collection holds.
-	[kMembersMoved]?(): void {}
+	[kMembersMoved](): void {}
 
-	[kSync]?(): void {
+	[kSync](): void {
 		if (this[kRegistered] === null) {
 			return;
 		}
@@ -6331,7 +6331,7 @@ abstract class LiveList implements LiveCollection {
 	// except for a document-wide list, which is dropped and recomputed on the
 	// next read, because a document sees far more changes than reads of such
 	// a list.
-	[kChildrenChangedSteps]?(
+	[kChildrenChangedSteps](
 		point: Node,
 		changed: readonly Node[] | null,
 		added: boolean,
@@ -6358,10 +6358,10 @@ abstract class LiveList implements LiveCollection {
 	}
 
 	// A list that reads none of the element's attributes is unaffected.
-	[kAttributeSync]?(_element: Element, localName: string): void {
+	[kAttributeSync](_element: Element, localName: string): void {
 		const watched = this[kWatched];
 		if (watched === localName || watched === anyAttribute) {
-			this[kSync]!();
+			this[kSync]();
 		}
 	}
 }
@@ -6373,13 +6373,13 @@ function dropList(list: LiveList): void {
 		return;
 	}
 	list[kExact] = false;
-	list[kMembersMoved]!();
+	list[kMembersMoved]();
 }
 
 function recomputeList(list: LiveList): void {
 	list[kItems] = list.compute();
 	list[kExact] = true;
-	list[kMembersMoved]!();
+	list[kMembersMoved]();
 	defineListProperties(list);
 }
 
@@ -6437,7 +6437,7 @@ function splice(
 		}
 		items.splice(at, members.length);
 	}
-	list[kMembersMoved]!();
+	list[kMembersMoved]();
 	defineIndices(list, items.length);
 	return true;
 }
@@ -6534,13 +6534,13 @@ function ensureList(list: LiveList): Node[] {
 
 const syncMethod = (
 	LiveList.prototype as unknown as Record<symbol, () => void>
-)[kSync]!;
+)[kSync];
 const childrenChangedMethod = (
 	LiveList.prototype as unknown as Record<
 		symbol,
 		(point: Node, changed: readonly Node[] | null, added: boolean) => void
 	>
-)[kChildrenChangedSteps]!;
+)[kChildrenChangedSteps];
 
 const kCompute = Symbol("compute");
 
@@ -6676,9 +6676,9 @@ class HTMLCollectionBase extends LiveList {
 	// change to either moves its named properties. No collection here selects
 	// members by id or name, so the members stay and only the names are
 	// rebuilt.
-	override [kAttributeSync]?(element: Element, localName: string): void {
+	override [kAttributeSync](element: Element, localName: string): void {
 		if (localName !== "id" && localName !== "name") {
-			super[kAttributeSync]!(element, localName);
+			super[kAttributeSync](element, localName);
 			return;
 		}
 		if (this[kChildMember] !== null && element[kParent] !== this[kOwner]) {
@@ -6856,13 +6856,13 @@ class MatchingCollection extends HTMLCollection {
 		return isNameless(members) ? members : null;
 	}
 
-	override [kMembersMoved]?(): void {
+	override [kMembersMoved](): void {
 		this[kMembers] = null;
 	}
 
-	override [kAttributeSync]?(element: Element, localName: string): void {
+	override [kAttributeSync](element: Element, localName: string): void {
 		if (localName !== this[kWatched]) {
-			super[kAttributeSync]!(element, localName);
+			super[kAttributeSync](element, localName);
 			return;
 		}
 		const items = computed(this);
@@ -6879,7 +6879,7 @@ class MatchingCollection extends HTMLCollection {
 				return;
 			}
 		}
-		this[kSync]!();
+		this[kSync]();
 	}
 }
 
@@ -7447,11 +7447,11 @@ export class Text extends CharacterData implements globalThis.Text {
 		return created;
 	}
 
-	override [kGetTheParent]?(_event: Event): EventTarget | null {
+	override [kGetTheParent](_event: Event): EventTarget | null {
 		return this[kAssignedSlot] ?? this[kParent];
 	}
 
-	override [kCloneSingle]?(document: Document): Node {
+	override [kCloneSingle](document: Document): Node {
 		const copy = new Text(this[kData]);
 		copy[kDocument] = document;
 		return copy;
@@ -7472,7 +7472,7 @@ class CDATASection extends Text {
 		return "#cdata-section";
 	}
 
-	override [kCloneSingle]?(document: Document): Node {
+	override [kCloneSingle](document: Document): Node {
 		const copy = new CDATASection(this[kData]);
 		copy[kDocument] = document;
 		return copy;
@@ -7498,7 +7498,7 @@ export class Comment extends CharacterData implements globalThis.Comment {
 		return "#comment";
 	}
 
-	override [kCloneSingle]?(document: Document): Node {
+	override [kCloneSingle](document: Document): Node {
 		const copy = new Comment(this[kData]);
 		copy[kDocument] = document;
 		return copy;
@@ -7534,7 +7534,7 @@ class ProcessingInstruction extends CharacterData {
 		return this[kTarget];
 	}
 
-	override [kCloneSingle]?(document: Document): Node {
+	override [kCloneSingle](document: Document): Node {
 		const copy = new ProcessingInstruction(this[kTarget], this[kData]);
 		copy[kDocument] = document;
 		return copy;
@@ -7586,7 +7586,7 @@ class DocumentType extends Node {
 		return this[kName];
 	}
 
-	override [kCloneSingle]?(document: Document): Node {
+	override [kCloneSingle](document: Document): Node {
 		const copy = new DocumentType(
 			this[kName],
 			this[kPublicId],
@@ -7653,7 +7653,7 @@ export class DocumentFragment extends Node implements globalThis.DocumentFragmen
 		return null;
 	}
 
-	override [kCloneSingle]?(document: Document): Node {
+	override [kCloneSingle](document: Document): Node {
 		const copy = new DocumentFragment();
 		copy[kDocument] = document;
 		return copy;
@@ -7781,7 +7781,7 @@ class Attr extends Node implements globalThis.Attr {
 			: `${this[kPrefix]}:${this[kLocalName]}`;
 	}
 
-	override [kCloneSingle]?(document: Document): Node {
+	override [kCloneSingle](document: Document): Node {
 		const copy = new Attr(
 			this[kNamespace],
 			this[kPrefix],
@@ -7826,7 +7826,7 @@ function changeAttribute(attribute: Attr, value: string): void {
 	const oldValue = attribute[kValue];
 	queueAttributeMutationRecord(element, attribute, oldValue);
 	attribute[kValue] = value;
-	element[kAttributeChangeSteps]!(
+	element[kAttributeChangeSteps](
 		attribute[kLocalName],
 		oldValue,
 		value,
@@ -7841,7 +7841,7 @@ function appendAttribute(element: Element, attribute: Attr): void {
 	element[kAttributeList].push(attribute);
 	attribute[kOwnerElement] = element;
 	attribute[kDocument] = element[kDocument];
-	element[kAttributeChangeSteps]!(
+	element[kAttributeChangeSteps](
 		attribute[kLocalName],
 		null,
 		attribute[kValue],
@@ -7860,7 +7860,7 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 		list.splice(index, 1);
 	}
 	attribute[kOwnerElement] = null;
-	element[kAttributeChangeSteps]!(
+	element[kAttributeChangeSteps](
 		attribute[kLocalName],
 		oldValue,
 		null,
@@ -7881,7 +7881,7 @@ function replaceAttribute(
 	newAttribute[kOwnerElement] = element;
 	newAttribute[kDocument] = element[kDocument];
 	oldAttribute[kOwnerElement] = null;
-	element[kAttributeChangeSteps]!(
+	element[kAttributeChangeSteps](
 		newAttribute[kLocalName],
 		oldAttribute[kValue],
 		newAttribute[kValue],
@@ -8839,11 +8839,11 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	/** An assigned slottable returns its slot instead of its parent. */
-	override [kGetTheParent]?(_event: Event): EventTarget | null {
+	override [kGetTheParent](_event: Event): EventTarget | null {
 		return this[kAssignedSlot] ?? this[kParent];
 	}
 
-	override [kInsertionSteps]?(): void {
+	override [kInsertionSteps](): void {
 		const root = getRoot(this);
 		if (root.nodeType === DOCUMENT_NODE) {
 			addToIdMap(root as Document, this);
@@ -8867,7 +8867,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 	}
 
-	override [kRemovingSteps]?(oldParent: Node): void {
+	override [kRemovingSteps](oldParent: Node): void {
 		const root = getRoot(oldParent);
 		if (root.nodeType === DOCUMENT_NODE) {
 			removeFromIdMap(root as Document, this);
@@ -8881,7 +8881,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 	}
 
-	[kAttributeChangeSteps]?(
+	[kAttributeChangeSteps](
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
@@ -8936,7 +8936,7 @@ export class Element extends Node implements globalThis.Element {
 		syncUAShadowTree(this);
 	}
 
-	override [kCloneSingle]?(document: Document): Node {
+	override [kCloneSingle](document: Document): Node {
 		const copy = createElementInternal(
 			document,
 			this[kLocalName],
@@ -9714,13 +9714,13 @@ export class HTMLElement extends Element {
 	// was showing as, so it closes. It closes silently, because the author
 	// who changed the attribute is not asking to be told about the old
 	// popover.
-	override [kAttributeChangeSteps]?(
+	override [kAttributeChangeSteps](
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		super[kAttributeChangeSteps]!(localName, oldValue, value, namespace);
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace !== null || localName !== "popover") {
 			return;
 		}
@@ -9735,8 +9735,8 @@ export class HTMLElement extends Element {
 
 	// The top layer holds nothing that is off the tree, and there is no page
 	// for the popover to be above anymore.
-	override [kRemovingSteps]?(oldParent: Node): void {
-		super[kRemovingSteps]!(oldParent);
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
 		if (!isShowingPopover(this)) {
 			return;
 		}
@@ -11388,7 +11388,7 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 
 	// Dispatch leaves a shadow tree through the host, unless the event was
 	// dispatched inside this tree and is not composed.
-	override [kGetTheParent]?(event: Event): EventTarget | null {
+	override [kGetTheParent](event: Event): EventTarget | null {
 		const path = event[kState].path;
 		if (
 			!event.composed &&
@@ -11401,7 +11401,7 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 		return this[kHost];
 	}
 
-	override [kCloneSingle]?(_document: Document): Node {
+	override [kCloneSingle](_document: Document): Node {
 		throw domError("NotSupportedError", "A shadow root cannot be cloned");
 	}
 }
@@ -11891,14 +11891,14 @@ class HTMLTemplateElement extends HTMLElement {
 		this.toggleAttribute("shadowrootserializable", Boolean(value));
 	}
 
-	override [kAdoptingSteps]?(_oldDocument: Document): void {
+	override [kAdoptingSteps](_oldDocument: Document): void {
 		const content = this[kTemplateContent];
 		if (content !== null) {
 			adoptNode(content, this[kDocument]);
 		}
 	}
 
-	override [kCloningSteps]?(
+	override [kCloningSteps](
 		copy: Node,
 		document: Document,
 		_deep: boolean,
@@ -12760,13 +12760,13 @@ class HTMLDetailsElement extends HTMLElement {
 		}
 	}
 
-	override [kAttributeChangeSteps]?(
+	override [kAttributeChangeSteps](
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		super[kAttributeChangeSteps]!(localName, oldValue, value, namespace);
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace !== null || localName !== "open") {
 			return;
 		}
@@ -12931,8 +12931,8 @@ class HTMLDialogElement extends HTMLElement {
 
 	// Nothing off the tree can render above the document, and a detached
 	// dialog is no longer modal.
-	override [kRemovingSteps]?(oldParent: Node): void {
-		super[kRemovingSteps]!(oldParent);
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
 		getTopLayer(this[kDocument]).delete(this);
 	}
 }
@@ -13750,8 +13750,8 @@ class HTMLIFrameElement extends HTMLElement {
 		return null;
 	}
 
-	override [kInsertionSteps]?(): void {
-		super[kInsertionSteps]!();
+	override [kInsertionSteps](): void {
+		super[kInsertionSteps]();
 		if (!this.isConnected) {
 			return;
 		}
@@ -13767,8 +13767,8 @@ class HTMLIFrameElement extends HTMLElement {
 		}, 0);
 	}
 
-	override [kRemovingSteps]?(parent: Node): void {
-		super[kRemovingSteps]!(parent);
+	override [kRemovingSteps](parent: Node): void {
+		super[kRemovingSteps](parent);
 		this[kContentDocument] = null;
 		this[kContentWindow] = null;
 		this[kFrameDocumentRun] = {};
@@ -13894,7 +13894,7 @@ const kGlyphText = Symbol("glyphText");
 // checkbox or radio. The tree is derived from the value, which is the
 // only state. The editing keys are the control's own default action,
 // implemented as a keydown listener like a browser's editing internals.
-interface HTMLInputElement
+export interface HTMLInputElement
 	extends Pick<
 		globalThis.HTMLInputElement,
 		"accept" |
@@ -13919,7 +13919,7 @@ interface HTMLInputElement
 		"useMap"
 	> {}
 
-interface HTMLInputElement
+export interface HTMLInputElement
 	extends Pick<
 		globalThis.HTMLInputElement,
 		"autocomplete" |
@@ -13942,7 +13942,7 @@ const SELECTABLE_INPUT_TYPES = new Set([
 	"password",
 ]);
 
-class HTMLInputElement extends HTMLElement {
+export class HTMLInputElement extends HTMLElement {
 	// Installed from the element table and read by the algorithms below.
 	declare type: string;
 
@@ -14516,13 +14516,13 @@ class HTMLInputElement extends HTMLElement {
 		);
 	}
 
-	override [kAttributeChangeSteps]?(
+	override [kAttributeChangeSteps](
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		super[kAttributeChangeSteps]!(localName, oldValue, value, namespace);
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace !== null) {
 			return;
 		}
@@ -14535,7 +14535,7 @@ class HTMLInputElement extends HTMLElement {
 		}
 	}
 
-	override [kCloningSteps]?(copy: Node): void {
+	override [kCloningSteps](copy: Node): void {
 		const clone = copy as HTMLInputElement;
 		clone[kValue] = this[kValue];
 		clone[kDirtyValue] = this[kDirtyValue];
@@ -15020,13 +15020,13 @@ function getCheckedRadio(
 	return getRadioGroup(input).find((radio) => radio.checked);
 }
 
-interface HTMLLabelElement
+export interface HTMLLabelElement
 	extends Pick<
 		globalThis.HTMLLabelElement,
 		"htmlFor"
 	> {}
 
-class HTMLLabelElement extends HTMLElement {
+export class HTMLLabelElement extends HTMLElement {
 	get form(): HTMLFormElement | null {
 		const control = this.control;
 		return control === null ? null : getFormOwner(control);
@@ -15789,13 +15789,13 @@ class HTMLMeterElement extends HTMLElement {
 		}
 	}
 
-	override [kAttributeChangeSteps]?(
+	override [kAttributeChangeSteps](
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		super[kAttributeChangeSteps]!(localName, oldValue, value, namespace);
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace === null && METER_ATTRIBUTES.has(localName)) {
 			this[kSyncUAShadowTree]!();
 		}
@@ -16033,13 +16033,13 @@ class HTMLOptionElement extends HTMLElement {
 		}
 	}
 
-	override [kAttributeChangeSteps]?(
+	override [kAttributeChangeSteps](
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		super[kAttributeChangeSteps]!(localName, oldValue, value, namespace);
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace === null && localName === "selected" && !this[kOptionDirty]) {
 			this[kSelectedness] = value !== null;
 		}
@@ -16049,7 +16049,7 @@ class HTMLOptionElement extends HTMLElement {
 		}
 	}
 
-	override [kCloningSteps]?(copy: Node): void {
+	override [kCloningSteps](copy: Node): void {
 		const clone = copy as HTMLOptionElement;
 		clone[kSelectedness] = this[kSelectedness];
 		clone[kOptionDirty] = this[kOptionDirty];
@@ -16364,13 +16364,13 @@ class HTMLProgressElement extends HTMLElement {
 		setGaugeFill(this[kBar], position < 0 ? null : position);
 	}
 
-	override [kAttributeChangeSteps]?(
+	override [kAttributeChangeSteps](
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		super[kAttributeChangeSteps]!(localName, oldValue, value, namespace);
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace === null && (localName === "value" || localName === "max")) {
 			this[kSyncUAShadowTree]!();
 		}
@@ -16441,7 +16441,7 @@ const kPickerHighlight = Symbol("highlight");
 // indicator, and a picker popover of option rows. The tree is derived
 // from the selectedness and the highlight below. The keyboard and mouse
 // behavior is the control's own default action.
-interface HTMLSelectElement
+export interface HTMLSelectElement
 	extends Pick<
 		globalThis.HTMLSelectElement,
 		"disabled" |
@@ -16450,18 +16450,18 @@ interface HTMLSelectElement
 		"required"
 	> {}
 
-interface HTMLSelectElement
+export interface HTMLSelectElement
 	extends Pick<
 		globalThis.HTMLSelectElement,
 		"autocomplete" |
 		"size"
 	> {}
 
-interface HTMLSelectElement {
+export interface HTMLSelectElement {
 	[index: number]: HTMLOptionElement | HTMLOptGroupElement;
 }
 
-class HTMLSelectElement extends HTMLElement {
+export class HTMLSelectElement extends HTMLElement {
 	declare [kOptions]: HTMLOptionsCollection | null;
 	declare [kSelectedOptions]: HTMLCollectionOf<HTMLOptionElement> | null;
 
@@ -16810,8 +16810,8 @@ class HTMLSelectElement extends HTMLElement {
 	// The dropdown is transient interaction state. Leaving the tree ends the
 	// interaction, the same as losing focus does. Removal also causes a focus
 	// loss, since focus cannot rest on an element off the tree.
-	override [kRemovingSteps]?(oldParent: Node): void {
-		super[kRemovingSteps]!(oldParent);
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
 		if (this[kPickerHighlight] !== null) {
 			this[kPickerHighlight] = null;
 			this[kSyncUAShadowTree]!();
@@ -17158,13 +17158,13 @@ export class HTMLStyleElement extends HTMLElement {
 		void _value;
 	}
 
-	override [kInsertionSteps]?(): void {
-		super[kInsertionSteps]!();
+	override [kInsertionSteps](): void {
+		super[kInsertionSteps]();
 		this[kDocument][kStyleElements] = this[kDocument][kStyleElements] + 1;
 	}
 
-	override [kRemovingSteps]?(oldParent: Node): void {
-		super[kRemovingSteps]!(oldParent);
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
 		this[kDocument][kStyleElements] = this[kDocument][kStyleElements] - 1;
 	}
 }
@@ -17695,7 +17695,7 @@ const kGoalColumn = Symbol("goalColumn");
 // and painted like any document text; a placeholder part; and a trailing
 // line-break anchor. The tree is derived from the value, and the editing
 // keys are the control's own default action.
-interface HTMLTextAreaElement
+export interface HTMLTextAreaElement
 	extends Pick<
 		globalThis.HTMLTextAreaElement,
 		"dirName" |
@@ -17708,7 +17708,7 @@ interface HTMLTextAreaElement
 		"required"
 	> {}
 
-interface HTMLTextAreaElement
+export interface HTMLTextAreaElement
 	extends Pick<
 		globalThis.HTMLTextAreaElement,
 		"autocomplete" |
@@ -17717,7 +17717,7 @@ interface HTMLTextAreaElement
 		"wrap"
 	> {}
 
-class HTMLTextAreaElement extends HTMLElement {
+export class HTMLTextAreaElement extends HTMLElement {
 	declare [kValue]: string;
 	declare [kDirty]: boolean;
 	declare [kSelectionStart]: number;
@@ -18045,7 +18045,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		);
 	}
 
-	override [kCloningSteps]?(copy: Node): void {
+	override [kCloningSteps](copy: Node): void {
 		const clone = copy as HTMLTextAreaElement;
 		clone[kValue] = this[kValue];
 		clone[kDirty] = this[kDirty];
@@ -22729,7 +22729,7 @@ export class Document extends Node implements globalThis.Document {
 		throw domError("NotSupportedError", "View transitions are not implemented");
 	}
 
-	override [kCloneSingle]?(_document: Document): Node {
+	override [kCloneSingle](_document: Document): Node {
 		const copy = new Document();
 		copyDocumentState(this, copy);
 		return copy;
@@ -22959,7 +22959,7 @@ Object.defineProperties(Document.prototype, {
 });
 
 class XMLDocument extends Document {
-	override [kCloneSingle]?(_document: Document): Node {
+	override [kCloneSingle](_document: Document): Node {
 		const copy = new XMLDocument();
 		copyDocumentState(this, copy);
 		return copy;
@@ -23732,11 +23732,11 @@ function cloneNode(
 	deep: boolean,
 ): Node {
 	const target = document ?? node[kDocument];
-	const copy = node[kCloneSingle]!(target);
+	const copy = node[kCloneSingle](target);
 	if (copy.nodeType === DOCUMENT_NODE) {
 		copy[kDocument] = copy as Document;
 	}
-	node[kCloningSteps]!(copy, target, deep);
+	node[kCloningSteps](copy, target, deep);
 	if (node.nodeType === ELEMENT_NODE) {
 		const shadow = (node as Element)[kShadowRoot];
 		if (shadow !== null && shadow[kClonable]) {
@@ -32559,8 +32559,6 @@ export type {
 	HTMLHtmlElement,
 	HTMLIFrameElement,
 	HTMLImageElement,
-	HTMLInputElement,
-	HTMLLabelElement,
 	HTMLLegendElement,
 	HTMLLIElement,
 	HTMLMapElement,
@@ -32585,7 +32583,6 @@ export type {
 	HTMLProgressElement,
 	HTMLQuoteElement,
 	HTMLScriptElement,
-	HTMLSelectElement,
 	HTMLSourceElement,
 	HTMLSpanElement,
 	HTMLTableCaptionElement,
@@ -32594,7 +32591,6 @@ export type {
 	HTMLTableElement,
 	HTMLTableRowElement,
 	HTMLTableSectionElement,
-	HTMLTextAreaElement,
 	HTMLTimeElement,
 	HTMLTitleElement,
 	HTMLTrackElement,

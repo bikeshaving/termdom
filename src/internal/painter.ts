@@ -13,6 +13,7 @@ import {
 	getTextControlSelectionRange,
 	getTextControlValueText,
 	getTopLayer,
+	HTMLElement,
 	renderedTopLayer,
 	type Window,
 } from "./dom.js";
@@ -517,7 +518,7 @@ function renderElement(
 		for (const childNode of children) {
 			if (childNode.nodeType === childNode.ELEMENT_NODE) {
 				const childElement = childNode as Element;
-				if (childElement instanceof (painter[kWindow] as any).HTMLElement) {
+				if (childElement instanceof HTMLElement) {
 					renderElement(painter, childElement, ctx);
 				}
 			} else if (childNode.nodeType === childNode.TEXT_NODE) {

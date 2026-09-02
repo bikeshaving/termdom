@@ -125,9 +125,9 @@ export class TermDOM {
 			if (
 				target !== this.document.activeElement ||
 				!(
-					target instanceof (this.window as any).HTMLInputElement ||
-					target instanceof (this.window as any).HTMLTextAreaElement ||
-					target instanceof (this.window as any).HTMLSelectElement
+					target instanceof DOM.HTMLInputElement ||
+					target instanceof DOM.HTMLTextAreaElement ||
+					target instanceof DOM.HTMLSelectElement
 				)
 			) {
 				return;
