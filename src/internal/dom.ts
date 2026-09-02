@@ -8200,8 +8200,8 @@ export class Element extends Node implements globalThis.Element {
 		super();
 		this[kNamespace] = null;
 		this[kPrefix] = null;
-		this[kLocalName] = "";
 		this[kUpperName] = null;
+		this[kLocalName] = "";
 		this[kAttributeList] = [];
 		this[kCustomState] = "uncustomized";
 		this[kDefinition] = null;
@@ -9339,6 +9339,7 @@ export class HTMLElement extends Element {
 		super();
 		this[kNamespace] = HTML_NAMESPACE;
 		this[kPrefix] = null;
+		this[kUpperName] = null;
 		this[kLocalName] = definition.localName;
 		this[kCustomState] = "custom";
 		this[kDefinition] = definition;
@@ -10385,6 +10386,7 @@ function buildElement(
 	element[kDocument] = document;
 	element[kNamespace] = namespace;
 	element[kPrefix] = prefix;
+	element[kUpperName] = null;
 	element[kLocalName] = localName;
 	element[kIsValue] = is;
 	return element;
@@ -10489,6 +10491,7 @@ function createElementInternal(
 			return failed;
 		}
 		result[kPrefix] = prefix;
+		result[kUpperName] = null;
 		result[kIsValue] = null;
 		result[kRegistry] = inRegistry;
 		return result;
