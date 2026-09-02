@@ -2505,6 +2505,18 @@ function syncTransferItems(transfer: DataTransfer): void {
 }
 
 const kTransferFiles = Symbol("files");
+const EFFECTS_ALLOWED = new Set([
+	"none",
+	"copy",
+	"copyLink",
+	"copyMove",
+	"link",
+	"linkMove",
+	"move",
+	"all",
+	"uninitialized",
+]);
+
 const kDropEffect = Symbol("dropEffect");
 const kEffectAllowed = Symbol("effectAllowed");
 
@@ -2573,7 +2585,10 @@ class DataTransfer {
 			"all" |
 			"uninitialized",
 	) {
-		this[kEffectAllowed] = String(value) as typeof value;
+		const effect = String(value);
+		if (EFFECTS_ALLOWED.has(effect)) {
+			this[kEffectAllowed] = effect as typeof value;
+		}
 	}
 
 	get items(): DataTransferItemList {
@@ -13256,12 +13271,13 @@ class HTMLFormElement extends HTMLElement {
 	}
 
 	checkValidity(): boolean {
-		for (const control of this.elements) {
+		let valid = true;
+		for (const control of [...this.elements]) {
 			if (!checkValidity(control as Element)) {
-				return false;
+				valid = false;
 			}
 		}
-		return true;
+		return valid;
 	}
 
 	// A terminal has no validation bubble to show, so there is nothing to do
@@ -13942,6 +13958,34 @@ const SELECTABLE_INPUT_TYPES = new Set([
 	"password",
 ]);
 
+export function parseWeekString(value: string): Date | null {
+	const match = /^(\d{4,})-W(\d{2})$/.exec(value);
+	if (match === null) {
+		return null;
+	}
+	const year = Number(match[1]);
+	const week = Number(match[2]);
+	if (week < 1 || week > 53) {
+		return null;
+	}
+	const january4 = new Date(Date.UTC(year, 0, 4));
+	const monday = january4.getTime() -
+		((january4.getUTCDay() || 7) - 1) * 86400000 +
+		(week - 1) * 7 * 86400000;
+	return new Date(monday);
+}
+
+function formatWeekString(date: Date): string {
+	const thursday = new Date(date.getTime());
+	thursday.setUTCDate(thursday.getUTCDate() + 4 - (thursday.getUTCDay() || 7));
+	const year = thursday.getUTCFullYear();
+	const yearStart = Date.UTC(year, 0, 1);
+	const week = Math.ceil(
+		((thursday.getTime() - yearStart) / 86400000 + 1) / 7,
+	);
+	return `${String(year).padStart(4, "0")}-W${String(week).padStart(2, "0")}`;
+}
+
 export class HTMLInputElement extends HTMLElement {
 	// Installed from the element table and read by the algorithms below.
 	declare type: string;
@@ -14343,6 +14387,14 @@ export class HTMLInputElement extends HTMLElement {
 			case "time":
 				date = new Date(`1970-01-01T${value}Z`);
 				break;
+			case "week": {
+				const parsed = parseWeekString(value);
+				if (parsed === null) {
+					return null;
+				}
+				date = parsed;
+				break;
+			}
 			default:
 				return null;
 		}
@@ -14351,7 +14403,12 @@ export class HTMLInputElement extends HTMLElement {
 
 	set valueAsDate(value: Date | null) {
 		const type = this.type;
-		if (type !== "date" && type !== "month" && type !== "time") {
+		if (
+			type !== "date" &&
+			type !== "month" &&
+			type !== "week" &&
+			type !== "time"
+		) {
 			throw domError(
 				"InvalidStateError",
 				"This input type does not take a Date",
@@ -14370,7 +14427,9 @@ export class HTMLInputElement extends HTMLElement {
 				? iso.slice(0, 10)
 				: type === "month"
 					? iso.slice(0, 7)
-					: iso.slice(11, 19);
+					: type === "week"
+						? formatWeekString(value)
+						: iso.slice(11, 19);
 	}
 
 	get [kUAValue](): string {
@@ -20095,6 +20154,28 @@ function getLabels(element: Element): NodeListOf<HTMLLabelElement> {
 	return createStaticNodeList(labels) as NodeListOf<HTMLLabelElement>;
 }
 
+const UNSUBMITTABLE_INPUT_TYPES = new Set([
+	"hidden",
+	"button",
+	"reset",
+	"image",
+]);
+
+const READONLY_INPUT_TYPES = new Set([
+	"text",
+	"search",
+	"url",
+	"tel",
+	"email",
+	"password",
+	"date",
+	"month",
+	"week",
+	"time",
+	"datetime-local",
+	"number",
+]);
+
 function willValidate(element: Element): boolean {
 	if (!isListed(element)) {
 		return false;
@@ -20111,7 +20192,22 @@ function willValidate(element: Element): boolean {
 	if (element[kLocalName] === "output") {
 		return false;
 	}
-	if (element.hasAttribute("readonly")) {
+	if (element instanceof HTMLInputElement) {
+		const type = element.type;
+		if (UNSUBMITTABLE_INPUT_TYPES.has(type)) {
+			return false;
+		}
+		if (READONLY_INPUT_TYPES.has(type) && element.hasAttribute("readonly")) {
+			return false;
+		}
+	} else if (element instanceof HTMLButtonElement) {
+		if (element.type !== "submit") {
+			return false;
+		}
+	} else if (
+		element instanceof HTMLTextAreaElement &&
+		element.hasAttribute("readonly")
+	) {
 		return false;
 	}
 	for (let node: Node | null = element; node !== null; node = node[kParent]) {
@@ -29979,9 +30075,7 @@ export class Window extends EventTarget {
 	releaseEvents(): void {}
 
 	reportError(e: any): void {
-		globalThis.setTimeout(() => {
-			throw e;
-		}, 0);
+		reportError(e);
 	}
 
 	requestIdleCallback(
@@ -30871,6 +30965,7 @@ interface Compiling {
 	namespaces: SelectorNamespaces | null;
 	pseudoElements: boolean;
 	nesting: boolean;
+	nested?: boolean;
 }
 
 function compileList(
@@ -31045,6 +31140,11 @@ function compileSimple(
 			compilePseudoClass(part, compound, compiling);
 			return;
 		case "PseudoElementSelector":
+			if (compiling.nested) {
+				throw new SelectorError(
+					"a pseudo-element cannot appear inside a pseudo-class",
+				);
+			}
 			compilePseudoElement(part, compound, compiling);
 			return;
 		case "NestingSelector":
@@ -31565,7 +31665,9 @@ function compileForgiving(
 				continue;
 			}
 			try {
-				compiled.push(compileComplex(selector, compiling, false));
+				compiled.push(
+					compileComplex(selector, {...compiling, nested: true}, false),
+				);
 			} catch (_err) {
 				// A forgiving selector list keeps the branches it can parse.
 			}
@@ -31588,7 +31690,9 @@ function compileArgumentList(
 			if (selector.type !== "Selector") {
 				throw new SelectorError("a selector list holds selectors");
 			}
-			compiled.push(compileComplex(selector, compiling, relative));
+			compiled.push(
+				compileComplex(selector, {...compiling, nested: true}, relative),
+			);
 		}
 	}
 	if (compiled.length === 0) {
