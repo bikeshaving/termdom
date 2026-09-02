@@ -4083,6 +4083,7 @@ export function getKeyboardActivation(
 const kNamespace = Symbol("namespace");
 
 const kLocalName = Symbol("local name");
+const kUpperName = Symbol("upper-cased name");
 
 const kParent = Symbol("parent");
 
@@ -7038,9 +7039,15 @@ function splitOnASCIIWhitespace(value: string): string[] {
 }
 
 function toASCIIUppercase(value: string): string {
-	return value.replace(/[a-z]/g, (character) =>
-		String.fromCharCode(character.charCodeAt(0) - 32),
-	);
+	// toUpperCase is Unicode-aware, which is only wrong outside ASCII.
+	for (let i = 0; i < value.length; i++) {
+		if (value.charCodeAt(i) > 0x7f) {
+			return value.replace(/[a-z]/g, (character) =>
+				String.fromCharCode(character.charCodeAt(0) - 32),
+			);
+		}
+	}
+	return value.toUpperCase();
 }
 
 const kElement = Symbol("element");
@@ -8166,6 +8173,7 @@ export class Element extends Node implements globalThis.Element {
 	[kNamespace]: string | null;
 	[kPrefix]: string | null;
 	[kLocalName]: string;
+	[kUpperName]: string | null;
 	[kAttributeList]: Attr[];
 	[kCustomState]: CustomElementState;
 	[kDefinition]: CustomElementDefinition | null;
@@ -8193,6 +8201,7 @@ export class Element extends Node implements globalThis.Element {
 		this[kNamespace] = null;
 		this[kPrefix] = null;
 		this[kLocalName] = "";
+		this[kUpperName] = null;
 		this[kAttributeList] = [];
 		this[kCustomState] = "uncustomized";
 		this[kDefinition] = null;
@@ -8237,12 +8246,21 @@ export class Element extends Node implements globalThis.Element {
 		return this[kLocalName];
 	}
 
+	// The upper-cased name is memoized: the qualified name never changes,
+	// and the cascade asks for tagName on every property it resolves.
 	get tagName(): string {
-		const qualified = this[kQualifiedName];
-		return this[kNamespace] === HTML_NAMESPACE &&
-			isHTMLDocument(this[kDocument])
-			? toASCIIUppercase(qualified)
-			: qualified;
+		if (
+			this[kNamespace] !== HTML_NAMESPACE ||
+			!isHTMLDocument(this[kDocument])
+		) {
+			return this[kQualifiedName];
+		}
+		let upper = this[kUpperName];
+		if (upper === null) {
+			upper = toASCIIUppercase(this[kQualifiedName]);
+			this[kUpperName] = upper;
+		}
+		return upper;
 	}
 
 	get id(): string {

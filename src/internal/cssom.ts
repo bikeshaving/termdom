@@ -8402,14 +8402,14 @@ function resolvePropertyValueRaw(
 
 	// 3. The UA's own per-element defaults, such as strong's bold, which
 	// take precedence over anything inherited.
-	const tagName = declaration[kElement].tagName.toLowerCase();
+	const element = declaration[kElement];
+	const isList =
+		element.namespaceURI === HTML_NAMESPACE &&
+		(element.localName === "ul" || element.localName === "ol");
 
 	// A list's marker gutter is sized to its widest marker rather than
 	// taken from the static table, so it has to be resolved first.
-	if (
-		property === "padding-left" &&
-		(tagName === "ul" || tagName === "ol")
-	) {
+	if (property === "padding-left" && isList) {
 		return `${getListGutterWidth(declaration[kElement])}ch`;
 	}
 
@@ -8418,11 +8418,8 @@ function resolvePropertyValueRaw(
 	// here rather than inheriting means an author value on an outer list
 	// does not leak into a nested one, while an author rule that matches
 	// the nested list still wins because step 2 already returned it.
-	if (
-		property === "list-style-type" &&
-		(tagName === "ul" || tagName === "ol")
-	) {
-		if (tagName === "ol") {
+	if (property === "list-style-type" && isList) {
+		if (element.localName === "ol") {
 			return "decimal";
 		}
 		const bullets = ["disc", "circle", "square"];
