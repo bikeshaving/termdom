@@ -3140,11 +3140,6 @@ class EventTarget implements globalThis.EventTarget {
 	): void;
 	addEventListener(
 		type: string,
-		listener: globalThis.EventListener | globalThis.EventListenerObject,
-		options?: boolean | globalThis.AddEventListenerOptions,
-	): void;
-	addEventListener(
-		type: string,
 		callback: globalThis.EventListenerOrEventListenerObject | null,
 		options?: boolean | globalThis.AddEventListenerOptions,
 	): void {
@@ -3191,11 +3186,6 @@ class EventTarget implements globalThis.EventTarget {
 	removeEventListener(
 		type: string,
 		callback: globalThis.EventListenerOrEventListenerObject | null,
-		options?: boolean | globalThis.EventListenerOptions,
-	): void;
-	removeEventListener(
-		type: string,
-		listener: globalThis.EventListener | globalThis.EventListenerObject,
 		options?: boolean | globalThis.EventListenerOptions,
 	): void;
 	removeEventListener(
@@ -8276,6 +8266,43 @@ export class Element extends Node implements globalThis.Element {
 			: `${this[kPrefix]!}:${this[kLocalName]!}`;
 	}
 
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<K extends keyof globalThis.ElementEventMap>(
+		type: K,
+		listener: (this: Element, ev: globalThis.ElementEventMap[K]) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<K extends keyof globalThis.ElementEventMap>(
+		type: K,
+		listener: (this: Element, ev: globalThis.ElementEventMap[K]) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
+
 	attachShadow(init: globalThis.ShadowRootInit): globalThis.ShadowRoot {
 		const options = toDictionary<ShadowRootInit>(init, "A ShadowRootInit");
 		const mode = String(options.mode);
@@ -9423,6 +9450,43 @@ export class HTMLElement extends Element {
 	// The event is a pointer event and untrusted, so a listener can tell it
 	// from a real one, and dispatch runs whatever activation behavior it
 	// reaches. A disabled form control is not clicked at all.
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<K extends keyof globalThis.HTMLElementEventMap>(
+		type: K,
+		listener: (this: HTMLElement, ev: globalThis.HTMLElementEventMap[K]) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<K extends keyof globalThis.HTMLElementEventMap>(
+		type: K,
+		listener: (this: HTMLElement, ev: globalThis.HTMLElementEventMap[K]) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
+
 	click(): void {
 		if (isActuallyDisabled(this)) {
 			return;
@@ -9941,6 +10005,43 @@ export class SVGElement extends Element {
 	set style(value: unknown) {
 		getInlineStyle(this).cssText = value == null ? "" : `${value}`;
 	}
+
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<K extends keyof globalThis.SVGElementEventMap>(
+		type: K,
+		listener: (this: SVGElement, ev: globalThis.SVGElementEventMap[K]) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<K extends keyof globalThis.SVGElementEventMap>(
+		type: K,
+		listener: (this: SVGElement, ev: globalThis.SVGElementEventMap[K]) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
 }
 
 Object.defineProperty(SVGElement.prototype, Symbol.toStringTag, {
@@ -9948,7 +10049,52 @@ Object.defineProperty(SVGElement.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-class MathMLElement extends Element {}
+class MathMLElement extends Element {
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<K extends keyof globalThis.MathMLElementEventMap>(
+		type: K,
+		listener: (
+			this: MathMLElement,
+			ev: globalThis.MathMLElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<
+		K extends keyof globalThis.MathMLElementEventMap,
+	>(
+		type: K,
+		listener: (
+			this: MathMLElement,
+			ev: globalThis.MathMLElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
+}
 
 Object.defineProperty(MathMLElement.prototype, Symbol.toStringTag, {
 	value: "MathMLElement",
@@ -11029,6 +11175,43 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 
 	get pictureInPictureElement(): globalThis.Element | null {
 		return null;
+	}
+
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<K extends keyof globalThis.ShadowRootEventMap>(
+		type: K,
+		listener: (this: ShadowRoot, ev: globalThis.ShadowRootEventMap[K]) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<K extends keyof globalThis.ShadowRootEventMap>(
+		type: K,
+		listener: (this: ShadowRoot, ev: globalThis.ShadowRootEventMap[K]) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
 	}
 
 	getHTML(options?: globalThis.GetHTMLOptions): string {
@@ -12147,7 +12330,52 @@ interface HTMLBodyElement
 		"onunload"
 	> {}
 
-class HTMLBodyElement extends HTMLElement {}
+class HTMLBodyElement extends HTMLElement {
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<K extends keyof globalThis.HTMLBodyElementEventMap>(
+		type: K,
+		listener: (
+			this: HTMLBodyElement,
+			ev: globalThis.HTMLBodyElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<
+		K extends keyof globalThis.HTMLBodyElementEventMap,
+	>(
+		type: K,
+		listener: (
+			this: HTMLBodyElement,
+			ev: globalThis.HTMLBodyElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
+}
 
 interface HTMLBRElement
 	extends Pick<
@@ -13126,7 +13354,54 @@ interface HTMLFrameSetElement
 		"onunload"
 	> {}
 
-class HTMLFrameSetElement extends HTMLElement {}
+class HTMLFrameSetElement extends HTMLElement {
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<
+		K extends keyof globalThis.HTMLFrameSetElementEventMap,
+	>(
+		type: K,
+		listener: (
+			this: HTMLFrameSetElement,
+			ev: globalThis.HTMLFrameSetElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<
+		K extends keyof globalThis.HTMLFrameSetElementEventMap,
+	>(
+		type: K,
+		listener: (
+			this: HTMLFrameSetElement,
+			ev: globalThis.HTMLFrameSetElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
+}
 
 class HTMLHeadElement extends HTMLElement {}
 
@@ -14673,6 +14948,53 @@ class HTMLMediaElement extends HTMLElement {
 		this[kPreservesPitch] = Boolean(value);
 	}
 
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<
+		K extends keyof globalThis.HTMLMediaElementEventMap,
+	>(
+		type: K,
+		listener: (
+			this: HTMLMediaElement,
+			ev: globalThis.HTMLMediaElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<
+		K extends keyof globalThis.HTMLMediaElementEventMap,
+	>(
+		type: K,
+		listener: (
+			this: HTMLMediaElement,
+			ev: globalThis.HTMLMediaElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
+
 	load(): void {
 		this[kCurrentTime] = 0;
 	}
@@ -14732,6 +15054,53 @@ class HTMLVideoElement extends HTMLMediaElement {
 
 	get videoHeight(): number {
 		return 0;
+	}
+
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<
+		K extends keyof globalThis.HTMLVideoElementEventMap,
+	>(
+		type: K,
+		listener: (
+			this: HTMLVideoElement,
+			ev: globalThis.HTMLVideoElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<
+		K extends keyof globalThis.HTMLVideoElementEventMap,
+	>(
+		type: K,
+		listener: (
+			this: HTMLVideoElement,
+			ev: globalThis.HTMLVideoElementEventMap[K],
+		) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
 	}
 }
 
@@ -20695,6 +21064,43 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	/** The window always has the system focus. */
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<K extends keyof globalThis.DocumentEventMap>(
+		type: K,
+		listener: (this: Document, ev: globalThis.DocumentEventMap[K]) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<K extends keyof globalThis.DocumentEventMap>(
+		type: K,
+		listener: (this: Document, ev: globalThis.DocumentEventMap[K]) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
+
 	hasFocus(): boolean {
 		return true;
 	}
@@ -27550,6 +27956,53 @@ class PermissionStatus extends EventTarget {
 		}
 		return isUserActive(document) ? "granted" : "prompt";
 	}
+
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<
+		K extends keyof globalThis.PermissionStatusEventMap,
+	>(
+		type: K,
+		listener: (
+			this: PermissionStatus,
+			ev: globalThis.PermissionStatusEventMap[K],
+		) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<
+		K extends keyof globalThis.PermissionStatusEventMap,
+	>(
+		type: K,
+		listener: (
+			this: PermissionStatus,
+			ev: globalThis.PermissionStatusEventMap[K],
+		) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
 }
 
 // The one event handler attribute a permission status has.
@@ -27928,6 +28381,43 @@ export class Window extends EventTarget {
 	// body's scrollTop expose the same value, as in standard DOM
 	// (window.scrollY === document.documentElement.scrollTop always). One
 	// document scroll, four ways to read or move it.
+	// lib.dom's overloads for this interface: the keyed one first.
+	override addEventListener<K extends keyof globalThis.WindowEventMap>(
+		type: K,
+		listener: (this: Window, ev: globalThis.WindowEventMap[K]) => any,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<K extends keyof globalThis.WindowEventMap>(
+		type: K,
+		listener: (this: Window, ev: globalThis.WindowEventMap[K]) => any,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: globalThis.EventListenerOrEventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
+	}
+
 	scrollTo(xOrOptions?: number | ScrollToOptions, y?: number): void {
 		const attached = getAttachedDocument(this.document);
 		if (attached === undefined) {
