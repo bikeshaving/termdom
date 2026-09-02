@@ -18,7 +18,7 @@ import {
 	type Window,
 } from "./dom.js";
 import {
-	flowWalker,
+	flowContent,
 	isPositioned,
 	isStackingContext,
 	type Layout,
@@ -472,12 +472,7 @@ function renderElement(
 			children.push(childNode);
 		}
 	} else {
-		const walker = flowWalker(element);
-		for (
-			let childNode = walker.firstChild();
-			childNode;
-			childNode = walker.nextSibling()
-		) {
+		for (const childNode of flowContent(element)) {
 			// Before any style read. A child outside the viewport costs one
 			// lookup.
 			if (

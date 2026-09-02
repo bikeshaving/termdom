@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {pseudoElement} from "../src/internal/dom.js";
-import {flowWalker} from "../src/internal/layout.js";
+import {flowDescendants} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -319,20 +319,14 @@ test.todo(
 		listItem.textContent = "ITEM";
 		list.appendChild(listItem);
 
-		// Use ExpandedTreeWalker to traverse and collect all content
-		const walker = flowWalker(container);
-
 		const traversedContent: string[] = [];
-		let currentNode = walker.nextNode();
-
-		while (currentNode) {
-			if (currentNode.nodeType === currentNode.TEXT_NODE) {
-				const textContent = currentNode.textContent || "";
+		for (const node of flowDescendants(container)) {
+			if (node.nodeType === node.TEXT_NODE) {
+				const textContent = node.textContent || "";
 				if (textContent.trim()) {
 					traversedContent.push(textContent);
 				}
 			}
-			currentNode = walker.nextNode();
 		}
 
 		// Verify pseudo-elements are included in traversal

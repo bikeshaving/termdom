@@ -28,12 +28,13 @@ import {
 	DOMRectList,
 	flatIsConnected,
 	flatParentElement,
+	getFlatFirstChild,
+	getFlatNextSibling,
+	getFlatParent,
 	getShadowRoot,
 	isModalDialog,
-	NodeFilter,
 	pseudoElementCount,
 	renderedTopLayer,
-	TreeWalker,
 	type Window,
 } from "./dom.js";
 import {
@@ -5867,19 +5868,114 @@ function approximatelyEqual(a: number, b: number): boolean {
 	return Math.abs(a - b) < 0.0001;
 }
 
-function createTreeWalker(
-	root: Node,
-	filter: ((node: Node) => number) | null = null,
-): TreeWalker {
-	// Elements and text over the flat tree. Comments and processing
-	// instructions generate no box and must not hide the content around
-	// them.
-	return new TreeWalker(
-		root as never,
-		NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
-		filter as never,
-		true,
+// The engine walks the flat tree through the DOM's three hops. Only
+// elements and text generate boxes; a comment or processing instruction
+// is stepped over and must not hide the content around it.
+function generatesBox(node: Node): boolean {
+	return (
+		node.nodeType === node.ELEMENT_NODE || node.nodeType === node.TEXT_NODE
 	);
+}
+
+/** The flat children that generate boxes. */
+function* flatChildren(parent: Node): Generator<Node> {
+	for (
+		let child = getFlatFirstChild(parent);
+		child !== null;
+		child = getFlatNextSibling(child)
+	) {
+		if (generatesBox(child)) {
+			yield child;
+		}
+	}
+}
+
+/**
+ * The node after `node` in the flat tree, depth first and within `root`,
+ * or null at the end. `skipChildren` steps past node's subtree.
+ */
+function flatStep(node: Node, root: Node, skipChildren: boolean): Node | null {
+	if (!skipChildren) {
+		const child = getFlatFirstChild(node);
+		if (child !== null) {
+			return child;
+		}
+	}
+	for (
+		let current: Node | null = node;
+		current !== null && current !== root;
+		current = getFlatParent(current)
+	) {
+		const sibling = getFlatNextSibling(current);
+		if (sibling !== null) {
+			return sibling;
+		}
+	}
+	return null;
+}
+
+/** Every descendant that generates a box, depth first over the flat tree. */
+function* flatDescendants(root: Node): Generator<Node> {
+	for (
+		let node = flatStep(root, root, false);
+		node !== null;
+		node = flatStep(node, root, false)
+	) {
+		if (generatesBox(node)) {
+			yield node;
+		}
+	}
+}
+
+/**
+ * An element's content as the flow sees it: its flat children that
+ * generate boxes, with a `display: contents` element dissolved into its
+ * own children.
+ */
+export function* flowContent(parent: Node): Generator<Node> {
+	for (const child of flatChildren(parent)) {
+		if (child.nodeType === child.ELEMENT_NODE && isDisplayContents(child)) {
+			yield* flowContent(child);
+		} else {
+			yield child;
+		}
+	}
+}
+
+/** Every node under `root` in flow order. */
+export function* flowDescendants(root: Node): Generator<Node> {
+	for (
+		let node = flowNext(root, root, false);
+		node !== null;
+		node = flowNext(node, root, false)
+	) {
+		yield node;
+	}
+}
+
+/**
+ * The next node in flow order after `node`, within `root`: depth first
+ * over the flat tree, only nodes that generate boxes, a `display:
+ * contents` element passed through to its children. `skipChildren` steps
+ * past node's subtree.
+ */
+export function flowNext(
+	node: Node,
+	root: Node,
+	skipChildren: boolean,
+): Node | null {
+	let next = flatStep(node, root, skipChildren);
+	while (next !== null) {
+		if (next.nodeType === next.TEXT_NODE) {
+			return next;
+		}
+		if (next.nodeType === next.ELEMENT_NODE && !isDisplayContents(next)) {
+			return next;
+		}
+		// A dissolved element is entered; anything else is stepped over.
+		next = flatStep(next, root, next.nodeType !== next.ELEMENT_NODE);
+	}
+	return null;
 }
 
 type Position =
@@ -6096,8 +6192,7 @@ function isSplitAroundBlock(element: Element): boolean {
 }
 
 function hasBlockLevelBox(element: Element): boolean {
-	const walker = flowWalker(element);
-	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+	for (const child of flowContent(element)) {
 		if (child.nodeType !== child.ELEMENT_NODE) {
 			continue;
 		}
@@ -7661,8 +7756,7 @@ function addElementNode(
 
 	// Only DIRECT children. A broken inline's boxes reach the tree through
 	// this container's own box reconciliation.
-	const walker = flowWalker(element);
-	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+	for (const child of flowContent(element)) {
 		if (
 			child.nodeType === child.ELEMENT_NODE ||
 			child.nodeType === child.TEXT_NODE
@@ -7735,8 +7829,7 @@ function flowChildren(
 	into: Node[] = [],
 	root = container,
 ): Node[] {
-	const walker = flowWalker(container);
-	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+	for (const child of flowContent(container)) {
 		into.push(child);
 		if (child.nodeType !== child.ELEMENT_NODE) {
 			continue;
@@ -7799,8 +7892,7 @@ function syncIndependentFormattingContext(
 		}
 	}
 
-	const walker = flowWalker(element);
-	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+	for (const child of flowContent(element)) {
 		if (
 			child.nodeType === child.ELEMENT_NODE ||
 			child.nodeType === child.TEXT_NODE
@@ -7842,8 +7934,7 @@ function dropHiddenContent(
 	if (box) {
 		dropIndependentFormattingContext(box);
 	}
-	const walker = createTreeWalker(element);
-	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+	for (const child of flatChildren(element)) {
 		dropLayoutNode(layout, child);
 		if (child.nodeType === child.ELEMENT_NODE) {
 			dropHiddenContent(layout, child as Element);
@@ -7882,23 +7973,22 @@ function dropRunContent(
 		return;
 	}
 	dropContainerBoxes(layout, element);
-	const walker = flowWalker(element);
-	for (let node = walker.nextNode(); node;) {
+	for (let node = flowNext(element, element, false); node !== null;) {
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const child = node as Element;
 			if (isOutOfFlow(child)) {
 				addNode(layout, child, null);
-				node = skipSubtree(walker) ? walker.currentNode : null;
+				node = flowNext(node, element, true);
 				continue;
 			}
 			if (layout[kBoxes].get(child)?.independentFormattingContext) {
-				node = skipSubtree(walker) ? walker.currentNode : null;
+				node = flowNext(node, element, true);
 				continue;
 			}
 			dropContainerBoxes(layout, child);
 		}
 		dropLayoutNode(layout, node);
-		node = walker.nextNode();
+		node = flowNext(node, element, false);
 	}
 }
 
@@ -7910,8 +8000,7 @@ function dropSteppedOver(
 	layout: Layout,
 	parent: Element,
 ): void {
-	const walker = createTreeWalker(parent);
-	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+	for (const child of flatChildren(parent)) {
 		if (child.nodeType !== child.ELEMENT_NODE) {
 			continue;
 		}
@@ -8028,30 +8117,6 @@ function placeChild(
 	parent.insertChild(child, index);
 }
 
-export function flowWalker(root: Node): TreeWalker {
-	return createTreeWalker(root, getContentsFilter);
-}
-
-function getContentsFilter(node: Node): number {
-	return (
-		node.nodeType === node.ELEMENT_NODE && isDisplayContents(node)
-			? NodeFilter.FILTER_SKIP
-			: NodeFilter.FILTER_ACCEPT
-	);
-}
-
-// nextSibling() alone gives up at a parent's last child, and an inline
-// run does not end there. `<span><b>x</b></span> tail` must climb out
-// of the span to reach " tail".
-function skipSubtree(walker: TreeWalker): boolean {
-	while (!walker.nextSibling()) {
-		if (!walker.parentNode()) {
-			return false;
-		}
-	}
-	return true;
-}
-
 function trackNode(
 	layout: Layout,
 	domNode: Node,
@@ -8086,8 +8151,7 @@ const kInvalidatedNodes = Symbol("invalidatedNodes");
 // The first flat-tree child that can start an inline run. A UA shadow
 // tree's <style> would otherwise end leaf collection at position zero.
 function flatFirstRenderableChild(element: Element): Node | null {
-	const walker = flowWalker(element);
-	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+	for (const child of flowContent(element)) {
 		if (
 			child.nodeType === child.ELEMENT_NODE &&
 			(getComputedDisplay(child as Element) === "none" ||
@@ -8173,8 +8237,7 @@ function invalidateSubtreeDerivation(
 	}
 	// The flat tree, not the flow. Which elements dissolve is the cascade's
 	// question, and marking one that generates no box costs nothing.
-	const walker = createTreeWalker(node);
-	for (let child = walker.nextNode(); child; child = walker.nextNode()) {
+	for (const child of flatDescendants(node)) {
 		if (child.nodeType === child.ELEMENT_NODE) {
 			invalidateContainerDerivation(layout, child as Element);
 		}
@@ -8251,12 +8314,8 @@ function invalidateNodeChildren(
 	layout: Layout,
 	element: Element,
 ): void {
-	const walker = flowWalker(element);
-	let child = walker.firstChild();
-
-	while (child) {
+	for (const child of flowContent(element)) {
 		invalidateNode(layout, child);
-		child = walker.nextSibling();
 	}
 }
 
@@ -8678,10 +8737,9 @@ function collectLeaves(
 	availableWidth: number,
 	availableWidthMode: AvailableSpace,
 ): void {
-	const walker = flowWalker(root);
-	walker.currentNode = start;
-	while (walker.currentNode) {
-		const node = walker.currentNode;
+	let cursor: Node | null = start;
+	while (cursor !== null) {
+		const node: Node = cursor;
 		if (stopsAtFlexItems && node.nodeType === node.ELEMENT_NODE) {
 			break;
 		}
@@ -8696,7 +8754,8 @@ function collectLeaves(
 					isWhitespaceOnly &&
 					shouldCollapseWhitespaceTextNode(textNode)
 				) {
-					if (!walker.nextNode()) {
+					cursor = flowNext(node, root, false);
+					if (cursor === null) {
 						break;
 					}
 					continue;
@@ -8708,7 +8767,8 @@ function collectLeaves(
 					content: textNode.textContent,
 				});
 			}
-			if (!walker.nextNode()) {
+			cursor = flowNext(node, root, false);
+			if (cursor === null) {
 				break;
 			}
 		} else if (node.nodeType === node.ELEMENT_NODE) {
@@ -8722,7 +8782,8 @@ function collectLeaves(
 				// Neither occupies run space nor interrupts the run. Before the
 				// display branches, or an absolute inline span measures into
 				// the run it left.
-				if (!skipSubtree(walker)) {
+				cursor = flowNext(node, root, true);
+				if (cursor === null) {
 					break;
 				}
 			} else if (element.tagName === "BR") {
@@ -8730,7 +8791,8 @@ function collectLeaves(
 					type: "br",
 					node: element as HTMLBRElement,
 				});
-				if (!walker.nextNode()) {
+				cursor = flowNext(node, root, false);
+				if (cursor === null) {
 					break;
 				}
 			} else if (isAtomicInline(display)) {
@@ -9006,11 +9068,13 @@ function collectLeaves(
 					contentHeight: finalContentHeight,
 				});
 				// The children were measured inside the box above.
-				if (!skipSubtree(walker)) {
+				cursor = flowNext(node, root, true);
+				if (cursor === null) {
 					break;
 				}
 			} else if (display === "inline") {
-				if (!walker.nextNode()) {
+				cursor = flowNext(node, root, false);
+				if (cursor === null) {
 					break;
 				}
 			} else {
@@ -9019,7 +9083,8 @@ function collectLeaves(
 				break;
 			}
 		} else {
-			if (!walker.nextNode()) {
+			cursor = flowNext(node, root, false);
+			if (cursor === null) {
 				break;
 			}
 		}
@@ -9695,8 +9760,7 @@ function hitTestInFlow(
 		}
 	}
 	const children: Element[] = [];
-	const walker = flowWalker(element);
-	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+	for (const child of flowContent(element)) {
 		if (child.nodeType !== 1) {
 			continue;
 		}
@@ -11670,11 +11734,14 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	} else {
 		targetTextNodes = new Set<Text>();
 
-		const walker = flowWalker(node);
-
-		let textNode;
-		while ((textNode = walker.nextNode())) {
-			targetTextNodes.add(textNode as Text);
+		for (
+			let found = flowNext(node, node, false);
+			found !== null;
+			found = flowNext(found, node, false)
+		) {
+			if (found.nodeType === found.TEXT_NODE) {
+				targetTextNodes.add(found as Text);
+			}
 		}
 	}
 

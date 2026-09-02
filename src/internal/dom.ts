@@ -20711,37 +20711,27 @@ export function flatIsConnected(target: globalThis.Node): boolean {
 	return false;
 }
 
-interface TreeLinks {
-	parent(node: Node): Node | null;
-	firstChild(node: Node): Node | null;
-	lastChild(node: Node): Node | null;
-	nextSibling(node: Node): Node | null;
-	previousSibling(node: Node): Node | null;
+// The flat-tree hops: shadow content in its slot's place, and
+// pseudo-element nodes among the children they belong beside. Neither is
+// a link a node stores, so each hop computes its result. The layout
+// engine walks this tree through the three hops exported below; the
+// DOM's own TreeWalker never does.
+
+export function getFlatFirstChild(
+	node: globalThis.Node,
+): globalThis.Node | null {
+	return flatFirstChild(node as Node) as unknown as globalThis.Node | null;
 }
 
-const NODE_LINKS: TreeLinks = Object.freeze({
-	parent: (node: Node) => node[kParent],
-	firstChild: (node: Node) => node[kFirstChild],
-	lastChild: (node: Node) => node[kLastChild],
-	nextSibling: (node: Node) => node[kNext],
-	previousSibling: (node: Node) => node[kPrevious],
-});
+export function getFlatNextSibling(
+	node: globalThis.Node,
+): globalThis.Node | null {
+	return flatNextSibling(node as Node) as unknown as globalThis.Node | null;
+}
 
-// Shadow content in its slot's place, and pseudo-element nodes among
-// the children they belong beside. Neither is a link a node stores, so
-// each hop computes its result.
-const FLAT_LINKS: TreeLinks = Object.freeze({
-	parent: flatParentNode,
-	firstChild: flatFirstChild,
-	lastChild: flatLastChild,
-	nextSibling: flatNextSibling,
-	previousSibling: flatPreviousSibling,
-});
-
-const kLinks = Symbol("links");
-
-// The flat-tree hops, with pseudo-element nodes among the
-// children they belong beside.
+export function getFlatParent(node: globalThis.Node): globalThis.Node | null {
+	return flatParentNode(node as Node) as unknown as globalThis.Node | null;
+}
 
 function getPseudoSlot(element: Element, name: string): Element | null {
 	const slots = element[kPseudoElements];
@@ -20794,55 +20784,6 @@ function flatContentFirstChild(element: Element): Node | null {
 	return element[kFirstChild];
 }
 
-function flatLastChild(node: Node): Node | null {
-	if (node.nodeType !== ELEMENT_NODE) {
-		return node[kLastChild];
-	}
-	const element = node as Element;
-	const after = getPseudoSlot(element, "::after");
-	return after !== null ? after : flatLastContent(element);
-}
-
-// The last child an element renders, or the ::before or ::marker it
-// renders instead when it has no content of its own. Different from
-// flatLastChild, which returns the ::after when there is one.
-function flatLastContent(element: Element): Node | null {
-	const child = flatContentLastChild(element);
-	if (child !== null) {
-		return child;
-	}
-	// An element with no content of its own still renders its ::before and
-	// ::marker, so the last of its content is whichever of those it has.
-	const slots = element[kPseudoElements];
-	if (slots !== null) {
-		const before = slots.get("::before");
-		if (before !== undefined) {
-			return before;
-		}
-		const marker = slots.get("::marker");
-		if (marker !== undefined) {
-			return marker;
-		}
-	}
-	return null;
-}
-
-// The mirror of flatContentFirstChild. A host with an empty shadow
-// tree renders nothing of its own, light children included.
-function flatContentLastChild(element: Element): Node | null {
-	const shadow = element[kShadowRoot];
-	if (shadow !== null) {
-		return shadow[kLastChild];
-	}
-	if (element instanceof HTMLSlotElement) {
-		const assigned = element[kAssignedNodes];
-		if (assigned.length > 0) {
-			return assigned[assigned.length - 1];
-		}
-	}
-	return element[kLastChild];
-}
-
 function flatNextSibling(node: Node): Node | null {
 	const host = (node as Element)[kPseudoHost];
 	if (host !== null && host !== undefined) {
@@ -20890,54 +20831,6 @@ function flatNextSibling(node: Node): Node | null {
 	const parent = flatParentNode(node);
 	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 		return getPseudoSlot(parent as Element, "::after");
-	}
-	return null;
-}
-
-function flatPreviousSibling(node: Node): Node | null {
-	const host = (node as Element)[kPseudoHost];
-	if (host !== null && host !== undefined) {
-		const name = (node as Element)[kPseudoName];
-		if (name === "::after") {
-			return flatLastContent(host);
-		}
-		if (name === "::before") {
-			return getPseudoSlot(host, "::marker");
-		}
-		return null;
-	}
-
-	const slot = getAssignedSlot(node);
-	if (slot !== null) {
-		const assigned = slot[kAssignedNodes];
-		const index = assigned.indexOf(node as Slottable);
-		if (index > 0) {
-			return assigned[index - 1];
-		}
-		if (index < 0) {
-			return null;
-		}
-		// The first projected node is preceded by the slot's own ::before, as
-		// the first of any other element's content is.
-		const before = getPseudoSlot(slot, "::before");
-		return before !== null ? before : getPseudoSlot(slot, "::marker");
-	}
-
-	const previous = node[kPrevious];
-	if (previous !== null) {
-		return previous;
-	}
-
-	// Mirror of the ::after hop. Uses the composed parent, so walking
-	// backwards out of a shadow root reaches the host's ::before and
-	// ::marker.
-	const parent = flatParentNode(node);
-	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
-		const before = getPseudoSlot(parent as Element, "::before");
-		if (before !== null) {
-			return before;
-		}
-		return getPseudoSlot(parent as Element, "::marker");
 	}
 	return null;
 }
@@ -26526,27 +26419,12 @@ export class TreeWalker implements globalThis.TreeWalker {
 	declare [kFilter]: NodeFilterInput;
 	declare [kActive]: {value: boolean};
 
-	// Decided at construction and read on every hop.
-	declare [kLinks]: TreeLinks;
-
-	/**
-	 * `flat` walks the FLAT tree rather than the node tree: shadow content
-	 * in its slot's place, and pseudo-element nodes among the children they
-	 * belong beside. It is the box tree's view, so only the engine asks for
-	 * it; `Document.createTreeWalker` never sets it.
-	 */
-	constructor(
-		root: Node,
-		whatToShow: number,
-		filter: NodeFilterInput,
-		flat = false,
-	) {
+	constructor(root: Node, whatToShow: number, filter: NodeFilterInput) {
 		this[kActive] = {value: false};
 		this[kRoot] = root;
 		this[kCurrent] = root;
 		this[kWhatToShow] = whatToShow;
 		this[kFilter] = filter ?? null;
-		this[kLinks] = flat ? FLAT_LINKS : NODE_LINKS;
 	}
 
 	get root(): globalThis.Node {
@@ -26619,8 +26497,8 @@ export class TreeWalker implements globalThis.TreeWalker {
 function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 	let node: Node | null =
 		first
-			? walk[kLinks].firstChild(walk[kCurrent])
-			: walk[kLinks].lastChild(walk[kCurrent]);
+			? walk[kCurrent][kFirstChild]
+			: walk[kCurrent][kLastChild];
 	while (node !== null) {
 		const result = filterNode(walk[kState], node);
 		if (result === FILTER_ACCEPT) {
@@ -26629,7 +26507,7 @@ function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 		}
 		if (result === FILTER_SKIP) {
 			const child =
-				first ? walk[kLinks].firstChild(node) : walk[kLinks].lastChild(node);
+				first ? node[kFirstChild] : node[kLastChild];
 			if (child !== null) {
 				node = child;
 				continue;
@@ -26638,13 +26516,13 @@ function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 		for (;;) {
 			const sibling =
 				first
-					? walk[kLinks].nextSibling(node)
-					: walk[kLinks].previousSibling(node);
+					? node[kNext]
+					: node[kPrevious];
 			if (sibling !== null) {
 				node = sibling;
 				break;
 			}
-			const parent: Node | null = walk[kLinks].parent(node);
+			const parent: Node | null = node[kParent];
 			if (
 				parent === null ||
 				parent === walk[kRoot] ||
@@ -26670,8 +26548,8 @@ function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 	for (;;) {
 		let sibling =
 			next
-				? walk[kLinks].nextSibling(node)
-				: walk[kLinks].previousSibling(node);
+				? node[kNext]
+				: node[kPrevious];
 		while (sibling !== null) {
 			node = sibling;
 			const result = filterNode(walk[kState], node);
@@ -26680,15 +26558,15 @@ function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 				return node;
 			}
 			sibling =
-				next ? walk[kLinks].firstChild(node) : walk[kLinks].lastChild(node);
+				next ? node[kFirstChild] : node[kLastChild];
 			if (result === FILTER_REJECT || sibling === null) {
 				sibling =
 					next
-						? walk[kLinks].nextSibling(node)
-						: walk[kLinks].previousSibling(node);
+						? node[kNext]
+						: node[kPrevious];
 			}
 		}
-		const parent = walk[kLinks].parent(node);
+		const parent = node[kParent];
 		if (parent === null || parent === walk[kRoot]) {
 			return null;
 		}
@@ -26702,7 +26580,7 @@ function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 function walkParent(walk: TreeWalker): Node | null {
 	let node: Node | null = walk[kCurrent];
 	while (node !== null && node !== walk[kRoot]) {
-		node = walk[kLinks].parent(node);
+		node = node[kParent];
 		if (node !== null && filterNode(walk[kState], node) === FILTER_ACCEPT) {
 			walk[kCurrent] = node;
 			return node;
@@ -26721,7 +26599,7 @@ function walkNext(walk: TreeWalker): Node | null {
 	let result = FILTER_ACCEPT;
 	for (;;) {
 		while (result !== FILTER_REJECT) {
-			const child = walk[kLinks].firstChild(node);
+			const child = node[kFirstChild];
 			if (child === null) {
 				break;
 			}
@@ -26738,11 +26616,11 @@ function walkNext(walk: TreeWalker): Node | null {
 			if (temporary === walk[kRoot]) {
 				return null;
 			}
-			sibling = walk[kLinks].nextSibling(temporary);
+			sibling = temporary[kNext];
 			if (sibling !== null) {
 				break;
 			}
-			temporary = walk[kLinks].parent(temporary);
+			temporary = temporary[kParent];
 		}
 		if (sibling === null) {
 			return null;
@@ -26759,7 +26637,7 @@ function walkNext(walk: TreeWalker): Node | null {
 function walkPrevious(walk: TreeWalker): Node | null {
 	let node = walk[kCurrent];
 	while (node !== walk[kRoot]) {
-		let sibling = walk[kLinks].previousSibling(node);
+		let sibling = node[kPrevious];
 		while (sibling !== null) {
 			node = sibling;
 			let result = filterNode(walk[kState], node);
@@ -26767,7 +26645,7 @@ function walkPrevious(walk: TreeWalker): Node | null {
 				if (result === FILTER_REJECT) {
 					break;
 				}
-				const child = walk[kLinks].lastChild(node);
+				const child = node[kLastChild];
 				if (child === null) {
 					break;
 				}
@@ -26778,9 +26656,9 @@ function walkPrevious(walk: TreeWalker): Node | null {
 				walk[kCurrent] = node;
 				return node;
 			}
-			sibling = walk[kLinks].previousSibling(node);
+			sibling = node[kPrevious];
 		}
-		const parent = walk[kLinks].parent(node);
+		const parent = node[kParent];
 		if (parent === null) {
 			return null;
 		}

@@ -2,11 +2,12 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {
 	ensurePseudoElement,
+	getFlatParent,
 	getPseudoHost,
 	getPseudoName,
 	pseudoElement,
 } from "../src/internal/dom.js";
-import {flowWalker} from "../src/internal/layout.js";
+import {flowContent, flowNext} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -20,6 +21,66 @@ const LIST_ITEM_RULE =
  * `display: contents`. The pseudo-elements are the test's own, put straight in
  * their slots; a cascade would own them instead.
  */
+// The engine walks the flow through flowContent and flowNext. These tests
+// were written against a walker over the same tree, and this is that
+// walker, stated in terms of the two functions.
+function flowWalker(root: Node): {
+	root: Node;
+	currentNode: Node;
+	nextNode(): Node | null;
+	firstChild(): Node | null;
+	nextSibling(): Node | null;
+	parentNode(): Node | null;
+} {
+	const walker = {
+		root,
+		currentNode: root,
+		nextNode(): Node | null {
+			const next = flowNext(walker.currentNode, root, false);
+			if (next !== null) {
+				walker.currentNode = next;
+			}
+			return next;
+		},
+		firstChild(): Node | null {
+			for (const child of flowContent(walker.currentNode)) {
+				walker.currentNode = child;
+				return child;
+			}
+			return null;
+		},
+		nextSibling(): Node | null {
+			if (walker.currentNode === root) {
+				return null;
+			}
+			const parent = getFlatParent(walker.currentNode);
+			if (parent === null) {
+				return null;
+			}
+			let seen = false;
+			for (const child of flowContent(parent)) {
+				if (seen) {
+					walker.currentNode = child;
+					return child;
+				}
+				seen = child === walker.currentNode;
+			}
+			return null;
+		},
+		parentNode(): Node | null {
+			if (walker.currentNode === root) {
+				return null;
+			}
+			const parent = getFlatParent(walker.currentNode);
+			if (parent !== null) {
+				walker.currentNode = parent;
+			}
+			return parent;
+		},
+	};
+	return walker;
+}
+
 function documentWindow(html: string): TermDOM {
 	return new TermDOM({
 		html: html.replace("<body>", `${LIST_ITEM_RULE}<body>`),
@@ -681,56 +742,6 @@ test("A bare document - flat-tree walker respects root boundary", () => {
 	expect(nodes.length).toBeLessThanOrEqual(3); // P, SPAN, #text
 });
 
-test("A bare document - flat-tree walker previousNode respects root boundary", () => {
-	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
-	const window = dom.window;
-	const document = window.document;
-
-	// Create: body → div → p → span
-	const div = document.createElement("div");
-	div.className = "container";
-
-	const p = document.createElement("p");
-	p.className = "paragraph";
-
-	const span = document.createElement("span");
-	span.className = "span";
-	span.textContent = "content";
-
-	p.appendChild(span);
-	div.appendChild(p);
-	document.body.appendChild(div);
-
-	// Walker rooted at div
-	const walker = flowWalker(div);
-
-	// Navigate to the span (deepest node)
-	walker.nextNode(); // p
-	walker.nextNode(); // span
-	walker.nextNode(); // #text
-
-	expect(walker.currentNode.textContent).toBe("content");
-
-	// Navigate backwards
-	const nodes: Array<{name: string; className?: string}> = [];
-	let node = walker.previousNode();
-	while (node && nodes.length < 10) {
-		nodes.push({
-			name: node.nodeName,
-			className: (node as any).className || undefined,
-		});
-		node = walker.previousNode();
-	}
-
-	// Should find span, p, div (all within root)
-	expect(nodes.some((n) => n.className === "span")).toBe(true);
-	expect(nodes.some((n) => n.className === "paragraph")).toBe(true);
-	expect(nodes.some((n) => n.className === "container")).toBe(true);
-
-	// Should NOT find body (outside root)
-	expect(nodes.some((n) => n.name === "BODY")).toBe(false);
-});
-
 test("A bare document - flat-tree walker parentNode respects root boundary", () => {
 	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
@@ -1041,7 +1052,6 @@ test("A bare document - nextSibling/previousSibling at the root return null, per
 	const a = window.document.getElementById("a")!;
 	const walker = flowWalker(a);
 	expect(walker.nextSibling()).toBe(null);
-	expect(walker.previousSibling()).toBe(null);
 	expect(walker.currentNode).toBe(a); // unmoved
 
 	// A child of the root still traverses siblings normally.
@@ -1092,15 +1102,6 @@ test("flat-tree walker skips comments rather than halting on them", () => {
 	document.body.innerHTML = "<p>a<!-- c -->b</p>";
 	const p = document.querySelector("p")!;
 	expect(names(p)).toEqual(["a", "b"]);
-
-	// lastChild()/previousSibling() skip backward the same way.
-	document.body.innerHTML = "<h1>A</h1><h2>B</h2><!-- c -->";
-	const back: string[] = [];
-	const walker = flowWalker(document.body);
-	for (let n = walker.lastChild(); n; n = walker.previousSibling()) {
-		back.push((n as Element).tagName);
-	}
-	expect(back).toEqual(["H2", "H1"]);
 
 	// A container whose only children are comments has no accepted children.
 	document.body.innerHTML = "<div><!--a--><!--b--></div>";
