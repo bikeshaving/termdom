@@ -435,7 +435,7 @@ function applySharedTextControlEdit(
 	shiftKey: boolean,
 	ctrlKey: boolean,
 ): TextControlEditResult | null {
-	const value = textControl[kUAValue]!;
+	const value = textControl[kUAValue];
 	const {start, end, direction} = getSelectionRecord(textControl)!;
 	const backward = direction === "backward";
 	const caret = backward ? start : end;
@@ -556,7 +556,7 @@ function printableTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	text: string,
 ): TextControlEditResult {
-	const value = textControl[kUAValue]!;
+	const value = textControl[kUAValue];
 	const {start, end} = getSelectionRecord(textControl)!;
 	return createCollapsedEdit(
 		value.slice(0, start) + text + value.slice(end),
@@ -609,7 +609,7 @@ function applyTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	result: TextControlEditResult,
 ): void {
-	const value = textControl[kUAValue]!;
+	const value = textControl[kUAValue];
 	const {start, end, direction} = getSelectionRecord(textControl)!;
 	if (result.value !== value) {
 		textControl[kSetUAValue]!(result.value);
@@ -7053,7 +7053,7 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	}
 
 	get length(): number {
-		return this[kTokens]!.length;
+		return this[kTokens].length;
 	}
 
 	get value(): string {
@@ -7086,18 +7086,18 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	}
 
 	item(index: number): string | null {
-		const tokens = this[kTokens]!;
+		const tokens = this[kTokens];
 		const at = toUnsignedLong(index);
 		return at < tokens.length ? tokens[at] : null;
 	}
 
 	contains(token: string): boolean {
-		return this[kTokens]!.includes(String(token));
+		return this[kTokens].includes(String(token));
 	}
 
 	add(...tokens: string[]): void {
 		validateTokens(tokens);
-		const current = this[kTokens]!.slice();
+		const current = this[kTokens].slice();
 		for (const token of tokens) {
 			if (!current.includes(token)) {
 				current.push(String(token));
@@ -7108,7 +7108,7 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 
 	remove(...tokens: string[]): void {
 		validateTokens(tokens);
-		const current = this[kTokens]!.filter(
+		const current = this[kTokens].filter(
 			(each) => !tokens.some((token) => String(token) === each),
 		);
 		writeTokenList(this, current);
@@ -7117,7 +7117,7 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	toggle(token: string, force?: boolean): boolean {
 		validateTokens([token]);
 		const name = String(token);
-		const current = this[kTokens]!.slice();
+		const current = this[kTokens].slice();
 		const index = current.indexOf(name);
 		if (index !== -1) {
 			if (force === undefined || force === false) {
@@ -7139,7 +7139,7 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 		validateTokens([token, newToken]);
 		const name = String(token);
 		const replacement = String(newToken);
-		const current = this[kTokens]!.slice();
+		const current = this[kTokens].slice();
 		if (!current.includes(name)) {
 			return false;
 		}
@@ -7732,7 +7732,7 @@ class Attr extends Node implements globalThis.Attr {
 	}
 
 	get name(): string {
-		return this[kQualifiedName]!;
+		return this[kQualifiedName];
 	}
 
 	get value(): string {
@@ -7756,7 +7756,7 @@ class Attr extends Node implements globalThis.Attr {
 	}
 
 	override get nodeName(): string {
-		return this[kQualifiedName]!;
+		return this[kQualifiedName];
 	}
 
 	override get nodeValue(): string | null {
@@ -7998,7 +7998,7 @@ class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
 			isHTMLDocument(this[kElement][kDocument]);
 		for (const item of items) {
 			const attribute = item as Attr;
-			const name = attribute[kQualifiedName]!;
+			const name = attribute[kQualifiedName];
 			if (html && toASCIILowercase(name) !== name) {
 				continue;
 			}
@@ -8220,7 +8220,7 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	get tagName(): string {
-		const qualified = this[kQualifiedName]!;
+		const qualified = this[kQualifiedName];
 		return this[kNamespace] === HTML_NAMESPACE &&
 			isHTMLDocument(this[kDocument])
 			? toASCIIUppercase(qualified)
@@ -8467,7 +8467,7 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	getAttributeNames(): string[] {
-		return this[kAttributeList].map((attribute) => attribute[kQualifiedName]!);
+		return this[kAttributeList].map((attribute) => attribute[kQualifiedName]);
 	}
 
 	getAttribute(getQualifiedName: string): string | null {
@@ -14058,7 +14058,7 @@ class HTMLInputElement extends HTMLElement {
 				return;
 			}
 
-			const value = this[kUAValue]!;
+			const value = this[kUAValue];
 			const {start, end, direction} = getSelectionRecord(this)!;
 			const anchor = direction === "backward" ? end : start;
 			const caret = direction === "backward" ? start : end;
@@ -14611,7 +14611,7 @@ class HTMLInputElement extends HTMLElement {
 		if (!this[kValueText]) {
 			return;
 		}
-		const value = this[kUAValue]!;
+		const value = this[kUAValue];
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		// A password puts one bullet per code unit into the shadow tree, never
 		// the real value. So what lays out, paints and can be selected is only
@@ -14662,7 +14662,7 @@ function insertTextControlText(
 	if (!text) {
 		return;
 	}
-	const value = textControl[kUAValue]!;
+	const value = textControl[kUAValue];
 	const {start, end} = getSelectionRecord(textControl)!;
 	const next = value.slice(0, start) + text + value.slice(end);
 	if (textControl.type === "number" && !isFloatPrefix(next)) {
@@ -14896,7 +14896,7 @@ function getSteppedValue(
 	const spacing = step > 0 ? step : 1;
 	const min = parseFloatingPoint(input.getAttribute("min")?.trim() ?? "");
 	const max = parseFloatingPoint(input.getAttribute("max")?.trim() ?? "");
-	const current = parseFloatingPoint(input[kUAValue]!) ?? 0;
+	const current = parseFloatingPoint(input[kUAValue]) ?? 0;
 	const base = min ?? 0;
 
 	// The offset in grid units, rounded enough that a value the grid itself
@@ -14919,7 +14919,7 @@ function getSteppedValue(
 	const places = Math.max(
 		getDecimalPlaces(stepAttribute),
 		getDecimalPlaces(input.getAttribute("min")),
-		getDecimalPlaces(input[kUAValue]!),
+		getDecimalPlaces(input[kUAValue]),
 	);
 	return String(Number(next.toFixed(Math.min(places, 20))));
 }
@@ -15993,7 +15993,7 @@ class HTMLOptionElement extends HTMLElement {
 		if (select !== null) {
 			askForAReset(select);
 		}
-		return this[kSelectedness]!;
+		return this[kSelectedness];
 	}
 
 	set selected(value: boolean) {
@@ -16051,7 +16051,7 @@ class HTMLOptionElement extends HTMLElement {
 
 	override [kCloningSteps]?(copy: Node): void {
 		const clone = copy as HTMLOptionElement;
-		clone[kSelectedness] = this[kSelectedness]!;
+		clone[kSelectedness] = this[kSelectedness];
 		clone[kOptionDirty] = this[kOptionDirty];
 	}
 }
@@ -16639,7 +16639,7 @@ class HTMLSelectElement extends HTMLElement {
 		let selected = this[kSelectedOptions];
 		if (selected === null) {
 			selected = new HTMLCollection(
-				() => getOptions(this).filter((option) => option[kSelectedness]!),
+				() => getOptions(this).filter((option) => option[kSelectedness]),
 				this,
 			) as HTMLCollectionOf<HTMLOptionElement>;
 			this[kSelectedOptions] = selected;
@@ -16650,7 +16650,7 @@ class HTMLSelectElement extends HTMLElement {
 
 	get selectedIndex(): number {
 		askForAReset(this);
-		return getOptions(this).findIndex((option) => option[kSelectedness]!);
+		return getOptions(this).findIndex((option) => option[kSelectedness]);
 	}
 
 	set selectedIndex(value: number) {
@@ -16669,7 +16669,7 @@ class HTMLSelectElement extends HTMLElement {
 	get value(): string {
 		askForAReset(this);
 		for (const option of getOptions(this)) {
-			if (option[kSelectedness]!) {
+			if (option[kSelectedness]) {
 				return option.value;
 			}
 		}
@@ -17090,7 +17090,7 @@ function getDisplaySize(select: HTMLSelectElement): number {
 // more than one option selected keeps only the last.
 function askForAReset(select: HTMLSelectElement): void {
 	const options = getOptions(select);
-	const selected = options.filter((option) => option[kSelectedness]!);
+	const selected = options.filter((option) => option[kSelectedness]);
 	if (
 		!select.hasAttribute("multiple") &&
 		getDisplaySize(select) === 1 &&
@@ -17781,7 +17781,7 @@ class HTMLTextAreaElement extends HTMLElement {
 				this[kGoalColumn] = null;
 			}
 
-			const value = this[kUAValue]!;
+			const value = this[kUAValue];
 			const {start, end, direction} = getSelectionRecord(this)!;
 			const backward = direction === "backward";
 			const caret = backward ? start : end;
@@ -17865,11 +17865,11 @@ class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	get value(): string {
-		return this[kUAValue]!;
+		return this[kUAValue];
 	}
 
 	set value(value: string) {
-		const previous = this[kUAValue]!;
+		const previous = this[kUAValue];
 		this[kValue] = normalizeNewlines(value === null ? "" : String(value));
 		this[kDirty] = true;
 		if (previous !== this[kValue]) {
@@ -18036,7 +18036,7 @@ class HTMLTextAreaElement extends HTMLElement {
 			toUnsignedLong(start),
 			toUnsignedLong(end),
 			direction,
-			this[kUAValue]!.length,
+			this[kUAValue].length,
 			(selection) => {
 				this[kSelectionStart] = selection[0];
 				this[kSelectionEnd] = selection[1];
@@ -18100,7 +18100,7 @@ class HTMLTextAreaElement extends HTMLElement {
 			return;
 		}
 		const attached = getAttachedDocument(this)!;
-		const value = this[kUAValue]!;
+		const value = this[kUAValue];
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		let changed = false;
 		if (this[kValueText].data !== value) {
@@ -20340,7 +20340,7 @@ function collectSelectValidity(
 		return;
 	}
 	const options = getOptions(select);
-	const selected = options.filter((option) => option[kSelectedness]!);
+	const selected = options.filter((option) => option[kSelectedness]);
 	if (selected.length === 0) {
 		flags.valueMissing = true;
 		return;
@@ -27132,14 +27132,14 @@ function createTreeAdapter(document: Document | null) {
 		},
 		getAttrList(element: Element): ParseAttribute[] {
 			return element[kAttributeList].map((attribute) => ({
-				name: attribute[kQualifiedName]!,
+				name: attribute[kQualifiedName],
 				value: attribute[kValue],
 				namespace: attribute[kNamespace] ?? undefined,
 				prefix: attribute[kPrefix] ?? undefined,
 			}));
 		},
 		getTagName(element: Element): string {
-			return element[kQualifiedName]!;
+			return element[kQualifiedName];
 		},
 		getNamespaceURI(element: Element): string {
 			return element[kNamespace] as string;
@@ -28096,7 +28096,7 @@ function getAttributeSerializedName(attribute: Attr): string {
 	if (namespace === XLINK_NAMESPACE) {
 		return `xlink:${attribute[kLocalName]}`;
 	}
-	return attribute[kQualifiedName]!;
+	return attribute[kQualifiedName];
 }
 
 // A shadow root is written out as the template the parser reads back,
@@ -28175,7 +28175,7 @@ function serializeNode(
 				namespace === MATHML_NAMESPACE ||
 				namespace === SVG_NAMESPACE
 					? element[kLocalName]
-					: element[kQualifiedName]!;
+					: element[kQualifiedName];
 			let html = `<${tagName}`;
 			for (const attribute of element[kAttributeList]) {
 				html += ` ${getAttributeSerializedName(attribute)}="${escapeAttribute(
