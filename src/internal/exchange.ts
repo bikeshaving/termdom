@@ -353,33 +353,55 @@ const kTail = Symbol("tail");
 const kPasteBody = Symbol("pasteBody");
 const kReplyBody = Symbol("replyBody");
 const kReplyLimit = Symbol("replyLimit");
+const kPasteLimit = Symbol("pasteLimit");
+const kHoldLimit = Symbol("holdLimit");
+const kExpectingReply = Symbol("expectingReply");
 
 /**
  * Decodes one chunk into what it meant. Keeps what a chunk boundary can
  * cut: a split escape (never a bare trailing ESC, which may be the
- * Escape key), an open paste body, and an open clipboard reply. The reply
- * is recognized whether or not anyone asked, or its base64 would be
- * typed as keystrokes.
+ * Escape key), an open paste body, and an open clipboard reply. Nothing
+ * here may hold the keystrokes that follow it for long: a paste that
+ * never closes is delivered at a size, a sequence that never finishes is
+ * dropped at a size, and a clipboard reply is only kept open while a
+ * query is waiting for it.
  */
 class WireReader {
 	// A larger reply is not a clipboard. It is given up as null.
 	static readonly [kReplyLimit] = 1 << 16;
+	// A paste this large is delivered as it stands and the fence forgotten.
+	static readonly [kPasteLimit] = 1 << 20;
+	// A split sequence longer than this is not one a terminal sends.
+	static readonly [kHoldLimit] = 4096;
 	declare [kTail]: string;
 	declare [kPasteBody]: string | null;
 	declare [kReplyBody]: string | null;
+	declare [kExpectingReply]: boolean;
 
 	constructor() {
 		this[kTail] = "";
 		this[kPasteBody] = null;
 		this[kReplyBody] = null;
+		this[kExpectingReply] = false;
+	}
+
+	/**
+	 * A clipboard reply nobody asked for is discarded whole rather than
+	 * typed as keystrokes, and one still open when the asker gives up is
+	 * discarded so the keystrokes behind it get through.
+	 */
+	expectClipboardReply(expecting: boolean): void {
+		this[kExpectingReply] = expecting;
+		if (!expecting) {
+			this[kReplyBody] = null;
+		}
 	}
 
 	feed(chunk: string): WireItem[] {
 		let data = this[kTail] + chunk;
 		this[kTail] = "";
-		// Only a short one. What outgrows a real sequence will not finish.
 		const held = splitTrailingEscape(data);
-		if (held > 0 && held <= 32) {
+		if (held > 0 && held <= WireReader[kHoldLimit]) {
 			this[kTail] = data.slice(-held);
 			data = data.slice(0, -held);
 		}
@@ -392,6 +414,10 @@ class WireReader {
 				const end = data.indexOf(PASTE_END, i);
 				if (end === -1) {
 					this[kPasteBody] += data.slice(i);
+					if (this[kPasteBody].length > WireReader[kPasteLimit]) {
+						items.push({kind: "paste", text: this[kPasteBody]});
+						this[kPasteBody] = null;
+					}
 					return items;
 				}
 				items.push({
@@ -430,7 +456,12 @@ class WireReader {
 				continue;
 			}
 			if (data.startsWith(CLIPBOARD_START, i)) {
-				this[kReplyBody] = "";
+				if (this[kExpectingReply]) {
+					this[kReplyBody] = "";
+					continue;
+				}
+				const unasked = data.slice(i).match(CLIPBOARD_REPLY);
+				i += unasked ? unasked[0].length : CLIPBOARD_START.length;
 				continue;
 			}
 			if (data[i] === "\x1b" && i + 1 < data.length) {
@@ -442,9 +473,14 @@ class WireReader {
 					) {
 						end++;
 					}
-					items.push(
-						decodeControlToken(data.slice(i, Math.min(end + 1, data.length))),
-					);
+					// A sequence with no final byte, or one nothing here names,
+					// is not a keystroke.
+					if (end < data.length) {
+						const item = decodeControlToken(data.slice(i, end + 1));
+						if (item.kind !== "key" || !item.key.includes("\x1b")) {
+							items.push(item);
+						}
+					}
 					i = end + 1;
 					continue;
 				}
@@ -1448,10 +1484,16 @@ function nextReply<K extends WireItem["kind"], T>(
 			clipboard: options.clipboard,
 			settle: (item) => {
 				clearTimeout(entry.timer);
+				if (options.clipboard) {
+					session[kWireReader].expectClipboardReply(false);
+				}
 				resolve(options.read(item as ReplyOf<K>));
 			},
 			giveUp: () => {
 				clearTimeout(entry.timer);
+				if (options.clipboard) {
+					session[kWireReader].expectClipboardReply(false);
+				}
 				if (options.absent !== undefined) {
 					resolve(options.absent);
 				} else {
@@ -1467,6 +1509,9 @@ function nextReply<K extends WireItem["kind"], T>(
 			}, options.timeoutMs),
 		};
 		session[kPendingReplies].push(entry);
+		if (options.clipboard) {
+			session[kWireReader].expectClipboardReply(true);
+		}
 		void session.write(options.ask);
 	});
 }
