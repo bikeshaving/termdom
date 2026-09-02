@@ -1526,6 +1526,45 @@ function expandShorthands(
 	for (const [property, value] of Object.entries(declarations)) {
 		const values = splitComponents(value);
 		switch (property) {
+			// css-fonts-4 §6.1: `normal` and `none` are whole values; otherwise
+			// each keyword belongs to the one longhand whose grammar takes it,
+			// and an unstated longhand resets to normal.
+			case "font-variant": {
+				const longhands = SHORTHAND_LONGHANDS.get("font-variant")!;
+				const lower = value.trim().toLowerCase();
+				if (lower === "normal" || lower === "none") {
+					for (const longhand of longhands) {
+						out[longhand] =
+							lower === "none" && longhand === "font-variant-ligatures"
+								? "none"
+								: "normal";
+					}
+					break;
+				}
+				const assigned = new Map<string, string[]>();
+				let valid = true;
+				for (const component of values) {
+					const longhand = longhands.find(
+						(candidate) =>
+							grammarLexer.matchProperty(candidate, component).matched !== null,
+					);
+					if (longhand === undefined) {
+						valid = false;
+						break;
+					}
+					assigned.set(longhand, [
+						...(assigned.get(longhand) ?? []),
+						component,
+					]);
+				}
+				if (!valid) {
+					break;
+				}
+				for (const longhand of longhands) {
+					out[longhand] = assigned.get(longhand)?.join(" ") ?? "normal";
+				}
+				break;
+			}
 			case "border": {
 				const {width, lineStyle, color} = splitLineValue(property, value);
 				setEdges("width", [width ?? "medium"]);
@@ -3273,6 +3312,21 @@ function serializeShorthandValue(
 		: longhands;
 	const values = reset ? stated.map(valueOf) : all;
 
+	// css-fonts-4 §6.1: `none` is font-variant-ligatures alone, and no
+	// shorthand spells `none` beside another longhand's value.
+	if (shorthand === "font-variant") {
+		const at = (longhand: string): string =>
+			values[stated.indexOf(longhand)] ?? "normal";
+		const rest = stated
+			.filter((longhand) => longhand !== "font-variant-ligatures")
+			.map(at);
+		if (at("font-variant-ligatures") === "none") {
+			return rest.every((value) => value === "normal") ? "none" : "";
+		}
+		const spelled = stated.map(at).filter((value) => value !== "normal");
+		return spelled.length > 0 ? spelled.join(" ") : "normal";
+	}
+
 	switch (SHORTHAND_SHAPES.get(shorthand)) {
 		case "box":
 			return collapseSides(values);
@@ -3876,10 +3930,25 @@ function applyDeclaration(
 		return false;
 	}
 	const expanded = expandShorthandValue(name, value);
+	// A shorthand this engine does not decompose (`font: menu`, a system
+	// font) is stored whole, and still covers its longhands: any declared
+	// on their own are dropped, as the standard's set-a-declaration does.
+	let changed = false;
 	if (!expanded) {
-		return storeDeclaration(declaration, name, value, important, cascade);
+		for (const longhand of SHORTHAND_LONGHANDS.get(name) ?? []) {
+			if (
+				cascade &&
+				findDeclaration(declaration, longhand)?.important &&
+				!important
+			) {
+				continue;
+			}
+			changed = removeDeclaration(declaration, longhand) || changed;
+		}
+		return storeDeclaration(declaration, name, value, important, cascade) ||
+			changed;
 	}
-	let changed = removeDeclaration(declaration, name);
+	changed = removeDeclaration(declaration, name);
 	for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
 		if (longhand in expanded) {
 			continue;
@@ -3939,8 +4008,16 @@ class CSSStyleProperties extends CSSStyleDeclaration {}
 // ASCII-lowercased.
 function normalizePropertyName(property: string): string {
 	const name = String(property).trim();
-	return name.startsWith("--") ? name : name.toLowerCase();
+	if (name.startsWith("--")) {
+		return name;
+	}
+	const lower = name.toLowerCase();
+	return LEGACY_PROPERTY_ALIASES.get(lower) ?? lower;
 }
+
+// A legacy name that is the same property under its standard name, so a
+// declaration made through it serializes as the standard one.
+const LEGACY_PROPERTY_ALIASES = new Map([["-webkit-line-clamp", "line-clamp"]]);
 
 // Escapes in a custom property's name spell characters that could not
 // otherwise appear. The source `--a\;b` names the property `--a;b`.

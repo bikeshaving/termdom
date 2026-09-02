@@ -56,6 +56,19 @@ for (const name of supported) {
 	}
 }
 
+// The property index describes font-variant's longhands in prose only.
+// css-fonts-4 §6.1 names them in this order. Set here so that `font`,
+// which contains font-variant, flattens through it.
+directLonghands.set("font-variant", [
+	"font-variant-ligatures",
+	"font-variant-caps",
+	"font-variant-alternates",
+	"font-variant-numeric",
+	"font-variant-east-asian",
+	"font-variant-position",
+	"font-variant-emoji",
+]);
+
 /** A shorthand's longhands, with nested shorthands (`border`) flattened out. */
 function flatten(name: string, seen = new Set<string>()): string[] {
 	const direct = directLonghands.get(name);
