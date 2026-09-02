@@ -430,6 +430,11 @@ export class LayoutNode {
 	cachedLayout: CachedSize | null;
 	styling: boolean;
 
+	// The computed values that shape text measurement without being part
+	// of the style record, joined, so a restyle can tell whether the
+	// measurement is still good. Set with the style.
+	measureKey: string;
+
 	// Null for a node no DOM node owns: an anonymous run's, a independent
 	// formatting context, the viewport. Stored on the node rather than in a map
 	// because it is read during paint culling and every child sweep, and a node
@@ -451,6 +456,7 @@ export class LayoutNode {
 		this.cachedLayout = null;
 		this.styling = false;
 		this.owner = null;
+		this.measureKey = "";
 		this.style = createStyle();
 		this.layout = createLayout();
 	}
@@ -6543,6 +6549,22 @@ function styleLayoutNode(
 	});
 }
 
+// What the run measurer reads beyond the style record: the properties
+// that decide where text breaks and how wide it is.
+const MEASURE_PROPERTIES = [
+	"white-space",
+	"direction",
+	"word-break",
+	"overflow-wrap",
+	"text-indent",
+	"text-align",
+	"text-transform",
+	"letter-spacing",
+	"tab-size",
+	"list-style-type",
+	"list-style-position",
+];
+
 function styleLayoutNodeProperties(
 	element: Element,
 	layoutNode: LayoutNode,
@@ -6884,6 +6906,9 @@ function styleLayoutNodeProperties(
 	} else {
 		layoutNode.setPositionType("static");
 	}
+	layoutNode.measureKey = MEASURE_PROPERTIES.map((property) =>
+		getComputedValue(element, property),
+	).join("|");
 }
 
 const kPositionedElements = Symbol("positionedElements");
@@ -10984,9 +11009,16 @@ function applyRestyles(
 			if (!flatIsConnected(element)) {
 				continue;
 			}
+			// A restyle that left every property layout reads as it was (a
+			// color, a decoration) changes no box and no measurement, and
+			// rebuilding would restyle every descendant for nothing. A child
+			// whose own style changed is in this set itself.
+			if (isLayoutStyleUnchanged(layout, element)) {
+				continue;
+			}
 			invalidateBoxDerivation(layout, element);
-			invalidateChildDerivation(layout, element);
 			invalidateEnclosingMeasure(layout, element);
+			invalidateChildDerivation(layout, element);
 			if (layout[kBoxes].get(element)?.children) {
 				invalidateContainerBoxes(layout, element);
 				// An element that becomes a flex container, or stops being one,
@@ -10995,6 +11027,55 @@ function applyRestyles(
 			}
 		}
 	}
+}
+
+// Whether the element's layout style, recomputed from the cascade, is
+// the one its layout node already holds. Only an element with a node
+// can answer; one without takes the full path.
+function isLayoutStyleUnchanged(layout: Layout, element: Element): boolean {
+	const layoutNode = layout[kNodeMap].get(element);
+	if (layoutNode === undefined) {
+		return false;
+	}
+	const probe = new LayoutNode();
+	styleLayoutNodeProperties(element, probe, new Set());
+	return (
+		probe.measureKey === layoutNode.measureKey &&
+		isSameValue(probe.style, layoutNode.style)
+	);
+}
+
+function isSameValue(a: unknown, b: unknown): boolean {
+	if (a === b) {
+		return true;
+	}
+	if (
+		typeof a !== "object" ||
+		typeof b !== "object" ||
+		a === null ||
+		b === null
+	) {
+		return Number.isNaN(a as number) && Number.isNaN(b as number);
+	}
+	if (Array.isArray(a) !== Array.isArray(b)) {
+		return false;
+	}
+	const keysA = Object.keys(a);
+	const keysB = Object.keys(b);
+	if (keysA.length !== keysB.length) {
+		return false;
+	}
+	for (const key of keysA) {
+		if (
+			!isSameValue(
+				(a as Record<string, unknown>)[key],
+				(b as Record<string, unknown>)[key],
+			)
+		) {
+			return false;
+		}
+	}
+	return true;
 }
 
 // Nothing here builds a box. A mutation says only which containers no
@@ -11010,9 +11091,12 @@ function invalidateForRecord(
 			: record.target;
 	if (record.type === "attributes") {
 		// Which rules now match is the cascade's to announce, through
-		// styleInvalidated.
-		invalidateBoxDerivation(layout, target);
-		invalidateChildDerivation(layout, target as Element);
+		// styleInvalidated, and it does so for every attribute change. Only
+		// an attribute layout reads for itself dirties anything here.
+		if (record.attributeName === "rows" || record.attributeName === "cols") {
+			invalidateBoxDerivation(layout, target);
+			invalidateChildDerivation(layout, target as Element);
+		}
 		if (record.attributeName === "slot") {
 			// Moves the node in the COMPOSED tree while the light tree is
 			// unchanged. No childList record arrives, and the container it left
