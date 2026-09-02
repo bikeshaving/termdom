@@ -101,7 +101,7 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 }
 
 /** A listener as this file's dispatch calls it. */
-type UAListener = (event: Event) => void;
+type UAListener = globalThis.EventListener;
 const kUASelection = Symbol("a control's selection, whatever its type");
 
 /**
@@ -3027,29 +3027,10 @@ const LEGACY_EVENT_INTERFACES = new Map<string, () => Event>([
 	["uievents", () => new UIEvent("")],
 ]);
 
-type EventListener = (event: Event) => void;
-
-interface EventListenerObject {
-	handleEvent(event: Event): void;
-}
-
-type EventListenerOrEventListenerObject = EventListener | EventListenerObject;
-
 /** What an AbortSignal must provide for a listener to use it. */
 interface ListenerSignal {
 	aborted: boolean;
 	addEventListener(type: string, callback: () => void): void;
-}
-
-interface AddEventListenerOptions {
-	capture?: boolean;
-	once?: boolean;
-	passive?: boolean;
-	signal?: ListenerSignal;
-}
-
-interface EventListenerOptions {
-	capture?: boolean;
 }
 
 /** Event types whose listeners mean the document observes pointer hover. */
@@ -3120,7 +3101,7 @@ function watchHoverListeners(
 
 interface Listener {
 	type: string;
-	callback: EventListenerOrEventListenerObject;
+	callback: globalThis.EventListenerOrEventListenerObject;
 	capture: boolean;
 	once: boolean;
 	passive: boolean;
@@ -3154,18 +3135,18 @@ class EventTarget implements globalThis.EventTarget {
 
 	addEventListener(
 		type: string,
-		callback: EventListenerOrEventListenerObject | null,
-		options?: boolean | AddEventListenerOptions,
+		callback: globalThis.EventListenerOrEventListenerObject | null,
+		options?: boolean | globalThis.AddEventListenerOptions,
 	): void;
 	addEventListener(
 		type: string,
-		listener: EventListener | EventListenerObject,
-		options?: boolean | AddEventListenerOptions,
+		listener: globalThis.EventListener | globalThis.EventListenerObject,
+		options?: boolean | globalThis.AddEventListenerOptions,
 	): void;
 	addEventListener(
 		type: string,
-		callback: EventListenerOrEventListenerObject | null,
-		options?: boolean | AddEventListenerOptions,
+		callback: globalThis.EventListenerOrEventListenerObject | null,
+		options?: boolean | globalThis.AddEventListenerOptions,
 	): void {
 		if (arguments.length < 2) {
 			throw new TypeError("addEventListener needs a type and a callback");
@@ -3209,18 +3190,18 @@ class EventTarget implements globalThis.EventTarget {
 
 	removeEventListener(
 		type: string,
-		callback: EventListenerOrEventListenerObject | null,
-		options?: boolean | EventListenerOptions,
+		callback: globalThis.EventListenerOrEventListenerObject | null,
+		options?: boolean | globalThis.EventListenerOptions,
 	): void;
 	removeEventListener(
 		type: string,
-		listener: EventListener | EventListenerObject,
-		options?: boolean | EventListenerOptions,
+		listener: globalThis.EventListener | globalThis.EventListenerObject,
+		options?: boolean | globalThis.EventListenerOptions,
 	): void;
 	removeEventListener(
 		type: string,
-		callback: EventListenerOrEventListenerObject | null,
-		options?: boolean | EventListenerOptions,
+		callback: globalThis.EventListenerOrEventListenerObject | null,
+		options?: boolean | globalThis.EventListenerOptions,
 	): void {
 		if (arguments.length < 2) {
 			throw new TypeError("removeEventListener needs a type and a callback");
@@ -3254,7 +3235,7 @@ class EventTarget implements globalThis.EventTarget {
 }
 
 function flattenMore(
-	options: boolean | AddEventListenerOptions | undefined,
+	options: boolean | globalThis.AddEventListenerOptions | undefined,
 ): {
 	capture: boolean;
 	once: boolean;
@@ -3276,7 +3257,7 @@ function flattenMore(
 			signal: null,
 		};
 	}
-	const dictionary = toDictionary<AddEventListenerOptions>(
+	const dictionary = toDictionary<globalThis.AddEventListenerOptions>(
 		options,
 		"Listener options",
 	);
@@ -3301,7 +3282,7 @@ function flattenMore(
 
 /** A capture-only options argument, for removeEventListener. */
 function flattenCapture(
-	options: boolean | EventListenerOptions | undefined,
+	options: boolean | globalThis.EventListenerOptions | undefined,
 ): boolean {
 	if (
 		options !== null &&
@@ -3312,19 +3293,22 @@ function flattenCapture(
 		return Boolean(options);
 	}
 	return Boolean(
-		toDictionary<EventListenerOptions>(options, "Listener options").capture,
+		toDictionary<globalThis.EventListenerOptions>(
+			options,
+			"Listener options",
+		).capture,
 	);
 }
 
 /** Convert a listener callback per Web IDL: null, or a callable object. */
 function toEventListener(
 	callback: unknown,
-): EventListenerOrEventListenerObject | null {
+): globalThis.EventListenerOrEventListenerObject | null {
 	if (callback === null || callback === undefined) {
 		return null;
 	}
 	if (typeof callback === "function" || typeof callback === "object") {
-		return callback as EventListenerOrEventListenerObject;
+		return callback as globalThis.EventListenerOrEventListenerObject;
 	}
 	throw new TypeError("An event listener must be an object or a function");
 }
@@ -3459,8 +3443,8 @@ function registerHandlerListener(
 ): Listener {
 	const listener: Listener = {
 		type,
-		callback: (event: Event): void => {
-			invokeEventHandler(target, type, record, event);
+		callback: (event: globalThis.Event): void => {
+			invokeEventHandler(target, type, record, event as Event);
 		},
 		capture: false,
 		once: false,
@@ -4199,7 +4183,7 @@ function innerInvoke(
 
 // For an object callback, handleEvent is looked up at call time.
 function callListener(
-	callback: EventListenerOrEventListenerObject,
+	callback: globalThis.EventListenerOrEventListenerObject,
 	thisArg: EventTarget | null,
 	event: Event,
 ): void {
@@ -8079,10 +8063,10 @@ const kARIAElements = Symbol("explicitly set attr-elements");
 const kDataset = Symbol("dataset");
 const kInternals = Symbol("element internals");
 
-type ScrollMethod = (
-	xOrOptions?: number | globalThis.ScrollToOptions,
-	y?: number,
-) => void;
+type ScrollMethod = {
+	(options?: globalThis.ScrollToOptions): void;
+	(x: number, y: number): void;
+};
 
 export class Element extends Node implements globalThis.Element {
 	// Installed on the prototype, where the engine that implements them is.
@@ -8646,7 +8630,7 @@ export class Element extends Node implements globalThis.Element {
 		insertAdjacent(this, String(where), text);
 	}
 
-	insertAdjacentHTML(position: string, text: string): void {
+	insertAdjacentHTML(position: InsertPosition, text: string): void {
 		const where = toASCIILowercase(String(position));
 		let context: Node;
 		switch (where) {
@@ -8701,7 +8685,7 @@ export class Element extends Node implements globalThis.Element {
 	// The Typed OM is not implemented. Every computed value here is a
 	// string, and returning a CSSStyleValue would mean parsing into a type
 	// nothing else here uses.
-	computedStyleMap(): never {
+	computedStyleMap(): globalThis.StylePropertyMapReadOnly {
 		throw domError(
 			"NotSupportedError",
 			"Typed OM is not implemented; use getComputedStyle",
@@ -8711,14 +8695,21 @@ export class Element extends Node implements globalThis.Element {
 	// Web Animations needs a timeline, and this engine has none. Frames come
 	// from terminal input and layout invalidation, not from a clock a running
 	// animation could sample.
-	animate(): never {
+	animate(
+		_keyframes: globalThis.Keyframe[] |
+			globalThis.PropertyIndexedKeyframes |
+			null,
+		_options?: number | globalThis.KeyframeAnimationOptions,
+	): globalThis.Animation {
 		throw domError(
 			"NotSupportedError",
 			"Web Animations is not implemented",
 		);
 	}
 
-	getAnimations(): globalThis.Animation[] {
+	getAnimations(
+		_options?: globalThis.GetAnimationsOptions,
+	): globalThis.Animation[] {
 		return [];
 	}
 
@@ -8730,15 +8721,15 @@ export class Element extends Node implements globalThis.Element {
 	// reporting after it leaves a box. A terminal reports the cell the mouse
 	// is over and stops at the screen edge, so there is nothing to capture
 	// and nowhere to lock to.
-	setPointerCapture(_pointerId: number): never {
+	setPointerCapture(_pointerId: number): void {
 		throw domError("NotSupportedError", "Pointer capture is not implemented");
 	}
 
-	releasePointerCapture(_pointerId: number): never {
+	releasePointerCapture(_pointerId: number): void {
 		throw domError("NotSupportedError", "Pointer capture is not implemented");
 	}
 
-	requestPointerLock(): never {
+	requestPointerLock(_options?: globalThis.PointerLockOptions): Promise<void> {
 		throw domError("NotSupportedError", "Pointer lock is not implemented");
 	}
 
@@ -9461,7 +9452,7 @@ export class HTMLElement extends Element {
 	// Moves the focus STATE and fires the four events HTML's focus update
 	// steps fire. A headless document paints nothing, so it only moves the
 	// state.
-	focus(): void {
+	focus(_options?: globalThis.FocusOptions): void {
 		const document = this[kDocument]!;
 		const previous = getInnermostActive(document);
 		// Uses shadow-including connectedness. A node whose tree root is a
@@ -21006,7 +20997,13 @@ export class Document extends Node implements globalThis.Document {
 		return instruction as unknown as globalThis.ProcessingInstruction;
 	}
 
-	importNode<T extends globalThis.Node>(node: T, deep = false): T {
+	importNode<T extends globalThis.Node>(
+		node: T,
+		options: boolean | globalThis.ImportNodeOptions = false,
+	): T {
+		const deep = typeof options === "boolean"
+			? options
+			: (options?.selfOnly === undefined ? false : !options.selfOnly);
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
@@ -21233,15 +21230,24 @@ export class Document extends Node implements globalThis.Document {
 	// XPath is not implemented. The selector engine is the only matcher
 	// this engine has.
 
-	evaluate(): never {
+	evaluate(
+		_expression: string,
+		_contextNode: globalThis.Node,
+		_resolver?: globalThis.XPathNSResolver | null,
+		_type?: number,
+		_result?: globalThis.XPathResult | null,
+	): globalThis.XPathResult {
 		throw domError("NotSupportedError", "XPath is not implemented");
 	}
 
-	createExpression(): never {
+	createExpression(
+		_expression: string,
+		_resolver?: globalThis.XPathNSResolver | null,
+	): globalThis.XPathExpression {
 		throw domError("NotSupportedError", "XPath is not implemented");
 	}
 
-	createNSResolver(): never {
+	createNSResolver(_nodeResolver: globalThis.Node): globalThis.Node {
 		throw domError("NotSupportedError", "XPath is not implemented");
 	}
 
@@ -21249,86 +21255,97 @@ export class Document extends Node implements globalThis.Document {
 	// The parser builds a tree from a string. document.write appends to a
 	// stream that this engine never opens.
 
-	open(): never {
+	open(_unused1?: string, _unused2?: string): globalThis.Document;
+	open(_url: string |
+		URL, _name: string, _features: string): globalThis.WindowProxy |
+			null;
+	open(): globalThis.Document | globalThis.WindowProxy | null {
 		throw domError("InvalidStateError", "This document is not a stream");
 	}
 
-	write(): never {
+	write(..._text: string[]): void {
 		throw domError("InvalidStateError", "This document is not a stream");
 	}
 
-	writeln(): never {
+	writeln(..._text: string[]): void {
 		throw domError("InvalidStateError", "This document is not a stream");
 	}
 
 	// Editing commands. This engine has no editing host for them.
 
-	execCommand(): never {
+	execCommand(_commandId: string, _showUI?: boolean, _value?: string): boolean {
 		throw domError("NotSupportedError", "execCommand is not implemented");
 	}
 
-	queryCommandEnabled(): never {
+	queryCommandEnabled(_commandId: string): boolean {
 		throw domError("NotSupportedError", "execCommand is not implemented");
 	}
 
-	queryCommandIndeterm(): never {
+	queryCommandIndeterm(_commandId: string): boolean {
 		throw domError("NotSupportedError", "execCommand is not implemented");
 	}
 
-	queryCommandState(): never {
+	queryCommandState(_commandId: string): boolean {
 		throw domError("NotSupportedError", "execCommand is not implemented");
 	}
 
-	queryCommandSupported(): never {
+	queryCommandSupported(_commandId: string): boolean {
 		throw domError("NotSupportedError", "execCommand is not implemented");
 	}
 
-	queryCommandValue(): never {
+	queryCommandValue(_commandId: string): string {
 		throw domError("NotSupportedError", "execCommand is not implemented");
 	}
 
 	// APIs that need a window manager, a network, or a compositor.
 
-	caretPositionFromPoint(): never {
+	caretPositionFromPoint(
+		_x: number,
+		_y: number,
+		_options?: globalThis.CaretPositionFromPointOptions,
+	): globalThis.CaretPosition | null {
 		throw domError(
 			"NotSupportedError",
 			"caretPositionFromPoint is not implemented",
 		);
 	}
 
-	caretRangeFromPoint(): never {
+	caretRangeFromPoint(_x: number, _y: number): globalThis.Range | null {
 		throw domError(
 			"NotSupportedError",
 			"caretRangeFromPoint is not implemented",
 		);
 	}
 
-	exitPictureInPicture(): never {
+	exitPictureInPicture(): Promise<void> {
 		throw domError(
 			"NotSupportedError",
 			"Picture-in-picture is not implemented",
 		);
 	}
 
-	exitPointerLock(): never {
+	exitPointerLock(): void {
 		throw domError("NotSupportedError", "Pointer lock is not implemented");
 	}
 
-	hasStorageAccess(): never {
+	hasStorageAccess(): Promise<boolean> {
 		throw domError(
 			"NotSupportedError",
 			"The storage access API is not implemented",
 		);
 	}
 
-	requestStorageAccess(): never {
+	requestStorageAccess(): Promise<void> {
 		throw domError(
 			"NotSupportedError",
 			"The storage access API is not implemented",
 		);
 	}
 
-	startViewTransition(): never {
+	startViewTransition(
+		_callbackOptions?: globalThis.ViewTransitionUpdateCallback |
+			globalThis.StartViewTransitionOptions,
+	): globalThis.ViewTransition {
 		throw domError("NotSupportedError", "View transitions are not implemented");
 	}
 
@@ -24029,7 +24046,9 @@ class Selection implements globalThis.Selection {
 		this.removeAllRanges();
 	}
 
-	getComposedRanges(options?: {shadowRoots?: ShadowRoot[]}): StaticRange[] {
+	getComposedRanges(
+		options?: globalThis.GetComposedRangesOptions,
+	): StaticRange[] {
 		const dictionary = toDictionary<{shadowRoots?: unknown}>(
 			options,
 			"getComposedRanges",
@@ -27987,7 +28006,7 @@ export class Window extends EventTarget {
 			// The pre-2020 MediaQueryList API, which much deployed code still
 			// calls: plain aliases for the EventTarget pair.
 			addListener: {
-				value: (callback: ((event: Event) => void) | null) => {
+				value: (callback: globalThis.EventListener | null) => {
 					if (callback) {
 						list.addEventListener("change", callback);
 					}
@@ -27995,7 +28014,7 @@ export class Window extends EventTarget {
 				configurable: true,
 			},
 			removeListener: {
-				value: (callback: ((event: Event) => void) | null) => {
+				value: (callback: globalThis.EventListener | null) => {
 					if (callback) {
 						list.removeEventListener("change", callback);
 					}

@@ -6,9 +6,9 @@ const cfg = ts.readConfigFile("tsconfig.json", ts.sys.readFile);
 const parsed = ts.parseJsonConfigFileContent(cfg.config, ts.sys, ".");
 const program = ts.createProgram(["tests/lib-dom-exact.ts"], parsed.options);
 const checker = program.getTypeChecker();
-const sf = program.getSourceFile("tests/lib-dom-exact.ts");
+const sf = program.getSourceFile("tests/lib-dom-exact.ts")!;
 
-function members(t) {
+function members(t: ts.Type): string[] {
 	if (t.flags & ts.TypeFlags.Never) {
 		return [];
 	}
@@ -28,7 +28,11 @@ function members(t) {
 let drifting = 0;
 let exact = 0;
 for (const st of sf.statements) {
-	if (!ts.isTypeAliasDeclaration(st) || !/Drift$/.test(st.name.text) || st.typeParameters) {
+	if (
+		!ts.isTypeAliasDeclaration(st) ||
+		!/Drift$/.test(st.name.text) ||
+		st.typeParameters
+	) {
 		continue;
 	}
 	const m = members(checker.getTypeAtLocation(st.type));
@@ -37,7 +41,10 @@ for (const st of sf.statements) {
 		continue;
 	}
 	drifting++;
-	console.log(st.name.text.replace(/Drift$/, "").padEnd(28), m.length + ": " + m.join(", "));
+	console.log(
+		st.name.text.replace(/Drift$/, "").padEnd(28),
+		m.length + ": " + m.join(", "),
+	);
 }
 console.log(`\n${exact} exact, ${drifting} drifting`);
 process.exit(drifting === 0 ? 0 : 1);
