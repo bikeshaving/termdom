@@ -714,7 +714,7 @@ function setTextSelection(
 	end: number,
 	direction: string | undefined,
 	length: number,
-	store: (selection: [number, number, string]) => void,
+	store: (selection: [number, number, SelectionDirection]) => void,
 ): void {
 	const clampedEnd = Math.min(end, length);
 	const clampedStart = Math.min(Math.min(start, length), clampedEnd);
@@ -856,16 +856,16 @@ function validateAttributeLocalName(name: string): void {
  */
 function validateAndExtract(
 	namespace: string | null,
-	getQualifiedName: string,
+	qualifiedName: string,
 	forAttribute: boolean,
 ): {namespace: string | null; prefix: string | null; localName: string} {
 	const ns = namespace === "" || namespace == null ? null : String(namespace);
 	let prefix: string | null = null;
-	let localName = getQualifiedName;
-	const colon = getQualifiedName.indexOf(":");
+	let localName = qualifiedName;
+	const colon = qualifiedName.indexOf(":");
 	if (colon !== -1) {
-		prefix = getQualifiedName.slice(0, colon);
-		localName = getQualifiedName.slice(colon + 1);
+		prefix = qualifiedName.slice(0, colon);
+		localName = qualifiedName.slice(colon + 1);
 		if (!VALID_NAMESPACE_PREFIX.test(prefix)) {
 			throw domError(
 				"InvalidCharacterError",
@@ -889,7 +889,7 @@ function validateAndExtract(
 		throw domError("NamespaceError", "The xml prefix needs the XML namespace");
 	}
 	if (
-		(getQualifiedName === "xmlns" || prefix === "xmlns") &&
+		(qualifiedName === "xmlns" || prefix === "xmlns") &&
 		ns !== XMLNS_NAMESPACE
 	) {
 		throw domError(
@@ -899,7 +899,7 @@ function validateAndExtract(
 	}
 	if (
 		ns === XMLNS_NAMESPACE &&
-		getQualifiedName !== "xmlns" &&
+		qualifiedName !== "xmlns" &&
 		prefix !== "xmlns"
 	) {
 		throw domError(
@@ -916,7 +916,7 @@ interface EventInit {
 	composed?: boolean;
 }
 
-interface CustomEventInit<T = unknown> extends EventInit {
+interface CustomEventInit<T = any> extends EventInit {
 	detail?: T;
 }
 
@@ -1290,7 +1290,7 @@ const kDetail = Symbol("detail");
 // Extends this DOM's Event (which carries the dispatch state) rather than
 // the platform's CustomEvent. An instance is a platform Event but not a
 // platform CustomEvent.
-export class CustomEvent<T = unknown>
+export class CustomEvent<T = any>
 	extends Event
 	implements globalThis.CustomEvent<T> {
 	declare [kDetail]?: T | null;
@@ -1307,14 +1307,14 @@ export class CustomEvent<T = unknown>
 	// lib.dom types this as T even though it is null until an init sets it.
 	// Every browser's types have the same problem.
 	get detail(): T {
-		return this[kDetail]! as T;
+		return this[kDetail] as T;
 	}
 
 	initCustomEvent(
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		detail: T | null = null,
+		detail?: T,
 	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("initCustomEvent needs a type");
@@ -1323,7 +1323,7 @@ export class CustomEvent<T = unknown>
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
-		this[kDetail] = detail;
+		this[kDetail] = detail ?? null;
 	}
 }
 
@@ -1379,12 +1379,12 @@ function constructInternal<T>(build: () => T): T {
 	}
 }
 
-interface MessageEventInit<T = unknown> extends EventInit {
+interface MessageEventInit<T = any> extends EventInit {
 	data?: T;
 	origin?: string;
 	lastEventId?: string;
-	source?: null;
-	ports?: unknown[];
+	source?: globalThis.MessageEventSource | null;
+	ports?: globalThis.MessagePort[];
 }
 
 const kMessageData = Symbol("message data");
@@ -1395,12 +1395,12 @@ const kPorts = Symbol("ports");
 
 // Nothing in a terminal posts one yet, but the interface is a constructor
 // authors can call and createEvent can name, so it is implemented fully.
-class MessageEvent<T = unknown> extends Event {
+class MessageEvent<T = any> extends Event {
 	declare [kMessageData]?: T;
 	declare [kOrigin]?: string;
 	declare [kLastEventId]?: string;
-	declare [kMessageSource]?: null;
-	declare [kPorts]?: readonly unknown[];
+	declare [kMessageSource]?: globalThis.MessageEventSource | null;
+	declare [kPorts]?: readonly globalThis.MessagePort[];
 
 	constructor(type: string, eventInitDict: MessageEventInit<T> = {}) {
 		super(type, eventInitDict);
@@ -1427,23 +1427,43 @@ class MessageEvent<T = unknown> extends Event {
 		return this[kLastEventId]!;
 	}
 
-	get source(): null {
+	get source(): globalThis.MessageEventSource | null {
 		return this[kMessageSource]!;
 	}
 
-	get ports(): readonly unknown[] {
+	get ports(): readonly globalThis.MessagePort[] {
 		return this[kPorts]!;
 	}
 
 	initMessageEvent(
 		type: string,
+		bubbles?: boolean,
+		cancelable?: boolean,
+		data?: any,
+		origin?: string,
+		lastEventId?: string,
+		source?: globalThis.MessageEventSource | null,
+		ports?: globalThis.MessagePort[],
+	): void;
+	initMessageEvent(
+		type: string,
+		bubbles?: boolean,
+		cancelable?: boolean,
+		data?: any,
+		origin?: string,
+		lastEventId?: string,
+		source?: globalThis.MessageEventSource | null,
+		ports?: Iterable<globalThis.MessagePort>,
+	): void;
+	initMessageEvent(
+		type: string,
 		bubbles = false,
 		cancelable = false,
-		data: T = null as T,
+		data: any = null,
 		origin = "",
 		lastEventId = "",
-		source = null,
-		ports: unknown[] = [],
+		source: globalThis.MessageEventSource | null = null,
+		ports: Iterable<globalThis.MessagePort> = [],
 	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("initMessageEvent needs a type");
@@ -1506,8 +1526,8 @@ interface StorageEventInit extends EventInit {
 	key?: string | null;
 	oldValue?: string | null;
 	newValue?: string | null;
-	url?: string;
-	storageArea?: null;
+	url?: string | URL;
+	storageArea?: globalThis.Storage | null;
 }
 
 const kStorageKey = Symbol("storage key");
@@ -1523,7 +1543,7 @@ class StorageEvent extends Event {
 	declare [kStorageOldValue]?: string | null;
 	declare [kStorageNewValue]?: string | null;
 	declare [kStorageURL]?: string;
-	declare [kStorageArea]?: null;
+	declare [kStorageArea]?: globalThis.Storage | null;
 
 	constructor(type: string, eventInitDict: StorageEventInit = {}) {
 		super(type, eventInitDict);
@@ -1556,7 +1576,7 @@ class StorageEvent extends Event {
 		return this[kStorageURL]!;
 	}
 
-	get storageArea(): null {
+	get storageArea(): globalThis.Storage | null {
 		return this[kStorageArea]!;
 	}
 
@@ -1567,8 +1587,8 @@ class StorageEvent extends Event {
 		key: string | null = null,
 		oldValue: string | null = null,
 		newValue: string | null = null,
-		url = "",
-		storageArea = null,
+		url: string | URL = "",
+		storageArea: globalThis.Storage | null = null,
 	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("initStorageEvent needs a type");
@@ -1591,7 +1611,7 @@ Object.defineProperty(StorageEvent.prototype, Symbol.toStringTag, {
 });
 
 interface UIEventInit extends EventInit {
-	view?: null;
+	view?: globalThis.Window | null;
 	detail?: number;
 	which?: number;
 }
@@ -1751,7 +1771,7 @@ class UIEvent extends Event {
 		this[kWhich] = toUnsignedLong(init.which ?? 0);
 	}
 
-	get view(): null {
+	get view(): globalThis.Window | null {
 		return null;
 	}
 
@@ -1967,20 +1987,20 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 
 	initMouseEvent(
 		type: string,
-		bubbles = false,
-		cancelable = false,
-		view: globalThis.Window | null = null,
-		detail = 0,
-		screenX = 0,
-		screenY = 0,
-		clientX = 0,
-		clientY = 0,
-		ctrlKey = false,
-		altKey = false,
-		shiftKey = false,
-		metaKey = false,
-		button = 0,
-		relatedTarget: globalThis.EventTarget | null = null,
+		bubbles: boolean,
+		cancelable: boolean,
+		view: globalThis.Window,
+		detail: number,
+		screenX: number,
+		screenY: number,
+		clientX: number,
+		clientY: number,
+		ctrlKey: boolean,
+		altKey: boolean,
+		shiftKey: boolean,
+		metaKey: boolean,
+		button: number,
+		relatedTarget: globalThis.EventTarget | null,
 	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("initMouseEvent needs a type");
@@ -2282,6 +2302,14 @@ class InputEvent extends UIEvent {
 	get inputType(): string {
 		return this[kInputType]!;
 	}
+
+	get dataTransfer(): globalThis.DataTransfer | null {
+		return null;
+	}
+
+	getTargetRanges(): globalThis.StaticRange[] {
+		return [];
+	}
 }
 
 Object.defineProperty(InputEvent.prototype, Symbol.toStringTag, {
@@ -2311,12 +2339,16 @@ function normalizeTransferFormat(format: unknown): string {
 const kInternalConstruction = Symbol("internal construction");
 
 /** A list of files. Always empty, since nothing in a terminal produces one. */
+interface FileList {
+	readonly [index: number]: globalThis.File;
+}
+
 class FileList {
 	get length(): number {
 		return 0;
 	}
 
-	item(_index: number): null {
+	item(_index: number): globalThis.File | null {
 		return null;
 	}
 
@@ -2352,7 +2384,7 @@ class DataTransferItem {
 		return this[kItemType]!;
 	}
 
-	getAsString(callback: unknown): void {
+	getAsString(callback: globalThis.FunctionStringCallback | null): void {
 		if (callback === null || callback === undefined) {
 			return;
 		}
@@ -2365,7 +2397,11 @@ class DataTransferItem {
 		});
 	}
 
-	getAsFile(): null {
+	getAsFile(): globalThis.File | null {
+		return null;
+	}
+
+	webkitGetAsEntry(): globalThis.FileSystemEntry | null {
 		return null;
 	}
 }
@@ -2382,6 +2418,10 @@ const kTransferMode = Symbol("mode");
 const kTransferEntries = Symbol("entries");
 
 /** The entries of a transfer, as an indexed, mutable list. */
+interface DataTransferItemList {
+	readonly [index: number]: DataTransferItem;
+}
+
 class DataTransferItemList {
 	declare [kListOwner]?: DataTransfer;
 	declare [kListIndices]?: number;
@@ -2398,7 +2438,9 @@ class DataTransferItemList {
 		return this[kListOwner]![kTransferEntries]!.size;
 	}
 
-	add(data: unknown, type?: unknown): DataTransferItem | null {
+	add(data: string, type: string): DataTransferItem | null;
+	add(data: globalThis.File): DataTransferItem | null;
+	add(data: string | globalThis.File, type?: string): DataTransferItem | null {
 		const owner = this[kListOwner]!;
 		if (owner[kTransferMode] !== "readwrite") {
 			return null;
@@ -2484,8 +2526,16 @@ class DataTransfer {
 	declare [kTransferItems]?: DataTransferItemList;
 	declare [kTransferFiles]?: FileList;
 	declare [kTransferMode]?: "readwrite" | "readonly" | "protected";
-	declare [kDropEffect]?: string;
-	declare [kEffectAllowed]?: string;
+	declare [kDropEffect]?: "none" | "copy" | "link" | "move";
+	declare [kEffectAllowed]?: "none" |
+		"copy" |
+		"copyLink" |
+		"copyMove" |
+		"link" |
+		"linkMove" |
+		"move" |
+		"all" |
+		"uninitialized";
 
 	constructor() {
 		this[kTransferEntries] = new Map();
@@ -2499,23 +2549,43 @@ class DataTransfer {
 		this[kEffectAllowed] = "uninitialized";
 	}
 
-	get dropEffect(): string {
+	get dropEffect(): "none" | "copy" | "link" | "move" {
 		return this[kDropEffect]!;
 	}
 
-	set dropEffect(value: string) {
+	set dropEffect(value: "none" | "copy" | "link" | "move") {
 		const effect = String(value);
 		if (["none", "copy", "link", "move"].includes(effect)) {
-			this[kDropEffect] = effect;
+			this[kDropEffect] = effect as "none" | "copy" | "link" | "move";
 		}
 	}
 
-	get effectAllowed(): string {
+	get effectAllowed():
+		"none" |
+		"copy" |
+		"copyLink" |
+		"copyMove" |
+		"link" |
+		"linkMove" |
+		"move" |
+		"all" |
+		"uninitialized" {
 		return this[kEffectAllowed]!;
 	}
 
-	set effectAllowed(value: string) {
-		this[kEffectAllowed] = String(value);
+	set effectAllowed(
+		value:
+			"none" |
+			"copy" |
+			"copyLink" |
+			"copyMove" |
+			"link" |
+			"linkMove" |
+			"move" |
+			"all" |
+			"uninitialized",
+	) {
+		this[kEffectAllowed] = String(value) as typeof value;
 	}
 
 	get items(): DataTransferItemList {
@@ -2533,16 +2603,16 @@ class DataTransfer {
 		return this[kTransferFiles]!;
 	}
 
-	setDragImage(_image: unknown, _x: unknown, _y: unknown): void {}
+	setDragImage(_image: globalThis.Element, _x: number, _y: number): void {}
 
-	getData(format: unknown): string {
+	getData(format: string): string {
 		if (this[kTransferMode] === "protected") {
 			return "";
 		}
 		return this[kTransferEntries]!.get(normalizeTransferFormat(format)) ?? "";
 	}
 
-	setData(format: unknown, data: unknown): void {
+	setData(format: string, data: string): void {
 		if (this[kTransferMode] !== "readwrite") {
 			return;
 		}
@@ -2550,7 +2620,7 @@ class DataTransfer {
 		syncTransferItems(this);
 	}
 
-	clearData(format?: unknown): void {
+	clearData(format?: string): void {
 		if (this[kTransferMode] !== "readwrite") {
 			return;
 		}
@@ -2760,6 +2830,12 @@ class WheelEvent extends MouseEvent {
 	get deltaMode(): number {
 		return this[kDeltaMode]!;
 	}
+}
+
+interface WheelEvent {
+	readonly DOM_DELTA_PIXEL: 0;
+	readonly DOM_DELTA_LINE: 1;
+	readonly DOM_DELTA_PAGE: 2;
 }
 
 Object.defineProperties(WheelEvent.prototype, {
@@ -5927,7 +6003,7 @@ export class MutationObserver implements globalThis.MutationObserver {
 		this[kCallback] = callback;
 	}
 
-	observe(target: Node, options: MutationObserverInit = {}): void {
+	observe(target: Node, options: globalThis.MutationObserverInit = {}): void {
 		if (arguments.length < 1) {
 			throw new TypeError("observe needs a target");
 		}
@@ -6480,6 +6556,10 @@ const childrenChangedMethod = (
 
 const kCompute = Symbol("compute");
 
+export interface NodeList {
+	[index: number]: globalThis.Node;
+}
+
 export class NodeList extends LiveList {
 	declare forEach: (
 		callback: (
@@ -6487,7 +6567,7 @@ export class NodeList extends LiveList {
 			index: number,
 			list: NodeList,
 		) => void,
-		thisArg?: unknown,
+		thisArg?: any,
 	) => void;
 
 	declare keys: () => ArrayIterator<number>;
@@ -6538,7 +6618,7 @@ interface NodeListOf<T extends globalThis.Node> extends NodeList {
 	[index: number]: T;
 	forEach(
 		callback: (node: T, index: number, list: NodeListOf<T>) => void,
-		thisArg?: unknown,
+		thisArg?: any,
 	): void;
 	keys(): ArrayIterator<number>;
 	values(): ArrayIterator<T>;
@@ -6546,7 +6626,7 @@ interface NodeListOf<T extends globalThis.Node> extends NodeList {
 	[Symbol.iterator](): ArrayIterator<T>;
 }
 
-class HTMLCollection extends LiveList {
+class HTMLCollectionBase extends LiveList {
 	[index: number]: Element;
 
 	declare [Symbol.iterator]: () => ArrayIterator<Element>;
@@ -6604,26 +6684,6 @@ class HTMLCollection extends LiveList {
 		return at < items.length ? (items[at] as Element) : null;
 	}
 
-	namedItem(name: string): Element | null {
-		if (name === "") {
-			return null;
-		}
-		const key = String(name);
-		for (const item of ensureList(this)) {
-			const element = item as Element;
-			if (element.getAttribute("id") === key) {
-				return element;
-			}
-			if (
-				element.namespaceURI === HTML_NAMESPACE &&
-				element.getAttribute("name") === key
-			) {
-				return element;
-			}
-		}
-		return null;
-	}
-
 	// A collection is addressable by the id and name of its members, so a
 	// change to either moves its named properties. No collection here selects
 	// members by id or name, so the members stay and only the names are
@@ -6644,13 +6704,35 @@ class HTMLCollection extends LiveList {
 	}
 }
 
+class HTMLCollection extends HTMLCollectionBase {
+	namedItem(name: string): Element | null {
+		if (name === "") {
+			return null;
+		}
+		const key = String(name);
+		for (const item of ensureList(this)) {
+			const element = item as Element;
+			if (element.getAttribute("id") === key) {
+				return element;
+			}
+			if (
+				element.namespaceURI === HTML_NAMESPACE &&
+				element.getAttribute("name") === key
+			) {
+				return element;
+			}
+		}
+		return null;
+	}
+}
+
 Object.defineProperty(HTMLCollection.prototype, Symbol.toStringTag, {
 	value: "HTMLCollection",
 	configurable: true,
 });
 
-interface HTMLCollectionOf<T> {
-	readonly length: number;
+interface HTMLCollectionOf<T>
+	extends Omit<HTMLCollectionBase, "item" | number | typeof Symbol.iterator> {
 	item(index: number): T | null;
 	namedItem(name: string): T | null;
 	[index: number]: T;
@@ -6963,7 +7045,7 @@ const kTokens = Symbol("tokens");
 class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	declare forEach: (
 		callback: (token: string, index: number, list: DOMTokenList) => void,
-		thisArg?: unknown,
+		thisArg?: any,
 	) => void;
 
 	declare keys: () => ArrayIterator<number>;
@@ -7448,6 +7530,10 @@ class ProcessingInstruction extends CharacterData {
 		this[kTarget] = target;
 	}
 
+	get sheet(): globalThis.CSSStyleSheet | null {
+		return null;
+	}
+
 	get target(): string {
 		return this[kTarget]!;
 	}
@@ -7523,7 +7609,11 @@ class DocumentType extends Node {
 	}
 }
 
-interface DocumentType {
+interface DocumentType
+	extends Pick<
+		globalThis.DocumentType,
+		"after" | "before" | "remove" | "replaceWith"
+	> {
 
 	get ownerDocument(): Document;
 
@@ -9997,6 +10087,18 @@ Object.defineProperty(HTMLUnknownElement.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+export interface SVGElement
+	extends Pick<
+		globalThis.SVGElement,
+		Extract<keyof globalThis.GlobalEventHandlers, `on${string}`> |
+		"autofocus" |
+		"dataset" |
+		"nonce" |
+		"tabIndex" |
+		"blur" |
+		"focus"
+	> {}
+
 export class SVGElement extends Element {
 	get style(): globalThis.CSSStyleDeclaration {
 		return getInlineStyle(this);
@@ -10004,6 +10106,31 @@ export class SVGElement extends Element {
 
 	set style(value: unknown) {
 		getInlineStyle(this).cssText = value == null ? "" : `${value}`;
+	}
+
+	override get className(): any {
+		return this.getAttribute("class") ?? "";
+	}
+
+	get attributeStyleMap(): globalThis.StylePropertyMap {
+		throw domError("NotSupportedError", "Typed OM is not implemented");
+	}
+
+	get ownerSVGElement(): globalThis.SVGSVGElement | null {
+		for (let node = this[kParent]!; node !== null; node = node[kParent]!) {
+			if (
+				node instanceof Element &&
+				node.namespaceURI === SVG_NAMESPACE &&
+				node.localName === "svg"
+			) {
+				return node as unknown as globalThis.SVGSVGElement;
+			}
+		}
+		return null;
+	}
+
+	get viewportElement(): globalThis.SVGElement | null {
+		return this.ownerSVGElement;
 	}
 
 	// lib.dom's overloads for this interface: the keyed one first.
@@ -10049,7 +10176,31 @@ Object.defineProperty(SVGElement.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+interface MathMLElement
+	extends Pick<
+		globalThis.MathMLElement,
+		Extract<keyof globalThis.GlobalEventHandlers, `on${string}`> |
+		"autofocus" |
+		"dataset" |
+		"nonce" |
+		"tabIndex" |
+		"blur" |
+		"focus"
+	> {}
+
 class MathMLElement extends Element {
+	get style(): globalThis.CSSStyleDeclaration {
+		return getInlineStyle(this);
+	}
+
+	set style(value: unknown) {
+		getInlineStyle(this).cssText = value == null ? "" : `${value}`;
+	}
+
+	get attributeStyleMap(): globalThis.StylePropertyMap {
+		throw domError("NotSupportedError", "Typed OM is not implemented");
+	}
+
 	// lib.dom's overloads for this interface: the keyed one first.
 	override addEventListener<K extends keyof globalThis.MathMLElementEventMap>(
 		type: K,
@@ -10316,7 +10467,7 @@ function isValidCustomElementName(name: string): boolean {
 	);
 }
 
-type CustomElementConstructor = new () => Element;
+type CustomElementConstructor = globalThis.CustomElementConstructor;
 
 interface CustomElementDefinition {
 	registry: CustomElementRegistry;
@@ -10529,7 +10680,7 @@ class CustomElementRegistry {
 	define(
 		name: string,
 		constructor: CustomElementConstructor,
-		options?: {extends?: string},
+		options?: globalThis.ElementDefinitionOptions,
 	): void {
 		if (arguments.length < 2) {
 			throw new TypeError("define needs a name and a constructor");
@@ -10908,7 +11059,7 @@ function constructCustomElement(definition: CustomElementDefinition): Element {
 		definition.constructor,
 		[],
 		definition.constructor,
-	) as Element;
+	) as unknown as Element;
 }
 
 // The element is already in the tree. What changes is its prototype, its
@@ -12406,13 +12557,13 @@ interface HTMLButtonElement
 
 class HTMLButtonElement extends HTMLElement {
 	// Installed from the element table and read by the algorithms below.
-	declare type: string;
+	declare type: "submit" | "reset" | "button";
 
 	get form(): HTMLFormElement | null {
 		return getFormOwner(this);
 	}
 
-	get labels(): NodeList {
+	get labels(): NodeListOf<HTMLLabelElement> {
 		return getLabels(this);
 	}
 
@@ -12422,6 +12573,33 @@ class HTMLButtonElement extends HTMLElement {
 
 	set popoverTargetElement(value: Element | null) {
 		setPopoverTargetAttributeElement(this, value);
+	}
+
+	get willValidate(): boolean {
+		return willValidate(this);
+	}
+
+	get validity(): ValidityState {
+		return getValidityState(this);
+	}
+
+	get validationMessage(): string {
+		return getValidationMessage(this);
+	}
+
+	checkValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	reportValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	setCustomValidity(error: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("setCustomValidity needs a message");
+		}
+		setCustomValidity(this, error);
 	}
 }
 
@@ -12435,12 +12613,52 @@ interface HTMLCanvasElement
 	> {}
 
 class HTMLCanvasElement extends HTMLElement {
-	getContext(contextId: string): null {
+	captureStream(_frameRequestRate?: number): globalThis.MediaStream {
+		return noMediaPipeline("media stream");
+	}
+
+	getContext(
+		contextId: "2d",
+		options?: globalThis.CanvasRenderingContext2DSettings,
+	): globalThis.CanvasRenderingContext2D | null;
+	getContext(
+		contextId: "bitmaprenderer",
+		options?: globalThis.ImageBitmapRenderingContextSettings,
+	): globalThis.ImageBitmapRenderingContext | null;
+	getContext(
+		contextId: "webgl",
+		options?: globalThis.WebGLContextAttributes,
+	): globalThis.WebGLRenderingContext | null;
+	getContext(
+		contextId: "webgl2",
+		options?: globalThis.WebGLContextAttributes,
+	): globalThis.WebGL2RenderingContext | null;
+	getContext(
+		contextId: string,
+		options?: any,
+	): globalThis.RenderingContext | null;
+	getContext(contextId: string): globalThis.RenderingContext | null {
 		if (arguments.length < 1) {
 			throw new TypeError("getContext needs a context id");
 		}
 		void contextId;
 		return null;
+	}
+
+	toBlob(
+		callback: globalThis.BlobCallback,
+		_type?: string,
+		_quality?: number,
+	): void {
+		queueMicrotask(() => callback(null));
+	}
+
+	toDataURL(_type?: string, _quality?: number): string {
+		return "data:,";
+	}
+
+	transferControlToOffscreen(): globalThis.OffscreenCanvas {
+		return noMediaPipeline("bitmap");
 	}
 }
 
@@ -12461,7 +12679,7 @@ class HTMLDataListElement extends HTMLElement {
 		this[kOptions] = null;
 	}
 
-	get options(): HTMLCollection {
+	get options(): HTMLCollectionOf<HTMLOptionElement> {
 		let options = this[kOptions]!;
 		if (options === null) {
 			options = new HTMLCollection(() => {
@@ -12475,7 +12693,7 @@ class HTMLDataListElement extends HTMLElement {
 			}, this);
 			this[kOptions] = options;
 		}
-		return options;
+		return options as HTMLCollectionOf<HTMLOptionElement>;
 	}
 }
 
@@ -12872,7 +13090,7 @@ class HTMLDListElement extends HTMLElement {}
 
 /** Never loads, so it has no SVG document. */
 class HTMLEmbedElement extends HTMLElement {
-	getSVGDocument(): null {
+	getSVGDocument(): Document | null {
 		return null;
 	}
 }
@@ -12881,7 +13099,6 @@ interface HTMLEmbedElement
 	extends Pick<
 		globalThis.HTMLEmbedElement,
 		"align" |
-		"getSVGDocument" |
 		"height" |
 		"name" |
 		"src" |
@@ -12931,6 +13148,33 @@ class HTMLFieldSetElement extends HTMLElement {
 			this[kElements] = elements;
 		}
 		return elements;
+	}
+
+	get willValidate(): boolean {
+		return willValidate(this);
+	}
+
+	get validity(): ValidityState {
+		return getValidityState(this);
+	}
+
+	get validationMessage(): string {
+		return getValidationMessage(this);
+	}
+
+	checkValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	reportValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	setCustomValidity(error: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("setCustomValidity needs a message");
+		}
+		setCustomValidity(this, error);
 	}
 }
 
@@ -13045,6 +13289,8 @@ class HTMLFormElement extends HTMLElement {
 }
 
 interface HTMLFormElement {
+	[index: number]: Element;
+	[name: string]: any;
 	acceptCharset: string;
 	action: string;
 	autocomplete: AutoFillBase;
@@ -13165,7 +13411,7 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
 // subclass cannot declare in TypeScript, so the merged interface below
 // declares it instead. lib.dom gets the same result by splitting the base
 // in two, which no engine does.
-class HTMLFormControlsCollection extends HTMLCollection {
+class HTMLFormControlsCollection extends (HTMLCollection as typeof HTMLCollectionBase) {
 	declare [kOwner]?: Node | null;
 
 	constructor(compute: () => Element[], owner: Node | null = null) {
@@ -13176,7 +13422,7 @@ class HTMLFormControlsCollection extends HTMLCollection {
 		this[kOwner] = owner;
 	}
 
-	override namedItem(name: string): Element | null {
+	namedItem(name: string): RadioNodeList | Element | null {
 		const key = String(name);
 		if (key === "") {
 			return null;
@@ -13247,15 +13493,27 @@ function createMatchingCollection(
 	return matches;
 }
 
-interface HTMLFormControlsCollection {
-	namedItem(name: string): RadioNodeList | Element | null;
-}
-
 Object.defineProperty(
 	HTMLFormControlsCollection.prototype,
 	Symbol.toStringTag,
 	{value: "HTMLFormControlsCollection", configurable: true},
 );
+
+interface RadioNodeList {
+	item(index: number): HTMLInputElement;
+	[index: number]: HTMLInputElement;
+	forEach: (
+		callback: (
+			node: HTMLInputElement,
+			index: number,
+			list: NodeListOf<HTMLInputElement>,
+		) => void,
+		thisArg?: any,
+	) => void;
+	values: () => ArrayIterator<globalThis.HTMLInputElement>;
+	entries: () => ArrayIterator<[number, globalThis.HTMLInputElement]>;
+	[Symbol.iterator]: () => ArrayIterator<globalThis.HTMLInputElement>;
+}
 
 class RadioNodeList extends NodeList {
 	constructor(compute: () => Node[], owner: Node | null = null) {
@@ -13313,11 +13571,11 @@ interface HTMLFrameElement
 	> {}
 
 class HTMLFrameElement extends HTMLElement {
-	get contentDocument(): null {
+	get contentDocument(): Document | null {
 		return null;
 	}
 
-	get contentWindow(): null {
+	get contentWindow(): globalThis.WindowProxy | null {
 		return null;
 	}
 }
@@ -13496,12 +13754,12 @@ class HTMLIFrameElement extends HTMLElement {
 		return this[kContentDocument]!;
 	}
 
-	get contentWindow(): FrameWindowLike | null {
+	get contentWindow(): globalThis.WindowProxy | null {
 		ensureFrameDocument(this);
-		return this[kContentWindow]!;
+		return this[kContentWindow]! as unknown as globalThis.WindowProxy | null;
 	}
 
-	getSVGDocument(): null {
+	getSVGDocument(): Document | null {
 		return null;
 	}
 
@@ -13622,6 +13880,9 @@ interface HTMLImageElement
 	> {}
 
 const kDirtyValue = Symbol("dirtyValue");
+const kFiles = Symbol("files");
+
+type SelectionDirection = "forward" | "backward" | "none";
 const kSelectionStart = Symbol("selectionStart");
 const kSelectionEnd = Symbol("selectionEnd");
 const kSelectionDirection = Symbol("selectionDirection");
@@ -13698,6 +13959,7 @@ class HTMLInputElement extends HTMLElement {
 	// Installed from the element table and read by the algorithms below.
 	declare type: string;
 
+	declare [kFiles]?: FileList | null;
 	declare [kValue]?: string;
 	declare [kDirtyValue]?: boolean;
 	declare [kChecked]?: boolean;
@@ -13705,7 +13967,7 @@ class HTMLInputElement extends HTMLElement {
 	declare [kIndeterminate]?: boolean;
 	declare [kSelectionStart]?: number;
 	declare [kSelectionEnd]?: number;
-	declare [kSelectionDirection]?: string;
+	declare [kSelectionDirection]?: SelectionDirection;
 	declare [kPreviouslyChecked]?: boolean;
 	declare [kPreviouslyIndeterminate]?: boolean;
 	declare [kPreviousRadio]?: HTMLInputElement | null;
@@ -13733,6 +13995,7 @@ class HTMLInputElement extends HTMLElement {
 		super(...args);
 		this[kValue] = "";
 		this[kDirtyValue] = false;
+		this[kFiles] = null;
 		this[kChecked] = false;
 		this[kDirtyChecked] = false;
 		this[kIndeterminate] = false;
@@ -13840,8 +14103,10 @@ class HTMLInputElement extends HTMLElement {
 		return getFormOwner(this);
 	}
 
-	get labels(): NodeList {
-		return this.type === "hidden" ? createStaticNodeList([]) : getLabels(this);
+	get labels(): NodeListOf<HTMLLabelElement> | null {
+		return this.type === "hidden"
+			? (createStaticNodeList([]) as NodeListOf<HTMLLabelElement>)
+			: getLabels(this);
 	}
 
 	get list(): HTMLDataListElement | null {
@@ -13992,19 +14257,19 @@ class HTMLInputElement extends HTMLElement {
 		);
 	}
 
-	get selectionDirection(): string | null {
+	get selectionDirection(): SelectionDirection | null {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			return null;
 		}
 		return this[kSelectionDirection]!;
 	}
 
-	set selectionDirection(value: string | null) {
+	set selectionDirection(value: SelectionDirection | null) {
 		requireSelectable(this);
 		this.setSelectionRange(
 			this[kSelectionStart]!,
 			this[kSelectionEnd]!,
-			value === null ? undefined : String(value),
+			value === null ? undefined : (String(value) as SelectionDirection),
 		);
 	}
 
@@ -14021,6 +14286,106 @@ class HTMLInputElement extends HTMLElement {
 	// returns an attribute for the types that have no value of their own. Those
 	// types render no text control, so their value here is the empty string a
 	// caret would sit in.
+	get willValidate(): boolean {
+		return willValidate(this);
+	}
+
+	get validity(): ValidityState {
+		return getValidityState(this);
+	}
+
+	get validationMessage(): string {
+		return getValidationMessage(this);
+	}
+
+	get files(): FileList | null {
+		if (this.type !== "file") {
+			return null;
+		}
+		let files = this[kFiles]!;
+		if (files === null) {
+			files = new FileList();
+			this[kFiles] = files;
+		}
+		return files;
+	}
+
+	set files(value: FileList | null) {
+		if (this.type === "file" && value instanceof FileList) {
+			this[kFiles] = value;
+		}
+	}
+
+	get capture(): string {
+		return this.getAttribute("capture") ?? "";
+	}
+
+	set capture(value: string) {
+		this.setAttribute("capture", String(value));
+	}
+
+	get webkitdirectory(): boolean {
+		return this.hasAttribute("webkitdirectory");
+	}
+
+	set webkitdirectory(value: boolean) {
+		if (value) {
+			this.setAttribute("webkitdirectory", "");
+		} else {
+			this.removeAttribute("webkitdirectory");
+		}
+	}
+
+	get webkitEntries(): readonly globalThis.FileSystemEntry[] {
+		return [];
+	}
+
+	get valueAsDate(): Date | null {
+		const value = this.value;
+		if (value === "") {
+			return null;
+		}
+		let date: Date;
+		switch (this.type) {
+			case "date":
+				date = new Date(`${value}T00:00:00Z`);
+				break;
+			case "month":
+				date = new Date(`${value}-01T00:00:00Z`);
+				break;
+			case "time":
+				date = new Date(`1970-01-01T${value}Z`);
+				break;
+			default:
+				return null;
+		}
+		return Number.isNaN(date.getTime()) ? null : date;
+	}
+
+	set valueAsDate(value: Date | null) {
+		const type = this.type;
+		if (type !== "date" && type !== "month" && type !== "time") {
+			throw domError(
+				"InvalidStateError",
+				"This input type does not take a Date",
+			);
+		}
+		if (value !== null && !(value instanceof Date)) {
+			throw new TypeError("valueAsDate takes a Date or null");
+		}
+		if (value === null || Number.isNaN(value.getTime())) {
+			this.value = "";
+			return;
+		}
+		const iso = value.toISOString();
+		this.value =
+			type === "date"
+				? iso.slice(0, 10)
+				: type === "month"
+					? iso.slice(0, 7)
+					: iso.slice(11, 19);
+	}
+
 	get [kUAValue](): string {
 		return getInputValueMode(this.type) === "value" ? this[kValue]! : "";
 	}
@@ -14032,6 +14397,23 @@ class HTMLInputElement extends HTMLElement {
 	// The programmatic equivalents of the arrow keys: move along the step
 	// grid without firing events. A step of "any" defines no grid, which is
 	// the InvalidStateError the spec requires.
+	showPicker(): void {}
+
+	checkValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	reportValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	setCustomValidity(error: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("setCustomValidity needs a message");
+		}
+		setCustomValidity(this, error);
+	}
+
 	stepUp(n = 1): void {
 		stepInput(this, Math.trunc(Number(n)));
 	}
@@ -14047,19 +14429,30 @@ class HTMLInputElement extends HTMLElement {
 		this.setSelectionRange(0, this[kValue]!.length, "none");
 	}
 
-	setSelectionRange(start: number, end: number, direction?: string): void {
+	setSelectionRange(
+		start: number | null,
+		end: number | null,
+		direction?: SelectionDirection,
+	): void {
 		if (arguments.length < 2) {
 			throw new TypeError("setSelectionRange needs a start and an end");
 		}
 		requireSelectable(this);
-		this[kSetUASelection]!(start, end, direction);
+		this[kSetUASelection]!(start ?? 0, end ?? 0, direction);
 	}
 
+	setRangeText(replacement: string): void;
+	setRangeText(
+		replacement: string,
+		start: number,
+		end: number,
+		selectionMode?: globalThis.SelectionMode,
+	): void;
 	setRangeText(
 		replacement: string,
 		start?: number,
 		end?: number,
-		selectMode?: string,
+		selectMode?: globalThis.SelectionMode,
 	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("setRangeText needs a replacement");
@@ -14117,7 +14510,11 @@ class HTMLInputElement extends HTMLElement {
 		};
 	}
 
-	[kSetUASelection]?(start: number, end: number, direction?: string): void {
+	[kSetUASelection]?(
+		start: number,
+		end: number,
+		direction?: string,
+	): void {
 		setTextSelection(
 			this,
 			toUnsignedLong(start),
@@ -14737,7 +15134,7 @@ export interface HTMLLinkElement
 	> {}
 
 export class HTMLLinkElement extends HTMLElement {
-	get sheet(): null {
+	get sheet(): globalThis.CSSStyleSheet | null {
 		return null;
 	}
 }
@@ -14793,6 +15190,7 @@ interface HTMLMarqueeElement
 	extends Pick<
 		globalThis.HTMLMarqueeElement,
 		"hspace" |
+		"loop" |
 		"vspace"
 	> {}
 
@@ -14838,8 +15236,25 @@ interface HTMLMediaElement
 interface HTMLMediaElement
 	extends Pick<
 		globalThis.HTMLMediaElement,
-		"preload"
-	> {}
+		"preload" |
+		"disableRemotePlayback" |
+		"onencrypted" |
+		"onwaitingforkey"
+	> {
+	readonly NETWORK_EMPTY: 0;
+	readonly NETWORK_IDLE: 1;
+	readonly NETWORK_LOADING: 2;
+	readonly NETWORK_NO_SOURCE: 3;
+	readonly HAVE_NOTHING: 0;
+	readonly HAVE_METADATA: 1;
+	readonly HAVE_CURRENT_DATA: 2;
+	readonly HAVE_FUTURE_DATA: 3;
+	readonly HAVE_ENOUGH_DATA: 4;
+}
+
+function noMediaPipeline(what: string): never {
+	throw domError("NotSupportedError", `A terminal has no ${what}`);
+}
 
 class HTMLMediaElement extends HTMLElement {
 	static readonly NETWORK_EMPTY = NETWORK_EMPTY;
@@ -14866,6 +15281,46 @@ class HTMLMediaElement extends HTMLElement {
 		this[kDefaultPlaybackRate] = 1;
 		this[kPreservesPitch] = true;
 		this[kCurrentTime] = 0;
+	}
+
+	get error(): globalThis.MediaError | null {
+		return null;
+	}
+
+	get buffered(): globalThis.TimeRanges {
+		return noMediaPipeline("media buffer");
+	}
+
+	get played(): globalThis.TimeRanges {
+		return noMediaPipeline("media playback");
+	}
+
+	get seekable(): globalThis.TimeRanges {
+		return noMediaPipeline("media playback");
+	}
+
+	get mediaKeys(): globalThis.MediaKeys | null {
+		return null;
+	}
+
+	get remote(): globalThis.RemotePlayback {
+		return noMediaPipeline("remote playback");
+	}
+
+	get sinkId(): string {
+		return "";
+	}
+
+	get srcObject(): globalThis.MediaProvider | null {
+		return null;
+	}
+
+	set srcObject(_value: globalThis.MediaProvider | null) {
+		noMediaPipeline("media pipeline");
+	}
+
+	get textTracks(): globalThis.TextTrackList {
+		return noMediaPipeline("text track list");
 	}
 
 	get currentSrc(): string {
@@ -14995,11 +15450,35 @@ class HTMLMediaElement extends HTMLElement {
 		super.removeEventListener(type, listener, options);
 	}
 
+	addTextTrack(
+		_kind: globalThis.TextTrackKind,
+		_label?: string,
+		_language?: string,
+	): globalThis.TextTrack {
+		return noMediaPipeline("text track list");
+	}
+
+	fastSeek(time: number): void {
+		this.currentTime = time;
+	}
+
+	setMediaKeys(_mediaKeys: globalThis.MediaKeys | null): Promise<void> {
+		return Promise.reject(
+			domError("NotSupportedError", "A terminal has no media pipeline"),
+		);
+	}
+
+	setSinkId(_sinkId: string): Promise<void> {
+		return Promise.reject(
+			domError("NotSupportedError", "A terminal has no audio output"),
+		);
+	}
+
 	load(): void {
 		this[kCurrentTime] = 0;
 	}
 
-	canPlayType(type: string): string {
+	canPlayType(type: string): globalThis.CanPlayTypeResult {
 		if (arguments.length < 1) {
 			throw new TypeError("canPlayType needs a type");
 		}
@@ -15047,6 +15526,14 @@ interface HTMLVideoElement
 		"width"
 	> {}
 
+interface HTMLVideoElement
+	extends Pick<
+		globalThis.HTMLVideoElement,
+		"disablePictureInPicture" |
+		"onenterpictureinpicture" |
+		"onleavepictureinpicture"
+	> {}
+
 class HTMLVideoElement extends HTMLMediaElement {
 	get videoWidth(): number {
 		return 0;
@@ -15057,6 +15544,24 @@ class HTMLVideoElement extends HTMLMediaElement {
 	}
 
 	// lib.dom's overloads for this interface: the keyed one first.
+	cancelVideoFrameCallback(_handle: number): void {}
+
+	getVideoPlaybackQuality(): globalThis.VideoPlaybackQuality {
+		return noMediaPipeline("video pipeline");
+	}
+
+	requestPictureInPicture(): Promise<globalThis.PictureInPictureWindow> {
+		return Promise.reject(
+			domError("NotSupportedError", "A terminal has no picture-in-picture"),
+		);
+	}
+
+	requestVideoFrameCallback(
+		_callback: globalThis.VideoFrameRequestCallback,
+	): number {
+		return 0;
+	}
+
 	override addEventListener<
 		K extends keyof globalThis.HTMLVideoElementEventMap,
 	>(
@@ -15265,7 +15770,7 @@ class HTMLMeterElement extends HTMLElement {
 		this.setAttribute("optimum", String(toDouble(value)));
 	}
 
-	get labels(): NodeList {
+	get labels(): NodeListOf<HTMLLabelElement> {
 		return getLabels(this);
 	}
 
@@ -15376,15 +15881,42 @@ class HTMLObjectElement extends HTMLElement {
 		return getFormOwner(this);
 	}
 
-	get contentDocument(): null {
+	get contentDocument(): Document | null {
 		return null;
 	}
 
-	get contentWindow(): null {
+	get contentWindow(): globalThis.WindowProxy | null {
 		return null;
 	}
 
-	getSVGDocument(): null {
+	get willValidate(): boolean {
+		return willValidate(this);
+	}
+
+	get validity(): ValidityState {
+		return getValidityState(this);
+	}
+
+	get validationMessage(): string {
+		return getValidationMessage(this);
+	}
+
+	checkValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	reportValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	setCustomValidity(error: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("setCustomValidity needs a message");
+		}
+		setCustomValidity(this, error);
+	}
+
+	getSVGDocument(): Document | null {
 		return null;
 	}
 }
@@ -15557,6 +16089,10 @@ function getSelect(option: Element): HTMLSelectElement | null {
 
 const kSelect = Symbol("select");
 
+interface HTMLOptionsCollection {
+	[index: number]: HTMLOptionElement;
+}
+
 class HTMLOptionsCollection extends HTMLCollection {
 	declare [kSelect]?: HTMLSelectElement;
 
@@ -15599,7 +16135,18 @@ class HTMLOptionsCollection extends HTMLCollection {
 		this[kSelect]!.selectedIndex = value;
 	}
 
-	add(element: Element, before?: Element | number | null): void {
+	override item(index: number): HTMLOptionElement | null {
+		return super.item(index) as HTMLOptionElement | null;
+	}
+
+	override namedItem(name: string): HTMLOptionElement | null {
+		return super.namedItem(name) as HTMLOptionElement | null;
+	}
+
+	add(
+		element: HTMLOptionElement | HTMLOptGroupElement,
+		before?: HTMLElement | number | null,
+	): void {
 		if (
 			!(element instanceof HTMLOptionElement) &&
 			!(element instanceof HTMLOptGroupElement)
@@ -15675,7 +16222,7 @@ class HTMLOutputElement extends HTMLElement {
 		return "output";
 	}
 
-	get labels(): NodeList {
+	get labels(): NodeListOf<HTMLLabelElement> {
 		return getLabels(this);
 	}
 
@@ -15701,6 +16248,33 @@ class HTMLOutputElement extends HTMLElement {
 		}
 		this[kDirty] = true;
 		setDescendantText(this, String(value));
+	}
+
+	get willValidate(): boolean {
+		return willValidate(this);
+	}
+
+	get validity(): ValidityState {
+		return getValidityState(this);
+	}
+
+	get validationMessage(): string {
+		return getValidationMessage(this);
+	}
+
+	checkValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	reportValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	setCustomValidity(error: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("setCustomValidity needs a message");
+		}
+		setCustomValidity(this, error);
 	}
 
 	[kResetControl]?(): void {
@@ -15778,7 +16352,7 @@ class HTMLProgressElement extends HTMLElement {
 		return this.hasAttribute("value") ? this.value / this.max : -1;
 	}
 
-	get labels(): NodeList {
+	get labels(): NodeListOf<HTMLLabelElement> {
 		return getLabels(this);
 	}
 
@@ -15897,9 +16471,13 @@ interface HTMLSelectElement
 		"size"
 	> {}
 
+interface HTMLSelectElement {
+	[index: number]: HTMLOptionElement | HTMLOptGroupElement;
+}
+
 class HTMLSelectElement extends HTMLElement {
 	declare [kOptions]?: HTMLOptionsCollection | null;
-	declare [kSelectedOptions]?: HTMLCollection | null;
+	declare [kSelectedOptions]?: HTMLCollectionOf<HTMLOptionElement> | null;
 
 	declare [kUpgraded]?: boolean;
 	declare [kValueText]?: globalThis.Text | null;
@@ -16045,11 +16623,11 @@ class HTMLSelectElement extends HTMLElement {
 		return getFormOwner(this);
 	}
 
-	get labels(): NodeList {
+	get labels(): NodeListOf<HTMLLabelElement> {
 		return getLabels(this);
 	}
 
-	get type(): string {
+	get type(): "select-one" | "select-multiple" {
 		return this.hasAttribute("multiple") ? "select-multiple" : "select-one";
 	}
 
@@ -16071,13 +16649,13 @@ class HTMLSelectElement extends HTMLElement {
 		this.options.length = value;
 	}
 
-	get selectedOptions(): HTMLCollection {
+	get selectedOptions(): HTMLCollectionOf<HTMLOptionElement> {
 		let selected = this[kSelectedOptions]!;
 		if (selected === null) {
 			selected = new HTMLCollection(
 				() => getOptions(this).filter((option) => option[kSelectedness]!),
 				this,
-			);
+			) as HTMLCollectionOf<HTMLOptionElement>;
 			this[kSelectedOptions] = selected;
 		}
 		askForAReset(this);
@@ -16128,22 +16706,56 @@ class HTMLSelectElement extends HTMLElement {
 		syncUAShadowTree(this);
 	}
 
+	get willValidate(): boolean {
+		return willValidate(this);
+	}
+
+	get validity(): ValidityState {
+		return getValidityState(this);
+	}
+
+	get validationMessage(): string {
+		return getValidationMessage(this);
+	}
+
 	get [kUAValueText](): globalThis.Text | null {
 		return this[kValueText]!;
 	}
 
-	item(index: number): Element | null {
+	showPicker(): void {}
+
+	checkValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	reportValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	setCustomValidity(error: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("setCustomValidity needs a message");
+		}
+		setCustomValidity(this, error);
+	}
+
+	item(index: number): HTMLOptionElement | null {
 		return this.options.item(index);
 	}
 
-	namedItem(name: string): Element | null {
+	namedItem(name: string): HTMLOptionElement | null {
 		return this.options.namedItem(name);
 	}
 
-	add(element: Element, before?: Element | number | null): void {
+	add(
+		element: HTMLOptionElement | HTMLOptGroupElement,
+		before?: HTMLElement | number | null,
+	): void {
 		this.options.add(element, before);
 	}
 
+	override remove(): void;
+	override remove(index: number): void;
 	override remove(index?: number): void {
 		if (arguments.length === 0) {
 			if (this[kParent] !== null) {
@@ -16666,8 +17278,9 @@ class HTMLTableElement extends HTMLElement {
 		this[kRows] = null;
 	}
 
-	get caption(): Element | null {
-		return getFirstChildElement(this, "caption");
+	get caption(): HTMLTableCaptionElement | null {
+		return getFirstChildElement(this, "caption") as HTMLTableCaptionElement |
+			null;
 	}
 
 	set caption(value: Element | null) {
@@ -16680,8 +17293,11 @@ class HTMLTableElement extends HTMLElement {
 		}
 	}
 
-	get tHead(): Element | null {
-		return getFirstChildElement(this, "thead");
+	get tHead(): HTMLTableSectionElement | null {
+		return getFirstChildElement(
+			this,
+			"thead",
+		) as HTMLTableSectionElement | null;
 	}
 
 	set tHead(value: Element | null) {
@@ -16709,8 +17325,11 @@ class HTMLTableElement extends HTMLElement {
 		preInsert(value, this, before);
 	}
 
-	get tFoot(): Element | null {
-		return getFirstChildElement(this, "tfoot");
+	get tFoot(): HTMLTableSectionElement | null {
+		return getFirstChildElement(
+			this,
+			"tfoot",
+		) as HTMLTableSectionElement | null;
 	}
 
 	set tFoot(value: Element | null) {
@@ -16726,7 +17345,7 @@ class HTMLTableElement extends HTMLElement {
 		}
 	}
 
-	get tBodies(): HTMLCollection {
+	get tBodies(): HTMLCollectionOf<HTMLTableSectionElement> {
 		let bodies = this[kTBodies]!;
 		if (bodies === null) {
 			bodies = new HTMLCollection(
@@ -16736,19 +17355,19 @@ class HTMLTableElement extends HTMLElement {
 			);
 			this[kTBodies] = bodies;
 		}
-		return bodies;
+		return bodies as HTMLCollectionOf<HTMLTableSectionElement>;
 	}
 
-	get rows(): HTMLCollection {
+	get rows(): HTMLCollectionOf<HTMLTableRowElement> {
 		let rows = this[kRows]!;
 		if (rows === null) {
 			rows = new HTMLCollection(() => getTableRows(this), this);
 			this[kRows] = rows;
 		}
-		return rows;
+		return rows as HTMLCollectionOf<HTMLTableRowElement>;
 	}
 
-	createCaption(): Element {
+	createCaption(): HTMLTableCaptionElement {
 		const existing = this.caption;
 		if (existing !== null) {
 			return existing;
@@ -16759,7 +17378,7 @@ class HTMLTableElement extends HTMLElement {
 			HTML_NAMESPACE,
 		);
 		preInsert(caption, this, this[kFirstChild]!);
-		return caption;
+		return caption as HTMLTableCaptionElement;
 	}
 
 	deleteCaption(): void {
@@ -16769,7 +17388,7 @@ class HTMLTableElement extends HTMLElement {
 		}
 	}
 
-	createTHead(): Element {
+	createTHead(): HTMLTableSectionElement {
 		const existing = this.tHead;
 		if (existing !== null) {
 			return existing;
@@ -16780,7 +17399,7 @@ class HTMLTableElement extends HTMLElement {
 			HTML_NAMESPACE,
 		);
 		this.tHead = head;
-		return head;
+		return head as HTMLTableSectionElement;
 	}
 
 	deleteTHead(): void {
@@ -16790,7 +17409,7 @@ class HTMLTableElement extends HTMLElement {
 		}
 	}
 
-	createTFoot(): Element {
+	createTFoot(): HTMLTableSectionElement {
 		const existing = this.tFoot;
 		if (existing !== null) {
 			return existing;
@@ -16801,7 +17420,7 @@ class HTMLTableElement extends HTMLElement {
 			HTML_NAMESPACE,
 		);
 		preInsert(foot, this, null);
-		return foot;
+		return foot as HTMLTableSectionElement;
 	}
 
 	deleteTFoot(): void {
@@ -16811,7 +17430,7 @@ class HTMLTableElement extends HTMLElement {
 		}
 	}
 
-	createTBody(): Element {
+	createTBody(): HTMLTableSectionElement {
 		const body = createElementInternal(
 			this[kDocument]!,
 			"tbody",
@@ -16820,10 +17439,10 @@ class HTMLTableElement extends HTMLElement {
 		const bodies = getChildElementsNamed(this, "tbody");
 		const last = bodies[bodies.length - 1];
 		preInsert(body, this, last === undefined ? null : last[kNext]!);
-		return body;
+		return body as HTMLTableSectionElement;
 	}
 
-	insertRow(index = -1): Element {
+	insertRow(index = -1): HTMLTableRowElement {
 		const rows = getTableRows(this);
 		const at = toLong(index);
 		if (at < -1 || at > rows.length) {
@@ -16840,21 +17459,21 @@ class HTMLTableElement extends HTMLElement {
 			);
 			appendNode(row, body);
 			preInsert(body, this, null);
-			return row;
+			return row as HTMLTableRowElement;
 		}
 		if (rows.length === 0) {
 			const bodies = getChildElementsNamed(this, "tbody");
 			appendNode(row, bodies[bodies.length - 1]);
-			return row;
+			return row as HTMLTableRowElement;
 		}
 		if (at === -1 || at === rows.length) {
 			const last = rows[rows.length - 1];
 			preInsert(row, last[kParent]! as Node, null);
-			return row;
+			return row as HTMLTableRowElement;
 		}
 		const reference = rows[at];
 		preInsert(row, reference[kParent]! as Node, reference);
-		return row;
+		return row as HTMLTableRowElement;
 	}
 
 	deleteRow(index: number): void {
@@ -16964,7 +17583,7 @@ class HTMLTableRowElement extends HTMLElement {
 		return getChildElementsNamed(parent, "tr").indexOf(this);
 	}
 
-	get cells(): HTMLCollection {
+	get cells(): HTMLCollectionOf<HTMLTableCellElement> {
 		let cells = this[kCells]!;
 		if (cells === null) {
 			cells = new HTMLCollection(
@@ -16974,10 +17593,10 @@ class HTMLTableRowElement extends HTMLElement {
 			);
 			this[kCells] = cells;
 		}
-		return cells;
+		return cells as HTMLCollectionOf<HTMLTableCellElement>;
 	}
 
-	insertCell(index = -1): Element {
+	insertCell(index = -1): HTMLTableCellElement {
 		const cells = getRowCells(this);
 		const at = toLong(index);
 		if (at < -1 || at > cells.length) {
@@ -16985,7 +17604,7 @@ class HTMLTableRowElement extends HTMLElement {
 		}
 		const cell = createElementInternal(this[kDocument]!, "td", HTML_NAMESPACE);
 		preInsert(cell, this, at === -1 || at === cells.length ? null : cells[at]);
-		return cell;
+		return cell as HTMLTableCellElement;
 	}
 
 	deleteCell(index: number): void {
@@ -17046,7 +17665,7 @@ class HTMLTableSectionElement extends HTMLElement {
 		this[kRows] = null;
 	}
 
-	get rows(): HTMLCollection {
+	get rows(): HTMLCollectionOf<HTMLTableRowElement> {
 		let rows = this[kRows]!;
 		if (rows === null) {
 			rows = new HTMLCollection(
@@ -17056,10 +17675,10 @@ class HTMLTableSectionElement extends HTMLElement {
 			);
 			this[kRows] = rows;
 		}
-		return rows;
+		return rows as HTMLCollectionOf<HTMLTableRowElement>;
 	}
 
-	insertRow(index = -1): Element {
+	insertRow(index = -1): HTMLTableRowElement {
 		const rows = getChildElementsNamed(this, "tr");
 		const at = toLong(index);
 		if (at < -1 || at > rows.length) {
@@ -17067,7 +17686,7 @@ class HTMLTableSectionElement extends HTMLElement {
 		}
 		const row = createElementInternal(this[kDocument]!, "tr", HTML_NAMESPACE);
 		preInsert(row, this, at === -1 || at === rows.length ? null : rows[at]);
-		return row;
+		return row as HTMLTableRowElement;
 	}
 
 	deleteRow(index: number): void {
@@ -17117,7 +17736,7 @@ class HTMLTextAreaElement extends HTMLElement {
 	declare [kDirty]?: boolean;
 	declare [kSelectionStart]?: number;
 	declare [kSelectionEnd]?: number;
-	declare [kSelectionDirection]?: string;
+	declare [kSelectionDirection]?: SelectionDirection;
 
 	declare [kUpgraded]?: boolean;
 	declare [kValueText]?: globalThis.Text | null;
@@ -17243,7 +17862,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		return getFormOwner(this);
 	}
 
-	get labels(): NodeList {
+	get labels(): NodeListOf<HTMLLabelElement> {
 		return getLabels(this);
 	}
 
@@ -17304,20 +17923,32 @@ class HTMLTextAreaElement extends HTMLElement {
 		);
 	}
 
-	get selectionDirection(): string {
+	get selectionDirection(): SelectionDirection {
 		return this[kSelectionDirection]!;
 	}
 
-	set selectionDirection(value: string) {
+	set selectionDirection(value: SelectionDirection) {
 		this.setSelectionRange(
 			this[kSelectionStart]!,
 			this[kSelectionEnd]!,
-			String(value),
+			String(value) as SelectionDirection,
 		);
 	}
 
 	// The value the UA shadow tree renders and edits: the raw value once the
 	// dirty flag is set, the child text until then.
+	get willValidate(): boolean {
+		return willValidate(this);
+	}
+
+	get validity(): ValidityState {
+		return getValidityState(this);
+	}
+
+	get validationMessage(): string {
+		return getValidationMessage(this);
+	}
+
 	get [kUAValue](): string {
 		return this[kDirty]!
 			? this[kValue]!
@@ -17328,22 +17959,48 @@ class HTMLTextAreaElement extends HTMLElement {
 		return this[kValueText]!;
 	}
 
+	checkValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	reportValidity(): boolean {
+		return checkValidity(this);
+	}
+
+	setCustomValidity(error: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("setCustomValidity needs a message");
+		}
+		setCustomValidity(this, error);
+	}
+
 	select(): void {
 		this.setSelectionRange(0, this.value.length, "none");
 	}
 
-	setSelectionRange(start: number, end: number, direction?: string): void {
+	setSelectionRange(
+		start: number | null,
+		end: number | null,
+		direction?: SelectionDirection,
+	): void {
 		if (arguments.length < 2) {
 			throw new TypeError("setSelectionRange needs a start and an end");
 		}
-		this[kSetUASelection]!(start, end, direction);
+		this[kSetUASelection]!(start ?? 0, end ?? 0, direction);
 	}
 
+	setRangeText(replacement: string): void;
+	setRangeText(
+		replacement: string,
+		start: number,
+		end: number,
+		selectionMode?: globalThis.SelectionMode,
+	): void;
 	setRangeText(
 		replacement: string,
 		start?: number,
 		end?: number,
-		selectMode?: string,
+		selectMode?: globalThis.SelectionMode,
 	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("setRangeText needs a replacement");
@@ -17383,7 +18040,11 @@ class HTMLTextAreaElement extends HTMLElement {
 		};
 	}
 
-	[kSetUASelection]?(start: number, end: number, direction?: string): void {
+	[kSetUASelection]?(
+		start: number,
+		end: number,
+		direction?: string,
+	): void {
 		setTextSelection(
 			this,
 			toUnsignedLong(start),
@@ -17643,7 +18304,34 @@ interface HTMLTrackElement
 		"kind"
 	> {}
 
-class HTMLTrackElement extends HTMLElement {}
+interface HTMLTrackElement {
+	readonly NONE: 0;
+	readonly LOADING: 1;
+	readonly LOADED: 2;
+	readonly ERROR: 3;
+}
+
+class HTMLTrackElement extends HTMLElement {
+	static readonly NONE = 0;
+	static readonly LOADING = 1;
+	static readonly LOADED = 2;
+	static readonly ERROR = 3;
+
+	get readyState(): number {
+		return 0;
+	}
+
+	get track(): globalThis.TextTrack {
+		return noMediaPipeline("text track");
+	}
+}
+
+Object.defineProperties(HTMLTrackElement.prototype, {
+	NONE: {value: 0, enumerable: true},
+	LOADING: {value: 1, enumerable: true},
+	LOADED: {value: 2, enumerable: true},
+	ERROR: {value: 3, enumerable: true},
+});
 
 interface HTMLUListElement
 	extends Pick<
@@ -18930,6 +19618,16 @@ const kFlags = Symbol("flags");
 const kValidityFlags = Symbol("validity flags");
 
 class ValidityState {
+	declare readonly badInput: boolean;
+	declare readonly customError: boolean;
+	declare readonly patternMismatch: boolean;
+	declare readonly rangeOverflow: boolean;
+	declare readonly rangeUnderflow: boolean;
+	declare readonly stepMismatch: boolean;
+	declare readonly tooLong: boolean;
+	declare readonly tooShort: boolean;
+	declare readonly typeMismatch: boolean;
+	declare readonly valueMissing: boolean;
 	declare [kFlags]?: () => ValidityFlags;
 
 	constructor(flags: () => ValidityFlags) {
@@ -19010,7 +19708,7 @@ class CustomStateSet {
 
 	forEach(
 		callback: (value: string, key: string, set: CustomStateSet) => void,
-		thisArg?: unknown,
+		thisArg?: any,
 	): void {
 		if (typeof callback !== "function") {
 			throw new TypeError("That is not a callback");
@@ -19020,15 +19718,15 @@ class CustomStateSet {
 		}
 	}
 
-	keys(): IterableIterator<string> {
+	keys(): SetIterator<string> {
 		return this[kStates]!.values();
 	}
 
-	values(): IterableIterator<string> {
+	values(): SetIterator<string> {
 		return this[kStates]!.values();
 	}
 
-	entries(): IterableIterator<[string, string]> {
+	entries(): SetIterator<[string, string]> {
 		return this[kStates]!.entries();
 	}
 
@@ -19116,7 +19814,10 @@ class ElementInternals {
 		return this[kValidationMessage]!;
 	}
 
-	setFormValue(value: unknown, state?: unknown): void {
+	setFormValue(
+		value: string | globalThis.File | globalThis.FormData | null,
+		state?: string | globalThis.File | globalThis.FormData | null,
+	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("setFormValue needs a value");
 		}
@@ -19391,9 +20092,9 @@ function attachElementInternals(element: HTMLElement): ElementInternals {
 	return internals;
 }
 
-function getLabels(element: Element): NodeList {
+function getLabels(element: Element): NodeListOf<HTMLLabelElement> {
 	if (!isLabelable(element)) {
-		return createStaticNodeList([]);
+		return createStaticNodeList([]) as NodeListOf<HTMLLabelElement>;
 	}
 	const labels: Node[] = [];
 	const root = getRoot(element);
@@ -19405,7 +20106,7 @@ function getLabels(element: Element): NodeList {
 			labels.push(node);
 		}
 	}
-	return createStaticNodeList(labels);
+	return createStaticNodeList(labels) as NodeListOf<HTMLLabelElement>;
 }
 
 function willValidate(element: Element): boolean {
@@ -19436,17 +20137,302 @@ function willValidate(element: Element): boolean {
 }
 
 function checkValidity(element: Element): boolean {
-	const internals = element[kInternals]!;
-	const flags =
-		internals === null ? noValidityFlags() : internals[kValidityFlags]!;
 	if (!willValidate(element)) {
 		return true;
 	}
+	const flags = getValidityFlags(element);
 	if (!VALIDITY_FLAG_NAMES.some((name) => flags[name])) {
 		return true;
 	}
 	dispatch(element, new Event("invalid", {cancelable: true}));
 	return false;
+}
+
+const customValidityMessages = new WeakMap<Element, string>();
+const validityStates = new WeakMap<Element, ValidityState>();
+
+function setCustomValidity(element: Element, error: string): void {
+	customValidityMessages.set(element, String(error));
+}
+
+function getValidityState(element: Element): ValidityState {
+	let state = validityStates.get(element);
+	if (state === undefined) {
+		const previous = internalConstruction;
+		internalConstruction = true;
+		try {
+			state = new ValidityState(() => getValidityFlags(element));
+		} finally {
+			internalConstruction = previous;
+		}
+		validityStates.set(element, state);
+	}
+	return state;
+}
+
+function getValidityFlags(element: Element): ValidityFlags {
+	const internals = element[kInternals]!;
+	if (internals !== null) {
+		return internals[kValidityFlags]!;
+	}
+	const flags = noValidityFlags();
+	flags.customError = (customValidityMessages.get(element) ?? "") !== "";
+	if (element instanceof HTMLInputElement) {
+		collectInputValidity(element, flags);
+	} else if (element instanceof HTMLSelectElement) {
+		collectSelectValidity(element, flags);
+	} else if (element instanceof HTMLTextAreaElement) {
+		collectTextAreaValidity(element, flags);
+	}
+	return flags;
+}
+
+const REQUIRED_INPUT_TYPES = new Set([
+	"text",
+	"search",
+	"url",
+	"tel",
+	"email",
+	"password",
+	"date",
+	"month",
+	"week",
+	"time",
+	"datetime-local",
+	"number",
+	"checkbox",
+	"radio",
+	"file",
+]);
+
+const PATTERN_INPUT_TYPES = new Set([
+	"text",
+	"search",
+	"url",
+	"tel",
+	"email",
+	"password",
+]);
+
+const EMAIL_ADDRESS =
+	/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+function collectInputValidity(
+	input: HTMLInputElement,
+	flags: ValidityFlags,
+): void {
+	const type = input.type;
+	const value = input.value;
+	const multiple = input.hasAttribute("multiple");
+	if (input.hasAttribute("required") && REQUIRED_INPUT_TYPES.has(type)) {
+		if (type === "checkbox") {
+			flags.valueMissing = !input.checked;
+		} else if (type === "radio") {
+			flags.valueMissing = !isRadioGroupChecked(input);
+		} else if (type === "file") {
+			flags.valueMissing = input.files === null || input.files.length === 0;
+		} else {
+			flags.valueMissing = value === "";
+		}
+	}
+	if (type === "email" && value !== "") {
+		const addresses = multiple
+			? value.split(",").map((v) => v.trim())
+			: [value];
+		flags.typeMismatch = !addresses.every((address) =>
+			EMAIL_ADDRESS.test(address),
+		);
+	} else if (type === "url" && value !== "") {
+		flags.typeMismatch = !URL.canParse(value);
+	}
+	const pattern = input.getAttribute("pattern");
+	if (pattern !== null && value !== "" && PATTERN_INPUT_TYPES.has(type)) {
+		const values =
+			type === "email" && multiple
+				? value.split(",").map((v) => v.trim())
+				: [value];
+		flags.patternMismatch = !values.every((v) => matchesPattern(pattern, v));
+	}
+	if (PATTERN_INPUT_TYPES.has(type) && input[kDirtyValue]) {
+		collectLengthValidity(input, value, flags);
+	}
+	if (type === "number" || type === "range") {
+		collectRangeValidity(input, value, flags);
+	}
+}
+
+function isRadioGroupChecked(input: HTMLInputElement): boolean {
+	const name = input.getAttribute("name");
+	if (name === null || name === "") {
+		return input.checked;
+	}
+	const form = getFormOwner(input);
+	for (const node of descendants(getRoot(input))) {
+		if (
+			node instanceof HTMLInputElement &&
+			node.type === "radio" &&
+			node.getAttribute("name") === name &&
+			getFormOwner(node) === form &&
+			node.checked
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function matchesPattern(pattern: string, value: string): boolean {
+	let expression: RegExp;
+	try {
+		expression = new RegExp(`^(?:${pattern})$`, "v");
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return true;
+		}
+		throw error;
+	}
+	return expression.test(value);
+}
+
+function parseLengthAttribute(element: Element, name: string): number | null {
+	const value = element.getAttribute(name);
+	const parsed = value === null ? null : parseInteger(value);
+	return parsed !== null && parsed >= 0 ? parsed : null;
+}
+
+function collectLengthValidity(
+	element: Element,
+	value: string,
+	flags: ValidityFlags,
+): void {
+	const max = parseLengthAttribute(element, "maxlength");
+	const min = parseLengthAttribute(element, "minlength");
+	flags.tooLong = max !== null && value.length > max;
+	flags.tooShort = min !== null && value !== "" && value.length < min;
+}
+
+function parseNumberAttribute(element: Element, name: string): number | null {
+	const value = element.getAttribute(name);
+	if (value === null) {
+		return null;
+	}
+	const parsed = Number(value.trim());
+	return value.trim() !== "" && Number.isFinite(parsed) ? parsed : null;
+}
+
+function collectRangeValidity(
+	input: HTMLInputElement,
+	value: string,
+	flags: ValidityFlags,
+): void {
+	const number = value === "" ? NaN : Number(value);
+	if (!Number.isFinite(number)) {
+		return;
+	}
+	const min = parseNumberAttribute(input, "min");
+	const max = parseNumberAttribute(input, "max");
+	flags.rangeUnderflow = min !== null && number < min;
+	flags.rangeOverflow = max !== null && number > max;
+	const stepAttribute = input.getAttribute("step");
+	if (stepAttribute !== null && stepAttribute.trim().toLowerCase() === "any") {
+		return;
+	}
+	const parsedStep = parseNumberAttribute(input, "step");
+	const step = parsedStep !== null && parsedStep > 0 ? parsedStep : 1;
+	const base = min ?? 0;
+	const quotient = (number - base) / step;
+	flags.stepMismatch =
+		Math.abs(quotient - Math.round(quotient)) >
+		1e-9 * Math.max(1, Math.abs(quotient));
+}
+
+function collectSelectValidity(
+	select: HTMLSelectElement,
+	flags: ValidityFlags,
+): void {
+	if (!select.hasAttribute("required")) {
+		return;
+	}
+	const options = getOptions(select);
+	const selected = options.filter((option) => option[kSelectedness]!);
+	if (selected.length === 0) {
+		flags.valueMissing = true;
+		return;
+	}
+	const placeholder =
+		!select.hasAttribute("multiple") &&
+		select.size <= 1 &&
+		options.length > 0 &&
+		options[0][kParent] === select &&
+		options[0].value === ""
+			? options[0]
+			: null;
+	flags.valueMissing = selected.length === 1 && selected[0] === placeholder;
+}
+
+function collectTextAreaValidity(
+	textarea: HTMLTextAreaElement,
+	flags: ValidityFlags,
+): void {
+	const value = textarea.value;
+	flags.valueMissing = textarea.hasAttribute("required") && value === "";
+	if (textarea[kDirty]) {
+		collectLengthValidity(textarea, value, flags);
+	}
+}
+
+function getValidationMessage(element: Element): string {
+	if (!willValidate(element)) {
+		return "";
+	}
+	const internals = element[kInternals]!;
+	if (internals !== null) {
+		return internals.validationMessage;
+	}
+	const flags = getValidityFlags(element);
+	if (flags.customError) {
+		return customValidityMessages.get(element) ?? "";
+	}
+	if (flags.valueMissing) {
+		if (element instanceof HTMLSelectElement) {
+			return "Please select an item in the list.";
+		}
+		const type = element instanceof HTMLInputElement ? element.type : "";
+		if (type === "checkbox") {
+			return "Please check this box if you want to proceed.";
+		}
+		if (type === "radio") {
+			return "Please select one of these options.";
+		}
+		if (type === "file") {
+			return "Please select a file.";
+		}
+		return "Please fill out this field.";
+	}
+	if (flags.typeMismatch) {
+		return element instanceof HTMLInputElement && element.type === "url"
+			? "Please enter a URL."
+			: "Please enter an email address.";
+	}
+	if (flags.patternMismatch) {
+		return "Please match the requested format.";
+	}
+	if (flags.tooLong) {
+		return "Please shorten this text.";
+	}
+	if (flags.tooShort) {
+		return "Please lengthen this text.";
+	}
+	if (flags.rangeUnderflow) {
+		return `Value must be greater than or equal to ${element.getAttribute("min")}.`;
+	}
+	if (flags.rangeOverflow) {
+		return `Value must be less than or equal to ${element.getAttribute("max")}.`;
+	}
+	if (flags.stepMismatch) {
+		return "Please enter a valid value.";
+	}
+	return "";
 }
 
 /**
@@ -19892,12 +20878,7 @@ class DOMRectReadOnly {
 		return new DOMRectReadOnly(other.x, other.y, other.width, other.height);
 	}
 
-	toJSON(): DOMRectInit & {
-		top: number;
-		right: number;
-		bottom: number;
-		left: number;
-	} {
+	toJSON(): any {
 		return {
 			x: this.x,
 			y: this.y,
@@ -20149,7 +21130,7 @@ interface ResizeObserverEntry {
 	target: globalThis.Element;
 	contentRect: globalThis.DOMRect;
 	borderBoxSize: readonly ResizeObserverSize[];
-	getContentBoxSize: readonly ResizeObserverSize[];
+	contentBoxSize: readonly ResizeObserverSize[];
 	devicePixelContentBoxSize: readonly ResizeObserverSize[];
 }
 
@@ -20169,9 +21150,7 @@ const RESIZE_BOXES = new Set([
 	"device-pixel-content-box",
 ]);
 
-interface ResizeObserverOptions {
-	box?: string;
-}
+type ResizeObserverOptions = globalThis.ResizeObserverOptions;
 
 class ResizeObserver extends LayoutObserver<
 	ResizeSize,
@@ -20252,7 +21231,7 @@ class ResizeObserver extends LayoutObserver<
 					content.width,
 					content.height,
 				),
-				getContentBoxSize: [box],
+				contentBoxSize: [box],
 				borderBoxSize: [
 					{
 						inlineSize: border?.width ?? content.width,
@@ -20287,21 +21266,9 @@ function getContentBox(
 	};
 }
 
-interface IntersectionObserverInit {
-	root?: globalThis.Element | null;
-	rootMargin?: string;
-	threshold?: number | number[];
-}
+type IntersectionObserverInit = globalThis.IntersectionObserverInit;
 
-interface IntersectionObserverEntry {
-	target: globalThis.Element;
-	isIntersecting: boolean;
-	getIntersectionRatio: number;
-	boundingClientRect: globalThis.DOMRect;
-	intersectionRect: globalThis.DOMRect;
-	rootBounds: globalThis.DOMRect | null;
-	time: number;
-}
+type IntersectionObserverEntry = globalThis.IntersectionObserverEntry;
 
 type IntersectionObserverCallback = (
 	entries: IntersectionObserverEntry[],
@@ -20316,7 +21283,7 @@ class IntersectionObserver extends LayoutObserver<
 > {
 	readonly rootMargin: string;
 	readonly thresholds: readonly number[];
-	declare [kIntersectionRoot]?: globalThis.Element | null;
+	declare [kIntersectionRoot]?: globalThis.Element | globalThis.Document | null;
 
 	constructor(
 		callback: IntersectionObserverCallback,
@@ -20335,8 +21302,12 @@ class IntersectionObserver extends LayoutObserver<
 		);
 	}
 
-	get root(): globalThis.Element | null {
+	get root(): globalThis.Element | globalThis.Document | null {
 		return this[kIntersectionRoot]!;
+	}
+
+	override observe(target: globalThis.Element): void {
+		super.observe(target);
 	}
 
 	[kMeasure](
@@ -20354,9 +21325,10 @@ class IntersectionObserver extends LayoutObserver<
 		// The root is an explicit element's border box or the viewport. Either
 		// way it is grown by rootMargin, which is the point of that option: it
 		// lets a list start loading a row before it scrolls into view.
+		const root = this[kIntersectionRoot]!;
 		const rootBox =
-			this[kIntersectionRoot]!
-				? layout.getRect(this[kIntersectionRoot]!)
+			root && root.nodeType === ELEMENT_NODE
+				? layout.getRect(root as globalThis.Element)
 				: viewport;
 		if (!rootBox) {
 			return null;
@@ -20374,7 +21346,7 @@ class IntersectionObserver extends LayoutObserver<
 			entry: {
 				target,
 				isIntersecting: index > 0,
-				getIntersectionRatio: ratio,
+				intersectionRatio: ratio,
 				boundingClientRect: box,
 				intersectionRect:
 					index > 0 ? rect : new DOMRect(0, 0, 0, 0),
@@ -21293,24 +22265,32 @@ export class Document extends Node implements globalThis.Document {
 
 	createElementNS(
 		namespaceURI: "http://www.w3.org/1999/xhtml",
-		getQualifiedName: string,
+		qualifiedName: string,
 	): globalThis.HTMLElement;
+	createElementNS<K extends keyof globalThis.SVGElementTagNameMap>(
+		namespaceURI: "http://www.w3.org/2000/svg",
+		qualifiedName: K,
+	): globalThis.SVGElementTagNameMap[K];
 	createElementNS(
 		namespaceURI: "http://www.w3.org/2000/svg",
-		getQualifiedName: string,
+		qualifiedName: string,
 	): globalThis.SVGElement;
+	createElementNS<K extends keyof globalThis.MathMLElementTagNameMap>(
+		namespaceURI: "http://www.w3.org/1998/Math/MathML",
+		qualifiedName: K,
+	): globalThis.MathMLElementTagNameMap[K];
 	createElementNS(
 		namespaceURI: "http://www.w3.org/1998/Math/MathML",
-		getQualifiedName: string,
+		qualifiedName: string,
 	): globalThis.MathMLElement;
 	createElementNS(
 		namespaceURI: string | null,
-		getQualifiedName: string,
+		qualifiedName: string,
 		options?: globalThis.ElementCreationOptions,
 	): globalThis.Element;
 	createElementNS(
 		namespace: string | null,
-		getQualifiedName: string,
+		qualifiedName: string,
 		options?: string | globalThis.ElementCreationOptions,
 	): globalThis.Element;
 	createElementNS(
@@ -22145,7 +23125,7 @@ class DOMImplementation {
 		);
 	}
 
-	hasFeature(): boolean {
+	hasFeature(..._args: any[]): true {
 		return true;
 	}
 }
@@ -25320,8 +26300,8 @@ class NodeIterator {
 		return this[kWhatToShow]!;
 	}
 
-	get filter(): NodeFilterInput {
-		return this[kFilter]!;
+	get filter(): globalThis.NodeFilter | null {
+		return this[kFilter]! as globalThis.NodeFilter | null;
 	}
 
 	nextNode(): Node | null {
@@ -27003,7 +27983,10 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 }
 
 export class DOMParser {
-	parseFromString(string: string, type: string): Document {
+	parseFromString(
+		string: string,
+		type: globalThis.DOMParserSupportedType,
+	): Document {
 		const contentType = String(type);
 		if (contentType === "text/html") {
 			return parseHTMLDocument(String(string), "about:blank", false, null);
@@ -27462,6 +28445,24 @@ for (const prototype of [
 
 installEventHandlers(Document.prototype, DOCUMENT_EVENT_HANDLERS);
 
+// HTMLOrSVGElement: the same members on all three element interfaces.
+for (const prototype of [SVGElement.prototype, MathMLElement.prototype]) {
+	for (const name of [
+		"autofocus",
+		"dataset",
+		"nonce",
+		"tabIndex",
+		"blur",
+		"focus",
+	]) {
+		Object.defineProperty(
+			prototype,
+			name,
+			Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)!,
+		);
+	}
+}
+
 for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 	for (const name of FORWARDED_BODY_EVENT_HANDLERS) {
 		installForwardedEventHandler(constructor.prototype, name);
@@ -27731,12 +28732,15 @@ const kItemEntries = Symbol("entries");
 // OSC 52 carries one payload the terminal treats as text, so text/plain
 // is the only type a write sends and the only type a read returns. An
 // item may hold other types, and the clipboard skips them.
+const kPresentationStyle = Symbol("presentation style");
+
 class ClipboardItem {
 	declare [kItemEntries]?: Map<string, Promise<Blob>>;
+	declare [kPresentationStyle]?: globalThis.PresentationStyle;
 
 	constructor(
 		items: Record<string, string | Blob | Promise<string | Blob>>,
-		_options?: unknown,
+		options?: globalThis.ClipboardItemOptions,
 	) {
 		if (items === null || typeof items !== "object") {
 			throw new TypeError("A clipboard item takes a record of types");
@@ -27757,6 +28761,11 @@ class ClipboardItem {
 			throw new TypeError("A clipboard item carries at least one type");
 		}
 		this[kItemEntries] = entries;
+		this[kPresentationStyle] = options?.presentationStyle ?? "unspecified";
+	}
+
+	get presentationStyle(): globalThis.PresentationStyle {
+		return this[kPresentationStyle]!;
 	}
 
 	get types(): readonly string[] {
@@ -27824,7 +28833,7 @@ class Clipboard extends EventTarget {
 		return text;
 	}
 
-	async write(items: Iterable<ClipboardItem>): Promise<void> {
+	async write(items: ClipboardItem[]): Promise<void> {
 		const terminal = reachClipboard(this[kClipboardDocument]!, "writes");
 		let carrier: ClipboardItem | null = null;
 		for (const item of items) {
@@ -27922,6 +28931,11 @@ const kPermissionDocument = Symbol("the document this permission stands over");
 // gesture is being dispatched and prompt otherwise. Nothing fires
 // `change`, because the gesture opens and closes inside one dispatch,
 // and a listener would be told about a state that had already passed.
+interface PermissionStatus extends Pick<
+	globalThis.PermissionStatus,
+	"onchange"
+> {}
+
 class PermissionStatus extends EventTarget {
 	declare [kPermissionName]?: string;
 	declare [kPermissionDocument]?: Document | null;
@@ -27939,7 +28953,7 @@ class PermissionStatus extends EventTarget {
 		return this[kPermissionName]!;
 	}
 
-	get state(): string {
+	get state(): globalThis.PermissionState {
 		const document = this[kPermissionDocument]!;
 		if (
 			document === null || !CLIPBOARD_PERMISSIONS.has(this[kPermissionName]!)
@@ -28025,7 +29039,9 @@ class Permissions extends EventTarget {
 		this[kPermissionDocument] = document as Document;
 	}
 
-	query(descriptor: {name?: string}): Promise<PermissionStatus> {
+	query(
+		descriptor: globalThis.PermissionDescriptor,
+	): Promise<PermissionStatus> {
 		if (descriptor === null || typeof descriptor !== "object") {
 			return Promise.reject(
 				new TypeError("A permission query takes a descriptor"),

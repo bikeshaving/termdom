@@ -545,34 +545,64 @@ type Overloads<T> = T extends {
 	(...a: infer A4): infer R4;
 	(...a: infer A5): infer R5;
 	(...a: infer A6): infer R6;
+	(...a: infer A7): infer R7;
+	(...a: infer A8): infer R8;
 }
-	? [[A1, R1], [A2, R2], [A3, R3], [A4, R4], [A5, R5], [A6, R6]]
+	? [
+		[A1, R1],
+		[A2, R2],
+		[A3, R3],
+		[A4, R4],
+		[A5, R5],
+		[A6, R6],
+		[A7, R7],
+		[A8, R8],
+	]
 	: T extends {
 		(...a: infer A1): infer R1;
 		(...a: infer A2): infer R2;
 		(...a: infer A3): infer R3;
 		(...a: infer A4): infer R4;
 		(...a: infer A5): infer R5;
+		(...a: infer A6): infer R6;
+		(...a: infer A7): infer R7;
 	}
-		? [[A1, R1], [A2, R2], [A3, R3], [A4, R4], [A5, R5]]
+		? [[A1, R1], [A2, R2], [A3, R3], [A4, R4], [A5, R5], [A6, R6], [A7, R7]]
 		: T extends {
 			(...a: infer A1): infer R1;
 			(...a: infer A2): infer R2;
 			(...a: infer A3): infer R3;
 			(...a: infer A4): infer R4;
+			(...a: infer A5): infer R5;
+			(...a: infer A6): infer R6;
 		}
-			? [[A1, R1], [A2, R2], [A3, R3], [A4, R4]]
+			? [[A1, R1], [A2, R2], [A3, R3], [A4, R4], [A5, R5], [A6, R6]]
 			: T extends {
 				(...a: infer A1): infer R1;
 				(...a: infer A2): infer R2;
 				(...a: infer A3): infer R3;
+				(...a: infer A4): infer R4;
+				(...a: infer A5): infer R5;
 			}
-				? [[A1, R1], [A2, R2], [A3, R3]]
-				: T extends {(...a: infer A1): infer R1; (...a: infer A2): infer R2}
-					? [[A1, R1], [A2, R2]]
-					: T extends (...a: infer A1) => infer R1
-						? [[A1, R1]]
-						: never;
+				? [[A1, R1], [A2, R2], [A3, R3], [A4, R4], [A5, R5]]
+				: T extends {
+					(...a: infer A1): infer R1;
+					(...a: infer A2): infer R2;
+					(...a: infer A3): infer R3;
+					(...a: infer A4): infer R4;
+				}
+					? [[A1, R1], [A2, R2], [A3, R3], [A4, R4]]
+					: T extends {
+						(...a: infer A1): infer R1;
+						(...a: infer A2): infer R2;
+						(...a: infer A3): infer R3;
+					}
+						? [[A1, R1], [A2, R2], [A3, R3]]
+						: T extends {(...a: infer A1): infer R1; (...a: infer A2): infer R2}
+							? [[A1, R1], [A2, R2]]
+							: T extends (...a: infer A1) => infer R1
+								? [[A1, R1]]
+								: never;
 type MapOverloads<T extends Array<[unknown[], unknown]>> = {
 	[I in keyof T]: [ToPlatformTuple<T[I][0]>, ToPlatform<T[I][1]>];
 };

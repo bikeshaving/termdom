@@ -684,6 +684,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 			str("direction"),
 			str("height"),
 			ulong("hspace", "hspace", 0),
+			long("loop", "loop", -1),
 			str("scrollAmount", "scrollamount"),
 			str("scrollDelay", "scrolldelay"),
 			bool("trueSpeed", "truespeed"),
@@ -708,6 +709,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 			bool("loop"),
 			bool("controls"),
 			bool("defaultMuted", "muted"),
+			bool("disableRemotePlayback", "disableremoteplayback"),
 		],
 	},
 	{
