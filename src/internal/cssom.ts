@@ -9600,10 +9600,13 @@ export class Cascade {
 						shouldSyncStylesheets = true;
 					}
 				}
-				// A list's gutter is derived from its children, so a mutation
-				// invalidates the LIST. A wider marker added later overran the
-				// gutter the original items set.
-				invalidateEnclosingList(this, mutation.target);
+				// A list's gutter is derived from its items' markers, so a
+				// change to the ITEMS invalidates the list: a wider marker added
+				// later overran the gutter the original items set. A change
+				// inside an item's content moves no marker.
+				if (mutationChangesListItems(mutation)) {
+					invalidateEnclosingList(this, mutation.target);
+				}
 
 				for (const node of mutation.addedNodes) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
@@ -11263,6 +11266,29 @@ function invalidateElementCaches(
 // their ordinals. Only the NEAREST list is affected.
 // TODO(box-tree): the gutter is a layout question answered here in the
 // cascade. Computing it during block layout deletes this.
+function mutationChangesListItems(mutation: MutationRecord): boolean {
+	const target = mutation.target;
+	if (
+		target.nodeType === 1 &&
+		((target as Element).tagName === "UL" ||
+			(target as Element).tagName === "OL")
+	) {
+		return true;
+	}
+	for (const list of [mutation.addedNodes, mutation.removedNodes]) {
+		for (const node of list) {
+			if (node.nodeType !== 1) {
+				continue;
+			}
+			const element = node as Element;
+			if (element.tagName === "LI" || element.querySelector("li") !== null) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 function invalidateEnclosingList(
 	cascade: Cascade,
 	target: Node,
@@ -12453,20 +12479,26 @@ function getListItemCounterValue(
 		return 0;
 	}
 
-	const parentScope = cascade[kCounterScopes].get(parent);
-	let currentValue = parentScope?.counters["list-item"] ?? 0;
-
-	const siblings = Array.from(parent.children);
-	const currentIndex = siblings.indexOf(element);
-
-	for (let i = 0; i < currentIndex; i++) {
-		const sibling = siblings[i];
-		if (sibling.tagName === "LI") {
-			currentValue += 1;
+	// Items initialize in document order, so the nearest earlier item that
+	// has a scope already holds the count up to itself. Counting from the
+	// list's start for every item made a long list quadratic.
+	let uncounted = 0;
+	for (
+		let previous = element.previousElementSibling;
+		previous !== null;
+		previous = previous.previousElementSibling
+	) {
+		if (previous.tagName !== "LI") {
+			continue;
 		}
+		const scope = cascade[kCounterScopes].get(previous as Element);
+		if (scope !== undefined && "list-item" in scope.counters) {
+			return scope.counters["list-item"] + uncounted;
+		}
+		uncounted++;
 	}
-
-	return currentValue;
+	const parentScope = cascade[kCounterScopes].get(parent);
+	return (parentScope?.counters["list-item"] ?? 0) + uncounted;
 }
 
 function getCounterValueInScope(
