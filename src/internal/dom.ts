@@ -29212,7 +29212,7 @@ Object.defineProperty(Location.prototype, Symbol.toStringTag, {
 // null when the URL Standard cannot parse it, and each member above falls
 // back to what a browser returns for an opaque location.
 function getLocationURL(location: Location): URL | null {
-	return URL.parse(location.href);
+	return URL.canParse(location.href) ? new URL(location.href) : null;
 }
 
 function noNavigation(): DOMException {
@@ -29662,8 +29662,9 @@ export class Window extends EventTarget {
 	}
 
 	get origin(): string {
-		const url = URL.parse(this.document.URL);
-		return url === null ? "null" : url.origin;
+		return URL.canParse(this.document.URL)
+			? new URL(this.document.URL).origin
+			: "null";
 	}
 
 	get localStorage(): Storage {
