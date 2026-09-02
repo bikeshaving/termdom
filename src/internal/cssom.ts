@@ -9293,20 +9293,19 @@ function attachPseudoElementsToElement(
 	cascade: Cascade,
 	element: Element,
 ): void {
-	// If no pseudo rule names this element's type, no counter scope reaches
-	// it, and it has no pseudo-element to reconsider, everything below would
-	// return no, at the cost of one matches() call per rule.
+	// If no pseudo rule names this element's type and it has no
+	// pseudo-element to reconsider, everything below would return no, at
+	// the cost of one matches() call per rule. Counters are built when a
+	// content value first reads them.
 	const tags = getPseudoSubjects(cascade);
 	if (
 		tags !== null &&
 		!tags.has(element.tagName) &&
 		pseudoElementCount(element) === 0 &&
-		!cascade[kCounterScopes].has(element.parentElement!) &&
 		!(element.getAttribute("style") ?? "").includes("list-item")
 	) {
 		return;
 	}
-	initializeCounters(cascade, element);
 
 	for (const pseudoType of PSEUDO_ELEMENT_NAMES) {
 		attachPseudoElementToElementForType(cascade, element, pseudoType);
@@ -9352,6 +9351,7 @@ const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
 const kParsedRules = Symbol("parsedRules");
 const kReachingClasses = Symbol("reachingClasses");
+const kKeyProperties = Symbol("keyProperties");
 const kReachingIds = Symbol("reachingIds");
 const kReachingAttributes = Symbol("reachingAttributes");
 const kReachingStates = Symbol("reachingStates");
@@ -9402,6 +9402,10 @@ export class Cascade {
 	// rules declaring an inherited property. Collected loosely. A false
 	// positive only widens the invalidation.
 	declare [kReachingClasses]: Set<string>;
+	// Every property a rule declares, by each class, id and attribute its
+	// selector tests, as `.name`, `#name` and `[name]`. A change to a key
+	// whose properties are all paint decides nothing layout reads.
+	declare [kKeyProperties]: Map<string, Set<string>>;
 	declare [kReachingIds]: Set<string>;
 	declare [kReachingAttributes]: Set<string>;
 
@@ -9511,6 +9515,7 @@ export class Cascade {
 		this[kSelectorsReachSiblings] = false;
 		this[kSelectorsReachAncestors] = false;
 		this[kReachingClasses] = new Set<string>();
+		this[kKeyProperties] = new Map<string, Set<string>>();
 		this[kReachingIds] = new Set<string>();
 		this[kReachingAttributes] = new Set<string>();
 		this[kReachingStates] = false;
@@ -9639,6 +9644,15 @@ export class Cascade {
 				}
 			} else if (mutation.type === "attributes") {
 				const element = mutation.target as Element;
+				// A change to keys whose rules declare only paint properties
+				// leaves every box where it was. The styles are dropped so the
+				// next read resolves them, and layout is not told.
+				const notifyLayout = !isPaintOnlyChange(
+					this,
+					element,
+					mutation.attributeName!,
+					mutation.oldValue,
+				);
 				// Only a change the sheets USE that way reaches descendants.
 				// When no rule tests the class outside its own subject and none
 				// declares an inherited property, descendant styles are
@@ -9650,10 +9664,13 @@ export class Cascade {
 						mutation.oldValue,
 					)
 				) {
-					invalidateSubtree(this, element);
+					invalidateSubtree(this, element, notifyLayout);
 				} else {
-					invalidateElementCaches(this, element);
+					invalidateElementCaches(this, element, notifyLayout);
 					attachPseudoElementsToElement(this, element);
+				}
+				if (!notifyLayout) {
+					this[kLayout].invalidateFrame();
 				}
 				// `.on ~ .light` matches a FOLLOWING sibling whose cached
 				// styles know nothing of this change. :has() reaches ancestors,
@@ -10077,6 +10094,7 @@ export class Cascade {
 	// Replace each counter(name[, style]) with the number it stands at
 	// here.
 	[kResolveCounterFunction](element: Element, content: string): string {
+		initializeCounters(this, element);
 		const scope = this[kCounterScopes].get(element);
 		return content.replace(
 			/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
@@ -10216,9 +10234,17 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 
 // The parent's scope is read, never built. Building it recursively up a
 // deep tree is what this avoids.
+// Built on first read, not on invalidation: a counter's value depends
+// on the element's ancestors, and for a list item on the items before
+// it, so the parent is built first and a dropped scope comes back when
+// something next asks. A full restyle used to build every element's
+// computed style here for the counters alone.
 function initializeCounters(cascade: Cascade, element: Element): void {
 	if (cascade[kCounterScopes].has(element)) {
 		return;
+	}
+	if (element.parentElement) {
+		initializeCounters(cascade, element.parentElement);
 	}
 
 	// With no counter rules anywhere, only lists carry counters. But an
@@ -11217,12 +11243,20 @@ function parseStylesheetsIfStale(cascade: Cascade): void {
 function invalidateSubtree(
 	cascade: Cascade,
 	element: Element,
+	notifyLayout = true,
 ): void {
-	invalidateElementCaches(cascade, element);
-	attachPseudoElementsToElement(cascade, element);
+	// A paint-only change cannot create or remove a pseudo-element, since
+	// `content` is not a paint property, so the attachment pass is skipped
+	// with layout.
+	invalidateElementCaches(cascade, element, notifyLayout);
+	if (notifyLayout) {
+		attachPseudoElementsToElement(cascade, element);
+	}
 	for (const descendant of element.querySelectorAll("*")) {
-		invalidateElementCaches(cascade, descendant);
-		attachPseudoElementsToElement(cascade, descendant);
+		invalidateElementCaches(cascade, descendant, notifyLayout);
+		if (notifyLayout) {
+			attachPseudoElementsToElement(cascade, descendant);
+		}
 	}
 	const root = element.shadowRoot;
 	if (root) {
@@ -11235,11 +11269,14 @@ function invalidateSubtree(
 function invalidateElementCaches(
 	cascade: Cascade,
 	element: Element,
+	notifyLayout = true,
 ): void {
 	// The one place an element's computed style goes stale, so the one
 	// place layout, which measured it under the style being dropped, is
-	// notified.
-	cascade[kLayout].styleInvalidated(element);
+	// notified, unless the caller knows nothing layout reads changed.
+	if (notifyLayout) {
+		cascade[kLayout].styleInvalidated(element);
+	}
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade changed rather than merely dropped.
 	const dropped = cascade[kComputedStyleCache].get(element);
@@ -11257,6 +11294,90 @@ function invalidateElementCaches(
 	}
 	cascade[kPseudoElementStyleCache].delete(element);
 	cascade[kCounterScopes].delete(element);
+}
+
+// Properties the painter reads and layout never does. A rule declaring
+// only these moves nothing when it starts or stops matching.
+const PAINT_ONLY_PROPERTIES = new Set([
+	"color",
+	"background",
+	"background-color",
+	"background-image",
+	"background-position",
+	"background-repeat",
+	"background-size",
+	"background-attachment",
+	"background-clip",
+	"background-origin",
+	"border-color",
+	"border-top-color",
+	"border-right-color",
+	"border-bottom-color",
+	"border-left-color",
+	"border-block-color",
+	"border-inline-color",
+	"outline",
+	"outline-color",
+	"outline-style",
+	"outline-width",
+	"outline-offset",
+	"text-decoration",
+	"text-decoration-line",
+	"text-decoration-color",
+	"text-decoration-style",
+	"text-decoration-thickness",
+	"font-weight",
+	"font-style",
+	"caret-color",
+	"accent-color",
+	"cursor",
+	"visibility",
+	"opacity",
+	"user-select",
+	"pointer-events",
+]);
+
+// Whether every rule an attribute change can turn on or off declares
+// paint properties only. The style attribute can declare anything; a
+// key no rule tests changes nothing at all.
+function isPaintOnlyChange(
+	cascade: Cascade,
+	element: Element,
+	name: string,
+	oldValue: string | null,
+): boolean {
+	if (
+		name === "style" || (cascade[kReachingStates] && STATE_ATTRIBUTES.has(name))
+	) {
+		return false;
+	}
+	const keys: string[] = [`[${name}]`];
+	if (name === "class") {
+		const before = oldValue === null ? [] : oldValue.split(/\s+/);
+		for (const token of [...before, ...element.classList]) {
+			if (token !== "") {
+				keys.push(`.${token}`);
+			}
+		}
+	} else if (name === "id") {
+		for (const token of [oldValue, element.getAttribute("id")]) {
+			if (token !== null && token !== "") {
+				keys.push(`#${token}`);
+			}
+		}
+	}
+	for (const key of keys) {
+		const properties = cascade[kKeyProperties].get(key);
+		if (properties === undefined) {
+			continue;
+		}
+		for (const property of properties) {
+			if (!PAINT_ONLY_PROPERTIES.has(property)) {
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 // The list's padding-left is a function of its items' markers and
@@ -11320,6 +11441,7 @@ function parseStylesheets(
 	cascade[kSelectorsReachSiblings] = false;
 	cascade[kSelectorsReachAncestors] = false;
 	cascade[kReachingClasses].clear();
+	cascade[kKeyProperties].clear();
 	cascade[kReachingIds].clear();
 	cascade[kReachingAttributes].clear();
 	cascade[kReachingStates] = false;
@@ -11755,6 +11877,23 @@ function indexReachingKeys(
 		}
 	}
 	const compounds = reading.compounds;
+	const names = Object.keys(declarations);
+	for (const keys of compounds) {
+		for (const key of [
+			...keys.classes.map((name) => `.${name}`),
+			...keys.ids.map((name) => `#${name}`),
+			...keys.attributes.map((name) => `[${name}]`),
+		]) {
+			let properties = cascade[kKeyProperties].get(key);
+			if (properties === undefined) {
+				properties = new Set<string>();
+				cascade[kKeyProperties].set(key, properties);
+			}
+			for (const name of names) {
+				properties.add(name);
+			}
+		}
+	}
 	const last = inherits ? compounds.length : compounds.length - 1;
 	for (let i = 0; i < last; i++) {
 		const keys = compounds[i];
