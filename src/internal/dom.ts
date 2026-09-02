@@ -9220,6 +9220,44 @@ Object.defineProperties(Element.prototype, {
 
 const alreadyConstructed = Symbol("already constructed");
 
+/**
+ * The innerText setter's steps: each line of the text becomes a text node,
+ * and each line break between them a br element.
+ */
+function createTextFragment(
+	document: Document,
+	value: string,
+): DocumentFragment {
+	const fragment = new DocumentFragment();
+	fragment[kDocument] = document;
+	const text = String(value);
+	const lines = text.split(/\r\n|\r|\n/);
+	for (const [index, line] of lines.entries()) {
+		if (index > 0) {
+			appendNode(
+				createElementInternal(document, "br", HTML_NAMESPACE),
+				fragment,
+			);
+		}
+		if (line !== "") {
+			const text = new Text(line);
+			text[kDocument] = document;
+			appendNode(text, fragment);
+		}
+	}
+	return fragment;
+}
+
+function replaceAllWithText(element: Element, value: string): void {
+	const document = element[kDocument];
+	const text = String(value);
+	if (text === "") {
+		replaceAll(null, element);
+		return;
+	}
+	replaceAll(createTextFragment(document, text), element);
+}
+
 export class HTMLElement extends Element {
 	// Installed on the prototype, where the engine that measures them is.
 	declare readonly offsetWidth: number;
@@ -9518,24 +9556,30 @@ export class HTMLElement extends Element {
 		return "";
 	}
 
-	// The RENDERED text, which differs from textContent: it respects
-	// display, collapses white space and inserts the line breaks layout
-	// chose. This engine computes all of that, but reading it back through
-	// this property is not wired up.
+	// HTML's "rendered text" respects display, collapses white space and
+	// carries the line breaks layout chose. This engine computes all of
+	// that but does not read it back here yet, so every element takes the
+	// path the standard gives an element that is not being rendered: its
+	// descendant text content.
 	get innerText(): string {
-		throw domError("NotSupportedError", "innerText is not implemented");
+		return this.textContent ?? "";
 	}
 
-	set innerText(_value: string) {
-		throw domError("NotSupportedError", "innerText is not implemented");
+	set innerText(value: string) {
+		replaceAllWithText(this, value);
 	}
 
 	get outerText(): string {
-		throw domError("NotSupportedError", "outerText is not implemented");
+		return this.innerText;
 	}
 
-	set outerText(_value: string) {
-		throw domError("NotSupportedError", "outerText is not implemented");
+	set outerText(value: string) {
+		const parent = this[kParent];
+		if (parent === null) {
+			throw domError("NoModificationAllowedError", "The element has no parent");
+		}
+		const fragment = createTextFragment(this[kDocument], value);
+		replaceChild(this, fragment, parent);
 	}
 
 	get attributeStyleMap(): globalThis.StylePropertyMap {
@@ -22684,12 +22728,9 @@ export class Document extends Node implements globalThis.Document {
 		if (!(root instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		// The flat bit is private to the engine, and the default whatToShow is
-		// every bit there is. Without this mask, `createTreeWalker(root)` would
-		// walk the box tree's view of the document instead of the page's.
 		return new TreeWalker(
 			root as Node,
-			toUnsignedLong(whatToShow) & ~SHOW_FLAT,
+			toUnsignedLong(whatToShow),
 			filter as NodeFilterInput,
 		) as unknown as globalThis.TreeWalker;
 	}
@@ -26292,22 +26333,6 @@ export const NodeFilter = {
 
 Object.freeze(NodeFilter);
 
-/**
- * A private `whatToShow` bit that requests the FLAT tree rather than the
- * node tree: shadow content in its slot's place, and pseudo-element nodes
- * among the children they belong beside.
- *
- * It lives in `whatToShow` because that argument already says what a walk
- * is interested in, and because the bit is inert in the only test that
- * reads it: acceptance computes `1 << (nodeType - 1)`, and the highest
- * node type (NOTATION, 12) reaches 0x800, so no node type can produce this
- * bit. It is private because the flat tree is the box tree's view, not
- * something a page should be able to request. `Document.createTreeWalker`
- * masks it off, which also stops the SHOW_ALL default from making every
- * walk flat.
- */
-export const SHOW_FLAT = 0x1000;
-
 function filterNode(
 	traverser: {
 		whatToShow: number;
@@ -26504,13 +26529,24 @@ export class TreeWalker implements globalThis.TreeWalker {
 	// Decided at construction and read on every hop.
 	declare [kLinks]: TreeLinks;
 
-	constructor(root: Node, whatToShow: number, filter: NodeFilterInput) {
+	/**
+	 * `flat` walks the FLAT tree rather than the node tree: shadow content
+	 * in its slot's place, and pseudo-element nodes among the children they
+	 * belong beside. It is the box tree's view, so only the engine asks for
+	 * it; `Document.createTreeWalker` never sets it.
+	 */
+	constructor(
+		root: Node,
+		whatToShow: number,
+		filter: NodeFilterInput,
+		flat = false,
+	) {
 		this[kActive] = {value: false};
 		this[kRoot] = root;
 		this[kCurrent] = root;
 		this[kWhatToShow] = whatToShow;
 		this[kFilter] = filter ?? null;
-		this[kLinks] = getTreeLinks(whatToShow);
+		this[kLinks] = flat ? FLAT_LINKS : NODE_LINKS;
 	}
 
 	get root(): globalThis.Node {
@@ -26579,10 +26615,6 @@ export class TreeWalker implements globalThis.TreeWalker {
 
 // A walk's whatToShow never changes after construction, so the choice
 // is made once, there, and every hop below is a text control read.
-function getTreeLinks(whatToShow: number): TreeLinks {
-	return (whatToShow & SHOW_FLAT) !== 0 ? FLAT_LINKS : NODE_LINKS;
-}
-
 // DOM Standard, "traverse children".
 function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 	let node: Node | null =

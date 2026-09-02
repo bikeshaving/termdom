@@ -571,7 +571,12 @@ export async function render(termdom: TermDOM): Promise<void> {
 					await renderOnce(termdom);
 				} while (termdom[kRenderQueued]);
 				// A callback that schedules another frame re-queues the loop, so
-				// requestAnimationFrame chains tick frame by frame.
+				// requestAnimationFrame chains tick frame by frame. A disposed
+				// engine paints nothing, so a chain that never ends would spin
+				// here forever; it ends with the engine.
+				if (termdom[kLifecycle] === "disposed") {
+					break;
+				}
 				framesAwaiting = DOM.runFrameCallbacks(termdom.document);
 			} while (termdom[kRenderQueued] || framesAwaiting);
 		} finally {

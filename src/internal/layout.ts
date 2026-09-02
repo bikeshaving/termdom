@@ -33,7 +33,6 @@ import {
 	NodeFilter,
 	pseudoElementCount,
 	renderedTopLayer,
-	SHOW_FLAT,
 	TreeWalker,
 	type Window,
 } from "./dom.js";
@@ -5877,8 +5876,9 @@ function createTreeWalker(
 	// them.
 	return new TreeWalker(
 		root as never,
-		NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT | SHOW_FLAT,
+		NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
 		filter as never,
+		true,
 	);
 }
 

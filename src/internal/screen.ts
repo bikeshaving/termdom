@@ -910,7 +910,7 @@ function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 		// already covered by the glyph. Skip it, or the line grows a phantom
 		// space per wide character and shifts what follows.
 		if (encoding === 0) {
-			col += grid.widthAt(index) - 1;
+			col += Math.max(1, grid.widthAt(index)) - 1;
 		}
 	}
 
@@ -925,7 +925,7 @@ function getLineLength(grid: CellGrid, row: number): number {
 	for (let col = grid.cols - 1; col >= 0; col--) {
 		const index = getRowStart + col;
 		if (grid.cluster[index] !== 0) {
-			return col + grid.widthAt(index);
+			return col + Math.max(1, grid.widthAt(index));
 		}
 	}
 	return 0;
@@ -1051,6 +1051,12 @@ export class CellContext {
 
 			const width = getStringWidth(char);
 
+			// A soft hyphen or a lone format character has no width and takes
+			// no cell. A cell holding one would send every walk over the row
+			// backwards.
+			if (width === 0) {
+				continue;
+			}
 			if (currentX + width > this.cols) {
 				break;
 			}

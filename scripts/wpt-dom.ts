@@ -224,7 +224,14 @@ const TESTDRIVER_VENDOR = String.raw`
 `;
 
 /** The names a test file expects to find on its global. */
-function domGlobals(dom: DOMModule): Record<string, unknown> {
+/**
+ * The constructors come off the engine's window, which carries every
+ * platform class; the module exports most of them as types only.
+ */
+function domGlobals(
+	dom: DOMModule,
+	window: DOM.Window,
+): Record<string, unknown> {
 	const names = [
 		"AbstractRange",
 		"AnimationEvent",
@@ -360,8 +367,9 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 	];
 	const globals: Record<string, unknown> = {};
 	const source = dom as unknown as Record<string, unknown>;
+	const fromWindow = window as unknown as Record<string, unknown>;
 	for (const name of names) {
-		globals[name] = source[name];
+		globals[name] = fromWindow[name] ?? source[name];
 	}
 	return globals;
 }
@@ -1070,15 +1078,18 @@ function installFramePages(
 		}
 		let document = loaded.get(frame);
 		if (document === undefined) {
-			document = dom.createDocumentWindow(text, new URL(src!, url).href)
-				.document as unknown as Document;
+			const frameWindow = dom.createDocumentWindow(
+				text,
+				new URL(src!, url).href,
+			);
+			document = frameWindow.document as unknown as Document;
 			// The frame's window, which the corpus reads its interfaces off
 			// (`doc.defaultView.NodeList`) the way the outer document reads
 			// them off the harness realm. One realm serves both, so the
 			// constructors it names are the same objects either way.
 			Object.defineProperty(document, "defaultView", {
 				value: Object.assign(Object.create(globalThis) as object, {
-					...domGlobals(dom),
+					...domGlobals(dom, frameWindow),
 					document,
 				}),
 				configurable: true,
@@ -1150,7 +1161,7 @@ function installGlobals(
 		getSelection: win.getSelection.bind(win),
 	};
 	const values: Record<string, unknown> = {
-		...domGlobals(dom),
+		...domGlobals(dom, engineWindow),
 		document,
 		// The registry is the window's, not the module's: a bare
 		// `customElements.define` in a test file has to reach the one the
