@@ -5464,7 +5464,7 @@ class CSSImportRule extends CSSRule {
 			out += this[kLayerName] ? ` layer(${this[kLayerName]})` : " layer";
 		}
 		if (this[kSupportsText] !== null) {
-			out += ` isSupportedDeclaration(${this[kSupportsText]})`;
+			out += ` supports(${this[kSupportsText]})`;
 		}
 		const media = this[kMedia].mediaText;
 		if (media) {
