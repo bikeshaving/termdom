@@ -107,3 +107,24 @@ test("a clipboard reply that never closes is released when the query gives up", 
 	expect(keys.at(-1)).toBe("x");
 	dom.dispose();
 });
+
+test("a string sequence that arrives whole is dropped whole", async () => {
+	const {proc, dom, keys} = await mount();
+	await send(proc, "\x1b]0;title\x07x");
+	await send(proc, "\x1bPq#0;1;1\x1b\\x");
+	await send(proc, "\x1b_apc\x07x");
+	expect(keys).toEqual(["x", "x", "x"]);
+	dom.dispose();
+});
+
+test("a string opener with no terminator in its write is keys, and swallows nothing", async () => {
+	const {proc, dom, keys} = await mount();
+	await send(proc, "\x1b]0;" + "t".repeat(5000));
+	await send(proc, "x");
+	expect(keys[0]).toBe("Escape");
+	expect(keys.at(-1)).toBe("x");
+	for (const key of keys) {
+		expect(key.includes("\x1b")).toBe(false);
+	}
+	dom.dispose();
+});

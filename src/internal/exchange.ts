@@ -305,11 +305,23 @@ function decodeKeyToken(token: string): WireKey {
 
 	// Ctrl+<letter> is one control byte. 0x09 and 0x0d are what Tab and
 	// Enter send, indistinguishable from Ctrl+I and Ctrl+M, so the named
-	// key wins.
+	// key wins. NUL is Ctrl+Space, and 0x1c to 0x1f are Ctrl with the four
+	// punctuation keys after Z.
 	if (code >= 1 && code <= 26 && code !== 9 && code !== 13) {
 		return {
 			kind: "key",
 			key: String.fromCharCode(code + 96),
+			char: "",
+			shiftKey: false,
+			ctrlKey: true,
+			altKey: false,
+			metaKey: false,
+		};
+	}
+	if (code === 0 || (code >= 0x1c && code <= 0x1f)) {
+		return {
+			kind: "key",
+			key: code === 0 ? " " : String.fromCharCode(code + 64),
 			char: "",
 			shiftKey: false,
 			ctrlKey: true,
@@ -455,14 +467,24 @@ class WireReader {
 				i += PASTE_START.length;
 				continue;
 			}
-			if (data.startsWith(CLIPBOARD_START, i)) {
-				if (this[kExpectingReply]) {
-					this[kReplyBody] = "";
+			if (data.startsWith(CLIPBOARD_START, i) && this[kExpectingReply]) {
+				this[kReplyBody] = "";
+				continue;
+			}
+			// OSC, DCS, APC, PM and SOS are strings a terminal writes, not
+			// keys it sends. One that arrives whole is discarded through its
+			// terminator. One with no terminator in the same write is keys:
+			// Escape and then a bracket is what a person typing sends too.
+			if (
+				data[i] === "\x1b" &&
+				i + 1 < data.length &&
+				STRING_OPENERS.has(data[i + 1])
+			) {
+				const end = findStringTerminator(data, i + 2);
+				if (end !== -1) {
+					i = end;
 					continue;
 				}
-				const unasked = data.slice(i).match(CLIPBOARD_REPLY);
-				i += unasked ? unasked[0].length : CLIPBOARD_START.length;
-				continue;
 			}
 			if (data[i] === "\x1b" && i + 1 < data.length) {
 				if (data[i + 1] === "[") {
@@ -485,13 +507,21 @@ class WireReader {
 					continue;
 				}
 				if (data[i + 1] === "O" && i + 2 < data.length) {
-					items.push(decodeKeyToken(data.slice(i, i + 3)));
+					const item = decodeKeyToken(data.slice(i, i + 3));
+					if (!item.key.includes("\x1b")) {
+						items.push(item);
+					}
 					i += 3;
 					continue;
 				}
 			}
-			// A surrogate pair is one keystroke.
+			// A C1 control is not a keystroke a terminal sends.
 			const code = data.charCodeAt(i);
+			if (code >= 0x80 && code <= 0x9f) {
+				i++;
+				continue;
+			}
+			// A surrogate pair is one keystroke.
 			const width = code >= 0xd800 && code <= 0xdbff && i + 1 < data.length
 				? 2
 				: 1;
@@ -532,6 +562,21 @@ function decode64(text: string): Uint8Array | null {
 // The length of an incomplete CSI, SS3 or clipboard-reply opening at
 // the end of the chunk, or 0. A bare trailing ESC is 0, since it may be
 // the Escape key.
+const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
+
+/** The index just past BEL or ST, or -1 when neither closes the string. */
+function findStringTerminator(data: string, from: number): number {
+	for (let i = from; i < data.length; i++) {
+		if (data[i] === "\x07") {
+			return i + 1;
+		}
+		if (data[i] === "\x1b" && data[i + 1] === "\\") {
+			return i + 2;
+		}
+	}
+	return -1;
+}
+
 function splitTrailingEscape(chunk: string): number {
 	const esc = chunk.lastIndexOf("\x1b");
 	if (esc === -1 || esc === chunk.length - 1) {
