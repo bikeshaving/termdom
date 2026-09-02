@@ -359,7 +359,7 @@ test("borders respect the camera: culled above the band, visible when scrolled t
 	dom.dispose();
 });
 
-test("a long unbroken word wraps at the field edge -- overflow-wrap: break-word is the UA default", async () => {
+test("a long unbroken word wraps at the textControl edge -- overflow-wrap: break-word is the UA default", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -427,7 +427,7 @@ test("a drag inside the textarea selects within its value", async () => {
 
 	// Content starts at col 3 (border + 1ch padding), row 2 (1-based).
 	// Press on 'l' (offset 1), drag down a visual line: the focus lands
-	// mid second line, all within the field's own selection.
+	// mid second line, all within the textControl's own selection.
 	await type(terminal, "\x1b[<0;4;2M\x1b[<32;6;3M\x1b[<0;6;3m");
 	await nextFrame(dom);
 	expect(document.activeElement).toBe(textarea);

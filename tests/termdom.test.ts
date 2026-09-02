@@ -255,7 +255,7 @@ test("fullscreen owns the alternate screen from row zero, whatever the anchor", 
 });
 
 test("entering fullscreen hides the cursor on the screen it takes", async () => {
-	// A focused field shows the real cursor on its caret. Entry is switch,
+	// A focused textControl shows the real cursor on its caret. Entry is switch,
 	// hide, clear: a cursor the entry left visible would sit blinking on the
 	// screen it just took.
 	const terminal = new MockProcess({rows: 8, cols: 40});

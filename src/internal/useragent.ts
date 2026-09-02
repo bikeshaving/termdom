@@ -152,7 +152,7 @@ export const TEXTAREA_UA_STYLES = `
 // The value and placeholder clip their text. The render loop sets
 // scrollLeft to follow the caret. The outline paints as a bottom
 // underline.
-export const FIELD_UA_STYLES = `
+export const TEXT_CONTROL_UA_STYLES = `
 	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	[part="placeholder"] { color: #808080; }
 	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }

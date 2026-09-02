@@ -23,7 +23,7 @@ import {
 	getPseudoHost,
 	getPseudoName,
 	getShadowRoot,
-	isUARoot,
+	isUAShadowTree,
 	LEGACY_PSEUDO_ELEMENTS,
 	matchesCompiled,
 	NO_NAMESPACES,
@@ -593,7 +593,7 @@ const SYSTEM_COLORS: Record<string, number> = {
 	buttontext: 0, // a control's label: the default foreground
 	canvas: 0, // the document background: the default background
 	canvastext: 0, // document text: the default foreground
-	field: 0, // an input's background: the default background
+	textControl: 0, // an input's background: the default background
 	fieldtext: 0, // an input's text: the default foreground
 	graytext: 0x808080, // disabled text: bright black, the dim gray
 	highlight: 0x0000ff, // the selection, when inverse cannot express it: blue
@@ -1809,7 +1809,7 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
 // element's viewport block, a select sized to its widest option label so
-// the field never jumps, the size attribute driving an input's width.
+// the textControl never jumps, the size attribute driving an input's width.
 // Everything expressible as CSS lives in UA_ELEMENT_STYLES.
 function getElementDefaults(
 	element: Element,
@@ -8433,8 +8433,8 @@ function isBeingRendered(element: Element): boolean {
 		node = host;
 	}
 	// A light-DOM child an open shadow root never slots is outside the flat
-	// tree. A closed root is this engine's own widget internals, whose parts
-	// the widget itself reads styles for.
+	// tree. A closed root is this engine's own UA shadow tree internals, whose parts
+	// the UA shadow tree itself reads styles for.
 	for (
 		let child: Element | null = element;
 		child;
@@ -9485,8 +9485,8 @@ export class Cascade {
 			return;
 		}
 		this[kShadowRoots].add(root);
-		// Incrementally. Rebuilding every sheet per widget upgrade made a
-		// document of n widgets reparse everything n times.
+		// Incrementally. Rebuilding every sheet per UA shadow tree upgrade made a
+		// document of n UA shadow trees reparse everything n times.
 		this[kSyncShadowRoot](root);
 	}
 
@@ -9870,7 +9870,7 @@ export class Cascade {
 			parseStyleSheet(this, sheet, root);
 		}
 		// Without this sync the drift check orders the full rebuild this path
-		// exists to avoid, once per widget.
+		// exists to avoid, once per UA shadow tree.
 		this[kParsedStyleSheetCount] = getStyleSheetCount(this);
 		const fresh = this[kParsedRules].slice(before);
 		if (fresh.length === 0) {
@@ -9892,7 +9892,7 @@ export class Cascade {
 				invalidateSubtree(this, child);
 			}
 		}
-		// The widgets' sheets have no pseudo-generating rules, so the attach
+		// The UA shadow trees' sheets have no pseudo-generating rules, so the attach
 		// sweep runs only for an author shadow root that does.
 		if (
 			fresh.some(
@@ -11759,7 +11759,7 @@ function parseSelector(
 	}
 	const specificity = reading.specificity;
 	const uaOrigin = Boolean(
-		uaOriginSheet || (scope != null && isUARoot(scope)),
+		uaOriginSheet || (scope != null && isUAShadowTree(scope)),
 	);
 
 	const subjectTag = reading.subjectTag;
@@ -11985,7 +11985,7 @@ function getScopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 // from inside.
 function getPartPseudo(element: Element): string | null {
 	const root = element.getRootNode();
-	if (isUARoot(root)) {
+	if (isUAShadowTree(root)) {
 		const part = element.getAttribute("part");
 		if (part === "placeholder" || part === "selection") {
 			return `::${part}`;
@@ -12002,7 +12002,7 @@ function isRuleMatch(
 	elementRoot?: Node,
 ): boolean {
 	// The cheapest rejections come first. One identity check rejects a
-	// widget's whole sheet for every element outside it.
+	// UA shadow tree's whole sheet for every element outside it.
 	const root = elementRoot ?? element.getRootNode();
 	if (rule.scope !== undefined && rule.scope !== root) {
 		// A :host rule's subject is outside the tree it was written in.
@@ -12152,7 +12152,7 @@ function getPseudoSubjects(
 	const tags = new Set(["OL", "UL", "LI"]);
 	// Only the pseudo-elements this function attaches. ::marker reaches
 	// list items, handled above, and ::placeholder, ::selection and ::part
-	// live on nodes the widget trees already hold.
+	// live on nodes the UA shadow tree trees already hold.
 	for (const type of ["::before", "::after"]) {
 		for (const rule of cascade[kPseudoRulesByType].get(type) ?? []) {
 			if (!rule.subjectTag) {

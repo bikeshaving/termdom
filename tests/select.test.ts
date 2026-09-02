@@ -1,5 +1,5 @@
 /**
- * <select> as a UA shadow tree: a flat field in the input family showing
+ * <select> as a UA shadow tree: a flat textControl in the input family showing
  * the selected option's label plus a dim ▾ indicator -- both real parts
  * in a UA-internal root, painted by the normal pipeline. Arrow keys move
  * the selection in place (no popup machinery to degrade), firing input
@@ -43,7 +43,7 @@ test("select renders the selected label and indicator, never the option list", a
 	dom.dispose();
 });
 
-test("the field is sized to the longest option label", async () => {
+test("the textControl is sized to the longest option label", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -90,7 +90,7 @@ test("arrows change the selection in place, skipping disabled options", async ()
 	dom.dispose();
 });
 
-test("a focused select underlines its field, like the rest of the family", async () => {
+test("a focused select underlines its textControl, like the rest of the family", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -253,7 +253,7 @@ test("picker: clicking an option row commits it, fires change, and closes", asyn
 
 	await click(terminal, 2, 1);
 	await nextFrame(dom);
-	// Rows: 1 field, 2 border, 3 Alpha, 4 Beta, 5 Gamma ray, 6 border.
+	// Rows: 1 textControl, 2 border, 3 Alpha, 4 Beta, 5 Gamma ray, 6 border.
 	await click(terminal, 3, 5);
 	await nextFrame(dom);
 
@@ -302,7 +302,7 @@ test("picker: the highlighted row is inverse video, the rest carry no underline"
 
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
-	// Rows: 0 field, 1 border, 2 Alpha (highlighted), 3 Beta, 4 Gamma ray.
+	// Rows: 0 textControl, 1 border, 2 Alpha (highlighted), 3 Beta, 4 Gamma ray.
 	// The highlighted row paints SGR inverse -- the Highlight/HighlightText
 	// UA pair -- across the row, not just under the label.
 	expect(cellAt(2, 1).isInverse()).toBeTruthy();
@@ -343,7 +343,7 @@ test("picker: a group is a heading with its options indented beneath it", async 
 	await nextFrame(dom);
 
 	const rows = terminal.getPlainText().split("\n");
-	// Row 0 is the field, row 1 the picker's top border.
+	// Row 0 is the textControl, row 1 the picker's top border.
 	expect(rows[2]).toContain("None");
 	expect(rows[3]).toContain("Fruit");
 	expect(rows[4]).toContain("  Apple");

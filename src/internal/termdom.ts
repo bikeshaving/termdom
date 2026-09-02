@@ -77,7 +77,7 @@ export class TermDOM {
 	declare [kLifecycle]: Lifecycle;
 	declare [kMouseReportingEnabled]: boolean;
 	declare [kHoverReportingEnabled]: boolean;
-	// The field whose caret the next frame reveals. The last edit before
+	// The textControl whose caret the next frame reveals. The last edit before
 	// the frame wins.
 	declare [kPendingCaretReveal]: HTMLInputElement |
 		HTMLTextAreaElement |
@@ -118,9 +118,9 @@ export class TermDOM {
 			}
 			details.scrollIntoView({block: "nearest"});
 		};
-		// Only the active field. A select commit or an author's dispatch on an
+		// Only the active textControl. A select commit or an author's dispatch on an
 		// unfocused control must not move the document scroll.
-		const onFieldEditEvent = (event: Event): void => {
+		const onTextControlEditEvent = (event: Event): void => {
 			const target = event.target;
 			if (
 				target !== this.document.activeElement ||
@@ -190,12 +190,12 @@ export class TermDOM {
 		);
 
 		// Capture, so the event is seen however it bubbles.
-		this.document.addEventListener("input", onFieldEditEvent, true);
-		this.document.addEventListener("select", onFieldEditEvent, true);
-		this.document.addEventListener("change", onFieldEditEvent, true);
+		this.document.addEventListener("input", onTextControlEditEvent, true);
+		this.document.addEventListener("select", onTextControlEditEvent, true);
+		this.document.addEventListener("change", onTextControlEditEvent, true);
 		this.document.addEventListener(
 			"selectionchange",
-			onFieldEditEvent,
+			onTextControlEditEvent,
 			true,
 		);
 		// A terminal page is one screen tall, and what a details opened is
@@ -656,7 +656,7 @@ function getCaretRect(
 	if (focus === null) {
 		return null;
 	}
-	const node = DOM.getFieldValueText(element);
+	const node = DOM.getTextControlValueText(element);
 	if (node === null) {
 		return null;
 	}
@@ -672,7 +672,7 @@ function getCaretRect(
 
 /**
  * Keeps the caret inside the document scroll on edits only. Wheel-scrolling away
- * from a focused field stays allowed.
+ * from a focused textControl stays allowed.
  */
 function scrollCaretIntoView(
 	termdom: TermDOM,
@@ -688,7 +688,7 @@ function scrollCaretIntoView(
 	if (caret !== null) {
 		caretY = caret.y;
 	}
-	// Widened to the field's edge when the caret is on its first or last
+	// Widened to the textControl's edge when the caret is on its first or last
 	// row, so the border shows instead of a cropped box.
 	const boxModel = getBoxModel(element);
 	let revealTop = caretY;
@@ -920,7 +920,7 @@ async function renderInteractive(
 	termdom[kLayout].performLayout();
 	DOM.clampScrollOffsets(termdom.document);
 
-	// Skipped if focus has moved on. Revealing a field the user left would
+	// Skipped if focus has moved on. Revealing a textControl the user left would
 	// yank the document scroll back.
 	if (termdom[kPendingCaretReveal]) {
 		const reveal = termdom[kPendingCaretReveal];
@@ -949,7 +949,7 @@ async function renderInteractive(
 		return;
 	}
 
-	DOM.revealFieldCaret(termdom.document);
+	DOM.revealTextControlCaret(termdom.document);
 
 	// Fullscreen owns the alternate screen from row zero. The document's
 	// scroll position survives underneath.
@@ -989,7 +989,7 @@ async function renderInteractive(
 
 	// The cursor stays hidden while a frame paints and between frames. It
 	// is parked for resize bookkeeping, and a cursor blinking there is not
-	// UI. A focused field shows it on its caret, where IME composition
+	// UI. A focused textControl shows it on its caret, where IME composition
 	// anchors.
 	if (ansi) {
 		termdom[kExchange].setDisplayType("cursorHidden", true);

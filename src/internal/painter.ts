@@ -8,10 +8,10 @@ import {
 } from "./cssom.js";
 import {
 	flatParentElement,
-	getFieldSelectionRange,
-	getFieldValueText,
 	getSelectionRecord,
 	getShadowRoot,
+	getTextControlSelectionRange,
+	getTextControlValueText,
 	getTopLayer,
 	renderedTopLayer,
 	type Window,
@@ -418,7 +418,7 @@ function renderElement(
 		if (record !== null) {
 			const focus =
 				record.direction === "backward" ? record.start : record.end;
-			const node = getFieldValueText(element) ?? getGlyphText(element);
+			const node = getTextControlValueText(element) ?? getGlyphText(element);
 			let caret: {x: number; y: number} | null = null;
 			if (node) {
 				const range = element.ownerDocument.createRange();
@@ -804,10 +804,13 @@ function getPaintSelectionRange(
 	painter: Painter,
 	textNode: Text,
 ): {range: Range; selectionParent: Element} | null {
-	const field = getFieldSelectionRange(painter[kDocument], textNode);
-	if (field) {
-		// ::selection resolves on the field, not the shadow value span.
-		return {range: field.range, selectionParent: field.field};
+	const textControl = getTextControlSelectionRange(
+		painter[kDocument],
+		textNode,
+	);
+	if (textControl) {
+		// ::selection resolves on the textControl, not the shadow value span.
+		return {range: textControl.range, selectionParent: textControl.textControl};
 	}
 
 	const selection = painter[kWindow].getSelection();

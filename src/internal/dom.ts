@@ -45,10 +45,10 @@ import {
 } from "./text.js";
 import {
 	DETAILS_UA_STYLES,
-	FIELD_UA_STYLES,
 	METER_UA_STYLES,
 	PROGRESS_UA_STYLES,
 	SELECT_UA_STYLES,
+	TEXT_CONTROL_UA_STYLES,
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 
@@ -59,18 +59,18 @@ const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
 const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
 const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 
-const kUpgradeWidget = Symbol("build a control's UA widget");
+const kEnsureUAShadowTree = Symbol("build a control's UA shadow tree");
 
 // Safe to call more than once, and synchronous: the shadow tree exists
 // when this returns. A control that was removed and re-inserted keeps its
 // tree and only updates the state it missed.
-function upgradeWidget(element: globalThis.Element): void {
+function ensureUAShadowTree(element: globalThis.Element): void {
 	(element as unknown as Record<symbol, (() => void) | undefined>)[
-		kUpgradeWidget
+		kEnsureUAShadowTree
 	]?.();
 }
 
-// Built-in tags that get a UA widget when they connect.
+// Built-in tags that get a UA UA shadow tree when they connect.
 const UPGRADEABLE_CONTROLS = new Set([
 	"DETAILS",
 	"INPUT",
@@ -85,12 +85,12 @@ const kFirstChild = Symbol("first child");
 // Walks the child links directly instead of running a selector query.
 // This runs on every insertion, so ordinary markup should cost no more
 // than one tag comparison per element.
-function upgradeWidgets(root: globalThis.Node): void {
+function ensureUAShadowTrees(root: globalThis.Node): void {
 	const stack: Element[] = [root as Element];
 	while (stack.length > 0) {
 		const element = stack.pop()!;
 		if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
-			upgradeWidget(element);
+			ensureUAShadowTree(element);
 		}
 		for (let node = element[kFirstChild]!; node !== null; node = node[kNext]!) {
 			if (node.nodeType === ELEMENT_NODE) {
@@ -140,19 +140,19 @@ export function setUASelection(
 	)[kSetUASelection]!(start, end, direction);
 }
 
-const kSyncWidget = Symbol("bring a control's UA tree back into step");
+const kSyncUAShadowTree = Symbol("bring a control's UA tree back into step");
 
-/** Notify a control that its state changed so its UA root can update. */
-function widgetChanged(element: Element): void {
+/** Notify a control that its state changed so its UA shadow tree can update. */
+function syncUAShadowTree(element: Element): void {
 	(element as unknown as Record<symbol, (() => void) | undefined>)[
-		kSyncWidget
+		kSyncUAShadowTree
 	]?.();
 }
 
-// The single definition of which elements are fields. Painting, caret
+// The single definition of which elements are text controls. Painting, caret
 // scrolling and the mousedown default action all use it, so they agree.
 // checkbox and radio render a toggle, and hidden renders nothing.
-function isTextField(element: {
+function isTextControl(element: {
 	tagName: string;
 	type?: string;
 }): boolean {
@@ -176,10 +176,12 @@ const kUAValueText = Symbol(
  * `[part="value"]` in the closed tree. The renderer reads it to place the
  * caret, and the editing code reads it to hit-test a point.
  */
-export function getFieldValueText(field: globalThis.Element): globalThis.Text |
+export function getTextControlValueText(
+	textControl: globalThis.Element,
+): globalThis.Text |
 	null {
 	return (
-		(field as unknown as Record<
+		(textControl as unknown as Record<
 			symbol,
 			globalThis.Text | null | undefined
 		>)[kUAValueText] ??
@@ -206,20 +208,20 @@ export function getSelectionFocus(element: globalThis.Element): number | null {
 }
 
 /**
- * The value offset under a document-space point in a text field. Accounts
+ * The value offset under a document-space point in a text textControl. Accounts
  * for cell widths and clamps to the nearest offset, so a drag that leaves
- * the field still resolves. That matches browsers: a selection started in
- * a field belongs to the field until release.
+ * the textControl still resolves. That matches browsers: a selection started in
+ * a textControl belongs to the textControl until release.
  */
-export function getFieldCaretOffset(
+export function getTextControlCaretOffset(
 	element: globalThis.Element,
 	x: number,
 	y: number,
 ): number | null {
-	// Measure against the value's own text. For a password field that text
+	// Measure against the value's own text. For a password textControl that text
 	// is the bullets, which is what was painted, so that is what the point
 	// lands on.
-	const valueText = getFieldValueText(element);
+	const valueText = getTextControlValueText(element);
 	if (!valueText) {
 		return null;
 	}
@@ -240,48 +242,48 @@ export function getFieldCaretOffset(
 }
 
 /**
- * The mousedown default action in a text field: put the caret at the
- * pressed character. Returns the field and the offset so the caller can
- * use them as a drag anchor, or null if the press was not on a field.
+ * The mousedown default action in a text textControl: put the caret at the
+ * pressed character. Returns the textControl and the offset so the caller can
+ * use them as a drag anchor, or null if the press was not on a textControl.
  * checkbox, radio and hidden render no text, so a press on them returns
  * null.
  */
-export function placeFieldCaret(
+export function placeTextControlCaret(
 	target: globalThis.Element,
 	x: number,
 	y: number,
-): {field: globalThis.Element; offset: number} | null {
-	if (!isTextField(target)) {
+): {textControl: globalThis.Element; offset: number} | null {
+	if (!isTextControl(target)) {
 		return null;
 	}
-	const offset = getFieldCaretOffset(target, x, y);
+	const offset = getTextControlCaretOffset(target, x, y);
 	if (offset === null) {
 		return null;
 	}
 	setUASelection(target, offset, offset);
-	return {field: target, offset};
+	return {textControl: target, offset};
 }
 
 /**
- * The focused text field's selection over this text node, or null. Per
+ * The focused text textControl's selection over this text node, or null. Per
  * spec a control's selection is invisible to getSelection(), so this is
  * the only way the highlight can find it. The range refers to the text
  * node the control renders its value through, so a node identity check is
  * enough.
  */
-export function getFieldSelectionRange(
+export function getTextControlSelectionRange(
 	document: globalThis.Document,
 	textNode: globalThis.Text,
-): {range: globalThis.Range; field: globalThis.Element} | null {
+): {range: globalThis.Range; textControl: globalThis.Element} | null {
 	const active = document.activeElement;
-	if (!active || !isTextField(active)) {
+	if (!active || !isTextControl(active)) {
 		return null;
 	}
 	const range = getUASelectionRange(active);
 	if (!range || range.startContainer !== textNode) {
 		return null;
 	}
-	return {range, field: active};
+	return {range, textControl: active};
 }
 
 /**
@@ -290,12 +292,12 @@ export function getFieldSelectionRange(
  * causes no relayout. Measured in cells. Recomputed every frame as derived
  * state.
  */
-export function revealFieldCaret(document: globalThis.Document): void {
+export function revealTextControlCaret(document: globalThis.Document): void {
 	const active = document.activeElement;
-	if (!active || active.localName !== "input" || !isTextField(active)) {
+	if (!active || active.localName !== "input" || !isTextControl(active)) {
 		return;
 	}
-	const valueText = getFieldValueText(active);
+	const valueText = getTextControlValueText(active);
 	const valueSpan = valueText?.parentElement;
 	if (!valueText || !valueSpan) {
 		return;
@@ -404,8 +406,8 @@ function getUADocument(node: globalThis.Node): globalThis.Document {
 	return (node as Node).ownerDocument as unknown as globalThis.Document;
 }
 
-/** A field's value and selection after an editing key. */
-interface FieldEditResult {
+/** A textControl's value and selection after an editing key. */
+interface TextControlEditResult {
 	value: string;
 	start: number;
 	end: number;
@@ -415,12 +417,12 @@ interface FieldEditResult {
 // With Shift the selection extends from the fixed anchor, like the
 // browser's anchor/focus model. Without Shift the selection collapses at
 // the target. A move never edits text.
-function fieldSelectionMove(
+function moveTextControlSelection(
 	value: string,
 	anchor: number,
 	target: number,
 	shiftKey: boolean,
-): FieldEditResult {
+): TextControlEditResult {
 	const clamped = Math.max(0, Math.min(target, value.length));
 	if (shiftKey) {
 		return {
@@ -439,14 +441,14 @@ const kUAValue = Symbol("a text control's value, beneath the IDL attribute");
 // grapheme-aware. Returns null for any other key. Enter, vertical motion
 // and Home/End are left to the control, which knows where its lines end,
 // and printable insertion is a keypress action.
-function applySharedFieldEdit(
-	field: HTMLInputElement | HTMLTextAreaElement,
+function applySharedTextControlEdit(
+	textControl: HTMLInputElement | HTMLTextAreaElement,
 	key: string,
 	shiftKey: boolean,
 	ctrlKey: boolean,
-): FieldEditResult | null {
-	const value = field[kUAValue]!;
-	const {start, end, direction} = getSelectionRecord(field)!;
+): TextControlEditResult | null {
+	const value = textControl[kUAValue]!;
+	const {start, end, direction} = getSelectionRecord(textControl)!;
 	const backward = direction === "backward";
 	const caret = backward ? start : end;
 	const anchor = backward ? end : start;
@@ -456,7 +458,7 @@ function applySharedFieldEdit(
 	// never a browser shortcut. Ctrl+A, Ctrl+E, Ctrl+K and Ctrl+U depend on
 	// line bounds, so the control handles those. These are the rest.
 	if (ctrlKey && key === "b") {
-		return fieldSelectionMove(
+		return moveTextControlSelection(
 			value,
 			anchor,
 			hasSelection ? start : getPreviousGraphemeBoundary(value, caret),
@@ -464,7 +466,7 @@ function applySharedFieldEdit(
 		);
 	}
 	if (ctrlKey && key === "f") {
-		return fieldSelectionMove(
+		return moveTextControlSelection(
 			value,
 			anchor,
 			hasSelection ? end : getNextGraphemeBoundary(value, caret),
@@ -531,7 +533,7 @@ function applySharedFieldEdit(
 	}
 	if (key === "ArrowLeft") {
 		if (shiftKey) {
-			return fieldSelectionMove(
+			return moveTextControlSelection(
 				value,
 				anchor,
 				getPreviousGraphemeBoundary(value, caret),
@@ -543,11 +545,11 @@ function applySharedFieldEdit(
 		const target = hasSelection
 			? start
 			: getPreviousGraphemeBoundary(value, caret);
-		return fieldSelectionMove(value, anchor, target, false);
+		return moveTextControlSelection(value, anchor, target, false);
 	}
 	if (key === "ArrowRight") {
 		if (shiftKey) {
-			return fieldSelectionMove(
+			return moveTextControlSelection(
 				value,
 				anchor,
 				getNextGraphemeBoundary(value, caret),
@@ -555,19 +557,19 @@ function applySharedFieldEdit(
 			);
 		}
 		const target = hasSelection ? end : getNextGraphemeBoundary(value, caret);
-		return fieldSelectionMove(value, anchor, target, false);
+		return moveTextControlSelection(value, anchor, target, false);
 	}
 	return null;
 }
 
 // Called from beforeinput, as in a browser: insertion is the keypress
-// default action, and the field's input event follows.
-function printableFieldEdit(
-	field: HTMLInputElement | HTMLTextAreaElement,
+// default action, and the textControl's input event follows.
+function printableTextControlEdit(
+	textControl: HTMLInputElement | HTMLTextAreaElement,
 	text: string,
-): FieldEditResult {
-	const value = field[kUAValue]!;
-	const {start, end} = getSelectionRecord(field)!;
+): TextControlEditResult {
+	const value = textControl[kUAValue]!;
+	const {start, end} = getSelectionRecord(textControl)!;
 	return createCollapsedEdit(
 		value.slice(0, start) + text + value.slice(end),
 		start + text.length,
@@ -600,7 +602,10 @@ function getWordEnd(value: string, caret: number): number {
 }
 
 /** An edit result with the caret collapsed at `pos`. */
-function createCollapsedEdit(value: string, pos: number): FieldEditResult {
+function createCollapsedEdit(
+	value: string,
+	pos: number,
+): TextControlEditResult {
 	const clamped = Math.max(0, Math.min(pos, value.length));
 	return {value, start: clamped, end: clamped, direction: "none"};
 }
@@ -612,27 +617,33 @@ const kSetUAValue = Symbol("write a text control's value, as a user edit does");
 // through the value IDL setter. In a browser a user edit changes the value
 // without running the setter, and frameworks rely on that to tell user
 // input from the page's own writes.
-function applyFieldEdit(
-	field: HTMLInputElement | HTMLTextAreaElement,
-	result: FieldEditResult,
+function applyTextControlEdit(
+	textControl: HTMLInputElement | HTMLTextAreaElement,
+	result: TextControlEditResult,
 ): void {
-	const value = field[kUAValue]!;
-	const {start, end, direction} = getSelectionRecord(field)!;
+	const value = textControl[kUAValue]!;
+	const {start, end, direction} = getSelectionRecord(textControl)!;
 	if (result.value !== value) {
-		field[kSetUAValue]!(result.value);
-		field[kSetUASelection]!(result.start, result.end, result.direction);
-		dispatch(field, new Event("input", {bubbles: true, cancelable: false}));
+		textControl[kSetUAValue]!(result.value);
+		textControl[kSetUASelection]!(result.start, result.end, result.direction);
+		dispatch(
+			textControl,
+			new Event("input", {bubbles: true, cancelable: false}),
+		);
 	} else if (
 		result.start !== start ||
 		result.end !== end ||
 		(result.start !== result.end && result.direction !== direction)
 	) {
-		field[kSetUASelection]!(result.start, result.end, result.direction);
-		dispatch(field, new Event("select", {bubbles: true, cancelable: false}));
+		textControl[kSetUASelection]!(result.start, result.end, result.direction);
+		dispatch(
+			textControl,
+			new Event("select", {bubbles: true, cancelable: false}),
+		);
 	}
 }
 
-/** Add a span with a `part` attribute and one empty text node to a UA root. */
+/** Add a span with a `part` attribute and one empty text node to a UA shadow tree. */
 function addPart(
 	root: globalThis.ShadowRoot,
 	part: string,
@@ -664,18 +675,18 @@ const kDocument = Symbol("node document");
 
 // The root is registered with the cascade BEFORE it is populated, so
 // populating it is the invalidation that swaps in the new composed tree.
-function buildUARoot(
+function buildUAShadowTree(
 	host: Element,
 	attached: AttachedDocument,
 	styles: string,
 ): globalThis.ShadowRoot {
-	const root = attachUARoot<globalThis.ShadowRoot>(host);
+	const root = attachUAShadowTree<globalThis.ShadowRoot>(host);
 	attached[kLayout].invalidate();
 	observeShadowRoot(host[kDocument]!, root);
 	// The sheet has to be in the root BEFORE the cascade is told about the
 	// root, so the registration's incremental parse picks it up. Registering
 	// first and populating after left the cascade to notice the sheet by count
-	// drift, which forced a full rebuild of every sheet per widget.
+	// drift, which forced a full rebuild of every sheet per UA shadow tree.
 	root.appendChild(createUAStyleElement(host, styles));
 	attached[kCascade].registerShadowRoot(root);
 	return root;
@@ -3482,7 +3493,7 @@ function invokeEventHandler(
 	if (callback === null) {
 		return;
 	}
-	// A window's error handler receives the ErrorEvent's fields as separate
+	// A window's error handler receives the ErrorEvent's text controls as separate
 	// arguments and returns true to cancel, the inverse of every other
 	// handler. A document's or element's error handler is an ordinary one.
 	const errorHandling =
@@ -3971,7 +3982,7 @@ function runActivationBehavior(target: EventTarget, event: Event): void {
 	}
 }
 
-/** Input types that are buttons rather than fields. */
+/** Input types that are buttons rather than text controls. */
 const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
 
 /**
@@ -4211,14 +4222,14 @@ function reportError(error: unknown): void {
 }
 
 const kSync = Symbol("resynchronize own properties");
-const kStructureSync = Symbol(
+const kChildrenChangedSteps = Symbol(
 	"resynchronize after a change to a tree's structure",
 );
 const kAttributeSync = Symbol("resynchronize after an attribute change");
 
 interface LiveCollection {
 	[kSync]?(): void;
-	[kStructureSync]?(
+	[kChildrenChangedSteps]?(
 		point: Node,
 		changed: readonly Node[] | null,
 		added: boolean,
@@ -4287,7 +4298,7 @@ const kTreeRoot = Symbol("tree root");
 // of walking the tree again. A document-wide collection is reached through
 // the document of the change's point, because a tree under construction
 // outside the document can still contain its members.
-function structureChanged(
+function runChildrenChangedSteps(
 	point: Node,
 	changed: readonly Node[] | null,
 	added: boolean,
@@ -4299,14 +4310,14 @@ function structureChanged(
 				continue;
 			}
 			for (const collection of held) {
-				structureSyncMethod.call(collection, point, changed, added);
+				childrenChangedMethod.call(collection, point, changed, added);
 			}
 		}
 	}
 	const wide = point[kDocument]![kDocumentWideLists]!;
 	if (wide !== null) {
 		for (const collection of wide) {
-			structureSyncMethod.call(collection, point, changed, added);
+			childrenChangedMethod.call(collection, point, changed, added);
 		}
 	}
 }
@@ -5214,8 +5225,8 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 			}
 		}
 	}
-	structureChanged(oldParent, [node], false);
-	structureChanged(newParent, [node], true);
+	runChildrenChangedSteps(oldParent, [node], false);
+	runChildrenChangedSteps(newParent, [node], true);
 	queueTreeMutationRecord(
 		oldParent,
 		[],
@@ -5342,7 +5353,7 @@ function insertNode(
 			}
 		}
 	}
-	structureChanged(parent, nodes, true);
+	runChildrenChangedSteps(parent, nodes, true);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
@@ -5604,7 +5615,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			);
 		}
 	}
-	structureChanged(parent, [node], false);
+	runChildrenChangedSteps(parent, [node], false);
 	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
@@ -6243,7 +6254,7 @@ abstract class LiveList implements LiveCollection {
 	// The members the changed nodes carry, if the collection can determine
 	// that from those nodes alone and knows its named properties did not
 	// move. Null if the list has to be recomputed to find out.
-	structureMembers(changed: readonly Node[]): Node[] | null {
+	getChangedMembers(changed: readonly Node[]): Node[] | null {
 		const member = this[kChildMember]!;
 		if (member === null) {
 			return null;
@@ -6281,7 +6292,7 @@ abstract class LiveList implements LiveCollection {
 	// except for a document-wide list, which is dropped and recomputed on the
 	// next read, because a document sees far more changes than reads of such
 	// a list.
-	[kStructureSync]?(
+	[kChildrenChangedSteps]?(
 		point: Node,
 		changed: readonly Node[] | null,
 		added: boolean,
@@ -6298,7 +6309,7 @@ abstract class LiveList implements LiveCollection {
 				return;
 			}
 			if (changed !== null) {
-				const members = this.structureMembers(changed);
+				const members = this.getChangedMembers(changed);
 				if (members !== null && splice(this, point, changed, members, added)) {
 					return;
 				}
@@ -6485,12 +6496,12 @@ function ensureList(list: LiveList): Node[] {
 const syncMethod = (
 	LiveList.prototype as unknown as Record<symbol, () => void>
 )[kSync]!;
-const structureSyncMethod = (
+const childrenChangedMethod = (
 	LiveList.prototype as unknown as Record<
 		symbol,
 		(point: Node, changed: readonly Node[] | null, added: boolean) => void
 	>
-)[kStructureSync]!;
+)[kChildrenChangedSteps]!;
 
 const kCompute = Symbol("compute");
 
@@ -6586,8 +6597,8 @@ class HTMLCollection extends LiveList {
 		return this[kCompute]!();
 	}
 
-	override structureMembers(changed: readonly Node[]): Node[] | null {
-		const members = super.structureMembers(changed);
+	override getChangedMembers(changed: readonly Node[]): Node[] | null {
+		const members = super.getChangedMembers(changed);
 		if (members === null || isNameless(members)) {
 			return members;
 		}
@@ -6784,7 +6795,7 @@ class MatchingCollection extends HTMLCollection {
 
 	// Runs the test over the changed subtree rather than over the tree it
 	// moved in or out of.
-	override structureMembers(changed: readonly Node[]): Node[] | null {
+	override getChangedMembers(changed: readonly Node[]): Node[] | null {
 		const members: Node[] = [];
 		for (const node of changed) {
 			const elements =
@@ -7013,7 +7024,7 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	}
 
 	// An attribute's tokens are not part of the tree's shape.
-	override structureMembers(): Node[] {
+	override getChangedMembers(): Node[] {
 		return [];
 	}
 
@@ -7919,7 +7930,7 @@ class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
 	}
 
 	// An element's attributes are not part of the tree's shape.
-	override structureMembers(): Node[] {
+	override getChangedMembers(): Node[] {
 		return [];
 	}
 
@@ -8746,7 +8757,7 @@ export class Element extends Node implements globalThis.Element {
 			this[kRegistry] = root[kRegistry]!;
 			tryToUpgrade(this);
 		}
-		syncFormOwner(this);
+		resetTheFormOwner(this);
 		syncFormDisabled(this);
 		// A form that joins a tree becomes the owner of everything already in
 		// the tree that names it, and a fieldset applies its disabling to what
@@ -8755,7 +8766,7 @@ export class Element extends Node implements globalThis.Element {
 			this instanceof HTMLFormElement ||
 			this instanceof HTMLFieldSetElement
 		) {
-			syncFormOwners(root);
+			resetFormOwners(root);
 		}
 	}
 
@@ -8764,12 +8775,12 @@ export class Element extends Node implements globalThis.Element {
 		if (root.nodeType === DOCUMENT_NODE) {
 			removeFromIdMap(root as Document, this);
 		}
-		syncFormOwners(this);
+		resetFormOwners(this);
 		if (
 			this instanceof HTMLFormElement ||
 			this instanceof HTMLFieldSetElement
 		) {
-			syncFormOwners(root);
+			resetFormOwners(root);
 		}
 	}
 
@@ -8805,7 +8816,7 @@ export class Element extends Node implements globalThis.Element {
 			updateSlotName(this, oldValue, value);
 		}
 		if (namespace === null && (localName === "form" || localName === "id")) {
-			syncFormOwners(getRoot(this));
+			resetFormOwners(getRoot(this));
 		}
 		if (namespace === null && localName === "disabled") {
 			syncFormDisabled(this);
@@ -8825,7 +8836,7 @@ export class Element extends Node implements globalThis.Element {
 				namespace,
 			]);
 		}
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
 	override [kCloneSingle]?(document: Document): Node {
@@ -10815,7 +10826,7 @@ function upgradeElement(
 	// A form-associated element learns its owner and its disabled state as
 	// it becomes one, which is the first moment it has internals to notify.
 	if (definition.formAssociated) {
-		syncFormOwner(element);
+		resetTheFormOwner(element);
 		syncFormDisabled(element);
 	}
 }
@@ -10883,7 +10894,7 @@ const SHADOW_HOST_NAMES = new Set([
 
 // Named slots sort children by their `slot` attribute, but author content
 // does not carry that attribute and the UA must not write onto author
-// nodes. A UA root that sorts children by what they are (details sends
+// nodes. A UA shadow tree that sorts children by what they are (details sends
 // its first summary to one slot and everything else to the other) uses
 // this function instead. findSlottables calls it on every assignment
 // pass, so it always reads the current child list.
@@ -10902,7 +10913,7 @@ const kDelegatesFocus = Symbol("delegates focus");
 const kClonable = Symbol("clonable");
 const kSerializable = Symbol("serializable");
 const kDeclarative = Symbol("declarative");
-const kUARoot = Symbol("user-agent shadow root");
+const kUAShadowTree = Symbol("user-agent shadow root");
 const kAvailableToInternals = Symbol("available to element internals");
 
 /**
@@ -10912,7 +10923,7 @@ const kAvailableToInternals = Symbol("available to element internals");
  */
 export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoot {
 	[kShadowMode]?: "open" | "closed";
-	[kUARoot]?: boolean;
+	[kUAShadowTree]?: boolean;
 	[kDelegatesFocus]?: boolean;
 	[kSlotAssignment]?: "named" | "manual";
 	[kUASlotting]?: ((slot: object) => Slottable[]) | null;
@@ -10924,7 +10935,7 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 	constructor() {
 		super();
 		this[kShadowMode] = "open";
-		this[kUARoot] = false;
+		this[kUAShadowTree] = false;
 		this[kDelegatesFocus] = false;
 		this[kSlotAssignment] = "named";
 		this[kUASlotting] = null;
@@ -11170,14 +11181,14 @@ function attachShadowRoot(
 // throws the NotSupportedError the spec requires, `cloneNode` copies
 // nothing, and serialization never includes it. Reachable only through
 // getShadowRoot and the control that built it.
-function attachUARoot<T>(target: Element): T {
+function attachUAShadowTree<T>(target: Element): T {
 	const host = target as Element;
 	const shadow = constructInternal(() => new ShadowRoot());
 	shadow[kDocument] = host[kDocument]!;
 	shadow[kHost] = host;
 	shadow[kConnected] = host[kConnected]!;
 	shadow[kShadowMode] = "closed";
-	shadow[kUARoot] = true;
+	shadow[kUAShadowTree] = true;
 	shadow[kRegistry] = globalCustomElements;
 	host[kShadowRoot] = shadow;
 	return shadow as T;
@@ -11187,8 +11198,8 @@ function attachUARoot<T>(target: Element): T {
  * The cascade checks this: a rule from a UA shadow tree's stylesheet is a
  * UA rule, which every author rule outranks whatever its specificity.
  */
-export function isUARoot(node: globalThis.Node): boolean {
-	return node instanceof ShadowRoot && node[kUARoot]!;
+export function isUAShadowTree(node: globalThis.Node): boolean {
+	return node instanceof ShadowRoot && node[kUAShadowTree]!;
 }
 
 /**
@@ -12284,9 +12295,9 @@ class HTMLDetailsElement extends HTMLElement {
 		this[kContent] = null;
 	}
 
-	[kUpgradeWidget]?(): void {
+	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncWidget]!();
+			this[kSyncUAShadowTree]!();
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -12295,7 +12306,7 @@ class HTMLDetailsElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		const document = getUADocument(this);
-		const root = buildUARoot(this, attached, DETAILS_UA_STYLES);
+		const root = buildUAShadowTree(this, attached, DETAILS_UA_STYLES);
 		const shadow = root as unknown as ShadowRoot;
 		const summarySlot = document.createElement("slot");
 		const content = document.createElement("div");
@@ -12310,10 +12321,10 @@ class HTMLDetailsElement extends HTMLElement {
 		root.appendChild(summarySlot);
 		root.appendChild(content);
 		this[kContent] = content;
-		this[kSyncWidget]!();
+		this[kSyncUAShadowTree]!();
 	}
 
-	[kSyncWidget]?(): void {
+	[kSyncUAShadowTree]?(): void {
 		const content = this[kContent]!;
 		if (content === null) {
 			return;
@@ -12732,7 +12743,7 @@ class HTMLFormElement extends HTMLElement {
 		let elements = this[kElements]!;
 		if (elements === null) {
 			elements = new HTMLFormControlsCollection(
-				() => getListedControls(this),
+				() => getListedElements(this),
 				this,
 			);
 			this[kElements] = elements;
@@ -12788,7 +12799,7 @@ class HTMLFormElement extends HTMLElement {
 		if (canceled) {
 			return;
 		}
-		for (const control of getListedControls(this)) {
+		for (const control of getListedElements(this)) {
 			resetControl(control);
 		}
 	}
@@ -12835,7 +12846,7 @@ interface HTMLFormElement {
 	submit(): void;
 }
 
-function getListedControls(form: HTMLFormElement): Element[] {
+function getListedElements(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
 	const root = getRoot(form);
 	for (const node of descendants(root)) {
@@ -13432,11 +13443,11 @@ class HTMLInputElement extends HTMLElement {
 	declare [kPreviouslyIndeterminate]?: boolean;
 	declare [kPreviousRadio]?: HTMLInputElement | null;
 
-	// The rendered tree and what it was built for: "field" for a text-like
+	// The rendered tree and what it was built for: "textControl" for a text-like
 	// input, "toggle" for checkbox/radio, null until built. The two are
 	// different trees, so a type change rebuilds.
 	declare [kUpgraded]?: boolean;
-	declare [kKind]?: "field" | "toggle" | null;
+	declare [kKind]?: "textControl" | "toggle" | null;
 	declare [kRoot]?: globalThis.ShadowRoot | null;
 	declare [kValueText]?: globalThis.Text | null;
 	declare [kPlaceholderText]?: globalThis.Text | null;
@@ -13449,7 +13460,7 @@ class HTMLInputElement extends HTMLElement {
 
 	// A checkbox or radio activates on Space or Enter and never accepts
 	// typed text. Home and End move to the ends of the whole value, since an
-	// input has no visual lines. Everything else is the shared field logic.
+	// input has no visual lines. Everything else is the shared textControl logic.
 	declare [kOnKeydown]?: (event: KeyboardEvent) => void;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -13474,19 +13485,19 @@ class HTMLInputElement extends HTMLElement {
 			if (event.defaultPrevented || event.data == null) {
 				return;
 			}
-			if (getInputKind(this) !== "field") {
+			if (getInputKind(this) !== "textControl") {
 				return;
 			}
 			if (event.inputType === "insertText") {
 				event.preventDefault();
-				insertFieldText(this, event.data);
+				insertTextControlText(this, event.data);
 				return;
 			}
 			if (event.inputType !== "insertFromPaste") {
 				return;
 			}
 			event.preventDefault();
-			insertFieldText(this, event.data.replace(/[\r\n]+/g, ""));
+			insertTextControlText(this, event.data.replace(/[\r\n]+/g, ""));
 		};
 		this[kOnKeydown] = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) {
@@ -13521,7 +13532,10 @@ class HTMLInputElement extends HTMLElement {
 			) {
 				const stepped = getSteppedValue(this, key === "ArrowUp" ? 1 : -1);
 				if (stepped !== null) {
-					applyFieldEdit(this, createCollapsedEdit(stepped, stepped.length));
+					applyTextControlEdit(
+						this,
+						createCollapsedEdit(stepped, stepped.length),
+					);
 					dispatch(this, new Event("change", {bubbles: true}));
 				}
 				return;
@@ -13532,20 +13546,25 @@ class HTMLInputElement extends HTMLElement {
 			const anchor = direction === "backward" ? end : start;
 			const caret = direction === "backward" ? start : end;
 
-			let result: FieldEditResult | null;
+			let result: TextControlEditResult | null;
 			if (key === "Home" || (ctrlKey && key === "a")) {
-				result = fieldSelectionMove(value, anchor, 0, shiftKey);
+				result = moveTextControlSelection(value, anchor, 0, shiftKey);
 			} else if (key === "End" || (ctrlKey && key === "e")) {
-				result = fieldSelectionMove(value, anchor, value.length, shiftKey);
+				result = moveTextControlSelection(
+					value,
+					anchor,
+					value.length,
+					shiftKey,
+				);
 			} else if (ctrlKey && key === "k") {
 				result = createCollapsedEdit(value.slice(0, caret), caret);
 			} else if (ctrlKey && key === "u") {
 				result = createCollapsedEdit(value.slice(caret), 0);
 			} else {
-				result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
+				result = applySharedTextControlEdit(this, key, shiftKey, ctrlKey);
 			}
 			if (result) {
-				applyFieldEdit(this, result);
+				applyTextControlEdit(this, result);
 			}
 		};
 	}
@@ -13625,11 +13644,11 @@ class HTMLInputElement extends HTMLElement {
 			default:
 				this.setAttribute("value", string);
 		}
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
 	// NaN when the value does not parse. Only the numeric types return a
-	// number. Assigning NaN empties the field. Assigning a non-finite number
+	// number. Assigning NaN empties the textControl. Assigning a non-finite number
 	// throws the TypeError the spec requires.
 	get valueAsNumber(): number {
 		if (this.type !== "number" && this.type !== "range") {
@@ -13731,9 +13750,9 @@ class HTMLInputElement extends HTMLElement {
 		setPopoverTargetAttributeElement(this, value);
 	}
 
-	// The value the widget renders and edits. The IDL attribute above
+	// The value the UA shadow tree renders and edits. The IDL attribute above
 	// returns an attribute for the types that have no value of their own.
-	// Those types render no field, so their value here is the empty string a
+	// Those types render no textControl, so their value here is the empty string a
 	// caret would sit in.
 	get [kUAValue](): string {
 		return getInputValueMode(this.type) === "value" ? this[kValue]! : "";
@@ -13793,7 +13812,7 @@ class HTMLInputElement extends HTMLElement {
 		this[kSelectionStart] = result.start;
 		this[kSelectionEnd] = result.end;
 		this[kSelectionDirection] = "none";
-		widgetChanged(this);
+		syncUAShadowTree(this);
 		scheduleTextSelectionChange(this);
 	}
 
@@ -13816,12 +13835,12 @@ class HTMLInputElement extends HTMLElement {
 			? value.replace(/[\r\n]/g, "")
 			: sanitizeInputValue(this, value);
 		this[kDirtyValue] = true;
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
 	// The selection APIs work for the five types the HTML Standard lists and
-	// throw for the rest. But the caret in an email or number field is real,
-	// and the widget behind the control edits through it. This is the same
+	// throw for the rest. But the caret in an email or number textControl is real,
+	// and the UA shadow tree behind the control edits through it. This is the same
 	// algorithm without the type check an author gets.
 	[kUASelection]?(): {start: number; end: number; direction: string} {
 		return {
@@ -13879,18 +13898,18 @@ class HTMLInputElement extends HTMLElement {
 		this[kChecked] = this.hasAttribute("checked");
 		this[kDirtyChecked] = false;
 		this[kIndeterminate] = false;
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
 	[kUASelectionRange]?(): globalThis.Range | null {
 		return getTextSelectionRange(this, this[kValueText]!);
 	}
 
-	[kUpgradeWidget]?(): void {
+	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
 			// A control that left the tree and came back keeps its tree. Only
 			// the state it missed needs updating.
-			this[kSyncWidget]!();
+			this[kSyncUAShadowTree]!();
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -13913,7 +13932,7 @@ class HTMLInputElement extends HTMLElement {
 	// whether it is checked, which is state like any other: it is written
 	// here, where the state changes, so the frame that shows it is scheduled
 	// by the same mutation as every other change.
-	[kSyncWidget]?(): void {
+	[kSyncUAShadowTree]?(): void {
 		if (!this[kUpgraded]) {
 			return;
 		}
@@ -13922,7 +13941,7 @@ class HTMLInputElement extends HTMLElement {
 			buildInputWidget(this);
 			return;
 		}
-		if (this[kKind] !== "field") {
+		if (this[kKind] !== "textControl") {
 			if (this[kGlyphText]!) {
 				const mark =
 					this.type === "checkbox"
@@ -13982,20 +14001,26 @@ class HTMLInputElement extends HTMLElement {
 
 // A number input's text can be any prefix of a valid floating-point
 // number and nothing else. An insertion that would break the grammar is
-// refused whole, the way a browser's number field refuses a second
+// refused whole, the way a browser's number textControl refuses a second
 // decimal point. Deletions are never blocked, so text a deletion leaves
 // outside the grammar can always be cleared.
-function insertFieldText(field: HTMLInputElement, text: string): void {
+function insertTextControlText(
+	textControl: HTMLInputElement,
+	text: string,
+): void {
 	if (!text) {
 		return;
 	}
-	const value = field[kUAValue]!;
-	const {start, end} = getSelectionRecord(field)!;
+	const value = textControl[kUAValue]!;
+	const {start, end} = getSelectionRecord(textControl)!;
 	const next = value.slice(0, start) + text + value.slice(end);
-	if (field.type === "number" && !isFloatPrefix(next)) {
+	if (textControl.type === "number" && !isFloatPrefix(next)) {
 		return;
 	}
-	applyFieldEdit(field, createCollapsedEdit(next, start + text.length));
+	applyTextControlEdit(
+		textControl,
+		createCollapsedEdit(next, start + text.length),
+	);
 }
 
 // A checkbox or radio button changes before the click is dispatched, so
@@ -14049,14 +14074,14 @@ function setCheckedness(
 	checked: boolean,
 ): void {
 	input[kChecked] = checked;
-	widgetChanged(input);
+	syncUAShadowTree(input);
 	if (!checked || input.type !== "radio") {
 		return;
 	}
 	for (const other of getRadioGroup(input)) {
 		if (other !== input) {
 			other[kChecked] = false;
-			widgetChanged(other);
+			syncUAShadowTree(other);
 		}
 	}
 }
@@ -14074,12 +14099,12 @@ function requireSelectable(
 
 function getInputKind(
 	input: HTMLInputElement,
-): "field" | "toggle" {
+): "textControl" | "toggle" {
 	const type = input.type;
-	return type === "checkbox" || type === "radio" ? "toggle" : "field";
+	return type === "checkbox" || type === "radio" ? "toggle" : "textControl";
 }
 
-// The field tree has value and placeholder parts. The toggle tree has a
+// The textControl tree has value and placeholder parts. The toggle tree has a
 // single glyph part the painter fills from live `.checked`, because a
 // radio's group exclusivity unchecks siblings with no hook to sync
 // on.
@@ -14089,7 +14114,7 @@ function buildInputWidget(
 	const attached = getAttachedDocument(input)!;
 	let root = input[kRoot]!;
 	if (root === null) {
-		root = buildUARoot(input, attached, FIELD_UA_STYLES);
+		root = buildUAShadowTree(input, attached, TEXT_CONTROL_UA_STYLES);
 	} else {
 		// A rebuild keeps the root and its observer registration and replaces
 		// only what is under it, including the stylesheet.
@@ -14097,12 +14122,12 @@ function buildInputWidget(
 			root.removeChild(root.firstChild);
 		}
 		attached[kLayout].invalidate();
-		root.appendChild(createUAStyleElement(input, FIELD_UA_STYLES));
+		root.appendChild(createUAStyleElement(input, TEXT_CONTROL_UA_STYLES));
 	}
 	input[kRoot] = root;
 	input[kKind] = getInputKind(input);
 
-	if (input[kKind] === "field") {
+	if (input[kKind] === "textControl") {
 		input[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		input[kPlaceholderText] = addPart(
 			root,
@@ -14114,7 +14139,7 @@ function buildInputWidget(
 		input[kGlyphText] = addPart(root, "glyph").firstChild as globalThis.Text;
 	}
 	attached[kLayout].invalidate(input);
-	input[kSyncWidget]!();
+	input[kSyncUAShadowTree]!();
 }
 
 function getInputValueMode(type: string): "value" |
@@ -14205,9 +14230,9 @@ function stepInput(input: HTMLInputElement, steps: number): void {
 // `min` anchors (zero when there is no min), clamped to [min, max]. A
 // value between grid points moves to the nearest point in the direction
 // of travel. Returns null when there is nowhere to go, so the caller can
-// leave the field untouched. An out-of-range value steps to the nearest
+// leave the textControl untouched. An out-of-range value steps to the nearest
 // bound whichever way it was pushed, which is how a browser's up/down
-// buttons pull a field into range.
+// buttons pull a textControl into range.
 function getSteppedValue(
 	input: HTMLInputElement,
 	steps: number,
@@ -14762,7 +14787,7 @@ function buildGaugeRoot(
 	styles: string,
 ): {bar: globalThis.HTMLElement; groove: globalThis.Text} {
 	const document = getUADocument(host);
-	const root = buildUARoot(host, attached, styles);
+	const root = buildUAShadowTree(host, attached, styles);
 	const track = addPart(root, "track");
 	track.removeChild(track.firstChild!);
 	const bar = document.createElement("span");
@@ -14883,9 +14908,9 @@ class HTMLMeterElement extends HTMLElement {
 		return getLabels(this);
 	}
 
-	[kUpgradeWidget]?(): void {
+	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncWidget]!();
+			this[kSyncUAShadowTree]!();
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -14894,10 +14919,10 @@ class HTMLMeterElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		this[kBar] = buildGaugeRoot(this, attached, METER_UA_STYLES).bar;
-		this[kSyncWidget]!();
+		this[kSyncUAShadowTree]!();
 	}
 
-	[kSyncWidget]?(): void {
+	[kSyncUAShadowTree]?(): void {
 		if (!this[kUpgraded]) {
 			return;
 		}
@@ -14919,7 +14944,7 @@ class HTMLMeterElement extends HTMLElement {
 	): void {
 		super[kAttributeChangeSteps]!(localName, oldValue, value, namespace);
 		if (namespace === null && METER_ATTRIBUTES.has(localName)) {
-			this[kSyncWidget]!();
+			this[kSyncUAShadowTree]!();
 		}
 	}
 }
@@ -15106,7 +15131,7 @@ class HTMLOptionElement extends HTMLElement {
 			}
 		}
 		askForAReset(select);
-		widgetChanged(select);
+		syncUAShadowTree(select);
 	}
 
 	// Selectedness is not an attribute and not part of the tree. The one
@@ -15141,7 +15166,7 @@ class HTMLOptionElement extends HTMLElement {
 		}
 		const select = getSelect(this);
 		if (select !== null) {
-			widgetChanged(select);
+			syncUAShadowTree(select);
 		}
 	}
 
@@ -15396,9 +15421,9 @@ class HTMLProgressElement extends HTMLElement {
 		return getLabels(this);
 	}
 
-	[kUpgradeWidget]?(): void {
+	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncWidget]!();
+			this[kSyncUAShadowTree]!();
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -15407,10 +15432,10 @@ class HTMLProgressElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		this[kBar] = buildGaugeRoot(this, attached, PROGRESS_UA_STYLES).bar;
-		this[kSyncWidget]!();
+		this[kSyncUAShadowTree]!();
 	}
 
-	[kSyncWidget]?(): void {
+	[kSyncUAShadowTree]?(): void {
 		if (!this[kUpgraded]) {
 			return;
 		}
@@ -15426,7 +15451,7 @@ class HTMLProgressElement extends HTMLElement {
 	): void {
 		super[kAttributeChangeSteps]!(localName, oldValue, value, namespace);
 		if (namespace === null && (localName === "value" || localName === "max")) {
-			this[kSyncWidget]!();
+			this[kSyncUAShadowTree]!();
 		}
 	}
 }
@@ -15574,14 +15599,14 @@ class HTMLSelectElement extends HTMLElement {
 						commitSelectOption(this, highlight);
 						return;
 					}
-					this[kSyncWidget]!(); // No change: just close.
+					this[kSyncUAShadowTree]!(); // No change: just close.
 					return;
 				} else if (key === "Escape") {
 					this[kPickerHighlight] = null;
 				} else {
 					return;
 				}
-				this[kSyncWidget]!();
+				this[kSyncUAShadowTree]!();
 				return;
 			}
 
@@ -15634,7 +15659,7 @@ class HTMLSelectElement extends HTMLElement {
 					if (index !== this.selectedIndex) {
 						commitSelectOption(this, index);
 					} else {
-						this[kSyncWidget]!(); // Re-press the selection: just close.
+						this[kSyncUAShadowTree]!(); // Re-press the selection: just close.
 					}
 				}
 				return;
@@ -15644,13 +15669,13 @@ class HTMLSelectElement extends HTMLElement {
 			const pickerRect = attached[kLayout].getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
 				this[kPickerHighlight] = null;
-				this[kSyncWidget]!();
+				this[kSyncUAShadowTree]!();
 			}
 		};
 		this[kOnBlur] = (): void => {
 			if (this[kPickerHighlight] !== null) {
 				this[kPickerHighlight] = null;
-				this[kSyncWidget]!();
+				this[kSyncUAShadowTree]!();
 			}
 		};
 	}
@@ -15713,7 +15738,7 @@ class HTMLSelectElement extends HTMLElement {
 		if (index >= 0 && index < options.length) {
 			options[index][kSelectedness] = true;
 		}
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
 	get value(): string {
@@ -15739,7 +15764,7 @@ class HTMLSelectElement extends HTMLElement {
 				option[kSelectedness] = false;
 			}
 		}
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
 	get [kUAValueText](): globalThis.Text | null {
@@ -15769,7 +15794,7 @@ class HTMLSelectElement extends HTMLElement {
 	}
 
 	// A select's selection record is always collapsed at the label's start,
-	// so the caret placement path can treat a select like a field. The caret
+	// so the caret placement path can treat a select like a textControl. The caret
 	// is the focus of the selection.
 	[kUASelection]?(): {start: number; end: number; direction: string} {
 		return {start: 0, end: 0, direction: "none"};
@@ -15781,12 +15806,12 @@ class HTMLSelectElement extends HTMLElement {
 			option[kOptionDirty] = false;
 		}
 		askForAReset(this);
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
-	[kUpgradeWidget]?(): void {
+	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncWidget]!();
+			this[kSyncUAShadowTree]!();
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -15798,7 +15823,7 @@ class HTMLSelectElement extends HTMLElement {
 		// The tree: the selected option's label (part=value), the ▾ indicator
 		// (part=indicator), and the picker popover (part=picker, one row per
 		// option). Composition hides the light option list.
-		const root = buildUARoot(this, attached, SELECT_UA_STYLES);
+		const root = buildUAShadowTree(this, attached, SELECT_UA_STYLES);
 		this[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		(addPart(root, "indicator").firstChild as globalThis.Text).data = " ▾";
 		const picker = document.createElement("div");
@@ -15820,7 +15845,7 @@ class HTMLSelectElement extends HTMLElement {
 			characterData: true,
 		});
 
-		this[kSyncWidget]!();
+		this[kSyncUAShadowTree]!();
 	}
 
 	// The dropdown is transient interaction state. Leaving the tree ends the
@@ -15830,11 +15855,11 @@ class HTMLSelectElement extends HTMLElement {
 		super[kRemovingSteps]!(oldParent);
 		if (this[kPickerHighlight] !== null) {
 			this[kPickerHighlight] = null;
-			this[kSyncWidget]!();
+			this[kSyncUAShadowTree]!();
 		}
 	}
 
-	[kSyncWidget]?(): void {
+	[kSyncUAShadowTree]?(): void {
 		const picker = this[kPicker]!;
 		if (!this[kUpgraded] || picker === null) {
 			return;
@@ -15859,8 +15884,8 @@ class HTMLSelectElement extends HTMLElement {
 
 		syncPickerRows(this, picker);
 
-		// Anchor below the field in DOCUMENT coordinates (the picker's
-		// containing block is the ICB), matching the field's width.
+		// Anchor below the textControl in DOCUMENT coordinates (the picker's
+		// containing block is the ICB), matching the textControl's width.
 		const rect = attached[kLayout].getRect(this);
 		if (rect) {
 			const top = `${Math.round(rect.bottom)}px`;
@@ -15880,7 +15905,7 @@ class HTMLSelectElement extends HTMLElement {
 			picker.style.display = "block";
 		}
 		// An open picker paints in the top layer, over following content. The
-		// widget owns the membership together with the display flip, as one
+		// UA shadow tree owns the membership together with the display flip, as one
 		// intent.
 		getTopLayer(this[kDocument]!).add(picker as unknown as Element);
 	}
@@ -15998,7 +16023,7 @@ function openPicker(
 		index = options.findIndex((o) => !optionIsDisabled(o));
 	}
 	select[kPickerHighlight] = index;
-	select[kSyncWidget]!();
+	select[kSyncUAShadowTree]!();
 }
 
 function commitSelectOption(
@@ -16744,7 +16769,7 @@ class HTMLTextAreaElement extends HTMLElement {
 
 	// Enter inserts a newline. The vertical arrows and Home/End move by
 	// VISUAL line (soft wraps count, as in a browser). Every other editing
-	// key is the shared field logic. This reads laid-out geometry, so it
+	// key is the shared textControl logic. This reads laid-out geometry, so it
 	// flushes layout first.
 	declare [kOnKeydown]?: (event: KeyboardEvent) => void;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -16765,7 +16790,7 @@ class HTMLTextAreaElement extends HTMLElement {
 			}
 			if (event.inputType === "insertText") {
 				event.preventDefault();
-				applyFieldEdit(this, printableFieldEdit(this, event.data));
+				applyTextControlEdit(this, printableTextControlEdit(this, event.data));
 				return;
 			}
 			if (event.inputType !== "insertFromPaste") {
@@ -16796,11 +16821,11 @@ class HTMLTextAreaElement extends HTMLElement {
 			const caret = backward ? start : end;
 			const anchor = backward ? end : start;
 
-			let result: FieldEditResult | null;
+			let result: TextControlEditResult | null;
 			if (key === "Enter" || (ctrlKey && key === "j")) {
 			// Insert a newline like any typed character, replacing the
 			// selection. A terminal sends line feed for Ctrl+J, which is the
-			// chord that reaches a field whose Enter an application has taken
+			// chord that reaches a textControl whose Enter an application has taken
 			// over.
 				const next = value.slice(0, start) + "\n" + value.slice(end);
 				const pos = start + 1;
@@ -16812,7 +16837,7 @@ class HTMLTextAreaElement extends HTMLElement {
 					caret,
 					key === "ArrowDown" ? 1 : -1,
 				);
-				result = fieldSelectionMove(value, anchor, target, shiftKey);
+				result = moveTextControlSelection(value, anchor, target, shiftKey);
 			} else if (
 				key === "Home" ||
 				key === "End" ||
@@ -16837,7 +16862,7 @@ class HTMLTextAreaElement extends HTMLElement {
 					);
 				} else {
 					const toStart = key === "Home" || key === "a";
-					result = fieldSelectionMove(
+					result = moveTextControlSelection(
 						value,
 						anchor,
 						toStart ? lineStart : lineEnd,
@@ -16845,10 +16870,10 @@ class HTMLTextAreaElement extends HTMLElement {
 					);
 				}
 			} else {
-				result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
+				result = applySharedTextControlEdit(this, key, shiftKey, ctrlKey);
 			}
 			if (result) {
-				applyFieldEdit(this, result);
+				applyTextControlEdit(this, result);
 			}
 		};
 	}
@@ -16886,7 +16911,7 @@ class HTMLTextAreaElement extends HTMLElement {
 			this[kSelectionEnd] = this[kValue]!.length;
 			this[kSelectionDirection] = "none";
 		}
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
 	get textLength(): number {
@@ -16930,7 +16955,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		);
 	}
 
-	// The value the widget renders and edits: the raw value once the dirty
+	// The value the UA shadow tree renders and edits: the raw value once the dirty
 	// flag is set, the child text until then.
 	get [kUAValue](): string {
 		return this[kDirty]!
@@ -16976,7 +17001,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		this[kSelectionStart] = result.start;
 		this[kSelectionEnd] = result.end;
 		this[kSelectionDirection] = "none";
-		widgetChanged(this);
+		syncUAShadowTree(this);
 		scheduleTextSelectionChange(this);
 	}
 
@@ -16985,7 +17010,7 @@ class HTMLTextAreaElement extends HTMLElement {
 	[kSetUAValue]?(value: string): void {
 		this[kValue] = normalizeNewlines(value);
 		this[kDirty] = true;
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
 	// A textarea's selection is always its own. See the input's version.
@@ -17021,16 +17046,16 @@ class HTMLTextAreaElement extends HTMLElement {
 	[kResetControl]?(): void {
 		this[kValue] = "";
 		this[kDirty] = false;
-		widgetChanged(this);
+		syncUAShadowTree(this);
 	}
 
 	[kUASelectionRange]?(): globalThis.Range | null {
 		return getTextSelectionRange(this, this[kValueText]!);
 	}
 
-	[kUpgradeWidget]?(): void {
+	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncWidget]!();
+			this[kSyncUAShadowTree]!();
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -17039,7 +17064,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		const document = getUADocument(this);
-		const root = buildUARoot(this, attached, TEXTAREA_UA_STYLES);
+		const root = buildUAShadowTree(this, attached, TEXTAREA_UA_STYLES);
 		this[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		this[kPlaceholderSpan] = addPart(root, "placeholder");
 		this[kPlaceholderText] =
@@ -17057,12 +17082,12 @@ class HTMLTextAreaElement extends HTMLElement {
 		this.addEventListener("keydown", this[kOnKeydown]! as UAListener);
 		this.addEventListener("beforeinput", this[kOnBeforeInput]! as UAListener);
 
-		this[kSyncWidget]!();
+		this[kSyncUAShadowTree]!();
 	}
 
 	// Placeholder visibility is real CSS (an inline display:none), not
 	// painter logic, so the normal pipeline never sees a hidden placeholder.
-	[kSyncWidget]?(): void {
+	[kSyncUAShadowTree]?(): void {
 		if (!this[kUpgraded]) {
 			return;
 		}
@@ -17096,13 +17121,16 @@ class HTMLTextAreaElement extends HTMLElement {
 
 // One atomic edit.
 function insertPaste(
-	field: HTMLInputElement | HTMLTextAreaElement,
+	textControl: HTMLInputElement | HTMLTextAreaElement,
 	text: string,
 ): void {
 	if (!text) {
 		return;
 	}
-	applyFieldEdit(field, printableFieldEdit(field, text));
+	applyTextControlEdit(
+		textControl,
+		printableTextControlEdit(textControl, text),
+	);
 }
 
 // Keeps the column (in cells) where the target line allows. Soft wraps
@@ -17182,15 +17210,15 @@ function getTextareaLine(
 	return lines.length - 1;
 }
 
-// A thin field-specific view over the shared `lineFragments` primitive,
+// A thin textControl-specific view over the shared `lineFragments` primitive,
 // including the empty and trailing-newline lines. Used only by the
 // control's own Home/End and vertical-motion editing. Geometry consumers
 // read `lineFragments` or a `Range` directly.
 function getTextareaVisualLines(
-	field: HTMLTextAreaElement,
+	textControl: HTMLTextAreaElement,
 	layout: Layout,
 ): {value: string; lines: TextareaVisualLine[]} | null {
-	const valueText = getFieldValueText(field);
+	const valueText = getTextControlValueText(textControl);
 	if (!valueText) {
 		return null;
 	}
@@ -18065,7 +18093,7 @@ export function lightDismissRelease(
  * click outside, and neither does anything else in the layer. Returns
  * false when nothing takes it.
  */
-export function closeTopmost(document: globalThis.Document): boolean {
+export function handleCloseRequest(document: globalThis.Document): boolean {
 	const popover = getTopmostAutoPopover(document);
 	let target: globalThis.Element | null = null;
 	for (const element of renderedTopLayer(document)) {
@@ -18450,7 +18478,7 @@ const kFormOwner = Symbol("the form an internals last reported");
 
 // The callback is the one place the owner has to be remembered, because
 // the callback reports the change rather than the value.
-function syncFormOwner(element: Element): void {
+function resetTheFormOwner(element: Element): void {
 	if (!isFormAssociatedCustom(element)) {
 		return;
 	}
@@ -18466,12 +18494,12 @@ function syncFormOwner(element: Element): void {
 	enqueueCallbackReaction(element, "formAssociatedCallback", [owner]);
 }
 
-function syncFormOwners(node: Node): void {
+function resetFormOwners(node: Node): void {
 	for (const candidate of shadowIncludingInclusiveDescendants(node)) {
 		if (candidate.nodeType !== ELEMENT_NODE) {
 			continue;
 		}
-		syncFormOwner(candidate as Element);
+		resetTheFormOwner(candidate as Element);
 		syncFormDisabled(candidate as Element);
 	}
 }
@@ -22127,7 +22155,7 @@ const scrolledElements = new WeakMap<Document, Set<Element>>();
 // paints on the cell grid, like the document document scroll), clamps into the
 // range layout reports for the box, stores the value, and tells the
 // engine what moved so the frame journal can price it. A box whose
-// extent layout cannot report (a field's value span, an opaque measured
+// extent layout cannot report (a textControl's value span, an opaque measured
 // run) stores the write unclamped; the caret-reveal code owns those
 // offsets and keeps them sane. On a headless document the write is
 // stored and read back, and nothing moves.
@@ -25052,7 +25080,7 @@ export class TreeWalker implements globalThis.TreeWalker {
 }
 
 // A walk's whatToShow never changes after construction, so the choice
-// is made once, there, and every hop below is a field read.
+// is made once, there, and every hop below is a textControl read.
 function getTreeLinks(whatToShow: number): TreeLinks {
 	return (whatToShow & SHOW_FLAT) !== 0 ? FLAT_LINKS : NODE_LINKS;
 }
@@ -25445,7 +25473,7 @@ function getShadowHost(root: Node): Element | null {
 	return isShadowRoot(root) ? (root as ShadowRoot)[kHost]! : null;
 }
 
-function getAssignedSlotFlat(element: Element): Element | null {
+function getOpenAssignedSlot(element: Element): Element | null {
 	return (element.assignedSlot as Element | null) ?? null;
 }
 
@@ -27077,7 +27105,7 @@ export function attachDocument(
 
 const engineObservers = new WeakMap<Document, MutationObserver>();
 
-// Everything except painting: the flat-tree memo, UA widget upgrades,
+// Everything except painting: the flat-tree memo, UA UA shadow tree upgrades,
 // the cascade, the layout tree and the focus default actions, always in
 // the same order, because mutations reach here both from the observer
 // and from synchronous drains.
@@ -27124,7 +27152,7 @@ function handleMutationRecords(
 			if (added.nodeType !== added.ELEMENT_NODE) {
 				continue;
 			}
-			upgradeWidgets(added);
+			ensureUAShadowTrees(added);
 		}
 	}
 	attached[kCascade].handleMutations(relevant);
@@ -29594,10 +29622,10 @@ function compilePseudoElement(
 		// before `::slotted()` describes the slot it landed in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
-		compound.origin = (element) => getAssignedSlotFlat(element);
+		compound.origin = (element) => getOpenAssignedSlot(element);
 		compound.tests.push(
 			(element, state) =>
-				getAssignedSlotFlat(element) !== null &&
+				getOpenAssignedSlot(element) !== null &&
 				inner.some((complex) => matchComplex(complex, element, state, false)),
 		);
 		return;

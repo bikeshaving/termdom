@@ -404,7 +404,7 @@ test("slotted content inherits through the slot's shadow-tree chain", async () =
 	dom.dispose();
 });
 
-// Input internals as a UA shadow tree: the widget painter's content model
+// Input internals as a UA shadow tree: the UA shadow tree painter's content model
 // is real (UA-hidden) DOM in the symbol slot, styled by a real scoped
 // stylesheet -- while staying exactly as closed as a browser input's own
 // internals.
@@ -427,11 +427,11 @@ test("input internals are a UA shadow tree, closed to authors", async () => {
 	dom.dispose();
 });
 
-test("the field design survives the round-trip through the UA stylesheet", async () => {
-	// The field design is scoped CSS on real parts, not painter constants:
+test("the textControl design survives the round-trip through the UA stylesheet", async () => {
+	// The textControl design is scoped CSS on real parts, not painter constants:
 	// the placeholder is the UA gray ghost, and the focus affordance is an
 	// `outline` the painter renders as a box-model-aware underline across the
-	// whole field. This pins the whole pipeline: UA sheet parsing, scope
+	// whole textControl. This pins the whole pipeline: UA sheet parsing, scope
 	// gating, :host(:focus) matching, focus invalidation, and the outline pass.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
@@ -451,7 +451,7 @@ test("the field design survives the round-trip through the UA stylesheet", async
 	input.focus();
 	await nextFrame(dom);
 	// Focused: the :host(:focus) outline renders as a solid underline across
-	// the whole field -- the value/placeholder AND the empty tail past it, the
+	// the whole textControl -- the value/placeholder AND the empty tail past it, the
 	// box-model-aware fill a plain text-decoration could never reach.
 	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
 	expect(cellAt(0, 5).isUnderline()).toBeTruthy();
@@ -459,7 +459,7 @@ test("the field design survives the round-trip through the UA stylesheet", async
 
 	input.blur();
 	await nextFrame(dom);
-	// Blurred again: the outline is gone, the field is plain.
+	// Blurred again: the outline is gone, the textControl is plain.
 	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
 
 	dom.dispose();
@@ -481,7 +481,7 @@ test("::placeholder is author-styleable and cascades over the UA gray", async ()
 
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
-	// The author color wins; a blurred field carries no chrome of its own.
+	// The author color wins; a blurred textControl carries no chrome of its own.
 	expect(cellAt(0, 0).getFgColor()).toBe(0xff0000);
 	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
 
@@ -609,7 +609,7 @@ test("a focused input's outline underline carries the outline color on unclaimed
 
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
-	// A blank cell of the field row: underlined, in the accent.
+	// A blank cell of the textControl row: underlined, in the accent.
 	expect(cellAt(0, 19).isUnderline()).toBeTruthy();
 	expect(cellAt(0, 19).getFgColor()).toBe(0x5fafff);
 	// The placeholder's explicit gray wins over the outline's default.

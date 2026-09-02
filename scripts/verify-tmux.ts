@@ -127,7 +127,7 @@ function assert(condition: boolean, message: string): void {
 
 const scenarios: Scenario[] = [
 	{
-		name: "chat composer: flat one-row field with the accent focus underline",
+		name: "chat composer: flat one-row textControl with the accent focus underline",
 		command: "node examples/chat.ts",
 		cols: 118,
 		run: async (pane) => {

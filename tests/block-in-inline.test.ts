@@ -152,7 +152,7 @@ test("a widget inside an inline-block's block content paints in place", async ()
 	const input = dom.document.querySelector("input")!;
 	const rect = input.getBoundingClientRect();
 	// Positions under a independent formatting context mean nothing until the run places the box
-	// that owns it; the widget's own rect is anchored to that box's content edge.
+	// that owns it; the UA shadow tree's own rect is anchored to that box's content edge.
 	expect(rect.x).toBe(1);
 	expect(terminal.getPlainText()).toContain("typed");
 
@@ -177,7 +177,7 @@ test("a widget in an inline-block does not take a box of its own", async () => {
 	);
 
 	// The run measures the box and everything in it. Manufacturing a layout
-	// node for the widget put it at the top of the document, one row above the
+	// node for the UA shadow tree put it at the top of the document, one row above the
 	// text it belongs beside.
 	expect(lines()[0]).toBe("headingV");
 

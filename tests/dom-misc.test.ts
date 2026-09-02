@@ -104,7 +104,7 @@ test("define reads prototype once, and only after the name is valid", () => {
 	).toThrow();
 	expect(reads).toEqual([]);
 
-	// A valid one reads prototype exactly once, then the two class fields.
+	// A valid one reads prototype exactly once, then the two class text controls.
 	customElements.define("x-read-once", watched() as any);
 	expect(reads).toEqual(["prototype", "disabledFeatures", "formAssociated"]);
 });

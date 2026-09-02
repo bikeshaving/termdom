@@ -1,16 +1,16 @@
 import {type Cascade, getComputedValue} from "./cssom.js";
 import {
-	closeTopmost,
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
 	flatParentElement,
-	getFieldCaretOffset,
 	getKeyboardActivation,
 	getShadowRoot,
+	getTextControlCaretOffset,
+	handleCloseRequest,
 	lightDismissPress,
 	lightDismissRelease,
 	lockDataTransfer,
-	placeFieldCaret,
+	placeTextControlCaret,
 	setDocumentFocusVisible,
 	setHoveredElement,
 	setUASelection,
@@ -281,7 +281,7 @@ const kScrollChainTimeoutMs = Symbol("scrollChainTimeoutMs");
 const kMouseDownTarget = Symbol("mouseDownTarget");
 const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
-const kFieldDragAnchor = Symbol("fieldDragAnchor");
+const kTextControlDragAnchor = Symbol("textControlDragAnchor");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 const kDblclickIntervalMs = Symbol("dblclickIntervalMs");
@@ -323,9 +323,9 @@ export class Input {
 	declare [kPopoverPressTarget]: Element | null;
 	// The document selection's anchor while a left-button drag selects.
 	declare [kSelectionDragAnchor]: {node: Text; offset: number} | null;
-	// A drag begun in a field extends the field's own bounded selection,
+	// A drag begun in a textControl extends the textControl's own bounded selection,
 	// not the document's. The two never merge.
-	declare [kFieldDragAnchor]: {
+	declare [kTextControlDragAnchor]: {
 		element: HTMLInputElement | HTMLTextAreaElement;
 		offset: number;
 	} | null;
@@ -353,7 +353,7 @@ export class Input {
 		this[kMouseDownTarget] = null;
 		this[kPopoverPressTarget] = null;
 		this[kSelectionDragAnchor] = null;
-		this[kFieldDragAnchor] = null;
+		this[kTextControlDragAnchor] = null;
 		this[kLastClickTarget] = null;
 		this[kLastClickTime] = 0;
 	}
@@ -740,13 +740,16 @@ function dragTo(
 	y: number,
 	isInDocument: boolean,
 ): void {
-	// Clamped into the field, whichever element the pointer is over now.
-	if (input[kFieldDragAnchor] && isInDocument) {
-		const {element: fieldElement, offset: anchor} = input[kFieldDragAnchor];
-		const focus = getFieldCaretOffset(fieldElement, x, y);
+	// Clamped into the textControl, whichever element the pointer is over now.
+	if (input[kTextControlDragAnchor] && isInDocument) {
+		const {
+			element: textControlElement,
+			offset: anchor,
+		} = input[kTextControlDragAnchor];
+		const focus = getTextControlCaretOffset(textControlElement, x, y);
 		if (focus !== null) {
 			setUASelection(
-				fieldElement,
+				textControlElement,
 				Math.min(anchor, focus),
 				Math.max(anchor, focus),
 				focus < anchor ? "backward" : "forward",
@@ -788,7 +791,7 @@ function dispatchPress(
 	// Light dismiss is a press and a release in the same place, so a drag
 	// out of a popover does not close it.
 	input[kPopoverPressTarget] = lightDismissPress(target);
-	input[kFieldDragAnchor] = null;
+	input[kTextControlDragAnchor] = null;
 	if (setDocumentFocusVisible(input[kDocument], false)) {
 		input[kCascade].handleFocusChange(
 			input[kDocument].activeElement,
@@ -813,13 +816,13 @@ function dispatchPress(
 		void render(input[kTermDOM]);
 	}
 
-	// Default action: a press in a field places the caret and anchors a
-	// field drag. The select widget's own mousedown listener ran above.
+	// Default action: a press in a textControl places the caret and anchors a
+	// textControl drag. The select UA shadow tree's own mousedown listener ran above.
 	const parked =
-		base === 0 && isInDocument ? placeFieldCaret(target, x, y) : null;
+		base === 0 && isInDocument ? placeTextControlCaret(target, x, y) : null;
 	if (parked) {
-		input[kFieldDragAnchor] = {
-			element: parked.field as HTMLInputElement | HTMLTextAreaElement,
+		input[kTextControlDragAnchor] = {
+			element: parked.textControl as HTMLInputElement | HTMLTextAreaElement,
 			offset: parked.offset,
 		};
 		// The document selection still clears, as in a browser.
@@ -833,7 +836,7 @@ function dispatchPress(
 	// Default action: collapse the document selection at the press and
 	// anchor a drag there. Left button only. preventDefault opts out.
 	const selection = input[kWindow].getSelection();
-	if (base === 0 && selection && !input[kFieldDragAnchor]) {
+	if (base === 0 && selection && !input[kTextControlDragAnchor]) {
 		let anchor = isInDocument ? getTextPosition(input, x, y) : null;
 		if (anchor && !isSelectable(input, anchor)) {
 			anchor = null;
@@ -869,7 +872,7 @@ function dispatchRelease(
 	lightDismissRelease(target, input[kPopoverPressTarget]);
 	input[kPopoverPressTarget] = null;
 	let selectedByDrag = false;
-	input[kFieldDragAnchor] = null;
+	input[kTextControlDragAnchor] = null;
 	if (input[kSelectionDragAnchor]) {
 		input[kSelectionDragAnchor] = null;
 		const text = input[kWindow].getSelection()?.toString() ?? "";
@@ -970,7 +973,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	// nothing from the user, and terminal convention gives Escape to the
 	// app.
 	if (keyName === "Escape") {
-		if (closeTopmost(input[kDocument])) {
+		if (handleCloseRequest(input[kDocument])) {
 			void render(input[kTermDOM]);
 			return;
 		}
@@ -981,7 +984,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 			moveFocus(input, shiftKey);
 		}
 
-		// Field editing is each widget's own keydown listener, run above.
+		// Field editing is each UA shadow tree's own keydown listener, run above.
 		const activation = getKeyboardActivation(targetElement);
 		if (activation) {
 			if (
@@ -1002,7 +1005,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		}
 	}
 
-	// Inserting the character is keypress's default action, so a field's
+	// Inserting the character is keypress's default action, so a textControl's
 	// input event follows keypress, as in a browser.
 	if (notCanceled && char !== "") {
 		const charCode = char.codePointAt(0)!;

@@ -1,5 +1,5 @@
 /**
- * The user-agent widgets past the form fields: what a browser hides
+ * The user-agent widgets past the form text controls: what a browser hides
  * (datalist, a closed dialog, a closed details), the disclosure a summary
  * opens, the bars progress and meter draw, and the chrome a fieldset puts
  * around its legend.
@@ -385,12 +385,12 @@ test("a meter's level reads its value against low, high and optimum", async () =
 test("a fieldset draws a border its legend interrupts", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 24});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = "<fieldset><legend>Legend</legend>field body</fieldset>";
+	dom.document.body.innerHTML = "<fieldset><legend>Legend</legend>textControl body</fieldset>";
 	await nextFrame(dom);
 
 	expect(terminal.getPlainText()).toBe(
 		"┌─ Legend ─────────────┐\n" +
-		"│ field body           │\n" +
+		"│ textControl body           │\n" +
 		"└──────────────────────┘\n",
 	);
 

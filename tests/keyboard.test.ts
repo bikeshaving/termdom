@@ -373,7 +373,7 @@ test("keyboard events bubble up the DOM", async () => {
 	await new Promise((r) => setTimeout(r, 0));
 	expect(seen).toEqual(["body"]);
 
-	// Focused: the key lands on the field and climbs from there, so each
+	// Focused: the key lands on the textControl and climbs from there, so each
 	// ancestor hears it once, innermost first.
 	seen.length = 0;
 	child.focus();
@@ -622,7 +622,7 @@ test("a lone stray cursor report dispatches nothing", async () => {
 	dom.dispose();
 });
 
-test("a focused empty input still shows its placeholder, caret at the field start", async () => {
+test("a focused empty input still shows its placeholder, caret at the textControl start", async () => {
 	// Browsers show the placeholder in a focused empty input -- the caret
 	// just sits at position 0 over the dimmed text, and the first keystroke
 	// replaces it. This regressed invisibly for as long as autofocus was
@@ -688,10 +688,10 @@ test("backspace works after a framework resets .value out from under the caret",
 });
 
 test("deleting at the end of an overflowed input scrolls earlier text back into view", async () => {
-	// With more text than the field holds, the window follows the caret
+	// With more text than the textControl holds, the window follows the caret
 	// right. On backspace it used to stay put: the tail shrank inside the
 	// window while the earlier characters sat hidden off the left edge. A
-	// browser's field scrolls back to keep the field full -- the previous
+	// browser's textControl scrolls back to keep the textControl full -- the previous
 	// letters reappear as you delete.
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
@@ -803,9 +803,9 @@ test("Shift+arrows extend a selection with the browser's anchor/focus model", as
 	dom.dispose();
 });
 
-test("a number field paints its selection exactly as a text field does", async () => {
+test("a number textControl paints its selection exactly as a text textControl does", async () => {
 	// selectionStart/End answer null on number/email/date per spec, but browsers
-	// still highlight a selection in them -- the painter asks the field for the
+	// still highlight a selection in them -- the painter asks the textControl for the
 	// range it renders, not for the API the author is gated out of.
 	const inverseCells = async (type: string): Promise<string> => {
 		const terminal = new MockProcess({rows: 6, cols: 40});
@@ -1348,7 +1348,7 @@ test("Tab rests on nothing past the last focusable, and re-enters at the ends", 
 	dom.dispose();
 });
 
-test("focusing a field inside a fullscreen element leaves the camera alone", async () => {
+test("focusing a textControl inside a fullscreen element leaves the camera alone", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -1365,7 +1365,7 @@ test("focusing a field inside a fullscreen element leaves the camera alone", asy
 
 	// The fullscreen element left the flow, so body.scrollHeight measures
 	// next to nothing; a reveal sized by it scrolled the camera by the
-	// field's whole row and carried the caret off the screen.
+	// textControl's whole row and carried the caret off the screen.
 	input.focus();
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
 	await new Promise((r) => setTimeout(r, 10));
@@ -1429,7 +1429,7 @@ test("a number input's value reports nothing until the text is a number", async 
 	// A deletion may strand the text outside the grammar -- Ctrl+A to the
 	// start, Ctrl+D deleting the "-" leaves "4.2"; deleting again leaves
 	// ".2", still a number; deleting once more strands "2"... clear with
-	// Ctrl+E then Ctrl+U and the field takes text again.
+	// Ctrl+E then Ctrl+U and the textControl takes text again.
 	await press("\x01\x04");
 	expect(input.value).toBe("4.2");
 	await press("\x05\x15");
@@ -1457,7 +1457,7 @@ test("arrows step a number input along its grid, inside min and max", async () =
 	expect(input.value).toBe("3");
 	await press("\x1b[A");
 	expect(input.value).toBe("5");
-	// The next point is past max, so the field stays and nothing fires.
+	// The next point is past max, so the textControl stays and nothing fires.
 	events.length = 0;
 	await press("\x1b[A");
 	expect(input.value).toBe("5");
@@ -1558,9 +1558,9 @@ test("wide characters in an input measure in cells, not characters", async () =>
 	// CJK glyphs are two cells wide. Character arithmetic put the caret mid-text
 	// -- IME composition then anchored on top of already-typed glyphs, mangling
 	// each committed syllable -- and padEnd by character count pushed the
-	// value's cells past the field's 20-cell extent. The "|" right after the
+	// value's cells past the textControl's 20-cell extent. The "|" right after the
 	// input is the containment witness: it sits at cell 20 exactly when the
-	// field occupies exactly 20 cells.
+	// textControl occupies exactly 20 cells.
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = "<div><input id=\"a\" type=\"text\" style=\"width:20ch\">|</div>";
@@ -1580,7 +1580,7 @@ test("wide characters in an input measure in cells, not characters", async () =>
 	}
 
 	expect(input.value).toBe("김남제");
-	// 3 glyphs = 6 cells, padded to the 20-cell field, marker at cell 20.
+	// 3 glyphs = 6 cells, padded to the 20-cell textControl, marker at cell 20.
 	expect(line(0)).toBe("김남제              |");
 	// Caret sits AFTER six CELLS of glyphs, not three characters.
 	expect(buffer.cursorX).toBe(6);
@@ -1619,7 +1619,7 @@ test("width:100% on an input fills its container instead of collapsing", async (
 	const [full, half] = Array.from(dom.document.querySelectorAll("input"));
 	expect(full.getBoundingClientRect().width).toBe(40);
 	expect(half.getBoundingClientRect().width).toBe(20);
-	// The full-width field no longer clips its 22-char placeholder.
+	// The full-width textControl no longer clips its 22-char placeholder.
 	expect(terminal.getPlainText()).toContain("What needs to be done?");
 
 	dom.dispose();
@@ -1661,10 +1661,10 @@ test(":focus rules apply on focus and revert on blur", async () => {
 	dom.dispose();
 });
 
-test("a blurred field is plain; the focused field carries an underline across its extent", async () => {
+test("a blurred textControl is plain; the focused textControl carries an underline across its extent", async () => {
 	// The focus affordance is an `outline` the painter renders as a
-	// box-model-aware underline: a blurred field is plain, and focusing draws
-	// a solid underline across the WHOLE field -- the value AND the empty tail
+	// box-model-aware underline: a blurred textControl is plain, and focusing draws
+	// a solid underline across the WHOLE textControl -- the value AND the empty tail
 	// past it, the fill a glyph-only text-decoration could never reach.
 	const terminal = new MockProcess({rows: 5, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
@@ -1681,7 +1681,7 @@ test("a blurred field is plain; the focused field carries an underline across it
 	// Blurred: plain, both the value and the blank tail past it.
 	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
 	expect(cellAt(0, 5).isUnderline()).toBeFalsy();
-	// The neighbouring empty field (input b, cols 20-39) is plain too.
+	// The neighbouring empty textControl (input b, cols 20-39) is plain too.
 	expect(cellAt(0, 25).isUnderline()).toBeFalsy();
 
 	// Focused: a solid underline across the whole extent -- value and tail --
@@ -1691,7 +1691,7 @@ test("a blurred field is plain; the focused field carries an underline across it
 	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
 	expect(cellAt(0, 0).isDim()).toBeFalsy();
 	expect(cellAt(0, 5).isUnderline()).toBeTruthy();
-	// The other field, still blurred, stays plain.
+	// The other textControl, still blurred, stays plain.
 	expect(cellAt(0, 25).isUnderline()).toBeFalsy();
 
 	dom.dispose();
@@ -1800,10 +1800,10 @@ test("a runtime class flip swaps a row for its editor, in place", async () => {
 });
 
 test("typing in a width:auto input never clips the lead character", async () => {
-	// A shrink-wrapped field grows with its value, but the growth used to
+	// A shrink-wrapped textControl grows with its value, but the growth used to
 	// land a frame late: the keystroke painted at the stale width, the
 	// caret did not fit, and the scroll-window shoved the first character
-	// off the field for one frame. The edit path now syncs the UA tree
+	// off the textControl for one frame. The edit path now syncs the UA tree
 	// before layout flushes, so the very first frame shows the full value.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
@@ -1826,7 +1826,7 @@ test("typing in a width:auto input never clips the lead character", async () => 
 });
 
 test("an empty width:auto input keeps a single caret cell", async () => {
-	// With no value the field still reserves one cell (min-width) instead of
+	// With no value the textControl still reserves one cell (min-width) instead of
 	// collapsing to zero width and vanishing from the row. Blurred it is plain;
 	// focusing draws the outline underline over that single cell.
 	const terminal = new MockProcess({rows: 4, cols: 30});
@@ -1848,7 +1848,7 @@ test("an empty width:auto input keeps a single caret cell", async () => {
 	await nextFrame(dom);
 	expect(line().getCell(3).isUnderline()).toBeTruthy();
 
-	// Typing grows the field; deleting back to empty returns to the single
+	// Typing grows the textControl; deleting back to empty returns to the single
 	// cell rather than zero width, and the outline still marks it.
 	(terminal.stdin as any).emit("data", Buffer.from("hi"));
 	await new Promise((r) => setTimeout(r, 0));
@@ -1912,7 +1912,7 @@ test("an author-colored link keeps its focus ring", async () => {
 
 test("non-mouse nav: a button takes the outline underline across its whole box on focus", async () => {
 	// A button isn't underlined at rest (it wears [ ] brackets), so it uses the
-	// same `outline` focus as a field -- and the merge op lines the WHOLE box,
+	// same `outline` focus as a textControl -- and the merge op lines the WHOLE box,
 	// brackets included, where an inverse FILL misses the ::before/::after.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
@@ -1971,7 +1971,7 @@ test("bracketed paste into an input strips newlines and never replays as keys", 
 
 test("bracketed paste into a textarea keeps its newlines", async () => {
 	// A terminal sends a pasted line break as CR, the byte Enter sends -- not
-	// LF. The paste must reach the field with LF newlines regardless, or the
+	// LF. The paste must reach the textControl with LF newlines regardless, or the
 	// textarea inserts bare CRs that break no line and the paste renders as
 	// one run-together row.
 	const terminal = new MockProcess({rows: 6, cols: 40});
@@ -2040,7 +2040,7 @@ test("a click in a text input parks the caret at the pressed character", async (
 	dom.dispose();
 });
 
-test("a drag inside an input selects within the field, bounded to its value", async () => {
+test("a drag inside an input selects within the textControl, bounded to its value", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -2050,7 +2050,7 @@ test("a drag inside an input selects within the field, bounded to its value", as
 	const input = dom.document.querySelector("input") as HTMLInputElement;
 
 	// Press at col 2 (offset 1), drag far past the value's end, release:
-	// the selection clamps to the value -- the field's own world, not the
+	// the selection clamps to the value -- the textControl's own world, not the
 	// document selection.
 	(terminal.stdin as any).emit(
 		"data",
@@ -2074,7 +2074,7 @@ test("a drag inside an input selects within the field, bounded to its value", as
 	dom.dispose();
 });
 
-test("clicking into a field clears the document selection's highlight", async () => {
+test("clicking into a textControl clears the document selection's highlight", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -2083,7 +2083,7 @@ test("clicking into a field clears the document selection's highlight", async ()
 	await nextFrame(dom);
 
 	// Select the page text by drag, then press inside the input: the
-	// document selection collapses away; the field's world takes over.
+	// document selection collapses away; the textControl's world takes over.
 	(terminal.stdin as any).emit(
 		"data",
 		Buffer.from("\x1b[<0;1;1M\x1b[<32;9;1M\x1b[<0;9;1m"),
@@ -2099,7 +2099,7 @@ test("clicking into a field clears the document selection's highlight", async ()
 	expect(dom.window.getSelection()?.isCollapsed ?? true).toBe(true);
 	const input = dom.document.querySelector("input") as HTMLInputElement;
 	expect(dom.document.activeElement).toBe(input);
-	// And getSelection never exposes the field's own selection, per spec.
+	// And getSelection never exposes the textControl's own selection, per spec.
 	input.setSelectionRange(0, 5);
 	await nextFrame(dom);
 	expect(dom.window.getSelection()?.toString() ?? "").toBe("");
@@ -2340,7 +2340,7 @@ test("a password input paints masked bullets, never the real value", async () =>
 });
 
 test("a constrained input scrolls horizontally to follow the caret", async () => {
-	// Typing past a fixed-width field's width windows the value so the caret
+	// Typing past a fixed-width textControl's width windows the value so the caret
 	// stays in view: the box clips to its width (max-width on the value part),
 	// and the value scrolls under it.
 	const terminal = new MockProcess({rows: 4, cols: 30});
@@ -2358,8 +2358,8 @@ test("a constrained input scrolls horizontally to follow the caret", async () =>
 		await nextFrame(dom);
 	}
 
-	// The field shows the last ten cells, caret at the trailing edge -- not the
-	// leading "abcdef", and never wider than the field.
+	// The textControl shows the last ten cells, caret at the trailing edge -- not the
+	// leading "abcdef", and never wider than the textControl.
 	const row = terminal.getPlainText().split("\n")[0];
 	expect(row.startsWith("ghijklmnop")).toBe(true);
 	expect(row).not.toContain("abcdef");
@@ -2491,8 +2491,8 @@ test("line feed is the Ctrl+J chord, not Enter", async () => {
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML = "<textarea id=\"t\"></textarea>";
-	const field = dom.document.getElementById("t") as HTMLTextAreaElement;
-	field.focus();
+	const textControl = dom.document.getElementById("t") as HTMLTextAreaElement;
+	textControl.focus();
 	await nextFrame(dom);
 
 	const keys: string[] = [];
@@ -2508,9 +2508,9 @@ test("line feed is the Ctrl+J chord, not Enter", async () => {
 	await nextFrame(dom);
 
 	expect(keys).toEqual(["Enter", "j+ctrl"]);
-	// Both insert a newline in a textarea: the chord is what reaches a field
+	// Both insert a newline in a textarea: the chord is what reaches a textControl
 	// whose Enter an application has taken for itself.
-	expect(field.value).toBe("\n\n");
+	expect(textControl.value).toBe("\n\n");
 
 	dom.dispose();
 });

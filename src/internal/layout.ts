@@ -100,7 +100,7 @@ function isContainingBlockType(positionType: PositionType): boolean {
 	return positionType !== "static";
 }
 
-type AvailableSpace = "indefinite" | "definite" | "fit-content";
+type AvailableSpace = "indefinite" | "definite" | "shrink-to-fit";
 
 type Edges<T> = {left: T; top: T; right: T; bottom: T};
 
@@ -342,7 +342,7 @@ function isMatchingConstraints(
 
 // The cache reuse rules, after Yoga. Beyond an identical request, a
 // cached size satisfies an `definite` request of that same size, an
-// `fit-content` bound over an unbounded result that fits it, and a tighter
+// `shrink-to-fit` bound over an unbounded result that fits it, and a tighter
 // `fit-content` bound the result still fits. Sizing only. A full layout
 // placed children against its request.
 function isCachedSizeValid(
@@ -358,11 +358,11 @@ function isCachedSizeValid(
 	if (mode === "definite" && available === cachedComputed) {
 		return true;
 	}
-	if (mode === "fit-content") {
+	if (mode === "shrink-to-fit") {
 		if (cachedSpace === "indefinite") {
 			return cachedComputed <= available;
 		}
-		if (cachedSpace === "fit-content") {
+		if (cachedSpace === "shrink-to-fit") {
 			return cachedAvailable > available && cachedComputed <= available;
 		}
 	}
@@ -370,7 +370,7 @@ function isCachedSizeValid(
 }
 
 function isMinContent(mode: AvailableSpace, available: number): boolean {
-	return mode === "fit-content" && available === 0;
+	return mode === "shrink-to-fit" && available === 0;
 }
 
 const CACHE_SLOT_COUNT = 9;
@@ -783,12 +783,12 @@ export class LayoutNode {
 		if (!isDefined(width) && this.style.widthSizing !== "none") {
 			if (this.style.widthSizing === "min-content") {
 				availableWidth = 0;
-				widthSpace = "fit-content";
+				widthSpace = "shrink-to-fit";
 			} else if (this.style.widthSizing === "max-content") {
 				availableWidth = NaN;
 				widthSpace = "indefinite";
 			} else if (isDefined(availableWidth)) {
-				widthSpace = "fit-content";
+				widthSpace = "shrink-to-fit";
 			}
 		}
 		const availableHeight = isDefined(height) ? height : ownerHeight;
@@ -1111,16 +1111,16 @@ function constrainMaxSizeForMode(
 
 	if (
 		mode.mode === "definite" ||
-		mode.mode === "fit-content"
+		mode.mode === "shrink-to-fit"
 	) {
 		// A max caps the size without making it indefinite. Downgrading
-		// `definite` to `fit-content` tells an empty box it is shrink-wrapped,
+		// `definite` to `shrink-to-fit` tells an empty box it is shrink-wrapped,
 		// and it collapses to zero instead of taking the size flex just
 		// resolved for it.
 		mode.value = isDefined(mode.value) ? Math.min(mode.value, max) : max;
 	} else {
 		mode.value = max;
-		mode.mode = "fit-content";
+		mode.mode = "shrink-to-fit";
 	}
 }
 
@@ -1223,7 +1223,7 @@ function layoutMeasuredContent(
 			? availableHeight - marginColumn
 			: measured.height + paddingBorderColumn;
 
-	// Not clamped to an `fit-content` request. An unbreakable word overflows,
+	// Not clamped to an `shrink-to-fit` request. An unbreakable word overflows,
 	// and a box claiming less than it occupies made min-content zero and let
 	// a long word paint over its neighbour.
 	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
@@ -1252,12 +1252,12 @@ function layoutEmptyContainer(
 	const marginColumn = getAxisMargin(node, "column", ownerWidth);
 
 	const width =
-		widthSpace === "indefinite" || widthSpace === "fit-content"
+		widthSpace === "indefinite" || widthSpace === "shrink-to-fit"
 			? paddingBorderRow
 			: availableWidth - marginRow;
 	const height =
 		heightSpace === "indefinite" ||
-		heightSpace === "fit-content"
+		heightSpace === "shrink-to-fit"
 			? paddingBorderColumn
 			: availableHeight - marginColumn;
 
@@ -1336,11 +1336,11 @@ function computeFlexBasisForChild(
 
 	if (!isDefined(childWidth.value) && isDefined(width)) {
 		childWidth.value = width;
-		childWidth.mode = "fit-content";
+		childWidth.mode = "shrink-to-fit";
 	}
 	if (!isDefined(childHeight.value) && isDefined(height)) {
 		childHeight.value = height;
-		childHeight.mode = "fit-content";
+		childHeight.mode = "shrink-to-fit";
 	}
 
 	const stretch = getAlignSelf(node, child) === "stretch";
@@ -1586,7 +1586,7 @@ function layoutFlexbox(
 				getAxisMargin(child, cross, ownerWidth);
 			lineCross = Math.max(lineCross, childCross);
 		}
-		// Only a definite cross size fills the line. An `fit-content` bound
+		// Only a definite cross size fills the line. An `shrink-to-fit` bound
 		// treated as definite becomes the container's content size, then its
 		// basis above.
 		if (!wrap && isDefined(innerCross) && crossSpace === "definite") {
@@ -1832,7 +1832,7 @@ function resolveFlexibleLengths(
 	}
 	const growing = innerMain - hypotheticalTotal > 0;
 
-	// Growing needs a definite main size. Under `fit-content` the container
+	// Growing needs a definite main size. Under `shrink-to-fit` the container
 	// shrink-wraps. Shrinking still applies.
 	if (growing && mainSpace !== "definite") {
 		commit();
@@ -1959,8 +1959,8 @@ function getAutoMinimumMainSize(
 		child,
 		mainIsRow ? 0 : crossAvailable,
 		mainIsRow ? crossAvailable : 0,
-		mainIsRow ? "fit-content" : crossAvailableSpace,
-		mainIsRow ? crossAvailableSpace : "fit-content",
+		mainIsRow ? "shrink-to-fit" : crossAvailableSpace,
+		mainIsRow ? crossAvailableSpace : "shrink-to-fit",
 		ownerWidth,
 		ownerHeight,
 		false,
@@ -2064,10 +2064,10 @@ function layoutFlexItem(
 		if (isDefined(available)) {
 			if (isRow(cross)) {
 				childWidth.value = available;
-				childWidth.mode = "fit-content";
+				childWidth.mode = "shrink-to-fit";
 			} else {
 				childHeight.value = available;
-				childHeight.mode = "fit-content";
+				childHeight.mode = "shrink-to-fit";
 			}
 		}
 	}
@@ -2492,7 +2492,7 @@ function layoutAbsoluteChild(
 		childWidth.mode = "definite";
 	} else if (shrinkAcross) {
 		childWidth.value = blockWidth - left - right;
-		childWidth.mode = "fit-content";
+		childWidth.mode = "shrink-to-fit";
 	} else if (isDefined(left) && isDefined(right)) {
 		childWidth.value = blockWidth - left - right - marginLeft - marginRight;
 		childWidth.mode = "definite";
@@ -2503,7 +2503,7 @@ function layoutAbsoluteChild(
 		childWidth.mode =
 			area && getGridSelfAlign(node, child, true) === "stretch"
 				? "definite"
-				: "fit-content";
+				: "shrink-to-fit";
 	}
 
 	if (isStyleDimensionDefined(child, "column", basisHeight)) {
@@ -2512,7 +2512,7 @@ function layoutAbsoluteChild(
 		childHeight.mode = "definite";
 	} else if (shrinkDown) {
 		childHeight.value = blockHeight - top - bottom;
-		childHeight.mode = "fit-content";
+		childHeight.mode = "shrink-to-fit";
 	} else if (isDefined(top) && isDefined(bottom)) {
 		childHeight.value = blockHeight - top - bottom - marginTop - marginBottom;
 		childHeight.mode = "definite";
@@ -2521,7 +2521,7 @@ function layoutAbsoluteChild(
 		childHeight.mode =
 			area && getGridSelfAlign(node, child, false) === "stretch"
 				? "definite"
-				: "fit-content";
+				: "shrink-to-fit";
 	}
 
 	layoutNode(
@@ -2771,7 +2771,7 @@ function getIntrinsicCellWidth(
 		cell,
 		minContent ? 0 : NaN,
 		NaN,
-		minContent ? "fit-content" : "indefinite",
+		minContent ? "shrink-to-fit" : "indefinite",
 		"indefinite",
 		ownerWidth,
 		ownerHeight,
@@ -3751,7 +3751,7 @@ function getGridItemContribution(
 			child,
 			minContent ? 0 : NaN,
 			NaN,
-			minContent ? "fit-content" : "indefinite",
+			minContent ? "shrink-to-fit" : "indefinite",
 			"indefinite",
 			sizing.ownerWidth,
 			sizing.ownerHeight,
@@ -4476,7 +4476,7 @@ function layoutGridItem(
 		childWidth.mode = "definite";
 	} else {
 		childWidth.value = Math.max(0, areaWidth);
-		childWidth.mode = "fit-content";
+		childWidth.mode = "shrink-to-fit";
 	}
 
 	if (isStyleDimensionDefined(child, "column", ownerHeight)) {
@@ -4493,7 +4493,7 @@ function layoutGridItem(
 		childHeight.mode = "definite";
 	} else {
 		childHeight.value = Math.max(0, areaHeight);
-		childHeight.mode = "fit-content";
+		childHeight.mode = "shrink-to-fit";
 	}
 
 	constrainMaxSizeForMode(child, "row", ownerWidth, childWidth);
@@ -4860,7 +4860,7 @@ function layoutGrid(
 	let columnsTotal = totalOf(columnTracks, columnGap);
 	// A shrink-to-fit grid that overflows its bound is re-sized against it.
 	if (
-		widthSpace === "fit-content" &&
+		widthSpace === "shrink-to-fit" &&
 		isDefined(innerWidth) &&
 		columnsTotal > innerWidth + EPSILON
 	) {
@@ -4908,7 +4908,7 @@ function layoutGrid(
 	let rowTracks = sizeRows(definiteHeight ? innerHeight : NaN);
 	let rowsTotal = totalOf(rowTracks, rowGap);
 	if (
-		heightSpace === "fit-content" &&
+		heightSpace === "shrink-to-fit" &&
 		isDefined(innerHeight) &&
 		rowsTotal > innerHeight + EPSILON
 	) {
@@ -5259,13 +5259,13 @@ function layoutBlockChild(
 		childWidth.mode = "definite";
 	} else if (child.style.widthSizing === "min-content") {
 		childWidth.value = 0;
-		childWidth.mode = "fit-content";
+		childWidth.mode = "shrink-to-fit";
 	} else if (child.style.widthSizing === "max-content") {
 		// An undefined request measures the content unbroken.
 	} else if (isDefined(contentWidth)) {
-		// A non-filling child's `fit-content` request is already fit-content.
+		// A non-filling child's `shrink-to-fit` request is already fit-content.
 		childWidth.value = contentWidth;
-		childWidth.mode = fill ? "definite" : "fit-content";
+		childWidth.mode = fill ? "definite" : "shrink-to-fit";
 	}
 
 	if (isStyleDimensionDefined(child, "column", ownerHeight)) {
@@ -5300,7 +5300,7 @@ function hasNoLineBox(child: LayoutNode): boolean {
 	return child.measureContent !== null && child.layout.height === 0;
 }
 
-function isFillingBlockChild(child: LayoutNode): boolean {
+function isStretchFit(child: LayoutNode): boolean {
 	return (
 		!isShrinkToFitWidth(child) &&
 		child.style.margin.left.unit !== "auto" &&
@@ -5418,7 +5418,7 @@ function layoutBlock(
 		layoutBlockChild(
 			child,
 			contentWidth,
-			isFillingBlockChild(child),
+			isStretchFit(child),
 			ownerWidth,
 			ownerHeight,
 			performLayout,
@@ -8792,14 +8792,14 @@ function collectLeaves(
 					contentWidthMode = "definite";
 				} else if (widthSizing === "min-content") {
 					contentWidth = 0;
-					contentWidthMode = "fit-content";
+					contentWidthMode = "shrink-to-fit";
 				} else if (
 					widthSizing === "fit-content" &&
 					Number.isFinite(availableWidth) &&
 					availableWidth < Number.MAX_SAFE_INTEGER
 				) {
 					contentWidth = Math.max(0, availableWidth - horizontalBoxSpace);
-					contentWidthMode = "fit-content";
+					contentWidthMode = "shrink-to-fit";
 				} else if (element.tagName === "TEXTAREA") {
 					// cols sizes the CONTENT box (spec default 20). The UA
 					// sheet carries no width for it. A constant that pre-baked
@@ -8812,7 +8812,7 @@ function collectLeaves(
 
 				// On a row flex item's main axis the flex engine owns the used
 				// width, and the requests carry that authority: an `definite`
-				// request is the resolved width, and an `fit-content` request
+				// request is the resolved width, and an `shrink-to-fit` request
 				// below the CSS width is an intrinsic probe wanting the
 				// CONTENT's minimum, not the basis. Row flex items only.
 				// Elsewhere an `definite` request describes the container, and
@@ -8828,11 +8828,11 @@ function collectLeaves(
 						contentWidthMode = "definite";
 						offerOwnsWidth = true;
 					} else if (
-						availableWidthMode === "fit-content" &&
+						availableWidthMode === "shrink-to-fit" &&
 						offered < contentWidth
 					) {
 						contentWidth = offered;
-						contentWidthMode = "fit-content";
+						contentWidthMode = "shrink-to-fit";
 						offerOwnsWidth = true;
 					}
 				}
@@ -8841,8 +8841,8 @@ function collectLeaves(
 				// reported box. Otherwise it wraps at its natural width and
 				// overflows the capped box. A percentage resolves against the
 				// run's available width, or `max-width: 100%` (every text
-				// field's value part) broke at its natural width and overflowed
-				// its field.
+				// textControl's value part) broke at its natural width and overflowed
+				// its textControl.
 				const maxWidthValue = parseUnitValue(
 					getComputedValue(element, "max-width"),
 				);
@@ -8862,7 +8862,7 @@ function collectLeaves(
 					if (cap < contentWidth) {
 						contentWidth = cap;
 						if (contentWidthMode === "indefinite") {
-							contentWidthMode = "fit-content";
+							contentWidthMode = "shrink-to-fit";
 						}
 					}
 				}
@@ -8888,7 +8888,7 @@ function collectLeaves(
 					independentFormattingContext.performLayout(
 						contentWidthMode === "definite" ||
 						(widthSizing !== "none" &&
-							contentWidthMode === "fit-content")
+							contentWidthMode === "shrink-to-fit")
 							? contentWidth
 							: Number.NaN,
 						contentHeightMode === "definite"
@@ -8912,8 +8912,8 @@ function collectLeaves(
 				}
 
 				// And the REPORTED box. Content that cannot wrap (a single-line
-				// field's pre text) overflows and is clipped rather than
-				// stretching the box, or the field's horizontal scroll has
+				// textControl's pre text) overflows and is clipped rather than
+				// stretching the box, or the textControl's horizontal scroll has
 				// nothing to window.
 				if (maxWidthCap !== undefined) {
 					finalContentWidth = Math.min(
@@ -8928,7 +8928,7 @@ function collectLeaves(
 				}
 
 				// rows floor the content height (spec default 2). A floor, not
-				// a height: the field grows with its content, where a browser
+				// a height: the textControl grows with its content, where a browser
 				// would scroll inside a fixed box. cols fix the reported width.
 				// The box is attribute-sized however short the value is.
 				if (element.tagName === "TEXTAREA") {
@@ -9032,7 +9032,7 @@ function breakNodes(
 	widthSpace: AvailableSpace,
 ): BreakResult {
 	// An `indefinite` request is indefinite (NaN), so percentages in
-	// the content cannot resolve. Any definite request, an `fit-content` 0
+	// the content cannot resolve. Any definite request, an `shrink-to-fit` 0
 	// included, resolves them.
 	const leafNodes = collectLeafNodes(
 		layout,
@@ -9079,7 +9079,7 @@ function breakNodes(
 		nowrap,
 	);
 	// break-word does NOT shrink min-content (the word still measures whole
-	// at the `fit-content` 0 probe), while anywhere and break-all do.
+	// at the `shrink-to-fit` 0 probe), while anywhere and break-all do.
 	const breakAnywhere =
 		!nowrap &&
 		(wordBreak === "break-all" ||
@@ -10695,7 +10695,7 @@ export class Layout {
 			});
 		}
 		// Empty text's one line sits at the containing block's content-box
-		// origin, where a caret rests in an empty field.
+		// origin, where a caret rests in an empty textControl.
 		if (lines.length === 0) {
 			const parent = textNode.parentElement;
 			const content = parent && this.contentRect(parent);
@@ -10721,7 +10721,7 @@ export class Layout {
 	// a column into an offset, correct over collapsing white space. Landing
 	// past the last character means "after it", so a drag selects through
 	// end-of-line. With clampToNearestLine a point on no line resolves to
-	// the nearest, so a drag that leaves a field still tracks it.
+	// the nearest, so a drag that leaves a textControl still tracks it.
 	caretPositionFromPoint(
 		x: number,
 		y: number,
@@ -11593,13 +11593,13 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	// formatting context with its own alignment.
 	let alignContainer: Element | null = flatParentElement<Element>(runHead);
 
-	// Flat-tree parents. A widget's UA shadow text has no parentElement
+	// Flat-tree parents. A UA shadow tree's UA shadow text has no parentElement
 	// chain to its host, and the walk would stop at the shadow boundary.
 	while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
 		const parent = flatParentElement<Element>(currentNode)!;
 
 		if (establishesIndependentFormattingContext(parent)) {
-			// A field's windowed value shifts its content by its own scroll, so
+			// A textControl's windowed value shifts its content by its own scroll, so
 			// the caret stays in view, independent of whether its segment is
 			// found below.
 			accumulatedOffsetX -= (parent as Element).scrollLeft || 0;

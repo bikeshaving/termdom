@@ -672,7 +672,7 @@ function getBorderChar(borderEncoding: number): string {
  * Parallel typed-array planes indexed by `row * cols + col`. A color of
  * 0 is the terminal's default, not black. It is the sentinel the diff
  * writes as 39/49. A char of 0 is an empty cell, including the column a
- * two-column glyph covers. The glyph's width field steps the emitter
+ * two-column glyph covers. The glyph's width textControl steps the emitter
  * over it.
  */
 class CellGrid {
@@ -954,7 +954,7 @@ export class CellContext {
 	rows: number;
 	cols: number;
 	viewportOffset: number;
-	// Where a focused field wants the real cursor. IME composition anchors
+	// Where a focused textControl wants the real cursor. IME composition anchors
 	// there, so an inverse-cell caret is not enough for text entry.
 	caret: {col: number; row: number} | null;
 	// The overflow:hidden clip in document (row, col) space. An edge is
