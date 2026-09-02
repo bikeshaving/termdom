@@ -7376,7 +7376,7 @@ function syncContainerRuns(
 		// A box a fresh build would have made differently is remade. The rest
 		// is re-derived onto the existing node.
 		const node = entry.node!;
-		addNode(layout, node, containerFlex);
+		addNode(layout, node, containerFlex, null);
 		// An out-of-flow box hangs from its containing block, which the build
 		// above hoisted it to, and takes no place among the boxes counted here.
 		if (isOutOfFlow(node)) {
@@ -7505,10 +7505,14 @@ function isReachableFrom(
 	return false;
 }
 
+// `known` is the anonymous run box holding the node, or null when the
+// node has a box of its own, from a caller that has the container's box
+// list in hand. Undefined asks for it, which climbs to the container.
 function addNode(
 	layout: Layout,
 	node: Node,
 	parentLayoutNode: LayoutNode | null = null,
+	known?: Box | null,
 ): void {
 	// Fresh builds never descend past a display:none boundary, and rebuild
 	// sweeps must not bring descendants back in under it.
@@ -7568,12 +7572,15 @@ function addNode(
 		const existingLayoutNode = layout[kNodeMap].get(node)!;
 		// A node left from when this content was block-level is dropped, so
 		// the anonymous box is the only thing measuring it.
-		if (isInlineLevel(node) && getBox(layout, node)) {
+		if (
+			isInlineLevel(node) &&
+			(known !== undefined ? known : getBox(layout, node))
+		) {
 			dropLayoutNode(layout, node);
 			if (node.nodeType === node.ELEMENT_NODE) {
-				addElementNode(layout, node as Element, parentLayoutNode);
+				addElementNode(layout, node as Element, parentLayoutNode, known);
 			} else {
-				addTextNode(layout, node as Text, parentLayoutNode);
+				addTextNode(layout, node as Text, parentLayoutNode, known);
 			}
 			return;
 		}
@@ -7619,9 +7626,9 @@ function addNode(
 	}
 
 	if (node.nodeType === node.ELEMENT_NODE) {
-		addElementNode(layout, node as Element, parentLayoutNode);
+		addElementNode(layout, node as Element, parentLayoutNode, known);
 	} else if (node.nodeType === node.TEXT_NODE) {
-		addTextNode(layout, node as Text, parentLayoutNode);
+		addTextNode(layout, node as Text, parentLayoutNode, known);
 	}
 }
 
@@ -7629,12 +7636,13 @@ function addElementNode(
 	layout: Layout,
 	element: Element,
 	parentLayoutNode: LayoutNode | null = null,
+	known?: Box | null,
 ): void {
 	const display = getComputedDisplay(element);
 	const asRun = isMeasuredAsRun(element);
 
 	if (asRun) {
-		const box = getBox(layout, element);
+		const box = known !== undefined ? known : getBox(layout, element);
 		if (box) {
 			invalidateBox(layout, box);
 			layout[kDirtyRunContainers].add(box.container);
@@ -7684,13 +7692,23 @@ function addElementNode(
 	dropIndependentFormattingContext(getPrincipalBox(layout, element));
 
 	// Only DIRECT children. A broken inline's boxes reach the tree through
-	// this container's own box reconciliation.
+	// this container's own box reconciliation. The container's box list
+	// says which run each child falls in, so no child climbs to find out.
+	// An out-of-flow child heads no run whatever the list says of it.
+	const heads = flatIsConnected(element)
+		? getContainerBox(layout, element).heads
+		: null;
 	for (const child of flowContent(element)) {
 		if (
 			child.nodeType === child.ELEMENT_NODE ||
 			child.nodeType === child.TEXT_NODE
 		) {
-			addNode(layout, child, layoutNode);
+			let known: Box | null | undefined;
+			const entry = heads?.get(child);
+			if (entry !== undefined && !isOutOfFlow(child)) {
+				known = entry.kind === "anonymous" ? entry : null;
+			}
+			addNode(layout, child, layoutNode, known);
 		}
 	}
 
@@ -7716,6 +7734,7 @@ function addTextNode(
 	layout: Layout,
 	text: Text,
 	parentLayoutNode: LayoutNode | null = null,
+	known?: Box | null,
 ): void {
 	if (!parentLayoutNode) {
 		return;
@@ -7725,7 +7744,7 @@ function addTextNode(
 		return;
 	}
 
-	const box = getBox(layout, text);
+	const box = known !== undefined ? known : getBox(layout, text);
 	if (box) {
 		invalidateBox(layout, box);
 		layout[kDirtyRunContainers].add(box.container);
