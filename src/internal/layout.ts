@@ -11074,6 +11074,11 @@ function isLayoutStyleUnchanged(layout: Layout, element: Element): boolean {
 	if (layoutNode === undefined) {
 		return false;
 	}
+	// A pseudo-element's style is the host's to change, and its box is the
+	// host's child, so a host with any takes the full path.
+	if (pseudoElementCount(element) > 0) {
+		return false;
+	}
 	const probe = new LayoutNode();
 	styleLayoutNodeProperties(element, probe, new Set());
 	return (
