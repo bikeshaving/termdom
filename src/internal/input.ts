@@ -111,7 +111,7 @@ function getSequentialFocusEntries(
 		for (
 			let ancestor: Element | null = element;
 			ancestor;
-			ancestor = flatParentElement<Element>(ancestor)
+			ancestor = flatParentElement(ancestor)
 		) {
 			if (getComputedValue(ancestor, "display") === "none") {
 				return false;
@@ -127,7 +127,7 @@ function getSequentialFocusEntries(
 		for (
 			let ancestor: Element | null = element;
 			ancestor;
-			ancestor = flatParentElement<Element>(ancestor)
+			ancestor = flatParentElement(ancestor)
 		) {
 			if (ancestor.hasAttribute("inert")) {
 				return true;
@@ -164,7 +164,7 @@ function getSequentialFocusEntries(
 			}
 			const element = node as Element;
 			const ownerTabindex = getTabIndex(element);
-			const shadow = getShadowRoot<ShadowRoot>(element);
+			const shadow = getShadowRoot(element);
 			if (shadow !== null) {
 				const innerBarrier =
 					ownerTabindex < 0 ? (barrier ?? element) : barrier;
@@ -245,7 +245,7 @@ function getWheelScroller(
 		element &&
 		element !== document.body &&
 		element !== document.documentElement;
-		element = flatParentElement<Element>(element)
+		element = flatParentElement(element)
 	) {
 		const overflowY =
 			getComputedValue(element, "overflow-y") ||
@@ -405,7 +405,7 @@ export class Input {
 				for (
 					let node: Element | null = element;
 					node;
-					node = flatParentElement<Element>(node)
+					node = flatParentElement(node)
 				) {
 					chain.push(node);
 				}
@@ -1076,7 +1076,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 	// activeElement retargets to the shadow host. Follow it down.
 	let current = input[kDocument].activeElement;
 	while (current !== null) {
-		const shadow = getShadowRoot<ShadowRoot>(current);
+		const shadow = getShadowRoot(current);
 		const inner = shadow?.activeElement ?? null;
 		if (inner === null) {
 			break;
@@ -1153,7 +1153,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 				for (
 					let ancestor: Element | null = element;
 					ancestor;
-					ancestor = flatParentElement<Element>(ancestor)
+					ancestor = flatParentElement(ancestor)
 				) {
 					if (ancestor === owner) {
 						return true;
@@ -1213,7 +1213,7 @@ function isSelectable(
 	input: Input,
 	position: {node: Text; offset: number},
 ): boolean {
-	const parent = flatParentElement<Element>(position.node);
+	const parent = flatParentElement(position.node);
 	return parent === null ||
 		input[kCascade].isSelectable(parent);
 }

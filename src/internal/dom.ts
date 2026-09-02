@@ -264,6 +264,8 @@ export function placeTextControlCaret(
 	return {textControl: target, offset};
 }
 
+const kUASelectionRange = Symbol("what an element's own selection covers");
+
 /**
  * The focused text text control's selection over this text node, or null. Per
  * spec a control's selection is invisible to getSelection(), so this is
@@ -279,7 +281,7 @@ export function getTextControlSelectionRange(
 	if (!active || !isTextControl(active)) {
 		return null;
 	}
-	const range = getUASelectionRange(active);
+	const range = (active as Element)[kUASelectionRange]?.() ?? null;
 	if (!range || range.startContainer !== textNode) {
 		return null;
 	}
@@ -352,23 +354,9 @@ export function revealTextControlCaret(document: globalThis.Document): void {
 	}
 }
 
-const kUASelectionRange = Symbol("what an element's own selection covers");
-
 // Per spec a form control's selection is invisible to getSelection(), so
 // this is the only way to measure it. The range belongs to the document
 // and is valid until the next selection read.
-function getUASelectionRange(
-	element: globalThis.Element,
-): globalThis.Range | null {
-	return (
-		(element as unknown as Record<
-			symbol,
-			(() => globalThis.Range | null) | undefined
-		>)[
-			kUASelectionRange
-		]?.() ?? null
-	);
-}
 
 /** The range each document reuses for control-selection queries. */
 const selectionRanges = new WeakMap<globalThis.Document, globalThis.Range>();
@@ -3664,7 +3652,7 @@ function retarget(
 }
 
 /** Whether a root is a shadow root, meaning a fragment with a host. */
-function isShadowRoot(root: Node): boolean {
+function isShadowRoot(root: Node): root is ShadowRoot {
 	return root instanceof ShadowRoot;
 }
 
@@ -9991,7 +9979,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			for (
 				let ancestor: Element | null = this;
 				ancestor !== null;
-				ancestor = flatParentElement<Element>(ancestor)
+				ancestor = getFlatTreeParent(ancestor)
 			) {
 				if (view.getComputedStyle(ancestor).display === "none") {
 					return false;
@@ -11533,8 +11521,13 @@ export function isUAShadowTree(node: globalThis.Node): boolean {
  * composes through this. `Element.shadowRoot` is the author-facing view
  * and shows only an open tree.
  */
-export function getShadowRoot<T>(element: globalThis.Element): T | null {
-	return ((element as Element)[kShadowRoot]! as T) ?? null;
+export function getShadowRoot(
+	element: globalThis.Element,
+): globalThis.ShadowRoot | null {
+	return (
+		((element as Element)[kShadowRoot]! as unknown as globalThis.ShadowRoot) ??
+		null
+	);
 }
 
 type Slottable = Element | Text;
@@ -11549,12 +11542,6 @@ function isAssigned(target: EventTarget | null): boolean {
 		isSlottable(target) &&
 		(target as Slottable)[kAssignedSlot] !== null
 	);
-}
-
-function getSlottableName(slottable: Slottable): string {
-	return slottable.nodeType === ELEMENT_NODE
-		? (slottable as Element)[kSlottableName]!
-		: "";
 }
 
 function hasInclusiveDescendantSlot(node: Node): boolean {
@@ -11594,7 +11581,7 @@ function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 		}
 		return null;
 	}
-	const name = getSlottableName(slottable);
+	const name = isElement(slottable) ? slottable[kSlottableName]! : "";
 	for (const descendant of descendants(shadow)) {
 		if (
 			descendant instanceof HTMLSlotElement &&
@@ -18743,7 +18730,7 @@ function getNearestInclusiveOpenPopover(node: Node): Element | null {
 	for (
 		let current: Node | null = node;
 		current !== null;
-		current = flatParentElement<Node>(current)
+		current = getFlatTreeParent(current)
 	) {
 		const state = popoverStates.get(current as Element);
 		if (state?.mode === "auto" && state.visibility === "showing") {
@@ -18760,7 +18747,7 @@ function getNearestInclusiveTargetPopover(node: Node): Element | null {
 	for (
 		let current: Node | null = node;
 		current !== null;
-		current = flatParentElement<Node>(current)
+		current = getFlatTreeParent(current)
 	) {
 		const target = getPopoverTargetElement(current);
 		if (
@@ -18985,7 +18972,7 @@ function isFlatInclusiveAncestor(ancestor: Node, node: Node): boolean {
 	for (
 		let current: Node | null = node;
 		current !== null;
-		current = flatParentElement<Node>(current)
+		current = getFlatTreeParent(current)
 	) {
 		if (current === ancestor) {
 			return true;
@@ -20468,8 +20455,12 @@ export function pseudoElementCount(host: globalThis.Element): number {
  * pseudo-element node is identified, and how the flat tree finds the
  * parent that a node with no parent renders inside.
  */
-export function getPseudoHost<T>(node: globalThis.Node): T | null {
-	return ((node as Element)[kPseudoHost]! as T) ?? null;
+export function getPseudoHost(
+	node: globalThis.Node,
+): globalThis.Element | null {
+	return (
+		((node as Element)[kPseudoHost]! as unknown as globalThis.Element) ?? null
+	);
 }
 
 /** For example "::before". */
@@ -20540,22 +20531,26 @@ function getAssignedSlot(node: Node): HTMLSlotElement | null {
  * to the HOST, and a pseudo-element node's is the element it originates
  * from. Everything else is parentElement.
  */
-export function flatParentElement<T>(target: globalThis.Node): T | null {
-	const node = target as Node;
+export function flatParentElement(
+	target: globalThis.Node,
+): globalThis.Element | null {
+	return getFlatTreeParent(target as Node) as unknown as globalThis.Element |
+		null;
+}
+
+function getFlatTreeParent(node: Node): Element | null {
 	const slot = getAssignedSlot(node);
 	if (slot !== null) {
-		return slot as unknown as T;
+		return slot;
 	}
 	const parent = node[kParent]!;
 	if (parent !== null) {
-		if (parent.nodeType === ELEMENT_NODE) {
-			return parent as unknown as T;
+		if (isElement(parent)) {
+			return parent;
 		}
-		return isShadowRoot(parent)
-			? ((parent as ShadowRoot)[kHost]! as unknown as T)
-			: null;
+		return isShadowRoot(parent) ? parent[kHost]! : null;
 	}
-	return ((node as Element)[kPseudoHost]! as T) ?? null;
+	return (node as Element)[kPseudoHost]! ?? null;
 }
 
 /**
@@ -20570,7 +20565,7 @@ export function flatIsConnected(target: globalThis.Node): boolean {
 		if (isConnectedNode(node)) {
 			return true;
 		}
-		node = flatParentElement<Node>(node);
+		node = getFlatTreeParent(node);
 	}
 	return false;
 }
@@ -22891,9 +22886,9 @@ export function elementAtDocumentPoint(
 	// The DOM cannot hand out a pseudo-element, so a hit on the content it
 	// generates is a hit on the element it originates from.
 	for (
-		let host = element && getPseudoHost<Element>(element);
+		let host = element && element[kPseudoHost]!;
 		host;
-		host = getPseudoHost<Element>(element!)
+		host = element![kPseudoHost]!
 	) {
 		element = host;
 	}
@@ -22954,7 +22949,7 @@ Object.defineProperties(Document.prototype, {
 					: elementAtDocumentPoint(this, x, y + attached[kScreen].scrollTop);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
-				hit = flatParentElement(hit);
+				hit = getFlatTreeParent(hit);
 			}
 			return stack;
 		},
@@ -26898,7 +26893,7 @@ function isHovered(element: Element): boolean {
 	for (
 		let node: Element | null = hoveredElements.get(document) ?? null;
 		node !== null;
-		node = flatParentElement<Element>(node)
+		node = getFlatTreeParent(node)
 	) {
 		if (node === element) {
 			return true;
@@ -28621,7 +28616,7 @@ function dropUnfocusableFocus(
 ): void {
 	let active = document.activeElement;
 	while (active !== null) {
-		const shadow = getShadowRoot<ShadowRoot>(active);
+		const shadow = (active as Element)[kShadowRoot]!;
 		const inner = shadow?.activeElement ?? null;
 		if (inner === null) {
 			break;
@@ -28634,7 +28629,7 @@ function dropUnfocusableFocus(
 	for (
 		let node: globalThis.Element | null = active;
 		node !== null;
-		node = flatParentElement<globalThis.Element>(node)
+		node = flatParentElement(node)
 	) {
 		if (
 			node.hasAttribute("inert") ||
@@ -31369,7 +31364,7 @@ function compilePseudoClass(
 			return;
 		case "root":
 			compound.tests.push((element) => {
-				const parent = getParent(element);
+				const parent = element[kParent]!;
 				return parent !== null && parent.nodeType === DOCUMENT_NODE;
 			});
 			return;
@@ -31884,9 +31879,9 @@ function canOpen(element: Element): boolean {
 
 function isEmpty(element: Element): boolean {
 	for (
-		let child = getFirstChildNode(element);
+		let child = element[kFirstChild]!;
 		child !== null;
-		child = getNextSibling(child)
+		child = child[kNext]!
 	) {
 		if (child.nodeType === ELEMENT_NODE) {
 			return false;
@@ -32077,27 +32072,26 @@ function getAutoDirection(element: Element): "ltr" | "rtl" {
 function getTextUnder(element: Element, all: boolean): string {
 	let text = "";
 	for (
-		let child = getFirstChildNode(element);
+		let child = element[kFirstChild]!;
 		child !== null;
-		child = getNextSibling(child)
+		child = child[kNext]!
 	) {
 		if (child.nodeType === TEXT_NODE || child.nodeType === CDATA_SECTION_NODE) {
 			text += child.nodeValue ?? "";
 			continue;
 		}
-		const descendant = asElement(child);
-		if (descendant === null || all) {
+		if (!isElement(child) || all) {
 			continue;
 		}
-		// A descendant that states its own direction, and one that isolates its
+		// A child that states its own direction, and one that isolates its
 		// content, both keep their text out of the scan above them.
 		if (
-			OPAQUE_TO_AUTO.has(descendant.localName) ||
-			getDeclaredDirection(descendant) !== null
+			OPAQUE_TO_AUTO.has(child.localName) ||
+			getDeclaredDirection(child) !== null
 		) {
 			continue;
 		}
-		text += getTextUnder(descendant, false);
+		text += getTextUnder(child, false);
 	}
 	return text;
 }
@@ -32212,13 +32206,12 @@ function getParentStep(
 	element: Element,
 	state: MatchState,
 ): {element: Element; featureless: boolean} | null {
-	const parent = getParent(element);
+	const parent = element[kParent]!;
 	if (parent === null) {
 		return null;
 	}
-	const above = asElement(parent);
-	if (above !== null) {
-		return {element: above, featureless: false};
+	if (isElement(parent)) {
+		return {element: parent, featureless: false};
 	}
 	// A selector written in a shadow tree can reach the host above it, and
 	// the host is featureless. Only `:host` and its two functional forms can
@@ -32264,62 +32257,33 @@ function hasMatch(
 	return false;
 }
 
-// The DOM types the links between nodes the way the platform does: a
-// parent is a ParentNode and a sibling a ChildNode, mixins that describe
-// what may stand in each position rather than what a node is. The
-// matcher walks nodes, so it reads each link as the node on the other
-// end, and these four readers are the only places it does that.
-
-function getParent(node: Node): Node | null {
-	return node.parentNode as Node | null;
-}
-
-function getFirstChildNode(node: Node): Node | null {
-	return node.firstChild as Node | null;
-}
-
-function getPreviousSibling(node: Node): Node | null {
-	return node.previousSibling as Node | null;
-}
-
-function getNextSibling(node: Node): Node | null {
-	return node.nextSibling as Node | null;
-}
-
-function asElement(node: Node | null): Element | null {
-	return node !== null && node.nodeType === ELEMENT_NODE
-		? (node as Element)
-		: null;
+function isElement(node: Node): node is Element {
+	return node.nodeType === ELEMENT_NODE;
 }
 
 function parentElement(node: Node): Element | null {
-	return asElement(getParent(node));
+	const parent = node[kParent]!;
+	return parent !== null && isElement(parent) ? parent : null;
 }
 
 function getElementSiblings(element: Element): Element[] {
-	const parent = getParent(element);
+	const parent = element[kParent]!;
 	return parent === null ? [element] : getElementChildren(parent);
 }
 
 function getPreviousElement(element: Element): Element | null {
-	for (let node = getPreviousSibling(element);
-		node !== null;
-		node = getPreviousSibling(node)) {
-		const found = asElement(node);
-		if (found !== null) {
-			return found;
+	for (let node = element[kPrevious]!; node !== null; node = node[kPrevious]!) {
+		if (isElement(node)) {
+			return node;
 		}
 	}
 	return null;
 }
 
 function getNextElement(element: Element): Element | null {
-	for (let node = getNextSibling(element);
-		node !== null;
-		node = getNextSibling(node)) {
-		const found = asElement(node);
-		if (found !== null) {
-			return found;
+	for (let node = element[kNext]!; node !== null; node = node[kNext]!) {
+		if (isElement(node)) {
+			return node;
 		}
 	}
 	return null;
@@ -32516,8 +32480,7 @@ function walkElements(
 		node !== null;
 		node = nextInTree(node, root)
 	) {
-		const element = asElement(node);
-		if (element !== null && visit(element)) {
+		if (isElement(node) && visit(node)) {
 			return true;
 		}
 	}

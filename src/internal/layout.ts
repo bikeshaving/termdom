@@ -6354,11 +6354,11 @@ const DIRECTIONS = new Set<string>([
 
 const WRAPS = new Set<string>(["nowrap", "wrap", "wrap-reverse"]);
 
-function asFlexDirection(value: string): FlexDirection {
+function parseFlexDirection(value: string): FlexDirection {
 	return DIRECTIONS.has(value) ? (value as FlexDirection) : "row";
 }
 
-function asWrap(value: string): Wrap {
+function parseFlexWrap(value: string): Wrap {
 	return WRAPS.has(value) ? (value as Wrap) : "nowrap";
 }
 
@@ -6827,10 +6827,10 @@ function styleLayoutNodeProperties(
 
 	if (display === "flex") {
 		layoutNode.setFlexDirection(
-			asFlexDirection(getComputedValue(element, "flex-direction")),
+			parseFlexDirection(getComputedValue(element, "flex-direction")),
 		);
 		layoutNode.setFlexWrap(
-			asWrap(getComputedValue(element, "flex-wrap")),
+			parseFlexWrap(getComputedValue(element, "flex-wrap")),
 		);
 		layoutNode.setJustifyContent(
 			getJustifyContentConstant(
@@ -7413,9 +7413,9 @@ function syncRunMembers(
 // The flat parent, skipping elements that generate no box. A projected
 // node's box lives under the slot's own box parent.
 function getBoxParentElement(node: Node): Element | null {
-	let parent = flatParentElement<Element>(node);
+	let parent = flatParentElement(node);
 	while (parent !== null && isDisplayContents(parent)) {
-		parent = flatParentElement<Element>(parent);
+		parent = flatParentElement(parent);
 	}
 	return parent;
 }
@@ -7938,9 +7938,9 @@ function getContainingBlockLayoutNode(
 	element: Element,
 ): LayoutNode | null {
 	for (
-		let ancestor = flatParentElement<Element>(element);
+		let ancestor = flatParentElement(element);
 		ancestor;
-		ancestor = flatParentElement<Element>(ancestor)
+		ancestor = flatParentElement(ancestor)
 	) {
 		if (getPosition(ancestor) !== "static") {
 			const layoutNode = layout[kNodeMap].get(ancestor);
@@ -7957,9 +7957,9 @@ function getContainingBlockLayoutNode(
 
 function isHiddenByAncestor(node: Node): boolean {
 	for (
-		let ancestor = flatParentElement<Element>(node);
+		let ancestor = flatParentElement(node);
 		ancestor;
-		ancestor = flatParentElement<Element>(ancestor)
+		ancestor = flatParentElement(ancestor)
 	) {
 		if (getComputedDisplay(ancestor) === "none") {
 			return true;
@@ -8103,7 +8103,7 @@ function flatFirstRenderableChild(element: Element): Node | null {
 // Then the flex algorithm, not the element's own CSS width, owns its
 // used width.
 function isRowFlexItem(element: Element): boolean {
-	const parent = flatParentElement<Element>(element);
+	const parent = flatParentElement(element);
 	if (!parent) {
 		return false;
 	}
@@ -8535,7 +8535,7 @@ interface RectText {
 }
 
 function getWhiteSpace(textNode: Text): string {
-	const parent = flatParentElement<Element>(textNode);
+	const parent = flatParentElement(textNode);
 	return parent ? getComputedValue(parent, "white-space") : "normal";
 }
 
@@ -9051,7 +9051,7 @@ function breakNodes(
 	const opener = source.head;
 	const styleElement =
 		opener.nodeType === opener.TEXT_NODE
-			? flatParentElement<Element>(opener)!
+			? flatParentElement(opener)!
 			: (opener as Element);
 
 	const whiteSpace = getComputedValue(styleElement, "white-space");
@@ -10243,7 +10243,7 @@ export class Layout {
 			// A host's childNodes are its LIGHT children, unrelated to the
 			// composed ones the layout tree holds. The counts collide by
 			// accident. Hosts always take the walker.
-			getShadowRoot<ShadowRoot>(element) !== null ||
+			getShadowRoot(element) !== null ||
 			// A broken inline's boxes are children[] entries whose DOM node
 			// lives a level DOWN. `<span>a<div/><span>c</span></span>d<input>`
 			// collides at three and three, and the fast path dropped the text
@@ -10485,9 +10485,9 @@ export class Layout {
 	// screen's to reveal.
 	revealInScrollPorts(element: Element): void {
 		for (
-			let ancestor = flatParentElement<Element>(element);
+			let ancestor = flatParentElement(element);
 			ancestor && !isRootBox(this, ancestor);
-			ancestor = flatParentElement<Element>(ancestor)
+			ancestor = flatParentElement(ancestor)
 		) {
 			const overflow = getComputedValue(ancestor, "overflow");
 			if (
@@ -10809,9 +10809,9 @@ export class Layout {
 			}
 			let root: Element = body;
 			for (
-				let ancestor = flatParentElement<Element>(element);
+				let ancestor = flatParentElement(element);
 				ancestor;
-				ancestor = flatParentElement<Element>(ancestor)
+				ancestor = flatParentElement(ancestor)
 			) {
 				if (isStackingContext(ancestor)) {
 					root = ancestor;
@@ -10930,7 +10930,7 @@ export class Layout {
 		for (
 			let el: Element | null = element;
 			el;
-			el = flatParentElement<Element>(el)
+			el = flatParentElement(el)
 		) {
 			if (getPosition(el) === "fixed") {
 				return true;
@@ -11064,7 +11064,7 @@ function invalidateForRecord(
 			// is unreachable from where it now is. Rare enough for the blunt
 			// approach.
 			const host = (target as Element).parentElement;
-			if (host && getShadowRoot<ShadowRoot>(host)) {
+			if (host && getShadowRoot(host)) {
 				invalidateSubtreeDerivation(layout, host);
 			}
 		}
@@ -11158,9 +11158,9 @@ function getInlineBlockRect(
 	// is an inline-block.
 	const enclosing: Element[] = [];
 	for (
-		let ancestor = flatParentElement<Element>(element);
+		let ancestor = flatParentElement(element);
 		ancestor;
-		ancestor = flatParentElement<Element>(ancestor)
+		ancestor = flatParentElement(ancestor)
 	) {
 		enclosing.unshift(ancestor);
 		if (ancestor === runHead) {
@@ -11592,12 +11592,12 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	// Whose text-align governs these lines: the block container, until the
 	// walk descends into an inline-block's nested breakResult, a fresh
 	// formatting context with its own alignment.
-	let alignContainer: Element | null = flatParentElement<Element>(runHead);
+	let alignContainer: Element | null = flatParentElement(runHead);
 
 	// Flat-tree parents. A UA shadow tree's UA shadow text has no parentElement
 	// chain to its host, and the walk would stop at the shadow boundary.
-	while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
-		const parent = flatParentElement<Element>(currentNode)!;
+	while (currentNode !== runHead && flatParentElement(currentNode)) {
+		const parent = flatParentElement(currentNode)!;
 
 		if (establishesIndependentFormattingContext(parent)) {
 			// A text control's windowed value shifts its content by its own
@@ -11647,9 +11647,9 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		let ancestor =
 			node.nodeType === node.ELEMENT_NODE
 				? (node as Element)
-				: flatParentElement<Element>(node);
+				: flatParentElement(node);
 		ancestor && ancestor !== runHead && !layout[kNodeMap].has(ancestor);
-		ancestor = flatParentElement<Element>(ancestor)
+		ancestor = flatParentElement(ancestor)
 	) {
 		if (getPosition(ancestor) === "relative") {
 			const left = parseUnitValue(getComputedValue(ancestor, "left"));

@@ -7126,10 +7126,8 @@ const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
 
 // A bare fragment is a document fragment too and hosts nothing, which
 // is what separates it from a tree some element composes.
-function asShadowRoot(root: Node): ShadowRoot | null {
-	return root.nodeType === 11 && (root as ShadowRoot).host
-		? (root as ShadowRoot)
-		: null;
+function isShadowRoot(root: Node): root is ShadowRoot {
+	return root.nodeType === 11 && (root as ShadowRoot).host !== undefined;
 }
 
 const kSyncShadowRoot = Symbol("syncShadowRoot");
@@ -7145,8 +7143,8 @@ function getSheet(element: Element): CSSStyleSheet {
 			}
 			// A shadow sheet's change syncs its root. Only a document
 			// sheet's change rebuilds the document cascade.
-			const root = asShadowRoot(element.getRootNode());
-			if (root) {
+			const root = element.getRootNode();
+			if (isShadowRoot(root)) {
 				cascade[kSyncShadowRoot](root);
 			} else {
 				cascade.syncStylesheets();
@@ -7438,7 +7436,7 @@ export function getComputedValue(
 ): string {
 	// A pseudo-element node's style is its host's declaration for the
 	// pseudo-element it fills. It matches no selector of its own.
-	const host = getPseudoHost<Element>(element);
+	const host = getPseudoHost(element);
 	if (host !== null) {
 		const name = getPseudoName(element) as string;
 		const cascade = host.ownerDocument
@@ -7736,7 +7734,7 @@ function getLengthContext(
 ): LengthContext {
 	const own = property === "font-size";
 	const parent = own
-		? flatParentElement<Element>(declaration[kElement]!)
+		? flatParentElement(declaration[kElement]!)
 		: null;
 	const font = own
 		? parent
@@ -7957,9 +7955,9 @@ function getContainingBlockBox(
 	}
 	if (position === "absolute") {
 		for (
-			let ancestor = flatParentElement<Element>(declaration[kElement]!);
+			let ancestor = flatParentElement(declaration[kElement]!);
 			ancestor;
-			ancestor = flatParentElement<Element>(ancestor)
+			ancestor = flatParentElement(ancestor)
 		) {
 			const ancestorPosition =
 				getComputedValue(ancestor, "position");
@@ -7971,9 +7969,9 @@ function getContainingBlockBox(
 	}
 	if (position === "sticky") {
 		for (
-			let ancestor = flatParentElement<Element>(declaration[kElement]!);
+			let ancestor = flatParentElement(declaration[kElement]!);
 			ancestor;
-			ancestor = flatParentElement<Element>(ancestor)
+			ancestor = flatParentElement(ancestor)
 		) {
 			const overflow = getComputedValue(ancestor, "overflow");
 			if (overflow && overflow !== "visible") {
@@ -7981,7 +7979,7 @@ function getContainingBlockBox(
 			}
 		}
 	}
-	const parent = flatParentElement<Element>(declaration[kElement]!);
+	const parent = flatParentElement(declaration[kElement]!);
 	return parent
 		? getUsedBoxRect(declaration, parent, true)
 		: getViewportBox(declaration);
@@ -8047,7 +8045,7 @@ function getResolvedMinSize(
 	for (
 		let element: Element | null = declaration[kElement]!;
 		element;
-		element = flatParentElement<Element>(element)
+		element = flatParentElement(element)
 	) {
 		if (getComputedValue(element, "display") === "none") {
 			return "0px";
@@ -8056,7 +8054,7 @@ function getResolvedMinSize(
 	if (declaration.getComputedValue("aspect-ratio") !== "auto") {
 		return "auto";
 	}
-	const parent = flatParentElement<Element>(declaration[kElement]!);
+	const parent = flatParentElement(declaration[kElement]!);
 	const display = parent
 		? getComputedValue(parent, "display")
 		: "";
@@ -8077,7 +8075,7 @@ function getAutoMargin(
 	property: string,
 	rect: DOMRect,
 ): number {
-	const parent = flatParentElement<Element>(declaration[kElement]!);
+	const parent = flatParentElement(declaration[kElement]!);
 	const parentRect = parent
 		? getUsedRect(declaration[kCascade]!, parent)
 		: null;
@@ -8114,7 +8112,7 @@ function getAutoMargin(
 function getContainingWidth(
 	declaration: MeasuredDeclaration,
 ): number | null {
-	const parent = flatParentElement<Element>(declaration[kElement]!);
+	const parent = flatParentElement(declaration[kElement]!);
 	if (!parent) {
 		return null;
 	}
@@ -8137,7 +8135,7 @@ function resolveFromParent(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string | null {
-	const parent = flatParentElement<Element>(declaration[kElement]!);
+	const parent = flatParentElement(declaration[kElement]!);
 	if (!parent) {
 		return null;
 	}
@@ -8371,9 +8369,9 @@ function resolvePropertyValueRaw(
 			// to shadow child) and reaches slotted content through its slot's
 			// chain, exactly as in a browser.
 			for (
-				let parent = flatParentElement<Element>(declaration[kElement]!);
+				let parent = flatParentElement(declaration[kElement]!);
 				parent !== null;
-				parent = flatParentElement<Element>(parent)
+				parent = flatParentElement(parent)
 			) {
 				const parentValue = getComputedValue(parent, property);
 				if (parentValue) {
@@ -8403,7 +8401,7 @@ function getCustomNames(
 	for (
 		let element: Element | null = computed[kElement]!;
 		element;
-		element = flatParentElement<Element>(element)
+		element = flatParentElement(element)
 	) {
 		const declaration = computed[kCascade]?.declarationFor(element);
 		for (const name of declaration?.declaredCustomProperties() ?? []) {
@@ -8657,7 +8655,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			host &&
 			getComputedValue(host, "display") === "contents"
 		) {
-			host = flatParentElement<Element>(host);
+			host = flatParentElement(host);
 		}
 		const box = host && this[kCascade]![kContentBox](host);
 		if (!box) {
@@ -9505,7 +9503,7 @@ export class Cascade {
 				for (
 					let ancestor: Element | null = start;
 					ancestor;
-					ancestor = flatParentElement<Element>(ancestor)
+					ancestor = flatParentElement(ancestor)
 				) {
 					invalidateElementCaches(this, ancestor);
 				}
@@ -9518,8 +9516,8 @@ export class Cascade {
 				// sheet's sync stays inside its root.
 				if ((mutation.target as Element).tagName === "STYLE") {
 					reparseOwnerText(getSheet(mutation.target as Element));
-					const styleRoot = asShadowRoot(mutation.target.getRootNode());
-					if (styleRoot) {
+					const styleRoot = mutation.target.getRootNode();
+					if (isShadowRoot(styleRoot)) {
 						this[kSyncShadowRoot](styleRoot);
 					} else {
 						shouldSyncStylesheets = true;
@@ -9535,10 +9533,8 @@ export class Cascade {
 						const element = node as Element;
 						if (isStyleElement(element)) {
 							const addedRoot =
-								element.tagName === "STYLE"
-									? asShadowRoot(element.getRootNode())
-									: null;
-							if (addedRoot) {
+								element.tagName === "STYLE" ? element.getRootNode() : null;
+							if (addedRoot !== null && isShadowRoot(addedRoot)) {
 								this[kSyncShadowRoot](addedRoot);
 							} else {
 								shouldSyncStylesheets = true;
@@ -9600,8 +9596,8 @@ export class Cascade {
 				const owner = mutation.target.parentElement;
 				if (owner?.tagName === "STYLE") {
 					reparseOwnerText(getSheet(owner));
-					const ownerRoot = asShadowRoot(owner.getRootNode());
-					if (ownerRoot) {
+					const ownerRoot = owner.getRootNode();
+					if (isShadowRoot(ownerRoot)) {
 						this[kSyncShadowRoot](ownerRoot);
 					} else {
 						shouldSyncStylesheets = true;
@@ -9628,7 +9624,7 @@ export class Cascade {
 			if (value !== "auto" && value !== "") {
 				return true;
 			}
-			current = flatParentElement<Element>(current);
+			current = flatParentElement(current);
 		}
 		return true;
 	}
@@ -9643,10 +9639,10 @@ export class Cascade {
 			for (
 				let node: Element | null = element;
 				node;
-				node = flatParentElement<Element>(node)
+				node = flatParentElement(node)
 			) {
 				invalidateElementCaches(this, node);
-				const shadowRoot = getShadowRoot<ShadowRoot>(node);
+				const shadowRoot = getShadowRoot(node);
 				if (shadowRoot) {
 					for (const descendant of shadowRoot.querySelectorAll("*")) {
 						invalidateElementCaches(this, descendant);
@@ -9677,7 +9673,7 @@ export class Cascade {
 			for (
 				let node: Element | null = element;
 				node;
-				node = flatParentElement<Element>(node)
+				node = flatParentElement(node)
 			) {
 				chain.add(node);
 			}
@@ -9688,7 +9684,7 @@ export class Cascade {
 		const invalidate = (node: Element): void => {
 			invalidateElementCaches(this, node);
 			// A host's hover reaches its shadow tree through :host(:hover).
-			const shadowRoot = getShadowRoot<ShadowRoot>(node);
+			const shadowRoot = getShadowRoot(node);
 			if (shadowRoot) {
 				for (const descendant of shadowRoot.querySelectorAll("*")) {
 					invalidateElementCaches(this, descendant);
@@ -11827,7 +11823,7 @@ function getMatchingRules(
 	const partPseudo = getPartPseudo(element);
 	const root = element.getRootNode();
 	const rootNode = root as unknown as Node;
-	const shadowHost = asShadowRoot(root)?.host ?? null;
+	const shadowHost = isShadowRoot(root) ? root.host : null;
 	const getPartNames = (element.getAttribute("part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
@@ -12031,7 +12027,7 @@ function isRuleMatch(
 	}
 	// Author document rules match everything outside shadow trees,
 	// detached elements included, because styles resolve before insertion.
-	return asShadowRoot(root) === null && matchesRule(element, rule);
+	return !isShadowRoot(root) && matchesRule(element, rule);
 }
 
 function computePseudoElementStyle(

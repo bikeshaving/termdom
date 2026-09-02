@@ -597,9 +597,9 @@ function getPositionedClip(
 ): ClipRect | null {
 	let clip = contextClip;
 	for (
-		let ancestor = flatParentElement<Element>(element);
+		let ancestor = flatParentElement(element);
 		ancestor && ancestor !== contextRoot;
-		ancestor = flatParentElement<Element>(ancestor)
+		ancestor = flatParentElement(ancestor)
 	) {
 		if (!isPositioned(ancestor)) {
 			continue;
@@ -736,7 +736,7 @@ function renderOutsideMarker(
 }
 
 function getGlyphText(element: Element): Text | null {
-	const root = getShadowRoot<ShadowRoot>(element);
+	const root = getShadowRoot(element);
 	const glyph = root ? root.querySelector('[part="glyph"]') : null;
 	return (glyph?.firstChild as Text | null) ?? null;
 }
@@ -753,7 +753,7 @@ function renderText(
 
 	// The flat-tree parent. Slotted text inherits through the slot, not
 	// the host.
-	const parentElement = flatParentElement<Element>(textNode);
+	const parentElement = flatParentElement(textNode);
 	if (!parentElement) {
 		return;
 	}
@@ -821,7 +821,7 @@ function getPaintSelectionRange(
 	if (!getDocumentRange.intersectsNode(textNode)) {
 		return null;
 	}
-	const selectionParent = flatParentElement<Element>(textNode);
+	const selectionParent = flatParentElement(textNode);
 	if (!selectionParent) {
 		return null;
 	}
