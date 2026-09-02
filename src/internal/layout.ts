@@ -430,6 +430,10 @@ export class LayoutNode {
 	cachedLayout: CachedSize | null;
 	styling: boolean;
 
+	// The layout pass that last styled this node. A node re-added within
+	// the pass that styled it is not styled again.
+	styledPass: number;
+
 	// The computed values that shape text measurement without being part
 	// of the style record, joined, so a restyle can tell whether the
 	// measurement is still good. Set with the style.
@@ -456,6 +460,7 @@ export class LayoutNode {
 		this.cachedLayout = null;
 		this.styling = false;
 		this.owner = null;
+		this.styledPass = 0;
 		this.measureKey = "";
 		this.style = createStyle();
 		this.layout = createLayout();
@@ -6543,7 +6548,9 @@ function styleLayoutNode(
 	element: Element,
 	layoutNode: LayoutNode,
 	positionedElements?: Set<Element>,
+	pass = 0,
 ): void {
+	layoutNode.styledPass = pass;
 	layoutNode.setStyles(() => {
 		styleLayoutNodeProperties(element, layoutNode, positionedElements);
 	});
@@ -6719,9 +6726,12 @@ function styleLayoutNodeProperties(
 		}
 	}
 
-	// Item properties apply whatever the parent is and are simply not
-	// consulted outside a flex container, which is what CSS says of them.
-	const flexGrow = getComputedValue(element, "flex-grow");
+	// Item properties are consulted only inside a flex or grid container,
+	// which is what CSS says of them. Outside one they are read as their
+	// initial values without asking the cascade, which is most elements.
+	const item = (property: string, initial: string): string =>
+		parentIsFlex ? getComputedValue(element, property) : initial;
+	const flexGrow = item("flex-grow", "0");
 	const growValue = parseFloat(flexGrow);
 	if (!isNaN(growValue) && growValue >= 0) {
 		layoutNode.setFlexGrow(growValue);
@@ -6729,10 +6739,10 @@ function styleLayoutNodeProperties(
 		layoutNode.setFlexGrow(undefined);
 	}
 
-	const orderValue = parseInt(getComputedValue(element, "order"), 10);
+	const orderValue = parseInt(item("order", "0"), 10);
 	layoutNode.setOrder(Number.isNaN(orderValue) ? undefined : orderValue);
 
-	const flexShrink = getComputedValue(element, "flex-shrink");
+	const flexShrink = item("flex-shrink", "1");
 	const shrinkValue = parseFloat(flexShrink);
 	if (!isNaN(shrinkValue) && shrinkValue >= 0) {
 		layoutNode.setFlexShrink(shrinkValue);
@@ -6740,50 +6750,44 @@ function styleLayoutNodeProperties(
 		layoutNode.setFlexShrink(undefined);
 	}
 
-	const flexBasis = parseUnitValue(
-		getComputedValue(element, "flex-basis"),
-	);
+	const flexBasisText = item("flex-basis", "auto");
+	const flexBasis = parseUnitValue(flexBasisText);
 	layoutNode.setFlexBasis(
-		flexBasis ??
-		(getComputedValue(element, "flex-basis") === "auto"
-			? "auto"
-			: undefined),
+		flexBasis ?? (flexBasisText === "auto" ? "auto" : undefined),
 	);
 
-	const alignSelf = getComputedValue(element, "align-self");
-	layoutNode.setAlignSelf(getAlignmentConstant(alignSelf, "auto"));
+	layoutNode.setAlignSelf(
+		getAlignmentConstant(item("align-self", "auto"), "auto"),
+	);
 	layoutNode.setJustifySelf(
-		getAlignmentConstant(
-			getComputedValue(element, "justify-self"),
-			"auto",
-		),
+		getAlignmentConstant(item("justify-self", "auto"), "auto"),
 	);
 
 	layoutNode.setGridRowStart(
-		parseGridPlacement(getComputedValue(element, "grid-row-start")),
+		parseGridPlacement(item("grid-row-start", "auto")),
 	);
-	layoutNode.setGridRowEnd(
-		parseGridPlacement(getComputedValue(element, "grid-row-end")),
-	);
+	layoutNode.setGridRowEnd(parseGridPlacement(item("grid-row-end", "auto")));
 	layoutNode.setGridColumnStart(
-		parseGridPlacement(getComputedValue(element, "grid-column-start")),
+		parseGridPlacement(item("grid-column-start", "auto")),
 	);
 	layoutNode.setGridColumnEnd(
-		parseGridPlacement(getComputedValue(element, "grid-column-end")),
+		parseGridPlacement(item("grid-column-end", "auto")),
 	);
 
 	// The gap shorthand is expanded in the cascade. The longhands are
-	// enough.
-	const rowGap = parseUnitValue(getComputedValue(element, "row-gap"));
-	if (typeof rowGap === "number") {
-		layoutNode.setGap("row", rowGap);
-	}
+	// enough, and only a flex or grid container has a gap.
+	if (hasItemChildren(display)) {
+		const rowGap = parseUnitValue(getComputedValue(element, "row-gap"));
+		if (typeof rowGap === "number") {
+			layoutNode.setGap("row", rowGap);
+		}
 
-	const columnGap = parseUnitValue(
-		getComputedValue(element, "column-gap"),
-	);
-	if (typeof columnGap === "number") {
-		layoutNode.setGap("column", columnGap);
+		const columnGap = parseUnitValue(
+			getComputedValue(element, "column-gap"),
+		);
+		if (typeof columnGap === "number") {
+			layoutNode.setGap("column", columnGap);
+		}
 	}
 
 	if (display === "none") {
@@ -6911,6 +6915,7 @@ function styleLayoutNodeProperties(
 	).join("|");
 }
 
+const kPass = Symbol("pass");
 const kPositionedElements = Symbol("positionedElements");
 
 // Only an out-of-flow box is asked where it would have been, so only it
@@ -6921,7 +6926,12 @@ function styleNode(
 	layoutNode: LayoutNode,
 ): void {
 	const wasHidden = layoutNode.style.displayType === "none";
-	styleLayoutNode(element, layoutNode, layout[kPositionedElements]);
+	styleLayoutNode(
+		element,
+		layoutNode,
+		layout[kPositionedElements],
+		layout[kPass],
+	);
 	// Turning on display:none makes the whole subtree box-less, and every
 	// path that restyles a box passes through here.
 	if (!wasHidden && layoutNode.style.displayType === "none") {
@@ -7577,8 +7587,11 @@ function addNode(
 				addElementNode(layout, element, parentLayoutNode);
 				return;
 			}
-			// Whatever moved the node may also have restyled it.
-			styleNode(layout, element, existingLayoutNode);
+			// Whatever moved the node may also have restyled it, unless this
+			// pass already styled it.
+			if (existingLayoutNode.styledPass !== layout[kPass]) {
+				styleNode(layout, element, existingLayoutNode);
+			}
 			// A kept box is re-derived exactly as if built from scratch.
 			if (isMeasuredAsRun(element)) {
 				syncIndependentFormattingContext(layout, element);
@@ -9997,9 +10010,13 @@ export class Layout {
 
 	// Geometry moved since the last painted frame.
 	declare [kMoved]: boolean;
+	// Counts layout passes, so a node styled in this pass is not styled
+	// again when a container re-adds it.
+	declare [kPass]: number;
 
 	constructor(window: Window, width: number, height: number) {
 		this[kMoved] = false;
+		this[kPass] = 0;
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
 		this[kRectTextIndices] = new WeakMap<
@@ -10081,6 +10098,7 @@ export class Layout {
 	}
 
 	performLayout(): void {
+		this[kPass]++;
 		// Built on the first pass, not at construction. The engine is
 		// constructed before the cascade that provides display exists.
 		if (!this[kNodeMap].has(this[kRootElement])) {
