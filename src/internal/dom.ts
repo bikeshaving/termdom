@@ -30653,9 +30653,24 @@ function buildWindow(document: Document): Window {
 	return window as unknown as Window;
 }
 
-/** Parse a document from markup and display it in a window of its own. */
-export function createDocumentWindow(html: string, url?: string): Window {
-	return buildWindow(parseHTMLDocument(html, url));
+/**
+ * Parse a document from markup and display it in a window of its own. An
+ * XML content type parses as XML, which is what a frame whose src names a
+ * .xml, .xhtml or .svg file holds.
+ */
+export function createDocumentWindow(
+	source: string,
+	url?: string,
+	contentType = "text/html",
+): Window {
+	if (contentType === "text/html") {
+		return buildWindow(parseHTMLDocument(source, url));
+	}
+	const document = parseXMLDocument(source, contentType);
+	if (url !== undefined) {
+		document[kDocumentURL] = url;
+	}
+	return buildWindow(document);
 }
 
 // CSS Selectors: the language, and the matcher a selector compiles to.

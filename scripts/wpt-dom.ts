@@ -1031,7 +1031,7 @@ async function framePages(
 	const pages = new Map<string, string>();
 	for (const path of paths) {
 		const name = path.split("#")[0];
-		if (!/\.html$/.test(name)) {
+		if (frameContentType(name) === null) {
 			continue;
 		}
 		const text = await cached(resolveScript(name, file));
@@ -1040,6 +1040,23 @@ async function framePages(
 		}
 	}
 	return pages;
+}
+
+/** The content type a frame's src parses as, or null for one not served. */
+function frameContentType(name: string): string | null {
+	if (/\.html$/.test(name)) {
+		return "text/html";
+	}
+	if (/\.xhtml$/.test(name)) {
+		return "application/xhtml+xml";
+	}
+	if (/\.svg$/.test(name)) {
+		return "image/svg+xml";
+	}
+	if (/\.xml$/.test(name)) {
+		return "application/xml";
+	}
+	return null;
 }
 
 /**
@@ -1081,6 +1098,7 @@ function installFramePages(
 			const frameWindow = dom.createDocumentWindow(
 				text,
 				new URL(src!, url).href,
+				frameContentType(src!.split("#")[0])!,
 			);
 			document = frameWindow.document as unknown as Document;
 			// The frame's window, which the corpus reads its interfaces off
@@ -1204,6 +1222,26 @@ function installGlobals(
 	for (const name of ["self", "window", "parent", "top", "frames"]) {
 		scope[name] = scope;
 	}
+	// `window.onerror = ...` and the other window handler attributes land on
+	// the engine window, whose dispatch is what fires them. The harness
+	// window is this realm's global, so each name is an accessor here.
+	const handlerNames = Object.getOwnPropertyNames(
+		Object.getPrototypeOf(engineWindow) as object,
+	).filter((name) => /^on[a-z]/.test(name));
+	const engineHandlers = engineWindow as unknown as Record<string, unknown>;
+	for (const name of handlerNames) {
+		saved.set(name, {
+			had: Object.prototype.hasOwnProperty.call(scope, name),
+			value: scope[name],
+		});
+		Object.defineProperty(scope, name, {
+			get: () => engineHandlers[name],
+			set: (value: unknown) => {
+				engineHandlers[name] = value;
+			},
+			configurable: true,
+		});
+	}
 	// The window's named property access. A great many test files name their
 	// fixture by its id alone -- `createTestTree(test1)` over a `<div
 	// id=test1>` -- which is the Window's legacy named access, not the
@@ -1266,10 +1304,9 @@ function installGlobals(
 	return {
 		restore(): void {
 			for (const [name, entry] of saved) {
+				delete scope[name];
 				if (entry.had) {
 					scope[name] = entry.value;
-				} else {
-					delete scope[name];
 				}
 			}
 		},
