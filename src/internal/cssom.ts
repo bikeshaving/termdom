@@ -8375,11 +8375,12 @@ function resolvePropertyValueRaw(
 	// source order, so within each tier the last match wins.
 	let ruleValue = "";
 	let importantRuleValue = "";
-	// `!important` reverses the layer order (css-cascade-5 §6.4.4): the
-	// EARLIEST layer wins, and unlayered declarations, which win the normal
-	// cascade, lose to every layer. The rules arrive earliest layer first,
-	// so the first layer to declare the property keeps it, and later ones
-	// only tie it within the same layer.
+	// `!important` reverses the origin and layer order (css-cascade-5 §6.1,
+	// §6.4.4): a UA declaration beats an author one, the EARLIEST layer
+	// wins, and unlayered declarations, which win the normal cascade, lose
+	// to every layer. The rules arrive UA first and earliest layer first, so
+	// the first origin and layer to declare the property keeps it, and
+	// later rules only tie it within that same origin and layer.
 	let importantOrigin = false;
 	let importantLayer = 0;
 	for (const rule of declaration[kCSSRules]) {
@@ -8391,8 +8392,8 @@ function resolvePropertyValueRaw(
 		if (
 			importantName !== null &&
 			(importantRuleValue === "" ||
-				Boolean(rule.uaOrigin) !== importantOrigin ||
-				rule.layerRank === importantLayer)
+				(Boolean(rule.uaOrigin) === importantOrigin &&
+					rule.layerRank === importantLayer))
 		) {
 			importantRuleValue = rule.declarations[importantName];
 			importantOrigin = Boolean(rule.uaOrigin);

@@ -824,3 +824,18 @@ test("initial takes the property's initial value, not the parent's", () => {
 	expect(color("c")).toBe("rgb(255, 0, 0)");
 	expect(color("d")).toBe("rgb(0, 0, 0)");
 });
+
+test("an important UA declaration beats an important author one", () => {
+	const dom = domFor(`<!DOCTYPE html><html><head><style>
+		input { display: block !important }
+	</style></head><body>
+		<input id="hidden" type="hidden">
+		<input id="text" type="text">
+	</body></html>`);
+	const display = (id: string): string =>
+		dom.window
+			.getComputedStyle(dom.window.document.getElementById(id)!)
+			.getPropertyValue("display");
+	expect(display("hidden")).toBe("none");
+	expect(display("text")).toBe("block");
+});
