@@ -1229,6 +1229,7 @@ function installGlobals(
 		Object.getPrototypeOf(engineWindow) as object,
 	).filter((name) => /^on[a-z]/.test(name));
 	const engineHandlers = engineWindow as unknown as Record<string, unknown>;
+	const accessors = new Set(handlerNames);
 	for (const name of handlerNames) {
 		saved.set(name, {
 			had: Object.prototype.hasOwnProperty.call(scope, name),
@@ -1304,9 +1305,13 @@ function installGlobals(
 	return {
 		restore(): void {
 			for (const [name, entry] of saved) {
-				delete scope[name];
+				if (accessors.has(name)) {
+					delete scope[name];
+				}
 				if (entry.had) {
 					scope[name] = entry.value;
+				} else if (!accessors.has(name)) {
+					delete scope[name];
 				}
 			}
 		},
