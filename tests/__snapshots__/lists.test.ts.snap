@@ -59,7 +59,7 @@ exports[`lists in flexbox containers 1`] = `Tasks       Steps
 exports[`lists with mixed inline and block content 1`] = `Lists with Rich Content                           
   • Text with [39;1mbold[0m and [39;3mitalic[0m                     [0m
   • Item with code: console.log('hello')          
-  •  Item with paragraph:                         
+  • Item with paragraph:                          
     This is a paragraph inside a list item with   
     some longer text that might wrap.             
   • Block content                                 

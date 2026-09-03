@@ -8,7 +8,8 @@
  * and never for typing. The same distinction holds here, and the dirty value
  * flag follows the HTML Standard on both sides of it.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -47,13 +48,14 @@ function trackAccessor(node: any, property: "value" | "checked"): {
 	});
 	return {
 		assigned,
+
 		/** Whether the element's value has moved out from under the tracker. */
 		drifted: () => node[property] !== seen,
 	};
 }
 
 /** A focused field in a running terminal, ready to be typed into. */
-async function fieldFixture(tag: "input" | "textarea"): Promise<
+async function textControlFixture(tag: "input" | "textarea"): Promise<
 	{terminal: MockProcess; dom: TermDOM; field: any}
 > {
 	const terminal = new MockProcess({rows: 8, cols: 40});
@@ -70,7 +72,7 @@ async function fieldFixture(tag: "input" | "textarea"): Promise<
 /* ------------------------------------------- the user's edit, not the page's */
 
 test("typing an input never runs the page's value setter", async () => {
-	const {terminal, dom, field} = await fieldFixture("input");
+	const {terminal, dom, field} = await textControlFixture("input");
 	const tracker = trackAccessor(field, "value");
 	const events: string[] = [];
 	field.addEventListener("input", () => events.push("input"));
@@ -86,7 +88,7 @@ test("typing an input never runs the page's value setter", async () => {
 });
 
 test("backspace and paste stay off the page's value setter", async () => {
-	const {terminal, dom, field} = await fieldFixture("input");
+	const {terminal, dom, field} = await textControlFixture("input");
 	await type(terminal, "abc");
 	const tracker = trackAccessor(field, "value");
 
@@ -101,7 +103,7 @@ test("backspace and paste stay off the page's value setter", async () => {
 });
 
 test("typing a textarea never runs the page's value setter", async () => {
-	const {terminal, dom, field} = await fieldFixture("textarea");
+	const {terminal, dom, field} = await textControlFixture("textarea");
 	const tracker = trackAccessor(field, "value");
 	const events: string[] = [];
 	field.addEventListener("input", () => events.push("input"));
@@ -141,7 +143,7 @@ test("clicking a checkbox never runs the page's checked setter", async () => {
 });
 
 test("the page's own assignment still runs its wrapped setter", async () => {
-	const {dom, field} = await fieldFixture("input");
+	const {dom, field} = await textControlFixture("input");
 	const tracker = trackAccessor(field, "value");
 
 	field.value = "written";
@@ -154,7 +156,7 @@ test("the page's own assignment still runs its wrapped setter", async () => {
 });
 
 test("a page assignment after typing runs the setter, and wins", async () => {
-	const {terminal, dom, field} = await fieldFixture("input");
+	const {terminal, dom, field} = await textControlFixture("input");
 	await type(terminal, "typed");
 	const tracker = trackAccessor(field, "value");
 
@@ -170,7 +172,7 @@ test("a page assignment after typing runs the setter, and wins", async () => {
 /* ------------------------------------------------------ the dirty value flag */
 
 test("typing sets an input's dirty value flag", async () => {
-	const {terminal, dom, field} = await fieldFixture("input");
+	const {terminal, dom, field} = await textControlFixture("input");
 	field.setAttribute("value", "default");
 	expect(field.value).toBe("default");
 
@@ -218,7 +220,7 @@ test("a form reset clears the flag a user edit set", async () => {
 });
 
 test("typing sets a textarea's dirty value flag", async () => {
-	const {terminal, dom, field} = await fieldFixture("textarea");
+	const {terminal, dom, field} = await textControlFixture("textarea");
 	field.appendChild(dom.document.createTextNode("child"));
 	expect(field.value).toBe("child");
 
@@ -235,7 +237,7 @@ test("typing sets a textarea's dirty value flag", async () => {
 /* ------------------------------------------------- what the widget renders */
 
 test("a user edit reaches the rendered value, not only the IDL attribute", async () => {
-	const {terminal, dom, field} = await fieldFixture("input");
+	const {terminal, dom, field} = await textControlFixture("input");
 	// A page that replaces the accessor outright still sees its field paint.
 	Object.defineProperty(field, "value", {
 		configurable: true,

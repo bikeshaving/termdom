@@ -8,14 +8,15 @@
  * and the negotiation that decides whether we do it at all.
  */
 
-import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {
+	getParagraphDirection,
 	hasRTL,
-	inferParagraphDirection,
 	toVisualOrder,
 } from "../src/internal/text.js";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 const HEBREW = "שלום";
 const HEBREW_VISUAL = [...HEBREW].reverse().join("");
@@ -74,9 +75,9 @@ test("paired punctuation is mirrored inside an RTL run", () => {
 });
 
 test("paragraph direction is inferred from the first strong character", () => {
-	expect(inferParagraphDirection("hello שלום")).toBe("ltr");
-	expect(inferParagraphDirection("שלום hello")).toBe("rtl");
-	expect(inferParagraphDirection("123 !?")).toBe("ltr");
+	expect(getParagraphDirection("hello שלום")).toBe("ltr");
+	expect(getParagraphDirection("שלום hello")).toBe("rtl");
+	expect(getParagraphDirection("123 !?")).toBe("ltr");
 	expect(hasRTL("plain ascii")).toBe(false);
 });
 
@@ -111,14 +112,23 @@ test("direction: rtl right-aligns the line and keeps Latin runs readable", async
 });
 
 test("the terminal is asked to leave bidi to us, and its answer is honoured", async () => {
-	// MockProcess wraps a real headless terminal, which does not implement BDSM
-	// and answers DECRQM with 0 ("not recognised") -- so we reorder.
+	// MockProcess wraps a real headless terminal, which does not implement
+	// BDSM and answers DECRQM with 0 ("not recognised") -- so we reorder. The
+	// reordering alone would happen with no negotiation at all, so what this
+	// reads is the asking: mode 8 reset to explicit, then queried.
 	const terminal = new MockProcess({cols: 20, rows: 4});
+	const wire = captureRawOutput(terminal);
+
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${HEBREW}</div>`;
 
 	await nextFrame(dom);
+	await new Promise((resolve) => setTimeout(resolve, 60));
 
+	// Explicit mode, then "what is mode 8 now?", in that order.
+	expect(wire()).toContain("\x1b[8l\x1b[8$p");
+	// Nothing came back, and silence has always meant no bidi, so the order
+	// on screen is the one we put there.
 	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(HEBREW_VISUAL);
 
 	dom.dispose();
@@ -230,15 +240,7 @@ test("a terminal that ignores mode 2027 is left alone", async () => {
 	// Silence is the common answer, and means the same as "not recognised": our
 	// measurements do not change, only whether the terminal agrees with them.
 	const terminal = new MockProcess({cols: 20, rows: 4});
-	const stdout = terminal.stdout as unknown as {
-		write: (...args: unknown[]) => boolean;
-	};
-	const original = stdout.write.bind(stdout);
-	const seen: string[] = [];
-	stdout.write = (...args: unknown[]) => {
-		seen.push(String(args[0]));
-		return original(...args);
-	};
+	const seen = captureRawOutput(terminal);
 
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = "<div>hi</div>";
@@ -247,7 +249,7 @@ test("a terminal that ignores mode 2027 is left alone", async () => {
 	dom.dispose();
 
 	// Nothing to restore: the mode never took.
-	expect(seen.join("")).not.toContain("\x1b[?2027l");
+	expect(seen()).not.toContain("\x1b[?2027l");
 
 	dom.dispose();
 });

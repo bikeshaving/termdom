@@ -6,7 +6,8 @@
  * and what hit-testing must mirror so clicks land on what's visibly on
  * top.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

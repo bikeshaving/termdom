@@ -8,7 +8,8 @@
  * (standard web components), the symbol slot is reserved for UA-internal
  * widget trees (closed to DOM APIs, like a browser input's own internals).
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -403,7 +404,7 @@ test("slotted content inherits through the slot's shadow-tree chain", async () =
 	dom.dispose();
 });
 
-// Input internals as a UA shadow tree: the widget painter's content model
+// Input internals as a UA shadow tree: the UA shadow tree painter's content model
 // is real (UA-hidden) DOM in the symbol slot, styled by a real scoped
 // stylesheet -- while staying exactly as closed as a browser input's own
 // internals.
@@ -671,6 +672,7 @@ test("::part() styles an exposed shadow part from the document, per spec", async
 	document.head.appendChild(style);
 
 	const Base = window.HTMLElement as unknown as typeof HTMLElement;
+
 	class Card extends Base {
 		connectedCallback(): void {
 			const root = this.attachShadow({mode: "open"});
@@ -683,6 +685,7 @@ test("::part() styles an exposed shadow part from the document, per spec", async
 			root.append(title, body);
 		}
 	}
+
 	window.customElements.define("my-card", Card);
 
 	const card = document.createElement("my-card");
@@ -697,5 +700,64 @@ test("::part() styles an exposed shadow part from the document, per spec", async
 	expect(window.getComputedStyle(title).color).toBe("rgb(9, 8, 7)");
 	expect(window.getComputedStyle(body).fontWeight).not.toBe("bold");
 
+	dom.dispose();
+});
+
+test("moveBefore into a shadow tree re-roots the moved subtree", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		html: "<!DOCTYPE html><html><body><div id=host></div><p id=moved><b id=inner>x</b></p></body></html>",
+	});
+	const document = dom.window.document;
+	const host = document.getElementById("host")!;
+	const moved = document.getElementById("moved")!;
+	const inner = document.getElementById("inner")!;
+	type Movable = {moveBefore(node: Node, child: Node | null): void};
+	const shadow = host.attachShadow({mode: "open"}) as ShadowRoot & Movable;
+	const body = document.body as HTMLElement & Movable;
+	const iterator = document.createNodeIterator(inner);
+
+	shadow.moveBefore(moved, null);
+	expect(moved.getRootNode()).toBe(shadow);
+	expect(inner.getRootNode()).toBe(shadow);
+	expect(moved.isConnected).toBe(true);
+
+	inner.append(document.createElement("i"));
+	expect(iterator.nextNode()).toBe(inner);
+	expect(iterator.nextNode()).toBe(inner.firstChild);
+
+	body.moveBefore(moved, null);
+	expect(moved.getRootNode()).toBe(document);
+	expect(inner.getRootNode()).toBe(document);
+	await nextFrame(dom);
+});
+
+test("focus() on a host whose shadow root delegates focus lands on the delegate", async () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document} = dom;
+	document.body.innerHTML = "<div id=\"host\"><div id=\"light\" tabindex=\"0\">light</div></div><div id=\"plain\"></div>";
+	const host = document.getElementById("host")!;
+	const root = host.attachShadow({mode: "open", delegatesFocus: true});
+	root.innerHTML = "<span>label</span><slot></slot><input id=\"first\"><input id=\"second\" autofocus>";
+	await nextFrame(dom);
+
+	host.focus();
+	expect(root.activeElement).toBe(root.getElementById("second"));
+	expect(document.activeElement).toBe(host);
+
+	root.getElementById("first")!.focus();
+	host.focus();
+	expect(root.activeElement).toBe(root.getElementById("first"));
+
+	const empty = document.getElementById("plain")!;
+	empty.attachShadow({
+		mode: "open",
+		delegatesFocus: true,
+	}).innerHTML = "<span>nothing</span>";
+	empty.setAttribute("tabindex", "0");
+	(root.activeElement as HTMLElement).blur();
+	expect(document.activeElement).toBe(document.body);
+	empty.focus();
+	expect(document.activeElement).toBe(document.body);
 	dom.dispose();
 });

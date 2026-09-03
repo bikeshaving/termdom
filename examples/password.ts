@@ -1,9 +1,9 @@
 // Adapted from https://backbonenotbad.hyperclay.com/
 // https://gist.github.com/panphora/8f4d620ae92e8b28dcb4f20152185749
-import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
-import {jsx} from "@b9g/crank/standalone";
 import {renderer} from "@b9g/crank/dom";
+import {jsx} from "@b9g/crank/standalone";
+import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
 

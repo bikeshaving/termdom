@@ -3,12 +3,30 @@
  * what a registry reads off a constructor and when, and which exception a
  * member throws.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {
-	createHTMLDocument,
-	customElements,
+	createDocumentWindow,
+	type Document,
 	HTMLElement,
 } from "../src/internal/dom.js";
+
+// The realm the tests reach constructors through: a window of this DOM
+// exposes them, as the platform does.
+const realm = createDocumentWindow("<!doctype html>");
+
+// The door a test document comes through. The parser is the one that hands
+// a document the realm's custom element registry, as it does the engine's.
+function createHTMLDocument(title?: string): Document {
+	return new realm.DOMParser().parseFromString(
+		title === undefined
+			? "<!doctype html>"
+			: `<!doctype html><title>${title}</title>`,
+		"text/html",
+	) as unknown as Document;
+}
+
+const customElements = realm.customElements;
 
 test("an attribute joins the document of the element it lands on", () => {
 	const document = createHTMLDocument("") as any;
@@ -68,6 +86,7 @@ test("getName wants a constructor", () => {
 
 test("define reads prototype once, and only after the name is valid", () => {
 	const reads: string[] = [];
+
 	function watched(): typeof HTMLElement {
 		// The test observes which keys define() reads; only a trap sees reads.
 		// eslint-disable-next-line no-restricted-globals
@@ -85,7 +104,7 @@ test("define reads prototype once, and only after the name is valid", () => {
 	).toThrow();
 	expect(reads).toEqual([]);
 
-	// A valid one reads prototype exactly once, then the two class fields.
+	// A valid one reads prototype exactly once, then the two class text controls.
 	customElements.define("x-read-once", watched() as any);
 	expect(reads).toEqual(["prototype", "disabledFeatures", "formAssociated"]);
 });
@@ -101,4 +120,59 @@ test("attachInternals refuses with a NotSupportedError", () => {
 	}
 	expect(thrown?.name).toBe("NotSupportedError");
 	expect(thrown instanceof TypeError).toBe(false);
+});
+
+test("a window's location takes the document's URL apart", () => {
+	const window = createDocumentWindow(
+		"<!doctype html>",
+		"https://example.com:8443/a/b?q=1#top",
+	) as any;
+	const location = window.location;
+	expect(location.href).toBe("https://example.com:8443/a/b?q=1#top");
+	expect(location.protocol).toBe("https:");
+	expect(location.host).toBe("example.com:8443");
+	expect(location.hostname).toBe("example.com");
+	expect(location.port).toBe("8443");
+	expect(location.pathname).toBe("/a/b");
+	expect(location.search).toBe("?q=1");
+	expect(location.hash).toBe("#top");
+	expect(location.origin).toBe("https://example.com:8443");
+	expect(String(location)).toBe(location.href);
+
+	// One object per window, and the document's is the window's.
+	expect(window.location).toBe(location);
+	expect(window.document.location).toBe(location as never);
+
+	// A terminal document is nobody's frame.
+	expect(location.ancestorOrigins.length).toBe(0);
+	expect(location.ancestorOrigins.item(0)).toBe(null);
+	expect(location.ancestorOrigins.contains("https://example.com:8443")).toBe(
+		false,
+	);
+});
+
+test("a location will not navigate, and an unmounted document has none", () => {
+	const window = createDocumentWindow("<!doctype html>") as any;
+	const location = window.location;
+	expect(location.href).toBe("about:blank");
+
+	for (const navigate of [
+		() => location.reload(),
+		() => location.assign("https://example.com/"),
+		() => location.replace("https://example.com/"),
+		() => (location.href = "https://example.com/"),
+		() => (location.pathname = "/elsewhere"),
+		() => (location.hash = "#elsewhere"),
+	]) {
+		let thrown: any = null;
+		try {
+			navigate();
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown?.name).toBe("NotSupportedError");
+	}
+
+	// A document nobody displays is in no browsing context, so it is nowhere.
+	expect(createHTMLDocument().location).toBe(null as never);
 });

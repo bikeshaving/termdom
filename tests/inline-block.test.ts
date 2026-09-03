@@ -4,9 +4,10 @@
  * Tests for inline and inline-block element rendering in the terminal.
  */
 
-import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 function heightOf(_dom: TermDOM, el: Element): number | undefined {
 	const rect = (el as HTMLElement).getBoundingClientRect();

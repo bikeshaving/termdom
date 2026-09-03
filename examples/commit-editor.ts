@@ -64,9 +64,9 @@ function update(): void {
 	counter.textContent = `${headline.length}/50`;
 	counter.className = over ? "counter over" : "counter";
 	const bodyLines = body.value ? body.value.split("\n").length : 0;
-	const bodyNote = bodyLines ?
-		`  (+${bodyLines} body line${bodyLines === 1 ? "" : "s"})` :
-		"";
+	const bodyNote = bodyLines
+		? `  (+${bodyLines} body line${bodyLines === 1 ? "" : "s"})`
+		: "";
 	status.textContent = subject.value ? `→ ${headline}${bodyNote}` : "";
 }
 

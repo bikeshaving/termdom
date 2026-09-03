@@ -1,4 +1,5 @@
 import {describe, expect, test} from "@b9g/libuild/test";
+
 import {scenarios} from "./ansi-fixtures.js";
 import {recordedOutput} from "./fixtures/ansi-output.js";
 

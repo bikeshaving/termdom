@@ -5,9 +5,10 @@
  * to work correctly, especially the examples/flexbox-demo.ts
  */
 
-import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 test("flexbox-demo layout renders correctly", async () => {
 	const terminal = new MockProcess({cols: 80, rows: 24});
@@ -693,7 +694,7 @@ test("a flex item's width applies even when it is an inline box", async () => {
 
 	await nextFrame(dom);
 
-	// Flex items are blockified (css-display-3 §2.7), so `width` is theirs to
+	// Flex items are getBlockifiedDisplay (css-display-3 §2.7), so `width` is theirs to
 	// keep; treating them as pure inlines let the measure answer with the text
 	// size instead. 30 + 30 in 40 columns shrinks to 20 and 20.
 	const [first, second] = [...dom.document.querySelectorAll("span")].map((el) =>
@@ -723,7 +724,7 @@ test("flex-shrink: 0 keeps an item at its width while the rest give way", async 
 });
 
 test("an inline element that becomes a flex item keeps its padding", async () => {
-	// A flex item is blockified (css-display-3 §2.7): `display: inline` on a
+	// A flex item is getBlockifiedDisplay (css-display-3 §2.7): `display: inline` on a
 	// flex container's child computes to block-level and carries its box model
 	// like any block. The engine used to clear the inline element's padding,
 	// so `.row{display:flex} .row span{padding:0 2ch}` collapsed to no gap --
@@ -749,8 +750,8 @@ test("an inline element that becomes a flex item keeps its padding", async () =>
 	dom.dispose();
 });
 
-test("a blockified inline flex item offsets its content by padding", async () => {
-	// The blockified inline flex item reserves its padding in its box, and its
+test("a getBlockifiedDisplay inline flex item offsets its content by padding", async () => {
+	// The getBlockifiedDisplay inline flex item reserves its padding in its box, and its
 	// content must sit inside that padding, not at the border edge. The box was
 	// reserved but the text painted at the corner -- horizontally ("LBL" flush
 	// left inside a padded box) and vertically (padding-top ignored).
@@ -849,7 +850,41 @@ test("whitespace next to inline flex items is not an item either", async () => {
 	dom.dispose();
 });
 
-test.todo("white-space: pre keeps whitespace items, per spec", async () => {
+test("a flex container takes the alignment keywords css-align-3 names", async () => {
+	// css-align-3 §4/§6: `start`/`end` and their writing-mode-relative and
+	// physical spellings are the same alignments `flex-start`/`flex-end` name
+	// on a flex container in a left-to-right row. A grid container and
+	// align-self already read them; a flex container has to read them too.
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"display:flex;align-items:start;width:20ch;height:5px\">" +
+		"<div id=\"s\">a</div></div>" +
+		"<div style=\"display:flex;align-items:end;width:20ch;height:5px\">" +
+		"<div id=\"e\">a</div></div>" +
+		"<div style=\"display:flex;justify-content:end;width:20ch\">" +
+		"<div id=\"j\">ab</div></div>" +
+		"<div style=\"display:flex;justify-content:right;width:20ch\">" +
+		"<div id=\"r\">ab</div></div>";
+	await nextFrame(dom);
+
+	const rect = (id: string) =>
+		dom.document.getElementById(id)!.getBoundingClientRect();
+	// start is flex-start, not the stretch an unread keyword falls back to:
+	// the item keeps its own one-row height at the top of a five-row line.
+	expect(rect("s").height).toBe(1);
+	expect(rect("s").top).toBe(0);
+	// end is flex-end: the last of the second container's five rows.
+	expect(rect("e").height).toBe(1);
+	expect(rect("e").top).toBe(9); // five rows above it, then four
+
+	// end and right both flush the two-cell item against the far edge.
+	expect(rect("j").left).toBe(18);
+	expect(rect("r").left).toBe(18);
+	dom.dispose();
+});
+
+test("white-space: pre keeps whitespace items, per spec", async () => {
 	// The suppression correctly spares this item (pre is not collapsible),
 	// but a pre-existing quirk measures whitespace-only runs at zero width,
 	// so the preserved spaces occupy no cells. The ITEM part of §4 is

@@ -11,14 +11,13 @@
  * lives as long as the process, which is the whole point of it.
  */
 
-import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {expect, test} from "@b9g/libuild/test";
+
+import type {Exchange} from "../src/internal/exchange.js";
+import {Screen} from "../src/internal/screen.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {Screen, type WidthMeasurer} from "../src/internal/ansi.js";
-import {
-	recordClusterAdvance,
-	stringWidth,
-} from "../src/internal/text.js";
+import {getStringWidth, recordClusterAdvance} from "../src/internal/text.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 /** A measurer that records what it was offered instead of asking anything. */
 function recordingMeasurer(starved = new Set<string>()): {
@@ -30,7 +29,7 @@ function recordingMeasurer(starved = new Set<string>()): {
 	}>;
 	deferred: string[];
 	starved: Set<string>;
-	measurer: WidthMeasurer;
+	measurer: Exchange;
 } {
 	const probes: Array<{
 		cluster: string;
@@ -44,19 +43,28 @@ function recordingMeasurer(starved = new Set<string>()): {
 		probes,
 		deferred,
 		starved,
+		// The screen asks its exchange six things; this double answers them
+		// and records the asks, and is nothing else an exchange is.
 		measurer: {
-			wants: (cluster) => !asked.has(cluster),
-			starved: () => starved,
-			defer: (cluster) => {
+			probing: () => true,
+			clusterWidthsNegotiated: () => false,
+			wantsWidth: (cluster: string) => !asked.has(cluster),
+			deferredWidths: () => starved,
+			deferWidth: (cluster: string) => {
 				deferred.push(cluster);
 			},
-			probe: (cluster, run, column, width) => {
+			probeWidth: (
+				cluster: string,
+				run: number,
+				column: number,
+				width: number,
+			) => {
 				asked.add(cluster);
 				starved.delete(cluster);
 				probes.push({cluster, run, column, width});
 				return "\x1b[6n";
 			},
-		},
+		} as unknown as Exchange,
 	};
 }
 
@@ -115,17 +123,17 @@ function scriptTerminal(
 
 /**
  * One frame through the public surface: clusters drawn at their columns,
- * the measurer riding the frame options, the emitted bytes returned. The
+ * the measurer wired to the screen, the emitted bytes returned. The
  * emitter is what is under test; the pen is just how cells get there.
  */
 function emit(
 	rows: number,
 	cols: number,
 	cells: Array<[number, string]>,
-	measurer: WidthMeasurer,
+	measurer: Exchange,
 ): string {
-	const screen = new Screen(rows, cols, "rgb");
-	const context = screen.beginFrame({offset: 0, measurer});
+	const screen = new Screen(rows, cols, "rgb", measurer);
+	const context = screen.beginFrame({offset: 0});
 	for (const [index, cluster] of cells) {
 		context.drawText(cluster, index % cols, Math.floor(index / cols));
 	}
@@ -185,7 +193,7 @@ test("the characters every terminal agrees about are never asked about", () => {
 	let col = 0;
 	for (const cluster of trusted) {
 		cells.push([col, cluster]);
-		col += stringWidth(cluster);
+		col += getStringWidth(cluster);
 	}
 
 	const {probes, measurer} = recordingMeasurer();
@@ -355,18 +363,18 @@ test("a gap crossed by cursor-forward keeps the run it was crossing", () => {
 
 test("the ledger keeps the first answer and only records a correction", () => {
 	const cluster = "\u{1F323}️"; // 🌣️
-	expect(stringWidth(cluster)).toBe(2);
+	expect(getStringWidth(cluster)).toBe(2);
 
 	expect(recordClusterAdvance(cluster, 1)).toBe(true);
-	expect(stringWidth(cluster)).toBe(1);
-	expect(stringWidth(`x${cluster}x`)).toBe(3);
+	expect(getStringWidth(cluster)).toBe(1);
+	expect(getStringWidth(`x${cluster}x`)).toBe(3);
 
 	// Append-only: a second answer never overwrites the first.
 	expect(recordClusterAdvance(cluster, 2)).toBe(false);
 
 	// A terminal that agrees with the tables records nothing new.
 	const agreeing = "\u{1F324}️"; // 🌤️
-	expect(recordClusterAdvance(agreeing, stringWidth(agreeing))).toBe(false);
+	expect(recordClusterAdvance(agreeing, getStringWidth(agreeing))).toBe(false);
 });
 
 test("a terminal that agrees is asked once and nothing repaints", async () => {
@@ -383,7 +391,7 @@ test("a terminal that agrees is asked once and nothing repaints", async () => {
 	await settle();
 
 	expect(script.probeCount()).toBe(1);
-	expect(stringWidth("\u{1F325}️")).toBe(2);
+	expect(getStringWidth("\u{1F325}️")).toBe(2);
 	// Agreement is not news: no frame follows it.
 	expect(script.written.length).toBe(framesAfterReply);
 
@@ -444,10 +452,10 @@ test("every unmeasured glyph in a run carries its own query", async () => {
 	stdin.simulateResponse("\x1b[1;2R\x1b[1;3R\x1b[1;5R");
 	await settle();
 
-	expect(stringWidth(repeated)).toBe(1);
+	expect(getStringWidth(repeated)).toBe(1);
 	// Two cells, as the tables said: the drift of BOTH earlier glyphs was
 	// accounted for before this reading was taken.
-	expect(stringWidth(after)).toBe(2);
+	expect(getStringWidth(after)).toBe(2);
 
 	dom.dispose();
 });
@@ -470,7 +478,7 @@ test("a reading that cannot be believed takes the rest of its run with it", asyn
 	stdin.simulateResponse("\x1b[1;31R\x1b[1;4R");
 	await settle();
 
-	expect(stringWidth(first)).toBe(2);
+	expect(getStringWidth(first)).toBe(2);
 
 	dom.dispose();
 });
@@ -546,8 +554,8 @@ test("a burst of replies is matched to its probes in order", async () => {
 	stdin.simulateResponse("\x1b[1;2R\x1b[1;4R");
 	await settle();
 
-	expect(stringWidth(first)).toBe(1);
-	expect(stringWidth(second)).toBe(2);
+	expect(getStringWidth(first)).toBe(1);
+	expect(getStringWidth(second)).toBe(2);
 
 	dom.dispose();
 });
@@ -558,7 +566,7 @@ test("right-aligned text against the margin is measured anyway", async () => {
 	// unreadable. Deferred in place, it would go unmeasured for the session
 	// and the box around it would stay one cell out.
 	const cluster = "\uFEE0"; // ﻠ, shaped lam
-	expect(stringWidth(cluster)).toBe(1);
+	expect(getStringWidth(cluster)).toBe(1);
 
 	const terminal = new MockProcess({cols: 20, rows: 6});
 	// The train probes from column 3, where the line starts; two cells where
@@ -573,7 +581,7 @@ test("right-aligned text against the margin is measured anyway", async () => {
 	// Past the wait a starved cluster gives the document to paint on its own.
 	await settle(800);
 
-	expect(stringWidth(cluster)).toBe(2);
+	expect(getStringWidth(cluster)).toBe(2);
 	const span = dom.document.getElementById("e")!;
 	expect(span.getBoundingClientRect().width).toBe(2);
 
@@ -645,7 +653,7 @@ test("one unanswered probe does not end the measuring of a terminal that answers
 	dom.document.body.innerHTML = `<div>${answered}</div>`;
 	await nextFrame(dom);
 	await settle();
-	expect(stringWidth(answered)).toBe(1);
+	expect(getStringWidth(answered)).toBe(1);
 
 	dom.document.body.innerHTML = `<div>${silent}</div>`;
 	await nextFrame(dom);
@@ -655,14 +663,14 @@ test("one unanswered probe does not end the measuring of a terminal that answers
 	// leaves the queue, and the session keeps asking, because this terminal has
 	// answered before and one unanswered question does not unsay that.
 	await settle(2200);
-	expect(stringWidth(silent)).toBe(2);
+	expect(getStringWidth(silent)).toBe(2);
 
 	dom.document.body.innerHTML = `<div>${later}</div>`;
 	await nextFrame(dom);
 	await settle();
 
 	expect(script.probeCount()).toBe(3);
-	expect(stringWidth(later)).toBe(1);
+	expect(getStringWidth(later)).toBe(1);
 
 	dom.dispose();
 });

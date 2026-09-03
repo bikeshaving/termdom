@@ -5,9 +5,9 @@
  * clicks and the keys the page would have had, and gives all of it back on
  * close.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
-import {parseHTMLDocument} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 async function open(html: string, cols = 30, rows = 8): Promise<
@@ -250,9 +250,13 @@ test("close falls back to the body when the opener left the document", async () 
 });
 
 test("a headless document moves focus state through show and close", () => {
-	const document = parseHTMLDocument(
+	// A parser is a window's, and the document it hands back has a window of
+	// neither its own nor anyone else's -- which is the case under test.
+	const {window} = new TermDOM({transport: new MockProcess().transport});
+	const document = new window.DOMParser().parseFromString(
 		"<!doctype html><button id=\"page\">page</button>" +
 		"<dialog><button id=\"ok\">OK</button></dialog>",
+		"text/html",
 	);
 	const dialog = (document as any).querySelector(
 		"dialog",

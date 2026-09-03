@@ -5,9 +5,29 @@
  * and that background colors render correctly without bleeding.
  */
 
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
+
+/**
+ * How many cells of a painted row carry a background colour.
+ *
+ * A background is the one thing the row's text cannot report: the cells past
+ * the last character hold a colour and a space, and reading the row as a
+ * string turns them into trailing blanks that look the same either way. The
+ * cells have to be counted.
+ */
+function backgroundCells(terminal: MockProcess, row: number): number {
+	const line = (terminal as any).terminal.buffer.active.getLine(row);
+	let count = 0;
+	for (let x = 0; x < line.length; x++) {
+		if (line.getCell(x)!.isBgRGB()) {
+			count++;
+		}
+	}
+	return count;
+}
 
 test("red foreground color renders correctly", async () => {
 	const terminal = new MockProcess();
@@ -49,12 +69,11 @@ test("background colors fill full width", async () => {
 	const lines = snapshot.split("\n");
 	const coloredLine = lines.find((line) => line.includes("Short text"));
 
-	// Count the background color codes - should extend beyond text
 	expect(coloredLine).toMatch(/48;2;255;0;0/); // red background
 
-	// The line should contain the text (full width filling is a TODO)
-	const visibleContent = coloredLine?.replace(/\x1b\[[0-9;]*m/g, "") || "";
-	expect(visibleContent.trim()).toBe("Short text");
+	// A block box is as wide as its container, so the red runs the whole
+	// width of the terminal and not just under the ten characters.
+	expect(backgroundCells(terminal, 0)).toBe(80);
 
 	expect(snapshot).toMatchSnapshot();
 
@@ -162,13 +181,11 @@ test("inline elements do not extend background", async () => {
 	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
 
-	// Inline elements should not fill the full width
-	const lines = snapshot.split("\n");
-	const coloredLine = lines.find((line) => line.includes("Inline text"));
-	const visibleContent = coloredLine?.replace(/\x1b\[[0-9;]*m/g, "") || "";
+	expect(snapshot).toMatch(/48;2;0;128;0/); // green background
 
-	// Should only be as wide as the text
-	expect(visibleContent.trim()).toBe("Inline text");
+	// An inline box is as wide as its text, so the green stops with the
+	// eleventh character rather than running out to the margin.
+	expect(backgroundCells(terminal, 0)).toBe("Inline text".length);
 
 	expect(snapshot).toMatchSnapshot();
 

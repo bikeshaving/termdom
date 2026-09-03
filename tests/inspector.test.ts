@@ -1,7 +1,10 @@
-import {test, expect} from "@b9g/libuild/test";
+import "../src/internal/inspector.js";
+
 import {inspect} from "node:util";
-import type {Element} from "../src/internal/dom.js";
-import {createDocumentWindow} from "../src/internal/termdom.js";
+
+import {expect, test} from "@b9g/libuild/test";
+
+import {createDocumentWindow, type Element} from "../src/internal/dom.js";
 
 function asElement(value: unknown): Element {
 	return value as Element;
@@ -16,7 +19,6 @@ function inspected(target: unknown, maxDepth = 2): string {
 	return inspect(target, {colors: false, depth: maxDepth});
 }
 
-/** A document of this DOM, from markup, displayed in a window of its own. */
 function documentWindow(html: string): {
 	window: ReturnType<typeof createDocumentWindow>;
 } {
@@ -101,7 +103,7 @@ test("inspect formats: handles self-closing tags", () => {
 
 test("inspect formats: truncates long text", () => {
 	const longText =
-		"This is a very long text that should be truncated when displayed in the inspector output to avoid making it too verbose";
+		"This is a very long text that should be truncated when attached in the inspector output to avoid making it too verbose";
 	const dom = documentWindow(`<p>${longText}</p>`);
 	const p = dom.window.document.querySelector("p");
 

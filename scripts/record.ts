@@ -10,7 +10,8 @@
  *   bun scripts/record.ts animated > animated.cast
  */
 import {EventEmitter} from "node:events";
-import {TermDOM, transportFromProcess, type ProcessLike} from "../src/index.js";
+
+import {type ProcessLike, TermDOM, transportFromProcess} from "../src/index.js";
 
 const COLS = 78;
 const ROWS = 24;
@@ -47,12 +48,12 @@ function makeRecorder(
 	};
 
 	const stdin = new (class extends EventEmitter {
+		isTTY: boolean;
 		constructor(...args: ConstructorParameters<typeof EventEmitter>) {
 			super(...args);
 			this.isTTY = true;
 		}
 
-		isTTY: boolean;
 		setRawMode(): this {
 			return this;
 		}
@@ -71,6 +72,9 @@ function makeRecorder(
 	})();
 
 	const proc = new (class extends EventEmitter {
+		stdout: typeof stdout;
+		stdin: typeof stdin;
+		env: {TERM: string; COLORTERM: string};
 		constructor(...args: ConstructorParameters<typeof EventEmitter>) {
 			super(...args);
 			this.stdout = stdout;
@@ -78,9 +82,6 @@ function makeRecorder(
 			this.env = {TERM: "xterm-256color", COLORTERM: "truecolor"};
 		}
 
-		stdout: typeof stdout;
-		stdin: typeof stdin;
-		env: {TERM: string; COLORTERM: string};
 		exit(): never {
 			throw new Error("recording finished");
 		}

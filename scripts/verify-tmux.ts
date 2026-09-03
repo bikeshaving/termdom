@@ -35,9 +35,9 @@ function newestMtime(dir: string): number {
 	let newest = 0;
 	for (const entry of readdirSync(dir, {withFileTypes: true})) {
 		const path = join(dir, entry.name);
-		const mtime = entry.isDirectory() ?
-				newestMtime(path) :
-			statSync(path).mtimeMs;
+		const mtime = entry.isDirectory()
+			? newestMtime(path)
+			: statSync(path).mtimeMs;
 		if (mtime > newest) {
 			newest = mtime;
 		}
@@ -63,6 +63,7 @@ interface Scenario {
 	command: string;
 	cols?: number;
 	rows?: number;
+
 	/** Settle time before the first capture, in ms. */
 	settle?: number;
 	run(pane: Pane): Promise<void>;
@@ -126,7 +127,7 @@ function assert(condition: boolean, message: string): void {
 
 const scenarios: Scenario[] = [
 	{
-		name: "chat composer: flat one-row field with the accent focus underline",
+		name: "chat composer: flat one-row textControl with the accent focus underline",
 		command: "node examples/chat.ts",
 		cols: 118,
 		run: async (pane) => {

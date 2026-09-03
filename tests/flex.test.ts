@@ -1,5 +1,6 @@
-import {beforeEach, describe, expect, test} from "@b9g/libuild/test";
-import Flex, {Config, Node} from "../src/internal/flex.js";
+import {describe, expect, test} from "@b9g/libuild/test";
+
+import {LayoutNode} from "../src/internal/layout.js";
 
 /**
  * Spec tests for the layout engine, driven directly rather than through the
@@ -18,32 +19,25 @@ import Flex, {Config, Node} from "../src/internal/flex.js";
 
 // termdom drives the engine with web defaults, which are also the CSS initial
 // values: flex-direction row, flex-shrink 1, align-content stretch.
-let config: Config;
-
-beforeEach(() => {
-	config = Config.create();
-	config.setPointScaleFactor(1);
-});
-
-function node(): Node {
-	return Node.createWithConfig(config);
+function node(): LayoutNode {
+	return new LayoutNode();
 }
 
-function box(parent: Node, index = parent.getChildCount()): Node {
+function box(parent: LayoutNode, index = parent.children.length): LayoutNode {
 	const child = node();
 	parent.insertChild(child, index);
 	return child;
 }
 
-function rect(n: Node): {
+function rect(n: LayoutNode): {
 	left: number;
 	top: number;
 	width: number;
 	height: number;
 } {
 	return {
-		left: n.getComputedLeft(),
-		top: n.getComputedTop(),
+		left: n.layout.left,
+		top: n.layout.top,
 		width: n.getComputedWidth(),
 		height: n.getComputedHeight(),
 	};
@@ -61,11 +55,11 @@ describe("flex-basis auto vs content sizing (css-flexbox-1 §7.2.3)", () => {
 		const item = box(root);
 		item.setWidth(30);
 		item.setHeight(10);
-		item.setFlexBasisAuto();
+		item.setFlexBasis("auto");
 		item.setFlexGrow(0);
 		item.setFlexShrink(0);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).width).toBe(30);
 	});
@@ -83,7 +77,7 @@ describe("flex-basis auto vs content sizing (css-flexbox-1 §7.2.3)", () => {
 		item.setFlexGrow(0);
 		item.setFlexShrink(0);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).width).toBe(50);
 	});
@@ -97,8 +91,8 @@ describe("flex-basis auto vs content sizing (css-flexbox-1 §7.2.3)", () => {
 		root.setHeight(20);
 
 		const item = box(root);
-		item.setFlexBasisAuto();
-		item.setWidthAuto();
+		item.setFlexBasis("auto");
+		item.setWidth("auto");
 		item.setFlexGrow(0);
 		item.setFlexShrink(0);
 
@@ -106,7 +100,7 @@ describe("flex-basis auto vs content sizing (css-flexbox-1 §7.2.3)", () => {
 		content.setWidth(25);
 		content.setHeight(10);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).width).toBe(25);
 	});
@@ -137,7 +131,7 @@ describe("min/max clamping against grow and shrink (css-flexbox-1 §9.7)", () =>
 		b.setFlexBasis(0);
 		b.setHeight(10);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(a).width).toBe(30);
 		expect(rect(b).width).toBe(70);
@@ -166,7 +160,7 @@ describe("min/max clamping against grow and shrink (css-flexbox-1 §9.7)", () =>
 		b.setFlexBasis(0);
 		b.setHeight(10);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(a).width).toBe(80);
 		expect(rect(b).width).toBe(20);
@@ -199,7 +193,7 @@ describe("min/max clamping against grow and shrink (css-flexbox-1 §9.7)", () =>
 		b.setFlexShrink(1);
 		b.setHeight(10);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(a).width).toBe(60);
 		expect(rect(b).width).toBe(40);
@@ -217,13 +211,20 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 	//
 	// Each line's cross size is 10, so the lines total 20 in a 40-tall
 	// container: 20 of free cross space to distribute.
-	function wrapped(alignContent: number): Node[] {
+	function wrapped(
+		alignContent: "flex-start" |
+			"flex-end" |
+			"center" |
+			"space-between" |
+			"space-around" |
+			"stretch",
+	): LayoutNode[] {
 		const root = node();
 		root.setWidth(100);
 		root.setHeight(40);
-		root.setFlexWrap(Flex.WRAP_WRAP);
+		root.setFlexWrap("wrap");
 		root.setAlignContent(alignContent);
-		root.setAlignItems(Flex.ALIGN_FLEX_START);
+		root.setAlignItems("flex-start");
 
 		const items = [box(root), box(root), box(root)];
 		for (const item of items) {
@@ -232,12 +233,12 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 			item.setFlexShrink(0);
 		}
 
-		root.calculateLayout(100, 40);
+		root.performLayout(100, 40);
 		return items;
 	}
 
 	test("items wrap onto a second line when the first is full", () => {
-		const [one, two, three] = wrapped(Flex.ALIGN_FLEX_START);
+		const [one, two, three] = wrapped("flex-start");
 		expect(rect(one).left).toBe(0);
 		expect(rect(two).left).toBe(40);
 		// Wrapped to the next line, so back to the main-start edge.
@@ -246,7 +247,7 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 
 	test("align-content: flex-start packs lines at the cross-start edge", () => {
 		// Lines at 0 and 10; the 20 of free space is left at the end.
-		const [one, two, three] = wrapped(Flex.ALIGN_FLEX_START);
+		const [one, two, three] = wrapped("flex-start");
 		expect(rect(one).top).toBe(0);
 		expect(rect(two).top).toBe(0);
 		expect(rect(three).top).toBe(10);
@@ -254,14 +255,14 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 
 	test("align-content: flex-end packs lines at the cross-end edge", () => {
 		// All 20 of free space goes in front: lines at 20 and 30.
-		const [one, , three] = wrapped(Flex.ALIGN_FLEX_END);
+		const [one, , three] = wrapped("flex-end");
 		expect(rect(one).top).toBe(20);
 		expect(rect(three).top).toBe(30);
 	});
 
 	test("align-content: center packs lines around the cross midpoint", () => {
 		// Half the free space in front: 20/2 = 10, so lines at 10 and 20.
-		const [one, , three] = wrapped(Flex.ALIGN_CENTER);
+		const [one, , three] = wrapped("center");
 		expect(rect(one).top).toBe(10);
 		expect(rect(three).top).toBe(20);
 	});
@@ -269,7 +270,7 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 	test("align-content: space-between puts all free space between the lines", () => {
 		// First line flush at 0, last flush at the end; the gap is the whole
 		// 20 of free space: 0, then 10 + 20 = 30.
-		const [one, , three] = wrapped(Flex.ALIGN_SPACE_BETWEEN);
+		const [one, , three] = wrapped("space-between");
 		expect(rect(one).top).toBe(0);
 		expect(rect(three).top).toBe(30);
 	});
@@ -277,7 +278,7 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 	test("align-content: space-around gives each line equal space on both sides", () => {
 		// 20 free / 2 lines = 10 per line, half of it (5) leading each.
 		// Line 1 at 5; line 2 at 5 + 10 + 10 = 25.
-		const [one, , three] = wrapped(Flex.ALIGN_SPACE_AROUND);
+		const [one, , three] = wrapped("space-around");
 		expect(rect(one).top).toBe(5);
 		expect(rect(three).top).toBe(25);
 	});
@@ -290,9 +291,9 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 		const root = node();
 		root.setWidth(100);
 		root.setHeight(50);
-		root.setFlexWrap(Flex.WRAP_WRAP);
-		root.setAlignContent(Flex.ALIGN_SPACE_EVENLY);
-		root.setAlignItems(Flex.ALIGN_FLEX_START);
+		root.setFlexWrap("wrap");
+		root.setAlignContent("space-evenly");
+		root.setAlignItems("flex-start");
 
 		const items = [box(root), box(root), box(root)];
 		for (const item of items) {
@@ -301,7 +302,7 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 			item.setFlexShrink(0);
 		}
 
-		root.calculateLayout(100, 50);
+		root.performLayout(100, 50);
 
 		expect(rect(items[0]).top).toBe(10);
 		expect(rect(items[2]).top).toBe(30);
@@ -310,7 +311,7 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 	test("align-content: stretch grows the lines to fill the cross axis", () => {
 		// 20 free / 2 lines = each line grows from 10 to 20.
 		// Lines start at 0 and 20. The items keep their definite height of 10.
-		const [one, , three] = wrapped(Flex.ALIGN_STRETCH);
+		const [one, , three] = wrapped("stretch");
 		expect(rect(one).top).toBe(0);
 		expect(rect(three).top).toBe(20);
 		expect(rect(one).height).toBe(10);
@@ -329,16 +330,19 @@ describe("percentage margins and padding resolve against the containing block wi
 		const root = node();
 		root.setWidth(200);
 		root.setHeight(100);
-		root.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
+		root.setFlexDirection("column");
 
 		const child = box(root);
-		child.setPaddingPercent(Flex.EDGE_ALL, 10);
+		child.setPadding("left", {percentage: 10});
+		child.setPadding("top", {percentage: 10});
+		child.setPadding("right", {percentage: 10});
+		child.setPadding("bottom", {percentage: 10});
 
 		const grandchild = box(child);
 		grandchild.setWidth(10);
 		grandchild.setHeight(5);
 
-		root.calculateLayout(200, 100);
+		root.performLayout(200, 100);
 
 		// Padding is 10% of 200 = 20 on every edge, so the content box of the
 		// child starts at (20, 20) within it.
@@ -352,14 +356,14 @@ describe("percentage margins and padding resolve against the containing block wi
 		const root = node();
 		root.setWidth(200);
 		root.setHeight(100);
-		root.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
+		root.setFlexDirection("column");
 
 		const child = box(root);
 		child.setHeight(10);
-		child.setMarginPercent(Flex.EDGE_TOP, 10);
-		child.setMarginPercent(Flex.EDGE_LEFT, 10);
+		child.setMargin("top", {percentage: 10});
+		child.setMargin("left", {percentage: 10});
 
-		root.calculateLayout(200, 100);
+		root.performLayout(200, 100);
 
 		// Both margins are 10% of the containing block's width (200) = 20.
 		// A margin-top of 10 would mean it had been resolved against the height.
@@ -381,10 +385,10 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setWidth(20);
 		item.setHeight(10);
 		item.setFlexShrink(0);
-		item.setMarginAuto(Flex.EDGE_LEFT);
-		item.setMarginAuto(Flex.EDGE_RIGHT);
+		item.setMargin("left", "auto");
+		item.setMargin("right", "auto");
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).left).toBe(40);
 	});
@@ -399,9 +403,9 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setWidth(20);
 		item.setHeight(10);
 		item.setFlexShrink(0);
-		item.setMarginAuto(Flex.EDGE_LEFT);
+		item.setMargin("left", "auto");
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).left).toBe(80);
 	});
@@ -415,10 +419,10 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		const item = box(root);
 		item.setWidth(20);
 		item.setHeight(10);
-		item.setMarginAuto(Flex.EDGE_TOP);
-		item.setMarginAuto(Flex.EDGE_BOTTOM);
+		item.setMargin("top", "auto");
+		item.setMargin("bottom", "auto");
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).top).toBe(5);
 	});
@@ -430,15 +434,15 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		const root = node();
 		root.setWidth(100);
 		root.setHeight(20);
-		root.setJustifyContent(Flex.JUSTIFY_FLEX_END);
+		root.setJustifyContent("flex-end");
 
 		const item = box(root);
 		item.setWidth(20);
 		item.setHeight(10);
 		item.setFlexShrink(0);
-		item.setMarginAuto(Flex.EDGE_RIGHT);
+		item.setMargin("right", "auto");
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).left).toBe(0);
 	});
@@ -455,11 +459,11 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 	// This is exactly where baseline and flex-start part company: under
 	// flex-start both boxes would sit at 0 and the text rows would be on
 	// different lines.
-	function baselineRow(alignItems: number): {
-		a: Node;
-		b: Node;
-		aText: Node;
-		bText: Node;
+	function baselineRow(alignItems: "baseline" | "flex-start"): {
+		a: LayoutNode;
+		b: LayoutNode;
+		aText: LayoutNode;
+		bText: LayoutNode;
 	} {
 		const root = node();
 		root.setWidth(100);
@@ -467,7 +471,7 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 		root.setAlignItems(alignItems);
 
 		const a = box(root);
-		a.setPadding(Flex.EDGE_TOP, 2);
+		a.setPadding("top", 2);
 		const aText = box(a);
 		aText.setWidth(10);
 		aText.setHeight(1);
@@ -477,12 +481,12 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 		bText.setWidth(10);
 		bText.setHeight(1);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 		return {a, b, aText, bText};
 	}
 
 	test("aligns the first rows of items with different leading padding", () => {
-		const {a, b, aText, bText} = baselineRow(Flex.ALIGN_BASELINE);
+		const {a, b, aText, bText} = baselineRow("baseline");
 
 		// A is flush; B is pushed down to meet it.
 		expect(rect(a).top).toBe(0);
@@ -500,7 +504,7 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 		// Under flex-start both boxes sit at 0, so the text rows are on
 		// different lines (2 and 0). If baseline were quietly treated as
 		// flex-start, this is the assertion that would catch it.
-		const {a, b, aText, bText} = baselineRow(Flex.ALIGN_FLEX_START);
+		const {a, b, aText, bText} = baselineRow("flex-start");
 
 		expect(rect(a).top).toBe(0);
 		expect(rect(b).top).toBe(0);
@@ -519,7 +523,7 @@ describe("gap (css-align-3)", () => {
 		const root = node();
 		root.setWidth(40);
 		root.setHeight(3);
-		root.setGap(Flex.GUTTER_COLUMN, 3);
+		root.setGap("column", 3);
 
 		const items = [box(root), box(root), box(root)];
 		for (const item of items) {
@@ -528,7 +532,7 @@ describe("gap (css-align-3)", () => {
 			item.setFlexShrink(0);
 		}
 
-		root.calculateLayout(40, 3);
+		root.performLayout(40, 3);
 
 		expect(rect(items[0]).left).toBe(0);
 		expect(rect(items[1]).left).toBe(9);
@@ -543,7 +547,7 @@ describe("gap (css-align-3)", () => {
 		const root = node();
 		root.setWidth(32);
 		root.setHeight(3);
-		root.setGap(Flex.GUTTER_COLUMN, 2);
+		root.setGap("column", 2);
 
 		const items = [box(root), box(root), box(root)];
 		for (const item of items) {
@@ -552,7 +556,7 @@ describe("gap (css-align-3)", () => {
 			item.setHeight(1);
 		}
 
-		root.calculateLayout(32, 3);
+		root.performLayout(32, 3);
 
 		const widths = items.map((item) => rect(item).width);
 		expect(widths.reduce((sum, w) => sum + w, 0)).toBe(28);
@@ -567,11 +571,11 @@ describe("gap (css-align-3)", () => {
 		const root = node();
 		root.setWidth(20);
 		root.setHeight(10);
-		root.setFlexWrap(Flex.WRAP_WRAP);
-		root.setAlignContent(Flex.ALIGN_FLEX_START);
-		root.setAlignItems(Flex.ALIGN_FLEX_START);
-		root.setGap(Flex.GUTTER_COLUMN, 2);
-		root.setGap(Flex.GUTTER_ROW, 1);
+		root.setFlexWrap("wrap");
+		root.setAlignContent("flex-start");
+		root.setAlignItems("flex-start");
+		root.setGap("column", 2);
+		root.setGap("row", 1);
 
 		const items = [box(root), box(root), box(root)];
 		for (const item of items) {
@@ -580,20 +584,13 @@ describe("gap (css-align-3)", () => {
 			item.setFlexShrink(0);
 		}
 
-		root.calculateLayout(20, 10);
+		root.performLayout(20, 10);
 
 		expect(rect(items[1]).left).toBe(10);
 		expect(rect(items[1]).top).toBe(0);
 		// Wrapped, and pushed down by its own height plus the row gap.
 		expect(rect(items[2]).left).toBe(0);
 		expect(rect(items[2]).top).toBe(2);
-	});
-
-	test("GUTTER_ALL sets both axes", () => {
-		const root = node();
-		root.setGap(Flex.GUTTER_ALL, 4);
-		expect(root.getGap(Flex.GUTTER_ROW)).toBe(4);
-		expect(root.getGap(Flex.GUTTER_COLUMN)).toBe(4);
 	});
 });
 
@@ -606,10 +603,14 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 	// These use a measure function so the engine can be driven directly: it
 	// reports the longest word when offered no room, and the full string when
 	// offered enough -- which is what a real text run does.
-	function textItem(parent: Node, longest: number, full: number): Node {
+	function textItem(
+		parent: LayoutNode,
+		longest: number,
+		full: number,
+	): LayoutNode {
 		const item = box(parent);
-		item.setMeasureFunc((width, widthMode) => {
-			if (widthMode === Flex.MEASURE_MODE_UNDEFINED) {
+		item.setMeasureContent((width, widthSpace) => {
+			if (widthSpace === "indefinite") {
 				return {width: full, height: 1};
 			}
 			// Wrap into the offered width, but never below the longest single word.
@@ -629,7 +630,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		const wide = textItem(root, 15, 15); // one unbreakable 15-cell word
 		const narrow = textItem(root, 4, 4);
 
-		root.calculateLayout(12, 3);
+		root.performLayout(12, 3);
 
 		expect(rect(wide).width).toBe(15);
 		expect(rect(narrow).width).toBe(4);
@@ -647,7 +648,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		const wrappable = textItem(root, 5, 16); // longest word 5, full string 16
 		const fixed = textItem(root, 4, 4);
 
-		root.calculateLayout(12, 3);
+		root.performLayout(12, 3);
 
 		expect(rect(wrappable).width).toBeLessThan(16);
 		expect(rect(wrappable).width).toBeGreaterThanOrEqual(5);
@@ -664,7 +665,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		wide.setMinWidth(0);
 		textItem(root, 4, 4);
 
-		root.calculateLayout(12, 3);
+		root.performLayout(12, 3);
 
 		expect(rect(wide).width).toBeLessThan(15);
 	});
@@ -677,7 +678,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		const wide = textItem(root, 15, 15);
 		wide.setFlexShrink(0);
 
-		root.calculateLayout(12, 3);
+		root.performLayout(12, 3);
 
 		expect(rect(wide).width).toBe(15);
 	});
@@ -710,13 +711,16 @@ describe("what a measurement produced, not only how big it was", () => {
 	}
 
 	/** An item whose placing measurements leave their lines in `placed`. */
-	function textItem(parent: Node, placed: {lines: string[] | null}): Node {
+	function textItem(
+		parent: LayoutNode,
+		placed: {lines: string[] | null},
+	): LayoutNode {
 		const item = box(parent);
-		item.setMeasureFunc((width, widthMode, _height, _heightMode, placing) => {
+		item.setMeasureContent((width, widthSpace, placing) => {
 			const limit =
-				widthMode === Flex.MEASURE_MODE_UNDEFINED ?
-					Number.MAX_SAFE_INTEGER :
-					width;
+				widthSpace === "indefinite"
+					? Number.MAX_SAFE_INTEGER
+					: width;
 			const lines = breakWords(limit);
 			if (placing) {
 				placed.lines = lines;
@@ -737,7 +741,7 @@ describe("what a measurement produced, not only how big it was", () => {
 		// pass makes of it are answered at other widths (the row's whole 17 among
 		// them) and are no part of the box it ends up with.
 		const root = node();
-		root.setFlexDirection(Flex.FLEX_DIRECTION_ROW);
+		root.setFlexDirection("row");
 		root.setWidth(24);
 
 		const placed: {lines: string[] | null} = {lines: null};
@@ -746,12 +750,12 @@ describe("what a measurement produced, not only how big it was", () => {
 		const fixed = textItem(root, {lines: null});
 		fixed.setFlexShrink(0);
 
-		root.calculateLayout(NaN, NaN);
+		root.performLayout(NaN, NaN);
 		expect(rect(shrinking).width).toBe(4);
 		expect(placed.lines).toEqual(breakWords(4));
 
 		root.setWidth(17);
-		root.calculateLayout(NaN, NaN);
+		root.performLayout(NaN, NaN);
 
 		// Four cells wide: one word per line, and that is what it holds.
 		expect(rect(shrinking).width).toBe(4);

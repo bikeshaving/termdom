@@ -2,9 +2,10 @@
  * Basic HTML-to-Terminal Tests
  */
 
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
 	const terminal = new MockProcess();
@@ -126,9 +127,11 @@ test("can render HTML to terminal without errors", async () => {
 	div.style.setProperty("color", "blue");
 	document.body.appendChild(div);
 
-	// Should render without throwing errors
-	// DOM automatically re-renders via MutationObserver
-	await new Promise((resolve) => setTimeout(resolve));
+	await nextFrame(dom);
+
+	// The text reaches the screen, and the color it was given reaches it too.
+	expect(terminal.getVisibleText()).toContain("Test content");
+	expect(terminal.getStaticANSI()).toContain("38;2;0;0;255m");
 	dom.dispose();
 });
 
@@ -251,6 +254,32 @@ test("fullscreen owns the alternate screen from row zero, whatever the anchor", 
 	dom.dispose();
 });
 
+test("entering fullscreen hides the cursor on the screen it takes", async () => {
+	// A focused field shows the real cursor on its caret. Entry is switch,
+	// hide, clear: a cursor the entry left visible would sit blinking on the
+	// screen it just took.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = "<input id=\"i\"><div id=\"fs\">STAGE</div>";
+	await dom.attach();
+	document.getElementById("i")!.focus();
+	await nextFrame(dom);
+
+	const raw = captureRawOutput(terminal);
+
+	await document.getElementById("fs")!.requestFullscreen();
+	await nextFrame(dom);
+	const written = raw();
+	const entry = written.indexOf("\x1b[?1049h");
+	const hide = written.indexOf("\x1b[?25l");
+	const clear = written.indexOf("\x1b[2J");
+	expect(entry).toBeGreaterThan(-1);
+	expect(hide).toBeGreaterThan(entry);
+	expect(hide).toBeLessThan(clear);
+	await dom.dispose();
+});
+
 test("closing while fullscreen leaves no trace, and the shell lands below", async () => {
 	// An alt-screen program vanishes on exit: the switch restores what the
 	// screen held before entry, and that is the record. The payout belongs
@@ -267,16 +296,12 @@ test("closing while fullscreen leaves no trace, and the shell lands below", asyn
 	await document.getElementById("fs")!.requestFullscreen();
 	await nextFrame(dom);
 
-	let written = "";
-	const original = terminal.stdout.write.bind(terminal.stdout);
-	terminal.stdout.write = ((chunk: unknown, ...rest: unknown[]) => {
-		written += String(chunk);
-		return original(chunk as never, ...(rest as never[]));
-	}) as typeof terminal.stdout.write;
+	const raw = captureRawOutput(terminal);
 
 	await dom.dispose();
 	// The alt screen exits, nothing pays out after it, and the cursor
 	// steps to a fresh line.
+	const written = raw();
 	const restoreAt = written.indexOf("\x1b[?1049l");
 	expect(restoreAt).toBeGreaterThan(-1);
 	const after = written.slice(restoreAt + "\x1b[?1049l".length);

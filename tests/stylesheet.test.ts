@@ -1,7 +1,12 @@
-import {test, expect} from "@b9g/libuild/test";
-import {TermDOM, createDocumentWindow} from "../src/internal/termdom.js";
-import {MockProcess, styleManagerFor} from "./test-utils.js";
-import {claimUAToolkit} from "../src/internal/dom.js";
+import {expect, test} from "@b9g/libuild/test";
+
+import {
+	getPseudoHost,
+	getPseudoName,
+	pseudoElement,
+} from "../src/internal/dom.js";
+import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();
@@ -12,7 +17,7 @@ test("CSS specificity calculation", async () => {
 	const style = document.createElement("style");
 	style.textContent = `
     div { color: red; }                    /* 000-000-001 */
-    .class { color: green; }               /* 000-001-000 */  
+    .class { color: green; }               /* 000-001-000 */
     .class.other { color: blue; }          /* 000-002-000 */
     #id { color: purple; }                 /* 001-000-000 */
     #id.class { color: orange; }           /* 001-001-000 */
@@ -20,8 +25,7 @@ test("CSS specificity calculation", async () => {
   `;
 	document.head.appendChild(style);
 
-	// Wait for MutationObserver to parse styles
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Specificity is verified through the cascade -- the most specific matching
 	// rule wins in getComputedStyle -- rather than by reading the parser's table.
@@ -42,6 +46,59 @@ test("CSS specificity calculation", async () => {
 	expect(colorOf("class other", "")).toBe("rgb(0, 0, 255)"); // .class.other (000-002-000)
 	expect(colorOf("", "id")).toBe("rgb(128, 0, 128)"); // #id (001-000-000)
 	expect(colorOf("class", "id")).toBe("rgb(255, 165, 0)"); // #id.class (001-001-000)
+
+	termdom.dispose();
+});
+
+test("@namespace qualifies the type selectors a sheet writes", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+	const SVG = "http://www.w3.org/2000/svg";
+
+	const style = document.createElement("style");
+	style.textContent = `
+    @namespace svg url(${SVG});
+    svg|circle { color: red; }
+    |circle { color: blue; }
+    *|rect { color: green; }
+    nope|rect { color: purple; }
+  `;
+	document.head.appendChild(style);
+	const circle = document.createElementNS(SVG, "circle");
+	const rect = document.createElementNS(SVG, "rect");
+	document.body.append(circle, rect);
+	await nextFrame(termdom);
+
+	const colorOf = (el: Element): string =>
+		termdom.window.getComputedStyle(el).getPropertyValue("color");
+	expect(colorOf(circle)).toBe("rgb(255, 0, 0)");
+	expect(colorOf(rect)).toBe("rgb(0, 128, 0)");
+
+	termdom.dispose();
+});
+
+test("a default @namespace keeps a typeless compound off other namespaces", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const style = document.createElement("style");
+	style.textContent = `
+    @namespace url(http://www.w3.org/2000/svg);
+    .x { color: red; }
+  `;
+	document.head.appendChild(style);
+	const div = document.createElement("div");
+	div.className = "x";
+	document.body.appendChild(div);
+	await nextFrame(termdom);
+
+	expect(
+		termdom.window.getComputedStyle(div).getPropertyValue("color"),
+	).not.toBe(
+		"rgb(255, 0, 0)",
+	);
 
 	termdom.dispose();
 });
@@ -68,7 +125,7 @@ test("selector-list pseudo-classes weigh their most specific argument", async ()
 		.has-target.a.b { color: blue; }
 	`;
 	document.head.appendChild(style);
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const host = document.createElement("div");
 	host.innerHTML =
@@ -106,7 +163,7 @@ test("the CSS 2 pseudo-element spelling weighs as an element", async () => {
 		.legacy::before { content: "x"; color: blue; }
 	`;
 	document.head.appendChild(style);
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const element = document.createElement("div");
 	element.className = "legacy";
@@ -134,7 +191,7 @@ test("attribute values do not affect selector specificity", async () => {
 	`;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const element = document.createElement("div");
 	element.className = "target";
@@ -156,12 +213,12 @@ test("CSS cascade resolution", async () => {
 	const style = document.createElement("style");
 	style.textContent = `
     div { color: red; }
-    .high-specificity { color: green; }  
+    .high-specificity { color: green; }
     #very-high { color: blue; }
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Test element with multiple applicable rules
 	const div = document.createElement("div");
@@ -186,21 +243,21 @@ test("Pseudo-element CSS support", async () => {
 
 	const style = document.createElement("style");
 	style.textContent = `
-    .test::before { 
-      content: "Before: "; 
-      color: blue; 
+    .test::before {
+      content: "Before: ";
+      color: blue;
     }
-    .test::after { 
-      content: " :After"; 
-      color: green; 
+    .test::after {
+      content: " :After";
+      color: green;
     }
-    li::marker { 
-      color: purple; 
+    li::marker {
+      color: purple;
     }
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const div = document.createElement("div");
 	div.className = "test";
@@ -236,7 +293,7 @@ test("Pseudo-element specificity", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const div = document.createElement("div");
 	div.className = "class";
@@ -251,7 +308,7 @@ test("Pseudo-element specificity", async () => {
 	termdom.dispose();
 });
 
-test.todo("StyleManager auto-refresh on DOM changes", async () => {
+test("Cascade auto-refresh on DOM changes", async () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
@@ -269,8 +326,7 @@ test.todo("StyleManager auto-refresh on DOM changes", async () => {
 	style.textContent = ".test { color: red; }";
 	document.head.appendChild(style);
 
-	// Wait for MutationObserver to trigger
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Should automatically pick up new styles
 	computedStyle = termdom.window.getComputedStyle(div);
@@ -279,22 +335,17 @@ test.todo("StyleManager auto-refresh on DOM changes", async () => {
 	// Modify stylesheet content
 	style.textContent = ".test { color: blue; }";
 
-	// Wait for change detection
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Should pick up modified styles
 	computedStyle = termdom.window.getComputedStyle(div);
 	expect(computedStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 });
 
-test("StyleManager createPseudoElementNode", async () => {
-	// The test is UA-side code: it builds its own cascade over a document
-	// no engine holds and claims the toolkit through the public door, the
-	// way any user agent would.
-	const window = createDocumentWindow("<!DOCTYPE html><body></body>");
-	const {document} = window;
-	const toolkit = claimUAToolkit(document);
-
+test("pseudo-element nodes follow the rules that reach their hosts", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
 	const style = document.createElement("style");
 	style.textContent = `
     .test::before { content: "Hello World"; }
@@ -302,44 +353,18 @@ test("StyleManager createPseudoElementNode", async () => {
     .normal::before { content: normal; }
   `;
 	document.head.appendChild(style);
+	document.body.innerHTML =
+		"<div class=\"test\"></div><div class=\"empty\"></div>" +
+		"<div class=\"normal\"></div>";
+	await nextFrame(termdom);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
-
-	const styleManager = styleManagerFor({window});
-
-	// Test element with content
-	const testDiv = document.createElement("div");
-	testDiv.className = "test";
-
-	styleManager.attachPseudoElementsToElement(testDiv);
-	const pseudoNode = toolkit.pseudoElement<Element>(testDiv, "::before");
+	const [testDiv, emptyDiv, normalDiv] = Array.from(document.body.children);
+	const pseudoNode = pseudoElement<Element>(testDiv, "::before");
 	expect(pseudoNode).not.toBeNull();
 	expect(pseudoNode!.textContent).toBe("Hello World");
-	expect(toolkit.pseudoNameOf(pseudoNode!)).toBe("::before");
-	expect(toolkit.pseudoHostOf(pseudoNode!)).toBe(testDiv);
-
-	// Test element with no content
-	const emptyDiv = document.createElement("div");
-	emptyDiv.className = "empty";
-
-	styleManager.attachPseudoElementsToElement(emptyDiv);
-	expect(toolkit.pseudoElement(emptyDiv, "::before")).toBeNull();
-
-	// Test element with content: normal
-	const normalDiv = document.createElement("div");
-	normalDiv.className = "normal";
-
-	styleManager.attachPseudoElementsToElement(normalDiv);
-	expect(toolkit.pseudoElement(normalDiv, "::before")).toBeNull();
-
-	// Test shouldCreatePseudoElement
-	expect(styleManager.shouldCreatePseudoElement(testDiv, "::before")).toBe(
-		true,
-	);
-	expect(styleManager.shouldCreatePseudoElement(emptyDiv, "::before")).toBe(
-		false,
-	);
-	expect(styleManager.shouldCreatePseudoElement(normalDiv, "::before")).toBe(
-		false,
-	);
+	expect(getPseudoName(pseudoNode!)).toBe("::before");
+	expect(getPseudoHost(pseudoNode!)).toBe(testDiv);
+	expect(pseudoElement(emptyDiv, "::before")).toBeNull();
+	expect(pseudoElement(normalDiv, "::before")).toBeNull();
+	termdom.dispose();
 });

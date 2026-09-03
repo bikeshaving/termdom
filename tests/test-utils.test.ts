@@ -5,9 +5,10 @@
  * to ensure proper TTY simulation and cursor query handling
  */
 
-import {describe, test, expect, beforeEach} from "@b9g/libuild/test";
-import {MockProcess, stripControlCodes, nextFrame} from "./test-utils.js";
+import {beforeEach, describe, expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 describe("MockProcess", () => {
 	let terminal: MockProcess;

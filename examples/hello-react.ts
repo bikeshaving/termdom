@@ -5,9 +5,9 @@
 //   any key  increments the counter
 //   q        quit
 import {TermDOM} from "@b9g/termdom";
+import htm from "htm";
 import {createElement, useEffect, useState} from "react";
 import {createRoot} from "react-dom/client";
-import htm from "htm";
 
 // JSX without a build step: htm parses the same shape from a template
 // literal, straight to createElement.

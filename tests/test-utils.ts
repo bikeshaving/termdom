@@ -3,23 +3,25 @@
  * TermDOM through, and the helpers that read a frame back off it.
  */
 
+import {EventEmitter} from "events";
+import {existsSync, mkdirSync, writeFileSync} from "fs";
+import {join} from "path";
+
+import xtermPkg from "@xterm/headless";
+
 import {
 	type ProcessLike,
-	type TTYWriteStream,
-	type TTYReadStream,
 	type TerminalTransport,
 	transportFromProcess,
-} from "../src/internal/terminalsession.js";
-import {EventEmitter} from "events";
-import xtermPkg from "@xterm/headless";
+	type TTYReadStream,
+	type TTYWriteStream,
+} from "../src/index.js";
+import type {ColorDepth} from "../src/internal/exchange.js";
+import {Screen} from "../src/internal/screen.js";
+import {getStringWidth} from "../src/internal/text.js";
+
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
-import {Screen, type ColorDepth} from "../src/internal/ansi.js";
-import {stringWidth} from "../src/internal/text.js";
-import {StyleManager} from "../src/internal/cascade.js";
-import {LayoutEngine} from "../src/internal/layout.js";
-import {writeFileSync, mkdirSync, existsSync} from "fs";
-import {join} from "path";
 
 /**
  * The width tables, as the mock terminal's own measure.
@@ -35,7 +37,7 @@ import {join} from "path";
 const TABLE_UNICODE_VERSION = {
 	version: "table",
 	wcwidth(codepoint: number): 0 | 1 | 2 {
-		const width = stringWidth(String.fromCodePoint(codepoint));
+		const width = getStringWidth(String.fromCodePoint(codepoint));
 		return width <= 0 ? 0 : width >= 2 ? 2 : 1;
 	},
 	charProperties(codepoint: number, preceding: number): number {
@@ -139,12 +141,11 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 }
 
 class MockReadStream extends EventEmitter implements TTYReadStream {
+	isTTY: boolean;
 	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
 		super(...args);
 		this.isTTY = true;
 	}
-
-	isTTY: boolean;
 
 	setRawMode(_mode: boolean): this {
 		return this;
@@ -176,21 +177,6 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	env: Record<string, string | undefined>;
 	terminal: Terminal;
 	declare [kTransport]: TerminalTransport | null;
-
-	/** This mock as a TerminalTransport, the shape TermDOM takes. */
-	get transport(): TerminalTransport {
-		return (this[kTransport] ??= transportFromProcess(this));
-	}
-
-	/**
-	 * A transport that declares prior screen content (sharesScreen), for tests
-	 * exercising command-start anchoring: xterm-headless answers the DSR query.
-	 * Fresh per access -- a transport's streams are one-shot, and anchor tests
-	 * attach several instances to the same mock terminal in sequence.
-	 */
-	get sharedTransport(): TerminalTransport {
-		return transportFromProcess(this, {sharesScreen: true});
-	}
 
 	constructor(
 		options: {
@@ -248,6 +234,21 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 
 		this.stdin = new MockReadStream();
 		this.stdout = new MockWriteStream(this.terminal, this.stdin, cols, rows);
+	}
+
+	/** This mock as a TerminalTransport, the shape TermDOM takes. */
+	get transport(): TerminalTransport {
+		return (this[kTransport] ??= transportFromProcess(this));
+	}
+
+	/**
+	 * A transport that declares prior screen content (sharesScreen), for tests
+	 * exercising command-start anchoring: xterm-headless answers the DSR query.
+	 * Fresh per access -- a transport's streams are one-shot, and anchor tests
+	 * attach several instances to the same mock terminal in sequence.
+	 */
+	get sharedTransport(): TerminalTransport {
+		return transportFromProcess(this, {sharesScreen: true});
 	}
 
 	/**
@@ -363,13 +364,26 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 					dim: !!cell.isDim(),
 					blink: !!cell.isBlink(),
 				});
-				outputCol += stringWidth(chars) === 2 ? 2 : 1;
+				outputCol += getStringWidth(chars) === 2 ? 2 : 1;
 			}
 		}
 
 		// The frame emitter withholds the final row's line ending (the screen
 		// has nothing below it); the oracle's callers split on lines.
 		return stripControlCodes(screen.endFrame() + "\r\n");
+	}
+
+	/**
+	 * Write ANSI output to .ansi file after test passes
+	 */
+	writeANSI(testName: string): void {
+		const ansiOutput = this.getStaticANSI();
+		const ansiDir = join(process.cwd(), "tests", "__snapshots__", "ansi");
+		if (!existsSync(ansiDir)) {
+			mkdirSync(ansiDir, {recursive: true});
+		}
+		const ansiFilename = `${testName}.ansi`;
+		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
 	}
 
 	/**
@@ -387,19 +401,6 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		}
 
 		return "ansi";
-	}
-
-	/**
-	 * Write ANSI output to .ansi file after test passes
-	 */
-	writeANSI(testName: string): void {
-		const ansiOutput = this.getStaticANSI();
-		const ansiDir = join(process.cwd(), "tests", "__snapshots__", "ansi");
-		if (!existsSync(ansiDir)) {
-			mkdirSync(ansiDir, {recursive: true});
-		}
-		const ansiFilename = `${testName}.ansi`;
-		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
 	}
 }
 
@@ -424,16 +425,40 @@ export function nextFrame(dom: {
 }
 
 /**
- * A StyleManager wired to a TermDOM's window, for the handful of tests that
- * inspect CSS parsing or pseudo-element resolution directly. styleManager is
- * #private on TermDOM; this re-parses the same document's stylesheets, so it
- * resolves the same rules.
+ * Override a MockProcess's stdout.write to record every raw chunk written to
+ * it, and return a getter for everything recorded so far, joined.
+ *
+ * By default the write still reaches the underlying terminal (forward: true);
+ * pass forward: false for a stdout that has nothing real behind it to reach
+ * (a piped, non-TTY mock). onChunk, if given, sees each chunk as it arrives --
+ * for a caller that wants to react to output live rather than poll the
+ * getter.
  */
-export function styleManagerFor(dom: {window: any}): StyleManager {
-	const sm = new StyleManager(dom.window);
-	sm.setLayoutEngine(new LayoutEngine(dom.window));
-	sm.refreshStylesheets();
-	return sm;
+export function captureRawOutput(
+	t: MockProcess,
+	options: {forward?: boolean; onChunk?: (chunk: string) => void} = {},
+): () => string {
+	const {forward = true, onChunk} = options;
+	let raw = "";
+	const orig = t.stdout.write.bind(t.stdout);
+	(t.stdout as unknown as {write: unknown}).write = (
+		chunk: unknown,
+		enc?: unknown,
+		cb?: unknown,
+	) => {
+		const data = String(chunk);
+		raw += data;
+		onChunk?.(data);
+		if (forward) {
+			return (orig as (...a: unknown[]) => unknown)(chunk, enc, cb);
+		}
+		const callback = typeof enc === "function" ? enc : cb;
+		if (typeof callback === "function") {
+			(callback as () => void)();
+		}
+		return true;
+	};
+	return () => raw;
 }
 
 export function stripControlCodes(ansi: string): string {

@@ -20,8 +20,10 @@
  *
  * SCAN=600 WANT=20 npx libuild test fuzz -p node
  */
-import {test} from "@b9g/libuild/test";
 import {mkdirSync, writeFileSync} from "fs";
+
+import {test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 
@@ -142,11 +144,12 @@ function rng(seed: number): () => number {
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 	};
 }
+
 const pick = <T>(next: () => number, items: T[]): T =>
 	items[Math.floor(next() * items.length) % items.length];
 
 type Action =
-	| {kind: "class"; id: string; cls: string} |
+	{kind: "class"; id: string; cls: string} |
 	{kind: "style"; id: string; value: string} |
 	{kind: "attr"; id: string; value: string} |
 	{
@@ -195,11 +198,26 @@ function frameOf(terminal: any): string {
 const find = (document: any, id: string): any =>
 	id === "body" ? document.body : document.querySelector(`[data-f="${id}"]`);
 
+/**
+ * Give every untagged element an id no element in the document already has.
+ *
+ * Tagging runs again after each action, and the elements an action added are
+ * the untagged ones. Counting from zero every time would hand a new element
+ * the id an old one is still wearing, and `find` would then answer with
+ * whichever came first in the document -- so a recorded repro would name
+ * elements it never touched.
+ */
 function tag(document: any): void {
+	const elements = Array.from(document.body.querySelectorAll("*")) as any[];
 	let counter = 0;
-	for (const element of Array.from(
-		document.body.querySelectorAll("*"),
-	) as any[]) {
+	for (const element of elements) {
+		const existing = element.getAttribute("data-f");
+		const index = existing === null ? -1 : Number(existing.slice(1));
+		if (Number.isInteger(index) && index >= counter) {
+			counter = index + 1;
+		}
+	}
+	for (const element of elements) {
 		if (!element.hasAttribute("data-f")) {
 			element.setAttribute("data-f", `e${counter++}`);
 		}
@@ -667,11 +685,11 @@ const REGRESSION_SEEDS = [
 test("shrink", async () => {
 	const scan = Number(process.env.SCAN ?? 0);
 	const from = Number(process.env.FROM ?? 1);
-	const seeds = scan ?
-			Array.from({length: scan}, (_, i) => from + i) :
-		process.env.SEEDS ?
-				process.env.SEEDS.split(",").map((s) => Number(s.trim())) :
-			REGRESSION_SEEDS;
+	const seeds = scan
+		? Array.from({length: scan}, (_, i) => from + i)
+		: process.env.SEEDS
+			? process.env.SEEDS.split(",").map((s) => Number(s.trim()))
+			: REGRESSION_SEEDS;
 	const wanted = Number(process.env.WANT ?? seeds.length);
 	const report: string[] = [];
 	let found = 0;

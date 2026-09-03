@@ -3,14 +3,15 @@
  * over the domains the width tests sweep. The node test lane holds the
  * pure-JS width path against this fixture -- the parity that used to need
  * Bun in-process -- and the bun lane holds the fixture itself fresh, since
- * there stringWidth IS Bun.stringWidth. Regenerate alongside the width
+ * there getStringWidth IS Bun.stringWidth. Regenerate alongside the width
  * tables whenever the Unicode version moves.
  *
  * Run: bun scripts/generate-width-oracle.ts
  */
 
 import {writeFileSync} from "node:fs";
-import {widthIsUncertain} from "../src/internal/text.js";
+
+import {isWidthUncertain} from "../src/internal/text.js";
 import {
 	ORACLE_CASES,
 	oracleSweepWidth,
@@ -40,7 +41,7 @@ if (sweepable) {
 	let lastWidth = -2;
 	let count = 0;
 	for (let code = 0; code <= 0x3ffff; code++) {
-		const width = oracleSweepWidth(code, oracle, widthIsUncertain);
+		const width = oracleSweepWidth(code, oracle, isWidthUncertain);
 		if (width === lastWidth) {
 			count++;
 		} else {

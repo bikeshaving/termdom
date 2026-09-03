@@ -24,9 +24,11 @@
  * hangs says which feature did it rather than dying silently.
  */
 
-import {writeFileSync, readFileSync} from "node:fs";
+import {readFileSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
+
 import properties from "mdn-data/css/properties.json" with {type: "json"};
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 
@@ -42,10 +44,13 @@ const ROOT = join(import.meta.dirname, "..");
  * claim, and conflating them is how a support table starts lying.
  */
 interface Feature {
+
 	/** The declaration under test. */
 	value: string;
+
 	/** Which box it goes on. Container properties belong on the parent. */
 	target?: "probe" | "parent";
+
 	/**
 	 * Context present in BOTH runs, so the diff isolates the property. Most
 	 * properties do nothing without it: `top` needs `position`, every flex item
@@ -53,13 +58,17 @@ interface Feature {
 	 * to wrap. Probing without context reports the whole of flexbox as missing.
 	 */
 	setup?: string;
+
 	/** Text to put inside #probe, when the property needs something to act on. */
 	text?: string;
+
 	/** Whole-document override, for properties that need real structure. */
 	markup?: string;
-	/** Selector override for the declaration, for properties that only act
-	 * on a pseudo-element (content on #probe::before, not #probe). */
+
+	// Selector override for the declaration, for properties that only act
+	// on a pseudo-element (content on #probe::before, not #probe).
 	selector?: string;
+
 	/**
 	 * A behaviour check, for properties whose whole effect is interaction:
 	 * no cell and no rect moves under them, so the frame-and-geometry diff
@@ -69,6 +78,7 @@ interface Feature {
 }
 
 const LONG = "the quick brown fox jumps over the lazy dog again and again";
+
 /** A word no line of the probe document is wide enough to hold. */
 const UNBREAKABLE = "supercalifragilisticexpialidocious";
 const FLEX = "#parent { display: flex; }";
@@ -77,23 +87,23 @@ const NARROW = "#probe { width: 10ch; }";
 
 const FEATURES: Record<string, Feature> = {
 	// Box model
-	"width": {value: "12ch"},
-	"height": {value: "4px"},
+	width: {value: "12ch"},
+	height: {value: "4px"},
 	"min-width": {value: "20ch", setup: NARROW},
 	"min-height": {value: "5px"},
 	"max-width": {value: "3ch", setup: NARROW},
 	"max-height": {value: "1px", setup: "#probe { height: 5px; }"},
-	"padding": {value: "1px 2ch"},
+	padding: {value: "1px 2ch"},
 	"padding-top": {value: "2px"},
 	"padding-right": {value: "3ch", setup: NARROW},
 	"padding-bottom": {value: "2px"},
 	"padding-left": {value: "3ch"},
-	"margin": {value: "1px 2ch"},
+	margin: {value: "1px 2ch"},
 	"margin-top": {value: "2px"},
 	"margin-right": {value: "3ch", setup: `${FLEX} #probe { width: 10ch; }`},
 	"margin-bottom": {value: "2px"},
 	"margin-left": {value: "3ch"},
-	"border": {value: "1px solid red"},
+	border: {value: "1px solid red"},
 	"border-width": {value: "1px", setup: "#probe { border-style: solid; }"},
 	"border-style": {value: "solid", setup: "#probe { border-width: 1px; }"},
 	"border-color": {value: "red", setup: "#probe { border: 1px solid; }"},
@@ -123,7 +133,7 @@ const FEATURES: Record<string, Feature> = {
 		setup: "#probe { width: 12ch; padding: 0 2ch; border: 1px solid; }",
 	},
 	"aspect-ratio": {value: "1 / 1", setup: NARROW},
-	"outline": {value: "1px solid red"},
+	outline: {value: "1px solid red"},
 	"outline-style": {value: "solid", setup: "#probe { outline-width: 1px; }"},
 	// The painted outline is present or absent; a zero width is the only width
 	// the grid can tell apart from the rest.
@@ -135,12 +145,12 @@ const FEATURES: Record<string, Feature> = {
 	"outline-offset": {value: "1px", setup: "#probe { outline: 1px solid red; }"},
 
 	// Display and positioning
-	"display": {value: "none"},
-	"position": {value: "absolute"},
-	"top": {value: "3px", setup: "#probe { position: absolute; }"},
-	"right": {value: "2ch", setup: "#probe { position: absolute; }"},
-	"bottom": {value: "1px", setup: "#probe { position: absolute; }"},
-	"left": {value: "4ch", setup: "#probe { position: absolute; }"},
+	display: {value: "none"},
+	position: {value: "absolute"},
+	top: {value: "3px", setup: "#probe { position: absolute; }"},
+	right: {value: "2ch", setup: "#probe { position: absolute; }"},
+	bottom: {value: "1px", setup: "#probe { position: absolute; }"},
+	left: {value: "4ch", setup: "#probe { position: absolute; }"},
 	"z-index": {
 		value: "5",
 		setup:
@@ -150,7 +160,7 @@ const FEATURES: Record<string, Feature> = {
 	// #inner is above #sibling by z-index alone; `isolation` on #probe makes
 	// #probe a stacking context, which confines #inner to #probe's own place in
 	// the paint order and puts #sibling on top.
-	"isolation": {
+	isolation: {
 		value: "isolate",
 		setup:
 			"#parent { display: block; position: relative; }" +
@@ -162,7 +172,7 @@ const FEATURES: Record<string, Feature> = {
 			'<div id="parent"><div id="probe"><div id="inner">inner</div></div>' +
 			'<div id="sibling">sibling</div></div>',
 	},
-	"float": {value: "right"},
+	float: {value: "right"},
 	// user-select changes what a selection may take, not what paints, so
 	// the probe drives Selection.modify past a none run and asks where the
 	// focus landed.
@@ -186,7 +196,7 @@ const FEATURES: Record<string, Feature> = {
 	// and clears #sibling -- clearing the document's only float, as this
 	// once did, can never move anything, and the row said "no effect" about
 	// the probe rather than the property.
-	"clear": {
+	clear: {
 		value: "both",
 		selector: "#sibling",
 		setup: "#probe { float: left; }",
@@ -194,7 +204,7 @@ const FEATURES: Record<string, Feature> = {
 	// Clipping only shows against content that overflows the box: an
 	// unbreakable word wider than it for the x axis, wrapped lines taller
 	// than it for the y axis.
-	"overflow": {
+	overflow: {
 		value: "hidden",
 		setup: NARROW,
 		text: "an-unbreakable-overflowing-word",
@@ -209,7 +219,7 @@ const FEATURES: Record<string, Feature> = {
 		setup: "#probe { width: 6ch; height: 1px; }",
 		text: "aaa bbb ccc",
 	},
-	"visibility": {value: "hidden"},
+	visibility: {value: "hidden"},
 
 	// Flexbox -- container properties on the parent, item properties on the item
 	"flex-direction": {value: "column", target: "parent", setup: FLEX},
@@ -224,7 +234,7 @@ const FEATURES: Record<string, Feature> = {
 		setup: `${FLEX} #probe, #sibling { width: 30ch; }`,
 	},
 	"flex-basis": {value: "8ch", setup: FLEX},
-	"flex": {value: "1 0 8ch", setup: FLEX},
+	flex: {value: "1 0 8ch", setup: FLEX},
 	"justify-content": {value: "flex-end", target: "parent", setup: FLEX},
 	"align-items": {
 		value: "flex-end",
@@ -240,8 +250,8 @@ const FEATURES: Record<string, Feature> = {
 		target: "parent",
 		setup: `${FLEX} #parent { height: 8px; flex-wrap: wrap; } #probe, #sibling { width: 30ch; }`,
 	},
-	"order": {value: "2", setup: FLEX},
-	"gap": {value: "2px", target: "parent", setup: FLEX},
+	order: {value: "2", setup: FLEX},
+	gap: {value: "2px", target: "parent", setup: FLEX},
 	"row-gap": {
 		value: "2px",
 		target: "parent",
@@ -271,9 +281,9 @@ const FEATURES: Record<string, Feature> = {
 	},
 
 	// Text and paint
-	"color": {value: "red"},
+	color: {value: "red"},
 	"background-color": {value: "blue"},
-	"background": {value: "blue"},
+	background: {value: "blue"},
 	"font-weight": {value: "bold"},
 	"font-style": {value: "italic"},
 	"text-decoration": {value: "underline"},
@@ -295,8 +305,8 @@ const FEATURES: Record<string, Feature> = {
 		text: UNBREAKABLE,
 	},
 	"line-height": {value: "2"},
-	"direction": {value: "rtl"},
-	"opacity": {value: "0"},
+	direction: {value: "rtl"},
+	opacity: {value: "0"},
 	"font-family": {value: "monospace"},
 	"font-size": {value: "2px"},
 	"letter-spacing": {value: "2px"},
@@ -344,16 +354,16 @@ const FEATURES: Record<string, Feature> = {
 			"#probe { display: inline-block; height: 1px; }" +
 			" #sibling { display: inline-block; height: 4px; }",
 	},
-	"content": {value: '"X"', selector: "#probe::before"},
+	content: {value: '"X"', selector: "#probe::before"},
 	"counter-reset": {value: "c 3"},
 	"counter-increment": {value: "c 2"},
 
 	// Deliberately unsupported, probed so the claim stays honest
-	"transition": {value: "color 1s"},
-	"animation": {value: "spin 1s"},
+	transition: {value: "color 1s"},
+	animation: {value: "spin 1s"},
 	"box-shadow": {value: "1px 1px red"},
-	"filter": {value: "blur(1px)"},
-	"cursor": {value: "pointer"},
+	filter: {value: "blur(1px)"},
+	cursor: {value: "pointer"},
 };
 
 /**
@@ -538,31 +548,31 @@ function generatedFeatures(): Record<string, Feature> {
 			// Each value has to MOVE something: a track list that resolves to
 			// the size the box already had measures as no support at all.
 			value:
-				name === "grid-template-areas" ?
-					'"a a" "b b"' :
-					name === "grid-template" || name === "grid" ?
-						"3px 1px / 6ch 6ch" :
-						name.endsWith("-start") || name.endsWith("-end") ?
-							"3" :
-							name === "grid-area" ?
-								"2 / 2 / 3 / 3" :
-								"3px",
+				name === "grid-template-areas"
+					? '"a a" "b b"'
+					: name === "grid-template" || name === "grid"
+						? "3px 1px / 6ch 6ch"
+						: name.endsWith("-start") || name.endsWith("-end")
+							? "3"
+							: name === "grid-area"
+								? "2 / 2 / 3 / 3"
+								: "3px",
 			target:
 				name.startsWith("grid-auto") ||
 				name === "grid" ||
 				name === "grid-template" ||
-				name === "grid-template-areas" ?
-					"parent" :
-					"probe",
+				name === "grid-template-areas"
+					? "parent"
+					: "probe",
 			// grid-auto-columns sizes the implicit COLUMNS, which only exist
 			// where the flow makes them: a row-flow grid never creates one.
 			setup:
-				name === "grid-auto-columns" ?
-					"#parent { display: grid; grid-auto-flow: column; }" : // An area map only moves a box that names one of its
+				name === "grid-auto-columns"
+					? "#parent { display: grid; grid-auto-flow: column; }" // An area map only moves a box that names one of its
 				// areas, and only against columns it can span.
-					name === "grid-template-areas" ?
-						`${GRID} #probe { grid-area: b; }` :
-						"#parent { display: grid; }",
+					: name === "grid-template-areas"
+						? `${GRID} #probe { grid-area: b; }`
+						: "#parent { display: grid; }",
 		};
 	}
 
@@ -917,6 +927,7 @@ const PROBE_MARKUP =
 interface Probe {
 	name: string;
 	category: string;
+
 	/** Returns whether the feature demonstrably works, plus an optional note. */
 	run(): Promise<{supported: boolean; note?: string}>;
 }
@@ -974,17 +985,17 @@ async function snapshot(
 function cssProbe(property: string, feature: Feature, category: string): Probe {
 	const markup =
 		feature.markup ??
-		(feature.text ?
-				PROBE_MARKUP.replace("probe text", feature.text) :
-			PROBE_MARKUP);
+		(feature.text
+			? PROBE_MARKUP.replace("probe text", feature.text)
+			: PROBE_MARKUP);
 	const target =
 		feature.selector ?? (feature.target === "parent" ? "#parent" : "#probe");
 	// BASE_CSS blocks out the default #parent; a probe that brings its own
 	// markup (a real <table>, say) brings its own context and must not have
 	// display: block forced onto its root.
-	const context = feature.markup ?
-			(feature.setup ?? "") :
-		`${BASE_CSS} ${feature.setup ?? ""}`;
+	const context = feature.markup
+		? (feature.setup ?? "")
+		: `${BASE_CSS} ${feature.setup ?? ""}`;
 	if (feature.behaves) {
 		return apiProbe(property, category, feature.behaves, "behaviour probe");
 	}
@@ -1175,9 +1186,9 @@ function buildProbes(): Probe[] {
 	const probes: Probe[] = [];
 	const generated = generatedFeatures();
 	for (const [name, feature] of Object.entries(generated)) {
-		const category = name.startsWith("border") ?
-			"Box model" :
-			"Logical properties";
+		const category = name.startsWith("border")
+			? "Box model"
+			: "Logical properties";
 		probes.push(cssProbe(name, feature, category));
 	}
 	for (const [category, names] of CATEGORIES) {

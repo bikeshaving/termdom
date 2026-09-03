@@ -44,6 +44,7 @@ document.body.innerHTML = `
 `;
 
 const rows = document.getElementById("rows")!;
+
 function fill(season: string): void {
 	rows.textContent = "";
 	for (const [flower, month, color] of SEASONS[season]) {
@@ -56,6 +57,7 @@ function fill(season: string): void {
 		rows.appendChild(tr);
 	}
 }
+
 fill("spring");
 
 const select = document.getElementById("season") as HTMLSelectElement;

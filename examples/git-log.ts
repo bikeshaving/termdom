@@ -7,8 +7,9 @@
 //
 //   j/k or arrows   move       Enter / l   expand   h   collapse
 //   g / G           top/bottom            q          quit
-import {TermDOM} from "@b9g/termdom";
 import {execFileSync} from "node:child_process";
+
+import {TermDOM} from "@b9g/termdom";
 
 function git(args: string[]): string {
 	return execFileSync("git", args, {encoding: "utf8", maxBuffer: 1 << 26});

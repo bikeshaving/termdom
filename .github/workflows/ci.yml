@@ -8,6 +8,49 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The node floor in package.json engines and the newest release. The
+    # floor leg is what holds engines honest.
+    strategy:
+      matrix:
+        node: [20, 26]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+
+      - run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun typecheck
+
+      - name: lib.dom drift
+        run: bun drift
+
+      - name: Lint
+        run: bun lint
+
+      # Node exercises the pure-JS fallbacks (stringWidth, color) that bun's
+      # native paths would otherwise hide.
+      - name: Test on Node
+        run: npx libuild test -p node
+
+      # Bun ships one version, so its half of the suite runs once.
+      - name: Test on Bun
+        if: matrix.node == 26
+        run: npx libuild test -p bun
+
+  # src/generated/ has one author per file: its generator. This job reruns
+  # the hermetic generators and fails on any drift -- a hand edit to a
+  # generated file, or a generator change without its regenerated output.
+  # widthtables.ts is excluded: its input is the UCD, fetched, not vendored.
+  freshness:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
@@ -21,16 +64,11 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Typecheck
-        run: bun typecheck
+      - name: Regenerate
+        run: npx tsx scripts/generate-css-properties.ts
 
-      - name: Lint
-        run: bun lint
-
-      # Runs the suite on bun and node. Node exercises the pure-JS fallbacks
-      # (stringWidth, color) that bun's native paths would otherwise hide.
-      - name: Test
-        run: bun run test
+      - name: Diff
+        run: git diff --exit-code src/generated/cssproperties.ts
 
   # termdom is developed under Bun, so nothing in `bun test` ever executes the
   # pure-JS fallbacks in src/runtime.ts. A regression there is invisible to the
@@ -52,7 +90,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 20
 
       - name: Smoke test on Node
         run: node scripts/smoke.js

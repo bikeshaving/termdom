@@ -6,9 +6,10 @@
  * blockquote whose border must start at its first text row), and the
  * conditions that stop a collapse (border, padding, a BFC, a flex parent).
  */
-import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 function rectOf(_dom: TermDOM, el: Element): DOMRect {
 	return (el as HTMLElement).getBoundingClientRect();

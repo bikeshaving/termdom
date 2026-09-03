@@ -1,7 +1,8 @@
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
+import {flowDescendants, pseudoElement} from "../src/internal/dom.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
-import {flowWalker} from "../src/internal/layout.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();
@@ -33,7 +34,7 @@ test("::before and ::after content rendering", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Test basic quote wrapper
 	const quote = document.createElement("div");
@@ -97,7 +98,7 @@ test("::marker pseudo-element with lists", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Test custom arrow markers
 	const customList = document.createElement("ul");
@@ -128,22 +129,22 @@ test("::marker pseudo-element with lists", async () => {
 	const output = terminal.getPlainText();
 
 	// Verify custom markers appear in output (outside positioning is the default)
-	expect(output).toContain("→");
-	expect(output).toContain("First item");
-	expect(output).toContain("Second item");
-	expect(output).toContain("🔥");
-	expect(output).toContain("Fire item");
+	expect(output).toContain("→ First item");
+	expect(output).toContain("→ Second item");
+	expect(output).toContain("🔥 Fire item");
 
-	// Verify StyleManager can get marker content for outside positioning
-	const styleManager = styleManagerFor(termdom);
-
-	const markerContent = styleManager.getMarkerContent(item1);
-	expect(markerContent).not.toBeNull();
-	expect(markerContent).toBe("→ ");
-
-	const emojiMarkerContent = styleManager.getMarkerContent(emojiItem);
-	expect(emojiMarkerContent).not.toBeNull();
-	expect(emojiMarkerContent).toBe("🔥 ");
+	// The marker's content is the cascade's answer for the ::marker pseudo.
+	expect(
+		termdom
+			.window
+			.getComputedStyle(item1, "::marker")
+			.getPropertyValue("content"),
+	).toBe('"→ "');
+	expect(
+		termdom.window
+			.getComputedStyle(emojiItem, "::marker")
+			.getPropertyValue("content"),
+	).toBe('"🔥 "');
 });
 
 test("Pseudo-element cascade and specificity in rendering", async () => {
@@ -160,7 +161,7 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	// Element that matches all three selectors
 	const element = document.createElement("div");
@@ -178,7 +179,7 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
 	expect(output).not.toContain("div: Test message");
 	expect(output).not.toContain("content: Test message");
 
-	// Verify StyleManager cascade resolution
+	// Verify Cascade cascade resolution
 	const beforeStyle = termdom.window.getComputedStyle(element, "::before");
 	expect(beforeStyle.getPropertyValue("content")).toBe('"special: "');
 });
@@ -202,7 +203,7 @@ test.todo(
   `;
 		document.head.appendChild(style);
 
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		await nextFrame(termdom);
 
 		// Test different content scenarios
 		const quotesEl = document.createElement("div");
@@ -234,21 +235,14 @@ test.todo(
 		expect(output).toContain('He said: "Hello"Content');
 		expect(output).toContain("★ Important");
 
-		// Verify empty/none/normal don't create pseudo-elements
-		const styleManager = styleManagerFor(termdom);
-
-		expect(styleManager.shouldCreatePseudoElement(emptyEl, "::before")).toBe(
-			false,
-		);
-		expect(styleManager.shouldCreatePseudoElement(noneEl, "::before")).toBe(
-			false,
-		);
-
+		// Content of none, normal or nothing creates no pseudo-element.
 		const normalEl = document.createElement("div");
 		normalEl.className = "normal";
-		expect(styleManager.shouldCreatePseudoElement(normalEl, "::before")).toBe(
-			false,
-		);
+		document.body.appendChild(normalEl);
+		await nextFrame(termdom);
+		expect(pseudoElement(emptyEl, "::before")).toBeNull();
+		expect(pseudoElement(noneEl, "::before")).toBeNull();
+		expect(pseudoElement(normalEl, "::before")).toBeNull();
 	},
 );
 
@@ -265,7 +259,7 @@ test("Pseudo-elements with inline styles override", async () => {
   `;
 	document.head.appendChild(style);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await nextFrame(termdom);
 
 	const element = document.createElement("div");
 	element.className = "base";
@@ -305,7 +299,7 @@ test.todo(
   `;
 		document.head.appendChild(style);
 
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		await nextFrame(termdom);
 
 		// Create test structure
 		const container = document.createElement("div");
@@ -324,24 +318,18 @@ test.todo(
 		listItem.textContent = "ITEM";
 		list.appendChild(listItem);
 
-		// Use ExpandedTreeWalker to traverse and collect all content
-		const walker = flowWalker(container);
-
 		const traversedContent: string[] = [];
-		let currentNode = walker.nextNode();
-
-		while (currentNode) {
-			if (currentNode.nodeType === currentNode.TEXT_NODE) {
-				const textContent = currentNode.textContent || "";
+		for (const node of flowDescendants(container)) {
+			if (node.nodeType === node.TEXT_NODE) {
+				const textContent = node.textContent || "";
 				if (textContent.trim()) {
 					traversedContent.push(textContent);
 				}
 			}
-			currentNode = walker.nextNode();
 		}
 
 		// Verify pseudo-elements are included in traversal
-		// Note: This depends on ExpandedTreeWalker being integrated with StyleManager
+		// Note: This depends on ExpandedTreeWalker being integrated with Cascade
 		// The exact order may vary based on implementation, but pseudo-element content should be present
 		const allContent = traversedContent.join("");
 		expect(allContent).toContain("BEFORE");
@@ -456,4 +444,38 @@ test("a pseudo-element's used box answers the read that asked for the layout", a
 	);
 	expect(cs.getPropertyValue("width")).toBe("40px");
 	expect(cs.getPropertyValue("height")).toBe("1px");
+});
+
+test("a slot's ::before and ::after wrap the content assigned to it", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 24});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const host = document.createElement("div");
+	const shadow = host.attachShadow({mode: "open"});
+	// A slot's own pseudo-elements sit around whatever it renders, which is
+	// its assigned nodes when it has any and its fallback content otherwise.
+	shadow.innerHTML =
+		"<style>slot::before { content: \"PRE\" } " +
+		"slot::after { content: \"END\" }</style><slot>FB</slot>";
+	host.appendChild(document.createTextNode("ASSIGNED"));
+	document.body.appendChild(host);
+	await nextFrame(termdom);
+
+	expect(terminal.getPlainText()).toContain("PREASSIGNEDEND");
+});
+
+test("a slot's ::after follows its fallback content when nothing is assigned", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 24});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const host = document.createElement("div");
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML =
+		"<style>slot::after { content: \"END\" }</style><slot>FB</slot>";
+	document.body.appendChild(host);
+	await nextFrame(termdom);
+
+	expect(terminal.getPlainText()).toContain("FBEND");
 });

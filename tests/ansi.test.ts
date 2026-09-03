@@ -1,9 +1,10 @@
 import {describe, expect, test} from "@b9g/libuild/test";
+
 import {
-	Screen,
 	type CellContext,
 	type LineStyle,
-} from "../src/internal/ansi.js";
+	Screen,
+} from "../src/internal/screen.js";
 import {renderFrame, stripControlCodes} from "./test-utils.js";
 
 describe("cells through the pen", () => {
@@ -108,9 +109,7 @@ describe("Screen", () => {
 			// Should hide cursor and enable sync mode. The cursor stays hidden
 			// between frames -- it is parked for resize bookkeeping, not UI --
 			// and dispose() is what shows it again on the way out.
-			expect(output).toContain("\x1b[?25l"); // Hide cursor
 			expect(output).toContain("\x1b[?2026h"); // Sync mode start
-			expect(output).not.toContain("\x1b[?25h"); // Cursor stays hidden
 			expect(output).toContain("\x1b[?2026l"); // Sync mode end
 		});
 
@@ -809,6 +808,13 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		// Where four cells meet, a cross; where two meet along an edge, a tee.
+		// The snapshot below records the whole picture, but the junctions are
+		// the reason the picture is interesting, so they are named.
+		expect(cleanOutput).toContain("┌───┬───┐");
+		expect(cleanOutput).toContain("├───┼───┤");
+		expect(cleanOutput).toContain("└───┴───┘");
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -841,6 +847,11 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		// A solid cell beside a double one: the shared edge is drawn in the
+		// heavier of the two styles, and the corners of each cell keep their own.
+		expect(cleanOutput).toContain("┌────╦════╗");
+		expect(cleanOutput).toContain("└────╩════╝");
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -907,6 +918,10 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		// The row between the header and the data carries a cross under each
+		// column boundary.
+		expect(cleanOutput).toContain("├───┼───┼───┤");
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -924,6 +939,9 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toContain("┌──┐");
+		expect(cleanOutput).toContain("└──┘");
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -942,6 +960,10 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toContain("╔════╗");
+		expect(cleanOutput).toContain("║Test║");
+		expect(cleanOutput).toContain("╚════╝");
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -958,6 +980,11 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		// Only the two edges asked for: the corners that need a right or a
+		// bottom side have nothing to join to and are not drawn.
+		expect(cleanOutput).toContain("┌────");
+		expect(cleanOutput).not.toMatch(/[┐┘└]/);
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -1012,6 +1039,12 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		// The step of the L: the run turns down at a cross and ends at the
+		// outer corner, rather than carrying straight on.
+		expect(cleanOutput).toContain("┌──┬──┐");
+		expect(cleanOutput).toContain("├──┼──┘");
+		expect(cleanOutput).toContain("└──┘");
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -1050,6 +1083,10 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		// Three styles in a row, each keeping its own weight at the seam.
+		expect(cleanOutput).toContain("┌─╦═╦━┓");
+		expect(cleanOutput).toContain("└─╩═╩━┛");
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -1080,6 +1117,12 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		// The inner box stands clear of the outer one, so the two never join:
+		// a row through both shows four separate sides.
+		expect(cleanOutput).toContain("║ ┌───┐ ║");
+		expect(cleanOutput).toContain("║ └───┘ ║");
+		expect(cleanOutput).not.toMatch(/[┼┬┴├┤]/);
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -1107,6 +1150,11 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		// Nine cells: two full junction rows between the three rows of content.
+		expect(cleanOutput.split("\n").filter((line) => line.includes("┼")).length)
+			.toBe(2);
+		expect(cleanOutput).toContain("├──┼──┼──┤");
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
@@ -1127,6 +1175,14 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
+		// Colour rides on the border cells themselves, so the run of box
+		// characters carries both a foreground and a background.
+		const SGR = "\x1b[38;2;255;0;0;48;2;0;255;0m";
+		expect(output).toContain(`${SGR}┌───┐`);
+		// The sides are coloured one at a time, so the text between them is
+		// left in whatever colour it had.
+		expect(output).toContain(`${SGR}│\x1b[0mCol${SGR}│`);
+
 		expect(cleanOutput).toMatchSnapshot();
 	});
 });

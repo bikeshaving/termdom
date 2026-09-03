@@ -1,5 +1,5 @@
 /**
- * Regenerate src/internal/cssproperties.ts from mdn-data.
+ * Regenerate src/generated/cssproperties.ts from mdn-data.
  *
  * mdn-data's css/properties.json is the CSS property index: every property, its
  * initial value, whether it inherits, and -- for a shorthand -- the longhands it
@@ -10,8 +10,9 @@
  * Run: node --experimental-strip-types scripts/generate-css-properties.ts
  */
 
-import {createRequire} from "node:module";
+import {execFileSync} from "node:child_process";
 import {writeFileSync} from "node:fs";
+import {createRequire} from "node:module";
 import {fileURLToPath} from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -54,6 +55,19 @@ for (const name of supported) {
 		directLonghands.set(name, computed);
 	}
 }
+
+// The property index describes font-variant's longhands in prose only.
+// css-fonts-4 §6.1 names them in this order. Set here so that `font`,
+// which contains font-variant, flattens through it.
+directLonghands.set("font-variant", [
+	"font-variant-ligatures",
+	"font-variant-caps",
+	"font-variant-alternates",
+	"font-variant-numeric",
+	"font-variant-east-asian",
+	"font-variant-position",
+	"font-variant-emoji",
+]);
 
 /** A shorthand's longhands, with nested shorthands (`border`) flattened out. */
 function flatten(name: string, seen = new Set<string>()): string[] {
@@ -161,6 +175,7 @@ for (const name of longhands) {
  * accessors on that rule's own declaration block and nowhere else.
  */
 const descriptors: Record<string, string[]> = {};
+
 /**
  * Descriptors the property index leaves out. css-page-3 gives @page's block
  * the page margins alongside its own descriptors, so they are named on
@@ -248,29 +263,14 @@ ${record(initials)}
 `;
 
 const out = fileURLToPath(
-	new URL("../src/internal/cssproperties.ts", import.meta.url),
+	new URL("../src/generated/cssproperties.ts", import.meta.url),
 );
-// The template already writes the file in house format; prettier, when
-// installed, only settles line-wrapping edge cases.
-let formatted = source;
-try {
-	const prettier = require("prettier") as {
-		format(source: string, options: object): Promise<string>;
-		resolveConfig(path: string): Promise<object | null>;
-	};
-	formatted = await prettier.format(source, {
-		...((await prettier.resolveConfig(out)) ?? {}),
-		parser: "typescript",
-		useTabs: true,
-		bracketSpacing: false,
-	});
-} catch (error) {
-	if ((error as {code?: string}).code !== "MODULE_NOT_FOUND") {
-		throw error;
-	}
-	// Not installed: the raw template stands.
-}
-writeFileSync(out, formatted);
+writeFileSync(out, source);
+// The emitted file must be canonical -- CI diffs it against a fresh run,
+// so formatting cannot be optional or the artifact forks from its
+// generator. eslint is the project's one formatter; a failure here is a
+// failure of the generation, not a shrug.
+execFileSync("npx", ["eslint", "--fix", out], {stdio: "inherit"});
 process.stdout.write(
 	`${supported.length} properties, ${longhands.length} longhands, ${
 		Object.keys(shorthands).length

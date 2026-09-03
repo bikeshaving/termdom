@@ -56,8 +56,9 @@
     "smoke": "node scripts/smoke.js",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.js",
     "support": "bun scripts/support-matrix.ts",
-    "test": "libuild test -p node -p bun",
+    "test": "libuild test -p node -p bun --timeout 180000",
     "typecheck": "tsc --noEmit",
+    "drift": "bun scripts/lib-dom-drift.ts",
     "verify:examples": "node scripts/verify-examples.ts",
     "verify:ime": "npm --prefix website run verify:ime",
     "verify:terminal": "node scripts/verify-terminal-app.ts",
@@ -68,16 +69,14 @@
     "bidi-js": "1.0.3",
     "css-tree": "^3.2.1",
     "linebreak": "1.1.0",
-    "nwsapi": "^2.2.21",
     "parse5": "^7.3.0"
   },
   "devDependencies": {
     "@b9g/crank": "^0.7.11",
-    "@b9g/eslint-config": "^0.1.0",
-    "@b9g/libuild": "^0.2.21",
+    "@b9g/eslint-config": "^0.1.3",
+    "@b9g/libuild": "^0.2.22",
     "@eslint/js": "^9.39.5",
     "@stylistic/eslint-plugin": "^5.10.0",
-    "@types/bun": "^1.2.21",
     "@types/prismjs": "^1.26.6",
     "@types/react-dom": "^19.2.4",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
@@ -99,5 +98,8 @@
     "typescript": "^5.9.2",
     "vue": "^3.5.41"
   },
-  "module": "./dist/index.js"
+  "module": "./dist/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  }
 }

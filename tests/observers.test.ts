@@ -4,7 +4,8 @@
  * Both read boxes the layout engine already produces each frame, so the tests
  * drive real renders and assert the callbacks fire with the right values.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -254,7 +255,7 @@ test("ResizeObserver reports 0x0 when an element is hidden", async () => {
 	// Reporting the hide is how a component learns it has been hidden; skipping
 	// it left the observer holding the last size the element ever had.
 	expect(entries.length).toBe(1);
-	// contentRect is a real DOMRect (as in a browser), so compare fields
+	// contentRect is a real DOMRect (as in a browser), so compare text controls
 	// rather than structure.
 	const rect = entries[0].contentRect;
 	expect(rect.top).toBe(0);
@@ -266,7 +267,7 @@ test("ResizeObserver reports 0x0 when an element is hidden", async () => {
 });
 
 test("display:none stops taking up rows", async () => {
-	// Not an observer bug: styleFlexNode set DISPLAY_NONE and then a later branch
+	// Not an observer bug: styleLayoutNode set DISPLAY_NONE and then a later branch
 	// reset it to flex, so a hidden element stopped painting but kept its space.
 	const {dom, terminal, document} = make(8, 30) as any;
 	document.body.innerHTML = "<div id=\"a\" style=\"height:3px\">AAA</div><div>after</div>";

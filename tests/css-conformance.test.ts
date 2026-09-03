@@ -11,7 +11,8 @@
  * non-snapshot assertions run on both.
  */
 
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -20,6 +21,7 @@ interface Fixture {
 	cols?: number;
 	rows?: number;
 	html: string;
+
 	/** A substring that must appear in the visible text, as a liveness check. */
 	contains?: string[];
 }
@@ -296,7 +298,7 @@ test("css: nested overflow:hidden clips intersect", async () => {
 // text-align: assert actual horizontal position, not just presence -- a
 // liveness-only check can't tell "centered" from "left-aligned but present".
 // justify is intentionally not covered: it isn't implemented (see
-// lineAlignOffset in layout.ts).
+// getLineAlignOffset in layout.ts).
 test("css: text-align:center centers a line within its container width", async () => {
 	const {text} = await renderFixture({
 		name: "text-align-center",
@@ -439,6 +441,17 @@ test("css: @media rules do not apply when the query fails", async () => {
 	expect(
 		await colorOf(
 			"<style>@media (min-width: 999999px){p{color:orange}}</style><p>x</p>",
+			"p",
+		),
+	).not.toBe("rgb(255, 165, 0)");
+});
+
+test("css: a comment in an @media prelude leaves the query standing", async () => {
+	// The comment used to be sliced into the feature's parentheses, leaving a
+	// condition css-tree refuses -- which was read as matching.
+	expect(
+		await colorOf(
+			"<style>@media (min-width: 1000px) /* c */ {p{color:orange}}</style><p>x</p>",
 			"p",
 		),
 	).not.toBe("rgb(255, 165, 0)");

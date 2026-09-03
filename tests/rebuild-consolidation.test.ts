@@ -5,7 +5,8 @@
  * fresh build runs. So a frame reached by mutation is the frame a fresh parse
  * of the same tree renders, and each case below asserts exactly that.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

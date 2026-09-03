@@ -8,9 +8,10 @@
 //
 //   type            filter          Up/Down, Ctrl-n/p   move selection
 //   Enter           print & quit    Esc / Ctrl-c        cancel
-import {TermDOM} from "@b9g/termdom";
-import {readFileSync, readdirSync} from "node:fs";
+import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+
+import {TermDOM} from "@b9g/termdom";
 
 // ---- data source -------------------------------------------------------------
 function walk(
@@ -129,14 +130,14 @@ function rows(): HTMLElement[] {
 
 function render(): void {
 	const query = input.value;
-	matches = query ?
-			items
-				.map((item) => ({item, s: score(item, query)}))
-				.filter((m): m is {item: string; s: number} => m.s !== null)
-				.sort((a, b) => a.s - b.s || a.item.length - b.item.length)
-				.slice(0, 500)
-				.map((m) => m.item) :
-			items.slice(0, 500); // no query: original order
+	matches = query
+		? items
+			.map((item) => ({item, s: score(item, query)}))
+			.filter((m): m is {item: string; s: number} => m.s !== null)
+			.sort((a, b) => a.s - b.s || a.item.length - b.item.length)
+			.slice(0, 500)
+			.map((m) => m.item)
+		: items.slice(0, 500); // no query: original order
 
 	selected = Math.max(0, Math.min(selected, matches.length - 1));
 	results.textContent = "";
@@ -163,9 +164,9 @@ function setSelected(row: HTMLElement | undefined, on: boolean): void {
 		return;
 	}
 	row.classList.toggle("selected", on);
-	row.querySelector<HTMLElement>(".mark")!.textContent = on ?
-		"\u203a\u00a0" :
-		"\u00a0\u00a0";
+	row.querySelector<HTMLElement>(".mark")!.textContent = on
+		? "\u203a\u00a0"
+		: "\u00a0\u00a0";
 }
 
 function move(delta: number): void {

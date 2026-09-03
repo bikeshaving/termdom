@@ -1,58 +1,92 @@
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
+import {
+	ensurePseudoElement,
+	flatParentElement,
+	flowContent,
+	flowNext,
+	getPseudoHost,
+	getPseudoName,
+	pseudoElement,
+} from "../src/internal/dom.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
-import {claimUAToolkit, type UAToolkit} from "../src/internal/dom.js";
 
-// One claim per bare document: the door is open because nothing here ever
-// installs an engine.
-const toolkits = new WeakMap<object, UAToolkit>();
-function ua(node: object): UAToolkit {
-	const document =
-		(node as {ownerDocument?: object}).ownerDocument ?? node;
-	let toolkit = toolkits.get(document);
-	if (toolkit === undefined) {
-		toolkit = claimUAToolkit(document);
-		toolkits.set(document, toolkit);
-	}
-	return toolkit;
-}
-
-function ensurePseudoElement<T>(host: object, name: string): T {
-	return ua(host).ensurePseudoElement<T>(host, name);
-}
-function pseudoElement<T>(host: object, name: string): T | null {
-	return ua(host).pseudoElement<T>(host, name);
-}
-function pseudoHostOf<T>(node: object): T | null {
-	return ua(node).pseudoHostOf<T>(node);
-}
-function pseudoNameOf(node: object): string | null {
-	return ua(node).pseudoNameOf(node);
-}
-import {flowWalker} from "../src/internal/layout.js";
-import {createDocumentWindow} from "../src/internal/termdom.js";
+/** A rule the head carries, so a div can be a list item like an li. */
+const LIST_ITEM_RULE =
+	"<style>li, [data-list-item] { display: list-item; }</style>";
 
 /**
- * A document of this DOM, from markup, displayed in a window of its own.
- *
- * The walkers here come from layout, which dissolves `display: contents`, so
- * the window answers computed-style reads with the initial value of every
- * property. The pseudo-elements are the test's own, put straight in their
- * slots; a cascade would own them instead.
+ * A document of this DOM, from markup, with a cascade over it that knows what
+ * a list item is. The walkers here come from layout, which dissolves
+ * `display: contents`. The pseudo-elements are the test's own, put straight in
+ * their slots; a cascade would own them instead.
  */
-function documentWindow(html: string): {
-	window: ReturnType<typeof createDocumentWindow>;
+// The engine walks the flow through flowContent and flowNext. These tests
+// were written against a walker over the same tree, and this is that
+// walker, stated in terms of the two functions.
+function flowWalker(root: Node): {
+	root: Node;
+	currentNode: Node;
+	nextNode(): Node | null;
+	firstChild(): Node | null;
+	nextSibling(): Node | null;
+	parentNode(): Node | null;
 } {
-	const window = createDocumentWindow(html);
-	window.getComputedStyle = ((element: Element) =>
-		({
-			getPropertyValue: (property: string) =>
-				property === "display" &&
-				(element.tagName === "LI" || element.hasAttribute("data-list-item")) ?
-					"list-item" :
-					"",
-		}) as unknown as CSSStyleDeclaration) as typeof window.getComputedStyle;
-	return {window};
+	const walker = {
+		root,
+		currentNode: root,
+		nextNode(): Node | null {
+			const next = flowNext(walker.currentNode, root, false);
+			if (next !== null) {
+				walker.currentNode = next;
+			}
+			return next;
+		},
+		firstChild(): Node | null {
+			for (const child of flowContent(walker.currentNode)) {
+				walker.currentNode = child;
+				return child;
+			}
+			return null;
+		},
+		nextSibling(): Node | null {
+			if (walker.currentNode === root) {
+				return null;
+			}
+			const parent = flatParentElement(walker.currentNode);
+			if (parent === null) {
+				return null;
+			}
+			let seen = false;
+			for (const child of flowContent(parent)) {
+				if (seen) {
+					walker.currentNode = child;
+					return child;
+				}
+				seen = child === walker.currentNode;
+			}
+			return null;
+		},
+		parentNode(): Node | null {
+			if (walker.currentNode === root) {
+				return null;
+			}
+			const parent = flatParentElement(walker.currentNode);
+			if (parent !== null) {
+				walker.currentNode = parent;
+			}
+			return parent;
+		},
+	};
+	return walker;
+}
+
+function documentWindow(html: string): TermDOM {
+	return new TermDOM({
+		html: html.replace("<body>", `${LIST_ITEM_RULE}<body>`),
+		transport: new MockProcess().transport,
+	});
 }
 
 /**
@@ -115,11 +149,11 @@ test("A bare document - flat-tree walker pseudo-element traversal", () => {
 
 	let node = walker.nextNode();
 	while (node && nodes.length < 10) {
-		const metadata = pseudoNameOf(node);
+		const metadata = getPseudoName(node);
 		nodes.push({
 			name: node.nodeName,
 			content: node.textContent || "",
-			isPseudo: pseudoHostOf(node) !== null,
+			isPseudo: getPseudoHost(node) !== null,
 			pseudoType: metadata ?? undefined,
 		});
 		node = walker.nextNode();
@@ -215,10 +249,9 @@ test("A bare document - flat-tree walker slot content traversal", () => {
 	// Should find the host element
 	expect(nodes.some((n) => n.name === "DIV" && !n.className)).toBe(true);
 
-	// Should find the slot element
-	expect(nodes.some((n) => n.name === "SLOT")).toBe(true);
-
-	// Should find slotted content
+	// A slot is display: contents, so it is never stopped on; its assigned
+	// content is walked in its place.
+	expect(nodes.some((n) => n.name === "SLOT")).toBe(false);
 	expect(nodes.some((n) => n.className === "light-content")).toBe(true);
 	expect(nodes.some((n) => n.content === "Light DOM content")).toBe(true);
 });
@@ -237,11 +270,11 @@ test("A bare document - flat-tree walker utility functions", () => {
 	expect(pseudoElement<Element>(div, "::after")).toBe(null);
 
 	// Test pseudo node creation
-	expect(pseudoNameOf(beforeNode)).toBe("::before");
-	expect(pseudoHostOf(beforeNode)).toBe(div);
+	expect(getPseudoName(beforeNode)).toBe("::before");
+	expect(getPseudoHost(beforeNode)).toBe(div);
 	expect(beforeNode.textContent).toBe("Before");
-	expect(pseudoHostOf(beforeNode) !== null).toBe(true);
-	expect(pseudoHostOf(div) !== null).toBe(false);
+	expect(getPseudoHost(beforeNode) !== null).toBe(true);
+	expect(getPseudoHost(div) !== null).toBe(false);
 });
 
 test("A bare document - flat-tree walker ::marker pseudo-element traversal", () => {
@@ -272,11 +305,11 @@ test("A bare document - flat-tree walker ::marker pseudo-element traversal", () 
 
 	let node = walker.nextNode();
 	while (node && nodes.length < 10) {
-		const metadata = pseudoNameOf(node);
+		const metadata = getPseudoName(node);
 		nodes.push({
 			name: node.nodeName,
 			content: node.textContent || "",
-			isPseudo: pseudoHostOf(node) !== null,
+			isPseudo: getPseudoHost(node) !== null,
 			pseudoType: metadata ?? undefined,
 		});
 		node = walker.nextNode();
@@ -414,8 +447,8 @@ test("A bare document - flat-tree walker shadow roots in slot assigned nodes", (
 	// Should find the slot host
 	expect(nodes.some((n) => n.className === "slot-host")).toBe(true);
 
-	// Should find the slot element
-	expect(nodes.some((n) => n.name === "SLOT")).toBe(true);
+	// The slot itself is display: contents and never stopped on.
+	expect(nodes.some((n) => n.name === "SLOT")).toBe(false);
 
 	// Should find the assigned element
 	expect(nodes.some((n) => n.className === "assigned-with-shadow")).toBe(true);
@@ -426,9 +459,8 @@ test("A bare document - flat-tree walker shadow roots in slot assigned nodes", (
 		nodes.some((n) => n.content === "Shadow content in assigned node"),
 	).toBe(true);
 
-	// Verify traversal order: host → slot → assigned element → assigned element's shadow content
+	// Verify traversal order: host → assigned element → assigned element's shadow content
 	const hostIndex = nodes.findIndex((n) => n.className === "slot-host");
-	const slotIndex = nodes.findIndex((n) => n.name === "SLOT");
 	const assignedIndex = nodes.findIndex(
 		(n) => n.className === "assigned-with-shadow",
 	);
@@ -436,8 +468,7 @@ test("A bare document - flat-tree walker shadow roots in slot assigned nodes", (
 		(n) => n.className === "shadow-in-assigned",
 	);
 
-	expect(hostIndex).toBeLessThan(slotIndex);
-	expect(slotIndex).toBeLessThan(assignedIndex);
+	expect(hostIndex).toBeLessThan(assignedIndex);
 	expect(assignedIndex).toBeLessThan(shadowInAssignedIndex);
 });
 
@@ -489,12 +520,12 @@ test("A bare document - flat-tree walker complex nested scenario with pseudo-ele
 
 	let node = walker.nextNode();
 	while (node && nodes.length < 20) {
-		const metadata = pseudoNameOf(node);
+		const metadata = getPseudoName(node);
 		nodes.push({
 			name: node.nodeName,
 			className: (node as any).className || undefined,
 			content: node.textContent || "",
-			isPseudo: pseudoHostOf(node) !== null,
+			isPseudo: getPseudoHost(node) !== null,
 			pseudoType: metadata ?? undefined,
 		});
 		node = walker.nextNode();
@@ -505,7 +536,7 @@ test("A bare document - flat-tree walker complex nested scenario with pseudo-ele
 	expect(nodes.some((n) => n.pseudoType === "::marker")).toBe(true);
 	expect(nodes.some((n) => n.pseudoType === "::before")).toBe(true);
 	expect(nodes.some((n) => n.pseudoType === "::after")).toBe(true);
-	expect(nodes.some((n) => n.name === "SLOT")).toBe(true);
+	expect(nodes.some((n) => n.name === "SLOT")).toBe(false);
 	expect(nodes.some((n) => n.className === "assigned-content")).toBe(true);
 	expect(nodes.some((n) => n.className === "deep-shadow")).toBe(true);
 
@@ -513,18 +544,16 @@ test("A bare document - flat-tree walker complex nested scenario with pseudo-ele
 	const liIndex = nodes.findIndex((n) => n.className === "complex-list-item");
 	const markerIndex = nodes.findIndex((n) => n.pseudoType === "::marker");
 	const beforeIndex = nodes.findIndex((n) => n.pseudoType === "::before");
-	const slotIndex = nodes.findIndex((n) => n.name === "SLOT");
 	const assignedIndex = nodes.findIndex(
 		(n) => n.className === "assigned-content",
 	);
 	const deepShadowIndex = nodes.findIndex((n) => n.className === "deep-shadow");
 	const afterIndex = nodes.findIndex((n) => n.pseudoType === "::after");
 
-	// Verify the complex order: LI → ::marker → ::before → SLOT → assigned content → deep shadow → ::after
+	// Verify the complex order: LI → ::marker → ::before → assigned content → deep shadow → ::after
 	expect(liIndex).toBeLessThan(markerIndex);
 	expect(markerIndex).toBeLessThan(beforeIndex);
-	expect(beforeIndex).toBeLessThan(slotIndex);
-	expect(slotIndex).toBeLessThan(assignedIndex);
+	expect(beforeIndex).toBeLessThan(assignedIndex);
 	expect(assignedIndex).toBeLessThan(deepShadowIndex);
 	expect(deepShadowIndex).toBeLessThan(afterIndex);
 });
@@ -532,7 +561,7 @@ test("A bare document - flat-tree walker complex nested scenario with pseudo-ele
 // TermDOM Integration Tests
 
 test("TermDOM - flat-tree walker basic functionality", () => {
-	const {document} = createDocumentWindow("<!DOCTYPE html><body></body>");
+	const {document} = documentWindow("<!DOCTYPE html><body></body>");
 
 	const div = document.createElement("div");
 	div.textContent = "Hello World";
@@ -553,7 +582,7 @@ test("TermDOM - flat-tree walker basic functionality", () => {
 });
 
 test("TermDOM - flat-tree walker with shadow DOM", () => {
-	const {document} = createDocumentWindow("<!DOCTYPE html><body></body>");
+	const {document} = documentWindow("<!DOCTYPE html><body></body>");
 
 	// Create a custom element with shadow DOM
 	class TestElement extends (document.defaultView as any).HTMLElement {
@@ -602,7 +631,7 @@ test("TermDOM - flat-tree walker with shadow DOM", () => {
 });
 
 test("TermDOM - flat-tree walker basic traversal", () => {
-	const {document} = createDocumentWindow("<!DOCTYPE html><body></body>");
+	const {document} = documentWindow("<!DOCTYPE html><body></body>");
 
 	const div = document.createElement("div");
 	div.textContent = "Hello";
@@ -714,56 +743,6 @@ test("A bare document - flat-tree walker respects root boundary", () => {
 	expect(nodes.length).toBeLessThanOrEqual(3); // P, SPAN, #text
 });
 
-test("A bare document - flat-tree walker previousNode respects root boundary", () => {
-	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
-	const window = dom.window;
-	const document = window.document;
-
-	// Create: body → div → p → span
-	const div = document.createElement("div");
-	div.className = "container";
-
-	const p = document.createElement("p");
-	p.className = "paragraph";
-
-	const span = document.createElement("span");
-	span.className = "span";
-	span.textContent = "content";
-
-	p.appendChild(span);
-	div.appendChild(p);
-	document.body.appendChild(div);
-
-	// Walker rooted at div
-	const walker = flowWalker(div);
-
-	// Navigate to the span (deepest node)
-	walker.nextNode(); // p
-	walker.nextNode(); // span
-	walker.nextNode(); // #text
-
-	expect(walker.currentNode.textContent).toBe("content");
-
-	// Navigate backwards
-	const nodes: Array<{name: string; className?: string}> = [];
-	let node = walker.previousNode();
-	while (node && nodes.length < 10) {
-		nodes.push({
-			name: node.nodeName,
-			className: (node as any).className || undefined,
-		});
-		node = walker.previousNode();
-	}
-
-	// Should find span, p, div (all within root)
-	expect(nodes.some((n) => n.className === "span")).toBe(true);
-	expect(nodes.some((n) => n.className === "paragraph")).toBe(true);
-	expect(nodes.some((n) => n.className === "container")).toBe(true);
-
-	// Should NOT find body (outside root)
-	expect(nodes.some((n) => n.name === "BODY")).toBe(false);
-});
-
 test("A bare document - flat-tree walker parentNode respects root boundary", () => {
 	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
@@ -805,7 +784,7 @@ test("A bare document - flat-tree walker parentNode respects root boundary", () 
 	expect((walker.currentNode as any).className).toBe("paragraph");
 });
 
-test("FAILING - flat-tree walker ::after elements in layout engine pattern", () => {
+test("flat-tree walker reaches ::after in the layout engine's pattern", () => {
 	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
@@ -816,7 +795,7 @@ test("FAILING - flat-tree walker ::after elements in layout engine pattern", () 
 	quote.textContent = "Hello World";
 	document.body.appendChild(quote);
 
-	// Set up pseudo-elements using StyleManager pattern
+	// Set up pseudo-elements using Cascade pattern
 	attachPseudo(quote, "::before", '"');
 	attachPseudo(quote, "::after", '"');
 
@@ -832,7 +811,7 @@ test("FAILING - flat-tree walker ::after elements in layout engine pattern", () 
 
 	let child = walker.firstChild();
 	while (child) {
-		const pseudoMeta = pseudoNameOf(child);
+		const pseudoMeta = getPseudoName(child);
 		foundNodes.push({
 			type: child.nodeType === child.TEXT_NODE ? "TEXT" : "ELEMENT",
 			content: child.textContent || "",
@@ -1074,7 +1053,6 @@ test("A bare document - nextSibling/previousSibling at the root return null, per
 	const a = window.document.getElementById("a")!;
 	const walker = flowWalker(a);
 	expect(walker.nextSibling()).toBe(null);
-	expect(walker.previousSibling()).toBe(null);
 	expect(walker.currentNode).toBe(a); // unmoved
 
 	// A child of the root still traverses siblings normally.
@@ -1097,9 +1075,9 @@ test("flat-tree walker skips comments rather than halting on them", () => {
 		const out: string[] = [];
 		for (let n = walker.firstChild(); n; n = walker.nextSibling()) {
 			out.push(
-				n.nodeType === n.ELEMENT_NODE ?
-						(n as Element).tagName :
-						(n as Text).data,
+				n.nodeType === n.ELEMENT_NODE
+					? (n as Element).tagName
+					: (n as Text).data,
 			);
 		}
 		return out;
@@ -1126,16 +1104,60 @@ test("flat-tree walker skips comments rather than halting on them", () => {
 	const p = document.querySelector("p")!;
 	expect(names(p)).toEqual(["a", "b"]);
 
-	// lastChild()/previousSibling() skip backward the same way.
-	document.body.innerHTML = "<h1>A</h1><h2>B</h2><!-- c -->";
-	const back: string[] = [];
-	const walker = flowWalker(document.body);
-	for (let n = walker.lastChild(); n; n = walker.previousSibling()) {
-		back.push((n as Element).tagName);
-	}
-	expect(back).toEqual(["H2", "H1"]);
-
 	// A container whose only children are comments has no accepted children.
 	document.body.innerHTML = "<div><!--a--><!--b--></div>";
 	expect(names(document.querySelector("div")!)).toEqual([]);
+});
+
+test("the flat tree is not something a page can ask createTreeWalker for", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
+	const document = dom.window.document;
+
+	// The same element two ways: a light child, and a shadow child that only
+	// the flat tree reaches.
+	const host = document.createElement("div");
+	host.innerHTML = "<span>light</span>";
+	host.attachShadow({mode: "open"}).innerHTML = "<b>shadow</b>";
+	document.body.appendChild(host);
+
+	const names = (walker: {nextNode(): unknown}): string[] => {
+		const seen: string[] = [];
+		for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+			seen.push((n as Node).nodeName);
+		}
+		return seen;
+	};
+
+	// whatToShow defaults to every bit there is, the private one included. It
+	// is masked off at this door, so the default walk stays on the node tree.
+	expect(names(document.createTreeWalker(host) as never)).toEqual([
+		"SPAN",
+		"#text",
+	]);
+
+	// And a caller naming the bit outright gets it stripped rather than
+	// honoured: what is left asks for no node type at all.
+	expect(names(document.createTreeWalker(host, 0x1000) as never)).toEqual([]);
+
+	// The engine's own walk does reach the shadow child, which is the
+	// difference the bit makes.
+	expect(names(flowWalker(host) as never)).toContain("B");
+});
+
+test("scrollingElement is the root outside quirks mode, and the body inside it", () => {
+	// CSSOM View §7: the element that scrolls the viewport depends on the
+	// document's mode, which a missing doctype decides.
+	const standards = documentWindow(
+		"<!DOCTYPE html><html><body><p>x</p></body></html>",
+	);
+	expect(standards.window.document.compatMode).toBe("CSS1Compat");
+	expect(standards.window.document.scrollingElement).toBe(
+		standards.window.document.documentElement,
+	);
+
+	const quirks = documentWindow("<html><body><p>x</p></body></html>");
+	expect(quirks.window.document.compatMode).toBe("BackCompat");
+	expect(quirks.window.document.scrollingElement).toBe(
+		quirks.window.document.body,
+	);
 });

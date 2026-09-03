@@ -7,9 +7,10 @@
  *
  * z-index was parsed and then never read.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, stripControlCodes, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 async function renderRows(html: string, cols = 30): Promise<string[]> {
 	const terminal = new MockProcess({cols, rows: 8});
@@ -67,13 +68,15 @@ test("without a z-index, document order still decides", async () => {
 });
 
 test("z-index does not apply to a static box", async () => {
-	// Per CSS, z-index only affects positioned boxes. A static one keeps its place
-	// in document order however large a z-index it is given.
+	// Per CSS, z-index only affects positioned boxes. The static box carries the
+	// larger z-index and comes first, so it wins only if z-index is wrongly
+	// honoured on it; the positioned box that follows paints over it.
 	const rows = await renderRows(`
 		<div style="position:relative">
+			<div style="z-index:99; background-color:red">STATIC</div>
 			<div style="position:absolute; top:0; left:0; background-color:blue">POSITIONED</div>
-			<div style="position:absolute; top:0; left:0; z-index:99; background-color:red">WINS</div>
 		</div>`);
 
-	expect(rows[0]).toContain("WINS");
+	expect(rows[0]).toContain("POSITIONED");
+	expect(rows[0]).not.toContain("STATIC");
 });

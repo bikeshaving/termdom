@@ -4,7 +4,8 @@
  * clicks past it or presses Escape -- unless it is manual, which does neither
  * -- and an auto one closes whatever open popover it is not nested inside.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -237,8 +238,6 @@ test("a canceled beforetoggle keeps the popover closed", async () => {
 	expect(popover.matches(":popover-open")).toBe(false);
 	expect(seen).toEqual(["beforetoggle"]);
 
-	// Closing is not cancelable: a popover that will not close is a trap.
-	popover.togglePopover(true);
 	dom.dispose();
 });
 

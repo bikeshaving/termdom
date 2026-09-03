@@ -6,7 +6,8 @@
  * uses.
  */
 
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -114,8 +115,12 @@ test("scrollWidth/scrollHeight equal clientWidth/clientHeight when content doesn
 	await nextFrame(dom);
 
 	const box = dom.document.getElementById("box")!;
-	expect(box.scrollWidth).toBe(box.clientWidth);
-	expect(box.scrollHeight).toBe(box.clientHeight);
+	// Both sides of the equality are stated, so a box that measured zero in
+	// every direction cannot satisfy it.
+	expect(box.clientWidth).toBe(8);
+	expect(box.clientHeight).toBe(3);
+	expect(box.scrollWidth).toBe(8);
+	expect(box.scrollHeight).toBe(3);
 	dom.dispose();
 });
 
@@ -127,17 +132,17 @@ test("body's own clientHeight/scrollHeight (viewport height, real content height
 
 	// clientHeight is the terminal's own height, unrelated to content.
 	expect(dom.document.body.clientHeight).toBe(10);
-	// scrollHeight is the document's real content height (2 lines here), which
-	// the general contentBoxSize() fallback -- had it applied to body -- would
-	// get wrong, since body has no explicit height for a border-box rect to
-	// report; the existing instance-level override must still be winning.
+	// scrollHeight is the document's real content height (2 lines here). The
+	// general fallback, which reads the border-box rect, would get this wrong
+	// -- body has no explicit height for such a rect to report -- so body's
+	// own override has to be the one answering.
 	expect(dom.document.body.scrollHeight).toBe(2);
 	dom.dispose();
 });
 
 test("offsetWidth/Height and clientWidth/Height stay mechanically consistent with border width", async () => {
 	// offsetWidth/Height, clientWidth/Height, and offsetTop/Left are all
-	// derived from the same #layoutRectOf/#contentBoxOf internals in
+	// derived from the same #layoutRectOf/#getContentBox internals in
 	// termdom.ts, not independently written formulas -- so this identity can't
 	// silently drift out of sync across an edit to just one of them the way
 	// duplicated code could.
@@ -157,5 +162,77 @@ test("offsetWidth/Height and clientWidth/Height stay mechanically consistent wit
 		expect(el.offsetWidth - el.clientWidth).toBe(expectedBorderTotal[id]);
 		expect(el.offsetHeight - el.clientHeight).toBe(expectedBorderTotal[id]);
 	}
+	dom.dispose();
+});
+
+test("an empty inline sits where the line had reached", async () => {
+	// It has no fragments to measure, so its rect is the cursor between the
+	// ones around it -- a zero-width box at the place it would occupy, which
+	// is what a browser reports. Only an empty inline that OPENED its run
+	// used to get one; every other answered at the viewport origin.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+
+	const x = async (markup: string): Promise<number> => {
+		dom.document.body.innerHTML = `<div style="padding-left: 2ch">${markup}</div>`;
+		await nextFrame(dom);
+		return dom.document.querySelector("#t")!.getBoundingClientRect().x;
+	};
+
+	// The content edge, wherever the run opens.
+	expect(await x("<span id=t></span>")).toBe(2);
+	expect(await x("<span id=t></span>y")).toBe(2);
+	// Spaces before it collapse away, so the line has reached nothing.
+	expect(await x("   <span id=t></span>")).toBe(2);
+	// And after content, the cursor is past it.
+	expect(await x("y<span id=t></span>")).toBe(3);
+	expect(await x("ab<span id=t></span>cd")).toBe(4);
+	expect(await x("<b>y</b><span id=t></span>")).toBe(3);
+
+	dom.dispose();
+});
+
+test("offsetParent walks the flat tree and answers only shadow-including ancestors", async () => {
+	const terminal = new MockProcess({cols: 60, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = "<div id=\"container\" style=\"position: relative\"></div>";
+	const container = document.getElementById("container")!;
+
+	const inner = document.createElement("div");
+	container.append(inner);
+	const innerRoot = inner.attachShadow({mode: "open"});
+	innerRoot.innerHTML = "<div id=\"rel\" style=\"position: relative; padding-left: 6ch\"><div id=\"target\"></div></div>";
+	await nextFrame(dom);
+	expect(innerRoot.getElementById("target")!.offsetParent).toBe(
+		innerRoot.getElementById("rel"),
+	);
+	expect(innerRoot.getElementById("target")!.offsetLeft).toBe(6);
+
+	const slotted = document.createElement("div");
+	slotted.innerHTML = "<div id=\"light\"></div>";
+	container.append(slotted);
+	slotted.attachShadow({mode: "open"}).innerHTML =
+		"<div style=\"position: relative; padding-left: 4ch\"><slot></slot></div>";
+	await nextFrame(dom);
+	const light = slotted.querySelector("#light") as HTMLElement;
+	expect(light.offsetParent).toBe(container);
+	expect(light.offsetLeft).toBe(4);
+
+	const unslotted = document.createElement("div");
+	unslotted.innerHTML = "<div id=\"orphan\"></div>";
+	container.append(unslotted);
+	unslotted.attachShadow({mode: "open"}).innerHTML = "<p>no slot</p>";
+	await nextFrame(dom);
+	expect((unslotted.querySelector("#orphan") as HTMLElement).offsetParent).toBe(
+		null,
+	);
+
+	const fixed = document.createElement("div");
+	fixed.style.position = "fixed";
+	container.append(fixed);
+	await nextFrame(dom);
+	expect(fixed.offsetParent).toBe(null);
 	dom.dispose();
 });

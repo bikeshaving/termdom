@@ -1,9 +1,9 @@
 /**
  * Run the web-platform-tests css/cssom suite against this engine's CSSOM.
  *
- * Each test is a testharness.js document of this engine's own DOM, displayed
+ * Each test is a testharness.js document of this engine's own DOM, attached
  * in a window with the engine's CSSOM, which the styles module defines on
- * the DOM's own prototypes at load, plus the StyleManager a TermDOM builds. Its harness scripts are evaluated in
+ * the DOM's own prototypes at load, plus the Cascade a TermDOM builds. Its harness scripts are evaluated in
  * document order, at the global scope of a realm of the file's own whose
  * global is that window, because nothing here runs a document's scripts on
  * its own.
@@ -15,24 +15,22 @@
  */
 
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
-import {createContext, runInContext} from "node:vm";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
-import {
-	getBoxModel,
-	MediaList,
-	StyleManager,
-} from "../src/internal/cascade.ts";
-import {LayoutEngine} from "../src/internal/layout.ts";
-import {
-	createDocumentWindow,
-	type EngineWindow,
-} from "../src/internal/termdom.ts";
+import {createContext, runInContext} from "node:vm";
+
+import {createDocumentWindow, type Window} from "../src/internal/dom.ts";
+import type {
+	TerminalCloseInfo,
+	TerminalSize,
+} from "../src/internal/exchange.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
 const RAW = "https://raw.githubusercontent.com/web-platform-tests/wpt/master";
 const SUITE = "css/cssom";
+
 /**
  * A test that has not finished in this long is recorded as a timeout.
  *
@@ -188,99 +186,32 @@ interface Outcome {
 	error?: string;
 }
 
-/** The style and layout engines mounted on a document, by document. */
-const mounts = new Map<
-	Document,
-	{styleManager: StyleManager; layoutEngine: LayoutEngine}
->();
-
 /**
- * The geometry reads a test takes off an element: clientWidth/clientHeight,
- * which several tests derive their expected resolved values from, and
- * getBoundingClientRect/getClientRects, which a test calls to force layout up
- * to date before reading a used value.
- *
- * TermDOM installs all of these off the same layout rects, from the mount that
- * owns the document's renderer. A document under this harness has a
- * StyleManager and a LayoutEngine but no TermDOM, so the harness installs the
- * same measurements against the same engine. The DOM classes are the realm's,
- * one set for every document in it, so each read finds the mount of the
- * document the element belongs to rather than closing over one of them.
+ * A TermDOM for a test document: the CSSOM, a cascade, a layout engine and
+ * the environment facts a test document expects to find around it. The suite
+ * is written against a browser viewport in CSS pixels; this engine's pixel is
+ * a cell, so the terminal behind it is a grid the same size as the viewport
+ * the tests assume. Nothing is written to it: the engine is never attached.
  */
-function installGeometry(window: EngineWindow): void {
-	if (geometryInstalled) {
-		return;
-	}
-	geometryInstalled = true;
-	const mountOf = (
-		element: Element,
-	): {styleManager: StyleManager; layoutEngine: LayoutEngine} | undefined =>
-		element.ownerDocument ? mounts.get(element.ownerDocument) : undefined;
-	const clientBox = (
-		element: Element,
-	): {width: number; height: number} | null => {
-		const rect = mountOf(element)?.styleManager.usedRect(element);
-		if (!rect) {
-			return null;
-		}
-		const box = getBoxModel(element);
-		return {
-			width: rect.width - box.borderLeftWidth - box.borderRightWidth,
-			height: rect.height - box.borderTopWidth - box.borderBottomWidth,
-		};
-	};
-	for (const [property, axis] of [
-		["clientWidth", "width"],
-		["clientHeight", "height"],
-	] as const) {
-		Object.defineProperty(window.HTMLElement.prototype, property, {
-			get(this: Element) {
-				return Math.round(clientBox(this)?.[axis] ?? 0);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-	Object.defineProperty(window.Element.prototype, "getBoundingClientRect", {
-		value(this: Element): DOMRect {
-			const mount = mountOf(this);
-			if (!mount) {
-				return new DOMRect();
-			}
-			return (
-				mount.styleManager.usedRect(this) ?? mount.layoutEngine.createDOMRect()
-			);
+function mountEngine(html: string, url: string): TermDOM {
+	const termDOM = new TermDOM({
+		html,
+		url,
+		transport: {
+			cols: 800,
+			rows: 600,
+			readable: new ReadableStream<string>({}, {highWaterMark: 0}),
+			writable: new WritableStream<string>({}),
+			resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
+			closed: new Promise<TerminalCloseInfo>(() => {}),
+			ready: Promise.resolve(),
+			colorDepth: "rgb",
+			interactive: false,
+			sharesScreen: false,
+			close() {},
 		},
-		configurable: true,
-		writable: true,
 	});
-	Object.defineProperty(window.Element.prototype, "getClientRects", {
-		value(this: Element): DOMRectList {
-			const mount = mountOf(this);
-			if (!mount) {
-				return [] as unknown as DOMRectList;
-			}
-			// usedRect for the flush; getRects for the fragments, which a box
-			// broken across lines has more than one of.
-			mount.styleManager.usedRect(this);
-			return mount.layoutEngine.createDOMRectList(
-				mount.layoutEngine.getRects(this),
-			);
-		},
-		configurable: true,
-		writable: true,
-	});
-}
-
-let geometryInstalled = false;
-
-/**
- * Mount the engine on a document window: the CSSOM, a cascade, a layout engine
- * and the environment facts a test document expects to find around it. This is
- * the startup a TermDOM does, without the renderer.
- */
-function mountEngine(window: EngineWindow): StyleManager {
-	const document = window.document;
+	const {window, document} = termDOM;
 
 	// There is no render loop behind this harness, so a frame is the next
 	// macrotask -- which is what a test that waits for one is really waiting on.
@@ -306,47 +237,7 @@ function mountEngine(window: EngineWindow): StyleManager {
 		configurable: true,
 	});
 
-	const styleManager = new StyleManager(window);
-	const layoutEngine = new LayoutEngine(window);
-	styleManager.setLayoutEngine(layoutEngine);
-	// The flush a resolved value takes. TermDOM's own is
-	// #processPendingMutationsAndRender: pending mutations drained into the
-	// style and layout engines, then a synchronous layout. Here, with no
-	// render loop, it is the same seam without the paint -- and the drain is
-	// what makes a value read straight after a DOM build measure that build.
-	const observer = new window.MutationObserver(() => {});
-	observer.observe(document, {
-		childList: true,
-		subtree: true,
-		attributes: true,
-		attributeOldValue: true,
-		characterData: true,
-	});
-	styleManager.setLayoutFlush(() => {
-		const pending = observer.takeRecords();
-		if (pending.length > 0) {
-			styleManager.handleMutations(pending);
-			layoutEngine.handleMutations(pending);
-		}
-		layoutEngine.calculateLayout();
-		return pending.length > 0;
-	});
-	// The suite is written against a browser viewport in CSS pixels; this
-	// engine's pixel is a cell, so the harness gives it a grid the same size
-	// as the viewport the tests assume.
-	layoutEngine.resize(800, 600);
-	mounts.set(document, {styleManager, layoutEngine});
-	installGeometry(window);
-	// matchMedia, which TermDOM installs live off the same evaluator. There is
-	// no resize under this harness, so the list a query answers with is the
-	// one it is created with.
-	(window as unknown as Record<string, unknown>).matchMedia = (
-		query: string,
-	): {media: string; matches: boolean} => ({
-		media: new MediaList(String(query)).mediaText,
-		matches: styleManager.mediaQueryMatches(String(query)),
-	});
-	return styleManager;
+	return termDOM;
 }
 
 /**
@@ -356,7 +247,7 @@ function mountEngine(window: EngineWindow): StyleManager {
  * A terminal has no frames, so TermDOM gives an iframe no content document --
  * and a fixture that reaches through one is not testing frames, it is using a
  * second document to have a second cascade. The harness gives it that: the
- * iframe's `srcdoc`, or an empty document, mounted on an engine of its own and
+ * iframe's `srcdoc`, or an empty document, attached on an engine of its own and
  * running in a realm of its own, which is what `contentWindow.eval` runs in.
  * Lazily, because a document written into a frame can carry frames of its own.
  */
@@ -364,7 +255,7 @@ const frames = new WeakMap<Element, {document: Document; window: unknown}>();
 let framesInstalled = false;
 let documentURL = "about:blank";
 
-function installFrames(window: EngineWindow): void {
+function installFrames(window: Window): void {
 	if (framesInstalled) {
 		return;
 	}
@@ -372,12 +263,11 @@ function installFrames(window: EngineWindow): void {
 	const contextOf = (frame: Element): {document: Document; window: unknown} => {
 		let context = frames.get(frame);
 		if (context === undefined) {
-			const inner = createDocumentWindow(
+			const inner = mountEngine(
 				frame.getAttribute("srcdoc") ??
 				"<!doctype html><html><head></head><body></body></html>",
 				documentURL,
-			);
-			mountEngine(inner);
+			).window;
 			const realm = createRealm(inner, documentURL);
 			context = {
 				document: inner.document,
@@ -457,11 +347,9 @@ async function runFile(file: string): Promise<Outcome> {
 	}
 
 	const url = `http://web-platform.test/${SUITE}/${file}`;
-	const window = createDocumentWindow(html, url);
-	const document = window.document;
+	const {window, document} = mountEngine(html, url);
 	documentURL = url;
 	installFrames(window);
-	mountEngine(window);
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	let timer: ReturnType<typeof setTimeout> | null = null;
@@ -565,6 +453,21 @@ async function runFile(file: string): Promise<Outcome> {
 	return outcome;
 }
 
+/** Put every name on the realm, over whatever the window already put there. */
+function defineAll(
+	scope: Record<string, unknown>,
+	values: Record<string, unknown>,
+): void {
+	for (const [name, value] of Object.entries(values)) {
+		Object.defineProperty(scope, name, {
+			value,
+			writable: true,
+			enumerable: true,
+			configurable: true,
+		});
+	}
+}
+
 /**
  * A realm of the file's own, with the file's window as its global.
  *
@@ -580,7 +483,7 @@ async function runFile(file: string): Promise<Outcome> {
  * engine's, reached across the boundary exactly as a browser's page script
  * reaches the UA's.
  */
-function createRealm(window: EngineWindow, url: string): object {
+function createRealm(window: Window, url: string): object {
 	// Every name the window carries, own or inherited, enumerable or not: the
 	// DOM and CSSOM interface objects live on Window.prototype and a test reads
 	// them as bare globals. A realm's global is a flat object, so the chain is
@@ -616,14 +519,16 @@ function createRealm(window: EngineWindow, url: string): object {
 				...descriptor,
 				value:
 					typeof descriptor.value === "function" &&
-					descriptor.value.prototype === undefined ?
-							descriptor.value.bind(window) :
-						descriptor.value,
+					descriptor.value.prototype === undefined
+						? descriptor.value.bind(window)
+						: descriptor.value,
 				configurable: true,
 			});
 		}
 	}
-	Object.assign(scope, {
+	// Defined rather than assigned: the loop above copies the window's own
+	// accessors onto the realm, and a getter with no setter refuses a write.
+	defineAll(scope, {
 		document: window.document,
 		location: {
 			href: url,
@@ -702,9 +607,9 @@ async function flattenModule(
 	const prefix: string[] = [];
 	for (const match of imports) {
 		const specifier = match[1];
-		const path = specifier.startsWith("/") ?
-				specifier.slice(1) :
-			`${SUITE}/${specifier.replace(/^\.\//, "")}`;
+		const path = specifier.startsWith("/")
+			? specifier.slice(1)
+			: `${SUITE}/${specifier.replace(/^\.\//, "")}`;
 		const text = await cached(path);
 		if (text === null) {
 			return null;

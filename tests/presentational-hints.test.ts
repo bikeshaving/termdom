@@ -10,24 +10,24 @@
  * The table below is that list, transcribed from the Rendering section
  * (2026-08-14). Every entry is either implemented -- and then a test here
  * shows the attribute reaching a computed value -- or named with the reason it
- * is not. An entry in neither table, or in both, fails the guard: a hint is
- * handled or somebody looked at it and wrote down why not.
+ * is not. An entry in both tables fails the guard: a hint is handled or
+ * somebody looked at it and wrote down why not.
  */
-import {test, expect} from "@b9g/libuild/test";
-import {createDocumentWindow} from "../src/internal/termdom.js";
-import {StyleManager} from "../src/internal/cascade.js";
-import {LayoutEngine} from "../src/internal/layout.js";
+import {expect, test} from "@b9g/libuild/test";
+
+import {TermDOM} from "../src/internal/termdom.js";
 import {UA_DOCUMENT_STYLES} from "../src/internal/useragent.js";
+import {MockProcess} from "./test-utils.js";
 
 /** The computed value of a property on the element an id names. */
 function computed(html: string, id: string, property: string): string {
-	const window = createDocumentWindow(
-		`<!DOCTYPE html><html><body>${html}</body></html>`,
-	);
-	const styleManager = new StyleManager(window);
-	styleManager.setLayoutEngine(new LayoutEngine(window));
-	const element = window.document.getElementById(id)!;
-	return window.getComputedStyle(element).getPropertyValue(property);
+	const {window, document} = new TermDOM({
+		html: `<!DOCTYPE html><html><body>${html}</body></html>`,
+		transport: new MockProcess().transport,
+	});
+	return window
+		.getComputedStyle(document.getElementById(id)!)
+		.getPropertyValue(property);
 }
 
 /**
@@ -36,7 +36,7 @@ function computed(html: string, id: string, property: string): string {
  */
 const IMPLEMENTED_HINTS: Record<string, string> = {
 	"*[dir]": "direction",
-	"bdi": "direction",
+	bdi: "direction",
 	"input[type=tel]": "direction",
 };
 
@@ -85,7 +85,7 @@ const EXCLUDED_HINTS: Record<string, string> = {
 
 	// Alignment attributes, which map to text-align, float and vertical-align.
 	"div[align]": "text-align: the align attribute predates text-align",
-	"center": "text-align: center, which the UA sheet could carry but does not",
+	center: "text-align: center, which the UA sheet could carry but does not",
 	"td[align]": "text-align on a cell",
 	"th[align]": "text-align on a cell",
 	"tr[align]": "text-align on a row",
@@ -153,17 +153,18 @@ const EXCLUDED_HINTS: Record<string, string> = {
 		"background-color on the button's anonymous content box -- no color well",
 };
 
-test("every attribute the Rendering section styles is implemented or named", () => {
-	const names = new Set([
-		...Object.keys(IMPLEMENTED_HINTS),
-		...Object.keys(EXCLUDED_HINTS),
-	]);
-	for (const name of names) {
-		const implemented = name in IMPLEMENTED_HINTS;
-		const excluded = name in EXCLUDED_HINTS;
-		expect(`${name}: ${implemented !== excluded}`).toBe(`${name}: true`);
+test("no attribute is both implemented and excluded, and every exclusion says why", () => {
+	// Whether the transcription is complete is not something the tables can
+	// answer about themselves -- they are the transcription. What they can
+	// answer is that no entry appears in both, that neither has been emptied,
+	// and that an exclusion carries its reason.
+	expect(Object.keys(IMPLEMENTED_HINTS).length).toBeGreaterThan(0);
+	expect(Object.keys(EXCLUDED_HINTS).length).toBeGreaterThan(0);
+	for (const name of Object.keys(IMPLEMENTED_HINTS)) {
+		expect(`${name} excluded: ${name in EXCLUDED_HINTS}`).toBe(
+			`${name} excluded: false`,
+		);
 	}
-	// An exclusion says why, in words, not by being empty.
 	for (const [name, reason] of Object.entries(EXCLUDED_HINTS)) {
 		expect(`${name}: ${reason.length > 12}`).toBe(`${name}: true`);
 	}
@@ -202,19 +203,20 @@ test("dir=auto reads the direction off the content", () => {
 	).toBe(
 		"ltr",
 	);
-	// The boundary, pinned rather than asserted away: the selector engine's
-	// :dir() reads the FIRST character rather than the first character with a
-	// strong direction, so content opening with digits or punctuation reads
-	// left-to-right whatever follows. Writing dir=rtl says it outright.
+	// The first character with a STRONG direction decides, so digits and
+	// punctuation ahead of the text settle nothing.
 	expect(
 		computed("<div dir=\"auto\" id=\"d\">123 - שלום</div>", "d", "direction"),
+	).toBe("rtl");
+	expect(
+		computed("<div dir=\"auto\" id=\"d\">123 - hello</div>", "d", "direction"),
 	).toBe("ltr");
 });
 
 test("an unrecognized dir value inherits the parent's direction", () => {
 	// Which is why the explicit values are attribute selectors rather than the
 	// Rendering section's `[dir]:dir(ltr)`: a value that is neither ltr, rtl
-	// nor auto matches no rule, and direction inherits, as the directionality
+	// nor auto matches no rule, and direction inherits, as the getDirectionality
 	// algorithm says it should.
 	const markup = "<div dir=\"rtl\"><p dir=\"sideways\" id=\"inner\">x</p></div>";
 	expect(computed(markup, "inner", "direction")).toBe("rtl");

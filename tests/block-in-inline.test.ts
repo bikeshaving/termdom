@@ -9,9 +9,10 @@
  * nothing at all.
  */
 
-import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 async function render(html: string, cols = 40, rows = 8): Promise<
 	{dom: TermDOM; terminal: MockProcess; lines: () => string[]}
@@ -150,8 +151,8 @@ test("a widget inside an inline-block's block content paints in place", async ()
 
 	const input = dom.document.querySelector("input")!;
 	const rect = input.getBoundingClientRect();
-	// Positions under a content root mean nothing until the run places the box
-	// that owns it; the widget's own rect is anchored to that box's content edge.
+	// Positions under a independent formatting context mean nothing until the run places the box
+	// that owns it; the UA shadow tree's own rect is anchored to that box's content edge.
 	expect(rect.x).toBe(1);
 	expect(terminal.getPlainText()).toContain("typed");
 
@@ -160,7 +161,7 @@ test("a widget inside an inline-block's block content paints in place", async ()
 
 test("an inline-block's content survives sitting inside another inline", async () => {
 	// Nested this way the box is a run MEMBER, and #addElementNode is never
-	// called on one, so its measurement is what gives it a content root.
+	// called on one, so its measurement is what gives it a independent formatting context.
 	const {dom, lines} = await render(
 		"<span><span style=\"display: inline-block\"><p>deep</p></span> tail</span>",
 	);
@@ -176,7 +177,7 @@ test("a widget in an inline-block does not take a box of its own", async () => {
 	);
 
 	// The run measures the box and everything in it. Manufacturing a layout
-	// node for the widget put it at the top of the document, one row above the
+	// node for the UA shadow tree put it at the top of the document, one row above the
 	// text it belongs beside.
 	expect(lines()[0]).toBe("headingV");
 
@@ -236,7 +237,7 @@ test("a display: contents element added brings its children with it", async () =
 });
 
 test("an inline flex item holding a block is a block container", async () => {
-	// A flex container blockifies its children (css-display-3 §2.7), so an
+	// A flex container isBlockified its children (css-display-3 §2.7), so an
 	// inline one holding block-level content establishes a block container.
 	// Measured as a run instead, its content ends at the first block inside it
 	// -- and everything from there on, which here is everything, is dropped.
@@ -250,7 +251,7 @@ test("an inline flex item holding a block is a block container", async () => {
 });
 
 test("an inline-block inside an inline-block takes a block child", async () => {
-	// The inner one lays its block content out under a content root of its
+	// The inner one lays its block content out under a independent formatting context of its
 	// own, and a block arriving there belongs to that box's children like any
 	// other.
 	const {dom, lines} = await render(

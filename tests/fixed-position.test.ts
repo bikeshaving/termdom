@@ -5,9 +5,10 @@
  * conversion always assumed this; layout now provides it -- fixed boxes
  * hoist to the terminal-sized viewport root, not the document root.
  */
-import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 function makeTallDoc(dom: TermDOM): void {
 	dom.document.body.innerHTML =

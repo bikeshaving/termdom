@@ -8,7 +8,8 @@
  * author mutated IS the sheet the cascade walks.
  */
 
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -471,6 +472,77 @@ test("a shadow root's stylesheets and adopted sheets are the same CSSOM", async 
 	expect(dom.window.getComputedStyle(span).getPropertyValue("color")).toBe(
 		"rgb(0, 0, 255)",
 	);
+
+	dom.dispose();
+});
+
+test("text the CSS parsers cannot judge passes through as authored", () => {
+	const {dom} = makeDOM();
+	const sheet = new dom.window.CSSStyleSheet();
+
+	// A media list keeps queries this engine cannot judge, case-folded.
+	const mediaText = (query: string): string => {
+		sheet.replaceSync(`@media ${query} { a { color: red } }`);
+		return (sheet.cssRules[0] as CSSMediaRule).media.mediaText;
+	};
+	expect(mediaText("GARBAGE!!")).toBe("garbage!!");
+	expect(mediaText("screen and foo")).toBe("screen and foo");
+	expect(mediaText("not(color)")).toBe("not(color)");
+	expect(mediaText("not (a) and (b)")).toBe("not (a) and (b)");
+	expect(mediaText("SCREEN and (Min-Width: 5PX)")).toBe(
+		"screen and (min-width: 5px)",
+	);
+	// An or-group serializes as one condition, its first value canonicalized.
+	expect(mediaText("((min-width: 05px) or (color))")).toBe(
+		"((min-width: 5px) or (color))",
+	);
+	// Features that stand apart without `and` are opaque text, not a join.
+	expect(mediaText("(min-width: 05px) (color)")).toBe(
+		"(min-width: 5px) (color)",
+	);
+
+	// A value whose parentheses never close swallows the rest of the block.
+	sheet.replaceSync("a { color: red(; width: 10px }");
+	const styleRule = sheet.cssRules[0] as CSSStyleRule;
+	expect(styleRule.style.length).toBe(0);
+	expect(styleRule.cssText).toBe("a { }");
+
+	// A keyframe selector is `from`, `to` or a percentage, and a percentage
+	// is a number token: an exponent spells one as anywhere else in CSS. A
+	// word standing where a selector belongs serializes empty.
+	sheet.replaceSync("@keyframes k { from {} 50.0% {} 1e2% {} halfway {} }");
+	const keyframes = sheet.cssRules[0] as CSSKeyframesRule;
+	expect(Array.from(keyframes.cssRules, (rule) =>
+		(rule as CSSKeyframeRule).keyText,
+	)).toEqual(["0%", "50%", "100%", ""]);
+
+	// `layer` names a layer only as a word of its own: `layered-thing` is a
+	// media query, and a media type this engine cannot judge is kept as
+	// authored. A constructed sheet drops @import, so these parse through a
+	// style element's sheet.
+	const style = dom.document.createElement("style");
+	dom.document.head.appendChild(style);
+	const parsedSheet = style.sheet!;
+	parsedSheet.insertRule("@import url(a.css) layered-thing;", 0);
+	const imported = parsedSheet.cssRules[0] as CSSImportRule;
+	expect(imported.layerName).toBe(null);
+	expect(imported.media.mediaText).toBe("layered-thing");
+	// An @import prelude off the grammar is a rule nothing can hold.
+	expect(() => parsedSheet.insertRule("@import url(a.css) garbage!!;", 0))
+		.toThrow();
+
+	// `layer()` takes a layer name: one off the grammar drops the rule,
+	// while the bare word asks for the anonymous layer.
+	expect(() => parsedSheet.insertRule("@import url(a.css) layer(1a);", 0))
+		.toThrow();
+	parsedSheet.insertRule("@import url(a.css) layer;", 0);
+	expect((parsedSheet.cssRules[0] as CSSImportRule).layerName).toBe("");
+
+	// A supports() whose parenthesis never closes is recovered ending at the
+	// text: the condition reaches its last character.
+	parsedSheet.insertRule("@import url(a.css) supports(display:flex", 0);
+	expect((parsedSheet.cssRules[0] as CSSImportRule).supportsText)
+		.toBe("display:flex");
 
 	dom.dispose();
 });

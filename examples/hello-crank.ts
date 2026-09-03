@@ -4,10 +4,10 @@
 //
 //   any key  increments the counter
 //   q        quit
-import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
-import {jsx} from "@b9g/crank/standalone";
 import {renderer} from "@b9g/crank/dom";
+import {jsx} from "@b9g/crank/standalone";
+import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
 term.attach();

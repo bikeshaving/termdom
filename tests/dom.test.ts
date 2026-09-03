@@ -7,22 +7,33 @@
  * live collection sees mid-mutation, and the cases a browsing context would
  * normally be needed to set up.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {
-	createHTMLDocument,
-	customElements,
+	createDocumentWindow,
+	type Document,
 	CustomEvent as DOMCustomEvent,
-	DOMParser,
 	Event as DOMEvent,
 	HTMLElement,
 	MutationObserver,
 	NodeFilter,
-	parseHTMLDocument,
-	setAmbientDocument,
-	setDefaultView,
 	Text,
-	installUAEngine,
 } from "../src/internal/dom.js";
+
+// The door a test document comes through. The parser is the one that hands
+// a document the realm's custom element registry, as it does the engine's.
+function createHTMLDocument(title?: string): Document {
+	return createDocumentWindow(
+		title === undefined
+			? "<!doctype html>"
+			: `<!doctype html><title>${title}</title>`,
+	).document as unknown as Document;
+}
+
+// The interfaces script sees are the window's, so the tests take them from
+// one: a parser, a Window of its own, and the realm's element registry.
+const realm = createDocumentWindow("<!doctype html>");
+const customElements = realm.customElements;
 
 function make(): any {
 	const document = createHTMLDocument("") as any;
@@ -41,7 +52,10 @@ test("a node cannot be inserted into itself or its descendant", () => {
 });
 
 test("a document takes one element child and one doctype, in that order", () => {
-	const document = new DOMParser().parseFromString("", "text/html") as any;
+	const document = new realm.DOMParser().parseFromString(
+		"",
+		"text/html",
+	) as any;
 	const bare = document.implementation.createDocument(null, null, null);
 	const first = bare.createElement("first");
 	bare.appendChild(first);
@@ -458,8 +472,8 @@ test("raw text children are not escaped", () => {
 });
 
 test("the parser puts a document in quirks mode without a doctype", () => {
-	const noQuirks = parseHTMLDocument("<!doctype html><p>x");
-	const quirks = parseHTMLDocument("<p>x");
+	const noQuirks = createDocumentWindow("<!doctype html><p>x").document;
+	const quirks = createDocumentWindow("<p>x").document;
 	expect(noQuirks.compatMode).toBe("CSS1Compat");
 	expect(quirks.compatMode).toBe("BackCompat");
 });
@@ -778,11 +792,13 @@ test("stopPropagation on a platform event ends the walk", () => {
 test("a subclass of the platform CustomEvent dispatches", () => {
 	const document = make();
 	const target = document.createElement("div");
+
 	class ThingEvent extends globalThis.CustomEvent<{count: number}> {
 		constructor(count: number) {
 			super("thing", {bubbles: true, detail: {count}});
 		}
 	}
+
 	let heard: unknown = null;
 	document.body.appendChild(target);
 	document.body.addEventListener("thing", (event: any) => {
@@ -953,7 +969,7 @@ test("observing a node twice replaces the options it was observed with", async (
 /* -------------------------------------------------------------- serializing */
 
 test("a document parsed from a string keeps its URL and content type", () => {
-	const document = new DOMParser().parseFromString(
+	const document = new realm.DOMParser().parseFromString(
 		"<!doctype html><title>t</title>",
 		"text/html",
 	);
@@ -1133,7 +1149,6 @@ test("a shadow root is cloned with its host only when it is clonable", () => {
 
 test("a reaction runs after the mutation that enqueued it, in tree order", () => {
 	const document = make();
-	setAmbientDocument(document);
 	const order: string[] = [];
 	customElements.define(
 		"order-one",
@@ -1157,7 +1172,6 @@ test("a reaction runs after the mutation that enqueued it, in tree order", () =>
 
 test("an attribute reaction is enqueued only for an observed name", () => {
 	const document = make();
-	setAmbientDocument(document);
 	const seen: unknown[][] = [];
 	customElements.define(
 		"order-two",
@@ -1182,11 +1196,11 @@ test("an attribute reaction is enqueued only for an observed name", () => {
 
 test("an upgrade replays the attributes and the connection it missed", () => {
 	const document = make();
-	setAmbientDocument(document);
 	const seen: string[] = [];
 	const element = document.createElement("order-three");
 	element.setAttribute("a", "1");
 	document.body.appendChild(element);
+
 	class OrderThree extends HTMLElement {
 		static get observedAttributes(): string[] {
 			return ["a"];
@@ -1200,6 +1214,7 @@ test("an upgrade replays the attributes and the connection it missed", () => {
 			seen.push("connected");
 		}
 	}
+
 	expect(element instanceof OrderThree).toBe(false);
 	customElements.define("order-three", OrderThree);
 	expect(element instanceof OrderThree).toBe(true);
@@ -1222,8 +1237,9 @@ test("a definition is rejected by name and by a constructor already used", () =>
 
 test("a constructor called on its own builds an element of its own name", () => {
 	const document = make();
-	setAmbientDocument(document);
+
 	class OrderSix extends HTMLElement {}
+
 	customElements.define("order-six", OrderSix);
 	const element: any = new OrderSix();
 	expect(element.localName).toBe("order-six");
@@ -1236,7 +1252,6 @@ test("a constructor called on its own builds an element of its own name", () => 
 /** A document with a paragraph of two text nodes, and a range over it. */
 function withRange(): any {
 	const document = make();
-	setAmbientDocument(document);
 	const paragraph = document.createElement("p");
 	paragraph.appendChild(document.createTextNode("abcdef"));
 	paragraph.appendChild(document.createElement("b"));
@@ -1667,9 +1682,9 @@ test("a disabled fieldset disables what its legend does not hold", () => {
 /* -------------------------------------------------------- template content */
 
 test("a template's children are parsed into its content, not into the tree", () => {
-	const document = parseHTMLDocument(
+	const document = createDocumentWindow(
 		"<body><template><div id=inside>text</div></template></body>",
-	) as any;
+	).document as any;
 	const template = document.querySelector("template");
 	expect(template.childNodes.length).toBe(0);
 	expect(template.content.childNodes.length).toBe(1);
@@ -1826,7 +1841,10 @@ test("a value that is not an object is null, per the callback's legacy rule", ()
 });
 
 test("a body's window handlers are its window's, and are dropped without one", () => {
-	const document = make();
+	const document = new realm.DOMParser().parseFromString(
+		"<!doctype html><title></title>",
+		"text/html",
+	) as any;
 	const body = document.body as any;
 	// The set that forwards; the rest of the mixin stays the element's own.
 	expect("onload" in body).toBe(true);
@@ -1838,44 +1856,10 @@ test("a body's window handlers are its window's, and are dropped without one", (
 	expect(body.onload).toBe(null);
 
 	const handler = () => {};
-	const view: any = {};
-	setDefaultView(document, view);
+	const view: any = new (realm as any).Window(document);
 	body.onload = handler;
 	expect(view.onload).toBe(handler);
 	expect(body.onload).toBe(handler);
-});
-
-test("one predicate names the elements that edit text", () => {
-	// The paint, the caret scroll and the press-to-park default action all ask
-	// this question, and a spelling that forgot `hidden` sent a press on a
-	// hidden input down the field-drag path.
-	const document = make();
-	const toolkit = installUAEngine(document, {} as never);
-	const field = (tag: string, type?: string) => {
-		const element = document.createElement(tag);
-		if (type !== undefined) {
-			(element as any).type = type;
-		}
-		return toolkit.isTextField(element as any);
-	};
-
-	expect(field("textarea")).toBe(true);
-	for (const type of [
-		"text",
-		"search",
-		"url",
-		"tel",
-		"password",
-		"number",
-		"email",
-		"date",
-	]) {
-		expect(field("input", type)).toBe(true);
-	}
-	for (const type of ["checkbox", "radio", "hidden"]) {
-		expect(field("input", type)).toBe(false);
-	}
-	expect(field("div")).toBe(false);
 });
 
 test("the selection APIs answer null where they do not apply, and throw when set", () => {
@@ -1933,9 +1917,9 @@ test("createContextualFragment parses in the range's context", () => {
 	expect(fragment.lastChild!.textContent).toBe(" tail");
 
 	// A range anchored at the document parses against the body.
-	const documentRange = document.createRange();
-	documentRange.setStart(document, 0);
-	const fromDocument = documentRange.createContextualFragment("<i>x</i>");
+	const getDocumentRange = document.createRange();
+	getDocumentRange.setStart(document, 0);
+	const fromDocument = getDocumentRange.createContextualFragment("<i>x</i>");
 	expect((fromDocument.firstChild as Element).tagName).toBe("I");
 });
 
@@ -1961,4 +1945,20 @@ test("focus reaches into shadow trees, and each scope retargets", () => {
 	expect(document.activeElement).toBe(host);
 	expect(root.activeElement).toBe(mid);
 	expect(nested.activeElement).toBe(button);
+});
+
+test("a wheel or touch listener on the window is passive by default", () => {
+	const window = createDocumentWindow("<!DOCTYPE html><p>x</p>");
+	for (const type of ["wheel", "mousewheel", "touchstart", "touchmove"]) {
+		window.addEventListener(type, (event) => event.preventDefault());
+		const event = new DOMEvent(type, {cancelable: true});
+		window.dispatchEvent(event);
+		expect(event.defaultPrevented).toBe(false);
+	}
+	window.addEventListener("wheel", (event) => event.preventDefault(), {
+		passive: false,
+	});
+	const active = new DOMEvent("wheel", {cancelable: true});
+	window.dispatchEvent(active);
+	expect(active.defaultPrevented).toBe(true);
 });

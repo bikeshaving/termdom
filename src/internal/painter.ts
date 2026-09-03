@@ -1,60 +1,44 @@
-/**
- * The paint walk: a document's boxes in paint order, resolved to styled cells.
- *
- * It reads the DOM, computed styles and geometry, and writes nothing but cells.
- */
-import type {
-	UAToolkit,
-} from "./dom.js";
-import type {EngineWindow} from "./termdom.js";
 import {
-	type LayoutEngine,
-	flowWalker,
+	type Cascade,
+	cssColorToNumber,
+	getBoxModel,
+	getComputedValue,
+	isTransparentColor,
+	resolveBorderSides,
+} from "./cssom.js";
+import {
+	flatParentElement,
+	flowContent,
+	getSelectionRecord,
+	getShadowRoot,
+	getTextControlSelectionRange,
+	getTextControlValueText,
+	getTopLayer,
+	HTMLElement,
+	renderedTopLayer,
+	type Window,
+} from "./dom.js";
+import {
 	isPositioned,
+	isStackingContext,
+	type Layout,
 	renderTextFragment,
 } from "./layout.js";
-import type {Viewport} from "./viewport.js";
-import {
-	type ComputedStyle,
-	type StyleManager,
-	computedStyleOf,
-	getBoxModel,
-	pseudoStyleOf,
-	resolveBorderSides,
-} from "./cascade.js";
-import {cssColorToNumber, isTransparentColor} from "./color.js";
+import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.js";
 
-import type {CellStyle, CellContext, LineStyle} from "./ansi.js";
-
-/**
- * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
- * an axis that nothing clips is unbounded, and the only honest spelling of
- * that is -Infinity to +Infinity. A DOMRect would have to store it as
- * `x: -Infinity, width: Infinity`, whose `right` is then `NaN` -- which every
- * intersection downstream would silently propagate.
- */
+// Edges, not origin and size. An unclipped axis is +-Infinity, and an
+// edge computed from an infinite origin and size is NaN.
 type ClipRect = {left: number; top: number; right: number; bottom: number};
 
-/**
- * Whether a computed style asks for an underline.
- *
- * `text-decoration` is a shorthand whose value lives in the longhands, so an
- * author writing `text-decoration-line: underline` leaves the shorthand
- * computing to "none" -- and reading only the shorthand meant the longhand did
- * nothing at all. Read the longhand first, since it is where the value is, and
- * fall back to the shorthand for the styles that set it that way.
- */
-function hasUnderline(style: ComputedStyle): boolean {
-	return style.computedValueOf("text-decoration-line").includes("underline");
+function hasUnderline(decorationLine: string): boolean {
+	return decorationLine.includes("underline");
 }
 
-/** Whether a computed style asks for a line-through (SGR strikethrough). */
-function hasLineThrough(style: ComputedStyle): boolean {
-	return style.computedValueOf("text-decoration-line").includes("line-through");
+function hasLineThrough(decorationLine: string): boolean {
+	return decorationLine.includes("line-through");
 }
 
-/** Whether an overflow value clips its axis: everything but visible does. */
-function overflowClips(value: string): boolean {
+function isClippingOverflow(value: string): boolean {
 	return (
 		value === "hidden" ||
 		value === "clip" ||
@@ -63,17 +47,10 @@ function overflowClips(value: string): boolean {
 	);
 }
 
-/**
- * The clip a non-visible overflow (hidden/clip, and auto/scroll -- a scroll
- * container clips what is scrolled out of it) imposes on the element's own
- * children, intersected with whatever clip was already active from an
- * ancestor. The clip is the PADDING box: content scrolled past the edge must
- * not paint over the border glyphs, so each clipping axis is inset by that
- * side's border. An axis that stays visible is unbounded (+-Infinity), not
- * just "this element's own edge", so overflow-x:hidden;overflow-y:visible
- * only bounds columns, matching CSS's independent per-axis overflow.
- */
-function overflowClipRect(
+// The clip is the padding box, so scrolled-out content does not paint
+// over the border glyphs. An axis that stays visible is unbounded, per
+// axis.
+function getOverflowClipRect(
 	element: Element,
 	rect: {left: number; top: number; width: number; height: number} | null,
 	overflowX: string,
@@ -83,8 +60,8 @@ function overflowClipRect(
 	if (!rect) {
 		return parent;
 	}
-	const clipsX = overflowClips(overflowX);
-	const clipsY = overflowClips(overflowY);
+	const clipsX = isClippingOverflow(overflowX);
+	const clipsY = isClippingOverflow(overflowY);
 	if (!clipsX && !clipsY) {
 		return parent;
 	}
@@ -108,14 +85,8 @@ function overflowClipRect(
 	};
 }
 
-/**
- * The terminal has exactly three font weights, and CSS names all three:
- * light maps to SGR faint (dim), normal to nothing, bold to SGR bold.
- * Numeric values follow the CSS scale (100-300 light, 600+ bold). The
- * relative keywords resolve absolutely rather than against the parent's
- * weight -- an approximation, documented rather than hidden: "bolder" from
- * a bold parent cannot get bolder on a terminal anyway.
- */
+// Three weights: faint, normal, bold. The relative keywords resolve
+// absolutely. Bolder than bold does not exist here anyway.
 function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
 	if (weight === "bold" || weight === "bolder") {
 		return {bold: true, dim: false};
@@ -135,24 +106,16 @@ function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
 	return {bold: false, dim: false};
 }
 
-/**
- * Highlight / HighlightText -- the system-color pair whose combined
- * meaning on a terminal is "swap the cell's colors", SGR inverse.
- * SelectedItem / SelectedItemText name the same thing on a non-text
- * selection (a chosen option, a picked row), so the pair rides the same
- * pathway.
- */
+// Highlight/HighlightText and SelectedItem/SelectedItemText. On a
+// terminal the pair means SGR inverse.
 function isSystemHighlightColor(value: string): boolean {
 	return /^(?:highlight|selecteditem)(?:text)?$/i.test(value.trim());
 }
 
-/**
- * A background-color as `drawRect` takes it: the two system colors keep their
- * terminal meanings (Canvas the terminal's own background, Highlight a swap of
- * each cell's colors), every other color is its cells' background, and a
- * background that paints nothing answers null.
- */
-function backgroundFill(value: string): number | "default" | "inverse" | null {
+// Canvas is the terminal's own background. Highlight is inverse.
+function getBackgroundFill(
+	value: string,
+): number | "default" | "inverse" | null {
 	if (!value || value === "initial" || isTransparentColor(value)) {
 		return null;
 	}
@@ -165,68 +128,51 @@ function backgroundFill(value: string): number | "default" | "inverse" | null {
 	return cssColorToNumber(value);
 }
 
-/**
- * A computed style reduced to terminal cell attributes -- one mapping,
- * shared by text nodes and the input painter's shadow parts.
- */
-function cellStyleFromComputed(
-	computedStyle: ComputedStyle,
-): CellStyle {
-	const color = computedStyle.computedValueOf("color");
-	const bgColor = computedStyle.computedValueOf("background-color");
+function getCellStyle(element: Element): CellStyle {
+	const color = getComputedValue(element, "color");
+	const bgColor = getComputedValue(element, "background-color");
 	const {bold, dim} = resolveFontWeight(
-		computedStyle.computedValueOf("font-weight"),
+		getComputedValue(element, "font-weight"),
 	);
-	// background-color: Highlight is CSS's spelling of "swap the cell's
-	// colors": SGR inverse, the terminal-native highlight with no color
-	// assumptions -- the same translation ::selection's resolver makes.
-	// The background alone carries the signal, so an author color on the
-	// element (a restyled link keeping its UA focus ring) does not defeat
-	// it; color: HighlightText alone resolves to nothing.
+	// The background alone carries inverse. color: HighlightText alone
+	// resolves to nothing, so an author color does not defeat it.
 	const isHighlightPair = isSystemHighlightColor(bgColor);
 	return {
 		fg:
-			color && color !== "initial" && !isSystemHighlightColor(color) ?
-					cssColorToNumber(color) :
-				undefined,
+			color && color !== "initial" && !isSystemHighlightColor(color)
+				? cssColorToNumber(color)
+				: undefined,
 		bg:
 			bgColor &&
 			bgColor !== "initial" &&
 			!isTransparentColor(bgColor) &&
 			!/^canvas$/i.test(bgColor.trim()) &&
-			!isSystemHighlightColor(bgColor) ?
-					cssColorToNumber(bgColor) :
-				undefined,
+			!isSystemHighlightColor(bgColor)
+				? cssColorToNumber(bgColor)
+				: undefined,
 		inverse: isHighlightPair || undefined,
 		bold,
 		dim,
-		italic: computedStyle.computedValueOf("font-style") === "italic",
-		underline: hasUnderline(computedStyle),
+		italic: getComputedValue(element, "font-style") === "italic",
+		underline: hasUnderline(getComputedValue(element, "text-decoration-line")),
 		underlineStyle:
-			computedStyle.computedValueOf("text-decoration-style") === "double" ?
-					("double" as const) :
-				undefined,
-		strikethrough: hasLineThrough(computedStyle),
+			getComputedValue(element, "text-decoration-style") === "double"
+				? ("double" as const)
+				: undefined,
+		strikethrough: hasLineThrough(
+			getComputedValue(element, "text-decoration-line"),
+		),
 	};
 }
 
-/**
- * The style a selection highlight paints with, over `base`. Everything
- * comes from ::selection rules -- there is no built-in fallback. The UA
- * document sheet declares the Highlight/HighlightText system-color
- * pair, which is CSS's spelling of "swap the cell's colors" and
- * translates to SGR 7 (inverse), the terminal-native highlight with no
- * color assumptions; author colors replace the system keywords through
- * the ordinary cascade. An element no ::selection rule reaches paints
- * no highlight at all -- the UA rule is load-bearing.
- */
-function selectionStyleFor(
+// Everything comes from ::selection rules. The UA sheet's Highlight
+// pair is what makes an unstyled selection inverse at all.
+function getSelectionStyle(
 	element: Element,
 	base: CellStyle,
 ): CellStyle {
-	const declaration = pseudoStyleOf(element, "::selection");
-	const fg = declaration.computedValueOf("color");
-	const bg = declaration.computedValueOf("background-color");
+	const fg = getComputedValue(element, "color", "::selection");
+	const bg = getComputedValue(element, "background-color", "::selection");
 	if (!fg && !bg) {
 		return base;
 	}
@@ -242,13 +188,8 @@ function selectionStyleFor(
 	};
 }
 
-/**
- * Apply CSS `text-transform` at paint time, not layout time. Every character
- * occupies the same cell width regardless of case in a terminal, so unlike a
- * browser's proportional font this can never change line wrapping -- there's
- * no need to re-measure, just transform the already-shaped text right before
- * it's drawn.
- */
+// Applied at paint time. Case never changes a cell width, so it cannot
+// change wrapping.
 function applyTextTransform(text: string, transform: string): string {
 	switch (transform) {
 		case "capitalize":
@@ -268,90 +209,56 @@ function applyTextTransform(text: string, transform: string): string {
 const kWindow = Symbol("window");
 const kDocument = Symbol("document");
 const kLayout = Symbol("layout");
-const kStyleManager = Symbol("styleManager");
-const kViewport = Symbol("viewport");
+const kCascade = Symbol("cascade");
+const kScreen = Symbol("screen");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
-const kToolkit = Symbol("toolkit");
 
-/**
- * The paint walk: the pure transformation of a laid-out DOM tree into terminal
- * cells. It reads geometry from the {@link LayoutEngine}, computed styles from
- * the {@link StyleManager} and the DOM, and form controls' shadow parts and caret
- * from the composed tree (the shell upgrades the widgets on connect, so their
- * shadow is already there), then draws into a `CellContext`. It owns no
- * scheduling and mutates no DOM -- callers hand it a fresh context and call
- * {@link Painter.paint}.
- *
- * Two pieces of render state are shared with TermDOM rather than owned here: the
- * top layer (the shell decides what is promoted; the walk only reads and prunes
- * disconnected members) and the per-field scroll offsets (the walk writes them
- * as it windows an overflowing value; hit-testing reads them back). Both arrive
- * by reference through the constructor.
- */
+/** Reads the DOM, styles and geometry. Writes only into the CellContext. */
 export class Painter {
-	declare [kWindow]: EngineWindow;
-	// The document, cached the way TermDOM caches it: a stray post-dispose frame
-	// paints against this reference rather than reaching through a torn-down
-	// window. The live window still serves getComputedStyle/getSelection.
+	declare [kWindow]: Window;
 	declare [kDocument]: Document;
-	declare [kLayout]: LayoutEngine;
-	declare [kStyleManager]: StyleManager;
-	declare [kViewport]: Viewport;
-	// Shared with TermDOM by reference -- see the class doc.
+	declare [kLayout]: Layout;
+	declare [kCascade]: Cascade;
+	declare [kScreen]: Screen;
 	declare [kTopLayer]: Set<Element>;
-	// List markers already painted this frame; each renders at most once.
+	// Each list marker paints at most once per frame.
 	declare [kRenderedOutsideMarkers]: WeakSet<Element>;
-	// The rows the walk's ancestor scroll boxes have scrolled so far. Paint
-	// extents are cached in unscrolled layout rows while a scrolled subtree
-	// paints that many rows higher, so every band-culling comparison moves
-	// the band by this amount instead of the extents.
+	// Paint extents are cached in unscrolled rows. A scrolled subtree
+	// paints this many rows higher, so culling shifts the viewport instead.
 	declare [kScrolledRows]: number;
-	// The UA's capabilities, granted to the engine and shared here: the walk
-	// opens closed shadow trees and reads control selections through it.
-	declare [kToolkit]: UAToolkit;
 
-	constructor(deps: {
-		window: EngineWindow;
-		document: Document;
-		layout: LayoutEngine;
-		styleManager: StyleManager;
-		viewport: Viewport;
-		topLayer: Set<Element>;
-		toolkit: UAToolkit;
-	}) {
+	constructor(
+		document: Document,
+		layout: Layout,
+		cascade: Cascade,
+		screen: Screen,
+	) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
-		this[kWindow] = deps.window;
-		this[kDocument] = deps.document;
-		this[kLayout] = deps.layout;
-		this[kStyleManager] = deps.styleManager;
-		this[kViewport] = deps.viewport;
-		this[kTopLayer] = deps.topLayer;
-		this[kToolkit] = deps.toolkit;
+		this[kWindow] = document.defaultView as unknown as Window;
+		this[kDocument] = document;
+		this[kLayout] = layout;
+		this[kCascade] = cascade;
+		this[kScreen] = screen;
+		this[kTopLayer] = getTopLayer(document) as unknown as Set<Element>;
 	}
 
-	/** The whole document: the root stacking context, then the top layer. */
 	paint(ctx: CellContext): void {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		renderStackingContext(this, this[kDocument].body, ctx, layers);
-		for (const element of this[kTopLayer]) {
-			// COMPOSITION-connected: a UA part (the select's picker) lives in
-			// a fragment and is never DOM-connected while very much on screen.
-			if (!this[kToolkit].flatIsConnected(element)) {
-				this[kTopLayer].delete(element);
-				continue;
-			}
+		const rendered = renderedTopLayer(this[kDocument]) as unknown as Element[];
+		for (const element of rendered) {
 			const previousClip = ctx.clipRect;
 			ctx.clipRect = null;
-			// A top-layer element enters the walk from outside its ancestor
-			// chain; seed the culling shift its scrolled ancestors impose.
+			// Entered from outside its ancestor chain, so seed the culling
+			// shift.
 			this[kScrolledRows] = this[kLayout].scrolledAncestorRows(element);
 			try {
-				renderBackdrop(this, element, ctx);
+				renderBackdrop(element, ctx);
 				renderStackingContext(this, element, ctx, layers);
 			} finally {
 				ctx.clipRect = previousClip;
@@ -361,27 +268,15 @@ export class Painter {
 	}
 }
 
-/**
- * The ::backdrop of a top-layer element: the box between it and everything
- * the document already painted, covering the viewport. Like ::selection,
- * it has no node of its own -- what it paints comes entirely from the
- * ::backdrop rules the cascade resolves, the UA sheet's included, so an
- * author writing `dialog::backdrop { background-color: ... }` replaces the
- * scrim and one writing `transparent` removes it.
- */
-function renderBackdrop(
-	painter: Painter,
-	element: Element,
-	ctx: CellContext,
-): void {
-	const fill = backgroundFill(
-		pseudoStyleOf(element, "::backdrop").computedValueOf("background-color"),
+// Whatever the ::backdrop rules resolve to, the UA sheet's included.
+function renderBackdrop(element: Element, ctx: CellContext): void {
+	const fill = getBackgroundFill(
+		getComputedValue(element, "background-color", "::backdrop"),
 	);
 	if (fill === null) {
 		return;
 	}
-	// The viewport, in the document coordinates every draw call takes: the
-	// band the buffer holds, which is where a fixed box paints too.
+	// The viewport in document coordinates.
 	ctx.drawRect(0, -ctx.viewportOffset, ctx.cols, ctx.rows, fill);
 }
 
@@ -391,117 +286,62 @@ function renderElement(
 	ctx: CellContext,
 	afterOwnBox?: () => void,
 ): void {
-	// Viewport culling. The buffer only keeps document rows in
-	// [-viewportOffset, -viewportOffset + rows); a subtree whose paint extent
-	// lies wholly outside that band would be walked -- styles computed, text
-	// shaped, borders drawn -- and then discarded cell by cell. Skip it here
-	// and the paint costs what is on screen, not what is in the document.
-	// The enclosing band, for the child-enumeration queries below; the
-	// per-band check culls precisely on recursion, and the context's cell
-	// mask makes any overshoot harmless.
-	// Extents are cached in unscrolled layout rows; a subtree inside scrolled
-	// boxes paints that many rows higher, so the band moves down instead.
+	// A subtree wholly outside the viewport would be styled, shaped
+	// and drawn, then discarded cell by cell.
 	const scrolledRows = painter[kScrolledRows];
-	let bandTop = -ctx.viewportOffset + scrolledRows;
-	let bandBottom = bandTop + ctx.rows;
-	if (ctx.paintBands) {
-		// Skip any subtree outside every band.
-		let inside = false;
-		bandTop = Infinity;
-		bandBottom = -Infinity;
-		for (const [start, end] of ctx.paintBands) {
-			const top = start - ctx.viewportOffset + scrolledRows;
-			const bottom = end - ctx.viewportOffset + scrolledRows;
-			bandTop = Math.min(bandTop, top);
-			bandBottom = Math.max(bandBottom, bottom);
-			if (!painter[kLayout].isSubtreeOutsideBand(element, top, bottom)) {
-				inside = true;
-			}
-		}
-		if (!inside) {
-			return;
-		}
-	} else if (
-		painter[kLayout].isSubtreeOutsideBand(element, bandTop, bandBottom)
+	let viewportTop = -ctx.viewportOffset + scrolledRows;
+	let viewportBottom = viewportTop + ctx.rows;
+	if (
+		painter[kLayout].isSubtreeOutsideViewport(
+			element,
+			viewportTop,
+			viewportBottom,
+		)
 	) {
 		return;
 	}
 
-	// display:none generates NO box and no descendant boxes -- final, per
-	// CSS. Stray run state under a hidden subtree (an editing todo's
-	// hidden .view) could otherwise ghost-paint at whatever coordinates
-	// it last held.
-	// One computed-style read per element per paint; every property below
-	// comes off this declaration.
-	const computed = computedStyleOf(element);
-	if (computed.computedValueOf("display") === "none") {
+	// Stray run state under a hidden subtree would ghost-paint at whatever
+	// coordinates it last held.
+	if (getComputedValue(element, "display") === "none") {
 		return;
 	}
 
 	const rect = painter[kLayout].getRect(element);
 
-	const color = computed.computedValueOf("color");
-	const backgroundColor = computed.computedValueOf("background-color");
-	const {bold, dim} = resolveFontWeight(
-		computed.computedValueOf("font-weight"),
-	);
-	const italic = computed.computedValueOf("font-style") === "italic";
-	const underline = hasUnderline(computed);
-	const underlineStyle =
-		computed.computedValueOf("text-decoration-style") === "double" ?
-				("double" as const) :
-			undefined;
-	// visibility:hidden reserves the box (layout is untouched) but paints
-	// nothing of it -- unlike display:none, which removes the box entirely. A
-	// descendant that sets visibility:visible still paints, since visibility
-	// inherits and each element resolves its own computed value here.
-	const visible = computed.computedValueOf("visibility") !== "hidden";
+	const color = getComputedValue(element, "color");
+	const backgroundColor = getComputedValue(element, "background-color");
+	const visible = getComputedValue(element, "visibility") !== "hidden";
 
-	// background-color: Canvas -- the CSS system color for the document
-	// background -- clears the box to the terminal's DEFAULT background:
-	// opaque in every theme without asserting any color, the same
-	// system-color translation ::selection's Highlight pair uses. The UA
-	// picker sheet relies on it; authors can too. background-color:
-	// Highlight fills the box with SGR inverse instead -- the browser's
-	// blue dropdown row, in the terminal's own colors. The background
-	// alone carries the signal: an author color on the element (a
-	// restyled link keeping its UA focus ring) must not defeat it.
+	// Canvas clears the box to the terminal's default background, opaque in
+	// every theme. Highlight fills it with inverse.
 	const isCanvasBg =
 		Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
 	const isHighlightBox =
 		Boolean(backgroundColor) && isSystemHighlightColor(backgroundColor);
 	const style = {
 		fg:
-			color && color !== "initial" && !isSystemHighlightColor(color) ?
-					cssColorToNumber(color) :
-				undefined,
+			color && color !== "initial" && !isSystemHighlightColor(color)
+				? cssColorToNumber(color)
+				: undefined,
 		bg:
 			backgroundColor &&
 			!isCanvasBg &&
 			backgroundColor !== "initial" &&
 			!isTransparentColor(backgroundColor) &&
-			!isSystemHighlightColor(backgroundColor) ?
-					cssColorToNumber(backgroundColor) :
-				undefined,
-		bold,
-		dim,
-		italic,
-		underline,
-		underlineStyle,
+			!isSystemHighlightColor(backgroundColor)
+				? cssColorToNumber(backgroundColor)
+				: undefined,
 	};
 
 	if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
-		const fill = isCanvasBg ?
-			"default" :
-			isHighlightBox ?
-				"inverse" :
-				style.bg;
-		// A box that broke across lines has a fragment on each of them, and
-		// its background belongs to those fragments rather than to the
-		// rectangle enclosing them: the enclosing one covers the whole width
-		// of every line it spans, including the cells before the box begins
-		// and after it ends, which are its neighbours' to paint. A box that
-		// did not break has one fragment and fills it.
+		const fill = isCanvasBg
+			? "default"
+			: isHighlightBox
+				? "inverse"
+				: style.bg;
+		// A box broken across lines fills each fragment, not the rectangle
+		// enclosing them, whose ends belong to its neighbours.
 		const fragments = painter[kLayout].getRects(element);
 		if (fragments.length > 1) {
 			for (const fragment of fragments) {
@@ -518,17 +358,11 @@ function renderElement(
 		}
 	}
 
-	// Handle borders
 	if (rect && visible) {
 		const sides = resolveBorderSides(element);
-		// Border color per CSS: each side's border-<side>-color, whose
-		// initial value is currentColor -- the element's own color -- and,
-		// with nothing authored anywhere, the terminal's DEFAULT
-		// foreground. Never a hardcoded white: no theme-safe color exists,
-		// and forcing one breaks light terminals. A transparent side
-		// reserves its layout space but paints no glyph -- the browser
-		// behavior authors use for invisible spacing borders; layout reads
-		// the widths elsewhere and is unaffected.
+		// Unauthored, a border is the terminal's default foreground, because
+		// no theme-safe color exists. A transparent side keeps its space and
+		// paints no glyph.
 		const sideFor = (
 			line: LineStyle["style"] | undefined,
 			prop: string,
@@ -536,7 +370,7 @@ function renderElement(
 			if (!line) {
 				return undefined;
 			}
-			const borderColor = computed.computedValueOf(prop);
+			const borderColor = getComputedValue(element, prop);
 			if (isTransparentColor(borderColor)) {
 				return undefined;
 			}
@@ -545,9 +379,9 @@ function renderElement(
 				color:
 					borderColor &&
 					borderColor !== "currentcolor" &&
-					borderColor !== "currentColor" ?
-							cssColorToNumber(borderColor) :
-						style.fg,
+					borderColor !== "currentColor"
+						? cssColorToNumber(borderColor)
+						: style.fg,
 			};
 		};
 		const top = sideFor(sides.top, "border-top-color");
@@ -574,24 +408,18 @@ function renderElement(
 		}
 	}
 
-	// Handle list-style-position: outside markers
 	if (visible) {
 		renderOutsideMarker(painter, element, ctx);
 	}
 
-	// The ACTIVE element wears the terminal cursor at the focus of its
-	// selection: a field's caret, a select's label, a toggle's glyph. The
-	// record and the closed tree come through the UA toolkit; the geometry
-	// is the measurement any Range takes. The content origin stands in when
-	// the focus has no box (an empty value); an element with no selection
-	// record leaves the cursor where the frame parked it.
+	// The active element shows the terminal cursor at its selection focus.
+	// The content origin is used when the focus has no box.
 	if (rect && visible && element === painter[kDocument].activeElement) {
-		const record = painter[kToolkit].selectionOf(element);
+		const record = getSelectionRecord(element);
 		if (record !== null) {
 			const focus =
 				record.direction === "backward" ? record.start : record.end;
-			const node =
-				painter[kToolkit].valueTextOf(element) ?? glyphTextOf(painter, element);
+			const node = getTextControlValueText(element) ?? getGlyphText(element);
 			let caret: {x: number; y: number} | null = null;
 			if (node) {
 				const range = element.ownerDocument.createRange();
@@ -614,98 +442,65 @@ function renderElement(
 		}
 	}
 
-	// No manual lifecycle management needed
-
-	// The stacking-context painter slots its negative-z layer here: after
-	// this element's own background and border, before any of its in-flow
-	// content -- the CSS position for negative z-index.
+	// The negative-z layer goes here, after the box and before its content.
 	if (afterOwnBox) {
 		afterOwnBox();
 	}
 
-	// The IN-FLOW walk: children paint in tree order, and POSITIONED
-	// children don't paint here at all -- per CSS they are hoisted to
-	// their nearest stacking context and painted in its layer order (see
-	// kRenderStackingContext). The old per-sibling z sort could never
-	// let a deep overlay escape its parent's siblings; hoisting is what
-	// makes a modal or dropdown paint over unrelated subtrees.
-	// The element's own scroll shifts its children, not itself: the child
-	// walk below culls against the band moved by that much more, and the
-	// walk state carries the accumulated shift to every descendant. The
-	// document roots' scrollTop is the camera, applied at ctx.viewportOffset,
-	// never here.
+	// The element's own scroll shifts its children, not itself. The
+	// document roots' scrollTop is the document scroll, applied at
+	// ctx.viewportOffset.
 	const ownScrolledRows =
 		element === painter[kDocument].body ||
-		element === painter[kDocument].documentElement ?
-			0 :
-			element.scrollTop || 0;
-	bandTop += ownScrolledRows;
-	bandBottom += ownScrolledRows;
+		element === painter[kDocument].documentElement
+			? 0
+			: element.scrollTop || 0;
+	viewportTop += ownScrolledRows;
+	viewportBottom += ownScrolledRows;
 
 	const children: Node[] = [];
 
-	// Fast path: for a plain vertically-stacked container (no position:
-	// relative/absolute child, no flex-direction other than column -- see
-	// visibleChildrenInBand's own doc comment for exactly what that rules
-	// out), the layout tree already knows which children are in band
-	// without visiting the rest to rule them out. Without it, a long list
-	// scrolled to any depth costs O(total children) per frame -- worse
-	// the longer the list gets, though only ~O(screen) of it can ever be
-	// visible -- because the walker below has no choice but to step
-	// through every sibling to find out which ones are off-band.
-	const fastChildren = painter[kLayout].visibleChildrenInBand(
+	// For a plain vertical stack the layout tree knows which children are
+	// in the viewport. The walk below costs every sibling.
+	const fastChildren = painter[kLayout].getVisibleChildren(
 		element,
-		bandTop,
-		bandBottom,
+		viewportTop,
+		viewportBottom,
 	);
 	if (fastChildren) {
 		for (const childNode of fastChildren) {
 			children.push(childNode);
 		}
 	} else {
-		// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
-		const walker = flowWalker(element);
-		for (
-			let childNode = walker.firstChild();
-			childNode;
-			childNode = walker.nextSibling()
-		) {
-			// Cull before any style read: an off-band child costs one map
-			// lookup instead of a computed-style resolution, which is what keeps a
-			// wide container of mostly off-screen children O(screen).
+		for (const childNode of flowContent(element)) {
+			// Before any style read. A child outside the viewport costs one
+			// lookup.
 			if (
 				childNode.nodeType === childNode.ELEMENT_NODE &&
-				painter[kLayout].isSubtreeOutsideBand(
+				painter[kLayout].isSubtreeOutsideViewport(
 					childNode as Element,
-					bandTop,
-					bandBottom,
+					viewportTop,
+					viewportBottom,
 				)
 			) {
 				continue;
 			}
 			if (
 				childNode.nodeType === childNode.ELEMENT_NODE &&
-				isPositioned(childNode as Element) &&
-				painter[kLayout].positionedElements.has(childNode as Element)
+				painter[kLayout].hoistedToLayer(childNode as Element)
 			) {
-				// Hoisted to its stacking context. Registry membership is
-				// the gate: a positioned INLINE run member owns no box of
-				// its own -- no layer would ever paint it, so it stays with
-				// its run (offsets on run members are an unsupported edge).
 				continue;
 			}
 			children.push(childNode);
 		}
 	}
 
-	// A non-visible overflow clips *descendants* to this element's own box --
-	// never the element's own border/background painted above, which is why
-	// this is scoped to just the children, not the whole function.
-	const overflow = computed.computedValueOf("overflow");
-	const overflowX = computed.computedValueOf("overflow-x") || overflow;
-	const overflowY = computed.computedValueOf("overflow-y") || overflow;
+	// Overflow clips descendants, never the element's own box.
+	const overflow = getComputedValue(element, "overflow");
+	const overflowX = getComputedValue(element, "overflow-x") || overflow;
+	const overflowY = getComputedValue(element, "overflow-y") || overflow;
 	const previousClip = ctx.clipRect;
-	ctx.clipRect = overflowClipRect(
+	ctx.clipRect = getOverflowClipRect(
 		element,
 		rect,
 		overflowX,
@@ -718,7 +513,7 @@ function renderElement(
 		for (const childNode of children) {
 			if (childNode.nodeType === childNode.ELEMENT_NODE) {
 				const childElement = childNode as Element;
-				if (childElement instanceof (painter[kWindow] as any).HTMLElement) {
+				if (childElement instanceof HTMLElement) {
 					renderElement(painter, childElement, ctx);
 				}
 			} else if (childNode.nodeType === childNode.TEXT_NODE) {
@@ -731,117 +526,96 @@ function renderElement(
 		painter[kScrolledRows] = scrolledRows;
 	}
 
-	// A focused textarea's own selection now paints inline while the child
-	// walk lays down the value text -- kRenderTextSelection reads the
-	// control's selectionStart/End, the same way it reads a document Range.
-
-	// An `outline` paints last (a focus ring). A bordered box already has a
-	// ring of glyphs at its perimeter, so the outline repaints them in the
-	// outline color rather than underlining them. A borderless box gets an
-	// underline along its bottom row in the same color. Bottom only:
-	// overline (SGR 53) is unreliable.
+	// An outline repaints a bordered box's ring in its color. A borderless
+	// box gets an underline along its bottom row. Overline (SGR 53) is
+	// unreliable.
 	if (rect && visible) {
-		const computed = computedStyleOf(element);
-		const outlineStyle = computed.computedValueOf("outline-style");
+		const outlineStyle = getComputedValue(element, "outline-style");
 		if (
 			outlineStyle &&
 			outlineStyle !== "none" &&
-			parseFloat(computed.computedValueOf("outline-width")) !== 0
+			parseFloat(getComputedValue(element, "outline-width")) !== 0
 		) {
-			const outlineColor = computed
-				.computedValueOf("outline-color")
+			const outlineColor = getComputedValue(element, "outline-color")
 				.trim()
 				.toLowerCase();
 			const hasColor =
 				Boolean(outlineColor) &&
+				outlineColor !== "auto" &&
 				outlineColor !== "currentcolor" &&
 				outlineColor !== "invert" &&
 				!isSystemHighlightColor(outlineColor);
+			// `auto`, the initial value and what `outline: 1px solid` leaves,
+			// takes the element's own color, as a border's currentcolor does.
+			const color = hasColor ? cssColorToNumber(outlineColor) : style.fg;
 			const sides = resolveBorderSides(element);
 			if (sides.top || sides.right || sides.bottom || sides.left) {
-				if (hasColor) {
-					const ring = (
-						line: LineStyle["style"] | undefined,
-					): LineStyle | undefined =>
-						line && {style: line, color: cssColorToNumber(outlineColor)};
-					ctx.drawBox(
-						Math.round(rect.left),
-						Math.round(rect.top),
-						Math.round(rect.width),
-						Math.round(rect.height),
-						{
-							top: ring(sides.top),
-							right: ring(sides.right),
-							bottom: ring(sides.bottom),
-							left: ring(sides.left),
-							topLeft: sides.topLeft,
-							topRight: sides.topRight,
-							bottomRight: sides.bottomRight,
-							bottomLeft: sides.bottomLeft,
-						},
-					);
-				}
+				const ring = (
+					line: LineStyle["style"] | undefined,
+				): LineStyle | undefined => line && {style: line, color};
+				ctx.drawBox(
+					Math.round(rect.left),
+					Math.round(rect.top),
+					Math.round(rect.width),
+					Math.round(rect.height),
+					{
+						top: ring(sides.top),
+						right: ring(sides.right),
+						bottom: ring(sides.bottom),
+						left: ring(sides.left),
+						topLeft: sides.topLeft,
+						topRight: sides.topRight,
+						bottomRight: sides.bottomRight,
+						bottomLeft: sides.bottomLeft,
+					},
+				);
 			} else {
 				ctx.drawDecoration(
 					Math.round(rect.left),
 					Math.round(rect.bottom) - 1,
 					Math.round(rect.width),
-					hasColor ?
-							{underline: true, fg: cssColorToNumber(outlineColor)} :
-							{underline: true},
+					{underline: true, fg: color},
 				);
 			}
 		}
 	}
 }
 
-/**
- * The clip a deferred positioned box paints under: the context root's
- * clip, intersected with every overflow-clipping box along the CSS
- * containing-block chain (its positioned ancestors up to the context
- * root) -- and nothing else: intervening non-positioned overflow
- * ancestors don't clip a box they don't contain.
- */
-function positionedClipFor(
+// The context root's clip intersected with the overflow of the
+// positioned ancestors only. A non-positioned overflow ancestor does not
+// contain the box.
+function getPositionedClip(
 	painter: Painter,
 	element: Element,
 	contextRoot: Element,
-	contextClip: CellContext["clipRect"],
-): CellContext["clipRect"] {
+	contextClip: ClipRect | null,
+): ClipRect | null {
 	let clip = contextClip;
 	for (
-		let ancestor = painter[kToolkit].flatParentElement<Element>(element);
+		let ancestor = flatParentElement(element);
 		ancestor && ancestor !== contextRoot;
-		ancestor = painter[kToolkit].flatParentElement<Element>(ancestor)
+		ancestor = flatParentElement(ancestor)
 	) {
 		if (!isPositioned(ancestor)) {
 			continue;
 		}
-		const style = computedStyleOf(ancestor);
-		const overflow = style.computedValueOf("overflow");
-		const overflowX = style.computedValueOf("overflow-x") || overflow;
-		const overflowY = style.computedValueOf("overflow-y") || overflow;
-		if (overflowClips(overflowX) || overflowClips(overflowY)) {
+		const overflow = getComputedValue(ancestor, "overflow");
+		const overflowX = getComputedValue(ancestor, "overflow-x") || overflow;
+		const overflowY = getComputedValue(ancestor, "overflow-y") || overflow;
+		if (isClippingOverflow(overflowX) || isClippingOverflow(overflowY)) {
 			const rect = painter[kLayout].getRect(ancestor);
 			if (rect) {
-				clip = overflowClipRect(ancestor, rect, overflowX, overflowY, clip);
+				clip = getOverflowClipRect(ancestor, rect, overflowX, overflowY, clip);
 			}
 		}
 	}
 	return clip;
 }
 
-/**
- * Paint a stacking context in the CSS layer order: the root's own box,
- * negative-z child contexts, in-flow content (the kRenderElement walk,
- * which skips positioned descendants), the positioned z:auto/0 layer,
- * then positive-z contexts. A z:auto member doesn't isolate: it paints
- * as an in-flow subtree here while its own positioned descendants sit
- * in THIS context's buckets. Deferred layers paint under the context
- * root's clip -- a positioned box escapes overflow ancestors between
- * itself and its context, the common CSS escape (per-containing-block
- * clipping is layer-2 work).
- */
+// CSS layer order: the root's box, negative-z contexts, in-flow
+// content, the positioned z:auto/0 layer, positive-z contexts. A z:auto
+// member does not isolate. Its own positioned descendants sit in this
+// context's buckets.
 function renderStackingContext(
 	painter: Painter,
 	root: Element,
@@ -858,24 +632,16 @@ function renderStackingContext(
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
 		const previousScrolled = painter[kScrolledRows];
-		// Clips apply along the CONTAINING BLOCK chain only: an overflow
-		// ancestor that isn't a positioned ancestor doesn't clip a
-		// deferred box, but its own containing blocks' overflow does.
-		ctx.clipRect = positionedClipFor(painter, element, root, contextClip);
-		// A hoisted box enters the walk from its stacking context, not its
-		// ancestor chain: re-derive the culling shift its own scrolled
-		// ancestors impose rather than inheriting the context root's.
+		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
+		// Entered from its stacking context, not its ancestor chain.
 		painter[kScrolledRows] = painter[kLayout].scrolledAncestorRows(element);
-		// position:fixed anchors to the VIEWPORT: cancel the camera by
-		// undoing the scroll offset for the whole subtree. Fixed-space is
-		// a property of the containing-block CHAIN: an absolute box inside
-		// a fixed bar is laid out against the bar's viewport coordinates
-		// and must ride with it, so the walk includes ancestors.
+		// Fixed space cancels the document scroll for the whole subtree. An
+		// absolute box inside a fixed bar moves with it.
 		if (painter[kLayout].isInFixedSpace(element)) {
-			ctx.viewportOffset = previousOffset + painter[kViewport].scrollTop;
+			ctx.viewportOffset = previousOffset + painter[kScreen].scrollTop;
 		}
 		try {
-			if (painter[kLayout].formsStackingContext(element)) {
+			if (isStackingContext(element)) {
 				renderStackingContext(painter, element, ctx, layers);
 			} else {
 				renderElement(painter, element, ctx);
@@ -899,36 +665,30 @@ function renderStackingContext(
 	}
 }
 
-/** Render outside-positioned list markers, once per element per frame. */
 function renderOutsideMarker(
 	painter: Painter,
 	element: Element,
 	ctx: CellContext,
 ): void {
-	const computedStyle = computedStyleOf(element);
-	const display = computedStyle.computedValueOf("display");
+	const display = getComputedValue(element, "display");
 
-	// Only handle list items
 	if (display !== "list-item") {
 		return;
 	}
 
 	const listStylePosition =
-		computedStyle.computedValueOf("list-style-position") || "outside";
+		getComputedValue(element, "list-style-position") || "outside";
 
-	// Only handle outside positioning
 	if (listStylePosition !== "outside") {
 		return;
 	}
 
-	// Prevent duplicate rendering in the same frame
 	if (painter[kRenderedOutsideMarkers].has(element)) {
 		return;
 	}
 	painter[kRenderedOutsideMarkers].add(element);
 
-	// Get marker content from StyleManager
-	const markerContent = painter[kStyleManager].getMarkerContent(element);
+	const markerContent = painter[kCascade].getMarkerContent(element);
 	if (!markerContent) {
 		return;
 	}
@@ -938,53 +698,49 @@ function renderOutsideMarker(
 		return;
 	}
 
-	// Cells, not code units: a marker like "日本 " is 3 characters but 5 cells
-	// wide, and right-aligning it by its length would paint it over the item's
-	// own text.
+	// Cells, not code units. "日本 " is 3 characters and 5 cells.
 	const markerWidth = ctx.measureText(markerContent).width;
 
-	// Get marker styles
-	const markerStyle = pseudoStyleOf(element, "::marker");
-	// ::marker inherits color from its originating element, so fall back to the
-	// list item's own color rather than rendering the marker unstyled.
 	const markerColor =
-		markerStyle.computedValueOf("color") ||
-		computedStyle.computedValueOf("color");
+		getComputedValue(element, "color", "::marker") ||
+		getComputedValue(element, "color");
 	const {bold: markerBold, dim: markerDim} = resolveFontWeight(
-		markerStyle.computedValueOf("font-weight"),
+		getComputedValue(element, "font-weight", "::marker"),
 	);
-	const markerItalic = markerStyle.computedValueOf("font-style") === "italic";
-	const markerUnderline = hasUnderline(markerStyle);
+	const markerItalic = getComputedValue(element, "font-style", "::marker") ===
+		"italic";
+	const markerUnderline = hasUnderline(
+		getComputedValue(element, "text-decoration-line", "::marker"),
+	);
 
 	const markerTextStyle = {
 		fg:
-			markerColor && markerColor !== "initial" ?
-					cssColorToNumber(markerColor) :
-				undefined,
+			markerColor && markerColor !== "initial"
+				? cssColorToNumber(markerColor)
+				: undefined,
 		bold: markerBold,
 		dim: markerDim,
 		italic: markerItalic,
 		underline: markerUnderline,
 	};
 
-	// Position marker just before the list item's content area (outside positioning)
-	const markerX = Math.max(0, Math.round(rect.left) - markerWidth);
-	const markerY = Math.round(rect.top);
-
-	// Render the marker (clipped to available space, never mutate the DOM)
-	ctx.drawText(markerContent, markerX, markerY, markerTextStyle);
+	// Outside the content box, as css-lists-3 §3.3 places it. A marker
+	// that would start before the first column is clipped away whole,
+	// as a browser clips it at the viewport.
+	const content = painter[kLayout].contentRect(element) ?? rect;
+	const markerX = Math.round(content.left) - markerWidth;
+	if (markerX < 0) {
+		return;
+	}
+	ctx.drawText(markerContent, markerX, Math.round(rect.top), markerTextStyle);
 }
 
-/** The text a toggle's glyph renders through, from its closed tree. */
-function glyphTextOf(painter: Painter, element: Element): Text | null {
-	const root = painter[kToolkit].shadowRootOf<ShadowRoot>(element);
+function getGlyphText(element: Element): Text | null {
+	const root = getShadowRoot(element);
 	const glyph = root ? root.querySelector('[part="glyph"]') : null;
 	return (glyph?.firstChild as Text | null) ?? null;
 }
 
-/**
- * Render a text node with proper styling from its parent element or pseudo-element
- */
 function renderText(
 	painter: Painter,
 	textNode: Text,
@@ -995,31 +751,23 @@ function renderText(
 		return;
 	}
 
-	// The FLAT-tree parent: slotted bare text draws its inherited styles
-	// through the slot's shadow chain, not from the host it came from, and
-	// the text of a pseudo-element draws the pseudo-element's own.
-	const parentElement = painter[kToolkit].flatParentElement<Element>(textNode);
+	// The flat-tree parent. Slotted text inherits through the slot, not
+	// the host.
+	const parentElement = flatParentElement(textNode);
 	if (!parentElement) {
 		return;
 	}
 
-	const computedStyle: ComputedStyle = computedStyleOf(parentElement);
-
-	// visibility inherits, so the parent's own resolved value already accounts
-	// for a closer ancestor overriding back to visible.
-	if (computedStyle.computedValueOf("visibility") === "hidden") {
+	if (getComputedValue(parentElement, "visibility") === "hidden") {
 		return;
 	}
 
-	const textTransform = computedStyle.computedValueOf("text-transform");
-	const textStyle = cellStyleFromComputed(computedStyle);
+	const textTransform = getComputedValue(parentElement, "text-transform");
+	const textStyle = getCellStyle(parentElement);
 
-	// One fragment per line the node covers -- the same geometry
-	// `Range.getClientRects()` reports over the node -- each carrying the
-	// range of `data` its line renders. The characters to draw come from the
-	// node itself, rendered under its own `white-space` and then transformed:
-	// nothing of the line breaker's is read here.
-	const whiteSpace = computedStyle.computedValueOf("white-space");
+	// One fragment per line, each naming the range of `data` it renders.
+	// The characters come from the node under its own white-space.
+	const whiteSpace = getComputedValue(parentElement, "white-space");
 	const fragments = painter[kLayout].lineFragments(textNode);
 	let painted = false;
 	for (const fragment of fragments) {
@@ -1049,28 +797,20 @@ function renderText(
 	}
 }
 
-/**
- * The Range to highlight over a text node, and the element whose ::selection
- * rules style it. Two sources, one shape: a focused form control's own
- * selection when this text node is the one the control renders its value
- * through -- getSelection() cannot see inside a control, per spec, so the
- * control hands its selection out as a Range of its own -- otherwise the
- * document selection.
- */
-function selectionRangeFor(
+// A focused control's own selection when the node renders its value
+// (the document selection cannot see inside a control), else the
+// document's.
+function getPaintSelectionRange(
 	painter: Painter,
 	textNode: Text,
 ): {range: Range; selectionParent: Element} | null {
-	const active = painter[kDocument].activeElement;
-	if (active && painter[kToolkit].isTextField(active)) {
-		const fieldRange = painter[kToolkit].selectionRangeOf(active);
-		// The control's range names the text it renders its value through, so
-		// node identity is the whole test -- no widget anatomy to know.
-		if (fieldRange && fieldRange.startContainer === textNode) {
-			// ::selection resolves on the field host (`input::selection`), not
-			// the shadow value span.
-			return {range: fieldRange, selectionParent: active};
-		}
+	const textControl = getTextControlSelectionRange(
+		painter[kDocument],
+		textNode,
+	);
+	if (textControl) {
+		// ::selection resolves on the text control, not the shadow value span.
+		return {range: textControl.range, selectionParent: textControl.textControl};
 	}
 
 	const selection = painter[kWindow].getSelection();
@@ -1081,25 +821,22 @@ function selectionRangeFor(
 	if (!documentRange.intersectsNode(textNode)) {
 		return null;
 	}
-	const selectionParent = painter[kToolkit].flatParentElement<Element>(
-		textNode,
-	);
+	const selectionParent = flatParentElement(textNode);
 	if (!selectionParent) {
 		return null;
 	}
-	// user-select: none keeps this node's text out of the selection, so no
-	// share of the highlight lands on it either.
-	if (!painter[kStyleManager].isSelectable(selectionParent)) {
+	if (!painter[kCascade].isSelectable(selectionParent)) {
 		return null;
 	}
-	// Narrowed to this node: ::selection resolves per node's parent, so each
-	// node's share of the selection is painted in its own style.
+	// Narrowed to this node. ::selection resolves per parent.
 	const from =
-		documentRange.startContainer === textNode ? documentRange.startOffset : 0;
+		documentRange.startContainer === textNode
+			? documentRange.startOffset
+			: 0;
 	const to =
-		documentRange.endContainer === textNode ?
-			documentRange.endOffset :
-			textNode.data.length;
+		documentRange.endContainer === textNode
+			? documentRange.endOffset
+			: textNode.data.length;
 	if (to <= from) {
 		return null;
 	}
@@ -1109,14 +846,7 @@ function selectionRangeFor(
 	return {range, selectionParent};
 }
 
-/**
- * Overlay the selection on a text node as inverse video (or the author's
- * ::selection colors) by redrawing its selected runs in the highlight style.
- * The selected Range comes from kSelectionRangeFor; the runs' rects and text
- * come from the layout's Range geometry, so the painter does no offset math.
- * Case transforms never change cell width, so transforming each run's raw
- * text repaints exactly the cells the base pass laid down.
- */
+// Redraws the selected runs in the highlight style over the base pass.
 function renderTextSelection(
 	painter: Painter,
 	textNode: Text,
@@ -1124,17 +854,17 @@ function renderTextSelection(
 	textTransform: string,
 	ctx: CellContext,
 ): void {
-	const found = selectionRangeFor(painter, textNode);
+	const found = getPaintSelectionRange(painter, textNode);
 	if (!found) {
 		return;
 	}
 	const {range, selectionParent} = found;
-	const selectionStyle = selectionStyleFor(selectionParent, textStyle);
+	const selectionStyle = getSelectionStyle(selectionParent, textStyle);
 	if (selectionStyle === textStyle) {
 		return;
-	} // no ::selection rule reaches here
+	}
 
-	for (const run of painter[kLayout].getRangeRuns(range)) {
+	for (const run of painter[kLayout].getRangeSpans(range)) {
 		ctx.drawText(
 			applyTextTransform(run.text, textTransform),
 			run.rect.x,

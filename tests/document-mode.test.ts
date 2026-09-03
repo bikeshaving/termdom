@@ -19,7 +19,8 @@
  * Nothing of ours is committed in document mode, so nothing is frozen: the
  * document stays a single mutable thing that we repaint a window of.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -166,9 +167,9 @@ test("document mode waits for cursor detection so the anchor never shifts", asyn
 		terminal.stdout.write("PREV-1\r\nPREV-2\r\n", () => resolve());
 	});
 
-	// Construction kicks off auto-detection; its promise is pending right now. We do
-	// NOT await it -- the render must, which is the fix. (detectCursor defaults off
-	// for a non-real process, so enable it to exercise the path.)
+	// Construction kicks off auto-detection; its promise is pending right now.
+	// We do NOT await it -- the render must, which is the fix. The shared
+	// transport is what puts detection on the path at all.
 	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML = "<div id=\"a\">A-0</div><div id=\"b\">B</div>";
 	await nextFrame(dom);
@@ -313,6 +314,53 @@ test("close() seals the document into scrollback; a later mutation starts a fres
 	dom.dispose();
 });
 
+test("the seal pays out the rows the region painted, not body's own box", async () => {
+	// An inline body is a run member: its block children are hoisted out and
+	// laid out beside it, so its own box measures one line however many rows
+	// they paint. Sizing the payout from it wrote a different document than
+	// the screen had shown.
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	terminal.stdout.write("PRE-0\r\nPRE-1\r\nPRE-2\r\nPRE-3\r\nPRE-4\r\n");
+	const dom = new TermDOM({transport: terminal.sharedTransport});
+	const style = dom.document.createElement("style");
+	style.textContent = ".pane { height: 4em; overflow-y: scroll; }";
+	dom.document.head.appendChild(style);
+	dom.document.body.innerHTML =
+		"<div>HEAD</div>" +
+		"<div id=\"pane\" class=\"pane\">" +
+		Array.from({length: 20}, (_, i) => `<div>row ${i}</div>`).join("") +
+		"</div>" +
+		"<div>FOOT</div>";
+	await nextFrame(dom);
+	dom.document.body.setAttribute("style", "display: inline");
+	await nextFrame(dom);
+	(dom.document.getElementById("pane") as any).scrollTop = 1;
+	await nextFrame(dom);
+
+	const ours = (rows: string[]): string[] =>
+		rows.filter((row) => row !== "" && !row.startsWith("PRE-"));
+	const before = read(terminal, 10);
+	expect(ours([...before.scrollback, ...before.viewport])).toEqual([
+		"HEAD",
+		"row 1",
+		"row 2",
+		"row 3",
+		"row 4",
+		"FOOT",
+	]);
+
+	dom.document.close();
+	await nextFrame(dom);
+
+	// What the screen showed survives the one write that commits.
+	const after = read(terminal, 10);
+	expect(ours([...after.scrollback, ...after.viewport]).slice(0, 6)).toEqual(
+		ours([...before.scrollback, ...before.viewport]),
+	);
+
+	dom.dispose();
+});
+
 test("[Symbol.dispose] tears down, so `using` works", () => {
 	const terminal = new MockProcess({rows: 10, cols: 30});
 	const dom = new TermDOM({transport: terminal.sharedTransport});
@@ -323,4 +371,52 @@ test("[Symbol.dispose] tears down, so `using` works", () => {
 
 	// Idempotent with an explicit dispose(); tearing down twice is safe.
 	expect(() => dom.dispose()).not.toThrow();
+});
+
+test(":fullscreen matches the element the stack holds", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = "<div id=\"stage\">x</div>";
+	await nextFrame(dom);
+
+	const stage = dom.document.getElementById("stage")!;
+	expect(stage.matches(":fullscreen")).toBe(false);
+
+	await stage.requestFullscreen();
+	expect(stage.matches(":fullscreen")).toBe(true);
+	expect(dom.document.body.matches(":fullscreen")).toBe(false);
+
+	await dom.document.exitFullscreen();
+	expect(stage.matches(":fullscreen")).toBe(false);
+	dom.dispose();
+});
+
+test("a fullscreen transition reaches a document listener once", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = "<div id=\"stage\">x</div>";
+	await nextFrame(dom);
+
+	// The event fires at the element and bubbles, so a document listener hears
+	// it through the bubble. Firing at the document as well would deliver every
+	// transition twice, which is the shape this pins.
+	const onDocument: string[] = [];
+	const onElement: string[] = [];
+	dom.document.addEventListener("fullscreenchange", () => {
+		onDocument.push("change");
+	});
+	const stage = dom.document.getElementById("stage")!;
+	stage.addEventListener("fullscreenchange", () => {
+		onElement.push("change");
+	});
+
+	await stage.requestFullscreen();
+	expect(onElement).toEqual(["change"]);
+	expect(onDocument).toEqual(["change"]);
+
+	await dom.document.exitFullscreen();
+	expect(onElement).toEqual(["change", "change"]);
+	expect(onDocument).toEqual(["change", "change"]);
+
+	dom.dispose();
 });

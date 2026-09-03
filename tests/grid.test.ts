@@ -11,7 +11,8 @@
  * track has to round to edges that still meet), and that a grid built by
  * mutation lands where the same grid built at once does.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -25,18 +26,21 @@ interface Box {
 interface Rendered {
 	dom: TermDOM;
 	document: Document;
+
 	/** The nth <i> in the document, which every fixture uses for its items. */
 	item(index: number): Box;
 	items(): Box[];
 	box(selector: string, index?: number): Box;
 	rows(): string[];
+
 	/** The painted frame, colors and all. */
 	painted(): string;
+
 	/** A resolved value off the grid container, which every fixture calls #g. */
 	resolved(property: string, selector?: string): string;
 }
 
-function boxOf(element: Element): Box {
+function getBox(element: Element): Box {
 	const rect = element.getBoundingClientRect();
 	return {
 		left: rect.left,
@@ -63,9 +67,9 @@ async function render(html: string, cols = 30, rows = 12): Promise<Rendered> {
 	return {
 		dom,
 		document: dom.document,
-		item: (index) => boxOf(query("i", index)),
-		items: () => Array.from(dom.document.querySelectorAll("i")).map(boxOf),
-		box: (selector, index = 0) => boxOf(query(selector, index)),
+		item: (index) => getBox(query("i", index)),
+		items: () => Array.from(dom.document.querySelectorAll("i")).map(getBox),
+		box: (selector, index = 0) => getBox(query(selector, index)),
 		rows: () => {
 			const lines = terminal
 				.getVisibleText()
@@ -156,13 +160,21 @@ test("auto tracks size to their content and share what is left", async () => {
 });
 
 test("min-content and max-content size a track to its content", async () => {
-	// The word cannot break, so both are its width: 8 cells, and the second
-	// track takes the rest.
-	const {item, resolved} = await render(
-		grid("grid-template-columns: min-content auto", "<i>unbreakab</i><i>x</i>"),
-	);
-	expect(item(0).width).toBe(9);
-	expect(resolved("grid-template-columns")).toBe("9px 21px");
+	// The word cannot break, so both keywords come out at its width -- 9
+	// cells -- and the second track takes the rest. Naming both means asking
+	// for both: one of them alone leaves the other free to mean anything.
+	for (const keyword of ["min-content", "max-content"]) {
+		const {item, resolved} = await render(
+			grid(
+				`grid-template-columns: ${keyword} auto`,
+				"<i>unbreakab</i><i>x</i>",
+			),
+		);
+		expect(`${keyword}: ${item(0).width}`).toBe(`${keyword}: 9`);
+		expect(`${keyword}: ${resolved("grid-template-columns")}`).toBe(
+			`${keyword}: 9px 21px`,
+		);
+	}
 });
 
 test("minmax clamps a track between its two breadths", async () => {
@@ -732,16 +744,20 @@ test("implicit columns are created past the explicit grid", async () => {
 });
 
 test("an implicit track before the explicit grid shifts everything after it", async () => {
-	// A negative line creates tracks in front of line 1, and the explicit
-	// grid slides right by them.
-	const {items, resolved} = await render(
+	// Negative lines count back from the end of the EXPLICIT grid, so in a
+	// one-track grid -1 is line 2 and -2 is line 1. Reaching past -2 asks for
+	// a line that does not exist yet, and the track made for it goes in front
+	// of line 1 -- pushing the explicit track right by its width.
+	const {items} = await render(
 		grid(
 			"grid-template-columns: 4px; grid-auto-columns: 3px",
-			"<i style=\"grid-column: -2 / -1\">a</i><i style=\"grid-column: 1 / 2\">b</i>",
+			"<i style=\"grid-column: -3 / -2\">a</i><i style=\"grid-column: 1 / 2\">b</i>",
 		),
 	);
-	expect(resolved("grid-template-columns")).toBe("4px");
-	expect(items()[0].left).toBe(0);
+	// The new track is 3 wide and starts the grid; the explicit one keeps its
+	// own 4 and begins where the new one ends.
+	expect(items()[0]).toEqual({left: 0, top: 0, width: 3, height: 1});
+	expect(items()[1]).toEqual({left: 3, top: 0, width: 4, height: 1});
 });
 
 test("order moves an item's place on the grid, not only its painting", async () => {
@@ -1153,7 +1169,7 @@ test("text directly in a grid container becomes an item of its own", async () =>
 	expect(items()[0].left).toBe(4);
 });
 
-test("a grid item is blockified", async () => {
+test("a grid item is getBlockifiedDisplay", async () => {
 	// css-display-3 §2.7: an inline child of a grid container computes to
 	// block, so its width applies.
 	const {item} = await render(
@@ -1242,6 +1258,35 @@ test("a spanning item widens the tracks it crosses only by what it needs", async
 		),
 	);
 	expect(resolved("grid-template-columns")).toBe("6px 6px");
+});
+
+test("a limit made from a contribution is grown past (css-grid-2 §12.5.1)", async () => {
+	// Two tracks with a fixed minimum and an auto maximum, so only the growth
+	// limits move here. Column 1 holds "aa", and the step that sizes tracks to
+	// their own items sets its growth limit to that item's max-content
+	// contribution: 2, an author's content speaking for that one track.
+	// Column 2 holds nothing of its own, so its growth limit is still infinite.
+	//
+	// Then the spanning item, whose min-content contribution is 5 (the longest
+	// word) and whose max-content contribution is 9 (the whole line). The
+	// intrinsic-maximums step hands out 5 - (2 + 0) = 3. Column 1 is already at
+	// its limit and can take none of it, so column 2 takes all 3 and its limit
+	// turns from infinite to finite -- which is what marks it infinitely
+	// growable. The max-content-maximums step then hands out 9 - (2 + 3) = 4,
+	// and only column 2 may take it: it grows past the 3 it was handed a moment
+	// ago, to 7, while column 1 stays at the 2 its own item asked for.
+	//
+	// Sharing that space equally instead -- what treating every track as
+	// infinitely growable comes to -- would leave column 1 at five and a half.
+	const {resolved} = await render(
+		grid(
+			"justify-content: start; width: 20px;" +
+			" grid-template-columns: minmax(0, auto) minmax(0, auto)",
+			"<i style=\"grid-row: 1; grid-column: 1\">aa</i>" +
+			"<i style=\"grid-row: 2; grid-column: span 2\">bbb ccccc</i>",
+		),
+	);
+	expect(resolved("grid-template-columns")).toBe("2px 7px");
 });
 
 test("a spanning item does not widen a fixed track", async () => {
@@ -1522,10 +1567,13 @@ async function mutationMatchesFresh(
 	const finalHTML = before.document.body.innerHTML;
 	const fresh = await render(finalHTML, cols, rows);
 
+	// A floor first: two empty renders agree about everything, so a fixture
+	// that painted nothing would satisfy every comparison below it.
+	expect(before.rows().join("").trim().length).toBeGreaterThan(0);
 	expect(before.rows()).toEqual(fresh.rows());
 	const geometry = (rendered: Rendered) =>
 		Array.from(rendered.document.querySelectorAll("*")).map((element) => {
-			const box = boxOf(element);
+			const box = getBox(element);
 			return `${element.tagName}#${element.id}.${element.className}: ${box.left},${box.top} ${box.width}x${box.height}`;
 		});
 	expect(geometry(before)).toEqual(geometry(fresh));
@@ -1679,7 +1727,7 @@ test("a resize relays the flexible tracks out", async () => {
 
 	const widths = (): number[] =>
 		Array.from(dom.document.querySelectorAll("i")).map(
-			(element) => boxOf(element).width,
+			(element) => getBox(element).width,
 		);
 	// The relayout arrives after the resize debounce and a cursor round trip.
 	for (let attempt = 0; attempt < 40; attempt++) {

@@ -6,7 +6,8 @@
  * and change like a browser's closed select. Options never render: the
  * shadow tree replaces the light children in composition.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -429,6 +430,35 @@ test("selectedOptions is live over the selection, not just over the tree", async
 
 	(options[2] as any).selected = true;
 	expect(Array.from(selected).map((o: any) => o.value)).toEqual(["c"]);
+
+	dom.dispose();
+});
+
+test("picker: a select taken out of the document closes its picker", async () => {
+	// Removal ends the interaction, as losing focus does -- and removal
+	// takes the focus too, so a picker that outlived it would be an open
+	// dropdown on an unfocused control.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	const {document} = dom;
+	const select = makeSelect(document);
+	document.body.appendChild(select);
+	select.focus();
+	await nextFrame(dom);
+	await type(terminal, " ");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("Gamma ray");
+
+	select.remove();
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).not.toContain("Gamma ray");
+
+	document.body.appendChild(select);
+	await nextFrame(dom);
+	expect(document.activeElement).not.toBe(select);
+	expect(terminal.getPlainText()).not.toContain("Gamma ray");
+	expect(terminal.getPlainText()).toContain("Alpha");
 
 	dom.dispose();
 });

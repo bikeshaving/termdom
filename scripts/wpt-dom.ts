@@ -1,7 +1,7 @@
 /**
  * Run the web-platform-tests dom suites against TermDOM's own DOM.
  *
- * Each test is a testharness.js document, mounted on a full engine over a
+ * Each test is a testharness.js document, attached on a full engine over a
  * mock transport: the file's markup becomes the engine's initial document,
  * so layout, the cascade, focus rendering and the rest of the user agent are
  * live under the test. The engine realm's globals are installed on the realm
@@ -25,8 +25,8 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import type {Document} from "../src/internal/dom.ts";
 import type * as DOM from "../src/internal/dom.ts";
-import type * as TERMDOM from "../src/internal/termdom.ts";
-import type {TerminalTransport} from "../src/internal/terminalsession.ts";
+import type * as TermDOM from "../src/internal/termdom.ts";
+import type {TerminalTransport} from "../src/internal/exchange.ts";
 
 /**
  * A test file's realm: the engine module and the DOM module of one
@@ -41,7 +41,7 @@ import type {TerminalTransport} from "../src/internal/terminalsession.ts";
  * copy of the graph.
  */
 type DOMModule = typeof DOM;
-type EngineModule = typeof TERMDOM;
+type EngineModule = typeof TermDOM;
 
 interface Realm {
 	dom: DOMModule;
@@ -62,6 +62,7 @@ async function freshRealm(): Promise<Realm> {
 }
 
 interface MockTransport extends TerminalTransport {
+
 	/** Type into the engine: the bytes a terminal would send for the keys. */
 	pushInput(text: string): void;
 }
@@ -223,7 +224,14 @@ const TESTDRIVER_VENDOR = String.raw`
 `;
 
 /** The names a test file expects to find on its global. */
-function domGlobals(dom: DOMModule): Record<string, unknown> {
+/**
+ * The constructors come off the engine's window, which carries every
+ * platform class; the module exports most of them as types only.
+ */
+function domGlobals(
+	dom: DOMModule,
+	window: DOM.Window,
+): Record<string, unknown> {
 	const names = [
 		"AbstractRange",
 		"AnimationEvent",
@@ -359,8 +367,9 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 	];
 	const globals: Record<string, unknown> = {};
 	const source = dom as unknown as Record<string, unknown>;
+	const fromWindow = window as unknown as Record<string, unknown>;
 	for (const name of names) {
-		globals[name] = source[name];
+		globals[name] = fromWindow[name] ?? source[name];
 	}
 	return globals;
 }
@@ -379,8 +388,10 @@ const SUITES = [
 	"shadow-dom",
 	"custom-elements",
 ];
+
 /** A test that has not finished in this long is recorded as a timeout. */
 const TIMEOUT_MS = 5000;
+
 /** What `<meta name=timeout content=long>` buys a test. */
 const LONG_TIMEOUT_MS = 60000;
 
@@ -483,12 +494,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: a frame's document URL",
 	"dom/nodes/Element-getElementsByTagName-change-document-HTMLNess.html":
 		"requires-browsing-context: an element adopted between an HTML and an XML frame",
-	"dom/nodes/Element-matches.html":
-		"requires-browsing-context: the selector corpus is loaded into a frame",
-	"dom/nodes/Element-webkitMatchesSelector.html":
-		"requires-browsing-context: the selector corpus is loaded into a frame",
-	"dom/nodes/ParentNode-querySelector-All.html":
-		"requires-browsing-context: the selector corpus is loaded into a frame",
 	"dom/nodes/Node-parentNode.html":
 		"requires-browsing-context: a frame's document element parentage",
 	"dom/nodes/query-target-in-load-event.html":
@@ -915,7 +920,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"selection/modify.tentative.html, bidi/modify-*.html, contenteditable/modify*.html, move-by-word-*.html",
-		'Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, so the line granularities need a document mounted in a terminal; on the bare DOM this suite runs against, they do nothing.',
+		'Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, so the line granularities need a document attached in a terminal; on the bare DOM this suite runs against, they do nothing.',
 	],
 	[
 		"selection/getSelection.html (excluded), and the defaultView sanity checks in it",
@@ -934,14 +939,6 @@ const DEVIATIONS: Array<[string, string]> = [
 		"An element's id does not become a property of a global. Window is not part of this DOM, and the spec's own text calls its named property access a legacy quirk. The document stands alone, with `defaultView` null.",
 	],
 	[
-		"dom/nodes/Element-matches-namespaced-elements.html, querySelector-mixed-case.html",
-		"A selector with an explicit namespace prefix (`*|name`, `svg|circle`) is rejected. The selector engine is nwsapi, which carries no namespace prefix map.",
-	],
-	[
-		"dom/nodes/Element-closest.html",
-		"`:scope` inside matches() and closest() resolves against the document rather than the element the method was called on. The selector engine is nwsapi, and its match entry point takes no scoping root.",
-	],
-	[
 		"dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute",
 		"The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick=\"...\"` in markup is a function compiled from the attribute's value, and this DOM never executes script, so the attribute sets no handler and the IDL attribute reads back null. The failing subtests in this file either compile a content attribute, or expect a body's or a frameset's forwarded handler to land on a Window. A document with no browsing context has no event handler target for the forwarded set, so the write is dropped and the read answers null, and the harness's window is a bare event target.",
 	],
@@ -951,7 +948,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"custom-elements/HTMLElement-attachInternals.html, and the constraint validation members of the built-in controls",
-		"`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented.",
+		"`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented. `:valid`, `:invalid`, `:user-valid`, `:user-invalid`, `:in-range` and `:out-of-range` read the same flags, so they are selectors this engine accepts and matches nothing with -- which is the `:invalid` subtest of dom/nodes/Element-closest.html.",
 	],
 	[
 		"the focus members, and every subtest that moves focus",
@@ -1005,6 +1002,142 @@ function resolveScript(src: string, file: string): string {
 	return stack.join("/");
 }
 
+/**
+ * The documents a test file points a frame at, read out of the cache before
+ * the file runs.
+ *
+ * A frame's `src` names a document to fetch, and this engine fetches nothing,
+ * so an unhelped frame holds about:blank forever. The suite's selector corpus
+ * is loaded that way -- the 454 selectors of `dom/nodes/selectors.js` are run
+ * against a fixture document a frame carries -- so the harness performs the
+ * fetch the browser would: every path the file assigns to a `src`, or writes
+ * on a frame in its markup, is collected here and handed over below.
+ */
+async function framePages(
+	document: Document,
+	html: string,
+	file: string,
+): Promise<Map<string, string>> {
+	const paths = new Set<string>();
+	for (const match of html.matchAll(/\.src\s*=\s*["']([^"']+)["']/g)) {
+		paths.add(match[1]);
+	}
+	for (const frame of document.getElementsByTagName("iframe")) {
+		const src = frame.getAttribute("src");
+		if (src !== null) {
+			paths.add(src);
+		}
+	}
+	const pages = new Map<string, string>();
+	for (const path of paths) {
+		const name = path.split("#")[0];
+		if (frameContentType(name) === null) {
+			continue;
+		}
+		const text = await cached(resolveScript(name, file));
+		if (text !== null) {
+			pages.set(path, text);
+		}
+	}
+	return pages;
+}
+
+/** The content type a frame's src parses as, or null for one not served. */
+function frameContentType(name: string): string | null {
+	if (/\.html$/.test(name)) {
+		return "text/html";
+	}
+	if (/\.xhtml$/.test(name)) {
+		return "application/xhtml+xml";
+	}
+	if (/\.svg$/.test(name)) {
+		return "image/svg+xml";
+	}
+	if (/\.xml$/.test(name)) {
+		return "application/xml";
+	}
+	return null;
+}
+
+/**
+ * Give this realm's frames the documents their `src` names.
+ *
+ * A frame already builds a content document on insertion and fires load from
+ * a task; what it cannot do is put anything but about:blank in it. The two
+ * accessors below answer with the fetched document instead, parsed at the
+ * frame's own URL so that the fragment `:target` reads is the one the src
+ * carries. A src the harness did not fetch falls through to the frame's own
+ * answer, so every other test file sees the DOM it saw before.
+ */
+function installFramePages(
+	dom: DOMModule,
+	document: Document,
+	pages: Map<string, string>,
+	url: string,
+): void {
+	if (pages.size === 0) {
+		return;
+	}
+	const prototype = Object.getPrototypeOf(
+		document.createElement("iframe"),
+	) as object;
+	const inherited = {
+		document: Object.getOwnPropertyDescriptor(prototype, "contentDocument")!,
+		window: Object.getOwnPropertyDescriptor(prototype, "contentWindow")!,
+	};
+	const loaded = new WeakMap<object, Document>();
+	const load = (frame: object): Document | null => {
+		const src = (frame as {getAttribute(name: string): string | null})
+			.getAttribute("src");
+		const text = src === null ? undefined : pages.get(src);
+		if (text === undefined) {
+			return null;
+		}
+		let document = loaded.get(frame);
+		if (document === undefined) {
+			const frameWindow = dom.createDocumentWindow(
+				text,
+				new URL(src!, url).href,
+				frameContentType(src!.split("#")[0])!,
+			);
+			document = frameWindow.document as unknown as Document;
+			// The frame's window, which the corpus reads its interfaces off
+			// (`doc.defaultView.NodeList`) the way the outer document reads
+			// them off the harness realm. One realm serves both, so the
+			// constructors it names are the same objects either way.
+			Object.defineProperty(document, "defaultView", {
+				value: Object.assign(Object.create(globalThis) as object, {
+					...domGlobals(dom, frameWindow),
+					document,
+				}),
+				configurable: true,
+			});
+			loaded.set(frame, document);
+		}
+		return document;
+	};
+	Object.defineProperty(prototype, "contentDocument", {
+		get(this: object): unknown {
+			return load(this) ?? inherited.document.get!.call(this);
+		},
+		configurable: true,
+	});
+	Object.defineProperty(prototype, "contentWindow", {
+		get(this: object): unknown {
+			const document = load(this);
+			if (document === null) {
+				return inherited.window.get!.call(this);
+			}
+			// The view carries the realm's constructors, which a test reads
+			// off `iframe.contentWindow.Element`.
+			return Object.assign(document.defaultView as object, {
+				frameElement: this,
+			});
+		},
+		configurable: true,
+	});
+}
+
 /** The document a `.any.js` or `.window.js` test would be generated into. */
 function generatedDocument(file: string, source: string): string {
 	const metas = [...source.matchAll(/^\/\/\s*META:\s*script=(\S+)/gm)];
@@ -1028,7 +1161,7 @@ interface HarnessGlobals {
 /** Install this realm's DOM as the harness realm's DOM, and hand back the undo. */
 function installGlobals(
 	dom: DOMModule,
-	engineWindow: TERMDOM.EngineWindow,
+	engineWindow: DOM.Window,
 	document: Document,
 	url: string,
 ): HarnessGlobals {
@@ -1040,6 +1173,7 @@ function installGlobals(
 		dispatchEvent: (event: object) => boolean;
 		getSelection: () => unknown;
 		getComputedStyle: (...args: unknown[]) => unknown;
+		customElements: unknown;
 		requestAnimationFrame: (callback: (time: number) => void) => number;
 		cancelAnimationFrame: (handle: number) => void;
 	};
@@ -1050,8 +1184,12 @@ function installGlobals(
 		getSelection: win.getSelection.bind(win),
 	};
 	const values: Record<string, unknown> = {
-		...domGlobals(dom),
+		...domGlobals(dom, engineWindow),
 		document,
+		// The registry is the window's, not the module's: a bare
+		// `customElements.define` in a test file has to reach the one the
+		// document upgrades through.
+		customElements: win.customElements,
 		getComputedStyle: win.getComputedStyle.bind(win),
 		requestAnimationFrame: win.requestAnimationFrame.bind(win),
 		cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
@@ -1065,19 +1203,50 @@ function installGlobals(
 		},
 		...windowShim,
 	};
-	for (const [name, value] of Object.entries(values)) {
+	const names = [
+		...Object.keys(values),
+		"self",
+		"window",
+		"parent",
+		"top",
+		"frames",
+	];
+	// Everything is read before anything is written. Several of the runtime's
+	// own globals are built on first read out of a module that reads other
+	// globals as it loads, so a name saved after its neighbours were replaced
+	// would be built against this DOM's classes instead of the runtime's.
+	for (const name of names) {
 		saved.set(name, {
 			had: Object.prototype.hasOwnProperty.call(scope, name),
 			value: scope[name],
 		});
+	}
+	for (const [name, value] of Object.entries(values)) {
 		scope[name] = value;
 	}
 	for (const name of ["self", "window", "parent", "top", "frames"]) {
+		scope[name] = scope;
+	}
+	// `window.onerror = ...` and the other window handler attributes land on
+	// the engine window, whose dispatch is what fires them. The harness
+	// window is this realm's global, so each name is an accessor here.
+	const handlerNames = Object.getOwnPropertyNames(
+		Object.getPrototypeOf(engineWindow) as object,
+	).filter((name) => /^on[a-z]/.test(name));
+	const engineHandlers = engineWindow as unknown as Record<string, unknown>;
+	const accessors = new Set(handlerNames);
+	for (const name of handlerNames) {
 		saved.set(name, {
 			had: Object.prototype.hasOwnProperty.call(scope, name),
 			value: scope[name],
 		});
-		scope[name] = scope;
+		Object.defineProperty(scope, name, {
+			get: () => engineHandlers[name],
+			set: (value: unknown) => {
+				engineHandlers[name] = value;
+			},
+			configurable: true,
+		});
 	}
 	// The window's named property access. A great many test files name their
 	// fixture by its id alone -- `createTestTree(test1)` over a `<div
@@ -1138,13 +1307,15 @@ function installGlobals(
 		value: "complete",
 		configurable: true,
 	});
-	dom.setAmbientDocument(document);
 	return {
 		restore(): void {
 			for (const [name, entry] of saved) {
+				if (accessors.has(name)) {
+					delete scope[name];
+				}
 				if (entry.had) {
 					scope[name] = entry.value;
-				} else {
+				} else if (!accessors.has(name)) {
 					delete scope[name];
 				}
 			}
@@ -1161,9 +1332,9 @@ async function runFile(file: string): Promise<Outcome> {
 	if (source === null) {
 		return {file, harness: "ERROR", subtests: [], error: "not fetched"};
 	}
-	const html = /\.(any|window)\.js$/.test(file) ?
-			generatedDocument(file, source) :
-		source;
+	const html = /\.(any|window)\.js$/.test(file)
+		? generatedDocument(file, source)
+		: source;
 	const url = `http://web-platform.test/${file}`;
 
 	const {dom, termdom} = await freshRealm();
@@ -1187,7 +1358,7 @@ async function runFile(file: string): Promise<Outcome> {
 	}
 }
 
-/** Run one test file against its mounted engine; the caller disposes. */
+/** Run one test file against its attached engine; the caller disposes. */
 async function runMountedFile(
 	dom: DOMModule,
 	engine: InstanceType<EngineModule["TermDOM"]>,
@@ -1251,6 +1422,8 @@ async function runMountedFile(
 		return {file, harness: "REFTEST", subtests: []};
 	}
 
+	installFramePages(dom, document, await framePages(document, html, file), url);
+
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	const globals = installGlobals(dom, engine.window, document, url);
 	const scopeForDriver = globalThis as unknown as Record<string, unknown>;
@@ -1284,9 +1457,20 @@ async function runMountedFile(
 			}));
 			settle();
 		};
-		const body = `${sources.join(
-			"\n;\n",
-		)}\n;\nadd_completion_callback(__complete);`;
+		// Registered as soon as the harness exists, as testharnessreport.js
+		// is in a browser: an uncaught error while a later script still runs
+		// completes the harness at once, and a callback registered after the
+		// last script would never hear it.
+		const harnessIndex = sources.findIndex((source) =>
+			source.includes("function add_completion_callback"),
+		);
+		const body = sources
+			.map((source, index) =>
+				index === harnessIndex
+					? `${source}\n;\nadd_completion_callback(__complete);`
+					: source,
+			)
+			.join("\n;\n");
 		try {
 			// One block at global scope for the whole file: the harness and the
 			// test share it exactly as they share a document's script scope. The
@@ -1309,9 +1493,9 @@ async function runMountedFile(
 		}
 		const timer = setTimeout(
 			settle,
-			/<meta\s+name=["']?timeout["']?\s+content=["']?long/i.test(html) ?
-				LONG_TIMEOUT_MS :
-				TIMEOUT_MS,
+			/<meta\s+name=["']?timeout["']?\s+content=["']?long/i.test(html)
+				? LONG_TIMEOUT_MS
+				: TIMEOUT_MS,
 		);
 		timer.unref?.();
 		await done;
@@ -1345,9 +1529,10 @@ process.on("unhandledRejection", () => {});
 const WORKER_FILE_LIMIT = 100;
 const workerSuite = process.argv[2] === "--suite" ? process.argv[3] : null;
 const workerStart =
-	workerSuite !== null && process.argv[4] === "--start" ?
-			Number(process.argv[5]) :
-		null;
+	workerSuite !== null && process.argv[4] === "--start"
+		? Number(process.argv[5])
+		: null;
+
 function filterArgument(): string | undefined {
 	if (workerSuite === null) {
 		return process.argv[2];
@@ -1459,7 +1644,7 @@ const lines: string[] = [
 	"",
 	"Generated by `node --experimental-strip-types scripts/wpt-dom.ts`.",
 	"",
-	"Every test file is mounted as the initial document of a full TermDOM",
+	"Every test file is attached as the initial document of a full TermDOM",
 	"engine over a mock 80x24 transport: the tree, the cascade, layout, focus",
 	"and the CSSOM are all live under the test, and `document`, `Node`,",
 	"`Element` and the rest of the realm's DOM globals are the engine's own",

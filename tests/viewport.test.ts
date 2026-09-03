@@ -1,4 +1,5 @@
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/index.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -335,8 +336,8 @@ test("content positioning with different terminal sizes", async () => {
 		<div>Third line content</div>
 	`;
 
-	// Small terminal test. detectCursor:true is required for cursor detection
-	// (and therefore push-up) to run at all -- without it, screenTop stays 0
+	// The shared transport is what lets cursor detection -- and therefore
+	// push-up -- run at all. Over a plain transport screenTop stays 0
 	// regardless of content, which is not what this test is about.
 	await new Promise<void>((resolve) => {
 		smallTerminal.stdout.write("\x1b[3;1H", () => resolve());
@@ -776,6 +777,94 @@ test("a width resize re-anchors via the parked cursor, not guesswork", async () 
 	expect(line(0)).toBe("PREV-A");
 	expect(line(1)).toBe("PREV-B");
 	expect(line(2)).toBe("HEADER LINE THAT IS FAIRLY");
+
+	dom.dispose();
+});
+
+test("a superseded resize drops the answer to the query it sent", async () => {
+	// The re-anchor asks the terminal where the cursor is and waits. A second
+	// SIGWINCH during that wait retires the question: the row coming back was
+	// measured at a width the terminal has left, and placing the frame by it
+	// would anchor the redraw somewhere the content no longer is. The resize
+	// that is settling now is the one allowed to place the frame, and the
+	// suppression that keeps animation ticks off the screen holds until it
+	// does.
+	const terminal = new MockProcess({rows: 20, cols: 60});
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("PREV-A\r\nPREV-B\r\n", () => resolve());
+	});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
+	dom.document.body.innerHTML =
+		"<div>HEADER LINE THAT IS FAIRLY LONG AND WILL WRAP WHEN NARROW</div>" +
+		"<div>short one</div>";
+	await nextFrame(dom);
+
+	// Hold the cursor replies so a resize can be superseded mid-query.
+	const stdin = terminal.stdin as any;
+	const deliver = stdin.simulateResponse.bind(stdin);
+	const held: string[] = [];
+	stdin.simulateResponse = (data: string): void => {
+		if (/\x1b\[\d+;\d+R/.test(data)) {
+			held.push(data);
+			return;
+		}
+		deliver(data);
+	};
+
+	const sleep = (ms: number) =>
+		new Promise((resolve) => setTimeout(resolve, ms));
+	const waitForQuery = async (): Promise<void> => {
+		for (let waited = 0; held.length === 0 && waited < 2000; waited += 5) {
+			await sleep(5);
+		}
+		expect(held.length).toBe(1);
+	};
+
+	terminal.resize(30, 20);
+	(terminal as any).emit("SIGWINCH");
+	await waitForQuery();
+
+	// Nothing may paint while a resize settles, so this mutation is the proof
+	// of whether a redraw happened: it reaches the screen only through one.
+	dom.document.body.innerHTML += "<div>SENTINEL</div>";
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const line = (i: number): string =>
+		(buffer.getLine(i)?.translateToString(true) ?? "").replace(/\s+$/, "");
+	const onScreen = (text: string): number => {
+		let copies = 0;
+		for (let i = 0; i < buffer.baseY + 20; i++) {
+			if (line(i).includes(text)) {
+				copies++;
+			}
+		}
+		return copies;
+	};
+
+	// A second SIGWINCH, then the first resize's answer. The debounce has not
+	// run out, so the second resize has issued no query of its own and this
+	// reply is the only one outstanding.
+	terminal.resize(24, 20);
+	(terminal as any).emit("SIGWINCH");
+	deliver(held.shift()!);
+	await sleep(20);
+	expect(onScreen("SENTINEL")).toBe(0);
+
+	// The second resize's own query is what places the frame.
+	await waitForQuery();
+	deliver(held.shift()!);
+	for (
+		let waited = 0;
+		onScreen("SENTINEL") === 0 && waited < 2000;
+		waited += 25
+	) {
+		await sleep(25);
+	}
+
+	expect(onScreen("SENTINEL")).toBe(1);
+	expect(onScreen("HEADER LINE")).toBe(1);
+	expect(line(0)).toBe("PREV-A");
+	expect(line(1)).toBe("PREV-B");
 
 	dom.dispose();
 });

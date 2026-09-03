@@ -8,8 +8,23 @@
  * object can see, and the answer is shadow-including: a tree reached through a
  * host of one's own is a tree one is inside.
  */
-import {test, expect} from "@b9g/libuild/test";
-import {createHTMLDocument, FocusEvent} from "../src/internal/dom.js";
+import {expect, test} from "@b9g/libuild/test";
+
+import {createDocumentWindow, type Document} from "../src/internal/dom.js";
+
+// The interfaces script sees are a window's, so the events the tests
+// dispatch are built with a window's constructors.
+const realm = createDocumentWindow("<!doctype html>");
+
+// The door a test document comes through. The parser is the one that hands
+// a document the realm's custom element registry, as it does the engine's.
+function createHTMLDocument(title?: string): Document {
+	return createDocumentWindow(
+		title === undefined
+			? "<!doctype html>"
+			: `<!doctype html><title>${title}</title>`,
+	).document as unknown as Document;
+}
 
 /**
  * A host in a document, a shadow tree on it holding a sibling and a second
@@ -50,7 +65,7 @@ test("a related target stays itself for a target in a tree below it", () => {
 		deep.addEventListener("demo", (event: any) => {
 			seen = event.relatedTarget;
 		});
-		deep.dispatchEvent(new FocusEvent("demo", {relatedTarget: sibling}));
+		deep.dispatchEvent(new realm.FocusEvent("demo", {relatedTarget: sibling}));
 		expect(`${mode}: ${seen === sibling}`).toBe(`${mode}: true`);
 	}
 });
@@ -63,7 +78,7 @@ test("a related target in a tree below is retargeted to the host", () => {
 	sibling.addEventListener("demo", (event: any) => {
 		seen = event.relatedTarget;
 	});
-	sibling.dispatchEvent(new FocusEvent("demo", {relatedTarget: deep}));
+	sibling.dispatchEvent(new realm.FocusEvent("demo", {relatedTarget: deep}));
 	expect(seen === inner).toBe(true);
 });
 
@@ -80,7 +95,7 @@ test("every struct of the path carries its own retargeted related target", () =>
 		});
 	}
 	deep.dispatchEvent(
-		new FocusEvent("demo", {
+		new realm.FocusEvent("demo", {
 			relatedTarget: sibling,
 			bubbles: true,
 			composed: true,

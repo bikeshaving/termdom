@@ -5,8 +5,8 @@
  *
  *   bun scripts/screenshot.ts > docs/todomvc.svg
  */
-import {MockProcess, nextFrame} from "../tests/test-utils.ts";
 import {TermDOM} from "../src/index.ts";
+import {MockProcess, nextFrame} from "../tests/test-utils.ts";
 
 const COLS = 64;
 const ROWS = 16;

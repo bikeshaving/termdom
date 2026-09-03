@@ -1,26 +1,19 @@
-import {test, expect, describe} from "@b9g/libuild/test";
-import {StyleManager} from "../src/internal/cascade.js";
-import {LayoutEngine} from "../src/internal/layout.js";
+import {describe, expect, test} from "@b9g/libuild/test";
+
+import {CSS_SHORTHANDS} from "../src/generated/cssproperties.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
-import {createDocumentWindow} from "../src/internal/termdom.js";
-import {CSS_SHORTHANDS} from "../src/internal/cssproperties.js";
 
-/** A document of this DOM, from markup, displayed in a window of its own. */
-function documentWindow(html: string): {
-	window: ReturnType<typeof createDocumentWindow>;
-} {
-	return {window: createDocumentWindow(html)};
+/** This markup in a DOM of its own, over a terminal nothing reads. */
+function domFor(html: string): TermDOM {
+	return new TermDOM({html, transport: new MockProcess().transport});
 }
 
 describe("getComputedStyle - What We Support", () => {
 	test("CSS spec defaults", () => {
-		const dom = documentWindow(
+		const dom = domFor(
 			"<!DOCTYPE html><html><body><div id=\"test\"></div></body></html>",
 		);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -36,12 +29,14 @@ describe("getComputedStyle - What We Support", () => {
 		expect(styles.getPropertyValue("font-size")).toBe("1px");
 		expect(styles.getPropertyValue("white-space")).toBe("normal");
 		expect(styles.getPropertyValue("position")).toBe("static");
-		expect(styles.getPropertyValue("width")).toBe("auto");
-		expect(styles.getPropertyValue("height")).toBe("auto");
+		// width and height are resolved-value properties: a rendered box
+		// answers with the used length, and a block fills its containing block.
+		expect(styles.getPropertyValue("width")).toBe("80px");
+		expect(styles.getPropertyValue("height")).toBe("0px");
 	});
 
 	test("terminal element defaults", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="div"></div>
@@ -54,9 +49,6 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
 
 		// Block elements
 		expect(
@@ -118,16 +110,13 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("inline styles override defaults", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: red; margin: 10px; display: flex;"></div>
 				</body>
 			</html>
 		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -139,16 +128,13 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSS keywords - initial", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: initial; margin: initial;"></div>
 				</body>
 			</html>
 		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -158,16 +144,13 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSS keywords - unset, revert, revert-layer", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: unset; margin: revert; padding: revert-layer;"></div>
 				</body>
 			</html>
 		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -177,8 +160,8 @@ describe("getComputedStyle - What We Support", () => {
 		expect(styles.getPropertyValue("padding")).toBe("0px");
 	});
 
-	test.todo("property inheritance", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+	test("property inheritance", () => {
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="parent" style="color: blue; font-size: 16px; margin: 20px;">
@@ -188,9 +171,6 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
 
 		const child = dom.window.document.getElementById("child")!;
 		const childStyles = dom.window.getComputedStyle(child);
@@ -214,16 +194,13 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSSStyleDeclaration interface compatibility", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: red; margin: 10px;"></div>
 				</body>
 			</html>
 		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -241,7 +218,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("box model properties", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
+		const dom = domFor(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="
@@ -254,351 +231,17 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
 		expect(styles.getPropertyValue("margin")).toBe("5px 10px 15px 20px");
 		expect(styles.getPropertyValue("padding")).toBe("1px 2px 3px 4px");
 		expect(styles.getPropertyValue("border")).toBe("2px solid rgb(0, 0, 0)");
-		expect(styles.getPropertyValue("width")).toBe("100px");
-		expect(styles.getPropertyValue("height")).toBe("50px");
-	});
-});
-
-describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
-	test.todo("CSS specificity calculation", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<style>
-						.class { color: blue; }
-						#id { color: red; }
-						div { color: green; }
-					</style>
-				</head>
-				<body>
-					<div id="test" class="class" style="color: yellow;"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-		const element = dom.window.document.getElementById("test")!;
-		const styles = dom.window.getComputedStyle(element);
-
-		// Should resolve to inline style (highest specificity)
-		expect(styles.getPropertyValue("color")).toBe("rgb(255, 255, 0)");
-
-		// Without inline style, ID should win
-		element.style.removeProperty("color");
-		expect(styles.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
-
-		// Without ID, class should win
-		element.removeAttribute("id");
-		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
-
-		// Without class, element selector should win
-		element.removeAttribute("class");
-		expect(styles.getPropertyValue("color")).toBe("rgb(0, 128, 0)");
-	});
-
-	test.todo("stylesheet parsing from <style> elements", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<style>
-						div { 
-							color: red; 
-							margin: 20px;
-							font-size: 14px;
-						}
-						.container {
-							padding: 10px;
-							background-color: #f0f0f0;
-						}
-					</style>
-				</head>
-				<body>
-					<div id="test" class="container"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-		const element = dom.window.document.getElementById("test")!;
-		const styles = dom.window.getComputedStyle(element);
-
-		// Should apply styles from <style> element
-		expect(styles.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
-		expect(styles.getPropertyValue("margin")).toBe("20px");
-		expect(styles.getPropertyValue("font-size")).toBe("14px");
-		expect(styles.getPropertyValue("padding")).toBe("10px");
-		expect(styles.getPropertyValue("background-color")).toBe("#f0f0f0");
-	});
-
-	test.todo("multiple stylesheets with cascade resolution", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<style>
-						div { color: red; font-size: 12px; }
-					</style>
-					<style>
-						div { color: blue; margin: 10px; }
-					</style>
-				</head>
-				<body>
-					<div id="test"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-		const element = dom.window.document.getElementById("test")!;
-		const styles = dom.window.getComputedStyle(element);
-
-		// Later stylesheet should win for same specificity
-		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
-		// Properties from both should apply
-		expect(styles.getPropertyValue("font-size")).toBe("12px");
-		expect(styles.getPropertyValue("margin")).toBe("10px");
-	});
-
-	test.todo("!important declarations", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<style>
-						div { color: red !important; }
-						#test { color: blue; }
-					</style>
-				</head>
-				<body>
-					<div id="test" style="color: green;"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-		const element = dom.window.document.getElementById("test")!;
-		const styles = dom.window.getComputedStyle(element);
-
-		// !important should override everything except inline !important
-		expect(styles.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
-	});
-
-	test.todo("complex selectors", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<style>
-						.parent .child { color: red; }
-						div > span { font-size: 16px; }
-						.container + .sibling { margin: 20px; }
-						div:first-child { padding: 10px; }
-					</style>
-				</head>
-				<body>
-					<div class="parent">
-						<span class="child">Child</span>
-						<span>Direct child</span>
-					</div>
-					<div class="container"></div>
-					<div class="sibling"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-
-		// Descendant selector
-		const child = dom.window.document.querySelector(".child")!;
-		expect(dom.window.getComputedStyle(child).getPropertyValue("color")).toBe(
-			"rgb(255, 0, 0)",
-		);
-
-		// Child selector
-		const directChild = dom.window.document.querySelector("div > span")!;
-		expect(
-			dom.window.getComputedStyle(directChild).getPropertyValue("font-size"),
-		).toBe("16px");
-
-		// Adjacent sibling
-		const sibling = dom.window.document.querySelector(".sibling")!;
-		expect(
-			dom.window.getComputedStyle(sibling).getPropertyValue("margin"),
-		).toBe("20px");
-
-		// Pseudo-class
-		const firstDiv = dom.window.document.querySelector("div:first-child")!;
-		expect(
-			dom.window.getComputedStyle(firstDiv).getPropertyValue("padding"),
-		).toBe("10px");
-	});
-
-	test.todo("external stylesheets", () => {
-		// This would require implementing <link> element support
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<link rel="stylesheet" href="styles.css">
-				</head>
-				<body>
-					<div id="test"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-		const element = dom.window.document.getElementById("test")!;
-		const styles = dom.window.getComputedStyle(element);
-
-		// Should load and apply external stylesheet
-		// This test would need mock file system or HTTP support
-		expect(styles.getPropertyValue("color")).toBe("from-external-css");
-	});
-
-	test("shorthand property expansion - margin and padding", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<style>
-						div { 
-							margin: 10px 20px;
-							padding: 5px 15px 25px;
-						}
-					</style>
-				</head>
-				<body>
-					<div id="test"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-		const element = dom.window.document.getElementById("test")!;
-		const styles = dom.window.getComputedStyle(element);
-
-		// Margin shorthand should expand to individual properties
-		expect(styles.getPropertyValue("margin-top")).toBe("10px");
-		expect(styles.getPropertyValue("margin-right")).toBe("20px");
-		expect(styles.getPropertyValue("margin-bottom")).toBe("10px");
-		expect(styles.getPropertyValue("margin-left")).toBe("20px");
-
-		// Padding shorthand should expand to individual properties
-		expect(styles.getPropertyValue("padding-top")).toBe("5px");
-		expect(styles.getPropertyValue("padding-right")).toBe("15px");
-		expect(styles.getPropertyValue("padding-bottom")).toBe("25px");
-		expect(styles.getPropertyValue("padding-left")).toBe("15px");
-
-		// And the shorthand properties should return the expanded form
-		expect(styles.getPropertyValue("margin")).toBe("10px 20px");
-		expect(styles.getPropertyValue("padding")).toBe("5px 15px 25px");
-	});
-
-	test.todo("shorthand property expansion - border and background", () => {
-		// TODO: Implement border and background shorthand expansion
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<style>
-						div { 
-							border: 2px solid red;
-							background: #fff url(bg.png) no-repeat center;
-						}
-					</style>
-				</head>
-				<body>
-					<div id="test"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-		const element = dom.window.document.getElementById("test")!;
-		const styles = dom.window.getComputedStyle(element);
-
-		expect(styles.getPropertyValue("border-width")).toBe("2px");
-		expect(styles.getPropertyValue("border-style")).toBe("solid");
-		expect(styles.getPropertyValue("border-color")).toBe("rgb(255, 0, 0)");
-
-		expect(styles.getPropertyValue("background-color")).toBe("#fff");
-		expect(styles.getPropertyValue("background-image")).toBe("url(bg.png)");
-		expect(styles.getPropertyValue("background-repeat")).toBe("no-repeat");
-		expect(styles.getPropertyValue("background-position")).toBe("center");
-	});
-
-	test.todo("CSS media queries", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<style>
-						div { color: red; }
-						@media screen and (max-width: 600px) {
-							div { color: blue; }
-						}
-					</style>
-				</head>
-				<body>
-					<div id="test"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-		const element = dom.window.document.getElementById("test")!;
-		const styles = dom.window.getComputedStyle(element);
-
-		// Should apply media query based on viewport size
-		// This would need viewport size simulation
-		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
-	});
-
-	test.todo("CSS custom properties (CSS variables)", () => {
-		const dom = documentWindow(`<!DOCTYPE html>
-			<html>
-				<head>
-					<style>
-						:root {
-							--primary-color: blue;
-							--spacing: 20px;
-						}
-						div {
-							color: var(--primary-color);
-							margin: var(--spacing);
-						}
-					</style>
-				</head>
-				<body>
-					<div id="test"></div>
-				</body>
-			</html>
-		`);
-		const styleManager = new StyleManager(dom.window);
-		const layoutEngine = new LayoutEngine(dom.window);
-		styleManager.setLayoutEngine(layoutEngine);
-		const element = dom.window.document.getElementById("test")!;
-		const styles = dom.window.getComputedStyle(element);
-
-		// Should resolve CSS custom properties
-		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
-		expect(styles.getPropertyValue("margin")).toBe("20px");
-
-		// Should also expose custom properties themselves
-		expect(styles.getPropertyValue("--primary-color")).toBe("rgb(0, 0, 255)");
-		expect(styles.getPropertyValue("--spacing")).toBe("20px");
+		// The declared 100 and 50 are border-box lengths (box-sizing starts at
+		// border-box here), and the resolved value is the content box inside
+		// them: 100 less two 2px borders and 2+4 of padding, 50 less the rest.
+		expect(styles.getPropertyValue("width")).toBe("90px");
+		expect(styles.getPropertyValue("height")).toBe("42px");
 	});
 });
 
@@ -995,7 +638,7 @@ test("a viewport-relative length re-resolves when the terminal resizes", async (
 
 test("an author's shorthand read does not poison the computed value", async () => {
 	// getComputedStyle().margin answers with USED values; the engine's own
-	// computedValueOf answers with computed ones. The two must not share an
+	// getComputedValue answers with computed ones. The two must not share an
 	// answer.
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
@@ -1009,8 +652,8 @@ test("an author's shorthand read does not poison the computed value", async () =
 	// The author's read resolves the percentage against the containing block.
 	expect(declaration.margin).toBe("20px");
 	// The engine's read still answers what the cascade said.
-	expect(declaration.computedValueOf("margin")).toBe("50%");
-	expect(declaration.computedValueOf("margin-top")).toBe("50%");
+	expect(declaration.getComputedValue("margin")).toBe("50%");
+	expect(declaration.getComputedValue("margin-top")).toBe("50%");
 
 	dom.dispose();
 });
@@ -1020,8 +663,8 @@ test("an author's shorthand read does not poison the computed value", async () =
  * something on each longhand the grammar names.
  */
 const EXPANDED_SHORTHANDS: Record<string, string> = {
-	"background": "red",
-	"border": "1px solid red",
+	background: "red",
+	border: "1px solid red",
 	"border-block": "1px solid red",
 	"border-block-color": "red blue",
 	"border-block-end": "1px solid red",
@@ -1043,32 +686,33 @@ const EXPANDED_SHORTHANDS: Record<string, string> = {
 	"border-style": "solid",
 	"border-top": "1px solid red",
 	"border-width": "1px",
-	"flex": "1 1 auto",
+	flex: "1 1 auto",
 	"flex-flow": "column wrap",
-	"gap": "1px 2ch",
-	"inset": "1px 2ch",
-	"inset-block": "1px 2px",
-	"inset-inline": "1ch 2ch",
-	"list-style": "square inside",
-	"margin": "1px 2ch",
-	"margin-block": "1px 2px",
-	"margin-inline": "1ch 2ch",
-	"outline": "1px solid red",
-	"overflow": "hidden scroll",
-	"padding": "1px 2ch",
-	"padding-block": "1px 2px",
-	"padding-inline": "1ch 2ch",
-	"grid": "auto-flow dense 4px / 1fr 1fr",
+	"font-variant": "small-caps oldstyle-nums",
+	gap: "1px 2ch",
+	grid: "auto-flow dense 4px / 1fr 1fr",
 	"grid-area": "hero / 1 / span 2 / -1",
 	"grid-column": "2 / span 3",
 	"grid-gap": "1px 2ch",
 	"grid-row": "main",
 	"grid-template": '"a b" 2px "c d" 3px / 1fr 2fr',
+	inset: "1px 2ch",
+	"inset-block": "1px 2px",
+	"inset-inline": "1ch 2ch",
+	"list-style": "square inside",
+	margin: "1px 2ch",
+	"margin-block": "1px 2px",
+	"margin-inline": "1ch 2ch",
+	outline: "1px solid red",
+	overflow: "hidden scroll",
+	padding: "1px 2ch",
+	"padding-block": "1px 2px",
+	"padding-inline": "1ch 2ch",
 	"place-content": "space-between center",
 	"place-items": "center start",
 	"place-self": "center start",
 	"text-decoration": "underline",
-	"transition": "left 2s ease-in 0.5s, color 1s",
+	transition: "left 2s ease-in 0.5s, color 1s",
 };
 
 /**
@@ -1083,15 +727,15 @@ const UNEXPANDED_SHORTHANDS: Record<string, string> = {
 	"-webkit-border-start": "vendor alias for border-inline-start",
 	"-webkit-mask": "vendor alias for mask, which needs pixels",
 	"-webkit-text-stroke": "glyph outlines, which the emulator owns",
-	"all": "stands for every property there is; the cascade reads it directly",
-	"animation": "no animation clock",
+	all: "stands for every property there is; the cascade reads it directly",
+	animation: "no animation clock",
 	"animation-range": "no animation clock",
 	"background-position": "an image to position, which needs pixels",
-	"caret": "the caret is the terminal's own cursor",
+	caret: "the caret is the terminal's own cursor",
 	"column-rule": "multi-column layout",
-	"columns": "multi-column layout",
+	columns: "multi-column layout",
 	"contain-intrinsic-size": "containment",
-	"container": "container queries",
+	container: "container queries",
 	"corner-block-end-shape": "corner shapes are finer than a cell",
 	"corner-block-start-shape": "corner shapes are finer than a cell",
 	"corner-bottom-shape": "corner shapes are finer than a cell",
@@ -1101,11 +745,11 @@ const UNEXPANDED_SHORTHANDS: Record<string, string> = {
 	"corner-right-shape": "corner shapes are finer than a cell",
 	"corner-shape": "corner shapes are finer than a cell",
 	"corner-top-shape": "corner shapes are finer than a cell",
-	"font": "system font keywords and a line-height the grid fixes",
+	font: "system font keywords and a line-height the grid fixes",
 	"interest-delay": "no interest timers",
-	"mask": "masking, which needs pixels",
+	mask: "masking, which needs pixels",
 	"mask-border": "masking, which needs pixels",
-	"offset": "motion paths, which need sub-cell geometry",
+	offset: "motion paths, which need sub-cell geometry",
 	"overscroll-behavior": "overscroll behavior",
 	"position-try": "anchor positioning",
 	"scroll-margin": "scroll snapping",
@@ -1127,9 +771,7 @@ test("every CSS shorthand is expanded or listed as unexpanded", () => {
 	// The property table is generated from mdn-data, so a shorthand the
 	// platform adds arrives here on its own. It is handled or it is named --
 	// and either way somebody looked at it.
-	const probe = createDocumentWindow(
-		"<div></div>",
-	).document.querySelector("div")!;
+	const probe = domFor("<div></div>").document.querySelector("div")!;
 	for (const shorthand of Object.keys(CSS_SHORTHANDS)) {
 		const expanded = shorthand in EXPANDED_SHORTHANDS;
 		const unexpanded = shorthand in UNEXPANDED_SHORTHANDS;
@@ -1162,4 +804,71 @@ test("every CSS shorthand is expanded or listed as unexpanded", () => {
 			`${shorthand} is a shorthand: true`,
 		);
 	}
+});
+
+test("initial takes the property's initial value, not the parent's", () => {
+	const dom = domFor(`<!DOCTYPE html><html><head><style>
+		#d { color: blue }
+	</style></head><body><div style="color: red">
+		<span id="a" style="color: initial">a</span>
+		<span id="b" style="color: unset">b</span>
+		<span id="c" style="color: inherit">c</span>
+		<span id="d" style="color: initial">d</span>
+	</div></body></html>`);
+	const color = (id: string): string =>
+		dom.window
+			.getComputedStyle(dom.window.document.getElementById(id)!)
+			.getPropertyValue("color");
+	expect(color("a")).toBe("rgb(0, 0, 0)");
+	expect(color("b")).toBe("rgb(255, 0, 0)");
+	expect(color("c")).toBe("rgb(255, 0, 0)");
+	expect(color("d")).toBe("rgb(0, 0, 0)");
+});
+
+test("an important UA declaration beats an important author one", () => {
+	const dom = domFor(`<!DOCTYPE html><html><head><style>
+		input { display: block !important }
+	</style></head><body>
+		<input id="hidden" type="hidden">
+		<input id="text" type="text">
+	</body></html>`);
+	const display = (id: string): string =>
+		dom.window
+			.getComputedStyle(dom.window.document.getElementById(id)!)
+			.getPropertyValue("display");
+	expect(display("hidden")).toBe("none");
+	expect(display("text")).toBe("block");
+});
+
+test("inserting a child restyles the siblings and parent that selectors read", async () => {
+	const dom = domFor(`<!DOCTYPE html><html><head><style>
+		.item + .item { color: red }
+		.item:first-child { font-weight: bold }
+		.box:empty { color: blue }
+	</style></head><body><div id="list"><div class="item" id="a">a</div></div><div class="box" id="empty"></div></body></html>`);
+	const document = dom.window.document;
+	const style = (id: string, property: string): string =>
+		dom.window
+			.getComputedStyle(document.getElementById(id)!)
+			.getPropertyValue(property);
+	await nextFrame(dom);
+	expect(style("a", "color")).toBe("rgb(0, 0, 0)");
+	expect(style("a", "font-weight")).toBe("bold");
+	expect(style("empty", "color")).toBe("rgb(0, 0, 255)");
+
+	const first = document.createElement("div");
+	first.className = "item";
+	first.id = "first";
+	document.getElementById("list")!.prepend(first);
+	document.getElementById("empty")!.append(document.createElement("div"));
+	await nextFrame(dom);
+	expect(style("a", "color")).toBe("rgb(255, 0, 0)");
+	expect(style("a", "font-weight")).toBe("normal");
+	expect(style("first", "font-weight")).toBe("bold");
+	expect(style("empty", "color")).toBe("rgb(0, 0, 0)");
+
+	first.remove();
+	await nextFrame(dom);
+	expect(style("a", "color")).toBe("rgb(0, 0, 0)");
+	expect(style("a", "font-weight")).toBe("bold");
 });

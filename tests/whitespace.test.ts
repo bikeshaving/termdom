@@ -11,9 +11,10 @@
  * Tests both standalone behavior and interaction with flexbox containers.
  */
 
-import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 // ===== NOWRAP TESTS =====
 
@@ -664,5 +665,57 @@ test("break-spaces preserves every space", async () => {
 		'<div style="white-space: break-spaces">a  b   c</div>';
 	await nextFrame(dom);
 	expect(terminal.getVisibleText()).toContain("a  b   c");
+	dom.dispose();
+});
+
+test("the spaces a line opens on collapse away, whatever follows them", async () => {
+	// Found by fuzz/layout.test.ts, which noticed that taking a box out of
+	// flow moved the boxes after it. Collapsible spaces at the start of a line
+	// are removed (css-text-3 §4.1.1), and a line box left holding nothing but
+	// an empty inline is treated as not existing (css2 §9.4.2) -- so the block
+	// below sits on row 0 however the spaces before it are arranged.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+
+	const top = async (markup: string): Promise<number> => {
+		dom.document.body.innerHTML = markup;
+		await nextFrame(dom);
+		const target = dom.document.querySelector("#t")!;
+		return target.getBoundingClientRect().y;
+	};
+
+	expect(await top("   <div id=t>x</div>")).toBe(0);
+	expect(await top("<b></b><div id=t>x</div>")).toBe(0);
+	// The pair is the case that failed: neither the spaces nor the empty
+	// inline makes a line on its own, and together they made one.
+	expect(await top("   <b></b><div id=t>x</div>")).toBe(0);
+	expect(await top("   <b> </b><div id=t>x</div>")).toBe(0);
+	// Text on the line is content, and keeps it.
+	expect(await top("   <b>y</b><div id=t>x</div>")).toBe(1);
+
+	dom.dispose();
+});
+
+test("a pre span keeps its own spaces, and only its own", async () => {
+	// The trim used to ask whether ANYTHING in the run preserved spaces, which
+	// spared the collapsible ones at both edges. A preserving leaf guards the
+	// spaces it carries; the ones around it still go.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+
+	const left = async (markup: string): Promise<number> => {
+		dom.document.body.innerHTML = markup;
+		await nextFrame(dom);
+		const target = dom.document.querySelector("#t")!;
+		return target.getBoundingClientRect().x;
+	};
+
+	expect(await left('   <b id=t style="white-space: pre">ab</b>')).toBe(0);
+	expect(await left('<b id=t style="white-space: pre">ab</b>   ')).toBe(0);
+	// Its own spaces stay: the text starts one cell in.
+	expect(await left('<b style="white-space: pre"> </b><b id=t>ab</b>')).toBe(1);
+
 	dom.dispose();
 });

@@ -1,10 +1,11 @@
-import {test, expect, describe} from "@b9g/libuild/test";
+import {describe, expect, test} from "@b9g/libuild/test";
+
+import {transportFromProcess} from "../src/internal/exchange.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {transportFromProcess} from "../src/internal/terminalsession.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 // A raw-capture mock: it keeps the exact bytes TermDOM writes, so tests can
-// assert the wire protocol (synchronized-output wrappers, no redundant cursor
+// assert the wire protocol (wrapSynchronized-output wrappers, no redundant cursor
 // homing, nothing at all when empty). stdin.isTTY:false disables cursor
 // detection entirely, so these tests render from the terminal home row without
 // any anchor setup.
@@ -74,8 +75,8 @@ describe("Viewport Integration Tests", () => {
 		const output = mock.getOutput();
 		expect(output).toContain("Hello World");
 		expect(output).not.toContain("\x1b[H"); // cursor already at home
-		expect(output).toContain("\x1b[?2026h"); // synchronized output start
-		expect(output).toContain("\x1b[?2026l"); // synchronized output end
+		expect(output).toContain("\x1b[?2026h"); // wrapSynchronized output start
+		expect(output).toContain("\x1b[?2026l"); // wrapSynchronized output end
 	});
 
 	test("empty content writes nothing (hasContent optimization)", async () => {
@@ -125,10 +126,9 @@ describe("Viewport Integration Tests", () => {
 		expect(lines.filter((l) => l === "No double offset").length).toBe(1);
 	});
 
-	// Push-up (moving the anchor up so overflowing content fits) is not yet
-	// implemented -- see the matching test.todo in viewport.test.ts. Kept here so
-	// the ANSI-path version of the gap stays recorded.
-	test.todo(
+	// The ANSI-path version of the push-up viewport.test.ts asserts through
+	// window.screenTop: the same scenario, read off the bytes instead.
+	test(
 		"content overflowing the space below the anchor pushes up to fit",
 		async () => {
 			const terminal = new MockProcess({rows: 5, cols: 40});

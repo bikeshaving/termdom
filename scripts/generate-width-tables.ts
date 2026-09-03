@@ -1,5 +1,5 @@
 /**
- * Regenerate src/internal/widthtables.ts from the Unicode Character
+ * Regenerate src/generated/widthtables.ts from the Unicode Character
  * Database, so the wide, zero-width, and ambiguous ranges all come from one
  * source instead of hand-maintained lists.
  *
@@ -13,6 +13,7 @@
  * Run: node --experimental-strip-types scripts/generate-width-tables.ts
  */
 
+import {execFileSync} from "node:child_process";
 import {writeFileSync} from "node:fs";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -119,7 +120,7 @@ const zero = subtract(
 	],
 );
 
-const target = join(ROOT, "src/internal/widthtables.ts");
+const target = join(ROOT, "src/generated/widthtables.ts");
 const output = `/**
  * Character width tables, generated from the Unicode Character Database at
  * ${UNICODE_VERSION}. Do not edit; run
@@ -146,6 +147,9 @@ ${render(
 )}
 `;
 writeFileSync(target, output);
+// The emitted file must be canonical: eslint is the one formatter, and a
+// failure here is a failure of the generation.
+execFileSync("npx", ["eslint", "--fix", target], {stdio: "inherit"});
 console.log(
 	`WIDE ${wide.length} ranges, ZERO ${zero.length}, AMBIGUOUS ${ambiguous.length} (Unicode ${UNICODE_VERSION})`,
 );

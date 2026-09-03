@@ -29,11 +29,12 @@
 // Clicking does the same: a card picks up, a pile drops, the deck deals, and
 // a double-click sends a card home. The menu and the confirm dialog take
 // clicks too.
-import {TermDOM} from "@b9g/termdom";
-import type {Context} from "@b9g/crank";
-import {jsx} from "@b9g/crank/standalone";
-import {renderer} from "@b9g/crank/dom";
 import {pathToFileURL} from "node:url";
+
+import type {Context} from "@b9g/crank";
+import {renderer} from "@b9g/crank/dom";
+import {jsx} from "@b9g/crank/standalone";
+import {TermDOM} from "@b9g/termdom";
 
 // ---- the deck ----------------------------------------------------------------
 
@@ -56,8 +57,10 @@ const RANKS = [
 ];
 
 interface Card {
+
 	/** 1 (ace) through 13 (king). */
 	rank: number;
+
 	/** An index into SUITS; hearts and diamonds are the red ones. */
 	suit: number;
 	up: boolean;
@@ -68,12 +71,15 @@ function isRed(card: Card): boolean {
 }
 
 interface Game {
+
 	/** The deal this game was shuffled from. */
 	number: number;
+
 	/** How many cards a turn of the stock flips: klondike's one or three. */
 	draw: number;
 	stock: Card[];
 	waste: Card[];
+
 	/** One pile per suit, in SUITS order, each running up from its ace. */
 	foundations: Card[][];
 	tableau: Card[][];
@@ -471,10 +477,12 @@ const TURN_GLYPH = "↻";
 const DOT = " · ";
 const MIDDOT = "·";
 const STAR = "★";
+
 /** The key hints shrink with the cards, never past their own columns. */
 function deckKey(t: Tier): string {
 	return t.width >= 7 ? "Space" : t.width >= 5 ? "Spc" : "\u2423";
 }
+
 function FlipKey({tier}: {tier: Tier}) {
 	if (tier.width >= 7) {
 		return jsx`<kbd>0</kbd>/<kbd>f</kbd>lip`;
@@ -484,6 +492,7 @@ function FlipKey({tier}: {tier: Tier}) {
 	}
 	return jsx`<kbd>0</kbd>`;
 }
+
 /** The cells FlipKey takes, which the caption row's padding needs. */
 function flipKeyLength(t: Tier): number {
 	return t.width >= 7 ? 6 : t.width >= 5 ? 3 : 1;
@@ -516,9 +525,9 @@ function backRows(width: number, height: number): string[] {
 			return BL + B.repeat(width - 2) + BR;
 		}
 		const inner = Array.from({length: width - 2}, (_, col) =>
-			row === Math.floor(height / 2) && col === Math.floor((width - 2) / 2) ?
-				MOTIF :
-				" ",
+			row === Math.floor(height / 2) && col === Math.floor((width - 2) / 2)
+				? MOTIF
+				: " ",
 		).join("");
 		return L + inner + R;
 	});
@@ -565,10 +574,12 @@ function faceRows(card: Card, tier: Tier): string[] {
 interface CardProps {
 	card: Card;
 	tier: Tier;
+
 	/** A card with another lying over it, showing its index row alone. */
 	covered?: boolean;
 	held?: boolean;
 	drop?: boolean;
+
 	/** The keyboard cursor rests here. */
 	cursor?: boolean;
 	onclick?: (event: MouseEvent) => unknown;
@@ -626,9 +637,9 @@ function Slot({
 	onclick?: (event: MouseEvent) => unknown;
 }) {
 	const rows = Array.from({length: tier.height}, (_, line) =>
-		line === Math.floor(tier.height / 2) && mark ?
-				centered(mark, tier.width) :
-				blank(tier.width),
+		line === Math.floor(tier.height / 2) && mark
+			? centered(mark, tier.width)
+			: blank(tier.width),
 	);
 	const classes = ["slot"];
 	if (drop) {
@@ -1174,9 +1185,9 @@ function* App(this: Context) {
 			seat(
 				"board",
 				pile,
-				grip?.kind === "tableau" && grip.pile === pile ?
-					grip.index :
-						Math.max(0, lastOf(pileAt(pile))),
+				grip?.kind === "tableau" && grip.pile === pile
+					? grip.index
+					: Math.max(0, lastOf(pileAt(pile))),
 			);
 		}
 	};
@@ -1228,9 +1239,9 @@ function* App(this: Context) {
 							<div class="again">(press <kbd>${modeNow()}</kbd> again to deal)</div>
 							<div class="answers">seed${" #"}<input id="seed" type="number" min="1" placeholder="random" /></div>
 							<div class="answers"><span onclick=${dealFromMenu}><kbd>Enter</kbd>${" deal"}</span>${
-								startedAt !== null ?
-									jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}><kbd>b</kbd>ack</span>` :
-									""
+								startedAt !== null
+									? jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}><kbd>b</kbd>ack</span>`
+									: ""
 							}<span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => term.window.close()}><kbd>q</kbd>uit</span></div>
 						</dialog>
 					</div>
@@ -1268,9 +1279,9 @@ function* App(this: Context) {
 						${clock(startedAt === null ? 0 : (finishedAt ?? performance.now()) - startedAt)}
 					</span>
 					${
-						won(game) ?
-							jsx`<span class="win">Won${message ? ` ${MIDDOT} ${message}` : ""}</span>` :
-							message && jsx`<span class="score">${message}</span>`
+						won(game)
+							? jsx`<span class="win">Won${message ? ` ${MIDDOT} ${message}` : ""}</span>`
+							: message && jsx`<span class="score">${message}</span>`
 					}
 				</div>
 
@@ -1286,22 +1297,22 @@ function* App(this: Context) {
 				<div class="top">
 					<div class="pile">
 						${
-							game.stock.length > 0 ?
-								jsx`<${CardFace}
+							game.stock.length > 0
+								? jsx`<${CardFace}
 										card=${{rank: 1, suit: 0, up: false}}
 										tier=${t}
 										cursor=${atTop(0)}
 										onclick=${() => act(draw)}
-									/>` :
-								jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
+									/>`
+								: jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
 										cursor=${atTop(0)} onclick=${() => act(draw)} />`
 						}
 					</div>
 					<div class="pile">
 						${
-							wasteTop ?
-									game.waste.slice(-(game.draw === 3 ? 3 : 1)).map(
-										(card, at, fan) => jsx`<${CardFace}
+							wasteTop
+								? game.waste.slice(-(game.draw === 3 ? 3 : 1)).map(
+									(card, at, fan) => jsx`<${CardFace}
 												key=${`${card.suit}-${card.rank}`}
 												card=${card}
 												tier=${t}
@@ -1311,8 +1322,8 @@ function* App(this: Context) {
 												onclick=${at === fan.length - 1 ? () => grab({kind: "waste"}) : undefined}
 												ondblclick=${at === fan.length - 1 ? () => sendHome({kind: "waste"}) : undefined}
 											/>`,
-									) :
-								jsx`<${Slot} tier=${t} cursor=${atTop(1)} />`
+								)
+								: jsx`<${Slot} tier=${t} cursor=${atTop(1)} />`
 						}
 					</div>
 					<div class="gap"></div>
@@ -1320,16 +1331,16 @@ function* App(this: Context) {
 						(foundation, index) => jsx`
 							<div class="pile" key=${`foundation-${index}`}>
 								${
-									top(foundation) ?
-										jsx`<${CardFace}
+									top(foundation)
+										? jsx`<${CardFace}
 												card=${top(foundation)}
 												tier=${t}
 												held=${grip?.kind === "foundation" && grip.index === index}
 												drop=${home === index}
 												cursor=${atTop(3 + index)}
 												onclick=${() => target({kind: "foundation", index})}
-											/>` :
-										jsx`<${Slot}
+											/>`
+										: jsx`<${Slot}
 												tier=${t}
 												mark=${SUITS[index]}
 												cursor=${atTop(3 + index)}
@@ -1357,15 +1368,15 @@ function* App(this: Context) {
 						(pile, index) => jsx`
 							<div class="pile" key=${`pile-${index}`}>
 								${
-									pile.length === 0 ?
-										jsx`<${Slot}
+									pile.length === 0
+										? jsx`<${Slot}
 												tier=${t}
 												drop=${Boolean(card) && fitsTableau(card, pile)}
 												cursor=${cursorShown && cur.row === "board" && cur.col === index}
 												onclick=${() => target({kind: "tableau", pile: index})}
-											/>` :
-											pile.map(
-												(each, depth) => jsx`
+											/>`
+										: pile.map(
+											(each, depth) => jsx`
 													<${CardFace}
 														key=${`${each.suit}-${each.rank}`}
 														card=${each}
@@ -1396,7 +1407,7 @@ function* App(this: Context) {
 														}}
 													/>
 												`,
-											)
+										)
 								}
 							</div>
 						`,

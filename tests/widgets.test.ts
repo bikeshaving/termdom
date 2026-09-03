@@ -1,12 +1,33 @@
 /**
- * The user-agent widgets past the form fields: what a browser hides
+ * The user-agent widgets past the form text controls: what a browser hides
  * (datalist, a closed dialog, a closed details), the disclosure a summary
  * opens, the bars progress and meter draw, and the chrome a fieldset puts
  * around its legend.
  */
-import {test, expect} from "@b9g/libuild/test";
+import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
+
+/**
+ * The terminal text, once a repaint no test asked for has drawn a mark into
+ * it. The wait is the mark's arrival, not a clock a loaded machine can
+ * outrun; a mark that never arrives times out and the caller asserts on the
+ * text as it stands. Nothing here requests a frame, which is the contract
+ * the callers are testing.
+ */
+async function paintedText(
+	terminal: MockProcess,
+	mark: string,
+): Promise<string> {
+	const deadline = Date.now() + 5000;
+	let text = terminal.getPlainText();
+	while (!text.includes(mark) && Date.now() < deadline) {
+		await new Promise((resolve) => setTimeout(resolve, 1));
+		text = terminal.getPlainText();
+	}
+	return text;
+}
 
 function type(terminal: MockProcess, data: string): Promise<void> {
 	(terminal.stdin as any).emit("data", Buffer.from(data));
@@ -337,18 +358,24 @@ test("a meter's level reads its value against low, high and optimum", async () =
 	await nextFrame(dom);
 
 	const meter = document.querySelector("meter") as HTMLMeterElement;
-	// The level is a color, so the three readings differ in SGR and nowhere
-	// else. Above high with the optimum above high is the good one; between
-	// low and high is one region away; below low is two.
-	const optimum = terminal.getStaticANSI();
+	// Each level names its own colour in the UA sheet, so the reading has to
+	// be the SGR itself. Asserting only that the three frames DIFFER proves
+	// nothing: the bar fills proportionally, so 9, 5 and 1 already differ by
+	// fill length whatever colour they are painted in.
+	const sgrOf = (): string => {
+		const match = terminal.getStaticANSI().match(/38;2;(\d+);(\d+);(\d+)/);
+		return match ? `${match[1]},${match[2]},${match[3]}` : "none";
+	};
+	// Above high, with the optimum above high: the good region.
+	expect(sgrOf()).toBe("95,175,95");
+	// Between low and high: one region away from the optimum.
 	meter.setAttribute("value", "5");
 	await nextFrame(dom);
-	const suboptimum = terminal.getStaticANSI();
+	expect(sgrOf()).toBe("215,175,95");
+	// Below low: two regions away.
 	meter.setAttribute("value", "1");
 	await nextFrame(dom);
-	const worst = terminal.getStaticANSI();
-
-	expect(new Set([optimum, suboptimum, worst]).size).toBe(3);
+	expect(sgrOf()).toBe("215,95,95");
 
 	dom.dispose();
 });
@@ -417,17 +444,15 @@ test("a checkedness that changes on its own repaints, and unchecks its group", a
 	const box = dom.document.getElementById("c") as HTMLInputElement;
 	box.checked = true;
 	// No frame is requested here: the repaint has to be the mutation's own.
-	await new Promise((r) => setTimeout(r, 30));
-	expect(terminal.getPlainText()).toContain("[x]");
+	expect(await paintedText(terminal, "[x]")).toContain("[x]");
 
 	const first = dom.document.getElementById("r1") as HTMLInputElement;
 	const second = dom.document.getElementById("r2") as HTMLInputElement;
 	second.checked = true;
-	await new Promise((r) => setTimeout(r, 30));
+	// The sibling the group unchecked shows it, with no event to have hooked.
+	expect(await paintedText(terminal, "( )(x)")).toContain("( )(x)");
 	expect(second.checked).toBe(true);
 	expect(first.checked).toBe(false);
-	// The sibling the group unchecked shows it, with no event to have hooked.
-	expect(terminal.getPlainText()).toContain("( )(x)");
 
 	dom.dispose();
 });
