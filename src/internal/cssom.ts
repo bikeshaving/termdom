@@ -7553,10 +7553,11 @@ const kCSSRules = Symbol("cssRules");
 const kSyncResolved = Symbol("syncResolved");
 const kResolved = Symbol("resolved");
 const kCustom = Symbol("custom");
+const kInlineBlock = Symbol("inlineBlock");
 const kUsedValue = Symbol("usedValue");
 const kBaseValue = Symbol("baseValue");
 const kActiveTransitions = Symbol("activeTransitions");
-const kCurrentDeclarations = Symbol("currentDeclarations");
+const kGeneration = Symbol("generation");
 const kUsedGridTracks = Symbol("usedGridTracks");
 const kFlushStyle = Symbol("flushStyle");
 const kMatchingRules = Symbol("matchingRules");
@@ -7568,6 +7569,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kCSSRules]: ParsedCSSRule[];
 
 	declare [kCascade]: Cascade | null;
+	declare [kGeneration]: number;
+	declare [kInlineBlock]: DeclarationBlock | null;
 
 	// Computed strings, memoized once per property per resolution, ""
 	// results included. An inherited property re-resolved on every read
@@ -7589,9 +7592,11 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		this[kCustom] = null;
 		this[kElement] = element;
 		this[kCSSRules] = cssRules;
+		this[kInlineBlock] = null;
+		this[kGeneration] = 0;
 		if (cascade) {
 			this[kCascade] = cascade;
-			cascade[kCurrentDeclarations].add(this);
+			this[kGeneration] = cascade[kGeneration];
 		}
 	}
 
@@ -7612,8 +7617,10 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 
 	getComputedValue(property: string): string {
-		const current = this[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(this)) {
+		if (
+			this[kCascade] !== null &&
+			this[kGeneration] !== this[kCascade][kGeneration]
+		) {
 			this[kSyncResolved]();
 		}
 		const value = this[kBaseValue](property);
@@ -7639,8 +7646,10 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// reads through getComputedValue, which does not flush, because style
 		// is resolved from inside layout, which a flush would re-enter.
 		this[kCascade]?.[kFlushStyle]();
-		const current = this[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(this)) {
+		if (
+			this[kCascade] !== null &&
+			this[kGeneration] !== this[kCascade][kGeneration]
+		) {
 			this[kSyncResolved]();
 		}
 		// A flow-relative longhand resolves as the physical longhand it maps
@@ -7759,8 +7768,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		// Before the work, because resolving below reads back through this
 		// declaration.
-		this[kCascade][kCurrentDeclarations].add(this);
+		this[kGeneration] = this[kCascade][kGeneration];
 		this[kCSSRules] = this[kCascade][kMatchingRules](this[kElement]);
+		this[kInlineBlock] = null;
 		this[kCustom] = null;
 		storeTransitionFallback(
 			this[kCascade],
@@ -8205,10 +8215,20 @@ function getContainingWidth(
 function getInlineDeclarations(
 	declaration: ComputedStyleDeclaration,
 ): DeclarationBlock {
-	const style = (declaration[kElement] as HTMLElement).style;
-	return style instanceof CSSStyleDeclaration
-		? getDeclarationBlock(style)
-		: EMPTY_DECLARATIONS;
+	let block = declaration[kInlineBlock];
+	if (block === null) {
+		const element = declaration[kElement];
+		let style = inlineStyles.get(element);
+		if (style === undefined && element.hasAttribute("style")) {
+			getInlineStyle(element);
+			style = inlineStyles.get(element);
+		}
+		block = style === undefined
+			? EMPTY_DECLARATIONS
+			: getDeclarationBlock(style);
+		declaration[kInlineBlock] = block;
+	}
+	return block;
 }
 
 function resolveFromParent(
@@ -8287,9 +8307,11 @@ function resolvePropertyValue(
 	// a property with its own grammar re-serializes them in that property's
 	// spelling.
 	const value = raw
-		? property.startsWith("--")
-			? substituteVar(declaration, raw)
-			: serializeCSSValue(substituteVar(declaration, raw), property)
+		? !raw.includes("var(")
+			? raw
+			: property.startsWith("--")
+				? substituteVar(declaration, raw)
+				: serializeCSSValue(substituteVar(declaration, raw), property)
 		: raw;
 	// `currentcolor` is the element's own color, which is what a resolved
 	// value reports. On `color` itself it means the parent's.
@@ -8307,6 +8329,24 @@ function resolvePropertyValue(
 	return value;
 }
 
+// The physical property first, then every flow-relative name that can
+// map to it, whichever way `direction` goes.
+const SLOT_CANDIDATES = new Map<string, readonly string[]>();
+
+function getSlotCandidates(property: string): readonly string[] {
+	let names = SLOT_CANDIDATES.get(property);
+	if (names === undefined) {
+		const logical = PHYSICAL_TO_LOGICAL.get(property);
+		names = logical ? [property, ...logical] : [property];
+		SLOT_CANDIDATES.set(property, names);
+	}
+	return names;
+}
+
+function acceptsAnyName(): boolean {
+	return true;
+}
+
 function resolvePropertyValueRaw(
 	declaration: ComputedStyleDeclaration,
 	property: string,
@@ -8314,15 +8354,17 @@ function resolvePropertyValueRaw(
 	// A physical property and its flow-relative names are ONE cascade slot
 	// (css-logical-1 §2.1). The slot widens to both inline edges and narrows
 	// by `direction` only once a block actually declares one of them.
-	const logical = PHYSICAL_TO_LOGICAL.get(property);
-	const names = logical ? [property, ...logical] : [property];
+	const names = getSlotCandidates(property);
 	let direction: string | null = null;
-	const mapsHere = (name: string): boolean =>
-		name === property ||
-		getPhysicalProperty(
-			name,
-			(direction ??= declaration.getComputedValue("direction")),
-		) === property;
+	const mapsHere =
+		names.length === 1
+			? acceptsAnyName
+			: (name: string): boolean =>
+				name === property ||
+				getPhysicalProperty(
+					name,
+					(direction ??= declaration.getComputedValue("direction")),
+				) === property;
 
 	const inline = getInlineDeclarations(declaration);
 	const inlineName = getDeclaredName(inline, names, false, mapsHere);
@@ -8459,7 +8501,7 @@ function resolvePropertyValueRaw(
 	}
 
 	// 5. The property's initial value.
-	return getInitialStyle(declaration[kElement], property);
+	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
 }
 
 // This element's own custom properties and every ancestor's, since a
@@ -8467,8 +8509,10 @@ function resolvePropertyValueRaw(
 function getCustomNames(
 	computed: ComputedStyleDeclaration,
 ): string[] {
-	const current = computed[kCascade]?.[kCurrentDeclarations];
-	if (current !== undefined && !current.has(computed)) {
+	if (
+		computed[kCascade] !== null &&
+		computed[kGeneration] !== computed[kCascade][kGeneration]
+	) {
 		computed[kSyncResolved]();
 	}
 	if (computed[kCustom]) {
@@ -8548,6 +8592,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element | null;
 	declare [kPseudoElement]: string;
 	declare [kCascade]: Cascade | null;
+	declare [kGeneration]: number;
 
 	declare [kNodeResolved]: Map<string, string>;
 	declare [kBoxView]: MeasuredDeclaration | null;
@@ -8565,9 +8610,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		this[kElement] = element ?? null;
 		this[kPseudoElement] = pseudoElement;
 		this[kCascade] = cascade ?? null;
-		if (cascade) {
-			cascade[kCurrentDeclarations].add(this);
-		}
+		this[kGeneration] = cascade ? cascade[kGeneration] : 0;
 	}
 
 	override get length(): number {
@@ -8586,8 +8629,10 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// pseudo-element, which is what the ::selection and ::marker painters
 	// check.
 	getComputedValue(property: string): string {
-		const current = this[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(this)) {
+		if (
+			this[kCascade] !== null &&
+			this[kGeneration] !== this[kCascade][kGeneration]
+		) {
 			this[kSyncResolved]();
 		}
 		const value = this[kBaseValue](property);
@@ -8599,8 +8644,10 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// completed with initial values, so a box is never laid out without a
 	// `display`.
 	nodeValue(property: string): string {
-		const current = this[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(this)) {
+		if (
+			this[kCascade] !== null &&
+			this[kGeneration] !== this[kCascade][kGeneration]
+		) {
 			this[kSyncResolved]();
 		}
 		let value = this[kNodeResolved].get(property);
@@ -8644,7 +8691,9 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	[kSyncResolved](): void {
 		// Before the work, because resolving below reads back through this
 		// declaration.
-		this[kCascade]?.[kCurrentDeclarations].add(this);
+		if (this[kCascade] !== null) {
+			this[kGeneration] = this[kCascade][kGeneration];
+		}
 		if (this[kCascade] && this[kElement] && this[kPseudoElement]) {
 			this[kPseudoDeclarations] = this[kCascade][kPseudoDeclarationsFor](
 				this[kElement],
@@ -9377,10 +9426,10 @@ const kTransitionFlushQueued = Symbol("transitionFlushQueued");
 export class Cascade {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
 
-	// Every declaration resolved against the current cascade. Dropping one, or
-	// replacing the set, sends it back through kSyncResolved on its next read.
-	// Weak, so a declaration nobody holds costs nothing.
-	declare [kCurrentDeclarations]: WeakSet<object>;
+	// Counts the times every declaration was invalidated at once. A
+	// declaration carrying an older number, or zero, goes back through
+	// kSyncResolved on its next read.
+	declare [kGeneration]: number;
 
 	// Nothing else tracks a shadow tree's sheets, so a parse walks these.
 	declare [kShadowRoots]: Set<ShadowRoot>;
@@ -9510,7 +9559,7 @@ export class Cascade {
 			Element,
 			ComputedStyleDeclaration
 		>();
-		this[kCurrentDeclarations] = new WeakSet<object>();
+		this[kGeneration] = 1;
 		this[kShadowRoots] = new Set<ShadowRoot>();
 		this[kPseudoElementStyleCache] = new WeakMap<
 			Element,
@@ -10097,7 +10146,7 @@ export class Cascade {
 
 	[kDropCache](): void {
 		// Every computed style ever handed out re-resolves on its next read.
-		this[kCurrentDeclarations] = new WeakSet<object>();
+		this[kGeneration]++;
 		this[kUsedValues] = new WeakMap();
 		this[kComputedStyleCache] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
@@ -10235,7 +10284,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 	// out, so it is told the cascade changed rather than merely dropped.
 	const dropped = cascade[kComputedStyleCache].get(element);
 	if (dropped) {
-		cascade[kCurrentDeclarations].delete(dropped);
+		dropped[kGeneration] = 0;
 		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
@@ -11294,14 +11343,14 @@ function invalidateElementCaches(
 	// out, so it is told the cascade changed rather than merely dropped.
 	const dropped = cascade[kComputedStyleCache].get(element);
 	if (dropped) {
-		cascade[kCurrentDeclarations].delete(dropped);
+		dropped[kGeneration] = 0;
 		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
 	const droppedPseudos = cascade[kPseudoElementStyleCache].get(element);
 	if (droppedPseudos) {
 		for (const [name, declaration] of droppedPseudos) {
-			cascade[kCurrentDeclarations].delete(declaration);
+			declaration[kGeneration] = 0;
 			storeTransitionFallback(cascade, element, name, declaration[kResolved]);
 		}
 	}
