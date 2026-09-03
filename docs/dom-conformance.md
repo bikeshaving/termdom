@@ -20,8 +20,8 @@ window's legacy named access to elements by id.
 - Optional-feature subtests reporting unsupported: 6
 - Files whose harness completed: 692
 - Files whose harness did not complete: 70
-- Subtests passed: 99104
-- Subtests failed: 1461
+- Subtests passed: 99115
+- Subtests failed: 1462
 
 ## Exclusions
 
@@ -1520,7 +1520,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/perform-microtask-checkpoint-before-construction.html | OK | 0 | 2 |
 | custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 3 | 1 |
 | custom-elements/pseudo-class-defined-print.html | REFTEST | 0 | 0 |
-| custom-elements/pseudo-class-defined.html | TIMEOUT | 0 | 0 |
+| custom-elements/pseudo-class-defined.html | TIMEOUT | 11 | 1 |
 | custom-elements/range-and-constructors.html | OK | 2 | 0 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
 | custom-elements/reactions/Animation.html | OK | 0 | 3 |
@@ -3261,6 +3261,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/pseudo-class-defined-customized-builtins.html
 
 - <abbr is="my-abbr"> should not be :defined: assert_equals: matches(":defined") expected false but got true
+
+### custom-elements/pseudo-class-defined.html
+
+- this.matches(:defined) should not match during an upgrade: assert_equals: expected 2 but got 0
 
 ### custom-elements/reactions/Animation.html
 
