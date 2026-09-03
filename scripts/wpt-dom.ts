@@ -1125,9 +1125,14 @@ function installFramePages(
 	Object.defineProperty(prototype, "contentWindow", {
 		get(this: object): unknown {
 			const document = load(this);
-			return document === null
-				? inherited.window.get!.call(this)
-				: {document, frameElement: this};
+			if (document === null) {
+				return inherited.window.get!.call(this);
+			}
+			// The view carries the realm's constructors, which a test reads
+			// off `iframe.contentWindow.Element`.
+			return Object.assign(document.defaultView as object, {
+				frameElement: this,
+			});
 		},
 		configurable: true,
 	});
@@ -1452,9 +1457,20 @@ async function runMountedFile(
 			}));
 			settle();
 		};
-		const body = `${sources.join(
-			"\n;\n",
-		)}\n;\nadd_completion_callback(__complete);`;
+		// Registered as soon as the harness exists, as testharnessreport.js
+		// is in a browser: an uncaught error while a later script still runs
+		// completes the harness at once, and a callback registered after the
+		// last script would never hear it.
+		const harnessIndex = sources.findIndex((source) =>
+			source.includes("function add_completion_callback"),
+		);
+		const body = sources
+			.map((source, index) =>
+				index === harnessIndex
+					? `${source}\n;\nadd_completion_callback(__complete);`
+					: source,
+			)
+			.join("\n;\n");
 		try {
 			// One block at global scope for the whole file: the harness and the
 			// test share it exactly as they share a document's script scope. The
