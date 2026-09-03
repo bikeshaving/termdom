@@ -1378,6 +1378,55 @@ interface MessageEventInit<T = any> extends EventInit {
 	ports?: globalThis.MessagePort[];
 }
 
+const kErrorMessage = Symbol("error message");
+const kErrorFilename = Symbol("error filename");
+const kErrorLineno = Symbol("error lineno");
+const kErrorColno = Symbol("error colno");
+const kErrorValue = Symbol("error value");
+
+class ErrorEvent extends Event {
+	declare [kErrorMessage]: string;
+	declare [kErrorFilename]: string;
+	declare [kErrorLineno]: number;
+	declare [kErrorColno]: number;
+	declare [kErrorValue]: unknown;
+
+	constructor(type: string, eventInitDict: ErrorEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<ErrorEventInit>(eventInitDict, "An event init");
+		this[kErrorMessage] = String(init.message ?? "");
+		this[kErrorFilename] = String(init.filename ?? "");
+		this[kErrorLineno] = toUnsignedLong(init.lineno ?? 0);
+		this[kErrorColno] = toUnsignedLong(init.colno ?? 0);
+		this[kErrorValue] = init.error;
+	}
+
+	get message(): string {
+		return this[kErrorMessage];
+	}
+
+	get filename(): string {
+		return this[kErrorFilename];
+	}
+
+	get lineno(): number {
+		return this[kErrorLineno];
+	}
+
+	get colno(): number {
+		return this[kErrorColno];
+	}
+
+	get error(): unknown {
+		return this[kErrorValue];
+	}
+}
+
+Object.defineProperty(ErrorEvent.prototype, Symbol.toStringTag, {
+	value: "ErrorEvent",
+	configurable: true,
+});
+
 const kMessageData = Symbol("message data");
 const kOrigin = Symbol("origin");
 const kLastEventId = Symbol("last event id");
@@ -3093,6 +3142,7 @@ const LEGACY_EVENT_INTERFACES = new Map<string, () => Event>([
 	["compositionevent", () => new CompositionEvent("")],
 	["customevent", () => new CustomEvent("")],
 	["dragevent", () => new DragEvent("")],
+	["errorevent", () => new ErrorEvent("")],
 	["event", () => new Event("")],
 	["events", () => new Event("")],
 	["focusevent", () => new FocusEvent("")],
@@ -3528,15 +3578,16 @@ function registerHandlerListener(
 	return listener;
 }
 
-// This DOM defines no ErrorEvent interface, so this tests for the shape
-// of an ErrorEvent dispatched from outside.
+// An ErrorEvent of this DOM's, or one dispatched from outside with the
+// same shape.
 function isErrorEvent(event: Event): boolean {
 	return (
-		"message" in event &&
-		"filename" in event &&
-		"lineno" in event &&
-		"colno" in event &&
-		"error" in event
+		event instanceof ErrorEvent ||
+		("message" in event &&
+			"filename" in event &&
+			"lineno" in event &&
+			"colno" in event &&
+			"error" in event)
 	);
 }
 
@@ -3571,7 +3622,7 @@ function invokeEventHandler(
 			)
 			: called.call(target, event);
 	} catch (error) {
-		reportError(error);
+		reportError(error, getEventTargetDocument(target));
 		return;
 	}
 	if (errorHandling ? result === true : result === false) {
@@ -4242,7 +4293,12 @@ function innerInvoke(
 		try {
 			callListener(listener.callback, state.currentTarget, event);
 		} catch (error) {
-			reportError(error);
+			reportError(
+				error,
+				state.currentTarget === null
+					? null
+					: getEventTargetDocument(state.currentTarget),
+			);
 		}
 		if (state.foreign) {
 			syncForeignFlags(event, state);
@@ -4272,7 +4328,22 @@ function callListener(
 	(handleEvent as (event: Event) => void).call(callback, event);
 }
 
-function reportError(error: unknown): void {
+// HTML's "report an exception": the document's window hears an error
+// event first, and a handler that cancels it has handled the error. With
+// no window, or an unhandled one, the runtime reports it.
+function reportError(error: unknown, document: Document | null = null): void {
+	const view = document === null ? null : document[kDefaultView];
+	if (view !== null) {
+		const event = new ErrorEvent("error", {
+			cancelable: true,
+			message: error instanceof Error ? error.message : String(error),
+			error,
+		});
+		dispatch(view as unknown as EventTarget, event);
+		if (event.defaultPrevented) {
+			return;
+		}
+	}
 	const report = (globalThis as {reportError?: (e: unknown) => void})
 		.reportError;
 	if (report) {
@@ -4280,6 +4351,17 @@ function reportError(error: unknown): void {
 	} else {
 		console.error(error);
 	}
+}
+
+// The document whose window an exception raised on this target reaches.
+function getEventTargetDocument(target: EventTarget): Document | null {
+	if (target instanceof Node) {
+		return target[kDocument];
+	}
+	if (target instanceof Window) {
+		return target.document as unknown as Document;
+	}
+	return null;
 }
 
 const kSync = Symbol("resynchronize own properties");
@@ -6152,7 +6234,7 @@ function notifyObserver(observer: MutationObserver): void {
 	try {
 		observer[kCallback].call(observer, records, observer);
 	} catch (error) {
-		reportError(error);
+		reportError(error, (records[0].target as Node)[kDocument]);
 	}
 }
 
@@ -10456,8 +10538,8 @@ function createElementInternal(
 		let result: Element;
 		try {
 			result = constructCustomElement(definition);
-			if (result[kCustomState] !== "custom" || result[kDefinition] === null) {
-				throw new TypeError("That constructor did not build a custom element");
+			if (!(result instanceof HTMLElement)) {
+				throw new TypeError("That constructor did not build an HTML element");
 			}
 			if (result[kAttributeList].length > 0) {
 				throw domError(
@@ -10496,10 +10578,12 @@ function createElementInternal(
 				);
 			}
 		} catch (error) {
-			reportError(error);
+			reportError(error, document);
+			// HTML's "create an element" step 6.1.2: a constructor that failed
+			// leaves an HTMLUnknownElement in the failed state.
 			const failed = buildElement(
 				document,
-				getElementInterface(namespace, localName),
+				HTMLUnknownElement,
 				localName,
 				namespace,
 				prefix,
@@ -10662,7 +10746,7 @@ function invokeReactions(queue: Element[]): void {
 					reaction.callback.apply(element, reaction.args);
 				}
 			} catch (error) {
-				reportError(error);
+				reportError(error, element[kDocument]);
 			}
 		}
 	}
@@ -30236,7 +30320,7 @@ export class Window extends EventTarget {
 	releaseEvents(): void {}
 
 	reportError(e: any): void {
-		reportError(e);
+		reportError(e, this.document as unknown as Document);
 	}
 
 	requestIdleCallback(
@@ -30469,6 +30553,7 @@ const platform = {
 	IntersectionObserver,
 	KeyboardEvent,
 	Location,
+	ErrorEvent,
 	MathMLElement,
 	MessageEvent,
 	MouseEvent,
@@ -30555,6 +30640,7 @@ export interface Window
 	CustomEvent: typeof globalThis.CustomEvent;
 	UIEvent: typeof globalThis.UIEvent;
 	MouseEvent: typeof globalThis.MouseEvent;
+	ErrorEvent: typeof globalThis.ErrorEvent;
 	PointerEvent: typeof globalThis.PointerEvent;
 	WheelEvent: typeof globalThis.WheelEvent;
 	KeyboardEvent: typeof globalThis.KeyboardEvent;
@@ -32828,6 +32914,7 @@ export type {
 	BeforeUnloadEvent,
 	MessageEvent,
 	HashChangeEvent,
+	ErrorEvent,
 	StorageEvent,
 	UIEvent,
 	MouseEvent,
