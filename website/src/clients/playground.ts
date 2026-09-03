@@ -850,6 +850,23 @@ function* Workbench(
 	},
 ) {
 	let code = value;
+	// More terminals of other sizes, running the same program: a resize is
+	// half of what a terminal program has to get right, and two sizes side
+	// by side show it without dragging a window.
+	let extras: Array<{id: number; cols: number; rows: number}> = [];
+	let nextExtra = 1;
+	let extraSize = "40x12";
+	const addExtra = (): void => {
+		const [cols, rows] = extraSize.split("x").map(Number);
+		this.refresh(() => {
+			extras = [...extras, {id: nextExtra++, cols, rows}];
+		});
+	};
+	const removeExtra = (id: number): void => {
+		this.refresh(() => {
+			extras = extras.filter((each) => each.id !== id);
+		});
+	};
 	let editorOpen = !drawer || readEditorPreference();
 	const toggleEditor = (): void => {
 		this.refresh(() => {
@@ -943,6 +960,23 @@ function* Workbench(
 								${editorOpen ? "Hide editor" : "Edit"}
 							</button>`
 						: null}
+					${drawer
+						? jsx`<label for=${`${name}-pane-size`}>Pane</label>
+							<select
+								id=${`${name}-pane-size`}
+								value=${extraSize}
+								onchange=${(ev: Event) => {
+									extraSize = (ev.target as HTMLSelectElement).value;
+								}}
+							>
+								${PANE_SIZES.map(
+									(size) => jsx`<option key=${size} value=${size}>${size.replace("x", "×")}</option>`,
+								)}
+							</select>
+							<button id=${`${name}-add-pane`} type="button" onclick=${addExtra}>
+								+ Pane
+							</button>`
+						: null}
 					<button id=${`${name}-run`} type="button" onclick=${runNow}>
 						Run <kbd>${RUN_KEY_LABEL}</kbd>
 					</button>
@@ -965,19 +999,92 @@ function* Workbench(
 								/>
 							</div>`
 						: null}
-					<${TerminalPane}
-						code=${code}
-						cols=${geometry.cols}
-						rows=${geometry.rows}
-						fill=${fill}
-						runNonce=${runNonce}
-						onstatus=${onstatus}
-					/>
+					<div class=${terminalSide}>
+						<${TerminalPane}
+							code=${code}
+							cols=${geometry.cols}
+							rows=${geometry.rows}
+							fill=${fill}
+							runNonce=${runNonce}
+							onstatus=${onstatus}
+						/>
+						${extras.length > 0
+							? jsx`<div class=${extraStrip}>
+									${extras.map(
+										(extra) => jsx`
+											<div key=${extra.id} class="extra">
+												<div class="bar">
+													<span>${extra.cols}×${extra.rows}</span>
+													<button type="button" aria-label="Remove pane" onclick=${() => removeExtra(extra.id)}>×</button>
+												</div>
+												<${TerminalPane}
+													code=${code}
+													cols=${extra.cols}
+													rows=${extra.rows}
+													runNonce=${runNonce}
+													onstatus=${() => {}}
+												/>
+											</div>
+										`,
+									)}
+								</div>`
+							: null}
+					</div>
 				</div>
 			</div>
 		`;
 	}
 }
+
+const PANE_SIZES = ["40x12", "60x20", "80x24", "100x30", "132x43"];
+
+/* The terminal side: the main pane, and under it the extra panes at their
+   own sizes, each with a bar naming the size and letting it go. */
+const terminalSide = css`
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+	background-color: ${TERMINAL_BACKGROUND};
+	> :first-child {
+		flex: 1;
+		min-height: 0;
+	}
+`;
+
+const extraStrip = css`
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	padding: 0.5rem;
+	border-top: 1px solid var(--border-color);
+	overflow: auto;
+	max-height: 50%;
+	.extra {
+		border: 1px solid var(--border-color);
+		border-radius: 6px;
+		overflow: hidden;
+	}
+	.bar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.1rem 0.5rem;
+		font-size: 0.75rem;
+		color: var(--muted-color);
+		background-color: var(--surface-color);
+	}
+	.bar button {
+		font: inherit;
+		color: var(--muted-color);
+		background: none;
+		border: none;
+		cursor: pointer;
+	}
+	.bar button:hover {
+		color: var(--highlight-color);
+	}
+`;
 
 /*** Gallery ***/
 

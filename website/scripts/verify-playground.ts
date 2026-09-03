@@ -111,6 +111,27 @@ report(
 await page.click("#playground-editor");
 await page.waitForSelector("content-area");
 report(true, "workbench: the Edit button opens the drawer");
+// A second pane at another size runs the same program beside the first.
+await page.click("#playground-add-pane");
+await page.waitForFunction(() => document.querySelectorAll(".xterm").length >= 2);
+const painted = await (async () => {
+	const deadline = Date.now() + 15000;
+	while (Date.now() < deadline) {
+		const count = await page.evaluate(
+			() =>
+				Array.from(document.querySelectorAll(".xterm-rows")).filter((el) =>
+					(el.textContent ?? "").includes("Hello"),
+				).length,
+		);
+		if (count >= 2) return true;
+		await new Promise((r) => setTimeout(r, 250));
+	}
+	return false;
+})();
+report(painted, "workbench: an added pane runs the program at its own size");
+await page.click('[aria-label="Remove pane"]');
+await page.waitForFunction(() => document.querySelectorAll(".xterm").length === 1);
+report(true, "workbench: a pane can be removed");
 
 // Switching examples runs the next program, and nothing of the previous
 // one survives the reset -- a dead realm's queued writes must not drain
