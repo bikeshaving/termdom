@@ -6324,7 +6324,7 @@ function isSuppressedFlexWhitespace(text: Text): boolean {
 		if (node.nodeType !== node.ELEMENT_NODE) {
 			continue;
 		}
-		// USED display. A getBlockifiedDisplay item opens a box of its own
+		// USED display. A blockified item opens a box of its own
 		// rather than joining the run. A display:none child does not interrupt
 		// it.
 		const siblingDisplay = getUsedDisplay(node as Element);
@@ -6630,7 +6630,7 @@ function styleLayoutNodeProperties(
 		);
 	}
 
-	// A getBlockifiedDisplay inline flex item keeps its padding, margin and
+	// A blockified inline flex item keeps its padding, margin and
 	// border like any block (css-display-3 §2.7). Without the parentIsFlex
 	// exception, `.row{display:flex} .row span{padding:1}` dropped the span's
 	// padding.
@@ -7650,7 +7650,7 @@ function addElementNode(
 			dropRunContent(layout, element);
 			return;
 		}
-		// No anonymous box holds it (a flex container's getBlockifiedDisplay
+		// No anonymous box holds it (a flex container's blockified
 		// children). Its own box lays it out below.
 	}
 
@@ -8640,7 +8640,7 @@ function collectLeafNodes(
 	// A run starting inside an inline box carries on past its end.
 	// `<span>a<div/>b</span>c` puts "b" and "c" on one line, so the walk
 	// cannot stop at </span>. The climb stops at an out-of-flow inline,
-	// which is getBlockifiedDisplay and lays its own content out.
+	// which is blockified and lays its own content out.
 	const parentDisplay = getComputedDisplay(parentElement);
 	let traversalRoot: Node;
 	if (hasItemChildren(parentDisplay) && node.nodeType === node.ELEMENT_NODE) {
@@ -10568,13 +10568,13 @@ export class Layout {
 			return null;
 		}
 
-		// A getBlockifiedDisplay box's layout node is the truth, not the text
+		// A blockified box's layout node is the truth, not the text
 		// union the run machinery below reports, but only once one has been
 		// built.
-		const getBlockifiedDisplay = isBlockifiedByLayout(element) &&
+		const blockified = isBlockifiedByLayout(element) &&
 			this[kNodeMap].has(element);
 
-		if (!getBlockifiedDisplay && isInlineDisplay(display)) {
+		if (!blockified && isInlineDisplay(display)) {
 			if (isAtomicInline(display)) {
 				const rect = getInlineBlockRect(this, element);
 				if (rect) {
@@ -11676,7 +11676,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		layoutNode,
 	);
 
-	// getDocumentPosition gives the border box, and a getBlockifiedDisplay
+	// getDocumentPosition gives the border box, and a blockified
 	// inline flex item reserved padding and border in it (styleLayoutNode's
 	// parentIsFlex exception) that its text ignored, painting at the border
 	// edge. Scoped to exactly that case. A normal inline's box model is

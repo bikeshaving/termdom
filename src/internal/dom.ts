@@ -18835,10 +18835,10 @@ function getTopmostPopoverAncestor(
 	source: Element | null,
 ): Element | null {
 	const popovers = getShowingAutoPopovers(node[kDocument]);
-	const getNodeIndex = getLastFlatAncestorIndex(popovers, node);
+	const nodeIndex = getLastFlatAncestorIndex(popovers, node);
 	const sourceIndex =
 		source === null ? -1 : getLastFlatAncestorIndex(popovers, source);
-	const index = Math.max(getNodeIndex, sourceIndex);
+	const index = Math.max(nodeIndex, sourceIndex);
 	return index === -1 ? null : popovers[index];
 }
 
