@@ -5177,6 +5177,7 @@ const kCustomState = Symbol("custom element state");
 
 const kAssignedSlot = Symbol("assigned slot");
 const kDefinition = Symbol("element definition");
+const kRoot = Symbol("root");
 
 // Held the same way as the ranges below and re-homed by the same moves.
 const nodeIteratorsByRoot = new WeakMap<Node, Set<NodeIterator>>();
@@ -5248,6 +5249,28 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	const newPreviousSibling =
 		child !== null ? child[kPrevious] : newParent[kLastChild];
 	linkChild(node, newParent, child);
+	// A move between a shadow tree and its host's tree changes the root of
+	// everything moved. The pre-remove steps above already put every live
+	// range outside the subtree, but an iterator rooted inside it moves.
+	const oldRoot = oldParent[kTreeRoot];
+	const newRoot = newParent[kTreeRoot];
+	if (oldRoot !== newRoot) {
+		for (
+			let moved: Node | null = node;
+			moved !== null;
+			moved = nextInTree(moved, node)
+		) {
+			moved[kTreeRoot] = newRoot;
+		}
+		if (iterators !== undefined) {
+			for (const iterator of iterators) {
+				if (isInclusiveAncestor(node, iterator[kRoot])) {
+					iterators.delete(iterator);
+					registerNodeIterator(newRoot, iterator);
+				}
+			}
+		}
+	}
 	const shadow =
 		newParent.nodeType === ELEMENT_NODE
 			? (newParent as Element)[kShadowRoot]
@@ -5589,8 +5612,6 @@ function preRemove(child: Node, parent: Node): Node {
 	removeNode(child);
 	return child;
 }
-
-const kRoot = Symbol("root");
 
 const kActiveElement = Symbol("focused area");
 

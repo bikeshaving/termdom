@@ -702,3 +702,32 @@ test("::part() styles an exposed shadow part from the document, per spec", async
 
 	dom.dispose();
 });
+
+test("moveBefore into a shadow tree re-roots the moved subtree", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		html: "<!DOCTYPE html><html><body><div id=host></div><p id=moved><b id=inner>x</b></p></body></html>",
+	});
+	const document = dom.window.document;
+	const host = document.getElementById("host")!;
+	const moved = document.getElementById("moved")!;
+	const inner = document.getElementById("inner")!;
+	type Movable = {moveBefore(node: Node, child: Node | null): void};
+	const shadow = host.attachShadow({mode: "open"}) as ShadowRoot & Movable;
+	const body = document.body as HTMLElement & Movable;
+	const iterator = document.createNodeIterator(inner);
+
+	shadow.moveBefore(moved, null);
+	expect(moved.getRootNode()).toBe(shadow);
+	expect(inner.getRootNode()).toBe(shadow);
+	expect(moved.isConnected).toBe(true);
+
+	inner.append(document.createElement("i"));
+	expect(iterator.nextNode()).toBe(inner);
+	expect(iterator.nextNode()).toBe(inner.firstChild);
+
+	body.moveBefore(moved, null);
+	expect(moved.getRootNode()).toBe(document);
+	expect(inner.getRootNode()).toBe(document);
+	await nextFrame(dom);
+});
