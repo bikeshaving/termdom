@@ -3445,6 +3445,7 @@ const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 const kLayout = Symbol("layout");
 const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsing = Symbol("parsing");
+const kPseudoHosts = Symbol("pseudoHosts");
 const kElement = Symbol("element");
 const kParentRule = Symbol("parentRule");
 const kOnChange = Symbol("onChange");
@@ -9391,6 +9392,9 @@ export class Cascade {
 	declare [kParsedRules]: ParsedCSSRule[];
 	declare [kStylesheetsDirty]: boolean;
 	declare [kParsing]: boolean;
+	// Every element holding a pseudo-element node, so a sheet change
+	// reconsiders them without walking the document.
+	declare [kPseudoHosts]: Set<Element>;
 
 	// Whether any parsed selector can reach OUTSIDE a mutated element's
 	// subtree. Sibling combinators reach following siblings, and :has()
@@ -9515,6 +9519,7 @@ export class Cascade {
 		this[kParsedRules] = [];
 		this[kStylesheetsDirty] = false;
 		this[kParsing] = false;
+		this[kPseudoHosts] = new Set();
 		this[kSelectorsReachSiblings] = false;
 		this[kSelectorsReachAncestors] = false;
 		this[kReachingClasses] = new Set<string>();
@@ -12380,17 +12385,12 @@ function attachPseudoElements(
 	if (!cascade[kDocument].documentElement) {
 		return;
 	}
-	const walker = cascade[kDocument].createTreeWalker(
-		cascade[kDocument].documentElement,
-		cascade[kWindow].NodeFilter.SHOW_ELEMENT,
-		null,
-	);
-	let element = walker.nextNode() as Element;
-	while (element) {
-		if (pseudoElementCount(element) > 0) {
+	for (const element of [...cascade[kPseudoHosts]]) {
+		if (element.isConnected && pseudoElementCount(element) > 0) {
 			attachPseudoElementsToElement(cascade, element);
+		} else {
+			cascade[kPseudoHosts].delete(element);
 		}
-		element = walker.nextNode() as Element;
 	}
 
 	attachPseudoElementsToDocument(cascade);
@@ -12508,6 +12508,7 @@ function attachPseudoElementToElementForType(
 		return;
 	}
 	const node = ensurePseudoElement<Element>(element, pseudoType);
+	cascade[kPseudoHosts].add(element);
 	node.appendChild(element.ownerDocument.createTextNode(content));
 	cascade[kLayout].invalidate();
 	cascade[kLayout].invalidate(element);
