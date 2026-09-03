@@ -24738,6 +24738,9 @@ function cloneCharacterDataSlice(
 }
 
 const kRangeSelection = Symbol("the selection whose range this is");
+// A range the selection made for itself and no author has been handed:
+// released when the selection moves on from it.
+const kSelectionOwned = Symbol("selection-owned range");
 
 class Range extends AbstractRange implements globalThis.Range {
 	static readonly START_TO_START = START_TO_START;
@@ -24749,11 +24752,13 @@ class Range extends AbstractRange implements globalThis.Range {
 	declare getBoundingClientRect: () => globalThis.DOMRect;
 	declare getClientRects: () => globalThis.DOMRectList;
 	[kRangeSelection]: Selection | null;
+	[kSelectionOwned]: boolean;
 
 	constructor() {
 		const document = getCurrentDocument();
 		super(document, 0, document, 0);
 		this[kRangeSelection] = null;
+		this[kSelectionOwned] = false;
 		registerLiveRange(this);
 	}
 
@@ -25139,6 +25144,17 @@ function registerLiveRange(range: Range): void {
 	liveRangesEver++;
 }
 
+// For a range the engine made for itself and is done with. An author's
+// range stays live for as long as the author holds it.
+function releaseLiveRange(range: Range): void {
+	liveRangesByRoot.get(getRoot(range[kStartNode]))?.delete(range);
+}
+
+/** How many live ranges the mutation steps walk for this node's tree. */
+export function getLiveRangeCount(node: globalThis.Node): number {
+	return liveRangesByRoot.get(getRoot(node as Node))?.size ?? 0;
+}
+
 function selectNodeWithin(range: Range, node: Node): void {
 	const parent = getBoundaryParent(node);
 	const index = getNodeIndex(node);
@@ -25184,6 +25200,7 @@ function extractRange(range: Range): DocumentFragment {
 			getNodeLength(first),
 		);
 		appendNode(extractRange(subrange), clone);
+		releaseLiveRange(subrange);
 	}
 	for (const child of shape.containedChildren) {
 		appendNode(child, fragment);
@@ -25199,6 +25216,7 @@ function extractRange(range: Range): DocumentFragment {
 		const subrange = new Range();
 		setRangePoints(subrange, last, 0, endNode, endOffset);
 		appendNode(extractRange(subrange), clone);
+		releaseLiveRange(subrange);
 	}
 	return fragment;
 }
@@ -25238,6 +25256,7 @@ function cloneRangeContents(range: Range): DocumentFragment {
 			getNodeLength(first),
 		);
 		appendNode(cloneRangeContents(subrange), clone);
+		releaseLiveRange(subrange);
 	}
 	for (const child of shape.containedChildren) {
 		appendNode(cloneNode(child, undefined, true), fragment);
@@ -25252,6 +25271,7 @@ function cloneRangeContents(range: Range): DocumentFragment {
 		const subrange = new Range();
 		setRangePoints(subrange, last, 0, endNode, endOffset);
 		appendNode(cloneRangeContents(subrange), clone);
+		releaseLiveRange(subrange);
 	}
 	return fragment;
 }
@@ -25601,6 +25621,7 @@ class Selection implements globalThis.Selection {
 		if (toUnsignedLong(index) !== 0 || range === null) {
 			throw indexSizeError("The selection has no range at that index");
 		}
+		range[kSelectionOwned] = false;
 		return range;
 	}
 
@@ -25645,7 +25666,11 @@ class Selection implements globalThis.Selection {
 			return;
 		}
 		range[kRangeSelection] = null;
+		if (range[kSelectionOwned]) {
+			releaseLiveRange(range);
+		}
 		this[kRange] = null;
+		releaseSelectionPoints(this);
 		this[kStart] = null;
 		this[kEnd] = null;
 		this[kDirection] = "directionless";
@@ -26162,15 +26187,11 @@ function getSelectionLine(lines: SelectionLine[], index: number): number {
 	return lines.length - 1;
 }
 
-function getCaretColumn(
-	document: Document,
-	layout: Layout,
-	point: [Node, number],
-): number | null {
-	const range = document.createRange();
-	range.setStart(point[0] as unknown as globalThis.Node, point[1]);
-	range.setEnd(point[0] as unknown as globalThis.Node, point[1]);
+function getCaretColumn(layout: Layout, point: [Node, number]): number | null {
+	const range = new Range();
+	setRangePoints(range, point[0], point[1], point[0], point[1]);
 	const rect = layout.getRangeRects(range)[0];
+	releaseLiveRange(range);
 	return rect === undefined ? null : rect.x;
 }
 
@@ -26198,7 +26219,7 @@ function selectionLineMove(
 		return getSelectionPoint(run, lines[lines.length - 1].end);
 	}
 	const here = getSelectionPoint(run, index);
-	const column = here === null ? null : getCaretColumn(document, layout, here);
+	const column = here === null ? null : getCaretColumn(layout, here);
 	const root = document.body ?? document.documentElement;
 	const found =
 		column === null || root === null
@@ -26316,6 +26337,7 @@ function createRangeBetween(start: [Node, number], end: [Node, number]): Range {
 	const range = new Range();
 	setRangeBoundary(range, start[0], start[1], true);
 	setRangeBoundary(range, end[0], end[1], false);
+	range[kSelectionOwned] = true;
 	return range;
 }
 
@@ -26329,6 +26351,9 @@ function associateSelectionRange(
 	const previous = selection[kRange];
 	if (previous !== null) {
 		previous[kRangeSelection] = null;
+		if (previous[kSelectionOwned] && previous !== range) {
+			releaseLiveRange(previous);
+		}
 	}
 	selection[kRange] = range;
 	range[kRangeSelection] = selection;
@@ -26336,6 +26361,7 @@ function associateSelectionRange(
 		compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
 	const start = anchorFirst ? anchor : focus;
 	const end = anchorFirst ? focus : anchor;
+	releaseSelectionPoints(selection);
 	selection[kStart] = createLivePoint(start[0], start[1]);
 	selection[kEnd] = createLivePoint(end[0], end[1]);
 	selection[kDirection] = direction;
@@ -26358,6 +26384,8 @@ function selectionChanged(
 	}
 	const start = createLivePoint(range[kStartNode], range[kStartOffset]);
 	const end = createLivePoint(range[kEndNode], range[kEndOffset]);
+	const oldStart = selection[kStart];
+	const oldEnd = selection[kEnd];
 	if (
 		which === "both" || selection[kStart] === null || selection[kEnd] === null
 	) {
@@ -26374,7 +26402,25 @@ function selectionChanged(
 			selection[kStart] = end;
 		}
 	}
+	for (const point of [oldStart, oldEnd, start, end]) {
+		if (
+			point !== null &&
+			point !== selection[kStart] &&
+			point !== selection[kEnd]
+		) {
+			releaseLiveRange(point);
+		}
+	}
 	scheduleSelectionChange(selection[kDocument]);
+}
+
+function releaseSelectionPoints(selection: Selection): void {
+	if (selection[kStart] !== null) {
+		releaseLiveRange(selection[kStart]);
+	}
+	if (selection[kEnd] !== null) {
+		releaseLiveRange(selection[kEnd]);
+	}
 }
 
 function getComposedOrder(point: Range, other: Range): number {
