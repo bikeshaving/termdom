@@ -1,7 +1,21 @@
 import {expect, test} from "@b9g/libuild/test";
 
+import {Screen} from "../src/internal/screen.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
+
+test("a cell written inside a wide cluster's span is dropped, not emitted", () => {
+	const screen = new Screen(2, 12, 8);
+	const ctx = screen.beginFrame({offset: 0});
+	ctx.drawText("काा", 2, 0);
+	ctx.drawText("ab", 3, 0);
+	ctx.drawText("cd", 6, 0);
+	const frame = stripControlCodes(screen.endFrame());
+	expect(frame).toContain("काा");
+	expect(frame).toContain("cd");
+	expect(frame).not.toContain("a");
+	expect(frame).not.toContain("b");
+});
 
 test("a selection boundary inside a cluster takes the cluster whole", async () => {
 	const terminal = new MockProcess({cols: 30, rows: 4});

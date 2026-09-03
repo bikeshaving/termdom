@@ -1519,7 +1519,11 @@ function generateANSI(
 	let cursorCol = 0;
 	let prevIndex = -1;
 
-	let skipNextCol = -1;
+	// The first column after the glyph last emitted on this row, when
+	// that glyph is wider than one cell. A cell written inside the span (a
+	// selection or caret measured off a cluster boundary) cannot be
+	// reached without moving the cursor back, so it is not emitted.
+	let coveredUntil = -1;
 
 	// The emission run the cursor is in (every move ends one), and how many
 	// unmeasured clusters this row has painted. Each can carry the real
@@ -1591,12 +1595,9 @@ function generateANSI(
 				continue;
 			}
 
-			if (skipNextCol >= 0 && row === cursorRow && col === skipNextCol) {
-				skipNextCol = -1;
+			if (row === cursorRow && col < coveredUntil) {
 				continue;
 			}
-
-			skipNextCol = -1;
 
 			if (row !== cursorRow || col !== cursorCol) {
 				const moveSeq = moveCursor(writer, cursorRow, cursorCol, row, col);
@@ -1671,10 +1672,7 @@ function generateANSI(
 
 			cursorCol += width;
 			prevIndex = index;
-
-			if (width === 2) {
-				skipNextCol = col + 1;
-			}
+			coveredUntil = width > 1 ? col + width : -1;
 		}
 
 		if (rowHasContent) {
