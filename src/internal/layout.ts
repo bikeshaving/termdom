@@ -41,6 +41,7 @@ import {
 import {
 	getParagraphDirection,
 	getStringWidth,
+	graphemeSegmenter,
 	hasRTL,
 	toVisualOrder,
 	writeClusterWidths,
@@ -11406,13 +11407,16 @@ function getOffsetInFragment(
 	);
 	let cellX = fragment.rect.x;
 	let index = 0;
-	while (index < text.length && cellX < x) {
-		const width = getStringWidth(text[index]);
+	for (const {segment} of graphemeSegmenter.segment(text)) {
+		if (cellX >= x) {
+			break;
+		}
+		const width = getStringWidth(segment);
 		if (cellX + width > x) {
 			break;
 		}
 		cellX += width;
-		index++;
+		index += segment.length;
 	}
 	const distance =
 		x < fragment.rect.x
@@ -11431,6 +11435,38 @@ function getOffsetInFragment(
 
 // The text is included because the only way to restyle a cell is to
 // redraw its glyph.
+// The cluster boundaries of a string: where the cluster holding an
+// index starts, and where the first cluster at or after an index starts.
+function getClusterStarts(text: string): {
+	at(index: number): number;
+	after(index: number): number;
+} {
+	const starts: number[] = [];
+	for (const {index} of graphemeSegmenter.segment(text)) {
+		starts.push(index);
+	}
+	return {
+		at(index) {
+			let start = 0;
+			for (const candidate of starts) {
+				if (candidate > index) {
+					break;
+				}
+				start = candidate;
+			}
+			return start;
+		},
+		after(index) {
+			for (const candidate of starts) {
+				if (candidate >= index) {
+					return candidate;
+				}
+			}
+			return text.length;
+		},
+	};
+}
+
 function getSelectionSpans(
 	layout: Layout,
 	textNode: Text,
@@ -11445,6 +11481,10 @@ function getSelectionSpans(
 			textNode.data.slice(fragment.startOffset, fragment.endOffset),
 			whiteSpace,
 		);
+		// A cell holds a whole cluster, so a run that starts or ends inside
+		// one takes the cluster whole. Measured off a cluster boundary, a run
+		// landed inside the span of the glyph before it.
+		const clusterStarts = getClusterStarts(text);
 		let runStart = -1;
 		for (let i = 0; i <= text.length; i++) {
 			const dataOffset =
@@ -11453,8 +11493,9 @@ function getSelectionSpans(
 					: -1;
 			const selected = dataOffset >= from && dataOffset < to;
 			if (selected && runStart === -1) {
-				runStart = i;
+				runStart = clusterStarts.at(i);
 			} else if (!selected && runStart !== -1) {
+				i = clusterStarts.after(i);
 				const x =
 					Math.round(fragment.rect.x) +
 					getStringWidth(text.slice(0, runStart));
