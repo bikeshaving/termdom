@@ -12047,13 +12047,16 @@ function parseSelector(
 	) {
 		cascade[kCounterRulesExist] = true;
 	}
-	if (declarations["display"] === "list-item") {
-		cascade[kListItemRulesExist] = true;
-	}
 	const specificity = reading.specificity;
 	const uaOrigin = Boolean(
 		uaOriginSheet || (scope != null && isUAShadowTree(scope)),
 	);
+	// The UA sheet's own `li { display: list-item }` is covered by the tag
+	// tests that read this flag. Set by the UA sheet too, the flag was
+	// always on, and every element paid for a ::marker it could not have.
+	if (!uaOrigin && declarations["display"] === "list-item") {
+		cascade[kListItemRulesExist] = true;
+	}
 
 	const subjectTag = reading.subjectTag;
 	// A :host rule is tried against the host as well as the tree's
