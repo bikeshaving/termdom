@@ -103,6 +103,14 @@ report(await waitForText("Hello"), "gallery: the first card runs its program");
 await page.click('[data-card="hello-world"]');
 await page.waitForSelector("select");
 report(await waitForText("Hello"), "playground: opening a card runs it in the workbench");
+// The terminal has the frame to itself until the editor is asked for.
+report(
+	(await page.evaluate(() => document.querySelector("content-area") === null)),
+	"workbench: the editor drawer starts shut",
+);
+await page.click("#playground-editor");
+await page.waitForSelector("content-area");
+report(true, "workbench: the Edit button opens the drawer");
 
 // Switching examples runs the next program, and nothing of the previous
 // one survives the reset -- a dead realm's queued writes must not drain

@@ -760,6 +760,33 @@ function editorPane(lines: number) {
 	`;
 }
 
+/* The terminal alone, filling the frame, while the editor drawer is shut. */
+const paneSolo = css`
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: minmax(0, 1fr);
+	flex: 1;
+	min-height: 0;
+`;
+
+const EDITOR_PREFERENCE = "playground:editor";
+
+function readEditorPreference(): boolean {
+	try {
+		return localStorage.getItem(EDITOR_PREFERENCE) === "open";
+	} catch {
+		return false;
+	}
+}
+
+function writeEditorPreference(open: boolean): void {
+	try {
+		localStorage.setItem(EDITOR_PREFERENCE, open ? "open" : "closed");
+	} catch {
+		// A page that cannot remember still toggles.
+	}
+}
+
 /* In the toolbar rather than under the panes, taking the room the controls
    leave and giving a long message an ellipsis rather than a second row. */
 const statusLine = css`
@@ -798,6 +825,7 @@ function* Workbench(
 		title,
 		geometry,
 		fill,
+		drawer,
 		oncode,
 		controls: extraControls,
 	}: {
@@ -810,12 +838,25 @@ function* Workbench(
 		geometry: {cols: number; rows: number; editorLines: number};
 		/** Fill the box this is given instead of sizing to the geometry. */
 		fill?: boolean;
+		/**
+		 * The editor is a drawer beside the terminal, closed until asked for:
+		 * the terminal is what a visitor came to see, and the editor is there
+		 * for the one who came to change it. Remembered across pages.
+		 */
+		drawer?: boolean;
 		/** Hears what the editor holds, the outside value included. */
 		oncode?: (code: string) => void;
 		controls?: unknown;
 	},
 ) {
 	let code = value;
+	let editorOpen = !drawer || readEditorPreference();
+	const toggleEditor = (): void => {
+		this.refresh(() => {
+			editorOpen = !editorOpen;
+			writeEditorPreference(editorOpen);
+		});
+	};
 	let shown = value;
 	let shownEpoch = valueEpoch;
 	let updateEditor = true;
@@ -869,6 +910,7 @@ function* Workbench(
 		title,
 		geometry,
 		fill,
+		drawer,
 		oncode,
 		controls: extraControls,
 	} of this) {
@@ -891,6 +933,16 @@ function* Workbench(
 				<div class=${toolbar}>
 					${title ? jsx`<span class=${filename}>${title}</span>` : null}
 					${extraControls}
+					${drawer
+						? jsx`<button
+								id=${`${name}-editor`}
+								type="button"
+								aria-pressed=${editorOpen ? "true" : "false"}
+								onclick=${toggleEditor}
+							>
+								${editorOpen ? "Hide editor" : "Edit"}
+							</button>`
+						: null}
 					<button id=${`${name}-run`} type="button" onclick=${runNow}>
 						Run <kbd>${RUN_KEY_LABEL}</kbd>
 					</button>
@@ -902,15 +954,17 @@ function* Workbench(
 					</p>
 				</div>
 
-				<div class=${panes(geometry.cols, fill)}>
-					<div class=${fill ? editorPaneFill : editorPane(geometry.editorLines)}>
-						<${CodeEditor}
-							copy=${!updateEditor}
-							value=${code}
-							language="javascript"
-							showGutter
-						/>
-					</div>
+				<div class=${editorOpen ? panes(geometry.cols, fill) : paneSolo}>
+					${editorOpen
+						? jsx`<div class=${fill ? editorPaneFill : editorPane(geometry.editorLines)}>
+								<${CodeEditor}
+									copy=${!updateEditor}
+									value=${code}
+									language="javascript"
+									showGutter
+								/>
+							</div>`
+						: null}
 					<${TerminalPane}
 						code=${code}
 						cols=${geometry.cols}
@@ -1303,6 +1357,7 @@ function* Playground(this: Context) {
 					name="playground"
 					geometry=${PAGE_GEOMETRY}
 					fill
+					drawer
 					oncode=${oncode}
 					controls=${jsx`
 						<a href="#" class=${filename}>‹ Gallery</a>
