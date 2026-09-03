@@ -1417,7 +1417,7 @@ class ErrorEvent extends Event {
 		return this[kErrorColno];
 	}
 
-	get error(): unknown {
+	get error(): any {
 		return this[kErrorValue];
 	}
 }

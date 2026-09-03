@@ -21,103 +21,111 @@ type Map0<T> =
 			? globalThis.CustomEvent
 			: Identical<T, DOM.BeforeUnloadEvent> extends true
 				? globalThis.BeforeUnloadEvent
-				: Identical<T, DOM.MessageEvent> extends true
-					? globalThis.MessageEvent
-					: Identical<T, DOM.HashChangeEvent> extends true
-						? globalThis.HashChangeEvent
-						: Identical<T, DOM.StorageEvent> extends true
-							? globalThis.StorageEvent
-							: Identical<T, DOM.UIEvent> extends true
-								? globalThis.UIEvent
-								: Identical<T, DOM.MouseEvent> extends true
-									? globalThis.MouseEvent
-									: Identical<T, DOM.FocusEvent> extends true
-										? globalThis.FocusEvent
-										: Identical<T, DOM.KeyboardEvent> extends true
-											? globalThis.KeyboardEvent
-											: Identical<T, DOM.CompositionEvent> extends true
-												? globalThis.CompositionEvent
-												: Identical<T, DOM.TextEvent> extends true
-													? globalThis.TextEvent
-													: Identical<T, DOM.InputEvent> extends true
-														? globalThis.InputEvent
-														: Identical<T, DOM.FileList> extends true
-															? globalThis.FileList
-															: Identical<T, DOM.DataTransferItem> extends true
-																? globalThis.DataTransferItem
+				: Identical<T, DOM.ErrorEvent> extends true
+					? globalThis.ErrorEvent
+					: Identical<T, DOM.MessageEvent> extends true
+						? globalThis.MessageEvent
+						: Identical<T, DOM.HashChangeEvent> extends true
+							? globalThis.HashChangeEvent
+							: Identical<T, DOM.StorageEvent> extends true
+								? globalThis.StorageEvent
+								: Identical<T, DOM.UIEvent> extends true
+									? globalThis.UIEvent
+									: Identical<T, DOM.MouseEvent> extends true
+										? globalThis.MouseEvent
+										: Identical<T, DOM.FocusEvent> extends true
+											? globalThis.FocusEvent
+											: Identical<T, DOM.KeyboardEvent> extends true
+												? globalThis.KeyboardEvent
+												: Identical<T, DOM.CompositionEvent> extends true
+													? globalThis.CompositionEvent
+													: Identical<T, DOM.TextEvent> extends true
+														? globalThis.TextEvent
+														: Identical<T, DOM.InputEvent> extends true
+															? globalThis.InputEvent
+															: Identical<T, DOM.FileList> extends true
+																? globalThis.FileList
 																: Identical<
 																	T,
-																	DOM.DataTransferItemList
+																	DOM.DataTransferItem
 																> extends true
-																	? globalThis.DataTransferItemList
-																	: Identical<T, DOM.DataTransfer> extends true
-																		? globalThis.DataTransfer
+																	? globalThis.DataTransferItem
+																	: Identical<
+																		T,
+																		DOM.DataTransferItemList
+																	> extends true
+																		? globalThis.DataTransferItemList
 																		: Identical<
 																			T,
-																			DOM.ClipboardEvent
+																			DOM.DataTransfer
 																		> extends true
-																			? globalThis.ClipboardEvent
+																			? globalThis.DataTransfer
 																			: Identical<
 																				T,
-																				DOM.TransitionEvent
+																				DOM.ClipboardEvent
 																			> extends true
-																				? globalThis.TransitionEvent
+																				? globalThis.ClipboardEvent
 																				: Identical<
 																					T,
-																					DOM.AnimationEvent
+																					DOM.TransitionEvent
 																				> extends true
-																					? globalThis.AnimationEvent
+																					? globalThis.TransitionEvent
 																					: Identical<
 																						T,
-																						DOM.WheelEvent
+																						DOM.AnimationEvent
 																					> extends true
-																						? globalThis.WheelEvent
+																						? globalThis.AnimationEvent
 																						: Identical<
 																							T,
-																							DOM.PointerEvent
+																							DOM.WheelEvent
 																						> extends true
-																							? globalThis.PointerEvent
+																							? globalThis.WheelEvent
 																							: Identical<
 																								T,
-																								DOM.DragEvent
+																								DOM.PointerEvent
 																							> extends true
-																								? globalThis.DragEvent
+																								? globalThis.PointerEvent
 																								: Identical<
 																									T,
-																									DOM.EventTarget
+																									DOM.DragEvent
 																								> extends true
-																									? globalThis.EventTarget
+																									? globalThis.DragEvent
 																									: Identical<
 																										T,
-																										DOM.Node
+																										DOM.EventTarget
 																									> extends true
-																										? globalThis.Node
+																										? globalThis.EventTarget
 																										: Identical<
 																											T,
-																											DOM.MutationRecord
+																											DOM.Node
 																										> extends true
-																											? globalThis.MutationRecord
+																											? globalThis.Node
 																											: Identical<
 																												T,
-																												DOM.MutationObserver
+																												DOM.MutationRecord
 																											> extends true
-																												? globalThis.MutationObserver
+																												? globalThis.MutationRecord
 																												: Identical<
 																													T,
-																													DOM.NodeList
+																													DOM.MutationObserver
 																												> extends true
-																													? globalThis.NodeList
+																													? globalThis.MutationObserver
 																													: Identical<
 																														T,
-																														DOM.HTMLCollection
+																														DOM.NodeList
 																													> extends true
-																														? globalThis.HTMLCollection
+																														? globalThis.NodeList
 																														: Identical<
 																															T,
-																															DOM.DOMTokenList
+																															DOM.HTMLCollection
 																														> extends true
-																															? globalThis.DOMTokenList
-																															: Map1<T>;
+																															? globalThis.HTMLCollection
+																															: Identical<
+																																T,
+																																DOM.DOMTokenList
+																															> extends true
+																																? globalThis.DOMTokenList
+																																: Map1<T>;
 type Map1<T> =
 	Identical<T, DOM.CharacterData> extends true
 		? globalThis.CharacterData
@@ -644,6 +652,7 @@ export type MessageEventDrift = Drift<
 	DOM.MessageEvent,
 	globalThis.MessageEvent
 >;
+export type ErrorEventDrift = Drift<DOM.ErrorEvent, globalThis.ErrorEvent>;
 export type HashChangeEventDrift = Drift<
 	DOM.HashChangeEvent,
 	globalThis.HashChangeEvent
