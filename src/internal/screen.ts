@@ -1464,8 +1464,7 @@ const PROBE_RESIDUE_COLUMNS = 4;
 
 function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 	// Only the first painted row can hide a probe. Emission never moves the
-	// cursor back up, so content could not paint over a pending probes on a
-	// later row.
+	// cursor back up, so content could not paint over probes on a later row.
 	const {rows, cols, cluster, border} = grid;
 	if (cols <= PROBE_RESIDUE_COLUMNS) {
 		return null;
@@ -1529,9 +1528,9 @@ function generateANSI(
 	let unknownInRow = 0;
 
 	// Clusters the margin has deferred are probed off to the side, before
-	// the frame paints anything. The pending probes goes to a cell the first
-	// painted row covers, and that row's own content lands on top of it in
-	// this same write, so nothing of it is ever on screen.
+	// the frame paints anything. The probes go to cells the first painted
+	// row covers, and that row's own content lands on top of them in this
+	// same write, so nothing of them is ever on screen.
 	if (measurer !== undefined) {
 		const deferred = measurer.deferredWidths();
 		if (deferred.size > 0) {
@@ -1547,7 +1546,7 @@ function generateANSI(
 						writer.cursorForward(cell.col);
 					}
 					// Each probe is reached by naming its column outright, so
-					// no pending probes glyph's advance carries into the next.
+					// no probed glyph's advance carries into the next.
 					run++;
 					output +=
 						writer.text(cluster).take() +
@@ -1660,7 +1659,7 @@ function generateANSI(
 					//
 					// Defer instead. The cluster keeps its place in line and
 					// gets measured wherever it next appears with room, or, if
-					// it never has room, on a later frame's pending probes.
+					// it never has room, among a later frame's probes.
 					if (col + PROBE_RESIDUE_COLUMNS + 2 * unknownInRow < cols) {
 						output += measurer.probeWidth(glyph, run, col, width);
 					} else {
@@ -1737,8 +1736,8 @@ export class Screen {
 	declare [kHasSavedCursor]: boolean;
 	declare [kNeedsFullClear]: boolean;
 	declare [kNeedsScreenReset]: boolean;
-	// A pending probes is waiting. The next flush re-emits the first
-	// contentful row as its cover even if nothing changed.
+	// Probes are waiting. The next flush re-emits the first contentful row
+	// as their cover even if nothing changed.
 	declare [kFlushProbes]: boolean;
 	// Null for a headless render.
 	declare [kMeasurer]: Exchange | null;
@@ -1753,8 +1752,6 @@ export class Screen {
 	declare [kFrameScroll]: number;
 	declare [kDirty]: boolean;
 
-	// Whether a frame probes is decided as it is emitted, so the channel
-	// ending or mode 2027 settling later changes nothing here.
 	constructor(
 		rows: number,
 		cols: number,
@@ -2160,10 +2157,10 @@ export class Screen {
 				}
 			}
 
-			// A waiting pending probes goes only under cells this same write
-			// paints over. A frame that diffs to nothing offers none, so the
-			// first contentful row re-emits verbatim: identical cells, no
-			// erase, and the pending probes goes under them.
+			// Waiting probes go only under cells this same write paints over.
+			// A frame that diffs to nothing offers none, so the first
+			// contentful row re-emits verbatim: identical cells, no erase, and
+			// the probes go under them.
 			if (this[kFlushProbes]) {
 				this[kFlushProbes] = false;
 				if (measurer !== undefined && !hasContent) {

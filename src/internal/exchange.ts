@@ -559,9 +559,6 @@ class WireReader {
 	}
 }
 
-// The length of an incomplete CSI, SS3 or clipboard-reply opening at
-// the end of the chunk, or 0. A bare trailing ESC is 0, since it may be
-// the Escape key.
 const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
 
 /** The index just past BEL or ST, or -1 when neither closes the string. */
@@ -677,7 +674,7 @@ const kClipboardQueryTimeout = Symbol("clipboardQueryTimeout");
 const kProbingEnded = Symbol("probingEnded");
 const kWidths = Symbol("widths");
 const kWidthProbeTimeout = Symbol("widthProbeTimeout");
-const kWidthDeferralWait = Symbol("widthStarvationWait");
+const kWidthDeferralWait = Symbol("widthDeferralWait");
 
 /**
  * One reader, one writer, and the demultiplexer between them. Every
@@ -689,7 +686,7 @@ export class Exchange {
 	// replies at all stops probing.
 	static readonly [kWidthProbeTimeout] = 2000;
 	// Long enough that anything still animating or typing carries the
-	// pending probes.
+	// probes.
 	static readonly [kWidthDeferralWait] = 500;
 	// Most terminals refuse clipboard reads by silence. This is what every
 	// readText() waits before rejecting.
@@ -802,9 +799,9 @@ export class Exchange {
 	}
 
 	/**
-	 * Painted too near the last column for its reply to be readable. One
-	 * deferral of a cluster never probed is deferral, because the layout
-	 * that put it there will put it there again.
+	 * Painted too near the last column for its reply to be readable. A
+	 * cluster never probed that is deferred once is deferred every frame,
+	 * because the layout that put it there will put it there again.
 	 */
 	deferWidth(cluster: string): void {
 		const widths = this[kWidths];
@@ -997,7 +994,7 @@ export class Exchange {
 		}
 	}
 
-	/** DSR. The cursor row is the anchor anchor. */
+	/** DSR. The cursor row is the anchor. */
 	detectAnchor(): Promise<number> {
 		if (!this[kInteractive]) {
 			return Promise.reject(
@@ -1197,10 +1194,10 @@ interface WidthProbes {
 	// before its reply is probed twice, which keeps a run's column
 	// arithmetic whole.
 	settled: Set<string>;
-	// Ever probed, from anywhere. Bounds the pending probes to one per
-	// cluster.
+	// Ever probed, from anywhere. Bounds the probes to one per cluster.
 	asked: Set<string>;
-	// Turned away by the margin and never probed. Waiting for a pending probes.
+	// Turned away by the margin and never probed. Waiting for the deferral
+	// timer.
 	deferred: Set<string>;
 	deferralTimer: ReturnType<typeof setTimeout> | null;
 	// False for good once the terminal proves it does not reply.
@@ -1237,7 +1234,7 @@ function createWidthProbes(probing: boolean): WidthProbes {
 	};
 }
 
-// Deferral is found mid-frame, past where the pending probes would have gone.
+// Deferral is found mid-frame, past where the probes would have gone.
 // A document still painting carries it on the next frame for free. Only
 // a quiet one needs a frame requested.
 function requestDeferredProbeFrame(session: Exchange): void {

@@ -342,9 +342,9 @@ function isMatchingConstraints(
 }
 
 // The cache reuse rules, after Yoga. Beyond an identical request, a
-// cached size satisfies an `definite` request of that same size, an
+// cached size satisfies a `definite` request of that same size, a
 // `shrink-to-fit` bound over an unbounded result that fits it, and a tighter
-// `fit-content` bound the result still fits. Sizing only. A full layout
+// `shrink-to-fit` bound the result still fits. Sizing only. A full layout
 // placed children against its request.
 function isCachedSizeValid(
 	cachedSpace: AvailableSpace,
@@ -376,9 +376,8 @@ function isMinContent(mode: AvailableSpace, available: number): boolean {
 
 const CACHE_SLOT_COUNT = 9;
 
-// One cache slot per query shape, after Taffy: one slot per query shape, so the
-// probes one pass makes of a child (min-content, max-content, fixed) never
-// evict each other.
+// One cache slot per query shape, after Taffy, so the probes one pass makes
+// of a child (min-content, max-content, fixed) never evict each other.
 function getCacheSlot(
 	availableWidth: number,
 	availableHeight: number,
@@ -424,8 +423,7 @@ export class LayoutNode {
 	unstackedChildCount: number;
 
 	// One sizing result per query shape (getCacheSlot), so a placing pass's
-	// several probes of one child keep their own. The dirty flag invalidates
-	// both.
+	// several probes of one child keep their own. `stale` invalidates both.
 	cachedSizes: Array<CachedSize | null>;
 	cachedLayout: CachedSize | null;
 	styling: boolean;
@@ -439,7 +437,7 @@ export class LayoutNode {
 	// measurement is still good. Set with the style.
 	measureKey: string;
 
-	// Null for a node no DOM node owns: an anonymous run's, a independent
+	// Null for a node no DOM node owns: an anonymous run, an independent
 	// formatting context, the viewport. Stored on the node rather than in a map
 	// because it is read during paint culling and every child sweep, and a node
 	// that left the tree cannot go stale.
@@ -7538,7 +7536,7 @@ function addNode(
 		return;
 	}
 	// An out-of-flow box stays where it is for its containing block to reach
-	// down to, unless the two are in different layout trees (a independent
+	// down to, unless the two are in different layout trees (an independent
 	// formatting context's block cannot reach in). Then the box moves.
 	if (isOutOfFlow(node)) {
 		const containingBlock =
@@ -8005,7 +8003,7 @@ function isHiddenByAncestor(node: Node): boolean {
 	return false;
 }
 
-// Coordinates under a independent formatting context start at the box that owns
+// Coordinates under an independent formatting context start at the box that owns
 // it: the ancestor whose root the node was actually laid out under, not the
 // nearest one. An out-of-flow descendant hangs from its containing block
 // instead.
@@ -8282,7 +8280,7 @@ function dropBreakResultCache(
 }
 
 // Drop an anonymous box's lines and dirty the measure that refills them,
-// including, under a independent formatting context, the box whose measure is
+// including, under an independent formatting context, the box whose measure is
 // the only thing that ever lays that content out.
 function invalidateBox(
 	layout: Layout,
@@ -8408,7 +8406,7 @@ function invalidateEnclosingMeasure(
 
 const kRestyled = Symbol("restyled");
 
-// Under a independent formatting context, dirtying just the run invalidates it
+// Under an independent formatting context, dirtying just the run invalidates it
 // forever. Nothing above the box ever visits those nodes, so the cleared break
 // result is never rebuilt and the run paints nothing.
 function markRunMeasureDirty(
@@ -8850,7 +8848,7 @@ function collectLeaves(
 				// max-width caps the width the content BREAKS at, not just the
 				// reported box. Otherwise it wraps at its natural width and
 				// overflows the capped box. A percentage resolves against the
-				// run's available width, or `max-width: 100%` (every text text
+				// run's available width, or `max-width: 100%` (every text
 				// control's value part) broke at its natural width and
 				// overflowed its text control.
 				const maxWidthValue = parseUnitValue(

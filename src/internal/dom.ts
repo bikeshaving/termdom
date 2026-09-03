@@ -71,7 +71,7 @@ function ensureUAShadowTree(element: globalThis.Element): void {
 	]?.();
 }
 
-// Built-in tags that get a UA UA shadow tree when they connect.
+// Built-in tags that get a UA shadow tree when they connect.
 const UPGRADEABLE_CONTROLS = new Set([
 	"DETAILS",
 	"INPUT",
@@ -209,7 +209,7 @@ export function getSelectionFocus(element: globalThis.Element): number | null {
 }
 
 /**
- * The value offset under a document-space point in a text text control. Accounts
+ * The value offset under a document-space point in a text control. Accounts
  * for cell widths and clamps to the nearest offset, so a drag that leaves
  * the text control still resolves. That matches browsers: a selection started in
  * a text control belongs to the text control until release.
@@ -243,7 +243,7 @@ export function getTextControlCaretOffset(
 }
 
 /**
- * The mousedown default action in a text text control: put the caret at the
+ * The mousedown default action in a text control: put the caret at the
  * pressed character. Returns the text control and the offset so the caller can
  * use them as a drag anchor, or null if the press was not on a text control.
  * checkbox, radio and hidden render no text, so a press on them returns
@@ -268,7 +268,7 @@ export function placeTextControlCaret(
 const kUASelectionRange = Symbol("what an element's own selection covers");
 
 /**
- * The focused text text control's selection over this text node, or null. Per
+ * The focused text control's selection over this text node, or null. Per
  * spec a control's selection is invisible to getSelection(), so this is
  * the only way the highlight can find it. The range refers to the text
  * node the control renders its value through, so a node identity check is
@@ -3552,8 +3552,8 @@ function invokeEventHandler(
 	if (callback === null) {
 		return;
 	}
-	// A window's error handler receives the ErrorEvent's text controls as
-	// separate arguments and returns true to cancel, the inverse of every other
+	// A window's error handler receives the ErrorEvent's fields as separate
+	// arguments and returns true to cancel, the inverse of every other
 	// handler. A document's or element's error handler is an ordinary one.
 	const errorHandling =
 		type === "error" && !(target instanceof Node) && isErrorEvent(event);
@@ -9606,9 +9606,6 @@ export class HTMLElement extends Element {
 		throw domError("NotSupportedError", "Typed OM is not implemented");
 	}
 
-	// The event is a pointer event and untrusted, so a listener can tell it
-	// from a real one, and dispatch runs whatever activation behavior it
-	// reaches. A disabled form control is not clicked at all.
 	// lib.dom's overloads for this interface: the keyed one first.
 	override addEventListener<K extends keyof globalThis.HTMLElementEventMap>(
 		type: K,
@@ -14381,10 +14378,6 @@ export class HTMLInputElement extends HTMLElement {
 		setPopoverTargetAttributeElement(this, value);
 	}
 
-	// The value the UA shadow tree renders and edits. The IDL attribute above
-	// returns an attribute for the types that have no value of their own. Those
-	// types render no text control, so their value here is the empty string a
-	// caret would sit in.
 	get willValidate(): boolean {
 		return willValidate(this);
 	}
@@ -14508,9 +14501,6 @@ export class HTMLInputElement extends HTMLElement {
 		return this[kValueText];
 	}
 
-	// The programmatic equivalents of the arrow keys: move along the step
-	// grid without firing events. A step of "any" defines no grid, which is
-	// the InvalidStateError the spec requires.
 	showPicker(): void {}
 
 	checkValidity(): boolean {
@@ -15657,7 +15647,6 @@ class HTMLVideoElement extends HTMLMediaElement {
 		return 0;
 	}
 
-	// lib.dom's overloads for this interface: the keyed one first.
 	cancelVideoFrameCallback(_handle: number): void {}
 
 	getVideoPlaybackQuality(): globalThis.VideoPlaybackQuality {
@@ -18048,8 +18037,6 @@ export class HTMLTextAreaElement extends HTMLElement {
 		);
 	}
 
-	// The value the UA shadow tree renders and edits: the raw value once the
-	// dirty flag is set, the child text until then.
 	get willValidate(): boolean {
 		return willValidate(this);
 	}
@@ -23759,7 +23746,7 @@ function writeScrollOffset(
 	offsets[axis] = value;
 }
 
-/** html and body scroll the document document scroll. */
+/** html and body scroll the document. */
 function isDocumentScroller(element: Element): boolean {
 	const document = element[kDocument];
 	return (
@@ -23772,7 +23759,7 @@ function isDocumentScroller(element: Element): boolean {
 const scrolledElements = new WeakMap<Document, Set<Element>>();
 
 // A write on an attached document rounds to whole cells (everything
-// paints on the cell grid, like the document document scroll), clamps into the
+// paints on the cell grid, like the document scroll), clamps into the
 // range layout reports for the box, stores the value, and tells the
 // engine what moved so the frame journal can price it. A box whose
 // extent layout cannot report (a text control's value span, an opaque measured
@@ -26681,8 +26668,6 @@ export class TreeWalker implements globalThis.TreeWalker {
 	}
 }
 
-// A walk's whatToShow never changes after construction, so the choice
-// is made once, there, and every hop below is a text control read.
 // DOM Standard, "traverse children".
 function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 	let node: Node | null =
@@ -26781,9 +26766,7 @@ function walkParent(walk: TreeWalker): Node | null {
 
 // Down to the first child, else to the next sibling, else up until some level
 // has one. The climb asks each level for its OWN next sibling, starting at the
-// node itself. That lets a hop return the result for the level it is asked
-// about: an element's ::after follows the last of its content, and the flat
-// hops return it at that step.
+// node itself.
 function walkNext(walk: TreeWalker): Node | null {
 	let node = walk[kCurrent];
 	let result = FILTER_ACCEPT;
@@ -28724,7 +28707,7 @@ export function attachDocument(
 
 const engineObservers = new WeakMap<Document, MutationObserver>();
 
-// Everything except painting: the flat-tree memo, UA UA shadow tree upgrades,
+// Everything except painting: the flat-tree memo, UA shadow tree upgrades,
 // the cascade, the layout tree and the focus default actions, always in
 // the same order, because mutations reach here both from the observer
 // and from synchronous drains.
@@ -29433,8 +29416,6 @@ const frameCallbacks = new WeakMap<
 	{next: number; held: Map<number, FrameRequestCallback>}
 >();
 
-// Returns whether new callbacks arrived while these ran. A callback that
-// schedules another frame must tick the engine's render loop again.
 function holdFrameCallback(
 	document: Document,
 	callback: FrameRequestCallback,
@@ -29915,11 +29896,6 @@ export class Window extends EventTarget {
 		return noWindowFeature("trusted types");
 	}
 
-	// scrollTo/scroll set the document scroll to an absolute position, the same
-	// state scrollY reads and scrollBy moves relatively. documentElement and
-	// body's scrollTop expose the same value, as in standard DOM
-	// (window.scrollY === document.documentElement.scrollTop always). One
-	// document scroll, four ways to read or move it.
 	// lib.dom's overloads for this interface: the keyed one first.
 	override addEventListener<K extends keyof globalThis.WindowEventMap>(
 		type: K,
@@ -30866,8 +30842,8 @@ interface MatchState {
 
 	// Each parent's element children, gathered once per query, with each
 	// child's index and the children by type. :nth-child and the of-type
-	// tests read a candidate's siblings, and a query over a long list asked
-	// for the same list, and counted through it, once per candidate.
+	// tests read a candidate's siblings, and without the index a query over
+	// a long list counted through the same siblings once per candidate.
 	siblings: Map<Node, SiblingIndex>;
 
 	// The node `:scope` refers to, or null when the selector uses none.
@@ -31314,7 +31290,7 @@ function qualifiedName(
 }
 
 // ASCII case-insensitive against an HTML element in an HTML document,
-// case-sensitive everywhere else. That keeps `feGaussianBlur` isSelectable
+// case-sensitive everywhere else. That keeps `feGaussianBlur` selectable
 // and lets `DIV` match a `div`.
 function compileType(name: string, compiling: Compiling): Predicate {
 	const {
@@ -32730,8 +32706,6 @@ function closestSelector(
 	return null;
 }
 
-// The node after this one in tree order, stopping at a root: its first
-// child, or else the next sibling of the nearest ancestor that has one.
 // The walk follows the links a node already has rather than recursing,
 // so a deep tree costs no stack and a wide one allocates nothing.
 function walkElements(
