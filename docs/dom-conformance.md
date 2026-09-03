@@ -20,8 +20,8 @@ window's legacy named access to elements by id.
 - Optional-feature subtests reporting unsupported: 6
 - Files whose harness completed: 692
 - Files whose harness did not complete: 70
-- Subtests passed: 99115
-- Subtests failed: 1462
+- Subtests passed: 99111
+- Subtests failed: 1454
 
 ## Exclusions
 
@@ -1149,7 +1149,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/toString-user-select-none.html | OK | 0 | 3 |
 | selection/type.html | OK | 29 | 0 |
 | selection/user-select-on-input-and-contenteditable.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
-| shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 0 | 14 |
+| shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 1 | 13 |
 | shadow-dom/Document-prototype-adoptNode.html | OK | 2 | 0 |
 | shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 2 | 6 |
 | shadow-dom/Document-prototype-importNode.html | OK | 2 | 0 |
@@ -1493,7 +1493,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
-| custom-elements/form-associated/ElementInternals-validation.html | OK | 9 | 5 |
+| custom-elements/form-associated/ElementInternals-validation.html | OK | 11 | 3 |
 | custom-elements/form-associated/disabled-delegatesFocus.html | OK | 0 | 1 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
@@ -1520,7 +1520,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/perform-microtask-checkpoint-before-construction.html | OK | 0 | 2 |
 | custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 3 | 1 |
 | custom-elements/pseudo-class-defined-print.html | REFTEST | 0 | 0 |
-| custom-elements/pseudo-class-defined.html | TIMEOUT | 11 | 1 |
+| custom-elements/pseudo-class-defined.html | TIMEOUT | 0 | 0 |
 | custom-elements/range-and-constructors.html | OK | 2 | 0 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
 | custom-elements/reactions/Animation.html | OK | 0 | 3 |
@@ -1584,12 +1584,12 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/CustomElementRegistry-define.html | OK | 3 | 0 |
 | custom-elements/registries/CustomElementRegistry-initialize.html | OK | 13 | 0 |
 | custom-elements/registries/CustomElementRegistry-multi-register.html | OK | 2 | 0 |
-| custom-elements/registries/CustomElementRegistry-upgrade.html | OK | 1 | 4 |
+| custom-elements/registries/CustomElementRegistry-upgrade.html | OK | 2 | 3 |
 | custom-elements/registries/Document-createElement.html | OK | 10 | 0 |
 | custom-elements/registries/Document-createElementNS.html | OK | 10 | 0 |
 | custom-elements/registries/Document-customElementRegistry.html | OK | 4 | 0 |
 | custom-elements/registries/Document-importNode-cross-document.window.js | ERROR | 0 | 15 |
-| custom-elements/registries/Document-importNode.html | OK | 10 | 10 |
+| custom-elements/registries/Document-importNode.html | OK | 13 | 7 |
 | custom-elements/registries/Element-customElementRegistry-exceptions.html | OK | 2 | 1 |
 | custom-elements/registries/Element-customElementRegistry.html | OK | 10 | 1 |
 | custom-elements/registries/Element-innerHTML.html | OK | 8 | 4 |
@@ -2758,7 +2758,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/Document-caretPositionFromPoint.tentative.html
 
-- document.caretPositionFromPoint() throws when called without the correct parameters: assert_throws_js: function "() => { document.caretPositionFromPoint(5, 5, "foo"); }" threw object "NotSupportedError: caretPositionFromPoint is not implemented" ("NotSupportedError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location: caretPositionFromPoint is not implemented
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: caretPositionFromPoint is not implemented
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: The font loading API is not implemented"
@@ -3184,8 +3183,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/ElementInternals-validation.html
 
-- willValidate: assert_false: with readonly attribute expected false got true
-- willValidate after upgrade: assert_false: with readOnly attribute expected false got true
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
 - Custom control affects validation at the owner form: assert_equals: expected 3 but got 2
 - Custom control affects :valid :invalid for FORM and FIELDSET: assert_true: expected true got false
@@ -3261,10 +3258,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/pseudo-class-defined-customized-builtins.html
 
 - <abbr is="my-abbr"> should not be :defined: assert_equals: matches(":defined") expected false but got true
-
-### custom-elements/pseudo-class-defined.html
-
-- this.matches(:defined) should not match during an upgrade: assert_equals: expected 2 but got 0
 
 ### custom-elements/reactions/Animation.html
 
@@ -3365,7 +3358,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/registries/CustomElementRegistry-upgrade.html
 
 - upgrade is a no-op when called on a shadow root with no association: That is not a node
-- upgrade is a no-op when called on an element associated with a different registry: assert_false: expected false got true
 - upgrade should upgrade a candidate element when called on a shadow root with an association: That is not a node
 - upgrade should not upgrade a candidate element not associated with a registry: That is not a node
 
@@ -3395,10 +3387,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - importNode should clone a template content using the global registry by default: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
 - importNode should clone a template content using a specified scoped registry: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
 - importNode should clone a template content with a nested template element using a scoped registry: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
-- importNode: pass options argument with value { }: assert_true: expected true got false
-- importNode: pass options argument with value { customElementRegistry: scopedRegistry }: assert_true: expected true got false
-- importNode: pass options argument with value { customElementRegistry: null }: assert_throws_js: function "() => document.importNode(root, { customElementRegistry: null })" did not throw
-- importNode should use the provided fallback registry for null-registry descendants nested under non-null-registry ancestors: Cannot read properties of null (reading 'firstElementChild')
+- importNode should use the provided fallback registry for null-registry descendants nested under non-null-registry ancestors: assert_equals: imported container with null registry should use the fallback registry expected object "[object CustomElementRegistry]" but got null
 
 ### custom-elements/registries/Element-customElementRegistry-exceptions.html
 
