@@ -225,7 +225,9 @@ test("offsetParent walks the flat tree and answers only shadow-including ancesto
 	container.append(unslotted);
 	unslotted.attachShadow({mode: "open"}).innerHTML = "<p>no slot</p>";
 	await nextFrame(dom);
-	expect((unslotted.querySelector("#orphan") as HTMLElement).offsetParent).toBe(null);
+	expect((unslotted.querySelector("#orphan") as HTMLElement).offsetParent).toBe(
+		null,
+	);
 
 	const fixed = document.createElement("div");
 	fixed.style.position = "fixed";
