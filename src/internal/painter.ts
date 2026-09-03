@@ -541,41 +541,40 @@ function renderElement(
 				.toLowerCase();
 			const hasColor =
 				Boolean(outlineColor) &&
+				outlineColor !== "auto" &&
 				outlineColor !== "currentcolor" &&
 				outlineColor !== "invert" &&
 				!isSystemHighlightColor(outlineColor);
+			// `auto`, the initial value and what `outline: 1px solid` leaves,
+			// takes the element's own color, as a border's currentcolor does.
+			const color = hasColor ? cssColorToNumber(outlineColor) : style.fg;
 			const sides = resolveBorderSides(element);
 			if (sides.top || sides.right || sides.bottom || sides.left) {
-				if (hasColor) {
-					const ring = (
-						line: LineStyle["style"] | undefined,
-					): LineStyle | undefined =>
-						line && {style: line, color: cssColorToNumber(outlineColor)};
-					ctx.drawBox(
-						Math.round(rect.left),
-						Math.round(rect.top),
-						Math.round(rect.width),
-						Math.round(rect.height),
-						{
-							top: ring(sides.top),
-							right: ring(sides.right),
-							bottom: ring(sides.bottom),
-							left: ring(sides.left),
-							topLeft: sides.topLeft,
-							topRight: sides.topRight,
-							bottomRight: sides.bottomRight,
-							bottomLeft: sides.bottomLeft,
-						},
-					);
-				}
+				const ring = (
+					line: LineStyle["style"] | undefined,
+				): LineStyle | undefined => line && {style: line, color};
+				ctx.drawBox(
+					Math.round(rect.left),
+					Math.round(rect.top),
+					Math.round(rect.width),
+					Math.round(rect.height),
+					{
+						top: ring(sides.top),
+						right: ring(sides.right),
+						bottom: ring(sides.bottom),
+						left: ring(sides.left),
+						topLeft: sides.topLeft,
+						topRight: sides.topRight,
+						bottomRight: sides.bottomRight,
+						bottomLeft: sides.bottomLeft,
+					},
+				);
 			} else {
 				ctx.drawDecoration(
 					Math.round(rect.left),
 					Math.round(rect.bottom) - 1,
 					Math.round(rect.width),
-					hasColor
-						? {underline: true, fg: cssColorToNumber(outlineColor)}
-						: {underline: true},
+					{underline: true, fg: color},
 				);
 			}
 		}
