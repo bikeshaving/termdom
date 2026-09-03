@@ -805,3 +805,22 @@ test("every CSS shorthand is expanded or listed as unexpanded", () => {
 		);
 	}
 });
+
+test("initial takes the property's initial value, not the parent's", () => {
+	const dom = domFor(`<!DOCTYPE html><html><head><style>
+		#d { color: blue }
+	</style></head><body><div style="color: red">
+		<span id="a" style="color: initial">a</span>
+		<span id="b" style="color: unset">b</span>
+		<span id="c" style="color: inherit">c</span>
+		<span id="d" style="color: initial">d</span>
+	</div></body></html>`);
+	const color = (id: string): string =>
+		dom.window
+			.getComputedStyle(dom.window.document.getElementById(id)!)
+			.getPropertyValue("color");
+	expect(color("a")).toBe("rgb(0, 0, 0)");
+	expect(color("b")).toBe("rgb(255, 0, 0)");
+	expect(color("c")).toBe("rgb(255, 0, 0)");
+	expect(color("d")).toBe("rgb(0, 0, 0)");
+});

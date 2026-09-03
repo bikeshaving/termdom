@@ -8362,31 +8362,19 @@ function resolvePropertyValueRaw(
 
 	const inline = getInlineDeclarations(declaration);
 	const inlineName = getDeclaredName(inline, names, false, mapsHere);
-	const inlineValue = inlineName
-		? inline.declarations[inlineName].trim()
-		: undefined;
-	const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
+	const inlineValue =
+		inlineName !== null ? inline.declarations[inlineName].trim() : "";
 	const inlineImportantName = getDeclaredName(inline, names, true, mapsHere);
-	const inlineImportantValue = inlineImportantName
-		? inline.declarations[inlineImportantName].trim()
-		: undefined;
-	const inlineImportant =
-		!!inlineImportantValue && !INITIAL_KEYWORDS.has(inlineImportantValue);
-
-	// `inherit` skips the rest of the cascade and goes straight to the parent's
-	// resolved value, regardless of whether this property normally inherits.
-	if (inlineImportant && inlineImportantValue === "inherit") {
-		return resolveFromParent(declaration, property) ?? "";
-	}
-	if (!inlineImportant && inlineUsable && inlineValue === "inherit") {
-		return resolveFromParent(declaration, property) ?? "";
-	}
+	const inlineImportantValue =
+		inlineImportantName !== null
+			? inline.declarations[inlineImportantName].trim()
+			: "";
 
 	// 1 & 2. Inline style and stylesheet rules, with an !important tier above
 	// the normal cascade. The parsed rules are pre-sorted by specificity and
 	// source order, so within each tier the last match wins.
-	let ruleValue: string | null = null;
-	let importantRuleValue: string | null = null;
+	let ruleValue = "";
+	let importantRuleValue = "";
 	// `!important` reverses the layer order (css-cascade-5 §6.4.4): the
 	// EARLIEST layer wins, and unlayered declarations, which win the normal
 	// cascade, lose to every layer. The rules arrive earliest layer first,
@@ -8402,7 +8390,7 @@ function resolvePropertyValueRaw(
 		const importantName = getDeclaredName(rule, names, true, mapsHere);
 		if (
 			importantName !== null &&
-			(importantRuleValue === null ||
+			(importantRuleValue === "" ||
 				Boolean(rule.uaOrigin) !== importantOrigin ||
 				rule.layerRank === importantLayer)
 		) {
@@ -8412,31 +8400,20 @@ function resolvePropertyValueRaw(
 		}
 	}
 
-	// A CSS-wide keyword a rule declares is not a value. `inherit` takes
-	// the parent's value, and the rest send resolution on to the defaults
-	// below, as though the declaration were not there.
-	const declaredByRule = (value: string): string | null => {
-		if (value === "inherit") {
-			return resolveFromParent(declaration, property) ?? "";
-		}
-		return INITIAL_KEYWORDS.has(value) ? null : value;
-	};
-
-	if (inlineImportant) {
-		return inlineImportantValue!;
+	const declared =
+		inlineImportantValue || importantRuleValue || inlineValue || ruleValue;
+	// A CSS-wide keyword on the winning declaration decides the value there:
+	// `inherit` takes the parent's whether or not the property inherits,
+	// `initial` takes the property's initial value, and the rest send
+	// resolution on to the defaults below, as though nothing were declared.
+	if (declared === "inherit") {
+		return resolveFromParent(declaration, property) ?? "";
 	}
-	if (importantRuleValue) {
-		const resolved = declaredByRule(importantRuleValue);
-		if (resolved !== null) {
-			return resolved;
-		}
-	} else if (inlineUsable) {
-		return inlineValue!;
-	} else if (ruleValue) {
-		const resolved = declaredByRule(ruleValue);
-		if (resolved !== null) {
-			return resolved;
-		}
+	if (declared === "initial") {
+		return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
+	}
+	if (declared !== "" && !INITIAL_KEYWORDS.has(declared)) {
+		return declared;
 	}
 
 	// 3. The UA's own per-element defaults, such as strong's bold, which
