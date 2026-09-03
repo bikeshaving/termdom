@@ -1,8 +1,6 @@
-import "prismjs/components/prism-typescript.js";
-import "prismjs/components/prism-json.js";
-import "prismjs/components/prism-bash.js";
-import "prismjs/components/prism-python.js";
-
+/* eslint-disable termdom/import-order -- Prism's language packs register on
+   the global its core import creates, so the core has to load before them,
+   which the rule's side-effect-first order would undo. */
 import {readFileSync} from "node:fs";
 
 import {TermDOM} from "@b9g/termdom";
@@ -13,6 +11,11 @@ import {markedHighlight} from "marked-highlight";
 // registers its grammar on the Prism it is imported beside; CSS and JavaScript
 // ship in Prism's core, so only the rest need a line here.
 import Prism from "prismjs";
+import "prismjs/components/prism-typescript.js";
+import "prismjs/components/prism-json.js";
+import "prismjs/components/prism-bash.js";
+import "prismjs/components/prism-python.js";
+/* eslint-enable termdom/import-order */
 
 // marked and marked-highlight are standard Node/browser libraries used here
 // completely unmodified -- the whole point: a real web toolchain feeding a real
