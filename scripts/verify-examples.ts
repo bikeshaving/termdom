@@ -53,7 +53,14 @@ interface Check {
 }
 
 /** Content rendered beyond the shell's own prompt and echo of the command. */
+// A stack trace on the pane is not a render. An example that dies at load
+// leaves one, and it must not count as content.
+const CRASH = /^(?:\w*Error\b|\s+at .+\(.+:\d+:\d+\)$)/m;
+
 function rendered(text: string, command: string): boolean {
+	if (CRASH.test(text)) {
+		return false;
+	}
 	const lines = text
 		.split("\n")
 		.filter((line) => line.trim() !== "")
