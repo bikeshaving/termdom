@@ -5,7 +5,7 @@ import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 test("a cell written inside a wide cluster's span is dropped, not emitted", () => {
-	const screen = new Screen(2, 12, 8);
+	const screen = new Screen(2, 12, "rgb");
 	const ctx = screen.beginFrame({offset: 0});
 	ctx.drawText("काा", 2, 0);
 	ctx.drawText("ab", 3, 0);

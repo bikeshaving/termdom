@@ -58,7 +58,7 @@
     "support": "bun scripts/support-matrix.ts",
     "test": "libuild test -p node -p bun --timeout 180000",
     "typecheck": "tsc --noEmit",
-    "drift": "tsx scripts/lib-dom-drift.ts",
+    "drift": "bun scripts/lib-dom-drift.ts",
     "verify:examples": "node scripts/verify-examples.ts",
     "verify:ime": "npm --prefix website run verify:ime",
     "verify:terminal": "node scripts/verify-terminal-app.ts",
