@@ -10955,6 +10955,11 @@ class CustomElementRegistry {
 			if (candidate.nodeType !== ELEMENT_NODE) {
 				continue;
 			}
+			// Another registry's element is not this one's to upgrade.
+			const registry = (candidate as Element)[kRegistry];
+			if (registry !== null && registry !== this) {
+				continue;
+			}
 			tryToUpgrade(candidate as Element);
 		}
 	}
@@ -20282,9 +20287,11 @@ function willValidate(element: Element): boolean {
 			return false;
 		}
 	} else if (
-		element instanceof HTMLTextAreaElement &&
+		(element instanceof HTMLTextAreaElement || element[kInternals] !== null) &&
 		element.hasAttribute("readonly")
 	) {
+		// A textarea and a form-associated custom element honor readonly;
+		// a button or a checkbox does not.
 		return false;
 	}
 	for (let node: Node | null = element; node !== null; node = node[kParent]) {
@@ -22615,9 +22622,10 @@ export class Document extends Node implements globalThis.Document {
 		node: T,
 		options: boolean | globalThis.ImportNodeOptions = false,
 	): T {
-		const deep = typeof options === "boolean"
-			? options
-			: (options?.selfOnly === undefined ? false : !options.selfOnly);
+		const deep = typeof options === "boolean" ? options : !options?.selfOnly;
+		if (typeof options === "object" && options.customElementRegistry === null) {
+			throw new TypeError("customElementRegistry cannot be null");
+		}
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
@@ -22911,10 +22919,13 @@ export class Document extends Node implements globalThis.Document {
 	// APIs that need a window manager, a network, or a compositor.
 
 	caretPositionFromPoint(
-		_x: number,
-		_y: number,
-		_options?: globalThis.CaretPositionFromPointOptions,
+		x: number,
+		y: number,
+		options?: globalThis.CaretPositionFromPointOptions,
 	): globalThis.CaretPosition | null {
+		toDouble(x);
+		toDouble(y);
+		toDictionary(options ?? {}, "A CaretPositionFromPointOptions");
 		throw domError(
 			"NotSupportedError",
 			"caretPositionFromPoint is not implemented",
