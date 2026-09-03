@@ -103,6 +103,8 @@ and dispatched to DOM nodes.
   with seeded deals playable by keyboard or mouse.
 - [`hello-{react,vue,svelte,crank}.ts`](./examples) — one greeting and
   keypress counter apiece, each driving that framework's stock renderer.
+- [`ssh.ts`](./examples/ssh.ts) — an SSH server where every session gets a
+  document of its own, rendered over the session's channel.
 
 More runnable examples can be found in [`examples/`](./examples). Most of
 them also run in the browser at

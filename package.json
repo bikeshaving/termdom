@@ -79,6 +79,7 @@
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/prismjs": "^1.26.6",
     "@types/react-dom": "^19.2.4",
+    "@types/ssh2": "^1.15.6",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@xterm/headless": "^5.5.0",
@@ -94,6 +95,7 @@
     "prismjs": "^1.30.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "ssh2": "^1.17.0",
     "svelte": "^5.56.9",
     "typescript": "^5.9.2",
     "vue": "^3.5.41"
