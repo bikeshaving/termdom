@@ -2273,14 +2273,25 @@ function withMarkerSeparator(marker: string): string {
 // written. Null outside a list.
 function getDefaultMarkerContent(hostElement: Element): string | null {
 	const listParent = hostElement.parentElement;
-	if (
-		!listParent ||
-		(listParent.tagName !== "UL" && listParent.tagName !== "OL")
-	) {
+	if (!listParent) {
 		return null;
 	}
 	const marker = getListMarker(hostElement, listParent);
 	return marker ? `"${withMarkerSeparator(marker)}"` : null;
+}
+
+// What a list numbers: an li, or anything an author styled as one. A
+// parent of any kind can hold them; ol's start and reversed read as
+// absent on any other.
+function isListItem(element: Element): boolean {
+	return (
+		(element.localName === "li" && element.namespaceURI === HTML_NAMESPACE) ||
+		getComputedValue(element, "display") === "list-item"
+	);
+}
+
+function getListItems(listParent: Element): Element[] {
+	return Array.from(listParent.children).filter(isListItem);
 }
 
 // A content value is a SEQUENCE of components (strings and functions).
@@ -9081,9 +9092,7 @@ function toAlpha(value: number): string {
 // `<ol start>` sets where counting begins, `<ol reversed>` counts down,
 // and a `<li value>` resets the counter mid-list and carries forward.
 function getListItemOrdinal(listItem: Element, listParent: Element): number {
-	const items = Array.from(listParent.children).filter(
-		(child) => child.tagName === "LI",
-	);
+	const items = getListItems(listParent);
 
 	const reversed = listParent.hasAttribute("reversed");
 	const start = parseInt(listParent.getAttribute("start") ?? "", 10);
@@ -9144,10 +9153,7 @@ function getListMarker(listItem: Element, listParent: Element): string {
 	}
 
 	if (COUNTER_STYLES.has(listStyleType)) {
-		const items = Array.from(listParent.children).filter(
-			(child) => child.tagName === "LI",
-		);
-		if (!items.includes(listItem)) {
+		if (!getListItems(listParent).includes(listItem)) {
 			return "";
 		}
 		return `${formatOrdinal(getListItemOrdinal(listItem, listParent), listStyleType)}.`;
@@ -10244,10 +10250,19 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	}
 
 	// A ::marker needs no rule to exist, since list-style-type gives it
-	// content on its own, so the items are found by tag as well.
-	const listItems = cascade[kDocument].querySelectorAll(
-		'[style*="list-item"], li',
+	// content on its own, so the items are found by tag, by inline style,
+	// and by every rule that declares the display.
+	const listItems = new Set<Element>(
+		cascade[kDocument].querySelectorAll('[style*="list-item"], li'),
 	);
+	for (const rule of cascade[kParsedRules]) {
+		if (rule.declarations["display"] === "list-item" && !rule.uaOrigin) {
+			const scope = (rule.scope ?? cascade[kDocument]) as Node;
+			for (const element of selectForRule(scope, rule)) {
+				listItems.add(element);
+			}
+		}
+	}
 	for (const element of listItems) {
 		const computedStyle = cascade.declarationFor(element);
 		const display = computedStyle.getComputedValue("display");

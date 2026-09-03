@@ -724,10 +724,15 @@ function renderOutsideMarker(
 		underline: markerUnderline,
 	};
 
-	const markerX = Math.max(0, Math.round(rect.left) - markerWidth);
-	const markerY = Math.round(rect.top);
-
-	ctx.drawText(markerContent, markerX, markerY, markerTextStyle);
+	// Outside the content box, as css-lists-3 §3.3 places it. A marker
+	// that would start before the first column is clipped away whole,
+	// as a browser clips it at the viewport.
+	const content = painter[kLayout].contentRect(element) ?? rect;
+	const markerX = Math.round(content.left) - markerWidth;
+	if (markerX < 0) {
+		return;
+	}
+	ctx.drawText(markerContent, markerX, Math.round(rect.top), markerTextStyle);
 }
 
 function getGlyphText(element: Element): Text | null {
