@@ -3142,7 +3142,6 @@ const LEGACY_EVENT_INTERFACES = new Map<string, () => Event>([
 	["compositionevent", () => new CompositionEvent("")],
 	["customevent", () => new CustomEvent("")],
 	["dragevent", () => new DragEvent("")],
-	["errorevent", () => new ErrorEvent("")],
 	["event", () => new Event("")],
 	["events", () => new Event("")],
 	["focusevent", () => new FocusEvent("")],
