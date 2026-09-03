@@ -925,6 +925,170 @@ function* Workbench(
 	}
 }
 
+/*** Gallery ***/
+
+/**
+ * What a program is about, from the comment it opens with: the first
+ * paragraph of a leading block comment or run of line comments, with the
+ * comment marks stripped. An example that opens with code gets a stock line.
+ */
+function describeProgram(code: string): string {
+	const block = code.match(/^\s*\/\*\*?([\s\S]*?)\*\//);
+	let text = "";
+	if (block) {
+		text = block[1];
+	} else {
+		const lines: string[] = [];
+		for (const line of code.split("\n")) {
+			if (!line.startsWith("//")) break;
+			lines.push(line.slice(2));
+		}
+		text = lines.join("\n");
+	}
+	const paragraph = text
+		.split("\n")
+		.map((line) => line.replace(/^\s*\*? ?/, ""))
+		.join("\n")
+		.trim()
+		.split(/\n\s*\n/)[0];
+	const flat = paragraph.replace(/\s+/g, " ").trim();
+	return flat || "A program written against the DOM, drawn in a terminal.";
+}
+
+const GALLERY_GEOMETRY = {cols: 48, rows: 12};
+
+const gallery = css`
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+	gap: 1rem;
+	margin: 1.5rem 0 0;
+	padding: 0;
+	list-style: none;
+`;
+
+const card = css`
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	overflow: hidden;
+	background-color: var(--surface-color);
+	color: inherit;
+	text-decoration: none;
+	&:hover {
+		text-decoration: none;
+		border-color: var(--highlight-color);
+	}
+	&:focus-visible {
+		outline: 2px solid var(--highlight-color);
+		outline-offset: 1px;
+	}
+	.thumb {
+		/* The pane is a picture here: clicks go to the card, and the program
+		   under it keeps running for its own sake. */
+		pointer-events: none;
+		background-color: ${TERMINAL_BACKGROUND};
+		height: ${GALLERY_GEOMETRY.rows * FONT_SIZE * 1.3 + PANE_CHROME}px;
+		overflow: hidden;
+	}
+	.caption {
+		padding: 0.6rem 0.8rem 0.7rem;
+		border-top: 1px solid var(--border-color);
+	}
+	.title {
+		font-weight: bold;
+		color: var(--highlight-color);
+	}
+	.blurb {
+		margin: 0.2rem 0 0;
+		font-size: 0.85rem;
+		color: var(--muted-color);
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+`;
+
+/**
+ * One card: the program running small, once the card comes near the
+ * viewport, under its name and what it is about. Twenty programs booting
+ * on load is not what a visitor asked for, so a card boots itself when
+ * it is about to be seen and stays booted.
+ */
+function* GalleryCard(this: Context, {example}: {example: PlaygroundExample}) {
+	let visible = false;
+	let root!: HTMLAnchorElement;
+	this.after(() => {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((entry) => entry.isIntersecting)) {
+					observer.disconnect();
+					this.refresh(() => {
+						visible = true;
+					});
+				}
+			},
+			{rootMargin: "200px"},
+		);
+		observer.observe(root);
+		this.cleanup(() => observer.disconnect());
+	});
+	for ({example} of this) {
+		yield jsx`
+			<a
+				ref=${(el: HTMLAnchorElement) => (root = el)}
+				class=${card}
+				href=${`#e=${example.id}`}
+				data-card=${example.id}
+			>
+				<div class="thumb" aria-hidden="true">
+					${visible
+						? jsx`<${TerminalPane}
+								code=${example.code}
+								cols=${GALLERY_GEOMETRY.cols}
+								rows=${GALLERY_GEOMETRY.rows}
+								runNonce=${0}
+								onstatus=${() => {}}
+							/>`
+						: null}
+				</div>
+				<div class="caption">
+					<div class="title">${example.label}</div>
+					<p class="blurb">${describeProgram(example.code)}</p>
+				</div>
+			</a>
+		`;
+	}
+}
+
+function Gallery({examples}: {examples: PlaygroundExample[]}) {
+	return jsx`
+		<main class=${container}>
+			<h1 class=${css`
+				font-size: 2.2rem;
+				margin: 0;
+			`}>Playground</h1>
+			<p class=${css`
+				color: var(--muted-color);
+				margin: 0.5rem 0 0;
+			`}>
+				The library's own examples, running in this page. Open one to
+				edit it and watch the terminal follow.
+			</p>
+			<ul class=${gallery}>
+				${examples.map(
+					(example) => jsx`
+						<li key=${example.id}>
+							<${GalleryCard} example=${example} />
+						</li>
+					`,
+				)}
+			</ul>
+		</main>
+	`;
+}
+
 /*** Sharing ***/
 
 /**
@@ -1007,6 +1171,12 @@ function writeShareHash(hash: string): void {
 function* Playground(this: Context) {
 	const examples = readExamples();
 	const share = readShareHash();
+	// The page opens on the gallery, and on the workbench when the address
+	// names a program.
+	let mode: "gallery" | "workbench" =
+		share.example !== undefined || share.program !== undefined
+			? "workbench"
+			: "gallery";
 	let example =
 		examples.find((each) => each.id === share.example) ?? examples[0];
 	// What the editor holds when it is not an example as it ships: a program
@@ -1030,6 +1200,7 @@ function* Playground(this: Context) {
 			void decodeProgram(pending).then((decoded) => {
 				if (decoded === null || readShareHash().program !== pending) return;
 				this.refresh(() => {
+					mode = "workbench";
 					program = decoded;
 					custom = true;
 					pickEpoch++;
@@ -1038,10 +1209,19 @@ function* Playground(this: Context) {
 			return;
 		}
 		const chosen = examples.find((each) => each.id === next.example);
-		if (chosen === undefined || (chosen === example && program === null)) {
+		if (chosen === undefined) {
+			if (mode !== "gallery") {
+				this.refresh(() => {
+					mode = "gallery";
+				});
+			}
+			return;
+		}
+		if (mode === "workbench" && chosen === example && program === null) {
 			return;
 		}
 		this.refresh(() => {
+			mode = "workbench";
 			example = chosen;
 			program = null;
 			custom = false;
@@ -1107,6 +1287,10 @@ function* Playground(this: Context) {
 	};
 
 	for ({} of this) {
+		if (mode === "gallery") {
+			yield jsx`<${Gallery} examples=${examples} />`;
+			continue;
+		}
 		yield jsx`
 			<main class=${pageShell}>
 				<h1 class=${css`
@@ -1121,6 +1305,7 @@ function* Playground(this: Context) {
 					fill
 					oncode=${oncode}
 					controls=${jsx`
+						<a href="#" class=${filename}>‹ Gallery</a>
 						<label for="playground-examples">Example</label>
 						<select
 							id="playground-examples"

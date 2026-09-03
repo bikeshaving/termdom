@@ -93,9 +93,16 @@ async function waitForText(needle: string, timeout = 30000): Promise<boolean> {
 	return false;
 }
 
-// The playground page: the first example runs on load.
+// The playground page opens on the gallery: a card per example, the first
+// of them running small. Opening a card is the workbench with that program.
 await page.goto(`${ORIGIN}/playground/`, {waitUntil: "load"});
-report(await waitForText("Hello"), "playground: default example paints");
+await page.waitForSelector("[data-card]");
+const cards = await page.evaluate(() => document.querySelectorAll("[data-card]").length);
+report(cards >= 20, "gallery: a card per runnable example", `${cards} cards`);
+report(await waitForText("Hello"), "gallery: the first card runs its program");
+await page.click('[data-card="hello-world"]');
+await page.waitForSelector("select");
+report(await waitForText("Hello"), "playground: opening a card runs it in the workbench");
 
 // Switching examples runs the next program, and nothing of the previous
 // one survives the reset -- a dead realm's queued writes must not drain
@@ -168,9 +175,8 @@ await page.goto(`${ORIGIN}/playground/#c=r${encoded}`);
 await page.reload({waitUntil: "load"});
 await page.waitForSelector(".xterm");
 report(await waitForText("shared program painted", 15000), "share: #c= runs the encoded program on a fresh load");
-await page.goto(`${ORIGIN}/playground/`);
-await page.waitForSelector(".xterm");
-await page.selectOption("select", "shell");
+await page.goto(`${ORIGIN}/playground/#e=shell`);
+await page.waitForSelector("select");
 report(await waitForText("termdom shell", 15000), "playground: shell paints its banner");
 // The emulator's textarea takes the keys. A click on the pane would also
 // be a click in the program, on empty screen, which moves its focus off
