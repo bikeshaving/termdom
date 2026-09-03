@@ -9363,6 +9363,11 @@ const kUsedStale = Symbol("used values stale");
 const kShadowRoots = Symbol("shadowRoots");
 const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
+
+// Selectors whose match on one element depends on its siblings or its
+// children: the sibling combinators, the tree-structural pseudo-classes
+// and :empty.
+const SIBLING_SELECTOR = /[+~]|:(?:nth-|first-|last-|only-|empty)/;
 const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
 const kParsedRules = Symbol("parsedRules");
@@ -9663,6 +9668,17 @@ export class Cascade {
 							shouldSyncStylesheets = true;
 						}
 					}
+				}
+				// A child that came or went changes what `li + li`,
+				// `:first-child` and `:empty` match on the children around it
+				// and on the parent, none of which the mutation names.
+				if (this[kSelectorsReachAncestors]) {
+					this[kDropCache]();
+				} else if (
+					this[kSelectorsReachSiblings] &&
+					mutation.target.nodeType === Node.ELEMENT_NODE
+				) {
+					invalidateSubtree(this, mutation.target as Element);
 				}
 			} else if (mutation.type === "attributes") {
 				const element = mutation.target as Element;
@@ -12016,7 +12032,7 @@ function parseSelector(
 	) {
 		return;
 	}
-	if (selector.includes("+") || selector.includes("~")) {
+	if (SIBLING_SELECTOR.test(selector)) {
 		cascade[kSelectorsReachSiblings] = true;
 	}
 	if (selector.includes(":has")) {

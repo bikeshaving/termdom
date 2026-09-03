@@ -839,3 +839,36 @@ test("an important UA declaration beats an important author one", () => {
 	expect(display("hidden")).toBe("none");
 	expect(display("text")).toBe("block");
 });
+
+test("inserting a child restyles the siblings and parent that selectors read", async () => {
+	const dom = domFor(`<!DOCTYPE html><html><head><style>
+		.item + .item { color: red }
+		.item:first-child { font-weight: bold }
+		.box:empty { color: blue }
+	</style></head><body><div id="list"><div class="item" id="a">a</div></div><div class="box" id="empty"></div></body></html>`);
+	const document = dom.window.document;
+	const style = (id: string, property: string): string =>
+		dom.window
+			.getComputedStyle(document.getElementById(id)!)
+			.getPropertyValue(property);
+	await nextFrame(dom);
+	expect(style("a", "color")).toBe("rgb(0, 0, 0)");
+	expect(style("a", "font-weight")).toBe("bold");
+	expect(style("empty", "color")).toBe("rgb(0, 0, 255)");
+
+	const first = document.createElement("div");
+	first.className = "item";
+	first.id = "first";
+	document.getElementById("list")!.prepend(first);
+	document.getElementById("empty")!.append(document.createElement("div"));
+	await nextFrame(dom);
+	expect(style("a", "color")).toBe("rgb(255, 0, 0)");
+	expect(style("a", "font-weight")).toBe("normal");
+	expect(style("first", "font-weight")).toBe("bold");
+	expect(style("empty", "color")).toBe("rgb(0, 0, 0)");
+
+	first.remove();
+	await nextFrame(dom);
+	expect(style("a", "color")).toBe("rgb(0, 0, 0)");
+	expect(style("a", "font-weight")).toBe("bold");
+});
