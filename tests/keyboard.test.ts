@@ -2618,3 +2618,42 @@ test("a mouse report is trusted, and so is the focus move it causes", async () =
 
 	dom.dispose();
 });
+
+test("Space toggles a focused checkbox and checks a focused radio", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
+	const {document} = termdom;
+	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+
+	document.body.innerHTML = `
+		<input id="box" type="checkbox">
+		<input id="one" type="radio" name="r" checked>
+		<input id="two" type="radio" name="r">
+	`;
+	const box = document.getElementById("box") as HTMLInputElement;
+	const one = document.getElementById("one") as HTMLInputElement;
+	const two = document.getElementById("two") as HTMLInputElement;
+	const changes: string[] = [];
+	document.body.addEventListener("change", (event) => {
+		changes.push((event.target as Element).id);
+	});
+
+	box.focus();
+	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
+	expect(box.checked).toBe(true);
+	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
+	expect(box.checked).toBe(false);
+
+	two.focus();
+	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
+	expect(two.checked).toBe(true);
+	expect(one.checked).toBe(false);
+	expect(changes).toEqual(["box", "box", "two"]);
+	termdom.dispose();
+});

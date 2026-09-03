@@ -4056,8 +4056,9 @@ const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
  *
  * The elements are the ones hasActivationBehavior lists, minus label,
  * whose behavior is a click forwarded to its control rather than a key of
- * its own. The input interpreter decides which keys a terminal sends. This
- * file decides which elements they apply to.
+ * its own, and minus checkbox and radio, whose own keydown listener
+ * clicks them on Space and Enter. The input interpreter decides which
+ * keys a terminal sends. This file decides which elements they apply to.
  */
 export function getKeyboardActivation(
 	target: globalThis.Element,
