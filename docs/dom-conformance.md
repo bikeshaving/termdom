@@ -18,10 +18,10 @@ window's legacy named access to elements by id.
 - Reference tests (no testharness, scored by pixels): 55
 - Excluded, each with its reason below: 356
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 691
-- Files whose harness did not complete: 71
-- Subtests passed: 99639
-- Subtests failed: 941
+- Files whose harness completed: 692
+- Files whose harness did not complete: 70
+- Subtests passed: 99665
+- Subtests failed: 917
 
 ## Exclusions
 
@@ -772,7 +772,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/AddEventListenerOptions-once.any.js | OK | 4 | 0 |
 | dom/events/AddEventListenerOptions-passive.any.js | OK | 5 | 0 |
 | dom/events/AddEventListenerOptions-signal.any.js | OK | 11 | 0 |
-| dom/events/Body-FrameSet-Event-Handlers.html | OK | 24 | 24 |
+| dom/events/Body-FrameSet-Event-Handlers.html | OK | 48 | 0 |
 | dom/events/CustomEvent.html | OK | 3 | 0 |
 | dom/events/Event-cancelBubble.html | OK | 8 | 0 |
 | dom/events/Event-constants.html | OK | 4 | 0 |
@@ -1141,7 +1141,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-user-input: the control is clicked by a pointer action sequence) | 0 | 0 |
 | selection/textcontrols/focus.html | EXCLUDED (requires-user-input: the control is focused by a pointer action sequence) | 0 | 0 |
 | selection/textcontrols/initial-selection-during-focus-event-propagation.html | EXCLUDED (requires-user-input: the control is focused by a pointer action sequence) | 0 | 0 |
-| selection/textcontrols/onselectionchange-content-attribute.html | TIMEOUT | 0 | 0 |
+| selection/textcontrols/onselectionchange-content-attribute.html | OK | 2 | 0 |
 | selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
 | selection/textcontrols/selectionchange.html | OK | 44 | 16 |
@@ -1892,33 +1892,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - a.relList in http://www.w3.org/2000/svg namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
 - a.relList in http://www.w3.org/1998/Math/MathML namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
-
-### dom/events/Body-FrameSet-Event-Handlers.html
-
-- Reflect HTMLBodyElement.onblur: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onblur: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onerror: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onerror: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onfocus: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onfocus: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onload: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onload: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onscroll: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onscroll: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onresize: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onresize: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
 
 ### dom/events/Event-dispatch-bubbles-false.html
 

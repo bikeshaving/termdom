@@ -106,24 +106,30 @@ test("a title never carries its own escape sequences to the terminal", async () 
 	dom.dispose();
 });
 
-test("a <script> in rendered HTML is inert (no code execution)", async () => {
+test("a <script> in rendered HTML is inert, and a handler attribute is the app's", async () => {
 	const t = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: t.transport});
-	(globalThis as unknown as {__termdomPwned?: boolean}).__termdomPwned = false;
-	// If parsed scripts ran, either of these would flip the flag.
+	const flags = globalThis as unknown as {
+		__termdomScript?: boolean;
+		__termdomHandler?: boolean;
+	};
+	flags.__termdomScript = false;
+	flags.__termdomHandler = false;
+	// A parsed script never runs: the engine loads nothing. A handler
+	// attribute runs when its event fires, as in a browser, because the
+	// markup is the app's own and untrusted markup is the app's to
+	// sanitize before it reaches innerHTML.
 	dom.document.body.innerHTML =
-		"<script>globalThis.__termdomPwned = true;</script>" +
-		"<img src=\"x\" onerror=\"globalThis.__termdomPwned = true;\">" +
-		"<div onclick=\"globalThis.__termdomPwned = true;\">text</div>";
+		"<script>globalThis.__termdomScript = true;</script>" +
+		"<div onclick=\"globalThis.__termdomHandler = this.tagName === 'DIV' && event.type === 'click';\">text</div>";
 	await nextFrame(dom);
-	// Click the handler-bearing div: an inline on* attribute must not execute.
+	expect(flags.__termdomScript).toBe(false);
+	expect(flags.__termdomHandler).toBe(false);
 	dom.document
 		.querySelector("div")
 		?.dispatchEvent(new dom.window.MouseEvent("click", {bubbles: true}));
 	await nextFrame(dom);
-
-	expect(
-		(globalThis as unknown as {__termdomPwned?: boolean}).__termdomPwned,
-	).toBe(false);
+	expect(flags.__termdomScript).toBe(false);
+	expect(flags.__termdomHandler).toBe(true);
 	dom.dispose();
 });

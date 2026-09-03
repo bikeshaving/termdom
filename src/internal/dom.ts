@@ -3512,7 +3512,10 @@ function getEventHandlerValue(
 	if (handlers === null) {
 		return null;
 	}
-	return handlers.get(type)?.value ?? null;
+	const record = handlers.get(type);
+	return record === undefined
+		? null
+		: compileEventHandler(target, type, record);
 }
 
 // Activate the handler on a value. Deactivate it on null.
@@ -3598,7 +3601,7 @@ function invokeEventHandler(
 	record: EventHandlerRecord,
 	event: Event,
 ): void {
-	const callback = record.value;
+	const callback = compileEventHandler(target, type, record);
 	if (callback === null) {
 		return;
 	}
@@ -3652,6 +3655,74 @@ function installEventHandler(prototype: object, name: string): void {
 		enumerable: true,
 		configurable: true,
 	});
+}
+
+// An event handler content attribute (`onclick="..."`) holds its source
+// until the handler is first read or fired, when it compiles to a function
+// taking `event` with the element as `this`. Markup the app hands the
+// engine is the app's, as a page's markup is the page's: a handler in it
+// runs, and untrusted markup is the app's to sanitize first. One that
+// does not compile reports its error and leaves the handler null.
+class UncompiledHandler {
+	readonly source: string;
+	readonly element: Element;
+
+	constructor(source: string, element: Element) {
+		this.source = source;
+		this.element = element;
+	}
+}
+
+const HANDLER_ATTRIBUTES: ReadonlySet<string> = new Set([
+	...GLOBAL_EVENT_HANDLERS,
+	...DOCUMENT_AND_ELEMENT_EVENT_HANDLERS,
+	...FORWARDED_BODY_EVENT_HANDLERS,
+]);
+const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> = new Set(
+	FORWARDED_BODY_EVENT_HANDLERS,
+);
+
+function compileEventHandler(
+	target: EventTarget,
+	type: string,
+	record: EventHandlerRecord,
+): EventHandlerValue | null {
+	const value = record.value;
+	if (!(value instanceof UncompiledHandler)) {
+		return value;
+	}
+	try {
+		record.value = new Function("event", value.source) as EventHandlerValue;
+	} catch (error) {
+		reportError(error, value.element[kDocument]);
+		setEventHandler(target, type, null);
+		return null;
+	}
+	return record.value;
+}
+
+// The attribute change steps for an event handler content attribute. A
+// body's or frameset's window handlers land on the window.
+function handlerAttributeChanged(
+	element: Element,
+	localName: string,
+	value: string | null,
+): void {
+	const forwarded =
+		FORWARDED_HANDLER_ATTRIBUTES.has(localName) &&
+		(element.localName === "body" || element.localName === "frameset");
+	const target: EventTarget | null = forwarded
+		? (element[kDocument][kDefaultView] as unknown as EventTarget | null)
+		: element;
+	if (target === null) {
+		return;
+	}
+	const type = PREFIXED_HANDLER_TYPES.get(localName) ?? localName.slice(2);
+	setEventHandler(
+		target,
+		type,
+		value === null ? null : new UncompiledHandler(value, element),
+	);
 }
 
 function installEventHandlers(
@@ -9028,6 +9099,13 @@ export class Element extends Node implements globalThis.Element {
 	): void {
 		if (localName === "class" && namespace === null) {
 			this[kClassTokens] = null;
+		}
+		if (
+			namespace === null &&
+			HANDLER_ATTRIBUTES.has(localName) &&
+			this[kNamespace] === HTML_NAMESPACE
+		) {
+			handlerAttributeChanged(this, localName, value);
 		}
 		if (localName === "id" && namespace === null) {
 			const root = getRoot(this);
