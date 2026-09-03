@@ -38,6 +38,7 @@ const RUNNABLE = [
 	"prism",
 	"progress-bar",
 	"rtl",
+	"shell",
 	"solitaire",
 	"todomvc",
 	"tree",
@@ -46,6 +47,52 @@ const RUNNABLE = [
 
 /** The element the sandbox module URLs travel in, read by the client. */
 export const SANDBOX_CONFIG_ID = "playground-sandbox-config";
+
+/** The element the repository's files travel in, read by the client. */
+export const FILES_SCRIPT_ID = "playground-files-data";
+
+/**
+ * The files a program in the sandbox can read, by path under the
+ * repository root: every example, the guides, and the few files at the top
+ * a visitor would `cat`. The sandbox seeds its filesystem from these, so
+ * `ls examples` in the browser lists the same files as at a desk.
+ */
+export async function collectWorkspaceFiles(
+	repo: FileSystemDirectoryHandle,
+): Promise<Record<string, string>> {
+	const files: Record<string, string> = {};
+	const read = async (
+		dir: FileSystemDirectoryHandle,
+		name: string,
+		path: string,
+	): Promise<void> => {
+		const file = await (await dir.getFileHandle(name)).getFile();
+		files[path] = await file.text();
+	};
+	for (const name of ["README.md", "LICENSE", "package.json"]) {
+		await read(repo, name, name);
+	}
+	const examples = await repo.getDirectoryHandle("examples");
+	for await (const [name, handle] of examples.entries()) {
+		if (handle.kind === "file" && name.endsWith(".ts")) {
+			await read(examples, name, `examples/${name}`);
+		}
+	}
+	const guides = await (
+		await repo.getDirectoryHandle("docs")
+	).getDirectoryHandle("guides");
+	for await (const [name, handle] of guides.entries()) {
+		if (handle.kind === "file" && name.endsWith(".md")) {
+			await read(guides, name, `docs/guides/${name}`);
+		}
+	}
+	return files;
+}
+
+/** The files as the JSON body of a `<script>`, `<` escaped like the examples. */
+export function serializeFiles(files: Record<string, string>): string {
+	return JSON.stringify(files).replace(/</g, "\\u003c");
+}
 
 /** What the sandbox's import map resolves each bare specifier to. */
 export interface SandboxConfig {

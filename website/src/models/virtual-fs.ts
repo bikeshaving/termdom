@@ -21,54 +21,56 @@ const REPO: Tree = {
 	},
 	".gitignore": "",
 	docs: {
-		guides: {
-			"01-getting-started.md": "",
-			"02-layout.md": "",
-			"03-events-and-input.md": "",
-			"04-api.md": "",
-		},
+		guides: {},
+		"dom-conformance.md": "",
+		"cssom-conformance.md": "",
 	},
-	examples: {
-		"flexbox.ts": "",
-		"form.ts": "",
-		"solitaire.ts": "",
-		"todomvc.ts": "",
-		"tree.ts": "",
-	},
+	examples: {},
 	src: {
 		"index.ts": "",
 		internal: {
-			"ansi.ts": "",
+			"cssom.ts": "",
 			"dom.ts": "",
-			"flex.ts": "",
+			"exchange.ts": "",
+			"htmltables.ts": "",
+			"input.ts": "",
+			"inspector.ts": "",
 			"layout.ts": "",
-			"styles.ts": "",
+			"painter.ts": "",
+			"screen.ts": "",
 			"termdom.ts": "",
+			"text.ts": "",
+			"useragent.ts": "",
 		},
 	},
 	tests: {
 		"dom.test.ts": "",
+		"cascade.test.ts": "",
 		"flexbox.test.ts": "",
 	},
-	"LICENSE.md": "",
-	"README.md": [
-		"# TermDOM",
-		"",
-		"A DOM you can attach to a terminal: HTML in, cells out.",
-		"Layout is CSS, input is events, and the caret is real.",
-		"",
-		"    npm install @b9g/termdom",
-		"",
-	].join("\n"),
-	"package.json": [
-		"{",
-		'\t"name": "@b9g/termdom",',
-		'\t"version": "0.1.3",',
-		'\t"license": "MIT"',
-		"}",
-		"",
-	].join("\n"),
+	LICENSE: "",
+	"README.md": "",
+	"package.json": "",
 };
+
+// The page seeds the files a program can read: every example, the guides,
+// and the top-level files, with their real contents. Read here, as the
+// module loads inside the sandbox, so a program's first readFileSync sees
+// them. A file the page did not carry keeps its empty placeholder.
+const seeded = (globalThis as {__workspaceFiles?: Record<string, string>})
+	.__workspaceFiles;
+if (seeded !== undefined) {
+	for (const [path, contents] of Object.entries(seeded)) {
+		const parts = path.split("/");
+		const name = parts.pop()!;
+		let node: Tree = REPO;
+		for (const part of parts) {
+			const child = node[part];
+			node = typeof child === "object" ? child : (node[part] = {});
+		}
+		node[name] = contents;
+	}
+}
 
 const ROOT: Tree = {
 	workspace: {termdom: REPO},
@@ -151,10 +153,28 @@ export function join(...parts: string[]): string {
 	return parts.join("/").replace(/\/+/g, "/");
 }
 
-export function resolve(path?: string): string {
-	if (!path || path === ".") return FS_ROOT;
-	if (path.startsWith("/")) return path.replace(/\/+/g, "/");
-	return join(FS_ROOT, path);
+// As node:path resolves: right to left until a segment is absolute, the
+// working directory beneath them all, and `.` and `..` folded away.
+export function resolve(...parts: string[]): string {
+	let path = "";
+	for (let i = parts.length - 1; i >= 0 && !path.startsWith("/"); i--) {
+		if (parts[i]) {
+			path = path === "" ? parts[i] : `${parts[i]}/${path}`;
+		}
+	}
+	if (!path.startsWith("/")) {
+		path = `${FS_ROOT}/${path}`;
+	}
+	const out: string[] = [];
+	for (const part of path.split("/")) {
+		if (part === "" || part === ".") continue;
+		if (part === "..") {
+			out.pop();
+		} else {
+			out.push(part);
+		}
+	}
+	return `/${out.join("/")}`;
 }
 
 /** node:os, as far as the examples reach into it. */

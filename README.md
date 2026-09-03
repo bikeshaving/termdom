@@ -105,6 +105,8 @@ and dispatched to DOM nodes.
   keypress counter apiece, each driving that framework's stock renderer.
 - [`ssh.ts`](./examples/ssh.ts) — an SSH server where every session gets a
   document of its own, rendered over the session's channel.
+- [`shell.ts`](./examples/shell.ts) — `ls`, `cat`, `less`, `cd` and `pwd`
+  over the filesystem, which in the playground is this repository.
 
 More runnable examples can be found in [`examples/`](./examples). Most of
 them also run in the browser at

@@ -6,8 +6,11 @@ import {assets} from "../server.js";
 import {
 	collectExamples,
 	serializeExamples,
+	collectWorkspaceFiles,
 	EXAMPLES_SCRIPT_ID,
+	FILES_SCRIPT_ID,
 	SANDBOX_CONFIG_ID,
+	serializeFiles,
 } from "../models/playground-examples.js";
 
 /**
@@ -24,6 +27,9 @@ export default async function Playground({url}: {url: string}) {
 	const examples = await collectExamples(
 		await self.directories.open("examples"),
 	);
+	const files = await collectWorkspaceFiles(
+		await self.directories.open("repo"),
+	);
 
 	return jsx`
 		<${Root}
@@ -36,6 +42,9 @@ export default async function Playground({url}: {url: string}) {
 		>
 			<script type="application/json" id=${EXAMPLES_SCRIPT_ID}>
 				<${Raw} value=${serializeExamples(examples)} />
+			</script>
+			<script type="application/json" id=${FILES_SCRIPT_ID}>
+				<${Raw} value=${serializeFiles(files)} />
 			</script>
 			<script type="application/json" id=${SANDBOX_CONFIG_ID}>
 				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript})} />

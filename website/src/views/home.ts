@@ -9,8 +9,11 @@ import type {PlaygroundExample} from "../models/playground-examples.js";
 import {
 	collectExamples,
 	serializeExamples,
+	collectWorkspaceFiles,
 	EXAMPLES_SCRIPT_ID,
+	FILES_SCRIPT_ID,
 	SANDBOX_CONFIG_ID,
+	serializeFiles,
 } from "../models/playground-examples.js";
 
 const container = css`
@@ -106,6 +109,9 @@ export default async function Home({url}: {url: string}) {
 	const examples = await collectExamples(
 		await self.directories.open("examples"),
 	);
+	const files = await collectWorkspaceFiles(
+		await self.directories.open("repo"),
+	);
 	const playgrounds: Record<string, PlaygroundExample> = {};
 	for (const example of examples) {
 		if (EMBEDDED.includes(example.id)) playgrounds[example.id] = example;
@@ -142,6 +148,9 @@ export default async function Home({url}: {url: string}) {
 			</main>
 			<script type="application/json" id=${EXAMPLES_SCRIPT_ID}>
 				<${Raw} value=${serializeExamples(Object.values(playgrounds))} />
+			</script>
+			<script type="application/json" id=${FILES_SCRIPT_ID}>
+				<${Raw} value=${serializeFiles(files)} />
 			</script>
 			<script type="application/json" id=${SANDBOX_CONFIG_ID}>
 				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript})} />

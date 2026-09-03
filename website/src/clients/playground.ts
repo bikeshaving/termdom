@@ -24,6 +24,7 @@ import {installIMEQuirks} from "./ime.js";
 // wrote them to; the model exports the element ids both sides agree on.
 import {
 	EXAMPLES_SCRIPT_ID,
+	FILES_SCRIPT_ID,
 	SANDBOX_CONFIG_ID,
 } from "../models/playground-examples.js";
 import type {
@@ -219,6 +220,12 @@ interface SandboxWindow extends Window {
 	__transport?: TerminalTransport;
 }
 
+/** The repository's files the page carries, for the sandbox's filesystem. */
+function readWorkspaceFiles(): Record<string, string> {
+	const script = document.getElementById(FILES_SCRIPT_ID);
+	return script ? (JSON.parse(script.textContent!) as Record<string, string>) : {};
+}
+
 function readSandboxConfig(): SandboxConfig | null {
 	const script = document.getElementById(SANDBOX_CONFIG_ID);
 	return script ? (JSON.parse(script.textContent!) as SandboxConfig) : null;
@@ -264,12 +271,19 @@ function importMapFor(config: SandboxConfig, code: string): string {
  * URL on request. `<` is escaped so no asset URL can close the script
  * element it is written into.
  */
-function sandboxHTML(config: SandboxConfig, code: string): string {
+function sandboxHTML(
+	config: SandboxConfig,
+	code: string,
+	files: Record<string, string>,
+): string {
 	const importMap = importMapFor(config, code);
+	const workspace = JSON.stringify(files).replace(/</g, "\\u003c");
 	return [
 		"<!doctype html>",
 		'<meta charset="utf-8">',
 		'<script type="importmap">' + importMap + "</" + "script>",
+		// Read by the filesystem module as it loads, before any program.
+		"<script>globalThis.__workspaceFiles = " + workspace + ";</" + "script>",
 		'<script type="module">',
 		'globalThis.process = {argv: ["node", "example.ts"], env: {},' +
 			' cwd: () => "/workspace/termdom", platform: "linux",' +
@@ -301,7 +315,7 @@ async function runProgram(
 	const iframe = document.createElement("iframe");
 	iframe.style.display = "none";
 	iframe.setAttribute("aria-hidden", "true");
-	iframe.srcdoc = sandboxHTML(config, code);
+	iframe.srcdoc = sandboxHTML(config, code, readWorkspaceFiles());
 	const loaded = new Promise<void>((resolve) => {
 		iframe.addEventListener("load", () => resolve(), {once: true});
 	});

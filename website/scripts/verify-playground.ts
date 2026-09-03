@@ -148,7 +148,21 @@ await page.selectOption("select", "chat");
 report(await waitForText("ch.at", 15000), "playground: chat paints");
 await page.selectOption("select", "fuzzy-finder");
 report(await waitForText("type to filter", 15000), "playground: fuzzy-finder paints");
-report(await waitForText("termdom", 5000), "playground: fuzzy-finder previews the virtual files");
+report(await waitForText("01-getting-started.md", 5000), "playground: fuzzy-finder lists the seeded files");
+// The shell reads the filesystem the page seeded: the examples directory
+// lists these programs, and cat prints one of them.
+await page.selectOption("select", "shell");
+report(await waitForText("termdom shell", 15000), "playground: shell paints its banner");
+// The emulator's textarea takes the keys. A click on the pane would also
+// be a click in the program, on empty screen, which moves its focus off
+// the prompt.
+await page.locator(".xterm-helper-textarea").first().focus();
+await page.keyboard.type("ls examples");
+await page.keyboard.press("Enter");
+report(await waitForText("hello-world.ts", 5000), "playground: ls lists the seeded examples");
+await page.keyboard.type("cat examples/hello-world.ts");
+await page.keyboard.press("Enter");
+report(await waitForText("Hello, terminal", 5000), "playground: cat prints a seeded example");
 await page.selectOption("select", "markdown");
 report(await waitForText("Markdown in the Terminal", 15000), "playground: markdown renders through marked and Prism");
 
