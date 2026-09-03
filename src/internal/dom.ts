@@ -3446,6 +3446,9 @@ function getDefaultPassiveValue(type: string, target: EventTarget): boolean {
 	) {
 		return false;
 	}
+	if (target instanceof Window) {
+		return true;
+	}
 	if (!(target instanceof Node)) {
 		return false;
 	}
@@ -5069,6 +5072,7 @@ function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
 }
 
 const kShadowRoot = Symbol("shadow root");
+const kDelegatesFocus = Symbol("delegates focus");
 
 // A node with no children and no hosted tree is an ancestor of nothing,
 // so the climb that would prove it is skipped.
@@ -9854,8 +9858,29 @@ export class HTMLElement extends Element {
 	// steps fire. A headless document paints nothing, so it only moves the
 	// state.
 	focus(_options?: globalThis.FocusOptions): void {
+		// A host whose shadow root delegates focus hands the call to its
+		// focus delegate (HTML's focusing steps, step 3).
 		const document = this[kDocument];
 		const previous = getInnermostActive(document);
+		// A host whose shadow root delegates focus hands the call to its
+		// focus delegate (HTML's focusing steps, step 3), keeps the focus
+		// where it is when its own tree already holds it, and does nothing
+		// at all without a delegate.
+		const shadow = this[kShadowRoot];
+		if (shadow !== null && shadow[kDelegatesFocus]) {
+			if (
+				previous !== null &&
+				previous !== this &&
+				isShadowIncludingInclusiveAncestor(this, previous)
+			) {
+				return;
+			}
+			const delegate = getFocusDelegate(this);
+			if (delegate !== null) {
+				(delegate as HTMLElement).focus();
+			}
+			return;
+		}
 		// Uses shadow-including connectedness. A node whose tree root is a
 		// shadow root is focusable when its host chain reaches the document.
 		// The node-tree root test rejected every element in a shadow tree.
@@ -10030,6 +10055,40 @@ function getInnermostActive(document: Document): Element | null {
 // not from focus(). Elements focusable without an attribute say so
 // through their default tabindex. A disabled control is focusable by
 // neither route.
+// The focus delegate of a host whose shadow root delegates focus: the
+// first focusable area among the shadow root's own descendants in tree
+// order, an autofocus one first, itself a delegate's delegate when that
+// descendant is such a host. Slotted light content is the host's, not
+// the shadow root's, and is not a candidate. Null for any other element.
+function getFocusDelegate(element: Element): Element | null {
+	const shadow = element[kShadowRoot];
+	if (shadow === null || !shadow[kDelegatesFocus]) {
+		return null;
+	}
+	let first: Element | null = null;
+	for (const node of descendants(shadow)) {
+		if (node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
+		const candidate = node as Element;
+		const inner = candidate[kShadowRoot];
+		const area =
+			inner !== null && inner[kDelegatesFocus]
+				? getFocusDelegate(candidate)
+				: isFocusableArea(candidate)
+					? candidate
+					: null;
+		if (area === null) {
+			continue;
+		}
+		if (candidate.hasAttribute("autofocus")) {
+			return area;
+		}
+		first ??= area;
+	}
+	return first;
+}
+
 function isFocusableArea(element: Element): boolean {
 	if (isActuallyDisabled(element)) {
 		return false;
@@ -11454,7 +11513,6 @@ interface ShadowRootInit {
 	serializable?: boolean;
 }
 
-const kDelegatesFocus = Symbol("delegates focus");
 const kClonable = Symbol("clonable");
 const kSerializable = Symbol("serializable");
 const kDeclarative = Symbol("declarative");
@@ -11642,12 +11700,27 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 		replaceAll(fragment, this);
 	}
 
-	elementFromPoint(_x: number, _y: number): Element | null {
-		return null;
+	elementFromPoint(x: number, y: number): Element | null {
+		const attached = getAttachedDocument(this[kHost] as Element);
+		if (attached === undefined) {
+			return null;
+		}
+		return elementAtDocumentPoint(
+			this[kDocument] as unknown as globalThis.Document,
+			toDouble(x),
+			toDouble(y) + attached[kScreen].scrollTop,
+			this as unknown as globalThis.Node,
+		) as unknown as Element | null;
 	}
 
-	elementsFromPoint(_x: number, _y: number): Element[] {
-		return [];
+	elementsFromPoint(x: number, y: number): Element[] {
+		const stack: Element[] = [];
+		let hit = this.elementFromPoint(x, y);
+		while (hit !== null) {
+			stack.push(hit);
+			hit = getFlatTreeParent(hit);
+		}
+		return stack;
 	}
 
 	getAnimations(): globalThis.Animation[] {
@@ -19690,10 +19763,13 @@ function isListed(element: Element): boolean {
 	return isHTMLTag(element, LISTED_TAGS);
 }
 
+// Custom or precustomized: a constructor running for an upgrade may
+// attach internals and set a form value before it returns.
 function isFormAssociatedCustom(element: Element): boolean {
 	const definition = element[kDefinition];
+	const state = element[kCustomState];
 	return (
-		element[kCustomState] === "custom" &&
+		(state === "custom" || state === "precustomized") &&
 		definition !== null &&
 		definition.formAssociated
 	);
@@ -20851,6 +20927,17 @@ export function pseudoElementCount(host: globalThis.Element): number {
 	return slots === null || slots === undefined ? 0 : slots.size;
 }
 
+/** Whether `ancestor` is a shadow-including inclusive ancestor of `node`. */
+export function isShadowIncludingAncestor(
+	ancestor: globalThis.Node,
+	node: globalThis.Node,
+): boolean {
+	return isShadowIncludingInclusiveAncestor(
+		ancestor as unknown as Node,
+		node as unknown as Node,
+	);
+}
+
 /**
  * Null for every node except a pseudo-element node. This is how a
  * pseudo-element node is identified, and how the flat tree finds the
@@ -20969,6 +21056,31 @@ export function flatIsConnected(target: globalThis.Node): boolean {
 		node = getFlatTreeParent(node);
 	}
 	return false;
+}
+
+/**
+ * Whether the flat tree holds the node at all. A host's light child
+ * renders only through a slot, so one no slot took, or one under a slot
+ * showing its fallback, is connected and yet has no box.
+ */
+export function isInFlatTree(target: globalThis.Node): boolean {
+	for (let node = target as Node; ;) {
+		const parent = node[kParent];
+		if (parent === null) {
+			return isShadowRoot(node)
+				? isInFlatTree(node[kHost] as unknown as globalThis.Node)
+				: node.nodeType === DOCUMENT_NODE;
+		}
+		const slot = getAssignedSlot(node);
+		if (
+			slot === null &&
+			parent.nodeType === ELEMENT_NODE &&
+			(parent as Element)[kShadowRoot] !== null
+		) {
+			return false;
+		}
+		node = slot ?? parent;
+	}
 }
 
 // The flat-tree hops: shadow content in its slot's place, and
@@ -23272,6 +23384,7 @@ export function elementAtDocumentPoint(
 	document: globalThis.Document,
 	x: number,
 	y: number,
+	context: globalThis.Node = document,
 ): globalThis.Element | null {
 	const attached = getAttachedDocument(document);
 	if (attached === undefined) {
@@ -23294,19 +23407,15 @@ export function elementAtDocumentPoint(
 	) {
 		element = host;
 	}
-	// RETARGET out of shadow trees, per spec. From outside a shadow tree
-	// (and the document is always outside), the hit is the HOST, so a click
-	// on an input's internal value span is a click on the input. Without
-	// this, closest() and focus logic dead-end inside the UA fragment, whose
-	// parts have no parentElement chain to climb.
-	while (element) {
-		const root = element.getRootNode();
-		if (root.nodeType === 11 && (root as unknown as ShadowRoot).host) {
-			element = (root as unknown as ShadowRoot).host as unknown as Element;
-		} else {
-			break;
-		}
-	}
+	// RETARGETED against the asking tree, per CSSOM View. From the
+	// document, a hit inside a shadow tree is the HOST, so a click on an
+	// input's internal value span is a click on the input. From a shadow
+	// root, a hit inside it stays inside, and one in a nested tree is that
+	// tree's host.
+	element = retarget(
+		element as unknown as EventTarget | null,
+		context as unknown as EventTarget,
+	) as unknown as globalThis.Element | null;
 	// A modal dialog makes the rest of the document inert. A point outside
 	// it lands on its backdrop, and a backdrop hit counts as a hit on the
 	// DIALOG. That is the target a browser reports for a click on the dim
@@ -32238,8 +32347,9 @@ const DISABLEABLE = new Set([
 
 function isDisableable(element: Element): boolean {
 	return (
-		element.namespaceURI === HTML_NAMESPACE &&
-		DISABLEABLE.has(element.localName)
+		(element.namespaceURI === HTML_NAMESPACE &&
+			DISABLEABLE.has(element.localName)) ||
+			isFormAssociatedCustom(element)
 	);
 }
 

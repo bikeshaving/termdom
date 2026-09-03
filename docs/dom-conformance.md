@@ -18,10 +18,10 @@ window's legacy named access to elements by id.
 - Reference tests (no testharness, scored by pixels): 55
 - Excluded, each with its reason below: 356
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 692
-- Files whose harness did not complete: 70
-- Subtests passed: 99665
-- Subtests failed: 917
+- Files whose harness completed: 693
+- Files whose harness did not complete: 69
+- Subtests passed: 99711
+- Subtests failed: 871
 
 ## Exclusions
 
@@ -893,7 +893,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
 | dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
 | dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/passive-by-default.html | OK | 92 | 8 |
+| dom/events/passive-by-default.html | OK | 100 | 0 |
 | dom/events/pointer-event-document-move.html | EXCLUDED (requires-user-input: a pointer action sequence that moves the node it presses) | 0 | 0 |
 | dom/events/preventDefault-during-activation-behavior.html | OK | 1 | 0 |
 | dom/events/relatedTarget.window.js | OK | 1 | 5 |
@@ -1153,7 +1153,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/Document-prototype-adoptNode.html | OK | 2 | 0 |
 | shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 2 | 6 |
 | shadow-dom/Document-prototype-importNode.html | OK | 2 | 0 |
-| shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html | OK | 0 | 41 |
+| shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html | OK | 9 | 32 |
 | shadow-dom/Element-interface-attachShadow-custom-element.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
 | shadow-dom/Element-interface-attachShadow.html | OK | 6 | 0 |
 | shadow-dom/Element-interface-shadowRoot-attribute.html | OK | 3 | 0 |
@@ -1295,11 +1295,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | OK | 0 | 1 |
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | OK | 0 | 1 |
 | shadow-dom/focus/click-focus-slot-ancestor.html | OK | 0 | 3 |
-| shadow-dom/focus/delegatesFocus-tabindex-change.html | OK | 0 | 1 |
-| shadow-dom/focus/focus-autofocus.html | OK | 1 | 4 |
+| shadow-dom/focus/delegatesFocus-tabindex-change.html | OK | 1 | 0 |
+| shadow-dom/focus/focus-autofocus.html | OK | 5 | 0 |
 | shadow-dom/focus/focus-click-on-shadow-host.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-method-delegatesFocus-nested-browsing-context.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-method-delegatesFocus.html | OK | 2 | 13 |
+| shadow-dom/focus/focus-method-delegatesFocus.html | OK | 15 | 0 |
 | shadow-dom/focus/focus-method-with-delegatesFocus.html | ERROR (missing script resources/shadow-dom.js) | 0 | 0 |
 | shadow-dom/focus/focus-preserved-on-slot-reorder.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-pseudo-matches-on-shadow-host.html | TIMEOUT | 0 | 0 |
@@ -1351,7 +1351,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/leaktests/window-frames.html | EXCLUDED (requires-browsing-context: whether a shadow tree's nodes leak into window.frames) | 0 | 0 |
 | shadow-dom/manual-slot-assignment-no-wrong-unassign.html | REFTEST | 0 | 0 |
 | shadow-dom/nested-hover-pseudo-class-removal.html | EXCLUDED (requires-user-input: a pointer action sequence over a :hover rule) | 0 | 0 |
-| shadow-dom/offsetParent-across-shadow-boundaries.html | OK | 14 | 8 |
+| shadow-dom/offsetParent-across-shadow-boundaries.html | OK | 18 | 4 |
 | shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html | OK | 0 | 3 |
 | shadow-dom/reference-target/tentative/aria-labelledby.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference-target/tentative/commandfor.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
@@ -1498,7 +1498,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
 | custom-elements/form-associated/form-associated-callback.html | OK | 3 | 2 |
-| custom-elements/form-associated/form-disabled-callback.html | ERROR | 1 | 9 |
+| custom-elements/form-associated/form-disabled-callback.html | OK | 8 | 2 |
 | custom-elements/form-associated/form-elements-namedItem.html | OK | 0 | 3 |
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
 | custom-elements/form-associated/label-delegatesFocus.html | OK | 0 | 2 |
@@ -1952,17 +1952,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - If the event's initialized flag is not set, an InvalidStateError must be thrown (DeviceMotionEvent).: No event interface is named "DeviceMotionEvent"
 - If the event's initialized flag is not set, an InvalidStateError must be thrown (DeviceOrientationEvent).: No event interface is named "DeviceOrientationEvent"
 
-### dom/events/passive-by-default.html
-
-- touchstart listener is passive by default for Object: assert_equals: defaultPrevented expected false but got true
-- touchstart listener is passive with {passive:undefined} for Object: assert_equals: defaultPrevented expected false but got true
-- touchmove listener is passive by default for Object: assert_equals: defaultPrevented expected false but got true
-- touchmove listener is passive with {passive:undefined} for Object: assert_equals: defaultPrevented expected false but got true
-- wheel listener is passive by default for Object: assert_equals: defaultPrevented expected false but got true
-- wheel listener is passive with {passive:undefined} for Object: assert_equals: defaultPrevented expected false but got true
-- mousewheel listener is passive by default for Object: assert_equals: defaultPrevented expected false but got true
-- mousewheel listener is passive with {passive:undefined} for Object: assert_equals: defaultPrevented expected false but got true
-
 ### dom/events/relatedTarget.window.js
 
 - Reset if target pointed to a shadow tree: XMLHttpRequest is not defined
@@ -2261,20 +2250,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html
 
 - document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: assert_equals: expected Element node <test-element style="display: inline;"></test-element> but got null
-- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: assert_equals: expected Element node <test-element style="display: block;"></test-element> but got null
-- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: assert_equals: expected Element node <test-element style="display: inline-block;"></test-element> but got null
 - document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline: assert_equals: expected Element node <test-element style="display: inline;">text</test-element> but got null
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: block: assert_equals: expected Element node <test-element style="display: block;">text</test-element> but got null
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline-block: assert_equals: expected Element node <test-element style="display: inline-block;">text</test-e... but got null
 - document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: assert_equals: expected Element node <span>text</span> but got null
 - document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: assert_equals: expected Element node <span>text</span> but got Element node <test-element style="display: block;"><span>text</span></...
 - document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: assert_equals: expected Element node <span>text</span> but got Element node <test-element style="display: inline-block;"><span>text</...
 - document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline: assert_equals: expected Element node <test-element style="display: inline;"></test-element> but got null
-- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: block: assert_equals: expected Element node <span>text</span> but got null
-- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline-block: assert_equals: expected Element node <span>text</span> but got null
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: block: assert_equals: expected Element node <span>text</span> but got Element node <test-element style="display: block;"></test-element>
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline-block: assert_equals: expected Element node <span>text</span> but got Element node <test-element style="display: inline-block;"></test-element>
 - document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline: assert_equals: expected Element node <test-element style="display: inline;"></test-element> but got null
-- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: block: assert_equals: expected Element node <slot>fallback</slot> but got null
-- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline-block: assert_equals: expected Element node <slot>fallback</slot> but got null
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: block: assert_equals: expected Element node <slot>fallback</slot> but got Element node <test-element style="display: block;"></test-element>
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline-block: assert_equals: expected Element node <slot>fallback</slot> but got Element node <test-element style="display: inline-block;"></test-element>
 - document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline: assert_equals: expected Element node <inner-host>hello</inner-host> but got null
 - document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: block: assert_equals: expected Element node <inner-host>hello</inner-host> but got Element node <test-element style="display: block;"><inner-host>hello</...
 - document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline-block: assert_equals: expected Element node <inner-host>hello</inner-host> but got Element node <test-element style="display: inline-block;"><inner-host>...
@@ -2285,11 +2270,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: block: assert_equals: expected Element node <inner-host></inner-host> but got Element node <test-element style="display: block;"><inner-host></inner...
 - document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline-block: assert_equals: expected Element node <inner-host></inner-host> but got Element node <test-element style="display: inline-block;"><inner-host>...
 - document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline;"></test-element>, Element node <div id="container"><test-element style="display: inline;..., Element node <body>
-- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: block;"></test-element>, Element node <div id="container"><test-element style="display: block;"..., Element node <body>
-- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline-block;"></test-element>, Element node <div id="container"><test-element style="display: inline-..., Element node <body>
 - document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline;">text</test-element>, Element node <div id="container"><test-element style="display: inline;..., Element node <body>
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: block: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: block;">text</test-element>, Element node <div id="container"><test-element style="display: block;"..., Element node <body>
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline-block: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline-block;">text</test-e..., Element node <div id="container"><test-element style="display: inline-..., Element node <body>
 - document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element style="display: inline;"><span>text</span><..., Element node <div id="container"><test-element style="display: inline;..., Element node <body>
 - document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element style="display: block;"><span>text</span></..., Element node <div id="container"><test-element style="display: block;"..., Element node <body>
 - document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element style="display: inline-block;"><span>text</..., Element node <div id="container"><test-element style="display: inline-..., Element node <body>
@@ -2299,7 +2280,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline;"></test-element>, Element node <div id="container"><test-element style="display: inline;..., Element node <body>
 - document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: block: assert_array_equals: lengths differ, expected array [Element node <slot>fallback</slot>, Element node <div><slot>fallback</slot></div>, Element node <test-element style="display: block;"></test-element>, Element node <div id="container"><test-element style="display: block;"..., Element node <body>
 - document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline-block: assert_array_equals: lengths differ, expected array [Element node <slot>fallback</slot>, Element node <div><slot>fallback</slot></div>, Element node <test-element style="display: inline-block;"></test-element>, Element node <div id="container"><test-element style="display: inline-..., Element node <body>
-- shadowRoot.elementsFromPoint must behave the same with document.elementsFromPoint regarding HTML element: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: block;"></test-element>, Element node <div><test-element style="display: block;"></test-element..., Element node <div id="container"><div><test-element style="display: bl..., Element node <body>
 - elementsFromPoint should return all elements under a point, even when context object is not connected: assert_equals: expected 4 but got 0
 
 ### shadow-dom/HighlightRegistry-highlightsFromPoint.html
@@ -2377,7 +2357,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html
 
-- Calling blur() on shadow host with delegatesFocus should remove the focus.: assert_equals: expected Element node <div id="host">
+- Calling blur() on shadow host with delegatesFocus should remove the focus.: assert_equals: expected Element node <body><div id="host">
 
 ### shadow-dom/focus/click-focus-delegatesFocus-click.html
 
@@ -2400,36 +2380,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Select on non-focusable slot inside focusable div will select text: assert_greater_than: expected a number greater than 0 but got 0
 - Select on non-focusable non-editable slot in a contenteditable shadow DOM and inside focusable div will select text: assert_equals: expected Element node <div id="container" contenteditable="true"><span id="slot... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
 
-### shadow-dom/focus/delegatesFocus-tabindex-change.html
-
-- Setting tabindex on the shadow host of a focused element with delegatesFocus should not change focus.: assert_equals: The shadow host should be focused. expected Element node <div></div> but got Element node <body>
-
-### shadow-dom/focus/focus-autofocus.html
-
-- The second input should be focused since it has autofocus: assert_equals: expected Element node <div id="host"></div> but got Element node <body>
-- Focus should be delegated to the autofocus element when the inner host has delegates focus: assert_equals: expected Element node <div id="host"></div> but got Element node <body>
-- Focus should not be delegated to the slotted elements: assert_equals: expected Element node <div id="host"><div tabindex="0" autofocus="true"></div><... but got Element node <body>
-- Focus should be delegated to the nested div which has autofocus based on the tree order: assert_equals: expected Element node <div id="host"></div> but got Element node <body>
-
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
 - :focus should be applied to the host and the child node when the focus is moved by mouse click: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-
-### shadow-dom/focus/focus-method-delegatesFocus.html
-
-- focus() on host with delegatesFocus, all tabindex=0: assert_equals: expected Element node <div tabindex="0">aboveSlots</div> but got null
-- focus() on host with delegatesFocus & tabindex =-1, all other tabindex=0: assert_equals: expected Element node <div tabindex="0">aboveSlots</div> but got null
-- focus() on host with delegatesFocus & no tabindex, all other tabindex=0: assert_equals: expected Element node <div tabindex="0">aboveSlots</div> but got null
-- focus() on host with delegatesFocus & tabindex = 0, all other tabindex=-1: assert_equals: expected Element node <div tabindex="-1">aboveSlots</div> but got null
-- focus() on host with delegatesFocus, all tabindex=-1: assert_equals: expected Element node <div tabindex="-1">aboveSlots</div> but got null
-- focus() on host with delegatesFocus & tabindex=0, #belowSlots with tabindex=0: assert_equals: expected Element node <div tabindex="0">belowSlots</div> but got null
-- focus() on host with delegatesFocus & tabindex=0, #outside with tabindex=0: assert_equals: expected Element node <body>
-- focus() on host with delegatesFocus & tabindex=0, #aboveSlots and #belowSlots with tabindex=0: assert_equals: expected Element node <div tabindex="0">aboveSlots</div> but got null
-- focus() on host with delegatesFocus & tabindex=0, #aboveSlots with tabindex=0 and #belowSlots with tabindex=1: assert_equals: expected Element node <div tabindex="0">aboveSlots</div> but got null
-- focus() on host with delegatesFocus & tabindex=0, #slottedToFirstSlot, #slottedToSecondSlot, #belowSlots  with tabindex=0: assert_equals: expected Element node <div tabindex="0">belowSlots</div> but got null
-- focus() on host with delegatesFocus with another host with no delegatesFocus and a focusable child: assert_equals: expected Element node <div><input></div> but got Element node <div id="host">
-- focus() on host with delegatesFocus with another host with delegatesFocus and a focusable child: assert_equals: expected Element node <div><input></div> but got Element node <div id="host">
-- focus() on host with delegatesFocus and slotted focusable children: assert_equals: expected Element node <div><div><input></div></div> but got Element node <div id="host">
 
 ### shadow-dom/focus/focus-scroll-under-delegatesFocus.html
 
@@ -2480,14 +2433,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/offsetParent-across-shadow-boundaries.html
 
-- offsetParent must return null when the context object is assigned to a slot without a fixed containing block in shadow tree of open mode: assert_equals: expected null but got Element node <div id="container" style="position: relative"><div><div ...
-- offsetParent must return null when the context object is assigned to a slot without a fixed containing block in shadow tree of closed mode: assert_equals: expected null but got Element node <div id="container" style="position: relative"><div><div ...
-- offsetParent must find the first offset parent which is a shadow-including ancestor of the context object even some shadow tree of open mode did not have any offset parent: assert_equals: expected Element node <div id="container" style="position: relative"><section><... but got Element node <body>
-- offsetParent must find the first offset parent which is a shadow-including ancestor of the context object even some shadow tree of closed mode did not have any offset parent: assert_equals: expected Element node <div id="container" style="position: relative"><section><... but got Element node <body>
-- offsetParent must return null on a child element of a shadow host for the shadow tree in open mode which is not assigned to any slot: assert_equals: expected null but got Element node <div id="container" style="position: relative"><section><...
-- offsetParent must return null on a child element of a shadow host for the shadow tree in closed mode which is not assigned to any slot: assert_equals: expected null but got Element node <div id="container" style="position: relative"><section><...
-- offsetParent must return null on a child element of a shadow host for the shadow tree in open mode which is not in the flat tree: assert_equals: expected null but got Element node <div id="container" style="position: relative"><section><...
-- offsetParent must return null on a child element of a shadow host for the shadow tree in closed mode which is not in the flat tree: assert_equals: expected null but got Element node <div id="container" style="position: relative"><section><...
+- offsetParent must return the fixed position containing block of an element when the context object is assigned to a slot within a fixed containing block in shadow tree of open mode: assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got null
+- offsetParent must return the fixed position containing block of an element when the context object is assigned to a slot within a fixed containing block in shadow tree of closed mode: assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got null
+- offsetParent must return the fixed position containing block of a fixed element when the context object is assigned to a slot within a fixed containing block in shadow tree of open mode: assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got null
+- offsetParent must return the fixed position containing block of a fixed element when the context object is assigned to a slot within a fixed containing block in shadow tree of closed mode: assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got null
 
 ### shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html
 
@@ -2665,15 +2614,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/form-disabled-callback.html
 
-- Adding/removing disabled content attribute: assert_true: expected true got false
-- Relationship with FIELDSET: assert_true: expected true got false
 - A disabled form-associated custom element should not provide an entry for it: FormData constructor: Argument 1 could not be converted to: undefined.
 - A disabled form-associated custom element should not submit an entry for it: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'nextSibling')"
-- Upgrading an element with disabled content attribute: assert_array_equals: value is undefined, expected array
-- Toggling "disabled" attribute on a custom element inside disabled <fieldset> does not trigger a callback: assert_array_equals: value is undefined, expected array
-- Toggling "disabled" attribute on a <fieldset> does not trigger a callback on disabled custom element descendant: assert_array_equals: value is undefined, expected array
-- Callback triggered during a clone/append operation, with disabled state provided by ancestor: assert_array_equals: value is undefined, expected array
-- Callback triggered during a clone operation, with disabled state provided by ancestor: assert_array_equals: value is undefined, expected array
 
 ### custom-elements/form-associated/form-elements-namedItem.html
 

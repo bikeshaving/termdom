@@ -731,3 +731,33 @@ test("moveBefore into a shadow tree re-roots the moved subtree", async () => {
 	expect(inner.getRootNode()).toBe(document);
 	await nextFrame(dom);
 });
+
+test("focus() on a host whose shadow root delegates focus lands on the delegate", async () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document} = dom;
+	document.body.innerHTML = "<div id=\"host\"><div id=\"light\" tabindex=\"0\">light</div></div><div id=\"plain\"></div>";
+	const host = document.getElementById("host")!;
+	const root = host.attachShadow({mode: "open", delegatesFocus: true});
+	root.innerHTML = "<span>label</span><slot></slot><input id=\"first\"><input id=\"second\" autofocus>";
+	await nextFrame(dom);
+
+	host.focus();
+	expect(root.activeElement).toBe(root.getElementById("second"));
+	expect(document.activeElement).toBe(host);
+
+	root.getElementById("first")!.focus();
+	host.focus();
+	expect(root.activeElement).toBe(root.getElementById("first"));
+
+	const empty = document.getElementById("plain")!;
+	empty.attachShadow({
+		mode: "open",
+		delegatesFocus: true,
+	}).innerHTML = "<span>nothing</span>";
+	empty.setAttribute("tabindex", "0");
+	(root.activeElement as HTMLElement).blur();
+	expect(document.activeElement).toBe(document.body);
+	empty.focus();
+	expect(document.activeElement).toBe(document.body);
+	dom.dispose();
+});

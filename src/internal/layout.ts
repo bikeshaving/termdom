@@ -33,7 +33,9 @@ import {
 	flowContent,
 	flowNext,
 	getShadowRoot,
+	isInFlatTree,
 	isModalDialog,
+	isShadowIncludingAncestor,
 	pseudoElementCount,
 	renderedTopLayer,
 	type Window,
@@ -10449,24 +10451,45 @@ export class Layout {
 		};
 	}
 
-	// The live DOM tree, not the box tree. A separate concern from where
-	// the boxes ended up.
+	// CSSOM View's offsetParent: the nearest flat-tree ancestor that is
+	// positioned, the body, or a table cell or table, skipping one the
+	// element cannot see from its own tree (a slotted node's ancestors
+	// inside the shadow tree). A fixed box's offsets are viewport offsets,
+	// so a fixed ancestor ends the walk with null; transforms do not
+	// render here, so nothing else gives a fixed box a containing block.
 	offsetParent(element: Element): Element | null {
-		if (!element.isConnected) {
+		if (!element.isConnected || !isInFlatTree(element)) {
+			return null;
+		}
+		const document = this[kWindow].document;
+		const body = document.body ?? null;
+		if (element === body || element === document.documentElement) {
+			return null;
+		}
+		if (getComputedValue(element, "position") === "fixed") {
 			return null;
 		}
 		for (
-			let ancestor = element.parentElement;
-			ancestor;
-			ancestor = ancestor.parentElement
+			let ancestor = flatParentElement(element);
+			ancestor !== null;
+			ancestor = flatParentElement(ancestor)
 		) {
 			const position = getComputedValue(ancestor, "position");
-			if (position && position !== "static") {
+			if (position === "fixed") {
+				return null;
+			}
+			const name = ancestor.localName;
+			const candidate =
+				(position !== "" && position !== "static") ||
+				ancestor === body ||
+				name === "td" ||
+				name === "th" ||
+				name === "table";
+			if (candidate && isShadowIncludingAncestor(ancestor, element)) {
 				return ancestor;
 			}
 		}
-		const body = this[kWindow].document.body ?? null;
-		return body === element ? null : body;
+		return null;
 	}
 
 	clientSize(element: Element): {width: number; height: number} {

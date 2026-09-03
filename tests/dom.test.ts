@@ -1946,3 +1946,19 @@ test("focus reaches into shadow trees, and each scope retargets", () => {
 	expect(root.activeElement).toBe(mid);
 	expect(nested.activeElement).toBe(button);
 });
+
+test("a wheel or touch listener on the window is passive by default", () => {
+	const window = createDocumentWindow("<!DOCTYPE html><p>x</p>");
+	for (const type of ["wheel", "mousewheel", "touchstart", "touchmove"]) {
+		window.addEventListener(type, (event) => event.preventDefault());
+		const event = new DOMEvent(type, {cancelable: true});
+		window.dispatchEvent(event);
+		expect(event.defaultPrevented).toBe(false);
+	}
+	window.addEventListener("wheel", (event) => event.preventDefault(), {
+		passive: false,
+	});
+	const active = new DOMEvent("wheel", {cancelable: true});
+	window.dispatchEvent(active);
+	expect(active.defaultPrevented).toBe(true);
+});

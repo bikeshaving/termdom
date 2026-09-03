@@ -192,3 +192,45 @@ test("an empty inline sits where the line had reached", async () => {
 
 	dom.dispose();
 });
+
+test("offsetParent walks the flat tree and answers only shadow-including ancestors", async () => {
+	const terminal = new MockProcess({cols: 60, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = "<div id=\"container\" style=\"position: relative\"></div>";
+	const container = document.getElementById("container")!;
+
+	const inner = document.createElement("div");
+	container.append(inner);
+	const innerRoot = inner.attachShadow({mode: "open"});
+	innerRoot.innerHTML = "<div id=\"rel\" style=\"position: relative; padding-left: 6ch\"><div id=\"target\"></div></div>";
+	await nextFrame(dom);
+	expect(innerRoot.getElementById("target")!.offsetParent).toBe(
+		innerRoot.getElementById("rel"),
+	);
+	expect(innerRoot.getElementById("target")!.offsetLeft).toBe(6);
+
+	const slotted = document.createElement("div");
+	slotted.innerHTML = "<div id=\"light\"></div>";
+	container.append(slotted);
+	slotted.attachShadow({mode: "open"}).innerHTML =
+		"<div style=\"position: relative; padding-left: 4ch\"><slot></slot></div>";
+	await nextFrame(dom);
+	const light = slotted.querySelector("#light") as HTMLElement;
+	expect(light.offsetParent).toBe(container);
+	expect(light.offsetLeft).toBe(4);
+
+	const unslotted = document.createElement("div");
+	unslotted.innerHTML = "<div id=\"orphan\"></div>";
+	container.append(unslotted);
+	unslotted.attachShadow({mode: "open"}).innerHTML = "<p>no slot</p>";
+	await nextFrame(dom);
+	expect((unslotted.querySelector("#orphan") as HTMLElement).offsetParent).toBe(null);
+
+	const fixed = document.createElement("div");
+	fixed.style.position = "fixed";
+	container.append(fixed);
+	await nextFrame(dom);
+	expect(fixed.offsetParent).toBe(null);
+	dom.dispose();
+});
