@@ -18,10 +18,10 @@ window's legacy named access to elements by id.
 - Reference tests (no testharness, scored by pixels): 55
 - Excluded, each with its reason below: 356
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 692
-- Files whose harness did not complete: 70
-- Subtests passed: 99111
-- Subtests failed: 1454
+- Files whose harness completed: 691
+- Files whose harness did not complete: 71
+- Subtests passed: 99639
+- Subtests failed: 941
 
 ## Exclusions
 
@@ -515,8 +515,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_changed.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace.html | OK | 21 | 30 |
-| dom/nodes/Document-createElement.html | OK | 49 | 98 |
-| dom/nodes/Document-createElementNS.html | OK | 206 | 390 |
+| dom/nodes/Document-createElement.html | OK | 147 | 0 |
+| dom/nodes/Document-createElementNS.html | OK | 596 | 0 |
 | dom/nodes/Document-createEvent-touchevent.window.js | OK | 3 | 0 |
 | dom/nodes/Document-createEvent.https.html | OK | 261 | 12 |
 | dom/nodes/Document-createProcessingInstruction.html | OK | 12 | 0 |
@@ -612,10 +612,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/NodeList-live-mutations.window.js | OK | 4 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-3.html | OK | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-3.html | ERROR | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | OK | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | ERROR | 1 | 0 |
 | dom/nodes/ParentNode-append.html | OK | 25 | 0 |
 | dom/nodes/ParentNode-children.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-prepend.html | OK | 22 | 0 |
@@ -809,7 +809,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-propagation.html | OK | 7 | 0 |
 | dom/events/Event-returnValue.html | OK | 7 | 0 |
 | dom/events/Event-stopImmediatePropagation.html | OK | 1 | 0 |
-| dom/events/Event-stopPropagation-cancel-bubbling.html | OK | 0 | 1 |
+| dom/events/Event-stopPropagation-cancel-bubbling.html | ERROR | 0 | 1 |
 | dom/events/Event-subclasses-constructors.html | OK | 43 | 6 |
 | dom/events/Event-timestamp-cross-realm-getter.html | EXCLUDED (requires-browsing-context: a timeStamp getter taken from a frame's realm) | 0 | 0 |
 | dom/events/Event-timestamp-high-resolution.html | OK | 4 | 0 |
@@ -819,7 +819,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-type.html | OK | 3 | 0 |
 | dom/events/EventListener-addEventListener.sub.window.js | OK | 1 | 0 |
 | dom/events/EventListener-handleEvent-cross-realm.html | EXCLUDED (requires-browsing-context: listener objects built in a frame's realm) | 0 | 0 |
-| dom/events/EventListener-handleEvent.html | OK | 3 | 3 |
+| dom/events/EventListener-handleEvent.html | OK | 6 | 0 |
 | dom/events/EventListener-incumbent-global-1.sub.html | EXCLUDED (requires-browsing-context: which global a listener is called with, across frames) | 0 | 0 |
 | dom/events/EventListener-incumbent-global-2.sub.html | EXCLUDED (requires-browsing-context: which global a listener is called with, across frames) | 0 | 0 |
 | dom/events/EventListener-incumbent-global-subframe-1.sub.html | EXCLUDED (requires-browsing-context: a subframe of the incumbent-global test) | 0 | 0 |
@@ -941,7 +941,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-transition-end-event.html | EXCLUDED (requires-window-event-propagation: the harness awaits transitionend on window, and this DOM's dispatch path ends at the document) | 0 | 0 |
-| dom/events/window-composed-path.html | OK | 1 | 0 |
+| dom/events/window-composed-path.html | ERROR | 1 | 0 |
 | dom/events/window-event-restored-after-throwing-onerror.html | EXCLUDED (requires-browsing-context: window.event inside window.onerror) | 0 | 0 |
 | dom/ranges/Range-adopt-test.html | OK | 4 | 0 |
 | dom/ranges/Range-attribute-nodes.html | OK | 26 | 0 |
@@ -1026,7 +1026,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/addRange-48.html | OK | 232 | 0 |
 | selection/addRange-52.html | OK | 232 | 0 |
 | selection/addRange-56.html | OK | 116 | 0 |
-| selection/addRange.tentative.html | TIMEOUT | 0 | 0 |
+| selection/addRange.tentative.html | OK | 1 | 0 |
 | selection/anchor-removal.html | EXCLUDED (requires-user-input: the selection is dragged out with a pointer action sequence) | 0 | 0 |
 | selection/anonymous/details-ancestor.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/anonymous/details-mutate.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
@@ -1097,7 +1097,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/onselectstart-on-key-in-contenteditable.html | EXCLUDED (requires-user-input: the selection is made by a key action sequence) | 0 | 0 |
 | selection/removeAllRanges.html | OK | 116 | 0 |
 | selection/removeRange.html | OK | 29 | 0 |
-| selection/script-and-style-elements.html | TIMEOUT | 0 | 0 |
+| selection/script-and-style-elements.html | OK | 0 | 1 |
 | selection/select-end-of-line-image.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selectAllChildren.html | OK | 2242 | 0 |
 | selection/selection-content-visibility-hidden.html | OK | 0 | 1 |
@@ -1135,7 +1135,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/shadow-dom/tentative/Selection-getComposedRanges.html | OK | 12 | 0 |
 | selection/shadow-dom/tentative/Selection-isCollapsed.html | OK | 4 | 0 |
 | selection/shadow-dom/tentative/Selection-later-become-slotted-content.html | OK | 1 | 0 |
-| selection/stringifier.tentative.html | TIMEOUT | 0 | 0 |
+| selection/stringifier.tentative.html | OK | 1 | 0 |
 | selection/stringifier_editable_element.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/test-iframe.html | REFTEST | 0 | 0 |
 | selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-user-input: the control is clicked by a pointer action sequence) | 0 | 0 |
@@ -1174,7 +1174,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-attachment.html | OK | 654 | 0 |
-| shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | TIMEOUT | 0 | 0 |
+| shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | OK | 0 | 1 |
 | shadow-dom/declarative/declarative-shadow-dom-basic.html | OK | 22 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | EXCLUDED (requires-script-execution: the opt-in is read by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-repeats-2.html | EXCLUDED (requires-script-execution: the second template is judged by a script the parser runs between them) | 0 | 0 |
@@ -1454,7 +1454,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
 | custom-elements/CustomElementRegistry.html | OK | 45 | 1 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
-| custom-elements/Document-createElement.html | OK | 11 | 25 |
+| custom-elements/Document-createElement.html | OK | 33 | 3 |
 | custom-elements/Document-createElementNS-customized-builtins.html | EXCLUDED (customized built-ins: createElementNS with an is option) | 0 | 0 |
 | custom-elements/Document-createElementNS-prefix-timing.html | OK | 3 | 0 |
 | custom-elements/Document-createElementNS.html | OK | 4 | 0 |
@@ -1489,7 +1489,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus-notref.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html | OK | 0 | 2 |
-| custom-elements/form-associated/ElementInternals-setFormValue.html | TIMEOUT | 1 | 54 |
+| custom-elements/form-associated/ElementInternals-setFormValue.html | ERROR | 1 | 54 |
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
@@ -1498,10 +1498,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
 | custom-elements/form-associated/form-associated-callback.html | OK | 3 | 2 |
-| custom-elements/form-associated/form-disabled-callback.html | OK | 1 | 9 |
+| custom-elements/form-associated/form-disabled-callback.html | ERROR | 1 | 9 |
 | custom-elements/form-associated/form-elements-namedItem.html | OK | 0 | 3 |
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
-| custom-elements/form-associated/label-delegatesFocus.html | TIMEOUT | 0 | 0 |
+| custom-elements/form-associated/label-delegatesFocus.html | OK | 0 | 2 |
 | custom-elements/historical.html | OK | 3 | 0 |
 | custom-elements/htmlconstructor/newtarget-customized-builtins.html | OK | 0 | 10 |
 | custom-elements/htmlconstructor/newtarget.html | OK | 2 | 8 |
@@ -1518,9 +1518,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (This document is not a stream) | 0 | 0 |
 | custom-elements/parser/serializing-html-fragments-customized-builtins.html | EXCLUDED (customized built-ins: serializing an is attribute) | 0 | 0 |
 | custom-elements/perform-microtask-checkpoint-before-construction.html | OK | 0 | 2 |
-| custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 3 | 1 |
+| custom-elements/pseudo-class-defined-customized-builtins.html | ERROR | 3 | 1 |
 | custom-elements/pseudo-class-defined-print.html | REFTEST | 0 | 0 |
-| custom-elements/pseudo-class-defined.html | TIMEOUT | 0 | 0 |
+| custom-elements/pseudo-class-defined.html | ERROR | 11 | 1 |
 | custom-elements/range-and-constructors.html | OK | 2 | 0 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
 | custom-elements/reactions/Animation.html | OK | 0 | 3 |
@@ -1621,7 +1621,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/valid-custom-element-names.html | OK | 1975 | 0 |
 | custom-elements/state/ElementInternals-states.html | OK | 4 | 0 |
 | custom-elements/state/state-css-selector-nth-of.html | OK | 1 | 2 |
-| custom-elements/state/state-css-selector-shadow-dom.html | OK | 0 | 3 |
+| custom-elements/state/state-css-selector-shadow-dom.html | ERROR | 0 | 0 |
 | custom-elements/state/state-css-selector.html | OK | 5 | 5 |
 | custom-elements/state/state-pseudo-class.html | OK | 5 | 3 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html | OK | 0 | 11 |
@@ -1630,7 +1630,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/upgrading/Document-importNode-customized-builtins.html | EXCLUDED (customized built-ins: importing an element with an is value) | 0 | 0 |
 | custom-elements/upgrading/Document-importNode.html | OK | 2 | 0 |
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | EXCLUDED (customized built-ins: cloning an element with an is value) | 0 | 0 |
-| custom-elements/upgrading/Node-cloneNode.html | OK | 3 | 6 |
+| custom-elements/upgrading/Node-cloneNode.html | OK | 5 | 4 |
 | custom-elements/upgrading/upgrade-custom-element-error-event.html | EXCLUDED (requires-browsing-context: the failure is counted as an error event at the window) | 0 | 0 |
 | custom-elements/upgrading/upgrading-enqueue-reactions.html | OK | 0 | 5 |
 | custom-elements/upgrading/upgrading-parser-created-element.html | EXCLUDED (requires-script-execution: the element under test is one the parser created around a script it ran) | 0 | 0 |
@@ -1673,500 +1673,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Created element's namespace in xhtml_ns_changed.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
 - Created element's namespace in xhtml_ns_changed.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
 - Created element's namespace in xhtml_ns_changed.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
-
-### dom/nodes/Document-createElement.html
-
-- createElement(undefined) in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement(undefined) in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement(null) in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement(null) in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("f1oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("f1oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo1") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo1") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("fெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("fெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("fooெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("fooெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement(":") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement(":") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement(":foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement(":foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("f:oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("f:oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo:") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo:") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("f:o:o") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("f:o:o") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("f::oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("f::oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("f::oo:") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("f::oo:") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo:0") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo:0") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo:_") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo:_") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo:ெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo:ெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo:fooெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo:fooெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("fooெ:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("fooெ:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("xml") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("xml") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("xmlns") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("xmlns") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("xmlfoo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("xmlfoo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("xml:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("xml:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("xmlns:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("xmlns:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("xmlfoo:bar") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("xmlfoo:bar") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("svg") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("svg") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("math") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("math") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("FOO") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("FOO") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("marK") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("marK") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("İnput") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("İnput") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("ınput") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("ınput") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("̀foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("̀foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("f}oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("f}oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo}") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo}") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("\ufffffoo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("\ufffffoo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("f\uffffoo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("f\uffffoo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo\uffff") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo\uffff") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("f<oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("f<oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("̀") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("̀") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("1foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("1foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("1:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("1:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("fo o") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("fo o") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("}foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("}foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("<foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("<foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("foo>") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("foo>") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("<foo>") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("<foo>") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement("-foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement("-foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-- createElement(".foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
-- createElement(".foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
-
-### dom/nodes/Document-createElementNS.html
-
-- createElementNS test in XML document: null,null,null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,null,null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,undefined,null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,undefined,null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"f1oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"foo1",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"ெfoo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"ெfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,";foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,";foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"}foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"}foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"f}oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"f}oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"foo}",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"foo}",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"\ufffffoo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"\ufffffoo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"f\uffffoo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"f\uffffoo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"foo\uffff",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"foo\uffff",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"<foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"<foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"f<oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"f<oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"^^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"^^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"fo o","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"fo o","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"f:o:o","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"f:o:o","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,":","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,":","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"xml",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"xml",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"null:xml","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"null:xml","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "",null,null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "",null,null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,null,null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,null,null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,undefined,null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,undefined,null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"f1oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"foo1",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"f::oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"f::oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"xml",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"xml",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","fo<o",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","fo<o",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/",".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/",".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","foo1",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","f:o:o",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","f:o:o",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","f::oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","f::oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","a:0","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","a:0","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","0:a",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","0:a",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","a:_",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","a:_",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","a:ெ",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","a:ெ",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","a:;",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","a:;",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","a:̀",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","a:̀",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","ெ:a",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","ெ:a",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","̀:a",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","̀:a",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/",";:a",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/",";:a",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","a:aெ",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","a:aெ",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","aெ:a",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","aெ:a",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","xml:test","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","xml:test","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","xmlns:test","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","xmlns:test","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","test:xmlns",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","test:xmlns",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","_:_",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","_:_",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","_:h0",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","_:h0",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","_:test",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","_:test",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","l_:_",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","l_:_",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","ns:_0",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","ns:_0",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","ns:a0",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","ns:a0",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","ns0:test",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","ns0:test",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","a.b:c",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","a.b:c",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","a-b:c",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","a-b:c",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","xml",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","XMLNS",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","XMLNS",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","XML:foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","XML:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","XMLNS:foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","XMLNS:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","prefix::local",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","prefix::local",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:{","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:{","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:}","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:}","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:~","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:~","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:'","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:'","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:!","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:!","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:@","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:@","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:#","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:#","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:$","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:$","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:%","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:%","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:&","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:&","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:*","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:*","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:(","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:(","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:)","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:)","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:+","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:+","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:=","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:=","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:[","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:[","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:]","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:]","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:\\","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:\\","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:/","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:/","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:;","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:;","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:`","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:`","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:<","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:<","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:,","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:,","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:a ","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:a ","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","namespaceURI:\"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","namespaceURI:\"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","foo1",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","xml",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","foo1",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xml",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xml:foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xml:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespaces","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespaces","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/xml/1998/namespace","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/xml/1998/namespace","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","f1oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","f1oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo1","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo1","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xml","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xml","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlns",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlns",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlfoo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlfoo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlns:foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlns:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo:xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo:xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","foo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","foo1",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","xml",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: null,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: null,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: undefined,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: undefined,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/",null,null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/",null,null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://example.com/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://example.com/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/",null,null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/",null,null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace",null,null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace",null,null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/",null,"NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/",null,"NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:",null,null: assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:",null,null: assert_equals: expected "Dummy XHTML document" but got ""
-- createElementNS test in XML document: "foo:","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
-- createElementNS test in XHTML document: "foo:","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
 
 ### dom/nodes/Document-createEvent.https.html
 
@@ -2468,12 +1974,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Event timestamp should not have a resolution better than 5 microseconds: assert_greater_than_equal: expected a number greater than or equal to 5 but got 1
 
-### dom/events/EventListener-handleEvent.html
-
-- rethrows errors when getting `handleEvent`: assert_true: Timed out waiting for error expected true got false
-- throws if `handleEvent` is falsy and not callable: assert_true: Timed out waiting for error expected true got false
-- throws if `handleEvent` is thruthy and not callable: assert_true: Timed out waiting for error expected true got false
-
 ### dom/events/EventTarget-dispatchEvent.html
 
 - If the event's initialized flag is not set, an InvalidStateError must be thrown (DeviceMotionEvent).: No event interface is named "DeviceMotionEvent"
@@ -2693,6 +2193,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - cross editing boundary: assert_equals: expected "this " but got " after"
 - Selection.modify(): move by paragraphboundary cross editing boundary: assert_equals: expected "this " but got " after"
 
+### selection/script-and-style-elements.html
+
+- Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got "\n#not_included{}\n\n  style { display:block; color: green; }\n  script { color: blue; }\n\nfunction not_included(){}\n\nfunction test_block_script() {\n  let pre = document.createElement(\"pre\");\n  pre.append(document.createTextNode(\"PASS\"));\n  document.getElementById(\"p1\").append(pre);\n}\n\nPASS"
+
 ### selection/selection-content-visibility-hidden.html
 
 - Text with content-visibility: hidden is not selected: assert_equals: Text with content-visibility: hidden should not be selected expected "" but got "This is hidden text.\n\n  \n    promise_test(async t => {\n      const range = document.createRange();\n      range.selectNodeContents(document.body);\n      const selection = window.getSelection();\n      selection.addRange(range);\n\n      const selectedText = selection.toString().trim();\n      assert_equals(selectedText, '', 'Text with content-visibility: hidden should not be selected');\n    }, 'Text with content-visibility: hidden is not selected');"
@@ -2846,6 +2350,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - button element with accesskey in the shadow tree of open mode: Test timed out
 - button element with accesskey in the shadow tree of closed mode: 
+
+### shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html
+
+- Declarative Shadow DOM: shadow root should be available to element internals: assert_true: expected true got false
 
 ### shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html
 
@@ -3036,31 +2544,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/Document-createElement.html
 
-- document.createElement must report a TypeError when the result of Construct is not a DOM node: Cannot read properties of null (reading 'name')
-- document.createElement must report a TypeError when the result of Construct is a TextNode: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when attribute is added by setAttribute during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when attribute is added by attributes.setNamedItem during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when a Text child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when a Comment child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when an element child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when the element gets inserted into another element during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when the element is adopted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a the document of an iframe during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a the document of an iframe during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
 - document.createElement must report a NotSupportedError when the element is adopted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - document.createElement must report a NotSupportedError when the element is inserted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - document.createElement must not report a NotSupportedError when the element is adopted back from a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
-- document.createElement must report a NotSupportedError when the local name of the element does not match that of the custom element: Cannot read properties of null (reading 'name')
-- document.createElement must report an exception thrown by a custom element constructor: Cannot read properties of null (reading 'name')
 
 ### custom-elements/HTMLElement-attachInternals.html
 
@@ -3226,6 +2712,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Clicking a reset button invokes formResetCallback in a microtask: assert_false: expected false got true
 
+### custom-elements/form-associated/label-delegatesFocus.html
+
+- Clicking on a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- Clicking on a span in a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+
 ### custom-elements/htmlconstructor/newtarget-customized-builtins.html
 
 - If prototype is not object (null), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
@@ -3258,6 +2749,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/pseudo-class-defined-customized-builtins.html
 
 - <abbr is="my-abbr"> should not be :defined: assert_equals: matches(":defined") expected false but got true
+
+### custom-elements/pseudo-class-defined.html
+
+- this.matches(:defined) should not match during an upgrade: assert_equals: expected 2 but got 0
 
 ### custom-elements/reactions/Animation.html
 
@@ -3617,12 +3112,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - state selector has influence on nth-of when state is applied: assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
 - style is invalided on clear(): assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
 
-### custom-elements/state/state-css-selector-shadow-dom.html
-
-- state selector has no influence when state is not applied: assert_equals: expected "rgb(255, 0, 0)" but got "rgb(0, 0, 0)"
-- state selector has influence when state is applied: assert_equals: expected "rgb(0, 255, 0)" but got "rgb(0, 0, 0)"
-- state selector only applies on given ident: assert_equals: expected "rgb(255, 0, 0)" but got "rgb(0, 0, 0)"
-
 ### custom-elements/state/state-css-selector.html
 
 - state selector has influence when state is applied: assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
@@ -3669,10 +3158,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Node.prototype.cloneNode(false) must be able to clone a custom element inside an iframe: assert_true: expected true got false
 - Node.prototype.cloneNode(true) must be able to clone a descendent custom element: promise_test: Unhandled rejection with value: object "TypeError: Right-hand side of 'instanceof' is not an object"
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: Cannot read properties of undefined (reading 'name')
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: Cannot read properties of undefined (reading 'name')
-- Upgrading a custom element must throw TypeError when the custom element's constructor returns another element: Cannot read properties of undefined (reading 'name')
-- Inserting an element must not try to upgrade a custom element when it had already failed to upgrade once: assert_equals: expected (string) "bad" but got (undefined) undefined
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: assert_equals: expected "TypeError" but got "InvalidStateError"
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: assert_equals: expected "TypeError" but got "InvalidStateError"
 
 ### custom-elements/upgrading/upgrading-enqueue-reactions.html
 
