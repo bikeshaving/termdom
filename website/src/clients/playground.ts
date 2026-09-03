@@ -925,16 +925,156 @@ function* Workbench(
 	}
 }
 
+/*** Sharing ***/
+
+/**
+ * The playground's state as a URL: `#e=<id>` for an example as it ships,
+ * `#c=<program>` for anything edited, the program deflated and base64url
+ * encoded so a whole example fits in an address bar. Written as the
+ * reader types and read once on load, so a link is a playground.
+ */
+const SHARE_DEBOUNCE = 500;
+
+function base64url(bytes: Uint8Array): string {
+	let binary = "";
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64url(text: string): Uint8Array {
+	const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
+	return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function pipeBytes(
+	bytes: Uint8Array,
+	stream: {readable: ReadableStream; writable: WritableStream},
+): Promise<Uint8Array> {
+	const writer = stream.writable.getWriter();
+	void writer.write(bytes);
+	void writer.close();
+	const chunks: Uint8Array[] = [];
+	const reader = stream.readable.getReader();
+	for (;;) {
+		const {value, done} = await reader.read();
+		if (done) break;
+		chunks.push(value as Uint8Array);
+	}
+	const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+	let offset = 0;
+	for (const chunk of chunks) {
+		out.set(chunk, offset);
+		offset += chunk.length;
+	}
+	return out;
+}
+
+async function encodeProgram(code: string): Promise<string> {
+	const bytes = new TextEncoder().encode(code);
+	if (typeof CompressionStream === "undefined") return `r${base64url(bytes)}`;
+	return `d${base64url(await pipeBytes(bytes, new CompressionStream("deflate-raw")))}`;
+}
+
+async function decodeProgram(text: string): Promise<string | null> {
+	try {
+		const bytes = fromBase64url(text.slice(1));
+		if (text.startsWith("r")) return new TextDecoder().decode(bytes);
+		if (text.startsWith("d") && typeof DecompressionStream !== "undefined") {
+			return new TextDecoder().decode(
+				await pipeBytes(bytes, new DecompressionStream("deflate-raw")),
+			);
+		}
+	} catch {
+		// A hash that is not one of ours: the page opens on its default.
+	}
+	return null;
+}
+
+function readShareHash(): {example?: string; program?: string} {
+	const params = new URLSearchParams(location.hash.replace(/^#/, ""));
+	return {
+		example: params.get("e") ?? undefined,
+		program: params.get("c") ?? undefined,
+	};
+}
+
+function writeShareHash(hash: string): void {
+	if (location.hash === `#${hash}`) return;
+	history.replaceState(null, "", `#${hash}`);
+}
+
 /** The playground page: the picker, and a workbench under it. */
 function* Playground(this: Context) {
 	const examples = readExamples();
-	let example = examples[0];
+	const share = readShareHash();
+	let example =
+		examples.find((each) => each.id === share.example) ?? examples[0];
+	// What the editor holds when it is not an example as it ships: a program
+	// from a shared link, until the reader picks something else.
+	let program: string | null = null;
 	// True when the editor's text matches no example; the picker shows its
 	// placeholder instead of an example name.
 	let custom = false;
 	// Bumped on every pick, so choosing the example the edits started from
 	// still resets the editor to it.
 	let pickEpoch = 0;
+	let shareTimer = 0;
+	let latest = example.code;
+	let shareStatus = "";
+	// A shared program arrives encoded, so it lands a moment after the page.
+	// The same steps serve a hash that changes under the page (a back
+	// button, a pasted address), with an example id taking effect at once.
+	const applyShare = (next: {example?: string; program?: string}): void => {
+		if (next.program !== undefined) {
+			const pending = next.program;
+			void decodeProgram(pending).then((decoded) => {
+				if (decoded === null || readShareHash().program !== pending) return;
+				this.refresh(() => {
+					program = decoded;
+					custom = true;
+					pickEpoch++;
+				});
+			});
+			return;
+		}
+		const chosen = examples.find((each) => each.id === next.example);
+		if (chosen === undefined || (chosen === example && program === null)) {
+			return;
+		}
+		this.refresh(() => {
+			example = chosen;
+			program = null;
+			custom = false;
+			pickEpoch++;
+		});
+	};
+	applyShare(share);
+	const onhashchange = (): void => applyShare(readShareHash());
+	window.addEventListener("hashchange", onhashchange);
+	this.cleanup(() => window.removeEventListener("hashchange", onhashchange));
+	// The hash follows the editor: the example's id while the text is one,
+	// the program itself once it is not.
+	const updateShare = async (): Promise<void> => {
+		const match = examples.find((each) => each.code === latest);
+		writeShareHash(
+			match ? `e=${match.id}` : `c=${await encodeProgram(latest)}`,
+		);
+	};
+	const copyLink = async (): Promise<void> => {
+		window.clearTimeout(shareTimer);
+		await updateShare();
+		try {
+			await navigator.clipboard.writeText(location.href);
+			shareStatus = "Link copied.";
+		} catch {
+			shareStatus = "Copy the address bar to share.";
+		}
+		this.refresh();
+		window.setTimeout(() => {
+			shareStatus = "";
+			this.refresh();
+		}, 2500);
+	};
 
 	const onexamplechange = (ev: Event) => {
 		const id = (ev.target as HTMLSelectElement).value;
@@ -942,12 +1082,16 @@ function* Playground(this: Context) {
 		if (!chosen) return;
 		this.refresh(() => {
 			example = chosen;
+			program = null;
 			custom = false;
 			pickEpoch++;
 		});
 	};
 
 	const oncode = (code: string) => {
+		latest = code;
+		window.clearTimeout(shareTimer);
+		shareTimer = window.setTimeout(() => void updateShare(), SHARE_DEBOUNCE);
 		const match = examples.find((each) => each.code === code);
 		const isCustom = match === undefined;
 		if (match !== undefined && match !== example) {
@@ -970,7 +1114,7 @@ function* Playground(this: Context) {
 					margin: 0;
 				`}>Playground</h1>
 				<${Workbench}
-					value=${example.code}
+					value=${program ?? example.code}
 					valueEpoch=${pickEpoch}
 					name="playground"
 					geometry=${PAGE_GEOMETRY}
@@ -992,6 +1136,10 @@ function* Playground(this: Context) {
 								`,
 							)}
 						</select>
+						<button id="playground-share" type="button" onclick=${() => void copyLink()}>
+							Share
+						</button>
+						${shareStatus ? jsx`<span class=${filename}>${shareStatus}</span>` : null}
 					`}
 				/>
 			</main>

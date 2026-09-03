@@ -151,6 +151,25 @@ report(await waitForText("type to filter", 15000), "playground: fuzzy-finder pai
 report(await waitForText("01-getting-started.md", 5000), "playground: fuzzy-finder lists the seeded files");
 // The shell reads the filesystem the page seeded: the examples directory
 // lists these programs, and cat prints one of them.
+// The address follows the picker, and a shared address opens what it
+// names: an example by id, or a program encoded into the hash.
+report((await page.evaluate(() => location.hash)) === "#e=fuzzy-finder", "share: the hash names the picked example");
+await page.goto(`${ORIGIN}/playground/#e=flexbox`);
+await page.waitForSelector(".xterm");
+report(await waitForText("TermDOM flexbox", 15000), "share: #e= opens the named example");
+const sharedProgram = [
+	'import {TermDOM} from "@b9g/termdom";',
+	"const term = new TermDOM();",
+	"term.attach();",
+	'term.document.body.textContent = "shared program painted";',
+].join("\n");
+const encoded = Buffer.from(sharedProgram).toString("base64url");
+await page.goto(`${ORIGIN}/playground/#c=r${encoded}`);
+await page.reload({waitUntil: "load"});
+await page.waitForSelector(".xterm");
+report(await waitForText("shared program painted", 15000), "share: #c= runs the encoded program on a fresh load");
+await page.goto(`${ORIGIN}/playground/`);
+await page.waitForSelector(".xterm");
 await page.selectOption("select", "shell");
 report(await waitForText("termdom shell", 15000), "playground: shell paints its banner");
 // The emulator's textarea takes the keys. A click on the pane would also
