@@ -1457,6 +1457,11 @@ function layoutFlexbox(
 		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
 		: NaN;
 
+	// The items' containing block is the container's content box
+	// (css-flexbox-1 §4), so their percentages resolve against it.
+	const itemOwnerWidth = innerWidth;
+	const itemOwnerHeight = innerHeight;
+
 	const innerMain = mainIsRow ? innerWidth : innerHeight;
 	const innerCross = mainIsRow ? innerHeight : innerWidth;
 	const crossSpace = mainIsRow ? heightSpace : widthSpace;
@@ -1471,7 +1476,7 @@ function layoutFlexbox(
 			zeroLayout(child);
 			continue;
 		}
-		resolveNodeMargins(child, ownerWidth);
+		resolveNodeMargins(child, itemOwnerWidth);
 
 		if (isOutOfFlowType(child.style.positionType)) {
 			continue;
@@ -1484,8 +1489,8 @@ function layoutFlexbox(
 			child,
 			innerCross,
 			crossSpace,
-			ownerWidth,
-			ownerHeight,
+			itemOwnerWidth,
+			itemOwnerHeight,
 		);
 
 		computeFlexBasisForChild(
@@ -1495,8 +1500,8 @@ function layoutFlexbox(
 			widthSpace,
 			innerHeight,
 			heightSpace,
-			ownerWidth,
-			ownerHeight,
+			itemOwnerWidth,
+			itemOwnerHeight,
 		);
 		inFlow.push(child);
 	}
@@ -1518,12 +1523,12 @@ function layoutFlexbox(
 
 		for (; index < inFlow.length; index++) {
 			const child = inFlow[index];
-			const childMarginMain = getAxisMargin(child, mainAxis, ownerWidth);
+			const childMarginMain = getAxisMargin(child, mainAxis, itemOwnerWidth);
 			const basis = boundAxisWithinMinMax(
 				child,
 				mainAxis,
 				child.layout.computedFlexBasis,
-				mainIsRow ? ownerWidth : ownerHeight,
+				mainIsRow ? itemOwnerWidth : itemOwnerHeight,
 			);
 
 			const precedingGap = line.items.length > 0 ? mainGap : 0;
@@ -1561,8 +1566,8 @@ function layoutFlexbox(
 			node,
 			mainForItems,
 			mainSpace,
-			ownerWidth,
-			ownerHeight,
+			itemOwnerWidth,
+			itemOwnerHeight,
 		);
 
 		for (const child of line.items) {
@@ -1573,8 +1578,8 @@ function layoutFlexbox(
 				innerHeight,
 				innerCross,
 				crossSpace,
-				ownerWidth,
-				ownerHeight,
+				itemOwnerWidth,
+				itemOwnerHeight,
 				performLayout,
 			);
 		}
@@ -1585,7 +1590,7 @@ function layoutFlexbox(
 			mainForItems,
 			leadingPaddingBorderMain,
 			mainGap,
-			ownerWidth,
+			itemOwnerWidth,
 			performLayout,
 		);
 
@@ -1593,7 +1598,7 @@ function layoutFlexbox(
 		for (const child of line.items) {
 			const childCross =
 				(isRow(cross) ? child.layout.width : child.layout.height) +
-				getAxisMargin(child, cross, ownerWidth);
+				getAxisMargin(child, cross, itemOwnerWidth);
 			lineCross = Math.max(lineCross, childCross);
 		}
 		// Only a definite cross size fills the line. An `shrink-to-fit` bound
@@ -1669,8 +1674,8 @@ function layoutFlexbox(
 		containerInnerCross,
 		totalCrossDim,
 		leadingPaddingBorderCross,
-		ownerWidth,
-		ownerHeight,
+		itemOwnerWidth,
+		itemOwnerHeight,
 	);
 
 	if (isReverse(mainAxis)) {
@@ -5368,6 +5373,13 @@ function layoutBlock(
 	const innerWidth = isDefined(availableWidth)
 		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
 		: NaN;
+	// The children's containing block is the content box (css2 §10.1),
+	// so their percentages resolve against it: a width they can read
+	// before it is known is not definite.
+	const innerHeight =
+		heightSpace === "definite"
+			? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
+			: NaN;
 
 	// The width is resolved before the children lay out, min/max included,
 	// so each is measured once at the width it keeps.
@@ -5381,14 +5393,13 @@ function layoutBlock(
 				child,
 				innerWidth,
 				false,
-				ownerWidth,
-				ownerHeight,
+				innerWidth,
+				innerHeight,
 				false,
 			);
 			widest = Math.max(
 				widest,
-				child.layout.width +
-				getAxisMargin(child, "row", ownerWidth),
+				child.layout.width + getAxisMargin(child, "row", innerWidth),
 			);
 		}
 		borderBoxWidth = widest + paddingBorderRow;
@@ -5425,12 +5436,13 @@ function layoutBlock(
 
 	for (let i = 0; i < inFlow.length; i++) {
 		const child = inFlow[i];
+		resolveNodeMargins(child, contentWidth);
 		layoutBlockChild(
 			child,
 			contentWidth,
 			isStretchFit(child),
-			ownerWidth,
-			ownerHeight,
+			contentWidth,
+			innerHeight,
 			performLayout,
 		);
 
