@@ -1025,8 +1025,11 @@ export class Exchange extends EventTarget {
 			ask: CURSOR_QUERY,
 			timeoutMs: 1000,
 			sequence: this[kDSRSequence]++,
+			// The 1-based row the command started on becomes the 0-based
+			// anchor.
 			read: ({row}) => {
-				anchorDetected(this, row);
+				this[kScreen].documentTop = row - 1;
+				this[kScreen].anchorScrollTop = 1 - row;
 				this[kHasDetectedAnchor] = true;
 				return row;
 			},
@@ -1292,7 +1295,9 @@ function requestDeferredProbeFrame(session: Exchange): void {
 		if (session[kDisposed] || widths.deferred.size === 0) {
 			return;
 		}
-		probesDeferred(session);
+		// Deferred probes go out with the next frame even if nothing changed.
+		session[kScreen].flushProbes();
+		requestRender(session[kWindow].document);
 	}, Exchange[kWidthDeferralWait]);
 }
 
@@ -1377,8 +1382,14 @@ function settleWidthProbe(
 
 	widths.settled.add(probe.cluster);
 	widths.drift += advance - probe.width;
+	// A cluster measured wider or narrower than the tables said, so every
+	// column after it on a painted row is off. The previous frame described
+	// a screen that was never drawn. Drop it and paint again from the
+	// corrected measurements.
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		widthsCorrected(session);
+		session[kLayout].invalidateTextMeasurement();
+		session[kScreen].repaintAll();
+		requestRender(session[kWindow].document);
 	}
 }
 
@@ -1465,59 +1476,6 @@ function terminalResized(
 	syncMediaQueries(window.document);
 }
 
-/** Where the frame is after a resize, for the re-anchor. */
-function frameStanding(
-	session: Exchange,
-	cols: number,
-): {
-	contentHeight: number;
-	wrappedRowsAbove: number | null;
-	documentTop: number;
-} {
-	const layout = session[kLayout];
-	layout.performLayout();
-	return {
-		contentHeight: layout.documentPaintHeight(),
-		wrappedRowsAbove: session[kScreen].wrappedRowsAbovePark(cols),
-		documentTop: session[kScreen].documentTop,
-	};
-}
-
-/** The frame now starts at `startRow`. Repaint it from there. */
-function frameReplaced(session: Exchange, startRow: number): void {
-	const screen = session[kScreen];
-	screen.documentTop = startRow;
-	screen.anchorScrollTop = -startRow;
-	screen.replaced(startRow);
-	requestRender(session[kWindow].document);
-}
-
-/**
- * The 1-based terminal row the command started on becomes the 0-based anchor.
- */
-function anchorDetected(session: Exchange, row: number): void {
-	session[kScreen].documentTop = row - 1;
-	session[kScreen].anchorScrollTop = 1 - row;
-}
-
-/** Deferred width probes go out with the next frame even if nothing changed. */
-function probesDeferred(session: Exchange): void {
-	session[kScreen].flushProbes();
-	requestRender(session[kWindow].document);
-}
-
-/**
- * A cluster measured wider or narrower than the tables said, so every
- * column after it on a painted row is off. The previous frame described
- * a screen that was never drawn. Drop it and paint again from the
- * corrected measurements.
- */
-function widthsCorrected(session: Exchange): void {
-	session[kLayout].invalidateTextMeasurement();
-	session[kScreen].repaintAll();
-	requestRender(session[kWindow].document);
-}
-
 // The terminal has rewrapped the old frame with the text above it. The
 // cursor was parked on the frame's bottom row and stayed on its line
 // through the rewrap, and every painted row is a hard line, so the
@@ -1527,14 +1485,21 @@ function widthsCorrected(session: Exchange): void {
 function handleResize(session: Exchange): void {
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
 	terminalResized(session, newWidth, newHeight);
-	const {contentHeight, wrappedRowsAbove, documentTop} = frameStanding(
-		session,
-		newWidth,
-	);
+	// Where the frame is after the resize, for the re-anchor.
+	const screen = session[kScreen];
+	const layout = session[kLayout];
+	layout.performLayout();
+	const contentHeight = layout.documentPaintHeight();
+	const wrappedRowsAbove = screen.wrappedRowsAbovePark(newWidth);
+	const documentTop = screen.documentTop;
 	const settling = session[kSettlingResize];
 
+	// The frame now starts at startRow. Repaint it from there.
 	const redraw = (startRow: number) => {
-		frameReplaced(session, startRow);
+		screen.documentTop = startRow;
+		screen.anchorScrollTop = -startRow;
+		screen.replaced(startRow);
+		requestRender(session[kWindow].document);
 
 		// The frame is placed by the screen reset. Cursor detection is
 		// suspended until it is written.

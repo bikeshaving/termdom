@@ -169,9 +169,17 @@ export class TermDOM {
 		});
 		// A page can dispatch an event of the same name on the document.
 		// Only the exchange's own reach these.
+
+		// document.close(): flush the document into the scrollback and seal
+		// it. The next mutation starts a fresh one below it.
 		exchange.addEventListener("seal", (event) => {
-			if (event.target === exchange) {
-				sealTermDOM(this);
+			if (
+				event.target === exchange &&
+				isAttached(this) &&
+				this[kRenderCount] > 0
+			) {
+				flushDocument(this);
+				this[kSealed] = true;
 			}
 		});
 		exchange.addEventListener("terminalclose", (event) => {
@@ -201,8 +209,12 @@ export class TermDOM {
 			}
 			return this[kAttachReady];
 		}
+		// Re-derive everything that comes from the transport. Only before the
+		// first frame.
 		if (rebinding) {
-			rebindTransport(this, transport);
+			this[kTransport] = transport;
+			this[kScreen].rebind(transport.colorDepth);
+			this[kExchange].rebind(transport);
 		}
 		// Resolves when the first frame has been written. The negotiations'
 		// silence timeouts must not delay that.
@@ -335,17 +347,6 @@ function isAttached(termDOM: TermDOM): boolean {
 }
 
 /**
- * document.close(): flush the document into the scrollback and seal it.
- * The next mutation starts a fresh one below it.
- */
-function sealTermDOM(termDOM: TermDOM): void {
-	if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
-		flushDocument(termDOM);
-		termDOM[kSealed] = true;
-	}
-}
-
-/**
  * End the session. Called when the window closed and beforeunload
  * allowed it, or when the terminal went away.
  */
@@ -371,19 +372,6 @@ function closeTermDOM(termDOM: TermDOM): void {
 }
 
 /**
- * Re-derive everything that comes from the transport. Only before the first
- * frame.
- */
-function rebindTransport(
-	termDOM: TermDOM,
-	transport: TerminalTransport,
-): void {
-	termDOM[kTransport] = transport;
-	termDOM[kScreen].rebind(transport.colorDepth);
-	termDOM[kExchange].rebind(transport);
-}
-
-/**
  * The mouse is captured while the document owns the document scroll. When the
  * wheel has been yielded to the terminal, capture would take the user's
  * scrollback and selection for nothing.
@@ -406,15 +394,6 @@ function syncMouseReporting(
 }
 
 /** Whether anything in the document can observe pointer hover right now. */
-function isHoverObserved(
-	termDOM: TermDOM,
-): boolean {
-	return (
-		DOM.hoverListenerCount(termDOM.document) > 0 ||
-		termDOM[kCascade].hoverRulesExist()
-	);
-}
-
 /**
  * Motion reporting (1003) sends a report per cell the pointer crosses, so
  * it is on only while capture is on and something observes hover.
@@ -422,7 +401,10 @@ function isHoverObserved(
 function syncHoverReporting(
 	termDOM: TermDOM,
 ): void {
-	const wanted = termDOM[kMouseReportingEnabled] && isHoverObserved(termDOM);
+	const wanted =
+		termDOM[kMouseReportingEnabled] &&
+		(DOM.hoverListenerCount(termDOM.document) > 0 ||
+			termDOM[kCascade].hoverRulesExist());
 	if (wanted === termDOM[kHoverReportingEnabled]) {
 		return;
 	}

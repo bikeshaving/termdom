@@ -12,6 +12,13 @@ function filler(rows: number): string {
 	return html;
 }
 
+async function until(condition: () => boolean): Promise<void> {
+	const deadline = Date.now() + 5000;
+	while (!condition() && Date.now() < deadline) {
+		await new Promise((r) => setTimeout(r, 10));
+	}
+}
+
 function closeCountingTransport(terminal: MockProcess): {
 	transport: any;
 	closes(): number;
@@ -84,7 +91,7 @@ test("a page's own beforeunload closes nothing; the window's does", async () => 
 	expect(watched.closes()).toBe(0);
 
 	dom.window.close();
-	await new Promise((r) => setTimeout(r, 60));
+	await until(() => watched.closes() === 1);
 	expect(watched.closes()).toBe(1);
 });
 
@@ -104,7 +111,7 @@ test("a page's terminalclose or seal reaches no session listener", async () => {
 	expect(dom.document.body.innerHTML).toBe("<div>open</div>");
 
 	dom.window.close();
-	await new Promise((r) => setTimeout(r, 60));
+	await until(() => watched.closes() === 1);
 	expect(watched.closes()).toBe(1);
 });
 
