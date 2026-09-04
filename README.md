@@ -6,7 +6,7 @@
 
 TermDOM is a JavaScript/TypeScript library that renders HTML and CSS to the
 terminal. It draws actual DOM nodes to terminal output and redraws the screen
-when nodes are mutated, so TUIs and interactive CLIs can be written with
+when they are mutated, so TUIs and interactive CLIs can be written with
 vanilla JavaScript, or any frontend web framework or library.
 
 ```sh
@@ -55,8 +55,8 @@ setInterval(() => {
 
 - **Stylesheets** CSS from `<style>` elements and `style` attributes cascades
   and inherits as in the browser, translated to ANSI color and decoration.
-- **Layout** The CSS box model, flexbox, and table layout, computed in whole
-  terminal cells with margins, borders, and padding.
+- **Layout** The CSS box model, flexbox, grid, and table layout, computed in whole
+  terminal cells, with margins, borders, and padding.
 - **Text** CJK, emoji, and combining characters take correct widths; Hebrew
   and Arabic render in visual order with contextual shaping.
 - **DOM utilities** `document.querySelector()`, `MutationObserver`,
