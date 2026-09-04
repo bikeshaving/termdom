@@ -1754,10 +1754,9 @@ export class Screen {
 		rows: number,
 		cols: number,
 		colorDepth: ColorDepth = "rgb",
-		measurer: Exchange | null = null,
 	) {
 		this[kFlushProbes] = false;
-		this[kMeasurer] = measurer;
+		this[kMeasurer] = null;
 		this[kPrev] = null;
 		this[kSpare] = null;
 		this[kDiff] = null;
@@ -1778,6 +1777,11 @@ export class Screen {
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
 		this[kWriter] = new FrameWriter(colorDepth);
+	}
+
+	/** Width probes go out over the exchange, once there is one. */
+	set measurer(exchange: Exchange) {
+		this[kMeasurer] = exchange;
 	}
 
 	get rows(): number {

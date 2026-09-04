@@ -1,5 +1,15 @@
-import {CustomEvent, Event, EventTarget, type Window} from "./dom.ts";
+import type {Cascade} from "./cssom.ts";
+import {
+	dispatchAsUserAgent,
+	Event,
+	EventTarget,
+	requestRender,
+	syncMediaQueries,
+	type Window,
+} from "./dom.ts";
 import type {Input} from "./input.ts";
+import type {Layout} from "./layout.ts";
+import type {Screen} from "./screen.ts";
 import {recordClusterAdvance} from "./text.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
@@ -632,18 +642,6 @@ interface PendingReply {
 	clipboard?: boolean;
 }
 
-export interface FrameStanding {
-	contentHeight: number;
-	wrappedRowsAbove: number | null;
-	documentTop: number;
-}
-
-export interface ResizeReport {
-	cols: number;
-	rows: number;
-	standing: FrameStanding | null;
-}
-
 const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
 const kEngagedModes = Symbol("engagedModes");
@@ -652,6 +650,9 @@ const kResizeTimer = Symbol("resizeTimer");
 const kSettlingResize = Symbol("settlingResize");
 const kTransportClosed = Symbol("transportClosed");
 const kWindow = Symbol("window");
+const kLayout = Symbol("layout");
+const kCascade = Symbol("cascade");
+const kScreen = Symbol("screen");
 const kInput = Symbol("input");
 
 const kWriter = Symbol("writer");
@@ -698,6 +699,9 @@ export class Exchange extends EventTarget {
 	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
 	declare [kWindow]: Window;
+	declare [kLayout]: Layout;
+	declare [kCascade]: Cascade;
+	declare [kScreen]: Screen;
 	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
 	// A token per resize burst, so a redraw that lands after a newer burst
 	// began is abandoned. Null between bursts.
@@ -727,7 +731,13 @@ export class Exchange extends EventTarget {
 	declare [kProbingEnded]: boolean;
 	declare [kWidths]: WidthProbes;
 
-	constructor(transport: TerminalTransport, window: Window) {
+	constructor(
+		transport: TerminalTransport,
+		window: Window,
+		layout: Layout,
+		styles: Cascade,
+		screen: Screen,
+	) {
 		super();
 		const interactive = transport.interactive;
 		this[kWriter] = null;
@@ -751,6 +761,9 @@ export class Exchange extends EventTarget {
 		// Anchor detection only makes sense when a shell's rows are above ours.
 		this[kAnchorDetectionEnabled] = transport.sharesScreen && interactive;
 		this[kWindow] = window;
+		this[kLayout] = layout;
+		this[kCascade] = styles;
+		this[kScreen] = screen;
 		this[kInput] = null;
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
@@ -903,11 +916,7 @@ export class Exchange extends EventTarget {
 		this[kAnchorDetectionEnabled] =
 			transport.sharesScreen && transport.interactive;
 		this[kWidths] = createWidthProbes(transport.interactive);
-		this.dispatchEvent(
-			new CustomEvent<ResizeReport>("terminalresize", {
-				detail: {cols: transport.cols, rows: transport.rows, standing: null},
-			}),
-		);
+		terminalResized(this, transport.cols, transport.rows);
 	}
 
 	start(input: Input): void {
@@ -965,7 +974,7 @@ export class Exchange extends EventTarget {
 		}
 		this[kPriorBidiMode] = answer;
 		if (answer === 1 || answer === 3) {
-			this.dispatchEvent(new Event("reorder"));
+			this[kLayout].adoptTerminalReordering();
 		}
 	}
 
@@ -1014,7 +1023,7 @@ export class Exchange extends EventTarget {
 			timeoutMs: 1000,
 			sequence: this[kDSRSequence]++,
 			read: ({row}) => {
-				this.dispatchEvent(new CustomEvent("anchor", {detail: {row}}));
+				anchorDetected(this, row);
 				this[kHasDetectedAnchor] = true;
 				return row;
 			},
@@ -1254,7 +1263,7 @@ function requestDeferredProbeFrame(session: Exchange): void {
 		if (session[kDisposed] || widths.deferred.size === 0) {
 			return;
 		}
-		session.dispatchEvent(new Event("probes"));
+		probesDeferred(session);
 	}, Exchange[kWidthDeferralWait]);
 }
 
@@ -1340,7 +1349,7 @@ function settleWidthProbe(
 	widths.settled.add(probe.cluster);
 	widths.drift += advance - probe.width;
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		session.dispatchEvent(new Event("widths"));
+		widthsCorrected(session);
 	}
 }
 
@@ -1408,6 +1417,78 @@ function scheduleResize(session: Exchange): void {
 	}, RESIZE_DEBOUNCE_MS);
 }
 
+function terminalResized(
+	session: Exchange,
+	width: number,
+	height: number,
+): void {
+	const screen = session[kScreen];
+	// A SIGWINCH with an unchanged size still redraws but fires no event.
+	const sizeChanged = width !== screen.cols || height !== screen.rows;
+	screen.resize(height, width);
+	session[kLayout].resize(width, height);
+	// A size change can flip any @media result and every vw/vh value.
+	session[kCascade].syncStylesheets();
+	const window = session[kWindow];
+	if (sizeChanged) {
+		dispatchAsUserAgent(window, new window.Event("resize"));
+	}
+	syncMediaQueries(window.document);
+}
+
+/** Where the frame is after a resize, for the re-anchor. */
+function frameStanding(
+	session: Exchange,
+	cols: number,
+): {
+	contentHeight: number;
+	wrappedRowsAbove: number | null;
+	documentTop: number;
+} {
+	const layout = session[kLayout];
+	layout.performLayout();
+	return {
+		contentHeight: layout.documentPaintHeight(),
+		wrappedRowsAbove: session[kScreen].wrappedRowsAbovePark(cols),
+		documentTop: session[kScreen].documentTop,
+	};
+}
+
+/** The frame now starts at `startRow`. Repaint it from there. */
+function frameReplaced(session: Exchange, startRow: number): void {
+	const screen = session[kScreen];
+	screen.documentTop = startRow;
+	screen.anchorScrollTop = -startRow;
+	screen.replaced(startRow);
+	requestRender(session[kWindow].document);
+}
+
+/**
+ * The 1-based terminal row the command started on becomes the 0-based anchor.
+ */
+function anchorDetected(session: Exchange, row: number): void {
+	session[kScreen].documentTop = row - 1;
+	session[kScreen].anchorScrollTop = 1 - row;
+}
+
+/** Deferred width probes go out with the next frame even if nothing changed. */
+function probesDeferred(session: Exchange): void {
+	session[kScreen].flushProbes();
+	requestRender(session[kWindow].document);
+}
+
+/**
+ * A cluster measured wider or narrower than the tables said, so every
+ * column after it on a painted row is off. The previous frame described
+ * a screen that was never drawn. Drop it and paint again from the
+ * corrected measurements.
+ */
+function widthsCorrected(session: Exchange): void {
+	session[kLayout].invalidateTextMeasurement();
+	session[kScreen].repaintAll();
+	requestRender(session[kWindow].document);
+}
+
 // The terminal has rewrapped the old frame with the text above it. The
 // cursor was parked on the frame's bottom row and stayed on its line
 // through the rewrap, and every painted row is a hard line, so the
@@ -1416,21 +1497,15 @@ function scheduleResize(session: Exchange): void {
 // exact for height changes.
 function handleResize(session: Exchange): void {
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
-	// The terminalresize listener fills in standing.
-	const report: ResizeReport = {
-		cols: newWidth,
-		rows: newHeight,
-		standing: null,
-	};
-	session.dispatchEvent(new CustomEvent("terminalresize", {detail: report}));
-	if (report.standing === null) {
-		return;
-	}
-	const {contentHeight, wrappedRowsAbove, documentTop} = report.standing;
+	terminalResized(session, newWidth, newHeight);
+	const {contentHeight, wrappedRowsAbove, documentTop} = frameStanding(
+		session,
+		newWidth,
+	);
 	const settling = session[kSettlingResize];
 
 	const redraw = (startRow: number) => {
-		session.dispatchEvent(new CustomEvent("replace", {detail: {startRow}}));
+		frameReplaced(session, startRow);
 
 		// The frame is placed by the screen reset. Cursor detection is
 		// suspended until it is written.

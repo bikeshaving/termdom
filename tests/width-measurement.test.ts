@@ -132,7 +132,8 @@ function emit(
 	cells: Array<[number, string]>,
 	measurer: Exchange,
 ): string {
-	const screen = new Screen(rows, cols, "rgb", measurer);
+	const screen = new Screen(rows, cols, "rgb");
+	screen.measurer = measurer;
 	const context = screen.beginFrame({offset: 0});
 	for (const [index, cluster] of cells) {
 		context.drawText(cluster, index % cols, Math.floor(index / cols));

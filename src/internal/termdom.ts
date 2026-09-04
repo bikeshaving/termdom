@@ -8,7 +8,6 @@ import {
 } from "./dom.ts";
 import {
 	Exchange,
-	type ResizeReport,
 	type TerminalCloseInfo,
 	type TerminalSize,
 	type TerminalTransport,
@@ -129,15 +128,21 @@ export class TermDOM {
 		);
 		this[kCascade] = new Cascade(this.window, this[kLayout]);
 
-		// The screen measures widths over the exchange's probe channel.
-		this[kExchange] = new Exchange(this[kTransport], this.window);
-		const exchange = this[kExchange];
 		this[kScreen] = new Screen(
 			this[kTransport].rows,
 			this[kTransport].cols,
 			this[kTransport].colorDepth,
-			this[kExchange],
 		);
+		this[kExchange] = new Exchange(
+			this[kTransport],
+			this.window,
+			this[kLayout],
+			this[kCascade],
+			this[kScreen],
+		);
+		const exchange = this[kExchange];
+		// The screen measures widths over the exchange's probe channel.
+		this[kScreen].measurer = exchange;
 
 		DOM.attachDocument(
 			document,
@@ -214,55 +219,18 @@ export class TermDOM {
 			}
 			closeTermDOM(this);
 		});
-		// Terminal events come from the exchange itself. A page can dispatch
-		// an event of the same name on the document, and it must not reach
-		// these.
-		const fromTerminal =
-			(handle: (event: Event) => void) =>
-				(event: Event): void => {
-					if (event.target === exchange) {
-						handle(event);
-					}
-				};
-		exchange.addEventListener("seal", fromTerminal(() => sealTermDOM(this)));
-		exchange.addEventListener(
-			"terminalresize",
-			fromTerminal((event) => {
-				const report = (event as CustomEvent<ResizeReport>).detail;
-				terminalResized(this, report.cols, report.rows);
-				report.standing = frameStanding(this, report.cols);
-			}),
-		);
-		exchange.addEventListener(
-			"replace",
-			fromTerminal((event) => {
-				const {startRow} = (event as CustomEvent<{startRow: number}>).detail;
-				frameReplaced(this, startRow);
-			}),
-		);
-		exchange.addEventListener(
-			"anchor",
-			fromTerminal((event) => {
-				const {row} = (event as CustomEvent<{row: number}>).detail;
-				anchorDetected(this, row);
-			}),
-		);
-		exchange.addEventListener(
-			"reorder",
-			fromTerminal(() => terminalReorders(this)),
-		);
-		exchange.addEventListener(
-			"probes",
-			fromTerminal(() => probesDeferred(this)),
-		);
-		exchange.addEventListener(
-			"widths",
-			fromTerminal(() => widthsCorrected(this)),
-		);
-		exchange.addEventListener(
-			"terminalclose",
-			fromTerminal(() => closeTermDOM(this)),
-		);
+		// A page can dispatch an event of the same name on the document.
+		// Only the exchange's own reach these.
+		exchange.addEventListener("seal", (event) => {
+			if (event.target === exchange) {
+				sealTermDOM(this);
+			}
+		});
+		exchange.addEventListener("terminalclose", (event) => {
+			if (event.target === exchange) {
+				closeTermDOM(this);
+			}
+		});
 	}
 
 	/**
@@ -465,82 +433,6 @@ function closeTermDOM(termDOM: TermDOM): void {
 			termDOM[kTransport].close({status: 0});
 		}
 	})();
-}
-
-function terminalResized(
-	termDOM: TermDOM,
-	width: number,
-	height: number,
-): void {
-	const screen = termDOM[kScreen];
-	// A SIGWINCH with an unchanged size still redraws but fires no event.
-	const sizeChanged = width !== screen.cols || height !== screen.rows;
-	screen.resize(height, width);
-	termDOM[kLayout].resize(width, height);
-	// A size change can flip any @media result and every vw/vh value.
-	termDOM[kCascade].syncStylesheets();
-	if (sizeChanged) {
-		const window = termDOM.window;
-		DOM.dispatchAsUserAgent(window, new window.Event("resize"));
-	}
-	DOM.syncMediaQueries(termDOM.document);
-}
-
-/** Record where the frame is after a resize, for the re-anchor. */
-function frameStanding(
-	termDOM: TermDOM,
-	cols: number,
-): {
-	contentHeight: number;
-	wrappedRowsAbove: number | null;
-	documentTop: number;
-} {
-	const layout = termDOM[kLayout];
-	layout.performLayout();
-	return {
-		contentHeight: layout.documentPaintHeight(),
-		wrappedRowsAbove: termDOM[kScreen].wrappedRowsAbovePark(cols),
-		documentTop: termDOM[kScreen].documentTop,
-	};
-}
-
-/** The frame now starts at `startRow`. Repaint it from there. */
-function frameReplaced(termDOM: TermDOM, startRow: number): void {
-	const screen = termDOM[kScreen];
-	screen.documentTop = startRow;
-	screen.anchorScrollTop = -startRow;
-	screen.replaced(startRow);
-	void render(termDOM);
-}
-
-/**
- * The 1-based terminal row the command started on becomes the 0-based anchor.
- */
-function anchorDetected(termDOM: TermDOM, row: number): void {
-	termDOM[kScreen].documentTop = row - 1;
-	termDOM[kScreen].anchorScrollTop = 1 - row;
-}
-
-function terminalReorders(termDOM: TermDOM): void {
-	termDOM[kLayout].adoptTerminalReordering();
-}
-
-/** Deferred width probes go out with the next frame even if nothing changed. */
-function probesDeferred(termDOM: TermDOM): void {
-	termDOM[kScreen].flushProbes();
-	void render(termDOM);
-}
-
-/**
- * A cluster measured wider or narrower than the tables said, so every
- * column after it on a painted row is off. The previous frame described
- * a screen that was never drawn. Drop it and paint again from the
- * corrected measurements.
- */
-function widthsCorrected(termDOM: TermDOM): void {
-	termDOM[kLayout].invalidateTextMeasurement();
-	termDOM[kScreen].repaintAll();
-	void render(termDOM);
 }
 
 /**
