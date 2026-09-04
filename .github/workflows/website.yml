@@ -1,0 +1,51 @@
+name: Website
+
+# termdom.org is the static site in website/, published to the gh-pages
+# branch. Every push to main rebuilds it: the playground bundles the engine
+# and seeds its filesystem from the examples and guides, so a change almost
+# anywhere in the repository changes the site.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: website
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+
+      # The site imports the engine from ../src, so both trees install.
+      - run: bun install --frozen-lockfile
+
+      - run: bun install --frozen-lockfile
+        working-directory: website
+
+      - name: Build
+        run: npm run static
+        working-directory: website
+
+      - name: Check links
+        run: npm run check-links
+        working-directory: website
+
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: website/dist/public
+          cname: termdom.org
