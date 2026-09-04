@@ -40,6 +40,7 @@ const RUNNABLE = [
 	"rtl",
 	"shell",
 	"solitaire",
+	"styling",
 	"todomvc",
 	"tree",
 	"weather",

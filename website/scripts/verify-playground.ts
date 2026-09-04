@@ -293,7 +293,7 @@ for (let i = 0, n = await embeds.count(); i < n; i++) {
 	await embeds.nth(i).scrollIntoViewIfNeeded();
 	await new Promise((r) => setTimeout(r, 1000));
 }
-report(await waitForText("Requests per region"), "home: bar-chart embed paints");
+report(await waitForText("An inline style beats all the rules"), "home: styling embed paints");
 report(await waitForText("TermDOM flexbox"), "home: flexbox embed paints");
 report(await waitForText("New profile"), "home: form embed paints");
 report(await waitForText("interface Point", 15000), "home: prism embed highlights its sample");

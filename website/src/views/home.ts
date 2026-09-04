@@ -76,7 +76,7 @@ const content = css`
 /** The programs the page embeds live, as `playground:id` names them. */
 const EMBEDDED = [
 	"hello-world",
-	"bar-chart",
+	"styling",
 	"flexbox",
 	"form",
 	"prism",

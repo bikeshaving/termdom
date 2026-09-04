@@ -1,15 +1,15 @@
 TermDOM is a JavaScript/TypeScript library that renders HTML and CSS to the
 terminal. It draws actual DOM nodes to terminal output and redraws the screen
-when nodes are mutated, so TUIs and interactive CLIs can be written with
+when they are mutated, so TUIs and interactive CLIs can be written with
 vanilla JavaScript or any frontend web framework or library.
 
 ![Klondike solitaire rendered by TermDOM](cast:solitaire)
 
 Typical terminal UI libraries ask you to learn its widgets: a Box, a List, a
 Screen, and the arbritrary APIs that go with them. By contrast, TermDOM
-implements a real, spec-compliant DOM and CSSOM API. Make a div, style it, put
-it in the body. Just like the browser there is no render call, and changes
-paint on the next frame.
+implements a real, spec-compliant DOM and CSSOM API. Make a div, style it,
+append it to the body. Just like the browser there is no render call, and
+changes paint automatically.
 
 ![examples/hello-world.ts](playground:hello-world)
 
@@ -20,7 +20,7 @@ writes the computed styles to the screen as ANSI escape sequences. It resolves
 colors against the terminal’s palette and draws text decorations as terminal
 attributes: bold, italic, underline, strikethrough.
 
-![examples/bar-chart.ts](playground:bar-chart)
+![examples/styling.ts](playground:styling)
 
 ## Layout
 
