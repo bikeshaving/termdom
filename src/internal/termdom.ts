@@ -722,9 +722,11 @@ async function renderInteractive(
 	afterRender(termDOM);
 }
 
-function staticRenderer(
+function renderStaticHTML(
 	termDOM: TermDOM,
-): TermDOM {
+	html: string,
+	lineEnding: "\n" | "\r\n",
+): string {
 	const cols = termDOM[kTransport].cols;
 	if (
 		termDOM[kStaticSibling] &&
@@ -748,15 +750,8 @@ function staticRenderer(
 			close() {},
 		},
 	});
-	return termDOM[kStaticSibling];
-}
 
-function renderStaticHTML(
-	termDOM: TermDOM,
-	html: string,
-	lineEnding: "\n" | "\r\n",
-): string {
-	const renderer = staticRenderer(termDOM);
+	const renderer = termDOM[kStaticSibling];
 	renderer.document.body.innerHTML = html;
 	return renderStatic(renderer, lineEnding);
 }
