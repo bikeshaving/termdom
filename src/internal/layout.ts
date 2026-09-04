@@ -10128,8 +10128,8 @@ export class Layout {
 		for (const layoutNode of this[kMeasureNodes]) {
 			layoutNode.invalidate();
 		}
-		markChanged(this);
 
+		this.invalidateFrame();
 		this.performLayout();
 	}
 
@@ -10947,10 +10947,16 @@ export class Layout {
 		return hitTestContext(this, paintRoot, x, y, layers, documentScrollTop);
 	}
 
-	// The observer drain calls this once per mutation batch. The cascade
-	// calls it for style changes no record describes.
+	// The observer drain calls this once per mutation batch. The cascade calls
+	// it for style changes no record describes. Every entry that moves geometry
+	// announces it here, and the pass itself moves nothing unannounced.
 	invalidateFrame(): void {
-		markChanged(this);
+		const document = this[kRootElement].ownerDocument;
+		if (document === null) {
+			return;
+		}
+		usedValuesChanged(document);
+		this[kMoved] = true;
 	}
 
 	// A node re-enumerates its whole subtree, because run membership may
@@ -10965,7 +10971,7 @@ export class Layout {
 		}
 		invalidateSubtreeDerivation(this, node);
 		invalidateNode(this, node);
-		markChanged(this);
+		this.invalidateFrame();
 	}
 
 	handleMutations(mutations: MutationRecord[]): void {
@@ -10980,7 +10986,6 @@ export class Layout {
 	// a re-measurement, and one that moves geometry is never missed.
 	styleInvalidated(element: Element): void {
 		this[kRestyled].add(element);
-		markChanged(this);
 	}
 
 	// A chain reaching a fixed box puts the geometry in viewport space
@@ -11988,16 +11993,4 @@ function revealInPort(
 
 function isScrollingOverflow(overflow: string): boolean {
 	return overflow === "auto" || overflow === "scroll" || overflow === "hidden";
-}
-
-// Every entry that moves geometry announces it here, and the pass
-// itself moves nothing unannounced. That is what lets a frame that ran
-// a pass and found nothing changed skip its paint.
-function markChanged(layout: Layout): void {
-	const document = layout[kRootElement].ownerDocument;
-	if (document === null) {
-		return;
-	}
-	usedValuesChanged(document);
-	layout[kMoved] = true;
 }

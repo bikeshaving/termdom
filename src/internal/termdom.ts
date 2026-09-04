@@ -349,9 +349,24 @@ function isFullscreen(termdom: TermDOM): boolean {
 	return termdom.document.fullscreenElement !== null;
 }
 
+// What the document asks of its session, from dom.ts and input.ts: whether
+// there is a live one, the end of the document, the end of the session, and
+// a frame. render() is below, with the frame loop it drives.
+
 export function isAttached(termdom: TermDOM): boolean {
 	const lifecycle = termdom[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
+}
+
+/**
+ * document.close(): flush the document into the scrollback and seal it.
+ * The next mutation starts a fresh one below it.
+ */
+export function sealTermDOM(termDOM: TermDOM): void {
+	if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
+		flushDocument(termDOM);
+		termDOM[kSealed] = true;
+	}
 }
 
 /**
@@ -379,12 +394,11 @@ export function closeTermDOM(termDOM: TermDOM): void {
 	})();
 }
 
-/**
- * Events from the terminal the engine reacts to: its size, where the
- * command started, how it orders text, what its glyphs measure, and that
- * it went away (closeTermDOM). The exchange reports them and these
- * functions react.
- */
+// What the terminal reports, from exchange.ts: its size, where the command
+// started, where the frame stands and lands around a resize, how it orders
+// text, what its glyphs measure, and, through closeTermDOM above, that it
+// went away. Nothing else calls these.
+
 export function terminalResized(
 	termDOM: TermDOM,
 	width: number,
@@ -459,17 +473,6 @@ export function widthsCorrected(termDOM: TermDOM): void {
 	termDOM[kLayout].invalidateTextMeasurement();
 	termDOM[kScreen].repaintAll();
 	void render(termDOM);
-}
-
-/**
- * document.close(): flush the document into the scrollback and seal it.
- * The next mutation starts a fresh one below it.
- */
-export function sealTermDOM(termDOM: TermDOM): void {
-	if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
-		flushDocument(termDOM);
-		termDOM[kSealed] = true;
-	}
 }
 
 function buildExchange(
