@@ -132,7 +132,7 @@ function serve(
 			body { padding: 1px 2ch; }
 			h1 { color: #5fafff; font-weight: bold; }
 			.keys { margin-top: 1px; color: #ffd700; }
-			.log { margin-top: 1px; height: 6px; overflow: hidden; }
+			.log { margin-top: 1px; }
 			.log div { color: #87d787; }
 			.hint { margin-top: 1px; color: #808080; }
 		</style>
@@ -151,7 +151,7 @@ function serve(
 		}
 		const line = document.createElement("div");
 		line.textContent = `key: ${JSON.stringify(key)}`;
-		log.prepend(line);
+		log.append(line);
 	});
 	termdom.attach();
 	refreshStatus();
