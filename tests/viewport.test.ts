@@ -1,6 +1,6 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/index.js";
+import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("cursor detection sets window.screenTop from the command-start row", async () => {

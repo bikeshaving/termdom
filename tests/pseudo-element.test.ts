@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {flowDescendants, pseudoElement} from "../src/internal/dom.js";
-import {TermDOM} from "../src/internal/termdom.js";
+import {flowDescendants, pseudoElement} from "../src/internal/dom.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("::before and ::after content rendering", async () => {

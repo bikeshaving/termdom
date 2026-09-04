@@ -1,8 +1,8 @@
-import "./internal/inspector.js";
+import "./internal/inspector.ts";
 
-export {TermDOM} from "./internal/termdom.js";
-export type {TermDOMOptions} from "./internal/termdom.js";
-export {transportFromProcess} from "./internal/exchange.js";
+export {TermDOM} from "./internal/termdom.ts";
+export type {TermDOMOptions} from "./internal/termdom.ts";
+export {transportFromProcess} from "./internal/exchange.ts";
 export type {
 	ProcessLike,
 	TTYReadStream,
@@ -10,4 +10,4 @@ export type {
 	TerminalCloseInfo,
 	TerminalSize,
 	TerminalTransport,
-} from "./internal/exchange.js";
+} from "./internal/exchange.ts";

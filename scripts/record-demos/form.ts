@@ -1,5 +1,5 @@
 /** The form demo, scripted: type, tab, type, submit. */
-import type {TermDOM} from "../../src/index.js";
+import type {TermDOM} from "../../src/index.ts";
 
 export default {
 	setup(termdom: TermDOM): void {

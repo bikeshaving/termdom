@@ -1,10 +1,10 @@
-import type {ColorDepth, Exchange} from "./exchange.js";
+import type {ColorDepth, Exchange} from "./exchange.ts";
 import {
 	getStringWidth,
 	graphemeSegmenter,
 	isWidthUncertain,
 	PRINTABLE_ASCII,
-} from "./text.js";
+} from "./text.ts";
 
 function isControlByte(code: number): boolean {
 	return code < 0x20 || (code >= 0x7f && code < 0xa0);

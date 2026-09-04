@@ -5,7 +5,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {Screen} from "../src/internal/screen.js";
+import {Screen} from "../src/internal/screen.ts";
 import {renderStatic} from "./test-utils.js";
 
 test("a zero-width cluster takes no cell and the line still ends", () => {

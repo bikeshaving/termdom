@@ -1,6 +1,6 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {createDocumentWindow} from "../src/internal/dom.js";
+import {createDocumentWindow} from "../src/internal/dom.ts";
 
 test("a form-associated custom element is disabled by its attribute or a fieldset, and says so", () => {
 	const window = createDocumentWindow("<!DOCTYPE html><body></body>");

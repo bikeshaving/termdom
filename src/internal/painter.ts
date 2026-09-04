@@ -5,7 +5,7 @@ import {
 	getComputedValue,
 	isTransparentColor,
 	resolveBorderSides,
-} from "./cssom.js";
+} from "./cssom.ts";
 import {
 	flatParentElement,
 	flowContent,
@@ -17,14 +17,14 @@ import {
 	HTMLElement,
 	renderedTopLayer,
 	type Window,
-} from "./dom.js";
+} from "./dom.ts";
 import {
 	isPositioned,
 	isStackingContext,
 	type Layout,
 	renderTextFragment,
-} from "./layout.js";
-import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.js";
+} from "./layout.ts";
+import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
 // edge computed from an infinite origin and size is NaN.

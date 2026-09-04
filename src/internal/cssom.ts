@@ -7,7 +7,7 @@ import {
 	CSS_PROPERTIES,
 	CSS_RESET_ONLY_LONGHANDS,
 	CSS_SHORTHANDS,
-} from "../generated/cssproperties.js";
+} from "../generated/cssproperties.ts";
 import {
 	type CompiledSelector,
 	compileSelector,
@@ -37,11 +37,11 @@ import {
 	styleElementCount,
 	TransitionEvent,
 	type Window,
-} from "./dom.js";
-import type {Layout} from "./layout.js";
-import {LINE_STYLES, type LineStyle} from "./screen.js";
-import {getStringWidth} from "./text.js";
-import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
+} from "./dom.ts";
+import type {Layout} from "./layout.ts";
+import {LINE_STYLES, type LineStyle} from "./screen.ts";
+import {getStringWidth} from "./text.ts";
+import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.ts";
 
 export type Unit = "undefined" | "cell" | "percent" | "auto";
 

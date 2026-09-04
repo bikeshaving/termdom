@@ -2,7 +2,7 @@ import {readFileSync} from "node:fs";
 
 import {describe, expect, test} from "@b9g/libuild/test";
 
-import {getStringWidth, isWidthUncertain} from "../src/internal/text.js";
+import {getStringWidth, isWidthUncertain} from "../src/internal/text.ts";
 import {
 	ORACLE_CASES,
 	oracleSweepWidth,

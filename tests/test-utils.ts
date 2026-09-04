@@ -15,10 +15,10 @@ import {
 	transportFromProcess,
 	type TTYReadStream,
 	type TTYWriteStream,
-} from "../src/index.js";
-import type {ColorDepth} from "../src/internal/exchange.js";
-import {Screen} from "../src/internal/screen.js";
-import {getStringWidth} from "../src/internal/text.js";
+} from "../src/index.ts";
+import type {ColorDepth} from "../src/internal/exchange.ts";
+import {Screen} from "../src/internal/screen.ts";
+import {getStringWidth} from "../src/internal/text.ts";
 
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;

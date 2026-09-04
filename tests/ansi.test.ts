@@ -4,7 +4,7 @@ import {
 	type CellContext,
 	type LineStyle,
 	Screen,
-} from "../src/internal/screen.js";
+} from "../src/internal/screen.ts";
 import {renderFrame, stripControlCodes} from "./test-utils.js";
 
 describe("cells through the pen", () => {

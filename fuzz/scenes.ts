@@ -16,7 +16,7 @@
  */
 import fc from "fast-check";
 
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "../tests/test-utils.js";
 
 export const SHEET = `

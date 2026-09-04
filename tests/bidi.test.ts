@@ -10,12 +10,12 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {
 	getParagraphDirection,
 	hasRTL,
 	toVisualOrder,
-} from "../src/internal/text.js";
+} from "../src/internal/text.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 const HEBREW = "שלום";

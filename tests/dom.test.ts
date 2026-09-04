@@ -18,7 +18,7 @@ import {
 	MutationObserver,
 	NodeFilter,
 	Text,
-} from "../src/internal/dom.js";
+} from "../src/internal/dom.ts";
 
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.

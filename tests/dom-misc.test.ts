@@ -9,7 +9,7 @@ import {
 	createDocumentWindow,
 	type Document,
 	HTMLElement,
-} from "../src/internal/dom.js";
+} from "../src/internal/dom.ts";
 
 // The realm the tests reach constructors through: a window of this DOM
 // exposes them, as the platform does.

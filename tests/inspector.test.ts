@@ -1,10 +1,10 @@
-import "../src/internal/inspector.js";
+import "../src/internal/inspector.ts";
 
 import {inspect} from "node:util";
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {createDocumentWindow, type Element} from "../src/internal/dom.js";
+import {createDocumentWindow, type Element} from "../src/internal/dom.ts";
 
 function asElement(value: unknown): Element {
 	return value as Element;

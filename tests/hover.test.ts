@@ -1,6 +1,6 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 const MOTION_ON = "\x1b[?1003h";

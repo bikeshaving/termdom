@@ -5,7 +5,7 @@ import {
 	UNCERTAIN_RANGES,
 	WIDE_RANGES,
 	ZERO_WIDTH_RANGES,
-} from "../generated/widthtables.js";
+} from "../generated/widthtables.ts";
 
 // Bun has a native getStringWidth. Node and Deno use the fallback.
 const bun = globalThis.Bun;

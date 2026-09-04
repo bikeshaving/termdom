@@ -4,8 +4,8 @@ import {
 	getPseudoHost,
 	getPseudoName,
 	pseudoElement,
-} from "../src/internal/dom.js";
-import {TermDOM} from "../src/internal/termdom.js";
+} from "../src/internal/dom.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("CSS specificity calculation", async () => {

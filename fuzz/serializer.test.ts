@@ -17,7 +17,7 @@
 import {test} from "@b9g/libuild/test";
 import fc from "fast-check";
 
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess} from "../tests/test-utils.js";
 
 const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 200);

@@ -13,6 +13,7 @@
     "url": "https://github.com/bikeshaving/termdom/issues"
   },
   "type": "module",
+  "main": "./dist/index.cjs",
   "keywords": [
     "terminal",
     "tui",
@@ -24,26 +25,9 @@
     "layout"
   ],
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.js"
-    },
-    "./index": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./index.js": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./package.json": "./dist/package.json"
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
   },
-  "types": "./dist/index.d.ts",
-  "main": "./dist/index.cjs",
   "files": [
     "dist",
     "README.md",

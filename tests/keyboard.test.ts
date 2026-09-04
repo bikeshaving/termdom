@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {transportFromProcess} from "../src/internal/exchange.js";
-import {TermDOM} from "../src/internal/termdom.js";
+import {transportFromProcess} from "../src/internal/exchange.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 test("keyboard events are dispatched to elements", async () => {

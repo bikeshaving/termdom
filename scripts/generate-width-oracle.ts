@@ -11,7 +11,7 @@
 
 import {writeFileSync} from "node:fs";
 
-import {isWidthUncertain} from "../src/internal/text.js";
+import {isWidthUncertain} from "../src/internal/text.ts";
 import {
 	ORACLE_CASES,
 	oracleSweepWidth,

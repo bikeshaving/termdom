@@ -1,6 +1,6 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("an on* attribute reflects as a function and fires with the element as this", async () => {

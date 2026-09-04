@@ -1,4 +1,4 @@
-import {type Cascade, getComputedValue} from "./cssom.js";
+import {type Cascade, getComputedValue} from "./cssom.ts";
 import {
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
@@ -19,11 +19,11 @@ import {
 	setUASelection,
 	topmostModalDialog,
 	type Window,
-} from "./dom.js";
-import type {WireKey, WireMouse, WirePaste} from "./exchange.js";
-import type {Layout} from "./layout.js";
-import type {Screen} from "./screen.js";
-import {render, type TermDOM} from "./termdom.js";
+} from "./dom.ts";
+import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
+import type {Layout} from "./layout.ts";
+import type {Screen} from "./screen.ts";
+import {render, type TermDOM} from "./termdom.ts";
 
 // The keys a terminal names, with the legacy keyCode plenty of code
 // still reads. Also the list of names that are physical key identities.

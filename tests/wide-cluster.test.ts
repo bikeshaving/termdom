@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {Screen} from "../src/internal/screen.js";
-import {TermDOM} from "../src/internal/termdom.js";
+import {Screen} from "../src/internal/screen.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 test("a cell written inside a wide cluster's span is dropped, not emitted", () => {

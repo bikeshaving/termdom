@@ -1,5 +1,5 @@
 /** The README example, verbatim: a progress card driven by mutation. */
-import type {TermDOM} from "../../src/index.js";
+import type {TermDOM} from "../../src/index.ts";
 
 export default {
 	setup(termdom: TermDOM): () => void {

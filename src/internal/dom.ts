@@ -13,8 +13,8 @@ import {
 	styleAttributeChanged,
 	styleElementSheet,
 	styleShadowAttached,
-} from "./cssom.js";
-import type {Exchange} from "./exchange.js";
+} from "./cssom.ts";
+import type {Exchange} from "./exchange.ts";
 import {
 	ARIA_ELEMENT_REFLECTIONS,
 	ARIA_STRING_REFLECTIONS,
@@ -28,22 +28,22 @@ import {
 	HTML_UNKNOWN_TAGS,
 	type ReflectSpec,
 	WINDOW_EVENT_HANDLERS,
-} from "./htmltables.js";
-import type {Layout} from "./layout.js";
-import type {Screen} from "./screen.js";
+} from "./htmltables.ts";
+import type {Layout} from "./layout.ts";
+import type {Screen} from "./screen.ts";
 import {
 	closeTermDOM,
 	isAttached,
 	render,
 	sealTermDOM,
 	type TermDOM,
-} from "./termdom.js";
+} from "./termdom.ts";
 import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
 	getStringWidth,
 	toASCIILowercase,
-} from "./text.js";
+} from "./text.ts";
 import {
 	DETAILS_UA_STYLES,
 	METER_UA_STYLES,
@@ -51,7 +51,7 @@ import {
 	SELECT_UA_STYLES,
 	TEXT_CONTROL_UA_STYLES,
 	TEXTAREA_UA_STYLES,
-} from "./useragent.js";
+} from "./useragent.ts";
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";

@@ -29,7 +29,7 @@ import {join} from "node:path";
 
 import properties from "mdn-data/css/properties.json" with {type: "json"};
 
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 
 const ROOT = join(import.meta.dirname, "..");

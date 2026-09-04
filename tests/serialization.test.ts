@@ -10,7 +10,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {createDocumentWindow, type Document} from "../src/internal/dom.js";
+import {createDocumentWindow, type Document} from "../src/internal/dom.ts";
 
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.

@@ -1,6 +1,6 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 // TermDOM renders UNTRUSTED content -- a Markdown file, an LLM reply in the chat

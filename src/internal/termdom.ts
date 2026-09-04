@@ -1,22 +1,22 @@
-import {Cascade, getBoxModel} from "./cssom.js";
-import * as DOM from "./dom.js";
+import {Cascade, getBoxModel} from "./cssom.ts";
+import * as DOM from "./dom.ts";
 import {
 	createDocumentWindow,
 	disconnectObservers,
 	flushObservers,
 	type Window,
-} from "./dom.js";
+} from "./dom.ts";
 import {
 	Exchange,
 	type TerminalCloseInfo,
 	type TerminalSize,
 	type TerminalTransport,
 	transportFromProcess,
-} from "./exchange.js";
-import {Input} from "./input.js";
-import {Layout} from "./layout.js";
-import {Painter} from "./painter.js";
-import {Screen} from "./screen.js";
+} from "./exchange.ts";
+import {Input} from "./input.ts";
+import {Layout} from "./layout.ts";
+import {Painter} from "./painter.ts";
+import {Screen} from "./screen.ts";
 
 export interface TermDOMOptions {
 

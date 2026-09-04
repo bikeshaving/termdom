@@ -7,8 +7,8 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {createDocumentWindow} from "../src/internal/dom.js";
-import {TermDOM} from "../src/internal/termdom.js";
+import {createDocumentWindow} from "../src/internal/dom.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 // The door a test document comes through: a document of this DOM, in the

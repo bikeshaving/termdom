@@ -14,7 +14,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("a grid places its items on the tracks it declares", async () => {

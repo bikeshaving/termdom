@@ -23,7 +23,7 @@ import {
 	type TrackSize,
 	usedValuesChanged,
 	type Value,
-} from "./cssom.js";
+} from "./cssom.ts";
 import {
 	DOMRectList,
 	flatChildren,
@@ -39,7 +39,7 @@ import {
 	pseudoElementCount,
 	renderedTopLayer,
 	type Window,
-} from "./dom.js";
+} from "./dom.ts";
 import {
 	getParagraphDirection,
 	getStringWidth,
@@ -47,7 +47,7 @@ import {
 	hasRTL,
 	toVisualOrder,
 	writeClusterWidths,
-} from "./text.js";
+} from "./text.ts";
 
 // `normal` means whatever the mode says: stretch on a grid item,
 // flex-start across flex lines (css-align-3).

@@ -17,8 +17,8 @@ import {
 	parseSelectorList,
 	setDocumentFocusVisible,
 	setHoveredElement,
-} from "../src/internal/dom.js";
-import {TermDOM} from "../src/internal/termdom.js";
+} from "../src/internal/dom.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 function tree(html: string, url = "about:blank"): Document {

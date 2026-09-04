@@ -4,8 +4,8 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {getSelectionRecord, getShadowRoot} from "../src/internal/dom.js";
-import {TermDOM} from "../src/internal/termdom.js";
+import {getSelectionRecord, getShadowRoot} from "../src/internal/dom.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("the UA surface reads past the type gate the author meets", async () => {

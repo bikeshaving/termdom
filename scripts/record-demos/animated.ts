@@ -1,5 +1,5 @@
 /** The animated demo, scripted: let it run, no input. */
-import type {TermDOM} from "../../src/index.js";
+import type {TermDOM} from "../../src/index.ts";
 
 export default {
 	setup(termdom: TermDOM): () => void {

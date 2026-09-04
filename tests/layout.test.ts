@@ -1,7 +1,7 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
-import {renderTextFragment} from "../src/internal/layout.js";
-import {TermDOM} from "../src/internal/termdom.js";
+import {renderTextFragment} from "../src/internal/layout.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 /** One laid-out line of a text node, as an author can read it back. */

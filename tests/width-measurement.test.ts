@@ -13,10 +13,10 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import type {Exchange} from "../src/internal/exchange.js";
-import {Screen} from "../src/internal/screen.js";
-import {TermDOM} from "../src/internal/termdom.js";
-import {getStringWidth, recordClusterAdvance} from "../src/internal/text.js";
+import type {Exchange} from "../src/internal/exchange.ts";
+import {Screen} from "../src/internal/screen.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
+import {getStringWidth, recordClusterAdvance} from "../src/internal/text.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 /** A measurer that records what it was offered instead of asking anything. */

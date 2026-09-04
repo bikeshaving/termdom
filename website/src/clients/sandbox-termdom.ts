@@ -5,10 +5,10 @@
  * globalThis, the way a node construction gets the process's tty. Programs
  * run as written; the pane is their terminal.
  */
-import {TermDOM as EngineTermDOM} from "../../../src/index.js";
-import type {TermDOMOptions} from "../../../src/index.js";
+import {TermDOM as EngineTermDOM} from "../../../src/index.ts";
+import type {TermDOMOptions} from "../../../src/index.ts";
 
-export * from "../../../src/index.js";
+export * from "../../../src/index.ts";
 
 interface SandboxGlobals {
 	__transport?: TermDOMOptions["transport"];

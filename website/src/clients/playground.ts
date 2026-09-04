@@ -17,7 +17,7 @@ import type {
 	TerminalTransport,
 	TerminalSize,
 	TerminalCloseInfo,
-} from "../../../src/index.js";
+} from "../../../src/index.ts";
 import {CodeEditor, editorHeight} from "../components/code-editor.js";
 import {installIMEQuirks} from "./ime.js";
 // The programs themselves arrive in the page, in the script element the view

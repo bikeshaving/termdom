@@ -11,7 +11,7 @@
  */
 import {EventEmitter} from "node:events";
 
-import {type ProcessLike, TermDOM, transportFromProcess} from "../src/index.js";
+import {type ProcessLike, TermDOM, transportFromProcess} from "../src/index.ts";
 
 const COLS = 78;
 const ROWS = 24;

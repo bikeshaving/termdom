@@ -15,8 +15,8 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.js";
-import {UA_DOCUMENT_STYLES} from "../src/internal/useragent.js";
+import {TermDOM} from "../src/internal/termdom.ts";
+import {UA_DOCUMENT_STYLES} from "../src/internal/useragent.ts";
 import {MockProcess} from "./test-utils.js";
 
 /** The computed value of a property on the element an id names. */

@@ -8,7 +8,7 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("offsetWidth/offsetHeight report an element's own border-box size", async () => {

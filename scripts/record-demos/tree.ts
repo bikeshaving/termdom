@@ -1,5 +1,5 @@
 /** The file-tree demo, scripted for recording: browse, expand, collapse. */
-import type {TermDOM} from "../../src/index.js";
+import type {TermDOM} from "../../src/index.ts";
 
 // A canned filesystem so the recording is reproducible anywhere.
 const FS: Record<string, string[]> = {

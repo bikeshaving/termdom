@@ -1,4 +1,4 @@
-import type {Input} from "./input.js";
+import type {Input} from "./input.ts";
 import {
 	anchorDetected,
 	closeTermDOM,
@@ -9,8 +9,8 @@ import {
 	terminalReorders,
 	terminalResized,
 	widthsCorrected,
-} from "./termdom.js";
-import {recordClusterAdvance} from "./text.js";
+} from "./termdom.ts";
+import {recordClusterAdvance} from "./text.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
 

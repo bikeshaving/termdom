@@ -3,7 +3,7 @@
  * the cursor, a draw played from the discard, the ace it uncovers, the
  * new-game menu, and an undo. Deal 13 is chosen for exactly this script.
  */
-import type {TermDOM} from "../../src/index.js";
+import type {TermDOM} from "../../src/index.ts";
 
 const RIGHT = "\x1b[C";
 const LEFT = "\x1b[D";
