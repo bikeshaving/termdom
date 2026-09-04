@@ -107,37 +107,7 @@ export class TermDOM {
 		this[kMouseReportingEnabled] = false;
 		this[kHoverReportingEnabled] = false;
 		this[kPendingCaretReveal] = null;
-		// A details that closes took content away. Only opening reveals.
-		const onDisclosureToggle = (event: Event): void => {
-			const details = event.target as HTMLElement | null;
-			if (details === null || !("open" in details)) {
-				return;
-			}
-			if (!(details as HTMLDetailsElement).open) {
-				return;
-			}
-			details.scrollIntoView({block: "nearest"});
-		};
-		// Only the active text control. A select commit or an author's dispatch
-		// on an unfocused control must not move the document scroll.
-		const onTextControlEditEvent = (event: Event): void => {
-			const target = event.target;
-			if (
-				target !== this.document.activeElement ||
-				!(
-					target instanceof DOM.HTMLInputElement ||
-					target instanceof DOM.HTMLTextAreaElement ||
-					target instanceof DOM.HTMLSelectElement
-				)
-			) {
-				return;
-			}
-			queueCaretReveal(
-				this,
-				target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-			);
-			void render(this);
-		};
+
 		this[kAttachReady] = Promise.resolve();
 		this[kAttachBegun] = Promise.resolve();
 		this[kStaticSibling] = null;
@@ -159,7 +129,7 @@ export class TermDOM {
 		this[kCascade] = new Cascade(this.window, this[kLayout]);
 
 		// The screen measures widths over the exchange's probe channel.
-		this[kExchange] = buildExchange(this);
+		this[kExchange] = new Exchange(this[kTransport], this);
 		this[kScreen] = new Screen(
 			this[kTransport].rows,
 			this[kTransport].cols,
@@ -189,6 +159,27 @@ export class TermDOM {
 			this[kScreen],
 		);
 
+		// Only the active text control. A select commit or an author's dispatch
+		// on an unfocused control must not move the document scroll.
+		const onTextControlEditEvent = (event: Event): void => {
+			const target = event.target;
+			if (
+				target !== this.document.activeElement ||
+				!(
+					target instanceof DOM.HTMLInputElement ||
+					target instanceof DOM.HTMLTextAreaElement ||
+					target instanceof DOM.HTMLSelectElement
+				)
+			) {
+				return;
+			}
+			queueCaretReveal(
+				this,
+				target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+			);
+			void render(this);
+		};
+
 		// Capture, so the event is seen however it bubbles.
 		this.document.addEventListener("input", onTextControlEditEvent, true);
 		this.document.addEventListener("select", onTextControlEditEvent, true);
@@ -198,6 +189,19 @@ export class TermDOM {
 			onTextControlEditEvent,
 			true,
 		);
+
+		// A details that closes took content away. Only opening reveals.
+		const onDisclosureToggle = (event: Event): void => {
+			const details = event.target as HTMLElement | null;
+			if (details === null || !("open" in details)) {
+				return;
+			}
+			if (!(details as HTMLDetailsElement).open) {
+				return;
+			}
+			details.scrollIntoView({block: "nearest"});
+		};
+
 		// A terminal page is one screen tall, and what a details opened is
 		// often below the fold.
 		this.document.addEventListener("toggle", onDisclosureToggle, true);
@@ -345,16 +349,16 @@ export class TermDOM {
 	}
 }
 
-function isFullscreen(termdom: TermDOM): boolean {
-	return termdom.document.fullscreenElement !== null;
+function isFullscreen(termDOM: TermDOM): boolean {
+	return termDOM.document.fullscreenElement !== null;
 }
 
 // What the document asks of its session, from dom.ts and input.ts: whether
 // there is a live one, the end of the document, the end of the session, and
 // a frame. render() is below, with the frame loop it drives.
 
-export function isAttached(termdom: TermDOM): boolean {
-	const lifecycle = termdom[kLifecycle];
+export function isAttached(termDOM: TermDOM): boolean {
+	const lifecycle = termDOM[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
 }
 
@@ -475,23 +479,17 @@ export function widthsCorrected(termDOM: TermDOM): void {
 	void render(termDOM);
 }
 
-function buildExchange(
-	termdom: TermDOM,
-): Exchange {
-	return new Exchange(termdom[kTransport], termdom);
-}
-
 /**
  * Re-derive everything that comes from the transport. Only before the first
  * frame.
  */
 function rebindTransport(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 	transport: TerminalTransport,
 ): void {
-	termdom[kTransport] = transport;
-	termdom[kScreen].rebind(transport.colorDepth);
-	termdom[kExchange].rebind(transport);
+	termDOM[kTransport] = transport;
+	termDOM[kScreen].rebind(transport.colorDepth);
+	termDOM[kExchange].rebind(transport);
 }
 
 /**
@@ -500,29 +498,29 @@ function rebindTransport(
  * scrollback and selection for nothing.
  */
 function syncMouseReporting(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): void {
 	const wanted =
-		isAttached(termdom) &&
-		termdom[kTransport].interactive &&
-		!termdom[kInput].mouseCaptureYielded;
-	if (wanted === termdom[kMouseReportingEnabled]) {
+		isAttached(termDOM) &&
+		termDOM[kTransport].interactive &&
+		!termDOM[kInput].mouseCaptureYielded;
+	if (wanted === termDOM[kMouseReportingEnabled]) {
 		return;
 	}
-	termdom[kMouseReportingEnabled] = wanted;
-	termdom[kExchange].setDisplayType("mouseCapture", wanted);
+	termDOM[kMouseReportingEnabled] = wanted;
+	termDOM[kExchange].setDisplayType("mouseCapture", wanted);
 	// Motion reporting depends on capture. A yield hands the whole mouse
 	// back.
-	syncHoverReporting(termdom);
+	syncHoverReporting(termDOM);
 }
 
 /** Whether anything in the document can observe pointer hover right now. */
 function isHoverObserved(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): boolean {
 	return (
-		DOM.hoverListenerCount(termdom.document) > 0 ||
-		termdom[kCascade].hoverRulesExist()
+		DOM.hoverListenerCount(termDOM.document) > 0 ||
+		termDOM[kCascade].hoverRulesExist()
 	);
 }
 
@@ -531,62 +529,62 @@ function isHoverObserved(
  * it is on only while capture is on and something observes hover.
  */
 function syncHoverReporting(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): void {
-	const wanted = termdom[kMouseReportingEnabled] && isHoverObserved(termdom);
-	if (wanted === termdom[kHoverReportingEnabled]) {
+	const wanted = termDOM[kMouseReportingEnabled] && isHoverObserved(termDOM);
+	if (wanted === termDOM[kHoverReportingEnabled]) {
 		return;
 	}
-	termdom[kHoverReportingEnabled] = wanted;
-	termdom[kExchange].setDisplayType("motionReporting", wanted);
+	termDOM[kHoverReportingEnabled] = wanted;
+	termDOM[kExchange].setDisplayType("motionReporting", wanted);
 }
 
-export async function render(termdom: TermDOM): Promise<void> {
+export async function render(termDOM: TermDOM): Promise<void> {
 	// Until attach(), mutations keep the DOM and layout live but write
 	// nothing.
-	if (!isAttached(termdom)) {
+	if (!isAttached(termDOM)) {
 		return;
 	}
 
 	// A settling resize suppresses every render until its re-anchored
 	// redraw.
-	if (termdom[kExchange].resizing) {
+	if (termDOM[kExchange].resizing) {
 		return;
 	}
 
 	// Coalesce, never drop. A dropped render leaves the diff's previous
 	// buffer out of step with the screen. The loop folds this call's changes
 	// into a trailing frame, so awaiting render() means they are painted.
-	if (termdom[kRenderInFlight] !== null) {
-		termdom[kRenderQueued] = true;
-		return termdom[kRenderInFlight];
+	if (termDOM[kRenderInFlight] !== null) {
+		termDOM[kRenderQueued] = true;
+		return termDOM[kRenderInFlight];
 	}
 
 	// The loop's first synchronous step can trigger a render, which has to
 	// coalesce too, so claim the slot before starting.
-	termdom[kRenderInFlight] = Promise.resolve();
+	termDOM[kRenderInFlight] = Promise.resolve();
 	let framesAwaiting = false;
 	const frames = (async () => {
 		try {
 			do {
 				do {
-					termdom[kRenderQueued] = false;
-					await renderOnce(termdom);
-				} while (termdom[kRenderQueued]);
+					termDOM[kRenderQueued] = false;
+					await renderOnce(termDOM);
+				} while (termDOM[kRenderQueued]);
 				// A callback that schedules another frame re-queues the loop, so
 				// requestAnimationFrame chains tick frame by frame. A disposed
 				// engine paints nothing, so a chain that never ends would spin
 				// here forever; it ends with the engine.
-				if (termdom[kLifecycle] === "disposed") {
+				if (termDOM[kLifecycle] === "disposed") {
 					break;
 				}
-				framesAwaiting = DOM.runFrameCallbacks(termdom.document);
-			} while (termdom[kRenderQueued] || framesAwaiting);
+				framesAwaiting = DOM.runFrameCallbacks(termDOM.document);
+			} while (termDOM[kRenderQueued] || framesAwaiting);
 		} finally {
-			termdom[kRenderInFlight] = null;
+			termDOM[kRenderInFlight] = null;
 		}
 	})();
-	termdom[kRenderInFlight] = frames;
+	termDOM[kRenderInFlight] = frames;
 	return frames;
 }
 
@@ -596,28 +594,28 @@ export async function render(termdom: TermDOM): Promise<void> {
  * does.
  */
 async function renderOnce(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): Promise<void> {
 	// A render loop can outlive dispose() by one queued frame.
-	if (termdom[kLifecycle] === "attaching") {
-		await termdom[kAttachBegun];
+	if (termDOM[kLifecycle] === "attaching") {
+		await termDOM[kAttachBegun];
 	}
-	if (termdom[kLifecycle] === "disposed") {
+	if (termDOM[kLifecycle] === "disposed") {
 		return;
 	}
-	if (!termdom[kTransport].interactive) {
-		await printStatic(termdom);
+	if (!termDOM[kTransport].interactive) {
+		await printStatic(termDOM);
 		return;
 	}
 
-	await renderInteractive(termdom);
+	await renderInteractive(termDOM);
 }
 
 function getDocumentFlowHeight(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): number {
 	const rect =
-		termdom[kLayout].getRect(termdom.document.documentElement);
+		termDOM[kLayout].getRect(termDOM.document.documentElement);
 	return rect ? Math.ceil(rect.height) : 0;
 }
 
@@ -627,13 +625,13 @@ function getDocumentFlowHeight(
  * nothing.
  */
 function getScrollingRegionHeight(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): number {
-	return isFullscreen(termdom)
-		? termdom[kScreen].rows
+	return isFullscreen(termDOM)
+		? termDOM[kScreen].rows
 		: Math.min(
-			termdom[kScreen].rows,
-			getDocumentFlowHeight(termdom),
+			termDOM[kScreen].rows,
+			getDocumentFlowHeight(termDOM),
 		);
 }
 
@@ -643,13 +641,13 @@ function getScrollingRegionHeight(
  * keystroke.
  */
 function queueCaretReveal(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): void {
-	termdom[kPendingCaretReveal] = element;
+	termDOM[kPendingCaretReveal] = element;
 	// A document scroll move and a caret move. No mutation record describes
 	// either.
-	termdom[kScreen].invalidate();
+	termDOM[kScreen].invalidate();
 }
 
 /**
@@ -657,7 +655,7 @@ function queueCaretReveal(
  * through the rendered text. Null when there is no record, text or box.
  */
 function getCaretRect(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 	element: Element,
 ): {x: number; y: number} | null {
 	const focus = DOM.getSelectionFocus(element);
@@ -671,7 +669,7 @@ function getCaretRect(
 	const range = element.ownerDocument.createRange();
 	range.setStart(node, Math.min(focus, node.data.length));
 	range.collapse(true);
-	const rects = termdom[kLayout].getRangeRects(range);
+	const rects = termDOM[kLayout].getRangeRects(range);
 	if (rects.length === 0) {
 		return null;
 	}
@@ -683,16 +681,16 @@ function getCaretRect(
  * from a focused text control stays allowed.
  */
 function scrollCaretIntoView(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): void {
-	DOM.flushLayout(termdom.document);
-	const rect = termdom[kLayout].getRect(element);
+	DOM.flushLayout(termDOM.document);
+	const rect = termDOM[kLayout].getRect(element);
 	if (!rect) {
 		return;
 	}
 	let caretY = Math.round(rect.top);
-	const caret = getCaretRect(termdom, element);
+	const caret = getCaretRect(termDOM, element);
 	if (caret !== null) {
 		caretY = caret.y;
 	}
@@ -710,8 +708,8 @@ function scrollCaretIntoView(
 	) {
 		revealBottom = Math.round(rect.bottom);
 	}
-	const regionHeight = getScrollingRegionHeight(termdom);
-	const top = termdom[kScreen].scrollTop;
+	const regionHeight = getScrollingRegionHeight(termDOM);
+	const top = termDOM[kScreen].scrollTop;
 	const delta =
 		revealTop < top
 			? revealTop - top
@@ -719,7 +717,7 @@ function scrollCaretIntoView(
 				? revealBottom - (top + regionHeight)
 				: 0;
 	if (delta) {
-		scrollDocument(termdom, delta);
+		scrollDocument(termDOM, delta);
 	}
 }
 
@@ -730,11 +728,11 @@ function scrollCaretIntoView(
  * dragged along and the diff repairs it.
  */
 function resolveScrollShift(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 	regionHeight: number,
 	record: {element: Element; delta: number} | null,
 ): {delta: number; top: number; end: number} | null {
-	const journal = termdom[kScreen].journal;
+	const journal = termDOM[kScreen].journal;
 	if (
 		record === null ||
 		record.delta === 0 ||
@@ -743,12 +741,12 @@ function resolveScrollShift(
 		journal.frameScroll !== 0 ||
 		// The rows the terminal would shift are not the rows the last frame
 		// painted.
-		termdom[kLayout].moved ||
+		termDOM[kLayout].moved ||
 		!record.element.isConnected
 	) {
 		return null;
 	}
-	const engine = termdom[kLayout];
+	const engine = termDOM[kLayout];
 	const rect = engine.getRect(record.element);
 	if (rect === null) {
 		return null;
@@ -758,7 +756,7 @@ function resolveScrollShift(
 	const box = getBoxModel(record.element);
 	const left = rect.left + (box.borderLeftWidth || 0);
 	const right = rect.left + rect.width - (box.borderRightWidth || 0);
-	if (left > 0 || right < termdom[kScreen].cols) {
+	if (left > 0 || right < termDOM[kScreen].cols) {
 		return null;
 	}
 
@@ -767,7 +765,7 @@ function resolveScrollShift(
 	// scroll for it.
 	const lift = engine.isInFixedSpace(record.element)
 		? 0
-		: termdom[kScreen].scrollTop;
+		: termDOM[kScreen].scrollTop;
 	const top = Math.max(
 		0,
 		Math.round(rect.top + (box.borderTopWidth || 0)) - lift,
@@ -787,47 +785,47 @@ function resolveScrollShift(
  * mutates schedules the next frame through the mutation observer.
  */
 function afterRender(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): void {
-	termdom[kRenderCount]++;
+	termDOM[kRenderCount]++;
 	// The viewport in document coordinates, for IntersectionObserver.
-	const viewport = new termdom.window.DOMRect(
+	const viewport = new termDOM.window.DOMRect(
 		0,
-		termdom[kScreen].scrollTop,
-		termdom[kScreen].cols,
-		termdom[kScreen].rows,
+		termDOM[kScreen].scrollTop,
+		termDOM[kScreen].cols,
+		termDOM[kScreen].rows,
 	);
 	flushObservers(
-		termdom.document,
-		termdom[kLayout],
+		termDOM.document,
+		termDOM[kLayout],
 		viewport,
-		termdom[kRenderCount],
+		termDOM[kRenderCount],
 	);
 	// The stylesheets have parsed, so whether any rule tests :hover is
 	// current.
-	syncMouseReporting(termdom);
-	syncHoverReporting(termdom);
+	syncMouseReporting(termDOM);
+	syncHoverReporting(termDOM);
 }
 
 /** The whole document as plain lines, for a stdout that is not a terminal. */
 async function printStatic(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): Promise<void> {
-	DOM.applyMutations(termdom.document);
+	DOM.applyMutations(termDOM.document);
 
-	termdom[kLayout].performLayout();
+	termDOM[kLayout].performLayout();
 
-	const context = termdom[kScreen].beginStatic({
-		rows: termdom[kLayout].documentPaintHeight(),
+	const context = termDOM[kScreen].beginStatic({
+		rows: termDOM[kLayout].documentPaintHeight(),
 	});
-	termdom[kPainter].paint(context);
-	const output = termdom[kScreen].endFrame();
-	termdom[kLayout].framePainted();
+	termDOM[kPainter].paint(context);
+	const output = termDOM[kScreen].endFrame();
+	termDOM[kLayout].framePainted();
 
 	if (output) {
-		await termdom[kExchange].write(output);
+		await termDOM[kExchange].write(output);
 	}
-	afterRender(termdom);
+	afterRender(termDOM);
 }
 
 /**
@@ -836,14 +834,14 @@ async function printStatic(
  * document whole into the scrollback, like any command's output.
  */
 function flushDocument(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): void {
-	if (!termdom[kTransport].interactive) {
+	if (!termDOM[kTransport].interactive) {
 		return;
 	}
 
-	const top = termdom[kScreen].documentTop;
-	const output = renderStatic(termdom, "\r\n");
+	const top = termDOM[kScreen].documentTop;
+	const output = renderStatic(termDOM, "\r\n");
 	if (!output) {
 		return;
 	}
@@ -852,27 +850,27 @@ function flushDocument(
 	// old frame held below. Never a full ED from the top. tmux archives a
 	// fully erased screen into the scrollback, which put the document there
 	// twice.
-	void termdom[kExchange].cursorToRow(top + 1);
-	void termdom[kExchange].writeLines(output);
-	void termdom[kExchange].eraseBelow();
+	void termDOM[kExchange].cursorToRow(top + 1);
+	void termDOM[kExchange].writeLines(output);
+	void termDOM[kExchange].eraseBelow();
 }
 
 /** The document as ANSI: colors and line breaks, no cursor controls, no modes. */
 function renderStatic(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 	lineEnding: "\n" | "\r\n",
 ): string {
-	DOM.flushLayout(termdom.document);
-	const contentHeight = termdom[kLayout].documentPaintHeight();
+	DOM.flushLayout(termDOM.document);
+	const contentHeight = termDOM[kLayout].documentPaintHeight();
 	if (contentHeight === 0) {
 		return "";
 	}
-	const context = termdom[kScreen].beginStatic({
+	const context = termDOM[kScreen].beginStatic({
 		rows: contentHeight,
 		lineEnding,
 	});
-	termdom[kPainter].paint(context);
-	return termdom[kScreen].endFrame();
+	termDOM[kPainter].paint(context);
+	return termDOM[kScreen].endFrame();
 }
 
 /**
@@ -881,17 +879,17 @@ function renderStatic(
  * scrollback. Nothing on screen before us is painted over.
  */
 async function renderInteractive(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): Promise<void> {
 	// close() sealed the previous document. Start a fresh one below it.
-	if (termdom[kSealed]) {
-		termdom[kSealed] = false;
-		termdom[kScreen].scrollTo(0);
-		termdom[kScreen].repaintAll();
+	if (termDOM[kSealed]) {
+		termDOM[kSealed] = false;
+		termDOM[kScreen].scrollTo(0);
+		termDOM[kScreen].repaintAll();
 		// detectAnchor reads a reply, so the listener must be attached.
-		if (termdom[kTransport].interactive) {
-			termdom.attach();
-			await termdom[kExchange].detectAnchor();
+		if (termDOM[kTransport].interactive) {
+			termDOM.attach();
+			await termDOM[kExchange].detectAnchor();
 		}
 	}
 
@@ -899,115 +897,115 @@ async function renderInteractive(
 	// frame painted before it is known anchors a row above every later one.
 	// Await only when pending, because the scroll clamp below is synchronous
 	// by contract.
-	const detectionPending = termdom[kExchange].cursorDetectionPending;
+	const detectionPending = termDOM[kExchange].cursorDetectionPending;
 	if (detectionPending) {
 		await detectionPending;
 	}
 
 	// The screen switch is written at the start of a frame so no frame
 	// straddles it. Entry is switch, hide, clear.
-	const wantAlt = isFullscreen(termdom);
-	if (wantAlt !== termdom[kOnAlternateScreen]) {
-		termdom[kOnAlternateScreen] = wantAlt;
-		termdom[kExchange].setDisplayType("altScreen", wantAlt);
+	const wantAlt = isFullscreen(termDOM);
+	if (wantAlt !== termDOM[kOnAlternateScreen]) {
+		termDOM[kOnAlternateScreen] = wantAlt;
+		termDOM[kExchange].setDisplayType("altScreen", wantAlt);
 		if (wantAlt) {
-			termdom[kExchange].setDisplayType("cursorHidden", true);
-			void termdom[kExchange].clearScreen();
+			termDOM[kExchange].setDisplayType("cursorHidden", true);
+			void termDOM[kExchange].clearScreen();
 		}
 		// Drop the diff model, or this frame patches one screen against the
 		// other's content.
-		termdom[kScreen].repaintAll();
-		syncMouseReporting(termdom);
+		termDOM[kScreen].repaintAll();
+		syncMouseReporting(termDOM);
 	}
 
 	// First, so a hover listener's mutations join the records taken below.
-	termdom[kInput].resolvePendingHover();
+	termDOM[kInput].resolvePendingHover();
 
-	DOM.applyMutations(termdom.document);
+	DOM.applyMutations(termDOM.document);
 
-	termdom[kLayout].performLayout();
-	DOM.clampScrollOffsets(termdom.document);
+	termDOM[kLayout].performLayout();
+	DOM.clampScrollOffsets(termDOM.document);
 
 	// Skipped if focus has moved on. Revealing a text control the user left
 	// would yank the document scroll back.
-	if (termdom[kPendingCaretReveal]) {
-		const reveal = termdom[kPendingCaretReveal];
-		termdom[kPendingCaretReveal] = null;
-		if (reveal === termdom.document.activeElement) {
-			scrollCaretIntoView(termdom, reveal);
+	if (termDOM[kPendingCaretReveal]) {
+		const reveal = termDOM[kPendingCaretReveal];
+		termDOM[kPendingCaretReveal] = null;
+		if (reveal === termDOM.document.activeElement) {
+			scrollCaretIntoView(termDOM, reveal);
 		}
 	}
 
 	// Nothing this frame could paint differs from the screen, so skip the
 	// paint.
-	const journalled = DOM.takeScrollShift(termdom.document) as {
+	const journalled = DOM.takeScrollShift(termDOM.document) as {
 		element: Element;
 		delta: number;
 	} | null;
-	const journal = termdom[kScreen].journal;
+	const journal = termDOM[kScreen].journal;
 	if (
 		!journal.dirty &&
-		!termdom[kLayout].moved &&
+		!termDOM[kLayout].moved &&
 		journal.frameScroll === 0 &&
 		journalled === null &&
 		!journal.needsRepaint
 	) {
 		// Observers still run, so a fresh observe() gets its initial entry.
-		afterRender(termdom);
+		afterRender(termDOM);
 		return;
 	}
 
-	DOM.revealTextControlCaret(termdom.document);
+	DOM.revealTextControlCaret(termDOM.document);
 
 	// Fullscreen owns the alternate screen from row zero. The document's
 	// scroll position survives underneath.
-	const fullscreen = isFullscreen(termdom);
+	const fullscreen = isFullscreen(termDOM);
 	const contentHeight = fullscreen
-		? termdom[kScreen].rows
-		: termdom[kLayout].documentPaintHeight();
+		? termDOM[kScreen].rows
+		: termDOM[kLayout].documentPaintHeight();
 	const regionHeight = Math.min(
 		contentHeight,
-		termdom[kScreen].rows,
+		termDOM[kScreen].rows,
 	);
 
-	const top = fullscreen ? 0 : reserveRows(termdom, regionHeight);
+	const top = fullscreen ? 0 : reserveRows(termDOM, regionHeight);
 
 	if (!fullscreen) {
 		// Through scrollTo, so the journal's delta is what the screen is about
 		// to be shifted by.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		termdom[kScreen].scrollTo(Math.min(termdom[kScreen].scrollTop, maxScroll));
+		termDOM[kScreen].scrollTo(Math.min(termDOM[kScreen].scrollTop, maxScroll));
 	}
 
 	// The document scroll has nothing to move in fullscreen. A scroll box
 	// inside it still does, under DECSTBM margins.
-	const shift = resolveScrollShift(termdom, regionHeight, journalled);
+	const shift = resolveScrollShift(termDOM, regionHeight, journalled);
 	// Read after the clamp, which adds to the journal.
-	const clamped = termdom[kScreen].journal;
-	const context = termdom[kScreen].beginFrame({
-		offset: -termdom[kScreen].scrollTop,
+	const clamped = termDOM[kScreen].journal;
+	const context = termDOM[kScreen].beginFrame({
+		offset: -termDOM[kScreen].scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
 		delta: shift ? shift.delta : fullscreen ? 0 : clamped.frameScroll,
 		shift: shift ?? undefined,
 	});
-	termdom[kPainter].paint(context);
-	const ansi = termdom[kScreen].endFrame();
-	termdom[kLayout].framePainted();
+	termDOM[kPainter].paint(context);
+	const ansi = termDOM[kScreen].endFrame();
+	termDOM[kLayout].framePainted();
 
 	// The cursor stays hidden while a frame paints and between frames. It
 	// is parked for resize bookkeeping, and a cursor blinking there is not
 	// UI. A focused text control shows it on its caret, where IME composition
 	// anchors.
 	if (ansi) {
-		termdom[kExchange].setDisplayType("cursorHidden", true);
-		await termdom[kExchange].write(ansi);
+		termDOM[kExchange].setDisplayType("cursorHidden", true);
+		await termDOM[kExchange].write(ansi);
 	}
-	termdom[kExchange].setDisplayType(
+	termDOM[kExchange].setDisplayType(
 		"cursorHidden",
-		!termdom[kScreen].caretVisible,
+		!termDOM[kScreen].caretVisible,
 	);
-	afterRender(termdom);
+	afterRender(termDOM);
 }
 
 /**
@@ -1015,27 +1013,27 @@ async function renderInteractive(
  * anchor. The start moves up by that much.
  */
 function pushRowsUp(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 	rows: number,
 ): number {
-	const overflow = termdom[kScreen].documentTop +
+	const overflow = termDOM[kScreen].documentTop +
 		rows -
-		termdom[kScreen].rows;
+		termDOM[kScreen].rows;
 	if (overflow <= 0) {
 		return 0;
 	}
-	const push = Math.min(overflow, termdom[kScreen].documentTop);
-	termdom[kScreen].documentTop -= push;
+	const push = Math.min(overflow, termDOM[kScreen].documentTop);
+	termDOM[kScreen].documentTop -= push;
 	return push;
 }
 
 function scrollDocument(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 	rows: number,
 ): void {
-	termdom[kScreen].scrollTo(termdom[kScreen].scrollTop + rows);
+	termDOM[kScreen].scrollTo(termDOM[kScreen].scrollTop + rows);
 	// No mutation record describes a document scroll move.
-	void render(termdom);
+	void render(termDOM);
 }
 
 /**
@@ -1046,34 +1044,31 @@ function scrollDocument(
  * rows to xterm-headless's scrollback, which would make this untestable.
  * Returns the screen row the region starts at.
  */
-function reserveRows(
-	termdom: TermDOM,
-	rows: number,
-): number {
-	const push = pushRowsUp(termdom, rows);
+function reserveRows(termDOM: TermDOM, rows: number): number {
+	const push = pushRowsUp(termDOM, rows);
 	if (push > 0) {
-		void termdom[kExchange].scrollUp(termdom[kScreen].rows, push);
+		void termDOM[kExchange].scrollUp(termDOM[kScreen].rows, push);
 		// The previous buffer is not shifted. Its rows are region-relative and
 		// the region top moved by exactly the scroll. A pending post-resize
 		// reset is screen-absolute and does shift.
-		termdom[kScreen].scrolled(push);
+		termDOM[kScreen].scrolled(push);
 	}
 
-	return termdom[kScreen].documentTop;
+	return termDOM[kScreen].documentTop;
 }
 
 function staticRenderer(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 ): TermDOM {
-	const cols = termdom[kTransport].cols;
+	const cols = termDOM[kTransport].cols;
 	if (
-		termdom[kStaticSibling] &&
-		termdom[kStaticSibling][kScreen].cols !== cols
+		termDOM[kStaticSibling] &&
+		termDOM[kStaticSibling][kScreen].cols !== cols
 	) {
-		void termdom[kStaticSibling].dispose();
-		termdom[kStaticSibling] = null;
+		void termDOM[kStaticSibling].dispose();
+		termDOM[kStaticSibling] = null;
 	}
-	termdom[kStaticSibling] ??= new TermDOM({
+	termDOM[kStaticSibling] ??= new TermDOM({
 		transport: {
 			cols,
 			rows: 24,
@@ -1088,15 +1083,15 @@ function staticRenderer(
 			close() {},
 		},
 	});
-	return termdom[kStaticSibling];
+	return termDOM[kStaticSibling];
 }
 
 function renderStaticHTML(
-	termdom: TermDOM,
+	termDOM: TermDOM,
 	html: string,
 	lineEnding: "\n" | "\r\n",
 ): string {
-	const renderer = staticRenderer(termdom);
+	const renderer = staticRenderer(termDOM);
 	renderer.document.body.innerHTML = html;
 	return renderStatic(renderer, lineEnding);
 }
