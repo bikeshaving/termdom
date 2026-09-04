@@ -110,6 +110,11 @@ export function* Root(
 							})}
 						/>
 					</script>
+					<script
+						type="module"
+						src="https://static.cloudflareinsights.com/beacon.min.js"
+						data-cf-beacon=${JSON.stringify({token: "7714c5d88a0a4cdd97e9d24245c50e2e"})}
+					></script>
 				</head>
 				<body>
 					<${ColorSchemeScript} />
