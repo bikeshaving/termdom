@@ -152,7 +152,7 @@ function serve(
 		const line = document.createElement("div");
 		line.textContent = `key: ${JSON.stringify(key)}`;
 		log.append(line);
-		line.scrollIntoView();
+		window.scrollTo(0, document.documentElement.scrollHeight);
 	});
 	termdom.attach();
 	refreshStatus();
