@@ -73,6 +73,18 @@ test("requestFullscreen before attach() rejects and stays silent", async () => {
 	dom.dispose();
 });
 
+test("renderANSI leaves the gap between two backgrounds unpainted", () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	const ansi = dom.renderANSI(
+		"<div style=\"display:flex;gap:1ch\">" +
+		"<span style=\"background-color:red\">a</span>" +
+		"<span style=\"background-color:blue\">b</span>" +
+		"</div>",
+	);
+	expect(ansi).toContain("a\x1b[0m \x1b[");
+});
+
 test("renderANSI transforms HTML at the transport's width, touching nothing", () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);

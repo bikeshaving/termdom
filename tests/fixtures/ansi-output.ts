@@ -40,5 +40,5 @@ export const recordedOutput: Record<string, string> = {
 	"clipRect and viewport offset":
 		"\u001b[?2026h\u001b[3;1H\r\n\r\n\r\u001b[Kvisible row\r\n\u001b[2C\r\u001b[K\u001b[2C────────\r\n\u001b[2C\r\u001b[K\u001b[2Cso clipp\r\n\r\n\r\u001b[Kunclipped again\u001b[8;1H\u001b[?2026l",
 	"static render to a pipe":
-		"plain\u001b[0m\n\u001b[38;2;255;0;0;1mstyled\u001b[0m\n日本語 wide\u001b[0m\n\u001b[38;2;0;255;0m┌──────┐  \u001b[0m👍 tail\u001b[0m\n\u001b[38;2;0;255;0m└──────┘\u001b[0m\n|crlf\u001b[0m\r\nlines\u001b[0m\r\n",
+		"plain\u001b[0m\n\u001b[38;2;255;0;0;1mstyled\u001b[0m\n日本語 wide\u001b[0m\n\u001b[38;2;0;255;0m┌──────┐\u001b[0m  👍 tail\u001b[0m\n\u001b[38;2;0;255;0m└──────┘\u001b[0m\n|crlf\u001b[0m\r\nlines\u001b[0m\r\n",
 };

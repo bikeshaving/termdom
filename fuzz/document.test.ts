@@ -267,6 +267,35 @@ const sizeArbitrary = fc.record({
 	rows: fc.integer({min: 14, max: 30}),
 });
 
+// The frame is repainted in place and commits nothing, so on the way out
+// the document is printed whole as command output. What that leaves on the
+// screen has to be the frame the terminal was showing, cell for cell,
+// colors included.
+test("exiting leaves the frame it was showing", async () => {
+	await fc.assert(
+		fc.asyncProperty(runArbitrary, async (run: Run) => {
+			const live = await play(run);
+			// Content taller than the terminal scrolls into the scrollback on
+			// the way out, and the screen shows its tail.
+			if (live.dom.document.body.scrollHeight > live.rows) {
+				live.dom.dispose();
+				return;
+			}
+			const before = live.terminal.getStaticANSI();
+			await live.dom.dispose();
+			const after = live.terminal.getStaticANSI();
+			if (after !== before) {
+				throw new Error(
+					`html: ${run.document.html}\n` +
+					`script: ${JSON.stringify(run.script)}\n` +
+					`--- showing\n${before}\n--- left behind\n${after}`,
+				);
+			}
+		}),
+		assertOptions,
+	);
+}, 900000);
+
 test("a resize round trip lands back on the frame it left", async () => {
 	await fc.assert(
 		fc.asyncProperty(
