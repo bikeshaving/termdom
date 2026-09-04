@@ -492,12 +492,16 @@ function* TerminalPane(
 
 	// A growing pane asks the program for its height a few times a second:
 	// the document is the program's to change whenever it likes, and a
-	// frame it paints is not something the pane hears about.
+	// frame it paints is not something the pane hears about. It keeps the
+	// tallest it has seen: a program whose output comes and goes would
+	// otherwise move the page under the reader with every change.
+	let tallest = 0;
 	const follow = (): void => {
 		if (!grow) return;
 		const content = current?.contentRows();
 		if (!content) return;
-		const next = Math.min(grow.max, Math.max(grow.min, content));
+		tallest = Math.max(tallest, content);
+		const next = Math.min(grow.max, Math.max(grow.min, tallest));
 		if (next !== wantRows) {
 			wantRows = next;
 			fit();
