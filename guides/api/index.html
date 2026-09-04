@@ -35,7 +35,9 @@ without terminal wiring.</p><h3 id="term-attach-transport"><code>term.attach(tra
 and bracketed paste, and paints whatever the document holds. Idempotent;
 no other call writes to the terminal. Returns a promise that resolves
 once the first frame has been written.</p><p>While attached to the process transport, the Node event loop stays alive
-until <code>dispose()</code> or <code>window.close()</code>.</p><p>Passing a transport rebinds the instance to it, only before the first
+until <code>dispose()</code> or <code>window.close()</code>.</p><p><code>document.visibilityState</code> is <code>&quot;hidden&quot;</code> before <code>attach()</code>, <code>&quot;visible&quot;</code>
+until <code>dispose()</code>, and <code>&quot;hidden&quot;</code> after. <code>visibilitychange</code> fires on each
+change.</p><p>Passing a transport rebinds the instance to it, only before the first
 attach.</p><h3 id="term-renderansi-html"><code>term.renderANSI(html)</code> <a class="heading-anchor" href="#term-renderansi-html">#</a></h3><p>Renders an HTML string to an ANSI string at the transport&#039;s width: colors
 and line breaks only, no cursor controls or mode changes. <code>&lt;style&gt;</code>
 elements in the fragment join the cascade. The instance&#039;s own document is
