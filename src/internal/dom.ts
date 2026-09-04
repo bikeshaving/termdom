@@ -32,13 +32,6 @@ import {
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";
 import {
-	closeTermDOM,
-	isAttached,
-	render,
-	sealTermDOM,
-	type TermDOM,
-} from "./termdom.ts";
-import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
 	getStringWidth,
@@ -190,11 +183,13 @@ export function getTextControlValueText(
 	);
 }
 
-const kTermDOM = Symbol("termDOM");
+const kRender = Symbol("render");
+const kVisible = Symbol("visible");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kScreen = Symbol("screen");
+const kPendingCaretReveal = Symbol("pendingCaretReveal");
 
 /**
  * The focus offset of a control's selection record, in offsets of the
@@ -3254,7 +3249,7 @@ const kListeners = Symbol("event listener list");
 const kGetTheParent = Symbol("get the parent");
 
 /** An event target: a listener list, and the parent dispatch walks to. */
-class EventTarget implements globalThis.EventTarget {
+export class EventTarget implements globalThis.EventTarget {
 	declare [kListeners]: Listener[];
 
 	/** Null until this target is given an event handler. Most never are. */
@@ -4005,6 +4000,8 @@ function dispatch(
 	const state = event[kState];
 	state.trusted = trusted;
 	state.dispatch = true;
+	const exchange = getSessionExchange(target);
+	const originalRelatedTarget = state.relatedTarget;
 	let activationTarget: EventTarget | null = null;
 	let relatedTarget = retarget(state.relatedTarget, target);
 	let clearTargets = false;
@@ -4117,10 +4114,6 @@ function dispatch(
 	state.dispatch = false;
 	state.stopPropagation = false;
 	state.stopImmediate = false;
-	if (clearTargets) {
-		state.target = null;
-		state.relatedTarget = null;
-	}
 	if (activationTarget !== null) {
 		if (!state.canceled) {
 			runActivationBehavior(activationTarget, event);
@@ -4129,6 +4122,21 @@ function dispatch(
 		}
 	}
 	protectClipboardData(event);
+	if (exchange !== null) {
+		// The exchange's listeners get the original targets; the retargeted
+		// values invokeListeners left return once they've run.
+		const retargetedTarget = state.target;
+		const retargetedRelatedTarget = state.relatedTarget;
+		state.target = target;
+		state.relatedTarget = originalRelatedTarget;
+		deliverToSession(exchange, event);
+		state.target = retargetedTarget;
+		state.relatedTarget = retargetedRelatedTarget;
+	}
+	if (clearTargets) {
+		state.target = null;
+		state.relatedTarget = null;
+	}
 	return !state.canceled;
 }
 
@@ -4382,6 +4390,52 @@ function innerInvoke(
 		}
 	}
 	return found;
+}
+
+function getSessionExchange(target: EventTarget): EventTarget | null {
+	const document = getEventTargetDocument(target);
+	if (document === null) {
+		return null;
+	}
+	const attached = getAttachedDocument(document);
+	return attached === undefined ? null : attached[kExchange];
+}
+
+// Every dispatched event reaches the exchange's listeners after its path,
+// regardless of bubbles, composed, or stopPropagation().
+function deliverToSession(exchange: EventTarget, event: Event): void {
+	const state = event[kState];
+	state.currentTarget = exchange;
+	const listeners = exchange[kListeners].slice();
+	innerInvoke(event, listeners, true);
+	state.stopImmediate = false;
+	innerInvoke(event, listeners, false);
+	state.stopImmediate = false;
+	state.currentTarget = null;
+}
+
+export function requestRender(document: globalThis.Document): void {
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached !== undefined) {
+		void attached[kRender]();
+	}
+}
+
+export function setDocumentVisible(
+	document: globalThis.Document,
+	visible: boolean,
+): void {
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached === undefined || attached[kVisible] === visible) {
+		return;
+	}
+	attached[kVisible] = visible;
+	dispatch(attached, new Event("visibilitychange", {bubbles: true}));
+}
+
+function isDocumentVisible(document: Document): boolean {
+	const attached = getAttachedDocument(document);
+	return attached === undefined || attached[kVisible];
 }
 
 // For an object callback, handleEvent is looked up at call time.
@@ -8637,7 +8691,7 @@ export class Element extends Node implements globalThis.Element {
 			if (this.isConnected) {
 				attached[kLayout].invalidate(this);
 				attached[kScreen].invalidate();
-				void render(attached[kTermDOM]);
+				void attached[kRender]();
 			}
 		}
 		return root as unknown as globalThis.ShadowRoot;
@@ -8655,7 +8709,7 @@ export class Element extends Node implements globalThis.Element {
 		// Fullscreen switches to the alternate screen, and attach() is the only
 		// consent for that. A browser rejects without a user gesture; this is
 		// the terminal equivalent.
-		if (!isAttached(attached[kTermDOM])) {
+		if (!attached[kVisible]) {
 			return Promise.reject(
 				new Error("requestFullscreen(): attach() the terminal first"),
 			);
@@ -9899,7 +9953,7 @@ export class HTMLElement extends Element {
 		// anything.
 		attached[kCascade].handleFocusChange(previous, this);
 		attached[kScreen].invalidate();
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 		// The body holds focus whenever nothing else does, so moving focus off
 		// the body fires no blur.
 		if (previous !== null && previous !== (document.body as unknown)) {
@@ -9934,7 +9988,7 @@ export class HTMLElement extends Element {
 		}
 		attached[kCascade].handleFocusChange(this, null);
 		attached[kScreen].invalidate();
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 		dispatchAsUserAgent(
 			this,
 			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
@@ -10253,22 +10307,14 @@ Object.defineProperties(HTMLElement.prototype, {
 			if (!rect) {
 				return;
 			}
-			const document = this[kDocument];
-			const flow = attached[kLayout].getRect(document.documentElement);
-			const regionHeight =
-				getFullscreenElement(document) !== null
-					? attached[kScreen].rows
-					: Math.min(
-						attached[kScreen].rows,
-						flow ? Math.ceil(flow.height) : 0,
-					);
+			const regionHeight = getScrollingRegionHeight(this[kDocument]);
 			const top = attached[kScreen].scrollTop;
 			if (rect.top < top) {
 				attached[kScreen].scrollTo(rect.top);
-				void render(attached[kTermDOM]);
+				void attached[kRender]();
 			} else if (rect.bottom > top + regionHeight) {
 				attached[kScreen].scrollTo(rect.bottom - regionHeight);
-				void render(attached[kTermDOM]);
+				void attached[kRender]();
 			}
 		},
 		configurable: true,
@@ -18800,7 +18846,7 @@ function popoverStateChanged(element: Element): void {
 	}
 	attached[kCascade].handleStateChange(element);
 	attached[kScreen].invalidate();
-	void render(attached[kTermDOM]);
+	void attached[kRender]();
 }
 
 // Returns true, false for a call that should silently do nothing, or the
@@ -22011,11 +22057,15 @@ export class Document extends Node implements globalThis.Document {
 	// What an attached document renders through, set by attachDocument. A
 	// headless document has none and behaves as a document with no browsing
 	// context.
-	declare [kTermDOM]: TermDOM;
+	declare [kRender]: () => Promise<void>;
+	declare [kVisible]: boolean;
 	declare [kLayout]: Layout;
 	declare [kCascade]: Cascade;
 	declare [kExchange]: Exchange;
 	declare [kScreen]: Screen;
+	// The text control whose caret the next frame reveals. The last edit
+	// before the frame wins.
+	declare [kPendingCaretReveal]: TextControlOrSelect | null;
 
 	declare [kImplementation]: DOMImplementation | null;
 
@@ -22280,7 +22330,7 @@ export class Document extends Node implements globalThis.Document {
 		const attached = getAttachedDocument(this);
 		if (
 			attached !== undefined &&
-			isAttached(attached[kTermDOM]) &&
+			attached[kVisible] &&
 			attached[kExchange].interactive
 		) {
 			void attached[kExchange].setTitle(String(value));
@@ -22406,13 +22456,12 @@ export class Document extends Node implements globalThis.Document {
 		this.body?.setAttribute("vlink", value);
 	}
 
-	/** A terminal shows what it renders, immediately. */
 	get hidden(): boolean {
-		return false;
+		return !isDocumentVisible(this);
 	}
 
 	get visibilityState(): globalThis.DocumentVisibilityState {
-		return "visible";
+		return isDocumentVisible(this) ? "visible" : "hidden";
 	}
 
 	get fullscreen(): boolean {
@@ -22605,10 +22654,7 @@ export class Document extends Node implements globalThis.Document {
 	// sealed into the terminal's scrollback, and a later mutation starts a
 	// fresh document below the sealed block.
 	close(): void {
-		const attached = getAttachedDocument(this);
-		if (attached !== undefined) {
-			sealTermDOM(attached[kTermDOM]);
-		}
+		getAttachedDocument(this)?.[kExchange].dispatchEvent(new Event("seal"));
 	}
 
 	getElementsByTagName<K extends keyof globalThis.HTMLElementTagNameMap>(
@@ -24082,7 +24128,7 @@ function setScrollOffset(
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
 			attached[kScreen].scrollTo(Number(value));
-			void render(attached[kTermDOM]);
+			void attached[kRender]();
 		}
 		return;
 	}
@@ -24116,7 +24162,7 @@ function setScrollOffset(
 	} else {
 		attached[kScreen].invalidate();
 	}
-	void render(attached[kTermDOM]);
+	void attached[kRender]();
 }
 
 /**
@@ -24165,7 +24211,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	if (changed) {
 		scrollShifts.delete(document as Document);
 		attached[kScreen].invalidate();
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 }
 
@@ -25710,7 +25756,7 @@ function scheduleSelectionChange(document: Document): void {
 	const attached = getAttachedDocument(document);
 	if (attached !== undefined) {
 		attached[kScreen].invalidate();
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 	if (document[kSelectionChangeScheduled]) {
 		return;
@@ -29018,31 +29064,37 @@ export function syncMediaQueries(document: globalThis.Document): void {
  */
 export function attachDocument(
 	document: globalThis.Document,
-	termDOM: TermDOM,
 	layout: Layout,
 	styles: Cascade,
 	exchange: Exchange,
 	screen: Screen,
+	render: () => Promise<void>,
 ): void {
 	const attached = document as Document;
-	if (attached[kTermDOM] !== undefined) {
+	if (attached[kExchange] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
-	attached[kTermDOM] = termDOM;
+	attached[kRender] = render;
+	attached[kVisible] = false;
 	attached[kLayout] = layout;
 	attached[kCascade] = styles;
 	attached[kExchange] = exchange;
 	attached[kScreen] = screen;
+	attached[kPendingCaretReveal] = null;
+	for (const type of ["input", "select", "change", "selectionchange"]) {
+		exchange.addEventListener(type, onTextControlEditEvent);
+	}
+	exchange.addEventListener("toggle", onDisclosureToggle);
 	hoverListenerCounts.set(
 		attached,
-		watchHoverListeners(attached, () => render(termDOM)),
+		watchHoverListeners(attached, () => render()),
 	);
 	// The document owns the observer. Mutations fan out to the cascade, the
 	// layout tree and the UA default actions here, and the engine is only
 	// asked to render the frame that shows the result.
 	const observer = new MutationObserver((mutations) => {
 		handleMutationRecords(attached, mutations);
-		void render(termDOM);
+		void render();
 	});
 	observer.observe(document.documentElement as unknown as Node, {
 		childList: true,
@@ -29055,6 +29107,154 @@ export function attachDocument(
 }
 
 const engineObservers = new WeakMap<Document, MutationObserver>();
+
+type TextControlOrSelect =
+	HTMLInputElement |
+	HTMLTextAreaElement |
+	HTMLSelectElement;
+
+// Only the active text control. A select commit or an author's dispatch on
+// an unfocused control must not move the document scroll. The reveal
+// happens on the frame the edit scheduled, so there is one document scroll
+// decision per frame instead of a layout flush per keystroke.
+function onTextControlEditEvent(event: globalThis.Event): void {
+	const target = event.target;
+	if (
+		!(
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			target instanceof HTMLSelectElement
+		)
+	) {
+		return;
+	}
+	const attached = getAttachedDocument(target);
+	if (attached === undefined || target !== getFocusedElement(attached)) {
+		return;
+	}
+	attached[kPendingCaretReveal] = target;
+	// A document scroll move and a caret move. No mutation record describes
+	// either.
+	attached[kScreen].invalidate();
+	void attached[kRender]();
+}
+
+// A terminal page is one screen tall, and what a details opened is often
+// below the fold. A details that closes took content away, so only opening
+// reveals.
+function onDisclosureToggle(event: globalThis.Event): void {
+	const details = event.target;
+	if (!(details instanceof HTMLDetailsElement) || !details.open) {
+		return;
+	}
+	details.scrollIntoView({block: "nearest"});
+}
+
+/** The focused element, through shadow roots. */
+export function getFocusedElement(
+	document: globalThis.Document,
+): globalThis.Element | null {
+	let active = document.activeElement;
+	for (
+		let inner = active && getShadowRoot(active)?.activeElement;
+		inner;
+		inner = getShadowRoot(inner)?.activeElement
+	) {
+		active = inner;
+	}
+	return active;
+}
+
+// The rows the document scroll shows. Fullscreen owns the screen from row
+// zero, and its element has left the flow, which then measures next to
+// nothing.
+function getScrollingRegionHeight(document: globalThis.Document): number {
+	const attached = getAttachedDocument(document as unknown as Node)!;
+	if (getFullscreenElement(attached) !== null) {
+		return attached[kScreen].rows;
+	}
+	const flow = attached[kLayout].getRect(document.documentElement!);
+	return Math.min(attached[kScreen].rows, flow ? Math.ceil(flow.height) : 0);
+}
+
+// The caret as the painter derives it: the selection focus, measured
+// through the rendered text. Null when there is no record, text or box.
+function getCaretRect(
+	attached: Document,
+	element: globalThis.Element,
+): {x: number; y: number} | null {
+	const focus = getSelectionFocus(element);
+	if (focus === null) {
+		return null;
+	}
+	const node = getTextControlValueText(element);
+	if (node === null) {
+		return null;
+	}
+	const range = element.ownerDocument!.createRange();
+	range.setStart(node, Math.min(focus, node.data.length));
+	range.collapse(true);
+	const rects = attached[kLayout].getRangeRects(range);
+	if (rects.length === 0) {
+		return null;
+	}
+	return {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
+}
+
+/**
+ * Scrolls the document to the caret of the text control an edit queued,
+ * after layout. Skipped if focus has moved on: revealing a control the user
+ * left would yank the document scroll back. Wheel-scrolling away from a
+ * focused control stays allowed, since only edits queue a reveal.
+ */
+export function revealPendingCaret(document: globalThis.Document): void {
+	const attached = document as Document;
+	const element = attached[kPendingCaretReveal];
+	if (element === null) {
+		return;
+	}
+	attached[kPendingCaretReveal] = null;
+	if (element !== getFocusedElement(document)) {
+		return;
+	}
+	flushLayout(element);
+	const rect = attached[kLayout].getRect(element);
+	if (!rect) {
+		return;
+	}
+	let caretY = Math.round(rect.top);
+	const caret = getCaretRect(attached, element);
+	if (caret !== null) {
+		caretY = caret.y;
+	}
+	// Widened to the text control's edge when the caret is on its first or
+	// last row, so the border shows instead of a cropped box.
+	const boxModel = getBoxModel(element);
+	let revealTop = caretY;
+	let revealBottom = caretY + 1;
+	if (caretY <= Math.round(rect.top) + (boxModel.borderTopWidth || 0)) {
+		revealTop = Math.round(rect.top);
+	}
+	if (
+		caretY >=
+		Math.round(rect.bottom) - (boxModel.borderBottomWidth || 0) - 1
+	) {
+		revealBottom = Math.round(rect.bottom);
+	}
+	const regionHeight = getScrollingRegionHeight(document);
+	const top = attached[kScreen].scrollTop;
+	const delta =
+		revealTop < top
+			? revealTop - top
+			: revealBottom > top + regionHeight
+				? revealBottom - (top + regionHeight)
+				: 0;
+	if (delta) {
+		attached[kScreen].scrollTo(top + delta);
+		// No mutation record describes a document scroll move.
+		void attached[kRender]();
+	}
+}
 
 // Everything except painting: the flat-tree memo, UA shadow tree upgrades,
 // the cascade, the layout tree and the focus default actions, always in
@@ -29208,7 +29408,7 @@ export function flushLayout(node: globalThis.Node): boolean {
 	) as globalThis.Document;
 	const had = applyMutations(document);
 	if (had) {
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 	attached[kLayout].performLayout();
 	clampScrollOffsets(document);
@@ -29224,7 +29424,8 @@ export function hoverListenerCount(document: globalThis.Document): number {
 // A document that has been adopted. It renders, and knows what it
 // renders through.
 type AttachedDocument = Document & {
-	[kTermDOM]: TermDOM;
+	[kRender]: () => Promise<void>;
+	[kVisible]: boolean;
 	[kLayout]: Layout;
 	[kCascade]: Cascade;
 	[kExchange]: Exchange;
@@ -29238,7 +29439,7 @@ function getAttachedDocument(
 	const document = (
 		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
 	) as Document | null;
-	return document !== null && document[kTermDOM] !== undefined
+	return document !== null && document[kExchange] !== undefined
 		? (document as AttachedDocument)
 		: undefined;
 }
@@ -29399,7 +29600,7 @@ function reachClipboard(document: Document, what: string): Exchange {
 	const attached = getAttachedDocument(document);
 	if (
 		attached === undefined ||
-		!isAttached(attached[kTermDOM]) ||
+		!attached[kVisible] ||
 		!attached[kExchange].interactive
 	) {
 		throw clipboardDenied(
@@ -29487,7 +29688,7 @@ class PermissionStatus extends EventTarget {
 		const attached = getAttachedDocument(document);
 		if (
 			!attached ||
-			!isAttached(attached[kTermDOM]) ||
+			!attached[kVisible] ||
 			!attached[kExchange].interactive
 		) {
 			return "denied";
@@ -29790,7 +29991,7 @@ function frameSettled(
 		holdFrameCallback(document, () => {
 			resolve();
 		});
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	});
 }
 
@@ -30294,7 +30495,7 @@ export class Window extends EventTarget {
 				? (xOrOptions.top ?? attached[kScreen].scrollTop)
 				: (y ?? 0);
 		attached[kScreen].scrollTo(top);
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 
 	scroll(options?: globalThis.ScrollToOptions): void;
@@ -30319,7 +30520,7 @@ export class Window extends EventTarget {
 				? (xOrOptions.top ?? 0)
 				: (y ?? 0);
 		attached[kScreen].scrollTo(attached[kScreen].scrollTop + top);
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 
 	// requestAnimationFrame is the only way to await a painted frame. It
@@ -30332,7 +30533,7 @@ export class Window extends EventTarget {
 			return 0;
 		}
 		const handle = holdFrameCallback(this.document, callback);
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 		return handle;
 	}
 
@@ -30419,7 +30620,6 @@ export class Window extends EventTarget {
 		if (event.defaultPrevented || event.returnValue !== "") {
 			return;
 		}
-		closeTermDOM(attached[kTermDOM]);
 		this[kClosed] = true;
 	}
 
@@ -33097,7 +33297,6 @@ export type {
 	Storage,
 	NodeListOf,
 	HTMLCollectionOf,
-	EventTarget,
 	BeforeUnloadEvent,
 	MessageEvent,
 	HashChangeEvent,

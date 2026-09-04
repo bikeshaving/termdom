@@ -1,15 +1,15 @@
-import type {Input} from "./input.ts";
+import type {Cascade} from "./cssom.ts";
 import {
-	anchorDetected,
-	closeTermDOM,
-	frameReplaced,
-	frameStanding,
-	probesDeferred,
-	type TermDOM,
-	terminalReorders,
-	terminalResized,
-	widthsCorrected,
-} from "./termdom.ts";
+	dispatchAsUserAgent,
+	Event,
+	EventTarget,
+	requestRender,
+	syncMediaQueries,
+	type Window,
+} from "./dom.ts";
+import type {Input} from "./input.ts";
+import type {Layout} from "./layout.ts";
+import type {Screen} from "./screen.ts";
 import {recordClusterAdvance} from "./text.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
@@ -649,7 +649,10 @@ const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kResizeTimer = Symbol("resizeTimer");
 const kSettlingResize = Symbol("settlingResize");
 const kTransportClosed = Symbol("transportClosed");
-const kTermDOM = Symbol("termDOM");
+const kWindow = Symbol("window");
+const kLayout = Symbol("layout");
+const kCascade = Symbol("cascade");
+const kScreen = Symbol("screen");
 const kInput = Symbol("input");
 
 const kWriter = Symbol("writer");
@@ -679,9 +682,12 @@ const kWidthDeferralWait = Symbol("widthDeferralWait");
 /**
  * One reader, one writer, and the demultiplexer between them. Every
  * query is bounded by a timer, since most terminals reply with nothing.
- * Silence means the terminal has no opinion and ours holds.
+ * Silence means the terminal has no opinion and ours holds. What the
+ * terminal reports is applied to the screen and layout here. As an event
+ * target it receives every event dispatched in the document after the
+ * event's path, and dispatches seal and terminalclose on itself.
  */
-export class Exchange {
+export class Exchange extends EventTarget {
 	// A terminal replying late is still replying. Only one that never
 	// replies at all stops probing.
 	static readonly [kWidthProbeTimeout] = 2000;
@@ -695,7 +701,10 @@ export class Exchange {
 	declare [kInteractive]: boolean;
 	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
-	declare [kTermDOM]: TermDOM;
+	declare [kWindow]: Window;
+	declare [kLayout]: Layout;
+	declare [kCascade]: Cascade;
+	declare [kScreen]: Screen;
 	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
 	// A token per resize burst, so a redraw that lands after a newer burst
 	// began is abandoned. Null between bursts.
@@ -725,7 +734,14 @@ export class Exchange {
 	declare [kProbingEnded]: boolean;
 	declare [kWidths]: WidthProbes;
 
-	constructor(transport: TerminalTransport, termDOM: TermDOM) {
+	constructor(
+		transport: TerminalTransport,
+		window: Window,
+		layout: Layout,
+		styles: Cascade,
+		screen: Screen,
+	) {
+		super();
 		const interactive = transport.interactive;
 		this[kWriter] = null;
 		this[kReader] = null;
@@ -747,7 +763,10 @@ export class Exchange {
 		this[kEngagedModes] = new Set<ModeName>();
 		// Anchor detection only makes sense when a shell's rows are above ours.
 		this[kAnchorDetectionEnabled] = transport.sharesScreen && interactive;
-		this[kTermDOM] = termDOM;
+		this[kWindow] = window;
+		this[kLayout] = layout;
+		this[kCascade] = styles;
+		this[kScreen] = screen;
 		this[kInput] = null;
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
@@ -900,7 +919,7 @@ export class Exchange {
 		this[kAnchorDetectionEnabled] =
 			transport.sharesScreen && transport.interactive;
 		this[kWidths] = createWidthProbes(transport.interactive);
-		terminalResized(this[kTermDOM], transport.cols, transport.rows);
+		terminalResized(this, transport.cols, transport.rows);
 	}
 
 	start(input: Input): void {
@@ -919,7 +938,7 @@ export class Exchange {
 		void this[kTransport].closed.then(() => {
 			if (!this[kDisposed]) {
 				this[kTransportClosed] = true;
-				closeTermDOM(this[kTermDOM]);
+				this.dispatchEvent(new Event("terminalclose"));
 			}
 		});
 	}
@@ -958,7 +977,7 @@ export class Exchange {
 		}
 		this[kPriorBidiMode] = answer;
 		if (answer === 1 || answer === 3) {
-			terminalReorders(this[kTermDOM]);
+			this[kLayout].adoptTerminalReordering();
 		}
 	}
 
@@ -1006,8 +1025,11 @@ export class Exchange {
 			ask: CURSOR_QUERY,
 			timeoutMs: 1000,
 			sequence: this[kDSRSequence]++,
+			// The 1-based row the command started on becomes the 0-based
+			// anchor.
 			read: ({row}) => {
-				anchorDetected(this[kTermDOM], row);
+				this[kScreen].documentTop = row - 1;
+				this[kScreen].anchorScrollTop = 1 - row;
 				this[kHasDetectedAnchor] = true;
 				return row;
 			},
@@ -1072,6 +1094,32 @@ export class Exchange {
 		);
 	}
 
+	/**
+	 * Room below the anchor for `rows` comes from scrolling earlier output
+	 * into the scrollback, never from painting over it. Returns the screen
+	 * row the region starts at.
+	 */
+	reserveRows(rows: number): number {
+		const screen = this[kScreen];
+		const overflow = screen.documentTop + rows - screen.rows;
+		const push = overflow <= 0 ? 0 : Math.min(overflow, screen.documentTop);
+		if (push > 0) {
+			screen.documentTop -= push;
+			void this.scrollUp(screen.rows, push);
+			// The previous buffer is not shifted. Its rows are region-relative
+			// and the region top moved by exactly the scroll. A pending
+			// post-resize reset is screen-absolute and does shift.
+			screen.scrolled(push);
+		}
+		return screen.documentTop;
+	}
+
+	/**
+	 * The scroll is IND (ESC D) from the bottom row. A bare LF after an
+	 * absolute CUP does not scroll (tmux and xterm-headless both), and CSI n S
+	 * scrolls without adding the rows to xterm-headless's scrollback, which
+	 * would make this untestable.
+	 */
 	scrollUp(bottomRow: number, rows: number): Promise<void> {
 		return this.write(getRowStart(bottomRow) + SCROLL_STEP.repeat(rows));
 	}
@@ -1247,7 +1295,9 @@ function requestDeferredProbeFrame(session: Exchange): void {
 		if (session[kDisposed] || widths.deferred.size === 0) {
 			return;
 		}
-		probesDeferred(session[kTermDOM]);
+		// Deferred probes go out with the next frame even if nothing changed.
+		session[kScreen].flushProbes();
+		requestRender(session[kWindow].document);
 	}, Exchange[kWidthDeferralWait]);
 }
 
@@ -1332,8 +1382,14 @@ function settleWidthProbe(
 
 	widths.settled.add(probe.cluster);
 	widths.drift += advance - probe.width;
+	// A cluster measured wider or narrower than the tables said, so every
+	// column after it on a painted row is off. The previous frame described
+	// a screen that was never drawn. Drop it and paint again from the
+	// corrected measurements.
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		widthsCorrected(session[kTermDOM]);
+		session[kLayout].invalidateTextMeasurement();
+		session[kScreen].repaintAll();
+		requestRender(session[kWindow].document);
 	}
 }
 
@@ -1401,6 +1457,25 @@ function scheduleResize(session: Exchange): void {
 	}, RESIZE_DEBOUNCE_MS);
 }
 
+function terminalResized(
+	session: Exchange,
+	width: number,
+	height: number,
+): void {
+	const screen = session[kScreen];
+	// A SIGWINCH with an unchanged size still redraws but fires no event.
+	const sizeChanged = width !== screen.cols || height !== screen.rows;
+	screen.resize(height, width);
+	session[kLayout].resize(width, height);
+	// A size change can flip any @media result and every vw/vh value.
+	session[kCascade].syncStylesheets();
+	const window = session[kWindow];
+	if (sizeChanged) {
+		dispatchAsUserAgent(window, new window.Event("resize"));
+	}
+	syncMediaQueries(window.document);
+}
+
 // The terminal has rewrapped the old frame with the text above it. The
 // cursor was parked on the frame's bottom row and stayed on its line
 // through the rewrap, and every painted row is a hard line, so the
@@ -1408,24 +1483,30 @@ function scheduleResize(session: Exchange): void {
 // new top. A terminal that does not reply gets the computed re-anchor,
 // exact for height changes.
 function handleResize(session: Exchange): void {
-	const termDOM = session[kTermDOM];
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
-	terminalResized(termDOM, newWidth, newHeight);
-	const {contentHeight, wrappedRowsAbove, documentTop} = frameStanding(
-		termDOM,
-		newWidth,
-	);
+	terminalResized(session, newWidth, newHeight);
+	// Where the frame is after the resize, for the re-anchor.
+	const screen = session[kScreen];
+	const layout = session[kLayout];
+	layout.performLayout();
+	const contentHeight = layout.documentPaintHeight();
+	const wrappedRowsAbove = screen.wrappedRowsAbovePark(newWidth);
+	const documentTop = screen.documentTop;
 	const settling = session[kSettlingResize];
 
+	// The frame now starts at startRow. Repaint it from there.
 	const redraw = (startRow: number) => {
-		frameReplaced(termDOM, startRow);
+		screen.documentTop = startRow;
+		screen.anchorScrollTop = -startRow;
+		screen.replaced(startRow);
+		requestRender(session[kWindow].document);
 
 		// The frame is placed by the screen reset. Cursor detection is
 		// suspended until it is written.
 		session[kSettlingResize] = null;
 		const wasDetected = session[kHasDetectedAnchor];
 		session[kHasDetectedAnchor] = false;
-		termDOM.window.requestAnimationFrame(() => {
+		session[kWindow].requestAnimationFrame(() => {
 			session[kHasDetectedAnchor] = wasDetected;
 		});
 	};
@@ -1481,7 +1562,7 @@ function routeChunk(session: Exchange, chunk: string): void {
 				// decision.
 				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
-					session[kTermDOM].window.close();
+					session[kWindow].close();
 					break;
 				}
 				keys.push(item);

@@ -32,6 +32,7 @@ const RUNNABLE = [
 	"fullscreen",
 	"fuzzy-finder",
 	"hacker-news",
+	"hover",
 	"lists",
 	"markdown",
 	"password",

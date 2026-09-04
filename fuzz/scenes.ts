@@ -34,6 +34,7 @@ export const SHEET = `
 	.editing .view { display: none; }
 	.on ~ .light { color: red; }
 	.dim { color: #808080; }
+	.bg { background-color: #333366; }
 	.pane { height: 4em; overflow-y: scroll; }
 	.box { border: 1px solid; }
 	.round { border-radius: 1ch; }
@@ -72,6 +73,7 @@ const BASE_CLASSES = [
 	"on",
 	"light",
 	"dim",
+	"bg",
 	"pane",
 ];
 const BASE_TAGS = ["div", "span", "p", "b", "em", "section", "li"];

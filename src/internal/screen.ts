@@ -891,7 +891,13 @@ function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 	let previous = -1;
 	for (let col = 0; col <= lastCol; col++) {
 		const index = rowStart + col;
+		// An empty cell has no style. Written under the previous cell's
+		// background, a gap between two boxes would take the left one's color.
 		if (grid.cluster[index] === 0) {
+			if (previous !== -1) {
+				writer.resetStyle();
+				previous = -1;
+			}
 			writer.text(" ");
 			continue;
 		}
@@ -1754,10 +1760,9 @@ export class Screen {
 		rows: number,
 		cols: number,
 		colorDepth: ColorDepth = "rgb",
-		measurer: Exchange | null = null,
 	) {
 		this[kFlushProbes] = false;
-		this[kMeasurer] = measurer;
+		this[kMeasurer] = null;
 		this[kPrev] = null;
 		this[kSpare] = null;
 		this[kDiff] = null;
@@ -1778,6 +1783,11 @@ export class Screen {
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
 		this[kWriter] = new FrameWriter(colorDepth);
+	}
+
+	/** Width probes go out over the exchange, once there is one. */
+	set measurer(exchange: Exchange) {
+		this[kMeasurer] = exchange;
 	}
 
 	get rows(): number {
