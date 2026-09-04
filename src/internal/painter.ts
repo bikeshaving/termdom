@@ -245,6 +245,63 @@ export class Painter {
 		this[kTopLayer] = getTopLayer(document) as unknown as Set<Element>;
 	}
 
+	/**
+	 * The buffer rows a journalled element scroll covers, or null when the
+	 * terminal cannot shift them. DECSTBM margins are horizontal, so a scroll
+	 * shift is the region's full width or nothing. Content overlapping the
+	 * shift is dragged along and the diff repairs it.
+	 */
+	resolveScrollShift(
+		regionHeight: number,
+		record: {element: Element; delta: number} | null,
+	): {delta: number; top: number; end: number} | null {
+		const screen = this[kScreen];
+		const layout = this[kLayout];
+		if (
+			record === null ||
+			record.delta === 0 ||
+			// One scroll shift per frame. The document scroll's region already
+			// contains this box.
+			screen.journal.frameScroll !== 0 ||
+			// The rows the terminal would shift are not the rows the last
+			// frame painted.
+			layout.moved ||
+			!record.element.isConnected
+		) {
+			return null;
+		}
+		const rect = layout.getRect(record.element);
+		if (rect === null) {
+			return null;
+		}
+
+		// The scroll port is the padding box.
+		const box = getBoxModel(record.element);
+		const left = rect.left + (box.borderLeftWidth || 0);
+		const right = rect.left + rect.width - (box.borderRightWidth || 0);
+		if (left > 0 || right < screen.cols) {
+			return null;
+		}
+
+		// Layout rows are document rows. Buffer rows are the document
+		// scroll's. A fixed box is laid out in viewport rows and the paint
+		// cancels the document scroll for it.
+		const lift = layout.isInFixedSpace(record.element) ? 0 : screen.scrollTop;
+		const top = Math.max(
+			0,
+			Math.round(rect.top + (box.borderTopWidth || 0)) - lift,
+		);
+		const end = Math.min(
+			regionHeight,
+			Math.round(rect.top + rect.height - (box.borderBottomWidth || 0)) -
+			lift,
+		);
+		if (end - top <= Math.abs(record.delta)) {
+			return null;
+		}
+		return {delta: record.delta, top, end};
+	}
+
 	paint(ctx: CellContext): void {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;

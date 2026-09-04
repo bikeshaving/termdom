@@ -1,4 +1,4 @@
-import {Cascade, getBoxModel} from "./cssom.ts";
+import {Cascade} from "./cssom.ts";
 import * as DOM from "./dom.ts";
 import {
 	createDocumentWindow,
@@ -43,7 +43,6 @@ const kInput = Symbol("input");
 const kAttachReady = Symbol("attachReady");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
-const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kTransport = Symbol("transport");
 const kExchange = Symbol("exchange");
 const kStaticSibling = Symbol("staticSibling");
@@ -77,13 +76,6 @@ export class TermDOM {
 	declare [kLifecycle]: Lifecycle;
 	declare [kMouseReportingEnabled]: boolean;
 	declare [kHoverReportingEnabled]: boolean;
-	// The text control whose caret the next frame reveals. The last edit before
-	// the frame wins.
-	declare [kPendingCaretReveal]: HTMLInputElement |
-		HTMLTextAreaElement |
-		HTMLSelectElement |
-		null;
-
 	declare [kTransport]: TerminalTransport;
 	declare [kExchange]: Exchange;
 	// Resolves once the session is established and the first frame written.
@@ -94,7 +86,6 @@ export class TermDOM {
 	declare [kAttachBegun]: Promise<void>;
 	// The engine behind renderANSI and print, rebuilt when the width changes.
 	declare [kStaticSibling]: TermDOM | null;
-
 	constructor(options: TermDOMOptions = {}) {
 		this[kSealed] = false;
 
@@ -106,7 +97,6 @@ export class TermDOM {
 
 		this[kMouseReportingEnabled] = false;
 		this[kHoverReportingEnabled] = false;
-		this[kPendingCaretReveal] = null;
 
 		this[kAttachReady] = Promise.resolve();
 		this[kAttachBegun] = Promise.resolve();
@@ -165,48 +155,6 @@ export class TermDOM {
 			this[kCascade],
 			this[kScreen],
 		);
-
-		// Only the active text control. A select commit or an author's dispatch
-		// on an unfocused control must not move the document scroll.
-		const onTextControlEditEvent = (event: Event): void => {
-			const target = event.target;
-			if (
-				target !== getFocusedElement(this) ||
-				!(
-					target instanceof DOM.HTMLInputElement ||
-					target instanceof DOM.HTMLTextAreaElement ||
-					target instanceof DOM.HTMLSelectElement
-				)
-			) {
-				return;
-			}
-			queueCaretReveal(
-				this,
-				target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-			);
-			void render(this);
-		};
-
-		exchange.addEventListener("input", onTextControlEditEvent);
-		exchange.addEventListener("select", onTextControlEditEvent);
-		exchange.addEventListener("change", onTextControlEditEvent);
-		exchange.addEventListener("selectionchange", onTextControlEditEvent);
-
-		// A details that closes took content away. Only opening reveals.
-		const onDisclosureToggle = (event: Event): void => {
-			const details = event.target as HTMLElement | null;
-			if (details === null || !("open" in details)) {
-				return;
-			}
-			if (!(details as HTMLDetailsElement).open) {
-				return;
-			}
-			details.scrollIntoView({block: "nearest"});
-		};
-
-		// A terminal page is one screen tall, and what a details opened is
-		// often below the fold.
-		exchange.addEventListener("toggle", onDisclosureToggle);
 
 		// A canceled or untrusted beforeunload does not close.
 		exchange.addEventListener("beforeunload", (event) => {
@@ -382,18 +330,6 @@ function isFullscreen(termDOM: TermDOM): boolean {
 }
 
 // activeElement retargets to the shadow host; this follows it down.
-function getFocusedElement(termDOM: TermDOM): Element | null {
-	let active = termDOM.document.activeElement;
-	for (
-		let inner = active && DOM.getShadowRoot(active)?.activeElement;
-		inner;
-		inner = DOM.getShadowRoot(inner)?.activeElement
-	) {
-		active = inner;
-	}
-	return active;
-}
-
 function isAttached(termDOM: TermDOM): boolean {
 	const lifecycle = termDOM[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
@@ -567,175 +503,6 @@ async function renderOnce(
 	await renderInteractive(termDOM);
 }
 
-function getDocumentFlowHeight(
-	termDOM: TermDOM,
-): number {
-	const rect =
-		termDOM[kLayout].getRect(termDOM.document.documentElement);
-	return rect ? Math.ceil(rect.height) : 0;
-}
-
-/**
- * The rows the document scroll shows. Fullscreen owns the screen from row zero,
- * and its element has left the flow, which then measures next to
- * nothing.
- */
-function getScrollingRegionHeight(
-	termDOM: TermDOM,
-): number {
-	return isFullscreen(termDOM)
-		? termDOM[kScreen].rows
-		: Math.min(
-			termDOM[kScreen].rows,
-			getDocumentFlowHeight(termDOM),
-		);
-}
-
-/**
- * The reveal happens on the frame the edit scheduled, so there is one
- * document scroll decision per frame instead of a synchronous layout flush per
- * keystroke.
- */
-function queueCaretReveal(
-	termDOM: TermDOM,
-	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-): void {
-	termDOM[kPendingCaretReveal] = element;
-	// A document scroll move and a caret move. No mutation record describes
-	// either.
-	termDOM[kScreen].invalidate();
-}
-
-/**
- * The caret as the painter derives it: the selection focus, measured
- * through the rendered text. Null when there is no record, text or box.
- */
-function getCaretRect(
-	termDOM: TermDOM,
-	element: Element,
-): {x: number; y: number} | null {
-	const focus = DOM.getSelectionFocus(element);
-	if (focus === null) {
-		return null;
-	}
-	const node = DOM.getTextControlValueText(element);
-	if (node === null) {
-		return null;
-	}
-	const range = element.ownerDocument.createRange();
-	range.setStart(node, Math.min(focus, node.data.length));
-	range.collapse(true);
-	const rects = termDOM[kLayout].getRangeRects(range);
-	if (rects.length === 0) {
-		return null;
-	}
-	return {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
-}
-
-/**
- * Keeps the caret inside the document scroll on edits only. Wheel-scrolling away
- * from a focused text control stays allowed.
- */
-function scrollCaretIntoView(
-	termDOM: TermDOM,
-	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-): void {
-	DOM.flushLayout(termDOM.document);
-	const rect = termDOM[kLayout].getRect(element);
-	if (!rect) {
-		return;
-	}
-	let caretY = Math.round(rect.top);
-	const caret = getCaretRect(termDOM, element);
-	if (caret !== null) {
-		caretY = caret.y;
-	}
-	// Widened to the text control's edge when the caret is on its first or last
-	// row, so the border shows instead of a cropped box.
-	const boxModel = getBoxModel(element);
-	let revealTop = caretY;
-	let revealBottom = caretY + 1;
-	if (caretY <= Math.round(rect.top) + (boxModel.borderTopWidth || 0)) {
-		revealTop = Math.round(rect.top);
-	}
-	if (
-		caretY >=
-		Math.round(rect.bottom) - (boxModel.borderBottomWidth || 0) - 1
-	) {
-		revealBottom = Math.round(rect.bottom);
-	}
-	const regionHeight = getScrollingRegionHeight(termDOM);
-	const top = termDOM[kScreen].scrollTop;
-	const delta =
-		revealTop < top
-			? revealTop - top
-			: revealBottom > top + regionHeight
-				? revealBottom - (top + regionHeight)
-				: 0;
-	if (delta) {
-		scrollDocument(termDOM, delta);
-	}
-}
-
-/**
- * The buffer rows the journalled element scroll covers, or null when the
- * terminal cannot shift them. DECSTBM margins are horizontal, so a scroll shift
- * is the region's full width or nothing. Content overlapping the shift is
- * dragged along and the diff repairs it.
- */
-function resolveScrollShift(
-	termDOM: TermDOM,
-	regionHeight: number,
-	record: {element: Element; delta: number} | null,
-): {delta: number; top: number; end: number} | null {
-	const journal = termDOM[kScreen].journal;
-	if (
-		record === null ||
-		record.delta === 0 ||
-		// One scroll shift per frame. The document scroll's region already
-		// contains this box.
-		journal.frameScroll !== 0 ||
-		// The rows the terminal would shift are not the rows the last frame
-		// painted.
-		termDOM[kLayout].moved ||
-		!record.element.isConnected
-	) {
-		return null;
-	}
-	const engine = termDOM[kLayout];
-	const rect = engine.getRect(record.element);
-	if (rect === null) {
-		return null;
-	}
-
-	// The scroll port is the padding box.
-	const box = getBoxModel(record.element);
-	const left = rect.left + (box.borderLeftWidth || 0);
-	const right = rect.left + rect.width - (box.borderRightWidth || 0);
-	if (left > 0 || right < termDOM[kScreen].cols) {
-		return null;
-	}
-
-	// Layout rows are document rows. Buffer rows are the document scroll's. A
-	// fixed box is laid out in viewport rows and the paint cancels the document
-	// scroll for it.
-	const lift = engine.isInFixedSpace(record.element)
-		? 0
-		: termDOM[kScreen].scrollTop;
-	const top = Math.max(
-		0,
-		Math.round(rect.top + (box.borderTopWidth || 0)) - lift,
-	);
-	const end = Math.min(
-		regionHeight,
-		Math.round(rect.top + rect.height - (box.borderBottomWidth || 0)) - lift,
-	);
-	if (end - top <= Math.abs(record.delta)) {
-		return null;
-	}
-	return {delta: record.delta, top, end};
-}
-
 /**
  * Run the observers against the layout just produced. A callback that
  * mutates schedules the next frame through the mutation observer.
@@ -882,15 +649,7 @@ async function renderInteractive(
 	termDOM[kLayout].performLayout();
 	DOM.clampScrollOffsets(termDOM.document);
 
-	// Skipped if focus has moved on. Revealing a text control the user left
-	// would yank the document scroll back.
-	if (termDOM[kPendingCaretReveal]) {
-		const reveal = termDOM[kPendingCaretReveal];
-		termDOM[kPendingCaretReveal] = null;
-		if (reveal === getFocusedElement(termDOM)) {
-			scrollCaretIntoView(termDOM, reveal);
-		}
-	}
+	DOM.revealPendingCaret(termDOM.document);
 
 	// Nothing this frame could paint differs from the screen, so skip the
 	// paint.
@@ -924,7 +683,7 @@ async function renderInteractive(
 		termDOM[kScreen].rows,
 	);
 
-	const top = fullscreen ? 0 : reserveRows(termDOM, regionHeight);
+	const top = fullscreen ? 0 : termDOM[kExchange].reserveRows(regionHeight);
 
 	if (!fullscreen) {
 		// Through scrollTo, so the journal's delta is what the screen is about
@@ -935,7 +694,7 @@ async function renderInteractive(
 
 	// The document scroll has nothing to move in fullscreen. A scroll box
 	// inside it still does, under DECSTBM margins.
-	const shift = resolveScrollShift(termDOM, regionHeight, journalled);
+	const shift = termDOM[kPainter].resolveScrollShift(regionHeight, journalled);
 	// Read after the clamp, which adds to the journal.
 	const clamped = termDOM[kScreen].journal;
 	const context = termDOM[kScreen].beginFrame({
@@ -962,55 +721,6 @@ async function renderInteractive(
 		!termDOM[kScreen].caretVisible,
 	);
 	afterRender(termDOM);
-}
-
-/**
- * How many rows the screen must scroll for `rows` to fit below the
- * anchor. The start moves up by that much.
- */
-function pushRowsUp(
-	termDOM: TermDOM,
-	rows: number,
-): number {
-	const overflow = termDOM[kScreen].documentTop +
-		rows -
-		termDOM[kScreen].rows;
-	if (overflow <= 0) {
-		return 0;
-	}
-	const push = Math.min(overflow, termDOM[kScreen].documentTop);
-	termDOM[kScreen].documentTop -= push;
-	return push;
-}
-
-function scrollDocument(
-	termDOM: TermDOM,
-	rows: number,
-): void {
-	termDOM[kScreen].scrollTo(termDOM[kScreen].scrollTop + rows);
-	// No mutation record describes a document scroll move.
-	void render(termDOM);
-}
-
-/**
- * Room below the anchor comes from scrolling earlier output into
- * the scrollback, never from painting over it. The scroll is IND (ESC D)
- * from the bottom row. A bare LF after an absolute CUP does not scroll
- * (tmux and xterm-headless both), and CSI n S scrolls without adding the
- * rows to xterm-headless's scrollback, which would make this untestable.
- * Returns the screen row the region starts at.
- */
-function reserveRows(termDOM: TermDOM, rows: number): number {
-	const push = pushRowsUp(termDOM, rows);
-	if (push > 0) {
-		void termDOM[kExchange].scrollUp(termDOM[kScreen].rows, push);
-		// The previous buffer is not shifted. Its rows are region-relative and
-		// the region top moved by exactly the scroll. A pending post-resize
-		// reset is screen-absolute and does shift.
-		termDOM[kScreen].scrolled(push);
-	}
-
-	return termDOM[kScreen].documentTop;
 }
 
 function staticRenderer(

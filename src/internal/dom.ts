@@ -189,6 +189,7 @@ const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kScreen = Symbol("screen");
+const kPendingCaretReveal = Symbol("pendingCaretReveal");
 
 /**
  * The focus offset of a control's selection record, in offsets of the
@@ -10302,15 +10303,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			if (!rect) {
 				return;
 			}
-			const document = this[kDocument];
-			const flow = attached[kLayout].getRect(document.documentElement);
-			const regionHeight =
-				getFullscreenElement(document) !== null
-					? attached[kScreen].rows
-					: Math.min(
-						attached[kScreen].rows,
-						flow ? Math.ceil(flow.height) : 0,
-					);
+			const regionHeight = getScrollingRegionHeight(this[kDocument]);
 			const top = attached[kScreen].scrollTop;
 			if (rect.top < top) {
 				attached[kScreen].scrollTo(rect.top);
@@ -22066,6 +22059,9 @@ export class Document extends Node implements globalThis.Document {
 	declare [kCascade]: Cascade;
 	declare [kExchange]: Exchange;
 	declare [kScreen]: Screen;
+	// The text control whose caret the next frame reveals. The last edit
+	// before the frame wins.
+	declare [kPendingCaretReveal]: TextControlOrSelect | null;
 
 	declare [kImplementation]: DOMImplementation | null;
 
@@ -29080,6 +29076,11 @@ export function attachDocument(
 	attached[kCascade] = styles;
 	attached[kExchange] = exchange;
 	attached[kScreen] = screen;
+	attached[kPendingCaretReveal] = null;
+	for (const type of ["input", "select", "change", "selectionchange"]) {
+		exchange.addEventListener(type, onTextControlEditEvent);
+	}
+	exchange.addEventListener("toggle", onDisclosureToggle);
 	hoverListenerCounts.set(
 		attached,
 		watchHoverListeners(attached, () => render()),
@@ -29102,6 +29103,154 @@ export function attachDocument(
 }
 
 const engineObservers = new WeakMap<Document, MutationObserver>();
+
+type TextControlOrSelect =
+	HTMLInputElement |
+	HTMLTextAreaElement |
+	HTMLSelectElement;
+
+// Only the active text control. A select commit or an author's dispatch on
+// an unfocused control must not move the document scroll. The reveal
+// happens on the frame the edit scheduled, so there is one document scroll
+// decision per frame instead of a layout flush per keystroke.
+function onTextControlEditEvent(event: globalThis.Event): void {
+	const target = event.target;
+	if (
+		!(
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			target instanceof HTMLSelectElement
+		)
+	) {
+		return;
+	}
+	const attached = getAttachedDocument(target);
+	if (attached === undefined || target !== getFocusedElement(attached)) {
+		return;
+	}
+	attached[kPendingCaretReveal] = target;
+	// A document scroll move and a caret move. No mutation record describes
+	// either.
+	attached[kScreen].invalidate();
+	void attached[kRender]();
+}
+
+// A terminal page is one screen tall, and what a details opened is often
+// below the fold. A details that closes took content away, so only opening
+// reveals.
+function onDisclosureToggle(event: globalThis.Event): void {
+	const details = event.target;
+	if (!(details instanceof HTMLDetailsElement) || !details.open) {
+		return;
+	}
+	details.scrollIntoView({block: "nearest"});
+}
+
+/** The focused element, through shadow roots. */
+export function getFocusedElement(
+	document: globalThis.Document,
+): globalThis.Element | null {
+	let active = document.activeElement;
+	for (
+		let inner = active && getShadowRoot(active)?.activeElement;
+		inner;
+		inner = getShadowRoot(inner)?.activeElement
+	) {
+		active = inner;
+	}
+	return active;
+}
+
+// The rows the document scroll shows. Fullscreen owns the screen from row
+// zero, and its element has left the flow, which then measures next to
+// nothing.
+function getScrollingRegionHeight(document: globalThis.Document): number {
+	const attached = getAttachedDocument(document as unknown as Node)!;
+	if (getFullscreenElement(attached) !== null) {
+		return attached[kScreen].rows;
+	}
+	const flow = attached[kLayout].getRect(document.documentElement!);
+	return Math.min(attached[kScreen].rows, flow ? Math.ceil(flow.height) : 0);
+}
+
+// The caret as the painter derives it: the selection focus, measured
+// through the rendered text. Null when there is no record, text or box.
+function getCaretRect(
+	attached: Document,
+	element: globalThis.Element,
+): {x: number; y: number} | null {
+	const focus = getSelectionFocus(element);
+	if (focus === null) {
+		return null;
+	}
+	const node = getTextControlValueText(element);
+	if (node === null) {
+		return null;
+	}
+	const range = element.ownerDocument!.createRange();
+	range.setStart(node, Math.min(focus, node.data.length));
+	range.collapse(true);
+	const rects = attached[kLayout].getRangeRects(range);
+	if (rects.length === 0) {
+		return null;
+	}
+	return {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
+}
+
+/**
+ * Scrolls the document to the caret of the text control an edit queued,
+ * after layout. Skipped if focus has moved on: revealing a control the user
+ * left would yank the document scroll back. Wheel-scrolling away from a
+ * focused control stays allowed, since only edits queue a reveal.
+ */
+export function revealPendingCaret(document: globalThis.Document): void {
+	const attached = document as Document;
+	const element = attached[kPendingCaretReveal];
+	if (element === null) {
+		return;
+	}
+	attached[kPendingCaretReveal] = null;
+	if (element !== getFocusedElement(document)) {
+		return;
+	}
+	flushLayout(element);
+	const rect = attached[kLayout].getRect(element);
+	if (!rect) {
+		return;
+	}
+	let caretY = Math.round(rect.top);
+	const caret = getCaretRect(attached, element);
+	if (caret !== null) {
+		caretY = caret.y;
+	}
+	// Widened to the text control's edge when the caret is on its first or
+	// last row, so the border shows instead of a cropped box.
+	const boxModel = getBoxModel(element);
+	let revealTop = caretY;
+	let revealBottom = caretY + 1;
+	if (caretY <= Math.round(rect.top) + (boxModel.borderTopWidth || 0)) {
+		revealTop = Math.round(rect.top);
+	}
+	if (
+		caretY >=
+		Math.round(rect.bottom) - (boxModel.borderBottomWidth || 0) - 1
+	) {
+		revealBottom = Math.round(rect.bottom);
+	}
+	const regionHeight = getScrollingRegionHeight(document);
+	const top = attached[kScreen].scrollTop;
+	const delta =
+		revealTop < top
+			? revealTop - top
+			: revealBottom > top + regionHeight
+				? revealBottom - (top + regionHeight)
+				: 0;
+	if (delta) {
+		attached[kScreen].scrollTo(top + delta);
+		// No mutation record describes a document scroll move.
+		void attached[kRender]();
+	}
+}
 
 // Everything except painting: the flat-tree memo, UA shadow tree upgrades,
 // the cascade, the layout tree and the focus default actions, always in

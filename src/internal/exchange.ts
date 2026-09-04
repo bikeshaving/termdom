@@ -1088,6 +1088,32 @@ export class Exchange extends EventTarget {
 		);
 	}
 
+	/**
+	 * Room below the anchor for `rows` comes from scrolling earlier output
+	 * into the scrollback, never from painting over it. Returns the screen
+	 * row the region starts at.
+	 */
+	reserveRows(rows: number): number {
+		const screen = this[kScreen];
+		const overflow = screen.documentTop + rows - screen.rows;
+		const push = overflow <= 0 ? 0 : Math.min(overflow, screen.documentTop);
+		if (push > 0) {
+			screen.documentTop -= push;
+			void this.scrollUp(screen.rows, push);
+			// The previous buffer is not shifted. Its rows are region-relative
+			// and the region top moved by exactly the scroll. A pending
+			// post-resize reset is screen-absolute and does shift.
+			screen.scrolled(push);
+		}
+		return screen.documentTop;
+	}
+
+	/**
+	 * The scroll is IND (ESC D) from the bottom row. A bare LF after an
+	 * absolute CUP does not scroll (tmux and xterm-headless both), and CSI n S
+	 * scrolls without adding the rows to xterm-headless's scrollback, which
+	 * would make this untestable.
+	 */
 	scrollUp(bottomRow: number, rows: number): Promise<void> {
 		return this.write(getRowStart(bottomRow) + SCROLL_STEP.repeat(rows));
 	}
