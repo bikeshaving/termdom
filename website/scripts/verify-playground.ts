@@ -193,6 +193,20 @@ report((await page.evaluate(() => location.hash)) === "#e=fuzzy-finder", "share:
 await page.goto(`${ORIGIN}/playground/#e=flexbox`);
 await page.waitForSelector(".xterm");
 report(await waitForText("TermDOM flexbox", 15000), "share: #e= opens the named example");
+report(
+	(await page.inputValue("#playground-examples")) === "flexbox",
+	"share: the picker shows the example the address named",
+);
+// The emulator's rows fit the pane: a row count one too many paints its
+// last row half under the pane's edge.
+const fitting = await page.evaluate(() => {
+	const term = document.querySelector("#playground-terminal .xterm, .xterm")!;
+	const screen = term.querySelector(".xterm-screen")!;
+	const box = term.parentElement!.getBoundingClientRect();
+	const rows = screen.getBoundingClientRect();
+	return rows.bottom <= box.bottom + 0.5 && rows.right <= box.right + 0.5;
+});
+report(fitting, "workbench: the emulator's rows fit inside the pane");
 const sharedProgram = [
 	'import {TermDOM} from "@b9g/termdom";',
 	"const term = new TermDOM();",

@@ -441,7 +441,9 @@ function* TerminalPane(
 	// A filling pane takes its geometry from its own box, so the terminal is
 	// as big as the window makes it. A fixed pane keeps its rows but widens
 	// to the box, with `cols` as the floor -- the addon measures the box in
-	// cells either way.
+	// cells either way. The padding is on the emulator's element, which is
+	// the padding the addon subtracts; on the box it would be counted as
+	// room for a row that then paints half under the edge.
 	const fitAddon = new FitAddon();
 	terminal.loadAddon(fitAddon);
 	const fit = (): void => {
@@ -532,17 +534,21 @@ function* TerminalPane(
 					class=${
 						fill
 							? css`
-									padding: 0.5rem;
 									min-width: 0;
 									min-height: 0;
 									overflow: hidden;
 									background-color: ${TERMINAL_BACKGROUND};
+									> .xterm {
+										padding: 0.5rem;
+									}
 								`
 							: css`
-									padding: 0.5rem;
 									min-width: 0;
 									overflow-x: auto;
 									background-color: ${TERMINAL_BACKGROUND};
+									> .xterm {
+										padding: 0.5rem;
+									}
 								`
 					}
 				/>
@@ -1469,15 +1475,15 @@ function* Playground(this: Context) {
 					controls=${jsx`
 						<a href="#" class=${filename}>‹ Gallery</a>
 						<label for="playground-examples">Example</label>
-						<select
-							id="playground-examples"
-							value=${custom ? "" : example.id}
-							onchange=${onexamplechange}
-						>
-							<option value="" disabled hidden>Pick an example…</option>
+						<select id="playground-examples" onchange=${onexamplechange}>
+							<option value="" disabled hidden selected=${custom}>Pick an example…</option>
 							${examples.map(
 								(each) => jsx`
-									<option key=${each.id} value=${each.id}>
+									<option
+										key=${each.id}
+										value=${each.id}
+										selected=${!custom && each.id === example.id}
+									>
 										${each.label}
 									</option>
 								`,
