@@ -682,7 +682,10 @@ const kWidthDeferralWait = Symbol("widthDeferralWait");
 /**
  * One reader, one writer, and the demultiplexer between them. Every
  * query is bounded by a timer, since most terminals reply with nothing.
- * Silence means the terminal has no opinion and ours holds.
+ * Silence means the terminal has no opinion and ours holds. What the
+ * terminal reports is applied to the screen and layout here. As an event
+ * target it receives every event dispatched in the document after the
+ * event's path, and dispatches seal and terminalclose on itself.
  */
 export class Exchange extends EventTarget {
 	// A terminal replying late is still replying. Only one that never

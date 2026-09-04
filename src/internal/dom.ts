@@ -4388,8 +4388,6 @@ function innerInvoke(
 	return found;
 }
 
-// Every dispatched event is passed to the exchange's listeners after its
-// path, regardless of bubbles, composed, or stopPropagation().
 function getSessionExchange(target: EventTarget): EventTarget | null {
 	const document = getEventTargetDocument(target);
 	if (document === null) {
@@ -4399,6 +4397,8 @@ function getSessionExchange(target: EventTarget): EventTarget | null {
 	return attached === undefined ? null : attached[kExchange];
 }
 
+// Every dispatched event reaches the exchange's listeners after its path,
+// regardless of bubbles, composed, or stopPropagation().
 function deliverToSession(exchange: EventTarget, event: Event): void {
 	const state = event[kState];
 	state.currentTarget = exchange;

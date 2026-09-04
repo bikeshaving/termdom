@@ -329,7 +329,6 @@ function isFullscreen(termDOM: TermDOM): boolean {
 	return termDOM.document.fullscreenElement !== null;
 }
 
-// activeElement retargets to the shadow host; this follows it down.
 function isAttached(termDOM: TermDOM): boolean {
 	const lifecycle = termDOM[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
