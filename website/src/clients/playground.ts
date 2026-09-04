@@ -1289,8 +1289,7 @@ function Gallery({examples}: {examples: PlaygroundExample[]}) {
 				color: var(--muted-color);
 				margin: 0.5rem 0 0;
 			`}>
-				The library's own examples, running in this page. Open one to
-				edit it and watch the terminal follow.
+				The library's own examples, running in this page. Open one to edit it and watch the terminal follow.
 			</p>
 			<ul class=${gallery}>
 				${examples.map(
