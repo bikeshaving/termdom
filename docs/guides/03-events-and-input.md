@@ -62,9 +62,17 @@ focus, `click` clicks, `wheel` scrolls. Coordinates are in cells.
 row.addEventListener("click", () => open(row.dataset.path!));
 ```
 
-A terminal reports the mouse position only while a button is down, so
-`:hover` is not implemented. While an app has the mouse, the terminal's
-own select-to-copy is still available by holding `Shift`.
+`:hover` styles the element under the pointer, and `mouseover`,
+`mouseout`, `mouseenter`, `mouseleave` and `mousemove` fire as in a
+browser. A terminal reports mouse motion only when asked, so the engine
+asks while a stylesheet has a `:hover` rule or the page has a listener
+for one of those events, and stops when the last one goes. While an app
+has the mouse, the terminal's own select-to-copy is still available by
+holding `Shift`.
+
+```ts
+document.head.innerHTML = "<style>li:hover { background-color: blue }</style>";
+```
 
 ## Focus
 
