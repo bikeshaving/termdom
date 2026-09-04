@@ -19,6 +19,18 @@ Options:
 
 - `transport?: TerminalTransport` — the terminal to render to. Defaults to
   `transportFromProcess()`, a wrapper around the global `process`.
+- `html?: string` — the initial document's markup, parsed as a whole
+  page. Defaults to an empty document. A page written as a file starts
+  here:
+
+  ```ts
+  import {readFile} from "node:fs/promises";
+
+  const term = new TermDOM({html: await readFile("page.html", "utf8")});
+  ```
+
+- `url?: string` — the document's URL, as `document.URL` and
+  `location.href` report it.
 
 ### `term.document`, `term.window`
 
