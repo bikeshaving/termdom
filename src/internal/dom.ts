@@ -4122,12 +4122,16 @@ function dispatch(
 		}
 	}
 	protectClipboardData(event);
-	// The exchange's listeners get the original targets; the clearing
-	// happens after they run.
 	if (exchange !== null) {
+		// The exchange's listeners get the original targets; the retargeted
+		// values invokeListeners left return once they've run.
+		const retargetedTarget = state.target;
+		const retargetedRelatedTarget = state.relatedTarget;
 		state.target = target;
 		state.relatedTarget = originalRelatedTarget;
 		deliverToSession(exchange, event);
+		state.target = retargetedTarget;
+		state.relatedTarget = retargetedRelatedTarget;
 	}
 	if (clearTargets) {
 		state.target = null;

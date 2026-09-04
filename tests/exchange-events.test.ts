@@ -78,6 +78,23 @@ test("a change inside a shadow root reveals the control", async () => {
 	await dom.dispose();
 });
 
+test("a composed event dispatched inside a shadow root retargets to the host after dispatch", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.body.innerHTML = "<div id=host></div>";
+	const host = document.getElementById("host")!;
+	const root = host.attachShadow({mode: "closed"});
+	root.innerHTML = "<input>";
+	const input = root.querySelector("input")!;
+	await nextFrame(dom);
+
+	const event = new window.Event("shadowed", {bubbles: true, composed: true});
+	input.dispatchEvent(event);
+	expect(event.target).toBe(host);
+	await dom.dispose();
+});
+
 test("a page's own beforeunload closes nothing; the window's does", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const watched = closeCountingTransport(terminal);
