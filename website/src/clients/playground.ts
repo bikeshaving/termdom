@@ -48,12 +48,19 @@ function readExamples(): PlaygroundExample[] {
  * examples are written against: eighty columns, and twenty-four rows, which is
  * one more than the tallest of them paints. An embed is a figure in an
  * argument, and a pane far taller than its program is a black void with a
- * program at the top of it, so an embed holds fourteen rows; its columns
- * widen to the pane, with fifty-six as the floor a narrow box scrolls to.
- * `editorLines` is whole lines, so the box ends where a line does.
+ * program at the top of it, so an embed starts at fourteen rows and then
+ * follows its program, between four rows and the page's twenty-four; its
+ * columns widen to the pane, with fifty-six as the floor a narrow box
+ * scrolls to. `editorLines` is whole lines, so the box ends where a line
+ * does.
  */
 const PAGE_GEOMETRY = {cols: 80, rows: 24, editorLines: 20};
-const EMBED_GEOMETRY = {cols: 56, rows: 14, editorLines: 13};
+const EMBED_GEOMETRY = {
+	cols: 56,
+	rows: 14,
+	editorLines: 13,
+	grow: {min: 4, max: 24},
+};
 
 const FONT_SIZE = 13;
 // The emulator's cell in the font stack below, measured rather than guessed.
@@ -213,11 +220,14 @@ class XtermTransport implements TerminalTransport {
 /** One program's lifetime: its sandbox, and the way to end it. */
 interface Run {
 	stop(): Promise<void>;
+	/** The rows the program's document takes, or null before it has one. */
+	contentRows(): number | null;
 }
 
 interface SandboxWindow extends Window {
 	__start?: (url: string) => Promise<unknown>;
 	__transport?: TerminalTransport;
+	__termdom?: {document: Document};
 }
 
 /** The repository's files the page carries, for the sandbox's filesystem. */
@@ -361,6 +371,12 @@ async function runProgram(
 		transport.close();
 	};
 
+	const contentRows = (): number | null => {
+		if (stopped) return null;
+		const height = sandbox.__termdom?.document.documentElement?.scrollHeight;
+		return height ? height : null;
+	};
+
 	try {
 		await sandbox.__start(url);
 	} catch (error) {
@@ -368,7 +384,7 @@ async function runProgram(
 		throw error;
 	}
 
-	return {stop};
+	return {stop, contentRows};
 }
 
 function describeError(error: unknown): string {
@@ -404,6 +420,7 @@ function* TerminalPane(
 		cols,
 		rows,
 		fill,
+		grow,
 		runNonce,
 		onstatus,
 	}: {
@@ -412,6 +429,11 @@ function* TerminalPane(
 		rows: number;
 		/** Take the size of the box instead of the given geometry. */
 		fill?: boolean;
+		/**
+		 * Follow the program: as many rows as its document takes, between
+		 * these two, so a short program is not a screen of black under it.
+		 */
+		grow?: {min: number; max: number};
 		runNonce: number;
 		onstatus: (status: Status) => void;
 	},
@@ -446,6 +468,9 @@ function* TerminalPane(
 	// room for a row that then paints half under the edge.
 	const fitAddon = new FitAddon();
 	terminal.loadAddon(fitAddon);
+	// The rows a fixed pane holds: the given ones, or what the program
+	// takes once it has painted and the pane follows it.
+	let wantRows = rows;
 	const fit = (): void => {
 		if (fill) {
 			fitAddon.fit();
@@ -454,8 +479,8 @@ function* TerminalPane(
 		const dims = fitAddon.proposeDimensions();
 		if (dims && dims.cols) {
 			const target = Math.max(cols, dims.cols);
-			if (target !== terminal.cols || rows !== terminal.rows) {
-				terminal.resize(target, rows);
+			if (target !== terminal.cols || wantRows !== terminal.rows) {
+				terminal.resize(target, wantRows);
 			}
 		}
 	};
@@ -464,6 +489,24 @@ function* TerminalPane(
 	let current: Run | null = null;
 	let autoRunTimer = 0;
 	let chain: Promise<void> = Promise.resolve();
+
+	// A growing pane asks the program for its height a few times a second:
+	// the document is the program's to change whenever it likes, and a
+	// frame it paints is not something the pane hears about.
+	const follow = (): void => {
+		if (!grow) return;
+		const content = current?.contentRows();
+		if (!content) return;
+		const next = Math.min(grow.max, Math.max(grow.min, content));
+		if (next !== wantRows) {
+			wantRows = next;
+			fit();
+		}
+	};
+	if (grow) {
+		const timer = window.setInterval(follow, 250);
+		this.cleanup(() => window.clearInterval(timer));
+	}
 
 	const run = (): Promise<void> => {
 		window.clearTimeout(autoRunTimer);
@@ -841,7 +884,12 @@ function* Workbench(
 		name: string;
 		/** The file in the editor, where nothing else in the bar names it. */
 		title?: string;
-		geometry: {cols: number; rows: number; editorLines: number};
+		geometry: {
+			cols: number;
+			rows: number;
+			editorLines: number;
+			grow?: {min: number; max: number};
+		};
 		/** Fill the box this is given instead of sizing to the geometry. */
 		fill?: boolean;
 		/**
@@ -1011,6 +1059,7 @@ function* Workbench(
 							cols=${geometry.cols}
 							rows=${geometry.rows}
 							fill=${fill}
+							grow=${geometry.grow}
 							runNonce=${runNonce}
 							onstatus=${onstatus}
 						/>

@@ -10,12 +10,19 @@ import type {TermDOMOptions} from "../../../src/index.js";
 
 export * from "../../../src/index.js";
 
+interface SandboxGlobals {
+	__transport?: TermDOMOptions["transport"];
+	__termdom?: EngineTermDOM;
+}
+
+/**
+ * The last TermDOM the program made is left on globalThis for the pane,
+ * which reads its document's height to size itself to what it paints.
+ */
 export class TermDOM extends EngineTermDOM {
 	constructor(options?: TermDOMOptions) {
-		super({
-			transport: (globalThis as {__transport?: TermDOMOptions["transport"]})
-				.__transport,
-			...options,
-		});
+		const globals = globalThis as SandboxGlobals;
+		super({transport: globals.__transport, ...options});
+		globals.__termdom = this;
 	}
 }
