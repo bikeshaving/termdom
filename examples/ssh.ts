@@ -7,13 +7,16 @@
  *   node examples/ssh.ts
  *   ssh -p 2222 localhost          # from another terminal; any password
  *
- * The host key is generated on each start, so a client that connected
- * before will warn that it changed. Set SSH_HOST_KEY to a PEM file to keep
- * one. Set SSH_PORT to listen elsewhere than 2222.
+ * The host key is generated on the first start and kept under the user's
+ * cache directory, so a client that connected before is not warned that
+ * the host changed. Set SSH_HOST_KEY to a PEM file to use one of your own.
+ * Set SSH_PORT to listen elsewhere than 2222.
  */
 import {generateKeyPairSync} from "node:crypto";
 import {EventEmitter} from "node:events";
-import {readFileSync} from "node:fs";
+import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
+import {homedir} from "node:os";
+import {join} from "node:path";
 
 import {type ProcessLike, TermDOM, transportFromProcess} from "@b9g/termdom";
 import ssh2, {type ServerChannel} from "ssh2";
@@ -21,15 +24,24 @@ import ssh2, {type ServerChannel} from "ssh2";
 const PORT = Number(process.env.SSH_PORT ?? 2222);
 
 function hostKey(): string {
-	const path = process.env.SSH_HOST_KEY;
-	if (path) {
+	const path =
+		process.env.SSH_HOST_KEY ??
+		join(
+			process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"),
+			"termdom",
+			"ssh-host-key.pem",
+		);
+	if (existsSync(path)) {
 		return readFileSync(path, "utf8");
 	}
-	return generateKeyPairSync("rsa", {
+	const {privateKey} = generateKeyPairSync("rsa", {
 		modulusLength: 2048,
 		publicKeyEncoding: {type: "pkcs1", format: "pem"},
 		privateKeyEncoding: {type: "pkcs1", format: "pem"},
-	}).privateKey;
+	});
+	mkdirSync(join(path, ".."), {recursive: true});
+	writeFileSync(path, privateKey, {mode: 0o600});
+	return privateKey;
 }
 
 interface Pty {
@@ -95,7 +107,10 @@ function serve(
 ): SessionProcess {
 	const proc = new SessionProcess(channel, pty, env);
 	const termdom = new TermDOM({
-		transport: transportFromProcess(proc, {sharesScreen: false}),
+		// The client's terminal keeps its shell above the connection, so the
+		// document anchors under the ssh command as a local one does under
+		// its prompt, and paints from there down.
+		transport: transportFromProcess(proc, {sharesScreen: true}),
 	});
 	const {document, window} = termdom;
 	served++;
