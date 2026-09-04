@@ -214,25 +214,55 @@ export class TermDOM {
 			}
 			closeTermDOM(this);
 		});
-		exchange.addEventListener("seal", () => sealTermDOM(this));
-
-		exchange.addEventListener("terminalresize", (event) => {
-			const report = (event as CustomEvent<ResizeReport>).detail;
-			terminalResized(this, report.cols, report.rows);
-			report.standing = frameStanding(this, report.cols);
-		});
-		exchange.addEventListener("replace", (event) => {
-			const {startRow} = (event as CustomEvent<{startRow: number}>).detail;
-			frameReplaced(this, startRow);
-		});
-		exchange.addEventListener("anchor", (event) => {
-			const {row} = (event as CustomEvent<{row: number}>).detail;
-			anchorDetected(this, row);
-		});
-		exchange.addEventListener("reorder", () => terminalReorders(this));
-		exchange.addEventListener("probes", () => probesDeferred(this));
-		exchange.addEventListener("widths", () => widthsCorrected(this));
-		exchange.addEventListener("terminalclose", () => closeTermDOM(this));
+		// Terminal events come from the exchange itself. A page can dispatch
+		// an event of the same name on the document, and it must not reach
+		// these.
+		const fromTerminal =
+			(handle: (event: Event) => void) =>
+				(event: Event): void => {
+					if (event.target === exchange) {
+						handle(event);
+					}
+				};
+		exchange.addEventListener("seal", fromTerminal(() => sealTermDOM(this)));
+		exchange.addEventListener(
+			"terminalresize",
+			fromTerminal((event) => {
+				const report = (event as CustomEvent<ResizeReport>).detail;
+				terminalResized(this, report.cols, report.rows);
+				report.standing = frameStanding(this, report.cols);
+			}),
+		);
+		exchange.addEventListener(
+			"replace",
+			fromTerminal((event) => {
+				const {startRow} = (event as CustomEvent<{startRow: number}>).detail;
+				frameReplaced(this, startRow);
+			}),
+		);
+		exchange.addEventListener(
+			"anchor",
+			fromTerminal((event) => {
+				const {row} = (event as CustomEvent<{row: number}>).detail;
+				anchorDetected(this, row);
+			}),
+		);
+		exchange.addEventListener(
+			"reorder",
+			fromTerminal(() => terminalReorders(this)),
+		);
+		exchange.addEventListener(
+			"probes",
+			fromTerminal(() => probesDeferred(this)),
+		);
+		exchange.addEventListener(
+			"widths",
+			fromTerminal(() => widthsCorrected(this)),
+		);
+		exchange.addEventListener(
+			"terminalclose",
+			fromTerminal(() => closeTermDOM(this)),
+		);
 	}
 
 	/**

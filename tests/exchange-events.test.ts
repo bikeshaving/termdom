@@ -88,6 +88,26 @@ test("a page's own beforeunload closes nothing; the window's does", async () => 
 	expect(watched.closes()).toBe(1);
 });
 
+test("a page's terminalclose or seal reaches no session listener", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const watched = closeCountingTransport(terminal);
+	const dom = new TermDOM({transport: watched.transport});
+	dom.attach();
+	dom.document.body.innerHTML = "<div>open</div>";
+	await nextFrame(dom);
+
+	for (const type of ["terminalclose", "seal", "replace", "anchor"]) {
+		dom.document.dispatchEvent(new dom.window.Event(type));
+	}
+	await new Promise((r) => setTimeout(r, 60));
+	expect(watched.closes()).toBe(0);
+	expect(dom.document.body.innerHTML).toBe("<div>open</div>");
+
+	dom.window.close();
+	await new Promise((r) => setTimeout(r, 60));
+	expect(watched.closes()).toBe(1);
+});
+
 test("a document is visible from attach() to dispose()", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});

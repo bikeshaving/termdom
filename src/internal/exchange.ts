@@ -1423,7 +1423,10 @@ function handleResize(session: Exchange): void {
 		standing: null,
 	};
 	session.dispatchEvent(new CustomEvent("terminalresize", {detail: report}));
-	const {contentHeight, wrappedRowsAbove, documentTop} = report.standing!;
+	if (report.standing === null) {
+		return;
+	}
+	const {contentHeight, wrappedRowsAbove, documentTop} = report.standing;
 	const settling = session[kSettlingResize];
 
 	const redraw = (startRow: number) => {

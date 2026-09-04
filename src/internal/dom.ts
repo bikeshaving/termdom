@@ -4399,16 +4399,14 @@ function getSessionExchange(target: EventTarget): EventTarget | null {
 }
 
 function deliverToSession(exchange: EventTarget, event: Event): void {
-	for (const listener of exchange[kListeners].slice()) {
-		if (listener.removed || listener.type !== event.type) {
-			continue;
-		}
-		try {
-			callListener(listener.callback, exchange, event);
-		} catch (error) {
-			reportError(error, getEventTargetDocument(event.target as EventTarget));
-		}
-	}
+	const state = event[kState];
+	state.currentTarget = exchange;
+	const listeners = exchange[kListeners].slice();
+	innerInvoke(event, listeners, true);
+	state.stopImmediate = false;
+	innerInvoke(event, listeners, false);
+	state.stopImmediate = false;
+	state.currentTarget = null;
 }
 
 export function requestRender(document: globalThis.Document): void {
