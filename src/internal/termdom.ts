@@ -8,6 +8,7 @@ import {
 } from "./dom.ts";
 import {
 	Exchange,
+	type ResizeReport,
 	type TerminalCloseInfo,
 	type TerminalSize,
 	type TerminalTransport,
@@ -129,7 +130,8 @@ export class TermDOM {
 		this[kCascade] = new Cascade(this.window, this[kLayout]);
 
 		// The screen measures widths over the exchange's probe channel.
-		this[kExchange] = new Exchange(this[kTransport], this);
+		this[kExchange] = new Exchange(this[kTransport], this.window);
+		const exchange = this[kExchange];
 		this[kScreen] = new Screen(
 			this[kTransport].rows,
 			this[kTransport].cols,
@@ -139,15 +141,15 @@ export class TermDOM {
 
 		DOM.attachDocument(
 			document,
-			this,
 			this[kLayout],
 			this[kCascade],
 			this[kExchange],
 			this[kScreen],
+			() => render(this),
 		);
 
 		this[kInput] = new Input(
-			this,
+			this.document,
 			this[kLayout],
 			this[kCascade],
 			this[kScreen],
@@ -164,7 +166,7 @@ export class TermDOM {
 		const onTextControlEditEvent = (event: Event): void => {
 			const target = event.target;
 			if (
-				target !== this.document.activeElement ||
+				target !== getFocusedElement(this) ||
 				!(
 					target instanceof DOM.HTMLInputElement ||
 					target instanceof DOM.HTMLTextAreaElement ||
@@ -180,15 +182,10 @@ export class TermDOM {
 			void render(this);
 		};
 
-		// Capture, so the event is seen however it bubbles.
-		this.document.addEventListener("input", onTextControlEditEvent, true);
-		this.document.addEventListener("select", onTextControlEditEvent, true);
-		this.document.addEventListener("change", onTextControlEditEvent, true);
-		this.document.addEventListener(
-			"selectionchange",
-			onTextControlEditEvent,
-			true,
-		);
+		exchange.addEventListener("input", onTextControlEditEvent);
+		exchange.addEventListener("select", onTextControlEditEvent);
+		exchange.addEventListener("change", onTextControlEditEvent);
+		exchange.addEventListener("selectionchange", onTextControlEditEvent);
 
 		// A details that closes took content away. Only opening reveals.
 		const onDisclosureToggle = (event: Event): void => {
@@ -204,7 +201,38 @@ export class TermDOM {
 
 		// A terminal page is one screen tall, and what a details opened is
 		// often below the fold.
-		this.document.addEventListener("toggle", onDisclosureToggle, true);
+		exchange.addEventListener("toggle", onDisclosureToggle);
+
+		// A canceled or untrusted beforeunload does not close.
+		exchange.addEventListener("beforeunload", (event) => {
+			if (
+				!event.isTrusted ||
+				event.defaultPrevented ||
+				(event as BeforeUnloadEvent).returnValue !== ""
+			) {
+				return;
+			}
+			closeTermDOM(this);
+		});
+		exchange.addEventListener("seal", () => sealTermDOM(this));
+
+		exchange.addEventListener("terminalresize", (event) => {
+			const report = (event as CustomEvent<ResizeReport>).detail;
+			terminalResized(this, report.cols, report.rows);
+			report.standing = frameStanding(this, report.cols);
+		});
+		exchange.addEventListener("replace", (event) => {
+			const {startRow} = (event as CustomEvent<{startRow: number}>).detail;
+			frameReplaced(this, startRow);
+		});
+		exchange.addEventListener("anchor", (event) => {
+			const {row} = (event as CustomEvent<{row: number}>).detail;
+			anchorDetected(this, row);
+		});
+		exchange.addEventListener("reorder", () => terminalReorders(this));
+		exchange.addEventListener("probes", () => probesDeferred(this));
+		exchange.addEventListener("widths", () => widthsCorrected(this));
+		exchange.addEventListener("terminalclose", () => closeTermDOM(this));
 	}
 
 	/**
@@ -233,6 +261,7 @@ export class TermDOM {
 		// Resolves when the first frame has been written. The negotiations'
 		// silence timeouts must not delay that.
 		this[kLifecycle] = "attaching";
+		DOM.setDocumentVisible(this.document, true);
 		let begun!: () => void;
 		this[kAttachBegun] = new Promise<void>((resolve) => {
 			begun = resolve;
@@ -312,6 +341,7 @@ export class TermDOM {
 
 		const wasAttached = isAttached(this);
 		this[kLifecycle] = "disposed";
+		DOM.setDocumentVisible(this.document, false);
 
 		// Frames painted in place, so nothing reached the scrollback. Write the
 		// document out now. Skip this if no frame was ever painted, because the
@@ -353,11 +383,20 @@ function isFullscreen(termDOM: TermDOM): boolean {
 	return termDOM.document.fullscreenElement !== null;
 }
 
-// What the document asks of its session, from dom.ts and input.ts: whether
-// there is a live one, the end of the document, the end of the session, and
-// a frame. render() is below, with the frame loop it drives.
+// activeElement retargets to the shadow host; this follows it down.
+function getFocusedElement(termDOM: TermDOM): Element | null {
+	let active = termDOM.document.activeElement;
+	for (
+		let inner = active && DOM.getShadowRoot(active)?.activeElement;
+		inner;
+		inner = DOM.getShadowRoot(inner)?.activeElement
+	) {
+		active = inner;
+	}
+	return active;
+}
 
-export function isAttached(termDOM: TermDOM): boolean {
+function isAttached(termDOM: TermDOM): boolean {
 	const lifecycle = termDOM[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
 }
@@ -366,7 +405,7 @@ export function isAttached(termDOM: TermDOM): boolean {
  * document.close(): flush the document into the scrollback and seal it.
  * The next mutation starts a fresh one below it.
  */
-export function sealTermDOM(termDOM: TermDOM): void {
+function sealTermDOM(termDOM: TermDOM): void {
 	if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
 		flushDocument(termDOM);
 		termDOM[kSealed] = true;
@@ -377,7 +416,7 @@ export function sealTermDOM(termDOM: TermDOM): void {
  * End the session. Called when the window closed and beforeunload
  * allowed it, or when the terminal went away.
  */
-export function closeTermDOM(termDOM: TermDOM): void {
+function closeTermDOM(termDOM: TermDOM): void {
 	// A terminal that went away has nothing to drain or close.
 	const live = isAttached(termDOM) && !termDOM[kExchange].transportClosed;
 	// Wait for attach to finish so the final output lands where the frame
@@ -398,12 +437,7 @@ export function closeTermDOM(termDOM: TermDOM): void {
 	})();
 }
 
-// What the terminal reports, from exchange.ts: its size, where the command
-// started, where the frame stands and lands around a resize, how it orders
-// text, what its glyphs measure, and, through closeTermDOM above, that it
-// went away. Nothing else calls these.
-
-export function terminalResized(
+function terminalResized(
 	termDOM: TermDOM,
 	width: number,
 	height: number,
@@ -423,7 +457,7 @@ export function terminalResized(
 }
 
 /** Record where the frame is after a resize, for the re-anchor. */
-export function frameStanding(
+function frameStanding(
 	termDOM: TermDOM,
 	cols: number,
 ): {
@@ -441,7 +475,7 @@ export function frameStanding(
 }
 
 /** The frame now starts at `startRow`. Repaint it from there. */
-export function frameReplaced(termDOM: TermDOM, startRow: number): void {
+function frameReplaced(termDOM: TermDOM, startRow: number): void {
 	const screen = termDOM[kScreen];
 	screen.documentTop = startRow;
 	screen.anchorScrollTop = -startRow;
@@ -452,17 +486,17 @@ export function frameReplaced(termDOM: TermDOM, startRow: number): void {
 /**
  * The 1-based terminal row the command started on becomes the 0-based anchor.
  */
-export function anchorDetected(termDOM: TermDOM, row: number): void {
+function anchorDetected(termDOM: TermDOM, row: number): void {
 	termDOM[kScreen].documentTop = row - 1;
 	termDOM[kScreen].anchorScrollTop = 1 - row;
 }
 
-export function terminalReorders(termDOM: TermDOM): void {
+function terminalReorders(termDOM: TermDOM): void {
 	termDOM[kLayout].adoptTerminalReordering();
 }
 
 /** Deferred width probes go out with the next frame even if nothing changed. */
-export function probesDeferred(termDOM: TermDOM): void {
+function probesDeferred(termDOM: TermDOM): void {
 	termDOM[kScreen].flushProbes();
 	void render(termDOM);
 }
@@ -473,7 +507,7 @@ export function probesDeferred(termDOM: TermDOM): void {
  * a screen that was never drawn. Drop it and paint again from the
  * corrected measurements.
  */
-export function widthsCorrected(termDOM: TermDOM): void {
+function widthsCorrected(termDOM: TermDOM): void {
 	termDOM[kLayout].invalidateTextMeasurement();
 	termDOM[kScreen].repaintAll();
 	void render(termDOM);
@@ -931,7 +965,7 @@ async function renderInteractive(
 	if (termDOM[kPendingCaretReveal]) {
 		const reveal = termDOM[kPendingCaretReveal];
 		termDOM[kPendingCaretReveal] = null;
-		if (reveal === termDOM.document.activeElement) {
+		if (reveal === getFocusedElement(termDOM)) {
 			scrollCaretIntoView(termDOM, reveal);
 		}
 	}

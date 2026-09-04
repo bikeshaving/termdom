@@ -14,6 +14,7 @@ import {
 	lightDismissRelease,
 	lockDataTransfer,
 	placeTextControlCaret,
+	requestRender,
 	setDocumentFocusVisible,
 	setHoveredElement,
 	setUASelection,
@@ -23,7 +24,6 @@ import {
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";
-import {render, type TermDOM} from "./termdom.ts";
 
 // The keys a terminal names, with the legacy keyCode plenty of code
 // still reads. Also the list of names that are physical key identities.
@@ -226,7 +226,6 @@ function getSequentialFocusEntries(
 	return buildScope(roots, null);
 }
 
-const kTermDOM = Symbol("termDOM");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kScreen = Symbol("screen");
@@ -298,7 +297,6 @@ export class Input {
 	static readonly [kDblclickIntervalMs] = 500;
 	declare [kDocument]: Document;
 	declare [kWindow]: Window;
-	declare [kTermDOM]: TermDOM;
 	declare [kLayout]: Layout;
 	declare [kCascade]: Cascade;
 	declare [kScreen]: Screen;
@@ -337,14 +335,13 @@ export class Input {
 	declare [kLastClickTime]: number;
 
 	constructor(
-		termDOM: TermDOM,
+		document: Document,
 		layout: Layout,
 		styles: Cascade,
 		screen: Screen,
 	) {
-		this[kDocument] = termDOM.document;
-		this[kWindow] = termDOM.document.defaultView as unknown as Window;
-		this[kTermDOM] = termDOM;
+		this[kDocument] = document;
+		this[kWindow] = document.defaultView as unknown as Window;
 		this[kLayout] = layout;
 		this[kCascade] = styles;
 		this[kScreen] = screen;
@@ -524,7 +521,7 @@ function deliverMouseReport(
 			quiet: base <= 2,
 		};
 		if (base > 2) {
-			void render(input[kTermDOM]);
+			requestRender(input[kDocument]);
 			return;
 		}
 	}
@@ -553,7 +550,7 @@ function deliverMouseReport(
 			// scrollback, so the mouse is yielded to it. preventDefault on the
 			// wheel event opts out, as in a browser.
 			input[kMouseCaptureYielded] = true;
-			void render(input[kTermDOM]);
+			requestRender(input[kDocument]);
 			if (input[kScrollChainTimer] !== null) {
 				clearTimeout(input[kScrollChainTimer]);
 			}
@@ -635,7 +632,7 @@ function deliverPaste(input: Input, text: string): void {
 			}),
 		);
 	}
-	void render(input[kTermDOM]);
+	requestRender(input[kDocument]);
 }
 
 // A keystroke also means the terminal has snapped back to the live
@@ -715,7 +712,6 @@ function scrollByWheel(
 		scroller.scrollTop += deltaY;
 		return false;
 	}
-	const termDOM = input[kTermDOM];
 	if (
 		deltaY < 0 &&
 		input[kScreen].scrollTop === 0 &&
@@ -724,7 +720,7 @@ function scrollByWheel(
 		return true;
 	}
 	input[kScreen].scrollTo(input[kScreen].scrollTop + deltaY);
-	void render(termDOM);
+	requestRender(input[kDocument]);
 	return false;
 }
 
@@ -734,7 +730,7 @@ function reclaimMouseCapture(input: Input): void {
 		input[kScrollChainTimer] = null;
 	}
 	input[kMouseCaptureYielded] = false;
-	void render(input[kTermDOM]);
+	requestRender(input[kDocument]);
 }
 
 function dragTo(
@@ -757,7 +753,7 @@ function dragTo(
 				Math.max(anchor, focus),
 				focus < anchor ? "backward" : "forward",
 			);
-			void render(input[kTermDOM]);
+			requestRender(input[kDocument]);
 		}
 		return;
 	}
@@ -776,7 +772,7 @@ function dragTo(
 					focus.node,
 					focus.offset,
 				);
-			void render(input[kTermDOM]);
+			requestRender(input[kDocument]);
 		}
 	}
 }
@@ -799,7 +795,7 @@ function dispatchPress(
 		input[kCascade].handleFocusChange(
 			input[kDocument].activeElement,
 		);
-		void render(input[kTermDOM]);
+		requestRender(input[kDocument]);
 	}
 	const notCanceled = dispatchAsUserAgent(
 		target,
@@ -813,10 +809,10 @@ function dispatchPress(
 	const active = input[kDocument].activeElement;
 	if (focusable && focusable !== active) {
 		(focusable as HTMLElement).focus();
-		void render(input[kTermDOM]);
+		requestRender(input[kDocument]);
 	} else if (!focusable && active && active !== input[kDocument].body) {
 		(active as HTMLElement).blur();
-		void render(input[kTermDOM]);
+		requestRender(input[kDocument]);
 	}
 
 	// Default action: a press in a text control places the caret and anchors a
@@ -834,7 +830,7 @@ function dispatchPress(
 		if (docSelection && !docSelection.isCollapsed) {
 			docSelection.removeAllRanges();
 		}
-		void render(input[kTermDOM]);
+		requestRender(input[kDocument]);
 	}
 
 	// Default action: collapse the document selection at the press and
@@ -858,7 +854,7 @@ function dispatchPress(
 			selection.removeAllRanges();
 		}
 		if (hadSelection) {
-			void render(input[kTermDOM]);
+			requestRender(input[kDocument]);
 		}
 	}
 }
@@ -909,7 +905,7 @@ function dispatchRelease(
 				: null;
 		if (control) {
 			control.focus();
-			void render(input[kTermDOM]);
+			requestRender(input[kDocument]);
 		}
 
 		// In addition to its own click. Reset so a third click starts a pair.
@@ -943,7 +939,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		input[kCascade].handleFocusChange(
 			input[kDocument].activeElement,
 		);
-		void render(input[kTermDOM]);
+		requestRender(input[kDocument]);
 	}
 
 	// A fullscreen element is usually not focusable, so keydown falls back
@@ -976,7 +972,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	// app.
 	if (keyName === "Escape") {
 		if (handleCloseRequest(input[kDocument])) {
-			void render(input[kTermDOM]);
+			requestRender(input[kDocument]);
 			return;
 		}
 	}
@@ -1003,7 +999,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 						composed: true,
 					}),
 				);
-				void render(input[kTermDOM]);
+				requestRender(input[kDocument]);
 			}
 		}
 	}
@@ -1185,7 +1181,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 	next.focus();
 	next.scrollIntoView({block: "nearest"});
 	// No mutation record describes a focus move.
-	void render(input[kTermDOM]);
+	requestRender(input[kDocument]);
 }
 
 // Null over a form control. Its value is not document text.

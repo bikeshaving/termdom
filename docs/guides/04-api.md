@@ -75,6 +75,10 @@ once the first frame has been written.
 While attached to the process transport, the Node event loop stays alive
 until `dispose()` or `window.close()`.
 
+`document.visibilityState` is `"hidden"` before `attach()`, `"visible"`
+until `dispose()`, and `"hidden"` after. `visibilitychange` fires on each
+change.
+
 Passing a transport rebinds the instance to it, only before the first
 attach.
 

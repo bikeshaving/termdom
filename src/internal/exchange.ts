@@ -1,15 +1,5 @@
+import {CustomEvent, Event, EventTarget, type Window} from "./dom.ts";
 import type {Input} from "./input.ts";
-import {
-	anchorDetected,
-	closeTermDOM,
-	frameReplaced,
-	frameStanding,
-	probesDeferred,
-	type TermDOM,
-	terminalReorders,
-	terminalResized,
-	widthsCorrected,
-} from "./termdom.ts";
 import {recordClusterAdvance} from "./text.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
@@ -642,6 +632,18 @@ interface PendingReply {
 	clipboard?: boolean;
 }
 
+export interface FrameStanding {
+	contentHeight: number;
+	wrappedRowsAbove: number | null;
+	documentTop: number;
+}
+
+export interface ResizeReport {
+	cols: number;
+	rows: number;
+	standing: FrameStanding | null;
+}
+
 const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
 const kEngagedModes = Symbol("engagedModes");
@@ -649,7 +651,7 @@ const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kResizeTimer = Symbol("resizeTimer");
 const kSettlingResize = Symbol("settlingResize");
 const kTransportClosed = Symbol("transportClosed");
-const kTermDOM = Symbol("termDOM");
+const kWindow = Symbol("window");
 const kInput = Symbol("input");
 
 const kWriter = Symbol("writer");
@@ -681,7 +683,7 @@ const kWidthDeferralWait = Symbol("widthDeferralWait");
  * query is bounded by a timer, since most terminals reply with nothing.
  * Silence means the terminal has no opinion and ours holds.
  */
-export class Exchange {
+export class Exchange extends EventTarget {
 	// A terminal replying late is still replying. Only one that never
 	// replies at all stops probing.
 	static readonly [kWidthProbeTimeout] = 2000;
@@ -695,7 +697,7 @@ export class Exchange {
 	declare [kInteractive]: boolean;
 	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
-	declare [kTermDOM]: TermDOM;
+	declare [kWindow]: Window;
 	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
 	// A token per resize burst, so a redraw that lands after a newer burst
 	// began is abandoned. Null between bursts.
@@ -725,7 +727,8 @@ export class Exchange {
 	declare [kProbingEnded]: boolean;
 	declare [kWidths]: WidthProbes;
 
-	constructor(transport: TerminalTransport, termDOM: TermDOM) {
+	constructor(transport: TerminalTransport, window: Window) {
+		super();
 		const interactive = transport.interactive;
 		this[kWriter] = null;
 		this[kReader] = null;
@@ -747,7 +750,7 @@ export class Exchange {
 		this[kEngagedModes] = new Set<ModeName>();
 		// Anchor detection only makes sense when a shell's rows are above ours.
 		this[kAnchorDetectionEnabled] = transport.sharesScreen && interactive;
-		this[kTermDOM] = termDOM;
+		this[kWindow] = window;
 		this[kInput] = null;
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
@@ -900,7 +903,11 @@ export class Exchange {
 		this[kAnchorDetectionEnabled] =
 			transport.sharesScreen && transport.interactive;
 		this[kWidths] = createWidthProbes(transport.interactive);
-		terminalResized(this[kTermDOM], transport.cols, transport.rows);
+		this.dispatchEvent(
+			new CustomEvent<ResizeReport>("terminalresize", {
+				detail: {cols: transport.cols, rows: transport.rows, standing: null},
+			}),
+		);
 	}
 
 	start(input: Input): void {
@@ -919,7 +926,7 @@ export class Exchange {
 		void this[kTransport].closed.then(() => {
 			if (!this[kDisposed]) {
 				this[kTransportClosed] = true;
-				closeTermDOM(this[kTermDOM]);
+				this.dispatchEvent(new Event("terminalclose"));
 			}
 		});
 	}
@@ -958,7 +965,7 @@ export class Exchange {
 		}
 		this[kPriorBidiMode] = answer;
 		if (answer === 1 || answer === 3) {
-			terminalReorders(this[kTermDOM]);
+			this.dispatchEvent(new Event("reorder"));
 		}
 	}
 
@@ -1007,7 +1014,7 @@ export class Exchange {
 			timeoutMs: 1000,
 			sequence: this[kDSRSequence]++,
 			read: ({row}) => {
-				anchorDetected(this[kTermDOM], row);
+				this.dispatchEvent(new CustomEvent("anchor", {detail: {row}}));
 				this[kHasDetectedAnchor] = true;
 				return row;
 			},
@@ -1247,7 +1254,7 @@ function requestDeferredProbeFrame(session: Exchange): void {
 		if (session[kDisposed] || widths.deferred.size === 0) {
 			return;
 		}
-		probesDeferred(session[kTermDOM]);
+		session.dispatchEvent(new Event("probes"));
 	}, Exchange[kWidthDeferralWait]);
 }
 
@@ -1333,7 +1340,7 @@ function settleWidthProbe(
 	widths.settled.add(probe.cluster);
 	widths.drift += advance - probe.width;
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		widthsCorrected(session[kTermDOM]);
+		session.dispatchEvent(new Event("widths"));
 	}
 }
 
@@ -1408,24 +1415,26 @@ function scheduleResize(session: Exchange): void {
 // new top. A terminal that does not reply gets the computed re-anchor,
 // exact for height changes.
 function handleResize(session: Exchange): void {
-	const termDOM = session[kTermDOM];
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
-	terminalResized(termDOM, newWidth, newHeight);
-	const {contentHeight, wrappedRowsAbove, documentTop} = frameStanding(
-		termDOM,
-		newWidth,
-	);
+	// The terminalresize listener fills in standing.
+	const report: ResizeReport = {
+		cols: newWidth,
+		rows: newHeight,
+		standing: null,
+	};
+	session.dispatchEvent(new CustomEvent("terminalresize", {detail: report}));
+	const {contentHeight, wrappedRowsAbove, documentTop} = report.standing!;
 	const settling = session[kSettlingResize];
 
 	const redraw = (startRow: number) => {
-		frameReplaced(termDOM, startRow);
+		session.dispatchEvent(new CustomEvent("replace", {detail: {startRow}}));
 
 		// The frame is placed by the screen reset. Cursor detection is
 		// suspended until it is written.
 		session[kSettlingResize] = null;
 		const wasDetected = session[kHasDetectedAnchor];
 		session[kHasDetectedAnchor] = false;
-		termDOM.window.requestAnimationFrame(() => {
+		session[kWindow].requestAnimationFrame(() => {
 			session[kHasDetectedAnchor] = wasDetected;
 		});
 	};
@@ -1481,7 +1490,7 @@ function routeChunk(session: Exchange, chunk: string): void {
 				// decision.
 				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
-					session[kTermDOM].window.close();
+					session[kWindow].close();
 					break;
 				}
 				keys.push(item);

@@ -32,13 +32,6 @@ import {
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";
 import {
-	closeTermDOM,
-	isAttached,
-	render,
-	sealTermDOM,
-	type TermDOM,
-} from "./termdom.ts";
-import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
 	getStringWidth,
@@ -190,7 +183,8 @@ export function getTextControlValueText(
 	);
 }
 
-const kTermDOM = Symbol("termDOM");
+const kRender = Symbol("render");
+const kVisible = Symbol("visible");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
@@ -3254,7 +3248,7 @@ const kListeners = Symbol("event listener list");
 const kGetTheParent = Symbol("get the parent");
 
 /** An event target: a listener list, and the parent dispatch walks to. */
-class EventTarget implements globalThis.EventTarget {
+export class EventTarget implements globalThis.EventTarget {
 	declare [kListeners]: Listener[];
 
 	/** Null until this target is given an event handler. Most never are. */
@@ -4005,6 +3999,8 @@ function dispatch(
 	const state = event[kState];
 	state.trusted = trusted;
 	state.dispatch = true;
+	const exchange = getSessionExchange(target);
+	const originalRelatedTarget = state.relatedTarget;
 	let activationTarget: EventTarget | null = null;
 	let relatedTarget = retarget(state.relatedTarget, target);
 	let clearTargets = false;
@@ -4117,10 +4113,6 @@ function dispatch(
 	state.dispatch = false;
 	state.stopPropagation = false;
 	state.stopImmediate = false;
-	if (clearTargets) {
-		state.target = null;
-		state.relatedTarget = null;
-	}
 	if (activationTarget !== null) {
 		if (!state.canceled) {
 			runActivationBehavior(activationTarget, event);
@@ -4129,6 +4121,17 @@ function dispatch(
 		}
 	}
 	protectClipboardData(event);
+	// The exchange's listeners get the original targets; the clearing
+	// happens after they run.
+	if (exchange !== null) {
+		state.target = target;
+		state.relatedTarget = originalRelatedTarget;
+		deliverToSession(exchange, event);
+	}
+	if (clearTargets) {
+		state.target = null;
+		state.relatedTarget = null;
+	}
 	return !state.canceled;
 }
 
@@ -4382,6 +4385,54 @@ function innerInvoke(
 		}
 	}
 	return found;
+}
+
+// Every dispatched event is passed to the exchange's listeners after its
+// path, regardless of bubbles, composed, or stopPropagation().
+function getSessionExchange(target: EventTarget): EventTarget | null {
+	const document = getEventTargetDocument(target);
+	if (document === null) {
+		return null;
+	}
+	const attached = getAttachedDocument(document);
+	return attached === undefined ? null : attached[kExchange];
+}
+
+function deliverToSession(exchange: EventTarget, event: Event): void {
+	for (const listener of exchange[kListeners].slice()) {
+		if (listener.removed || listener.type !== event.type) {
+			continue;
+		}
+		try {
+			callListener(listener.callback, exchange, event);
+		} catch (error) {
+			reportError(error, getEventTargetDocument(event.target as EventTarget));
+		}
+	}
+}
+
+export function requestRender(document: globalThis.Document): void {
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached !== undefined) {
+		void attached[kRender]();
+	}
+}
+
+export function setDocumentVisible(
+	document: globalThis.Document,
+	visible: boolean,
+): void {
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached === undefined || attached[kVisible] === visible) {
+		return;
+	}
+	attached[kVisible] = visible;
+	dispatch(attached, new Event("visibilitychange", {bubbles: true}));
+}
+
+function isDocumentVisible(document: Document): boolean {
+	const attached = getAttachedDocument(document);
+	return attached === undefined || attached[kVisible];
 }
 
 // For an object callback, handleEvent is looked up at call time.
@@ -8637,7 +8688,7 @@ export class Element extends Node implements globalThis.Element {
 			if (this.isConnected) {
 				attached[kLayout].invalidate(this);
 				attached[kScreen].invalidate();
-				void render(attached[kTermDOM]);
+				void attached[kRender]();
 			}
 		}
 		return root as unknown as globalThis.ShadowRoot;
@@ -8655,7 +8706,7 @@ export class Element extends Node implements globalThis.Element {
 		// Fullscreen switches to the alternate screen, and attach() is the only
 		// consent for that. A browser rejects without a user gesture; this is
 		// the terminal equivalent.
-		if (!isAttached(attached[kTermDOM])) {
+		if (!attached[kVisible]) {
 			return Promise.reject(
 				new Error("requestFullscreen(): attach() the terminal first"),
 			);
@@ -9899,7 +9950,7 @@ export class HTMLElement extends Element {
 		// anything.
 		attached[kCascade].handleFocusChange(previous, this);
 		attached[kScreen].invalidate();
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 		// The body holds focus whenever nothing else does, so moving focus off
 		// the body fires no blur.
 		if (previous !== null && previous !== (document.body as unknown)) {
@@ -9934,7 +9985,7 @@ export class HTMLElement extends Element {
 		}
 		attached[kCascade].handleFocusChange(this, null);
 		attached[kScreen].invalidate();
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 		dispatchAsUserAgent(
 			this,
 			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
@@ -10265,10 +10316,10 @@ Object.defineProperties(HTMLElement.prototype, {
 			const top = attached[kScreen].scrollTop;
 			if (rect.top < top) {
 				attached[kScreen].scrollTo(rect.top);
-				void render(attached[kTermDOM]);
+				void attached[kRender]();
 			} else if (rect.bottom > top + regionHeight) {
 				attached[kScreen].scrollTo(rect.bottom - regionHeight);
-				void render(attached[kTermDOM]);
+				void attached[kRender]();
 			}
 		},
 		configurable: true,
@@ -18800,7 +18851,7 @@ function popoverStateChanged(element: Element): void {
 	}
 	attached[kCascade].handleStateChange(element);
 	attached[kScreen].invalidate();
-	void render(attached[kTermDOM]);
+	void attached[kRender]();
 }
 
 // Returns true, false for a call that should silently do nothing, or the
@@ -22011,7 +22062,8 @@ export class Document extends Node implements globalThis.Document {
 	// What an attached document renders through, set by attachDocument. A
 	// headless document has none and behaves as a document with no browsing
 	// context.
-	declare [kTermDOM]: TermDOM;
+	declare [kRender]: () => Promise<void>;
+	declare [kVisible]: boolean;
 	declare [kLayout]: Layout;
 	declare [kCascade]: Cascade;
 	declare [kExchange]: Exchange;
@@ -22280,7 +22332,7 @@ export class Document extends Node implements globalThis.Document {
 		const attached = getAttachedDocument(this);
 		if (
 			attached !== undefined &&
-			isAttached(attached[kTermDOM]) &&
+			attached[kVisible] &&
 			attached[kExchange].interactive
 		) {
 			void attached[kExchange].setTitle(String(value));
@@ -22406,13 +22458,12 @@ export class Document extends Node implements globalThis.Document {
 		this.body?.setAttribute("vlink", value);
 	}
 
-	/** A terminal shows what it renders, immediately. */
 	get hidden(): boolean {
-		return false;
+		return !isDocumentVisible(this);
 	}
 
 	get visibilityState(): globalThis.DocumentVisibilityState {
-		return "visible";
+		return isDocumentVisible(this) ? "visible" : "hidden";
 	}
 
 	get fullscreen(): boolean {
@@ -22605,10 +22656,7 @@ export class Document extends Node implements globalThis.Document {
 	// sealed into the terminal's scrollback, and a later mutation starts a
 	// fresh document below the sealed block.
 	close(): void {
-		const attached = getAttachedDocument(this);
-		if (attached !== undefined) {
-			sealTermDOM(attached[kTermDOM]);
-		}
+		getAttachedDocument(this)?.[kExchange].dispatchEvent(new Event("seal"));
 	}
 
 	getElementsByTagName<K extends keyof globalThis.HTMLElementTagNameMap>(
@@ -24082,7 +24130,7 @@ function setScrollOffset(
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
 			attached[kScreen].scrollTo(Number(value));
-			void render(attached[kTermDOM]);
+			void attached[kRender]();
 		}
 		return;
 	}
@@ -24116,7 +24164,7 @@ function setScrollOffset(
 	} else {
 		attached[kScreen].invalidate();
 	}
-	void render(attached[kTermDOM]);
+	void attached[kRender]();
 }
 
 /**
@@ -24165,7 +24213,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	if (changed) {
 		scrollShifts.delete(document as Document);
 		attached[kScreen].invalidate();
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 }
 
@@ -25710,7 +25758,7 @@ function scheduleSelectionChange(document: Document): void {
 	const attached = getAttachedDocument(document);
 	if (attached !== undefined) {
 		attached[kScreen].invalidate();
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 	if (document[kSelectionChangeScheduled]) {
 		return;
@@ -29018,31 +29066,32 @@ export function syncMediaQueries(document: globalThis.Document): void {
  */
 export function attachDocument(
 	document: globalThis.Document,
-	termDOM: TermDOM,
 	layout: Layout,
 	styles: Cascade,
 	exchange: Exchange,
 	screen: Screen,
+	render: () => Promise<void>,
 ): void {
 	const attached = document as Document;
-	if (attached[kTermDOM] !== undefined) {
+	if (attached[kExchange] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
-	attached[kTermDOM] = termDOM;
+	attached[kRender] = render;
+	attached[kVisible] = false;
 	attached[kLayout] = layout;
 	attached[kCascade] = styles;
 	attached[kExchange] = exchange;
 	attached[kScreen] = screen;
 	hoverListenerCounts.set(
 		attached,
-		watchHoverListeners(attached, () => render(termDOM)),
+		watchHoverListeners(attached, () => render()),
 	);
 	// The document owns the observer. Mutations fan out to the cascade, the
 	// layout tree and the UA default actions here, and the engine is only
 	// asked to render the frame that shows the result.
 	const observer = new MutationObserver((mutations) => {
 		handleMutationRecords(attached, mutations);
-		void render(termDOM);
+		void render();
 	});
 	observer.observe(document.documentElement as unknown as Node, {
 		childList: true,
@@ -29208,7 +29257,7 @@ export function flushLayout(node: globalThis.Node): boolean {
 	) as globalThis.Document;
 	const had = applyMutations(document);
 	if (had) {
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 	attached[kLayout].performLayout();
 	clampScrollOffsets(document);
@@ -29224,7 +29273,8 @@ export function hoverListenerCount(document: globalThis.Document): number {
 // A document that has been adopted. It renders, and knows what it
 // renders through.
 type AttachedDocument = Document & {
-	[kTermDOM]: TermDOM;
+	[kRender]: () => Promise<void>;
+	[kVisible]: boolean;
 	[kLayout]: Layout;
 	[kCascade]: Cascade;
 	[kExchange]: Exchange;
@@ -29238,7 +29288,7 @@ function getAttachedDocument(
 	const document = (
 		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
 	) as Document | null;
-	return document !== null && document[kTermDOM] !== undefined
+	return document !== null && document[kExchange] !== undefined
 		? (document as AttachedDocument)
 		: undefined;
 }
@@ -29399,7 +29449,7 @@ function reachClipboard(document: Document, what: string): Exchange {
 	const attached = getAttachedDocument(document);
 	if (
 		attached === undefined ||
-		!isAttached(attached[kTermDOM]) ||
+		!attached[kVisible] ||
 		!attached[kExchange].interactive
 	) {
 		throw clipboardDenied(
@@ -29487,7 +29537,7 @@ class PermissionStatus extends EventTarget {
 		const attached = getAttachedDocument(document);
 		if (
 			!attached ||
-			!isAttached(attached[kTermDOM]) ||
+			!attached[kVisible] ||
 			!attached[kExchange].interactive
 		) {
 			return "denied";
@@ -29790,7 +29840,7 @@ function frameSettled(
 		holdFrameCallback(document, () => {
 			resolve();
 		});
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	});
 }
 
@@ -30294,7 +30344,7 @@ export class Window extends EventTarget {
 				? (xOrOptions.top ?? attached[kScreen].scrollTop)
 				: (y ?? 0);
 		attached[kScreen].scrollTo(top);
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 
 	scroll(options?: globalThis.ScrollToOptions): void;
@@ -30319,7 +30369,7 @@ export class Window extends EventTarget {
 				? (xOrOptions.top ?? 0)
 				: (y ?? 0);
 		attached[kScreen].scrollTo(attached[kScreen].scrollTop + top);
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 	}
 
 	// requestAnimationFrame is the only way to await a painted frame. It
@@ -30332,7 +30382,7 @@ export class Window extends EventTarget {
 			return 0;
 		}
 		const handle = holdFrameCallback(this.document, callback);
-		void render(attached[kTermDOM]);
+		void attached[kRender]();
 		return handle;
 	}
 
@@ -30419,7 +30469,6 @@ export class Window extends EventTarget {
 		if (event.defaultPrevented || event.returnValue !== "") {
 			return;
 		}
-		closeTermDOM(attached[kTermDOM]);
 		this[kClosed] = true;
 	}
 
@@ -33097,7 +33146,6 @@ export type {
 	Storage,
 	NodeListOf,
 	HTMLCollectionOf,
-	EventTarget,
 	BeforeUnloadEvent,
 	MessageEvent,
 	HashChangeEvent,
