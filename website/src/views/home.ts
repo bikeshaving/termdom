@@ -119,7 +119,7 @@ export default async function Home({url}: {url: string}) {
 
 	return jsx`
 		<${Root}
-			title="TermDOM | Build terminal apps with HTML, CSS and the DOM"
+			title="TermDOM | Build terminal apps with HTML, CSS, and DOM"
 			url=${url}
 			description="TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It draws actual DOM nodes to terminal output and redraws the screen when they mutate."
 			stylesheets=${[assets.xtermCSS]}
@@ -134,7 +134,7 @@ export default async function Home({url}: {url: string}) {
 					margin: 0 0 2.5rem;
 					font-size: 1.05rem;
 				`}>
-					Build terminal apps with HTML, CSS and the DOM.
+					Build terminal apps with HTML, CSS, and DOM.
 				</p>
 
 				<div class=${content}>

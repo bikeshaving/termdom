@@ -1,6 +1,6 @@
 # TermDOM
 
-**Build terminal apps with HTML, CSS and DOM.**
+**Build terminal apps with HTML, CSS, and DOM.**
 
 ![Klondike solitaire rendered by TermDOM](./docs/solitaire.gif)
 
