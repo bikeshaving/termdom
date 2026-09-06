@@ -2114,14 +2114,7 @@ const kCharCode = Symbol("charCode");
 const kKeyCode = Symbol("keyCode");
 
 /** The key-location constants, installed on the prototype. */
-interface KeyboardEvent
-	extends Pick<
-		globalThis.KeyboardEvent,
-		"DOM_KEY_LOCATION_STANDARD" |
-		"DOM_KEY_LOCATION_LEFT" |
-		"DOM_KEY_LOCATION_RIGHT" |
-		"DOM_KEY_LOCATION_NUMPAD"
-	> {
+interface KeyboardEvent {
 	[kKey]: string;
 	[kCode]: string;
 	[kLocation]: number;
@@ -2138,6 +2131,10 @@ class KeyboardEvent extends UIEvent implements globalThis.KeyboardEvent {
 	static readonly DOM_KEY_LOCATION_LEFT = DOM_KEY_LOCATION_LEFT;
 	static readonly DOM_KEY_LOCATION_RIGHT = DOM_KEY_LOCATION_RIGHT;
 	static readonly DOM_KEY_LOCATION_NUMPAD = DOM_KEY_LOCATION_NUMPAD;
+	declare readonly DOM_KEY_LOCATION_STANDARD: globalThis.KeyboardEvent["DOM_KEY_LOCATION_STANDARD"];
+	declare readonly DOM_KEY_LOCATION_LEFT: globalThis.KeyboardEvent["DOM_KEY_LOCATION_LEFT"];
+	declare readonly DOM_KEY_LOCATION_RIGHT: globalThis.KeyboardEvent["DOM_KEY_LOCATION_RIGHT"];
+	declare readonly DOM_KEY_LOCATION_NUMPAD: globalThis.KeyboardEvent["DOM_KEY_LOCATION_NUMPAD"];
 	constructor(type: string, eventInitDict: KeyboardEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<KeyboardEventInit>(
@@ -2397,12 +2394,8 @@ function normalizeTransferFormat(format: unknown): string {
 /** The brand used to construct an interface that declares no constructor. */
 const kInternalConstruction = Symbol("internal construction");
 
-/** A list of files. Always empty, since nothing in a terminal produces one. */
-interface FileList {
-	readonly [index: number]: globalThis.File;
-}
-
 class FileList {
+	readonly [index: number]: globalThis.File;
 	get length(): number {
 		return 0;
 	}
@@ -2480,13 +2473,12 @@ const kTransferEntries = Symbol("entries");
 
 /** The entries of a transfer, as an indexed, mutable list. */
 interface DataTransferItemList {
-	readonly [index: number]: DataTransferItem;
-
 	[kListOwner]: DataTransfer;
 	[kListIndices]: number;
 }
 
 class DataTransferItemList {
+	readonly [index: number]: DataTransferItem;
 	constructor(brand?: unknown, owner?: DataTransfer) {
 		if (brand !== kInternalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -2885,10 +2877,6 @@ interface WheelEvent {
 	[kDeltaY]: number;
 	[kDeltaZ]: number;
 	[kDeltaMode]: number;
-
-	readonly DOM_DELTA_PIXEL: 0;
-	readonly DOM_DELTA_LINE: 1;
-	readonly DOM_DELTA_PAGE: 2;
 }
 
 /** Fired when the wheel turns over a target. */
@@ -2896,6 +2884,9 @@ class WheelEvent extends MouseEvent {
 	static readonly DOM_DELTA_PIXEL = DOM_DELTA_PIXEL;
 	static readonly DOM_DELTA_LINE = DOM_DELTA_LINE;
 	static readonly DOM_DELTA_PAGE = DOM_DELTA_PAGE;
+	declare readonly DOM_DELTA_PIXEL: 0;
+	declare readonly DOM_DELTA_LINE: 1;
+	declare readonly DOM_DELTA_PAGE: 2;
 	constructor(type: string, eventInitDict: WheelEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<WheelEventInit>(eventInitDict, "An event init");
@@ -4713,8 +4704,7 @@ const kAttributeList = Symbol("attribute list");
 const kDocumentURL = Symbol("document URL");
 
 /** The node-type constants, installed on the prototype below. */
-export interface Node
-	extends Pick<globalThis.Node, NodeConstants> {
+export interface Node {
 	[kRegistry]: CustomElementRegistry | null;
 	[kParent]: Node | null;
 	[kConnected]: boolean;
@@ -4754,6 +4744,25 @@ export class Node extends EventTarget implements globalThis.Node {
 
 	static readonly DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC =
 		DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC;
+
+	declare readonly ELEMENT_NODE: globalThis.Node["ELEMENT_NODE"];
+	declare readonly ATTRIBUTE_NODE: globalThis.Node["ATTRIBUTE_NODE"];
+	declare readonly TEXT_NODE: globalThis.Node["TEXT_NODE"];
+	declare readonly CDATA_SECTION_NODE: globalThis.Node["CDATA_SECTION_NODE"];
+	declare readonly ENTITY_REFERENCE_NODE: globalThis.Node["ENTITY_REFERENCE_NODE"];
+	declare readonly ENTITY_NODE: globalThis.Node["ENTITY_NODE"];
+	declare readonly PROCESSING_INSTRUCTION_NODE: globalThis.Node["PROCESSING_INSTRUCTION_NODE"];
+	declare readonly COMMENT_NODE: globalThis.Node["COMMENT_NODE"];
+	declare readonly DOCUMENT_NODE: globalThis.Node["DOCUMENT_NODE"];
+	declare readonly DOCUMENT_TYPE_NODE: globalThis.Node["DOCUMENT_TYPE_NODE"];
+	declare readonly DOCUMENT_FRAGMENT_NODE: globalThis.Node["DOCUMENT_FRAGMENT_NODE"];
+	declare readonly NOTATION_NODE: globalThis.Node["NOTATION_NODE"];
+	declare readonly DOCUMENT_POSITION_DISCONNECTED: globalThis.Node["DOCUMENT_POSITION_DISCONNECTED"];
+	declare readonly DOCUMENT_POSITION_PRECEDING: globalThis.Node["DOCUMENT_POSITION_PRECEDING"];
+	declare readonly DOCUMENT_POSITION_FOLLOWING: globalThis.Node["DOCUMENT_POSITION_FOLLOWING"];
+	declare readonly DOCUMENT_POSITION_CONTAINS: globalThis.Node["DOCUMENT_POSITION_CONTAINS"];
+	declare readonly DOCUMENT_POSITION_CONTAINED_BY: globalThis.Node["DOCUMENT_POSITION_CONTAINED_BY"];
+	declare readonly DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: globalThis.Node["DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC"];
 
 	constructor() {
 		super();
@@ -6844,14 +6853,12 @@ const childrenChangedMethod = (
 const kCompute = Symbol("compute");
 
 export interface NodeList {
-	[index: number]: globalThis.Node;
-
-	[Symbol.iterator]: () => ArrayIterator<globalThis.Node>;
-
 	[kCompute]: () => Node[];
 }
 
 export class NodeList extends LiveList {
+	[index: number]: globalThis.Node;
+	declare [Symbol.iterator]: () => ArrayIterator<globalThis.Node>;
 	declare forEach: (
 		callback: (
 			node: globalThis.Node,
@@ -6914,13 +6921,13 @@ interface NodeListOf<T extends globalThis.Node> extends NodeList {
 }
 
 interface HTMLCollectionBase {
-	[Symbol.iterator]: () => ArrayIterator<Element>;
 
 	[kCompute]: () => Element[];
 }
 
 class HTMLCollectionBase extends LiveList {
 	[index: number]: Element;
+	declare [Symbol.iterator]: () => ArrayIterator<Element>;
 
 	constructor(
 		compute: () => Element[],
@@ -7340,16 +7347,14 @@ const kSupported = Symbol("supported");
 const kTokens = Symbol("tokens");
 
 interface DOMTokenList {
-	[Symbol.iterator]: () => ArrayIterator<string>;
-
 	[kElement]: Element;
 	[kAttribute]: string;
 	[kSupported]: Set<string> | null;
-
-	[index: number]: string;
 }
 
 class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
+	[index: number]: string;
+	declare [Symbol.iterator]: () => ArrayIterator<string>;
 	declare forEach: (
 		callback: (token: string, index: number, list: DOMTokenList) => void,
 		thisArg?: any,
@@ -7546,14 +7551,19 @@ function validateTokens(tokens: string[]): void {
 	}
 }
 
-interface CharacterData
-	extends Pick<globalThis.CharacterData, ChildNodeMixin> {
-	get ownerDocument(): Document;
-
+interface CharacterData {
 	[kData]: string;
+
+	get ownerDocument(): Document;
 }
 
 class CharacterData extends Node implements globalThis.CharacterData {
+	declare after: globalThis.CharacterData["after"];
+	declare before: globalThis.CharacterData["before"];
+	declare remove: globalThis.CharacterData["remove"];
+	declare replaceWith: globalThis.CharacterData["replaceWith"];
+	declare readonly nextElementSibling: globalThis.CharacterData["nextElementSibling"];
+	declare readonly previousElementSibling: globalThis.CharacterData["previousElementSibling"];
 	constructor(data: string) {
 		super();
 		this[kData] = data;
@@ -7821,9 +7831,9 @@ Object.defineProperty(Comment.prototype, Symbol.toStringTag, {
 });
 
 interface ProcessingInstruction {
-	get ownerDocument(): Document;
-
 	[kTarget]: string;
+
+	get ownerDocument(): Document;
 }
 
 class ProcessingInstruction extends CharacterData {
@@ -7864,21 +7874,20 @@ const kName = Symbol("doctype name");
 const kPublicId = Symbol("public id");
 const kSystemId = Symbol("system id");
 
-interface DocumentType
-	extends Pick<
-		globalThis.DocumentType,
-		"after" | "before" | "remove" | "replaceWith"
-	> {
-	get ownerDocument(): Document;
-
-	get textContent(): null;
-
+interface DocumentType {
 	[kName]: string;
 	[kPublicId]: string;
 	[kSystemId]: string;
+
+	get ownerDocument(): Document;
+	get textContent(): null;
 }
 
 class DocumentType extends Node {
+	declare after: globalThis.DocumentType["after"];
+	declare before: globalThis.DocumentType["before"];
+	declare remove: globalThis.DocumentType["remove"];
+	declare replaceWith: globalThis.DocumentType["replaceWith"];
 	constructor(name: string, publicId: string, systemId: string) {
 		super();
 		this[kName] = name;
@@ -7922,14 +7931,22 @@ Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export interface DocumentFragment
-	extends Pick<globalThis.DocumentFragment, ParentNodeMixin> {
-	get ownerDocument(): Document;
-
+export interface DocumentFragment {
 	[kHost]: Element | null;
+
+	get ownerDocument(): Document;
 }
 
 export class DocumentFragment extends Node implements globalThis.DocumentFragment {
+	declare readonly childElementCount: globalThis.DocumentFragment["childElementCount"];
+	declare readonly children: globalThis.DocumentFragment["children"];
+	declare readonly firstElementChild: globalThis.DocumentFragment["firstElementChild"];
+	declare readonly lastElementChild: globalThis.DocumentFragment["lastElementChild"];
+	declare append: globalThis.DocumentFragment["append"];
+	declare prepend: globalThis.DocumentFragment["prepend"];
+	declare querySelector: globalThis.DocumentFragment["querySelector"];
+	declare querySelectorAll: globalThis.DocumentFragment["querySelectorAll"];
+	declare replaceChildren: globalThis.DocumentFragment["replaceChildren"];
 	constructor() {
 		super();
 		this[kHost] = null;
@@ -8007,13 +8024,13 @@ const kOwnerElement = Symbol("owner element");
 const kQualifiedName = Symbol("qualified name");
 
 interface Attr {
-	get ownerDocument(): Document;
-
 	[kNamespace]: string | null;
 	[kPrefix]: string | null;
 	[kLocalName]: string;
 	[kValue]: string;
 	[kOwnerElement]: Element | null;
+
+	get ownerDocument(): Document;
 }
 
 class Attr extends Node implements globalThis.Attr {
@@ -8276,14 +8293,12 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 }
 
 interface NamedNodeMap {
-	[Symbol.iterator]: () => ArrayIterator<Attr>;
-
 	[kElement]: Element;
-
-	[index: number]: Attr;
 }
 
 class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
+	[index: number]: Attr;
+	declare [Symbol.iterator]: () => ArrayIterator<Attr>;
 	constructor(element: Element) {
 		super(true, element);
 		this[kElement] = element;
@@ -8454,31 +8469,7 @@ type ScrollMethod = {
  * exceptions: a Pick would make them properties, and subclasses declare
  * each as a method.
  */
-export interface Element
-	extends Pick<
-		globalThis.Element,
-		// `remove` and `scrollIntoView` are written out below rather than
-		// Picked. A Pick yields a property, and subclasses declare each of them
-		// as a method, which cannot override a property.
-		Exclude<ChildNodeMixin, "remove"> |
-		ParentNodeMixin |
-		SelectorSurface |
-		FullscreenSurface |
-		"part" |
-		"checkVisibility" |
-		"clientWidth" |
-		"clientHeight" |
-		"scrollWidth" |
-		"scrollHeight" |
-		"clientLeft" |
-		"clientTop" |
-		"scrollIntoView" |
-		Extract<keyof globalThis.Element, ARIAReflection>
-	> {
-	remove(): void;
-
-	get ownerDocument(): Document;
-
+export interface Element {
 	[kNamespace]: string | null;
 	[kPrefix]: string | null;
 	[kLocalName]: string;
@@ -8504,9 +8495,95 @@ export interface Element
 	[kPseudoElements]: Map<string, Element> | null;
 	[kPseudoHost]: Element | null;
 	[kPseudoName]: string | null;
+
+	// The ChildNode mixin's remove, installed from the tables. A select
+	// overloads it, which a declared property cannot allow.
+	// eslint-disable-next-line @b9g/merged-slots-only
+	remove(): void;
+	get ownerDocument(): Document;
 }
 
 export class Element extends Node implements globalThis.Element {
+	declare after: globalThis.Element["after"];
+	declare before: globalThis.Element["before"];
+	declare replaceWith: globalThis.Element["replaceWith"];
+	declare readonly nextElementSibling: globalThis.Element["nextElementSibling"];
+	declare readonly previousElementSibling: globalThis.Element["previousElementSibling"];
+	declare readonly childElementCount: globalThis.Element["childElementCount"];
+	declare readonly children: globalThis.Element["children"];
+	declare readonly firstElementChild: globalThis.Element["firstElementChild"];
+	declare readonly lastElementChild: globalThis.Element["lastElementChild"];
+	declare append: globalThis.Element["append"];
+	declare prepend: globalThis.Element["prepend"];
+	declare querySelector: globalThis.Element["querySelector"];
+	declare querySelectorAll: globalThis.Element["querySelectorAll"];
+	declare replaceChildren: globalThis.Element["replaceChildren"];
+	declare closest: globalThis.Element["closest"];
+	declare matches: globalThis.Element["matches"];
+	declare webkitMatchesSelector: globalThis.Element["webkitMatchesSelector"];
+	declare onfullscreenchange: globalThis.Element["onfullscreenchange"];
+	declare onfullscreenerror: globalThis.Element["onfullscreenerror"];
+	declare part: globalThis.Element["part"];
+	declare checkVisibility: globalThis.Element["checkVisibility"];
+	declare readonly clientWidth: globalThis.Element["clientWidth"];
+	declare readonly clientHeight: globalThis.Element["clientHeight"];
+	declare readonly scrollWidth: globalThis.Element["scrollWidth"];
+	declare readonly scrollHeight: globalThis.Element["scrollHeight"];
+	declare readonly clientLeft: globalThis.Element["clientLeft"];
+	declare readonly clientTop: globalThis.Element["clientTop"];
+	declare scrollIntoView: globalThis.Element["scrollIntoView"];
+	declare ariaActiveDescendantElement: globalThis.Element["ariaActiveDescendantElement"];
+	declare ariaAtomic: globalThis.Element["ariaAtomic"];
+	declare ariaAutoComplete: globalThis.Element["ariaAutoComplete"];
+	declare ariaBrailleLabel: globalThis.Element["ariaBrailleLabel"];
+	declare ariaBrailleRoleDescription: globalThis.Element["ariaBrailleRoleDescription"];
+	declare ariaBusy: globalThis.Element["ariaBusy"];
+	declare ariaChecked: globalThis.Element["ariaChecked"];
+	declare ariaColCount: globalThis.Element["ariaColCount"];
+	declare ariaColIndex: globalThis.Element["ariaColIndex"];
+	declare ariaColIndexText: globalThis.Element["ariaColIndexText"];
+	declare ariaColSpan: globalThis.Element["ariaColSpan"];
+	declare ariaControlsElements: globalThis.Element["ariaControlsElements"];
+	declare ariaCurrent: globalThis.Element["ariaCurrent"];
+	declare ariaDescribedByElements: globalThis.Element["ariaDescribedByElements"];
+	declare ariaDescription: globalThis.Element["ariaDescription"];
+	declare ariaDetailsElements: globalThis.Element["ariaDetailsElements"];
+	declare ariaDisabled: globalThis.Element["ariaDisabled"];
+	declare ariaErrorMessageElements: globalThis.Element["ariaErrorMessageElements"];
+	declare ariaExpanded: globalThis.Element["ariaExpanded"];
+	declare ariaFlowToElements: globalThis.Element["ariaFlowToElements"];
+	declare ariaHasPopup: globalThis.Element["ariaHasPopup"];
+	declare ariaHidden: globalThis.Element["ariaHidden"];
+	declare ariaInvalid: globalThis.Element["ariaInvalid"];
+	declare ariaKeyShortcuts: globalThis.Element["ariaKeyShortcuts"];
+	declare ariaLabel: globalThis.Element["ariaLabel"];
+	declare ariaLabelledByElements: globalThis.Element["ariaLabelledByElements"];
+	declare ariaLevel: globalThis.Element["ariaLevel"];
+	declare ariaLive: globalThis.Element["ariaLive"];
+	declare ariaModal: globalThis.Element["ariaModal"];
+	declare ariaMultiLine: globalThis.Element["ariaMultiLine"];
+	declare ariaMultiSelectable: globalThis.Element["ariaMultiSelectable"];
+	declare ariaOrientation: globalThis.Element["ariaOrientation"];
+	declare ariaOwnsElements: globalThis.Element["ariaOwnsElements"];
+	declare ariaPlaceholder: globalThis.Element["ariaPlaceholder"];
+	declare ariaPosInSet: globalThis.Element["ariaPosInSet"];
+	declare ariaPressed: globalThis.Element["ariaPressed"];
+	declare ariaReadOnly: globalThis.Element["ariaReadOnly"];
+	declare ariaRelevant: globalThis.Element["ariaRelevant"];
+	declare ariaRequired: globalThis.Element["ariaRequired"];
+	declare ariaRoleDescription: globalThis.Element["ariaRoleDescription"];
+	declare ariaRowCount: globalThis.Element["ariaRowCount"];
+	declare ariaRowIndex: globalThis.Element["ariaRowIndex"];
+	declare ariaRowIndexText: globalThis.Element["ariaRowIndexText"];
+	declare ariaRowSpan: globalThis.Element["ariaRowSpan"];
+	declare ariaSelected: globalThis.Element["ariaSelected"];
+	declare ariaSetSize: globalThis.Element["ariaSetSize"];
+	declare ariaSort: globalThis.Element["ariaSort"];
+	declare ariaValueMax: globalThis.Element["ariaValueMax"];
+	declare ariaValueMin: globalThis.Element["ariaValueMin"];
+	declare ariaValueNow: globalThis.Element["ariaValueNow"];
+	declare ariaValueText: globalThis.Element["ariaValueText"];
+	declare role: globalThis.Element["role"];
 	// Installed on the prototype, where the engine that implements them is.
 	declare getBoundingClientRect: () => globalThis.DOMRect;
 	declare getClientRects: () => globalThis.DOMRectList;
@@ -9569,29 +9646,119 @@ function replaceAllWithText(element: Element, value: string): void {
 	replaceAll(createTextFragment(document, text), element);
 }
 
-/**
- * The members the tables and the cascade give an HTML element: the event
- * handler attributes, the reflected attributes, and `style`, which the
- * cascade installs when it loads.
- */
-export interface HTMLElement
-	extends Pick<
-		globalThis.HTMLElement,
-		Extract<keyof globalThis.HTMLElement, `on${string}`> |
-		"accessKey" |
-		"autofocus" |
-		"dir" |
-		"enterKeyHint" |
-		"inputMode" |
-		"lang" |
-		"nonce" |
-		"popover" |
-		"title" |
-		"writingSuggestions" |
-		"style"
-	> {}
-
 export class HTMLElement extends Element {
+	declare onfullscreenchange: globalThis.HTMLElement["onfullscreenchange"];
+	declare onfullscreenerror: globalThis.HTMLElement["onfullscreenerror"];
+	declare accessKey: globalThis.HTMLElement["accessKey"];
+	declare dir: globalThis.HTMLElement["dir"];
+	declare lang: globalThis.HTMLElement["lang"];
+	declare popover: globalThis.HTMLElement["popover"];
+	declare title: globalThis.HTMLElement["title"];
+	declare writingSuggestions: globalThis.HTMLElement["writingSuggestions"];
+	declare enterKeyHint: globalThis.HTMLElement["enterKeyHint"];
+	declare inputMode: globalThis.HTMLElement["inputMode"];
+	declare onabort: globalThis.HTMLElement["onabort"];
+	declare onanimationcancel: globalThis.HTMLElement["onanimationcancel"];
+	declare onanimationend: globalThis.HTMLElement["onanimationend"];
+	declare onanimationiteration: globalThis.HTMLElement["onanimationiteration"];
+	declare onanimationstart: globalThis.HTMLElement["onanimationstart"];
+	declare onauxclick: globalThis.HTMLElement["onauxclick"];
+	declare onbeforeinput: globalThis.HTMLElement["onbeforeinput"];
+	declare onbeforematch: globalThis.HTMLElement["onbeforematch"];
+	declare onbeforetoggle: globalThis.HTMLElement["onbeforetoggle"];
+	declare onblur: globalThis.HTMLElement["onblur"];
+	declare oncancel: globalThis.HTMLElement["oncancel"];
+	declare oncanplay: globalThis.HTMLElement["oncanplay"];
+	declare oncanplaythrough: globalThis.HTMLElement["oncanplaythrough"];
+	declare onchange: globalThis.HTMLElement["onchange"];
+	declare onclick: globalThis.HTMLElement["onclick"];
+	declare onclose: globalThis.HTMLElement["onclose"];
+	declare oncontextlost: globalThis.HTMLElement["oncontextlost"];
+	declare oncontextmenu: globalThis.HTMLElement["oncontextmenu"];
+	declare oncontextrestored: globalThis.HTMLElement["oncontextrestored"];
+	declare oncopy: globalThis.HTMLElement["oncopy"];
+	declare oncuechange: globalThis.HTMLElement["oncuechange"];
+	declare oncut: globalThis.HTMLElement["oncut"];
+	declare ondblclick: globalThis.HTMLElement["ondblclick"];
+	declare ondrag: globalThis.HTMLElement["ondrag"];
+	declare ondragend: globalThis.HTMLElement["ondragend"];
+	declare ondragenter: globalThis.HTMLElement["ondragenter"];
+	declare ondragleave: globalThis.HTMLElement["ondragleave"];
+	declare ondragover: globalThis.HTMLElement["ondragover"];
+	declare ondragstart: globalThis.HTMLElement["ondragstart"];
+	declare ondrop: globalThis.HTMLElement["ondrop"];
+	declare ondurationchange: globalThis.HTMLElement["ondurationchange"];
+	declare onemptied: globalThis.HTMLElement["onemptied"];
+	declare onended: globalThis.HTMLElement["onended"];
+	declare onerror: globalThis.HTMLElement["onerror"];
+	declare onfocus: globalThis.HTMLElement["onfocus"];
+	declare onformdata: globalThis.HTMLElement["onformdata"];
+	declare ongotpointercapture: globalThis.HTMLElement["ongotpointercapture"];
+	declare oninput: globalThis.HTMLElement["oninput"];
+	declare oninvalid: globalThis.HTMLElement["oninvalid"];
+	declare onkeydown: globalThis.HTMLElement["onkeydown"];
+	declare onkeypress: globalThis.HTMLElement["onkeypress"];
+	declare onkeyup: globalThis.HTMLElement["onkeyup"];
+	declare onload: globalThis.HTMLElement["onload"];
+	declare onloadeddata: globalThis.HTMLElement["onloadeddata"];
+	declare onloadedmetadata: globalThis.HTMLElement["onloadedmetadata"];
+	declare onloadstart: globalThis.HTMLElement["onloadstart"];
+	declare onlostpointercapture: globalThis.HTMLElement["onlostpointercapture"];
+	declare onmousedown: globalThis.HTMLElement["onmousedown"];
+	declare onmouseenter: globalThis.HTMLElement["onmouseenter"];
+	declare onmouseleave: globalThis.HTMLElement["onmouseleave"];
+	declare onmousemove: globalThis.HTMLElement["onmousemove"];
+	declare onmouseout: globalThis.HTMLElement["onmouseout"];
+	declare onmouseover: globalThis.HTMLElement["onmouseover"];
+	declare onmouseup: globalThis.HTMLElement["onmouseup"];
+	declare onpaste: globalThis.HTMLElement["onpaste"];
+	declare onpause: globalThis.HTMLElement["onpause"];
+	declare onplay: globalThis.HTMLElement["onplay"];
+	declare onplaying: globalThis.HTMLElement["onplaying"];
+	declare onpointercancel: globalThis.HTMLElement["onpointercancel"];
+	declare onpointerdown: globalThis.HTMLElement["onpointerdown"];
+	declare onpointerenter: globalThis.HTMLElement["onpointerenter"];
+	declare onpointerleave: globalThis.HTMLElement["onpointerleave"];
+	declare onpointermove: globalThis.HTMLElement["onpointermove"];
+	declare onpointerout: globalThis.HTMLElement["onpointerout"];
+	declare onpointerover: globalThis.HTMLElement["onpointerover"];
+	declare onpointerrawupdate: globalThis.HTMLElement["onpointerrawupdate"];
+	declare onpointerup: globalThis.HTMLElement["onpointerup"];
+	declare onprogress: globalThis.HTMLElement["onprogress"];
+	declare onratechange: globalThis.HTMLElement["onratechange"];
+	declare onreset: globalThis.HTMLElement["onreset"];
+	declare onresize: globalThis.HTMLElement["onresize"];
+	declare onscroll: globalThis.HTMLElement["onscroll"];
+	declare onscrollend: globalThis.HTMLElement["onscrollend"];
+	declare onsecuritypolicyviolation: globalThis.HTMLElement["onsecuritypolicyviolation"];
+	declare onseeked: globalThis.HTMLElement["onseeked"];
+	declare onseeking: globalThis.HTMLElement["onseeking"];
+	declare onselect: globalThis.HTMLElement["onselect"];
+	declare onselectionchange: globalThis.HTMLElement["onselectionchange"];
+	declare onselectstart: globalThis.HTMLElement["onselectstart"];
+	declare onslotchange: globalThis.HTMLElement["onslotchange"];
+	declare onstalled: globalThis.HTMLElement["onstalled"];
+	declare onsubmit: globalThis.HTMLElement["onsubmit"];
+	declare onsuspend: globalThis.HTMLElement["onsuspend"];
+	declare ontimeupdate: globalThis.HTMLElement["ontimeupdate"];
+	declare ontoggle: globalThis.HTMLElement["ontoggle"];
+	declare ontouchcancel: globalThis.HTMLElement["ontouchcancel"];
+	declare ontouchend: globalThis.HTMLElement["ontouchend"];
+	declare ontouchmove: globalThis.HTMLElement["ontouchmove"];
+	declare ontouchstart: globalThis.HTMLElement["ontouchstart"];
+	declare ontransitioncancel: globalThis.HTMLElement["ontransitioncancel"];
+	declare ontransitionend: globalThis.HTMLElement["ontransitionend"];
+	declare ontransitionrun: globalThis.HTMLElement["ontransitionrun"];
+	declare ontransitionstart: globalThis.HTMLElement["ontransitionstart"];
+	declare onvolumechange: globalThis.HTMLElement["onvolumechange"];
+	declare onwaiting: globalThis.HTMLElement["onwaiting"];
+	declare onwebkitanimationend: globalThis.HTMLElement["onwebkitanimationend"];
+	declare onwebkitanimationiteration: globalThis.HTMLElement["onwebkitanimationiteration"];
+	declare onwebkitanimationstart: globalThis.HTMLElement["onwebkitanimationstart"];
+	declare onwebkittransitionend: globalThis.HTMLElement["onwebkittransitionend"];
+	declare onwheel: globalThis.HTMLElement["onwheel"];
+	declare autofocus: globalThis.HTMLElement["autofocus"];
+	declare nonce: globalThis.HTMLElement["nonce"];
 	// Installed on the prototype, where the engine that measures them is.
 	declare readonly offsetWidth: number;
 	declare readonly offsetHeight: number;
@@ -10492,19 +10659,113 @@ Object.defineProperty(HTMLUnknownElement.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export interface SVGElement
-	extends Pick<
-		globalThis.SVGElement,
-		Extract<keyof globalThis.GlobalEventHandlers, `on${string}`> |
-		"autofocus" |
-		"dataset" |
-		"nonce" |
-		"tabIndex" |
-		"blur" |
-		"focus"
-	> {}
-
 export class SVGElement extends Element {
+	declare onabort: globalThis.SVGElement["onabort"];
+	declare onanimationcancel: globalThis.SVGElement["onanimationcancel"];
+	declare onanimationend: globalThis.SVGElement["onanimationend"];
+	declare onanimationiteration: globalThis.SVGElement["onanimationiteration"];
+	declare onanimationstart: globalThis.SVGElement["onanimationstart"];
+	declare onauxclick: globalThis.SVGElement["onauxclick"];
+	declare onbeforeinput: globalThis.SVGElement["onbeforeinput"];
+	declare onbeforematch: globalThis.SVGElement["onbeforematch"];
+	declare onbeforetoggle: globalThis.SVGElement["onbeforetoggle"];
+	declare onblur: globalThis.SVGElement["onblur"];
+	declare oncancel: globalThis.SVGElement["oncancel"];
+	declare oncanplay: globalThis.SVGElement["oncanplay"];
+	declare oncanplaythrough: globalThis.SVGElement["oncanplaythrough"];
+	declare onchange: globalThis.SVGElement["onchange"];
+	declare onclick: globalThis.SVGElement["onclick"];
+	declare onclose: globalThis.SVGElement["onclose"];
+	declare oncontextlost: globalThis.SVGElement["oncontextlost"];
+	declare oncontextmenu: globalThis.SVGElement["oncontextmenu"];
+	declare oncontextrestored: globalThis.SVGElement["oncontextrestored"];
+	declare oncopy: globalThis.SVGElement["oncopy"];
+	declare oncuechange: globalThis.SVGElement["oncuechange"];
+	declare oncut: globalThis.SVGElement["oncut"];
+	declare ondblclick: globalThis.SVGElement["ondblclick"];
+	declare ondrag: globalThis.SVGElement["ondrag"];
+	declare ondragend: globalThis.SVGElement["ondragend"];
+	declare ondragenter: globalThis.SVGElement["ondragenter"];
+	declare ondragleave: globalThis.SVGElement["ondragleave"];
+	declare ondragover: globalThis.SVGElement["ondragover"];
+	declare ondragstart: globalThis.SVGElement["ondragstart"];
+	declare ondrop: globalThis.SVGElement["ondrop"];
+	declare ondurationchange: globalThis.SVGElement["ondurationchange"];
+	declare onemptied: globalThis.SVGElement["onemptied"];
+	declare onended: globalThis.SVGElement["onended"];
+	declare onerror: globalThis.SVGElement["onerror"];
+	declare onfocus: globalThis.SVGElement["onfocus"];
+	declare onformdata: globalThis.SVGElement["onformdata"];
+	declare ongotpointercapture: globalThis.SVGElement["ongotpointercapture"];
+	declare oninput: globalThis.SVGElement["oninput"];
+	declare oninvalid: globalThis.SVGElement["oninvalid"];
+	declare onkeydown: globalThis.SVGElement["onkeydown"];
+	declare onkeypress: globalThis.SVGElement["onkeypress"];
+	declare onkeyup: globalThis.SVGElement["onkeyup"];
+	declare onload: globalThis.SVGElement["onload"];
+	declare onloadeddata: globalThis.SVGElement["onloadeddata"];
+	declare onloadedmetadata: globalThis.SVGElement["onloadedmetadata"];
+	declare onloadstart: globalThis.SVGElement["onloadstart"];
+	declare onlostpointercapture: globalThis.SVGElement["onlostpointercapture"];
+	declare onmousedown: globalThis.SVGElement["onmousedown"];
+	declare onmouseenter: globalThis.SVGElement["onmouseenter"];
+	declare onmouseleave: globalThis.SVGElement["onmouseleave"];
+	declare onmousemove: globalThis.SVGElement["onmousemove"];
+	declare onmouseout: globalThis.SVGElement["onmouseout"];
+	declare onmouseover: globalThis.SVGElement["onmouseover"];
+	declare onmouseup: globalThis.SVGElement["onmouseup"];
+	declare onpaste: globalThis.SVGElement["onpaste"];
+	declare onpause: globalThis.SVGElement["onpause"];
+	declare onplay: globalThis.SVGElement["onplay"];
+	declare onplaying: globalThis.SVGElement["onplaying"];
+	declare onpointercancel: globalThis.SVGElement["onpointercancel"];
+	declare onpointerdown: globalThis.SVGElement["onpointerdown"];
+	declare onpointerenter: globalThis.SVGElement["onpointerenter"];
+	declare onpointerleave: globalThis.SVGElement["onpointerleave"];
+	declare onpointermove: globalThis.SVGElement["onpointermove"];
+	declare onpointerout: globalThis.SVGElement["onpointerout"];
+	declare onpointerover: globalThis.SVGElement["onpointerover"];
+	declare onpointerrawupdate: globalThis.SVGElement["onpointerrawupdate"];
+	declare onpointerup: globalThis.SVGElement["onpointerup"];
+	declare onprogress: globalThis.SVGElement["onprogress"];
+	declare onratechange: globalThis.SVGElement["onratechange"];
+	declare onreset: globalThis.SVGElement["onreset"];
+	declare onresize: globalThis.SVGElement["onresize"];
+	declare onscroll: globalThis.SVGElement["onscroll"];
+	declare onscrollend: globalThis.SVGElement["onscrollend"];
+	declare onsecuritypolicyviolation: globalThis.SVGElement["onsecuritypolicyviolation"];
+	declare onseeked: globalThis.SVGElement["onseeked"];
+	declare onseeking: globalThis.SVGElement["onseeking"];
+	declare onselect: globalThis.SVGElement["onselect"];
+	declare onselectionchange: globalThis.SVGElement["onselectionchange"];
+	declare onselectstart: globalThis.SVGElement["onselectstart"];
+	declare onslotchange: globalThis.SVGElement["onslotchange"];
+	declare onstalled: globalThis.SVGElement["onstalled"];
+	declare onsubmit: globalThis.SVGElement["onsubmit"];
+	declare onsuspend: globalThis.SVGElement["onsuspend"];
+	declare ontimeupdate: globalThis.SVGElement["ontimeupdate"];
+	declare ontoggle: globalThis.SVGElement["ontoggle"];
+	declare ontouchcancel: globalThis.SVGElement["ontouchcancel"];
+	declare ontouchend: globalThis.SVGElement["ontouchend"];
+	declare ontouchmove: globalThis.SVGElement["ontouchmove"];
+	declare ontouchstart: globalThis.SVGElement["ontouchstart"];
+	declare ontransitioncancel: globalThis.SVGElement["ontransitioncancel"];
+	declare ontransitionend: globalThis.SVGElement["ontransitionend"];
+	declare ontransitionrun: globalThis.SVGElement["ontransitionrun"];
+	declare ontransitionstart: globalThis.SVGElement["ontransitionstart"];
+	declare onvolumechange: globalThis.SVGElement["onvolumechange"];
+	declare onwaiting: globalThis.SVGElement["onwaiting"];
+	declare onwebkitanimationend: globalThis.SVGElement["onwebkitanimationend"];
+	declare onwebkitanimationiteration: globalThis.SVGElement["onwebkitanimationiteration"];
+	declare onwebkitanimationstart: globalThis.SVGElement["onwebkitanimationstart"];
+	declare onwebkittransitionend: globalThis.SVGElement["onwebkittransitionend"];
+	declare onwheel: globalThis.SVGElement["onwheel"];
+	declare autofocus: globalThis.SVGElement["autofocus"];
+	declare readonly dataset: globalThis.SVGElement["dataset"];
+	declare nonce: globalThis.SVGElement["nonce"];
+	declare tabIndex: globalThis.SVGElement["tabIndex"];
+	declare blur: globalThis.SVGElement["blur"];
+	declare focus: globalThis.SVGElement["focus"];
 	get style(): globalThis.CSSStyleDeclaration {
 		return getInlineStyle(this);
 	}
@@ -10581,19 +10842,113 @@ Object.defineProperty(SVGElement.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-interface MathMLElement
-	extends Pick<
-		globalThis.MathMLElement,
-		Extract<keyof globalThis.GlobalEventHandlers, `on${string}`> |
-		"autofocus" |
-		"dataset" |
-		"nonce" |
-		"tabIndex" |
-		"blur" |
-		"focus"
-	> {}
-
 class MathMLElement extends Element {
+	declare onabort: globalThis.MathMLElement["onabort"];
+	declare onanimationcancel: globalThis.MathMLElement["onanimationcancel"];
+	declare onanimationend: globalThis.MathMLElement["onanimationend"];
+	declare onanimationiteration: globalThis.MathMLElement["onanimationiteration"];
+	declare onanimationstart: globalThis.MathMLElement["onanimationstart"];
+	declare onauxclick: globalThis.MathMLElement["onauxclick"];
+	declare onbeforeinput: globalThis.MathMLElement["onbeforeinput"];
+	declare onbeforematch: globalThis.MathMLElement["onbeforematch"];
+	declare onbeforetoggle: globalThis.MathMLElement["onbeforetoggle"];
+	declare onblur: globalThis.MathMLElement["onblur"];
+	declare oncancel: globalThis.MathMLElement["oncancel"];
+	declare oncanplay: globalThis.MathMLElement["oncanplay"];
+	declare oncanplaythrough: globalThis.MathMLElement["oncanplaythrough"];
+	declare onchange: globalThis.MathMLElement["onchange"];
+	declare onclick: globalThis.MathMLElement["onclick"];
+	declare onclose: globalThis.MathMLElement["onclose"];
+	declare oncontextlost: globalThis.MathMLElement["oncontextlost"];
+	declare oncontextmenu: globalThis.MathMLElement["oncontextmenu"];
+	declare oncontextrestored: globalThis.MathMLElement["oncontextrestored"];
+	declare oncopy: globalThis.MathMLElement["oncopy"];
+	declare oncuechange: globalThis.MathMLElement["oncuechange"];
+	declare oncut: globalThis.MathMLElement["oncut"];
+	declare ondblclick: globalThis.MathMLElement["ondblclick"];
+	declare ondrag: globalThis.MathMLElement["ondrag"];
+	declare ondragend: globalThis.MathMLElement["ondragend"];
+	declare ondragenter: globalThis.MathMLElement["ondragenter"];
+	declare ondragleave: globalThis.MathMLElement["ondragleave"];
+	declare ondragover: globalThis.MathMLElement["ondragover"];
+	declare ondragstart: globalThis.MathMLElement["ondragstart"];
+	declare ondrop: globalThis.MathMLElement["ondrop"];
+	declare ondurationchange: globalThis.MathMLElement["ondurationchange"];
+	declare onemptied: globalThis.MathMLElement["onemptied"];
+	declare onended: globalThis.MathMLElement["onended"];
+	declare onerror: globalThis.MathMLElement["onerror"];
+	declare onfocus: globalThis.MathMLElement["onfocus"];
+	declare onformdata: globalThis.MathMLElement["onformdata"];
+	declare ongotpointercapture: globalThis.MathMLElement["ongotpointercapture"];
+	declare oninput: globalThis.MathMLElement["oninput"];
+	declare oninvalid: globalThis.MathMLElement["oninvalid"];
+	declare onkeydown: globalThis.MathMLElement["onkeydown"];
+	declare onkeypress: globalThis.MathMLElement["onkeypress"];
+	declare onkeyup: globalThis.MathMLElement["onkeyup"];
+	declare onload: globalThis.MathMLElement["onload"];
+	declare onloadeddata: globalThis.MathMLElement["onloadeddata"];
+	declare onloadedmetadata: globalThis.MathMLElement["onloadedmetadata"];
+	declare onloadstart: globalThis.MathMLElement["onloadstart"];
+	declare onlostpointercapture: globalThis.MathMLElement["onlostpointercapture"];
+	declare onmousedown: globalThis.MathMLElement["onmousedown"];
+	declare onmouseenter: globalThis.MathMLElement["onmouseenter"];
+	declare onmouseleave: globalThis.MathMLElement["onmouseleave"];
+	declare onmousemove: globalThis.MathMLElement["onmousemove"];
+	declare onmouseout: globalThis.MathMLElement["onmouseout"];
+	declare onmouseover: globalThis.MathMLElement["onmouseover"];
+	declare onmouseup: globalThis.MathMLElement["onmouseup"];
+	declare onpaste: globalThis.MathMLElement["onpaste"];
+	declare onpause: globalThis.MathMLElement["onpause"];
+	declare onplay: globalThis.MathMLElement["onplay"];
+	declare onplaying: globalThis.MathMLElement["onplaying"];
+	declare onpointercancel: globalThis.MathMLElement["onpointercancel"];
+	declare onpointerdown: globalThis.MathMLElement["onpointerdown"];
+	declare onpointerenter: globalThis.MathMLElement["onpointerenter"];
+	declare onpointerleave: globalThis.MathMLElement["onpointerleave"];
+	declare onpointermove: globalThis.MathMLElement["onpointermove"];
+	declare onpointerout: globalThis.MathMLElement["onpointerout"];
+	declare onpointerover: globalThis.MathMLElement["onpointerover"];
+	declare onpointerrawupdate: globalThis.MathMLElement["onpointerrawupdate"];
+	declare onpointerup: globalThis.MathMLElement["onpointerup"];
+	declare onprogress: globalThis.MathMLElement["onprogress"];
+	declare onratechange: globalThis.MathMLElement["onratechange"];
+	declare onreset: globalThis.MathMLElement["onreset"];
+	declare onresize: globalThis.MathMLElement["onresize"];
+	declare onscroll: globalThis.MathMLElement["onscroll"];
+	declare onscrollend: globalThis.MathMLElement["onscrollend"];
+	declare onsecuritypolicyviolation: globalThis.MathMLElement["onsecuritypolicyviolation"];
+	declare onseeked: globalThis.MathMLElement["onseeked"];
+	declare onseeking: globalThis.MathMLElement["onseeking"];
+	declare onselect: globalThis.MathMLElement["onselect"];
+	declare onselectionchange: globalThis.MathMLElement["onselectionchange"];
+	declare onselectstart: globalThis.MathMLElement["onselectstart"];
+	declare onslotchange: globalThis.MathMLElement["onslotchange"];
+	declare onstalled: globalThis.MathMLElement["onstalled"];
+	declare onsubmit: globalThis.MathMLElement["onsubmit"];
+	declare onsuspend: globalThis.MathMLElement["onsuspend"];
+	declare ontimeupdate: globalThis.MathMLElement["ontimeupdate"];
+	declare ontoggle: globalThis.MathMLElement["ontoggle"];
+	declare ontouchcancel: globalThis.MathMLElement["ontouchcancel"];
+	declare ontouchend: globalThis.MathMLElement["ontouchend"];
+	declare ontouchmove: globalThis.MathMLElement["ontouchmove"];
+	declare ontouchstart: globalThis.MathMLElement["ontouchstart"];
+	declare ontransitioncancel: globalThis.MathMLElement["ontransitioncancel"];
+	declare ontransitionend: globalThis.MathMLElement["ontransitionend"];
+	declare ontransitionrun: globalThis.MathMLElement["ontransitionrun"];
+	declare ontransitionstart: globalThis.MathMLElement["ontransitionstart"];
+	declare onvolumechange: globalThis.MathMLElement["onvolumechange"];
+	declare onwaiting: globalThis.MathMLElement["onwaiting"];
+	declare onwebkitanimationend: globalThis.MathMLElement["onwebkitanimationend"];
+	declare onwebkitanimationiteration: globalThis.MathMLElement["onwebkitanimationiteration"];
+	declare onwebkitanimationstart: globalThis.MathMLElement["onwebkitanimationstart"];
+	declare onwebkittransitionend: globalThis.MathMLElement["onwebkittransitionend"];
+	declare onwheel: globalThis.MathMLElement["onwheel"];
+	declare autofocus: globalThis.MathMLElement["autofocus"];
+	declare readonly dataset: globalThis.MathMLElement["dataset"];
+	declare nonce: globalThis.MathMLElement["nonce"];
+	declare tabIndex: globalThis.MathMLElement["tabIndex"];
+	declare blur: globalThis.MathMLElement["blur"];
+	declare focus: globalThis.MathMLElement["focus"];
 	get style(): globalThis.CSSStyleDeclaration {
 		return getInlineStyle(this);
 	}
@@ -11620,8 +11975,7 @@ const kDeclarative = Symbol("declarative");
 const kUAShadowTree = Symbol("user-agent shadow root");
 const kAvailableToInternals = Symbol("available to element internals");
 
-export interface ShadowRoot
-	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {
+export interface ShadowRoot {
 	[kShadowMode]: "open" | "closed";
 	[kUAShadowTree]: boolean;
 	[kDelegatesFocus]: boolean;
@@ -11639,6 +11993,16 @@ export interface ShadowRoot
  * composed path) works across it without a second concept.
  */
 export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoot {
+	declare readonly childElementCount: globalThis.ShadowRoot["childElementCount"];
+	declare readonly children: globalThis.ShadowRoot["children"];
+	declare readonly firstElementChild: globalThis.ShadowRoot["firstElementChild"];
+	declare readonly lastElementChild: globalThis.ShadowRoot["lastElementChild"];
+	declare append: globalThis.ShadowRoot["append"];
+	declare prepend: globalThis.ShadowRoot["prepend"];
+	declare querySelector: globalThis.ShadowRoot["querySelector"];
+	declare querySelectorAll: globalThis.ShadowRoot["querySelectorAll"];
+	declare replaceChildren: globalThis.ShadowRoot["replaceChildren"];
+	declare onslotchange: globalThis.ShadowRoot["onslotchange"];
 	constructor() {
 		super();
 		this[kShadowMode] = "open";
@@ -12635,40 +12999,36 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 
 // Written out rather than picked. A computed projection satisfies keyof
 // but not assignability, and assignability is what this is for.
-interface HTMLAnchorElement {
-	hash: string;
-	host: string;
-	hostname: string;
-	href: string;
-	toString(): string;
-	readonly origin: string;
-	password: string;
-	pathname: string;
-	port: string;
-	protocol: string;
-	search: string;
-	username: string;
-	charset: string;
-	coords: string;
-	download: string;
-	hreflang: string;
-	name: string;
-	ping: string;
-	referrerPolicy: string;
-	rel: string;
-	get relList(): DOMTokenList;
-	set relList(value: string);
-	rev: string;
-	shape: string;
-	target: string;
-	type: string;
-}
-
 // The HTML Standard's element interfaces, each filled in from the table.
 // The reflecting members come from `HTML_INTERFACES`. Members that are
 // not reflections are written in the class body. A class with an empty
 // body only reflects, which is all its interface does.
 class HTMLAnchorElement extends HTMLElement {
+	declare toString: () => string;
+	declare hash: string;
+	declare host: string;
+	declare hostname: string;
+	declare href: string;
+	declare readonly origin: string;
+	declare password: string;
+	declare pathname: string;
+	declare port: string;
+	declare protocol: string;
+	declare search: string;
+	declare username: string;
+	declare charset: string;
+	declare coords: string;
+	declare download: string;
+	declare hreflang: string;
+	declare name: string;
+	declare ping: string;
+	declare referrerPolicy: string;
+	declare rel: string;
+	declare relList: DOMTokenList;
+	declare rev: string;
+	declare shape: string;
+	declare target: string;
+	declare type: string;
 	get text(): string {
 		return getDescendantText(this);
 	}
@@ -12826,46 +13186,35 @@ function writeHyperlink(element: Element, change: (url: URL) => void): void {
 
 Object.defineProperties(HTMLAnchorElement.prototype, hyperlinkMembers);
 
-interface HTMLAreaElement
-	extends Pick<
-		globalThis.HTMLAreaElement,
-		"alt" |
-		"coords" |
-		"download" |
-		"hash" |
-		"host" |
-		"hostname" |
-		"href" |
-		"noHref" |
-		"origin" |
-		"password" |
-		"pathname" |
-		"ping" |
-		"port" |
-		"protocol" |
-		"referrerPolicy" |
-		"rel" |
-		"relList" |
-		"search" |
-		"shape" |
-		"target" |
-		"toString" |
-		"username"
-	> {}
-
-class HTMLAreaElement extends HTMLElement {}
+class HTMLAreaElement extends HTMLElement {
+	declare alt: globalThis.HTMLAreaElement["alt"];
+	declare coords: globalThis.HTMLAreaElement["coords"];
+	declare download: globalThis.HTMLAreaElement["download"];
+	declare hash: globalThis.HTMLAreaElement["hash"];
+	declare host: globalThis.HTMLAreaElement["host"];
+	declare hostname: globalThis.HTMLAreaElement["hostname"];
+	declare href: globalThis.HTMLAreaElement["href"];
+	declare noHref: globalThis.HTMLAreaElement["noHref"];
+	declare readonly origin: globalThis.HTMLAreaElement["origin"];
+	declare password: globalThis.HTMLAreaElement["password"];
+	declare pathname: globalThis.HTMLAreaElement["pathname"];
+	declare ping: globalThis.HTMLAreaElement["ping"];
+	declare port: globalThis.HTMLAreaElement["port"];
+	declare protocol: globalThis.HTMLAreaElement["protocol"];
+	declare referrerPolicy: globalThis.HTMLAreaElement["referrerPolicy"];
+	declare rel: globalThis.HTMLAreaElement["rel"];
+	declare relList: globalThis.HTMLAreaElement["relList"];
+	declare search: globalThis.HTMLAreaElement["search"];
+	declare shape: globalThis.HTMLAreaElement["shape"];
+	declare target: globalThis.HTMLAreaElement["target"];
+	declare toString: globalThis.HTMLAreaElement["toString"];
+	declare username: globalThis.HTMLAreaElement["username"];
+}
 
 Object.defineProperties(HTMLAreaElement.prototype, hyperlinkMembers);
 
-// Its own href is the exception: it resolves against the document's URL
-// rather than the base, because it is the base.
-interface HTMLBaseElement
-	extends Pick<
-		globalThis.HTMLBaseElement,
-		"target"
-	> {}
-
 class HTMLBaseElement extends HTMLElement {
+	declare target: globalThis.HTMLBaseElement["target"];
 	get href(): string {
 		const value = this.getAttribute("href");
 		const fallback = this[kDocument][kDocumentURL];
@@ -12880,41 +13229,33 @@ class HTMLBaseElement extends HTMLElement {
 	}
 }
 
-interface HTMLBodyElement
-	extends Pick<
-		globalThis.HTMLBodyElement,
-		"aLink" |
-		"background" |
-		"bgColor" |
-		"link" |
-		"text" |
-		"vLink"
-	>,
-	Pick<
-		globalThis.HTMLBodyElement,
-		"onafterprint" |
-		"onbeforeprint" |
-		"onbeforeunload" |
-		"ongamepadconnected" |
-		"ongamepaddisconnected" |
-		"onhashchange" |
-		"onlanguagechange" |
-		"onmessage" |
-		"onmessageerror" |
-		"onoffline" |
-		"ononline" |
-		"onpagehide" |
-		"onpagereveal" |
-		"onpageshow" |
-		"onpageswap" |
-		"onpopstate" |
-		"onrejectionhandled" |
-		"onstorage" |
-		"onunhandledrejection" |
-		"onunload"
-	> {}
-
 class HTMLBodyElement extends HTMLElement {
+	declare aLink: globalThis.HTMLBodyElement["aLink"];
+	declare background: globalThis.HTMLBodyElement["background"];
+	declare bgColor: globalThis.HTMLBodyElement["bgColor"];
+	declare link: globalThis.HTMLBodyElement["link"];
+	declare text: globalThis.HTMLBodyElement["text"];
+	declare vLink: globalThis.HTMLBodyElement["vLink"];
+	declare onafterprint: globalThis.HTMLBodyElement["onafterprint"];
+	declare onbeforeprint: globalThis.HTMLBodyElement["onbeforeprint"];
+	declare onbeforeunload: globalThis.HTMLBodyElement["onbeforeunload"];
+	declare ongamepadconnected: globalThis.HTMLBodyElement["ongamepadconnected"];
+	declare ongamepaddisconnected: globalThis.HTMLBodyElement["ongamepaddisconnected"];
+	declare onhashchange: globalThis.HTMLBodyElement["onhashchange"];
+	declare onlanguagechange: globalThis.HTMLBodyElement["onlanguagechange"];
+	declare onmessage: globalThis.HTMLBodyElement["onmessage"];
+	declare onmessageerror: globalThis.HTMLBodyElement["onmessageerror"];
+	declare onoffline: globalThis.HTMLBodyElement["onoffline"];
+	declare ononline: globalThis.HTMLBodyElement["ononline"];
+	declare onpagehide: globalThis.HTMLBodyElement["onpagehide"];
+	declare onpagereveal: globalThis.HTMLBodyElement["onpagereveal"];
+	declare onpageshow: globalThis.HTMLBodyElement["onpageshow"];
+	declare onpageswap: globalThis.HTMLBodyElement["onpageswap"];
+	declare onpopstate: globalThis.HTMLBodyElement["onpopstate"];
+	declare onrejectionhandled: globalThis.HTMLBodyElement["onrejectionhandled"];
+	declare onstorage: globalThis.HTMLBodyElement["onstorage"];
+	declare onunhandledrejection: globalThis.HTMLBodyElement["onunhandledrejection"];
+	declare onunload: globalThis.HTMLBodyElement["onunload"];
 	// lib.dom's overloads for this interface: the keyed one first.
 	override addEventListener<K extends keyof globalThis.HTMLBodyElementEventMap>(
 		type: K,
@@ -12961,32 +13302,20 @@ class HTMLBodyElement extends HTMLElement {
 	}
 }
 
-interface HTMLBRElement
-	extends Pick<
-		globalThis.HTMLBRElement,
-		"clear"
-	> {}
-
-class HTMLBRElement extends HTMLElement {}
-
-interface HTMLButtonElement
-	extends Pick<
-		globalThis.HTMLButtonElement,
-		"disabled" |
-		"name" |
-		"value"
-	>,
-	Pick<
-		globalThis.HTMLButtonElement,
-		"formAction" |
-		"formEnctype" |
-		"formMethod" |
-		"formNoValidate" |
-		"formTarget" |
-		"popoverTargetAction"
-	> {}
+class HTMLBRElement extends HTMLElement {
+	declare clear: globalThis.HTMLBRElement["clear"];
+}
 
 class HTMLButtonElement extends HTMLElement {
+	declare disabled: globalThis.HTMLButtonElement["disabled"];
+	declare name: globalThis.HTMLButtonElement["name"];
+	declare value: globalThis.HTMLButtonElement["value"];
+	declare formAction: globalThis.HTMLButtonElement["formAction"];
+	declare formEnctype: globalThis.HTMLButtonElement["formEnctype"];
+	declare formMethod: globalThis.HTMLButtonElement["formMethod"];
+	declare formNoValidate: globalThis.HTMLButtonElement["formNoValidate"];
+	declare formTarget: globalThis.HTMLButtonElement["formTarget"];
+	declare popoverTargetAction: globalThis.HTMLButtonElement["popoverTargetAction"];
 	// Installed from the element table and read by the algorithms below.
 	declare type: "submit" | "reset" | "button";
 
@@ -13034,16 +13363,9 @@ class HTMLButtonElement extends HTMLElement {
 	}
 }
 
-// A rendering context is a bitmap, and there is none. getContext
-// returns null exactly as it does for an unsupported context type.
-interface HTMLCanvasElement
-	extends Pick<
-		globalThis.HTMLCanvasElement,
-		"height" |
-		"width"
-	> {}
-
 class HTMLCanvasElement extends HTMLElement {
+	declare height: globalThis.HTMLCanvasElement["height"];
+	declare width: globalThis.HTMLCanvasElement["width"];
 	captureStream(_frameRequestRate?: number): globalThis.MediaStream {
 		return noMediaPipeline("media stream");
 	}
@@ -13093,13 +13415,9 @@ class HTMLCanvasElement extends HTMLElement {
 	}
 }
 
-interface HTMLDataElement
-	extends Pick<
-		globalThis.HTMLDataElement,
-		"value"
-	> {}
-
-class HTMLDataElement extends HTMLElement {}
+class HTMLDataElement extends HTMLElement {
+	declare value: globalThis.HTMLDataElement["value"];
+}
 
 const kOptions = Symbol("options");
 
@@ -13146,20 +13464,16 @@ const kUpgraded = Symbol("upgraded");
 // child, including text nodes, which no light-tree selector could reach.
 // Hiding a closed details' body is then one display flip on that
 // container.
-interface HTMLDetailsElement
-	extends Pick<
-		globalThis.HTMLDetailsElement,
-		"name" |
-		"open"
-	> {
+interface HTMLDetailsElement {
 	[kToggleQueued]: boolean;
 	[kStateAtQueue]: string;
-
 	[kUpgraded]: boolean;
 	[kContent]: globalThis.HTMLElement | null;
 }
 
 class HTMLDetailsElement extends HTMLElement {
+	declare name: globalThis.HTMLDetailsElement["name"];
+	declare open: globalThis.HTMLDetailsElement["open"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kToggleQueued] = false;
@@ -13308,17 +13622,14 @@ const kPreviouslyFocused = Symbol("previouslyFocused");
 // stacking context and outside the flow it was written in, and makes the
 // rest of the document unreachable until it closes. show() leaves it
 // where it is, as an ordinary visible box.
-interface HTMLDialogElement
-	extends Pick<
-		globalThis.HTMLDialogElement,
-		"open"
-	> {
+interface HTMLDialogElement {
 	[kReturnValue]: string;
 	// Where focus was when the dialog took it, so closing can restore it.
 	[kPreviouslyFocused]: Element | null;
 }
 
 class HTMLDialogElement extends HTMLElement {
+	declare open: globalThis.HTMLDialogElement["open"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kReturnValue] = "";
@@ -13502,43 +13813,26 @@ function isConnectedNode(node: Node): boolean {
 	return node[kConnected];
 }
 
-interface HTMLDirectoryElement
-	extends Pick<
-		globalThis.HTMLDirectoryElement,
-		"compact"
-	> {}
+class HTMLDirectoryElement extends HTMLElement {
+	declare compact: globalThis.HTMLDirectoryElement["compact"];
+}
 
-class HTMLDirectoryElement extends HTMLElement {}
+class HTMLDivElement extends HTMLElement {
+	declare align: globalThis.HTMLDivElement["align"];
+}
 
-interface HTMLDivElement
-	extends Pick<
-		globalThis.HTMLDivElement,
-		"align"
-	> {}
-
-class HTMLDivElement extends HTMLElement {}
-
-interface HTMLDListElement
-	extends Pick<
-		globalThis.HTMLDListElement,
-		"compact"
-	> {}
-
-class HTMLDListElement extends HTMLElement {}
-
-interface HTMLEmbedElement
-	extends Pick<
-		globalThis.HTMLEmbedElement,
-		"align" |
-		"height" |
-		"name" |
-		"src" |
-		"type" |
-		"width"
-	> {}
+class HTMLDListElement extends HTMLElement {
+	declare compact: globalThis.HTMLDListElement["compact"];
+}
 
 /** Never loads, so it has no SVG document. */
 class HTMLEmbedElement extends HTMLElement {
+	declare name: globalThis.HTMLEmbedElement["name"];
+	declare height: globalThis.HTMLEmbedElement["height"];
+	declare width: globalThis.HTMLEmbedElement["width"];
+	declare align: globalThis.HTMLEmbedElement["align"];
+	declare src: globalThis.HTMLEmbedElement["src"];
+	declare type: globalThis.HTMLEmbedElement["type"];
 	getSVGDocument(): Document | null {
 		return null;
 	}
@@ -13546,16 +13840,13 @@ class HTMLEmbedElement extends HTMLElement {
 
 const kElements = Symbol("elements");
 
-interface HTMLFieldSetElement
-	extends Pick<
-		globalThis.HTMLFieldSetElement,
-		"disabled" |
-		"name"
-	> {
+interface HTMLFieldSetElement {
 	[kElements]: HTMLCollection | null;
 }
 
 class HTMLFieldSetElement extends HTMLElement {
+	declare disabled: globalThis.HTMLFieldSetElement["disabled"];
+	declare name: globalThis.HTMLFieldSetElement["name"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kElements] = null;
@@ -13617,15 +13908,11 @@ class HTMLFieldSetElement extends HTMLElement {
 	}
 }
 
-interface HTMLFontElement
-	extends Pick<
-		globalThis.HTMLFontElement,
-		"color" |
-		"face" |
-		"size"
-	> {}
-
-class HTMLFontElement extends HTMLElement {}
+class HTMLFontElement extends HTMLElement {
+	declare color: globalThis.HTMLFontElement["color"];
+	declare face: globalThis.HTMLFontElement["face"];
+	declare size: globalThis.HTMLFontElement["size"];
+}
 
 const kFiringReset = Symbol("firingReset");
 
@@ -13636,25 +13923,23 @@ const kFiringReset = Symbol("firingReset");
 interface HTMLFormElement {
 	[kElements]: HTMLFormControlsCollection | null;
 	[kFiringReset]: boolean;
+}
 
+class HTMLFormElement extends HTMLElement {
 	// lib.dom's named and indexed getters. Declared for parity, not
 	// installed: form.name and form[0] are undefined here.
 	[index: number]: Element;
 	[name: string]: any;
-	acceptCharset: string;
-	action: string;
-	autocomplete: AutoFillBase;
-	enctype: string;
-	method: string;
-	name: string;
-	noValidate: boolean;
-	rel: string;
-	get relList(): DOMTokenList;
-	set relList(value: string);
-	target: string;
-}
-
-class HTMLFormElement extends HTMLElement {
+	declare acceptCharset: string;
+	declare action: string;
+	declare autocomplete: AutoFillBase;
+	declare enctype: string;
+	declare method: string;
+	declare name: string;
+	declare noValidate: boolean;
+	declare rel: string;
+	declare relList: DOMTokenList;
+	declare target: string;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kElements] = null;
@@ -13938,10 +14223,11 @@ Object.defineProperty(
 	{value: "HTMLFormControlsCollection", configurable: true},
 );
 
-interface RadioNodeList {
-	item(index: number): HTMLInputElement;
+class RadioNodeList extends NodeList {
 	[index: number]: HTMLInputElement;
-	forEach: (
+	declare item: (index: number) => HTMLInputElement;
+	declare [Symbol.iterator]: () => ArrayIterator<globalThis.HTMLInputElement>;
+	declare forEach: (
 		callback: (
 			node: HTMLInputElement,
 			index: number,
@@ -13949,12 +14235,9 @@ interface RadioNodeList {
 		) => void,
 		thisArg?: any,
 	) => void;
-	values: () => ArrayIterator<globalThis.HTMLInputElement>;
-	entries: () => ArrayIterator<[number, globalThis.HTMLInputElement]>;
-	[Symbol.iterator]: () => ArrayIterator<globalThis.HTMLInputElement>;
-}
 
-class RadioNodeList extends NodeList {
+	declare values: () => ArrayIterator<globalThis.HTMLInputElement>;
+	declare entries: () => ArrayIterator<[number, globalThis.HTMLInputElement]>;
 	constructor(compute: () => Node[], owner: Node | null = null) {
 		super(compute, true, owner, null, anyAttribute, true);
 	}
@@ -13995,21 +14278,15 @@ Object.defineProperty(RadioNodeList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** Has no browsing context here either. */
-interface HTMLFrameElement
-	extends Pick<
-		globalThis.HTMLFrameElement,
-		"frameBorder" |
-		"longDesc" |
-		"marginHeight" |
-		"marginWidth" |
-		"name" |
-		"noResize" |
-		"scrolling" |
-		"src"
-	> {}
-
 class HTMLFrameElement extends HTMLElement {
+	declare name: globalThis.HTMLFrameElement["name"];
+	declare src: globalThis.HTMLFrameElement["src"];
+	declare frameBorder: globalThis.HTMLFrameElement["frameBorder"];
+	declare longDesc: globalThis.HTMLFrameElement["longDesc"];
+	declare marginHeight: globalThis.HTMLFrameElement["marginHeight"];
+	declare marginWidth: globalThis.HTMLFrameElement["marginWidth"];
+	declare noResize: globalThis.HTMLFrameElement["noResize"];
+	declare scrolling: globalThis.HTMLFrameElement["scrolling"];
 	get contentDocument(): Document | null {
 		return null;
 	}
@@ -14019,37 +14296,29 @@ class HTMLFrameElement extends HTMLElement {
 	}
 }
 
-interface HTMLFrameSetElement
-	extends Pick<
-		globalThis.HTMLFrameSetElement,
-		"cols" |
-		"rows"
-	>,
-	Pick<
-		globalThis.HTMLFrameSetElement,
-		"onafterprint" |
-		"onbeforeprint" |
-		"onbeforeunload" |
-		"ongamepadconnected" |
-		"ongamepaddisconnected" |
-		"onhashchange" |
-		"onlanguagechange" |
-		"onmessage" |
-		"onmessageerror" |
-		"onoffline" |
-		"ononline" |
-		"onpagehide" |
-		"onpagereveal" |
-		"onpageshow" |
-		"onpageswap" |
-		"onpopstate" |
-		"onrejectionhandled" |
-		"onstorage" |
-		"onunhandledrejection" |
-		"onunload"
-	> {}
-
 class HTMLFrameSetElement extends HTMLElement {
+	declare cols: globalThis.HTMLFrameSetElement["cols"];
+	declare rows: globalThis.HTMLFrameSetElement["rows"];
+	declare onafterprint: globalThis.HTMLFrameSetElement["onafterprint"];
+	declare onbeforeprint: globalThis.HTMLFrameSetElement["onbeforeprint"];
+	declare onbeforeunload: globalThis.HTMLFrameSetElement["onbeforeunload"];
+	declare ongamepadconnected: globalThis.HTMLFrameSetElement["ongamepadconnected"];
+	declare ongamepaddisconnected: globalThis.HTMLFrameSetElement["ongamepaddisconnected"];
+	declare onhashchange: globalThis.HTMLFrameSetElement["onhashchange"];
+	declare onlanguagechange: globalThis.HTMLFrameSetElement["onlanguagechange"];
+	declare onmessage: globalThis.HTMLFrameSetElement["onmessage"];
+	declare onmessageerror: globalThis.HTMLFrameSetElement["onmessageerror"];
+	declare onoffline: globalThis.HTMLFrameSetElement["onoffline"];
+	declare ononline: globalThis.HTMLFrameSetElement["ononline"];
+	declare onpagehide: globalThis.HTMLFrameSetElement["onpagehide"];
+	declare onpagereveal: globalThis.HTMLFrameSetElement["onpagereveal"];
+	declare onpageshow: globalThis.HTMLFrameSetElement["onpageshow"];
+	declare onpageswap: globalThis.HTMLFrameSetElement["onpageswap"];
+	declare onpopstate: globalThis.HTMLFrameSetElement["onpopstate"];
+	declare onrejectionhandled: globalThis.HTMLFrameSetElement["onrejectionhandled"];
+	declare onstorage: globalThis.HTMLFrameSetElement["onstorage"];
+	declare onunhandledrejection: globalThis.HTMLFrameSetElement["onunhandledrejection"];
+	declare onunload: globalThis.HTMLFrameSetElement["onunload"];
 	// lib.dom's overloads for this interface: the keyed one first.
 	override addEventListener<
 		K extends keyof globalThis.HTMLFrameSetElementEventMap,
@@ -14100,33 +14369,21 @@ class HTMLFrameSetElement extends HTMLElement {
 
 class HTMLHeadElement extends HTMLElement {}
 
-interface HTMLHeadingElement
-	extends Pick<
-		globalThis.HTMLHeadingElement,
-		"align"
-	> {}
+class HTMLHeadingElement extends HTMLElement {
+	declare align: globalThis.HTMLHeadingElement["align"];
+}
 
-class HTMLHeadingElement extends HTMLElement {}
+class HTMLHRElement extends HTMLElement {
+	declare width: globalThis.HTMLHRElement["width"];
+	declare align: globalThis.HTMLHRElement["align"];
+	declare color: globalThis.HTMLHRElement["color"];
+	declare size: globalThis.HTMLHRElement["size"];
+	declare noShade: globalThis.HTMLHRElement["noShade"];
+}
 
-interface HTMLHRElement
-	extends Pick<
-		globalThis.HTMLHRElement,
-		"align" |
-		"color" |
-		"noShade" |
-		"size" |
-		"width"
-	> {}
-
-class HTMLHRElement extends HTMLElement {}
-
-interface HTMLHtmlElement
-	extends Pick<
-		globalThis.HTMLHtmlElement,
-		"version"
-	> {}
-
-class HTMLHtmlElement extends HTMLElement {}
+class HTMLHtmlElement extends HTMLElement {
+	declare version: globalThis.HTMLHtmlElement["version"];
+}
 
 const kContentDocument = Symbol("contentDocument");
 const kContentWindow = Symbol("contentWindow");
@@ -14146,29 +14403,7 @@ interface FrameWindowLike {
 // performs no fetches, so a src iframe holds about:blank, the same
 // document a browser shows before navigation. There is no second realm;
 // the frame's constructors are this realm's.
-interface HTMLIFrameElement
-	extends Pick<
-		globalThis.HTMLIFrameElement,
-		"loading"
-	>,
-	Pick<
-		globalThis.HTMLIFrameElement,
-		"align" |
-		"allow" |
-		"allowFullscreen" |
-		"frameBorder" |
-		"height" |
-		"longDesc" |
-		"marginHeight" |
-		"marginWidth" |
-		"name" |
-		"referrerPolicy" |
-		"sandbox" |
-		"scrolling" |
-		"src" |
-		"srcdoc" |
-		"width"
-	> {
+interface HTMLIFrameElement {
 	[kContentDocument]: Document | null;
 	[kContentWindow]: FrameWindowLike | null;
 	// Identifies the stretch of connectedness the current content document
@@ -14178,6 +14413,22 @@ interface HTMLIFrameElement
 }
 
 class HTMLIFrameElement extends HTMLElement {
+	declare loading: globalThis.HTMLIFrameElement["loading"];
+	declare referrerPolicy: globalThis.HTMLIFrameElement["referrerPolicy"];
+	declare name: globalThis.HTMLIFrameElement["name"];
+	declare height: globalThis.HTMLIFrameElement["height"];
+	declare width: globalThis.HTMLIFrameElement["width"];
+	declare align: globalThis.HTMLIFrameElement["align"];
+	declare src: globalThis.HTMLIFrameElement["src"];
+	declare frameBorder: globalThis.HTMLIFrameElement["frameBorder"];
+	declare longDesc: globalThis.HTMLIFrameElement["longDesc"];
+	declare marginHeight: globalThis.HTMLIFrameElement["marginHeight"];
+	declare marginWidth: globalThis.HTMLIFrameElement["marginWidth"];
+	declare scrolling: globalThis.HTMLIFrameElement["scrolling"];
+	declare allow: globalThis.HTMLIFrameElement["allow"];
+	declare allowFullscreen: globalThis.HTMLIFrameElement["allowFullscreen"];
+	declare sandbox: globalThis.HTMLIFrameElement["sandbox"];
+	declare srcdoc: globalThis.HTMLIFrameElement["srcdoc"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kContentDocument] = null;
@@ -14245,43 +14496,31 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	};
 }
 
-interface HTMLImageElement
-	extends Pick<
-		globalThis.HTMLImageElement,
-		"align" |
-		"alt" |
-		"border" |
-		"complete" |
-		"crossOrigin" |
-		"currentSrc" |
-		"decode" |
-		"decoding" |
-		"fetchPriority" |
-		"height" |
-		"hspace" |
-		"isMap" |
-		"loading" |
-		"longDesc" |
-		"lowsrc" |
-		"name" |
-		"naturalHeight" |
-		"naturalWidth" |
-		"referrerPolicy" |
-		"sizes" |
-		"src" |
-		"srcset" |
-		"useMap" |
-		"vspace" |
-		"width" |
-		"x" |
-		"y"
-	> {}
-
 // Nothing is fetched, so image data is never available. The natural
 // dimensions are zero, the current source is empty, and decoding
 // rejects. The width and height an author reads are the attributes,
 // which is what the spec returns for an image that is not rendered.
 class HTMLImageElement extends HTMLElement {
+	declare alt: globalThis.HTMLImageElement["alt"];
+	declare referrerPolicy: globalThis.HTMLImageElement["referrerPolicy"];
+	declare name: globalThis.HTMLImageElement["name"];
+	declare height: globalThis.HTMLImageElement["height"];
+	declare width: globalThis.HTMLImageElement["width"];
+	declare align: globalThis.HTMLImageElement["align"];
+	declare src: globalThis.HTMLImageElement["src"];
+	declare longDesc: globalThis.HTMLImageElement["longDesc"];
+	declare loading: globalThis.HTMLImageElement["loading"];
+	declare border: globalThis.HTMLImageElement["border"];
+	declare crossOrigin: globalThis.HTMLImageElement["crossOrigin"];
+	declare decoding: globalThis.HTMLImageElement["decoding"];
+	declare fetchPriority: globalThis.HTMLImageElement["fetchPriority"];
+	declare hspace: globalThis.HTMLImageElement["hspace"];
+	declare isMap: globalThis.HTMLImageElement["isMap"];
+	declare lowsrc: globalThis.HTMLImageElement["lowsrc"];
+	declare sizes: globalThis.HTMLImageElement["sizes"];
+	declare srcset: globalThis.HTMLImageElement["srcset"];
+	declare useMap: globalThis.HTMLImageElement["useMap"];
+	declare vspace: globalThis.HTMLImageElement["vspace"];
 	get naturalWidth(): number {
 		return 0;
 	}
@@ -14379,43 +14618,7 @@ function formatWeekString(date: Date): string {
 // checkbox or radio. The tree is derived from the value, which is the
 // only state. The editing keys are the control's own default action,
 // implemented as a keydown listener like a browser's editing internals.
-export interface HTMLInputElement
-	extends Pick<
-		globalThis.HTMLInputElement,
-		"accept" |
-		"align" |
-		"alt" |
-		"defaultChecked" |
-		"defaultValue" |
-		"dirName" |
-		"disabled" |
-		"max" |
-		"maxLength" |
-		"min" |
-		"minLength" |
-		"multiple" |
-		"name" |
-		"pattern" |
-		"placeholder" |
-		"readOnly" |
-		"required" |
-		"src" |
-		"step" |
-		"useMap"
-	>,
-	Pick<
-		globalThis.HTMLInputElement,
-		"autocomplete" |
-		"formAction" |
-		"formEnctype" |
-		"formMethod" |
-		"formNoValidate" |
-		"formTarget" |
-		"height" |
-		"popoverTargetAction" |
-		"size" |
-		"width"
-	> {
+export interface HTMLInputElement {
 	[kFiles]: FileList | null;
 	[kValue]: string;
 	[kDirtyValue]: boolean;
@@ -14428,7 +14631,6 @@ export interface HTMLInputElement
 	[kPreviouslyChecked]: boolean;
 	[kPreviouslyIndeterminate]: boolean;
 	[kPreviousRadio]: HTMLInputElement | null;
-
 	// The rendered tree and what it was built for: "text control" for a
 	// text-like input, "toggle" for checkbox/radio, null until built. The two
 	// are different trees, so a type change rebuilds.
@@ -14438,12 +14640,10 @@ export interface HTMLInputElement
 	[kValueText]: globalThis.Text | null;
 	[kPlaceholderText]: globalThis.Text | null;
 	[kGlyphText]: globalThis.Text | null;
-
 	// A typed character arrives as insertText. A paste arrives as
 	// insertFromPaste, and a single-line input strips its line breaks (HTML
 	// value sanitization). A toggle accepts neither, since it holds no text.
 	[kOnBeforeInput]: (event: InputEvent) => void;
-
 	// A checkbox or radio activates on Space or Enter and never accepts typed
 	// text. Home and End move to the ends of the whole value, since an input
 	// has no visual lines. Everything else is the shared text control logic.
@@ -14451,6 +14651,36 @@ export interface HTMLInputElement
 }
 
 export class HTMLInputElement extends HTMLElement {
+	declare alt: globalThis.HTMLInputElement["alt"];
+	declare disabled: globalThis.HTMLInputElement["disabled"];
+	declare name: globalThis.HTMLInputElement["name"];
+	declare align: globalThis.HTMLInputElement["align"];
+	declare src: globalThis.HTMLInputElement["src"];
+	declare useMap: globalThis.HTMLInputElement["useMap"];
+	declare accept: globalThis.HTMLInputElement["accept"];
+	declare defaultChecked: globalThis.HTMLInputElement["defaultChecked"];
+	declare defaultValue: globalThis.HTMLInputElement["defaultValue"];
+	declare dirName: globalThis.HTMLInputElement["dirName"];
+	declare max: globalThis.HTMLInputElement["max"];
+	declare maxLength: globalThis.HTMLInputElement["maxLength"];
+	declare min: globalThis.HTMLInputElement["min"];
+	declare minLength: globalThis.HTMLInputElement["minLength"];
+	declare multiple: globalThis.HTMLInputElement["multiple"];
+	declare pattern: globalThis.HTMLInputElement["pattern"];
+	declare placeholder: globalThis.HTMLInputElement["placeholder"];
+	declare readOnly: globalThis.HTMLInputElement["readOnly"];
+	declare required: globalThis.HTMLInputElement["required"];
+	declare step: globalThis.HTMLInputElement["step"];
+	declare formAction: globalThis.HTMLInputElement["formAction"];
+	declare formEnctype: globalThis.HTMLInputElement["formEnctype"];
+	declare formMethod: globalThis.HTMLInputElement["formMethod"];
+	declare formNoValidate: globalThis.HTMLInputElement["formNoValidate"];
+	declare formTarget: globalThis.HTMLInputElement["formTarget"];
+	declare popoverTargetAction: globalThis.HTMLInputElement["popoverTargetAction"];
+	declare height: globalThis.HTMLInputElement["height"];
+	declare width: globalThis.HTMLInputElement["width"];
+	declare size: globalThis.HTMLInputElement["size"];
+	declare autocomplete: globalThis.HTMLInputElement["autocomplete"];
 	// Installed from the element table and read by the algorithms below.
 	declare type: string;
 
@@ -15504,13 +15734,8 @@ function getCheckedRadio(
 	return getRadioGroup(input).find((radio) => radio.checked);
 }
 
-export interface HTMLLabelElement
-	extends Pick<
-		globalThis.HTMLLabelElement,
-		"htmlFor"
-	> {}
-
 export class HTMLLabelElement extends HTMLElement {
+	declare htmlFor: globalThis.HTMLLabelElement["htmlFor"];
 	get form(): HTMLFormElement | null {
 		const control = this.control;
 		return control === null ? null : getFormOwner(control);
@@ -15549,13 +15774,8 @@ export class HTMLLabelElement extends HTMLElement {
 	}
 }
 
-interface HTMLLegendElement
-	extends Pick<
-		globalThis.HTMLLegendElement,
-		"align"
-	> {}
-
 class HTMLLegendElement extends HTMLElement {
+	declare align: globalThis.HTMLLegendElement["align"];
 	get form(): HTMLFormElement | null {
 		const parent = this[kParent];
 		if (parent === null || !(parent instanceof HTMLFieldSetElement)) {
@@ -15565,44 +15785,31 @@ class HTMLLegendElement extends HTMLElement {
 	}
 }
 
-interface HTMLLIElement
-	extends Pick<
-		globalThis.HTMLLIElement,
-		"type" |
-		"value"
-	> {}
-
-class HTMLLIElement extends HTMLElement {}
-
-/** Never fetched, so it never has a sheet. */
-export interface HTMLLinkElement
-	extends Pick<
-		globalThis.HTMLLinkElement,
-		"blocking" |
-		"charset" |
-		"crossOrigin" |
-		"disabled" |
-		"href" |
-		"hreflang" |
-		"imageSizes" |
-		"imageSrcset" |
-		"integrity" |
-		"media" |
-		"referrerPolicy" |
-		"rel" |
-		"relList" |
-		"rev" |
-		"sizes" |
-		"target" |
-		"type"
-	>,
-	Pick<
-		globalThis.HTMLLinkElement,
-		"as" |
-		"fetchPriority"
-	> {}
+class HTMLLIElement extends HTMLElement {
+	declare value: globalThis.HTMLLIElement["value"];
+	declare type: globalThis.HTMLLIElement["type"];
+}
 
 export class HTMLLinkElement extends HTMLElement {
+	declare href: globalThis.HTMLLinkElement["href"];
+	declare referrerPolicy: globalThis.HTMLLinkElement["referrerPolicy"];
+	declare rel: globalThis.HTMLLinkElement["rel"];
+	declare relList: globalThis.HTMLLinkElement["relList"];
+	declare target: globalThis.HTMLLinkElement["target"];
+	declare disabled: globalThis.HTMLLinkElement["disabled"];
+	declare type: globalThis.HTMLLinkElement["type"];
+	declare crossOrigin: globalThis.HTMLLinkElement["crossOrigin"];
+	declare sizes: globalThis.HTMLLinkElement["sizes"];
+	declare blocking: globalThis.HTMLLinkElement["blocking"];
+	declare charset: globalThis.HTMLLinkElement["charset"];
+	declare hreflang: globalThis.HTMLLinkElement["hreflang"];
+	declare imageSizes: globalThis.HTMLLinkElement["imageSizes"];
+	declare imageSrcset: globalThis.HTMLLinkElement["imageSrcset"];
+	declare integrity: globalThis.HTMLLinkElement["integrity"];
+	declare media: globalThis.HTMLLinkElement["media"];
+	declare rev: globalThis.HTMLLinkElement["rev"];
+	declare fetchPriority: globalThis.HTMLLinkElement["fetchPriority"];
+	declare as: globalThis.HTMLLinkElement["as"];
 	get sheet(): globalThis.CSSStyleSheet | null {
 		return null;
 	}
@@ -15610,15 +15817,12 @@ export class HTMLLinkElement extends HTMLElement {
 
 const kAreas = Symbol("areas");
 
-interface HTMLMapElement
-	extends Pick<
-		globalThis.HTMLMapElement,
-		"name"
-	> {
+interface HTMLMapElement {
 	[kAreas]: HTMLCollection | null;
 }
 
 class HTMLMapElement extends HTMLElement {
+	declare name: globalThis.HTMLMapElement["name"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kAreas] = null;
@@ -15642,27 +15846,18 @@ class HTMLMapElement extends HTMLElement {
 	}
 }
 
-/** Its scrolling is a rendering effect the tree does not implement. */
-interface HTMLMarqueeElement
-	extends Pick<
-		globalThis.HTMLMarqueeElement,
-		"behavior" |
-		"bgColor" |
-		"direction" |
-		"height" |
-		"scrollAmount" |
-		"scrollDelay" |
-		"trueSpeed" |
-		"width"
-	>,
-	Pick<
-		globalThis.HTMLMarqueeElement,
-		"hspace" |
-		"loop" |
-		"vspace"
-	> {}
-
 class HTMLMarqueeElement extends HTMLElement {
+	declare bgColor: globalThis.HTMLMarqueeElement["bgColor"];
+	declare height: globalThis.HTMLMarqueeElement["height"];
+	declare width: globalThis.HTMLMarqueeElement["width"];
+	declare behavior: globalThis.HTMLMarqueeElement["behavior"];
+	declare direction: globalThis.HTMLMarqueeElement["direction"];
+	declare scrollAmount: globalThis.HTMLMarqueeElement["scrollAmount"];
+	declare scrollDelay: globalThis.HTMLMarqueeElement["scrollDelay"];
+	declare trueSpeed: globalThis.HTMLMarqueeElement["trueSpeed"];
+	declare hspace: globalThis.HTMLMarqueeElement["hspace"];
+	declare vspace: globalThis.HTMLMarqueeElement["vspace"];
+	declare loop: globalThis.HTMLMarqueeElement["loop"];
 	start(): void {}
 
 	stop(): void {}
@@ -15694,39 +15889,13 @@ function noMediaPipeline(what: string): never {
 // paused, and a NaN duration. The members that return a resource's own
 // objects (buffered ranges, tracks, error) are absent rather than
 // returning an empty stand-in.
-interface HTMLMediaElement
-	extends Pick<
-		globalThis.HTMLMediaElement,
-		"autoplay" |
-		"controls" |
-		"crossOrigin" |
-		"defaultMuted" |
-		"loop" |
-		"src"
-	>,
-	Pick<
-		globalThis.HTMLMediaElement,
-		"preload" |
-		"disableRemotePlayback" |
-		"onencrypted" |
-		"onwaitingforkey"
-	> {
+interface HTMLMediaElement {
 	[kVolume]: number;
 	[kMuted]: boolean;
 	[kPlaybackRate]: number;
 	[kDefaultPlaybackRate]: number;
 	[kPreservesPitch]: boolean;
 	[kCurrentTime]: number;
-
-	readonly NETWORK_EMPTY: 0;
-	readonly NETWORK_IDLE: 1;
-	readonly NETWORK_LOADING: 2;
-	readonly NETWORK_NO_SOURCE: 3;
-	readonly HAVE_NOTHING: 0;
-	readonly HAVE_METADATA: 1;
-	readonly HAVE_CURRENT_DATA: 2;
-	readonly HAVE_FUTURE_DATA: 3;
-	readonly HAVE_ENOUGH_DATA: 4;
 }
 
 class HTMLMediaElement extends HTMLElement {
@@ -15739,6 +15908,25 @@ class HTMLMediaElement extends HTMLElement {
 	static readonly HAVE_CURRENT_DATA = HAVE_CURRENT_DATA;
 	static readonly HAVE_FUTURE_DATA = HAVE_FUTURE_DATA;
 	static readonly HAVE_ENOUGH_DATA = HAVE_ENOUGH_DATA;
+	declare readonly NETWORK_EMPTY: 0;
+	declare readonly NETWORK_IDLE: 1;
+	declare readonly NETWORK_LOADING: 2;
+	declare readonly NETWORK_NO_SOURCE: 3;
+	declare readonly HAVE_NOTHING: 0;
+	declare readonly HAVE_METADATA: 1;
+	declare readonly HAVE_CURRENT_DATA: 2;
+	declare readonly HAVE_FUTURE_DATA: 3;
+	declare readonly HAVE_ENOUGH_DATA: 4;
+	declare src: globalThis.HTMLMediaElement["src"];
+	declare crossOrigin: globalThis.HTMLMediaElement["crossOrigin"];
+	declare loop: globalThis.HTMLMediaElement["loop"];
+	declare autoplay: globalThis.HTMLMediaElement["autoplay"];
+	declare controls: globalThis.HTMLMediaElement["controls"];
+	declare defaultMuted: globalThis.HTMLMediaElement["defaultMuted"];
+	declare preload: globalThis.HTMLMediaElement["preload"];
+	declare disableRemotePlayback: globalThis.HTMLMediaElement["disableRemotePlayback"];
+	declare onencrypted: globalThis.HTMLMediaElement["onencrypted"];
+	declare onwaitingforkey: globalThis.HTMLMediaElement["onwaitingforkey"];
 
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -15976,28 +16164,14 @@ Object.defineProperties(HTMLMediaElement.prototype, {
 
 class HTMLAudioElement extends HTMLMediaElement {}
 
-/**
- * Intrinsic dimensions are zero until a video is decoded, which never happens.
- */
-interface HTMLVideoElement
-	extends Pick<
-		globalThis.HTMLVideoElement,
-		"playsInline" |
-		"poster"
-	>,
-	Pick<
-		globalThis.HTMLVideoElement,
-		"height" |
-		"width"
-	>,
-	Pick<
-		globalThis.HTMLVideoElement,
-		"disablePictureInPicture" |
-		"onenterpictureinpicture" |
-		"onleavepictureinpicture"
-	> {}
-
 class HTMLVideoElement extends HTMLMediaElement {
+	declare playsInline: globalThis.HTMLVideoElement["playsInline"];
+	declare poster: globalThis.HTMLVideoElement["poster"];
+	declare height: globalThis.HTMLVideoElement["height"];
+	declare width: globalThis.HTMLVideoElement["width"];
+	declare disablePictureInPicture: globalThis.HTMLVideoElement["disablePictureInPicture"];
+	declare onenterpictureinpicture: globalThis.HTMLVideoElement["onenterpictureinpicture"];
+	declare onleavepictureinpicture: globalThis.HTMLVideoElement["onleavepictureinpicture"];
 	get videoWidth(): number {
 		return 0;
 	}
@@ -16071,25 +16245,17 @@ class HTMLVideoElement extends HTMLMediaElement {
 	}
 }
 
-interface HTMLMenuElement
-	extends Pick<
-		globalThis.HTMLMenuElement,
-		"compact"
-	> {}
+class HTMLMenuElement extends HTMLElement {
+	declare compact: globalThis.HTMLMenuElement["compact"];
+}
 
-class HTMLMenuElement extends HTMLElement {}
-
-interface HTMLMetaElement
-	extends Pick<
-		globalThis.HTMLMetaElement,
-		"content" |
-		"httpEquiv" |
-		"media" |
-		"name" |
-		"scheme"
-	> {}
-
-class HTMLMetaElement extends HTMLElement {}
+class HTMLMetaElement extends HTMLElement {
+	declare name: globalThis.HTMLMetaElement["name"];
+	declare media: globalThis.HTMLMetaElement["media"];
+	declare content: globalThis.HTMLMetaElement["content"];
+	declare httpEquiv: globalThis.HTMLMetaElement["httpEquiv"];
+	declare scheme: globalThis.HTMLMetaElement["scheme"];
+}
 
 // A run of full blocks for the filled bar and a run of light shade for
 // the groove behind it. Both are ordinary text in the shadow tree,
@@ -16303,43 +16469,28 @@ function getMeterLevel(
 	return value >= low && value <= high ? "optimum" : "suboptimum";
 }
 
-interface HTMLModElement
-	extends Pick<
-		globalThis.HTMLModElement,
-		"cite" |
-		"dateTime"
-	> {}
-
-class HTMLModElement extends HTMLElement {}
-
-// Nothing is ever fetched, so the object never gets a nested browsing
-// context. Its document, window and SVG document are all null, which is
-// what they are for an object that loaded nothing.
-interface HTMLObjectElement
-	extends Pick<
-		globalThis.HTMLObjectElement,
-		"align" |
-		"archive" |
-		"border" |
-		"code" |
-		"codeBase" |
-		"codeType" |
-		"data" |
-		"declare" |
-		"height" |
-		"name" |
-		"standby" |
-		"type" |
-		"useMap" |
-		"width"
-	>,
-	Pick<
-		globalThis.HTMLObjectElement,
-		"hspace" |
-		"vspace"
-	> {}
+class HTMLModElement extends HTMLElement {
+	declare cite: globalThis.HTMLModElement["cite"];
+	declare dateTime: globalThis.HTMLModElement["dateTime"];
+}
 
 class HTMLObjectElement extends HTMLElement {
+	declare name: globalThis.HTMLObjectElement["name"];
+	declare height: globalThis.HTMLObjectElement["height"];
+	declare width: globalThis.HTMLObjectElement["width"];
+	declare align: globalThis.HTMLObjectElement["align"];
+	declare type: globalThis.HTMLObjectElement["type"];
+	declare border: globalThis.HTMLObjectElement["border"];
+	declare useMap: globalThis.HTMLObjectElement["useMap"];
+	declare archive: globalThis.HTMLObjectElement["archive"];
+	declare code: globalThis.HTMLObjectElement["code"];
+	declare codeBase: globalThis.HTMLObjectElement["codeBase"];
+	declare codeType: globalThis.HTMLObjectElement["codeType"];
+	declare data: globalThis.HTMLObjectElement["data"];
+	declare declare: globalThis.HTMLObjectElement["declare"];
+	declare standby: globalThis.HTMLObjectElement["standby"];
+	declare hspace: globalThis.HTMLObjectElement["hspace"];
+	declare vspace: globalThis.HTMLObjectElement["vspace"];
 	get form(): HTMLFormElement | null {
 		return getFormOwner(this);
 	}
@@ -16384,16 +16535,12 @@ class HTMLObjectElement extends HTMLElement {
 	}
 }
 
-interface HTMLOListElement
-	extends Pick<
-		globalThis.HTMLOListElement,
-		"compact" |
-		"reversed" |
-		"start" |
-		"type"
-	> {}
-
-class HTMLOListElement extends HTMLElement {}
+class HTMLOListElement extends HTMLElement {
+	declare compact: globalThis.HTMLOListElement["compact"];
+	declare type: globalThis.HTMLOListElement["type"];
+	declare reversed: globalThis.HTMLOListElement["reversed"];
+	declare start: globalThis.HTMLOListElement["start"];
+}
 
 class HTMLOptGroupElement extends HTMLElement {
 	// Installed from the element table and read by the select's own tree.
@@ -16407,16 +16554,13 @@ const kOptionDirty = Symbol("an option's dirtiness");
 
 const kSelectedOptions = Symbol("selectedOptions");
 
-interface HTMLOptionElement
-	extends Pick<
-		globalThis.HTMLOptionElement,
-		"defaultSelected"
-	> {
+interface HTMLOptionElement {
 	[kSelectednessValue]: boolean;
 	[kOptionDirty]: boolean;
 }
 
 class HTMLOptionElement extends HTMLElement {
+	declare defaultSelected: globalThis.HTMLOptionElement["defaultSelected"];
 	// Installed from the element table and read by the select's own tree.
 	declare disabled: boolean;
 
@@ -16553,12 +16697,11 @@ function getSelect(option: Element): HTMLSelectElement | null {
 const kSelect = Symbol("select");
 
 interface HTMLOptionsCollection {
-	[index: number]: HTMLOptionElement;
-
 	[kSelect]: HTMLSelectElement;
 }
 
 class HTMLOptionsCollection extends HTMLCollection {
+	[index: number]: HTMLOptionElement;
 	constructor(select: HTMLSelectElement) {
 		super(() => getOptions(select), select);
 		this[kSelect] = select;
@@ -16661,17 +16804,14 @@ Object.defineProperty(HTMLOptionsCollection.prototype, Symbol.toStringTag, {
 const kDirty = Symbol("dirty");
 const kStored = Symbol("stored");
 
-interface HTMLOutputElement
-	extends Pick<
-		globalThis.HTMLOutputElement,
-		"htmlFor" |
-		"name"
-	> {
+interface HTMLOutputElement {
 	[kDirty]: boolean;
 	[kStored]: string;
 }
 
 class HTMLOutputElement extends HTMLElement {
+	declare name: globalThis.HTMLOutputElement["name"];
+	declare htmlFor: globalThis.HTMLOutputElement["htmlFor"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kDirty] = false;
@@ -16749,34 +16889,22 @@ class HTMLOutputElement extends HTMLElement {
 	}
 }
 
-interface HTMLParagraphElement
-	extends Pick<
-		globalThis.HTMLParagraphElement,
-		"align"
-	> {}
+class HTMLParagraphElement extends HTMLElement {
+	declare align: globalThis.HTMLParagraphElement["align"];
+}
 
-class HTMLParagraphElement extends HTMLElement {}
-
-interface HTMLParamElement
-	extends Pick<
-		globalThis.HTMLParamElement,
-		"name" |
-		"type" |
-		"value" |
-		"valueType"
-	> {}
-
-class HTMLParamElement extends HTMLElement {}
+class HTMLParamElement extends HTMLElement {
+	declare name: globalThis.HTMLParamElement["name"];
+	declare value: globalThis.HTMLParamElement["value"];
+	declare type: globalThis.HTMLParamElement["type"];
+	declare valueType: globalThis.HTMLParamElement["valueType"];
+}
 
 class HTMLPictureElement extends HTMLElement {}
 
-interface HTMLPreElement
-	extends Pick<
-		globalThis.HTMLPreElement,
-		"width"
-	> {}
-
-class HTMLPreElement extends HTMLElement {}
+class HTMLPreElement extends HTMLElement {
+	declare width: globalThis.HTMLPreElement["width"];
+}
 
 // Renders a closed shadow tree it owns: a run of block glyphs filled to
 // `value`/`max`. A progress with no value attribute is indeterminate,
@@ -16858,36 +16986,25 @@ class HTMLProgressElement extends HTMLElement {
 	}
 }
 
-interface HTMLQuoteElement
-	extends Pick<
-		globalThis.HTMLQuoteElement,
-		"cite"
-	> {}
-
-class HTMLQuoteElement extends HTMLElement {}
-
-interface HTMLScriptElement
-	extends Pick<
-		globalThis.HTMLScriptElement,
-		"async" |
-		"blocking" |
-		"charset" |
-		"crossOrigin" |
-		"defer" |
-		"event" |
-		"fetchPriority" |
-		"htmlFor" |
-		"integrity" |
-		"noModule" |
-		"referrerPolicy" |
-		"src" |
-		"text" |
-		"type"
-	> {}
+class HTMLQuoteElement extends HTMLElement {
+	declare cite: globalThis.HTMLQuoteElement["cite"];
+}
 
 // The element is the one the spec defines and its text is the text it
 // holds. Executing it is the step this DOM does not have.
 class HTMLScriptElement extends HTMLElement {
+	declare referrerPolicy: globalThis.HTMLScriptElement["referrerPolicy"];
+	declare src: globalThis.HTMLScriptElement["src"];
+	declare type: globalThis.HTMLScriptElement["type"];
+	declare crossOrigin: globalThis.HTMLScriptElement["crossOrigin"];
+	declare fetchPriority: globalThis.HTMLScriptElement["fetchPriority"];
+	declare htmlFor: globalThis.HTMLScriptElement["htmlFor"];
+	declare blocking: globalThis.HTMLScriptElement["blocking"];
+	declare charset: globalThis.HTMLScriptElement["charset"];
+	declare integrity: globalThis.HTMLScriptElement["integrity"];
+	declare defer: globalThis.HTMLScriptElement["defer"];
+	declare event: globalThis.HTMLScriptElement["event"];
+	declare noModule: globalThis.HTMLScriptElement["noModule"];
 	get text(): string {
 		return getChildText(this);
 	}
@@ -16923,47 +17040,36 @@ const kPickerHighlight = Symbol("highlight");
 // indicator, and a picker popover of option rows. The tree is derived
 // from the selectedness and the highlight below. The keyboard and mouse
 // behavior is the control's own default action.
-export interface HTMLSelectElement
-	extends Pick<
-		globalThis.HTMLSelectElement,
-		"disabled" |
-		"multiple" |
-		"name" |
-		"required"
-	>,
-	Pick<
-		globalThis.HTMLSelectElement,
-		"autocomplete" |
-		"size"
-	> {
-	[index: number]: HTMLOptionElement | HTMLOptGroupElement;
-
+export interface HTMLSelectElement {
 	[kOptions]: HTMLOptionsCollection | null;
 	[kSelectedOptions]: HTMLCollectionOf<HTMLOptionElement> | null;
-
 	[kUpgraded]: boolean;
 	[kValueText]: globalThis.Text | null;
 	[kPicker]: globalThis.HTMLElement | null;
 	// The highlighted option index while the picker is OPEN. Null means
 	// closed.
 	[kPickerHighlight]: number | null;
-
 	// OPEN: arrows move the highlight without committing, Enter/Space
 	// commit, Escape dismisses. CLOSED: Enter/Space open the picker, and
 	// arrows change the selection in place. This is the browser's
 	// closed-select keyboard model.
 	[kOnKeydown]: (event: KeyboardEvent) => void;
-
 	// A press opens a closed picker. With the picker open, a press on an
 	// option row commits it (a disabled row does nothing), and a press on the
 	// closed face dismisses. The row under the point is found from the rows'
 	// document rects, not a renderer hit test.
 	[kOnMousedown]: (event: MouseEvent) => void;
-
 	[kOnBlur]: () => void;
 }
 
 export class HTMLSelectElement extends HTMLElement {
+	[index: number]: HTMLOptionElement | HTMLOptGroupElement;
+	declare disabled: globalThis.HTMLSelectElement["disabled"];
+	declare name: globalThis.HTMLSelectElement["name"];
+	declare multiple: globalThis.HTMLSelectElement["multiple"];
+	declare required: globalThis.HTMLSelectElement["required"];
+	declare size: globalThis.HTMLSelectElement["size"];
+	declare autocomplete: globalThis.HTMLSelectElement["autocomplete"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kOptions] = null;
@@ -17588,40 +17694,25 @@ function askForAReset(select: HTMLSelectElement): void {
 	}
 }
 
-interface HTMLSourceElement
-	extends Pick<
-		globalThis.HTMLSourceElement,
-		"media" |
-		"sizes" |
-		"src" |
-		"srcset" |
-		"type"
-	>,
-	Pick<
-		globalThis.HTMLSourceElement,
-		"height" |
-		"width"
-	> {}
-
-class HTMLSourceElement extends HTMLElement {}
+class HTMLSourceElement extends HTMLElement {
+	declare src: globalThis.HTMLSourceElement["src"];
+	declare type: globalThis.HTMLSourceElement["type"];
+	declare sizes: globalThis.HTMLSourceElement["sizes"];
+	declare srcset: globalThis.HTMLSourceElement["srcset"];
+	declare media: globalThis.HTMLSourceElement["media"];
+	declare height: globalThis.HTMLSourceElement["height"];
+	declare width: globalThis.HTMLSourceElement["width"];
+}
 
 class HTMLSpanElement extends HTMLElement {}
 
 const kStyleElements = Symbol("how many style elements the tree holds");
 
-/**
- * The sheet belongs to the engine's cascade, not to the tree. There is
- * none here, which is why `sheet` is null and `disabled` is false.
- */
-export interface HTMLStyleElement
-	extends Pick<
-		globalThis.HTMLStyleElement,
-		"blocking" |
-		"media" |
-		"type"
-	> {}
-
 export class HTMLStyleElement extends HTMLElement {
+	declare type: globalThis.HTMLStyleElement["type"];
+	declare blocking: globalThis.HTMLStyleElement["blocking"];
+	declare media: globalThis.HTMLStyleElement["media"];
+
 	/** Null outside a tree. */
 	get sheet(): CSSStyleSheet | null {
 		return styleElementSheet(this);
@@ -17655,37 +17746,25 @@ export function styleElementCount(document: Document): number {
 	return document[kStyleElements];
 }
 
-interface HTMLTableCaptionElement
-	extends Pick<
-		globalThis.HTMLTableCaptionElement,
-		"align"
-	> {}
-
-class HTMLTableCaptionElement extends HTMLElement {}
-
-interface HTMLTableCellElement
-	extends Pick<
-		globalThis.HTMLTableCellElement,
-		"abbr" |
-		"align" |
-		"axis" |
-		"bgColor" |
-		"ch" |
-		"chOff" |
-		"headers" |
-		"height" |
-		"noWrap" |
-		"vAlign" |
-		"width"
-	>,
-	Pick<
-		globalThis.HTMLTableCellElement,
-		"colSpan" |
-		"rowSpan" |
-		"scope"
-	> {}
+class HTMLTableCaptionElement extends HTMLElement {
+	declare align: globalThis.HTMLTableCaptionElement["align"];
+}
 
 class HTMLTableCellElement extends HTMLElement {
+	declare bgColor: globalThis.HTMLTableCellElement["bgColor"];
+	declare height: globalThis.HTMLTableCellElement["height"];
+	declare width: globalThis.HTMLTableCellElement["width"];
+	declare align: globalThis.HTMLTableCellElement["align"];
+	declare abbr: globalThis.HTMLTableCellElement["abbr"];
+	declare axis: globalThis.HTMLTableCellElement["axis"];
+	declare ch: globalThis.HTMLTableCellElement["ch"];
+	declare chOff: globalThis.HTMLTableCellElement["chOff"];
+	declare headers: globalThis.HTMLTableCellElement["headers"];
+	declare noWrap: globalThis.HTMLTableCellElement["noWrap"];
+	declare vAlign: globalThis.HTMLTableCellElement["vAlign"];
+	declare colSpan: globalThis.HTMLTableCellElement["colSpan"];
+	declare rowSpan: globalThis.HTMLTableCellElement["rowSpan"];
+	declare scope: globalThis.HTMLTableCellElement["scope"];
 	get cellIndex(): number {
 		const parent = this[kParent];
 		if (!(parent instanceof HTMLTableRowElement)) {
@@ -17695,43 +17774,33 @@ class HTMLTableCellElement extends HTMLElement {
 	}
 }
 
-interface HTMLTableColElement
-	extends Pick<
-		globalThis.HTMLTableColElement,
-		"width"
-	>,
-	Pick<
-		globalThis.HTMLTableColElement,
-		"align" |
-		"ch" |
-		"chOff" |
-		"span" |
-		"vAlign"
-	> {}
-
-class HTMLTableColElement extends HTMLElement {}
+class HTMLTableColElement extends HTMLElement {
+	declare width: globalThis.HTMLTableColElement["width"];
+	declare align: globalThis.HTMLTableColElement["align"];
+	declare ch: globalThis.HTMLTableColElement["ch"];
+	declare chOff: globalThis.HTMLTableColElement["chOff"];
+	declare vAlign: globalThis.HTMLTableColElement["vAlign"];
+	declare span: globalThis.HTMLTableColElement["span"];
+}
 
 const kTBodies = Symbol("tBodies");
 const kRows = Symbol("rows");
 
-interface HTMLTableElement
-	extends Pick<
-		globalThis.HTMLTableElement,
-		"align" |
-		"bgColor" |
-		"border" |
-		"cellPadding" |
-		"cellSpacing" |
-		"frame" |
-		"rules" |
-		"summary" |
-		"width"
-	> {
+interface HTMLTableElement {
 	[kTBodies]: HTMLCollection | null;
 	[kRows]: HTMLCollection | null;
 }
 
 class HTMLTableElement extends HTMLElement {
+	declare bgColor: globalThis.HTMLTableElement["bgColor"];
+	declare width: globalThis.HTMLTableElement["width"];
+	declare align: globalThis.HTMLTableElement["align"];
+	declare border: globalThis.HTMLTableElement["border"];
+	declare cellPadding: globalThis.HTMLTableElement["cellPadding"];
+	declare cellSpacing: globalThis.HTMLTableElement["cellSpacing"];
+	declare frame: globalThis.HTMLTableElement["frame"];
+	declare rules: globalThis.HTMLTableElement["rules"];
+	declare summary: globalThis.HTMLTableElement["summary"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kTBodies] = null;
@@ -18008,22 +18077,16 @@ function getTableRows(table: Element): Element[] {
 
 const kCells = Symbol("cells");
 
-interface HTMLTableRowElement
-	extends Pick<
-		globalThis.HTMLTableRowElement,
-		"align" |
-		"ch" |
-		"chOff" |
-		"vAlign"
-	>,
-	Pick<
-		globalThis.HTMLTableRowElement,
-		"bgColor"
-	> {
+interface HTMLTableRowElement {
 	[kCells]: HTMLCollection | null;
 }
 
 class HTMLTableRowElement extends HTMLElement {
+	declare align: globalThis.HTMLTableRowElement["align"];
+	declare ch: globalThis.HTMLTableRowElement["ch"];
+	declare chOff: globalThis.HTMLTableRowElement["chOff"];
+	declare vAlign: globalThis.HTMLTableRowElement["vAlign"];
+	declare bgColor: globalThis.HTMLTableRowElement["bgColor"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kCells] = null;
@@ -18108,18 +18171,15 @@ function getRowCells(row: Element): Element[] {
 	return cells;
 }
 
-interface HTMLTableSectionElement
-	extends Pick<
-		globalThis.HTMLTableSectionElement,
-		"align" |
-		"ch" |
-		"chOff" |
-		"vAlign"
-	> {
+interface HTMLTableSectionElement {
 	[kRows]: HTMLCollection | null;
 }
 
 class HTMLTableSectionElement extends HTMLElement {
+	declare align: globalThis.HTMLTableSectionElement["align"];
+	declare ch: globalThis.HTMLTableSectionElement["ch"];
+	declare chOff: globalThis.HTMLTableSectionElement["chOff"];
+	declare vAlign: globalThis.HTMLTableSectionElement["vAlign"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kRows] = null;
@@ -18169,40 +18229,19 @@ const kGoalColumn = Symbol("goalColumn");
 // and painted like any document text; a placeholder part; and a trailing
 // line-break anchor. The tree is derived from the value, and the editing
 // keys are the control's own default action.
-export interface HTMLTextAreaElement
-	extends Pick<
-		globalThis.HTMLTextAreaElement,
-		"autocomplete" |
-		"cols" |
-		"rows" |
-		"wrap"
-	>,
-	Pick<
-		globalThis.HTMLTextAreaElement,
-		"dirName" |
-		"disabled" |
-		"maxLength" |
-		"minLength" |
-		"name" |
-		"placeholder" |
-		"readOnly" |
-		"required"
-	> {
+export interface HTMLTextAreaElement {
 	[kValue]: string;
 	[kDirty]: boolean;
 	[kSelectionStart]: number;
 	[kSelectionEnd]: number;
 	[kSelectionDirection]: SelectionDirection;
-
 	[kUpgraded]: boolean;
 	[kValueText]: globalThis.Text | null;
 	[kPlaceholderText]: globalThis.Text | null;
 	[kPlaceholderSpan]: globalThis.HTMLElement | null;
 	[kGoalColumn]: number | null;
-
 	// A typed character arrives as insertText. A paste keeps its newlines.
 	[kOnBeforeInput]: (event: InputEvent) => void;
-
 	// Enter inserts a newline. The vertical arrows and Home/End move by
 	// VISUAL line (soft wraps count, as in a browser). Every other editing
 	// key is the shared text control logic. This reads laid-out geometry, so it
@@ -18211,6 +18250,18 @@ export interface HTMLTextAreaElement
 }
 
 export class HTMLTextAreaElement extends HTMLElement {
+	declare cols: globalThis.HTMLTextAreaElement["cols"];
+	declare rows: globalThis.HTMLTextAreaElement["rows"];
+	declare autocomplete: globalThis.HTMLTextAreaElement["autocomplete"];
+	declare wrap: globalThis.HTMLTextAreaElement["wrap"];
+	declare disabled: globalThis.HTMLTextAreaElement["disabled"];
+	declare name: globalThis.HTMLTextAreaElement["name"];
+	declare dirName: globalThis.HTMLTextAreaElement["dirName"];
+	declare maxLength: globalThis.HTMLTextAreaElement["maxLength"];
+	declare minLength: globalThis.HTMLTextAreaElement["minLength"];
+	declare placeholder: globalThis.HTMLTextAreaElement["placeholder"];
+	declare readOnly: globalThis.HTMLTextAreaElement["readOnly"];
+	declare required: globalThis.HTMLTextAreaElement["required"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kValue] = "";
@@ -18717,13 +18768,9 @@ function normalizeNewlines(value: string): string {
 	return value.replace(/\r\n?/g, "\n");
 }
 
-interface HTMLTimeElement
-	extends Pick<
-		globalThis.HTMLTimeElement,
-		"dateTime"
-	> {}
-
-class HTMLTimeElement extends HTMLElement {}
+class HTMLTimeElement extends HTMLElement {
+	declare dateTime: globalThis.HTMLTimeElement["dateTime"];
+}
 
 class HTMLTitleElement extends HTMLElement {
 	get text(): string {
@@ -18746,29 +18793,20 @@ function getChildText(element: Element): string {
 	return text;
 }
 
-interface HTMLTrackElement
-	extends Pick<
-		globalThis.HTMLTrackElement,
-		"default" |
-		"label" |
-		"src" |
-		"srclang"
-	>,
-	Pick<
-		globalThis.HTMLTrackElement,
-		"kind"
-	> {
-	readonly NONE: 0;
-	readonly LOADING: 1;
-	readonly LOADED: 2;
-	readonly ERROR: 3;
-}
-
 class HTMLTrackElement extends HTMLElement {
 	static readonly NONE = 0;
 	static readonly LOADING = 1;
 	static readonly LOADED = 2;
 	static readonly ERROR = 3;
+	declare readonly NONE: 0;
+	declare readonly LOADING: 1;
+	declare readonly LOADED: 2;
+	declare readonly ERROR: 3;
+	declare src: globalThis.HTMLTrackElement["src"];
+	declare default: globalThis.HTMLTrackElement["default"];
+	declare label: globalThis.HTMLTrackElement["label"];
+	declare srclang: globalThis.HTMLTrackElement["srclang"];
+	declare kind: globalThis.HTMLTrackElement["kind"];
 
 	get readyState(): number {
 		return 0;
@@ -18786,14 +18824,10 @@ Object.defineProperties(HTMLTrackElement.prototype, {
 	ERROR: {value: 3, enumerable: true},
 });
 
-interface HTMLUListElement
-	extends Pick<
-		globalThis.HTMLUListElement,
-		"compact" |
-		"type"
-	> {}
-
-class HTMLUListElement extends HTMLElement {}
+class HTMLUListElement extends HTMLElement {
+	declare compact: globalThis.HTMLUListElement["compact"];
+	declare type: globalThis.HTMLUListElement["type"];
+}
 
 // `mode` is the state the popover was OPENED in, not the one its
 // attribute names now. The attribute can change under a showing popover,
@@ -20210,13 +20244,8 @@ const kElementInternalsTarget = Symbol("the element an internals belongs to");
 // A custom element's handle on the parts of it the platform owns: its
 // shadow root, its form owner, the value it submits, its validity and the
 // accessibility properties it declares.
-interface ElementInternals
-	extends Pick<
-		globalThis.ElementInternals,
-		Extract<keyof globalThis.ElementInternals, ARIAReflection>
-	> {
+interface ElementInternals {
 	[kValidity]: ValidityState;
-
 	[kElementInternalsTarget]: Element;
 	[kFormOwner]: HTMLFormElement | null;
 	[kFormDisabled]: boolean;
@@ -20227,6 +20256,58 @@ interface ElementInternals
 }
 
 class ElementInternals {
+	declare ariaActiveDescendantElement: globalThis.ElementInternals["ariaActiveDescendantElement"];
+	declare ariaAtomic: globalThis.ElementInternals["ariaAtomic"];
+	declare ariaAutoComplete: globalThis.ElementInternals["ariaAutoComplete"];
+	declare ariaBrailleLabel: globalThis.ElementInternals["ariaBrailleLabel"];
+	declare ariaBrailleRoleDescription: globalThis.ElementInternals["ariaBrailleRoleDescription"];
+	declare ariaBusy: globalThis.ElementInternals["ariaBusy"];
+	declare ariaChecked: globalThis.ElementInternals["ariaChecked"];
+	declare ariaColCount: globalThis.ElementInternals["ariaColCount"];
+	declare ariaColIndex: globalThis.ElementInternals["ariaColIndex"];
+	declare ariaColIndexText: globalThis.ElementInternals["ariaColIndexText"];
+	declare ariaColSpan: globalThis.ElementInternals["ariaColSpan"];
+	declare ariaControlsElements: globalThis.ElementInternals["ariaControlsElements"];
+	declare ariaCurrent: globalThis.ElementInternals["ariaCurrent"];
+	declare ariaDescribedByElements: globalThis.ElementInternals["ariaDescribedByElements"];
+	declare ariaDescription: globalThis.ElementInternals["ariaDescription"];
+	declare ariaDetailsElements: globalThis.ElementInternals["ariaDetailsElements"];
+	declare ariaDisabled: globalThis.ElementInternals["ariaDisabled"];
+	declare ariaErrorMessageElements: globalThis.ElementInternals["ariaErrorMessageElements"];
+	declare ariaExpanded: globalThis.ElementInternals["ariaExpanded"];
+	declare ariaFlowToElements: globalThis.ElementInternals["ariaFlowToElements"];
+	declare ariaHasPopup: globalThis.ElementInternals["ariaHasPopup"];
+	declare ariaHidden: globalThis.ElementInternals["ariaHidden"];
+	declare ariaInvalid: globalThis.ElementInternals["ariaInvalid"];
+	declare ariaKeyShortcuts: globalThis.ElementInternals["ariaKeyShortcuts"];
+	declare ariaLabel: globalThis.ElementInternals["ariaLabel"];
+	declare ariaLabelledByElements: globalThis.ElementInternals["ariaLabelledByElements"];
+	declare ariaLevel: globalThis.ElementInternals["ariaLevel"];
+	declare ariaLive: globalThis.ElementInternals["ariaLive"];
+	declare ariaModal: globalThis.ElementInternals["ariaModal"];
+	declare ariaMultiLine: globalThis.ElementInternals["ariaMultiLine"];
+	declare ariaMultiSelectable: globalThis.ElementInternals["ariaMultiSelectable"];
+	declare ariaOrientation: globalThis.ElementInternals["ariaOrientation"];
+	declare ariaOwnsElements: globalThis.ElementInternals["ariaOwnsElements"];
+	declare ariaPlaceholder: globalThis.ElementInternals["ariaPlaceholder"];
+	declare ariaPosInSet: globalThis.ElementInternals["ariaPosInSet"];
+	declare ariaPressed: globalThis.ElementInternals["ariaPressed"];
+	declare ariaReadOnly: globalThis.ElementInternals["ariaReadOnly"];
+	declare ariaRelevant: globalThis.ElementInternals["ariaRelevant"];
+	declare ariaRequired: globalThis.ElementInternals["ariaRequired"];
+	declare ariaRoleDescription: globalThis.ElementInternals["ariaRoleDescription"];
+	declare ariaRowCount: globalThis.ElementInternals["ariaRowCount"];
+	declare ariaRowIndex: globalThis.ElementInternals["ariaRowIndex"];
+	declare ariaRowIndexText: globalThis.ElementInternals["ariaRowIndexText"];
+	declare ariaRowSpan: globalThis.ElementInternals["ariaRowSpan"];
+	declare ariaSelected: globalThis.ElementInternals["ariaSelected"];
+	declare ariaSetSize: globalThis.ElementInternals["ariaSetSize"];
+	declare ariaSort: globalThis.ElementInternals["ariaSort"];
+	declare ariaValueMax: globalThis.ElementInternals["ariaValueMax"];
+	declare ariaValueMin: globalThis.ElementInternals["ariaValueMin"];
+	declare ariaValueNow: globalThis.ElementInternals["ariaValueNow"];
+	declare ariaValueText: globalThis.ElementInternals["ariaValueText"];
+	declare role: globalThis.ElementInternals["role"];
 	constructor(target: Element) {
 		this[kFormOwner] = null;
 		this[kFormDisabled] = false;
@@ -22085,19 +22166,7 @@ const kIdMap = Symbol("id map");
  * The event handler attributes installed on the prototype below, and the
  * ParentNode mixin from the tables.
  */
-export interface Document
-	extends Pick<
-		globalThis.Document,
-		Extract<keyof globalThis.Document, `on${string}`> |
-		ParentNodeMixin |
-		// DECLARED but never installed, and the difference matters.
-		// document.all is specified to be a FALSY object, which JavaScript
-		// cannot express; browsers give it an internal slot no script can
-		// reach. The selector engine tests `"all" in context` and then reads
-		// `context.all[id]`, so a property holding undefined would throw, while
-		// an absent one takes the path that works.
-		"all"
-	> {
+export interface Document {
 	// What an attached document renders through, set by attachDocument. A
 	// headless document has none and behaves as a document with no browsing
 	// context.
@@ -22110,13 +22179,7 @@ export interface Document
 	// The text control whose caret the next frame reveals. The last edit
 	// before the frame wins.
 	[kPendingCaretReveal]: TextControlOrSelect | null;
-
 	[kImplementation]: DOMImplementation | null;
-
-	get ownerDocument(): null;
-
-	get textContent(): null;
-
 	[kDocumentURL]: string;
 	[kMode]: "no-quirks" | "quirks" | "limited-quirks";
 	[kType]: "xml" | "html";
@@ -22137,9 +22200,128 @@ export interface Document
 	// it.
 	[kPopoverShowing]: boolean;
 	[kPopoverHidingCount]: number;
+
+	get ownerDocument(): null;
+	get textContent(): null;
 }
 
 export class Document extends Node implements globalThis.Document {
+	declare readonly childElementCount: globalThis.Document["childElementCount"];
+	declare readonly children: globalThis.Document["children"];
+	declare readonly firstElementChild: globalThis.Document["firstElementChild"];
+	declare readonly lastElementChild: globalThis.Document["lastElementChild"];
+	declare append: globalThis.Document["append"];
+	declare prepend: globalThis.Document["prepend"];
+	declare querySelector: globalThis.Document["querySelector"];
+	declare querySelectorAll: globalThis.Document["querySelectorAll"];
+	declare replaceChildren: globalThis.Document["replaceChildren"];
+	declare onfullscreenchange: globalThis.Document["onfullscreenchange"];
+	declare onfullscreenerror: globalThis.Document["onfullscreenerror"];
+	declare onabort: globalThis.Document["onabort"];
+	declare onanimationcancel: globalThis.Document["onanimationcancel"];
+	declare onanimationend: globalThis.Document["onanimationend"];
+	declare onanimationiteration: globalThis.Document["onanimationiteration"];
+	declare onanimationstart: globalThis.Document["onanimationstart"];
+	declare onauxclick: globalThis.Document["onauxclick"];
+	declare onbeforeinput: globalThis.Document["onbeforeinput"];
+	declare onbeforematch: globalThis.Document["onbeforematch"];
+	declare onbeforetoggle: globalThis.Document["onbeforetoggle"];
+	declare onblur: globalThis.Document["onblur"];
+	declare oncancel: globalThis.Document["oncancel"];
+	declare oncanplay: globalThis.Document["oncanplay"];
+	declare oncanplaythrough: globalThis.Document["oncanplaythrough"];
+	declare onchange: globalThis.Document["onchange"];
+	declare onclick: globalThis.Document["onclick"];
+	declare onclose: globalThis.Document["onclose"];
+	declare oncontextlost: globalThis.Document["oncontextlost"];
+	declare oncontextmenu: globalThis.Document["oncontextmenu"];
+	declare oncontextrestored: globalThis.Document["oncontextrestored"];
+	declare oncopy: globalThis.Document["oncopy"];
+	declare oncuechange: globalThis.Document["oncuechange"];
+	declare oncut: globalThis.Document["oncut"];
+	declare ondblclick: globalThis.Document["ondblclick"];
+	declare ondrag: globalThis.Document["ondrag"];
+	declare ondragend: globalThis.Document["ondragend"];
+	declare ondragenter: globalThis.Document["ondragenter"];
+	declare ondragleave: globalThis.Document["ondragleave"];
+	declare ondragover: globalThis.Document["ondragover"];
+	declare ondragstart: globalThis.Document["ondragstart"];
+	declare ondrop: globalThis.Document["ondrop"];
+	declare ondurationchange: globalThis.Document["ondurationchange"];
+	declare onemptied: globalThis.Document["onemptied"];
+	declare onended: globalThis.Document["onended"];
+	declare onerror: globalThis.Document["onerror"];
+	declare onfocus: globalThis.Document["onfocus"];
+	declare onformdata: globalThis.Document["onformdata"];
+	declare ongotpointercapture: globalThis.Document["ongotpointercapture"];
+	declare oninput: globalThis.Document["oninput"];
+	declare oninvalid: globalThis.Document["oninvalid"];
+	declare onkeydown: globalThis.Document["onkeydown"];
+	declare onkeypress: globalThis.Document["onkeypress"];
+	declare onkeyup: globalThis.Document["onkeyup"];
+	declare onload: globalThis.Document["onload"];
+	declare onloadeddata: globalThis.Document["onloadeddata"];
+	declare onloadedmetadata: globalThis.Document["onloadedmetadata"];
+	declare onloadstart: globalThis.Document["onloadstart"];
+	declare onlostpointercapture: globalThis.Document["onlostpointercapture"];
+	declare onmousedown: globalThis.Document["onmousedown"];
+	declare onmouseenter: globalThis.Document["onmouseenter"];
+	declare onmouseleave: globalThis.Document["onmouseleave"];
+	declare onmousemove: globalThis.Document["onmousemove"];
+	declare onmouseout: globalThis.Document["onmouseout"];
+	declare onmouseover: globalThis.Document["onmouseover"];
+	declare onmouseup: globalThis.Document["onmouseup"];
+	declare onpaste: globalThis.Document["onpaste"];
+	declare onpause: globalThis.Document["onpause"];
+	declare onplay: globalThis.Document["onplay"];
+	declare onplaying: globalThis.Document["onplaying"];
+	declare onpointercancel: globalThis.Document["onpointercancel"];
+	declare onpointerdown: globalThis.Document["onpointerdown"];
+	declare onpointerenter: globalThis.Document["onpointerenter"];
+	declare onpointerleave: globalThis.Document["onpointerleave"];
+	declare onpointermove: globalThis.Document["onpointermove"];
+	declare onpointerout: globalThis.Document["onpointerout"];
+	declare onpointerover: globalThis.Document["onpointerover"];
+	declare onpointerrawupdate: globalThis.Document["onpointerrawupdate"];
+	declare onpointerup: globalThis.Document["onpointerup"];
+	declare onprogress: globalThis.Document["onprogress"];
+	declare onratechange: globalThis.Document["onratechange"];
+	declare onreset: globalThis.Document["onreset"];
+	declare onresize: globalThis.Document["onresize"];
+	declare onscroll: globalThis.Document["onscroll"];
+	declare onscrollend: globalThis.Document["onscrollend"];
+	declare onsecuritypolicyviolation: globalThis.Document["onsecuritypolicyviolation"];
+	declare onseeked: globalThis.Document["onseeked"];
+	declare onseeking: globalThis.Document["onseeking"];
+	declare onselect: globalThis.Document["onselect"];
+	declare onselectionchange: globalThis.Document["onselectionchange"];
+	declare onselectstart: globalThis.Document["onselectstart"];
+	declare onslotchange: globalThis.Document["onslotchange"];
+	declare onstalled: globalThis.Document["onstalled"];
+	declare onsubmit: globalThis.Document["onsubmit"];
+	declare onsuspend: globalThis.Document["onsuspend"];
+	declare ontimeupdate: globalThis.Document["ontimeupdate"];
+	declare ontoggle: globalThis.Document["ontoggle"];
+	declare ontouchcancel: globalThis.Document["ontouchcancel"];
+	declare ontouchend: globalThis.Document["ontouchend"];
+	declare ontouchmove: globalThis.Document["ontouchmove"];
+	declare ontouchstart: globalThis.Document["ontouchstart"];
+	declare ontransitioncancel: globalThis.Document["ontransitioncancel"];
+	declare ontransitionend: globalThis.Document["ontransitionend"];
+	declare ontransitionrun: globalThis.Document["ontransitionrun"];
+	declare ontransitionstart: globalThis.Document["ontransitionstart"];
+	declare onvolumechange: globalThis.Document["onvolumechange"];
+	declare onwaiting: globalThis.Document["onwaiting"];
+	declare onwebkitanimationend: globalThis.Document["onwebkitanimationend"];
+	declare onwebkitanimationiteration: globalThis.Document["onwebkitanimationiteration"];
+	declare onwebkitanimationstart: globalThis.Document["onwebkitanimationstart"];
+	declare onwebkittransitionend: globalThis.Document["onwebkittransitionend"];
+	declare onwheel: globalThis.Document["onwheel"];
+	declare readonly all: globalThis.Document["all"];
+	declare onpointerlockchange: globalThis.Document["onpointerlockchange"];
+	declare onpointerlockerror: globalThis.Document["onpointerlockerror"];
+	declare onreadystatechange: globalThis.Document["onreadystatechange"];
+	declare onvisibilitychange: globalThis.Document["onvisibilitychange"];
 	// Installed on the prototype, where the engine that implements them is.
 	declare elementFromPoint: (
 		x: number,
@@ -25130,11 +25312,7 @@ const kRangeSelection = Symbol("the selection whose range this is");
 // released when the selection moves on from it.
 const kSelectionOwned = Symbol("selection-owned range");
 
-interface Range
-	extends Pick<
-		globalThis.Range,
-		"START_TO_START" | "START_TO_END" | "END_TO_END" | "END_TO_START"
-	> {
+interface Range {
 	[kRangeSelection]: Selection | null;
 	[kSelectionOwned]: boolean;
 }
@@ -25144,6 +25322,10 @@ class Range extends AbstractRange implements globalThis.Range {
 	static readonly START_TO_END = START_TO_END;
 	static readonly END_TO_END = END_TO_END;
 	static readonly END_TO_START = END_TO_START;
+	declare readonly START_TO_START: globalThis.Range["START_TO_START"];
+	declare readonly START_TO_END: globalThis.Range["START_TO_END"];
+	declare readonly END_TO_END: globalThis.Range["END_TO_END"];
+	declare readonly END_TO_START: globalThis.Range["END_TO_START"];
 
 	// Installed on the prototype, where the engine that measures them is.
 	declare getBoundingClientRect: () => globalThis.DOMRect;
@@ -29726,15 +29908,13 @@ const kPermissionDocument = Symbol("the document this permission stands over");
 // gesture is being dispatched and prompt otherwise. Nothing fires
 // `change`, because the gesture opens and closes inside one dispatch,
 // and a listener would be told about a state that had already passed.
-interface PermissionStatus extends Pick<
-	globalThis.PermissionStatus,
-	"onchange"
-> {
+interface PermissionStatus {
 	[kPermissionName]: string;
 	[kPermissionDocument]: Document | null;
 }
 
 class PermissionStatus extends EventTarget {
+	declare onchange: globalThis.PermissionStatus["onchange"];
 	constructor(name?: string, document?: Document) {
 		super();
 		if (!internalConstruction) {
@@ -30088,14 +30268,13 @@ export function runFrameCallbacks(document: globalThis.Document): boolean {
 const kStorageItems = Symbol("storage items");
 
 interface Storage {
-	[name: string]: any;
-
 	[kStorageItems]: Map<string, string>;
 }
 
 // One in-memory area per window, kept for the session the way a private
 // browsing window keeps its storage: nothing is written to disk.
 class Storage {
+	[name: string]: any;
 	constructor() {
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -30185,15 +30364,7 @@ const kNextIdleHandle = Symbol("next idle handle");
  * APIs an author reaches for through `window`. The member types are the
  * host's, which is how a caller outside this file sees them.
  */
-export interface Window
-	extends WindowEventHandlerAttributes,
-	Pick<
-		globalThis.Window,
-		"ondevicemotion" |
-		"ondeviceorientation" |
-		"ondeviceorientationabsolute" |
-		"onorientationchange"
-	> {
+export interface Window {
 	[kNavigator]: Navigator | undefined;
 	[kWindowLocation]: Location | undefined;
 	[kClosed]: boolean;
@@ -30206,109 +30377,231 @@ export interface Window
 	[kIdleTimers]: Map<number, ReturnType<typeof setTimeout>>;
 	[kNextIdleHandle]: number;
 
-	[index: number]: Window;
 	// An overload with the host's event type, so a caller holding a Window
 	// can dispatch a platform event as it would to any EventTarget.
-	dispatchEvent(event: globalThis.Event): boolean;
-	readonly window: Window;
-	readonly self: Window;
-	atob: globalThis.Window["atob"];
-	btoa: globalThis.Window["btoa"];
-	fetch: globalThis.Window["fetch"];
-	structuredClone: globalThis.Window["structuredClone"];
-
-	getComputedStyle(
-		element: globalThis.Element,
-		pseudoElement?: string | null,
-	): globalThis.CSSStyleDeclaration;
-	setTimeout: globalThis.Window["setTimeout"];
-	clearTimeout: globalThis.Window["clearTimeout"];
-	setInterval: globalThis.Window["setInterval"];
-	clearInterval: globalThis.Window["clearInterval"];
-	queueMicrotask: globalThis.Window["queueMicrotask"];
-
-	readonly NodeFilter: typeof globalThis.NodeFilter;
-
-	EventTarget: typeof globalThis.EventTarget;
-	Event: typeof globalThis.Event;
-	CustomEvent: typeof globalThis.CustomEvent;
-	UIEvent: typeof globalThis.UIEvent;
-	MouseEvent: typeof globalThis.MouseEvent;
-	ErrorEvent: typeof globalThis.ErrorEvent;
-	PointerEvent: typeof globalThis.PointerEvent;
-	WheelEvent: typeof globalThis.WheelEvent;
-	KeyboardEvent: typeof globalThis.KeyboardEvent;
-	FocusEvent: typeof globalThis.FocusEvent;
-	InputEvent: typeof globalThis.InputEvent;
-	ClipboardEvent: typeof ClipboardEvent;
-	DataTransfer: typeof DataTransfer;
-	DataTransferItem: typeof DataTransferItem;
-	DataTransferItemList: typeof DataTransferItemList;
-	FileList: typeof FileList;
-	Clipboard: typeof Clipboard;
-	ClipboardItem: typeof ClipboardItem;
-	Permissions: typeof Permissions;
-	PermissionStatus: typeof PermissionStatus;
-	CompositionEvent: typeof globalThis.CompositionEvent;
-	BeforeUnloadEvent: typeof globalThis.BeforeUnloadEvent;
-	DOMException: typeof globalThis.DOMException;
-	Node: typeof globalThis.Node;
-	Element: typeof globalThis.Element;
-	Attr: typeof globalThis.Attr;
-	CharacterData: typeof globalThis.CharacterData;
-	Text: typeof globalThis.Text;
-	Comment: typeof globalThis.Comment;
-	CDATASection: typeof globalThis.CDATASection;
-	ProcessingInstruction: typeof globalThis.ProcessingInstruction;
-	DocumentType: typeof globalThis.DocumentType;
-	Document: typeof globalThis.Document;
-	XMLDocument: typeof globalThis.XMLDocument;
-	DocumentFragment: typeof globalThis.DocumentFragment;
-	ShadowRoot: typeof globalThis.ShadowRoot;
-	DOMImplementation: typeof globalThis.DOMImplementation;
-	DOMParser: typeof globalThis.DOMParser;
-	NodeList: typeof globalThis.NodeList;
-	HTMLCollection: typeof globalThis.HTMLCollection;
-	NamedNodeMap: typeof globalThis.NamedNodeMap;
-	DOMTokenList: typeof globalThis.DOMTokenList;
-	DOMStringMap: typeof globalThis.DOMStringMap;
-	MutationObserver: typeof globalThis.MutationObserver;
-	MutationRecord: typeof globalThis.MutationRecord;
-	NodeIterator: typeof globalThis.NodeIterator;
-	TreeWalker: typeof globalThis.TreeWalker;
-	AbstractRange: typeof globalThis.AbstractRange;
-	StaticRange: typeof globalThis.StaticRange;
-	Range: typeof globalThis.Range;
-	Selection: typeof globalThis.Selection;
-	DOMRect: typeof globalThis.DOMRect;
-	DOMRectReadOnly: typeof globalThis.DOMRectReadOnly;
-	CustomElementRegistry: typeof globalThis.CustomElementRegistry;
-	ElementInternals: typeof globalThis.ElementInternals;
-	ValidityState: typeof globalThis.ValidityState;
-	SVGElement: typeof globalThis.SVGElement;
-	MathMLElement: typeof globalThis.MathMLElement;
-	HTMLElement: typeof globalThis.HTMLElement;
-	HTMLInputElement: typeof globalThis.HTMLInputElement;
-	HTMLTextAreaElement: typeof globalThis.HTMLTextAreaElement;
-	HTMLSelectElement: typeof globalThis.HTMLSelectElement;
-	HTMLOptionElement: typeof globalThis.HTMLOptionElement;
-	HTMLButtonElement: typeof globalThis.HTMLButtonElement;
-	HTMLLabelElement: typeof globalThis.HTMLLabelElement;
-	HTMLAnchorElement: typeof globalThis.HTMLAnchorElement;
-	HTMLStyleElement: typeof globalThis.HTMLStyleElement;
-	HTMLLinkElement: typeof globalThis.HTMLLinkElement;
-	HTMLFormElement: typeof globalThis.HTMLFormElement;
-	HTMLDetailsElement: typeof globalThis.HTMLDetailsElement;
-	HTMLDialogElement: typeof globalThis.HTMLDialogElement;
-	HTMLTemplateElement: typeof globalThis.HTMLTemplateElement;
-	HTMLSlotElement: typeof globalThis.HTMLSlotElement;
-	CSSStyleDeclaration: typeof globalThis.CSSStyleDeclaration;
-	CSSStyleSheet: typeof globalThis.CSSStyleSheet;
-	ResizeObserver: typeof globalThis.ResizeObserver;
-	IntersectionObserver: typeof globalThis.IntersectionObserver;
 }
 
 export class Window extends EventTarget {
+	[index: number]: Window;
+	declare getComputedStyle: (
+		element: globalThis.Element,
+		pseudoElement?: string | null,
+	) => globalThis.CSSStyleDeclaration;
+
+	declare dispatchEvent: (event: globalThis.Event) => boolean;
+	declare readonly window: Window;
+	declare readonly self: Window;
+	declare atob: globalThis.Window["atob"];
+	declare btoa: globalThis.Window["btoa"];
+	declare fetch: globalThis.Window["fetch"];
+	declare structuredClone: globalThis.Window["structuredClone"];
+	declare setTimeout: globalThis.Window["setTimeout"];
+	declare clearTimeout: globalThis.Window["clearTimeout"];
+	declare setInterval: globalThis.Window["setInterval"];
+	declare clearInterval: globalThis.Window["clearInterval"];
+	declare queueMicrotask: globalThis.Window["queueMicrotask"];
+	declare readonly NodeFilter: typeof globalThis.NodeFilter;
+	declare EventTarget: typeof globalThis.EventTarget;
+	declare Event: typeof globalThis.Event;
+	declare CustomEvent: typeof globalThis.CustomEvent;
+	declare UIEvent: typeof globalThis.UIEvent;
+	declare MouseEvent: typeof globalThis.MouseEvent;
+	declare ErrorEvent: typeof globalThis.ErrorEvent;
+	declare PointerEvent: typeof globalThis.PointerEvent;
+	declare WheelEvent: typeof globalThis.WheelEvent;
+	declare KeyboardEvent: typeof globalThis.KeyboardEvent;
+	declare FocusEvent: typeof globalThis.FocusEvent;
+	declare InputEvent: typeof globalThis.InputEvent;
+	declare ClipboardEvent: typeof ClipboardEvent;
+	declare DataTransfer: typeof DataTransfer;
+	declare DataTransferItem: typeof DataTransferItem;
+	declare DataTransferItemList: typeof DataTransferItemList;
+	declare FileList: typeof FileList;
+	declare Clipboard: typeof Clipboard;
+	declare ClipboardItem: typeof ClipboardItem;
+	declare Permissions: typeof Permissions;
+	declare PermissionStatus: typeof PermissionStatus;
+	declare CompositionEvent: typeof globalThis.CompositionEvent;
+	declare BeforeUnloadEvent: typeof globalThis.BeforeUnloadEvent;
+	declare DOMException: typeof globalThis.DOMException;
+	declare Node: typeof globalThis.Node;
+	declare Element: typeof globalThis.Element;
+	declare Attr: typeof globalThis.Attr;
+	declare CharacterData: typeof globalThis.CharacterData;
+	declare Text: typeof globalThis.Text;
+	declare Comment: typeof globalThis.Comment;
+	declare CDATASection: typeof globalThis.CDATASection;
+	declare ProcessingInstruction: typeof globalThis.ProcessingInstruction;
+	declare DocumentType: typeof globalThis.DocumentType;
+	declare Document: typeof globalThis.Document;
+	declare XMLDocument: typeof globalThis.XMLDocument;
+	declare DocumentFragment: typeof globalThis.DocumentFragment;
+	declare ShadowRoot: typeof globalThis.ShadowRoot;
+	declare DOMImplementation: typeof globalThis.DOMImplementation;
+	declare DOMParser: typeof globalThis.DOMParser;
+	declare NodeList: typeof globalThis.NodeList;
+	declare HTMLCollection: typeof globalThis.HTMLCollection;
+	declare NamedNodeMap: typeof globalThis.NamedNodeMap;
+	declare DOMTokenList: typeof globalThis.DOMTokenList;
+	declare DOMStringMap: typeof globalThis.DOMStringMap;
+	declare MutationObserver: typeof globalThis.MutationObserver;
+	declare MutationRecord: typeof globalThis.MutationRecord;
+	declare NodeIterator: typeof globalThis.NodeIterator;
+	declare TreeWalker: typeof globalThis.TreeWalker;
+	declare AbstractRange: typeof globalThis.AbstractRange;
+	declare StaticRange: typeof globalThis.StaticRange;
+	declare Range: typeof globalThis.Range;
+	declare Selection: typeof globalThis.Selection;
+	declare DOMRect: typeof globalThis.DOMRect;
+	declare DOMRectReadOnly: typeof globalThis.DOMRectReadOnly;
+	declare CustomElementRegistry: typeof globalThis.CustomElementRegistry;
+	declare ElementInternals: typeof globalThis.ElementInternals;
+	declare ValidityState: typeof globalThis.ValidityState;
+	declare SVGElement: typeof globalThis.SVGElement;
+	declare MathMLElement: typeof globalThis.MathMLElement;
+	declare HTMLElement: typeof globalThis.HTMLElement;
+	declare HTMLInputElement: typeof globalThis.HTMLInputElement;
+	declare HTMLTextAreaElement: typeof globalThis.HTMLTextAreaElement;
+	declare HTMLSelectElement: typeof globalThis.HTMLSelectElement;
+	declare HTMLOptionElement: typeof globalThis.HTMLOptionElement;
+	declare HTMLButtonElement: typeof globalThis.HTMLButtonElement;
+	declare HTMLLabelElement: typeof globalThis.HTMLLabelElement;
+	declare HTMLAnchorElement: typeof globalThis.HTMLAnchorElement;
+	declare HTMLStyleElement: typeof globalThis.HTMLStyleElement;
+	declare HTMLLinkElement: typeof globalThis.HTMLLinkElement;
+	declare HTMLFormElement: typeof globalThis.HTMLFormElement;
+	declare HTMLDetailsElement: typeof globalThis.HTMLDetailsElement;
+	declare HTMLDialogElement: typeof globalThis.HTMLDialogElement;
+	declare HTMLTemplateElement: typeof globalThis.HTMLTemplateElement;
+	declare HTMLSlotElement: typeof globalThis.HTMLSlotElement;
+	declare CSSStyleDeclaration: typeof globalThis.CSSStyleDeclaration;
+	declare CSSStyleSheet: typeof globalThis.CSSStyleSheet;
+	declare ResizeObserver: typeof globalThis.ResizeObserver;
+	declare IntersectionObserver: typeof globalThis.IntersectionObserver;
+	declare onabort: globalThis.Window["onabort"];
+	declare onanimationcancel: globalThis.Window["onanimationcancel"];
+	declare onanimationend: globalThis.Window["onanimationend"];
+	declare onanimationiteration: globalThis.Window["onanimationiteration"];
+	declare onanimationstart: globalThis.Window["onanimationstart"];
+	declare onauxclick: globalThis.Window["onauxclick"];
+	declare onbeforeinput: globalThis.Window["onbeforeinput"];
+	declare onbeforematch: globalThis.Window["onbeforematch"];
+	declare onbeforetoggle: globalThis.Window["onbeforetoggle"];
+	declare onblur: globalThis.Window["onblur"];
+	declare oncancel: globalThis.Window["oncancel"];
+	declare oncanplay: globalThis.Window["oncanplay"];
+	declare oncanplaythrough: globalThis.Window["oncanplaythrough"];
+	declare onchange: globalThis.Window["onchange"];
+	declare onclick: globalThis.Window["onclick"];
+	declare onclose: globalThis.Window["onclose"];
+	declare oncontextlost: globalThis.Window["oncontextlost"];
+	declare oncontextmenu: globalThis.Window["oncontextmenu"];
+	declare oncontextrestored: globalThis.Window["oncontextrestored"];
+	declare oncopy: globalThis.Window["oncopy"];
+	declare oncuechange: globalThis.Window["oncuechange"];
+	declare oncut: globalThis.Window["oncut"];
+	declare ondblclick: globalThis.Window["ondblclick"];
+	declare ondrag: globalThis.Window["ondrag"];
+	declare ondragend: globalThis.Window["ondragend"];
+	declare ondragenter: globalThis.Window["ondragenter"];
+	declare ondragleave: globalThis.Window["ondragleave"];
+	declare ondragover: globalThis.Window["ondragover"];
+	declare ondragstart: globalThis.Window["ondragstart"];
+	declare ondrop: globalThis.Window["ondrop"];
+	declare ondurationchange: globalThis.Window["ondurationchange"];
+	declare onemptied: globalThis.Window["onemptied"];
+	declare onended: globalThis.Window["onended"];
+	declare onerror: globalThis.Window["onerror"];
+	declare onfocus: globalThis.Window["onfocus"];
+	declare onformdata: globalThis.Window["onformdata"];
+	declare ongotpointercapture: globalThis.Window["ongotpointercapture"];
+	declare oninput: globalThis.Window["oninput"];
+	declare oninvalid: globalThis.Window["oninvalid"];
+	declare onkeydown: globalThis.Window["onkeydown"];
+	declare onkeypress: globalThis.Window["onkeypress"];
+	declare onkeyup: globalThis.Window["onkeyup"];
+	declare onload: globalThis.Window["onload"];
+	declare onloadeddata: globalThis.Window["onloadeddata"];
+	declare onloadedmetadata: globalThis.Window["onloadedmetadata"];
+	declare onloadstart: globalThis.Window["onloadstart"];
+	declare onlostpointercapture: globalThis.Window["onlostpointercapture"];
+	declare onmousedown: globalThis.Window["onmousedown"];
+	declare onmouseenter: globalThis.Window["onmouseenter"];
+	declare onmouseleave: globalThis.Window["onmouseleave"];
+	declare onmousemove: globalThis.Window["onmousemove"];
+	declare onmouseout: globalThis.Window["onmouseout"];
+	declare onmouseover: globalThis.Window["onmouseover"];
+	declare onmouseup: globalThis.Window["onmouseup"];
+	declare onpaste: globalThis.Window["onpaste"];
+	declare onpause: globalThis.Window["onpause"];
+	declare onplay: globalThis.Window["onplay"];
+	declare onplaying: globalThis.Window["onplaying"];
+	declare onpointercancel: globalThis.Window["onpointercancel"];
+	declare onpointerdown: globalThis.Window["onpointerdown"];
+	declare onpointerenter: globalThis.Window["onpointerenter"];
+	declare onpointerleave: globalThis.Window["onpointerleave"];
+	declare onpointermove: globalThis.Window["onpointermove"];
+	declare onpointerout: globalThis.Window["onpointerout"];
+	declare onpointerover: globalThis.Window["onpointerover"];
+	declare onpointerrawupdate: globalThis.Window["onpointerrawupdate"];
+	declare onpointerup: globalThis.Window["onpointerup"];
+	declare onprogress: globalThis.Window["onprogress"];
+	declare onratechange: globalThis.Window["onratechange"];
+	declare onreset: globalThis.Window["onreset"];
+	declare onresize: globalThis.Window["onresize"];
+	declare onscroll: globalThis.Window["onscroll"];
+	declare onscrollend: globalThis.Window["onscrollend"];
+	declare onsecuritypolicyviolation: globalThis.Window["onsecuritypolicyviolation"];
+	declare onseeked: globalThis.Window["onseeked"];
+	declare onseeking: globalThis.Window["onseeking"];
+	declare onselect: globalThis.Window["onselect"];
+	declare onselectionchange: globalThis.Window["onselectionchange"];
+	declare onselectstart: globalThis.Window["onselectstart"];
+	declare onslotchange: globalThis.Window["onslotchange"];
+	declare onstalled: globalThis.Window["onstalled"];
+	declare onsubmit: globalThis.Window["onsubmit"];
+	declare onsuspend: globalThis.Window["onsuspend"];
+	declare ontimeupdate: globalThis.Window["ontimeupdate"];
+	declare ontoggle: globalThis.Window["ontoggle"];
+	declare ontouchcancel: globalThis.Window["ontouchcancel"];
+	declare ontouchend: globalThis.Window["ontouchend"];
+	declare ontouchmove: globalThis.Window["ontouchmove"];
+	declare ontouchstart: globalThis.Window["ontouchstart"];
+	declare ontransitioncancel: globalThis.Window["ontransitioncancel"];
+	declare ontransitionend: globalThis.Window["ontransitionend"];
+	declare ontransitionrun: globalThis.Window["ontransitionrun"];
+	declare ontransitionstart: globalThis.Window["ontransitionstart"];
+	declare onvolumechange: globalThis.Window["onvolumechange"];
+	declare onwaiting: globalThis.Window["onwaiting"];
+	declare onwebkitanimationend: globalThis.Window["onwebkitanimationend"];
+	declare onwebkitanimationiteration: globalThis.Window["onwebkitanimationiteration"];
+	declare onwebkitanimationstart: globalThis.Window["onwebkitanimationstart"];
+	declare onwebkittransitionend: globalThis.Window["onwebkittransitionend"];
+	declare onwheel: globalThis.Window["onwheel"];
+	declare onafterprint: globalThis.Window["onafterprint"];
+	declare onbeforeprint: globalThis.Window["onbeforeprint"];
+	declare onbeforeunload: globalThis.Window["onbeforeunload"];
+	declare ongamepadconnected: globalThis.Window["ongamepadconnected"];
+	declare ongamepaddisconnected: globalThis.Window["ongamepaddisconnected"];
+	declare onhashchange: globalThis.Window["onhashchange"];
+	declare onlanguagechange: globalThis.Window["onlanguagechange"];
+	declare onmessage: globalThis.Window["onmessage"];
+	declare onmessageerror: globalThis.Window["onmessageerror"];
+	declare onoffline: globalThis.Window["onoffline"];
+	declare ononline: globalThis.Window["ononline"];
+	declare onpagehide: globalThis.Window["onpagehide"];
+	declare onpagereveal: globalThis.Window["onpagereveal"];
+	declare onpageshow: globalThis.Window["onpageshow"];
+	declare onpageswap: globalThis.Window["onpageswap"];
+	declare onpopstate: globalThis.Window["onpopstate"];
+	declare onrejectionhandled: globalThis.Window["onrejectionhandled"];
+	declare onstorage: globalThis.Window["onstorage"];
+	declare onunhandledrejection: globalThis.Window["onunhandledrejection"];
+	declare onunload: globalThis.Window["onunload"];
+	declare ondevicemotion: globalThis.Window["ondevicemotion"];
+	declare ondeviceorientation: globalThis.Window["ondeviceorientation"];
+	declare ondeviceorientationabsolute: globalThis.Window["ondeviceorientationabsolute"];
+	declare onorientationchange: globalThis.Window["onorientationchange"];
 	readonly document: Document;
 	constructor(document: Document) {
 		super();
@@ -30964,59 +31257,6 @@ installEventHandlers(Window.prototype, [
 	"onorientationchange",
 ]);
 
-// RUNTIME: installed on prototypes at load.
-type NodeConstants =
-	"ELEMENT_NODE" |
-	"ATTRIBUTE_NODE" |
-	"TEXT_NODE" |
-	"CDATA_SECTION_NODE" |
-	"ENTITY_REFERENCE_NODE" |
-	"ENTITY_NODE" |
-	"PROCESSING_INSTRUCTION_NODE" |
-	"COMMENT_NODE" |
-	"DOCUMENT_NODE" |
-	"DOCUMENT_TYPE_NODE" |
-	"DOCUMENT_FRAGMENT_NODE" |
-	"NOTATION_NODE" |
-	"DOCUMENT_POSITION_DISCONNECTED" |
-	"DOCUMENT_POSITION_PRECEDING" |
-	"DOCUMENT_POSITION_FOLLOWING" |
-	"DOCUMENT_POSITION_CONTAINS" |
-	"DOCUMENT_POSITION_CONTAINED_BY" |
-	"DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC";
-
-// RUNTIME: installed from the tables.
-type ChildNodeMixin =
-	"after" |
-	"before" |
-	"remove" |
-	"replaceWith" |
-	"nextElementSibling" |
-	"previousElementSibling";
-
-// RUNTIME: installed from the tables.
-type ParentNodeMixin =
-	"childElementCount" |
-	"children" |
-	"firstElementChild" |
-	"lastElementChild" |
-	"append" |
-	"prepend" |
-	"querySelector" |
-	"querySelectorAll" |
-	"replaceChildren";
-
-// RUNTIME: installed from the tables.
-type ARIAReflection =
-	"role" |
-	`aria${string}`;
-
-// RUNTIME: installed from the tables.
-type SelectorSurface = "closest" | "matches" | "webkitMatchesSelector";
-
-// RUNTIME: installed from the tables.
-type FullscreenSurface = "onfullscreenchange" | "onfullscreenerror";
-
 // The one place an interface joins the window. A class not listed here
 // is not visible to script, whatever this module exports.
 const platform = {
@@ -31169,13 +31409,6 @@ const platform = {
 	Window,
 	XMLDocument,
 } as const;
-
-// addEventListener/removeEventListener come from EventTarget, so the
-// mixins' redeclarations are dropped.
-type WindowEventHandlerAttributes = Omit<
-	globalThis.GlobalEventHandlers & globalThis.WindowEventHandlers,
-	"addEventListener" | "removeEventListener"
->;
 
 // A window starts with its interfaces and the timers any script expects
 // to find. The display fills in the rest (sizing, scrolling, animation
