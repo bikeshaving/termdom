@@ -391,9 +391,12 @@ function decodeKeyToken(token: string): WireKey {
 const kTail = Symbol("tail");
 const kPasteBody = Symbol("pasteBody");
 const kReplyBody = Symbol("replyBody");
-const kReplyLimit = Symbol("replyLimit");
-const kPasteLimit = Symbol("pasteLimit");
-const kHoldLimit = Symbol("holdLimit");
+// A larger reply is not a clipboard. It is given up as null.
+const REPLY_LIMIT = 1 << 16;
+// A paste this large is delivered as it stands and the fence forgotten.
+const PASTE_LIMIT = 1 << 20;
+// A split sequence longer than this is not one a terminal sends.
+const HOLD_LIMIT = 4096;
 const kExpectingReply = Symbol("expectingReply");
 
 interface WireReader {
@@ -413,12 +416,6 @@ interface WireReader {
  * query is waiting for it.
  */
 class WireReader {
-	// A larger reply is not a clipboard. It is given up as null.
-	static readonly [kReplyLimit] = 1 << 16;
-	// A paste this large is delivered as it stands and the fence forgotten.
-	static readonly [kPasteLimit] = 1 << 20;
-	// A split sequence longer than this is not one a terminal sends.
-	static readonly [kHoldLimit] = 4096;
 	constructor() {
 		this[kTail] = "";
 		this[kPasteBody] = null;
@@ -442,7 +439,7 @@ class WireReader {
 		let data = this[kTail] + chunk;
 		this[kTail] = "";
 		const held = splitTrailingEscape(data);
-		if (held > 0 && held <= WireReader[kHoldLimit]) {
+		if (held > 0 && held <= HOLD_LIMIT) {
 			this[kTail] = data.slice(-held);
 			data = data.slice(0, -held);
 		}
@@ -455,7 +452,7 @@ class WireReader {
 				const end = data.indexOf(PASTE_END, i);
 				if (end === -1) {
 					this[kPasteBody] += data.slice(i);
-					if (this[kPasteBody].length > WireReader[kPasteLimit]) {
+					if (this[kPasteBody].length > PASTE_LIMIT) {
 						items.push({kind: "paste", text: this[kPasteBody]});
 						this[kPasteBody] = null;
 					}
@@ -475,7 +472,7 @@ class WireReader {
 				this[kReplyBody] = null;
 				const match = reply.match(CLIPBOARD_REPLY);
 				if (!match) {
-					if (reply.length <= WireReader[kReplyLimit]) {
+					if (reply.length <= REPLY_LIMIT) {
 						this[kReplyBody] = reply;
 					} else {
 						items.push({kind: "clipboard", text: null});
@@ -674,12 +671,17 @@ const kPendingReplies = Symbol("pendingReplies");
 const kPriorBidiMode = Symbol("priorBidiMode");
 const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
 
-const kClipboardQueryTimeout = Symbol("clipboardQueryTimeout");
+// Most terminals refuse clipboard reads by silence. This is what every
+// readText() waits before rejecting.
+const CLIPBOARD_QUERY_TIMEOUT_MS = 500;
 
 const kProbingEnded = Symbol("probingEnded");
 const kWidths = Symbol("widths");
-const kWidthProbeTimeout = Symbol("widthProbeTimeout");
-const kWidthDeferralWait = Symbol("widthDeferralWait");
+// A terminal replying late is still replying. Only one that never
+// replies at all stops probing.
+const WIDTH_PROBE_TIMEOUT_MS = 2000;
+// Long enough that anything still animating or typing carries the probes.
+const WIDTH_DEFERRAL_WAIT_MS = 500;
 
 export interface Exchange {
 	[kTransport]: TerminalTransport;
@@ -729,15 +731,6 @@ export interface Exchange {
  * event's path, and dispatches seal and terminalclose on itself.
  */
 export class Exchange extends EventTarget {
-	// A terminal replying late is still replying. Only one that never
-	// replies at all stops probing.
-	static readonly [kWidthProbeTimeout] = 2000;
-	// Long enough that anything still animating or typing carries the
-	// probes.
-	static readonly [kWidthDeferralWait] = 500;
-	// Most terminals refuse clipboard reads by silence. This is what every
-	// readText() waits before rejecting.
-	static readonly [kClipboardQueryTimeout] = 500;
 	constructor(
 		transport: TerminalTransport,
 		window: Window,
@@ -1072,7 +1065,7 @@ export class Exchange extends EventTarget {
 		abandonClipboardQuery(this);
 		return nextReply(this, "clipboard", {
 			ask: CLIPBOARD_QUERY,
-			timeoutMs: Exchange[kClipboardQueryTimeout],
+			timeoutMs: CLIPBOARD_QUERY_TIMEOUT_MS,
 			absent: null,
 			clipboard: true,
 			read: ({text}) => text,
@@ -1302,7 +1295,7 @@ function requestDeferredProbeFrame(session: Exchange): void {
 		// Deferred probes go out with the next frame even if nothing changed.
 		session[kScreen].flushProbes();
 		requestRender(session[kWindow].document);
-	}, Exchange[kWidthDeferralWait]);
+	}, WIDTH_DEFERRAL_WAIT_MS);
 }
 
 // One deadline, timed from the oldest outstanding probe.
@@ -1317,13 +1310,13 @@ function armWidthProbeTimer(session: Exchange): void {
 	}
 	const remaining = Math.max(
 		0,
-		oldest.sentAt + Exchange[kWidthProbeTimeout] - Date.now(),
+		oldest.sentAt + WIDTH_PROBE_TIMEOUT_MS - Date.now(),
 	);
 	widths.timer = setTimeout(() => {
 		widths.timer = null;
 		// An abandoned probe leaves the queue that matches replies. Its cluster
 		// keeps the tables' width and is not probed again.
-		const deadline = Date.now() - Exchange[kWidthProbeTimeout];
+		const deadline = Date.now() - WIDTH_PROBE_TIMEOUT_MS;
 		let expired = 0;
 		while (
 			expired < widths.pending.length &&

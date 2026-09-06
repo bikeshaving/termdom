@@ -279,14 +279,12 @@ const kPendingHover = Symbol("pendingHover");
 const kHoverElement = Symbol("hoverElement");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kScrollChainTimer = Symbol("scrollChainTimer");
-const kScrollChainTimeoutMs = Symbol("scrollChainTimeoutMs");
 const kMouseDownTarget = Symbol("mouseDownTarget");
 const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
 const kTextControlDragAnchor = Symbol("textControlDragAnchor");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
-const kDblclickIntervalMs = Symbol("dblclickIntervalMs");
 
 export interface Input {
 	[kDocument]: Document;
@@ -329,13 +327,13 @@ export interface Input {
 	[kLastClickTime]: number;
 }
 
+// Reclaims a yield no keystroke reclaimed. A flat window from the yield,
+// not a debounce. Wheel activity while yielded produces no signal, and a
+// gap between ticks longer than this would re-yield on the next tick.
+const SCROLL_CHAIN_TIMEOUT_MS = 3000;
+const DBLCLICK_INTERVAL_MS = 500;
+
 export class Input {
-	// Reclaims a yield no keystroke reclaimed. A flat window from the
-	// yield, not a debounce. Wheel activity while yielded produces no
-	// signal, and a gap between ticks longer than this would re-yield on
-	// the next tick.
-	static readonly [kScrollChainTimeoutMs] = 3000;
-	static readonly [kDblclickIntervalMs] = 500;
 	constructor(
 		document: Document,
 		layout: Layout,
@@ -559,7 +557,7 @@ function deliverMouseReport(
 			input[kScrollChainTimer] = setTimeout(() => {
 				input[kScrollChainTimer] = null;
 				reclaimMouseCapture(input);
-			}, Input[kScrollChainTimeoutMs]);
+			}, SCROLL_CHAIN_TIMEOUT_MS);
 		}
 		return;
 	}
@@ -914,7 +912,7 @@ function dispatchRelease(
 		const now = performance.now();
 		if (
 			input[kLastClickTarget] === target &&
-			now - input[kLastClickTime] <= Input[kDblclickIntervalMs]
+			now - input[kLastClickTime] <= DBLCLICK_INTERVAL_MS
 		) {
 			dispatchAsUserAgent(
 				target,

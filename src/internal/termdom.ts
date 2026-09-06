@@ -415,7 +415,7 @@ function syncHoverReporting(
 	termDOM[kExchange].setDisplayType("motionReporting", wanted);
 }
 
-export async function render(termDOM: TermDOM): Promise<void> {
+async function render(termDOM: TermDOM): Promise<void> {
 	// Until attach(), mutations keep the DOM and layout live but write
 	// nothing.
 	if (!isAttached(termDOM)) {
