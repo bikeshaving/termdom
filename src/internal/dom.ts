@@ -2113,7 +2113,15 @@ const kIsComposing = Symbol("isComposing");
 const kCharCode = Symbol("charCode");
 const kKeyCode = Symbol("keyCode");
 
-interface KeyboardEvent {
+/** The key-location constants, installed on the prototype. */
+interface KeyboardEvent
+	extends Pick<
+		globalThis.KeyboardEvent,
+		"DOM_KEY_LOCATION_STANDARD" |
+		"DOM_KEY_LOCATION_LEFT" |
+		"DOM_KEY_LOCATION_RIGHT" |
+		"DOM_KEY_LOCATION_NUMPAD"
+	> {
 	[kKey]: string;
 	[kCode]: string;
 	[kLocation]: number;
@@ -2225,16 +2233,6 @@ class KeyboardEvent extends UIEvent implements globalThis.KeyboardEvent {
 		this[kModifiers] = getInitModifiers({ctrlKey, altKey, shiftKey, metaKey});
 	}
 }
-
-/** The key-location constants, installed on the prototype. */
-interface KeyboardEvent
-	extends Pick<
-		globalThis.KeyboardEvent,
-		"DOM_KEY_LOCATION_STANDARD" |
-		"DOM_KEY_LOCATION_LEFT" |
-		"DOM_KEY_LOCATION_RIGHT" |
-		"DOM_KEY_LOCATION_NUMPAD"
-	> {}
 
 Object.defineProperties(KeyboardEvent.prototype, {
 	DOM_KEY_LOCATION_STANDARD: {
@@ -2887,6 +2885,10 @@ interface WheelEvent {
 	[kDeltaY]: number;
 	[kDeltaZ]: number;
 	[kDeltaMode]: number;
+
+	readonly DOM_DELTA_PIXEL: 0;
+	readonly DOM_DELTA_LINE: 1;
+	readonly DOM_DELTA_PAGE: 2;
 }
 
 /** Fired when the wheel turns over a target. */
@@ -2918,12 +2920,6 @@ class WheelEvent extends MouseEvent {
 	get deltaMode(): number {
 		return this[kDeltaMode];
 	}
-}
-
-interface WheelEvent {
-	readonly DOM_DELTA_PIXEL: 0;
-	readonly DOM_DELTA_LINE: 1;
-	readonly DOM_DELTA_PAGE: 2;
 }
 
 Object.defineProperties(WheelEvent.prototype, {
@@ -4716,6 +4712,10 @@ const kRegistry = Symbol("custom element registry");
 const kAttributeList = Symbol("attribute list");
 const kDocumentURL = Symbol("document URL");
 
+/** The node-type constants, installed on the prototype below. */
+export interface Node
+	extends Pick<globalThis.Node, NodeConstants> {}
+
 export class Node extends EventTarget implements globalThis.Node {
 	static readonly ELEMENT_NODE = ELEMENT_NODE;
 	static readonly ATTRIBUTE_NODE = ATTRIBUTE_NODE;
@@ -5099,9 +5099,6 @@ export class Node extends EventTarget implements globalThis.Node {
 		throw domError("NotSupportedError", "That node cannot be cloned");
 	}
 }
-
-/** The node-type constants, installed on the prototype below. */
-export interface Node extends Pick<globalThis.Node, NodeConstants> {}
 
 for (const [name, value] of [
 	["ELEMENT_NODE", ELEMENT_NODE],
@@ -7348,6 +7345,8 @@ interface DOMTokenList {
 	[kElement]: Element;
 	[kAttribute]: string;
 	[kSupported]: Set<string> | null;
+
+	[index: number]: string;
 }
 
 class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
@@ -7504,10 +7503,6 @@ Object.defineProperty(DOMTokenList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-interface DOMTokenList {
-	[index: number]: string;
-}
-
 // An interface with an indexed property getter and a length gets
 // %Array.prototype%'s own functions, the same function objects rather
 // than copies, so comparing them finds them equal. Iteration reads length
@@ -7549,6 +7544,11 @@ function validateTokens(tokens: string[]): void {
 			);
 		}
 	}
+}
+
+interface CharacterData
+	extends Pick<globalThis.CharacterData, ChildNodeMixin> {
+	get ownerDocument(): Document;
 }
 
 class CharacterData extends Node implements globalThis.CharacterData {
@@ -7640,12 +7640,6 @@ class CharacterData extends Node implements globalThis.CharacterData {
 			String(data),
 		);
 	}
-}
-
-interface CharacterData
-	extends Pick<globalThis.CharacterData, ChildNodeMixin> {
-
-	get ownerDocument(): Document;
 }
 
 Object.defineProperty(CharacterData.prototype, Symbol.toStringTag, {
@@ -7824,6 +7818,10 @@ Object.defineProperty(Comment.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+interface ProcessingInstruction {
+	get ownerDocument(): Document;
+}
+
 class ProcessingInstruction extends CharacterData {
 	[kTarget]: string;
 
@@ -7855,10 +7853,6 @@ class ProcessingInstruction extends CharacterData {
 	}
 }
 
-interface ProcessingInstruction {
-	get ownerDocument(): Document;
-}
-
 Object.defineProperty(ProcessingInstruction.prototype, Symbol.toStringTag, {
 	value: "ProcessingInstruction",
 	configurable: true,
@@ -7867,6 +7861,16 @@ Object.defineProperty(ProcessingInstruction.prototype, Symbol.toStringTag, {
 const kName = Symbol("doctype name");
 const kPublicId = Symbol("public id");
 const kSystemId = Symbol("system id");
+
+interface DocumentType
+	extends Pick<
+		globalThis.DocumentType,
+		"after" | "before" | "remove" | "replaceWith"
+	> {
+	get ownerDocument(): Document;
+
+	get textContent(): null;
+}
 
 class DocumentType extends Node {
 	[kName]: string;
@@ -7911,21 +7915,15 @@ class DocumentType extends Node {
 	}
 }
 
-interface DocumentType
-	extends Pick<
-		globalThis.DocumentType,
-		"after" | "before" | "remove" | "replaceWith"
-	> {
-
-	get ownerDocument(): Document;
-
-	get textContent(): null;
-}
-
 Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
 	value: "DocumentType",
 	configurable: true,
 });
+
+export interface DocumentFragment
+	extends Pick<globalThis.DocumentFragment, ParentNodeMixin> {
+	get ownerDocument(): Document;
+}
 
 export class DocumentFragment extends Node implements globalThis.DocumentFragment {
 	[kHost]: Element | null;
@@ -7974,12 +7972,6 @@ export class DocumentFragment extends Node implements globalThis.DocumentFragmen
 	}
 }
 
-export interface DocumentFragment
-	extends Pick<globalThis.DocumentFragment, ParentNodeMixin> {
-
-	get ownerDocument(): Document;
-}
-
 Object.defineProperty(DocumentFragment.prototype, Symbol.toStringTag, {
 	value: "DocumentFragment",
 	configurable: true,
@@ -8011,6 +8003,10 @@ function setDescendantText(node: Node, value: string | null): void {
 const kValue = Symbol("attribute value");
 const kOwnerElement = Symbol("owner element");
 const kQualifiedName = Symbol("qualified name");
+
+interface Attr {
+	get ownerDocument(): Document;
+}
 
 class Attr extends Node implements globalThis.Attr {
 	[kNamespace]: string | null;
@@ -8111,11 +8107,6 @@ Object.defineProperty(Attr.prototype, Symbol.toStringTag, {
 	value: "Attr",
 	configurable: true,
 });
-
-interface Attr {
-
-	get ownerDocument(): Document;
-}
 
 function setExistingAttributeValue(attribute: Attr, value: string): void {
 	const element = attribute[kOwnerElement];
@@ -8286,6 +8277,8 @@ interface NamedNodeMap {
 	[Symbol.iterator]: () => ArrayIterator<Attr>;
 
 	[kElement]: Element;
+
+	[index: number]: Attr;
 }
 
 class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
@@ -8382,10 +8375,6 @@ Object.defineProperty(NamedNodeMap.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-interface NamedNodeMap {
-	[index: number]: Attr;
-}
-
 installArrayIteration(NodeList.prototype, true);
 installArrayIteration(DOMTokenList.prototype, true);
 installArrayIteration(HTMLCollection.prototype, false);
@@ -8454,6 +8443,40 @@ type ScrollMethod = {
 	(options?: globalThis.ScrollToOptions): void;
 	(x: number, y: number): void;
 };
+
+/**
+ * The members the tables and the engine give an element, which installing
+ * them says nothing about: the mixins, the reflected members, and the
+ * geometry the engine measures. Declared with Pick so a declaration
+ * cannot drift from the member it stands for. The two written out are
+ * exceptions: a Pick would make them properties, and subclasses declare
+ * each as a method.
+ */
+export interface Element
+	extends Pick<
+		globalThis.Element,
+		// `remove` and `scrollIntoView` are written out below rather than
+		// Picked. A Pick yields a property, and subclasses declare each of them
+		// as a method, which cannot override a property.
+		Exclude<ChildNodeMixin, "remove"> |
+		ParentNodeMixin |
+		SelectorSurface |
+		FullscreenSurface |
+		"part" |
+		"checkVisibility" |
+		"clientWidth" |
+		"clientHeight" |
+		"scrollWidth" |
+		"scrollHeight" |
+		"clientLeft" |
+		"clientTop" |
+		"scrollIntoView" |
+		Extract<keyof globalThis.Element, ARIAReflection>
+	> {
+	remove(): void;
+
+	get ownerDocument(): Document;
+}
 
 export class Element extends Node implements globalThis.Element {
 	// Installed on the prototype, where the engine that implements them is.
@@ -9303,40 +9326,6 @@ const scrollOffsets = new WeakMap<
 	{left: number; top: number}
 >();
 
-/**
- * The members the tables and the engine give an element, which installing
- * them says nothing about: the mixins, the reflected members, and the
- * geometry the engine measures. Declared with Pick so a declaration
- * cannot drift from the member it stands for. The two written out are
- * exceptions: a Pick would make them properties, and subclasses declare
- * each as a method.
- */
-export interface Element
-	extends Pick<
-		globalThis.Element,
-		// `remove` and `scrollIntoView` are written out below rather than
-		// Picked. A Pick yields a property, and subclasses declare each of them
-		// as a method, which cannot override a property.
-		Exclude<ChildNodeMixin, "remove"> |
-		ParentNodeMixin |
-		SelectorSurface |
-		FullscreenSurface |
-		"part" |
-		"checkVisibility" |
-		"clientWidth" |
-		"clientHeight" |
-		"scrollWidth" |
-		"scrollHeight" |
-		"clientLeft" |
-		"clientTop" |
-		"scrollIntoView" |
-		Extract<keyof globalThis.Element, ARIAReflection>
-	> {
-	remove(): void;
-
-	get ownerDocument(): Document;
-}
-
 Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 	value: "Element",
 	configurable: true,
@@ -9577,6 +9566,28 @@ function replaceAllWithText(element: Element, value: string): void {
 	}
 	replaceAll(createTextFragment(document, text), element);
 }
+
+/**
+ * The members the tables and the cascade give an HTML element: the event
+ * handler attributes, the reflected attributes, and `style`, which the
+ * cascade installs when it loads.
+ */
+export interface HTMLElement
+	extends Pick<
+		globalThis.HTMLElement,
+		Extract<keyof globalThis.HTMLElement, `on${string}`> |
+		"accessKey" |
+		"autofocus" |
+		"dir" |
+		"enterKeyHint" |
+		"inputMode" |
+		"lang" |
+		"nonce" |
+		"popover" |
+		"title" |
+		"writingSuggestions" |
+		"style"
+	> {}
 
 export class HTMLElement extends Element {
 	// Installed on the prototype, where the engine that measures them is.
@@ -10225,28 +10236,6 @@ Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
 	value: "HTMLElement",
 	configurable: true,
 });
-
-/**
- * The members the tables and the cascade give an HTML element: the event
- * handler attributes, the reflected attributes, and `style`, which the
- * cascade installs when it loads.
- */
-export interface HTMLElement
-	extends Pick<
-		globalThis.HTMLElement,
-		Extract<keyof globalThis.HTMLElement, `on${string}`> |
-		"accessKey" |
-		"autofocus" |
-		"dir" |
-		"enterKeyHint" |
-		"inputMode" |
-		"lang" |
-		"nonce" |
-		"popover" |
-		"title" |
-		"writingSuggestions" |
-		"style"
-	> {}
 
 // Settles everything a geometry read must see: pending mutation records
 // are delivered and the layout they invalidated is recomputed. Returns
@@ -11629,6 +11618,9 @@ const kDeclarative = Symbol("declarative");
 const kUAShadowTree = Symbol("user-agent shadow root");
 const kAvailableToInternals = Symbol("available to element internals");
 
+export interface ShadowRoot
+	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {}
+
 /**
  * A document fragment with a host. Every algorithm that already steps
  * from a fragment to its host (pre-insertion validity, retargeting, the
@@ -11856,9 +11848,6 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 		throw domError("NotSupportedError", "A shadow root cannot be cloned");
 	}
 }
-
-export interface ShadowRoot
-	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {}
 
 installEventHandler(ShadowRoot.prototype, "onslotchange");
 
@@ -12636,20 +12625,6 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 	});
 }
 
-// The HTML Standard's element interfaces, each filled in from the table.
-// The reflecting members come from `HTML_INTERFACES`. Members that are
-// not reflections are written in the class body. A class with an empty
-// body only reflects, which is all its interface does.
-class HTMLAnchorElement extends HTMLElement {
-	get text(): string {
-		return getDescendantText(this);
-	}
-
-	set text(value: string) {
-		setDescendantText(this, String(value));
-	}
-}
-
 // Written out rather than picked. A computed projection satisfies keyof
 // but not assignability, and assignability is what this is for.
 interface HTMLAnchorElement {
@@ -12678,8 +12653,21 @@ interface HTMLAnchorElement {
 	rev: string;
 	shape: string;
 	target: string;
-	text: string;
 	type: string;
+}
+
+// The HTML Standard's element interfaces, each filled in from the table.
+// The reflecting members come from `HTML_INTERFACES`. Members that are
+// not reflections are written in the class body. A class with an empty
+// body only reflects, which is all its interface does.
+class HTMLAnchorElement extends HTMLElement {
+	get text(): string {
+		return getDescendantText(this);
+	}
+
+	set text(value: string) {
+		setDescendantText(this, String(value));
+	}
 }
 
 function createHyperlinkPart(
@@ -12830,8 +12818,6 @@ function writeHyperlink(element: Element, change: (url: URL) => void): void {
 
 Object.defineProperties(HTMLAnchorElement.prototype, hyperlinkMembers);
 
-class HTMLAreaElement extends HTMLElement {}
-
 interface HTMLAreaElement
 	extends Pick<
 		globalThis.HTMLAreaElement,
@@ -12858,6 +12844,9 @@ interface HTMLAreaElement
 		"toString" |
 		"username"
 	> {}
+
+class HTMLAreaElement extends HTMLElement {}
+
 Object.defineProperties(HTMLAreaElement.prototype, hyperlinkMembers);
 
 // Its own href is the exception: it resolves against the document's URL
@@ -12892,10 +12881,8 @@ interface HTMLBodyElement
 		"link" |
 		"text" |
 		"vLink"
-	> {}
-
-interface HTMLBodyElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLBodyElement,
 		"onafterprint" |
 		"onbeforeprint" |
@@ -12980,10 +12967,8 @@ interface HTMLButtonElement
 		"disabled" |
 		"name" |
 		"value"
-	> {}
-
-interface HTMLButtonElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLButtonElement,
 		"formAction" |
 		"formEnctype" |
@@ -13533,13 +13518,6 @@ interface HTMLDListElement
 
 class HTMLDListElement extends HTMLElement {}
 
-/** Never loads, so it has no SVG document. */
-class HTMLEmbedElement extends HTMLElement {
-	getSVGDocument(): Document | null {
-		return null;
-	}
-}
-
 interface HTMLEmbedElement
 	extends Pick<
 		globalThis.HTMLEmbedElement,
@@ -13550,6 +13528,13 @@ interface HTMLEmbedElement
 		"type" |
 		"width"
 	> {}
+
+/** Never loads, so it has no SVG document. */
+class HTMLEmbedElement extends HTMLElement {
+	getSVGDocument(): Document | null {
+		return null;
+	}
+}
 
 const kElements = Symbol("elements");
 
@@ -13643,6 +13628,25 @@ const kFiringReset = Symbol("firingReset");
 interface HTMLFormElement {
 	[kElements]: HTMLFormControlsCollection | null;
 	[kFiringReset]: boolean;
+
+	[index: number]: Element;
+	[name: string]: any;
+	acceptCharset: string;
+	action: string;
+	autocomplete: AutoFillBase;
+	enctype: string;
+	method: string;
+	name: string;
+	noValidate: boolean;
+	rel: string;
+	get relList(): DOMTokenList;
+	set relList(value: string);
+	target: string;
+	checkValidity(): boolean;
+	reportValidity(): boolean;
+	requestSubmit(submitter?: HTMLElement | null): void;
+	reset(): void;
+	submit(): void;
 }
 
 class HTMLFormElement extends HTMLElement {
@@ -13736,30 +13740,6 @@ class HTMLFormElement extends HTMLElement {
 	[Symbol.iterator](): ArrayIterator<Element> {
 		return this.elements[Symbol.iterator]();
 	}
-}
-
-interface HTMLFormElement {
-	[index: number]: Element;
-	[name: string]: any;
-	acceptCharset: string;
-	action: string;
-	autocomplete: AutoFillBase;
-	elements: HTMLFormControlsCollection;
-	encoding: string;
-	enctype: string;
-	length: number;
-	method: string;
-	name: string;
-	noValidate: boolean;
-	rel: string;
-	get relList(): DOMTokenList;
-	set relList(value: string);
-	target: string;
-	checkValidity(): boolean;
-	reportValidity(): boolean;
-	requestSubmit(submitter?: HTMLElement | null): void;
-	reset(): void;
-	submit(): void;
 }
 
 function getListedElements(form: HTMLFormElement): Element[] {
@@ -14039,10 +14019,8 @@ interface HTMLFrameSetElement
 		globalThis.HTMLFrameSetElement,
 		"cols" |
 		"rows"
-	> {}
-
-interface HTMLFrameSetElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLFrameSetElement,
 		"onafterprint" |
 		"onbeforeprint" |
@@ -14166,6 +14144,10 @@ interface FrameWindowLike {
 interface HTMLIFrameElement
 	extends Pick<
 		globalThis.HTMLIFrameElement,
+		"loading"
+	>,
+	Pick<
+		globalThis.HTMLIFrameElement,
 		"align" |
 		"allow" |
 		"allowFullscreen" |
@@ -14181,12 +14163,6 @@ interface HTMLIFrameElement
 		"src" |
 		"srcdoc" |
 		"width"
-	> {}
-
-interface HTMLIFrameElement
-	extends Pick<
-		globalThis.HTMLIFrameElement,
-		"loading"
 	> {
 	[kContentDocument]: Document | null;
 	[kContentWindow]: FrameWindowLike | null;
@@ -14264,6 +14240,38 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	};
 }
 
+interface HTMLImageElement
+	extends Pick<
+		globalThis.HTMLImageElement,
+		"align" |
+		"alt" |
+		"border" |
+		"complete" |
+		"crossOrigin" |
+		"currentSrc" |
+		"decode" |
+		"decoding" |
+		"fetchPriority" |
+		"height" |
+		"hspace" |
+		"isMap" |
+		"loading" |
+		"longDesc" |
+		"lowsrc" |
+		"name" |
+		"naturalHeight" |
+		"naturalWidth" |
+		"referrerPolicy" |
+		"sizes" |
+		"src" |
+		"srcset" |
+		"useMap" |
+		"vspace" |
+		"width" |
+		"x" |
+		"y"
+	> {}
+
 // Nothing is fetched, so image data is never available. The natural
 // dimensions are zero, the current source is empty, and decoding
 // rejects. The width and height an author reads are the attributes,
@@ -14302,38 +14310,6 @@ class HTMLImageElement extends HTMLElement {
 	}
 }
 
-interface HTMLImageElement
-	extends Pick<
-		globalThis.HTMLImageElement,
-		"align" |
-		"alt" |
-		"border" |
-		"complete" |
-		"crossOrigin" |
-		"currentSrc" |
-		"decode" |
-		"decoding" |
-		"fetchPriority" |
-		"height" |
-		"hspace" |
-		"isMap" |
-		"loading" |
-		"longDesc" |
-		"lowsrc" |
-		"name" |
-		"naturalHeight" |
-		"naturalWidth" |
-		"referrerPolicy" |
-		"sizes" |
-		"src" |
-		"srcset" |
-		"useMap" |
-		"vspace" |
-		"width" |
-		"x" |
-		"y"
-	> {}
-
 const kDirtyValue = Symbol("dirtyValue");
 const kFiles = Symbol("files");
 
@@ -14353,54 +14329,6 @@ const kOnBeforeInput = Symbol("onBeforeInput");
 const kKind = Symbol("kind");
 const kPlaceholderText = Symbol("placeholderText");
 const kGlyphText = Symbol("glyphText");
-
-// The value model is the spec's: an attribute holds the default, a
-// separate value holds what was written, and a dirty flag decides which
-// one the control reports. Checkedness works the same way. What the
-// control RENDERS is a closed shadow tree it owns: a value part and a
-// placeholder part for a text-like input, or a single glyph part for a
-// checkbox or radio. The tree is derived from the value, which is the
-// only state. The editing keys are the control's own default action,
-// implemented as a keydown listener like a browser's editing internals.
-export interface HTMLInputElement
-	extends Pick<
-		globalThis.HTMLInputElement,
-		"accept" |
-		"align" |
-		"alt" |
-		"defaultChecked" |
-		"defaultValue" |
-		"dirName" |
-		"disabled" |
-		"max" |
-		"maxLength" |
-		"min" |
-		"minLength" |
-		"multiple" |
-		"name" |
-		"pattern" |
-		"placeholder" |
-		"readOnly" |
-		"required" |
-		"src" |
-		"step" |
-		"useMap"
-	> {}
-
-export interface HTMLInputElement
-	extends Pick<
-		globalThis.HTMLInputElement,
-		"autocomplete" |
-		"formAction" |
-		"formEnctype" |
-		"formMethod" |
-		"formNoValidate" |
-		"formTarget" |
-		"height" |
-		"popoverTargetAction" |
-		"size" |
-		"width"
-	> {}
 
 const SELECTABLE_INPUT_TYPES = new Set([
 	"text",
@@ -14438,7 +14366,51 @@ function formatWeekString(date: Date): string {
 	return `${String(year).padStart(4, "0")}-W${String(week).padStart(2, "0")}`;
 }
 
-export interface HTMLInputElement {
+// The value model is the spec's: an attribute holds the default, a
+// separate value holds what was written, and a dirty flag decides which
+// one the control reports. Checkedness works the same way. What the
+// control RENDERS is a closed shadow tree it owns: a value part and a
+// placeholder part for a text-like input, or a single glyph part for a
+// checkbox or radio. The tree is derived from the value, which is the
+// only state. The editing keys are the control's own default action,
+// implemented as a keydown listener like a browser's editing internals.
+export interface HTMLInputElement
+	extends Pick<
+		globalThis.HTMLInputElement,
+		"accept" |
+		"align" |
+		"alt" |
+		"defaultChecked" |
+		"defaultValue" |
+		"dirName" |
+		"disabled" |
+		"max" |
+		"maxLength" |
+		"min" |
+		"minLength" |
+		"multiple" |
+		"name" |
+		"pattern" |
+		"placeholder" |
+		"readOnly" |
+		"required" |
+		"src" |
+		"step" |
+		"useMap"
+	>,
+	Pick<
+		globalThis.HTMLInputElement,
+		"autocomplete" |
+		"formAction" |
+		"formEnctype" |
+		"formMethod" |
+		"formNoValidate" |
+		"formTarget" |
+		"height" |
+		"popoverTargetAction" |
+		"size" |
+		"width"
+	> {
 	[kFiles]: FileList | null;
 	[kValue]: string;
 	[kDirtyValue]: boolean;
@@ -15618,10 +15590,8 @@ export interface HTMLLinkElement
 		"sizes" |
 		"target" |
 		"type"
-	> {}
-
-export interface HTMLLinkElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLLinkElement,
 		"as" |
 		"fetchPriority"
@@ -15679,10 +15649,8 @@ interface HTMLMarqueeElement
 		"scrollDelay" |
 		"trueSpeed" |
 		"width"
-	> {}
-
-interface HTMLMarqueeElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLMarqueeElement,
 		"hspace" |
 		"loop" |
@@ -15712,6 +15680,10 @@ const kPlaybackRate = Symbol("playbackRate");
 const kDefaultPlaybackRate = Symbol("defaultPlaybackRate");
 const kPreservesPitch = Symbol("preservesPitch");
 
+function noMediaPipeline(what: string): never {
+	throw domError("NotSupportedError", `A terminal has no ${what}`);
+}
+
 // No resource is ever fetched, so the element stays in the state a media
 // element is in before loading: no network activity, nothing loaded,
 // paused, and a NaN duration. The members that return a resource's own
@@ -15726,16 +15698,21 @@ interface HTMLMediaElement
 		"defaultMuted" |
 		"loop" |
 		"src"
-	> {}
-
-interface HTMLMediaElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLMediaElement,
 		"preload" |
 		"disableRemotePlayback" |
 		"onencrypted" |
 		"onwaitingforkey"
 	> {
+	[kVolume]: number;
+	[kMuted]: boolean;
+	[kPlaybackRate]: number;
+	[kDefaultPlaybackRate]: number;
+	[kPreservesPitch]: boolean;
+	[kCurrentTime]: number;
+
 	readonly NETWORK_EMPTY: 0;
 	readonly NETWORK_IDLE: 1;
 	readonly NETWORK_LOADING: 2;
@@ -15745,19 +15722,6 @@ interface HTMLMediaElement
 	readonly HAVE_CURRENT_DATA: 2;
 	readonly HAVE_FUTURE_DATA: 3;
 	readonly HAVE_ENOUGH_DATA: 4;
-}
-
-function noMediaPipeline(what: string): never {
-	throw domError("NotSupportedError", `A terminal has no ${what}`);
-}
-
-interface HTMLMediaElement {
-	[kVolume]: number;
-	[kMuted]: boolean;
-	[kPlaybackRate]: number;
-	[kDefaultPlaybackRate]: number;
-	[kPreservesPitch]: boolean;
-	[kCurrentTime]: number;
 }
 
 class HTMLMediaElement extends HTMLElement {
@@ -16015,17 +15979,13 @@ interface HTMLVideoElement
 		globalThis.HTMLVideoElement,
 		"playsInline" |
 		"poster"
-	> {}
-
-interface HTMLVideoElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLVideoElement,
 		"height" |
 		"width"
-	> {}
-
-interface HTMLVideoElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLVideoElement,
 		"disablePictureInPicture" |
 		"onenterpictureinpicture" |
@@ -16367,10 +16327,8 @@ interface HTMLObjectElement
 		"type" |
 		"useMap" |
 		"width"
-	> {}
-
-interface HTMLObjectElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLObjectElement,
 		"hspace" |
 		"vspace"
@@ -16442,15 +16400,13 @@ const kSelectedness = Symbol("an option's selectedness");
 const kSelectednessValue = Symbol("selectedness value");
 const kOptionDirty = Symbol("an option's dirtiness");
 
+const kSelectedOptions = Symbol("selectedOptions");
+
 interface HTMLOptionElement
 	extends Pick<
 		globalThis.HTMLOptionElement,
 		"defaultSelected"
-	> {}
-
-const kSelectedOptions = Symbol("selectedOptions");
-
-interface HTMLOptionElement {
+	> {
 	[kSelectednessValue]: boolean;
 	[kOptionDirty]: boolean;
 }
@@ -16905,6 +16861,25 @@ interface HTMLQuoteElement
 
 class HTMLQuoteElement extends HTMLElement {}
 
+interface HTMLScriptElement
+	extends Pick<
+		globalThis.HTMLScriptElement,
+		"async" |
+		"blocking" |
+		"charset" |
+		"crossOrigin" |
+		"defer" |
+		"event" |
+		"fetchPriority" |
+		"htmlFor" |
+		"integrity" |
+		"noModule" |
+		"referrerPolicy" |
+		"src" |
+		"text" |
+		"type"
+	> {}
+
 // The element is the one the spec defines and its text is the text it
 // holds. Executing it is the step this DOM does not have.
 class HTMLScriptElement extends HTMLElement {
@@ -16931,24 +16906,6 @@ class HTMLScriptElement extends HTMLElement {
 	}
 }
 
-interface HTMLScriptElement
-	extends Pick<
-		globalThis.HTMLScriptElement,
-		"async" |
-		"blocking" |
-		"charset" |
-		"crossOrigin" |
-		"defer" |
-		"event" |
-		"fetchPriority" |
-		"htmlFor" |
-		"integrity" |
-		"noModule" |
-		"referrerPolicy" |
-		"src" |
-		"text" |
-		"type"
-	> {}
 const kPicker = Symbol("picker");
 const kOnMousedown = Symbol("onMousedown");
 const kOnBlur = Symbol("onBlur");
@@ -16968,16 +16925,12 @@ export interface HTMLSelectElement
 		"multiple" |
 		"name" |
 		"required"
-	> {}
-
-export interface HTMLSelectElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLSelectElement,
 		"autocomplete" |
 		"size"
-	> {}
-
-export interface HTMLSelectElement {
+	> {
 	[index: number]: HTMLOptionElement | HTMLOptGroupElement;
 
 	[kOptions]: HTMLOptionsCollection | null;
@@ -17638,10 +17591,8 @@ interface HTMLSourceElement
 		"src" |
 		"srcset" |
 		"type"
-	> {}
-
-interface HTMLSourceElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLSourceElement,
 		"height" |
 		"width"
@@ -17721,10 +17672,8 @@ interface HTMLTableCellElement
 		"noWrap" |
 		"vAlign" |
 		"width"
-	> {}
-
-interface HTMLTableCellElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLTableCellElement,
 		"colSpan" |
 		"rowSpan" |
@@ -17745,10 +17694,8 @@ interface HTMLTableColElement
 	extends Pick<
 		globalThis.HTMLTableColElement,
 		"width"
-	> {}
-
-interface HTMLTableColElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLTableColElement,
 		"align" |
 		"ch" |
@@ -18059,16 +18006,14 @@ const kCells = Symbol("cells");
 interface HTMLTableRowElement
 	extends Pick<
 		globalThis.HTMLTableRowElement,
-		"bgColor"
-	> {}
-
-interface HTMLTableRowElement
-	extends Pick<
-		globalThis.HTMLTableRowElement,
 		"align" |
 		"ch" |
 		"chOff" |
 		"vAlign"
+	>,
+	Pick<
+		globalThis.HTMLTableRowElement,
+		"bgColor"
 	> {
 	[kCells]: HTMLCollection | null;
 }
@@ -18222,6 +18167,13 @@ const kGoalColumn = Symbol("goalColumn");
 export interface HTMLTextAreaElement
 	extends Pick<
 		globalThis.HTMLTextAreaElement,
+		"autocomplete" |
+		"cols" |
+		"rows" |
+		"wrap"
+	>,
+	Pick<
+		globalThis.HTMLTextAreaElement,
 		"dirName" |
 		"disabled" |
 		"maxLength" |
@@ -18230,15 +18182,6 @@ export interface HTMLTextAreaElement
 		"placeholder" |
 		"readOnly" |
 		"required"
-	> {}
-
-export interface HTMLTextAreaElement
-	extends Pick<
-		globalThis.HTMLTextAreaElement,
-		"autocomplete" |
-		"cols" |
-		"rows" |
-		"wrap"
 	> {
 	[kValue]: string;
 	[kDirty]: boolean;
@@ -18805,15 +18748,11 @@ interface HTMLTrackElement
 		"label" |
 		"src" |
 		"srclang"
-	> {}
-
-interface HTMLTrackElement
-	extends Pick<
+	>,
+	Pick<
 		globalThis.HTMLTrackElement,
 		"kind"
-	> {}
-
-interface HTMLTrackElement {
+	> {
 	readonly NONE: 0;
 	readonly LOADING: 1;
 	readonly LOADED: 2;
@@ -20264,7 +20203,11 @@ const kElementInternalsTarget = Symbol("the element an internals belongs to");
 // A custom element's handle on the parts of it the platform owns: its
 // shadow root, its form owner, the value it submits, its validity and the
 // accessibility properties it declares.
-interface ElementInternals {
+interface ElementInternals
+	extends Pick<
+		globalThis.ElementInternals,
+		Extract<keyof globalThis.ElementInternals, ARIAReflection>
+	> {
 	[kValidity]: ValidityState;
 }
 
@@ -20411,12 +20354,6 @@ Object.defineProperty(ElementInternals.prototype, Symbol.toStringTag, {
 	value: "ElementInternals",
 	configurable: true,
 });
-
-interface ElementInternals
-	extends Pick<
-		globalThis.ElementInternals,
-		Extract<keyof globalThis.ElementInternals, ARIAReflection>
-	> {}
 
 for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
 	Object.defineProperty(ElementInternals.prototype, property, {
@@ -22137,7 +22074,23 @@ const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
 
-export interface Document {
+/**
+ * The event handler attributes installed on the prototype below, and the
+ * ParentNode mixin from the tables.
+ */
+export interface Document
+	extends Pick<
+		globalThis.Document,
+		Extract<keyof globalThis.Document, `on${string}`> |
+		ParentNodeMixin |
+		// DECLARED but never installed, and the difference matters.
+		// document.all is specified to be a FALSY object, which JavaScript
+		// cannot express; browsers give it an internal slot no script can
+		// reach. The selector engine tests `"all" in context` and then reads
+		// `context.all[id]`, so a property holding undefined would throw, while
+		// an absent one takes the path that works.
+		"all"
+	> {
 	// What an attached document renders through, set by attachDocument. A
 	// headless document has none and behaves as a document with no browsing
 	// context.
@@ -22152,6 +22105,10 @@ export interface Document {
 	[kPendingCaretReveal]: TextControlOrSelect | null;
 
 	[kImplementation]: DOMImplementation | null;
+
+	get ownerDocument(): null;
+
+	get textContent(): null;
 }
 
 export class Document extends Node implements globalThis.Document {
@@ -23495,29 +23452,6 @@ Object.defineProperty(Document.prototype, Symbol.toStringTag, {
 	value: "Document",
 	configurable: true,
 });
-
-/**
- * The event handler attributes installed on the prototype below, and the
- * ParentNode mixin from the tables.
- */
-export interface Document
-	extends Pick<
-		globalThis.Document,
-		Extract<keyof globalThis.Document, `on${string}`> |
-		ParentNodeMixin |
-		// DECLARED but never installed, and the difference matters.
-		// document.all is specified to be a FALSY object, which JavaScript
-		// cannot express; browsers give it an internal slot no script can
-		// reach. The selector engine tests `"all" in context` and then reads
-		// `context.all[id]`, so a property holding undefined would throw, while
-		// an absent one takes the path that works.
-		"all"
-	> {
-
-	get ownerDocument(): null;
-
-	get textContent(): null;
-}
 
 /**
  * The last entry in the top layer is topmost, and only `showModal` ever
@@ -25188,6 +25122,12 @@ const kRangeSelection = Symbol("the selection whose range this is");
 // released when the selection moves on from it.
 const kSelectionOwned = Symbol("selection-owned range");
 
+interface Range
+	extends Pick<
+		globalThis.Range,
+		"START_TO_START" | "START_TO_END" | "END_TO_END" | "END_TO_START"
+	> {}
+
 class Range extends AbstractRange implements globalThis.Range {
 	static readonly START_TO_START = START_TO_START;
 	static readonly START_TO_END = START_TO_END;
@@ -25776,12 +25716,6 @@ function insertIntoRange(range: Range, node: Node): void {
 		rangeBoundaryPointsChanged(range, "end");
 	}
 }
-
-interface Range
-	extends Pick<
-		globalThis.Range,
-		"START_TO_START" | "START_TO_END" | "END_TO_END" | "END_TO_START"
-	> {}
 
 for (const [name, value] of [
 	["START_TO_START", START_TO_START],
@@ -30236,7 +30170,22 @@ const kWindowStatus = Symbol("window status");
 const kIdleTimers = Symbol("idle timers");
 const kNextIdleHandle = Symbol("next idle handle");
 
-export interface Window {
+/**
+ * A terminal has one screen and no browsing context, so the window is a
+ * plain object rather than a global. It exposes this file's interfaces,
+ * the scrolling and sizing the display implements, and the handful of
+ * APIs an author reaches for through `window`. The member types are the
+ * host's, which is how a caller outside this file sees them.
+ */
+export interface Window
+	extends WindowEventHandlerAttributes,
+	Pick<
+		globalThis.Window,
+		"ondevicemotion" |
+		"ondeviceorientation" |
+		"ondeviceorientationabsolute" |
+		"onorientationchange"
+	> {
 	[kNavigator]: Navigator | undefined;
 	[kWindowLocation]: Location | undefined;
 	[kClosed]: boolean;
@@ -30248,6 +30197,107 @@ export interface Window {
 	[kWindowStatus]: string;
 	[kIdleTimers]: Map<number, ReturnType<typeof setTimeout>>;
 	[kNextIdleHandle]: number;
+
+	[index: number]: Window;
+	// An overload with the host's event type, so a caller holding a Window
+	// can dispatch a platform event as it would to any EventTarget.
+	dispatchEvent(event: globalThis.Event): boolean;
+	readonly window: Window;
+	readonly self: Window;
+	atob: globalThis.Window["atob"];
+	btoa: globalThis.Window["btoa"];
+	fetch: globalThis.Window["fetch"];
+	structuredClone: globalThis.Window["structuredClone"];
+
+	getComputedStyle(
+		element: globalThis.Element,
+		pseudoElement?: string | null,
+	): globalThis.CSSStyleDeclaration;
+	setTimeout: globalThis.Window["setTimeout"];
+	clearTimeout: globalThis.Window["clearTimeout"];
+	setInterval: globalThis.Window["setInterval"];
+	clearInterval: globalThis.Window["clearInterval"];
+	queueMicrotask: globalThis.Window["queueMicrotask"];
+
+	readonly NodeFilter: typeof globalThis.NodeFilter;
+
+	EventTarget: typeof globalThis.EventTarget;
+	Event: typeof globalThis.Event;
+	CustomEvent: typeof globalThis.CustomEvent;
+	UIEvent: typeof globalThis.UIEvent;
+	MouseEvent: typeof globalThis.MouseEvent;
+	ErrorEvent: typeof globalThis.ErrorEvent;
+	PointerEvent: typeof globalThis.PointerEvent;
+	WheelEvent: typeof globalThis.WheelEvent;
+	KeyboardEvent: typeof globalThis.KeyboardEvent;
+	FocusEvent: typeof globalThis.FocusEvent;
+	InputEvent: typeof globalThis.InputEvent;
+	ClipboardEvent: typeof ClipboardEvent;
+	DataTransfer: typeof DataTransfer;
+	DataTransferItem: typeof DataTransferItem;
+	DataTransferItemList: typeof DataTransferItemList;
+	FileList: typeof FileList;
+	Clipboard: typeof Clipboard;
+	ClipboardItem: typeof ClipboardItem;
+	Permissions: typeof Permissions;
+	PermissionStatus: typeof PermissionStatus;
+	CompositionEvent: typeof globalThis.CompositionEvent;
+	BeforeUnloadEvent: typeof globalThis.BeforeUnloadEvent;
+	DOMException: typeof globalThis.DOMException;
+	Node: typeof globalThis.Node;
+	Element: typeof globalThis.Element;
+	Attr: typeof globalThis.Attr;
+	CharacterData: typeof globalThis.CharacterData;
+	Text: typeof globalThis.Text;
+	Comment: typeof globalThis.Comment;
+	CDATASection: typeof globalThis.CDATASection;
+	ProcessingInstruction: typeof globalThis.ProcessingInstruction;
+	DocumentType: typeof globalThis.DocumentType;
+	Document: typeof globalThis.Document;
+	XMLDocument: typeof globalThis.XMLDocument;
+	DocumentFragment: typeof globalThis.DocumentFragment;
+	ShadowRoot: typeof globalThis.ShadowRoot;
+	DOMImplementation: typeof globalThis.DOMImplementation;
+	DOMParser: typeof globalThis.DOMParser;
+	NodeList: typeof globalThis.NodeList;
+	HTMLCollection: typeof globalThis.HTMLCollection;
+	NamedNodeMap: typeof globalThis.NamedNodeMap;
+	DOMTokenList: typeof globalThis.DOMTokenList;
+	DOMStringMap: typeof globalThis.DOMStringMap;
+	MutationObserver: typeof globalThis.MutationObserver;
+	MutationRecord: typeof globalThis.MutationRecord;
+	NodeIterator: typeof globalThis.NodeIterator;
+	TreeWalker: typeof globalThis.TreeWalker;
+	AbstractRange: typeof globalThis.AbstractRange;
+	StaticRange: typeof globalThis.StaticRange;
+	Range: typeof globalThis.Range;
+	Selection: typeof globalThis.Selection;
+	DOMRect: typeof globalThis.DOMRect;
+	DOMRectReadOnly: typeof globalThis.DOMRectReadOnly;
+	CustomElementRegistry: typeof globalThis.CustomElementRegistry;
+	ElementInternals: typeof globalThis.ElementInternals;
+	ValidityState: typeof globalThis.ValidityState;
+	SVGElement: typeof globalThis.SVGElement;
+	MathMLElement: typeof globalThis.MathMLElement;
+	HTMLElement: typeof globalThis.HTMLElement;
+	HTMLInputElement: typeof globalThis.HTMLInputElement;
+	HTMLTextAreaElement: typeof globalThis.HTMLTextAreaElement;
+	HTMLSelectElement: typeof globalThis.HTMLSelectElement;
+	HTMLOptionElement: typeof globalThis.HTMLOptionElement;
+	HTMLButtonElement: typeof globalThis.HTMLButtonElement;
+	HTMLLabelElement: typeof globalThis.HTMLLabelElement;
+	HTMLAnchorElement: typeof globalThis.HTMLAnchorElement;
+	HTMLStyleElement: typeof globalThis.HTMLStyleElement;
+	HTMLLinkElement: typeof globalThis.HTMLLinkElement;
+	HTMLFormElement: typeof globalThis.HTMLFormElement;
+	HTMLDetailsElement: typeof globalThis.HTMLDetailsElement;
+	HTMLDialogElement: typeof globalThis.HTMLDialogElement;
+	HTMLTemplateElement: typeof globalThis.HTMLTemplateElement;
+	HTMLSlotElement: typeof globalThis.HTMLSlotElement;
+	CSSStyleDeclaration: typeof globalThis.CSSStyleDeclaration;
+	CSSStyleSheet: typeof globalThis.CSSStyleSheet;
+	ResizeObserver: typeof globalThis.ResizeObserver;
+	IntersectionObserver: typeof globalThis.IntersectionObserver;
 }
 
 export class Window extends EventTarget {
@@ -31118,124 +31168,6 @@ type WindowEventHandlerAttributes = Omit<
 	globalThis.GlobalEventHandlers & globalThis.WindowEventHandlers,
 	"addEventListener" | "removeEventListener"
 >;
-
-/**
- * A terminal has one screen and no browsing context, so the window is a
- * plain object rather than a global. It exposes this file's interfaces,
- * the scrolling and sizing the display implements, and the handful of
- * APIs an author reaches for through `window`. The member types are the
- * host's, which is how a caller outside this file sees them.
- */
-export interface Window
-	extends WindowEventHandlerAttributes,
-	Pick<
-		globalThis.Window,
-		"ondevicemotion" |
-		"ondeviceorientation" |
-		"ondeviceorientationabsolute" |
-		"onorientationchange"
-	> {
-	[index: number]: Window;
-	// An overload with the host's event type, so a caller holding a Window
-	// can dispatch a platform event as it would to any EventTarget.
-	dispatchEvent(event: globalThis.Event): boolean;
-	readonly window: Window;
-	readonly self: Window;
-	atob: globalThis.Window["atob"];
-	btoa: globalThis.Window["btoa"];
-	fetch: globalThis.Window["fetch"];
-	structuredClone: globalThis.Window["structuredClone"];
-
-	getComputedStyle(
-		element: globalThis.Element,
-		pseudoElement?: string | null,
-	): globalThis.CSSStyleDeclaration;
-	setTimeout: globalThis.Window["setTimeout"];
-	clearTimeout: globalThis.Window["clearTimeout"];
-	setInterval: globalThis.Window["setInterval"];
-	clearInterval: globalThis.Window["clearInterval"];
-	queueMicrotask: globalThis.Window["queueMicrotask"];
-
-	readonly NodeFilter: typeof globalThis.NodeFilter;
-
-	EventTarget: typeof globalThis.EventTarget;
-	Event: typeof globalThis.Event;
-	CustomEvent: typeof globalThis.CustomEvent;
-	UIEvent: typeof globalThis.UIEvent;
-	MouseEvent: typeof globalThis.MouseEvent;
-	ErrorEvent: typeof globalThis.ErrorEvent;
-	PointerEvent: typeof globalThis.PointerEvent;
-	WheelEvent: typeof globalThis.WheelEvent;
-	KeyboardEvent: typeof globalThis.KeyboardEvent;
-	FocusEvent: typeof globalThis.FocusEvent;
-	InputEvent: typeof globalThis.InputEvent;
-	ClipboardEvent: typeof ClipboardEvent;
-	DataTransfer: typeof DataTransfer;
-	DataTransferItem: typeof DataTransferItem;
-	DataTransferItemList: typeof DataTransferItemList;
-	FileList: typeof FileList;
-	Clipboard: typeof Clipboard;
-	ClipboardItem: typeof ClipboardItem;
-	Permissions: typeof Permissions;
-	PermissionStatus: typeof PermissionStatus;
-	CompositionEvent: typeof globalThis.CompositionEvent;
-	BeforeUnloadEvent: typeof globalThis.BeforeUnloadEvent;
-	DOMException: typeof globalThis.DOMException;
-	Node: typeof globalThis.Node;
-	Element: typeof globalThis.Element;
-	Attr: typeof globalThis.Attr;
-	CharacterData: typeof globalThis.CharacterData;
-	Text: typeof globalThis.Text;
-	Comment: typeof globalThis.Comment;
-	CDATASection: typeof globalThis.CDATASection;
-	ProcessingInstruction: typeof globalThis.ProcessingInstruction;
-	DocumentType: typeof globalThis.DocumentType;
-	Document: typeof globalThis.Document;
-	XMLDocument: typeof globalThis.XMLDocument;
-	DocumentFragment: typeof globalThis.DocumentFragment;
-	ShadowRoot: typeof globalThis.ShadowRoot;
-	DOMImplementation: typeof globalThis.DOMImplementation;
-	DOMParser: typeof globalThis.DOMParser;
-	NodeList: typeof globalThis.NodeList;
-	HTMLCollection: typeof globalThis.HTMLCollection;
-	NamedNodeMap: typeof globalThis.NamedNodeMap;
-	DOMTokenList: typeof globalThis.DOMTokenList;
-	DOMStringMap: typeof globalThis.DOMStringMap;
-	MutationObserver: typeof globalThis.MutationObserver;
-	MutationRecord: typeof globalThis.MutationRecord;
-	NodeIterator: typeof globalThis.NodeIterator;
-	TreeWalker: typeof globalThis.TreeWalker;
-	AbstractRange: typeof globalThis.AbstractRange;
-	StaticRange: typeof globalThis.StaticRange;
-	Range: typeof globalThis.Range;
-	Selection: typeof globalThis.Selection;
-	DOMRect: typeof globalThis.DOMRect;
-	DOMRectReadOnly: typeof globalThis.DOMRectReadOnly;
-	CustomElementRegistry: typeof globalThis.CustomElementRegistry;
-	ElementInternals: typeof globalThis.ElementInternals;
-	ValidityState: typeof globalThis.ValidityState;
-	SVGElement: typeof globalThis.SVGElement;
-	MathMLElement: typeof globalThis.MathMLElement;
-	HTMLElement: typeof globalThis.HTMLElement;
-	HTMLInputElement: typeof globalThis.HTMLInputElement;
-	HTMLTextAreaElement: typeof globalThis.HTMLTextAreaElement;
-	HTMLSelectElement: typeof globalThis.HTMLSelectElement;
-	HTMLOptionElement: typeof globalThis.HTMLOptionElement;
-	HTMLButtonElement: typeof globalThis.HTMLButtonElement;
-	HTMLLabelElement: typeof globalThis.HTMLLabelElement;
-	HTMLAnchorElement: typeof globalThis.HTMLAnchorElement;
-	HTMLStyleElement: typeof globalThis.HTMLStyleElement;
-	HTMLLinkElement: typeof globalThis.HTMLLinkElement;
-	HTMLFormElement: typeof globalThis.HTMLFormElement;
-	HTMLDetailsElement: typeof globalThis.HTMLDetailsElement;
-	HTMLDialogElement: typeof globalThis.HTMLDialogElement;
-	HTMLTemplateElement: typeof globalThis.HTMLTemplateElement;
-	HTMLSlotElement: typeof globalThis.HTMLSlotElement;
-	CSSStyleDeclaration: typeof globalThis.CSSStyleDeclaration;
-	CSSStyleSheet: typeof globalThis.CSSStyleSheet;
-	ResizeObserver: typeof globalThis.ResizeObserver;
-	IntersectionObserver: typeof globalThis.IntersectionObserver;
-}
 
 // A window starts with its interfaces and the timers any script expects
 // to find. The display fills in the rest (sizing, scrolling, animation
