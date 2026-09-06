@@ -288,23 +288,17 @@ const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 const kDblclickIntervalMs = Symbol("dblclickIntervalMs");
 
-export class Input {
-	// Reclaims a yield no keystroke reclaimed. A flat window from the
-	// yield, not a debounce. Wheel activity while yielded produces no
-	// signal, and a gap between ticks longer than this would re-yield on
-	// the next tick.
-	static readonly [kScrollChainTimeoutMs] = 3000;
-	static readonly [kDblclickIntervalMs] = 500;
-	declare [kDocument]: Document;
-	declare [kWindow]: Window;
-	declare [kLayout]: Layout;
-	declare [kCascade]: Cascade;
-	declare [kScreen]: Screen;
+export interface Input {
+	[kDocument]: Document;
+	[kWindow]: Window;
+	[kLayout]: Layout;
+	[kCascade]: Cascade;
+	[kScreen]: Screen;
 	// What movementX/movementY measure from.
-	declare [kLastMouse]: {x: number; y: number} | null;
+	[kLastMouse]: {x: number; y: number} | null;
 	// Motion coalesced to one hit-test per frame. `quiet` marks a drag's
 	// motion, whose mousemove the report already dispatched.
-	declare [kPendingHover]: {
+	[kPendingHover]: {
 		x: number;
 		y: number;
 		shiftKey: boolean;
@@ -313,27 +307,35 @@ export class Input {
 		quiet: boolean;
 	} | null;
 
-	declare [kHoverElement]: Element | null;
+	[kHoverElement]: Element | null;
 	// The document scroll hit the document top and the user kept scrolling up,
 	// so the wheel belongs to the terminal's scrollback until the next
 	// keystroke (terminals snap to the live screen on input) or the timer.
-	declare [kMouseCaptureYielded]: boolean;
-	declare [kScrollChainTimer]: ReturnType<typeof setTimeout> | null;
+	[kMouseCaptureYielded]: boolean;
+	[kScrollChainTimer]: ReturnType<typeof setTimeout> | null;
 	// A mouseup on the same element is a click.
-	declare [kMouseDownTarget]: Element | null;
-	declare [kPopoverPressTarget]: Element | null;
+	[kMouseDownTarget]: Element | null;
+	[kPopoverPressTarget]: Element | null;
 	// The document selection's anchor while a left-button drag selects.
-	declare [kSelectionDragAnchor]: {node: Text; offset: number} | null;
+	[kSelectionDragAnchor]: {node: Text; offset: number} | null;
 	// A drag begun in a text control extends the text control's own bounded
 	// selection, not the document's. The two never merge.
-	declare [kTextControlDragAnchor]: {
+	[kTextControlDragAnchor]: {
 		element: HTMLInputElement | HTMLTextAreaElement;
 		offset: number;
 	} | null;
 
-	declare [kLastClickTarget]: Element | null;
-	declare [kLastClickTime]: number;
+	[kLastClickTarget]: Element | null;
+	[kLastClickTime]: number;
+}
 
+export class Input {
+	// Reclaims a yield no keystroke reclaimed. A flat window from the
+	// yield, not a debounce. Wheel activity while yielded produces no
+	// signal, and a gap between ticks longer than this would re-yield on
+	// the next tick.
+	static readonly [kScrollChainTimeoutMs] = 3000;
+	static readonly [kDblclickIntervalMs] = 500;
 	constructor(
 		document: Document,
 		layout: Layout,

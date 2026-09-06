@@ -396,6 +396,13 @@ const kPasteLimit = Symbol("pasteLimit");
 const kHoldLimit = Symbol("holdLimit");
 const kExpectingReply = Symbol("expectingReply");
 
+interface WireReader {
+	[kTail]: string;
+	[kPasteBody]: string | null;
+	[kReplyBody]: string | null;
+	[kExpectingReply]: boolean;
+}
+
 /**
  * Decodes one chunk into what it meant. Keeps what a chunk boundary can
  * cut: a split escape (never a bare trailing ESC, which may be the
@@ -412,11 +419,6 @@ class WireReader {
 	static readonly [kPasteLimit] = 1 << 20;
 	// A split sequence longer than this is not one a terminal sends.
 	static readonly [kHoldLimit] = 4096;
-	declare [kTail]: string;
-	declare [kPasteBody]: string | null;
-	declare [kReplyBody]: string | null;
-	declare [kExpectingReply]: boolean;
-
 	constructor() {
 		this[kTail] = "";
 		this[kPasteBody] = null;
@@ -679,6 +681,45 @@ const kWidths = Symbol("widths");
 const kWidthProbeTimeout = Symbol("widthProbeTimeout");
 const kWidthDeferralWait = Symbol("widthDeferralWait");
 
+export interface Exchange {
+	[kTransport]: TerminalTransport;
+	[kInteractive]: boolean;
+	[kEngagedModes]: Set<ModeName>;
+	[kAnchorDetectionEnabled]: boolean;
+	[kWindow]: Window;
+	[kLayout]: Layout;
+	[kCascade]: Cascade;
+	[kScreen]: Screen;
+	[kResizeTimer]: ReturnType<typeof setTimeout> | null;
+	// A token per resize burst, so a redraw that lands after a newer burst
+	// began is abandoned. Null between bursts.
+	[kSettlingResize]: object | null;
+	[kTransportClosed]: boolean;
+	[kInput]: Input | null;
+	[kWriter]: WritableStreamDefaultWriter<string> | null;
+	[kReader]: ReadableStreamDefaultReader<string> | null;
+	[kResizeReader]: ReadableStreamDefaultReader<TerminalSize> | null;
+	[kStarted]: boolean;
+	[kDisposed]: boolean;
+	[kLastWrite]: Promise<void>;
+	[kWireReader]: WireReader;
+	// The resize re-anchor saves and restores this around its redraw.
+	[kHasDetectedAnchor]: boolean;
+	[kCursorDetectionPromise]: Promise<void> | null;
+	// Oldest first. Two mode negotiations can be outstanding at once. Each
+	// names its mode, so neither takes the other's reply.
+	[kPendingReplies]: PendingReply[];
+	// The BDSM state the terminal reported before we touched it.
+	[kPriorBidiMode]: number | null;
+	[kGraphemeClustersNegotiated]: boolean;
+	// A terminal replies to DSR in ask order, so this keeps cursor
+	// detection and width probes from taking each other's replies.
+	[kDSRSequence]: number;
+	// Teardown has begun. No frame may send another probe.
+	[kProbingEnded]: boolean;
+	[kWidths]: WidthProbes;
+}
+
 /**
  * One reader, one writer, and the demultiplexer between them. Every
  * query is bounded by a timer, since most terminals reply with nothing.
@@ -697,43 +738,6 @@ export class Exchange extends EventTarget {
 	// Most terminals refuse clipboard reads by silence. This is what every
 	// readText() waits before rejecting.
 	static readonly [kClipboardQueryTimeout] = 500;
-	declare [kTransport]: TerminalTransport;
-	declare [kInteractive]: boolean;
-	declare [kEngagedModes]: Set<ModeName>;
-	declare [kAnchorDetectionEnabled]: boolean;
-	declare [kWindow]: Window;
-	declare [kLayout]: Layout;
-	declare [kCascade]: Cascade;
-	declare [kScreen]: Screen;
-	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
-	// A token per resize burst, so a redraw that lands after a newer burst
-	// began is abandoned. Null between bursts.
-	declare [kSettlingResize]: object | null;
-	declare [kTransportClosed]: boolean;
-	declare [kInput]: Input | null;
-	declare [kWriter]: WritableStreamDefaultWriter<string> | null;
-	declare [kReader]: ReadableStreamDefaultReader<string> | null;
-	declare [kResizeReader]: ReadableStreamDefaultReader<TerminalSize> | null;
-	declare [kStarted]: boolean;
-	declare [kDisposed]: boolean;
-	declare [kLastWrite]: Promise<void>;
-	declare [kWireReader]: WireReader;
-	// The resize re-anchor saves and restores this around its redraw.
-	declare [kHasDetectedAnchor]: boolean;
-	declare [kCursorDetectionPromise]: Promise<void> | null;
-	// Oldest first. Two mode negotiations can be outstanding at once. Each
-	// names its mode, so neither takes the other's reply.
-	declare [kPendingReplies]: PendingReply[];
-	// The BDSM state the terminal reported before we touched it.
-	declare [kPriorBidiMode]: number | null;
-	declare [kGraphemeClustersNegotiated]: boolean;
-	// A terminal replies to DSR in ask order, so this keeps cursor
-	// detection and width probes from taking each other's replies.
-	declare [kDSRSequence]: number;
-	// Teardown has begun. No frame may send another probe.
-	declare [kProbingEnded]: boolean;
-	declare [kWidths]: WidthProbes;
-
 	constructor(
 		transport: TerminalTransport,
 		window: Window,

@@ -1027,19 +1027,21 @@ const kTimeStamp = Symbol("timeStamp");
 const kIsMouseEvent = Symbol("is a mouse event");
 const kType = Symbol("document type");
 
+export interface Event {
+	[kType]: string;
+	[kBubbles]: boolean;
+	[kCancelable]: boolean;
+	[kComposed]: boolean;
+	[kTimeStamp]: number;
+	[kState]: DispatchState;
+}
+
 /** An event, plus the flags listeners set on it during dispatch. */
 export class Event extends EventBase implements globalThis.Event {
 	static readonly NONE = NONE;
 	static readonly CAPTURING_PHASE = CAPTURING_PHASE;
 	static readonly AT_TARGET = AT_TARGET;
 	static readonly BUBBLING_PHASE = BUBBLING_PHASE;
-	declare [kType]: string;
-	declare [kBubbles]: boolean;
-	declare [kCancelable]: boolean;
-	declare [kComposed]: boolean;
-	declare [kTimeStamp]: number;
-	declare [kState]: DispatchState;
-
 	constructor(type: string, eventInitDict: EventInit = {}) {
 		if (arguments.length < 1) {
 			throw new TypeError("Event constructor needs a type");
@@ -1276,11 +1278,13 @@ const kDetail = Symbol("detail");
 // Extends this DOM's Event (which carries the dispatch state) rather than
 // the platform's CustomEvent. An instance is a platform Event but not a
 // platform CustomEvent.
+export interface CustomEvent<T = any> {
+	[kDetail]: T | null;
+}
+
 export class CustomEvent<T = any>
 	extends Event
 	implements globalThis.CustomEvent<T> {
-	declare [kDetail]: T | null;
-
 	constructor(type: string, eventInitDict: CustomEventInit<T> = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<CustomEventInit<T>>(
@@ -1323,9 +1327,11 @@ const kReturnValue = Symbol("returnValue");
 // The interface declares no constructor, so `new` throws for authors.
 // Teardown treats two things as cancellation: preventDefault(), and a
 // returnValue set to anything but the empty string.
-class BeforeUnloadEvent extends Event {
-	declare [kReturnValue]: string;
+interface BeforeUnloadEvent {
+	[kReturnValue]: string;
+}
 
+class BeforeUnloadEvent extends Event {
 	constructor(
 		type = "beforeunload",
 		eventInitDict: EventInit = {cancelable: true},
@@ -1379,13 +1385,15 @@ const kErrorLineno = Symbol("error lineno");
 const kErrorColno = Symbol("error colno");
 const kErrorValue = Symbol("error value");
 
-class ErrorEvent extends Event {
-	declare [kErrorMessage]: string;
-	declare [kErrorFilename]: string;
-	declare [kErrorLineno]: number;
-	declare [kErrorColno]: number;
-	declare [kErrorValue]: unknown;
+interface ErrorEvent {
+	[kErrorMessage]: string;
+	[kErrorFilename]: string;
+	[kErrorLineno]: number;
+	[kErrorColno]: number;
+	[kErrorValue]: unknown;
+}
 
+class ErrorEvent extends Event {
 	constructor(type: string, eventInitDict: ErrorEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<ErrorEventInit>(eventInitDict, "An event init");
@@ -1430,13 +1438,15 @@ const kPorts = Symbol("ports");
 
 // Nothing in a terminal posts one yet, but the interface is a constructor
 // authors can call and createEvent can name, so it is implemented fully.
-class MessageEvent<T = any> extends Event {
-	declare [kMessageData]: T;
-	declare [kOrigin]: string;
-	declare [kLastEventId]: string;
-	declare [kMessageSource]: globalThis.MessageEventSource | null;
-	declare [kPorts]: readonly globalThis.MessagePort[];
+interface MessageEvent<T = any> {
+	[kMessageData]: T;
+	[kOrigin]: string;
+	[kLastEventId]: string;
+	[kMessageSource]: globalThis.MessageEventSource | null;
+	[kPorts]: readonly globalThis.MessagePort[];
+}
 
+class MessageEvent<T = any> extends Event {
 	constructor(type: string, eventInitDict: MessageEventInit<T> = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<MessageEventInit<T>>(
@@ -1528,11 +1538,13 @@ interface HashChangeEventInit extends EventInit {
 const kOldURL = Symbol("old URL");
 const kNewURL = Symbol("new URL");
 
+interface HashChangeEvent {
+	[kOldURL]: string;
+	[kNewURL]: string;
+}
+
 /** Fired when a document's fragment identifier changes. */
 class HashChangeEvent extends Event {
-	declare [kOldURL]: string;
-	declare [kNewURL]: string;
-
 	constructor(type: string, eventInitDict: HashChangeEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<HashChangeEventInit>(
@@ -1573,13 +1585,15 @@ const kStorageArea = Symbol("storage area");
 
 // There is no storage area in a terminal, but the interface is a
 // constructor authors can call and createEvent can name.
-class StorageEvent extends Event {
-	declare [kStorageKey]: string | null;
-	declare [kStorageOldValue]: string | null;
-	declare [kStorageNewValue]: string | null;
-	declare [kStorageURL]: string;
-	declare [kStorageArea]: globalThis.Storage | null;
+interface StorageEvent {
+	[kStorageKey]: string | null;
+	[kStorageOldValue]: string | null;
+	[kStorageNewValue]: string | null;
+	[kStorageURL]: string;
+	[kStorageArea]: globalThis.Storage | null;
+}
 
+class StorageEvent extends Event {
 	constructor(type: string, eventInitDict: StorageEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<StorageEventInit>(
@@ -1792,10 +1806,12 @@ const kWhich = Symbol("which");
 
 // `view` is always null here because a window is not the global object.
 // An init that passes one is a type error, not a value silently dropped.
-class UIEvent extends Event {
-	declare [kDetail]: number;
-	declare [kWhich]: number;
+interface UIEvent {
+	[kDetail]: number;
+	[kWhich]: number;
+}
 
+class UIEvent extends Event {
 	constructor(type: string, eventInitDict: UIEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<UIEventInit>(eventInitDict, "An event init");
@@ -1860,17 +1876,19 @@ const kDefaultView = Symbol("the window this document is attached in");
 
 // Dispatch runs activation behavior for a click that is a MouseEvent.
 // [kIsMouseEvent] is how it checks.
-class MouseEvent extends UIEvent implements globalThis.MouseEvent {
-	declare [kScreenX]: number;
-	declare [kScreenY]: number;
-	declare [kClientX]: number;
-	declare [kClientY]: number;
-	declare [kButton]: number;
-	declare [kButtons]: number;
-	declare [kMovementX]: number;
-	declare [kMovementY]: number;
-	declare [kModifiers]: Set<string>;
+interface MouseEvent {
+	[kScreenX]: number;
+	[kScreenY]: number;
+	[kClientX]: number;
+	[kClientY]: number;
+	[kButton]: number;
+	[kButtons]: number;
+	[kMovementX]: number;
+	[kMovementY]: number;
+	[kModifiers]: Set<string>;
+}
 
+class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 	constructor(type: string, eventInitDict: MouseEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<MouseEventInit>(eventInitDict, "An event init");
@@ -2095,21 +2113,23 @@ const kIsComposing = Symbol("isComposing");
 const kCharCode = Symbol("charCode");
 const kKeyCode = Symbol("keyCode");
 
+interface KeyboardEvent {
+	[kKey]: string;
+	[kCode]: string;
+	[kLocation]: number;
+	[kRepeat]: boolean;
+	[kIsComposing]: boolean;
+	[kCharCode]: number;
+	[kKeyCode]: number;
+	[kModifiers]: Set<string>;
+}
+
 /** A key event, identified by the character it types and the physical key. */
 class KeyboardEvent extends UIEvent implements globalThis.KeyboardEvent {
 	static readonly DOM_KEY_LOCATION_STANDARD = DOM_KEY_LOCATION_STANDARD;
 	static readonly DOM_KEY_LOCATION_LEFT = DOM_KEY_LOCATION_LEFT;
 	static readonly DOM_KEY_LOCATION_RIGHT = DOM_KEY_LOCATION_RIGHT;
 	static readonly DOM_KEY_LOCATION_NUMPAD = DOM_KEY_LOCATION_NUMPAD;
-	declare [kKey]: string;
-	declare [kCode]: string;
-	declare [kLocation]: number;
-	declare [kRepeat]: boolean;
-	declare [kIsComposing]: boolean;
-	declare [kCharCode]: number;
-	declare [kKeyCode]: number;
-	declare [kModifiers]: Set<string>;
-
 	constructor(type: string, eventInitDict: KeyboardEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<KeyboardEventInit>(
@@ -2229,10 +2249,12 @@ Object.defineProperties(KeyboardEvent.prototype, {
 
 const kData = Symbol("data");
 
+interface CompositionEvent {
+	[kData]: string;
+}
+
 /** Fired while an input method composes text. */
 class CompositionEvent extends UIEvent {
-	declare [kData]: string;
-
 	constructor(type: string, eventInitDict: CompositionEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<CompositionEventInit>(
@@ -2271,9 +2293,11 @@ Object.defineProperty(CompositionEvent.prototype, Symbol.toStringTag, {
 
 // DOM Level 3's legacy text-input event. The interface declares no
 // constructor, so createEvent("TextEvent") is the only way to make one.
-class TextEvent extends UIEvent {
-	declare [kData]: string;
+interface TextEvent {
+	[kData]: string;
+}
 
+class TextEvent extends UIEvent {
 	constructor(type = "", eventInitDict: UIEventInit = {}) {
 		super(type, eventInitDict);
 		this[kData] = "";
@@ -2311,12 +2335,14 @@ Object.defineProperty(TextEvent.prototype, Symbol.toStringTag, {
 
 const kInputType = Symbol("inputType");
 
+interface InputEvent {
+	[kData]: string | null;
+	[kIsComposing]: boolean;
+	[kInputType]: string;
+}
+
 /** Fired when an editing host's text changes, with the kind of change. */
 class InputEvent extends UIEvent {
-	declare [kData]: string | null;
-	declare [kIsComposing]: boolean;
-	declare [kInputType]: string;
-
 	constructor(type: string, eventInitDict: InputEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<InputEventInit>(eventInitDict, "An event init");
@@ -2398,11 +2424,13 @@ Object.defineProperty(FileList.prototype, Symbol.toStringTag, {
 const kItemType = Symbol("type");
 const kItemData = Symbol("data");
 
+interface DataTransferItem {
+	[kItemType]: string;
+	[kItemData]: string;
+}
+
 /** One entry of a transfer: a string under a format name. */
 class DataTransferItem {
-	declare [kItemType]: string;
-	declare [kItemData]: string;
-
 	constructor(brand?: unknown, type?: string, data?: string) {
 		if (brand !== kInternalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -2455,12 +2483,12 @@ const kTransferEntries = Symbol("entries");
 /** The entries of a transfer, as an indexed, mutable list. */
 interface DataTransferItemList {
 	readonly [index: number]: DataTransferItem;
+
+	[kListOwner]: DataTransfer;
+	[kListIndices]: number;
 }
 
 class DataTransferItemList {
-	declare [kListOwner]: DataTransfer;
-	declare [kListIndices]: number;
-
 	constructor(brand?: unknown, owner?: DataTransfer) {
 		if (brand !== kInternalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -2567,14 +2595,13 @@ const EFFECTS_ALLOWED = new Set([
 const kDropEffect = Symbol("dropEffect");
 const kEffectAllowed = Symbol("effectAllowed");
 
-/** The payload a clipboard event carries: text under format names. */
-class DataTransfer {
-	declare [kTransferEntries]: Map<string, string>;
-	declare [kTransferItems]: DataTransferItemList;
-	declare [kTransferFiles]: FileList;
-	declare [kTransferMode]: "readwrite" | "readonly" | "protected";
-	declare [kDropEffect]: "none" | "copy" | "link" | "move";
-	declare [kEffectAllowed]: "none" |
+interface DataTransfer {
+	[kTransferEntries]: Map<string, string>;
+	[kTransferItems]: DataTransferItemList;
+	[kTransferFiles]: FileList;
+	[kTransferMode]: "readwrite" | "readonly" | "protected";
+	[kDropEffect]: "none" | "copy" | "link" | "move";
+	[kEffectAllowed]: "none" |
 		"copy" |
 		"copyLink" |
 		"copyMove" |
@@ -2583,7 +2610,10 @@ class DataTransfer {
 		"move" |
 		"all" |
 		"uninitialized";
+}
 
+/** The payload a clipboard event carries: text under format names. */
+class DataTransfer {
 	constructor() {
 		this[kTransferEntries] = new Map();
 		this[kTransferItems] = new DataTransferItemList(
@@ -2716,10 +2746,12 @@ interface ClipboardEventInit extends EventInit {
 
 const kClipboardData = Symbol("clipboardData");
 
+interface ClipboardEvent {
+	[kClipboardData]: DataTransfer | null;
+}
+
 /** Fired for a clipboard gesture, carrying the data it moves. */
 class ClipboardEvent extends Event {
-	declare [kClipboardData]: DataTransfer | null;
-
 	constructor(type: string, eventInitDict: ClipboardEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<ClipboardEventInit>(
@@ -2752,12 +2784,14 @@ const kPropertyName = Symbol("propertyName");
 const kElapsedTime = Symbol("elapsedTime");
 const kEventPseudoElement = Symbol("pseudoElement");
 
+export interface TransitionEvent {
+	[kPropertyName]: string;
+	[kElapsedTime]: number;
+	[kEventPseudoElement]: string;
+}
+
 /** Fired when a CSS transition changes phase (css-transitions-1 §6). */
 export class TransitionEvent extends Event {
-	declare [kPropertyName]: string;
-	declare [kElapsedTime]: number;
-	declare [kEventPseudoElement]: string;
-
 	constructor(type: string, eventInitDict: TransitionEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<TransitionEventInit>(
@@ -2800,11 +2834,13 @@ const kAnimationName = Symbol("animationName");
 
 // css-animations-1 §4. The engine does not run @keyframes animations
 // yet. The interface exists because the platform defines it.
-class AnimationEvent extends Event {
-	declare [kAnimationName]: string;
-	declare [kElapsedTime]: number;
-	declare [kEventPseudoElement]: string;
+interface AnimationEvent {
+	[kAnimationName]: string;
+	[kElapsedTime]: number;
+	[kEventPseudoElement]: string;
+}
 
+class AnimationEvent extends Event {
 	constructor(type: string, eventInitDict: AnimationEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<AnimationEventInit>(
@@ -2846,16 +2882,18 @@ const kDeltaY = Symbol("deltaY");
 const kDeltaZ = Symbol("deltaZ");
 const kDeltaMode = Symbol("deltaMode");
 
+interface WheelEvent {
+	[kDeltaX]: number;
+	[kDeltaY]: number;
+	[kDeltaZ]: number;
+	[kDeltaMode]: number;
+}
+
 /** Fired when the wheel turns over a target. */
 class WheelEvent extends MouseEvent {
 	static readonly DOM_DELTA_PIXEL = DOM_DELTA_PIXEL;
 	static readonly DOM_DELTA_LINE = DOM_DELTA_LINE;
 	static readonly DOM_DELTA_PAGE = DOM_DELTA_PAGE;
-	declare [kDeltaX]: number;
-	declare [kDeltaY]: number;
-	declare [kDeltaZ]: number;
-	declare [kDeltaMode]: number;
-
 	constructor(type: string, eventInitDict: WheelEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<WheelEventInit>(eventInitDict, "An event init");
@@ -2929,22 +2967,24 @@ const kPredicted = Symbol("predicted");
 
 // `element.click()` fires one of these. It is a MouseEvent, so dispatch
 // runs any activation behavior it reaches.
-class PointerEvent extends MouseEvent {
-	declare [kPointerId]: number;
-	declare [kWidth]: number;
-	declare [kHeight]: number;
-	declare [kPressure]: number;
-	declare [kTangentialPressure]: number;
-	declare [kTiltX]: number | null;
-	declare [kTiltY]: number | null;
-	declare [kTwist]: number;
-	declare [kAltitudeAngle]: number | null;
-	declare [kAzimuthAngle]: number | null;
-	declare [kPointerType]: string;
-	declare [kIsPrimary]: boolean;
-	declare [kCoalesced]: PointerEvent[];
-	declare [kPredicted]: PointerEvent[];
+interface PointerEvent {
+	[kPointerId]: number;
+	[kWidth]: number;
+	[kHeight]: number;
+	[kPressure]: number;
+	[kTangentialPressure]: number;
+	[kTiltX]: number | null;
+	[kTiltY]: number | null;
+	[kTwist]: number;
+	[kAltitudeAngle]: number | null;
+	[kAzimuthAngle]: number | null;
+	[kPointerType]: string;
+	[kIsPrimary]: boolean;
+	[kCoalesced]: PointerEvent[];
+	[kPredicted]: PointerEvent[];
+}
 
+class PointerEvent extends MouseEvent {
 	constructor(type: string, eventInitDict: PointerEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<PointerEventInit>(eventInitDict, "An event init");
@@ -3067,10 +3107,12 @@ interface DragEventInit extends MouseEventInit {
 
 const kEventDataTransfer = Symbol("event data transfer");
 
+interface DragEvent {
+	[kEventDataTransfer]: DataTransfer | null;
+}
+
 /** A drag-and-drop event, carrying its drag session's data transfer. */
 class DragEvent extends MouseEvent {
-	declare [kEventDataTransfer]: DataTransfer | null;
-
 	constructor(type: string, eventInitDict: DragEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<DragEventInit>(eventInitDict, "An event init");
@@ -3248,12 +3290,15 @@ const kHandlers = Symbol("handlers");
 const kListeners = Symbol("event listener list");
 const kGetTheParent = Symbol("get the parent");
 
+export interface EventTarget {
+	[kListeners]: Listener[];
+
+	[kHandlers]: Map<string, EventHandlerRecord> | null;
+}
+
 /** An event target: a listener list, and the parent dispatch walks to. */
 export class EventTarget implements globalThis.EventTarget {
-	declare [kListeners]: Listener[];
-
 	/** Null until this target is given an event handler. Most never are. */
-	declare [kHandlers]: Map<string, EventHandlerRecord> | null;
 	constructor() {
 		this[kListeners] = [];
 		this[kHandlers] = null;
@@ -6129,17 +6174,19 @@ const kPreviousSibling = Symbol("previousSibling");
 const kNextSibling = Symbol("nextSibling");
 const kTarget = Symbol("processing instruction target");
 
-class MutationRecord implements globalThis.MutationRecord {
-	declare [kType]: string;
-	declare [kTarget]: Node;
-	declare [kAddedNodes]: NodeList;
-	declare [kRemovedNodes]: NodeList;
-	declare [kPreviousSibling]: Node | null;
-	declare [kNextSibling]: Node | null;
-	declare [kAttributeName]: string | null;
-	declare [kAttributeNamespace]: string | null;
-	declare [kOldValue]: string | null;
+interface MutationRecord {
+	[kType]: string;
+	[kTarget]: Node;
+	[kAddedNodes]: NodeList;
+	[kRemovedNodes]: NodeList;
+	[kPreviousSibling]: Node | null;
+	[kNextSibling]: Node | null;
+	[kAttributeName]: string | null;
+	[kAttributeNamespace]: string | null;
+	[kOldValue]: string | null;
+}
 
+class MutationRecord implements globalThis.MutationRecord {
 	constructor(
 		type: string,
 		target: Node,
@@ -6220,16 +6267,18 @@ function toStringSequence(value: Iterable<string>): string[] {
 const kCallback = Symbol("callback");
 const kRecords = Symbol("records");
 
-/** Observes a tree and delivers mutation records. */
-export class MutationObserver implements globalThis.MutationObserver {
-	declare [kCallback]: MutationCallback;
+export interface MutationObserver {
+	[kCallback]: MutationCallback;
 
 	// Held strongly. Each node's registered observer list holds this
 	// observer too, and the cycle is collected once both sides are
 	// unreachable.
-	declare [kNodes]: Set<Node>;
-	declare [kRecords]: MutationRecord[];
+	[kNodes]: Set<Node>;
+	[kRecords]: MutationRecord[];
+}
 
+/** Observes a tree and delivers mutation records. */
+export class MutationObserver implements globalThis.MutationObserver {
 	constructor(callback: MutationCallback) {
 		this[kNodes] = new Set();
 		this[kRecords] = [];
@@ -6498,18 +6547,20 @@ const anyAttribute = Symbol("any attribute");
 // collection. The own properties themselves (which indices and names are
 // defined) are what a change resynchronizes, because they are observable
 // without a read.
-abstract class LiveList implements LiveCollection {
-	declare [kItems]: Node[];
-	declare [kDefined]: number;
-	declare [kRegistered]: Node | null;
-	declare [kExact]: boolean;
-	declare [kLive]: boolean;
-	declare [kOwner]: Node | null;
-	declare [kChildMember]: ((node: Node) => boolean) | null;
-	declare [kDocumentWide]: boolean;
-	declare [kWatched]: string | symbol | null;
-	declare [kNames]: string[];
+interface LiveList {
+	[kItems]: Node[];
+	[kDefined]: number;
+	[kRegistered]: Node | null;
+	[kExact]: boolean;
+	[kLive]: boolean;
+	[kOwner]: Node | null;
+	[kChildMember]: ((node: Node) => boolean) | null;
+	[kDocumentWide]: boolean;
+	[kWatched]: string | symbol | null;
+	[kNames]: string[];
+}
 
+abstract class LiveList implements LiveCollection {
 	// childMember: the list draws only from the owner's direct children, so
 	// a change anywhere deeper in the owner's tree leaves it untouched, and
 	// the children a change carries are exactly the members it carries.
@@ -6797,6 +6848,10 @@ const kCompute = Symbol("compute");
 
 export interface NodeList {
 	[index: number]: globalThis.Node;
+
+	[Symbol.iterator]: () => ArrayIterator<globalThis.Node>;
+
+	[kCompute]: () => Node[];
 }
 
 export class NodeList extends LiveList {
@@ -6812,10 +6867,6 @@ export class NodeList extends LiveList {
 	declare keys: () => ArrayIterator<number>;
 	declare values: () => ArrayIterator<globalThis.Node>;
 	declare entries: () => ArrayIterator<[number, globalThis.Node]>;
-	declare [Symbol.iterator]: () => ArrayIterator<globalThis.Node>;
-
-	declare [kCompute]: () => Node[];
-
 	constructor(
 		compute: () => Node[],
 		live: boolean,
@@ -6865,12 +6916,14 @@ interface NodeListOf<T extends globalThis.Node> extends NodeList {
 	[Symbol.iterator](): ArrayIterator<T>;
 }
 
+interface HTMLCollectionBase {
+	[Symbol.iterator]: () => ArrayIterator<Element>;
+
+	[kCompute]: () => Element[];
+}
+
 class HTMLCollectionBase extends LiveList {
 	[index: number]: Element;
-
-	declare [Symbol.iterator]: () => ArrayIterator<Element>;
-
-	declare [kCompute]: () => Element[];
 
 	constructor(
 		compute: () => Element[],
@@ -7059,11 +7112,13 @@ const kMembers = Symbol("members");
 
 // The test is per element, so an attribute change checks the one element
 // that changed instead of walking the tree again.
-class MatchingCollection extends HTMLCollection {
-	declare [kRoot]: Node;
-	declare [kMatches]: (element: Element) => boolean;
-	declare [kMembers]: Set<Node> | null;
+interface MatchingCollection {
+	[kRoot]: Node;
+	[kMatches]: (element: Element) => boolean;
+	[kMembers]: Set<Node> | null;
+}
 
+class MatchingCollection extends HTMLCollection {
 	// watched: the attribute the test reads, if any.
 	constructor(
 		root: Node,
@@ -7287,6 +7342,14 @@ const kAttribute = Symbol("attribute");
 const kSupported = Symbol("supported");
 const kTokens = Symbol("tokens");
 
+interface DOMTokenList {
+	[Symbol.iterator]: () => ArrayIterator<string>;
+
+	[kElement]: Element;
+	[kAttribute]: string;
+	[kSupported]: Set<string> | null;
+}
+
 class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	declare forEach: (
 		callback: (token: string, index: number, list: DOMTokenList) => void,
@@ -7296,12 +7359,6 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	declare keys: () => ArrayIterator<number>;
 	declare values: () => ArrayIterator<string>;
 	declare entries: () => ArrayIterator<[number, string]>;
-	declare [Symbol.iterator]: () => ArrayIterator<string>;
-
-	declare [kElement]: Element;
-	declare [kAttribute]: string;
-	declare [kSupported]: Set<string> | null;
-
 	constructor(element: Element, attribute: string, supported?: string[]) {
 		super(true, element);
 		this[kElement] = element;
@@ -8225,11 +8282,13 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 	return null;
 }
 
+interface NamedNodeMap {
+	[Symbol.iterator]: () => ArrayIterator<Attr>;
+
+	[kElement]: Element;
+}
+
 class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
-	declare [Symbol.iterator]: () => ArrayIterator<Attr>;
-
-	declare [kElement]: Element;
-
 	constructor(element: Element) {
 		super(true, element);
 		this[kElement] = element;
@@ -8346,8 +8405,11 @@ const kByName = Symbol("byName");
 // implements that behavior. Every other name maps to one of the four
 // namespace interfaces. Author definitions live in a
 // CustomElementRegistry, a separate table with a separate lifetime.
+interface ElementRegistry {
+	[kByName]: Map<string, new () => Element>;
+}
+
 class ElementRegistry {
-	declare [kByName]: Map<string, new () => Element>;
 	constructor() {
 		this[kByName] = new Map<string, new () => Element>();
 	}
@@ -11007,18 +11069,20 @@ const kDefinitionIsRunning = Symbol("definitionIsRunning");
 const kWhenDefined = Symbol("whenDefined");
 const kScoped = Symbol("scoped");
 
-class CustomElementRegistry {
+interface CustomElementRegistry {
 	// The registry the realm gives every document is not scoped, and it is
 	// the only one a document may hold.
-	declare [kScoped]: boolean;
-	declare [kDefinitions]: CustomElementDefinition[];
-	declare [kDefinitionIsRunning]: boolean;
+	[kScoped]: boolean;
+	[kDefinitions]: CustomElementDefinition[];
+	[kDefinitionIsRunning]: boolean;
 
-	declare [kWhenDefined]: Map<string, {
+	[kWhenDefined]: Map<string, {
 		promise: Promise<CustomElementConstructor>;
 		resolve: (value: CustomElementConstructor) => void;
 	}>;
+}
 
+class CustomElementRegistry {
 	constructor() {
 		this[kScoped] = !internalConstruction;
 		this[kDefinitions] = [];
@@ -13046,8 +13110,11 @@ class HTMLDataElement extends HTMLElement {}
 
 const kOptions = Symbol("options");
 
+interface HTMLDataListElement {
+	[kOptions]: HTMLCollection | null;
+}
+
 class HTMLDataListElement extends HTMLElement {
-	declare [kOptions]: HTMLCollection | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kOptions] = null;
@@ -13091,14 +13158,15 @@ interface HTMLDetailsElement
 		globalThis.HTMLDetailsElement,
 		"name" |
 		"open"
-	> {}
+	> {
+	[kToggleQueued]: boolean;
+	[kStateAtQueue]: string;
+
+	[kUpgraded]: boolean;
+	[kContent]: globalThis.HTMLElement | null;
+}
 
 class HTMLDetailsElement extends HTMLElement {
-	declare [kToggleQueued]: boolean;
-	declare [kStateAtQueue]: string;
-
-	declare [kUpgraded]: boolean;
-	declare [kContent]: globalThis.HTMLElement | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kToggleQueued] = false;
@@ -13208,11 +13276,13 @@ const kOldState = Symbol("oldState");
 const kNewState = Symbol("newState");
 const kSource = Symbol("source");
 
-class ToggleEvent extends Event {
-	declare [kOldState]: string;
-	declare [kNewState]: string;
-	declare [kSource]: Element | null;
+interface ToggleEvent {
+	[kOldState]: string;
+	[kNewState]: string;
+	[kSource]: Element | null;
+}
 
+class ToggleEvent extends Event {
 	constructor(type: string, eventInitDict: ToggleEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<ToggleEventInit>(eventInitDict, "An event init");
@@ -13249,12 +13319,13 @@ interface HTMLDialogElement
 	extends Pick<
 		globalThis.HTMLDialogElement,
 		"open"
-	> {}
+	> {
+	[kReturnValue]: string;
+	// Where focus was when the dialog took it, so closing can restore it.
+	[kPreviouslyFocused]: Element | null;
+}
 
 class HTMLDialogElement extends HTMLElement {
-	declare [kReturnValue]: string;
-	// Where focus was when the dialog took it, so closing can restore it.
-	declare [kPreviouslyFocused]: Element | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kReturnValue] = "";
@@ -13487,10 +13558,11 @@ interface HTMLFieldSetElement
 		globalThis.HTMLFieldSetElement,
 		"disabled" |
 		"name"
-	> {}
+	> {
+	[kElements]: HTMLCollection | null;
+}
 
 class HTMLFieldSetElement extends HTMLElement {
-	declare [kElements]: HTMLCollection | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kElements] = null;
@@ -13568,9 +13640,12 @@ const kFiringReset = Symbol("firingReset");
 // the steps up to the navigation and stops. `requestSubmit()` fires the
 // submit event those steps fire first. `reset()` fires its event and
 // restores every control the form owns to its default.
+interface HTMLFormElement {
+	[kElements]: HTMLFormControlsCollection | null;
+	[kFiringReset]: boolean;
+}
+
 class HTMLFormElement extends HTMLElement {
-	declare [kElements]: HTMLFormControlsCollection | null;
-	declare [kFiringReset]: boolean;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kElements] = null;
@@ -13762,9 +13837,11 @@ interface SubmitEventInit extends EventInit {
 
 const kSubmitter = Symbol("submitter");
 
-class SubmitEvent extends Event {
-	declare [kSubmitter]: HTMLElement | null;
+interface SubmitEvent {
+	[kSubmitter]: HTMLElement | null;
+}
 
+class SubmitEvent extends Event {
 	constructor(type: string, eventInitDict: SubmitEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<SubmitEventInit>(eventInitDict, "An event init");
@@ -13786,9 +13863,11 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
 // subclass cannot declare in TypeScript, so the merged interface below
 // declares it instead. lib.dom gets the same result by splitting the base
 // in two, which no engine does.
-class HTMLFormControlsCollection extends (HTMLCollection as typeof HTMLCollectionBase) {
-	declare [kOwner]: Node | null;
+interface HTMLFormControlsCollection {
+	[kOwner]: Node | null;
+}
 
+class HTMLFormControlsCollection extends (HTMLCollection as typeof HTMLCollectionBase) {
 	constructor(compute: () => Element[], owner: Node | null = null) {
 		// The form attribute can associate a control anywhere in the tree, and
 		// what counts as a control depends on its attributes, so the list is
@@ -14108,15 +14187,16 @@ interface HTMLIFrameElement
 	extends Pick<
 		globalThis.HTMLIFrameElement,
 		"loading"
-	> {}
-
-class HTMLIFrameElement extends HTMLElement {
-	declare [kContentDocument]: Document | null;
-	declare [kContentWindow]: FrameWindowLike | null;
+	> {
+	[kContentDocument]: Document | null;
+	[kContentWindow]: FrameWindowLike | null;
 	// Identifies the stretch of connectedness the current content document
 	// belongs to. Each removal and insertion starts a new one, so the load
 	// task fires only for the insertion that scheduled it.
-	declare [kFrameDocumentRun]: object;
+	[kFrameDocumentRun]: object;
+}
+
+class HTMLIFrameElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kContentDocument] = null;
@@ -14358,42 +14438,45 @@ function formatWeekString(date: Date): string {
 	return `${String(year).padStart(4, "0")}-W${String(week).padStart(2, "0")}`;
 }
 
-export class HTMLInputElement extends HTMLElement {
-	// Installed from the element table and read by the algorithms below.
-	declare type: string;
-
-	declare [kFiles]: FileList | null;
-	declare [kValue]: string;
-	declare [kDirtyValue]: boolean;
-	declare [kChecked]: boolean;
-	declare [kDirtyChecked]: boolean;
-	declare [kIndeterminate]: boolean;
-	declare [kSelectionStart]: number;
-	declare [kSelectionEnd]: number;
-	declare [kSelectionDirection]: SelectionDirection;
-	declare [kPreviouslyChecked]: boolean;
-	declare [kPreviouslyIndeterminate]: boolean;
-	declare [kPreviousRadio]: HTMLInputElement | null;
+export interface HTMLInputElement {
+	[kFiles]: FileList | null;
+	[kValue]: string;
+	[kDirtyValue]: boolean;
+	[kChecked]: boolean;
+	[kDirtyChecked]: boolean;
+	[kIndeterminate]: boolean;
+	[kSelectionStart]: number;
+	[kSelectionEnd]: number;
+	[kSelectionDirection]: SelectionDirection;
+	[kPreviouslyChecked]: boolean;
+	[kPreviouslyIndeterminate]: boolean;
+	[kPreviousRadio]: HTMLInputElement | null;
 
 	// The rendered tree and what it was built for: "text control" for a
 	// text-like input, "toggle" for checkbox/radio, null until built. The two
 	// are different trees, so a type change rebuilds.
-	declare [kUpgraded]: boolean;
-	declare [kKind]: "textControl" | "toggle" | null;
-	declare [kRoot]: globalThis.ShadowRoot | null;
-	declare [kValueText]: globalThis.Text | null;
-	declare [kPlaceholderText]: globalThis.Text | null;
-	declare [kGlyphText]: globalThis.Text | null;
+	[kUpgraded]: boolean;
+	[kKind]: "textControl" | "toggle" | null;
+	[kRoot]: globalThis.ShadowRoot | null;
+	[kValueText]: globalThis.Text | null;
+	[kPlaceholderText]: globalThis.Text | null;
+	[kGlyphText]: globalThis.Text | null;
 
 	// A typed character arrives as insertText. A paste arrives as
 	// insertFromPaste, and a single-line input strips its line breaks (HTML
 	// value sanitization). A toggle accepts neither, since it holds no text.
-	declare [kOnBeforeInput]: (event: InputEvent) => void;
+	[kOnBeforeInput]: (event: InputEvent) => void;
 
 	// A checkbox or radio activates on Space or Enter and never accepts typed
 	// text. Home and End move to the ends of the whole value, since an input
 	// has no visual lines. Everything else is the shared text control logic.
-	declare [kOnKeydown]: (event: KeyboardEvent) => void;
+	[kOnKeydown]: (event: KeyboardEvent) => void;
+}
+
+export class HTMLInputElement extends HTMLElement {
+	// Installed from the element table and read by the algorithms below.
+	declare type: string;
+
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kValue] = "";
@@ -15556,10 +15639,11 @@ interface HTMLMapElement
 	extends Pick<
 		globalThis.HTMLMapElement,
 		"name"
-	> {}
+	> {
+	[kAreas]: HTMLCollection | null;
+}
 
 class HTMLMapElement extends HTMLElement {
-	declare [kAreas]: HTMLCollection | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kAreas] = null;
@@ -15667,6 +15751,15 @@ function noMediaPipeline(what: string): never {
 	throw domError("NotSupportedError", `A terminal has no ${what}`);
 }
 
+interface HTMLMediaElement {
+	[kVolume]: number;
+	[kMuted]: boolean;
+	[kPlaybackRate]: number;
+	[kDefaultPlaybackRate]: number;
+	[kPreservesPitch]: boolean;
+	[kCurrentTime]: number;
+}
+
 class HTMLMediaElement extends HTMLElement {
 	static readonly NETWORK_EMPTY = NETWORK_EMPTY;
 	static readonly NETWORK_IDLE = NETWORK_IDLE;
@@ -15678,12 +15771,6 @@ class HTMLMediaElement extends HTMLElement {
 	static readonly HAVE_FUTURE_DATA = HAVE_FUTURE_DATA;
 	static readonly HAVE_ENOUGH_DATA = HAVE_ENOUGH_DATA;
 
-	declare [kVolume]: number;
-	declare [kMuted]: boolean;
-	declare [kPlaybackRate]: number;
-	declare [kDefaultPlaybackRate]: number;
-	declare [kPreservesPitch]: boolean;
-	declare [kCurrentTime]: number;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kVolume] = 1;
@@ -16109,9 +16196,12 @@ const METER_ATTRIBUTES = new Set([
 // where `value` sits between `min` and `max`, with a level attribute
 // computed from the low/high/optimum ranges, which the UA sheet uses to
 // color the bar.
+interface HTMLMeterElement {
+	[kUpgraded]: boolean;
+	[kBar]: globalThis.HTMLElement | null;
+}
+
 class HTMLMeterElement extends HTMLElement {
-	declare [kUpgraded]: boolean;
-	declare [kBar]: globalThis.HTMLElement | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kUpgraded] = false;
@@ -16360,12 +16450,15 @@ interface HTMLOptionElement
 
 const kSelectedOptions = Symbol("selectedOptions");
 
+interface HTMLOptionElement {
+	[kSelectednessValue]: boolean;
+	[kOptionDirty]: boolean;
+}
+
 class HTMLOptionElement extends HTMLElement {
 	// Installed from the element table and read by the select's own tree.
 	declare disabled: boolean;
 
-	declare [kSelectednessValue]: boolean;
-	declare [kOptionDirty]: boolean;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kSelectednessValue] = false;
@@ -16500,11 +16593,11 @@ const kSelect = Symbol("select");
 
 interface HTMLOptionsCollection {
 	[index: number]: HTMLOptionElement;
+
+	[kSelect]: HTMLSelectElement;
 }
 
 class HTMLOptionsCollection extends HTMLCollection {
-	declare [kSelect]: HTMLSelectElement;
-
 	constructor(select: HTMLSelectElement) {
 		super(() => getOptions(select), select);
 		this[kSelect] = select;
@@ -16612,11 +16705,12 @@ interface HTMLOutputElement
 		globalThis.HTMLOutputElement,
 		"htmlFor" |
 		"name"
-	> {}
+	> {
+	[kDirty]: boolean;
+	[kStored]: string;
+}
 
 class HTMLOutputElement extends HTMLElement {
-	declare [kDirty]: boolean;
-	declare [kStored]: string;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kDirty] = false;
@@ -16727,9 +16821,12 @@ class HTMLPreElement extends HTMLElement {}
 // `value`/`max`. A progress with no value attribute is indeterminate,
 // which here is an empty bar over the full groove. There is no animation
 // to show the difference the way a browser does.
+interface HTMLProgressElement {
+	[kUpgraded]: boolean;
+	[kBar]: globalThis.HTMLElement | null;
+}
+
 class HTMLProgressElement extends HTMLElement {
-	declare [kUpgraded]: boolean;
-	declare [kBar]: globalThis.HTMLElement | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kUpgraded] = false;
@@ -16882,32 +16979,33 @@ export interface HTMLSelectElement
 
 export interface HTMLSelectElement {
 	[index: number]: HTMLOptionElement | HTMLOptGroupElement;
-}
 
-export class HTMLSelectElement extends HTMLElement {
-	declare [kOptions]: HTMLOptionsCollection | null;
-	declare [kSelectedOptions]: HTMLCollectionOf<HTMLOptionElement> | null;
+	[kOptions]: HTMLOptionsCollection | null;
+	[kSelectedOptions]: HTMLCollectionOf<HTMLOptionElement> | null;
 
-	declare [kUpgraded]: boolean;
-	declare [kValueText]: globalThis.Text | null;
-	declare [kPicker]: globalThis.HTMLElement | null;
+	[kUpgraded]: boolean;
+	[kValueText]: globalThis.Text | null;
+	[kPicker]: globalThis.HTMLElement | null;
 	// The highlighted option index while the picker is OPEN. Null means
 	// closed.
-	declare [kPickerHighlight]: number | null;
+	[kPickerHighlight]: number | null;
 
 	// OPEN: arrows move the highlight without committing, Enter/Space
 	// commit, Escape dismisses. CLOSED: Enter/Space open the picker, and
 	// arrows change the selection in place. This is the browser's
 	// closed-select keyboard model.
-	declare [kOnKeydown]: (event: KeyboardEvent) => void;
+	[kOnKeydown]: (event: KeyboardEvent) => void;
 
 	// A press opens a closed picker. With the picker open, a press on an
 	// option row commits it (a disabled row does nothing), and a press on the
 	// closed face dismisses. The row under the point is found from the rows'
 	// document rects, not a renderer hit test.
-	declare [kOnMousedown]: (event: MouseEvent) => void;
+	[kOnMousedown]: (event: MouseEvent) => void;
 
-	declare [kOnBlur]: () => void;
+	[kOnBlur]: () => void;
+}
+
+export class HTMLSelectElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kOptions] = null;
@@ -17676,11 +17774,12 @@ interface HTMLTableElement
 		"rules" |
 		"summary" |
 		"width"
-	> {}
+	> {
+	[kTBodies]: HTMLCollection | null;
+	[kRows]: HTMLCollection | null;
+}
 
 class HTMLTableElement extends HTMLElement {
-	declare [kTBodies]: HTMLCollection | null;
-	declare [kRows]: HTMLCollection | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kTBodies] = null;
@@ -17970,10 +18069,11 @@ interface HTMLTableRowElement
 		"ch" |
 		"chOff" |
 		"vAlign"
-	> {}
+	> {
+	[kCells]: HTMLCollection | null;
+}
 
 class HTMLTableRowElement extends HTMLElement {
-	declare [kCells]: HTMLCollection | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kCells] = null;
@@ -18065,10 +18165,11 @@ interface HTMLTableSectionElement
 		"ch" |
 		"chOff" |
 		"vAlign"
-	> {}
+	> {
+	[kRows]: HTMLCollection | null;
+}
 
 class HTMLTableSectionElement extends HTMLElement {
-	declare [kRows]: HTMLCollection | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kRows] = null;
@@ -18138,29 +18239,30 @@ export interface HTMLTextAreaElement
 		"cols" |
 		"rows" |
 		"wrap"
-	> {}
+	> {
+	[kValue]: string;
+	[kDirty]: boolean;
+	[kSelectionStart]: number;
+	[kSelectionEnd]: number;
+	[kSelectionDirection]: SelectionDirection;
 
-export class HTMLTextAreaElement extends HTMLElement {
-	declare [kValue]: string;
-	declare [kDirty]: boolean;
-	declare [kSelectionStart]: number;
-	declare [kSelectionEnd]: number;
-	declare [kSelectionDirection]: SelectionDirection;
-
-	declare [kUpgraded]: boolean;
-	declare [kValueText]: globalThis.Text | null;
-	declare [kPlaceholderText]: globalThis.Text | null;
-	declare [kPlaceholderSpan]: globalThis.HTMLElement | null;
-	declare [kGoalColumn]: number | null;
+	[kUpgraded]: boolean;
+	[kValueText]: globalThis.Text | null;
+	[kPlaceholderText]: globalThis.Text | null;
+	[kPlaceholderSpan]: globalThis.HTMLElement | null;
+	[kGoalColumn]: number | null;
 
 	// A typed character arrives as insertText. A paste keeps its newlines.
-	declare [kOnBeforeInput]: (event: InputEvent) => void;
+	[kOnBeforeInput]: (event: InputEvent) => void;
 
 	// Enter inserts a newline. The vertical arrows and Home/End move by
 	// VISUAL line (soft wraps count, as in a browser). Every other editing
 	// key is the shared text control logic. This reads laid-out geometry, so it
 	// flushes layout first.
-	declare [kOnKeydown]: (event: KeyboardEvent) => void;
+	[kOnKeydown]: (event: KeyboardEvent) => void;
+}
+
+export class HTMLTextAreaElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kValue] = "";
@@ -20027,6 +20129,10 @@ function noValidityFlags(): ValidityFlags {
 const kFlags = Symbol("flags");
 const kValidityFlags = Symbol("validity flags");
 
+interface ValidityState {
+	[kFlags]: () => ValidityFlags;
+}
+
 class ValidityState {
 	declare readonly badInput: boolean;
 	declare readonly customError: boolean;
@@ -20038,8 +20144,6 @@ class ValidityState {
 	declare readonly tooShort: boolean;
 	declare readonly typeMismatch: boolean;
 	declare readonly valueMissing: boolean;
-	declare [kFlags]: () => ValidityFlags;
-
 	constructor(flags: () => ValidityFlags) {
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -20076,9 +20180,11 @@ const kStates = Symbol("custom state set");
 
 // The set belongs to the author. A selector engine that supports
 // `:state()` reads it, and nothing else in this DOM does.
-class CustomStateSet {
-	declare [kStates]: Set<string>;
+interface CustomStateSet {
+	[kStates]: Set<string>;
+}
 
+class CustomStateSet {
 	constructor() {
 		this[kStates] = new Set<string>();
 		if (!internalConstruction) {
@@ -20158,6 +20264,10 @@ const kElementInternalsTarget = Symbol("the element an internals belongs to");
 // A custom element's handle on the parts of it the platform owns: its
 // shadow root, its form owner, the value it submits, its validity and the
 // accessibility properties it declares.
+interface ElementInternals {
+	[kValidity]: ValidityState;
+}
+
 class ElementInternals {
 	[kElementInternalsTarget]: Element;
 	[kFormOwner]: HTMLFormElement | null;
@@ -20166,8 +20276,6 @@ class ElementInternals {
 	[kValidityFlags]: ValidityFlags;
 	[kValidationMessage]: string;
 	[kStates]: CustomStateSet | null;
-	declare [kValidity]: ValidityState;
-
 	constructor(target: Element) {
 		this[kFormOwner] = null;
 		this[kFormDisabled] = false;
@@ -21569,6 +21677,12 @@ export function disconnectObservers(document: globalThis.Document): void {
 // what was last reported for each, and registration with the manager.
 // Subclasses supply only how to measure one target (kMeasure) and how to
 // build an entry from that measurement.
+// The interface must repeat the class's type parameters to merge with it.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface LayoutObserver<TState, TEntry, TOptions = void> {
+	[kObserverCallback]: (entries: TEntry[], observer: this) => void;
+}
+
 abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	// One entry per target, as the DOM says. A second observe() of the same
 	// target replaces the first's options.
@@ -21579,8 +21693,6 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 
 	// One entry per document the observer has a target in.
 	[kHomes]: Set<object>;
-
-	declare [kObserverCallback]: (entries: TEntry[], observer: this) => void;
 
 	constructor() {
 		this[kTargets] = new Map<
@@ -21831,14 +21943,16 @@ type IntersectionObserverCallback = (
 
 const kIntersectionRoot = Symbol("intersection root");
 
+interface IntersectionObserver {
+	[kIntersectionRoot]: globalThis.Element | globalThis.Document | null;
+}
+
 class IntersectionObserver extends LayoutObserver<
 	number,
 	IntersectionObserverEntry
 > {
 	readonly rootMargin: string;
 	readonly thresholds: readonly number[];
-	declare [kIntersectionRoot]: globalThis.Element | globalThis.Document | null;
-
 	constructor(
 		callback: IntersectionObserverCallback,
 		init: IntersectionObserverInit = {},
@@ -22023,6 +22137,23 @@ const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
 
+export interface Document {
+	// What an attached document renders through, set by attachDocument. A
+	// headless document has none and behaves as a document with no browsing
+	// context.
+	[kRender]: () => Promise<void>;
+	[kVisible]: boolean;
+	[kLayout]: Layout;
+	[kCascade]: Cascade;
+	[kExchange]: Exchange;
+	[kScreen]: Screen;
+	// The text control whose caret the next frame reveals. The last edit
+	// before the frame wins.
+	[kPendingCaretReveal]: TextControlOrSelect | null;
+
+	[kImplementation]: DOMImplementation | null;
+}
+
 export class Document extends Node implements globalThis.Document {
 	// Installed on the prototype, where the engine that implements them is.
 	declare elementFromPoint: (
@@ -22053,21 +22184,6 @@ export class Document extends Node implements globalThis.Document {
 	// it.
 	[kPopoverShowing]: boolean;
 	[kPopoverHidingCount]: number;
-
-	// What an attached document renders through, set by attachDocument. A
-	// headless document has none and behaves as a document with no browsing
-	// context.
-	declare [kRender]: () => Promise<void>;
-	declare [kVisible]: boolean;
-	declare [kLayout]: Layout;
-	declare [kCascade]: Cascade;
-	declare [kExchange]: Exchange;
-	declare [kScreen]: Screen;
-	// The text control whose caret the next frame reveals. The last edit
-	// before the frame wins.
-	declare [kPendingCaretReveal]: TextControlOrSelect | null;
-
-	declare [kImplementation]: DOMImplementation | null;
 
 	constructor(...args: ConstructorParameters<typeof Node>) {
 		super(...args);
@@ -23613,9 +23729,11 @@ function removeIdEntry(document: Document, id: string, element: Element): void {
 	}
 }
 
-class DOMImplementation {
-	declare [kDocument]: Document;
+interface DOMImplementation {
+	[kDocument]: Document;
+}
 
+class DOMImplementation {
 	constructor(document: Document) {
 		this[kDocument] = document;
 	}
@@ -25854,20 +25972,22 @@ const kDirection = Symbol("direction");
 const kStart = Symbol("start");
 const kEnd = Symbol("end");
 
-class Selection implements globalThis.Selection {
-	declare [kDocument]: Document;
+interface Selection {
+	[kDocument]: Document;
 
 	// The range the Range API sees, which lives in a single tree.
-	declare [kRange]: Range | null;
+	[kRange]: Range | null;
 
 	// The composed boundary points, in tree order, each stored as a
 	// collapsed live range so tree mutations move it. A selection that
 	// crosses a shadow boundary keeps both of these while its range
 	// collapses.
-	declare [kStart]: Range | null;
-	declare [kEnd]: Range | null;
-	declare [kDirection]: "forwards" | "backwards" | "directionless";
+	[kStart]: Range | null;
+	[kEnd]: Range | null;
+	[kDirection]: "forwards" | "backwards" | "directionless";
+}
 
+class Selection implements globalThis.Selection {
 	constructor() {
 		this[kRange] = null;
 		this[kStart] = null;
@@ -26849,14 +26969,16 @@ const kFilter = Symbol("filter");
 const kPointerBefore = Symbol("pointerBefore");
 const kActive = Symbol("active");
 
-class NodeIterator {
-	declare [kRoot]: Node;
-	declare [kReference]: Node;
-	declare [kPointerBefore]: boolean;
-	declare [kWhatToShow]: number;
-	declare [kFilter]: NodeFilterInput;
-	declare [kActive]: {value: boolean};
+interface NodeIterator {
+	[kRoot]: Node;
+	[kReference]: Node;
+	[kPointerBefore]: boolean;
+	[kWhatToShow]: number;
+	[kFilter]: NodeFilterInput;
+	[kActive]: {value: boolean};
+}
 
+class NodeIterator {
 	constructor(root: Node, whatToShow: number, filter: NodeFilterInput) {
 		this[kPointerBefore] = true;
 		this[kActive] = {value: false};
@@ -26984,13 +27106,15 @@ Object.defineProperty(NodeIterator.prototype, Symbol.toStringTag, {
 
 const kCurrent = Symbol("current");
 
-export class TreeWalker implements globalThis.TreeWalker {
-	declare [kRoot]: Node;
-	declare [kCurrent]: Node;
-	declare [kWhatToShow]: number;
-	declare [kFilter]: NodeFilterInput;
-	declare [kActive]: {value: boolean};
+export interface TreeWalker {
+	[kRoot]: Node;
+	[kCurrent]: Node;
+	[kWhatToShow]: number;
+	[kFilter]: NodeFilterInput;
+	[kActive]: {value: boolean};
+}
 
+export class TreeWalker implements globalThis.TreeWalker {
 	constructor(root: Node, whatToShow: number, filter: NodeFilterInput) {
 		this[kActive] = {value: false};
 		this[kRoot] = root;
@@ -29459,10 +29583,12 @@ const kItemEntries = Symbol("entries");
 // item may hold other types, and the clipboard skips them.
 const kPresentationStyle = Symbol("presentation style");
 
-class ClipboardItem {
-	declare [kItemEntries]: Map<string, Promise<Blob>>;
-	declare [kPresentationStyle]: globalThis.PresentationStyle;
+interface ClipboardItem {
+	[kItemEntries]: Map<string, Promise<Blob>>;
+	[kPresentationStyle]: globalThis.PresentationStyle;
+}
 
+class ClipboardItem {
 	constructor(
 		items: Record<string, string | Blob | Promise<string | Blob>>,
 		options?: globalThis.ClipboardItemOptions,
@@ -29530,9 +29656,11 @@ const kClipboardDocument = Symbol("the document whose clipboard this is");
 // with `?` as the payload) and resolves with the reply. writeTokenList() and
 // read() are the same two round trips over a ClipboardItem. This is an
 // EventTarget because the interface says so; nothing fires events at it.
-class Clipboard extends EventTarget {
-	declare [kClipboardDocument]: Document;
+interface Clipboard {
+	[kClipboardDocument]: Document;
+}
 
+class Clipboard extends EventTarget {
 	constructor(document?: Document) {
 		super();
 		if (!internalConstruction) {
@@ -29659,12 +29787,12 @@ const kPermissionDocument = Symbol("the document this permission stands over");
 interface PermissionStatus extends Pick<
 	globalThis.PermissionStatus,
 	"onchange"
-> {}
+> {
+	[kPermissionName]: string;
+	[kPermissionDocument]: Document | null;
+}
 
 class PermissionStatus extends EventTarget {
-	declare [kPermissionName]: string;
-	declare [kPermissionDocument]: Document | null;
-
 	constructor(name?: string, document?: Document) {
 		super();
 		if (!internalConstruction) {
@@ -29753,9 +29881,11 @@ Object.defineProperty(PermissionStatus.prototype, Symbol.toStringTag, {
 });
 
 // Exposes the gate above by permission name.
-class Permissions extends EventTarget {
-	declare [kPermissionDocument]: Document;
+interface Permissions {
+	[kPermissionDocument]: Document;
+}
 
+class Permissions extends EventTarget {
 	constructor(document?: Document) {
 		super();
 		if (!internalConstruction) {
@@ -29798,10 +29928,12 @@ const kStrings = Symbol("the strings a list holds");
 
 // The only one here is Location.ancestorOrigins, which is empty because
 // a terminal document is not in a frame.
+interface DOMStringList {
+	[kStrings]: readonly string[];
+}
+
 class DOMStringList {
 	[index: number]: string;
-	declare [kStrings]: readonly string[];
-
 	constructor(strings: readonly string[]) {
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -29834,9 +29966,11 @@ Object.defineProperty(DOMStringList.prototype, Symbol.toStringTag, {
 // navigates, and there is nowhere to navigate to (one document per
 // window, no way to fetch another), so each throws rather than
 // pretending it moved.
-class Location {
-	declare [kLocationWindow]: Window;
+interface Location {
+	[kLocationWindow]: Window;
+}
 
+class Location {
 	constructor(window: Window) {
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -30013,13 +30147,13 @@ const kStorageItems = Symbol("storage items");
 
 interface Storage {
 	[name: string]: any;
+
+	[kStorageItems]: Map<string, string>;
 }
 
 // One in-memory area per window, kept for the session the way a private
 // browsing window keeps its storage: nothing is written to disk.
 class Storage {
-	declare [kStorageItems]: Map<string, string>;
-
 	constructor() {
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -30102,19 +30236,22 @@ const kWindowStatus = Symbol("window status");
 const kIdleTimers = Symbol("idle timers");
 const kNextIdleHandle = Symbol("next idle handle");
 
+export interface Window {
+	[kNavigator]: Navigator | undefined;
+	[kWindowLocation]: Location | undefined;
+	[kClosed]: boolean;
+	[kHistory]: globalThis.History;
+	[kLocalStorage]: Storage;
+	[kSessionStorage]: Storage;
+	[kScreenInfo]: globalThis.Screen;
+	[kWindowName]: string;
+	[kWindowStatus]: string;
+	[kIdleTimers]: Map<number, ReturnType<typeof setTimeout>>;
+	[kNextIdleHandle]: number;
+}
+
 export class Window extends EventTarget {
 	readonly document: Document;
-	declare [kNavigator]: Navigator | undefined;
-	declare [kWindowLocation]: Location | undefined;
-	declare [kClosed]: boolean;
-	declare [kHistory]: globalThis.History;
-	declare [kLocalStorage]: Storage;
-	declare [kSessionStorage]: Storage;
-	declare [kScreenInfo]: globalThis.Screen;
-	declare [kWindowName]: string;
-	declare [kWindowStatus]: string;
-	declare [kIdleTimers]: Map<number, ReturnType<typeof setTimeout>>;
-	declare [kNextIdleHandle]: number;
 	constructor(document: Document) {
 		super();
 		this.document = document;

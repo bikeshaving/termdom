@@ -3475,33 +3475,35 @@ const kSync = Symbol("sync");
 // serializes through setAttribute, so attribute invalidation fires
 // either way, and an attribute write reparses on the next read, detected
 // by the text differing from what this object last serialized.
-class CSSStyleDeclaration {
-	[index: number]: string;
-	declare [kElement]: Element | null;
-	declare [kParentRule]: CSSRule | null;
-	declare [kOnChange]: (() => void) | null;
+interface CSSStyleDeclaration {
+	[kElement]: Element | null;
+	[kParentRule]: CSSRule | null;
+	[kOnChange]: (() => void) | null;
 
 	// The at-rule whose descriptors this block holds, or empty for a block
 	// of CSS properties. Only an at-rule's own grammar can validate its
 	// descriptors.
-	declare [kDescriptors]: string;
+	[kDescriptors]: string;
 
-	declare [kKeyframe]: boolean;
-	declare [kDeclarations]: CSSDeclaration[];
+	[kKeyframe]: boolean;
+	[kDeclarations]: CSSDeclaration[];
 
 	// `all` expands to every longhand there is, and a scan per lookup would
 	// make serializing such a block cubic in its size.
-	declare [kByName]: Map<string, CSSDeclaration>;
+	[kByName]: Map<string, CSSDeclaration>;
 
 	// The `style` attribute text this object last serialized or parsed.
-	declare [kAttributeText]: string | null;
+	[kAttributeText]: string | null;
 
 	// The declarations expanded to longhands for the cascade.
-	declare [kBlock]: DeclarationBlock | null;
+	[kBlock]: DeclarationBlock | null;
 
 	// How many numeric index properties currently name a declaration.
-	declare [kIndexed]: number;
+	[kIndexed]: number;
+}
 
+class CSSStyleDeclaration {
+	[index: number]: string;
 	constructor(
 		owner: {
 			element?: Element;
@@ -4455,13 +4457,15 @@ function splitMediaQueryList(text: string): string[] {
 
 const kMedia = Symbol("media");
 
+export interface MediaList {
+	// Mutated in place, so a list an author holds stays current.
+	[kMedia]: string[];
+	[kOnChange]: (() => void) | null;
+}
+
 /** The media queries a sheet or an `@media` rule applies under. */
 export class MediaList implements globalThis.MediaList {
 	[index: number]: string;
-
-	// Mutated in place, so a list an author holds stays current.
-	declare [kMedia]: string[];
-	declare [kOnChange]: (() => void) | null;
 
 	constructor(mediaText = "", onChange?: () => void) {
 		this[kMedia] = [];
@@ -4561,6 +4565,10 @@ function detachRule(rule: CSSRule): void {
 	}
 }
 
+interface CSSRule {
+	[kParentRule]: CSSRule | null;
+}
+
 abstract class CSSRule {
 	static readonly STYLE_RULE = RULE_TYPES.STYLE_RULE;
 	static readonly CHARSET_RULE = RULE_TYPES.CHARSET_RULE;
@@ -4575,8 +4583,6 @@ abstract class CSSRule {
 	static readonly SUPPORTS_RULE = RULE_TYPES.SUPPORTS_RULE;
 	static readonly FONT_FEATURE_VALUES_RULE =
 		RULE_TYPES.FONT_FEATURE_VALUES_RULE;
-
-	declare [kParentRule]: CSSRule | null;
 
 	constructor(
 		parentStyleSheet: CSSStyleSheet | null,
@@ -4612,10 +4618,12 @@ function notifyRule(rule: CSSRule): void {
 const kRuleList = Symbol("ruleList");
 const kRules = Symbol("rules");
 
-abstract class CSSGroupingRule extends CSSRule {
-	declare [kRules]: CSSRule[];
-	declare [kRuleList]: CSSRuleList;
+interface CSSGroupingRule {
+	[kRules]: CSSRule[];
+	[kRuleList]: CSSRuleList;
+}
 
+abstract class CSSGroupingRule extends CSSRule {
 	constructor(
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
@@ -4716,11 +4724,13 @@ function assignDeclarations(
 	flushStyleAttribute(block);
 }
 
-class CSSStyleRule extends CSSGroupingRule {
-	declare [kSelectors]: SelectorNode;
-	declare [kSelectorText]: string | null;
-	declare [kStyle]: CSSStyleDeclaration;
+interface CSSStyleRule {
+	[kSelectors]: SelectorNode;
+	[kSelectorText]: string | null;
+	[kStyle]: CSSStyleDeclaration;
+}
 
+class CSSStyleRule extends CSSGroupingRule {
 	constructor(
 		selectors: SelectorNode,
 		block: string | readonly CSSDeclaration[],
@@ -4862,9 +4872,11 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 	DESCRIPTOR_BLOCKS.set(atRule, block);
 }
 
-abstract class CSSDeclarationBlockRule extends CSSRule {
-	declare [kStyle]: CSSStyleDeclaration;
+interface CSSDeclarationBlockRule {
+	[kStyle]: CSSStyleDeclaration;
+}
 
+abstract class CSSDeclarationBlockRule extends CSSRule {
 	constructor(
 		block: string | readonly CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
@@ -4924,12 +4936,14 @@ class CSSFontFaceRule extends CSSDeclarationBlockRule {
 	}
 }
 
+interface CSSPageRule {
+	[kSelectorText]: string;
+}
+
 /** `@page`: the page selector and its descriptors. */
 class CSSPageRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
 	static readonly atRule = "@page";
-
-	declare [kSelectorText]: string;
 
 	constructor(
 		selectorText: string,
@@ -4987,6 +5001,10 @@ function serializePageSelector(selector: string): string {
 
 const kName = Symbol("name");
 
+interface CSSNamedDeclarationRule {
+	[kName]: string;
+}
+
 /**
  * A named at-rule with a descriptor block: `@counter-style x { ... }` and
  * similar. The name is the prelude and the block holds the declarations.
@@ -4994,8 +5012,6 @@ const kName = Symbol("name");
 class CSSNamedDeclarationRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
 	static readonly atRule: string = "";
-
-	declare [kName]: string;
 
 	constructor(
 		name: string,
@@ -5079,10 +5095,12 @@ class CSSFontPaletteValuesRule extends CSSNamedDeclarationRule {
 
 const kKeyText = Symbol("keyText");
 
+interface CSSKeyframeRule {
+	[kKeyText]: string;
+}
+
 /** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
 class CSSKeyframeRule extends CSSDeclarationBlockRule {
-	declare [kKeyText]: string;
-
 	constructor(
 		keyText: string,
 		block: string | readonly CSSDeclaration[],
@@ -5168,10 +5186,12 @@ function serializeKeyText(text: string): string {
 	return keys.join(", ");
 }
 
+interface CSSMediaRule {
+	[kMedia]: MediaList;
+}
+
 /** `@media`: the rules that apply when the viewport matches. */
 class CSSMediaRule extends CSSConditionRule {
-	declare [kMedia]: MediaList;
-
 	constructor(
 		mediaText: string,
 		parentStyleSheet: CSSStyleSheet | null,
@@ -5207,10 +5227,12 @@ class CSSMediaRule extends CSSConditionRule {
 
 const kConditionText = Symbol("conditionText");
 
+interface CSSTextConditionRule {
+	[kConditionText]: string;
+}
+
 /** A grouping rule whose condition this engine keeps as authored text. */
 abstract class CSSTextConditionRule extends CSSConditionRule {
-	declare [kConditionText]: string;
-
 	constructor(
 		conditionText: string,
 		parentStyleSheet: CSSStyleSheet | null,
@@ -5254,11 +5276,13 @@ interface ContainerPreludeNode {
 const kContainerName = Symbol("containerName");
 const kContainerQuery = Symbol("containerQuery");
 
+interface CSSContainerRule {
+	[kContainerName]: string;
+	[kContainerQuery]: string;
+}
+
 /** `@container`: parsed, with no container query engine behind it. */
 class CSSContainerRule extends CSSTextConditionRule {
-	declare [kContainerName]: string;
-	declare [kContainerQuery]: string;
-
 	constructor(
 		conditionText: string,
 		parentStyleSheet: CSSStyleSheet | null,
@@ -5326,12 +5350,14 @@ const kPrelude = Symbol("prelude");
 const kScopeStart = Symbol("scopeStart");
 const kScopeEnd = Symbol("scopeEnd");
 
+interface CSSScopeRule {
+	[kPrelude]: string;
+	[kScopeStart]: string | null;
+	[kScopeEnd]: string | null;
+}
+
 /** `@scope`: parsed, and its rules apply unscoped. */
 class CSSScopeRule extends CSSGroupingRule {
-	declare [kPrelude]: string;
-	declare [kScopeStart]: string | null;
-	declare [kScopeEnd]: string | null;
-
 	constructor(
 		prelude: string,
 		parentStyleSheet: CSSStyleSheet | null,
@@ -5403,10 +5429,12 @@ class CSSStartingStyleRule extends CSSGroupingRule {
 	}
 }
 
+interface CSSLayerBlockRule {
+	[kName]: string;
+}
+
 /** `@layer name { ... }`: its rules cascade in source order. */
 class CSSLayerBlockRule extends CSSGroupingRule {
-	declare [kName]: string;
-
 	constructor(
 		name: string,
 		parentStyleSheet: CSSStyleSheet | null,
@@ -5433,10 +5461,12 @@ class CSSLayerBlockRule extends CSSGroupingRule {
 
 const kNames = Symbol("names");
 
+interface CSSLayerStatementRule {
+	[kNames]: string[];
+}
+
 /** `@layer a, b;`: the layer order, declared without a block. */
 class CSSLayerStatementRule extends CSSRule {
-	declare [kNames]: string[];
-
 	constructor(
 		names: readonly string[],
 		parentStyleSheet: CSSStyleSheet | null,
@@ -5462,11 +5492,13 @@ class CSSLayerStatementRule extends CSSRule {
 const kPrefix = Symbol("prefix");
 const kNamespaceURI = Symbol("namespaceURI");
 
+interface CSSNamespaceRule {
+	[kPrefix]: string;
+	[kNamespaceURI]: string;
+}
+
 /** `@namespace`: a prefix bound to a namespace URI. */
 class CSSNamespaceRule extends CSSRule {
-	declare [kPrefix]: string;
-	declare [kNamespaceURI]: string;
-
 	constructor(
 		prefix: string,
 		namespaceURI: string,
@@ -5501,12 +5533,14 @@ const kSupportsText = Symbol("supportsText");
 
 // There is no network behind a terminal document. Nothing is fetched,
 // the rule declares nothing, and its styleSheet is null.
-class CSSImportRule extends CSSRule {
-	declare [kHref]: string;
-	declare [kMedia]: MediaList;
-	declare [kLayerName]: string | null;
-	declare [kSupportsText]: string | null;
+interface CSSImportRule {
+	[kHref]: string;
+	[kMedia]: MediaList;
+	[kLayerName]: string | null;
+	[kSupportsText]: string | null;
+}
 
+class CSSImportRule extends CSSRule {
 	constructor(
 		href: string,
 		mediaText: string,
@@ -5569,11 +5603,13 @@ class CSSImportRule extends CSSRule {
 const kFontFamily = Symbol("fontFamily");
 const kBlocks = Symbol("blocks");
 
+interface CSSFontFeatureValuesRule {
+	[kFontFamily]: string;
+	[kBlocks]: Map<string, CSSStyleDeclaration>;
+}
+
 /** `@font-feature-values`: a font family and the feature blocks it names. */
 class CSSFontFeatureValuesRule extends CSSRule {
-	declare [kFontFamily]: string;
-	declare [kBlocks]: Map<string, CSSStyleDeclaration>;
-
 	constructor(
 		fontFamily: string,
 		node: ParsedNode,
@@ -5662,12 +5698,14 @@ function getFeatureBlock(
 	return block;
 }
 
+interface CSSKeyframesRule {
+	[kName]: string;
+	[kRules]: CSSRule[];
+	[kRuleList]: CSSRuleList;
+}
+
 /** `@keyframes`: its name and the keyframes it holds. */
 class CSSKeyframesRule extends CSSRule {
-	declare [kName]: string;
-	declare [kRules]: CSSRule[];
-	declare [kRuleList]: CSSRuleList;
-
 	constructor(
 		name: string,
 		parentStyleSheet: CSSStyleSheet | null,
@@ -5758,10 +5796,12 @@ class CSSKeyframesRule extends CSSRule {
 	}
 }
 
+interface CSSRuleList {
+	[kRules]: readonly CSSRule[];
+}
+
 /** The rules of a stylesheet or a grouping rule. */
 class CSSRuleList {
-	declare [kRules]: readonly CSSRule[];
-
 	constructor(rules: readonly CSSRule[]) {
 		this[kRules] = rules;
 	}
@@ -5787,10 +5827,12 @@ function createRuleList(rules: readonly CSSRule[]): CSSRuleList {
 
 const kSheets = Symbol("sheets");
 
+interface StyleSheetList {
+	[kSheets]: readonly CSSStyleSheet[];
+}
+
 /** The stylesheets of a document or a shadow root. */
 class StyleSheetList {
-	declare [kSheets]: readonly CSSStyleSheet[];
-
 	constructor(sheets: readonly CSSStyleSheet[]) {
 		this[kSheets] = sheets;
 	}
@@ -5821,20 +5863,22 @@ const constructedSheets = new WeakSet<CSSStyleSheet>();
 // The rules belong to this object. The cascade reads them rather than
 // re-parsing text, so every mutation path reaches the render through the
 // same invalidation a `<style>` text change does.
-class CSSStyleSheet {
-	declare [kRules]: CSSRule[];
-	declare [kRuleList]: CSSRuleList;
-	declare [kMedia]: MediaList;
-	declare [kOwnerNode]: Element | null;
-	declare [kOwnerRule]: CSSRule | null;
-	declare [kConstructed]: boolean;
-	declare [kDisabled]: boolean;
-	declare [kHref]: string | null;
-	declare [kTitle]: string | null;
+interface CSSStyleSheet {
+	[kRules]: CSSRule[];
+	[kRuleList]: CSSRuleList;
+	[kMedia]: MediaList;
+	[kOwnerNode]: Element | null;
+	[kOwnerRule]: CSSRule | null;
+	[kConstructed]: boolean;
+	[kDisabled]: boolean;
+	[kHref]: string | null;
+	[kTitle]: string | null;
 
 	// The owner node's text this sheet last parsed.
-	declare [kText]: string | null;
+	[kText]: string | null;
+}
 
+class CSSStyleSheet {
 	// A sheet with an owner element is one the document parsed:
 	// replace(Sync) is refused on it, and its rules follow the element's
 	// text. The exposed constructor takes options only, so authors can only
@@ -7575,22 +7619,24 @@ const kMatchingRules = Symbol("matchingRules");
 
 // LIVE: the object an author holds stays valid across class changes and
 // sheet replacements, because it re-resolves rather than being replaced.
-class ComputedStyleDeclaration extends CSSStyleProperties {
-	declare [kElement]: Element;
-	declare [kCSSRules]: ParsedCSSRule[];
+interface ComputedStyleDeclaration {
+	[kElement]: Element;
+	[kCSSRules]: ParsedCSSRule[];
 
-	declare [kCascade]: Cascade | null;
-	declare [kInlineBlock]: DeclarationBlock | null;
+	[kCascade]: Cascade | null;
+	[kInlineBlock]: DeclarationBlock | null;
 
 	// Computed strings, memoized once per property per resolution, ""
 	// results included. An inherited property re-resolved on every read
 	// would re-walk the whole ancestor chain, thousands of times per
 	// keystroke. The declaration is discarded wholesale on invalidation, so
 	// the memo needs no invalidation of its own.
-	declare [kResolved]: Map<string, string>;
+	[kResolved]: Map<string, string>;
 
-	declare [kCustom]: string[] | null;
+	[kCustom]: string[] | null;
+}
 
+class ComputedStyleDeclaration extends CSSStyleProperties {
 	constructor(
 		element: Element,
 		cssRules: ParsedCSSRule[] = [],
@@ -8562,20 +8608,23 @@ const kContentBox = Symbol("contentBox");
 // A flat declaration set: the matched rules plus what the
 // pseudo-element inherits from its originating element. LIVE, for the
 // same reason an element's declaration is.
-class PseudoStyleDeclaration extends CSSStyleProperties {
-	declare [kPseudoDeclarations]: Record<string, string>;
-	declare [kResolved]: Map<string, string>;
+interface PseudoStyleDeclaration {
+	[kPseudoDeclarations]: Record<string, string>;
+	[kResolved]: Map<string, string>;
 
 	// Absent on the engine's own reads (the ::selection and ::marker
 	// painters), which want the cascade's declarations and never a used
 	// value. Their declarations are passed in whole and are not the
 	// cascade's to recompute.
-	declare [kElement]: Element | null;
-	declare [kPseudoElement]: string;
-	declare [kCascade]: Cascade | null;
+	[kElement]: Element | null;
+	[kPseudoElement]: string;
+	[kCascade]: Cascade | null;
 
-	declare [kNodeResolved]: Map<string, string>;
-	declare [kBoxView]: MeasuredDeclaration | null;
+	[kNodeResolved]: Map<string, string>;
+	[kBoxView]: MeasuredDeclaration | null;
+}
+
+class PseudoStyleDeclaration extends CSSStyleProperties {
 	constructor(
 		declarations: Record<string, string>,
 		element?: Element,
@@ -8817,9 +8866,11 @@ function getBoxView(
 
 // A declaration of nothing, which CSSOM specifies for a bad pseudo
 // argument.
-class EmptyStyleDeclaration extends CSSStyleProperties {
-	declare [kElement]: Element | null;
+interface EmptyStyleDeclaration {
+	[kElement]: Element | null;
+}
 
+class EmptyStyleDeclaration extends CSSStyleProperties {
 	constructor(element?: Element) {
 		super();
 		this[kElement] = element ?? null;
@@ -9399,84 +9450,84 @@ const kTransitionTimer = Symbol("transitionTimer");
 const kTransitionEvents = Symbol("transitionEvents");
 const kTransitionFlushQueued = Symbol("transitionFlushQueued");
 
-export class Cascade {
-	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
+export interface Cascade {
+	[kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
 
 	// Every declaration resolved against the current cascade. Dropping one, or
 	// replacing the set, sends it back through kSyncResolved on its next read.
 	// Weak, so a declaration nobody holds costs nothing.
-	declare [kCurrentDeclarations]: WeakSet<object>;
+	[kCurrentDeclarations]: WeakSet<object>;
 
 	// Nothing else tracks a shadow tree's sheets, so a parse walks these.
-	declare [kShadowRoots]: Set<ShadowRoot>;
-	declare [kPseudoElementStyleCache]: WeakMap<
+	[kShadowRoots]: Set<ShadowRoot>;
+	[kPseudoElementStyleCache]: WeakMap<
 		Element,
 		Map<string, PseudoStyleDeclaration>
 	>;
 
-	declare [kParsedRules]: ParsedCSSRule[];
-	declare [kStylesheetsDirty]: boolean;
-	declare [kParsing]: boolean;
+	[kParsedRules]: ParsedCSSRule[];
+	[kStylesheetsDirty]: boolean;
+	[kParsing]: boolean;
 	// Every element holding a pseudo-element node, so a sheet change
 	// reconsiders them without walking the document.
-	declare [kPseudoHosts]: Set<Element>;
+	[kPseudoHosts]: Set<Element>;
 
 	// Whether any parsed selector can reach OUTSIDE a mutated element's
 	// subtree. Sibling combinators reach following siblings, and :has()
 	// reaches ancestors. The string tests are deliberately loose. A false
 	// positive only widens the rebuild.
-	declare [kSelectorsReachSiblings]: boolean;
-	declare [kSelectorsReachAncestors]: boolean;
+	[kSelectorsReachSiblings]: boolean;
+	[kSelectorsReachAncestors]: boolean;
 
 	// The keys whose change can affect an element's DESCENDANTS: those a
 	// selector tests left of a combinator (`.editing .view`), and those on
 	// rules declaring an inherited property. Collected loosely. A false
 	// positive only widens the invalidation.
-	declare [kReachingClasses]: Set<string>;
+	[kReachingClasses]: Set<string>;
 	// Every property a rule declares, by each class, id and attribute its
 	// selector tests, as `.name`, `#name` and `[name]`. A change to a key
 	// whose properties are all paint decides nothing layout reads.
-	declare [kKeyProperties]: Map<string, Set<string>>;
-	declare [kReachingIds]: Set<string>;
-	declare [kReachingAttributes]: Set<string>;
+	[kKeyProperties]: Map<string, Set<string>>;
+	[kReachingIds]: Set<string>;
+	[kReachingAttributes]: Set<string>;
 
 	// Whether any of those keys is a STATE pseudo-class (`:checked ~`),
 	// which is driven by attributes not in the sets above. While this is
 	// set, a change to any of STATE_ATTRIBUTES invalidates widely.
-	declare [kReachingStates]: boolean;
+	[kReachingStates]: boolean;
 
 	// Rule-existence gates. Attaching pseudo-elements and initializing
 	// counters both build full computed-style declarations per element per
 	// mutation. A document with no such rules must not pay that, and these
 	// let the hot paths decide "could any rule apply" with a few matches()
 	// calls.
-	declare [kPseudoRulesByType]: Map<string, ParsedCSSRule[]>;
-	declare [kCounterRulesExist]: boolean;
-	declare [kListItemRulesExist]: boolean;
+	[kPseudoRulesByType]: Map<string, ParsedCSSRule[]>;
+	[kCounterRulesExist]: boolean;
+	[kListItemRulesExist]: boolean;
 
 	// Whether any rule is scoped, which is what adds proximity to the sort.
-	declare [kScopedRulesExist]: boolean;
-	declare [kHasRulesExist]: boolean;
+	[kScopedRulesExist]: boolean;
+	[kHasRulesExist]: boolean;
 
 	// The engine reads this to decide whether the terminal must report
 	// pointer motion. A sheet that never tests :hover cannot show it, and
 	// motion reporting has a per-cell cost.
-	declare [kHoverRulesExist]: boolean;
+	[kHoverRulesExist]: boolean;
 
 	// -1 means never parsed. A changed count re-parses on the next style
 	// computation, which lets a sheet appended right before the first paint
 	// apply with no MutationObserver attached.
-	declare [kParsedStyleSheetCount]: number;
+	[kParsedStyleSheetCount]: number;
 
-	declare [kCounterScopes]: WeakMap<Element, CounterScope>;
+	[kCounterScopes]: WeakMap<Element, CounterScope>;
 
 	// The transition gate is STICKY. It opens the first time anything
 	// declares a transition and never closes, so a document with none pays
 	// two checks per style change event. Snapshots live in a WeakMap. Only
 	// elements with RUNNING transitions are in the strong map the tick
 	// iterates.
-	declare [kTransitionsExist]: boolean;
-	declare [kTransitionSnapshots]: WeakMap<
+	[kTransitionsExist]: boolean;
+	[kTransitionSnapshots]: WeakMap<
 		Element,
 		Map<string, Map<string, string>>
 	>;
@@ -9486,50 +9537,52 @@ export class Cascade {
 	// the case the snapshot cannot cover. These are the original maps, not
 	// copies. The declaration replacing its memo is what makes the old map
 	// safe to hold.
-	declare [kTransitionFallback]: WeakMap<
+	[kTransitionFallback]: WeakMap<
 		Element,
 		Map<string, Map<string, string>>
 	>;
 
-	declare [kActiveTransitions]: Map<
+	[kActiveTransitions]: Map<
 		Element,
 		Map<string, Map<string, RunningTransition>>
 	>;
 
 	// The timeline instant a frame's reads interpolate against.
-	declare [kTransitionClock]: number;
-	declare [kTransitionTimer]: ReturnType<typeof setTimeout> | null;
-	declare [kTransitionEvents]: QueuedTransitionEvent[];
-	declare [kTransitionFlushQueued]: boolean;
+	[kTransitionClock]: number;
+	[kTransitionTimer]: ReturnType<typeof setTimeout> | null;
+	[kTransitionEvents]: QueuedTransitionEvent[];
+	[kTransitionFlushQueued]: boolean;
 
 	// Fixed for the window's lifetime, so held directly.
-	declare [kDocument]: Document;
-	declare [kWindow]: Window;
-	declare [kLayout]: Layout;
+	[kDocument]: Document;
+	[kWindow]: Window;
+	[kLayout]: Layout;
 
-	declare [kFlushing]: boolean;
+	[kFlushing]: boolean;
 
 	// The used values measured behind the last flush, held here rather
 	// than on the declarations so a cascade rebuild drops them all at once.
-	declare [kUsedValues]: WeakMap<object, Map<string, string>>;
+	[kUsedValues]: WeakMap<object, Map<string, string>>;
 
 	// Set by the layout engine when geometry changed under the used values.
-	declare [kUsedStale]: boolean;
+	[kUsedStale]: boolean;
 
 	// Every cascade layer, in the order its name was first declared. A
 	// nested layer's path is dot-joined, the name `@layer a.b` writes for
 	// itself.
-	declare [kLayerPaths]: string[];
-	declare [kAnonymousLayers]: number;
+	[kLayerPaths]: string[];
+	[kAnonymousLayers]: number;
 
 	// Where an unlayered rule sorts: after every layer, and so above them.
-	declare [kUnlayeredRank]: number;
+	[kUnlayeredRank]: number;
 
 	// The element types a pseudo rule originates on, uppercased. Null when
 	// a rule reaches any type, as a counter rule does through the scope
 	// chain.
-	declare [kPseudoSubjectTags]: Set<string> | null | undefined;
+	[kPseudoSubjectTags]: Set<string> | null | undefined;
+}
 
+export class Cascade {
 	constructor(window: Window, layout: Layout) {
 		this[kComputedStyleCache] = new WeakMap<
 			Element,

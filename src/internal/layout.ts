@@ -9979,38 +9979,38 @@ function layoutRect(engine: Layout, element: Element): DOMRect | null {
 	return element.isConnected ? engine.getRect(element) : null;
 }
 
-export class Layout {
-	declare [kDOMRect]: typeof DOMRect;
-	declare [kRootElement]: Element;
-	declare [kWindow]: Window;
+export interface Layout {
+	[kDOMRect]: typeof DOMRect;
+	[kRootElement]: Element;
+	[kWindow]: Window;
 
 	// The terminal-sized root every box hangs from. It has no DOM node.
-	declare [kInitialContainingBlock]: LayoutNode;
+	[kInitialContainingBlock]: LayoutNode;
 
 	// Not every node has one. A run member is measured by the run around
 	// it and owns none, which is what getOwnLayoutNode checks.
-	declare [kNodeMap]: Map<Node, LayoutNode>;
+	[kNodeMap]: Map<Node, LayoutNode>;
 
-	declare [kInvalidatedNodes]: Set<Node>;
+	[kInvalidatedNodes]: Set<Node>;
 
 	// A SUPERSET hint. An element whose position went static without a
 	// restyle reaching its node is still listed, so every reader checks
 	// isPositioned too and uses the set only for the enumeration it saves.
 	// The paint side's grouping is O(positioned), never O(document).
-	declare [kPositionedElements]: Set<Element>;
+	[kPositionedElements]: Set<Element>;
 
 	// Re-measured on resize. What they returned was for another width.
-	declare [kMeasureNodes]: Set<LayoutNode>;
+	[kMeasureNodes]: Set<LayoutNode>;
 
 	// The terminal reorders bidirectional text itself (negotiateBidi), so
 	// lines stay logical. One reordering is correct and two is backwards
 	// again.
-	declare [kTerminalReordersText]: boolean;
+	[kTerminalReordersText]: boolean;
 
 	// Each text node's last rendering, keyed by the data and white-space it
 	// was rendered under. One run is broken once per width the sizing pass
 	// tries, and the rendering is the same every time.
-	declare [kRenderedLeaves]: WeakMap<Text, {
+	[kRenderedLeaves]: WeakMap<Text, {
 		key: string;
 		text: string;
 		offsets: Int32Array | null;
@@ -10019,41 +10019,43 @@ export class Layout {
 	// Per break result, each text node's placed fragments in segment order.
 	// Keyed on the break result object. Re-breaking builds a fresh object,
 	// so entries can never go stale.
-	declare [kRectTextIndices]: WeakMap<object, Map<Text, TextFragmentEntry[]>>;
+	[kRectTextIndices]: WeakMap<object, Map<Text, TextFragmentEntry[]>>;
 
 	// The identity a derivation syncs against. A container rebuilt
 	// around a node finds the box the node already had, with its layout
 	// node and fragments.
-	declare [kBoxes]: WeakMap<Node, Box>;
+	[kBoxes]: WeakMap<Node, Box>;
 
 	// The reverse of Box.layoutNode, and the registry the sweeps that must
 	// reach every box (resize, pruning, disposal) walk. Strong, because
 	// boxes a re-derivation drops must still be dropped.
-	declare [kAnonymousBoxes]: Map<LayoutNode, Box>;
+	[kAnonymousBoxes]: Map<LayoutNode, Box>;
 
 	// Containers whose enumeration still describes their children. A
 	// mutation drops the ones it disturbs, so flipping a class on one row
 	// of a long list re-enumerates that row and not the boxes around it. An
 	// unbounded change drops the set. Weak, because a container listed here
 	// may be the last thing holding a removed subtree.
-	declare [kDerivedContainers]: WeakSet<Element>;
+	[kDerivedContainers]: WeakSet<Element>;
 
 	// Containers whose box list may not match their layout children.
 	// Reconciled once per pass however many mutations dirtied them.
-	declare [kDirtyRunContainers]: Set<Element>;
+	[kDirtyRunContainers]: Set<Element>;
 
 	// Collected rather than acted on. The cascade announces these
 	// mid-invalidation, while descendants still hold the styles they are
 	// about to lose, and every question layout would ask is about styles
 	// that have not finished arriving.
-	declare [kRestyled]: Set<Element>;
+	[kRestyled]: Set<Element>;
 
 	// Geometry moved since the last painted frame.
-	declare [kMoved]: boolean;
+	[kMoved]: boolean;
 	// Counts layout passes, so a node styled in this pass is not styled
 	// again when a container re-adds it.
-	declare [kPass]: number;
+	[kPass]: number;
+}
 
+export class Layout {
 	constructor(window: Window, width: number, height: number) {
 		this[kMoved] = false;
 		this[kPass] = 0;

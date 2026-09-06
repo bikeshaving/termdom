@@ -215,20 +215,22 @@ const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
 
-/** Reads the DOM, styles and geometry. Writes only into the CellContext. */
-export class Painter {
-	declare [kWindow]: Window;
-	declare [kDocument]: Document;
-	declare [kLayout]: Layout;
-	declare [kCascade]: Cascade;
-	declare [kScreen]: Screen;
-	declare [kTopLayer]: Set<Element>;
+export interface Painter {
+	[kWindow]: Window;
+	[kDocument]: Document;
+	[kLayout]: Layout;
+	[kCascade]: Cascade;
+	[kScreen]: Screen;
+	[kTopLayer]: Set<Element>;
 	// Each list marker paints at most once per frame.
-	declare [kRenderedOutsideMarkers]: WeakSet<Element>;
+	[kRenderedOutsideMarkers]: WeakSet<Element>;
 	// Paint extents are cached in unscrolled rows. A scrolled subtree
 	// paints this many rows higher, so culling shifts the viewport instead.
-	declare [kScrolledRows]: number;
+	[kScrolledRows]: number;
+}
 
+/** Reads the DOM, styles and geometry. Writes only into the CellContext. */
+export class Painter {
 	constructor(
 		document: Document,
 		layout: Layout,

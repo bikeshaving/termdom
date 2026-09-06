@@ -105,11 +105,13 @@ function getUnderlineCodes(style: UnderlineStyle): string[] {
 const kOut = Symbol("out");
 const kColorDepth = Symbol("colorDepth");
 
+interface FrameWriter {
+	[kColorDepth]: ColorDepth;
+
+	[kOut]: string[];
+}
+
 class FrameWriter {
-	declare [kColorDepth]: ColorDepth;
-
-	declare [kOut]: string[];
-
 	constructor(colorDepth: ColorDepth) {
 		this[kColorDepth] = colorDepth;
 		this[kOut] = [];
@@ -1724,38 +1726,40 @@ const kDirty = Symbol("dirty");
 const kDocumentTop = Symbol("documentTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
 
-export class Screen {
-	declare [kPrev]: CellGrid | null;
+export interface Screen {
+	[kPrev]: CellGrid | null;
 	// The dropped grid, reused by the next frame of the same size.
-	declare [kSpare]: CellGrid | null;
-	declare [kDiff]: CellGrid | null;
-	declare [kEndFrame]: (() => string) | null;
-	declare [kRenderedLines]: Set<number>;
-	declare [kPrevContentHeight]: number;
+	[kSpare]: CellGrid | null;
+	[kDiff]: CellGrid | null;
+	[kEndFrame]: (() => string) | null;
+	[kRenderedLines]: Set<number>;
+	[kPrevContentHeight]: number;
 	// Where the last frame parked the cursor, in buffer coordinates. The
 	// resize re-anchor derives the frame's new top row from the cursor's
 	// post-rewrap position minus the wrapped rows above this park point.
-	declare [kPark]: {row: number; col: number};
-	declare [kLastCaretVisible]: boolean;
-	declare [kHasSavedCursor]: boolean;
-	declare [kNeedsFullClear]: boolean;
-	declare [kNeedsScreenReset]: boolean;
+	[kPark]: {row: number; col: number};
+	[kLastCaretVisible]: boolean;
+	[kHasSavedCursor]: boolean;
+	[kNeedsFullClear]: boolean;
+	[kNeedsScreenReset]: boolean;
 	// Probes are waiting. The next flush re-emits the first contentful row
 	// as their cover even if nothing changed.
-	declare [kFlushProbes]: boolean;
+	[kFlushProbes]: boolean;
 	// Null for a headless render.
-	declare [kMeasurer]: Exchange | null;
-	declare [kResetAtRow]: number;
-	declare [kRows]: number;
-	declare [kCols]: number;
+	[kMeasurer]: Exchange | null;
+	[kResetAtRow]: number;
+	[kRows]: number;
+	[kCols]: number;
 	// The fullscreen anchor: the alternate screen's row-zero scroll origin.
-	declare [kScrollTop]: number;
-	declare [kDocumentTop]: number;
-	declare [kAnchorScrollTop]: number;
-	declare [kWriter]: FrameWriter;
-	declare [kFrameScroll]: number;
-	declare [kDirty]: boolean;
+	[kScrollTop]: number;
+	[kDocumentTop]: number;
+	[kAnchorScrollTop]: number;
+	[kWriter]: FrameWriter;
+	[kFrameScroll]: number;
+	[kDirty]: boolean;
+}
 
+export class Screen {
 	constructor(
 		rows: number,
 		cols: number,

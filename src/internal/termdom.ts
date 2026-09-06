@@ -50,42 +50,45 @@ const kAttachBegun = Symbol("attachBegun");
 type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
 const kLifecycle = Symbol("lifecycle");
 
+export interface TermDOM {
+	[kScreen]: Screen;
+	[kLayout]: Layout;
+	[kCascade]: Cascade;
+	[kPainter]: Painter;
+	// document.close() sealed the document into the scrollback. The next
+	// mutation starts a fresh one below it.
+	[kSealed]: boolean;
+	[kRenderQueued]: boolean;
+	// Which screen frames land on. Switched at the start of a frame when
+	// the document's fullscreen state disagrees.
+	[kOnAlternateScreen]: boolean;
+	// The running render loop. A render() during it queues a trailing
+	// frame rather than starting another.
+	[kRenderInFlight]: Promise<void> | null;
+	// Timestamps observer entries.
+	[kRenderCount]: number;
+	[kInput]: Input;
+	// Construction never touches the terminal. attach() does, and dispose()
+	// ends the instance for good.
+	[kLifecycle]: Lifecycle;
+	[kMouseReportingEnabled]: boolean;
+	[kHoverReportingEnabled]: boolean;
+	[kTransport]: TerminalTransport;
+	[kExchange]: Exchange;
+	// Resolves once the session is established and the first frame written.
+	[kAttachReady]: Promise<void>;
+	// Resolves once attach()'s begin phase has run. Awaited only while
+	// attaching, because an unconditional await would defer every frame a
+	// microtask, and the scrollTop clamp is synchronous by contract.
+	[kAttachBegun]: Promise<void>;
+	// The engine behind renderANSI and print, rebuilt when the width changes.
+	[kStaticSibling]: TermDOM | null;
+}
+
 export class TermDOM {
 	readonly document: Document;
 	readonly window: Window;
 
-	declare [kScreen]: Screen;
-	declare [kLayout]: Layout;
-	declare [kCascade]: Cascade;
-	declare [kPainter]: Painter;
-	// document.close() sealed the document into the scrollback. The next
-	// mutation starts a fresh one below it.
-	declare [kSealed]: boolean;
-	declare [kRenderQueued]: boolean;
-	// Which screen frames land on. Switched at the start of a frame when
-	// the document's fullscreen state disagrees.
-	declare [kOnAlternateScreen]: boolean;
-	// The running render loop. A render() during it queues a trailing
-	// frame rather than starting another.
-	declare [kRenderInFlight]: Promise<void> | null;
-	// Timestamps observer entries.
-	declare [kRenderCount]: number;
-	declare [kInput]: Input;
-	// Construction never touches the terminal. attach() does, and dispose()
-	// ends the instance for good.
-	declare [kLifecycle]: Lifecycle;
-	declare [kMouseReportingEnabled]: boolean;
-	declare [kHoverReportingEnabled]: boolean;
-	declare [kTransport]: TerminalTransport;
-	declare [kExchange]: Exchange;
-	// Resolves once the session is established and the first frame written.
-	declare [kAttachReady]: Promise<void>;
-	// Resolves once attach()'s begin phase has run. Awaited only while
-	// attaching, because an unconditional await would defer every frame a
-	// microtask, and the scrollTop clamp is synchronous by contract.
-	declare [kAttachBegun]: Promise<void>;
-	// The engine behind renderANSI and print, rebuilt when the width changes.
-	declare [kStaticSibling]: TermDOM | null;
 	constructor(options: TermDOMOptions = {}) {
 		this[kSealed] = false;
 
