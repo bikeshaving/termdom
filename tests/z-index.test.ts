@@ -9,7 +9,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.ts";
+import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 async function renderRows(html: string, cols = 30): Promise<string[]> {

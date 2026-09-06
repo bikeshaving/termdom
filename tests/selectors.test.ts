@@ -9,6 +9,7 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
+import {TermDOM} from "../src/index.ts";
 import {
 	createDocumentWindow,
 	type Document,
@@ -18,7 +19,6 @@ import {
 	setDocumentFocusVisible,
 	setHoveredElement,
 } from "../src/internal/dom.ts";
-import {TermDOM} from "../src/internal/termdom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 function tree(html: string, url = "about:blank"): Document {

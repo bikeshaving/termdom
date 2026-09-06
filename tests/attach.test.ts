@@ -6,7 +6,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.ts";
+import {TermDOM} from "../src/index.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils";
 
 function countWrites(terminal: MockProcess): {count(): number} {

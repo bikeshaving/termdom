@@ -19,12 +19,12 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createContext, runInContext} from "node:vm";
 
+import {TermDOM} from "../src/index.ts";
 import {createDocumentWindow, type Window} from "../src/internal/dom.ts";
 import type {
 	TerminalCloseInfo,
 	TerminalSize,
 } from "../src/internal/exchange.ts";
-import {TermDOM} from "../src/internal/termdom.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");

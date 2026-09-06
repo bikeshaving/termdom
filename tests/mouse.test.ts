@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
+import {TermDOM} from "../src/index.ts";
 import {transportFromProcess} from "../src/internal/exchange.ts";
-import {TermDOM} from "../src/internal/termdom.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 const ENABLE = "\x1b[?1002h\x1b[?1006h";

@@ -15,7 +15,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/internal/termdom.ts";
+import {TermDOM} from "../src/index.ts";
 import {UA_DOCUMENT_STYLES} from "../src/internal/useragent.ts";
 import {MockProcess} from "./test-utils.js";
 

@@ -25,7 +25,7 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import type {Document} from "../src/internal/dom.ts";
 import type * as DOM from "../src/internal/dom.ts";
-import type * as TermDOM from "../src/internal/termdom.ts";
+import type * as TermDOM from "../src/index.ts";
 import type {TerminalTransport} from "../src/internal/exchange.ts";
 
 /**
@@ -53,7 +53,7 @@ let moduleCounter = 0;
 async function freshRealm(): Promise<Realm> {
 	const generation = moduleCounter++;
 	const termdom = (await import(
-		`../src/internal/termdom.ts?wpt=${generation}`,
+		`../src/index.ts?wpt=${generation}`,
 	)) as EngineModule;
 	const dom = (await import(
 		`../src/internal/dom.ts?wpt=${generation}`,

@@ -13,9 +13,9 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
+import {TermDOM} from "../src/index.ts";
 import type {Exchange} from "../src/internal/exchange.ts";
 import {Screen} from "../src/internal/screen.ts";
-import {TermDOM} from "../src/internal/termdom.ts";
 import {getStringWidth, recordClusterAdvance} from "../src/internal/text.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
