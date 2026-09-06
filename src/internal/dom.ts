@@ -4714,7 +4714,21 @@ const kDocumentURL = Symbol("document URL");
 
 /** The node-type constants, installed on the prototype below. */
 export interface Node
-	extends Pick<globalThis.Node, NodeConstants> {}
+	extends Pick<globalThis.Node, NodeConstants> {
+	[kRegistry]: CustomElementRegistry | null;
+	[kParent]: Node | null;
+	[kConnected]: boolean;
+	[kTreeRoot]: Node;
+	[kFirstChild]: Node | null;
+	[kLastChild]: Node | null;
+	[kPrevious]: Node | null;
+	[kNext]: Node | null;
+	[kDocument]: Document;
+	[kChildNodes]: NodeList | null;
+	[kLiveLists]: Set<LiveCollection> | null;
+	[kSerial]: number;
+	[kRegisteredObservers]: RegisteredObserver[] | null;
+}
 
 export class Node extends EventTarget implements globalThis.Node {
 	static readonly ELEMENT_NODE = ELEMENT_NODE;
@@ -4740,20 +4754,6 @@ export class Node extends EventTarget implements globalThis.Node {
 
 	static readonly DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC =
 		DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC;
-
-	[kRegistry]: CustomElementRegistry | null;
-	[kParent]: Node | null;
-	[kConnected]: boolean;
-	[kTreeRoot]: Node;
-	[kFirstChild]: Node | null;
-	[kLastChild]: Node | null;
-	[kPrevious]: Node | null;
-	[kNext]: Node | null;
-	[kDocument]: Document;
-	[kChildNodes]: NodeList | null;
-	[kLiveLists]: Set<LiveCollection> | null;
-	[kSerial]: number;
-	[kRegisteredObservers]: RegisteredObserver[] | null;
 
 	constructor() {
 		super();
@@ -7549,11 +7549,11 @@ function validateTokens(tokens: string[]): void {
 interface CharacterData
 	extends Pick<globalThis.CharacterData, ChildNodeMixin> {
 	get ownerDocument(): Document;
+
+	[kData]: string;
 }
 
 class CharacterData extends Node implements globalThis.CharacterData {
-	[kData]: string;
-
 	constructor(data: string) {
 		super();
 		this[kData] = data;
@@ -7688,10 +7688,12 @@ function queueCharacterDataMutationRecord(
 
 const kManualSlot = Symbol("manual slot assignment");
 
-export class Text extends CharacterData implements globalThis.Text {
+export interface Text {
 	[kAssignedSlot]: HTMLSlotElement | null;
 	[kManualSlot]: HTMLSlotElement | null;
+}
 
+export class Text extends CharacterData implements globalThis.Text {
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
 		this[kAssignedSlot] = null;
@@ -7820,11 +7822,11 @@ Object.defineProperty(Comment.prototype, Symbol.toStringTag, {
 
 interface ProcessingInstruction {
 	get ownerDocument(): Document;
+
+	[kTarget]: string;
 }
 
 class ProcessingInstruction extends CharacterData {
-	[kTarget]: string;
-
 	constructor(target: string, data: string) {
 		super(data);
 		this[kTarget] = target;
@@ -7870,13 +7872,13 @@ interface DocumentType
 	get ownerDocument(): Document;
 
 	get textContent(): null;
-}
 
-class DocumentType extends Node {
 	[kName]: string;
 	[kPublicId]: string;
 	[kSystemId]: string;
+}
 
+class DocumentType extends Node {
 	constructor(name: string, publicId: string, systemId: string) {
 		super();
 		this[kName] = name;
@@ -7923,11 +7925,11 @@ Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
 export interface DocumentFragment
 	extends Pick<globalThis.DocumentFragment, ParentNodeMixin> {
 	get ownerDocument(): Document;
+
+	[kHost]: Element | null;
 }
 
 export class DocumentFragment extends Node implements globalThis.DocumentFragment {
-	[kHost]: Element | null;
-
 	constructor() {
 		super();
 		this[kHost] = null;
@@ -8006,15 +8008,15 @@ const kQualifiedName = Symbol("qualified name");
 
 interface Attr {
 	get ownerDocument(): Document;
-}
 
-class Attr extends Node implements globalThis.Attr {
 	[kNamespace]: string | null;
 	[kPrefix]: string | null;
 	[kLocalName]: string;
 	[kValue]: string;
 	[kOwnerElement]: Element | null;
+}
 
+class Attr extends Node implements globalThis.Attr {
 	constructor(
 		namespace: string | null,
 		prefix: string | null,
@@ -8476,17 +8478,7 @@ export interface Element
 	remove(): void;
 
 	get ownerDocument(): Document;
-}
 
-export class Element extends Node implements globalThis.Element {
-	// Installed on the prototype, where the engine that implements them is.
-	declare getBoundingClientRect: () => globalThis.DOMRect;
-	declare getClientRects: () => globalThis.DOMRectList;
-	declare scrollLeft: number;
-	declare scrollTop: number;
-	declare scroll: ScrollMethod;
-	declare scrollTo: ScrollMethod;
-	declare scrollBy: ScrollMethod;
 	[kNamespace]: string | null;
 	[kPrefix]: string | null;
 	[kLocalName]: string;
@@ -8512,7 +8504,17 @@ export class Element extends Node implements globalThis.Element {
 	[kPseudoElements]: Map<string, Element> | null;
 	[kPseudoHost]: Element | null;
 	[kPseudoName]: string | null;
+}
 
+export class Element extends Node implements globalThis.Element {
+	// Installed on the prototype, where the engine that implements them is.
+	declare getBoundingClientRect: () => globalThis.DOMRect;
+	declare getClientRects: () => globalThis.DOMRectList;
+	declare scrollLeft: number;
+	declare scrollTop: number;
+	declare scroll: ScrollMethod;
+	declare scrollTo: ScrollMethod;
+	declare scrollBy: ScrollMethod;
 	constructor() {
 		super();
 		this[kNamespace] = null;
@@ -11619,14 +11621,7 @@ const kUAShadowTree = Symbol("user-agent shadow root");
 const kAvailableToInternals = Symbol("available to element internals");
 
 export interface ShadowRoot
-	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {}
-
-/**
- * A document fragment with a host. Every algorithm that already steps
- * from a fragment to its host (pre-insertion validity, retargeting, the
- * composed path) works across it without a second concept.
- */
-export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoot {
+	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {
 	[kShadowMode]: "open" | "closed";
 	[kUAShadowTree]: boolean;
 	[kDelegatesFocus]: boolean;
@@ -11636,7 +11631,14 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 	[kSerializable]: boolean;
 	[kDeclarative]: boolean;
 	[kAvailableToInternals]: boolean;
+}
 
+/**
+ * A document fragment with a host. Every algorithm that already steps
+ * from a fragment to its host (pre-insertion validity, retargeting, the
+ * composed path) works across it without a second concept.
+ */
+export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoot {
 	constructor() {
 		super();
 		this[kShadowMode] = "open";
@@ -12151,15 +12153,18 @@ function updateSlotName(
 	assignSlottablesForTree(getRoot(slot));
 }
 
+interface HTMLSlotElement {
+	[kSlotName]: string;
+	[kAssignedNodes]: Slottable[];
+	[kManualAssignment]: Slottable[];
+}
+
 // Assignment is recomputed rather than patched incrementally. Every
 // input to it (the host's children, their slot attributes, the slot names
 // in the tree) can change from any of a dozen mutation entry points. One
 // recomputation per changed tree is both the spec's shape and the only
 // one that cannot drift.
 class HTMLSlotElement extends HTMLElement {
-	[kSlotName]: string;
-	[kAssignedNodes]: Slottable[];
-	[kManualAssignment]: Slottable[];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kSlotName] = "";
@@ -12272,12 +12277,15 @@ const kTemplateContent = Symbol("template content");
 
 const kTemplateDocument = Symbol("templateDocument");
 
+interface HTMLTemplateElement {
+	[kTemplateContent]: DocumentFragment | null;
+}
+
 // The fragment is the form a shadow tree is written in (a declarative
 // shadow root is a template), so the element that owns the fragment
 // belongs next to the slot. The fragment's host is the template, which is
 // what stops a template from being appended into its own contents.
 class HTMLTemplateElement extends HTMLElement {
-	[kTemplateContent]: DocumentFragment | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kTemplateContent] = null;
@@ -19720,14 +19728,16 @@ function getDatasetPropertyName(attribute: string): string | null {
 const kDatasetElement = Symbol("the element a data map belongs to");
 const kDatasetNames = Symbol("the names a data map has materialized");
 
+interface DOMStringMap {
+	[kDatasetElement]: Element;
+	[kDatasetNames]: string[];
+}
+
 // Every attribute is an own accessor of the map, created when the map is
 // requested and synced on each request, so a read or write of a name
 // the element has goes straight through to the attribute.
 class DOMStringMap {
 	[name: string]: string | undefined;
-
-	[kDatasetElement]: Element;
-	[kDatasetNames]: string[];
 
 	constructor(element: Element) {
 		this[kDatasetNames] = [];
@@ -20209,9 +20219,7 @@ interface ElementInternals
 		Extract<keyof globalThis.ElementInternals, ARIAReflection>
 	> {
 	[kValidity]: ValidityState;
-}
 
-class ElementInternals {
 	[kElementInternalsTarget]: Element;
 	[kFormOwner]: HTMLFormElement | null;
 	[kFormDisabled]: boolean;
@@ -20219,6 +20227,9 @@ class ElementInternals {
 	[kValidityFlags]: ValidityFlags;
 	[kValidationMessage]: string;
 	[kStates]: CustomStateSet | null;
+}
+
+class ElementInternals {
 	constructor(target: Element) {
 		this[kFormOwner] = null;
 		this[kFormDisabled] = false;
@@ -21423,11 +21434,13 @@ function flatParentNode(node: Node): Node | null {
 
 const kRectValues = Symbol("rectangle origin and size");
 
+interface DOMRectReadOnly {
+	[kRectValues]: {x: number; y: number; width: number; height: number};
+}
+
 // A negative width or height puts left to the right of right, so the
 // edges take the minimum and maximum rather than assuming an order.
 class DOMRectReadOnly {
-	[kRectValues]: {x: number; y: number; width: number; height: number};
-
 	constructor(x = 0, y = 0, width = 0, height = 0) {
 		this[kRectValues] = {
 			x: Number(x) || 0,
@@ -21614,23 +21627,20 @@ export function disconnectObservers(document: globalThis.Document): void {
 // what was last reported for each, and registration with the manager.
 // Subclasses supply only how to measure one target (kMeasure) and how to
 // build an entry from that measurement.
-// The interface must repeat the class's type parameters to merge with it.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface LayoutObserver<TState, TEntry, TOptions = void> {
 	[kObserverCallback]: (entries: TEntry[], observer: this) => void;
-}
 
-abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	// One entry per target, as the DOM says. A second observe() of the same
 	// target replaces the first's options.
 	[kTargets]: Map<
 		globalThis.Element,
 		{options: TOptions | undefined; last: TState | null}
 	>;
-
 	// One entry per document the observer has a target in.
 	[kHomes]: Set<object>;
+}
 
+abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	constructor() {
 		this[kTargets] = new Map<
 			globalThis.Element,
@@ -22109,16 +22119,6 @@ export interface Document
 	get ownerDocument(): null;
 
 	get textContent(): null;
-}
-
-export class Document extends Node implements globalThis.Document {
-	// Installed on the prototype, where the engine that implements them is.
-	declare elementFromPoint: (
-		x: number,
-		y: number,
-	) => globalThis.Element | null;
-
-	declare elementsFromPoint: (x: number, y: number) => globalThis.Element[];
 
 	[kDocumentURL]: string;
 	[kMode]: "no-quirks" | "quirks" | "limited-quirks";
@@ -22127,7 +22127,6 @@ export class Document extends Node implements globalThis.Document {
 	[kEncoding]: string;
 	[kIdMap]: Map<string, Element[]>;
 	[kDocumentWideLists]: Set<LiveCollection> | null;
-
 	[kSelection]: Selection | null;
 	[kSelectionChangeScheduled]: boolean;
 	[kTemplateDocument]: Document | null;
@@ -22141,6 +22140,16 @@ export class Document extends Node implements globalThis.Document {
 	// it.
 	[kPopoverShowing]: boolean;
 	[kPopoverHidingCount]: number;
+}
+
+export class Document extends Node implements globalThis.Document {
+	// Installed on the prototype, where the engine that implements them is.
+	declare elementFromPoint: (
+		x: number,
+		y: number,
+	) => globalThis.Element | null;
+
+	declare elementsFromPoint: (x: number, y: number) => globalThis.Element[];
 
 	constructor(...args: ConstructorParameters<typeof Node>) {
 		super(...args);
@@ -24799,12 +24808,14 @@ function liveRangeNormalizeSteps(
 	});
 }
 
-class AbstractRange {
+interface AbstractRange {
 	[kStartNode]: Node;
 	[kStartOffset]: number;
 	[kEndNode]: Node;
 	[kEndOffset]: number;
+}
 
+class AbstractRange {
 	constructor(
 		startNode: Node,
 		startOffset: number,
@@ -25126,7 +25137,10 @@ interface Range
 	extends Pick<
 		globalThis.Range,
 		"START_TO_START" | "START_TO_END" | "END_TO_END" | "END_TO_START"
-	> {}
+	> {
+	[kRangeSelection]: Selection | null;
+	[kSelectionOwned]: boolean;
+}
 
 class Range extends AbstractRange implements globalThis.Range {
 	static readonly START_TO_START = START_TO_START;
@@ -25137,9 +25151,6 @@ class Range extends AbstractRange implements globalThis.Range {
 	// Installed on the prototype, where the engine that measures them is.
 	declare getBoundingClientRect: () => globalThis.DOMRect;
 	declare getClientRects: () => globalThis.DOMRectList;
-	[kRangeSelection]: Selection | null;
-	[kSelectionOwned]: boolean;
-
 	constructor() {
 		const document = getCurrentDocument();
 		super(document, 0, document, 0);
