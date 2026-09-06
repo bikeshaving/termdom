@@ -13637,6 +13637,8 @@ interface HTMLFormElement {
 	[kElements]: HTMLFormControlsCollection | null;
 	[kFiringReset]: boolean;
 
+	// lib.dom's named and indexed getters. Declared for parity, not
+	// installed: form.name and form[0] are undefined here.
 	[index: number]: Element;
 	[name: string]: any;
 	acceptCharset: string;
@@ -13650,11 +13652,6 @@ interface HTMLFormElement {
 	get relList(): DOMTokenList;
 	set relList(value: string);
 	target: string;
-	checkValidity(): boolean;
-	reportValidity(): boolean;
-	requestSubmit(submitter?: HTMLElement | null): void;
-	reset(): void;
-	submit(): void;
 }
 
 class HTMLFormElement extends HTMLElement {
