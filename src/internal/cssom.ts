@@ -6506,7 +6506,7 @@ function parseStyleSheet(
 				: declareLayer(
 					cascade,
 					context.layer,
-					` ${cascade[kAnonymousLayers]++}`,
+					`\0${cascade[kAnonymousLayers]++}`,
 				);
 			parseStyleSheet(cascade, rule, scope, uaOrigin, {...context, layer});
 		} else if (rule instanceof CSSScopeRule) {
