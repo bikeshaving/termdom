@@ -167,10 +167,7 @@ function getCellStyle(element: Element): CellStyle {
 
 // Everything comes from ::selection rules. The UA sheet's Highlight
 // pair is what makes an unstyled selection inverse at all.
-function getSelectionStyle(
-	element: Element,
-	base: CellStyle,
-): CellStyle {
+function getSelectionStyle(element: Element, base: CellStyle): CellStyle {
 	const fg = getComputedValue(element, "color", "::selection");
 	const bg = getComputedValue(element, "background-color", "::selection");
 	if (!fg && !bg) {
@@ -295,8 +292,7 @@ export class Painter {
 		);
 		const end = Math.min(
 			regionHeight,
-			Math.round(rect.top + rect.height - (box.borderBottomWidth || 0)) -
-			lift,
+			Math.round(rect.top + rect.height - (box.borderBottomWidth || 0)) - lift,
 		);
 		if (end - top <= Math.abs(record.delta)) {
 			return null;
@@ -394,11 +390,7 @@ function renderElement(
 	};
 
 	if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
-		const fill = isCanvasBg
-			? "default"
-			: isHighlightBox
-				? "inverse"
-				: style.bg;
+		const fill = isCanvasBg ? "default" : isHighlightBox ? "inverse" : style.bg;
 		// A box broken across lines fills each fragment, not the rectangle
 		// enclosing them, whose ends belong to its neighbours.
 		const fragments = painter[kLayout].getRects(element);
@@ -476,8 +468,7 @@ function renderElement(
 	if (rect && visible && element === painter[kDocument].activeElement) {
 		const record = getSelectionRecord(element);
 		if (record !== null) {
-			const focus =
-				record.direction === "backward" ? record.start : record.end;
+			const focus = record.direction === "backward" ? record.start : record.end;
 			const node = getTextControlValueText(element) ?? getGlyphText(element);
 			let caret: {x: number; y: number} | null = null;
 			if (node) {
@@ -800,11 +791,7 @@ function getGlyphText(element: Element): Text | null {
 	return (glyph?.firstChild as Text | null) ?? null;
 }
 
-function renderText(
-	painter: Painter,
-	textNode: Text,
-	ctx: CellContext,
-): void {
+function renderText(painter: Painter, textNode: Text, ctx: CellContext): void {
 	const textContent = textNode.data;
 	if (!textContent) {
 		return;
@@ -889,9 +876,7 @@ function getPaintSelectionRange(
 	}
 	// Narrowed to this node. ::selection resolves per parent.
 	const from =
-		documentRange.startContainer === textNode
-			? documentRange.startOffset
-			: 0;
+		documentRange.startContainer === textNode ? documentRange.startOffset : 0;
 	const to =
 		documentRange.endContainer === textNode
 			? documentRange.endOffset

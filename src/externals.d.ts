@@ -128,10 +128,7 @@ declare module "arabic-persian-reshaper" {
 	 * Bun. The default is the whole `module.exports`, which every runtime
 	 * agrees on.
 	 */
-	const shapers: {
-		ArabicShaper: Shaper;
-		PersianShaper: Shaper;
-	};
+	const shapers: {ArabicShaper: Shaper; PersianShaper: Shaper};
 	export default shapers;
 }
 

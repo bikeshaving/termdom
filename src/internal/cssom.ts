@@ -650,8 +650,7 @@ function parseColor(text: string): {color: number; alpha: number} | null {
 			return parseInt(short ? part + part : part, 16);
 		};
 		const packed = (channel(0) << 16) | (channel(1) << 8) | channel(2);
-		const alpha =
-			hex.length === 4 || hex.length === 8 ? channel(3) / 255 : 1;
+		const alpha = hex.length === 4 || hex.length === 8 ? channel(3) / 255 : 1;
 		return {color: packed, alpha};
 	}
 
@@ -675,9 +674,7 @@ function parseColor(text: string): {color: number; alpha: number} | null {
 		const c = (1 - Math.abs(2 * l - 1)) * s;
 		const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
 		const m = l - c / 2;
-		let r1 = 0,
-			g1 = 0,
-			b1 = 0;
+		let r1 = 0, g1 = 0, b1 = 0;
 		if (h < 60) {
 			[r1, g1, b1] = [c, x, 0];
 		} else if (h < 120) {
@@ -846,10 +843,7 @@ function getGrammarTerms(property: string, value: string): ValueTerm[] | null {
 		getTrace(node: unknown): Array<{type: string; name: string}> | null;
 	};
 	try {
-		ast = CSSTree.parse(value, {
-			context: "value",
-			positions: true,
-		}) as never;
+		ast = CSSTree.parse(value, {context: "value", positions: true}) as never;
 		match = grammarLexer.matchProperty(property, ast as never) as never;
 	} catch (_err) {
 		return null;
@@ -961,8 +955,7 @@ function expandPlace(
 	for (const token of splitComponents(value)) {
 		const previous = values[values.length - 1];
 		if (
-			previous !== undefined &&
-			ALIGNMENT_QUALIFIERS.has(previous.toLowerCase())
+			previous !== undefined && ALIGNMENT_QUALIFIERS.has(previous.toLowerCase())
 		) {
 			values[values.length - 1] = `${previous} ${token}`;
 		} else {
@@ -1284,9 +1277,7 @@ function expandGridPlacementPair(
 	const second =
 		groups.length > 1 && groups[1]
 			? groups[1]
-			: isCustomIdent(first)
-				? first
-				: "auto";
+			: isCustomIdent(first) ? first : "auto";
 	return {[start]: first, [end]: second};
 }
 
@@ -1298,9 +1289,7 @@ function expandGridArea(value: string): Record<string, string> {
 	const fallback = (index: number, from: string): string =>
 		groups.length > index && groups[index]
 			? groups[index]
-			: isCustomIdent(from)
-				? from
-				: "auto";
+			: isCustomIdent(from) ? from : "auto";
 	const columnStart = fallback(1, rowStart);
 	const rowEnd = fallback(2, rowStart);
 	const columnEnd = fallback(3, columnStart);
@@ -1467,8 +1456,7 @@ function expandTransition(value: string): Record<string, string> {
 			} else if (!easing && isEasingValue(token)) {
 				easing = lower;
 			} else if (
-				!behavior &&
-				(lower === "normal" || lower === "allow-discrete")
+				!behavior && (lower === "normal" || lower === "allow-discrete")
 			) {
 				behavior = lower;
 			} else if (!property) {
@@ -1889,9 +1877,7 @@ function getElementDefaults(
 		// in the sheet so the attribute can override the default without a
 		// width the sheet cannot express (there is no attr() length).
 		const size = parseInt(input.getAttribute("size") ?? "", 10);
-		return {
-			width: `${Number.isFinite(size) && size > 0 ? size : 20}ch`,
-		};
+		return {width: `${Number.isFinite(size) && size > 0 ? size : 20}ch`};
 	}
 	return undefined;
 }
@@ -1936,10 +1922,7 @@ const INITIAL_KEYWORDS = new Set([
 	"unset",
 ]);
 
-function getInitialStyle(
-	element: Element | null,
-	property: string,
-): string {
+function getInitialStyle(element: Element | null, property: string): string {
 	const elementDefaults = element ? getElementDefaults(element) : null;
 	if (elementDefaults && elementDefaults[property]) {
 		return elementDefaults[property];
@@ -1985,9 +1968,7 @@ export function parseUnitValue(
 	const number =
 		typeof parsed === "number"
 			? parsed
-			: parsed !== null
-				? parsed.percentage
-				: null;
+			: parsed !== null ? parsed.percentage : null;
 	return number !== null && number < 0 ? null : parsed;
 }
 
@@ -2065,18 +2046,14 @@ export function getBoxModel(element: Element): BoxModel {
 	const widthValue = parseUnitValue(getComputedValue(element, "width"));
 	const heightValue = parseUnitValue(getComputedValue(element, "height"));
 
-	const paddingTop = parseUnitValue(
-		getComputedValue(element, "padding-top"),
-	);
+	const paddingTop = parseUnitValue(getComputedValue(element, "padding-top"));
 	const paddingRight = parseUnitValue(
 		getComputedValue(element, "padding-right"),
 	);
 	const paddingBottom = parseUnitValue(
 		getComputedValue(element, "padding-bottom"),
 	);
-	const paddingLeft = parseUnitValue(
-		getComputedValue(element, "padding-left"),
-	);
+	const paddingLeft = parseUnitValue(getComputedValue(element, "padding-left"));
 
 	const marginTop = parseSignedUnitValue(
 		getComputedValue(element, "margin-top"),
@@ -3106,9 +3083,7 @@ function supportsConditionMatches(
 		matches =
 			matches === null
 				? operand
-				: joiner === "or"
-					? matches || operand
-					: matches && operand;
+				: joiner === "or" ? matches || operand : matches && operand;
 		awaited = false;
 	}
 	// A negated operand is a whole condition, so nothing may be joined to
@@ -3786,9 +3761,7 @@ function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 }
 
 // Reconstructs shorthands and keeps priority.
-function serializeDeclarations(
-	block: CSSStyleDeclaration,
-): string {
+function serializeDeclarations(block: CSSStyleDeclaration): string {
 	const parts: string[] = [];
 	const serialized = new Set<string>();
 	// A shorthand this block cannot express is unexpressible at every one
@@ -3836,9 +3809,7 @@ function serializeDeclarations(
 
 // Serializes to the `style` attribute, which is what invalidation
 // observes.
-function flushStyleAttribute(
-	declaration: CSSStyleDeclaration,
-): void {
+function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 	invalidateDeclaration(declaration);
 	if (declaration[kElement]) {
 		declaration[kAttributeText] = serializeDeclarations(declaration);
@@ -3847,9 +3818,7 @@ function flushStyleAttribute(
 	declaration[kOnChange]?.();
 }
 
-function invalidateDeclaration(
-	declaration: CSSStyleDeclaration,
-): void {
+function invalidateDeclaration(declaration: CSSStyleDeclaration): void {
 	declaration[kBlock] = null;
 	for (let i = 0; i < declaration[kIndexed]; i++) {
 		delete declaration[i];
@@ -4399,9 +4368,7 @@ function serializeMediaQuery(query: string): string {
 				? false
 				: expected === "feature"
 					? /^\s+$/.test(gap)
-					: type !== null
-						? /^\s+and\s+$/i.test(gap)
-						: gap === "";
+					: type !== null ? /^\s+and\s+$/i.test(gap) : gap === "";
 		if (!wellGapped) {
 			return serializeMediaQueryText(text);
 		}
@@ -4535,10 +4502,7 @@ export class MediaList implements globalThis.MediaList {
 	}
 }
 
-function parseMediaText(
-	list: MediaList,
-	text: string,
-): void {
+function parseMediaText(list: MediaList, text: string): void {
 	list[kMedia].length = 0;
 	for (const query of splitMediaQueryList(
 		stripCSSComments(String(text ?? "")),
@@ -4605,10 +4569,7 @@ abstract class CSSRule {
 }
 
 for (const [name, value] of Object.entries(RULE_TYPES)) {
-	Object.defineProperty(CSSRule.prototype, name, {
-		value,
-		enumerable: true,
-	});
+	Object.defineProperty(CSSRule.prototype, name, {value, enumerable: true});
 }
 
 function notifyRule(rule: CSSRule): void {
@@ -4658,8 +4619,7 @@ abstract class CSSGroupingRule extends CSSRule {
 		}
 		const inserted = parseRuleText(text, this.parentStyleSheet, this);
 		if (
-			inserted instanceof CSSImportRule ||
-			inserted instanceof CSSNamespaceRule
+			inserted instanceof CSSImportRule || inserted instanceof CSSNamespaceRule
 		) {
 			throw domException(
 				"Only a stylesheet may hold that rule",
@@ -6673,9 +6633,7 @@ function parsePseudoElementArgument(text: string): string | null {
 	const compound = getChildren(list[0] ?? {type: ""});
 	const pseudo = compound[compound.length - 1];
 	if (
-		compound.length !== 2 ||
-		!pseudo ||
-		pseudo.type !== "PseudoElementSelector"
+		compound.length !== 2 || !pseudo || pseudo.type !== "PseudoElementSelector"
 	) {
 		return null;
 	}
@@ -6769,11 +6727,7 @@ function getBlockDeclarations(
 		if (child.value.type === "Value" && value === raw.trim()) {
 			seedValueNodes(value, getNodes(child.value as never) as CSSNode[]);
 		}
-		declarations.push({
-			name,
-			value,
-			important: child.important === true,
-		});
+		declarations.push({name, value, important: child.important === true});
 	}
 	return declarations;
 }
@@ -6891,8 +6845,7 @@ function convertRule(
 		// A prefix no @namespace declared names no namespace, and a selector
 		// using one does not parse.
 		if (
-			prelude.includes("|") &&
-			!namespacePrefixesDeclared(prelude, namespaces)
+			prelude.includes("|") && !namespacePrefixesDeclared(prelude, namespaces)
 		) {
 			return null;
 		}
@@ -7074,9 +7027,7 @@ function convertNamespaceRule(
 		const ast = CSSTree.parse(prelude, {
 			context: "atrulePrelude",
 			atrule: "namespace",
-		}) as unknown as {
-			children?: {toArray(): NamespacePreludeNode[]} | null;
-		};
+		}) as unknown as {children?: {toArray(): NamespacePreludeNode[]} | null};
 		nodes = ast.children ? ast.children.toArray() : [];
 	} catch (_err) {
 		return null;
@@ -7089,8 +7040,7 @@ function convertNamespaceRule(
 	}
 	const uri = nodes[index];
 	if (
-		nodes.length !== index + 1 ||
-		(uri.type !== "Url" && uri.type !== "String")
+		nodes.length !== index + 1 || (uri.type !== "Url" && uri.type !== "String")
 	) {
 		return null;
 	}
@@ -7194,9 +7144,7 @@ function convertImportRule(
 		const spelled = sliceOf(node);
 		const opened = (node.name ?? "").length + 1;
 		supportsText = (
-			spelled.endsWith(")")
-				? spelled.slice(opened, -1)
-				: spelled.slice(opened)
+			spelled.endsWith(")") ? spelled.slice(opened, -1) : spelled.slice(opened)
 		).trim();
 		index++;
 	}
@@ -7250,10 +7198,7 @@ for (const type of [
 	if (!descriptor?.get) {
 		continue;
 	}
-	Object.defineProperty(type.prototype, "cssText", {
-		...descriptor,
-		set() {},
-	});
+	Object.defineProperty(type.prototype, "cssText", {...descriptor, set() {}});
 }
 
 const elementSheets = new WeakMap<Element, CSSStyleSheet>();
@@ -7874,9 +7819,7 @@ function getLengthContext(
 	property: string,
 ): LengthContext {
 	const own = property === "font-size";
-	const parent = own
-		? flatParentElement(declaration[kElement])
-		: null;
+	const parent = own ? flatParentElement(declaration[kElement]) : null;
 	const font = own
 		? parent
 			? getFontSize(getComputedValue(parent, "font-size"))
@@ -8100,8 +8043,7 @@ function getContainingBlockBox(
 			ancestor;
 			ancestor = flatParentElement(ancestor)
 		) {
-			const ancestorPosition =
-				getComputedValue(ancestor, "position");
+			const ancestorPosition = getComputedValue(ancestor, "position");
 			if (ancestorPosition && ancestorPosition !== "static") {
 				return getUsedBoxRect(declaration, ancestor, false);
 			}
@@ -8156,9 +8098,7 @@ function getUsedBoxRect(
 }
 
 // The initial containing block: the grid itself.
-function getViewportBox(
-	declaration: MeasuredDeclaration,
-): DOMRect | null {
+function getViewportBox(declaration: MeasuredDeclaration): DOMRect | null {
 	const block = declaration[kCascade]![kLayout].initialContainingBlock;
 	const rect = getUsedRect(declaration[kCascade]!, declaration[kElement]);
 	if (!rect) {
@@ -8196,9 +8136,7 @@ function getResolvedMinSize(
 		return "auto";
 	}
 	const parent = flatParentElement(declaration[kElement]);
-	const display = parent
-		? getComputedValue(parent, "display")
-		: "";
+	const display = parent ? getComputedValue(parent, "display") : "";
 	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 }
 
@@ -8225,8 +8163,7 @@ function getAutoMargin(
 	}
 	const edge = (name: string): number =>
 		parseFloat(getComputedValue(parent, name)) || 0;
-	const left =
-		parentRect.x + edge("border-left-width") + edge("padding-left");
+	const left = parentRect.x + edge("border-left-width") + edge("padding-left");
 	const top = parentRect.y + edge("border-top-width") + edge("padding-top");
 	const right =
 		parentRect.x +
@@ -8250,9 +8187,7 @@ function getAutoMargin(
 	}
 }
 
-function getContainingWidth(
-	declaration: MeasuredDeclaration,
-): number | null {
+function getContainingWidth(declaration: MeasuredDeclaration): number | null {
 	const parent = flatParentElement(declaration[kElement]);
 	if (!parent) {
 		return null;
@@ -8367,8 +8302,7 @@ function resolvePropertyValue(
 	// `currentcolor` is the element's own color, which is what a resolved
 	// value reports. On `color` itself it means the parent's.
 	if (
-		value.toLowerCase() === "currentcolor" &&
-		COLOR_PROPERTIES.has(property)
+		value.toLowerCase() === "currentcolor" && COLOR_PROPERTIES.has(property)
 	) {
 		// The COMPUTED color, on the engine's own read path. The author path
 		// flushes, from inside the resolution of a style that layout is waiting
@@ -8535,9 +8469,7 @@ function resolvePropertyValueRaw(
 
 // This element's own custom properties and every ancestor's, since a
 // custom property inherits.
-function getCustomNames(
-	computed: ComputedStyleDeclaration,
-): string[] {
+function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 	const current = computed[kCascade]?.[kCurrentDeclarations];
 	if (current !== undefined && !current.has(computed)) {
 		computed[kSyncResolved]();
@@ -8757,9 +8689,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 						property,
 						longhands,
 						(longhand) =>
-							this[kBaseValue](longhand) ||
-							CSS_INITIAL_VALUES[longhand] ||
-							"",
+							this[kBaseValue](longhand) || CSS_INITIAL_VALUES[longhand] || "",
 					)
 					: getComputedValueEntry(
 						property,
@@ -8783,10 +8713,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			// lookup taken first would report "no box" for a box one render
 			// away.
 			getUsedRect(cascade, originating);
-			const node = pseudoElement<Element>(
-				originating,
-				this[kPseudoElement],
-			);
+			const node = pseudoElement<Element>(originating, this[kPseudoElement]);
 			if (node) {
 				return measureUsedValue(getBoxView(this, node), property, computed);
 			}
@@ -8802,10 +8729,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		// its own, so its pseudo-elements go in the box its parent makes, the
 		// same box its children go in.
 		let host: Element | null = this[kElement];
-		while (
-			host &&
-			getComputedValue(host, "display") === "contents"
-		) {
+		while (host && getComputedValue(host, "display") === "contents") {
 			host = flatParentElement(host);
 		}
 		const box = host && this[kCascade]![kContentBox](host);
@@ -9027,9 +8951,7 @@ export function resolveBorderSides(element: Element): BorderSides {
 			return undefined;
 		}
 		// An unknown style keyword draws as solid rather than not at all.
-		return LINE_KEYWORDS.has(style)
-			? (style as LineStyle["style"])
-			: "solid";
+		return LINE_KEYWORDS.has(style) ? (style as LineStyle["style"]) : "solid";
 	};
 
 	// Rounded when the radius is nonzero on BOTH axes, as a browser squares
@@ -9191,8 +9113,7 @@ function formatOrdinal(ordinal: number, listStyleType: string): string {
 // Keyed by the COMPUTED list-style-type, not the parent's tag name. A
 // ul can be decimal, an ol disc, either none.
 function getListMarker(listItem: Element, listParent: Element): string {
-	const listStyleType =
-		getComputedValue(listItem, "list-style-type");
+	const listStyleType = getComputedValue(listItem, "list-style-type");
 
 	if (!listStyleType || listStyleType === "none") {
 		return "";
@@ -9527,20 +9448,14 @@ export interface Cascade {
 	// elements with RUNNING transitions are in the strong map the tick
 	// iterates.
 	[kTransitionsExist]: boolean;
-	[kTransitionSnapshots]: WeakMap<
-		Element,
-		Map<string, Map<string, string>>
-	>;
+	[kTransitionSnapshots]: WeakMap<Element, Map<string, Map<string, string>>>;
 
 	// A dropped declaration's resolved values, kept as the before-change
 	// style for a transition declared and retargeted in one style change,
 	// the case the snapshot cannot cover. These are the original maps, not
 	// copies. The declaration replacing its memo is what makes the old map
 	// safe to hold.
-	[kTransitionFallback]: WeakMap<
-		Element,
-		Map<string, Map<string, string>>
-	>;
+	[kTransitionFallback]: WeakMap<Element, Map<string, Map<string, string>>>;
 
 	[kActiveTransitions]: Map<
 		Element,
@@ -9855,10 +9770,7 @@ export class Cascade {
 	// The same staleness a focus move leaves, scoped to the symmetric
 	// difference of the two flat-tree chains. The shared ancestors above the
 	// fork were hovered before and are hovered still.
-	handleHoverChange(
-		previous: Element | null,
-		next: Element | null,
-	): void {
+	handleHoverChange(previous: Element | null, next: Element | null): void {
 		const chainOf = (element: Element | null): Set<Element> => {
 			const chain = new Set<Element>();
 			for (
@@ -10378,20 +10290,14 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 
 	const computedStyle = cascade.declarationFor(element);
 	const counterReset = computedStyle.getComputedValue("counter-reset");
-	const counterIncrement = computedStyle.getComputedValue(
-		"counter-increment",
-	);
+	const counterIncrement = computedStyle.getComputedValue("counter-increment");
 
 	const parentElement = element.parentElement;
 	const parentScope = parentElement
 		? cascade[kCounterScopes].get(parentElement)
 		: undefined;
 
-	const scope: CounterScope = {
-		element,
-		counters: {},
-		parent: parentScope,
-	};
+	const scope: CounterScope = {element, counters: {}, parent: parentScope};
 	cascade[kCounterScopes].set(element, scope);
 
 	if (counterReset && counterReset !== "none") {
@@ -10419,8 +10325,7 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 function isStyleElement(element: Element): boolean {
 	return (
 		element.tagName === "STYLE" ||
-		(element.tagName === "LINK" &&
-			element.getAttribute("rel") === "stylesheet")
+		(element.tagName === "LINK" && element.getAttribute("rel") === "stylesheet")
 	);
 }
 
@@ -10743,11 +10648,7 @@ function processTransitionStyle(
 			raw === ""
 				? getComputedValueEntry(property, CSS_INITIAL_VALUES[property] ?? "")
 				: raw;
-		if (
-			before === undefined ||
-			before === after ||
-			!runnable
-		) {
+		if (before === undefined || before === after || !runnable) {
 			continue;
 		}
 		startTransition(cascade, element, pseudo, property, {
@@ -10815,8 +10716,7 @@ function startTransition(
 	cascade[kTransitionClock] = now;
 	// A negative delay starts partway in, which is what elapsedTime
 	// reports.
-	const elapsed =
-		Math.min(Math.max(-timing.delay, 0), timing.duration) / 1000;
+	const elapsed = Math.min(Math.max(-timing.delay, 0), timing.duration) / 1000;
 	queueTransitionEvent(
 		cascade,
 		element,
@@ -10948,8 +10848,7 @@ function interpolateValue(from: string, to: string, progress: number): string {
 			Math.round(
 				fromColor[index] + (toColor[index] - fromColor[index]) * progress,
 			);
-		const alpha =
-			fromColor[3] + (toColor[3] - fromColor[3]) * progress;
+		const alpha = fromColor[3] + (toColor[3] - fromColor[3]) * progress;
 		if (alpha < 1) {
 			return `rgba(${channel(0)}, ${channel(1)}, ${channel(2)}, ${Math.round(alpha * 1000) / 1000})`;
 		}
@@ -11143,9 +11042,7 @@ function stepsEasing(
 	const jumps =
 		position === "jump-both"
 			? count + 1
-			: position === "jump-none"
-				? Math.max(count - 1, 1)
-				: count;
+			: position === "jump-none" ? Math.max(count - 1, 1) : count;
 	return (input) => {
 		if (input >= 1) {
 			return 1;
@@ -11251,8 +11148,7 @@ function flushTransitionEvents(cascade: Cascade): void {
 
 function scheduleTransitionTick(cascade: Cascade): void {
 	if (
-		cascade[kTransitionTimer] !== null ||
-		cascade[kActiveTransitions].size === 0
+		cascade[kTransitionTimer] !== null || cascade[kActiveTransitions].size === 0
 	) {
 		return;
 	}
@@ -11276,10 +11172,7 @@ function tickTransitions(cascade: Cascade): void {
 					cancelTransition(cascade, element, pseudo, property, now);
 					continue;
 				}
-				if (
-					!transition.started &&
-					now >= transition.start + transition.delay
-				) {
+				if (!transition.started && now >= transition.start + transition.delay) {
 					transition.started = true;
 					queueTransitionEvent(
 						cascade,
@@ -11291,10 +11184,7 @@ function tickTransitions(cascade: Cascade): void {
 						pseudo,
 					);
 				}
-				if (
-					now >=
-					transition.start + transition.delay + transition.duration
-				) {
+				if (now >= transition.start + transition.delay + transition.duration) {
 					transitions.delete(property);
 					queueTransitionEvent(
 						cascade,
@@ -11320,9 +11210,7 @@ function tickTransitions(cascade: Cascade): void {
 	// A window no engine set up has no requestAnimationFrame, and its reads
 	// interpolate on their own.
 	const raf = (
-		cascade[kWindow] as {
-			requestAnimationFrame?: (cb: () => void) => number;
-		}
+		cascade[kWindow] as {requestAnimationFrame?: (cb: () => void) => number}
 	).requestAnimationFrame;
 	if (typeof raf === "function") {
 		raf.call(cascade[kWindow], () => {});
@@ -11334,9 +11222,7 @@ function tickTransitions(cascade: Cascade): void {
 // is cheap enough to poll on every computed-style read. That catches a
 // sheet appended in the same tick, before the mutation observer
 // delivers.
-function getStyleSheetCount(
-	cascade: Cascade,
-): number {
+function getStyleSheetCount(cascade: Cascade): number {
 	return styleElementCount(cascade[kDocument] as unknown as DOMDocument);
 }
 
@@ -11518,10 +11404,7 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 	return false;
 }
 
-function invalidateEnclosingList(
-	cascade: Cascade,
-	target: Node,
-): void {
+function invalidateEnclosingList(cascade: Cascade, target: Node): void {
 	let element: Element | null =
 		target.nodeType === cascade[kWindow].Node.ELEMENT_NODE
 			? (target as Element)
@@ -11544,9 +11427,7 @@ function invalidateEnclosingList(
 // Every style cached against the previous rule set is dropped. A
 // declaration built before this parse was resolved against rules that
 // no longer describe the cascade, and nothing else would tell it.
-function parseStylesheets(
-	cascade: Cascade,
-): void {
+function parseStylesheets(cascade: Cascade): void {
 	// Materializing a sheet's rules notifies the sheet once per rule, and
 	// each notification asked for a parse from inside this one. The parse
 	// under way reads those rules itself.
@@ -11656,9 +11537,7 @@ function declareLayer(
 // A layer's OWN rules sort after every layer nested inside it, the same
 // relation unlayered rules have to layers, one level down. The important
 // cascade reads the same order backwards.
-function rankLayers(
-	cascade: Cascade,
-): Map<string, number> {
+function rankLayers(cascade: Cascade): Map<string, number> {
 	const nested = new Map<string, string[]>();
 	for (const path of cascade[kLayerPaths]) {
 		const dot = path.lastIndexOf(".");
@@ -11789,9 +11668,7 @@ function mediaConditionMatches(
 		matches =
 			matches === null
 				? operand
-				: disjunction
-					? matches || operand
-					: matches && operand;
+				: disjunction ? matches || operand : matches && operand;
 	}
 	return matches ?? true;
 }
@@ -11812,10 +11689,7 @@ function mediaOperandMatches(
 	return true;
 }
 
-function getViewportLength(
-	cascade: Cascade,
-	dimension: string,
-): number | null {
+function getViewportLength(cascade: Cascade, dimension: string): number | null {
 	if (dimension === "width") {
 		return cascade[kWindow].innerWidth;
 	}
@@ -11885,11 +11759,7 @@ function mediaFeatureMatches(
 		return true;
 	}
 	const bound =
-		name.startsWith("min-")
-			? "min"
-			: name.startsWith("max-")
-				? "max"
-				: null;
+		name.startsWith("min-") ? "min" : name.startsWith("max-") ? "max" : null;
 	const actual = getViewportLength(
 		cascade,
 		bound === null ? name : name.slice(4),
@@ -11949,9 +11819,7 @@ function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
 				? []
 				: compileSelectors(start, {namespaces, relative: true}),
 		limits:
-			rule.end
-				? compileSelectors(rule.end, {namespaces, relative: true})
-				: [],
+			rule.end ? compileSelectors(rule.end, {namespaces, relative: true}) : [],
 		owner: owner ? owner.parentElement : null,
 	};
 }
@@ -12069,10 +11937,7 @@ function parseSelector(
 	const {declarations, important, order} = block;
 	// Only a duration or delay can make a transition run, so the property
 	// list alone does not open the sticky gate.
-	if (
-		declarations["transition-duration"] ||
-		declarations["transition-delay"]
-	) {
+	if (declarations["transition-duration"] || declarations["transition-delay"]) {
 		cascade[kTransitionsExist] = true;
 	}
 	const layer = context.layer;
@@ -12182,10 +12047,7 @@ function parseSelector(
 	}
 }
 
-function getMatchingRules(
-	cascade: Cascade,
-	element: Element,
-): ParsedCSSRule[] {
+function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	// A UA shadow part IS the element its part pseudo styles. The host's
 	// ::placeholder rules cascade onto the [part="placeholder"] span.
 	const partPseudo = getPartPseudo(element);
@@ -12284,10 +12146,7 @@ function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
 
 // Only called for a rule that matches. One out of scope everywhere has
 // already been filtered out.
-function getScopeProximity(
-	element: Element,
-	rule: ParsedCSSRule,
-): number {
+function getScopeProximity(element: Element, rule: ParsedCSSRule): number {
 	const root = getScopingRoot(element, rule);
 	if (!root) {
 		return UNSCOPED;
@@ -12370,10 +12229,7 @@ function isRuleMatch(
 	const root = elementRoot ?? element.getRootNode();
 	if (rule.scope !== undefined && rule.scope !== root) {
 		// A :host rule's subject is outside the tree it was written in.
-		if (
-			!rule.reachesHost ||
-			element !== (rule.scope as ShadowRoot).host
-		) {
+		if (!rule.reachesHost || element !== (rule.scope as ShadowRoot).host) {
 			return false;
 		}
 	} else if (rule.subjectTag !== undefined && !rule.reachesHost) {
@@ -12425,8 +12281,7 @@ function computePseudoElementStyle(
 			const value = rule.declarations[name];
 			computedStyle[name] = value;
 			if (
-				!LOGICAL_TO_PHYSICAL.ltr.has(name) &&
-				!PHYSICAL_TO_LOGICAL.has(name)
+				!LOGICAL_TO_PHYSICAL.ltr.has(name) && !PHYSICAL_TO_LOGICAL.has(name)
 			) {
 				continue;
 			}
@@ -12477,9 +12332,7 @@ function getPseudoContent(
 	return cascade[kResolveCounterFunction](hostElement, textContent);
 }
 
-function attachPseudoElements(
-	cascade: Cascade,
-): void {
+function attachPseudoElements(cascade: Cascade): void {
 	// Preserve identity, never clear wholesale. Layout keys a
 	// pseudo-element's boxes by node instance, and a fresh node per sync
 	// orphans every mapped one.
@@ -12497,9 +12350,7 @@ function attachPseudoElements(
 	attachPseudoElementsToDocument(cascade);
 }
 
-function getPseudoSubjects(
-	cascade: Cascade,
-): Set<string> | null {
+function getPseudoSubjects(cascade: Cascade): Set<string> | null {
 	if (cascade[kPseudoSubjectTags] !== undefined) {
 		return cascade[kPseudoSubjectTags];
 	}
@@ -12659,9 +12510,7 @@ const CSSOM_WINDOW_GLOBALS = {
 	CSS: CSSNamespace,
 };
 
-function setupInvalidationHooks(
-	cascade: Cascade,
-): void {
+function setupInvalidationHooks(cascade: Cascade): void {
 	// An error thrown out of a constructed sheet belongs to this realm.
 	cssomWindow = cascade[kWindow];
 	Object.assign(cascade[kWindow], CSSOM_WINDOW_GLOBALS);
@@ -12727,10 +12576,7 @@ function incrementCounter(
 
 // The list's start value plus the items before this one. Siblings
 // share one counter, and each scope holds only its own element's value.
-function getListItemCounterValue(
-	cascade: Cascade,
-	element: Element,
-): number {
+function getListItemCounterValue(cascade: Cascade, element: Element): number {
 	let parent = element.parentElement;
 	while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
 		parent = parent.parentElement;
@@ -13103,8 +12949,7 @@ function parseTrackListValue(value: string): TrackList | null {
 			continue;
 		}
 		if (
-			node.type === "Function" &&
-			(node.name ?? "").toLowerCase() === "repeat"
+			node.type === "Function" && (node.name ?? "").toLowerCase() === "repeat"
 		) {
 			const repeat = parseTrackRepeat(node);
 			if (!repeat) {
@@ -13183,15 +13028,11 @@ function parseTrackRepeat(node: CSSNode): TrackRepeat | null {
 }
 
 /** grid-auto-rows/columns: a list of track sizes, cycled over implicit tracks. */
-export function parseTrackSizeList(
-	value: string,
-): TrackSize[] | null {
+export function parseTrackSizeList(value: string): TrackSize[] | null {
 	return memoizeGridValue("track-size-list", value, parseTrackSizeListValue);
 }
 
-function parseTrackSizeListValue(
-	value: string,
-): TrackSize[] | null {
+function parseTrackSizeListValue(value: string): TrackSize[] | null {
 	const text = value.trim();
 	if (!text || text === "auto") {
 		return null;
@@ -13293,15 +13134,11 @@ function parseGridAreasValue(value: string): GridAreaMap | null {
 }
 
 /** One `<grid-line>`: `auto`, a line number, a name, or a span of either. */
-export function parseGridPlacement(
-	value: string,
-): GridPlacement | null {
+export function parseGridPlacement(value: string): GridPlacement | null {
 	return memoizeGridValue("placement", value, parseGridPlacementValue);
 }
 
-function parseGridPlacementValue(
-	value: string,
-): GridPlacement | null {
+function parseGridPlacementValue(value: string): GridPlacement | null {
 	const text = value.trim();
 	if (!text || text === "auto") {
 		return null;

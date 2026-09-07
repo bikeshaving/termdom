@@ -101,12 +101,7 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	isTTY: boolean;
 	terminal: Terminal;
 
-	constructor(
-		terminal: Terminal,
-		stdin: MockReadStream,
-		cols = 80,
-		rows = 24,
-	) {
+	constructor(terminal: Terminal, stdin: MockReadStream, cols = 80, rows = 24) {
 		super();
 		this.isTTY = true;
 		this.terminal = terminal;

@@ -169,8 +169,7 @@ function getSequentialFocusEntries(
 			const ownerTabindex = getTabIndex(element);
 			const shadow = getShadowRoot(element);
 			if (shadow !== null) {
-				const innerBarrier =
-					ownerTabindex < 0 ? (barrier ?? element) : barrier;
+				const innerBarrier = ownerTabindex < 0 ? (barrier ?? element) : barrier;
 				// The host's light children appear through slots or not at all.
 				const inner = buildScope(shadow.children, innerBarrier);
 				let expansion = inner;
@@ -181,15 +180,11 @@ function getSequentialFocusEntries(
 				return;
 			}
 			if (element.localName === "slot") {
-				const innerBarrier =
-					ownerTabindex < 0 ? (barrier ?? element) : barrier;
+				const innerBarrier = ownerTabindex < 0 ? (barrier ?? element) : barrier;
 				const assigned = (element as HTMLSlotElement).assignedNodes();
 				const slotContents =
 					assigned.length > 0 ? assigned : element.childNodes;
-				const inner = buildScope(
-					slotContents as Iterable<Node>,
-					innerBarrier,
-				);
+				const inner = buildScope(slotContents as Iterable<Node>, innerBarrier);
 				const expansion = isFocusable(element)
 					? [{element, barrier}, ...inner]
 					: inner;
@@ -682,11 +677,7 @@ function decodeMouseReport(code: number, isRelease: boolean): {
 	};
 }
 
-function getDocumentPoint(
-	input: Input,
-	col: number,
-	row: number,
-): {
+function getDocumentPoint(input: Input, col: number, row: number): {
 	x: number;
 	y: number;
 	// False above the painted region, meaning a shell prompt's rows.
@@ -702,11 +693,7 @@ function getDocumentPoint(
 }
 
 // True when the tick escaped past every scroller and the document scroll.
-function scrollByWheel(
-	input: Input,
-	target: Element,
-	deltaY: number,
-): boolean {
+function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	const scroller = getWheelScroller(input, target, deltaY);
 	if (scroller) {
 		scroller.scrollTop += deltaY;
@@ -758,9 +745,7 @@ function dragTo(
 		return;
 	}
 	// Over a textless stretch or user-select: none, the focus stays put.
-	if (
-		input[kSelectionDragAnchor] && input[kMouseDownTarget] && isInDocument
-	) {
+	if (input[kSelectionDragAnchor] && input[kMouseDownTarget] && isInDocument) {
 		const focus = getTextPosition(input, x, y);
 		if (focus && isSelectable(input, focus)) {
 			const anchor = input[kSelectionDragAnchor];
@@ -792,9 +777,7 @@ function dispatchPress(
 	input[kPopoverPressTarget] = lightDismissPress(target);
 	input[kTextControlDragAnchor] = null;
 	if (setDocumentFocusVisible(input[kDocument], false)) {
-		input[kCascade].handleFocusChange(
-			input[kDocument].activeElement,
-		);
+		input[kCascade].handleFocusChange(input[kDocument].activeElement);
 		requestRender(input[kDocument]);
 	}
 	const notCanceled = dispatchAsUserAgent(
@@ -916,10 +899,7 @@ function dispatchRelease(
 		) {
 			dispatchAsUserAgent(
 				target,
-				new input[kWindow].MouseEvent("dblclick", {
-					...eventInit,
-					buttons: 0,
-				}),
+				new input[kWindow].MouseEvent("dblclick", {...eventInit, buttons: 0}),
 			);
 			input[kLastClickTarget] = null;
 			input[kLastClickTime] = 0;
@@ -936,9 +916,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	const keyCode = getLegacyKeyCode(keyName);
 
 	if (setDocumentFocusVisible(input[kDocument], true)) {
-		input[kCascade].handleFocusChange(
-			input[kDocument].activeElement,
-		);
+		input[kCascade].handleFocusChange(input[kDocument].activeElement);
 		requestRender(input[kDocument]);
 	}
 
@@ -1042,11 +1020,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	dispatchAsUserAgent(targetElement, keyupEvent);
 }
 
-function insertText(
-	input: Input,
-	target: Element,
-	text: string,
-): void {
+function insertText(input: Input, target: Element, text: string): void {
 	const tag = target.tagName;
 	if (tag !== "INPUT" && tag !== "TEXTAREA") {
 		return;
@@ -1065,10 +1039,7 @@ function insertText(
 function moveFocus(input: Input, reverse: boolean): void {
 	// Tab cannot leave a modal dialog.
 	const scope = topmostModalDialog(input[kDocument]) ?? input[kDocument];
-	const entries = getSequentialFocusEntries(
-		scope,
-		input[kLayout],
-	);
+	const entries = getSequentialFocusEntries(scope, input[kLayout]);
 
 	// activeElement retargets to the shadow host. Follow it down.
 	let current = input[kDocument].activeElement;
@@ -1080,9 +1051,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 		}
 		current = inner;
 	}
-	const currentIndex = entries.findIndex(
-		(entry) => entry.element === current,
-	);
+	const currentIndex = entries.findIndex((entry) => entry.element === current);
 	const currentBarrier =
 		currentIndex === -1 ? null : entries[currentIndex].barrier;
 	// Crossing out of a barrier is the tree exit below. Crossing in never
@@ -1198,11 +1167,7 @@ function getTextPosition(
 	) {
 		return null;
 	}
-	return input[kLayout].caretPositionFromPoint(
-		x,
-		y,
-		element,
-	);
+	return input[kLayout].caretPositionFromPoint(x, y, element);
 }
 
 function isSelectable(
@@ -1210,6 +1175,5 @@ function isSelectable(
 	position: {node: Text; offset: number},
 ): boolean {
 	const parent = flatParentElement(position.node);
-	return parent === null ||
-		input[kCascade].isSelectable(parent);
+	return parent === null || input[kCascade].isSelectable(parent);
 }

@@ -20,9 +20,7 @@ import {TermDOM, transportFromProcess} from "../dist/index.js";
 const runtime =
 	typeof Deno !== "undefined"
 		? "Deno"
-		: typeof Bun !== "undefined"
-			? "Bun"
-			: "Node";
+		: typeof Bun !== "undefined" ? "Bun" : "Node";
 const failures = [];
 
 function check(label, actual, expected) {

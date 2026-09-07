@@ -60,10 +60,7 @@ document.head.appendChild(style);
 // Custom TodoMVC event that bubbles by default
 class TodoEvent extends CustomEvent<any> {
 	constructor(type: string, detail: any = {}) {
-		super(type, {
-			bubbles: true,
-			detail,
-		});
+		super(type, {bubbles: true, detail});
 	}
 }
 
@@ -108,10 +105,7 @@ function* TodoItem(this: Context, {todo}: any) {
 
 	const ontoggle = () => {
 		this.dispatchEvent(
-			new TodoEvent("todotoggle", {
-				id: todo.id,
-				completed: !todo.completed,
-			}),
+			new TodoEvent("todotoggle", {id: todo.id, completed: !todo.completed}),
 		);
 	};
 
@@ -129,10 +123,7 @@ function* TodoItem(this: Context, {todo}: any) {
 	const onsave = () => {
 		if (editTitle.trim()) {
 			this.dispatchEvent(
-				new TodoEvent("todoedit", {
-					id: todo.id,
-					title: editTitle.trim(),
-				}),
+				new TodoEvent("todoedit", {id: todo.id, title: editTitle.trim()}),
 			);
 		}
 		this.refresh(() => (editing = false));
@@ -260,11 +251,7 @@ function* App(this: Context) {
 
 	this.addEventListener("todocreate", (ev: any) => {
 		this.refresh(() => {
-			todos.push({
-				id: nextId++,
-				title: ev.detail.title,
-				completed: false,
-			});
+			todos.push({id: nextId++, title: ev.detail.title, completed: false});
 		});
 	});
 

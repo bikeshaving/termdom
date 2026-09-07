@@ -73,10 +73,7 @@ test("special keys are mapped correctly", async () => {
 
 	const events: any[] = [];
 	document.body.addEventListener("keydown", (event) => {
-		events.push({
-			key: event.key,
-			keyCode: event.keyCode,
-		});
+		events.push({key: event.key, keyCode: event.keyCode});
 	});
 
 	// Test Enter key
@@ -218,10 +215,7 @@ test("arrow keys are parsed correctly", async () => {
 
 	const events: any[] = [];
 	document.body.addEventListener("keydown", (event) => {
-		events.push({
-			key: event.key,
-			keyCode: event.keyCode,
-		});
+		events.push({key: event.key, keyCode: event.keyCode});
 	});
 
 	// Test arrow keys (ANSI sequences)

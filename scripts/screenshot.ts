@@ -86,9 +86,7 @@ for (let y = 0; y < ROWS; y++) {
 				.replace(/</g, "&lt;")
 				.replace(/>/g, "&gt;");
 			spans += `<text x="${(PAD + runStart * CELL_W).toFixed(1)}" y="${(
-				PAD +
-				y * CELL_H +
-				FONT_SIZE
+				PAD + y * CELL_H + FONT_SIZE
 			).toFixed(1)}" fill="${runFg}"${runBold ? ' font-weight="bold"' : ""}${
 				runUnderline ? ' text-decoration="underline"' : ""
 			} xml:space="preserve">${esc}</text>`;
@@ -105,8 +103,7 @@ for (let y = 0; y < ROWS; y++) {
 		const underline = !!cell?.isUnderline();
 		if (cell && !cell.isBgDefault()) {
 			bgRects += `<rect x="${(PAD + x * CELL_W).toFixed(1)}" y="${(
-				PAD +
-				y * CELL_H
+				PAD + y * CELL_H
 			).toFixed(1)}" width="${CELL_W}" height="${CELL_H}" fill="${css(
 				cell.getBgColor(),
 			)}"/>`;

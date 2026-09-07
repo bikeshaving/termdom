@@ -21,10 +21,7 @@ interface CastEvent {
 	data: string;
 }
 
-function makeRecorder(
-	cols = COLS,
-	rows = ROWS,
-): {
+function makeRecorder(cols = COLS, rows = ROWS): {
 	proc: ProcessLike;
 	events: CastEvent[];
 	pressKey: (key: string) => void;

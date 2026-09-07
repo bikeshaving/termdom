@@ -253,9 +253,7 @@ function temperatureChart(temps: number[]): string {
 		const label =
 			row === ROWS - 1
 				? String(Math.round(max)).padStart(4) + "° "
-				: row === 0
-					? String(Math.round(min)).padStart(4) + "° "
-					: "      ";
+				: row === 0 ? String(Math.round(min)).padStart(4) + "° " : "      ";
 		lines.push(`<div><span class="label">${label}</span>${cells}</div>`);
 	}
 	return lines.join("");

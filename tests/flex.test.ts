@@ -718,9 +718,7 @@ describe("what a measurement produced, not only how big it was", () => {
 		const item = box(parent);
 		item.setMeasureContent((width, widthSpace, placing) => {
 			const limit =
-				widthSpace === "indefinite"
-					? Number.MAX_SAFE_INTEGER
-					: width;
+				widthSpace === "indefinite" ? Number.MAX_SAFE_INTEGER : width;
 			const lines = breakWords(limit);
 			if (placing) {
 				placed.lines = lines;

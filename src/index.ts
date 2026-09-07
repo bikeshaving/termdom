@@ -189,9 +189,7 @@ export class TermDOM {
 		// it. The next mutation starts a fresh one below it.
 		exchange.addEventListener("seal", (event) => {
 			if (
-				event.target === exchange &&
-				isAttached(this) &&
-				this[kRenderCount] > 0
+				event.target === exchange && isAttached(this) && this[kRenderCount] > 0
 			) {
 				flushDocument(this);
 				this[kSealed] = true;
@@ -391,9 +389,7 @@ function closeTermDOM(termDOM: TermDOM): void {
  * wheel has been yielded to the terminal, capture would take the user's
  * scrollback and selection for nothing.
  */
-function syncMouseReporting(
-	termDOM: TermDOM,
-): void {
+function syncMouseReporting(termDOM: TermDOM): void {
 	const wanted =
 		isAttached(termDOM) &&
 		termDOM[kTransport].interactive &&
@@ -413,9 +409,7 @@ function syncMouseReporting(
  * Motion reporting (1003) sends a report per cell the pointer crosses, so
  * it is on only while capture is on and something observes hover.
  */
-function syncHoverReporting(
-	termDOM: TermDOM,
-): void {
+function syncHoverReporting(termDOM: TermDOM): void {
 	const wanted =
 		termDOM[kMouseReportingEnabled] &&
 		(DOM.hoverListenerCount(termDOM.document) > 0 ||
@@ -481,9 +475,7 @@ async function render(termDOM: TermDOM): Promise<void> {
  * that attach queued must reach the terminal before the first frame
  * does.
  */
-async function renderOnce(
-	termDOM: TermDOM,
-): Promise<void> {
+async function renderOnce(termDOM: TermDOM): Promise<void> {
 	// A render loop can outlive dispose() by one queued frame.
 	if (termDOM[kLifecycle] === "attaching") {
 		await termDOM[kAttachBegun];
@@ -503,9 +495,7 @@ async function renderOnce(
  * Run the observers against the layout just produced. A callback that
  * mutates schedules the next frame through the mutation observer.
  */
-function afterRender(
-	termDOM: TermDOM,
-): void {
+function afterRender(termDOM: TermDOM): void {
 	termDOM[kRenderCount]++;
 	// The viewport in document coordinates, for IntersectionObserver.
 	const viewport = new termDOM.window.DOMRect(
@@ -527,9 +517,7 @@ function afterRender(
 }
 
 /** The whole document as plain lines, for a stdout that is not a terminal. */
-async function printStatic(
-	termDOM: TermDOM,
-): Promise<void> {
+async function printStatic(termDOM: TermDOM): Promise<void> {
 	DOM.applyMutations(termDOM.document);
 
 	termDOM[kLayout].performLayout();
@@ -552,9 +540,7 @@ async function printStatic(
  * terminal has only seen the last one. Erase our rows and print the
  * document whole into the scrollback, like any command's output.
  */
-function flushDocument(
-	termDOM: TermDOM,
-): void {
+function flushDocument(termDOM: TermDOM): void {
 	if (!termDOM[kTransport].interactive) {
 		return;
 	}
@@ -575,10 +561,7 @@ function flushDocument(
 }
 
 /** The document as ANSI: colors and line breaks, no cursor controls, no modes. */
-function renderStatic(
-	termDOM: TermDOM,
-	lineEnding: "\n" | "\r\n",
-): string {
+function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
 	DOM.flushLayout(termDOM.document);
 	const contentHeight = termDOM[kLayout].documentPaintHeight();
 	if (contentHeight === 0) {
@@ -597,9 +580,7 @@ function renderStatic(
  * anchor. Needing more rows scrolls earlier output into the
  * scrollback. Nothing on screen before us is painted over.
  */
-async function renderInteractive(
-	termDOM: TermDOM,
-): Promise<void> {
+async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// close() sealed the previous document. Start a fresh one below it.
 	if (termDOM[kSealed]) {
 		termDOM[kSealed] = false;
@@ -674,10 +655,7 @@ async function renderInteractive(
 	const contentHeight = fullscreen
 		? termDOM[kScreen].rows
 		: termDOM[kLayout].documentPaintHeight();
-	const regionHeight = Math.min(
-		contentHeight,
-		termDOM[kScreen].rows,
-	);
+	const regionHeight = Math.min(contentHeight, termDOM[kScreen].rows);
 
 	const top = fullscreen ? 0 : termDOM[kExchange].reserveRows(regionHeight);
 
@@ -726,8 +704,7 @@ function renderStaticHTML(
 ): string {
 	const cols = termDOM[kTransport].cols;
 	if (
-		termDOM[kStaticSibling] &&
-		termDOM[kStaticSibling][kScreen].cols !== cols
+		termDOM[kStaticSibling] && termDOM[kStaticSibling][kScreen].cols !== cols
 	) {
 		void termDOM[kStaticSibling].dispose();
 		termDOM[kStaticSibling] = null;

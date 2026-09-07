@@ -395,18 +395,11 @@ test(":disabled follows the fieldset chain and lets the first legend out", () =>
 
 test(":required and :optional only speak of controls that can be required", () => {
 	expect(ids(FORM, ":required")).toEqual(["plain"]);
-	expect(ids(FORM, "input:optional")).toEqual([
-		"in-legend",
-		"in-body",
-		"ro",
-	]);
+	expect(ids(FORM, "input:optional")).toEqual(["in-legend", "in-body", "ro"]);
 });
 
 test(":read-only and :read-write split on what the user may type into", () => {
-	expect(ids(FORM, "input:read-write")).toEqual([
-		"in-legend",
-		"plain",
-	]);
+	expect(ids(FORM, "input:read-write")).toEqual(["in-legend", "plain"]);
 	expect(ids(FORM, "#ro:read-only")).toEqual(["ro"]);
 	expect(ids(FORM, "#hidden:read-only")).toEqual(["hidden"]);
 	expect(ids("<div id=a contenteditable><b id=b></b></div>", ":read-write"))

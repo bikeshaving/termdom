@@ -1156,10 +1156,7 @@ test("collapsible white space between items is not an item", async () => {
 			<i>b</i>
 		</div>`,
 	);
-	expect(items().map((box) => [box.left, box.top])).toEqual([
-		[0, 0],
-		[4, 0],
-	]);
+	expect(items().map((box) => [box.left, box.top])).toEqual([[0, 0], [4, 0]]);
 });
 
 test("text directly in a grid container becomes an item of its own", async () => {
@@ -1518,10 +1515,7 @@ test("subgrid is refused, and the track list declares nothing", async () => {
 	const {items} = await render(
 		grid("grid-template-columns: subgrid", letters(2)),
 	);
-	expect(items().map((box) => [box.left, box.top])).toEqual([
-		[0, 0],
-		[0, 1],
-	]);
+	expect(items().map((box) => [box.left, box.top])).toEqual([[0, 0], [0, 1]]);
 });
 
 test("masonry is refused", async () => {
@@ -1531,10 +1525,7 @@ test("masonry is refused", async () => {
 			letters(2),
 		),
 	);
-	expect(items().map((box) => [box.left, box.top])).toEqual([
-		[0, 0],
-		[4, 0],
-	]);
+	expect(items().map((box) => [box.left, box.top])).toEqual([[0, 0], [4, 0]]);
 });
 
 test("a track list this engine cannot parse declares nothing", async () => {

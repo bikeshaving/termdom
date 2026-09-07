@@ -37,17 +37,11 @@ export default {
 	},
 	steps: [
 		1.0,
-		..."张三"
-			.split("")
-			.flatMap((c) => [c, 0.28] as [string, number])
-			.flat(),
+		..."张三".split("").flatMap((c) => [c, 0.28] as [string, number]).flat(),
 		0.6,
 		"\t",
 		0.8,
-		..."johndoe"
-			.split("")
-			.flatMap((c) => [c, 0.14] as [string, number])
-			.flat(),
+		..."johndoe".split("").flatMap((c) => [c, 0.14] as [string, number]).flat(),
 		2.0,
 	] as Array<number | string>,
 };

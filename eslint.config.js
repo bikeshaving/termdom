@@ -40,10 +40,7 @@ export default [
 			// imports themselves stay in the order they were written.
 			"sort-imports": [
 				"error",
-				{
-					ignoreCase: true,
-					ignoreDeclarationSort: true,
-				},
+				{ignoreCase: true, ignoreDeclarationSort: true},
 			],
 		},
 	},

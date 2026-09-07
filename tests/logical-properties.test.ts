@@ -25,10 +25,7 @@ function makeDOM(html = "", cols = 40, rows = 10): {
 }
 
 /** One element's computed values, after a frame. */
-async function computed(
-	html: string,
-	selector = "#t",
-): Promise<{
+async function computed(html: string, selector = "#t"): Promise<{
 	style: CSSStyleDeclaration;
 	of: (property: string) => string;
 	rect: ReturnType<Element["getBoundingClientRect"]>;

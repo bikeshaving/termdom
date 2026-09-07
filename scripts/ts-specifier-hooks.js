@@ -21,10 +21,7 @@ export function resolve(specifier, context, nextResolve) {
 		const asURL = new URL(specifier, context.parentURL);
 		if (asURL.pathname.includes("/src/")) {
 			let resolved = specifier;
-			if (
-				specifier.endsWith(".js") &&
-				!existsSync(fileURLToPath(asURL))
-			) {
+			if (specifier.endsWith(".js") && !existsSync(fileURLToPath(asURL))) {
 				resolved = specifier.slice(0, -3) + ".ts";
 			}
 			if (generation !== null && !resolved.includes("?")) {

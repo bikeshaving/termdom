@@ -336,10 +336,7 @@ const actionArbitrary: fc.Arbitrary<Action> = fc.oneof(
 				id: idArbitrary,
 				value: fc.constantFrom("", "ltr", "rtl", "auto"),
 			}),
-			fc.record({
-				kind: fc.constant("open" as const),
-				id: elementIdArbitrary,
-			}),
+			fc.record({kind: fc.constant("open" as const), id: elementIdArbitrary}),
 			fc.record({
 				kind: fc.constant("pop" as const),
 				id: elementIdArbitrary,
@@ -544,9 +541,7 @@ export async function apply(scene: Scene, action: Action): Promise<void> {
 	if (action.kind === "wheel") {
 		const button = action.up ? 64 : 65;
 		for (let i = 0; i < action.count; i++) {
-			scene.terminal.stdin.simulateResponse(
-				`\x1b[<${button};2;${action.row}M`,
-			);
+			scene.terminal.stdin.simulateResponse(`\x1b[<${button};2;${action.row}M`);
 		}
 		return;
 	}

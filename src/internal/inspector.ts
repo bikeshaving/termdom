@@ -71,10 +71,7 @@ function inspectDocument(
 	return output;
 }
 
-function inspectNode(
-	node: Node,
-	options: InspectorOptions = {},
-): string {
+function inspectNode(node: Node, options: InspectorOptions = {}): string {
 	switch (node.nodeType) {
 		case 1:
 			return inspectElement(node as Element, options);
@@ -226,10 +223,7 @@ function formatChildren(
 	return parts.join("") + "\n" + "  ".repeat((options.currentDepth || 1) - 1);
 }
 
-function inspectText(
-	text: Text,
-	options: InspectorOptions = {},
-): string {
+function inspectText(text: Text, options: InspectorOptions = {}): string {
 	const {colorize = true} = options;
 	const c = getPalette(colorize);
 
@@ -275,10 +269,7 @@ function inspectFragment(
 	return output;
 }
 
-function inspectDOMRect(
-	rect: any,
-	options: InspectorOptions = {},
-): string {
+function inspectDOMRect(rect: any, options: InspectorOptions = {}): string {
 	const {colorize = true} = options;
 	const c = getPalette(colorize);
 
@@ -333,11 +324,7 @@ const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
 
 function installInspectHook(
 	prototype: object,
-	render: (
-		target: never,
-		depth: number,
-		options: NodeInspectOptions,
-	) => string,
+	render: (target: never, depth: number, options: NodeInspectOptions) => string,
 ): void {
 	Object.defineProperty(prototype, kNodeInspect, {
 		value(this: never, depth: number, options: NodeInspectOptions) {

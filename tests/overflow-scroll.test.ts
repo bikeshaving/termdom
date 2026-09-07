@@ -14,11 +14,7 @@ function makeScrollerApp(options?: {
 	boxHeight?: number;
 	lines?: number;
 	rows?: number;
-}): {
-	terminal: MockProcess;
-	dom: TermDOM;
-	box: HTMLElement;
-} {
+}): {terminal: MockProcess; dom: TermDOM; box: HTMLElement} {
 	const {boxHeight = 3, lines = 8, rows = 10} = options ?? {};
 	const terminal = new MockProcess({cols: 20, rows});
 	const dom = new TermDOM({transport: terminal.transport});

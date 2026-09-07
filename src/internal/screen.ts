@@ -402,12 +402,7 @@ const BORDER_MASK = {
 	Style: 0b00001111,
 } as const;
 
-const BORDER_SHIFT = {
-	Top: 0,
-	Right: 8,
-	Bottom: 16,
-	Left: 24,
-} as const;
+const BORDER_SHIFT = {Top: 0, Right: 8, Bottom: 16, Left: 24} as const;
 
 const BORDER_EDGE_MASKS = [
 	BORDER_MASK.Top,
@@ -967,12 +962,7 @@ export class CellContext {
 	caret: {col: number; row: number} | null;
 	// The overflow:hidden clip in document (row, col) space. An edge is
 	// +-Infinity on an axis that is not clipped. Null when none is active.
-	clipRect: {
-		left: number;
-		top: number;
-		right: number;
-		bottom: number;
-	} | null;
+	clipRect: {left: number; top: number; right: number; bottom: number} | null;
 
 	constructor(
 		grid: CellGrid,
@@ -1247,11 +1237,7 @@ export class CellContext {
 	}
 }
 
-function inClip(
-	context: CellContext,
-	row: number,
-	col: number,
-): boolean {
+function inClip(context: CellContext, row: number, col: number): boolean {
 	if (!context.clipRect) {
 		return true;
 	}
@@ -1760,11 +1746,7 @@ export interface Screen {
 }
 
 export class Screen {
-	constructor(
-		rows: number,
-		cols: number,
-		colorDepth: ColorDepth = "rgb",
-	) {
+	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
 		this[kFlushProbes] = false;
 		this[kMeasurer] = null;
 		this[kPrev] = null;
@@ -1816,9 +1798,7 @@ export class Screen {
 			dirty: this[kDirty],
 			frameScroll: this[kFrameScroll],
 			needsRepaint:
-				this[kNeedsScreenReset] ||
-				this[kNeedsFullClear] ||
-				this[kFlushProbes],
+				this[kNeedsScreenReset] || this[kNeedsFullClear] || this[kFlushProbes],
 		};
 	}
 
@@ -1904,10 +1884,7 @@ export class Screen {
 		this[kRenderedLines].clear();
 	}
 
-	beginStatic({
-		rows: contentRows,
-		lineEnding = "\n",
-	}: {
+	beginStatic({rows: contentRows, lineEnding = "\n"}: {
 		rows: number;
 		lineEnding?: "\n" | "\r\n";
 	}): CellContext {
@@ -2270,10 +2247,7 @@ export class Screen {
 				if (contentHeight > 0) {
 					writer.cursorDown(contentHeight);
 				}
-				staleOutput = writer
-					.carriageReturn()
-					.eraseBelow()
-					.take();
+				staleOutput = writer.carriageReturn().eraseBelow().take();
 			} else if (
 				resetFrame &&
 				frameStartRow !== undefined &&

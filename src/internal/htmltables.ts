@@ -50,33 +50,21 @@ function str(
 	property: string,
 	attribute = property.toLowerCase(),
 ): ReflectSpec {
-	return {
-		property,
-		attribute,
-		kind: "string",
-	};
+	return {property, attribute, kind: "string"};
 }
 
 function url(
 	property: string,
 	attribute = property.toLowerCase(),
 ): ReflectSpec {
-	return {
-		property,
-		attribute,
-		kind: "url",
-	};
+	return {property, attribute, kind: "url"};
 }
 
 function bool(
 	property: string,
 	attribute = property.toLowerCase(),
 ): ReflectSpec {
-	return {
-		property,
-		attribute,
-		kind: "boolean",
-	};
+	return {property, attribute, kind: "boolean"};
 }
 
 function long(
@@ -85,13 +73,7 @@ function long(
 	fallback: number,
 	nonNegative = false,
 ): ReflectSpec {
-	return {
-		property,
-		attribute,
-		kind: "long",
-		fallback,
-		nonNegative,
-	};
+	return {property, attribute, kind: "long", fallback, nonNegative};
 }
 
 function ulong(
@@ -100,13 +82,7 @@ function ulong(
 	fallback: number,
 	extra: Partial<ReflectSpec> = {},
 ): ReflectSpec {
-	return {
-		property,
-		attribute,
-		kind: "unsigned-long",
-		fallback,
-		...extra,
-	};
+	return {property, attribute, kind: "unsigned-long", fallback, ...extra};
 }
 
 function keyword(
@@ -116,14 +92,7 @@ function keyword(
 	missing: string,
 	invalid: string,
 ): ReflectSpec {
-	return {
-		property,
-		attribute,
-		kind: "enum",
-		keywords,
-		missing,
-		invalid,
-	};
+	return {property, attribute, kind: "enum", keywords, missing, invalid};
 }
 
 function tokens(
@@ -131,12 +100,7 @@ function tokens(
 	attribute: string,
 	supported: readonly string[] = [],
 ): ReflectSpec {
-	return {
-		property,
-		attribute,
-		kind: "tokenlist",
-		supported,
-	};
+	return {property, attribute, kind: "tokenlist", supported};
 }
 
 const REFERRER_POLICIES = [
@@ -296,16 +260,8 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 		],
 	},
 	{name: "HTMLAudioElement", tags: ["audio"]},
-	{
-		name: "HTMLBRElement",
-		tags: ["br"],
-		reflect: [str("clear")],
-	},
-	{
-		name: "HTMLBaseElement",
-		tags: ["base"],
-		reflect: [str("target")],
-	},
+	{name: "HTMLBRElement", tags: ["br"], reflect: [str("clear")]},
+	{name: "HTMLBaseElement", tags: ["base"], reflect: [str("target")]},
 	{
 		name: "HTMLBodyElement",
 		tags: ["body"],
@@ -341,16 +297,8 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 		tags: ["canvas"],
 		reflect: [ulong("width", "width", 300), ulong("height", "height", 150)],
 	},
-	{
-		name: "HTMLDListElement",
-		tags: ["dl"],
-		reflect: [bool("compact")],
-	},
-	{
-		name: "HTMLDataElement",
-		tags: ["data"],
-		reflect: [str("value")],
-	},
+	{name: "HTMLDListElement", tags: ["dl"], reflect: [bool("compact")]},
+	{name: "HTMLDataElement", tags: ["data"], reflect: [str("value")]},
 	{name: "HTMLDataListElement", tags: ["datalist"]},
 	{
 		name: "HTMLDetailsElement",
@@ -371,16 +319,8 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 			),
 		],
 	},
-	{
-		name: "HTMLDirectoryElement",
-		tags: ["dir"],
-		reflect: [bool("compact")],
-	},
-	{
-		name: "HTMLDivElement",
-		tags: ["div"],
-		reflect: [str("align")],
-	},
+	{name: "HTMLDirectoryElement", tags: ["dir"], reflect: [bool("compact")]},
+	{name: "HTMLDivElement", tags: ["div"], reflect: [str("align")]},
 	{
 		name: "HTMLEmbedElement",
 		tags: ["embed"],
@@ -465,11 +405,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 		tags: ["h1", "h2", "h3", "h4", "h5", "h6"],
 		reflect: [str("align")],
 	},
-	{
-		name: "HTMLHtmlElement",
-		tags: ["html"],
-		reflect: [str("version")],
-	},
+	{name: "HTMLHtmlElement", tags: ["html"], reflect: [str("version")]},
 	{
 		name: "HTMLIFrameElement",
 		tags: ["iframe"],
@@ -610,11 +546,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 		tags: ["label"],
 		reflect: [str("htmlFor", "for")],
 	},
-	{
-		name: "HTMLLegendElement",
-		tags: ["legend"],
-		reflect: [str("align")],
-	},
+	{name: "HTMLLegendElement", tags: ["legend"], reflect: [str("align")]},
 	{
 		name: "HTMLLinkElement",
 		tags: ["link"],
@@ -670,11 +602,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 			str("target"),
 		],
 	},
-	{
-		name: "HTMLMapElement",
-		tags: ["map"],
-		reflect: [str("name")],
-	},
+	{name: "HTMLMapElement", tags: ["map"], reflect: [str("name")]},
 	{
 		name: "HTMLMarqueeElement",
 		tags: ["marquee"],
@@ -712,11 +640,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 			bool("disableRemotePlayback", "disableremoteplayback"),
 		],
 	},
-	{
-		name: "HTMLMenuElement",
-		tags: ["menu"],
-		reflect: [bool("compact")],
-	},
+	{name: "HTMLMenuElement", tags: ["menu"], reflect: [bool("compact")]},
 	{
 		name: "HTMLMetaElement",
 		tags: ["meta"],
@@ -780,11 +704,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 		tags: ["output"],
 		reflect: [tokens("htmlFor", "for"), str("name")],
 	},
-	{
-		name: "HTMLParagraphElement",
-		tags: ["p"],
-		reflect: [str("align")],
-	},
+	{name: "HTMLParagraphElement", tags: ["p"], reflect: [str("align")]},
 	{
 		name: "HTMLParamElement",
 		tags: ["param"],

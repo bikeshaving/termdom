@@ -1407,12 +1407,7 @@ async function runMountedFile(
 			}
 			sources.push(text);
 		} else if (script.getAttribute("type") === "module") {
-			return {
-				file,
-				harness: "SKIPPED",
-				subtests: [],
-				error: "module script",
-			};
+			return {file, harness: "SKIPPED", subtests: [], error: "module script"};
 		} else {
 			sources.push(script.textContent ?? "");
 		}
@@ -1627,9 +1622,7 @@ const all = outcomes.flatMap((outcome) => outcome.subtests);
 // unsupported; testharness scores it apart from failure, and so does this.
 const passed = all.filter((test) => test.status === 0);
 const optional = all.filter((test) => test.status === 4);
-const failed = all.filter(
-	(test) => test.status !== 0 && test.status !== 4,
-);
+const failed = all.filter((test) => test.status !== 0 && test.status !== 4);
 const reftests = outcomes.filter((outcome) => outcome.harness === "REFTEST");
 const excluded = outcomes.filter((outcome) => outcome.harness === "EXCLUDED");
 const brokenFiles = outcomes.filter(

@@ -549,9 +549,7 @@ type ToPlatform<T> = T extends unknown
 	: never;
 type ToPlatformTuple<
 	T extends readonly unknown[],
-> = {[I in keyof T]: ToPlatform<
-	T[I]
->};
+> = {[I in keyof T]: ToPlatform<T[I]>};
 type Keys<G> = Exclude<keyof G, symbol>;
 type Fn = (...args: never[]) => unknown;
 // Up to six overloads, most recent last, as TypeScript's `infer` on a
@@ -618,9 +616,7 @@ type Overloads<T> = T extends {
 						? [[A1, R1], [A2, R2], [A3, R3]]
 						: T extends {(...a: infer A1): infer R1; (...a: infer A2): infer R2}
 							? [[A1, R1], [A2, R2]]
-							: T extends (...a: infer A1) => infer R1
-								? [[A1, R1]]
-								: never;
+							: T extends (...a: infer A1) => infer R1 ? [[A1, R1]] : never;
 type MapOverloads<T extends Array<[unknown[], unknown]>> = {
 	[I in keyof T]: [ToPlatformTuple<T[I][0]>, ToPlatform<T[I][1]>];
 };

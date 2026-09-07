@@ -150,11 +150,7 @@ test("a frame asks about each unmeasured uncertain cluster, once", () => {
 	const output = emit(
 		1,
 		20,
-		[
-			[0, "\u{1F31E}"],
-			[2, "a"],
-			[3, "\u{1F31E}"],
-		],
+		[[0, "\u{1F31E}"], [2, "a"], [3, "\u{1F31E}"]],
 		measurer,
 	);
 
@@ -311,15 +307,7 @@ test("a starved cluster waits for a frame with a cell to hide in", () => {
 
 	// A row too short to cover the residue is no better.
 	const second = recordingMeasurer(starved);
-	emit(
-		1,
-		20,
-		[
-			[0, "-"],
-			[1, "-"],
-		],
-		second.measurer,
-	);
+	emit(1, 20, [[0, "-"], [1, "-"]], second.measurer);
 	expect(second.probes).toEqual([]);
 });
 
@@ -347,15 +335,7 @@ test("a gap crossed by cursor-forward keeps the run it was crossing", () => {
 	// on the far side of the gap too. Only a carriage return names a column
 	// outright, and only that ends a run.
 	const {probes, measurer} = recordingMeasurer();
-	const output = emit(
-		1,
-		40,
-		[
-			[0, "\u{1F33B}"],
-			[10, "\u{1F33C}"],
-		],
-		measurer,
-	);
+	const output = emit(1, 40, [[0, "\u{1F33B}"], [10, "\u{1F33C}"]], measurer);
 
 	expect(output).toContain("\x1b[8C");
 	expect(probes.map((probe) => probe.column)).toEqual([0, 10]);

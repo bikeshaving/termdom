@@ -185,9 +185,7 @@ function isRun(pile: Card[], index: number): boolean {
 		const card = pile[i];
 		const next = pile[i + 1];
 		if (
-			!next.up ||
-			isRed(card) === isRed(next) ||
-			card.rank !== next.rank + 1
+			!next.up || isRed(card) === isRed(next) || card.rank !== next.rank + 1
 		) {
 			return false;
 		}
@@ -247,8 +245,7 @@ function lift(game: Game, held: Held): void {
 }
 
 type Target =
-	{kind: "tableau"; pile: number} |
-	{kind: "foundation"; index: number};
+	{kind: "tableau"; pile: number} | {kind: "foundation"; index: number};
 
 /** Play the held cards onto a target, or report that they do not go there. */
 function play(game: Game, held: Held, target: Target): boolean {
@@ -623,13 +620,7 @@ function CardFace({
 }
 
 /** An empty place on the board: the stock's turnover arrow, or a suit's home. */
-function Slot({
-	tier,
-	mark,
-	drop,
-	cursor,
-	onclick,
-}: {
+function Slot({tier, mark, drop, cursor, onclick}: {
 	tier: Tier;
 	mark?: string;
 	drop?: boolean;
@@ -1449,8 +1440,7 @@ export function mount(host: TermDOM, options: {deal?: number} = {}): void {
 
 // `node examples/solitaire.ts 4242` deals game 4242 again, skipping the menu.
 if (
-	process.argv[1] &&
-	import.meta.url === pathToFileURL(process.argv[1]).href
+	process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
 	const argument = Number(process.argv[2]);
 	mount(

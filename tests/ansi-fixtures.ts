@@ -60,18 +60,9 @@ function attributeSweep(colorDepth: ColorDepth): string {
 }
 
 export const scenarios: Scenario[] = [
-	{
-		name: "attribute sweep, rgb",
-		run: () => attributeSweep("rgb"),
-	},
-	{
-		name: "attribute sweep, 256",
-		run: () => attributeSweep("256"),
-	},
-	{
-		name: "attribute sweep, ansi",
-		run: () => attributeSweep("ansi"),
-	},
+	{name: "attribute sweep, rgb", run: () => attributeSweep("rgb")},
+	{name: "attribute sweep, 256", run: () => attributeSweep("256")},
+	{name: "attribute sweep, ansi", run: () => attributeSweep("ansi")},
 	{
 		// A style run that turns attributes off one at a time exercises every
 		// reset code in the SGR delta, which the sweep above (all-on rows

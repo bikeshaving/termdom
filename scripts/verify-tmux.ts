@@ -262,10 +262,7 @@ const scenarios: Scenario[] = [
 		rows: 16,
 		run: async (pane) => {
 			const bottom = () =>
-				pane
-					.screen()
-					.filter((l) => l.trim())
-					.pop() ?? "";
+				pane.screen().filter((l) => l.trim()).pop() ?? "";
 			assert(
 				bottom().includes("sample") && bottom().includes("0%"),
 				"status bar missing from the viewport's bottom row",

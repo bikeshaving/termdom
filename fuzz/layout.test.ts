@@ -285,9 +285,7 @@ test("collapsible spaces at a block's edge change nothing", async () => {
 				// computed style, so it takes a laid-out document to answer.
 				const probe = await build(markup);
 				const eligible = (
-					Array.from(
-						probe.dom.document.querySelectorAll("[data-f]"),
-					) as any[]
+					Array.from(probe.dom.document.querySelectorAll("[data-f]")) as any[]
 				)
 					.filter((element) => takesEdgeSpaces(probe, element))
 					.map((element) => element.getAttribute("data-f"));

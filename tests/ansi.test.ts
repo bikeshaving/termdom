@@ -1002,9 +1002,7 @@ describe("Border Integration", () => {
 
 		// includes, not startsWith: the reset frame's erase sequence survives
 		// stripControlCodes on the first row.
-		const rows = stripControlCodes(output)
-			.split("\n")
-			.map((l) => l.trimEnd());
+		const rows = stripControlCodes(output).split("\n").map((l) => l.trimEnd());
 		const barRows = rows.filter((l) => l.includes("│")).length;
 		expect(barRows).toBe(4);
 	});

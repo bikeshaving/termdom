@@ -501,10 +501,7 @@ test("a block arriving under a box that measures as a unit rebuilds it", async (
 	document.body.innerHTML = "<span style=\"display: inline-block\" id=\"s\">A</span>B";
 	await nextFrame(dom);
 	const lines = () =>
-		terminal
-			.getPlainText()
-			.split("\n")
-			.map((line) => line.replace(/\s+$/, ""));
+		terminal.getPlainText().split("\n").map((line) => line.replace(/\s+$/, ""));
 	expect(lines()[0]).toBe("AB");
 
 	const block = document.createElement("div");
@@ -527,10 +524,7 @@ test("a block added inside a display: contents element keeps its siblings", asyn
 	document.body.innerHTML = "<style>.c { display: contents; }</style>AB<p class=\"c\" id=\"s\">C</p>";
 	await nextFrame(dom);
 	const lines = () =>
-		terminal
-			.getPlainText()
-			.split("\n")
-			.map((line) => line.replace(/\s+$/, ""));
+		terminal.getPlainText().split("\n").map((line) => line.replace(/\s+$/, ""));
 	expect(lines()[0]).toBe("ABC");
 
 	const block = document.createElement("div");
@@ -559,10 +553,7 @@ test("an element flipped to display: contents gives up its box", async () => {
 		"<li id=\"a\">A<div id=\"b\">B</div></li><p>C</p>";
 	await nextFrame(dom);
 	const lines = () =>
-		terminal
-			.getPlainText()
-			.split("\n")
-			.map((line) => line.replace(/\s+$/, ""));
+		terminal.getPlainText().split("\n").map((line) => line.replace(/\s+$/, ""));
 	expect(lines().slice(0, 3)).toEqual(["A", "B", "C"]);
 
 	document.getElementById("a")!.classList.add("c");
@@ -655,10 +646,7 @@ test("a flex item that stops being one gives up its layout node", async () => {
 		"<b><div id=\"d\" class=\"col\"><span>A</span></div>BC</b>";
 	await nextFrame(dom);
 	const lines = () =>
-		terminal
-			.getPlainText()
-			.split("\n")
-			.map((line) => line.replace(/\s+$/, ""));
+		terminal.getPlainText().split("\n").map((line) => line.replace(/\s+$/, ""));
 	expect(lines().slice(0, 2)).toEqual(["A", "BC"]);
 
 	document.getElementById("d")!.classList.remove("col");

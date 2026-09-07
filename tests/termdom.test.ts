@@ -84,9 +84,7 @@ test("HTML elements have CSS styling", () => {
 
 test("TermDOM provides correct terminal dimensions", () => {
 	const terminal = new MockProcess({cols: 100, rows: 50});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	expect(dom.window.innerWidth).toBe(100);
 	expect(dom.window.innerHeight).toBe(50);

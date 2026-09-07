@@ -107,9 +107,7 @@ const LEDGER = [
 const LEDGER_CODES = LEDGER.map((mode) => mode.code);
 
 /** Every private-mode toggle in a byte stream, in order. */
-function modeToggles(
-	bytes: string,
-): Array<{code: number; set: boolean}> {
+function modeToggles(bytes: string): Array<{code: number; set: boolean}> {
 	const toggles: Array<{code: number; set: boolean}> = [];
 	for (const match of bytes.matchAll(/\x1b\[\?(\d+)([hl])/g)) {
 		const code = Number(match[1]);

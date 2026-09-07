@@ -158,47 +158,23 @@ function isControlByte(code: number): boolean {
 // (in this order) and the panic paths can reset the union. A mode
 // written anywhere else is a restore leak.
 const MODE_SPELLINGS = {
-	motionReporting: {
-		set: "\x1b[?1003h",
-		reset: "\x1b[?1003l",
-		panic: true,
-	},
+	motionReporting: {set: "\x1b[?1003h", reset: "\x1b[?1003l", panic: true},
 	mouseCapture: {
 		set: "\x1b[?1002h\x1b[?1006h",
 		reset: "\x1b[?1006l\x1b[?1002l",
 		panic: true,
 	},
-	cursorHidden: {
-		set: "\x1b[?25l",
-		reset: "\x1b[?25h",
-		panic: true,
-	},
-	bracketedPaste: {
-		set: "\x1b[?2004h",
-		reset: "\x1b[?2004l",
-		panic: true,
-	},
+	cursorHidden: {set: "\x1b[?25l", reset: "\x1b[?25h", panic: true},
+	bracketedPaste: {set: "\x1b[?2004h", reset: "\x1b[?2004l", panic: true},
 	// XTWINOPS 22 and 23: push the title onto the terminal's stack and pop
 	// it back.
-	titleStack: {
-		set: "\x1b[22;0t",
-		reset: "\x1b[23;0t",
-		panic: true,
-	},
+	titleStack: {set: "\x1b[22;0t", reset: "\x1b[23;0t", panic: true},
 	// The panic spelling is ?1047, without the cursor restore. A bare
 	// ?1049l restores a saved cursor even when the alternate screen is not
 	// active (tmux and xterm both), which would teleport the queued output.
-	altScreen: {
-		set: "\x1b[?1049h",
-		reset: "\x1b[?1049l",
-		panic: "\x1b[?1047l",
-	},
+	altScreen: {set: "\x1b[?1049h", reset: "\x1b[?1049l", panic: "\x1b[?1047l"},
 	// Negotiated. A terminal that ignored the offer must not see the reset.
-	clusterWidths: {
-		set: "\x1b[?2027h",
-		reset: "\x1b[?2027l",
-		panic: false,
-	},
+	clusterWidths: {set: "\x1b[?2027h", reset: "\x1b[?2027l", panic: false},
 } as const;
 
 type ModeName = keyof typeof MODE_SPELLINGS;
@@ -593,8 +569,7 @@ function splitTrailingEscape(chunk: string): number {
 	}
 	const tail = chunk.slice(esc);
 	if (
-		tail.length < CLIPBOARD_START.length &&
-		CLIPBOARD_START.startsWith(tail)
+		tail.length < CLIPBOARD_START.length && CLIPBOARD_START.startsWith(tail)
 	) {
 		return tail.length;
 	}
@@ -870,9 +845,7 @@ export class Exchange extends EventTarget {
 		} else {
 			this[kEngagedModes].delete(name);
 		}
-		void this.write(
-			on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset,
-		);
+		void this.write(on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset);
 	}
 
 	restoreEngagedModes(): void {
@@ -1654,10 +1627,7 @@ function dispatchReply(session: Exchange, item: WireItem): void {
 		if (pending[i].kind !== item.kind) {
 			continue;
 		}
-		if (
-			item.kind === "mode-report" &&
-			pending[i].mode !== item.mode
-		) {
+		if (item.kind === "mode-report" && pending[i].mode !== item.mode) {
 			continue;
 		}
 		index = i;
@@ -1792,8 +1762,7 @@ export function transportFromProcess(
 
 	let engaged = false;
 	let dataListener:
-		((chunk: string | Uint8Array | ArrayBuffer) => void) |
-		null = null;
+		((chunk: string | Uint8Array | ArrayBuffer) => void) | null = null;
 	const signalListeners: Array<[ProcessSignal, () => void]> = [];
 
 	const disengage = () => {

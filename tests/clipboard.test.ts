@@ -136,9 +136,7 @@ test("an event an app dispatches itself is not a gesture", async () => {
 	const {document, window} = dom;
 	const pending: Array<Promise<any>> = [];
 	document.body.addEventListener("keydown", () => {
-		pending.push(
-			rejection(dom.window.navigator.clipboard.writeText("forged")),
-		);
+		pending.push(rejection(dom.window.navigator.clipboard.writeText("forged")));
 	});
 	document.body.dispatchEvent(
 		new window.KeyboardEvent("keydown", {key: "c", bubbles: true}),
@@ -462,9 +460,7 @@ test("write() carries a ClipboardItem's text over OSC 52", async () => {
 	const clipboard = dom.window.navigator.clipboard as any;
 	let written: Promise<void> | null = null;
 	dom.document.addEventListener("keydown", () => {
-		written = clipboard.write([
-			new ClipboardItem({"text/plain": "an item"}),
-		]);
+		written = clipboard.write([new ClipboardItem({"text/plain": "an item"})]);
 	});
 	await send(proc, "c");
 	await written;
@@ -546,9 +542,7 @@ test("the clipboard interfaces are on the window, and name their instances", asy
 	const {dom} = await mount();
 	const window = dom.window as any;
 	expect(window.navigator.clipboard instanceof window.Clipboard).toBe(true);
-	expect(window.navigator.permissions instanceof window.Permissions).toBe(
-		true,
-	);
+	expect(window.navigator.permissions instanceof window.Permissions).toBe(true);
 	expect(new window.ClipboardItem({"text/plain": "x"})).toBeInstanceOf(
 		window.ClipboardItem,
 	);
@@ -593,9 +587,7 @@ test("permissions.query refuses a name that is not one", async () => {
 	expect(unknownName).toBeInstanceOf(TypeError);
 	expect(await rejection(permissions.query({}))).toBeInstanceOf(TypeError);
 	// A name the API defines that a terminal has nothing behind.
-	expect((await permissions.query({name: "geolocation"})).state).toBe(
-		"denied",
-	);
+	expect((await permissions.query({name: "geolocation"})).state).toBe("denied");
 	dom.dispose();
 });
 

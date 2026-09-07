@@ -22,10 +22,7 @@ async function render(html: string, cols = 40, rows = 8): Promise<
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	const lines = () =>
-		terminal
-			.getPlainText()
-			.split("\n")
-			.map((line) => line.replace(/\s+$/, ""));
+		terminal.getPlainText().split("\n").map((line) => line.replace(/\s+$/, ""));
 	return {dom, terminal, lines};
 }
 
@@ -80,10 +77,7 @@ test("fragments survive a rebuild", async () => {
 	await nextFrame(dom);
 
 	expect(
-		terminal
-			.getPlainText()
-			.split("\n")
-			.map((l) => l.replace(/\s+$/, "")),
+		terminal.getPlainText().split("\n").map((l) => l.replace(/\s+$/, "")),
 	).toEqual(first);
 
 	dom.dispose();

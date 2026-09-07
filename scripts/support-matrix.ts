@@ -299,11 +299,7 @@ const FEATURES: Record<string, Feature> = {
 	// Breaking inside a word takes a word too long for the line: every word of
 	// LONG fits in ten columns, so LONG measures nothing here.
 	"word-break": {value: "break-all", setup: NARROW, text: UNBREAKABLE},
-	"overflow-wrap": {
-		value: "break-word",
-		setup: NARROW,
-		text: UNBREAKABLE,
-	},
+	"overflow-wrap": {value: "break-word", setup: NARROW, text: UNBREAKABLE},
 	"line-height": {value: "2"},
 	direction: {value: "rtl"},
 	opacity: {value: "0"},
@@ -554,9 +550,7 @@ function generatedFeatures(): Record<string, Feature> {
 						? "3px 1px / 6ch 6ch"
 						: name.endsWith("-start") || name.endsWith("-end")
 							? "3"
-							: name === "grid-area"
-								? "2 / 2 / 3 / 3"
-								: "3px",
+							: name === "grid-area" ? "2 / 2 / 3 / 3" : "3px",
 			target:
 				name.startsWith("grid-auto") ||
 				name === "grid" ||
@@ -1172,13 +1166,7 @@ const CATEGORIES: Array<[string, string[]]> = [
 	],
 	[
 		"Graphical effects",
-		[
-			"transition",
-			"animation",
-			"box-shadow",
-			"filter",
-			"cursor",
-		],
+		["transition", "animation", "box-shadow", "filter", "cursor"],
 	],
 ];
 

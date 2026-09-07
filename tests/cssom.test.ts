@@ -185,8 +185,7 @@ test("the whole CSSOM an author can reach is this engine's", async () => {
 				foreign.push(`${where} rule.style`);
 			}
 			if (
-				rule.parentStyleSheet &&
-				!isOurs(rule.parentStyleSheet, "CSSStyleSheet")
+				rule.parentStyleSheet && !isOurs(rule.parentStyleSheet, "CSSStyleSheet")
 			) {
 				foreign.push(`${where} rule.parentStyleSheet`);
 			}

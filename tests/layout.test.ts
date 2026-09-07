@@ -83,9 +83,7 @@ function layoutDOM(html = "<div></div>"): TermDOM {
 
 // CSS properties reaching the layout engine
 test("a pixel width and height size the box", () => {
-	const dom = layoutDOM(
-		"<div style=\"width: 100px; height: 50px;\"></div>",
-	);
+	const dom = layoutDOM("<div style=\"width: 100px; height: 50px;\"></div>");
 	const div = dom.document.querySelector("div")!;
 	const rect = boxOf(div);
 
@@ -93,9 +91,7 @@ test("a pixel width and height size the box", () => {
 });
 
 test("a percentage width resolves against the container", () => {
-	const dom = layoutDOM(
-		"<div style=\"width: 50%;\"></div>",
-	);
+	const dom = layoutDOM("<div style=\"width: 50%;\"></div>");
 	const div = dom.document.querySelector("div")!;
 	const rect = boxOf(div);
 
@@ -104,9 +100,7 @@ test("a percentage width resolves against the container", () => {
 });
 
 test("a margin offsets the box and takes room from its width", () => {
-	const dom = layoutDOM(
-		"<div style=\"margin: 10px;\"></div>",
-	);
+	const dom = layoutDOM("<div style=\"margin: 10px;\"></div>");
 	const div = dom.document.querySelector("div")!;
 	const rect = boxOf(div);
 
@@ -204,9 +198,7 @@ test("block elements have separate yoga nodes", () => {
 
 // Mutation handling tests
 test("style changes trigger layout updates", () => {
-	const dom = layoutDOM(
-		"<div style=\"width: 100px;\"></div>",
-	);
+	const dom = layoutDOM("<div style=\"width: 100px;\"></div>");
 	const div = dom.document.querySelector("div")!;
 
 	// Initial rect
@@ -222,9 +214,7 @@ test("style changes trigger layout updates", () => {
 });
 
 test("element removal cleans up yoga nodes", () => {
-	const dom = layoutDOM(
-		"<div><span>test</span></div>",
-	);
+	const dom = layoutDOM("<div><span>test</span></div>");
 	const div = dom.document.querySelector("div")!;
 	const span = dom.document.querySelector("span")!;
 
@@ -242,9 +232,7 @@ test("element removal cleans up yoga nodes", () => {
 
 // Edge cases
 test("display none elements", () => {
-	const dom = layoutDOM(
-		"<div style=\"display: none;\"></div>",
-	);
+	const dom = layoutDOM("<div style=\"display: none;\"></div>");
 	const div = dom.document.querySelector("div")!;
 
 	// A display:none element generates no box, so there is no geometry to
@@ -305,9 +293,7 @@ test("a run whose first node is removed re-measures from the next", () => {
 });
 
 test("emoji line fragments preserve character boundaries", () => {
-	const dom = layoutDOM(
-		"<span>🎨 Colorful Text 🌈</span>",
-	);
+	const dom = layoutDOM("<span>🎨 Colorful Text 🌈</span>");
 
 	const span = dom.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
@@ -413,9 +399,7 @@ test("inline-block elements should get individual rects", () => {
 });
 
 test("inline head element gets incorrect rect from yoga node", () => {
-	const dom = layoutDOM(
-		"<div><span>Head</span><span>Tail</span></div>",
-	);
+	const dom = layoutDOM("<div><span>Head</span><span>Tail</span></div>");
 
 	const spans = Array.from(dom.document.querySelectorAll("span"));
 
@@ -433,9 +417,7 @@ test("inline head element gets incorrect rect from yoga node", () => {
 });
 
 test("inline run with mixed content - whitespace handling", () => {
-	const dom = layoutDOM(
-		"<div>Start <span>middle  </span> <em>end</em></div>",
-	);
+	const dom = layoutDOM("<div>Start <span>middle  </span> <em>end</em></div>");
 
 	// In normal inline flow, this should be processed as one run
 	// This tests that our whitespace processing works correctly with mixed content
@@ -479,9 +461,7 @@ test("text truncation due to fragment offset accumulation error", () => {
 // === GETRECTEXTS WITH INLINE-BLOCK TESTS ===
 
 test("line fragments - regular inline element (baseline)", () => {
-	const dom = layoutDOM(
-		"<div><span>RegularInline</span></div>",
-	);
+	const dom = layoutDOM("<div><span>RegularInline</span></div>");
 
 	const span = dom.document.querySelector("span")!;
 	const rectTexts = lineTexts(span);
@@ -493,9 +473,7 @@ test("line fragments - regular inline element (baseline)", () => {
 });
 
 test("line fragments - text node in regular inline element", () => {
-	const dom = layoutDOM(
-		"<div><span>TextContent</span></div>",
-	);
+	const dom = layoutDOM("<div><span>TextContent</span></div>");
 
 	const span = dom.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
@@ -808,9 +786,7 @@ test("a Range over a text node reports the rects of its line fragments", () => {
 
 test("Inline run head changes - text to element", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const div = termdom.document.createElement("div");
 	div.innerHTML = "Initial text content";
@@ -832,9 +808,7 @@ test("Inline run head changes - text to element", async () => {
 
 test("Inline run head changes - element to text", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const div = termdom.document.createElement("div");
 	div.innerHTML = "<span>Initial span</span>";
@@ -856,9 +830,7 @@ test("Inline run head changes - element to text", async () => {
 
 test("Adding inline elements to existing run", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const div = termdom.document.createElement("div");
 	div.innerHTML = "Start ";
@@ -888,9 +860,7 @@ test("Adding inline elements to existing run", async () => {
 
 test("Removing inline elements from run", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const div = termdom.document.createElement("div");
 	div.innerHTML = 'Start <span id="remove">REMOVE</span> end';
@@ -915,9 +885,7 @@ test("Removing inline elements from run", async () => {
 
 test("Inline-block elements affecting run layout", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const div = termdom.document.createElement("div");
 	div.innerHTML = "Text before ";
@@ -945,9 +913,7 @@ test("Inline-block elements affecting run layout", async () => {
 
 test("Rapid DOM changes stress test", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const container = termdom.document.createElement("div");
 	container.innerHTML = "Base content";
@@ -988,9 +954,7 @@ test("Rapid DOM changes stress test", async () => {
 
 test("Text node splitting and merging", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const div = termdom.document.createElement("div");
 	const textNode = termdom.document.createTextNode("This is a long text node");
@@ -1021,9 +985,7 @@ test("Text node splitting and merging", async () => {
 
 test("White-space handling in dynamic inline runs", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const div = termdom.document.createElement("div");
 	div.innerHTML = "Word1    <span>   Word2   </span>    Word3";
@@ -1048,9 +1010,7 @@ test("White-space handling in dynamic inline runs", async () => {
 
 test("Direct textContent changes in inline runs", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const div = termdom.document.createElement("div");
 	div.innerHTML = "Before <span>original</span> after";
@@ -1075,9 +1035,7 @@ test("Direct textContent changes in inline runs", async () => {
 
 test("Text node data changes (characterData mutations)", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const div = termdom.document.createElement("div");
 	const textNode = termdom.document.createTextNode("Initial text content");
@@ -1102,9 +1060,7 @@ test("Text node data changes (characterData mutations)", async () => {
 
 test("Block element interrupting inline run", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const container = termdom.document.createElement("div");
 	container.innerHTML = 'Before <span id="inline">inline</span> after';
@@ -1135,9 +1091,7 @@ test("Block element interrupting inline run", async () => {
 
 test("Block element removal merging inline runs", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
+	const termdom = new TermDOM({transport: terminal.transport});
 
 	const container = termdom.document.createElement("div");
 	container.innerHTML =
@@ -1183,9 +1137,7 @@ test("Complex inline run with mixed content types", async () => {
 // These tests document the core issue affecting nested lists and other content
 
 test("Block child positioned after parent text content", () => {
-	const dom = layoutDOM(
-		"<div>Parent text<div>Child content</div></div>",
-	);
+	const dom = layoutDOM("<div>Parent text<div>Child content</div></div>");
 
 	const parent = dom.document.querySelector("div")!;
 	const child = parent.querySelector("div")!;
@@ -1716,10 +1668,7 @@ test("overflow-wrap: break-word wraps the long word inside the box", async () =>
 	document.body.appendChild(div);
 	await nextFrame(dom);
 
-	const lines = terminal
-		.getPlainText()
-		.split("\n")
-		.filter((l) => l.trim());
+	const lines = terminal.getPlainText().split("\n").filter((l) => l.trim());
 	expect(lines[0]).toBe("aaaaaaaaaa");
 	expect(lines[1]).toBe("aaaaaaaaaa");
 
@@ -1822,8 +1771,7 @@ describe("width sizing keywords", () => {
 		const dom = new TermDOM({transport: terminal.transport});
 		const {document} = dom;
 		document.body.innerHTML =
-			"<style>dialog { width: fit-content }</style>" +
-			"<dialog>Save?</dialog>";
+			"<style>dialog { width: fit-content }</style>" + "<dialog>Save?</dialog>";
 		await nextFrame(dom);
 
 		const dialog = document.querySelector("dialog") as HTMLDialogElement;

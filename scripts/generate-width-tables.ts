@@ -113,11 +113,7 @@ const zero = subtract(
 	]),
 	// The Hangul fillers are Default_Ignorable but occupy their East Asian
 	// Width like any other Hangul: terminals space them.
-	[
-		[0x115f, 0x115f],
-		[0x3164, 0x3164],
-		[0xffa0, 0xffa0],
-	],
+	[[0x115f, 0x115f], [0x3164, 0x3164], [0xffa0, 0xffa0]],
 );
 
 const target = join(ROOT, "src/generated/widthtables.ts");
@@ -128,11 +124,7 @@ const output = `/**
  * to regenerate.
  */
 
-${render(
-	"WIDE_RANGES",
-	"East Asian Width W and F: two cells.",
-	wide,
-)}
+${render("WIDE_RANGES", "East Asian Width W and F: two cells.", wide)}
 
 ${render(
 	"ZERO_WIDTH_RANGES",

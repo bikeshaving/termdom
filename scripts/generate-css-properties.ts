@@ -161,8 +161,7 @@ for (const name of longhands) {
 		continue;
 	}
 	if (
-		initial.includes(" ") &&
-		/^[a-z]+ [a-z]+ [a-z]+ [a-z]+ [a-z]/.test(initial)
+		initial.includes(" ") && /^[a-z]+ [a-z]+ [a-z]+ [a-z]+ [a-z]/.test(initial)
 	) {
 		continue;
 	}

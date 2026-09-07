@@ -9,11 +9,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-async function open(
-	html: string,
-	cols = 40,
-	rows = 10,
-): Promise<{
+async function open(html: string, cols = 40, rows = 10): Promise<{
 	terminal: MockProcess;
 	dom: TermDOM;
 	document: Document;
