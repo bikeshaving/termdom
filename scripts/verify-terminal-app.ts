@@ -51,10 +51,12 @@ function ensureFreshDist(): void {
  * walks to exactly the tab with this tty; teardown kills exactly the
  * processes on this tty and closes exactly the window holding it.
  */
-class TerminalWindow {
-	declare [kTTY]: string;
-	declare [kWindowId]: string;
+interface TerminalWindow {
+	[kTTY]: string;
+	[kWindowId]: string;
+}
 
+class TerminalWindow {
 	constructor(command: string, cols: number, rows: number) {
 		// Resolve BOTH identities up front, while the tab is alive: the tty
 		// addresses the tab for reads and scopes the teardown kills, and the

@@ -69,8 +69,11 @@ interface Scenario {
 	run(pane: Pane): Promise<void>;
 }
 
+interface Pane {
+	[kSession]: string;
+}
+
 class Pane {
-	declare [kSession]: string;
 	constructor(session: string) {
 		this[kSession] = session;
 	}

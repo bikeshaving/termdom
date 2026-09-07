@@ -91,12 +91,15 @@ const kStdin = Symbol("stdin");
 /**
  * Mock WriteStream for testing that implements our minimal TTYWriteStream interface
  */
+interface MockWriteStream {
+	[kStdin]: MockReadStream;
+}
+
 class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	columns: number;
 	rows: number;
 	isTTY: boolean;
 	terminal: Terminal;
-	declare [kStdin]: MockReadStream;
 
 	constructor(
 		terminal: Terminal,
@@ -171,12 +174,15 @@ class MockReadStream extends EventEmitter implements TTYReadStream {
 const kTransport = Symbol("transport");
 const kDetectColorDepth = Symbol("detectColorDepth");
 
+export interface MockProcess {
+	[kTransport]: TerminalTransport | null;
+}
+
 export class MockProcess extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;
 	stdin: MockReadStream;
 	env: Record<string, string | undefined>;
 	terminal: Terminal;
-	declare [kTransport]: TerminalTransport | null;
 
 	constructor(
 		options: {
