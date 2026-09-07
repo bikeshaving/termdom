@@ -6,106 +6,7 @@ import {
 	CSS_LONGHANDS,
 	CSS_PROPERTIES,
 } from "../generated/cssproperties.ts";
-import {
-	absolutizeLengths,
-	acceptsAnyName,
-	ACCESSOR_PROPERTIES,
-	AUTO_COLOR_PROPERTIES,
-	BULLET_MARKERS,
-	camelCaseProperty,
-	collapseRadius,
-	COLOR_PROPERTIES,
-	compileSelectors,
-	COUNTER_STYLES,
-	CSS_SPEC_DEFAULTS,
-	CSS_WIDE_KEYWORDS,
-	cssSupports,
-	DEFAULT_LIST_GUTTER,
-	DESCRIPTOR_NAMES,
-	EMPTY_DECLARATIONS,
-	expandShorthands,
-	expandShorthandValue,
-	FONT_RELATIVE_PERCENTAGES,
-	formatCounterValue,
-	formatOrdinal,
-	getBlockDeclarations,
-	getBlockifiedDisplay,
-	getComputedEntry,
-	getComputedValueEntry,
-	getContainerParts,
-	getCounterPairs,
-	getCounterValueInScope,
-	getCurrentTransitionValue,
-	getDeclaredName,
-	getFontSize,
-	getInsetLength,
-	getLayerNames,
-	getMatchedTransitions,
-	getMediaConditionParts,
-	getMediaLength,
-	getNestedRules,
-	getNodes,
-	getPhysicalProperty,
-	getPreludeText,
-	getScopeLimits,
-	getSlotCandidates,
-	getSlotNames,
-	getTransitionBase,
-	getTransitionProgress,
-	getUsedLength,
-	INHERITED_PROPERTIES,
-	INITIAL_FONT_SIZE,
-	INITIAL_KEYWORDS,
-	INSET_PROPERTIES,
-	isValidDeclaration,
-	ITEM_DISPLAYS,
-	KEYFRAME_EXCLUDED,
-	listGutterInProgress,
-	LOGICAL_TO_PHYSICAL,
-	LONGHAND_SHORTHANDS,
-	mediaComparison,
-	MIN_SIZE_PROPERTIES,
-	namespacePrefixesDeclared,
-	normalizePropertyName,
-	OPPOSITE_INSET,
-	PAINT_ONLY_PROPERTIES,
-	parseBorderWidthValue,
-	parseCounterReset,
-	parseDeclarationText,
-	parseEasing,
-	parseMediaQueryList,
-	parsePseudoElementArgument,
-	parseSignedUnitValue,
-	parseUnitValue,
-	PHYSICAL_TO_LOGICAL,
-	PSEUDO_ELEMENT_NAMES,
-	RADIUS_LONGHANDS,
-	readSelector,
-	resolveShorthand,
-	RULE_TYPES,
-	serializeCSSIdentifier,
-	serializeCSSString,
-	serializeCSSValue,
-	serializeKeyText,
-	serializeMediaQuery,
-	serializePageSelector,
-	serializePropertyName,
-	serializeSelectorList,
-	serializeShorthandValue,
-	SHORTHAND_LONGHANDS,
-	SIBLING_SELECTOR,
-	splitMediaQueryList,
-	splitSelectorList,
-	STATE_ATTRIBUTES,
-	stripCSSComments,
-	SUPPORTED_PROPERTIES,
-	UNCONDITIONAL,
-	unquoteContent,
-	UNSCOPED,
-	USED_TRACK_PROPERTIES,
-	USED_VALUE_PROPERTIES,
-	withMarkerSeparator,
-} from "./cssvalues.ts";
+import * as CSSValues from "./cssvalues.ts";
 import type {
 	BoxModel,
 	CounterScope,
@@ -219,35 +120,45 @@ function getInitialStyle(element: Element | null, property: string): string {
 
 	// A property this engine does not lay out still resolves to an initial
 	// value.
-	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
+	return CSSValues.CSS_SPEC_DEFAULTS[property] ||
+		CSS_INITIAL_VALUES[property] ||
+		"";
 }
 
 /** An element's margins, borders and padding, in cells. */
 export function getBoxModel(element: Element): BoxModel {
 	// The engine's own read: the cascade's declaration directly, without
 	// the author path's resolved-value work.
-	const widthValue = parseUnitValue(getComputedValue(element, "width"));
-	const heightValue = parseUnitValue(getComputedValue(element, "height"));
+	const widthValue = CSSValues.parseUnitValue(
+		getComputedValue(element, "width"),
+	);
+	const heightValue = CSSValues.parseUnitValue(
+		getComputedValue(element, "height"),
+	);
 
-	const paddingTop = parseUnitValue(getComputedValue(element, "padding-top"));
-	const paddingRight = parseUnitValue(
+	const paddingTop = CSSValues.parseUnitValue(
+		getComputedValue(element, "padding-top"),
+	);
+	const paddingRight = CSSValues.parseUnitValue(
 		getComputedValue(element, "padding-right"),
 	);
-	const paddingBottom = parseUnitValue(
+	const paddingBottom = CSSValues.parseUnitValue(
 		getComputedValue(element, "padding-bottom"),
 	);
-	const paddingLeft = parseUnitValue(getComputedValue(element, "padding-left"));
+	const paddingLeft = CSSValues.parseUnitValue(
+		getComputedValue(element, "padding-left"),
+	);
 
-	const marginTop = parseSignedUnitValue(
+	const marginTop = CSSValues.parseSignedUnitValue(
 		getComputedValue(element, "margin-top"),
 	);
-	const marginRight = parseSignedUnitValue(
+	const marginRight = CSSValues.parseSignedUnitValue(
 		getComputedValue(element, "margin-right"),
 	);
-	const marginBottom = parseSignedUnitValue(
+	const marginBottom = CSSValues.parseSignedUnitValue(
 		getComputedValue(element, "margin-bottom"),
 	);
-	const marginLeft = parseSignedUnitValue(
+	const marginLeft = CSSValues.parseSignedUnitValue(
 		getComputedValue(element, "margin-left"),
 	);
 
@@ -258,7 +169,7 @@ export function getBoxModel(element: Element): BoxModel {
 		if (!style || style === "none" || style === "hidden") {
 			return null;
 		}
-		return parseBorderWidthValue(
+		return CSSValues.parseBorderWidthValue(
 			getComputedValue(element, `border-${side}-width`),
 		);
 	};
@@ -300,7 +211,7 @@ function getDefaultMarkerContent(hostElement: Element): string | null {
 		return null;
 	}
 	const marker = getListMarker(hostElement, listParent);
-	return marker ? `"${withMarkerSeparator(marker)}"` : null;
+	return marker ? `"${CSSValues.withMarkerSeparator(marker)}"` : null;
 }
 
 // What a list numbers: an li, or anything an author styled as one. A
@@ -322,10 +233,10 @@ function getListItems(listParent: Element): Element[] {
 // in cells. The default marker misses `::marker { content: ">>>>>> " }`,
 // and .length undercounts a wide-character marker.
 function getListGutterWidth(listElement: Element): number {
-	if (listGutterInProgress.has(listElement)) {
-		return DEFAULT_LIST_GUTTER;
+	if (CSSValues.listGutterInProgress.has(listElement)) {
+		return CSSValues.DEFAULT_LIST_GUTTER;
 	}
-	listGutterInProgress.add(listElement);
+	CSSValues.listGutterInProgress.add(listElement);
 	try {
 		const cascade = documentCascades.get(listElement.ownerDocument);
 
@@ -336,15 +247,15 @@ function getListGutterWidth(listElement: Element): number {
 			}
 			const marker = cascade
 				? cascade.getMarkerContent(child)
-				: withMarkerSeparator(getListMarker(child, listElement));
+				: CSSValues.withMarkerSeparator(getListMarker(child, listElement));
 			if (!marker) {
 				continue;
 			}
 			widest = Math.max(widest, getStringWidth(marker));
 		}
-		return Math.max(DEFAULT_LIST_GUTTER, widest);
+		return Math.max(CSSValues.DEFAULT_LIST_GUTTER, widest);
 	} finally {
-		listGutterInProgress.delete(listElement);
+		CSSValues.listGutterInProgress.delete(listElement);
 	}
 }
 
@@ -353,9 +264,9 @@ const CSSNamespace = {
 		if (arguments.length === 0) {
 			throw typeError("escape requires an identifier");
 		}
-		return serializeCSSIdentifier(String(ident));
+		return CSSValues.serializeCSSIdentifier(String(ident));
 	},
-	supports: cssSupports,
+	supports: CSSValues.cssSupports,
 };
 // A namespace object's class string is its name, and is not writable.
 Object.defineProperty(CSSNamespace, Symbol.toStringTag, {
@@ -457,7 +368,7 @@ class CSSStyleDeclaration {
 		this[kSync]!();
 		this[kDeclarations] = [];
 		this[kByName].clear();
-		for (const declaration of parseDeclarationText(text ?? "")) {
+		for (const declaration of CSSValues.parseDeclarationText(text ?? "")) {
 			if (!isSupportedDeclaration(this, declaration.name)) {
 				continue;
 			}
@@ -484,23 +395,23 @@ class CSSStyleDeclaration {
 
 	getPropertyValue(property: string): string {
 		this[kSync]!();
-		const name = normalizePropertyName(property);
+		const name = CSSValues.normalizePropertyName(property);
 		const declared = findDeclaration(this, name);
 		if (declared) {
 			return declared.value;
 		}
-		const longhands = SHORTHAND_LONGHANDS.get(name);
+		const longhands = CSSValues.SHORTHAND_LONGHANDS.get(name);
 		return longhands ? getShorthandValue(this, name, longhands) : "";
 	}
 
 	getPropertyPriority(property: string): string {
 		this[kSync]!();
-		const name = normalizePropertyName(property);
+		const name = CSSValues.normalizePropertyName(property);
 		const declared = findDeclaration(this, name);
 		if (declared) {
 			return declared.important ? "important" : "";
 		}
-		const longhands = SHORTHAND_LONGHANDS.get(name);
+		const longhands = CSSValues.SHORTHAND_LONGHANDS.get(name);
 		if (
 			longhands &&
 			longhands.every((longhand) => findDeclaration(this, longhand)?.important)
@@ -512,7 +423,7 @@ class CSSStyleDeclaration {
 
 	setProperty(property: string, value: string, priority?: string): void {
 		this[kSync]!();
-		const name = normalizePropertyName(property);
+		const name = CSSValues.normalizePropertyName(property);
 		if (!isSupportedDeclaration(this, name)) {
 			return;
 		}
@@ -520,7 +431,10 @@ class CSSStyleDeclaration {
 		// removes the declaration. Every other value is stringified, and
 		// `undefined` stringifies to a value no property accepts, so the call
 		// does nothing.
-		const text = serializeCSSValue(value === null ? "" : String(value), name);
+		const text = CSSValues.serializeCSSValue(
+			value === null ? "" : String(value),
+			name,
+		);
 		if (text === "") {
 			this.removeProperty(name);
 			return;
@@ -536,10 +450,10 @@ class CSSStyleDeclaration {
 
 	removeProperty(property: string): string {
 		this[kSync]!();
-		const name = normalizePropertyName(property);
+		const name = CSSValues.normalizePropertyName(property);
 		const previous = this.getPropertyValue(name);
 		let changed = removeDeclaration(this, name);
-		for (const longhand of SHORTHAND_LONGHANDS.get(name) ?? []) {
+		for (const longhand of CSSValues.SHORTHAND_LONGHANDS.get(name) ?? []) {
 			changed = removeDeclaration(this, longhand) || changed;
 		}
 		if (changed) {
@@ -563,7 +477,7 @@ class CSSStyleDeclaration {
 		this[kAttributeText] = text;
 		this[kDeclarations] = [];
 		this[kByName].clear();
-		for (const declaration of parseDeclarationText(text)) {
+		for (const declaration of CSSValues.parseDeclarationText(text)) {
 			applyDeclaration(
 				this,
 				declaration.name,
@@ -581,7 +495,7 @@ const kTransitionsExist = Symbol("transitionsExist");
 function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 	style[kSync]!();
 	if (style[kDeclarations].length === 0) {
-		return EMPTY_DECLARATIONS;
+		return CSSValues.EMPTY_DECLARATIONS;
 	}
 	if (style[kBlock]) {
 		return style[kBlock];
@@ -595,7 +509,7 @@ function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 	style[kDeclarations].forEach((entry, index) => {
 		// An invalid declaration never enters the cascade. Dropping it lets a
 		// lower-priority rule keep winning, as in a browser.
-		if (!isValidDeclaration(entry.name, entry.value)) {
+		if (!CSSValues.isValidDeclaration(entry.name, entry.value)) {
 			return;
 		}
 		declarations[entry.name] = entry.value;
@@ -604,7 +518,7 @@ function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 			important[entry.name] = true;
 			importantValues[entry.name] = entry.value;
 		}
-		if (SHORTHAND_LONGHANDS.has(entry.name)) {
+		if (CSSValues.SHORTHAND_LONGHANDS.has(entry.name)) {
 			undecomposed = true;
 		}
 	});
@@ -627,17 +541,19 @@ function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 	// A shorthand this engine does not decompose reaches the cascade as
 	// whatever longhands it can name, with its importance applied to each.
 	if (undecomposed) {
-		for (const property of Object.keys(expandShorthands(importantValues))) {
+		for (const property of Object.keys(
+			CSSValues.expandShorthands(importantValues),
+		)) {
 			important[property] = true;
 		}
 		style[kDeclarations].forEach((entry, index) => {
-			const expanded = expandShorthands({[entry.name]: entry.value});
+			const expanded = CSSValues.expandShorthands({[entry.name]: entry.value});
 			for (const property in expanded) {
 				order[property] = index;
 			}
 		});
 		return (style[kBlock] = {
-			declarations: expandShorthands(declarations),
+			declarations: CSSValues.expandShorthands(declarations),
 			important,
 			order,
 		});
@@ -658,11 +574,14 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 			continue;
 		}
 		let text = "";
-		for (const shorthand of LONGHAND_SHORTHANDS.get(declaration.name) ?? []) {
+		for (const shorthand of CSSValues.LONGHAND_SHORTHANDS.get(
+			declaration.name,
+		) ??
+		[]) {
 			if (unserializable.has(shorthand)) {
 				continue;
 			}
-			const longhands = SHORTHAND_LONGHANDS.get(shorthand)!;
+			const longhands = CSSValues.SHORTHAND_LONGHANDS.get(shorthand)!;
 			// A shorthand covering more properties than the block holds cannot
 			// be serialized from it, and `all` covers hundreds.
 			if (longhands.length > block[kDeclarations].length) {
@@ -682,7 +601,7 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 		}
 		if (!text) {
 			const priority = declaration.important ? " !important" : "";
-			text = `${serializePropertyName(declaration.name)}: ${
+			text = `${CSSValues.serializePropertyName(declaration.name)}: ${
 				declaration.value
 			}${priority};`;
 			serialized.add(declaration.name);
@@ -727,18 +646,18 @@ function isSupportedDeclaration(
 ): boolean {
 	// A keyframe's block is one step of an animation, and the animation's
 	// own properties describe the whole rather than the step.
-	if (declaration[kKeyframe] && KEYFRAME_EXCLUDED.test(name)) {
+	if (declaration[kKeyframe] && CSSValues.KEYFRAME_EXCLUDED.test(name)) {
 		return false;
 	}
 	if (declaration[kDescriptors]) {
 		// An at-rule's block holds its own descriptors. One this engine has no
 		// descriptor list for accepts whatever it is given, which keeps
 		// @font-feature-values' feature blocks working.
-		const names = DESCRIPTOR_NAMES.get(declaration[kDescriptors]);
+		const names = CSSValues.DESCRIPTOR_NAMES.get(declaration[kDescriptors]);
 		return names ? names.has(name) : name !== "";
 	}
 
-	return name.startsWith("--") || SUPPORTED_PROPERTIES.has(name);
+	return name.startsWith("--") || CSSValues.SUPPORTED_PROPERTIES.has(name);
 }
 
 // A declaration that changes the value moves to the END of the block.
@@ -793,16 +712,16 @@ function applyDeclaration(
 	// A declaration whose value does not parse is not stored at all, so a
 	// shorthand with one bad component is dropped whole rather than leaving
 	// its good components behind.
-	if (!isValidDeclaration(name, value, declaration[kDescriptors])) {
+	if (!CSSValues.isValidDeclaration(name, value, declaration[kDescriptors])) {
 		return false;
 	}
-	const expanded = expandShorthandValue(name, value);
+	const expanded = CSSValues.expandShorthandValue(name, value);
 	// A shorthand this engine does not decompose (`font: menu`, a system
 	// font) is stored whole, and still covers its longhands: any declared
 	// on their own are dropped, as the standard's set-a-declaration does.
 	let changed = false;
 	if (!expanded) {
-		for (const longhand of SHORTHAND_LONGHANDS.get(name) ?? []) {
+		for (const longhand of CSSValues.SHORTHAND_LONGHANDS.get(name) ?? []) {
 			if (
 				cascade &&
 				findDeclaration(declaration, longhand)?.important &&
@@ -816,7 +735,7 @@ function applyDeclaration(
 			changed;
 	}
 	changed = removeDeclaration(declaration, name);
-	for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
+	for (const longhand of CSSValues.SHORTHAND_LONGHANDS.get(name)!) {
 		if (longhand in expanded) {
 			continue;
 		}
@@ -859,7 +778,7 @@ function getShorthandValue(
 			return "";
 		}
 	}
-	return serializeShorthandValue(
+	return CSSValues.serializeShorthandValue(
 		shorthand,
 		longhands,
 		(longhand) => findDeclaration(declaration, longhand)!.value,
@@ -882,9 +801,9 @@ for (const property of CSS_PROPERTIES) {
 		configurable: true,
 		enumerable: true,
 	};
-	const names = [camelCaseProperty(property)];
+	const names = [CSSValues.camelCaseProperty(property)];
 	if (property.startsWith("-webkit-")) {
-		names.push(camelCaseProperty(property, true));
+		names.push(CSSValues.camelCaseProperty(property, true));
 	}
 	if (property !== names[0]) {
 		names.push(property);
@@ -1017,11 +936,11 @@ export class MediaList implements globalThis.MediaList {
 		if (arguments.length === 0) {
 			throw typeError("appendMedium requires a medium");
 		}
-		const text = stripCSSComments(String(medium));
-		if (splitMediaQueryList(text).length !== 1) {
+		const text = CSSValues.stripCSSComments(String(medium));
+		if (CSSValues.splitMediaQueryList(text).length !== 1) {
 			return;
 		}
-		const query = serializeMediaQuery(text);
+		const query = CSSValues.serializeMediaQuery(text);
 		if (!query || this[kMedia].includes(query)) {
 			return;
 		}
@@ -1034,9 +953,11 @@ export class MediaList implements globalThis.MediaList {
 		if (arguments.length === 0) {
 			throw typeError("deleteMedium requires a medium");
 		}
-		const text = stripCSSComments(String(medium));
+		const text = CSSValues.stripCSSComments(String(medium));
 		const query =
-			splitMediaQueryList(text).length === 1 ? serializeMediaQuery(text) : "";
+			CSSValues.splitMediaQueryList(text).length === 1
+				? CSSValues.serializeMediaQuery(text)
+				: "";
 		const kept = this[kMedia].filter((entry) => entry !== query);
 		if (kept.length === this[kMedia].length) {
 			throw domException(`No such medium: ${medium}`, "NotFoundError");
@@ -1058,10 +979,10 @@ export class MediaList implements globalThis.MediaList {
 
 function parseMediaText(list: MediaList, text: string): void {
 	list[kMedia].length = 0;
-	for (const query of splitMediaQueryList(
-		stripCSSComments(String(text ?? "")),
+	for (const query of CSSValues.splitMediaQueryList(
+		CSSValues.stripCSSComments(String(text ?? "")),
 	)) {
-		const serialized = serializeMediaQuery(query);
+		const serialized = CSSValues.serializeMediaQuery(query);
 		if (serialized) {
 			list[kMedia].push(serialized);
 		}
@@ -1088,19 +1009,19 @@ interface CSSRule {
 }
 
 abstract class CSSRule {
-	static readonly STYLE_RULE = RULE_TYPES.STYLE_RULE;
-	static readonly CHARSET_RULE = RULE_TYPES.CHARSET_RULE;
-	static readonly IMPORT_RULE = RULE_TYPES.IMPORT_RULE;
-	static readonly MEDIA_RULE = RULE_TYPES.MEDIA_RULE;
-	static readonly FONT_FACE_RULE = RULE_TYPES.FONT_FACE_RULE;
-	static readonly PAGE_RULE = RULE_TYPES.PAGE_RULE;
-	static readonly KEYFRAMES_RULE = RULE_TYPES.KEYFRAMES_RULE;
-	static readonly KEYFRAME_RULE = RULE_TYPES.KEYFRAME_RULE;
-	static readonly NAMESPACE_RULE = RULE_TYPES.NAMESPACE_RULE;
-	static readonly COUNTER_STYLE_RULE = RULE_TYPES.COUNTER_STYLE_RULE;
-	static readonly SUPPORTS_RULE = RULE_TYPES.SUPPORTS_RULE;
+	static readonly STYLE_RULE = CSSValues.RULE_TYPES.STYLE_RULE;
+	static readonly CHARSET_RULE = CSSValues.RULE_TYPES.CHARSET_RULE;
+	static readonly IMPORT_RULE = CSSValues.RULE_TYPES.IMPORT_RULE;
+	static readonly MEDIA_RULE = CSSValues.RULE_TYPES.MEDIA_RULE;
+	static readonly FONT_FACE_RULE = CSSValues.RULE_TYPES.FONT_FACE_RULE;
+	static readonly PAGE_RULE = CSSValues.RULE_TYPES.PAGE_RULE;
+	static readonly KEYFRAMES_RULE = CSSValues.RULE_TYPES.KEYFRAMES_RULE;
+	static readonly KEYFRAME_RULE = CSSValues.RULE_TYPES.KEYFRAME_RULE;
+	static readonly NAMESPACE_RULE = CSSValues.RULE_TYPES.NAMESPACE_RULE;
+	static readonly COUNTER_STYLE_RULE = CSSValues.RULE_TYPES.COUNTER_STYLE_RULE;
+	static readonly SUPPORTS_RULE = CSSValues.RULE_TYPES.SUPPORTS_RULE;
 	static readonly FONT_FEATURE_VALUES_RULE =
-		RULE_TYPES.FONT_FEATURE_VALUES_RULE;
+		CSSValues.RULE_TYPES.FONT_FEATURE_VALUES_RULE;
 
 	constructor(
 		parentStyleSheet: CSSStyleSheet | null,
@@ -1122,7 +1043,7 @@ abstract class CSSRule {
 	}
 }
 
-for (const [name, value] of Object.entries(RULE_TYPES)) {
+for (const [name, value] of Object.entries(CSSValues.RULE_TYPES)) {
 	Object.defineProperty(CSSRule.prototype, name, {value, enumerable: true});
 }
 
@@ -1267,14 +1188,14 @@ class CSSStyleRule extends CSSGroupingRule {
 	}
 
 	get type(): number {
-		return RULE_TYPES.STYLE_RULE;
+		return CSSValues.RULE_TYPES.STYLE_RULE;
 	}
 
 	// Serialized on first read, because whether `*|E` keeps its prefix
 	// depends on `@namespace` rules that are only in place once parsing
 	// finishes.
 	get selectorText(): string {
-		return (this[kSelectorText] ??= serializeSelectorList(
+		return (this[kSelectorText] ??= CSSValues.serializeSelectorList(
 			this[kSelectors],
 			getSheetNamespaces(this.parentStyleSheet),
 		));
@@ -1344,14 +1265,14 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 			letter.toUpperCase(),
 		)}Descriptors`;
 	const block = class extends CSSStyleDeclaration {};
-	DESCRIPTOR_NAMES.set(atRule, new Set(descriptors));
+	CSSValues.DESCRIPTOR_NAMES.set(atRule, new Set(descriptors));
 	Object.defineProperty(block, "name", {value: name, configurable: true});
 	Object.defineProperty(block.prototype, Symbol.toStringTag, {
 		value: name,
 		configurable: true,
 	});
 	for (const descriptor of descriptors) {
-		const attribute = camelCaseProperty(descriptor);
+		const attribute = CSSValues.camelCaseProperty(descriptor);
 		for (const [index, key] of [attribute, descriptor].entries()) {
 			if (index === 1 && key === attribute) {
 				continue;
@@ -1427,7 +1348,7 @@ class CSSFontFaceRule extends CSSDeclarationBlockRule {
 	static readonly atRule = "@font-face";
 
 	get type(): number {
-		return RULE_TYPES.FONT_FACE_RULE;
+		return CSSValues.RULE_TYPES.FONT_FACE_RULE;
 	}
 
 	get prelude(): string {
@@ -1451,11 +1372,11 @@ class CSSPageRule extends CSSDeclarationBlockRule {
 		parentRule: CSSRule | null,
 	) {
 		super(block, parentStyleSheet, parentRule);
-		this[kSelectorText] = serializePageSelector(selectorText);
+		this[kSelectorText] = CSSValues.serializePageSelector(selectorText);
 	}
 
 	get type(): number {
-		return RULE_TYPES.PAGE_RULE;
+		return CSSValues.RULE_TYPES.PAGE_RULE;
 	}
 
 	get selectorText(): string {
@@ -1463,7 +1384,7 @@ class CSSPageRule extends CSSDeclarationBlockRule {
 	}
 
 	set selectorText(selector: string) {
-		this[kSelectorText] = serializePageSelector(String(selector));
+		this[kSelectorText] = CSSValues.serializePageSelector(String(selector));
 		notifyRule(this);
 	}
 
@@ -1515,7 +1436,7 @@ class CSSCounterStyleRule extends CSSNamedDeclarationRule {
 	static override readonly atRule = "@counter-style";
 
 	override get type(): number {
-		return RULE_TYPES.COUNTER_STYLE_RULE;
+		return CSSValues.RULE_TYPES.COUNTER_STYLE_RULE;
 	}
 
 	override get name(): string {
@@ -1581,11 +1502,11 @@ class CSSKeyframeRule extends CSSDeclarationBlockRule {
 		parentRule: CSSRule | null,
 	) {
 		super(block, parentStyleSheet, parentRule);
-		this[kKeyText] = serializeKeyText(keyText);
+		this[kKeyText] = CSSValues.serializeKeyText(keyText);
 	}
 
 	get type(): number {
-		return RULE_TYPES.KEYFRAME_RULE;
+		return CSSValues.RULE_TYPES.KEYFRAME_RULE;
 	}
 
 	get keyText(): string {
@@ -1593,7 +1514,7 @@ class CSSKeyframeRule extends CSSDeclarationBlockRule {
 	}
 
 	set keyText(text: string) {
-		const serialized = serializeKeyText(String(text));
+		const serialized = CSSValues.serializeKeyText(String(text));
 		if (!serialized) {
 			throw domException(
 				`Cannot parse keyText: ${text}`,
@@ -1627,7 +1548,7 @@ class CSSMediaRule extends CSSConditionRule {
 	}
 
 	get type(): number {
-		return RULE_TYPES.MEDIA_RULE;
+		return CSSValues.RULE_TYPES.MEDIA_RULE;
 	}
 
 	get media(): MediaList {
@@ -1682,7 +1603,7 @@ abstract class CSSTextConditionRule extends CSSConditionRule {
 /** `@supports`: its rules apply, since what this engine supports it renders. */
 class CSSSupportsRule extends CSSTextConditionRule {
 	get type(): number {
-		return RULE_TYPES.SUPPORTS_RULE;
+		return CSSValues.RULE_TYPES.SUPPORTS_RULE;
 	}
 
 	get atKeyword(): string {
@@ -1709,7 +1630,7 @@ class CSSContainerRule extends CSSTextConditionRule {
 		super(conditionText, parentStyleSheet, parentRule, build);
 		// The prelude does not change for this rule, so its parts are read
 		// once here.
-		const parts = getContainerParts(this.conditionText);
+		const parts = CSSValues.getContainerParts(this.conditionText);
 		this[kContainerName] = parts.name;
 		this[kContainerQuery] = parts.query;
 	}
@@ -1753,7 +1674,7 @@ class CSSScopeRule extends CSSGroupingRule {
 		this[kPrelude] = prelude.trim();
 		// The prelude does not change for this rule, so its parts are read
 		// once here.
-		const limits = getScopeLimits(this[kPrelude]);
+		const limits = CSSValues.getScopeLimits(this[kPrelude]);
 		this[kScopeStart] = limits.start;
 		this[kScopeEnd] = limits.end;
 	}
@@ -1868,7 +1789,7 @@ class CSSNamespaceRule extends CSSRule {
 	}
 
 	get type(): number {
-		return RULE_TYPES.NAMESPACE_RULE;
+		return CSSValues.RULE_TYPES.NAMESPACE_RULE;
 	}
 
 	get prefix(): string {
@@ -1881,7 +1802,7 @@ class CSSNamespaceRule extends CSSRule {
 
 	get cssText(): string {
 		const prefix = this[kPrefix] ? `${this[kPrefix]} ` : "";
-		return `@namespace ${prefix}url(${serializeCSSString(this[kNamespaceURI])});`;
+		return `@namespace ${prefix}url(${CSSValues.serializeCSSString(this[kNamespaceURI])});`;
 	}
 }
 
@@ -1914,7 +1835,7 @@ class CSSImportRule extends CSSRule {
 	}
 
 	get type(): number {
-		return RULE_TYPES.IMPORT_RULE;
+		return CSSValues.RULE_TYPES.IMPORT_RULE;
 	}
 
 	get href(): string {
@@ -1943,7 +1864,7 @@ class CSSImportRule extends CSSRule {
 	}
 
 	get cssText(): string {
-		let out = `@import url(${serializeCSSString(this[kHref])})`;
+		let out = `@import url(${CSSValues.serializeCSSString(this[kHref])})`;
 		if (this[kLayerName] !== null) {
 			out += this[kLayerName] ? ` layer(${this[kLayerName]})` : " layer";
 		}
@@ -1977,7 +1898,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 		super(parentStyleSheet, null);
 		this[kBlocks] = new Map<string, CSSStyleDeclaration>();
 		this[kFontFamily] = fontFamily.trim();
-		for (const child of getNodes(node.block ?? {})) {
+		for (const child of CSSValues.getNodes(node.block ?? {})) {
 			if (child.type !== "Atrule" || !child.name) {
 				continue;
 			}
@@ -1986,13 +1907,13 @@ class CSSFontFeatureValuesRule extends CSSRule {
 				onChange: () => notifyRule(this),
 				descriptors: "@font-feature-values",
 			});
-			assignDeclarations(block, getBlockDeclarations(child, source));
+			assignDeclarations(block, CSSValues.getBlockDeclarations(child, source));
 			this[kBlocks].set(child.name.toLowerCase(), block);
 		}
 	}
 
 	get type(): number {
-		return RULE_TYPES.FONT_FEATURE_VALUES_RULE;
+		return CSSValues.RULE_TYPES.FONT_FEATURE_VALUES_RULE;
 	}
 
 	get fontFamily(): string {
@@ -2081,7 +2002,7 @@ class CSSKeyframesRule extends CSSRule {
 	}
 
 	get type(): number {
-		return RULE_TYPES.KEYFRAMES_RULE;
+		return CSSValues.RULE_TYPES.KEYFRAMES_RULE;
 	}
 
 	get name(): string {
@@ -2108,9 +2029,9 @@ class CSSKeyframesRule extends CSSRule {
 		// animation-name uses for "no animation") are written as strings.
 		const reserved = this[kName].toLowerCase();
 		const name =
-			CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none"
-				? serializeCSSString(this[kName])
-				: serializeCSSIdentifier(this[kName]);
+			CSSValues.CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none"
+				? CSSValues.serializeCSSString(this[kName])
+				: CSSValues.serializeCSSIdentifier(this[kName]);
 		return `@keyframes ${name} {${frames}\n}`;
 	}
 
@@ -2129,7 +2050,7 @@ class CSSKeyframesRule extends CSSRule {
 	}
 
 	deleteRule(select: string): void {
-		const key = serializeKeyText(String(select));
+		const key = CSSValues.serializeKeyText(String(select));
 		for (let index = this[kRules].length - 1; index >= 0; index--) {
 			if ((this[kRules][index] as CSSKeyframeRule).keyText !== key) {
 				continue;
@@ -2143,7 +2064,7 @@ class CSSKeyframesRule extends CSSRule {
 	}
 
 	findRule(select: string): CSSKeyframeRule | null {
-		const key = serializeKeyText(String(select));
+		const key = CSSValues.serializeKeyText(String(select));
 		for (let index = this[kRules].length - 1; index >= 0; index--) {
 			const rule = this[kRules][index] as CSSKeyframeRule;
 			if (rule.keyText === key) {
@@ -2597,7 +2518,7 @@ function convertRule(
 	namespaces: SelectorNamespaces = NO_NAMESPACES,
 ): CSSRule | null {
 	if (node.type === "Rule") {
-		const prelude = getPreludeText(node);
+		const prelude = CSSValues.getPreludeText(node);
 		const selectors = parseSelectorList(prelude);
 		if (!selectors) {
 			return null;
@@ -2605,23 +2526,30 @@ function convertRule(
 		// A prefix no @namespace declared names no namespace, and a selector
 		// using one does not parse.
 		if (
-			prelude.includes("|") && !namespacePrefixesDeclared(prelude, namespaces)
+			prelude.includes("|") &&
+			!CSSValues.namespacePrefixesDeclared(prelude, namespaces)
 		) {
 			return null;
 		}
 		return new CSSStyleRule(
 			selectors,
-			getBlockDeclarations(node, source),
+			CSSValues.getBlockDeclarations(node, source),
 			sheet,
 			parentRule,
 			(rule) =>
-				convertRules(getNestedRules(node), source, sheet, rule, namespaces),
+				convertRules(
+					CSSValues.getNestedRules(node),
+					source,
+					sheet,
+					rule,
+					namespaces,
+				),
 		);
 	}
 	if (node.type !== "Atrule") {
 		return null;
 	}
-	const prelude = getPreludeText(node);
+	const prelude = CSSValues.getPreludeText(node);
 	switch ((node.name ?? "").toLowerCase()) {
 		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
 		case "charset":
@@ -2629,7 +2557,7 @@ function convertRule(
 		case "container":
 			return new CSSContainerRule(prelude, sheet, parentRule, (group) =>
 				convertRules(
-					getNodes(node.block ?? {}),
+					CSSValues.getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -2639,12 +2567,12 @@ function convertRule(
 		case "counter-style":
 			return new CSSCounterStyleRule(
 				prelude,
-				getBlockDeclarations(node, source),
+				CSSValues.getBlockDeclarations(node, source),
 				sheet,
 			);
 		case "font-face":
 			return new CSSFontFaceRule(
-				getBlockDeclarations(node, source),
+				CSSValues.getBlockDeclarations(node, source),
 				sheet,
 				parentRule,
 			);
@@ -2653,7 +2581,7 @@ function convertRule(
 		case "font-palette-values":
 			return new CSSFontPaletteValuesRule(
 				prelude,
-				getBlockDeclarations(node, source),
+				CSSValues.getBlockDeclarations(node, source),
 				sheet,
 			);
 		case "import":
@@ -2661,20 +2589,20 @@ function convertRule(
 		case "keyframes":
 		case "-webkit-keyframes":
 			return new CSSKeyframesRule(prelude, sheet, (rule) =>
-				getNodes(node.block ?? {})
+				CSSValues.getNodes(node.block ?? {})
 					.filter((frame) => frame.type === "Rule")
 					.map(
 						(frame) =>
 							new CSSKeyframeRule(
-								getPreludeText(frame),
-								getBlockDeclarations(frame, source),
+								CSSValues.getPreludeText(frame),
+								CSSValues.getBlockDeclarations(frame, source),
 								sheet,
 								rule,
 							),
 					),
 			);
 		case "layer": {
-			const names = getLayerNames(prelude);
+			const names = CSSValues.getLayerNames(prelude);
 			if (!names) {
 				return null;
 			}
@@ -2695,7 +2623,7 @@ function convertRule(
 				parentRule,
 				(group) =>
 					convertRules(
-						getNodes(node.block ?? {}),
+						CSSValues.getNodes(node.block ?? {}),
 						source,
 						sheet,
 						group,
@@ -2706,7 +2634,7 @@ function convertRule(
 		case "media":
 			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
 				convertRules(
-					getNodes(node.block ?? {}),
+					CSSValues.getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -2718,20 +2646,20 @@ function convertRule(
 		case "page":
 			return new CSSPageRule(
 				prelude,
-				getBlockDeclarations(node, source),
+				CSSValues.getBlockDeclarations(node, source),
 				sheet,
 				parentRule,
 			);
 		case "property":
 			return new CSSPropertyRule(
 				prelude,
-				getBlockDeclarations(node, source),
+				CSSValues.getBlockDeclarations(node, source),
 				sheet,
 			);
 		case "scope":
 			return new CSSScopeRule(prelude, sheet, parentRule, (group) =>
 				convertRules(
-					getNodes(node.block ?? {}),
+					CSSValues.getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -2741,7 +2669,7 @@ function convertRule(
 		case "starting-style":
 			return new CSSStartingStyleRule(sheet, parentRule, (group) =>
 				convertRules(
-					getNodes(node.block ?? {}),
+					CSSValues.getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -2751,7 +2679,7 @@ function convertRule(
 		case "supports":
 			return new CSSSupportsRule(prelude, sheet, parentRule, (group) =>
 				convertRules(
-					getNodes(node.block ?? {}),
+					CSSValues.getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -3293,28 +3221,30 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// A flow-relative longhand resolves as the physical longhand it maps
 		// to: same slot, same measurement, same result.
 		property = toPhysicalProperty(this, property);
-		if (this[kCascade] && USED_VALUE_PROPERTIES.has(property)) {
+		if (this[kCascade] && CSSValues.USED_VALUE_PROPERTIES.has(property)) {
 			return this[kUsedValue](property);
 		}
-		if (this[kCascade] && MIN_SIZE_PROPERTIES.has(property)) {
+		if (this[kCascade] && CSSValues.MIN_SIZE_PROPERTIES.has(property)) {
 			return getResolvedMinSize(this, this.getComputedValue(property));
 		}
-		if (this[kCascade] && USED_TRACK_PROPERTIES.has(property)) {
+		if (this[kCascade] && CSSValues.USED_TRACK_PROPERTIES.has(property)) {
 			const tracks = this[kCascade][kUsedGridTracks](
 				this[kElement],
 				property === "grid-template-rows",
 			);
 			if (tracks) {
-				return tracks.length > 0 ? tracks.map(getUsedLength).join(" ") : "none";
+				return tracks.length > 0
+					? tracks.map(CSSValues.getUsedLength).join(" ")
+					: "none";
 			}
 		}
-		if (AUTO_COLOR_PROPERTIES.has(property)) {
+		if (CSSValues.AUTO_COLOR_PROPERTIES.has(property)) {
 			const computed = this.getComputedValue(property);
 			return computed === "auto" ? this.getPropertyValue("color") : computed;
 		}
-		const longhands = SHORTHAND_LONGHANDS.get(property);
+		const longhands = CSSValues.SHORTHAND_LONGHANDS.get(property);
 		if (longhands) {
-			return resolveShorthand(property, longhands, (longhand) =>
+			return CSSValues.resolveShorthand(property, longhands, (longhand) =>
 				this.getPropertyValue(longhand),
 			);
 		}
@@ -3387,9 +3317,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	[kBaseValue](property: string): string {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
-			const longhands = SHORTHAND_LONGHANDS.get(property);
+			const longhands = CSSValues.SHORTHAND_LONGHANDS.get(property);
 			value = longhands
-				? resolveShorthand(property, longhands, (longhand) =>
+				? CSSValues.resolveShorthand(property, longhands, (longhand) =>
 					this[kBaseValue](longhand),
 				)
 				: getAbsolutizedValue(this, toPhysicalProperty(this, property));
@@ -3438,20 +3368,22 @@ function getAbsolutizedValue(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
-	const entry = getComputedEntry(
+	const entry = CSSValues.getComputedEntry(
 		property,
 		resolvePropertyValue(declaration, property),
 	);
 	if (!entry.contextual) {
 		return entry.value;
 	}
-	const absolute = absolutizeLengths(
+	const absolute = CSSValues.absolutizeLengths(
 		entry.value,
 		getLengthContext(declaration, property),
 	);
 	// Two radii that differ as written (`1ch 1px`) can measure the same
 	// cell, and a corner whose radii agree states one of them.
-	return RADIUS_LONGHANDS.has(property) ? collapseRadius(absolute) : absolute;
+	return CSSValues.RADIUS_LONGHANDS.has(property)
+		? CSSValues.collapseRadius(absolute)
+		: absolute;
 }
 
 // `font-size` measures against the PARENT's font size, so it is the one
@@ -3464,9 +3396,9 @@ function getLengthContext(
 	const parent = own ? flatParentElement(declaration[kElement]) : null;
 	const font = own
 		? parent
-			? getFontSize(getComputedValue(parent, "font-size"))
-			: INITIAL_FONT_SIZE
-		: getFontSize(declaration.getComputedValue("font-size"));
+			? CSSValues.getFontSize(getComputedValue(parent, "font-size"))
+			: CSSValues.INITIAL_FONT_SIZE
+		: CSSValues.getFontSize(declaration.getComputedValue("font-size"));
 	const root = getRootFontSize(declaration, own);
 	const cascade = declaration[kCascade];
 	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
@@ -3478,7 +3410,9 @@ function getLengthContext(
 		// A percentage is font-relative on exactly two properties. On
 		// `font-size` it is a share of the parent's, on `line-height` of this
 		// element's own. Everywhere else it stays a percentage until used.
-		percent: FONT_RELATIVE_PERCENTAGES.has(property) ? font / 100 : null,
+		percent: CSSValues.FONT_RELATIVE_PERCENTAGES.has(property)
+			? font / 100
+			: null,
 	};
 }
 
@@ -3490,22 +3424,25 @@ function getRootFontSize(
 	// `rem` in the root's own font-size means the initial value, not the
 	// value being computed.
 	if (!root || (ownFontSize && root === declaration[kElement])) {
-		return INITIAL_FONT_SIZE;
+		return CSSValues.INITIAL_FONT_SIZE;
 	}
 	return root === declaration[kElement]
-		? getFontSize(declaration.getComputedValue("font-size"))
-		: getFontSize(getComputedValue(root, "font-size"));
+		? CSSValues.getFontSize(declaration.getComputedValue("font-size"))
+		: CSSValues.getFontSize(getComputedValue(root, "font-size"));
 }
 
 function toPhysicalProperty(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
-	if (!LOGICAL_TO_PHYSICAL.ltr.has(property)) {
+	if (!CSSValues.LOGICAL_TO_PHYSICAL.ltr.has(property)) {
 		return property;
 	}
 	return (
-		getPhysicalProperty(property, declaration.getComputedValue("direction")) ??
+		CSSValues.getPhysicalProperty(
+			property,
+			declaration.getComputedValue("direction"),
+		) ??
 		property
 	);
 }
@@ -3525,7 +3462,7 @@ function measureUsedValue(
 			return "0px";
 		}
 	}
-	const inset = INSET_PROPERTIES.has(property);
+	const inset = CSSValues.INSET_PROPERTIES.has(property);
 	// An inset only applies to a positioned box. On a static one it stays as
 	// declared.
 	const position = inset ? declaration.getPropertyValue("position") : "";
@@ -3561,13 +3498,13 @@ function measureUsedValue(
 		// resolved value of width is the CONTENT width either way (cssom-view
 		// §7.1), so the edges are subtracted regardless of box-sizing.
 		const border = vertical ? rect.height : rect.width;
-		return getUsedLength(Math.max(0, border - edges));
+		return CSSValues.getUsedLength(Math.max(0, border - edges));
 	}
 
 	// An `auto` margin is whatever space the box was given: the distance
 	// between its border box and its containing block's content edge.
 	if (computed === "auto" && property.startsWith("margin-")) {
-		return getUsedLength(getAutoMargin(declaration, property, rect));
+		return CSSValues.getUsedLength(getAutoMargin(declaration, property, rect));
 	}
 
 	// Every other used length is already absolute in this engine's own
@@ -3578,7 +3515,7 @@ function measureUsedValue(
 		if (basis === null) {
 			return computed;
 		}
-		return getUsedLength((parseFloat(computed) / 100) * basis);
+		return CSSValues.getUsedLength((parseFloat(computed) / 100) * basis);
 	}
 	return computed || "0px";
 }
@@ -3598,9 +3535,9 @@ function getUsedInset(
 	}
 	const vertical = property === "top" || property === "bottom";
 	const basis = vertical ? block.height : block.width;
-	const own = getInsetLength(computed, basis);
+	const own = CSSValues.getInsetLength(computed, basis);
 	if (own !== null) {
-		return getUsedLength(own);
+		return CSSValues.getUsedLength(own);
 	}
 	// A sticky box keeps its `auto`. It names an edge that constrains
 	// nothing, not a distance.
@@ -3608,13 +3545,16 @@ function getUsedInset(
 		return computed;
 	}
 
-	const opposite = OPPOSITE_INSET[property];
-	const other = getInsetLength(declaration.getComputedValue(opposite), basis);
+	const opposite = CSSValues.OPPOSITE_INSET[property];
+	const other = CSSValues.getInsetLength(
+		declaration.getComputedValue(opposite),
+		basis,
+	);
 	// A relatively positioned box is offset from where it already was, so
 	// an `auto` inset is the negative of its opposite, and zero when both
 	// are auto, which moves the box nowhere.
 	if (position === "relative") {
-		return getUsedLength(other === null ? 0 : -other);
+		return CSSValues.getUsedLength(other === null ? 0 : -other);
 	}
 
 	// Out of flow: the box hangs in its containing block, so the used inset
@@ -3628,25 +3568,25 @@ function getUsedInset(
 			(vertical ? rect.height : rect.width) +
 			getEdgeLength(declaration, start) +
 			getEdgeLength(declaration, end);
-		return getUsedLength(basis - other - size);
+		return CSSValues.getUsedLength(basis - other - size);
 	}
 	switch (property) {
 		case "top":
-			return getUsedLength(
+			return CSSValues.getUsedLength(
 				rect.y - getEdgeLength(declaration, start) - block.y,
 			);
 		case "left":
-			return getUsedLength(
+			return CSSValues.getUsedLength(
 				rect.x - getEdgeLength(declaration, start) - block.x,
 			);
 		case "bottom":
-			return getUsedLength(
+			return CSSValues.getUsedLength(
 				block.y +
 				block.height -
 				(rect.y + rect.height + getEdgeLength(declaration, end)),
 			);
 		default:
-			return getUsedLength(
+			return CSSValues.getUsedLength(
 				block.x +
 				block.width -
 				(rect.x + rect.width + getEdgeLength(declaration, end)),
@@ -3764,7 +3704,7 @@ function getResolvedMinSize(
 	}
 	const parent = flatParentElement(declaration[kElement]);
 	const display = parent ? getComputedValue(parent, "display") : "";
-	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
+	return CSSValues.ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 }
 
 function getEdgeLength(
@@ -3837,7 +3777,7 @@ function getInlineDeclarations(
 			style = inlineStyles.get(element);
 		}
 		block = style === undefined
-			? EMPTY_DECLARATIONS
+			? CSSValues.EMPTY_DECLARATIONS
 			: getDeclarationBlock(style);
 		declaration[kInlineBlock] = block;
 	}
@@ -3924,12 +3864,13 @@ function resolvePropertyValue(
 			? raw
 			: property.startsWith("--")
 				? substituteVar(declaration, raw)
-				: serializeCSSValue(substituteVar(declaration, raw), property)
+				: CSSValues.serializeCSSValue(substituteVar(declaration, raw), property)
 		: raw;
 	// `currentcolor` is the element's own color, which is what a resolved
 	// value reports. On `color` itself it means the parent's.
 	if (
-		value.toLowerCase() === "currentcolor" && COLOR_PROPERTIES.has(property)
+		value.toLowerCase() === "currentcolor" &&
+		CSSValues.COLOR_PROPERTIES.has(property)
 	) {
 		// The COMPUTED color, on the engine's own read path. The author path
 		// flushes, from inside the resolution of a style that layout is waiting
@@ -3962,23 +3903,28 @@ function resolvePropertyValueRaw(
 	// A physical property and its flow-relative names are ONE cascade slot
 	// (css-logical-1 §2.1). The slot widens to both inline edges and narrows
 	// by `direction` only once a block actually declares one of them.
-	const names = getSlotCandidates(property);
+	const names = CSSValues.getSlotCandidates(property);
 	let direction: string | null = null;
 	const mapsHere =
 		names.length === 1
-			? acceptsAnyName
+			? CSSValues.acceptsAnyName
 			: (name: string): boolean =>
 				name === property ||
-				getPhysicalProperty(
+				CSSValues.getPhysicalProperty(
 					name,
 					(direction ??= declaration.getComputedValue("direction")),
 				) === property;
 
 	const inline = getInlineDeclarations(declaration);
-	const inlineName = getDeclaredName(inline, names, false, mapsHere);
+	const inlineName = CSSValues.getDeclaredName(inline, names, false, mapsHere);
 	const inlineValue =
 		inlineName !== null ? inline.declarations[inlineName].trim() : "";
-	const inlineImportantName = getDeclaredName(inline, names, true, mapsHere);
+	const inlineImportantName = CSSValues.getDeclaredName(
+		inline,
+		names,
+		true,
+		mapsHere,
+	);
 	const inlineImportantValue =
 		inlineImportantName !== null
 			? inline.declarations[inlineImportantName].trim()
@@ -3998,11 +3944,16 @@ function resolvePropertyValueRaw(
 	let importantOrigin = false;
 	let importantLayer = 0;
 	for (const rule of declaration[kCSSRules]) {
-		const name = getDeclaredName(rule, names, false, mapsHere);
+		const name = CSSValues.getDeclaredName(rule, names, false, mapsHere);
 		if (name !== null) {
 			ruleValue = rule.declarations[name];
 		}
-		const importantName = getDeclaredName(rule, names, true, mapsHere);
+		const importantName = CSSValues.getDeclaredName(
+			rule,
+			names,
+			true,
+			mapsHere,
+		);
 		if (
 			importantName !== null &&
 			(importantRuleValue === "" ||
@@ -4025,9 +3976,11 @@ function resolvePropertyValueRaw(
 		return resolveFromParent(declaration, property) ?? "";
 	}
 	if (declared === "initial") {
-		return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
+		return CSSValues.CSS_SPEC_DEFAULTS[property] ||
+			CSS_INITIAL_VALUES[property] ||
+			"";
 	}
-	if (declared !== "" && !INITIAL_KEYWORDS.has(declared)) {
+	if (declared !== "" && !CSSValues.INITIAL_KEYWORDS.has(declared)) {
 		return declared;
 	}
 
@@ -4067,7 +4020,9 @@ function resolvePropertyValueRaw(
 	// an inherited property, resolved through the same steps so the
 	// ancestor's own rules apply. A custom property always inherits; there
 	// is no fixed list of names.
-	if (INHERITED_PROPERTIES.has(property) || property.startsWith("--")) {
+	if (
+		CSSValues.INHERITED_PROPERTIES.has(property) || property.startsWith("--")
+	) {
 		const window = declaration[kElement].ownerDocument?.defaultView;
 		if (window) {
 			// Flat-tree parents. Inheritance crosses the shadow boundary (host
@@ -4087,7 +4042,9 @@ function resolvePropertyValueRaw(
 	}
 
 	// 5. The property's initial value.
-	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
+	return CSSValues.CSS_SPEC_DEFAULTS[property] ||
+		CSS_INITIAL_VALUES[property] ||
+		"";
 }
 
 // This element's own custom properties and every ancestor's, since a
@@ -4198,7 +4155,10 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		if (value === undefined) {
 			value =
 				this[kBaseValue](property) ||
-				getComputedValueEntry(property, getInitialStyle(null, property));
+				CSSValues.getComputedValueEntry(
+					property,
+					getInitialStyle(null, property),
+				);
 			this[kNodeResolved].set(property, value);
 		}
 		const transitional = getPseudoTransitionValue(this, property);
@@ -4209,8 +4169,11 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		this[kCascade]?.[kFlushStyle]();
 		const computed =
 			this.getComputedValue(property) ||
-			getComputedValueEntry(property, getInitialStyle(null, property));
-		if (this[kCascade] && USED_VALUE_PROPERTIES.has(property)) {
+			CSSValues.getComputedValueEntry(
+				property,
+				getInitialStyle(null, property),
+			);
+		if (this[kCascade] && CSSValues.USED_VALUE_PROPERTIES.has(property)) {
 			return this[kUsedValue](property, computed);
 		}
 		return computed;
@@ -4267,16 +4230,16 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	[kBaseValue](property: string): string {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
-			const longhands = SHORTHAND_LONGHANDS.get(property);
+			const longhands = CSSValues.SHORTHAND_LONGHANDS.get(property);
 			value =
 				longhands && this[kPseudoDeclarations][property] === undefined
-					? serializeShorthandValue(
+					? CSSValues.serializeShorthandValue(
 						property,
 						longhands,
 						(longhand) =>
 							this[kBaseValue](longhand) || CSS_INITIAL_VALUES[longhand] || "",
 					)
-					: getComputedValueEntry(
+					: CSSValues.getComputedValueEntry(
 						property,
 						this[kPseudoDeclarations][property] ?? "",
 					);
@@ -4326,7 +4289,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		const vertical =
 			property === "height" || property === "top" || property === "bottom";
 		const basis = vertical ? box.height : box.width;
-		return getUsedLength((parseFloat(computed) / 100) * basis);
+		return CSSValues.getUsedLength((parseFloat(computed) / 100) * basis);
 	}
 }
 
@@ -4418,8 +4381,8 @@ class EmptyStyleDeclaration extends CSSStyleProperties {
 	}
 }
 
-for (const property of ACCESSOR_PROPERTIES) {
-	const camelCase = camelCaseProperty(property);
+for (const property of CSSValues.ACCESSOR_PROPERTIES) {
+	const camelCase = CSSValues.camelCaseProperty(property);
 	for (const name of new Set([property, camelCase])) {
 		for (const prototype of [
 			ComputedStyleDeclaration.prototype,
@@ -4456,7 +4419,7 @@ export function resolveBorderSides(element: Element): BorderSides {
 		width: string,
 		style: string,
 	): LineStyle["style"] | undefined => {
-		const parsed = parseBorderWidthValue(width);
+		const parsed = CSSValues.parseBorderWidthValue(width);
 		const widthValue = typeof parsed === "number" ? parsed : NaN;
 		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
 			return undefined;
@@ -4532,16 +4495,16 @@ function getListMarker(listItem: Element, listParent: Element): string {
 		return "";
 	}
 
-	const bullet = BULLET_MARKERS[listStyleType];
+	const bullet = CSSValues.BULLET_MARKERS[listStyleType];
 	if (bullet) {
 		return bullet;
 	}
 
-	if (COUNTER_STYLES.has(listStyleType)) {
+	if (CSSValues.COUNTER_STYLES.has(listStyleType)) {
 		if (!getListItems(listParent).includes(listItem)) {
 			return "";
 		}
-		return `${formatOrdinal(getListItemOrdinal(listItem, listParent), listStyleType)}.`;
+		return `${CSSValues.formatOrdinal(getListItemOrdinal(listItem, listParent), listStyleType)}.`;
 	}
 
 	return "";
@@ -4689,7 +4652,7 @@ function attachPseudoElementsToElement(
 		return;
 	}
 
-	for (const pseudoType of PSEUDO_ELEMENT_NAMES) {
+	for (const pseudoType of CSSValues.PSEUDO_ELEMENT_NAMES) {
 		attachPseudoElementToElementForType(cascade, element, pseudoType);
 	}
 }
@@ -4774,7 +4737,7 @@ export interface Cascade {
 
 	// Whether any of those keys is a STATE pseudo-class (`:checked ~`),
 	// which is driven by attributes not in the sets above. While this is
-	// set, a change to any of STATE_ATTRIBUTES invalidates widely.
+	// set, a change to any of CSSValues.STATE_ATTRIBUTES invalidates widely.
 	[kReachingStates]: boolean;
 
 	// Rule-existence gates. Attaching pseudo-elements and initializing
@@ -5240,7 +5203,7 @@ export class Cascade {
 		if (!text) {
 			return true;
 		}
-		const queries = parseMediaQueryList(text);
+		const queries = CSSValues.parseMediaQueryList(text);
 		if (!queries) {
 			return true;
 		}
@@ -5270,7 +5233,7 @@ export class Cascade {
 			return null;
 		}
 
-		let textContent = unquoteContent(content);
+		let textContent = CSSValues.unquoteContent(content);
 
 		textContent = this[kResolveCounterFunction](hostElement, textContent);
 
@@ -5412,7 +5375,7 @@ export class Cascade {
 		// A pseudo-element INHERITS from its originating element. Rule
 		// declarations win, and inherited values only fill the gaps.
 		const hostStyle = this.declarationFor(element);
-		for (const property of INHERITED_PROPERTIES) {
+		for (const property of CSSValues.INHERITED_PROPERTIES) {
 			if (!declarations[property]) {
 				const inherited = hostStyle.getComputedValue(property);
 				if (inherited) {
@@ -5422,8 +5385,8 @@ export class Cascade {
 		}
 		// A pseudo-element of a flex or grid container is one of its items,
 		// and an item's display isBlockified, including the initial `inline`.
-		if (ITEM_DISPLAYS.has(hostStyle.getComputedValue("display"))) {
-			declarations.display = getBlockifiedDisplay(
+		if (CSSValues.ITEM_DISPLAYS.has(hostStyle.getComputedValue("display"))) {
+			declarations.display = CSSValues.getBlockifiedDisplay(
 				declarations.display || getInitialStyle(null, "display"),
 			);
 		}
@@ -5484,7 +5447,7 @@ export class Cascade {
 		if (this[kReachingAttributes].has(name)) {
 			return true;
 		}
-		return this[kReachingStates] && STATE_ATTRIBUTES.has(name);
+		return this[kReachingStates] && CSSValues.STATE_ATTRIBUTES.has(name);
 	}
 
 	[kDropCache](): void {
@@ -5506,8 +5469,8 @@ export class Cascade {
 			(_match, counterName, style) => {
 				const trimmedName = counterName.trim();
 				const trimmedStyle = style?.trim() || "decimal";
-				return formatCounterValue(
-					getCounterValueInScope(scope, trimmedName),
+				return CSSValues.formatCounterValue(
+					CSSValues.getCounterValueInScope(scope, trimmedName),
 					trimmedStyle,
 				);
 			},
@@ -5692,7 +5655,7 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 	cascade[kCounterScopes].set(element, scope);
 
 	if (counterReset && counterReset !== "none") {
-		parseCounterReset(scope, counterReset);
+		CSSValues.parseCounterReset(scope, counterReset);
 	}
 
 	if (element.tagName === "OL" || element.tagName === "UL") {
@@ -5793,7 +5756,7 @@ function getResolvedStyle(
 
 	let pseudoElement = "";
 	if (pseudoElt) {
-		const parsed = parsePseudoElementArgument(String(pseudoElt));
+		const parsed = CSSValues.parsePseudoElementArgument(String(pseudoElt));
 		if (parsed === null) {
 			return new EmptyStyleDeclaration(
 				element,
@@ -5862,7 +5825,7 @@ function processTransitionStyle(
 		}
 		cascade[kTransitionsExist] = true;
 	}
-	const candidates = getMatchedTransitions(read);
+	const candidates = CSSValues.getMatchedTransitions(read);
 	let snapshots = cascade[kTransitionSnapshots].get(element);
 	const previous = snapshots?.get(pseudo);
 	const fallbacks = cascade[kTransitionFallback].get(element);
@@ -5879,7 +5842,7 @@ function processTransitionStyle(
 		...(active?.keys() ?? []),
 	]);
 	for (const property of names) {
-		const after = getTransitionBase(read, property);
+		const after = CSSValues.getTransitionBase(read, property);
 		const timing = candidates?.get(property);
 		const runnable =
 			timing !== undefined && timing.duration + Math.max(timing.delay, 0) > 0;
@@ -5892,7 +5855,7 @@ function processTransitionStyle(
 			if (after === running.to) {
 				continue;
 			}
-			const current = getCurrentTransitionValue(running, now);
+			const current = CSSValues.getCurrentTransitionValue(running, now);
 			cancelTransition(cascade, element, pseudo, property, now);
 			if (current === after) {
 				continue;
@@ -5902,7 +5865,7 @@ function processTransitionStyle(
 			let duration = timing.duration;
 			let factor = 1;
 			if (after === running.reversingAdjustedStartValue) {
-				const progress = getTransitionProgress(running, now);
+				const progress = CSSValues.getTransitionProgress(running, now);
 				factor = Math.min(
 					Math.max(
 						progress * running.reversingShorteningFactor +
@@ -5929,7 +5892,10 @@ function processTransitionStyle(
 		const raw = previous?.get(property) ?? fallback?.get(property);
 		const before =
 			raw === ""
-				? getComputedValueEntry(property, CSS_INITIAL_VALUES[property] ?? "")
+				? CSSValues.getComputedValueEntry(
+					property,
+					CSS_INITIAL_VALUES[property] ?? "",
+				)
 				: raw;
 		if (before === undefined || before === after || !runnable) {
 			continue;
@@ -5946,7 +5912,7 @@ function processTransitionStyle(
 	if (candidates) {
 		const snapshot = new Map<string, string>();
 		for (const property of candidates.keys()) {
-			snapshot.set(property, getTransitionBase(read, property));
+			snapshot.set(property, CSSValues.getTransitionBase(read, property));
 		}
 		if (!snapshots) {
 			snapshots = new Map();
@@ -5990,7 +5956,7 @@ function startTransition(
 		start: now,
 		delay: timing.delay,
 		duration: timing.duration,
-		easing: parseEasing(timing.easing),
+		easing: CSSValues.parseEasing(timing.easing),
 		started: timing.delay <= 0,
 		reversingAdjustedStartValue: options.reversingAdjustedStartValue,
 		reversingShorteningFactor: options.reversingShorteningFactor,
@@ -6069,7 +6035,10 @@ function getTransitionValue(
 	if (!transition) {
 		return null;
 	}
-	return getCurrentTransitionValue(transition, cascade[kTransitionClock]);
+	return CSSValues.getCurrentTransitionValue(
+		transition,
+		cascade[kTransitionClock],
+	);
 }
 
 function queueTransitionEvent(
@@ -6272,7 +6241,8 @@ function isPaintOnlyChange(
 	oldValue: string | null,
 ): boolean {
 	if (
-		name === "style" || (cascade[kReachingStates] && STATE_ATTRIBUTES.has(name))
+		name === "style" ||
+		(cascade[kReachingStates] && CSSValues.STATE_ATTRIBUTES.has(name))
 	) {
 		return false;
 	}
@@ -6297,7 +6267,7 @@ function isPaintOnlyChange(
 			continue;
 		}
 		for (const property of properties) {
-			if (!PAINT_ONLY_PROPERTIES.has(property)) {
+			if (!CSSValues.PAINT_ONLY_PROPERTIES.has(property)) {
 				return false;
 			}
 		}
@@ -6475,7 +6445,7 @@ function parseStyleSheet(
 	container: CSSStyleSheet | CSSGroupingRule,
 	scope?: Node,
 	uaOrigin?: boolean,
-	context: RuleContext = UNCONDITIONAL,
+	context: RuleContext = CSSValues.UNCONDITIONAL,
 ): void {
 	if (container instanceof CSSStyleSheet) {
 		if (container.disabled) {
@@ -6549,7 +6519,7 @@ function mediaConditionMatches(
 	let matches: boolean | null = null;
 	let disjunction = false;
 	let negate = false;
-	for (const part of getMediaConditionParts(condition)) {
+	for (const part of CSSValues.getMediaConditionParts(condition)) {
 		if (part.type === "Identifier") {
 			const word = (part.name ?? "").toLowerCase();
 			if (word === "not") {
@@ -6626,7 +6596,7 @@ function mediaFeatureMatches(
 		cascade,
 		bound === null ? name : name.slice(4),
 	);
-	const length = getMediaLength(value);
+	const length = CSSValues.getMediaLength(value);
 	if (actual === null || length === null) {
 		return true;
 	}
@@ -6649,25 +6619,25 @@ function mediaFeatureRangeMatches(
 		node?.type === "Identifier" ? (node.name ?? "").toLowerCase() : "";
 	if (range.right) {
 		const actual = getViewportLength(cascade, named(range.middle));
-		const low = getMediaLength(range.left);
-		const high = getMediaLength(range.right);
+		const low = CSSValues.getMediaLength(range.left);
+		const high = CSSValues.getMediaLength(range.right);
 		if (actual === null || low === null || high === null) {
 			return true;
 		}
 		return (
-			mediaComparison(low, range.leftComparison, actual) &&
-			mediaComparison(actual, range.rightComparison, high)
+			CSSValues.mediaComparison(low, range.leftComparison, actual) &&
+			CSSValues.mediaComparison(actual, range.rightComparison, high)
 		);
 	}
 	const leftName = named(range.left);
 	const actual = getViewportLength(cascade, leftName || named(range.middle));
-	const length = getMediaLength(leftName ? range.middle : range.left);
+	const length = CSSValues.getMediaLength(leftName ? range.middle : range.left);
 	if (actual === null || length === null) {
 		return true;
 	}
 	return leftName
-		? mediaComparison(actual, range.leftComparison, length)
-		: mediaComparison(length, range.leftComparison, actual);
+		? CSSValues.mediaComparison(actual, range.leftComparison, length)
+		: CSSValues.mediaComparison(length, range.leftComparison, actual);
 }
 
 function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
@@ -6675,13 +6645,17 @@ function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
 	const start = rule.start;
 	const owner = rule.parentStyleSheet?.ownerNode ?? null;
 	return {
-		roots: start === null ? null : compileSelectors(start, {namespaces}),
+		roots: start === null
+			? null
+			: CSSValues.compileSelectors(start, {namespaces}),
 		rootsInOuter:
 			start === null
 				? []
-				: compileSelectors(start, {namespaces, relative: true}),
+				: CSSValues.compileSelectors(start, {namespaces, relative: true}),
 		limits:
-			rule.end ? compileSelectors(rule.end, {namespaces, relative: true}) : [],
+			rule.end
+				? CSSValues.compileSelectors(rule.end, {namespaces, relative: true})
+				: [],
 		owner: owner ? owner.parentElement : null,
 	};
 }
@@ -6691,13 +6665,13 @@ function parseStyleRule(
 	styleRule: CSSStyleRule,
 	scope?: Node,
 	uaOriginSheet?: boolean,
-	context: RuleContext = UNCONDITIONAL,
+	context: RuleContext = CSSValues.UNCONDITIONAL,
 ): void {
 	// Each selector of the list is matched and weighed on its own.
 	// `#a::before, #b` is one pseudo rule and one ordinary rule.
 	const block = getDeclarationBlock(styleRule.style);
 	const namespaces = getSheetNamespaces(styleRule.parentStyleSheet);
-	for (const selector of splitSelectorList(styleRule.selectorText)) {
+	for (const selector of CSSValues.splitSelectorList(styleRule.selectorText)) {
 		parseSelector(
 			cascade,
 			selector,
@@ -6726,7 +6700,7 @@ function indexReachingKeys(
 			property === "all" ||
 			property === "display" ||
 			property.startsWith("--") ||
-			INHERITED_PROPERTIES.has(property)
+			CSSValues.INHERITED_PROPERTIES.has(property)
 		) {
 			inherits = true;
 			break;
@@ -6794,7 +6768,7 @@ function parseSelector(
 	scope?: Node,
 	uaOriginSheet?: boolean,
 	getSheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
-	context: RuleContext = UNCONDITIONAL,
+	context: RuleContext = CSSValues.UNCONDITIONAL,
 ): void {
 	const {declarations, important, order} = block;
 	// Only a duration or delay can make a transition run, so the property
@@ -6823,17 +6797,17 @@ function parseSelector(
 	}
 	if (
 		selector.includes("|") &&
-		!namespacePrefixesDeclared(selector, getSheetNamespaces)
+		!CSSValues.namespacePrefixesDeclared(selector, getSheetNamespaces)
 	) {
 		return;
 	}
-	if (SIBLING_SELECTOR.test(selector)) {
+	if (CSSValues.SIBLING_SELECTOR.test(selector)) {
 		cascade[kSelectorsReachSiblings] = true;
 	}
 	if (selector.includes(":has")) {
 		cascade[kSelectorsReachAncestors] = true;
 	}
-	const reading = readSelector(selector);
+	const reading = CSSValues.readSelector(selector);
 	indexReachingKeys(cascade, reading, declarations);
 	if (
 		declarations["counter-reset"] ||
@@ -6953,7 +6927,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 			(rule) =>
 				[
 					rule,
-					rule.scopes ? getScopeProximity(element, rule) : UNSCOPED,
+					rule.scopes ? getScopeProximity(element, rule) : CSSValues.UNSCOPED,
 				] as const,
 		),
 	);
@@ -7011,7 +6985,7 @@ function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
 function getScopeProximity(element: Element, rule: ParsedCSSRule): number {
 	const root = getScopingRoot(element, rule);
 	if (!root) {
-		return UNSCOPED;
+		return CSSValues.UNSCOPED;
 	}
 	let generations = 0;
 	for (
@@ -7143,14 +7117,15 @@ function computePseudoElementStyle(
 			const value = rule.declarations[name];
 			computedStyle[name] = value;
 			if (
-				!LOGICAL_TO_PHYSICAL.ltr.has(name) && !PHYSICAL_TO_LOGICAL.has(name)
+				!CSSValues.LOGICAL_TO_PHYSICAL.ltr.has(name) &&
+				!CSSValues.PHYSICAL_TO_LOGICAL.has(name)
 			) {
 				continue;
 			}
 			direction ??= cascade
 				.declarationFor(element)
 				.getComputedValue("direction");
-			for (const other of getSlotNames(name, direction)) {
+			for (const other of CSSValues.getSlotNames(name, direction)) {
 				computedStyle[other] = value;
 			}
 		}
@@ -7189,7 +7164,7 @@ function getPseudoContent(
 		return null;
 	}
 
-	const textContent = unquoteContent(content);
+	const textContent = CSSValues.unquoteContent(content);
 
 	return cascade[kResolveCounterFunction](hostElement, textContent);
 }
@@ -7383,7 +7358,10 @@ function parseCounterIncrement(
 	scope: CounterScope,
 	counterIncrement: string,
 ): void {
-	for (const [name, increment] of getCounterPairs(counterIncrement, 1)) {
+	for (const [
+		name,
+		increment,
+	] of CSSValues.getCounterPairs(counterIncrement, 1)) {
 		incrementCounter(cascade, scope, name, increment);
 	}
 }
@@ -7401,7 +7379,10 @@ function incrementCounter(
 		const currentValue = getListItemCounterValue(cascade, scope.element);
 		scope.counters[counterName] = currentValue + increment;
 	} else {
-		const currentValue = getCounterValueInScope(scope.parent, counterName);
+		const currentValue = CSSValues.getCounterValueInScope(
+			scope.parent,
+			counterName,
+		);
 		scope.counters[counterName] = currentValue + increment;
 	}
 }
