@@ -4548,10 +4548,6 @@ export interface ImportPreludeNode {
 }
 
 // A bare fragment is a document fragment too and hosts nothing, which
-// is what separates it from a tree some element composes.
-export function isShadowRoot(root: Node): root is ShadowRoot {
-	return root.nodeType === 11 && (root as ShadowRoot).host !== undefined;
-}
 
 // The properties whose resolved value is the used value, per CSSOM.
 // Everything else resolves to its computed value.
@@ -4674,57 +4670,9 @@ export function acceptsAnyName(): boolean {
 }
 
 // In a document, and reachable through the flat tree it composes. A
-// light-DOM child its host never slots has no computed style to report.
-export function isBeingRendered(element: Element): boolean {
-	// Walk out through every shadow root the element is under. A tree whose
-	// outermost root is the document is composed into the rendering. One
-	// that ends in a bare fragment is not.
-	let node: Node = element;
-	for (let depth = 0; depth < 32; depth++) {
-		const root = node.getRootNode();
-		if (root === element.ownerDocument) {
-			break;
-		}
-		const host = (root as ShadowRoot).host;
-		if (!host) {
-			return false;
-		}
-		node = host;
-	}
-	// A light-DOM child an open shadow root never slots is outside the flat
-	// tree. A closed root is this engine's own UA shadow tree internals, whose
-	// parts the UA shadow tree itself reads styles for.
-	for (
-		let child: Element | null = element;
-		child;
-		child = child.parentElement
-	) {
-		const parent = child.parentElement;
-		if (
-			parent?.shadowRoot &&
-			parent.shadowRoot.mode === "open" &&
-			!(child as HTMLElement).assignedSlot
-		) {
-			return false;
-		}
-	}
-	return true;
-}
 
 // Writing a computed style is an error, not a no-op. It throws the
 // document's own DOMException, since one from another global is not
-// what an author catches.
-export function readOnlyDeclaration(element?: Element): DOMException {
-	const document = element ? element.ownerDocument : null;
-	const view = document ? document.defaultView : null;
-	const Exception =
-		(view as unknown as {DOMException?: typeof DOMException} | null)
-			?.DOMException ?? DOMException;
-	return new Exception(
-		"A computed style declaration is read-only",
-		"NoModificationAllowedError",
-	);
-}
 
 // The accessors (style.fontWeight) callers use alongside
 // getPropertyValue.
@@ -4812,20 +4760,6 @@ function toRoman(num: number): string {
 		}
 	}
 	return result;
-}
-
-export function getListNestingDepth(element: Element): number {
-	let depth = 0;
-	for (
-		let parent = element.parentElement;
-		parent;
-		parent = parent.parentElement
-	) {
-		if (parent.tagName === "UL" || parent.tagName === "OL") {
-			depth++;
-		}
-	}
-	return depth;
 }
 
 /** Marker glyphs for the bullet list-style-types. */
@@ -4935,13 +4869,6 @@ export interface CounterScope {
 // children: the sibling combinators, the tree-structural pseudo-classes
 // and :empty.
 export const SIBLING_SELECTOR = /[+~]|:(?:nth-|first-|last-|only-|empty)/;
-
-export function isStyleElement(element: Element): boolean {
-	return (
-		element.tagName === "STYLE" ||
-		(element.tagName === "LINK" && element.getAttribute("rel") === "stylesheet")
-	);
-}
 
 export function getBlockifiedDisplay(display: string): string {
 	return BLOCKIFIED_DISPLAYS[display] ?? display;
@@ -5439,29 +5366,6 @@ export const PAINT_ONLY_PROPERTIES = new Set([
 // The list's padding-left is a function of its items' markers and
 // their ordinals. Only the NEAREST list is affected.
 // TODO(box-tree): the gutter is a layout question answered here in the
-// cascade. Computing it during block layout deletes this.
-export function mutationChangesListItems(mutation: MutationRecord): boolean {
-	const target = mutation.target;
-	if (
-		target.nodeType === 1 &&
-		((target as Element).tagName === "UL" ||
-			(target as Element).tagName === "OL")
-	) {
-		return true;
-	}
-	for (const list of [mutation.addedNodes, mutation.removedNodes]) {
-		for (const node of list) {
-			if (node.nodeType !== 1) {
-				continue;
-			}
-			const element = node as Element;
-			if (element.tagName === "LI" || element.querySelector("li") !== null) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
 
 // Null for a value outside the grammar, which leaves the feature
 // unevaluated.
