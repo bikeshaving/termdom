@@ -1890,6 +1890,106 @@ export function parseUnitValue(
 	return number !== null && number < 0 ? null : parsed;
 }
 
+/** A number-valued property such as flex-grow. Null when not a number. */
+export function parseCSSNumber(value: string): number | null {
+	const number = parseFloat(value);
+	return Number.isFinite(number) ? number : null;
+}
+
+/** An integer-valued property such as order or z-index. */
+export function parseCSSInteger(value: string): number | null {
+	const number = parseCSSNumber(value);
+	return number === null ? null : Math.trunc(number);
+}
+
+/** One to four lengths in the order top, right, bottom, left, signs kept. */
+export function parseEdgeLengths(
+	value: string,
+): [UnitValue, UnitValue, UnitValue, UnitValue] {
+	const parts = splitComponents(value);
+	if (parts.length === 0) {
+		return [null, null, null, null];
+	}
+	const [top, right, bottom, left] = perEdge(parts);
+	return [
+		parseSignedUnitValue(top),
+		parseSignedUnitValue(right),
+		parseSignedUnitValue(bottom),
+		parseSignedUnitValue(left),
+	];
+}
+
+export type UnitValue = number | {percentage: number} | null;
+
+/**
+ * The alignment keyword without its qualifier: `safe center` and
+ * `first baseline` name center and baseline.
+ */
+export function parseAlignmentKeyword(value: string): string {
+	const tokens = value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+	while (tokens.length > 1 && ALIGNMENT_QUALIFIERS.has(tokens[0])) {
+		tokens.shift();
+	}
+	return tokens[0] ?? "";
+}
+
+export function parseGridAutoFlow(value: string): {
+	column: boolean;
+	dense: boolean;
+} {
+	const tokens = value.toLowerCase().split(/\s+/);
+	return {column: tokens.includes("column"), dense: tokens.includes("dense")};
+}
+
+/**
+ * A font weight as a number, 100 to 900. Relative keywords resolve
+ * against normal, since a terminal has one bold and one dim and nothing
+ * between to be relative to.
+ */
+export function parseFontWeight(value: string): number {
+	switch (value.trim().toLowerCase()) {
+		case "normal":
+			return 400;
+		case "bold":
+		case "bolder":
+			return 700;
+		case "lighter":
+			return 300;
+		default: {
+			const number = parseCSSNumber(value);
+			return number === null ? 400 : number;
+		}
+	}
+}
+
+export function parseTextDecorationLine(value: string): {
+	underline: boolean;
+	overline: boolean;
+	lineThrough: boolean;
+} {
+	const tokens = new Set(value.toLowerCase().split(/\s+/));
+	return {
+		underline: tokens.has("underline"),
+		overline: tokens.has("overline"),
+		lineThrough: tokens.has("line-through"),
+	};
+}
+
+/** Canvas: the terminal's own background. */
+export function isCanvasColor(value: string): boolean {
+	return value.trim().toLowerCase() === "canvas";
+}
+
+/**
+ * Highlight, HighlightText, SelectedItem and SelectedItemText. On a
+ * terminal the pair means SGR inverse.
+ */
+export function isHighlightColor(value: string): boolean {
+	return /^(?:highlight|selecteditem)(?:text)?$/.test(
+		value.trim().toLowerCase(),
+	);
+}
+
 /** The edges a box has, in cells, and the sizes it declares. */
 export interface BoxModel {
 	width?: number;

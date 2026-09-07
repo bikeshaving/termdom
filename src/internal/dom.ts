@@ -12,6 +12,7 @@ import {
 	styleElementSheet,
 	styleShadowAttached,
 } from "./cssom.ts";
+import {parseEdgeLengths, type UnitValue} from "./cssvalues.ts";
 import type {Exchange} from "./exchange.ts";
 import {
 	ARIA_ELEMENT_REFLECTIONS,
@@ -21972,24 +21973,14 @@ function applyRootMargin(
 	rect: globalThis.DOMRect,
 	margin: string,
 ): globalThis.DOMRect {
-	const parts = margin.trim().split(/\s+/).filter(Boolean);
-	if (parts.length === 0) {
+	const [t, r, b, l] = parseEdgeLengths(margin);
+	if (t === null && r === null && b === null && l === null) {
 		return rect;
 	}
-
-	const resolve = (value: string, basis: number): number => {
-		const match = /^(-?[\d.]+)(px|ch|%)?$/.exec(value);
-		if (!match) {
-			return 0;
-		}
-		const n = parseFloat(match[1]);
-		if (!Number.isFinite(n)) {
-			return 0;
-		}
-		return match[2] === "%" ? (n / 100) * basis : n;
-	};
-
-	const [t, r = t, b = t, l = r] = parts;
+	const resolve = (value: UnitValue, basis: number): number =>
+		value === null
+			? 0
+			: typeof value === "number" ? value : (value.percentage / 100) * basis;
 	const top = resolve(t, rect.height);
 	const right = resolve(r, rect.width);
 	const bottom = resolve(b, rect.height);

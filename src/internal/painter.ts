@@ -4,7 +4,15 @@ import {
 	getComputedValue,
 	resolveBorderSides,
 } from "./cssom.ts";
-import {cssColorToNumber, isTransparentColor} from "./cssvalues.ts";
+import {
+	cssColorToNumber,
+	isCanvasColor,
+	isHighlightColor,
+	isTransparentColor,
+	parseBorderWidthValue,
+	parseFontWeight,
+	parseTextDecorationLine,
+} from "./cssvalues.ts";
 import {
 	flatParentElement,
 	flowContent,
@@ -28,14 +36,6 @@ import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
 // edge computed from an infinite origin and size is NaN.
 type ClipRect = {left: number; top: number; right: number; bottom: number};
-
-function hasUnderline(decorationLine: string): boolean {
-	return decorationLine.includes("underline");
-}
-
-function hasLineThrough(decorationLine: string): boolean {
-	return decorationLine.includes("line-through");
-}
 
 function isClippingOverflow(value: string): boolean {
 	return (
@@ -84,31 +84,9 @@ function getOverflowClipRect(
 	};
 }
 
-// Three weights: faint, normal, bold. The relative keywords resolve
-// absolutely. Bolder than bold does not exist here anyway.
 function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
-	if (weight === "bold" || weight === "bolder") {
-		return {bold: true, dim: false};
-	}
-	if (weight === "lighter") {
-		return {bold: false, dim: true};
-	}
-	const numeric = parseInt(weight, 10);
-	if (Number.isFinite(numeric)) {
-		if (numeric >= 600) {
-			return {bold: true, dim: false};
-		}
-		if (numeric <= 300) {
-			return {bold: false, dim: true};
-		}
-	}
-	return {bold: false, dim: false};
-}
-
-// Highlight/HighlightText and SelectedItem/SelectedItemText. On a
-// terminal the pair means SGR inverse.
-function isSystemHighlightColor(value: string): boolean {
-	return /^(?:highlight|selecteditem)(?:text)?$/i.test(value.trim());
+	const number = parseFontWeight(weight);
+	return {bold: number >= 600, dim: number <= 300};
 }
 
 // Canvas is the terminal's own background. Highlight is inverse.
@@ -118,10 +96,10 @@ function getBackgroundFill(
 	if (!value || value === "initial" || isTransparentColor(value)) {
 		return null;
 	}
-	if (/^canvas$/i.test(value.trim())) {
+	if (isCanvasColor(value)) {
 		return "default";
 	}
-	if (isSystemHighlightColor(value)) {
+	if (isHighlightColor(value)) {
 		return "inverse";
 	}
 	return cssColorToNumber(value);
@@ -130,37 +108,38 @@ function getBackgroundFill(
 function getCellStyle(element: Element): CellStyle {
 	const color = getComputedValue(element, "color");
 	const bgColor = getComputedValue(element, "background-color");
+	const decoration = parseTextDecorationLine(
+		getComputedValue(element, "text-decoration-line"),
+	);
 	const {bold, dim} = resolveFontWeight(
 		getComputedValue(element, "font-weight"),
 	);
 	// The background alone carries inverse. color: HighlightText alone
 	// resolves to nothing, so an author color does not defeat it.
-	const isHighlightPair = isSystemHighlightColor(bgColor);
+	const isHighlightPair = isHighlightColor(bgColor);
 	return {
 		fg:
-			color && color !== "initial" && !isSystemHighlightColor(color)
+			color && color !== "initial" && !isHighlightColor(color)
 				? cssColorToNumber(color)
 				: undefined,
 		bg:
 			bgColor &&
 			bgColor !== "initial" &&
 			!isTransparentColor(bgColor) &&
-			!/^canvas$/i.test(bgColor.trim()) &&
-			!isSystemHighlightColor(bgColor)
+			!isCanvasColor(bgColor) &&
+			!isHighlightColor(bgColor)
 				? cssColorToNumber(bgColor)
 				: undefined,
 		inverse: isHighlightPair || undefined,
 		bold,
 		dim,
 		italic: getComputedValue(element, "font-style") === "italic",
-		underline: hasUnderline(getComputedValue(element, "text-decoration-line")),
+		underline: decoration.underline,
 		underlineStyle:
 			getComputedValue(element, "text-decoration-style") === "double"
 				? ("double" as const)
 				: undefined,
-		strikethrough: hasLineThrough(
-			getComputedValue(element, "text-decoration-line"),
-		),
+		strikethrough: decoration.lineThrough,
 	};
 }
 
@@ -172,8 +151,8 @@ function getSelectionStyle(element: Element, base: CellStyle): CellStyle {
 	if (!fg && !bg) {
 		return base;
 	}
-	const fgAuthored = Boolean(fg) && !isSystemHighlightColor(fg);
-	const bgAuthored = Boolean(bg) && !isSystemHighlightColor(bg);
+	const fgAuthored = Boolean(fg) && !isHighlightColor(fg);
+	const bgAuthored = Boolean(bg) && !isHighlightColor(bg);
 	if (!fgAuthored && !bgAuthored) {
 		return {...base, inverse: true};
 	}
@@ -369,13 +348,12 @@ function renderElement(
 
 	// Canvas clears the box to the terminal's default background, opaque in
 	// every theme. Highlight fills it with inverse.
-	const isCanvasBg =
-		Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
+	const isCanvasBg = Boolean(backgroundColor) && isCanvasColor(backgroundColor);
 	const isHighlightBox =
-		Boolean(backgroundColor) && isSystemHighlightColor(backgroundColor);
+		Boolean(backgroundColor) && isHighlightColor(backgroundColor);
 	const style = {
 		fg:
-			color && color !== "initial" && !isSystemHighlightColor(color)
+			color && color !== "initial" && !isHighlightColor(color)
 				? cssColorToNumber(color)
 				: undefined,
 		bg:
@@ -383,7 +361,7 @@ function renderElement(
 			!isCanvasBg &&
 			backgroundColor !== "initial" &&
 			!isTransparentColor(backgroundColor) &&
-			!isSystemHighlightColor(backgroundColor)
+			!isHighlightColor(backgroundColor)
 				? cssColorToNumber(backgroundColor)
 				: undefined,
 	};
@@ -583,7 +561,7 @@ function renderElement(
 		if (
 			outlineStyle &&
 			outlineStyle !== "none" &&
-			parseFloat(getComputedValue(element, "outline-width")) !== 0
+			parseBorderWidthValue(getComputedValue(element, "outline-width")) !== 0
 		) {
 			const outlineColor = getComputedValue(element, "outline-color")
 				.trim()
@@ -593,7 +571,7 @@ function renderElement(
 				outlineColor !== "auto" &&
 				outlineColor !== "currentcolor" &&
 				outlineColor !== "invert" &&
-				!isSystemHighlightColor(outlineColor);
+				!isHighlightColor(outlineColor);
 			// `auto`, the initial value and what `outline: 1px solid` leaves,
 			// takes the element's own color, as a border's currentcolor does.
 			const color = hasColor ? cssColorToNumber(outlineColor) : style.fg;
@@ -758,9 +736,9 @@ function renderOutsideMarker(
 	);
 	const markerItalic = getComputedValue(element, "font-style", "::marker") ===
 		"italic";
-	const markerUnderline = hasUnderline(
+	const markerUnderline = parseTextDecorationLine(
 		getComputedValue(element, "text-decoration-line", "::marker"),
-	);
+	).underline;
 
 	const markerTextStyle = {
 		fg:

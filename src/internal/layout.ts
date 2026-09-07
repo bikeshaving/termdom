@@ -8,9 +8,13 @@ import {
 	EMPTY_TRACK_LIST,
 	type GridAreaMap,
 	type GridPlacement,
+	parseAlignmentKeyword,
 	parseAspectRatio,
 	parseBorderWidthValue,
+	parseCSSInteger,
+	parseCSSNumber,
 	parseGridAreas,
+	parseGridAutoFlow,
 	parseGridPlacement,
 	parseSignedUnitValue,
 	parseTrackList,
@@ -6288,30 +6292,16 @@ const JUSTIFY_CONTENT_CONSTANTS: Record<string, Justify> = {
 	"space-evenly": "space-evenly",
 };
 
-function getAlignmentKeyword(value: string): string {
-	const tokens = value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-	while (
-		tokens.length > 1 &&
-		(tokens[0] === "safe" ||
-			tokens[0] === "unsafe" ||
-			tokens[0] === "first" ||
-			tokens[0] === "last")
-	) {
-		tokens.shift();
-	}
-	return tokens[0] ?? "";
-}
-
 function getAlignmentConstant(value: string, fallback: Align): Align {
 	if (!value || value === "auto") {
 		return fallback;
 	}
-	const constant = ALIGNMENT_CONSTANTS[getAlignmentKeyword(value)];
+	const constant = ALIGNMENT_CONSTANTS[parseAlignmentKeyword(value)];
 	return constant === undefined ? fallback : constant;
 }
 
 function getJustifyContentConstant(value: string): Justify {
-	const constant = JUSTIFY_CONTENT_CONSTANTS[getAlignmentKeyword(value)];
+	const constant = JUSTIFY_CONTENT_CONSTANTS[parseAlignmentKeyword(value)];
 	return constant === undefined ? "normal" : constant;
 }
 
@@ -6332,11 +6322,8 @@ function applyGridContainer(layoutNode: LayoutNode, element: Element): void {
 		parseTrackSizeList(getComputedValue(element, "grid-auto-rows")),
 	);
 
-	const flow = getComputedValue(element, "grid-auto-flow")
-		.toLowerCase()
-		.split(/\s+/)
-		.filter(Boolean);
-	layoutNode.setGridAutoFlow(flow.includes("column"), flow.includes("dense"));
+	const flow = parseGridAutoFlow(getComputedValue(element, "grid-auto-flow"));
+	layoutNode.setGridAutoFlow(flow.column, flow.dense);
 
 	layoutNode.setJustifyContent(
 		getJustifyContentConstant(getComputedValue(element, "justify-content")),
@@ -6572,20 +6559,17 @@ function styleLayoutNodeProperties(
 	// initial values without asking the cascade, which is most elements.
 	const item = (property: string, initial: string): string =>
 		parentIsFlex ? getComputedValue(element, property) : initial;
-	const flexGrow = item("flex-grow", "0");
-	const growValue = parseFloat(flexGrow);
-	if (!isNaN(growValue) && growValue >= 0) {
+	const growValue = parseCSSNumber(item("flex-grow", "0"));
+	if (growValue !== null && growValue >= 0) {
 		layoutNode.setFlexGrow(growValue);
 	} else {
 		layoutNode.setFlexGrow(undefined);
 	}
 
-	const orderValue = parseInt(item("order", "0"), 10);
-	layoutNode.setOrder(Number.isNaN(orderValue) ? undefined : orderValue);
+	layoutNode.setOrder(parseCSSInteger(item("order", "0")) ?? undefined);
 
-	const flexShrink = item("flex-shrink", "1");
-	const shrinkValue = parseFloat(flexShrink);
-	if (!isNaN(shrinkValue) && shrinkValue >= 0) {
+	const shrinkValue = parseCSSNumber(item("flex-shrink", "1"));
+	if (shrinkValue !== null && shrinkValue >= 0) {
 		layoutNode.setFlexShrink(shrinkValue);
 	} else {
 		layoutNode.setFlexShrink(undefined);
@@ -10669,8 +10653,7 @@ function getZIndexValue(element: Element): number | "auto" {
 	if (!zIndex || zIndex === "auto") {
 		return "auto";
 	}
-	const value = parseInt(zIndex, 10);
-	return Number.isFinite(value) ? value : "auto";
+	return parseCSSInteger(zIndex) ?? "auto";
 }
 
 // Positioned with a non-auto z-index. opacity/transform/filter have no
