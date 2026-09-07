@@ -9,8 +9,6 @@ import {
 	CSS_SHORTHANDS,
 } from "../generated/cssproperties.ts";
 import {
-	type CompiledSelector,
-	compileSelector,
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
 	type Element as DOMElement,
@@ -19,27 +17,31 @@ import {
 	ensurePseudoElement,
 	flatParentElement,
 	flushLayout,
-	getChildren,
 	getPseudoHost,
 	getPseudoName,
 	getShadowRoot,
 	isUAShadowTree,
-	LEGACY_PSEUDO_ELEMENTS,
-	matchesCompiled,
-	NO_NAMESPACES,
-	parseSelectorList,
 	pseudoElement,
 	pseudoElementCount,
-	pseudoName,
-	selectAllCompiled,
-	type SelectorNamespaces,
-	type SelectorNode,
 	styleElementCount,
 	TransitionEvent,
 	type Window,
 } from "./dom.ts";
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
+import {
+	type CompiledSelector,
+	compileSelector,
+	getChildren,
+	LEGACY_PSEUDO_ELEMENTS,
+	matchesCompiled,
+	NO_NAMESPACES,
+	parseSelectorList,
+	pseudoName,
+	selectAllCompiled,
+	type SelectorNamespaces,
+	type SelectorNode,
+} from "./selectors.ts";
 import {getStringWidth} from "./text.ts";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.ts";
 

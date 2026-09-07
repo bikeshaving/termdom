@@ -15,10 +15,12 @@ import {
 	type Document,
 	type Element,
 	type Node,
-	parseSelectorList,
 	setDocumentFocusVisible,
 	setHoveredElement,
 } from "../src/internal/dom.ts";
+import {
+	parseSelectorList,
+} from "../src/internal/selectors.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 function tree(html: string, url = "about:blank"): Document {
