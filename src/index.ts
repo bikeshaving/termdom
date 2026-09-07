@@ -123,8 +123,8 @@ export class TermDOM {
 			options.url,
 		);
 
-		const document = this.window.document as unknown as DOM.Document;
-		this.document = this.window.document;
+		const document =
+			this.document = this.window.document as unknown as DOM.Document;
 
 		this[kLayout] = new Layout(
 			this.window,
@@ -138,14 +138,15 @@ export class TermDOM {
 			this[kTransport].cols,
 			this[kTransport].colorDepth,
 		);
-		this[kExchange] = new Exchange(
+
+		const exchange = this[kExchange] = new Exchange(
 			this[kTransport],
 			this.window,
 			this[kLayout],
 			this[kCascade],
 			this[kScreen],
 		);
-		const exchange = this[kExchange];
+
 		// The screen measures widths over the exchange's probe channel.
 		this[kScreen].measurer = exchange;
 
@@ -164,6 +165,7 @@ export class TermDOM {
 			this[kCascade],
 			this[kScreen],
 		);
+
 		this[kPainter] = new Painter(
 			this.document,
 			this[kLayout],
@@ -255,6 +257,7 @@ export class TermDOM {
 				}
 			}
 			syncMouseReporting(this);
+			syncHoverReporting(this);
 			this[kExchange].initializeCursorDetection();
 			void this[kExchange].negotiateBidi();
 			void this[kExchange].negotiateGraphemeClusters();
@@ -399,9 +402,6 @@ function syncMouseReporting(termDOM: TermDOM): void {
 	}
 	termDOM[kMouseReportingEnabled] = wanted;
 	termDOM[kExchange].setDisplayType("mouseCapture", wanted);
-	// Motion reporting depends on capture. A yield hands the whole mouse
-	// back.
-	syncHoverReporting(termDOM);
 }
 
 /** Whether anything in the document can observe pointer hover right now. */
@@ -616,6 +616,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		// other's content.
 		termDOM[kScreen].repaintAll();
 		syncMouseReporting(termDOM);
+		syncHoverReporting(termDOM);
 	}
 
 	// First, so a hover listener's mutations join the records taken below.
