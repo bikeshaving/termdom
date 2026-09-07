@@ -41,9 +41,11 @@ import {
 	pseudoElement,
 	pseudoElementCount,
 	styleElementCount,
-	TransitionEvent,
 	type Window,
 } from "./dom.ts";
+import {
+	TransitionEvent,
+} from "./events.ts";
 import {
 	HTML_NAMESPACE,
 } from "./htmltables.ts";

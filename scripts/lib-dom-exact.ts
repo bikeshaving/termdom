@@ -2,6 +2,7 @@
 // Compiled by tsc, never run. scripts/lib-dom-drift.mjs prints what each
 // Drift alias resolves to, and exits nonzero when any is not `never`.
 import type * as DOM from "../src/internal/dom.ts";
+import type * as Events from "../src/internal/events.ts";
 
 type Identical<A, B> =
 	(<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)
@@ -15,84 +16,84 @@ type Identical<A, B> =
 // indistinguishable from its base, and a platform type would match the
 // smallest class of ours it happens to satisfy.
 type Map0<T> =
-	Identical<T, DOM.Event> extends true
+	Identical<T, Events.Event> extends true
 		? globalThis.Event
-		: Identical<T, DOM.CustomEvent> extends true
+		: Identical<T, Events.CustomEvent> extends true
 			? globalThis.CustomEvent
-			: Identical<T, DOM.BeforeUnloadEvent> extends true
+			: Identical<T, Events.BeforeUnloadEvent> extends true
 				? globalThis.BeforeUnloadEvent
-				: Identical<T, DOM.ErrorEvent> extends true
+				: Identical<T, Events.ErrorEvent> extends true
 					? globalThis.ErrorEvent
-					: Identical<T, DOM.MessageEvent> extends true
+					: Identical<T, Events.MessageEvent> extends true
 						? globalThis.MessageEvent
-						: Identical<T, DOM.HashChangeEvent> extends true
+						: Identical<T, Events.HashChangeEvent> extends true
 							? globalThis.HashChangeEvent
-							: Identical<T, DOM.StorageEvent> extends true
+							: Identical<T, Events.StorageEvent> extends true
 								? globalThis.StorageEvent
-								: Identical<T, DOM.UIEvent> extends true
+								: Identical<T, Events.UIEvent> extends true
 									? globalThis.UIEvent
-									: Identical<T, DOM.MouseEvent> extends true
+									: Identical<T, Events.MouseEvent> extends true
 										? globalThis.MouseEvent
-										: Identical<T, DOM.FocusEvent> extends true
+										: Identical<T, Events.FocusEvent> extends true
 											? globalThis.FocusEvent
-											: Identical<T, DOM.KeyboardEvent> extends true
+											: Identical<T, Events.KeyboardEvent> extends true
 												? globalThis.KeyboardEvent
-												: Identical<T, DOM.CompositionEvent> extends true
+												: Identical<T, Events.CompositionEvent> extends true
 													? globalThis.CompositionEvent
-													: Identical<T, DOM.TextEvent> extends true
+													: Identical<T, Events.TextEvent> extends true
 														? globalThis.TextEvent
-														: Identical<T, DOM.InputEvent> extends true
+														: Identical<T, Events.InputEvent> extends true
 															? globalThis.InputEvent
-															: Identical<T, DOM.FileList> extends true
+															: Identical<T, Events.FileList> extends true
 																? globalThis.FileList
 																: Identical<
 																	T,
-																	DOM.DataTransferItem
+																	Events.DataTransferItem
 																> extends true
 																	? globalThis.DataTransferItem
 																	: Identical<
 																		T,
-																		DOM.DataTransferItemList
+																		Events.DataTransferItemList
 																	> extends true
 																		? globalThis.DataTransferItemList
 																		: Identical<
 																			T,
-																			DOM.DataTransfer
+																			Events.DataTransfer
 																		> extends true
 																			? globalThis.DataTransfer
 																			: Identical<
 																				T,
-																				DOM.ClipboardEvent
+																				Events.ClipboardEvent
 																			> extends true
 																				? globalThis.ClipboardEvent
 																				: Identical<
 																					T,
-																					DOM.TransitionEvent
+																					Events.TransitionEvent
 																				> extends true
 																					? globalThis.TransitionEvent
 																					: Identical<
 																						T,
-																						DOM.AnimationEvent
+																						Events.AnimationEvent
 																					> extends true
 																						? globalThis.AnimationEvent
 																						: Identical<
 																							T,
-																							DOM.WheelEvent
+																							Events.WheelEvent
 																						> extends true
 																							? globalThis.WheelEvent
 																							: Identical<
 																								T,
-																								DOM.PointerEvent
+																								Events.PointerEvent
 																							> extends true
 																								? globalThis.PointerEvent
 																								: Identical<
 																									T,
-																									DOM.DragEvent
+																									Events.DragEvent
 																								> extends true
 																									? globalThis.DragEvent
 																									: Identical<
 																										T,
-																										DOM.EventTarget
+																										Events.EventTarget
 																									> extends true
 																										? globalThis.EventTarget
 																										: Identical<
@@ -638,70 +639,76 @@ export type Drift<C, G, Allowed extends string = never> = Exclude<{
 type SpecAhead = "showPopover" | "togglePopover";
 export type Extra<C, G> = Exclude<Exclude<keyof C, symbol>, keyof G>;
 
-export type EventDrift = Drift<DOM.Event, globalThis.Event>;
-export type CustomEventDrift = Drift<DOM.CustomEvent, globalThis.CustomEvent>;
+export type EventDrift = Drift<Events.Event, globalThis.Event>;
+export type CustomEventDrift = Drift<
+	Events.CustomEvent,
+	globalThis.CustomEvent
+>;
 export type BeforeUnloadEventDrift = Drift<
-	DOM.BeforeUnloadEvent,
+	Events.BeforeUnloadEvent,
 	globalThis.BeforeUnloadEvent
 >;
 export type MessageEventDrift = Drift<
-	DOM.MessageEvent,
+	Events.MessageEvent,
 	globalThis.MessageEvent
 >;
-export type ErrorEventDrift = Drift<DOM.ErrorEvent, globalThis.ErrorEvent>;
+export type ErrorEventDrift = Drift<Events.ErrorEvent, globalThis.ErrorEvent>;
 export type HashChangeEventDrift = Drift<
-	DOM.HashChangeEvent,
+	Events.HashChangeEvent,
 	globalThis.HashChangeEvent
 >;
 export type StorageEventDrift = Drift<
-	DOM.StorageEvent,
+	Events.StorageEvent,
 	globalThis.StorageEvent
 >;
-export type UIEventDrift = Drift<DOM.UIEvent, globalThis.UIEvent>;
-export type MouseEventDrift = Drift<DOM.MouseEvent, globalThis.MouseEvent>;
-export type FocusEventDrift = Drift<DOM.FocusEvent, globalThis.FocusEvent>;
+export type UIEventDrift = Drift<Events.UIEvent, globalThis.UIEvent>;
+export type MouseEventDrift = Drift<Events.MouseEvent, globalThis.MouseEvent>;
+export type FocusEventDrift = Drift<Events.FocusEvent, globalThis.FocusEvent>;
 export type KeyboardEventDrift = Drift<
-	DOM.KeyboardEvent,
+	Events.KeyboardEvent,
 	globalThis.KeyboardEvent
 >;
 export type CompositionEventDrift = Drift<
-	DOM.CompositionEvent,
+	Events.CompositionEvent,
 	globalThis.CompositionEvent
 >;
-export type TextEventDrift = Drift<DOM.TextEvent, globalThis.TextEvent>;
-export type InputEventDrift = Drift<DOM.InputEvent, globalThis.InputEvent>;
-export type FileListDrift = Drift<DOM.FileList, globalThis.FileList>;
+export type TextEventDrift = Drift<Events.TextEvent, globalThis.TextEvent>;
+export type InputEventDrift = Drift<Events.InputEvent, globalThis.InputEvent>;
+export type FileListDrift = Drift<Events.FileList, globalThis.FileList>;
 export type DataTransferItemDrift = Drift<
-	DOM.DataTransferItem,
+	Events.DataTransferItem,
 	globalThis.DataTransferItem
 >;
 export type DataTransferItemListDrift = Drift<
-	DOM.DataTransferItemList,
+	Events.DataTransferItemList,
 	globalThis.DataTransferItemList
 >;
 export type DataTransferDrift = Drift<
-	DOM.DataTransfer,
+	Events.DataTransfer,
 	globalThis.DataTransfer
 >;
 export type ClipboardEventDrift = Drift<
-	DOM.ClipboardEvent,
+	Events.ClipboardEvent,
 	globalThis.ClipboardEvent
 >;
 export type TransitionEventDrift = Drift<
-	DOM.TransitionEvent,
+	Events.TransitionEvent,
 	globalThis.TransitionEvent
 >;
 export type AnimationEventDrift = Drift<
-	DOM.AnimationEvent,
+	Events.AnimationEvent,
 	globalThis.AnimationEvent
 >;
-export type WheelEventDrift = Drift<DOM.WheelEvent, globalThis.WheelEvent>;
+export type WheelEventDrift = Drift<Events.WheelEvent, globalThis.WheelEvent>;
 export type PointerEventDrift = Drift<
-	DOM.PointerEvent,
+	Events.PointerEvent,
 	globalThis.PointerEvent
 >;
-export type DragEventDrift = Drift<DOM.DragEvent, globalThis.DragEvent>;
-export type EventTargetDrift = Drift<DOM.EventTarget, globalThis.EventTarget>;
+export type DragEventDrift = Drift<Events.DragEvent, globalThis.DragEvent>;
+export type EventTargetDrift = Drift<
+	Events.EventTarget,
+	globalThis.EventTarget
+>;
 export type NodeDrift = Drift<DOM.Node, globalThis.Node>;
 export type MutationRecordDrift = Drift<
 	DOM.MutationRecord,

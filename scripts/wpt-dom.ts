@@ -25,6 +25,7 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import type {Document} from "../src/internal/dom.ts";
 import type * as DOM from "../src/internal/dom.ts";
+import {Event} from "../src/internal/events.ts";
 import type * as TermDOM from "../src/index.ts";
 import type {TerminalTransport} from "../src/internal/exchange.ts";
 
@@ -1474,10 +1475,8 @@ async function runMountedFile(
 			// a name (`params.map(eval)`) finds them, while `let` and `const`
 			// stay in the file's own scope rather than the realm's.
 			(0, eval)(`with (__termdomNamedAccess) {\n${body}\n}`);
-			(scope.dispatchEvent as (event: object) => boolean)(
-				new dom.Event("load"),
-			);
-			document.dispatchEvent(new dom.Event("DOMContentLoaded"));
+			(scope.dispatchEvent as (event: object) => boolean)(new Event("load"));
+			document.dispatchEvent(new Event("DOMContentLoaded"));
 		} catch (error) {
 			return {
 				file,

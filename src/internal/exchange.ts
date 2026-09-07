@@ -1,12 +1,11 @@
 import type {Cascade} from "./cssom.ts";
 import {
 	dispatchAsUserAgent,
-	Event,
-	EventTarget,
 	requestRender,
 	syncMediaQueries,
 	type Window,
 } from "./dom.ts";
+import {Event, EventTarget} from "./events.ts";
 import type {Input} from "./input.ts";
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";

@@ -12,13 +12,15 @@ import {expect, test} from "@b9g/libuild/test";
 import {
 	createDocumentWindow,
 	type Document,
-	CustomEvent as DOMCustomEvent,
-	Event as DOMEvent,
 	HTMLElement,
 	MutationObserver,
 	NodeFilter,
 	Text,
 } from "../src/internal/dom.ts";
+import {
+	CustomEvent as DOMCustomEvent,
+	Event as DOMEvent,
+} from "../src/internal/events.ts";
 
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.

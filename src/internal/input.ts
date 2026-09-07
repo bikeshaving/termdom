@@ -12,7 +12,6 @@ import {
 	HTMLTextAreaElement,
 	lightDismissPress,
 	lightDismissRelease,
-	lockDataTransfer,
 	placeTextControlCaret,
 	requestRender,
 	setDocumentFocusVisible,
@@ -21,6 +20,9 @@ import {
 	topmostModalDialog,
 	type Window,
 } from "./dom.ts";
+import {
+	lockDataTransfer,
+} from "./events.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";

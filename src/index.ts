@@ -8,6 +8,7 @@ import {
 	flushObservers,
 	type Window,
 } from "./internal/dom.ts";
+import {hoverListenerCount} from "./internal/events.ts";
 import {
 	Exchange,
 	type TerminalCloseInfo,
@@ -412,7 +413,7 @@ function syncMouseReporting(termDOM: TermDOM): void {
 function syncHoverReporting(termDOM: TermDOM): void {
 	const wanted =
 		termDOM[kMouseReportingEnabled] &&
-		(DOM.hoverListenerCount(termDOM.document) > 0 ||
+		(hoverListenerCount(termDOM.document) > 0 ||
 			termDOM[kCascade].hoverRulesExist());
 	if (wanted === termDOM[kHoverReportingEnabled]) {
 		return;
