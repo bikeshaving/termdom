@@ -1,12 +1,11 @@
 import LineBreaker from "linebreak";
 
+import {getBoxModel, getComputedValue, usedValuesChanged} from "./cssom.ts";
 import {
 	AUTO_PLACEMENT,
 	AUTO_TRACK,
 	type BoxModel,
 	EMPTY_TRACK_LIST,
-	getBoxModel,
-	getComputedValue,
 	type GridAreaMap,
 	type GridPlacement,
 	parseAspectRatio,
@@ -21,9 +20,8 @@ import {
 	type TrackList,
 	type TrackListTrack,
 	type TrackSize,
-	usedValuesChanged,
 	type Value,
-} from "./cssom.ts";
+} from "./cssvalues.ts";
 import {
 	DOMRectList,
 	flatChildren,

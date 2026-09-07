@@ -1,11 +1,10 @@
 import {
 	type Cascade,
-	cssColorToNumber,
 	getBoxModel,
 	getComputedValue,
-	isTransparentColor,
 	resolveBorderSides,
 } from "./cssom.ts";
+import {cssColorToNumber, isTransparentColor} from "./cssvalues.ts";
 import {
 	flatParentElement,
 	flowContent,
