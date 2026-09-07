@@ -24,9 +24,15 @@ import {
 	HTML_ELEMENT_REFLECTIONS,
 	HTML_ELEMENT_TAGS,
 	HTML_INTERFACES,
+	HTML_NAMESPACE,
 	HTML_UNKNOWN_TAGS,
+	MATHML_NAMESPACE,
 	type ReflectSpec,
+	SVG_NAMESPACE,
 	WINDOW_EVENT_HANDLERS,
+	XLINK_NAMESPACE,
+	XML_NAMESPACE,
+	XMLNS_NAMESPACE,
 } from "./htmltables.ts";
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";
@@ -51,13 +57,6 @@ import {
 	TEXT_CONTROL_UA_STYLES,
 	TEXTAREA_UA_STYLES,
 } from "./useragent.ts";
-
-export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
-const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
-const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
-const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
-const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
-const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 
 const kEnsureUAShadowTree = Symbol("build a control's UA shadow tree");
 

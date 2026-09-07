@@ -15,7 +15,6 @@ import {
 	hasCustomState,
 	hasFocus,
 	hasFocusWithin,
-	HTML_NAMESPACE,
 	isActuallyDisabled,
 	isCheckedControl,
 	isDefaultControl,
@@ -37,6 +36,9 @@ import {
 	Node,
 	parentElement,
 } from "./dom.ts";
+import {
+	HTML_NAMESPACE,
+} from "./htmltables.ts";
 import {toASCIILowercase} from "./text.ts";
 
 // CSS Selectors: the language, and the matcher a selector compiles to.

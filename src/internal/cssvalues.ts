@@ -20,7 +20,7 @@ import type {
 	SelectorNode,
 } from "./selectors.ts";
 
-export type Unit = "undefined" | "cell" | "percent" | "auto";
+type Unit = "undefined" | "cell" | "percent" | "auto";
 
 /**
  * A length as the layout solver stores it. NaN is the number for
@@ -746,8 +746,6 @@ export function cssColorToNumber(cssColor: string): number {
 	}
 	return parseColor(cssColor)?.color ?? 0;
 }
-
-export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 const BORDER_STYLE_KEYWORDS = new Set([
 	"none",
@@ -5596,7 +5594,7 @@ export interface TrackListTrack {
  * from the space available. `auto-fit` then collapses the tracks that
  * took no item (css-grid-2 §7.2.3.2).
  */
-export interface TrackRepeat {
+interface TrackRepeat {
 	count: number | "auto-fill" | "auto-fit";
 	tracks: TrackListTrack[];
 
@@ -5604,7 +5602,7 @@ export interface TrackRepeat {
 	endNames: string[];
 }
 
-export type TrackListPart =
+type TrackListPart =
 	{type: "track"; track: TrackListTrack} |
 	{type: "repeat"; repeat: TrackRepeat};
 

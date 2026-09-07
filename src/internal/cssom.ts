@@ -54,7 +54,6 @@ import {
 	getTransitionBase,
 	getTransitionProgress,
 	getUsedLength,
-	HTML_NAMESPACE,
 	INHERITED_PROPERTIES,
 	INITIAL_FONT_SIZE,
 	INITIAL_KEYWORDS,
@@ -150,6 +149,9 @@ import {
 	TransitionEvent,
 	type Window,
 } from "./dom.ts";
+import {
+	HTML_NAMESPACE,
+} from "./htmltables.ts";
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {
