@@ -66,8 +66,8 @@ jobs:
 
       - name: Regenerate
         run: |
-          npx tsx scripts/generate-css-properties.ts
-          npx tsx scripts/generate-html-tables.ts
+          bun scripts/generate-css-properties.ts
+          bun scripts/generate-html-tables.ts
 
       - name: Diff
         run: git diff --exit-code src/generated/cssproperties.ts src/generated/htmltables.ts

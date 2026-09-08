@@ -7,7 +7,10 @@
  * generated from it rather than typed out, so the accessor set, the shorthand
  * table and the initial values all come from one source.
  *
- * Run: node --experimental-strip-types scripts/generate-css-properties.ts
+ * Run: bun scripts/generate-css-properties.ts
+ *
+ * Bun, because the named colors' values come from Bun.color, so this engine
+ * and Bun agree on every one.
  */
 
 import {execFileSync} from "node:child_process";
@@ -22,7 +25,12 @@ const properties = require("mdn-data/css/properties.json") as Record<
 		computed: string | string[];
 		initial: string | string[];
 		inherited: boolean;
+		syntax: string;
 	}
+>;
+const syntaxes = require("mdn-data/css/syntaxes.json") as Record<
+	string,
+	{syntax: string}
 >;
 const atRules = require("mdn-data/css/at-rules.json") as Record<
 	string,
@@ -204,6 +212,73 @@ for (const name of new Set([
 	}
 }
 
+/** The longhands the property index marks as inherited. */
+const inherited = longhands.filter((name) => properties[name].inherited);
+
+/**
+ * A property's grammar with the `<'property'>` references it makes
+ * replaced by those properties' own grammars.
+ */
+function expandSyntax(syntax: string, depth = 0): string {
+	if (depth > 8) {
+		return syntax;
+	}
+	return syntax.replace(/<'([^']+)'>/g, (reference, name: string) =>
+		name in properties
+			? `[ ${expandSyntax(properties[name].syntax, depth + 1)} ]`
+			: reference,
+	);
+}
+
+/**
+ * The longhands whose value is a color: their grammar names `<color>` and
+ * no other type.
+ */
+const colors = longhands.filter((name) => {
+	const types = [
+		...expandSyntax(properties[name].syntax).matchAll(/<([a-z-]+)>/g),
+	]
+		.map((match) => match[1]);
+	return types.length > 0 && types.every((type) => type === "color");
+});
+
+/**
+ * The keywords a grammar production accepts, following the productions it
+ * names. Function names and types are not keywords.
+ */
+function keywordsOf(name: string, seen = new Set<string>()): string[] {
+	if (seen.has(name)) {
+		return [];
+	}
+	seen.add(name);
+	const syntax = syntaxes[name]?.syntax ?? properties[name]?.syntax;
+	if (syntax === undefined) {
+		return [];
+	}
+	const out: string[] = [];
+	for (const token of syntax.split(/[\s|[\]&#!?*+,{}()]+/)) {
+		const reference = /^<'?([a-z-]+)'?(?:\(\))?>$/.exec(token);
+		if (reference) {
+			out.push(...keywordsOf(reference[1], seen));
+		} else if (/^[a-z][a-z-]*$/.test(token)) {
+			out.push(token);
+		}
+	}
+	return [...new Set(out)];
+}
+
+if (Bun === undefined) {
+	throw new Error("Run this under Bun: the named colors come from Bun.color");
+}
+const namedColors: Record<string, number> = {};
+for (const name of keywordsOf("named-color")) {
+	const color = Bun.color(name, "number");
+	if (color === null) {
+		throw new Error(`Bun.color does not know ${name}`);
+	}
+	namedColors[name] = color;
+}
+
 function list(values: readonly string[]): string {
 	return values.map((value) => `\t${JSON.stringify(value)},`).join("\n");
 }
@@ -212,6 +287,15 @@ function record(values: Record<string, string | string[]>): string {
 	return Object.keys(values)
 		.sort()
 		.map((key) => `\t${JSON.stringify(key)}: ${JSON.stringify(values[key])},`)
+		.join("\n");
+}
+
+function hexRecord(values: Record<string, number>): string {
+	return Object.keys(values)
+		.sort()
+		.map(
+			(key) => `\t${key}: 0x${values[key].toString(16).padStart(6, "0")},`,
+		)
 		.join("\n");
 }
 
@@ -259,6 +343,36 @@ ${record(descriptors)}
 export const CSS_INITIAL_VALUES: Readonly<Record<string, string>> = {
 ${record(initials)}
 };
+
+/** The longhands that inherit. */
+export const CSS_INHERITED_PROPERTIES: readonly string[] = [
+${list(inherited)}
+];
+
+/** The longhands whose value is a color. */
+export const CSS_COLOR_PROPERTIES: readonly string[] = [
+${list(colors)}
+];
+
+/** Each named color as packed RGB, as Bun.color reads it. */
+export const CSS_NAMED_COLORS: Readonly<Record<string, number>> = {
+${hexRecord(namedColors)}
+};
+
+/** The \`<line-style>\` keywords. */
+export const CSS_LINE_STYLES: readonly string[] = [
+${list(keywordsOf("line-style"))}
+];
+
+/** The easing function keywords, which name a function without arguments. */
+export const CSS_EASING_KEYWORDS: readonly string[] = [
+${list(keywordsOf("easing-function"))}
+];
+
+/** The generic font family names. */
+export const CSS_GENERIC_FAMILIES: readonly string[] = [
+${list(keywordsOf("generic-family"))}
+];
 `;
 
 const out = fileURLToPath(
