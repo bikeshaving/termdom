@@ -4648,18 +4648,15 @@ export class Layout {
 		if (!range.collapsed) {
 			return this.getRangeSpans(range).map((run) => run.rect);
 		}
-		const rects: DOMRect[] = [];
-		for (const textNode of rangeTextNodes(this, range)) {
-			const caret = getCaretRectInFragment(
-				this,
-				textNode,
-				range.startContainer === textNode ? range.startOffset : 0,
-			);
-			if (caret) {
-				rects.push(caret);
-			}
-		}
-		return rects;
+		const caret = this.getCaretRect(range.startContainer, range.startOffset);
+		return caret === null ? [] : [caret];
+	}
+
+	/** The zero-width rect of a caret at the point, in a text node only. */
+	getCaretRect(node: Node, offset: number): DOMRect | null {
+		return node.nodeType === node.TEXT_NODE
+			? getCaretRectInFragment(this, node as Text, offset)
+			: null;
 	}
 
 	// The text lets a caller repaint the run in the selection style.
@@ -5297,12 +5294,6 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 }
 
 function rangeTextNodes(layout: Layout, range: Range): Text[] {
-	if (range.collapsed) {
-		const container = range.startContainer;
-		return container.nodeType === container.TEXT_NODE
-			? [container as Text]
-			: [];
-	}
 	const root = range.commonAncestorContainer;
 	if (root.nodeType === root.TEXT_NODE) {
 		return [root as Text];

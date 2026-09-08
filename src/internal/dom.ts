@@ -25010,13 +25010,23 @@ function setRangePoints(
 	endNode: Node,
 	endOffset: number,
 ): void {
+	moveRange(range, startNode, startOffset, endNode, endOffset);
+	rangeBoundaryPointsChanged(range, "both");
+}
+
+function moveRange(
+	range: Range,
+	startNode: Node,
+	startOffset: number,
+	endNode: Node,
+	endOffset: number,
+): void {
 	const oldRoot = getRoot(range[kStartNode]);
 	range[kStartNode] = startNode;
 	range[kStartOffset] = startOffset;
 	range[kEndNode] = endNode;
 	range[kEndOffset] = endOffset;
 	rehomeLiveRange(range, oldRoot);
-	rangeBoundaryPointsChanged(range, "both");
 }
 
 /** Any node except a doctype. */
@@ -25591,11 +25601,6 @@ function releaseLiveRange(range: Range): void {
 	liveRangesByRoot.get(getRoot(range[kStartNode]))?.delete(range);
 }
 
-/** How many live ranges the mutation steps walk for this node's tree. */
-export function getLiveRangeCount(node: globalThis.Node): number {
-	return liveRangesByRoot.get(getRoot(node as Node))?.size ?? 0;
-}
-
 function selectNodeWithin(range: Range, node: Node): void {
 	const parent = getBoundaryParent(node);
 	const index = getNodeIndex(node);
@@ -25941,8 +25946,12 @@ function compareComposedPoints(
 // A selection stores each boundary point as a collapsed live range.
 function createLivePoint(node: Node, offset: number): Range {
 	const point = new Range();
-	setRangePoints(point, node, offset, node, offset);
+	movePoint(point, node, offset);
 	return point;
+}
+
+function movePoint(point: Range, node: Node, offset: number): void {
+	moveRange(point, node, offset, node, offset);
 }
 
 let selectionUnderConstruction: Document | null = null;
@@ -25967,25 +25976,25 @@ interface Selection {
 	// The range the Range API sees, which lives in a single tree.
 	[kRange]: Range | null;
 
-	// The composed boundary points, in tree order, each stored as a
-	// collapsed live range so tree mutations move it. A selection that
-	// crosses a shadow boundary keeps both of these while its range
-	// collapses.
-	[kStart]: Range | null;
-	[kEnd]: Range | null;
+	// The composed boundary points, in tree order, each a collapsed live
+	// range so tree mutations move it. A selection that crosses a shadow
+	// boundary keeps both of these while its range collapses. Made once
+	// and moved, so nothing needs to release them.
+	[kStart]: Range;
+	[kEnd]: Range;
 	[kDirection]: "forwards" | "backwards" | "directionless";
 }
 
 class Selection implements globalThis.Selection {
 	constructor() {
 		this[kRange] = null;
-		this[kStart] = null;
-		this[kEnd] = null;
 		this[kDirection] = "directionless";
 		if (selectionUnderConstruction === null) {
 			throw new TypeError("Selection cannot be constructed");
 		}
 		this[kDocument] = selectionUnderConstruction;
+		this[kStart] = createLivePoint(this[kDocument], 0);
+		this[kEnd] = createLivePoint(this[kDocument], 0);
 	}
 
 	get anchorNode(): Node | null {
@@ -26107,9 +26116,6 @@ class Selection implements globalThis.Selection {
 			releaseLiveRange(range);
 		}
 		this[kRange] = null;
-		releaseSelectionPoints(this);
-		this[kStart] = null;
-		this[kEnd] = null;
 		this[kDirection] = "directionless";
 		scheduleSelectionChange(this[kDocument]);
 	}
@@ -26136,11 +26142,11 @@ class Selection implements globalThis.Selection {
 				roots.push(root);
 			}
 		}
-		const start = this[kStart];
-		const end = this[kEnd];
-		if (start === null || end === null) {
+		if (this[kRange] === null) {
 			return [];
 		}
+		const start = this[kStart];
+		const end = this[kEnd];
 		const rescope = (
 			node: Node,
 			offset: number,
@@ -26203,7 +26209,7 @@ class Selection implements globalThis.Selection {
 		const point: [Node, number] = [node, at];
 		associateSelectionRange(
 			this,
-			createRangeBetween(point, point),
+			createRangeBetween(this, point, point),
 			point,
 			point,
 			this[kDirection],
@@ -26225,7 +26231,7 @@ class Selection implements globalThis.Selection {
 		const point: [Node, number] = [range[kStartNode], range[kStartOffset]];
 		associateSelectionRange(
 			this,
-			createRangeBetween(point, point),
+			createRangeBetween(this, point, point),
 			point,
 			point,
 			this[kDirection],
@@ -26240,7 +26246,7 @@ class Selection implements globalThis.Selection {
 		const point: [Node, number] = [range[kEndNode], range[kEndOffset]];
 		associateSelectionRange(
 			this,
-			createRangeBetween(point, point),
+			createRangeBetween(this, point, point),
 			point,
 			point,
 			this[kDirection],
@@ -26265,8 +26271,8 @@ class Selection implements globalThis.Selection {
 		const anchorFirst =
 			compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
 		const range = anchorFirst
-			? createRangeBetween(anchor, focus)
-			: createRangeBetween(focus, anchor);
+			? createRangeBetween(this, anchor, focus)
+			: createRangeBetween(this, focus, anchor);
 		associateSelectionRange(
 			this,
 			range,
@@ -26306,8 +26312,8 @@ class Selection implements globalThis.Selection {
 		const anchorFirst =
 			compareComposedPoints(anchorNode, anchorAt, focusNode, focusAt) !== AFTER;
 		const range = anchorFirst
-			? createRangeBetween(anchor, focus)
-			: createRangeBetween(focus, anchor);
+			? createRangeBetween(this, anchor, focus)
+			: createRangeBetween(this, focus, anchor);
 		associateSelectionRange(
 			this,
 			range,
@@ -26333,7 +26339,7 @@ class Selection implements globalThis.Selection {
 		const focus: [Node, number] = [node, childCount];
 		associateSelectionRange(
 			this,
-			createRangeBetween(anchor, focus),
+			createRangeBetween(this, anchor, focus),
 			anchor,
 			focus,
 			"forwards",
@@ -26608,11 +26614,8 @@ function getSelectionLine(lines: SelectionLine[], index: number): number {
 }
 
 function getCaretColumn(layout: Layout, point: [Node, number]): number | null {
-	const range = new Range();
-	setRangePoints(range, point[0], point[1], point[0], point[1]);
-	const rect = layout.getRangeRects(range)[0];
-	releaseLiveRange(range);
-	return rect === undefined ? null : rect.x;
+	const rect = layout.getCaretRect(point[0], point[1]);
+	return rect === null ? null : rect.x;
 }
 
 // Moving up from the first line or down from the last line goes to that
@@ -26751,11 +26754,26 @@ function getFocusPoint(selection: Selection): [Node, number] | null {
 		: [range[kStartNode], range[kStartOffset]];
 }
 
-function createRangeBetween(start: [Node, number], end: [Node, number]): Range {
-	const range = new Range();
+// The selection's range, moved to the points. A script that took the
+// range through getRangeAt keeps it, live, and the selection makes a
+// new one. Nothing else can reach the old one, so the spec's "new
+// range" is served by moving it.
+function createRangeBetween(
+	selection: Selection,
+	start: [Node, number],
+	end: [Node, number],
+): Range {
+	let range = selection[kRange];
+	if (range === null || !range[kSelectionOwned]) {
+		range = new Range();
+		range[kSelectionOwned] = true;
+	}
+	// Set as the Range API sets them, so an end in another tree collapses
+	// the range. The selection's own points are set after, not by the
+	// boundary hook.
+	range[kRangeSelection] = null;
 	setRangeBoundary(range, start[0], start[1], true);
 	setRangeBoundary(range, end[0], end[1], false);
-	range[kSelectionOwned] = true;
 	return range;
 }
 
@@ -26767,9 +26785,9 @@ function associateSelectionRange(
 	direction: "forwards" | "backwards" | "directionless",
 ): void {
 	const previous = selection[kRange];
-	if (previous !== null) {
+	if (previous !== null && previous !== range) {
 		previous[kRangeSelection] = null;
-		if (previous[kSelectionOwned] && previous !== range) {
+		if (previous[kSelectionOwned]) {
 			releaseLiveRange(previous);
 		}
 	}
@@ -26779,9 +26797,8 @@ function associateSelectionRange(
 		compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
 	const start = anchorFirst ? anchor : focus;
 	const end = anchorFirst ? focus : anchor;
-	releaseSelectionPoints(selection);
-	selection[kStart] = createLivePoint(start[0], start[1]);
-	selection[kEnd] = createLivePoint(end[0], end[1]);
+	movePoint(selection[kStart], start[0], start[1]);
+	movePoint(selection[kEnd], end[0], end[1]);
 	selection[kDirection] = direction;
 	scheduleSelectionChange(selection[kDocument]);
 }
@@ -26800,43 +26817,21 @@ function selectionChanged(
 		selection.removeAllRanges();
 		return;
 	}
-	const start = createLivePoint(range[kStartNode], range[kStartOffset]);
-	const end = createLivePoint(range[kEndNode], range[kEndOffset]);
-	const oldStart = selection[kStart];
-	const oldEnd = selection[kEnd];
-	if (
-		which === "both" || selection[kStart] === null || selection[kEnd] === null
-	) {
-		selection[kStart] = start;
-		selection[kEnd] = end;
-	} else if (which === "start") {
-		selection[kStart] = start;
-		if (getComposedOrder(start, selection[kEnd]) === AFTER) {
-			selection[kEnd] = start;
-		}
-	} else {
-		selection[kEnd] = end;
-		if (getComposedOrder(end, selection[kStart]) === BEFORE) {
-			selection[kStart] = end;
-		}
+	const start = selection[kStart];
+	const end = selection[kEnd];
+	if (which !== "end") {
+		movePoint(start, range[kStartNode], range[kStartOffset]);
 	}
-	for (const point of [oldStart, oldEnd, start, end]) {
-		if (
-			point !== null && point !== selection[kStart] && point !== selection[kEnd]
-		) {
-			releaseLiveRange(point);
-		}
+	if (which !== "start") {
+		movePoint(end, range[kEndNode], range[kEndOffset]);
+	}
+	// A point moved past the other takes it along.
+	if (which === "start" && getComposedOrder(start, end) === AFTER) {
+		movePoint(end, start[kStartNode], start[kStartOffset]);
+	} else if (which === "end" && getComposedOrder(end, start) === BEFORE) {
+		movePoint(start, end[kStartNode], end[kStartOffset]);
 	}
 	scheduleSelectionChange(selection[kDocument]);
-}
-
-function releaseSelectionPoints(selection: Selection): void {
-	if (selection[kStart] !== null) {
-		releaseLiveRange(selection[kStart]);
-	}
-	if (selection[kEnd] !== null) {
-		releaseLiveRange(selection[kEnd]);
-	}
 }
 
 function getComposedOrder(point: Range, other: Range): number {
