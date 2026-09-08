@@ -186,6 +186,40 @@ declare module "css-tree" {
 	}): {lexer: Lexer};
 }
 
+declare module "webidl2" {
+	// The WebIDL parser the table generator reads webref's IDL with. Only
+	// the definition shapes the generator walks are declared.
+	export interface Type {
+		idlType: string | Type | Type[];
+		nullable: boolean;
+		generic?: string;
+	}
+
+	export interface ExtendedAttribute {
+		name: string;
+		rhs: {value: unknown} | null;
+	}
+
+	export interface Member {
+		type: string;
+		name: string;
+		idlType: Type;
+		readonly: boolean;
+		extAttrs: ExtendedAttribute[];
+	}
+
+	export interface Definition {
+		type: string;
+		name?: string;
+		partial?: boolean;
+		target?: string;
+		includes?: string;
+		members?: Member[];
+	}
+
+	export function parse(text: string): Definition[];
+}
+
 declare module "bidi-js" {
 
 	/** UAX #9, the Unicode bidirectional algorithm. */

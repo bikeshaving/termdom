@@ -1,6 +1,13 @@
 import * as Parse5 from "parse5";
 
 import {
+	ARIA_ELEMENT_REFLECTIONS,
+	ARIA_STRING_REFLECTIONS,
+	DOCUMENT_EVENT_HANDLERS,
+	GLOBAL_EVENT_HANDLERS,
+	WINDOW_EVENT_HANDLERS,
+} from "../generated/htmltables.ts";
+import {
 	adoptStyleSheets,
 	type Cascade,
 	getAdoptedStyleSheets,
@@ -15,12 +22,7 @@ import {
 import {parseEdgeLengths, type UnitValue} from "./cssvalues.ts";
 import type {Exchange} from "./exchange.ts";
 import {
-	ARIA_ELEMENT_REFLECTIONS,
-	ARIA_STRING_REFLECTIONS,
-	DOCUMENT_AND_ELEMENT_EVENT_HANDLERS,
-	DOCUMENT_EVENT_HANDLERS,
 	FORWARDED_BODY_EVENT_HANDLERS,
-	GLOBAL_EVENT_HANDLERS,
 	HTML_ELEMENT_REFLECTIONS,
 	HTML_ELEMENT_TAGS,
 	HTML_INTERFACES,
@@ -29,7 +31,6 @@ import {
 	MATHML_NAMESPACE,
 	type ReflectSpec,
 	SVG_NAMESPACE,
-	WINDOW_EVENT_HANDLERS,
 	XLINK_NAMESPACE,
 	XML_NAMESPACE,
 	XMLNS_NAMESPACE,
@@ -3691,7 +3692,6 @@ class UncompiledHandler {
 
 const HANDLER_ATTRIBUTES: ReadonlySet<string> = new Set([
 	...GLOBAL_EVENT_HANDLERS,
-	...DOCUMENT_AND_ELEMENT_EVENT_HANDLERS,
 	...FORWARDED_BODY_EVENT_HANDLERS,
 ]);
 const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> = new Set(
@@ -19455,7 +19455,7 @@ const HTML_INTERFACE_CLASSES: Record<string, typeof HTMLElement> = {
 // as, and the tags an element of it is created for.
 for (const spec of HTML_INTERFACES) {
 	const constructor = HTML_INTERFACE_CLASSES[spec.name];
-	for (const reflection of spec.reflect ?? []) {
+	for (const reflection of spec.reflect) {
 		installReflection(constructor.prototype, reflection);
 	}
 	Object.defineProperty(constructor.prototype, Symbol.toStringTag, {
@@ -29074,7 +29074,6 @@ for (const prototype of [
 	Document.prototype,
 ]) {
 	installEventHandlers(prototype, GLOBAL_EVENT_HANDLERS);
-	installEventHandlers(prototype, DOCUMENT_AND_ELEMENT_EVENT_HANDLERS);
 }
 
 installEventHandlers(Document.prototype, DOCUMENT_EVENT_HANDLERS);
