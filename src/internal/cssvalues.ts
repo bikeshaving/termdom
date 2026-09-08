@@ -9,8 +9,7 @@ import {
 import {
 	compileSelector,
 	getChildren,
-	LEGACY_PSEUDO_ELEMENTS,
-	NO_NAMESPACES,
+	isLegacyPseudoElement,
 	parseSelectorList,
 	pseudoName,
 } from "./selectors.ts";
@@ -3691,7 +3690,7 @@ export function splitMediaQueryList(text: string): string[] {
 // matcher resolves them against the sheet's map.
 export function namespacePrefixesDeclared(
 	selector: string,
-	namespaces: SelectorNamespaces,
+	namespaces: SelectorNamespaces | undefined,
 ): boolean {
 	try {
 		compileSelector(selector, {namespaces, pseudoElements: true});
@@ -3841,7 +3840,8 @@ export function getScopeLimits(prelude: string): {
 
 function serializeQualifiedName(
 	name: string,
-	namespaces: SelectorNamespaces,
+	namespaces: SelectorNamespaces | undefined,
+	attribute = false,
 ): string {
 	const bar = name.lastIndexOf("|");
 	const local = bar === -1 ? name : name.slice(bar + 1);
@@ -3854,20 +3854,22 @@ function serializeQualifiedName(
 	// does not. `*|E` means "any namespace", which is what `E` already means
 	// with no default namespace declared, and a prefix bound to the default
 	// namespace resolves to the same namespace `E` does.
+	const declared = namespaces?.default ?? null;
 	if (prefix === "*") {
-		return namespaces.default === null ? localText : `*|${localText}`;
+		return declared === null && !attribute ? localText : `*|${localText}`;
 	}
 	if (prefix === "") {
 		// `|E` means "no namespace", which a bare `E` never means, whether or
 		// not a default namespace was declared, so the bar stays. An attribute
 		// is the exception: an unprefixed attribute is already in no namespace,
 		// so `[|attr]` and `[attr]` are the same selector.
-		return namespaces === ATTRIBUTE_NAMESPACES ? localText : `|${localText}`;
+		return attribute ? localText : `|${localText}`;
 	}
 	const decoded = CSSTree.ident.decode(prefix);
 	if (
-		namespaces.default !== null &&
-		namespaces.prefixes.get(decoded) === namespaces.default
+		!attribute &&
+		declared !== null &&
+		namespaces?.prefixes.get(decoded) === declared
 	) {
 		return localText;
 	}
@@ -3960,7 +3962,7 @@ function getSelectorSpecificity(selector: CSSTree.SelectorNode): Specificity {
 				const name = pseudoName(String(part.name ?? ""));
 				// `:before` is the CSS 2 spelling of a pseudo-element, and
 				// weighs as one.
-				if (LEGACY_PSEUDO_ELEMENTS.has(name)) {
+				if (isLegacyPseudoElement(name)) {
 					total[2]++;
 					break;
 				}
@@ -4178,20 +4180,13 @@ function getSubjectTag(complex: CSSTree.SelectorNode | undefined): string |
 	return CSSTree.ident.decode(name).toLowerCase();
 }
 
-// An unprefixed attribute is always in no namespace, whatever the
-// default.
-const ATTRIBUTE_NAMESPACES: SelectorNamespaces = {
-	default: "",
-	prefixes: new Map(),
-};
-
 function serializeIdentifierSource(name: string): string {
 	return serializeCSSIdentifier(CSSTree.ident.decode(name));
 }
 
 export function serializeSelectorList(
 	list: CSSTree.SelectorNode,
-	namespaces: SelectorNamespaces = NO_NAMESPACES,
+	namespaces?: SelectorNamespaces,
 ): string {
 	return getChildren(list)
 		.map((selector) => serializeSelector(selector, namespaces))
@@ -4200,7 +4195,7 @@ export function serializeSelectorList(
 
 function serializeSelector(
 	selector: CSSTree.SelectorNode,
-	namespaces: SelectorNamespaces = NO_NAMESPACES,
+	namespaces: SelectorNamespaces | undefined,
 ): string {
 	let out = "";
 	const parts = getChildren(selector);
@@ -4224,7 +4219,7 @@ function serializeSelector(
 
 function serializeSimpleSelector(
 	node: CSSTree.SelectorNode,
-	namespaces: SelectorNamespaces,
+	namespaces: SelectorNamespaces | undefined,
 ): string {
 	switch (node.type) {
 		case "TypeSelector":
@@ -4241,7 +4236,7 @@ function serializeSimpleSelector(
 		}
 		case "AttributeSelector": {
 			const name = node.name as {name: string};
-			let out = `[${serializeQualifiedName(name.name, ATTRIBUTE_NAMESPACES)}`;
+			let out = `[${serializeQualifiedName(name.name, undefined, true)}`;
 			if (node.matcher && node.value) {
 				const value =
 					node.value.type === "String"
@@ -4260,8 +4255,7 @@ function serializeSimpleSelector(
 			// serializes with two, the spelling every pseudo-element has.
 			const decoded = pseudoName(node.name as string);
 			const element =
-				node.type === "PseudoElementSelector" ||
-				LEGACY_PSEUDO_ELEMENTS.has(decoded);
+				node.type === "PseudoElementSelector" || isLegacyPseudoElement(decoded);
 			const colons = element ? "::" : ":";
 			const name = serializeCSSIdentifier(decoded);
 			const args = getChildren(node);
@@ -4280,7 +4274,7 @@ function serializeSimpleSelector(
 
 function serializeSelectorArgument(
 	node: CSSTree.SelectorNode,
-	namespaces: SelectorNamespaces,
+	namespaces: SelectorNamespaces | undefined,
 ): string {
 	switch (node.type) {
 		case "SelectorList":
@@ -4378,7 +4372,7 @@ export function parsePseudoElementArgument(text: string): string | null {
 	}
 	// One colon is the CSS 2 spelling, which only the four CSS 2
 	// pseudo-elements accept.
-	if (!double && !LEGACY_PSEUDO_ELEMENTS.has(pseudoName(name))) {
+	if (!double && !isLegacyPseudoElement(pseudoName(name))) {
 		return null;
 	}
 	const selectors = parseSelectorList(`*::${name}`);
@@ -4397,7 +4391,7 @@ export function parsePseudoElementArgument(text: string): string | null {
 	) {
 		return null;
 	}
-	return serializeSimpleSelector(pseudo, NO_NAMESPACES);
+	return serializeSimpleSelector(pseudo, undefined);
 }
 
 export function splitSelectorList(text: string): string[] {
@@ -4690,7 +4684,7 @@ export interface RuleContext {
 // A selector this engine cannot read selects nothing and is dropped.
 export function compileSelectors(
 	text: string,
-	options: {namespaces: SelectorNamespaces; relative?: boolean},
+	options: {namespaces?: SelectorNamespaces; relative?: boolean},
 ): CompiledSelector[] {
 	const compiled: CompiledSelector[] = [];
 	for (const selector of splitSelectorList(text)) {

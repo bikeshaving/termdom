@@ -35,7 +35,6 @@ import {
 	type CompiledSelector,
 	compileSelector,
 	matchesCompiled,
-	NO_NAMESPACES,
 	parseSelectorList,
 	selectAllCompiled,
 	type SelectorNamespaces,
@@ -1245,9 +1244,11 @@ class CSSStyleRule extends CSSGroupingRule {
 	}
 }
 
-function getSheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
+function getSheetNamespaces(
+	sheet: CSSStyleSheet | null,
+): SelectorNamespaces | undefined {
 	if (!sheet) {
-		return NO_NAMESPACES;
+		return undefined;
 	}
 	const namespaces: SelectorNamespaces = {default: null, prefixes: new Map()};
 	for (const rule of Array.from(sheet.cssRules)) {
@@ -2520,7 +2521,7 @@ function convertRule(
 	source: string,
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
-	namespaces: SelectorNamespaces = NO_NAMESPACES,
+	namespaces?: SelectorNamespaces,
 ): CSSRule | null {
 	if (node.type === "Rule") {
 		const prelude = CSSValues.getPreludeText(node);
@@ -6872,7 +6873,7 @@ function parseSelector(
 	block: CSSValues.DeclarationBlock,
 	scope?: Node,
 	uaOriginSheet?: boolean,
-	getSheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
+	namespaces?: SelectorNamespaces,
 	context: CSSValues.RuleContext = UNCONDITIONAL,
 ): void {
 	const {declarations, important, order} = block;
@@ -6896,13 +6897,9 @@ function parseSelector(
 		scopes = context.scopes;
 		cascade[kScopedRulesExist] = true;
 	}
-	let namespaces: SelectorNamespaces | undefined;
-	if (getSheetNamespaces !== NO_NAMESPACES) {
-		namespaces = getSheetNamespaces;
-	}
 	if (
 		selector.includes("|") &&
-		!CSSValues.namespacePrefixesDeclared(selector, getSheetNamespaces)
+		!CSSValues.namespacePrefixesDeclared(selector, namespaces)
 	) {
 		return;
 	}

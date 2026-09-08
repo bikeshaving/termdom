@@ -181,12 +181,16 @@ const FUNCTIONAL_PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 ]);
 
 /** May also be written with one colon, per CSS 2. */
-export const LEGACY_PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
+const LEGACY_PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"after",
 	"before",
 	"first-letter",
 	"first-line",
 ]);
+
+export function isLegacyPseudoElement(name: string): boolean {
+	return LEGACY_PSEUDO_ELEMENTS.has(name);
+}
 
 const ARGUMENTLESS_PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"active",
@@ -275,11 +279,6 @@ export interface SelectorNamespaces {
 	default: string | null;
 	prefixes: Map<string, string>;
 }
-
-export const NO_NAMESPACES: SelectorNamespaces = {
-	default: null,
-	prefixes: new Map(),
-};
 
 /** A selector this engine rejects, thrown from compilation. */
 export class SelectorError extends Error {}
@@ -510,7 +509,9 @@ function compileList(
 ): CompiledSelector {
 	const compiling: Compiling = {
 		namespaces:
-			options.namespaces === undefined ? NO_NAMESPACES : options.namespaces,
+			options.namespaces === undefined
+				? {default: null, prefixes: new Map()}
+				: options.namespaces,
 		pseudoElements: options.pseudoElements ?? false,
 		nesting: options.nesting ?? false,
 	};
