@@ -20,7 +20,7 @@ import {fileURLToPath} from "node:url";
 import {createContext, runInContext} from "node:vm";
 
 import {TermDOM} from "../src/index.ts";
-import {createDocumentWindow, type Window} from "../src/internal/dom.ts";
+import {createWindow, type Window} from "../src/internal/dom.ts";
 import type {
 	TerminalCloseInfo,
 	TerminalSize,
@@ -313,7 +313,7 @@ function installFrames(window: Window): void {
 			return;
 		}
 		written.delete(this);
-		const parsed = createDocumentWindow(html, documentURL).document;
+		const parsed = createWindow(html, documentURL).document;
 		const root = this.documentElement;
 		const source = parsed.documentElement;
 		if (root === null || source === null) {

@@ -4,10 +4,10 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {createDocumentWindow} from "../src/internal/dom.ts";
+import {createWindow} from "../src/internal/dom.ts";
 
 function input(markup: string): HTMLInputElement {
-	const window = createDocumentWindow(
+	const window = createWindow(
 		`<!doctype html><html><body>${markup}</body></html>`,
 	);
 	return window.document.querySelector("input") as HTMLInputElement;

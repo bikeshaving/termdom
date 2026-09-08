@@ -11,7 +11,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {
-	createDocumentWindow,
+	createWindow,
 	type Document,
 	type Element,
 	type Node,
@@ -24,7 +24,7 @@ import {
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 function tree(html: string, url = "about:blank"): Document {
-	return createDocumentWindow(html, url).document as unknown as Document;
+	return createWindow(html, url).document as unknown as Document;
 }
 
 function ids(html: string, selector: string): string[] {

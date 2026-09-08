@@ -31248,7 +31248,7 @@ function buildWindow(document: Document): Window {
  * XML content type parses as XML, which is what a frame whose src names a
  * .xml, .xhtml or .svg file holds.
  */
-export function createDocumentWindow(
+export function createWindow(
 	source: string,
 	url?: string,
 	contentType = "text/html",

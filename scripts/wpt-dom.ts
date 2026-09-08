@@ -1095,7 +1095,7 @@ function installFramePages(
 		}
 		let document = loaded.get(frame);
 		if (document === undefined) {
-			const frameWindow = dom.createDocumentWindow(
+			const frameWindow = dom.createWindow(
 				text,
 				new URL(src!, url).href,
 				frameContentType(src!.split("#")[0])!,

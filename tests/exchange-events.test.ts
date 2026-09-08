@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {createDocumentWindow} from "../src/internal/dom.ts";
+import {createWindow} from "../src/internal/dom.ts";
 import {MockProcess, nextFrame} from "./test-utils";
 
 function filler(rows: number): string {
@@ -154,7 +154,7 @@ test("a document is visible from attach() to dispose()", async () => {
 });
 
 test("a headless document has no terminal to hide it", () => {
-	const window = createDocumentWindow(
+	const window = createWindow(
 		"<!DOCTYPE html><html><head></head><body></body></html>",
 	);
 	expect(window.document.hidden).toBe(false);

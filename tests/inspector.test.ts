@@ -4,7 +4,7 @@ import {inspect} from "node:util";
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {createDocumentWindow, type Element} from "../src/internal/dom.ts";
+import {createWindow, type Element} from "../src/internal/dom.ts";
 
 function asElement(value: unknown): Element {
 	return value as Element;
@@ -20,9 +20,9 @@ function inspected(target: unknown, maxDepth = 2): string {
 }
 
 function documentWindow(html: string): {
-	window: ReturnType<typeof createDocumentWindow>;
+	window: ReturnType<typeof createWindow>;
 } {
-	return {window: createDocumentWindow(html)};
+	return {window: createWindow(html)};
 }
 
 test("inspect formats: formats basic elements", () => {
