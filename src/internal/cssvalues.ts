@@ -27,13 +27,17 @@ export interface Value {
 	value: number;
 }
 
-export const CSS_WIDE_KEYWORDS = new Set([
+const CSS_WIDE_KEYWORDS = new Set([
 	"inherit",
 	"initial",
 	"revert",
 	"revert-layer",
 	"unset",
 ]);
+
+export function isCSSWideKeyword(value: string): boolean {
+	return CSS_WIDE_KEYWORDS.has(value);
+}
 
 const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
 
@@ -357,6 +361,16 @@ export function serializeCSSString(text: string): string {
 }
 
 // The same result CSS.escape produces.
+// An animation's name is a <custom-ident> or a <string>. The words a
+// <custom-ident> excludes (the CSS-wide keywords and `none`, which
+// animation-name uses for "no animation") are written as strings.
+export function serializeKeyframesName(name: string): string {
+	const reserved = name.toLowerCase();
+	return CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none"
+		? serializeCSSString(name)
+		: serializeCSSIdentifier(name);
+}
+
 export function serializeCSSIdentifier(value: string): string {
 	const text = String(value);
 	let out = "";
@@ -1739,7 +1753,7 @@ export function expandShorthands(
 // Overrides the property index's initial values. A cell grid uses one
 // cell for `font-size` where the index says medium, and border-box for
 // `box-sizing`.
-export const CSS_SPEC_DEFAULTS: Record<string, string> = {
+const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	display: "inline",
 	"margin-top": "0",
 	"margin-right": "0",
@@ -1797,9 +1811,13 @@ export const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	order: "0",
 };
 
+export function getInitialValue(property: string): string {
+	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
+}
+
 // A custom property inherits too, and is in no list, because there is
 // no fixed set of names.
-export const INHERITED_PROPERTIES = new Set([
+const INHERITED_PROPERTIES = new Set([
 	"color",
 	"cursor",
 	"direction",
@@ -1830,12 +1848,9 @@ export const INHERITED_PROPERTIES = new Set([
 	"word-spacing",
 ]);
 
-export const INITIAL_KEYWORDS = new Set([
-	"initial",
-	"revert",
-	"revert-layer",
-	"unset",
-]);
+export function isInheritedProperty(property: string): boolean {
+	return property.startsWith("--") || INHERITED_PROPERTIES.has(property);
+}
 
 // The unit collapses to the count (px and ch both measure one cell), and
 // a percentage keeps its mark for the caller to resolve against a basis.
@@ -2121,7 +2136,11 @@ export function isValidDeclaration(
 // the same handful of values recur across a whole document.
 const grammarMatches = new Map<string, boolean>();
 
-export const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
+const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
+
+export function isSupportedProperty(property: string): boolean {
+	return property.startsWith("--") || SUPPORTED_PROPERTIES.has(property);
+}
 
 // A value that does not match its grammar is not a declaration at all.
 // `color: notacolor` is a no-op, not a value. A value with a
@@ -2220,7 +2239,7 @@ export function unquoteContent(content: string): string {
 	return out;
 }
 
-export const COLOR_PROPERTIES = new Set([
+const COLOR_PROPERTIES = new Set([
 	"accent-color",
 	"background-color",
 	"border-block-end-color",
@@ -2238,6 +2257,10 @@ export const COLOR_PROPERTIES = new Set([
 	"text-decoration-color",
 	"text-emphasis-color",
 ]);
+
+export function isColorProperty(property: string): boolean {
+	return COLOR_PROPERTIES.has(property);
+}
 
 // Author text (strings, family names, custom idents) is never
 // case-folded.
@@ -2290,7 +2313,7 @@ function getComputedNumber(token: string): string {
 	return token;
 }
 
-export const RADIUS_LONGHANDS = new Set([
+const RADIUS_LONGHANDS = new Set([
 	"border-top-left-radius",
 	"border-top-right-radius",
 	"border-bottom-right-radius",
@@ -2298,7 +2321,10 @@ export const RADIUS_LONGHANDS = new Set([
 ]);
 
 // A circular corner states one radius, an elliptical one both.
-export function collapseRadius(value: string): string {
+export function collapseRadius(property: string, value: string): string {
+	if (!RADIUS_LONGHANDS.has(property)) {
+		return value;
+	}
 	const parts = value.split(/\s+/).filter(Boolean);
 	return parts.length === 2 && parts[0] === parts[1] ? parts[0] : value;
 }
@@ -2337,7 +2363,7 @@ function normalizeValue(property: string, declared: string): string {
 	}
 	if (LENGTH_PROPERTIES.has(property)) {
 		const lengths = value.split(/\s+/).map(getComputedNumber).join(" ");
-		return RADIUS_LONGHANDS.has(property) ? collapseRadius(lengths) : lengths;
+		return collapseRadius(property, lengths);
 	}
 	return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
 }
@@ -2362,7 +2388,11 @@ const ABSOLUTIZED_PROPERTIES = new Set([
 
 // font-size resolves against the parent's font size, line-height
 // against the element's own. Every other percentage stays until used.
-export const FONT_RELATIVE_PERCENTAGES = new Set(["font-size", "line-height"]);
+const FONT_RELATIVE_PERCENTAGES = new Set(["font-size", "line-height"]);
+
+export function isFontRelativePercentage(property: string): boolean {
+	return FONT_RELATIVE_PERCENTAGES.has(property);
+}
 
 const RELATIVE_UNIT = /[\d.](?:r?em|ex|ch|vw|vh|vmin|vmax)\b/i;
 
@@ -2432,7 +2462,7 @@ export interface LengthContext {
 
 // One cell. `1em` is one cell in a document that declares no font size,
 // and a document that declares a size still gets the spec's arithmetic.
-export const INITIAL_FONT_SIZE = 1;
+const INITIAL_FONT_SIZE = 1;
 
 export function getFontSize(fontSize: string): number {
 	const size = parseFloat(fontSize);
@@ -2696,13 +2726,13 @@ const LINE_COMPONENTS = ["width", "style", "color"] as const;
 // block-start is always the top edge and `direction` alone decides the
 // inline edges. A writing-mode implementation would replace these two
 // tables with four more, and nothing else here would change.
-export const LOGICAL_TO_PHYSICAL: Readonly<
+const LOGICAL_TO_PHYSICAL: Readonly<
 	Record<"ltr" | "rtl", Map<string, string>>
 > = {ltr: new Map(), rtl: new Map()};
 
 // Both inline longhands can name a physical edge. Which one does is not
 // known until an element states its direction.
-export const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
+const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
 
 {
 	const map = (logical: string, ltr: string, rtl = ltr) => {
@@ -2753,6 +2783,16 @@ export const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
 	map("grid-column-gap", "column-gap");
 }
 
+export function isFlowRelative(property: string): boolean {
+	return LOGICAL_TO_PHYSICAL.ltr.has(property);
+}
+
+// Whether the property shares its cascade slot with another name.
+export function hasSlotAliases(property: string): boolean {
+	return LOGICAL_TO_PHYSICAL.ltr.has(property) ||
+		PHYSICAL_TO_LOGICAL.has(property);
+}
+
 export function getPhysicalProperty(
 	property: string,
 	direction: string,
@@ -2792,7 +2832,7 @@ type ShorthandShape =
 
 // In grammar order. The property index lists a box's sides
 // alphabetically, but the grammar runs top, right, bottom, left.
-export const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
+const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
 
 const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
 
@@ -2866,7 +2906,18 @@ function axisPair(shorthand: string, longhands: readonly string[]): boolean {
 // Widest first, with `all` first of all. A vendor-prefixed shorthand
 // goes last however wide, since it is not the name to write its
 // longhands as.
-export const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
+const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
+
+/** A shorthand's longhands in grammar order, or undefined for a longhand. */
+export function getLonghands(shorthand: string): readonly string[] | undefined {
+	return SHORTHAND_LONGHANDS.get(shorthand);
+}
+
+/** The shorthands that cover a longhand, widest first. */
+export function getShorthands(longhand: string): readonly string[] {
+	return LONGHAND_SHORTHANDS.get(longhand) ?? [];
+}
+
 {
 	const byLonghand = new Map<string, string[]>();
 	for (const [shorthand, longhands] of SHORTHAND_LONGHANDS) {
@@ -3961,7 +4012,7 @@ const STATE_PSEUDO_CLASSES = new Set([
 ]);
 
 // The attributes those state pseudo-classes depend on.
-export const STATE_ATTRIBUTES = new Set([
+const STATE_ATTRIBUTES = new Set([
 	"checked",
 	"disabled",
 	"href",
@@ -3980,6 +4031,10 @@ export const STATE_ATTRIBUTES = new Set([
 	"value",
 ]);
 
+export function isStateAttribute(name: string): boolean {
+	return STATE_ATTRIBUTES.has(name);
+}
+
 // A change to a key a compound names can change whether the compound
 // matches.
 interface CompoundKeys {
@@ -3994,6 +4049,9 @@ export interface SelectorReading {
 	specificity: string;
 	subjectTag: string | undefined;
 	compounds: CompoundKeys[];
+	// Whether a match depends on the element's siblings or children: the
+	// sibling combinators, the tree-structural pseudo-classes and :empty.
+	reachesSiblings: boolean;
 }
 
 // Includes pseudo-class arguments. A class inside :not() or :is() is
@@ -4042,6 +4100,7 @@ function harvestKeys(nodes: CSSTree.SelectorNode[], keys: CompoundKeys): void {
 // cannot be counted should lose a tie. It anchors to no type and names
 // no keys.
 export function readSelector(selector: string): SelectorReading {
+	const reachesSiblings = SIBLING_SELECTOR.test(selector);
 	let failed = false;
 	let list: CSSTree.SelectorNode | null = null;
 	try {
@@ -4055,7 +4114,12 @@ export function readSelector(selector: string): SelectorReading {
 		failed = true;
 	}
 	if (failed || !list || list.type !== "SelectorList") {
-		return {specificity: "000-000-000", subjectTag: undefined, compounds: []};
+		return {
+			specificity: "000-000-000",
+			subjectTag: undefined,
+			compounds: [],
+			reachesSiblings,
+		};
 	}
 	const weight = getListSpecificity(list);
 	const specificity = weight
@@ -4083,7 +4147,12 @@ export function readSelector(selector: string): SelectorReading {
 		}
 	}
 	closeCompound();
-	return {specificity, subjectTag: getSubjectTag(complex), compounds};
+	return {
+		specificity,
+		subjectTag: getSubjectTag(complex),
+		compounds,
+		reachesSiblings,
+	};
 }
 
 // Undefined when the subject names no type, including a type in a
@@ -4535,14 +4604,14 @@ function toRoman(num: number): string {
 }
 
 /** Marker glyphs for the bullet list-style-types. */
-export const BULLET_MARKERS: Record<string, string> = {
+const BULLET_MARKERS: Record<string, string> = {
 	disc: "\u2022",
 	circle: "\u25e6",
 	square: "\u25aa",
 };
 
 /** The list-style-types that count, and so draw a marker ending in a dot. */
-export const COUNTER_STYLES = new Set([
+const COUNTER_STYLES = new Set([
 	"decimal",
 	"decimal-leading-zero",
 	"lower-alpha",
@@ -4552,6 +4621,14 @@ export const COUNTER_STYLES = new Set([
 	"upper-latin",
 	"upper-roman",
 ]);
+
+export function getBulletMarker(listStyleType: string): string | undefined {
+	return BULLET_MARKERS[listStyleType];
+}
+
+export function isCounterStyle(listStyleType: string): boolean {
+	return COUNTER_STYLES.has(listStyleType);
+}
 
 /** Alphabetic counters are bijective base-26: 26 -> "z", 27 -> "aa". */
 function toAlpha(value: number): string {
@@ -4632,10 +4709,7 @@ export interface CounterScope {
 	parent?: CounterScope;
 }
 
-// Selectors whose match on one element depends on its siblings or its
-// children: the sibling combinators, the tree-structural pseudo-classes
-// and :empty.
-export const SIBLING_SELECTOR = /[+~]|:(?:nth-|first-|last-|only-|empty)/;
+const SIBLING_SELECTOR = /[+~]|:(?:nth-|first-|last-|only-|empty)/;
 
 export function getBlockifiedDisplay(display: string): string {
 	return BLOCKIFIED_DISPLAYS[display] ?? display;

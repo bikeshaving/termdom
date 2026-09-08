@@ -101,9 +101,7 @@ function getInitialStyle(element: Element | null, property: string): string {
 
 	// A property this engine does not lay out still resolves to an initial
 	// value.
-	return CSSValues.CSS_SPEC_DEFAULTS[property] ||
-		CSS_INITIAL_VALUES[property] ||
-		"";
+	return CSSValues.getInitialValue(property);
 }
 
 /** An element's margins, borders and padding, in cells. */
@@ -387,7 +385,7 @@ class CSSStyleDeclaration {
 		if (declared) {
 			return declared.value;
 		}
-		const longhands = CSSValues.SHORTHAND_LONGHANDS.get(name);
+		const longhands = CSSValues.getLonghands(name);
 		return longhands ? getShorthandValue(this, name, longhands) : "";
 	}
 
@@ -398,7 +396,7 @@ class CSSStyleDeclaration {
 		if (declared) {
 			return declared.important ? "important" : "";
 		}
-		const longhands = CSSValues.SHORTHAND_LONGHANDS.get(name);
+		const longhands = CSSValues.getLonghands(name);
 		if (
 			longhands &&
 			longhands.every((longhand) => findDeclaration(this, longhand)?.important)
@@ -440,7 +438,7 @@ class CSSStyleDeclaration {
 		const name = CSSValues.normalizePropertyName(property);
 		const previous = this.getPropertyValue(name);
 		let changed = removeDeclaration(this, name);
-		for (const longhand of CSSValues.SHORTHAND_LONGHANDS.get(name) ?? []) {
+		for (const longhand of CSSValues.getLonghands(name) ?? []) {
 			changed = removeDeclaration(this, longhand) || changed;
 		}
 		if (changed) {
@@ -513,7 +511,7 @@ function getDeclarationBlock(
 			important[entry.name] = true;
 			importantValues[entry.name] = entry.value;
 		}
-		if (CSSValues.SHORTHAND_LONGHANDS.has(entry.name)) {
+		if (CSSValues.getLonghands(entry.name) !== undefined) {
 			undecomposed = true;
 		}
 	});
@@ -569,14 +567,11 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 			continue;
 		}
 		let text = "";
-		for (const shorthand of CSSValues.LONGHAND_SHORTHANDS.get(
-			declaration.name,
-		) ??
-		[]) {
+		for (const shorthand of CSSValues.getShorthands(declaration.name)) {
 			if (unserializable.has(shorthand)) {
 				continue;
 			}
-			const longhands = CSSValues.SHORTHAND_LONGHANDS.get(shorthand)!;
+			const longhands = CSSValues.getLonghands(shorthand)!;
 			// A shorthand covering more properties than the block holds cannot
 			// be serialized from it, and `all` covers hundreds.
 			if (longhands.length > block[kDeclarations].length) {
@@ -660,7 +655,7 @@ function isSupportedDeclaration(
 		return names ? names.has(name) : name !== "";
 	}
 
-	return name.startsWith("--") || CSSValues.SUPPORTED_PROPERTIES.has(name);
+	return CSSValues.isSupportedProperty(name);
 }
 
 // A declaration that changes the value moves to the END of the block.
@@ -724,7 +719,7 @@ function applyDeclaration(
 	// on their own are dropped, as the standard's set-a-declaration does.
 	let changed = false;
 	if (!expanded) {
-		for (const longhand of CSSValues.SHORTHAND_LONGHANDS.get(name) ?? []) {
+		for (const longhand of CSSValues.getLonghands(name) ?? []) {
 			if (
 				cascade &&
 				findDeclaration(declaration, longhand)?.important &&
@@ -738,7 +733,7 @@ function applyDeclaration(
 			changed;
 	}
 	changed = removeDeclaration(declaration, name);
-	for (const longhand of CSSValues.SHORTHAND_LONGHANDS.get(name)!) {
+	for (const longhand of CSSValues.getLonghands(name)!) {
 		if (longhand in expanded) {
 			continue;
 		}
@@ -2041,14 +2036,7 @@ class CSSKeyframesRule extends CSSRule {
 
 	get cssText(): string {
 		const frames = this[kRules].map((rule) => `\n  ${rule.cssText}`).join("");
-		// An animation's name is a <custom-ident> or a <string>. The words a
-		// <custom-ident> excludes (the CSS-wide keywords and `none`, which
-		// animation-name uses for "no animation") are written as strings.
-		const reserved = this[kName].toLowerCase();
-		const name =
-			CSSValues.CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none"
-				? CSSValues.serializeCSSString(this[kName])
-				: CSSValues.serializeCSSIdentifier(this[kName]);
+		const name = CSSValues.serializeKeyframesName(this[kName]);
 		return `@keyframes ${name} {${frames}\n}`;
 	}
 
@@ -3300,7 +3288,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			const computed = this.getComputedValue(property);
 			return computed === "auto" ? this.getPropertyValue("color") : computed;
 		}
-		const longhands = CSSValues.SHORTHAND_LONGHANDS.get(property);
+		const longhands = CSSValues.getLonghands(property);
 		if (longhands) {
 			return CSSValues.resolveShorthand(property, longhands, (longhand) =>
 				this.getPropertyValue(longhand),
@@ -3375,7 +3363,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	[kBaseValue](property: string): string {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
-			const longhands = CSSValues.SHORTHAND_LONGHANDS.get(property);
+			const longhands = CSSValues.getLonghands(property);
 			value = longhands
 				? CSSValues.resolveShorthand(property, longhands, (longhand) =>
 					this[kBaseValue](longhand),
@@ -3439,9 +3427,7 @@ function getAbsolutizedValue(
 	);
 	// Two radii that differ as written (`1ch 1px`) can measure the same
 	// cell, and a corner whose radii agree states one of them.
-	return CSSValues.RADIUS_LONGHANDS.has(property)
-		? CSSValues.collapseRadius(absolute)
-		: absolute;
+	return CSSValues.collapseRadius(property, absolute);
 }
 
 // `font-size` measures against the PARENT's font size, so it is the one
@@ -3452,11 +3438,11 @@ function getLengthContext(
 ): CSSValues.LengthContext {
 	const own = property === "font-size";
 	const parent = own ? flatParentElement(declaration[kElement]) : null;
-	const font = own
-		? parent
-			? CSSValues.getFontSize(getComputedValue(parent, "font-size"))
-			: CSSValues.INITIAL_FONT_SIZE
-		: CSSValues.getFontSize(declaration.getComputedValue("font-size"));
+	const font = CSSValues.getFontSize(
+		own
+			? parent ? getComputedValue(parent, "font-size") : ""
+			: declaration.getComputedValue("font-size"),
+	);
 	const root = getRootFontSize(declaration, own);
 	const cascade = declaration[kCascade];
 	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
@@ -3468,9 +3454,7 @@ function getLengthContext(
 		// A percentage is font-relative on exactly two properties. On
 		// `font-size` it is a share of the parent's, on `line-height` of this
 		// element's own. Everywhere else it stays a percentage until used.
-		percent: CSSValues.FONT_RELATIVE_PERCENTAGES.has(property)
-			? font / 100
-			: null,
+		percent: CSSValues.isFontRelativePercentage(property) ? font / 100 : null,
 	};
 }
 
@@ -3481,19 +3465,20 @@ function getRootFontSize(
 	const root = declaration[kElement].ownerDocument?.documentElement;
 	// `rem` in the root's own font-size means the initial value, not the
 	// value being computed.
-	if (!root || (ownFontSize && root === declaration[kElement])) {
-		return CSSValues.INITIAL_FONT_SIZE;
-	}
-	return root === declaration[kElement]
-		? CSSValues.getFontSize(declaration.getComputedValue("font-size"))
-		: CSSValues.getFontSize(getComputedValue(root, "font-size"));
+	return CSSValues.getFontSize(
+		!root || (ownFontSize && root === declaration[kElement])
+			? ""
+			: root === declaration[kElement]
+				? declaration.getComputedValue("font-size")
+				: getComputedValue(root, "font-size"),
+	);
 }
 
 function toPhysicalProperty(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
-	if (!CSSValues.LOGICAL_TO_PHYSICAL.ltr.has(property)) {
+	if (!CSSValues.isFlowRelative(property)) {
 		return property;
 	}
 	return (
@@ -3939,7 +3924,7 @@ function resolvePropertyValue(
 	// value reports. On `color` itself it means the parent's.
 	if (
 		value.toLowerCase() === "currentcolor" &&
-		CSSValues.COLOR_PROPERTIES.has(property)
+		CSSValues.isColorProperty(property)
 	) {
 		// The COMPUTED color, on the engine's own read path. The author path
 		// flushes, from inside the resolution of a style that layout is waiting
@@ -4045,11 +4030,9 @@ function resolvePropertyValueRaw(
 		return resolveFromParent(declaration, property) ?? "";
 	}
 	if (declared === "initial") {
-		return CSSValues.CSS_SPEC_DEFAULTS[property] ||
-			CSS_INITIAL_VALUES[property] ||
-			"";
+		return CSSValues.getInitialValue(property);
 	}
-	if (declared !== "" && !CSSValues.INITIAL_KEYWORDS.has(declared)) {
+	if (declared !== "" && !CSSValues.isCSSWideKeyword(declared)) {
 		return declared;
 	}
 
@@ -4089,9 +4072,7 @@ function resolvePropertyValueRaw(
 	// an inherited property, resolved through the same steps so the
 	// ancestor's own rules apply. A custom property always inherits; there
 	// is no fixed list of names.
-	if (
-		CSSValues.INHERITED_PROPERTIES.has(property) || property.startsWith("--")
-	) {
+	if (CSSValues.isInheritedProperty(property)) {
 		const window = declaration[kElement].ownerDocument?.defaultView;
 		if (window) {
 			// Flat-tree parents. Inheritance crosses the shadow boundary (host
@@ -4111,9 +4092,7 @@ function resolvePropertyValueRaw(
 	}
 
 	// 5. The property's initial value.
-	return CSSValues.CSS_SPEC_DEFAULTS[property] ||
-		CSS_INITIAL_VALUES[property] ||
-		"";
+	return CSSValues.getInitialValue(property);
 }
 
 // This element's own custom properties and every ancestor's, since a
@@ -4299,7 +4278,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	[kBaseValue](property: string): string {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
-			const longhands = CSSValues.SHORTHAND_LONGHANDS.get(property);
+			const longhands = CSSValues.getLonghands(property);
 			value =
 				longhands && this[kPseudoDeclarations][property] === undefined
 					? CSSValues.serializeShorthandValue(
@@ -4564,12 +4543,12 @@ function getListMarker(listItem: Element, listParent: Element): string {
 		return "";
 	}
 
-	const bullet = CSSValues.BULLET_MARKERS[listStyleType];
+	const bullet = CSSValues.getBulletMarker(listStyleType);
 	if (bullet) {
 		return bullet;
 	}
 
-	if (CSSValues.COUNTER_STYLES.has(listStyleType)) {
+	if (CSSValues.isCounterStyle(listStyleType)) {
 		if (!getListItems(listParent).includes(listItem)) {
 			return "";
 		}
@@ -4580,6 +4559,10 @@ function getListMarker(listItem: Element, listParent: Element): string {
 }
 
 // TODO: Just use the CSSOM CSSRule interface from the DOM
+const INHERITED_PROPERTIES = CSS_PROPERTIES.filter(
+	CSSValues.isInheritedProperty,
+);
+
 interface ParsedCSSRule {
 
 	// Compiled against the namespaces the sheet declared, once, at parse. A
@@ -4809,7 +4792,7 @@ export interface Cascade {
 
 	// Whether any of those keys is a STATE pseudo-class (`:checked ~`),
 	// which is driven by attributes not in the sets above. While this is
-	// set, a change to any of CSSValues.STATE_ATTRIBUTES invalidates widely.
+	// set, a change to any state attribute invalidates widely.
 	[kReachingStates]: boolean;
 
 	// Rule-existence gates. Attaching pseudo-elements and initializing
@@ -5447,7 +5430,7 @@ export class Cascade {
 		// A pseudo-element INHERITS from its originating element. Rule
 		// declarations win, and inherited values only fill the gaps.
 		const hostStyle = this.declarationFor(element);
-		for (const property of CSSValues.INHERITED_PROPERTIES) {
+		for (const property of INHERITED_PROPERTIES) {
 			if (!declarations[property]) {
 				const inherited = hostStyle.getComputedValue(property);
 				if (inherited) {
@@ -5519,7 +5502,7 @@ export class Cascade {
 		if (this[kReachingAttributes].has(name)) {
 			return true;
 		}
-		return this[kReachingStates] && CSSValues.STATE_ATTRIBUTES.has(name);
+		return this[kReachingStates] && CSSValues.isStateAttribute(name);
 	}
 
 	[kDropCache](): void {
@@ -6359,7 +6342,7 @@ function isPaintOnlyChange(
 ): boolean {
 	if (
 		name === "style" ||
-		(cascade[kReachingStates] && CSSValues.STATE_ATTRIBUTES.has(name))
+		(cascade[kReachingStates] && CSSValues.isStateAttribute(name))
 	) {
 		return false;
 	}
@@ -6822,8 +6805,7 @@ function indexReachingKeys(
 		if (
 			property === "all" ||
 			property === "display" ||
-			property.startsWith("--") ||
-			CSSValues.INHERITED_PROPERTIES.has(property)
+			CSSValues.isInheritedProperty(property)
 		) {
 			inherits = true;
 			break;
@@ -6924,13 +6906,13 @@ function parseSelector(
 	) {
 		return;
 	}
-	if (CSSValues.SIBLING_SELECTOR.test(selector)) {
-		cascade[kSelectorsReachSiblings] = true;
-	}
 	if (selector.includes(":has")) {
 		cascade[kSelectorsReachAncestors] = true;
 	}
 	const reading = CSSValues.readSelector(selector);
+	if (reading.reachesSiblings) {
+		cascade[kSelectorsReachSiblings] = true;
+	}
 	indexReachingKeys(cascade, reading, declarations);
 	if (
 		declarations["counter-reset"] ||
@@ -7242,10 +7224,7 @@ function computePseudoElementStyle(
 		for (const name of names) {
 			const value = rule.declarations[name];
 			computedStyle[name] = value;
-			if (
-				!CSSValues.LOGICAL_TO_PHYSICAL.ltr.has(name) &&
-				!CSSValues.PHYSICAL_TO_LOGICAL.has(name)
-			) {
+			if (!CSSValues.hasSlotAliases(name)) {
 				continue;
 			}
 			direction ??= cascade
