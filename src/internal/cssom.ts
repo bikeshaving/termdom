@@ -11,14 +11,8 @@ import type {
 	BoxModel,
 	CounterScope,
 	CSSDeclaration,
-	CSSNode,
 	DeclarationBlock,
-	ImportPreludeNode,
 	LengthContext,
-	MediaConditionNode,
-	MediaQueryNode,
-	NamespacePreludeNode,
-	ParsedNode,
 	RuleContext,
 	RunningTransition,
 	ScopeCondition,
@@ -57,7 +51,6 @@ import {
 	parseSelectorList,
 	selectAllCompiled,
 	type SelectorNamespaces,
-	type SelectorNode,
 } from "./selectors.ts";
 import {
 	getStringWidth,
@@ -1160,14 +1153,14 @@ function assignDeclarations(
 }
 
 interface CSSStyleRule {
-	[kSelectors]: SelectorNode;
+	[kSelectors]: CSSTree.SelectorNode;
 	[kSelectorText]: string | null;
 	[kStyle]: CSSStyleDeclaration;
 }
 
 class CSSStyleRule extends CSSGroupingRule {
 	constructor(
-		selectors: SelectorNode,
+		selectors: CSSTree.SelectorNode,
 		block: string | readonly CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
@@ -1891,7 +1884,7 @@ interface CSSFontFeatureValuesRule {
 class CSSFontFeatureValuesRule extends CSSRule {
 	constructor(
 		fontFamily: string,
-		node: ParsedNode,
+		node: CSSTree.StyleSheetNode,
 		source: string,
 		parentStyleSheet: CSSStyleSheet | null,
 	) {
@@ -2422,7 +2415,7 @@ function parseRules(
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
 ): CSSRule[] {
-	let ast: {children: {toArray(): ParsedNode[]}};
+	let ast: {children: {toArray(): CSSTree.StyleSheetNode[]}};
 	try {
 		// Values parse to nodes in this one pass. A value outside its grammar
 		// falls back to a Raw node rather than an error, so the sheet keeps
@@ -2448,7 +2441,7 @@ function parseRuleText(
 	parentRule: CSSRule | null,
 ): CSSRule {
 	const source = String(text ?? "");
-	let ast: {children: {toArray(): ParsedNode[]}};
+	let ast: {children: {toArray(): CSSTree.StyleSheetNode[]}};
 	try {
 		ast = CSSTree.parse(source, {
 			parseValue: false,
@@ -2483,7 +2476,7 @@ function parseRuleText(
 // namespace map is built during the walk rather than read from a sheet
 // still being built.
 function convertRules(
-	nodes: readonly ParsedNode[],
+	nodes: readonly CSSTree.StyleSheetNode[],
 	source: string,
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
@@ -2511,7 +2504,7 @@ function convertRules(
 }
 
 function convertRule(
-	node: ParsedNode,
+	node: CSSTree.StyleSheetNode,
 	source: string,
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
@@ -2698,12 +2691,14 @@ function convertNamespaceRule(
 	prelude: string,
 	sheet: CSSStyleSheet | null,
 ): CSSNamespaceRule | null {
-	let nodes: NamespacePreludeNode[];
+	let nodes: CSSTree.NamespacePreludeNode[];
 	try {
 		const ast = CSSTree.parse(prelude, {
 			context: "atrulePrelude",
 			atrule: "namespace",
-		}) as unknown as {children?: {toArray(): NamespacePreludeNode[]} | null};
+		}) as unknown as {
+			children?: {toArray(): CSSTree.NamespacePreludeNode[]} | null;
+		};
 		nodes = ast.children ? ast.children.toArray() : [];
 	} catch (_err) {
 		return null;
@@ -2731,18 +2726,20 @@ function convertImportRule(
 	sheet: CSSStyleSheet | null,
 ): CSSImportRule | null {
 	const text = prelude.trim();
-	let nodes: ImportPreludeNode[];
+	let nodes: CSSTree.ImportPreludeNode[];
 	try {
 		const ast = CSSTree.parse(text, {
 			context: "atrulePrelude",
 			atrule: "import",
 			positions: true,
-		}) as unknown as {children?: {toArray(): ImportPreludeNode[]} | null};
+		}) as unknown as {
+			children?: {toArray(): CSSTree.ImportPreludeNode[]} | null;
+		};
 		nodes = ast.children ? ast.children.toArray() : [];
 	} catch (_err) {
 		return null;
 	}
-	const sliceOf = (node: ImportPreludeNode): string =>
+	const sliceOf = (node: CSSTree.ImportPreludeNode): string =>
 		node.loc ? text.slice(node.loc.start.offset, node.loc.end.offset) : "";
 	const head = nodes[0];
 	if (!head || (head.type !== "Url" && head.type !== "String")) {
@@ -2752,7 +2749,7 @@ function convertImportRule(
 	let index = 1;
 
 	let layerName: string | null = null;
-	let node: ImportPreludeNode | undefined = nodes[index];
+	let node: CSSTree.ImportPreludeNode | undefined = nodes[index];
 	if (
 		node &&
 		(node.type === "Identifier" || node.type === "Function") &&
@@ -6500,7 +6497,7 @@ function parseStyleSheet(
 // the deprecated types match nothing.
 function mediaQueryNodeMatches(
 	cascade: Cascade,
-	query: MediaQueryNode,
+	query: CSSTree.MediaQueryNode,
 ): boolean {
 	const type = (query.mediaType ?? "").toLowerCase();
 	let matches = type === "" || type === "all" || type === "screen";
@@ -6514,7 +6511,7 @@ function mediaQueryNodeMatches(
 // condition unevaluated, and so matching.
 function mediaConditionMatches(
 	cascade: Cascade,
-	condition: MediaConditionNode,
+	condition: CSSTree.MediaConditionNode,
 ): boolean {
 	let matches: boolean | null = null;
 	let disjunction = false;
@@ -6546,7 +6543,7 @@ function mediaConditionMatches(
 
 function mediaOperandMatches(
 	cascade: Cascade,
-	part: MediaConditionNode,
+	part: CSSTree.MediaConditionNode,
 ): boolean {
 	if (part.type === "Condition") {
 		return mediaConditionMatches(cascade, part);
@@ -6574,7 +6571,7 @@ function getViewportLength(cascade: Cascade, dimension: string): number | null {
 // default, as does a value outside the grammar.
 function mediaFeatureMatches(
 	cascade: Cascade,
-	feature: MediaConditionNode,
+	feature: CSSTree.MediaConditionNode,
 ): boolean {
 	const name = (feature.name ?? "").toLowerCase();
 	const value = feature.value ?? null;
@@ -6613,9 +6610,9 @@ function mediaFeatureMatches(
 // the value in a one-sided one.
 function mediaFeatureRangeMatches(
 	cascade: Cascade,
-	range: MediaConditionNode,
+	range: CSSTree.MediaConditionNode,
 ): boolean {
-	const named = (node: CSSNode | null | undefined): string =>
+	const named = (node: CSSTree.ValueNode | null | undefined): string =>
 		node?.type === "Identifier" ? (node.name ?? "").toLowerCase() : "";
 	if (range.right) {
 		const actual = getViewportLength(cascade, named(range.middle));

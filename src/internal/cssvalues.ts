@@ -14,11 +14,7 @@ import {
 	parseSelectorList,
 	pseudoName,
 } from "./selectors.ts";
-import type {
-	CompiledSelector,
-	SelectorNamespaces,
-	SelectorNode,
-} from "./selectors.ts";
+import type {CompiledSelector, SelectorNamespaces} from "./selectors.ts";
 
 type Unit = "undefined" | "cell" | "percent" | "auto";
 
@@ -41,26 +37,18 @@ export const CSS_WIDE_KEYWORDS = new Set([
 
 const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
 
-export type CSSNode = {
-	type: string;
-	name?: string;
-	value?: string;
-	unit?: string;
-	children?: {toArray(): CSSNode[]};
-};
-
 // Value parsing runs during style computation, and a document re-reads
 // the same handful of values many times, so each value is parsed once.
-const valueNodes = new Map<string, CSSNode[] | null>();
+const valueNodes = new Map<string, CSSTree.ValueNode[] | null>();
 
 /** A value's top-level nodes, or null if css-tree cannot parse the text. */
-function getCSSValueChildren(value: string): CSSNode[] | null {
+function getCSSValueChildren(value: string): CSSTree.ValueNode[] | null {
 	let nodes = valueNodes.get(value);
 	if (nodes === undefined) {
 		try {
 			const ast = CSSTree.parse(value, {
 				context: "value",
-			}) as unknown as CSSNode;
+			}) as unknown as CSSTree.ValueNode;
 			nodes = ast.children ? ast.children.toArray() : [];
 		} catch (_err) {
 			nodes = null;
@@ -76,7 +64,7 @@ function getCSSValueChildren(value: string): CSSNode[] | null {
 // Only a value whose canonical spelling matches the authored text may
 // seed the cache. For that value, the sheet's parse is the same parse
 // getCSSValueChildren would produce for the key.
-function seedValueNodes(value: string, nodes: CSSNode[]): void {
+function seedValueNodes(value: string, nodes: CSSTree.ValueNode[]): void {
 	if (valueNodes.has(value)) {
 		return;
 	}
@@ -86,12 +74,12 @@ function seedValueNodes(value: string, nodes: CSSNode[]): void {
 	valueNodes.set(value, nodes);
 }
 
-function getSingleValueNode(value: string): CSSNode | undefined {
+function getSingleValueNode(value: string): CSSTree.ValueNode | undefined {
 	const nodes = getCSSValueChildren(value);
 	return nodes && nodes.length === 1 ? nodes[0] : undefined;
 }
 
-function getFunctionArguments(node: CSSNode): CSSNode[] {
+function getFunctionArguments(node: CSSTree.ValueNode): CSSTree.ValueNode[] {
 	return (node.children?.toArray() ?? []).filter(
 		(child) => child.type !== "Operator",
 	);
@@ -811,7 +799,7 @@ interface ValueTerm {
 // to reading by shape. The text is the component as the declaration
 // spells it.
 function getGrammarTerms(property: string, value: string): ValueTerm[] | null {
-	let ast: {children?: {toArray(): CSSNode[]} | null};
+	let ast: {children?: {toArray(): CSSTree.ValueNode[]} | null};
 	// getTrace returns one step of the match per term the node matched.
 	let match: {
 		matched: unknown;
@@ -2914,25 +2902,14 @@ export const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 	}
 }
 
-interface SupportsNode {
-	type: string;
-	name?: string;
-	feature?: string;
-	property?: string;
-	loc?: ParsedSpan | null;
-	children?: {toArray(): SupportsNode[]} | null;
-	declaration?: SupportsNode | null;
-	value?: SupportsNode | null;
-}
-
 function supportsCondition(text: string): boolean {
-	let nodes: SupportsNode[];
+	let nodes: CSSTree.SupportsNode[];
 	try {
 		const ast = CSSTree.parse(text, {
 			context: "atrulePrelude",
 			atrule: "supports",
 			positions: true,
-		}) as unknown as {children?: {toArray(): SupportsNode[]} | null};
+		}) as unknown as {children?: {toArray(): CSSTree.SupportsNode[]} | null};
 		nodes = ast.children ? ast.children.toArray() : [];
 	} catch (_err) {
 		return false;
@@ -2948,7 +2925,7 @@ function supportsCondition(text: string): boolean {
 // operands and joiners alternate. A condition outside that grammar
 // supports nothing.
 function supportsConditionMatches(
-	condition: SupportsNode,
+	condition: CSSTree.SupportsNode,
 	source: string,
 ): boolean {
 	let matches: boolean | null = null;
@@ -2998,8 +2975,13 @@ function supportsConditionMatches(
 
 // A condition of any other shape (font-format(), font-tech()) is not
 // supported.
-function supportsOperandMatches(part: SupportsNode, source: string): boolean {
-	const sliceOf = (node: SupportsNode | null | undefined): string | null =>
+function supportsOperandMatches(
+	part: CSSTree.SupportsNode,
+	source: string,
+): boolean {
+	const sliceOf = (
+		node: CSSTree.SupportsNode | null | undefined,
+	): string | null =>
 		node?.loc ? source.slice(node.loc.start.offset, node.loc.end.offset) : null;
 	if (part.type === "Condition") {
 		return supportsConditionMatches(part, source);
@@ -3526,43 +3508,25 @@ function serializeMediaQueryText(text: string): string {
 	return modifier + [type, ...conditions].join(" and ");
 }
 
-export interface MediaQueryNode {
-	modifier?: string | null;
-	mediaType?: string | null;
-	condition?: MediaConditionNode | null;
-}
-
-export interface MediaConditionNode {
-	type: string;
-	name?: string;
-	loc?: ParsedSpan | null;
-	value?: CSSNode | null;
-	children?: {toArray(): MediaConditionNode[]} | null;
-	left?: CSSNode | null;
-	leftComparison?: string | null;
-	middle?: CSSNode | null;
-	rightComparison?: string | null;
-	right?: CSSNode | null;
-}
-
 // One parse per spelling, with positions. Serialization slices the
 // authored text at them.
-const mediaQueryNodes = new Map<string, MediaQueryNode[] | null>();
+const mediaQueryNodes = new Map<string, CSSTree.MediaQueryNode[] | null>();
 
 export function getMediaConditionParts(
-	condition: MediaConditionNode | null | undefined,
-): MediaConditionNode[] {
+	condition: CSSTree.MediaConditionNode | null | undefined,
+): CSSTree.MediaConditionNode[] {
 	return condition?.children ? condition.children.toArray() : [];
 }
 
-export function parseMediaQueryList(text: string): MediaQueryNode[] | null {
+export function parseMediaQueryList(text: string): CSSTree.MediaQueryNode[] |
+	null {
 	let queries = mediaQueryNodes.get(text);
 	if (queries === undefined) {
 		try {
 			const ast = CSSTree.parse(text, {
 				context: "mediaQueryList",
 				positions: true,
-			}) as unknown as {children: {toArray(): MediaQueryNode[]}};
+			}) as unknown as {children: {toArray(): CSSTree.MediaQueryNode[]}};
 			queries = ast.children.toArray();
 		} catch (_err) {
 			queries = null;
@@ -3746,7 +3710,10 @@ export function serializePageSelector(selector: string): string {
 // `from` is 0%, `to` is 100%.
 export function serializeKeyText(text: string): string {
 	const source = String(text).trim();
-	let list: {loc?: ParsedSpan | null; children: {toArray(): CSSNode[]}};
+	let list: {
+		loc?: CSSTree.Span | null;
+		children: {toArray(): CSSTree.ValueNode[]};
+	};
 	try {
 		list = CSSTree.parse(source, {
 			context: "selectorList",
@@ -3792,13 +3759,6 @@ export function serializeKeyText(text: string): string {
 	return keys.join(", ");
 }
 
-/** A top-level node from parsing a `@container` prelude. */
-interface ContainerPreludeNode {
-	type: string;
-	name?: string;
-	loc?: ParsedSpan | null;
-}
-
 // `none`, `and`, `or` and `not` name no container, so a prelude opening
 // with one of those words is a query alone, as is a prelude outside the
 // grammar.
@@ -3806,13 +3766,15 @@ export function getContainerParts(prelude: string): {
 	name: string;
 	query: string;
 } {
-	let nodes: ContainerPreludeNode[] = [];
+	let nodes: CSSTree.ContainerPreludeNode[] = [];
 	try {
 		const ast = CSSTree.parse(prelude, {
 			context: "atrulePrelude",
 			atrule: "container",
 			positions: true,
-		}) as unknown as {children?: {toArray(): ContainerPreludeNode[]} | null};
+		}) as unknown as {
+			children?: {toArray(): CSSTree.ContainerPreludeNode[]} | null;
+		};
 		nodes = ast.children ? ast.children.toArray() : [];
 	} catch (_err) {
 		return {name: "", query: prelude};
@@ -3827,26 +3789,21 @@ export function getContainerParts(prelude: string): {
 	};
 }
 
-interface ScopePreludeNode {
-	type: string;
-	loc?: ParsedSpan | null;
-	root?: ScopePreludeNode | null;
-	limit?: ScopePreludeNode | null;
-}
-
 // Both null for a prelude outside the grammar. The limit alone for the
 // implicit `@scope to (...)`.
 export function getScopeLimits(prelude: string): {
 	start: string | null;
 	end: string | null;
 } {
-	let scope: ScopePreludeNode | undefined;
+	let scope: CSSTree.ScopePreludeNode | undefined;
 	try {
 		const ast = CSSTree.parse(prelude, {
 			context: "atrulePrelude",
 			atrule: "scope",
 			positions: true,
-		}) as unknown as {children?: {toArray(): ScopePreludeNode[]} | null};
+		}) as unknown as {
+			children?: {toArray(): CSSTree.ScopePreludeNode[]} | null;
+		};
 		const nodes = ast.children ? ast.children.toArray() : [];
 		if (nodes.length === 1 && nodes[0].type === "Scope") {
 			scope = nodes[0];
@@ -3854,7 +3811,8 @@ export function getScopeLimits(prelude: string): {
 	} catch (_err) {
 		scope = undefined;
 	}
-	const sliceOf = (node: ScopePreludeNode | null | undefined): string | null =>
+	const sliceOf = (node: CSSTree.ScopePreludeNode | null | undefined): string |
+		null =>
 		node?.loc
 			? prelude.slice(node.loc.start.offset, node.loc.end.offset)
 			: null;
@@ -3919,7 +3877,7 @@ const COMPOUND_WEIGHTED_PSEUDO_CLASSES = new Set([
 	"nth-last-child",
 ]);
 
-function getListSpecificity(list: SelectorNode): Specificity {
+function getListSpecificity(list: CSSTree.SelectorNode): Specificity {
 	let most: Specificity = [0, 0, 0];
 	for (const selector of getChildren(list)) {
 		const weight = getSelectorSpecificity(selector);
@@ -3934,14 +3892,14 @@ function getListSpecificity(list: SelectorNode): Specificity {
 	return most;
 }
 
-function getSelectorSpecificity(selector: SelectorNode): Specificity {
+function getSelectorSpecificity(selector: CSSTree.SelectorNode): Specificity {
 	const total: Specificity = [0, 0, 0];
 	const add = (weight: Specificity): void => {
 		total[0] += weight[0];
 		total[1] += weight[1];
 		total[2] += weight[2];
 	};
-	const argumentWeight = (node: SelectorNode): Specificity => {
+	const argumentWeight = (node: CSSTree.SelectorNode): Specificity => {
 		for (const child of getChildren(node)) {
 			if (child.type === "SelectorList") {
 				return getListSpecificity(child);
@@ -4071,7 +4029,7 @@ export interface SelectorReading {
 
 // Includes pseudo-class arguments. A class inside :not() or :is() is
 // tested on the compound around it.
-function harvestKeys(nodes: SelectorNode[], keys: CompoundKeys): void {
+function harvestKeys(nodes: CSSTree.SelectorNode[], keys: CompoundKeys): void {
 	for (const node of nodes) {
 		switch (node.type) {
 			case "ClassSelector":
@@ -4116,14 +4074,14 @@ function harvestKeys(nodes: SelectorNode[], keys: CompoundKeys): void {
 // no keys.
 export function readSelector(selector: string): SelectorReading {
 	let failed = false;
-	let list: SelectorNode | null = null;
+	let list: CSSTree.SelectorNode | null = null;
 	try {
 		list = CSSTree.parse(selector, {
 			context: "selectorList",
 			onParseError() {
 				failed = true;
 			},
-		}) as unknown as SelectorNode;
+		}) as unknown as CSSTree.SelectorNode;
 	} catch (_err) {
 		failed = true;
 	}
@@ -4136,7 +4094,7 @@ export function readSelector(selector: string): SelectorReading {
 		.join("-");
 	const complex = getChildren(list).find((child) => child.type === "Selector");
 	const compounds: CompoundKeys[] = [];
-	let parts: SelectorNode[] = [];
+	let parts: CSSTree.SelectorNode[] = [];
 	const closeCompound = (): void => {
 		const keys: CompoundKeys = {
 			classes: [],
@@ -4162,11 +4120,12 @@ export function readSelector(selector: string): SelectorReading {
 // Undefined when the subject names no type, including a type in a
 // namespace, which the matcher resolves against the namespaces the sheet
 // bound.
-function getSubjectTag(complex: SelectorNode | undefined): string | undefined {
+function getSubjectTag(complex: CSSTree.SelectorNode | undefined): string |
+	undefined {
 	if (!complex) {
 		return undefined;
 	}
-	let type: SelectorNode | undefined;
+	let type: CSSTree.SelectorNode | undefined;
 	for (const part of getChildren(complex)) {
 		if (part.type === "Combinator") {
 			type = undefined;
@@ -4193,7 +4152,7 @@ function serializeIdentifierSource(name: string): string {
 }
 
 export function serializeSelectorList(
-	list: SelectorNode,
+	list: CSSTree.SelectorNode,
 	namespaces: SelectorNamespaces = NO_NAMESPACES,
 ): string {
 	return getChildren(list)
@@ -4202,7 +4161,7 @@ export function serializeSelectorList(
 }
 
 function serializeSelector(
-	selector: SelectorNode,
+	selector: CSSTree.SelectorNode,
 	namespaces: SelectorNamespaces = NO_NAMESPACES,
 ): string {
 	let out = "";
@@ -4226,7 +4185,7 @@ function serializeSelector(
 }
 
 function serializeSimpleSelector(
-	node: SelectorNode,
+	node: CSSTree.SelectorNode,
 	namespaces: SelectorNamespaces,
 ): string {
 	switch (node.type) {
@@ -4282,7 +4241,7 @@ function serializeSimpleSelector(
 }
 
 function serializeSelectorArgument(
-	node: SelectorNode,
+	node: CSSTree.SelectorNode,
 	namespaces: SelectorNamespaces,
 ): string {
 	switch (node.type) {
@@ -4431,30 +4390,9 @@ export function splitSelectorList(text: string): string[] {
 	return selectors.filter(Boolean);
 }
 
-interface ParsedSpan {
-	start: {offset: number};
-	end: {offset: number};
-}
-
-export interface ParsedNode {
-	type: string;
-	name?: string;
-	prelude?: {type: string; value?: string} | null;
-	block?: {children: {toArray(): ParsedNode[]}} | null;
-	property?: string;
-	value?: {
-		type: string;
-		value?: string;
-		loc?: ParsedSpan | null;
-		children?: {toArray(): CSSNode[]} | null;
-	} | null;
-	important?: boolean | string;
-	children?: {toArray(): ParsedNode[]} | null;
-}
-
 export function getNodes(container: {
-	children?: {toArray(): ParsedNode[]} | null;
-}): ParsedNode[] {
+	children?: {toArray(): CSSTree.StyleSheetNode[]} | null;
+}): CSSTree.StyleSheetNode[] {
 	return container.children ? container.children.toArray() : [];
 }
 
@@ -4462,7 +4400,7 @@ export function getNodes(container: {
 // is the authored one. The value TEXT always serializes from the source,
 // which the parsed spelling cannot replace.
 export function getBlockDeclarations(
-	node: ParsedNode,
+	node: CSSTree.StyleSheetNode,
 	source: string,
 ): CSSDeclaration[] {
 	const declarations: CSSDeclaration[] = [];
@@ -4488,44 +4426,39 @@ export function getBlockDeclarations(
 			continue;
 		}
 		if (child.value.type === "Value" && value === raw.trim()) {
-			seedValueNodes(value, getNodes(child.value as never) as CSSNode[]);
+			seedValueNodes(
+				value,
+				getNodes(child.value as never) as CSSTree.ValueNode[],
+			);
 		}
 		declarations.push({name, value, important: child.important === true});
 	}
 	return declarations;
 }
 
-export function getPreludeText(node: ParsedNode): string {
+export function getPreludeText(node: CSSTree.StyleSheetNode): string {
 	return (node.prelude?.value ?? "").trim();
 }
 
-export function getNestedRules(node: ParsedNode): ParsedNode[] {
+export function getNestedRules(
+	node: CSSTree.StyleSheetNode,
+): CSSTree.StyleSheetNode[] {
 	return getNodes(node.block ?? {}).filter(
 		(child) => child.type === "Rule" || child.type === "Atrule",
 	);
 }
 
-export interface NamespacePreludeNode {
-	type: string;
-	name?: string;
-	value?: string;
-}
-
-interface LayerPreludeNode {
-	type: string;
-	name?: string;
-	children?: {toArray(): LayerPreludeNode[]} | null;
-}
-
 // The empty list for the anonymous block. Null for a prelude outside
 // the grammar, which drops the at-rule.
 export function getLayerNames(prelude: string): string[] | null {
-	let nodes: LayerPreludeNode[];
+	let nodes: CSSTree.LayerPreludeNode[];
 	try {
 		const ast = CSSTree.parse(prelude, {
 			context: "atrulePrelude",
 			atrule: "layer",
-		}) as unknown as {children?: {toArray(): LayerPreludeNode[]} | null};
+		}) as unknown as {
+			children?: {toArray(): CSSTree.LayerPreludeNode[]} | null;
+		};
 		nodes = ast.children ? ast.children.toArray() : [];
 	} catch (_err) {
 		return null;
@@ -4537,14 +4470,6 @@ export function getLayerNames(prelude: string): string[] | null {
 		return null;
 	}
 	return (nodes[0].children?.toArray() ?? []).map((node) => node.name ?? "");
-}
-
-export interface ImportPreludeNode {
-	type: string;
-	name?: string;
-	value?: string;
-	loc?: ParsedSpan | null;
-	children?: {toArray(): ImportPreludeNode[]} | null;
 }
 
 // A bare fragment is a document fragment too and hosts nothing, which
@@ -5166,8 +5091,9 @@ function buildEasing(key: string): (input: number) => number {
 
 // css-easing-1 §2.6. Null for an argument list outside the grammar,
 // which then plays as `linear`.
-function linearEasing(node: CSSNode): ((input: number) => number) | null {
-	const stops: CSSNode[][] = [[]];
+function linearEasing(node: CSSTree.ValueNode): ((input: number) => number) |
+	null {
+	const stops: CSSTree.ValueNode[][] = [[]];
 	for (const child of node.children?.toArray() ?? []) {
 		if (child.type === "Operator") {
 			if ((child.value ?? "").trim() !== ",") {
@@ -5370,7 +5296,7 @@ export const PAINT_ONLY_PROPERTIES = new Set([
 // Null for a value outside the grammar, which leaves the feature
 // unevaluated.
 export function getMediaLength(
-	node: CSSNode | null | undefined,
+	node: CSSTree.ValueNode | null | undefined,
 ): number | null {
 	let length: number | null = null;
 	if (node?.type === "Number") {
@@ -5557,7 +5483,7 @@ export const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
 const REFUSED_GRID_VALUES = new Set(["subgrid", "masonry"]);
 
 // px and ch both measure one cell, and nothing else does.
-function trackCells(node: CSSNode): number | null {
+function trackCells(node: CSSTree.ValueNode): number | null {
 	if (node.type !== "Dimension") {
 		return null;
 	}
@@ -5573,7 +5499,7 @@ function getCellBreadth(cells: number): TrackBreadth {
 	return {kind: "length", value: {unit: "cell", value: cells}};
 }
 
-function parseTrackBreadth(node: CSSNode): TrackBreadth | null {
+function parseTrackBreadth(node: CSSTree.ValueNode): TrackBreadth | null {
 	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
 		const factor = parseFloat(node.value ?? "");
 		return Number.isFinite(factor) && factor >= 0
@@ -5606,7 +5532,7 @@ function parseTrackBreadth(node: CSSNode): TrackBreadth | null {
 	return null;
 }
 
-function parseTrackSize(node: CSSNode): TrackSize | null {
+function parseTrackSize(node: CSSTree.ValueNode): TrackSize | null {
 	if (node.type === "Function") {
 		const name = (node.name ?? "").toLowerCase();
 		const args = getFunctionArguments(node);
@@ -5652,7 +5578,7 @@ function parseTrackSize(node: CSSNode): TrackSize | null {
 	return {min: breadth, max: breadth};
 }
 
-function getBracketNames(node: CSSNode): string[] {
+function getBracketNames(node: CSSTree.ValueNode): string[] {
 	return (node.children?.toArray() ?? [])
 		.filter((child) => child.type === "Identifier")
 		.map((child) => child.name ?? "");
@@ -5735,7 +5661,7 @@ function parseTrackListValue(value: string): TrackList | null {
 	return {parts, endNames: names};
 }
 
-function parseTrackRepeat(node: CSSNode): TrackRepeat | null {
+function parseTrackRepeat(node: CSSTree.ValueNode): TrackRepeat | null {
 	const args = (node.children?.toArray() ?? []).filter(
 		(child) => child.type !== "Operator",
 	);

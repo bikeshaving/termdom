@@ -251,21 +251,9 @@ const ARGUMENTLESS_PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"window-inactive",
 ]);
 
-/** A selector AST node, as the CSS parser produces it. */
-export interface SelectorNode {
-	type: string;
-	name?: string | {type: string; name: string};
-	matcher?: string | null;
-	value?: {type: string; value?: string; name?: string} | null;
-	flags?: string | null;
-	children?: {toArray(): SelectorNode[]} | SelectorNode[] | null;
-	nth?: SelectorNode | null;
-	selector?: SelectorNode | null;
-	a?: string | null;
-	b?: string | null;
-}
-
-export function getChildren(node: SelectorNode): SelectorNode[] {
+export function getChildren(
+	node: CSSTree.SelectorNode,
+): CSSTree.SelectorNode[] {
 	const children = node.children;
 	if (!children) {
 		return [];
@@ -449,19 +437,19 @@ function preprocess(text: string): string {
 		.replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
 }
 
-function parseSelectorAST(text: string): SelectorNode | null {
+function parseSelectorAST(text: string): CSSTree.SelectorNode | null {
 	const source = preprocess(String(text));
 	if (source.trim() === "" || hasEmptySelector(source)) {
 		return null;
 	}
-	let list: SelectorNode;
+	let list: CSSTree.SelectorNode;
 	try {
 		list = CSSTree.parse(closeAtEndOfInput(source), {
 			context: "selectorList",
 			onParseError(error: Error) {
 				throw error;
 			},
-		}) as unknown as SelectorNode;
+		}) as unknown as CSSTree.SelectorNode;
 	} catch (_err) {
 		return null;
 	}
@@ -475,7 +463,7 @@ function parseSelectorAST(text: string): SelectorNode | null {
  * `svg|circle` names a declared namespace is for whoever knows the
  * declarations.
  */
-export function parseSelectorList(text: string): SelectorNode | null {
+export function parseSelectorList(text: string): CSSTree.SelectorNode | null {
 	const list = parseSelectorAST(text);
 	if (list === null) {
 		return null;
@@ -517,7 +505,7 @@ interface Compiling {
 }
 
 function compileList(
-	list: SelectorNode,
+	list: CSSTree.SelectorNode,
 	options: CompileOptions,
 ): CompiledSelector {
 	const compiling: Compiling = {
@@ -542,7 +530,7 @@ function compileList(
 }
 
 function compileComplex(
-	selector: SelectorNode,
+	selector: CSSTree.SelectorNode,
 	compiling: Compiling,
 	relative: boolean,
 ): CompiledComplex {
@@ -552,7 +540,7 @@ function compileComplex(
 	}
 	const compounds: CompiledCompound[] = [];
 	const combinators: Combinator[] = [];
-	let pending: SelectorNode[] = [];
+	let pending: CSSTree.SelectorNode[] = [];
 	let started = false;
 	for (const [index, part] of parts.entries()) {
 		if (part.type !== "Combinator") {
@@ -602,7 +590,7 @@ const ANCHOR_COMPOUND: CompiledCompound = {
 };
 
 function compileCompound(
-	parts: SelectorNode[],
+	parts: CSSTree.SelectorNode[],
 	compiling: Compiling,
 ): CompiledCompound {
 	const compound: CompiledCompound = {
@@ -635,7 +623,7 @@ function compileCompound(
 }
 
 function compileSimple(
-	part: SelectorNode,
+	part: CSSTree.SelectorNode,
 	compound: CompiledCompound,
 	compiling: Compiling,
 ): void {
@@ -830,7 +818,10 @@ const CASE_INSENSITIVE_ATTRIBUTES: ReadonlySet<string> = new Set([
 
 const ATTRIBUTE_OPERATORS = new Set(["=", "~=", "|=", "^=", "$=", "*="]);
 
-function compileAttribute(part: SelectorNode, compiling: Compiling): Predicate {
+function compileAttribute(
+	part: CSSTree.SelectorNode,
+	compiling: Compiling,
+): Predicate {
 	const qualified = (part.name as {name?: string} | undefined)?.name;
 	const {namespace, local} = qualifiedName(
 		String(qualified ?? ""),
@@ -917,7 +908,7 @@ function compileAttribute(part: SelectorNode, compiling: Compiling): Predicate {
 }
 
 function compilePseudoClass(
-	part: SelectorNode,
+	part: CSSTree.SelectorNode,
 	compound: CompiledCompound,
 	compiling: Compiling,
 ): void {
@@ -1157,7 +1148,10 @@ function compilePseudoClass(
 	}
 }
 
-function getIdentifierArgument(args: SelectorNode[], name: string): string {
+function getIdentifierArgument(
+	args: CSSTree.SelectorNode[],
+	name: string,
+): string {
 	const text = args
 		.map((argument) =>
 			argument.type === "Raw"
@@ -1180,7 +1174,7 @@ function getIdentifierArgument(args: SelectorNode[], name: string): string {
 
 /** Drops the branches that do not parse. */
 function compileForgiving(
-	args: SelectorNode[],
+	args: CSSTree.SelectorNode[],
 	compiling: Compiling,
 ): CompiledComplex[] {
 	const compiled: CompiledComplex[] = [];
@@ -1205,7 +1199,7 @@ function compileForgiving(
 
 /** One bad branch invalidates the whole list. */
 function compileArgumentList(
-	args: SelectorNode[],
+	args: CSSTree.SelectorNode[],
 	compiling: Compiling,
 	relative: boolean,
 ): CompiledComplex[] {
@@ -1229,7 +1223,7 @@ function compileArgumentList(
 }
 
 function compilePseudoElement(
-	part: SelectorNode,
+	part: CSSTree.SelectorNode,
 	compound: CompiledCompound,
 	compiling: Compiling,
 ): void {
@@ -1292,7 +1286,7 @@ function compilePseudoElement(
 
 function compileNth(
 	name: string,
-	args: SelectorNode[],
+	args: CSSTree.SelectorNode[],
 	compiling: Compiling,
 ): Predicate {
 	const nth = args.find((argument) => argument.type === "Nth");
@@ -1347,7 +1341,7 @@ interface AnPlusB {
 	b: number;
 }
 
-function readAnPlusB(node: SelectorNode | null): AnPlusB {
+function readAnPlusB(node: CSSTree.SelectorNode | null): AnPlusB {
 	if (node === null) {
 		throw new SelectorError("An+B is a step and an offset");
 	}
@@ -1540,7 +1534,7 @@ function isEmpty(element: Element): boolean {
 
 // RFC 4647 extended filtering: `:lang(en)` matches `en-GB`, and a `*`
 // in a range matches any run of subtags.
-function compileLang(args: SelectorNode[]): Predicate {
+function compileLang(args: CSSTree.SelectorNode[]): Predicate {
 	const ranges: string[] = [];
 	for (const argument of args) {
 		if (argument.type === "Operator") {
@@ -1645,7 +1639,7 @@ const AUTO_INPUT_TYPES = new Set([
 	"url",
 ]);
 
-function compileDir(args: SelectorNode[]): Predicate {
+function compileDir(args: CSSTree.SelectorNode[]): Predicate {
 	const wanted = toASCIILowercase(getIdentifierArgument(args, "dir"));
 	return (element) =>
 		element.nodeType === Node.ELEMENT_NODE &&

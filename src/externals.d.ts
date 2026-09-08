@@ -38,6 +38,121 @@ declare module "css-tree" {
 
 	export function parse(text: string, options?: ParseOptions): CSSTreeNode;
 
+	export interface Span {
+		start: {offset: number};
+		end: {offset: number};
+	}
+
+	/** A node of a parsed value. */
+	export interface ValueNode {
+		type: string;
+		name?: string;
+		value?: string;
+		unit?: string;
+		children?: {toArray(): ValueNode[]};
+	}
+
+	/** A rule, at-rule or declaration of a parsed stylesheet. */
+	export interface StyleSheetNode {
+		type: string;
+		name?: string;
+		prelude?: {type: string; value?: string} | null;
+		block?: {children: {toArray(): StyleSheetNode[]}} | null;
+		property?: string;
+		value?: {
+			type: string;
+			value?: string;
+			loc?: Span | null;
+			children?: {toArray(): ValueNode[]} | null;
+		} | null;
+		important?: boolean | string;
+		children?: {toArray(): StyleSheetNode[]} | null;
+	}
+
+	/** A selector AST node. */
+	export interface SelectorNode {
+		type: string;
+		name?: string | {type: string; name: string};
+		matcher?: string | null;
+		value?: {type: string; value?: string; name?: string} | null;
+		flags?: string | null;
+		children?: {toArray(): SelectorNode[]} | SelectorNode[] | null;
+		nth?: SelectorNode | null;
+		selector?: SelectorNode | null;
+		a?: string | null;
+		b?: string | null;
+	}
+
+	/** A node of a parsed `@supports` prelude. */
+	export interface SupportsNode {
+		type: string;
+		name?: string;
+		feature?: string;
+		property?: string;
+		loc?: Span | null;
+		children?: {toArray(): SupportsNode[]} | null;
+		declaration?: SupportsNode | null;
+		value?: SupportsNode | null;
+	}
+
+	/** A query of a parsed media query list. */
+	export interface MediaQueryNode {
+		modifier?: string | null;
+		mediaType?: string | null;
+		condition?: MediaConditionNode | null;
+	}
+
+	export interface MediaConditionNode {
+		type: string;
+		name?: string;
+		loc?: Span | null;
+		value?: ValueNode | null;
+		children?: {toArray(): MediaConditionNode[]} | null;
+		left?: ValueNode | null;
+		leftComparison?: string | null;
+		middle?: ValueNode | null;
+		rightComparison?: string | null;
+		right?: ValueNode | null;
+	}
+
+	/** A top-level node of a parsed `@container` prelude. */
+	export interface ContainerPreludeNode {
+		type: string;
+		name?: string;
+		loc?: Span | null;
+	}
+
+	/** A node of a parsed `@scope` prelude. */
+	export interface ScopePreludeNode {
+		type: string;
+		loc?: Span | null;
+		root?: ScopePreludeNode | null;
+		limit?: ScopePreludeNode | null;
+	}
+
+	/** A top-level node of a parsed `@namespace` prelude. */
+	export interface NamespacePreludeNode {
+		type: string;
+		name?: string;
+		value?: string;
+	}
+
+	/** A node of a parsed `@layer` prelude. */
+	export interface LayerPreludeNode {
+		type: string;
+		name?: string;
+		children?: {toArray(): LayerPreludeNode[]} | null;
+	}
+
+	/** A node of a parsed `@import` prelude. */
+	export interface ImportPreludeNode {
+		type: string;
+		name?: string;
+		value?: string;
+		loc?: Span | null;
+		children?: {toArray(): ImportPreludeNode[]} | null;
+	}
+
 	export function generate(node: CSSTreeNode): string;
 
 	export interface MatchResult {
