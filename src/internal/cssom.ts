@@ -7,18 +7,6 @@ import {
 	CSS_PROPERTIES,
 } from "../generated/cssproperties.ts";
 import * as CSSValues from "./cssvalues.ts";
-import type {
-	BoxModel,
-	CounterScope,
-	CSSDeclaration,
-	DeclarationBlock,
-	LengthContext,
-	RuleContext,
-	RunningTransition,
-	ScopeCondition,
-	SelectorReading,
-	TransitionTiming,
-} from "./cssvalues.ts";
 import {
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
@@ -119,7 +107,7 @@ function getInitialStyle(element: Element | null, property: string): string {
 }
 
 /** An element's margins, borders and padding, in cells. */
-export function getBoxModel(element: Element): BoxModel {
+export function getBoxModel(element: Element): CSSValues.BoxModel {
 	// The engine's own read: the cascade's declaration directly, without
 	// the author path's resolved-value work.
 	const widthValue = CSSValues.parseUnitValue(
@@ -304,17 +292,17 @@ interface CSSStyleDeclaration {
 	[kDescriptors]: string;
 
 	[kKeyframe]: boolean;
-	[kDeclarations]: CSSDeclaration[];
+	[kDeclarations]: CSSValues.CSSDeclaration[];
 
 	// `all` expands to every longhand there is, and a scan per lookup would
 	// make serializing such a block cubic in its size.
-	[kByName]: Map<string, CSSDeclaration>;
+	[kByName]: Map<string, CSSValues.CSSDeclaration>;
 
 	// The `style` attribute text this object last serialized or parsed.
 	[kAttributeText]: string | null;
 
 	// The declarations expanded to longhands for the cascade.
-	[kBlock]: DeclarationBlock | null;
+	[kBlock]: CSSValues.DeclarationBlock | null;
 
 	// How many numeric index properties currently name a declaration.
 	[kIndexed]: number;
@@ -332,7 +320,7 @@ class CSSStyleDeclaration {
 		} = {},
 	) {
 		this[kDeclarations] = [];
-		this[kByName] = new Map<string, CSSDeclaration>();
+		this[kByName] = new Map<string, CSSValues.CSSDeclaration>();
 		this[kAttributeText] = null;
 		this[kBlock] = null;
 		this[kIndexed] = 0;
@@ -485,7 +473,9 @@ class CSSStyleDeclaration {
 
 const kTransitionsExist = Symbol("transitionsExist");
 
-function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
+function getDeclarationBlock(
+	style: CSSStyleDeclaration,
+): CSSValues.DeclarationBlock {
 	style[kSync]!();
 	if (style[kDeclarations].length === 0) {
 		return CSSValues.EMPTY_DECLARATIONS;
@@ -629,7 +619,7 @@ function invalidateDeclaration(declaration: CSSStyleDeclaration): void {
 function findDeclaration(
 	declaration: CSSStyleDeclaration,
 	property: string,
-): CSSDeclaration | undefined {
+): CSSValues.CSSDeclaration | undefined {
 	return declaration[kByName].get(property);
 }
 
@@ -1140,7 +1130,7 @@ const kSelectorText = Symbol("selectorText");
 // filters are the cssText setter's.
 function assignDeclarations(
 	block: CSSStyleDeclaration,
-	declarations: readonly CSSDeclaration[],
+	declarations: readonly CSSValues.CSSDeclaration[],
 ): void {
 	for (const declaration of declarations) {
 		if (!isSupportedDeclaration(block, declaration.name)) {
@@ -1161,7 +1151,7 @@ interface CSSStyleRule {
 class CSSStyleRule extends CSSGroupingRule {
 	constructor(
 		selectors: CSSTree.SelectorNode,
-		block: string | readonly CSSDeclaration[],
+		block: string | readonly CSSValues.CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 		build?: (group: CSSGroupingRule) => CSSRule[],
@@ -1291,7 +1281,7 @@ interface CSSDeclarationBlockRule {
 
 abstract class CSSDeclarationBlockRule extends CSSRule {
 	constructor(
-		block: string | readonly CSSDeclaration[],
+		block: string | readonly CSSValues.CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
@@ -1360,7 +1350,7 @@ class CSSPageRule extends CSSDeclarationBlockRule {
 
 	constructor(
 		selectorText: string,
-		block: string | readonly CSSDeclaration[],
+		block: string | readonly CSSValues.CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
@@ -1402,7 +1392,7 @@ class CSSNamedDeclarationRule extends CSSDeclarationBlockRule {
 
 	constructor(
 		name: string,
-		block: string | readonly CSSDeclaration[],
+		block: string | readonly CSSValues.CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 	) {
 		super(block, parentStyleSheet, null);
@@ -1490,7 +1480,7 @@ interface CSSKeyframeRule {
 class CSSKeyframeRule extends CSSDeclarationBlockRule {
 	constructor(
 		keyText: string,
-		block: string | readonly CSSDeclaration[],
+		block: string | readonly CSSValues.CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
@@ -3123,7 +3113,7 @@ interface ComputedStyleDeclaration {
 	[kCSSRules]: ParsedCSSRule[];
 
 	[kCascade]: Cascade | null;
-	[kInlineBlock]: DeclarationBlock | null;
+	[kInlineBlock]: CSSValues.DeclarationBlock | null;
 
 	// Computed strings, memoized once per property per resolution, ""
 	// results included. An inherited property re-resolved on every read
@@ -3388,7 +3378,7 @@ function getAbsolutizedValue(
 function getLengthContext(
 	declaration: ComputedStyleDeclaration,
 	property: string,
-): LengthContext {
+): CSSValues.LengthContext {
 	const own = property === "font-size";
 	const parent = own ? flatParentElement(declaration[kElement]) : null;
 	const font = own
@@ -3764,7 +3754,7 @@ function getContainingWidth(declaration: MeasuredDeclaration): number | null {
 // covers every longhand it declares.
 function getInlineDeclarations(
 	declaration: ComputedStyleDeclaration,
-): DeclarationBlock {
+): CSSValues.DeclarationBlock {
 	let block = declaration[kInlineBlock];
 	if (block === null) {
 		const element = declaration[kElement];
@@ -4527,7 +4517,7 @@ interface ParsedCSSRule {
 	declarations: Record<string, string>;
 	important: Record<string, boolean>;
 
-	// Each declaration's position in the rule's block. See DeclarationBlock.
+	// Each declaration's position in the rule's block. See CSSValues.DeclarationBlock.
 	order: Record<string, number>;
 
 	// Zero-padded for lexicographic comparison.
@@ -4558,12 +4548,12 @@ interface ParsedCSSRule {
 
 	// The @scope conditions the rule was declared inside, outermost first.
 	// Absent for a rule no @scope encloses, which is in scope everywhere.
-	scopes?: readonly ScopeCondition[];
+	scopes?: readonly CSSValues.ScopeCondition[];
 }
 
 function isScopeRootMatch(
 	element: Element,
-	condition: ScopeCondition,
+	condition: CSSValues.ScopeCondition,
 	outer: Element | null,
 ): boolean {
 	if (condition.roots === null) {
@@ -4581,7 +4571,7 @@ function isScopeRootMatch(
 function isInScope(
 	element: Element,
 	root: Element,
-	condition: ScopeCondition,
+	condition: CSSValues.ScopeCondition,
 ): boolean {
 	let node: Element | null = element;
 	for (; node && node !== root; node = node.parentElement) {
@@ -4760,7 +4750,7 @@ export interface Cascade {
 	// apply with no MutationObserver attached.
 	[kParsedStyleSheetCount]: number;
 
-	[kCounterScopes]: WeakMap<Element, CounterScope>;
+	[kCounterScopes]: WeakMap<Element, CSSValues.CounterScope>;
 
 	// The transition gate is STICKY. It opens the first time anything
 	// declares a transition and never closes, so a document with none pays
@@ -4779,7 +4769,7 @@ export interface Cascade {
 
 	[kActiveTransitions]: Map<
 		Element,
-		Map<string, Map<string, RunningTransition>>
+		Map<string, Map<string, CSSValues.RunningTransition>>
 	>;
 
 	// The timeline instant a frame's reads interpolate against.
@@ -4878,7 +4868,7 @@ export class Cascade {
 		this[kHasRulesExist] = false;
 		this[kHoverRulesExist] = false;
 		this[kParsedStyleSheetCount] = -1;
-		this[kCounterScopes] = new WeakMap<Element, CounterScope>();
+		this[kCounterScopes] = new WeakMap<Element, CSSValues.CounterScope>();
 		this[kFlushing] = false;
 		this[kUsedValues] = new WeakMap();
 		this[kUsedStale] = true;
@@ -5648,7 +5638,11 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 		? cascade[kCounterScopes].get(parentElement)
 		: undefined;
 
-	const scope: CounterScope = {element, counters: {}, parent: parentScope};
+	const scope: CSSValues.CounterScope = {
+		element,
+		counters: {},
+		parent: parentScope,
+	};
 	cascade[kCounterScopes].set(element, scope);
 
 	if (counterReset && counterReset !== "none") {
@@ -5929,7 +5923,7 @@ function startTransition(
 	options: {
 		from: string;
 		to: string;
-		timing: TransitionTiming;
+		timing: CSSValues.TransitionTiming;
 		now: number;
 		reversingAdjustedStartValue: string;
 		reversingShorteningFactor: number;
@@ -5946,7 +5940,7 @@ function startTransition(
 		byPseudo.set(pseudo, transitions);
 	}
 	const {timing, now} = options;
-	const transition: RunningTransition = {
+	const transition: CSSValues.RunningTransition = {
 		property,
 		from: options.from,
 		to: options.to,
@@ -6442,7 +6436,7 @@ function parseStyleSheet(
 	container: CSSStyleSheet | CSSGroupingRule,
 	scope?: Node,
 	uaOrigin?: boolean,
-	context: RuleContext = CSSValues.UNCONDITIONAL,
+	context: CSSValues.RuleContext = CSSValues.UNCONDITIONAL,
 ): void {
 	if (container instanceof CSSStyleSheet) {
 		if (container.disabled) {
@@ -6637,7 +6631,7 @@ function mediaFeatureRangeMatches(
 		: CSSValues.mediaComparison(length, range.leftComparison, actual);
 }
 
-function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
+function readScopeCondition(rule: CSSScopeRule): CSSValues.ScopeCondition {
 	const namespaces = getSheetNamespaces(rule.parentStyleSheet);
 	const start = rule.start;
 	const owner = rule.parentStyleSheet?.ownerNode ?? null;
@@ -6662,7 +6656,7 @@ function parseStyleRule(
 	styleRule: CSSStyleRule,
 	scope?: Node,
 	uaOriginSheet?: boolean,
-	context: RuleContext = CSSValues.UNCONDITIONAL,
+	context: CSSValues.RuleContext = CSSValues.UNCONDITIONAL,
 ): void {
 	// Each selector of the list is matched and weighed on its own.
 	// `#a::before, #b` is one pseudo rule and one ordinary rule.
@@ -6686,7 +6680,7 @@ function parseStyleRule(
 // changes nothing but the element's own box.
 function indexReachingKeys(
 	cascade: Cascade,
-	reading: SelectorReading,
+	reading: CSSValues.SelectorReading,
 	declarations: Record<string, string>,
 ): void {
 	let inherits = false;
@@ -6744,7 +6738,7 @@ function indexReachingKeys(
 function compileRuleSelector(
 	selector: string,
 	namespaces: SelectorNamespaces | undefined,
-	scopes: readonly ScopeCondition[] | undefined,
+	scopes: readonly CSSValues.ScopeCondition[] | undefined,
 ): Pick<ParsedCSSRule, "matcher" | "relativeMatcher"> {
 	const read = (relative: boolean): CompiledSelector | null => {
 		try {
@@ -6761,11 +6755,11 @@ function compileRuleSelector(
 function parseSelector(
 	cascade: Cascade,
 	selector: string,
-	block: DeclarationBlock,
+	block: CSSValues.DeclarationBlock,
 	scope?: Node,
 	uaOriginSheet?: boolean,
 	getSheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
-	context: RuleContext = CSSValues.UNCONDITIONAL,
+	context: CSSValues.RuleContext = CSSValues.UNCONDITIONAL,
 ): void {
 	const {declarations, important, order} = block;
 	// Only a duration or delay can make a transition run, so the property
@@ -6783,7 +6777,7 @@ function parseSelector(
 	if (selector.includes(":hover")) {
 		cascade[kHoverRulesExist] = true;
 	}
-	let scopes: readonly ScopeCondition[] | undefined;
+	let scopes: readonly CSSValues.ScopeCondition[] | undefined;
 	if (context.scopes.length > 0) {
 		scopes = context.scopes;
 		cascade[kScopedRulesExist] = true;
@@ -7352,7 +7346,7 @@ function setupInvalidationHooks(cascade: Cascade): void {
 
 function parseCounterIncrement(
 	cascade: Cascade,
-	scope: CounterScope,
+	scope: CSSValues.CounterScope,
 	counterIncrement: string,
 ): void {
 	for (const [
@@ -7365,7 +7359,7 @@ function parseCounterIncrement(
 
 function incrementCounter(
 	cascade: Cascade,
-	scope: CounterScope,
+	scope: CSSValues.CounterScope,
 	counterName: string,
 	increment: number,
 ): void {
