@@ -2,10 +2,7 @@ import LineBreaker from "linebreak";
 
 import {getBoxModel, getComputedValue, usedValuesChanged} from "./cssom.ts";
 import {
-	AUTO_PLACEMENT,
-	AUTO_TRACK,
 	type BoxModel,
-	EMPTY_TRACK_LIST,
 	type GridAreaMap,
 	type GridPlacement,
 	parseAlignmentKeyword,
@@ -830,6 +827,13 @@ function toValue(input: Length): Value {
 	}
 	return AUTO_VALUE;
 }
+
+const AUTO_PLACEMENT: GridPlacement = {span: false, index: null, name: null};
+
+/** The `auto` track size: the initial value of grid-auto-rows/columns. */
+const AUTO_TRACK: TrackSize = {min: {kind: "auto"}, max: {kind: "auto"}};
+
+const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
 
 // Browser defaults, not Yoga's: row direction, align-content stretch,
 // flex-shrink 1.

@@ -209,15 +209,21 @@ function getListItems(listParent: Element): Element[] {
 	return Array.from(listParent.children).filter(isListItem);
 }
 
+/** Lists whose gutter is being measured, to stop re-entrant computation. */
+const listGutterInProgress = new WeakSet<Element>();
+
+/** Minimum gutter a UL/OL reserves for its markers, in cells. */
+const DEFAULT_LIST_GUTTER = 4;
+
 // Markers are right-aligned against the content edge, so the gutter
 // must fit the widest one, measured from the resolved ::marker content
 // in cells. The default marker misses `::marker { content: ">>>>>> " }`,
 // and .length undercounts a wide-character marker.
 function getListGutterWidth(listElement: Element): number {
-	if (CSSValues.listGutterInProgress.has(listElement)) {
-		return CSSValues.DEFAULT_LIST_GUTTER;
+	if (listGutterInProgress.has(listElement)) {
+		return DEFAULT_LIST_GUTTER;
 	}
-	CSSValues.listGutterInProgress.add(listElement);
+	listGutterInProgress.add(listElement);
 	try {
 		const cascade = documentCascades.get(listElement.ownerDocument);
 
@@ -234,9 +240,9 @@ function getListGutterWidth(listElement: Element): number {
 			}
 			widest = Math.max(widest, getStringWidth(marker));
 		}
-		return Math.max(CSSValues.DEFAULT_LIST_GUTTER, widest);
+		return Math.max(DEFAULT_LIST_GUTTER, widest);
 	} finally {
-		CSSValues.listGutterInProgress.delete(listElement);
+		listGutterInProgress.delete(listElement);
 	}
 }
 
@@ -473,12 +479,18 @@ class CSSStyleDeclaration {
 
 const kTransitionsExist = Symbol("transitionsExist");
 
+const EMPTY_DECLARATIONS: CSSValues.DeclarationBlock = {
+	declarations: {},
+	important: {},
+	order: {},
+};
+
 function getDeclarationBlock(
 	style: CSSStyleDeclaration,
 ): CSSValues.DeclarationBlock {
 	style[kSync]!();
 	if (style[kDeclarations].length === 0) {
-		return CSSValues.EMPTY_DECLARATIONS;
+		return EMPTY_DECLARATIONS;
 	}
 	if (style[kBlock]) {
 		return style[kBlock];
@@ -623,20 +635,28 @@ function findDeclaration(
 	return declaration[kByName].get(property);
 }
 
+const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
+
+const DESCRIPTOR_NAMES = new Map(
+	Object.entries(CSS_AT_RULE_DESCRIPTORS).map(
+		([atRule, descriptors]) => [atRule, new Set(descriptors)] as const,
+	),
+);
+
 function isSupportedDeclaration(
 	declaration: CSSStyleDeclaration,
 	name: string,
 ): boolean {
 	// A keyframe's block is one step of an animation, and the animation's
 	// own properties describe the whole rather than the step.
-	if (declaration[kKeyframe] && CSSValues.KEYFRAME_EXCLUDED.test(name)) {
+	if (declaration[kKeyframe] && KEYFRAME_EXCLUDED.test(name)) {
 		return false;
 	}
 	if (declaration[kDescriptors]) {
 		// An at-rule's block holds its own descriptors. One this engine has no
 		// descriptor list for accepts whatever it is given, which keeps
 		// @font-feature-values' feature blocks working.
-		const names = CSSValues.DESCRIPTOR_NAMES.get(declaration[kDescriptors]);
+		const names = DESCRIPTOR_NAMES.get(declaration[kDescriptors]);
 		return names ? names.has(name) : name !== "";
 	}
 
@@ -987,24 +1007,39 @@ function detachRule(rule: CSSRule): void {
 	}
 }
 
+const RULE_TYPES = {
+	STYLE_RULE: 1,
+	CHARSET_RULE: 2,
+	IMPORT_RULE: 3,
+	MEDIA_RULE: 4,
+	FONT_FACE_RULE: 5,
+	PAGE_RULE: 6,
+	KEYFRAMES_RULE: 7,
+	KEYFRAME_RULE: 8,
+	NAMESPACE_RULE: 10,
+	COUNTER_STYLE_RULE: 11,
+	SUPPORTS_RULE: 12,
+	FONT_FEATURE_VALUES_RULE: 14,
+} as const;
+
 interface CSSRule {
 	[kParentRule]: CSSRule | null;
 }
 
 abstract class CSSRule {
-	static readonly STYLE_RULE = CSSValues.RULE_TYPES.STYLE_RULE;
-	static readonly CHARSET_RULE = CSSValues.RULE_TYPES.CHARSET_RULE;
-	static readonly IMPORT_RULE = CSSValues.RULE_TYPES.IMPORT_RULE;
-	static readonly MEDIA_RULE = CSSValues.RULE_TYPES.MEDIA_RULE;
-	static readonly FONT_FACE_RULE = CSSValues.RULE_TYPES.FONT_FACE_RULE;
-	static readonly PAGE_RULE = CSSValues.RULE_TYPES.PAGE_RULE;
-	static readonly KEYFRAMES_RULE = CSSValues.RULE_TYPES.KEYFRAMES_RULE;
-	static readonly KEYFRAME_RULE = CSSValues.RULE_TYPES.KEYFRAME_RULE;
-	static readonly NAMESPACE_RULE = CSSValues.RULE_TYPES.NAMESPACE_RULE;
-	static readonly COUNTER_STYLE_RULE = CSSValues.RULE_TYPES.COUNTER_STYLE_RULE;
-	static readonly SUPPORTS_RULE = CSSValues.RULE_TYPES.SUPPORTS_RULE;
+	static readonly STYLE_RULE = RULE_TYPES.STYLE_RULE;
+	static readonly CHARSET_RULE = RULE_TYPES.CHARSET_RULE;
+	static readonly IMPORT_RULE = RULE_TYPES.IMPORT_RULE;
+	static readonly MEDIA_RULE = RULE_TYPES.MEDIA_RULE;
+	static readonly FONT_FACE_RULE = RULE_TYPES.FONT_FACE_RULE;
+	static readonly PAGE_RULE = RULE_TYPES.PAGE_RULE;
+	static readonly KEYFRAMES_RULE = RULE_TYPES.KEYFRAMES_RULE;
+	static readonly KEYFRAME_RULE = RULE_TYPES.KEYFRAME_RULE;
+	static readonly NAMESPACE_RULE = RULE_TYPES.NAMESPACE_RULE;
+	static readonly COUNTER_STYLE_RULE = RULE_TYPES.COUNTER_STYLE_RULE;
+	static readonly SUPPORTS_RULE = RULE_TYPES.SUPPORTS_RULE;
 	static readonly FONT_FEATURE_VALUES_RULE =
-		CSSValues.RULE_TYPES.FONT_FEATURE_VALUES_RULE;
+		RULE_TYPES.FONT_FEATURE_VALUES_RULE;
 
 	constructor(
 		parentStyleSheet: CSSStyleSheet | null,
@@ -1026,7 +1061,7 @@ abstract class CSSRule {
 	}
 }
 
-for (const [name, value] of Object.entries(CSSValues.RULE_TYPES)) {
+for (const [name, value] of Object.entries(RULE_TYPES)) {
 	Object.defineProperty(CSSRule.prototype, name, {value, enumerable: true});
 }
 
@@ -1171,7 +1206,7 @@ class CSSStyleRule extends CSSGroupingRule {
 	}
 
 	get type(): number {
-		return CSSValues.RULE_TYPES.STYLE_RULE;
+		return RULE_TYPES.STYLE_RULE;
 	}
 
 	// Serialized on first read, because whether `*|E` keeps its prefix
@@ -1248,7 +1283,6 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 			letter.toUpperCase(),
 		)}Descriptors`;
 	const block = class extends CSSStyleDeclaration {};
-	CSSValues.DESCRIPTOR_NAMES.set(atRule, new Set(descriptors));
 	Object.defineProperty(block, "name", {value: name, configurable: true});
 	Object.defineProperty(block.prototype, Symbol.toStringTag, {
 		value: name,
@@ -1331,7 +1365,7 @@ class CSSFontFaceRule extends CSSDeclarationBlockRule {
 	static readonly atRule = "@font-face";
 
 	get type(): number {
-		return CSSValues.RULE_TYPES.FONT_FACE_RULE;
+		return RULE_TYPES.FONT_FACE_RULE;
 	}
 
 	get prelude(): string {
@@ -1359,7 +1393,7 @@ class CSSPageRule extends CSSDeclarationBlockRule {
 	}
 
 	get type(): number {
-		return CSSValues.RULE_TYPES.PAGE_RULE;
+		return RULE_TYPES.PAGE_RULE;
 	}
 
 	get selectorText(): string {
@@ -1419,7 +1453,7 @@ class CSSCounterStyleRule extends CSSNamedDeclarationRule {
 	static override readonly atRule = "@counter-style";
 
 	override get type(): number {
-		return CSSValues.RULE_TYPES.COUNTER_STYLE_RULE;
+		return RULE_TYPES.COUNTER_STYLE_RULE;
 	}
 
 	override get name(): string {
@@ -1489,7 +1523,7 @@ class CSSKeyframeRule extends CSSDeclarationBlockRule {
 	}
 
 	get type(): number {
-		return CSSValues.RULE_TYPES.KEYFRAME_RULE;
+		return RULE_TYPES.KEYFRAME_RULE;
 	}
 
 	get keyText(): string {
@@ -1531,7 +1565,7 @@ class CSSMediaRule extends CSSConditionRule {
 	}
 
 	get type(): number {
-		return CSSValues.RULE_TYPES.MEDIA_RULE;
+		return RULE_TYPES.MEDIA_RULE;
 	}
 
 	get media(): MediaList {
@@ -1586,7 +1620,7 @@ abstract class CSSTextConditionRule extends CSSConditionRule {
 /** `@supports`: its rules apply, since what this engine supports it renders. */
 class CSSSupportsRule extends CSSTextConditionRule {
 	get type(): number {
-		return CSSValues.RULE_TYPES.SUPPORTS_RULE;
+		return RULE_TYPES.SUPPORTS_RULE;
 	}
 
 	get atKeyword(): string {
@@ -1772,7 +1806,7 @@ class CSSNamespaceRule extends CSSRule {
 	}
 
 	get type(): number {
-		return CSSValues.RULE_TYPES.NAMESPACE_RULE;
+		return RULE_TYPES.NAMESPACE_RULE;
 	}
 
 	get prefix(): string {
@@ -1818,7 +1852,7 @@ class CSSImportRule extends CSSRule {
 	}
 
 	get type(): number {
-		return CSSValues.RULE_TYPES.IMPORT_RULE;
+		return RULE_TYPES.IMPORT_RULE;
 	}
 
 	get href(): string {
@@ -1896,7 +1930,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 	}
 
 	get type(): number {
-		return CSSValues.RULE_TYPES.FONT_FEATURE_VALUES_RULE;
+		return RULE_TYPES.FONT_FEATURE_VALUES_RULE;
 	}
 
 	get fontFamily(): string {
@@ -1985,7 +2019,7 @@ class CSSKeyframesRule extends CSSRule {
 	}
 
 	get type(): number {
-		return CSSValues.RULE_TYPES.KEYFRAMES_RULE;
+		return RULE_TYPES.KEYFRAMES_RULE;
 	}
 
 	get name(): string {
@@ -3138,6 +3172,43 @@ function readOnlyDeclaration(element?: Element): DOMException {
 	);
 }
 
+// Resolve to the USED track sizes, not the sizing functions the author
+// wrote (css-grid-2 §7.2).
+const USED_TRACK_PROPERTIES = new Set([
+	"grid-template-columns",
+	"grid-template-rows",
+]);
+
+// `auto` here means a minimum only some boxes have.
+const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
+
+// `auto` on these means the element's own color, and the resolved value
+// CSSOM reports is that used color.
+const AUTO_COLOR_PROPERTIES = new Set(["caret-color", "outline-color"]);
+
+// The properties whose resolved value is the used value, per CSSOM.
+// Everything else resolves to its computed value.
+const USED_VALUE_PROPERTIES = new Set([
+	"border-bottom-width",
+	"border-left-width",
+	"border-right-width",
+	"border-top-width",
+	"bottom",
+	"height",
+	"left",
+	"margin-bottom",
+	"margin-left",
+	"margin-right",
+	"margin-top",
+	"padding-bottom",
+	"padding-left",
+	"padding-right",
+	"padding-top",
+	"right",
+	"top",
+	"width",
+]);
+
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	constructor(
 		element: Element,
@@ -3208,13 +3279,13 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// A flow-relative longhand resolves as the physical longhand it maps
 		// to: same slot, same measurement, same result.
 		property = toPhysicalProperty(this, property);
-		if (this[kCascade] && CSSValues.USED_VALUE_PROPERTIES.has(property)) {
+		if (this[kCascade] && USED_VALUE_PROPERTIES.has(property)) {
 			return this[kUsedValue](property);
 		}
-		if (this[kCascade] && CSSValues.MIN_SIZE_PROPERTIES.has(property)) {
+		if (this[kCascade] && MIN_SIZE_PROPERTIES.has(property)) {
 			return getResolvedMinSize(this, this.getComputedValue(property));
 		}
-		if (this[kCascade] && CSSValues.USED_TRACK_PROPERTIES.has(property)) {
+		if (this[kCascade] && USED_TRACK_PROPERTIES.has(property)) {
 			const tracks = this[kCascade][kUsedGridTracks](
 				this[kElement],
 				property === "grid-template-rows",
@@ -3225,7 +3296,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 					: "none";
 			}
 		}
-		if (CSSValues.AUTO_COLOR_PROPERTIES.has(property)) {
+		if (AUTO_COLOR_PROPERTIES.has(property)) {
 			const computed = this.getComputedValue(property);
 			return computed === "auto" ? this.getPropertyValue("color") : computed;
 		}
@@ -3434,6 +3505,8 @@ function toPhysicalProperty(
 	);
 }
 
+const INSET_PROPERTIES = new Set(["top", "right", "bottom", "left"]);
+
 function measureUsedValue(
 	declaration: MeasuredDeclaration,
 	property: string,
@@ -3449,7 +3522,7 @@ function measureUsedValue(
 			return "0px";
 		}
 	}
-	const inset = CSSValues.INSET_PROPERTIES.has(property);
+	const inset = INSET_PROPERTIES.has(property);
 	// An inset only applies to a positioned box. On a static one it stays as
 	// declared.
 	const position = inset ? declaration.getPropertyValue("position") : "";
@@ -3507,6 +3580,13 @@ function measureUsedValue(
 	return computed || "0px";
 }
 
+const OPPOSITE_INSET: Record<string, string> = {
+	top: "bottom",
+	bottom: "top",
+	left: "right",
+	right: "left",
+};
+
 // A declared inset resolves as written. `auto` is the one that has to be
 // measured, to whatever distance the box ended up at.
 function getUsedInset(
@@ -3532,7 +3612,7 @@ function getUsedInset(
 		return computed;
 	}
 
-	const opposite = CSSValues.OPPOSITE_INSET[property];
+	const opposite = OPPOSITE_INSET[property];
 	const other = CSSValues.getInsetLength(
 		declaration.getComputedValue(opposite),
 		basis,
@@ -3666,6 +3746,8 @@ function getViewportBox(declaration: MeasuredDeclaration): DOMRect | null {
 	);
 }
 
+const ITEM_DISPLAYS = new Set(["flex", "grid", "inline-flex", "inline-grid"]);
+
 // `auto` means the automatic minimum only a flex or grid item, or an
 // aspect-ratio box, actually has. Anywhere else it resolves to 0px.
 function getResolvedMinSize(
@@ -3691,7 +3773,7 @@ function getResolvedMinSize(
 	}
 	const parent = flatParentElement(declaration[kElement]);
 	const display = parent ? getComputedValue(parent, "display") : "";
-	return CSSValues.ITEM_DISPLAYS.has(display) ? "auto" : "0px";
+	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 }
 
 function getEdgeLength(
@@ -3764,7 +3846,7 @@ function getInlineDeclarations(
 			style = inlineStyles.get(element);
 		}
 		block = style === undefined
-			? CSSValues.EMPTY_DECLARATIONS
+			? EMPTY_DECLARATIONS
 			: getDeclarationBlock(style);
 		declaration[kInlineBlock] = block;
 	}
@@ -4160,7 +4242,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 				property,
 				getInitialStyle(null, property),
 			);
-		if (this[kCascade] && CSSValues.USED_VALUE_PROPERTIES.has(property)) {
+		if (this[kCascade] && USED_VALUE_PROPERTIES.has(property)) {
 			return this[kUsedValue](property, computed);
 		}
 		return computed;
@@ -4368,7 +4450,7 @@ class EmptyStyleDeclaration extends CSSStyleProperties {
 	}
 }
 
-for (const property of CSSValues.ACCESSOR_PROPERTIES) {
+for (const property of CSS_PROPERTIES) {
 	const camelCase = CSSValues.camelCaseProperty(property);
 	for (const name of new Set([property, camelCase])) {
 		for (const prototype of [
@@ -4620,6 +4702,9 @@ function shouldCreatePseudoElement(
 
 const kCounterScopes = Symbol("counterScopes");
 
+// The pseudo-elements this engine gives a node of their own.
+const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
+
 // The entry point for mutations.
 function attachPseudoElementsToElement(
 	cascade: Cascade,
@@ -4639,7 +4724,7 @@ function attachPseudoElementsToElement(
 		return;
 	}
 
-	for (const pseudoType of CSSValues.PSEUDO_ELEMENT_NAMES) {
+	for (const pseudoType of PSEUDO_ELEMENT_NAMES) {
 		attachPseudoElementToElementForType(cascade, element, pseudoType);
 	}
 }
@@ -5372,7 +5457,7 @@ export class Cascade {
 		}
 		// A pseudo-element of a flex or grid container is one of its items,
 		// and an item's display isBlockified, including the initial `inline`.
-		if (CSSValues.ITEM_DISPLAYS.has(hostStyle.getComputedValue("display"))) {
+		if (ITEM_DISPLAYS.has(hostStyle.getComputedValue("display"))) {
 			declarations.display = CSSValues.getBlockifiedDisplay(
 				declarations.display || getInitialStyle(null, "display"),
 			);
@@ -6222,6 +6307,47 @@ function invalidateElementCaches(
 	cascade[kCounterScopes].delete(element);
 }
 
+// Properties the painter reads and layout never does. A rule declaring
+// only these moves nothing when it starts or stops matching.
+const PAINT_ONLY_PROPERTIES = new Set([
+	"color",
+	"background",
+	"background-color",
+	"background-image",
+	"background-position",
+	"background-repeat",
+	"background-size",
+	"background-attachment",
+	"background-clip",
+	"background-origin",
+	"border-color",
+	"border-top-color",
+	"border-right-color",
+	"border-bottom-color",
+	"border-left-color",
+	"border-block-color",
+	"border-inline-color",
+	"outline",
+	"outline-color",
+	"outline-style",
+	"outline-width",
+	"outline-offset",
+	"text-decoration",
+	"text-decoration-line",
+	"text-decoration-color",
+	"text-decoration-style",
+	"text-decoration-thickness",
+	"font-weight",
+	"font-style",
+	"caret-color",
+	"accent-color",
+	"cursor",
+	"visibility",
+	"opacity",
+	"user-select",
+	"pointer-events",
+]);
+
 // Whether every rule an attribute change can turn on or off declares
 // paint properties only. The style attribute can declare anything; a
 // key no rule tests changes nothing at all.
@@ -6258,7 +6384,7 @@ function isPaintOnlyChange(
 			continue;
 		}
 		for (const property of properties) {
-			if (!CSSValues.PAINT_ONLY_PROPERTIES.has(property)) {
+			if (!PAINT_ONLY_PROPERTIES.has(property)) {
 				return false;
 			}
 		}
@@ -6266,6 +6392,10 @@ function isPaintOnlyChange(
 	return true;
 }
 
+// The list's padding-left is a function of its items' markers and
+// their ordinals. Only the NEAREST list is affected.
+// TODO(box-tree): the gutter is a layout question answered here in the
+// cascade; computing it during block layout deletes this.
 function invalidateEnclosingList(cascade: Cascade, target: Node): void {
 	let element: Element | null =
 		target.nodeType === cascade[kWindow].Node.ELEMENT_NODE
@@ -6426,6 +6556,8 @@ function rankLayers(cascade: Cascade): Map<string, number> {
 	return ranks;
 }
 
+const UNCONDITIONAL: CSSValues.RuleContext = {layer: null, scopes: []};
+
 // A disabled sheet and an unmatched @media contribute nothing.
 // @supports contributes, since what this engine supports it renders. A
 // grouping rule this walk has no branch for is walked THROUGH: a rule
@@ -6436,7 +6568,7 @@ function parseStyleSheet(
 	container: CSSStyleSheet | CSSGroupingRule,
 	scope?: Node,
 	uaOrigin?: boolean,
-	context: CSSValues.RuleContext = CSSValues.UNCONDITIONAL,
+	context: CSSValues.RuleContext = UNCONDITIONAL,
 ): void {
 	if (container instanceof CSSStyleSheet) {
 		if (container.disabled) {
@@ -6656,7 +6788,7 @@ function parseStyleRule(
 	styleRule: CSSStyleRule,
 	scope?: Node,
 	uaOriginSheet?: boolean,
-	context: CSSValues.RuleContext = CSSValues.UNCONDITIONAL,
+	context: CSSValues.RuleContext = UNCONDITIONAL,
 ): void {
 	// Each selector of the list is matched and weighed on its own.
 	// `#a::before, #b` is one pseudo rule and one ordinary rule.
@@ -6759,7 +6891,7 @@ function parseSelector(
 	scope?: Node,
 	uaOriginSheet?: boolean,
 	getSheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
-	context: CSSValues.RuleContext = CSSValues.UNCONDITIONAL,
+	context: CSSValues.RuleContext = UNCONDITIONAL,
 ): void {
 	const {declarations, important, order} = block;
 	// Only a duration or delay can make a transition run, so the property
@@ -6918,7 +7050,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 			(rule) =>
 				[
 					rule,
-					rule.scopes ? getScopeProximity(element, rule) : CSSValues.UNSCOPED,
+					rule.scopes ? getScopeProximity(element, rule) : UNSCOPED,
 				] as const,
 		),
 	);
@@ -6971,12 +7103,15 @@ function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
 	return getScopingRoot(element, rule) !== null;
 }
 
+// Farther from any element than any scoping root can be.
+const UNSCOPED = Number.MAX_SAFE_INTEGER;
+
 // Only called for a rule that matches. One out of scope everywhere has
 // already been filtered out.
 function getScopeProximity(element: Element, rule: ParsedCSSRule): number {
 	const root = getScopingRoot(element, rule);
 	if (!root) {
-		return CSSValues.UNSCOPED;
+		return UNSCOPED;
 	}
 	let generations = 0;
 	for (

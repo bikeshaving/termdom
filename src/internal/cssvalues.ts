@@ -2169,12 +2169,6 @@ function isValidByGrammar(
 	return valid;
 }
 
-/** Minimum gutter a UL/OL reserves for its markers, in cells. */
-export const DEFAULT_LIST_GUTTER = 4;
-
-/** Lists whose gutter is being measured, to stop re-entrant computation. */
-export const listGutterInProgress = new WeakSet<Element>();
-
 // A marker is separated from its item's text by one cell.
 export function withMarkerSeparator(marker: string): string {
 	return marker ? `${marker} ` : "";
@@ -2661,12 +2655,6 @@ export interface DeclarationBlock {
 	// Only this map records which that is.
 	order: Record<string, number>;
 }
-
-export const EMPTY_DECLARATIONS: DeclarationBlock = {
-	declarations: {},
-	important: {},
-	order: {},
-};
 
 // The slot name the block declares LAST at this importance, or null.
 // `accepts` rejects a flow-relative name that maps to the opposite edge.
@@ -3353,10 +3341,6 @@ export function parseDeclarationText(text: string): CSSDeclaration[] {
 	return declarations;
 }
 
-export const DESCRIPTOR_NAMES = new Map<string, ReadonlySet<string>>();
-
-export const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
-
 // Custom properties keep their case. Everything else is
 // ASCII-lowercased.
 export function normalizePropertyName(property: string): string {
@@ -3391,21 +3375,6 @@ export function serializePropertyName(property: string): string {
 		? `--${serializeCSSIdentifier(property.slice(2))}`
 		: property;
 }
-
-export const RULE_TYPES = {
-	STYLE_RULE: 1,
-	CHARSET_RULE: 2,
-	IMPORT_RULE: 3,
-	MEDIA_RULE: 4,
-	FONT_FACE_RULE: 5,
-	PAGE_RULE: 6,
-	KEYFRAMES_RULE: 7,
-	KEYFRAME_RULE: 8,
-	NAMESPACE_RULE: 10,
-	COUNTER_STYLE_RULE: 11,
-	SUPPORTS_RULE: 12,
-	FONT_FEATURE_VALUES_RULE: 14,
-} as const;
 
 // A comment can appear anywhere whitespace can, so it becomes a space.
 // Media text is sliced by hand here, and a comment left in would be
@@ -4472,59 +4441,10 @@ export function getLayerNames(prelude: string): string[] | null {
 	return (nodes[0].children?.toArray() ?? []).map((node) => node.name ?? "");
 }
 
-// A bare fragment is a document fragment too and hosts nothing, which
-
-// The properties whose resolved value is the used value, per CSSOM.
-// Everything else resolves to its computed value.
-export const USED_VALUE_PROPERTIES = new Set([
-	"border-bottom-width",
-	"border-left-width",
-	"border-right-width",
-	"border-top-width",
-	"bottom",
-	"height",
-	"left",
-	"margin-bottom",
-	"margin-left",
-	"margin-right",
-	"margin-top",
-	"padding-bottom",
-	"padding-left",
-	"padding-right",
-	"padding-top",
-	"right",
-	"top",
-	"width",
-]);
-
 // A used length in the one unit a terminal has: a cell, spelled `px`.
 export function getUsedLength(cells: number): string {
 	return `${Math.round(cells * 1000) / 1000}px`;
 }
-
-// `auto` on these means the element's own color, and the resolved value
-// CSSOM reports is that used color.
-export const AUTO_COLOR_PROPERTIES = new Set(["caret-color", "outline-color"]);
-
-// `auto` here means a minimum only some boxes have.
-export const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
-
-// Resolve to the USED track sizes, not the sizing functions the author
-// wrote (css-grid-2 §7.2).
-export const USED_TRACK_PROPERTIES = new Set([
-	"grid-template-columns",
-	"grid-template-rows",
-]);
-
-// The pseudo-elements this engine gives a node of their own.
-export const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
-
-export const ITEM_DISPLAYS = new Set([
-	"flex",
-	"grid",
-	"inline-flex",
-	"inline-grid",
-]);
 
 const BLOCKIFIED_DISPLAYS: Record<string, string> = {
 	inline: "block",
@@ -4532,15 +4452,6 @@ const BLOCKIFIED_DISPLAYS: Record<string, string> = {
 	"inline-flex": "flex",
 	"inline-grid": "grid",
 	"inline-table": "table",
-};
-
-export const INSET_PROPERTIES = new Set(["top", "right", "bottom", "left"]);
-
-export const OPPOSITE_INSET: Record<string, string> = {
-	top: "bottom",
-	bottom: "top",
-	left: "right",
-	right: "left",
 };
 
 // Null for `auto`, which is not a length but an instruction to
@@ -4593,70 +4504,6 @@ export function getSlotCandidates(property: string): readonly string[] {
 export function acceptsAnyName(): boolean {
 	return true;
 }
-
-// In a document, and reachable through the flat tree it composes. A
-
-// Writing a computed style is an error, not a no-op. It throws the
-// document's own DOMException, since one from another global is not
-
-// The accessors (style.fontWeight) callers use alongside
-// getPropertyValue.
-export const ACCESSOR_PROPERTIES = new Set<string>([
-	...LENGTH_PROPERTIES,
-	...COLOR_PROPERTIES,
-	...INHERITED_PROPERTIES,
-	"align-content",
-	"align-items",
-	"align-self",
-	"background",
-	"background-image",
-	"background-position",
-	"background-repeat",
-	"border",
-	"border-bottom-color",
-	"border-bottom-style",
-	"border-collapse",
-	"border-color",
-	"border-left-color",
-	"border-left-style",
-	"border-radius",
-	"border-right-color",
-	"border-right-style",
-	"border-style",
-	"border-top-color",
-	"border-top-style",
-	"box-sizing",
-	"clear",
-	"content",
-	"counter-increment",
-	"counter-reset",
-	"display",
-	"flex",
-	"flex-direction",
-	"flex-grow",
-	"flex-shrink",
-	"flex-wrap",
-	"float",
-	"gap",
-	"inset",
-	"isolation",
-	"justify-content",
-	"opacity",
-	"order",
-	"outline",
-	"outline-color",
-	"outline-style",
-	"overflow",
-	"overflow-x",
-	"overflow-y",
-	"position",
-	"table-layout",
-	"text-decoration-color",
-	"text-decoration-line",
-	"text-decoration-style",
-	"vertical-align",
-	"z-index",
-]);
 
 /** Roman numeral for 1-3999. Callers must range-check. */
 function toRoman(num: number): string {
@@ -4762,11 +4609,6 @@ export interface RuleContext {
 	layer: string | null;
 	scopes: readonly ScopeCondition[];
 }
-
-export const UNCONDITIONAL: RuleContext = {layer: null, scopes: []};
-
-// Farther from any element than any scoping root can be.
-export const UNSCOPED = Number.MAX_SAFE_INTEGER;
 
 // A selector this engine cannot read selects nothing and is dropped.
 export function compileSelectors(
@@ -5248,51 +5090,6 @@ function cubicBezierEasing(
 	};
 }
 
-// Properties the painter reads and layout never does. A rule declaring
-// only these moves nothing when it starts or stops matching.
-export const PAINT_ONLY_PROPERTIES = new Set([
-	"color",
-	"background",
-	"background-color",
-	"background-image",
-	"background-position",
-	"background-repeat",
-	"background-size",
-	"background-attachment",
-	"background-clip",
-	"background-origin",
-	"border-color",
-	"border-top-color",
-	"border-right-color",
-	"border-bottom-color",
-	"border-left-color",
-	"border-block-color",
-	"border-inline-color",
-	"outline",
-	"outline-color",
-	"outline-style",
-	"outline-width",
-	"outline-offset",
-	"text-decoration",
-	"text-decoration-line",
-	"text-decoration-color",
-	"text-decoration-style",
-	"text-decoration-thickness",
-	"font-weight",
-	"font-style",
-	"caret-color",
-	"accent-color",
-	"cursor",
-	"visibility",
-	"opacity",
-	"user-select",
-	"pointer-events",
-]);
-
-// The list's padding-left is a function of its items' markers and
-// their ordinals. Only the NEAREST list is affected.
-// TODO(box-tree): the gutter is a layout question answered here in the
-
 // Null for a value outside the grammar, which leaves the feature
 // unevaluated.
 export function getMediaLength(
@@ -5463,17 +5260,6 @@ export interface GridPlacement {
 	index: number | null;
 	name: string | null;
 }
-
-export const AUTO_PLACEMENT: GridPlacement = {
-	span: false,
-	index: null,
-	name: null,
-};
-
-/** The `auto` track size: the initial value of grid-auto-rows/columns. */
-export const AUTO_TRACK: TrackSize = {min: {kind: "auto"}, max: {kind: "auto"}};
-
-export const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
 
 // Rejected rather than approximated. `subgrid` takes its tracks from an
 // ancestor grid, so a grid's sizing could no longer be decided from its
