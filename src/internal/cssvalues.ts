@@ -16,7 +16,7 @@ import {
 } from "./selectors.ts";
 import type {CompiledSelector, SelectorNamespaces} from "./selectors.ts";
 
-type Unit = "undefined" | "cell" | "percent" | "auto";
+export type Unit = "undefined" | "cell" | "percent" | "auto";
 
 /**
  * A length as the layout solver stores it. NaN is the number for
