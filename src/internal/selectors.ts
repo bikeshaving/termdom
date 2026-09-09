@@ -36,9 +36,7 @@ import {
 	Node,
 	parentElement,
 } from "./dom.ts";
-import {
-	HTML_NAMESPACE,
-} from "./htmltables.ts";
+import {HTML_NAMESPACE, XML_NAMESPACE} from "./htmltables.ts";
 import {toASCIILowercase} from "./text.ts";
 
 // CSS Selectors: the language, and the matcher a selector compiles to.
@@ -1585,7 +1583,7 @@ function getElementLanguage(element: Element): string | null {
 			if (
 				attribute.localName === "lang" &&
 				(attribute.namespaceURI === null ||
-					attribute.namespaceURI === "http://www.w3.org/XML/1998/namespace")
+					attribute.namespaceURI === XML_NAMESPACE)
 			) {
 				return attribute.value;
 			}

@@ -21880,6 +21880,18 @@ class IntersectionObserver extends LayoutObserver<
 		this[kObserverCallback] = callback;
 		this[kIntersectionRoot] = init.root ?? null;
 		this.rootMargin = init.rootMargin ?? "0px";
+		// One to four lengths in px or a percentage, as the spec allows, with
+		// ch as the cell grid's own unit.
+		const parts = this.rootMargin.trim().split(/\s+/).filter(Boolean);
+		if (
+			parts.length > 4 ||
+			parts.some((part) => !/^-?(?:\d+\.?\d*|\.\d+)(?:px|ch|%)?$/.test(part))
+		) {
+			throw domError(
+				"SyntaxError",
+				`"${this.rootMargin}" is not a root margin`,
+			);
+		}
 
 		// A single number, an array, or the default of "any intersection at
 		// all".
