@@ -2395,7 +2395,7 @@ class FileList {
 		return null;
 	}
 
-	* [Symbol.iterator](): Generator<never, void, unknown> {}
+	*[Symbol.iterator](): Generator<never, void, unknown> {}
 }
 
 Object.defineProperty(FileList.prototype, Symbol.toStringTag, {
@@ -5205,16 +5205,16 @@ function isShadowIncludingInclusiveAncestor(
 
 // Shadow-including tree order: the node, then its shadow root's tree,
 // then its children's.
-function* shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
+function *shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
 	yield node;
 	if (node.nodeType === ELEMENT_NODE) {
 		const shadow = (node as Element)[kShadowRoot];
 		if (shadow !== null) {
-			yield* shadowIncludingInclusiveDescendants(shadow);
+			yield *shadowIncludingInclusiveDescendants(shadow);
 		}
 	}
 	for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
-		yield* shadowIncludingInclusiveDescendants(child);
+		yield *shadowIncludingInclusiveDescendants(child);
 	}
 }
 
@@ -5249,7 +5249,7 @@ export function getPreviousSiblingNode(node: Node): Node | null {
 	return node[kPrevious];
 }
 
-function* inclusiveDescendants(node: Node): Generator<Node> {
+function *inclusiveDescendants(node: Node): Generator<Node> {
 	let current: Node | null = node;
 	while (current !== null) {
 		yield current;
@@ -5257,7 +5257,7 @@ function* inclusiveDescendants(node: Node): Generator<Node> {
 	}
 }
 
-function* descendants(node: Node): Generator<Node> {
+function *descendants(node: Node): Generator<Node> {
 	let current: Node | null = node[kFirstChild];
 	while (current !== null) {
 		yield current;
@@ -21180,7 +21180,7 @@ function isElementOrText(node: Node): boolean {
 }
 
 /** The flat children that are elements or text. */
-export function* flatChildren(
+export function *flatChildren(
 	parent: globalThis.Node,
 ): Generator<globalThis.Node> {
 	for (
@@ -21223,7 +21223,7 @@ export function flatStep(
 }
 
 /** Every descendant that is an element or text, depth first over the flat tree. */
-export function* flatDescendants(
+export function *flatDescendants(
 	root: globalThis.Node,
 ): Generator<globalThis.Node> {
 	for (
@@ -21248,12 +21248,12 @@ function isDisplayContents(node: globalThis.Node): boolean {
  * elements or text, with a `display: contents` element dissolved into
  * its own children.
  */
-export function* flowContent(
+export function *flowContent(
 	parent: globalThis.Node,
 ): Generator<globalThis.Node> {
 	for (const child of flatChildren(parent)) {
 		if (child.nodeType === ELEMENT_NODE && isDisplayContents(child)) {
-			yield* flowContent(child);
+			yield *flowContent(child);
 		} else {
 			yield child;
 		}
@@ -21261,7 +21261,7 @@ export function* flowContent(
 }
 
 /** Every node under `root` in flow order. */
-export function* flowDescendants(
+export function *flowDescendants(
 	root: globalThis.Node,
 ): Generator<globalThis.Node> {
 	for (

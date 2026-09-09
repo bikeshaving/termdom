@@ -5140,13 +5140,13 @@ function invalidateForRecord(layout: Layout, record: MutationRecord): void {
 	}
 }
 
-function* getTextNodes(root: Node): Generator<Text> {
+function *getTextNodes(root: Node): Generator<Text> {
 	if (root.nodeType === root.TEXT_NODE) {
 		yield root as Text;
 		return;
 	}
 	for (const child of Array.from(root.childNodes)) {
-		yield* getTextNodes(child);
+		yield *getTextNodes(child);
 	}
 }
 
