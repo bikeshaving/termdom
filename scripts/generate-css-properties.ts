@@ -7,16 +7,17 @@
  * generated from it rather than typed out, so the accessor set, the shorthand
  * table and the initial values all come from one source.
  *
- * Run: bun scripts/generate-css-properties.ts
- *
- * Bun, because the named colors' values come from Bun.color, so this engine
- * and Bun agree on every one.
+ * Run: node --experimental-strip-types scripts/generate-css-properties.ts
  */
 
 import {execFileSync} from "node:child_process";
 import {writeFileSync} from "node:fs";
 import {createRequire} from "node:module";
 import {fileURLToPath} from "node:url";
+
+// The named-color table of CSS Color 4, which the grammar index names
+// without giving the values.
+import colorNames from "color-name";
 
 const require = createRequire(import.meta.url);
 const properties = require("mdn-data/css/properties.json") as Record<
@@ -32,6 +33,7 @@ const syntaxes = require("mdn-data/css/syntaxes.json") as Record<
 	string,
 	{syntax: string}
 >;
+
 const atRules = require("mdn-data/css/at-rules.json") as Record<
 	string,
 	{descriptors?: Record<string, unknown>}
@@ -267,16 +269,13 @@ function keywordsOf(name: string, seen = new Set<string>()): string[] {
 	return [...new Set(out)];
 }
 
-if (Bun === undefined) {
-	throw new Error("Run this under Bun: the named colors come from Bun.color");
-}
 const namedColors: Record<string, number> = {};
 for (const name of keywordsOf("named-color")) {
-	const color = Bun.color(name, "number");
-	if (color === null) {
-		throw new Error(`Bun.color does not know ${name}`);
+	const rgb = colorNames[name];
+	if (rgb === undefined) {
+		throw new Error(`color-name does not know ${name}`);
 	}
-	namedColors[name] = color;
+	namedColors[name] = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
 }
 
 function list(values: readonly string[]): string {
@@ -354,7 +353,7 @@ export const CSS_COLOR_PROPERTIES: readonly string[] = [
 ${list(colors)}
 ];
 
-/** Each named color as packed RGB, as Bun.color reads it. */
+/** Each named color as packed RGB, per CSS Color 4. */
 export const CSS_NAMED_COLORS: Readonly<Record<string, number>> = {
 ${hexRecord(namedColors)}
 };

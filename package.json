@@ -70,6 +70,7 @@
     "@webref/elements": "^2.8.0",
     "@webref/idl": "^3.83.1",
     "@xterm/headless": "^5.5.0",
+    "color-name": "^2.1.1",
     "eslint": "^9.39.5",
     "eslint-plugin-acrocase": "^0.1.1",
     "eslint-plugin-crank": "^0.2.2",

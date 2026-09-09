@@ -220,6 +220,13 @@ declare module "webidl2" {
 	export function parse(text: string): Definition[];
 }
 
+declare module "color-name" {
+
+	/** The CSS Color 4 named colors, each as its RGB channels. */
+	const colors: Readonly<Record<string, readonly [number, number, number]>>;
+	export default colors;
+}
+
 declare module "bidi-js" {
 
 	/** UAX #9, the Unicode bidirectional algorithm. */
@@ -282,8 +289,8 @@ declare module "arabic-persian-reshaper" {
 }
 
 /**
- * Bun's global, of which termdom uses a width measurement that knows the
- * Unicode tables, and the table generator a color parser. Declared here rather than taken from @types/bun,
+ * Bun's global, of which termdom uses one function: a width measurement that
+ * knows the Unicode tables. Declared here rather than taken from @types/bun,
  * whose global `Event` merges with lib.dom's and leaves `composedPath` with an
  * overload no DOM can satisfy (oven-sh/bun#40574).
  */
@@ -294,9 +301,6 @@ declare namespace globalThis {
 
 			/** The rendered column width of a string. */
 			stringWidth(input: string): number;
-
-			/** A CSS color as packed RGB, or null for text that is not one. */
-			color(input: string, format: "number"): number | null;
 		} |
 		undefined;
 }

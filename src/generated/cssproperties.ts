@@ -2112,7 +2112,7 @@ export const CSS_COLOR_PROPERTIES: readonly string[] = [
 	"-webkit-text-stroke-color",
 ];
 
-/** Each named color as packed RGB, as Bun.color reads it. */
+/** Each named color as packed RGB, per CSS Color 4. */
 export const CSS_NAMED_COLORS: Readonly<Record<string, number>> = {
 	aliceblue: 0xf0f8ff,
 	antiquewhite: 0xfaebd7,
