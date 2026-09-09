@@ -99,7 +99,7 @@ type StaticPositionFunction = (
 const UNDEFINED_VALUE: Value = {unit: "undefined", value: NaN};
 const AUTO_VALUE: Value = {unit: "auto", value: NaN};
 
-type Length = number | "auto" | {percentage: number} | undefined | null;
+export type Length = number | "auto" | {percentage: number} | undefined | null;
 
 function resolveValue(value: Value, ownerSize: number): number {
 	switch (value.unit) {
@@ -166,7 +166,7 @@ function getTrailingEdge(axis: FlexDirection): Edge {
 	}
 }
 
-interface Style {
+export interface Style {
 	flexDirection: FlexDirection;
 	justifyContent: Justify;
 	alignContent: Align;
@@ -359,13 +359,21 @@ function getCacheSlot(
 	);
 }
 
+const kMeasureContent = Symbol("measureContent");
+const kStaticPositionFunc = Symbol("staticPositionFunc");
+
+export interface LayoutNode {
+	[kMeasureContent]: ContentMeasure | null;
+	[kStaticPositionFunc]: StaticPositionFunction | null;
+}
+
 export class LayoutNode {
+	// Replaced whole by a restyle or written in place, with invalidate()
+	// after either.
 	style: Style;
 	layout: LayoutResult;
 	children: LayoutNode[];
 	parent: LayoutNode | null;
-	measureContent: ContentMeasure | null;
-	staticPositionFunc: StaticPositionFunction | null;
 	stale: boolean;
 
 	// The rows this subtree can paint, in absolute document rows. Absolutely
@@ -383,7 +391,6 @@ export class LayoutNode {
 	// several probes of one child keep their own. `stale` invalidates both.
 	cachedSizes: Array<CachedSize | null>;
 	cachedLayout: CachedSize | null;
-	styling: boolean;
 
 	// The layout pass that last styled this node. A node re-added within
 	// the pass that styled it is not styled again.
@@ -403,20 +410,37 @@ export class LayoutNode {
 	constructor() {
 		this.children = [];
 		this.parent = null;
-		this.measureContent = null;
-		this.staticPositionFunc = null;
+		this[kMeasureContent] = null;
+		this[kStaticPositionFunc] = null;
 		this.stale = true;
 		this.extentTop = 0;
 		this.extentBottom = 0;
 		this.unstackedChildCount = 0;
 		this.cachedSizes = new Array(CACHE_SLOT_COUNT).fill(null);
 		this.cachedLayout = null;
-		this.styling = false;
 		this.owner = null;
 		this.styledPass = 0;
 		this.measureKey = "";
 		this.style = createStyle();
 		this.layout = createLayout();
+	}
+
+	get measureContent(): ContentMeasure | null {
+		return this[kMeasureContent];
+	}
+
+	set measureContent(fn: ContentMeasure | null) {
+		this[kMeasureContent] = fn;
+		this.invalidate();
+	}
+
+	get staticPositionFunc(): StaticPositionFunction | null {
+		return this[kStaticPositionFunc];
+	}
+
+	set staticPositionFunc(fn: StaticPositionFunction | null) {
+		this[kStaticPositionFunc] = fn;
+		this.invalidate();
 	}
 
 	insertChild(child: LayoutNode, index: number): void {
@@ -440,35 +464,9 @@ export class LayoutNode {
 		return this.children.lastIndexOf(child);
 	}
 
-	freeRecursive(): void {
-		for (const child of this.children) {
-			child.freeRecursive();
-		}
-		this.children = [];
-		this.parent = null;
-		this.measureContent = null;
-		this.staticPositionFunc = null;
-	}
-
 	invalidate(): void {
 		this.stale = true;
-		if (this.styling) {
-			return;
-		}
 		invalidateAncestors(this);
-	}
-
-	// A computed style sets scores of properties on one node. The ancestor
-	// walk happens once at the end instead of once per setter.
-	setStyles(assign: () => void): void {
-		const outer = this.styling;
-		this.styling = true;
-		try {
-			assign();
-		} finally {
-			this.styling = outer;
-		}
-		this.invalidate();
 	}
 
 	computePaintExtents(originTop: number): void {
@@ -493,117 +491,6 @@ export class LayoutNode {
 		this.unstackedChildCount = unstacked;
 	}
 
-	setMeasureContent(fn: ContentMeasure | null): void {
-		this.measureContent = fn;
-		this.invalidate();
-	}
-
-	setStaticPositionFunc(fn: StaticPositionFunction | null): void {
-		this.staticPositionFunc = fn;
-		this.invalidate();
-	}
-
-	setFlexDirection(v: FlexDirection): void {
-		this.style.flexDirection = v;
-		this.invalidate();
-	}
-
-	setJustifyContent(v: Justify): void {
-		this.style.justifyContent = v;
-		this.invalidate();
-	}
-
-	setAlignContent(v: Align): void {
-		this.style.alignContent = v;
-		this.invalidate();
-	}
-
-	setAlignItems(v: Align): void {
-		this.style.alignItems = v;
-		this.invalidate();
-	}
-
-	setAlignSelf(v: Align): void {
-		this.style.alignSelf = v;
-		this.invalidate();
-	}
-
-	setPositionType(v: PositionType): void {
-		this.style.positionType = v;
-		this.invalidate();
-	}
-
-	setFlexWrap(v: Wrap): void {
-		this.style.flexWrap = v;
-		this.invalidate();
-	}
-
-	setGap(gutter: Gutter, value: number): void {
-		this.style.gap[gutter] = Number.isFinite(value) ? Math.max(0, value) : 0;
-		this.invalidate();
-	}
-
-	setJustifyItems(v: Align): void {
-		this.style.justifyItems = v;
-		this.invalidate();
-	}
-
-	setJustifySelf(v: Align): void {
-		this.style.justifySelf = v;
-		this.invalidate();
-	}
-
-	setGridTemplateColumns(v: TrackList | null): void {
-		this.style.gridTemplateColumns = v ?? EMPTY_TRACK_LIST;
-		this.invalidate();
-	}
-
-	setGridTemplateRows(v: TrackList | null): void {
-		this.style.gridTemplateRows = v ?? EMPTY_TRACK_LIST;
-		this.invalidate();
-	}
-
-	setGridTemplateAreas(v: GridAreaMap | null): void {
-		this.style.gridTemplateAreas = v;
-		this.invalidate();
-	}
-
-	setGridAutoColumns(v: TrackSize[] | null): void {
-		this.style.gridAutoColumns = v && v.length > 0 ? v : [AUTO_TRACK];
-		this.invalidate();
-	}
-
-	setGridAutoRows(v: TrackSize[] | null): void {
-		this.style.gridAutoRows = v && v.length > 0 ? v : [AUTO_TRACK];
-		this.invalidate();
-	}
-
-	setGridAutoFlow(column: boolean, dense: boolean): void {
-		this.style.gridAutoFlowColumn = column;
-		this.style.gridAutoFlowDense = dense;
-		this.invalidate();
-	}
-
-	setGridRowStart(v: GridPlacement | null): void {
-		this.style.gridRowStart = v ?? AUTO_PLACEMENT;
-		this.invalidate();
-	}
-
-	setGridRowEnd(v: GridPlacement | null): void {
-		this.style.gridRowEnd = v ?? AUTO_PLACEMENT;
-		this.invalidate();
-	}
-
-	setGridColumnStart(v: GridPlacement | null): void {
-		this.style.gridColumnStart = v ?? AUTO_PLACEMENT;
-		this.invalidate();
-	}
-
-	setGridColumnEnd(v: GridPlacement | null): void {
-		this.style.gridColumnEnd = v ?? AUTO_PLACEMENT;
-		this.invalidate();
-	}
-
 	getComputedGridTracks(
 		rows: boolean,
 	): {sizes: number[]; offset: number} | null {
@@ -615,115 +502,6 @@ export class LayoutNode {
 			sizes,
 			offset: rows ? this.layout.gridRowOffset : this.layout.gridColumnOffset,
 		};
-	}
-
-	setColSpan(v: number): void {
-		this.style.colSpan = Math.max(1, Math.floor(v) || 1);
-		this.invalidate();
-	}
-
-	setRowSpan(v: number): void {
-		this.style.rowSpan = Math.max(1, Math.floor(v) || 1);
-		this.invalidate();
-	}
-
-	setBlockFormattingContext(v: boolean): void {
-		this.style.blockFormattingContext = v;
-		this.invalidate();
-	}
-
-	setBorderCollapse(v: boolean): void {
-		this.style.borderCollapse = v;
-		this.invalidate();
-	}
-
-	setDisplayType(v: DisplayType): void {
-		this.style.displayType = v;
-		this.invalidate();
-	}
-
-	setOrder(v: number | undefined): void {
-		this.style.order = v ?? 0;
-		this.invalidate();
-	}
-
-	setFlexGrow(v: number | undefined): void {
-		this.style.flexGrow = v === undefined ? NaN : v;
-		this.invalidate();
-	}
-
-	setFlexShrink(v: number | undefined): void {
-		this.style.flexShrink = v === undefined ? NaN : v;
-		this.invalidate();
-	}
-
-	setFlexBasis(v: Length): void {
-		this.style.flexBasis = toValue(v);
-		this.invalidate();
-	}
-
-	setWidth(v: Length): void {
-		this.style.width = toValue(v);
-		this.invalidate();
-	}
-
-	setWidthSizing(v: Sizing): void {
-		if (this.style.widthSizing !== v) {
-			this.style.widthSizing = v;
-			this.invalidate();
-		}
-	}
-
-	setHeight(v: Length): void {
-		this.style.height = toValue(v);
-		this.invalidate();
-	}
-
-	setAspectRatio(v: number | undefined): void {
-		this.style.aspectRatio =
-			v !== undefined && Number.isFinite(v) && v > 0 ? v : NaN;
-		this.invalidate();
-	}
-
-	setMinWidth(v: Length): void {
-		this.style.minWidth = toValue(v);
-		this.invalidate();
-	}
-
-	setMinHeight(v: Length): void {
-		this.style.minHeight = toValue(v);
-		this.invalidate();
-	}
-
-	setMaxWidth(v: Length): void {
-		this.style.maxWidth = toValue(v);
-		this.invalidate();
-	}
-
-	setMaxHeight(v: Length): void {
-		this.style.maxHeight = toValue(v);
-		this.invalidate();
-	}
-
-	setMargin(edge: Edge, v: Length): void {
-		this.style.margin[edge] = toValue(v);
-		this.invalidate();
-	}
-
-	setPadding(edge: Edge, v: Length): void {
-		this.style.padding[edge] = toValue(v);
-		this.invalidate();
-	}
-
-	setBorder(edge: Edge, v: number | undefined): void {
-		const width = v === undefined || Number.isNaN(v) ? 0 : v;
-		this.style.border[edge] = width;
-		this.invalidate();
-	}
-
-	setPosition(edge: Edge, v: Length): void {
-		this.style.position[edge] = toValue(v);
-		this.invalidate();
 	}
 
 	getComputedWidth(): number {
@@ -775,7 +553,7 @@ export class LayoutNode {
 	}
 }
 
-function toValue(input: Length): Value {
+export function toValue(input: Length): Value {
 	if (input === undefined || input === null) {
 		return UNDEFINED_VALUE;
 	}
@@ -797,7 +575,7 @@ const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
 
 // Browser defaults, not Yoga's: row direction, align-content stretch,
 // flex-shrink 1.
-function createStyle(): Style {
+export function createStyle(): Style {
 	return {
 		flexDirection: "row",
 		justifyContent: "flex-start",
