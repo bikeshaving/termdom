@@ -704,17 +704,74 @@ function getContentBoxEdges(element: Element, vertical: boolean): number {
 	);
 }
 
+interface Styling {
+	// The layout pass that last styled the node. A node re-added within
+	// the pass that styled it is not styled again.
+	pass: number;
+	// The computed values that shape text measurement without being part
+	// of the style record, joined, so a restyle can tell whether the
+	// measurement is still good.
+	measureKey: string;
+}
+
+const stylings = new WeakMap<LayoutNode, Styling>();
+
+interface Extent {
+	// The rows the subtree can paint, in absolute document rows. Absolutely
+	// positioned children push it outside the box.
+	top: number;
+	bottom: number;
+	// Children whose extent need not follow document order: positioned
+	// ones, and display:none ones, whose result.top is never updated. The
+	// children are sorted by extent top only when this is 0.
+	unstackedChildren: number;
+}
+
+// Written after every solve, and read by the painter's row culling for
+// every child, so the records are kept and rewritten rather than remade.
+const extents = new WeakMap<LayoutNode, Extent>();
+
+function computePaintExtents(node: LayoutNode, originTop: number): Extent {
+	const top = originTop + node.result.top;
+	let extent = extents.get(node);
+	if (extent === undefined) {
+		extent = {top, bottom: top, unstackedChildren: 0};
+		extents.set(node, extent);
+	}
+	let highest = top;
+	let lowest = top + node.getComputedHeight();
+	let unstacked = 0;
+	for (const child of node.children) {
+		const childExtent = computePaintExtents(child, top);
+		if (
+			child.style.positionType !== "static" ||
+			child.style.displayType === "none"
+		) {
+			unstacked++;
+		}
+		if (childExtent.top < highest) {
+			highest = childExtent.top;
+		}
+		if (childExtent.bottom > lowest) {
+			lowest = childExtent.bottom;
+		}
+	}
+	extent.top = highest;
+	extent.bottom = lowest;
+	extent.unstackedChildren = unstacked;
+	return extent;
+}
+
 function styleLayoutNode(
 	element: Element,
 	layoutNode: LayoutNode,
 	positionedElements?: Set<Element>,
 	pass = 0,
 ): void {
-	layoutNode.styledPass = pass;
 	const style = createStyle();
 	styleLayoutNodeProperties(element, style, positionedElements);
 	layoutNode.style = style;
-	layoutNode.measureKey = getMeasureKey(element);
+	stylings.set(layoutNode, {pass, measureKey: getMeasureKey(element)});
 	layoutNode.invalidate();
 }
 
@@ -1646,7 +1703,7 @@ function addNode(
 			}
 			// Whatever moved the node may also have restyled it, unless this
 			// pass already styled it.
-			if (existingLayoutNode.styledPass !== layout[kPass]) {
+			if (stylings.get(existingLayoutNode)?.pass !== layout[kPass]) {
 				styleNode(layout, element, existingLayoutNode);
 			}
 			// A kept box is re-derived exactly as if built from scratch.
@@ -2883,6 +2940,7 @@ function collectLeaves(
 							: Number.NaN,
 						contentHeightMode === "definite" ? contentHeight : Number.NaN,
 					);
+					computePaintExtents(independentFormattingContext, 0);
 					finalContentWidth = independentFormattingContext.getComputedWidth();
 					finalContentHeight = independentFormattingContext.getComputedHeight();
 				} else {
@@ -4146,6 +4204,7 @@ export class Layout {
 		// viewport units against it.
 		const root = this[kInitialContainingBlock];
 		root.performLayout(root.style.width.value, root.style.height.value);
+		computePaintExtents(root, 0);
 	}
 
 	dispose(): void {
@@ -4173,7 +4232,8 @@ export class Layout {
 		if (!node) {
 			return false;
 		}
-		if (node.extentBottom > top && node.extentTop < bottom) {
+		const extent = extents.get(node);
+		if (extent !== undefined && extent.bottom > top && extent.top < bottom) {
 			return false;
 		}
 		// A broken inline paints boxes outside its own layout subtree, so its
@@ -4185,7 +4245,7 @@ export class Layout {
 	// The children whose paint extent could intersect rows [top, bottom),
 	// found by binary search. Culling a long list cost O(total children)
 	// per frame instead of O(visible). Null when the search cannot be
-	// trusted (children[] not sorted by extentTop), in which case callers
+	// trusted (children[] not sorted by extent top), in which case callers
 	// walk every child.
 	getVisibleChildren(
 		element: Element,
@@ -4198,7 +4258,7 @@ export class Layout {
 			// A measure-function leaf never decomposes into layout children, so
 			// empty children[] means "not decomposed," not "nothing to paint."
 			layoutNode.measure !== null ||
-			layoutNode.unstackedChildCount !== 0 ||
+			extents.get(layoutNode)?.unstackedChildren !== 0 ||
 			layoutNode.style.displayType !== "block" ||
 			// Cheap proxy for "every DOM child has exactly one children[]
 			// entry". A run member owns no layout node, and a pseudo-element is a
@@ -4225,7 +4285,7 @@ export class Layout {
 		let hi = children.length;
 		while (lo < hi) {
 			const mid = (lo + hi) >>> 1;
-			if (children[mid].extentBottom <= top) {
+			if (extents.get(children[mid])!.bottom <= top) {
 				lo = mid + 1;
 			} else {
 				hi = mid;
@@ -4235,7 +4295,7 @@ export class Layout {
 		const result: Node[] = [];
 		for (let i = lo; i < children.length; i++) {
 			const child = children[i];
-			if (child.extentTop >= bottom) {
+			if (extents.get(child)!.top >= bottom) {
 				break;
 			}
 			const domNode = child.owner as Node | undefined;
@@ -5011,8 +5071,9 @@ function applyRestyles(layout: Layout): void {
 				// color, a decoration) changes no box and no measurement, and
 				// rebuilding would restyle every descendant for nothing. A
 				// child whose own style changed is in this set itself.
+				const measureKey = stylings.get(layoutNode!)?.measureKey;
 				if (
-					probe.measureKey === layoutNode!.measureKey &&
+					probe.measureKey === measureKey &&
 					isSameValue(probe.style, layoutNode!.style)
 				) {
 					continue;
@@ -5027,7 +5088,7 @@ function applyRestyles(layout: Layout): void {
 				) {
 					const displayChanged =
 						probe.style.displayType !== layoutNode!.style.displayType;
-					const measureChanged = probe.measureKey !== layoutNode!.measureKey;
+					const measureChanged = probe.measureKey !== measureKey;
 					styleNode(layout, element, layoutNode!);
 					if (displayChanged || measureChanged) {
 						invalidateChildDerivation(layout, element);

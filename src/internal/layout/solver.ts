@@ -71,13 +71,13 @@ export interface Size {
 	height: number;
 }
 
-// `performLayout` is true for the measurement that places the box and
+// `placing` is true for the measurement that places the box and
 // false for the sizing probes before it. Only the placing one may keep
 // its line breaks.
 type Measure = (
 	width: number,
 	widthSpace: AvailableSpace,
-	performLayout: boolean,
+	placing: boolean,
 ) => Size;
 
 // The origin of CSS 2 §10.3.7's hypothetical box, in the containing
@@ -368,30 +368,10 @@ export class LayoutNode {
 	parent: LayoutNode | null;
 	stale: boolean;
 
-	// The rows this subtree can paint, in absolute document rows. Absolutely
-	// positioned children push it outside the box. Set by
-	// computePaintExtents.
-	extentTop: number;
-	extentBottom: number;
-
-	// Children whose extent need not follow document order: positioned
-	// ones, and display:none ones, whose result.top is never updated.
-	// children[] is sorted by extentTop only when this is 0.
-	unstackedChildCount: number;
-
 	// One sizing result per query shape (getCacheSlot), so a placing pass's
 	// several probes of one child keep their own. `stale` invalidates both.
 	cachedSizes: Array<CachedSize | null>;
 	cachedLayout: CachedSize | null;
-
-	// The layout pass that last styled this node. A node re-added within
-	// the pass that styled it is not styled again.
-	styledPass: number;
-
-	// The computed values that shape text measurement without being part
-	// of the style record, joined, so a restyle can tell whether the
-	// measurement is still good. Set with the style.
-	measureKey: string;
 
 	// Null for a node no DOM node owns: an anonymous run, an independent
 	// formatting context, the viewport. Stored on the node rather than in a map
@@ -405,14 +385,9 @@ export class LayoutNode {
 		this[kMeasure] = null;
 		this[kStaticPosition] = null;
 		this.stale = true;
-		this.extentTop = 0;
-		this.extentBottom = 0;
-		this.unstackedChildCount = 0;
 		this.cachedSizes = new Array(CACHE_SLOT_COUNT).fill(null);
 		this.cachedLayout = null;
 		this.owner = null;
-		this.styledPass = 0;
-		this.measureKey = "";
 		this.style = createStyle();
 		this.result = createResult();
 	}
@@ -459,28 +434,6 @@ export class LayoutNode {
 	invalidate(): void {
 		this.stale = true;
 		invalidateAncestors(this);
-	}
-
-	computePaintExtents(originTop: number): void {
-		const top = originTop + this.result.top;
-		let extentTop = top;
-		let extentBottom = top + this.getComputedHeight();
-		let unstacked = 0;
-		for (const child of this.children) {
-			child.computePaintExtents(top);
-			if (isUnstacked(child)) {
-				unstacked++;
-			}
-			if (child.extentTop < extentTop) {
-				extentTop = child.extentTop;
-			}
-			if (child.extentBottom > extentBottom) {
-				extentBottom = child.extentBottom;
-			}
-		}
-		this.extentTop = extentTop;
-		this.extentBottom = extentBottom;
-		this.unstackedChildCount = unstacked;
 	}
 
 	getComputedGridTracks(
@@ -540,7 +493,6 @@ export class LayoutNode {
 		);
 
 		roundToGrid(this, 0, 0);
-		this.computePaintExtents(0);
 		this.stale = false;
 	}
 }
@@ -664,12 +616,6 @@ function createResult(): LayoutResult {
 		collapseBottomNegative: 0,
 		selfCollapsing: false,
 	};
-}
-
-function isUnstacked(node: LayoutNode): boolean {
-	return (
-		node.style.positionType !== "static" || node.style.displayType === "none"
-	);
 }
 
 function invalidateAncestors(start: LayoutNode): void {
@@ -898,7 +844,7 @@ function layoutMeasuredContent(
 	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	const paddingBorderRow = getAxisPaddingAndBorder(node, "row", ownerWidth);
 	const paddingBorderColumn = getAxisPaddingAndBorder(
@@ -920,7 +866,7 @@ function layoutMeasuredContent(
 		// lines that get painted, and skipping it on the placing pass left a
 		// stretched item painting the lines of its last probe, the min-content
 		// one.
-		!performLayout
+		!placing
 	) {
 		setMeasuredSize(
 			node,
@@ -932,7 +878,7 @@ function layoutMeasuredContent(
 		return;
 	}
 
-	const measured = node.measure!(innerWidth, widthSpace, performLayout);
+	const measured = node.measure!(innerWidth, widthSpace, placing);
 
 	const width =
 		widthSpace === "definite"
@@ -1112,7 +1058,7 @@ function layoutFlexbox(
 	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	const mainAxis = node.style.flexDirection;
 	const cross = getCrossAxis(mainAxis);
@@ -1272,7 +1218,7 @@ function layoutFlexbox(
 				crossSpace,
 				itemOwnerWidth,
 				itemOwnerHeight,
-				performLayout,
+				placing,
 			);
 		}
 
@@ -1283,7 +1229,7 @@ function layoutFlexbox(
 			leadingPaddingBorderMain,
 			mainGap,
 			itemOwnerWidth,
-			performLayout,
+			placing,
 		);
 
 		let lineCross = 0;
@@ -1353,7 +1299,7 @@ function layoutFlexbox(
 		node.result.width = measuredCross;
 	}
 
-	if (!performLayout) {
+	if (!placing) {
 		return;
 	}
 
@@ -1689,7 +1635,7 @@ function layoutFlexItem(
 	crossSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	const mainAxis = node.style.flexDirection;
 	const cross = getCrossAxis(mainAxis);
@@ -1777,7 +1723,7 @@ function layoutFlexItem(
 		childHeight.mode,
 		ownerWidth,
 		ownerHeight,
-		performLayout,
+		placing,
 	);
 }
 
@@ -1818,7 +1764,7 @@ function positionMainAxis(
 	leadingPaddingBorderMain: number,
 	mainGap: number,
 	ownerWidth: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	const mainAxis = node.style.flexDirection;
 	const mainIsRow = isRow(mainAxis);
@@ -1898,7 +1844,7 @@ function positionMainAxis(
 			ownerWidth,
 		);
 
-		if (performLayout) {
+		if (placing) {
 			if (mainIsRow) {
 				child.result.left = cursor;
 			} else {
@@ -2619,7 +2565,7 @@ function layoutTable(
 	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	const paddingBorderRow = getAxisPaddingAndBorder(node, "row", ownerWidth);
 	const paddingBorderColumn = getAxisPaddingAndBorder(
@@ -2677,7 +2623,7 @@ function layoutTable(
 			"indefinite",
 			ownerWidth,
 			ownerHeight,
-			performLayout,
+			placing,
 		);
 		caption.result.left = leftPaddingBorder;
 		caption.result.top = topPaddingBorder + captionHeight;
@@ -2696,7 +2642,7 @@ function layoutTable(
 			"indefinite",
 			ownerWidth,
 			ownerHeight,
-			performLayout,
+			placing,
 		);
 
 		if (cell.rowSpan === 1) {
@@ -2763,7 +2709,7 @@ function layoutTable(
 
 	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
 
-	if (!performLayout) {
+	if (!placing) {
 		return;
 	}
 
@@ -4112,7 +4058,7 @@ function layoutGridItem(
 	areaTop: number,
 	areaWidth: number,
 	areaHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	// The area is the item's containing block (css-grid-2 §6.4).
 	const ownerWidth = areaWidth;
@@ -4179,10 +4125,10 @@ function layoutGridItem(
 		childHeight.mode,
 		ownerWidth,
 		ownerHeight,
-		performLayout,
+		placing,
 	);
 
-	if (!performLayout) {
+	if (!placing) {
 		return;
 	}
 
@@ -4282,7 +4228,7 @@ function layoutGrid(
 	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	const paddingBorderRow = getAxisPaddingAndBorder(node, "row", ownerWidth);
 	const paddingBorderColumn = getAxisPaddingAndBorder(
@@ -4600,7 +4546,7 @@ function layoutGrid(
 
 	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
 
-	if (!performLayout) {
+	if (!placing) {
 		return;
 	}
 
@@ -4871,7 +4817,7 @@ function layoutBlockChild(
 	fill: boolean,
 	ownerWidth: number,
 	ownerHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	const marginRow = getAxisMargin(child, "row", ownerWidth);
 	const marginColumn = getAxisMargin(child, "column", ownerWidth);
@@ -4933,7 +4879,7 @@ function layoutBlockChild(
 		childHeight.mode,
 		ownerWidth,
 		ownerHeight,
-		performLayout,
+		placing,
 	);
 }
 
@@ -4964,7 +4910,7 @@ function layoutBlock(
 	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	const paddingBorderRow = getAxisPaddingAndBorder(node, "row", ownerWidth);
 	const paddingBorderColumn = getAxisPaddingAndBorder(
@@ -5063,7 +5009,7 @@ function layoutBlock(
 			isStretchFit(child),
 			contentWidth,
 			innerHeight,
-			performLayout,
+			placing,
 		);
 
 		readCollapseTop(child, childTop);
@@ -5123,7 +5069,7 @@ function layoutBlock(
 	node.result.collapseBottomNegative = escapingBottom.negative;
 	node.result.selfCollapsing = selfCollapsing;
 
-	if (!performLayout) {
+	if (!placing) {
 		return;
 	}
 
@@ -5175,7 +5121,7 @@ function layoutNode(
 	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	// css-sizing-4 §5: the open axis follows a settled (`definite`) one
 	// through the ratio. With both settled the ratio yields. Margins come
@@ -5221,7 +5167,7 @@ function layoutNode(
 			)
 		) {
 			hit = node.cachedLayout;
-		} else if (!performLayout) {
+		} else if (!placing) {
 			// Margins are outside the size a measurement returns, so both
 			// requests are reduced to their content side before being compared.
 			const marginRow = getAxisMargin(node, "row", ownerWidth);
@@ -5274,7 +5220,7 @@ function layoutNode(
 		heightSpace,
 		ownerWidth,
 		ownerHeight,
-		performLayout,
+		placing,
 	);
 
 	const entry: CachedSize = {
@@ -5287,7 +5233,7 @@ function layoutNode(
 		width: node.result.width,
 		height: node.result.height,
 	};
-	if (performLayout) {
+	if (placing) {
 		node.cachedLayout = entry;
 	} else {
 		node.cachedSizes[
@@ -5305,7 +5251,7 @@ function layoutNodeImpl(
 	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
-	performLayout: boolean,
+	placing: boolean,
 ): void {
 	node.result.padding.left = getPadding(node, "left", ownerWidth);
 	node.result.padding.top = getPadding(node, "top", ownerWidth);
@@ -5341,7 +5287,7 @@ function layoutNodeImpl(
 			heightSpace,
 			ownerWidth,
 			ownerHeight,
-			performLayout,
+			placing,
 		);
 		return;
 	}
@@ -5355,7 +5301,7 @@ function layoutNodeImpl(
 			heightSpace,
 			ownerWidth,
 			ownerHeight,
-			performLayout,
+			placing,
 		);
 		return;
 	}
@@ -5369,7 +5315,7 @@ function layoutNodeImpl(
 			heightSpace,
 			ownerWidth,
 			ownerHeight,
-			performLayout,
+			placing,
 		);
 		return;
 	}
@@ -5388,7 +5334,7 @@ function layoutNodeImpl(
 			heightSpace,
 			ownerWidth,
 			ownerHeight,
-			performLayout,
+			placing,
 		);
 		return;
 	}
@@ -5420,7 +5366,7 @@ function layoutNodeImpl(
 		heightSpace,
 		ownerWidth,
 		ownerHeight,
-		performLayout,
+		placing,
 	);
 }
 
