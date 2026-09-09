@@ -19,7 +19,7 @@ import {
 	styleElementSheet,
 	styleShadowAttached,
 } from "./cssom.ts";
-import {parseEdgeLengths, type UnitValue} from "./cssvalues.ts";
+import * as CSSValues from "./cssvalues.ts";
 import type {Exchange} from "./exchange.ts";
 import {
 	FORWARDED_BODY_EVENT_HANDLERS,
@@ -21984,11 +21984,11 @@ function applyRootMargin(
 	rect: globalThis.DOMRect,
 	margin: string,
 ): globalThis.DOMRect {
-	const [t, r, b, l] = parseEdgeLengths(margin);
+	const [t, r, b, l] = CSSValues.parseEdgeLengths(margin);
 	if (t === null && r === null && b === null && l === null) {
 		return rect;
 	}
-	const resolve = (value: UnitValue, basis: number): number =>
+	const resolve = (value: CSSValues.UnitValue, basis: number): number =>
 		value === null
 			? 0
 			: typeof value === "number" ? value : (value.percentage / 100) * basis;

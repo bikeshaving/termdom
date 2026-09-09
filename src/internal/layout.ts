@@ -1,21 +1,7 @@
 import LineBreaker from "linebreak";
 
 import {getBoxModel, getComputedValue, usedValuesChanged} from "./cssom.ts";
-import {
-	type BoxModel,
-	parseAlignmentKeyword,
-	parseAspectRatio,
-	parseBorderWidthValue,
-	parseCSSInteger,
-	parseCSSNumber,
-	parseGridAreas,
-	parseGridAutoFlow,
-	parseGridPlacement,
-	parseSignedUnitValue,
-	parseTrackList,
-	parseTrackSizeList,
-	parseUnitValue,
-} from "./cssvalues.ts";
+import * as CSSValues from "./cssvalues.ts";
 import {
 	DOMRectList,
 	flatChildren,
@@ -543,16 +529,16 @@ const GRID_PLACEMENTS = [
 // content-based minimum, and 0 lets it shrink under its own text.
 function applyMinMax(style: Style, element: Element): void {
 	style.minWidth = toValue(
-		parseUnitValue(getComputedValue(element, "min-width")),
+		CSSValues.parseUnitValue(getComputedValue(element, "min-width")),
 	);
 	style.minHeight = toValue(
-		parseUnitValue(getComputedValue(element, "min-height")),
+		CSSValues.parseUnitValue(getComputedValue(element, "min-height")),
 	);
 	style.maxWidth = toValue(
-		parseUnitValue(getComputedValue(element, "max-width")),
+		CSSValues.parseUnitValue(getComputedValue(element, "max-width")),
 	);
 	style.maxHeight = toValue(
-		parseUnitValue(getComputedValue(element, "max-height")),
+		CSSValues.parseUnitValue(getComputedValue(element, "max-height")),
 	);
 }
 
@@ -568,7 +554,7 @@ function applyInsets(
 	autoWhenUnset: boolean,
 ): void {
 	for (const edge of edges) {
-		const value = parseUnitValue(getComputedValue(element, edge));
+		const value = CSSValues.parseUnitValue(getComputedValue(element, edge));
 		if (value !== null) {
 			style.position[edge] = toValue(value);
 		} else if (autoWhenUnset) {
@@ -620,43 +606,49 @@ function getAlignmentConstant(value: string, fallback: Align): Align {
 	if (!value || value === "auto") {
 		return fallback;
 	}
-	const constant = ALIGNMENT_CONSTANTS[parseAlignmentKeyword(value)];
+	const constant = ALIGNMENT_CONSTANTS[CSSValues.parseAlignmentKeyword(value)];
 	return constant === undefined ? fallback : constant;
 }
 
 function getJustifyContentConstant(value: string): Justify {
-	const constant = JUSTIFY_CONTENT_CONSTANTS[parseAlignmentKeyword(value)];
+	const constant = JUSTIFY_CONTENT_CONSTANTS[CSSValues.parseAlignmentKeyword(
+		value,
+	)];
 	return constant === undefined ? "normal" : constant;
 }
 
 function applyGridContainer(style: Style, element: Element): void {
-	const columns = parseTrackList(
+	const columns = CSSValues.parseTrackList(
 		getComputedValue(element, "grid-template-columns"),
 	);
 	if (columns) {
 		style.gridTemplateColumns = columns;
 	}
-	const rows = parseTrackList(getComputedValue(element, "grid-template-rows"));
+	const rows = CSSValues.parseTrackList(
+		getComputedValue(element, "grid-template-rows"),
+	);
 	if (rows) {
 		style.gridTemplateRows = rows;
 	}
-	style.gridTemplateAreas = parseGridAreas(
+	style.gridTemplateAreas = CSSValues.parseGridAreas(
 		getComputedValue(element, "grid-template-areas"),
 	);
-	const autoColumns = parseTrackSizeList(
+	const autoColumns = CSSValues.parseTrackSizeList(
 		getComputedValue(element, "grid-auto-columns"),
 	);
 	if (autoColumns && autoColumns.length > 0) {
 		style.gridAutoColumns = autoColumns;
 	}
-	const autoRows = parseTrackSizeList(
+	const autoRows = CSSValues.parseTrackSizeList(
 		getComputedValue(element, "grid-auto-rows"),
 	);
 	if (autoRows && autoRows.length > 0) {
 		style.gridAutoRows = autoRows;
 	}
 
-	const flow = parseGridAutoFlow(getComputedValue(element, "grid-auto-flow"));
+	const flow = CSSValues.parseGridAutoFlow(
+		getComputedValue(element, "grid-auto-flow"),
+	);
 	style.gridAutoFlowColumn = flow.column;
 	style.gridAutoFlowDense = flow.dense;
 
@@ -780,7 +772,7 @@ function styleLayoutNodeProperties(
 		applyMinMax(style, element);
 	} else {
 		const widthValue = getComputedValue(element, "width");
-		const width = parseUnitValue(widthValue);
+		const width = CSSValues.parseUnitValue(widthValue);
 		style.width = toValue(
 			typeof width === "number"
 				? width + getContentBoxEdges(element, false)
@@ -788,7 +780,9 @@ function styleLayoutNodeProperties(
 		);
 		style.widthSizing = getWidthSizingConstant(widthValue);
 
-		const height = parseUnitValue(getComputedValue(element, "height"));
+		const height = CSSValues.parseUnitValue(
+			getComputedValue(element, "height"),
+		);
 		style.height = toValue(
 			typeof height === "number"
 				? height + getContentBoxEdges(element, true)
@@ -799,7 +793,9 @@ function styleLayoutNodeProperties(
 	}
 
 	if (!inlineBox) {
-		const ratio = parseAspectRatio(getComputedValue(element, "aspect-ratio"));
+		const ratio = CSSValues.parseAspectRatio(
+			getComputedValue(element, "aspect-ratio"),
+		);
 		style.aspectRatio =
 			ratio !== undefined && Number.isFinite(ratio) && ratio > 0 ? ratio : NaN;
 
@@ -809,13 +805,15 @@ function styleLayoutNodeProperties(
 		// padding.
 		for (const edge of EDGES) {
 			const property = `margin-${edge}`;
-			const margin = parseSignedUnitValue(getComputedValue(element, property));
+			const margin = CSSValues.parseSignedUnitValue(
+				getComputedValue(element, property),
+			);
 			style.margin[edge] = toValue(
 				margin ??
 				(getComputedValue(element, property) === "auto" ? "auto" : undefined),
 			);
 			style.padding[edge] = toValue(
-				parseUnitValue(getComputedValue(element, `padding-${edge}`)),
+				CSSValues.parseUnitValue(getComputedValue(element, `padding-${edge}`)),
 			);
 			// The used width is 0 when the side's style is none or hidden
 			// (css-backgrounds §3.3), the same rule as getBoxModel, or the two
@@ -824,7 +822,7 @@ function styleLayoutNodeProperties(
 			const borderWidth =
 				!borderStyle || borderStyle === "none" || borderStyle === "hidden"
 					? null
-					: parseBorderWidthValue(
+					: CSSValues.parseBorderWidthValue(
 						getComputedValue(element, `border-${edge}-width`),
 					);
 			style.border[edge] =
@@ -856,14 +854,14 @@ function styleLayoutNodeProperties(
 	// initial values without asking the cascade, which is most elements.
 	const item = (property: string, initial: string): string =>
 		parentIsFlex ? getComputedValue(element, property) : initial;
-	const grow = parseCSSNumber(item("flex-grow", "0"));
+	const grow = CSSValues.parseCSSNumber(item("flex-grow", "0"));
 	style.flexGrow = grow !== null && grow >= 0 ? grow : NaN;
-	style.order = parseCSSInteger(item("order", "0")) ?? 0;
-	const shrink = parseCSSNumber(item("flex-shrink", "1"));
+	style.order = CSSValues.parseCSSInteger(item("order", "0")) ?? 0;
+	const shrink = CSSValues.parseCSSNumber(item("flex-shrink", "1"));
 	style.flexShrink = shrink !== null && shrink >= 0 ? shrink : NaN;
 
 	const flexBasisText = item("flex-basis", "auto");
-	const flexBasis = parseUnitValue(flexBasisText);
+	const flexBasis = CSSValues.parseUnitValue(flexBasisText);
 	style.flexBasis = toValue(
 		flexBasis ?? (flexBasisText === "auto" ? "auto" : undefined),
 	);
@@ -875,7 +873,7 @@ function styleLayoutNodeProperties(
 	);
 
 	for (const [key, property] of GRID_PLACEMENTS) {
-		const placement = parseGridPlacement(item(property, "auto"));
+		const placement = CSSValues.parseGridPlacement(item(property, "auto"));
 		if (placement) {
 			style[key] = placement;
 		}
@@ -884,12 +882,16 @@ function styleLayoutNodeProperties(
 	// The gap shorthand is expanded in the cascade. The longhands are
 	// enough, and only a flex or grid container has a gap.
 	if (hasItemChildren(display)) {
-		const rowGap = parseUnitValue(getComputedValue(element, "row-gap"));
+		const rowGap = CSSValues.parseUnitValue(
+			getComputedValue(element, "row-gap"),
+		);
 		if (typeof rowGap === "number") {
 			style.gap.row = Math.max(0, rowGap);
 		}
 
-		const columnGap = parseUnitValue(getComputedValue(element, "column-gap"));
+		const columnGap = CSSValues.parseUnitValue(
+			getComputedValue(element, "column-gap"),
+		);
 		if (typeof columnGap === "number") {
 			style.gap.column = Math.max(0, columnGap);
 		}
@@ -1879,7 +1881,7 @@ function syncIndependentFormattingContext(
 			["column-gap", "column"],
 		];
 		for (const [property, gutter] of gaps) {
-			const gap = parseUnitValue(getComputedValue(element, property));
+			const gap = CSSValues.parseUnitValue(getComputedValue(element, property));
 			style.gap[gutter] = typeof gap === "number" ? Math.max(0, gap) : 0;
 		}
 	}
@@ -2428,7 +2430,7 @@ interface InlineBlockLeaf {
 	type: "inline-block";
 	node: Element;
 	breakResult?: BreakResult;
-	boxModel: BoxModel;
+	boxModel: CSSValues.BoxModel;
 	contentWidth: number;
 	contentHeight: number;
 }
@@ -2739,7 +2741,9 @@ function collectLeaves(
 				// of collapsing to a void element's zero. Indefinite width
 				// falls through to auto.
 				if (boxModel.width === undefined) {
-					const widthValue = parseUnitValue(getComputedValue(element, "width"));
+					const widthValue = CSSValues.parseUnitValue(
+						getComputedValue(element, "width"),
+					);
 					if (
 						widthValue !== null &&
 						typeof widthValue === "object" &&
@@ -2827,7 +2831,7 @@ function collectLeaves(
 				// run's available width, or `max-width: 100%` (every text
 				// control's value part) broke at its natural width and
 				// overflowed its text control.
-				const maxWidthValue = parseUnitValue(
+				const maxWidthValue = CSSValues.parseUnitValue(
 					getComputedValue(element, "max-width"),
 				);
 				let maxWidthCap: number | undefined;
@@ -2932,7 +2936,7 @@ function collectLeaves(
 				// This leaf IS where an inline-block's box gets its size (the
 				// layout node only reports the whole run), so min/max apply here.
 				// Values are border-box. Convert to content-box.
-				const minWidthValue = parseUnitValue(
+				const minWidthValue = CSSValues.parseUnitValue(
 					getComputedValue(element, "min-width"),
 				);
 				if (typeof minWidthValue === "number") {
@@ -2941,7 +2945,7 @@ function collectLeaves(
 						minWidthValue - horizontalBoxSpace,
 					);
 				}
-				const minHeightValue = parseUnitValue(
+				const minHeightValue = CSSValues.parseUnitValue(
 					getComputedValue(element, "min-height"),
 				);
 				if (typeof minHeightValue === "number") {
@@ -2956,7 +2960,7 @@ function collectLeaves(
 						maxWidthValue - horizontalBoxSpace,
 					);
 				}
-				const maxHeightValue = parseUnitValue(
+				const maxHeightValue = CSSValues.parseUnitValue(
 					getComputedValue(element, "max-height"),
 				);
 				if (typeof maxHeightValue === "number") {
@@ -3501,7 +3505,9 @@ function getLineIndent(
 	if (!isFirstLine || !container) {
 		return 0;
 	}
-	const parsed = parseUnitValue(getComputedValue(container, "text-indent"));
+	const parsed = CSSValues.parseUnitValue(
+		getComputedValue(container, "text-indent"),
+	);
 	if (parsed === null) {
 		return 0;
 	}
@@ -4920,7 +4926,7 @@ function getZIndexValue(element: Element): number | "auto" {
 	if (!zIndex || zIndex === "auto") {
 		return "auto";
 	}
-	return parseCSSInteger(zIndex) ?? "auto";
+	return CSSValues.parseCSSInteger(zIndex) ?? "auto";
 }
 
 // Positioned with a non-auto z-index. opacity/transform/filter have no
@@ -5715,8 +5721,8 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		ancestor = flatParentElement(ancestor)
 	) {
 		if (getPosition(ancestor) === "relative") {
-			const left = parseUnitValue(getComputedValue(ancestor, "left"));
-			const top = parseUnitValue(getComputedValue(ancestor, "top"));
+			const left = CSSValues.parseUnitValue(getComputedValue(ancestor, "left"));
+			const top = CSSValues.parseUnitValue(getComputedValue(ancestor, "top"));
 			if (typeof left === "number") {
 				containerX += left;
 			}

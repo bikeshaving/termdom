@@ -1,12 +1,4 @@
-import type {
-	GridAreaMap,
-	GridPlacement,
-	TrackBreadth,
-	TrackList,
-	TrackListTrack,
-	TrackSize,
-	Value,
-} from "./cssvalues.ts";
+import type * as CSSValues from "./cssvalues.ts";
 
 // `normal` means whatever the mode says: stretch on a grid item,
 // flex-start across flex lines (css-align-3).
@@ -96,12 +88,12 @@ type StaticPosition = (
 ) => {left: number; top: number} | null;
 
 // NaN is the undefined length everywhere below. 0 is a length.
-const UNDEFINED_VALUE: Value = {unit: "undefined", value: NaN};
-const AUTO_VALUE: Value = {unit: "auto", value: NaN};
+const UNDEFINED_VALUE: CSSValues.Value = {unit: "undefined", value: NaN};
+const AUTO_VALUE: CSSValues.Value = {unit: "auto", value: NaN};
 
 export type Length = number | "auto" | {percentage: number} | undefined | null;
 
-function resolveValue(value: Value, ownerSize: number): number {
+function resolveValue(value: CSSValues.Value, ownerSize: number): number {
 	switch (value.unit) {
 		case "cell":
 			return value.value;
@@ -116,7 +108,7 @@ function isDefined(n: number): boolean {
 	return !Number.isNaN(n);
 }
 
-function resolveMargin(value: Value, ownerWidth: number): number {
+function resolveMargin(value: CSSValues.Value, ownerWidth: number): number {
 	if (value.unit === "auto") {
 		return 0;
 	}
@@ -183,19 +175,19 @@ export interface Style {
 	justifyItems: Align;
 	justifySelf: Align;
 
-	gridTemplateColumns: TrackList;
-	gridTemplateRows: TrackList;
-	gridTemplateAreas: GridAreaMap | null;
-	gridAutoColumns: TrackSize[];
-	gridAutoRows: TrackSize[];
+	gridTemplateColumns: CSSValues.TrackList;
+	gridTemplateRows: CSSValues.TrackList;
+	gridTemplateAreas: CSSValues.GridAreaMap | null;
+	gridAutoColumns: CSSValues.TrackSize[];
+	gridAutoRows: CSSValues.TrackSize[];
 
 	gridAutoFlowColumn: boolean;
 	gridAutoFlowDense: boolean;
 
-	gridRowStart: GridPlacement;
-	gridRowEnd: GridPlacement;
-	gridColumnStart: GridPlacement;
-	gridColumnEnd: GridPlacement;
+	gridRowStart: CSSValues.GridPlacement;
+	gridRowEnd: CSSValues.GridPlacement;
+	gridColumnStart: CSSValues.GridPlacement;
+	gridColumnEnd: CSSValues.GridPlacement;
 
 	colSpan: number;
 	rowSpan: number;
@@ -208,20 +200,20 @@ export interface Style {
 	flexGrow: number;
 	order: number;
 	flexShrink: number;
-	flexBasis: Value;
+	flexBasis: CSSValues.Value;
 
-	margin: Edges<Value>;
-	position: Edges<Value>;
-	padding: Edges<Value>;
+	margin: Edges<CSSValues.Value>;
+	position: Edges<CSSValues.Value>;
+	padding: Edges<CSSValues.Value>;
 	border: Edges<number>;
 
-	width: Value;
+	width: CSSValues.Value;
 	widthSizing: Sizing;
-	height: Value;
-	minWidth: Value;
-	minHeight: Value;
-	maxWidth: Value;
-	maxHeight: Value;
+	height: CSSValues.Value;
+	minWidth: CSSValues.Value;
+	minHeight: CSSValues.Value;
+	maxWidth: CSSValues.Value;
+	maxHeight: CSSValues.Value;
 
 	// width / height in cells on both axes, so 1 makes a 10-wide box 10
 	// rows tall. NaN is auto.
@@ -553,7 +545,7 @@ export class LayoutNode {
 	}
 }
 
-export function toValue(input: Length): Value {
+export function toValue(input: Length): CSSValues.Value {
 	if (input === undefined || input === null) {
 		return UNDEFINED_VALUE;
 	}
@@ -566,12 +558,19 @@ export function toValue(input: Length): Value {
 	return AUTO_VALUE;
 }
 
-const AUTO_PLACEMENT: GridPlacement = {span: false, index: null, name: null};
+const AUTO_PLACEMENT: CSSValues.GridPlacement = {
+	span: false,
+	index: null,
+	name: null,
+};
 
 /** The `auto` track size: the initial value of grid-auto-rows/columns. */
-const AUTO_TRACK: TrackSize = {min: {kind: "auto"}, max: {kind: "auto"}};
+const AUTO_TRACK: CSSValues.TrackSize = {
+	min: {kind: "auto"},
+	max: {kind: "auto"},
+};
 
-const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
+const EMPTY_TRACK_LIST: CSSValues.TrackList = {parts: [], endNames: []};
 
 // Browser defaults, not Yoga's: row direction, align-content stretch,
 // flex-shrink 1.
@@ -696,7 +695,10 @@ function resolveFlexShrink(node: LayoutNode): number {
 	return 1;
 }
 
-function resolveFlexBasis(node: LayoutNode, mainAxis: FlexDirection): Value {
+function resolveFlexBasis(
+	node: LayoutNode,
+	mainAxis: FlexDirection,
+): CSSValues.Value {
 	const basis = node.style.flexBasis;
 	if (basis.unit !== "auto" && basis.unit !== "undefined") {
 		return basis;
@@ -2809,7 +2811,7 @@ function layoutTable(
 
 // css-grid-2 §12.2.
 interface GridTrack {
-	size: TrackSize;
+	size: CSSValues.TrackSize;
 	base: number;
 
 	// Infinity until §12.5 gives an intrinsic or flexible track one.
@@ -2844,7 +2846,10 @@ interface GridItem {
 	rowEnd: number;
 }
 
-function trackLength(breadth: TrackBreadth, ownerSize: number): number {
+function trackLength(
+	breadth: CSSValues.TrackBreadth,
+	ownerSize: number,
+): number {
 	if (breadth.kind !== "length") {
 		return NaN;
 	}
@@ -2852,12 +2857,18 @@ function trackLength(breadth: TrackBreadth, ownerSize: number): number {
 }
 
 // A percentage against an indefinite size behaves as auto (css-grid-2 §7.2.1).
-function isIntrinsicBreadth(breadth: TrackBreadth, ownerSize: number): boolean {
+function isIntrinsicBreadth(
+	breadth: CSSValues.TrackBreadth,
+	ownerSize: number,
+): boolean {
 	return breadth.kind !== "flex" && !isDefined(trackLength(breadth, ownerSize));
 }
 
 // For counting repeat(auto-fill) repetitions.
-function getDefiniteTrackSize(size: TrackSize, ownerSize: number): number {
+function getDefiniteTrackSize(
+	size: CSSValues.TrackSize,
+	ownerSize: number,
+): number {
 	const max = trackLength(size.max, ownerSize);
 	if (isDefined(max)) {
 		return Math.max(0, max);
@@ -2866,7 +2877,7 @@ function getDefiniteTrackSize(size: TrackSize, ownerSize: number): number {
 	return isDefined(min) ? Math.max(0, min) : 0;
 }
 
-function createTrack(size: TrackSize, ownerSize: number): GridTrack {
+function createTrack(size: CSSValues.TrackSize, ownerSize: number): GridTrack {
 	const min = trackLength(size.min, ownerSize);
 	const max = trackLength(size.max, ownerSize);
 	const base = isDefined(min) ? Math.max(0, min) : 0;
@@ -2891,7 +2902,7 @@ function createTrack(size: TrackSize, ownerSize: number): GridTrack {
 }
 
 interface ExpandedTracks {
-	sizes: TrackSize[];
+	sizes: CSSValues.TrackSize[];
 
 	// Line i, for i in [0, sizes.length].
 	lineNames: string[][];
@@ -2901,12 +2912,12 @@ interface ExpandedTracks {
 // css-grid-2 §7.2.3.2: an auto-fill/auto-fit repeat with no definite
 // space repeats once.
 function expandTrackList(
-	list: TrackList,
+	list: CSSValues.TrackList,
 	availableSpace: number,
 	gap: number,
 	ownerSize: number,
 ): ExpandedTracks {
-	const sizes: TrackSize[] = [];
+	const sizes: CSSValues.TrackSize[] = [];
 	const lineNames: string[][] = [];
 	let autoFit: ExpandedTracks["autoFit"] = null;
 
@@ -2949,7 +2960,7 @@ function expandTrackList(
 	}
 
 	let pending: string[] = [];
-	const emit = (track: TrackListTrack) => {
+	const emit = (track: CSSValues.TrackListTrack) => {
 		lineNames.push(pending.concat(track.names));
 		pending = [];
 		sizes.push(track.size);
@@ -2980,7 +2991,7 @@ function expandTrackList(
 
 // An area `foo` names its edges foo-start and foo-end on both axes
 // (css-grid-2 §7.3).
-function getAreaLineNames(areas: GridAreaMap): {
+function getAreaLineNames(areas: CSSValues.GridAreaMap): {
 	columns: Map<string, number[]>;
 	rows: Map<string, number[]>;
 } {
@@ -3085,7 +3096,7 @@ function getNamedLine(
 }
 
 function resolveGridLine(
-	placement: GridPlacement,
+	placement: CSSValues.GridPlacement,
 	names: Map<string, number[]>,
 	explicitCount: number,
 	edge: "start" | "end",
@@ -4412,7 +4423,7 @@ function layoutGrid(
 		count: number,
 		base: number,
 		template: ExpandedTracks,
-		autoSizes: TrackSize[],
+		autoSizes: CSSValues.TrackSize[],
 		ownerSize: number,
 	): GridTrack[] => {
 		const tracks: GridTrack[] = [];
@@ -4724,7 +4735,7 @@ function getAbsoluteGridArea(
 	);
 
 	const edge = (
-		placement: GridPlacement,
+		placement: CSSValues.GridPlacement,
 		names: Map<string, number[]>,
 		explicitCount: number,
 		tracks: GridTrack[],
