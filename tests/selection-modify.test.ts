@@ -14,9 +14,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 // The door a test document comes through: a document of this DOM, in the
 // window whose selection the tests move, and with no terminal behind it.
 function withText(html: string): any {
-	const {document} = createWindow(
-		"<!doctype html><title></title>",
-	) as any;
+	const {document} = createWindow("<!doctype html><title></title>") as any;
 	document.body.innerHTML = html;
 	return document;
 }
