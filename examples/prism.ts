@@ -24,19 +24,19 @@ import "prismjs/components/prism-python.js";
 /* eslint-enable termdom/import-order */
 
 interface Sample {
-	id: string;
-	label: string;
-	code: string;
+  id: string;
+  label: string;
+  code: string;
 }
 
 // Samples are inline: nothing is read from disk, so the example runs in the
 // browser playground as well as a terminal. Lines stay under 64 columns so
 // they fit an 80-column screen beside the gutter.
 const SAMPLES: Sample[] = [
-	{
-		id: "typescript",
-		label: "TypeScript",
-		code: `// Types are erased before the program runs. Tokens are not.
+  {
+    id: "typescript",
+    label: "TypeScript",
+    code: `// Types are erased before the program runs. Tokens are not.
 interface Point {
   x: number;
   y: number;
@@ -54,11 +54,11 @@ const points: Point[] = [{x: 3, y: 4}, ORIGIN];
 for (const point of points) {
   console.log(\`distance: \${distance(point).toFixed(2)}\`);
 }`,
-	},
-	{
-		id: "css",
-		label: "CSS",
-		code: `/* A Prism theme is author CSS: token classes in, colours out. */
+  },
+  {
+    id: "css",
+    label: "CSS",
+    code: `/* A Prism theme is author CSS: token classes in, colours out. */
 :root {
   --ink: #cccccc;
   --paper: #2d2d2d;
@@ -78,11 +78,11 @@ pre[class*="language-"] {
 @media (max-width: 80ch) {
   .gutter { display: none; }
 }`,
-	},
-	{
-		id: "json",
-		label: "JSON",
-		code: `{
+  },
+  {
+    id: "json",
+    label: "JSON",
+    code: `{
   "name": "@b9g/termdom",
   "version": "0.1.4",
   "private": false,
@@ -97,11 +97,11 @@ pre[class*="language-"] {
     "typescript": "^5.9.2"
   }
 }`,
-	},
-	{
-		id: "python",
-		label: "Python",
-		code: `# One grammar per language, one class per kind of token.
+  },
+  {
+    id: "python",
+    label: "Python",
+    code: `# One grammar per language, one class per kind of token.
 from dataclasses import dataclass
 
 SUITS = "♠♥♦♣"
@@ -119,7 +119,7 @@ class Card:
 
 deck = [Card(rank, suit) for rank in range(1, 14) for suit in SUITS]
 print(len(deck), deck[0].label(), deck[-1].label())`,
-	},
+  },
 ];
 
 const term = new TermDOM();
@@ -129,68 +129,68 @@ const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `
-	body { background-color: #2d2d2d; color: #cccccc; }
-	.tabs { display: flex; flex-direction: row; gap: 1ch; padding: 0 1ch; }
-	.tab { color: #808080; padding: 0 1ch; }
-	.tab.current { color: #2d2d2d; background-color: #cc99cd; font-weight: bold; }
-	.pane { display: flex; flex-direction: row; padding: 1px 1ch; overflow: hidden; }
-	.gutter { color: #666666; padding-right: 1ch; text-align: right; width: 3ch; }
-	.hint { color: #666666; padding: 0 1ch; }
+  body { background-color: #2d2d2d; color: #cccccc; }
+  .tabs { display: flex; flex-direction: row; gap: 1ch; padding: 0 1ch; }
+  .tab { color: #808080; padding: 0 1ch; }
+  .tab.current { color: #2d2d2d; background-color: #cc99cd; font-weight: bold; }
+  .pane { display: flex; flex-direction: row; padding: 1px 1ch; overflow: hidden; }
+  .gutter { color: #666666; padding-right: 1ch; text-align: right; width: 3ch; }
+  .hint { color: #666666; padding: 0 1ch; }
 
-	/* Under 72 columns the gutter costs the source the room it needs, and
-	   @media answers again on every resize. */
-	@media (max-width: 72ch) {
-		.gutter { display: none; }
-	}
+  /* Under 72 columns the gutter costs the source the room it needs, and
+     @media answers again on every resize. */
+  @media (max-width: 72ch) {
+    .gutter { display: none; }
+  }
 
-	/* Prism's Tomorrow Night theme, rule for rule. The selectors are the
-	   classes Prism writes; the terminal resolves the hex to its palette. */
-	.token.comment,
-	.token.block-comment,
-	.token.prolog,
-	.token.doctype,
-	.token.cdata { color: #999999; }
-	.token.punctuation { color: #cccccc; }
-	.token.tag,
-	.token.attr-name,
-	.token.namespace,
-	.token.deleted { color: #e2777a; }
-	.token.function-name { color: #6196cc; }
-	.token.boolean,
-	.token.number,
-	.token.function { color: #f08d49; }
-	.token.property,
-	.token.class-name,
-	.token.constant,
-	.token.symbol { color: #f8c555; }
-	.token.selector,
-	.token.important,
-	.token.atrule,
-	.token.keyword,
-	.token.builtin { color: #cc99cd; }
-	.token.string,
-	.token.char,
-	.token.attr-value,
-	.token.regex,
-	.token.variable { color: #7ec699; }
-	.token.operator,
-	.token.entity,
-	.token.url { color: #67cdcc; }
-	.token.important,
-	.token.bold { font-weight: bold; }
-	.token.italic { font-style: italic; }
-	.token.inserted { color: #7ec699; }
+  /* Prism's Tomorrow Night theme, rule for rule. The selectors are the
+     classes Prism writes; the terminal resolves the hex to its palette. */
+  .token.comment,
+  .token.block-comment,
+  .token.prolog,
+  .token.doctype,
+  .token.cdata { color: #999999; }
+  .token.punctuation { color: #cccccc; }
+  .token.tag,
+  .token.attr-name,
+  .token.namespace,
+  .token.deleted { color: #e2777a; }
+  .token.function-name { color: #6196cc; }
+  .token.boolean,
+  .token.number,
+  .token.function { color: #f08d49; }
+  .token.property,
+  .token.class-name,
+  .token.constant,
+  .token.symbol { color: #f8c555; }
+  .token.selector,
+  .token.important,
+  .token.atrule,
+  .token.keyword,
+  .token.builtin { color: #cc99cd; }
+  .token.string,
+  .token.char,
+  .token.attr-value,
+  .token.regex,
+  .token.variable { color: #7ec699; }
+  .token.operator,
+  .token.entity,
+  .token.url { color: #67cdcc; }
+  .token.important,
+  .token.bold { font-weight: bold; }
+  .token.italic { font-style: italic; }
+  .token.inserted { color: #7ec699; }
 `;
 document.head.appendChild(style);
 
 const tabs = document.createElement("div");
 tabs.className = "tabs";
 const buttons = SAMPLES.map((sample, index) => {
-	const tab = document.createElement("span");
-	tab.className = "tab";
-	tab.textContent = `${index + 1} ${sample.label}`;
-	tabs.appendChild(tab);
-	return tab;
+  const tab = document.createElement("span");
+  tab.className = "tab";
+  tab.textContent = `${index + 1} ${sample.label}`;
+  tabs.appendChild(tab);
+  return tab;
 });
 
 const pane = document.createElement("div");
@@ -212,33 +212,33 @@ let current = 0;
 // edge, so a source line holds one row and the gutter's numbers stay level
 // with it at any width.
 function show(index: number): void {
-	current = (index + SAMPLES.length) % SAMPLES.length;
-	const sample = SAMPLES[current];
-	buttons.forEach((tab, i) => {
-		tab.className = i === current ? "tab current" : "tab";
-	});
-	const lines = sample.code.split("\n");
-	gutter.textContent = lines.map((_, i) => String(i + 1)).join("\n");
-	code.innerHTML = Prism.highlight(
-		sample.code,
-		Prism.languages[sample.id],
-		sample.id,
-	);
+  current = (index + SAMPLES.length) % SAMPLES.length;
+  const sample = SAMPLES[current];
+  buttons.forEach((tab, i) => {
+    tab.className = i === current ? "tab current" : "tab";
+  });
+  const lines = sample.code.split("\n");
+  gutter.textContent = lines.map((_, i) => String(i + 1)).join("\n");
+  code.innerHTML = Prism.highlight(
+    sample.code,
+    Prism.languages[sample.id],
+    sample.id,
+  );
 }
 
 show(0);
 
 const bindings: Record<string, () => void> = {
-	ArrowRight: () => show(current + 1),
-	ArrowLeft: () => show(current - 1),
-	q: () => term.window.close(),
+  ArrowRight: () => show(current + 1),
+  ArrowLeft: () => show(current - 1),
+  q: () => term.window.close(),
 };
 document.addEventListener("keydown", (event: Event) => {
-	const {key} = event as KeyboardEvent;
-	const picked = Number(key);
-	if (picked >= 1 && picked <= SAMPLES.length) {
-		show(picked - 1);
-		return;
-	}
-	bindings[key]?.();
+  const {key} = event as KeyboardEvent;
+  const picked = Number(key);
+  if (picked >= 1 && picked <= SAMPLES.length) {
+    show(picked - 1);
+    return;
+  }
+  bindings[key]?.();
 });

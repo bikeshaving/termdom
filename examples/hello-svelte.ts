@@ -13,12 +13,12 @@
 import {spawnSync} from "node:child_process";
 
 if (!import.meta.resolve("svelte").endsWith("index-client.js")) {
-	const {status} = spawnSync(
-		process.execPath,
-		["--conditions=browser", ...process.argv.slice(1)],
-		{stdio: "inherit"},
-	);
-	process.exit(status ?? 0);
+  const {status} = spawnSync(
+    process.execPath,
+    ["--conditions=browser", ...process.argv.slice(1)],
+    {stdio: "inherit"},
+  );
+  process.exit(status ?? 0);
 }
 
 const {TermDOM} = await import("@b9g/termdom");
@@ -27,27 +27,27 @@ const {mount} = await import("svelte");
 
 const SOURCE = `
 <script>
-	let {quit} = $props();
-	let count = $state(0);
+  let {quit} = $props();
+  let count = $state(0);
 
-	$effect(() => {
-		const onkeydown = (ev) => {
-			if (ev.key === "q") {
-				quit();
-				return;
-			}
+  $effect(() => {
+    const onkeydown = (ev) => {
+      if (ev.key === "q") {
+        quit();
+        return;
+      }
 
-			count++;
-		};
+      count++;
+    };
 
-		document.addEventListener("keydown", onkeydown);
-		return () => document.removeEventListener("keydown", onkeydown);
-	});
+    document.addEventListener("keydown", onkeydown);
+    return () => document.removeEventListener("keydown", onkeydown);
+  });
 </script>
 
 <div class="card">
-	<div class="greeting">Hello from Svelte!</div>
-	<div class="count">Keys pressed: {count}</div>
+  <div class="greeting">Hello from Svelte!</div>
+  <div class="count">Keys pressed: {count}</div>
 </div>
 <div class="hint">any key counts · [q]uit</div>
 `;
@@ -57,14 +57,14 @@ const SOURCE = `
 // beside this one.
 const {js} = compile(SOURCE, {generate: "client", name: "Hello"});
 const code = js.code.replace(
-	/(\bfrom\s*|\bimport\s*)(['"])([^'"]+)\2/g,
-	(match, keyword, quote, specifier) =>
-		/^[./]|^\w+:/.test(specifier)
-			? match
-			: `${keyword}${quote}${import.meta.resolve(specifier)}${quote}`,
+  /(\bfrom\s*|\bimport\s*)(['"])([^'"]+)\2/g,
+  (match, keyword, quote, specifier) =>
+    /^[./]|^\w+:/.test(specifier)
+      ? match
+      : `${keyword}${quote}${import.meta.resolve(specifier)}${quote}`,
 );
 const {default: Hello} = await import(
-	`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`,
+  `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`,
 );
 
 const term = new TermDOM();
@@ -82,14 +82,14 @@ globalThis.Comment = term.window.Comment as never;
 
 const style = document.createElement("style");
 style.textContent = `
-	.card { border: 1px solid #5fafff; padding: 0 1ch; margin: 1px 2ch; }
-	.greeting { color: cyan; font-weight: bold; }
-	.count { color: #ffd75f; }
-	.hint { color: #666666; margin-left: 2ch; }
+  .card { border: 1px solid #5fafff; padding: 0 1ch; margin: 1px 2ch; }
+  .greeting { color: cyan; font-weight: bold; }
+  .count { color: #ffd75f; }
+  .hint { color: #666666; margin-left: 2ch; }
 `;
 document.head.appendChild(style);
 
 mount(Hello, {
-	target: document.body as never,
-	props: {quit: () => term.window.close()},
+  target: document.body as never,
+  props: {quit: () => term.window.close()},
 });

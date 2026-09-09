@@ -8,7 +8,7 @@ const {document} = term;
 const style = document.createElement("style");
 
 function edge(kind: string): string {
-	return `border: 1px ${kind};`;
+  return `border: 1px ${kind};`;
 }
 
 style.textContent = `

@@ -7,7 +7,7 @@ const {document} = term;
 const style = document.createElement("style");
 style.textContent = `
 ul {
-	list-style-position: outside !important;
+  list-style-position: outside !important;
 }
 `;
 document.body.appendChild(style);
@@ -30,9 +30,9 @@ basicSection.appendChild(basicTitle);
 
 const basicUl = document.createElement("ul");
 ["First item", "Second item", "Third item"].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	basicUl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  basicUl.appendChild(li);
 });
 basicSection.appendChild(basicUl);
 container.appendChild(basicSection);
@@ -46,9 +46,9 @@ orderedSection.appendChild(orderedTitle);
 
 const basicOl = document.createElement("ol");
 ["First step", "Second step", "Third step"].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	basicOl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  basicOl.appendChild(li);
 });
 orderedSection.appendChild(basicOl);
 container.appendChild(orderedSection);
@@ -64,9 +64,9 @@ stylesSection.appendChild(stylesTitle);
 const discUl = document.createElement("ul");
 discUl.style.listStyleType = "disc";
 ["Disc item 1", "Disc item 2"].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	discUl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  discUl.appendChild(li);
 });
 stylesSection.appendChild(discUl);
 
@@ -74,9 +74,9 @@ stylesSection.appendChild(discUl);
 const circleUl = document.createElement("ul");
 circleUl.style.listStyleType = "circle";
 ["Circle item 1", "Circle item 2"].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	circleUl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  circleUl.appendChild(li);
 });
 stylesSection.appendChild(circleUl);
 
@@ -84,9 +84,9 @@ stylesSection.appendChild(circleUl);
 const squareUl = document.createElement("ul");
 squareUl.style.listStyleType = "square";
 ["Square item 1", "Square item 2"].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	squareUl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  squareUl.appendChild(li);
 });
 stylesSection.appendChild(squareUl);
 
@@ -94,9 +94,9 @@ stylesSection.appendChild(squareUl);
 const decimalOl = document.createElement("ol");
 decimalOl.style.listStyleType = "decimal";
 ["Decimal item 1", "Decimal item 2"].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	decimalOl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  decimalOl.appendChild(li);
 });
 stylesSection.appendChild(decimalOl);
 
@@ -104,9 +104,9 @@ stylesSection.appendChild(decimalOl);
 const alphaOl = document.createElement("ol");
 alphaOl.style.listStyleType = "lower-alpha";
 ["Alpha item 1", "Alpha item 2", "Alpha item 3"].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	alphaOl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  alphaOl.appendChild(li);
 });
 stylesSection.appendChild(alphaOl);
 
@@ -114,9 +114,9 @@ stylesSection.appendChild(alphaOl);
 const romanOl = document.createElement("ol");
 romanOl.style.listStyleType = "lower-roman";
 ["Roman item 1", "Roman item 2", "Roman item 3"].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	romanOl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  romanOl.appendChild(li);
 });
 stylesSection.appendChild(romanOl);
 container.appendChild(stylesSection);
@@ -176,13 +176,13 @@ const planItem = document.createElement("li");
 planItem.textContent = "Planning";
 const planSubUl = document.createElement("ul");
 [
-	"Requirements gathering",
-	"Architecture design",
-	"Timeline estimation",
+  "Requirements gathering",
+  "Architecture design",
+  "Timeline estimation",
 ].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	planSubUl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  planSubUl.appendChild(li);
 });
 planItem.appendChild(planSubUl);
 level1Ol.appendChild(planItem);
@@ -191,11 +191,11 @@ const devItem = document.createElement("li");
 devItem.textContent = "Development";
 const devSubUl = document.createElement("ul");
 ["Frontend implementation", "Backend services", "Database design"].forEach(
-	(text) => {
-		const li = document.createElement("li");
-		li.textContent = text;
-		devSubUl.appendChild(li);
-	},
+  (text) => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    devSubUl.appendChild(li);
+  },
 );
 devItem.appendChild(devSubUl);
 level1Ol.appendChild(devItem);
@@ -222,11 +222,11 @@ const setupItem = document.createElement("li");
 setupItem.textContent = "Setup";
 const setupUl = document.createElement("ul");
 ["Install dependencies", "Configure environment", "Initialize project"].forEach(
-	(text) => {
-		const li = document.createElement("li");
-		li.textContent = text;
-		setupUl.appendChild(li);
-	},
+  (text) => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    setupUl.appendChild(li);
+  },
 );
 setupItem.appendChild(setupUl);
 mixedOl.appendChild(setupItem);
@@ -235,9 +235,9 @@ const codeItem = document.createElement("li");
 codeItem.textContent = "Write Code";
 const codeUl = document.createElement("ul");
 ["Implement features", "Write tests", "Debug issues"].forEach((text) => {
-	const li = document.createElement("li");
-	li.textContent = text;
-	codeUl.appendChild(li);
+  const li = document.createElement("li");
+  li.textContent = text;
+  codeUl.appendChild(li);
 });
 codeItem.appendChild(codeUl);
 mixedOl.appendChild(codeItem);

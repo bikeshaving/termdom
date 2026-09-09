@@ -33,34 +33,34 @@ form.innerHTML = `
 document.body.appendChild(form);
 
 const fields = ["name", "email", "handle"].map(
-	(id) => document.getElementById(id) as HTMLInputElement,
+  (id) => document.getElementById(id) as HTMLInputElement,
 );
 const preview = document.getElementById("preview")!;
 const done = document.getElementById("done")!;
 
 function updatePreview(): void {
-	const [name, email, handle] = fields.map((f) => f.value);
-	preview.textContent =
-		name || email || handle
-			? `» ${name || "?"} <${email || "?"}> @${handle || "?"}`
-			: "» start typing to build a profile";
-	done.textContent = "";
+  const [name, email, handle] = fields.map((f) => f.value);
+  preview.textContent =
+    name || email || handle
+      ? `» ${name || "?"} <${email || "?"}> @${handle || "?"}`
+      : "» start typing to build a profile";
+  done.textContent = "";
 }
 
 // The standard event: fires on every edit, in any field.
 for (const field of fields) {
-	field.addEventListener("input", updatePreview);
+  field.addEventListener("input", updatePreview);
 }
 
 document.addEventListener("keydown", (event: Event) => {
-	if ((event as KeyboardEvent).key !== "Enter") {
-		return;
-	}
-	const [name, email, handle] = fields.map((f) => f.value.trim());
-	if (!name && !email && !handle) {
-		return;
-	}
-	done.textContent = `✓ saved: ${name || "anonymous"} <${email || "n/a"}> @${handle || "n/a"}`;
+  if ((event as KeyboardEvent).key !== "Enter") {
+    return;
+  }
+  const [name, email, handle] = fields.map((f) => f.value.trim());
+  if (!name && !email && !handle) {
+    return;
+  }
+  done.textContent = `✓ saved: ${name || "anonymous"} <${email || "n/a"}> @${handle || "n/a"}`;
 });
 
 updatePreview();
