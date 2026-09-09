@@ -220,13 +220,6 @@ declare module "webidl2" {
 	export function parse(text: string): Definition[];
 }
 
-declare module "color-name" {
-
-	/** The CSS Color 4 named colors, each as its RGB channels. */
-	const colors: Readonly<Record<string, readonly [number, number, number]>>;
-	export default colors;
-}
-
 declare module "bidi-js" {
 
 	/** UAX #9, the Unicode bidirectional algorithm. */
