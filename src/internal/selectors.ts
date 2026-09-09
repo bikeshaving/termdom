@@ -831,9 +831,7 @@ function compileAttribute(
 		throw new SelectorError("an attribute selector names an attribute");
 	}
 	const folded = toASCIILowercase(local);
-	const flags = part.flags === null || part.flags === undefined
-		? ""
-		: toASCIILowercase(String(part.flags));
+	const flags = part.flags == null ? "" : toASCIILowercase(String(part.flags));
 	if (flags !== "" && flags !== "i" && flags !== "s") {
 		throw new SelectorError(`unknown attribute flag ${flags}`);
 	}
@@ -1357,8 +1355,8 @@ function readAnPlusB(node: CSSTree.SelectorNode | null): AnPlusB {
 	if (node.type !== "AnPlusB") {
 		throw new SelectorError("An+B is a step and an offset");
 	}
-	const a = node.a === null || node.a === undefined ? 0 : readStep(node.a);
-	const b = node.b === null || node.b === undefined ? 0 : Number(node.b);
+	const a = node.a == null ? 0 : readStep(node.a);
+	const b = node.b == null ? 0 : Number(node.b);
 	if (!Number.isFinite(a) || !Number.isFinite(b)) {
 		throw new SelectorError("An+B counts in whole numbers");
 	}

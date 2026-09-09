@@ -1325,7 +1325,7 @@ function installGlobals(
 
 async function runFile(file: string): Promise<Outcome> {
 	const reason = EXCLUSIONS[file] ?? excludedDirectory(file);
-	if (reason !== null && reason !== undefined) {
+	if (reason != null) {
 		return {file, harness: "EXCLUDED", subtests: [], error: reason};
 	}
 	const source = await cached(file);

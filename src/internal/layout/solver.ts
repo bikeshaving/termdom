@@ -546,7 +546,7 @@ export class LayoutNode {
 }
 
 export function toValue(input: Length): CSSValues.Value {
-	if (input === undefined || input === null) {
+	if (input == null) {
 		return UNDEFINED_VALUE;
 	}
 	if (typeof input === "object") {

@@ -952,7 +952,7 @@ const LEGACY_EVENT_TYPES = new Map([
 
 /** A dictionary argument per Web IDL: absent, null, or an object. */
 function toDictionary<T extends object>(value: unknown, what: string): T {
-	if (value === undefined || value === null) {
+	if (value == null) {
 		return {} as T;
 	}
 	if (typeof value !== "object" && typeof value !== "function") {
@@ -1736,7 +1736,7 @@ function toDouble(value: unknown): number {
 
 /** Convert an EventTarget? argument per Web IDL: null or an event target. */
 function toEventTarget(value: unknown): EventTarget | null {
-	if (value === undefined || value === null) {
+	if (value == null) {
 		return null;
 	}
 	if (!(value instanceof EventTarget)) {
@@ -1806,7 +1806,7 @@ class UIEvent extends Event {
 	constructor(type: string, eventInitDict: UIEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<UIEventInit>(eventInitDict, "An event init");
-		if (init.view !== undefined && init.view !== null) {
+		if (init.view != null) {
 			throw new TypeError("There is no window for an event to come through");
 		}
 		this[kDetail] = toLong(init.detail ?? 0);
@@ -1839,7 +1839,7 @@ class UIEvent extends Event {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
-		if (view !== undefined && view !== null) {
+		if (view != null) {
 			throw new TypeError("There is no window for an event to come through");
 		}
 		this[kDetail] = toLong(detail);
@@ -2332,8 +2332,7 @@ class InputEvent extends UIEvent {
 	constructor(type: string, eventInitDict: InputEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<InputEventInit>(eventInitDict, "An event init");
-		this[kData] =
-			init.data === undefined || init.data === null ? null : String(init.data);
+		this[kData] = init.data == null ? null : String(init.data);
 		this[kIsComposing] = Boolean(init.isComposing);
 		this[kInputType] = String(init.inputType ?? "");
 	}
@@ -2430,7 +2429,7 @@ class DataTransferItem {
 	}
 
 	getAsString(callback: globalThis.FunctionStringCallback | null): void {
-		if (callback === null || callback === undefined) {
+		if (callback == null) {
 			return;
 		}
 		if (typeof callback !== "function") {
@@ -2737,9 +2736,7 @@ class ClipboardEvent extends Event {
 			"An event init",
 		);
 		this[kClipboardData] =
-			init.clipboardData === undefined || init.clipboardData === null
-				? null
-				: init.clipboardData;
+			init.clipboardData == null ? null : init.clipboardData;
 	}
 
 	get clipboardData(): DataTransfer | null {
@@ -3381,8 +3378,7 @@ function flattenMore(
 	signal: ListenerSignal | null;
 } {
 	if (
-		options !== null &&
-		options !== undefined &&
+		options != null &&
 		typeof options !== "object" &&
 		typeof options !== "function"
 	) {
@@ -3421,8 +3417,7 @@ function flattenCapture(
 	options: boolean | globalThis.EventListenerOptions | undefined,
 ): boolean {
 	if (
-		options !== null &&
-		options !== undefined &&
+		options != null &&
 		typeof options !== "object" &&
 		typeof options !== "function"
 	) {
@@ -3440,7 +3435,7 @@ function flattenCapture(
 function toEventListener(
 	callback: unknown,
 ): globalThis.EventListenerOrEventListenerObject | null {
-	if (callback === null || callback === undefined) {
+	if (callback == null) {
 		return null;
 	}
 	if (typeof callback === "function" || typeof callback === "object") {
@@ -5425,7 +5420,7 @@ function preInsert(node: Node, parent: Node, child: Node | null): Node {
 	if (!(node instanceof Node)) {
 		throw new TypeError("That is not a node");
 	}
-	if (child !== null && child !== undefined && !(child instanceof Node)) {
+	if (child != null && !(child instanceof Node)) {
 		throw new TypeError("That is not a node");
 	}
 	const reference = child ?? null;
@@ -11443,7 +11438,7 @@ class CustomElementRegistry {
 			options ?? {},
 			"An ElementDefinitionOptions",
 		);
-		if (init.extends !== undefined && init.extends !== null) {
+		if (init.extends != null) {
 			throw domError(
 				"NotSupportedError",
 				"A customized built-in element is not implemented here",
@@ -12817,7 +12812,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 				return this.getAttribute(attribute);
 			};
 			set = function (this: Element, value: unknown): void {
-				if (value === null || value === undefined) {
+				if (value == null) {
 					this.removeAttribute(attribute);
 				} else {
 					this.setAttribute(attribute, String(value));
@@ -12931,7 +12926,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 				return invalid;
 			};
 			set = function (this: Element, value: unknown): void {
-				if (spec.nullable && (value === null || value === undefined)) {
+				if (spec.nullable && (value == null)) {
 					this.removeAttribute(attribute);
 					return;
 				}
@@ -13937,7 +13932,7 @@ class HTMLFormElement extends HTMLElement {
 	}
 
 	requestSubmit(submitter: HTMLElement | null = null): void {
-		if (submitter !== null && submitter !== undefined) {
+		if (submitter != null) {
 			if (!(submitter instanceof Element) || !isSubmitButton(submitter)) {
 				throw new TypeError("That element is not a submit button");
 			}
@@ -16690,7 +16685,7 @@ class HTMLOptionsCollection extends HTMLCollection {
 			);
 		}
 		let reference: Node | null = null;
-		if (before !== undefined && before !== null) {
+		if (before != null) {
 			if (typeof before === "number") {
 				const options = getOptions(this[kSelect]);
 				const index = toLong(before);
@@ -19297,7 +19292,7 @@ function setPopoverTargetAttributeElement(
 	element: Element,
 	value: Element | null,
 ): void {
-	if (value === null || value === undefined) {
+	if (value == null) {
 		explicitPopoverTargets.delete(element);
 		element.removeAttribute("popovertarget");
 		return;
@@ -20281,9 +20276,7 @@ class ElementInternals {
 		}
 		requireFormAssociated(this);
 		this[kSubmissionValue] =
-			value === null || value === undefined
-				? null
-				: typeof value === "object" ? value : String(value);
+			value == null ? null : typeof value === "object" ? value : String(value);
 		void state;
 	}
 
@@ -20308,7 +20301,7 @@ class ElementInternals {
 		if (anyFailed && (message === undefined || String(message) === "")) {
 			throw new TypeError("A failing constraint needs a message");
 		}
-		if (anchor !== undefined && anchor !== null) {
+		if (anchor != null) {
 			if (
 				!(anchor instanceof HTMLElement) ||
 				!isShadowIncludingInclusiveAncestor(
@@ -20356,7 +20349,7 @@ for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
 			return this[kElementInternalsTarget].getAttribute(attribute);
 		},
 		set(this: ElementInternals, value: unknown): void {
-			if (value === null || value === undefined) {
+			if (value == null) {
 				this[kElementInternalsTarget].removeAttribute(attribute);
 			} else {
 				this[kElementInternalsTarget].setAttribute(attribute, String(value));
@@ -20460,7 +20453,7 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 			return targets.length === 0 ? null : targets[0];
 		},
 		set: wrapWithReactions(function (this: Element, value: unknown): void {
-			if (value === null || value === undefined) {
+			if (value == null) {
 				setARIATargets(this, property, attribute, null);
 				return;
 			}
@@ -21003,14 +20996,12 @@ export function pseudoElement<T>(
 	name: string,
 ): T | null {
 	const slots = (host as Element)[kPseudoElements];
-	return slots === null || slots === undefined
-		? null
-		: ((slots.get(name) as T) ?? null);
+	return slots == null ? null : ((slots.get(name) as T) ?? null);
 }
 
 export function pseudoElementCount(host: globalThis.Element): number {
 	const slots = (host as Element)[kPseudoElements];
-	return slots === null || slots === undefined ? 0 : slots.size;
+	return slots == null ? 0 : slots.size;
 }
 
 /** Whether `ancestor` is a shadow-including inclusive ancestor of `node`. */
@@ -21351,7 +21342,7 @@ function flatContentFirstChild(element: Element): Node | null {
 
 function flatNextSibling(node: Node): Node | null {
 	const host = (node as Element)[kPseudoHost];
-	if (host !== null && host !== undefined) {
+	if (host != null) {
 		const name = (node as Element)[kPseudoName];
 		if (name === "::marker") {
 			const before = getPseudoSlot(host, "::before");
@@ -21402,7 +21393,7 @@ function flatNextSibling(node: Node): Node | null {
 
 function flatParentNode(node: Node): Node | null {
 	const host = (node as Element)[kPseudoHost];
-	if (host !== null && host !== undefined) {
+	if (host != null) {
 		return host;
 	}
 	const slot = getAssignedSlot(node);
@@ -23511,8 +23502,7 @@ function isPotentiallyScrollable(body: Element): boolean {
 	};
 	const parent = body[kParent];
 	return (
-		parent !== null &&
-		parent !== undefined &&
+		parent != null &&
 		parent.nodeType === ELEMENT_NODE &&
 		scrolls(parent as Element) &&
 		scrolls(body)
@@ -23682,7 +23672,7 @@ function copyDocumentState(from: Document, to: Document): void {
 function extractRegistry(
 	options: {customElementRegistry?: unknown} | string | undefined,
 ): CustomElementRegistry | null | undefined {
-	if (options === undefined || options === null) {
+	if (options == null) {
 		return undefined;
 	}
 	if (typeof options !== "object") {
@@ -23692,7 +23682,7 @@ function extractRegistry(
 		return undefined;
 	}
 	const value = options.customElementRegistry;
-	if (value === null || value === undefined) {
+	if (value == null) {
 		return null;
 	}
 	if (!(value instanceof CustomElementRegistry)) {
@@ -23987,7 +23977,7 @@ const parentNodeMembers = {
 			if (!(node instanceof Node)) {
 				throw new TypeError("That is not a node");
 			}
-			if (child !== null && child !== undefined && !(child instanceof Node)) {
+			if (child != null && !(child instanceof Node)) {
 				throw new TypeError("That is not a node");
 			}
 			let reference = child ?? null;
@@ -26156,9 +26146,7 @@ class Selection implements globalThis.Selection {
 			"getComposedRanges",
 		);
 		const roots: ShadowRoot[] = [];
-		if (
-			dictionary.shadowRoots !== undefined && dictionary.shadowRoots !== null
-		) {
+		if (dictionary.shadowRoots != null) {
 			for (const root of dictionary.shadowRoots as Iterable<unknown>) {
 				if (!(root instanceof ShadowRoot)) {
 					throw new TypeError("That is not a shadow root");
@@ -26218,7 +26206,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("collapse needs a node");
 		}
-		if (node === null || node === undefined) {
+		if (node == null) {
 			this.removeAllRanges();
 			return;
 		}
@@ -28215,7 +28203,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 			fail("The xmlns prefix is reserved for namespace declarations");
 		}
 		const namespace = lookupXMLPrefix(scope, prefix);
-		if (namespace === undefined || namespace === null) {
+		if (namespace == null) {
 			fail(`The prefix "${prefix}" is not bound to a namespace`);
 		}
 		return {namespace, prefix, localName};
@@ -28780,7 +28768,7 @@ function serializeFragment(
 		(node as Element)[kLocalName] === "template"
 	) {
 		const content = (node as HTMLTemplateElement)[kTemplateContent];
-		if (content !== null && content !== undefined) {
+		if (content != null) {
 			children = content;
 		}
 	}
