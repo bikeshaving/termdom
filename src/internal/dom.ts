@@ -6,7 +6,7 @@ import {
 	DOCUMENT_EVENT_HANDLERS,
 	GLOBAL_EVENT_HANDLERS,
 	WINDOW_EVENT_HANDLERS,
-} from "../generated/htmltables.ts";
+} from "../generated/htmlidl.ts";
 import {
 	adoptStyleSheets,
 	type Cascade,
@@ -21,21 +21,14 @@ import {
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import type {Exchange} from "./exchange.ts";
+import type {Layout} from "./layout.ts";
 import {
-	FORWARDED_BODY_EVENT_HANDLERS,
 	HTML_ELEMENT_REFLECTIONS,
 	HTML_ELEMENT_TAGS,
 	HTML_INTERFACES,
-	HTML_NAMESPACE,
 	HTML_UNKNOWN_TAGS,
-	MATHML_NAMESPACE,
 	type ReflectSpec,
-	SVG_NAMESPACE,
-	XLINK_NAMESPACE,
-	XML_NAMESPACE,
-	XMLNS_NAMESPACE,
-} from "./htmltables.ts";
-import type {Layout} from "./layout.ts";
+} from "./reflection.ts";
 import type {Screen} from "./screen.ts";
 import {
 	closestSelector,
@@ -58,6 +51,13 @@ import {
 	TEXT_CONTROL_UA_STYLES,
 	TEXTAREA_UA_STYLES,
 } from "./useragent.ts";
+
+export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
+export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+export const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
+export const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
+export const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 
 const kEnsureUAShadowTree = Symbol("build a control's UA shadow tree");
 
@@ -3689,6 +3689,18 @@ class UncompiledHandler {
 		this.element = element;
 	}
 }
+
+// Set on a body or frameset, these are stored on its window and read
+// back from it.
+const FORWARDED_BODY_EVENT_HANDLERS: readonly string[] = [
+	"onblur",
+	"onerror",
+	"onfocus",
+	"onload",
+	"onresize",
+	"onscroll",
+	...WINDOW_EVENT_HANDLERS,
+];
 
 const HANDLER_ATTRIBUTES: ReadonlySet<string> = new Set([
 	...GLOBAL_EVENT_HANDLERS,

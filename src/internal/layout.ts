@@ -32,7 +32,7 @@ import {
 	type Style,
 	toValue,
 	type Wrap,
-} from "./solver.ts";
+} from "./layout/solver.ts";
 import {
 	getParagraphDirection,
 	getStringWidth,

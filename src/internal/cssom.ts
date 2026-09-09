@@ -28,7 +28,7 @@ import {
 } from "./dom.ts";
 import {
 	HTML_NAMESPACE,
-} from "./htmltables.ts";
+} from "./dom.ts";
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {

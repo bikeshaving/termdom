@@ -36,7 +36,7 @@ import {
 	Node,
 	parentElement,
 } from "./dom.ts";
-import {HTML_NAMESPACE, XML_NAMESPACE} from "./htmltables.ts";
+import {HTML_NAMESPACE, XML_NAMESPACE} from "./dom.ts";
 import {toASCIILowercase} from "./text.ts";
 
 // CSS Selectors: the language, and the matcher a selector compiles to.
