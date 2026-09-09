@@ -36,8 +36,8 @@ function rect(n: LayoutNode): {
 	height: number;
 } {
 	return {
-		left: n.layout.left,
-		top: n.layout.top,
+		left: n.result.left,
+		top: n.result.top,
 		width: n.getComputedWidth(),
 		height: n.getComputedHeight(),
 	};

@@ -3559,8 +3559,8 @@ function getAbsolutePosition(
 		current;
 		current = current.parent
 	) {
-		x += current.layout.left;
-		y += current.layout.top;
+		x += current.result.left;
+		y += current.result.top;
 		if (current !== layoutNode) {
 			const node = current.owner as Node | undefined;
 			if (
@@ -3709,9 +3709,9 @@ function getStaticPosition(
 	const offsetLeft = origin.x - containingOrigin.x;
 	const offsetTop = origin.y - containingOrigin.y;
 	const contentLeft =
-		containerNode.style.border.left + containerNode.layout.padding.left;
+		containerNode.style.border.left + containerNode.result.padding.left;
 	const contentTop =
-		containerNode.style.border.top + containerNode.layout.padding.top;
+		containerNode.style.border.top + containerNode.result.padding.top;
 
 	const box = getContainerBox(layout, container);
 	const children = box.children!;
@@ -3758,9 +3758,9 @@ function getStaticPosition(
 			left: offsetLeft + contentLeft,
 			top:
 				offsetTop +
-				previousNode.layout.top +
+				previousNode.result.top +
 				previousNode.getComputedHeight() +
-				previousNode.layout.margin.bottom,
+				previousNode.result.margin.bottom,
 		};
 	}
 	return {left: offsetLeft + contentLeft, top: offsetTop + contentTop};
@@ -4322,9 +4322,9 @@ export class Layout {
 				right =
 					child.measure !== null
 						? null
-						: Math.max(right, child.layout.left + child.getComputedWidth());
+						: Math.max(right, child.result.left + child.getComputedWidth());
 			}
-			bottom = Math.max(bottom, child.layout.top + child.getComputedHeight());
+			bottom = Math.max(bottom, child.result.top + child.getComputedHeight());
 		}
 		const clientWidth =
 			layoutNode.getComputedWidth() -

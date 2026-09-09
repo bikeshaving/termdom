@@ -363,7 +363,7 @@ export class LayoutNode {
 	// Replaced whole by a restyle or written in place, with invalidate()
 	// after either.
 	style: Style;
-	layout: LayoutResult;
+	result: LayoutResult;
 	children: LayoutNode[];
 	parent: LayoutNode | null;
 	stale: boolean;
@@ -375,7 +375,7 @@ export class LayoutNode {
 	extentBottom: number;
 
 	// Children whose extent need not follow document order: positioned
-	// ones, and display:none ones, whose layout.top is never updated.
+	// ones, and display:none ones, whose result.top is never updated.
 	// children[] is sorted by extentTop only when this is 0.
 	unstackedChildCount: number;
 
@@ -414,7 +414,7 @@ export class LayoutNode {
 		this.styledPass = 0;
 		this.measureKey = "";
 		this.style = createStyle();
-		this.layout = createLayout();
+		this.result = createResult();
 	}
 
 	get measure(): Measure | null {
@@ -462,7 +462,7 @@ export class LayoutNode {
 	}
 
 	computePaintExtents(originTop: number): void {
-		const top = originTop + this.layout.top;
+		const top = originTop + this.result.top;
 		let extentTop = top;
 		let extentBottom = top + this.getComputedHeight();
 		let unstacked = 0;
@@ -486,22 +486,22 @@ export class LayoutNode {
 	getComputedGridTracks(
 		rows: boolean,
 	): {sizes: number[]; offset: number} | null {
-		const sizes = rows ? this.layout.gridRows : this.layout.gridColumns;
+		const sizes = rows ? this.result.gridRows : this.result.gridColumns;
 		if (!sizes) {
 			return null;
 		}
 		return {
 			sizes,
-			offset: rows ? this.layout.gridRowOffset : this.layout.gridColumnOffset,
+			offset: rows ? this.result.gridRowOffset : this.result.gridColumnOffset,
 		};
 	}
 
 	getComputedWidth(): number {
-		return isDefined(this.layout.width) ? this.layout.width : 0;
+		return isDefined(this.result.width) ? this.result.width : 0;
 	}
 
 	getComputedHeight(): number {
-		return isDefined(this.layout.height) ? this.layout.height : 0;
+		return isDefined(this.result.height) ? this.result.height : 0;
 	}
 
 	performLayout(ownerWidth: number, ownerHeight: number): void {
@@ -644,7 +644,7 @@ export function createStyle(): Style {
 	};
 }
 
-function createLayout(): LayoutResult {
+function createResult(): LayoutResult {
 	return {
 		left: 0,
 		top: 0,
@@ -733,7 +733,7 @@ function getBaselineWithinBorderBox(
 		if (isOutOfFlowType(child.style.positionType)) {
 			continue;
 		}
-		return child.layout.top + getBaselineWithinBorderBox(child, ownerWidth);
+		return child.result.top + getBaselineWithinBorderBox(child, ownerWidth);
 	}
 
 	return contentTop;
@@ -864,10 +864,10 @@ function constrainMaxSizeForMode(
 }
 
 function resolveNodeMargins(node: LayoutNode, ownerWidth: number): void {
-	node.layout.margin.left = resolveMargin(node.style.margin.left, ownerWidth);
-	node.layout.margin.top = resolveMargin(node.style.margin.top, ownerWidth);
-	node.layout.margin.right = resolveMargin(node.style.margin.right, ownerWidth);
-	node.layout.margin.bottom = resolveMargin(
+	node.result.margin.left = resolveMargin(node.style.margin.left, ownerWidth);
+	node.result.margin.top = resolveMargin(node.style.margin.top, ownerWidth);
+	node.result.margin.right = resolveMargin(node.style.margin.right, ownerWidth);
+	node.result.margin.bottom = resolveMargin(
 		node.style.margin.bottom,
 		ownerWidth,
 	);
@@ -880,8 +880,8 @@ function setMeasuredSize(
 	ownerWidth: number,
 	ownerHeight: number,
 ): void {
-	node.layout.width = boundAxis(node, "row", width, ownerWidth, ownerWidth);
-	node.layout.height = boundAxis(
+	node.result.width = boundAxis(node, "row", width, ownerWidth, ownerWidth);
+	node.result.height = boundAxis(
 		node,
 		"column",
 		height,
@@ -1006,7 +1006,7 @@ function computeFlexBasisForChild(
 	);
 
 	if (isDefined(resolvedBasis) && isDefined(mainAxisSize)) {
-		child.layout.computedFlexBasis = Math.max(
+		child.result.computedFlexBasis = Math.max(
 			resolvedBasis,
 			getAxisPaddingAndBorder(child, mainAxis, ownerWidth),
 		);
@@ -1014,7 +1014,7 @@ function computeFlexBasisForChild(
 	}
 
 	if (mainIsRow && rowDimDefined) {
-		child.layout.computedFlexBasis = Math.max(
+		child.result.computedFlexBasis = Math.max(
 			resolveValue(child.style.width, ownerWidth),
 			getAxisPaddingAndBorder(child, "row", ownerWidth),
 		);
@@ -1022,7 +1022,7 @@ function computeFlexBasisForChild(
 	}
 
 	if (!mainIsRow && columnDimDefined) {
-		child.layout.computedFlexBasis = Math.max(
+		child.result.computedFlexBasis = Math.max(
 			resolveValue(child.style.height, ownerHeight),
 			getAxisPaddingAndBorder(child, "column", ownerWidth),
 		);
@@ -1090,8 +1090,8 @@ function computeFlexBasisForChild(
 		false,
 	);
 
-	child.layout.computedFlexBasis = Math.max(
-		mainIsRow ? child.layout.width : child.layout.height,
+	child.result.computedFlexBasis = Math.max(
+		mainIsRow ? child.result.width : child.result.height,
 		getAxisPaddingAndBorder(child, mainAxis, ownerWidth),
 	);
 }
@@ -1176,7 +1176,7 @@ function layoutFlexbox(
 
 		// Before the basis, because this lays the child out and would clobber a
 		// basis computed first.
-		child.layout.automaticMinimumSize = getAutoMinimumMainSize(
+		child.result.automaticMinimumSize = getAutoMinimumMainSize(
 			node,
 			child,
 			innerCross,
@@ -1219,7 +1219,7 @@ function layoutFlexbox(
 			const basis = boundAxisWithinMinMax(
 				child,
 				mainAxis,
-				child.layout.computedFlexBasis,
+				child.result.computedFlexBasis,
 				mainIsRow ? itemOwnerWidth : itemOwnerHeight,
 			);
 
@@ -1289,7 +1289,7 @@ function layoutFlexbox(
 		let lineCross = 0;
 		for (const child of line.items) {
 			const childCross =
-				(isRow(cross) ? child.layout.width : child.layout.height) +
+				(isRow(cross) ? child.result.width : child.result.height) +
 				getAxisMargin(child, cross, itemOwnerWidth);
 			lineCross = Math.max(lineCross, childCross);
 		}
@@ -1346,11 +1346,11 @@ function layoutFlexbox(
 		);
 
 	if (mainIsRow) {
-		node.layout.width = measuredMain;
-		node.layout.height = measuredCross;
+		node.result.width = measuredMain;
+		node.result.height = measuredCross;
 	} else {
-		node.layout.height = measuredMain;
-		node.layout.width = measuredCross;
+		node.result.height = measuredMain;
+		node.result.width = measuredCross;
 	}
 
 	if (!performLayout) {
@@ -1358,7 +1358,7 @@ function layoutFlexbox(
 	}
 
 	const containerInnerCross =
-		(crossIsRow ? node.layout.width : node.layout.height) - paddingBorderCross;
+		(crossIsRow ? node.result.width : node.result.height) - paddingBorderCross;
 
 	positionCrossAxis(
 		node,
@@ -1372,7 +1372,7 @@ function layoutFlexbox(
 
 	if (isReverse(mainAxis)) {
 		const containerInnerMain =
-			(mainIsRow ? node.layout.width : node.layout.height) - paddingBorderMain;
+			(mainIsRow ? node.result.width : node.result.height) - paddingBorderMain;
 		mirrorWithinContentBox(
 			lines,
 			mainAxis,
@@ -1391,16 +1391,16 @@ function layoutFlexbox(
 
 	// `position: relative` moves a box after flow placement, without moving
 	// anything else.
-	const innerWidthFinal = node.layout.width - paddingBorderRow;
-	const innerHeightFinal = node.layout.height - paddingBorderColumn;
+	const innerWidthFinal = node.result.width - paddingBorderRow;
+	const innerHeightFinal = node.result.height - paddingBorderColumn;
 
 	for (const line of lines) {
 		for (const child of line.items) {
 			if (child.style.positionType !== "relative") {
 				continue;
 			}
-			child.layout.left += getRelativeOffset(child, "row", innerWidthFinal);
-			child.layout.top += getRelativeOffset(child, "column", innerHeightFinal);
+			child.result.left += getRelativeOffset(child, "row", innerWidthFinal);
+			child.result.top += getRelativeOffset(child, "column", innerHeightFinal);
 		}
 	}
 
@@ -1498,19 +1498,19 @@ function resolveFlexibleLengths(
 			value,
 			mainOwnerSize,
 		);
-		const floor = child.layout.automaticMinimumSize;
+		const floor = child.result.automaticMinimumSize;
 		return isDefined(floor) ? Math.max(bounded, floor) : bounded;
 	};
 
 	for (const child of line.items) {
-		const flexBase = child.layout.computedFlexBasis;
+		const flexBase = child.result.computedFlexBasis;
 		base.set(child, flexBase);
 		target.set(child, clampMain(child, flexBase));
 	}
 
 	const commit = () => {
 		for (const child of line.items) {
-			child.layout.computedFlexBasis = target.get(child)!;
+			child.result.computedFlexBasis = target.get(child)!;
 		}
 	};
 
@@ -1662,7 +1662,7 @@ function getAutoMinimumMainSize(
 		false,
 	);
 
-	let floor = mainIsRow ? child.layout.width : child.layout.height;
+	let floor = mainIsRow ? child.result.width : child.result.height;
 
 	// Never past a specified size or the item's own maximum.
 	const size = mainIsRow ? child.style.width : child.style.height;
@@ -1695,7 +1695,7 @@ function layoutFlexItem(
 	const cross = getCrossAxis(mainAxis);
 	const mainIsRow = isRow(mainAxis);
 
-	const mainSize = child.layout.computedFlexBasis;
+	const mainSize = child.result.computedFlexBasis;
 	const align = getAlignSelf(node, child);
 
 	const crossDimDefined = isStyleDimensionDefined(
@@ -1792,7 +1792,7 @@ function stretchFlexItem(
 	const cross = getCrossAxis(mainAxis);
 	const mainIsRow = isRow(mainAxis);
 
-	const mainSize = mainIsRow ? child.layout.width : child.layout.height;
+	const mainSize = mainIsRow ? child.result.width : child.result.height;
 	const marginMain = getAxisMargin(child, mainAxis, ownerWidth);
 	const marginCross = getAxisMargin(child, cross, ownerWidth);
 
@@ -1826,7 +1826,7 @@ function positionMainAxis(
 	let contentMain = 0;
 	for (const child of line.items) {
 		contentMain +=
-			(mainIsRow ? child.layout.width : child.layout.height) +
+			(mainIsRow ? child.result.width : child.result.height) +
 			getAxisMargin(child, mainAxis, ownerWidth);
 	}
 
@@ -1900,13 +1900,13 @@ function positionMainAxis(
 
 		if (performLayout) {
 			if (mainIsRow) {
-				child.layout.left = cursor;
+				child.result.left = cursor;
 			} else {
-				child.layout.top = cursor;
+				child.result.top = cursor;
 			}
 		}
 
-		cursor += mainIsRow ? child.layout.width : child.layout.height;
+		cursor += mainIsRow ? child.result.width : child.result.height;
 		cursor += resolveMargin(
 			child.style.margin[getTrailingEdge(mainAxis)],
 			ownerWidth,
@@ -2031,14 +2031,14 @@ function positionCrossAxis(
 			) {
 				const targetCross = lineCross - leadingMargin - trailingMargin;
 				const currentCross = crossIsRow
-					? child.layout.width
-					: child.layout.height;
+					? child.result.width
+					: child.result.height;
 				if (!approximatelyEqual(currentCross, targetCross)) {
 					stretchFlexItem(node, child, targetCross, ownerWidth, ownerHeight);
 				}
 			}
 
-			const childCross = crossIsRow ? child.layout.width : child.layout.height;
+			const childCross = crossIsRow ? child.result.width : child.result.height;
 			const availableCross =
 				lineCross - childCross - leadingMargin - trailingMargin;
 
@@ -2073,9 +2073,9 @@ function positionCrossAxis(
 
 			const position = cursor + leadingMargin + offset;
 			if (crossIsRow) {
-				child.layout.left = position;
+				child.result.left = position;
 			} else {
-				child.layout.top = position;
+				child.result.top = position;
 			}
 		}
 
@@ -2095,17 +2095,17 @@ function mirrorWithinContentBox(
 
 	for (const line of lines) {
 		for (const child of line.items) {
-			const childSize = axisIsRow ? child.layout.width : child.layout.height;
-			const start = axisIsRow ? child.layout.left : child.layout.top;
+			const childSize = axisIsRow ? child.result.width : child.result.height;
+			const start = axisIsRow ? child.result.left : child.result.top;
 
 			const relative = start - leadingPaddingBorder;
 			const mirrored = innerSize - relative - childSize;
 			const position = leadingPaddingBorder + mirrored;
 
 			if (axisIsRow) {
-				child.layout.left = position;
+				child.result.left = position;
 			} else {
-				child.layout.top = position;
+				child.result.top = position;
 			}
 		}
 	}
@@ -2124,8 +2124,8 @@ function layoutAbsoluteChild(
 		height: number;
 	} | null = null,
 ): void {
-	const parentWidth = node.layout.width;
-	const parentHeight = node.layout.height;
+	const parentWidth = node.result.width;
+	const parentHeight = node.result.height;
 
 	const borderLeft = node.style.border.left;
 	const borderTop = node.style.border.top;
@@ -2225,17 +2225,17 @@ function layoutAbsoluteChild(
 	const isGrid = node.style.displayType === "grid";
 
 	if (shrinkAcross) {
-		const free = blockWidth - left - right - child.layout.width;
-		child.layout.left = blockLeft + left + Math.max(free, 0) / 2;
+		const free = blockWidth - left - right - child.result.width;
+		child.result.left = blockLeft + left + Math.max(free, 0) / 2;
 	} else if (isDefined(left)) {
-		child.layout.left = blockLeft + left + marginLeft;
+		child.result.left = blockLeft + left + marginLeft;
 	} else if (isDefined(right)) {
-		child.layout.left =
-			blockLeft + blockWidth - child.layout.width - right - marginRight;
+		child.result.left =
+			blockLeft + blockWidth - child.result.width - right - marginRight;
 	} else if (getStaticPosition) {
-		child.layout.left = getStaticPosition.left + marginLeft;
+		child.result.left = getStaticPosition.left + marginLeft;
 	} else {
-		const free = blockWidth - child.layout.width;
+		const free = blockWidth - child.result.width;
 		// A grid aligns an out-of-flow box by its own justify-self.
 		const align = isGrid
 			? getGridSelfAlign(node, child, true)
@@ -2245,26 +2245,26 @@ function layoutAbsoluteChild(
 					: node.style.justifyContent === "flex-end" ? "flex-end" : "flex-start"
 				: "flex-start";
 		if (align === "center") {
-			child.layout.left = blockLeft + free / 2;
+			child.result.left = blockLeft + free / 2;
 		} else if (align === "flex-end") {
-			child.layout.left = blockLeft + free;
+			child.result.left = blockLeft + free;
 		} else {
-			child.layout.left = blockLeft + marginLeft;
+			child.result.left = blockLeft + marginLeft;
 		}
 	}
 
 	if (shrinkDown) {
-		const free = blockHeight - top - bottom - child.layout.height;
-		child.layout.top = blockTop + top + Math.max(free, 0) / 2;
+		const free = blockHeight - top - bottom - child.result.height;
+		child.result.top = blockTop + top + Math.max(free, 0) / 2;
 	} else if (isDefined(top)) {
-		child.layout.top = blockTop + top + marginTop;
+		child.result.top = blockTop + top + marginTop;
 	} else if (isDefined(bottom)) {
-		child.layout.top =
-			blockTop + blockHeight - child.layout.height - bottom - marginBottom;
+		child.result.top =
+			blockTop + blockHeight - child.result.height - bottom - marginBottom;
 	} else if (getStaticPosition) {
-		child.layout.top = getStaticPosition.top + marginTop;
+		child.result.top = getStaticPosition.top + marginTop;
 	} else {
-		const free = blockHeight - child.layout.height;
+		const free = blockHeight - child.result.height;
 		const align = isGrid
 			? getGridSelfAlign(node, child, false)
 			: isColumn(node.style.flexDirection)
@@ -2273,11 +2273,11 @@ function layoutAbsoluteChild(
 					: node.style.alignItems === "flex-end" ? "flex-end" : "flex-start"
 				: "flex-start";
 		if (align === "center") {
-			child.layout.top = blockTop + free / 2;
+			child.result.top = blockTop + free / 2;
 		} else if (align === "flex-end") {
-			child.layout.top = blockTop + free;
+			child.result.top = blockTop + free;
 		} else {
-			child.layout.top = blockTop + marginTop;
+			child.result.top = blockTop + marginTop;
 		}
 	}
 
@@ -2292,25 +2292,25 @@ function layoutAbsoluteChild(
 			between !== null && between !== node;
 			between = between.parent
 		) {
-			offsetLeft += between.layout.left;
-			offsetTop += between.layout.top;
+			offsetLeft += between.result.left;
+			offsetTop += between.result.top;
 		}
-		child.layout.left -= offsetLeft;
-		child.layout.top -= offsetTop;
+		child.result.left -= offsetLeft;
+		child.result.top -= offsetTop;
 	}
 }
 
 function zeroLayout(node: LayoutNode): void {
-	node.layout.left = 0;
-	node.layout.top = 0;
-	node.layout.width = 0;
-	node.layout.height = 0;
-	node.layout.computedFlexBasis = 0;
-	node.layout.collapseTopPositive = 0;
-	node.layout.collapseTopNegative = 0;
-	node.layout.collapseBottomPositive = 0;
-	node.layout.collapseBottomNegative = 0;
-	node.layout.selfCollapsing = false;
+	node.result.left = 0;
+	node.result.top = 0;
+	node.result.width = 0;
+	node.result.height = 0;
+	node.result.computedFlexBasis = 0;
+	node.result.collapseTopPositive = 0;
+	node.result.collapseTopNegative = 0;
+	node.result.collapseBottomPositive = 0;
+	node.result.collapseBottomNegative = 0;
+	node.result.selfCollapsing = false;
 	for (const child of node.children) {
 		zeroLayout(child);
 	}
@@ -2454,7 +2454,7 @@ function getIntrinsicCellWidth(
 		ownerHeight,
 		false,
 	);
-	return cell.layout.width;
+	return cell.result.width;
 }
 
 function distributeAcross(
@@ -2679,9 +2679,9 @@ function layoutTable(
 			ownerHeight,
 			performLayout,
 		);
-		caption.layout.left = leftPaddingBorder;
-		caption.layout.top = topPaddingBorder + captionHeight;
-		captionHeight += caption.layout.height;
+		caption.result.left = leftPaddingBorder;
+		caption.result.top = topPaddingBorder + captionHeight;
+		captionHeight += caption.result.height;
 	}
 
 	const rowHeights = new Array<number>(rows.length).fill(0);
@@ -2702,7 +2702,7 @@ function layoutTable(
 		if (cell.rowSpan === 1) {
 			rowHeights[cell.row] = Math.max(
 				rowHeights[cell.row],
-				cell.node.layout.height,
+				cell.node.result.height,
 			);
 		}
 	}
@@ -2717,7 +2717,7 @@ function layoutTable(
 			covered += rowHeights[cell.row + i];
 		}
 
-		const deficit = cell.node.layout.height - covered;
+		const deficit = cell.node.result.height - covered;
 		if (deficit > 0) {
 			const last = Math.min(cell.row + cell.rowSpan - 1, rows.length - 1);
 			rowHeights[last] += deficit;
@@ -2772,19 +2772,19 @@ function layoutTable(
 	const gridTop = topPaddingBorder + captionHeight;
 
 	for (const group of groups) {
-		group.layout.left = leftPaddingBorder;
-		group.layout.width = contentWidth;
-		group.layout.top = gridTop;
-		group.layout.height = gridHeight;
+		group.result.left = leftPaddingBorder;
+		group.result.width = contentWidth;
+		group.result.top = gridTop;
+		group.result.height = gridHeight;
 	}
 
 	rows.forEach((row, index) => {
-		row.node.layout.left = row.group ? 0 : leftPaddingBorder;
-		row.node.layout.top = row.group
+		row.node.result.left = row.group ? 0 : leftPaddingBorder;
+		row.node.result.top = row.group
 			? rowStart(index)
 			: gridTop + rowStart(index);
-		row.node.layout.width = contentWidth;
-		row.node.layout.height = rowHeights[index];
+		row.node.result.width = contentWidth;
+		row.node.result.height = rowHeights[index];
 	});
 
 	for (const cell of cells) {
@@ -2804,8 +2804,8 @@ function layoutTable(
 			true,
 		);
 
-		cell.node.layout.left = columnStart(cell.column);
-		cell.node.layout.top = 0;
+		cell.node.result.left = columnStart(cell.column);
+		cell.node.result.top = 0;
 	}
 }
 
@@ -3433,7 +3433,7 @@ function getGridItemContribution(
 			false,
 		);
 		return (
-			child.layout.width + getAxisMargin(child, "row", sizing.ownerWidth)
+			child.result.width + getAxisMargin(child, "row", sizing.ownerWidth)
 		);
 	}
 	const width = getTrackSpan(
@@ -3453,7 +3453,7 @@ function getGridItemContribution(
 		false,
 	);
 	return (
-		child.layout.height +
+		child.result.height +
 		getAxisMargin(child, "column", sizing.ownerWidth) +
 		(sizing.baselineShims?.get(child) ?? 0)
 	);
@@ -4186,14 +4186,14 @@ function layoutGridItem(
 		return;
 	}
 
-	const freeX = areaWidth - child.layout.width - marginRow;
-	const freeY = areaHeight - child.layout.height - marginColumn;
+	const freeX = areaWidth - child.result.width - marginRow;
+	const freeY = areaHeight - child.result.height - marginColumn;
 
-	child.layout.left =
+	child.result.left =
 		areaLeft +
 		getAlignmentOffset(justify, freeX, autoLeft, autoRight) +
 		resolveMargin(child.style.margin.left, ownerWidth);
-	child.layout.top =
+	child.result.top =
 		areaTop +
 		getAlignmentOffset(align, freeY, autoTop, autoBottom) +
 		resolveMargin(child.style.margin.top, ownerWidth);
@@ -4255,7 +4255,7 @@ function alignGridBaselines(
 			);
 		}
 		for (const item of group) {
-			item.node.layout.top +=
+			item.node.result.top +=
 				furthest - getBaselineWithinBorderBox(item.node, ownerWidth);
 		}
 	}
@@ -4604,8 +4604,8 @@ function layoutGrid(
 		return;
 	}
 
-	const usedInnerWidth = Math.max(0, node.layout.width - paddingBorderRow);
-	const usedInnerHeight = Math.max(0, node.layout.height - paddingBorderColumn);
+	const usedInnerWidth = Math.max(0, node.result.width - paddingBorderRow);
+	const usedInnerHeight = Math.max(0, node.result.height - paddingBorderColumn);
 
 	positionTracks(
 		columnTracks,
@@ -4617,10 +4617,10 @@ function layoutGrid(
 
 	// Snapped by rounding the EDGES, as roundToGrid rounds the boxes, so the
 	// reported sizes tile the container.
-	node.layout.gridColumns = snapTrackSizes(columnTracks, columnGap);
-	node.layout.gridRows = snapTrackSizes(rowTracks, rowGap);
-	node.layout.gridColumnOffset = -columnBase || 0;
-	node.layout.gridRowOffset = -rowBase || 0;
+	node.result.gridColumns = snapTrackSizes(columnTracks, columnGap);
+	node.result.gridRows = snapTrackSizes(rowTracks, rowGap);
+	node.result.gridColumnOffset = -columnBase || 0;
+	node.result.gridRowOffset = -rowBase || 0;
 
 	// A line has two positions once tracks are spread by justify-content or
 	// a gap. An area takes the inner pair, so the space between tracks
@@ -4667,8 +4667,8 @@ function layoutGrid(
 		if (child.style.positionType !== "relative") {
 			continue;
 		}
-		child.layout.left += getRelativeOffset(child, "row", usedInnerWidth);
-		child.layout.top += getRelativeOffset(child, "column", usedInnerHeight);
+		child.result.left += getRelativeOffset(child, "row", usedInnerWidth);
+		child.result.top += getRelativeOffset(child, "column", usedInnerHeight);
 	}
 
 	for (const child of getOutOfFlowDescendants(node, false)) {
@@ -4728,10 +4728,10 @@ function getAbsoluteGridArea(
 
 	const paddingLeft = node.style.border.left;
 	const paddingTop = node.style.border.top;
-	const paddingRight = Math.max(0, node.layout.width - node.style.border.right);
+	const paddingRight = Math.max(0, node.result.width - node.style.border.right);
 	const paddingBottom = Math.max(
 		0,
-		node.layout.height - node.style.border.bottom,
+		node.result.height - node.style.border.bottom,
 	);
 
 	const edge = (
@@ -4847,16 +4847,16 @@ function getCollapsedMargin(set: MarginSet): number {
 // The child's own margin, plus what escapes its edge.
 function readCollapseTop(child: LayoutNode, into: MarginSet): void {
 	resetMarginSet(into);
-	addMargin(into, child.layout.margin.top);
-	into.positive = Math.max(into.positive, child.layout.collapseTopPositive);
-	into.negative = Math.min(into.negative, child.layout.collapseTopNegative);
+	addMargin(into, child.result.margin.top);
+	into.positive = Math.max(into.positive, child.result.collapseTopPositive);
+	into.negative = Math.min(into.negative, child.result.collapseTopNegative);
 }
 
 function readCollapseBottom(child: LayoutNode, into: MarginSet): void {
 	resetMarginSet(into);
-	addMargin(into, child.layout.margin.bottom);
-	into.positive = Math.max(into.positive, child.layout.collapseBottomPositive);
-	into.negative = Math.min(into.negative, child.layout.collapseBottomNegative);
+	addMargin(into, child.result.margin.bottom);
+	into.positive = Math.max(into.positive, child.result.collapseBottomPositive);
+	into.negative = Math.min(into.negative, child.result.collapseBottomNegative);
 }
 
 function isShrinkToFitWidth(node: LayoutNode): boolean {
@@ -4940,7 +4940,7 @@ function layoutBlockChild(
 // Collapsible white space between two blocks produces no line, so the
 // margins on either side of it keep adjoining (css2 §9.4.2, §8.3.1).
 function hasNoLineBox(child: LayoutNode): boolean {
-	return child.measure !== null && child.layout.height === 0;
+	return child.measure !== null && child.result.height === 0;
 }
 
 function isStretchFit(child: LayoutNode): boolean {
@@ -5019,7 +5019,7 @@ function layoutBlock(
 			);
 			widest = Math.max(
 				widest,
-				child.layout.width + getAxisMargin(child, "row", innerWidth),
+				child.result.width + getAxisMargin(child, "row", innerWidth),
 			);
 		}
 		borderBoxWidth = widest + paddingBorderRow;
@@ -5067,7 +5067,7 @@ function layoutBlock(
 		);
 
 		readCollapseTop(child, childTop);
-		if (child.layout.selfCollapsing || hasNoLineBox(child)) {
+		if (child.result.selfCollapsing || hasNoLineBox(child)) {
 			readCollapseBottom(child, childBottom);
 			mergeMarginSet(childTop, childBottom);
 			if (collecting) {
@@ -5089,7 +5089,7 @@ function layoutBlock(
 			tops[i] = cursor + getCollapsedMargin(adjoining);
 		}
 		resetMarginSet(adjoining);
-		cursor = tops[i] + child.layout.height;
+		cursor = tops[i] + child.result.height;
 		placedContent = true;
 		readCollapseBottom(child, adjoining);
 	}
@@ -5112,16 +5112,16 @@ function layoutBlock(
 	// Nothing at either edge and nothing between. The box is a gap its
 	// neighbours' margins pass through, and its two escaping sets are one.
 	const selfCollapsing =
-		openTop && openBottom && !placedContent && node.layout.height === 0;
+		openTop && openBottom && !placedContent && node.result.height === 0;
 	if (selfCollapsing) {
 		mergeMarginSet(escapingTop, escapingBottom);
 		mergeMarginSet(escapingBottom, escapingTop);
 	}
-	node.layout.collapseTopPositive = escapingTop.positive;
-	node.layout.collapseTopNegative = escapingTop.negative;
-	node.layout.collapseBottomPositive = escapingBottom.positive;
-	node.layout.collapseBottomNegative = escapingBottom.negative;
-	node.layout.selfCollapsing = selfCollapsing;
+	node.result.collapseTopPositive = escapingTop.positive;
+	node.result.collapseTopNegative = escapingTop.negative;
+	node.result.collapseBottomPositive = escapingBottom.positive;
+	node.result.collapseBottomNegative = escapingBottom.negative;
+	node.result.selfCollapsing = selfCollapsing;
 
 	if (!performLayout) {
 		return;
@@ -5129,11 +5129,11 @@ function layoutBlock(
 
 	for (let i = 0; i < inFlow.length; i++) {
 		const child = inFlow[i];
-		const leading = child.layout.margin.left;
-		const trailing = child.layout.margin.right;
+		const leading = child.result.margin.left;
+		const trailing = child.result.margin.right;
 		const leadingAuto = child.style.margin.left.unit === "auto";
 		const trailingAuto = child.style.margin.right.unit === "auto";
-		const free = contentWidth - child.layout.width - leading - trailing;
+		const free = contentWidth - child.result.width - leading - trailing;
 
 		let offset = 0;
 		if (leadingAuto && trailingAuto) {
@@ -5142,18 +5142,18 @@ function layoutBlock(
 			offset = Math.max(free, 0);
 		}
 
-		child.layout.left = leftPaddingBorder + leading + offset;
-		child.layout.top = topPaddingBorder + tops[i];
+		child.result.left = leftPaddingBorder + leading + offset;
+		child.result.top = topPaddingBorder + tops[i];
 	}
 
-	const innerWidthFinal = node.layout.width - paddingBorderRow;
-	const innerHeightFinal = node.layout.height - paddingBorderColumn;
+	const innerWidthFinal = node.result.width - paddingBorderRow;
+	const innerHeightFinal = node.result.height - paddingBorderColumn;
 	for (const child of inFlow) {
 		if (child.style.positionType !== "relative") {
 			continue;
 		}
-		child.layout.left += getRelativeOffset(child, "row", innerWidthFinal);
-		child.layout.top += getRelativeOffset(child, "column", innerHeightFinal);
+		child.result.left += getRelativeOffset(child, "row", innerWidthFinal);
+		child.result.top += getRelativeOffset(child, "column", innerHeightFinal);
 	}
 
 	for (const child of getOutOfFlowDescendants(node, false)) {
@@ -5254,8 +5254,8 @@ function layoutNode(
 			}
 		}
 		if (hit) {
-			node.layout.width = hit.width;
-			node.layout.height = hit.height;
+			node.result.width = hit.width;
+			node.result.height = hit.height;
 			return;
 		}
 	}
@@ -5284,8 +5284,8 @@ function layoutNode(
 		heightSpace,
 		ownerWidth,
 		ownerHeight,
-		width: node.layout.width,
-		height: node.layout.height,
+		width: node.result.width,
+		height: node.result.height,
 	};
 	if (performLayout) {
 		node.cachedLayout = entry;
@@ -5307,24 +5307,24 @@ function layoutNodeImpl(
 	ownerHeight: number,
 	performLayout: boolean,
 ): void {
-	node.layout.padding.left = getPadding(node, "left", ownerWidth);
-	node.layout.padding.top = getPadding(node, "top", ownerWidth);
-	node.layout.padding.right = getPadding(node, "right", ownerWidth);
-	node.layout.padding.bottom = getPadding(node, "bottom", ownerWidth);
+	node.result.padding.left = getPadding(node, "left", ownerWidth);
+	node.result.padding.top = getPadding(node, "top", ownerWidth);
+	node.result.padding.right = getPadding(node, "right", ownerWidth);
+	node.result.padding.bottom = getPadding(node, "bottom", ownerWidth);
 
 	resolveNodeMargins(node, ownerWidth);
 
 	// Only block layout writes these, so every other mode must clear them.
-	node.layout.collapseTopPositive = 0;
-	node.layout.collapseTopNegative = 0;
-	node.layout.collapseBottomPositive = 0;
-	node.layout.collapseBottomNegative = 0;
-	node.layout.selfCollapsing = false;
+	node.result.collapseTopPositive = 0;
+	node.result.collapseTopNegative = 0;
+	node.result.collapseBottomPositive = 0;
+	node.result.collapseBottomNegative = 0;
+	node.result.selfCollapsing = false;
 
 	// A box that stopped being a grid container must stop reporting them.
 	if (node.style.displayType !== "grid") {
-		node.layout.gridColumns = null;
-		node.layout.gridRows = null;
+		node.result.gridColumns = null;
+		node.result.gridRows = null;
 	}
 
 	if (node.style.displayType === "none") {
@@ -5438,10 +5438,10 @@ function roundToGrid(
 	absoluteLeft: number,
 	absoluteTop: number,
 ): void {
-	const nodeLeft = node.layout.left;
-	const nodeTop = node.layout.top;
-	const nodeWidth = isDefined(node.layout.width) ? node.layout.width : 0;
-	const nodeHeight = isDefined(node.layout.height) ? node.layout.height : 0;
+	const nodeLeft = node.result.left;
+	const nodeTop = node.result.top;
+	const nodeWidth = isDefined(node.result.width) ? node.result.width : 0;
+	const nodeHeight = isDefined(node.result.height) ? node.result.height : 0;
 
 	const absLeft = absoluteLeft + nodeLeft;
 	const absTop = absoluteTop + nodeTop;
@@ -5450,12 +5450,12 @@ function roundToGrid(
 
 	const isText = node.measure !== null;
 
-	node.layout.left = roundValue(nodeLeft, false, isText);
-	node.layout.top = roundValue(nodeTop, false, isText);
+	node.result.left = roundValue(nodeLeft, false, isText);
+	node.result.top = roundValue(nodeTop, false, isText);
 
-	node.layout.width =
+	node.result.width =
 		roundValue(absRight, isText, false) - roundValue(absLeft, isText, false);
-	node.layout.height =
+	node.result.height =
 		roundValue(absBottom, isText, false) - roundValue(absTop, isText, false);
 
 	for (const child of node.children) {
