@@ -22,7 +22,7 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-function* Hello(this: Context) {
+function *Hello(this: Context) {
 	let count = 0;
 	document.addEventListener("keydown", (ev: any) => {
 		if (ev.key === "q") {

@@ -652,7 +652,7 @@ function clock(ms: number): string {
 	return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-function* App(this: Context) {
+function *App(this: Context) {
 	// One or three cards per turn of the stock -- chosen on the menu, kept
 	// for every deal after. A deal named on the command line skips the menu:
 	// that is the speedrunner's and the verifier's door.

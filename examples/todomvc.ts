@@ -64,7 +64,7 @@ class TodoEvent extends CustomEvent<any> {
 	}
 }
 
-function* Header(this: Context) {
+function *Header(this: Context) {
 	let title = "";
 
 	const oninput = (ev: any) => {
@@ -99,7 +99,7 @@ function* Header(this: Context) {
 	}
 }
 
-function* TodoItem(this: Context, {todo}: any) {
+function *TodoItem(this: Context, {todo}: any) {
 	let editing = false;
 	let editTitle = todo.title;
 
@@ -176,7 +176,7 @@ function* TodoItem(this: Context, {todo}: any) {
 	}
 }
 
-function* TodoList(this: Context, {todos, filter}: any) {
+function *TodoList(this: Context, {todos, filter}: any) {
 	for ({todos, filter} of this) {
 		const filteredTodos = todos.filter((todo: any) => {
 			if (filter === "active") {
@@ -198,7 +198,7 @@ function* TodoList(this: Context, {todos, filter}: any) {
 	}
 }
 
-function* Footer(this: Context, {todos, filter}: any) {
+function *Footer(this: Context, {todos, filter}: any) {
 	const setFilter = (newFilter: string) => {
 		this.dispatchEvent(new TodoEvent("filterchange", {filter: newFilter}));
 	};
@@ -244,7 +244,7 @@ function* Footer(this: Context, {todos, filter}: any) {
 	}
 }
 
-function* App(this: Context) {
+function *App(this: Context) {
 	let todos: any[] = [];
 	let nextId = 1;
 	let filter = "";

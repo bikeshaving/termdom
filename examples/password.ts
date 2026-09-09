@@ -37,7 +37,7 @@ const requirements: Requirement[] = [
 	{label: "Special character", check: (pwd) => /[^a-zA-Z0-9]/.test(pwd)},
 ];
 
-function* PasswordStrength(this: Context) {
+function *PasswordStrength(this: Context) {
 	let password = "";
 
 	const oninput = (ev: any) => {
