@@ -35,9 +35,9 @@ import {
 	nextInTree,
 	Node,
 	parentElement,
-} from "../dom.ts";
-import {HTML_NAMESPACE, XML_NAMESPACE} from "../dom.ts";
-import {toASCIILowercase} from "../text.ts";
+} from "./dom.ts";
+import {HTML_NAMESPACE, XML_NAMESPACE} from "./dom.ts";
+import {toASCIILowercase} from "./text.ts";
 
 // CSS Selectors: the language, and the matcher a selector compiles to.
 // css-tree parses the selector. It is checked against the pseudo-classes

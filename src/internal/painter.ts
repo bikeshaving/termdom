@@ -4,7 +4,7 @@ import {
 	getComputedValue,
 	resolveBorderSides,
 } from "./cssom.ts";
-import * as CSSValues from "./cssom/cssvalues.ts";
+import * as CSSValues from "./cssvalues.ts";
 import {
 	flatParentElement,
 	flowContent,

@@ -12,7 +12,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {
 	parseSelectorList,
-} from "../src/internal/cssom/selectors.ts";
+} from "../src/internal/cssselectors.ts";
 import {
 	createWindow,
 	type Document,

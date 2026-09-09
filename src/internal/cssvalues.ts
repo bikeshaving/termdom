@@ -11,15 +11,15 @@ import {
 	CSS_PROPERTIES,
 	CSS_RESET_ONLY_LONGHANDS,
 	CSS_SHORTHANDS,
-} from "../../generated/cssproperties.ts";
+} from "../generated/cssproperties.ts";
 import {
 	compileSelector,
 	getChildren,
 	isLegacyPseudoElement,
 	parseSelectorList,
 	pseudoName,
-} from "./selectors.ts";
-import type {CompiledSelector, SelectorNamespaces} from "./selectors.ts";
+} from "./cssselectors.ts";
+import type {CompiledSelector, SelectorNamespaces} from "./cssselectors.ts";
 
 type Unit = "undefined" | "cell" | "percent" | "auto";
 

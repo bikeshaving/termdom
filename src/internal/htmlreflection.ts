@@ -1,7 +1,4 @@
-import {
-	HTML_REFLECTIONS,
-	HTML_TAG_INTERFACES,
-} from "../../generated/htmlidl.ts";
+import {HTML_REFLECTIONS, HTML_TAG_INTERFACES} from "../generated/htmlidl.ts";
 
 // `url` resolves against the document's base URL on getting.
 type ReflectKind =

@@ -9,7 +9,7 @@ import {
 	type Node,
 	NodeList,
 	Text,
-} from "../dom.ts";
+} from "./dom.ts";
 
 const colors = {
 	attr: "\x1b[36m",

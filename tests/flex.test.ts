@@ -1,6 +1,6 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
-import {LayoutNode, toValue} from "../src/internal/layout/solver.ts";
+import {LayoutNode, toValue} from "../src/internal/layoutsolver.ts";
 
 /**
  * Spec tests for the layout engine, driven directly rather than through the

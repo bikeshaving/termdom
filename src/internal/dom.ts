@@ -19,30 +19,22 @@ import {
 	styleElementSheet,
 	styleShadowAttached,
 } from "./cssom.ts";
-import * as CSSValues from "./cssom/cssvalues.ts";
 import {
 	closestSelector,
 	matchesSelector,
 	selectAll,
 	selectFirst,
 	SelectorError,
-} from "./cssom/selectors.ts";
-import {
-	DETAILS_UA_STYLES,
-	METER_UA_STYLES,
-	PROGRESS_UA_STYLES,
-	SELECT_UA_STYLES,
-	TEXT_CONTROL_UA_STYLES,
-	TEXTAREA_UA_STYLES,
-} from "./cssom/useragent.ts";
+} from "./cssselectors.ts";
+import * as CSSValues from "./cssvalues.ts";
+import type {Exchange} from "./exchange.ts";
 import {
 	HTML_ELEMENT_REFLECTIONS,
 	HTML_ELEMENT_TAGS,
 	HTML_INTERFACES,
 	HTML_UNKNOWN_TAGS,
 	type ReflectSpec,
-} from "./dom/reflection.ts";
-import type {Exchange} from "./exchange.ts";
+} from "./htmlreflection.ts";
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";
 import {
@@ -51,6 +43,14 @@ import {
 	getStringWidth,
 	toASCIILowercase,
 } from "./text.ts";
+import {
+	DETAILS_UA_STYLES,
+	METER_UA_STYLES,
+	PROGRESS_UA_STYLES,
+	SELECT_UA_STYLES,
+	TEXT_CONTROL_UA_STYLES,
+	TEXTAREA_UA_STYLES,
+} from "./useragent.ts";
 
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";

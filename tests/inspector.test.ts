@@ -1,4 +1,4 @@
-import "../src/internal/dom/inspector.ts";
+import "../src/internal/inspector.ts";
 
 import {inspect} from "node:util";
 
