@@ -3,7 +3,7 @@
  * scripts/generate-html-idl.ts. Do not edit by hand.
  */
 
-import type {ReflectSpec} from "../internal/reflection.ts";
+import type {ReflectSpec} from "../internal/dom/reflection.ts";
 
 /** Each tag's interface, per the HTML Standard's element index. */
 export const HTML_TAG_INTERFACES: Readonly<Record<string, string>> = {

@@ -1,7 +1,7 @@
 import LineBreaker from "linebreak";
 
 import {getBoxModel, getComputedValue, usedValuesChanged} from "./cssom.ts";
-import * as CSSValues from "./cssvalues.ts";
+import * as CSSValues from "./cssom/cssvalues.ts";
 import {
 	DOMRectList,
 	flatChildren,

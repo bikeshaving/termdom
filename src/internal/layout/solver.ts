@@ -1,4 +1,4 @@
-import type * as CSSValues from "../cssvalues.ts";
+import type * as CSSValues from "../cssom/cssvalues.ts";
 
 // `normal` means whatever the mode says: stretch on a grid item,
 // flex-start across flex lines (css-align-3).

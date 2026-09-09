@@ -6,7 +6,16 @@ import {
 	CSS_LONGHANDS,
 	CSS_PROPERTIES,
 } from "../generated/cssproperties.ts";
-import * as CSSValues from "./cssvalues.ts";
+import * as CSSValues from "./cssom/cssvalues.ts";
+import {
+	type CompiledSelector,
+	compileSelector,
+	matchesCompiled,
+	parseSelectorList,
+	selectAllCompiled,
+	type SelectorNamespaces,
+} from "./cssom/selectors.ts";
+import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./cssom/useragent.ts";
 import {
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
@@ -32,17 +41,8 @@ import {
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {
-	type CompiledSelector,
-	compileSelector,
-	matchesCompiled,
-	parseSelectorList,
-	selectAllCompiled,
-	type SelectorNamespaces,
-} from "./selectors.ts";
-import {
 	getStringWidth,
 } from "./text.ts";
-import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.ts";
 
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
 // element's viewport block, a select sized to its widest option label so

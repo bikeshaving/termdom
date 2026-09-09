@@ -11,7 +11,7 @@ import {
 	CSS_PROPERTIES,
 	CSS_RESET_ONLY_LONGHANDS,
 	CSS_SHORTHANDS,
-} from "../generated/cssproperties.ts";
+} from "../../generated/cssproperties.ts";
 import {
 	compileSelector,
 	getChildren,

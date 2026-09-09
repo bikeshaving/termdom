@@ -1,4 +1,4 @@
-import "./internal/inspector.ts";
+import "./internal/dom/inspector.ts";
 
 import {Cascade} from "./internal/cssom.ts";
 import * as DOM from "./internal/dom.ts";
