@@ -609,7 +609,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		full: number,
 	): LayoutNode {
 		const item = box(parent);
-		item.measureContent = (width, widthSpace) => {
+		item.measure = (width, widthSpace) => {
 			if (widthSpace === "indefinite") {
 				return {width: full, height: 1};
 			}
@@ -716,7 +716,7 @@ describe("what a measurement produced, not only how big it was", () => {
 		placed: {lines: string[] | null},
 	): LayoutNode {
 		const item = box(parent);
-		item.measureContent = (width, widthSpace, placing) => {
+		item.measure = (width, widthSpace, placing) => {
 			const limit =
 				widthSpace === "indefinite" ? Number.MAX_SAFE_INTEGER : width;
 			const lines = breakWords(limit);

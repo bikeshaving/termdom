@@ -82,7 +82,7 @@ export interface Size {
 // `performLayout` is true for the measurement that places the box and
 // false for the sizing probes before it. Only the placing one may keep
 // its line breaks.
-type ContentMeasure = (
+type Measure = (
 	width: number,
 	widthSpace: AvailableSpace,
 	performLayout: boolean,
@@ -91,7 +91,7 @@ type ContentMeasure = (
 // The origin of CSS 2 §10.3.7's hypothetical box, in the containing
 // block's border-box coordinates. Null means the containing block's
 // alignment places it.
-type StaticPositionFunction = (
+type StaticPosition = (
 	containingBlock: LayoutNode,
 ) => {left: number; top: number} | null;
 
@@ -359,12 +359,12 @@ function getCacheSlot(
 	);
 }
 
-const kMeasureContent = Symbol("measureContent");
-const kStaticPositionFunc = Symbol("staticPositionFunc");
+const kMeasure = Symbol("measure");
+const kStaticPosition = Symbol("staticPosition");
 
 export interface LayoutNode {
-	[kMeasureContent]: ContentMeasure | null;
-	[kStaticPositionFunc]: StaticPositionFunction | null;
+	[kMeasure]: Measure | null;
+	[kStaticPosition]: StaticPosition | null;
 }
 
 export class LayoutNode {
@@ -410,8 +410,8 @@ export class LayoutNode {
 	constructor() {
 		this.children = [];
 		this.parent = null;
-		this[kMeasureContent] = null;
-		this[kStaticPositionFunc] = null;
+		this[kMeasure] = null;
+		this[kStaticPosition] = null;
 		this.stale = true;
 		this.extentTop = 0;
 		this.extentBottom = 0;
@@ -425,21 +425,21 @@ export class LayoutNode {
 		this.layout = createLayout();
 	}
 
-	get measureContent(): ContentMeasure | null {
-		return this[kMeasureContent];
+	get measure(): Measure | null {
+		return this[kMeasure];
 	}
 
-	set measureContent(fn: ContentMeasure | null) {
-		this[kMeasureContent] = fn;
+	set measure(fn: Measure | null) {
+		this[kMeasure] = fn;
 		this.invalidate();
 	}
 
-	get staticPositionFunc(): StaticPositionFunction | null {
-		return this[kStaticPositionFunc];
+	get staticPosition(): StaticPosition | null {
+		return this[kStaticPosition];
 	}
 
-	set staticPositionFunc(fn: StaticPositionFunction | null) {
-		this[kStaticPositionFunc] = fn;
+	set staticPosition(fn: StaticPosition | null) {
+		this[kStaticPosition] = fn;
 		this.invalidate();
 	}
 
@@ -930,7 +930,7 @@ function layoutMeasuredContent(
 		return;
 	}
 
-	const measured = node.measureContent!(innerWidth, widthSpace, performLayout);
+	const measured = node.measure!(innerWidth, widthSpace, performLayout);
 
 	const width =
 		widthSpace === "definite"
@@ -2217,7 +2217,7 @@ function layoutAbsoluteChild(
 	const getStaticPosition =
 		(!isDefined(left) && !isDefined(right)) ||
 		(!isDefined(top) && !isDefined(bottom))
-			? (child.staticPositionFunc?.(node) ?? null)
+			? (child.staticPosition?.(node) ?? null)
 			: null;
 
 	const isGrid = node.style.displayType === "grid";
@@ -4929,7 +4929,7 @@ function layoutBlockChild(
 // Collapsible white space between two blocks produces no line, so the
 // margins on either side of it keep adjoining (css2 §9.4.2, §8.3.1).
 function hasNoLineBox(child: LayoutNode): boolean {
-	return child.measureContent !== null && child.layout.height === 0;
+	return child.measure !== null && child.layout.height === 0;
 }
 
 function isStretchFit(child: LayoutNode): boolean {
@@ -5321,7 +5321,7 @@ function layoutNodeImpl(
 		return;
 	}
 
-	if (node.measureContent) {
+	if (node.measure) {
 		layoutMeasuredContent(
 			node,
 			availableWidth,
@@ -5437,7 +5437,7 @@ function roundToGrid(
 	const absRight = absLeft + nodeWidth;
 	const absBottom = absTop + nodeHeight;
 
-	const isText = node.measureContent !== null;
+	const isText = node.measure !== null;
 
 	node.layout.left = roundValue(nodeLeft, false, isText);
 	node.layout.top = roundValue(nodeTop, false, isText);

@@ -1028,10 +1028,10 @@ function styleNode(
 		dropHiddenContent(layout, element);
 	}
 	if (isOutOfFlow(element)) {
-		layoutNode.staticPositionFunc = (containingBlock) =>
+		layoutNode.staticPosition = (containingBlock) =>
 			getStaticPosition(layout, element, containingBlock);
-	} else if (layoutNode.staticPositionFunc) {
-		layoutNode.staticPositionFunc = null;
+	} else if (layoutNode.staticPosition) {
+		layoutNode.staticPosition = null;
 	}
 }
 
@@ -1383,7 +1383,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 	}
 
 	const containerFlex = getContainerLayoutNode(layout, container);
-	if (!containerFlex || containerFlex.measureContent) {
+	if (!containerFlex || containerFlex.measure) {
 		// One box holds all of it, except an out-of-flow box, which no box
 		// list names and no run walk finds. This is the derivation that reaches
 		// it.
@@ -1415,7 +1415,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 				if (styledFrom) {
 					styleLayoutNode(styledFrom, layoutNode, layout[kPositionedElements]);
 				}
-				layoutNode.measureContent = (width, widthSpace, placing) =>
+				layoutNode.measure = (width, widthSpace, placing) =>
 					measureInlineRun(layout, entry, width, widthSpace, placing);
 				layout[kMeasureNodes].add(layoutNode);
 				layout[kAnonymousBoxes].set(layoutNode, entry);
@@ -1606,7 +1606,7 @@ function addNode(
 	// paint culling reads as nothing to draw. An <input> alone inside an
 	// inline-block painted nothing while the same input beside a letter of
 	// text painted fine.
-	if (parentLayoutNode?.measureContent) {
+	if (parentLayoutNode?.measure) {
 		const stale = layout[kNodeMap].get(node);
 		if (stale && stale.parent === parentLayoutNode) {
 			parentLayoutNode.removeChild(stale);
@@ -1720,7 +1720,7 @@ function addElementNode(
 		return;
 	} else if (asRun) {
 		const box = getPrincipalBox(layout, element);
-		layoutNode.measureContent = (width, widthSpace, placing) =>
+		layoutNode.measure = (width, widthSpace, placing) =>
 			measureInlineRun(layout, box, width, widthSpace, placing);
 		layout[kMeasureNodes].add(layoutNode);
 
@@ -1804,7 +1804,7 @@ function addTextNode(
 	}
 
 	const own = getPrincipalBox(layout, text);
-	layoutNode.measureContent = (width, widthSpace, placing) =>
+	layoutNode.measure = (width, widthSpace, placing) =>
 		measureInlineRun(layout, own, width, widthSpace, placing);
 	layout[kMeasureNodes].add(layoutNode);
 
@@ -2016,7 +2016,7 @@ function getContainingBlockLayoutNode(
 			// A measure-function node cannot take flex children, so a
 			// positioned inline-block cannot serve, and the hoist keeps
 			// climbing.
-			if (layoutNode && !layoutNode.measureContent) {
+			if (layoutNode && !layoutNode.measure) {
 				return layoutNode;
 			}
 		}
@@ -2361,7 +2361,7 @@ function invalidateEnclosingMeasure(layout: Layout, node: Node): void {
 		}
 	} else if (entry) {
 		const headLayoutNode = layout[kNodeMap].get(entry.node!);
-		if (headLayoutNode && headLayoutNode.measureContent) {
+		if (headLayoutNode && headLayoutNode.measure) {
 			headLayoutNode.invalidate();
 			// Out of any independent formatting context too. Only its owner
 			// runs that layout.
@@ -2386,7 +2386,7 @@ function invalidateEnclosingMeasure(layout: Layout, node: Node): void {
 		}
 		const layoutNode = layout[kNodeMap].get(current);
 		if (layoutNode) {
-			if (layoutNode.measureContent) {
+			if (layoutNode.measure) {
 				layoutNode.invalidate();
 			}
 			const host = getEnclosingIndependentFormattingContext(
@@ -2412,7 +2412,7 @@ function markRunMeasureDirty(layout: Layout, runHead: Node): void {
 	if (!layoutNode) {
 		return;
 	}
-	if (layoutNode.measureContent) {
+	if (layoutNode.measure) {
 		layoutNode.invalidate();
 	}
 	const host = getEnclosingIndependentFormattingContext(
@@ -4191,7 +4191,7 @@ export class Layout {
 			!layoutNode ||
 			// A measure-function leaf never decomposes into layout children, so
 			// empty children[] means "not decomposed," not "nothing to paint."
-			layoutNode.measureContent !== null ||
+			layoutNode.measure !== null ||
 			layoutNode.unstackedChildCount !== 0 ||
 			layoutNode.style.displayType !== "block" ||
 			// Cheap proxy for "every DOM child has exactly one children[]
@@ -4301,7 +4301,7 @@ export class Layout {
 		element: Element,
 	): {width: number | null; height: number} | null {
 		const layoutNode = this[kNodeMap].get(element);
-		if (!layoutNode || layoutNode.measureContent !== null) {
+		if (!layoutNode || layoutNode.measure !== null) {
 			return null;
 		}
 		const box = getBoxModel(element);
@@ -4314,7 +4314,7 @@ export class Layout {
 			}
 			if (right !== null) {
 				right =
-					child.measureContent !== null
+					child.measure !== null
 						? null
 						: Math.max(right, child.layout.left + child.getComputedWidth());
 			}
