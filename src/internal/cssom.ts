@@ -4540,10 +4540,12 @@ function getListMarker(listItem: Element, listParent: Element): string {
 	return "";
 }
 
-// TODO: Just use the CSSOM CSSRule interface from the DOM
-const INHERITED_PROPERTIES =
-	CSS_PROPERTIES.filter(CSSValues.isInheritedProperty);
+// Filled on first use, not at evaluation. cssvalues imports this module
+// back around through cssselectors and dom, so whichever end is imported
+// first runs before the other's tables exist.
+let inheritedProperties: readonly string[] | null = null;
 
+// TODO: Just use the CSSOM CSSRule interface from the DOM
 interface ParsedCSSRule {
 
 	// Compiled against the namespaces the sheet declared, once, at parse. A
@@ -5404,7 +5406,9 @@ export class Cascade {
 		// A pseudo-element INHERITS from its originating element. Rule
 		// declarations win, and inherited values only fill the gaps.
 		const hostStyle = this.declarationFor(element);
-		for (const property of INHERITED_PROPERTIES) {
+		inheritedProperties ??=
+			CSS_PROPERTIES.filter(CSSValues.isInheritedProperty);
+		for (const property of inheritedProperties) {
 			if (!declarations[property]) {
 				const inherited = hostStyle.getComputedValue(property);
 				if (inherited) {
