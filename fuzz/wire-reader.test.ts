@@ -73,23 +73,21 @@ const noise = fc
 	.map((parts) => parts.join("").replace(/[\x03\x04\x1a\x1c]/g, ""));
 
 // Every way of cutting the noise into chunks.
-const chunked = noise.chain((text) =>
-	fc
-		.array(fc.integer({min: 1, max: Math.max(1, text.length)}), {maxLength: 8})
-		.map((cuts) => {
-			const points = [...new Set(cuts.filter((c) => c < text.length))].sort(
-				(a, b) => a - b,
-			);
-			const chunks: string[] = [];
-			let last = 0;
-			for (const point of points) {
-				chunks.push(text.slice(last, point));
+const chunked = noise.chain((text) => fc
+	.array(fc.integer({min: 1, max: Math.max(1, text.length)}), {maxLength: 8})
+	.map((cuts) => {
+		const points = [...new Set(cuts.filter((c) => c < text.length))].sort(
+			(a, b) => a - b,
+		);
+		const chunks: string[] = [];
+		let last = 0;
+		for (const point of points) {
+			chunks.push(text.slice(last, point));
 				last = point;
-			}
-			chunks.push(text.slice(last));
-			return chunks;
-		}),
-);
+		}
+		chunks.push(text.slice(last));
+		return chunks;
+	}));
 
 function isCleanKey(key: string): boolean {
 	if (/^[A-Z][A-Za-z0-9]+$/.test(key)) {

@@ -803,9 +803,7 @@ test("a number field paints its selection exactly as a text field does", async (
 	// range it renders, not for the API the author is gated out of.
 	const inverseCells = async (type: string): Promise<string> => {
 		const terminal = new MockProcess({rows: 6, cols: 40});
-		const dom = new TermDOM({
-			transport: transportFromProcess(terminal as any),
-		});
+		const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 		dom.attach();
 		await new Promise((r) => setTimeout(r, 0));
 		const input = dom.document.createElement("input");
@@ -1917,11 +1915,10 @@ test("non-mouse nav: a button takes the outline underline across its whole box o
 
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
-	const line0 = () =>
-		(terminal as any).terminal.buffer.active
-			.getLine(0)
-			.translateToString(false)
-			.trimEnd();
+	const line0 = () => (terminal as any).terminal.buffer.active
+		.getLine(0)
+		.translateToString(false)
+		.trimEnd();
 	expect(line0()).toBe("[ go ]");
 	// At rest: no underline on the bracket.
 	expect(cellAt(0, 0).isUnderline()).toBeFalsy();

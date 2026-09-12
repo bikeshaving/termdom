@@ -9,12 +9,10 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-function make(rows = 10, cols = 40): {
-	terminal: MockProcess;
-	dom: TermDOM;
-	document: Document;
-	window: any;
-} {
+function make(
+	rows = 10,
+	cols = 40,
+): {terminal: MockProcess; dom: TermDOM; document: Document; window: any} {
 	const terminal = new MockProcess({rows, cols});
 	const dom = new TermDOM({transport: terminal.transport});
 	return {terminal, dom, document: dom.document, window: dom.window as any};
@@ -239,9 +237,12 @@ test("ResizeObserver reports 0x0 when an element is hidden", async () => {
 	document.body.innerHTML = "<div id=\"a\" style=\"width:10ch;height:3px\">A</div>";
 	await nextFrame(dom);
 
-	const entries: Array<{
-		contentRect: {top: number; left: number; width: number; height: number};
-	}> = [];
+	const entries: Array<{contentRect: {
+		top: number;
+		left: number;
+		width: number;
+		height: number;
+	};}> = [];
 	const ro = new window.ResizeObserver((es: typeof entries) =>
 		entries.push(...es),
 	);
@@ -363,11 +364,10 @@ test("IntersectionObserver exposes root, rootMargin and thresholds", () => {
 	const {dom, document, window} = make() as any;
 	document.body.innerHTML = "<div id=\"r\"></div>";
 	const root = document.getElementById("r");
-	const io = new window.IntersectionObserver(() => {}, {
-		root,
-		rootMargin: "10px",
-		threshold: [1, 0, 0.5],
-	});
+	const io = new window.IntersectionObserver(
+		() => {},
+		{root, rootMargin: "10px", threshold: [1, 0, 0.5]},
+	);
 
 	expect(io.root).toBe(root);
 	expect(io.rootMargin).toBe("10px");

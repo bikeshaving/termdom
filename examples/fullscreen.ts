@@ -39,28 +39,28 @@ const hint = stage.querySelector(".stage .hint") as HTMLElement;
 const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 let tick = 0;
 setInterval(() => {
-	tick++;
-	clock.textContent = new Date().toLocaleTimeString();
-	spinner.textContent = `${frames[tick % frames.length]} live while fullscreen ${frames[tick % frames.length]}`;
+  tick++;
+  clock.textContent = new Date().toLocaleTimeString();
+  spinner.textContent = `${frames[tick % frames.length]} live while fullscreen ${frames[tick % frames.length]}`;
 }, 100);
 
 document.addEventListener("fullscreenchange", () => {
-	const fullscreen = document.fullscreenElement === stage;
-	stage.classList.toggle("fs", fullscreen);
-	hint.textContent = fullscreen ? "f returns · q quits" : "press f";
+  const fullscreen = document.fullscreenElement === stage;
+  stage.classList.toggle("fs", fullscreen);
+  hint.textContent = fullscreen ? "f returns · q quits" : "press f";
 });
 
 // Keyboard events land on the focused element (or body) and bubble up to
 // the document -- never DOWN into children, so listen here.
 document.addEventListener("keydown", async (event: KeyboardEvent) => {
-	if (event.key === "q") {
-		term.window.close();
-	}
-	if (event.key === "f") {
-		if (document.fullscreenElement) {
-			await document.exitFullscreen();
-		} else {
-			await stage.requestFullscreen();
-		}
-	}
+  if (event.key === "q") {
+    term.window.close();
+  }
+  if (event.key === "f") {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await stage.requestFullscreen();
+    }
+  }
 });

@@ -199,9 +199,7 @@ const scenarios: Scenario[] = [
 			assert(
 				width(screen[content - 1]) === width(screen[content]) &&
 				width(screen[content]) === width(screen[content + 1]),
-				`Arabic box borders do not line up: ${JSON.stringify(
-					screen.slice(content - 1, content + 2),
-				)}`,
+				`Arabic box borders do not line up: ${JSON.stringify(screen.slice(content - 1, content + 2))}`,
 			);
 			assert(
 				screen[content].trimEnd().endsWith("│"),
@@ -319,9 +317,8 @@ const scenarios: Scenario[] = [
 			// interleaved -- so the payout clears per row instead.
 			const copies = pane
 				.full()
-				.filter((line) =>
-					line.includes("exercises the whole element set"),
-				).length;
+				.filter((line) => line.includes("exercises the whole element set"))
+				.length;
 			assert(
 				copies === 1,
 				`quit payout left ${copies} copies of the document in scrollback`,

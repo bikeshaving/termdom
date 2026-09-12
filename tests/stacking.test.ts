@@ -11,9 +11,11 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-async function render(html: string, cols = 40, rows = 8): Promise<
-	{terminal: MockProcess; dom: TermDOM}
-> {
+async function render(
+	html: string,
+	cols = 40,
+	rows = 8,
+): Promise<{terminal: MockProcess; dom: TermDOM}> {
 	const terminal = new MockProcess({rows, cols});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
@@ -25,9 +27,11 @@ test("a deep overlay escapes its parents and paints over a later subtree", async
 	// The old per-sibling sort could never do this: the overlay's parents
 	// are plain static divs, and the content it must cover is in a sibling
 	// subtree of its grandparent.
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<div><div><div style="position:absolute; top:1px; left:0; z-index:5; width:20ch">OVERLAY</div></div>first</div>
-		<div>underneath content</div>`);
+		<div>underneath content</div>`,
+	);
 	const rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toContain("first");
 	expect(rows[1]).toContain("OVERLAY");
@@ -38,11 +42,13 @@ test("a deep overlay escapes its parents and paints over a later subtree", async
 test("a stacking context is atomic: children cannot escape it", async () => {
 	// isolated forms a context (positioned, z:0); its z:999 child competes
 	// only INSIDE it, so the sibling context at z:1 wins.
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<div style="position:relative; z-index:0">
 			<div style="position:absolute; top:0; left:0; z-index:999; width:12ch">TRAPPED</div>
 		</div>
-		<div style="position:absolute; top:0; left:0; z-index:1; width:12ch">WINNER</div>`);
+		<div style="position:absolute; top:0; left:0; z-index:1; width:12ch">WINNER</div>`,
+	);
 	const rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toContain("WINNER");
 	expect(rows[0]).not.toContain("TRAPPED");
@@ -52,30 +58,36 @@ test("a stacking context is atomic: children cannot escape it", async () => {
 test("z-index:auto does not isolate: descendants join the outer context", async () => {
 	// Same shape, but the wrapper's z-index is auto -- no context forms, so
 	// the z:999 child competes at body level and beats z:1.
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<div style="position:relative">
 			<div style="position:absolute; top:0; left:0; z-index:999; width:12ch">ESCAPES</div>
 		</div>
-		<div style="position:absolute; top:0; left:0; z-index:1; width:12ch">loser</div>`);
+		<div style="position:absolute; top:0; left:0; z-index:1; width:12ch">loser</div>`,
+	);
 	const rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toContain("ESCAPES");
 	dom.dispose();
 });
 
 test("a z:auto positioned box paints above in-flow content", async () => {
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<div style="position:relative">
 			<div style="position:absolute; top:0; left:0; width:10ch">ABOVE</div>
 			<div>in-flow text</div>
-		</div>`);
+		</div>`,
+	);
 	expect(terminal.getPlainText().split("\n")[0]).toContain("ABOVE");
 	dom.dispose();
 });
 
 test("hit-testing lands on what is visibly on top", async () => {
-	const {dom} = await render(`
+	const {dom} = await render(
+		`
 		<div id="under">underneath row zero</div>
-		<div id="over" style="position:absolute; top:0; left:0; z-index:2; width:10ch">OVER</div>`);
+		<div id="over" style="position:absolute; top:0; left:0; z-index:2; width:10ch">OVER</div>`,
+	);
 	const {document} = dom;
 	// Inside the overlay's box: the overlay wins despite tree order.
 	expect(document.elementFromPoint(2, 0)?.id).toBe("over");
@@ -88,10 +100,12 @@ test("an absolute box outside its parent's rect is still clickable", async () =>
 	// The old top-down hit test required every ancestor to contain the
 	// point; a positioned child hanging outside its parent could never be
 	// reached.
-	const {dom} = await render(`
+	const {dom} = await render(
+		`
 		<div style="height:1">
 			<div id="hang" style="position:absolute; top:3px; left:5ch; width:6ch">HANG</div>
-		</div>`);
+		</div>`,
+	);
 	expect(dom.document.elementFromPoint(6, 3)?.id).toBe("hang");
 	dom.dispose();
 });
@@ -102,12 +116,14 @@ test("an absolute box outside its parent's rect is still clickable", async () =>
 // space nor is trapped inside a measure-function subtree.
 
 test("absolute resolves against the nearest positioned ancestor", async () => {
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<div>push down one row</div>
 		<div style="position:relative">
 			<div>filler row</div>
 			<div><div style="position:absolute; top:0; left:20ch; width:6ch">MARK</div></div>
-		</div>`);
+		</div>`,
+	);
 	const rows = terminal.getPlainText().split("\n");
 	// top:0 against the RELATIVE wrapper (document row 1) -- not against
 	// the static div it actually sits inside (row 2), and not the ICB.
@@ -117,9 +133,11 @@ test("absolute resolves against the nearest positioned ancestor", async () => {
 });
 
 test("with no positioned ancestor, the initial containing block wins", async () => {
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<div>row zero</div>
-		<div><div><div style="position:absolute; top:0; left:20ch; width:6ch">TOP</div></div></div>`);
+		<div><div><div style="position:absolute; top:0; left:20ch; width:6ch">TOP</div></div></div>`,
+	);
 	const rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toContain("TOP");
 	expect(rows[0]).toContain("row zero");
@@ -127,8 +145,10 @@ test("with no positioned ancestor, the initial containing block wins", async () 
 });
 
 test("an absolute box does not occupy inline-run space", async () => {
-	const {terminal, dom} = await render(`
-		<div>ab<span style="position:absolute; top:2px; left:0; width:4ch">X</span>cd</div>`);
+	const {terminal, dom} = await render(
+		`
+		<div>ab<span style="position:absolute; top:2px; left:0; width:4ch">X</span>cd</div>`,
+	);
 	const rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toContain("abcd"); // contiguous: X takes no run cells
 	expect(rows[2]).toContain("X");
@@ -136,10 +156,12 @@ test("an absolute box does not occupy inline-run space", async () => {
 });
 
 test("an absolute box escapes a measure-function (inline-block) subtree", async () => {
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<div style="position:relative">
 			<span style="display:inline-block">label<span style="position:absolute; top:1px; left:10ch; width:8ch">ESCAPED</span></span>
-		</div>`);
+		</div>`,
+	);
 	const rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toContain("label");
 	expect(rows[1]).toContain("ESCAPED");
@@ -150,19 +172,20 @@ test("a relative inline run member keeps painting with its run", async () => {
 	// It has no hoisted box -- no positioned layer would paint it -- so the
 	// in-flow walk must not defer it. (Its text also keeps its run cells:
 	// relative positioning preserves flow space.)
-	const {terminal, dom} = await render(
-		"<div>ab<span style=\"position:relative\">MID</span>cd</div>",
-	);
+	const {terminal, dom} =
+		await render("<div>ab<span style=\"position:relative\">MID</span>cd</div>");
 	expect(terminal.getPlainText()).toContain("abMIDcd");
 	dom.dispose();
 });
 
 test("isolation: isolate forms a stacking context without positioning", async () => {
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<div style="isolation:isolate">
 			<div style="position:absolute; top:0; left:0; z-index:999; width:10ch">TRAPPED</div>
 		</div>
-		<div style="position:absolute; top:0; left:0; z-index:1; width:10ch">WINNER</div>`);
+		<div style="position:absolute; top:0; left:0; z-index:1; width:10ch">WINNER</div>`,
+	);
 	expect(terminal.getPlainText().split("\n")[0]).toContain("WINNER");
 	dom.dispose();
 });
@@ -179,10 +202,12 @@ test("relative offsets shift an inline run member's fragments", async () => {
 test("a positioned ancestor's overflow clips its absolute descendant", async () => {
 	// The wrapper IS the box's containing block, so its overflow:hidden
 	// clips -- unlike an overflow ancestor outside the CB chain.
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<div style="position:relative; overflow:hidden; height:2px; width:10ch">
 			<div style="position:absolute; top:0; left:0; width:20ch">WIDE-CLIPPED-TEXT</div>
-		</div>`);
+		</div>`,
+	);
 	const row = terminal.getPlainText().split("\n")[0];
 	expect(row).toContain("WIDE-CLIPP");
 	expect(row).not.toContain("WIDE-CLIPPED");
@@ -226,13 +251,15 @@ test("a runtime flip to position:absolute keeps pseudo-only content", async () =
 	// its inline-run measure func skips out-of-flow boxes, so the flipped
 	// button measured 0x0 and its ::after glyph silently vanished. The box
 	// changed KIND -- reuse must give way to a full rebuild, both ways.
-	const {terminal, dom} = await render(`
+	const {terminal, dom} = await render(
+		`
 		<style>
 			li { position: relative; display: flex; flex-direction: row; }
 			.destroy::before { content: none } .destroy::after { content: "(x)" }
 			li.pinned .destroy { position: absolute; top: 0px; right: 0px; }
 		</style>
-		<li id="li"><span>Finish TermDOM</span><button class="destroy"></button></li>`);
+		<li id="li"><span>Finish TermDOM</span><button class="destroy"></button></li>`,
+	);
 	const li = dom.document.getElementById("li")!;
 	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(
 		"Finish TermDOM(x)",

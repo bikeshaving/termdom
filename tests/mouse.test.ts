@@ -25,9 +25,8 @@ function makeDocumentModeApp(lines = 30): {
 } {
 	const proc = new MockProcess();
 	const seen: string[] = [];
-	const written = captureRawOutput(proc, {
-		onChunk: (chunk) => seen.push(chunk),
-	});
+	const written =
+		captureRawOutput(proc, {onChunk: (chunk) => seen.push(chunk)});
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;
 	for (let i = 0; i < lines; i++) {

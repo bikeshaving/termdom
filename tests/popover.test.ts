@@ -9,7 +9,11 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-async function open(html: string, cols = 40, rows = 10): Promise<{
+async function open(
+	html: string,
+	cols = 40,
+	rows = 10,
+): Promise<{
 	terminal: MockProcess;
 	dom: TermDOM;
 	document: Document;
@@ -32,8 +36,11 @@ function press(terminal: MockProcess, data: string): Promise<void> {
 }
 
 /** A press and a release at a screen cell, which is a click. */
-async function click(terminal: MockProcess, col: number, row: number): Promise<
-	void> {
+async function click(
+	terminal: MockProcess,
+	col: number,
+	row: number,
+): Promise<void> {
 	await press(terminal, `\x1b[<0;${col};${row}M`);
 	await press(terminal, `\x1b[<0;${col};${row}m`);
 }
@@ -173,9 +180,8 @@ test("togglePopover flips the state, and force names the half to run", async () 
 });
 
 test("removing a showing popover takes it out of the top layer", async () => {
-	const {terminal, dom, popover} = await open(
-		"<p>page one</p><div popover>the popover</div>",
-	);
+	const {terminal, dom, popover} =
+		await open("<p>page one</p><div popover>the popover</div>");
 	popover.showPopover();
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).toContain("the popover");
@@ -320,9 +326,8 @@ test("a submit button is not an invoker, and a disabled one is not either", asyn
 });
 
 test("popoverTargetElement takes an element, not only an id", async () => {
-	const {document, dom, popover} = await open(
-		"<button>Open</button><div popover>hi</div>",
-	);
+	const {document, dom, popover} =
+		await open("<button>Open</button><div popover>hi</div>");
 	const button = document.querySelector("button") as HTMLButtonElement;
 	expect(button.popoverTargetElement).toBe(null);
 
@@ -340,9 +345,8 @@ test("popoverTargetElement takes an element, not only an id", async () => {
 /* ---------------------------------------------------------- light dismiss */
 
 test("a click outside an auto popover closes it, and one inside does not", async () => {
-	const {terminal, dom, popover} = await open(
-		"<p>page one</p><div popover><p>the popover</p></div>",
-	);
+	const {terminal, dom, popover} =
+		await open("<p>page one</p><div popover><p>the popover</p></div>");
 	popover.showPopover();
 	await nextFrame(dom);
 	const rect = popover.getBoundingClientRect();
@@ -377,9 +381,8 @@ test("a click on a popover's own invoker toggles rather than reopens", async () 
 });
 
 test("Escape closes the topmost auto popover", async () => {
-	const {terminal, dom, popover} = await open(
-		"<p>page</p><div popover>the popover</div>",
-	);
+	const {terminal, dom, popover} =
+		await open("<p>page</p><div popover>the popover</div>");
 	popover.showPopover();
 	await nextFrame(dom);
 
@@ -389,9 +392,8 @@ test("Escape closes the topmost auto popover", async () => {
 });
 
 test("a manual popover ignores both the click outside and Escape", async () => {
-	const {terminal, dom, popover} = await open(
-		"<p>page one</p><div popover=manual><p>the popover</p></div>",
-	);
+	const {terminal, dom, popover} =
+		await open("<p>page one</p><div popover=manual><p>the popover</p></div>");
 	popover.showPopover();
 	await nextFrame(dom);
 

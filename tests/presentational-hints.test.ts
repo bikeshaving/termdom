@@ -195,14 +195,10 @@ test("dir inherits, and a nested dir overrides it", () => {
 test("dir=auto reads the direction off the content", () => {
 	expect(
 		computed("<div dir=\"auto\" id=\"d\">שלום</div>", "d", "direction"),
-	).toBe(
-		"rtl",
-	);
+	).toBe("rtl");
 	expect(
 		computed("<div dir=\"auto\" id=\"d\">hello</div>", "d", "direction"),
-	).toBe(
-		"ltr",
-	);
+	).toBe("ltr");
 	// The first character with a STRONG direction decides, so digits and
 	// punctuation ahead of the text settle nothing.
 	expect(

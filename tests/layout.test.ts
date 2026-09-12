@@ -109,12 +109,14 @@ test("a margin offsets the box and takes room from its width", () => {
 });
 
 test("flex factors divide the container between the children", () => {
-	const dom = layoutDOM(`
+	const dom = layoutDOM(
+		`
 		<div style="display: flex;">
 			<div style="flex: 1;"></div>
 			<div style="flex: 2;"></div>
 		</div>
-	`);
+	`,
+	);
 
 	const container = dom.document.querySelector("div")!;
 	const children = Array.from(container.children);
@@ -165,11 +167,13 @@ test("addNode - text nodes", () => {
 
 // Inline run tests
 test("inline elements join runs correctly", () => {
-	const dom = layoutDOM(`
+	const dom = layoutDOM(
+		`
 		<div>
 			<span>first</span><span>second</span>
 		</div>
-	`);
+	`,
+	);
 
 	const container = dom.document.querySelector("div")!;
 
@@ -181,12 +185,14 @@ test("inline elements join runs correctly", () => {
 });
 
 test("block elements have separate yoga nodes", () => {
-	const dom = layoutDOM(`
+	const dom = layoutDOM(
+		`
 		<div>
 			<div>first block</div>
 			<div>second block</div>
 		</div>
-	`);
+	`,
+	);
 
 	const divs = Array.from(dom.document.querySelectorAll("div"));
 	const innerDivs = divs.slice(1); // Skip the container div
@@ -380,9 +386,8 @@ test("inline-block elements should get individual rects", () => {
 	);
 
 	const container = dom.document.querySelector("div")!;
-	const inlineBlocks = Array.from(
-		dom.document.querySelectorAll("div"),
-	).slice(1);
+	const inlineBlocks = Array.from(dom.document.querySelectorAll("div"))
+		.slice(1);
 
 	// Container should have a rect
 	expect(boxOf(container)).not.toBeNull();
@@ -1792,9 +1797,8 @@ test("white space beside an out-of-flow box collapses as if it were absent", () 
 	// beside, so the container has no line to be one row tall for. The
 	// collapsing test read the COMPUTED display, where the <b> is still an
 	// inline, rather than the used one, where it has getBlockifiedDisplay.
-	const dom = layoutDOM(
-		"<div id=\"host\">   <b style=\"position: absolute\"></b></div>",
-	);
+	const dom =
+		layoutDOM("<div id=\"host\">   <b style=\"position: absolute\"></b></div>");
 	const host = dom.document.getElementById("host")!;
 	expect(boxOf(host)!.height).toBe(0);
 });

@@ -190,12 +190,9 @@ const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 	return typeof panic === "string" ? panic : reset;
 }).join("");
 
-function decodeMouseEscape(token: string): {
-	button: number;
-	col: number;
-	row: number;
-	release: boolean;
-} | null {
+function decodeMouseEscape(
+	token: string,
+): {button: number; col: number; row: number; release: boolean} | null {
 	const match = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
 	if (!match) {
 		return null;
@@ -1843,16 +1840,15 @@ export function transportFromProcess(
 	const writable = new WritableStream<string>({
 		// Resolved on the write callback, so awaiting a write means the
 		// terminal has the bytes.
-		write: (chunk) =>
-			new Promise<void>((resolve, reject) => {
-				proc.stdout.write(chunk, "utf8", (error?: Error) => {
-					if (error) {
-						reject(error);
-					} else {
-						resolve();
-					}
-				});
-			}),
+		write: (chunk) => new Promise<void>((resolve, reject) => {
+			proc.stdout.write(chunk, "utf8", (error?: Error) => {
+				if (error) {
+					reject(error);
+				} else {
+					resolve();
+				}
+			});
+		}),
 	});
 
 	let resizeListener: (() => void) | null = null;

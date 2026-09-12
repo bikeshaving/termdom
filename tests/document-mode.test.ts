@@ -35,19 +35,17 @@ function read(terminal: MockProcess, rows: number): Screen {
 		buffer.getLine(index)?.translateToString(true) ?? "";
 
 	return {
-		scrollback: Array.from({length: buffer.baseY}, (_, i) => line(i)).filter(
-			Boolean,
-		),
-		viewport: Array.from({length: rows}, (_, i) =>
-			line(buffer.baseY + i),
-		).filter(Boolean),
+		scrollback: Array.from({length: buffer.baseY}, (_, i) => line(i))
+			.filter(Boolean),
+		viewport: Array.from({length: rows}, (_, i) => line(buffer.baseY + i))
+			.filter(Boolean),
 	};
 }
 
 /** A terminal with four rows of output already on it, from a previous command. */
-async function withPriorOutput(rows = 10): Promise<
-	{terminal: MockProcess; dom: TermDOM}
-> {
+async function withPriorOutput(
+	rows = 10,
+): Promise<{terminal: MockProcess; dom: TermDOM}> {
 	const terminal = new MockProcess({rows, cols: 30});
 	terminal.stdout.write("PREV-1\r\nPREV-2\r\nPREV-3\r\nPREV-4\r\n");
 

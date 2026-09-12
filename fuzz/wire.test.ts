@@ -157,8 +157,9 @@ function scrollbackOf(scene: Scene): string[] {
 /** Everything the main buffer holds, committed and visible. */
 function allRowsOf(scene: Scene): string[] {
 	const buffer = normalBuffer(scene);
-	return Array.from({length: buffer.baseY + scene.rows}, (_, i) =>
-		bufferLine(buffer, i),
+	return Array.from(
+		{length: buffer.baseY + scene.rows},
+		(_, i) => bufferLine(buffer, i),
 	);
 }
 
@@ -404,141 +405,151 @@ test(
 	900000,
 );
 
-test("the modes a session engages are the modes it hands back", async () => {
-	await fc.assert(
-		fc.asyncProperty(runArbitrary, async (run: Run) => {
-			const taken = wire();
-			const scene = await play(run, {
-				cols: COLS,
-				rows: ROWS,
-				chrome: CHROME,
-				record: taken.record,
-			});
-			await settle(scene, 10);
+test(
+	"the modes a session engages are the modes it hands back",
+	async () => {
+		await fc.assert(
+			fc.asyncProperty(runArbitrary, async (run: Run) => {
+				const taken = wire();
+				const scene = await play(run, {
+					cols: COLS,
+					rows: ROWS,
+					chrome: CHROME,
+					record: taken.record,
+				});
+				await settle(scene, 10);
 
-			const teardown = taken.mark();
-			const session = taken.since(0);
-			await scene.dom.dispose();
-			const goodbye = taken.since(teardown);
+				const teardown = taken.mark();
+				const session = taken.since(0);
+				await scene.dom.dispose();
+				const goodbye = taken.since(teardown);
 
-			const problems: string[] = [];
-			// Nothing is handed back that was not taken: walking the session
-			// forward, a reset never runs ahead of its set.
-			const held = new Map<number, number>(
-				LEDGER_CODES.map((code) => [code, 0]),
-			);
-			for (const toggle of modeToggles(session)) {
-				const depth = held.get(toggle.code) ?? 0;
-				if (!toggle.set && depth === 0) {
-					problems.push(
-						`the session reset mode ${toggle.code} without engaging it`,
-					);
-				}
-				held.set(toggle.code, Math.max(0, depth + (toggle.set ? 1 : -1)));
-			}
-
-			// The negotiated mode is offered, never imposed: a terminal that
-			// ignored the offer must not see the reset.
-			const whole = session + goodbye;
-			if (!whole.includes("\x1b[?2027h") && whole.includes("\x1b[?2027l")) {
-				problems.push("mode 2027 was reset without ever being offered");
-			}
-
-			// Whatever the session still held comes back, in the ledger's
-			// restore order. Except the negotiated one: a terminal that never
-			// answered the offer has it released rather than reset, which is
-			// the rule the check above states from the other side.
-			const owed = LEDGER.filter(
-				(mode) => mode.code !== 2027 && (held.get(mode.code) ?? 0) > 0,
-			);
-			const returned = modeToggles(goodbye).filter((toggle) => !toggle.set);
-			let at = 0;
-			for (const mode of owed) {
-				const found = returned.findIndex(
-					(toggle, index) => index >= at && toggle.code === mode.code,
+				const problems: string[] = [];
+				// Nothing is handed back that was not taken: walking the session
+				// forward, a reset never runs ahead of its set.
+				const held = new Map<number, number>(
+					LEDGER_CODES.map((code) => [code, 0]),
 				);
-				if (found === -1) {
-					problems.push(
-						`${mode.name} was engaged at dispose and never handed back ` +
-						`in order among ${JSON.stringify(returned.map((t) => t.code))}`,
-					);
-				} else {
-					at = found + 1;
-				}
-			}
-
-			if (problems.length) {
-				throw new Error(
-					`html: ${run.document.html}\n` +
-					`script: ${JSON.stringify(run.script)}\n${problems.join("\n")}`,
-				);
-			}
-		}),
-		assertOptions,
-	);
-}, 900000);
-
-test("the cursor is never addressed above the region it owns", async () => {
-	await fc.assert(
-		fc.asyncProperty(runArbitrary, async (run: Run) => {
-			const taken = wire();
-			// Where the frame boundaries fall in the chunk list, and how far
-			// down the screen the region started at each.
-			const bounds: Array<{at: number; top: number}> = [];
-			const scene = await play(run, {
-				cols: COLS,
-				rows: TIGHT_ROWS,
-				shared: true,
-				prior: PRIOR,
-				chrome: CHROME,
-				record: taken.record,
-				onFrame: (current: Scene) => {
-					// Fullscreen owns the alternate screen from row zero, so
-					// the main screen's command anchor names nothing there.
-					const window = current.dom.window as any;
-					bounds.push({
-						at: taken.mark(),
-						top: current.dom.document.fullscreenElement ? 0 : window.screenTop,
-					});
-				},
-			});
-
-			const problems: string[] = [];
-			let from = 0;
-			let previousTop = 0;
-			for (const bound of bounds) {
-				const bytes = taken.chunks.slice(from, bound.at).join("");
-				// The region may have moved up under this frame's own
-				// room-making, so the floor is the lower of the two tops.
-				const floor = Math.min(previousTop, bound.top) + 1;
-				for (const row of cursorRows(bytes)) {
-					if (row < floor) {
+				for (const toggle of modeToggles(session)) {
+					const depth = held.get(toggle.code) ?? 0;
+					if (!toggle.set && depth === 0) {
 						problems.push(
-							`the cursor was addressed to row ${row}, above a region ` +
-							`starting at row ${floor}`,
+							`the session reset mode ${toggle.code} without engaging it`,
 						);
 					}
+					held.set(toggle.code, Math.max(0, depth + (toggle.set ? 1 : -1)));
 				}
-				for (const margin of margins(bytes)) {
-					if (margin.top < floor || margin.bottom > scene.rows) {
+
+				// The negotiated mode is offered, never imposed: a terminal that
+				// ignored the offer must not see the reset.
+				const whole = session + goodbye;
+				if (!whole.includes("\x1b[?2027h") && whole.includes("\x1b[?2027l")) {
+					problems.push("mode 2027 was reset without ever being offered");
+				}
+
+				// Whatever the session still held comes back, in the ledger's
+				// restore order. Except the negotiated one: a terminal that never
+				// answered the offer has it released rather than reset, which is
+				// the rule the check above states from the other side.
+				const owed = LEDGER.filter(
+					(mode) => mode.code !== 2027 && (held.get(mode.code) ?? 0) > 0,
+				);
+				const returned = modeToggles(goodbye).filter((toggle) => !toggle.set);
+				let at = 0;
+				for (const mode of owed) {
+					const found = returned.findIndex(
+						(toggle, index) => index >= at && toggle.code === mode.code,
+					);
+					if (found === -1) {
 						problems.push(
-							`the scroll region ${margin.top}-${margin.bottom} runs past ` +
-							`the region rows ${floor}-${scene.rows}`,
+							`${mode.name} was engaged at dispose and never handed back ` +
+							`in order among ${JSON.stringify(returned.map((t) => t.code))}`,
 						);
+					} else {
+						at = found + 1;
 					}
 				}
-				from = bound.at;
-				previousTop = bound.top;
-			}
 
-			await scene.dom.dispose();
-			if (problems.length) {
-				throw new Error(
-					`html: ${run.document.html}\n` +
-					`script: ${JSON.stringify(run.script)}\n${problems.join("\n")}`,
-				);
-			}
-		}),
-		assertOptions,
-	);
-}, 900000);
+				if (problems.length) {
+					throw new Error(
+						`html: ${run.document.html}\n` +
+						`script: ${JSON.stringify(run.script)}\n${problems.join("\n")}`,
+					);
+				}
+			}),
+			assertOptions,
+		);
+	},
+	900000,
+);
+
+test(
+	"the cursor is never addressed above the region it owns",
+	async () => {
+		await fc.assert(
+			fc.asyncProperty(runArbitrary, async (run: Run) => {
+				const taken = wire();
+				// Where the frame boundaries fall in the chunk list, and how far
+				// down the screen the region started at each.
+				const bounds: Array<{at: number; top: number}> = [];
+				const scene = await play(run, {
+					cols: COLS,
+					rows: TIGHT_ROWS,
+					shared: true,
+					prior: PRIOR,
+					chrome: CHROME,
+					record: taken.record,
+					onFrame: (current: Scene) => {
+						// Fullscreen owns the alternate screen from row zero, so
+						// the main screen's command anchor names nothing there.
+						const window = current.dom.window as any;
+						bounds.push({
+							at: taken.mark(),
+							top: current.dom.document.fullscreenElement
+								? 0
+								: window.screenTop,
+						});
+					},
+				});
+
+				const problems: string[] = [];
+				let from = 0;
+				let previousTop = 0;
+				for (const bound of bounds) {
+					const bytes = taken.chunks.slice(from, bound.at).join("");
+					// The region may have moved up under this frame's own
+					// room-making, so the floor is the lower of the two tops.
+					const floor = Math.min(previousTop, bound.top) + 1;
+					for (const row of cursorRows(bytes)) {
+						if (row < floor) {
+							problems.push(
+								`the cursor was addressed to row ${row}, above a region ` +
+								`starting at row ${floor}`,
+							);
+						}
+					}
+					for (const margin of margins(bytes)) {
+						if (margin.top < floor || margin.bottom > scene.rows) {
+							problems.push(
+								`the scroll region ${margin.top}-${margin.bottom} runs past ` +
+								`the region rows ${floor}-${scene.rows}`,
+							);
+						}
+					}
+					from = bound.at;
+					previousTop = bound.top;
+				}
+
+				await scene.dom.dispose();
+				if (problems.length) {
+					throw new Error(
+						`html: ${run.document.html}\n` +
+						`script: ${JSON.stringify(run.script)}\n${problems.join("\n")}`,
+					);
+				}
+			}),
+			assertOptions,
+		);
+	},
+	900000,
+);

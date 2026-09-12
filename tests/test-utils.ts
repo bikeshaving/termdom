@@ -128,8 +128,9 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 			encoding = "utf8";
 		}
 
-		const data =
-			typeof chunk === "string" ? chunk : chunk.toString(encoding || "utf8");
+		const data = typeof chunk === "string"
+			? chunk
+			: chunk.toString(encoding || "utf8");
 
 		// Feed data to xterm terminal - it will handle cursor queries automatically
 		this.terminal.write(data, callback);
@@ -193,10 +194,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		const rows = options.rows || 24;
 
 		// Set up environment for testing (defaults to 24-bit color support)
-		this.env = options.env || {
-			COLORTERM: "truecolor",
-			TERM: "xterm-256color",
-		};
+		this.env = options.env || {COLORTERM: "truecolor", TERM: "xterm-256color"};
 
 		// Create headless xterm instance with standard color theme
 		this.terminal = new Terminal({
@@ -411,10 +409,12 @@ export class MockProcess extends EventEmitter implements ProcessLike {
  * page does with requestAnimationFrame, and the reason TermDOM has no public
  * render(). The engine's own window provides requestAnimationFrame.
  */
-export function nextFrame(dom: {
-	window: {requestAnimationFrame(cb: () => void): number};
-	attach?(): void;
-}): Promise<void> {
+export function nextFrame(
+	dom: {
+		window: {requestAnimationFrame(cb: () => void): number};
+		attach?(): void;
+	},
+): Promise<void> {
 	// attach() is the only door to the terminal; a test awaiting a frame is
 	// asking for one, so the harness makes the explicit call (idempotent).
 	// The attach.test.ts contract tests exercise the unattached state by not

@@ -126,17 +126,9 @@ const output = `/**
 
 ${render("WIDE_RANGES", "East Asian Width W and F: two cells.", wide)}
 
-${render(
-	"ZERO_WIDTH_RANGES",
-	"Marks, format characters, default-ignorables, and conjoining jamo: no cells when leading a cluster.",
-	zero,
-)}
+${render("ZERO_WIDTH_RANGES", "Marks, format characters, default-ignorables, and conjoining jamo: no cells when leading a cluster.", zero)}
 
-${render(
-	"UNCERTAIN_RANGES",
-	"East Asian Width A: one or two cells depending on the emulator, so the width is probed at runtime.",
-	ambiguous,
-)}
+${render("UNCERTAIN_RANGES", "East Asian Width A: one or two cells depending on the emulator, so the width is probed at runtime.", ambiguous)}
 `;
 writeFileSync(target, output);
 // The emitted file must be canonical: eslint is the one formatter, and a

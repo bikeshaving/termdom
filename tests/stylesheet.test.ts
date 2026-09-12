@@ -96,9 +96,7 @@ test("a default @namespace keeps a typeless compound off other namespaces", asyn
 
 	expect(
 		termdom.window.getComputedStyle(div).getPropertyValue("color"),
-	).not.toBe(
-		"rgb(255, 0, 0)",
-	);
+	).not.toBe("rgb(255, 0, 0)");
 
 	termdom.dispose();
 });
@@ -135,10 +133,9 @@ test("selector-list pseudo-classes weigh their most specific argument", async ()
 		"<div class=\"has-target a b\"><span id=\"child\"></span></div>";
 	document.body.appendChild(host);
 
-	const colorOf = (selector: string): string =>
-		termdom.window
-			.getComputedStyle(document.querySelector(selector)!)
-			.getPropertyValue("color");
+	const colorOf = (selector: string): string => termdom.window
+		.getComputedStyle(document.querySelector(selector)!)
+		.getPropertyValue("color");
 
 	// :is() carries its #nothing branch: 001-001-000 beats 000-003-000.
 	expect(colorOf(".is-target")).toBe("rgb(255, 0, 0)");

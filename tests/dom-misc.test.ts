@@ -5,15 +5,11 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {
-	createDocumentWindow,
-	type Document,
-	HTMLElement,
-} from "../src/internal/dom.ts";
+import {createWindow, type Document, HTMLElement} from "../src/internal/dom.ts";
 
 // The realm the tests reach constructors through: a window of this DOM
 // exposes them, as the platform does.
-const realm = createDocumentWindow("<!doctype html>");
+const realm = createWindow("<!doctype html>");
 
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.
@@ -123,7 +119,7 @@ test("attachInternals refuses with a NotSupportedError", () => {
 });
 
 test("a window's location takes the document's URL apart", () => {
-	const window = createDocumentWindow(
+	const window = createWindow(
 		"<!doctype html>",
 		"https://example.com:8443/a/b?q=1#top",
 	) as any;
@@ -152,7 +148,7 @@ test("a window's location takes the document's URL apart", () => {
 });
 
 test("a location will not navigate, and an unmounted document has none", () => {
-	const window = createDocumentWindow("<!doctype html>") as any;
+	const window = createWindow("<!doctype html>") as any;
 	const location = window.location;
 	expect(location.href).toBe("about:blank");
 

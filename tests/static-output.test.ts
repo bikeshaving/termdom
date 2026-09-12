@@ -76,10 +76,8 @@ test("lines are not padded out to the terminal width", async () => {
 test("a document taller than the terminal is emitted in full", async () => {
 	// There is no viewport, so there is no fold and nothing is clipped or
 	// committed. All 30 rows are simply printed.
-	const html = Array.from(
-		{length: 30},
-		(_, i) => `<div>row ${i + 1}</div>`,
-	).join("");
+	const html = Array.from({length: 30}, (_, i) => `<div>row ${i + 1}</div>`)
+		.join("");
 	const output = await renderPiped(html);
 	const lines = output.replace(/\x1b\[[0-9;]*m/g, "").split("\n");
 

@@ -98,59 +98,62 @@ const fragmentArbitrary = fc.oneof(
 );
 
 const markupArbitrary = fc.letrec<{markup: string}>((tie) => ({
-	markup: fc.oneof(
-		{maxDepth: 2, depthIdentifier: "markup"},
-		fragmentArbitrary,
-		fc
-			.tuple(
-				fc.constantFrom("div", "span", "p", "table", "td", "svg", "textarea"),
-				fc.array(tie("markup"), {maxLength: 3}),
-			)
-			.map(([tag, inner]) => `<${tag}>${inner.join("")}</${tag}>`),
-	),
+	markup: fc.oneof({
+		maxDepth: 2,
+		depthIdentifier: "markup",
+	}, fragmentArbitrary, fc
+		.tuple(
+			fc.constantFrom("div", "span", "p", "table", "td", "svg", "textarea"),
+			fc.array(tie("markup"), {maxLength: 3}),
+		)
+		.map(([tag, inner]) => `<${tag}>${inner.join("")}</${tag}>`)),
 })).markup;
 
 const documentArbitrary = fc
 	.array(markupArbitrary, {minLength: 1, maxLength: 4})
 	.map((parts) => parts.join(""));
 
-test("innerHTML reaches a fixpoint after one round trip", async () => {
-	// One document per batch of runs: nothing here paints, so the mutation
-	// records the engine queues on the way in are never drained, and a
-	// document that lives for thousands of parses is a document that holds
-	// every node it ever built.
-	let dom: any = null;
-	let host: any = null;
-	let served = 0;
-	const fresh = (): void => {
-		dom?.dispose();
-		const terminal = new MockProcess({cols: 60, rows: 24});
-		dom = new TermDOM({transport: terminal.transport}) as any;
-		host = dom.document.createElement("div");
-		dom.document.body.appendChild(host);
-	};
-	fresh();
-	try {
-		await fc.assert(
-			fc.asyncProperty(documentArbitrary, async (markup: string) => {
-				if (served++ % 50 === 0) {
-					fresh();
-				}
-				host.innerHTML = markup;
-				const once = host.innerHTML;
-				host.innerHTML = once;
-				const twice = host.innerHTML;
-				if (once !== twice) {
-					throw new Error(
-						`markup: ${JSON.stringify(markup)}\n` +
-						`once:   ${JSON.stringify(once)}\n` +
-						`twice:  ${JSON.stringify(twice)}`,
-					);
-				}
-			}),
-			{numRuns: NUM_RUNS, seed: SEED, includeErrorInReport: true},
-		);
-	} finally {
-		dom?.dispose();
-	}
-}, 900000);
+test(
+	"innerHTML reaches a fixpoint after one round trip",
+	async () => {
+		// One document per batch of runs: nothing here paints, so the mutation
+		// records the engine queues on the way in are never drained, and a
+		// document that lives for thousands of parses is a document that holds
+		// every node it ever built.
+		let dom: any = null;
+		let host: any = null;
+		let served = 0;
+		const fresh = (): void => {
+			dom?.dispose();
+			const terminal = new MockProcess({cols: 60, rows: 24});
+			dom = new TermDOM({transport: terminal.transport}) as any;
+			host = dom.document.createElement("div");
+			dom.document.body.appendChild(host);
+		};
+		fresh();
+		try {
+			await fc.assert(fc.asyncProperty(
+				documentArbitrary,
+				async (markup: string) => {
+					if (served++ % 50 === 0) {
+						fresh();
+					}
+					host.innerHTML = markup;
+					const once = host.innerHTML;
+					host.innerHTML = once;
+					const twice = host.innerHTML;
+					if (once !== twice) {
+						throw new Error(
+							`markup: ${JSON.stringify(markup)}\n` +
+							`once:   ${JSON.stringify(once)}\n` +
+							`twice:  ${JSON.stringify(twice)}`,
+						);
+					}
+				},
+			), {numRuns: NUM_RUNS, seed: SEED, includeErrorInReport: true});
+		} finally {
+			dom?.dispose();
+		}
+	},
+	900000,
+);

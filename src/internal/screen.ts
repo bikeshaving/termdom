@@ -477,19 +477,22 @@ const LINE_BITS: Record<LineStyle["style"], number> = {
 	hidden: BORDER_EDGE_STYLE.Hidden,
 };
 
-const BOX_DRAWING: Record<string, {
-	horizontal: string;
-	vertical: string;
-	topLeft: string;
-	topRight: string;
-	bottomLeft: string;
-	bottomRight: string;
-	topTee: string;
-	bottomTee: string;
-	leftTee: string;
-	rightTee: string;
-	cross: string;
-}> = {
+const BOX_DRAWING: Record<
+	string,
+	{
+		horizontal: string;
+		vertical: string;
+		topLeft: string;
+		topRight: string;
+		bottomLeft: string;
+		bottomRight: string;
+		topTee: string;
+		bottomTee: string;
+		leftTee: string;
+		rightTee: string;
+		cross: string;
+	}
+> = {
 	dashed: {
 		horizontal: "╌",
 		vertical: "┆",
@@ -641,10 +644,9 @@ function getBorderChar(borderEncoding: number): string {
 	// is still the border style's (a rounded dashed box keeps its dashes
 	// and bends only the four cells where the strokes turn), and a style
 	// whose corner has no rounded glyph stays square. See ROUNDED_CORNERS.
-	const corner =
-		hasRight && hasBottom
-			? charSet.topLeft // ┌
-			: hasLeft && hasBottom
+	const corner = hasRight && hasBottom
+		? charSet.topLeft // ┌
+		: hasLeft && hasBottom
 				? charSet.topRight // ┐
 				: hasRight && hasTop
 					? charSet.bottomLeft // └
@@ -748,8 +750,9 @@ class CellGrid {
 		const width = getGraphemeColumns(grapheme);
 		this.cluster[index] = encodeGrapheme(grapheme);
 		this.fg[index] = (style?.fg ?? 0) & COLOR_MASK;
-		this.bg[index] =
-			background !== undefined ? background : (style?.bg ?? 0) & COLOR_MASK;
+		this.bg[index] = background !== undefined
+			? background
+			: (style?.bg ?? 0) & COLOR_MASK;
 		this.attrs[index] =
 			packAttrs(style) |
 			((width < ATTR.WidthWide ? width : ATTR.WidthWide) << ATTR.WidthShift);
@@ -999,10 +1002,9 @@ export class CellContext {
 		// theme is. "inverse" fills with SGR inverse instead. That is the
 		// Highlight/HighlightText system-color pair, swapping each cell's
 		// colors with no assumption about what they are.
-		const style: CellStyle =
-			background === "inverse"
-				? {inverse: true}
-				: {bg: background === "default" ? undefined : background};
+		const style: CellStyle = background === "inverse"
+			? {inverse: true}
+			: {bg: background === "default" ? undefined : background};
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
@@ -1117,8 +1119,9 @@ export class CellContext {
 		if (bits === 0) {
 			return;
 		}
-		const style: CellStyle | undefined =
-			line.color != null ? {fg: line.color} : undefined;
+		const style: CellStyle | undefined = line.color != null
+			? {fg: line.color}
+			: undefined;
 		const rounded = BORDER_EDGE_STYLE.Rounded;
 
 		// Each cell records which way the stroke LEAVES it, and an end cell
@@ -1628,8 +1631,9 @@ function generateANSI(
 			}
 
 			const encoding = border[index];
-			const glyph =
-				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(cluster[index]);
+			const glyph = encoding > 0
+				? getBorderChar(encoding)
+				: decodeGrapheme(cluster[index]);
 			output += writer.text(glyph).take();
 
 			const width = grid.widthAt(index);
@@ -1884,10 +1888,12 @@ export class Screen {
 		this[kRenderedLines].clear();
 	}
 
-	beginStatic({rows: contentRows, lineEnding = "\n"}: {
-		rows: number;
-		lineEnding?: "\n" | "\r\n";
-	}): CellContext {
+	beginStatic(
+		{rows: contentRows, lineEnding = "\n"}: {
+			rows: number;
+			lineEnding?: "\n" | "\r\n";
+		},
+	): CellContext {
 		const rows = Math.max(0, contentRows);
 		if (rows === 0) {
 			const empty = new CellGrid(0, this[kCols]);
@@ -1912,37 +1918,33 @@ export class Screen {
 		return context;
 	}
 
-	beginFrame({
-		offset,
-		cursorRow: cursorPosition,
-		regionRows,
-		delta = 0,
-		shift,
-	}: {
+	beginFrame(
+		{offset, cursorRow: cursorPosition, regionRows, delta = 0, shift}: {
 
-		/** Rows the document scroll has scrolled, negative downward. */
-		offset: number;
+			/** Rows the document scroll has scrolled, negative downward. */
+			offset: number;
 
-		cursorRow?: number;
+			cursorRow?: number;
 
-		/**
+			/**
 		 * Rows past the terminal's height are printed with newlines, which is
 		 * what scrolls them into the scrollback where they stay readable (CSI n
 		 * S discards them). Only the last `rows` of them are kept as the previous
 		 * frame. They alone can still be redrawn.
 		 */
-		regionRows?: number;
+			regionRows?: number;
 
-		/** Rows the scroll moved since the last frame, positive downward. */
-		delta?: number;
+			/** Rows the scroll moved since the last frame, positive downward. */
+			delta?: number;
 
-		/**
+			/**
 		 * The buffer rows `delta` moved, `[top, end)`. A scrolling element's
 		 * port names its own rows here. The document scroll names none and takes the
 		 * whole region, which is the rows a document scroll spans.
 		 */
-		shift?: {top: number; end: number};
-	}): CellContext {
+			shift?: {top: number; end: number};
+		},
+	): CellContext {
 		const frameRows = Math.max(this[kRows], regionRows ?? this[kRows]);
 		const overflowing = frameRows > this[kRows];
 		const cols = this[kCols];
@@ -2016,7 +2018,8 @@ export class Screen {
 		const context = new CellContext(next, frameRows, cols, offset);
 		this[kEndFrame] = (): string => {
 			const measurer =
-				this[kMeasurer] !== null && isProbingUseful(this[kMeasurer])
+				this[kMeasurer] !== null &&
+				isProbingUseful(this[kMeasurer])
 					? this[kMeasurer]
 					: undefined;
 			// The frame is complete. Join the borders whose strokes touch, so
@@ -2204,8 +2207,10 @@ export class Screen {
 					// does not reflow-grow. No home and no ED. That would wipe
 					// what is above us, and tmux archives a full-screen erase
 					// into the scrollback.
-					prefix +=
-						writer.cursorTo(this[kResetAtRow] + 1, 1).saveCursor().take();
+					prefix += writer
+						.cursorTo(this[kResetAtRow] + 1, 1)
+						.saveCursor()
+						.take();
 					this[kHasSavedCursor] = true;
 					this[kNeedsScreenReset] = false;
 					this[kNeedsFullClear] = false;
@@ -2300,10 +2305,7 @@ export class Screen {
 						parkOutput = writer.take();
 					}
 				} else {
-					this[kPark] = {
-						row: Math.min(contentHeight, this[kRows]) - 1,
-						col: 0,
-					};
+					this[kPark] = {row: Math.min(contentHeight, this[kRows]) - 1, col: 0};
 					if (frameStartRow !== undefined) {
 						// 0-based start + height = 1-based last row. The bottom
 						// margin caps it when the content overflows the screen.

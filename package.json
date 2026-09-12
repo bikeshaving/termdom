@@ -57,7 +57,7 @@
   },
   "devDependencies": {
     "@b9g/crank": "^0.7.11",
-    "@b9g/eslint-config": "^0.1.4",
+    "@b9g/eslint-config": "^0.1.7",
     "@b9g/libuild": "^0.2.24",
     "@eslint/js": "^9.39.5",
     "@stylistic/eslint-plugin": "^5.10.0",
@@ -67,11 +67,13 @@
     "@types/ssh2": "^1.15.6",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
+    "@webref/elements": "^2.8.0",
+    "@webref/idl": "^3.83.1",
     "@xterm/headless": "^5.5.0",
     "eslint": "^9.39.5",
     "eslint-plugin-acrocase": "^0.1.1",
     "eslint-plugin-crank": "^0.2.2",
-    "eslint-plugin-esfold": "^0.1.2",
+    "eslint-plugin-esfold": "^0.1.10",
     "fast-check": "^4.9.0",
     "htm": "^3.1.1",
     "marked": "^18.0.9",
@@ -83,7 +85,8 @@
     "ssh2": "^1.17.0",
     "svelte": "^5.56.9",
     "typescript": "^5.9.2",
-    "vue": "^3.5.41"
+    "vue": "^3.5.41",
+    "webidl2": "^24.5.0"
   },
   "module": "./dist/index.js",
   "engines": {

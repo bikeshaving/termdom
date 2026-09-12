@@ -8,15 +8,13 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {createDocumentWindow} from "../src/internal/dom.ts";
+import {createWindow} from "../src/internal/dom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 // The door a test document comes through: a document of this DOM, in the
 // window whose selection the tests move, and with no terminal behind it.
 function withText(html: string): any {
-	const {document} = createDocumentWindow(
-		"<!doctype html><title></title>",
-	) as any;
+	const {document} = createWindow("<!doctype html><title></title>") as any;
 	document.body.innerHTML = html;
 	return document;
 }
