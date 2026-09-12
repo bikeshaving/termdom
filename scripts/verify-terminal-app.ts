@@ -62,7 +62,8 @@ class TerminalWindow {
 		// addresses the tab for reads and scopes the teardown kills, and the
 		// window id is what close() uses -- a dead tab stops answering for its
 		// tty, but a window closes by id in any state.
-		const [tty, windowId] = osascript(`
+		const [tty, windowId] = osascript(
+			`
 			tell application "Terminal"
 				set newTab to do script "cd ${ROOT} && ${command}"
 				set number of columns of newTab to ${cols}
@@ -77,7 +78,8 @@ class TerminalWindow {
 				end repeat
 				error "window for " & ttyId & " not found"
 			end tell
-		`).split("|");
+		`,
+		).split("|");
 		this[kTTY] = tty;
 		this[kWindowId] = windowId;
 	}
@@ -93,7 +95,8 @@ class TerminalWindow {
 	}
 
 	async resize(cols: number, rows: number): Promise<void> {
-		osascript(`
+		osascript(
+			`
 			tell application "Terminal"
 				repeat with w in (get windows)
 					try
@@ -105,7 +108,8 @@ class TerminalWindow {
 					end try
 				end repeat
 			end tell
-		`);
+		`,
+		);
 		await sleep(900);
 	}
 
@@ -138,11 +142,13 @@ class TerminalWindow {
 		// Close by window id: a dead tab stops answering for its tty, but the
 		// id keeps working in any state. Cleanup must never throw.
 		try {
-			osascript(`
+			osascript(
+				`
 				tell application "Terminal"
 					close (every window whose id is ${this[kWindowId]})
 				end tell
-			`);
+			`,
+			);
 		} catch (err) {
 			console.error(
 				`  warning: window ${this[kWindowId]} did not close: ${(err as Error).message}`,
@@ -155,7 +161,8 @@ class TerminalWindow {
 		// loop variable: `contents of t` hits AppleScript's dereference
 		// operator and returns the tab's specifier string instead of its text.
 		// Every window this harness opens holds exactly one (selected) tab.
-		return osascript(`
+		return osascript(
+			`
 			tell application "Terminal"
 				repeat with w in (get windows)
 					try
@@ -166,7 +173,8 @@ class TerminalWindow {
 				end repeat
 				error "harness tab ${this[kTTY]} not found"
 			end tell
-		`);
+		`,
+		);
 	}
 }
 

@@ -29,16 +29,14 @@ function tree(html: string, url = "about:blank"): Document {
 
 function ids(html: string, selector: string): string[] {
 	const document = tree(html);
-	return Array.from(document.querySelectorAll(selector)).map(
-		(element) => element.getAttribute("id") ?? "",
-	);
+	return Array.from(document.querySelectorAll(selector))
+		.map((element) => element.getAttribute("id") ?? "");
 }
 
 /** The ids a selector finds under a root, in tree order. */
 function found(root: Node, selector: string): string[] {
-	return Array.from(
-		(root as unknown as ParentNode).querySelectorAll(selector),
-	).map((element) => element.getAttribute("id") ?? "");
+	return Array.from((root as unknown as ParentNode).querySelectorAll(selector))
+		.map((element) => element.getAttribute("id") ?? "");
 }
 
 function find(root: Node, id: string): Element {
@@ -209,9 +207,8 @@ test("a deep tree costs no stack", () => {
 	};
 	let node = top;
 	for (let depth = 0; depth < 20000; depth++) {
-		const child = top.ownerDocument.createElement("div") as typeof top & {
-			setAttribute(name: string, value: string): void;
-		};
+		const child = top.ownerDocument.createElement("div") as typeof top &
+			{setAttribute(name: string, value: string): void};
 		if (depth === 19999) {
 			child.setAttribute("class", "deep");
 		}
@@ -324,9 +321,8 @@ test("a relative selector hangs from the root it is scoped to", () => {
 	const list = find(document, "list");
 	const l1 = find(document, "l1");
 	expect(
-		Array.from(list.querySelectorAll(":scope > li")).map((element) =>
-			(element as Element).getAttribute("id"),
-		),
+		Array.from(list.querySelectorAll(":scope > li"))
+			.map((element) => (element as Element).getAttribute("id")),
 	).toEqual(["l1", "l2", "l3", "l4", "l5"]);
 	expect(Array.from(l1.querySelectorAll(":scope > li"))).toEqual([]);
 	expect(() => document.querySelectorAll("> li")).toThrow(DOMException);

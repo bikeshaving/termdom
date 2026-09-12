@@ -163,9 +163,8 @@ function isTextControl(element: {tagName: string; type?: string}): boolean {
 	return type !== "checkbox" && type !== "radio" && type !== "hidden";
 }
 
-const kUAValueText = Symbol(
-	"the text node a control's editable value lives in",
-);
+const kUAValueText =
+	Symbol("the text node a control's editable value lives in");
 
 /**
  * The text node holding a form control's value inside its UA shadow tree,
@@ -180,8 +179,7 @@ export function getTextControlValueText(
 		(textControl as unknown as Record<
 			symbol,
 			globalThis.Text | null | undefined
-		>)[kUAValueText] ??
-		null
+		>)[kUAValueText] ?? null
 	);
 }
 
@@ -274,8 +272,8 @@ export function getTextControlSelectionRange(
 	if (!active || !isTextControl(active)) {
 		return null;
 	}
-	const range = (active as HTMLInputElement |
-		HTMLTextAreaElement)[kUASelectionRange]?.() ??
+	const range =
+		(active as HTMLInputElement | HTMLTextAreaElement)[kUASelectionRange]?.() ??
 		null;
 	if (!range || range.startContainer !== textNode) {
 		return null;
@@ -648,13 +646,15 @@ function observeShadowRoot(
 	document: Document,
 	root: globalThis.ShadowRoot,
 ): void {
-	engineObservers.get(document)?.observe(root as unknown as Node, {
-		childList: true,
-		subtree: true,
-		attributes: true,
-		attributeOldValue: true,
-		characterData: true,
-	});
+	engineObservers
+		.get(document)
+		?.observe(root as unknown as Node, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeOldValue: true,
+			characterData: true,
+		});
 }
 
 const kDocument = Symbol("node document");
@@ -702,10 +702,9 @@ function setTextSelection(
 	const clampedEnd = Math.min(end, length);
 	const clampedStart = Math.min(Math.min(start, length), clampedEnd);
 	const named = direction === undefined ? "none" : direction;
-	const kept =
-		named === "forward" || named === "backward" || named === "none"
-			? named
-			: "none";
+	const kept = named === "forward" || named === "backward" || named === "none"
+		? named
+		: "none";
 	store([clampedStart, clampedEnd, kept]);
 	scheduleTextSelectionChange(control);
 }
@@ -1592,10 +1591,12 @@ class StorageEvent extends Event {
 		super(type, eventInitDict);
 		const init = toDictionary<StorageEventInit>(eventInitDict, "An event init");
 		this[kStorageKey] = init.key == null ? null : String(init.key);
-		this[kStorageOldValue] =
-			init.oldValue == null ? null : String(init.oldValue);
-		this[kStorageNewValue] =
-			init.newValue == null ? null : String(init.newValue);
+		this[kStorageOldValue] = init.oldValue == null
+			? null
+			: String(init.oldValue);
+		this[kStorageNewValue] = init.newValue == null
+			? null
+			: String(init.newValue);
 		this[kStorageURL] = String(init.url ?? "");
 		this[kStorageArea] = init.storageArea ?? null;
 	}
@@ -2013,8 +2014,7 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 	get [kTargetRect](): {left: number; top: number} | null {
 		const target = this[kState].target as Element | null;
 		if (
-			target === null ||
-			typeof (target as {getBoundingClientRect?: unknown})
+			target === null || typeof (target as {getBoundingClientRect?: unknown})
 				.getBoundingClientRect !== "function"
 		) {
 			return null;
@@ -2735,8 +2735,9 @@ class ClipboardEvent extends Event {
 			eventInitDict,
 			"An event init",
 		);
-		this[kClipboardData] =
-			init.clipboardData == null ? null : init.clipboardData;
+		this[kClipboardData] = init.clipboardData == null
+			? null
+			: init.clipboardData;
 	}
 
 	get clipboardData(): DataTransfer | null {
@@ -2773,12 +2774,15 @@ export class TransitionEvent extends Event {
 			eventInitDict,
 			"An event init",
 		);
-		this[kPropertyName] =
-			init.propertyName === undefined ? "" : String(init.propertyName);
-		this[kElapsedTime] =
-			init.elapsedTime === undefined ? 0 : Number(init.elapsedTime);
-		this[kEventPseudoElement] =
-			init.pseudoElement === undefined ? "" : String(init.pseudoElement);
+		this[kPropertyName] = init.propertyName === undefined
+			? ""
+			: String(init.propertyName);
+		this[kElapsedTime] = init.elapsedTime === undefined
+			? 0
+			: Number(init.elapsedTime);
+		this[kEventPseudoElement] = init.pseudoElement === undefined
+			? ""
+			: String(init.pseudoElement);
 	}
 
 	get propertyName(): string {
@@ -2822,12 +2826,15 @@ class AnimationEvent extends Event {
 			eventInitDict,
 			"An event init",
 		);
-		this[kAnimationName] =
-			init.animationName === undefined ? "" : String(init.animationName);
-		this[kElapsedTime] =
-			init.elapsedTime === undefined ? 0 : Number(init.elapsedTime);
-		this[kEventPseudoElement] =
-			init.pseudoElement === undefined ? "" : String(init.pseudoElement);
+		this[kAnimationName] = init.animationName === undefined
+			? ""
+			: String(init.animationName);
+		this[kElapsedTime] = init.elapsedTime === undefined
+			? 0
+			: Number(init.elapsedTime);
+		this[kEventPseudoElement] = init.pseudoElement === undefined
+			? ""
+			: String(init.pseudoElement);
 	}
 
 	get animationName(): string {
@@ -2968,10 +2975,12 @@ class PointerEvent extends MouseEvent {
 		this[kTiltX] = init.tiltX === undefined ? null : toLong(init.tiltX);
 		this[kTiltY] = init.tiltY === undefined ? null : toLong(init.tiltY);
 		this[kTwist] = toLong(init.twist ?? 0);
-		this[kAltitudeAngle] =
-			init.altitudeAngle === undefined ? null : toDouble(init.altitudeAngle);
-		this[kAzimuthAngle] =
-			init.azimuthAngle === undefined ? null : toDouble(init.azimuthAngle);
+		this[kAltitudeAngle] = init.altitudeAngle === undefined
+			? null
+			: toDouble(init.altitudeAngle);
+		this[kAzimuthAngle] = init.azimuthAngle === undefined
+			? null
+			: toDouble(init.azimuthAngle);
 		this[kPointerType] = String(init.pointerType ?? "");
 		this[kIsPrimary] = Boolean(init.isPrimary);
 		this[kCoalesced] = [...(init.coalescedEvents ?? [])];
@@ -3298,8 +3307,9 @@ export class EventTarget implements globalThis.EventTarget {
 		if (listenerCallback === null) {
 			return;
 		}
-		const passive =
-			flat.passive === null ? getDefaultPassiveValue(name, this) : flat.passive;
+		const passive = flat.passive === null
+			? getDefaultPassiveValue(name, this)
+			: flat.passive;
 		for (const existing of this[kListeners]) {
 			if (
 				existing.type === name &&
@@ -3406,8 +3416,9 @@ function flattenMore(
 	return {
 		capture: Boolean(dictionary.capture),
 		once: Boolean(dictionary.once),
-		passive:
-			dictionary.passive === undefined ? null : Boolean(dictionary.passive),
+		passive: dictionary.passive === undefined
+			? null
+			: Boolean(dictionary.passive),
 		signal,
 	};
 }
@@ -3538,7 +3549,8 @@ function setEventHandler(
 	value: unknown,
 ): void {
 	const handler =
-		typeof value === "function" || (typeof value === "object" && value !== null)
+		typeof value === "function" ||
+		(typeof value === "object" && value !== null)
 			? (value as EventHandlerValue)
 			: null;
 	const handlers = getEventHandlerMap(target, handler !== null);
@@ -3701,9 +3713,8 @@ const HANDLER_ATTRIBUTES: ReadonlySet<string> = new Set([
 	...GLOBAL_EVENT_HANDLERS,
 	...FORWARDED_BODY_EVENT_HANDLERS,
 ]);
-const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> = new Set(
-	FORWARDED_BODY_EVENT_HANDLERS,
-);
+const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> =
+	new Set(FORWARDED_BODY_EVENT_HANDLERS);
 
 function compileEventHandler(
 	target: EventTarget,
@@ -3762,17 +3773,13 @@ function installEventHandlers(
 function installForwardedEventHandler(prototype: object, name: string): void {
 	Object.defineProperty(prototype, name, {
 		get(this: Element): unknown {
-			const view = this[kDocument][kDefaultView] as Record<
-				string,
-				unknown
-			> | null;
+			const view = this[kDocument][kDefaultView] as Record<string, unknown> |
+				null;
 			return view === null ? null : (view[name] ?? null);
 		},
 		set(this: Element, value: unknown): void {
-			const view = this[kDocument][kDefaultView] as Record<
-				string,
-				unknown
-			> | null;
+			const view = this[kDocument][kDefaultView] as Record<string, unknown> |
+				null;
 			if (view === null) {
 				return;
 			}
@@ -3941,11 +3948,9 @@ const BARE_MODIFIER_KEYS = new Set([
 // Events that represent the user asking for something, as opposed to
 // something happening to them. The list is the spec's. A paste's default
 // action forwards the text as a beforeinput, so that counts too.
-function isActivationTriggering(event: {
-	type: string;
-	key?: string;
-	inputType?: string;
-}): boolean {
+function isActivationTriggering(
+	event: {type: string; key?: string; inputType?: string},
+): boolean {
 	switch (event.type) {
 		case "keydown":
 			return event.key !== "Escape" && !BARE_MODIFIER_KEYS.has(event.key!);
@@ -4110,8 +4115,9 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 		}
 		for (let index = state.path.length - 1; index >= 0; index--) {
 			const struct = state.path[index];
-			state.eventPhase =
-				struct.shadowAdjustedTarget !== null ? AT_TARGET : CAPTURING_PHASE;
+			state.eventPhase = struct.shadowAdjustedTarget !== null
+				? AT_TARGET
+				: CAPTURING_PHASE;
 			invokeListeners(event, index, true);
 		}
 		for (let index = 0; index < state.path.length; index++) {
@@ -4958,10 +4964,9 @@ export class Node extends EventTarget implements globalThis.Node {
 			}
 		}
 		if (node1 === null || node2 === null || getRoot(node1) !== getRoot(node2)) {
-			const first =
-				node1 === null || node2 === null
-					? this[kSerial] < (other as unknown as Node)[kSerial]
-					: getRoot(node2)[kSerial] < getRoot(node1)[kSerial];
+			const first = node1 === null || node2 === null
+				? this[kSerial] < (other as unknown as Node)[kSerial]
+				: getRoot(node2)[kSerial] < getRoot(node1)[kSerial];
 			return (
 				DOCUMENT_POSITION_DISCONNECTED +
 				DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC +
@@ -5508,8 +5513,9 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	if (child !== null) {
 		liveRangeInsertSteps(newParent, child, 1);
 	}
-	const newPreviousSibling =
-		child !== null ? child[kPrevious] : newParent[kLastChild];
+	const newPreviousSibling = child !== null
+		? child[kPrevious]
+		: newParent[kLastChild];
 	linkChild(node, newParent, child);
 	// A move between a shadow tree and its host's tree changes the root of
 	// everything moved. The pre-remove steps above already put every live
@@ -5533,10 +5539,9 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 			}
 		}
 	}
-	const shadow =
-		newParent.nodeType === ELEMENT_NODE
-			? (newParent as Element)[kShadowRoot]
-			: null;
+	const shadow = newParent.nodeType === ELEMENT_NODE
+		? (newParent as Element)[kShadowRoot]
+		: null;
 	if (shadow !== null && shadow[kSlotAssignment] === "named") {
 		if (isSlottable(node)) {
 			assignASlot(node as Slottable);
@@ -5593,8 +5598,9 @@ function insertNode(
 	child: Node | null,
 	suppressObservers: boolean,
 ): void {
-	const nodes =
-		node.nodeType === DOCUMENT_FRAGMENT_NODE ? getChildNodeArray(node) : [node];
+	const nodes = node.nodeType === DOCUMENT_FRAGMENT_NODE
+		? getChildNodeArray(node)
+		: [node];
 	const count = nodes.length;
 	if (count === 0) {
 		return;
@@ -5608,8 +5614,9 @@ function insertNode(
 	if (child !== null) {
 		liveRangeInsertSteps(parent, child, count);
 	}
-	const previousSibling =
-		child !== null ? child[kPrevious] : parent[kLastChild];
+	const previousSibling = child !== null
+		? child[kPrevious]
+		: parent[kLastChild];
 	const document = parent[kDocument];
 	const connected = parent[kConnected];
 	for (const inserted of nodes) {
@@ -5649,10 +5656,9 @@ function insertNode(
 		) {
 			joined[kTreeRoot] = treeRoot;
 		}
-		const shadow =
-			parent.nodeType === ELEMENT_NODE
-				? (parent as Element)[kShadowRoot]
-				: null;
+		const shadow = parent.nodeType === ELEMENT_NODE
+			? (parent as Element)[kShadowRoot]
+			: null;
 		if (shadow !== null) {
 			if (shadow[kSlotAssignment] === "named") {
 				if (isSlottable(inserted)) {
@@ -5813,8 +5819,9 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 		removedNodes.push(child);
 		removeNode(child, true);
 	}
-	const nodes =
-		node.nodeType === DOCUMENT_FRAGMENT_NODE ? getChildNodeArray(node) : [node];
+	const nodes = node.nodeType === DOCUMENT_FRAGMENT_NODE
+		? getChildNodeArray(node)
+		: [node];
 	insertNode(node, parent, referenceChild, true);
 	queueTreeMutationRecord(
 		parent,
@@ -5846,10 +5853,9 @@ function hasOtherDoctypeChild(parent: Node, exclude: Node): boolean {
 
 function replaceAll(node: Node | null, parent: Node): void {
 	const removedNodes = getChildNodeArray(parent);
-	const addedNodes =
-		node === null
-			? []
-			: node.nodeType === DOCUMENT_FRAGMENT_NODE
+	const addedNodes = node === null
+		? []
+		: node.nodeType === DOCUMENT_FRAGMENT_NODE
 				? getChildNodeArray(node)
 				: [node];
 	for (const child of removedNodes) {
@@ -5910,8 +5916,9 @@ function removeNode(node: Node, suppressObservers = false): void {
 	if (assignedSlot !== null) {
 		assignSlottables(assignedSlot);
 	}
-	const hostShadow =
-		parent.nodeType === ELEMENT_NODE ? (parent as Element)[kShadowRoot] : null;
+	const hostShadow = parent.nodeType === ELEMENT_NODE
+		? (parent as Element)[kShadowRoot]
+		: null;
 	if (hostShadow !== null && hostShadow[kSlotAssignment] === "manual") {
 		assignSlottablesForTree(hostShadow);
 	}
@@ -5948,11 +5955,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			descendant.nodeType === ELEMENT_NODE &&
 			(descendant as Element)[kCustomState] === "custom"
 		) {
-			enqueueCallbackReaction(
-				descendant as Element,
-				"disconnectedCallback",
-				[],
-			);
+			enqueueCallbackReaction(descendant as Element, "disconnectedCallback", []);
 		}
 	}
 	runChildrenChangedSteps(parent, [node], false);
@@ -6352,22 +6355,21 @@ function normalizeObserverOptions(
 	options: MutationObserverInit,
 ): ObserverOptions {
 	const init = toDictionary<MutationObserverInit>(options, "Observe options");
-	const attributeFilter =
-		init.attributeFilter === undefined
-			? undefined
-			: toStringSequence(init.attributeFilter);
-	const attributeOldValue =
-		init.attributeOldValue === undefined
-			? undefined
-			: Boolean(init.attributeOldValue);
-	const characterDataOldValue =
-		init.characterDataOldValue === undefined
-			? undefined
-			: Boolean(init.characterDataOldValue);
-	let attributes =
-		init.attributes === undefined ? undefined : Boolean(init.attributes);
-	let characterData =
-		init.characterData === undefined ? undefined : Boolean(init.characterData);
+	const attributeFilter = init.attributeFilter === undefined
+		? undefined
+		: toStringSequence(init.attributeFilter);
+	const attributeOldValue = init.attributeOldValue === undefined
+		? undefined
+		: Boolean(init.attributeOldValue);
+	const characterDataOldValue = init.characterDataOldValue === undefined
+		? undefined
+		: Boolean(init.characterDataOldValue);
+	let attributes = init.attributes === undefined
+		? undefined
+		: Boolean(init.attributes);
+	let characterData = init.characterData === undefined
+		? undefined
+		: Boolean(init.characterData);
 	const childList = Boolean(init.childList);
 	if (
 		(attributeOldValue !== undefined || attributeFilter !== undefined) &&
@@ -6842,8 +6844,7 @@ const syncMethod = (
 const childrenChangedMethod = (
 	LiveList.prototype as unknown as Record<
 		symbol,
-		(point: Node, changed: readonly Node[] | null, added: boolean) => void
-	>
+		(point: Node, changed: readonly Node[] | null, added: boolean) => void>
 )[kChildrenChangedSteps];
 
 const kCompute = Symbol("compute");
@@ -7042,12 +7043,8 @@ function toUnsignedShort(value: unknown): number {
 }
 
 function createChildNodeList(node: Node): NodeList {
-	const list = new NodeList(
-		() => getChildNodeArray(node),
-		true,
-		node,
-		() => true,
-	);
+	const list =
+		new NodeList(() => getChildNodeArray(node), true, node, () => true);
 	ensureList(list);
 	return list;
 }
@@ -7118,20 +7115,15 @@ class MatchingCollection extends HTMLCollection {
 		watched: string | null,
 		matches: (element: Element) => boolean,
 	) {
-		super(
-			() => {
-				const found: Element[] = [];
-				for (const element of getDescendantElements(root, [])) {
-					if (matches(element)) {
-						found.push(element);
-					}
+		super(() => {
+			const found: Element[] = [];
+			for (const element of getDescendantElements(root, [])) {
+				if (matches(element)) {
+					found.push(element);
 				}
-				return found;
-			},
-			root,
-			null,
-			watched,
-		);
+			}
+			return found;
+		}, root, null, watched);
 		this[kMembers] = null;
 		this[kRoot] = root;
 		this[kMatches] = matches;
@@ -7142,10 +7134,9 @@ class MatchingCollection extends HTMLCollection {
 	override getChangedMembers(changed: readonly Node[]): Node[] | null {
 		const members: Node[] = [];
 		for (const node of changed) {
-			const elements =
-				node.nodeType === ELEMENT_NODE
-					? getDescendantElements(node, [node as Element])
-					: getDescendantElements(node, []);
+			const elements = node.nodeType === ELEMENT_NODE
+				? getDescendantElements(node, [node as Element])
+				: getDescendantElements(node, []);
 			for (const element of elements) {
 				if (this[kMatches](element)) {
 					members.push(element);
@@ -7213,10 +7204,9 @@ function createTagNameCollection(
 			if (qualifiedName === "*") {
 				return true;
 			}
-			const name =
-				element[kPrefix] === null
-					? element[kLocalName]
-					: `${element[kPrefix]}:${element[kLocalName]}`;
+			const name = element[kPrefix] === null
+				? element[kLocalName]
+				: `${element[kPrefix]}:${element[kLocalName]}`;
 			return element[kNamespace] === HTML_NAMESPACE
 				? name === lowered
 				: name === qualifiedName;
@@ -7276,10 +7266,9 @@ function createClassNameCollection(
 	let collection = cache.get(key);
 	if (collection === undefined) {
 		const classes = splitOnASCIIWhitespace(classNames);
-		const quirks =
-			root[kDocument][kMode] === "quirks"
-				? classes.map((name) => toASCIILowercase(name))
-				: classes;
+		const quirks = root[kDocument][kMode] === "quirks"
+			? classes.map((name) => toASCIILowercase(name))
+			: classes;
 		collection = new MatchingCollection(root, "class", (element) => {
 			if (classes.length === 0) {
 				return false;
@@ -7701,10 +7690,8 @@ export class Text extends CharacterData implements globalThis.Text {
 	}
 
 	get assignedSlot(): globalThis.HTMLSlotElement | null {
-		return findASlot(
-			this,
-			true,
-		) as unknown as globalThis.HTMLSlotElement | null;
+		return findASlot(this, true) as unknown as globalThis.HTMLSlotElement |
+			null;
 	}
 
 	override get nodeType(): number {
@@ -8737,10 +8724,9 @@ export class Element extends Node implements globalThis.Element {
 				"A document element has no outer HTML to replace",
 			);
 		}
-		const context =
-			parent.nodeType === DOCUMENT_FRAGMENT_NODE
-				? createElementInternal(this[kDocument], "body", HTML_NAMESPACE)
-				: (parent as Element);
+		const context = parent.nodeType === DOCUMENT_FRAGMENT_NODE
+			? createElementInternal(this[kDocument], "body", HTML_NAMESPACE)
+			: (parent as Element);
 		const fragment = parseHTMLFragment(String(value ?? ""), context);
 		replaceChild(this, fragment, parent);
 	}
@@ -8799,10 +8785,9 @@ export class Element extends Node implements globalThis.Element {
 		if (mode !== "open" && mode !== "closed") {
 			throw new TypeError(`${mode} is not a shadow root mode`);
 		}
-		const slotAssignment =
-			options.slotAssignment === undefined
-				? "named"
-				: String(options.slotAssignment);
+		const slotAssignment = options.slotAssignment === undefined
+			? "named"
+			: String(options.slotAssignment);
 		if (slotAssignment !== "named" && slotAssignment !== "manual") {
 			throw new TypeError(`${slotAssignment} is not a slot assignment mode`);
 		}
@@ -9007,7 +8992,8 @@ export class Element extends Node implements globalThis.Element {
 		return getAttributeByName(
 			this,
 			String(qualifiedName),
-		) as unknown as globalThis.Attr | null;
+		) as unknown as globalThis.Attr |
+		null;
 	}
 
 	getAttributeNodeNS(
@@ -9018,7 +9004,8 @@ export class Element extends Node implements globalThis.Element {
 			this,
 			namespace,
 			String(localName),
-		) as unknown as globalThis.Attr | null;
+		) as unknown as globalThis.Attr |
+		null;
 	}
 
 	setAttributeNode(attr: globalThis.Attr): globalThis.Attr | null {
@@ -9063,9 +9050,9 @@ export class Element extends Node implements globalThis.Element {
 	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<
 		globalThis.Element
 	>;
-	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<
-		globalThis.Element
-	> {
+	getElementsByTagName(
+		qualifiedName: string,
+	): HTMLCollectionOf<globalThis.Element> {
 		return createTagNameCollection(
 			this,
 			String(qualifiedName),
@@ -9133,7 +9120,8 @@ export class Element extends Node implements globalThis.Element {
 			this,
 			String(where),
 			element as unknown as Element,
-		) as unknown as globalThis.Element | null;
+		) as unknown as globalThis.Element |
+		null;
 	}
 
 	insertAdjacentText(where: InsertPosition, data: string): void {
@@ -9155,10 +9143,9 @@ export class Element extends Node implements globalThis.Element {
 						"There is nowhere to insert that HTML",
 					);
 				}
-				context =
-					parent.nodeType === ELEMENT_NODE
-						? parent
-						: createElementInternal(this[kDocument], "body", HTML_NAMESPACE);
+				context = parent.nodeType === ELEMENT_NODE
+					? parent
+					: createElementInternal(this[kDocument], "body", HTML_NAMESPACE);
 				break;
 			}
 			case "afterbegin":
@@ -9565,8 +9552,7 @@ Object.defineProperties(Element.prototype, {
 			flushLayout(this);
 			return createRectList(
 				attached[kLayout]
-					.getRects(this)
-					.map((rect) => toViewportRect(attached, rect, this)),
+					.getRects(this).map((rect) => toViewportRect(attached, rect, this)),
 			);
 		},
 		writable: true,
@@ -9769,10 +9755,9 @@ export class HTMLElement extends Element {
 			// prototype, which is what allocating from this constructor would
 			// have given the element anyway.
 			const named = (target as unknown as {prototype: unknown}).prototype;
-			const prototype =
-				named !== null && typeof named === "object"
-					? (named as object)
-					: HTMLElement.prototype;
+			const prototype = named !== null && typeof named === "object"
+				? (named as object)
+				: HTMLElement.prototype;
 			const element = stack[stack.length - 1];
 			if (element === alreadyConstructed) {
 				throw domError(
@@ -10212,10 +10197,9 @@ export class HTMLElement extends Element {
 	// Adds the element to the top layer, above everything else the document
 	// paints, and the UA sheet stops hiding it.
 	showPopover(options?: {source?: Element | null}): void {
-		const init =
-			options === undefined
-				? {}
-				: toDictionary<{source?: Element | null}>(options, "Show options");
+		const init = options === undefined
+			? {}
+			: toDictionary<{source?: Element | null}>(options, "Show options");
 		showPopover(this, true, init.source ?? null);
 	}
 
@@ -10304,8 +10288,9 @@ export class HTMLElement extends Element {
 function getInnermostActive(document: Document): Element | null {
 	let current = document.activeElement as unknown as Element | null;
 	while (current !== null) {
-		const inner = (current[kShadowRoot]?.activeElement ??
-			null) as unknown as Element | null;
+		const inner =
+			(current[kShadowRoot]?.activeElement ?? null) as unknown as Element |
+			null;
 		if (inner === null) {
 			break;
 		}
@@ -10336,10 +10321,9 @@ function getFocusDelegate(element: Element): Element | null {
 		}
 		const candidate = node as Element;
 		const inner = candidate[kShadowRoot];
-		const area =
-			inner !== null && inner[kDelegatesFocus]
-				? getFocusDelegate(candidate)
-				: isFocusableArea(candidate) ? candidate : null;
+		const area = inner !== null && inner[kDelegatesFocus]
+			? getFocusDelegate(candidate)
+			: isFocusableArea(candidate) ? candidate : null;
 		if (area === null) {
 			continue;
 		}
@@ -11329,9 +11313,8 @@ function ceReactions(prototype: object, names: string[]): void {
 				descriptor.value as (...args: unknown[]) => unknown,
 			);
 		} else if (typeof descriptor.set === "function") {
-			descriptor.set = wrapWithReactions(descriptor.set) as (
-				value: unknown,
-			) => void;
+			descriptor.set =
+				wrapWithReactions(descriptor.set) as (value: unknown) => void;
 		} else {
 			continue;
 		}
@@ -11386,10 +11369,13 @@ interface CustomElementRegistry {
 	[kDefinitions]: CustomElementDefinition[];
 	[kDefinitionIsRunning]: boolean;
 
-	[kWhenDefined]: Map<string, {
-		promise: Promise<CustomElementConstructor>;
-		resolve: (value: CustomElementConstructor) => void;
-	}>;
+	[kWhenDefined]: Map<
+		string,
+		{
+			promise: Promise<CustomElementConstructor>;
+			resolve: (value: CustomElementConstructor) => void;
+		}
+	>;
 }
 
 class CustomElementRegistry {
@@ -11745,8 +11731,8 @@ function getConstructorDefinition(
 // one registry serves every document. A document reaches it through the
 // algorithms below rather than a global, so a tree with no window behind
 // it still resolves its definitions.
-const globalCustomElements = constructInternal(
-	() => new CustomElementRegistry(),
+const globalCustomElements = constructInternal(() =>
+	new CustomElementRegistry(),
 );
 
 // Every node has a registry. An element takes its document's when
@@ -12007,10 +11993,9 @@ export class ShadowRoot
 			if (root === (this as unknown as Node)) {
 				return current as unknown as globalThis.Element;
 			}
-			current =
-				root instanceof ShadowRoot
-					? ((root.host ?? null) as Node | null)
-					: null;
+			current = root instanceof ShadowRoot
+				? ((root.host ?? null) as Node | null)
+				: null;
 		}
 		return null;
 	}
@@ -12518,9 +12503,8 @@ class HTMLSlotElement extends HTMLElement {
 	assignedElements(
 		options?: globalThis.AssignedNodesOptions,
 	): globalThis.Element[] {
-		return this.assignedNodes(options).filter(
-			(node) => node.nodeType === ELEMENT_NODE,
-		) as globalThis.Element[];
+		return this.assignedNodes(options)
+			.filter((node) => node.nodeType === ELEMENT_NODE) as globalThis.Element[];
 	}
 
 	// Recomputes every tree in which a slot lost or gained a node. The
@@ -12679,9 +12663,7 @@ class HTMLTemplateElement extends HTMLElement {
 		}
 		const target = (copy as HTMLTemplateElement).content;
 		for (
-			let child = content[kFirstChild];
-			child !== null;
-			child = child[kNext]
+			let child = content[kFirstChild]; child !== null; child = child[kNext]
 		) {
 			appendNode(cloneNode(child, document, true), target);
 		}
@@ -13905,10 +13887,8 @@ class HTMLFormElement extends HTMLElement {
 	get elements(): HTMLFormControlsCollection {
 		let elements = this[kElements];
 		if (elements === null) {
-			elements = new HTMLFormControlsCollection(
-				() => getListedElements(this),
-				this,
-			);
+			elements =
+				new HTMLFormControlsCollection(() => getListedElements(this), this);
 			this[kElements] = elements;
 		}
 		return elements;
@@ -14116,10 +14096,8 @@ class HTMLFormControlsCollection
 			return matches[0] as Element;
 		}
 		// A shared name returns the list of everything that shares it.
-		return new RadioNodeList(
-			() => createMatchingCollection(this, key),
-			this[kOwner],
-		) as unknown as Element;
+		return new RadioNodeList(() =>
+			createMatchingCollection(this, key), this[kOwner]) as unknown as Element;
 	}
 
 	override namedProperties(items: Node[]): Map<string, Node> {
@@ -14147,10 +14125,11 @@ class HTMLFormControlsCollection
 				key,
 				list.length === 1
 					? list[0]
-					: (new RadioNodeList(
-						() => createMatchingCollection(this, key),
-						this[kOwner],
-					) as unknown as Node),
+					: (new RadioNodeList(() =>
+						createMatchingCollection(
+							this,
+							key,
+						), this[kOwner]) as unknown as Node),
 			);
 		}
 		return named;
@@ -14440,8 +14419,8 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 		srcdoc ?? "",
 		srcdoc === null ? "about:blank" : "about:srcdoc",
 	);
-	contentDocument[kRegistry] = constructInternal(
-		() => new CustomElementRegistry(),
+	contentDocument[kRegistry] = constructInternal(() =>
+		new CustomElementRegistry(),
 	);
 	frame[kContentDocument] = contentDocument;
 	frame[kContentWindow] = {
@@ -14549,7 +14528,8 @@ export function parseWeekString(value: string): Date | null {
 		return null;
 	}
 	const january4 = new Date(Date.UTC(year, 0, 4));
-	const monday = january4.getTime() -
+	const monday =
+		january4.getTime() -
 		((january4.getUTCDay() || 7) - 1) * 86400000 +
 		(week - 1) * 7 * 86400000;
 	return new Date(monday);
@@ -15029,10 +15009,9 @@ export class HTMLInputElement extends HTMLElement {
 			return;
 		}
 		const iso = value.toISOString();
-		this.value =
-			type === "date"
-				? iso.slice(0, 10)
-				: type === "month"
+		this.value = type === "date"
+			? iso.slice(0, 10)
+			: type === "month"
 					? iso.slice(0, 7)
 					: type === "week" ? formatWeekString(value) : iso.slice(11, 19);
 	}
@@ -15251,10 +15230,9 @@ export class HTMLInputElement extends HTMLElement {
 		}
 		if (this[kKind] !== "textControl") {
 			if (this[kGlyphText]) {
-				const mark =
-					this.type === "checkbox"
-						? this.checked ? "[x]" : "[ ]"
-						: this.checked ? "(x)" : "( )";
+				const mark = this.type === "checkbox"
+					? this.checked ? "[x]" : "[ ]"
+					: this.checked ? "(x)" : "( )";
 				if (this[kGlyphText].data !== mark) {
 					this[kGlyphText].data = mark;
 				}
@@ -15420,10 +15398,8 @@ function buildInputWidget(input: HTMLInputElement): void {
 
 	if (input[kKind] === "textControl") {
 		input[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
-		input[kPlaceholderText] = addPart(
-			root,
-			"placeholder",
-		).firstChild as globalThis.Text;
+		input[kPlaceholderText] =
+			addPart(root, "placeholder").firstChild as globalThis.Text;
 	} else {
 		input[kValueText] = null;
 		input[kPlaceholderText] = null;
@@ -15433,10 +15409,9 @@ function buildInputWidget(input: HTMLInputElement): void {
 	input[kSyncUAShadowTree]!();
 }
 
-function getInputValueMode(type: string): "value" |
-	"default" |
-	"on" |
-	"filename" {
+function getInputValueMode(
+	type: string,
+): "value" | "default" | "on" | "filename" {
 	switch (type) {
 		case "hidden":
 		case "submit":
@@ -15526,10 +15501,9 @@ function getSteppedValue(
 	steps: number,
 ): string | null {
 	const stepAttribute = input.getAttribute("step")?.trim();
-	const step =
-		stepAttribute === undefined || /^any$/i.test(stepAttribute)
-			? 1
-			: (parseFloatingPoint(stepAttribute) ?? 1);
+	const step = stepAttribute === undefined || /^any$/i.test(stepAttribute)
+		? 1
+		: (parseFloatingPoint(stepAttribute) ?? 1);
 	const spacing = step > 0 ? step : 1;
 	const min = parseFloatingPoint(input.getAttribute("min")?.trim() ?? "");
 	const max = parseFloatingPoint(input.getAttribute("max")?.trim() ?? "");
@@ -16226,8 +16200,9 @@ function setGaugeFill(
 	bar: globalThis.HTMLElement,
 	fraction: number | null,
 ): void {
-	const width =
-		fraction === null ? "0%" : `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+	const width = fraction === null
+		? "0%"
+		: `${Math.max(0, Math.min(1, fraction)) * 100}%`;
 	if (bar.style.width !== width) {
 		bar.style.width = width;
 	}
@@ -16689,8 +16664,9 @@ class HTMLOptionsCollection extends HTMLCollection {
 			if (typeof before === "number") {
 				const options = getOptions(this[kSelect]);
 				const index = toLong(before);
-				reference =
-					index >= 0 && index < options.length ? options[index] : null;
+				reference = index >= 0 && index < options.length
+					? options[index]
+					: null;
 			} else {
 				if (!(before instanceof Element)) {
 					throw new TypeError("That is not an element");
@@ -16701,8 +16677,9 @@ class HTMLOptionsCollection extends HTMLCollection {
 				reference = before;
 			}
 		}
-		const parent =
-			reference === null ? this[kSelect] : (reference[kParent] as Node);
+		const parent = reference === null
+			? this[kSelect]
+			: (reference[kParent] as Node);
 		preInsert(element, parent, reference);
 	}
 
@@ -17073,12 +17050,13 @@ export class HTMLSelectElement extends HTMLElement {
 			}
 			const {clientX: x, clientY: y} = event;
 			const picker = this[kPicker]!;
-			const row = (Array.from(
-				picker.childNodes,
-			) as globalThis.HTMLElement[]).find((node) => {
-				const rect = attached[kLayout].getRect(node);
-				return rect ? rectContains(rect, x, y) : false;
-			});
+			const row =
+				(Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
+					(node) => {
+						const rect = attached[kLayout].getRect(node);
+						return rect ? rectContains(rect, x, y) : false;
+					},
+				);
 			if (row) {
 				const index = getOptionIndex(picker, row);
 				// A disabled row does nothing. The picker stays open and
@@ -17143,10 +17121,10 @@ export class HTMLSelectElement extends HTMLElement {
 	get selectedOptions(): HTMLCollectionOf<HTMLOptionElement> {
 		let selected = this[kSelectedOptions];
 		if (selected === null) {
-			selected = new HTMLCollection(
-				() => getOptions(this).filter((option) => option[kSelectedness]),
-				this,
-			) as HTMLCollectionOf<HTMLOptionElement>;
+			selected = new HTMLCollection(() =>
+				getOptions(this).filter(
+					(option) => option[kSelectedness],
+				), this) as HTMLCollectionOf<HTMLOptionElement>;
 			this[kSelectedOptions] = selected;
 		}
 		askForAReset(this);
@@ -17302,12 +17280,14 @@ export class HTMLSelectElement extends HTMLElement {
 		// The displayed label and picker rows track the option list, so a
 		// framework mutating the options must trigger a sync. Selection
 		// changes reach the tree through the control's own setters.
-		engineObservers.get(this[kDocument])?.observe(this, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			characterData: true,
-		});
+		engineObservers
+			.get(this[kDocument])
+			?.observe(this, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				characterData: true,
+			});
 
 		this[kSyncUAShadowTree]!();
 	}
@@ -17410,9 +17390,7 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 				highlighted: false,
 			});
 			for (
-				let child = node[kFirstChild];
-				child !== null;
-				child = child[kNext]
+				let child = node[kFirstChild]; child !== null; child = child[kNext]
 			) {
 				if (child instanceof HTMLOptionElement) {
 					addOption(child, true);
@@ -17462,9 +17440,7 @@ function stepSelectHighlight(
 ): number {
 	const options = getOptionList(select);
 	for (
-		let i = from + direction;
-		i >= 0 && i < options.length;
-		i += direction
+		let i = from + direction; i >= 0 && i < options.length; i += direction
 	) {
 		if (!optionIsDisabled(options[i])) {
 			return i;
@@ -17564,9 +17540,7 @@ function getOptions(select: Element): HTMLOptionElement[] {
 			options.push(node);
 		} else if (node instanceof HTMLOptGroupElement) {
 			for (
-				let child = node[kFirstChild];
-				child !== null;
-				child = child[kNext]
+				let child = node[kFirstChild]; child !== null; child = child[kNext]
 			) {
 				if (child instanceof HTMLOptionElement) {
 					options.push(child);
@@ -17736,10 +17710,8 @@ class HTMLTableElement extends HTMLElement {
 	}
 
 	get tHead(): HTMLTableSectionElement | null {
-		return getFirstChildElement(
-			this,
-			"thead",
-		) as HTMLTableSectionElement | null;
+		return getFirstChildElement(this, "thead") as HTMLTableSectionElement |
+			null;
 	}
 
 	set tHead(value: Element | null) {
@@ -17768,10 +17740,8 @@ class HTMLTableElement extends HTMLElement {
 	}
 
 	get tFoot(): HTMLTableSectionElement | null {
-		return getFirstChildElement(
-			this,
-			"tfoot",
-		) as HTMLTableSectionElement | null;
+		return getFirstChildElement(this, "tfoot") as HTMLTableSectionElement |
+			null;
 	}
 
 	set tFoot(value: Element | null) {
@@ -18021,11 +17991,9 @@ class HTMLTableRowElement extends HTMLElement {
 	get cells(): HTMLCollectionOf<HTMLTableCellElement> {
 		let cells = this[kCells];
 		if (cells === null) {
-			cells = new HTMLCollection(
-				() => getRowCells(this),
-				this,
-				(node) => node instanceof HTMLTableCellElement,
-			);
+			cells = new HTMLCollection(() =>
+				getRowCells(this), this, (node) => node instanceof
+					HTMLTableCellElement);
 			this[kCells] = cells;
 		}
 		return cells as HTMLCollectionOf<HTMLTableCellElement>;
@@ -19117,8 +19085,9 @@ function getTopmostPopoverAncestor(
 ): Element | null {
 	const popovers = getShowingAutoPopovers(node[kDocument]);
 	const nodeIndex = getLastFlatAncestorIndex(popovers, node);
-	const sourceIndex =
-		source === null ? -1 : getLastFlatAncestorIndex(popovers, source);
+	const sourceIndex = source === null
+		? -1
+		: getLastFlatAncestorIndex(popovers, source);
 	const index = Math.max(nodeIndex, sourceIndex);
 	return index === -1 ? null : popovers[index];
 }
@@ -19283,9 +19252,9 @@ function getPopoverTargetAttributeElement(node: Node): Element | null {
 	if (root.nodeType !== DOCUMENT_NODE && !isShadowRoot(root)) {
 		return null;
 	}
-	return (root as Document | ShadowRoot).getElementById(
-		id,
-	) as unknown as Element | null;
+	return (root as Document |
+		ShadowRoot).getElementById(id) as unknown as Element |
+		null;
 }
 
 function setPopoverTargetAttributeElement(
@@ -19632,10 +19601,9 @@ function getDatasetAttributeName(property: string): string {
 				`"${property}" is not a name a data-* attribute has`,
 			);
 		}
-		name +=
-			character >= "A" && character <= "Z"
-				? `-${toASCIILowercase(character)}`
-				: character;
+		name += character >= "A" && character <= "Z"
+			? `-${toASCIILowercase(character)}`
+			: character;
 	}
 	return name;
 }
@@ -19711,12 +19679,11 @@ function syncDataset(map: DOMStringMap): void {
 			get(this: DOMStringMap): string {
 				return map[kDatasetElement].getAttribute(attribute) as string;
 			},
-			set: wrapWithReactions(function (
-				this: DOMStringMap,
-				value: unknown,
-			): void {
-				this[kDatasetElement].setAttribute(attribute, String(value));
-			}) as (value: unknown) => void,
+			set: wrapWithReactions(
+				function (this: DOMStringMap, value: unknown): void {
+					this[kDatasetElement].setAttribute(attribute, String(value));
+				},
+			) as (value: unknown) => void,
 			enumerable: true,
 			configurable: true,
 		});
@@ -20275,8 +20242,9 @@ class ElementInternals {
 			throw new TypeError("setFormValue needs a value");
 		}
 		requireFormAssociated(this);
-		this[kSubmissionValue] =
-			value == null ? null : typeof value === "object" ? value : String(value);
+		this[kSubmissionValue] = value == null
+			? null
+			: typeof value === "object" ? value : String(value);
 		void state;
 	}
 
@@ -20729,10 +20697,9 @@ function collectInputValidity(
 	}
 	const pattern = input.getAttribute("pattern");
 	if (pattern !== null && value !== "" && PATTERN_INPUT_TYPES.has(type)) {
-		const values =
-			type === "email" && multiple
-				? value.split(",").map((v) => v.trim())
-				: [value];
+		const values = type === "email" && multiple
+			? value.split(",").map((v) => v.trim())
+			: [value];
 		flags.patternMismatch = !values.every((v) => matchesPattern(pattern, v));
 	}
 	if (PATTERN_INPUT_TYPES.has(type) && input[kDirtyValue]) {
@@ -21527,9 +21494,9 @@ Object.defineProperty(DOMRect.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export class DOMRectList extends Array<
-	globalThis.DOMRect
-> implements globalThis.DOMRectList {
+export class DOMRectList
+	extends Array<globalThis.DOMRect>
+	implements globalThis.DOMRectList {
 	item(index: number): globalThis.DOMRect | null {
 		if (index < 0 || index >= this.length) {
 			return null;
@@ -21740,11 +21707,12 @@ const RESIZE_BOXES = new Set([
 
 type ResizeObserverOptions = globalThis.ResizeObserverOptions;
 
-class ResizeObserver extends LayoutObserver<
-	ResizeSize,
-	ResizeObserverEntry,
-	ResizeObserverOptions
-> {
+class ResizeObserver
+	extends LayoutObserver<
+		ResizeSize,
+		ResizeObserverEntry,
+		ResizeObserverOptions
+	> {
 	constructor(callback: ResizeObserverCallback) {
 		super();
 		this[kObserverCallback] = callback;
@@ -21779,23 +21747,18 @@ class ResizeObserver extends LayoutObserver<
 		// that size is zero. Reporting it is how the DOM lets a component
 		// notice it has been hidden. Skipping it left the last size it ever had
 		// stuck.
-		const content = getContentBox(target, layout) ?? {
-			width: 0,
-			height: 0,
-			top: 0,
-			left: 0,
-		};
+		const content =
+			getContentBox(target, layout) ?? {width: 0, height: 0, top: 0, left: 0};
 
 		const border = layout.getRect(target);
 		// device-pixel-content-box is the content box. A cell is the device
 		// pixel here, so the two can never differ.
-		const watched =
-			options?.box === "border-box"
-				? {
-					width: border?.width ?? content.width,
-					height: border?.height ?? content.height,
-				}
-				: {width: content.width, height: content.height};
+		const watched = options?.box === "border-box"
+			? {
+				width: border?.width ?? content.width,
+				height: border?.height ?? content.height,
+			}
+			: {width: content.width, height: content.height};
 
 		if (
 			last && last.width === watched.width && last.height === watched.height
@@ -21869,10 +21832,8 @@ interface IntersectionObserver {
 	[kIntersectionRoot]: globalThis.Element | globalThis.Document | null;
 }
 
-class IntersectionObserver extends LayoutObserver<
-	number,
-	IntersectionObserverEntry
-> {
+class IntersectionObserver
+	extends LayoutObserver<number, IntersectionObserverEntry> {
 	readonly rootMargin: string;
 	readonly thresholds: readonly number[];
 	constructor(
@@ -21928,10 +21889,9 @@ class IntersectionObserver extends LayoutObserver<
 		// way it is grown by rootMargin, which is the point of that option: it
 		// lets a list start loading a row before it scrolls into view.
 		const root = this[kIntersectionRoot];
-		const rootBox =
-			root && root.nodeType === ELEMENT_NODE
-				? layout.getRect(root as globalThis.Element)
-				: viewport;
+		const rootBox = root && root.nodeType === ELEMENT_NODE
+			? layout.getRect(root as globalThis.Element)
+			: viewport;
 		if (!rootBox) {
 			return null;
 		}
@@ -22545,16 +22505,14 @@ export class Document extends Node implements globalThis.Document {
 		return this.embeds;
 	}
 
-	get links(): HTMLCollectionOf<
-		globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
-	> {
+	get links(): HTMLCollectionOf<globalThis.HTMLAnchorElement |
+	globalThis.HTMLAreaElement> {
 		return getDocumentCollection(this,
 			(e) =>
 				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
 				e.hasAttribute("href"),
-		) as unknown as HTMLCollectionOf<
-			globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
-		>;
+		) as unknown as HTMLCollectionOf<globalThis.HTMLAnchorElement |
+		globalThis.HTMLAreaElement>;
 	}
 
 	/** Always empty. The applet element was removed from HTML. */
@@ -22874,40 +22832,34 @@ export class Document extends Node implements globalThis.Document {
 		elementName: string,
 	): globalThis.NodeListOf<globalThis.HTMLElement> {
 		const name = String(elementName);
-		return new NodeList(
-			() => {
-				// Walks the tree instead of reading the all-elements
-				// collection. A list built on another live list would see that
-				// list's stale contents, because the two are resynchronized in
-				// the order they were first read.
-				const matches: Node[] = [];
-				const visit = (node: Node): void => {
-					for (
-						let child = node[kFirstChild];
-						child !== null;
-						child = child[kNext]
-					) {
-						if (child.nodeType !== ELEMENT_NODE) {
-							continue;
-						}
-						const element = child as Element;
-						if (
-							element.namespaceURI === HTML_NAMESPACE &&
-							element.getAttribute("name") === name
-						) {
-							matches.push(child);
-						}
-						visit(child);
+		return new NodeList(() => {
+			// Walks the tree instead of reading the all-elements
+			// collection. A list built on another live list would see that
+			// list's stale contents, because the two are resynchronized in
+			// the order they were first read.
+			const matches: Node[] = [];
+			const visit = (node: Node): void => {
+				for (
+					let child = node[kFirstChild]; child !== null; child = child[kNext]
+				) {
+					if (child.nodeType !== ELEMENT_NODE) {
+						continue;
 					}
-				};
-				visit(this as unknown as Node);
-				return matches;
-			},
-			true,
-			this,
-			null,
-			"name",
-		) as unknown as globalThis.NodeListOf<globalThis.HTMLElement>;
+					const element = child as Element;
+					if (
+						element.namespaceURI === HTML_NAMESPACE &&
+						element.getAttribute("name") === name
+					) {
+						matches.push(child);
+					}
+					visit(child);
+				}
+			};
+			visit(this as unknown as Node);
+			return matches;
+		}, true, this, null, "name") as unknown as globalThis.NodeListOf<
+			globalThis.HTMLElement
+		>;
 	}
 
 	getElementById(elementId: string): globalThis.HTMLElement | null {
@@ -22954,7 +22906,8 @@ export class Document extends Node implements globalThis.Document {
 		}
 		const is = extractIs(options);
 		const namespace =
-			isHTMLDocument(this) || this[kContentType] === "application/xhtml+xml"
+			isHTMLDocument(this) ||
+			this[kContentType] === "application/xhtml+xml"
 				? HTML_NAMESPACE
 				: null;
 		return createElementInternal(
@@ -23346,7 +23299,8 @@ export class Document extends Node implements globalThis.Document {
 
 	open(_unused1?: string, _unused2?: string): globalThis.Document;
 	open(_url: string |
-		URL, _name: string, _features: string): globalThis.WindowProxy | null;
+		URL, _name: string, _features: string): globalThis.WindowProxy |
+			null;
 	open(): globalThis.Document | globalThis.WindowProxy | null {
 		throw domError("InvalidStateError", "This document is not a stream");
 	}
@@ -23626,10 +23580,9 @@ Object.defineProperties(Document.prototype, {
 		value(this: Document, x: number, y: number): globalThis.Element[] {
 			const stack: globalThis.Element[] = [];
 			const attached = getAttachedDocument(this);
-			let hit =
-				attached === undefined
-					? null
-					: elementAtDocumentPoint(this, x, y + attached[kScreen].scrollTop);
+			let hit = attached === undefined
+				? null
+				: elementAtDocumentPoint(this, x, y + attached[kScreen].scrollTop);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
 				hit = getFlatTreeParent(hit as unknown as Element);
@@ -23907,11 +23860,9 @@ const parentNodeMembers = {
 			const owner = this as unknown as Record<symbol, HTMLCollection | null>;
 			let collection = owner[kChildren];
 			if (collection == null) {
-				collection = new HTMLCollection(
-					() => getElementChildren(this),
-					this,
-					(node) => node.nodeType === ELEMENT_NODE,
-				);
+				collection = new HTMLCollection(() => getElementChildren(this), this, (
+					node,
+				) => node.nodeType === ELEMENT_NODE);
 				ensureList(collection);
 				owner[kChildren] = collection;
 			}
@@ -24158,8 +24109,9 @@ function markUnscopable(prototype: object, names: string[]): void {
 	const existing = (prototype as Record<symbol, Record<string, true>>)[
 		Symbol.unscopables
 	];
-	const unscopables: Record<string, true> =
-		existing === undefined ? Object.create(null) : existing;
+	const unscopables: Record<string, true> = existing === undefined
+		? Object.create(null)
+		: existing;
 	for (const name of names) {
 		unscopables[name] = true;
 	}
@@ -24320,10 +24272,9 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 			continue;
 		}
 		// An unknowable horizontal extent leaves that axis unclamped.
-		const maxLeft =
-			extent.width === null
-				? offsets.left
-				: Math.max(0, extent.width - Math.round(port.width));
+		const maxLeft = extent.width === null
+			? offsets.left
+			: Math.max(0, extent.width - Math.round(port.width));
 		const maxTop = Math.max(0, extent.height - Math.round(port.height));
 		if (offsets.left <= maxLeft && offsets.top <= maxTop) {
 			continue;
@@ -24434,9 +24385,7 @@ function cloneNode(
 			const copiedShadow = (copy as Element)[kShadowRoot] as ShadowRoot;
 			copiedShadow[kDeclarative] = shadow[kDeclarative];
 			for (
-				let child = shadow[kFirstChild];
-				child !== null;
-				child = child[kNext]
+				let child = shadow[kFirstChild]; child !== null; child = child[kNext]
 			) {
 				appendNode(
 					cloneNode(child, copiedShadow[kDocument], true),
@@ -25410,17 +25359,13 @@ class Range extends AbstractRange implements globalThis.Range {
 	// innerHTML would use for the same markup.
 	createContextualFragment(markup: string): DocumentFragment {
 		const start = this[kStartNode];
-		let context: Element | null =
-			start instanceof Element
-				? start
-				: start[kParent] instanceof Element
-					? (start[kParent] as Element)
-					: null;
+		let context: Element | null = start instanceof Element
+			? start
+			: start[kParent] instanceof Element ? (start[kParent] as Element) : null;
 		if (context === null) {
-			const document =
-				start instanceof Document
-					? start
-					: (start.ownerDocument as Document | null);
+			const document = start instanceof Document
+				? start
+				: (start.ownerDocument as Document | null);
 			context = (document?.body ?? document?.documentElement ?? null) as
 			Element | null;
 		}
@@ -25569,7 +25514,8 @@ class Range extends AbstractRange implements globalThis.Range {
 				offset + 1,
 				this[kStartNode],
 				this[kStartOffset],
-			) === AFTER
+			) ===
+			AFTER
 		);
 	}
 
@@ -25756,16 +25702,15 @@ function insertIntoRange(range: Range, node: Node): void {
 	} else {
 		let child = startNode[kFirstChild];
 		for (
-			let index = 0;
-			index < range[kStartOffset] && child !== null;
-			index++
+			let index = 0; index < range[kStartOffset] && child !== null; index++
 		) {
 			child = child[kNext];
 		}
 		referenceNode = child;
 	}
-	const parent =
-		referenceNode === null ? startNode : (referenceNode[kParent] as Node);
+	const parent = referenceNode === null
+		? startNode
+		: (referenceNode[kParent] as Node);
 	ensurePreInsertionValidity(node, parent, referenceNode);
 	if (startNode instanceof Text) {
 		referenceNode = startNode.splitText(range[kStartOffset]);
@@ -25776,10 +25721,9 @@ function insertIntoRange(range: Range, node: Node): void {
 	if (node[kParent] !== null) {
 		removeNode(node);
 	}
-	let newOffset =
-		referenceNode === null
-			? getNodeLength(parent)
-			: getNodeIndex(referenceNode);
+	let newOffset = referenceNode === null
+		? getNodeLength(parent)
+		: getNodeIndex(referenceNode);
 	newOffset += node.nodeType === DOCUMENT_FRAGMENT_NODE
 		? getNodeLength(node)
 		: 1;
@@ -26426,18 +26370,16 @@ class Selection implements globalThis.Selection {
 			return;
 		}
 		const extending = how === "extend";
-		const from =
-			extending
-				? (getFocusPoint(this) as [Node, number])
-				: forward
+		const from = extending
+			? (getFocusPoint(this) as [Node, number])
+			: forward
 					? ([range[kEndNode], range[kEndOffset]] as [Node, number])
 					: ([range[kStartNode], range[kStartOffset]] as [Node, number]);
 		// Collapsing a range by a character is the whole motion. The caret
 		// lands on the edge the direction points at, not one character past it.
-		const to =
-			!extending && !range.collapsed && unit === "character"
-				? from
-				: getModifiedPoint(this, from, forward, unit);
+		const to = !extending && !range.collapsed && unit === "character"
+			? from
+			: getModifiedPoint(this, from, forward, unit);
 		if (to === null) {
 			return;
 		}
@@ -26656,15 +26598,14 @@ function selectionLineMove(
 	const here = getSelectionPoint(run, index);
 	const column = here === null ? null : getCaretColumn(layout, here);
 	const root = document.body ?? document.documentElement;
-	const found =
-		column === null || root === null
-			? null
-			: layout.caretPositionFromPoint(
-				column,
-				lines[target].y,
-				root as unknown as globalThis.Node,
-				true,
-			);
+	const found = column === null || root === null
+		? null
+		: layout.caretPositionFromPoint(
+			column,
+			lines[target].y,
+			root as unknown as globalThis.Node,
+			true,
+		);
 	if (found === null) {
 		return getSelectionPoint(run, lines[target].start);
 	}
@@ -26914,10 +26855,9 @@ function filterNode(
 	traverser.active.value = true;
 	let result: unknown;
 	try {
-		result =
-			typeof filter === "function"
-				? filter(node)
-				: (filter as {acceptNode(node: Node): number}).acceptNode(node);
+		result = typeof filter === "function"
+			? filter(node)
+			: (filter as {acceptNode(node: Node): number}).acceptNode(node);
 	} finally {
 		traverser.active.value = false;
 	}
@@ -27164,8 +27104,9 @@ export class TreeWalker implements globalThis.TreeWalker {
 
 // DOM Standard, "traverse children".
 function walkChildren(walk: TreeWalker, first: boolean): Node | null {
-	let node: Node | null =
-		first ? walk[kCurrent][kFirstChild] : walk[kCurrent][kLastChild];
+	let node: Node | null = first
+		? walk[kCurrent][kFirstChild]
+		: walk[kCurrent][kLastChild];
 	while (node !== null) {
 		const result = filterNode(walk[kState], node);
 		if (result === FILTER_ACCEPT) {
@@ -27492,7 +27433,9 @@ export function isDefaultControl(element: Element): boolean {
 	// The default button is the first submit button in tree order.
 	for (const candidate of form.querySelectorAll(
 		"button, input",
-	) as unknown as Iterable<Element>) {
+	) as unknown as Iterable<
+		Element
+	>) {
 		const local = candidate.localName;
 		const kind = local === "button"
 			? toASCIILowercase(candidate.getAttribute("type") ?? "submit")
@@ -27515,9 +27458,8 @@ export function isOpenElement(element: Element): boolean {
 			return element.getAttribute("open") !== null;
 		case "select":
 			return (
-				(element as unknown as {
-					[kPickerHighlight]?: unknown;
-				})[kPickerHighlight] !=
+				(element as unknown as {[kPickerHighlight]?:
+				unknown;})[kPickerHighlight] !=
 				null
 			);
 		default:
@@ -28784,9 +28726,7 @@ function serializeFragment(
 		}
 	}
 	for (
-		let child = children[kFirstChild];
-		child !== null;
-		child = child[kNext]
+		let child = children[kFirstChild]; child !== null; child = child[kNext]
 	) {
 		html += serializeNode(child, serializableShadowRoots, shadowRoots);
 	}
@@ -28831,9 +28771,7 @@ function serializeNode(
 					: element[kQualifiedName];
 			let html = `<${tagName}`;
 			for (const attribute of element[kAttributeList]) {
-				html += ` ${getAttributeSerializedName(attribute)}="${escapeAttribute(
-					attribute[kValue],
-				)}"`;
+				html += ` ${getAttributeSerializedName(attribute)}="${escapeAttribute(attribute[kValue])}"`;
 			}
 			html += ">";
 			if (namespace === HTML_NAMESPACE && VOID_ELEMENTS.has(tagName)) {
@@ -28883,9 +28821,7 @@ function serializeNode(
 		default: {
 			let html = "";
 			for (
-				let child = node[kFirstChild];
-				child !== null;
-				child = child[kNext]
+				let child = node[kFirstChild]; child !== null; child = child[kNext]
 			) {
 				html += serializeNode(child, serializableShadowRoots, shadowRoots);
 			}
@@ -29192,13 +29128,11 @@ type TextControlOrSelect =
 // decision per frame instead of a layout flush per keystroke.
 function onTextControlEditEvent(event: globalThis.Event): void {
 	const target = event.target;
-	if (
-		!(
-			target instanceof HTMLInputElement ||
-			target instanceof HTMLTextAreaElement ||
-			target instanceof HTMLSelectElement
-		)
-	) {
+	if (!(
+		target instanceof HTMLInputElement ||
+		target instanceof HTMLTextAreaElement ||
+		target instanceof HTMLSelectElement
+	)) {
 		return;
 	}
 	const attached = getAttachedDocument(target);
@@ -29315,10 +29249,9 @@ export function revealPendingCaret(document: globalThis.Document): void {
 	}
 	const regionHeight = getScrollingRegionHeight(document);
 	const top = attached[kScreen].scrollTop;
-	const delta =
-		revealTop < top
-			? revealTop - top
-			: revealBottom > top + regionHeight
+	const delta = revealTop < top
+		? revealTop - top
+		: revealBottom > top + regionHeight
 				? revealBottom - (top + regionHeight)
 				: 0;
 	if (delta) {
@@ -29433,10 +29366,8 @@ function dropUnfocusableFocus(
 		node = flatParentElement(node)
 	) {
 		if (
-			node.hasAttribute("inert") ||
-			attached[kCascade]
-				.declarationFor(node as Element)
-				.getComputedValue("display") === "none"
+			node.hasAttribute("inert") || attached[kCascade]
+				.declarationFor(node as Element).getComputedValue("display") === "none"
 		) {
 			(active as globalThis.HTMLElement).blur();
 			return;
@@ -29495,14 +29426,16 @@ export function hoverListenerCount(document: globalThis.Document): number {
 
 // A document that has been adopted. It renders, and knows what it
 // renders through.
-type AttachedDocument = Document & {
-	[kRender]: () => Promise<void>;
-	[kVisible]: boolean;
-	[kLayout]: Layout;
-	[kCascade]: Cascade;
-	[kExchange]: Exchange;
-	[kScreen]: Screen;
-};
+type AttachedDocument =
+	Document &
+	{
+		[kRender]: () => Promise<void>;
+		[kVisible]: boolean;
+		[kLayout]: Layout;
+		[kCascade]: Cascade;
+		[kExchange]: Exchange;
+		[kScreen]: Screen;
+	};
 
 function getAttachedDocument(
 	node: globalThis.Node,
@@ -29549,11 +29482,12 @@ class ClipboardItem {
 			const mediaType = normalizeMediaType(type);
 			entries.set(
 				mediaType,
-				Promise.resolve(value).then((held) =>
-					held instanceof Blob
-						? held
-						: new Blob([String(held)], {type: mediaType}),
-				),
+				Promise.resolve(value)
+					.then((held) =>
+						held instanceof Blob
+							? held
+							: new Blob([String(held)], {type: mediaType}),
+					),
 			);
 		}
 		if (entries.size === 0) {
@@ -29849,8 +29783,8 @@ class Permissions extends EventTarget {
 			);
 		}
 		return Promise.resolve(
-			constructInternal(
-				() => new PermissionStatus(name, this[kPermissionDocument]),
+			constructInternal(() =>
+				new PermissionStatus(name, this[kPermissionDocument]),
 			),
 		);
 	}
@@ -30056,8 +29990,10 @@ function holdFrameCallback(
 
 // A fullscreen transition resolves its promise here, once the render
 // that carries the switch has been written.
-function frameSettled(document: Document, attached: AttachedDocument): Promise<
-	void> {
+function frameSettled(
+	document: Document,
+	attached: AttachedDocument,
+): Promise<void> {
 	return new Promise((resolve) => {
 		holdFrameCallback(document, () => {
 			resolve();
@@ -30793,10 +30729,9 @@ export class Window extends EventTarget {
 		if (attached === undefined) {
 			return;
 		}
-		const top =
-			typeof xOrOptions === "object" && xOrOptions !== null
-				? (xOrOptions.top ?? attached[kScreen].scrollTop)
-				: (y ?? 0);
+		const top = typeof xOrOptions === "object" && xOrOptions !== null
+			? (xOrOptions.top ?? attached[kScreen].scrollTop)
+			: (y ?? 0);
 		attached[kScreen].scrollTo(top);
 		void attached[kRender]();
 	}
@@ -30818,10 +30753,9 @@ export class Window extends EventTarget {
 		if (attached === undefined) {
 			return;
 		}
-		const top =
-			typeof xOrOptions === "object" && xOrOptions !== null
-				? (xOrOptions.top ?? 0)
-				: (y ?? 0);
+		const top = typeof xOrOptions === "object" && xOrOptions !== null
+			? (xOrOptions.top ?? 0)
+			: (y ?? 0);
 		attached[kScreen].scrollTo(attached[kScreen].scrollTop + top);
 		void attached[kRender]();
 	}

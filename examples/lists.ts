@@ -179,11 +179,13 @@ const planSubUl = document.createElement("ul");
   "Requirements gathering",
   "Architecture design",
   "Timeline estimation",
-].forEach((text) => {
-  const li = document.createElement("li");
-  li.textContent = text;
-  planSubUl.appendChild(li);
-});
+].forEach(
+  (text) => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    planSubUl.appendChild(li);
+  },
+);
 planItem.appendChild(planSubUl);
 level1Ol.appendChild(planItem);
 

@@ -611,9 +611,8 @@ function getAlignmentConstant(value: string, fallback: Align): Align {
 }
 
 function getJustifyContentConstant(value: string): Justify {
-	const constant = JUSTIFY_CONTENT_CONSTANTS[CSSValues.parseAlignmentKeyword(
-		value,
-	)];
+	const constant =
+		JUSTIFY_CONTENT_CONSTANTS[CSSValues.parseAlignmentKeyword(value)];
 	return constant === undefined ? "normal" : constant;
 }
 
@@ -854,7 +853,11 @@ function styleLayoutNodeProperties(
 			getComputedValue(element, "aspect-ratio"),
 		);
 		style.aspectRatio =
-			ratio !== undefined && Number.isFinite(ratio) && ratio > 0 ? ratio : NaN;
+			ratio !== undefined &&
+			Number.isFinite(ratio) &&
+			ratio > 0
+				? ratio
+				: NaN;
 
 		// A blockified inline flex item keeps its padding, margin and
 		// border like any block (css-display-3 §2.7). Without the parentIsFlex
@@ -877,13 +880,16 @@ function styleLayoutNodeProperties(
 			// box models disagree about the same element.
 			const borderStyle = getComputedValue(element, `border-${edge}-style`);
 			const borderWidth =
-				!borderStyle || borderStyle === "none" || borderStyle === "hidden"
+				!borderStyle ||
+				borderStyle === "none" ||
+				borderStyle === "hidden"
 					? null
 					: CSSValues.parseBorderWidthValue(
 						getComputedValue(element, `border-${edge}-width`),
 					);
-			style.border[edge] =
-				typeof borderWidth === "number" && borderWidth > 0 ? borderWidth : 0;
+			style.border[edge] = typeof borderWidth === "number" && borderWidth > 0
+				? borderWidth
+				: 0;
 		}
 	}
 
@@ -897,7 +903,8 @@ function styleLayoutNodeProperties(
 			"flex-direction",
 		);
 		const crossEdges: readonly Edge[] =
-			direction === "column" || direction === "column-reverse"
+			direction === "column" ||
+			direction === "column-reverse"
 				? ["left", "right"]
 				: ["top", "bottom"];
 		for (const edge of crossEdges) {
@@ -1457,10 +1464,9 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 	for (const entry of children) {
 		if (entry.kind === "anonymous") {
 			let layoutNode = entry.layoutNode;
-			const styledFrom =
-				entry.head.nodeType === entry.head.ELEMENT_NODE
-					? (entry.head as Element)
-					: null;
+			const styledFrom = entry.head.nodeType === entry.head.ELEMENT_NODE
+				? (entry.head as Element)
+				: null;
 			// A run that changes hands starts fresh rather than keeping the
 			// last head's margins and flex factors.
 			if (layoutNode && entry.styledFrom !== styledFrom) {
@@ -1649,10 +1655,9 @@ function addNode(
 	// down to, unless the two are in different layout trees (an independent
 	// formatting context's block cannot reach in). Then the box moves.
 	if (isOutOfFlow(node)) {
-		const containingBlock =
-			getPosition(node as Element) === "fixed"
-				? layout[kInitialContainingBlock]
-				: getContainingBlockLayoutNode(layout, node as Element);
+		const containingBlock = getPosition(node as Element) === "fixed"
+			? layout[kInitialContainingBlock]
+			: getContainingBlockLayoutNode(layout, node as Element);
 		if (
 			containingBlock && !isReachableFrom(parentLayoutNode, containingBlock)
 		) {
@@ -2498,24 +2503,26 @@ type Leaf =
 	{type: "br"; node: HTMLBRElement};
 
 interface LineResult {
-	segments: Array<{
-		leaf: Leaf;
-		start: number;
-		end: number;
-		x: number;
-		width: number;
-		processedText: string;
+	segments: Array<
+		{
+			leaf: Leaf;
+			start: number;
+			end: number;
+			x: number;
+			width: number;
+			processedText: string;
 
-		// The raw-data range this segment renders, trimmed to begin and end on
-		// a rendered character, so rendering it reproduces processedText
-		// exactly. Both zero for a leaf that is not text.
-		dataStart: number;
-		dataEnd: number;
+			// The raw-data range this segment renders, trimmed to begin and end on
+			// a rendered character, so rendering it reproduces processedText
+			// exactly. Both zero for a leaf that is not text.
+			dataStart: number;
+			dataEnd: number;
 
-		// The direction the characters were reordered into. Null in logical
-		// order (no bidi on the line, or a terminal that reorders for itself).
-		visualBase: "ltr" | "rtl" | null;
-	}>;
+			// The direction the characters were reordered into. Null in logical
+			// order (no bidi on the line, or a terminal that reorders for itself).
+			visualBase: "ltr" | "rtl" | null;
+		}
+	>;
 	y: number;
 	width: number;
 	height: number;
@@ -2532,15 +2539,17 @@ interface BreakResult {
 }
 
 interface ProcessedContent {
-	items: Array<{
-		leafNode: Leaf;
-		start: number;
-		end: number;
-		processedContent?: string;
+	items: Array<
+		{
+			leafNode: Leaf;
+			start: number;
+			end: number;
+			processedContent?: string;
 
-		// Back to offsets in the leaf's raw data. Null where the two are equal.
-		dataOffsets?: Int32Array | null;
-	}>;
+			// Back to offsets in the leaf's raw data. Null where the two are equal.
+			dataOffsets?: Int32Array | null;
+		}
+	>;
 	text: string;
 
 	// Entry i is the cell width of text[0..i), so a range measures as one
@@ -2831,10 +2840,9 @@ function collectLeaves(
 				let contentHeightMode: AvailableSpace = "indefinite";
 
 				// A sizing keyword picks the probe the content is measured under.
-				const widthSizing =
-					boxModel.width === undefined
-						? getWidthSizingConstant(getComputedValue(element, "width"))
-						: "none";
+				const widthSizing = boxModel.width === undefined
+					? getWidthSizingConstant(getComputedValue(element, "width"))
+					: "none";
 				if (boxModel.width !== undefined) {
 					contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
 					contentWidthMode = "definite";
@@ -3092,10 +3100,9 @@ function breakNodes(
 	// Text properties come from what opens the box. A text node styles
 	// from its flat-tree parent.
 	const opener = source.head;
-	const styleElement =
-		opener.nodeType === opener.TEXT_NODE
-			? flatParentElement(opener)!
-			: (opener as Element);
+	const styleElement = opener.nodeType === opener.TEXT_NODE
+		? flatParentElement(opener)!
+		: (opener as Element);
 
 	const whiteSpace = getComputedValue(styleElement, "white-space");
 	const wordBreak = getComputedValue(styleElement, "word-break");
@@ -3104,8 +3111,9 @@ function breakNodes(
 	// A width of 0 is a real constraint, the min-content probe. Treated as
 	// unlimited it returned max-content, making min-content zero
 	// everywhere.
-	const maxWidth =
-		widthSpace === "indefinite" ? Number.MAX_SAFE_INTEGER : width;
+	const maxWidth = widthSpace === "indefinite"
+		? Number.MAX_SAFE_INTEGER
+		: width;
 
 	const processedContent = processWhitespace(layout, leafNodes);
 	// `pre` suppresses wrapping as `nowrap` does. Treating it as wrappable
@@ -3131,12 +3139,9 @@ function breakNodes(
 	// what makes an Arabic string in an undeclared <div> come out right.
 	// That is how such a string usually arrives.
 	const declared = getComputedValue(styleElement, "direction");
-	const base: "ltr" | "rtl" =
-		declared === "rtl"
-			? "rtl"
-			: declared === "ltr"
-				? "ltr"
-				: getParagraphDirection(processedContent.text);
+	const base: "ltr" | "rtl" = declared === "rtl"
+		? "rtl"
+		: declared === "ltr" ? "ltr" : getParagraphDirection(processedContent.text);
 
 	const lines = buildLines(
 		layout,
@@ -3400,8 +3405,9 @@ function buildLines(
 		// No break opportunity fits. The line takes the whole unbreakable unit
 		// and overflows, as a browser lets a long word escape its box.
 		if (bestBreak === lineStart && !breakAnywhere) {
-			bestBreak =
-				cursor < breaks.length ? breaks[cursor].position : content.text.length;
+			bestBreak = cursor < breaks.length
+				? breaks[cursor].position
+				: content.text.length;
 			bestBreakWidth = measureText(content, lineStart, bestBreak);
 		}
 
@@ -3577,7 +3583,10 @@ function getLineIndent(
 		: (parsed.percentage / 100) * containerWidth;
 }
 
-function findInlineBlockSegment(breakResult: BreakResult, element: Element): {
+function findInlineBlockSegment(
+	breakResult: BreakResult,
+	element: Element,
+): {
 	line: LineResult;
 	segment: LineResult["segments"][number] & {leaf: InlineBlockLeaf};
 } | null {
@@ -3588,9 +3597,8 @@ function findInlineBlockSegment(breakResult: BreakResult, element: Element): {
 			) {
 				return {
 					line,
-					segment: segment as LineResult["segments"][number] & {
-						leaf: InlineBlockLeaf;
-					},
+					segment: segment as LineResult["segments"][number] &
+					{leaf: InlineBlockLeaf},
 				};
 			}
 		}
@@ -3717,7 +3725,8 @@ function hitTestInFlow(
 	// long list is not walked whole for every pointer move. Paint extents
 	// are unscrolled document rows, so only an unscrolled element asks.
 	const candidates =
-		layout.scrolledAncestorRows(element) === 0 && (element.scrollTop || 0) === 0
+		layout.scrolledAncestorRows(element) === 0 &&
+		(element.scrollTop || 0) === 0
 			? layout.getVisibleChildren(element, y, y + 1)
 			: null;
 	const children: Element[] = [];
@@ -3882,14 +3891,12 @@ function getNodesInRange(
 				// fragment still reports where it sits, since that is a blank
 				// line's caret slot.
 				const offsets = item.dataOffsets ?? null;
-				const dataStart =
-					relativeStart < item.processedContent.length
-						? getDataOffset(offsets, relativeStart)
-						: item.leafNode.node.data.length;
-				const dataEnd =
-					portion.length > 0
-						? getDataOffset(offsets, relativeStart + portion.length - 1) + 1
-						: dataStart;
+				const dataStart = relativeStart < item.processedContent.length
+					? getDataOffset(offsets, relativeStart)
+					: item.leafNode.node.data.length;
+				const dataEnd = portion.length > 0
+					? getDataOffset(offsets, relativeStart + portion.length - 1) + 1
+					: dataStart;
 
 				nodes.push({
 					leaf: item.leafNode,
@@ -3998,11 +4005,10 @@ export interface Layout {
 	// Each text node's last rendering, keyed by the data and white-space it
 	// was rendered under. One run is broken once per width the sizing pass
 	// tries, and the rendering is the same every time.
-	[kRenderedLeaves]: WeakMap<Text, {
-		key: string;
-		text: string;
-		offsets: Int32Array | null;
-	}>;
+	[kRenderedLeaves]: WeakMap<
+		Text,
+		{key: string; text: string; offsets: Int32Array | null}
+	>;
 
 	// Per break result, each text node's placed fragments in segment order.
 	// Keyed on the break result object. Re-breaking builds a fresh object,
@@ -4326,8 +4332,8 @@ export class Layout {
 		const root = this[kRootElement];
 		const rootRect = this.getRect(root);
 		let height = rootRect ? Math.ceil(rootRect.height) : 0;
-		const rendered = renderedTopLayer(
-			root.ownerDocument!) as unknown as Element[];
+		const rendered =
+			renderedTopLayer(root.ownerDocument!) as unknown as Element[];
 		for (const element of rendered) {
 			if (isModalDialog(element)) {
 				return this[kInitialContainingBlock].style.height.value;
@@ -4379,10 +4385,9 @@ export class Layout {
 				continue;
 			}
 			if (right !== null) {
-				right =
-					child.measure !== null
-						? null
-						: Math.max(right, child.result.left + child.getComputedWidth());
+				right = child.measure !== null
+					? null
+					: Math.max(right, child.result.left + child.getComputedWidth());
 			}
 			bottom = Math.max(bottom, child.result.top + child.getComputedHeight());
 		}
@@ -4395,15 +4400,14 @@ export class Layout {
 			(box.borderTopWidth || 0) -
 			(box.borderBottomWidth || 0);
 		return {
-			width:
-				right === null
-					? null
-					: Math.round(
-						Math.max(
-							clientWidth,
-							right - (box.borderLeftWidth || 0) + (box.paddingRight || 0),
-						),
+			width: right === null
+				? null
+				: Math.round(
+					Math.max(
+						clientWidth,
+						right - (box.borderLeftWidth || 0) + (box.paddingRight || 0),
 					),
+				),
 			height: Math.round(
 				Math.max(
 					clientHeight,
@@ -4479,10 +4483,9 @@ export class Layout {
 		const box = getContentBoxSize(this, element);
 		return {
 			width: Math.round(box?.width ?? 0),
-			height:
-				isRootBox(this, element)
-					? this[kInitialContainingBlock].style.height.value
-					: Math.round(box?.height ?? 0),
+			height: isRootBox(this, element)
+				? this[kInitialContainingBlock].style.height.value
+				: Math.round(box?.height ?? 0),
 		};
 	}
 
@@ -4493,10 +4496,9 @@ export class Layout {
 		const box = getContentBoxSize(this, element);
 		return {
 			width: extent?.width ?? Math.round(box?.width ?? 0),
-			height:
-				isRootBox(this, element)
-					? getDocumentContentHeight(this)
-					: (extent?.height ?? Math.round(box?.height ?? 0)),
+			height: isRootBox(this, element)
+				? getDocumentContentHeight(this)
+				: (extent?.height ?? Math.round(box?.height ?? 0)),
 		};
 	}
 
@@ -4506,8 +4508,9 @@ export class Layout {
 	scrollRange(element: Element, axis: "left" | "top"): number | null {
 		const extent = this.scrollExtentOf(element);
 		const port = this.contentRect(element);
-		const size =
-			extent === null ? null : axis === "top" ? extent.height : extent.width;
+		const size = extent === null
+			? null
+			: axis === "top" ? extent.height : extent.width;
 		if (size === null || !port) {
 			return null;
 		}
@@ -4545,8 +4548,8 @@ export class Layout {
 	// of a scrolled subtree compares against the viewport moved by this amount
 	// rather than recomputing extents per scroll.
 	scrolledAncestorRows(element: Element): number {
-		const layoutNode = this[kNodeMap].get(element) ??
-			runLayoutNode(this, element);
+		const layoutNode =
+			this[kNodeMap].get(element) ?? runLayoutNode(this, element);
 		if (!layoutNode) {
 			return 0;
 		}
@@ -4555,9 +4558,7 @@ export class Layout {
 		const body = document.body;
 		let rows = 0;
 		for (
-			let current = layoutNode.parent;
-			current;
-			current = current.parent
+			let current = layoutNode.parent; current; current = current.parent
 		) {
 			const node = current.owner as Node | undefined;
 			if (
@@ -4584,8 +4585,8 @@ export class Layout {
 		// A blockified box's layout node is the truth, not the text
 		// union the run machinery below reports, but only once one has been
 		// built.
-		const blockified = isBlockifiedByLayout(element) &&
-			this[kNodeMap].has(element);
+		const blockified =
+			isBlockifiedByLayout(element) && this[kNodeMap].has(element);
 
 		if (!blockified && isInlineDisplay(display)) {
 			if (isAtomicInline(display)) {
@@ -4631,8 +4632,8 @@ export class Layout {
 			}
 		}
 
-		const layoutNode = this[kNodeMap].get(element) ??
-			runLayoutNode(this, element);
+		const layoutNode =
+			this[kNodeMap].get(element) ?? runLayoutNode(this, element);
 
 		if (!layoutNode) {
 			return null;
@@ -4692,10 +4693,9 @@ export class Layout {
 		const runs: Array<{rect: DOMRect; text: string}> = [];
 		for (const textNode of rangeTextNodes(this, range)) {
 			const from = range.startContainer === textNode ? range.startOffset : 0;
-			const to =
-				range.endContainer === textNode
-					? range.endOffset
-					: textNode.data.length;
+			const to = range.endContainer === textNode
+				? range.endOffset
+				: textNode.data.length;
 			if (to > from) {
 				runs.push(...getSelectionSpans(this, textNode, from, to));
 			}
@@ -4900,7 +4900,8 @@ export class Layout {
 		}
 		// Painting starts at the body, unless it generates no box of its own.
 		const paintRoot =
-			root === document.documentElement && !isDisplayContents(document.body)
+			root === document.documentElement &&
+			!isDisplayContents(document.body)
 				? document.body
 				: root;
 		for (const element of [...topLayer].reverse()) {
@@ -4967,9 +4968,7 @@ export class Layout {
 	// rather than document space.
 	isInFixedSpace(element: Element): boolean {
 		for (
-			let el: Element | null = element;
-			el;
-			el = flatParentElement(el)
+			let el: Element | null = element; el; el = flatParentElement(el)
 		) {
 			if (getPosition(el) === "fixed") {
 				return true;
@@ -5063,7 +5062,8 @@ function applyRestyles(layout: Layout): void {
 			// A pseudo-element's style is the host's to change, and its box is
 			// the host's child, so a host with any takes the full path.
 			const probe =
-				layoutNode !== undefined && pseudoElementCount(element) === 0
+				layoutNode !== undefined &&
+				pseudoElementCount(element) === 0
 					? probeLayoutStyle(element)
 					: null;
 			if (probe !== null) {
@@ -5158,10 +5158,9 @@ function isSameValue(a: unknown, b: unknown): boolean {
 // longer hold the boxes their enumeration names.
 function invalidateForRecord(layout: Layout, record: MutationRecord): void {
 	// A record on a shadow root describes the HOST's flat-tree children.
-	const target =
-		record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
-			? (record.target as ShadowRoot).host
-			: record.target;
+	const target = record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
+		? (record.target as ShadowRoot).host
+		: record.target;
 	if (record.type === "attributes") {
 		// Which rules now match is the cascade's to announce, through
 		// styleInvalidated, and it does so for every attribute change. Only
@@ -5398,15 +5397,13 @@ function getOffsetInFragment(
 		cellX += width;
 		index += segment.length;
 	}
-	const distance =
-		x < fragment.rect.x
-			? fragment.rect.x - x
-			: x >= cellX && index === text.length ? x - cellX : 0;
+	const distance = x < fragment.rect.x
+		? fragment.rect.x - x
+		: x >= cellX && index === text.length ? x - cellX : 0;
 	return {
-		offset:
-			index < text.length
-				? fragment.startOffset + getDataOffset(offsets, index)
-				: fragment.endOffset,
+		offset: index < text.length
+			? fragment.startOffset + getDataOffset(offsets, index)
+			: fragment.endOffset,
 		distance,
 	};
 }
@@ -5465,8 +5462,9 @@ function getSelectionSpans(
 		const clusterStarts = getClusterStarts(text);
 		let runStart = -1;
 		for (let i = 0; i <= text.length; i++) {
-			const dataOffset =
-				i < text.length ? fragment.startOffset + getDataOffset(offsets, i) : -1;
+			const dataOffset = i < text.length
+				? fragment.startOffset + getDataOffset(offsets, i)
+				: -1;
 			const selected = dataOffset >= from && dataOffset < to;
 			if (selected && runStart === -1) {
 				runStart = clusterStarts.at(i);
@@ -5774,10 +5772,9 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	// position:relative on a run member shifts its painted fragments. The
 	// box-less ancestors up to the run head accumulate offsets.
 	for (
-		let ancestor =
-			node.nodeType === node.ELEMENT_NODE
-				? (node as Element)
-				: flatParentElement(node);
+		let ancestor = node.nodeType === node.ELEMENT_NODE
+			? (node as Element)
+			: flatParentElement(node);
 		ancestor && ancestor !== runHead && !layout[kNodeMap].has(ancestor);
 		ancestor = flatParentElement(ancestor)
 	) {

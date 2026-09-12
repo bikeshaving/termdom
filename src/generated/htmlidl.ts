@@ -157,9 +157,10 @@ export const HTML_TAG_INTERFACES: Readonly<Record<string, string>> = {
  * attribute, and one reflecting an element or a number with a unit are
  * not here: their rules are prose, and reflection.ts writes them out.
  */
-export const HTML_REFLECTIONS: Readonly<
-	Record<string, readonly ReflectSpec[]>
-> = {
+export const HTML_REFLECTIONS: Readonly<Record<
+	string,
+	readonly ReflectSpec[]
+>> = {
 	HTMLAnchorElement: [
 		{property: "download", attribute: "download", kind: "string"},
 		{property: "ping", attribute: "ping", kind: "string"},
@@ -199,11 +200,7 @@ export const HTML_REFLECTIONS: Readonly<
 	],
 	HTMLButtonElement: [
 		{property: "disabled", attribute: "disabled", kind: "boolean"},
-		{
-			property: "formNoValidate",
-			attribute: "formnovalidate",
-			kind: "boolean",
-		},
+		{property: "formNoValidate", attribute: "formnovalidate", kind: "boolean"},
 		{property: "formTarget", attribute: "formtarget", kind: "string"},
 		{property: "name", attribute: "name", kind: "string"},
 		{property: "value", attribute: "value", kind: "string"},
@@ -339,11 +336,7 @@ export const HTML_REFLECTIONS: Readonly<
 		{property: "defaultChecked", attribute: "checked", kind: "boolean"},
 		{property: "dirName", attribute: "dirname", kind: "string"},
 		{property: "disabled", attribute: "disabled", kind: "boolean"},
-		{
-			property: "formNoValidate",
-			attribute: "formnovalidate",
-			kind: "boolean",
-		},
+		{property: "formNoValidate", attribute: "formnovalidate", kind: "boolean"},
 		{property: "formTarget", attribute: "formtarget", kind: "string"},
 		{property: "max", attribute: "max", kind: "string"},
 		{
@@ -553,12 +546,7 @@ export const HTML_REFLECTIONS: Readonly<
 		{property: "srcset", attribute: "srcset", kind: "string"},
 		{property: "sizes", attribute: "sizes", kind: "string"},
 		{property: "media", attribute: "media", kind: "string"},
-		{
-			property: "width",
-			attribute: "width",
-			kind: "unsigned-long",
-			fallback: 0,
-		},
+		{property: "width", attribute: "width", kind: "unsigned-long", fallback: 0},
 		{
 			property: "height",
 			attribute: "height",
@@ -716,12 +704,7 @@ export const HTML_REFLECTIONS: Readonly<
 		{property: "type", attribute: "type", kind: "string"},
 	],
 	HTMLVideoElement: [
-		{
-			property: "width",
-			attribute: "width",
-			kind: "unsigned-long",
-			fallback: 0,
-		},
+		{property: "width", attribute: "width", kind: "unsigned-long", fallback: 0},
 		{
 			property: "height",
 			attribute: "height",
@@ -783,9 +766,11 @@ export const ARIA_STRING_REFLECTIONS: ReadonlyArray<readonly [string, string]> =
 	];
 
 /** The aria-* attributes reflected as an element or a list of them. */
-export const ARIA_ELEMENT_REFLECTIONS: ReadonlyArray<
-	readonly [string, string, boolean]
-> = [
+export const ARIA_ELEMENT_REFLECTIONS: ReadonlyArray<readonly [
+	string,
+	string,
+	boolean,
+]> = [
 	["ariaActiveDescendantElement", "aria-activedescendant", false],
 	["ariaControlsElements", "aria-controls", true],
 	["ariaDescribedByElements", "aria-describedby", true],

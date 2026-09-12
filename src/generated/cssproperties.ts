@@ -1389,9 +1389,10 @@ export const CSS_PROPERTIES: readonly string[] = [
 ].sort();
 
 /** The longhands a shorthand resets but cannot state, per shorthand. */
-export const CSS_RESET_ONLY_LONGHANDS: Readonly<
-	Record<string, readonly string[]>
-> = {
+export const CSS_RESET_ONLY_LONGHANDS: Readonly<Record<
+	string,
+	readonly string[]
+>> = {
 	border: [
 		"border-image-source",
 		"border-image-slice",

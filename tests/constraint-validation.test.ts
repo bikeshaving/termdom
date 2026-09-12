@@ -7,9 +7,8 @@ import {expect, test} from "@b9g/libuild/test";
 import {createWindow} from "../src/internal/dom.ts";
 
 function input(markup: string): HTMLInputElement {
-	const window = createWindow(
-		`<!doctype html><html><body>${markup}</body></html>`,
-	);
+	const window =
+		createWindow(`<!doctype html><html><body>${markup}</body></html>`);
 	return window.document.querySelector("input") as HTMLInputElement;
 }
 
@@ -47,16 +46,12 @@ test("a date off its step is a step mismatch", () => {
 test("time steps in seconds and defaults to a minute", () => {
 	expect(
 		input('<input type=time min="00:00" value="10:30">').validity.stepMismatch,
-	).toBe(
-		false,
-	);
+	).toBe(false);
 	expect(
 		input(
 			'<input type=time min="00:00" value="10:30:30">',
 		).validity.stepMismatch,
-	).toBe(
-		true,
-	);
+	).toBe(true);
 	expect(
 		input(
 			'<input type=time min="00:00" step="30" value="10:30:30">',
@@ -100,9 +95,13 @@ test("month and week step in months and weeks", () => {
 
 test("datetime-local compares as a moment", () => {
 	expect(
-		input('<input type=datetime-local max="2026-01-10T12:00" value="2026-01-10T12:01">').validity.rangeOverflow,
+		input(
+			'<input type=datetime-local max="2026-01-10T12:00" value="2026-01-10T12:01">',
+		).validity.rangeOverflow,
 	).toBe(true);
 	expect(
-		input('<input type=datetime-local max="2026-01-10T12:00" value="2026-01-10T12:00">').validity.valid,
+		input(
+			'<input type=datetime-local max="2026-01-10T12:00" value="2026-01-10T12:00">',
+		).validity.valid,
 	).toBe(true);
 });

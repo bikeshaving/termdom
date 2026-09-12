@@ -5,11 +5,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {
-	createWindow,
-	type Document,
-	HTMLElement,
-} from "../src/internal/dom.ts";
+import {createWindow, type Document, HTMLElement} from "../src/internal/dom.ts";
 
 // The realm the tests reach constructors through: a window of this DOM
 // exposes them, as the platform does.

@@ -177,9 +177,7 @@ describe("banded element scroll", () => {
 
 	test("a box overlapping the band survives the shift", async () => {
 		const terminal = new MockProcess({rows: 12, cols: 40});
-		const dom = new TermDOM({
-			transport: transportFromProcess(terminal as any),
-		});
+		const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 		dom.attach();
 		dom.document.body.innerHTML =
 			CHROME_AND_PANE +

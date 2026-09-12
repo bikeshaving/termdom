@@ -16,9 +16,11 @@ function send(proc: MockProcess, data: string): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-async function mount(): Promise<
-	{proc: MockProcess; dom: TermDOM; keys: string[]}
-> {
+async function mount(): Promise<{
+	proc: MockProcess;
+	dom: TermDOM;
+	keys: string[];
+}> {
 	const proc = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({transport: proc.transport});
 	dom.document.body.innerHTML = "<textarea id=t></textarea>";
@@ -53,8 +55,8 @@ test("a paste that never closes is delivered at the cap, and keys resume", async
 	const {proc, dom, keys} = await mount();
 	let pasted: string | null = null;
 	dom.document.addEventListener("paste", (event) => {
-		pasted = (event as ClipboardEvent).clipboardData?.getData("text/plain") ??
-			"";
+		pasted =
+			(event as ClipboardEvent).clipboardData?.getData("text/plain") ?? "";
 	});
 	(dom.document.getElementById("t") as HTMLTextAreaElement).focus();
 	await send(proc, "\x1b[200~");

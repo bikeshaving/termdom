@@ -158,8 +158,7 @@ function *TodoItem(this: Context, {todo}: any) {
           <button class="destroy" onclick=${ondelete}></button>
         </div>
         ${
-          editing &&
-          jsx`
+          editing && jsx`
             <input
               class="edit"
               type="text"
@@ -190,9 +189,7 @@ function *TodoList(this: Context, {todos, filter}: any) {
 
     yield jsx`
       <ul class="todo-list">
-        ${filteredTodos.map(
-          (todo: any) => jsx`<${TodoItem} key=${todo.id} todo=${todo} />`,
-        )}
+        ${filteredTodos.map((todo: any) => jsx`<${TodoItem} key=${todo.id} todo=${todo} />`)}
       </ul>
     `;
   }
@@ -217,8 +214,7 @@ function *Footer(this: Context, {todos, filter}: any) {
           <strong>${activeCount}</strong> item${activeCount !== 1 ? "s" : ""} left
         </span>
         <ul class="filters">
-          ${["all", "active", "completed"].map(
-            (f) => jsx`
+          ${["all", "active", "completed"].map((f) => jsx`
               <li key=${f}>
                 <a
                   href="javascript:void(0)"
@@ -228,12 +224,10 @@ function *Footer(this: Context, {todos, filter}: any) {
                   ${f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
                 </a>
               </li>
-            `,
-          )}
+            `)}
         </ul>
         ${
-          completedCount > 0 &&
-          jsx`
+          completedCount > 0 && jsx`
             <button class="clear-completed" onclick=${clearCompleted}>
               Clear completed
             </button>
@@ -299,8 +293,7 @@ function *App(this: Context) {
       <section class="todoapp">
         <${Header} />
         ${
-          todos.length > 0 &&
-          jsx`
+          todos.length > 0 && jsx`
             <section class="main">
               <input
                 id="toggle-all"

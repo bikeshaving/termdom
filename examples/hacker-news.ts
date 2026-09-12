@@ -337,9 +337,8 @@ async function loadStories(): Promise<void> {
     if (!response.ok) {
       throw new Error(`the API answered ${response.status}`);
     }
-    const data = (await response.json()) as {
-      hits: Array<Hit & Record<"objectID", string>>;
-    };
+    const data = (await response.json()) as {hits: Array<Hit &
+      Record<"objectID", string>>;};
     if (mine !== generation) {
       return;
     }

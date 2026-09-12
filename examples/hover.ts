@@ -39,10 +39,7 @@ document.head.innerHTML = `
 document.body.innerHTML = `
   <h1>Hover</h1>
   <div class="swatches">
-    ${COLORS.map(
-      ([name, hex]) =>
-        `<div class="swatch" style="background-color: ${hex}">${name}</div>`,
-    ).join("")}
+    ${COLORS.map(([name, hex]) => `<div class="swatch" style="background-color: ${hex}">${name}</div>`).join("")}
   </div>
   <p>Links respond too: <a>one</a>, <a>two</a>, <a>three</a>.</p>
   <p class="status">Nothing under the pointer.</p>

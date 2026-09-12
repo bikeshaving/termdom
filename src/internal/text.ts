@@ -18,9 +18,8 @@ export function toASCIILowercase(value: string): string {
 }
 
 // Constructing a segmenter is expensive; the whole engine shares this one.
-export const graphemeSegmenter = new Intl.Segmenter("en", {
-	granularity: "grapheme",
-});
+export const graphemeSegmenter =
+	new Intl.Segmenter("en", {granularity: "grapheme"});
 
 // Marks and format characters are what Bun.stringWidth gets wrong.
 const COMBINING = /[\p{M}\p{Cf}]/u;
@@ -153,7 +152,9 @@ export function getStringWidth(str: string): number {
 
 	// Bun knows the tables, not the ledger.
 	const width =
-		bun !== undefined && clusterAdvances.size === 0 && !COMBINING.test(str)
+		bun !== undefined &&
+		clusterAdvances.size === 0 &&
+		!COMBINING.test(str)
 			? bun.stringWidth(str)
 			: getStringWidthFallback(str);
 	widthCache.set(str, width);

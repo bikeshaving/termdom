@@ -111,10 +111,9 @@ test("a pseudo-element transitions, and its events name it", async () => {
 	const started = new Promise<{propertyName: string; pseudoElement: string}>(
 		(resolve) =>
 			host.addEventListener("transitionstart", (event) =>
-				resolve(event as unknown as {
-					propertyName: string;
-					pseudoElement: string;
-				}),
+				resolve(
+					event as unknown as {propertyName: string; pseudoElement: string},
+				),
 			),
 	);
 	host.className = "hot";

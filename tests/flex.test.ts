@@ -459,12 +459,9 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 	// This is exactly where baseline and flex-start part company: under
 	// flex-start both boxes would sit at 0 and the text rows would be on
 	// different lines.
-	function baselineRow(alignItems: "baseline" | "flex-start"): {
-		a: LayoutNode;
-		b: LayoutNode;
-		aText: LayoutNode;
-		bText: LayoutNode;
-	} {
+	function baselineRow(
+		alignItems: "baseline" | "flex-start",
+	): {a: LayoutNode; b: LayoutNode; aText: LayoutNode; bText: LayoutNode} {
 		const root = node();
 		root.style.width = toValue(100);
 		root.style.height = toValue(20);
@@ -717,8 +714,9 @@ describe("what a measurement produced, not only how big it was", () => {
 	): LayoutNode {
 		const item = box(parent);
 		item.measure = (width, widthSpace, placing) => {
-			const limit =
-				widthSpace === "indefinite" ? Number.MAX_SAFE_INTEGER : width;
+			const limit = widthSpace === "indefinite"
+				? Number.MAX_SAFE_INTEGER
+				: width;
 			const lines = breakWords(limit);
 			if (placing) {
 				placed.lines = lines;

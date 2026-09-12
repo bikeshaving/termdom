@@ -15,9 +15,10 @@ function rectOf(_dom: TermDOM, el: Element): DOMRect {
 	return (el as HTMLElement).getBoundingClientRect();
 }
 
-async function layout(html: string, head = ""): Promise<
-	{terminal: MockProcess; dom: TermDOM}
-> {
+async function layout(
+	html: string,
+	head = "",
+): Promise<{terminal: MockProcess; dom: TermDOM}> {
 	const terminal = new MockProcess({cols: 60, rows: 16});
 	const dom = new TermDOM({transport: terminal.transport});
 	if (head) {
@@ -144,9 +145,8 @@ test("a negative margin subtracts from the collapsed positive", async () => {
 });
 
 test("negative values stay rejected where CSS forbids them", async () => {
-	const {dom} = await layout(
-		"<div id=\"w\" style=\"width:-5px;padding-top:-1px\">x</div>",
-	);
+	const {dom} =
+		await layout("<div id=\"w\" style=\"width:-5px;padding-top:-1px\">x</div>");
 	// Invalid declarations fall back: auto width fills the line, padding 0.
 	const w = rectOf(dom, dom.document.getElementById("w")!);
 	expect(w.width).toBe(60);

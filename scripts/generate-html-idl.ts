@@ -20,9 +20,10 @@ import {parse} from "webidl2";
 
 const require = createRequire(import.meta.url);
 const idlDir = dirname(require.resolve("@webref/idl/package.json"));
-const elements = require("@webref/elements/html.json") as {
-	elements: Array<{name: string; interface: string}>;
-};
+const elements = require("@webref/elements/html.json") as {elements: Array<{
+	name: string;
+	interface: string;
+}>;};
 
 interface Attribute {
 	name: string;
@@ -154,16 +155,16 @@ type Reflection = Record<string, string | number | boolean>;
 // setter algorithm, and an element or a double reflects through prose.
 function reflectionOf(attribute: Attribute): Reflection | null {
 	const e = attribute.extended;
-	const reflects = Object.keys(e).some(
-		(key) => key.startsWith("Reflect") && key !== "ReflectSetter",
-	);
+	const reflects = Object.keys(e)
+		.some((key) => key.startsWith("Reflect") && key !== "ReflectSetter");
 	if (!reflects || e.ReflectSetter) {
 		return null;
 	}
 	const spec: Reflection = {
 		property: attribute.name,
-		attribute:
-			typeof e.Reflect === "string" ? e.Reflect : attribute.name.toLowerCase(),
+		attribute: typeof e.Reflect === "string"
+			? e.Reflect
+			: attribute.name.toLowerCase(),
 	};
 	const fallback = e.ReflectDefault === undefined
 		? null

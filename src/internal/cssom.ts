@@ -168,10 +168,12 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 		marginBottom: typeof marginBottom === "number" ? marginBottom : 0,
 		marginLeft: typeof marginLeft === "number" ? marginLeft : 0,
 		borderTopWidth: typeof borderTopWidth === "number" ? borderTopWidth : 0,
-		borderRightWidth:
-			typeof borderRightWidth === "number" ? borderRightWidth : 0,
-		borderBottomWidth:
-			typeof borderBottomWidth === "number" ? borderBottomWidth : 0,
+		borderRightWidth: typeof borderRightWidth === "number"
+			? borderRightWidth
+			: 0,
+		borderBottomWidth: typeof borderBottomWidth === "number"
+			? borderBottomWidth
+			: 0,
 		borderLeftWidth: typeof borderLeftWidth === "number" ? borderLeftWidth : 0,
 	};
 }
@@ -544,11 +546,13 @@ function getDeclarationBlock(
 				order[property] = index;
 			}
 		});
-		return (style[kBlock] = {
-			declarations: CSSValues.expandShorthands(declarations),
-			important,
-			order,
-		});
+		return (
+			style[kBlock] = {
+				declarations: CSSValues.expandShorthands(declarations),
+				important,
+				order,
+			}
+		);
 	}
 	return (style[kBlock] = {declarations, important, order});
 }
@@ -632,9 +636,8 @@ function findDeclaration(
 const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
 
 const DESCRIPTOR_NAMES = new Map(
-	Object.entries(CSS_AT_RULE_DESCRIPTORS).map(
-		([atRule, descriptors]) => [atRule, new Set(descriptors)] as const,
-	),
+	Object.entries(CSS_AT_RULE_DESCRIPTORS)
+		.map(([atRule, descriptors]) => [atRule, new Set(descriptors)] as const),
 );
 
 function isSupportedDeclaration(
@@ -751,8 +754,7 @@ function applyDeclaration(
 				longhandValue,
 				important,
 				cascade,
-			) ||
-			changed;
+			) || changed;
 	}
 	return changed;
 }
@@ -951,10 +953,9 @@ export class MediaList implements globalThis.MediaList {
 			throw typeError("deleteMedium requires a medium");
 		}
 		const text = CSSValues.stripCSSComments(String(medium));
-		const query =
-			CSSValues.splitMediaQueryList(text).length === 1
-				? CSSValues.serializeMediaQuery(text)
-				: "";
+		const query = CSSValues.splitMediaQueryList(text).length === 1
+			? CSSValues.serializeMediaQuery(text)
+			: "";
 		const kept = this[kMedia].filter((entry) => entry !== query);
 		if (kept.length === this[kMedia].length) {
 			throw domException(`No such medium: ${medium}`, "NotFoundError");
@@ -1207,10 +1208,12 @@ class CSSStyleRule extends CSSGroupingRule {
 	// depends on `@namespace` rules that are only in place once parsing
 	// finishes.
 	get selectorText(): string {
-		return (this[kSelectorText] ??= CSSValues.serializeSelectorList(
-			this[kSelectors],
-			getSheetNamespaces(this.parentStyleSheet),
-		));
+		return (
+			this[kSelectorText] ??= CSSValues.serializeSelectorList(
+				this[kSelectors],
+				getSheetNamespaces(this.parentStyleSheet),
+			)
+		);
 	}
 
 	/** A selector that does not parse leaves the rule unchanged. */
@@ -1273,11 +1276,10 @@ function getSheetNamespaces(
 const DESCRIPTOR_BLOCKS = new Map<string, typeof CSSStyleDeclaration>();
 
 for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
-	const name = `CSS${atRule
-		.slice(1)
-		.replace(/(?:^|-)([a-z])/g, (_, letter: string) =>
-			letter.toUpperCase(),
-		)}Descriptors`;
+	const name = `CSS${atRule.slice(1).replace(
+		/(?:^|-)([a-z])/g,
+		(_, letter: string) => letter.toUpperCase(),
+	)}Descriptors`;
 	const block = class extends CSSStyleDeclaration {};
 	Object.defineProperty(block, "name", {value: name, configurable: true});
 	Object.defineProperty(block.prototype, Symbol.toStringTag, {
@@ -2292,13 +2294,10 @@ class CSSStyleSheet {
 		// selectors already parsed against it, so a sheet holding any other
 		// rule keeps it.
 		if (
-			removed instanceof CSSNamespaceRule &&
-			this[kRules].some(
-				(other) =>
-					!(
-						other instanceof CSSImportRule || other instanceof CSSNamespaceRule
-					),
-			)
+			removed instanceof CSSNamespaceRule && this[kRules].some((other) =>
+				!(
+					other instanceof CSSImportRule || other instanceof CSSNamespaceRule
+				))
 		) {
 			throw domException(
 				"A @namespace rule cannot be removed from a sheet that holds other rules",
@@ -2597,14 +2596,13 @@ function convertRule(
 			return new CSSKeyframesRule(prelude, sheet, (rule) =>
 				CSSValues.getNodes(node.block ?? {})
 					.filter((frame) => frame.type === "Rule")
-					.map(
-						(frame) =>
-							new CSSKeyframeRule(
-								CSSValues.getPreludeText(frame),
-								CSSValues.getBlockDeclarations(frame, source),
-								sheet,
-								rule,
-							),
+					.map((frame) =>
+						new CSSKeyframeRule(
+							CSSValues.getPreludeText(frame),
+							CSSValues.getBlockDeclarations(frame, source),
+							sheet,
+							rule,
+						),
 					),
 			);
 		case "layer": {
@@ -2623,18 +2621,14 @@ function convertRule(
 			if (names.length > 1) {
 				return null;
 			}
-			return new CSSLayerBlockRule(
-				names[0] ?? "",
-				sheet,
-				parentRule,
-				(group) =>
-					convertRules(
-						CSSValues.getNodes(node.block ?? {}),
-						source,
-						sheet,
-						group,
-						namespaces,
-					),
+			return new CSSLayerBlockRule(names[0] ?? "", sheet, parentRule, (group) =>
+				convertRules(
+					CSSValues.getNodes(node.block ?? {}),
+					source,
+					sheet,
+					group,
+					namespaces,
+				),
 			);
 		}
 		case "media":
@@ -2709,9 +2703,8 @@ function convertNamespaceRule(
 		const ast = CSSTree.parse(prelude, {
 			context: "atrulePrelude",
 			atrule: "namespace",
-		}) as unknown as {
-			children?: {toArray(): CSSTree.NamespacePreludeNode[]} | null;
-		};
+		}) as unknown as {children?: {toArray(): CSSTree.NamespacePreludeNode[]} |
+			null;};
 		nodes = ast.children ? ast.children.toArray() : [];
 	} catch (_err) {
 		return null;
@@ -2905,10 +2898,9 @@ function getShadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 }
 
 function getTreeCascade(tree: Node): Cascade | undefined {
-	const document =
-		tree.nodeType === tree.DOCUMENT_NODE
-			? (tree as Document)
-			: tree.ownerDocument;
+	const document = tree.nodeType === tree.DOCUMENT_NODE
+		? (tree as Document)
+		: tree.ownerDocument;
 	return document ? documentCascades.get(document) : undefined;
 }
 
@@ -2929,9 +2921,8 @@ function checkAdoptable(tree: Node, sheet: unknown): CSSStyleSheet {
 
 // A constructed sheet has no consumer until something adopts it.
 function adopt(target: Node, sheets: unknown): void {
-	const adopted = Array.from(sheets as Iterable<unknown>).map((sheet) =>
-		checkAdoptable(target, sheet),
-	);
+	const adopted = Array.from(sheets as Iterable<unknown>)
+		.map((sheet) => checkAdoptable(target, sheet));
 	// One array per tree, replaced in place, so the observable array an
 	// author already holds is the same object after a whole reassignment.
 	let list = adoptedSheets.get(target);
@@ -3109,9 +3100,9 @@ export function getComputedValue(
 
 // Only declarations handed to an author materialize an item list. The
 // engine's own computed styles never do.
-function getIndexedDeclaration<
-	T extends CSSStyleDeclaration,
->(declaration: T): T {
+function getIndexedDeclaration<T extends CSSStyleDeclaration>(
+	declaration: T,
+): T {
 	syncIndexed(declaration);
 	return declaration;
 }
@@ -3486,8 +3477,7 @@ function toPhysicalProperty(
 		CSSValues.getPhysicalProperty(
 			property,
 			declaration.getComputedValue("direction"),
-		) ??
-		property
+		) ?? property
 	);
 }
 
@@ -3885,8 +3875,9 @@ function substituteVar(
 		const name = (
 			commaIndex === -1 ? inner : inner.slice(0, commaIndex)
 		).trim();
-		const fallback =
-			commaIndex === -1 ? undefined : inner.slice(commaIndex + 1).trim();
+		const fallback = commaIndex === -1
+			? undefined
+			: inner.slice(commaIndex + 1).trim();
 
 		// A custom property is an ordinary (always-inherited) cascade lookup.
 		// resolvePropertyValueRaw's step 4 already walks ancestors for it.
@@ -3940,9 +3931,7 @@ function resolvePropertyValue(
 function getListNestingDepth(element: Element): number {
 	let depth = 0;
 	for (
-		let parent = element.parentElement;
-		parent;
-		parent = parent.parentElement
+		let parent = element.parentElement; parent; parent = parent.parentElement
 	) {
 		if (parent.tagName === "UL" || parent.tagName === "OL") {
 			depth++;
@@ -3960,30 +3949,29 @@ function resolvePropertyValueRaw(
 	// by `direction` only once a block actually declares one of them.
 	const names = CSSValues.getSlotCandidates(property);
 	let direction: string | null = null;
-	const mapsHere =
-		names.length === 1
-			? CSSValues.acceptsAnyName
-			: (name: string): boolean =>
-				name === property ||
-				CSSValues.getPhysicalProperty(
-					name,
-					(direction ??= declaration.getComputedValue("direction")),
-				) === property;
+	const mapsHere = names.length === 1
+		? CSSValues.acceptsAnyName
+		: (name: string): boolean =>
+			name === property ||
+			CSSValues.getPhysicalProperty(
+				name,
+				(direction ??= declaration.getComputedValue("direction")),
+			) === property;
 
 	const inline = getInlineDeclarations(declaration);
 	const inlineName = CSSValues.getDeclaredName(inline, names, false, mapsHere);
-	const inlineValue =
-		inlineName !== null ? inline.declarations[inlineName].trim() : "";
+	const inlineValue = inlineName !== null
+		? inline.declarations[inlineName].trim()
+		: "";
 	const inlineImportantName = CSSValues.getDeclaredName(
 		inline,
 		names,
 		true,
 		mapsHere,
 	);
-	const inlineImportantValue =
-		inlineImportantName !== null
-			? inline.declarations[inlineImportantName].trim()
-			: "";
+	const inlineImportantValue = inlineImportantName !== null
+		? inline.declarations[inlineImportantName].trim()
+		: "";
 
 	// 1 & 2. Inline style and stylesheet rules, with an !important tier above
 	// the normal cascade. The parsed rules are pre-sorted by specificity and
@@ -4280,18 +4268,13 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
 			const longhands = CSSValues.getLonghands(property);
-			value =
-				longhands && this[kPseudoDeclarations][property] === undefined
-					? CSSValues.serializeShorthandValue(
-						property,
-						longhands,
-						(longhand) =>
-							this[kBaseValue](longhand) || CSS_INITIAL_VALUES[longhand] || "",
-					)
-					: CSSValues.getComputedValueEntry(
-						property,
-						this[kPseudoDeclarations][property] ?? "",
-					);
+			value = longhands && this[kPseudoDeclarations][property] === undefined
+				? CSSValues.serializeShorthandValue(property, longhands, (longhand) =>
+					this[kBaseValue](longhand) || CSS_INITIAL_VALUES[longhand] || "")
+				: CSSValues.getComputedValueEntry(
+					property,
+					this[kPseudoDeclarations][property] ?? "",
+				);
 			this[kResolved].set(property, value);
 		}
 		return value;
@@ -4464,18 +4447,16 @@ interface BorderSides {
 const LINE_KEYWORDS = new Set<string>(LINE_STYLES);
 
 export function resolveBorderSides(element: Element): BorderSides {
-	const sideOf = (
-		width: string,
-		style: string,
-	): LineStyle["style"] | undefined => {
-		const parsed = CSSValues.parseBorderWidthValue(width);
-		const widthValue = typeof parsed === "number" ? parsed : NaN;
-		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
-			return undefined;
-		}
-		// An unknown style keyword draws as solid rather than not at all.
-		return LINE_KEYWORDS.has(style) ? (style as LineStyle["style"]) : "solid";
-	};
+	const sideOf =
+		(width: string, style: string): LineStyle["style"] | undefined => {
+			const parsed = CSSValues.parseBorderWidthValue(width);
+			const widthValue = typeof parsed === "number" ? parsed : NaN;
+			if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
+				return undefined;
+			}
+			// An unknown style keyword draws as solid rather than not at all.
+			return LINE_KEYWORDS.has(style) ? (style as LineStyle["style"]) : "solid";
+		};
 
 	// Rounded when the radius is nonzero on BOTH axes, as a browser squares
 	// off a collapsed ellipse. A cell grid has one size of curve.
@@ -4560,9 +4541,8 @@ function getListMarker(listItem: Element, listParent: Element): string {
 }
 
 // TODO: Just use the CSSOM CSSRule interface from the DOM
-const INHERITED_PROPERTIES = CSS_PROPERTIES.filter(
-	CSSValues.isInheritedProperty,
-);
+const INHERITED_PROPERTIES =
+	CSS_PROPERTIES.filter(CSSValues.isInheritedProperty);
 
 interface ParsedCSSRule {
 
@@ -4909,10 +4889,8 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 
 export class Cascade {
 	constructor(window: Window, layout: Layout) {
-		this[kComputedStyleCache] = new WeakMap<
-			Element,
-			ComputedStyleDeclaration
-		>();
+		this[kComputedStyleCache] =
+			new WeakMap<Element, ComputedStyleDeclaration>();
 		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kShadowRoots] = new Set<ShadowRoot>();
 		this[kPseudoElementStyleCache] = new WeakMap<
@@ -4986,10 +4964,9 @@ export class Cascade {
 		// every mutation restyles its flat-tree ancestor chain too.
 		if (this[kHasRulesExist]) {
 			for (const mutation of mutations) {
-				const start =
-					mutation.target.nodeType === 1
-						? (mutation.target as Element)
-						: mutation.target.parentElement;
+				const start = mutation.target.nodeType === 1
+					? (mutation.target as Element)
+					: mutation.target.parentElement;
 				for (
 					let ancestor: Element | null = start;
 					ancestor;
@@ -5025,8 +5002,9 @@ export class Cascade {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
 						if (isStyleElement(element)) {
-							const addedRoot =
-								element.tagName === "STYLE" ? element.getRootNode() : null;
+							const addedRoot = element.tagName === "STYLE"
+								? element.getRootNode()
+								: null;
 							if (addedRoot !== null && isShadowRoot(addedRoot)) {
 								this[kSyncShadowRoot](addedRoot);
 							} else {
@@ -5153,9 +5131,7 @@ export class Cascade {
 			// The whole flat-tree chain can observe focus (:focus-within,
 			// :host(:focus)), so every element on it goes stale together.
 			for (
-				let node: Element | null = element;
-				node;
-				node = flatParentElement(node)
+				let node: Element | null = element; node; node = flatParentElement(node)
 			) {
 				invalidateElementCaches(this, node);
 				const shadowRoot = getShadowRoot(node);
@@ -5184,9 +5160,7 @@ export class Cascade {
 		const chainOf = (element: Element | null): Set<Element> => {
 			const chain = new Set<Element>();
 			for (
-				let node: Element | null = element;
-				node;
-				node = flatParentElement(node)
+				let node: Element | null = element; node; node = flatParentElement(node)
 			) {
 				chain.add(node);
 			}
@@ -5392,10 +5366,9 @@ export class Cascade {
 		}
 		const layerRanks = rankLayers(this);
 		for (const rule of this[kParsedRules]) {
-			rule.layerRank =
-				rule.layer === null
-					? this[kUnlayeredRank]
-					: (layerRanks.get(rule.layer) ?? this[kUnlayeredRank]);
+			rule.layerRank = rule.layer === null
+				? this[kUnlayeredRank]
+				: (layerRanks.get(rule.layer) ?? this[kUnlayeredRank]);
 		}
 		sortRulesForCascade(this);
 		const host = root.host as Element | null;
@@ -5553,8 +5526,7 @@ function getPseudoDeclaration(
 	pseudoElement: string,
 ): PseudoStyleDeclaration {
 	const cached = cascade[kPseudoElementStyleCache]
-		.get(element)
-		?.get(pseudoElement);
+		.get(element)?.get(pseudoElement);
 	if (cached) {
 		return cached;
 	}
@@ -5719,10 +5691,9 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 	}
 
 	if (element.tagName === "OL" || element.tagName === "UL") {
-		const startValue =
-			element.tagName === "OL"
-				? parseInt(element.getAttribute("start") || "1", 10)
-				: 0;
+		const startValue = element.tagName === "OL"
+			? parseInt(element.getAttribute("start") || "1", 10)
+			: 0;
 		// start - 1, so the first increment gives start.
 		scope.counters["list-item"] = startValue - 1;
 	}
@@ -5779,9 +5750,7 @@ function isBeingRendered(element: Element): boolean {
 	// tree. A closed root is this engine's own UA shadow tree internals, whose
 	// parts the UA shadow tree itself reads styles for.
 	for (
-		let child: Element | null = element;
-		child;
-		child = child.parentElement
+		let child: Element | null = element; child; child = child.parentElement
 	) {
 		const parent = child.parentElement;
 		if (
@@ -5950,13 +5919,12 @@ function processTransitionStyle(
 		// fallback's raw entries store "no declaration" as the empty string,
 		// and the snapshot stores the initial value explicitly.
 		const raw = previous?.get(property) ?? fallback?.get(property);
-		const before =
-			raw === ""
-				? CSSValues.getComputedValueEntry(
-					property,
-					CSS_INITIAL_VALUES[property] ?? "",
-				)
-				: raw;
+		const before = raw === ""
+			? CSSValues.getComputedValueEntry(
+				property,
+				CSS_INITIAL_VALUES[property] ?? "",
+			)
+			: raw;
 		if (before === undefined || before === after || !runnable) {
 			continue;
 		}
@@ -6382,7 +6350,8 @@ function isPaintOnlyChange(
 // cascade; computing it during block layout deletes this.
 function invalidateEnclosingList(cascade: Cascade, target: Node): void {
 	let element: Element | null =
-		target.nodeType === cascade[kWindow].Node.ELEMENT_NODE
+		target.nodeType ===
+		cascade[kWindow].Node.ELEMENT_NODE
 			? (target as Element)
 			: target.parentElement;
 
@@ -6458,10 +6427,9 @@ function parseStylesheetsNow(cascade: Cascade): void {
 
 	const layerRanks = rankLayers(cascade);
 	for (const rule of cascade[kParsedRules]) {
-		rule.layerRank =
-			rule.layer === null
-				? cascade[kUnlayeredRank]
-				: (layerRanks.get(rule.layer) ?? cascade[kUnlayeredRank]);
+		rule.layerRank = rule.layer === null
+			? cascade[kUnlayeredRank]
+			: (layerRanks.get(rule.layer) ?? cascade[kUnlayeredRank]);
 	}
 
 	sortRulesForCascade(cascade);
@@ -6643,10 +6611,9 @@ function mediaConditionMatches(
 			operand = !operand;
 			negate = false;
 		}
-		matches =
-			matches === null
-				? operand
-				: disjunction ? matches || operand : matches && operand;
+		matches = matches === null
+			? operand
+			: disjunction ? matches || operand : matches && operand;
 	}
 	return matches ?? true;
 }
@@ -6697,8 +6664,9 @@ function mediaFeatureMatches(
 	if (value === null) {
 		return true;
 	}
-	const bound =
-		name.startsWith("min-") ? "min" : name.startsWith("max-") ? "max" : null;
+	const bound = name.startsWith("min-")
+		? "min"
+		: name.startsWith("max-") ? "max" : null;
 	const actual = getViewportLength(
 		cascade,
 		bound === null ? name : name.slice(4),
@@ -6755,14 +6723,12 @@ function readScopeCondition(rule: CSSScopeRule): CSSValues.ScopeCondition {
 		roots: start === null
 			? null
 			: CSSValues.compileSelectors(start, {namespaces}),
-		rootsInOuter:
-			start === null
-				? []
-				: CSSValues.compileSelectors(start, {namespaces, relative: true}),
-		limits:
-			rule.end
-				? CSSValues.compileSelectors(rule.end, {namespaces, relative: true})
-				: [],
+		rootsInOuter: start === null
+			? []
+			: CSSValues.compileSelectors(start, {namespaces, relative: true}),
+		limits: rule.end
+			? CSSValues.compileSelectors(rule.end, {namespaces, relative: true})
+			: [],
 		owner: owner ? owner.parentElement : null,
 	};
 }
@@ -7215,9 +7181,8 @@ function computePseudoElementStyle(
 	const computedStyle: Record<string, string> = {};
 	let direction: string | null = null;
 	for (const rule of matchingRules) {
-		const names = Object.keys(rule.declarations).sort(
-			(a, b) => (rule.order[a] ?? 0) - (rule.order[b] ?? 0),
-		);
+		const names = Object.keys(rule.declarations)
+			.sort((a, b) => (rule.order[a] ?? 0) - (rule.order[b] ?? 0));
 		for (const name of names) {
 			const value = rule.declarations[name];
 			computedStyle[name] = value;
@@ -7460,10 +7425,10 @@ function parseCounterIncrement(
 	scope: CSSValues.CounterScope,
 	counterIncrement: string,
 ): void {
-	for (const [
-		name,
-		increment,
-	] of CSSValues.getCounterPairs(counterIncrement, 1)) {
+	for (const [name, increment] of CSSValues.getCounterPairs(
+		counterIncrement,
+		1,
+	)) {
 		incrementCounter(cascade, scope, name, increment);
 	}
 }

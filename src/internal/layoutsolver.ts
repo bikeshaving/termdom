@@ -83,9 +83,10 @@ type Measure = (
 // The origin of CSS 2 §10.3.7's hypothetical box, in the containing
 // block's border-box coordinates. Null means the containing block's
 // alignment places it.
-type StaticPosition = (
-	containingBlock: LayoutNode,
-) => {left: number; top: number} | null;
+type StaticPosition = (containingBlock: LayoutNode) => {
+	left: number;
+	top: number;
+} | null;
 
 // NaN is the undefined length everywhere below. 0 is a length.
 const UNDEFINED_VALUE: CSSValues.Value = {unit: "undefined", value: NaN};
@@ -653,10 +654,9 @@ function resolveFlexBasis(
 }
 
 function getAlignSelf(parent: LayoutNode, child: LayoutNode): Align {
-	const align =
-		child.style.alignSelf === "auto"
-			? parent.style.alignItems
-			: child.style.alignSelf;
+	const align = child.style.alignSelf === "auto"
+		? parent.style.alignItems
+		: child.style.alignSelf;
 	// css-align-3 §4.2.
 	return align === "normal" ? "stretch" : align;
 }
@@ -880,14 +880,12 @@ function layoutMeasuredContent(
 
 	const measured = node.measure!(innerWidth, widthSpace, placing);
 
-	const width =
-		widthSpace === "definite"
-			? availableWidth - marginRow
-			: measured.width + paddingBorderRow;
-	const height =
-		heightSpace === "definite"
-			? availableHeight - marginColumn
-			: measured.height + paddingBorderColumn;
+	const width = widthSpace === "definite"
+		? availableWidth - marginRow
+		: measured.width + paddingBorderRow;
+	const height = heightSpace === "definite"
+		? availableHeight - marginColumn
+		: measured.height + paddingBorderColumn;
 
 	// Not clamped to an `shrink-to-fit` request. An unbreakable word overflows,
 	// and a box claiming less than it occupies made min-content zero and let
@@ -913,14 +911,12 @@ function layoutEmptyContainer(
 	const marginRow = getAxisMargin(node, "row", ownerWidth);
 	const marginColumn = getAxisMargin(node, "column", ownerWidth);
 
-	const width =
-		widthSpace === "indefinite" || widthSpace === "shrink-to-fit"
-			? paddingBorderRow
-			: availableWidth - marginRow;
-	const height =
-		heightSpace === "indefinite" || heightSpace === "shrink-to-fit"
-			? paddingBorderColumn
-			: availableHeight - marginColumn;
+	const width = widthSpace === "indefinite" || widthSpace === "shrink-to-fit"
+		? paddingBorderRow
+		: availableWidth - marginRow;
+	const height = heightSpace === "indefinite" || heightSpace === "shrink-to-fit"
+		? paddingBorderColumn
+		: availableHeight - marginColumn;
 
 	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
 }
@@ -1825,8 +1821,9 @@ function positionMainAxis(
 		}
 	}
 
-	const autoShare =
-		autoMarginCount > 0 && free > 0 ? free / autoMarginCount : 0;
+	const autoShare = autoMarginCount > 0 && free > 0
+		? free / autoMarginCount
+		: 0;
 
 	let cursor = leadingPaddingBorderMain + leading;
 	for (const child of line.items) {
@@ -1921,7 +1918,9 @@ function positionCrossAxis(
 	}
 
 	const stretchPerLine =
-		node.style.alignContent === "stretch" && lineCount > 0 && freeCross > 0
+		node.style.alignContent === "stretch" &&
+		lineCount > 0 &&
+		freeCross > 0
 			? freeCross / lineCount
 			: 0;
 
@@ -2063,12 +2062,8 @@ function layoutAbsoluteChild(
 	child: LayoutNode,
 	ownerWidth: number,
 	ownerHeight: number,
-	area: {
-		left: number;
-		top: number;
-		width: number;
-		height: number;
-	} | null = null,
+	area: {left: number; top: number; width: number; height: number} |
+		null = null,
 ): void {
 	const parentWidth = node.result.width;
 	const parentHeight = node.result.height;
@@ -2127,10 +2122,9 @@ function layoutAbsoluteChild(
 		childWidth.value = blockWidth;
 		// `stretch` fills the alignment container when size and both insets are
 		// auto (css-align-3 §5.2). Only a grid area has one.
-		childWidth.mode =
-			area && getGridSelfAlign(node, child, true) === "stretch"
-				? "definite"
-				: "shrink-to-fit";
+		childWidth.mode = area && getGridSelfAlign(node, child, true) === "stretch"
+			? "definite"
+			: "shrink-to-fit";
 	}
 
 	if (isStyleDimensionDefined(child, "column", basisHeight)) {
@@ -2146,7 +2140,8 @@ function layoutAbsoluteChild(
 	} else if (isDefined(blockHeight)) {
 		childHeight.value = blockHeight;
 		childHeight.mode =
-			area && getGridSelfAlign(node, child, false) === "stretch"
+			area &&
+			getGridSelfAlign(node, child, false) === "stretch"
 				? "definite"
 				: "shrink-to-fit";
 	}
@@ -2517,10 +2512,9 @@ function resolveColumnWidths(
 		}
 
 		// Every column is fixed. Spread it anyway rather than come up short.
-		const receivers =
-			autoColumns.length > 0
-				? autoColumns
-				: Array.from({length: columnCount}, (_, i) => i);
+		const receivers = autoColumns.length > 0
+			? autoColumns
+			: Array.from({length: columnCount}, (_, i) => i);
 
 		let weight = 0;
 		for (const i of receivers) {
@@ -2528,8 +2522,9 @@ function resolveColumnWidths(
 		}
 
 		for (const i of receivers) {
-			widths[i] +=
-				weight > 0 ? (extra * maxs[i]) / weight : extra / receivers.length;
+			widths[i] += weight > 0
+				? (extra * maxs[i]) / weight
+				: extra / receivers.length;
 		}
 	} else if (target <= totalMin) {
 		// The table overflows rather than let a word paint over the next cell.
@@ -2698,14 +2693,12 @@ function layoutTable(
 	const gridHeight = Math.max(0, cursor);
 	const contentHeight = captionHeight + gridHeight;
 
-	const width =
-		widthSpace === "definite"
-			? availableWidth - marginRow
-			: contentWidth + paddingBorderRow;
-	const height =
-		heightSpace === "definite"
-			? availableHeight - marginColumn
-			: contentHeight + paddingBorderColumn;
+	const width = widthSpace === "definite"
+		? availableWidth - marginRow
+		: contentWidth + paddingBorderRow;
+	const height = heightSpace === "definite"
+		? availableHeight - marginColumn
+		: contentHeight + paddingBorderColumn;
 
 	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
 
@@ -2884,8 +2877,9 @@ function expandTrackList(
 				fixedCount++;
 				continue;
 			}
-			const count =
-				typeof part.repeat.count === "number" ? part.repeat.count : 1;
+			const count = typeof part.repeat.count === "number"
+				? part.repeat.count
+				: 1;
 			for (const track of part.repeat.tracks) {
 				fixedSum += count * getDefiniteTrackSize(track.size, ownerSize);
 				fixedCount += count;
@@ -3081,10 +3075,9 @@ function resolveGridLine(
 	}
 	return {
 		kind: "line",
-		index:
-			placement.index > 0
-				? placement.index - 1
-				: explicitCount + placement.index + 1,
+		index: placement.index > 0
+			? placement.index - 1
+			: explicitCount + placement.index + 1,
 	};
 }
 
@@ -3166,10 +3159,9 @@ function pairGridLines(
 		return {start: end.index - 1, span: 1};
 	}
 
-	const span =
-		start.kind === "span" || start.kind === "spanName"
-			? start.count
-			: end.kind === "span" || end.kind === "spanName" ? end.count : 1;
+	const span = start.kind === "span" || start.kind === "spanName"
+		? start.count
+		: end.kind === "span" || end.kind === "spanName" ? end.count : 1;
 	return {start: null, span: Math.max(1, span)};
 }
 
@@ -3339,10 +3331,10 @@ interface TrackSizing {
 	baselineShims: Map<LayoutNode, number> | null;
 }
 
-function getItemTrackRange(sizing: TrackSizing, item: GridItem): [
-	number,
-	number,
-] {
+function getItemTrackRange(
+	sizing: TrackSizing,
+	item: GridItem,
+): [number, number] {
 	return sizing.columns
 		? [item.columnStart, item.columnEnd]
 		: [item.rowStart, item.rowEnd];
@@ -3522,10 +3514,9 @@ function distributeExtraSpace(
 		for (const index of open) {
 			const track = tracks[index];
 			const limit = limitOf(track);
-			const room =
-				limit === Infinity
-					? Infinity
-					: Math.max(0, limit - startOf(track) - track.planned);
+			const room = limit === Infinity
+				? Infinity
+				: Math.max(0, limit - startOf(track) - track.planned);
 			const growth = Math.min(share, room);
 			track.planned += growth;
 			used += growth;
@@ -3593,19 +3584,17 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 
 		if (intrinsicMin(track)) {
 			const kind = track.size.min.kind;
-			const floor =
-				kind === "min-content"
-					? getGridItemContribution(sizing, item, true)
-					: kind === "max-content"
+			const floor = kind === "min-content"
+				? getGridItemContribution(sizing, item, true)
+				: kind === "max-content"
 						? getGridItemContribution(sizing, item, false)
 						: getMinimumContribution(sizing, item, start, end);
 			track.base = Math.max(track.base, floor);
 		}
 		if (intrinsicMax(track)) {
-			const limit =
-				track.size.max.kind === "min-content"
-					? getGridItemContribution(sizing, item, true)
-					: getGridItemContribution(sizing, item, false);
+			const limit = track.size.max.kind === "min-content"
+				? getGridItemContribution(sizing, item, true)
+				: getGridItemContribution(sizing, item, false);
 			limits[start] = Math.max(limits[start], limit);
 		}
 	}
@@ -3656,15 +3645,14 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 		const baseSum = indices.reduce((sum, i) => sum + tracks[i].base, 0);
 		// Re-summed per step. A sum taken before an earlier step grew a track
 		// would count the same space twice.
-		const limitSum = () =>
-			indices.reduce(
-				(sum, i) =>
-					sum +
-					(tracks[i].growthLimit === Infinity
-						? tracks[i].base
-						: tracks[i].growthLimit),
-				0,
-			);
+		const limitSum = () => indices.reduce(
+			(sum, i) =>
+				sum +
+				(tracks[i].growthLimit === Infinity
+					? tracks[i].base
+					: tracks[i].growthLimit),
+			0,
+		);
 
 		const minContent = getGridItemContribution(sizing, item, true);
 		const maxContent = getGridItemContribution(sizing, item, false);
@@ -3753,9 +3741,8 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 		for (let i = start; i < end; i++) {
 			baseSum += tracks[i].base;
 		}
-		const deficit = getGridItemContribution(sizing, item, true) -
-			baseSum -
-			gaps;
+		const deficit =
+			getGridItemContribution(sizing, item, true) - baseSum - gaps;
 		if (deficit <= EPSILON) {
 			continue;
 		}
@@ -4274,10 +4261,7 @@ function layoutGrid(
 	const areas = node.style.gridTemplateAreas;
 	const fromAreas = areas
 		? getAreaLineNames(areas)
-		: {
-			columns: new Map<string, number[]>(),
-			rows: new Map<string, number[]>(),
-		};
+		: {columns: new Map<string, number[]>(), rows: new Map<string, number[]>()};
 
 	const columnTemplate = expandTrackList(
 		node.style.gridTemplateColumns,
@@ -4523,26 +4507,24 @@ function layoutGrid(
 		rowsTotal = totalOf(rowTracks, rowGap);
 	}
 
-	const width =
-		widthSpace === "definite"
-			? availableWidth - marginRow
-			: boundAxis(
-				node,
-				"row",
-				columnsTotal + paddingBorderRow,
-				ownerWidth,
-				ownerWidth,
-			);
-	const height =
-		heightSpace === "definite"
-			? availableHeight - marginColumn
-			: boundAxis(
-				node,
-				"column",
-				rowsTotal + paddingBorderColumn,
-				ownerHeight,
-				ownerWidth,
-			);
+	const width = widthSpace === "definite"
+		? availableWidth - marginRow
+		: boundAxis(
+			node,
+			"row",
+			columnsTotal + paddingBorderRow,
+			ownerWidth,
+			ownerWidth,
+		);
+	const height = heightSpace === "definite"
+		? availableHeight - marginColumn
+		: boundAxis(
+			node,
+			"column",
+			rowsTotal + paddingBorderColumn,
+			ownerHeight,
+			ownerWidth,
+		);
 
 	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
 
@@ -4844,12 +4826,8 @@ function layoutBlockChild(
 		const transferred =
 			resolveValue(child.style.height, ownerHeight) * child.style.aspectRatio;
 		childWidth.value =
-			boundAxisWithinMinMax(
-				child,
-				"row",
-				transferred,
-				contentWidth,
-			) + marginRow;
+			boundAxisWithinMinMax(child, "row", transferred, contentWidth) +
+			marginRow;
 		childWidth.mode = "definite";
 	} else if (child.style.widthSizing === "min-content") {
 		childWidth.value = 0;
@@ -4942,10 +4920,9 @@ function layoutBlock(
 	// The children's containing block is the content box (css2 §10.1),
 	// so their percentages resolve against it: a width they can read
 	// before it is known is not definite.
-	const innerHeight =
-		heightSpace === "definite"
-			? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
-			: NaN;
+	const innerHeight = heightSpace === "definite"
+		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
+		: NaN;
 
 	// The width is resolved before the children lay out, min/max included,
 	// so each is measured once at the width it keeps.
@@ -5048,10 +5025,9 @@ function layoutBlock(
 		contentHeight = cursor + getCollapsedMargin(adjoining);
 	}
 
-	const height =
-		heightSpace === "definite"
-			? availableHeight - marginColumn
-			: Math.max(0, contentHeight) + paddingBorderColumn;
+	const height = heightSpace === "definite"
+		? availableHeight - marginColumn
+		: Math.max(0, contentHeight) + paddingBorderColumn;
 
 	setMeasuredSize(node, borderBoxWidth, height, ownerWidth, ownerHeight);
 

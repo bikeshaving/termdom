@@ -972,10 +972,7 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.drawBox(0, 0, 5, 3, {
-				top: {style: "solid"},
-				left: {style: "solid"},
-			});
+			ctx.drawBox(0, 0, 5, 3, {top: {style: "solid"}, left: {style: "solid"}});
 			ctx.drawText("Part", 1, 1);
 		});
 

@@ -154,9 +154,8 @@ test("a document is visible from attach() to dispose()", async () => {
 });
 
 test("a headless document has no terminal to hide it", () => {
-	const window = createWindow(
-		"<!DOCTYPE html><html><head></head><body></body></html>",
-	);
+	const window =
+		createWindow("<!DOCTYPE html><html><head></head><body></body></html>");
 	expect(window.document.hidden).toBe(false);
 	expect(window.document.visibilityState).toBe("visible");
 });

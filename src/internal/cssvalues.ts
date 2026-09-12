@@ -223,10 +223,9 @@ export function serializeCSSValue(input: string, property = ""): string {
 			if (name.toLowerCase() === "url" && input[i] === "(") {
 				const end = input.indexOf(")", i);
 				const body = input.slice(i + 1, end === -1 ? input.length : end).trim();
-				const url =
-					body.startsWith('"') || body.startsWith("'")
-						? unescapeCSSString(body.slice(1, -1))
-						: unescapeCSSString(body);
+				const url = body.startsWith('"') || body.startsWith("'")
+					? unescapeCSSString(body.slice(1, -1))
+					: unescapeCSSString(body);
 				emit(`url(${serializeCSSString(url)})`);
 				i = end === -1 ? input.length : end;
 				continue;
@@ -596,12 +595,8 @@ const EDGES = ["top", "right", "bottom", "left"] as const;
 
 const AXIS_ENDS = ["start", "end"] as const;
 
-const CORNERS = [
-	"top-left",
-	"top-right",
-	"bottom-right",
-	"bottom-left",
-] as const;
+const CORNERS =
+	["top-left", "top-right", "bottom-right", "bottom-left"] as const;
 const LIST_STYLE_POSITIONS = new Set(["inside", "outside"]);
 
 // CSS 1-4 expansion: [all], [v h], [t h b], [t r b l]. Corners expand
@@ -660,9 +655,10 @@ function getGrammarTerms(property: string, value: string): ValueTerm[] | null {
 	}
 	const out: ValueTerm[] = [];
 	for (const node of ast.children?.toArray() ?? []) {
-		const source = node as unknown as {
-			loc?: {start: {offset: number}; end: {offset: number}};
-		};
+		const source = node as unknown as {loc?: {
+			start: {offset: number};
+			end: {offset: number};
+		};};
 		const trace = match.getTrace(node);
 		if (!trace || !source.loc) {
 			return null;
@@ -943,10 +939,9 @@ function expandBorderImage(value: string): Record<string, string> {
 		for (const component of traced) {
 			for (const longhand of BORDER_IMAGE_LONGHANDS) {
 				if (component.terms.includes(longhand)) {
-					out[longhand] =
-						out[longhand] === undefined
-							? component.text
-							: `${out[longhand]} ${component.text}`;
+					out[longhand] = out[longhand] === undefined
+						? component.text
+						: `${out[longhand]} ${component.text}`;
 					break;
 				}
 			}
@@ -1081,10 +1076,9 @@ function expandGridPlacementPair(
 ): Record<string, string> {
 	const groups = splitSlashGroups(value);
 	const first = groups[0] || "auto";
-	const second =
-		groups.length > 1 && groups[1]
-			? groups[1]
-			: isCustomIdent(first) ? first : "auto";
+	const second = groups.length > 1 && groups[1]
+		? groups[1]
+		: isCustomIdent(first) ? first : "auto";
 	return {[start]: first, [end]: second};
 }
 
@@ -1320,7 +1314,8 @@ export function expandShorthands(
 				if (lower === "normal" || lower === "none") {
 					for (const longhand of longhands) {
 						out[longhand] =
-							lower === "none" && longhand === "font-variant-ligatures"
+							lower === "none" &&
+							longhand === "font-variant-ligatures"
 								? "none"
 								: "normal";
 					}
@@ -1683,10 +1678,9 @@ export function parseUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
 	const parsed = getLeadingUnitValue(value);
-	const number =
-		typeof parsed === "number"
-			? parsed
-			: parsed !== null ? parsed.percentage : null;
+	const number = typeof parsed === "number"
+		? parsed
+		: parsed !== null ? parsed.percentage : null;
 	return number !== null && number < 0 ? null : parsed;
 }
 
@@ -2359,9 +2353,8 @@ function serializeCalc(terms: CalcTerms): string {
 // Null for anything this cannot reduce (a nested min()/max()/clamp(),
 // an unsubstituted var()), which leaves the value as written.
 function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
-	const tokens = body.match(
-		/[+-]?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?|[()*/+-]/g,
-	);
+	const tokens =
+		body.match(/[+-]?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?|[()*/+-]/g);
 	if (!tokens) {
 		return null;
 	}
@@ -2508,9 +2501,13 @@ const LINE_COMPONENTS = ["width", "style", "color"] as const;
 // block-start is always the top edge and `direction` alone decides the
 // inline edges. A writing-mode implementation would replace these two
 // tables with four more, and nothing else here would change.
-const LOGICAL_TO_PHYSICAL: Readonly<
-	Record<"ltr" | "rtl", Map<string, string>>
-> = {ltr: new Map(), rtl: new Map()};
+const LOGICAL_TO_PHYSICAL: Readonly<Record<
+	"ltr" | "rtl",
+	Map<string, string>
+>> = {
+	ltr: new Map(),
+	rtl: new Map(),
+};
 
 // Both inline longhands can name a physical edge. Which one does is not
 // known until an element states its direction.
@@ -2623,10 +2620,8 @@ const GRID_LINE_SHORTHANDS = new Set(["grid-area", "grid-column", "grid-row"]);
 // Longhands a shorthand resets but whose values its grammar cannot
 // express. A block missing them cannot serialize as the shorthand.
 const RESET_ONLY_LONGHANDS = new Map<string, ReadonlySet<string>>(
-	Object.entries(CSS_RESET_ONLY_LONGHANDS).map(([shorthand, longhands]) => [
-		shorthand,
-		new Set(longhands),
-	]),
+	Object.entries(CSS_RESET_ONLY_LONGHANDS)
+		.map(([shorthand, longhands]) => [shorthand, new Set(longhands)]),
 );
 
 for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
@@ -2650,18 +2645,13 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 			: shorthand === "grid" || shorthand === "grid-template"
 				? "grid-template"
 				: box
-					? radius
-						? "radius"
-						: "box" // A width, a style and a color stated once for several sides:
+					? radius ? "radius" : "box" // A width, a style and a color stated once for several sides:
 				// Four for `border`, the axis's two for `border-block` and
 				// `border-inline`.
 					: indexed.length >= 2 * LINE_COMPONENTS.length &&
-						LINE_COMPONENTS.every(
-							(kind) =>
-								indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
-									.length ===
-									indexed.length / LINE_COMPONENTS.length,
-						)
+						LINE_COMPONENTS.every((kind) =>
+							indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
+								.length === indexed.length / LINE_COMPONENTS.length)
 						? "border"
 						: indexed.length === LINE_COMPONENTS.length &&
 							indexed.every((longhand, index) =>
@@ -2780,10 +2770,9 @@ function supportsConditionMatches(
 		if (negate) {
 			operand = !operand;
 		}
-		matches =
-			matches === null
-				? operand
-				: joiner === "or" ? matches || operand : matches && operand;
+		matches = matches === null
+			? operand
+			: joiner === "or" ? matches || operand : matches && operand;
 		awaited = false;
 	}
 	// A negated operand is a whole condition, so nothing may be joined to
@@ -3021,9 +3010,8 @@ export function serializeShorthandValue(
 		case "border": {
 			const components: Array<[string, string]> = [];
 			for (const kind of LINE_COMPONENTS) {
-				const sides = stated.filter((longhand) =>
-					longhand.endsWith(`-${kind}`),
-				);
+				const sides =
+					stated.filter((longhand) => longhand.endsWith(`-${kind}`));
 				const sideValues = sides.map(valueOf);
 				if (sideValues.some((value) => value !== sideValues[0])) {
 					return "";
@@ -3320,8 +3308,9 @@ export function getMediaConditionParts(
 	return condition?.children ? condition.children.toArray() : [];
 }
 
-export function parseMediaQueryList(text: string): CSSTree.MediaQueryNode[] |
-	null {
+export function parseMediaQueryList(
+	text: string,
+): CSSTree.MediaQueryNode[] | null {
 	let queries = mediaQueryNodes.get(text);
 	if (queries === undefined) {
 		try {
@@ -3409,10 +3398,9 @@ export function serializeMediaQuery(query: string): string {
 			expected = "feature";
 			continue;
 		}
-		const wellGapped =
-			expected === "joiner"
-				? false
-				: expected === "feature"
+		const wellGapped = expected === "joiner"
+			? false
+			: expected === "feature"
 					? /^\s+$/.test(gap)
 					: type !== null ? /^\s+and\s+$/i.test(gap) : gap === "";
 		if (!wellGapped) {
@@ -3574,9 +3562,8 @@ export function getContainerParts(prelude: string): {
 			context: "atrulePrelude",
 			atrule: "container",
 			positions: true,
-		}) as unknown as {
-			children?: {toArray(): CSSTree.ContainerPreludeNode[]} | null;
-		};
+		}) as unknown as {children?: {toArray(): CSSTree.ContainerPreludeNode[]} |
+			null;};
 		nodes = ast.children ? ast.children.toArray() : [];
 	} catch (_err) {
 		return {name: "", query: prelude};
@@ -3613,8 +3600,9 @@ export function getScopeLimits(prelude: string): {
 	} catch (_err) {
 		scope = undefined;
 	}
-	const sliceOf = (node: CSSTree.ScopePreludeNode | null | undefined): string |
-		null =>
+	const sliceOf = (
+		node: CSSTree.ScopePreludeNode | null | undefined,
+	): string | null =>
 		node?.loc
 			? prelude.slice(node.loc.start.offset, node.loc.end.offset)
 			: null;
@@ -3943,8 +3931,9 @@ export function readSelector(selector: string): SelectorReading {
 // Undefined when the subject names no type, including a type in a
 // namespace, which the matcher resolves against the namespaces the sheet
 // bound.
-function getSubjectTag(complex: CSSTree.SelectorNode | undefined): string |
-	undefined {
+function getSubjectTag(
+	complex: CSSTree.SelectorNode | undefined,
+): string | undefined {
 	if (!complex) {
 		return undefined;
 	}
@@ -4021,10 +4010,9 @@ function serializeSimpleSelector(
 			const name = node.name as {name: string};
 			let out = `[${serializeQualifiedName(name.name, undefined, true)}`;
 			if (node.matcher && node.value) {
-				const value =
-					node.value.type === "String"
-						? (node.value.value ?? "")
-						: (node.value.name ?? "");
+				const value = node.value.type === "String"
+					? (node.value.value ?? "")
+					: (node.value.name ?? "");
 				out += `${node.matcher}${serializeCSSString(value)}`;
 				if (node.flags) {
 					out += ` ${node.flags.toLowerCase()}`;
@@ -4205,9 +4193,9 @@ export function splitSelectorList(text: string): string[] {
 	return selectors.filter(Boolean);
 }
 
-export function getNodes(container: {
-	children?: {toArray(): CSSTree.StyleSheetNode[]} | null;
-}): CSSTree.StyleSheetNode[] {
+export function getNodes(
+	container: {children?: {toArray(): CSSTree.StyleSheetNode[]} | null},
+): CSSTree.StyleSheetNode[] {
 	return container.children ? container.children.toArray() : [];
 }
 
@@ -4227,10 +4215,9 @@ export function getBlockDeclarations(
 			continue;
 		}
 		const name = parsePropertyName(child.property ?? "");
-		const raw =
-			child.value.type === "Raw"
-				? (child.value.value ?? "")
-				: child.value.loc
+		const raw = child.value.type === "Raw"
+			? (child.value.value ?? "")
+			: child.value.loc
 					? source.slice(
 						child.value.loc.start.offset,
 						child.value.loc.end.offset,
@@ -4613,12 +4600,11 @@ export function getMatchedTransitions(
 		};
 		// A shorthand in the list covers its longhands (css-transitions-1
 		// §2.1). `all` covers the bounded list above.
-		const targets =
-			name === "all"
-				? TRANSITIONABLE_ALL
-				: (
-					SHORTHAND_LONGHANDS.get(name) ?? [name]
-				);
+		const targets = name === "all"
+			? TRANSITIONABLE_ALL
+			: (
+				SHORTHAND_LONGHANDS.get(name) ?? [name]
+			);
 		for (const target of targets) {
 			out.set(target, timing);
 		}
@@ -4633,18 +4619,17 @@ export function getTransitionProgress(
 	if (transition.delay > 0 && now < transition.start + transition.delay) {
 		return 0;
 	}
-	const linear =
-		transition.duration <= 0
-			? 1
-			: (
-				Math.min(
-					Math.max(
-						(now - transition.start - transition.delay) / transition.duration,
-						0,
-					),
-					1,
-				)
-			);
+	const linear = transition.duration <= 0
+		? 1
+		: (
+			Math.min(
+				Math.max(
+					(now - transition.start - transition.delay) / transition.duration,
+					0,
+				),
+				1,
+			)
+		);
 	return transition.easing(linear);
 }
 
@@ -4760,12 +4745,12 @@ function buildEasing(key: string): (input: number) => number {
 				return cubicBezierEasing(points[0], points[1], points[2], points[3]);
 			}
 		} else if (name === "steps" && args.length >= 1 && args.length <= 2) {
-			const count =
-				args[0].type === "Number" ? parseInt(args[0].value ?? "", 10) : NaN;
-			const position =
-				args.length < 2
-					? "end"
-					: args[1].type === "Identifier"
+			const count = args[0].type === "Number"
+				? parseInt(args[0].value ?? "", 10)
+				: NaN;
+			const position = args.length < 2
+				? "end"
+				: args[1].type === "Identifier"
 						? (args[1].name ?? "").toLowerCase()
 						: "";
 			if (Number.isFinite(count) && count > 0 && position) {
@@ -4784,8 +4769,9 @@ function buildEasing(key: string): (input: number) => number {
 
 // css-easing-1 §2.6. Null for an argument list outside the grammar,
 // which then plays as `linear`.
-function linearEasing(node: CSSTree.ValueNode): ((input: number) => number) |
-	null {
+function linearEasing(
+	node: CSSTree.ValueNode,
+): ((input: number) => number) | null {
 	const stops: CSSTree.ValueNode[][] = [[]];
 	for (const child of node.children?.toArray() ?? []) {
 		if (child.type === "Operator") {
@@ -4877,10 +4863,9 @@ function stepsEasing(
 		position === "jump-start" ||
 		position === "start" ||
 		position === "jump-both";
-	const jumps =
-		position === "jump-both"
-			? count + 1
-			: position === "jump-none" ? Math.max(count - 1, 1) : count;
+	const jumps = position === "jump-both"
+		? count + 1
+		: position === "jump-none" ? Math.max(count - 1, 1) : count;
 	return (input) => {
 		if (input >= 1) {
 			return 1;

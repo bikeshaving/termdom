@@ -506,10 +506,9 @@ function compileList(
 	options: CompileOptions,
 ): CompiledSelector {
 	const compiling: Compiling = {
-		namespaces:
-			options.namespaces === undefined
-				? {default: null, prefixes: new Map()}
-				: options.namespaces,
+		namespaces: options.namespaces === undefined
+			? {default: null, prefixes: new Map()}
+			: options.namespaces,
 		pseudoElements: options.pseudoElements ?? false,
 		nesting: options.nesting ?? false,
 	};
@@ -956,8 +955,9 @@ function compilePseudoClass(
 		case "host":
 		case "host-context": {
 			compound.host = true;
-			const inner =
-				args.length === 0 ? null : compileArgumentList(args, compiling, false);
+			const inner = args.length === 0
+				? null
+				: compileArgumentList(args, compiling, false);
 			const context = name === "host-context";
 			compound.tests.push((element, state) => {
 				const shadow = state.shadow;
@@ -1118,16 +1118,12 @@ function compilePseudoClass(
 			);
 			return;
 		case "required":
-			compound.tests.push(
-				(element) =>
-					isRequirable(element) && element.getAttribute("required") !== null,
-			);
+			compound.tests.push((element) =>
+				isRequirable(element) && element.getAttribute("required") !== null);
 			return;
 		case "optional":
-			compound.tests.push(
-				(element) =>
-					isRequirable(element) && element.getAttribute("required") === null,
-			);
+			compound.tests.push((element) =>
+				isRequirable(element) && element.getAttribute("required") === null);
 			return;
 		case "read-only":
 			compound.tests.push((element, state) => !isMutable(element, state));
@@ -1176,8 +1172,9 @@ function compileForgiving(
 ): CompiledComplex[] {
 	const compiled: CompiledComplex[] = [];
 	for (const argument of args) {
-		const selectors =
-			argument.type === "SelectorList" ? getChildren(argument) : [argument];
+		const selectors = argument.type === "SelectorList"
+			? getChildren(argument)
+			: [argument];
 		for (const selector of selectors) {
 			if (selector.type !== "Selector") {
 				continue;
@@ -1202,8 +1199,9 @@ function compileArgumentList(
 ): CompiledComplex[] {
 	const compiled: CompiledComplex[] = [];
 	for (const argument of args) {
-		const selectors =
-			argument.type === "SelectorList" ? getChildren(argument) : [argument];
+		const selectors = argument.type === "SelectorList"
+			? getChildren(argument)
+			: [argument];
 		for (const selector of selectors) {
 			if (selector.type !== "Selector") {
 				throw new SelectorError("a selector list holds selectors");
@@ -1408,8 +1406,7 @@ const DISABLEABLE = new Set([
 function isDisableable(element: Element): boolean {
 	return (
 		(element.namespaceURI === HTML_NAMESPACE &&
-			DISABLEABLE.has(element.localName)) ||
-			isFormAssociatedCustom(element)
+			DISABLEABLE.has(element.localName)) || isFormAssociatedCustom(element)
 	);
 }
 
@@ -1463,10 +1460,9 @@ function isMutable(element: Element, state: MatchState): boolean {
 	if (element.namespaceURI === HTML_NAMESPACE) {
 		const name = element.localName;
 		if (name === "input" || name === "textarea") {
-			const type =
-				name === "input"
-					? toASCIILowercase(element.getAttribute("type") ?? "text")
-					: "text";
+			const type = name === "input"
+				? toASCIILowercase(element.getAttribute("type") ?? "text")
+				: "text";
 			if (!IMMUTABLE_INPUT_TYPES.has(type)) {
 				return (
 					element.getAttribute("readonly") === null &&
@@ -1973,13 +1969,12 @@ const compiled = new Map<string, CompiledSelector | SelectorError>();
 
 function getCacheKey(text: string, options: CompileOptions): string {
 	const namespaces = options.namespaces;
-	const map =
-		namespaces == null
-			? "-"
-			: [...namespaces.prefixes]
-				.map(([prefix, uri]) => `${prefix}=${uri}`)
-				.sort()
-				.join(" ");
+	const map = namespaces == null
+		? "-"
+		: [...namespaces.prefixes]
+			.map(([prefix, uri]) => `${prefix}=${uri}`)
+			.sort()
+			.join(" ");
 	return `${namespaces?.default ?? ""} ${map} ${
 		options.pseudoElements ? "p" : ""
 	}${options.relative ? "r" : ""}${options.nesting ? "n" : ""} ${text}`;
@@ -2003,10 +1998,9 @@ export function compileSelector(
 			}
 			entry = compileList(list, options);
 		} catch (error) {
-			entry =
-				error instanceof SelectorError
-					? error
-					: new SelectorError(String((error as Error).message));
+			entry = error instanceof SelectorError
+				? error
+				: new SelectorError(String((error as Error).message));
 		}
 		if (compiled.size > 1024) {
 			compiled.clear();

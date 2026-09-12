@@ -32,19 +32,22 @@ document.head.appendChild(style);
 
 function Hello() {
   const [count, setCount] = useState(0);
-  useEffect(() => {
-    const onkeydown = (ev: any) => {
-      if (ev.key === "q") {
-        term.window.close();
-        return;
-      }
+  useEffect(
+    () => {
+      const onkeydown = (ev: any) => {
+        if (ev.key === "q") {
+          term.window.close();
+          return;
+        }
 
-      setCount((value) => value + 1);
-    };
+        setCount((value) => value + 1);
+      };
 
-    document.addEventListener("keydown", onkeydown);
-    return () => document.removeEventListener("keydown", onkeydown);
-  }, []);
+      document.addEventListener("keydown", onkeydown);
+      return () => document.removeEventListener("keydown", onkeydown);
+    },
+    [],
+  );
 
   return html`
     <div>

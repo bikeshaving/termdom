@@ -241,10 +241,7 @@ const FEATURES: Record<string, Feature> = {
 		target: "parent",
 		setup: `${FLEX} #parent { height: 6px; }`,
 	},
-	"align-self": {
-		value: "flex-end",
-		setup: `${FLEX} #parent { height: 6px; }`,
-	},
+	"align-self": {value: "flex-end", setup: `${FLEX} #parent { height: 6px; }`},
 	"align-content": {
 		value: "flex-end",
 		target: "parent",
@@ -543,10 +540,9 @@ function generatedFeatures(): Record<string, Feature> {
 		out[name] = {
 			// Each value has to MOVE something: a track list that resolves to
 			// the size the box already had measures as no support at all.
-			value:
-				name === "grid-template-areas"
-					? '"a a" "b b"'
-					: name === "grid-template" || name === "grid"
+			value: name === "grid-template-areas"
+				? '"a a" "b b"'
+				: name === "grid-template" || name === "grid"
 						? "3px 1px / 6ch 6ch"
 						: name.endsWith("-start") || name.endsWith("-end")
 							? "3"
@@ -560,11 +556,10 @@ function generatedFeatures(): Record<string, Feature> {
 					: "probe",
 			// grid-auto-columns sizes the implicit COLUMNS, which only exist
 			// where the flow makes them: a row-flow grid never creates one.
-			setup:
-				name === "grid-auto-columns"
-					? "#parent { display: grid; grid-auto-flow: column; }" // An area map only moves a box that names one of its
+			setup: name === "grid-auto-columns"
+				? "#parent { display: grid; grid-auto-flow: column; }" // An area map only moves a box that names one of its
 				// areas, and only against columns it can span.
-					: name === "grid-template-areas"
+				: name === "grid-template-areas"
 						? `${GRID} #probe { grid-area: b; }`
 						: "#parent { display: grid; }",
 		};
@@ -1211,13 +1206,9 @@ function buildProbes(): Probe[] {
 				typeof (dom.window as {ResizeObserver?: unknown}).ResizeObserver ===
 				"function",
 		),
-		apiProbe(
-			"IntersectionObserver",
-			"DOM APIs",
-			(dom) =>
-				typeof (dom.window as {IntersectionObserver?: unknown})
-					.IntersectionObserver === "function",
-		),
+		apiProbe("IntersectionObserver", "DOM APIs", (dom) =>
+			typeof (dom.window as {IntersectionObserver?: unknown})
+				.IntersectionObserver === "function"),
 		apiProbe(
 			"matchMedia",
 			"DOM APIs",
@@ -1248,13 +1239,9 @@ function buildProbes(): Probe[] {
 			"DOM APIs",
 			(dom) => typeof dom.window.getSelection === "function",
 		),
-		apiProbe(
-			"Fullscreen API",
-			"DOM APIs",
-			(dom) =>
-				typeof (dom.document.body as {requestFullscreen?: unknown})
-					.requestFullscreen === "function",
-		),
+		apiProbe("Fullscreen API", "DOM APIs", (dom) =>
+			typeof (dom.document.body as {requestFullscreen?: unknown})
+				.requestFullscreen === "function"),
 	);
 
 	// At-rules and selectors: does the cascade honour them?
@@ -1337,11 +1324,7 @@ function buildProbes(): Probe[] {
 
 async function main(): Promise<void> {
 	const probes = buildProbes();
-	const results: Array<{
-		probe: Probe;
-		supported: boolean;
-		note?: string;
-	}> = [];
+	const results: Array<{probe: Probe; supported: boolean; note?: string}> = [];
 
 	for (const probe of probes) {
 		const t0 = performance.now();
@@ -1354,10 +1337,8 @@ async function main(): Promise<void> {
 			const {supported, note} = await Promise.race([
 				probe.run(),
 				new Promise<never>((_, reject) => {
-					watchdog = setTimeout(
-						() => reject(new Error(`probe hung: ${probe.name}`)),
-						30_000,
-					);
+					watchdog = setTimeout(() =>
+						reject(new Error(`probe hung: ${probe.name}`)), 30_000);
 				}),
 			]);
 			results.push({probe, supported, note});
@@ -1407,10 +1388,9 @@ async function main(): Promise<void> {
 		}
 		classified.add(name);
 	}
-	const notApplicable = NOT_APPLICABLE.map(
-		([reason, names]) =>
-			[reason, names.filter((n) => !probed.has(n))] as [string, string[]],
-	).filter(([, names]) => names.length > 0);
+	const notApplicable = NOT_APPLICABLE.map(([reason, names]) =>
+		[reason, names.filter((n) => !probed.has(n))] as [string, string[]])
+		.filter(([, names]) => names.length > 0);
 	const notImplemented = NOT_IMPLEMENTED.filter((n) => !probed.has(n));
 	const notApplicableCount = notApplicable.reduce(
 		(total, [, names]) => total + names.length,

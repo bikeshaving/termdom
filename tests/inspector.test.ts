@@ -19,16 +19,15 @@ function inspected(target: unknown, maxDepth = 2): string {
 	return inspect(target, {colors: false, depth: maxDepth});
 }
 
-function documentWindow(html: string): {
-	window: ReturnType<typeof createWindow>;
-} {
+function documentWindow(
+	html: string,
+): {window: ReturnType<typeof createWindow>} {
 	return {window: createWindow(html)};
 }
 
 test("inspect formats: formats basic elements", () => {
-	const dom = documentWindow(
-		"<div id=\"test\" class=\"container\">Hello</div>",
-	);
+	const dom =
+		documentWindow("<div id=\"test\" class=\"container\">Hello</div>");
 	const div = dom.window.document.getElementById("test");
 
 	const output = inspected(asElement(div));
@@ -37,14 +36,16 @@ test("inspect formats: formats basic elements", () => {
 });
 
 test("inspect formats: handles nested elements", () => {
-	const dom = documentWindow(`
+	const dom = documentWindow(
+		`
 		<nav>
 			<ul class="menu">
 				<li><a href="#home">Home</a></li>
 				<li><a href="#about">About</a></li>
 			</ul>
 		</nav>
-	`);
+	`,
+	);
 	const nav = dom.window.document.querySelector("nav");
 
 	const output = inspected(asElement(nav), 3);
@@ -56,7 +57,8 @@ test("inspect formats: handles nested elements", () => {
 });
 
 test("inspect formats: respects maxDepth", () => {
-	const dom = documentWindow(`
+	const dom = documentWindow(
+		`
 		<div>
 			<div>
 				<div>
@@ -64,7 +66,8 @@ test("inspect formats: respects maxDepth", () => {
 				</div>
 			</div>
 		</div>
-	`);
+	`,
+	);
 	const div = dom.window.document.querySelector("div");
 
 	const output = inspected(asElement(div), 2);
@@ -89,9 +92,8 @@ test("inspect formats: shows important attributes", () => {
 });
 
 test("inspect formats: handles self-closing tags", () => {
-	const dom = documentWindow(
-		"<div><img src=\"test.jpg\" alt=\"Test\"><br><hr></div>",
-	);
+	const dom =
+		documentWindow("<div><img src=\"test.jpg\" alt=\"Test\"><br><hr></div>");
 	const div = dom.window.document.querySelector("div");
 
 	const output = inspected(asElement(div));

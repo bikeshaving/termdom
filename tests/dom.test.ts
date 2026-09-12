@@ -52,10 +52,8 @@ test("a node cannot be inserted into itself or its descendant", () => {
 });
 
 test("a document takes one element child and one doctype, in that order", () => {
-	const document = new realm.DOMParser().parseFromString(
-		"",
-		"text/html",
-	) as any;
+	const document =
+		new realm.DOMParser().parseFromString("", "text/html") as any;
 	const bare = document.implementation.createDocument(null, null, null);
 	const first = bare.createElement("first");
 	bare.appendChild(first);
@@ -601,9 +599,11 @@ test("an uninitialized event cannot be dispatched", () => {
 test("a passive listener cannot cancel the event it hears", () => {
 	const document = make();
 	const target = document.createElement("div");
-	target.addEventListener("ping", (event: any) => event.preventDefault(), {
-		passive: true,
-	});
+	target.addEventListener(
+		"ping",
+		(event: any) => event.preventDefault(),
+		{passive: true},
+	);
 	const passive = new DOMEvent("ping", {cancelable: true});
 	expect(target.dispatchEvent(passive)).toBe(true);
 	target.addEventListener("pong", (event: any) => event.preventDefault());
@@ -653,12 +653,15 @@ test("a listener object's handleEvent is looked up at every dispatch", () => {
 	const target = document.createElement("div");
 	let lookups = 0;
 	let calls = 0;
-	target.addEventListener("ping", {
-		get handleEvent() {
-			lookups++;
-			return () => calls++;
-		},
-	} as any);
+	target.addEventListener(
+		"ping",
+		{
+			get handleEvent() {
+				lookups++;
+				return () => calls++;
+			},
+		} as any,
+	);
 	expect(lookups).toBe(0);
 	target.dispatchEvent(new DOMEvent("ping"));
 	target.dispatchEvent(new DOMEvent("ping"));
@@ -828,9 +831,8 @@ test("records arrive in a microtask, batched into one callback", async () => {
 	const parent = document.createElement("div");
 	document.body.appendChild(parent);
 	const batches: any[][] = [];
-	const observer = new MutationObserver((records: any) =>
-		batches.push(records),
-	);
+	const observer =
+		new MutationObserver((records: any) => batches.push(records));
 	observer.observe(parent, {childList: true, attributes: true});
 	parent.appendChild(document.createElement("span"));
 	parent.setAttribute("id", "x");
@@ -1955,9 +1957,11 @@ test("a wheel or touch listener on the window is passive by default", () => {
 		window.dispatchEvent(event);
 		expect(event.defaultPrevented).toBe(false);
 	}
-	window.addEventListener("wheel", (event) => event.preventDefault(), {
-		passive: false,
-	});
+	window.addEventListener(
+		"wheel",
+		(event) => event.preventDefault(),
+		{passive: false},
+	);
 	const active = new DOMEvent("wheel", {cancelable: true});
 	window.dispatchEvent(active);
 	expect(active.defaultPrevented).toBe(true);

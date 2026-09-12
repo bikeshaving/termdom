@@ -294,6 +294,5 @@ declare namespace globalThis {
 
 			/** The rendered column width of a string. */
 			stringWidth(input: string): number;
-		} |
-		undefined;
+		} | undefined;
 }

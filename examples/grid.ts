@@ -150,9 +150,8 @@ panel(
     ["uptime", "99.98%"],
     ["region", "iad"],
   ]
-    .map(
-      ([name, value]) =>
-        `<span>${name}</span><span class="value">${value}</span>`,
+    .map(([name, value]) =>
+      `<span>${name}</span><span class="value">${value}</span>`,
     )
     .join(""),
 );

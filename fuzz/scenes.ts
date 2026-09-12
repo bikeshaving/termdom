@@ -129,18 +129,17 @@ type Tree =
 	{tag: string; cls: string; children: Tree[]};
 
 const treeArbitrary = fc.letrec<{node: Tree}>((tie) => ({
-	node: fc.oneof(
-		{maxDepth: 3, depthIdentifier: "node"},
-		fc.constantFrom<Tree>({leaf: "text"}, {leaf: "space"}, {leaf: "comment"}),
-		...(SHAPES
-			? [fc.constantFrom<Tree>(...CLUSTERS.map((cluster) => ({cluster})))]
-			: []),
-		fc.record({
-			tag: fc.constantFrom(...TAGS),
-			cls: fc.constantFrom("", ...CLASSES),
-			children: fc.array(tie("node"), {maxLength: 3}),
-		}),
-	),
+	node: fc.oneof({maxDepth: 3, depthIdentifier: "node"}, fc.constantFrom<Tree>(
+		{leaf: "text"},
+		{leaf: "space"},
+		{leaf: "comment"},
+	), ...(SHAPES
+		? [fc.constantFrom<Tree>(...CLUSTERS.map((cluster) => ({cluster})))]
+		: []), fc.record({
+		tag: fc.constantFrom(...TAGS),
+		cls: fc.constantFrom("", ...CLASSES),
+		children: fc.array(tie("node"), {maxLength: 3}),
+	})),
 })).node;
 
 /**
@@ -156,9 +155,8 @@ function toMarkup(trees: Tree[]): {html: string; tokens: string[]} {
 		if ("cluster" in tree) {
 			// Every start tag in the fragment gets an id of its own, so an
 			// action can name what is inside a cluster and not only around it.
-			return tree.cluster.replace(
-				/<([a-z]+)(?=[\s>])/g,
-				(_, name) => `<${name} data-f="e${elements++}"`,
+			return tree.cluster.replace(/<([a-z]+)(?=[\s>])/g, (_, name) =>
+				`<${name} data-f="e${elements++}"`,
 			);
 		}
 		if ("leaf" in tree) {

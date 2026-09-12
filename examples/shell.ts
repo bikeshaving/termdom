@@ -94,9 +94,8 @@ function ls(argument: string | undefined): void {
     row.className = "line";
     for (const each of names.slice(i, i + columns)) {
       const cell = document.createElement("span");
-      cell.textContent = (each.name + (each.isDirectory() ? "/" : "")).padEnd(
-        width,
-      );
+      cell.textContent =
+        (each.name + (each.isDirectory() ? "/" : "")).padEnd(width);
       if (each.isDirectory()) {
         cell.className = "dir";
       }
@@ -159,10 +158,9 @@ function less(argument: string | undefined): void {
     const last = Math.max(0, lines.length - page());
     top = Math.max(0, Math.min(top, last));
     body.textContent = lines.slice(top, top + page()).join("\n");
-    const percent =
-      lines.length <= page()
-        ? 100
-        : Math.round(((top + page()) / lines.length) * 100);
+    const percent = lines.length <= page()
+      ? 100
+      : Math.round(((top + page()) / lines.length) * 100);
     status.textContent = `${argument} · lines ${top + 1}-${Math.min(lines.length, top + page())} of ${lines.length} · ${percent}% · q quits`;
   };
   const moves: Record<string, () => void> = {

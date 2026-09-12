@@ -481,9 +481,8 @@ const INTERFACE_NAMES: readonly string[] = [
 ];
 
 const tagsOf = (name: string): readonly string[] =>
-	Object.keys(HTML_TAG_INTERFACES).filter(
-		(tag) => HTML_TAG_INTERFACES[tag] === name,
-	);
+	Object.keys(HTML_TAG_INTERFACES)
+		.filter((tag) => HTML_TAG_INTERFACES[tag] === name);
 
 export const HTML_INTERFACES: readonly InterfaceSpec[] = INTERFACE_NAMES.map(
 	(name) => ({name, tags: tagsOf(name), reflect: reflectionsOf(name)}),
@@ -491,17 +490,16 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = INTERFACE_NAMES.map(
 
 // A tag the HTML Standard gives HTMLElement, or an interface this DOM has
 // no class for, which an author sees as an HTMLElement too.
-export const HTML_ELEMENT_TAGS: readonly string[] = Object.keys(
-	HTML_TAG_INTERFACES,
-).filter((tag) => {
-	const name = HTML_TAG_INTERFACES[tag];
-	return (
-		name !== "HTMLUnknownElement" &&
-		name !== "HTMLTemplateElement" &&
-		name !== "HTMLSlotElement" &&
-		!INTERFACE_NAMES.includes(name)
-	);
-});
+export const HTML_ELEMENT_TAGS: readonly string[] =
+	Object.keys(HTML_TAG_INTERFACES).filter((tag) => {
+		const name = HTML_TAG_INTERFACES[tag];
+		return (
+			name !== "HTMLUnknownElement" &&
+			name !== "HTMLTemplateElement" &&
+			name !== "HTMLSlotElement" &&
+			!INTERFACE_NAMES.includes(name)
+		);
+	});
 
 // Names HTML knows and gives HTMLUnknownElement to anyway.
 export const HTML_UNKNOWN_TAGS: readonly string[] = Object.keys(

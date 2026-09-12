@@ -65,10 +65,8 @@ async function suiteFiles(): Promise<string[]> {
 	const response = await fetch(
 		`https://api.github.com/repos/web-platform-tests/wpt/contents/${SUITE}`,
 	);
-	const entries = (await response.json()) as Array<{
-		name: string;
-		type: string;
-	}>;
+	const entries =
+		(await response.json()) as Array<{name: string; type: string}>;
 	const names = entries
 		.filter((entry) => entry.type === "file" && entry.name.endsWith(".html"))
 		.filter(
@@ -697,8 +695,8 @@ const lines: string[] = [
 	...Object.keys(EXCLUSIONS)
 		.sort()
 		.map((file) => `| ${file} | ${EXCLUSIONS[file]} |`),
-	...reftests.map(
-		(outcome) => `| ${outcome.file} | reftest: scored by pixel comparison |`,
+	...reftests.map((outcome) =>
+		`| ${outcome.file} | reftest: scored by pixel comparison |`,
 	),
 	"",
 	"## Deliberate deviations",

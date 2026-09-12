@@ -250,10 +250,9 @@ function temperatureChart(temps: number[]): string {
         return `<span class="${bucketOf(t)}">${EIGHTHS[level]}</span>`;
       })
       .join("");
-    const label =
-      row === ROWS - 1
-        ? String(Math.round(max)).padStart(4) + "° "
-        : row === 0 ? String(Math.round(min)).padStart(4) + "° " : "      ";
+    const label = row === ROWS - 1
+      ? String(Math.round(max)).padStart(4) + "° "
+      : row === 0 ? String(Math.round(min)).padStart(4) + "° " : "      ";
     lines.push(`<div><span class="label">${label}</span>${cells}</div>`);
   }
   return lines.join("");
@@ -296,11 +295,7 @@ function render(data: Forecast): void {
       <span>💧 ${now.relative_humidity_2m}%</span>
     </div>
     <div class="days">${days}</div>
-    <div class="chart">${temperatureChart(
-      data.hourly.temperature_2m.slice(dayIndex * 24, dayIndex * 24 + 24),
-    )}${skyRow(
-      data.hourly.weather_code.slice(dayIndex * 24, dayIndex * 24 + 24),
-    )}<div class="axis"><span class="label">      </span>0     6     12    18</div></div>
+    <div class="chart">${temperatureChart(data.hourly.temperature_2m.slice(dayIndex * 24, dayIndex * 24 + 24))}${skyRow(data.hourly.weather_code.slice(dayIndex * 24, dayIndex * 24 + 24))}<div class="axis"><span class="label">      </span>0     6     12    18</div></div>
   `;
 }
 

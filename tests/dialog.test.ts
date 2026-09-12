@@ -10,9 +10,11 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-async function open(html: string, cols = 30, rows = 8): Promise<
-	{terminal: MockProcess; dom: TermDOM; dialog: HTMLDialogElement}
-> {
+async function open(
+	html: string,
+	cols = 30,
+	rows = 8,
+): Promise<{terminal: MockProcess; dom: TermDOM; dialog: HTMLDialogElement}> {
 	const terminal = new MockProcess({rows, cols});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
@@ -67,9 +69,8 @@ test("the backdrop covers the viewport, and an author's rules restyle it", async
 });
 
 test("show() leaves the dialog in the flow, with no backdrop", async () => {
-	const {terminal, dom, dialog} = await open(
-		"<p>page one</p><dialog><p>Save?</p></dialog>",
-	);
+	const {terminal, dom, dialog} =
+		await open("<p>page one</p><dialog><p>Save?</p></dialog>");
 	dialog.show();
 	await nextFrame(dom);
 
@@ -83,9 +84,8 @@ test("show() leaves the dialog in the flow, with no backdrop", async () => {
 });
 
 test("closing gives the page back", async () => {
-	const {terminal, dom, dialog} = await open(
-		"<p>page one</p><dialog><p>Save?</p></dialog>",
-	);
+	const {terminal, dom, dialog} =
+		await open("<p>page one</p><dialog><p>Save?</p></dialog>");
 	dialog.showModal();
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).not.toContain("page one");

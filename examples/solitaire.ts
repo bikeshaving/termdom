@@ -521,10 +521,12 @@ function backRows(width: number, height: number): string[] {
     if (row === height - 1) {
       return BL + B.repeat(width - 2) + BR;
     }
-    const inner = Array.from({length: width - 2}, (_, col) =>
-      row === Math.floor(height / 2) && col === Math.floor((width - 2) / 2)
-        ? MOTIF
-        : " ",
+    const inner = Array.from(
+      {length: width - 2},
+      (_, col) =>
+        row === Math.floor(height / 2) && col === Math.floor((width - 2) / 2)
+          ? MOTIF
+          : " ",
     ).join("");
     return L + inner + R;
   });
@@ -548,8 +550,9 @@ function faceRows(card: Card, tier: Tier): string[] {
   if (!card.up) {
     return backRows(width, height);
   }
-  const grid = Array.from({length: height}, () =>
-    Array.from({length: width}, () => " "),
+  const grid = Array.from(
+    {length: height},
+    () => Array.from({length: width}, () => " "),
   );
   const index = `${RANKS[card.rank - 1]}${SUITS[card.suit]}`;
   for (let i = 0; i < index.length && i < width; i++) {
@@ -613,24 +616,26 @@ function CardFace({
       class=${classes.join(" ")}
       onclick=${onclick}
       ondblclick=${ondblclick}
-    >${(covered ? rows.slice(0, 1) : rows).map(
-      (row, line) => jsx`<div key=${line}>${row}</div>`,
-    )}</div>
+    >${(covered ? rows.slice(0, 1) : rows).map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
   `;
 }
 
 /** An empty place on the board: the stock's turnover arrow, or a suit's home. */
-function Slot({tier, mark, drop, cursor, onclick}: {
-  tier: Tier;
-  mark?: string;
-  drop?: boolean;
-  cursor?: boolean;
-  onclick?: (event: MouseEvent) => unknown;
-}) {
-  const rows = Array.from({length: tier.height}, (_, line) =>
-    line === Math.floor(tier.height / 2) && mark
-      ? centered(mark, tier.width)
-      : blank(tier.width),
+function Slot(
+  {tier, mark, drop, cursor, onclick}: {
+    tier: Tier;
+    mark?: string;
+    drop?: boolean;
+    cursor?: boolean;
+    onclick?: (event: MouseEvent) => unknown;
+  },
+) {
+  const rows = Array.from(
+    {length: tier.height},
+    (_, line) =>
+      line === Math.floor(tier.height / 2) && mark
+        ? centered(mark, tier.width)
+        : blank(tier.width),
   );
   const classes = ["slot"];
   if (drop) {
@@ -640,9 +645,7 @@ function Slot({tier, mark, drop, cursor, onclick}: {
     classes.push("cursor");
   }
   return jsx`
-    <div class=${classes.join(" ")} onclick=${onclick}>${rows.map(
-      (row, line) => jsx`<div key=${line}>${row}</div>`,
-    )}</div>
+    <div class=${classes.join(" ")} onclick=${onclick}>${rows.map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
   `;
 }
 
@@ -879,9 +882,8 @@ function *App(this: Context) {
 
   /** The typed seed names the deal; empty or nonsense means any deal. */
   const dealFromMenu = (): void => {
-    const seedField = document.getElementById(
-      "seed",
-    ) as HTMLInputElement | null;
+    const seedField = document.getElementById("seed") as HTMLInputElement |
+      null;
     const seed = Number.parseInt(seedField?.value ?? "", 10);
     menu = false;
     reset(Number.isFinite(seed) && seed > 0 ? seed : someDeal());
@@ -1130,8 +1132,9 @@ function *App(this: Context) {
         cur = {
           row: next.row,
           col: next.col,
-          depth:
-            next.row === "board" ? Math.max(0, pileAt(next.col).length - 1) : 0,
+          depth: next.row === "board"
+            ? Math.max(0, pileAt(next.col).length - 1)
+            : 0,
         };
       });
       return;
@@ -1230,9 +1233,7 @@ function *App(this: Context) {
               <div class="again">(press <kbd>${modeNow()}</kbd> again to deal)</div>
               <div class="answers">seed${" #"}<input id="seed" type="number" min="1" placeholder="random" /></div>
               <div class="answers"><span onclick=${dealFromMenu}><kbd>Enter</kbd>${" deal"}</span>${
-                startedAt !== null
-                  ? jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}><kbd>b</kbd>ack</span>`
-                  : ""
+                startedAt !== null ? jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}><kbd>b</kbd>ack</span>` : ""
               }<span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => term.window.close()}><kbd>q</kbd>uit</span></div>
             </dialog>
           </div>
@@ -1270,9 +1271,7 @@ function *App(this: Context) {
             ${clock(startedAt === null ? 0 : (finishedAt ?? performance.now()) - startedAt)}
           </span>
           ${
-            won(game)
-              ? jsx`<span class="win">Won${message ? ` ${MIDDOT} ${message}` : ""}</span>`
-              : message && jsx`<span class="score">${message}</span>`
+            won(game) ? jsx`<span class="win">Won${message ? ` ${MIDDOT} ${message}` : ""}</span>` : message && jsx`<span class="score">${message}</span>`
           }
         </div>
 
@@ -1318,8 +1317,7 @@ function *App(this: Context) {
             }
           </div>
           <div class="gap"></div>
-          ${game.foundations.map(
-            (foundation, index) => jsx`
+          ${game.foundations.map((foundation, index) => jsx`
               <div class="pile" key=${`foundation-${index}`}>
                 ${
                   top(foundation)
@@ -1340,23 +1338,19 @@ function *App(this: Context) {
                       />`
                 }
               </div>
-            `,
-          )}
+            `)}
         </div>
 
         <div class="numbers">
-          ${game.tableau.map(
-            (pile, index) => jsx`
+          ${game.tableau.map((pile, index) => jsx`
               <span
                 class=${Boolean(card) && fitsTableau(card, pile) ? "number drop" : "number"}
                 key=${`number-${index}`}
               ><${CenteredKey} cap=${String(index + 1)} width=${t.width} /></span>
-            `,
-          )}
+            `)}
         </div>
         <div class="board">
-          ${game.tableau.map(
-            (pile, index) => jsx`
+          ${game.tableau.map((pile, index) => jsx`
               <div class="pile" key=${`pile-${index}`}>
                 ${
                   pile.length === 0
@@ -1366,8 +1360,7 @@ function *App(this: Context) {
                         cursor=${cursorShown && cur.row === "board" && cur.col === index}
                         onclick=${() => target({kind: "tableau", pile: index})}
                       />`
-                    : pile.map(
-                      (each, depth) => jsx`
+                    : pile.map((each, depth) => jsx`
                           <${CardFace}
                             key=${`${each.suit}-${each.rank}`}
                             card=${each}
@@ -1380,35 +1373,24 @@ function *App(this: Context) {
                               if (held || !each.up) {
                                 target({kind: "tableau", pile: index});
                               } else if (isRun(pile, depth)) {
-                                grab({
-                                  kind: "tableau",
-                                  pile: index,
-                                  index: depth,
-                                });
+                                grab({kind: "tableau", pile: index, index: depth});
                               }
                             }}
                             ondblclick=${() => {
                               if (depth === pile.length - 1 && each.up) {
-                                sendHome({
-                                  kind: "tableau",
-                                  pile: index,
-                                  index: depth,
-                                });
+                                sendHome({kind: "tableau", pile: index, index: depth});
                               }
                             }}
                           />
-                        `,
-                    )
+                        `)
                 }
               </div>
-            `,
-          )}
+            `)}
         </div>
 
         </div>
         ${
-          ask &&
-          jsx`<div class="scrim">
+          ask && jsx`<div class="scrim">
             <dialog open>
               <div class="ask">${ask.question}</div>
               <div class="answers"><span onclick=${() => answer(true)}><kbd>y</kbd> ${ask.yes}</span><span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => answer(false)}><kbd>n</kbd> keep playing</span></div>

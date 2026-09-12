@@ -59,11 +59,13 @@ function getOverflowClipRect(
 
 	const box = getBoxModel(element);
 	const left = clipsX ? rect.left + (box.borderLeftWidth || 0) : -Infinity;
-	const right =
-		clipsX ? rect.left + rect.width - (box.borderRightWidth || 0) : Infinity;
+	const right = clipsX
+		? rect.left + rect.width - (box.borderRightWidth || 0)
+		: Infinity;
 	const top = clipsY ? rect.top + (box.borderTopWidth || 0) : -Infinity;
-	const bottom =
-		clipsY ? rect.top + rect.height - (box.borderBottomWidth || 0) : Infinity;
+	const bottom = clipsY
+		? rect.top + rect.height - (box.borderBottomWidth || 0)
+		: Infinity;
 
 	if (!parent) {
 		return {left, top, right, bottom};
@@ -110,10 +112,9 @@ function getCellStyle(element: Element): CellStyle {
 	// resolves to nothing, so an author color does not defeat it.
 	const isHighlightPair = CSSValues.isHighlightColor(bgColor);
 	return {
-		fg:
-			color && color !== "initial" && !CSSValues.isHighlightColor(color)
-				? CSSValues.cssColorToNumber(color)
-				: undefined,
+		fg: color && color !== "initial" && !CSSValues.isHighlightColor(color)
+			? CSSValues.cssColorToNumber(color)
+			: undefined,
 		bg:
 			bgColor &&
 			bgColor !== "initial" &&
@@ -128,7 +129,8 @@ function getCellStyle(element: Element): CellStyle {
 		italic: getComputedValue(element, "font-style") === "italic",
 		underline: decoration.underline,
 		underlineStyle:
-			getComputedValue(element, "text-decoration-style") === "double"
+			getComputedValue(element, "text-decoration-style") ===
+			"double"
 				? ("double" as const)
 				: undefined,
 		strikethrough: decoration.lineThrough,
@@ -340,15 +342,14 @@ function renderElement(
 
 	// Canvas clears the box to the terminal's default background, opaque in
 	// every theme. Highlight fills it with inverse.
-	const isCanvasBg = Boolean(backgroundColor) &&
-		CSSValues.isCanvasColor(backgroundColor);
+	const isCanvasBg =
+		Boolean(backgroundColor) && CSSValues.isCanvasColor(backgroundColor);
 	const isHighlightBox =
 		Boolean(backgroundColor) && CSSValues.isHighlightColor(backgroundColor);
 	const style = {
-		fg:
-			color && color !== "initial" && !CSSValues.isHighlightColor(color)
-				? CSSValues.cssColorToNumber(color)
-				: undefined,
+		fg: color && color !== "initial" && !CSSValues.isHighlightColor(color)
+			? CSSValues.cssColorToNumber(color)
+			: undefined,
 		bg:
 			backgroundColor &&
 			!isCanvasBg &&
@@ -731,17 +732,16 @@ function renderOutsideMarker(
 	const {bold: markerBold, dim: markerDim} = resolveFontWeight(
 		getComputedValue(element, "font-weight", "::marker"),
 	);
-	const markerItalic = getComputedValue(element, "font-style", "::marker") ===
-		"italic";
+	const markerItalic =
+		getComputedValue(element, "font-style", "::marker") === "italic";
 	const markerUnderline = CSSValues.parseTextDecorationLine(
 		getComputedValue(element, "text-decoration-line", "::marker"),
 	).underline;
 
 	const markerTextStyle = {
-		fg:
-			markerColor && markerColor !== "initial"
-				? CSSValues.cssColorToNumber(markerColor)
-				: undefined,
+		fg: markerColor && markerColor !== "initial"
+			? CSSValues.cssColorToNumber(markerColor)
+			: undefined,
 		bold: markerBold,
 		dim: markerDim,
 		italic: markerItalic,
@@ -849,12 +849,12 @@ function getPaintSelectionRange(
 		return null;
 	}
 	// Narrowed to this node. ::selection resolves per parent.
-	const from =
-		documentRange.startContainer === textNode ? documentRange.startOffset : 0;
-	const to =
-		documentRange.endContainer === textNode
-			? documentRange.endOffset
-			: textNode.data.length;
+	const from = documentRange.startContainer === textNode
+		? documentRange.startOffset
+		: 0;
+	const to = documentRange.endContainer === textNode
+		? documentRange.endOffset
+		: textNode.data.length;
 	if (to <= from) {
 		return null;
 	}

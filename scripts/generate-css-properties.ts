@@ -202,9 +202,7 @@ for (const name of new Set([
 	const names = [
 		...Object.keys(atRules[name]?.descriptors ?? {}),
 		...(extraDescriptors[name] ?? []),
-	]
-		.filter((descriptor) => !descriptor.includes("("))
-		.sort();
+	].filter((descriptor) => !descriptor.includes("(")).sort();
 	if (names.length > 0) {
 		descriptors[name] = names;
 	}
@@ -449,9 +447,7 @@ function record(values: Record<string, string | string[]>): string {
 function hexRecord(values: Record<string, number>): string {
 	return Object.keys(values)
 		.sort()
-		.map(
-			(key) => `\t${key}: 0x${values[key].toString(16).padStart(6, "0")},`,
-		)
+		.map((key) => `\t${key}: 0x${values[key].toString(16).padStart(6, "0")},`)
 		.join("\n");
 }
 

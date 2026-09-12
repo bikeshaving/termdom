@@ -97,16 +97,15 @@ for (let y = 0; y < ROWS; y++) {
 	for (let x = 0; x < COLS; x++) {
 		const cell = line.getCell(x);
 		const chars = cell?.getChars() || " ";
-		const fg =
-			cell && !cell.isFgDefault() ? css(cell.getFgColor()) : DEFAULT_FG;
+		const fg = cell && !cell.isFgDefault()
+			? css(cell.getFgColor())
+			: DEFAULT_FG;
 		const bold = !!cell?.isBold();
 		const underline = !!cell?.isUnderline();
 		if (cell && !cell.isBgDefault()) {
 			bgRects += `<rect x="${(PAD + x * CELL_W).toFixed(1)}" y="${(
 				PAD + y * CELL_H
-			).toFixed(1)}" width="${CELL_W}" height="${CELL_H}" fill="${css(
-				cell.getBgColor(),
-			)}"/>`;
+			).toFixed(1)}" width="${CELL_W}" height="${CELL_H}" fill="${css(cell.getBgColor())}"/>`;
 		}
 		if (fg !== runFg || bold !== runBold || underline !== runUnderline) {
 			flush(x);
