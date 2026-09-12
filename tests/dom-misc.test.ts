@@ -172,3 +172,34 @@ test("a location will not navigate, and an unmounted document has none", () => {
 	// A document nobody displays is in no browsing context, so it is nowhere.
 	expect(createHTMLDocument().location).toBe(null as never);
 });
+
+/* ------------------------------------ what the element tables construct */
+
+test("a tag the HTML Standard dropped constructs as unknown", () => {
+	// webref still lists menuitem, with the interface the spec it came from
+	// gave it. No browser knows the element.
+	const window = createWindow("<!doctype html>") as any;
+	const menuitem = window.document.createElement("menuitem");
+	expect(menuitem instanceof window.HTMLUnknownElement).toBe(true);
+});
+
+test("the element tables reflect headers, lowsrc and scrollAmount", () => {
+	const window =
+		createWindow("<!doctype html>", "https://example.com/a/b") as any;
+	const document = window.document;
+
+	// A cell's headers is a string, not a token list.
+	const td = document.createElement("td");
+	td.setAttribute("headers", "a b");
+	expect(td.headers).toBe("a b");
+
+	// lowsrc resolves against the base URL, as src does.
+	const img = document.createElement("img");
+	img.setAttribute("lowsrc", "x.png");
+	expect(img.lowsrc).toBe("https://example.com/a/x.png");
+
+	const marquee = document.createElement("marquee");
+	expect(marquee.scrollAmount).toBe(6);
+	marquee.setAttribute("scrollamount", "12");
+	expect(marquee.scrollAmount).toBe(12);
+});

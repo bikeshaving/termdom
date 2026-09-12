@@ -397,7 +397,14 @@ export function reflectionsOf(name: string): readonly ReflectSpec[] {
 	return [...generated, ...hand];
 }
 
+// Tags webref still lists that the HTML Standard has dropped. It gives
+// them the interface the spec they came from did; a browser, knowing no
+// such element, constructs them as unknown.
+const DROPPED_TAGS: ReadonlySet<string> = new Set(["menuitem"]);
+
 /** The interface a tag constructs as. */
 export function interfaceOf(tag: string): string {
-	return HTML_TAG_INTERFACES[tag];
+	return DROPPED_TAGS.has(tag)
+		? "HTMLUnknownElement"
+		: HTML_TAG_INTERFACES[tag];
 }
