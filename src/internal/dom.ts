@@ -25005,17 +25005,23 @@ function assertBoundaryNode(node: unknown): asserts node is Node {
 	}
 }
 
+/** The offset a boundary point settles on, or a throw. */
+function checkBoundaryPoint(node: Node, offset: number): number {
+	assertBoundaryNode(node);
+	const at = toUnsignedLong(offset);
+	if (at > getNodeLength(node)) {
+		throw indexSizeError("The offset is past the end of the node");
+	}
+	return at;
+}
+
 function setRangeBoundary(
 	range: Range,
 	node: Node,
 	offset: number,
 	isStart: boolean,
 ): void {
-	assertBoundaryNode(node);
-	const at = toUnsignedLong(offset);
-	if (at > getNodeLength(node)) {
-		throw indexSizeError("The offset is past the end of the node");
-	}
+	const at = checkBoundaryPoint(node, offset);
 	const oldRoot = getRoot(range[kStartNode]);
 	if (isStart) {
 		if (
@@ -26716,6 +26722,11 @@ function createRangeBetween(
 	start: [Node, number],
 	end: [Node, number],
 ): Range {
+	// Both points are checked before anything moves, because the range is
+	// reused: a bad offset must leave the selection as it was rather than
+	// half-moved.
+	checkBoundaryPoint(start[0], start[1]);
+	checkBoundaryPoint(end[0], end[1]);
 	let range = selection[kRange];
 	if (range === null || !range[kSelectionOwned]) {
 		range = new Range();

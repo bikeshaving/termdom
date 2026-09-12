@@ -1497,6 +1497,24 @@ test("a backward selection reports its anchor at the range's end", () => {
 	expect(selection.focusOffset).toBe(6);
 });
 
+test("an extend past the end of a node leaves the selection where it was", () => {
+	const document = make();
+	const paragraph = document.createElement("p");
+	const text = document.createTextNode("hello");
+	paragraph.appendChild(text);
+	document.body.appendChild(paragraph);
+	const selection = document.getSelection();
+	selection.setBaseAndExtent(text, 5, text, 0);
+	expect(() => selection.extend(text, 999)).toThrow();
+	expect(selection.type).toBe("Range");
+	expect(selection.toString()).toBe("hello");
+	expect(selection.anchorOffset).toBe(5);
+	expect(selection.focusOffset).toBe(0);
+	const composed = selection.getComposedRanges()[0];
+	expect(composed.startOffset).toBe(0);
+	expect(composed.endOffset).toBe(5);
+});
+
 test("a selection that crosses a shadow boundary keeps composed points", () => {
 	const {document, paragraph} = withRange();
 	const host = document.createElement("div");
