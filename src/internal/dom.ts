@@ -21828,6 +21828,9 @@ type IntersectionObserverCallback = (
 
 const kIntersectionRoot = Symbol("intersection root");
 
+const ROOT_MARGIN_COMPONENT =
+	/^[+-]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:px|ch|%)|(?:0+(?:\.0*)?|\.0+))$/;
+
 interface IntersectionObserver {
 	[kIntersectionRoot]: globalThis.Element | globalThis.Document | null;
 }
@@ -21843,13 +21846,16 @@ class IntersectionObserver
 		super();
 		this[kObserverCallback] = callback;
 		this[kIntersectionRoot] = init.root ?? null;
-		this.rootMargin = init.rootMargin ?? "0px";
+		// An empty rootMargin is the spec's own spelling of the default.
+		this.rootMargin = init.rootMargin || "0px";
 		// One to four lengths in px or a percentage, as the spec allows, with
-		// ch as the cell grid's own unit.
+		// ch as the cell grid's own unit. A unit is required, except on zero,
+		// which CSS lets any length write bare.
 		const parts = this.rootMargin.trim().split(/\s+/).filter(Boolean);
 		if (
+			parts.length === 0 ||
 			parts.length > 4 ||
-			parts.some((part) => !/^-?(?:\d+\.?\d*|\.\d+)(?:px|ch|%)?$/.test(part))
+			parts.some((part) => !ROOT_MARGIN_COMPONENT.test(part))
 		) {
 			throw domError(
 				"SyntaxError",
