@@ -4214,6 +4214,12 @@ export class Layout {
 	}
 
 	dispose(): void {
+		// The maps are not the only owners: every box hangs from the root,
+		// holding a style record and a measure closure, so the tree goes too.
+		const root = this[kInitialContainingBlock];
+		while (root.children.length > 0) {
+			root.removeChild(root.children[0]);
+		}
 		this[kNodeMap] = new Map();
 		this[kInvalidatedNodes] = new Set();
 		this[kMeasureNodes] = new Set();
