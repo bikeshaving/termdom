@@ -138,6 +138,30 @@ test("rows and cols size the empty box, as in a browser", async () => {
 	dom.dispose();
 });
 
+// An empty value has no glyph to put the caret after. Its line is the
+// control's content origin, not the empty value span's position, which
+// an inline that follows its host's own placeholder reports as the
+// host's top-right corner.
+test("the caret parks at the content origin of an empty textarea", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	document.body.innerHTML =
+		"<style>body { margin: 0; } textarea { width: 100%; }</style>" +
+		"<div>line one</div><textarea rows=\"1\"></textarea>";
+	document.querySelector("textarea")!.focus();
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// Border row 1, content row 2; border and padding, column 2.
+	const buffer = (terminal as any).terminal.buffer.active;
+	expect(buffer.cursorY).toBe(2);
+	expect(buffer.cursorX).toBe(2);
+	dom.dispose();
+});
+
 test("the caret parks at the multiline position; arrows move between lines", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});

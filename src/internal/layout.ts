@@ -4737,22 +4737,33 @@ export class Layout {
 			});
 		}
 		// Empty text's one line sits at the containing block's content-box
-		// origin, where a caret rests in an empty text control.
+		// origin, where a caret rests in an empty text control. An inline
+		// parent is passed over: empty, it has no line of its own to place
+		// the text on.
 		if (lines.length === 0) {
-			const parent = textNode.parentElement;
-			const content = parent && this.contentRect(parent);
-			if (content && parent) {
-				lines.push({
-					rect: new this[kDOMRect](
-						Math.round(content.x),
-						Math.round(content.y),
-						0,
-						this.getRect(parent)!.height || 1,
-					),
-					startOffset: 0,
-					endOffset: 0,
-					visualBase: null,
-				});
+			for (
+				let parent = flatParentElement(textNode);
+				parent;
+				parent = flatParentElement(parent)
+			) {
+				if (getComputedDisplay(parent) === "inline") {
+					continue;
+				}
+				const content = this.contentRect(parent);
+				if (content) {
+					lines.push({
+						rect: new this[kDOMRect](
+							Math.round(content.x),
+							Math.round(content.y),
+							0,
+							this.getRect(parent)!.height || 1,
+						),
+						startOffset: 0,
+						endOffset: 0,
+						visualBase: null,
+					});
+				}
+				break;
 			}
 		}
 		return lines;
