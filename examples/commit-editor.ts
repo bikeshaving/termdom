@@ -59,15 +59,15 @@ const counter = document.getElementById("counter")!;
 const status = document.getElementById("status")!;
 
 function update(): void {
-	const headline = `${type.value}: ${subject.value}`;
-	const over = headline.length > 50;
-	counter.textContent = `${headline.length}/50`;
-	counter.className = over ? "counter over" : "counter";
-	const bodyLines = body.value ? body.value.split("\n").length : 0;
-	const bodyNote = bodyLines
-		? `  (+${bodyLines} body line${bodyLines === 1 ? "" : "s"})`
-		: "";
-	status.textContent = subject.value ? `→ ${headline}${bodyNote}` : "";
+  const headline = `${type.value}: ${subject.value}`;
+  const over = headline.length > 50;
+  counter.textContent = `${headline.length}/50`;
+  counter.className = over ? "counter over" : "counter";
+  const bodyLines = body.value ? body.value.split("\n").length : 0;
+  const bodyNote = bodyLines
+    ? `  (+${bodyLines} body line${bodyLines === 1 ? "" : "s"})`
+    : "";
+  status.textContent = subject.value ? `→ ${headline}${bodyNote}` : "";
 }
 
 type.addEventListener("change", update);

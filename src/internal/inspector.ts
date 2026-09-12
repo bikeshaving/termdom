@@ -350,11 +350,13 @@ installInspectHook(Comment.prototype, (comment: Comment, _depth, options) =>
 	inspectComment(comment, {colorize: options.colors !== false}),
 );
 
-installInspectHook(DocumentFragment.prototype, (fragment: DocumentFragment, depth, options) =>
-	inspectFragment(fragment, {
-		maxDepth: depth,
-		colorize: options.colors !== false,
-	}),
+installInspectHook(
+	DocumentFragment.prototype,
+	(fragment: DocumentFragment, depth, options) =>
+		inspectFragment(fragment, {
+			maxDepth: depth,
+			colorize: options.colors !== false,
+		}),
 );
 
 installInspectHook(Document.prototype, (document: Document, depth, options) =>
@@ -369,8 +371,5 @@ installInspectHook(DOMRect.prototype, (rect: DOMRect, _depth, options) =>
 );
 
 installInspectHook(NodeList.prototype, (list: NodeList, depth, options) =>
-	inspectNodeList(list, {
-		maxDepth: depth,
-		colorize: options.colors !== false,
-	}),
+	inspectNodeList(list, {maxDepth: depth, colorize: options.colors !== false}),
 );

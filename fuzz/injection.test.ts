@@ -54,32 +54,27 @@ function hasControl(text: string): boolean {
  * the sequence openers spelled out, and ordinary characters to hide among.
  * fc.string alone reaches a control character too rarely to be the search.
  */
-const dangerous: fc.Arbitrary<string> = fc
-	.array(
-		fc.oneof(
-			fc.constantFrom(
-				"\x1b", // ESC, the opener of every two-byte sequence
-				"\x07", // BEL, which terminates an OSC
-				"\x9b", // C1 CSI: a single byte, no ESC needed
-				"\x9d", // C1 OSC
-				"\x90", // C1 DCS
-				"\x00",
-				"\x08",
-				"\x7f",
-				"\x1b]0;",
-				"\x1b]52;c;",
-				"\x1b[2J",
-				"\x1bP",
-				"]0;",
-				";",
-				"a",
-				" ",
-			),
-			fc.string({minLength: 1, maxLength: 2}),
-		),
-		{maxLength: 20},
-	)
-	.map((parts) => parts.join(""));
+const dangerous: fc.Arbitrary<string> = fc.array(fc.oneof(
+	fc.constantFrom(
+		"\x1b", // ESC, the opener of every two-byte sequence
+		"\x07", // BEL, which terminates an OSC
+		"\x9b", // C1 CSI: a single byte, no ESC needed
+		"\x9d", // C1 OSC
+		"\x90", // C1 DCS
+		"\x00",
+		"\x08",
+		"\x7f",
+		"\x1b]0;",
+		"\x1b]52;c;",
+		"\x1b[2J",
+		"\x1bP",
+		"]0;",
+		";",
+		"a",
+		" ",
+	),
+	fc.string({minLength: 1, maxLength: 2}),
+), {maxLength: 20}).map((parts) => parts.join(""));
 
 test("a title carries no command but the one that frames it", async () => {
 	await fc.assert(

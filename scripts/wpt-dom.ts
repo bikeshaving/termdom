@@ -1078,9 +1078,8 @@ function installFramePages(
 	if (pages.size === 0) {
 		return;
 	}
-	const prototype = Object.getPrototypeOf(
-		document.createElement("iframe"),
-	) as object;
+	const prototype =
+		Object.getPrototypeOf(document.createElement("iframe")) as object;
 	const inherited = {
 		document: Object.getOwnPropertyDescriptor(prototype, "contentDocument")!,
 		window: Object.getOwnPropertyDescriptor(prototype, "contentWindow")!,
@@ -1095,7 +1094,7 @@ function installFramePages(
 		}
 		let document = loaded.get(frame);
 		if (document === undefined) {
-			const frameWindow = dom.createDocumentWindow(
+			const frameWindow = dom.createWindow(
 				text,
 				new URL(src!, url).href,
 				frameContentType(src!.split("#")[0])!,
@@ -1277,26 +1276,27 @@ function installGlobals(
 	// A `with` scope object must answer `has` for names it cannot
 	// enumerate in advance; only a Proxy can.
 	// eslint-disable-next-line no-restricted-globals
-	const namedAccess = new Proxy(Object.create(
-		null,
-	) as Record<string, unknown>, {
-		has(_target, name): boolean {
-			return (
-				typeof name === "string" &&
-				!(name in scope) &&
-				namedElement(name) !== null
-			);
+	const namedAccess = new Proxy(
+		Object.create(null) as Record<string, unknown>,
+		{
+			has(_target, name): boolean {
+				return (
+					typeof name === "string" &&
+					!(name in scope) &&
+					namedElement(name) !== null
+				);
+			},
+			get(_target, name): unknown {
+				return typeof name === "string" ? namedElement(name) : undefined;
+			},
+			set(_target, name, value): boolean {
+				if (typeof name === "string") {
+					scope[name] = value;
+				}
+				return true;
+			},
 		},
-		get(_target, name): unknown {
-			return typeof name === "string" ? namedElement(name) : undefined;
-		},
-		set(_target, name, value): boolean {
-			if (typeof name === "string") {
-				scope[name] = value;
-			}
-			return true;
-		},
-	});
+	);
 	saved.set("__termdomNamedAccess", {
 		had: Object.prototype.hasOwnProperty.call(scope, "__termdomNamedAccess"),
 		value: scope.__termdomNamedAccess,
@@ -1325,7 +1325,7 @@ function installGlobals(
 
 async function runFile(file: string): Promise<Outcome> {
 	const reason = EXCLUSIONS[file] ?? excludedDirectory(file);
-	if (reason !== null && reason !== undefined) {
+	if (reason != null) {
 		return {file, harness: "EXCLUDED", subtests: [], error: reason};
 	}
 	const source = await cached(file);
@@ -1523,10 +1523,9 @@ process.on("unhandledRejection", () => {});
 // the orchestrator only aggregates.
 const WORKER_FILE_LIMIT = 100;
 const workerSuite = process.argv[2] === "--suite" ? process.argv[3] : null;
-const workerStart =
-	workerSuite !== null && process.argv[4] === "--start"
-		? Number(process.argv[5])
-		: null;
+const workerStart = workerSuite !== null && process.argv[4] === "--start"
+	? Number(process.argv[5])
+	: null;
 
 function filterArgument(): string | undefined {
 	if (workerSuite === null) {

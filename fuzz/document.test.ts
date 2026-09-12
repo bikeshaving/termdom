@@ -59,10 +59,8 @@ test(
 		await fc.assert(
 			fc.asyncProperty(runArbitrary, async (run: Run) => {
 				const live = await play(run);
-				const fresh = await replay(live.dom, {
-					cols: live.cols,
-					rows: live.rows,
-				});
+				const fresh =
+					await replay(live.dom, {cols: live.cols, rows: live.rows});
 				const incremental = frameOf(live.terminal);
 				const once = frameOf(fresh.terminal);
 				live.dom.dispose();
@@ -87,10 +85,8 @@ test(
 		await fc.assert(
 			fc.asyncProperty(runArbitrary, async (run: Run) => {
 				const live = await play(run);
-				const fresh = await replay(live.dom, {
-					cols: live.cols,
-					rows: live.rows,
-				});
+				const fresh =
+					await replay(live.dom, {cols: live.cols, rows: live.rows});
 				const mutated = [
 					live.dom.document.body,
 					...(Array.from(
@@ -271,64 +267,72 @@ const sizeArbitrary = fc.record({
 // the document is printed whole as command output. What that leaves on the
 // screen has to be the frame the terminal was showing, cell for cell,
 // colors included.
-test("exiting leaves the frame it was showing", async () => {
-	await fc.assert(
-		fc.asyncProperty(runArbitrary, async (run: Run) => {
-			const live = await play(run);
-			// Content taller than the terminal scrolls into the scrollback on
-			// the way out, and the screen shows its tail.
-			if (live.dom.document.body.scrollHeight > live.rows) {
-				live.dom.dispose();
-				return;
-			}
-			const before = live.terminal.getStaticANSI();
-			await live.dom.dispose();
-			const after = live.terminal.getStaticANSI();
-			if (after !== before) {
-				throw new Error(
-					`html: ${run.document.html}\n` +
-					`script: ${JSON.stringify(run.script)}\n` +
-					`--- showing\n${before}\n--- left behind\n${after}`,
-				);
-			}
-		}),
-		assertOptions,
-	);
-}, 900000);
-
-test("a resize round trip lands back on the frame it left", async () => {
-	await fc.assert(
-		fc.asyncProperty(
-			runArbitrary,
-			sizeArbitrary,
-			async (run: Run, other: any) => {
+test(
+	"exiting leaves the frame it was showing",
+	async () => {
+		await fc.assert(
+			fc.asyncProperty(runArbitrary, async (run: Run) => {
 				const live = await play(run);
-				// The script may have resized under us; the round trip goes out
-				// from where it left the terminal and comes back to it.
-				const first = {cols: live.cols, rows: live.rows};
-				fc.pre(first.cols !== other.cols || first.rows !== other.rows);
-				const before = frameOf(live.terminal);
-				// Content taller than the terminal scrolls into the scrollback,
-				// which a resize cannot bring back and this property has nothing
-				// to say about.
-				const height = live.dom.document.body.scrollHeight;
-				if (height > Math.min(first.rows, other.rows)) {
+				// Content taller than the terminal scrolls into the scrollback on
+				// the way out, and the screen shows its tail.
+				if (live.dom.document.body.scrollHeight > live.rows) {
 					live.dom.dispose();
 					return;
 				}
-				await resizeTo(live, other.cols, other.rows);
-				const after = await resizeTo(live, first.cols, first.rows);
-				live.dom.dispose();
+				const before = live.terminal.getStaticANSI();
+				await live.dom.dispose();
+				const after = live.terminal.getStaticANSI();
 				if (after !== before) {
 					throw new Error(
 						`html: ${run.document.html}\n` +
 						`script: ${JSON.stringify(run.script)}\n` +
-						`${first.cols}x${first.rows} -> ${other.cols}x${other.rows} -> back\n` +
-						`--- before\n${before}\n--- after\n${after}`,
+						`--- showing\n${before}\n--- left behind\n${after}`,
 					);
 				}
-			},
-		),
-		assertOptions,
-	);
-}, 900000);
+			}),
+			assertOptions,
+		);
+	},
+	900000,
+);
+
+test(
+	"a resize round trip lands back on the frame it left",
+	async () => {
+		await fc.assert(
+			fc.asyncProperty(
+				runArbitrary,
+				sizeArbitrary,
+				async (run: Run, other: any) => {
+					const live = await play(run);
+					// The script may have resized under us; the round trip goes out
+					// from where it left the terminal and comes back to it.
+					const first = {cols: live.cols, rows: live.rows};
+					fc.pre(first.cols !== other.cols || first.rows !== other.rows);
+					const before = frameOf(live.terminal);
+					// Content taller than the terminal scrolls into the scrollback,
+					// which a resize cannot bring back and this property has nothing
+					// to say about.
+					const height = live.dom.document.body.scrollHeight;
+					if (height > Math.min(first.rows, other.rows)) {
+						live.dom.dispose();
+						return;
+					}
+					await resizeTo(live, other.cols, other.rows);
+					const after = await resizeTo(live, first.cols, first.rows);
+					live.dom.dispose();
+					if (after !== before) {
+						throw new Error(
+							`html: ${run.document.html}\n` +
+							`script: ${JSON.stringify(run.script)}\n` +
+							`${first.cols}x${first.rows} -> ${other.cols}x${other.rows} -> back\n` +
+							`--- before\n${before}\n--- after\n${after}`,
+						);
+					}
+				},
+			),
+			assertOptions,
+		);
+	},
+	900000,
+);

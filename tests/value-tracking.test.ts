@@ -24,10 +24,10 @@ function type(terminal: MockProcess, data: string): Promise<void> {
  * library does: an instance property shadowing the prototype's, delegating
  * both ways, remembering every value the page assigns.
  */
-function trackAccessor(node: any, property: "value" | "checked"): {
-	assigned: unknown[];
-	drifted: () => boolean;
-} {
+function trackAccessor(
+	node: any,
+	property: "value" | "checked",
+): {assigned: unknown[]; drifted: () => boolean} {
 	const descriptor = Object.getOwnPropertyDescriptor(
 		Object.getPrototypeOf(node),
 		property,
@@ -55,9 +55,9 @@ function trackAccessor(node: any, property: "value" | "checked"): {
 }
 
 /** A focused field in a running terminal, ready to be typed into. */
-async function textControlFixture(tag: "input" | "textarea"): Promise<
-	{terminal: MockProcess; dom: TermDOM; field: any}
-> {
+async function textControlFixture(
+	tag: "input" | "textarea",
+): Promise<{terminal: MockProcess; dom: TermDOM; field: any}> {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();

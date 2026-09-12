@@ -21,40 +21,40 @@ const {createApp, ref, onMounted, onUnmounted} = await import("vue");
 
 const style = document.createElement("style");
 style.textContent = `
-	.card { border: 1px solid #5fafff; padding: 0 1ch; margin: 1px 2ch; }
-	.greeting { color: cyan; font-weight: bold; }
-	.count { color: #ffd75f; }
-	.hint { color: #666666; margin-left: 2ch; }
+  .card { border: 1px solid #5fafff; padding: 0 1ch; margin: 1px 2ch; }
+  .greeting { color: cyan; font-weight: bold; }
+  .count { color: #ffd75f; }
+  .hint { color: #666666; margin-left: 2ch; }
 `;
 document.head.appendChild(style);
 
 const Hello = {
-	setup() {
-		const count = ref(0);
-		const onkeydown = (ev: any) => {
-			if (ev.key === "q") {
-				term.window.close();
-				return;
-			}
+  setup() {
+    const count = ref(0);
+    const onkeydown = (ev: any) => {
+      if (ev.key === "q") {
+        term.window.close();
+        return;
+      }
 
-			count.value++;
-		};
+      count.value++;
+    };
 
-		onMounted(() => document.addEventListener("keydown", onkeydown));
-		onUnmounted(() => document.removeEventListener("keydown", onkeydown));
-		return {count};
-	},
-	// Vue's own template language, through the runtime compiler the Node
-	// build of Vue carries.
-	template: `
-		<div>
-			<div class="card">
-				<div class="greeting">Hello from Vue!</div>
-				<div class="count">Keys pressed: {{ count }}</div>
-			</div>
-			<div class="hint">any key counts · [q]uit</div>
-		</div>
-	`,
+    onMounted(() => document.addEventListener("keydown", onkeydown));
+    onUnmounted(() => document.removeEventListener("keydown", onkeydown));
+    return {count};
+  },
+  // Vue's own template language, through the runtime compiler the Node
+  // build of Vue carries.
+  template: `
+    <div>
+      <div class="card">
+        <div class="greeting">Hello from Vue!</div>
+        <div class="count">Keys pressed: {{ count }}</div>
+      </div>
+      <div class="hint">any key counts · [q]uit</div>
+    </div>
+  `,
 };
 
 createApp(Hello).mount(document.body as never);

@@ -96,138 +96,128 @@ async function build(
 }
 
 test("a box out of flow lays the others out as if it were not there", async () => {
-	await fc.assert(
-		fc.asyncProperty(
-			documentArbitrary,
-			fc.nat(),
-			async (document: Document, pick: number) => {
-				const markup = document.html;
-				const probe = await build(markup);
-				const present = ids(probe);
-				probe.dom.dispose();
-				if (present.length === 0) {
-					return;
-				}
-				const target = present[pick % present.length];
-				// `display: contents` is left out because the two documents
-				// are not the same question for it, and permanently so.
-				// Blockification changes an element's OUTER display type, and
-				// contents has none -- it is a <display-box> value like none,
-				// so the element generates no principal box and there is
-				// nothing for `position: absolute` to position. Taking such an
-				// element out of flow therefore changes nothing: it is still
-				// replaced by its children, which stay in the flow. Removing
-				// it takes those children with it. The engine already gets
-				// this right, which is why it dissolves on the computed
-				// display -- the one place in this file where that is not the
-				// bug it was twice above.
-				const skip = await build(markup, (scene) => {
-					const element = scene.dom.document.querySelector(
-						`[data-f="${target}"]`,
-					);
-					(scene as unknown as {contents: boolean}).contents =
-						element !== null &&
-						scene.dom.window
-							.getComputedStyle(element)
-							.getPropertyValue("display") === "contents";
-				});
-				const isContents = (skip as unknown as {contents: boolean}).contents;
-				skip.dom.dispose();
-				if (isContents) {
-					return;
-				}
+	await fc.assert(fc.asyncProperty(
+		documentArbitrary,
+		fc.nat(),
+		async (document: Document, pick: number) => {
+			const markup = document.html;
+			const probe = await build(markup);
+			const present = ids(probe);
+			probe.dom.dispose();
+			if (present.length === 0) {
+				return;
+			}
+			const target = present[pick % present.length];
+			// `display: contents` is left out because the two documents
+			// are not the same question for it, and permanently so.
+			// Blockification changes an element's OUTER display type, and
+			// contents has none -- it is a <display-box> value like none,
+			// so the element generates no principal box and there is
+			// nothing for `position: absolute` to position. Taking such an
+			// element out of flow therefore changes nothing: it is still
+			// replaced by its children, which stay in the flow. Removing
+			// it takes those children with it. The engine already gets
+			// this right, which is why it dissolves on the computed
+			// display -- the one place in this file where that is not the
+			// bug it was twice above.
+			const skip = await build(markup, (scene) => {
+				const element =
+					scene.dom.document.querySelector(`[data-f="${target}"]`);
+				(scene as unknown as {contents: boolean}).contents =
+					element !== null && scene.dom.window
+						.getComputedStyle(element)
+						.getPropertyValue("display") === "contents";
+			});
+			const isContents = (skip as unknown as {contents: boolean}).contents;
+			skip.dom.dispose();
+			if (isContents) {
+				return;
+			}
 
-				// The box, taken out of flow where it stands...
-				const floated = await build(markup, (scene) => {
-					const element = scene.dom.document.querySelector(
-						`[data-f="${target}"]`,
-					);
-					element?.setAttribute("style", "position: absolute");
-				});
-				// ...against the same document with it gone entirely.
-				const removed = await build(markup, (scene) => {
-					const element = scene.dom.document.querySelector(
-						`[data-f="${target}"]`,
-					);
-					element?.remove();
-				});
+			// The box, taken out of flow where it stands...
+			const floated = await build(markup, (scene) => {
+				const element =
+					scene.dom.document.querySelector(`[data-f="${target}"]`);
+				element?.setAttribute("style", "position: absolute");
+			});
+			// ...against the same document with it gone entirely.
+			const removed = await build(markup, (scene) => {
+				const element =
+					scene.dom.document.querySelector(`[data-f="${target}"]`);
+				element?.remove();
+			});
 
-				const withFloat = rects(floated);
-				const withGone = rects(removed);
-				// Only the boxes still in flow in both are comparable: the
-				// target keeps its descendants in one and takes them with it
-				// in the other.
-				const differences: string[] = [];
-				for (const [id, box] of withGone) {
-					const other = withFloat.get(id);
-					if (other !== undefined && other !== box) {
-						differences.push(`${id}: absolute=${other} removed=${box}`);
-					}
+			const withFloat = rects(floated);
+			const withGone = rects(removed);
+			// Only the boxes still in flow in both are comparable: the
+			// target keeps its descendants in one and takes them with it
+			// in the other.
+			const differences: string[] = [];
+			for (const [id, box] of withGone) {
+				const other = withFloat.get(id);
+				if (other !== undefined && other !== box) {
+					differences.push(`${id}: absolute=${other} removed=${box}`);
 				}
-				floated.dom.dispose();
-				removed.dom.dispose();
-				expect(differences).toEqual([]);
-			},
-		),
-		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
-	);
+			}
+			floated.dom.dispose();
+			removed.dom.dispose();
+			expect(differences).toEqual([]);
+		},
+	), {numRuns: RUNS, seed: SEED, includeErrorInReport: true});
 });
 
 test("an absolute box lands by its containing block, not its depth", async () => {
-	await fc.assert(
-		fc.asyncProperty(
-			documentArbitrary,
-			fc.array(fc.constantFrom("block", "inline-block", "contents"), {
-				maxLength: 3,
-			}),
-			async (document: Document, wrappers: string[]) => {
-				const markup = document.html;
-				// The same anchored box, buried under boxes that establish no
-				// containing block of their own. Its containing block is the
-				// anchor however many there are and whatever they are, so its
-				// rect may not move. An inline-block among them is the case
-				// that matters most: it lays its content out under a root of
-				// its own, so the box has to cross out of that tree to reach
-				// the anchor.
-				const nest = (inner: string, levels: string[]): string => {
-					if (levels.length === 0) {
-						return inner;
-					}
-					const [head, ...rest] = levels;
-					const wrapped =
-						head === "inline-block"
-							? `<span style="display: inline-block">${inner}</span>`
-							: head === "contents"
-								? `<div style="display: contents">${inner}</div>`
-								: `<div>${inner}</div>`;
-					return nest(wrapped, rest);
-				};
-				const box =
-					"<div data-probe style=\"position: absolute; top: 2ch; left: 3ch\">P</div>";
-				const anchored = (levels: string[]): string =>
-					`<div style="position: relative">${markup}${nest(box, levels)}</div>`;
+	await fc.assert(fc.asyncProperty(
+		documentArbitrary,
+		fc.array(fc.constantFrom("block", "inline-block", "contents"), {
+			maxLength: 3,
+		}),
+		async (document: Document, wrappers: string[]) => {
+			const markup = document.html;
+			// The same anchored box, buried under boxes that establish no
+			// containing block of their own. Its containing block is the
+			// anchor however many there are and whatever they are, so its
+			// rect may not move. An inline-block among them is the case
+			// that matters most: it lays its content out under a root of
+			// its own, so the box has to cross out of that tree to reach
+			// the anchor.
+			const nest = (inner: string, levels: string[]): string => {
+				if (levels.length === 0) {
+					return inner;
+				}
+				const [head, ...rest] = levels;
+				const wrapped = head === "inline-block"
+					? `<span style="display: inline-block">${inner}</span>`
+					: head === "contents"
+							? `<div style="display: contents">${inner}</div>`
+							: `<div>${inner}</div>`;
+				return nest(wrapped, rest);
+			};
+			const box =
+				"<div data-probe style=\"position: absolute; top: 2ch; left: 3ch\">P</div>";
+			const anchored = (levels: string[]): string =>
+				`<div style="position: relative">${markup}${nest(box, levels)}</div>`;
 
-				const shallow = await build(anchored([]));
-				const deep = await build(anchored(wrappers));
-				const at = (scene: Scene): string => {
-					const el = scene.dom.document.querySelector("[data-probe]");
-					const r = el.getBoundingClientRect();
-					return `${r.x},${r.y}`;
-				};
-				const a = at(shallow);
-				const b = at(deep);
-				shallow.dom.dispose();
-				deep.dom.dispose();
-				expect(b).toBe(a);
-			},
-		),
-		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
-	);
+			const shallow = await build(anchored([]));
+			const deep = await build(anchored(wrappers));
+			const at = (scene: Scene): string => {
+				const el = scene.dom.document.querySelector("[data-probe]");
+				const r = el.getBoundingClientRect();
+				return `${r.x},${r.y}`;
+			};
+			const a = at(shallow);
+			const b = at(deep);
+			shallow.dom.dispose();
+			deep.dom.dispose();
+			expect(b).toBe(a);
+		},
+	), {numRuns: RUNS, seed: SEED, includeErrorInReport: true});
 });
 
 test("laying out an unchanged document again moves nothing", async () => {
-	await fc.assert(
-		fc.asyncProperty(documentArbitrary, async (document: Document) => {
+	await fc.assert(fc.asyncProperty(
+		documentArbitrary,
+		async (document: Document) => {
 			const markup = document.html;
 			const scene = await build(markup);
 			const before = rects(scene);
@@ -237,9 +227,8 @@ test("laying out an unchanged document again moves nothing", async () => {
 			const after = rects(scene);
 			scene.dom.dispose();
 			expect([...after.entries()]).toEqual([...before.entries()]);
-		}),
-		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
-	);
+		},
+	), {numRuns: RUNS, seed: SEED, includeErrorInReport: true});
 });
 
 /**
@@ -274,98 +263,90 @@ function takesEdgeSpaces(scene: Scene, element: any): boolean {
 }
 
 test("collapsible spaces at a block's edge change nothing", async () => {
-	await fc.assert(
-		fc.asyncProperty(
-			documentArbitrary,
-			fc.nat(),
-			fc.boolean(),
-			async (document: Document, pick: number, atEnd: boolean) => {
-				const markup = document.html;
-				// Which elements may take the spaces is a question about
-				// computed style, so it takes a laid-out document to answer.
-				const probe = await build(markup);
-				const eligible = (
-					Array.from(probe.dom.document.querySelectorAll("[data-f]")) as any[]
-				)
-					.filter((element) => takesEdgeSpaces(probe, element))
-					.map((element) => element.getAttribute("data-f"));
-				const before = rects(probe);
-				probe.dom.dispose();
-				if (eligible.length === 0) {
-					return;
-				}
-				const target = eligible[pick % eligible.length];
+	await fc.assert(fc.asyncProperty(
+		documentArbitrary,
+		fc.nat(),
+		fc.boolean(),
+		async (document: Document, pick: number, atEnd: boolean) => {
+			const markup = document.html;
+			// Which elements may take the spaces is a question about
+			// computed style, so it takes a laid-out document to answer.
+			const probe = await build(markup);
+			const eligible = (
+				Array.from(probe.dom.document.querySelectorAll("[data-f]")) as any[]
+			)
+				.filter((element) => takesEdgeSpaces(probe, element))
+				.map((element) => element.getAttribute("data-f"));
+			const before = rects(probe);
+			probe.dom.dispose();
+			if (eligible.length === 0) {
+				return;
+			}
+			const target = eligible[pick % eligible.length];
 
-				const padded = await build(markup, (scene) => {
-					const element = scene.dom.document.querySelector(
-						`[data-f="${target}"]`,
-					);
-					// Spaces and tabs only. A newline is collapsible too, but
-					// not under pre-line, which keeps its lines and takes its
-					// spaces -- and this asks about the spaces.
-					const spaces = scene.dom.document.createTextNode(" \t  ");
-					if (atEnd) {
-						element?.appendChild(spaces);
-					} else {
-						element?.insertBefore(spaces, element.firstChild);
-					}
-				});
-				const after = rects(padded);
-				padded.dom.dispose();
-
-				const differences: string[] = [];
-				for (const [id, box] of before) {
-					const other = after.get(id);
-					if (other !== undefined && other !== box) {
-						differences.push(`${id}: plain=${box} padded=${other}`);
-					}
+			const padded = await build(markup, (scene) => {
+				const element =
+					scene.dom.document.querySelector(`[data-f="${target}"]`);
+				// Spaces and tabs only. A newline is collapsible too, but
+				// not under pre-line, which keeps its lines and takes its
+				// spaces -- and this asks about the spaces.
+				const spaces = scene.dom.document.createTextNode(" \t  ");
+				if (atEnd) {
+					element?.appendChild(spaces);
+				} else {
+					element?.insertBefore(spaces, element.firstChild);
 				}
-				expect(differences).toEqual([]);
-			},
-		),
-		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
-	);
+			});
+			const after = rects(padded);
+			padded.dom.dispose();
+
+			const differences: string[] = [];
+			for (const [id, box] of before) {
+				const other = after.get(id);
+				if (other !== undefined && other !== box) {
+					differences.push(`${id}: plain=${box} padded=${other}`);
+				}
+			}
+			expect(differences).toEqual([]);
+		},
+	), {numRuns: RUNS, seed: SEED, includeErrorInReport: true});
 });
 
 test("a box taken out and put back leaves the geometry it left", async () => {
-	await fc.assert(
-		fc.asyncProperty(
-			documentArbitrary,
-			fc.nat(),
-			async (document: Document, pick: number) => {
-				const scene = await build(document.html);
-				const present = ids(scene);
-				if (present.length === 0) {
-					scene.dom.dispose();
-					return;
-				}
-				const target = present[pick % present.length];
-				const before = rects(scene);
-
-				// Layout is a function of the tree, so a tree that ends where
-				// it started must lay out where it started. What this catches
-				// is the cache: an invalidation that a removal opens and a
-				// reinsertion fails to close leaves the second pass reading
-				// what the first one measured.
-				const element = scene.dom.document.querySelector(
-					`[data-f="${target}"]`,
-				) as any;
-				const parent = element?.parentNode;
-				const next = element?.nextSibling;
-				if (element === null || parent == null) {
-					scene.dom.dispose();
-					return;
-				}
-				element.remove();
-				await settle(scene);
-				parent.insertBefore(element, next);
-				await settle(scene);
-
-				const after = rects(scene);
+	await fc.assert(fc.asyncProperty(
+		documentArbitrary,
+		fc.nat(),
+		async (document: Document, pick: number) => {
+			const scene = await build(document.html);
+			const present = ids(scene);
+			if (present.length === 0) {
 				scene.dom.dispose();
-				expect([...after.entries()]).toEqual([...before.entries()]);
-			},
-		),
-		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
-	);
+				return;
+			}
+			const target = present[pick % present.length];
+			const before = rects(scene);
+
+			// Layout is a function of the tree, so a tree that ends where
+			// it started must lay out where it started. What this catches
+			// is the cache: an invalidation that a removal opens and a
+			// reinsertion fails to close leaves the second pass reading
+			// what the first one measured.
+			const element =
+				scene.dom.document.querySelector(`[data-f="${target}"]`) as any;
+			const parent = element?.parentNode;
+			const next = element?.nextSibling;
+			if (element === null || parent == null) {
+				scene.dom.dispose();
+				return;
+			}
+			element.remove();
+			await settle(scene);
+			parent.insertBefore(element, next);
+			await settle(scene);
+
+			const after = rects(scene);
+			scene.dom.dispose();
+			expect([...after.entries()]).toEqual([...before.entries()]);
+		},
+	), {numRuns: RUNS, seed: SEED, includeErrorInReport: true});
 });

@@ -84,10 +84,9 @@ async function render(html: string, cols = 30, rows = 12): Promise<Rendered> {
 			return lines;
 		},
 		painted: () => terminal.getScreenContents(),
-		resolved: (property, selector = "#g") =>
-			dom.window
-				.getComputedStyle(query(selector, 0))
-				.getPropertyValue(property),
+		resolved: (property, selector = "#g") => dom.window
+			.getComputedStyle(query(selector, 0))
+			.getPropertyValue(property),
 	};
 }
 
@@ -1430,9 +1429,8 @@ test("a box that is not a grid reports the track list it was given", async () =>
 });
 
 test("a grid with no tracks resolves to none", async () => {
-	const {
-		resolved,
-	} = await render("<div id=\"g\" style=\"display:grid\"></div>");
+	const {resolved} =
+		await render("<div id=\"g\" style=\"display:grid\"></div>");
 	expect(resolved("grid-template-columns")).toBe("none");
 });
 
@@ -1717,9 +1715,8 @@ test("a resize relays the flexible tracks out", async () => {
 	(terminal as unknown as {emit(event: string): void}).emit("SIGWINCH");
 
 	const widths = (): number[] =>
-		Array.from(dom.document.querySelectorAll("i")).map(
-			(element) => getBox(element).width,
-		);
+		Array.from(dom.document.querySelectorAll("i"))
+			.map((element) => getBox(element).width);
 	// The relayout arrives after the resize debounce and a cursor round trip.
 	for (let attempt = 0; attempt < 40; attempt++) {
 		if (widths()[0] === 20) {

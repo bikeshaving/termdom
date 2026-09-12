@@ -207,10 +207,8 @@ const importOrder = {
 					const start = entry.index === 0
 						? entry.node.range[0]
 						: block[entry.index - 1].range[1];
-					return source
-						.text
-						.slice(start, entry.node.range[1])
-						.replace(/^\s*\n/, "");
+					return source.text
+						.slice(start, entry.node.range[1]).replace(/^\s*\n/, "");
 				};
 				let expected = "";
 				let previousGroup = null;

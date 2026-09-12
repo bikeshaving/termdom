@@ -314,15 +314,13 @@ export const scenarios: Scenario[] = [
 		name: "scroll transform frames",
 		run: (): string => {
 			const renderer = new Screen(10, 24, "rgb");
-			const paint =
-				(top: number) =>
-					(ctx: CellContext) => {
-						for (let row = 0; row < 10; row++) {
-							ctx.drawText(`line ${top + row}`.padEnd(12), 0, row, {
-								fg: (top + row) % 2 === 0 ? 0x00ff00 : undefined,
-							});
-						}
-					};
+			const paint = (top: number) => (ctx: CellContext) => {
+				for (let row = 0; row < 10; row++) {
+					ctx.drawText(`line ${top + row}`.padEnd(12), 0, row, {
+						fg: (top + row) % 2 === 0 ? 0x00ff00 : undefined,
+					});
+				}
+			};
 			let out = renderFrame(
 				renderer,
 				{offset: 0, cursorRow: 0, regionRows: 10},

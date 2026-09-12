@@ -106,14 +106,11 @@ test("first render includes line clear sequences", async () => {
 	// Capture the raw ANSI output by intercepting stdout writes
 	let capturedOutput = "";
 	const originalWrite = terminal.stdout.write;
-	terminal.stdout.write = function (
-		chunk: any,
-		encoding?: any,
-		callback?: any,
-	) {
-		capturedOutput += chunk.toString();
-		return originalWrite.call(this, chunk, encoding, callback);
-	};
+	terminal.stdout.write =
+		function (chunk: any, encoding?: any, callback?: any) {
+			capturedOutput += chunk.toString();
+			return originalWrite.call(this, chunk, encoding, callback);
+		};
 
 	const div = document.createElement("div");
 	div.textContent = "Test content";

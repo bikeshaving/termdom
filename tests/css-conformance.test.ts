@@ -152,13 +152,10 @@ const FIXTURES: Fixture[] = [
 	},
 ];
 
-async function renderFixture(fx: Fixture): Promise<
-	{screen: string; text: string}
-> {
-	const terminal = new MockProcess({
-		cols: fx.cols ?? 40,
-		rows: fx.rows ?? 12,
-	});
+async function renderFixture(
+	fx: Fixture,
+): Promise<{screen: string; text: string}> {
+	const terminal = new MockProcess({cols: fx.cols ?? 40, rows: fx.rows ?? 12});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = fx.html;
 	await nextFrame(dom);

@@ -29,9 +29,9 @@ const pct = document.getElementById("pct") as HTMLElement;
 // TermDOM observes mutations and re-renders automatically.
 let n = 0;
 setInterval(() => {
-	n = (n + 1) % 101;
-	const cells = Math.round(n / 4);
-	done.textContent = "█".repeat(cells);
-	rest.textContent = "░".repeat(25 - cells);
-	pct.textContent = String(n).padStart(3) + "%";
+  n = (n + 1) % 101;
+  const cells = Math.round(n / 4);
+  done.textContent = "█".repeat(cells);
+  rest.textContent = "░".repeat(25 - cells);
+  pct.textContent = String(n).padStart(3) + "%";
 }, 50);

@@ -65,10 +65,12 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - name: Regenerate
-        run: npx tsx scripts/generate-css-properties.ts
+        run: |
+          npx tsx scripts/generate-css-properties.ts
+          npx tsx scripts/generate-html-idl.ts
 
       - name: Diff
-        run: git diff --exit-code src/generated/cssproperties.ts
+        run: git diff --exit-code src/generated/cssproperties.ts src/generated/htmlidl.ts
 
   # termdom is developed under Bun, so nothing in `bun test` ever executes the
   # pure-JS fallbacks in src/runtime.ts. A regression there is invisible to the

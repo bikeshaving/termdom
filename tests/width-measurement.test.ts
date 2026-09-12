@@ -21,12 +21,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 /** A measurer that records what it was offered instead of asking anything. */
 function recordingMeasurer(starved = new Set<string>()): {
-	probes: Array<{
-		cluster: string;
-		run: number;
-		column: number;
-		width: number;
-	}>;
+	probes: Array<{cluster: string; run: number; column: number; width: number}>;
 	deferred: string[];
 	starved: Set<string>;
 	measurer: Exchange;
@@ -78,12 +73,10 @@ function scriptTerminal(
 	terminal: MockProcess,
 	reply: (probeIndex: number) => string | null,
 ): {written: string[]; probeCount: () => number} {
-	const stdout = terminal.stdout as unknown as {
-		write: (...args: unknown[]) => boolean;
-	};
-	const stdin = terminal.stdin as unknown as {
-		simulateResponse: (data: string) => void;
-	};
+	const stdout =
+		terminal.stdout as unknown as {write: (...args: unknown[]) => boolean};
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
 	const original = stdout.write.bind(stdout);
 	const written: string[] = [];
 	let probes = 0;
@@ -418,9 +411,8 @@ test("every unmeasured glyph in a run carries its own query", async () => {
 	const repeated = "\u{1F32E}"; // 🌮
 	const after = "\u{1F32F}"; // 🌯
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const stdin = terminal.stdin as unknown as {
-		simulateResponse: (data: string) => void;
-	};
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
 	const script = scriptTerminal(terminal, () => null);
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${repeated}${repeated}${after}</div>`;
@@ -445,9 +437,8 @@ test("a reading that cannot be believed takes the rest of its run with it", asyn
 	const first = "\u{1F330}"; // 🌰
 	const second = "\u{1F331}"; // 🌱
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const stdin = terminal.stdin as unknown as {
-		simulateResponse: (data: string) => void;
-	};
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
 	scriptTerminal(terminal, () => null);
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${first}${second}</div>`;
@@ -467,9 +458,8 @@ test("a reading that cannot be believed takes the rest of its run with it", asyn
 test("a reply split across chunks is still a reply", async () => {
 	const cluster = "\u{1F332}"; // 🌲
 	const terminal = new MockProcess({cols: 20, rows: 6});
-	const stdin = terminal.stdin as unknown as {
-		simulateResponse: (data: string) => void;
-	};
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
 	scriptTerminal(terminal, () => null);
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${cluster}</div>`;
@@ -494,9 +484,8 @@ test("a reply split across chunks is still a reply", async () => {
 test("replies interleaved with typing reach the right side of the demux", async () => {
 	const cluster = "\u{1F327}️"; // 🌧️
 	const terminal = new MockProcess({cols: 20, rows: 6});
-	const stdin = terminal.stdin as unknown as {
-		simulateResponse: (data: string) => void;
-	};
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
 	scriptTerminal(terminal, () => null);
 	const dom = new TermDOM({transport: terminal.transport});
 	const keys: string[] = [];
@@ -520,9 +509,8 @@ test("a burst of replies is matched to its probes in order", async () => {
 	const first = "\u{1F328}️"; // 🌨️
 	const second = "\u{1F329}️"; // 🌩️
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const stdin = terminal.stdin as unknown as {
-		simulateResponse: (data: string) => void;
-	};
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
 	scriptTerminal(terminal, () => null);
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${first}${second}</div>`;
@@ -658,12 +646,10 @@ test("one unanswered probe does not end the measuring of a terminal that answers
 
 test("a terminal that measures in grapheme clusters is not asked at all", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 6});
-	const stdout = terminal.stdout as unknown as {
-		write: (...args: unknown[]) => boolean;
-	};
-	const stdin = terminal.stdin as unknown as {
-		simulateResponse: (data: string) => void;
-	};
+	const stdout =
+		terminal.stdout as unknown as {write: (...args: unknown[]) => boolean};
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
 	const original = stdout.write.bind(stdout);
 	const written: string[] = [];
 	let agreed!: () => void;

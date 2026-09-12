@@ -25,7 +25,10 @@ interface Box {
 	height: number;
 }
 
-async function render(html: string, cols = 60): Promise<{
+async function render(
+	html: string,
+	cols = 60,
+): Promise<{
 	box: (selector: string, index?: number) => Box;
 	rows: string[];
 	dom: TermDOM;

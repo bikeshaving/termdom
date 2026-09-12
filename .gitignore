@@ -43,3 +43,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # WPT suite cache (scripts/wpt-cssom.ts)
 .wpt
+package-lock.json

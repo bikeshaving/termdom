@@ -135,10 +135,8 @@ test("::marker pseudo-element with lists", async () => {
 
 	// The marker's content is the cascade's answer for the ::marker pseudo.
 	expect(
-		termdom
-			.window
-			.getComputedStyle(item1, "::marker")
-			.getPropertyValue("content"),
+		termdom.window
+			.getComputedStyle(item1, "::marker").getPropertyValue("content"),
 	).toBe('"→ "');
 	expect(
 		termdom.window
@@ -184,16 +182,14 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
 	expect(beforeStyle.getPropertyValue("content")).toBe('"special: "');
 });
 
-test.todo(
-	"Complex pseudo-element content with special characters",
-	async () => {
-		const terminal = new MockProcess();
-		const termdom = new TermDOM({transport: terminal.transport});
-		const {document} = termdom;
+test.todo("Complex pseudo-element content with special characters", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
 
-		// Test various content types
-		const style = document.createElement("style");
-		style.textContent = `
+	// Test various content types
+	const style = document.createElement("style");
+	style.textContent = `
     .quotes::before { content: "He said: \\"Hello\\""; }
     .unicode::before { content: "★ "; }
     .escaped::before { content: "\\A → "; white-space: pre; }
@@ -201,50 +197,49 @@ test.todo(
     .none::before { content: none; }
     .normal::before { content: normal; }
   `;
-		document.head.appendChild(style);
+	document.head.appendChild(style);
 
-		await nextFrame(termdom);
+	await nextFrame(termdom);
 
-		// Test different content scenarios
-		const quotesEl = document.createElement("div");
-		quotesEl.className = "quotes";
-		quotesEl.textContent = "Content";
-		document.body.appendChild(quotesEl);
+	// Test different content scenarios
+	const quotesEl = document.createElement("div");
+	quotesEl.className = "quotes";
+	quotesEl.textContent = "Content";
+	document.body.appendChild(quotesEl);
 
-		const unicodeEl = document.createElement("div");
-		unicodeEl.className = "unicode";
-		unicodeEl.textContent = "Important";
-		document.body.appendChild(unicodeEl);
+	const unicodeEl = document.createElement("div");
+	unicodeEl.className = "unicode";
+	unicodeEl.textContent = "Important";
+	document.body.appendChild(unicodeEl);
 
-		// Test elements that shouldn't have pseudo-elements
-		const emptyEl = document.createElement("div");
-		emptyEl.className = "empty";
-		emptyEl.textContent = "No prefix";
-		document.body.appendChild(emptyEl);
+	// Test elements that shouldn't have pseudo-elements
+	const emptyEl = document.createElement("div");
+	emptyEl.className = "empty";
+	emptyEl.textContent = "No prefix";
+	document.body.appendChild(emptyEl);
 
-		const noneEl = document.createElement("div");
-		noneEl.className = "none";
-		noneEl.textContent = "Also no prefix";
-		document.body.appendChild(noneEl);
+	const noneEl = document.createElement("div");
+	noneEl.className = "none";
+	noneEl.textContent = "Also no prefix";
+	document.body.appendChild(noneEl);
 
-		// Render to terminal
-		await nextFrame(termdom);
-		const output = terminal.getPlainText();
+	// Render to terminal
+	await nextFrame(termdom);
+	const output = terminal.getPlainText();
 
-		// Verify complex content rendering
-		expect(output).toContain('He said: "Hello"Content');
-		expect(output).toContain("★ Important");
+	// Verify complex content rendering
+	expect(output).toContain('He said: "Hello"Content');
+	expect(output).toContain("★ Important");
 
-		// Content of none, normal or nothing creates no pseudo-element.
-		const normalEl = document.createElement("div");
-		normalEl.className = "normal";
-		document.body.appendChild(normalEl);
-		await nextFrame(termdom);
-		expect(pseudoElement(emptyEl, "::before")).toBeNull();
-		expect(pseudoElement(noneEl, "::before")).toBeNull();
-		expect(pseudoElement(normalEl, "::before")).toBeNull();
-	},
-);
+	// Content of none, normal or nothing creates no pseudo-element.
+	const normalEl = document.createElement("div");
+	normalEl.className = "normal";
+	document.body.appendChild(normalEl);
+	await nextFrame(termdom);
+	expect(pseudoElement(emptyEl, "::before")).toBeNull();
+	expect(pseudoElement(noneEl, "::before")).toBeNull();
+	expect(pseudoElement(normalEl, "::before")).toBeNull();
+});
 
 test("Pseudo-elements with inline styles override", async () => {
 	const terminal = new MockProcess();
@@ -283,67 +278,64 @@ test("Pseudo-elements with inline styles override", async () => {
 	expect(afterStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 });
 
-test.todo(
-	"ExpandedTreeWalker traverses pseudo-elements in document order",
-	async () => {
-		const terminal = new MockProcess();
-		const termdom = new TermDOM({transport: terminal.transport});
-		const {document} = termdom;
+test.todo("ExpandedTreeWalker traverses pseudo-elements in document order", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
 
-		// Add CSS for multiple pseudo-elements
-		const style = document.createElement("style");
-		style.textContent = `
+	// Add CSS for multiple pseudo-elements
+	const style = document.createElement("style");
+	style.textContent = `
     .test::before { content: "BEFORE "; }
     .test::after { content: " AFTER"; }
     li::marker { content: "• "; }
   `;
-		document.head.appendChild(style);
+	document.head.appendChild(style);
 
-		await nextFrame(termdom);
+	await nextFrame(termdom);
 
-		// Create test structure
-		const container = document.createElement("div");
-		document.body.appendChild(container);
+	// Create test structure
+	const container = document.createElement("div");
+	document.body.appendChild(container);
 
-		const testDiv = document.createElement("div");
-		testDiv.className = "test";
-		testDiv.textContent = "MIDDLE";
-		container.appendChild(testDiv);
+	const testDiv = document.createElement("div");
+	testDiv.className = "test";
+	testDiv.textContent = "MIDDLE";
+	container.appendChild(testDiv);
 
-		const list = document.createElement("ul");
-		container.appendChild(list);
+	const list = document.createElement("ul");
+	container.appendChild(list);
 
-		const listItem = document.createElement("li");
-		listItem.className = "test";
-		listItem.textContent = "ITEM";
-		list.appendChild(listItem);
+	const listItem = document.createElement("li");
+	listItem.className = "test";
+	listItem.textContent = "ITEM";
+	list.appendChild(listItem);
 
-		const traversedContent: string[] = [];
-		for (const node of flowDescendants(container)) {
-			if (node.nodeType === node.TEXT_NODE) {
-				const textContent = node.textContent || "";
-				if (textContent.trim()) {
-					traversedContent.push(textContent);
-				}
+	const traversedContent: string[] = [];
+	for (const node of flowDescendants(container)) {
+		if (node.nodeType === node.TEXT_NODE) {
+			const textContent = node.textContent || "";
+			if (textContent.trim()) {
+				traversedContent.push(textContent);
 			}
 		}
+	}
 
-		// Verify pseudo-elements are included in traversal
-		// Note: This depends on ExpandedTreeWalker being integrated with Cascade
-		// The exact order may vary based on implementation, but pseudo-element content should be present
-		const allContent = traversedContent.join("");
-		expect(allContent).toContain("BEFORE");
-		expect(allContent).toContain("MIDDLE");
-		expect(allContent).toContain("AFTER");
+	// Verify pseudo-elements are included in traversal
+	// Note: This depends on ExpandedTreeWalker being integrated with Cascade
+	// The exact order may vary based on implementation, but pseudo-element content should be present
+	const allContent = traversedContent.join("");
+	expect(allContent).toContain("BEFORE");
+	expect(allContent).toContain("MIDDLE");
+	expect(allContent).toContain("AFTER");
 
-		// Render and verify final output
-		await nextFrame(termdom);
-		const output = terminal.getPlainText();
+	// Render and verify final output
+	await nextFrame(termdom);
+	const output = terminal.getPlainText();
 
-		// The output should contain pseudo-element content in proper document order
-		expect(output).toContain("BEFORE MIDDLE AFTER");
-	},
-);
+	// The output should contain pseudo-element content in proper document order
+	expect(output).toContain("BEFORE MIDDLE AFTER");
+});
 
 test("a block pseudo-element's resolved width and height are its used box", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 24});

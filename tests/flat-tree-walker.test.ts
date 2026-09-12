@@ -169,16 +169,12 @@ test("A bare document - flat-tree walker pseudo-element traversal", () => {
 
 	// Should find pseudo-elements
 	expect(
-		nodes.some(
-			(n) =>
-				n.content === "Before: " && n.isPseudo && n.pseudoType === "::before",
-		),
+		nodes.some((n) =>
+			n.content === "Before: " && n.isPseudo && n.pseudoType === "::before"),
 	).toBe(true);
 	expect(
-		nodes.some(
-			(n) =>
-				n.content === " :After" && n.isPseudo && n.pseudoType === "::after",
-		),
+		nodes.some((n) =>
+			n.content === " :After" && n.isPseudo && n.pseudoType === "::after"),
 	).toBe(true);
 });
 
@@ -336,10 +332,8 @@ test("A bare document - flat-tree walker ::marker pseudo-element traversal", () 
 	const markerIndex = nodes.findIndex((n) => n.pseudoType === "::marker");
 	const beforeIndex = nodes.findIndex((n) => n.pseudoType === "::before");
 	const afterIndex = nodes.findIndex((n) => n.pseudoType === "::after");
-	const contentTextIndex = nodes.findIndex(
-		(n) =>
-			!n.isPseudo && n.name === "#text" && n.content === "List item content",
-	);
+	const contentTextIndex = nodes.findIndex((n) =>
+		!n.isPseudo && n.name === "#text" && n.content === "List item content");
 
 	expect(markerIndex).toBeLessThan(beforeIndex);
 	expect(beforeIndex).toBeLessThan(contentTextIndex);
@@ -1147,9 +1141,8 @@ test("the flat tree is not something a page can ask createTreeWalker for", () =>
 test("scrollingElement is the root outside quirks mode, and the body inside it", () => {
 	// CSSOM View §7: the element that scrolls the viewport depends on the
 	// document's mode, which a missing doctype decides.
-	const standards = documentWindow(
-		"<!DOCTYPE html><html><body><p>x</p></body></html>",
-	);
+	const standards =
+		documentWindow("<!DOCTYPE html><html><body><p>x</p></body></html>");
 	expect(standards.window.document.compatMode).toBe("CSS1Compat");
 	expect(standards.window.document.scrollingElement).toBe(
 		standards.window.document.documentElement,

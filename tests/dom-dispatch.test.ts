@@ -10,16 +10,16 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {createDocumentWindow, type Document} from "../src/internal/dom.ts";
+import {createWindow, type Document} from "../src/internal/dom.ts";
 
 // The interfaces script sees are a window's, so the events the tests
 // dispatch are built with a window's constructors.
-const realm = createDocumentWindow("<!doctype html>");
+const realm = createWindow("<!doctype html>");
 
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.
 function createHTMLDocument(title?: string): Document {
-	return createDocumentWindow(
+	return createWindow(
 		title === undefined
 			? "<!doctype html>"
 			: `<!doctype html><title>${title}</title>`,

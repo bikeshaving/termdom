@@ -17,10 +17,9 @@
  */
 import {TermDOM, transportFromProcess} from "../dist/index.js";
 
-const runtime =
-	typeof Deno !== "undefined"
-		? "Deno"
-		: typeof Bun !== "undefined" ? "Bun" : "Node";
+const runtime = typeof Deno !== "undefined"
+	? "Deno"
+	: typeof Bun !== "undefined" ? "Bun" : "Node";
 const failures = [];
 
 function check(label, actual, expected) {
@@ -61,9 +60,8 @@ const widthCases = [
 	["combining accent", "é", 1],
 ];
 document.body.innerHTML = widthCases
-	.map(
-		([, text], i) =>
-			`<div><span id="w${i}" style="display:inline-block">${text}</span></div>`,
+	.map(([, text], i) =>
+		`<div><span id="w${i}" style="display:inline-block">${text}</span></div>`,
 	)
 	.join("");
 // No attach() and no frame await: this instance never touches the terminal,

@@ -14,9 +14,11 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-async function render(html: string, cols = 40, rows = 8): Promise<
-	{dom: TermDOM; terminal: MockProcess; lines: () => string[]}
-> {
+async function render(
+	html: string,
+	cols = 40,
+	rows = 8,
+): Promise<{dom: TermDOM; terminal: MockProcess; lines: () => string[]}> {
 	const terminal = new MockProcess({cols, rows});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
@@ -63,9 +65,8 @@ test("nested inlines split at the same block", async () => {
 });
 
 test("fragments survive a rebuild", async () => {
-	const {dom, terminal, lines} = await render(
-		"<p>before<span>a<div>b</div>c</span>after</p>",
-	);
+	const {dom, terminal, lines} =
+		await render("<p>before<span>a<div>b</div>c</span>after</p>");
 	const first = lines();
 	expect(first.slice(0, 3)).toEqual(["beforea", "b", "cafter"]);
 
@@ -215,9 +216,8 @@ test("a display: contents element added brings its children with it", async () =
 	// It generates no box of its own, so nothing about it reaches layout: the
 	// container has to be told to enumerate again, or the children it
 	// dissolves into are never boxed.
-	const {dom, lines} = await render(
-		"<style>.c { display: contents; }</style><div>A</div>",
-	);
+	const {dom, lines} =
+		await render("<style>.c { display: contents; }</style><div>A</div>");
 	expect(lines()[0]).toBe("A");
 
 	const wrapper = dom.document.createElement("span");
@@ -235,9 +235,8 @@ test("an inline flex item holding a block is a block container", async () => {
 	// inline one holding block-level content establishes a block container.
 	// Measured as a run instead, its content ends at the first block inside it
 	// -- and everything from there on, which here is everything, is dropped.
-	const {dom, lines} = await render(
-		"<b style=\"display: flex\"><span><p>X</p></span></b>",
-	);
+	const {dom, lines} =
+		await render("<b style=\"display: flex\"><span><p>X</p></span></b>");
 
 	expect(lines()[0]).toBe("X");
 

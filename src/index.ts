@@ -3,7 +3,7 @@ import "./internal/inspector.ts";
 import {Cascade} from "./internal/cssom.ts";
 import * as DOM from "./internal/dom.ts";
 import {
-	createDocumentWindow,
+	createWindow,
 	disconnectObservers,
 	flushObservers,
 	type Window,
@@ -118,7 +118,7 @@ export class TermDOM {
 		this[kStaticSibling] = null;
 		this[kTransport] = options.transport ?? transportFromProcess();
 
-		this.window = createDocumentWindow(
+		this.window = createWindow(
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
 			options.url,
 		);

@@ -14,516 +14,499 @@ type Identical<A, B> =
 // a subclass that adds no member of its own would otherwise be structurally
 // indistinguishable from its base, and a platform type would match the
 // smallest class of ours it happens to satisfy.
-type Map0<T> =
-	Identical<T, DOM.Event> extends true
-		? globalThis.Event
-		: Identical<T, DOM.CustomEvent> extends true
-			? globalThis.CustomEvent
-			: Identical<T, DOM.BeforeUnloadEvent> extends true
-				? globalThis.BeforeUnloadEvent
-				: Identical<T, DOM.ErrorEvent> extends true
-					? globalThis.ErrorEvent
-					: Identical<T, DOM.MessageEvent> extends true
-						? globalThis.MessageEvent
-						: Identical<T, DOM.HashChangeEvent> extends true
-							? globalThis.HashChangeEvent
-							: Identical<T, DOM.StorageEvent> extends true
-								? globalThis.StorageEvent
-								: Identical<T, DOM.UIEvent> extends true
-									? globalThis.UIEvent
-									: Identical<T, DOM.MouseEvent> extends true
-										? globalThis.MouseEvent
-										: Identical<T, DOM.FocusEvent> extends true
-											? globalThis.FocusEvent
-											: Identical<T, DOM.KeyboardEvent> extends true
-												? globalThis.KeyboardEvent
-												: Identical<T, DOM.CompositionEvent> extends true
-													? globalThis.CompositionEvent
-													: Identical<T, DOM.TextEvent> extends true
-														? globalThis.TextEvent
-														: Identical<T, DOM.InputEvent> extends true
-															? globalThis.InputEvent
-															: Identical<T, DOM.FileList> extends true
-																? globalThis.FileList
+type Map0<T> = Identical<T, DOM.Event> extends true
+	? globalThis.Event
+	: Identical<T, DOM.CustomEvent> extends true
+		? globalThis.CustomEvent
+		: Identical<T, DOM.BeforeUnloadEvent> extends true
+			? globalThis.BeforeUnloadEvent
+			: Identical<T, DOM.ErrorEvent> extends true
+				? globalThis.ErrorEvent
+				: Identical<T, DOM.MessageEvent> extends true
+					? globalThis.MessageEvent
+					: Identical<T, DOM.HashChangeEvent> extends true
+						? globalThis.HashChangeEvent
+						: Identical<T, DOM.StorageEvent> extends true
+							? globalThis.StorageEvent
+							: Identical<T, DOM.UIEvent> extends true
+								? globalThis.UIEvent
+								: Identical<T, DOM.MouseEvent> extends true
+									? globalThis.MouseEvent
+									: Identical<T, DOM.FocusEvent> extends true
+										? globalThis.FocusEvent
+										: Identical<T, DOM.KeyboardEvent> extends true
+											? globalThis.KeyboardEvent
+											: Identical<T, DOM.CompositionEvent> extends true
+												? globalThis.CompositionEvent
+												: Identical<T, DOM.TextEvent> extends true
+													? globalThis.TextEvent
+													: Identical<T, DOM.InputEvent> extends true
+														? globalThis.InputEvent
+														: Identical<T, DOM.FileList> extends true
+															? globalThis.FileList
+															: Identical<T, DOM.DataTransferItem> extends true
+																? globalThis.DataTransferItem
 																: Identical<
 																	T,
-																	DOM.DataTransferItem
+																	DOM.DataTransferItemList
 																> extends true
-																	? globalThis.DataTransferItem
-																	: Identical<
-																		T,
-																		DOM.DataTransferItemList
-																	> extends true
-																		? globalThis.DataTransferItemList
+																	? globalThis.DataTransferItemList
+																	: Identical<T, DOM.DataTransfer> extends true
+																		? globalThis.DataTransfer
 																		: Identical<
 																			T,
-																			DOM.DataTransfer
+																			DOM.ClipboardEvent
 																		> extends true
-																			? globalThis.DataTransfer
+																			? globalThis.ClipboardEvent
 																			: Identical<
 																				T,
-																				DOM.ClipboardEvent
+																				DOM.TransitionEvent
 																			> extends true
-																				? globalThis.ClipboardEvent
+																				? globalThis.TransitionEvent
 																				: Identical<
 																					T,
-																					DOM.TransitionEvent
+																					DOM.AnimationEvent
 																				> extends true
-																					? globalThis.TransitionEvent
+																					? globalThis.AnimationEvent
 																					: Identical<
 																						T,
-																						DOM.AnimationEvent
+																						DOM.WheelEvent
 																					> extends true
-																						? globalThis.AnimationEvent
+																						? globalThis.WheelEvent
 																						: Identical<
 																							T,
-																							DOM.WheelEvent
+																							DOM.PointerEvent
 																						> extends true
-																							? globalThis.WheelEvent
+																							? globalThis.PointerEvent
 																							: Identical<
 																								T,
-																								DOM.PointerEvent
+																								DOM.DragEvent
 																							> extends true
-																								? globalThis.PointerEvent
+																								? globalThis.DragEvent
 																								: Identical<
 																									T,
-																									DOM.DragEvent
+																									DOM.EventTarget
 																								> extends true
-																									? globalThis.DragEvent
+																									? globalThis.EventTarget
 																									: Identical<
 																										T,
-																										DOM.EventTarget
+																										DOM.Node
 																									> extends true
-																										? globalThis.EventTarget
+																										? globalThis.Node
 																										: Identical<
 																											T,
-																											DOM.Node
+																											DOM.MutationRecord
 																										> extends true
-																											? globalThis.Node
+																											? globalThis.MutationRecord
 																											: Identical<
 																												T,
-																												DOM.MutationRecord
+																												DOM.MutationObserver
 																											> extends true
-																												? globalThis.MutationRecord
+																												? globalThis.MutationObserver
 																												: Identical<
 																													T,
-																													DOM.MutationObserver
+																													DOM.NodeList
 																												> extends true
-																													? globalThis.MutationObserver
+																													? globalThis.NodeList
 																													: Identical<
 																														T,
-																														DOM.NodeList
+																														DOM.HTMLCollection
 																													> extends true
-																														? globalThis.NodeList
+																														? globalThis.HTMLCollection
 																														: Identical<
 																															T,
-																															DOM.HTMLCollection
+																															DOM.DOMTokenList
 																														> extends true
-																															? globalThis.HTMLCollection
-																															: Identical<
-																																T,
-																																DOM.DOMTokenList
-																															> extends true
-																																? globalThis.DOMTokenList
-																																: Map1<T>;
-type Map1<T> =
-	Identical<T, DOM.CharacterData> extends true
-		? globalThis.CharacterData
-		: Identical<T, DOM.Text> extends true
-			? globalThis.Text
-			: Identical<T, DOM.CDATASection> extends true
-				? globalThis.CDATASection
-				: Identical<T, DOM.Comment> extends true
-					? globalThis.Comment
-					: Identical<T, DOM.ProcessingInstruction> extends true
-						? globalThis.ProcessingInstruction
-						: Identical<T, DOM.DocumentType> extends true
-							? globalThis.DocumentType
-							: Identical<T, DOM.DocumentFragment> extends true
-								? globalThis.DocumentFragment
-								: Identical<T, DOM.Attr> extends true
-									? globalThis.Attr
-									: Identical<T, DOM.NamedNodeMap> extends true
-										? globalThis.NamedNodeMap
-										: Identical<T, DOM.Element> extends true
-											? globalThis.Element
-											: Identical<T, DOM.HTMLElement> extends true
-												? globalThis.HTMLElement
-												: Identical<T, DOM.HTMLUnknownElement> extends true
-													? globalThis.HTMLUnknownElement
-													: Identical<T, DOM.SVGElement> extends true
-														? globalThis.SVGElement
-														: Identical<T, DOM.MathMLElement> extends true
-															? globalThis.MathMLElement
-															: Identical<
-																T,
-																DOM.CustomElementRegistry
-															> extends true
-																? globalThis.CustomElementRegistry
-																: Identical<T, DOM.ShadowRoot> extends true
-																	? globalThis.ShadowRoot
+																															? globalThis.DOMTokenList
+																															: Map1<T>;
+type Map1<T> = Identical<T, DOM.CharacterData> extends true
+	? globalThis.CharacterData
+	: Identical<T, DOM.Text> extends true
+		? globalThis.Text
+		: Identical<T, DOM.CDATASection> extends true
+			? globalThis.CDATASection
+			: Identical<T, DOM.Comment> extends true
+				? globalThis.Comment
+				: Identical<T, DOM.ProcessingInstruction> extends true
+					? globalThis.ProcessingInstruction
+					: Identical<T, DOM.DocumentType> extends true
+						? globalThis.DocumentType
+						: Identical<T, DOM.DocumentFragment> extends true
+							? globalThis.DocumentFragment
+							: Identical<T, DOM.Attr> extends true
+								? globalThis.Attr
+								: Identical<T, DOM.NamedNodeMap> extends true
+									? globalThis.NamedNodeMap
+									: Identical<T, DOM.Element> extends true
+										? globalThis.Element
+										: Identical<T, DOM.HTMLElement> extends true
+											? globalThis.HTMLElement
+											: Identical<T, DOM.HTMLUnknownElement> extends true
+												? globalThis.HTMLUnknownElement
+												: Identical<T, DOM.SVGElement> extends true
+													? globalThis.SVGElement
+													: Identical<T, DOM.MathMLElement> extends true
+														? globalThis.MathMLElement
+														: Identical<
+															T,
+															DOM.CustomElementRegistry
+														> extends true
+															? globalThis.CustomElementRegistry
+															: Identical<T, DOM.ShadowRoot> extends true
+																? globalThis.ShadowRoot
+																: Identical<T, DOM.HTMLSlotElement> extends true
+																	? globalThis.HTMLSlotElement
 																	: Identical<
 																		T,
-																		DOM.HTMLSlotElement
+																		DOM.HTMLTemplateElement
 																	> extends true
-																		? globalThis.HTMLSlotElement
+																		? globalThis.HTMLTemplateElement
 																		: Identical<
 																			T,
-																			DOM.HTMLTemplateElement
+																			DOM.HTMLAnchorElement
 																		> extends true
-																			? globalThis.HTMLTemplateElement
+																			? globalThis.HTMLAnchorElement
 																			: Identical<
 																				T,
-																				DOM.HTMLAnchorElement
+																				DOM.HTMLAreaElement
 																			> extends true
-																				? globalThis.HTMLAnchorElement
+																				? globalThis.HTMLAreaElement
 																				: Identical<
 																					T,
-																					DOM.HTMLAreaElement
+																					DOM.HTMLBaseElement
 																				> extends true
-																					? globalThis.HTMLAreaElement
+																					? globalThis.HTMLBaseElement
 																					: Identical<
 																						T,
-																						DOM.HTMLBaseElement
+																						DOM.HTMLBodyElement
 																					> extends true
-																						? globalThis.HTMLBaseElement
+																						? globalThis.HTMLBodyElement
 																						: Identical<
 																							T,
-																							DOM.HTMLBodyElement
+																							DOM.HTMLBRElement
 																						> extends true
-																							? globalThis.HTMLBodyElement
+																							? globalThis.HTMLBRElement
 																							: Identical<
 																								T,
-																								DOM.HTMLBRElement
+																								DOM.HTMLButtonElement
 																							> extends true
-																								? globalThis.HTMLBRElement
+																								? globalThis.HTMLButtonElement
 																								: Identical<
 																									T,
-																									DOM.HTMLButtonElement
+																									DOM.HTMLCanvasElement
 																								> extends true
-																									? globalThis.HTMLButtonElement
+																									? globalThis.HTMLCanvasElement
 																									: Identical<
 																										T,
-																										DOM.HTMLCanvasElement
+																										DOM.HTMLDataElement
 																									> extends true
-																										? globalThis.HTMLCanvasElement
+																										? globalThis.HTMLDataElement
 																										: Identical<
 																											T,
-																											DOM.HTMLDataElement
+																											DOM.HTMLDataListElement
 																										> extends true
-																											? globalThis.HTMLDataElement
+																											? globalThis.HTMLDataListElement
 																											: Identical<
 																												T,
-																												DOM.HTMLDataListElement
+																												DOM.HTMLDetailsElement
 																											> extends true
-																												? globalThis.HTMLDataListElement
+																												? globalThis.HTMLDetailsElement
 																												: Identical<
 																													T,
-																													DOM.HTMLDetailsElement
+																													DOM.ToggleEvent
 																												> extends true
-																													? globalThis.HTMLDetailsElement
+																													? globalThis.ToggleEvent
 																													: Identical<
 																														T,
-																														DOM.ToggleEvent
+																														DOM.HTMLDialogElement
 																													> extends true
-																														? globalThis.ToggleEvent
-																														: Identical<
-																															T,
-																															DOM.HTMLDialogElement
-																														> extends true
-																															? globalThis.HTMLDialogElement
-																															: Map2<T>;
-type Map2<T> =
-	Identical<T, DOM.HTMLDirectoryElement> extends true
-		? globalThis.HTMLDirectoryElement
-		: Identical<T, DOM.HTMLDivElement> extends true
-			? globalThis.HTMLDivElement
-			: Identical<T, DOM.HTMLDListElement> extends true
-				? globalThis.HTMLDListElement
-				: Identical<T, DOM.HTMLEmbedElement> extends true
-					? globalThis.HTMLEmbedElement
-					: Identical<T, DOM.HTMLFieldSetElement> extends true
-						? globalThis.HTMLFieldSetElement
-						: Identical<T, DOM.HTMLFontElement> extends true
-							? globalThis.HTMLFontElement
-							: Identical<T, DOM.HTMLFormElement> extends true
-								? globalThis.HTMLFormElement
-								: Identical<T, DOM.SubmitEvent> extends true
-									? globalThis.SubmitEvent
-									: Identical<T, DOM.HTMLFormControlsCollection> extends true
-										? globalThis.HTMLFormControlsCollection
-										: Identical<T, DOM.RadioNodeList> extends true
-											? globalThis.RadioNodeList
-											: Identical<T, DOM.HTMLFrameElement> extends true
-												? globalThis.HTMLFrameElement
-												: Identical<T, DOM.HTMLFrameSetElement> extends true
-													? globalThis.HTMLFrameSetElement
-													: Identical<T, DOM.HTMLHeadElement> extends true
-														? globalThis.HTMLHeadElement
-														: Identical<T, DOM.HTMLHeadingElement> extends true
-															? globalThis.HTMLHeadingElement
-															: Identical<T, DOM.HTMLHRElement> extends true
-																? globalThis.HTMLHRElement
-																: Identical<T, DOM.HTMLHtmlElement> extends true
-																	? globalThis.HTMLHtmlElement
-																	: Identical<
-																		T,
-																		DOM.HTMLIFrameElement
-																	> extends true
-																		? globalThis.HTMLIFrameElement
-																		: Identical<
-																			T,
-																			DOM.HTMLImageElement
-																		> extends true
-																			? globalThis.HTMLImageElement
-																			: Identical<
-																				T,
-																				DOM.HTMLInputElement
-																			> extends true
-																				? globalThis.HTMLInputElement
-																				: Identical<
-																					T,
-																					DOM.HTMLLabelElement
-																				> extends true
-																					? globalThis.HTMLLabelElement
-																					: Identical<
-																						T,
-																						DOM.HTMLLegendElement
-																					> extends true
-																						? globalThis.HTMLLegendElement
-																						: Identical<
-																							T,
-																							DOM.HTMLLIElement
-																						> extends true
-																							? globalThis.HTMLLIElement
-																							: Identical<
-																								T,
-																								DOM.HTMLLinkElement
-																							> extends true
-																								? globalThis.HTMLLinkElement
-																								: Identical<
-																									T,
-																									DOM.HTMLMapElement
-																								> extends true
-																									? globalThis.HTMLMapElement
-																									: Identical<
-																										T,
-																										DOM.HTMLMarqueeElement
-																									> extends true
-																										? globalThis.HTMLMarqueeElement
-																										: Identical<
-																											T,
-																											DOM.HTMLMediaElement
-																										> extends true
-																											? globalThis.HTMLMediaElement
-																											: Identical<
-																												T,
-																												DOM.HTMLAudioElement
-																											> extends true
-																												? globalThis.HTMLAudioElement
-																												: Identical<
-																													T,
-																													DOM.HTMLVideoElement
-																												> extends true
-																													? globalThis.HTMLVideoElement
-																													: Identical<
-																														T,
-																														DOM.HTMLMenuElement
-																													> extends true
-																														? globalThis.HTMLMenuElement
-																														: Identical<
-																															T,
-																															DOM.HTMLMetaElement
-																														> extends true
-																															? globalThis.HTMLMetaElement
-																															: Map3<T>;
-type Map3<T> =
-	Identical<T, DOM.HTMLMeterElement> extends true
-		? globalThis.HTMLMeterElement
-		: Identical<T, DOM.HTMLModElement> extends true
-			? globalThis.HTMLModElement
-			: Identical<T, DOM.HTMLObjectElement> extends true
-				? globalThis.HTMLObjectElement
-				: Identical<T, DOM.HTMLOListElement> extends true
-					? globalThis.HTMLOListElement
-					: Identical<T, DOM.HTMLOptGroupElement> extends true
-						? globalThis.HTMLOptGroupElement
-						: Identical<T, DOM.HTMLOptionElement> extends true
-							? globalThis.HTMLOptionElement
-							: Identical<T, DOM.HTMLOptionsCollection> extends true
-								? globalThis.HTMLOptionsCollection
-								: Identical<T, DOM.HTMLOutputElement> extends true
-									? globalThis.HTMLOutputElement
-									: Identical<T, DOM.HTMLParagraphElement> extends true
-										? globalThis.HTMLParagraphElement
-										: Identical<T, DOM.HTMLParamElement> extends true
-											? globalThis.HTMLParamElement
-											: Identical<T, DOM.HTMLPictureElement> extends true
-												? globalThis.HTMLPictureElement
-												: Identical<T, DOM.HTMLPreElement> extends true
-													? globalThis.HTMLPreElement
-													: Identical<T, DOM.HTMLProgressElement> extends true
-														? globalThis.HTMLProgressElement
-														: Identical<T, DOM.HTMLQuoteElement> extends true
-															? globalThis.HTMLQuoteElement
-															: Identical<T, DOM.HTMLScriptElement> extends true
-																? globalThis.HTMLScriptElement
+																														? globalThis.HTMLDialogElement
+																														: Map2<T>;
+type Map2<T> = Identical<T, DOM.HTMLDirectoryElement> extends true
+	? globalThis.HTMLDirectoryElement
+	: Identical<T, DOM.HTMLDivElement> extends true
+		? globalThis.HTMLDivElement
+		: Identical<T, DOM.HTMLDListElement> extends true
+			? globalThis.HTMLDListElement
+			: Identical<T, DOM.HTMLEmbedElement> extends true
+				? globalThis.HTMLEmbedElement
+				: Identical<T, DOM.HTMLFieldSetElement> extends true
+					? globalThis.HTMLFieldSetElement
+					: Identical<T, DOM.HTMLFontElement> extends true
+						? globalThis.HTMLFontElement
+						: Identical<T, DOM.HTMLFormElement> extends true
+							? globalThis.HTMLFormElement
+							: Identical<T, DOM.SubmitEvent> extends true
+								? globalThis.SubmitEvent
+								: Identical<T, DOM.HTMLFormControlsCollection> extends true
+									? globalThis.HTMLFormControlsCollection
+									: Identical<T, DOM.RadioNodeList> extends true
+										? globalThis.RadioNodeList
+										: Identical<T, DOM.HTMLFrameElement> extends true
+											? globalThis.HTMLFrameElement
+											: Identical<T, DOM.HTMLFrameSetElement> extends true
+												? globalThis.HTMLFrameSetElement
+												: Identical<T, DOM.HTMLHeadElement> extends true
+													? globalThis.HTMLHeadElement
+													: Identical<T, DOM.HTMLHeadingElement> extends true
+														? globalThis.HTMLHeadingElement
+														: Identical<T, DOM.HTMLHRElement> extends true
+															? globalThis.HTMLHRElement
+															: Identical<T, DOM.HTMLHtmlElement> extends true
+																? globalThis.HTMLHtmlElement
 																: Identical<
 																	T,
-																	DOM.HTMLSelectElement
+																	DOM.HTMLIFrameElement
 																> extends true
-																	? globalThis.HTMLSelectElement
+																	? globalThis.HTMLIFrameElement
 																	: Identical<
 																		T,
-																		DOM.HTMLSourceElement
+																		DOM.HTMLImageElement
 																	> extends true
-																		? globalThis.HTMLSourceElement
+																		? globalThis.HTMLImageElement
 																		: Identical<
 																			T,
-																			DOM.HTMLSpanElement
+																			DOM.HTMLInputElement
 																		> extends true
-																			? globalThis.HTMLSpanElement
+																			? globalThis.HTMLInputElement
 																			: Identical<
 																				T,
-																				DOM.HTMLStyleElement
+																				DOM.HTMLLabelElement
 																			> extends true
-																				? globalThis.HTMLStyleElement
+																				? globalThis.HTMLLabelElement
 																				: Identical<
 																					T,
-																					DOM.HTMLTableCaptionElement
+																					DOM.HTMLLegendElement
 																				> extends true
-																					? globalThis.HTMLTableCaptionElement
+																					? globalThis.HTMLLegendElement
 																					: Identical<
 																						T,
-																						DOM.HTMLTableCellElement
+																						DOM.HTMLLIElement
 																					> extends true
-																						? globalThis.HTMLTableCellElement
+																						? globalThis.HTMLLIElement
 																						: Identical<
 																							T,
-																							DOM.HTMLTableColElement
+																							DOM.HTMLLinkElement
 																						> extends true
-																							? globalThis.HTMLTableColElement
+																							? globalThis.HTMLLinkElement
 																							: Identical<
 																								T,
-																								DOM.HTMLTableElement
+																								DOM.HTMLMapElement
 																							> extends true
-																								? globalThis.HTMLTableElement
+																								? globalThis.HTMLMapElement
 																								: Identical<
 																									T,
-																									DOM.HTMLTableRowElement
+																									DOM.HTMLMarqueeElement
 																								> extends true
-																									? globalThis.HTMLTableRowElement
+																									? globalThis.HTMLMarqueeElement
 																									: Identical<
 																										T,
-																										DOM.HTMLTableSectionElement
+																										DOM.HTMLMediaElement
 																									> extends true
-																										? globalThis.HTMLTableSectionElement
+																										? globalThis.HTMLMediaElement
 																										: Identical<
 																											T,
-																											DOM.HTMLTextAreaElement
+																											DOM.HTMLAudioElement
 																										> extends true
-																											? globalThis.HTMLTextAreaElement
+																											? globalThis.HTMLAudioElement
 																											: Identical<
 																												T,
-																												DOM.HTMLTimeElement
+																												DOM.HTMLVideoElement
 																											> extends true
-																												? globalThis.HTMLTimeElement
+																												? globalThis.HTMLVideoElement
 																												: Identical<
 																													T,
-																													DOM.HTMLTitleElement
+																													DOM.HTMLMenuElement
 																												> extends true
-																													? globalThis.HTMLTitleElement
+																													? globalThis.HTMLMenuElement
 																													: Identical<
 																														T,
-																														DOM.HTMLTrackElement
+																														DOM.HTMLMetaElement
 																													> extends true
-																														? globalThis.HTMLTrackElement
-																														: Identical<
-																															T,
-																															DOM.HTMLUListElement
-																														> extends true
-																															? globalThis.HTMLUListElement
-																															: Map4<T>;
-type Map4<T> =
-	Identical<T, DOM.DOMStringMap> extends true
-		? globalThis.DOMStringMap
-		: Identical<T, DOM.ValidityState> extends true
-			? globalThis.ValidityState
-			: Identical<T, DOM.CustomStateSet> extends true
-				? globalThis.CustomStateSet
-				: Identical<T, DOM.ElementInternals> extends true
-					? globalThis.ElementInternals
-					: Identical<T, DOM.DOMRectReadOnly> extends true
-						? globalThis.DOMRectReadOnly
-						: Identical<T, DOM.DOMRect> extends true
-							? globalThis.DOMRect
-							: Identical<T, DOM.DOMRectList> extends true
-								? globalThis.DOMRectList
-								: Identical<T, DOM.ResizeObserver> extends true
-									? globalThis.ResizeObserver
-									: Identical<T, DOM.IntersectionObserver> extends true
-										? globalThis.IntersectionObserver
-										: Identical<T, DOM.Document> extends true
-											? globalThis.Document
-											: Identical<T, DOM.XMLDocument> extends true
-												? globalThis.XMLDocument
-												: Identical<T, DOM.DOMImplementation> extends true
-													? globalThis.DOMImplementation
-													: Identical<T, DOM.AbstractRange> extends true
-														? globalThis.AbstractRange
-														: Identical<T, DOM.StaticRange> extends true
-															? globalThis.StaticRange
-															: Identical<T, DOM.Range> extends true
-																? globalThis.Range
-																: Identical<T, DOM.Selection> extends true
-																	? globalThis.Selection
-																	: Identical<T, DOM.NodeIterator> extends true
-																		? globalThis.NodeIterator
-																		: Identical<T, DOM.TreeWalker> extends true
-																			? globalThis.TreeWalker
-																			: Identical<T, DOM.DOMParser> extends true
-																				? globalThis.DOMParser
+																														? globalThis.HTMLMetaElement
+																														: Map3<T>;
+type Map3<T> = Identical<T, DOM.HTMLMeterElement> extends true
+	? globalThis.HTMLMeterElement
+	: Identical<T, DOM.HTMLModElement> extends true
+		? globalThis.HTMLModElement
+		: Identical<T, DOM.HTMLObjectElement> extends true
+			? globalThis.HTMLObjectElement
+			: Identical<T, DOM.HTMLOListElement> extends true
+				? globalThis.HTMLOListElement
+				: Identical<T, DOM.HTMLOptGroupElement> extends true
+					? globalThis.HTMLOptGroupElement
+					: Identical<T, DOM.HTMLOptionElement> extends true
+						? globalThis.HTMLOptionElement
+						: Identical<T, DOM.HTMLOptionsCollection> extends true
+							? globalThis.HTMLOptionsCollection
+							: Identical<T, DOM.HTMLOutputElement> extends true
+								? globalThis.HTMLOutputElement
+								: Identical<T, DOM.HTMLParagraphElement> extends true
+									? globalThis.HTMLParagraphElement
+									: Identical<T, DOM.HTMLParamElement> extends true
+										? globalThis.HTMLParamElement
+										: Identical<T, DOM.HTMLPictureElement> extends true
+											? globalThis.HTMLPictureElement
+											: Identical<T, DOM.HTMLPreElement> extends true
+												? globalThis.HTMLPreElement
+												: Identical<T, DOM.HTMLProgressElement> extends true
+													? globalThis.HTMLProgressElement
+													: Identical<T, DOM.HTMLQuoteElement> extends true
+														? globalThis.HTMLQuoteElement
+														: Identical<T, DOM.HTMLScriptElement> extends true
+															? globalThis.HTMLScriptElement
+															: Identical<T, DOM.HTMLSelectElement> extends true
+																? globalThis.HTMLSelectElement
+																: Identical<
+																	T,
+																	DOM.HTMLSourceElement
+																> extends true
+																	? globalThis.HTMLSourceElement
+																	: Identical<
+																		T,
+																		DOM.HTMLSpanElement
+																	> extends true
+																		? globalThis.HTMLSpanElement
+																		: Identical<
+																			T,
+																			DOM.HTMLStyleElement
+																		> extends true
+																			? globalThis.HTMLStyleElement
+																			: Identical<
+																				T,
+																				DOM.HTMLTableCaptionElement
+																			> extends true
+																				? globalThis.HTMLTableCaptionElement
 																				: Identical<
 																					T,
-																					DOM.ClipboardItem
+																					DOM.HTMLTableCellElement
 																				> extends true
-																					? globalThis.ClipboardItem
+																					? globalThis.HTMLTableCellElement
 																					: Identical<
 																						T,
-																						DOM.Clipboard
+																						DOM.HTMLTableColElement
 																					> extends true
-																						? globalThis.Clipboard
+																						? globalThis.HTMLTableColElement
 																						: Identical<
 																							T,
-																							DOM.PermissionStatus
+																							DOM.HTMLTableElement
 																						> extends true
-																							? globalThis.PermissionStatus
+																							? globalThis.HTMLTableElement
 																							: Identical<
 																								T,
-																								DOM.Permissions
+																								DOM.HTMLTableRowElement
 																							> extends true
-																								? globalThis.Permissions
+																								? globalThis.HTMLTableRowElement
 																								: Identical<
 																									T,
-																									DOM.DOMStringList
+																									DOM.HTMLTableSectionElement
 																								> extends true
-																									? globalThis.DOMStringList
+																									? globalThis.HTMLTableSectionElement
 																									: Identical<
 																										T,
-																										DOM.Location
+																										DOM.HTMLTextAreaElement
 																									> extends true
-																										? globalThis.Location
+																										? globalThis.HTMLTextAreaElement
 																										: Identical<
 																											T,
-																											DOM.Window
+																											DOM.HTMLTimeElement
 																										> extends true
-																											? globalThis.Window
+																											? globalThis.HTMLTimeElement
 																											: Identical<
 																												T,
-																												DOM.Storage
+																												DOM.HTMLTitleElement
 																											> extends true
-																												? globalThis.Storage
-																												: T;
+																												? globalThis.HTMLTitleElement
+																												: Identical<
+																													T,
+																													DOM.HTMLTrackElement
+																												> extends true
+																													? globalThis.HTMLTrackElement
+																													: Identical<
+																														T,
+																														DOM.HTMLUListElement
+																													> extends true
+																														? globalThis.HTMLUListElement
+																														: Map4<T>;
+type Map4<T> = Identical<T, DOM.DOMStringMap> extends true
+	? globalThis.DOMStringMap
+	: Identical<T, DOM.ValidityState> extends true
+		? globalThis.ValidityState
+		: Identical<T, DOM.CustomStateSet> extends true
+			? globalThis.CustomStateSet
+			: Identical<T, DOM.ElementInternals> extends true
+				? globalThis.ElementInternals
+				: Identical<T, DOM.DOMRectReadOnly> extends true
+					? globalThis.DOMRectReadOnly
+					: Identical<T, DOM.DOMRect> extends true
+						? globalThis.DOMRect
+						: Identical<T, DOM.DOMRectList> extends true
+							? globalThis.DOMRectList
+							: Identical<T, DOM.ResizeObserver> extends true
+								? globalThis.ResizeObserver
+								: Identical<T, DOM.IntersectionObserver> extends true
+									? globalThis.IntersectionObserver
+									: Identical<T, DOM.Document> extends true
+										? globalThis.Document
+										: Identical<T, DOM.XMLDocument> extends true
+											? globalThis.XMLDocument
+											: Identical<T, DOM.DOMImplementation> extends true
+												? globalThis.DOMImplementation
+												: Identical<T, DOM.AbstractRange> extends true
+													? globalThis.AbstractRange
+													: Identical<T, DOM.StaticRange> extends true
+														? globalThis.StaticRange
+														: Identical<T, DOM.Range> extends true
+															? globalThis.Range
+															: Identical<T, DOM.Selection> extends true
+																? globalThis.Selection
+																: Identical<T, DOM.NodeIterator> extends true
+																	? globalThis.NodeIterator
+																	: Identical<T, DOM.TreeWalker> extends true
+																		? globalThis.TreeWalker
+																		: Identical<T, DOM.DOMParser> extends true
+																			? globalThis.DOMParser
+																			: Identical<
+																				T,
+																				DOM.ClipboardItem
+																			> extends true
+																				? globalThis.ClipboardItem
+																				: Identical<
+																					T,
+																					DOM.Clipboard
+																				> extends true
+																					? globalThis.Clipboard
+																					: Identical<
+																						T,
+																						DOM.PermissionStatus
+																					> extends true
+																						? globalThis.PermissionStatus
+																						: Identical<
+																							T,
+																							DOM.Permissions
+																						> extends true
+																							? globalThis.Permissions
+																							: Identical<
+																								T,
+																								DOM.DOMStringList
+																							> extends true
+																								? globalThis.DOMStringList
+																								: Identical<
+																									T,
+																									DOM.Location
+																								> extends true
+																									? globalThis.Location
+																									: Identical<
+																										T,
+																										DOM.Window
+																									> extends true
+																										? globalThis.Window
+																										: Identical<
+																											T,
+																											DOM.Storage
+																										> extends true
+																											? globalThis.Storage
+																											: T;
 type ToPlatform<T> = T extends unknown
 	? T extends DOM.NodeListOf<infer U>
 		? Identical<T, DOM.NodeListOf<U>> extends true
@@ -547,9 +530,8 @@ type ToPlatform<T> = T extends unknown
 							? (...args: ToPlatformTuple<A>) => ToPlatform<R>
 							: Map0<T>
 	: never;
-type ToPlatformTuple<
-	T extends readonly unknown[],
-> = {[I in keyof T]: ToPlatform<T[I]>};
+type ToPlatformTuple<T extends readonly unknown[]> =
+	{[I in keyof T]: ToPlatform<T[I]>};
 type Keys<G> = Exclude<keyof G, symbol>;
 type Fn = (...args: never[]) => unknown;
 // Up to six overloads, most recent last, as TypeScript's `infer` on a
@@ -627,11 +609,14 @@ type MemberDrift<A, B> = [A] extends [Fn]
 			: true
 		: true
 	: Identical<ToPlatform<A>, B> extends true ? false : true;
-export type Drift<C, G, Allowed extends string = never> = Exclude<{
-	[K in Keys<G>]: K extends keyof C
-		? (MemberDrift<C[K], G[K]> extends true ? K : never)
-		: K;
-}[Keys<G>], Allowed>;
+export type Drift<C, G, Allowed extends string = never> = Exclude<
+	{
+		[K in Keys<G>]: K extends keyof C
+			? (MemberDrift<C[K], G[K]> extends true ? K : never)
+			: K;
+	}[Keys<G>],
+	Allowed
+>;
 
 // Members that differ from lib.dom on purpose. Each is the HTML Standard
 // ahead of lib.dom's copy of it.

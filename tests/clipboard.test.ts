@@ -20,11 +20,12 @@ function send(proc: MockProcess, data: string): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-type ClipboardProc = MockProcess & {
+type ClipboardProc =
+	MockProcess & {
 
-	/** Answered for the next clipboard query, if the terminal is one that does. */
-	clipboard: string | null;
-};
+		/** Answered for the next clipboard query, if the terminal is one that does. */
+		clipboard: string | null;
+	};
 
 async function mount(): Promise<{
 	proc: ClipboardProc;
@@ -124,9 +125,8 @@ test("writeText from a bare timer or microtask is refused", async () => {
 	const error = await fromTimer;
 	expect(error.name).toBe("NotAllowedError");
 	expect(raw()).not.toContain("\x1b]52;c;");
-	const fromMicrotask = await Promise.resolve().then(() =>
-		rejection(dom.window.navigator.clipboard.writeText("sneaky")),
-	);
+	const fromMicrotask = await Promise.resolve()
+		.then(() => rejection(dom.window.navigator.clipboard.writeText("sneaky")));
 	expect((await fromMicrotask).name).toBe("NotAllowedError");
 	dom.dispose();
 });

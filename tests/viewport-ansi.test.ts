@@ -128,28 +128,25 @@ describe("Viewport Integration Tests", () => {
 
 	// The ANSI-path version of the push-up viewport.test.ts asserts through
 	// window.screenTop: the same scenario, read off the bytes instead.
-	test(
-		"content overflowing the space below the anchor pushes up to fit",
-		async () => {
-			const terminal = new MockProcess({rows: 5, cols: 40});
-			await parkCursor(terminal, 4); // screenTop 3, only 2 rows below
-			const dom = new TermDOM({transport: terminal.sharedTransport});
-			await nextFrame(dom);
+	test("content overflowing the space below the anchor pushes up to fit", async () => {
+		const terminal = new MockProcess({rows: 5, cols: 40});
+		await parkCursor(terminal, 4); // screenTop 3, only 2 rows below
+		const dom = new TermDOM({transport: terminal.sharedTransport});
+		await nextFrame(dom);
 
-			const container = dom.document.createElement("div");
-			for (let i = 1; i <= 4; i++) {
-				const line = dom.document.createElement("div");
-				line.textContent = `Line ${i}`;
-				container.appendChild(line);
-			}
-			dom.document.body.appendChild(container);
-			await nextFrame(dom);
+		const container = dom.document.createElement("div");
+		for (let i = 1; i <= 4; i++) {
+			const line = dom.document.createElement("div");
+			line.textContent = `Line ${i}`;
+			container.appendChild(line);
+		}
+		dom.document.body.appendChild(container);
+		await nextFrame(dom);
 
-			const text = terminal.getPlainText();
-			expect(text).toContain("Line 1");
-			expect(text).toContain("Line 2");
-			expect(text).toContain("Line 3");
-			expect(text).toContain("Line 4");
-		},
-	);
+		const text = terminal.getPlainText();
+		expect(text).toContain("Line 1");
+		expect(text).toContain("Line 2");
+		expect(text).toContain("Line 3");
+		expect(text).toContain("Line 4");
+	});
 });

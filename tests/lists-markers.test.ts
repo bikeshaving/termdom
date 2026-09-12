@@ -67,10 +67,14 @@ test("the list-style shorthand is expanded", async () => {
 	// default marker is drawn regardless of what the author wrote.
 	expect(
 		await renderRows("<ul style=\"list-style: none\"><li>A</li></ul>"),
-	).toEqual(["    A"]);
+	).toEqual(
+		["    A"],
+	);
 	expect(
 		await renderRows("<ul style=\"list-style: square\"><li>A</li></ul>"),
-	).toEqual(["  ▪ A"]);
+	).toEqual(
+		["  ▪ A"],
+	);
 	// Components may appear in any order, and a position keyword must not be
 	// mistaken for a type.
 	expect(
@@ -131,7 +135,9 @@ test("li value resets the counter and later items carry on from it", async () =>
 test("ol reversed counts down", async () => {
 	expect(
 		await renderRows("<ol reversed><li>a</li><li>b</li><li>c</li></ol>"),
-	).toEqual([" 3. a", " 2. b", " 1. c"]);
+	).toEqual(
+		[" 3. a", " 2. b", " 1. c"],
+	);
 });
 
 test("the gutter fits the widest marker, so wide markers keep their separator", async () => {

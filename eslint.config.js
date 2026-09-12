@@ -2,6 +2,9 @@ import b9g from "@b9g/eslint-config";
 
 import termdom from "./eslint.rules.js";
 
+const indentOptions = b9g.find((config) => config.rules?.["@stylistic/indent"])
+	.rules["@stylistic/indent"][2];
+
 export default [
 	...b9g,
 	{
@@ -50,5 +53,15 @@ export default [
 		files: ["scripts/**", "examples/**"],
 		languageOptions: {globals: {URL: "readonly"}},
 		rules: {"no-console": "off"},
+	},
+	{
+		// The examples are shown in the website's playground, where a tab is
+		// as wide as the browser says, so they are indented with two spaces.
+		files: ["examples/**"],
+		rules: {
+			"@stylistic/indent": ["error", 2, indentOptions],
+			"@stylistic/indent-binary-ops": ["error", 2],
+			"@stylistic/no-tabs": "error",
+		},
 	},
 ];

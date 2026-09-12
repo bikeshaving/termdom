@@ -14,10 +14,11 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-function makeDOM(html = "", cols = 40, rows = 10): {
-	terminal: MockProcess;
-	dom: TermDOM;
-} {
+function makeDOM(
+	html = "",
+	cols = 40,
+	rows = 10,
+): {terminal: MockProcess; dom: TermDOM} {
 	const terminal = new MockProcess({cols, rows});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
@@ -25,7 +26,10 @@ function makeDOM(html = "", cols = 40, rows = 10): {
 }
 
 /** One element's computed values, after a frame. */
-async function computed(html: string, selector = "#t"): Promise<{
+async function computed(
+	html: string,
+	selector = "#t",
+): Promise<{
 	style: CSSStyleDeclaration;
 	of: (property: string) => string;
 	rect: ReturnType<Element["getBoundingClientRect"]>;
@@ -198,9 +202,8 @@ test("a property written through the IDL takes the slot from an earlier one", as
 });
 
 test("a computed style reports both names of the slot", async () => {
-	const {style} = await computed(
-		"<div id=\"t\" style=\"margin-inline-start: 2px\"></div>",
-	);
+	const {style} =
+		await computed("<div id=\"t\" style=\"margin-inline-start: 2px\"></div>");
 	const names = [...style];
 	expect(names).toContain("margin-inline-start");
 	expect(names).toContain("margin-left");

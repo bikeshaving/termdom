@@ -36,7 +36,8 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("terminal element defaults", () => {
-		const dom = domFor(`<!DOCTYPE html>
+		const dom = domFor(
+			`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="div"></div>
@@ -48,7 +49,8 @@ describe("getComputedStyle - What We Support", () => {
 					<button id="button"></button>
 				</body>
 			</html>
-		`);
+		`,
+		);
 
 		// Block elements
 		expect(
@@ -110,13 +112,15 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("inline styles override defaults", () => {
-		const dom = domFor(`<!DOCTYPE html>
+		const dom = domFor(
+			`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: red; margin: 10px; display: flex;"></div>
 				</body>
 			</html>
-		`);
+		`,
+		);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -128,13 +132,15 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSS keywords - initial", () => {
-		const dom = domFor(`<!DOCTYPE html>
+		const dom = domFor(
+			`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: initial; margin: initial;"></div>
 				</body>
 			</html>
-		`);
+		`,
+		);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -144,13 +150,15 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSS keywords - unset, revert, revert-layer", () => {
-		const dom = domFor(`<!DOCTYPE html>
+		const dom = domFor(
+			`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: unset; margin: revert; padding: revert-layer;"></div>
 				</body>
 			</html>
-		`);
+		`,
+		);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -161,7 +169,8 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("property inheritance", () => {
-		const dom = domFor(`<!DOCTYPE html>
+		const dom = domFor(
+			`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="parent" style="color: blue; font-size: 16px; margin: 20px;">
@@ -170,7 +179,8 @@ describe("getComputedStyle - What We Support", () => {
 					</div>
 				</body>
 			</html>
-		`);
+		`,
+		);
 
 		const child = dom.window.document.getElementById("child")!;
 		const childStyles = dom.window.getComputedStyle(child);
@@ -194,13 +204,15 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSSStyleDeclaration interface compatibility", () => {
-		const dom = domFor(`<!DOCTYPE html>
+		const dom = domFor(
+			`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: red; margin: 10px;"></div>
 				</body>
 			</html>
-		`);
+		`,
+		);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -218,7 +230,8 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("box model properties", () => {
-		const dom = domFor(`<!DOCTYPE html>
+		const dom = domFor(
+			`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="
@@ -230,7 +243,8 @@ describe("getComputedStyle - What We Support", () => {
 					"></div>
 				</body>
 			</html>
-		`);
+		`,
+		);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -259,10 +273,9 @@ test("a nonzero length without a unit is invalid and never enters the cascade", 
 	</style>`;
 	dom.document.body.innerHTML = "<div class=\"box\">B</div><div class=\"shorthand\">S</div>";
 	await nextFrame(dom);
-	const value = (sel: string, prop: string) =>
-		dom.window
-			.getComputedStyle(dom.document.querySelector(sel)!)
-			.getPropertyValue(prop);
+	const value = (sel: string, prop: string) => dom.window
+		.getComputedStyle(dom.document.querySelector(sel)!)
+		.getPropertyValue(prop);
 
 	expect(value(".box", "padding-top")).toBe("3px");
 	// A shorthand is invalid as a whole if any component is: neither the
@@ -284,10 +297,9 @@ test("a corner radius computes to a length pair and does not inherit", async () 
 	dom.document.body.innerHTML = `<div class="cells">C<span class="child">K</span></div>
 		<div class="ellipse">E</div><div class="percent">P</div><div class="reset">R</div>`;
 	await nextFrame(dom);
-	const value = (sel: string, prop: string) =>
-		dom.window
-			.getComputedStyle(dom.document.querySelector(sel)!)
-			.getPropertyValue(prop);
+	const value = (sel: string, prop: string) => dom.window
+		.getComputedStyle(dom.document.querySelector(sel)!)
+		.getPropertyValue(prop);
 
 	// A cell is the terminal's unit of width, so a radius in ch computes to
 	// that many px like any other length.
@@ -326,10 +338,9 @@ test("bare numbers stay valid where CSS says they are", async () => {
 	</style>`;
 	dom.document.body.innerHTML = "<div class=\"zero\">Z</div><div class=\"numeric\">N</div><div class=\"units\">U</div>";
 	await nextFrame(dom);
-	const value = (sel: string, prop: string) =>
-		dom.window
-			.getComputedStyle(dom.document.querySelector(sel)!)
-			.getPropertyValue(prop);
+	const value = (sel: string, prop: string) => dom.window
+		.getComputedStyle(dom.document.querySelector(sel)!)
+		.getPropertyValue(prop);
 
 	expect(value(".zero", "padding-top")).toBe("0px");
 	expect(value(".numeric", "line-height")).toBe("2");
@@ -785,9 +796,8 @@ test("every CSS shorthand is expanded or listed as unexpanded", () => {
 		// The public face of expansion: a shorthand set on a declaration
 		// enumerates as the longhands it declared.
 		probe.setAttribute("style", `${shorthand}: ${value}`);
-		const longhands = Array.from(
-			probe.style as unknown as Iterable<string>,
-		).filter((name) => name !== shorthand);
+		const longhands = Array.from(probe.style as unknown as Iterable<string>)
+			.filter((name) => name !== shorthand);
 		expect(`${shorthand} -> ${longhands.length > 0}`).toBe(
 			`${shorthand} -> true`,
 		);
@@ -807,18 +817,19 @@ test("every CSS shorthand is expanded or listed as unexpanded", () => {
 });
 
 test("initial takes the property's initial value, not the parent's", () => {
-	const dom = domFor(`<!DOCTYPE html><html><head><style>
+	const dom = domFor(
+		`<!DOCTYPE html><html><head><style>
 		#d { color: blue }
 	</style></head><body><div style="color: red">
 		<span id="a" style="color: initial">a</span>
 		<span id="b" style="color: unset">b</span>
 		<span id="c" style="color: inherit">c</span>
 		<span id="d" style="color: initial">d</span>
-	</div></body></html>`);
-	const color = (id: string): string =>
-		dom.window
-			.getComputedStyle(dom.window.document.getElementById(id)!)
-			.getPropertyValue("color");
+	</div></body></html>`,
+	);
+	const color = (id: string): string => dom.window
+		.getComputedStyle(dom.window.document.getElementById(id)!)
+		.getPropertyValue("color");
 	expect(color("a")).toBe("rgb(0, 0, 0)");
 	expect(color("b")).toBe("rgb(255, 0, 0)");
 	expect(color("c")).toBe("rgb(255, 0, 0)");
@@ -826,31 +837,33 @@ test("initial takes the property's initial value, not the parent's", () => {
 });
 
 test("an important UA declaration beats an important author one", () => {
-	const dom = domFor(`<!DOCTYPE html><html><head><style>
+	const dom = domFor(
+		`<!DOCTYPE html><html><head><style>
 		input { display: block !important }
 	</style></head><body>
 		<input id="hidden" type="hidden">
 		<input id="text" type="text">
-	</body></html>`);
-	const display = (id: string): string =>
-		dom.window
-			.getComputedStyle(dom.window.document.getElementById(id)!)
-			.getPropertyValue("display");
+	</body></html>`,
+	);
+	const display = (id: string): string => dom.window
+		.getComputedStyle(dom.window.document.getElementById(id)!)
+		.getPropertyValue("display");
 	expect(display("hidden")).toBe("none");
 	expect(display("text")).toBe("block");
 });
 
 test("inserting a child restyles the siblings and parent that selectors read", async () => {
-	const dom = domFor(`<!DOCTYPE html><html><head><style>
+	const dom = domFor(
+		`<!DOCTYPE html><html><head><style>
 		.item + .item { color: red }
 		.item:first-child { font-weight: bold }
 		.box:empty { color: blue }
-	</style></head><body><div id="list"><div class="item" id="a">a</div></div><div class="box" id="empty"></div></body></html>`);
+	</style></head><body><div id="list"><div class="item" id="a">a</div></div><div class="box" id="empty"></div></body></html>`,
+	);
 	const document = dom.window.document;
-	const style = (id: string, property: string): string =>
-		dom.window
-			.getComputedStyle(document.getElementById(id)!)
-			.getPropertyValue(property);
+	const style = (id: string, property: string): string => dom.window
+		.getComputedStyle(document.getElementById(id)!)
+		.getPropertyValue(property);
 	await nextFrame(dom);
 	expect(style("a", "color")).toBe("rgb(0, 0, 0)");
 	expect(style("a", "font-weight")).toBe("bold");

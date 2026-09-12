@@ -11,10 +11,10 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-function makeOverflowingApp(rows = 5, lines = 20): {
-	terminal: MockProcess;
-	dom: TermDOM;
-} {
+function makeOverflowingApp(
+	rows = 5,
+	lines = 20,
+): {terminal: MockProcess; dom: TermDOM} {
 	const terminal = new MockProcess({cols: 40, rows});
 	const dom = new TermDOM({transport: terminal.transport});
 	for (let i = 0; i < lines; i++) {

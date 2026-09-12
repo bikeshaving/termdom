@@ -136,24 +136,17 @@ test("the terminal is asked to leave bidi to us, and its answer is honoured", as
 
 test("a terminal that insists on reordering gets logical order instead", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 4});
-	const stdout = terminal.stdout as unknown as {
-		write: (...args: unknown[]) => boolean;
-	};
+	const stdout =
+		terminal.stdout as unknown as {write: (...args: unknown[]) => boolean};
 	const original = stdout.write.bind(stdout);
 	// Swallow the probe before the headless terminal can answer it, and reply
 	// the way a terminal with permanent implicit bidi would.
 	stdout.write = (...args: unknown[]) => {
 		const data = String(args[0]);
 		if (data.includes("\x1b[8$p")) {
-			setTimeout(
-				() =>
-					(
-						terminal.stdin as unknown as {
-							simulateResponse: (s: string) => void;
-						}
-					).simulateResponse("\x1b[8;3$y"),
-				0,
-			);
+			setTimeout(() => (
+				terminal.stdin as unknown as {simulateResponse: (s: string) => void}
+			).simulateResponse("\x1b[8;3$y"), 0);
 			const rest = data.replace("\x1b[8l", "").replace("\x1b[8$p", "");
 			if (rest) {
 				return original(rest, ...args.slice(1));
@@ -187,24 +180,17 @@ test("grapheme-cluster mode is negotiated, and given back on dispose", async () 
 	// which is per code point and cannot express a ZWJ sequence as one unit.
 	// We measure by cluster, so this asks the terminal to agree.
 	const terminal = new MockProcess({cols: 20, rows: 4});
-	const stdout = terminal.stdout as unknown as {
-		write: (...args: unknown[]) => boolean;
-	};
+	const stdout =
+		terminal.stdout as unknown as {write: (...args: unknown[]) => boolean};
 	const original = stdout.write.bind(stdout);
 	const seen: string[] = [];
 	stdout.write = (...args: unknown[]) => {
 		const data = String(args[0]);
 		seen.push(data);
 		if (data.includes("\x1b[?2027$p")) {
-			setTimeout(
-				() =>
-					(
-						terminal.stdin as unknown as {
-							simulateResponse: (s: string) => void;
-						}
-					).simulateResponse("\x1b[?2027;1$y"),
-				0,
-			);
+			setTimeout(() => (
+				terminal.stdin as unknown as {simulateResponse: (s: string) => void}
+			).simulateResponse("\x1b[?2027;1$y"), 0);
 			const rest = data.replace("\x1b[?2027h", "").replace("\x1b[?2027$p", "");
 			if (rest) {
 				return original(rest, ...args.slice(1));

@@ -13,47 +13,47 @@ const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `
-	body { margin: 0; padding: 0 1ch; }
-	h1 { background-color: Highlight; color: HighlightText; padding-left: 1ch; }
-	p { margin-top: 1px; }
+  body { margin: 0; padding: 0 1ch; }
+  h1 { background-color: Highlight; color: HighlightText; padding-left: 1ch; }
+  p { margin-top: 1px; }
 `;
 document.head.appendChild(style);
 
 document.body.innerHTML = `
-	<h1>dialog</h1>
-	<p>transcript line one</p>
-	<p>transcript line two</p>
-	<p>
-		<button type="button" id="flow">show()</button>
-		<button type="button" id="modal">showModal()</button>
-	</p>
-	<dialog id="dlg">
-		<p id="how"></p>
-		<button type="button" id="close">close</button>
-	</dialog>
-	<p id="tail">this line stays put for show() and vanishes under the
-	modal backdrop</p>
-	<p>tab · enter · q quits</p>
+  <h1>dialog</h1>
+  <p>transcript line one</p>
+  <p>transcript line two</p>
+  <p>
+    <button type="button" id="flow">show()</button>
+    <button type="button" id="modal">showModal()</button>
+  </p>
+  <dialog id="dlg">
+    <p id="how"></p>
+    <button type="button" id="close">close</button>
+  </dialog>
+  <p id="tail">this line stays put for show() and vanishes under the
+  modal backdrop</p>
+  <p>tab · enter · q quits</p>
 `;
 
 const dialog = document.getElementById("dlg") as HTMLDialogElement;
 const how = document.getElementById("how")!;
 document.getElementById("flow")!.addEventListener("click", () => {
-	how.textContent = "in flow: the page grew by this box";
-	dialog.show();
+  how.textContent = "in flow: the page grew by this box";
+  dialog.show();
 });
 document.getElementById("modal")!.addEventListener("click", () => {
-	how.textContent = "modal: centered, backdrop, page inert";
-	dialog.showModal();
+  how.textContent = "modal: centered, backdrop, page inert";
+  dialog.showModal();
 });
 document.getElementById("close")!.addEventListener("click", () => {
-	dialog.close();
+  dialog.close();
 });
 
 document.addEventListener("keydown", (event) => {
-	if ((event as KeyboardEvent).key === "q" && !dialog.open) {
-		term.window.close();
-	}
+  if ((event as KeyboardEvent).key === "q" && !dialog.open) {
+    term.window.close();
+  }
 });
 
 term.attach();

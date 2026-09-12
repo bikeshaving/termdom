@@ -14,10 +14,7 @@ function makeApp(options: {html?: string} = {}): {
 } {
 	const proc = new MockProcess();
 	const written = captureRawOutput(proc);
-	const termdom = new TermDOM({
-		transport: proc.transport,
-		html: options.html,
-	});
+	const termdom = new TermDOM({transport: proc.transport, html: options.html});
 	return {proc, written, termdom, document: termdom.document};
 }
 
@@ -160,11 +157,10 @@ test("boundary events fire in UI Events order with relatedTarget", async () => {
 
 	const log: string[] = [];
 	const related: Record<string, unknown> = {};
-	for (const [element, name] of [
-		[parent, "parent"],
-		[a, "a"],
-		[b, "b"],
-	] as const) {
+	for (const [
+		element,
+		name,
+	] of [[parent, "parent"], [a, "a"], [b, "b"]] as const) {
 		for (const type of [
 			"mouseover",
 			"mouseout",
@@ -210,9 +206,8 @@ test("boundary events fire in UI Events order with relatedTarget", async () => {
 });
 
 test("mouseenter does not bubble; mouseover does", async () => {
-	const {proc, termdom, document} = makeApp({
-		html: "<div id=parent><span id=a>aaaa</span></div>",
-	});
+	const {proc, termdom, document} =
+		makeApp({html: "<div id=parent><span id=a>aaaa</span></div>"});
 	await nextFrame(termdom);
 	const parent = document.getElementById("parent")!;
 	const a = document.getElementById("a")!;
@@ -270,9 +265,9 @@ test("@media (hover: none) rules never apply", async () => {
 	const {termdom, document} = makeApp({html});
 	await nextFrame(termdom);
 	const div = document.querySelector("div")!;
-	expect(
-		termdom.window.getComputedStyle(div).getPropertyValue("color"),
-	).toBe("rgb(0, 0, 0)");
+	expect(termdom.window.getComputedStyle(div).getPropertyValue("color")).toBe(
+		"rgb(0, 0, 0)",
+	);
 	termdom.dispose();
 });
 

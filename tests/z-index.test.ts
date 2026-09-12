@@ -28,11 +28,13 @@ async function renderRows(html: string, cols = 30): Promise<string[]> {
 test("a positioned box with a higher z-index paints over its siblings", async () => {
 	// The overlay is a sibling of the text it covers. Painted in document order it
 	// would land underneath, whatever its z-index said.
-	const rows = await renderRows(`
+	const rows = await renderRows(
+		`
 		<div style="position:relative">
 			<div>background text here</div>
 			<div style="position:absolute; top:0; left:4ch; width:8ch; z-index:10; background-color:blue">OVER</div>
-		</div>`);
+		</div>`,
+	);
 
 	// The overlay's own text survives, and it has eaten the text beneath it.
 	expect(rows[0]).toContain("OVER");
@@ -44,11 +46,13 @@ test("a negative z-index paints behind", async () => {
 	// stable sort. Per CSS a z:auto positioned box paints ABOVE in-flow
 	// content (the layer the stacking painter now implements), so going
 	// behind requires what the title always claimed: a negative z-index.
-	const rows = await renderRows(`
+	const rows = await renderRows(
+		`
 		<div style="position:relative">
 			<div style="position:absolute; top:0; left:0; z-index:-1">BEHIND</div>
 			<div>front</div>
-		</div>`);
+		</div>`,
+	);
 
 	// "front" is written first in the document but must win: the negative box goes
 	// under it.
@@ -58,11 +62,13 @@ test("a negative z-index paints behind", async () => {
 test("without a z-index, document order still decides", async () => {
 	// The sort is stable, so unpositioned and auto-z boxes keep painting exactly as
 	// they did. This is what stops the change moving anything that already worked.
-	const rows = await renderRows(`
+	const rows = await renderRows(
+		`
 		<div style="position:relative">
 			<div style="position:absolute; top:0; left:0">FIRST</div>
 			<div style="position:absolute; top:0; left:0">SECOND</div>
-		</div>`);
+		</div>`,
+	);
 
 	expect(rows[0]).toContain("SECOND");
 });
@@ -71,11 +77,13 @@ test("z-index does not apply to a static box", async () => {
 	// Per CSS, z-index only affects positioned boxes. The static box carries the
 	// larger z-index and comes first, so it wins only if z-index is wrongly
 	// honoured on it; the positioned box that follows paints over it.
-	const rows = await renderRows(`
+	const rows = await renderRows(
+		`
 		<div style="position:relative">
 			<div style="z-index:99; background-color:red">STATIC</div>
 			<div style="position:absolute; top:0; left:0; background-color:blue">POSITIONED</div>
-		</div>`);
+		</div>`,
+	);
 
 	expect(rows[0]).toContain("POSITIONED");
 	expect(rows[0]).not.toContain("STATIC");

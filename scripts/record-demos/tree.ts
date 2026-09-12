@@ -85,10 +85,9 @@ export default {
 					const children = document.createElement("div");
 					const depth =
 						Math.floor((parseInt(current.style.paddingLeft) - 1) / 2) + 1;
-					const dir =
-						current.dataset.path === "src/"
-							? "./src"
-							: "./" + current.dataset.path!.replace(/\/$/, "");
+					const dir = current.dataset.path === "src/"
+						? "./src"
+						: "./" + current.dataset.path!.replace(/\/$/, "");
 					fill(children, dir, depth);
 					current.after(children);
 					current.dataset.open = "true";

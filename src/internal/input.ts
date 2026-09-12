@@ -182,8 +182,9 @@ function getSequentialFocusEntries(
 			if (element.localName === "slot") {
 				const innerBarrier = ownerTabindex < 0 ? (barrier ?? element) : barrier;
 				const assigned = (element as HTMLSlotElement).assignedNodes();
-				const slotContents =
-					assigned.length > 0 ? assigned : element.childNodes;
+				const slotContents = assigned.length > 0
+					? assigned
+					: element.childNodes;
 				const inner = buildScope(slotContents as Iterable<Node>, innerBarrier);
 				const expansion = isFocusable(element)
 					? [{element, barrier}, ...inner]
@@ -212,12 +213,11 @@ function getSequentialFocusEntries(
 		return entries.flatMap((entry) => entry.elements);
 	};
 
-	const roots =
-		root.nodeType === 9
-			? ((root as Document).documentElement
-				? [(root as Document).documentElement as Element]
-				: [])
-			: Array.from((root as Element).children);
+	const roots = root.nodeType === 9
+		? ((root as Document).documentElement
+			? [(root as Document).documentElement as Element]
+			: [])
+		: Array.from((root as Element).children);
 	return buildScope(roots, null);
 }
 
@@ -388,8 +388,8 @@ export class Input {
 		}
 		this[kPendingHover] = null;
 		const {x, y, shiftKey, altKey, ctrlKey} = pending;
-		const target = elementAtDocumentPoint(this[kDocument], x, y) ||
-			this[kDocument].body;
+		const target =
+			elementAtDocumentPoint(this[kDocument], x, y) || this[kDocument].body;
 		const previous = this[kHoverElement];
 		if (target !== previous) {
 			this[kHoverElement] = target;
@@ -486,10 +486,12 @@ export class Input {
 	}
 }
 
-function deliverMouseReport(
-	input: Input,
-	{button: code, col, row, release: isRelease}: WireMouse,
-): void {
+function deliverMouseReport(input: Input, {
+	button: code,
+	col,
+	row,
+	release: isRelease,
+}: WireMouse): void {
 	const {
 		shiftKey,
 		altKey,
@@ -507,14 +509,7 @@ function deliverMouseReport(
 	// hit-test per frame. A drag's motion also falls through. Its mousemove
 	// and selection updates are per report.
 	if (isMotion) {
-		input[kPendingHover] = {
-			x,
-			y,
-			shiftKey,
-			altKey,
-			ctrlKey,
-			quiet: base <= 2,
-		};
+		input[kPendingHover] = {x, y, shiftKey, altKey, ctrlKey, quiet: base <= 2};
 		if (base > 2) {
 			requestRender(input[kDocument]);
 			return;
@@ -600,10 +595,9 @@ function deliverPaste(input: Input, text: string): void {
 	// The DOM's paste carries LF.
 	text = text.replace(/\r\n?/g, "\n");
 	const focused = input[kDocument].activeElement;
-	const target =
-		focused && focused !== input[kDocument].body
-			? focused
-			: input[kDocument].body;
+	const target = focused && focused !== input[kDocument].body
+		? focused
+		: input[kDocument].body;
 	const clipboardData = new input[kWindow].DataTransfer();
 	clipboardData.setData("text/plain", text);
 	lockDataTransfer(clipboardData);
@@ -684,10 +678,9 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 	isInDocument: boolean;
 } {
 	const screen = input[kScreen];
-	const documentRow =
-		input[kDocument].fullscreenElement !== null
-			? row - 1 + screen.anchorScrollTop
-			: row - 1 - screen.documentTop + screen.scrollTop;
+	const documentRow = input[kDocument].fullscreenElement !== null
+		? row - 1 + screen.anchorScrollTop
+		: row - 1 - screen.documentTop + screen.scrollTop;
 	const isInDocument = documentRow >= 0;
 	return {x: col - 1, y: isInDocument ? documentRow : 0, isInDocument};
 }
@@ -728,10 +721,8 @@ function dragTo(
 ): void {
 	// Clamped into the text control, whichever element the pointer is over now.
 	if (input[kTextControlDragAnchor] && isInDocument) {
-		const {
-			element: textControlElement,
-			offset: anchor,
-		} = input[kTextControlDragAnchor];
+		const {element: textControlElement, offset: anchor} =
+			input[kTextControlDragAnchor];
 		const focus = getTextControlCaretOffset(textControlElement, x, y);
 		if (focus !== null) {
 			setUASelection(
@@ -801,8 +792,9 @@ function dispatchPress(
 	// Default action: a press in a text control places the caret and anchors a
 	// text control drag. The select UA shadow tree's own mousedown listener ran
 	// above.
-	const parked =
-		base === 0 && isInDocument ? placeTextControlCaret(target, x, y) : null;
+	const parked = base === 0 && isInDocument
+		? placeTextControlCaret(target, x, y)
+		: null;
 	if (parked) {
 		input[kTextControlDragAnchor] = {
 			element: parked.textControl as HTMLInputElement | HTMLTextAreaElement,
@@ -923,10 +915,9 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	// A fullscreen element is usually not focusable, so keydown falls back
 	// to it before the body.
 	const active = input[kDocument].activeElement;
-	const targetElement =
-		active && active !== input[kDocument].body
-			? active
-			: input[kDocument].fullscreenElement || input[kDocument].body;
+	const targetElement = active && active !== input[kDocument].body
+		? active
+		: input[kDocument].fullscreenElement || input[kDocument].body;
 
 	const keydownEvent = new input[kWindow].KeyboardEvent("keydown", {
 		key: keyName,
@@ -1052,8 +1043,9 @@ function moveFocus(input: Input, reverse: boolean): void {
 		current = inner;
 	}
 	const currentIndex = entries.findIndex((entry) => entry.element === current);
-	const currentBarrier =
-		currentIndex === -1 ? null : entries[currentIndex].barrier;
+	const currentBarrier = currentIndex === -1
+		? null
+		: entries[currentIndex].barrier;
 	// Crossing out of a barrier is the tree exit below. Crossing in never
 	// happens.
 	const reachable = (index: number): boolean =>
@@ -1073,9 +1065,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 		}
 	} else {
 		for (
-			let i = currentIndex + step;
-			i >= 0 && i < entries.length;
-			i += step
+			let i = currentIndex + step; i >= 0 && i < entries.length; i += step
 		) {
 			if (reachable(i)) {
 				nextIndex = i;

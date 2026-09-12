@@ -854,9 +854,7 @@ test("a superseded resize drops the answer to the query it sent", async () => {
 	await waitForQuery();
 	deliver(held.shift()!);
 	for (
-		let waited = 0;
-		onScreen("SENTINEL") === 0 && waited < 2000;
-		waited += 25
+		let waited = 0; onScreen("SENTINEL") === 0 && waited < 2000; waited += 25
 	) {
 		await sleep(25);
 	}
@@ -1167,11 +1165,9 @@ test("scroll-transform frames match a full repaint exactly", async () => {
 	// including the fixed bar, whose rows the transform must repaint at both
 	// its real and its shifted position.
 	const content =
-		Array.from(
-			{length: 60},
-			(_, i) => `<div>line ${i} of the document</div>`,
-		).join("") +
-		"<div style=\"position:fixed;bottom:0;left:0;right:0;background-color:#333\">BAR</div>";
+		Array.from({length: 60}, (_, i) => `<div>line ${i} of the document</div>`)
+			.join("") +
+			"<div style=\"position:fixed;bottom:0;left:0;right:0;background-color:#333\">BAR</div>";
 
 	const render = async (steps: number[]): Promise<string> => {
 		const terminal = new MockProcess({cols: 40, rows: 10});

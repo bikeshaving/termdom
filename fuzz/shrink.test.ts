@@ -172,9 +172,7 @@ type Action =
 
 function describe(action: Action): string {
 	const {kind, ...rest} = action as any;
-	return `${kind}(${Object.entries(rest)
-		.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-		.join(", ")})`;
+	return `${kind}(${Object.entries(rest).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ")})`;
 }
 
 function makeDOM(): {dom: any; terminal: any} {
@@ -682,47 +680,51 @@ const REGRESSION_SEEDS = [
 	586,
 ];
 
-test("shrink", async () => {
-	const scan = Number(process.env.SCAN ?? 0);
-	const from = Number(process.env.FROM ?? 1);
-	const seeds = scan
-		? Array.from({length: scan}, (_, i) => from + i)
-		: process.env.SEEDS
-			? process.env.SEEDS.split(",").map((s) => Number(s.trim()))
-			: REGRESSION_SEEDS;
-	const wanted = Number(process.env.WANT ?? seeds.length);
-	const report: string[] = [];
-	let found = 0;
-	let checked = 0;
-	mkdirSync(REPORT_DIR, {recursive: true});
-	mkdirSync(REPORT_DIR, {recursive: true});
-	for (const seed of seeds) {
-		if (found >= wanted) {
-			break;
+test(
+	"shrink",
+	async () => {
+		const scan = Number(process.env.SCAN ?? 0);
+		const from = Number(process.env.FROM ?? 1);
+		const seeds = scan
+			? Array.from({length: scan}, (_, i) => from + i)
+			: process.env.SEEDS
+				? process.env.SEEDS.split(",").map((s) => Number(s.trim()))
+				: REGRESSION_SEEDS;
+		const wanted = Number(process.env.WANT ?? seeds.length);
+		const report: string[] = [];
+		let found = 0;
+		let checked = 0;
+		mkdirSync(REPORT_DIR, {recursive: true});
+		mkdirSync(REPORT_DIR, {recursive: true});
+		for (const seed of seeds) {
+			if (found >= wanted) {
+				break;
+			}
+			checked++;
+			// A seed that crashes the engine takes the scan down with it and never
+			// reaches the report, so the seed under way is left on disk first.
+			writeFileSync(`${REPORT_DIR}/seed.txt`, String(seed));
+			// A seed that crashes the engine takes the scan down with it and never
+			// reaches the report, so the seed under way is left on disk first.
+			writeFileSync(`${REPORT_DIR}/seed.txt`, String(seed));
+			const {html, actions} = await record(seed);
+			if (!(await differs(html, actions)).differs) {
+				continue;
+			}
+			found++;
+			const small = await shrink(html, actions);
+			const result = await differs(small.html, small.actions);
+			report.push(
+				`== seed ${seed}\nhtml: ${small.html}\n` +
+				`actions:\n${small.actions.map((a) => `  ${describe(a)}`).join("\n")}\n` +
+				`--- incremental\n${result.incremental}\n--- fresh\n${result.fresh}\n`,
+			);
 		}
-		checked++;
-		// A seed that crashes the engine takes the scan down with it and never
-		// reaches the report, so the seed under way is left on disk first.
-		writeFileSync(`${REPORT_DIR}/seed.txt`, String(seed));
-		// A seed that crashes the engine takes the scan down with it and never
-		// reaches the report, so the seed under way is left on disk first.
-		writeFileSync(`${REPORT_DIR}/seed.txt`, String(seed));
-		const {html, actions} = await record(seed);
-		if (!(await differs(html, actions)).differs) {
-			continue;
+		const summary = `${found} of ${checked} scanned\n\n${report.join("\n")}`;
+		writeFileSync(`${REPORT_DIR}/shrunk.txt`, summary);
+		if (found > 0) {
+			throw new Error(summary);
 		}
-		found++;
-		const small = await shrink(html, actions);
-		const result = await differs(small.html, small.actions);
-		report.push(
-			`== seed ${seed}\nhtml: ${small.html}\n` +
-			`actions:\n${small.actions.map((a) => `  ${describe(a)}`).join("\n")}\n` +
-			`--- incremental\n${result.incremental}\n--- fresh\n${result.fresh}\n`,
-		);
-	}
-	const summary = `${found} of ${checked} scanned\n\n${report.join("\n")}`;
-	writeFileSync(`${REPORT_DIR}/shrunk.txt`, summary);
-	if (found > 0) {
-		throw new Error(summary);
-	}
-}, 900000);
+	},
+	900000,
+);

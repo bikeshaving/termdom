@@ -52,11 +52,11 @@ sidebar.appendChild(sidebarTitle);
 
 const menuItems = ["• Home", "• About", "• Services", "• Contact"];
 for (const item of menuItems) {
-	const menuItem = document.createElement("span");
-	menuItem.textContent = item;
-	menuItem.style.color = "white";
-	menuItem.style.padding = "0px 1px 0px 1px";
-	sidebar.appendChild(menuItem);
+  const menuItem = document.createElement("span");
+  menuItem.textContent = item;
+  menuItem.style.color = "white";
+  menuItem.style.padding = "0px 1px 0px 1px";
+  sidebar.appendChild(menuItem);
 }
 
 const mainContent = document.createElement("div");
@@ -74,7 +74,7 @@ mainContent.appendChild(contentTitle);
 
 const contentText = document.createElement("span");
 contentText.textContent =
-	"Flex rows and columns, gap, grow and shrink -- resolved by a spec flexbox engine and painted to whole cells. Multi-line markup lays out as in a browser: whitespace between items is not an item.";
+  "Flex rows and columns, gap, grow and shrink -- resolved by a spec flexbox engine and painted to whole cells. Multi-line markup lays out as in a browser: whitespace between items is not an item.";
 contentText.style.color = "white";
 contentText.style.padding = "1px 0px 1px 0px";
 mainContent.appendChild(contentText);
@@ -86,31 +86,31 @@ featuresContainer.style.padding = "1px 0px 0px 0px";
 mainContent.appendChild(featuresContainer);
 
 const features = [
-	{title: "🎨 Styling", desc: "One cascade: sheets, inline, var(), :has()"},
-	{title: "📐 Layout", desc: "Flex, tables, margin collapsing"},
-	{title: "🧩 Widgets", desc: "Inputs and selects as UA shadow trees"},
+  {title: "🎨 Styling", desc: "One cascade: sheets, inline, var(), :has()"},
+  {title: "📐 Layout", desc: "Flex, tables, margin collapsing"},
+  {title: "🧩 Widgets", desc: "Inputs and selects as UA shadow trees"},
 ];
 
 for (const feature of features) {
-	const featureCard = document.createElement("div");
-	featureCard.style.display = "flex";
-	featureCard.style.flexDirection = "column";
-	featureCard.style.backgroundColor = "darkcyan";
-	featureCard.style.padding = "1px 1px 1px 1px";
-	featureCard.style.flex = "1";
-	featuresContainer.appendChild(featureCard);
+  const featureCard = document.createElement("div");
+  featureCard.style.display = "flex";
+  featureCard.style.flexDirection = "column";
+  featureCard.style.backgroundColor = "darkcyan";
+  featureCard.style.padding = "1px 1px 1px 1px";
+  featureCard.style.flex = "1";
+  featuresContainer.appendChild(featureCard);
 
-	const featureTitle = document.createElement("span");
-	featureTitle.textContent = feature.title;
-	featureTitle.style.color = "white";
-	featureTitle.style.textAlign = "center";
-	featureCard.appendChild(featureTitle);
+  const featureTitle = document.createElement("span");
+  featureTitle.textContent = feature.title;
+  featureTitle.style.color = "white";
+  featureTitle.style.textAlign = "center";
+  featureCard.appendChild(featureTitle);
 
-	const featureDesc = document.createElement("span");
-	featureDesc.textContent = feature.desc;
-	featureDesc.style.color = "white";
-	featureDesc.style.textAlign = "center";
-	featureCard.appendChild(featureDesc);
+  const featureDesc = document.createElement("span");
+  featureDesc.textContent = feature.desc;
+  featureDesc.style.color = "white";
+  featureDesc.style.textAlign = "center";
+  featureCard.appendChild(featureDesc);
 }
 
 const footer = document.createElement("div");

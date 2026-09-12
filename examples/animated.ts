@@ -125,18 +125,18 @@ document.body.appendChild(app);
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const brailleFrames = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
 const clockFrames = [
-	"🕐",
-	"🕑",
-	"🕒",
-	"🕓",
-	"🕔",
-	"🕕",
-	"🕖",
-	"🕗",
-	"🕘",
-	"🕙",
-	"🕚",
-	"🕛",
+  "🕐",
+  "🕑",
+  "🕒",
+  "🕓",
+  "🕔",
+  "🕕",
+  "🕖",
+  "🕗",
+  "🕘",
+  "🕙",
+  "🕚",
+  "🕛",
 ];
 let frame = 0;
 let progress = 0;
@@ -145,48 +145,48 @@ let bounceDir = 1;
 const bounceWidth = 20;
 
 function updateAnimations(): void {
-	// Spinner
-	spinner.textContent =
-		spinnerFrames[frame % spinnerFrames.length] + " Processing...";
+  // Spinner
+  spinner.textContent =
+    spinnerFrames[frame % spinnerFrames.length] + " Processing...";
 
-	// Dots
-	const dotCount = frame % 4;
-	dots.textContent =
-		"Please wait" + ".".repeat(dotCount) + " ".repeat(3 - dotCount);
+  // Dots
+  const dotCount = frame % 4;
+  dots.textContent =
+    "Please wait" + ".".repeat(dotCount) + " ".repeat(3 - dotCount);
 
-	// Progress bar
-	const barWidth = 30;
-	const filled = Math.round((progress / 100) * barWidth);
-	barFill.textContent = "█".repeat(filled);
-	barTrack.textContent = "░".repeat(barWidth - filled);
-	barPct.textContent = `${Math.round(progress)}%`;
-	progress = (progress + 0.5) % 101;
+  // Progress bar
+  const barWidth = 30;
+  const filled = Math.round((progress / 100) * barWidth);
+  barFill.textContent = "█".repeat(filled);
+  barTrack.textContent = "░".repeat(barWidth - filled);
+  barPct.textContent = `${Math.round(progress)}%`;
+  progress = (progress + 0.5) % 101;
 
-	// Braille spinner
-	braille.textContent =
-		brailleFrames[frame % brailleFrames.length] + " Computing...";
+  // Braille spinner
+  braille.textContent =
+    brailleFrames[frame % brailleFrames.length] + " Computing...";
 
-	// Clock
-	clock.textContent = clockFrames[frame % clockFrames.length];
+  // Clock
+  clock.textContent = clockFrames[frame % clockFrames.length];
 
-	// Bouncing ball
-	bounce.textContent =
-		" ".repeat(bouncePos) + "●" + " ".repeat(bounceWidth - bouncePos);
-	bouncePos += bounceDir;
-	if (bouncePos >= bounceWidth || bouncePos <= 0) {
-		bounceDir *= -1;
-	}
+  // Bouncing ball
+  bounce.textContent =
+    " ".repeat(bouncePos) + "●" + " ".repeat(bounceWidth - bouncePos);
+  bouncePos += bounceDir;
+  if (bouncePos >= bounceWidth || bouncePos <= 0) {
+    bounceDir *= -1;
+  }
 
-	frame++;
+  frame++;
 }
 
 // Keyboard handler
 document.addEventListener("keydown", (e: Event) => {
-	const ke = e as KeyboardEvent;
-	if (ke.key === "q") {
-		clearInterval(interval);
-		term.window.close();
-	}
+  const ke = e as KeyboardEvent;
+  if (ke.key === "q") {
+    clearInterval(interval);
+    term.window.close();
+  }
 });
 
 // Start animation loop

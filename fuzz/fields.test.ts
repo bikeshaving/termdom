@@ -131,31 +131,28 @@ function step(model: Model, command: Command, multiline: boolean): Model {
 	}
 }
 
-const commandArbitrary: fc.Arbitrary<Command> = fc.oneof(
-	{
-		arbitrary: fc.record({
-			kind: fc.constant("type" as const),
-			text: fc.constantFrom("a", "b", " ", "z", "ab", "hello"),
-		}),
-		weight: 4,
-	},
-	fc.record({kind: fc.constant("left" as const)}),
-	fc.record({kind: fc.constant("right" as const)}),
-	fc.record({kind: fc.constant("home" as const)}),
-	fc.record({kind: fc.constant("end" as const)}),
-	fc.record({kind: fc.constant("back" as const)}),
-	fc.record({kind: fc.constant("forward" as const)}),
-	fc.record({kind: fc.constant("killToEnd" as const)}),
-	fc.record({kind: fc.constant("killToStart" as const)}),
-	fc.record({kind: fc.constant("killWord" as const)}),
-	fc.record({kind: fc.constant("deleteForward" as const)}),
-	fc.record({kind: fc.constant("backspace" as const)}),
-	fc.record({kind: fc.constant("newline" as const)}),
-	fc.record({
-		kind: fc.constant("paste" as const),
-		text: fc.constantFrom("pasted", "two words", "a\nb", "x\ny\nz", ""),
+const commandArbitrary: fc.Arbitrary<Command> = fc.oneof({
+	arbitrary: fc.record({
+		kind: fc.constant("type" as const),
+		text: fc.constantFrom("a", "b", " ", "z", "ab", "hello"),
 	}),
-);
+	weight: 4,
+}, fc.record({kind: fc.constant("left" as const)}), fc.record({
+	kind: fc.constant("right" as const),
+}), fc.record({kind: fc.constant("home" as const)}), fc.record({
+	kind: fc.constant("end" as const),
+}), fc.record({kind: fc.constant("back" as const)}), fc.record({
+	kind: fc.constant("forward" as const),
+}), fc.record({kind: fc.constant("killToEnd" as const)}), fc.record({
+	kind: fc.constant("killToStart" as const),
+}), fc.record({kind: fc.constant("killWord" as const)}), fc.record({
+	kind: fc.constant("deleteForward" as const),
+}), fc.record({kind: fc.constant("backspace" as const)}), fc.record({
+	kind: fc.constant("newline" as const),
+}), fc.record({
+	kind: fc.constant("paste" as const),
+	text: fc.constantFrom("pasted", "two words", "a\nb", "x\ny\nz", ""),
+}));
 
 const scriptArbitrary = fc.array(commandArbitrary, {
 	minLength: 1,
@@ -199,20 +196,28 @@ async function play(
 	dom.dispose();
 }
 
-test("an input edits the way the model says", async () => {
-	await fc.assert(
-		fc.asyncProperty(scriptArbitrary, (script: Command[]) =>
-			play("input", script),
-		),
-		{numRuns: NUM_RUNS, seed: SEED, includeErrorInReport: true},
-	);
-}, 900000);
+test(
+	"an input edits the way the model says",
+	async () => {
+		await fc.assert(
+			fc.asyncProperty(scriptArbitrary, (script: Command[]) =>
+				play("input", script),
+			),
+			{numRuns: NUM_RUNS, seed: SEED, includeErrorInReport: true},
+		);
+	},
+	900000,
+);
 
-test("a textarea edits the way the model says", async () => {
-	await fc.assert(
-		fc.asyncProperty(scriptArbitrary, (script: Command[]) =>
-			play("textarea", script),
-		),
-		{numRuns: NUM_RUNS, seed: SEED, includeErrorInReport: true},
-	);
-}, 900000);
+test(
+	"a textarea edits the way the model says",
+	async () => {
+		await fc.assert(
+			fc.asyncProperty(scriptArbitrary, (script: Command[]) =>
+				play("textarea", script),
+			),
+			{numRuns: NUM_RUNS, seed: SEED, includeErrorInReport: true},
+		);
+	},
+	900000,
+);
