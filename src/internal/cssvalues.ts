@@ -590,6 +590,197 @@ export function cssColorToNumber(cssColor: string): number {
 	return parseColor(cssColor)?.color ?? 0;
 }
 
+/**
+ * One `<color-stop>`. The position is what the author wrote: a fraction
+ * of the gradient line, a length in cells, or null for one the fixup
+ * fills in. The color is packed RGB, with alpha kept apart because a
+ * cell either takes a color or keeps what is under it.
+ */
+export interface GradientStop {
+	color: number;
+	alpha: number;
+	position: UnitValue;
+}
+
+/**
+ * A parsed `linear-gradient()`. The angle is the gradient line's, in
+ * degrees clockwise from straight up. Stop positions stay as authored
+ * because css-images-3 §3.4.3 resolves them against the line's length,
+ * which the painter knows and the parser does not.
+ */
+export interface Gradient {
+	repeating: boolean;
+	angle: number;
+	stops: GradientStop[];
+}
+
+const ANGLE_DEGREES: Record<string, number> = {
+	deg: 1,
+	grad: 360 / 400,
+	rad: 180 / Math.PI,
+	turn: 360,
+};
+
+// A corner's angle is the diagonal of a box whose cells make it square,
+// which is what a terminal's two-to-one cells make of a bar twice as
+// wide as it is tall.
+const DIRECTION_ANGLES: Record<string, number> = {
+	top: 0,
+	right: 90,
+	bottom: 180,
+	left: 270,
+	"top-left": 315,
+	"top-right": 45,
+	"bottom-right": 135,
+	"bottom-left": 225,
+};
+
+const VERTICAL_SIDES = new Set(["top", "bottom"]);
+
+function normalizeAngle(degrees: number): number {
+	return ((degrees % 360) + 360) % 360;
+}
+
+// Null when the group is not a direction, in which case it is the first
+// color stop instead.
+function readGradientDirection(nodes: CSSTree.ValueNode[]): number | null {
+	if (nodes.length === 1 && nodes[0].type === "Dimension") {
+		const factor = ANGLE_DEGREES[(nodes[0].unit ?? "").toLowerCase()];
+		const number = parseFloat(nodes[0].value ?? "");
+		if (factor === undefined || !Number.isFinite(number)) {
+			return null;
+		}
+		return normalizeAngle(number * factor);
+	}
+	if (
+		nodes.length < 2 ||
+		nodes.length > 3 ||
+		nodes[0].type !== "Identifier" ||
+		(nodes[0].name ?? "").toLowerCase() !== "to"
+	) {
+		return null;
+	}
+	const sides = nodes
+		.slice(1)
+		.map((node) =>
+			node.type === "Identifier" ? (node.name ?? "").toLowerCase() : "",
+		);
+	// `to left top` and `to top left` name the same corner.
+	const corner = sides.length === 1
+		? sides[0]
+		: VERTICAL_SIDES.has(sides[0])
+			? `${sides[0]}-${sides[1]}`
+			: `${sides[1]}-${sides[0]}`;
+	return DIRECTION_ANGLES[corner] ?? null;
+}
+
+function readGradientColor(
+	node: CSSTree.ValueNode,
+): {color: number; alpha: number} | null {
+	const text = CSSTree.generate(node as never).trim().toLowerCase();
+	// A transparent stop still names a place on the line; the painter
+	// borrows its neighbour's channels so the fade does not run to black.
+	if (text === "transparent") {
+		return {color: 0, alpha: 0};
+	}
+	return parseColor(text);
+}
+
+// Undefined, not null, for a node that is no position at all: null is a
+// position the fixup has yet to fill in.
+function readStopPosition(node: CSSTree.ValueNode): UnitValue | undefined {
+	const number = parseFloat(node.value ?? "");
+	if (!Number.isFinite(number)) {
+		return undefined;
+	}
+	if (node.type === "Percentage") {
+		return {percentage: number};
+	}
+	// px and ch both measure one cell, and nothing else does.
+	if (node.type === "Dimension") {
+		const unit = (node.unit ?? "").toLowerCase();
+		return unit === "px" || unit === "ch" ? number : undefined;
+	}
+	return node.type === "Number" && number === 0 ? 0 : undefined;
+}
+
+function readLinearGradient(value: string): Gradient | null {
+	// Only the first layer of a `background-image` list is read: a cell
+	// holds one background, so nothing under the topmost image shows.
+	const node = getCSSValueChildren(value.trim())?.[0];
+	if (!node || node.type !== "Function") {
+		return null;
+	}
+	const name = (node.name ?? "").toLowerCase();
+	if (name !== "linear-gradient" && name !== "repeating-linear-gradient") {
+		return null;
+	}
+	const args: CSSTree.ValueNode[][] = [[]];
+	for (const child of node.children?.toArray() ?? []) {
+		if (child.type === "Operator" && child.value === ",") {
+			args.push([]);
+		} else {
+			args[args.length - 1].push(child);
+		}
+	}
+	const direction = readGradientDirection(args[0]);
+	const stops: GradientStop[] = [];
+	for (let i = direction === null ? 0 : 1; i < args.length; i++) {
+		const group = args[i];
+		if (group.length === 0 || group.length > 3) {
+			return null;
+		}
+		// A lone length between two stops is a color hint. It moves the
+		// midpoint of a fade, a shift no run of whole cells can show, so it
+		// parses and is then dropped.
+		if (readStopPosition(group[0]) !== undefined) {
+			if (group.length > 1 || stops.length === 0 || i === args.length - 1) {
+				return null;
+			}
+			continue;
+		}
+		const color = readGradientColor(group[0]);
+		if (color === null) {
+			return null;
+		}
+		for (const position of group.length > 1 ? group.slice(1) : [null]) {
+			const resolved = position === null ? null : readStopPosition(position);
+			if (resolved === undefined) {
+				return null;
+			}
+			// Two positions on one stop are two stops of the same color, so
+			// the run between them takes no gradient at all.
+			stops.push({color: color.color, alpha: color.alpha, position: resolved});
+		}
+	}
+	if (stops.length < 2) {
+		return null;
+	}
+	return {
+		repeating: name === "repeating-linear-gradient",
+		angle: direction ?? 180,
+		stops,
+	};
+}
+
+const gradients = new Map<string, Gradient | null>();
+
+/**
+ * The first image of a `background-image`, when it is a linear gradient.
+ * Null for every other image, which a terminal paints as nothing.
+ */
+export function parseLinearGradient(value: string): Gradient | null {
+	let gradient = gradients.get(value);
+	if (gradient === undefined) {
+		gradient = readLinearGradient(value);
+		if (gradients.size > 1024) {
+			gradients.clear();
+		}
+		gradients.set(value, gradient);
+	}
+	return gradient;
+}
+
 const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
 const EDGES = ["top", "right", "bottom", "left"] as const;
 
