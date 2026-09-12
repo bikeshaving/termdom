@@ -3852,7 +3852,15 @@ function getInlineCursorBefore(
 			if (!(position & element.DOCUMENT_POSITION_PRECEDING)) {
 				return cursor;
 			}
-			cursor = {x: segment.x + segment.width, y: line.y};
+			cursor = {
+				x:
+					segment.x +
+					segment.width +
+					(segment.leaf.type === "inline-block"
+						? segment.leaf.boxModel.marginRight
+						: 0),
+				y: line.y,
+			};
 		}
 	}
 	return cursor;
@@ -3910,6 +3918,10 @@ function getNodesInRange(
 					visualBase: null,
 				});
 			} else if (item.leafNode.type === "inline-block") {
+				// The placeholder advances by the margin box, so the line fits it
+				// whole; the segment is the border box, which is what a rect,
+				// a paint and a nested offset are of.
+				const {marginLeft, marginRight} = item.leafNode.boxModel;
 				width = getInlineBlockWidth(item.leafNode);
 				let processedText = "";
 				if (item.leafNode.breakResult) {
@@ -3923,8 +3935,8 @@ function getNodesInRange(
 					leaf: item.leafNode,
 					start: 0,
 					end: 0,
-					x,
-					width,
+					x: x + marginLeft,
+					width: width - marginLeft - marginRight,
 					processedText,
 					dataStart: 0,
 					dataEnd: 0,
@@ -5227,6 +5239,26 @@ function *getTextNodes(root: Node): Generator<Text> {
 	}
 }
 
+// Where a run head's lines count from. An atomic inline heading its run
+// has the run's layout node, which the container's layout placed at the
+// head's own margin edge, while the segments count from its margin box:
+// its own segment sits one margin in. Every other head's node is where
+// its lines start.
+function getRunOrigin(
+	layout: Layout,
+	runHead: Node,
+	headLayoutNode: LayoutNode,
+): {x: number; y: number} {
+	const position = getDocumentPosition(layout, runHead, headLayoutNode);
+	if (
+		runHead.nodeType === runHead.ELEMENT_NODE &&
+		isAtomicInline(getComputedDisplay(runHead as Element))
+	) {
+		position.x -= getBoxModel(runHead as Element).marginLeft;
+	}
+	return position;
+}
+
 // Three depths, only the first direct. The box heads its own run (ask
 // the flex tree); it is a MEMBER of a run headed elsewhere, whose
 // segment.x is run-relative and must be anchored at the head's
@@ -5274,7 +5306,7 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 		return null;
 	}
 
-	const runPosition = getDocumentPosition(layout, runHead, headLayoutNode);
+	const runPosition = getRunOrigin(layout, runHead, headLayoutNode);
 	let originX = runPosition.x;
 	let originY = runPosition.y;
 
@@ -5605,7 +5637,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 					return [];
 				}
 
-				const position = getDocumentPosition(layout, element, layoutNode);
+				const position = getRunOrigin(layout, element, layoutNode);
 				const containerX = position.x;
 				const containerY = position.y;
 
@@ -5707,7 +5739,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		return [];
 	}
 
-	let {x: containerX, y: containerY} = getDocumentPosition(
+	let {x: containerX, y: containerY} = getRunOrigin(
 		layout,
 		runHead,
 		layoutNode,
