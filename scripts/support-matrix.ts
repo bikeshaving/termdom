@@ -280,6 +280,7 @@ const FEATURES: Record<string, Feature> = {
 	// Text and paint
 	color: {value: "red"},
 	"background-color": {value: "blue"},
+	"background-image": {value: "linear-gradient(to right, red, blue)"},
 	background: {value: "blue"},
 	"font-weight": {value: "bold"},
 	"font-style": {value: "italic"},
@@ -614,7 +615,6 @@ const NOT_APPLICABLE: Array<[string, string[]]> = [
 			"backdrop-filter",
 			"background-attachment",
 			"background-blend-mode",
-			"background-image",
 			"background-origin",
 			"background-position",
 			"background-position-x",
@@ -1123,6 +1123,7 @@ const CATEGORIES: Array<[string, string[]]> = [
 		[
 			"color",
 			"background-color",
+			"background-image",
 			"user-select",
 			"background",
 			"font-weight",

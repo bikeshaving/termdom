@@ -63,6 +63,12 @@ document.head.appendChild(style);
 Selectors, specificity, inheritance, `@media` queries, and custom
 properties work as in a browser.
 
+`background-image` takes a `linear-gradient()` or
+`repeating-linear-gradient()`, which fills the box one cell at a time --
+a row counts for two units against a column's one, so `to bottom right`
+reaches the corner it names. Any other image paints nothing, leaving the
+`background-color` alone.
+
 ## Quitting
 
 `window.close()` ends the session: the final frame stays in the
