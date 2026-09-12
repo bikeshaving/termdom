@@ -41,13 +41,6 @@ export interface ReflectSpec {
 	nullable?: boolean;
 }
 
-interface InterfaceSpec {
-	name: string;
-	// Empty for an interface that only serves as a base.
-	tags: readonly string[];
-	reflect: readonly ReflectSpec[];
-}
-
 function str(
 	property: string,
 	attribute = property.toLowerCase(),
@@ -396,7 +389,7 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 	],
 };
 
-function reflectionsOf(name: string): readonly ReflectSpec[] {
+export function reflectionsOf(name: string): readonly ReflectSpec[] {
 	const hand = HAND_REFLECTIONS[name] ?? [];
 	const generated = (HTML_REFLECTIONS[name] ?? []).filter(
 		(spec) => !hand.some((own) => own.property === spec.property),
@@ -404,104 +397,7 @@ function reflectionsOf(name: string): readonly ReflectSpec[] {
 	return [...generated, ...hand];
 }
 
-export const HTML_ELEMENT_REFLECTIONS: readonly ReflectSpec[] =
-	reflectionsOf("HTMLElement");
-
-// The element interfaces this DOM has a class for, filled in from the
-// tables. HTMLTemplateElement and HTMLSlotElement register themselves
-// in dom.ts.
-const INTERFACE_NAMES: readonly string[] = [
-	"HTMLAnchorElement",
-	"HTMLAreaElement",
-	"HTMLAudioElement",
-	"HTMLBRElement",
-	"HTMLBaseElement",
-	"HTMLBodyElement",
-	"HTMLButtonElement",
-	"HTMLCanvasElement",
-	"HTMLDListElement",
-	"HTMLDataElement",
-	"HTMLDataListElement",
-	"HTMLDetailsElement",
-	"HTMLDialogElement",
-	"HTMLDirectoryElement",
-	"HTMLDivElement",
-	"HTMLEmbedElement",
-	"HTMLFieldSetElement",
-	"HTMLFontElement",
-	"HTMLFormElement",
-	"HTMLFrameElement",
-	"HTMLFrameSetElement",
-	"HTMLHRElement",
-	"HTMLHeadElement",
-	"HTMLHeadingElement",
-	"HTMLHtmlElement",
-	"HTMLIFrameElement",
-	"HTMLImageElement",
-	"HTMLInputElement",
-	"HTMLLIElement",
-	"HTMLLabelElement",
-	"HTMLLegendElement",
-	"HTMLLinkElement",
-	"HTMLMapElement",
-	"HTMLMarqueeElement",
-	"HTMLMediaElement",
-	"HTMLMenuElement",
-	"HTMLMetaElement",
-	"HTMLModElement",
-	"HTMLOListElement",
-	"HTMLObjectElement",
-	"HTMLOptGroupElement",
-	"HTMLOptionElement",
-	"HTMLOutputElement",
-	"HTMLParagraphElement",
-	"HTMLParamElement",
-	"HTMLPictureElement",
-	"HTMLPreElement",
-	"HTMLProgressElement",
-	"HTMLMeterElement",
-	"HTMLQuoteElement",
-	"HTMLScriptElement",
-	"HTMLSelectElement",
-	"HTMLSourceElement",
-	"HTMLSpanElement",
-	"HTMLStyleElement",
-	"HTMLTableCaptionElement",
-	"HTMLTableCellElement",
-	"HTMLTableColElement",
-	"HTMLTableElement",
-	"HTMLTableRowElement",
-	"HTMLTableSectionElement",
-	"HTMLTextAreaElement",
-	"HTMLTimeElement",
-	"HTMLTitleElement",
-	"HTMLTrackElement",
-	"HTMLUListElement",
-	"HTMLVideoElement",
-];
-
-const tagsOf = (name: string): readonly string[] =>
-	Object.keys(HTML_TAG_INTERFACES)
-		.filter((tag) => HTML_TAG_INTERFACES[tag] === name);
-
-export const HTML_INTERFACES: readonly InterfaceSpec[] = INTERFACE_NAMES.map(
-	(name) => ({name, tags: tagsOf(name), reflect: reflectionsOf(name)}),
-);
-
-// A tag the HTML Standard gives HTMLElement, or an interface this DOM has
-// no class for, which an author sees as an HTMLElement too.
-export const HTML_ELEMENT_TAGS: readonly string[] =
-	Object.keys(HTML_TAG_INTERFACES).filter((tag) => {
-		const name = HTML_TAG_INTERFACES[tag];
-		return (
-			name !== "HTMLUnknownElement" &&
-			name !== "HTMLTemplateElement" &&
-			name !== "HTMLSlotElement" &&
-			!INTERFACE_NAMES.includes(name)
-		);
-	});
-
-// Names HTML knows and gives HTMLUnknownElement to anyway.
-export const HTML_UNKNOWN_TAGS: readonly string[] = Object.keys(
-	HTML_TAG_INTERFACES,
-).filter((tag) => HTML_TAG_INTERFACES[tag] === "HTMLUnknownElement");
+/** The interface a tag constructs as. */
+export function interfaceOf(tag: string): string {
+	return HTML_TAG_INTERFACES[tag];
+}

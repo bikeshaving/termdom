@@ -5,6 +5,7 @@ import {
 	ARIA_STRING_REFLECTIONS,
 	DOCUMENT_EVENT_HANDLERS,
 	GLOBAL_EVENT_HANDLERS,
+	HTML_TAG_INTERFACES,
 	WINDOW_EVENT_HANDLERS,
 } from "../generated/htmlidl.ts";
 import {
@@ -29,10 +30,8 @@ import {
 import * as CSSValues from "./cssvalues.ts";
 import type {Exchange} from "./exchange.ts";
 import {
-	HTML_ELEMENT_REFLECTIONS,
-	HTML_ELEMENT_TAGS,
-	HTML_INTERFACES,
-	HTML_UNKNOWN_TAGS,
+	interfaceOf,
+	reflectionsOf,
 	type ReflectSpec,
 } from "./htmlreflection.ts";
 import type {Layout} from "./layout.ts";
@@ -12940,7 +12939,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 // Written out rather than picked. A computed projection satisfies keyof
 // but not assignability, and assignability is what this is for.
 // The HTML Standard's element interfaces, each filled in from the table.
-// The reflecting members come from `HTML_INTERFACES`. Members that are
+// The reflecting members come from `reflectionsOf`. Members that are
 // not reflections are written in the class body. A class with an empty
 // body only reflects, which is all its interface does.
 class HTMLAnchorElement extends HTMLElement {
@@ -19427,32 +19426,38 @@ const HTML_INTERFACE_CLASSES: Record<string, typeof HTMLElement> = {
 	HTMLVideoElement,
 };
 
-// Installs the members each interface reflects, the name it stringifies
-// as, and the tags an element of it is created for.
-for (const spec of HTML_INTERFACES) {
-	const constructor = HTML_INTERFACE_CLASSES[spec.name];
-	for (const reflection of spec.reflect) {
+// Installs the members each interface reflects and the name it
+// stringifies as.
+for (const [name, constructor] of Object.entries(HTML_INTERFACE_CLASSES)) {
+	for (const reflection of reflectionsOf(name)) {
 		installReflection(constructor.prototype, reflection);
 	}
 	Object.defineProperty(constructor.prototype, Symbol.toStringTag, {
-		value: spec.name,
+		value: name,
 		configurable: true,
 	});
-	for (const tag of spec.tags) {
-		builtinRegistry.define(HTML_NAMESPACE, tag, constructor);
-	}
 }
 
-for (const tag of HTML_ELEMENT_TAGS) {
-	builtinRegistry.define(HTML_NAMESPACE, tag, HTMLElement);
-}
-
-for (const tag of HTML_UNKNOWN_TAGS) {
-	builtinRegistry.define(HTML_NAMESPACE, tag, HTMLUnknownElement);
-}
-
-for (const reflection of HTML_ELEMENT_REFLECTIONS) {
+for (const reflection of reflectionsOf("HTMLElement")) {
 	installReflection(HTMLElement.prototype, reflection);
+}
+
+// The tag an element is created for. A tag the HTML Standard gives
+// HTMLElement, or an interface this DOM has no class for, is an
+// HTMLElement to an author; the names HTML knows and gives
+// HTMLUnknownElement to anyway keep it. template and slot register
+// themselves above, with the classes that need no reflections.
+for (const tag of Object.keys(HTML_TAG_INTERFACES)) {
+	if (tag === "template" || tag === "slot") {
+		continue;
+	}
+	const name = interfaceOf(tag);
+	builtinRegistry.define(
+		HTML_NAMESPACE,
+		tag,
+		HTML_INTERFACE_CLASSES[name] ??
+		(name === "HTMLUnknownElement" ? HTMLUnknownElement : HTMLElement),
+	);
 }
 
 // The ARIA mixin: every aria-* content attribute as a nullable string on
