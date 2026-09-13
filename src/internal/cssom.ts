@@ -5582,6 +5582,18 @@ function getPseudoDeclaration(
 	return declaration;
 }
 
+// `::highlight()` names a registered highlight, and a registered name is
+// a DOMString: the escapes a selector spells it with are not part of it.
+// `::highlight(a\.b)` and CSS.highlights.set("a.b", ...) are the same
+// name, so rules and lookups both key on the unescaped one.
+function unescapeHighlightName(pseudoElement: string): string {
+	const written = pseudoElement.match(/^::highlight\((.*)\)$/);
+	if (written === null) {
+		return pseudoElement;
+	}
+	return `::highlight(${CSSTree.ident.decode(written[1].trim())})`;
+}
+
 // True for a pseudo-element the tree needs a node of its own for. The
 // rest -- ::placeholder, ::selection, ::part() and ::highlight() --
 // style boxes that already exist.
@@ -5828,7 +5840,7 @@ function getResolvedStyle(
 				element,
 			) as unknown as globalThis.CSSStyleDeclaration;
 		}
-		pseudoElement = parsed;
+		pseudoElement = unescapeHighlightName(parsed);
 	}
 
 	if (pseudoElement) {
@@ -6945,7 +6957,8 @@ function parseSelector(
 	);
 
 	if (pseudoMatch) {
-		const [, baseSelector, pseudoElement] = pseudoMatch;
+		const [, baseSelector] = pseudoMatch;
+		const pseudoElement = unescapeHighlightName(pseudoMatch[2]);
 		const rule: ParsedCSSRule = {
 			// A pseudo-element written with no originating selector originates
 			// on every element, which is what `*` means.

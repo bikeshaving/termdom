@@ -177,6 +177,34 @@ test("a ::highlight rule generates no pseudo-element", async () => {
 	dom.dispose();
 });
 
+test("a name written with escapes styles the name it spells", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	const escaped = window.CSS.escape("a.b");
+	expect(escaped).toBe("a\\.b");
+	document.head.innerHTML =
+		`<style>::highlight(${escaped}) { background-color: yellow }</style>`;
+	document.body.innerHTML = "<p>abcdefgh</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const range = document.createRange();
+	range.setStart(text, 0);
+	range.setEnd(text, 4);
+	window.CSS.highlights.set("a.b", new window.Highlight(range));
+	await nextFrame(dom);
+
+	expect(yellowCells(terminal, 0)).toEqual([0, 1, 2, 3]);
+	expect(
+		window.getComputedStyle(
+			document.querySelector("p"),
+			`::highlight(${escaped})`,
+		)
+			.backgroundColor,
+	).toBe("rgb(255, 255, 0)");
+
+	dom.dispose();
+});
+
 test("a highlight spanning two text nodes paints both", async () => {
 	const {terminal, dom, window} = highlightDOM();
 	const {document} = dom;

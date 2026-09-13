@@ -1141,6 +1141,13 @@ function compilePseudoClass(
 	}
 }
 
+// An identifier is what the argument has to be written as: `1` is a
+// number however it is read. What its escapes spell is another matter,
+// and can be anything, so `a\.b` names "a.b".
+const CSS_IDENTIFIER =
+	/^(?:--|-?(?:[a-zA-Z_-￿]|\\[^\n]))(?:[\w-￿-]|\\[^\n])*$/;
+
+/** The name a `::part()`, `::highlight()` or `:state()` was written with. */
 function getIdentifierArgument(
 	args: CSSTree.SelectorNode[],
 	name: string,
@@ -1153,16 +1160,10 @@ function getIdentifierArgument(
 		)
 		.join("")
 		.trim();
-	if (!/^(?:[\w\u0080-\uFFFF-]|\\[^\n])+$/.test(text)) {
+	if (!CSS_IDENTIFIER.test(text)) {
 		throw new SelectorError(`:${name} takes one identifier`);
 	}
-	// The escapes spell the name, and the name has to be an identifier. `1`
-	// is a number however it is written.
-	const identifier = CSSTree.ident.decode(text);
-	if (!/^[a-zA-Z_\u0080-\uFFFF-][\w\u0080-\uFFFF-]*$/.test(identifier)) {
-		throw new SelectorError(`:${name} takes one identifier`);
-	}
-	return identifier;
+	return CSSTree.ident.decode(text);
 }
 
 /** Drops the branches that do not parse. */
