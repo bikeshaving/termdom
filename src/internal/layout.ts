@@ -10,6 +10,7 @@ import {
 	flatParentElement,
 	flowContent,
 	flowNext,
+	getNaturalImageSize,
 	getShadowRoot,
 	isInFlatTree,
 	isModalDialog,
@@ -2667,6 +2668,66 @@ function measureInlineRun(
 	return {width: breakResult.maxLineWidth, height: breakResult.totalHeight};
 }
 
+/**
+ * How many cells an `<img>` box takes.
+ *
+ * Given width and height it is those, whatever the image is. Given one of
+ * them, the other follows the decoded image's ratio, counted in cells, as
+ * a definite axis follows a settled one through aspect-ratio. Given
+ * neither, it is the image scaled by what a cell measures in pixels,
+ * rounded up so no row of pixels is cropped. With nothing decoded there
+ * is no ratio and no pixel size, and the box is the alt text's, which is
+ * what the run measured before this.
+ */
+function getImageBoxSize(
+	element: Element,
+	cssWidth: number | undefined,
+	cssHeight: number | undefined,
+	cellPixels: {width: number; height: number},
+	altWidth: number,
+	altHeight: number,
+): {width: number; height: number} {
+	const width =
+		cssWidth ?? (parseNonNegativeAttribute(element, "width") ?? undefined);
+	const height =
+		cssHeight ?? (parseNonNegativeAttribute(element, "height") ?? undefined);
+	if (width !== undefined && height !== undefined) {
+		return {width, height};
+	}
+
+	const natural = getNaturalImageSize(element);
+	if (natural === null) {
+		return {width: width ?? altWidth, height: height ?? altHeight};
+	}
+	const cellWidth = natural.width / cellPixels.width;
+	const cellHeight = natural.height / cellPixels.height;
+	if (width !== undefined) {
+		return {
+			width,
+			height: Math.max(1, Math.round(width / cellWidth * cellHeight)),
+		};
+	}
+	if (height !== undefined) {
+		return {
+			width: Math.max(1, Math.round(height / cellHeight * cellWidth)),
+			height,
+		};
+	}
+	return {width: Math.ceil(cellWidth), height: Math.ceil(cellHeight)};
+}
+
+function parseNonNegativeAttribute(
+	element: Element,
+	name: string,
+): number | null {
+	const value = element.getAttribute(name);
+	if (value === null) {
+		return null;
+	}
+	const parsed = parseInt(value, 10);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 // The members are the box's own, so nothing here decides where a run
 // ends, and a member that has left the tree is not among them.
 function collectLeafNodes(
@@ -2999,6 +3060,23 @@ function collectLeaves(
 					if (boxModel.width === undefined && !offerOwnsWidth) {
 						finalContentWidth = contentWidth;
 					}
+				}
+
+				if (element.tagName === "IMG") {
+					const box = getImageBoxSize(
+						element,
+						boxModel.width === undefined
+							? undefined
+							: Math.max(0, boxModel.width - horizontalBoxSpace),
+						boxModel.height === undefined
+							? undefined
+							: Math.max(0, boxModel.height - verticalBoxSpace),
+						layout.cellPixels,
+						finalContentWidth,
+						finalContentHeight,
+					);
+					finalContentWidth = box.width;
+					finalContentHeight = box.height;
 				}
 
 				// This leaf IS where an inline-block's box gets its size (the
@@ -3487,6 +3565,10 @@ function measureText(
 }
 
 const kTerminalReordersText = Symbol("terminalReordersText");
+const kCellPixels = Symbol("cellPixels");
+// What a cell measures until the terminal says. Most fonts run about
+// twice as tall as wide at any size.
+const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
 const kMoved = Symbol("moved");
 
 // Both halves are needed. Each segment's characters reorder (bidi.ts),
@@ -4016,6 +4098,11 @@ export interface Layout {
 	// again.
 	[kTerminalReordersText]: boolean;
 
+	// What one cell measures in the terminal's pixels, which is how an
+	// image's pixel size becomes a box in cells. XTWINOPS reports it; this
+	// is the fallback until it does.
+	[kCellPixels]: {width: number; height: number};
+
 	// Each text node's last rendering, keyed by the data and white-space it
 	// was rendered under. One run is broken once per width the sizing pass
 	// tries, and the rendering is the same every time.
@@ -4069,6 +4156,7 @@ export class Layout {
 		this[kPass] = 0;
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
+		this[kCellPixels] = {...DEFAULT_CELL_PIXELS};
 		this[kRectTextIndices] = new WeakMap<
 			object,
 			Map<Text, TextFragmentEntry[]>
@@ -4107,6 +4195,23 @@ export class Layout {
 
 	get moved(): boolean {
 		return this[kMoved];
+	}
+
+	/** One cell in terminal pixels. */
+	get cellPixels(): {width: number; height: number} {
+		return this[kCellPixels];
+	}
+
+	/** XTWINOPS answered. Every image box was measured against the guess. */
+	adoptCellPixels(width: number, height: number): void {
+		const cell = this[kCellPixels];
+		if (cell.width === width && cell.height === height) {
+			return;
+		}
+		this[kCellPixels] = {width, height};
+		// Every image box standing was measured against the guess, and a box
+		// measured inside a run is cached with the run.
+		this.invalidateTextMeasurement();
 	}
 
 	adoptTerminalReordering(): void {

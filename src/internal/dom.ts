@@ -35,7 +35,7 @@ import {
 	type ReflectSpec,
 } from "./htmlreflection.ts";
 import type {Layout} from "./layout.ts";
-import type {Screen} from "./screen.ts";
+import type {CellImage, Screen} from "./screen.ts";
 import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
@@ -44,6 +44,7 @@ import {
 } from "./text.ts";
 import {
 	DETAILS_UA_STYLES,
+	IMAGE_UA_STYLES,
 	METER_UA_STYLES,
 	PROGRESS_UA_STYLES,
 	SELECT_UA_STYLES,
@@ -72,6 +73,7 @@ function ensureUAShadowTree(element: globalThis.Element): void {
 // Built-in tags that get a UA shadow tree when they connect.
 const UPGRADEABLE_CONTROLS = new Set([
 	"DETAILS",
+	"IMG",
 	"INPUT",
 	"METER",
 	"PROGRESS",
@@ -14428,10 +14430,206 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	};
 }
 
-// Nothing is fetched, so image data is never available. The natural
-// dimensions are zero, the current source is empty, and decoding
-// rejects. The width and height an author reads are the attributes,
-// which is what the spec returns for an image that is not rendered.
+// The eight bytes a PNG opens with, and the type of the header chunk
+// that has to follow them.
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const IHDR_TYPE = [0x49, 0x48, 0x44, 0x52];
+
+/**
+ * The pixel size in a PNG's IHDR chunk, or null when the bytes are not a
+ * PNG.
+ *
+ * Only the header is read. Nothing here decodes pixels: the bytes go to
+ * the terminal whole and it draws them, so the size is the one fact the
+ * engine needs and a decoder would be a library to carry for it.
+ */
+function readPNGSize(
+	bytes: Uint8Array,
+): {width: number; height: number} | null {
+	// Signature, the chunk's four-byte length, "IHDR", and two four-byte
+	// dimensions: the first 24 bytes of every PNG.
+	if (bytes.length < 24) {
+		return null;
+	}
+	for (let i = 0; i < PNG_SIGNATURE.length; i++) {
+		if (bytes[i] !== PNG_SIGNATURE[i]) {
+			return null;
+		}
+	}
+	for (let i = 0; i < IHDR_TYPE.length; i++) {
+		if (bytes[12 + i] !== IHDR_TYPE[i]) {
+			return null;
+		}
+	}
+	const readUint32 = (at: number): number =>
+		((bytes[at] << 24) |
+			(bytes[at + 1] << 16) |
+			(bytes[at + 2] << 8) |
+			bytes[at + 3]) >>> 0;
+	const width = readUint32(16);
+	const height = readUint32(20);
+	return width > 0 && height > 0 ? {width, height} : null;
+}
+
+const DATA_URL = /^data:([^,]*),([^]*)$/;
+
+function decodeDataURL(url: string): Uint8Array | null {
+	const match = DATA_URL.exec(url);
+	if (match === null) {
+		return null;
+	}
+	const payload = match[2];
+	if (/;base64$/i.test(match[1])) {
+		let binary: string;
+		try {
+			binary = atob(payload.replace(/\s+/g, ""));
+		} catch (_err) {
+			return null;
+		}
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) {
+			bytes[i] = binary.charCodeAt(i);
+		}
+		return bytes;
+	}
+	// Percent-escapes here spell BYTES. decodeURIComponent would read them
+	// back as UTF-8 and turn every escape above 0x7f into something else.
+	const bytes: number[] = [];
+	for (let i = 0; i < payload.length; i++) {
+		if (payload[i] === "%" && i + 3 <= payload.length) {
+			const code = parseInt(payload.slice(i + 1, i + 3), 16);
+			if (Number.isFinite(code)) {
+				bytes.push(code);
+				i += 2;
+				continue;
+			}
+		}
+		bytes.push(payload.charCodeAt(i) & 0xff);
+	}
+	return new Uint8Array(bytes);
+}
+
+/**
+ * node:fs is named only inside this call, so a bundle for the browser
+ * playground never pulls it in. There a file: URL or a path rejects,
+ * which is the same answer a missing file gives.
+ */
+async function readImageFile(source: string): Promise<Uint8Array> {
+	const {readFile} = await import("node:fs/promises");
+	const path = source.startsWith("file:")
+		? decodeURIComponent(new URL(source).pathname)
+		: source;
+	return new Uint8Array(await readFile(path));
+}
+
+function fetchImageBytes(source: string): Promise<Uint8Array> {
+	if (source.startsWith("data:")) {
+		const bytes = decodeDataURL(source);
+		return bytes === null
+			? Promise.reject(new Error("The data: URL carries no image"))
+			: Promise.resolve(bytes);
+	}
+	return readImageFile(source);
+}
+
+// Distinct bytes get distinct ids, so the emitter transmits each image
+// to the terminal once however many boxes place it.
+let nextImageId = 1;
+
+const kNaturalWidth = Symbol("natural width");
+const kNaturalHeight = Symbol("natural height");
+const kComplete = Symbol("complete");
+const kCurrentSrc = Symbol("current source");
+const kImageCells = Symbol("decoded image");
+// Identifies one load. A reply from an abandoned one is dropped.
+const kLoadRun = Symbol("load run");
+const kAltText = Symbol("alt text");
+
+function invalidateImageBox(image: HTMLImageElement): void {
+	const attached = getAttachedDocument(image);
+	if (attached === undefined) {
+		return;
+	}
+	attached[kLayout].invalidate(image);
+	void attached[kRender]();
+}
+
+// Broken is complete: every question about the image has an answer, and
+// the box goes on showing the alt text.
+function failImage(image: HTMLImageElement): void {
+	image[kComplete] = true;
+	invalidateImageBox(image);
+	image.dispatchEvent(new Event("error"));
+}
+
+function loadImage(image: HTMLImageElement): void {
+	const run = (image[kLoadRun] = {});
+	image[kImageCells] = null;
+	image[kNaturalWidth] = 0;
+	image[kNaturalHeight] = 0;
+	image[kCurrentSrc] = "";
+	const source = image.src;
+	if (source === "") {
+		// No source is not a failure. The element is complete with nothing
+		// to show, and nothing to show is the alt text's box.
+		image[kComplete] = true;
+		invalidateImageBox(image);
+		return;
+	}
+	image[kComplete] = false;
+	void fetchImageBytes(source).then((bytes) => {
+		if (image[kLoadRun] !== run) {
+			return;
+		}
+		const size = readPNGSize(bytes);
+		if (size === null) {
+			failImage(image);
+			return;
+		}
+		image[kNaturalWidth] = size.width;
+		image[kNaturalHeight] = size.height;
+		image[kImageCells] = {id: nextImageId++, bytes};
+		image[kCurrentSrc] = source;
+		image[kComplete] = true;
+		invalidateImageBox(image);
+		image.dispatchEvent(new Event("load"));
+	}, () => {
+		if (image[kLoadRun] === run) {
+			failImage(image);
+		}
+	});
+}
+
+/** The bytes an `<img>` can hand the terminal, or null when it has none. */
+export function getImageCells(element: globalThis.Element): CellImage | null {
+	return element instanceof HTMLImageElement ? element[kImageCells] : null;
+}
+
+/** An `<img>`'s decoded pixel size, or null when nothing decoded. */
+export function getNaturalImageSize(
+	element: globalThis.Element,
+): {width: number; height: number} | null {
+	if (!(element instanceof HTMLImageElement) || element[kImageCells] === null) {
+		return null;
+	}
+	return {width: element[kNaturalWidth], height: element[kNaturalHeight]};
+}
+
+// A PNG is loaded through the file system or out of a data: URL, and the
+// terminal draws it. Until it decodes, and on any terminal that cannot
+// draw pixels, the box holds the alt text in a UA shadow tree and shows
+// that instead.
+interface HTMLImageElement {
+	[kUpgraded]: boolean;
+	[kAltText]: globalThis.Text | null;
+	[kNaturalWidth]: number;
+	[kNaturalHeight]: number;
+	[kComplete]: boolean;
+	[kCurrentSrc]: string;
+	[kImageCells]: CellImage | null;
+	[kLoadRun]: object | null;
+}
+
 class HTMLImageElement extends HTMLElement {
 	declare alt: globalThis.HTMLImageElement["alt"];
 	declare referrerPolicy: globalThis.HTMLImageElement["referrerPolicy"];
@@ -14453,20 +14651,33 @@ class HTMLImageElement extends HTMLElement {
 	declare srcset: globalThis.HTMLImageElement["srcset"];
 	declare useMap: globalThis.HTMLImageElement["useMap"];
 	declare vspace: globalThis.HTMLImageElement["vspace"];
+
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kUpgraded] = false;
+		this[kAltText] = null;
+		this[kNaturalWidth] = 0;
+		this[kNaturalHeight] = 0;
+		this[kComplete] = true;
+		this[kCurrentSrc] = "";
+		this[kImageCells] = null;
+		this[kLoadRun] = null;
+	}
+
 	get naturalWidth(): number {
-		return 0;
+		return this[kNaturalWidth];
 	}
 
 	get naturalHeight(): number {
-		return 0;
+		return this[kNaturalHeight];
 	}
 
 	get currentSrc(): string {
-		return "";
+		return this[kCurrentSrc];
 	}
 
 	get complete(): boolean {
-		return !this.hasAttribute("src") && !this.hasAttribute("srcset");
+		return this[kComplete];
 	}
 
 	// Deprecated members that report the rendered position. This engine
@@ -14480,9 +14691,60 @@ class HTMLImageElement extends HTMLElement {
 	}
 
 	decode(): Promise<void> {
+		if (this[kImageCells] !== null) {
+			return Promise.resolve();
+		}
 		return Promise.reject(
 			domError("EncodingError", "There is no image data to decode"),
 		);
+	}
+
+	[kEnsureUAShadowTree]?(): void {
+		if (this[kUpgraded]) {
+			this[kSyncUAShadowTree]!();
+			return;
+		}
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
+			return;
+		}
+		this[kUpgraded] = true;
+		const root = buildUAShadowTree(this, attached, IMAGE_UA_STYLES);
+		this[kAltText] = addPart(root, "alt").firstChild as globalThis.Text;
+		this[kSyncUAShadowTree]!();
+		// An src set before the element connected had nothing to invalidate,
+		// so the load starts here instead and the first frame gets the size.
+		if (this[kLoadRun] === null) {
+			loadImage(this);
+		}
+	}
+
+	[kSyncUAShadowTree]?(): void {
+		const alt = this[kAltText];
+		if (alt === null || alt.data === this.alt) {
+			return;
+		}
+		alt.data = this.alt;
+		getAttachedDocument(this)?.[kLayout].invalidate(this);
+	}
+
+	override [kAttributeChangeSteps](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
+		if (namespace !== null) {
+			return;
+		}
+		if (localName === "src") {
+			loadImage(this);
+		} else if (localName === "alt") {
+			this[kSyncUAShadowTree]!();
+		} else if (localName === "width" || localName === "height") {
+			getAttachedDocument(this)?.[kLayout].invalidate(this);
+		}
 	}
 }
 

@@ -955,6 +955,16 @@ function getGraphemeColumns(grapheme: string): number {
 	return getStringWidth(grapheme);
 }
 
+/**
+ * An image the terminal draws, and the id that names it on the wire. The
+ * bytes are the file itself: the terminal decodes them, so nothing here
+ * looks past the header that gives the size.
+ */
+export interface CellImage {
+	id: number;
+	bytes: Uint8Array;
+}
+
 export class CellContext {
 	grid: CellGrid;
 	rows: number;
