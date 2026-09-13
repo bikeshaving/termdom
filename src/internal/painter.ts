@@ -598,8 +598,9 @@ function renderElement(
 	// Over the flat fill, which a transparent stop composites onto.
 	const gradient = rect && visible ? getGradient(element) : null;
 	if (rect && gradient !== null) {
-		const cell = painter[kScreen].cellPixels;
-		const fragments = painter[kLayout].getRects(element);
+		const layout = painter[kLayout];
+		const cell = layout.cellPixels;
+		const fragments = layout.getRects(element);
 		for (const fragment of fragments.length > 1 ? fragments : [rect]) {
 			renderGradient(
 				ctx,

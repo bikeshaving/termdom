@@ -87,6 +87,55 @@ function toDataURL(bytes: Uint8Array): string {
 	return `data:image/png;base64,${toBase64(bytes)}`;
 }
 
+/**
+ * A mock whose replies to the startup questions are this test's, not the
+ * headless emulator's: each pattern that matches an outgoing write is
+ * stripped from it and its answer is fed back on stdin.
+ *
+ * The stripping matters. xterm-headless answers XTWINOPS itself with the
+ * pixel size of a terminal that has no window, and an unstripped kitty
+ * query would sit in the emulator's buffer as text.
+ */
+function scriptReplies(
+	terminal: MockProcess,
+	answers: Array<{ask: string; reply: string | null}>,
+): void {
+	const stdout =
+		terminal.stdout as unknown as {write: (...args: unknown[]) => boolean};
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
+	const original = stdout.write.bind(stdout);
+	stdout.write = (...args: unknown[]) => {
+		let data = String(args[0]);
+		let matched = false;
+		for (const {ask, reply} of answers) {
+			if (!data.includes(ask)) {
+				continue;
+			}
+			matched = true;
+			data = data.replace(ask, "");
+			if (reply !== null) {
+				setTimeout(() => stdin.simulateResponse(reply), 0);
+			}
+		}
+		if (!matched) {
+			return original(...args);
+		}
+		if (data) {
+			return original(data, ...args.slice(1));
+		}
+		// A swallowed write still has to complete: the transport's sink
+		// resolves on the callback, and everything queued behind it waits.
+		const callback = args.find((arg) => typeof arg === "function");
+		if (callback) {
+			(callback as () => void)();
+		}
+		return true;
+	};
+}
+
+const CELL_SIZE_QUERY = "\x1b[16t";
+
 /** Wait for a condition a reply or a load has to arrive before. */
 async function until(predicate: () => boolean): Promise<void> {
 	const deadline = Date.now() + 5000;
@@ -171,6 +220,39 @@ test("a data: PNG loads, reports its natural size, and sizes its box", async () 
 	expect(rect.height).toBe(1);
 
 	dom.dispose();
+});
+
+test("the box divides the image by the cell size the terminal reports", async () => {
+	const wide = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: wide.transport});
+	dom.document.body.innerHTML =
+		`<img alt="big" src="${toDataURL(makePNG(40, 32))}">`;
+	const img = dom.document.querySelector("img")!;
+	await nextFrame(dom);
+	await until(() => img.complete && img.naturalWidth === 40);
+	await nextFrame(dom);
+
+	// 40 by 32 pixels over the default 8 by 16 cell.
+	expect(img.getBoundingClientRect().width).toBe(5);
+	expect(img.getBoundingClientRect().height).toBe(2);
+	dom.dispose();
+
+	const narrow = new MockProcess({cols: 40, rows: 8});
+	// CSI 6 ; height ; width t: cells four pixels wide and sixteen tall.
+	scriptReplies(narrow, [{ask: CELL_SIZE_QUERY, reply: "\x1b[6;16;4t"}]);
+	const narrowDOM = new TermDOM({transport: narrow.transport});
+	narrowDOM.document.body.innerHTML =
+		`<img alt="big" src="${toDataURL(makePNG(40, 32))}">`;
+	const narrowImg = narrowDOM.document.querySelector("img")!;
+	await nextFrame(narrowDOM);
+	await until(() =>
+		narrowImg.complete && narrowImg.getBoundingClientRect().width === 10);
+	await nextFrame(narrowDOM);
+
+	expect(narrowImg.getBoundingClientRect().width).toBe(10);
+	expect(narrowImg.getBoundingClientRect().height).toBe(2);
+
+	narrowDOM.dispose();
 });
 
 test("a missing file fires error and keeps the alt box", async () => {
