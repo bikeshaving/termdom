@@ -27219,6 +27219,56 @@ export function getPaintedHighlights(
 	return painted.sort((a, b) => a.priority - b.priority);
 }
 
+/** Whether anything at all highlights this document. */
+export function hasPaintedHighlights(document: globalThis.Document): boolean {
+	const registry = (document as Document)[kHighlights];
+	if (registry === null) {
+		return false;
+	}
+	for (const highlight of registry[kHighlightsByName].values()) {
+		for (const range of highlight[kHighlightRanges]) {
+			if (!range.collapsed) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/**
+ * The text nodes one of a highlight's ranges covers, with the offsets it
+ * covers of each. Read once per frame, so that painting a text node is a
+ * lookup rather than a comparison against every registered range.
+ */
+export function getHighlightedTextNodes(
+	range: globalThis.AbstractRange,
+): Array<{textNode: globalThis.Text; from: number; to: number}> {
+	const start = (range as AbstractRange)[kStartNode];
+	const end = (range as AbstractRange)[kEndNode];
+	if (getRoot(start) !== getRoot(end)) {
+		return [];
+	}
+	let container = start;
+	while (!isInclusiveAncestor(container, end)) {
+		container = container[kParent] as Node;
+	}
+	const covered: Array<{textNode: Text; from: number; to: number}> = [];
+	for (
+		let node: Node | null = container;
+		node !== null;
+		node = nextInTree(node, container)
+	) {
+		if (!(node instanceof Text)) {
+			continue;
+		}
+		const offsets = getHighlightedOffsets(range, node);
+		if (offsets !== null) {
+			covered.push({textNode: node, from: offsets.from, to: offsets.to});
+		}
+	}
+	return covered;
+}
+
 /**
  * The offsets of a text node one of a highlight's ranges covers, or null
  * when it covers none of it. A static range whose boundary points no

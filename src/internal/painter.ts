@@ -8,15 +8,15 @@ import * as CSSValues from "./cssvalues.ts";
 import {
 	flatParentElement,
 	flowContent,
-	getHighlightedOffsets,
+	getHighlightedTextNodes,
 	getPaintedHighlights,
 	getSelectionRecord,
 	getShadowRoot,
 	getTextControlSelectionRange,
 	getTextControlValueText,
 	getTopLayer,
+	hasPaintedHighlights,
 	HTMLElement,
-	type PaintedHighlight,
 	renderedTopLayer,
 	type Window,
 } from "./dom.ts";
@@ -382,7 +382,7 @@ const kScreen = Symbol("screen");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
-const kHighlights = Symbol("highlights");
+const kHighlightedText = Symbol("highlightedText");
 const kHighlightStyles = Symbol("highlightStyles");
 
 export interface Painter {
@@ -397,10 +397,18 @@ export interface Painter {
 	// Paint extents are cached in unscrolled rows. A scrolled subtree
 	// paints this many rows higher, so culling shifts the viewport instead.
 	[kScrolledRows]: number;
-	// The frame's registered highlights, read once rather than per text
-	// node, with the style each resolves to on an element beside it.
-	[kHighlights]: PaintedHighlight[];
+	// What the frame's registered highlights cover, read once rather than
+	// compared against every range per text node, with the style each name
+	// resolves to on an element beside it.
+	[kHighlightedText]: Map<Text, HighlightRun[]>;
 	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
+}
+
+/** One registered highlight's share of one text node, in paint order. */
+interface HighlightRun {
+	name: string;
+	from: number;
+	to: number;
 }
 
 /** Reads the DOM, styles and geometry. Writes only into the CellContext. */
@@ -413,7 +421,7 @@ export class Painter {
 	) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
-		this[kHighlights] = [];
+		this[kHighlightedText] = new Map();
 		this[kHighlightStyles] = new Map();
 		this[kWindow] = document.defaultView as unknown as Window;
 		this[kDocument] = document;
@@ -447,7 +455,7 @@ export class Painter {
 			// A registered highlight overdraws cells the scrolled box's own
 			// geometry does not describe, and nothing tracks which rows it
 			// covered. The frame repaints those rows instead of shifting them.
-			getPaintedHighlights(this[kDocument]).length > 0 ||
+			hasPaintedHighlights(this[kDocument]) ||
 			!record.element.isConnected
 		) {
 			return null;
@@ -486,7 +494,7 @@ export class Painter {
 	paint(ctx: CellContext): void {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
-		this[kHighlights] = getPaintedHighlights(this[kDocument]);
+		this[kHighlightedText] = collectHighlightedText(this[kDocument]);
 		this[kHighlightStyles] = new Map();
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		renderStackingContext(this, this[kDocument].body, ctx, layers);
@@ -1269,6 +1277,28 @@ function getHighlightSegments(
 	return segments;
 }
 
+// Every text node a registered highlight covers, in the order the
+// painter folds the styles in. Built once a frame: a text node with no
+// entry here has no highlight over it.
+function collectHighlightedText(document: Document): Map<Text, HighlightRun[]> {
+	const highlighted = new Map<Text, HighlightRun[]>();
+	for (const highlight of getPaintedHighlights(document)) {
+		for (const range of highlight.ranges) {
+			for (const covered of getHighlightedTextNodes(range)) {
+				const textNode = covered.textNode as Text;
+				const runs = highlighted.get(textNode);
+				const run = {name: highlight.name, from: covered.from, to: covered.to};
+				if (runs === undefined) {
+					highlighted.set(textNode, [run]);
+				} else {
+					runs.push(run);
+				}
+			}
+		}
+	}
+	return highlighted;
+}
+
 // Redraws the highlighted runs over the base pass, one draw per run of
 // cells the same layers cover, the selection included.
 function renderTextHighlights(
@@ -1282,24 +1312,15 @@ function renderTextHighlights(
 	// The flat-tree parent, where a highlight's style resolves. Slotted
 	// text takes the style of the slot it renders in, not the host's.
 	const parent = flatParentElement(textNode);
-	if (parent !== null) {
-		for (const highlight of painter[kHighlights]) {
-			const paint = getHighlightStyle(painter, parent, highlight.name);
-			if (paint === null) {
-				continue;
-			}
-			for (const range of highlight.ranges) {
-				const covered = getHighlightedOffsets(range, textNode);
-				if (covered !== null) {
-					layers.push({
-						...painter[kLayout].snapToClusters(
-							textNode,
-							covered.from,
-							covered.to,
-						),
-						paint,
-					});
-				}
+	const runs = painter[kHighlightedText].get(textNode);
+	if (parent !== null && runs !== undefined) {
+		for (const run of runs) {
+			const paint = getHighlightStyle(painter, parent, run.name);
+			if (paint !== null) {
+				layers.push({
+					...painter[kLayout].snapToClusters(textNode, run.from, run.to),
+					paint,
+				});
 			}
 		}
 	}

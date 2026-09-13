@@ -224,6 +224,36 @@ test("a highlight spanning two text nodes paints both", async () => {
 	dom.dispose();
 });
 
+test("a range spanning nested elements paints every text node under it", async () => {
+	const {terminal, dom, window} = highlightDOM({rows: 12, cols: 20});
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML =
+		"<div>" +
+		Array.from({length: 8}, (_, i) => `<p>row <b>${i}</b> end</p>`).join("") +
+		"</div>";
+	const rows = Array.from(document.querySelectorAll("p"));
+
+	// From inside one row's first text node to inside a later row's last
+	// one, over the text nodes of three rows and the <b> inside each.
+	const range = document.createRange();
+	range.setStart(rows[2].firstChild!, 2);
+	range.setEnd(rows[4].lastChild!, 2);
+	window.CSS.highlights.set("hit", new window.Highlight(range));
+	await nextFrame(dom);
+
+	// The rows outside the range are untouched, whatever the ones inside
+	// it cost to find.
+	expect(yellowCells(terminal, 1)).toEqual([]);
+	expect(yellowCells(terminal, 2)).toEqual([2, 3, 4, 5, 6, 7, 8]);
+	expect(yellowCells(terminal, 3)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+	expect(yellowCells(terminal, 4)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+	expect(yellowCells(terminal, 5)).toEqual([]);
+
+	dom.dispose();
+});
+
 test("priority, then registration order, decides which layer wins", async () => {
 	const {terminal, dom, window} = highlightDOM();
 	const {document} = dom;
