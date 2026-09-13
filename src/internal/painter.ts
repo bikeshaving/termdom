@@ -444,6 +444,10 @@ export class Painter {
 			// The rows the terminal would shift are not the rows the last
 			// frame painted.
 			layout.moved ||
+			// A registered highlight overdraws cells the scrolled box's own
+			// geometry does not describe, and nothing tracks which rows it
+			// covered. The frame repaints those rows instead of shifting them.
+			getPaintedHighlights(this[kDocument]).length > 0 ||
 			!record.element.isConnected
 		) {
 			return null;

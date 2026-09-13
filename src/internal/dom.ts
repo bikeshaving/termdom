@@ -25836,6 +25836,7 @@ function rangeBoundaryPointsChanged(
 	if (selection !== null) {
 		selectionChanged(selection, which);
 	}
+	rangeHighlightsChanged(range);
 }
 
 /** At most one per task. */
@@ -26869,6 +26870,7 @@ class Highlight {
 
 	set priority(value: number) {
 		this[kHighlightPriority] = toLong(value);
+		highlightChanged(this);
 	}
 
 	get type(): HighlightType {
@@ -26880,6 +26882,7 @@ class Highlight {
 			throw new TypeError(`${String(value)} is not a highlight type`);
 		}
 		this[kHighlightType] = String(value) as HighlightType;
+		highlightChanged(this);
 	}
 
 	get size(): number {
@@ -26891,6 +26894,8 @@ class Highlight {
 			throw new TypeError("That is not a range");
 		}
 		this[kHighlightRanges].add(range);
+		joinHighlight(range, this);
+		highlightChanged(this);
 		return this;
 	}
 
@@ -26898,7 +26903,12 @@ class Highlight {
 		if (arguments.length < 1) {
 			throw new TypeError("delete needs a range");
 		}
-		return this[kHighlightRanges].delete(range);
+		const deleted = this[kHighlightRanges].delete(range);
+		if (deleted) {
+			leaveHighlight(range, this);
+			highlightChanged(this);
+		}
+		return deleted;
 	}
 
 	has(range: AbstractRange): boolean {
@@ -26909,7 +26919,14 @@ class Highlight {
 	}
 
 	clear(): void {
+		if (this[kHighlightRanges].size === 0) {
+			return;
+		}
+		for (const range of this[kHighlightRanges]) {
+			leaveHighlight(range, this);
+		}
 		this[kHighlightRanges].clear();
+		highlightChanged(this);
 	}
 
 	forEach(
@@ -26993,6 +27010,7 @@ class HighlightRegistry {
 		}
 		this[kHighlightsByName].set(key, highlight);
 		highlight[kHighlightRegistries].add(this);
+		invalidateHighlights(this[kRegistryDocument]);
 		return this;
 	}
 
@@ -27021,6 +27039,7 @@ class HighlightRegistry {
 		}
 		this[kHighlightsByName].delete(key);
 		dropRegistration(this, highlight);
+		invalidateHighlights(this[kRegistryDocument]);
 		return true;
 	}
 
@@ -27033,6 +27052,7 @@ class HighlightRegistry {
 		for (const highlight of registered) {
 			dropRegistration(this, highlight);
 		}
+		invalidateHighlights(this[kRegistryDocument]);
 	}
 
 	forEach(
@@ -27110,6 +27130,59 @@ function dropRegistration(
 		}
 	}
 	highlight[kHighlightRegistries].delete(registry);
+}
+
+// Which highlights a range is in, so that moving its boundary points
+// repaints them. Only ranges that join one are ever in here, and the
+// count keeps the lookup off the path of every other range.
+const highlightsByRange = new WeakMap<AbstractRange, Set<Highlight>>();
+let highlightedRangesEver = 0;
+
+function joinHighlight(range: AbstractRange, highlight: Highlight): void {
+	let highlights = highlightsByRange.get(range);
+	if (highlights === undefined) {
+		highlights = new Set<Highlight>();
+		highlightsByRange.set(range, highlights);
+	}
+	highlights.add(highlight);
+	highlightedRangesEver++;
+}
+
+function leaveHighlight(range: AbstractRange, highlight: Highlight): void {
+	highlightsByRange.get(range)?.delete(highlight);
+}
+
+/** The highlights a range moved under, for the mutation steps. */
+function rangeHighlightsChanged(range: Range): void {
+	if (highlightedRangesEver === 0) {
+		return;
+	}
+	const highlights = highlightsByRange.get(range);
+	if (highlights === undefined) {
+		return;
+	}
+	for (const highlight of highlights) {
+		highlightChanged(highlight);
+	}
+}
+
+// A highlight belongs to whatever registries hold it, and each of those
+// belongs to a document with a screen to repaint.
+function highlightChanged(highlight: Highlight): void {
+	for (const registry of highlight[kHighlightRegistries]) {
+		invalidateHighlights(registry[kRegistryDocument]);
+	}
+}
+
+// Neither registering a highlight nor moving one is a DOM mutation, and
+// no record names the rows it covers, so the repaint is asked for here.
+function invalidateHighlights(document: Document): void {
+	const attached = getAttachedDocument(document);
+	if (attached === undefined) {
+		return;
+	}
+	attached[kScreen].invalidate();
+	void attached[kRender]();
 }
 
 /** A registered highlight and what it covers, for the painter. */

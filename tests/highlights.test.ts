@@ -6,7 +6,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 function highlightDOM(options: {rows?: number; cols?: number} = {}): {
 	terminal: MockProcess;
@@ -282,6 +282,127 @@ test("text-decoration-line: underline in a highlight rule underlines", async () 
 	expect(cellAt(terminal, 0, 2).isUnderline()).toBeTruthy();
 	expect(cellAt(terminal, 0, 4).isUnderline()).toBeTruthy();
 	expect(cellAt(terminal, 0, 5).isUnderline()).toBeFalsy();
+
+	dom.dispose();
+});
+
+test("a highlight mutation repaints without a DOM mutation", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML = "<p>abcdefgh</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const first = document.createRange();
+	first.setStart(text, 0);
+	first.setEnd(text, 2);
+	const second = document.createRange();
+	second.setStart(text, 4);
+	second.setEnd(text, 6);
+	const highlight = new window.Highlight(first);
+	const other = new window.Highlight(second);
+	window.CSS.highlights.set("hit", highlight);
+	await nextFrame(dom);
+	expect(yellowCells(terminal, 0)).toEqual([0, 1]);
+
+	// Adding a range.
+	highlight.add(second);
+	await nextFrame(dom);
+	expect(yellowCells(terminal, 0)).toEqual([0, 1, 4, 5]);
+
+	// Removing one.
+	highlight.delete(first);
+	await nextFrame(dom);
+	expect(yellowCells(terminal, 0)).toEqual([4, 5]);
+
+	// Moving one.
+	second.setEnd(text, 7);
+	await nextFrame(dom);
+	expect(yellowCells(terminal, 0)).toEqual([4, 5, 6]);
+
+	// A change of priority, where the layer below is a different color.
+	document.head.innerHTML +=
+		"<style>::highlight(other) { background-color: lime }</style>";
+	window.CSS.highlights.set("other", other);
+	await nextFrame(dom);
+	expect(cellAt(terminal, 0, 4).getBgColor()).toBe(0x00ff00);
+	highlight.priority = 1;
+	await nextFrame(dom);
+	expect(cellAt(terminal, 0, 4).getBgColor()).toBe(0xffff00);
+
+	// And dropping the name.
+	window.CSS.highlights.delete("hit");
+	window.CSS.highlights.delete("other");
+	await nextFrame(dom);
+	expect(yellowCells(terminal, 0)).toEqual([]);
+
+	dom.dispose();
+});
+
+test("an invalid static range is skipped, and a live range follows the tree", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML = "<p><span>gone</span><span>here</span></p>";
+	const [first, second] = Array.from(document.querySelectorAll("span"));
+
+	const stale = new window.StaticRange({
+		startContainer: first.firstChild!,
+		startOffset: 0,
+		endContainer: first.firstChild!,
+		endOffset: 4,
+	});
+	const live = document.createRange();
+	live.setStart(second.firstChild!, 0);
+	live.setEnd(second.firstChild!, 4);
+	window.CSS.highlights.set("hit", new window.Highlight(stale, live));
+	await nextFrame(dom);
+	expect(yellowCells(terminal, 0)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+
+	// The static range's node leaves the tree, so it describes nothing and
+	// paints nothing. The live range's points follow the text inserted
+	// before it.
+	first.remove();
+	const inserted = document.createElement("span");
+	inserted.textContent = "XY";
+	second.parentElement!.insertBefore(inserted, second);
+	await nextFrame(dom);
+	expect(yellowCells(terminal, 0)).toEqual([2, 3, 4, 5]);
+
+	dom.dispose();
+});
+
+test("a non-empty highlight refuses the scroll transform", async () => {
+	const {terminal, dom, window} = highlightDOM({rows: 8, cols: 20});
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML =
+		"<div id=\"pane\" style=\"height:6em;overflow-y:scroll\">" +
+		Array.from({length: 20}, (_, i) => `<div>row ${i}</div>`).join("") +
+		"</div>";
+	await nextFrame(dom);
+
+	// The transform is a DECSTBM band and an in-terminal line delete.
+	const band = /\x1b\[\d+;\d+r/;
+	const raw = captureRawOutput(terminal);
+	document.getElementById("pane")!.scrollTop = 2;
+	await nextFrame(dom);
+	expect(raw()).toMatch(band);
+
+	const text = document.querySelector("#pane div")!.firstChild!;
+	const range = document.createRange();
+	range.setStart(text, 0);
+	range.setEnd(text, 3);
+	window.CSS.highlights.set("hit", new window.Highlight(range));
+	await nextFrame(dom);
+
+	const rawAgain = captureRawOutput(terminal);
+	document.getElementById("pane")!.scrollTop = 4;
+	await nextFrame(dom);
+	expect(rawAgain()).not.toMatch(band);
 
 	dom.dispose();
 });
