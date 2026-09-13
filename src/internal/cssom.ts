@@ -5414,15 +5414,7 @@ export class Cascade {
 		}
 		// The UA shadow trees' sheets have no pseudo-generating rules, so the
 		// attach sweep runs only for an author shadow root that does.
-		if (
-			fresh.some(
-				(rule) =>
-					rule.pseudoElement &&
-					rule.pseudoElement !== "::placeholder" &&
-					rule.pseudoElement !== "::selection" &&
-					!rule.pseudoElement.startsWith("::part("),
-			)
-		) {
+		if (fresh.some((rule) => generatesPseudoElement(rule.pseudoElement))) {
 			attachPseudoElements(this);
 		}
 	}
@@ -5590,18 +5582,28 @@ function getPseudoDeclaration(
 	return declaration;
 }
 
+// True for a pseudo-element the tree needs a node of its own for. The
+// rest -- ::placeholder, ::selection, ::part() and ::highlight() --
+// style boxes that already exist.
+function generatesPseudoElement(
+	pseudoElement: string | undefined,
+): pseudoElement is string {
+	return Boolean(
+		pseudoElement &&
+		pseudoElement !== "::placeholder" &&
+		pseudoElement !== "::selection" &&
+		!pseudoElement.startsWith("::part(") &&
+		!pseudoElement.startsWith("::highlight("),
+	);
+}
+
 // Driven from the rules rather than the tree, so the walk costs what
 // the sheets ask for rather than what the document holds.
 function attachPseudoElementsToDocument(cascade: Cascade): void {
 	const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 
 	for (const rule of cascade[kParsedRules]) {
-		if (
-			rule.pseudoElement &&
-			rule.pseudoElement !== "::placeholder" &&
-			rule.pseudoElement !== "::selection" &&
-			!rule.pseudoElement.startsWith("::part(")
-		) {
+		if (generatesPseudoElement(rule.pseudoElement)) {
 			const rules = pseudoRulesByType.get(rule.pseudoElement) || [];
 			rules.push(rule);
 			pseudoRulesByType.set(rule.pseudoElement, rules);

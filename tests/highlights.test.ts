@@ -6,6 +6,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {pseudoElementCount} from "../src/internal/dom.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 function highlightDOM(options: {rows?: number; cols?: number} = {}): {
@@ -147,6 +148,31 @@ test("a styled highlight paints its cells, and an unstyled name paints none", as
 	await nextFrame(dom);
 
 	expect(yellowCells(terminal, 0)).toEqual([5, 6, 7]);
+
+	dom.dispose();
+});
+
+test("a ::highlight rule generates no pseudo-element", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { content: \"X\"; background-color: yellow }" +
+		"</style>";
+	document.body.innerHTML = "<p>abcdefgh</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const range = document.createRange();
+	range.setStart(text, 0);
+	range.setEnd(text, 4);
+	window.CSS.highlights.set("hit", new window.Highlight(range));
+	await nextFrame(dom);
+
+	// A highlight styles text that is already there. It has no box, so
+	// `content` in its rule makes no node on anything.
+	for (const element of document.querySelectorAll("*")) {
+		expect(pseudoElementCount(element)).toBe(0);
+	}
+	expect(yellowCells(terminal, 0)).toEqual([0, 1, 2, 3]);
 
 	dom.dispose();
 });
