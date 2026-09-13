@@ -100,6 +100,17 @@ Everything inside `<math>` can be selected and highlighted by cell.
 [`examples/katex.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/katex.ts)
 renders TeX through KaTeX's MathML output and walks every element.
 
+## Images
+
+An `<img>` is a box the size of its `width` and `height` attributes or CSS,
+else its PNG's size in cells, else its alt text. In a terminal that speaks
+the kitty graphics protocol (kitty, Ghostty, WezTerm) or iTerm2's inline
+images, the box shows the image; everywhere else, and whenever the image
+cannot load, it shows the alt text. `src` may be a `data:` URL, a `file:`
+URL, or a path relative to the working directory. `load` and `error` fire,
+and `naturalWidth`, `naturalHeight`, `complete`, and `decode()` report as
+they do in a browser.
+
 ## Not implemented
 
 Floats, `subgrid` and masonry. The [compatibility matrix](/compatibility/) has
