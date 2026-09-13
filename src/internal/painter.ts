@@ -274,18 +274,37 @@ function renderGradient(
 	const stops = resolveStops(gradient.stops, length);
 	const left = Math.round(rect.left);
 	const top = Math.round(rect.top);
-	for (let row = 0; row < rows; row++) {
-		const y = (row + 0.5) * aspect - startY;
+	const colorAt = (x: number, y: number): number | null =>
+		getStopColor(
+			stops,
+			length > 0 ? (x * dx + y * dy) / length : 0,
+			gradient.repeating,
+			under,
+		);
+	// Along a row or a column every cell of the other axis is the same
+	// color, so it is one fill. Only a slanted line is cell by cell.
+	if (dy === 0) {
 		for (let col = 0; col < cols; col++) {
-			const x = col + 0.5 - startX;
-			const color = getStopColor(
-				stops,
-				length > 0 ? (x * dx + y * dy) / length : 0,
-				gradient.repeating,
-				under,
-			);
+			const color = colorAt(col + 0.5 - startX, 0);
 			if (color !== null) {
-				ctx.drawRect(left + col, top + row, 1, 1, color);
+				ctx.drawRect(left + col, top, 1, rows, color);
+			}
+		}
+	} else if (dx === 0) {
+		for (let row = 0; row < rows; row++) {
+			const color = colorAt(0, (row + 0.5) * aspect - startY);
+			if (color !== null) {
+				ctx.drawRect(left, top + row, cols, 1, color);
+			}
+		}
+	} else {
+		for (let row = 0; row < rows; row++) {
+			const y = (row + 0.5) * aspect - startY;
+			for (let col = 0; col < cols; col++) {
+				const color = colorAt(col + 0.5 - startX, y);
+				if (color !== null) {
+					ctx.drawRect(left + col, top + row, 1, 1, color);
+				}
 			}
 		}
 	}
@@ -580,9 +599,8 @@ function renderElement(
 	// Over the flat fill, which a transparent stop composites onto.
 	const gradient = rect && visible ? getGradient(element) : null;
 	if (rect && gradient !== null) {
-		const layout = painter[kLayout];
-		const cell = layout.cellPixels;
-		const fragments = layout.getRects(element);
+		const cell = painter[kScreen].cellPixels;
+		const fragments = painter[kLayout].getRects(element);
 		for (const fragment of fragments.length > 1 ? fragments : [rect]) {
 			renderGradient(
 				ctx,

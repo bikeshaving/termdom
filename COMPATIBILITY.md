@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-190 features supported, 36 probed and unsupported,
+190 features supported, 38 probed and unsupported,
 156 CSS properties not applicable to a character grid,
 128 applicable and not implemented,
 4 not yet probed.
@@ -186,7 +186,9 @@ changed.
 | --- | --- |
 | `color` | yes |
 | `background-color` | yes |
-| `background-image` | yes |
+| `background-image: linear-gradient()` | yes |
+| `background-image: radial-gradient()` | no (no effect) |
+| `background-image: url()` | no (no effect) |
 | `user-select` | yes |
 | `background` | yes |
 | `font-weight` | yes |

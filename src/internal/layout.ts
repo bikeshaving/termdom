@@ -3485,10 +3485,6 @@ function measureText(
 }
 
 const kTerminalReordersText = Symbol("terminalReordersText");
-const kCellPixels = Symbol("cellPixels");
-// What a cell measures until the terminal says. Most fonts run about
-// twice as tall as wide at any size.
-const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
 const kMoved = Symbol("moved");
 
 // Both halves are needed. Each segment's characters reorder (bidi.ts),
@@ -4017,7 +4013,6 @@ export interface Layout {
 	// lines stay logical. One reordering is correct and two is backwards
 	// again.
 	[kTerminalReordersText]: boolean;
-	[kCellPixels]: {width: number; height: number};
 
 	// Each text node's last rendering, keyed by the data and white-space it
 	// was rendered under. One run is broken once per width the sizing pass
@@ -4072,7 +4067,6 @@ export class Layout {
 		this[kPass] = 0;
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
-		this[kCellPixels] = {...DEFAULT_CELL_PIXELS};
 		this[kRectTextIndices] = new WeakMap<
 			object,
 			Map<Text, TextFragmentEntry[]>
@@ -4111,21 +4105,6 @@ export class Layout {
 
 	get moved(): boolean {
 		return this[kMoved];
-	}
-
-	/** One cell in terminal pixels. */
-	get cellPixels(): {width: number; height: number} {
-		return this[kCellPixels];
-	}
-
-	/** XTWINOPS answered. Whatever was painted against the guess repaints. */
-	adoptCellPixels(width: number, height: number): void {
-		const cell = this[kCellPixels];
-		if (cell.width === width && cell.height === height) {
-			return;
-		}
-		this[kCellPixels] = {width, height};
-		this.invalidate();
 	}
 
 	adoptTerminalReordering(): void {

@@ -983,7 +983,7 @@ export class Exchange extends EventTarget {
 				width > 0 && height > 0 ? {width, height} : null,
 		});
 		if (cell !== null && !this[kDisposed]) {
-			this[kLayout].adoptCellPixels(cell.width, cell.height);
+			this[kScreen].adoptCellPixels(cell.width, cell.height);
 		}
 	}
 
