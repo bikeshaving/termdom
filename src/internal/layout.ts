@@ -4733,9 +4733,7 @@ export class Layout {
 	}
 
 	// The offsets the cells above actually cover, since a cell holds a
-	// whole cluster. Two highlight layers that share a cluster have to
-	// agree on it before their styles fold, or the one drawn last takes
-	// the cell whatever its priority.
+	// whole cluster.
 	snapToClusters(
 		textNode: Text,
 		from: number,

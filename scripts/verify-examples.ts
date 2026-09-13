@@ -112,8 +112,6 @@ const INTERACTIVE: Record<string, (cmd: string) => Promise<string | null>> = {
 		}
 		return null;
 	},
-	// Typing a query registers a highlight per hit, and the status line
-	// counts them.
 	"highlights.ts": async (cmd) => {
 		await launch(cmd, 3000);
 		tmux(`send-keys -t ${SESSION} "error"`);

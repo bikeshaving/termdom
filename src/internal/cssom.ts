@@ -5240,11 +5240,8 @@ export class Cascade {
 
 	/**
 	 * The properties a pseudo-element's own rules set on this element, empty
-	 * when no rule reaches it. getComputedValue answers for the
-	 * pseudo-element with the originating element's inherited values filled
-	 * in, which cannot tell a declared `color` from the one the text was
-	 * already painted in; a highlight layer overrides only what it declares,
-	 * and an unstyled `::highlight()` name paints nothing at all.
+	 * when no rule reaches it. Unlike getComputedValue, this does not fill in
+	 * the originating element's inherited values.
 	 */
 	declaredPseudoProperties(
 		element: Element,
@@ -5582,10 +5579,9 @@ function getPseudoDeclaration(
 	return declaration;
 }
 
-// `::highlight()` names a registered highlight, and a registered name is
-// a DOMString: the escapes a selector spells it with are not part of it.
-// `::highlight(a\.b)` and CSS.highlights.set("a.b", ...) are the same
-// name, so rules and lookups both key on the unescaped one.
+// A registered highlight name is a DOMString, so the escapes a selector
+// spells it with are not part of it: `::highlight(a\.b)` and
+// CSS.highlights.set("a.b", ...) name the same highlight.
 function unescapeHighlightName(pseudoElement: string): string {
 	const written = pseudoElement.match(/^::highlight\((.*)\)$/);
 	if (written === null) {

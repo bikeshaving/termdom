@@ -355,8 +355,6 @@ export class TermDOM {
 		}
 		this[kCascade].dispose();
 		this[kLayout].dispose();
-		// The registry and its highlights are the document's, and the
-		// highlights hold the registry back.
 		DOM.clearHighlights(this.document);
 		disconnectObservers(this.document);
 		return this[kExchange].flush();

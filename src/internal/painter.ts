@@ -397,9 +397,6 @@ export interface Painter {
 	// Paint extents are cached in unscrolled rows. A scrolled subtree
 	// paints this many rows higher, so culling shifts the viewport instead.
 	[kScrolledRows]: number;
-	// What the frame's registered highlights cover, read once rather than
-	// compared against every range per text node, with the style each name
-	// resolves to on an element beside it.
 	[kHighlightedText]: Map<Text, HighlightRun[]>;
 	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
 }
@@ -452,9 +449,6 @@ export class Painter {
 			// The rows the terminal would shift are not the rows the last
 			// frame painted.
 			layout.moved ||
-			// A registered highlight overdraws cells the scrolled box's own
-			// geometry does not describe, and nothing tracks which rows it
-			// covered. The frame repaints those rows instead of shifting them.
 			hasPaintedHighlights(this[kDocument]) ||
 			!record.element.isConnected
 		) {
@@ -1107,10 +1101,8 @@ function getPaintSelectionRange(
 }
 
 /**
- * What a `::highlight()` rule can change about a cell: the color pair,
- * the terminal's inverse through the Highlight keyword, and the
- * decoration lines the cell model carries. A property the rule does not
- * declare is absent here, so the layer under it shows through.
+ * What a `::highlight()` rule can change about a cell. A property it does
+ * not declare is absent here, so the layer under it shows through.
  */
 interface HighlightPaint {
 	fg?: number;
@@ -1121,11 +1113,9 @@ interface HighlightPaint {
 }
 
 /**
- * What `::highlight(name)` paints on this element, taking each property
- * the element's own rules leave out from the nearest flat-tree ancestor
- * whose rules declare it, as css-pseudo-4 inherits highlight styles.
- * Null when no ancestor declares anything: css-highlight-api gives a
- * name no rule styles no style of its own, so it paints nothing.
+ * What `::highlight(name)` paints on this element, each property taken
+ * from the nearest flat-tree ancestor whose rules declare it. Null when
+ * none of them do, since an unstyled name paints nothing.
  */
 function readHighlightStyle(
 	painter: Painter,
@@ -1144,8 +1134,6 @@ function readHighlightStyle(
 	const paint: HighlightPaint = {...inherited};
 	if (declared.has("color")) {
 		const color = getComputedValue(element, "color", pseudo);
-		// The background alone carries inverse, as it does for an element:
-		// HighlightText on its own resolves to nothing.
 		paint.fg = color && !CSSValues.isHighlightColor(color)
 			? CSSValues.cssColorToNumber(color)
 			: undefined;
@@ -1159,8 +1147,6 @@ function readHighlightStyle(
 		} else if (
 			background &&
 			!CSSValues.isTransparentColor(background) &&
-			// Canvas is the terminal's own background, which a cell can only
-			// be cleared to by a box. A highlight leaves the fill under it.
 			!CSSValues.isCanvasColor(background)
 		) {
 			paint.bg = CSSValues.cssColorToNumber(background);
@@ -1170,8 +1156,6 @@ function readHighlightStyle(
 		const decoration = CSSValues.parseTextDecorationLine(
 			getComputedValue(element, "text-decoration-line", pseudo),
 		);
-		// Decorations add to the ones the text already carries. A highlight
-		// draws a line; it never rubs one out.
 		paint.underline = decoration.underline || undefined;
 		paint.strikethrough = decoration.lineThrough || undefined;
 	}
@@ -1235,9 +1219,8 @@ function getHighlightStyle(
 
 /**
  * One highlight layer over the style under it. A background of the
- * layer's own is the whole background, so it turns off the inverse the
- * layer under it asked for: that inverse would swap the colors this
- * layer named.
+ * layer's own is the whole background, so it turns off the inverse under
+ * it, which would otherwise swap the colors this layer named.
  */
 function foldHighlight(base: CellStyle, paint: HighlightPaint): CellStyle {
 	return {
@@ -1284,10 +1267,9 @@ function collectHighlightedText(document: Document): Map<Text, HighlightRun[]> {
 	const highlighted = new Map<Text, HighlightRun[]>();
 	for (const highlight of getPaintedHighlights(document)) {
 		for (const range of highlight.ranges) {
-			for (const covered of getHighlightedTextNodes(range)) {
-				const textNode = covered.textNode as Text;
+			for (const {textNode, from, to} of getHighlightedTextNodes(range)) {
+				const run = {name: highlight.name, from, to};
 				const runs = highlighted.get(textNode);
-				const run = {name: highlight.name, from: covered.from, to: covered.to};
 				if (runs === undefined) {
 					highlighted.set(textNode, [run]);
 				} else {
@@ -1309,8 +1291,6 @@ function renderTextHighlights(
 	ctx: CellContext,
 ): void {
 	const layers: HighlightLayer[] = [];
-	// The flat-tree parent, where a highlight's style resolves. Slotted
-	// text takes the style of the slot it renders in, not the host's.
 	const parent = flatParentElement(textNode);
 	const runs = painter[kHighlightedText].get(textNode);
 	if (parent !== null && runs !== undefined) {
@@ -1324,10 +1304,6 @@ function renderTextHighlights(
 			}
 		}
 	}
-	// Last, so it folds over every custom highlight whatever their
-	// priorities: css-highlight-api puts the built-in pseudo-elements above
-	// them all. Its style resolves on the control that owns the selection,
-	// which is not always this node's parent.
 	const selected = getPaintSelectionRange(painter, textNode);
 	if (selected !== null) {
 		const paint = readSelectionStyle(selected.selectionParent);

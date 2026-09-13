@@ -26850,8 +26850,6 @@ interface Highlight {
 
 /** A set of ranges to paint under one `::highlight()` name. */
 class Highlight {
-	// The tag the platform interface declares. Written on the prototype
-	// below, where every one of this file's classes writes it.
 	declare readonly [Symbol.toStringTag]: string;
 
 	constructor(...initialRanges: AbstractRange[]) {
@@ -27003,8 +27001,6 @@ class HighlightRegistry {
 		const key = String(name);
 		const previous = this[kHighlightsByName].get(key);
 		if (previous !== undefined) {
-			// Registration order is paint order, and the spec registers the
-			// name afresh.
 			this[kHighlightsByName].delete(key);
 			dropRegistration(this, previous);
 		}
@@ -27192,10 +27188,8 @@ export interface PaintedHighlight {
 }
 
 /**
- * Every registered highlight that covers something, in the order the
- * painter folds their styles in. A collapsed range covers no cell, and a
- * highlight of nothing but those is not here at all -- which makes an
- * empty array the answer to "does anything highlight this document".
+ * Every registered highlight that covers something, lowest priority
+ * first, which is the order the painter folds their styles in.
  */
 export function getPaintedHighlights(
 	document: globalThis.Document,
@@ -27213,9 +27207,6 @@ export function getPaintedHighlights(
 			painted.push({name, ranges, priority: highlight[kHighlightPriority]});
 		}
 	}
-	// Lowest priority first, so the ones above it fold over it. The sort is
-	// stable and the map is in registration order, which is the tie-break
-	// css-highlight-api asks for.
 	return painted.sort((a, b) => a.priority - b.priority);
 }
 
@@ -27237,8 +27228,7 @@ export function hasPaintedHighlights(document: globalThis.Document): boolean {
 
 /**
  * The text nodes one of a highlight's ranges covers, with the offsets it
- * covers of each. Read once per frame, so that painting a text node is a
- * lookup rather than a comparison against every registered range.
+ * covers of each.
  */
 export function getHighlightedTextNodes(
 	range: globalThis.AbstractRange,
@@ -27272,9 +27262,7 @@ export function getHighlightedTextNodes(
 /**
  * The offsets of a text node one of a highlight's ranges covers, or null
  * when it covers none of it. A static range whose boundary points no
- * longer describe the tree -- a node that has left it, an offset past the
- * end of its node -- describes nothing, which is how css-highlight-api
- * ignores an invalid one.
+ * longer describe the tree describes nothing.
  */
 export function getHighlightedOffsets(
 	range: globalThis.AbstractRange,
@@ -30707,9 +30695,8 @@ export class Window extends EventTarget {
 	declare Selection: typeof globalThis.Selection;
 	declare Highlight: typeof globalThis.Highlight;
 	declare HighlightRegistry: typeof globalThis.HighlightRegistry;
-	// The CSS namespace the cascade installs. Spelled out rather than
-	// borrowed from lib.dom, whose CSS also has a factory for every unit a
-	// browser measures in.
+	// Spelled out rather than borrowed from lib.dom, whose CSS also has a
+	// factory for every unit a browser measures in.
 	declare CSS: {
 		escape(ident: string): string;
 		supports(conditionOrProperty: string, value?: string): boolean;

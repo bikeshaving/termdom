@@ -243,8 +243,6 @@ test("a range spanning nested elements paints every text node under it", async (
 	window.CSS.highlights.set("hit", new window.Highlight(range));
 	await nextFrame(dom);
 
-	// The rows outside the range are untouched, whatever the ones inside
-	// it cost to find.
 	expect(yellowCells(terminal, 1)).toEqual([]);
 	expect(yellowCells(terminal, 2)).toEqual([2, 3, 4, 5, 6, 7, 8]);
 	expect(yellowCells(terminal, 3)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);

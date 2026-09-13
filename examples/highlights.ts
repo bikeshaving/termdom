@@ -49,9 +49,8 @@ document.head.innerHTML = `
            padding: 0 1ch; }
     .log div { color: #b0b0b0; }
 
-    /* The two highlights. The current hit is registered at the higher
-       priority, so where they overlap its rules win -- and because it sets
-       no color of its own, the other layer's still shows through. */
+    /* The current hit is registered at the higher priority, so where the
+       two overlap its rules win. */
     ::highlight(search-hit) { background-color: #ffd166; color: #111111; }
     ::highlight(search-current) { background-color: #f77f00;
                                   text-decoration-line: underline; }
@@ -75,7 +74,6 @@ const log = document.querySelector(".log")!;
 
 const hits = new Highlight();
 const current = new Highlight();
-// Higher, so it folds over the plain hits where they cover the same cells.
 current.priority = 1;
 CSS.highlights.set("search-hit", hits);
 CSS.highlights.set("search-current", current);
@@ -107,8 +105,6 @@ function search(query: string): Range[] {
 }
 
 function show(): void {
-  // Registering the ranges is the whole update. No element is touched, so
-  // the tree the log laid out is the tree it keeps.
   hits.clear();
   current.clear();
   for (const range of found) {
