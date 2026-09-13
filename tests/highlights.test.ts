@@ -6,7 +6,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 function highlightDOM(options: {rows?: number; cols?: number} = {}): {
 	terminal: MockProcess;
@@ -19,6 +19,19 @@ function highlightDOM(options: {rows?: number; cols?: number} = {}): {
 	});
 	const dom = new TermDOM({transport: terminal.transport});
 	return {terminal, dom, window: dom.window as any};
+}
+
+/** The columns of a row painted on a yellow background. */
+function yellowCells(terminal: MockProcess, row: number): number[] {
+	const line = (terminal as any).terminal.buffer.active.getLine(row);
+	const columns: number[] = [];
+	for (let col = 0; col < line.length; col++) {
+		const cell = line.getCell(col);
+		if (cell.isBgRGB() && cell.getBgColor() === 0xffff00) {
+			columns.push(col);
+		}
+	}
+	return columns;
 }
 
 test("CSS.highlights is a registry, and Highlight constructs from ranges", () => {
@@ -105,6 +118,49 @@ test("the registry is a map, and re-registering a name moves it last", () => {
 	expect(registry.size).toBe(0);
 	expect(() => registry.set("bad", {} as never)).toThrow(TypeError);
 	expect(() => new window.HighlightRegistry()).toThrow(TypeError);
+
+	dom.dispose();
+});
+
+test("a styled highlight paints its cells, and an unstyled name paints none", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML = "<p>find the word here</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const range = document.createRange();
+	range.setStart(text, 5);
+	range.setEnd(text, 8);
+	window.CSS.highlights.set("hit", new window.Highlight(range));
+	// A name no rule styles has no user-agent style to fall back on.
+	const unstyled = document.createRange();
+	unstyled.setStart(text, 9);
+	unstyled.setEnd(text, 13);
+	window.CSS.highlights.set("miss", new window.Highlight(unstyled));
+	await nextFrame(dom);
+
+	expect(yellowCells(terminal, 0)).toEqual([5, 6, 7]);
+
+	dom.dispose();
+});
+
+test("a highlight spanning two text nodes paints both", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML = "<p><span>abcd</span><span>efgh</span></p>";
+	const [first, second] = Array.from(document.querySelectorAll("span"));
+
+	const range = document.createRange();
+	range.setStart(first.firstChild!, 2);
+	range.setEnd(second.firstChild!, 2);
+	window.CSS.highlights.set("hit", new window.Highlight(range));
+	await nextFrame(dom);
+
+	expect(yellowCells(terminal, 0)).toEqual([2, 3, 4, 5]);
 
 	dom.dispose();
 });

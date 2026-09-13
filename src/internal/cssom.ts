@@ -5238,6 +5238,24 @@ export class Cascade {
 		return declaration;
 	}
 
+	/**
+	 * The properties a pseudo-element's own rules set on this element, empty
+	 * when no rule reaches it. getComputedValue answers for the
+	 * pseudo-element with the originating element's inherited values filled
+	 * in, which cannot tell a declared `color` from the one the text was
+	 * already painted in; a highlight layer overrides only what it declares,
+	 * and an unstyled `::highlight()` name paints nothing at all.
+	 */
+	declaredPseudoProperties(
+		element: Element,
+		pseudoElement: string,
+	): Set<string> {
+		parseStylesheetsIfStale(this);
+		return new Set(
+			Object.keys(computePseudoElementStyle(this, element, pseudoElement)),
+		);
+	}
+
 	// Only width/height features are meaningful on the one screen a
 	// terminal has. Every other feature matches rather than silently
 	// dropping rules. Public because window.matchMedia uses the SAME

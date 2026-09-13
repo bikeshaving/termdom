@@ -4721,6 +4721,17 @@ export class Layout {
 		return runs;
 	}
 
+	// One text node's share of the work above. A highlight narrows its
+	// ranges to the node it is painting over, and has no live range to
+	// hand getRangeSpans.
+	getTextSpans(
+		textNode: Text,
+		from: number,
+		to: number,
+	): Array<{rect: DOMRect; text: string}> {
+		return to > from ? getSelectionSpans(this, textNode, from, to) : [];
+	}
+
 	// The one place laid-out lines get their data ranges. Range geometry,
 	// the caret, the painter and textarea navigation all read them here.
 	// Two lines exist that no layout fragment produces (the row after a

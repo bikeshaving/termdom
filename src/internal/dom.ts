@@ -27112,6 +27112,73 @@ function dropRegistration(
 	highlight[kHighlightRegistries].delete(registry);
 }
 
+/** A registered highlight and what it covers, for the painter. */
+export interface PaintedHighlight {
+	name: string;
+	ranges: globalThis.AbstractRange[];
+}
+
+/**
+ * Every registered highlight that covers something, in the order the
+ * painter folds their styles in. A collapsed range covers no cell, and a
+ * highlight of nothing but those is not here at all -- which makes an
+ * empty array the answer to "does anything highlight this document".
+ */
+export function getPaintedHighlights(
+	document: globalThis.Document,
+): PaintedHighlight[] {
+	const registry = (document as Document)[kHighlights];
+	if (registry === null || registry[kHighlightsByName].size === 0) {
+		return [];
+	}
+	const painted: PaintedHighlight[] = [];
+	for (const [name, highlight] of registry[kHighlightsByName]) {
+		const ranges = [...highlight[kHighlightRanges]].filter(
+			(range) => !range.collapsed,
+		);
+		if (ranges.length > 0) {
+			painted.push({name, ranges});
+		}
+	}
+	return painted;
+}
+
+/**
+ * The offsets of a text node one of a highlight's ranges covers, or null
+ * when it covers none of it. A static range whose boundary points no
+ * longer describe the tree -- a node that has left it, an offset past the
+ * end of its node -- describes nothing, which is how css-highlight-api
+ * ignores an invalid one.
+ */
+export function getHighlightedOffsets(
+	range: globalThis.AbstractRange,
+	textNode: globalThis.Text,
+): {from: number; to: number} | null {
+	const start = (range as AbstractRange)[kStartNode];
+	const startOffset = (range as AbstractRange)[kStartOffset];
+	const end = (range as AbstractRange)[kEndNode];
+	const endOffset = (range as AbstractRange)[kEndOffset];
+	const node = textNode as Text;
+	if (
+		startOffset > getNodeLength(start) ||
+		endOffset > getNodeLength(end) ||
+		getRoot(start) !== getRoot(node) ||
+		getRoot(end) !== getRoot(node)
+	) {
+		return null;
+	}
+	const from = start === node ? startOffset : 0;
+	const to = end === node ? endOffset : getNodeLength(node);
+	if (
+		to <= from ||
+		comparePoints(node, from, end, endOffset) !== BEFORE ||
+		comparePoints(node, to, start, startOffset) !== AFTER
+	) {
+		return null;
+	}
+	return {from, to};
+}
+
 const FILTER_ACCEPT = 1;
 const FILTER_REJECT = 2;
 const FILTER_SKIP = 3;

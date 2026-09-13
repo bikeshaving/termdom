@@ -8,12 +8,15 @@ import * as CSSValues from "./cssvalues.ts";
 import {
 	flatParentElement,
 	flowContent,
+	getHighlightedOffsets,
+	getPaintedHighlights,
 	getSelectionRecord,
 	getShadowRoot,
 	getTextControlSelectionRange,
 	getTextControlValueText,
 	getTopLayer,
 	HTMLElement,
+	type PaintedHighlight,
 	renderedTopLayer,
 	type Window,
 } from "./dom.ts";
@@ -399,6 +402,8 @@ const kScreen = Symbol("screen");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
+const kHighlights = Symbol("highlights");
+const kHighlightStyles = Symbol("highlightStyles");
 
 export interface Painter {
 	[kWindow]: Window;
@@ -412,6 +417,10 @@ export interface Painter {
 	// Paint extents are cached in unscrolled rows. A scrolled subtree
 	// paints this many rows higher, so culling shifts the viewport instead.
 	[kScrolledRows]: number;
+	// The frame's registered highlights, read once rather than per text
+	// node, with the style each resolves to on an element beside it.
+	[kHighlights]: PaintedHighlight[];
+	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
 }
 
 /** Reads the DOM, styles and geometry. Writes only into the CellContext. */
@@ -424,6 +433,8 @@ export class Painter {
 	) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
+		this[kHighlights] = [];
+		this[kHighlightStyles] = new Map();
 		this[kWindow] = document.defaultView as unknown as Window;
 		this[kDocument] = document;
 		this[kLayout] = layout;
@@ -491,6 +502,8 @@ export class Painter {
 	paint(ctx: CellContext): void {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
+		this[kHighlights] = getPaintedHighlights(this[kDocument]);
+		this[kHighlightStyles] = new Map();
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		renderStackingContext(this, this[kDocument].body, ctx, layers);
 		const rendered = renderedTopLayer(this[kDocument]) as unknown as Element[];
@@ -1045,6 +1058,7 @@ function renderText(painter: Painter, textNode: Text, ctx: CellContext): void {
 		);
 	}
 	if (painted) {
+		renderTextHighlights(painter, textNode, textStyle, textTransform, ctx);
 		renderTextSelection(painter, textNode, textStyle, textTransform, ctx);
 	}
 }
@@ -1121,5 +1135,182 @@ function renderTextSelection(
 			run.rect.y,
 			selectionStyle,
 		);
+	}
+}
+
+/**
+ * What a `::highlight()` rule can change about a cell: the color pair,
+ * the terminal's inverse through the Highlight keyword, and the
+ * decoration lines the cell model carries. A property the rule does not
+ * declare is absent here, so the layer under it shows through.
+ */
+interface HighlightPaint {
+	fg?: number;
+	bg?: number;
+	inverse?: boolean;
+	underline?: boolean;
+	strikethrough?: boolean;
+}
+
+// Null for a name no rule styles, which css-highlight-api gives no
+// default style of its own: it paints nothing.
+function readHighlightStyle(
+	cascade: Cascade,
+	element: Element,
+	name: string,
+): HighlightPaint | null {
+	const pseudo = `::highlight(${name})`;
+	const declared = cascade.declaredPseudoProperties(element, pseudo);
+	if (declared.size === 0) {
+		return null;
+	}
+	const paint: HighlightPaint = {};
+	if (declared.has("color")) {
+		const color = getComputedValue(element, "color", pseudo);
+		// The background alone carries inverse, as it does for an element:
+		// HighlightText on its own resolves to nothing.
+		if (color && !CSSValues.isHighlightColor(color)) {
+			paint.fg = CSSValues.cssColorToNumber(color);
+		}
+	}
+	if (declared.has("background-color")) {
+		const background = getComputedValue(element, "background-color", pseudo);
+		if (CSSValues.isHighlightColor(background)) {
+			paint.inverse = true;
+		} else if (
+			background &&
+			!CSSValues.isTransparentColor(background) &&
+			// Canvas is the terminal's own background, which a cell can only
+			// be cleared to by a box. A highlight leaves the fill under it.
+			!CSSValues.isCanvasColor(background)
+		) {
+			paint.bg = CSSValues.cssColorToNumber(background);
+		}
+	}
+	if (declared.has("text-decoration-line")) {
+		const decoration = CSSValues.parseTextDecorationLine(
+			getComputedValue(element, "text-decoration-line", pseudo),
+		);
+		// Decorations add to the ones the text already carries. A highlight
+		// draws a line; it never rubs one out.
+		if (decoration.underline) {
+			paint.underline = true;
+		}
+		if (decoration.lineThrough) {
+			paint.strikethrough = true;
+		}
+	}
+	return paint;
+}
+
+// Per element and name, for the frame. A highlight over many text nodes
+// resolves its style on the few elements they share.
+function getHighlightStyle(
+	painter: Painter,
+	element: Element,
+	name: string,
+): HighlightPaint | null {
+	let byName = painter[kHighlightStyles].get(element);
+	if (byName === undefined) {
+		byName = new Map<string, HighlightPaint | null>();
+		painter[kHighlightStyles].set(element, byName);
+	}
+	let paint = byName.get(name);
+	if (paint === undefined) {
+		paint = readHighlightStyle(painter[kCascade], element, name);
+		byName.set(name, paint);
+	}
+	return paint;
+}
+
+function foldHighlight(base: CellStyle, paint: HighlightPaint): CellStyle {
+	return {
+		...base,
+		fg: paint.fg ?? base.fg,
+		bg: paint.bg ?? base.bg,
+		inverse: paint.inverse || base.inverse,
+		underline: paint.underline || base.underline,
+		strikethrough: paint.strikethrough || base.strikethrough,
+	};
+}
+
+interface HighlightLayer {
+	from: number;
+	to: number;
+	paint: HighlightPaint;
+}
+
+// The offsets where the covering layers change, so each run of cells
+// every layer agrees on is drawn once rather than once per layer.
+function getHighlightSegments(
+	layers: HighlightLayer[],
+): Array<[number, number]> {
+	const edges =
+		[...new Set(layers.flatMap((layer) => [layer.from, layer.to]))].sort(
+			(a, b) => a - b,
+		);
+	const segments: Array<[number, number]> = [];
+	for (let i = 0; i + 1 < edges.length; i++) {
+		const covered = layers.some(
+			(layer) => layer.from <= edges[i] && layer.to >= edges[i + 1],
+		);
+		if (covered) {
+			segments.push([edges[i], edges[i + 1]]);
+		}
+	}
+	return segments;
+}
+
+// Redraws the highlighted runs over the base pass, one draw per run.
+function renderTextHighlights(
+	painter: Painter,
+	textNode: Text,
+	textStyle: CellStyle,
+	textTransform: string,
+	ctx: CellContext,
+): void {
+	if (painter[kHighlights].length === 0) {
+		return;
+	}
+	// The flat-tree parent, where the highlight's style resolves, as
+	// ::selection's does.
+	const parent = flatParentElement(textNode);
+	if (parent === null) {
+		return;
+	}
+	const layers: HighlightLayer[] = [];
+	for (const highlight of painter[kHighlights]) {
+		const paint = getHighlightStyle(painter, parent, highlight.name);
+		if (paint === null) {
+			continue;
+		}
+		for (const range of highlight.ranges) {
+			const covered = getHighlightedOffsets(range, textNode);
+			if (covered !== null) {
+				layers.push({from: covered.from, to: covered.to, paint});
+			}
+		}
+	}
+	if (layers.length === 0) {
+		return;
+	}
+	for (const [from, to] of getHighlightSegments(layers)) {
+		let style = textStyle;
+		for (const layer of layers) {
+			if (layer.from <= from && layer.to >= to) {
+				style = foldHighlight(style, layer.paint);
+			}
+		}
+		if (style === textStyle) {
+			continue;
+		}
+		for (const run of painter[kLayout].getTextSpans(textNode, from, to)) {
+			ctx.drawText(
+				applyTextTransform(run.text, textTransform),
+				run.rect.x,
+				run.rect.y,
+				style,
+			);
+		}
 	}
 }
