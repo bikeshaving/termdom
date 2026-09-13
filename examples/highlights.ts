@@ -44,7 +44,7 @@ document.head.innerHTML = `
     .prompt { display: flex; flex-direction: row; }
     .prompt .sigil { color: #5fafff; }
     input { flex-grow: 1; }
-    .status { color: #808080; }
+    .status { color: #808080; height: 1em; }
     .log { height: 14em; overflow-y: scroll; border: 1px solid #444444;
            padding: 0 1ch; }
     .log div { color: #b0b0b0; }
