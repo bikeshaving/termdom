@@ -1112,29 +1112,40 @@ interface HighlightPaint {
 	strikethrough?: boolean;
 }
 
-// Null for a name no rule styles, which css-highlight-api gives no
-// default style of its own: it paints nothing.
+/**
+ * What `::highlight(name)` paints on this element, taking each property
+ * the element's own rules leave out from the nearest flat-tree ancestor
+ * whose rules declare it, as css-pseudo-4 inherits highlight styles.
+ * Null when no ancestor declares anything: css-highlight-api gives a
+ * name no rule styles no style of its own, so it paints nothing.
+ */
 function readHighlightStyle(
-	cascade: Cascade,
+	painter: Painter,
 	element: Element,
 	name: string,
 ): HighlightPaint | null {
 	const pseudo = `::highlight(${name})`;
-	const declared = cascade.declaredPseudoProperties(element, pseudo);
+	const declared = painter[kCascade].declaredPseudoProperties(element, pseudo);
+	const parent = flatParentElement(element);
+	const inherited = parent === null
+		? null
+		: getHighlightStyle(painter, parent, name);
 	if (declared.size === 0) {
-		return null;
+		return inherited;
 	}
-	const paint: HighlightPaint = {};
+	const paint: HighlightPaint = {...inherited};
 	if (declared.has("color")) {
 		const color = getComputedValue(element, "color", pseudo);
 		// The background alone carries inverse, as it does for an element:
 		// HighlightText on its own resolves to nothing.
-		if (color && !CSSValues.isHighlightColor(color)) {
-			paint.fg = CSSValues.cssColorToNumber(color);
-		}
+		paint.fg = color && !CSSValues.isHighlightColor(color)
+			? CSSValues.cssColorToNumber(color)
+			: undefined;
 	}
 	if (declared.has("background-color")) {
 		const background = getComputedValue(element, "background-color", pseudo);
+		paint.bg = undefined;
+		paint.inverse = undefined;
 		if (CSSValues.isHighlightColor(background)) {
 			paint.inverse = true;
 		} else if (
@@ -1153,12 +1164,8 @@ function readHighlightStyle(
 		);
 		// Decorations add to the ones the text already carries. A highlight
 		// draws a line; it never rubs one out.
-		if (decoration.underline) {
-			paint.underline = true;
-		}
-		if (decoration.lineThrough) {
-			paint.strikethrough = true;
-		}
+		paint.underline = decoration.underline || undefined;
+		paint.strikethrough = decoration.lineThrough || undefined;
 	}
 	return paint;
 }
@@ -1212,7 +1219,7 @@ function getHighlightStyle(
 	}
 	let paint = byName.get(name);
 	if (paint === undefined) {
-		paint = readHighlightStyle(painter[kCascade], element, name);
+		paint = readHighlightStyle(painter, element, name);
 		byName.set(name, paint);
 	}
 	return paint;

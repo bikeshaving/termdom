@@ -317,6 +317,62 @@ test("equal priority is broken by registration order", async () => {
 	dom.dispose();
 });
 
+test("a highlight style reaches the text inside a child element", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>" +
+		"p::highlight(hit) { background-color: yellow; color: red }" +
+		"b::highlight(hit) { color: blue }" +
+		"</style>";
+	document.body.innerHTML = "<p>hel<b>lo</b> world</p>";
+	const paragraph = document.querySelector("p")!;
+
+	const range = document.createRange();
+	range.setStart(paragraph.firstChild!, 0);
+	range.setEnd(paragraph.lastChild!, 6);
+	window.CSS.highlights.set("hit", new window.Highlight(range));
+	await nextFrame(dom);
+
+	// "lo" is in a <b> with no background rule of its own, and it takes the
+	// paragraph's.
+	expect(yellowCells(terminal, 0)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+	expect(cellAt(terminal, 0, 0).getFgColor()).toBe(0xff0000);
+	expect(cellAt(terminal, 0, 3).getFgColor()).toBe(0x0000ff);
+	expect(cellAt(terminal, 0, 6).getFgColor()).toBe(0xff0000);
+
+	dom.dispose();
+});
+
+test("a document highlight rule reaches slotted and shadow text", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML = "<div id=\"host\">slotted</div>";
+	const host = document.getElementById("host")!;
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = "<span>own</span><slot></slot>";
+
+	const shadowText = root.querySelector("span")!.firstChild!;
+	const slottedText = host.firstChild!;
+	const highlight = new window.Highlight();
+	for (const text of [shadowText, slottedText]) {
+		const range = document.createRange();
+		range.setStart(text, 0);
+		range.setEnd(text, (text as any).data.length);
+		highlight.add(range);
+	}
+	window.CSS.highlights.set("hit", highlight);
+	await nextFrame(dom);
+
+	// "own" then "slotted": a rule in the document reaches both through
+	// the flat tree, though neither element is one the rule matches.
+	expect(yellowCells(terminal, 0)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+	dom.dispose();
+});
+
 test("priority decides a cell two layers share a cluster of", async () => {
 	const {terminal, dom, window} = highlightDOM();
 	const {document} = dom;
