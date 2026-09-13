@@ -1284,7 +1284,14 @@ function renderTextHighlights(
 			for (const range of highlight.ranges) {
 				const covered = getHighlightedOffsets(range, textNode);
 				if (covered !== null) {
-					layers.push({from: covered.from, to: covered.to, paint});
+					layers.push({
+						...painter[kLayout].snapToClusters(
+							textNode,
+							covered.from,
+							covered.to,
+						),
+						paint,
+					});
 				}
 			}
 		}
@@ -1297,7 +1304,14 @@ function renderTextHighlights(
 	if (selected !== null) {
 		const paint = readSelectionStyle(selected.selectionParent);
 		if (paint !== null) {
-			layers.push({from: selected.from, to: selected.to, paint});
+			layers.push({
+				...painter[kLayout].snapToClusters(
+					textNode,
+					selected.from,
+					selected.to,
+				),
+				paint,
+			});
 		}
 	}
 	if (layers.length === 0) {

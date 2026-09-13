@@ -317,6 +317,72 @@ test("equal priority is broken by registration order", async () => {
 	dom.dispose();
 });
 
+test("priority decides a cell two layers share a cluster of", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>" +
+		"::highlight(high) { background-color: yellow }" +
+		"::highlight(low) { background-color: blue }" +
+		"</style>";
+	// One cell holds "e" and the combining acute over it, the next holds
+	// "x", so the two layers meet inside the first cell.
+	document.body.innerHTML = "<p>éx</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const first = document.createRange();
+	first.setStart(text, 0);
+	first.setEnd(text, 1);
+	const rest = document.createRange();
+	rest.setStart(text, 1);
+	rest.setEnd(text, 3);
+
+	const high = new window.Highlight(first);
+	high.priority = 1;
+	window.CSS.highlights.set("high", high);
+	window.CSS.highlights.set("low", new window.Highlight(rest));
+	await nextFrame(dom);
+
+	expect(yellowCells(terminal, 0)).toEqual([0]);
+	expect(cellAt(terminal, 0, 1).getBgColor()).toBe(0x0000ff);
+
+	dom.dispose();
+});
+
+test("::selection takes a cell it shares a cluster with a highlight", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>" +
+		"::highlight(hit) { background-color: yellow }" +
+		"::selection { background-color: blue }" +
+		"</style>";
+	document.body.innerHTML = "<p>éx</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const covered = document.createRange();
+	covered.setStart(text, 0);
+	covered.setEnd(text, 3);
+	const highlight = new window.Highlight(covered);
+	highlight.priority = 99;
+	window.CSS.highlights.set("hit", highlight);
+
+	// Half of the first cluster, which is the whole of the first cell. A
+	// built-in pseudo-element is over every custom highlight.
+	const selected = document.createRange();
+	selected.setStart(text, 1);
+	selected.setEnd(text, 2);
+	const selection = window.getSelection()!;
+	selection.removeAllRanges();
+	selection.addRange(selected);
+	await nextFrame(dom);
+
+	expect(cellAt(terminal, 0, 0).getBgColor()).toBe(0x0000ff);
+	expect(yellowCells(terminal, 0)).toEqual([1]);
+
+	dom.dispose();
+});
+
 test("a ::selection background of its own is not inverted", async () => {
 	const {terminal, dom, window} = highlightDOM();
 	const {document} = dom;

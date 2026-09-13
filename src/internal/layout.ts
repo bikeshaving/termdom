@@ -4732,6 +4732,46 @@ export class Layout {
 		return to > from ? getSelectionSpans(this, textNode, from, to) : [];
 	}
 
+	// The offsets the cells above actually cover, since a cell holds a
+	// whole cluster. Two highlight layers that share a cluster have to
+	// agree on it before their styles fold, or the one drawn last takes
+	// the cell whatever its priority.
+	snapToClusters(
+		textNode: Text,
+		from: number,
+		to: number,
+	): {from: number; to: number} {
+		let start = from;
+		let end = to;
+		const whiteSpace = getWhiteSpace(textNode);
+		for (const fragment of this.lineFragments(textNode)) {
+			const {text, offsets} = renderWhiteSpaceOffsets(
+				textNode.data.slice(fragment.startOffset, fragment.endOffset),
+				whiteSpace,
+			);
+			const clusterStarts = getClusterStarts(text);
+			for (let i = 0; i < text.length; i++) {
+				const dataOffset = fragment.startOffset + getDataOffset(offsets, i);
+				if (dataOffset < from || dataOffset >= to) {
+					continue;
+				}
+				const before = clusterStarts.at(i);
+				start = Math.min(
+					start,
+					fragment.startOffset + getDataOffset(offsets, before),
+				);
+				const after = clusterStarts.after(i + 1);
+				end = Math.max(
+					end,
+					after < text.length
+						? fragment.startOffset + getDataOffset(offsets, after)
+						: fragment.endOffset,
+				);
+			}
+		}
+		return {from: start, to: end};
+	}
+
 	// The one place laid-out lines get their data ranges. Range geometry,
 	// the caret, the painter and textarea navigation all read them here.
 	// Two lines exist that no layout fragment produces (the row after a
