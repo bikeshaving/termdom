@@ -1866,7 +1866,10 @@ const ANGLE_DEGREES: Record<string, number> = {
 	turn: 360,
 };
 
-/** An `<angle>` in degrees, normalized to [0, 360). Null when not one. */
+/**
+ * An `<angle>` in degrees, the canonical unit CSS serializes every angle
+ * in, normalized to [0, 360). Null when not one.
+ */
 export function parseAngle(value: string): number | null {
 	const node = getSingleValueNode(value);
 	if (!node || node.type !== "Dimension") {

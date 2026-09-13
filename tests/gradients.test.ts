@@ -12,7 +12,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {parseAngle, parseLinearGradient} from "../src/internal/cssvalues.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, scriptReplies} from "./test-utils.js";
 
 /**
  * The painted row, one cell at a time: the packed background, the packed
@@ -230,6 +230,43 @@ test("45deg points at the top right, not the bottom right", async () => {
 	expect(RED(last[0].bg)).toBeGreaterThan(223);
 	expect(BLUE(first[9].bg)).toBeGreaterThan(223);
 	expect(first[0].bg).not.toBe(last[0].bg);
+	dispose();
+});
+
+test("the angle follows the cell size the terminal reports", async () => {
+	// Over square cells, 45deg runs corner to corner, so the cells down the
+	// main diagonal sit at one place on the gradient line and share a color.
+	const square = new MockProcess({cols: 20, rows: 8});
+	scriptReplies(square, [{ask: "\x1b[16t", reply: "\x1b[6;8;8t"}]);
+	const dom = new TermDOM({transport: square.transport});
+	const div = dom.document.createElement("div");
+	div.setAttribute(
+		"style",
+		"width: 4ch; height: 4px; background-image: linear-gradient(45deg, red, blue)",
+	);
+	dom.document.body.appendChild(div);
+	await nextFrame(dom);
+	// The answers land after the first paint, and the repaint follows them.
+	const deadline = Date.now() + 5000;
+	while (
+		readRow(square, 1, 4)[1].bg !== readRow(square, 0, 4)[0].bg &&
+		Date.now() < deadline
+	) {
+		await new Promise((resolve) => setTimeout(resolve, 1));
+	}
+	const rows = [0, 1, 2, 3].map((row) => readRow(square, row, 4));
+	expect(rows[1][1].bg).toBe(rows[0][0].bg);
+	expect(rows[2][2].bg).toBe(rows[0][0].bg);
+	expect(rows[3][3].bg).toBe(rows[0][0].bg);
+	dom.dispose();
+
+	// Over the guessed cell, twice as tall as wide, the diagonal drifts.
+	const {terminal, dispose} = await paintBox(
+		"background-image: linear-gradient(45deg, red, blue)",
+		4,
+		4,
+	);
+	expect(readRow(terminal, 1, 4)[1].bg).not.toBe(readRow(terminal, 0, 4)[0].bg);
 	dispose();
 });
 

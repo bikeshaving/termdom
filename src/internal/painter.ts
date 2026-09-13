@@ -106,11 +106,6 @@ function getGradient(element: Element): CSSValues.Gradient | null {
 		: null;
 }
 
-// A cell is about twice as tall as it is wide, so a row counts for two
-// units against a column's one. Measured in cells instead, a diagonal
-// gradient would run at nothing like the angle the screen shows.
-const CELL_ASPECT = 2;
-
 // A stop's position as a fraction of the gradient line, which is what
 // the interpolation walks.
 interface ResolvedStop {
@@ -254,6 +249,7 @@ function renderGradient(
 	gradient: CSSValues.Gradient,
 	rect: {left: number; top: number; width: number; height: number},
 	under: number | null,
+	aspect: number,
 ): void {
 	const cols = Math.round(rect.width);
 	const rows = Math.round(rect.height);
@@ -266,7 +262,10 @@ function renderGradient(
 	// to tilt a gradient that should run straight along a row.
 	const dx = squareOff(Math.sin(radians));
 	const dy = squareOff(-Math.cos(radians));
-	const height = rows * CELL_ASPECT;
+	// A row counts for as many units as a cell is taller than wide, so the
+	// gradient runs at the angle the screen shows and not the one a grid
+	// of square cells would.
+	const height = rows * aspect;
 	const length = Math.abs(cols * dx) + Math.abs(height * dy);
 	// The line is centered on the box, so it starts half its length back
 	// from the center.
@@ -276,7 +275,7 @@ function renderGradient(
 	const left = Math.round(rect.left);
 	const top = Math.round(rect.top);
 	for (let row = 0; row < rows; row++) {
-		const y = (row + 0.5) * CELL_ASPECT - startY;
+		const y = (row + 0.5) * aspect - startY;
 		for (let col = 0; col < cols; col++) {
 			const x = col + 0.5 - startX;
 			const color = getStopColor(
@@ -581,9 +580,17 @@ function renderElement(
 	// Over the flat fill, which a transparent stop composites onto.
 	const gradient = rect && visible ? getGradient(element) : null;
 	if (rect && gradient !== null) {
-		const fragments = painter[kLayout].getRects(element);
+		const layout = painter[kLayout];
+		const cell = layout.cellPixels;
+		const fragments = layout.getRects(element);
 		for (const fragment of fragments.length > 1 ? fragments : [rect]) {
-			renderGradient(ctx, gradient, fragment, style.bg ?? null);
+			renderGradient(
+				ctx,
+				gradient,
+				fragment,
+				style.bg ?? null,
+				cell.height / cell.width,
+			);
 		}
 	}
 
