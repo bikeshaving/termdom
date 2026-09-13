@@ -24,6 +24,7 @@ import {
 	ensurePseudoElement,
 	flatParentElement,
 	flushLayout,
+	getHighlightRegistry,
 	getPseudoHost,
 	getPseudoName,
 	getShadowRoot,
@@ -261,6 +262,18 @@ Object.defineProperty(CSSNamespace, Symbol.toStringTag, {
 	enumerable: false,
 	configurable: true,
 });
+
+// The highlight registry belongs to one document, so each window gets a
+// CSS of its own over the shared namespace rather than the namespace
+// itself.
+function createCSSNamespace(document: Document): typeof CSSNamespace {
+	const namespace = Object.create(CSSNamespace) as typeof CSSNamespace;
+	Object.defineProperty(namespace, "highlights", {
+		value: getHighlightRegistry(document),
+		enumerable: true,
+	});
+	return namespace;
+}
 
 const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 
@@ -7421,7 +7434,9 @@ const CSSOM_WINDOW_GLOBALS = {
 function setupInvalidationHooks(cascade: Cascade): void {
 	// An error thrown out of a constructed sheet belongs to this realm.
 	cssomWindow = cascade[kWindow];
-	Object.assign(cascade[kWindow], CSSOM_WINDOW_GLOBALS);
+	Object.assign(cascade[kWindow], CSSOM_WINDOW_GLOBALS, {
+		CSS: createCSSNamespace(cascade[kDocument]),
+	});
 }
 
 function parseCounterIncrement(

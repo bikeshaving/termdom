@@ -506,7 +506,17 @@ type Map4<T> = Identical<T, DOM.DOMStringMap> extends true
 																											DOM.Storage
 																										> extends true
 																											? globalThis.Storage
-																											: T;
+																											: Identical<
+																												T,
+																												DOM.Highlight
+																											> extends true
+																												? globalThis.Highlight
+																												: Identical<
+																													T,
+																													DOM.HighlightRegistry
+																												> extends true
+																													? globalThis.HighlightRegistry
+																													: T;
 type ToPlatform<T> = T extends unknown
 	? T extends DOM.NodeListOf<infer U>
 		? Identical<T, DOM.NodeListOf<U>> extends true
@@ -1155,6 +1165,11 @@ export type AbstractRangeDrift = Drift<
 export type StaticRangeDrift = Drift<DOM.StaticRange, globalThis.StaticRange>;
 export type RangeDrift = Drift<DOM.Range, globalThis.Range>;
 export type SelectionDrift = Drift<DOM.Selection, globalThis.Selection>;
+export type HighlightDrift = Drift<DOM.Highlight, globalThis.Highlight>;
+export type HighlightRegistryDrift = Drift<
+	DOM.HighlightRegistry,
+	globalThis.HighlightRegistry
+>;
 export type NodeIteratorDrift = Drift<
 	DOM.NodeIterator,
 	globalThis.NodeIterator
