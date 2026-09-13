@@ -614,13 +614,6 @@ export interface Gradient {
 	stops: GradientStop[];
 }
 
-const ANGLE_DEGREES: Record<string, number> = {
-	deg: 1,
-	grad: 360 / 400,
-	rad: 180 / Math.PI,
-	turn: 360,
-};
-
 // A corner's angle is the diagonal of a box whose cells make it square,
 // which is what a terminal's two-to-one cells make of a bar twice as
 // wide as it is tall.
@@ -637,20 +630,11 @@ const DIRECTION_ANGLES: Record<string, number> = {
 
 const VERTICAL_SIDES = new Set(["top", "bottom"]);
 
-function normalizeAngle(degrees: number): number {
-	return ((degrees % 360) + 360) % 360;
-}
-
 // Null when the group is not a direction, in which case it is the first
 // color stop instead.
 function readGradientDirection(nodes: CSSTree.ValueNode[]): number | null {
 	if (nodes.length === 1 && nodes[0].type === "Dimension") {
-		const factor = ANGLE_DEGREES[(nodes[0].unit ?? "").toLowerCase()];
-		const number = parseFloat(nodes[0].value ?? "");
-		if (factor === undefined || !Number.isFinite(number)) {
-			return null;
-		}
-		return normalizeAngle(number * factor);
+		return parseAngle(CSSTree.generate(nodes[0] as never));
 	}
 	if (
 		nodes.length < 2 ||
@@ -1873,6 +1857,28 @@ export function parseUnitValue(
 		? parsed
 		: parsed !== null ? parsed.percentage : null;
 	return number !== null && number < 0 ? null : parsed;
+}
+
+const ANGLE_DEGREES: Record<string, number> = {
+	deg: 1,
+	grad: 360 / 400,
+	rad: 180 / Math.PI,
+	turn: 360,
+};
+
+/** An `<angle>` in degrees, normalized to [0, 360). Null when not one. */
+export function parseAngle(value: string): number | null {
+	const node = getSingleValueNode(value);
+	if (!node || node.type !== "Dimension") {
+		return null;
+	}
+	const factor = ANGLE_DEGREES[(node.unit ?? "").toLowerCase()];
+	const number = parseFloat(node.value ?? "");
+	if (factor === undefined || !Number.isFinite(number)) {
+		return null;
+	}
+	const degrees = number * factor;
+	return ((degrees % 360) + 360) % 360;
 }
 
 /** A number-valued property such as flex-grow. Null when not a number. */

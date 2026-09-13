@@ -11,7 +11,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {parseLinearGradient} from "../src/internal/cssvalues.ts";
+import {parseAngle, parseLinearGradient} from "../src/internal/cssvalues.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 /**
@@ -58,6 +58,18 @@ async function paintBox(
 const RED = (color: number): number => (color >> 16) & 0xff;
 const GREEN = (color: number): number => (color >> 8) & 0xff;
 const BLUE = (color: number): number => color & 0xff;
+
+test("an angle reads in any unit and lands in [0, 360)", () => {
+	expect(parseAngle("90deg")).toBe(90);
+	expect(parseAngle("100grad")).toBe(90);
+	expect(parseAngle("0.25turn")).toBe(90);
+	expect(parseAngle("1.5707963267948966rad")).toBeCloseTo(90);
+	expect(parseAngle("-90deg")).toBe(270);
+	expect(parseAngle("450deg")).toBe(90);
+	expect(parseAngle("90")).toBeNull();
+	expect(parseAngle("90px")).toBeNull();
+	expect(parseAngle("to left")).toBeNull();
+});
 
 test("a gradient's direction is an angle or a side or corner", () => {
 	expect(parseLinearGradient("linear-gradient(red, blue)")?.angle).toBe(180);
