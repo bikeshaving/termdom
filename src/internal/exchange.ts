@@ -247,6 +247,7 @@ type WireItem =
 	WirePaste |
 	{kind: "cursor-report"; row: number; col: number} |
 	{kind: "mode-report"; mode: string; value: number} |
+	{kind: "cell-size"; width: number; height: number} |
 	{kind: "clipboard"; text: string | null};
 
 // The one named spelling that carries a modifier.
@@ -594,6 +595,15 @@ function decodeControlToken(token: string): WireItem {
 			value: parseInt(mode[3], 10),
 		};
 	}
+	// XTWINOPS reports the cell height before its width.
+	const cell = token.match(/^\x1b\[6;(\d+);(\d+)t$/);
+	if (cell) {
+		return {
+			kind: "cell-size",
+			height: parseInt(cell[1], 10),
+			width: parseInt(cell[2], 10),
+		};
+	}
 	return decodeKeyToken(token);
 }
 
@@ -646,6 +656,10 @@ const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
 // Most terminals refuse clipboard reads by silence. This is what every
 // readText() waits before rejecting.
 const CLIPBOARD_QUERY_TIMEOUT_MS = 500;
+
+// XTWINOPS 16: report the cell's size in pixels, as CSI 6 ; height ;
+// width t.
+const CELL_SIZE_QUERY = "\x1b[16t";
 
 const kProbingEnded = Symbol("probingEnded");
 const kWidths = Symbol("widths");
@@ -945,6 +959,31 @@ export class Exchange extends EventTarget {
 		this[kPriorBidiMode] = answer;
 		if (answer === 1 || answer === 3) {
 			this[kLayout].adoptTerminalReordering();
+		}
+	}
+
+	/**
+	 * What one cell measures in pixels. Silence leaves the guessed cell
+	 * standing, which is the contract an unanswered question gives
+	 * everywhere else here.
+	 */
+	async negotiateCellPixels(): Promise<void> {
+		if (!this[kInteractive]) {
+			return;
+		}
+		const cell = await nextReply<
+			"cell-size",
+			{width: number; height: number} | null
+		>(this, "cell-size", {
+			ask: CELL_SIZE_QUERY,
+			timeoutMs: 1000,
+			absent: null,
+			// A terminal with no window reports zeroes. That is not a cell.
+			read: ({width, height}) =>
+				width > 0 && height > 0 ? {width, height} : null,
+		});
+		if (cell !== null && !this[kDisposed]) {
+			this[kLayout].adoptCellPixels(cell.width, cell.height);
 		}
 	}
 
