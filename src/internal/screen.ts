@@ -989,7 +989,9 @@ export interface ImagePlacement {
 }
 
 // Kitty takes a payload in base64, split into chunks small enough for a
-// terminal's input buffer. q=2 asks it not to acknowledge anything, so
+// terminal's input buffer. a=t transmits and shows nothing: a=T would
+// paint the image at its own size wherever the cursor stood, and then
+// walk the cursor past it. q=2 asks it not to acknowledge anything, so
 // none of this comes back as a reply the wire reader would have to
 // swallow.
 const KITTY_CHUNK = 4096;
@@ -1003,7 +1005,7 @@ function createKittyTransmission(image: CellImage): string {
 		// The keys ride the first chunk. Every chunk after it carries only
 		// whether another follows.
 		out += at === 0
-			? `\x1b_Ga=T,f=100,i=${image.id},q=2,m=${more};${chunk}\x1b\\`
+			? `\x1b_Ga=t,f=100,i=${image.id},q=2,m=${more};${chunk}\x1b\\`
 			: `\x1b_Gm=${more};${chunk}\x1b\\`;
 	}
 	return out;
@@ -1011,11 +1013,12 @@ function createKittyTransmission(image: CellImage): string {
 
 // Placement 0 of an image, which is what a placement with no p= is, so
 // a frame re-placing the same image replaces it rather than stacking
-// another copy on it.
+// another copy on it. C=1 leaves the cursor where the placement found
+// it, which is where the next move counts from.
 function createKittyPlacement(placement: ImagePlacement): string {
 	return (
 		`\x1b_Ga=p,i=${placement.image.id},c=${placement.cols},` +
-		`r=${placement.rows},q=2\x1b\\`
+		`r=${placement.rows},C=1,q=2\x1b\\`
 	);
 }
 
