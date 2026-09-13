@@ -11,7 +11,7 @@ import {deflateSync} from "node:zlib";
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 const CRC_TABLE = new Uint32Array(256);
 for (let i = 0; i < 256; i++) {
@@ -135,6 +135,8 @@ function scriptReplies(
 }
 
 const CELL_SIZE_QUERY = "\x1b[16t";
+const KITTY_QUERY = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\";
+const KITTY_OK = "\x1b_Gi=31;OK\x1b\\";
 
 /** Wait for a condition a reply or a load has to arrive before. */
 async function until(predicate: () => boolean): Promise<void> {
@@ -292,6 +294,116 @@ test("changing src reloads", async () => {
 	expect(img.complete).toBe(false);
 	await until(() => img.naturalWidth === 64);
 	expect(img.naturalHeight).toBe(16);
+
+	dom.dispose();
+});
+
+/* ----------------------------------------------------------- emission */
+
+test("a terminal that answers the kitty query gets pixels", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	// The capture goes on first, so what it records is what reached the
+	// terminal: the queries this helper swallows are not in it.
+	const raw = captureRawOutput(terminal);
+	scriptReplies(terminal, [
+		{ask: KITTY_QUERY, reply: KITTY_OK},
+		{ask: CELL_SIZE_QUERY, reply: "\x1b[6;16;8t"},
+	]);
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		`<img alt="photo" src="${toDataURL(makePNG(40, 32))}">`;
+	const img = dom.document.querySelector("img")!;
+	await nextFrame(dom);
+	await until(() => raw().includes("\x1b_G"));
+	await nextFrame(dom);
+
+	const output = raw();
+	// The bytes go once, as a PNG (f=100), and the placement names the box.
+	expect(output).toContain("a=T,f=100,i=");
+	expect(output).toMatch(/\x1b_Ga=p,i=\d+,c=5,r=2,q=2\x1b\\/);
+
+	// The cursor is put on the box's top-left before the sequence.
+	const placement = output.indexOf("\x1b_Ga=p");
+	expect(output.slice(0, placement)).toMatch(/\x1b\[\d+;1H[^]*$/);
+
+	// The cells under it are blank, so no glyph paints over the pixels.
+	// The alt text would exactly fill the box, and none of it is there.
+	expect(terminal.getPlainText()).not.toContain("photo");
+	expect(img.getBoundingClientRect().width).toBe(5);
+
+	dom.dispose();
+});
+
+test("a terminal that answers nothing shows the alt text", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const raw = captureRawOutput(terminal);
+	scriptReplies(terminal, [{ask: KITTY_QUERY, reply: null}]);
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		`<img alt="photo" src="${toDataURL(makePNG(40, 32))}">`;
+	const img = dom.document.querySelector("img")!;
+	await nextFrame(dom);
+	await until(() => img.complete && img.naturalWidth === 40);
+	// Past the query's own timeout, so silence has been taken for an answer.
+	await new Promise((resolve) => setTimeout(resolve, 1200));
+	await nextFrame(dom);
+
+	expect(raw()).not.toContain("\x1b_G");
+	expect(terminal.getPlainText()).toContain("photo");
+
+	dom.dispose();
+});
+
+test("iTerm2 is detected from the environment when kitty says nothing", async () => {
+	const terminal = new MockProcess({
+		cols: 40,
+		rows: 8,
+		env: {TERM: "xterm-256color", TERM_PROGRAM: "iTerm.app"},
+	});
+	const raw = captureRawOutput(terminal);
+	scriptReplies(terminal, [{ask: KITTY_QUERY, reply: null}]);
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		`<img alt="photo" src="${toDataURL(makePNG(40, 32))}">`;
+	await nextFrame(dom);
+	await until(() => raw().includes("\x1b]1337;"));
+	await nextFrame(dom);
+
+	const output = raw();
+	expect(output).toContain(
+		"\x1b]1337;File=inline=1;width=5;height=2;preserveAspectRatio=0:",
+	);
+	expect(output).not.toContain("\x1b_G");
+
+	dom.dispose();
+});
+
+test("a placement that leaves the screen is deleted", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	scriptReplies(terminal, [{ask: KITTY_QUERY, reply: KITTY_OK}]);
+	const raw = captureRawOutput(terminal);
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		`<img alt="photo" src="${toDataURL(makePNG(40, 32))}">`;
+	const img = dom.document.querySelector("img")!;
+	await nextFrame(dom);
+	await until(() => raw().includes("\x1b_Ga=p"));
+
+	const id = /\x1b_Ga=p,i=(\d+)/.exec(raw())![1];
+	img.style.display = "none";
+	await nextFrame(dom);
+	await until(() => raw().includes(`a=d,d=i,i=${id}`));
+	expect(raw()).toContain(`\x1b_Ga=d,d=i,i=${id},q=2\x1b\\`);
+
+	// And again when the element goes away entirely.
+	img.style.display = "";
+	await nextFrame(dom);
+	await until(() => raw().lastIndexOf("\x1b_Ga=p") > raw().indexOf("a=d"));
+	const before = raw().length;
+	img.remove();
+	await nextFrame(dom);
+	await until(() => raw().slice(before).includes(`a=d,d=i,i=${id}`));
+	expect(raw().slice(before)).toContain(`a=d,d=i,i=${id}`);
 
 	dom.dispose();
 });
