@@ -317,6 +317,44 @@ test("equal priority is broken by registration order", async () => {
 	dom.dispose();
 });
 
+test("a ::selection background of its own is not inverted", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>" +
+		"::highlight(system) { background-color: Highlight }" +
+		"::selection { background-color: yellow; color: black }" +
+		"</style>";
+	document.body.innerHTML =
+		"<p><span style=\"background-color:Highlight\">abcd</span>efgh</p>";
+	const span = document.querySelector("span")!;
+	const tail = span.nextSibling!;
+
+	const systemRange = document.createRange();
+	systemRange.setStart(tail, 0);
+	systemRange.setEnd(tail, 4);
+	window.CSS.highlights.set("system", new window.Highlight(systemRange));
+
+	const selected = document.createRange();
+	selected.setStart(span.firstChild!, 2);
+	selected.setEnd(tail, 2);
+	const selection = window.getSelection()!;
+	selection.removeAllRanges();
+	selection.addRange(selected);
+	await nextFrame(dom);
+
+	// Over a highlight that asked for the terminal's inverse, and over an
+	// element background that did.
+	expect(cellAt(terminal, 0, 2).isInverse()).toBeFalsy();
+	expect(cellAt(terminal, 0, 4).isInverse()).toBeFalsy();
+	expect(yellowCells(terminal, 0)).toEqual([2, 3, 4, 5]);
+	// The cells the selection does not cover keep the inverse.
+	expect(cellAt(terminal, 0, 1).isInverse()).toBeTruthy();
+	expect(cellAt(terminal, 0, 6).isInverse()).toBeTruthy();
+
+	dom.dispose();
+});
+
 test("::selection folds over a highlight covering the same cells", async () => {
 	const {terminal, dom, window} = highlightDOM();
 	const {document} = dom;
