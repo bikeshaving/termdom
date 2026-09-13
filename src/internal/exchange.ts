@@ -54,6 +54,13 @@ export interface TerminalTransport {
 	readonly interactive: boolean;
 
 	/**
+	 * The environment the terminal runs under, where the transport has one.
+	 * Only read for what no query answers: iTerm2 announces its inline
+	 * images there and nowhere else.
+	 */
+	readonly env?: Readonly<Record<string, string | undefined>>;
+
+	/**
 	 * A pty is established at construction. An SSH channel resolves when it
 	 * opens.
 	 */
@@ -132,6 +139,12 @@ function decode64(text: string): Uint8Array | null {
 
 const CURSOR_QUERY = "\x1b[6n";
 const CLIPBOARD_QUERY = "\x1b]52;c;?\x07";
+// One black pixel offered as a direct 24-bit transmission, which the
+// terminal is asked to acknowledge rather than draw. Kitty, Ghostty and
+// WezTerm answer. A terminal that does not know APC strings swallows it
+// as one, which is why this is safe to send blind.
+const KITTY_GRAPHICS_QUERY = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\";
+const KITTY_QUERY_ID = "i=31";
 // BDSM (mode 8). Reset means the application orders bidi text. Set
 // means the terminal does.
 const BIDI_EXPLICIT = "\x1b[8l";
@@ -212,6 +225,10 @@ const CLIPBOARD_START = "\x1b]52;";
 // The payload stops at ESC so a reply ended by ST is still bounded.
 const CLIPBOARD_REPLY = /^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/;
 
+const GRAPHICS_START = "\x1b_G";
+// An APC string, bounded the way the clipboard's OSC is.
+const GRAPHICS_REPLY = /^\x1b_G([^\x07\x1b]*)(?:\x07|\x1b\\)/;
+
 /**
  * `key` is a name ("ArrowUp") or the character itself. `char` is empty when the
  * key produces none.
@@ -248,6 +265,7 @@ type WireItem =
 	{kind: "cursor-report"; row: number; col: number} |
 	{kind: "mode-report"; mode: string; value: number} |
 	{kind: "cell-size"; width: number; height: number} |
+	{kind: "graphics"; payload: string} |
 	{kind: "clipboard"; text: string | null};
 
 // The one named spelling that carries a modifier.
@@ -372,6 +390,8 @@ const PASTE_LIMIT = 1 << 20;
 // A split sequence longer than this is not one a terminal sends.
 const HOLD_LIMIT = 4096;
 const kExpectingReply = Symbol("expectingReply");
+const kGraphicsBody = Symbol("graphicsBody");
+const kExpectingGraphics = Symbol("expectingGraphics");
 
 const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
 
@@ -380,6 +400,8 @@ interface WireReader {
 	[kPasteBody]: string | null;
 	[kReplyBody]: string | null;
 	[kExpectingReply]: boolean;
+	[kGraphicsBody]: string | null;
+	[kExpectingGraphics]: boolean;
 }
 
 /**
@@ -397,6 +419,8 @@ class WireReader {
 		this[kPasteBody] = null;
 		this[kReplyBody] = null;
 		this[kExpectingReply] = false;
+		this[kGraphicsBody] = null;
+		this[kExpectingGraphics] = false;
 	}
 
 	/**
@@ -408,6 +432,18 @@ class WireReader {
 		this[kExpectingReply] = expecting;
 		if (!expecting) {
 			this[kReplyBody] = null;
+		}
+	}
+
+	/**
+	 * The same contract for the graphics query's APC: an unasked-for one is
+	 * a string the reader discards whole, and an open one is dropped when
+	 * the asker gives up so the keystrokes behind it get through.
+	 */
+	expectGraphicsReply(expecting: boolean): void {
+		this[kExpectingGraphics] = expecting;
+		if (!expecting) {
+			this[kGraphicsBody] = null;
 		}
 	}
 
@@ -464,6 +500,25 @@ class WireReader {
 				i = match[0].length;
 				continue;
 			}
+			// A graphics reply that will not parse is a terminal saying
+			// nothing useful, which is what an empty payload means here.
+			if (this[kGraphicsBody] !== null) {
+				const reply = this[kGraphicsBody] + data.slice(i);
+				this[kGraphicsBody] = null;
+				const match = reply.match(GRAPHICS_REPLY);
+				if (!match) {
+					if (reply.length <= REPLY_LIMIT) {
+						this[kGraphicsBody] = reply;
+					} else {
+						items.push({kind: "graphics", payload: ""});
+					}
+					return items;
+				}
+				items.push({kind: "graphics", payload: match[1]});
+				data = reply;
+				i = match[0].length;
+				continue;
+			}
 			if (data.startsWith(PASTE_START, i)) {
 				this[kPasteBody] = "";
 				i += PASTE_START.length;
@@ -471,6 +526,10 @@ class WireReader {
 			}
 			if (data.startsWith(CLIPBOARD_START, i) && this[kExpectingReply]) {
 				this[kReplyBody] = "";
+				continue;
+			}
+			if (data.startsWith(GRAPHICS_START, i) && this[kExpectingGraphics]) {
+				this[kGraphicsBody] = "";
 				continue;
 			}
 			// OSC, DCS, APC, PM and SOS are strings a terminal writes, not
@@ -571,6 +630,9 @@ function splitTrailingEscape(chunk: string): number {
 	) {
 		return tail.length;
 	}
+	if (tail.length < GRAPHICS_START.length && GRAPHICS_START.startsWith(tail)) {
+		return tail.length;
+	}
 	return 0;
 }
 
@@ -621,6 +683,7 @@ interface PendingReply {
 	// Cursor questions only: DSR send order, shared with the width probes.
 	sequence?: number;
 	clipboard?: boolean;
+	graphics?: boolean;
 }
 
 const kTransport = Symbol("transport");
@@ -983,7 +1046,7 @@ export class Exchange extends EventTarget {
 				width > 0 && height > 0 ? {width, height} : null,
 		});
 		if (cell !== null && !this[kDisposed]) {
-			this[kScreen].adoptCellPixels(cell.width, cell.height);
+			this[kLayout].adoptCellPixels(cell.width, cell.height);
 		}
 	}
 
@@ -1017,6 +1080,27 @@ export class Exchange extends EventTarget {
 		if (this[kGraphemeClustersNegotiated]) {
 			this[kEngagedModes].add("clusterWidths");
 		}
+	}
+
+	/**
+	 * Which inline-image protocol this terminal speaks, if any. Silence
+	 * leaves every image showing its alt text, which is the contract an
+	 * unanswered question gives everywhere else here.
+	 */
+	async negotiateImages(): Promise<void> {
+		if (!this[kInteractive]) {
+			return;
+		}
+
+		const kitty = await queryKittyGraphics(this);
+		if (this[kDisposed]) {
+			return;
+		}
+		// Kitty's protocol is asked for and iTerm2's is inferred, so the
+		// inference only runs where the question went unanswered.
+		this[kScreen].imageProtocol = kitty
+			? "kitty"
+			: hasITerm2Environment(this[kTransport].env) ? "iterm2" : null;
 	}
 
 	/** DSR. The cursor row is the anchor. */
@@ -1603,6 +1687,7 @@ function nextReply<K extends WireItem["kind"], T>(
 		mode?: string;
 		sequence?: number;
 		clipboard?: boolean;
+		graphics?: boolean;
 	},
 ): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
@@ -1611,10 +1696,14 @@ function nextReply<K extends WireItem["kind"], T>(
 			mode: options.mode,
 			sequence: options.sequence,
 			clipboard: options.clipboard,
+			graphics: options.graphics,
 			settle: (item) => {
 				clearTimeout(entry.timer);
 				if (options.clipboard) {
 					session[kWireReader].expectClipboardReply(false);
+				}
+				if (options.graphics) {
+					session[kWireReader].expectGraphicsReply(false);
 				}
 				resolve(options.read(item as ReplyItem<K>));
 			},
@@ -1622,6 +1711,9 @@ function nextReply<K extends WireItem["kind"], T>(
 				clearTimeout(entry.timer);
 				if (options.clipboard) {
 					session[kWireReader].expectClipboardReply(false);
+				}
+				if (options.graphics) {
+					session[kWireReader].expectGraphicsReply(false);
 				}
 				if (options.absent !== undefined) {
 					resolve(options.absent);
@@ -1640,6 +1732,9 @@ function nextReply<K extends WireItem["kind"], T>(
 		session[kPendingReplies].push(entry);
 		if (options.clipboard) {
 			session[kWireReader].expectClipboardReply(true);
+		}
+		if (options.graphics) {
+			session[kWireReader].expectGraphicsReply(true);
 		}
 		void session.write(options.ask);
 	});
@@ -1685,6 +1780,37 @@ function dispatchReply(session: Exchange, item: WireItem): void {
 	}
 	const [entry] = pending.splice(index, 1);
 	entry.settle(item);
+}
+
+function queryKittyGraphics(session: Exchange): Promise<boolean> {
+	return nextReply<"graphics", boolean>(session, "graphics", {
+		ask: KITTY_GRAPHICS_QUERY,
+		timeoutMs: 1000,
+		absent: false,
+		graphics: true,
+		read: ({payload}) => isKittyAcknowledgement(payload),
+	});
+}
+
+// Kitty answers with the query's own control data and then a status.
+// Anything but OK is a terminal that read the escape and refused it.
+function isKittyAcknowledgement(payload: string): boolean {
+	const end = payload.indexOf(";");
+	if (end === -1) {
+		return false;
+	}
+	return (
+		payload.slice(0, end).split(",").includes(KITTY_QUERY_ID) &&
+		payload.slice(end + 1) === "OK"
+	);
+}
+
+// iTerm2 has no query to ask, so its own announcement is the only
+// evidence. LC_TERMINAL is the one that survives ssh.
+function hasITerm2Environment(
+	env: Readonly<Record<string, string | undefined>> | undefined,
+): boolean {
+	return env?.TERM_PROGRAM === "iTerm.app" || env?.LC_TERMINAL === "iTerm2";
 }
 
 // `prelude` goes in the same write as the DECRQM. DECRPM values: 0 not
@@ -1925,6 +2051,7 @@ export function transportFromProcess(
 		sharesScreen,
 		interactive: proc.stdout.isTTY !== false,
 		colorDepth: detectColorDepth(proc),
+		env: proc.env,
 		ready: Promise.resolve(),
 		readable,
 		writable,
