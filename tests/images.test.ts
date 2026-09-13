@@ -11,7 +11,12 @@ import {deflateSync} from "node:zlib";
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
+import {
+	captureRawOutput,
+	MockProcess,
+	nextFrame,
+	scriptReplies,
+} from "./test-utils.js";
 
 const CRC_TABLE = new Uint32Array(256);
 for (let i = 0; i < 256; i++) {
@@ -85,53 +90,6 @@ function toBase64(bytes: Uint8Array): string {
 
 function toDataURL(bytes: Uint8Array): string {
 	return `data:image/png;base64,${toBase64(bytes)}`;
-}
-
-/**
- * A mock whose replies to the startup questions are this test's, not the
- * headless emulator's: each pattern that matches an outgoing write is
- * stripped from it and its answer is fed back on stdin.
- *
- * The stripping matters. xterm-headless answers XTWINOPS itself with the
- * pixel size of a terminal that has no window, and an unstripped kitty
- * query would sit in the emulator's buffer as text.
- */
-function scriptReplies(
-	terminal: MockProcess,
-	answers: Array<{ask: string; reply: string | null}>,
-): void {
-	const stdout =
-		terminal.stdout as unknown as {write: (...args: unknown[]) => boolean};
-	const stdin =
-		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
-	const original = stdout.write.bind(stdout);
-	stdout.write = (...args: unknown[]) => {
-		let data = String(args[0]);
-		let matched = false;
-		for (const {ask, reply} of answers) {
-			if (!data.includes(ask)) {
-				continue;
-			}
-			matched = true;
-			data = data.replace(ask, "");
-			if (reply !== null) {
-				setTimeout(() => stdin.simulateResponse(reply), 0);
-			}
-		}
-		if (!matched) {
-			return original(...args);
-		}
-		if (data) {
-			return original(data, ...args.slice(1));
-		}
-		// A swallowed write still has to complete: the transport's sink
-		// resolves on the callback, and everything queued behind it waits.
-		const callback = args.find((arg) => typeof arg === "function");
-		if (callback) {
-			(callback as () => void)();
-		}
-		return true;
-	};
 }
 
 const CELL_SIZE_QUERY = "\x1b[16t";
