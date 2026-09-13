@@ -7,8 +7,8 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-189 features supported, 36 probed and unsupported,
-157 CSS properties not applicable to a character grid,
+190 features supported, 38 probed and unsupported,
+156 CSS properties not applicable to a character grid,
 128 applicable and not implemented,
 4 not yet probed.
 
@@ -186,6 +186,9 @@ changed.
 | --- | --- |
 | `color` | yes |
 | `background-color` | yes |
+| `background-image: linear-gradient()` | yes |
+| `background-image: radial-gradient()` | no (no effect) |
+| `background-image: url()` | no (no effect) |
 | `user-select` | yes |
 | `background` | yes |
 | `font-weight` | yes |
@@ -298,7 +301,7 @@ These properties have no rendering a grid of characters can carry.
 
 **Transforms, 3D and motion paths, which need sub-cell geometry.** `backface-visibility`, `offset`, `offset-anchor`, `offset-distance`, `offset-path`, `offset-position`, `offset-rotate`, `perspective`, `perspective-origin`, `rotate`, `scale`, `transform`, `transform-box`, `transform-origin`, `transform-style`, `translate`, `zoom`
 
-**Raster imagery and compositing, which need pixels.** `backdrop-filter`, `background-attachment`, `background-blend-mode`, `background-image`, `background-origin`, `background-position`, `background-position-x`, `background-position-y`, `background-repeat`, `background-size`, `border-image`, `border-image-outset`, `border-image-repeat`, `border-image-slice`, `border-image-source`, `border-image-width`, `clip-path`, `dynamic-range-limit`, `image-orientation`, `image-rendering`, `mask`, `mask-border`, `mask-border-mode`, `mask-border-outset`, `mask-border-repeat`, `mask-border-slice`, `mask-border-source`, `mask-border-width`, `mask-clip`, `mask-composite`, `mask-image`, `mask-mode`, `mask-origin`, `mask-position`, `mask-repeat`, `mask-size`, `mix-blend-mode`, `object-fit`, `object-position`, `shape-image-threshold`, `shape-margin`, `shape-outside`
+**Raster imagery and compositing, which need pixels.** `backdrop-filter`, `background-attachment`, `background-blend-mode`, `background-origin`, `background-position`, `background-position-x`, `background-position-y`, `background-repeat`, `background-size`, `border-image`, `border-image-outset`, `border-image-repeat`, `border-image-slice`, `border-image-source`, `border-image-width`, `clip-path`, `dynamic-range-limit`, `image-orientation`, `image-rendering`, `mask`, `mask-border`, `mask-border-mode`, `mask-border-outset`, `mask-border-repeat`, `mask-border-slice`, `mask-border-source`, `mask-border-width`, `mask-clip`, `mask-composite`, `mask-image`, `mask-mode`, `mask-origin`, `mask-position`, `mask-repeat`, `mask-size`, `mix-blend-mode`, `object-fit`, `object-position`, `shape-image-threshold`, `shape-margin`, `shape-outside`
 
 **SVG presentation attributes, for a rendering model with no cells.** `alignment-baseline`, `baseline-shift`, `baseline-source`, `clip-rule`, `color-interpolation-filters`, `cx`, `cy`, `d`, `dominant-baseline`, `fill`, `fill-opacity`, `fill-rule`, `flood-color`, `flood-opacity`, `lighting-color`, `marker`, `marker-end`, `marker-mid`, `marker-start`, `mask-type`, `paint-order`, `r`, `rx`, `ry`, `shape-rendering`, `stop-color`, `stop-opacity`, `stroke`, `stroke-dasharray`, `stroke-dashoffset`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`, `stroke-opacity`, `stroke-width`, `text-anchor`, `vector-effect`, `x`, `y`
 

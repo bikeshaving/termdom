@@ -262,6 +262,13 @@ export class TermDOM {
 			void this[kExchange].negotiateBidi();
 			void this[kExchange].negotiateGraphemeClusters();
 			this[kExchange].scrubProbeEcho();
+			// After the erase, which is for the mode probes' echo. What was
+			// painted against the guessed cell repaints when the answer lands.
+			void this[kExchange].negotiateCellPixels().then(() => {
+				if (isAttached(this)) {
+					void render(this);
+				}
+			});
 			this[kLifecycle] = "attached";
 			begun();
 

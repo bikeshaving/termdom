@@ -99,6 +99,217 @@ function getBackgroundFill(
 	return CSSValues.cssColorToNumber(value);
 }
 
+function getGradient(element: Element): CSSValues.Gradient | null {
+	const image = getComputedValue(element, "background-image");
+	return image && image !== "none"
+		? CSSValues.parseLinearGradient(image)
+		: null;
+}
+
+// A stop's position as a fraction of the gradient line, which is what
+// the interpolation walks.
+interface ResolvedStop {
+	color: number;
+	alpha: number;
+	position: number;
+}
+
+/**
+ * css-images-3 §3.4.3, against a gradient line of `length` cells: the
+ * ends are pinned, a position never runs backwards, and a run of stops
+ * without positions spreads evenly between the two that have them.
+ */
+function resolveStops(
+	stops: readonly CSSValues.GradientStop[],
+	length: number,
+): ResolvedStop[] {
+	// NaN marks a position still to be filled in, so the sweeps below can
+	// tell "not yet known" from a real zero.
+	const resolved = stops.map((stop) => ({
+		color: stop.color,
+		alpha: stop.alpha,
+		position: stop.position === null
+			? NaN
+			: typeof stop.position === "number"
+				? (length > 0 ? stop.position / length : 0)
+				: stop.position.percentage / 100,
+	}));
+	const last = resolved.length - 1;
+	if (Number.isNaN(resolved[0].position)) {
+		resolved[0].position = 0;
+	}
+	if (Number.isNaN(resolved[last].position)) {
+		resolved[last].position = 1;
+	}
+	let previous = resolved[0].position;
+	for (let i = 1; i <= last; i++) {
+		if (Number.isNaN(resolved[i].position)) {
+			continue;
+		}
+		resolved[i].position = Math.max(resolved[i].position, previous);
+		previous = resolved[i].position;
+	}
+	for (let i = 1; i < last; i++) {
+		if (!Number.isNaN(resolved[i].position)) {
+			continue;
+		}
+		let end = i;
+		while (Number.isNaN(resolved[end].position)) {
+			end++;
+		}
+		const start = resolved[i - 1].position;
+		const step = (resolved[end].position - start) / (end - i + 1);
+		for (let between = i; between < end; between++) {
+			resolved[between].position = start + step * (between - i + 1);
+		}
+		i = end;
+	}
+	// A transparent stop names a place, not a color. Interpolating sRGB
+	// toward the black it packs would dirty the fade, so it borrows the
+	// channels of the nearest stop that paints.
+	for (let i = 0; i <= last; i++) {
+		if (resolved[i].alpha > 0) {
+			continue;
+		}
+		for (let away = 1; away <= last; away++) {
+			const before = resolved[i - away];
+			const after = resolved[i + away];
+			if (before !== undefined && before.alpha > 0) {
+				resolved[i].color = before.color;
+				break;
+			}
+			if (after !== undefined && after.alpha > 0) {
+				resolved[i].color = after.color;
+				break;
+			}
+		}
+	}
+	return resolved;
+}
+
+function squareOff(value: number): number {
+	return Math.abs(value) < 1e-9 ? 0 : value;
+}
+
+function mixColors(before: number, after: number, ratio: number): number {
+	const channel = (shift: number): number => {
+		const from = (before >> shift) & 0xff;
+		const to = (after >> shift) & 0xff;
+		return Math.round(from + (to - from) * ratio) << shift;
+	};
+	return channel(16) | channel(8) | channel(0);
+}
+
+// Null where the gradient is more transparent than it is opaque, which
+// leaves the cell to the flat background-color under it.
+function getStopColor(
+	stops: ResolvedStop[],
+	position: number,
+	repeating: boolean,
+	under: number | null,
+): number | null {
+	const first = stops[0].position;
+	const last = stops[stops.length - 1].position;
+	let t = position;
+	if (repeating && last > first) {
+		const period = last - first;
+		t = first + (((position - first) % period) + period) % period;
+	}
+	let index = 1;
+	while (index < stops.length - 1 && stops[index].position < t) {
+		index++;
+	}
+	const before = stops[index - 1];
+	const after = stops[index];
+	const span = after.position - before.position;
+	// Two stops in one place are a hard edge, and everything at or past
+	// it belongs to the later one.
+	const ratio = span > 0
+		? Math.min(1, Math.max(0, (t - before.position) / span))
+		: t < before.position ? 0 : 1;
+	const alpha = before.alpha + (after.alpha - before.alpha) * ratio;
+	const color = mixColors(before.color, after.color, ratio);
+	// Over a flat color the gradient composites onto it. Over nothing there
+	// is no color to composite with, so the cell is the gradient's where
+	// it is more opaque than not, and the terminal's otherwise.
+	if (under !== null) {
+		return alpha >= 1 ? color : mixColors(under, color, alpha);
+	}
+	return alpha < 0.5 ? null : color;
+}
+
+/**
+ * css-images-3 §3.4.1: the gradient line runs through the box's center
+ * at the gradient's angle and is `|w·sin a| + |h·cos a|` long, so that
+ * every corner of the box projects onto it. A cell takes the color at
+ * the projection of its own center.
+ */
+function renderGradient(
+	ctx: CellContext,
+	gradient: CSSValues.Gradient,
+	rect: {left: number; top: number; width: number; height: number},
+	under: number | null,
+	aspect: number,
+): void {
+	const cols = Math.round(rect.width);
+	const rows = Math.round(rect.height);
+	if (cols <= 0 || rows <= 0) {
+		return;
+	}
+	const radians = (gradient.angle * Math.PI) / 180;
+	// 0deg points up the screen, and the angle grows clockwise. A right
+	// angle's sine or cosine lands a hair off zero, and a hair is enough
+	// to tilt a gradient that should run straight along a row.
+	const dx = squareOff(Math.sin(radians));
+	const dy = squareOff(-Math.cos(radians));
+	// A row counts for as many units as a cell is taller than wide, so the
+	// gradient runs at the angle the screen shows and not the one a grid
+	// of square cells would.
+	const height = rows * aspect;
+	const length = Math.abs(cols * dx) + Math.abs(height * dy);
+	// The line is centered on the box, so it starts half its length back
+	// from the center.
+	const startX = (cols - dx * length) / 2;
+	const startY = (height - dy * length) / 2;
+	const stops = resolveStops(gradient.stops, length);
+	const left = Math.round(rect.left);
+	const top = Math.round(rect.top);
+	const colorAt = (x: number, y: number): number | null =>
+		getStopColor(
+			stops,
+			length > 0 ? (x * dx + y * dy) / length : 0,
+			gradient.repeating,
+			under,
+		);
+	// Along a row or a column every cell of the other axis is the same
+	// color, so it is one fill. Only a slanted line is cell by cell.
+	if (dy === 0) {
+		for (let col = 0; col < cols; col++) {
+			const color = colorAt(col + 0.5 - startX, 0);
+			if (color !== null) {
+				ctx.drawRect(left + col, top, 1, rows, color);
+			}
+		}
+	} else if (dx === 0) {
+		for (let row = 0; row < rows; row++) {
+			const color = colorAt(0, (row + 0.5) * aspect - startY);
+			if (color !== null) {
+				ctx.drawRect(left, top + row, cols, 1, color);
+			}
+		}
+	} else {
+		for (let row = 0; row < rows; row++) {
+			const y = (row + 0.5) * aspect - startY;
+			for (let col = 0; col < cols; col++) {
+				const color = colorAt(col + 0.5 - startX, y);
+				if (color !== null) {
+					ctx.drawRect(left + col, top + row, 1, 1, color);
+				}
+			}
+		}
+	}
+}
+
 function getCellStyle(element: Element): CellStyle {
 	const color = getComputedValue(element, "color");
 	const bgColor = getComputedValue(element, "background-color");
@@ -111,11 +322,16 @@ function getCellStyle(element: Element): CellStyle {
 	// The background alone carries inverse. color: HighlightText alone
 	// resolves to nothing, so an author color does not defeat it.
 	const isHighlightPair = CSSValues.isHighlightColor(bgColor);
+	// A gradient gives every cell its own background, so naming one here
+	// would repaint the run flat under the text. An undefined background
+	// leaves each cell the color the gradient put there.
+	const isGradientBox = getGradient(element) !== null;
 	return {
 		fg: color && color !== "initial" && !CSSValues.isHighlightColor(color)
 			? CSSValues.cssColorToNumber(color)
 			: undefined,
 		bg:
+			!isGradientBox &&
 			bgColor &&
 			bgColor !== "initial" &&
 			!CSSValues.isTransparentColor(bgColor) &&
@@ -377,6 +593,22 @@ function renderElement(
 			}
 		} else {
 			ctx.drawRect(rect.left, rect.top, rect.width, rect.height, fill);
+		}
+	}
+
+	// Over the flat fill, which a transparent stop composites onto.
+	const gradient = rect && visible ? getGradient(element) : null;
+	if (rect && gradient !== null) {
+		const cell = painter[kScreen].cellPixels;
+		const fragments = painter[kLayout].getRects(element);
+		for (const fragment of fragments.length > 1 ? fragments : [rect]) {
+			renderGradient(
+				ctx,
+				gradient,
+				fragment,
+				style.bg ?? null,
+				cell.height / cell.width,
+			);
 		}
 	}
 

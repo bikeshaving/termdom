@@ -280,6 +280,11 @@ const FEATURES: Record<string, Feature> = {
 	// Text and paint
 	color: {value: "red"},
 	"background-color": {value: "blue"},
+	"background-image: linear-gradient()": {
+		value: "linear-gradient(to right, red, blue)",
+	},
+	"background-image: radial-gradient()": {value: "radial-gradient(red, blue)"},
+	"background-image: url()": {value: "url(docs/solitaire.png)"},
 	background: {value: "blue"},
 	"font-weight": {value: "bold"},
 	"font-style": {value: "italic"},
@@ -614,7 +619,6 @@ const NOT_APPLICABLE: Array<[string, string[]]> = [
 			"backdrop-filter",
 			"background-attachment",
 			"background-blend-mode",
-			"background-image",
 			"background-origin",
 			"background-position",
 			"background-position-x",
@@ -971,7 +975,10 @@ async function snapshot(
  * Both halves matter: geometry catches layout properties, and the painted cells
  * catch the ones that only change colour or attributes.
  */
-function cssProbe(property: string, feature: Feature, category: string): Probe {
+// A name is a property, or a property and one form of its value, as in
+// `background-image: url()`, when the forms are supported separately.
+function cssProbe(name: string, feature: Feature, category: string): Probe {
+	const property = name.split(":")[0];
 	const markup =
 		feature.markup ??
 		(feature.text
@@ -989,7 +996,7 @@ function cssProbe(property: string, feature: Feature, category: string): Probe {
 		return apiProbe(property, category, feature.behaves, "behaviour probe");
 	}
 	return {
-		name: property,
+		name,
 		category,
 		async run() {
 			const base = await snapshot(context, markup);
@@ -1123,6 +1130,9 @@ const CATEGORIES: Array<[string, string[]]> = [
 		[
 			"color",
 			"background-color",
+			"background-image: linear-gradient()",
+			"background-image: radial-gradient()",
+			"background-image: url()",
 			"user-select",
 			"background",
 			"font-weight",
@@ -1353,7 +1363,7 @@ async function main(): Promise<void> {
 	// Every standard property is accounted for in one of three states, so the
 	// difference between "we checked and it does not work" and "this could never
 	// mean anything here" sits on the page rather than in someone's head.
-	const probed = new Set(probes.map((p) => p.name));
+	const probed = new Set(probes.map((p) => p.name.split(":")[0]));
 	const standard = Object.keys(properties)
 		.filter(
 			(p) =>

@@ -1715,6 +1715,10 @@ const kFrameScroll = Symbol("frameScroll");
 const kDirty = Symbol("dirty");
 const kDocumentTop = Symbol("documentTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
+const kCellPixels = Symbol("cellPixels");
+// What a cell measures until the terminal says. Most fonts run about
+// twice as tall as wide at any size.
+const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
 
 export interface Screen {
 	[kPrev]: CellGrid | null;
@@ -1743,6 +1747,7 @@ export interface Screen {
 	// The fullscreen anchor: the alternate screen's row-zero scroll origin.
 	[kScrollTop]: number;
 	[kDocumentTop]: number;
+	[kCellPixels]: {width: number; height: number};
 	[kAnchorScrollTop]: number;
 	[kWriter]: FrameWriter;
 	[kFrameScroll]: number;
@@ -1770,6 +1775,7 @@ export class Screen {
 		this[kScrollTop] = 0;
 		this[kDocumentTop] = 0;
 		this[kAnchorScrollTop] = 0;
+		this[kCellPixels] = {...DEFAULT_CELL_PIXELS};
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
 		this[kWriter] = new FrameWriter(colorDepth);
@@ -1806,6 +1812,11 @@ export class Screen {
 		};
 	}
 
+	/** One cell in terminal pixels. */
+	get cellPixels(): {width: number; height: number} {
+		return this[kCellPixels];
+	}
+
 	get documentTop(): number {
 		return this[kDocumentTop];
 	}
@@ -1835,6 +1846,16 @@ export class Screen {
 		const next = Math.max(0, row);
 		this[kFrameScroll] += next - this[kScrollTop];
 		this[kScrollTop] = next;
+	}
+
+	/** XTWINOPS answered. Whatever was painted against the guess repaints. */
+	adoptCellPixels(width: number, height: number): void {
+		const cell = this[kCellPixels];
+		if (cell.width === width && cell.height === height) {
+			return;
+		}
+		this[kCellPixels] = {width, height};
+		this.invalidate();
 	}
 
 	invalidate(): void {
