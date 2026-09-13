@@ -1265,22 +1265,21 @@ function renderTextHighlights(
 	textTransform: string,
 	ctx: CellContext,
 ): void {
-	// The flat-tree parent, where a highlight's style resolves, as
-	// ::selection's does.
-	const parent = flatParentElement(textNode);
-	if (parent === null) {
-		return;
-	}
 	const layers: HighlightLayer[] = [];
-	for (const highlight of painter[kHighlights]) {
-		const paint = getHighlightStyle(painter, parent, highlight.name);
-		if (paint === null) {
-			continue;
-		}
-		for (const range of highlight.ranges) {
-			const covered = getHighlightedOffsets(range, textNode);
-			if (covered !== null) {
-				layers.push({from: covered.from, to: covered.to, paint});
+	// The flat-tree parent, where a highlight's style resolves. Slotted
+	// text takes the style of the slot it renders in, not the host's.
+	const parent = flatParentElement(textNode);
+	if (parent !== null) {
+		for (const highlight of painter[kHighlights]) {
+			const paint = getHighlightStyle(painter, parent, highlight.name);
+			if (paint === null) {
+				continue;
+			}
+			for (const range of highlight.ranges) {
+				const covered = getHighlightedOffsets(range, textNode);
+				if (covered !== null) {
+					layers.push({from: covered.from, to: covered.to, paint});
+				}
 			}
 		}
 	}

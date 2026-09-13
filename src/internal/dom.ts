@@ -30657,6 +30657,15 @@ export class Window extends EventTarget {
 	declare Selection: typeof globalThis.Selection;
 	declare Highlight: typeof globalThis.Highlight;
 	declare HighlightRegistry: typeof globalThis.HighlightRegistry;
+	// The CSS namespace the cascade installs. Spelled out rather than
+	// borrowed from lib.dom, whose CSS also has a factory for every unit a
+	// browser measures in.
+	declare CSS: {
+		escape(ident: string): string;
+		supports(conditionOrProperty: string, value?: string): boolean;
+		readonly highlights: globalThis.HighlightRegistry;
+	};
+
 	declare DOMRect: typeof globalThis.DOMRect;
 	declare DOMRectReadOnly: typeof globalThis.DOMRectReadOnly;
 	declare CustomElementRegistry: typeof globalThis.CustomElementRegistry;

@@ -112,6 +112,20 @@ const INTERACTIVE: Record<string, (cmd: string) => Promise<string | null>> = {
 		}
 		return null;
 	},
+	// Typing a query registers a highlight per hit, and the status line
+	// counts them.
+	"highlights.ts": async (cmd) => {
+		await launch(cmd, 3000);
+		tmux(`send-keys -t ${SESSION} "error"`);
+		await sleep(1200);
+		tmux(`send-keys -t ${SESSION} Enter`);
+		await sleep(800);
+		const text = capture();
+		if (!/2\/\d+ matches for "error"/.test(text)) {
+			return `the search found no hits:\n${text.slice(0, 400)}`;
+		}
+		return null;
+	},
 	"fuzzy-finder.ts": async (cmd) => {
 		await launch(cmd, 3000);
 		tmux(`send-keys -t ${SESSION} "readme"`);
