@@ -340,10 +340,19 @@ test("a transparent stop lets the background-color through", async () => {
 		1,
 	);
 	const row = readRow(terminal, 0, 10);
-	// Under half coverage the flat fill stands, and the yellow end never
-	// fades through black on its way there.
-	expect(row[0].bg).toBe(0x008000);
-	expect(row[9].bg).toBe(0xffff00);
+	// The gradient composites onto the flat fill: green where it is
+	// transparent, yellow where it is opaque, and a blend of the two
+	// between, never a fade through black.
+	const red = (color: number): number => (color >> 16) & 0xff;
+	// Cells sample the line at their centers, so the ends are a twentieth
+	// of the way in, not at the stops themselves.
+	expect(red(row[0].bg)).toBeLessThan(0x20);
+	expect(red(row[5].bg)).toBeGreaterThan(0x40);
+	expect(red(row[5].bg)).toBeLessThan(0xc0);
+	expect(red(row[9].bg)).toBeGreaterThan(0xe0);
+	for (const cell of row) {
+		expect(cell.bg & 0xff).toBe(0);
+	}
 	dispose();
 });
 

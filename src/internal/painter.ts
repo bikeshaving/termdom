@@ -211,6 +211,7 @@ function getStopColor(
 	stops: ResolvedStop[],
 	position: number,
 	repeating: boolean,
+	under: number | null,
 ): number | null {
 	const first = stops[0].position;
 	const last = stops[stops.length - 1].position;
@@ -231,10 +232,15 @@ function getStopColor(
 	const ratio = span > 0
 		? Math.min(1, Math.max(0, (t - before.position) / span))
 		: t < before.position ? 0 : 1;
-	if (before.alpha + (after.alpha - before.alpha) * ratio < 0.5) {
-		return null;
+	const alpha = before.alpha + (after.alpha - before.alpha) * ratio;
+	const color = mixColors(before.color, after.color, ratio);
+	// Over a flat color the gradient composites onto it. Over nothing there
+	// is no color to composite with, so the cell is the gradient's where
+	// it is more opaque than not, and the terminal's otherwise.
+	if (under !== null) {
+		return alpha >= 1 ? color : mixColors(under, color, alpha);
 	}
-	return mixColors(before.color, after.color, ratio);
+	return alpha < 0.5 ? null : color;
 }
 
 /**
@@ -247,6 +253,7 @@ function renderGradient(
 	ctx: CellContext,
 	gradient: CSSValues.Gradient,
 	rect: {left: number; top: number; width: number; height: number},
+	under: number | null,
 ): void {
 	const cols = Math.round(rect.width);
 	const rows = Math.round(rect.height);
@@ -276,6 +283,7 @@ function renderGradient(
 				stops,
 				length > 0 ? (x * dx + y * dy) / length : 0,
 				gradient.repeating,
+				under,
 			);
 			if (color !== null) {
 				ctx.drawRect(left + col, top + row, 1, 1, color);
@@ -570,13 +578,12 @@ function renderElement(
 		}
 	}
 
-	// Over the flat fill, which shows through wherever the gradient is
-	// more transparent than it is opaque.
+	// Over the flat fill, which a transparent stop composites onto.
 	const gradient = rect && visible ? getGradient(element) : null;
 	if (rect && gradient !== null) {
 		const fragments = painter[kLayout].getRects(element);
 		for (const fragment of fragments.length > 1 ? fragments : [rect]) {
-			renderGradient(ctx, gradient, fragment);
+			renderGradient(ctx, gradient, fragment, style.bg ?? null);
 		}
 	}
 
