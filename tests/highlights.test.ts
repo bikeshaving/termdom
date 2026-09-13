@@ -77,12 +77,12 @@ test("CSS.highlights is a registry, and Highlight constructs from ranges", () =>
 	highlight.clear();
 	expect(highlight.size).toBe(0);
 
-	// A highlight takes ranges, and its type is an enumeration.
+	// A highlight takes ranges, and its type is an enumeration: a value
+	// outside it leaves the type alone.
 	expect(() => highlight.add({} as never)).toThrow(TypeError);
-	expect(() => {
-		highlight.type = "underline";
-	}).toThrow(TypeError);
 	highlight.type = "spelling-error";
+	expect(highlight.type).toBe("spelling-error");
+	highlight.type = "underline";
 	expect(highlight.type).toBe("spelling-error");
 	highlight.priority = 2.7;
 	expect(highlight.priority).toBe(2);

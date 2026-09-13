@@ -26879,7 +26879,7 @@ class Highlight {
 
 	set type(value: HighlightType) {
 		if (!HIGHLIGHT_TYPES.includes(String(value))) {
-			throw new TypeError(`${String(value)} is not a highlight type`);
+			return;
 		}
 		this[kHighlightType] = String(value) as HighlightType;
 		highlightChanged(this);
