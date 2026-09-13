@@ -356,26 +356,6 @@ function getCellStyle(element: Element): CellStyle {
 	};
 }
 
-// Everything comes from ::selection rules. The UA sheet's Highlight
-// pair is what makes an unstyled selection inverse at all.
-function getSelectionStyle(element: Element, base: CellStyle): CellStyle {
-	const fg = getComputedValue(element, "color", "::selection");
-	const bg = getComputedValue(element, "background-color", "::selection");
-	if (!fg && !bg) {
-		return base;
-	}
-	const fgAuthored = Boolean(fg) && !CSSValues.isHighlightColor(fg);
-	const bgAuthored = Boolean(bg) && !CSSValues.isHighlightColor(bg);
-	if (!fgAuthored && !bgAuthored) {
-		return {...base, inverse: true};
-	}
-	return {
-		...base,
-		fg: fgAuthored ? CSSValues.cssColorToNumber(fg) : base.fg,
-		bg: bgAuthored ? CSSValues.cssColorToNumber(bg) : base.bg,
-	};
-}
-
 // Applied at paint time. Case never changes a cell width, so it cannot
 // change wrapping.
 function applyTextTransform(text: string, transform: string): string {
@@ -1059,24 +1039,31 @@ function renderText(painter: Painter, textNode: Text, ctx: CellContext): void {
 	}
 	if (painted) {
 		renderTextHighlights(painter, textNode, textStyle, textTransform, ctx);
-		renderTextSelection(painter, textNode, textStyle, textTransform, ctx);
 	}
 }
 
 // A focused control's own selection when the node renders its value
 // (the document selection cannot see inside a control), else the
-// document's.
+// document's, narrowed to this node's offsets.
 function getPaintSelectionRange(
 	painter: Painter,
 	textNode: Text,
-): {range: Range; selectionParent: Element} | null {
+): {from: number; to: number; selectionParent: Element} | null {
 	const textControl = getTextControlSelectionRange(
 		painter[kDocument],
 		textNode,
 	);
 	if (textControl) {
+		const {range} = textControl;
+		if (range.endOffset <= range.startOffset) {
+			return null;
+		}
 		// ::selection resolves on the text control, not the shadow value span.
-		return {range: textControl.range, selectionParent: textControl.textControl};
+		return {
+			from: range.startOffset,
+			to: range.endOffset,
+			selectionParent: textControl.textControl,
+		};
 	}
 
 	const selection = painter[kWindow].getSelection();
@@ -1094,7 +1081,7 @@ function getPaintSelectionRange(
 	if (!painter[kCascade].isSelectable(selectionParent)) {
 		return null;
 	}
-	// Narrowed to this node. ::selection resolves per parent.
+	// ::selection resolves per parent.
 	const from = documentRange.startContainer === textNode
 		? documentRange.startOffset
 		: 0;
@@ -1104,38 +1091,7 @@ function getPaintSelectionRange(
 	if (to <= from) {
 		return null;
 	}
-	const range = textNode.ownerDocument.createRange();
-	range.setStart(textNode, from);
-	range.setEnd(textNode, to);
-	return {range, selectionParent};
-}
-
-// Redraws the selected runs in the highlight style over the base pass.
-function renderTextSelection(
-	painter: Painter,
-	textNode: Text,
-	textStyle: CellStyle,
-	textTransform: string,
-	ctx: CellContext,
-): void {
-	const found = getPaintSelectionRange(painter, textNode);
-	if (!found) {
-		return;
-	}
-	const {range, selectionParent} = found;
-	const selectionStyle = getSelectionStyle(selectionParent, textStyle);
-	if (selectionStyle === textStyle) {
-		return;
-	}
-
-	for (const run of painter[kLayout].getRangeSpans(range)) {
-		ctx.drawText(
-			applyTextTransform(run.text, textTransform),
-			run.rect.x,
-			run.rect.y,
-			selectionStyle,
-		);
-	}
+	return {from, to, selectionParent};
 }
 
 /**
@@ -1203,6 +1159,41 @@ function readHighlightStyle(
 	return paint;
 }
 
+// Everything comes from ::selection rules. The UA sheet's Highlight
+// pair is what makes an unstyled selection inverse at all, and an
+// author color of either half means the terminal's inverse is not what
+// the author asked for.
+function readSelectionStyle(element: Element): HighlightPaint | null {
+	const fg = getComputedValue(element, "color", "::selection");
+	const bg = getComputedValue(element, "background-color", "::selection");
+	const decoration = CSSValues.parseTextDecorationLine(
+		getComputedValue(element, "text-decoration-line", "::selection"),
+	);
+	const paint: HighlightPaint = {};
+	if (decoration.underline) {
+		paint.underline = true;
+	}
+	if (decoration.lineThrough) {
+		paint.strikethrough = true;
+	}
+	if (!fg && !bg) {
+		return paint.underline || paint.strikethrough ? paint : null;
+	}
+	const fgAuthored = Boolean(fg) && !CSSValues.isHighlightColor(fg);
+	const bgAuthored = Boolean(bg) && !CSSValues.isHighlightColor(bg);
+	if (!fgAuthored && !bgAuthored) {
+		paint.inverse = true;
+		return paint;
+	}
+	if (fgAuthored) {
+		paint.fg = CSSValues.cssColorToNumber(fg);
+	}
+	if (bgAuthored) {
+		paint.bg = CSSValues.cssColorToNumber(bg);
+	}
+	return paint;
+}
+
 // Per element and name, for the frame. A highlight over many text nodes
 // resolves its style on the few elements they share.
 function getHighlightStyle(
@@ -1261,7 +1252,8 @@ function getHighlightSegments(
 	return segments;
 }
 
-// Redraws the highlighted runs over the base pass, one draw per run.
+// Redraws the highlighted runs over the base pass, one draw per run of
+// cells the same layers cover, the selection included.
 function renderTextHighlights(
 	painter: Painter,
 	textNode: Text,
@@ -1269,10 +1261,7 @@ function renderTextHighlights(
 	textTransform: string,
 	ctx: CellContext,
 ): void {
-	if (painter[kHighlights].length === 0) {
-		return;
-	}
-	// The flat-tree parent, where the highlight's style resolves, as
+	// The flat-tree parent, where a highlight's style resolves, as
 	// ::selection's does.
 	const parent = flatParentElement(textNode);
 	if (parent === null) {
@@ -1289,6 +1278,17 @@ function renderTextHighlights(
 			if (covered !== null) {
 				layers.push({from: covered.from, to: covered.to, paint});
 			}
+		}
+	}
+	// Last, so it folds over every custom highlight whatever their
+	// priorities: css-highlight-api puts the built-in pseudo-elements above
+	// them all. Its style resolves on the control that owns the selection,
+	// which is not always this node's parent.
+	const selected = getPaintSelectionRange(painter, textNode);
+	if (selected !== null) {
+		const paint = readSelectionStyle(selected.selectionParent);
+		if (paint !== null) {
+			layers.push({from: selected.from, to: selected.to, paint});
 		}
 	}
 	if (layers.length === 0) {

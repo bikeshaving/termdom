@@ -21,6 +21,11 @@ function highlightDOM(options: {rows?: number; cols?: number} = {}): {
 	return {terminal, dom, window: dom.window as any};
 }
 
+/** The cell the terminal painted at a row and column. */
+function cellAt(terminal: MockProcess, row: number, col: number): any {
+	return (terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+}
+
 /** The columns of a row painted on a yellow background. */
 function yellowCells(terminal: MockProcess, row: number): number[] {
 	const line = (terminal as any).terminal.buffer.active.getLine(row);
@@ -161,6 +166,122 @@ test("a highlight spanning two text nodes paints both", async () => {
 	await nextFrame(dom);
 
 	expect(yellowCells(terminal, 0)).toEqual([2, 3, 4, 5]);
+
+	dom.dispose();
+});
+
+test("priority, then registration order, decides which layer wins", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>" +
+		"::highlight(low) { background-color: yellow; color: red }" +
+		"::highlight(high) { background-color: blue }" +
+		"::highlight(late) { background-color: lime }" +
+		"</style>";
+	document.body.innerHTML = "<p>abcdefgh</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const whole = document.createRange();
+	whole.setStart(text, 0);
+	whole.setEnd(text, 8);
+	const half = document.createRange();
+	half.setStart(text, 4);
+	half.setEnd(text, 8);
+
+	const low = new window.Highlight(whole);
+	const high = new window.Highlight(half);
+	high.priority = 1;
+	window.CSS.highlights.set("low", low);
+	window.CSS.highlights.set("high", high);
+	await nextFrame(dom);
+
+	// The higher priority wins where the two overlap, and only there.
+	expect(yellowCells(terminal, 0)).toEqual([0, 1, 2, 3]);
+	expect(cellAt(terminal, 0, 5).getBgColor()).toBe(0x0000ff);
+	// It set no color, so the layer below it still supplies one.
+	expect(cellAt(terminal, 0, 5).getFgColor()).toBe(0xff0000);
+
+	dom.dispose();
+});
+
+test("equal priority is broken by registration order", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>" +
+		"::highlight(early) { background-color: yellow }" +
+		"::highlight(late) { background-color: lime }" +
+		"</style>";
+	document.body.innerHTML = "<p>abcdefgh</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const range = document.createRange();
+	range.setStart(text, 0);
+	range.setEnd(text, 4);
+	// Both at the default priority, so the name registered last wins.
+	window.CSS.highlights.set("early", new window.Highlight(range));
+	window.CSS.highlights.set("late", new window.Highlight(range));
+	await nextFrame(dom);
+
+	expect(yellowCells(terminal, 0)).toEqual([]);
+	expect(cellAt(terminal, 0, 0).getBgColor()).toBe(0x00ff00);
+
+	dom.dispose();
+});
+
+test("::selection folds over a highlight covering the same cells", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>" +
+		"::highlight(hit) { background-color: yellow }" +
+		"::selection { background-color: blue }" +
+		"</style>";
+	document.body.innerHTML = "<p>abcdefgh</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const whole = document.createRange();
+	whole.setStart(text, 0);
+	whole.setEnd(text, 8);
+	const highlight = new window.Highlight(whole);
+	// However high the highlight's priority, a built-in pseudo paints over
+	// it.
+	highlight.priority = 99;
+	window.CSS.highlights.set("hit", highlight);
+
+	const selected = document.createRange();
+	selected.setStart(text, 4);
+	selected.setEnd(text, 8);
+	const selection = window.getSelection()!;
+	selection.removeAllRanges();
+	selection.addRange(selected);
+	await nextFrame(dom);
+
+	expect(yellowCells(terminal, 0)).toEqual([0, 1, 2, 3]);
+	expect(cellAt(terminal, 0, 5).getBgColor()).toBe(0x0000ff);
+
+	dom.dispose();
+});
+
+test("text-decoration-line: underline in a highlight rule underlines", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { text-decoration-line: underline }</style>";
+	document.body.innerHTML = "<p>abcdefgh</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const range = document.createRange();
+	range.setStart(text, 2);
+	range.setEnd(text, 5);
+	window.CSS.highlights.set("hit", new window.Highlight(range));
+	await nextFrame(dom);
+
+	expect(cellAt(terminal, 0, 1).isUnderline()).toBeFalsy();
+	expect(cellAt(terminal, 0, 2).isUnderline()).toBeTruthy();
+	expect(cellAt(terminal, 0, 4).isUnderline()).toBeTruthy();
+	expect(cellAt(terminal, 0, 5).isUnderline()).toBeFalsy();
 
 	dom.dispose();
 });

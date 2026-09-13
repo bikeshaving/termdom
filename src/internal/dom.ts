@@ -27131,16 +27131,19 @@ export function getPaintedHighlights(
 	if (registry === null || registry[kHighlightsByName].size === 0) {
 		return [];
 	}
-	const painted: PaintedHighlight[] = [];
+	const painted: Array<PaintedHighlight & {priority: number}> = [];
 	for (const [name, highlight] of registry[kHighlightsByName]) {
 		const ranges = [...highlight[kHighlightRanges]].filter(
 			(range) => !range.collapsed,
 		);
 		if (ranges.length > 0) {
-			painted.push({name, ranges});
+			painted.push({name, ranges, priority: highlight[kHighlightPriority]});
 		}
 	}
-	return painted;
+	// Lowest priority first, so the ones above it fold over it. The sort is
+	// stable and the map is in registration order, which is the tie-break
+	// css-highlight-api asks for.
+	return painted.sort((a, b) => a.priority - b.priority);
 }
 
 /**
