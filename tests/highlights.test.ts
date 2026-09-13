@@ -205,6 +205,39 @@ test("priority, then registration order, decides which layer wins", async () => 
 	dom.dispose();
 });
 
+test("a concrete background over a system-color layer is not inverted", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>" +
+		"::highlight(system) { background-color: Highlight }" +
+		"::highlight(own) { background-color: yellow; color: black }" +
+		"</style>";
+	document.body.innerHTML = "<p>abcdefgh</p>";
+	const text = document.querySelector("p")!.firstChild!;
+
+	const whole = document.createRange();
+	whole.setStart(text, 0);
+	whole.setEnd(text, 8);
+	const half = document.createRange();
+	half.setStart(text, 4);
+	half.setEnd(text, 8);
+
+	const own = new window.Highlight(half);
+	own.priority = 1;
+	window.CSS.highlights.set("system", new window.Highlight(whole));
+	window.CSS.highlights.set("own", own);
+	await nextFrame(dom);
+
+	// The system color alone is the terminal's inverse video.
+	expect(cellAt(terminal, 0, 1).isInverse()).toBeTruthy();
+	// Under a layer with colors of its own, that inverse would swap them.
+	expect(cellAt(terminal, 0, 5).isInverse()).toBeFalsy();
+	expect(yellowCells(terminal, 0)).toEqual([4, 5, 6, 7]);
+
+	dom.dispose();
+});
+
 test("equal priority is broken by registration order", async () => {
 	const {terminal, dom, window} = highlightDOM();
 	const {document} = dom;

@@ -1145,6 +1145,9 @@ function readHighlightStyle(
 			!CSSValues.isCanvasColor(background)
 		) {
 			paint.bg = CSSValues.cssColorToNumber(background);
+			// A color of its own is the whole background. Inverse from a
+			// layer under it would swap the colors this one asked for.
+			paint.inverse = false;
 		}
 	}
 	if (declared.has("text-decoration-line")) {
@@ -1223,7 +1226,7 @@ function foldHighlight(base: CellStyle, paint: HighlightPaint): CellStyle {
 		...base,
 		fg: paint.fg ?? base.fg,
 		bg: paint.bg ?? base.bg,
-		inverse: paint.inverse || base.inverse,
+		inverse: paint.inverse ?? base.inverse,
 		underline: paint.underline || base.underline,
 		strikethrough: paint.strikethrough || base.strikethrough,
 	};
