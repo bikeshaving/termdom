@@ -285,8 +285,13 @@ export class TermDOM {
 			});
 			this[kExchange].scrubProbeEcho();
 			// After the erase, which is for the mode probes' echo. What was
-			// painted against the guessed cell repaints when the answer lands.
-			void this[kExchange].negotiateCellPixels().then(() => {
+			// painted against the guessed cell repaints when the answer lands,
+			// and an image paints as its alt text until the terminal says it
+			// can show pixels.
+			void Promise.all([
+				this[kExchange].negotiateCellPixels(),
+				this[kExchange].negotiateImages(),
+			]).then(() => {
 				if (isAttached(this)) {
 					void render(this);
 				}

@@ -1052,7 +1052,7 @@ function paintBox(
 	}
 	// Over the flat fill, which a transparent stop composites onto.
 	if (style.gradient !== null) {
-		const cell = painter[kScreen].cellPixels;
+		const cell = painter[kLayout].cellPixels;
 		for (const fragment of fragments) {
 			renderGradient(
 				ctx,

@@ -965,6 +965,14 @@ export interface CellImage {
 	bytes: Uint8Array;
 }
 
+/**
+ * The inline-image protocol the terminal speaks. Kitty's is preferred:
+ * it names each image and each placement, so an image is transmitted
+ * once and moved or deleted by id. iTerm2's has neither, so every frame
+ * re-sends every visible image.
+ */
+export type ImageProtocol = "kitty" | "iterm2";
+
 export class CellContext {
 	grid: CellGrid;
 	rows: number;
@@ -1728,6 +1736,7 @@ const kCellPixels = Symbol("cellPixels");
 // What a cell measures until the terminal says. Most fonts run about
 // twice as tall as wide at any size.
 const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
+const kImageProtocol = Symbol("imageProtocol");
 
 export interface Screen {
 	[kPrev]: CellGrid | null;
@@ -1759,6 +1768,9 @@ export interface Screen {
 	[kWriter]: FrameWriter;
 	[kFrameScroll]: number;
 	[kDirty]: boolean;
+	// Null until the exchange has asked, and on every terminal that cannot
+	// draw pixels at all.
+	[kImageProtocol]: ImageProtocol | null;
 }
 
 export class Screen {
@@ -1784,12 +1796,22 @@ export class Screen {
 		this[kCellPixels] = {...DEFAULT_CELL_PIXELS};
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
+		this[kImageProtocol] = null;
 		this[kWriter] = new FrameWriter(colorDepth);
 	}
 
 	/** Width probes go out over the exchange, once there is one. */
 	set measurer(exchange: Exchange) {
 		this[kMeasurer] = exchange;
+	}
+
+	/** What the exchange found out the terminal can draw. */
+	get imageProtocol(): ImageProtocol | null {
+		return this[kImageProtocol];
+	}
+
+	set imageProtocol(protocol: ImageProtocol | null) {
+		this[kImageProtocol] = protocol;
 	}
 
 	get rows(): number {
@@ -1818,11 +1840,6 @@ export class Screen {
 		};
 	}
 
-	/** One cell in terminal pixels. */
-	get cellPixels(): {width: number; height: number} {
-		return this[kCellPixels];
-	}
-
 	get documentTop(): number {
 		return this[kDocumentTop];
 	}
@@ -1844,16 +1861,6 @@ export class Screen {
 		const next = Math.max(0, row);
 		this[kFrameScroll] += next - this[kScrollTop];
 		this[kScrollTop] = next;
-	}
-
-	/** XTWINOPS answered. Whatever was painted against the guess repaints. */
-	adoptCellPixels(width: number, height: number): void {
-		const cell = this[kCellPixels];
-		if (cell.width === width && cell.height === height) {
-			return;
-		}
-		this[kCellPixels] = {width, height};
-		this.invalidate();
 	}
 
 	invalidate(): void {
