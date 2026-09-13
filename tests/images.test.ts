@@ -319,8 +319,8 @@ test("a terminal that answers the kitty query gets pixels", async () => {
 
 	const output = raw();
 	// The bytes go once, as a PNG (f=100), and the placement names the box.
-	expect(output).toContain("a=T,f=100,i=");
-	expect(output).toMatch(/\x1b_Ga=p,i=\d+,c=5,r=2,q=2\x1b\\/);
+	expect(output).toContain("a=t,f=100,i=");
+	expect(output).toMatch(/\x1b_Ga=p,i=\d+,c=5,r=2,C=1,q=2\x1b\\/);
 
 	// The cursor is put on the box's top-left before the sequence.
 	const placement = output.indexOf("\x1b_Ga=p");
