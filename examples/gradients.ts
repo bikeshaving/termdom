@@ -22,6 +22,17 @@ document.body.innerHTML = `
     }
     .angled { background-image: linear-gradient(45deg, #8f1a1a, #ffd27f); }
 
+    /* An angle in any unit. 0deg points up and grows clockwise, so 90deg
+       is "to right" and 0.5turn is "to bottom". */
+    .angles .bar { width: 8ch; height: 4px; }
+    .deg-0 { background-image: linear-gradient(0deg, #1b263b, #e0e1dd); }
+    .deg-30 { background-image: linear-gradient(30deg, #1b263b, #e0e1dd); }
+    .deg-60 { background-image: linear-gradient(60deg, #1b263b, #e0e1dd); }
+    .deg-90 { background-image: linear-gradient(90deg, #1b263b, #e0e1dd); }
+    .deg-120 { background-image: linear-gradient(120deg, #1b263b, #e0e1dd); }
+    .turn { background-image: linear-gradient(0.75turn, #1b263b, #e0e1dd); }
+    .grad { background-image: linear-gradient(300grad, #1b263b, #e0e1dd); }
+
     /* Two stops in one place are a hard edge, so a gradient can also be a
        set of bands. */
     .bands {
@@ -61,6 +72,17 @@ document.body.innerHTML = `
       <div class="bar to-bottom"></div>
       <div class="bar corner"></div>
       <div class="bar angled"></div>
+    </div>
+
+    <div class="label">0deg / 30deg / 60deg / 90deg / 120deg / 0.75turn / 300grad</div>
+    <div class="row angles">
+      <div class="bar deg-0"></div>
+      <div class="bar deg-30"></div>
+      <div class="bar deg-60"></div>
+      <div class="bar deg-90"></div>
+      <div class="bar deg-120"></div>
+      <div class="bar turn"></div>
+      <div class="bar grad"></div>
     </div>
 
     <div class="label">hard stops</div>
