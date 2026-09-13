@@ -10,7 +10,7 @@ import {
 import type {Input} from "./input.ts";
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";
-import {recordClusterAdvance} from "./text.ts";
+import {decode64, encode64, recordClusterAdvance} from "./text.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
 
@@ -83,66 +83,6 @@ export interface TerminalTransport {
 	 * pane, a test) does nothing.
 	 */
 	close(info?: TerminalCloseInfo): void;
-}
-
-const BASE64_ALPHABET =
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const BASE64_CODES = new Int8Array(128).fill(-1);
-for (let i = 0; i < BASE64_ALPHABET.length; i++) {
-	BASE64_CODES[BASE64_ALPHABET.charCodeAt(i)] = i;
-}
-
-function encode64(bytes: Uint8Array): string {
-	let out = "";
-	let i = 0;
-	for (; i + 2 < bytes.length; i += 3) {
-		const n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
-		out +=
-			BASE64_ALPHABET[n >> 18] +
-			BASE64_ALPHABET[(n >> 12) & 63] +
-			BASE64_ALPHABET[(n >> 6) & 63] +
-			BASE64_ALPHABET[n & 63];
-	}
-	const rest = bytes.length - i;
-	if (rest === 1) {
-		const n = bytes[i] << 16;
-		out += BASE64_ALPHABET[n >> 18] + BASE64_ALPHABET[(n >> 12) & 63] + "==";
-	} else if (rest === 2) {
-		const n = (bytes[i] << 16) | (bytes[i + 1] << 8);
-		out +=
-			BASE64_ALPHABET[n >> 18] +
-			BASE64_ALPHABET[(n >> 12) & 63] +
-			BASE64_ALPHABET[(n >> 6) & 63] +
-			"=";
-	}
-	return out;
-}
-
-// Tolerant, since terminals differ. Bytes outside the alphabet are
-// skipped and an unpadded tail decodes. Null when the digit count
-// carries no byte.
-function decode64(text: string): Uint8Array | null {
-	const bytes = new Uint8Array((text.length * 3) >> 2);
-	let held = 0;
-	let bits = 0;
-	let length = 0;
-	for (let i = 0; i < text.length; i++) {
-		const code = text.charCodeAt(i);
-		const value = code < 128 ? BASE64_CODES[code] : -1;
-		if (value < 0) {
-			continue;
-		}
-		held = (held << 6) | value;
-		bits += 6;
-		if (bits >= 8) {
-			bits -= 8;
-			bytes[length++] = (held >> bits) & 0xff;
-		}
-	}
-	if (bits >= 6) {
-		return null;
-	}
-	return bytes.subarray(0, length);
 }
 
 const CURSOR_QUERY = "\x1b[6n";

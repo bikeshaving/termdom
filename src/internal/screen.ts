@@ -1,5 +1,6 @@
 import type {ColorDepth, Exchange} from "./exchange.ts";
 import {
+	encode64,
 	getStringWidth,
 	graphemeSegmenter,
 	isWidthUncertain,
@@ -145,6 +146,11 @@ class FrameWriter {
 
 	cursorDown(rows: number): this {
 		this[kOut].push(`\x1b[${rows}B`);
+		return this;
+	}
+
+	cursorUp(rows: number): this {
+		this[kOut].push(`\x1b[${rows}A`);
 		return this;
 	}
 
@@ -973,6 +979,90 @@ export interface CellImage {
  */
 export type ImageProtocol = "kitty" | "iterm2";
 
+/** Where one image goes, in the frame's own buffer rows and columns. */
+export interface ImagePlacement {
+	image: CellImage;
+	row: number;
+	col: number;
+	cols: number;
+	rows: number;
+}
+
+// Kitty takes a payload in base64, split into chunks small enough for a
+// terminal's input buffer. q=2 asks it not to acknowledge anything, so
+// none of this comes back as a reply the wire reader would have to
+// swallow.
+const KITTY_CHUNK = 4096;
+
+function createKittyTransmission(image: CellImage): string {
+	const payload = encode64(image.bytes);
+	let out = "";
+	for (let at = 0; at < payload.length; at += KITTY_CHUNK) {
+		const chunk = payload.slice(at, at + KITTY_CHUNK);
+		const more = at + KITTY_CHUNK < payload.length ? 1 : 0;
+		// The keys ride the first chunk. Every chunk after it carries only
+		// whether another follows.
+		out += at === 0
+			? `\x1b_Ga=T,f=100,i=${image.id},q=2,m=${more};${chunk}\x1b\\`
+			: `\x1b_Gm=${more};${chunk}\x1b\\`;
+	}
+	return out;
+}
+
+// Placement 0 of an image, which is what a placement with no p= is, so
+// a frame re-placing the same image replaces it rather than stacking
+// another copy on it.
+function createKittyPlacement(placement: ImagePlacement): string {
+	return (
+		`\x1b_Ga=p,i=${placement.image.id},c=${placement.cols},` +
+		`r=${placement.rows},q=2\x1b\\`
+	);
+}
+
+function createKittyDeletion(id: number): string {
+	return `\x1b_Ga=d,d=i,i=${id},q=2\x1b\\`;
+}
+
+// iTerm2 names neither images nor placements, so there is nothing to
+// transmit once and nothing to delete: the whole file goes out wherever
+// the image is meant to appear, every time it appears.
+function createITermImage(placement: ImagePlacement): string {
+	return (
+		`\x1b]1337;File=inline=1;width=${placement.cols};` +
+		`height=${placement.rows};preserveAspectRatio=0:` +
+		`${encode64(placement.image.bytes)}\x07`
+	);
+}
+
+function createImageSequence(
+	protocol: ImageProtocol,
+	placement: ImagePlacement,
+	transmitted: Set<number>,
+): string {
+	if (protocol === "iterm2") {
+		return createITermImage(placement);
+	}
+	let out = "";
+	if (!transmitted.has(placement.image.id)) {
+		transmitted.add(placement.image.id);
+		out += createKittyTransmission(placement.image);
+	}
+	return out + createKittyPlacement(placement);
+}
+
+function samePlacements(a: ImagePlacement[], b: ImagePlacement[]): boolean {
+	if (a.length !== b.length) {
+		return false;
+	}
+	return a.every((placement, index) =>
+		placement.image.id === b[index].image.id &&
+		placement.row === b[index].row &&
+		placement.col === b[index].col &&
+		placement.cols === b[index].cols &&
+		placement.rows === b[index].rows,
+	);
+}
+
 export class CellContext {
 	grid: CellGrid;
 	rows: number;
@@ -984,6 +1074,9 @@ export class CellContext {
 	// The overflow:hidden clip in document (row, col) space. An edge is
 	// +-Infinity on an axis that is not clipped. Null when none is active.
 	clipRect: {left: number; top: number; right: number; bottom: number} | null;
+	// The images this frame asks the terminal to draw, in paint order.
+	// They are not cells, so nothing in the diff knows about them.
+	images: ImagePlacement[];
 
 	constructor(
 		grid: CellGrid,
@@ -993,6 +1086,7 @@ export class CellContext {
 	) {
 		this.caret = null;
 		this.clipRect = null;
+		this.images = [];
 		this.grid = grid;
 		this.rows = rows;
 		this.cols = cols;
@@ -1029,6 +1123,44 @@ export class CellContext {
 				setCell(this, row, col, " ", style);
 			}
 		}
+	}
+
+	/**
+	 * Hand the terminal an image to draw over these cells.
+	 *
+	 * The cells themselves are blanked, keeping whatever background was
+	 * filled into them, so nothing paints a glyph where the pixels go. The
+	 * pixels are the terminal's: they are not in the grid, and the diff
+	 * that follows can neither see them nor erase them.
+	 */
+	drawImage(
+		x: number,
+		y: number,
+		cols: number,
+		rows: number,
+		image: CellImage,
+	): void {
+		if (cols <= 0 || rows <= 0) {
+			return;
+		}
+		for (let row = y; row < y + rows; row++) {
+			for (let col = x; col < x + cols; col++) {
+				setCell(this, row, col, " ", {});
+			}
+		}
+		// The placement is one absolute position, so a box whose top-left is
+		// off screen or clipped away places nothing at all.
+		const row = y + this.viewportOffset;
+		if (
+			row < 0 ||
+			row >= this.rows ||
+			x < 0 ||
+			x >= this.cols ||
+			!inClip(this, y, x)
+		) {
+			return;
+		}
+		this.images.push({image, row, col: x, cols, rows});
 	}
 
 	measureText(text: string): TextMetrics {
@@ -1737,6 +1869,8 @@ const kCellPixels = Symbol("cellPixels");
 // twice as tall as wide at any size.
 const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
 const kImageProtocol = Symbol("imageProtocol");
+const kTransmitted = Symbol("transmitted");
+const kPlacements = Symbol("placements");
 
 export interface Screen {
 	[kPrev]: CellGrid | null;
@@ -1771,6 +1905,11 @@ export interface Screen {
 	// Null until the exchange has asked, and on every terminal that cannot
 	// draw pixels at all.
 	[kImageProtocol]: ImageProtocol | null;
+	// Kitty image ids the terminal already holds the bytes for.
+	[kTransmitted]: Set<number>;
+	// What the last frame put on screen, so a placement that moved or went
+	// away is taken down.
+	[kPlacements]: ImagePlacement[];
 }
 
 export class Screen {
@@ -1797,6 +1936,8 @@ export class Screen {
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
 		this[kImageProtocol] = null;
+		this[kTransmitted] = new Set<number>();
+		this[kPlacements] = [];
 		this[kWriter] = new FrameWriter(colorDepth);
 	}
 
@@ -1811,7 +1952,13 @@ export class Screen {
 	}
 
 	set imageProtocol(protocol: ImageProtocol | null) {
+		if (this[kImageProtocol] === protocol) {
+			return;
+		}
 		this[kImageProtocol] = protocol;
+		// Every image on screen was painted under the old answer, as alt
+		// text or as pixels. What the painter produces has changed.
+		this[kDirty] = true;
 	}
 
 	get rows(): number {
@@ -1846,6 +1993,16 @@ export class Screen {
 
 	set documentTop(row: number) {
 		this[kDocumentTop] = row;
+	}
+
+	/**
+	 * Take every placement back down. Kitty holds them until it is told
+	 * otherwise, so a document that goes away has to say so.
+	 */
+	releaseImages(): string {
+		const output = deletePlacements(this, this[kPlacements], []);
+		this[kPlacements] = [];
+		return output;
 	}
 
 	resize(rows: number, cols: number): void {
@@ -1939,7 +2096,8 @@ export class Screen {
 			// A file wants a bare newline. A terminal wants CRLF. A lone LF
 			// moves the cursor down without returning it to column 0, so the
 			// lines would staircase across the screen.
-			return lines.join(lineEnding) + lineEnding;
+			const body = lines.join(lineEnding) + lineEnding;
+			return body + writeStaticImages(this, context.images, rows);
 		};
 		return context;
 	}
@@ -2222,6 +2380,14 @@ export class Screen {
 				hasContent = true;
 			}
 
+			// An image lives in the terminal, not in the grid, so nothing in
+			// the diff above can see one appear, move or go away. A frame
+			// whose placements differ from the last one's has to go out.
+			const placements = this[kImageProtocol] === null ? [] : context.images;
+			if (!samePlacements(this[kPlacements], placements)) {
+				hasContent = true;
+			}
+
 			const writer = this[kWriter];
 			let prefix = scrollPrefix;
 			let frameStartRow: number | undefined;
@@ -2354,7 +2520,23 @@ export class Screen {
 				}
 			}
 
-			const frame = prefix + output + staleOutput + parkOutput;
+			// Before the park, so the cursor still ends where the park puts
+			// it, and after the rows, so the cells under a placement have
+			// been blanked by the time its pixels land on them.
+			let imageOutput = "";
+			if (hasContent) {
+				imageOutput =
+					deletePlacements(this, this[kPlacements], placements) +
+					writeFramePlacements(
+						this,
+						placements,
+						frameStartRow,
+						this[kHasSavedCursor],
+					);
+				this[kPlacements] = placements;
+			}
+
+			const frame = prefix + output + staleOutput + imageOutput + parkOutput;
 			return hasContent ? wrapSynchronized(frame) : frame;
 		};
 		return context;
@@ -2371,6 +2553,110 @@ export class Screen {
 		this[kDirty] = false;
 		return ansi;
 	}
+}
+
+/**
+ * The kitty images the last frame placed that this one does not. The
+ * bytes go with them, so an image that comes back is transmitted again
+ * rather than trusting a terminal to have kept what it was told to
+ * delete.
+ */
+function deletePlacements(
+	screen: Screen,
+	previous: ImagePlacement[],
+	current: ImagePlacement[],
+): string {
+	if (screen[kImageProtocol] !== "kitty") {
+		return "";
+	}
+	const live = new Set(current.map((placement) => placement.image.id));
+	let output = "";
+	for (const id of new Set(previous.map((placement) => placement.image.id))) {
+		if (live.has(id)) {
+			continue;
+		}
+		screen[kTransmitted].delete(id);
+		output += createKittyDeletion(id);
+	}
+	return output;
+}
+
+/**
+ * Each placement's sequences, preceded by a move to its top-left. The
+ * absolute row is preferred; without one the frame's saved start is what
+ * a placement counts down from, and with neither there is no position to
+ * name and the image waits for a frame that has one.
+ */
+function writeFramePlacements(
+	screen: Screen,
+	placements: ImagePlacement[],
+	frameStartRow: number | undefined,
+	hasSavedCursor: boolean,
+): string {
+	const protocol = screen[kImageProtocol];
+	if (protocol === null || placements.length === 0) {
+		return "";
+	}
+	const writer = screen[kWriter];
+	let output = "";
+	for (const placement of placements) {
+		if (frameStartRow !== undefined) {
+			writer.cursorTo(frameStartRow + placement.row + 1, placement.col + 1);
+		} else if (hasSavedCursor) {
+			writer.restoreCursor();
+			if (placement.row > 0) {
+				writer.cursorDown(placement.row);
+			}
+			writer.carriageReturn();
+			if (placement.col > 0) {
+				writer.cursorForward(placement.col);
+			}
+		} else {
+			continue;
+		}
+		output +=
+			writer.take() +
+			createImageSequence(protocol, placement, screen[kTransmitted]);
+	}
+	return output;
+}
+
+/**
+ * The same sequences for output that is printed rather than repainted.
+ * The rows have just been written, so the cursor sits at the start of
+ * the one below the last and each placement is that many rows up. Every
+ * move is saved and restored, so what the caller prints next goes where
+ * it would have.
+ */
+function writeStaticImages(
+	screen: Screen,
+	placements: ImagePlacement[],
+	rows: number,
+): string {
+	const protocol = screen[kImageProtocol];
+	if (protocol === null || placements.length === 0) {
+		return "";
+	}
+	const writer = screen[kWriter];
+	// Printed output keeps no image state: nothing here will be moved or
+	// deleted later, so each run transmits what it places.
+	const transmitted = new Set<number>();
+	let output = "";
+	for (const placement of placements) {
+		writer.saveCursor();
+		if (rows > placement.row) {
+			writer.cursorUp(rows - placement.row);
+		}
+		writer.carriageReturn();
+		if (placement.col > 0) {
+			writer.cursorForward(placement.col);
+		}
+		output +=
+			writer.take() +
+			createImageSequence(protocol, placement, transmitted) +
+			writer.restoreCursor().take();
+	}
+	return output;
 }
 
 function takeGrid(screen: Screen, rows: number, cols: number): CellGrid {
