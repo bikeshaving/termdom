@@ -362,19 +362,30 @@ function getUneditableIsland(
 }
 
 /** The first place inside an element a caret can sit. */
+/** The first place the caret can show: the first text with something in it. */
 function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
-	for (
-		let node = element.firstChild; node !== null; node = element.firstChild
-	) {
+	let fallback: EditingPoint | null = null;
+	let node: globalThis.Node | null = element.firstChild;
+	while (node !== null) {
 		if (node.nodeType === TEXT_NODE) {
-			return {node, offset: 0};
+			const data = (node as globalThis.Text).data;
+			if (!COLLAPSIBLE_ONLY.test(data)) {
+				return {node, offset: data.search(/[^ \t\n\r\f]/)};
+			}
+			fallback ??= {node, offset: 0};
+		} else if (node.nodeType === ELEMENT_NODE && node.firstChild === null) {
+			fallback ??= {node, offset: 0};
 		}
-		if (node.nodeType !== ELEMENT_NODE || node.firstChild === null) {
-			return {node: element, offset: 0};
+		if (node.firstChild !== null) {
+			node = node.firstChild;
+		} else {
+			while (node !== null && node !== element && node.nextSibling === null) {
+				node = node.parentNode;
+			}
+			node = node === null || node === element ? null : node.nextSibling;
 		}
-		element = node as globalThis.Element;
 	}
-	return {node: element, offset: 0};
+	return fallback ?? {node: element, offset: 0};
 }
 
 // A point in an element next to a text node is the same place as a point
