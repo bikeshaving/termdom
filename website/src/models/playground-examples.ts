@@ -26,6 +26,7 @@ const RUNNABLE = [
 	"bar-chart",
 	"borders",
 	"chat",
+	"codemirror",
 	"commit-editor",
 	"flexbox",
 	"form",
