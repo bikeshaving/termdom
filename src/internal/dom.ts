@@ -14061,6 +14061,161 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+type FormDataEntry = [string, string | globalThis.File];
+
+const LONE_SURROGATE = /\p{Surrogate}/gu;
+
+// The names and values a form sends are USVStrings, and a lone surrogate
+// is not a scalar value.
+function toScalarValueString(value: string): string {
+	return value.replace(LONE_SURROGATE, "�");
+}
+
+// A Blob that is not a File becomes one named "blob", and a filename
+// argument renames whichever File it ends up with.
+function createEntry(
+	name: unknown,
+	value: unknown,
+	filename?: unknown,
+): FormDataEntry {
+	const key = toScalarValueString(String(name));
+	if (!(value instanceof Blob)) {
+		return [key, toScalarValueString(String(value))];
+	}
+	let file = value instanceof File
+		? value
+		: new File([value], "blob", {type: value.type});
+	if (filename !== undefined) {
+		file = new File(
+			[file],
+			toScalarValueString(String(filename)),
+			{type: file.type, lastModified: file.lastModified},
+		);
+	}
+	return [key, file];
+}
+
+const kEntryList = Symbol("the entry list");
+
+interface FormData {
+	[kEntryList]: FormDataEntry[];
+}
+
+/** A list of names and values, the shape a form submission is sent in. */
+class FormData {
+	constructor() {
+		this[kEntryList] = [];
+	}
+
+	append(name: string, value: string | Blob): void;
+	append(name: string, value: string): void;
+	append(name: string, blobValue: Blob, filename?: string): void;
+	append(name: string, value: string | Blob, filename?: string): void {
+		if (arguments.length < 2) {
+			throw new TypeError("append needs a name and a value");
+		}
+		this[kEntryList].push(createEntry(name, value, filename));
+	}
+
+	delete(name: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("delete needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		this[kEntryList] = this[kEntryList].filter(([key]) => key !== wanted);
+	}
+
+	get(name: string): globalThis.FormDataEntryValue | null {
+		if (arguments.length < 1) {
+			throw new TypeError("get needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		const found = this[kEntryList].find(([key]) => key === wanted);
+		return found === undefined ? null : found[1];
+	}
+
+	getAll(name: string): globalThis.FormDataEntryValue[] {
+		if (arguments.length < 1) {
+			throw new TypeError("getAll needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		return this[kEntryList]
+			.filter(([key]) => key === wanted).map(([, value]) => value);
+	}
+
+	has(name: string): boolean {
+		if (arguments.length < 1) {
+			throw new TypeError("has needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		return this[kEntryList].some(([key]) => key === wanted);
+	}
+
+	set(name: string, value: string | Blob): void;
+	set(name: string, value: string): void;
+	set(name: string, blobValue: Blob, filename?: string): void;
+	set(name: string, value: string | Blob, filename?: string): void {
+		if (arguments.length < 2) {
+			throw new TypeError("set needs a name and a value");
+		}
+		const entry = createEntry(name, value, filename);
+		const entries = this[kEntryList];
+		const at = entries.findIndex(([key]) => key === entry[0]);
+		if (at === -1) {
+			entries.push(entry);
+			return;
+		}
+		entries[at] = entry;
+		this[kEntryList] = entries.filter(
+			(held, index) => index === at || held[0] !== entry[0],
+		);
+	}
+
+	forEach(
+		callbackfn: (
+			value: globalThis.FormDataEntryValue,
+			key: string,
+			parent: FormData,
+		) => void,
+		thisArg?: any,
+	): void {
+		if (typeof callbackfn !== "function") {
+			throw new TypeError("forEach needs a function");
+		}
+		for (let index = 0; index < this[kEntryList].length; index++) {
+			const [key, value] = this[kEntryList][index];
+			callbackfn.call(thisArg, value, key, this);
+		}
+	}
+
+	entries(): FormDataIterator<[string, globalThis.FormDataEntryValue]> {
+		return this[kEntryList]
+			.map(([key, value]): [string, globalThis.FormDataEntryValue] =>
+				[key, value])[Symbol.iterator]();
+	}
+
+	keys(): FormDataIterator<string> {
+		return this[kEntryList].map(([key]) => key)[Symbol.iterator]();
+	}
+
+	values(): FormDataIterator<globalThis.FormDataEntryValue> {
+		return this[kEntryList].map(
+			([, value]): globalThis.FormDataEntryValue => value,
+		)[Symbol.iterator]();
+	}
+
+	[Symbol.iterator](): FormDataIterator<
+		[string, globalThis.FormDataEntryValue]
+	> {
+		return this.entries();
+	}
+}
+
+Object.defineProperty(FormData.prototype, Symbol.toStringTag, {
+	value: "FormData",
+	configurable: true,
+});
+
 // WebIDL has this inherit HTMLCollection, so it does. What it returns
 // for a shared name is wider than the inherited return type, which a
 // subclass cannot declare in TypeScript, so the merged interface below
@@ -30657,6 +30812,7 @@ export class Window extends EventTarget {
 	declare DataTransferItem: typeof DataTransferItem;
 	declare DataTransferItemList: typeof DataTransferItemList;
 	declare FileList: typeof FileList;
+	declare FormData: typeof FormData;
 	declare Clipboard: typeof Clipboard;
 	declare ClipboardItem: typeof ClipboardItem;
 	declare Permissions: typeof Permissions;
@@ -31542,6 +31698,7 @@ const platform = {
 	EventTarget,
 	FileList,
 	FocusEvent,
+	FormData,
 	HTMLAnchorElement,
 	HTMLAreaElement,
 	HTMLAudioElement,
@@ -31776,6 +31933,7 @@ export type {
 	HTMLFontElement,
 	HTMLFormElement,
 	SubmitEvent,
+	FormData,
 	HTMLFormControlsCollection,
 	RadioNodeList,
 	HTMLFrameElement,
