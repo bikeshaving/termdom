@@ -1,24 +1,12 @@
 name: Release
 
-# The only way @b9g/termdom reaches npm - and CI can only STAGE, never make a
-# version live.
-#
-# Trigger by publishing a GitHub Release, which creates the tag, or from
-# Actions -> Release -> Run workflow. The job runs straight through to
-# `libuild stage`: the version lands on the registry in a not-installable
-# state, and only a human running `npm stage approve <id>` makes it live.
-# That approval always prompts for 2FA, in the CLI and on the website, so no
-# automation can do it. Staging is the only gate: the `npm` environment
-# exists for the trusted-publisher binding and must carry no protection
-# rules.
-#
-# Restrict this repo's npm trusted publisher to the `npm stage publish` action
-# only. Without that, CI regains the ability to publish directly.
+# Publishing a GitHub Release stages the version on npm with provenance.
+# It goes live only when a person runs `npm stage approve`, which asks
+# for 2FA.
 
 on:
   release:
     types: [published]
-  workflow_dispatch:
 
 jobs:
   stage:
@@ -36,23 +24,16 @@ jobs:
         with:
           node-version: 24
 
-      # Trusted publishing needs npm 11.5.1+, and staged publishing 11.15.0+
-      # (libuild stage checks and says so). libuild spawns `npm`, so the
-      # upgraded binary has to be the one on PATH.
+      # Staged publishing needs npm 11.15 or later.
       - run: npm install -g npm@latest
 
       - run: bun install --frozen-lockfile
 
       - run: bun run build
 
-      # The same script a human runs locally, so CI cannot drift from the
-      # command you debug with.
       - run: bun run test
 
-      # A mistyped tag would otherwise stage whatever the manifest says, and
-      # the GitHub Release would then claim a version npm never received.
       - name: Check the tag matches the version
-        if: github.event_name == 'release'
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           PKG="$(node -p "require('./package.json').version")"
@@ -61,17 +42,4 @@ jobs:
             exit 1
           fi
 
-      # The release is created after approval as the record of a version that
-      # is already live, so a release-triggered run has nothing to stage.
-      - name: Skip staging when the version is already published
-        id: published
-        run: |
-          PKG="$(node -p "require('./package.json').version")"
-          if npm view "@b9g/termdom@$PKG" version > /dev/null 2>&1; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Provenance comes from the OIDC attestation; the trusted publisher
-      # mints the token, so no npm secret exists anywhere in this repo.
-      - if: steps.published.outputs.skip != 'true'
-        run: npx libuild stage
+      - run: npx libuild stage
