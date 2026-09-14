@@ -2573,7 +2573,7 @@ interface BreakPoint {
 // One laid-out line of a text node. The raw-data range begins and ends
 // on a rendered character, so renderTextFragment over it reproduces the
 // painted characters.
-interface LineFragment {
+export interface LineFragment {
 	rect: DOMRect;
 
 	// Data offset of the line's first character / caret slot.
@@ -4784,6 +4784,30 @@ export class Layout {
 		return {from: start, to: end};
 	}
 
+	/** Whether the inline children of this element lay out on its own lines. */
+	isRunContainer(element: Element): boolean {
+		return isRunContainer(this, element);
+	}
+
+	/**
+	 * Where every line of this container's runs paints, keyed by the text
+	 * node that renders it. What the painter draws from, in place of a
+	 * lookup per text node. Null when the container's boxes have not been
+	 * derived, which leaves the geometry to be resolved per text node.
+	 */
+	runFragments(element: Element): Map<Node, LineFragment[]> | null {
+		const box = this[kBoxes].get(element);
+		if (!box?.children || !this[kDerivedContainers].has(element)) {
+			return null;
+		}
+		const fragments = new Map<Node, LineFragment[]>();
+		// A blockified inline heads a run of its own, on a principal box.
+		for (const child of box.children) {
+			collectRunFragments(this, child, fragments);
+		}
+		return fragments;
+	}
+
 	// The one place laid-out lines get their data ranges. Range geometry,
 	// the caret, the painter and textarea navigation all read them here.
 	// Two lines exist that no layout fragment produces (the row after a
@@ -5696,6 +5720,186 @@ function hitTestContext(
 		}
 	}
 	return null;
+}
+
+const NO_OFFSET = {x: 0, y: 0};
+
+// Where the inline children of this element are laid out, matching what
+// getRunContainerFromParent accepts for a text node.
+function isRunContainer(layout: Layout, element: Element): boolean {
+	if (isDisplayContents(element)) {
+		return false;
+	}
+	if (isOutOfFlow(element)) {
+		return true;
+	}
+	const display = getComputedDisplay(element);
+	if (display === "inline") {
+		return false;
+	}
+	if (isAtomicInline(display)) {
+		return Boolean(layout[kBoxes].get(element)?.independentFormattingContext);
+	}
+	return true;
+}
+
+// Every line fragment one run paints, keyed by the node that renders it.
+// The geometry is getRectTexts', resolved for the whole run at once:
+// the origin and the alignment of a line are read once rather than once
+// per text node under it.
+function collectRunFragments(
+	layout: Layout,
+	run: Box,
+	fragments: Map<Node, LineFragment[]>,
+): void {
+	const breakResult = run.fragments;
+	const runHead = run.kind === "anonymous" ? run.members[0] : run.node;
+	if (!breakResult || !runHead) {
+		return;
+	}
+	const layoutNode = getOwnLayoutNode(layout, run);
+	if (!layoutNode) {
+		return;
+	}
+	const origin = getRunOrigin(layout, runHead, layoutNode);
+	// getDocumentPosition gives the border box, and a blockified inline
+	// flex item reserved padding and border in it that its text ignored.
+	if (runHead.nodeType === runHead.ELEMENT_NODE) {
+		const headElement = runHead as Element;
+		if (
+			getComputedDisplay(headElement) === "inline" && hasItemParent(headElement)
+		) {
+			const headBox = getBoxModel(headElement);
+			origin.x += headBox.paddingLeft + headBox.borderLeftWidth;
+			origin.y += headBox.paddingTop + headBox.borderTopWidth;
+		}
+	}
+
+	// position:relative on a run member shifts its painted fragments. The
+	// box-less ancestors up to the run head accumulate offsets.
+	const shifts = new Map<Element, {x: number; y: number}>();
+	const relativeShift = (start: Element | null): {x: number; y: number} => {
+		if (!start || start === runHead || layout[kNodeMap].has(start)) {
+			return NO_OFFSET;
+		}
+		const known = shifts.get(start);
+		if (known) {
+			return known;
+		}
+		const inherited = relativeShift(flatParentElement(start));
+		let {x, y} = inherited;
+		if (getPosition(start) === "relative") {
+			const left = CSSValues.parseSignedUnitValue(
+				getComputedValue(start, "left"),
+			);
+			const top = CSSValues.parseSignedUnitValue(
+				getComputedValue(start, "top"),
+			);
+			if (typeof left === "number") {
+				x += left;
+			}
+			if (typeof top === "number") {
+				y += top;
+			}
+		}
+		const shift = {x, y};
+		shifts.set(start, shift);
+		return shift;
+	};
+
+	// One line's share of one node, merged across the segments it broke
+	// into there.
+	interface Merged {
+		minX: number;
+		maxX: number;
+		startOffset: number;
+		endOffset: number;
+		visualBase: "ltr" | "rtl" | null;
+	}
+
+	const emit = (
+		result: BreakResult,
+		baseX: number,
+		baseY: number,
+		alignContainer: Element | null,
+	): void => {
+		for (let i = 0; i < result.lines.length; i++) {
+			const line = result.lines[i];
+			const merged = new Map<Node, Merged>();
+			for (const segment of line.segments) {
+				const leaf = segment.leaf;
+				if (leaf.type === "inline-block") {
+					// To the CONTENT edge. Border and padding occupy cells. A
+					// windowed value shifts its content by its own scroll.
+					if (leaf.breakResult) {
+						emit(
+							leaf.breakResult,
+							baseX +
+							segment.x +
+							leaf.boxModel.paddingLeft +
+							leaf.boxModel.borderLeftWidth -
+							(leaf.node.scrollLeft || 0),
+							baseY +
+							line.y +
+							leaf.boxModel.paddingTop +
+							leaf.boxModel.borderTopWidth -
+							(leaf.node.scrollTop || 0),
+							leaf.node,
+						);
+					}
+					continue;
+				}
+				const node = leaf.node as Node;
+				const entry = merged.get(node);
+				if (entry === undefined) {
+					merged.set(node, {
+						minX: segment.x,
+						maxX: segment.x + segment.width,
+						startOffset: segment.dataStart,
+						endOffset: segment.dataEnd,
+						visualBase: segment.visualBase,
+					});
+				} else {
+					entry.minX = Math.min(entry.minX, segment.x);
+					entry.maxX = Math.max(entry.maxX, segment.x + segment.width);
+					entry.endOffset = segment.dataEnd;
+				}
+			}
+			if (merged.size === 0) {
+				continue;
+			}
+			const alignOffset = getLineAlignOffset(
+				alignContainer,
+				result.containerWidth,
+				line.width,
+			);
+			const indent = getLineIndent(
+				i === 0,
+				alignContainer,
+				result.containerWidth,
+			);
+			for (const [node, entry] of merged) {
+				const shift = relativeShift(flatParentElement(node));
+				let lines = fragments.get(node);
+				if (!lines) {
+					fragments.set(node, (lines = []));
+				}
+				lines.push({
+					rect: new layout[kDOMRect](
+						baseX + entry.minX + alignOffset + indent + shift.x,
+						baseY + line.y + shift.y,
+						entry.maxX - entry.minX,
+						line.height,
+					),
+					startOffset: entry.startOffset,
+					endOffset: entry.endOffset,
+					visualBase: entry.visualBase,
+				});
+			}
+		}
+	};
+
+	emit(breakResult, origin.x, origin.y, flatParentElement(runHead));
 }
 
 // Nothing outside layout may reason about processed text. Geometry

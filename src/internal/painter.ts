@@ -25,6 +25,7 @@ import {
 	isPositioned,
 	isStackingContext,
 	type Layout,
+	type LineFragment,
 	renderTextFragment,
 } from "./layout.ts";
 import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
@@ -385,6 +386,9 @@ const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
 const kHighlightedText = Symbol("highlightedText");
 const kHighlightStyles = Symbol("highlightStyles");
+const kRunFragments = Symbol("runFragments");
+
+const NO_FRAGMENTS: LineFragment[] = [];
 
 export interface Painter {
 	[kWindow]: Window;
@@ -400,6 +404,9 @@ export interface Painter {
 	[kScrolledRows]: number;
 	[kHighlightedText]: Map<Text, HighlightRun[]>;
 	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
+	// The lines of the run container the walk is inside, resolved once for
+	// the whole run. Null above the first container of a frame.
+	[kRunFragments]: Map<Node, LineFragment[]> | null;
 }
 
 /** One registered highlight's share of one text node, in paint order. */
@@ -421,6 +428,7 @@ export class Painter {
 		this[kScrolledRows] = 0;
 		this[kHighlightedText] = new Map();
 		this[kHighlightStyles] = new Map();
+		this[kRunFragments] = null;
 		this[kWindow] = document.defaultView as unknown as Window;
 		this[kDocument] = document;
 		this[kLayout] = layout;
@@ -491,6 +499,7 @@ export class Painter {
 		this[kScrolledRows] = 0;
 		this[kHighlightedText] = collectHighlightedText(this[kDocument]);
 		this[kHighlightStyles] = new Map();
+		this[kRunFragments] = null;
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		renderStackingContext(this, this[kDocument].body, ctx, layers);
 		const rendered = renderedTopLayer(this[kDocument]) as unknown as Element[];
@@ -764,6 +773,13 @@ function renderElement(
 	);
 	painter[kScrolledRows] = scrolledRows + ownScrolledRows;
 
+	// A run's lines are resolved once here, not once per text node under
+	// it. Inline descendants keep painting from their container's.
+	const previousFragments = painter[kRunFragments];
+	if (children.length > 0 && painter[kLayout].isRunContainer(element)) {
+		painter[kRunFragments] = painter[kLayout].runFragments(element);
+	}
+
 	try {
 		for (const childNode of children) {
 			if (childNode.nodeType === childNode.ELEMENT_NODE) {
@@ -779,6 +795,7 @@ function renderElement(
 	} finally {
 		ctx.clipRect = previousClip;
 		painter[kScrolledRows] = scrolledRows;
+		painter[kRunFragments] = previousFragments;
 	}
 
 	// An outline repaints a bordered box's ring in its color. A borderless
@@ -916,6 +933,10 @@ function renderStackingContext(
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
 		const previousScrolled = painter[kScrolledRows];
+		const previousFragments = painter[kRunFragments];
+		// Entered from its stacking context, so the run its inline content
+		// belongs to is not the one the walk is standing in.
+		painter[kRunFragments] = null;
 		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
 		// Entered from its stacking context, not its ancestor chain.
 		painter[kScrolledRows] = painter[kLayout].scrolledAncestorRows(element);
@@ -934,6 +955,7 @@ function renderStackingContext(
 			ctx.clipRect = previousClip;
 			ctx.viewportOffset = previousOffset;
 			painter[kScrolledRows] = previousScrolled;
+			painter[kRunFragments] = previousFragments;
 		}
 	};
 	renderElement(painter, root, ctx, () => {
@@ -1047,7 +1069,10 @@ function renderText(painter: Painter, textNode: Text, ctx: CellContext): void {
 	// One fragment per line, each naming the range of `data` it renders.
 	// The characters come from the node under its own white-space.
 	const whiteSpace = getComputedValue(parentElement, "white-space");
-	const fragments = painter[kLayout].lineFragments(textNode);
+	const runFragments = painter[kRunFragments];
+	const fragments = runFragments === null
+		? painter[kLayout].lineFragments(textNode)
+		: (runFragments.get(textNode) ?? NO_FRAGMENTS);
 	let painted = false;
 	for (const fragment of fragments) {
 		if (fragment.endOffset <= fragment.startOffset) {
