@@ -112,6 +112,18 @@ const INTERACTIVE: Record<string, (cmd: string) => Promise<string | null>> = {
 		}
 		return null;
 	},
+	"codemirror.ts": async (cmd) => {
+		await launch(cmd, 4000);
+		tmux(`send-keys -t ${SESSION} Down Down End`);
+		await sleep(400);
+		tmux(`send-keys -t ${SESSION} " // noon"`);
+		await sleep(1000);
+		const text = capture();
+		if (!text.includes('"afternoon"; // noon') || !/Ln 3, Col \d+/.test(text)) {
+			return `the editor did not take the edit:\n${text.slice(0, 400)}`;
+		}
+		return null;
+	},
 	"highlights.ts": async (cmd) => {
 		await launch(cmd, 3000);
 		tmux(`send-keys -t ${SESSION} "error"`);
