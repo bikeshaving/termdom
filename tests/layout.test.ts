@@ -1367,6 +1367,42 @@ test("an overlay with no insets paints on the row its flow position names", asyn
 	termdom.dispose();
 });
 
+test("a negative inset moves a box up and left", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const termdom = new TermDOM({transport: terminal.transport});
+	termdom.document.head.innerHTML =
+		"<style>" +
+		".box { position: relative; border: 1px solid; padding: 0 1ch; " +
+		"margin-top: 1px }" +
+		".title { position: absolute; top: -1px; left: 3ch }" +
+		".nudged { position: relative; top: -1px; left: -1ch }" +
+		"</style>";
+	termdom.document.body.innerHTML =
+		"<div class=\"box\"><span class=\"title\"> title </span>" +
+		"<div>body text</div></div>";
+	await nextFrame(termdom);
+
+	// The title sits on the box's top border row, three cells into the
+	// padding box, which starts inside the border.
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[1]).toBe("┌───title────────────────────┐");
+	expect(rows[2]).toContain("body text");
+	const title = termdom.document.querySelector(".title")!;
+	expect([
+		title.getBoundingClientRect().top,
+		title.getBoundingClientRect().left,
+	])
+		.toEqual([1, 4]);
+
+	const body = termdom.document.querySelector(".box > div")!;
+	const before = body.getBoundingClientRect();
+	body.className = "nudged";
+	await nextFrame(termdom);
+	const after = body.getBoundingClientRect();
+	expect([after.top - before.top, after.left - before.left]).toEqual([-1, -1]);
+	termdom.dispose();
+});
+
 test("box-sizing decides what a declared width names", async () => {
 	const termdom = new TermDOM({transport: new MockProcess().transport});
 	const {document, window} = termdom;

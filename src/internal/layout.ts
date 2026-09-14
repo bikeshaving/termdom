@@ -554,7 +554,9 @@ function applyInsets(
 	autoWhenUnset: boolean,
 ): void {
 	for (const edge of edges) {
-		const value = CSSValues.parseUnitValue(getComputedValue(element, edge));
+		const value = CSSValues.parseSignedUnitValue(
+			getComputedValue(element, edge),
+		);
 		if (value !== null) {
 			style.position[edge] = toValue(value);
 		} else if (autoWhenUnset) {
@@ -5877,8 +5879,12 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		ancestor = flatParentElement(ancestor)
 	) {
 		if (getPosition(ancestor) === "relative") {
-			const left = CSSValues.parseUnitValue(getComputedValue(ancestor, "left"));
-			const top = CSSValues.parseUnitValue(getComputedValue(ancestor, "top"));
+			const left = CSSValues.parseSignedUnitValue(
+				getComputedValue(ancestor, "left"),
+			);
+			const top = CSSValues.parseSignedUnitValue(
+				getComputedValue(ancestor, "top"),
+			);
 			if (typeof left === "number") {
 				containerX += left;
 			}
