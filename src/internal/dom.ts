@@ -8133,7 +8133,9 @@ function changeAttribute(attribute: Attr, value: string): void {
 		attribute[kNamespace],
 	);
 	syncAttributeCollections(element, attribute[kLocalName]);
-	notifyAttributeChange(element, attribute[kLocalName]);
+	if (value !== oldValue) {
+		notifyAttributeChange(element, attribute[kLocalName]);
+	}
 }
 
 function appendAttribute(element: Element, attribute: Attr): void {
