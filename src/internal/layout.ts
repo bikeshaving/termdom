@@ -285,13 +285,17 @@ function isSpacePreserving(whiteSpace: string): boolean {
 	);
 }
 
-const COLLAPSIBLE_RUN = /\s+/g;
-const PRE_LINE_RUN = /[^\S\n]+/g;
+// css-text-3 §4.1.1 names the characters that collapse. A no-break
+// space and the fixed-width spaces are content, whatever white-space
+// says.
+const COLLAPSIBLE_RUN = /[ \t\n\r\f]+/g;
+const PRE_LINE_RUN = /[ \t\r\f]+/g;
+const COLLAPSIBLE_ONLY = /^[ \t\n\r\f]*$/;
 
 // Whether rendering would change anything: two collapsible characters
 // in a row, or one that is not already the space it collapses to.
-const COLLAPSES = /\s\s|[^\S ]/;
-const PRE_LINE_COLLAPSES = /[^\S\n][^\S\n]|[^\S\n ]/;
+const COLLAPSES = /[ \t\n\r\f][ \t\n\r\f]|[\t\n\r\f]/;
+const PRE_LINE_COLLAPSES = /[ \t\r\f][ \t\r\f]|[\t\r\f]/;
 
 // Stateful (`g`). Reset lastIndex before scanning.
 function getCollapsiblePattern(whiteSpace: string): RegExp {
@@ -388,7 +392,7 @@ export function renderTextFragment(
 // White space renders nothing where the run it would open has no
 // content to sit beside (css2 §9.4.2 with css-text-3 §4.1.1).
 function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
-	if (!textNode.textContent || !/^\s*$/.test(textNode.textContent)) {
+	if (!textNode.textContent || !COLLAPSIBLE_ONLY.test(textNode.textContent)) {
 		return false;
 	}
 
@@ -473,7 +477,7 @@ function isSuppressedFlexWhitespace(text: Text): boolean {
 	}
 	for (let node: Node | null = text; node; node = node.nextSibling) {
 		if (node.nodeType === node.TEXT_NODE) {
-			if ((node as Text).data.trim() !== "") {
+			if (!COLLAPSIBLE_ONLY.test((node as Text).data)) {
 				return false;
 			}
 			continue;
@@ -2754,7 +2758,7 @@ function collectLeaves(
 			const textNode = node as Text;
 
 			if (textNode.textContent) {
-				const isWhitespaceOnly = /^\s*$/.test(textNode.textContent);
+				const isWhitespaceOnly = COLLAPSIBLE_ONLY.test(textNode.textContent);
 
 				if (isWhitespaceOnly && shouldCollapseWhitespaceTextNode(textNode)) {
 					cursor = flowNext(node, root, false);
