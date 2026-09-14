@@ -4703,9 +4703,13 @@ export class Layout {
 
 	/** The zero-width rect of a caret at the point, in a text node only. */
 	getCaretRect(node: Node, offset: number): DOMRect | null {
-		return node.nodeType === node.TEXT_NODE
-			? getCaretRectInFragment(this, node as Text, offset)
-			: null;
+		if (node.nodeType === node.TEXT_NODE) {
+			return getCaretRectInFragment(this, node as Text, offset);
+		}
+		const point = textPointAt(node, offset);
+		return point === null
+			? null
+			: getCaretRectInFragment(this, point[0], point[1]);
 	}
 
 	// The text lets a caller repaint the run in the selection style.
@@ -5440,6 +5444,47 @@ function rangeTextNodes(layout: Layout, range: Range): Text[] {
 		}
 	}
 	return nodes;
+}
+
+// A point in an element names the seam between two children. The
+// caret shows at the end of the text the seam follows, else at the start
+// of the text it precedes.
+function textPointAt(node: Node, offset: number): [Text, number] | null {
+	const children = node.childNodes;
+	const before = offset > 0 ? lastTextIn(children[offset - 1]) : null;
+	if (before !== null) {
+		return [before, before.data.length];
+	}
+	const after = offset < children.length ? firstTextIn(children[offset]) : null;
+	return after === null ? null : [after, 0];
+}
+
+function firstTextIn(node: Node): Text | null {
+	if (node.nodeType === node.TEXT_NODE) {
+		return node as Text;
+	}
+	for (let child = node.firstChild; child !== null; child = child.nextSibling) {
+		const text = firstTextIn(child);
+		if (text !== null) {
+			return text;
+		}
+	}
+	return null;
+}
+
+function lastTextIn(node: Node): Text | null {
+	if (node.nodeType === node.TEXT_NODE) {
+		return node as Text;
+	}
+	for (let child = node.lastChild;
+		child !== null;
+		child = child.previousSibling) {
+		const text = lastTextIn(child);
+		if (text !== null) {
+			return text;
+		}
+	}
+	return null;
 }
 
 function getCaretRectInFragment(

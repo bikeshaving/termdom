@@ -87,6 +87,21 @@ test("focusing a host skips the whitespace between its blocks", async () => {
 	fixture.dom.dispose();
 });
 
+test("a caret at an element point paints beside the text it touches", async () => {
+	const fixture = await withHost("<div contenteditable><div>abc</div></div>");
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const line = host.firstChild!;
+	document.getSelection()!.setBaseAndExtent(line, 1, line, 1);
+	await nextFrame(fixture.dom);
+	expect(fixture.cursor().x).toBe(3);
+	document.getSelection()!.setBaseAndExtent(line, 0, line, 0);
+	await nextFrame(fixture.dom);
+	expect(fixture.cursor().x).toBe(0);
+	fixture.dom.dispose();
+});
+
 test("a focused host parks the terminal cursor at the caret", async () => {
 	const fixture =
 		await withHost("<div>title</div><div contenteditable>hello</div>");
