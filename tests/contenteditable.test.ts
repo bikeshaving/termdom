@@ -329,6 +329,26 @@ test("the caret stays inside the host when a motion would leave it", async () =>
 	fixture.dom.dispose();
 });
 
+test("the arrows visit an empty block and the cursor sits on its row", async () => {
+	const fixture = await withHost(
+		"<div contenteditable><div>one</div><div><br></div><div>three</div></div>",
+	);
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const empty = host.childNodes[1];
+	await fixture.type("\x1b[B");
+	expect(caret(document)).toEqual({node: empty, offset: 0});
+	expect(fixture.cursor()).toEqual({x: 0, y: 1});
+	await fixture.type("\x1b[B");
+	expect(
+		caret(document),
+	).toEqual({node: host.lastChild!.firstChild, offset: 0});
+	await fixture.type("\x1b[A");
+	expect(caret(document)).toEqual({node: empty, offset: 0});
+	fixture.dom.dispose();
+});
+
 test("Ctrl+W, Ctrl+U and Ctrl+K delete by word and by line", async () => {
 	const fixture = await withHost("<div contenteditable>one two three</div>");
 	const {document, host} = fixture;

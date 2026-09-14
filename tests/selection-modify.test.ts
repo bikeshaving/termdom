@@ -248,6 +248,32 @@ test("a line's ends and a line move stay on the caret's own block", async () => 
 	dom.dispose();
 });
 
+test("an empty line is a place the caret can rest", async () => {
+	const {dom, document} = await attached("<p>one</p><p><br></p><p>three</p>");
+	const one = document.body.childNodes[0].firstChild;
+	const empty = document.body.childNodes[1];
+	const three = document.body.childNodes[2].firstChild;
+	const selection = document.getSelection()!;
+	selection.setBaseAndExtent(one, 0, one, 0);
+	selection.modify("move", "forward", "line");
+	expect([selection.focusNode, selection.focusOffset]).toEqual([empty, 0]);
+	selection.modify("move", "forward", "line");
+	expect([selection.focusNode, selection.focusOffset]).toEqual([three, 0]);
+	selection.modify("move", "backward", "line");
+	expect([selection.focusNode, selection.focusOffset]).toEqual([empty, 0]);
+	// Right and Left step onto the empty line and off it, one press each.
+	selection.setBaseAndExtent(one, 3, one, 3);
+	selection.modify("move", "forward", "character");
+	expect([selection.focusNode, selection.focusOffset]).toEqual([empty, 0]);
+	selection.modify("move", "forward", "character");
+	expect([selection.focusNode, selection.focusOffset]).toEqual([three, 0]);
+	selection.modify("move", "backward", "character");
+	expect([selection.focusNode, selection.focusOffset]).toEqual([empty, 0]);
+	selection.modify("move", "backward", "character");
+	expect([selection.focusNode, selection.focusOffset]).toEqual([one, 3]);
+	dom.dispose();
+});
+
 test("a modified selection paints where it now is", async () => {
 	const terminal = new MockProcess({cols: 12, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
