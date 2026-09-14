@@ -88,7 +88,7 @@ function getLegacyKeyCode(keyName: string): number {
 
 // What Tab traverses and what a mousedown focuses.
 const FOCUSABLE_SELECTOR =
-	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
+	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
 
 // `barrier` is the nearest scope owner above with a negative tabindex.
 // The stop cannot be tabbed into from outside, but focus scripted inside

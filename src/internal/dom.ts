@@ -28,6 +28,7 @@ import {
 	SelectorError,
 } from "./cssselectors.ts";
 import * as CSSValues from "./cssvalues.ts";
+import {installEditing} from "./editing.ts";
 import type {Exchange} from "./exchange.ts";
 import {
 	getInterface,
@@ -22028,6 +22029,7 @@ const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
 const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
+const kDesignMode = Symbol("whether the whole document is editable");
 
 /**
  * The event handler attributes installed on the prototype below, and the
@@ -22053,6 +22055,7 @@ export interface Document {
 	[kContentType]: string;
 	[kEncoding]: string;
 	[kIdMap]: Map<string, Element[]>;
+	[kDesignMode]: boolean;
 	[kDocumentWideLists]: Set<LiveCollection> | null;
 	[kSelection]: Selection | null;
 	[kSelectionChangeScheduled]: boolean;
@@ -22204,6 +22207,7 @@ export class Document extends Node implements globalThis.Document {
 		this[kContentType] = "application/xml";
 		this[kEncoding] = "UTF-8";
 		this[kIdMap] = new Map<string, Element[]>();
+		this[kDesignMode] = false;
 		this[kSelection] = null;
 		this[kSelectionChangeScheduled] = false;
 		this[kHighlights] = null;
@@ -22643,12 +22647,17 @@ export class Document extends Node implements globalThis.Document {
 		return "complete";
 	}
 
-	/** Nothing here is editable through execCommand. */
+	/** On makes the body an editing host. Only "on" and "off" mean anything. */
 	get designMode(): string {
-		return "off";
+		return this[kDesignMode] ? "on" : "off";
 	}
 
-	set designMode(_value: string) {}
+	set designMode(value: string) {
+		const state = toASCIILowercase(String(value));
+		if (state === "on" || state === "off") {
+			this[kDesignMode] = state === "on";
+		}
+	}
 
 	/** Script does not run while this document is built. */
 	get currentScript(): globalThis.HTMLOrSVGScriptElement | null {
@@ -29585,6 +29594,7 @@ export function attachDocument(
 		exchange.addEventListener(type, onTextControlEditEvent);
 	}
 	exchange.addEventListener("toggle", onDisclosureToggle);
+	installEditing(exchange);
 	hoverListenerCounts.set(
 		attached,
 		watchHoverListeners(attached, () => render()),
