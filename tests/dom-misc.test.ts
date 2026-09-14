@@ -203,3 +203,17 @@ test("the element tables reflect headers, lowsrc and scrollAmount", () => {
 	marquee.setAttribute("scrollamount", "12");
 	expect(marquee.scrollAmount).toBe(12);
 });
+
+test("document.fonts is an empty set that is already loaded", async () => {
+	const {document} = createWindow("<!DOCTYPE html><body></body>");
+	const fonts = document.fonts;
+	expect(String(fonts)).toBe("[object FontFaceSet]");
+	expect(document.fonts).toBe(fonts);
+	expect(fonts.status).toBe("loaded");
+	expect(fonts.size).toBe(0);
+	expect([...fonts]).toEqual([]);
+	expect(fonts.check("12px serif")).toBe(true);
+	expect(await fonts.ready).toBe(fonts);
+	expect(await fonts.load("12px serif")).toEqual([]);
+	expect(() => fonts.add({} as FontFace)).toThrow(TypeError);
+});
