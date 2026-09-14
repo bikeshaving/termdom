@@ -4011,10 +4011,15 @@ export function isStateAttribute(name: string): boolean {
 // A change to a key a compound names can change whether the compound
 // matches.
 interface CompoundKeys {
+	tag: string | null;
 	classes: string[];
 	ids: string[];
 	attributes: string[];
 	states: boolean;
+	// Whether matching this compound reads the element's siblings or
+	// children: it follows a sibling combinator, or tests a tree-structural
+	// pseudo-class or :empty.
+	siblingTested: boolean;
 }
 
 // The subject is the last compound.
@@ -4025,6 +4030,36 @@ export interface SelectorReading {
 	// Whether a match depends on the element's siblings or children: the
 	// sibling combinators, the tree-structural pseudo-classes and :empty.
 	reachesSiblings: boolean;
+	// Whether such a test sits on a compound other than the subject, so a
+	// change among one element's children can change its descendants'
+	// matches too.
+	siblingsReachDescendants: boolean;
+}
+
+const STRUCTURAL_PSEUDO = /^(?:nth-|first-|last-|only-|empty)/;
+
+function testsSiblings(nodes: CSSTree.SelectorNode[]): boolean {
+	for (const node of nodes) {
+		if (node.type === "Combinator") {
+			const name = String(node.name ?? "");
+			if (name === "+" || name === "~") {
+				return true;
+			}
+		} else if (node.type === "PseudoClassSelector") {
+			if (STRUCTURAL_PSEUDO.test(String(node.name ?? ""))) {
+				return true;
+			}
+			if (node.children && testsSiblings(getChildren(node))) {
+				return true;
+			}
+		} else if (
+			(node.type === "SelectorList" || node.type === "Selector") &&
+			testsSiblings(getChildren(node))
+		) {
+			return true;
+		}
+	}
+	return false;
 }
 
 // Includes pseudo-class arguments. A class inside :not() or :is() is
@@ -4046,6 +4081,14 @@ function harvestKeys(nodes: CSSTree.SelectorNode[], keys: CompoundKeys): void {
 				keys.attributes.push(
 					CSSTree.ident.decode(name.slice(name.indexOf("|") + 1)).toLowerCase(),
 				);
+				break;
+			}
+			case "TypeSelector": {
+				const name = String(node.name ?? "");
+				const local = name.slice(name.indexOf("|") + 1).toLowerCase();
+				if (local !== "*") {
+					keys.tag = local;
+				}
 				break;
 			}
 			case "PseudoClassSelector":
@@ -4092,6 +4135,7 @@ export function readSelector(selector: string): SelectorReading {
 			subjectTag: undefined,
 			compounds: [],
 			reachesSiblings,
+			siblingsReachDescendants: reachesSiblings,
 		};
 	}
 	const weight = getListSpecificity(list);
@@ -4101,20 +4145,26 @@ export function readSelector(selector: string): SelectorReading {
 	const complex = getChildren(list).find((child) => child.type === "Selector");
 	const compounds: CompoundKeys[] = [];
 	let parts: CSSTree.SelectorNode[] = [];
+	let afterSiblingCombinator = false;
 	const closeCompound = (): void => {
 		const keys: CompoundKeys = {
+			tag: null,
 			classes: [],
 			ids: [],
 			attributes: [],
 			states: false,
+			siblingTested: afterSiblingCombinator || testsSiblings(parts),
 		};
 		harvestKeys(parts, keys);
 		compounds.push(keys);
 		parts = [];
+		afterSiblingCombinator = false;
 	};
 	for (const part of complex ? getChildren(complex) : []) {
 		if (part.type === "Combinator") {
 			closeCompound();
+			const name = String(part.name ?? "");
+			afterSiblingCombinator = name === "+" || name === "~";
 		} else {
 			parts.push(part);
 		}
@@ -4125,6 +4175,9 @@ export function readSelector(selector: string): SelectorReading {
 		subjectTag: getSubjectTag(complex),
 		compounds,
 		reachesSiblings,
+		siblingsReachDescendants: compounds
+			.slice(0, -1)
+			.some((keys) => keys.siblingTested),
 	};
 }
 
