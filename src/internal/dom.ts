@@ -22,6 +22,7 @@ import {
 } from "./cssom.ts";
 import {
 	closestSelector,
+	getDirectionality,
 	matchesSelector,
 	selectAll,
 	selectFirst,
@@ -14479,11 +14480,33 @@ function appendFieldEntries(
 	}
 	if (field instanceof HTMLTextAreaElement) {
 		entries.push(createEntry(name, normalizeToCRLF(field.value)));
+		appendDirectionEntry(entries, field);
 		return;
 	}
 	entries.push(
 		createEntry(name, (field as HTMLInputElement | HTMLButtonElement).value),
 	);
+	if (
+		field instanceof HTMLInputElement && DIRNAME_INPUT_TYPES.has(field.type)
+	) {
+		appendDirectionEntry(entries, field);
+	}
+}
+
+const DIRNAME_INPUT_TYPES = new Set([
+	"text",
+	"search",
+	"tel",
+	"url",
+	"email",
+	"password",
+]);
+
+function appendDirectionEntry(entries: FormDataEntry[], field: Element): void {
+	const dirname = field.getAttribute("dirname");
+	if (dirname !== null && dirname !== "") {
+		entries.push(createEntry(dirname, getDirectionality(field)));
+	}
 }
 
 /**
