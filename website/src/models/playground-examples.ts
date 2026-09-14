@@ -33,6 +33,7 @@ const RUNNABLE = [
 	"fuzzy-finder",
 	"gradients",
 	"hacker-news",
+	"highlights",
 	"hover",
 	"lists",
 	"markdown",

@@ -355,6 +355,7 @@ export class TermDOM {
 		}
 		this[kCascade].dispose();
 		this[kLayout].dispose();
+		DOM.clearHighlights(this.document);
 		disconnectObservers(this.document);
 		return this[kExchange].flush();
 	}

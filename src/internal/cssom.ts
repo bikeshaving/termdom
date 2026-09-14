@@ -24,6 +24,7 @@ import {
 	ensurePseudoElement,
 	flatParentElement,
 	flushLayout,
+	getHighlightRegistry,
 	getPseudoHost,
 	getPseudoName,
 	getShadowRoot,
@@ -261,6 +262,18 @@ Object.defineProperty(CSSNamespace, Symbol.toStringTag, {
 	enumerable: false,
 	configurable: true,
 });
+
+// The highlight registry belongs to one document, so each window gets a
+// CSS of its own over the shared namespace rather than the namespace
+// itself.
+function createCSSNamespace(document: Document): typeof CSSNamespace {
+	const namespace = Object.create(CSSNamespace) as typeof CSSNamespace;
+	Object.defineProperty(namespace, "highlights", {
+		value: getHighlightRegistry(document),
+		enumerable: true,
+	});
+	return namespace;
+}
 
 const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 
@@ -5225,6 +5238,21 @@ export class Cascade {
 		return declaration;
 	}
 
+	/**
+	 * The properties a pseudo-element's own rules set on this element, empty
+	 * when no rule reaches it. Unlike getComputedValue, this does not fill in
+	 * the originating element's inherited values.
+	 */
+	declaredPseudoProperties(
+		element: Element,
+		pseudoElement: string,
+	): Set<string> {
+		parseStylesheetsIfStale(this);
+		return new Set(
+			Object.keys(computePseudoElementStyle(this, element, pseudoElement)),
+		);
+	}
+
 	// Only width/height features are meaningful on the one screen a
 	// terminal has. Every other feature matches rather than silently
 	// dropping rules. Public because window.matchMedia uses the SAME
@@ -5383,15 +5411,7 @@ export class Cascade {
 		}
 		// The UA shadow trees' sheets have no pseudo-generating rules, so the
 		// attach sweep runs only for an author shadow root that does.
-		if (
-			fresh.some(
-				(rule) =>
-					rule.pseudoElement &&
-					rule.pseudoElement !== "::placeholder" &&
-					rule.pseudoElement !== "::selection" &&
-					!rule.pseudoElement.startsWith("::part("),
-			)
-		) {
+		if (fresh.some((rule) => generatesPseudoElement(rule.pseudoElement))) {
 			attachPseudoElements(this);
 		}
 	}
@@ -5559,18 +5579,39 @@ function getPseudoDeclaration(
 	return declaration;
 }
 
+// A registered highlight name is a DOMString, so the escapes a selector
+// spells it with are not part of it: `::highlight(a\.b)` and
+// CSS.highlights.set("a.b", ...) name the same highlight.
+function unescapeHighlightName(pseudoElement: string): string {
+	const written = pseudoElement.match(/^::highlight\((.*)\)$/);
+	if (written === null) {
+		return pseudoElement;
+	}
+	return `::highlight(${CSSTree.ident.decode(written[1].trim())})`;
+}
+
+// True for a pseudo-element the tree needs a node of its own for. The
+// rest -- ::placeholder, ::selection, ::part() and ::highlight() --
+// style boxes that already exist.
+function generatesPseudoElement(
+	pseudoElement: string | undefined,
+): pseudoElement is string {
+	return Boolean(
+		pseudoElement &&
+		pseudoElement !== "::placeholder" &&
+		pseudoElement !== "::selection" &&
+		!pseudoElement.startsWith("::part(") &&
+		!pseudoElement.startsWith("::highlight("),
+	);
+}
+
 // Driven from the rules rather than the tree, so the walk costs what
 // the sheets ask for rather than what the document holds.
 function attachPseudoElementsToDocument(cascade: Cascade): void {
 	const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 
 	for (const rule of cascade[kParsedRules]) {
-		if (
-			rule.pseudoElement &&
-			rule.pseudoElement !== "::placeholder" &&
-			rule.pseudoElement !== "::selection" &&
-			!rule.pseudoElement.startsWith("::part(")
-		) {
+		if (generatesPseudoElement(rule.pseudoElement)) {
 			const rules = pseudoRulesByType.get(rule.pseudoElement) || [];
 			rules.push(rule);
 			pseudoRulesByType.set(rule.pseudoElement, rules);
@@ -5795,7 +5836,7 @@ function getResolvedStyle(
 				element,
 			) as unknown as globalThis.CSSStyleDeclaration;
 		}
-		pseudoElement = parsed;
+		pseudoElement = unescapeHighlightName(parsed);
 	}
 
 	if (pseudoElement) {
@@ -6912,7 +6953,8 @@ function parseSelector(
 	);
 
 	if (pseudoMatch) {
-		const [, baseSelector, pseudoElement] = pseudoMatch;
+		const [, baseSelector] = pseudoMatch;
+		const pseudoElement = unescapeHighlightName(pseudoMatch[2]);
 		const rule: ParsedCSSRule = {
 			// A pseudo-element written with no originating selector originates
 			// on every element, which is what `*` means.
@@ -7415,13 +7457,14 @@ const CSSOM_WINDOW_GLOBALS = {
 	MediaList,
 	CSSStyleDeclaration,
 	CSSStyleProperties,
-	CSS: CSSNamespace,
 };
 
 function setupInvalidationHooks(cascade: Cascade): void {
 	// An error thrown out of a constructed sheet belongs to this realm.
 	cssomWindow = cascade[kWindow];
-	Object.assign(cascade[kWindow], CSSOM_WINDOW_GLOBALS);
+	Object.assign(cascade[kWindow], CSSOM_WINDOW_GLOBALS, {
+		CSS: createCSSNamespace(cascade[kDocument]),
+	});
 }
 
 function parseCounterIncrement(

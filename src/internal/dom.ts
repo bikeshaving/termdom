@@ -22026,6 +22026,7 @@ function isHTMLDocument(document: Document): boolean {
 
 const kImplementation = Symbol("implementation");
 const kSelection = Symbol("the document's selection");
+const kHighlights = Symbol("the document's highlight registry");
 const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
 const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
@@ -22058,6 +22059,7 @@ export interface Document {
 	[kDocumentWideLists]: Set<LiveCollection> | null;
 	[kSelection]: Selection | null;
 	[kSelectionChangeScheduled]: boolean;
+	[kHighlights]: HighlightRegistry | null;
 	[kTemplateDocument]: Document | null;
 	[kActiveElement]: Element | null;
 	[kDefaultView]: object | null;
@@ -22207,6 +22209,7 @@ export class Document extends Node implements globalThis.Document {
 		this[kIdMap] = new Map<string, Element[]>();
 		this[kSelection] = null;
 		this[kSelectionChangeScheduled] = false;
+		this[kHighlights] = null;
 		this[kTemplateDocument] = null;
 		this[kActiveElement] = null;
 		this[kDefaultView] = null;
@@ -25833,6 +25836,7 @@ function rangeBoundaryPointsChanged(
 	if (selection !== null) {
 		selectionChanged(selection, which);
 	}
+	rangeHighlightsChanged(range);
 }
 
 /** At most one per task. */
@@ -26824,6 +26828,470 @@ Object.defineProperty(Selection.prototype, Symbol.toStringTag, {
 	value: "Selection",
 	configurable: true,
 });
+
+type HighlightType = "grammar-error" | "highlight" | "spelling-error";
+
+const HIGHLIGHT_TYPES = ["highlight", "spelling-error", "grammar-error"];
+
+const kHighlightRanges = Symbol("the ranges a highlight covers");
+const kHighlightPriority = Symbol("highlight priority");
+const kHighlightType = Symbol("highlight type");
+// The registries a highlight is registered in. A highlight belongs to no
+// document of its own, so this is the only way from a mutated highlight
+// to the screens that have to repaint.
+const kHighlightRegistries = Symbol("the registries holding this highlight");
+
+interface Highlight {
+	[kHighlightRanges]: Set<AbstractRange>;
+	[kHighlightPriority]: number;
+	[kHighlightType]: HighlightType;
+	[kHighlightRegistries]: Set<HighlightRegistry>;
+}
+
+/** A set of ranges to paint under one `::highlight()` name. */
+class Highlight {
+	declare readonly [Symbol.toStringTag]: string;
+
+	constructor(...initialRanges: AbstractRange[]) {
+		this[kHighlightRanges] = new Set<AbstractRange>();
+		this[kHighlightPriority] = 0;
+		this[kHighlightType] = "highlight";
+		this[kHighlightRegistries] = new Set<HighlightRegistry>();
+		for (const range of initialRanges) {
+			this.add(range);
+		}
+	}
+
+	get priority(): number {
+		return this[kHighlightPriority];
+	}
+
+	set priority(value: number) {
+		this[kHighlightPriority] = toLong(value);
+		highlightChanged(this);
+	}
+
+	get type(): HighlightType {
+		return this[kHighlightType];
+	}
+
+	set type(value: HighlightType) {
+		if (!HIGHLIGHT_TYPES.includes(String(value))) {
+			return;
+		}
+		this[kHighlightType] = String(value) as HighlightType;
+		highlightChanged(this);
+	}
+
+	get size(): number {
+		return this[kHighlightRanges].size;
+	}
+
+	add(range: AbstractRange): Highlight {
+		if (!(range instanceof AbstractRange)) {
+			throw new TypeError("That is not a range");
+		}
+		this[kHighlightRanges].add(range);
+		joinHighlight(range, this);
+		highlightChanged(this);
+		return this;
+	}
+
+	delete(range: AbstractRange): boolean {
+		if (arguments.length < 1) {
+			throw new TypeError("delete needs a range");
+		}
+		const deleted = this[kHighlightRanges].delete(range);
+		if (deleted) {
+			leaveHighlight(range, this);
+			highlightChanged(this);
+		}
+		return deleted;
+	}
+
+	has(range: AbstractRange): boolean {
+		if (arguments.length < 1) {
+			throw new TypeError("has needs a range");
+		}
+		return this[kHighlightRanges].has(range);
+	}
+
+	clear(): void {
+		if (this[kHighlightRanges].size === 0) {
+			return;
+		}
+		for (const range of this[kHighlightRanges]) {
+			leaveHighlight(range, this);
+		}
+		this[kHighlightRanges].clear();
+		highlightChanged(this);
+	}
+
+	forEach(
+		callback: (
+			value: AbstractRange,
+			key: AbstractRange,
+			parent: Highlight,
+		) => void,
+		thisArg?: any,
+	): void {
+		if (typeof callback !== "function") {
+			throw new TypeError("That is not a callback");
+		}
+		for (const range of [...this[kHighlightRanges]]) {
+			callback.call(thisArg, range, range, this);
+		}
+	}
+
+	keys(): SetIterator<globalThis.AbstractRange> {
+		return this[kHighlightRanges].values();
+	}
+
+	values(): SetIterator<globalThis.AbstractRange> {
+		return this[kHighlightRanges].values();
+	}
+
+	entries(): SetIterator<[globalThis.AbstractRange, globalThis.AbstractRange]> {
+		return this[kHighlightRanges].entries();
+	}
+
+	[Symbol.iterator](): SetIterator<globalThis.AbstractRange> {
+		return this[kHighlightRanges].values();
+	}
+}
+
+Object.defineProperty(Highlight.prototype, Symbol.toStringTag, {
+	value: "Highlight",
+	configurable: true,
+});
+
+const kHighlightsByName = Symbol("the highlights, in registration order");
+const kRegistryDocument = Symbol("the document a registry paints");
+
+interface HighlightRegistry {
+	[kHighlightsByName]: Map<string, Highlight>;
+	[kRegistryDocument]: Document;
+}
+
+/**
+ * A document's registered highlights, as `CSS.highlights`. Insertion
+ * ordered: two highlights of equal priority paint in the order their
+ * names were registered, so re-registering a name moves it last.
+ */
+class HighlightRegistry {
+	constructor() {
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kHighlightsByName] = new Map<string, Highlight>();
+		this[kRegistryDocument] = registryUnderConstruction as Document;
+	}
+
+	get size(): number {
+		return this[kHighlightsByName].size;
+	}
+
+	set(name: string, highlight: Highlight): HighlightRegistry {
+		if (arguments.length < 2) {
+			throw new TypeError("set needs a name and a highlight");
+		}
+		if (!(highlight instanceof Highlight)) {
+			throw new TypeError("That is not a highlight");
+		}
+		const key = String(name);
+		const previous = this[kHighlightsByName].get(key);
+		if (previous !== undefined) {
+			this[kHighlightsByName].delete(key);
+			dropRegistration(this, previous);
+		}
+		this[kHighlightsByName].set(key, highlight);
+		highlight[kHighlightRegistries].add(this);
+		invalidateHighlights(this[kRegistryDocument]);
+		return this;
+	}
+
+	get(name: string): Highlight | undefined {
+		if (arguments.length < 1) {
+			throw new TypeError("get needs a name");
+		}
+		return this[kHighlightsByName].get(String(name));
+	}
+
+	has(name: string): boolean {
+		if (arguments.length < 1) {
+			throw new TypeError("has needs a name");
+		}
+		return this[kHighlightsByName].has(String(name));
+	}
+
+	delete(name: string): boolean {
+		if (arguments.length < 1) {
+			throw new TypeError("delete needs a name");
+		}
+		const key = String(name);
+		const highlight = this[kHighlightsByName].get(key);
+		if (highlight === undefined) {
+			return false;
+		}
+		this[kHighlightsByName].delete(key);
+		dropRegistration(this, highlight);
+		invalidateHighlights(this[kRegistryDocument]);
+		return true;
+	}
+
+	clear(): void {
+		if (this[kHighlightsByName].size === 0) {
+			return;
+		}
+		const registered = [...this[kHighlightsByName].values()];
+		this[kHighlightsByName].clear();
+		for (const highlight of registered) {
+			dropRegistration(this, highlight);
+		}
+		invalidateHighlights(this[kRegistryDocument]);
+	}
+
+	forEach(
+		callback: (
+			value: Highlight,
+			key: string,
+			parent: HighlightRegistry,
+		) => void,
+		thisArg?: any,
+	): void {
+		if (typeof callback !== "function") {
+			throw new TypeError("That is not a callback");
+		}
+		for (const [name, highlight] of [...this[kHighlightsByName]]) {
+			callback.call(thisArg, highlight, name, this);
+		}
+	}
+
+	keys(): MapIterator<string> {
+		return this[kHighlightsByName].keys();
+	}
+
+	values(): MapIterator<globalThis.Highlight> {
+		return this[kHighlightsByName].values();
+	}
+
+	entries(): MapIterator<[string, globalThis.Highlight]> {
+		return this[kHighlightsByName].entries();
+	}
+
+	[Symbol.iterator](): MapIterator<[string, globalThis.Highlight]> {
+		return this[kHighlightsByName].entries();
+	}
+}
+
+Object.defineProperty(HighlightRegistry.prototype, Symbol.toStringTag, {
+	value: "HighlightRegistry",
+	configurable: true,
+});
+
+let registryUnderConstruction: Document | null = null;
+
+/** The document's registry, built on the first `CSS.highlights` read. */
+export function getHighlightRegistry(
+	document: globalThis.Document,
+): HighlightRegistry {
+	const owner = document as Document;
+	let registry = owner[kHighlights];
+	if (registry === null) {
+		registryUnderConstruction = owner;
+		try {
+			registry = constructInternal(() => new HighlightRegistry());
+		} finally {
+			registryUnderConstruction = null;
+		}
+		owner[kHighlights] = registry;
+	}
+	return registry;
+}
+
+/** A torn-down document paints nothing, and holds no highlight. */
+export function clearHighlights(document: globalThis.Document): void {
+	(document as Document)[kHighlights]?.clear();
+}
+
+// A highlight that is no longer registered under any name in this
+// registry stops repainting through it.
+function dropRegistration(
+	registry: HighlightRegistry,
+	highlight: Highlight,
+): void {
+	for (const registered of registry[kHighlightsByName].values()) {
+		if (registered === highlight) {
+			return;
+		}
+	}
+	highlight[kHighlightRegistries].delete(registry);
+}
+
+// Which highlights a range is in, so that moving its boundary points
+// repaints them. Only ranges that join one are ever in here, and the
+// count keeps the lookup off the path of every other range.
+const highlightsByRange = new WeakMap<AbstractRange, Set<Highlight>>();
+let highlightedRangesEver = 0;
+
+function joinHighlight(range: AbstractRange, highlight: Highlight): void {
+	let highlights = highlightsByRange.get(range);
+	if (highlights === undefined) {
+		highlights = new Set<Highlight>();
+		highlightsByRange.set(range, highlights);
+	}
+	highlights.add(highlight);
+	highlightedRangesEver++;
+}
+
+function leaveHighlight(range: AbstractRange, highlight: Highlight): void {
+	highlightsByRange.get(range)?.delete(highlight);
+}
+
+/** The highlights a range moved under, for the mutation steps. */
+function rangeHighlightsChanged(range: Range): void {
+	if (highlightedRangesEver === 0) {
+		return;
+	}
+	const highlights = highlightsByRange.get(range);
+	if (highlights === undefined) {
+		return;
+	}
+	for (const highlight of highlights) {
+		highlightChanged(highlight);
+	}
+}
+
+// A highlight belongs to whatever registries hold it, and each of those
+// belongs to a document with a screen to repaint.
+function highlightChanged(highlight: Highlight): void {
+	for (const registry of highlight[kHighlightRegistries]) {
+		invalidateHighlights(registry[kRegistryDocument]);
+	}
+}
+
+// Neither registering a highlight nor moving one is a DOM mutation, and
+// no record names the rows it covers, so the repaint is asked for here.
+function invalidateHighlights(document: Document): void {
+	const attached = getAttachedDocument(document);
+	if (attached === undefined) {
+		return;
+	}
+	attached[kScreen].invalidate();
+	void attached[kRender]();
+}
+
+/** A registered highlight and what it covers, for the painter. */
+export interface PaintedHighlight {
+	name: string;
+	ranges: globalThis.AbstractRange[];
+}
+
+/**
+ * Every registered highlight that covers something, lowest priority
+ * first, which is the order the painter folds their styles in.
+ */
+export function getPaintedHighlights(
+	document: globalThis.Document,
+): PaintedHighlight[] {
+	const registry = (document as Document)[kHighlights];
+	if (registry === null || registry[kHighlightsByName].size === 0) {
+		return [];
+	}
+	const painted: Array<PaintedHighlight & {priority: number}> = [];
+	for (const [name, highlight] of registry[kHighlightsByName]) {
+		const ranges = [...highlight[kHighlightRanges]].filter(
+			(range) => !range.collapsed,
+		);
+		if (ranges.length > 0) {
+			painted.push({name, ranges, priority: highlight[kHighlightPriority]});
+		}
+	}
+	return painted.sort((a, b) => a.priority - b.priority);
+}
+
+/** Whether anything at all highlights this document. */
+export function hasPaintedHighlights(document: globalThis.Document): boolean {
+	const registry = (document as Document)[kHighlights];
+	if (registry === null) {
+		return false;
+	}
+	for (const highlight of registry[kHighlightsByName].values()) {
+		for (const range of highlight[kHighlightRanges]) {
+			if (!range.collapsed) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/**
+ * The text nodes one of a highlight's ranges covers, with the offsets it
+ * covers of each.
+ */
+export function getHighlightedTextNodes(
+	range: globalThis.AbstractRange,
+): Array<{textNode: globalThis.Text; from: number; to: number}> {
+	const start = (range as AbstractRange)[kStartNode];
+	const end = (range as AbstractRange)[kEndNode];
+	if (getRoot(start) !== getRoot(end)) {
+		return [];
+	}
+	let container = start;
+	while (!isInclusiveAncestor(container, end)) {
+		container = container[kParent] as Node;
+	}
+	const covered: Array<{textNode: Text; from: number; to: number}> = [];
+	for (
+		let node: Node | null = container;
+		node !== null;
+		node = nextInTree(node, container)
+	) {
+		if (!(node instanceof Text)) {
+			continue;
+		}
+		const offsets = getHighlightedOffsets(range, node);
+		if (offsets !== null) {
+			covered.push({textNode: node, from: offsets.from, to: offsets.to});
+		}
+	}
+	return covered;
+}
+
+/**
+ * The offsets of a text node one of a highlight's ranges covers, or null
+ * when it covers none of it. A static range whose boundary points no
+ * longer describe the tree describes nothing.
+ */
+export function getHighlightedOffsets(
+	range: globalThis.AbstractRange,
+	textNode: globalThis.Text,
+): {from: number; to: number} | null {
+	const start = (range as AbstractRange)[kStartNode];
+	const startOffset = (range as AbstractRange)[kStartOffset];
+	const end = (range as AbstractRange)[kEndNode];
+	const endOffset = (range as AbstractRange)[kEndOffset];
+	const node = textNode as Text;
+	if (
+		startOffset > getNodeLength(start) ||
+		endOffset > getNodeLength(end) ||
+		getRoot(start) !== getRoot(node) ||
+		getRoot(end) !== getRoot(node)
+	) {
+		return null;
+	}
+	const from = start === node ? startOffset : 0;
+	const to = end === node ? endOffset : getNodeLength(node);
+	if (
+		to <= from ||
+		comparePoints(node, from, end, endOffset) !== BEFORE ||
+		comparePoints(node, to, start, startOffset) !== AFTER
+	) {
+		return null;
+	}
+	return {from, to};
+}
 
 const FILTER_ACCEPT = 1;
 const FILTER_REJECT = 2;
@@ -30225,6 +30693,16 @@ export class Window extends EventTarget {
 	declare StaticRange: typeof globalThis.StaticRange;
 	declare Range: typeof globalThis.Range;
 	declare Selection: typeof globalThis.Selection;
+	declare Highlight: typeof globalThis.Highlight;
+	declare HighlightRegistry: typeof globalThis.HighlightRegistry;
+	// Spelled out rather than borrowed from lib.dom, whose CSS also has a
+	// factory for every unit a browser measures in.
+	declare CSS: {
+		escape(ident: string): string;
+		supports(conditionOrProperty: string, value?: string): boolean;
+		readonly highlights: globalThis.HighlightRegistry;
+	};
+
 	declare DOMRect: typeof globalThis.DOMRect;
 	declare DOMRectReadOnly: typeof globalThis.DOMRectReadOnly;
 	declare CustomElementRegistry: typeof globalThis.CustomElementRegistry;
@@ -31140,6 +31618,8 @@ const platform = {
 	HTMLUnknownElement,
 	HTMLVideoElement,
 	HashChangeEvent,
+	Highlight,
+	HighlightRegistry,
 	InputEvent,
 	IntersectionObserver,
 	KeyboardEvent,
@@ -31357,6 +31837,8 @@ export type {
 	StaticRange,
 	Range,
 	Selection,
+	Highlight,
+	HighlightRegistry,
 	NodeIterator,
 	XMLWellFormednessError,
 	ClipboardItem,

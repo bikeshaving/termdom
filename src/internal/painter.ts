@@ -8,11 +8,14 @@ import * as CSSValues from "./cssvalues.ts";
 import {
 	flatParentElement,
 	flowContent,
+	getHighlightedTextNodes,
+	getPaintedHighlights,
 	getSelectionRecord,
 	getShadowRoot,
 	getTextControlSelectionRange,
 	getTextControlValueText,
 	getTopLayer,
+	hasPaintedHighlights,
 	HTMLElement,
 	renderedTopLayer,
 	type Window,
@@ -353,26 +356,6 @@ function getCellStyle(element: Element): CellStyle {
 	};
 }
 
-// Everything comes from ::selection rules. The UA sheet's Highlight
-// pair is what makes an unstyled selection inverse at all.
-function getSelectionStyle(element: Element, base: CellStyle): CellStyle {
-	const fg = getComputedValue(element, "color", "::selection");
-	const bg = getComputedValue(element, "background-color", "::selection");
-	if (!fg && !bg) {
-		return base;
-	}
-	const fgAuthored = Boolean(fg) && !CSSValues.isHighlightColor(fg);
-	const bgAuthored = Boolean(bg) && !CSSValues.isHighlightColor(bg);
-	if (!fgAuthored && !bgAuthored) {
-		return {...base, inverse: true};
-	}
-	return {
-		...base,
-		fg: fgAuthored ? CSSValues.cssColorToNumber(fg) : base.fg,
-		bg: bgAuthored ? CSSValues.cssColorToNumber(bg) : base.bg,
-	};
-}
-
 // Applied at paint time. Case never changes a cell width, so it cannot
 // change wrapping.
 function applyTextTransform(text: string, transform: string): string {
@@ -399,6 +382,8 @@ const kScreen = Symbol("screen");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
+const kHighlightedText = Symbol("highlightedText");
+const kHighlightStyles = Symbol("highlightStyles");
 
 export interface Painter {
 	[kWindow]: Window;
@@ -412,6 +397,15 @@ export interface Painter {
 	// Paint extents are cached in unscrolled rows. A scrolled subtree
 	// paints this many rows higher, so culling shifts the viewport instead.
 	[kScrolledRows]: number;
+	[kHighlightedText]: Map<Text, HighlightRun[]>;
+	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
+}
+
+/** One registered highlight's share of one text node, in paint order. */
+interface HighlightRun {
+	name: string;
+	from: number;
+	to: number;
 }
 
 /** Reads the DOM, styles and geometry. Writes only into the CellContext. */
@@ -424,6 +418,8 @@ export class Painter {
 	) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
+		this[kHighlightedText] = new Map();
+		this[kHighlightStyles] = new Map();
 		this[kWindow] = document.defaultView as unknown as Window;
 		this[kDocument] = document;
 		this[kLayout] = layout;
@@ -453,6 +449,7 @@ export class Painter {
 			// The rows the terminal would shift are not the rows the last
 			// frame painted.
 			layout.moved ||
+			hasPaintedHighlights(this[kDocument]) ||
 			!record.element.isConnected
 		) {
 			return null;
@@ -491,6 +488,8 @@ export class Painter {
 	paint(ctx: CellContext): void {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
+		this[kHighlightedText] = collectHighlightedText(this[kDocument]);
+		this[kHighlightStyles] = new Map();
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		renderStackingContext(this, this[kDocument].body, ctx, layers);
 		const rendered = renderedTopLayer(this[kDocument]) as unknown as Element[];
@@ -1045,24 +1044,32 @@ function renderText(painter: Painter, textNode: Text, ctx: CellContext): void {
 		);
 	}
 	if (painted) {
-		renderTextSelection(painter, textNode, textStyle, textTransform, ctx);
+		renderTextHighlights(painter, textNode, textStyle, textTransform, ctx);
 	}
 }
 
 // A focused control's own selection when the node renders its value
 // (the document selection cannot see inside a control), else the
-// document's.
+// document's, narrowed to this node's offsets.
 function getPaintSelectionRange(
 	painter: Painter,
 	textNode: Text,
-): {range: Range; selectionParent: Element} | null {
+): {from: number; to: number; selectionParent: Element} | null {
 	const textControl = getTextControlSelectionRange(
 		painter[kDocument],
 		textNode,
 	);
 	if (textControl) {
+		const {range} = textControl;
+		if (range.endOffset <= range.startOffset) {
+			return null;
+		}
 		// ::selection resolves on the text control, not the shadow value span.
-		return {range: textControl.range, selectionParent: textControl.textControl};
+		return {
+			from: range.startOffset,
+			to: range.endOffset,
+			selectionParent: textControl.textControl,
+		};
 	}
 
 	const selection = painter[kWindow].getSelection();
@@ -1080,7 +1087,7 @@ function getPaintSelectionRange(
 	if (!painter[kCascade].isSelectable(selectionParent)) {
 		return null;
 	}
-	// Narrowed to this node. ::selection resolves per parent.
+	// ::selection resolves per parent.
 	const from = documentRange.startContainer === textNode
 		? documentRange.startOffset
 		: 0;
@@ -1090,36 +1097,247 @@ function getPaintSelectionRange(
 	if (to <= from) {
 		return null;
 	}
-	const range = textNode.ownerDocument.createRange();
-	range.setStart(textNode, from);
-	range.setEnd(textNode, to);
-	return {range, selectionParent};
+	return {from, to, selectionParent};
 }
 
-// Redraws the selected runs in the highlight style over the base pass.
-function renderTextSelection(
+/**
+ * What a `::highlight()` rule can change about a cell. A property it does
+ * not declare is absent here, so the layer under it shows through.
+ */
+interface HighlightPaint {
+	fg?: number;
+	bg?: number;
+	inverse?: boolean;
+	underline?: boolean;
+	strikethrough?: boolean;
+}
+
+/**
+ * What `::highlight(name)` paints on this element, each property taken
+ * from the nearest flat-tree ancestor whose rules declare it. Null when
+ * none of them do, since an unstyled name paints nothing.
+ */
+function readHighlightStyle(
+	painter: Painter,
+	element: Element,
+	name: string,
+): HighlightPaint | null {
+	const pseudo = `::highlight(${name})`;
+	const declared = painter[kCascade].declaredPseudoProperties(element, pseudo);
+	const parent = flatParentElement(element);
+	const inherited = parent === null
+		? null
+		: getHighlightStyle(painter, parent, name);
+	if (declared.size === 0) {
+		return inherited;
+	}
+	const paint: HighlightPaint = {...inherited};
+	if (declared.has("color")) {
+		const color = getComputedValue(element, "color", pseudo);
+		paint.fg = color && !CSSValues.isHighlightColor(color)
+			? CSSValues.cssColorToNumber(color)
+			: undefined;
+	}
+	if (declared.has("background-color")) {
+		const background = getComputedValue(element, "background-color", pseudo);
+		paint.bg = undefined;
+		paint.inverse = undefined;
+		if (CSSValues.isHighlightColor(background)) {
+			paint.inverse = true;
+		} else if (
+			background &&
+			!CSSValues.isTransparentColor(background) &&
+			!CSSValues.isCanvasColor(background)
+		) {
+			paint.bg = CSSValues.cssColorToNumber(background);
+		}
+	}
+	if (declared.has("text-decoration-line")) {
+		const decoration = CSSValues.parseTextDecorationLine(
+			getComputedValue(element, "text-decoration-line", pseudo),
+		);
+		paint.underline = decoration.underline || undefined;
+		paint.strikethrough = decoration.lineThrough || undefined;
+	}
+	return paint;
+}
+
+// Everything comes from ::selection rules. The UA sheet's Highlight
+// pair is what makes an unstyled selection inverse at all, and an
+// author color of either half means the terminal's inverse is not what
+// the author asked for.
+function readSelectionStyle(element: Element): HighlightPaint | null {
+	const fg = getComputedValue(element, "color", "::selection");
+	const bg = getComputedValue(element, "background-color", "::selection");
+	const decoration = CSSValues.parseTextDecorationLine(
+		getComputedValue(element, "text-decoration-line", "::selection"),
+	);
+	const paint: HighlightPaint = {};
+	if (decoration.underline) {
+		paint.underline = true;
+	}
+	if (decoration.lineThrough) {
+		paint.strikethrough = true;
+	}
+	if (!fg && !bg) {
+		return paint.underline || paint.strikethrough ? paint : null;
+	}
+	const fgAuthored = Boolean(fg) && !CSSValues.isHighlightColor(fg);
+	const bgAuthored = Boolean(bg) && !CSSValues.isHighlightColor(bg);
+	if (!fgAuthored && !bgAuthored) {
+		paint.inverse = true;
+		return paint;
+	}
+	if (fgAuthored) {
+		paint.fg = CSSValues.cssColorToNumber(fg);
+	}
+	if (bgAuthored) {
+		paint.bg = CSSValues.cssColorToNumber(bg);
+	}
+	return paint;
+}
+
+// Per element and name, for the frame. A highlight over many text nodes
+// resolves its style on the few elements they share.
+function getHighlightStyle(
+	painter: Painter,
+	element: Element,
+	name: string,
+): HighlightPaint | null {
+	let byName = painter[kHighlightStyles].get(element);
+	if (byName === undefined) {
+		byName = new Map<string, HighlightPaint | null>();
+		painter[kHighlightStyles].set(element, byName);
+	}
+	let paint = byName.get(name);
+	if (paint === undefined) {
+		paint = readHighlightStyle(painter, element, name);
+		byName.set(name, paint);
+	}
+	return paint;
+}
+
+/**
+ * One highlight layer over the style under it. A background of the
+ * layer's own is the whole background, so it turns off the inverse under
+ * it, which would otherwise swap the colors this layer named.
+ */
+function foldHighlight(base: CellStyle, paint: HighlightPaint): CellStyle {
+	return {
+		...base,
+		fg: paint.fg ?? base.fg,
+		bg: paint.bg ?? base.bg,
+		inverse: paint.inverse ?? (paint.bg === undefined ? base.inverse : false),
+		underline: paint.underline || base.underline,
+		strikethrough: paint.strikethrough || base.strikethrough,
+	};
+}
+
+interface HighlightLayer {
+	from: number;
+	to: number;
+	paint: HighlightPaint;
+}
+
+// The offsets where the covering layers change, so each run of cells
+// every layer agrees on is drawn once rather than once per layer.
+function getHighlightSegments(
+	layers: HighlightLayer[],
+): Array<[number, number]> {
+	const edges =
+		[...new Set(layers.flatMap((layer) => [layer.from, layer.to]))].sort(
+			(a, b) => a - b,
+		);
+	const segments: Array<[number, number]> = [];
+	for (let i = 0; i + 1 < edges.length; i++) {
+		const covered = layers.some(
+			(layer) => layer.from <= edges[i] && layer.to >= edges[i + 1],
+		);
+		if (covered) {
+			segments.push([edges[i], edges[i + 1]]);
+		}
+	}
+	return segments;
+}
+
+// Every text node a registered highlight covers, in the order the
+// painter folds the styles in. Built once a frame: a text node with no
+// entry here has no highlight over it.
+function collectHighlightedText(document: Document): Map<Text, HighlightRun[]> {
+	const highlighted = new Map<Text, HighlightRun[]>();
+	for (const highlight of getPaintedHighlights(document)) {
+		for (const range of highlight.ranges) {
+			for (const {textNode, from, to} of getHighlightedTextNodes(range)) {
+				const run = {name: highlight.name, from, to};
+				const runs = highlighted.get(textNode);
+				if (runs === undefined) {
+					highlighted.set(textNode, [run]);
+				} else {
+					runs.push(run);
+				}
+			}
+		}
+	}
+	return highlighted;
+}
+
+// Redraws the highlighted runs over the base pass, one draw per run of
+// cells the same layers cover, the selection included.
+function renderTextHighlights(
 	painter: Painter,
 	textNode: Text,
 	textStyle: CellStyle,
 	textTransform: string,
 	ctx: CellContext,
 ): void {
-	const found = getPaintSelectionRange(painter, textNode);
-	if (!found) {
+	const layers: HighlightLayer[] = [];
+	const parent = flatParentElement(textNode);
+	const runs = painter[kHighlightedText].get(textNode);
+	if (parent !== null && runs !== undefined) {
+		for (const run of runs) {
+			const paint = getHighlightStyle(painter, parent, run.name);
+			if (paint !== null) {
+				layers.push({
+					...painter[kLayout].snapToClusters(textNode, run.from, run.to),
+					paint,
+				});
+			}
+		}
+	}
+	const selected = getPaintSelectionRange(painter, textNode);
+	if (selected !== null) {
+		const paint = readSelectionStyle(selected.selectionParent);
+		if (paint !== null) {
+			layers.push({
+				...painter[kLayout].snapToClusters(
+					textNode,
+					selected.from,
+					selected.to,
+				),
+				paint,
+			});
+		}
+	}
+	if (layers.length === 0) {
 		return;
 	}
-	const {range, selectionParent} = found;
-	const selectionStyle = getSelectionStyle(selectionParent, textStyle);
-	if (selectionStyle === textStyle) {
-		return;
-	}
-
-	for (const run of painter[kLayout].getRangeSpans(range)) {
-		ctx.drawText(
-			applyTextTransform(run.text, textTransform),
-			run.rect.x,
-			run.rect.y,
-			selectionStyle,
-		);
+	for (const [from, to] of getHighlightSegments(layers)) {
+		let style = textStyle;
+		for (const layer of layers) {
+			if (layer.from <= from && layer.to >= to) {
+				style = foldHighlight(style, layer.paint);
+			}
+		}
+		if (style === textStyle) {
+			continue;
+		}
+		for (const run of painter[kLayout].getTextSpans(textNode, from, to)) {
+			ctx.drawText(
+				applyTextTransform(run.text, textTransform),
+				run.rect.x,
+				run.rect.y,
+				style,
+			);
+		}
 	}
 }

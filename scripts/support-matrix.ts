@@ -1249,6 +1249,11 @@ function buildProbes(): Probe[] {
 			"DOM APIs",
 			(dom) => typeof dom.window.getSelection === "function",
 		),
+		apiProbe("CSS Custom Highlight API", "DOM APIs", (dom) => {
+			const highlight = new dom.window.Highlight();
+			dom.window.CSS.highlights.set("probe", highlight);
+			return dom.window.CSS.highlights.get("probe") === highlight;
+		}),
 		apiProbe("Fullscreen API", "DOM APIs", (dom) =>
 			typeof (dom.document.body as {requestFullscreen?: unknown})
 				.requestFullscreen === "function"),

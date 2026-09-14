@@ -20,8 +20,8 @@ window's legacy named access to elements by id.
 - Optional-feature subtests reporting unsupported: 6
 - Files whose harness completed: 693
 - Files whose harness did not complete: 69
-- Subtests passed: 99711
-- Subtests failed: 871
+- Subtests passed: 99712
+- Subtests failed: 870
 
 ## Exclusions
 
@@ -1159,7 +1159,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/Element-interface-shadowRoot-attribute.html | OK | 3 | 0 |
 | shadow-dom/Extensions-to-Event-Interface.html | OK | 16 | 0 |
 | shadow-dom/HTMLSlotElement-interface.html | OK | 18 | 0 |
-| shadow-dom/HighlightRegistry-highlightsFromPoint.html | OK | 0 | 4 |
+| shadow-dom/HighlightRegistry-highlightsFromPoint.html | OK | 1 | 3 |
 | shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | OK | 1 | 2 |
 | shadow-dom/Node-prototype-cloneNode.html | OK | 4 | 0 |
 | shadow-dom/Range-prototype-insertNode.html | OK | 1 | 0 |
@@ -2284,10 +2284,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/HighlightRegistry-highlightsFromPoint.html
 
-- CSS.highlights.highlightsFromPoint() should throw when called with nodes that are not ShadowRoot objects in options.: assert_throws_js: function "() => { CSS.highlights.highlightsFromPoint(10, 10, {shadowRoots: [container]}); }" threw object "ReferenceError: CSS is not defined" ("ReferenceError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
-- CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: Highlight is not defined
-- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: Highlight is not defined
-- CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.: CSS is not defined
+- CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: CSS.highlights.highlightsFromPoint is not a function
+- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: CSS.highlights.highlightsFromPoint is not a function
+- CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.: CSS.highlights.highlightsFromPoint is not a function
 
 ### shadow-dom/MouseEvent-prototype-offsetX-offsetY.html
 

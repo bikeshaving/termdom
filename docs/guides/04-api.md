@@ -51,6 +51,8 @@ are wired to the terminal:
 - `resize` — fired when the terminal size changes, before the
   `MediaQueryList` `change` events that resize triggers
 - `getSelection()` — the document selection, `modify()` included
+- `CSS.highlights` — the highlight registry, painted by `::highlight()`
+  rules
 - `navigator.clipboard.writeText()` / `readText()` — the system clipboard
   over OSC 52, reachable only during the dispatch of a trusted user event;
   `readText()` rejects when the terminal does not answer
