@@ -4720,6 +4720,9 @@ const kUsedStale = Symbol("used values stale");
 const kShadowRoots = Symbol("shadowRoots");
 const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
+const kSiblingsReachDescendants = Symbol("siblingsReachDescendants");
+const kSiblingKeys = Symbol("siblingKeys");
+const kSiblingsUniversal = Symbol("siblingsUniversal");
 const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
 const kParsedRules = Symbol("parsedRules");
@@ -4772,6 +4775,12 @@ export interface Cascade {
 	// reaches ancestors. The string tests are deliberately loose. A false
 	// positive only widens the rebuild.
 	[kSelectorsReachSiblings]: boolean;
+	[kSiblingsReachDescendants]: boolean;
+	// The tag, class, id and attribute keys of every sibling-tested
+	// compound, so a change among an element's children restyles only the
+	// children such a compound could name.
+	[kSiblingKeys]: Set<string>;
+	[kSiblingsUniversal]: boolean;
 	[kSelectorsReachAncestors]: boolean;
 
 	// The keys whose change can affect an element's DESCENDANTS: those a
@@ -4917,6 +4926,9 @@ export class Cascade {
 		this[kParsing] = false;
 		this[kPseudoHosts] = new Set();
 		this[kSelectorsReachSiblings] = false;
+		this[kSiblingsReachDescendants] = false;
+		this[kSiblingKeys] = new Set();
+		this[kSiblingsUniversal] = false;
 		this[kSelectorsReachAncestors] = false;
 		this[kReachingClasses] = new Set<string>();
 		this[kKeyProperties] = new Map<string, Set<string>>();
@@ -5055,10 +5067,17 @@ export class Cascade {
 					this[kSelectorsReachSiblings] &&
 					mutation.target.nodeType === Node.ELEMENT_NODE
 				) {
-					invalidateSubtree(this, mutation.target as Element);
+					invalidateChildren(this, mutation.target as Element);
 				}
 			} else if (mutation.type === "attributes") {
 				const element = mutation.target as Element;
+				// A value written over itself changes no style.
+				if (
+					mutation.oldValue !== null &&
+					mutation.oldValue === element.getAttribute(mutation.attributeName!)
+				) {
+					continue;
+				}
 				// A change to keys whose rules declare only paint properties
 				// leaves every box where it was. The styles are dropped so the
 				// next read resolves them, and layout is not told.
@@ -5098,7 +5117,7 @@ export class Cascade {
 						sibling;
 						sibling = sibling.nextElementSibling
 					) {
-						invalidateSubtree(this, sibling);
+						invalidateSibling(this, sibling);
 					}
 				}
 			} else if (mutation.type === "characterData") {
@@ -5455,7 +5474,13 @@ export class Cascade {
 		oldValue: string | null,
 	): boolean {
 		if (name === "style") {
-			return true;
+			if (oldValue === null) {
+				return true;
+			}
+			return inlineChangeReachesDescendants(
+				oldValue,
+				element.getAttribute("style") ?? "",
+			);
 		}
 		if (name === "class") {
 			if (this[kReachingAttributes].has("class")) {
@@ -6274,6 +6299,59 @@ function invalidateSubtree(
 	}
 }
 
+// A child that came or went can change what the element's other
+// children match, and the element itself through :empty. Their
+// descendants only follow when a sheet tests siblings outside a subject
+// or inherits through one.
+function invalidateChildren(cascade: Cascade, element: Element): void {
+	if (cascade[kSiblingsReachDescendants]) {
+		invalidateSubtree(cascade, element);
+		return;
+	}
+	invalidateSibling(cascade, element);
+	for (const child of element.children) {
+		invalidateSibling(cascade, child);
+	}
+}
+
+function invalidateSibling(cascade: Cascade, element: Element): void {
+	if (!isSiblingTested(cascade, element)) {
+		return;
+	}
+	if (cascade[kSiblingsReachDescendants]) {
+		invalidateSubtree(cascade, element);
+		return;
+	}
+	invalidateElementCaches(cascade, element);
+	attachPseudoElementsToElement(cascade, element);
+}
+
+// Whether some sibling-tested compound could name the element.
+function isSiblingTested(cascade: Cascade, element: Element): boolean {
+	if (cascade[kSiblingsUniversal]) {
+		return true;
+	}
+	const keys = cascade[kSiblingKeys];
+	if (keys.has(element.localName)) {
+		return true;
+	}
+	for (const name of element.classList) {
+		if (keys.has(`.${name}`)) {
+			return true;
+		}
+	}
+	const id = element.getAttribute("id");
+	if (id !== null && keys.has(`#${id}`)) {
+		return true;
+	}
+	for (const attribute of element.attributes) {
+		if (keys.has(`[${attribute.localName}]`)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function invalidateElementCaches(
 	cascade: Cascade,
 	element: Element,
@@ -6348,6 +6426,40 @@ const PAINT_ONLY_PROPERTIES = new Set([
 // Whether every rule an attribute change can turn on or off declares
 // paint properties only. The style attribute can declare anything; a
 // key no rule tests changes nothing at all.
+// Only a property that inherits, or display or all, which reshape the
+// children, can change a descendant's style. A height or a margin
+// written inline changes the element alone.
+function inlineChangeReachesDescendants(
+	before: string,
+	after: string,
+): boolean {
+	const read = (text: string): Map<string, string> => {
+		const values = new Map<string, string>();
+		for (const declaration of CSSValues.parseDeclarationText(text)) {
+			values.set(
+				declaration.name,
+				`${declaration.value}${declaration.important ? "!" : ""}`,
+			);
+		}
+		return values;
+	};
+	const was = read(before);
+	const now = read(after);
+	for (const property of new Set([...was.keys(), ...now.keys()])) {
+		if (was.get(property) === now.get(property)) {
+			continue;
+		}
+		if (
+			property === "all" ||
+			property === "display" ||
+			CSSValues.isInheritedProperty(property)
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function isPaintOnlyChange(
 	cascade: Cascade,
 	element: Element,
@@ -6436,6 +6548,9 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	const document = cascade[kDocument];
 	cascade[kParsedRules] = [];
 	cascade[kSelectorsReachSiblings] = false;
+	cascade[kSiblingsReachDescendants] = false;
+	cascade[kSiblingKeys] = new Set();
+	cascade[kSiblingsUniversal] = false;
 	cascade[kSelectorsReachAncestors] = false;
 	cascade[kReachingClasses].clear();
 	cascade[kKeyProperties].clear();
@@ -6823,7 +6938,35 @@ function indexReachingKeys(
 			break;
 		}
 	}
+	if (
+		reading.reachesSiblings && (reading.siblingsReachDescendants || inherits)
+	) {
+		cascade[kSiblingsReachDescendants] = true;
+	}
 	const compounds = reading.compounds;
+	for (const keys of compounds) {
+		if (!keys.siblingTested) {
+			continue;
+		}
+		if (
+			keys.tag === null &&
+			keys.classes.length === 0 &&
+			keys.ids.length === 0 &&
+			keys.attributes.length === 0
+		) {
+			cascade[kSiblingsUniversal] = true;
+		}
+		if (keys.tag !== null) {
+			cascade[kSiblingKeys].add(keys.tag);
+		}
+		for (const key of [
+			...keys.classes.map((name) => `.${name}`),
+			...keys.ids.map((name) => `#${name}`),
+			...keys.attributes.map((name) => `[${name}]`),
+		]) {
+			cascade[kSiblingKeys].add(key);
+		}
+	}
 	const names = Object.keys(declarations);
 	for (const keys of compounds) {
 		for (const key of [
