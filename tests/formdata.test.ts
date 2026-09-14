@@ -115,6 +115,30 @@ test("an entry list follows the rule for each kind of control", () => {
 	]);
 });
 
+test("a dirname sends the control's direction after its value", () => {
+	const window = createWindow(
+		`<!DOCTYPE html><body><form id="f">
+	<input name="a" value="hi" dirname="a.dir">
+	<input name="b" value="hi" dirname="b.dir" dir="rtl">
+	<textarea name="c" dirname="c.dir" dir="auto">שלום</textarea>
+	<input name="d" type="checkbox" checked dirname="d.dir">
+	<input name="e" value="x" dirname="">
+	</form></body>`,
+	);
+	const form = window.document.getElementById("f") as HTMLFormElement;
+
+	expect([...new window.FormData(form)]).toEqual([
+		["a", "hi"],
+		["a.dir", "ltr"],
+		["b", "hi"],
+		["b.dir", "rtl"],
+		["c", "שלום"],
+		["c.dir", "rtl"],
+		["d", "on"],
+		["e", "x"],
+	]);
+});
+
 test("only the submitting button is in the entry list", () => {
 	const window = createWindow(CONTROLS);
 	const {document} = window;
