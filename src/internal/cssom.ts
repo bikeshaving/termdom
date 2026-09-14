@@ -7457,7 +7457,6 @@ const CSSOM_WINDOW_GLOBALS = {
 	MediaList,
 	CSSStyleDeclaration,
 	CSSStyleProperties,
-	CSS: CSSNamespace,
 };
 
 function setupInvalidationHooks(cascade: Cascade): void {
