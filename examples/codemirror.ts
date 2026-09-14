@@ -80,8 +80,8 @@ const theme = EditorView.theme(
 );
 
 // CodeMirror's own line moves probe half a text height at a time, and a
-// line here is one cell tall, so half of it rounds to nothing. These move
-// by a whole line instead.
+// line here is one cell tall, so half of it rounds to nothing. These
+// probe half a cell past the line's edge, which is the next row.
 function moveLine(
   forward: boolean,
   extend: boolean,
@@ -89,7 +89,11 @@ function moveLine(
   return (view: EditorView): boolean => {
     const {selection} = view.state;
     const ranges = selection.ranges.map((range) => {
-      const moved = view.moveVertically(range, forward, view.defaultLineHeight);
+      const moved = view.moveVertically(
+        range,
+        forward,
+        view.defaultLineHeight / 2,
+      );
       return extend ? EditorSelection.range(range.anchor, moved.head) : moved;
     });
     view.dispatch({
