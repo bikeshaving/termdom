@@ -24,7 +24,8 @@ are wired to the terminal:</p><ul><li><code>innerWidth</code>, <code>innerHeight
 size, in cells</li><li><code>screenTop</code> — the row the rendered region starts at</li><li><code>scrollY</code>, <code>pageYOffset</code>, <code>scrollTo()</code>, <code>scrollBy()</code>, <code>scroll()</code> —
 document scrolling</li><li><code>requestAnimationFrame()</code>, <code>cancelAnimationFrame()</code> — the callback fires
 after the frame that includes your pending mutations has been written</li><li><code>matchMedia()</code> — live <code>MediaQueryList</code>s, re-evaluated on resize</li><li><code>resize</code> — fired when the terminal size changes, before the
-<code>MediaQueryList</code> <code>change</code> events that resize triggers</li><li><code>getSelection()</code> — the document selection, <code>modify()</code> included</li><li><code>navigator.clipboard.writeText()</code> / <code>readText()</code> — the system clipboard
+<code>MediaQueryList</code> <code>change</code> events that resize triggers</li><li><code>getSelection()</code> — the document selection, <code>modify()</code> included</li><li><code>CSS.highlights</code> — the highlight registry, painted by <code>::highlight()</code>
+rules</li><li><code>navigator.clipboard.writeText()</code> / <code>readText()</code> — the system clipboard
 over OSC 52, reachable only during the dispatch of a trusted user event;
 <code>readText()</code> rejects when the terminal does not answer</li><li><code>navigator.userActivation</code> — <code>hasBeenActive</code> and <code>isActive</code></li><li><code>MutationObserver</code>, <code>ResizeObserver</code>, <code>IntersectionObserver</code> — entries
 are delivered per rendered frame</li><li><code>close()</code> — quit: flush the final frame to scrollback, restore terminal
