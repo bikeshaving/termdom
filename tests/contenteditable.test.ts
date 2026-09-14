@@ -74,6 +74,19 @@ test("focusing a host with no selection inside it parks the caret at its start",
 	fixture.dom.dispose();
 });
 
+test("focusing a host skips the whitespace between its blocks", async () => {
+	const fixture = await withHost(
+		"<div contenteditable>\n  <h2>Notes</h2>\n  <div>body</div>\n</div>",
+	);
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const point = caret(document);
+	expect(point.node).toBe(host.querySelector("h2")!.firstChild);
+	expect(point.offset).toBe(0);
+	fixture.dom.dispose();
+});
+
 test("a focused host parks the terminal cursor at the caret", async () => {
 	const fixture =
 		await withHost("<div>title</div><div contenteditable>hello</div>");
