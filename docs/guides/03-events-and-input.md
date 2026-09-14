@@ -102,6 +102,46 @@ works: CJK input methods compose in the field. `<input type="password">`
 masks its value. A number input takes float syntax only, and ArrowUp and
 ArrowDown step it within `min` and `max`.
 
+## Editing
+
+An element with `contenteditable` is an editing host: click into it and
+the caret becomes the real terminal cursor, and what you type goes into
+the tree. `document.designMode = "on"` makes the whole body one. A
+`contenteditable="false"` element inside a host is stepped over as one
+piece and never takes the caret.
+
+```html
+<div id="note" contenteditable>Type here.</div>
+```
+
+The arrows move the caret by character, Alt or Ctrl with them by word,
+Up and Down by line, and Home and End to the line's ends; Shift extends
+the selection instead of moving it. Backspace and Delete take one
+grapheme cluster, or the selection. The readline chords the text fields
+use work here too: Ctrl+W takes back a word, Ctrl+U the line before the
+caret, Ctrl+K the line after it. Enter splits the block the caret is in,
+Shift+Enter puts a `<br>` in, and a block left empty keeps a `<br>` so
+it stays a line tall — the same tree Chrome writes.
+
+Every edit is a cancelable `beforeinput` first and an `input` after, both
+bubbling from the element the caret is in, with the spec's input types:
+`insertText`, `insertFromPaste`, `insertParagraph`, `insertLineBreak`,
+`deleteContentBackward`, `deleteContentForward`, `deleteWordBackward`,
+`deleteSoftLineBackward` and `deleteSoftLineForward`. Cancel the
+`beforeinput` and nothing in the tree moves:
+
+```ts
+note.addEventListener("beforeinput", (event) => {
+	if (event.inputType === "insertParagraph") {
+		event.preventDefault();
+	}
+});
+```
+
+Undo and redo are not here yet, and neither are `execCommand`, the
+formatting commands, HTML paste, IME composition in a host, or
+spellcheck.
+
 ## Selection and the clipboard
 
 Drag to select, in the document or inside a field; style it with
