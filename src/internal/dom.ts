@@ -26536,11 +26536,22 @@ function getSelectionIndex(
 
 // An offset on the seam between two nodes maps to the earlier node's
 // end, which is the same position as the later node's start.
+// An index where one text node ends and the next begins is a point in
+// either. The end of the earlier node is the default; a line start wants
+// the later one.
 function getSelectionPoint(
 	run: SelectionText,
 	index: number,
+	atStart = false,
 ): [Node, number] | null {
 	const at = Math.max(0, Math.min(index, run.text.length));
+	if (atStart) {
+		for (let i = run.parts.length - 1; i >= 0; i--) {
+			if (run.parts[i].start <= at) {
+				return [run.parts[i].node, at - run.parts[i].start];
+			}
+		}
+	}
 	for (const part of run.parts) {
 		if (at <= part.start + part.node[kData].length) {
 			return [part.node, at - part.start];
@@ -26606,6 +26617,7 @@ function selectionLineMove(
 	document: Document,
 	run: SelectionText,
 	layout: Layout,
+	from: [Node, number],
 	index: number,
 	forward: boolean,
 ): [Node, number] | null {
@@ -26613,16 +26625,15 @@ function selectionLineMove(
 	if (lines.length === 0) {
 		return null;
 	}
-	const at = getSelectionLine(lines, index);
+	const at = getSelectionLineOf(lines, layout, from, index);
 	const target = at + (forward ? 1 : -1);
 	if (target < 0) {
-		return getSelectionPoint(run, lines[0].start);
+		return getSelectionPoint(run, lines[0].start, true);
 	}
 	if (target >= lines.length) {
 		return getSelectionPoint(run, lines[lines.length - 1].end);
 	}
-	const here = getSelectionPoint(run, index);
-	const column = here === null ? null : getCaretColumn(layout, here);
+	const column = getCaretColumn(layout, from);
 	const root = document.body ?? document.documentElement;
 	const found = column === null || root === null
 		? null
@@ -26633,7 +26644,7 @@ function selectionLineMove(
 			true,
 		);
 	if (found === null) {
-		return getSelectionPoint(run, lines[target].start);
+		return getSelectionPoint(run, lines[target].start, true);
 	}
 	return [found.node as unknown as Node, found.offset];
 }
@@ -26689,13 +26700,47 @@ function getModifiedPoint(
 		if (lines.length === 0) {
 			return null;
 		}
-		const line = lines[getSelectionLine(lines, index)];
-		return getSelectionPoint(run, forward ? line.end : line.start);
+		const line = lines[getSelectionLineOf(lines, layout, from, index)];
+		return forward
+			? getSelectionPoint(run, line.end)
+			: getSelectionPoint(run, line.start, true);
 	}
 	if (granularity === "line") {
-		return selectionLineMove(document, run, layout, index, forward);
+		return selectionLineMove(document, run, layout, from, index, forward);
 	}
 	return null;
+}
+
+// Two blocks' text nodes meet in the flattened string, so an index on
+// that seam names the end of one line and the start of the next. The
+// caret's own node settles which, and within one node a wrap point
+// belongs to the row that begins there.
+function getSelectionLineOf(
+	lines: SelectionLine[],
+	layout: Layout,
+	from: [Node, number],
+	index: number,
+): number {
+	const [node, offset] = from;
+	if (node.nodeType === TEXT_NODE) {
+		let y: number | null = null;
+		for (const fragment of layout.lineFragments(node as Text)) {
+			if (fragment.startOffset <= offset && offset < fragment.endOffset) {
+				y = Math.round(fragment.rect.y);
+				break;
+			}
+			if (offset === fragment.endOffset) {
+				y = Math.round(fragment.rect.y);
+			}
+		}
+		if (y !== null) {
+			const at = lines.findIndex((line) => line.y === y);
+			if (at !== -1) {
+				return at;
+			}
+		}
+	}
+	return getSelectionLine(lines, index);
 }
 
 function isInDocument(selection: Selection, node: Node): boolean {
