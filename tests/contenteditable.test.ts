@@ -280,6 +280,40 @@ test("Backspace and Delete take one grapheme cluster or the selection", async ()
 	fixture.dom.dispose();
 });
 
+test("the caret stays inside the host when a motion would leave it", async () => {
+	const fixture = await withHost(
+		"<div>above</div><div contenteditable><div>one</div><div>two</div></div>" +
+		"<div>below the host</div>",
+	);
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const one = host.firstChild!.firstChild!;
+	const two = host.lastChild!.firstChild!;
+
+	// Down on the last line lands at its end; Up on the first at its start.
+	await fixture.type("\x1b[B\x1b[B");
+	expect(caret(document)).toEqual({node: two, offset: 3});
+	await fixture.type("\x1b[A\x1b[A");
+	expect(caret(document)).toEqual({node: one, offset: 0});
+	// Left at the start and Right at the end go nowhere, so no frame
+	// follows them.
+	await send(fixture.terminal, "\x1b[D");
+	expect(caret(document)).toEqual({node: one, offset: 0});
+	await fixture.type("\x1b[F\x1b[B");
+	await send(fixture.terminal, "\x1b[C");
+	expect(caret(document)).toEqual({node: two, offset: 3});
+	// Shift+Down on the last line extends to its end and no further.
+	await fixture.type("\x1b[H\x1b[1;2B");
+	const selection = document.getSelection()!;
+	expect([selection.focusNode, selection.focusOffset]).toEqual([two, 3]);
+
+	// The application-cursor forms of the keys move the same way.
+	await fixture.type("\x1bOH\x1bOA\x1bOC");
+	expect(caret(document)).toEqual({node: one, offset: 1});
+	fixture.dom.dispose();
+});
+
 test("Ctrl+W, Ctrl+U and Ctrl+K delete by word and by line", async () => {
 	const fixture = await withHost("<div contenteditable>one two three</div>");
 	const {document, host} = fixture;
