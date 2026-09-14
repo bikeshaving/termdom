@@ -22028,6 +22028,7 @@ function isHTMLDocument(document: Document): boolean {
 const kImplementation = Symbol("implementation");
 const kSelection = Symbol("the document's selection");
 const kHighlights = Symbol("the document's highlight registry");
+const kFonts = Symbol("the document's font face set");
 const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
 const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
@@ -22063,6 +22064,7 @@ export interface Document {
 	[kSelection]: Selection | null;
 	[kSelectionChangeScheduled]: boolean;
 	[kHighlights]: HighlightRegistry | null;
+	[kFonts]: FontFaceSet | null;
 	[kTemplateDocument]: Document | null;
 	[kActiveElement]: Element | null;
 	[kDefaultView]: object | null;
@@ -22214,6 +22216,7 @@ export class Document extends Node implements globalThis.Document {
 		this[kSelection] = null;
 		this[kSelectionChangeScheduled] = false;
 		this[kHighlights] = null;
+		this[kFonts] = null;
 		this[kTemplateDocument] = null;
 		this[kActiveElement] = null;
 		this[kDefaultView] = null;
@@ -22692,10 +22695,8 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	get fonts(): globalThis.FontFaceSet {
-		throw domError(
-			"NotSupportedError",
-			"The font loading API is not implemented",
-		);
+		this[kFonts] ??= new FontFaceSet();
+		return this[kFonts] as unknown as globalThis.FontFaceSet;
 	}
 
 	get timeline(): globalThis.DocumentTimeline {
@@ -26882,6 +26883,84 @@ Object.defineProperty(Selection.prototype, Symbol.toStringTag, {
 	value: "Selection",
 	configurable: true,
 });
+
+/**
+ * The document's fonts, which a terminal has none of: an empty set that
+ * is already loaded, so code that waits on `fonts.ready` goes on.
+ */
+class FontFaceSet extends EventTarget {
+	declare readonly [Symbol.toStringTag]: string;
+	declare onloading: globalThis.FontFaceSet["onloading"];
+	declare onloadingdone: globalThis.FontFaceSet["onloadingdone"];
+	declare onloadingerror: globalThis.FontFaceSet["onloadingerror"];
+
+	get ready(): Promise<globalThis.FontFaceSet> {
+		return Promise.resolve(this as unknown as globalThis.FontFaceSet);
+	}
+
+	get status(): globalThis.FontFaceSetLoadStatus {
+		return "loaded";
+	}
+
+	get size(): number {
+		return 0;
+	}
+
+	check(_font: string, _text?: string): boolean {
+		return true;
+	}
+
+	load(_font: string, _text?: string): Promise<globalThis.FontFace[]> {
+		return Promise.resolve([]);
+	}
+
+	add(_font: globalThis.FontFace): this {
+		throw new TypeError("This document loads no fonts");
+	}
+
+	clear(): void {}
+
+	delete(_font: globalThis.FontFace): boolean {
+		return false;
+	}
+
+	has(_font: globalThis.FontFace): boolean {
+		return false;
+	}
+
+	forEach(
+		_callback: (
+			value: globalThis.FontFace,
+			key: globalThis.FontFace,
+			parent: globalThis.FontFaceSet,
+		) => void,
+		_thisArg?: unknown,
+	): void {}
+
+	entries(): SetIterator<[globalThis.FontFace, globalThis.FontFace]> {
+		return new Set<globalThis.FontFace>().entries();
+	}
+
+	keys(): SetIterator<globalThis.FontFace> {
+		return new Set<globalThis.FontFace>().keys();
+	}
+
+	values(): SetIterator<globalThis.FontFace> {
+		return new Set<globalThis.FontFace>().values();
+	}
+
+	[Symbol.iterator](): SetIterator<globalThis.FontFace> {
+		return this.values();
+	}
+}
+
+Object.defineProperty(FontFaceSet.prototype, Symbol.toStringTag, {
+	value: "FontFaceSet",
+	configurable: true,
+});
+for (const name of ["onloading", "onloadingdone", "onloadingerror"]) {
+	installEventHandler(FontFaceSet.prototype, name);
+}
 
 type HighlightType = "grammar-error" | "highlight" | "spelling-error";
 
