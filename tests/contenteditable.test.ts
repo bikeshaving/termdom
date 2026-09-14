@@ -185,3 +185,160 @@ test("designMode on makes the body an editing host", async () => {
 	document.designMode = "off";
 	fixture.dom.dispose();
 });
+
+test("typing inserts text at the caret and fires beforeinput then input", async () => {
+	const fixture = await withHost("<div contenteditable>ac</div>");
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[C");
+
+	const seen: string[] = [];
+	for (const type of ["beforeinput", "input"]) {
+		host.addEventListener(type, (event: any) => {
+			seen.push(`${event.type}:${event.inputType}:${event.data}`);
+		});
+	}
+	await fixture.type("b");
+	expect(host.innerHTML).toBe("abc");
+	expect(seen).toEqual(["beforeinput:insertText:b", "input:insertText:b"]);
+	expect(caret(document).offset).toBe(2);
+	expect(fixture.terminal.getPlainText()).toContain("abc");
+	fixture.dom.dispose();
+});
+
+test("a canceled beforeinput leaves the tree alone", async () => {
+	const fixture = await withHost("<div contenteditable>ac</div>");
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	host.addEventListener("beforeinput", (event: any) => event.preventDefault());
+	let inputs = 0;
+	host.addEventListener("input", () => inputs++);
+	await fixture.type("b\x7f");
+	expect(host.innerHTML).toBe("ac");
+	expect(inputs).toBe(0);
+	fixture.dom.dispose();
+});
+
+test("typing into an empty host makes the text node it needs", async () => {
+	const fixture = await withHost("<div contenteditable></div>");
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("hi");
+	expect(host.innerHTML).toBe("hi");
+	expect(host.childNodes.length).toBe(1);
+	fixture.dom.dispose();
+});
+
+test("Backspace and Delete take one grapheme cluster or the selection", async () => {
+	const fixture =
+		await withHost("<div contenteditable>a\u{1f469}\u{200d}\u{1f4bb}bc</div>");
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const seen: string[] = [];
+	host.addEventListener("beforeinput", (event: any) => {
+		seen.push(event.inputType);
+	});
+
+	// Past "a" and the whole ZWJ sequence, then back over it in one Backspace.
+	await fixture.type("\x1b[C\x1b[C");
+	await fixture.type("\x7f");
+	expect(host.textContent).toBe("abc");
+	expect(caret(document).offset).toBe(1);
+
+	// Delete takes the character in front of the caret.
+	await fixture.type("\x1b[3~");
+	expect(host.textContent).toBe("ac");
+
+	// A selection goes whole.
+	document
+		.getSelection()
+		.setBaseAndExtent(host.firstChild, 0, host.firstChild, 2);
+	await fixture.type("\x7f");
+	expect(host.textContent).toBe("");
+	expect(seen).toEqual([
+		"deleteContentBackward",
+		"deleteContentForward",
+		"deleteContentBackward",
+	]);
+	fixture.dom.dispose();
+});
+
+test("Ctrl+W, Ctrl+U and Ctrl+K delete by word and by line", async () => {
+	const fixture = await withHost("<div contenteditable>one two three</div>");
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const seen: string[] = [];
+	host.addEventListener("beforeinput", (event: any) => {
+		seen.push(event.inputType);
+	});
+
+	// To the end, then one word back.
+	await fixture.type("\x1b[F");
+	await fixture.type("\x17");
+	expect(host.textContent).toBe("one two ");
+
+	// Ctrl+K from the middle takes the rest of the line.
+	host.textContent = "one two three";
+	await nextFrame(fixture.dom);
+	document
+		.getSelection()
+		.setBaseAndExtent(host.firstChild, 4, host.firstChild, 4);
+	await fixture.type("\x0b");
+	expect(host.textContent).toBe("one ");
+
+	// Ctrl+U takes the line back to its start.
+	host.textContent = "one two three";
+	await nextFrame(fixture.dom);
+	document
+		.getSelection()
+		.setBaseAndExtent(host.firstChild, 8, host.firstChild, 8);
+	await fixture.type("\x15");
+	expect(host.textContent).toBe("three");
+	expect(seen).toEqual([
+		"deleteWordBackward",
+		"deleteSoftLineForward",
+		"deleteSoftLineBackward",
+	]);
+	fixture.dom.dispose();
+});
+
+test("a space that would collapse away is written as a non-breaking space", async () => {
+	const fixture = await withHost("<div contenteditable>a</div>");
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[F");
+
+	// A trailing space has nothing after it to hold it open.
+	await fixture.type(" ");
+	expect(host.innerHTML).toBe("a&nbsp;");
+	// A letter after it gives the space something to sit between.
+	await fixture.type("b");
+	expect(host.innerHTML).toBe("a b");
+	// In a run only the last space can stay plain.
+	await fixture.type("  c");
+	expect(host.innerHTML).toBe("a b&nbsp; c");
+	expect(fixture.terminal.getPlainText()).toContain("a b\u00a0 c");
+	fixture.dom.dispose();
+});
+
+test("a paste inserts its text through insertFromPaste", async () => {
+	const fixture = await withHost("<div contenteditable>ac</div>");
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[C");
+	const seen: string[] = [];
+	for (const type of ["paste", "beforeinput", "input"]) {
+		host.addEventListener(type, (event: any) => seen.push(event.type));
+	}
+	await fixture.type("\x1b[200~b\x1b[201~");
+	expect(host.innerHTML).toBe("abc");
+	expect(seen).toEqual(["paste", "beforeinput", "input"]);
+	fixture.dom.dispose();
+});
