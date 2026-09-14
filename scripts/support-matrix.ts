@@ -1249,6 +1249,21 @@ function buildProbes(): Probe[] {
 			"DOM APIs",
 			(dom) => typeof dom.window.getSelection === "function",
 		),
+		apiProbe("contenteditable", "DOM APIs", (dom) => {
+			const host = dom.document.createElement("div");
+			host.contentEditable = "true";
+			dom.document.body.appendChild(host);
+			host.focus();
+			host.dispatchEvent(
+				new dom.window.InputEvent("beforeinput", {
+					inputType: "insertText",
+					data: "hi",
+					bubbles: true,
+					cancelable: true,
+				}),
+			);
+			return host.textContent === "hi";
+		}),
 		apiProbe("CSS Custom Highlight API", "DOM APIs", (dom) => {
 			const highlight = new dom.window.Highlight();
 			dom.window.CSS.highlights.set("probe", highlight);
