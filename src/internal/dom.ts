@@ -14025,8 +14025,9 @@ function isSubmitButton(element: Element): boolean {
 }
 
 // Fires the submit event unless the caller was `submit()`, which the
-// spec defines as skipping it. The navigation itself is the one step this
-// DOM does not have.
+// spec defines as skipping it, and then builds the entry list the
+// submission would send. The navigation that would send it is the one
+// step this DOM does not have.
 function submitForm(
 	form: HTMLFormElement,
 	submitter: Element | null,
@@ -14035,18 +14036,20 @@ function submitForm(
 	// A form outside a document cannot submit, because submission ends in a
 	// navigation and there is nothing to navigate. The submit event does not
 	// fire either.
-	if (!form.isConnected) {
+	if (!form.isConnected || form[kConstructingEntryList]) {
 		return;
 	}
-	if (skipEvent) {
-		return;
+	if (!skipEvent) {
+		const event = new SubmitEvent("submit", {
+			bubbles: true,
+			cancelable: true,
+			submitter: submitter as HTMLElement | null,
+		});
+		if (!dispatch(form, event)) {
+			return;
+		}
 	}
-	const event = new SubmitEvent("submit", {
-		bubbles: true,
-		cancelable: true,
-		submitter: submitter as HTMLElement | null,
-	});
-	dispatch(form, event);
+	constructEntryList(form, submitter);
 }
 
 const kResetControl = Symbol("put a control back to its default");
