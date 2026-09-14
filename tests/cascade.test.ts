@@ -852,6 +852,57 @@ test("an important UA declaration beats an important author one", () => {
 	expect(display("text")).toBe("block");
 });
 
+test("a child that came or went restyles only the children sibling rules could name", async () => {
+	const dom = domFor(
+		`<!DOCTYPE html><html><head><style>
+		.item:first-child { color: red }
+	</style></head><body><div id="list"><span id="plain">x</span><div class="item" id="a">a</div></div></body></html>`,
+	);
+	const document = dom.window.document;
+	await nextFrame(dom);
+	const plain = document.getElementById("plain")!;
+	expect(dom.window.getComputedStyle(plain).getPropertyValue("color"))
+		.toBe("rgb(0, 0, 0)");
+	const list = document.getElementById("list")!;
+	const first = document.createElement("div");
+	first.className = "item";
+	list.prepend(first);
+	await nextFrame(dom);
+	expect(dom.window.getComputedStyle(plain).getPropertyValue("color"))
+		.toBe("rgb(0, 0, 0)");
+	expect(dom.window.getComputedStyle(first).getPropertyValue("color"))
+		.toBe("rgb(255, 0, 0)");
+	expect(
+		dom.window.getComputedStyle(document.getElementById("a")!)
+			.getPropertyValue("color"),
+	).toBe("rgb(0, 0, 0)");
+});
+
+test("an inline style change reaches children only through what inherits", async () => {
+	const dom = domFor(
+		"<!DOCTYPE html><html><body><div id=\"box\"><span id=\"child\">x</span></div></body></html>",
+	);
+	const document = dom.window.document;
+	const box = document.getElementById("box")!;
+	const child = document.getElementById("child")!;
+	const color = (): string => dom.window.getComputedStyle(child).color;
+	await nextFrame(dom);
+	expect(color()).toBe("rgb(0, 0, 0)");
+	box.style.height = "3px";
+	await nextFrame(dom);
+	expect(color()).toBe("rgb(0, 0, 0)");
+	expect(dom.window.getComputedStyle(box).height).toBe("3px");
+	box.style.color = "red";
+	await nextFrame(dom);
+	expect(color()).toBe("rgb(255, 0, 0)");
+	box.style.height = "";
+	await nextFrame(dom);
+	expect(color()).toBe("rgb(255, 0, 0)");
+	box.style.color = "";
+	await nextFrame(dom);
+	expect(color()).toBe("rgb(0, 0, 0)");
+});
+
 test("inserting a child restyles the siblings and parent that selectors read", async () => {
 	const dom = domFor(
 		`<!DOCTYPE html><html><head><style>
