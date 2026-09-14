@@ -133,19 +133,6 @@ document.addEventListener("paste", (event) => {
 `copy` and `cut` never fire from the user: the terminal keeps the copy
 gesture — Cmd+C, Shift+drag — and Ctrl+C is the interrupt.
 
-## Highlights
-
-To color text without wrapping it in elements, register ranges with the
-CSS Custom Highlight API: `CSS.highlights.set("search-hit", new
-Highlight(range, ...))`, styled by `::highlight(search-hit)` rules for
-`color`, `background-color` and `text-decoration-line`. Wrapping text in
-a span would mutate the tree and could change where lines break, while a
-highlight is painted after layout and changes nothing but the cells. A
-name no rule styles paints nothing; where highlights overlap, the one
-with the higher `priority` wins the properties it sets — ties going to
-the name registered last — and `::selection` paints over all of them.
-`examples/highlights.ts` is find-in-page over a log pane on two names.
-
 ## Scrolling
 
 Output starts at the command line and flows down; when the document

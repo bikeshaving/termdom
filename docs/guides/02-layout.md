@@ -77,3 +77,11 @@ clip too, and make the box scrollable: `scrollTop`, `scrollTo`,
 
 Floats, `subgrid` and masonry. The [compatibility matrix](/compatibility/) has
 the full list.
+
+## Highlights
+
+`CSS.highlights.set("hit", new Highlight(...ranges))` colors ranges through
+`::highlight(hit)` rules for `color`, `background-color` and
+`text-decoration-line`, without adding elements or moving a line break.
+The higher `priority` wins where highlights overlap, and `::selection`
+paints over all of them. See `examples/highlights.ts`.
