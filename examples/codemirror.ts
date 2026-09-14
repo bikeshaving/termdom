@@ -14,7 +14,7 @@ import {TermDOM} from "@b9g/termdom";
 import {defaultKeymap, history, historyKeymap} from "@codemirror/commands";
 import {javascript} from "@codemirror/lang-javascript";
 import {defaultHighlightStyle, syntaxHighlighting} from "@codemirror/language";
-import {EditorState} from "@codemirror/state";
+import {EditorSelection, EditorState} from "@codemirror/state";
 import {EditorView, keymap, lineNumbers} from "@codemirror/view";
 
 const term = new TermDOM();
@@ -79,6 +79,33 @@ const theme = EditorView.theme(
   {dark: true},
 );
 
+// CodeMirror's own line moves probe half a text height at a time, and a
+// line here is one cell tall, so half of it rounds to nothing. These move
+// by a whole line instead.
+function moveLine(
+  forward: boolean,
+  extend: boolean,
+): (view: EditorView) => boolean {
+  return (view: EditorView): boolean => {
+    const {selection} = view.state;
+    const ranges = selection.ranges.map((range) => {
+      const moved = view.moveVertically(range, forward, view.defaultLineHeight);
+      return extend ? EditorSelection.range(range.anchor, moved.head) : moved;
+    });
+    view.dispatch({
+      selection: EditorSelection.create(ranges, selection.mainIndex),
+      scrollIntoView: true,
+      userEvent: "select",
+    });
+    return true;
+  };
+}
+
+const lineKeys = keymap.of([
+  {key: "ArrowUp", run: moveLine(false, false), shift: moveLine(false, true)},
+  {key: "ArrowDown", run: moveLine(true, false), shift: moveLine(true, true)},
+]);
+
 const status = document.querySelector(".status")!;
 const view = new EditorView({
   state: EditorState.create({
@@ -95,6 +122,7 @@ const view = new EditorView({
     extensions: [
       lineNumbers(),
       history(),
+      lineKeys,
       keymap.of([...defaultKeymap, ...historyKeymap]),
       javascript(),
       syntaxHighlighting(defaultHighlightStyle),
