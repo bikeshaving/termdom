@@ -34,6 +34,8 @@ const COLLAPSIBLE_ONLY = /^[ \t\n\r\f]*$/;
 // A control edits its own value and keeps its keys, whatever it sits in.
 const TEXT_CONTROL_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
+const HEADING_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
+
 // The elements a caret's line is bounded by. The editing host itself
 // bounds a line whatever its tag.
 const BLOCK_TAGS = new Set([
@@ -81,7 +83,7 @@ const ATOMIC_TAGS = new Set(["br", "hr", "img", "input", "select", "textarea"]);
 const PRESERVED_WHITE_SPACE = new Set(["pre", "pre-wrap", "break-spaces"]);
 
 // What a keystroke in a host asks for, before anything in the tree moves.
-const DELETE_CHORDS: Record<string, string> = {
+const EDIT_CHORDS: Record<string, string> = {
 	"alt+Backspace": "deleteWordBackward",
 	"ctrl+w": "deleteWordBackward",
 	"ctrl+u": "deleteSoftLineBackward",
@@ -273,22 +275,25 @@ function onEditingKeydown(event: globalThis.Event): void {
 		);
 		return;
 	}
-	const inputType = getDeleteInputType(keyboard);
+	const inputType = getEditInputType(keyboard);
 	if (inputType !== null) {
 		requestEditingInput(host, inputType, null);
 	}
 }
 
-function getDeleteInputType(keyboard: globalThis.KeyboardEvent): string | null {
+function getEditInputType(keyboard: globalThis.KeyboardEvent): string | null {
 	if (keyboard.ctrlKey || keyboard.altKey) {
 		const modifier = keyboard.ctrlKey ? "ctrl" : "alt";
-		return DELETE_CHORDS[`${modifier}+${keyboard.key}`] ?? null;
+		return EDIT_CHORDS[`${modifier}+${keyboard.key}`] ?? null;
 	}
 	if (keyboard.key === "Backspace") {
 		return "deleteContentBackward";
 	}
 	if (keyboard.key === "Delete") {
 		return "deleteContentForward";
+	}
+	if (keyboard.key === "Enter") {
+		return keyboard.shiftKey ? "insertLineBreak" : "insertParagraph";
 	}
 	return null;
 }
@@ -403,10 +408,17 @@ function applyEditingInput(
 	}
 	switch (inputType) {
 		case "insertText":
-		case "insertFromPaste":
 			return data !== null &&
 				data !== "" &&
 				insertEditingText(host, selection, data);
+		case "insertFromPaste":
+			return data !== null &&
+				data !== "" &&
+				insertPastedText(host, selection, data);
+		case "insertParagraph":
+			return insertEditingParagraph(host, selection);
+		case "insertLineBreak":
+			return insertEditingLineBreak(host, selection);
 		case "deleteContentBackward":
 			return deleteEditingContent(host, selection, false);
 		case "deleteContentForward":
@@ -438,6 +450,323 @@ function insertEditingText(
 	return true;
 }
 
+// A pasted line break is a new block, the way Enter's is. HTML on the
+// clipboard is not read.
+function insertPastedText(
+	host: globalThis.HTMLElement,
+	selection: globalThis.Selection,
+	text: string,
+): boolean {
+	deleteSelectionContents(host, selection);
+	const lines = text.split("\n");
+	for (let at = 0; at < lines.length; at++) {
+		if (at > 0) {
+			insertEditingParagraph(host, selection);
+		}
+		if (lines[at] !== "") {
+			insertEditingText(host, selection, lines[at]);
+		}
+	}
+	return true;
+}
+
+// Enter splits the caret's block in two. The inline elements around the
+// caret are split with it, because the range takes a copy of every
+// element it is only partly inside.
+function insertEditingParagraph(
+	host: globalThis.HTMLElement,
+	selection: globalThis.Selection,
+): boolean {
+	deleteSelectionContents(host, selection);
+	let point = getCaretPoint(selection);
+	let block = getBlockContainer(host, point.node);
+	if (block === host) {
+		block = wrapLineInBlock(host, point);
+		if (point.node === host) {
+			point = {node: block, offset: block.childNodes.length};
+		}
+	}
+	if (block.localName === "li" && !hasRenderedContent(block)) {
+		return leaveList(selection, block);
+	}
+	const document = host.ownerDocument;
+	const created = document.createElement(
+		getSeparatorTag(block, isAtBlockEnd(host, point)),
+	);
+	const tail = document.createRange();
+	tail.setStart(point.node, point.offset);
+	tail.setEnd(block, block.childNodes.length);
+	created.appendChild(tail.extractContents());
+	block.parentNode!.insertBefore(created, block.nextSibling);
+	fillEmptyBlock(block);
+	fillEmptyBlock(created);
+	collapseTo(selection, normalizeCaretPoint(getFirstCaretPoint(created)));
+	return true;
+}
+
+function insertEditingLineBreak(
+	host: globalThis.HTMLElement,
+	selection: globalThis.Selection,
+): boolean {
+	deleteSelectionContents(host, selection);
+	const document = host.ownerDocument;
+	const lineBreak = document.createElement("br");
+	insertNodeAt(getCaretPoint(selection), lineBreak);
+	const after = {
+		node: lineBreak.parentNode!,
+		offset: getChildIndex(lineBreak) + 1,
+	};
+	// A break with nothing after it opens a line the layout has no reason
+	// to keep, so it gets the same placeholder an empty block gets.
+	if (isAtBlockEnd(host, after)) {
+		lineBreak.parentNode!.insertBefore(
+			document.createElement("br"),
+			lineBreak.nextSibling,
+		);
+	}
+	collapseTo(selection, after);
+	return true;
+}
+
+// Chrome ends the list rather than making another empty item, and the
+// items below the one left behind carry on in a list of their own.
+function leaveList(
+	selection: globalThis.Selection,
+	item: globalThis.Element,
+): boolean {
+	const list = item.parentElement;
+	if (list === null || list.parentNode === null) {
+		return false;
+	}
+	const document = item.ownerDocument;
+	const block = document.createElement("div");
+	list.parentNode.insertBefore(block, list.nextSibling);
+	if (item.nextSibling !== null) {
+		const rest = document.createElement(list.localName);
+		while (item.nextSibling !== null) {
+			rest.appendChild(item.nextSibling);
+		}
+		block.parentNode!.insertBefore(rest, block.nextSibling);
+	}
+	item.remove();
+	fillEmptyBlock(block);
+	if (list.firstChild === null) {
+		list.remove();
+	}
+	collapseTo(selection, {node: block, offset: 0});
+	return true;
+}
+
+// Chrome's default paragraph separator is a div. A paragraph and a list
+// item split into their own kind; a heading does too, except at its end,
+// where what follows a heading is body text.
+function getSeparatorTag(block: globalThis.Element, atEnd: boolean): string {
+	const tag = block.localName;
+	if (tag === "li" || tag === "p") {
+		return tag;
+	}
+	if (HEADING_TAGS.has(tag)) {
+		return atEnd ? "div" : tag;
+	}
+	return "div";
+}
+
+// Enter with the caret in the host itself has no block to split, so the
+// line the caret is on becomes one, which is what Chrome does.
+function wrapLineInBlock(
+	host: globalThis.HTMLElement,
+	point: EditingPoint,
+): globalThis.Element {
+	const block = host.ownerDocument.createElement("div");
+	let top: globalThis.Node | null = point.node === host
+		? (host.childNodes[point.offset] ?? host.lastChild)
+		: point.node;
+	while (top !== null && top.parentNode !== host) {
+		top = top.parentNode;
+	}
+	if (top === null) {
+		host.appendChild(block);
+		return block;
+	}
+	let first = top;
+	while (
+		first.previousSibling !== null &&
+		!isBlockElement(host, first.previousSibling)
+	) {
+		first = first.previousSibling;
+	}
+	let last = top;
+	while (last.nextSibling !== null && !isBlockElement(host, last.nextSibling)) {
+		last = last.nextSibling;
+	}
+	host.insertBefore(block, first);
+	for (let node: globalThis.Node = first; ;) {
+		const next = node.nextSibling;
+		block.appendChild(node);
+		if (node === last || next === null) {
+			break;
+		}
+		node = next;
+	}
+	return block;
+}
+
+// Backspace at a block's start, or Delete at its end, runs the two
+// blocks together and takes the emptied one out.
+function mergeBlocks(
+	first: globalThis.Element,
+	second: globalThis.Element,
+	selection: globalThis.Selection,
+): void {
+	const placeholder = getPlaceholderBreak(first);
+	if (placeholder !== null) {
+		placeholder.remove();
+	}
+	const at =
+		normalizeCaretPoint({node: first, offset: first.childNodes.length});
+	while (second.firstChild !== null) {
+		first.appendChild(second.firstChild);
+	}
+	removeWithEmptiedAncestors(second);
+	fillEmptyBlock(first);
+	collapseTo(selection, at);
+}
+
+function removeWithEmptiedAncestors(element: globalThis.Element): void {
+	const parent = element.parentElement;
+	element.remove();
+	if (
+		parent !== null &&
+		parent.firstChild === null &&
+		getEditingHost(parent) !== parent
+	) {
+		removeWithEmptiedAncestors(parent);
+	}
+}
+
+/** The block that renders just before this one inside the host. */
+function getNeighborBlock(
+	host: globalThis.HTMLElement,
+	block: globalThis.Element,
+	forward: boolean,
+): globalThis.Element | null {
+	for (
+		let node: globalThis.Node = block;
+		node !== host && node.parentNode !== null;
+		node = node.parentNode
+	) {
+		for (
+			let sibling = forward ? node.nextSibling : node.previousSibling;
+			sibling !== null;
+			sibling = forward ? sibling.nextSibling : sibling.previousSibling
+		) {
+			const found = getEdgeBlockIn(host, sibling, forward);
+			if (found !== null) {
+				return found;
+			}
+		}
+	}
+	return null;
+}
+
+function getEdgeBlockIn(
+	host: globalThis.HTMLElement,
+	node: globalThis.Node,
+	forward: boolean,
+): globalThis.Element | null {
+	if (node.nodeType !== ELEMENT_NODE) {
+		return null;
+	}
+	const element = node as globalThis.Element;
+	for (
+		let child = forward ? element.firstChild : element.lastChild;
+		child !== null;
+		child = forward ? child.nextSibling : child.previousSibling
+	) {
+		const found = getEdgeBlockIn(host, child, forward);
+		if (found !== null) {
+			return found;
+		}
+	}
+	return isBlockElement(host, element) ? element : null;
+}
+
+/** A <br> whose only job is to give an empty line its height. */
+function getPlaceholderBreak(
+	block: globalThis.Element,
+): globalThis.Element | null {
+	const last = block.lastChild;
+	if (last === null || !isBreak(last)) {
+		return null;
+	}
+	for (
+		let node = last.previousSibling; node !== null; node = node.previousSibling
+	) {
+		if (isBreak(node)) {
+			return last as globalThis.Element;
+		}
+		if (isRenderedNode(node)) {
+			return null;
+		}
+	}
+	return last as globalThis.Element;
+}
+
+function fillEmptyBlock(block: globalThis.Element): void {
+	if (hasRenderedContent(block) || getPlaceholderBreak(block) !== null) {
+		return;
+	}
+	block.appendChild(block.ownerDocument.createElement("br"));
+}
+
+function hasRenderedContent(element: globalThis.Element): boolean {
+	for (
+		let child = element.firstChild; child !== null; child = child.nextSibling
+	) {
+		if (isRenderedNode(child)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function insertNodeAt(point: EditingPoint, node: globalThis.Node): void {
+	if (point.node.nodeType === TEXT_NODE) {
+		const text = point.node as globalThis.Text;
+		const parent = text.parentNode!;
+		if (point.offset === 0) {
+			parent.insertBefore(node, text);
+		} else if (point.offset >= text.data.length) {
+			parent.insertBefore(node, text.nextSibling);
+		} else {
+			parent.insertBefore(node, text.splitText(point.offset));
+		}
+		return;
+	}
+	const element = point.node as globalThis.Element;
+	element.insertBefore(node, element.childNodes[point.offset] ?? null);
+}
+
+/** Whether nothing the layout would draw sits after the point in its block. */
+function isAtBlockEnd(
+	host: globalThis.HTMLElement,
+	point: EditingPoint,
+): boolean {
+	if (point.node.nodeType === TEXT_NODE) {
+		if (point.offset < (point.node as globalThis.Text).data.length) {
+			return false;
+		}
+	} else {
+		const children = point.node.childNodes;
+		for (let at = point.offset; at < children.length; at++) {
+			if (isRenderedNode(children[at])) {
+				return false;
+			}
+		}
+	}
+	return !hasRenderedSibling(host, point.node, true);
+}
+
 function deleteEditingContent(
 	host: globalThis.HTMLElement,
 	selection: globalThis.Selection,
@@ -458,7 +787,7 @@ function deleteEditingContent(
 	}
 	const neighbor = getAdjacentNode(host, point, forward);
 	if (neighbor === null) {
-		return false;
+		return mergeAcrossBlocks(host, selection, point, forward);
 	}
 	if (neighbor.nodeType === TEXT_NODE) {
 		const data = neighbor as globalThis.Text;
@@ -477,6 +806,31 @@ function deleteEditingContent(
 	});
 	(neighbor as globalThis.ChildNode).remove();
 	collapseTo(selection, at);
+	fillEmptyBlock(getBlockContainer(host, at.node));
+	return true;
+}
+
+// Backspace at a block's start takes the break before it, which is the
+// block boundary: the two blocks become one.
+function mergeAcrossBlocks(
+	host: globalThis.HTMLElement,
+	selection: globalThis.Selection,
+	point: EditingPoint,
+	forward: boolean,
+): boolean {
+	const block = getBlockContainer(host, point.node);
+	if (block === host) {
+		return false;
+	}
+	const other = getNeighborBlock(host, block, forward);
+	if (other === null || other === host) {
+		return false;
+	}
+	if (forward) {
+		mergeBlocks(block, other, selection);
+	} else {
+		mergeBlocks(other, block, selection);
+	}
 	return true;
 }
 
@@ -513,7 +867,14 @@ function deleteSelectionContents(
 	if (!host.contains(range.endContainer)) {
 		range.setEnd(host, host.childNodes.length);
 	}
+	const first = getBlockContainer(host, range.startContainer);
+	const last = getBlockContainer(host, range.endContainer);
 	range.deleteContents();
+	if (first !== last && host.contains(first) && host.contains(last)) {
+		mergeBlocks(first, last, selection);
+	} else {
+		fillEmptyBlock(first);
+	}
 	return true;
 }
 
@@ -532,6 +893,7 @@ function cutGrapheme(
 	text.deleteData(from, to - from);
 	normalizeSpaces(host, text, from, from);
 	collapseTo(selection, {node: text, offset: from});
+	fillEmptyBlock(getBlockContainer(host, text));
 	return true;
 }
 
@@ -541,40 +903,34 @@ function openTextAt(
 	host: globalThis.HTMLElement,
 	point: EditingPoint,
 ): {node: globalThis.Text; offset: number} {
-	const placed = takePlaceholderBreak(host, point);
-	if (placed.node.nodeType === TEXT_NODE) {
-		return {node: placed.node as globalThis.Text, offset: placed.offset};
+	takePlaceholderBreak(host, point);
+	if (point.node.nodeType === TEXT_NODE) {
+		return {node: point.node as globalThis.Text, offset: point.offset};
 	}
-	const inside = normalizeCaretPoint(placed);
+	const inside = normalizeCaretPoint(point);
 	if (inside.node.nodeType === TEXT_NODE) {
 		return {node: inside.node as globalThis.Text, offset: inside.offset};
 	}
-	const parent = placed.node as globalThis.Element;
+	const parent = point.node as globalThis.Element;
 	const created = parent.ownerDocument.createTextNode("");
-	parent.insertBefore(created, parent.childNodes[placed.offset] ?? null);
+	parent.insertBefore(created, parent.childNodes[point.offset] ?? null);
 	return {node: created, offset: 0};
 }
 
 // The <br> that holds an empty line open goes as soon as text lands in
-// front of it, which is Chrome's placeholder br.
+// front of it, which is Chrome's placeholder br. Removing it leaves the
+// caret where it was, since the caret is what the break sat behind.
 function takePlaceholderBreak(
 	host: globalThis.HTMLElement,
 	point: EditingPoint,
-): EditingPoint {
+): void {
 	const block = getBlockContainer(host, point.node);
-	const last = block.lastChild;
-	if (last === null || !isBreak(last)) {
-		return point;
+	const placeholder = getPlaceholderBreak(block);
+	if (
+		placeholder !== null && getAdjacentNode(host, point, true) === placeholder
+	) {
+		placeholder.remove();
 	}
-	const before = last.previousSibling;
-	if (before !== null && !isBreak(before)) {
-		return point;
-	}
-	if (point.node !== block || point.offset !== getChildIndex(last)) {
-		return point;
-	}
-	last.remove();
-	return point;
 }
 
 /** The element whose line the caret sits on: a block, or the host. */
@@ -679,16 +1035,14 @@ function isCollapsibleWhiteSpace(text: globalThis.Text): boolean {
 	return !PRESERVED_WHITE_SPACE.has(view.getComputedStyle(parent).whiteSpace);
 }
 
-// A line break holds no text of its own, so a space next to one still
-// collapses away.
 function hasRenderedSibling(
 	host: globalThis.HTMLElement,
-	text: globalThis.Text,
+	from: globalThis.Node,
 	forward: boolean,
 ): boolean {
-	const block = getBlockContainer(host, text);
+	const block = getBlockContainer(host, from);
 	for (
-		let node: globalThis.Node | null = text;
+		let node: globalThis.Node | null = from;
 		node !== null && node !== block;
 		node = node.parentNode
 	) {
@@ -697,16 +1051,20 @@ function hasRenderedSibling(
 			sibling !== null;
 			sibling = forward ? sibling.nextSibling : sibling.previousSibling
 		) {
-			if (sibling.nodeType === ELEMENT_NODE) {
-				if (!isBreak(sibling)) {
-					return true;
-				}
-			} else if (!COLLAPSIBLE_ONLY.test(sibling.textContent ?? "")) {
+			if (isRenderedNode(sibling)) {
 				return true;
 			}
 		}
 	}
 	return false;
+}
+
+// A line break holds no text of its own, so a space next to one still
+// collapses away and an empty block that ends in one is still empty.
+function isRenderedNode(node: globalThis.Node): boolean {
+	return node.nodeType === ELEMENT_NODE
+		? !isBreak(node)
+		: !COLLAPSIBLE_ONLY.test(node.textContent ?? "");
 }
 
 function clampSelectionToHost(
