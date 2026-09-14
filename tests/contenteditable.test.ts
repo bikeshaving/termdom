@@ -342,3 +342,206 @@ test("a paste inserts its text through insertFromPaste", async () => {
 	expect(seen).toEqual(["paste", "beforeinput", "input"]);
 	fixture.dom.dispose();
 });
+
+test("Enter splits the caret's block and leaves an empty one one line tall", async () => {
+	const fixture = await withHost("<div contenteditable><p>abcd</p></div>");
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const seen: string[] = [];
+	host.addEventListener("beforeinput", (event: any) => {
+		seen.push(event.inputType);
+	});
+
+	await fixture.type("\x1b[C\x1b[C");
+	await fixture.type("\r");
+	expect(host.innerHTML).toBe("<p>ab</p><p>cd</p>");
+	expect(seen).toEqual(["insertParagraph"]);
+	expect(caret(document).node).toBe(host.lastChild.firstChild);
+	expect(caret(document).offset).toBe(0);
+
+	// At the end of a paragraph the new one is empty, and its placeholder
+	// <br> keeps it a line tall.
+	await fixture.type("\x1b[F\r");
+	expect(host.innerHTML).toBe("<p>ab</p><p>cd</p><p><br></p>");
+	const rows = fixture.terminal.getPlainText().split("\n");
+	expect(rows[0]).toContain("ab");
+	expect(rows[1]).toContain("cd");
+
+	// Typing takes the placeholder away again.
+	await fixture.type("e");
+	expect(host.innerHTML).toBe("<p>ab</p><p>cd</p><p>e</p>");
+	fixture.dom.dispose();
+});
+
+test("Enter at the end of a heading starts a div", async () => {
+	const fixture = await withHost("<div contenteditable><h1>title</h1></div>");
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[F\r");
+	expect(host.innerHTML).toBe("<h1>title</h1><div><br></div>");
+
+	// In the middle it is the heading that splits.
+	host.innerHTML = "<h1>title</h1>";
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[H\x1b[C\x1b[C\r");
+	expect(host.innerHTML).toBe("<h1>ti</h1><h1>tle</h1>");
+	fixture.dom.dispose();
+});
+
+test("Enter with no block wraps the line in a div and starts another", async () => {
+	const fixture = await withHost("<div contenteditable>abcd</div>");
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[C\x1b[C\r");
+	expect(host.innerHTML).toBe("<div>ab</div><div>cd</div>");
+	fixture.dom.dispose();
+});
+
+test("Enter splits the inline elements around the caret with the block", async () => {
+	const fixture = await withHost(
+		"<div contenteditable><p>he<b>ll<i>o</i> there</b></p></div>",
+	);
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[C\x1b[C\x1b[C\x1b[C");
+	await fixture.type("\r");
+	expect(host.innerHTML).toBe("<p>he<b>ll</b></p><p><b><i>o</i> there</b></p>");
+	fixture.dom.dispose();
+});
+
+test("Shift+Enter inserts a <br>", async () => {
+	const fixture = await withHost("<div contenteditable><p>abcd</p></div>");
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const seen: string[] = [];
+	host.addEventListener("beforeinput", (event: any) => {
+		seen.push(event.inputType);
+	});
+	await fixture.type("\x1b[C\x1b[C");
+	// No terminal sends Shift+Enter as a sequence of its own, so the key
+	// arrives the way a page would send it.
+	host.dispatchEvent(
+		new (fixture.dom.window as any).KeyboardEvent("keydown", {
+			key: "Enter",
+			shiftKey: true,
+			bubbles: true,
+			cancelable: true,
+		}),
+	);
+	await nextFrame(fixture.dom);
+	expect(host.innerHTML).toBe("<p>ab<br>cd</p>");
+	expect(seen).toEqual(["insertLineBreak"]);
+
+	// A break at the end of a block gets the placeholder that keeps the
+	// new line a line.
+	await fixture.type("\x1b[F");
+	host.dispatchEvent(
+		new (fixture.dom.window as any).KeyboardEvent("keydown", {
+			key: "Enter",
+			shiftKey: true,
+			bubbles: true,
+			cancelable: true,
+		}),
+	);
+	await nextFrame(fixture.dom);
+	expect(host.innerHTML).toBe("<p>ab<br>cd<br><br></p>");
+	await fixture.type("e");
+	expect(host.innerHTML).toBe("<p>ab<br>cd<br>e</p>");
+	fixture.dom.dispose();
+});
+
+test("Backspace at a block's start merges it into the one before", async () => {
+	const fixture =
+		await withHost("<div contenteditable><p>one</p><p>two</p></div>");
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const second = host.lastChild;
+	document
+		.getSelection()
+		.setBaseAndExtent(second.firstChild, 0, second.firstChild, 0);
+	await fixture.type("\x7f");
+	expect(host.innerHTML).toBe("<p>onetwo</p>");
+	expect(caret(document).offset).toBe(3);
+
+	// Delete at the end takes the next block in the same way.
+	host.innerHTML = "<p>one</p><p>two</p>";
+	await nextFrame(fixture.dom);
+	const first = host.firstChild;
+	document
+		.getSelection()
+		.setBaseAndExtent(first.firstChild, 3, first.firstChild, 3);
+	await fixture.type("\x1b[3~");
+	expect(host.innerHTML).toBe("<p>onetwo</p>");
+	fixture.dom.dispose();
+});
+
+test("deleting a selection that spans blocks joins the two ends", async () => {
+	const fixture = await withHost(
+		"<div contenteditable><p>one</p><p>two</p><p>three</p></div>",
+	);
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	document
+		.getSelection()
+		.setBaseAndExtent(
+			host.firstChild.firstChild,
+			1,
+			host.lastChild.firstChild,
+			2,
+		);
+	await fixture.type("\x7f");
+	expect(host.innerHTML).toBe("<p>oree</p>");
+	fixture.dom.dispose();
+});
+
+test("emptying a block leaves the placeholder <br> behind", async () => {
+	const fixture = await withHost("<div contenteditable><p>a</p></div>");
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[F\x7f");
+	expect(host.innerHTML).toBe("<p><br></p>");
+	fixture.dom.dispose();
+});
+
+test("Enter in a list makes another item; Enter in an empty item ends it", async () => {
+	const fixture = await withHost(
+		"<div contenteditable><ul><li>one</li><li>two</li></ul></div>",
+	);
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	const second = host.querySelectorAll("li")[1];
+	document
+		.getSelection()
+		.setBaseAndExtent(second.firstChild, 3, second.firstChild, 3);
+	await fixture.type("\r");
+	expect(host.innerHTML).toBe("<ul><li>one</li><li>two</li><li><br></li></ul>");
+
+	// The empty item leaves the list rather than making another.
+	await fixture.type("\r");
+	expect(host.innerHTML).toBe(
+		"<ul><li>one</li><li>two</li></ul><div><br></div>",
+	);
+	await fixture.type("x");
+	expect(host.innerHTML).toBe("<ul><li>one</li><li>two</li></ul><div>x</div>");
+	fixture.dom.dispose();
+});
+
+test("a pasted line break starts a new block", async () => {
+	const fixture = await withHost("<div contenteditable><p>ad</p></div>");
+	const {host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[C");
+	await fixture.type("\x1b[200~b\rc\x1b[201~");
+	expect(host.innerHTML).toBe("<p>ab</p><p>cd</p>");
+	fixture.dom.dispose();
+});
