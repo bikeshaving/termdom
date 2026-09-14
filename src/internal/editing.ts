@@ -305,14 +305,21 @@ function moveEditingCaret(
 	extend: boolean,
 ): void {
 	const selection = ensureCaretInside(host);
-	if (selection === null) {
+	if (selection === null || selection.focusNode === null) {
 		return;
 	}
-	selection.modify(
-		extend ? "extend" : "move",
-		forward ? "forward" : "backward",
-		granularity,
-	);
+	const alter = extend ? "extend" : "move";
+	const direction = forward ? "forward" : "backward";
+	const from = {node: selection.focusNode, offset: selection.focusOffset};
+	selection.modify(alter, direction, granularity);
+	if (selection.focusNode !== null && !host.contains(selection.focusNode)) {
+		if (extend) {
+			selection.extend(from.node, from.offset);
+		} else {
+			collapseTo(selection, from);
+		}
+		selection.modify(alter, direction, "lineboundary");
+	}
 	skipUneditable(host, selection, forward, extend);
 }
 
