@@ -98,6 +98,8 @@ and dispatched to DOM nodes.
   Open-Meteo, with a city search and flexbox day cards.
 - [`popover.ts`](./examples/popover.ts) — a menu bar where every menu is
   a declarative popover; open, dismiss and stacking are the platform's.
+- [`codemirror.ts`](./examples/codemirror.ts) — CodeMirror editing a file on a
+  `contenteditable` host, with line numbers and syntax colors.
 - [`solitaire.ts`](./examples/solitaire.ts) — the Klondike solitaire above,
   with seeded deals playable by keyboard or mouse.
 - [`hello-{react,vue,svelte,crank}.ts`](./examples) — one greeting and
