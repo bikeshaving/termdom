@@ -77,3 +77,139 @@ test("a FormData replaces a lone surrogate in a name or a value", () => {
 	data.append("pair", "😀");
 	expect(data.get("pair")).toBe("😀");
 });
+
+const CONTROLS = `<!DOCTYPE html><body><form id="f">
+	<input name="text" value="hi">
+	<input name="check" type="checkbox" checked>
+	<input name="checkval" type="checkbox" value="yes" checked>
+	<input name="unchecked" type="checkbox" checked value="no" disabled>
+	<input name="radio" type="radio" value="r" checked>
+	<input name="off" value="x" disabled>
+	<input value="anonymous">
+	<select name="pick"><option value="a" selected>A</option><option value="b">B</option></select>
+	<select name="many" multiple><option value="1" selected>1</option><option value="2" selected>2</option><option value="3">3</option></select>
+	<textarea name="note">one
+two</textarea>
+	<input type="hidden" name="_charset_">
+	<datalist><input name="inlist" value="no"></datalist>
+	<object name="obj"></object>
+	<button name="plain" value="v1">a</button>
+	<button name="send" value="v2" type="submit">b</button>
+	<input name="pixel" type="image">
+</form></body>`;
+
+test("an entry list follows the rule for each kind of control", () => {
+	const window = createWindow(CONTROLS);
+	const form = window.document.getElementById("f") as HTMLFormElement;
+
+	expect([...new window.FormData(form)]).toEqual([
+		["text", "hi"],
+		["check", "on"],
+		["checkval", "yes"],
+		["radio", "r"],
+		["pick", "a"],
+		["many", "1"],
+		["many", "2"],
+		["note", "one\r\ntwo"],
+		["_charset_", "UTF-8"],
+	]);
+});
+
+test("only the submitting button is in the entry list", () => {
+	const window = createWindow(CONTROLS);
+	const {document} = window;
+	const form = document.getElementById("f") as HTMLFormElement;
+	const send = form.querySelector("[name=send]") as HTMLButtonElement;
+	const pixel = form.querySelector("[name=pixel]") as HTMLInputElement;
+
+	const sent = [...new window.FormData(form, send)];
+	expect(sent).toContainEqual(["send", "v2"]);
+	expect(sent.filter(([name]) => name === "plain")).toEqual([]);
+	expect(sent.filter(([name]) => name === "pixel.x")).toEqual([]);
+
+	const clicked = [...new window.FormData(form, pixel)];
+	expect(clicked.slice(-2)).toEqual([["pixel.x", "0"], ["pixel.y", "0"]]);
+
+	const other = document.createElement("form");
+	document.body.append(other);
+	expect(() => new window.FormData(other, send)).toThrow(/does not belong/);
+	try {
+		new window.FormData(other, send);
+	} catch (error) {
+		expect((error as DOMException).name).toBe("NotFoundError");
+	}
+	expect(() => new window.FormData(form, form)).toThrow(TypeError);
+});
+
+test("a file input with no file sends an empty file", async () => {
+	const window = createWindow(
+		'<!DOCTYPE html><body><form id="f"><input name="doc" type="file"></form>',
+	);
+	const form = window.document.getElementById("f") as HTMLFormElement;
+	const file = new window.FormData(form).get("doc") as File;
+
+	expect(file).toBeInstanceOf(File);
+	expect(file.name).toBe("");
+	expect(file.type).toBe("application/octet-stream");
+	expect(file.size).toBe(0);
+	expect(await file.text()).toBe("");
+});
+
+test("a form-associated custom element sends what it set as its value", () => {
+	const window =
+		createWindow('<!DOCTYPE html><body><form id="f"></form></body>');
+	const {document, customElements} = window;
+
+	class Control extends window.HTMLElement {
+		declare internals: ElementInternals;
+		constructor() {
+			super();
+			this.internals = this.attachInternals();
+		}
+
+		static get formAssociated(): boolean {
+			return true;
+		}
+	}
+
+	customElements.define("x-control", Control);
+	const form = document.getElementById("f") as HTMLFormElement;
+	form.innerHTML = `<x-control name="one"></x-control>
+		<x-control name="two"></x-control>
+		<x-control name="three"></x-control>
+		<x-control name="four"></x-control>`;
+	const [one, two, three, four] =
+		[...form.querySelectorAll("x-control")] as Control[];
+
+	one.internals.setFormValue("a string");
+	two.internals.setFormValue(new File(["bytes"], "two.txt"));
+	const held = new window.FormData();
+	held.append("inner", "1");
+	held.append("other", "2");
+	three.internals.setFormValue(held);
+	four.internals.setFormValue(null);
+
+	const entries = [...new window.FormData(form)];
+	expect(entries.map(([name]) => name)).toEqual([
+		"one",
+		"two",
+		"inner",
+		"other",
+	]);
+	expect(entries[0][1]).toBe("a string");
+	expect((entries[1][1] as File).name).toBe("two.txt");
+	expect(entries[2][1]).toBe("1");
+	expect(entries[3][1]).toBe("2");
+
+	three.removeAttribute("name");
+	expect([...new window.FormData(form)].map(([name]) => name)).toEqual([
+		"one",
+		"two",
+		"inner",
+		"other",
+	]);
+	two.setAttribute("disabled", "");
+	expect([...new window.FormData(form)].some(([name]) => name === "two")).toBe(
+		false,
+	);
+});
