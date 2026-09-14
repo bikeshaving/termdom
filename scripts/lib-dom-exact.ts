@@ -519,7 +519,7 @@ type Map4<T> = Identical<T, DOM.DOMStringMap> extends true
 																													: Map5<T>;
 type Map5<T> = Identical<T, DOM.FormData> extends true
 	? globalThis.FormData
-	: T;
+	: Identical<T, DOM.FormDataEvent> extends true ? globalThis.FormDataEvent : T;
 type ToPlatform<T> = T extends unknown
 	? T extends DOM.NodeListOf<infer U>
 		? Identical<T, DOM.NodeListOf<U>> extends true
@@ -670,6 +670,10 @@ export type TextEventDrift = Drift<DOM.TextEvent, globalThis.TextEvent>;
 export type InputEventDrift = Drift<DOM.InputEvent, globalThis.InputEvent>;
 export type FileListDrift = Drift<DOM.FileList, globalThis.FileList>;
 export type FormDataDrift = Drift<DOM.FormData, globalThis.FormData>;
+export type FormDataEventDrift = Drift<
+	DOM.FormDataEvent,
+	globalThis.FormDataEvent
+>;
 export type DataTransferItemDrift = Drift<
 	DOM.DataTransferItem,
 	globalThis.DataTransferItem

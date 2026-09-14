@@ -213,3 +213,42 @@ test("a form-associated custom element sends what it set as its value", () => {
 		false,
 	);
 });
+
+test("the formdata event carries the entries and a listener can amend them", () => {
+	const window = createWindow(
+		'<!DOCTYPE html><body><form id="f"><input name="a" value="1">' +
+		'<input name="drop" value="2"></form></body>',
+	);
+	const {document} = window;
+	const form = document.getElementById("f") as HTMLFormElement;
+	const seen: Array<[string, boolean, boolean, boolean]> = [];
+
+	document.body.addEventListener("formdata", (event) => {
+		const data = (event as FormDataEvent).formData;
+		seen.push([
+			event.type,
+			event.bubbles,
+			event.cancelable,
+			event.target === form,
+		]);
+		expect(Object.prototype.toString.call(event)).toBe(
+			"[object FormDataEvent]",
+		);
+		expect([...data]).toEqual([["a", "1"], ["drop", "2"]]);
+		data.delete("drop");
+		data.append("added", "3");
+		expect(() => new window.FormData(form)).toThrow(/already building/);
+		try {
+			new window.FormData(form);
+		} catch (error) {
+			expect((error as DOMException).name).toBe("InvalidStateError");
+		}
+	});
+
+	expect([...new window.FormData(form)]).toEqual([["a", "1"], ["added", "3"]]);
+	expect(seen).toEqual([["formdata", true, false, true]]);
+	expect(() => new window.FormData(form)).not.toThrow();
+	expect(() =>
+		new window.FormDataEvent("formdata", {} as FormDataEventInit),
+	).toThrow(TypeError);
+});

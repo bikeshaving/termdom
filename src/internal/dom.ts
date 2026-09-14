@@ -14259,6 +14259,41 @@ Object.defineProperty(FormData.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+interface FormDataEventInit extends EventInit {
+	formData: FormData;
+}
+
+const kEventFormData = Symbol("the entries the event carries");
+
+interface FormDataEvent {
+	[kEventFormData]: FormData;
+}
+
+// The event a form fires once its entry list is built, so a listener
+// can add to, remove from or rewrite the entries before they are sent.
+class FormDataEvent extends Event {
+	constructor(type: string, eventInitDict: FormDataEventInit) {
+		super(type, eventInitDict);
+		const init = toDictionary<FormDataEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		if (!(init.formData instanceof FormData)) {
+			throw new TypeError("A formdata event needs a FormData");
+		}
+		this[kEventFormData] = init.formData;
+	}
+
+	get formData(): FormData {
+		return this[kEventFormData];
+	}
+}
+
+Object.defineProperty(FormDataEvent.prototype, Symbol.toStringTag, {
+	value: "FormDataEvent",
+	configurable: true,
+});
+
 const SUBMITTABLE_TAGS = new Set([
 	"button",
 	"input",
@@ -14439,15 +14474,19 @@ function constructEntryList(
 		return null;
 	}
 	form[kConstructingEntryList] = true;
-	const entries: FormDataEntry[] = [];
+	const data = new FormData();
 	try {
 		for (const field of getSubmittableElements(form)) {
-			appendFieldEntries(entries, field, submitter);
+			appendFieldEntries(data[kEntryList], field, submitter);
 		}
+		dispatch(
+			form,
+			new FormDataEvent("formdata", {formData: data, bubbles: true}),
+		);
 	} finally {
 		form[kConstructingEntryList] = false;
 	}
-	return entries;
+	return data[kEntryList].slice();
 }
 
 // WebIDL has this inherit HTMLCollection, so it does. What it returns
@@ -31046,6 +31085,7 @@ export class Window extends EventTarget {
 	declare DataTransferItemList: typeof DataTransferItemList;
 	declare FileList: typeof FileList;
 	declare FormData: typeof globalThis.FormData;
+	declare FormDataEvent: typeof globalThis.FormDataEvent;
 	declare Clipboard: typeof Clipboard;
 	declare ClipboardItem: typeof ClipboardItem;
 	declare Permissions: typeof Permissions;
@@ -31932,6 +31972,7 @@ const platform = {
 	FileList,
 	FocusEvent,
 	FormData,
+	FormDataEvent,
 	HTMLAnchorElement,
 	HTMLAreaElement,
 	HTMLAudioElement,
@@ -32167,6 +32208,7 @@ export type {
 	HTMLFormElement,
 	SubmitEvent,
 	FormData,
+	FormDataEvent,
 	HTMLFormControlsCollection,
 	RadioNodeList,
 	HTMLFrameElement,
