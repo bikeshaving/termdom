@@ -252,3 +252,75 @@ test("the formdata event carries the entries and a listener can amend them", () 
 		new window.FormDataEvent("formdata", {} as FormDataEventInit),
 	).toThrow(TypeError);
 });
+
+function submissionWindow(): ReturnType<typeof createWindow> {
+	return createWindow(
+		'<!DOCTYPE html><body><form id="f"><input name="a" value="1">' +
+		'<button id="send" name="send">go</button></form></body>',
+	);
+}
+
+test("requestSubmit fires submit and then builds the entry list", () => {
+	const window = submissionWindow();
+	const {document} = window;
+	const form = document.getElementById("f") as HTMLFormElement;
+	const send = document.getElementById("send") as HTMLButtonElement;
+	const order: string[] = [];
+	const sent: Array<[string, unknown]> = [];
+
+	form.addEventListener("submit", (event) => {
+		order.push("submit");
+		expect((event as SubmitEvent).submitter).toBe(send);
+	});
+	form.addEventListener("formdata", (event) => {
+		order.push("formdata");
+		const data = (event as FormDataEvent).formData;
+		data.append("extra", "2");
+		sent.push(...data);
+	});
+
+	form.requestSubmit(send);
+	expect(order).toEqual(["submit", "formdata"]);
+	expect(sent).toEqual([["a", "1"], ["send", ""], ["extra", "2"]]);
+});
+
+test("a submit listener can read the entry list the form would send", () => {
+	const window = submissionWindow();
+	const {document} = window;
+	const form = document.getElementById("f") as HTMLFormElement;
+	const send = document.getElementById("send") as HTMLButtonElement;
+	let read: Array<[string, unknown]> = [];
+
+	form.addEventListener("submit", (event) => {
+		read = [...new window.FormData(event.target as HTMLFormElement, send)];
+	});
+	form.requestSubmit(send);
+	expect(read).toEqual([["a", "1"], ["send", ""]]);
+});
+
+test("a canceled submit builds no entry list, and submit() fires no submit", () => {
+	const window = submissionWindow();
+	const {document} = window;
+	const form = document.getElementById("f") as HTMLFormElement;
+	const order: string[] = [];
+
+	const cancel = (event: Event): void => {
+		order.push("submit");
+		event.preventDefault();
+	};
+	form.addEventListener("submit", cancel);
+	form.addEventListener("formdata", () => order.push("formdata"));
+
+	form.requestSubmit();
+	expect(order).toEqual(["submit"]);
+
+	form.removeEventListener("submit", cancel);
+	form.addEventListener("submit", () => order.push("submit"));
+	form.submit();
+	expect(order).toEqual(["submit", "formdata"]);
+
+	form.remove();
+	form.requestSubmit();
+	form.submit();
+	expect(order).toEqual(["submit", "formdata"]);
+});
