@@ -26432,9 +26432,19 @@ class Selection implements globalThis.Selection {
 // document's painted text as one string rather than one node at a time.
 // Built per call. A selection moves at keystroke speed, and a cache of
 // the document's text would need invalidating on every mutation.
+// A part is a painted text node, or a <br>, which is one character of
+// its own: the caret can rest on an empty line. Parts in different
+// blocks are a character apart, so the end of one block and the start
+// of the next are two places, as they are on screen.
+interface SelectionPart {
+	node: Text | Element;
+	start: number;
+	length: number;
+}
+
 interface SelectionText {
 	text: string;
-	parts: Array<{node: Text; start: number}>;
+	parts: SelectionPart[];
 }
 
 // Offsets into the flattened text.
@@ -26459,15 +26469,35 @@ function isPaintedText(node: Text, layout: Layout | null): boolean {
 	return false;
 }
 
+function isLineBreakElement(node: Node): node is Element {
+	return node.nodeType === ELEMENT_NODE && (node as Element).localName === "br";
+}
+
+// The nearest ancestor that is not laid out inline, which is the block
+// whose lines the node's text falls on.
+function getBlockOf(node: Node): Element | null {
+	for (
+		let ancestor = node.parentElement as Element | null;
+		ancestor !== null;
+		ancestor = ancestor.parentElement as Element | null
+	) {
+		const display = getComputedValue(ancestor, "display");
+		if (display !== "inline" && display !== "contents") {
+			return ancestor;
+		}
+	}
+	return null;
+}
+
 // The isSelectable filter checks each text node's parent rather than
 // pruning the subtree, because user-select: none does not inherit. A
 // `text` descendant inside a `none` ancestor is isSelectable again.
 function getSelectionTextNodes(
 	document: Document,
 	attached: AttachedDocument | undefined,
-): Text[] {
+): Array<Text | Element> {
 	const layout = attached === undefined ? null : attached[kLayout];
-	const nodes: Text[] = [];
+	const nodes: Array<Text | Element> = [];
 	const collect = (node: Node): void => {
 		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
 			if (child.nodeType === TEXT_NODE) {
@@ -26476,6 +26506,13 @@ function getSelectionTextNodes(
 					(attached === undefined || attached[kCascade].isSelectable(node))
 				) {
 					nodes.push(child as Text);
+				}
+			} else if (isLineBreakElement(child)) {
+				if (
+					(layout === null || layout.getRects(child).length > 0) &&
+					(attached === undefined || attached[kCascade].isSelectable(node))
+				) {
+					nodes.push(child);
 				}
 			} else if (child.nodeType === ELEMENT_NODE) {
 				const name = (child as Element).localName;
@@ -26492,12 +26529,22 @@ function getSelectionTextNodes(
 	return nodes;
 }
 
-function flattenSelectionText(nodes: Text[]): SelectionText {
+function flattenSelectionText(nodes: Array<Text | Element>): SelectionText {
 	let text = "";
-	const parts: Array<{node: Text; start: number}> = [];
+	const parts: SelectionPart[] = [];
+	let previous: Text | Element | null = null;
 	for (const node of nodes) {
-		parts.push({node, start: text.length});
-		text += node[kData];
+		if (
+			previous !== null &&
+			!isLineBreakElement(previous) &&
+			getBlockOf(previous) !== getBlockOf(node)
+		) {
+			text += "\n";
+		}
+		const piece = isLineBreakElement(node) ? "\n" : (node as Text)[kData];
+		parts.push({node, start: text.length, length: piece.length});
+		text += piece;
+		previous = node;
 	}
 	return {text, parts};
 }
@@ -26514,7 +26561,7 @@ function getSelectionIndex(
 	if (node.nodeType === TEXT_NODE) {
 		for (const part of run.parts) {
 			if (part.node === node) {
-				return part.start + Math.min(offset, part.node[kData].length);
+				return part.start + Math.min(offset, part.length);
 			}
 		}
 		return null;
@@ -26533,7 +26580,7 @@ function getSelectionIndex(
 	let last: number | null = null;
 	for (const part of run.parts) {
 		if (isInclusiveAncestor(node, part.node)) {
-			last = part.start + part.node[kData].length;
+			last = part.start + part.length;
 		}
 	}
 	return last;
@@ -26550,20 +26597,37 @@ function getSelectionPoint(
 	atStart = false,
 ): [Node, number] | null {
 	const at = Math.max(0, Math.min(index, run.text.length));
-	if (atStart) {
-		for (let i = run.parts.length - 1; i >= 0; i--) {
-			if (run.parts[i].start <= at) {
-				return [run.parts[i].node, at - run.parts[i].start];
-			}
+	const candidates = run.parts.filter(
+		(part) => part.start <= at && at <= part.start + part.length,
+	);
+	// The place after a <br> is the start of what follows it, when
+	// anything does.
+	const kept = candidates.filter(
+		(part) =>
+			candidates.length === 1 ||
+			!isLineBreakElement(part.node) ||
+			at === part.start,
+	);
+	let part: SelectionPart | null = kept.length > 0
+		? kept[atStart ? kept.length - 1 : 0]
+		: null;
+	for (let i = run.parts.length - 1; part === null && i >= 0; i--) {
+		if (run.parts[i].start <= at) {
+			part = run.parts[i];
 		}
 	}
-	for (const part of run.parts) {
-		if (at <= part.start + part.node[kData].length) {
-			return [part.node, at - part.start];
-		}
+	if (part === null) {
+		return null;
 	}
-	const last = run.parts[run.parts.length - 1];
-	return last === undefined ? null : [last.node, last.node[kData].length];
+	if (isLineBreakElement(part.node)) {
+		const parent = part.node[kParent];
+		if (parent === null) {
+			return null;
+		}
+		const index = Array.prototype.indexOf.call(parent.childNodes, part.node);
+		return [parent, at === part.start ? index : index + 1];
+	}
+	return [part.node, Math.min(at - part.start, part.length)];
 }
 
 // Two fragments on the same row are the same line no matter how many
@@ -26573,21 +26637,32 @@ function getSelectionLines(
 	layout: Layout,
 ): SelectionLine[] {
 	const rows = new Map<number, SelectionLine>();
+	const add = (y: number, start: number, end: number): void => {
+		const row = rows.get(y);
+		if (row === undefined) {
+			rows.set(y, {y, start, end});
+		} else {
+			row.start = Math.min(row.start, start);
+			row.end = Math.max(row.end, end);
+		}
+	};
 	for (const part of run.parts) {
+		if (isLineBreakElement(part.node)) {
+			const rect = layout.getRects(part.node)[0];
+			if (rect !== undefined) {
+				add(Math.round(rect.y), part.start, part.start + part.length);
+			}
+			continue;
+		}
 		for (const fragment of layout.lineFragments(part.node)) {
 			if (fragment.endOffset <= fragment.startOffset) {
 				continue;
 			}
-			const y = Math.round(fragment.rect.y);
-			const start = part.start + fragment.startOffset;
-			const end = part.start + fragment.endOffset;
-			const row = rows.get(y);
-			if (row === undefined) {
-				rows.set(y, {y, start, end});
-			} else {
-				row.start = Math.min(row.start, start);
-				row.end = Math.max(row.end, end);
-			}
+			add(
+				Math.round(fragment.rect.y),
+				part.start + fragment.startOffset,
+				part.start + fragment.endOffset,
+			);
 		}
 	}
 	return [...rows.values()].sort((a, b) => a.y - b.y);
@@ -26648,7 +26723,15 @@ function selectionLineMove(
 			root as unknown as globalThis.Node,
 			true,
 		);
-	if (found === null) {
+	const landed = found === null
+		? null
+		: getSelectionIndex(run, found.node as unknown as Node, found.offset);
+	if (
+		found === null ||
+		landed === null ||
+		landed < lines[target].start ||
+		landed > lines[target].end
+	) {
 		return getSelectionPoint(run, lines[target].start, true);
 	}
 	return [found.node as unknown as Node, found.offset];
@@ -26727,8 +26810,8 @@ function getSelectionLineOf(
 	index: number,
 ): number {
 	const [node, offset] = from;
+	let y: number | null = null;
 	if (node.nodeType === TEXT_NODE) {
-		let y: number | null = null;
 		for (const fragment of layout.lineFragments(node as Text)) {
 			if (fragment.startOffset <= offset && offset < fragment.endOffset) {
 				y = Math.round(fragment.rect.y);
@@ -26738,11 +26821,17 @@ function getSelectionLineOf(
 				y = Math.round(fragment.rect.y);
 			}
 		}
-		if (y !== null) {
-			const at = lines.findIndex((line) => line.y === y);
-			if (at !== -1) {
-				return at;
-			}
+	} else {
+		const child = node.childNodes[offset] as unknown as Node | undefined;
+		if (child !== undefined && isLineBreakElement(child)) {
+			const rect = layout.getRects(child)[0];
+			y = rect === undefined ? null : Math.round(rect.y);
+		}
+	}
+	if (y !== null) {
+		const at = lines.findIndex((line) => line.y === y);
+		if (at !== -1) {
+			return at;
 		}
 	}
 	return getSelectionLine(lines, index);
