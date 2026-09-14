@@ -21,6 +21,7 @@ import {
 	topmostModalDialog,
 	type Window,
 } from "./dom.ts";
+import {requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";
@@ -620,6 +621,8 @@ function deliverPaste(input: Input, text: string): void {
 				cancelable: true,
 			}),
 		);
+	} else if (proceed) {
+		requestEditingInsert(target, "insertFromPaste", text);
 	}
 	requestRender(input[kDocument]);
 }
@@ -1014,6 +1017,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 function insertText(input: Input, target: Element, text: string): void {
 	const tag = target.tagName;
 	if (tag !== "INPUT" && tag !== "TEXTAREA") {
+		requestEditingInsert(target, "insertText", text);
 		return;
 	}
 	dispatchAsUserAgent(
