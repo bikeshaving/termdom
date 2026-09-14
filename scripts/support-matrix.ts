@@ -1257,6 +1257,13 @@ function buildProbes(): Probe[] {
 		apiProbe("Fullscreen API", "DOM APIs", (dom) =>
 			typeof (dom.document.body as {requestFullscreen?: unknown})
 				.requestFullscreen === "function"),
+		apiProbe("FormData", "DOM APIs", (dom) => {
+			const form = dom.document.createElement("form");
+			form.innerHTML = '<input name="probe" value="1">';
+			dom.document.body.appendChild(form);
+			const data = new dom.window.FormData(form as HTMLFormElement);
+			return data.get("probe") === "1";
+		}),
 	);
 
 	// At-rules and selectors: does the cascade honour them?

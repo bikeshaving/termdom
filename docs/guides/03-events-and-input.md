@@ -102,6 +102,23 @@ works: CJK input methods compose in the field. `<input type="password">`
 masks its value. A number input takes float syntax only, and ArrowUp and
 ArrowDown step it within `min` and `max`.
 
+`new FormData(form)` builds the form's entry list: every submittable
+control it owns, in tree order, by the rule its kind has. Submitting a
+form builds the same list. `requestSubmit()` fires `submit` first and
+stops there if a listener cancels it; `submit()` skips that event. Either
+way the form then fires `formdata`, whose `event.formData` a listener can
+add to or rewrite before the entries count as sent:
+
+```ts
+form.addEventListener("formdata", (event) => {
+	event.formData.append("token", token);
+});
+form.requestSubmit();
+```
+
+Submission stops there. There is no page to navigate to, so the form
+never sends anything over the network.
+
 ## Selection and the clipboard
 
 Drag to select, in the document or inside a field; style it with
