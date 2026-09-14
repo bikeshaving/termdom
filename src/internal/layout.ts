@@ -3652,7 +3652,7 @@ function getAbsolutePosition(
 function getBreakResultTextIndex(
 	layout: Layout,
 	breakResult: BreakResult,
-): Map<Text, TextFragmentEntry[]> {
+): Map<Node, TextFragmentEntry[]> {
 	let index = layout[kRectTextIndices].get(breakResult);
 	if (index) {
 		return index;
@@ -3661,11 +3661,11 @@ function getBreakResultTextIndex(
 	let ord = 0;
 	const visit = (segments: any[], baseX: number, lineIndex: number): void => {
 		for (const segment of segments) {
-			if (segment.leaf.type === "text") {
-				const textNode = segment.leaf.node as Text;
-				let entries = index!.get(textNode);
+			if (segment.leaf.type === "text" || segment.leaf.type === "br") {
+				const node = segment.leaf.node as Node;
+				let entries = index!.get(node);
 				if (!entries) {
-					index!.set(textNode, (entries = []));
+					index!.set(node, (entries = []));
 				}
 				entries.push({
 					line: lineIndex,
@@ -4031,7 +4031,7 @@ export interface Layout {
 	// Per break result, each text node's placed fragments in segment order.
 	// Keyed on the break result object. Re-breaking builds a fresh object,
 	// so entries can never go stale.
-	[kRectTextIndices]: WeakMap<object, Map<Text, TextFragmentEntry[]>>;
+	[kRectTextIndices]: WeakMap<object, Map<Node, TextFragmentEntry[]>>;
 
 	// The identity a derivation syncs against. A container rebuilt
 	// around a node finds the box the node already had, with its layout
@@ -4075,7 +4075,7 @@ export class Layout {
 		this[kTerminalReordersText] = false;
 		this[kRectTextIndices] = new WeakMap<
 			object,
-			Map<Text, TextFragmentEntry[]>
+			Map<Node, TextFragmentEntry[]>
 		>();
 		this[kBoxes] = new WeakMap<Node, Box>();
 		this[kDerivedContainers] = new WeakSet<Element>();
@@ -4705,6 +4705,10 @@ export class Layout {
 	getCaretRect(node: Node, offset: number): DOMRect | null {
 		if (node.nodeType === node.TEXT_NODE) {
 			return getCaretRectInFragment(this, node as Text, offset);
+		}
+		const next = node.childNodes[offset];
+		if (next !== undefined && isLineBreak(next)) {
+			return this.getRects(next)[0] ?? null;
 		}
 		const point = textPointAt(node, offset);
 		return point === null
@@ -5459,6 +5463,11 @@ function textPointAt(node: Node, offset: number): [Text, number] | null {
 	return after === null ? null : [after, 0];
 }
 
+function isLineBreak(node: Node): boolean {
+	return node.nodeType === node.ELEMENT_NODE &&
+		(node as Element).tagName === "BR";
+}
+
 function firstTextIn(node: Node): Text | null {
 	if (node.nodeType === node.TEXT_NODE) {
 		return node as Text;
@@ -5943,12 +5952,12 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		}
 	}
 
-	let targetTextNodes: Set<Text>;
+	let targetTextNodes: Set<Node>;
 
-	if (node.nodeType === node.TEXT_NODE) {
-		targetTextNodes = new Set([node as Text]);
+	if (node.nodeType === node.TEXT_NODE || isLineBreak(node)) {
+		targetTextNodes = new Set([node]);
 	} else {
-		targetTextNodes = new Set<Text>();
+		targetTextNodes = new Set<Node>();
 
 		for (
 			let found = flowNext(node, node, false);

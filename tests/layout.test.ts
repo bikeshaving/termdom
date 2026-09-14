@@ -1403,6 +1403,16 @@ test("a negative inset moves a box up and left", async () => {
 	termdom.dispose();
 });
 
+test("a br has one empty rect where its line breaks", async () => {
+	const dom = layoutDOM("<div>one<br>two</div><div><br></div>");
+	const [inline, alone] = [...dom.document.querySelectorAll("br")];
+	const rects = [...inline.getClientRects()].map((r) => [r.x, r.y, r.width]);
+	expect(rects).toEqual([[3, 0, 0]]);
+	expect([...alone.getClientRects()].map((r) => [r.x, r.y, r.width]))
+		.toEqual([[0, 2, 0]]);
+	expect(alone.getBoundingClientRect().height).toBe(1);
+});
+
 test("box-sizing decides what a declared width names", async () => {
 	const termdom = new TermDOM({transport: new MockProcess().transport});
 	const {document, window} = termdom;
