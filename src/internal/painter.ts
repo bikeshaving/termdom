@@ -9,6 +9,7 @@ import {
 	flatParentElement,
 	flowContent,
 	getHighlightedTextNodes,
+	getImageCells,
 	getPaintedHighlights,
 	getSelectionRecord,
 	getShadowRoot,
@@ -598,8 +599,9 @@ function renderElement(
 	// Over the flat fill, which a transparent stop composites onto.
 	const gradient = rect && visible ? getGradient(element) : null;
 	if (rect && gradient !== null) {
-		const cell = painter[kScreen].cellPixels;
-		const fragments = painter[kLayout].getRects(element);
+		const layout = painter[kLayout];
+		const cell = layout.cellPixels;
+		const fragments = layout.getRects(element);
 		for (const fragment of fragments.length > 1 ? fragments : [rect]) {
 			renderGradient(
 				ctx,
@@ -712,38 +714,43 @@ function renderElement(
 
 	const children: Node[] = [];
 
-	// For a plain vertical stack the layout tree knows which children are
-	// in the viewport. The walk below costs every sibling.
-	const fastChildren = painter[kLayout].getVisibleChildren(
-		element,
-		viewportTop,
-		viewportBottom,
-	);
-	if (fastChildren) {
-		for (const childNode of fastChildren) {
-			children.push(childNode);
-		}
-	} else {
-		for (const childNode of flowContent(element)) {
-			// Before any style read. A child outside the viewport costs one
-			// lookup.
-			if (
-				childNode.nodeType === childNode.ELEMENT_NODE &&
-				painter[kLayout].isSubtreeOutsideViewport(
-					childNode as Element,
-					viewportTop,
-					viewportBottom,
-				)
-			) {
-				continue;
+	// An image the terminal draws stands in for everything inside the box.
+	// The alt text in the UA shadow tree is what the pixels replace, and
+	// painting it would put glyphs where they go.
+	if (!renderImage(painter, element, ctx, visible)) {
+		// For a plain vertical stack the layout tree knows which children are
+		// in the viewport. The walk below costs every sibling.
+		const fastChildren = painter[kLayout].getVisibleChildren(
+			element,
+			viewportTop,
+			viewportBottom,
+		);
+		if (fastChildren) {
+			for (const childNode of fastChildren) {
+				children.push(childNode);
 			}
-			if (
-				childNode.nodeType === childNode.ELEMENT_NODE &&
-				painter[kLayout].hoistedToLayer(childNode as Element)
-			) {
-				continue;
+		} else {
+			for (const childNode of flowContent(element)) {
+				// Before any style read. A child outside the viewport costs one
+				// lookup.
+				if (
+					childNode.nodeType === childNode.ELEMENT_NODE &&
+					painter[kLayout].isSubtreeOutsideViewport(
+						childNode as Element,
+						viewportTop,
+						viewportBottom,
+					)
+				) {
+					continue;
+				}
+				if (
+					childNode.nodeType === childNode.ELEMENT_NODE &&
+					painter[kLayout].hoistedToLayer(childNode as Element)
+				) {
+					continue;
+				}
+				children.push(childNode);
 			}
-			children.push(childNode);
 		}
 	}
 
@@ -835,6 +842,42 @@ function renderElement(
 			}
 		}
 	}
+}
+
+/**
+ * Place an `<img>`'s pixels over its content box, and say whether they
+ * went. They do not when the element is not an image, when the terminal
+ * has no protocol for them, or when nothing has decoded yet -- and each
+ * of those is a box that falls back to its alt text.
+ */
+function renderImage(
+	painter: Painter,
+	element: Element,
+	ctx: CellContext,
+	visible: boolean,
+): boolean {
+	if (!visible || element.tagName !== "IMG") {
+		return false;
+	}
+	if (painter[kScreen].imageProtocol === null) {
+		return false;
+	}
+	const image = getImageCells(element);
+	if (image === null) {
+		return false;
+	}
+	const content = painter[kLayout].contentRect(element);
+	if (content === null) {
+		return false;
+	}
+	ctx.drawImage(
+		Math.round(content.x),
+		Math.round(content.y),
+		Math.round(content.width),
+		Math.round(content.height),
+		image,
+	);
+	return true;
 }
 
 // The context root's clip intersected with the overflow of the
