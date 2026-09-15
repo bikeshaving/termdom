@@ -4,7 +4,10 @@
 		<loc>https://termdom.org/</loc>
 	</url>
 	<url>
-		<loc>https://termdom.org/playground/</loc>
+		<loc>https://termdom.org/examples/</loc>
+	</url>
+	<url>
+		<loc>https://termdom.org/blog/</loc>
 	</url>
 	<url>
 		<loc>https://termdom.org/compatibility/</loc>

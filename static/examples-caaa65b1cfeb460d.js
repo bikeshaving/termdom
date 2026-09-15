@@ -376,7 +376,6 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 		color: var(--text-color);
 		background-color: var(--surface-color);
 		border: 1px solid var(--border-color);
-		border-radius: 6px;
 		padding: 0.25rem 0.7rem;
 	}
 
@@ -453,7 +452,6 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 	container: workbench / inline-size;
 	margin: 0;
 	border: 1px solid var(--border-color);
-	border-radius: 8px;
 	overflow: hidden;
 	background-color: var(--surface-color);
 `;function DA(e){return Ue`
@@ -581,7 +579,6 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 	max-height: 50%;
 	.extra {
 		border: 1px solid var(--border-color);
-		border-radius: 6px;
 		overflow: hidden;
 	}
 	.bar {
@@ -618,7 +615,6 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 	display: flex;
 	flex-direction: column;
 	border: 1px solid var(--border-color);
-	border-radius: 8px;
 	overflow: hidden;
 	background-color: var(--surface-color);
 	color: inherit;
@@ -680,9 +676,10 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 		`}function qA({examples:e}){return Te`
 		<main class=${EA}>
 			<h1 class=${Ue`
-				font-size: 2.2rem;
 				margin: 0;
-			`}>Playground</h1>
+				background: none;
+				padding: 0;
+			`}>Examples</h1>
 			<p class=${Ue`
 				color: var(--muted-color);
 				margin: 0.5rem 0 0;
@@ -700,9 +697,10 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 	`}var KA=500;function H0(e){let t="";for(let r of e)t+=String.fromCharCode(r);return btoa(t).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}function VA(e){let t=atob(e.replace(/-/g,"+").replace(/_/g,"/"));return Uint8Array.from(t,r=>r.charCodeAt(0))}async function V0(e,t){let r=t.writable.getWriter();r.write(e),r.close();let i=[],s=t.readable.getReader();for(;;){let{value:l,done:c}=await s.read();if(c)break;i.push(l)}let n=new Uint8Array(i.reduce((l,c)=>l+c.length,0)),a=0;for(let l of i)n.set(l,a),a+=l.length;return n}async function GA(e){let t=new TextEncoder().encode(e);return typeof CompressionStream>"u"?`r${H0(t)}`:`d${H0(await V0(t,new CompressionStream("deflate-raw")))}`}async function XA(e){try{let t=VA(e.slice(1));if(e.startsWith("r"))return new TextDecoder().decode(t);if(e.startsWith("d")&&typeof DecompressionStream<"u")return new TextDecoder().decode(await V0(t,new DecompressionStream("deflate-raw")))}catch{}return null}function G1(){let e=new URLSearchParams(location.hash.replace(/^#/,""));return{example:e.get("e")??void 0,program:e.get("c")??void 0}}function YA(e){location.hash!==`#${e}`&&history.replaceState(null,"",`#${e}`)}function*JA(){let e=z0(),t=G1(),r=t.example!==void 0||t.program!==void 0?"workbench":"gallery",i=e.find(v=>v.id===t.example)??e[0],s=null,n=!1,a=0,l=0,c=i.code,h="",d=v=>{if(v.program!==void 0){let E=v.program;XA(E).then(A=>{A===null||G1().program!==E||this.refresh(()=>{r="workbench",s=A,n=!0,a++})});return}let k=e.find(E=>E.id===v.example);if(k===void 0){r!=="gallery"&&this.refresh(()=>{r="gallery"});return}r==="workbench"&&k===i&&s===null||this.refresh(()=>{r="workbench",i=k,s=null,n=!1,a++})};d(t);let p=()=>d(G1());window.addEventListener("hashchange",p),this.cleanup(()=>window.removeEventListener("hashchange",p));let g=async()=>{let v=e.find(k=>k.code===c);YA(v?`e=${v.id}`:`c=${await GA(c)}`)},_=async()=>{window.clearTimeout(l),await g();try{await navigator.clipboard.writeText(location.href),h="Link copied."}catch{h="Copy the address bar to share."}this.refresh(),window.setTimeout(()=>{h="",this.refresh()},2500)},w=v=>{let k=v.target.value,E=e.find(A=>A.id===k);E&&this.refresh(()=>{i=E,s=null,n=!1,a++})},y=v=>{c=v,window.clearTimeout(l),l=window.setTimeout(()=>{g()},KA);let k=e.find(A=>A.code===v),E=k===void 0;k!==void 0&&k!==i?this.refresh(()=>{i=k,n=!1}):E!==n&&this.refresh(()=>{n=E})};for({}of this){if(r==="gallery"){yield Te`<${qA} examples=${e} />`;continue}yield Te`
 			<main class=${TA}>
 				<h1 class=${Ue`
-					font-size: 2.2rem;
 					margin: 0;
-				`}>Playground</h1>
+					background: none;
+					padding: 0;
+				`}>Examples</h1>
 				<${K0}
 					value=${s??i.code}
 					valueEpoch=${a}
