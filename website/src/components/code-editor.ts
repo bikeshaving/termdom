@@ -30,10 +30,12 @@ const TAB = "  ";
 // row height is a whole number of pixels rather than a ratio: a fractional
 // line box rounds independently in each column, and the halves of a pixel per
 // row add up to a number sitting above the line it belongs to.
-const FONT_SIZE = "14px";
-const LINE_HEIGHT = "22px";
-// One padding for both, so row 1 starts at the same y in both columns.
-const VERTICAL_PADDING = "1rem";
+const FONT_SIZE = "16px";
+const LINE_HEIGHT = "24px";
+// One padding for both, so row 1 starts at the same y in both columns. Half
+// a row: the frame's stroke runs through the middle of the row above, and
+// this is the rest of that row.
+const VERTICAL_PADDING = "12px";
 
 /**
  * The height of an editor showing `lines` whole lines. Sized here because the
@@ -201,20 +203,18 @@ function* Gutter(this: Context<typeof Gutter>, {length}: {length: number}) {
 					flex-direction: column;
 					flex: none;
 					margin: 0;
-					padding: ${VERTICAL_PADDING} 0.6rem ${VERTICAL_PADDING} 0.9rem;
+					padding: ${VERTICAL_PADDING} 1.5ch ${VERTICAL_PADDING} 1.5ch;
 					font-size: ${FONT_SIZE};
 					line-height: ${LINE_HEIGHT};
 					text-align: right;
 					color: var(--muted-color);
-					border-right: 1px solid var(--border-color);
 					user-select: none;
 					position: sticky;
 					left: 0;
 					/* A step back from the code, the way the page's background
-					   sits behind its surfaces: the numbers are not the text,
-					   and the column they sit in says so without a second
-					   border. */
-					background-color: var(--bg-color);
+					   sits behind its surfaces, and the rule between the two
+					   runs down the middle of the gutter's last column. */
+					background: var(--rule) right 0.5ch center / 1px 100% no-repeat var(--bg-color);
 				`}
 			>
 				${lines.map(
@@ -262,7 +262,7 @@ const code = css`
 	&& {
 		flex: 1 1 auto;
 		margin: 0;
-		padding: ${VERTICAL_PADDING} 1rem;
+		padding: ${VERTICAL_PADDING} 1.5ch;
 		background: none;
 		border: none;
 		border-radius: 0;

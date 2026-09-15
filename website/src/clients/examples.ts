@@ -62,9 +62,10 @@ const EMBED_GEOMETRY = {
 	grow: {min: 4, max: 24},
 };
 
-const FONT_SIZE = 13;
+// The page's own size, so the emulator's cells are the page's cells.
+const FONT_SIZE = 16;
 // The emulator's cell in the font stack below, measured rather than guessed.
-const CELL_WIDTH = 7.83;
+const CELL_WIDTH = 9.64;
 // What the pane adds around the emulator's own box: its padding.
 const PANE_CHROME = 16;
 // The rule between the two halves, which is all that separates them.
@@ -75,8 +76,8 @@ const SEAM = 1;
 // half of any width that can hold both.
 const EDITOR_MIN_COLUMNS = 64;
 // The editor's own cell, and what its padding, gutter and border add.
-const EDITOR_CELL_WIDTH = 8.4;
-const EDITOR_CHROME = 80;
+const EDITOR_CELL_WIDTH = 9.6;
+const EDITOR_CHROME = 96;
 
 /**
  * The width at which the editor and a `cols`-wide terminal can sit side by
@@ -622,41 +623,40 @@ interface Status {
 }
 
 const container = css`
-	max-width: 1440px;
+	max-width: 160ch;
 	margin: 0 auto;
-	padding: 5rem 1.2rem 2rem;
+	padding: calc(var(--bar-height) + 2lh) 2ch 2lh;
 `;
 
-/* The playground is a window's worth of workbench: the navbar is fixed at
-   50px, and what is left of the viewport is the frame. Nothing scrolls but
-   the editor's own text. */
+/* The examples page is a window's worth of workbench: the navbar is fixed
+   at the top, and what is left of the viewport is the frame. Nothing scrolls
+   but the editor's own text. */
 const pageShell = css`
-	max-width: 1440px;
+	max-width: 160ch;
 	margin: 0 auto;
-	padding: calc(50px + 1rem) 1.2rem 1.2rem;
+	padding: calc(var(--bar-height) + 1lh) 2ch 1lh;
 	height: 100dvh;
 	box-sizing: border-box;
 	display: flex;
 	flex-direction: column;
-	gap: 0.8rem;
+	gap: 1lh;
 `;
 
 /* The workbench's title bar: whatever the page puts here, the run button, and
    the status the run reports. It sits inside the frame, one step back from the
    panes the way the page's background sits behind its surfaces, so the
    workbench reads as a single block rather than a control loose above two
-   boxes. The controls are the site's own: a surface, a hairline border and the
-   radius `code` and `pre` are given. */
+   boxes. It is one row of controls and the row the rule under them takes,
+   with the half row the frame's stroke leaves above. */
 const toolbar = css`
 	display: flex;
 	flex-direction: row;
 	align-items: center;
-	gap: 0.5rem;
+	gap: 1ch;
 	margin: 0;
-	padding: 0.5rem 0.6rem;
+	padding: 0.5lh 1.5ch 1lh;
 	flex-wrap: wrap;
-	background-color: var(--bg-color);
-	border-bottom: 1px solid var(--border-color);
+	background: var(--rule) bottom 0.5lh center / 100% 1px no-repeat var(--bg-color);
 
 	label {
 		color: var(--muted-color);
@@ -692,7 +692,7 @@ const toolbar = css`
 		font: inherit;
 		font-weight: normal;
 		color: var(--muted-color);
-		margin-left: 0.4rem;
+		margin-left: 1ch;
 	}
 `;
 
@@ -700,9 +700,8 @@ const toolbar = css`
    it. It is also what the static figure shows before the embed hydrates, in
    the same place, so the bar does not change shape when it does. */
 const filename = css`
-	font-size: 0.8rem;
 	color: var(--muted-color);
-	margin: 0 0.2rem 0 0.1rem;
+	margin: 0;
 `;
 
 /**
@@ -736,8 +735,22 @@ function panes(cols: number, fill?: boolean) {
 		`
 			: ""}
 
+		/* The rule between the halves runs down the middle of the cell that
+		   separates them, and reaches the frame's stroke at either end. */
 		> * + * {
-			border-top: 1px solid var(--border-color);
+			position: relative;
+			margin-top: 1lh;
+		}
+
+		> * + *::before {
+			content: "";
+			position: absolute;
+			left: 0;
+			right: 0;
+			top: -0.5lh;
+			height: 1px;
+			background-color: currentColor;
+			pointer-events: none;
 		}
 
 		@container workbench (min-width: ${sideBySideWidth(fill ? FILL_MIN_COLUMNS : cols)}px) {
@@ -745,8 +758,17 @@ function panes(cols: number, fill?: boolean) {
 			${fill ? "grid-template-rows: minmax(0, 1fr);" : ""}
 
 			> * + * {
-				border-top: none;
-				border-left: 1px solid var(--border-color);
+				margin-top: 0;
+				margin-left: 1ch;
+			}
+
+			> * + *::before {
+				top: 0;
+				bottom: 0;
+				left: -0.5ch;
+				right: auto;
+				width: 1px;
+				height: auto;
 			}
 		}
 	`;
@@ -776,16 +798,26 @@ const editorPaneFill = css`
 	}
 `;
 
-/* The frame. The site draws a surface as a hairline border and an 8px radius
-   -- `pre`, the install command, the cast player -- and the workbench is one
-   surface, so it is drawn the same way and the panes inside it have no edges
-   of their own. */
+/* The frame. The site draws a box as a stroke down the middle of the cell
+   around it -- `pre`, the install command -- and the workbench is one box,
+   so it is drawn the same way: half a cell of padding puts the stroke on the
+   content's edge, where the rules inside it meet it. */
 const workbench = css`
 	container: workbench / inline-size;
+	position: relative;
 	margin: 0;
-	border: 1px solid var(--border-color);
+	padding: 0.5lh 0.5ch;
 	overflow: hidden;
 	background-color: var(--surface-color);
+
+	&::before {
+		content: "";
+		position: absolute;
+		inset: 0.5lh 0.5ch;
+		border: 1px solid currentColor;
+		pointer-events: none;
+		z-index: 1;
+	}
 `;
 
 /* The editor half. Its height is a whole number of the editor's own rows, and
@@ -835,10 +867,9 @@ function writeEditorPreference(open: boolean): void {
 /* In the toolbar rather than under the panes, taking the room the controls
    leave and giving a long message an ellipsis rather than a second row. */
 const statusLine = css`
-	flex: 1 1 12rem;
+	flex: 1 1 24ch;
 	min-width: 0;
 	margin: 0;
-	font-size: 0.85rem;
 	color: var(--muted-color);
 	white-space: nowrap;
 	overflow: hidden;
@@ -1106,21 +1137,20 @@ const terminalSide = css`
 const extraStrip = css`
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0.5rem;
-	padding: 0.5rem;
-	border-top: 1px solid var(--border-color);
+	gap: 1ch;
+	padding: 1lh 1.5ch 0.5lh;
+	background: var(--rule) top 0.5lh center / 100% 1px no-repeat;
 	overflow: auto;
 	max-height: 50%;
 	.extra {
-		border: 1px solid var(--border-color);
+		border: 1px solid currentColor;
 		overflow: hidden;
 	}
 	.bar {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 0.1rem 0.5rem;
-		font-size: 0.75rem;
+		padding: 0 1ch;
 		color: var(--muted-color);
 		background-color: var(--surface-color);
 	}
@@ -1178,20 +1208,33 @@ const gallery = css`
 `;
 
 const card = css`
+	position: relative;
 	display: flex;
 	flex-direction: column;
-	border: 1px solid var(--border-color);
+	padding: 0.5lh 0.5ch;
 	overflow: hidden;
 	background-color: var(--surface-color);
 	color: inherit;
 	text-decoration: none;
+	&::before {
+		content: "";
+		position: absolute;
+		inset: 0.5lh 0.5ch;
+		border: 1px solid currentColor;
+		pointer-events: none;
+		z-index: 1;
+	}
 	&:hover {
 		text-decoration: none;
+		background-color: var(--surface-color);
+		color: inherit;
+	}
+	&:hover::before {
 		border-color: var(--highlight-color);
 	}
 	&:focus-visible {
-		outline: 2px solid var(--highlight-color);
-		outline-offset: 1px;
+		outline: 1px solid var(--highlight-color);
+		outline-offset: 0;
 	}
 	.thumb {
 		/* The pane is a picture here: clicks go to the card, and the program
@@ -1202,16 +1245,15 @@ const card = css`
 		overflow: hidden;
 	}
 	.caption {
-		padding: 0.6rem 0.8rem 0.7rem;
-		border-top: 1px solid var(--border-color);
+		padding: 1lh 1.5ch 0.5lh;
+		background: var(--rule) top 0.5lh center / 100% 1px no-repeat;
 	}
 	.title {
 		font-weight: bold;
 		color: var(--highlight-color);
 	}
 	.blurb {
-		margin: 0.2rem 0 0;
-		font-size: 0.85rem;
+		margin: 0;
 		color: var(--muted-color);
 		display: -webkit-box;
 		-webkit-line-clamp: 3;
