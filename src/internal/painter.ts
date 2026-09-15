@@ -28,12 +28,37 @@ import {
 	type Layout,
 	type LineFragment,
 	renderTextFragment,
+	type RunGeometry,
 } from "./layout.ts";
 import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
 // edge computed from an infinite origin and size is NaN.
 type ClipRect = {left: number; top: number; right: number; bottom: number};
+
+// What a box is drawn from. A DOMRect is one; so is the union below,
+// which is read for its edges and never handed out.
+interface PaintRect {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+	bottom: number;
+}
+
+function unionRects(rects: readonly DOMRect[]): PaintRect {
+	let left = Infinity;
+	let top = Infinity;
+	let right = -Infinity;
+	let bottom = -Infinity;
+	for (const rect of rects) {
+		left = Math.min(left, rect.x);
+		top = Math.min(top, rect.y);
+		right = Math.max(right, rect.x + rect.width);
+		bottom = Math.max(bottom, rect.y + rect.height);
+	}
+	return {left, top, width: right - left, height: bottom - top, bottom};
+}
 
 function isClippingOverflow(value: string): boolean {
 	return (
@@ -334,6 +359,7 @@ interface MarkerStyle {
  */
 export interface PaintStyle {
 	display: string;
+	position: string;
 	visible: boolean;
 	fg: number | undefined;
 	bg: number | undefined;
@@ -485,6 +511,7 @@ function computePaintStyle(element: Element): PaintStyle {
 	const overflow = getComputedValue(element, "overflow");
 	return {
 		display,
+		position: getComputedValue(element, "position"),
 		visible: getComputedValue(element, "visibility") !== "hidden",
 		fg,
 		bg,
@@ -550,7 +577,7 @@ const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
 const kHighlightedText = Symbol("highlightedText");
 const kHighlightStyles = Symbol("highlightStyles");
-const kRunFragments = Symbol("runFragments");
+const kRunGeometry = Symbol("runGeometry");
 
 const NO_FRAGMENTS: LineFragment[] = [];
 
@@ -568,9 +595,9 @@ export interface Painter {
 	[kScrolledRows]: number;
 	[kHighlightedText]: Map<Text, HighlightRun[]>;
 	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
-	// The lines of the run container the walk is inside, resolved once for
+	// Where the run container the walk is inside paints, resolved once for
 	// the whole run. Null above the first container of a frame.
-	[kRunFragments]: Map<Node, LineFragment[]> | null;
+	[kRunGeometry]: RunGeometry | null;
 }
 
 /** One registered highlight's share of one text node, in paint order. */
@@ -592,7 +619,7 @@ export class Painter {
 		this[kScrolledRows] = 0;
 		this[kHighlightedText] = new Map();
 		this[kHighlightStyles] = new Map();
-		this[kRunFragments] = null;
+		this[kRunGeometry] = null;
 		this[kWindow] = document.defaultView as unknown as Window;
 		this[kDocument] = document;
 		this[kLayout] = layout;
@@ -663,7 +690,7 @@ export class Painter {
 		this[kScrolledRows] = 0;
 		this[kHighlightedText] = collectHighlightedText(this[kDocument]);
 		this[kHighlightStyles] = new Map();
-		this[kRunFragments] = null;
+		this[kRunGeometry] = null;
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		renderStackingContext(this, this[kDocument].body, ctx, layers);
 		const rendered = renderedTopLayer(this[kDocument]) as unknown as Element[];
@@ -734,13 +761,18 @@ function renderElement(
 		return;
 	}
 
-	const rect = painter[kLayout].getRect(element);
+	// An inline box's rects are the run's to state. Everything else is one
+	// box, which the layout node knows without consulting any line.
+	const boxRects = painter[kRunGeometry]?.boxes.get(element) ?? null;
+	const rect = boxRects === null
+		? painter[kLayout].getRect(element)
+		: unionRects(boxRects);
 	const visible = style.visible;
 
 	if (rect && visible && style.fill !== null) {
 		// A box broken across lines fills each fragment, not the rectangle
 		// enclosing them, whose ends belong to its neighbours.
-		const fragments = painter[kLayout].getRects(element);
+		const fragments = boxRects ?? painter[kLayout].getRects(element);
 		if (fragments.length > 1) {
 			for (const fragment of fragments) {
 				ctx.drawRect(
@@ -759,7 +791,7 @@ function renderElement(
 	// Over the flat fill, which a transparent stop composites onto.
 	if (rect && visible && style.gradient !== null) {
 		const cell = painter[kScreen].cellPixels;
-		const fragments = painter[kLayout].getRects(element);
+		const fragments = boxRects ?? painter[kLayout].getRects(element);
 		for (const fragment of fragments.length > 1 ? fragments : [rect]) {
 			renderGradient(
 				ctx,
@@ -882,9 +914,12 @@ function renderElement(
 
 	// A run's lines are resolved once here, not once per text node under
 	// it. Inline descendants keep painting from their container's.
-	const previousFragments = painter[kRunFragments];
-	if (children.length > 0 && painter[kLayout].isRunContainer(element)) {
-		painter[kRunFragments] = painter[kLayout].runFragments(element);
+	const previousGeometry = painter[kRunGeometry];
+	if (
+		children.length > 0 &&
+		painter[kLayout].isRunContainer(element, style.display, style.position)
+	) {
+		painter[kRunGeometry] = painter[kLayout].runGeometry(element);
 	}
 
 	try {
@@ -902,7 +937,7 @@ function renderElement(
 	} finally {
 		ctx.clipRect = previousClip;
 		painter[kScrolledRows] = scrolledRows;
-		painter[kRunFragments] = previousFragments;
+		painter[kRunGeometry] = previousGeometry;
 	}
 
 	// An outline repaints a bordered box's ring in its color. A borderless
@@ -1002,10 +1037,10 @@ function renderStackingContext(
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
 		const previousScrolled = painter[kScrolledRows];
-		const previousFragments = painter[kRunFragments];
+		const previousGeometry = painter[kRunGeometry];
 		// Entered from its stacking context, so the run its inline content
 		// belongs to is not the one the walk is standing in.
-		painter[kRunFragments] = null;
+		painter[kRunGeometry] = null;
 		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
 		// Entered from its stacking context, not its ancestor chain.
 		painter[kScrolledRows] = painter[kLayout].scrolledAncestorRows(element);
@@ -1024,7 +1059,7 @@ function renderStackingContext(
 			ctx.clipRect = previousClip;
 			ctx.viewportOffset = previousOffset;
 			painter[kScrolledRows] = previousScrolled;
-			painter[kRunFragments] = previousFragments;
+			painter[kRunGeometry] = previousGeometry;
 		}
 	};
 	renderElement(painter, root, ctx, () => {
@@ -1111,10 +1146,10 @@ function renderText(painter: Painter, textNode: Text, ctx: CellContext): void {
 	// One fragment per line, each naming the range of `data` it renders.
 	// The characters come from the node under its own white-space.
 	const whiteSpace = parentStyle.whiteSpace;
-	const runFragments = painter[kRunFragments];
-	const fragments = runFragments === null
+	const geometry = painter[kRunGeometry];
+	const fragments = geometry === null
 		? painter[kLayout].lineFragments(textNode)
-		: (runFragments.get(textNode) ?? NO_FRAGMENTS);
+		: (geometry.texts.get(textNode) ?? NO_FRAGMENTS);
 	let painted = false;
 	for (const fragment of fragments) {
 		if (fragment.endOffset <= fragment.startOffset) {

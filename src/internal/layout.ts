@@ -4791,28 +4791,31 @@ export class Layout {
 		return {from: start, to: end};
 	}
 
-	/** Whether the inline children of this element lay out on its own lines. */
-	isRunContainer(element: Element): boolean {
-		return isRunContainer(this, element);
+	/**
+	 * Whether the inline children of this element lay out on its own lines,
+	 * given its computed `display` and `position`.
+	 */
+	isRunContainer(element: Element, display: string, position: string): boolean {
+		return isRunContainer(this, element, display, position);
 	}
 
 	/**
-	 * Where every line of this container's runs paints, keyed by the text
-	 * node that renders it. What the painter draws from, in place of a
-	 * lookup per text node. Null when the container's boxes have not been
-	 * derived, which leaves the geometry to be resolved per text node.
+	 * Where this container's runs paint, resolved for the whole run at
+	 * once. What the painter draws from, in place of a lookup per node.
+	 * Null when the container's boxes have not been derived, which leaves
+	 * the geometry to be resolved node by node.
 	 */
-	runFragments(element: Element): Map<Node, LineFragment[]> | null {
+	runGeometry(element: Element): RunGeometry | null {
 		const box = this[kBoxes].get(element);
 		if (!box?.children || !this[kDerivedContainers].has(element)) {
 			return null;
 		}
-		const fragments = new Map<Node, LineFragment[]>();
+		const geometry: RunGeometry = {texts: new Map(), boxes: new Map()};
 		// A blockified inline heads a run of its own, on a principal box.
 		for (const child of box.children) {
-			collectRunFragments(this, child, fragments);
+			collectRunFragments(this, child, geometry);
 		}
-		return fragments;
+		return geometry;
 	}
 
 	// The one place laid-out lines get their data ranges. Range geometry,
@@ -5757,14 +5760,19 @@ const NO_OFFSET = {x: 0, y: 0};
 
 // Where the inline children of this element are laid out, matching what
 // getRunContainerFromParent accepts for a text node.
-function isRunContainer(layout: Layout, element: Element): boolean {
-	if (isDisplayContents(element)) {
+function isRunContainer(
+	layout: Layout,
+	element: Element,
+	computed: string,
+	position: string,
+): boolean {
+	if (computed === "contents") {
 		return false;
 	}
-	if (isOutOfFlow(element)) {
+	if (position === "absolute" || position === "fixed") {
 		return true;
 	}
-	const display = getComputedDisplay(element);
+	const display = DISPLAYS.has(computed) ? (computed as Display) : "block";
 	if (display === "inline") {
 		return false;
 	}
@@ -5774,6 +5782,18 @@ function isRunContainer(layout: Layout, element: Element): boolean {
 	return true;
 }
 
+const NO_ELEMENTS: Element[] = [];
+
+/** Where one run container's lines and inline boxes paint. */
+export interface RunGeometry {
+	// What each text node renders, one entry per line it sits on.
+	texts: Map<Node, LineFragment[]>;
+
+	// The fragment rects of each inline box, one per line it spans. An
+	// inline whose rects the run cannot state on its own is absent.
+	boxes: Map<Element, DOMRect[]>;
+}
+
 // Every line fragment one run paints, keyed by the node that renders it.
 // The geometry is getRectTexts', resolved for the whole run at once:
 // the origin and the alignment of a line are read once rather than once
@@ -5781,8 +5801,9 @@ function isRunContainer(layout: Layout, element: Element): boolean {
 function collectRunFragments(
 	layout: Layout,
 	run: Box,
-	fragments: Map<Node, LineFragment[]>,
+	geometry: RunGeometry,
 ): void {
+	const fragments = geometry.texts;
 	const breakResult = run.fragments;
 	const runHead = run.kind === "anonymous" ? run.members[0] : run.node;
 	if (!breakResult || !runHead) {
@@ -5838,6 +5859,32 @@ function collectRunFragments(
 		return shift;
 	};
 
+	// The inline boxes a text node's fragment also belongs to: its
+	// ancestors up to the first that is a box of its own, which states its
+	// rect from its layout node instead. A broken inline reports the
+	// fragments its container holds for it, not these.
+	const chains = new Map<Element, Element[]>();
+	const inlineChain = (start: Element | null): Element[] => {
+		if (!start) {
+			return NO_ELEMENTS;
+		}
+		const known = chains.get(start);
+		if (known) {
+			return known;
+		}
+		const chain =
+			getComputedDisplay(start) !== "inline" ||
+			isBlockified(start) ||
+			layout[kBoxes].get(start)?.broken
+				? NO_ELEMENTS
+				: [start, ...inlineChain(flatParentElement(start))];
+		chains.set(start, chain);
+		return chain;
+	};
+	// An inline holding a nested formatting context covers text this walk
+	// places in another frame, which is not what getRectTexts unions for it.
+	const opaque = new Set<Element>();
+
 	// One line's share of one node, merged across the segments it broke
 	// into there.
 	interface Merged {
@@ -5863,6 +5910,9 @@ function collectRunFragments(
 					// To the CONTENT edge. Border and padding occupy cells. A
 					// windowed value shifts its content by its own scroll.
 					if (leaf.breakResult) {
+						for (const box of inlineChain(flatParentElement(leaf.node))) {
+							opaque.add(box);
+						}
 						emit(
 							leaf.breakResult,
 							baseX +
@@ -5909,8 +5959,10 @@ function collectRunFragments(
 				alignContainer,
 				result.containerWidth,
 			);
+			const spans = new Map<Element, {minX: number; maxX: number}>();
 			for (const [node, entry] of merged) {
-				const shift = relativeShift(flatParentElement(node));
+				const parent = flatParentElement(node);
+				const shift = relativeShift(parent);
 				let lines = fragments.get(node);
 				if (!lines) {
 					fragments.set(node, (lines = []));
@@ -5926,11 +5978,40 @@ function collectRunFragments(
 					endOffset: entry.endOffset,
 					visualBase: entry.visualBase,
 				});
+				// An inline's rect is the union over all its text, so a box is
+				// measured across the nodes it holds, not per node.
+				for (const box of inlineChain(parent)) {
+					const span = spans.get(box);
+					if (span === undefined) {
+						spans.set(box, {minX: entry.minX, maxX: entry.maxX});
+					} else {
+						span.minX = Math.min(span.minX, entry.minX);
+						span.maxX = Math.max(span.maxX, entry.maxX);
+					}
+				}
+			}
+			for (const [box, span] of spans) {
+				const shift = relativeShift(box);
+				let rects = geometry.boxes.get(box);
+				if (!rects) {
+					geometry.boxes.set(box, (rects = []));
+				}
+				rects.push(
+					new layout[kDOMRect](
+						baseX + span.minX + alignOffset + indent + shift.x,
+						baseY + line.y + shift.y,
+						span.maxX - span.minX,
+						line.height,
+					),
+				);
 			}
 		}
 	};
 
 	emit(breakResult, origin.x, origin.y, flatParentElement(runHead));
+	for (const box of opaque) {
+		geometry.boxes.delete(box);
+	}
 }
 
 // Nothing outside layout may reason about processed text. Geometry
