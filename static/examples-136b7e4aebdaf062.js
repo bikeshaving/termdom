@@ -216,6 +216,10 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 					}
 					flex-direction: column;
 					flex: none;
+					/* As tall as its numbers, not the window: the column and its
+					   rule run the length of the text it scrolls with. */
+					align-self: flex-start;
+					min-height: 100%;
 					margin: 0;
 					padding: ${Wl} 1.5ch ${Wl} 1.5ch;
 					font-size: ${V1};
