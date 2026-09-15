@@ -659,19 +659,16 @@ const toolbar = css`
 	border-bottom: 1px solid var(--border-color);
 
 	label {
-		font-size: 0.8rem;
 		color: var(--muted-color);
 	}
 
 	select,
 	button {
 		font: inherit;
-		font-size: 0.85rem;
-		line-height: 1.4;
 		color: var(--text-color);
-		background-color: var(--surface-color);
-		border: 1px solid var(--border-color);
-		padding: 0.25rem 0.7rem;
+		background: none;
+		border: none;
+		padding: 0;
 	}
 
 	button {
@@ -681,17 +678,14 @@ const toolbar = css`
 
 	select:hover,
 	button:hover {
-		border-color: var(--highlight-color);
-	}
-
-	button:hover {
-		color: var(--highlight-color);
+		background-color: var(--highlight-color);
+		color: var(--bg-color);
 	}
 
 	select:focus-visible,
 	button:focus-visible {
-		outline: 2px solid var(--highlight-color);
-		outline-offset: 1px;
+		outline: 1px solid var(--highlight-color);
+		outline-offset: 0;
 	}
 
 	button kbd {

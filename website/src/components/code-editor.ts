@@ -274,12 +274,18 @@ const code = css`
 		outline: none;
 	}
 
+	/* The site draws a box around every pre; the editor is the box here. */
+	&&::before {
+		content: none;
+	}
+
 	& code {
 		background: none;
 		border: none;
 		border-radius: 0;
 		padding: 0;
 		font-size: inherit;
+		overflow: visible;
 	}
 
 	/* A line is exactly one row tall whatever it holds: a token span with a
