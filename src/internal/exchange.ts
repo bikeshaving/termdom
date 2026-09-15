@@ -380,6 +380,8 @@ interface WireReader {
 	[kExpectingReply]: boolean;
 }
 
+const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
+
 /**
  * Decodes one chunk into what it meant. Keeps what a chunk boundary can
  * cut: a split escape (never a bare trailing ESC, which may be the
@@ -531,8 +533,6 @@ class WireReader {
 		return items;
 	}
 }
-
-const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
 
 /** The index just past BEL or ST, or -1 when neither closes the string. */
 function findStringTerminator(data: string, from: number): number {

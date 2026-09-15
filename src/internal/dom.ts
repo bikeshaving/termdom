@@ -81,6 +81,19 @@ const UPGRADEABLE_CONTROLS = new Set([
 const kNext = Symbol("next sibling link");
 const kFirstChild = Symbol("first child");
 
+const ELEMENT_NODE = 1;
+const ATTRIBUTE_NODE = 2;
+const TEXT_NODE = 3;
+const CDATA_SECTION_NODE = 4;
+const ENTITY_REFERENCE_NODE = 5;
+const ENTITY_NODE = 6;
+const PROCESSING_INSTRUCTION_NODE = 7;
+const COMMENT_NODE = 8;
+const DOCUMENT_NODE = 9;
+const DOCUMENT_TYPE_NODE = 10;
+const DOCUMENT_FRAGMENT_NODE = 11;
+const NOTATION_NODE = 12;
+
 // Walks the child links directly instead of running a selector query.
 // This runs on every insertion, so ordinary markup should cost no more
 // than one tag comparison per element.
@@ -637,6 +650,8 @@ function addPart(
 	root.appendChild(span);
 	return span;
 }
+
+const engineObservers = new WeakMap<Document, MutationObserver>();
 
 // Per spec a document-rooted observer never sees inside a shadow root, so
 // each root is observed on its own.
@@ -1321,6 +1336,13 @@ const kReturnValue = Symbol("returnValue");
 interface BeforeUnloadEvent {
 	[kReturnValue]: string;
 }
+
+// The HTML element constructor is an author-facing algorithm: it looks
+// up which custom element definition `new.target` names and throws if
+// there is none. The tree's own creation path needs the same classes
+// without that check, and this flag tells the constructor which case it
+// is in.
+let internalConstruction = false;
 
 class BeforeUnloadEvent extends Event {
 	constructor(
@@ -4600,14 +4622,14 @@ function runChildrenChangedSteps(
 				continue;
 			}
 			for (const collection of held) {
-				childrenChangedMethod.call(collection, point, changed, added);
+				collection[kChildrenChangedSteps](point, changed, added);
 			}
 		}
 	}
 	const wide = point[kDocument][kDocumentWideLists];
 	if (wide !== null) {
 		for (const collection of wide) {
-			childrenChangedMethod.call(collection, point, changed, added);
+			collection[kChildrenChangedSteps](point, changed, added);
 		}
 	}
 }
@@ -4623,16 +4645,16 @@ const kTokenLists = Symbol("reflected token lists");
 function syncAttributeCollections(element: Element, localName: string): void {
 	const map = element[kAttributesMap];
 	if (map !== null) {
-		syncMethod.call(map);
+		map[kSync]();
 	}
 	const classList = element[kClassList];
 	if (classList !== null) {
-		syncMethod.call(classList);
+		classList[kSync]();
 	}
 	const lists = element[kTokenLists];
 	if (lists !== null) {
 		for (const list of lists.values()) {
-			syncMethod.call(list);
+			list[kSync]();
 		}
 	}
 	if (heldListDocuments.has(element[kDocument])) {
@@ -4653,19 +4675,6 @@ function syncAttributeCollections(element: Element, localName: string): void {
 		}
 	}
 }
-
-const ELEMENT_NODE = 1;
-const ATTRIBUTE_NODE = 2;
-const TEXT_NODE = 3;
-const CDATA_SECTION_NODE = 4;
-const ENTITY_REFERENCE_NODE = 5;
-const ENTITY_NODE = 6;
-const PROCESSING_INSTRUCTION_NODE = 7;
-const COMMENT_NODE = 8;
-const DOCUMENT_NODE = 9;
-const DOCUMENT_TYPE_NODE = 10;
-const DOCUMENT_FRAGMENT_NODE = 11;
-const NOTATION_NODE = 12;
 
 const DOCUMENT_POSITION_DISCONNECTED = 0x01;
 const DOCUMENT_POSITION_PRECEDING = 0x02;
@@ -6059,6 +6068,11 @@ function queueMutationObserverMicrotask(): void {
 
 const kNodes = Symbol("nodes");
 
+// slotchange is signalled here rather than fired. The spec fires it from
+// the same microtask that delivers mutation records, after them, so a
+// script observing both sees the records first.
+const signalSlots: HTMLSlotElement[] = [];
+
 // Runs as a microtask, so a script sees the records for everything it
 // did before yielding, in one callback per observer.
 function notifyMutationObservers(): void {
@@ -6835,15 +6849,6 @@ function ensureList(list: LiveList): Node[] {
 	}
 	return list[kItems];
 }
-
-const syncMethod = (
-	LiveList.prototype as unknown as Record<symbol, () => void>
-)[kSync];
-const childrenChangedMethod = (
-	LiveList.prototype as unknown as Record<
-		symbol,
-		(point: Node, changed: readonly Node[] | null, added: boolean) => void>
-)[kChildrenChangedSteps];
 
 const kCompute = Symbol("compute");
 
@@ -8404,13 +8409,6 @@ class ElementRegistry {
 
 const builtinRegistry = new ElementRegistry();
 
-// The HTML element constructor is an author-facing algorithm: it looks
-// up which custom element definition `new.target` names and throws if
-// there is none. The tree's own creation path needs the same classes
-// without that check, and this flag tells the constructor which case it
-// is in.
-let internalConstruction = false;
-
 const kChildren = Symbol("children");
 const kSlottableName = Symbol("slottable name");
 const kReactionQueue = Symbol("custom element reaction queue");
@@ -8797,7 +8795,7 @@ export class Element extends Node implements globalThis.Element {
 			Boolean(options.serializable),
 			Boolean(options.delegatesFocus),
 			slotAssignment,
-			registry === undefined ? globalCustomElements : registry,
+			registry === undefined ? getGlobalCustomElements() : registry,
 		);
 		const root = this[kShadowRoot] as ShadowRoot;
 		const attached = getAttachedDocument(this);
@@ -10999,6 +10997,8 @@ function getElementInterface(
 	return Element;
 }
 
+let currentDocumentForConstruction: Document | null = null;
+
 function buildElement(
 	document: Document,
 	constructor: new () => Element,
@@ -11710,7 +11710,7 @@ function getConstructorDefinition(
 			return definition;
 		}
 	}
-	const global = getDefinition(globalCustomElements, constructor);
+	const global = getDefinition(getGlobalCustomElements(), constructor);
 	if (global !== null) {
 		return global;
 	}
@@ -11727,9 +11727,14 @@ function getConstructorDefinition(
 // one registry serves every document. A document reaches it through the
 // algorithms below rather than a global, so a tree with no window behind
 // it still resolves its definitions.
-const globalCustomElements = constructInternal(() =>
-	new CustomElementRegistry(),
-);
+let globalCustomElements: CustomElementRegistry | null = null;
+
+function getGlobalCustomElements(): CustomElementRegistry {
+	if (globalCustomElements === null) {
+		globalCustomElements = constructInternal(() => new CustomElementRegistry());
+	}
+	return globalCustomElements;
+}
 
 // Every node has a registry. An element takes its document's when
 // created and the tree's when inserted. A shadow root takes its host's
@@ -12251,7 +12256,7 @@ function attachUAShadowTree<T>(target: Element): T {
 	shadow[kConnected] = host[kConnected];
 	shadow[kShadowMode] = "closed";
 	shadow[kUAShadowTree] = true;
-	shadow[kRegistry] = globalCustomElements;
+	shadow[kRegistry] = getGlobalCustomElements();
 	host[kShadowRoot] = shadow;
 	return shadow as T;
 }
@@ -12405,11 +12410,6 @@ function assignASlot(slottable: Slottable): void {
 		assignSlottables(slot);
 	}
 }
-
-// slotchange is signalled here rather than fired. The spec fires it from
-// the same microtask that delivers mutation records, after them, so a
-// script observing both sees the records first.
-const signalSlots: HTMLSlotElement[] = [];
 
 function signalASlotChange(slot: HTMLSlotElement): void {
 	if (!signalSlots.includes(slot)) {
@@ -16542,7 +16542,7 @@ class HTMLOptionElement extends HTMLElement {
 		const select = getSelect(this);
 		const selected = select === null ? null : select[kSelectedOptions];
 		if (selected !== null) {
-			syncMethod.call(selected);
+			selected[kSync]();
 		}
 	}
 
@@ -21999,7 +21999,6 @@ function getThresholdIndex(
 	return index;
 }
 
-let currentDocumentForConstruction: Document | null = null;
 let ambientDocument: Document | null = null;
 
 // A window here is not the global object, so there is no "current
@@ -23797,7 +23796,7 @@ Object.defineProperty(DOMImplementation.prototype, Symbol.toStringTag, {
 function createHTMLDocument(
 	title?: string,
 	url = "about:blank",
-	registry: CustomElementRegistry | null = globalCustomElements,
+	registry: CustomElementRegistry | null = getGlobalCustomElements(),
 ): Document {
 	const document = new Document();
 	document[kRegistry] = registry;
@@ -24253,6 +24252,13 @@ function setScrollOffset(
 	void attached[kRender]();
 }
 
+// The one box whose vertical scroll this frame can express as a scroll shift,
+// meaning rows the terminal may shift instead of repainting. Repeated
+// scrolls on one box add up. A second box scrolling means no single shift
+// describes the frame, so the record is dropped in favor of the screen's
+// dirty bit.
+const scrollShifts = new WeakMap<Document, {element: Element; delta: number}>();
+
 /**
  * Pull every stored scroll offset back into its box's scrollable range
  * against fresh layout. A mutation that shrinks a box's content must not
@@ -24301,13 +24307,6 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		void attached[kRender]();
 	}
 }
-
-// The one box whose vertical scroll this frame can express as a scroll shift,
-// meaning rows the terminal may shift instead of repainting. Repeated
-// scrolls on one box add up. A second box scrolling means no single shift
-// describes the frame, so the record is dropped in favor of the screen's
-// dirty bit.
-const scrollShifts = new WeakMap<Document, {element: Element; delta: number}>();
 
 function recordScrollShift(
 	attached: AttachedDocument,
@@ -26970,6 +26969,8 @@ interface HighlightRegistry {
 	[kRegistryDocument]: Document;
 }
 
+let registryUnderConstruction: Document | null = null;
+
 /**
  * A document's registered highlights, as `CSS.highlights`. Insertion
  * ordered: two highlights of equal priority paint in the order their
@@ -27085,8 +27086,6 @@ Object.defineProperty(HighlightRegistry.prototype, Symbol.toStringTag, {
 	value: "HighlightRegistry",
 	configurable: true,
 });
-
-let registryUnderConstruction: Document | null = null;
 
 /** The document's registry, built on the first `CSS.highlights` read. */
 export function getHighlightRegistry(
@@ -27854,6 +27853,16 @@ export function isTargetElement(element: Element): boolean {
 	);
 }
 
+const PLACEHOLDER_INPUT_TYPES = new Set([
+	"email",
+	"number",
+	"password",
+	"search",
+	"tel",
+	"text",
+	"url",
+]);
+
 export function isPlaceholderShown(element: Element): boolean {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
@@ -27875,16 +27884,6 @@ export function isPlaceholderShown(element: Element): boolean {
 	}
 	return (element as unknown as {value: string}).value === "";
 }
-
-const PLACEHOLDER_INPUT_TYPES = new Set([
-	"email",
-	"number",
-	"password",
-	"search",
-	"tel",
-	"text",
-	"url",
-]);
 
 function getInputTypeValue(element: Element): string {
 	return toASCIILowercase(element.getAttribute("type") ?? "text");
@@ -28328,7 +28327,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 			// none.
 			template.hasAttribute("shadowrootcustomelementregistry")
 				? null
-				: globalCustomElements,
+				: getGlobalCustomElements(),
 		);
 	} catch (_err) {
 		return false;
@@ -28356,7 +28355,7 @@ function parseHTMLDocument(
 	html: string,
 	url = "about:blank",
 	allowDeclarativeShadowRoots = true,
-	registry: CustomElementRegistry | null = globalCustomElements,
+	registry: CustomElementRegistry | null = getGlobalCustomElements(),
 ): Document {
 	const adapter = createTreeAdapter(null);
 	const outerRegistry = parseRegistry;
@@ -29557,6 +29556,8 @@ export function syncMediaQueries(document: globalThis.Document): void {
 	}
 }
 
+const hoverListenerCounts = new WeakMap<Document, () => number>();
+
 /**
  * Once per document. A second engine would build every widget a second
  * time, and the two would disagree about what is on screen.
@@ -29604,8 +29605,6 @@ export function attachDocument(
 	});
 	engineObservers.set(attached, observer);
 }
-
-const engineObservers = new WeakMap<Document, MutationObserver>();
 
 type TextControlOrSelect =
 	HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
@@ -29905,8 +29904,6 @@ export function flushLayout(node: globalThis.Node): boolean {
 	clampScrollOffsets(document);
 	return had;
 }
-
-const hoverListenerCounts = new WeakMap<Document, () => number>();
 
 export function hoverListenerCount(document: globalThis.Document): number {
 	return hoverListenerCounts.get(document as Document)?.() ?? 0;
@@ -30875,7 +30872,7 @@ export class Window extends EventTarget {
 	}
 
 	get customElements(): globalThis.CustomElementRegistry {
-		return globalCustomElements as unknown as globalThis.CustomElementRegistry;
+		return getGlobalCustomElements() as unknown as globalThis.CustomElementRegistry;
 	}
 
 	// The terminal is both the window and the screen, so the inner and

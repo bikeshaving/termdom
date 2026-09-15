@@ -7067,6 +7067,9 @@ function parseSelector(
 	}
 }
 
+// Farther from any element than any scoping root can be.
+const UNSCOPED = Number.MAX_SAFE_INTEGER;
+
 function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	// A UA shadow part IS the element its part pseudo styles. The host's
 	// ::placeholder rules cascade onto the [part="placeholder"] span.
@@ -7163,9 +7166,6 @@ function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
 	}
 	return getScopingRoot(element, rule) !== null;
 }
-
-// Farther from any element than any scoping root can be.
-const UNSCOPED = Number.MAX_SAFE_INTEGER;
 
 // Only called for a rule that matches. One out of scope everywhere has
 // already been filtered out.

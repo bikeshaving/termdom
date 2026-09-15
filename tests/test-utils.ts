@@ -23,6 +23,9 @@ import {getStringWidth} from "../src/internal/text.ts";
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
 
+/** charProperties kind: the cluster ended on a joiner and wants what follows. */
+const ZWJ_PENDING = 1;
+
 /**
  * The width tables, as the mock terminal's own measure.
  *
@@ -82,9 +85,6 @@ const TABLE_UNICODE_VERSION = {
 		return (width & 3) << 1;
 	},
 };
-
-/** charProperties kind: the cluster ended on a joiner and wants what follows. */
-const ZWJ_PENDING = 1;
 
 const kStdin = Symbol("stdin");
 

@@ -1,4 +1,4 @@
-/* eslint-disable termdom/import-order -- Prism's language packs register on
+/* eslint-disable @b9g/import-order -- Prism's language packs register on
    the global its core import creates, so the core has to load before them,
    which the rule's side-effect-first order would undo. */
 import {readFileSync} from "node:fs";
@@ -15,7 +15,7 @@ import "prismjs/components/prism-typescript.js";
 import "prismjs/components/prism-json.js";
 import "prismjs/components/prism-bash.js";
 import "prismjs/components/prism-python.js";
-/* eslint-enable termdom/import-order */
+/* eslint-enable @b9g/import-order */
 
 // marked and marked-highlight are standard Node/browser libraries used here
 // completely unmodified -- the whole point: a real web toolchain feeding a real

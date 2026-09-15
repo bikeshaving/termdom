@@ -1461,6 +1461,10 @@ const DECORATION_LINE_KEYWORDS = new Set([
 	"grammar-error",
 ]);
 
+// In grammar order. The property index lists a box's sides
+// alphabetically, but the grammar runs top, right, bottom, left.
+const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
+
 // Declarations are consulted per property, so a shorthand that is never
 // expanded to longhands does not exist downstream. Order is preserved,
 // so an explicit longhand after a shorthand still overrides it. A
@@ -2555,11 +2559,12 @@ function serializeCalc(terms: CalcTerms): string {
 // Null for anything this cannot reduce (a nested min()/max()/clamp(),
 // an unsubstituted var()), which leaves the value as written.
 function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
-	const tokens =
+	const matched =
 		body.match(/[+-]?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?|[()*/+-]/g);
-	if (!tokens) {
+	if (!matched) {
 		return null;
 	}
+	const tokens: readonly string[] = matched;
 	let position = 0;
 	const peek = (): string | undefined => tokens[position];
 
@@ -2569,7 +2574,7 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 		number: terms.number * by,
 	});
 
-	const primary = (): CalcTerms | null => {
+	function primary(): CalcTerms | null {
 		const token = tokens[position++];
 		if (token === undefined) {
 			return null;
@@ -2604,9 +2609,9 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 			return null;
 		}
 		return {px: number * factor, percent: 0, number: 0};
-	};
+	}
 
-	const product = (): CalcTerms | null => {
+	function product(): CalcTerms | null {
 		let left = primary();
 		while (left !== null && (peek() === "*" || peek() === "/")) {
 			const operator = tokens[position++];
@@ -2628,9 +2633,9 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 			}
 		}
 		return left;
-	};
+	}
 
-	const sum = (): CalcTerms | null => {
+	function sum(): CalcTerms | null {
 		let left = product();
 		while (left !== null && (peek() === "+" || peek() === "-")) {
 			const operator = tokens[position++];
@@ -2646,7 +2651,7 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 			};
 		}
 		return left;
-	};
+	}
 
 	const terms = sum();
 	return terms !== null && position === tokens.length ? terms : null;
@@ -2804,10 +2809,6 @@ type ShorthandShape =
 	"grid-line" |
 	"grid-template" |
 	"sequence";
-
-// In grammar order. The property index lists a box's sides
-// alphabetically, but the grammar runs top, right, bottom, left.
-const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
 
 const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
 

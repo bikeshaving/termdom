@@ -180,6 +180,9 @@ function updateAnimations(): void {
   frame++;
 }
 
+// Start animation loop
+const interval = setInterval(updateAnimations, 80);
+
 // Keyboard handler
 document.addEventListener("keydown", (e: Event) => {
   const ke = e as KeyboardEvent;
@@ -189,6 +192,4 @@ document.addEventListener("keydown", (e: Event) => {
   }
 });
 
-// Start animation loop
-const interval = setInterval(updateAnimations, 80);
 updateAnimations();

@@ -11,7 +11,7 @@
  *
  * Keys: left/right arrows or 1-4 pick the language, q quits.
  */
-/* eslint-disable termdom/import-order -- Prism's language packs register on
+/* eslint-disable @b9g/import-order -- Prism's language packs register on
    the global its core import creates, so the core has to load before them,
    which the rule's side-effect-first order would undo. */
 import {TermDOM} from "@b9g/termdom";
@@ -21,7 +21,7 @@ import Prism from "prismjs";
 import "prismjs/components/prism-typescript.js";
 import "prismjs/components/prism-json.js";
 import "prismjs/components/prism-python.js";
-/* eslint-enable termdom/import-order */
+/* eslint-enable @b9g/import-order */
 
 interface Sample {
   id: string;

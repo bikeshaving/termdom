@@ -688,18 +688,19 @@ function *App(this: Context) {
   const liveRun = (): boolean =>
     startedAt !== null && finishedAt === null && game.moves > 0;
 
-  const guardedReset = (number: number, label: string): void => {
-    if (!liveRun()) {
-      return reset(number);
-    }
-    this.refresh(() => {
-      confirming = {
-        question: "Abandon this run?",
-        yes: `start ${label}`,
-        go: () => reset(number),
-      };
-    });
+  // The cursor is a place on the board, in the board's own geometry: seven
+  // columns, a top row (deck, flip, a gap, four suit homes) and the
+  // tableau below, where a column is a pile and the cursor can rest on any
+  // face-up card of it. Enter acts where the cursor is; the arrows move it,
+  // wrapping across columns.
+  let cur: {row: "top" | "board"; col: number; depth: number} = {
+    row: "board",
+    col: 0,
+    depth: 0,
   };
+  // The cursor exists once the keyboard asks for it -- the :focus-visible
+  // convention. A fresh deal shows no gold, and a mouse game never does.
+  let cursorShown = false;
 
   /** Back to the deal's opening position, clock unstarted, cursor down. */
   const reset = (number: number): void => {
@@ -715,6 +716,19 @@ function *App(this: Context) {
       finishedAt = null;
       cur = {row: "board", col: 0, depth: 0};
       cursorShown = false;
+    });
+  };
+
+  const guardedReset = (number: number, label: string): void => {
+    if (!liveRun()) {
+      return reset(number);
+    }
+    this.refresh(() => {
+      confirming = {
+        question: "Abandon this run?",
+        yes: `start ${label}`,
+        go: () => reset(number),
+      };
     });
   };
 
@@ -921,20 +935,6 @@ function *App(this: Context) {
       });
     }
   };
-
-  // The cursor is a place on the board, in the board's own geometry: seven
-  // columns, a top row (deck, flip, a gap, four suit homes) and the
-  // tableau below, where a column is a pile and the cursor can rest on any
-  // face-up card of it. Enter acts where the cursor is; the arrows move it,
-  // wrapping across columns.
-  let cur: {row: "top" | "board"; col: number; depth: number} = {
-    row: "board",
-    col: 0,
-    depth: 0,
-  };
-  // The cursor exists once the keyboard asks for it -- the :focus-visible
-  // convention. A fresh deal shows no gold, and a mouse game never does.
-  let cursorShown = false;
 
   /**
    * A key press is a cursor move too: whatever a letter or number acts on,
