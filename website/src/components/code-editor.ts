@@ -202,6 +202,10 @@ function* Gutter(this: Context<typeof Gutter>, {length}: {length: number}) {
 					}
 					flex-direction: column;
 					flex: none;
+					/* As tall as its numbers, not the window: the column and its
+					   rule run the length of the text it scrolls with. */
+					align-self: flex-start;
+					min-height: 100%;
 					margin: 0;
 					padding: ${VERTICAL_PADDING} 1.5ch ${VERTICAL_PADDING} 1.5ch;
 					font-size: ${FONT_SIZE};
