@@ -362,9 +362,9 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 	align-items: center;
 	gap: 1ch;
 	margin: 0;
-	padding: 0.5lh 1.5ch 1lh;
+	padding: 0.5lh 1.5ch 0.5lh;
 	flex-wrap: wrap;
-	background: var(--rule) bottom 0.5lh center / 100% 1px no-repeat var(--bg-color);
+	background: var(--rule) bottom center / 100% 1px no-repeat var(--bg-color);
 
 	label {
 		color: var(--muted-color);
@@ -473,7 +473,6 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 	margin: 0;
 	padding: 0.5lh 0.5ch;
 	overflow: hidden;
-	background-color: var(--surface-color);
 
 	&::before {
 		content: "";
@@ -644,7 +643,6 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 	flex-direction: column;
 	padding: 0.5lh 0.5ch;
 	overflow: hidden;
-	background-color: var(--surface-color);
 	color: inherit;
 	text-decoration: none;
 	&::before {
@@ -657,7 +655,7 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 	}
 	&:hover {
 		text-decoration: none;
-		background-color: var(--surface-color);
+		background: none;
 		color: inherit;
 	}
 	&:hover::before {
