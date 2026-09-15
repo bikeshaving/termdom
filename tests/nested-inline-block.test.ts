@@ -237,3 +237,25 @@ test("a block between two runs does not blank the earlier one", async () => {
 
 	dom.dispose();
 });
+
+test("an inline-block two boxes deep paints inside its own border", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"width: 28ch\">x " +
+		"<span style=\"display: inline-block; padding: 0 1ch; border: 1px solid\">a " +
+		"<span style=\"display: inline-block; border: 1px solid\">b</span>" +
+		"</span> y</div>";
+
+	await nextFrame(dom);
+
+	// The walk from the text node up added the offsets of the boxes it
+	// found in the run and skipped the ones nested inside another, so "b"
+	// landed a row high, over its own box's top border.
+	const lines = terminal.getVisibleText().split("\n");
+	expect(lines[1]).toContain("┌─┐");
+	expect(lines[2]).toContain("│b│");
+	expect(lines[3]).toContain("└─┘");
+
+	dom.dispose();
+});
