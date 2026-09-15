@@ -5267,6 +5267,21 @@ export class Cascade {
 	}
 
 	/**
+	 * One object per resolved style, the same until the element's style
+	 * changes. Null for a pseudo-element and while a transition runs.
+	 */
+	styleKeyOf(element: Element): object | null {
+		if (this[kActiveTransitions].size > 0 || getPseudoHost(element) !== null) {
+			return null;
+		}
+		const declaration = this.declarationFor(element);
+		if (!this[kCurrentDeclarations].has(declaration)) {
+			declaration[kSyncResolved]();
+		}
+		return declaration[kResolved];
+	}
+
+	/**
 	 * The properties a pseudo-element's own rules set on this element, empty
 	 * when no rule reaches it. Unlike getComputedValue, this does not fill in
 	 * the originating element's inherited values.
