@@ -22,11 +22,20 @@ import {
 } from "./dom.ts";
 import {getEditingCaretPoint} from "./editing.ts";
 import {
+	type Box,
+	type BreakResult,
+	type Display,
+	getLineAlignOffset,
+	getLineIndent,
+	hasItemParent,
+	type InlineBlockLeaf,
+	isAtomicInline,
 	isPositioned,
 	isStackingContext,
 	type Layout,
 	renderTextFragment,
 } from "./layout.ts";
+import type {LayoutNode} from "./layoutsolver.ts";
 import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
@@ -314,46 +323,202 @@ function renderGradient(
 	}
 }
 
-function getCellStyle(element: Element): CellStyle {
+const paintStyles = new WeakMap<object, PaintStyle>();
+
+interface PaintStyle {
+	display: string;
+	visible: boolean;
+	fg: number | undefined;
+	bg: number | undefined;
+	fill: number | "default" | "inverse" | null;
+	gradient: CSSValues.Gradient | null;
+	border: BorderPaint | null;
+	outlineColor: number | undefined | null;
+	overflowX: string;
+	overflowY: string;
+	textTransform: string;
+	whiteSpace: string;
+	cell: CellStyle;
+	shiftX: number;
+	shiftY: number;
+}
+
+interface BorderPaint {
+	top?: LineStyle;
+	right?: LineStyle;
+	bottom?: LineStyle;
+	left?: LineStyle;
+	topLeft?: "round";
+	topRight?: "round";
+	bottomRight?: "round";
+	bottomLeft?: "round";
+}
+
+const kWindow = Symbol("window");
+const kDocument = Symbol("document");
+const kLayout = Symbol("layout");
+const kCascade = Symbol("cascade");
+const kScreen = Symbol("screen");
+const kTopLayer = Symbol("topLayer");
+const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
+const kScrolledRows = Symbol("scrolledRows");
+const kHighlightedText = Symbol("highlightedText");
+const kHighlightStyles = Symbol("highlightStyles");
+
+function getPaintStyle(painter: Painter, element: Element): PaintStyle {
+	const key = painter[kCascade].styleKeyOf(element);
+	const known = key === null ? undefined : paintStyles.get(key);
+	if (known !== undefined) {
+		return known;
+	}
+	const style = readPaintStyle(element);
+	if (key !== null) {
+		paintStyles.set(key, style);
+	}
+	return style;
+}
+
+function readPaintStyle(element: Element): PaintStyle {
 	const color = getComputedValue(element, "color");
-	const bgColor = getComputedValue(element, "background-color");
+	const backgroundColor = getComputedValue(element, "background-color");
+	const fg = color && color !== "initial" && !CSSValues.isHighlightColor(color)
+		? CSSValues.cssColorToNumber(color)
+		: undefined;
+	// Canvas clears the box to the terminal's default background, opaque in
+	// every theme. Highlight fills it with inverse.
+	const isCanvasBg =
+		Boolean(backgroundColor) && CSSValues.isCanvasColor(backgroundColor);
+	const isHighlightBox =
+		Boolean(backgroundColor) && CSSValues.isHighlightColor(backgroundColor);
+	const bg =
+		backgroundColor &&
+		!isCanvasBg &&
+		backgroundColor !== "initial" &&
+		!CSSValues.isTransparentColor(backgroundColor) &&
+		!CSSValues.isHighlightColor(backgroundColor)
+			? CSSValues.cssColorToNumber(backgroundColor)
+			: undefined;
+	const fill = bg != null || isCanvasBg || isHighlightBox
+		? isCanvasBg ? "default" : isHighlightBox ? "inverse" : bg!
+		: null;
+	const sides = resolveBorderSides(element);
+	// Unauthored, a border is the terminal's default foreground, because
+	// no theme-safe color exists. A transparent side keeps its space and
+	// paints no glyph.
+	const sideFor = (
+		line: LineStyle["style"] | undefined,
+		prop: string,
+	): LineStyle | undefined => {
+		if (!line) {
+			return undefined;
+		}
+		const borderColor = getComputedValue(element, prop);
+		if (CSSValues.isTransparentColor(borderColor)) {
+			return undefined;
+		}
+		return {
+			style: line,
+			color:
+				borderColor &&
+				borderColor !== "currentcolor" &&
+				borderColor !== "currentColor"
+					? CSSValues.cssColorToNumber(borderColor)
+					: fg,
+		};
+	};
+	const border: BorderPaint = {
+		top: sideFor(sides.top, "border-top-color"),
+		right: sideFor(sides.right, "border-right-color"),
+		bottom: sideFor(sides.bottom, "border-bottom-color"),
+		left: sideFor(sides.left, "border-left-color"),
+		topLeft: sides.topLeft,
+		topRight: sides.topRight,
+		bottomRight: sides.bottomRight,
+		bottomLeft: sides.bottomLeft,
+	};
+	// An outline repaints a bordered box's ring in its color. A borderless
+	// box gets an underline along its bottom row. Overline (SGR 53) is
+	// unreliable.
+	const outlineStyle = getComputedValue(element, "outline-style");
+	let outlineColor: number | undefined | null = null;
+	if (
+		outlineStyle &&
+		outlineStyle !== "none" &&
+		CSSValues.parseBorderWidthValue(
+			getComputedValue(element, "outline-width"),
+		) !==
+		0
+	) {
+		const outline = getComputedValue(element, "outline-color")
+			.trim()
+			.toLowerCase();
+		const hasColor =
+			Boolean(outline) &&
+			outline !== "auto" &&
+			outline !== "currentcolor" &&
+			outline !== "invert" &&
+			!CSSValues.isHighlightColor(outline);
+		// `auto`, the initial value and what `outline: 1px solid` leaves,
+		// takes the element's own color, as a border's currentcolor does.
+		outlineColor = hasColor ? CSSValues.cssColorToNumber(outline) : fg;
+	}
+	const overflow = getComputedValue(element, "overflow");
+	let shiftX = 0;
+	let shiftY = 0;
+	if (getComputedValue(element, "position") === "relative") {
+		const left = CSSValues.parseSignedUnitValue(
+			getComputedValue(element, "left"),
+		);
+		const top = CSSValues.parseSignedUnitValue(
+			getComputedValue(element, "top"),
+		);
+		shiftX = typeof left === "number" ? left : 0;
+		shiftY = typeof top === "number" ? top : 0;
+	}
 	const decoration = CSSValues.parseTextDecorationLine(
 		getComputedValue(element, "text-decoration-line"),
 	);
 	const {bold, dim} = resolveFontWeight(
 		getComputedValue(element, "font-weight"),
 	);
-	// The background alone carries inverse. color: HighlightText alone
-	// resolves to nothing, so an author color does not defeat it.
-	const isHighlightPair = CSSValues.isHighlightColor(bgColor);
-	// A gradient gives every cell its own background, so naming one here
-	// would repaint the run flat under the text. An undefined background
-	// leaves each cell the color the gradient put there.
-	const isGradientBox = getGradient(element) !== null;
+	const gradient = getGradient(element);
 	return {
-		fg: color && color !== "initial" && !CSSValues.isHighlightColor(color)
-			? CSSValues.cssColorToNumber(color)
-			: undefined,
-		bg:
-			!isGradientBox &&
-			bgColor &&
-			bgColor !== "initial" &&
-			!CSSValues.isTransparentColor(bgColor) &&
-			!CSSValues.isCanvasColor(bgColor) &&
-			!CSSValues.isHighlightColor(bgColor)
-				? CSSValues.cssColorToNumber(bgColor)
-				: undefined,
-		inverse: isHighlightPair || undefined,
-		bold,
-		dim,
-		italic: getComputedValue(element, "font-style") === "italic",
-		underline: decoration.underline,
-		underlineStyle:
-			getComputedValue(element, "text-decoration-style") ===
-			"double"
-				? ("double" as const)
-				: undefined,
-		strikethrough: decoration.lineThrough,
+		display: getComputedValue(element, "display"),
+		visible: getComputedValue(element, "visibility") !== "hidden",
+		fg,
+		bg,
+		fill,
+		gradient,
+		border: border.top || border.right || border.bottom || border.left
+			? border
+			: null,
+		outlineColor,
+		overflowX: getComputedValue(element, "overflow-x") || overflow,
+		overflowY: getComputedValue(element, "overflow-y") || overflow,
+		textTransform: getComputedValue(element, "text-transform"),
+		whiteSpace: getComputedValue(element, "white-space"),
+		shiftX,
+		shiftY,
+		cell: {
+			fg,
+			// A gradient gives every cell its own background, so naming one
+			// here would repaint the run flat under the text. An undefined
+			// background leaves each cell the color the gradient put there.
+			bg: gradient === null ? bg : undefined,
+			// The background alone carries inverse. color: HighlightText alone
+			// resolves to nothing, so an author color does not defeat it.
+			inverse: isHighlightBox || undefined,
+			bold,
+			dim,
+			italic: getComputedValue(element, "font-style") === "italic",
+			underline: decoration.underline,
+			underlineStyle:
+				getComputedValue(element, "text-decoration-style") ===
+				"double"
+					? ("double" as const)
+					: undefined,
+			strikethrough: decoration.lineThrough,
+		},
 	};
 }
 
@@ -375,16 +540,44 @@ function applyTextTransform(text: string, transform: string): string {
 	}
 }
 
-const kWindow = Symbol("window");
-const kDocument = Symbol("document");
-const kLayout = Symbol("layout");
-const kCascade = Symbol("cascade");
-const kScreen = Symbol("screen");
-const kTopLayer = Symbol("topLayer");
-const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
-const kScrolledRows = Symbol("scrolledRows");
-const kHighlightedText = Symbol("highlightedText");
-const kHighlightStyles = Symbol("highlightStyles");
+interface Rect {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}
+
+interface Origin {
+	x: number;
+	y: number;
+}
+
+interface TextFragment {
+	rect: Rect;
+	startOffset: number;
+	endOffset: number;
+	visualBase: "ltr" | "rtl" | null;
+}
+
+interface RunPaint {
+	texts: Map<Text, TextFragment[]>;
+	boxes: Map<Element, Rect[]>;
+	leaves: Map<Element, {rect: Rect; leaf: InlineBlockLeaf}>;
+}
+
+function unionRect(rects: Rect[]): Rect {
+	let left = Infinity;
+	let top = Infinity;
+	let right = -Infinity;
+	let bottom = -Infinity;
+	for (const rect of rects) {
+		left = Math.min(left, rect.left);
+		top = Math.min(top, rect.top);
+		right = Math.max(right, rect.left + rect.width);
+		bottom = Math.max(bottom, rect.top + rect.height);
+	}
+	return {left, top, width: right - left, height: bottom - top};
+}
 
 /** One registered highlight's share of one text node, in paint order. */
 interface HighlightRun {
@@ -409,7 +602,6 @@ export interface Painter {
 	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
 }
 
-/** Reads the DOM, styles and geometry. Writes only into the CellContext. */
 export class Painter {
 	constructor(
 		document: Document,
@@ -523,321 +715,810 @@ function renderBackdrop(element: Element, ctx: CellContext): void {
 	ctx.drawRect(0, -ctx.viewportOffset, ctx.cols, ctx.rows, fill);
 }
 
-function renderElement(
+// CSS layer order: the root's box, negative-z contexts, in-flow
+// content, the positioned z:auto/0 layer, positive-z contexts. A z:auto
+// member does not isolate. Its own positioned descendants sit in this
+// context's buckets.
+function renderStackingContext(
+	painter: Painter,
+	root: Element,
+	ctx: CellContext,
+	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
+): void {
+	const bucket = layers.get(root);
+	if (!bucket) {
+		paintEntry(painter, root, ctx);
+		return;
+	}
+	const contextClip = ctx.clipRect;
+	const paintMember = (element: Element) => {
+		const previousClip = ctx.clipRect;
+		const previousOffset = ctx.viewportOffset;
+		const previousScrolled = painter[kScrolledRows];
+		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
+		// Entered from its stacking context, not its ancestor chain.
+		painter[kScrolledRows] = painter[kLayout].scrolledAncestorRows(element);
+		// Fixed space cancels the document scroll for the whole subtree. An
+		// absolute box inside a fixed bar moves with it.
+		if (painter[kLayout].isInFixedSpace(element)) {
+			ctx.viewportOffset = previousOffset + painter[kScreen].scrollTop;
+		}
+		try {
+			if (isStackingContext(element)) {
+				renderStackingContext(painter, element, ctx, layers);
+			} else {
+				paintEntry(painter, element, ctx);
+			}
+		} finally {
+			ctx.clipRect = previousClip;
+			ctx.viewportOffset = previousOffset;
+			painter[kScrolledRows] = previousScrolled;
+		}
+	};
+	paintEntry(painter, root, ctx, () => {
+		for (const element of bucket.neg) {
+			paintMember(element);
+		}
+	});
+	for (const element of bucket.zero) {
+		paintMember(element);
+	}
+	for (const element of bucket.pos) {
+		paintMember(element);
+	}
+}
+
+function paintEntry(
 	painter: Painter,
 	element: Element,
 	ctx: CellContext,
 	afterOwnBox?: () => void,
 ): void {
-	// A subtree wholly outside the viewport would be styled, shaped
-	// and drawn, then discarded cell by cell.
-	const scrolledRows = painter[kScrolledRows];
-	let viewportTop = -ctx.viewportOffset + scrolledRows;
-	let viewportBottom = viewportTop + ctx.rows;
-	if (
-		painter[kLayout].isSubtreeOutsideViewport(
-			element,
-			viewportTop,
-			viewportBottom,
-		)
-	) {
+	const layout = painter[kLayout];
+	const node = layout.nodeOf(element);
+	if (node === null) {
 		return;
 	}
-
-	// Stray run state under a hidden subtree would ghost-paint at whatever
-	// coordinates it last held.
-	if (getComputedValue(element, "display") === "none") {
+	const rect = layout.getRect(element);
+	if (rect === null) {
 		return;
 	}
+	paintBlock(painter, element, node, {x: rect.x, y: rect.y}, ctx, afterOwnBox);
+}
 
-	const rect = painter[kLayout].getRect(element);
+function isOutsideViewport(
+	painter: Painter,
+	ctx: CellContext,
+	node: LayoutNode,
+	element: Element | null,
+): boolean {
+	const extent = painter[kLayout].paintExtent(node);
+	if (extent === undefined) {
+		return false;
+	}
+	const top = -ctx.viewportOffset + painter[kScrolledRows];
+	const bottom = top + ctx.rows;
+	if (extent.bottom > top && extent.top < bottom) {
+		return false;
+	}
+	// A broken inline paints boxes outside its own layout subtree, so its
+	// extent says nothing about them.
+	return element === null || !painter[kLayout].boxOf(element)?.broken;
+}
 
-	const color = getComputedValue(element, "color");
-	const backgroundColor = getComputedValue(element, "background-color");
-	const visible = getComputedValue(element, "visibility") !== "hidden";
-
-	// Canvas clears the box to the terminal's default background, opaque in
-	// every theme. Highlight fills it with inverse.
-	const isCanvasBg =
-		Boolean(backgroundColor) && CSSValues.isCanvasColor(backgroundColor);
-	const isHighlightBox =
-		Boolean(backgroundColor) && CSSValues.isHighlightColor(backgroundColor);
-	const style = {
-		fg: color && color !== "initial" && !CSSValues.isHighlightColor(color)
-			? CSSValues.cssColorToNumber(color)
-			: undefined,
-		bg:
-			backgroundColor &&
-			!isCanvasBg &&
-			backgroundColor !== "initial" &&
-			!CSSValues.isTransparentColor(backgroundColor) &&
-			!CSSValues.isHighlightColor(backgroundColor)
-				? CSSValues.cssColorToNumber(backgroundColor)
-				: undefined,
+function paintBlock(
+	painter: Painter,
+	element: Element,
+	node: LayoutNode,
+	origin: Origin,
+	ctx: CellContext,
+	afterOwnBox?: () => void,
+): void {
+	if (isOutsideViewport(painter, ctx, node, element)) {
+		return;
+	}
+	const style = getPaintStyle(painter, element);
+	if (style.display === "none") {
+		return;
+	}
+	const rect: Rect = {
+		left: origin.x,
+		top: origin.y,
+		width: node.getComputedWidth(),
+		height: node.getComputedHeight(),
 	};
-
-	if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
-		const fill = isCanvasBg ? "default" : isHighlightBox ? "inverse" : style.bg;
-		// A box broken across lines fills each fragment, not the rectangle
-		// enclosing them, whose ends belong to its neighbours.
-		const fragments = painter[kLayout].getRects(element);
-		if (fragments.length > 1) {
-			for (const fragment of fragments) {
-				ctx.drawRect(
-					fragment.left,
-					fragment.top,
-					fragment.width,
-					fragment.height,
-					fill,
-				);
-			}
-		} else {
-			ctx.drawRect(rect.left, rect.top, rect.width, rect.height, fill);
-		}
+	paintBox(painter, element, style, [rect], rect, ctx);
+	if (style.visible) {
+		renderOutsideMarker(painter, element, rect, ctx);
 	}
-
-	// Over the flat fill, which a transparent stop composites onto.
-	const gradient = rect && visible ? getGradient(element) : null;
-	if (rect && gradient !== null) {
-		const cell = painter[kScreen].cellPixels;
-		const fragments = painter[kLayout].getRects(element);
-		for (const fragment of fragments.length > 1 ? fragments : [rect]) {
-			renderGradient(
-				ctx,
-				gradient,
-				fragment,
-				style.bg ?? null,
-				cell.height / cell.width,
-			);
-		}
-	}
-
-	if (rect && visible) {
-		const sides = resolveBorderSides(element);
-		// Unauthored, a border is the terminal's default foreground, because
-		// no theme-safe color exists. A transparent side keeps its space and
-		// paints no glyph.
-		const sideFor = (
-			line: LineStyle["style"] | undefined,
-			prop: string,
-		): LineStyle | undefined => {
-			if (!line) {
-				return undefined;
-			}
-			const borderColor = getComputedValue(element, prop);
-			if (CSSValues.isTransparentColor(borderColor)) {
-				return undefined;
-			}
-			return {
-				style: line,
-				color:
-					borderColor &&
-					borderColor !== "currentcolor" &&
-					borderColor !== "currentColor"
-						? CSSValues.cssColorToNumber(borderColor)
-						: style.fg,
-			};
-		};
-		const top = sideFor(sides.top, "border-top-color");
-		const borderRight = sideFor(sides.right, "border-right-color");
-		const bottom = sideFor(sides.bottom, "border-bottom-color");
-		const left = sideFor(sides.left, "border-left-color");
-		if (top || borderRight || bottom || left) {
-			ctx.drawBox(
-				Math.round(rect.left),
-				Math.round(rect.top),
-				Math.round(rect.width),
-				Math.round(rect.height),
-				{
-					top,
-					right: borderRight,
-					bottom,
-					left,
-					topLeft: sides.topLeft,
-					topRight: sides.topRight,
-					bottomRight: sides.bottomRight,
-					bottomLeft: sides.bottomLeft,
-				},
-			);
-		}
-	}
-
-	if (visible) {
-		renderOutsideMarker(painter, element, ctx);
-	}
-
-	// The active element shows the terminal cursor at its selection focus.
-	// The content origin is used when the focus has no box.
-	if (rect && visible && element === painter[kDocument].activeElement) {
-		const record = getSelectionRecord(element);
-		if (record === null) {
-			renderEditingCaret(painter, element, ctx);
-		} else {
-			const focus = record.direction === "backward" ? record.start : record.end;
-			const node = getTextControlValueText(element) ?? getGlyphText(element);
-			let caret: {x: number; y: number} | null = null;
-			if (node) {
-				const range = element.ownerDocument.createRange();
-				range.setStart(node, Math.min(focus, node.data.length));
-				range.collapse(true);
-				const rects = painter[kLayout].getRangeRects(range);
-				if (rects.length > 0) {
-					caret = {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
-				}
-			}
-			if (caret === null) {
-				const content = painter[kLayout].contentRect(element);
-				if (content) {
-					caret = {x: Math.round(content.x), y: Math.round(content.y)};
-				}
-			}
-			if (caret !== null) {
-				ctx.setCaret(caret.x, caret.y);
-			}
-		}
-	}
+	paintCaret(painter, element, style, rect, ctx);
 
 	// The negative-z layer goes here, after the box and before its content.
 	if (afterOwnBox) {
 		afterOwnBox();
 	}
 
-	// The element's own scroll shifts its children, not itself. The
-	// document roots' scrollTop is the document scroll, applied at
-	// ctx.viewportOffset.
-	const ownScrolledRows =
+	paintContent(painter, element, style, rect, ctx, (origin) => {
+		paintNodes(painter, node, origin, ctx);
+	});
+	paintOutline(painter, element, style, rect, ctx);
+}
+
+function paintContent(
+	painter: Painter,
+	element: Element,
+	style: PaintStyle,
+	rect: Rect,
+	ctx: CellContext,
+	paintLayoutChildren: (origin: Origin) => void,
+): void {
+	const layout = painter[kLayout];
+	const isRoot =
 		element === painter[kDocument].body ||
-		element === painter[kDocument].documentElement
-			? 0
-			: element.scrollTop || 0;
-	viewportTop += ownScrolledRows;
-	viewportBottom += ownScrolledRows;
-
-	const children: Node[] = [];
-
-	// For a plain vertical stack the layout tree knows which children are
-	// in the viewport. The walk below costs every sibling.
-	const fastChildren = painter[kLayout].getVisibleChildren(
-		element,
-		viewportTop,
-		viewportBottom,
-	);
-	if (fastChildren) {
-		for (const childNode of fastChildren) {
-			children.push(childNode);
-		}
-	} else {
-		for (const childNode of flowContent(element)) {
-			// Before any style read. A child outside the viewport costs one
-			// lookup.
-			if (
-				childNode.nodeType === childNode.ELEMENT_NODE &&
-				painter[kLayout].isSubtreeOutsideViewport(
-					childNode as Element,
-					viewportTop,
-					viewportBottom,
-				)
-			) {
-				continue;
-			}
-			if (
-				childNode.nodeType === childNode.ELEMENT_NODE &&
-				painter[kLayout].hoistedToLayer(childNode as Element)
-			) {
-				continue;
-			}
-			children.push(childNode);
-		}
-	}
+		element === painter[kDocument].documentElement;
+	const scrolledRows = isRoot ? 0 : element.scrollTop || 0;
+	const scrolledCols = isRoot ? 0 : element.scrollLeft || 0;
+	const origin: Origin = {
+		x: rect.left - scrolledCols,
+		y: rect.top - scrolledRows,
+	};
 
 	// Overflow clips descendants, never the element's own box.
-	const overflow = getComputedValue(element, "overflow");
-	const overflowX = getComputedValue(element, "overflow-x") || overflow;
-	const overflowY = getComputedValue(element, "overflow-y") || overflow;
 	const previousClip = ctx.clipRect;
+	const previousScrolled = painter[kScrolledRows];
 	ctx.clipRect = getOverflowClipRect(
 		element,
 		rect,
-		overflowX,
-		overflowY,
+		style.overflowX,
+		style.overflowY,
 		previousClip,
 	);
-	painter[kScrolledRows] = scrolledRows + ownScrolledRows;
-
+	painter[kScrolledRows] = previousScrolled + scrolledRows;
 	try {
-		for (const childNode of children) {
-			if (childNode.nodeType === childNode.ELEMENT_NODE) {
-				const childElement = childNode as Element;
-				if (childElement instanceof HTMLElement) {
-					renderElement(painter, childElement, ctx);
-				}
-			} else if (childNode.nodeType === childNode.TEXT_NODE) {
-				const textNode = childNode as Text;
-				renderText(painter, textNode, ctx);
-			}
+		const box = layout.boxOf(element);
+		const context = box?.independentFormattingContext ?? null;
+		const model = getBoxModel(element);
+		const own = box?.fragments ? ownLeaf(box.fragments, element) : null;
+		if (own !== null && own.breakResult) {
+			paintLines(
+				painter,
+				own.breakResult,
+				flowContent(element),
+				element,
+				element,
+				{
+					x: origin.x + model.paddingLeft + model.borderLeftWidth,
+					y: origin.y + model.paddingTop + model.borderTopWidth,
+				},
+				ctx,
+			);
+		} else if (own === null && box?.fragments) {
+			// A blockified inline reserved padding and border in its box
+			// that its lines count from the inside of.
+			const inset = style.display === "inline" && hasItemParent(element);
+			paintLines(
+				painter,
+				box.fragments,
+				flowContent(element),
+				element,
+				box.container,
+				{
+					x: origin.x + (inset ? model.paddingLeft + model.borderLeftWidth : 0),
+					y: origin.y + (inset ? model.paddingTop + model.borderTopWidth : 0),
+				},
+				ctx,
+			);
+		} else if (context !== null) {
+			paintNodes(
+				painter,
+				context,
+				{
+					x: origin.x + model.paddingLeft + model.borderLeftWidth,
+					y: origin.y + model.paddingTop + model.borderTopWidth,
+				},
+				ctx,
+			);
+		} else {
+			paintLayoutChildren(origin);
 		}
 	} finally {
 		ctx.clipRect = previousClip;
-		painter[kScrolledRows] = scrolledRows;
+		painter[kScrolledRows] = previousScrolled;
 	}
+}
 
-	// An outline repaints a bordered box's ring in its color. A borderless
-	// box gets an underline along its bottom row. Overline (SGR 53) is
-	// unreliable.
-	if (rect && visible) {
-		const outlineStyle = getComputedValue(element, "outline-style");
-		if (
-			outlineStyle &&
-			outlineStyle !== "none" &&
-			CSSValues.parseBorderWidthValue(
-				getComputedValue(element, "outline-width"),
-			) !== 0
+function ownLeaf(lines: BreakResult, element: Element): InlineBlockLeaf | null {
+	const line = lines.lines[0];
+	if (lines.lines.length !== 1 || line.segments.length !== 1) {
+		return null;
+	}
+	const {leaf} = line.segments[0];
+	return leaf.type === "inline-block" && leaf.node === element ? leaf : null;
+}
+
+function paintNodes(
+	painter: Painter,
+	node: LayoutNode,
+	origin: Origin,
+	ctx: CellContext,
+): void {
+	const layout = painter[kLayout];
+	for (const child of visibleChildren(painter, ctx, node)) {
+		const owner = child.owner as Node | null;
+		if (owner === null) {
+			continue;
+		}
+		const childOrigin = {
+			x: origin.x + child.result.left,
+			y: origin.y + child.result.top,
+		};
+		const run = layout.runOf(child);
+		if (run !== null) {
+			paintRun(painter, run, childOrigin, ctx);
+		} else if (
+			owner.nodeType === owner.ELEMENT_NODE &&
+			owner instanceof HTMLElement &&
+			!layout.hoistedToLayer(owner)
 		) {
-			const outlineColor = getComputedValue(element, "outline-color")
-				.trim()
-				.toLowerCase();
-			const hasColor =
-				Boolean(outlineColor) &&
-				outlineColor !== "auto" &&
-				outlineColor !== "currentcolor" &&
-				outlineColor !== "invert" &&
-				!CSSValues.isHighlightColor(outlineColor);
-			// `auto`, the initial value and what `outline: 1px solid` leaves,
-			// takes the element's own color, as a border's currentcolor does.
-			const color = hasColor
-				? CSSValues.cssColorToNumber(outlineColor)
-				: style.fg;
-			const sides = resolveBorderSides(element);
-			if (sides.top || sides.right || sides.bottom || sides.left) {
-				const ring = (
-					line: LineStyle["style"] | undefined,
-				): LineStyle | undefined => line && {style: line, color};
-				ctx.drawBox(
-					Math.round(rect.left),
-					Math.round(rect.top),
-					Math.round(rect.width),
-					Math.round(rect.height),
-					{
-						top: ring(sides.top),
-						right: ring(sides.right),
-						bottom: ring(sides.bottom),
-						left: ring(sides.left),
-						topLeft: sides.topLeft,
-						topRight: sides.topRight,
-						bottomRight: sides.bottomRight,
-						bottomLeft: sides.bottomLeft,
-					},
-				);
-			} else {
-				ctx.drawDecoration(
-					Math.round(rect.left),
-					Math.round(rect.bottom) - 1,
-					Math.round(rect.width),
-					{underline: true, fg: color},
-				);
-			}
+			paintBlock(painter, owner, child, childOrigin, ctx);
 		}
 	}
+}
+
+function visibleChildren(
+	painter: Painter,
+	ctx: CellContext,
+	node: LayoutNode,
+): LayoutNode[] {
+	const layout = painter[kLayout];
+	const children = node.children;
+	const top = -ctx.viewportOffset + painter[kScrolledRows];
+	const bottom = top + ctx.rows;
+	const extent = layout.paintExtent(node);
+	if (extent === undefined || extent.unstackedChildren !== 0) {
+		return children;
+	}
+	let lo = 0;
+	let hi = children.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		const childExtent = layout.paintExtent(children[mid]);
+		if (childExtent !== undefined && childExtent.bottom <= top) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	const visible: LayoutNode[] = [];
+	for (let i = lo; i < children.length; i++) {
+		const childExtent = layout.paintExtent(children[i]);
+		if (childExtent !== undefined && childExtent.top >= bottom) {
+			break;
+		}
+		visible.push(children[i]);
+	}
+	return visible;
+}
+
+function paintBox(
+	painter: Painter,
+	element: Element,
+	style: PaintStyle,
+	fragments: Rect[],
+	rect: Rect,
+	ctx: CellContext,
+): void {
+	if (!style.visible) {
+		return;
+	}
+	if (style.fill !== null) {
+		for (const fragment of fragments) {
+			ctx.drawRect(
+				fragment.left,
+				fragment.top,
+				fragment.width,
+				fragment.height,
+				style.fill,
+			);
+		}
+	}
+	// Over the flat fill, which a transparent stop composites onto.
+	if (style.gradient !== null) {
+		const cell = painter[kScreen].cellPixels;
+		for (const fragment of fragments) {
+			renderGradient(
+				ctx,
+				style.gradient,
+				fragment,
+				style.bg ?? null,
+				cell.height / cell.width,
+			);
+		}
+	}
+	if (style.border !== null) {
+		ctx.drawBox(
+			Math.round(rect.left),
+			Math.round(rect.top),
+			Math.round(rect.width),
+			Math.round(rect.height),
+			style.border,
+		);
+	}
+	void element;
+}
+
+function paintOutline(
+	painter: Painter,
+	element: Element,
+	style: PaintStyle,
+	rect: Rect,
+	ctx: CellContext,
+): void {
+	if (!style.visible || style.outlineColor === null) {
+		return;
+	}
+	const color = style.outlineColor;
+	const sides = resolveBorderSides(element);
+	if (sides.top || sides.right || sides.bottom || sides.left) {
+		const ring =
+			(line: LineStyle["style"] | undefined): LineStyle | undefined =>
+				line && {style: line, color};
+		ctx.drawBox(
+			Math.round(rect.left),
+			Math.round(rect.top),
+			Math.round(rect.width),
+			Math.round(rect.height),
+			{
+				top: ring(sides.top),
+				right: ring(sides.right),
+				bottom: ring(sides.bottom),
+				left: ring(sides.left),
+				topLeft: sides.topLeft,
+				topRight: sides.topRight,
+				bottomRight: sides.bottomRight,
+				bottomLeft: sides.bottomLeft,
+			},
+		);
+	} else {
+		ctx.drawDecoration(
+			Math.round(rect.left),
+			Math.round(rect.top + rect.height) - 1,
+			Math.round(rect.width),
+			{underline: true, fg: color},
+		);
+	}
+}
+
+function paintCaret(
+	painter: Painter,
+	element: Element,
+	style: PaintStyle,
+	rect: Rect,
+	ctx: CellContext,
+): void {
+	if (!style.visible || element !== painter[kDocument].activeElement) {
+		return;
+	}
+	const record = getSelectionRecord(element);
+	if (record === null) {
+		renderEditingCaret(painter, element, ctx);
+		return;
+	}
+	const focus = record.direction === "backward" ? record.start : record.end;
+	const node = getTextControlValueText(element) ?? getGlyphText(element);
+	let caret: {x: number; y: number} | null = null;
+	if (node) {
+		const range = element.ownerDocument.createRange();
+		range.setStart(node, Math.min(focus, node.data.length));
+		range.collapse(true);
+		const rects = painter[kLayout].getRangeRects(range);
+		if (rects.length > 0) {
+			caret = {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
+		}
+	}
+	if (caret === null) {
+		const content = painter[kLayout].contentRect(element);
+		if (content) {
+			caret = {x: Math.round(content.x), y: Math.round(content.y)};
+		}
+	}
+	if (caret !== null) {
+		ctx.setCaret(caret.x, caret.y);
+	}
+	void rect;
+}
+
+// A run's lines, from the box that broke them. The origin is the run's
+// layout node's; an atomic inline heading its run has that node at its
+// margin edge while its segment counts from its margin box.
+function paintRun(
+	painter: Painter,
+	box: Box,
+	origin: Origin,
+	ctx: CellContext,
+): void {
+	const lines = box.fragments;
+	if (lines === null) {
+		return;
+	}
+	const head = box.head;
+	let x = origin.x;
+	if (
+		head.nodeType === head.ELEMENT_NODE &&
+		isAtomicInline(getPaintStyle(painter, head as Element).display as Display)
+	) {
+		x -= getBoxModel(head as Element).marginLeft;
+	}
+	paintLines(
+		painter,
+		lines,
+		box.members,
+		box.container,
+		box.container,
+		{x, y: origin.y},
+		ctx,
+	);
+}
+
+function paintLines(
+	painter: Painter,
+	lines: BreakResult,
+	members: Iterable<Node>,
+	container: Element,
+	alignContainer: Element,
+	origin: Origin,
+	ctx: CellContext,
+): void {
+	const run = resolveRun(painter, lines, container, alignContainer, origin);
+	for (const member of members) {
+		paintMember(painter, member, run, ctx);
+	}
+}
+
+function paintMember(
+	painter: Painter,
+	node: Node,
+	run: RunPaint,
+	ctx: CellContext,
+): void {
+	if (node.nodeType === node.TEXT_NODE) {
+		paintText(painter, node as Text, run, ctx);
+		return;
+	}
+	if (node.nodeType !== node.ELEMENT_NODE) {
+		return;
+	}
+	const element = node as Element;
+	const leaf = run.leaves.get(element);
+	if (leaf !== undefined) {
+		paintAtomic(painter, element, leaf.leaf, leaf.rect, ctx);
+		return;
+	}
+	if (painter[kLayout].hoistedToLayer(element)) {
+		return;
+	}
+	paintInline(painter, element, run, ctx);
+}
+
+function paintInline(
+	painter: Painter,
+	element: Element,
+	run: RunPaint,
+	ctx: CellContext,
+): void {
+	const style = getPaintStyle(painter, element);
+	if (style.display === "none") {
+		return;
+	}
+	const fragments = run.boxes.get(element) ?? [];
+	const rect = fragments.length > 0 ? unionRect(fragments) : null;
+	if (rect !== null) {
+		paintBox(painter, element, style, fragments, rect, ctx);
+		paintCaret(painter, element, style, rect, ctx);
+	}
+	for (const child of flowContent(element)) {
+		paintMember(painter, child, run, ctx);
+	}
+	if (rect !== null) {
+		paintOutline(painter, element, style, rect, ctx);
+	}
+}
+
+function paintAtomic(
+	painter: Painter,
+	element: Element,
+	leaf: InlineBlockLeaf,
+	rect: Rect,
+	ctx: CellContext,
+): void {
+	const style = getPaintStyle(painter, element);
+	if (style.display === "none") {
+		return;
+	}
+	paintBox(painter, element, style, [rect], rect, ctx);
+	if (style.visible) {
+		renderOutsideMarker(painter, element, rect, ctx);
+	}
+	paintCaret(painter, element, style, rect, ctx);
+
+	paintContent(painter, element, style, rect, ctx, (origin) => {
+		if (leaf.breakResult) {
+			const model = leaf.boxModel;
+			paintLines(
+				painter,
+				leaf.breakResult,
+				flowContent(element),
+				element,
+				element,
+				{
+					x: origin.x + model.paddingLeft + model.borderLeftWidth,
+					y: origin.y + model.paddingTop + model.borderTopWidth,
+				},
+				ctx,
+			);
+		}
+	});
+	paintOutline(painter, element, style, rect, ctx);
+}
+
+function resolveRun(
+	painter: Painter,
+	lines: BreakResult,
+	container: Element,
+	alignContainer: Element,
+	origin: Origin,
+): RunPaint {
+	const run: RunPaint = {texts: new Map(), boxes: new Map(), leaves: new Map()};
+	const boxLines = new Map<Element, Map<number, Rect>>();
+	const shifts = new Map<Node, Origin>();
+	const shiftOf = (node: Node): Origin => {
+		let shift = shifts.get(node);
+		if (shift === undefined) {
+			shift = {x: 0, y: 0};
+			for (
+				let ancestor = node.nodeType === node.ELEMENT_NODE
+					? (node as Element)
+					: flatParentElement(node);
+				ancestor !== null && ancestor !== container;
+				ancestor = flatParentElement(ancestor)
+			) {
+				const style = getPaintStyle(painter, ancestor);
+				shift.x += style.shiftX;
+				shift.y += style.shiftY;
+			}
+			shifts.set(node, shift);
+		}
+		return shift;
+	};
+	const first = lines.lines[0];
+	for (const line of lines.lines) {
+		const alignOffset = getLineAlignOffset(
+			alignContainer,
+			lines.containerWidth,
+			line.width,
+		);
+		const indent = getLineIndent(
+			line === first,
+			alignContainer,
+			lines.containerWidth,
+		);
+		const lineX = origin.x + alignOffset + indent;
+		const lineY = origin.y + line.y;
+		const textSpans = new Map<
+			Text,
+			{
+				left: number;
+				right: number;
+				start: number;
+				end: number;
+				visualBase: "ltr" | "rtl" | null;
+			}
+		>();
+		for (const segment of line.segments) {
+			const {leaf} = segment;
+			if (leaf.type === "text") {
+				const span = textSpans.get(leaf.node);
+				const left = lineX + segment.x;
+				const right = left + segment.width;
+				if (span === undefined) {
+					textSpans.set(leaf.node, {
+						left,
+						right,
+						start: segment.dataStart,
+						end: segment.dataEnd,
+						visualBase: segment.visualBase,
+					});
+				} else {
+					span.left = Math.min(span.left, left);
+					span.right = Math.max(span.right, right);
+					span.end = segment.dataEnd;
+				}
+			} else if (leaf.type === "inline-block") {
+				const shift = shiftOf(leaf.node);
+				const rect = {
+					left: lineX + segment.x + shift.x,
+					top: lineY + shift.y,
+					width: segment.width,
+					height: line.height,
+				};
+				run.leaves.set(leaf.node, {rect, leaf});
+				coverAncestors(boxLines, leaf.node, container, lineY, rect);
+			}
+		}
+		for (const [textNode, span] of textSpans) {
+			const shift = shiftOf(textNode);
+			const rect = {
+				left: span.left + shift.x,
+				top: lineY + shift.y,
+				width: span.right - span.left,
+				height: line.height,
+			};
+			let fragments = run.texts.get(textNode);
+			if (fragments === undefined) {
+				run.texts.set(textNode, (fragments = []));
+			}
+			fragments.push({
+				rect,
+				startOffset: span.start,
+				endOffset: span.end,
+				visualBase: span.visualBase,
+			});
+			coverAncestors(boxLines, textNode, container, lineY, rect);
+		}
+	}
+	for (const [element, byLine] of boxLines) {
+		run.boxes.set(element, [...byLine.values()]);
+	}
+	return run;
+}
+
+function coverAncestors(
+	boxLines: Map<Element, Map<number, Rect>>,
+	node: Node,
+	container: Element,
+	lineY: number,
+	rect: Rect,
+): void {
+	for (
+		let ancestor = flatParentElement(node);
+		ancestor !== null && ancestor !== container;
+		ancestor = flatParentElement(ancestor)
+	) {
+		let byLine = boxLines.get(ancestor);
+		if (byLine === undefined) {
+			boxLines.set(ancestor, (byLine = new Map()));
+		}
+		const known = byLine.get(lineY);
+		if (known === undefined) {
+			byLine.set(lineY, {...rect});
+		} else {
+			const left = Math.min(known.left, rect.left);
+			const right = Math.max(known.left + known.width, rect.left + rect.width);
+			known.left = left;
+			known.width = right - left;
+		}
+	}
+}
+
+function paintText(
+	painter: Painter,
+	textNode: Text,
+	run: RunPaint,
+	ctx: CellContext,
+): void {
+	const fragments = run.texts.get(textNode);
+	if (fragments === undefined || !textNode.data) {
+		return;
+	}
+	// The flat-tree parent. Slotted text inherits through the slot, not
+	// the host.
+	const parentElement = flatParentElement(textNode);
+	if (!parentElement) {
+		return;
+	}
+	const style = getPaintStyle(painter, parentElement);
+	if (!style.visible) {
+		return;
+	}
+	let painted = false;
+	for (const fragment of fragments) {
+		if (fragment.endOffset <= fragment.startOffset) {
+			continue;
+		}
+		const text = renderTextFragment(
+			textNode.data,
+			style.whiteSpace,
+			fragment.startOffset,
+			fragment.endOffset,
+			fragment.visualBase,
+		);
+		if (!text) {
+			continue;
+		}
+		painted = true;
+		ctx.drawText(
+			applyTextTransform(text, style.textTransform),
+			Math.round(fragment.rect.left),
+			Math.round(fragment.rect.top),
+			style.cell,
+		);
+	}
+	if (painted) {
+		renderTextHighlights(
+			painter,
+			textNode,
+			style.cell,
+			style.textTransform,
+			ctx,
+		);
+	}
+}
+
+function renderOutsideMarker(
+	painter: Painter,
+	element: Element,
+	rect: Rect,
+	ctx: CellContext,
+): void {
+	const display = getComputedValue(element, "display");
+
+	if (display !== "list-item") {
+		return;
+	}
+
+	const listStylePosition =
+		getComputedValue(element, "list-style-position") || "outside";
+
+	if (listStylePosition !== "outside") {
+		return;
+	}
+
+	if (painter[kRenderedOutsideMarkers].has(element)) {
+		return;
+	}
+	painter[kRenderedOutsideMarkers].add(element);
+
+	const markerContent = painter[kCascade].getMarkerContent(element);
+	if (!markerContent) {
+		return;
+	}
+
+	// Cells, not code units. "日本 " is 3 characters and 5 cells.
+	const markerWidth = ctx.measureText(markerContent).width;
+
+	const markerColor =
+		getComputedValue(element, "color", "::marker") ||
+		getComputedValue(element, "color");
+	const {bold: markerBold, dim: markerDim} = resolveFontWeight(
+		getComputedValue(element, "font-weight", "::marker"),
+	);
+	const markerItalic =
+		getComputedValue(element, "font-style", "::marker") === "italic";
+	const markerUnderline = CSSValues.parseTextDecorationLine(
+		getComputedValue(element, "text-decoration-line", "::marker"),
+	).underline;
+
+	const markerTextStyle = {
+		fg: markerColor && markerColor !== "initial"
+			? CSSValues.cssColorToNumber(markerColor)
+			: undefined,
+		bold: markerBold,
+		dim: markerDim,
+		italic: markerItalic,
+		underline: markerUnderline,
+	};
+
+	// Outside the content box, as css-lists-3 §3.3 places it. A marker
+	// that would start before the first column is clipped away whole,
+	// as a browser clips it at the viewport.
+	const model = getBoxModel(element);
+	const markerX =
+		Math.round(rect.left + model.borderLeftWidth + model.paddingLeft) -
+		markerWidth;
+	if (markerX < 0) {
+		return;
+	}
+	ctx.drawText(markerContent, markerX, Math.round(rect.top), markerTextStyle);
 }
 
 // A focused editing host parks the cursor at the document selection's
@@ -896,184 +1577,10 @@ function getPositionedClip(
 	return clip;
 }
 
-// CSS layer order: the root's box, negative-z contexts, in-flow
-// content, the positioned z:auto/0 layer, positive-z contexts. A z:auto
-// member does not isolate. Its own positioned descendants sit in this
-// context's buckets.
-function renderStackingContext(
-	painter: Painter,
-	root: Element,
-	ctx: CellContext,
-	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
-): void {
-	const bucket = layers.get(root);
-	if (!bucket) {
-		renderElement(painter, root, ctx);
-		return;
-	}
-	const contextClip = ctx.clipRect;
-	const paintMember = (element: Element) => {
-		const previousClip = ctx.clipRect;
-		const previousOffset = ctx.viewportOffset;
-		const previousScrolled = painter[kScrolledRows];
-		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
-		// Entered from its stacking context, not its ancestor chain.
-		painter[kScrolledRows] = painter[kLayout].scrolledAncestorRows(element);
-		// Fixed space cancels the document scroll for the whole subtree. An
-		// absolute box inside a fixed bar moves with it.
-		if (painter[kLayout].isInFixedSpace(element)) {
-			ctx.viewportOffset = previousOffset + painter[kScreen].scrollTop;
-		}
-		try {
-			if (isStackingContext(element)) {
-				renderStackingContext(painter, element, ctx, layers);
-			} else {
-				renderElement(painter, element, ctx);
-			}
-		} finally {
-			ctx.clipRect = previousClip;
-			ctx.viewportOffset = previousOffset;
-			painter[kScrolledRows] = previousScrolled;
-		}
-	};
-	renderElement(painter, root, ctx, () => {
-		for (const element of bucket.neg) {
-			paintMember(element);
-		}
-	});
-	for (const element of bucket.zero) {
-		paintMember(element);
-	}
-	for (const element of bucket.pos) {
-		paintMember(element);
-	}
-}
-
-function renderOutsideMarker(
-	painter: Painter,
-	element: Element,
-	ctx: CellContext,
-): void {
-	const display = getComputedValue(element, "display");
-
-	if (display !== "list-item") {
-		return;
-	}
-
-	const listStylePosition =
-		getComputedValue(element, "list-style-position") || "outside";
-
-	if (listStylePosition !== "outside") {
-		return;
-	}
-
-	if (painter[kRenderedOutsideMarkers].has(element)) {
-		return;
-	}
-	painter[kRenderedOutsideMarkers].add(element);
-
-	const markerContent = painter[kCascade].getMarkerContent(element);
-	if (!markerContent) {
-		return;
-	}
-
-	const rect = painter[kLayout].getRect(element);
-	if (!rect) {
-		return;
-	}
-
-	// Cells, not code units. "日本 " is 3 characters and 5 cells.
-	const markerWidth = ctx.measureText(markerContent).width;
-
-	const markerColor =
-		getComputedValue(element, "color", "::marker") ||
-		getComputedValue(element, "color");
-	const {bold: markerBold, dim: markerDim} = resolveFontWeight(
-		getComputedValue(element, "font-weight", "::marker"),
-	);
-	const markerItalic =
-		getComputedValue(element, "font-style", "::marker") === "italic";
-	const markerUnderline = CSSValues.parseTextDecorationLine(
-		getComputedValue(element, "text-decoration-line", "::marker"),
-	).underline;
-
-	const markerTextStyle = {
-		fg: markerColor && markerColor !== "initial"
-			? CSSValues.cssColorToNumber(markerColor)
-			: undefined,
-		bold: markerBold,
-		dim: markerDim,
-		italic: markerItalic,
-		underline: markerUnderline,
-	};
-
-	// Outside the content box, as css-lists-3 §3.3 places it. A marker
-	// that would start before the first column is clipped away whole,
-	// as a browser clips it at the viewport.
-	const content = painter[kLayout].contentRect(element) ?? rect;
-	const markerX = Math.round(content.left) - markerWidth;
-	if (markerX < 0) {
-		return;
-	}
-	ctx.drawText(markerContent, markerX, Math.round(rect.top), markerTextStyle);
-}
-
 function getGlyphText(element: Element): Text | null {
 	const root = getShadowRoot(element);
 	const glyph = root ? root.querySelector('[part="glyph"]') : null;
 	return (glyph?.firstChild as Text | null) ?? null;
-}
-
-function renderText(painter: Painter, textNode: Text, ctx: CellContext): void {
-	const textContent = textNode.data;
-	if (!textContent) {
-		return;
-	}
-
-	// The flat-tree parent. Slotted text inherits through the slot, not
-	// the host.
-	const parentElement = flatParentElement(textNode);
-	if (!parentElement) {
-		return;
-	}
-
-	if (getComputedValue(parentElement, "visibility") === "hidden") {
-		return;
-	}
-
-	const textTransform = getComputedValue(parentElement, "text-transform");
-	const textStyle = getCellStyle(parentElement);
-
-	// One fragment per line, each naming the range of `data` it renders.
-	// The characters come from the node under its own white-space.
-	const whiteSpace = getComputedValue(parentElement, "white-space");
-	const fragments = painter[kLayout].lineFragments(textNode);
-	let painted = false;
-	for (const fragment of fragments) {
-		if (fragment.endOffset <= fragment.startOffset) {
-			continue;
-		}
-		const text = renderTextFragment(
-			textContent,
-			whiteSpace,
-			fragment.startOffset,
-			fragment.endOffset,
-			fragment.visualBase,
-		);
-		if (!text) {
-			continue;
-		}
-		painted = true;
-		ctx.drawText(
-			applyTextTransform(text, textTransform),
-			Math.round(fragment.rect.x),
-			Math.round(fragment.rect.y),
-			textStyle,
-		);
-	}
-	if (painted) {
-		renderTextHighlights(painter, textNode, textStyle, textTransform, ctx);
-	}
 }
 
 // A focused control's own selection when the node renders its value

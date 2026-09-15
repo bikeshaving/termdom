@@ -77,7 +77,7 @@ function isDisplayContents(node: Node): boolean {
 	return getComputedDisplay(node as Element) === "contents";
 }
 
-type Display =
+export type Display =
 	"none" |
 	"contents" |
 	"block" |
@@ -148,7 +148,7 @@ function getComputedDisplay(element: Element): Display {
 }
 
 // A box that sits on a line whole, measured as one opaque unit.
-function isAtomicInline(display: Display): boolean {
+export function isAtomicInline(display: Display): boolean {
 	return display === "inline-block" || display === "inline-grid";
 }
 
@@ -177,7 +177,7 @@ function hasFlexParent(element: Element): boolean {
 	return parent !== null && getComputedDisplay(parent) === "flex";
 }
 
-function hasItemParent(element: Element): boolean {
+export function hasItemParent(element: Element): boolean {
 	const parent = element.parentElement;
 	return parent !== null && hasItemChildren(getComputedDisplay(parent));
 }
@@ -721,7 +721,7 @@ interface Styling {
 
 const stylings = new WeakMap<LayoutNode, Styling>();
 
-interface Extent {
+export interface Extent {
 	// The rows the subtree can paint, in absolute document rows. Absolutely
 	// positioned children push it outside the box.
 	top: number;
@@ -1110,7 +1110,7 @@ function styleNode(
 // `node` is a DOM node's principal box. `anonymous` is one contiguous
 // run of inline-level flow children of a block container (CSS2
 // §9.2.1.1), belonging to no DOM node at all.
-type BoxKind = "node" | "anonymous";
+export type BoxKind = "node" | "anonymous";
 
 // A box either is LAID OUT (it has a layout node the solver sized) or
 // is a run MEMBER whose geometry lives in the break result of the run
@@ -1119,7 +1119,7 @@ type BoxKind = "node" | "anonymous";
 // its container's runs, and a rebuild syncs against the boxes it
 // replaces. That is what lets layout nodes and fragments be keyed by
 // box.
-class Box {
+export class Box {
 	readonly kind: BoxKind;
 
 	// Null for an anonymous box.
@@ -2494,7 +2494,7 @@ function markRunMeasureDirty(layout: Layout, runHead: Node): void {
 	}
 }
 
-interface InlineBlockLeaf {
+export interface InlineBlockLeaf {
 	type: "inline-block";
 	node: Element;
 	breakResult?: BreakResult;
@@ -2503,12 +2503,12 @@ interface InlineBlockLeaf {
 	contentHeight: number;
 }
 
-type Leaf =
+export type Leaf =
 	InlineBlockLeaf |
 	{type: "text"; node: Text; content: string} |
 	{type: "br"; node: HTMLBRElement};
 
-interface LineResult {
+export interface LineResult {
 	segments: Array<
 		{
 			leaf: Leaf;
@@ -2534,7 +2534,7 @@ interface LineResult {
 	height: number;
 }
 
-interface BreakResult {
+export interface BreakResult {
 	lines: LineResult[];
 	maxLineWidth: number;
 	totalHeight: number;
@@ -3539,7 +3539,7 @@ function toVisualLine(
 
 // justify is not implemented. It would redistribute space during
 // breaking, not shift an already-broken line.
-function getLineAlignOffset(
+export function getLineAlignOffset(
 	container: Element | null,
 	containerWidth: number | undefined,
 	lineWidth: number,
@@ -3567,7 +3567,7 @@ function getLineAlignOffset(
 // Added on top of text-align's offset rather than shrinking the line
 // box as a browser would. Indent with center/right is rare enough not
 // to matter.
-function getLineIndent(
+export function getLineIndent(
 	isFirstLine: boolean,
 	container: Element | null,
 	containerWidth: number | undefined,
@@ -5067,6 +5067,34 @@ export class Layout {
 			}
 		}
 		return false;
+	}
+
+	/** The layout node an element's principal box was laid out as, if any. */
+	nodeOf(element: Element): LayoutNode | null {
+		return this[kNodeMap].get(element) ?? null;
+	}
+
+	/** The rows a node's subtree can paint, in document rows. */
+	paintExtent(node: LayoutNode): Extent | undefined {
+		return extents.get(node);
+	}
+
+	/**
+	 * The box whose lines a layout node lays out, when it is a run's. Null
+	 * for a principal box's node.
+	 */
+	runOf(node: LayoutNode): Box | null {
+		const owner = node.owner as Node | null;
+		if (owner === null) {
+			return null;
+		}
+		const box = getBox(this, owner);
+		return box !== null && box.layoutNode === node ? box : null;
+	}
+
+	/** The principal box of an element, or null before its container derived one. */
+	boxOf(element: Element): Box | null {
+		return this[kBoxes].get(element) ?? null;
 	}
 }
 
