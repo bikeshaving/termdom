@@ -17,58 +17,61 @@ import {
 } from "../models/playground-examples.js";
 
 const container = css`
-	max-width: 900px;
+	max-width: 100ch;
 	margin: 0 auto;
-	padding: 5rem 1.2rem 2rem;
+	padding: calc(var(--bar-height) + 2lh) 2ch 2lh;
 `;
 
 /* The content is markdown (content/home.md); this styles what it emits. */
 const content = css`
 	figure.cast {
-		margin: 2rem 0;
+		margin: 1lh 0;
 	}
 
 	figure.cast img {
 		display: block;
 		max-width: 100%;
-		border: 1px solid var(--border-color);
-		border-radius: 8px;
 	}
 
 	figure.cast figcaption {
-		margin-top: 0.5rem;
-		font-size: 0.8rem;
 		color: var(--muted-color);
 	}
 
 	figure.playground {
-		margin: 2rem 0;
+		margin: 1lh 0;
 		min-width: 0;
 	}
 
 	.playground-preview {
-		border: 1px solid var(--border-color);
-		border-radius: 8px;
-		overflow: hidden;
-		background-color: var(--surface-color);
+		position: relative;
+		padding: 1lh 2ch;
+	}
+
+	.playground-preview::before {
+		content: "";
+		position: absolute;
+		inset: 0.5lh 0.5ch;
+		border: 1px solid currentColor;
+		pointer-events: none;
 	}
 
 	.playground-preview-bar {
-		padding: 0.5rem 0.7rem;
-		font-size: 0.8rem;
+		padding-bottom: 1lh;
 		color: var(--muted-color);
-		background-color: var(--bg-color);
-		border-bottom: 1px solid var(--border-color);
+		background: var(--rule) bottom 0.5lh center / 100% 1px no-repeat;
 	}
 
 	/* About the hydrated editor's height, so booting an embed does not move
 	   the page under the reader. */
 	.playground-preview > pre {
 		margin: 0;
-		border: none;
-		border-radius: 0;
-		max-height: calc(1rem + 20 * 1.5em);
+		padding: 0;
+		max-height: 21lh;
 		overflow: auto;
+	}
+
+	.playground-preview > pre::before {
+		content: none;
 	}
 
 `;
@@ -82,9 +85,9 @@ const EMBEDDED = [
 	"prism",
 ];
 
-/* The playground bundle carries the engine, an emulator and a highlighter,
+/* The examples bundle carries the engine, an emulator and a highlighter,
    so it loads when the first embed comes near rather than with the page. */
-function playgroundLoader(src: string): string {
+function examplesLoader(src: string): string {
 	return `
 const embeds = document.querySelectorAll("[data-playground]");
 if (embeds.length) {
@@ -126,13 +129,12 @@ export default async function Home({url}: {url: string}) {
 		>
 			<main data-pagefind-body class=${container}>
 				<h1 class=${css`
-					font-size: 2.2rem;
-					margin-bottom: 0.5rem;
+					margin-bottom: 0;
+					border-bottom: none;
 				`}>termdom</h1>
 				<p class=${css`
 					color: var(--muted-color);
-					margin: 0 0 2.5rem;
-					font-size: 1.05rem;
+					margin: 0 0 2lh;
 				`}>
 					Build terminal apps with HTML, CSS, and DOM.
 				</p>
@@ -156,7 +158,7 @@ export default async function Home({url}: {url: string}) {
 				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript})} />
 			</script>
 			<script type="module">
-				<${Raw} value=${playgroundLoader(assets.playgroundScript)} />
+				<${Raw} value=${examplesLoader(assets.examplesScript)} />
 			</script>
 		<//Root>
 	`;

@@ -7,9 +7,9 @@ export default function NotFound({url}: {url: string}) {
 	return jsx`
 		<${Root} title="TermDOM | Not found" url=${url} description="Page not found.">
 			<main class=${css`
-				max-width: 900px;
+				max-width: 100ch;
 				margin: 0 auto;
-				padding: 6rem 1.2rem 4rem;
+				padding: calc(var(--bar-height) + 2lh) 2ch 2lh;
 			`}>
 				<h1>404</h1>
 				<p>
@@ -17,7 +17,8 @@ export default function NotFound({url}: {url: string}) {
 				</p>
 				<p>
 					Try the <a href="/guides/getting-started/">guides</a>, the
-					<a href="/compatibility/">compatibility matrix</a>, or
+					<a href="/examples/">examples</a>, the <a href="/blog/">blog</a>,
+					the <a href="/compatibility/">compatibility matrix</a>, or
 					<a href="/">the home page</a>.
 				</p>
 			</main>

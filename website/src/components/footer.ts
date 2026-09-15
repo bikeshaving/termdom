@@ -5,23 +5,23 @@ export function Footer() {
 	return jsx`
 		<footer
 			class=${css`
-				background-color: var(--bg-color);
-				border-top: 1px solid var(--border-color);
-				padding: 2em;
+				background: var(--rule) top 0.5lh center / 100% 1px no-repeat var(--bg-color);
+				padding: 2lh 2ch 1lh;
 				text-align: center;
-				font-size: 0.85rem;
 			`}
 		>
 			<nav
 				class=${css`
 					display: flex;
 					justify-content: center;
-					gap: 2em;
+					gap: 2ch;
 					flex-wrap: wrap;
-					margin-bottom: 1em;
+					margin-bottom: 1lh;
 				`}
 			>
 				<a href="/guides/getting-started/">Guides</a>
+				<a href="/examples/">Examples</a>
+				<a href="/blog/">Blog</a>
 				<a href="/compatibility/">Compatibility</a>
 				<a href="https://github.com/bikeshaving/termdom">GitHub</a>
 				<a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a>

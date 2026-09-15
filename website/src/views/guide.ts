@@ -33,10 +33,10 @@ export default async function Guide({url}: {url: string}) {
 				<h1>${title}</h1>
 				<${Marked} markdown=${body} components=${components} basePath="guides" />
 				<div class=${css`
-					margin-top: 3rem;
-					padding-top: 1.5rem;
-					border-top: 1px solid var(--border-color);
-					font-size: 0.85rem;
+					margin-top: 1lh;
+					padding-top: 2lh;
+					background: var(--rule) top 0.5lh center / 100% 1px no-repeat;
+					color: var(--muted-color);
 				`}>
 					<a href=${`https://github.com/bikeshaving/termdom/edit/main/docs/${filename}`}>
 						Edit this page on GitHub

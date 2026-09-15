@@ -4,11 +4,11 @@
 :root {
 	--bg-color: #0d1117;
 	--text-color: #e6edf3;
-	--highlight-color: #58d6ff;
-	--muted-color: #8b949e;
+	--highlight-color: #5fafff;
+	--muted-color: #808080;
 	--surface-color: #161b22;
-	--border-color: #30363d;
-	--accent-color: #7ee787;
+	--border-color: #8b949e;
+	--accent-color: #5faf5f;
 
 	color-scheme: dark;
 }
@@ -16,70 +16,126 @@
 .color-scheme-light {
 	--bg-color: #f7f9fb;
 	--text-color: #10151c;
-	--highlight-color: #0b6fa4;
+	--highlight-color: #005a8e;
 	--muted-color: #5b6672;
 	--surface-color: #ffffff;
-	--border-color: #d5dbe2;
-	--accent-color: #1a7f37;
+	--border-color: #5b6672;
+	--accent-color: #116b00;
 
 	color-scheme: light;
 }
 
 /*
- * A terminal library's website is monospace throughout. It is not a costume:
- * every measurement on the page is in cells, so the page is set in the units
- * the library works in.
+ * The page is what TermDOM would paint if it were handed this document:
+ * one typeface at one size, so every glyph is a cell; horizontal measures
+ * in ch and vertical ones in lh, so boxes land on the grid; and a border
+ * is a glyph in the middle of a one-cell band rather than a line at the
+ * box's edge. --rule is that glyph's stroke, painted as a gradient so a
+ * band can carry it at its center; a closed box gets the same stroke from
+ * a pseudo-element inset by half a cell. There is no radius, no shadow and
+ * no second size, because a cell buffer has none. The bar height is the
+ * row the navbar occupies plus the row its rule occupies.
  */
+:root {
+	--bar-height: 2lh;
+	--rule: linear-gradient(currentColor, currentColor);
+	--border-color: currentColor;
+}
+
 html {
 	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
 		"Liberation Mono", monospace;
 	font-size: 16px;
-	scroll-padding-top: 4rem;
+	line-height: 1.5;
+	scroll-padding-top: calc(var(--bar-height) + 1lh);
 }
 
 body {
 	background-color: var(--bg-color);
 	color: var(--text-color);
-	line-height: 1.6;
 	margin: 0;
 	overflow-wrap: break-word;
 }
 
 * {
 	box-sizing: border-box;
+	border-radius: 0;
+}
+
+::selection {
+	background-color: var(--highlight-color);
+	color: var(--bg-color);
+}
+
+:focus-visible {
+	outline: 1px solid var(--highlight-color);
+	outline-offset: 0;
 }
 
 a {
 	color: var(--highlight-color);
-	text-decoration: none;
-}
-
-a:hover {
 	text-decoration: underline;
 }
 
+a:hover,
+a:focus-visible {
+	background-color: var(--highlight-color);
+	color: var(--bg-color);
+	text-decoration: none;
+	outline: none;
+}
+
+/* A box: the stroke sits half a cell in from every edge. */
+.box {
+	position: relative;
+	padding: 1lh 2ch;
+}
+
+.box::before {
+	content: "";
+	position: absolute;
+	inset: 0.5lh 0.5ch;
+	border: 1px solid currentColor;
+	pointer-events: none;
+}
+
+/* Headings are bold text. The first one takes a rule in the row under it. */
 h1,
 h2,
 h3,
 h4 {
-	line-height: 1.25;
-	font-weight: 700;
+	font-size: inherit;
+	line-height: inherit;
+	font-weight: bold;
+	margin: 0;
 }
 
 h1 {
-	font-size: 1.9rem;
-	margin: 0 0 1rem;
+	margin: 0 0 1lh;
+	padding-bottom: 1lh;
+	background: var(--rule) bottom 0.5lh center / 100% 1px no-repeat;
 }
 
 h2 {
-	font-size: 1.3rem;
-	margin: 3rem 0 0.75rem;
+	margin: 2lh 0 1lh;
 	color: var(--highlight-color);
 }
 
-h3 {
-	font-size: 1.05rem;
-	margin: 2rem 0 0.5rem;
+h3,
+h4 {
+	margin: 1lh 0 0;
+}
+
+p,
+ul,
+ol,
+dl {
+	margin: 0 0 1lh;
+}
+
+ul,
+ol {
+	padding-left: 4ch;
 }
 
 /*
@@ -88,7 +144,7 @@ h3 {
  * it comes forward when the heading is under the pointer.
  */
 .heading-anchor {
-	margin-left: 0.4em;
+	margin-left: 1ch;
 	color: var(--muted-color);
 	opacity: 0;
 	transition: opacity 0.1s;
@@ -104,78 +160,172 @@ h4:hover .heading-anchor,
 
 code {
 	font-family: inherit;
-	font-size: 0.9em;
-	background-color: var(--surface-color);
-	border: 1px solid var(--border-color);
-	border-radius: 4px;
-	padding: 0.1em 0.35em;
+	font-size: inherit;
+	background-color: rgba(128, 128, 128, 0.15);
+	padding: 0;
 }
 
 pre {
-	background-color: var(--surface-color);
-	border: 1px solid var(--border-color);
-	border-radius: 8px;
-	padding: 1rem 1.2rem;
-	overflow-x: auto;
-	font-size: 0.85rem;
-	line-height: 1.5;
+	position: relative;
+	background: none;
+	border: none;
+	padding: 1lh 2ch;
+	margin: 1lh 0;
+	font-size: inherit;
+	line-height: inherit;
+}
+
+pre::before {
+	content: "";
+	position: absolute;
+	inset: 0.5lh 0.5ch;
+	border: 1px solid currentColor;
+	pointer-events: none;
 }
 
 pre code {
+	display: block;
+	overflow-x: auto;
 	background: none;
-	border: none;
 	padding: 0;
-	font-size: inherit;
 }
 
 blockquote {
-	margin: 1.5rem 0;
-	padding-left: 1rem;
-	border-left: 3px solid var(--border-color);
+	margin: 1lh 0;
+	padding-left: 2ch;
 	color: var(--muted-color);
+	background: var(--rule) left 0.5ch center / 1px 100% no-repeat;
 }
 
 table {
 	border-collapse: collapse;
 	width: 100%;
-	margin: 1.5rem 0;
-	font-size: 0.9rem;
+	margin: 1lh 0;
 	display: block;
 	overflow-x: auto;
 }
 
 th,
 td {
-	border: 1px solid var(--border-color);
-	padding: 0.4rem 0.7rem;
+	border: 1px solid currentColor;
+	padding: 0 1ch;
 	text-align: left;
 }
 
 th {
-	background-color: var(--surface-color);
+	font-weight: bold;
 }
 
 hr {
 	border: none;
-	border-top: 1px solid var(--border-color);
-	margin: 2.5rem 0;
+	height: 1lh;
+	margin: 0;
+	background: var(--rule) center / 100% 1px no-repeat;
 }
 
 details {
-	margin: 0.75rem 0;
-	border: 1px solid var(--border-color);
-	border-radius: 6px;
-	padding: 0.5rem 0.9rem;
-	background-color: var(--surface-color);
+	position: relative;
+	margin: 1lh 0;
+	padding: 1lh 2ch;
+}
+
+details::before {
+	content: "";
+	position: absolute;
+	inset: 0.5lh 0.5ch;
+	border: 1px solid currentColor;
+	pointer-events: none;
 }
 
 details summary {
 	cursor: pointer;
-	color: var(--highlight-color);
+	list-style: none;
 }
 
-details[open] summary {
-	margin-bottom: 0.5rem;
+details summary::-webkit-details-marker {
+	display: none;
+}
+
+details summary::before {
+	content: "▸ ";
+}
+
+details[open] summary::before {
+	content: "▾ ";
+}
+
+img {
+	display: block;
+	max-width: 100%;
+}
+
+figure {
+	margin: 1lh 0;
+}
+
+figcaption {
+	color: var(--muted-color);
+}
+
+/* A button is its label in brackets. A text field is its text, underlined
+   while it has focus. */
+button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: none;
+	padding: 0;
+	margin: 0;
+	cursor: pointer;
+}
+
+button::before {
+	content: "[ ";
+}
+
+button::after {
+	content: " ]";
+}
+
+button:hover {
+	background-color: var(--highlight-color);
+	color: var(--bg-color);
+}
+
+input,
+select,
+textarea {
+	font: inherit;
+	line-height: inherit;
+	color: inherit;
+	background: none;
+	border: none;
+	border-bottom: 1px solid transparent;
+	padding: 0;
+	margin: 0;
+}
+
+input::placeholder {
+	color: var(--muted-color);
+	font-weight: lighter;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+	outline: none;
+	border-bottom-color: var(--highlight-color);
+}
+
+/* What shows only in one color scheme; the root's class decides. */
+.color-scheme-light .scheme-dark,
+html:not(.color-scheme-light) .scheme-light {
+	display: none;
+}
+
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button {
+	-webkit-appearance: none;
 }
 
 /*
@@ -183,25 +333,19 @@ details[open] summary {
  * site has an opinion about it.
  */
 .cast-player {
-	border: 1px solid var(--border-color);
-	border-radius: 8px;
 	overflow: hidden;
 	background: #0d1117;
 }
 
-.cast-player .ap-player {
-	font-size: 13px;
-}
-
 /* Pagefind's search UI, themed to match. */
 :root {
-	--pagefind-ui-scale: 0.8;
+	--pagefind-ui-scale: 1;
 	--pagefind-ui-primary: var(--text-color);
 	--pagefind-ui-text: var(--text-color);
 	--pagefind-ui-background: var(--bg-color);
-	--pagefind-ui-border: var(--border-color);
+	--pagefind-ui-border: var(--text-color);
 	--pagefind-ui-tag: var(--surface-color);
 	--pagefind-ui-border-width: 1px;
-	--pagefind-ui-border-radius: 6px;
+	--pagefind-ui-border-radius: 0;
 	--pagefind-ui-font: inherit;
 }

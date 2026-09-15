@@ -12,7 +12,7 @@
 		"skipLibCheck": true,
 		"noEmit": true
 	},
-	// The playground bundles the library from source, so the engine's ambient
+	// The examples page bundles the library from source, so the engine's ambient
 	// module declarations belong to this program too.
 	"include": [
 		"src",

@@ -106,11 +106,11 @@ and dispatched to DOM nodes.
 - [`ssh.ts`](./examples/ssh.ts) — an SSH server where every session gets a
   document of its own, rendered over the session's channel.
 - [`shell.ts`](./examples/shell.ts) — `ls`, `cat`, `less`, `cd` and `pwd`
-  over the filesystem, which in the playground is this repository.
+  over the filesystem, which on termdom.org is this repository.
 
 More runnable examples can be found in [`examples/`](./examples). Most of
 them also run in the browser at
-[termdom.org/playground](https://termdom.org/playground/), from the same
+[termdom.org/examples](https://termdom.org/examples/), from the same
 files.
 
 ## Runtimes

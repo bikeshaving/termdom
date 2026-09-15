@@ -8,8 +8,9 @@ import {collectDocuments} from "./models/document.js";
 
 import HomeView from "./views/home.js";
 import GuideView from "./views/guide.js";
+import {BlogIndexView, BlogPostView, collectPosts} from "./views/blog.js";
 import SupportView from "./views/support.js";
-import PlaygroundView from "./views/playground.js";
+import ExamplesView from "./views/examples.js";
 import NotFoundView from "./views/not-found.js";
 
 // Asset imports. Shovel bundles each one and hands back a content-hashed URL,
@@ -20,13 +21,13 @@ import clientCSS from "./styles/client.css" with {assetBase: "/static/"};
 // giant raw SVG controls and a collapsed terminal box.
 import navbarScript from "./clients/navbar.ts" with {assetBase: "/static/"};
 import searchScript from "./clients/search.ts" with {assetBase: "/static/"};
-import playgroundScript from "./clients/playground.ts" with {assetBase: "/static/"};
+import examplesScript from "./clients/examples.ts" with {assetBase: "/static/"};
 // What the sandbox iframe's import map resolves bare specifiers to:
 // "@b9g/termdom" is the engine, "node:fs" and "node:path" are the in-memory
-// filesystem. Programs in the playground import them as written.
+// filesystem. Programs on the examples page import them as written.
 import sandboxTermdomScript from "./clients/sandbox-termdom.ts" with {assetBase: "/static/"};
 import virtualFSScript from "./models/virtual-fs.ts" with {assetBase: "/static/"};
-// The terminal emulator's own stylesheet, linked from the playground alone.
+// The terminal emulator's own stylesheet, linked from the examples page alone.
 import xtermCSS from "@xterm/xterm/css/xterm.css" with {assetBase: "/static/"};
 import favicon from "../static/favicon.ico" with {assetBase: "/", assetName: "favicon.ico"};
 import logo from "../static/logo.svg" with {assetBase: "/static/", assetName: "[name].[ext]"};
@@ -40,7 +41,7 @@ export const assets = {
 	clientCSS,
 	navbarScript,
 	searchScript,
-	playgroundScript,
+	examplesScript,
 	sandboxTermdomScript,
 	virtualFSScript,
 	xtermCSS,
@@ -91,9 +92,21 @@ router
 	);
 
 router
-	.route("/playground/")
+	.route("/blog/")
 	.get(async (request) =>
-		renderView(PlaygroundView, new URL(request.url).pathname),
+		renderView(BlogIndexView, new URL(request.url).pathname),
+	);
+
+router
+	.route("/blog/:slug/")
+	.get(async (request, context) =>
+		renderView(BlogPostView, new URL(request.url).pathname, context.params),
+	);
+
+router
+	.route("/examples/")
+	.get(async (request) =>
+		renderView(ExamplesView, new URL(request.url).pathname),
 	);
 
 router
@@ -173,8 +186,19 @@ async function guideURLs(): Promise<string[]> {
 	return docs.filter((doc) => doc.attributes.publish).map((doc) => doc.url);
 }
 
+async function blogURLs(): Promise<string[]> {
+	return (await collectPosts()).map((doc) => doc.url);
+}
+
 async function allRoutes(): Promise<string[]> {
-	return ["/", "/playground/", "/compatibility/", ...(await guideURLs())];
+	return [
+		"/",
+		"/examples/",
+		"/blog/",
+		"/compatibility/",
+		...(await guideURLs()),
+		...(await blogURLs()),
+	];
 }
 
 async function generateSitemap(): Promise<string> {
@@ -224,6 +248,12 @@ async function generateStaticSite(): Promise<void> {
 			route === "/" ? "index.html" : `${route.slice(1)}index.html`;
 		await write(filePath, await response.text());
 	}
+
+	// The examples page was the playground once, and links to it are out there.
+	await write(
+		"playground/index.html",
+		`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta http-equiv="refresh" content="0; url=/examples/"><link rel="canonical" href="${SITE}/examples/"><title>Examples</title></head><body data-pagefind-ignore><a href="/examples/">Moved to /examples/</a></body></html>`,
+	);
 
 	// GitHub Pages serves 404.html for anything it cannot find.
 	const notFound = await fetch("/this-path-does-not-exist/");

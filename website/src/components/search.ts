@@ -152,7 +152,7 @@ export async function* Search(this: Context) {
 		yield jsx`
 			<div class=${css`
 				position: relative;
-				margin-bottom: 1rem;
+				margin-bottom: 1lh;
 			`}>
 				<input
 					type="search"
@@ -164,22 +164,8 @@ export async function* Search(this: Context) {
 					onkeydown=${onKeyDown}
 					class=${css`
 						width: 100%;
-						padding: 0.5rem 0.75rem;
-						font-size: 0.9rem;
-						border: 1px solid var(--text-color);
-						border-radius: 4px;
-						background: var(--bg-color);
-						color: var(--text-color);
 						box-sizing: border-box;
-
-						&::placeholder {
-							opacity: 0.5;
-						}
-
-						&:focus {
-							outline: none;
-							border-color: var(--highlight-color);
-						}
+						text-align: inherit;
 					`}
 				/>
 
@@ -191,26 +177,32 @@ export async function* Search(this: Context) {
 						top: 100%;
 						left: 0;
 						right: 0;
-						margin-top: 0.25rem;
+						margin-top: 0;
+						padding: 1lh 2ch;
 						background: var(--bg-color);
-						border: 1px solid var(--text-color);
-						border-radius: 4px;
-						max-height: 400px;
+						max-height: 16lh;
+
+						&::before {
+							content: "";
+							position: absolute;
+							inset: 0.5lh 0.5ch;
+							border: 1px solid currentColor;
+							pointer-events: none;
+						}
 						overflow-y: auto;
 						z-index: 100;
 						text-align: left;
 
 						@media screen and (min-width: 800px) {
-							min-width: 300px;
+							min-width: 40ch;
 						}
 					`}>
 						${
 							loading
 								? jsx`
 							<div class=${css`
-								padding: 1rem;
-								opacity: 0.6;
-								font-size: 0.85rem;
+								padding: 0 1ch;
+								color: var(--muted-color);
 							`}>Searching...</div>
 						`
 								: results.length > 0
@@ -220,37 +212,32 @@ export async function* Search(this: Context) {
 								href=${r.url}
 								class=${css`
 									display: block;
-									padding: 0.75rem;
+									padding: 0 1ch;
+									color: inherit;
 									text-decoration: none;
-									border-bottom: 1px solid var(--text-color);
-									border-bottom-color: rgba(128, 128, 128, 0.2);
+									margin-bottom: 1lh;
 
 									&:last-child {
-										border-bottom: none;
+										margin-bottom: 0;
 									}
 
 									&:hover {
-										background: rgba(128, 128, 128, 0.1);
+										background: var(--surface-color);
+										color: inherit;
 									}
 								`}
 							>
 								<div class=${css`
-									font-weight: 600;
-									font-size: 0.9rem;
-									margin-bottom: 0.25rem;
+									font-weight: bold;
 									color: var(--highlight-color);
 								`}>${r.title}</div>
 								<div
 									class=${css`
-										font-size: 0.8rem;
-										line-height: 1.4;
 										color: var(--text-color);
 
 										mark {
 											background: var(--highlight-color);
 											color: var(--bg-color);
-											padding: 0 2px;
-											border-radius: 2px;
 										}
 									`}
 									innerHTML=${r.excerpt}
@@ -261,9 +248,8 @@ export async function* Search(this: Context) {
 									: query.trim()
 										? jsx`
 							<div class=${css`
-								padding: 1rem;
-								opacity: 0.6;
-								font-size: 0.85rem;
+								padding: 0 1ch;
+								color: var(--muted-color);
 							`}>No results found</div>
 						`
 										: null

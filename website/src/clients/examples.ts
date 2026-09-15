@@ -44,7 +44,7 @@ function readExamples(): PlaygroundExample[] {
 /**
  * How much terminal a context gets.
  *
- * The playground page is somewhere to work, so it gets the terminal the
+ * The examples page is somewhere to work, so it gets the terminal the
  * examples are written against: eighty columns, and twenty-four rows, which is
  * one more than the tallest of them paints. An embed is a figure in an
  * argument, and a pane far taller than its program is a black void with a
@@ -671,7 +671,6 @@ const toolbar = css`
 		color: var(--text-color);
 		background-color: var(--surface-color);
 		border: 1px solid var(--border-color);
-		border-radius: 6px;
 		padding: 0.25rem 0.7rem;
 	}
 
@@ -717,7 +716,7 @@ const filename = css`
  *
  * Which one is a question about the width the workbench has, not the width
  * the window has -- the same component sits in a 900px column on the home
- * page and across the playground page -- so it is a container query, and the
+ * page and across the examples page -- so it is a container query, and the
  * workbench is the container.
  *
  * The two halves meet on a rule rather than across a gap: they are one
@@ -791,7 +790,6 @@ const workbench = css`
 	container: workbench / inline-size;
 	margin: 0;
 	border: 1px solid var(--border-color);
-	border-radius: 8px;
 	overflow: hidden;
 	background-color: var(--surface-color);
 `;
@@ -863,7 +861,7 @@ const statusLine = css`
  * The page and the embeds on the home page are the same thing rendered in two
  * places: this owns the one string, the editor owns the text, and the terminal
  * pane owns the running program. `controls` is whatever the surrounding page
- * puts beside the run button -- the picker, on the playground page.
+ * puts beside the run button -- the picker, on the examples page.
  *
  * The editor re-renders itself as it is typed in, so a keystroke arrives here
  * as `contentchange` and the editor is handed back a `Copy`; only a value
@@ -1121,7 +1119,6 @@ const extraStrip = css`
 	max-height: 50%;
 	.extra {
 		border: 1px solid var(--border-color);
-		border-radius: 6px;
 		overflow: hidden;
 	}
 	.bar {
@@ -1190,7 +1187,6 @@ const card = css`
 	display: flex;
 	flex-direction: column;
 	border: 1px solid var(--border-color);
-	border-radius: 8px;
 	overflow: hidden;
 	background-color: var(--surface-color);
 	color: inherit;
@@ -1286,9 +1282,10 @@ function Gallery({examples}: {examples: PlaygroundExample[]}) {
 	return jsx`
 		<main class=${container}>
 			<h1 class=${css`
-				font-size: 2.2rem;
 				margin: 0;
-			`}>Playground</h1>
+				background: none;
+				padding: 0;
+			`}>Examples</h1>
 			<p class=${css`
 				color: var(--muted-color);
 				margin: 0.5rem 0 0;
@@ -1386,7 +1383,7 @@ function writeShareHash(hash: string): void {
 	history.replaceState(null, "", `#${hash}`);
 }
 
-/** The playground page: the picker, and a workbench under it. */
+/** The examples page: the picker, and a workbench under it. */
 function* Playground(this: Context) {
 	const examples = readExamples();
 	const share = readShareHash();
@@ -1513,9 +1510,10 @@ function* Playground(this: Context) {
 		yield jsx`
 			<main class=${pageShell}>
 				<h1 class=${css`
-					font-size: 2.2rem;
 					margin: 0;
-				`}>Playground</h1>
+					background: none;
+					padding: 0;
+				`}>Examples</h1>
 				<${Workbench}
 					value=${program ?? example.code}
 					valueEpoch=${pickEpoch}
@@ -1558,7 +1556,7 @@ function* Playground(this: Context) {
  * Each `<figure data-playground="id">` holds the program, highlighted at build
  * time, and stays that way until it comes near the viewport: five terminals
  * booting at load is not what someone scrolling a home page asked for. What
- * replaces it is the same workbench the playground page renders, with the
+ * replaces it is the same workbench the examples page renders, with the
  * program already in it.
  */
 function hydrateEmbeds(): void {

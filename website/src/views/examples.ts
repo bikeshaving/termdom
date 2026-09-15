@@ -23,7 +23,7 @@ import {
  * repository's `examples/` directory here, at build time, so the client bundle
  * carries no copy of them.
  */
-export default async function Playground({url}: {url: string}) {
+export default async function Examples({url}: {url: string}) {
 	const examples = await collectExamples(
 		await self.directories.open("examples"),
 	);
@@ -33,11 +33,11 @@ export default async function Playground({url}: {url: string}) {
 
 	return jsx`
 		<${Root}
-			title="TermDOM | Playground"
+			title="TermDOM | Examples"
 			url=${url}
 			description="Edit the library's own examples and watch TermDOM render them to a terminal, live in your browser."
 			stylesheets=${[assets.xtermCSS]}
-			scripts=${[assets.playgroundScript]}
+			scripts=${[assets.examplesScript]}
 			footer=${false}
 		>
 			<script type="application/json" id=${EXAMPLES_SCRIPT_ID}>
@@ -52,11 +52,11 @@ export default async function Playground({url}: {url: string}) {
 			<div id="playground">
 				<noscript class=${css`
 					display: block;
-					max-width: 1200px;
+					max-width: 120ch;
 					margin: 0 auto;
-					padding: 5rem 1.2rem 2rem;
+					padding: calc(var(--bar-height) + 2lh) 2ch 2lh;
 				`}>
-					The playground needs JavaScript: it runs the library, an editor and a
+					This page needs JavaScript: it runs the library, an editor and a
 					terminal emulator in this page.
 				</noscript>
 			</div>

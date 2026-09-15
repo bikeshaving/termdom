@@ -29,6 +29,8 @@ export interface DocInfo {
 		title: string;
 		publish: boolean;
 		description?: string;
+		/** A post's date, as front matter parses it: a Date, or the string as written. */
+		date?: string | Date;
 	};
 	url: string;
 	filename: string;

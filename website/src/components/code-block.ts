@@ -40,9 +40,7 @@ export function CodeBlock({code, lang = "ts"}: {code: string; lang?: string}) {
 		: escapeHTML(code);
 
 	return jsx`
-		<pre class="language-${language} ${css`
-			margin: 1.25rem 0;
-		`}"><code class="language-${language}"><${Raw} value=${html} /></code></pre>
+		<pre class="language-${language}"><code class="language-${language}"><${Raw} value=${html} /></code></pre>
 	`;
 }
 

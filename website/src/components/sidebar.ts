@@ -18,9 +18,7 @@ export function Sidebar({
 	for (const doc of docs) {
 		if (doc.attributes.publish) {
 			links.push(jsx`
-				<div class=${css`
-					margin: 10px 0;
-				`}>
+				<div>
 					<a
 						href=${doc.url}
 						aria-current=${doc.url === url && "page"}
@@ -42,28 +40,27 @@ export function Sidebar({
 	return jsx`
 		<div id="sidebar" class=${css`
 			background-color: var(--bg-color);
-			margin-top: 50px;
-			padding: 2rem 0.4rem;
+			margin-top: var(--bar-height);
+			padding: 1lh 2ch 1lh;
 			color: var(--text-color);
-			border-right: 1px solid var(--border-color);
-			border-bottom: 1px solid var(--border-color);
-			font-size: 0.9rem;
+			background: var(--rule) bottom 0.5lh center / 100% 1px no-repeat;
 
 			@media screen and (min-width: 800px) {
 				position: fixed;
-				top: 50px;
+				top: var(--bar-height);
 				bottom: 0;
 				overflow-x: hidden;
 				overflow-y: auto;
-				width: 15rem;
+				width: 28ch;
 				margin: 0;
-				padding: 2rem 1rem;
+				padding: 1lh 2ch 1lh 2ch;
 				text-align: right;
+				background: var(--rule) right 0.5ch center / 1px 100% no-repeat;
 			}
 
 			@media screen and (min-width: 1100px) {
-				padding: 3rem 2rem;
-				width: 20rem;
+				padding: 2lh 4ch 2lh 4ch;
+				width: 36ch;
 			}
 
 			> :first-child {
@@ -72,8 +69,7 @@ export function Sidebar({
 		`}>
 			<h2 class=${css`
 				color: var(--highlight-color);
-				margin-top: 0;
-				font-size: 1.1rem;
+				margin: 0 0 1lh;
 			`}>${title}</h2>
 			<div id="search-root">
 				<${Search} />
@@ -87,23 +83,24 @@ export function Main({children}: {children: unknown}) {
 	return jsx`
 		<main data-pagefind-body class=${css`
 			margin: 0 auto;
-			padding: 2rem 0.4rem;
+			padding: 1lh 2ch;
+			min-height: calc(100vh - var(--bar-height));
 
 			@media screen and (min-width: 800px) {
-				margin-left: 240px;
-				padding: 2rem 1rem;
-				margin-top: 50px;
+				margin-left: 28ch;
+				padding: 1lh 2ch;
+				margin-top: var(--bar-height);
 			}
 
 			@media screen and (min-width: 1100px) {
-				margin-left: 20rem;
-				padding: 3rem 2rem;
+				margin-left: 36ch;
+				padding: 2lh 4ch;
 			}
 
 			p,
 			ul,
 			ol {
-				max-width: 800px;
+				max-width: 80ch;
 			}
 		`}>
 			${children}

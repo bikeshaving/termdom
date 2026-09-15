@@ -1,10 +1,10 @@
 /**
  * Load the built site in a real browser and check that the sandboxed
- * ES-module runner actually runs the examples: the playground page's
+ * ES-module runner actually runs the examples: the examples page's
  * default program paints, switching programs paints the next one, and the
  * homepage embeds hydrate and paint. Console errors fail the run.
  *
- *   node scripts/verify-playground.ts [origin]
+ *   node scripts/verify-examples.ts [origin]
  */
 import {chromium} from "playwright";
 import {createServer} from "node:http";
@@ -93,9 +93,9 @@ async function waitForText(needle: string, timeout = 30000): Promise<boolean> {
 	return false;
 }
 
-// The playground page opens on the gallery: a card per example, the first
+// The examples page opens on the gallery: a card per example, the first
 // of them running small. Opening a card is the workbench with that program.
-await page.goto(`${ORIGIN}/playground/`, {waitUntil: "load"});
+await page.goto(`${ORIGIN}/examples/`, {waitUntil: "load"});
 await page.waitForSelector("[data-card]");
 const cards = await page.evaluate(() => document.querySelectorAll("[data-card]").length);
 report(cards >= 20, "gallery: a card per runnable example", `${cards} cards`);
@@ -190,7 +190,7 @@ report(await waitForText("01-getting-started.md", 5000), "playground: fuzzy-find
 // The address follows the picker, and a shared address opens what it
 // names: an example by id, or a program encoded into the hash.
 report((await page.evaluate(() => location.hash)) === "#e=fuzzy-finder", "share: the hash names the picked example");
-await page.goto(`${ORIGIN}/playground/#e=flexbox`);
+await page.goto(`${ORIGIN}/examples/#e=flexbox`);
 await page.waitForSelector(".xterm");
 report(await waitForText("TermDOM flexbox", 15000), "share: #e= opens the named example");
 report(
@@ -214,11 +214,11 @@ const sharedProgram = [
 	'term.document.body.textContent = "shared program painted";',
 ].join("\n");
 const encoded = Buffer.from(sharedProgram).toString("base64url");
-await page.goto(`${ORIGIN}/playground/#c=r${encoded}`);
+await page.goto(`${ORIGIN}/examples/#c=r${encoded}`);
 await page.reload({waitUntil: "load"});
 await page.waitForSelector(".xterm");
 report(await waitForText("shared program painted", 15000), "share: #c= runs the encoded program on a fresh load");
-await page.goto(`${ORIGIN}/playground/#e=shell`);
+await page.goto(`${ORIGIN}/examples/#e=shell`);
 await page.waitForSelector("select");
 report(await waitForText("termdom shell", 15000), "playground: shell paints its banner");
 // The emulator's textarea takes the keys. A click on the pane would also
@@ -275,7 +275,7 @@ report(await waitForText(".token.keyword", 5000), "playground: prism switches la
 // The first one is above the fold, so it is checked where a reader meets
 // it -- before any scrolling, which would carry it away faster than the
 // observer that mounts it.
-// A fresh page, as a first visit is: the playground page above has been
+// A fresh page, as a first visit is: the examples page above has been
 // through a dozen sandbox boots by now.
 await page.close();
 page = await browser.newPage();

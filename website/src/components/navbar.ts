@@ -8,7 +8,7 @@ const positionFixed = css`
 	top: 0;
 	left: 0;
 	right: 0;
-	height: 50px;
+	height: var(--bar-height);
 	z-index: 999;
 `;
 
@@ -17,7 +17,7 @@ const navbarGroupLayout = css`
 	flex-direction: row;
 	justify-content: center;
 	align-items: center;
-	gap: 1em;
+	gap: 2ch;
 `;
 
 /**
@@ -30,10 +30,10 @@ function BlockCursor() {
 			aria-hidden="true"
 			class=${css`
 				display: inline-block;
-				width: 0.6em;
-				height: 1.05em;
+				width: 1ch;
+				height: 1lh;
 				background-color: var(--highlight-color);
-				vertical-align: text-bottom;
+				vertical-align: bottom;
 			`}
 		/>
 	`;
@@ -45,11 +45,9 @@ export function Navbar({url}: {url: string}) {
 			class="
 				${positionFixed}
 				${css`
-					border-bottom: 1px solid var(--border-color);
-					background-color: var(--bg-color);
+					background: var(--rule) bottom 0.5lh center / 100% 1px no-repeat var(--bg-color);
 					overflow-x: auto;
-					padding: 0 1em;
-					font-size: 0.9rem;
+					padding: 0 1ch 1lh;
 
 					a {
 						text-decoration: none;
@@ -58,20 +56,24 @@ export function Navbar({url}: {url: string}) {
 						white-space: nowrap;
 					}
 
-					a:hover,
+					a:hover {
+						background-color: var(--highlight-color);
+						color: var(--bg-color);
+					}
+
 					a[aria-current="page"] {
 						color: var(--highlight-color);
 					}
 
 					@media screen and (min-width: 800px) {
-						padding: 0 2em;
+						padding: 0 2ch;
 					}
 
 					display: flex;
 					flex-direction: row;
 					justify-content: space-between;
 					align-items: center;
-					gap: 1em;
+					gap: 2ch;
 				`}
 			"
 		>
@@ -79,7 +81,7 @@ export function Navbar({url}: {url: string}) {
 				<a
 					class=${navbarGroupLayout}
 					aria-current=${url === "/" && "page"}
-					style="gap: 0.4em"
+					style="gap: 1ch"
 					href="/"
 				>
 					<${BlockCursor} />
@@ -90,9 +92,13 @@ export function Navbar({url}: {url: string}) {
 					aria-current=${url.startsWith("/guides") && "page"}
 				>Guides</a>
 				<a
-					href="/playground/"
-					aria-current=${url.startsWith("/playground") && "page"}
-				>Playground</a>
+					href="/examples/"
+					aria-current=${url.startsWith("/examples") && "page"}
+				>Examples</a>
+				<a
+					href="/blog/"
+					aria-current=${url.startsWith("/blog") && "page"}
+				>Blog</a>
 				<a
 					href="/compatibility/"
 					aria-current=${url.startsWith("/compatibility") && "page"}

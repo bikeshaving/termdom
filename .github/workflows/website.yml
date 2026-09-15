@@ -1,7 +1,7 @@
 name: Website
 
 # termdom.org is the static site in website/, published to the gh-pages
-# branch. Every push to main rebuilds it: the playground bundles the engine
+# branch. Every push to main rebuilds it: the examples page bundles the engine
 # and seeds its filesystem from the examples and guides, so a change almost
 # anywhere in the repository changes the site.
 on:
