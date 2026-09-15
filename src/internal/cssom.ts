@@ -3149,25 +3149,6 @@ const kUsedGridTracks = Symbol("usedGridTracks");
 const kFlushStyle = Symbol("flushStyle");
 const kMatchingRules = Symbol("matchingRules");
 
-// LIVE: the object an author holds stays valid across class changes and
-// sheet replacements, because it re-resolves rather than being replaced.
-interface ComputedStyleDeclaration {
-	[kElement]: Element;
-	[kCSSRules]: ParsedCSSRule[];
-
-	[kCascade]: Cascade | null;
-	[kInlineBlock]: CSSValues.DeclarationBlock | null;
-
-	// Computed strings, memoized once per property per resolution, ""
-	// results included. An inherited property re-resolved on every read
-	// would re-walk the whole ancestor chain, thousands of times per
-	// keystroke. The declaration is discarded wholesale on invalidation, so
-	// the memo needs no invalidation of its own.
-	[kResolved]: Map<string, string>;
-
-	[kCustom]: string[] | null;
-}
-
 // Writing a computed style is an error, not a no-op. It throws the
 // document's own DOMException, since one from another global is not
 // what an author catches.
@@ -3219,6 +3200,25 @@ const USED_VALUE_PROPERTIES = new Set([
 	"top",
 	"width",
 ]);
+
+// LIVE: the object an author holds stays valid across class changes and
+// sheet replacements, because it re-resolves rather than being replaced.
+interface ComputedStyleDeclaration {
+	[kElement]: Element;
+	[kCSSRules]: ParsedCSSRule[];
+
+	[kCascade]: Cascade | null;
+	[kInlineBlock]: CSSValues.DeclarationBlock | null;
+
+	// Computed strings, memoized once per property per resolution, ""
+	// results included. An inherited property re-resolved on every read
+	// would re-walk the whole ancestor chain, thousands of times per
+	// keystroke. The declaration is discarded wholesale on invalidation, so
+	// the memo needs no invalidation of its own.
+	[kResolved]: Map<string, string>;
+
+	[kCustom]: string[] | null;
+}
 
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	constructor(
@@ -4749,6 +4749,40 @@ const kTransitionTimer = Symbol("transitionTimer");
 const kTransitionEvents = Symbol("transitionEvents");
 const kTransitionFlushQueued = Symbol("transitionFlushQueued");
 
+function isStyleElement(element: Element): boolean {
+	return (
+		element.tagName === "STYLE" ||
+		(element.tagName === "LINK" && element.getAttribute("rel") === "stylesheet")
+	);
+}
+
+// The list's padding-left is a function of its items' markers and
+// their ordinals. Only the NEAREST list is affected.
+// TODO(box-tree): the gutter is a layout question answered here in the
+// cascade. Computing it during block layout deletes this.
+function mutationChangesListItems(mutation: MutationRecord): boolean {
+	const target = mutation.target;
+	if (
+		target.nodeType === 1 &&
+		((target as Element).tagName === "UL" ||
+			(target as Element).tagName === "OL")
+	) {
+		return true;
+	}
+	for (const list of [mutation.addedNodes, mutation.removedNodes]) {
+		for (const node of list) {
+			if (node.nodeType !== 1) {
+				continue;
+			}
+			const element = node as Element;
+			if (element.tagName === "LI" || element.querySelector("li") !== null) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 export interface Cascade {
 	[kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
 
@@ -4873,40 +4907,6 @@ export interface Cascade {
 	// a rule reaches any type, as a counter rule does through the scope
 	// chain.
 	[kPseudoSubjectTags]: Set<string> | null | undefined;
-}
-
-function isStyleElement(element: Element): boolean {
-	return (
-		element.tagName === "STYLE" ||
-		(element.tagName === "LINK" && element.getAttribute("rel") === "stylesheet")
-	);
-}
-
-// The list's padding-left is a function of its items' markers and
-// their ordinals. Only the NEAREST list is affected.
-// TODO(box-tree): the gutter is a layout question answered here in the
-// cascade. Computing it during block layout deletes this.
-function mutationChangesListItems(mutation: MutationRecord): boolean {
-	const target = mutation.target;
-	if (
-		target.nodeType === 1 &&
-		((target as Element).tagName === "UL" ||
-			(target as Element).tagName === "OL")
-	) {
-		return true;
-	}
-	for (const list of [mutation.addedNodes, mutation.removedNodes]) {
-		for (const node of list) {
-			if (node.nodeType !== 1) {
-				continue;
-			}
-			const element = node as Element;
-			if (element.tagName === "LI" || element.querySelector("li") !== null) {
-				return true;
-			}
-		}
-	}
-	return false;
 }
 
 export class Cascade {

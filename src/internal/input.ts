@@ -280,6 +280,12 @@ const kTextControlDragAnchor = Symbol("textControlDragAnchor");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 
+// Reclaims a yield no keystroke reclaimed. A flat window from the yield,
+// not a debounce. Wheel activity while yielded produces no signal, and a
+// gap between ticks longer than this would re-yield on the next tick.
+const SCROLL_CHAIN_TIMEOUT_MS = 3000;
+const DBLCLICK_INTERVAL_MS = 500;
+
 export interface Input {
 	[kDocument]: Document;
 	[kWindow]: Window;
@@ -320,12 +326,6 @@ export interface Input {
 	[kLastClickTarget]: Element | null;
 	[kLastClickTime]: number;
 }
-
-// Reclaims a yield no keystroke reclaimed. A flat window from the yield,
-// not a debounce. Wheel activity while yielded produces no signal, and a
-// gap between ticks longer than this would re-yield on the next tick.
-const SCROLL_CHAIN_TIMEOUT_MS = 3000;
-const DBLCLICK_INTERVAL_MS = 500;
 
 export class Input {
 	constructor(
