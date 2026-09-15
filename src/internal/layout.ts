@@ -33,6 +33,7 @@ import {
 	toValue,
 	type Wrap,
 } from "./layoutsolver.ts";
+import type {PaintStyle} from "./painter.ts";
 import {
 	getParagraphDirection,
 	getStringWidth,
@@ -3492,6 +3493,7 @@ function measureText(
 
 const kTerminalReordersText = Symbol("terminalReordersText");
 const kMoved = Symbol("moved");
+const kPaintStyles = Symbol("paintStyles");
 
 // Both halves are needed. Each segment's characters reorder (bidi.ts),
 // and in an RTL paragraph the segments mirror across the line.
@@ -4060,6 +4062,10 @@ export interface Layout {
 	// that have not finished arriving.
 	[kRestyled]: Set<Element>;
 
+	// What the painter resolved from each element's computed style. Dropped
+	// with the cascade's own caches, so it can never outlive them.
+	[kPaintStyles]: WeakMap<Element, PaintStyle>;
+
 	// Geometry moved since the last painted frame.
 	[kMoved]: boolean;
 	// Counts layout passes, so a node styled in this pass is not styled
@@ -4082,6 +4088,7 @@ export class Layout {
 		this[kAnonymousBoxes] = new Map<LayoutNode, Box>();
 		this[kDirtyRunContainers] = new Set<Element>();
 		this[kRestyled] = new Set<Element>();
+		this[kPaintStyles] = new WeakMap<Element, PaintStyle>();
 		this[kRenderedLeaves] = new WeakMap<
 			Text,
 			{key: string; text: string; offsets: Int32Array | null}
@@ -5072,12 +5079,36 @@ export class Layout {
 		}
 	}
 
-	// Whatever measured the element measured it under the style that is
-	// gone, and nothing about the space it was offered says so.
-	// Deliberately over-approximate: a change that moves no geometry costs
-	// a re-measurement, and one that moves geometry is never missed.
-	styleInvalidated(element: Element): void {
-		this[kRestyled].add(element);
+	/**
+	 * The element's computed style went stale. Whatever measured it
+	 * measured it under the style that is gone, and nothing about the space
+	 * it was offered says so, so `measured` re-measures it: deliberately
+	 * over-approximate, and false only for a change that paints
+	 * differently without moving anything.
+	 */
+	styleInvalidated(element: Element, measured = true): void {
+		this[kPaintStyles].delete(element);
+		if (measured) {
+			this[kRestyled].add(element);
+		}
+	}
+
+	// Every computed style went at once, so nothing resolved from one holds.
+	stylesDropped(): void {
+		this[kPaintStyles] = new WeakMap<Element, PaintStyle>();
+	}
+
+	/** The painter's style for an element, resolved on the first frame that asks. */
+	paintStyle(
+		element: Element,
+		compute: (element: Element) => PaintStyle,
+	): PaintStyle {
+		let style = this[kPaintStyles].get(element);
+		if (style === undefined) {
+			style = compute(element);
+			this[kPaintStyles].set(element, style);
+		}
+		return style;
 	}
 
 	// A chain reaching a fixed box puts the geometry in viewport space

@@ -10,6 +10,7 @@ import {
 	flowContent,
 	getHighlightedTextNodes,
 	getPaintedHighlights,
+	getPseudoHost,
 	getSelectionRecord,
 	getShadowRoot,
 	getTextControlSelectionRange,
@@ -315,46 +316,209 @@ function renderGradient(
 	}
 }
 
-function getCellStyle(element: Element): CellStyle {
+type BoxSides = Parameters<CellContext["drawBox"]>[4];
+
+/** What a list marker painted outside its box is drawn with. */
+interface MarkerStyle {
+	outside: boolean;
+	fg: number | undefined;
+	bold: boolean;
+	dim: boolean;
+	italic: boolean;
+	underline: boolean;
+}
+
+/**
+ * Everything paint reads from one element's computed style, resolved
+ * once. The layout holds these until the cascade restyles the element.
+ */
+export interface PaintStyle {
+	display: string;
+	visible: boolean;
+	fg: number | undefined;
+	bg: number | undefined;
+
+	// The flat color the box clears itself to, or null for none.
+	fill: number | "default" | "inverse" | null;
+	gradient: CSSValues.Gradient | null;
+	borders: BoxSides | null;
+
+	// A ring in the outline's color over a bordered box, or, with sides
+	// null, an underline along a borderless box's bottom row.
+	outline: {sides: BoxSides | null; color: number | undefined} | null;
+	overflowX: string;
+	overflowY: string;
+	textTransform: string;
+	whiteSpace: string;
+	cell: CellStyle;
+
+	// Null unless the element is a list item.
+	marker: MarkerStyle | null;
+}
+
+function getMarkerStyle(element: Element): MarkerStyle {
+	const color =
+		getComputedValue(element, "color", "::marker") ||
+		getComputedValue(element, "color");
+	const {bold, dim} = resolveFontWeight(
+		getComputedValue(element, "font-weight", "::marker"),
+	);
+	return {
+		outside:
+			(getComputedValue(element, "list-style-position") || "outside") ===
+			"outside",
+		fg: color && color !== "initial"
+			? CSSValues.cssColorToNumber(color)
+			: undefined,
+		bold,
+		dim,
+		italic: getComputedValue(element, "font-style", "::marker") === "italic",
+		underline: CSSValues.parseTextDecorationLine(
+			getComputedValue(element, "text-decoration-line", "::marker"),
+		).underline,
+	};
+}
+
+function computePaintStyle(element: Element): PaintStyle {
 	const color = getComputedValue(element, "color");
 	const bgColor = getComputedValue(element, "background-color");
+	// Canvas clears the box to the terminal's default background, opaque in
+	// every theme. Highlight fills it with inverse.
+	const isCanvasBg = Boolean(bgColor) && CSSValues.isCanvasColor(bgColor);
+	const isHighlightBox =
+		Boolean(bgColor) && CSSValues.isHighlightColor(bgColor);
+	const fg = color && color !== "initial" && !CSSValues.isHighlightColor(color)
+		? CSSValues.cssColorToNumber(color)
+		: undefined;
+	const bg =
+		bgColor &&
+		!isCanvasBg &&
+		bgColor !== "initial" &&
+		!CSSValues.isTransparentColor(bgColor) &&
+		!CSSValues.isHighlightColor(bgColor)
+			? CSSValues.cssColorToNumber(bgColor)
+			: undefined;
+	const gradient = getGradient(element);
+
+	const sides = resolveBorderSides(element);
+	// Unauthored, a border is the terminal's default foreground, because no
+	// theme-safe color exists. A transparent side keeps its space and paints
+	// no glyph.
+	const sideFor = (
+		line: LineStyle["style"] | undefined,
+		prop: string,
+	): LineStyle | undefined => {
+		if (!line) {
+			return undefined;
+		}
+		const borderColor = getComputedValue(element, prop);
+		if (CSSValues.isTransparentColor(borderColor)) {
+			return undefined;
+		}
+		return {
+			style: line,
+			color:
+				borderColor &&
+				borderColor !== "currentcolor" &&
+				borderColor !== "currentColor"
+					? CSSValues.cssColorToNumber(borderColor)
+					: fg,
+		};
+	};
+	const top = sideFor(sides.top, "border-top-color");
+	const right = sideFor(sides.right, "border-right-color");
+	const bottom = sideFor(sides.bottom, "border-bottom-color");
+	const left = sideFor(sides.left, "border-left-color");
+	const corners = {
+		topLeft: sides.topLeft,
+		topRight: sides.topRight,
+		bottomRight: sides.bottomRight,
+		bottomLeft: sides.bottomLeft,
+	};
+
+	let outline: PaintStyle["outline"] = null;
+	const outlineStyle = getComputedValue(element, "outline-style");
+	if (
+		outlineStyle &&
+		outlineStyle !== "none" &&
+		CSSValues.parseBorderWidthValue(
+			getComputedValue(element, "outline-width"),
+		) !==
+		0
+	) {
+		const outlineColor = getComputedValue(element, "outline-color")
+			.trim()
+			.toLowerCase();
+		const hasColor =
+			Boolean(outlineColor) &&
+			outlineColor !== "auto" &&
+			outlineColor !== "currentcolor" &&
+			outlineColor !== "invert" &&
+			!CSSValues.isHighlightColor(outlineColor);
+		// `auto`, the initial value and what `outline: 1px solid` leaves,
+		// takes the element's own color, as a border's currentcolor does.
+		const ringColor = hasColor ? CSSValues.cssColorToNumber(outlineColor) : fg;
+		const ring =
+			(line: LineStyle["style"] | undefined): LineStyle | undefined => line &&
+				{style: line, color: ringColor};
+		outline = {
+			sides: sides.top || sides.right || sides.bottom || sides.left
+				? {
+					top: ring(sides.top),
+					right: ring(sides.right),
+					bottom: ring(sides.bottom),
+					left: ring(sides.left),
+					...corners,
+				}
+				: null,
+			color: ringColor,
+		};
+	}
+
 	const decoration = CSSValues.parseTextDecorationLine(
 		getComputedValue(element, "text-decoration-line"),
 	);
 	const {bold, dim} = resolveFontWeight(
 		getComputedValue(element, "font-weight"),
 	);
-	// The background alone carries inverse. color: HighlightText alone
-	// resolves to nothing, so an author color does not defeat it.
-	const isHighlightPair = CSSValues.isHighlightColor(bgColor);
-	// A gradient gives every cell its own background, so naming one here
-	// would repaint the run flat under the text. An undefined background
-	// leaves each cell the color the gradient put there.
-	const isGradientBox = getGradient(element) !== null;
+	const display = getComputedValue(element, "display");
+	const overflow = getComputedValue(element, "overflow");
 	return {
-		fg: color && color !== "initial" && !CSSValues.isHighlightColor(color)
-			? CSSValues.cssColorToNumber(color)
-			: undefined,
-		bg:
-			!isGradientBox &&
-			bgColor &&
-			bgColor !== "initial" &&
-			!CSSValues.isTransparentColor(bgColor) &&
-			!CSSValues.isCanvasColor(bgColor) &&
-			!CSSValues.isHighlightColor(bgColor)
-				? CSSValues.cssColorToNumber(bgColor)
-				: undefined,
-		inverse: isHighlightPair || undefined,
-		bold,
-		dim,
-		italic: getComputedValue(element, "font-style") === "italic",
-		underline: decoration.underline,
-		underlineStyle:
-			getComputedValue(element, "text-decoration-style") ===
-			"double"
-				? ("double" as const)
-				: undefined,
-		strikethrough: decoration.lineThrough,
+		display,
+		visible: getComputedValue(element, "visibility") !== "hidden",
+		fg,
+		bg,
+		fill: isCanvasBg ? "default" : isHighlightBox ? "inverse" : (bg ?? null),
+		gradient,
+		borders: top || right || bottom || left
+			? {top, right, bottom, left, ...corners}
+			: null,
+		outline,
+		overflowX: getComputedValue(element, "overflow-x") || overflow,
+		overflowY: getComputedValue(element, "overflow-y") || overflow,
+		textTransform: getComputedValue(element, "text-transform"),
+		whiteSpace: getComputedValue(element, "white-space"),
+		cell: {
+			fg,
+			// A gradient gives every cell its own background, so naming one
+			// here would repaint the run flat under the text. An undefined
+			// background leaves each cell the color the gradient put there.
+			bg: gradient === null ? bg : undefined,
+			// The background alone carries inverse. color: HighlightText alone
+			// resolves to nothing, so an author color does not defeat it.
+			inverse: isHighlightBox || undefined,
+			bold,
+			dim,
+			italic: getComputedValue(element, "font-style") === "italic",
+			underline: decoration.underline,
+			underlineStyle:
+				getComputedValue(element, "text-decoration-style") ===
+				"double"
+					? ("double" as const)
+					: undefined,
+			strikethrough: decoration.lineThrough,
+		},
+		marker: display === "list-item" ? getMarkerStyle(element) : null,
 	};
 }
 
@@ -520,6 +684,15 @@ export class Painter {
 	}
 }
 
+// A pseudo-element node's style belongs to its host's declarations, which
+// the cache is not told about, so it resolves afresh.
+function getPaintStyle(painter: Painter, element: Element): PaintStyle {
+	if (painter[kCascade].transitioning || getPseudoHost(element) !== null) {
+		return computePaintStyle(element);
+	}
+	return painter[kLayout].paintStyle(element, computePaintStyle);
+}
+
 // Whatever the ::backdrop rules resolve to, the UA sheet's included.
 function renderBackdrop(element: Element, ctx: CellContext): void {
 	const fill = getBackgroundFill(
@@ -553,40 +726,18 @@ function renderElement(
 		return;
 	}
 
+	const style = getPaintStyle(painter, element);
+
 	// Stray run state under a hidden subtree would ghost-paint at whatever
 	// coordinates it last held.
-	if (getComputedValue(element, "display") === "none") {
+	if (style.display === "none") {
 		return;
 	}
 
 	const rect = painter[kLayout].getRect(element);
+	const visible = style.visible;
 
-	const color = getComputedValue(element, "color");
-	const backgroundColor = getComputedValue(element, "background-color");
-	const visible = getComputedValue(element, "visibility") !== "hidden";
-
-	// Canvas clears the box to the terminal's default background, opaque in
-	// every theme. Highlight fills it with inverse.
-	const isCanvasBg =
-		Boolean(backgroundColor) && CSSValues.isCanvasColor(backgroundColor);
-	const isHighlightBox =
-		Boolean(backgroundColor) && CSSValues.isHighlightColor(backgroundColor);
-	const style = {
-		fg: color && color !== "initial" && !CSSValues.isHighlightColor(color)
-			? CSSValues.cssColorToNumber(color)
-			: undefined,
-		bg:
-			backgroundColor &&
-			!isCanvasBg &&
-			backgroundColor !== "initial" &&
-			!CSSValues.isTransparentColor(backgroundColor) &&
-			!CSSValues.isHighlightColor(backgroundColor)
-				? CSSValues.cssColorToNumber(backgroundColor)
-				: undefined,
-	};
-
-	if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
-		const fill = isCanvasBg ? "default" : isHighlightBox ? "inverse" : style.bg;
+	if (rect && visible && style.fill !== null) {
 		// A box broken across lines fills each fragment, not the rectangle
 		// enclosing them, whose ends belong to its neighbours.
 		const fragments = painter[kLayout].getRects(element);
@@ -597,23 +748,22 @@ function renderElement(
 					fragment.top,
 					fragment.width,
 					fragment.height,
-					fill,
+					style.fill,
 				);
 			}
 		} else {
-			ctx.drawRect(rect.left, rect.top, rect.width, rect.height, fill);
+			ctx.drawRect(rect.left, rect.top, rect.width, rect.height, style.fill);
 		}
 	}
 
 	// Over the flat fill, which a transparent stop composites onto.
-	const gradient = rect && visible ? getGradient(element) : null;
-	if (rect && gradient !== null) {
+	if (rect && visible && style.gradient !== null) {
 		const cell = painter[kScreen].cellPixels;
 		const fragments = painter[kLayout].getRects(element);
 		for (const fragment of fragments.length > 1 ? fragments : [rect]) {
 			renderGradient(
 				ctx,
-				gradient,
+				style.gradient,
 				fragment,
 				style.bg ?? null,
 				cell.height / cell.width,
@@ -621,58 +771,18 @@ function renderElement(
 		}
 	}
 
-	if (rect && visible) {
-		const sides = resolveBorderSides(element);
-		// Unauthored, a border is the terminal's default foreground, because
-		// no theme-safe color exists. A transparent side keeps its space and
-		// paints no glyph.
-		const sideFor = (
-			line: LineStyle["style"] | undefined,
-			prop: string,
-		): LineStyle | undefined => {
-			if (!line) {
-				return undefined;
-			}
-			const borderColor = getComputedValue(element, prop);
-			if (CSSValues.isTransparentColor(borderColor)) {
-				return undefined;
-			}
-			return {
-				style: line,
-				color:
-					borderColor &&
-					borderColor !== "currentcolor" &&
-					borderColor !== "currentColor"
-						? CSSValues.cssColorToNumber(borderColor)
-						: style.fg,
-			};
-		};
-		const top = sideFor(sides.top, "border-top-color");
-		const borderRight = sideFor(sides.right, "border-right-color");
-		const bottom = sideFor(sides.bottom, "border-bottom-color");
-		const left = sideFor(sides.left, "border-left-color");
-		if (top || borderRight || bottom || left) {
-			ctx.drawBox(
-				Math.round(rect.left),
-				Math.round(rect.top),
-				Math.round(rect.width),
-				Math.round(rect.height),
-				{
-					top,
-					right: borderRight,
-					bottom,
-					left,
-					topLeft: sides.topLeft,
-					topRight: sides.topRight,
-					bottomRight: sides.bottomRight,
-					bottomLeft: sides.bottomLeft,
-				},
-			);
-		}
+	if (rect && visible && style.borders !== null) {
+		ctx.drawBox(
+			Math.round(rect.left),
+			Math.round(rect.top),
+			Math.round(rect.width),
+			Math.round(rect.height),
+			style.borders,
+		);
 	}
 
-	if (visible) {
-		renderOutsideMarker(painter, element, ctx);
+	if (visible && style.marker !== null && style.marker.outside) {
+		renderOutsideMarker(painter, element, style.marker, ctx);
 	}
 
 	// The active element shows the terminal cursor at its selection focus.
@@ -760,15 +870,12 @@ function renderElement(
 	}
 
 	// Overflow clips descendants, never the element's own box.
-	const overflow = getComputedValue(element, "overflow");
-	const overflowX = getComputedValue(element, "overflow-x") || overflow;
-	const overflowY = getComputedValue(element, "overflow-y") || overflow;
 	const previousClip = ctx.clipRect;
 	ctx.clipRect = getOverflowClipRect(
 		element,
 		rect,
-		overflowX,
-		overflowY,
+		style.overflowX,
+		style.overflowY,
 		previousClip,
 	);
 	painter[kScrolledRows] = scrolledRows + ownScrolledRows;
@@ -801,58 +908,22 @@ function renderElement(
 	// An outline repaints a bordered box's ring in its color. A borderless
 	// box gets an underline along its bottom row. Overline (SGR 53) is
 	// unreliable.
-	if (rect && visible) {
-		const outlineStyle = getComputedValue(element, "outline-style");
-		if (
-			outlineStyle &&
-			outlineStyle !== "none" &&
-			CSSValues.parseBorderWidthValue(
-				getComputedValue(element, "outline-width"),
-			) !== 0
-		) {
-			const outlineColor = getComputedValue(element, "outline-color")
-				.trim()
-				.toLowerCase();
-			const hasColor =
-				Boolean(outlineColor) &&
-				outlineColor !== "auto" &&
-				outlineColor !== "currentcolor" &&
-				outlineColor !== "invert" &&
-				!CSSValues.isHighlightColor(outlineColor);
-			// `auto`, the initial value and what `outline: 1px solid` leaves,
-			// takes the element's own color, as a border's currentcolor does.
-			const color = hasColor
-				? CSSValues.cssColorToNumber(outlineColor)
-				: style.fg;
-			const sides = resolveBorderSides(element);
-			if (sides.top || sides.right || sides.bottom || sides.left) {
-				const ring = (
-					line: LineStyle["style"] | undefined,
-				): LineStyle | undefined => line && {style: line, color};
-				ctx.drawBox(
-					Math.round(rect.left),
-					Math.round(rect.top),
-					Math.round(rect.width),
-					Math.round(rect.height),
-					{
-						top: ring(sides.top),
-						right: ring(sides.right),
-						bottom: ring(sides.bottom),
-						left: ring(sides.left),
-						topLeft: sides.topLeft,
-						topRight: sides.topRight,
-						bottomRight: sides.bottomRight,
-						bottomLeft: sides.bottomLeft,
-					},
-				);
-			} else {
-				ctx.drawDecoration(
-					Math.round(rect.left),
-					Math.round(rect.bottom) - 1,
-					Math.round(rect.width),
-					{underline: true, fg: color},
-				);
-			}
+	if (rect && visible && style.outline !== null) {
+		if (style.outline.sides !== null) {
+			ctx.drawBox(
+				Math.round(rect.left),
+				Math.round(rect.top),
+				Math.round(rect.width),
+				Math.round(rect.height),
+				style.outline.sides,
+			);
+		} else {
+			ctx.drawDecoration(
+				Math.round(rect.left),
+				Math.round(rect.bottom) - 1,
+				Math.round(rect.width),
+				{underline: true, fg: style.outline.color},
+			);
 		}
 	}
 }
@@ -900,9 +971,7 @@ function getPositionedClip(
 		if (!isPositioned(ancestor)) {
 			continue;
 		}
-		const overflow = getComputedValue(ancestor, "overflow");
-		const overflowX = getComputedValue(ancestor, "overflow-x") || overflow;
-		const overflowY = getComputedValue(ancestor, "overflow-y") || overflow;
+		const {overflowX, overflowY} = getPaintStyle(painter, ancestor);
 		if (isClippingOverflow(overflowX) || isClippingOverflow(overflowY)) {
 			const rect = painter[kLayout].getRect(ancestor);
 			if (rect) {
@@ -974,21 +1043,9 @@ function renderStackingContext(
 function renderOutsideMarker(
 	painter: Painter,
 	element: Element,
+	marker: MarkerStyle,
 	ctx: CellContext,
 ): void {
-	const display = getComputedValue(element, "display");
-
-	if (display !== "list-item") {
-		return;
-	}
-
-	const listStylePosition =
-		getComputedValue(element, "list-style-position") || "outside";
-
-	if (listStylePosition !== "outside") {
-		return;
-	}
-
 	if (painter[kRenderedOutsideMarkers].has(element)) {
 		return;
 	}
@@ -1007,28 +1064,6 @@ function renderOutsideMarker(
 	// Cells, not code units. "日本 " is 3 characters and 5 cells.
 	const markerWidth = ctx.measureText(markerContent).width;
 
-	const markerColor =
-		getComputedValue(element, "color", "::marker") ||
-		getComputedValue(element, "color");
-	const {bold: markerBold, dim: markerDim} = resolveFontWeight(
-		getComputedValue(element, "font-weight", "::marker"),
-	);
-	const markerItalic =
-		getComputedValue(element, "font-style", "::marker") === "italic";
-	const markerUnderline = CSSValues.parseTextDecorationLine(
-		getComputedValue(element, "text-decoration-line", "::marker"),
-	).underline;
-
-	const markerTextStyle = {
-		fg: markerColor && markerColor !== "initial"
-			? CSSValues.cssColorToNumber(markerColor)
-			: undefined,
-		bold: markerBold,
-		dim: markerDim,
-		italic: markerItalic,
-		underline: markerUnderline,
-	};
-
 	// Outside the content box, as css-lists-3 §3.3 places it. A marker
 	// that would start before the first column is clipped away whole,
 	// as a browser clips it at the viewport.
@@ -1037,7 +1072,13 @@ function renderOutsideMarker(
 	if (markerX < 0) {
 		return;
 	}
-	ctx.drawText(markerContent, markerX, Math.round(rect.top), markerTextStyle);
+	ctx.drawText(markerContent, markerX, Math.round(rect.top), {
+		fg: marker.fg,
+		bold: marker.bold,
+		dim: marker.dim,
+		italic: marker.italic,
+		underline: marker.underline,
+	});
 }
 
 function getGlyphText(element: Element): Text | null {
@@ -1059,16 +1100,17 @@ function renderText(painter: Painter, textNode: Text, ctx: CellContext): void {
 		return;
 	}
 
-	if (getComputedValue(parentElement, "visibility") === "hidden") {
+	const parentStyle = getPaintStyle(painter, parentElement);
+	if (!parentStyle.visible) {
 		return;
 	}
 
-	const textTransform = getComputedValue(parentElement, "text-transform");
-	const textStyle = getCellStyle(parentElement);
+	const textTransform = parentStyle.textTransform;
+	const textStyle = parentStyle.cell;
 
 	// One fragment per line, each naming the range of `data` it renders.
 	// The characters come from the node under its own white-space.
-	const whiteSpace = getComputedValue(parentElement, "white-space");
+	const whiteSpace = parentStyle.whiteSpace;
 	const runFragments = painter[kRunFragments];
 	const fragments = runFragments === null
 		? painter[kLayout].lineFragments(textNode)

@@ -4973,6 +4973,12 @@ export class Cascade {
 		parseStylesheets(this);
 	}
 
+	// A transition moves computed values between frames without ever
+	// invalidating them, so nothing resolved from one may be kept.
+	get transitioning(): boolean {
+		return this[kActiveTransitions].size > 0;
+	}
+
 	registerShadowRoot(root: ShadowRoot): void {
 		if (this[kShadowRoots].has(root)) {
 			return;
@@ -5530,6 +5536,7 @@ export class Cascade {
 
 	[kDropCache](): void {
 		// Every computed style ever handed out re-resolves on its next read.
+		this[kLayout].stylesDropped();
 		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kUsedValues] = new WeakMap();
 		this[kComputedStyleCache] = new WeakMap();
@@ -6359,10 +6366,9 @@ function invalidateElementCaches(
 ): void {
 	// The one place an element's computed style goes stale, so the one
 	// place layout, which measured it under the style being dropped, is
-	// notified, unless the caller knows nothing layout reads changed.
-	if (notifyLayout) {
-		cascade[kLayout].styleInvalidated(element);
-	}
+	// notified. A caller that knows nothing layout reads changed says so,
+	// and only what the painter resolved is dropped.
+	cascade[kLayout].styleInvalidated(element, notifyLayout);
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade changed rather than merely dropped.
 	const dropped = cascade[kComputedStyleCache].get(element);
