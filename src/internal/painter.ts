@@ -385,6 +385,13 @@ const kScrolledRows = Symbol("scrolledRows");
 const kHighlightedText = Symbol("highlightedText");
 const kHighlightStyles = Symbol("highlightStyles");
 
+/** One registered highlight's share of one text node, in paint order. */
+interface HighlightRun {
+	name: string;
+	from: number;
+	to: number;
+}
+
 export interface Painter {
 	[kWindow]: Window;
 	[kDocument]: Document;
@@ -399,13 +406,6 @@ export interface Painter {
 	[kScrolledRows]: number;
 	[kHighlightedText]: Map<Text, HighlightRun[]>;
 	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
-}
-
-/** One registered highlight's share of one text node, in paint order. */
-interface HighlightRun {
-	name: string;
-	from: number;
-	to: number;
 }
 
 /** Reads the DOM, styles and geometry. Writes only into the CellContext. */
