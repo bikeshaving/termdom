@@ -22,6 +22,7 @@ import {
 } from "./cssom.ts";
 import {
 	closestSelector,
+	getDirectionality,
 	matchesSelector,
 	selectAll,
 	selectFirst,
@@ -13850,6 +13851,8 @@ class HTMLFontElement extends HTMLElement {
 }
 
 const kFiringReset = Symbol("firingReset");
+const kConstructingEntryList = Symbol("constructing entry list");
+const kSubmissionValue = Symbol("submission value");
 
 // Submission navigates, and this DOM does not navigate. `submit()` runs
 // the steps up to the navigation and stops. `requestSubmit()` fires the
@@ -13858,6 +13861,7 @@ const kFiringReset = Symbol("firingReset");
 interface HTMLFormElement {
 	[kElements]: HTMLFormControlsCollection | null;
 	[kFiringReset]: boolean;
+	[kConstructingEntryList]: boolean;
 }
 
 class HTMLFormElement extends HTMLElement {
@@ -13879,6 +13883,7 @@ class HTMLFormElement extends HTMLElement {
 		super(...args);
 		this[kElements] = null;
 		this[kFiringReset] = false;
+		this[kConstructingEntryList] = false;
 	}
 
 	get elements(): HTMLFormControlsCollection {
@@ -13999,8 +14004,9 @@ function isSubmitButton(element: Element): boolean {
 }
 
 // Fires the submit event unless the caller was `submit()`, which the
-// spec defines as skipping it. The navigation itself is the one step this
-// DOM does not have.
+// spec defines as skipping it, and then builds the entry list the
+// submission would send. The navigation that would send it is the one
+// step this DOM does not have.
 function submitForm(
 	form: HTMLFormElement,
 	submitter: Element | null,
@@ -14009,18 +14015,20 @@ function submitForm(
 	// A form outside a document cannot submit, because submission ends in a
 	// navigation and there is nothing to navigate. The submit event does not
 	// fire either.
-	if (!form.isConnected) {
+	if (!form.isConnected || form[kConstructingEntryList]) {
 		return;
 	}
-	if (skipEvent) {
-		return;
+	if (!skipEvent) {
+		const event = new SubmitEvent("submit", {
+			bubbles: true,
+			cancelable: true,
+			submitter: submitter as HTMLElement | null,
+		});
+		if (!dispatch(form, event)) {
+			return;
+		}
 	}
-	const event = new SubmitEvent("submit", {
-		bubbles: true,
-		cancelable: true,
-		submitter: submitter as HTMLElement | null,
-	});
-	dispatch(form, event);
+	constructEntryList(form, submitter);
 }
 
 const kResetControl = Symbol("put a control back to its default");
@@ -14060,6 +14068,452 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
 	value: "SubmitEvent",
 	configurable: true,
 });
+
+type FormDataEntry = [string, string | globalThis.File];
+
+const LONE_SURROGATE = /\p{Surrogate}/gu;
+
+// The names and values a form sends are USVStrings, and a lone surrogate
+// is not a scalar value.
+function toScalarValueString(value: string): string {
+	return value.replace(LONE_SURROGATE, "�");
+}
+
+/** A File named exactly as asked: Bun reports an empty name as undefined. */
+function createFile(
+	bits: BlobPart[],
+	name: string,
+	options: FilePropertyBag,
+): globalThis.File {
+	const file = new File(bits, name, options);
+	if (file.name !== name) {
+		Object.defineProperty(file, "name", {
+			value: name,
+			configurable: true,
+			enumerable: true,
+		});
+	}
+	return file;
+}
+
+// A Blob that is not a File becomes one named "blob", and a filename
+// argument renames whichever File it ends up with.
+function createEntry(
+	name: unknown,
+	value: unknown,
+	filename?: unknown,
+): FormDataEntry {
+	const key = toScalarValueString(String(name));
+	if (!(value instanceof Blob)) {
+		return [key, toScalarValueString(String(value))];
+	}
+	let file = value instanceof File
+		? value
+		: createFile([value], "blob", {type: value.type});
+	if (filename !== undefined) {
+		file = createFile(
+			[file],
+			toScalarValueString(String(filename)),
+			{type: file.type, lastModified: file.lastModified},
+		);
+	}
+	return [key, file];
+}
+
+const kEntryList = Symbol("the entry list");
+
+interface FormData {
+	[kEntryList]: FormDataEntry[];
+}
+
+/** A list of names and values, the shape a form submission is sent in. */
+class FormData {
+	constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
+		this[kEntryList] = [];
+		if (form == null) {
+			return;
+		}
+		if (!(form instanceof HTMLFormElement)) {
+			throw new TypeError("A FormData takes a form element");
+		}
+		if (submitter != null) {
+			if (!(submitter instanceof Element) || !isSubmitButton(submitter)) {
+				throw new TypeError("That element is not a submit button");
+			}
+			if (getFormOwner(submitter) !== form) {
+				throw notFoundError("That button does not belong to this form");
+			}
+		}
+		const entries = constructEntryList(form, submitter ?? null);
+		if (entries === null) {
+			throw domError(
+				"InvalidStateError",
+				"That form is already building its entry list",
+			);
+		}
+		this[kEntryList] = entries;
+	}
+
+	append(name: string, value: string | Blob): void;
+	append(name: string, value: string): void;
+	append(name: string, blobValue: Blob, filename?: string): void;
+	append(name: string, value: string | Blob, filename?: string): void {
+		if (arguments.length < 2) {
+			throw new TypeError("append needs a name and a value");
+		}
+		this[kEntryList].push(createEntry(name, value, filename));
+	}
+
+	delete(name: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("delete needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		this[kEntryList] = this[kEntryList].filter(([key]) => key !== wanted);
+	}
+
+	get(name: string): globalThis.FormDataEntryValue | null {
+		if (arguments.length < 1) {
+			throw new TypeError("get needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		const found = this[kEntryList].find(([key]) => key === wanted);
+		return found === undefined ? null : found[1];
+	}
+
+	getAll(name: string): globalThis.FormDataEntryValue[] {
+		if (arguments.length < 1) {
+			throw new TypeError("getAll needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		return this[kEntryList]
+			.filter(([key]) => key === wanted).map(([, value]) => value);
+	}
+
+	has(name: string): boolean {
+		if (arguments.length < 1) {
+			throw new TypeError("has needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		return this[kEntryList].some(([key]) => key === wanted);
+	}
+
+	set(name: string, value: string | Blob): void;
+	set(name: string, value: string): void;
+	set(name: string, blobValue: Blob, filename?: string): void;
+	set(name: string, value: string | Blob, filename?: string): void {
+		if (arguments.length < 2) {
+			throw new TypeError("set needs a name and a value");
+		}
+		const entry = createEntry(name, value, filename);
+		const entries = this[kEntryList];
+		const at = entries.findIndex(([key]) => key === entry[0]);
+		if (at === -1) {
+			entries.push(entry);
+			return;
+		}
+		entries[at] = entry;
+		this[kEntryList] = entries.filter(
+			(held, index) => index === at || held[0] !== entry[0],
+		);
+	}
+
+	forEach(
+		callbackfn: (
+			value: globalThis.FormDataEntryValue,
+			key: string,
+			parent: FormData,
+		) => void,
+		thisArg?: any,
+	): void {
+		if (typeof callbackfn !== "function") {
+			throw new TypeError("forEach needs a function");
+		}
+		for (let index = 0; index < this[kEntryList].length; index++) {
+			const [key, value] = this[kEntryList][index];
+			callbackfn.call(thisArg, value, key, this);
+		}
+	}
+
+	entries(): FormDataIterator<[string, globalThis.FormDataEntryValue]> {
+		return this[kEntryList]
+			.map(([key, value]): [string, globalThis.FormDataEntryValue] =>
+				[key, value])[Symbol.iterator]();
+	}
+
+	keys(): FormDataIterator<string> {
+		return this[kEntryList].map(([key]) => key)[Symbol.iterator]();
+	}
+
+	values(): FormDataIterator<globalThis.FormDataEntryValue> {
+		return this[kEntryList].map(
+			([, value]): globalThis.FormDataEntryValue => value,
+		)[Symbol.iterator]();
+	}
+
+	[Symbol.iterator](): FormDataIterator<
+		[string, globalThis.FormDataEntryValue]
+	> {
+		return this.entries();
+	}
+}
+
+Object.defineProperty(FormData.prototype, Symbol.toStringTag, {
+	value: "FormData",
+	configurable: true,
+});
+
+interface FormDataEventInit extends EventInit {
+	formData: FormData;
+}
+
+const kEventFormData = Symbol("the entries the event carries");
+
+interface FormDataEvent {
+	[kEventFormData]: FormData;
+}
+
+// The event a form fires once its entry list is built, so a listener
+// can add to, remove from or rewrite the entries before they are sent.
+class FormDataEvent extends Event {
+	constructor(type: string, eventInitDict: FormDataEventInit) {
+		super(type, eventInitDict);
+		const init = toDictionary<FormDataEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		if (!(init.formData instanceof FormData)) {
+			throw new TypeError("A formdata event needs a FormData");
+		}
+		this[kEventFormData] = init.formData;
+	}
+
+	get formData(): FormData {
+		return this[kEventFormData];
+	}
+}
+
+Object.defineProperty(FormDataEvent.prototype, Symbol.toStringTag, {
+	value: "FormDataEvent",
+	configurable: true,
+});
+
+const SUBMITTABLE_TAGS = new Set([
+	"button",
+	"input",
+	"object",
+	"select",
+	"textarea",
+]);
+
+function isSubmittable(element: Element): boolean {
+	if (isFormAssociatedCustom(element)) {
+		return true;
+	}
+	return isHTMLTag(element, SUBMITTABLE_TAGS);
+}
+
+// Every kind of button, not only the ones that submit: a reset button and
+// a plain button are skipped for the same reason a submit button that did
+// not submit is.
+function isButtonControl(element: Element): boolean {
+	if (element instanceof HTMLButtonElement) {
+		return true;
+	}
+	if (element instanceof HTMLInputElement) {
+		const type = element.type;
+		return (
+			type === "submit" ||
+			type === "image" ||
+			type === "reset" ||
+			type === "button"
+		);
+	}
+	return false;
+}
+
+function hasDataListAncestor(element: Element): boolean {
+	for (
+		let node: Node | null = element[kParent];
+		node !== null;
+		node = node[kParent]
+	) {
+		if (node instanceof HTMLDataListElement) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function getSubmittableElements(form: HTMLFormElement): Element[] {
+	const controls: Element[] = [];
+	for (const node of descendants(getRoot(form))) {
+		if (node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
+		const element = node as Element;
+		if (isSubmittable(element) && getFormOwner(element) === form) {
+			controls.push(element);
+		}
+	}
+	return controls;
+}
+
+// A submission normalizes a textarea's newlines, which the value itself
+// holds as line feeds.
+function normalizeToCRLF(value: string): string {
+	return value.replace(/\r\n|\r|\n/g, "\r\n");
+}
+
+// What a custom element reported through setFormValue: a string, a File,
+// a FormData whose entries all join, or null for nothing at all.
+function appendSubmissionValue(entries: FormDataEntry[], field: Element): void {
+	const value = field[kInternals]?.[kSubmissionValue] ?? null;
+	if (value instanceof FormData) {
+		entries.push(...value[kEntryList]);
+		return;
+	}
+	if (value === null) {
+		return;
+	}
+	const name = field.getAttribute("name");
+	if (name === null || name === "") {
+		return;
+	}
+	entries.push(createEntry(name, value));
+}
+
+const OCTET_STREAM = "application/octet-stream";
+
+function appendFieldEntries(
+	entries: FormDataEntry[],
+	field: Element,
+	submitter: Element | null,
+): void {
+	if (hasDataListAncestor(field) || isActuallyDisabled(field)) {
+		return;
+	}
+	if (isButtonControl(field) && field !== submitter) {
+		return;
+	}
+	if (field instanceof HTMLInputElement) {
+		const type = field.type;
+		if ((type === "checkbox" || type === "radio") && !field.checked) {
+			return;
+		}
+		if (type === "image") {
+			const given = field.getAttribute("name");
+			const prefix = given === null || given === "" ? "" : `${given}.`;
+			entries.push(createEntry(`${prefix}x`, "0"));
+			entries.push(createEntry(`${prefix}y`, "0"));
+			return;
+		}
+	}
+	if (isFormAssociatedCustom(field)) {
+		appendSubmissionValue(entries, field);
+		return;
+	}
+	const name = field.getAttribute("name");
+	if (name === null || name === "") {
+		return;
+	}
+	if (field instanceof HTMLSelectElement) {
+		for (const option of field.selectedOptions) {
+			if (!isActuallyDisabled(option)) {
+				entries.push(createEntry(name, option.value));
+			}
+		}
+		return;
+	}
+	if (field instanceof HTMLInputElement) {
+		const type = field.type;
+		if (type === "checkbox" || type === "radio") {
+			entries.push(createEntry(name, field.getAttribute("value") ?? "on"));
+			return;
+		}
+		if (type === "file") {
+			const files = field.files;
+			if (files === null || files.length === 0) {
+				entries.push(
+					createEntry(name, createFile([], "", {type: OCTET_STREAM})),
+				);
+			} else {
+				for (const file of files) {
+					entries.push(createEntry(name, file));
+				}
+			}
+			return;
+		}
+	}
+	if (field instanceof HTMLObjectElement) {
+		return;
+	}
+	if (
+		field instanceof HTMLInputElement &&
+		field.type === "hidden" &&
+		toASCIILowercase(name) === "_charset_"
+	) {
+		entries.push(createEntry(name, "UTF-8"));
+		return;
+	}
+	if (field instanceof HTMLTextAreaElement) {
+		entries.push(createEntry(name, normalizeToCRLF(field.value)));
+		appendDirectionEntry(entries, field);
+		return;
+	}
+	entries.push(
+		createEntry(name, (field as HTMLInputElement | HTMLButtonElement).value),
+	);
+	if (
+		field instanceof HTMLInputElement && DIRNAME_INPUT_TYPES.has(field.type)
+	) {
+		appendDirectionEntry(entries, field);
+	}
+}
+
+const DIRNAME_INPUT_TYPES = new Set([
+	"text",
+	"search",
+	"tel",
+	"url",
+	"email",
+	"password",
+]);
+
+function appendDirectionEntry(entries: FormDataEntry[], field: Element): void {
+	const dirname = field.getAttribute("dirname");
+	if (dirname !== null && dirname !== "") {
+		entries.push(createEntry(dirname, getDirectionality(field)));
+	}
+}
+
+/**
+ * The names and values the form would send, in tree order. Null when the
+ * form is already building a list, which is what a FormData built inside
+ * a formdata listener would be doing.
+ */
+function constructEntryList(
+	form: HTMLFormElement,
+	submitter: Element | null,
+): FormDataEntry[] | null {
+	if (form[kConstructingEntryList]) {
+		return null;
+	}
+	form[kConstructingEntryList] = true;
+	const data = new FormData();
+	try {
+		for (const field of getSubmittableElements(form)) {
+			appendFieldEntries(data[kEntryList], field, submitter);
+		}
+		dispatch(
+			form,
+			new FormDataEvent("formdata", {formData: data, bubbles: true}),
+		);
+	} finally {
+		form[kConstructingEntryList] = false;
+	}
+	return data[kEntryList].slice();
+}
 
 // WebIDL has this inherit HTMLCollection, so it does. What it returns
 // for a shared name is wider than the inherited return type, which a
@@ -20111,7 +20565,6 @@ Object.defineProperty(CustomStateSet.prototype, Symbol.toStringTag, {
 
 const kValidity = Symbol("validity");
 const kValidationMessage = Symbol("validation message");
-const kSubmissionValue = Symbol("submission value");
 const kElementInternalsTarget = Symbol("the element an internals belongs to");
 
 // A custom element's handle on the parts of it the platform owns: its
@@ -30657,6 +31110,8 @@ export class Window extends EventTarget {
 	declare DataTransferItem: typeof DataTransferItem;
 	declare DataTransferItemList: typeof DataTransferItemList;
 	declare FileList: typeof FileList;
+	declare FormData: typeof globalThis.FormData;
+	declare FormDataEvent: typeof globalThis.FormDataEvent;
 	declare Clipboard: typeof Clipboard;
 	declare ClipboardItem: typeof ClipboardItem;
 	declare Permissions: typeof Permissions;
@@ -31542,6 +31997,8 @@ const platform = {
 	EventTarget,
 	FileList,
 	FocusEvent,
+	FormData,
+	FormDataEvent,
 	HTMLAnchorElement,
 	HTMLAreaElement,
 	HTMLAudioElement,
@@ -31776,6 +32233,8 @@ export type {
 	HTMLFontElement,
 	HTMLFormElement,
 	SubmitEvent,
+	FormData,
+	FormDataEvent,
 	HTMLFormControlsCollection,
 	RadioNodeList,
 	HTMLFrameElement,

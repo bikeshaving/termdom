@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-191 features supported, 38 probed and unsupported,
+192 features supported, 38 probed and unsupported,
 156 CSS properties not applicable to a character grid,
 128 applicable and not implemented,
 4 not yet probed.
@@ -27,6 +27,7 @@ changed.
 | `Selection / getSelection` | yes |
 | `CSS Custom Highlight API` | yes |
 | `Fullscreen API` | yes |
+| `FormData` | yes |
 
 ## Selectors
 
