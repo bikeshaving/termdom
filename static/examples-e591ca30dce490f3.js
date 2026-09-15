@@ -268,7 +268,10 @@ ${r.map(({variableName:i,uniqueLocalName:s})=>`  reactHotLoader.register(${i}, "
 		content: none;
 	}
 
+	/* A line is \`<code>text</code><br>\`, one line box; the site's block
+	   \`pre code\` would put the break on a line of its own. */
 	& code {
+		display: inline;
 		background: none;
 		border: none;
 		border-radius: 0;
