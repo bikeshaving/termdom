@@ -285,13 +285,17 @@ function isSpacePreserving(whiteSpace: string): boolean {
 	);
 }
 
-const COLLAPSIBLE_RUN = /\s+/g;
-const PRE_LINE_RUN = /[^\S\n]+/g;
+// css-text-3 §4.1.1 names the characters that collapse. A no-break
+// space and the fixed-width spaces are content, whatever white-space
+// says.
+const COLLAPSIBLE_RUN = /[ \t\n\r\f]+/g;
+const PRE_LINE_RUN = /[ \t\r\f]+/g;
+const COLLAPSIBLE_ONLY = /^[ \t\n\r\f]*$/;
 
 // Whether rendering would change anything: two collapsible characters
 // in a row, or one that is not already the space it collapses to.
-const COLLAPSES = /\s\s|[^\S ]/;
-const PRE_LINE_COLLAPSES = /[^\S\n][^\S\n]|[^\S\n ]/;
+const COLLAPSES = /[ \t\n\r\f][ \t\n\r\f]|[\t\n\r\f]/;
+const PRE_LINE_COLLAPSES = /[ \t\r\f][ \t\r\f]|[\t\r\f]/;
 
 // Stateful (`g`). Reset lastIndex before scanning.
 function getCollapsiblePattern(whiteSpace: string): RegExp {
@@ -388,7 +392,7 @@ export function renderTextFragment(
 // White space renders nothing where the run it would open has no
 // content to sit beside (css2 §9.4.2 with css-text-3 §4.1.1).
 function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
-	if (!textNode.textContent || !/^\s*$/.test(textNode.textContent)) {
+	if (!textNode.textContent || !COLLAPSIBLE_ONLY.test(textNode.textContent)) {
 		return false;
 	}
 
@@ -473,7 +477,7 @@ function isSuppressedFlexWhitespace(text: Text): boolean {
 	}
 	for (let node: Node | null = text; node; node = node.nextSibling) {
 		if (node.nodeType === node.TEXT_NODE) {
-			if ((node as Text).data.trim() !== "") {
+			if (!COLLAPSIBLE_ONLY.test((node as Text).data)) {
 				return false;
 			}
 			continue;
@@ -2754,7 +2758,7 @@ function collectLeaves(
 			const textNode = node as Text;
 
 			if (textNode.textContent) {
-				const isWhitespaceOnly = /^\s*$/.test(textNode.textContent);
+				const isWhitespaceOnly = COLLAPSIBLE_ONLY.test(textNode.textContent);
 
 				if (isWhitespaceOnly && shouldCollapseWhitespaceTextNode(textNode)) {
 					cursor = flowNext(node, root, false);
@@ -3648,7 +3652,7 @@ function getAbsolutePosition(
 function getBreakResultTextIndex(
 	layout: Layout,
 	breakResult: BreakResult,
-): Map<Text, TextFragmentEntry[]> {
+): Map<Node, TextFragmentEntry[]> {
 	let index = layout[kRectTextIndices].get(breakResult);
 	if (index) {
 		return index;
@@ -3657,11 +3661,11 @@ function getBreakResultTextIndex(
 	let ord = 0;
 	const visit = (segments: any[], baseX: number, lineIndex: number): void => {
 		for (const segment of segments) {
-			if (segment.leaf.type === "text") {
-				const textNode = segment.leaf.node as Text;
-				let entries = index!.get(textNode);
+			if (segment.leaf.type === "text" || segment.leaf.type === "br") {
+				const node = segment.leaf.node as Node;
+				let entries = index!.get(node);
 				if (!entries) {
-					index!.set(textNode, (entries = []));
+					index!.set(node, (entries = []));
 				}
 				entries.push({
 					line: lineIndex,
@@ -4027,7 +4031,7 @@ export interface Layout {
 	// Per break result, each text node's placed fragments in segment order.
 	// Keyed on the break result object. Re-breaking builds a fresh object,
 	// so entries can never go stale.
-	[kRectTextIndices]: WeakMap<object, Map<Text, TextFragmentEntry[]>>;
+	[kRectTextIndices]: WeakMap<object, Map<Node, TextFragmentEntry[]>>;
 
 	// The identity a derivation syncs against. A container rebuilt
 	// around a node finds the box the node already had, with its layout
@@ -4071,7 +4075,7 @@ export class Layout {
 		this[kTerminalReordersText] = false;
 		this[kRectTextIndices] = new WeakMap<
 			object,
-			Map<Text, TextFragmentEntry[]>
+			Map<Node, TextFragmentEntry[]>
 		>();
 		this[kBoxes] = new WeakMap<Node, Box>();
 		this[kDerivedContainers] = new WeakSet<Element>();
@@ -4699,9 +4703,17 @@ export class Layout {
 
 	/** The zero-width rect of a caret at the point, in a text node only. */
 	getCaretRect(node: Node, offset: number): DOMRect | null {
-		return node.nodeType === node.TEXT_NODE
-			? getCaretRectInFragment(this, node as Text, offset)
-			: null;
+		if (node.nodeType === node.TEXT_NODE) {
+			return getCaretRectInFragment(this, node as Text, offset);
+		}
+		const next = node.childNodes[offset];
+		if (next !== undefined && isLineBreak(next)) {
+			return this.getRects(next)[0] ?? null;
+		}
+		const point = textPointAt(node, offset);
+		return point === null
+			? null
+			: getCaretRectInFragment(this, point[0], point[1]);
 	}
 
 	// The text lets a caller repaint the run in the selection style.
@@ -5438,6 +5450,52 @@ function rangeTextNodes(layout: Layout, range: Range): Text[] {
 	return nodes;
 }
 
+// A point in an element names the seam between two children. The
+// caret shows at the end of the text the seam follows, else at the start
+// of the text it precedes.
+function textPointAt(node: Node, offset: number): [Text, number] | null {
+	const children = node.childNodes;
+	const before = offset > 0 ? lastTextIn(children[offset - 1]) : null;
+	if (before !== null) {
+		return [before, before.data.length];
+	}
+	const after = offset < children.length ? firstTextIn(children[offset]) : null;
+	return after === null ? null : [after, 0];
+}
+
+function isLineBreak(node: Node): boolean {
+	return node.nodeType === node.ELEMENT_NODE &&
+		(node as Element).tagName === "BR";
+}
+
+function firstTextIn(node: Node): Text | null {
+	if (node.nodeType === node.TEXT_NODE) {
+		return node as Text;
+	}
+	for (let child = node.firstChild; child !== null; child = child.nextSibling) {
+		const text = firstTextIn(child);
+		if (text !== null) {
+			return text;
+		}
+	}
+	return null;
+}
+
+function lastTextIn(node: Node): Text | null {
+	if (node.nodeType === node.TEXT_NODE) {
+		return node as Text;
+	}
+	for (let child = node.lastChild;
+		child !== null;
+		child = child.previousSibling) {
+		const text = lastTextIn(child);
+		if (text !== null) {
+			return text;
+		}
+	}
+	return null;
+}
+
 function getCaretRectInFragment(
 	layout: Layout,
 	textNode: Text,
@@ -5894,12 +5952,12 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		}
 	}
 
-	let targetTextNodes: Set<Text>;
+	let targetTextNodes: Set<Node>;
 
-	if (node.nodeType === node.TEXT_NODE) {
-		targetTextNodes = new Set([node as Text]);
+	if (node.nodeType === node.TEXT_NODE || isLineBreak(node)) {
+		targetTextNodes = new Set([node]);
 	} else {
-		targetTextNodes = new Set<Text>();
+		targetTextNodes = new Set<Node>();
 
 		for (
 			let found = flowNext(node, node, false);

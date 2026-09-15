@@ -21,6 +21,7 @@ import {
 	topmostModalDialog,
 	type Window,
 } from "./dom.ts";
+import {requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";
@@ -88,7 +89,7 @@ function getLegacyKeyCode(keyName: string): number {
 
 // What Tab traverses and what a mousedown focuses.
 const FOCUSABLE_SELECTOR =
-	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
+	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
 
 // `barrier` is the nearest scope owner above with a negative tabindex.
 // The stop cannot be tabbed into from outside, but focus scripted inside
@@ -619,6 +620,8 @@ function deliverPaste(input: Input, text: string): void {
 				cancelable: true,
 			}),
 		);
+	} else if (proceed) {
+		requestEditingInsert(target, "insertFromPaste", text);
 	}
 	requestRender(input[kDocument]);
 }
@@ -1013,6 +1016,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 function insertText(input: Input, target: Element, text: string): void {
 	const tag = target.tagName;
 	if (tag !== "INPUT" && tag !== "TEXTAREA") {
+		requestEditingInsert(target, "insertText", text);
 		return;
 	}
 	dispatchAsUserAgent(

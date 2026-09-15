@@ -20,6 +20,7 @@ import {
 	renderedTopLayer,
 	type Window,
 } from "./dom.ts";
+import {getEditingCaretPoint} from "./editing.ts";
 import {
 	isPositioned,
 	isStackingContext,
@@ -669,7 +670,9 @@ function renderElement(
 	// The content origin is used when the focus has no box.
 	if (rect && visible && element === painter[kDocument].activeElement) {
 		const record = getSelectionRecord(element);
-		if (record !== null) {
+		if (record === null) {
+			renderEditingCaret(painter, element, ctx);
+		} else {
 			const focus = record.direction === "backward" ? record.start : record.end;
 			const node = getTextControlValueText(element) ?? getGlyphText(element);
 			let caret: {x: number; y: number} | null = null;
@@ -834,6 +837,31 @@ function renderElement(
 				);
 			}
 		}
+	}
+}
+
+// A focused editing host parks the cursor at the document selection's
+// focus, the way a focused text control parks it at its own.
+function renderEditingCaret(
+	painter: Painter,
+	element: Element,
+	ctx: CellContext,
+): void {
+	const point = getEditingCaretPoint(painter[kDocument]);
+	if (point === null || !element.contains(point.node)) {
+		return;
+	}
+	const rect = painter[kLayout].getCaretRect(point.node, point.offset);
+	if (rect !== null) {
+		ctx.setCaret(Math.round(rect.x), Math.round(rect.y));
+		return;
+	}
+	const box = point.node.nodeType === point.node.ELEMENT_NODE
+		? (point.node as Element)
+		: (flatParentElement(point.node) ?? element);
+	const content = painter[kLayout].contentRect(box);
+	if (content) {
+		ctx.setCaret(Math.round(content.x), Math.round(content.y));
 	}
 }
 

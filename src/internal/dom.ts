@@ -28,6 +28,7 @@ import {
 	SelectorError,
 } from "./cssselectors.ts";
 import * as CSSValues from "./cssvalues.ts";
+import {installEditing} from "./editing.ts";
 import type {Exchange} from "./exchange.ts";
 import {
 	interfaceOf,
@@ -8132,7 +8133,9 @@ function changeAttribute(attribute: Attr, value: string): void {
 		attribute[kNamespace],
 	);
 	syncAttributeCollections(element, attribute[kLocalName]);
-	notifyAttributeChange(element, attribute[kLocalName]);
+	if (value !== oldValue) {
+		notifyAttributeChange(element, attribute[kLocalName]);
+	}
 }
 
 function appendAttribute(element: Element, attribute: Attr): void {
@@ -22025,10 +22028,12 @@ function isHTMLDocument(document: Document): boolean {
 const kImplementation = Symbol("implementation");
 const kSelection = Symbol("the document's selection");
 const kHighlights = Symbol("the document's highlight registry");
+const kFonts = Symbol("the document's font face set");
 const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
 const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
+const kDesignMode = Symbol("whether the whole document is editable");
 
 /**
  * The event handler attributes installed on the prototype below, and the
@@ -22054,10 +22059,12 @@ export interface Document {
 	[kContentType]: string;
 	[kEncoding]: string;
 	[kIdMap]: Map<string, Element[]>;
+	[kDesignMode]: boolean;
 	[kDocumentWideLists]: Set<LiveCollection> | null;
 	[kSelection]: Selection | null;
 	[kSelectionChangeScheduled]: boolean;
 	[kHighlights]: HighlightRegistry | null;
+	[kFonts]: FontFaceSet | null;
 	[kTemplateDocument]: Document | null;
 	[kActiveElement]: Element | null;
 	[kDefaultView]: object | null;
@@ -22205,9 +22212,11 @@ export class Document extends Node implements globalThis.Document {
 		this[kContentType] = "application/xml";
 		this[kEncoding] = "UTF-8";
 		this[kIdMap] = new Map<string, Element[]>();
+		this[kDesignMode] = false;
 		this[kSelection] = null;
 		this[kSelectionChangeScheduled] = false;
 		this[kHighlights] = null;
+		this[kFonts] = null;
 		this[kTemplateDocument] = null;
 		this[kActiveElement] = null;
 		this[kDefaultView] = null;
@@ -22644,12 +22653,17 @@ export class Document extends Node implements globalThis.Document {
 		return "complete";
 	}
 
-	/** Nothing here is editable through execCommand. */
+	/** On makes the body an editing host. Only "on" and "off" mean anything. */
 	get designMode(): string {
-		return "off";
+		return this[kDesignMode] ? "on" : "off";
 	}
 
-	set designMode(_value: string) {}
+	set designMode(value: string) {
+		const state = toASCIILowercase(String(value));
+		if (state === "on" || state === "off") {
+			this[kDesignMode] = state === "on";
+		}
+	}
 
 	/** Script does not run while this document is built. */
 	get currentScript(): globalThis.HTMLOrSVGScriptElement | null {
@@ -22681,10 +22695,8 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	get fonts(): globalThis.FontFaceSet {
-		throw domError(
-			"NotSupportedError",
-			"The font loading API is not implemented",
-		);
+		this[kFonts] ??= new FontFaceSet();
+		return this[kFonts] as unknown as globalThis.FontFaceSet;
 	}
 
 	get timeline(): globalThis.DocumentTimeline {
@@ -26419,9 +26431,19 @@ class Selection implements globalThis.Selection {
 // document's painted text as one string rather than one node at a time.
 // Built per call. A selection moves at keystroke speed, and a cache of
 // the document's text would need invalidating on every mutation.
+// A part is a painted text node, or a <br>, which is one character of
+// its own: the caret can rest on an empty line. Parts in different
+// blocks are a character apart, so the end of one block and the start
+// of the next are two places, as they are on screen.
+interface SelectionPart {
+	node: Text | Element;
+	start: number;
+	length: number;
+}
+
 interface SelectionText {
 	text: string;
-	parts: Array<{node: Text; start: number}>;
+	parts: SelectionPart[];
 }
 
 // Offsets into the flattened text.
@@ -26446,15 +26468,35 @@ function isPaintedText(node: Text, layout: Layout | null): boolean {
 	return false;
 }
 
+function isLineBreakElement(node: Node): node is Element {
+	return node.nodeType === ELEMENT_NODE && (node as Element).localName === "br";
+}
+
+// The nearest ancestor that is not laid out inline, which is the block
+// whose lines the node's text falls on.
+function getBlockOf(node: Node): Element | null {
+	for (
+		let ancestor = node.parentElement as Element | null;
+		ancestor !== null;
+		ancestor = ancestor.parentElement as Element | null
+	) {
+		const display = getComputedValue(ancestor, "display");
+		if (display !== "inline" && display !== "contents") {
+			return ancestor;
+		}
+	}
+	return null;
+}
+
 // The isSelectable filter checks each text node's parent rather than
 // pruning the subtree, because user-select: none does not inherit. A
 // `text` descendant inside a `none` ancestor is isSelectable again.
 function getSelectionTextNodes(
 	document: Document,
 	attached: AttachedDocument | undefined,
-): Text[] {
+): Array<Text | Element> {
 	const layout = attached === undefined ? null : attached[kLayout];
-	const nodes: Text[] = [];
+	const nodes: Array<Text | Element> = [];
 	const collect = (node: Node): void => {
 		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
 			if (child.nodeType === TEXT_NODE) {
@@ -26463,6 +26505,13 @@ function getSelectionTextNodes(
 					(attached === undefined || attached[kCascade].isSelectable(node))
 				) {
 					nodes.push(child as Text);
+				}
+			} else if (isLineBreakElement(child)) {
+				if (
+					(layout === null || layout.getRects(child).length > 0) &&
+					(attached === undefined || attached[kCascade].isSelectable(node))
+				) {
+					nodes.push(child);
 				}
 			} else if (child.nodeType === ELEMENT_NODE) {
 				const name = (child as Element).localName;
@@ -26479,12 +26528,22 @@ function getSelectionTextNodes(
 	return nodes;
 }
 
-function flattenSelectionText(nodes: Text[]): SelectionText {
+function flattenSelectionText(nodes: Array<Text | Element>): SelectionText {
 	let text = "";
-	const parts: Array<{node: Text; start: number}> = [];
+	const parts: SelectionPart[] = [];
+	let previous: Text | Element | null = null;
 	for (const node of nodes) {
-		parts.push({node, start: text.length});
-		text += node[kData];
+		if (
+			previous !== null &&
+			!isLineBreakElement(previous) &&
+			getBlockOf(previous) !== getBlockOf(node)
+		) {
+			text += "\n";
+		}
+		const piece = isLineBreakElement(node) ? "\n" : (node as Text)[kData];
+		parts.push({node, start: text.length, length: piece.length});
+		text += piece;
+		previous = node;
 	}
 	return {text, parts};
 }
@@ -26501,7 +26560,7 @@ function getSelectionIndex(
 	if (node.nodeType === TEXT_NODE) {
 		for (const part of run.parts) {
 			if (part.node === node) {
-				return part.start + Math.min(offset, part.node[kData].length);
+				return part.start + Math.min(offset, part.length);
 			}
 		}
 		return null;
@@ -26520,7 +26579,7 @@ function getSelectionIndex(
 	let last: number | null = null;
 	for (const part of run.parts) {
 		if (isInclusiveAncestor(node, part.node)) {
-			last = part.start + part.node[kData].length;
+			last = part.start + part.length;
 		}
 	}
 	return last;
@@ -26528,18 +26587,46 @@ function getSelectionIndex(
 
 // An offset on the seam between two nodes maps to the earlier node's
 // end, which is the same position as the later node's start.
+// An index where one text node ends and the next begins is a point in
+// either. The end of the earlier node is the default; a line start wants
+// the later one.
 function getSelectionPoint(
 	run: SelectionText,
 	index: number,
+	atStart = false,
 ): [Node, number] | null {
 	const at = Math.max(0, Math.min(index, run.text.length));
-	for (const part of run.parts) {
-		if (at <= part.start + part.node[kData].length) {
-			return [part.node, at - part.start];
+	const candidates = run.parts.filter(
+		(part) => part.start <= at && at <= part.start + part.length,
+	);
+	// The place after a <br> is the start of what follows it, when
+	// anything does.
+	const kept = candidates.filter(
+		(part) =>
+			candidates.length === 1 ||
+			!isLineBreakElement(part.node) ||
+			at === part.start,
+	);
+	let part: SelectionPart | null = kept.length > 0
+		? kept[atStart ? kept.length - 1 : 0]
+		: null;
+	for (let i = run.parts.length - 1; part === null && i >= 0; i--) {
+		if (run.parts[i].start <= at) {
+			part = run.parts[i];
 		}
 	}
-	const last = run.parts[run.parts.length - 1];
-	return last === undefined ? null : [last.node, last.node[kData].length];
+	if (part === null) {
+		return null;
+	}
+	if (isLineBreakElement(part.node)) {
+		const parent = part.node[kParent];
+		if (parent === null) {
+			return null;
+		}
+		const index = Array.prototype.indexOf.call(parent.childNodes, part.node);
+		return [parent, at === part.start ? index : index + 1];
+	}
+	return [part.node, Math.min(at - part.start, part.length)];
 }
 
 // Two fragments on the same row are the same line no matter how many
@@ -26549,21 +26636,32 @@ function getSelectionLines(
 	layout: Layout,
 ): SelectionLine[] {
 	const rows = new Map<number, SelectionLine>();
+	const add = (y: number, start: number, end: number): void => {
+		const row = rows.get(y);
+		if (row === undefined) {
+			rows.set(y, {y, start, end});
+		} else {
+			row.start = Math.min(row.start, start);
+			row.end = Math.max(row.end, end);
+		}
+	};
 	for (const part of run.parts) {
+		if (isLineBreakElement(part.node)) {
+			const rect = layout.getRects(part.node)[0];
+			if (rect !== undefined) {
+				add(Math.round(rect.y), part.start, part.start + part.length);
+			}
+			continue;
+		}
 		for (const fragment of layout.lineFragments(part.node)) {
 			if (fragment.endOffset <= fragment.startOffset) {
 				continue;
 			}
-			const y = Math.round(fragment.rect.y);
-			const start = part.start + fragment.startOffset;
-			const end = part.start + fragment.endOffset;
-			const row = rows.get(y);
-			if (row === undefined) {
-				rows.set(y, {y, start, end});
-			} else {
-				row.start = Math.min(row.start, start);
-				row.end = Math.max(row.end, end);
-			}
+			add(
+				Math.round(fragment.rect.y),
+				part.start + fragment.startOffset,
+				part.start + fragment.endOffset,
+			);
 		}
 	}
 	return [...rows.values()].sort((a, b) => a.y - b.y);
@@ -26598,6 +26696,7 @@ function selectionLineMove(
 	document: Document,
 	run: SelectionText,
 	layout: Layout,
+	from: [Node, number],
 	index: number,
 	forward: boolean,
 ): [Node, number] | null {
@@ -26605,16 +26704,15 @@ function selectionLineMove(
 	if (lines.length === 0) {
 		return null;
 	}
-	const at = getSelectionLine(lines, index);
+	const at = getSelectionLineOf(lines, layout, from, index);
 	const target = at + (forward ? 1 : -1);
 	if (target < 0) {
-		return getSelectionPoint(run, lines[0].start);
+		return getSelectionPoint(run, lines[0].start, true);
 	}
 	if (target >= lines.length) {
 		return getSelectionPoint(run, lines[lines.length - 1].end);
 	}
-	const here = getSelectionPoint(run, index);
-	const column = here === null ? null : getCaretColumn(layout, here);
+	const column = getCaretColumn(layout, from);
 	const root = document.body ?? document.documentElement;
 	const found = column === null || root === null
 		? null
@@ -26624,8 +26722,16 @@ function selectionLineMove(
 			root as unknown as globalThis.Node,
 			true,
 		);
-	if (found === null) {
-		return getSelectionPoint(run, lines[target].start);
+	const landed = found === null
+		? null
+		: getSelectionIndex(run, found.node as unknown as Node, found.offset);
+	if (
+		found === null ||
+		landed === null ||
+		landed < lines[target].start ||
+		landed > lines[target].end
+	) {
+		return getSelectionPoint(run, lines[target].start, true);
 	}
 	return [found.node as unknown as Node, found.offset];
 }
@@ -26681,13 +26787,53 @@ function getModifiedPoint(
 		if (lines.length === 0) {
 			return null;
 		}
-		const line = lines[getSelectionLine(lines, index)];
-		return getSelectionPoint(run, forward ? line.end : line.start);
+		const line = lines[getSelectionLineOf(lines, layout, from, index)];
+		return forward
+			? getSelectionPoint(run, line.end)
+			: getSelectionPoint(run, line.start, true);
 	}
 	if (granularity === "line") {
-		return selectionLineMove(document, run, layout, index, forward);
+		return selectionLineMove(document, run, layout, from, index, forward);
 	}
 	return null;
+}
+
+// Two blocks' text nodes meet in the flattened string, so an index on
+// that seam names the end of one line and the start of the next. The
+// caret's own node settles which, and within one node a wrap point
+// belongs to the row that begins there.
+function getSelectionLineOf(
+	lines: SelectionLine[],
+	layout: Layout,
+	from: [Node, number],
+	index: number,
+): number {
+	const [node, offset] = from;
+	let y: number | null = null;
+	if (node.nodeType === TEXT_NODE) {
+		for (const fragment of layout.lineFragments(node as Text)) {
+			if (fragment.startOffset <= offset && offset < fragment.endOffset) {
+				y = Math.round(fragment.rect.y);
+				break;
+			}
+			if (offset === fragment.endOffset) {
+				y = Math.round(fragment.rect.y);
+			}
+		}
+	} else {
+		const child = node.childNodes[offset] as unknown as Node | undefined;
+		if (child !== undefined && isLineBreakElement(child)) {
+			const rect = layout.getRects(child)[0];
+			y = rect === undefined ? null : Math.round(rect.y);
+		}
+	}
+	if (y !== null) {
+		const at = lines.findIndex((line) => line.y === y);
+		if (at !== -1) {
+			return at;
+		}
+	}
+	return getSelectionLine(lines, index);
 }
 
 function isInDocument(selection: Selection, node: Node): boolean {
@@ -26825,6 +26971,84 @@ Object.defineProperty(Selection.prototype, Symbol.toStringTag, {
 	value: "Selection",
 	configurable: true,
 });
+
+/**
+ * The document's fonts, which a terminal has none of: an empty set that
+ * is already loaded, so code that waits on `fonts.ready` goes on.
+ */
+class FontFaceSet extends EventTarget {
+	declare readonly [Symbol.toStringTag]: string;
+	declare onloading: globalThis.FontFaceSet["onloading"];
+	declare onloadingdone: globalThis.FontFaceSet["onloadingdone"];
+	declare onloadingerror: globalThis.FontFaceSet["onloadingerror"];
+
+	get ready(): Promise<globalThis.FontFaceSet> {
+		return Promise.resolve(this as unknown as globalThis.FontFaceSet);
+	}
+
+	get status(): globalThis.FontFaceSetLoadStatus {
+		return "loaded";
+	}
+
+	get size(): number {
+		return 0;
+	}
+
+	check(_font: string, _text?: string): boolean {
+		return true;
+	}
+
+	load(_font: string, _text?: string): Promise<globalThis.FontFace[]> {
+		return Promise.resolve([]);
+	}
+
+	add(_font: globalThis.FontFace): this {
+		throw new TypeError("This document loads no fonts");
+	}
+
+	clear(): void {}
+
+	delete(_font: globalThis.FontFace): boolean {
+		return false;
+	}
+
+	has(_font: globalThis.FontFace): boolean {
+		return false;
+	}
+
+	forEach(
+		_callback: (
+			value: globalThis.FontFace,
+			key: globalThis.FontFace,
+			parent: globalThis.FontFaceSet,
+		) => void,
+		_thisArg?: unknown,
+	): void {}
+
+	entries(): SetIterator<[globalThis.FontFace, globalThis.FontFace]> {
+		return new Set<globalThis.FontFace>().entries();
+	}
+
+	keys(): SetIterator<globalThis.FontFace> {
+		return new Set<globalThis.FontFace>().keys();
+	}
+
+	values(): SetIterator<globalThis.FontFace> {
+		return new Set<globalThis.FontFace>().values();
+	}
+
+	[Symbol.iterator](): SetIterator<globalThis.FontFace> {
+		return this.values();
+	}
+}
+
+Object.defineProperty(FontFaceSet.prototype, Symbol.toStringTag, {
+	value: "FontFaceSet",
+	configurable: true,
+});
+for (const name of ["onloading", "onloadingdone", "onloadingerror"]) {
+	installEventHandler(FontFaceSet.prototype, name);
+}
 
 type HighlightType = "grammar-error" | "highlight" | "spelling-error";
 
@@ -29584,6 +29808,7 @@ export function attachDocument(
 		exchange.addEventListener(type, onTextControlEditEvent);
 	}
 	exchange.addEventListener("toggle", onDisclosureToggle);
+	installEditing(exchange);
 	hoverListenerCounts.set(
 		attached,
 		watchHoverListeners(attached, () => render()),
