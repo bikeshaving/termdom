@@ -346,16 +346,15 @@ export function revealTextControlCaret(document: globalThis.Document): void {
 	}
 }
 
-// Per spec a form control's selection is invisible to getSelection(), so
-// this is the only way to measure it. The range belongs to the document
-// and is valid until the next selection read.
-
 /** The range each document reuses for control-selection queries. */
 const selectionRanges = new WeakMap<globalThis.Document, globalThis.Range>();
 
-// Null when the selection is collapsed, since there is nothing to
-// highlight. Offsets are clamped into the text, so a selection recorded
-// against a longer value still measures.
+// Per spec a form control's selection is invisible to getSelection(), so
+// this is the only way to measure it. The range belongs to the document
+// and is valid until the next selection read. Null when the selection is
+// collapsed, since there is nothing to highlight. Offsets are clamped
+// into the text, so a selection recorded against a longer value still
+// measures.
 function getTextSelectionRange(
 	control: HTMLInputElement | HTMLTextAreaElement,
 	valueText: globalThis.Text | null,
@@ -3273,12 +3272,12 @@ const kGetTheParent = Symbol("get the parent");
 export interface EventTarget {
 	[kListeners]: Listener[];
 
+	/** Null until this target is given an event handler. Most never are. */
 	[kHandlers]: Map<string, EventHandlerRecord> | null;
 }
 
 /** An event target: a listener list, and the parent dispatch walks to. */
 export class EventTarget implements globalThis.EventTarget {
-	/** Null until this target is given an event handler. Most never are. */
 	constructor() {
 		this[kListeners] = [];
 		this[kHandlers] = null;
@@ -10106,8 +10105,6 @@ export class HTMLElement extends Element {
 	// steps fire. A headless document paints nothing, so it only moves the
 	// state.
 	focus(_options?: globalThis.FocusOptions): void {
-		// A host whose shadow root delegates focus hands the call to its
-		// focus delegate (HTML's focusing steps, step 3).
 		const document = this[kDocument];
 		const previous = getInnermostActive(document);
 		// A host whose shadow root delegates focus hands the call to its
@@ -10298,11 +10295,6 @@ function getInnermostActive(document: Document): Element | null {
 	return current;
 }
 
-// A tabindex attribute makes any element focusable whatever its value.
-// A negative value only removes the element from sequential navigation,
-// not from focus(). Elements focusable without an attribute say so
-// through their default tabindex. A disabled control is focusable by
-// neither route.
 // The focus delegate of a host whose shadow root delegates focus: the
 // first focusable area among the shadow root's own descendants in tree
 // order, an autofocus one first, itself a delegate's delegate when that
@@ -10334,6 +10326,11 @@ function getFocusDelegate(element: Element): Element | null {
 	return first;
 }
 
+// A tabindex attribute makes any element focusable whatever its value.
+// A negative value only removes the element from sequential navigation,
+// not from focus(). Elements focusable without an attribute say so
+// through their default tabindex. A disabled control is focusable by
+// neither route.
 function isFocusableArea(element: Element): boolean {
 	if (isActuallyDisabled(element)) {
 		return false;
@@ -12936,12 +12933,13 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 	});
 }
 
-// Written out rather than picked. A computed projection satisfies keyof
-// but not assignability, and assignability is what this is for.
 // The HTML Standard's element interfaces, each filled in from the table.
 // The reflecting members come from `reflectionsOf`. Members that are
 // not reflections are written in the class body. A class with an empty
 // body only reflects, which is all its interface does.
+
+// Written out rather than picked. A computed projection satisfies keyof
+// but not assignability, and assignability is what this is for.
 class HTMLAnchorElement extends HTMLElement {
 	declare toString: () => string;
 	declare hash: string;
@@ -22717,7 +22715,6 @@ export class Document extends Node implements globalThis.Document {
 		return parseHTMLDocument(String(html), "about:blank", true, null);
 	}
 
-	/** The window always has the system focus. */
 	// lib.dom's overloads for this interface: the keyed one first.
 	override addEventListener<K extends keyof globalThis.DocumentEventMap>(
 		type: K,
@@ -22755,6 +22752,7 @@ export class Document extends Node implements globalThis.Document {
 		super.removeEventListener(type, listener, options);
 	}
 
+	/** The window always has the system focus. */
 	hasFocus(): boolean {
 		return true;
 	}
@@ -24674,6 +24672,9 @@ function registerNodeIterator(treeRoot: Node, iterator: NodeIterator): void {
 let liveRangesEver = 0;
 
 const kStartNode = Symbol("range start node");
+const kStartOffset = Symbol("range start offset");
+const kEndNode = Symbol("range end node");
+const kEndOffset = Symbol("range end offset");
 
 function rehomeLiveRange(range: Range, oldRoot: Node): void {
 	const newRoot = getRoot(range[kStartNode]);
@@ -24701,10 +24702,6 @@ function forEachLiveRange(context: Node, steps: (range: Range) => void): void {
 		steps(range);
 	}
 }
-
-const kStartOffset = Symbol("range start offset");
-const kEndNode = Symbol("range end node");
-const kEndOffset = Symbol("range end offset");
 
 // A node inserted before a child shifts every boundary point in the
 // parent that is past that child.
@@ -29541,6 +29538,7 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 }
 
 // State an attached document accepts only from its engine.
+
 // Re-evaluators called when the viewport changes. The lists belong to
 // this module. The resize path is the one place a terminal viewport
 // changes, so the engine decides when to call them.
@@ -30456,7 +30454,9 @@ function noNavigation(): DOMException {
 // window exists only when attached (a headless document has none), so the
 // members below may expect a mount, and degrade the way the document's own do
 // without one: a viewport of no size, a document scroll at the origin, a query
-// that matches nothing. Keyed by the handle requestAnimationFrame returned, so
+// that matches nothing.
+
+// Keyed by the handle requestAnimationFrame returned, so
 // cancelAnimationFrame can cancel. The engine fires them once the frame
 // containing their pending mutations has been written.
 const frameCallbacks = new WeakMap<
@@ -30617,9 +30617,6 @@ export interface Window {
 	[kWindowStatus]: string;
 	[kIdleTimers]: Map<number, ReturnType<typeof setTimeout>>;
 	[kNextIdleHandle]: number;
-
-	// An overload with the host's event type, so a caller holding a Window
-	// can dispatch a platform event as it would to any EventTarget.
 }
 
 export class Window extends EventTarget {
@@ -30629,6 +30626,8 @@ export class Window extends EventTarget {
 		pseudoElement?: string | null,
 	) => globalThis.CSSStyleDeclaration;
 
+	// An overload with the host's event type, so a caller holding a Window
+	// can dispatch a platform event as it would to any EventTarget.
 	declare dispatchEvent: (event: globalThis.Event) => boolean;
 	declare readonly window: Window;
 	declare readonly self: Window;

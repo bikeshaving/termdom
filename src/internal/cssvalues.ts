@@ -354,7 +354,6 @@ export function serializeCSSString(text: string): string {
 	return `"${text.replace(/[\\"]/g, "\\$&")}"`;
 }
 
-// The same result CSS.escape produces.
 // An animation's name is a <custom-ident> or a <string>. The words a
 // <custom-ident> excludes (the CSS-wide keywords and `none`, which
 // animation-name uses for "no animation") are written as strings.
@@ -365,6 +364,7 @@ export function serializeKeyframesName(name: string): string {
 		: serializeCSSIdentifier(name);
 }
 
+// The same result CSS.escape produces.
 export function serializeCSSIdentifier(value: string): string {
 	const text = String(value);
 	let out = "";
@@ -766,12 +766,14 @@ export function parseLinearGradient(value: string): Gradient | null {
 }
 
 const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
+
 const EDGES = ["top", "right", "bottom", "left"] as const;
 
 const AXIS_ENDS = ["start", "end"] as const;
 
 const CORNERS =
 	["top-left", "top-right", "bottom-right", "bottom-left"] as const;
+
 const LIST_STYLE_POSITIONS = new Set(["inside", "outside"]);
 
 // CSS 1-4 expansion: [all], [v h], [t h b], [t r b l]. Corners expand
@@ -1801,6 +1803,8 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	order: "0",
 };
 
+// A property this engine does not lay out still resolves to an initial
+// value.
 export function getInitialValue(property: string): string {
 	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
 }
@@ -1821,11 +1825,11 @@ export function isInheritedProperty(property: string): boolean {
 	return property.startsWith("--") || INHERITED_PROPERTIES.has(property);
 }
 
+export type UnitValue = number | {percentage: number} | null;
+
 // The unit collapses to the count (px and ch both measure one cell), and
 // a percentage keeps its mark for the caller to resolve against a basis.
-function getLeadingUnitValue(
-	value: string,
-): number | {percentage: number} | null {
+function getLeadingUnitValue(value: string): UnitValue {
 	const nodes = value ? getCSSValueChildren(value.trim()) : null;
 	const node = nodes?.[0];
 	if (!node) {
@@ -1857,6 +1861,13 @@ export function parseUnitValue(
 		? parsed
 		: parsed !== null ? parsed.percentage : null;
 	return number !== null && number < 0 ? null : parsed;
+}
+
+/** Lengths that may be negative. Margins (and offsets) keep the sign. */
+export function parseSignedUnitValue(
+	value: string,
+): ReturnType<typeof parseUnitValue> {
+	return getLeadingUnitValue(value ?? "");
 }
 
 const ANGLE_DEGREES: Record<string, number> = {
@@ -1912,8 +1923,6 @@ export function parseEdgeLengths(
 		parseSignedUnitValue(left),
 	];
 }
-
-export type UnitValue = number | {percentage: number} | null;
 
 /**
  * The alignment keyword without its qualifier: `safe center` and
@@ -2000,13 +2009,6 @@ export interface BoxModel {
 	borderRightWidth: number;
 	borderBottomWidth: number;
 	borderLeftWidth: number;
-}
-
-/** Lengths that may be negative. Margins (and offsets) keep the sign. */
-export function parseSignedUnitValue(
-	value: string,
-): ReturnType<typeof parseUnitValue> {
-	return getLeadingUnitValue(value ?? "");
 }
 
 /**
@@ -2125,15 +2127,15 @@ export function isValidDeclaration(
 	);
 }
 
-// A declaration is parsed once for every element that declares it, and
-// the same handful of values recur across a whole document.
-const grammarMatches = new Map<string, boolean>();
-
 const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
 
 export function isSupportedProperty(property: string): boolean {
 	return property.startsWith("--") || SUPPORTED_PROPERTIES.has(property);
 }
+
+// A declaration is parsed once for every element that declares it, and
+// the same handful of values recur across a whole document.
+const grammarMatches = new Map<string, boolean>();
 
 // A value that does not match its grammar is not a declaration at all.
 // `color: notacolor` is a no-op, not a value. A value with a
@@ -2688,12 +2690,6 @@ export function getDeclaredName(
 	return winner;
 }
 
-export interface CSSDeclaration {
-	name: string;
-	value: string;
-	important: boolean;
-}
-
 const LINE_COMPONENTS = ["width", "style", "color"] as const;
 
 // One table per inline direction (css-logical-1 §2). This engine
@@ -2836,18 +2832,18 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 	// slash rather than one value per corner.
 	const radius =
 		box !== null && indexed.every((longhand) => longhand.endsWith("-radius"));
+	// The grid shorthands write their components around slashes, which no
+	// other shorthand's grammar does. A `border` shape states a width, a
+	// style and a color once for several sides: four for `border`, the
+	// axis's two for `border-block` and `border-inline`.
 	SHORTHAND_SHAPES.set(
 		shorthand,
-		// The grid shorthands write their components around slashes, which no
-		// other shorthand's grammar does.
 		GRID_LINE_SHORTHANDS.has(shorthand)
 			? "grid-line"
 			: shorthand === "grid" || shorthand === "grid-template"
 				? "grid-template"
 				: box
-					? radius ? "radius" : "box" // A width, a style and a color stated once for several sides:
-				// Four for `border`, the axis's two for `border-block` and
-				// `border-inline`.
+					? radius ? "radius" : "box"
 					: indexed.length >= 2 * LINE_COMPONENTS.length &&
 						LINE_COMPONENTS.every((kind) =>
 							indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
@@ -2880,16 +2876,6 @@ function axisPair(shorthand: string, longhands: readonly string[]): boolean {
 // longhands as.
 const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 
-/** A shorthand's longhands in grammar order, or undefined for a longhand. */
-export function getLonghands(shorthand: string): readonly string[] | undefined {
-	return SHORTHAND_LONGHANDS.get(shorthand);
-}
-
-/** The shorthands that cover a longhand, widest first. */
-export function getShorthands(longhand: string): readonly string[] {
-	return LONGHAND_SHORTHANDS.get(longhand) ?? [];
-}
-
 {
 	const byLonghand = new Map<string, string[]>();
 	for (const [shorthand, longhands] of SHORTHAND_LONGHANDS) {
@@ -2911,6 +2897,16 @@ export function getShorthands(longhand: string): readonly string[] {
 		);
 		LONGHAND_SHORTHANDS.set(longhand, shorthands);
 	}
+}
+
+/** A shorthand's longhands in grammar order, or undefined for a longhand. */
+export function getLonghands(shorthand: string): readonly string[] | undefined {
+	return SHORTHAND_LONGHANDS.get(shorthand);
+}
+
+/** The shorthands that cover a longhand, widest first. */
+export function getShorthands(longhand: string): readonly string[] {
+	return LONGHAND_SHORTHANDS.get(longhand) ?? [];
 }
 
 function supportsCondition(text: string): boolean {
@@ -3308,6 +3304,12 @@ export function camelCaseProperty(
 	);
 }
 
+export interface CSSDeclaration {
+	name: string;
+	value: string;
+	important: boolean;
+}
+
 export function parseDeclarationText(text: string): CSSDeclaration[] {
 	const declarations: CSSDeclaration[] = [];
 	let depth = 0;
@@ -3362,6 +3364,10 @@ export function parseDeclarationText(text: string): CSSDeclaration[] {
 	return declarations;
 }
 
+// A legacy name that is the same property under its standard name, so a
+// declaration made through it serializes as the standard one.
+const LEGACY_PROPERTY_ALIASES = new Map([["-webkit-line-clamp", "line-clamp"]]);
+
 // Custom properties keep their case. Everything else is
 // ASCII-lowercased.
 export function normalizePropertyName(property: string): string {
@@ -3372,10 +3378,6 @@ export function normalizePropertyName(property: string): string {
 	const lower = name.toLowerCase();
 	return LEGACY_PROPERTY_ALIASES.get(lower) ?? lower;
 }
-
-// A legacy name that is the same property under its standard name, so a
-// declaration made through it serializes as the standard one.
-const LEGACY_PROPERTY_ALIASES = new Map([["-webkit-line-clamp", "line-clamp"]]);
 
 // Escapes in a custom property's name spell characters that could not
 // otherwise appear. The source `--a\;b` names the property `--a;b`.
@@ -3502,12 +3504,6 @@ function serializeMediaQueryText(text: string): string {
 // authored text at them.
 const mediaQueryNodes = new Map<string, CSSTree.MediaQueryNode[] | null>();
 
-export function getMediaConditionParts(
-	condition: CSSTree.MediaConditionNode | null | undefined,
-): CSSTree.MediaConditionNode[] {
-	return condition?.children ? condition.children.toArray() : [];
-}
-
 export function parseMediaQueryList(
 	text: string,
 ): CSSTree.MediaQueryNode[] | null {
@@ -3528,6 +3524,12 @@ export function parseMediaQueryList(
 		mediaQueryNodes.set(text, queries);
 	}
 	return queries;
+}
+
+export function getMediaConditionParts(
+	condition: CSSTree.MediaConditionNode | null | undefined,
+): CSSTree.MediaConditionNode[] {
+	return condition?.children ? condition.children.toArray() : [];
 }
 
 // The spelling CSSOM writes: names case-folded, and the media type
@@ -3809,6 +3811,10 @@ export function getScopeLimits(prelude: string): {
 	return {start: sliceOf(scope?.root), end: sliceOf(scope?.limit)};
 }
 
+function serializeIdentifierSource(name: string): string {
+	return serializeCSSIdentifier(CSSTree.ident.decode(name));
+}
+
 function serializeQualifiedName(
 	name: string,
 	namespaces: SelectorNamespaces | undefined,
@@ -4068,6 +4074,11 @@ function harvestKeys(nodes: CSSTree.SelectorNode[], keys: CompoundKeys): void {
 	}
 }
 
+// Selectors whose match on one element depends on its siblings or its
+// children: the sibling combinators, the tree-structural pseudo-classes
+// and :empty.
+const SIBLING_SELECTOR = /[+~]|:(?:nth-|first-|last-|only-|empty)/;
+
 // A selector this parser cannot read weighs nothing. The matcher reads
 // a wider grammar and may still accept it, and a rule whose weight
 // cannot be counted should lose a tie. It anchors to no type and names
@@ -4150,10 +4161,6 @@ function getSubjectTag(
 		return undefined;
 	}
 	return CSSTree.ident.decode(name).toLowerCase();
-}
-
-function serializeIdentifierSource(name: string): string {
-	return serializeCSSIdentifier(CSSTree.ident.decode(name));
 }
 
 export function serializeSelectorList(
@@ -4487,6 +4494,10 @@ const BLOCKIFIED_DISPLAYS: Record<string, string> = {
 	"inline-table": "table",
 };
 
+export function getBlockifiedDisplay(display: string): string {
+	return BLOCKIFIED_DISPLAYS[display] ?? display;
+}
+
 // Null for `auto`, which is not a length but an instruction to
 // measure.
 export function getInsetLength(computed: string, basis: number): number | null {
@@ -4665,18 +4676,6 @@ export function compileSelectors(
 		}
 	}
 	return compiled;
-}
-
-export interface CounterScope {
-	element: Element;
-	counters: {[counterName: string]: number};
-	parent?: CounterScope;
-}
-
-const SIBLING_SELECTOR = /[+~]|:(?:nth-|first-|last-|only-|empty)/;
-
-export function getBlockifiedDisplay(display: string): string {
-	return BLOCKIFIED_DISPLAYS[display] ?? display;
 }
 
 // CSS transitions (css-transitions-1): started at style change events,
@@ -5165,6 +5164,12 @@ export function mediaComparison(
 		default:
 			return true;
 	}
+}
+
+export interface CounterScope {
+	element: Element;
+	counters: {[counterName: string]: number};
+	parent?: CounterScope;
 }
 
 // Each identifier opens a pair. A counter written without a number

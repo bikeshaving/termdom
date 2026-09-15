@@ -776,15 +776,6 @@ function styleLayoutNode(
 	layoutNode.invalidate();
 }
 
-// The computed values that shape text measurement without being part of
-// the style record, joined, so a restyle can tell whether the measurement
-// is still good.
-function getMeasureKey(element: Element): string {
-	return MEASURE_PROPERTIES.map((property) =>
-		getComputedValue(element, property),
-	).join("|");
-}
-
 // What the run measurer reads beyond the style record: the properties
 // that decide where text breaks and how wide it is.
 const MEASURE_PROPERTIES = [
@@ -800,6 +791,15 @@ const MEASURE_PROPERTIES = [
 	"list-style-type",
 	"list-style-position",
 ];
+
+// The computed values that shape text measurement without being part of
+// the style record, joined, so a restyle can tell whether the measurement
+// is still good.
+function getMeasureKey(element: Element): string {
+	return MEASURE_PROPERTIES.map((property) =>
+		getComputedValue(element, property),
+	).join("|");
+}
 
 // Fills a fresh record, so a property the element no longer declares
 // falls back to its initial value rather than to the last restyle's.
@@ -5508,8 +5508,6 @@ function getOffsetInFragment(
 	};
 }
 
-// The text is included because the only way to restyle a cell is to
-// redraw its glyph.
 // The cluster boundaries of a string: where the cluster holding an
 // index starts, and where the first cluster at or after an index starts.
 function getClusterStarts(text: string): {
@@ -5542,6 +5540,8 @@ function getClusterStarts(text: string): {
 	};
 }
 
+// The text is included because the only way to restyle a cell is to
+// redraw its glyph.
 function getSelectionSpans(
 	layout: Layout,
 	textNode: Text,

@@ -184,11 +184,11 @@ export class TermDOM {
 			}
 			closeTermDOM(this);
 		});
-		// A page can dispatch an event of the same name on the document.
-		// Only the exchange's own reach these.
 
-		// document.close(): flush the document into the scrollback and seal
-		// it. The next mutation starts a fresh one below it.
+		// A page can dispatch an event of the same name on the document.
+		// Only the exchange's own reach these. document.close() flushes the
+		// document into the scrollback and seals it. The next mutation
+		// starts a fresh one below it.
 		exchange.addEventListener("seal", (event) => {
 			if (
 				event.target === exchange && isAttached(this) && this[kRenderCount] > 0
@@ -412,7 +412,6 @@ function syncMouseReporting(termDOM: TermDOM): void {
 	termDOM[kExchange].setDisplayType("mouseCapture", wanted);
 }
 
-/** Whether anything in the document can observe pointer hover right now. */
 /**
  * Motion reporting (1003) sends a report per cell the pointer crosses, so
  * it is on only while capture is on and something observes hover.

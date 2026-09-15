@@ -272,41 +272,6 @@ export interface CellStyle {
 	overline?: boolean;
 }
 
-function packAttrs(style: CellStyle | undefined): number {
-	if (!style) {
-		return 0;
-	}
-	let attrs = 0;
-	if (style.bold) {
-		attrs |= ATTR.Bold;
-	}
-	if (style.italic) {
-		attrs |= ATTR.Italic;
-	}
-	if (style.underline) {
-		attrs |= ATTR.Underline;
-		if (style.underlineStyle === "double") {
-			attrs |= ATTR.DoubleUnderline;
-		}
-	}
-	if (style.strikethrough) {
-		attrs |= ATTR.Strikethrough;
-	}
-	if (style.overline) {
-		attrs |= ATTR.Overline;
-	}
-	if (style.inverse) {
-		attrs |= ATTR.Inverse;
-	}
-	if (style.blink) {
-		attrs |= ATTR.Blink;
-	}
-	if (style.dim) {
-		attrs |= ATTR.Dim;
-	}
-	return attrs;
-}
-
 interface TextMetrics {
 	width: number;
 }
@@ -346,6 +311,41 @@ const ATTR = {
 	WidthMask: 0x1f << 9,
 	WidthWide: 0x1f,
 } as const;
+
+function packAttrs(style: CellStyle | undefined): number {
+	if (!style) {
+		return 0;
+	}
+	let attrs = 0;
+	if (style.bold) {
+		attrs |= ATTR.Bold;
+	}
+	if (style.italic) {
+		attrs |= ATTR.Italic;
+	}
+	if (style.underline) {
+		attrs |= ATTR.Underline;
+		if (style.underlineStyle === "double") {
+			attrs |= ATTR.DoubleUnderline;
+		}
+	}
+	if (style.strikethrough) {
+		attrs |= ATTR.Strikethrough;
+	}
+	if (style.overline) {
+		attrs |= ATTR.Overline;
+	}
+	if (style.inverse) {
+		attrs |= ATTR.Inverse;
+	}
+	if (style.blink) {
+		attrs |= ATTR.Blink;
+	}
+	if (style.dim) {
+		attrs |= ATTR.Dim;
+	}
+	return attrs;
+}
 
 // At or above this a char-plane value indexes internedGraphemes. Below
 // it the value is the code point. Zero is the empty cell.
@@ -438,14 +438,6 @@ function getEdgeRounded(edgeValue: number): boolean {
 	return (edgeValue & BORDER_EDGE_STYLE.Rounded) !== 0;
 }
 
-/**
- * A border line: the CSS keyword and its color, or the terminal's
- * default foreground when absent. A cap says how an end finishes. By
- * default it stops at the end cell's center, so another line's
- * half-stroke joins with it into a corner or a tee. "square" projects
- * through the cell for a free end. "round" curves the glyph where two
- * capped ends meet.
- */
 export const LINE_STYLES = [
 	"solid",
 	"double",
@@ -458,6 +450,14 @@ export const LINE_STYLES = [
 	"hidden",
 ] as const;
 
+/**
+ * A border line: the CSS keyword and its color, or the terminal's
+ * default foreground when absent. A cap says how an end finishes. By
+ * default it stops at the end cell's center, so another line's
+ * half-stroke joins with it into a corner or a tee. "square" projects
+ * through the cell for a free end. "round" curves the glyph where two
+ * capped ends meet.
+ */
 export interface LineStyle {
 	style: (typeof LINE_STYLES)[number];
 	color?: number | null;

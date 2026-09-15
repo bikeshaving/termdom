@@ -221,11 +221,11 @@ function getSequentialFocusEntries(
 	return buildScope(roots, null);
 }
 
+const kDocument = Symbol("document");
+const kWindow = Symbol("window");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kScreen = Symbol("screen");
-
-const kDocument = Symbol("document");
 
 // The nearest scroll container (overflow auto or scroll; hidden does
 // not take the wheel) that can still move in the tick's direction, or
@@ -268,7 +268,6 @@ function getWheelScroller(
 	return null;
 }
 
-const kWindow = Symbol("window");
 const kLastMouse = Symbol("lastMouse");
 const kPendingHover = Symbol("pendingHover");
 const kHoverElement = Symbol("hoverElement");

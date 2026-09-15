@@ -408,6 +408,34 @@ function hasEmptySelector(text: string): boolean {
 	return empty(text.length);
 }
 
+interface CompileOptions {
+
+	// Null leaves the prefixes unresolved: the selector is checked for
+	// shape and every prefix is accepted. A grammar check wants that; a
+	// match does not.
+	namespaces?: SelectorNamespaces | null;
+
+	// The DOM's own query methods accept `a::before` and match nothing with
+	// it. The cascade, which matches `::slotted()` and `::part()` for real,
+	// sets this.
+	pseudoElements?: boolean;
+
+	// Allow the selector to open with a combinator, as `@scope` does.
+	relative?: boolean;
+
+	// `&` is allowed inside a style rule and nowhere else. It selects
+	// nothing on its own; the rule it is nested in gives it something to
+	// refer to.
+	nesting?: boolean;
+}
+
+interface Compiling {
+	namespaces: SelectorNamespaces | null;
+	pseudoElements: boolean;
+	nesting: boolean;
+	nested?: boolean;
+}
+
 // Checks shape only. A prefix means whatever the sheet declares, which
 // is not this check's concern, and `&` is allowed where a rule encloses
 // it.
@@ -473,34 +501,6 @@ export function parseSelectorList(text: string): CSSTree.SelectorNode | null {
 	return list;
 }
 
-interface CompileOptions {
-
-	// Null leaves the prefixes unresolved: the selector is checked for
-	// shape and every prefix is accepted. A grammar check wants that; a
-	// match does not.
-	namespaces?: SelectorNamespaces | null;
-
-	// The DOM's own query methods accept `a::before` and match nothing with
-	// it. The cascade, which matches `::slotted()` and `::part()` for real,
-	// sets this.
-	pseudoElements?: boolean;
-
-	// Allow the selector to open with a combinator, as `@scope` does.
-	relative?: boolean;
-
-	// `&` is allowed inside a style rule and nowhere else. It selects
-	// nothing on its own; the rule it is nested in gives it something to
-	// refer to.
-	nesting?: boolean;
-}
-
-interface Compiling {
-	namespaces: SelectorNamespaces | null;
-	pseudoElements: boolean;
-	nesting: boolean;
-	nested?: boolean;
-}
-
 function compileList(
 	list: CSSTree.SelectorNode,
 	options: CompileOptions,
@@ -526,6 +526,18 @@ function compileList(
 	}
 	return {list: compiled};
 }
+
+// The compound a relative selector hangs from: the element `:has()` was
+// asked about.
+const ANCHOR_COMPOUND: CompiledCompound = {
+	tests: [
+		(element: Element, state: MatchState): boolean =>
+			element === state.anchor,
+	],
+	origin: null,
+	originTests: [],
+	host: false,
+};
 
 function compileComplex(
 	selector: CSSTree.SelectorNode,
@@ -574,18 +586,6 @@ function compileComplex(
 	compounds.push(compileCompound(pending, compiling));
 	return {compounds, combinators};
 }
-
-// The compound a relative selector hangs from: the element `:has()` was
-// asked about.
-const ANCHOR_COMPOUND: CompiledCompound = {
-	tests: [
-		(element: Element, state: MatchState): boolean =>
-			element === state.anchor,
-	],
-	origin: null,
-	originTests: [],
-	host: false,
-};
 
 function compileCompound(
 	parts: CSSTree.SelectorNode[],

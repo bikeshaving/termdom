@@ -98,9 +98,6 @@ function getInitialStyle(element: Element | null, property: string): string {
 	if (elementDefaults && elementDefaults[property]) {
 		return elementDefaults[property];
 	}
-
-	// A property this engine does not lay out still resolves to an initial
-	// value.
 	return CSSValues.getInitialValue(property);
 }
 
@@ -207,6 +204,18 @@ function isListItem(element: Element): boolean {
 
 function getListItems(listParent: Element): Element[] {
 	return Array.from(listParent.children).filter(isListItem);
+}
+
+function getListNestingDepth(element: Element): number {
+	let depth = 0;
+	for (
+		let parent = element.parentElement; parent; parent = parent.parentElement
+	) {
+		if (parent.tagName === "UL" || parent.tagName === "OL") {
+			depth++;
+		}
+	}
+	return depth;
 }
 
 /** Lists whose gutter is being measured, to stop re-entrant computation. */
@@ -2863,6 +2872,7 @@ const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
 
 const kSyncShadowRoot = Symbol("syncShadowRoot");
 
+// A bare fragment is a document fragment too and hosts nothing, which
 // is what separates it from a tree some element composes.
 function isShadowRoot(root: Node): root is ShadowRoot {
 	return root.nodeType === 11 && (root as ShadowRoot).host !== undefined;
@@ -2889,6 +2899,12 @@ function getSheet(element: Element): CSSStyleSheet {
 		elementSheets.set(element, sheet);
 	}
 	return sheet;
+}
+
+// A <style>'s child list IS its stylesheet. Changing it replaces the
+// rules even when the resulting text is the same.
+function reparseOwnerText(sheet: CSSStyleSheet): void {
+	sheet[kText] = null;
 }
 
 // What `styleSheets` lists. An adopted sheet belongs to no element and
@@ -3152,6 +3168,8 @@ interface ComputedStyleDeclaration {
 	[kCustom]: string[] | null;
 }
 
+// Writing a computed style is an error, not a no-op. It throws the
+// document's own DOMException, since one from another global is not
 // what an author catches.
 function readOnlyDeclaration(element?: Element): DOMException {
 	const document = element ? element.ownerDocument : null;
@@ -3902,7 +3920,6 @@ function substituteVar(
 		}
 		// Neither a value nor a fallback: the guaranteed-invalid value. Omit
 		// it, which approximates the property's own initial/inherited fallback.
-
 		i = j;
 	}
 	return out;
@@ -3939,18 +3956,6 @@ function resolvePropertyValue(
 			: declaration.getComputedValue("color");
 	}
 	return value;
-}
-
-function getListNestingDepth(element: Element): number {
-	let depth = 0;
-	for (
-		let parent = element.parentElement; parent; parent = parent.parentElement
-	) {
-		if (parent.tagName === "UL" || parent.tagName === "OL") {
-			depth++;
-		}
-	}
-	return depth;
 }
 
 function resolvePropertyValueRaw(
@@ -4679,8 +4684,6 @@ function shouldCreatePseudoElement(
 	return !!(content && content !== "none" && content !== "normal");
 }
 
-const kCounterScopes = Symbol("counterScopes");
-
 // The pseudo-elements this engine gives a node of their own.
 const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
 
@@ -4738,6 +4741,7 @@ const kHoverRulesExist = Symbol("hoverRulesExist");
 const kLayerPaths = Symbol("layerPaths");
 const kAnonymousLayers = Symbol("anonymousLayers");
 const kUnlayeredRank = Symbol("unlayeredRank");
+const kCounterScopes = Symbol("counterScopes");
 const kTransitionSnapshots = Symbol("transitionSnapshots");
 const kTransitionFallback = Symbol("transitionFallback");
 const kTransitionClock = Symbol("transitionClock");
@@ -4878,6 +4882,9 @@ function isStyleElement(element: Element): boolean {
 	);
 }
 
+// The list's padding-left is a function of its items' markers and
+// their ordinals. Only the NEAREST list is affected.
+// TODO(box-tree): the gutter is a layout question answered here in the
 // cascade. Computing it during block layout deletes this.
 function mutationChangesListItems(mutation: MutationRecord): boolean {
 	const target = mutation.target;
@@ -5667,21 +5674,6 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	}
 }
 
-function invalidateElement(cascade: Cascade, element: Element): void {
-	// A computed style an author still holds is the one this cache handed
-	// out, so it is told the cascade changed rather than merely dropped.
-	const dropped = cascade[kComputedStyleCache].get(element);
-	if (dropped) {
-		cascade[kCurrentDeclarations].delete(dropped);
-		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
-	}
-	cascade[kComputedStyleCache].delete(element);
-	cascade[kPseudoElementStyleCache].delete(element);
-	// A style change can flip display: contents, which moves the node's
-	// flat-tree BOX parent, so every box enumeration is stale.
-	cascade[kLayout].invalidateFrame();
-}
-
 // The parent's scope is read, never built. Building it recursively up a
 // deep tree is what this avoids.
 // Built on first read, not on invalidation: a counter's value depends
@@ -5752,10 +5744,72 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 	}
 }
 
-// A <style>'s child list IS its stylesheet. Changing it replaces the
-// rules even when the resulting text is the same.
-function reparseOwnerText(sheet: CSSStyleSheet): void {
-	sheet[kText] = null;
+function parseCounterIncrement(
+	cascade: Cascade,
+	scope: CSSValues.CounterScope,
+	counterIncrement: string,
+): void {
+	for (const [name, increment] of CSSValues.getCounterPairs(
+		counterIncrement,
+		1,
+	)) {
+		incrementCounter(cascade, scope, name, increment);
+	}
+}
+
+function incrementCounter(
+	cascade: Cascade,
+	scope: CSSValues.CounterScope,
+	counterName: string,
+	increment: number,
+): void {
+	// A list item counts from the item before it, not from its scope.
+	// Siblings share one list, and each scope only ever holds its own
+	// element's value.
+	if (counterName === "list-item" && scope.element.tagName === "LI") {
+		const currentValue = getListItemCounterValue(cascade, scope.element);
+		scope.counters[counterName] = currentValue + increment;
+	} else {
+		const currentValue = CSSValues.getCounterValueInScope(
+			scope.parent,
+			counterName,
+		);
+		scope.counters[counterName] = currentValue + increment;
+	}
+}
+
+// The list's start value plus the items before this one. Siblings
+// share one counter, and each scope holds only its own element's value.
+function getListItemCounterValue(cascade: Cascade, element: Element): number {
+	let parent = element.parentElement;
+	while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
+		parent = parent.parentElement;
+	}
+
+	if (!parent) {
+		return 0;
+	}
+
+	// Items initialize in document order, so the nearest earlier item that
+	// has a scope already holds the count up to itself. Counting from the
+	// list's start for every item made a long list quadratic.
+	let uncounted = 0;
+	for (
+		let previous = element.previousElementSibling;
+		previous !== null;
+		previous = previous.previousElementSibling
+	) {
+		if (previous.tagName !== "LI") {
+			continue;
+		}
+		const scope = cascade[kCounterScopes].get(previous as Element);
+		if (scope !== undefined && "list-item" in scope.counters) {
+			return scope.counters["list-item"] + uncounted;
+		}
+		uncounted++;
+	}
+	const parentScope = cascade[kCounterScopes].get(parent);
+	return (parentScope?.counters["list-item"] ?? 0) + uncounted;
 }
 
 function getUsedValues(
@@ -5774,6 +5828,7 @@ function dropUsedValues(cascade: Cascade, declaration: object): void {
 	cascade[kUsedValues].delete(declaration);
 }
 
+// In a document, and reachable through the flat tree it composes. A
 // light-DOM child its host never slots has no computed style to report.
 function isBeingRendered(element: Element): boolean {
 	// Walk out through every shadow root the element is under. A tree whose
@@ -6272,6 +6327,21 @@ function invalidateSubtree(
 			invalidateSubtree(cascade, descendant);
 		}
 	}
+}
+
+function invalidateElement(cascade: Cascade, element: Element): void {
+	// A computed style an author still holds is the one this cache handed
+	// out, so it is told the cascade changed rather than merely dropped.
+	const dropped = cascade[kComputedStyleCache].get(element);
+	if (dropped) {
+		cascade[kCurrentDeclarations].delete(dropped);
+		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
+	}
+	cascade[kComputedStyleCache].delete(element);
+	cascade[kPseudoElementStyleCache].delete(element);
+	// A style change can flip display: contents, which moves the node's
+	// flat-tree BOX parent, so every box enumeration is stale.
+	cascade[kLayout].invalidateFrame();
 }
 
 function invalidateElementCaches(
@@ -7465,74 +7535,6 @@ function setupInvalidationHooks(cascade: Cascade): void {
 	Object.assign(cascade[kWindow], CSSOM_WINDOW_GLOBALS, {
 		CSS: createCSSNamespace(cascade[kDocument]),
 	});
-}
-
-function parseCounterIncrement(
-	cascade: Cascade,
-	scope: CSSValues.CounterScope,
-	counterIncrement: string,
-): void {
-	for (const [name, increment] of CSSValues.getCounterPairs(
-		counterIncrement,
-		1,
-	)) {
-		incrementCounter(cascade, scope, name, increment);
-	}
-}
-
-function incrementCounter(
-	cascade: Cascade,
-	scope: CSSValues.CounterScope,
-	counterName: string,
-	increment: number,
-): void {
-	// A list item counts from the item before it, not from its scope.
-	// Siblings share one list, and each scope only ever holds its own
-	// element's value.
-	if (counterName === "list-item" && scope.element.tagName === "LI") {
-		const currentValue = getListItemCounterValue(cascade, scope.element);
-		scope.counters[counterName] = currentValue + increment;
-	} else {
-		const currentValue = CSSValues.getCounterValueInScope(
-			scope.parent,
-			counterName,
-		);
-		scope.counters[counterName] = currentValue + increment;
-	}
-}
-
-// The list's start value plus the items before this one. Siblings
-// share one counter, and each scope holds only its own element's value.
-function getListItemCounterValue(cascade: Cascade, element: Element): number {
-	let parent = element.parentElement;
-	while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
-		parent = parent.parentElement;
-	}
-
-	if (!parent) {
-		return 0;
-	}
-
-	// Items initialize in document order, so the nearest earlier item that
-	// has a scope already holds the count up to itself. Counting from the
-	// list's start for every item made a long list quadratic.
-	let uncounted = 0;
-	for (
-		let previous = element.previousElementSibling;
-		previous !== null;
-		previous = previous.previousElementSibling
-	) {
-		if (previous.tagName !== "LI") {
-			continue;
-		}
-		const scope = cascade[kCounterScopes].get(previous as Element);
-		if (scope !== undefined && "list-item" in scope.counters) {
-			return scope.counters["list-item"] + uncounted;
-		}
-		uncounted++;
-	}
-	const parentScope = cascade[kCounterScopes].get(parent);
-	return (parentScope?.counters["list-item"] ?? 0) + uncounted;
 }
 
 /** The element's inline style declaration, one per element for its lifetime. */
