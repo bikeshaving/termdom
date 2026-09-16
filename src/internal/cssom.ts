@@ -4386,6 +4386,24 @@ function getBoxView(
 	return view;
 }
 
+// A transitioning value reaches the element's descendants through
+// inheritance, so the subtree under each transitioning element is what
+// the style cache cannot hold.
+function isTransitioning(cascade: Cascade, element: Element): boolean {
+	const active = cascade[kActiveTransitions];
+	if (active.size === 0) {
+		return false;
+	}
+	for (let node: Element | null = element;
+		node;
+		node = flatParentElement(node)) {
+		if (active.has(node)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // A declaration of nothing, which CSSOM specifies for a bad pseudo
 // argument.
 interface EmptyStyleDeclaration {
@@ -5271,7 +5289,7 @@ export class Cascade {
 	 * changes. Null for a pseudo-element and while a transition runs.
 	 */
 	styleKeyOf(element: Element): object | null {
-		if (this[kActiveTransitions].size > 0 || getPseudoHost(element) !== null) {
+		if (getPseudoHost(element) !== null || isTransitioning(this, element)) {
 			return null;
 		}
 		const declaration = this.declarationFor(element);

@@ -1110,7 +1110,7 @@ function styleNode(
 // `node` is a DOM node's principal box. `anonymous` is one contiguous
 // run of inline-level flow children of a block container (CSS2
 // §9.2.1.1), belonging to no DOM node at all.
-export type BoxKind = "node" | "anonymous";
+type BoxKind = "node" | "anonymous";
 
 // A box either is LAID OUT (it has a layout node the solver sized) or
 // is a run MEMBER whose geometry lives in the break result of the run
@@ -2503,12 +2503,12 @@ export interface InlineBlockLeaf {
 	contentHeight: number;
 }
 
-export type Leaf =
+type Leaf =
 	InlineBlockLeaf |
 	{type: "text"; node: Text; content: string} |
 	{type: "br"; node: HTMLBRElement};
 
-export interface LineResult {
+interface LineResult {
 	segments: Array<
 		{
 			leaf: Leaf;
@@ -4249,27 +4249,6 @@ export class Layout {
 	// own, and no layer would ever paint it, so it stays with its run.
 	hoistedToLayer(element: Element): boolean {
 		return isPositioned(element) && this[kPositionedElements].has(element);
-	}
-
-	// Conservative. An element without a layout node is never culled, and
-	// extents are recomputed with layout, so a stale result is impossible.
-	isSubtreeOutsideViewport(
-		element: Element,
-		top: number,
-		bottom: number,
-	): boolean {
-		const node = this[kNodeMap].get(element) ?? runLayoutNode(this, element);
-		if (!node) {
-			return false;
-		}
-		const extent = extents.get(node);
-		if (extent !== undefined && extent.bottom > top && extent.top < bottom) {
-			return false;
-		}
-		// A broken inline paints boxes outside its own layout subtree, so its
-		// extent says nothing about them. Culling by its zero-height first
-		// fragment rendered <a href><div>card</div></a> empty.
-		return !this[kBoxes].get(element)?.broken;
 	}
 
 	// The children whose paint extent could intersect rows [top, bottom),
