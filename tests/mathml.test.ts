@@ -436,6 +436,158 @@ test("merror draws a red border in display mode", async () => {
 	);
 });
 
+test("an operator's form comes from its position unless form says otherwise", async () => {
+	expect(
+		await renderLines(inline("<mo form=\"infix\">-</mo><mi>x</mi>")),
+	).toEqual(
+		["a - x z"],
+	);
+	expect(
+		await renderLines(
+			inline("<mi>f</mi><mo>(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo>)</mo>"),
+		),
+	).toEqual(["a f(x,y) z"]);
+	expect(await renderLines(inline("<mi>a</mi><mo>xor</mo><mi>b</mi>"))).toEqual(
+		["a a xor b z"],
+	);
+});
+
+test("lspace and rspace attributes override the dictionary", async () => {
+	expect(
+		await renderLines(
+			inline("<mi>a</mi><mo lspace=\"0\" rspace=\"0\">+</mo><mi>b</mi>"),
+		),
+	).toEqual(["a a+b z"]);
+	expect(
+		await renderLines(
+			inline("<mi>a</mi><mo lspace=\"1em\" rspace=\"1em\">×</mo><mi>b</mi>"),
+		),
+	).toEqual(["a a × b z"]);
+});
+
+test("stretchy=false keeps a fence plain and minsize grows one", async () => {
+	const fraction = "<mfrac><mi>a</mi><mi>b</mi></mfrac>";
+	expect(
+		await renderLines(
+			block(
+				`<mo stretchy="false">(</mo>${fraction}<mo stretchy="false">)</mo>`,
+			),
+			10,
+		),
+	).toEqual(["    a", "  (───)", "    b"]);
+	expect(
+		await renderLines(block("<mo minsize=\"3\">(</mo><mi>x</mi>"), 10),
+	).toEqual(
+		["    ⎛", "    ⎜x", "    ⎝"],
+	);
+});
+
+test("border and padding on <math> use the box model", async () => {
+	expect(
+		await renderLines(
+			"<math display=\"block\" style=\"border:1px solid\"><mi>x</mi></math>",
+			12,
+		),
+	).toEqual(["┌──────────┐", "│    x     │", "└──────────┘"]);
+	expect(
+		await renderLines(
+			"<math display=\"block\" style=\"text-align:left;padding-left:2ch\">" +
+			"<mi>x</mi><mo>+</mo><mn>1</mn></math>",
+			12,
+		),
+	).toEqual(["  x + 1"]);
+});
+
+test("innerText is the one-line form, or the TeX annotation", async () => {
+	const {dom} = await render(
+		block("<mfrac><mi>a</mi><mi>b</mi></mfrac>") +
+		"<math id=\"t\"><semantics><mi>x</mi>" +
+		"<annotation encoding=\"application/x-tex\">\\frac{1}{2}</annotation>" +
+		"</semantics></math>",
+	);
+	const [display, tex] = dom.document.querySelectorAll("math");
+	expect((display as HTMLElement).innerText).toBe("a/b");
+	expect((tex as HTMLElement).innerText).toBe("\\frac{1}{2}");
+	dom.dispose();
+});
+
+test("--math-variant-glyphs: unicode uses the alphanumeric block", async () => {
+	const html =
+		"<math display=\"block\" style=\"--math-variant-glyphs: unicode\">" +
+		"<mi>x</mi><mi mathvariant=\"bold\">A</mi>" +
+		"<mi mathvariant=\"double-struck\">R</mi><mi>sin</mi></math>";
+	expect(await renderLines(html, 10)).toEqual(["  𝑥𝐀ℝsin"]);
+	expect(await renderANSI(html)).not.toContain("\x1b[3m");
+});
+
+test("font-style and font-weight on tokens become SGR", async () => {
+	const output = await renderANSI(
+		block("<mn style=\"font-style: italic; font-weight: bold\">7</mn>"),
+	);
+	expect(output).toContain("\x1b[1;3m");
+});
+
+const QUADRATIC =
+	"<mi>x</mi><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mo>±</mo>" +
+	"<msqrt><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></msqrt>" +
+	"</mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac>";
+const EULER =
+	"<msup><mi>e</mi><mrow><mi>i</mi><mi>π</mi></mrow></msup><mo>+</mo><mn>1</mn><mo>=</mo><mn>0</mn>";
+const NAVIER_STOKES =
+	"<mi>ρ</mi><mo>(</mo><mfrac><mrow><mo>∂</mo><mi>u</mi></mrow><mrow><mo>∂</mo><mi>t</mi></mrow></mfrac>" +
+	"<mo>+</mo><mi>u</mi><mo>⋅</mo><mo>∇</mo><mi>u</mi><mo>)</mo><mo>=</mo><mo>−</mo><mo>∇</mo><mi>p</mi>" +
+	"<mo>+</mo><mi>μ</mi><msup><mo>∇</mo><mn>2</mn></msup><mi>u</mi><mo>+</mo><mi>f</mi>";
+const FOURIER =
+	"<mover accent=\"true\"><mi>f</mi><mo>^</mo></mover><mo>(</mo><mi>ξ</mi><mo>)</mo><mo>=</mo>" +
+	"<msubsup><mo>∫</mo><mrow><mo>−</mo><mi>∞</mi></mrow><mi>∞</mi></msubsup>" +
+	"<mi>f</mi><mo>(</mo><mi>x</mi><mo>)</mo>" +
+	"<msup><mi>e</mi><mrow><mo>−</mo><mn>2</mn><mi>π</mi><mi>i</mi><mi>x</mi><mi>ξ</mi></mrow></msup>" +
+	"<mi>d</mi><mi>x</mi>";
+
+test("golden: the quadratic formula", async () => {
+	expect(await renderLines(block(QUADRATIC))).toEqual([
+		"                     ────────",
+		"               −b ± √b² − 4ac",
+		"          x = ────────────────",
+		"                     2a",
+	]);
+	expect(await renderLines(`<math>${QUADRATIC}</math>`)).toEqual([
+		"x = (−b ± √(b² − 4ac))/(2a)",
+	]);
+});
+
+test("golden: Euler's identity", async () => {
+	expect(await renderLines(block(EULER))).toEqual([
+		"               iπ",
+		"              e   + 1 = 0",
+	]);
+	expect(
+		await renderLines(`<math>${EULER}</math>`),
+	).toEqual(["e^(iπ) + 1 = 0"]);
+});
+
+test("golden: the Navier-Stokes momentum equation", async () => {
+	expect(await renderLines(block(NAVIER_STOKES))).toEqual([
+		"     ⎛ ∂u        ⎞",
+		"    ρ⎜──── + u⋅∇u⎟ = − ∇p + μ∇²u + f",
+		"     ⎝ ∂t        ⎠",
+	]);
+	expect(await renderLines(`<math>${NAVIER_STOKES}</math>`)).toEqual([
+		"ρ((∂u)/(∂t) + u⋅∇u) = − ∇p + μ∇²u + f",
+	]);
+});
+
+test("golden: the Fourier transform", async () => {
+	expect(await renderLines(block(FOURIER))).toEqual([
+		"         ⎛ ⎞    ∞  ⎛ ⎞ −2πixξ",
+		"        f̂⎜ξ⎟ = ∫  f⎜x⎟e      dx",
+		"         ⎝ ⎠    −∞ ⎝ ⎠",
+	]);
+	expect(await renderLines(`<math>${FOURIER}</math>`)).toEqual([
+		"f̂(ξ) = ∫_(−∞)^∞f(x)e^(−2πixξ)dx",
+	]);
+});
+
 test("getBoundingClientRect reports the math box in cells", async () => {
 	const {dom} = await render(inline("<mi>x</mi><mo>+</mo><mi>y</mi>"), 40);
 	const rect = dom.document.querySelector("math")!.getBoundingClientRect();
