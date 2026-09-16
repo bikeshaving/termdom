@@ -37,6 +37,7 @@ import {
 	type ReflectSpec,
 } from "./htmlreflection.ts";
 import type {Layout} from "./layout.ts";
+import {linearizeMath} from "./mathml.ts";
 import type {Screen} from "./screen.ts";
 import {
 	getNextGraphemeBoundary,
@@ -10923,6 +10924,16 @@ class MathMLElement extends Element {
 
 	set style(value: unknown) {
 		getInlineStyle(this).cssText = value == null ? "" : `${value}`;
+	}
+
+	// Not in the DOM standard, which puts innerText on HTMLElement only.
+	// A formula copied out of a terminal has to fit on one line, so a
+	// <math> element's innerText is its inline linearization, or the TeX
+	// source when an annotation carries one.
+	get innerText(): string {
+		return this.localName === "math"
+			? linearizeMath(this as unknown as globalThis.Element)
+			: (this.textContent ?? "");
 	}
 
 	get attributeStyleMap(): globalThis.StylePropertyMap {

@@ -243,7 +243,7 @@ function layoutNode(node: Node, context: MathContext): MathBox {
 		const parent = node.parentElement;
 		return createTextBox(
 			collapseTokenText((node as Text).data),
-			parent ? getTokenStyle(parent, context, false) : null,
+			parent ? getTokenStyle(parent, null) : null,
 		);
 	}
 	const element = node as Element;
@@ -318,10 +318,129 @@ function layoutTextToken(
 	text: string,
 	context: MathContext,
 ): MathBox {
-	const collapsed = collapseTokenText(text).replace(INVISIBLE_OPERATORS, "");
-	const single = isSingleGrapheme(collapsed);
-	const style = getTokenStyle(element, context, single);
-	return createTextBox(toPlainGlyphs(collapsed, context.glyphs), style);
+	let collapsed = collapseTokenText(text).replace(INVISIBLE_OPERATORS, "");
+	let variant = getMathVariant(element);
+	if (
+		variant === null &&
+		element.localName === "mi" &&
+		isSingleGrapheme(collapsed)
+	) {
+		variant = "italic";
+	}
+	let bold = variant !== null && variant.includes("bold");
+	let italic = variant !== null && variant.includes("italic");
+	if (variant !== null && context.variantGlyphs && context.glyphs !== "ascii") {
+		const mapped = toMathAlphanumeric(collapsed, variant);
+		if (mapped !== null) {
+			collapsed = mapped;
+			bold = false;
+			italic = false;
+		}
+	}
+	return createTextBox(
+		toPlainGlyphs(collapsed, context.glyphs),
+		getTokenStyle(element, variant === null ? null : {bold, italic}),
+	);
+}
+
+interface AlphanumericRange {
+	upper: number;
+	lower: number;
+	digits?: number;
+	greekUpper?: number;
+	greekLower?: number;
+	exceptions?: Record<string, string>;
+}
+
+// The Mathematical Alphanumeric Symbols block, by mathvariant. The
+// exceptions are the letters Unicode had encoded before the block.
+const ALPHANUMERIC_RANGES: Record<string, AlphanumericRange> = {
+	bold: {
+		upper: 0x1d400,
+		lower: 0x1d41a,
+		digits: 0x1d7ce,
+		greekUpper: 0x1d6a8,
+		greekLower: 0x1d6c2,
+	},
+	italic: {
+		upper: 0x1d434,
+		lower: 0x1d44e,
+		greekUpper: 0x1d6e2,
+		greekLower: 0x1d6fc,
+		exceptions: {h: "ℎ"},
+	},
+	"bold-italic": {
+		upper: 0x1d468,
+		lower: 0x1d482,
+		greekUpper: 0x1d71c,
+		greekLower: 0x1d736,
+	},
+	script: {
+		upper: 0x1d49c,
+		lower: 0x1d4b6,
+		exceptions: {
+			B: "ℬ",
+			E: "ℰ",
+			F: "ℱ",
+			H: "ℋ",
+			I: "ℐ",
+			L: "ℒ",
+			M: "ℳ",
+			R: "ℛ",
+			e: "ℯ",
+			g: "ℊ",
+			o: "ℴ",
+		},
+	},
+	fraktur: {
+		upper: 0x1d504,
+		lower: 0x1d51e,
+		exceptions: {C: "ℭ", H: "ℌ", I: "ℑ", R: "ℜ", Z: "ℨ"},
+	},
+	"double-struck": {
+		upper: 0x1d538,
+		lower: 0x1d552,
+		digits: 0x1d7d8,
+		exceptions: {C: "ℂ", H: "ℍ", N: "ℕ", P: "ℙ", Q: "ℚ", R: "ℝ", Z: "ℤ"},
+	},
+	"sans-serif": {upper: 0x1d5a0, lower: 0x1d5ba, digits: 0x1d7e2},
+	monospace: {upper: 0x1d670, lower: 0x1d68a, digits: 0x1d7f6},
+};
+
+// The text in the block's letters, or null when any character has no
+// form there, so the token falls back to SGR bold and italic.
+function toMathAlphanumeric(text: string, variant: string): string | null {
+	const range = ALPHANUMERIC_RANGES[variant];
+	if (range === undefined) {
+		return null;
+	}
+	let out = "";
+	for (const char of text) {
+		const code = char.codePointAt(0)!;
+		const exception = range.exceptions?.[char];
+		if (exception !== undefined) {
+			out += exception;
+		} else if (code >= 0x41 && code <= 0x5a) {
+			out += String.fromCodePoint(range.upper + code - 0x41);
+		} else if (code >= 0x61 && code <= 0x7a) {
+			out += String.fromCodePoint(range.lower + code - 0x61);
+		} else if (code >= 0x30 && code <= 0x39 && range.digits !== undefined) {
+			out += String.fromCodePoint(range.digits + code - 0x30);
+		} else if (
+			code >= 0x391 && code <= 0x3a9 && range.greekUpper !== undefined
+		) {
+			out += String.fromCodePoint(range.greekUpper + code - 0x391);
+		} else if (
+			code >= 0x3b1 && code <= 0x3c9 && range.greekLower !== undefined
+		) {
+			out += String.fromCodePoint(range.greekLower + code - 0x3b1);
+		} else if (char === " ") {
+			out += char;
+		} else {
+			return null;
+		}
+	}
+	return out;
 }
 
 function isSingleGrapheme(text: string): boolean {
@@ -348,27 +467,24 @@ function getMathVariant(element: Element): string | null {
 	return null;
 }
 
+// The cell style of an element's text. A math variant, when the token
+// has one, decides bold and italic instead of the font properties.
 function getTokenStyle(
 	element: Element,
-	_context: MathContext,
-	singleIdentifier: boolean,
+	variant: {bold: boolean; italic: boolean} | null,
 ): CellStyle | null {
 	const color = getComputedValue(element, "color");
 	const background = getComputedValue(element, "background-color");
 	const weight = getComputedValue(element, "font-weight");
 	const fontStyle = getComputedValue(element, "font-style");
-	const variant = getMathVariant(element);
-	let bold =
-		weight === "bold" ||
+	const bold = variant === null
+		? weight === "bold" ||
 		weight === "bolder" ||
-		(Number.isFinite(Number(weight)) && Number(weight) >= 600);
-	let italic = fontStyle === "italic" || fontStyle === "oblique";
-	if (variant !== null) {
-		bold = variant.includes("bold");
-		italic = variant.includes("italic");
-	} else if (element.localName === "mi" && singleIdentifier) {
-		italic = true;
-	}
+		(Number.isFinite(Number(weight)) && Number(weight) >= 600)
+		: variant.bold;
+	const italic = variant === null
+		? fontStyle === "italic" || fontStyle === "oblique"
+		: variant.italic;
 	const style: CellStyle = {};
 	let any = false;
 	if (color && color !== "initial" && !CSSValues.isHighlightColor(color)) {
@@ -586,7 +702,7 @@ function layoutStretchedOperator(
 	if (rows === null) {
 		return layoutTextToken(element, operator.text, context);
 	}
-	return createRowsBox(rows, baseline, getTokenStyle(element, context, false));
+	return createRowsBox(rows, baseline, getTokenStyle(element, null));
 }
 
 function createRowsBox(
@@ -841,7 +957,7 @@ function attachUnderOver(
 	const script = stretchy && base.width > 1
 		? createTextBox(
 			buildHorizontalGlyph(operator!.text, base.width, context.glyphs)!,
-			getTokenStyle(node as Element, context, false),
+			getTokenStyle(node as Element, null),
 		)
 		: layoutNode(node, context);
 	return side === "over"
@@ -1441,7 +1557,7 @@ function layoutTable(element: Element, context: MathContext): MathBox {
 				}
 			}
 		}
-		return rowBox!;
+		return rowBox ?? createEmptyBox(1);
 	});
 	const width = Math.max(...rowBoxes.map((row) => row.width));
 	const ruleRow = (): MathBox => {
