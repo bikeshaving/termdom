@@ -191,7 +191,7 @@ test("a script without Unicode forms is spelled ^ and _ inline", async () => {
 				"<msubsup><mi>x</mi><mi>ab</mi><mrow><mi>n</mi><mo>+</mo><mi>q</mi></mrow></msubsup>",
 			),
 		),
-	).toEqual(["a x_(ab)^(n + q) z"]);
+	).toEqual(["a x_(ab)^(n+q) z"]);
 });
 
 test("mmultiscripts puts prescripts before the base", async () => {
@@ -253,6 +253,113 @@ test("math-style: compact forces the inline forms in display mode", async () => 
 		10,
 	);
 	expect(lines).toEqual(["   a/b"]);
+});
+
+test("a display root draws an overline and a sign on the baseline", async () => {
+	expect(
+		await renderLines(
+			block("<msqrt><mi>x</mi><mo>+</mo><mn>1</mn></msqrt>"),
+			20,
+		),
+	).toEqual(["        ─────", "       √x + 1"]);
+	expect(
+		await renderLines(
+			block("<msqrt><mfrac><mi>a</mi><mi>b</mi></mfrac></msqrt>"),
+			10,
+		),
+	).toEqual(["    ───", "   ╱ a", "   √───", "     b"]);
+	expect(
+		await renderLines(block("<mroot><mi>x</mi><mn>3</mn></mroot>"), 10),
+	).toEqual(
+		["    3─", "    √x"],
+	);
+});
+
+test("an inline root is √(x) with the index as a superscript", async () => {
+	expect(
+		await renderLines(inline("<msqrt><mi>x</mi><mo>+</mo><mn>1</mn></msqrt>")),
+	).toEqual(["a √(x + 1) z"]);
+	expect(
+		await renderLines(inline("<mroot><mi>x</mi><mn>3</mn></mroot>")),
+	).toEqual(
+		["a ³√(x) z"],
+	);
+});
+
+test("stretchy fences grow to the height of their siblings", async () => {
+	const fraction = "<mfrac><mi>a</mi><mi>b</mi></mfrac>";
+	expect(
+		await renderLines(block(`<mo>(</mo>${fraction}<mo>)</mo>`), 10),
+	).toEqual(
+		["  ⎛ a ⎞", "  ⎜───⎟", "  ⎝ b ⎠"],
+	);
+	expect(
+		await renderLines(block(`<mo>{</mo>${fraction}<mo>}</mo>`), 10),
+	).toEqual(
+		["  ⎧ a ⎫", "  ⎨───⎬", "  ⎩ b ⎭"],
+	);
+	expect(
+		await renderLines(block(`<mo>∫</mo>${fraction}<mi>dx</mi>`), 12),
+	).toEqual(
+		["   ⌠ a", "   ⎮───dx", "   ⌡ b"],
+	);
+	expect(await renderLines(inline(`<mo>(</mo>${fraction}<mo>)</mo>`))).toEqual([
+		"a (a/b) z",
+	]);
+});
+
+test("large operators stack their limits in display mode", async () => {
+	const sum =
+		"<munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>" +
+		"<msup><mi>k</mi><mn>2</mn></msup>";
+	expect(await renderLines(block(sum), 12)).toEqual([
+		"    n",
+		"    ∑ k²",
+		"   k=1",
+	]);
+	expect(await renderLines(inline(sum))).toEqual(["a ∑ₖ₌₁ⁿk² z"]);
+});
+
+test("an accent over a one-cell base is a combining mark", async () => {
+	expect(
+		await renderLines(
+			inline("<mover accent=\"true\"><mi>x</mi><mo>¯</mo></mover>"),
+		),
+	).toEqual(["a x̄ z"]);
+	expect(
+		await renderLines(
+			block(
+				"<mover><mrow><mi>a</mi><mi>b</mi><mi>c</mi></mrow><mo>⏞</mo></mover>",
+			),
+			10,
+		),
+	).toEqual(["   ╭─╮", "   abc"]);
+	expect(
+		await renderLines(
+			block(
+				"<munder><mi>lim</mi><mrow><mi>n</mi><mo>→</mo><mi>∞</mi></mrow></munder>",
+			),
+			10,
+		),
+	).toEqual(["   lim", "   n→∞"]);
+});
+
+test("the ascii glyph set draws with slashes, pipes and dashes", async () => {
+	const lines = await renderLines(
+		"<math display=\"block\" style=\"--math-glyphs: ascii\"><mo>(</mo>" +
+		"<mfrac><mi>a</mi><msqrt><mi>b</mi></msqrt></mfrac><mo>)</mo></math>",
+		12,
+	);
+	expect(lines).toEqual([
+		"  /     \\",
+		"  |  a  |",
+		"  |-----|",
+		"  |   _ |",
+		"  \\ \\/b /",
+	]);
+	for (const line of lines) {
+		expect(/^[\x00-\x7f]*$/.test(line)).toBe(true);
+	}
 });
 
 test("getBoundingClientRect reports the math box in cells", async () => {
