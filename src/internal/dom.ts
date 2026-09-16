@@ -14407,6 +14407,15 @@ function appendSubmissionValue(entries: FormDataEntry[], field: Element): void {
 
 const OCTET_STREAM = "application/octet-stream";
 
+const DIRNAME_INPUT_TYPES = new Set([
+	"text",
+	"search",
+	"tel",
+	"url",
+	"email",
+	"password",
+]);
+
 function appendFieldEntries(
 	entries: FormDataEntry[],
 	field: Element,
@@ -14492,15 +14501,6 @@ function appendFieldEntries(
 		appendDirectionEntry(entries, field);
 	}
 }
-
-const DIRNAME_INPUT_TYPES = new Set([
-	"text",
-	"search",
-	"tel",
-	"url",
-	"email",
-	"password",
-]);
 
 function appendDirectionEntry(entries: FormDataEntry[], field: Element): void {
 	const dirname = field.getAttribute("dirname");
