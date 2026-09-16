@@ -341,6 +341,8 @@ interface PaintStyle {
 	cell: CellStyle;
 	shiftX: number;
 	shiftY: number;
+	contentInsetX: number;
+	contentInsetY: number;
 }
 
 interface BorderPaint {
@@ -482,7 +484,10 @@ function readPaintStyle(element: Element): PaintStyle {
 		getComputedValue(element, "font-weight"),
 	);
 	const gradient = getGradient(element);
+	const model = getBoxModel(element);
 	return {
+		contentInsetX: model.paddingLeft + model.borderLeftWidth,
+		contentInsetY: model.paddingTop + model.borderTopWidth,
 		display: getComputedValue(element, "display"),
 		visible: getComputedValue(element, "visibility") !== "hidden",
 		fg,
@@ -827,11 +832,11 @@ function paintBlock(
 		width: node.getComputedWidth(),
 		height: node.getComputedHeight(),
 	};
-	paintBox(painter, element, style, [rect], rect, ctx);
+	paintBox(painter, style, [rect], rect, ctx);
 	if (style.visible) {
-		renderOutsideMarker(painter, element, rect, ctx);
+		renderOutsideMarker(painter, element, style, rect, ctx);
 	}
-	paintCaret(painter, element, style, rect, ctx);
+	paintCaret(painter, element, style, ctx);
 
 	// The negative-z layer goes here, after the box and before its content.
 	if (afterOwnBox) {
@@ -877,7 +882,6 @@ function paintContent(
 	try {
 		const box = layout.boxOf(element);
 		const context = box?.independentFormattingContext ?? null;
-		const model = getBoxModel(element);
 		const own = box?.fragments ? ownLeaf(box.fragments, element) : null;
 		if (own !== null && own.breakResult) {
 			paintLines(
@@ -886,10 +890,7 @@ function paintContent(
 				flowContent(element),
 				element,
 				element,
-				{
-					x: origin.x + model.paddingLeft + model.borderLeftWidth,
-					y: origin.y + model.paddingTop + model.borderTopWidth,
-				},
+				{x: origin.x + style.contentInsetX, y: origin.y + style.contentInsetY},
 				ctx,
 			);
 		} else if (own === null && box?.fragments) {
@@ -903,8 +904,8 @@ function paintContent(
 				element,
 				box.container,
 				{
-					x: origin.x + (inset ? model.paddingLeft + model.borderLeftWidth : 0),
-					y: origin.y + (inset ? model.paddingTop + model.borderTopWidth : 0),
+					x: origin.x + (inset ? style.contentInsetX : 0),
+					y: origin.y + (inset ? style.contentInsetY : 0),
 				},
 				ctx,
 			);
@@ -912,10 +913,7 @@ function paintContent(
 			paintNodes(
 				painter,
 				context,
-				{
-					x: origin.x + model.paddingLeft + model.borderLeftWidth,
-					y: origin.y + model.paddingTop + model.borderTopWidth,
-				},
+				{x: origin.x + style.contentInsetX, y: origin.y + style.contentInsetY},
 				ctx,
 			);
 		} else {
@@ -975,7 +973,16 @@ function visibleChildren(
 	const top = -ctx.viewportOffset + painter[kScrolledRows];
 	const bottom = top + ctx.rows;
 	const extent = layout.paintExtent(node);
-	if (extent === undefined || extent.unstackedChildren !== 0) {
+	const owner = node.owner as Node | null;
+	if (
+		extent === undefined ||
+		extent.unstackedChildren !== 0 ||
+		node.measure !== null ||
+		node.style.displayType !== "block" ||
+		(owner !== null &&
+			owner.nodeType === owner.ELEMENT_NODE &&
+			layout.boxOf(owner as Element)?.holdsFragments === true)
+	) {
 		return children;
 	}
 	let lo = 0;
@@ -1002,7 +1009,6 @@ function visibleChildren(
 
 function paintBox(
 	painter: Painter,
-	element: Element,
 	style: PaintStyle,
 	fragments: Rect[],
 	rect: Rect,
@@ -1044,7 +1050,6 @@ function paintBox(
 			style.border,
 		);
 	}
-	void element;
 }
 
 function paintOutline(
@@ -1093,7 +1098,6 @@ function paintCaret(
 	painter: Painter,
 	element: Element,
 	style: PaintStyle,
-	rect: Rect,
 	ctx: CellContext,
 ): void {
 	if (!style.visible || element !== painter[kDocument].activeElement) {
@@ -1125,7 +1129,6 @@ function paintCaret(
 	if (caret !== null) {
 		ctx.setCaret(caret.x, caret.y);
 	}
-	void rect;
 }
 
 // A run's lines, from the box that broke them. The origin is the run's
@@ -1213,8 +1216,8 @@ function paintInline(
 	const fragments = run.boxes.get(element) ?? [];
 	const rect = fragments.length > 0 ? unionRect(fragments) : null;
 	if (rect !== null) {
-		paintBox(painter, element, style, fragments, rect, ctx);
-		paintCaret(painter, element, style, rect, ctx);
+		paintBox(painter, style, fragments, rect, ctx);
+		paintCaret(painter, element, style, ctx);
 	}
 	for (const child of flowContent(element)) {
 		paintMember(painter, child, run, ctx);
@@ -1235,11 +1238,11 @@ function paintAtomic(
 	if (style.display === "none") {
 		return;
 	}
-	paintBox(painter, element, style, [rect], rect, ctx);
+	paintBox(painter, style, [rect], rect, ctx);
 	if (style.visible) {
-		renderOutsideMarker(painter, element, rect, ctx);
+		renderOutsideMarker(painter, element, style, rect, ctx);
 	}
-	paintCaret(painter, element, style, rect, ctx);
+	paintCaret(painter, element, style, ctx);
 
 	paintContent(painter, element, style, rect, ctx, (origin) => {
 		if (leaf.breakResult) {
@@ -1457,12 +1460,11 @@ function paintText(
 function renderOutsideMarker(
 	painter: Painter,
 	element: Element,
+	style: PaintStyle,
 	rect: Rect,
 	ctx: CellContext,
 ): void {
-	const display = getComputedValue(element, "display");
-
-	if (display !== "list-item") {
+	if (style.display !== "list-item") {
 		return;
 	}
 
