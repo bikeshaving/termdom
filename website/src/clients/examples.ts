@@ -1176,34 +1176,6 @@ const extraStrip = css`
 
 /*** Gallery ***/
 
-/**
- * What a program is about, from the comment it opens with: the first
- * paragraph of a leading block comment or run of line comments, with the
- * comment marks stripped. An example that opens with code has none.
- */
-function describeProgram(code: string): string {
-	const block = code.match(/^\s*\/\*\*?([\s\S]*?)\*\//);
-	let text = "";
-	if (block) {
-		text = block[1];
-	} else {
-		const lines: string[] = [];
-		for (const line of code.split("\n")) {
-			if (!line.startsWith("//")) break;
-			lines.push(line.slice(2));
-		}
-		text = lines.join("\n");
-	}
-	const paragraph = text
-		.split("\n")
-		.map((line) => line.replace(/^\s*\*? ?/, ""))
-		.join("\n")
-		.trim()
-		.split(/\n\s*\n/)[0];
-	const flat = paragraph.replace(/\s+/g, " ").trim();
-	return flat;
-}
-
 const GALLERY_GEOMETRY = {cols: 48, rows: 12};
 
 const gallery = css`
@@ -1259,14 +1231,6 @@ const card = css`
 		font-weight: bold;
 		color: var(--highlight-color);
 	}
-	.blurb {
-		margin: 0;
-		color: var(--muted-color);
-		display: -webkit-box;
-		-webkit-line-clamp: 3;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
 `;
 
 /**
@@ -1314,9 +1278,6 @@ function* GalleryCard(this: Context, {example}: {example: PlaygroundExample}) {
 				</div>
 				<div class="caption">
 					<div class="title">${example.label}</div>
-					${describeProgram(example.code)
-						? jsx`<p class="blurb">${describeProgram(example.code)}</p>`
-						: null}
 				</div>
 			</a>
 		`;
