@@ -9,8 +9,14 @@ import {getComputedValue} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {MATHML_NAMESPACE} from "./dom.ts";
 import {
+	buildHorizontalGlyph,
+	buildVerticalGlyph,
 	getFractionBar,
+	getOverline,
+	getRadical,
 	type GlyphSet,
+	hasHorizontalPieces,
+	hasVerticalPieces,
 	parseGlyphSet,
 	toPlainGlyphs,
 } from "./mathglyphs.ts";
@@ -41,6 +47,8 @@ interface MathContext {
 	display: boolean;
 	glyphs: GlyphSet;
 	variantGlyphs: boolean;
+	// Inside a script or a limit, where operators get no air.
+	tight: boolean;
 }
 
 interface Operator {
@@ -81,6 +89,7 @@ export function layoutMath(element: Element, display: boolean): MathBox {
 		glyphs: parseGlyphSet(getComputedValue(element, "--math-glyphs")),
 		variantGlyphs:
 			getComputedValue(element, "--math-variant-glyphs").trim() === "unicode",
+		tight: false,
 	};
 	return layoutRow(getLayoutChildren(element), element, context);
 }
@@ -278,6 +287,13 @@ function layoutNode(node: Node, context: MathContext): MathBox {
 			return layoutMultiscripts(element, local);
 		case "mfrac":
 			return layoutFraction(element, local);
+		case "msqrt":
+		case "mroot":
+			return layoutRadical(element, local);
+		case "munder":
+		case "mover":
+		case "munderover":
+			return layoutUnderOver(element, local);
 		default:
 			return layoutRow(getLayoutChildren(element), element, local);
 	}
@@ -459,7 +475,8 @@ function isOperatorElement(node: Node): boolean {
 /**
  * An mrow's children side by side. An infix operator with enough
  * spacing in the dictionary gets one cell of air on that side; prefix
- * and postfix operators sit tight against their operands.
+ * and postfix operators sit tight against their operands. A stretchy
+ * operator is laid out last, to the height of the other children.
  */
 function layoutRow(
 	children: Node[],
@@ -469,23 +486,357 @@ function layoutRow(
 	if (children.length === 0) {
 		return createEmptyBox(1);
 	}
+	const operators = children.map((child, index) =>
+		isOperatorElement(child)
+			? getOperator(child as Element, index, children.length)
+			: null,
+	);
+	const boxes = children.map((child, index) => {
+		const operator = operators[index];
+		return operator !== null && isVerticallyStretchy(operator, context)
+			? null
+			: layoutNode(child, context);
+	});
+	let ascent = 0;
+	let descent = 0;
+	for (const box of boxes) {
+		if (box !== null) {
+			ascent = Math.max(ascent, box.baseline);
+			descent = Math.max(descent, getDescent(box));
+		}
+	}
 	let result: MathBox | null = null;
 	let gapAfter = false;
 	for (let index = 0; index < children.length; index++) {
-		const child = children[index];
-		const operator = isOperatorElement(child)
-			? getOperator(child as Element, index, children.length)
-			: null;
-		const box = layoutNode(child, context);
+		const operator = operators[index];
+		const box =
+			boxes[index] ??
+			layoutStretchedOperator(
+				children[index] as Element,
+				operator!,
+				ascent,
+				descent,
+				context,
+			);
 		if (result === null) {
 			result = box;
 		} else {
-			const gap = (gapAfter || operator?.gapBefore) && box.width > 0 ? 1 : 0;
+			const gap =
+				!context.tight &&
+				(gapAfter || operator?.gapBefore) &&
+				box.width > 0
+					? 1
+					: 0;
 			result = beside(result, box, gap);
 		}
 		gapAfter = operator?.gapAfter ?? false;
 	}
 	return result!;
+}
+
+function isVerticallyStretchy(
+	operator: Operator,
+	context: MathContext,
+): boolean {
+	return (
+		context.display &&
+		operator.entry.stretchy &&
+		hasVerticalPieces(operator.text, context.glyphs)
+	);
+}
+
+/**
+ * A stretchy operator grown to its siblings' rows. A symmetric one has
+ * the same reach above and below the baseline. minsize and maxsize
+ * clamp the height in rows, and a height of one is the plain glyph.
+ */
+function layoutStretchedOperator(
+	element: Element,
+	operator: Operator,
+	ascent: number,
+	descent: number,
+	context: MathContext,
+): MathBox {
+	const reach = Math.max(ascent, descent);
+	let height = operator.entry.symmetric ? reach * 2 + 1 : ascent + descent + 1;
+	const minsize = parseMathLength(element.getAttribute("minsize"));
+	const maxsize = parseMathLength(element.getAttribute("maxsize"));
+	if (minsize !== null) {
+		height = Math.max(height, Math.round(minsize));
+	}
+	if (maxsize !== null) {
+		height = Math.min(height, Math.max(1, Math.round(maxsize)));
+	}
+	const baseline = operator.entry.symmetric
+		? (height - 1) >> 1
+		: Math.min(ascent, height - 1);
+	const rows = height > 1
+		? buildVerticalGlyph(operator.text, height, baseline, context.glyphs)
+		: null;
+	if (rows === null) {
+		return layoutTextToken(element, operator.text, context);
+	}
+	return createRowsBox(rows, baseline, getTokenStyle(element, context, false));
+}
+
+function createRowsBox(
+	rows: string[],
+	baseline: number,
+	style: CellStyle | null,
+): MathBox {
+	let box: MathBox | null = null;
+	for (const row of rows) {
+		const line = createTextBox(row, style);
+		box = box === null ? line : stack(box, line, "left", 0);
+	}
+	return {...box!, baseline};
+}
+
+// Writes `top` over `base` at a cell offset, on copies of the rows it
+// touches. Both boxes' cells in the overlap must be one cell wide.
+function overlay(base: MathBox, top: MathBox, x: number, y: number): MathBox {
+	const cells = base.cells.slice();
+	for (let row = 0; row < top.height; row++) {
+		const target = cells[y + row].slice();
+		let column = 0;
+		let index = 0;
+		while (index < target.length && column < x) {
+			column += target[index].width;
+			index++;
+		}
+		for (const cell of top.cells[row]) {
+			target[index++] = cell;
+		}
+		cells[y + row] = target;
+	}
+	return {...base, cells};
+}
+
+const COMBINING_OVER: Record<string, string> = {
+	"¯": "̄",
+	"‾": "̄",
+	ˉ: "̄",
+	"−": "̄",
+	"-": "̄",
+	_: "̄",
+	"^": "̂",
+	ˆ: "̂",
+	"˙": "̇",
+	".": "̇",
+	"¨": "̈",
+	"→": "⃗",
+	"⃗": "⃗",
+	"~": "̃",
+	"˜": "̃",
+	"˘": "̆",
+	ˇ: "̌",
+	"´": "́",
+	"`": "̀",
+	"˚": "̊",
+};
+
+const COMBINING_UNDER: Record<string, string> = {
+	_: "̲",
+	"‾": "̲",
+	"¯": "̲",
+	"−": "̲",
+	"-": "̲",
+	".": "̣",
+	"˙": "̣",
+	"¨": "̤",
+};
+
+/**
+ * A radical. Display mode draws an overline over the radicand, a radical
+ * sign on the baseline and a climb up the rows between; an mroot's index
+ * ends on the row above the sign, overlapping the climb column. Inline
+ * mode writes √(x), with the index as a superscript when it has one.
+ */
+function layoutRadical(element: Element, context: MathContext): MathBox {
+	const children = getLayoutChildren(element);
+	const isRoot = element.localName === "mroot";
+	const radicand = isRoot
+		? layoutChild(children[0], context)
+		: layoutRow(children, element, context);
+	const index = isRoot
+		? layoutChild(children[1], scriptContext(context))
+		: null;
+	if (!context.display) {
+		const body = beside(
+			beside(createTextBox("(", null), radicand),
+			createTextBox(")", null),
+		);
+		const sign = createTextBox(toPlainGlyphs("√", context.glyphs), null);
+		if (index === null) {
+			return beside(sign, body);
+		}
+		const indexCharacters = toScriptCharacters(index, "sup", context);
+		if (indexCharacters !== null) {
+			return beside(beside(indexCharacters, sign), body);
+		}
+		return beside(
+			beside(
+				beside(createTextBox("root(", null), index),
+				createTextBox(", ", null),
+			),
+			beside(radicand, createTextBox(")", null)),
+		);
+	}
+	const {sign, climb} = getRadical(context.glyphs);
+	const signWidth = getStringWidth(sign);
+	const rows: string[] = [];
+	for (let row = 0; row < radicand.height; row++) {
+		rows.push(
+			row < radicand.baseline
+				? climb
+				: row === radicand.baseline ? sign : " ".repeat(signWidth),
+		);
+	}
+	const column = createRowsBox(rows, radicand.baseline, null);
+	const overline = createTextBox(
+		" ".repeat(signWidth) + getOverline(context.glyphs).repeat(radicand.width),
+		null,
+	);
+	const body = beside(column, radicand);
+	let result = stack(overline, body, "left", body.baseline + 1);
+	if (index === null) {
+		return result;
+	}
+	const shift = Math.max(0, index.width - signWidth);
+	result = pad(result, 0, 0, 0, shift);
+	let top = result.baseline - index.height;
+	if (top < 0) {
+		result = pad(result, -top, 0, 0, 0);
+		top = 0;
+	}
+	return overlay(result, index, shift + signWidth - index.width, top);
+}
+
+/**
+ * Under- and over-scripts. Display mode stacks them, centered on the
+ * widest; an accent on a one-cell base becomes a combining mark, and a
+ * stretchy accent or arrow over a wider base repeats its filler. Inline
+ * mode writes them as scripts, which is how limits on ∑ and ∫ read on
+ * one line.
+ */
+function layoutUnderOver(element: Element, context: MathContext): MathBox {
+	const children = getLayoutChildren(element);
+	const kind = element.localName;
+	let underNode = kind === "mover" ? undefined : children[1];
+	let overNode = kind === "mover"
+		? children[1]
+		: kind === "munderover" ? children[2] : undefined;
+	let result = layoutChild(children[0], context);
+	if (overNode !== undefined) {
+		const combined = combineAccent(
+			result,
+			overNode,
+			"over",
+			element.getAttribute("accent"),
+			context,
+		);
+		if (combined !== null) {
+			result = combined;
+			overNode = undefined;
+		}
+	}
+	if (underNode !== undefined) {
+		const combined = combineAccent(
+			result,
+			underNode,
+			"under",
+			element.getAttribute("accentunder"),
+			context,
+		);
+		if (combined !== null) {
+			result = combined;
+			underNode = undefined;
+		}
+	}
+	const scripts = scriptContext(context);
+	if (!context.display) {
+		return attachScripts(
+			result,
+			underNode === undefined ? null : layoutNode(underNode, scripts),
+			overNode === undefined ? null : layoutNode(overNode, scripts),
+			underNode,
+			overNode,
+			context,
+		);
+	}
+	if (overNode !== undefined) {
+		result = attachUnderOver(result, overNode, "over", scripts);
+	}
+	if (underNode !== undefined) {
+		result = attachUnderOver(result, underNode, "under", scripts);
+	}
+	return result;
+}
+
+function getAccentOperator(
+	node: Node,
+): {text: string; entry: OperatorEntry} | null {
+	if (!isOperatorElement(node)) {
+		return null;
+	}
+	const text = collapseTokenText((node as Element).textContent ?? "");
+	return {text, entry: lookupOperator(text, "postfix")};
+}
+
+// An accent on a one-cell base as that cell with a combining mark, or
+// null when the accent has no mark, the base is wider, or the width
+// tables say the terminal would give the mark a cell of its own.
+function combineAccent(
+	base: MathBox,
+	node: Node,
+	side: "over" | "under",
+	accentAttribute: string | null,
+	context: MathContext,
+): MathBox | null {
+	const operator = getAccentOperator(node);
+	const accentFlag = accentAttribute?.trim().toLowerCase();
+	const accent =
+		accentFlag === "true" ||
+		(accentFlag !== "false" && operator !== null && operator.entry.accent);
+	if (
+		!accent ||
+		operator === null ||
+		context.glyphs === "ascii" ||
+		base.height !== 1 ||
+		base.cells[0].length !== 1
+	) {
+		return null;
+	}
+	const mark = (side === "over" ? COMBINING_OVER : COMBINING_UNDER)[
+		operator.text
+	];
+	const cell = base.cells[0][0];
+	if (mark === undefined || getStringWidth(cell.text + mark) !== cell.width) {
+		return null;
+	}
+	return {...base, cells: [[{...cell, text: cell.text + mark}]]};
+}
+
+function attachUnderOver(
+	base: MathBox,
+	node: Node,
+	side: "over" | "under",
+	context: MathContext,
+): MathBox {
+	const operator = getAccentOperator(node);
+	const stretchy =
+		operator !== null &&
+		readFlag(node as Element, "stretchy", operator.entry.stretchy) &&
+		hasHorizontalPieces(operator.text, context.glyphs);
+	const script = stretchy && base.width > 1
+		? createTextBox(
+			buildHorizontalGlyph(operator!.text, base.width, context.glyphs)!,
+			getTokenStyle(node as Element, context, false),
+		)
+		: layoutNode(node, context);
+	return side === "over"
+		? stack(script, base, "center", base.baseline + script.height)
+		: stack(base, script, "center", base.baseline);
 }
 
 /**
@@ -636,6 +987,10 @@ function layoutChild(node: Node | undefined, context: MathContext): MathBox {
 	return node === undefined ? createEmptyBox(1) : layoutNode(node, context);
 }
 
+function scriptContext(context: MathContext): MathContext {
+	return context.tight ? context : {...context, tight: true};
+}
+
 /**
  * A one-row script as Unicode superscript or subscript characters, or
  * null when any grapheme in it has no such form. The ASCII set has none.
@@ -776,8 +1131,8 @@ function layoutScriptElement(element: Element, context: MathContext): MathBox {
 		: element.localName === "msubsup" ? children[2] : undefined;
 	return attachScripts(
 		base,
-		subNode === undefined ? null : layoutNode(subNode, context),
-		supNode === undefined ? null : layoutNode(supNode, context),
+		subNode === undefined ? null : layoutNode(subNode, scriptContext(context)),
+		supNode === undefined ? null : layoutNode(supNode, scriptContext(context)),
 		subNode,
 		supNode,
 		context,
@@ -808,8 +1163,12 @@ function layoutMultiscripts(element: Element, context: MathContext): MathBox {
 	for (const [subNode, supNode, isPre] of pairs) {
 		result = attachScripts(
 			result,
-			isEmptyScript(subNode) ? null : layoutNode(subNode!, context),
-			isEmptyScript(supNode) ? null : layoutNode(supNode!, context),
+			isEmptyScript(subNode)
+				? null
+				: layoutNode(subNode!, scriptContext(context)),
+			isEmptyScript(supNode)
+				? null
+				: layoutNode(supNode!, scriptContext(context)),
 			subNode,
 			supNode,
 			context,
