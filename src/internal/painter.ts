@@ -368,7 +368,7 @@ const kHighlightedText = Symbol("highlightedText");
 const kHighlightStyles = Symbol("highlightStyles");
 
 function getPaintStyle(painter: Painter, element: Element): PaintStyle {
-	const key = painter[kCascade].styleKeyOf(element);
+	const key = painter[kCascade].getStyleKey(element);
 	const known = key === null ? undefined : paintStyles.get(key);
 	if (known !== undefined) {
 		return known;
@@ -780,7 +780,7 @@ function paintEntry(
 	afterOwnBox?: () => void,
 ): void {
 	const layout = painter[kLayout];
-	const node = layout.nodeOf(element);
+	const node = layout.getLayoutNode(element);
 	if (node === null) {
 		return;
 	}
@@ -808,7 +808,7 @@ function isOutsideViewport(
 	}
 	// A broken inline paints boxes outside its own layout subtree, so its
 	// extent says nothing about them.
-	return element === null || !painter[kLayout].boxOf(element)?.broken;
+	return element === null || !painter[kLayout].getBox(element)?.broken;
 }
 
 function paintBlock(
@@ -880,7 +880,7 @@ function paintContent(
 	);
 	painter[kScrolledRows] = previousScrolled + scrolledRows;
 	try {
-		const box = layout.boxOf(element);
+		const box = layout.getBox(element);
 		const context = box?.independentFormattingContext ?? null;
 		const own = box?.fragments ? ownLeaf(box.fragments, element) : null;
 		if (own !== null && own.breakResult) {
@@ -950,7 +950,7 @@ function paintNodes(
 			x: origin.x + child.result.left,
 			y: origin.y + child.result.top,
 		};
-		const run = layout.runOf(child);
+		const run = layout.getRun(child);
 		if (run !== null) {
 			paintRun(painter, run, childOrigin, ctx);
 		} else if (
@@ -981,7 +981,7 @@ function visibleChildren(
 		node.style.displayType !== "block" ||
 		(owner !== null &&
 			owner.nodeType === owner.ELEMENT_NODE &&
-			layout.boxOf(owner as Element)?.holdsFragments === true)
+			layout.getBox(owner as Element)?.holdsFragments === true)
 	) {
 		return children;
 	}
@@ -1274,7 +1274,7 @@ function resolveRun(
 	const run: RunPaint = {texts: new Map(), boxes: new Map(), leaves: new Map()};
 	const boxLines = new Map<Element, Map<number, Rect>>();
 	const shifts = new Map<Node, Origin>();
-	const shiftOf = (node: Node): Origin => {
+	const getShift = (node: Node): Origin => {
 		let shift = shifts.get(node);
 		if (shift === undefined) {
 			shift = {x: 0, y: 0};
@@ -1337,7 +1337,7 @@ function resolveRun(
 					span.end = segment.dataEnd;
 				}
 			} else if (leaf.type === "inline-block") {
-				const shift = shiftOf(leaf.node);
+				const shift = getShift(leaf.node);
 				const rect = {
 					left: lineX + segment.x + shift.x,
 					top: lineY + shift.y,
@@ -1349,7 +1349,7 @@ function resolveRun(
 			}
 		}
 		for (const [textNode, span] of textSpans) {
-			const shift = shiftOf(textNode);
+			const shift = getShift(textNode);
 			const rect = {
 				left: span.left + shift.x,
 				top: lineY + shift.y,
