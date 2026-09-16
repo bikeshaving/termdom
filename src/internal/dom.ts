@@ -1330,19 +1330,19 @@ Object.defineProperty(CustomEvent.prototype, Symbol.toStringTag, {
 
 const kReturnValue = Symbol("returnValue");
 
-// The interface declares no constructor, so `new` throws for authors.
-// Teardown treats two things as cancellation: preventDefault(), and a
-// returnValue set to anything but the empty string.
-interface BeforeUnloadEvent {
-	[kReturnValue]: string;
-}
-
 // The HTML element constructor is an author-facing algorithm: it looks
 // up which custom element definition `new.target` names and throws if
 // there is none. The tree's own creation path needs the same classes
 // without that check, and this flag tells the constructor which case it
 // is in.
 let internalConstruction = false;
+
+// The interface declares no constructor, so `new` throws for authors.
+// Teardown treats two things as cancellation: preventDefault(), and a
+// returnValue set to anything but the empty string.
+interface BeforeUnloadEvent {
+	[kReturnValue]: string;
+}
 
 class BeforeUnloadEvent extends Event {
 	constructor(
@@ -26964,12 +26964,12 @@ Object.defineProperty(Highlight.prototype, Symbol.toStringTag, {
 const kHighlightsByName = Symbol("the highlights, in registration order");
 const kRegistryDocument = Symbol("the document a registry paints");
 
+let registryUnderConstruction: Document | null = null;
+
 interface HighlightRegistry {
 	[kHighlightsByName]: Map<string, Highlight>;
 	[kRegistryDocument]: Document;
 }
-
-let registryUnderConstruction: Document | null = null;
 
 /**
  * A document's registered highlights, as `CSS.highlights`. Insertion

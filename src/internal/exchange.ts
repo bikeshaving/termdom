@@ -373,14 +373,14 @@ const PASTE_LIMIT = 1 << 20;
 const HOLD_LIMIT = 4096;
 const kExpectingReply = Symbol("expectingReply");
 
+const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
+
 interface WireReader {
 	[kTail]: string;
 	[kPasteBody]: string | null;
 	[kReplyBody]: string | null;
 	[kExpectingReply]: boolean;
 }
-
-const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
 
 /**
  * Decodes one chunk into what it meant. Keeps what a chunk boundary can
