@@ -49,7 +49,7 @@ interface MathContext {
 	display: boolean;
 	glyphs: GlyphSet;
 	variantGlyphs: boolean;
-	// Inside a script or a limit, where operators get no air.
+	// Inside a script or a limit, where operators get no spacing.
 	tight: boolean;
 }
 
@@ -600,9 +600,9 @@ function isOperatorElement(node: Node): boolean {
 
 /**
  * An mrow's children side by side. An infix operator with enough
- * spacing in the dictionary gets one cell of air on that side; prefix
- * and postfix operators sit tight against their operands. A stretchy
- * operator is laid out last, to the height of the other children.
+ * spacing in the dictionary gets one cell on that side; prefix and
+ * postfix operators get none. A stretchy operator is laid out last, to
+ * the height of the other children.
  */
 function layoutRow(
 	children: Node[],
@@ -1720,7 +1720,7 @@ function blankOut(box: MathBox): MathBox {
 }
 
 // A red border around the content in display mode. Inline mode has no
-// rows to spare, so the content itself turns red.
+// rows for a border, so the content is red instead.
 function layoutError(element: Element, context: MathContext): MathBox {
 	const box = layoutRow(getLayoutChildren(element), element, context);
 	const red: CellStyle = {fg: CSSValues.cssColorToNumber("red")};
