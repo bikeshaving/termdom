@@ -1179,7 +1179,7 @@ const extraStrip = css`
 /**
  * What a program is about, from the comment it opens with: the first
  * paragraph of a leading block comment or run of line comments, with the
- * comment marks stripped. An example that opens with code gets a stock line.
+ * comment marks stripped. An example that opens with code has none.
  */
 function describeProgram(code: string): string {
 	const block = code.match(/^\s*\/\*\*?([\s\S]*?)\*\//);
