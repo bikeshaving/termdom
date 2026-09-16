@@ -8,7 +8,12 @@
 import {getComputedValue} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {MATHML_NAMESPACE} from "./dom.ts";
-import {type GlyphSet, parseGlyphSet, toPlainGlyphs} from "./mathglyphs.ts";
+import {
+	getFractionBar,
+	type GlyphSet,
+	parseGlyphSet,
+	toPlainGlyphs,
+} from "./mathglyphs.ts";
 import {
 	lookupOperator,
 	type OperatorEntry,
@@ -265,6 +270,14 @@ function layoutNode(node: Node, context: MathContext): MathBox {
 		case "mprescripts":
 		case "none":
 			return createEmptyBox(0);
+		case "msub":
+		case "msup":
+		case "msubsup":
+			return layoutScriptElement(element, local);
+		case "mmultiscripts":
+			return layoutMultiscripts(element, local);
+		case "mfrac":
+			return layoutFraction(element, local);
 		default:
 			return layoutRow(getLayoutChildren(element), element, local);
 	}
@@ -486,6 +499,369 @@ export function linearizeMath(element: Element): string {
 	}
 	const box = layoutMath(element, false);
 	return getBoxText(box).join("\n").trim();
+}
+
+const SUPERSCRIPTS: Record<string, string> = {
+	0: "⁰",
+	1: "¹",
+	2: "²",
+	3: "³",
+	4: "⁴",
+	5: "⁵",
+	6: "⁶",
+	7: "⁷",
+	8: "⁸",
+	9: "⁹",
+	"+": "⁺",
+	"-": "⁻",
+	"−": "⁻",
+	"=": "⁼",
+	"(": "⁽",
+	")": "⁾",
+	" ": " ",
+	a: "ᵃ",
+	b: "ᵇ",
+	c: "ᶜ",
+	d: "ᵈ",
+	e: "ᵉ",
+	f: "ᶠ",
+	g: "ᵍ",
+	h: "ʰ",
+	i: "ⁱ",
+	j: "ʲ",
+	k: "ᵏ",
+	l: "ˡ",
+	m: "ᵐ",
+	n: "ⁿ",
+	o: "ᵒ",
+	p: "ᵖ",
+	r: "ʳ",
+	s: "ˢ",
+	t: "ᵗ",
+	u: "ᵘ",
+	v: "ᵛ",
+	w: "ʷ",
+	x: "ˣ",
+	y: "ʸ",
+	z: "ᶻ",
+	A: "ᴬ",
+	B: "ᴮ",
+	D: "ᴰ",
+	E: "ᴱ",
+	G: "ᴳ",
+	H: "ᴴ",
+	I: "ᴵ",
+	J: "ᴶ",
+	K: "ᴷ",
+	L: "ᴸ",
+	M: "ᴹ",
+	N: "ᴺ",
+	O: "ᴼ",
+	P: "ᴾ",
+	R: "ᴿ",
+	T: "ᵀ",
+	U: "ᵁ",
+	V: "ⱽ",
+	W: "ᵂ",
+	β: "ᵝ",
+	γ: "ᵞ",
+	δ: "ᵟ",
+	θ: "ᶿ",
+	φ: "ᵠ",
+	χ: "ᵡ",
+};
+
+const SUBSCRIPTS: Record<string, string> = {
+	0: "₀",
+	1: "₁",
+	2: "₂",
+	3: "₃",
+	4: "₄",
+	5: "₅",
+	6: "₆",
+	7: "₇",
+	8: "₈",
+	9: "₉",
+	"+": "₊",
+	"-": "₋",
+	"−": "₋",
+	"=": "₌",
+	"(": "₍",
+	")": "₎",
+	" ": " ",
+	a: "ₐ",
+	e: "ₑ",
+	h: "ₕ",
+	i: "ᵢ",
+	j: "ⱼ",
+	k: "ₖ",
+	l: "ₗ",
+	m: "ₘ",
+	n: "ₙ",
+	o: "ₒ",
+	p: "ₚ",
+	r: "ᵣ",
+	s: "ₛ",
+	t: "ₜ",
+	u: "ᵤ",
+	v: "ᵥ",
+	x: "ₓ",
+	β: "ᵦ",
+	γ: "ᵧ",
+	ρ: "ᵨ",
+	φ: "ᵩ",
+	χ: "ᵪ",
+};
+
+// Elements whose one-line form reads as a unit without parentheses when
+// it is one side of a linearized fraction (x²/2, √x/2).
+const FRACTION_UNITS = new Set([
+	"mi",
+	"mn",
+	"mo",
+	"mtext",
+	"ms",
+	"msub",
+	"msup",
+	"msubsup",
+	"msqrt",
+	"mroot",
+]);
+
+// The same for a linearized script: only a number (x^10), since x^ab
+// would read as x^a b.
+const SCRIPT_UNITS = new Set(["mn"]);
+
+function layoutChild(node: Node | undefined, context: MathContext): MathBox {
+	return node === undefined ? createEmptyBox(1) : layoutNode(node, context);
+}
+
+/**
+ * A one-row script as Unicode superscript or subscript characters, or
+ * null when any grapheme in it has no such form. The ASCII set has none.
+ */
+function toScriptCharacters(
+	box: MathBox,
+	kind: "sub" | "sup",
+	context: MathContext,
+): MathBox | null {
+	if (box.height !== 1 || box.width === 0 || context.glyphs === "ascii") {
+		return null;
+	}
+	const table = kind === "sup" ? SUPERSCRIPTS : SUBSCRIPTS;
+	const cells: MathCell[] = [];
+	let width = 0;
+	for (const cell of box.cells[0]) {
+		const mapped = table[cell.text];
+		if (mapped === undefined) {
+			return null;
+		}
+		const cellWidth = Math.max(1, getStringWidth(mapped));
+		cells.push({text: mapped, width: cellWidth, style: cell.style});
+		width += cellWidth;
+	}
+	return {width, height: 1, baseline: 0, cells: [cells]};
+}
+
+function parenthesize(
+	box: MathBox,
+	node: Node | undefined,
+	units: Set<string>,
+): MathBox {
+	if (
+		box.width <= 1 ||
+		(node !== undefined &&
+			node.nodeType === node.ELEMENT_NODE &&
+			units.has((node as Element).localName))
+	) {
+		return box;
+	}
+	return beside(
+		beside(createTextBox("(", null), box),
+		createTextBox(")", null),
+	);
+}
+
+// The rows a shifted script pair occupies beside the base: the
+// superscript ends on the row above the baseline, the subscript starts
+// on the row below, and the baseline row between them is empty.
+function buildScriptColumn(
+	sub: MathBox | null,
+	sup: MathBox | null,
+	align: Alignment,
+): MathBox {
+	let column = createEmptyBox(Math.max(sub?.width ?? 0, sup?.width ?? 0, 1));
+	if (sup !== null) {
+		column = stack(sup, column, align, sup.height);
+	}
+	if (sub !== null) {
+		column = stack(column, sub, align, column.baseline);
+	}
+	return column;
+}
+
+/**
+ * Scripts on a base. Unicode script characters follow the base on its
+ * own row whenever the script has them, subscript before superscript.
+ * Otherwise display mode shifts the script a row up or down beside the
+ * base, and inline mode spells it ^(…) or _(…).
+ */
+function attachScripts(
+	base: MathBox,
+	sub: MathBox | null,
+	sup: MathBox | null,
+	subNode: Node | undefined,
+	supNode: Node | undefined,
+	context: MathContext,
+	pre = false,
+): MathBox {
+	const subCharacters = sub && toScriptCharacters(sub, "sub", context);
+	const supCharacters = sup && toScriptCharacters(sup, "sup", context);
+	const shiftedSub = subCharacters ? null : sub;
+	const shiftedSup = supCharacters ? null : sup;
+	const joinTo = (box: MathBox, part: MathBox): MathBox =>
+		pre ? beside(part, box) : beside(box, part);
+	let result = base;
+	if (pre) {
+		if (subCharacters) {
+			result = beside(subCharacters, result);
+		}
+		if (supCharacters) {
+			result = beside(supCharacters, result);
+		}
+	} else {
+		if (subCharacters) {
+			result = beside(result, subCharacters);
+		}
+		if (supCharacters) {
+			result = beside(result, supCharacters);
+		}
+	}
+	if (shiftedSub === null && shiftedSup === null) {
+		return result;
+	}
+	if (context.display) {
+		return joinTo(
+			result,
+			buildScriptColumn(shiftedSub, shiftedSup, pre ? "right" : "left"),
+		);
+	}
+	if (shiftedSub !== null) {
+		result = joinTo(
+			result,
+			beside(
+				createTextBox("_", null),
+				parenthesize(shiftedSub, subNode, SCRIPT_UNITS),
+			),
+		);
+	}
+	if (shiftedSup !== null) {
+		result = joinTo(
+			result,
+			beside(
+				createTextBox("^", null),
+				parenthesize(shiftedSup, supNode, SCRIPT_UNITS),
+			),
+		);
+	}
+	return result;
+}
+
+function layoutScriptElement(element: Element, context: MathContext): MathBox {
+	const children = getLayoutChildren(element);
+	const base = layoutChild(children[0], context);
+	const subNode = element.localName === "msup" ? undefined : children[1];
+	const supNode = element.localName === "msup"
+		? children[1]
+		: element.localName === "msubsup" ? children[2] : undefined;
+	return attachScripts(
+		base,
+		subNode === undefined ? null : layoutNode(subNode, context),
+		supNode === undefined ? null : layoutNode(supNode, context),
+		subNode,
+		supNode,
+		context,
+	);
+}
+
+function isEmptyScript(node: Node | undefined): boolean {
+	return (
+		node === undefined ||
+		(isMathElement(node) && (node as Element).localName === "none")
+	);
+}
+
+function layoutMultiscripts(element: Element, context: MathContext): MathBox {
+	const children = getLayoutChildren(element);
+	let result = layoutChild(children[0], context);
+	const pairs: Array<[Node | undefined, Node | undefined, boolean]> = [];
+	let pre = false;
+	for (let index = 1; index < children.length; index++) {
+		const node = children[index];
+		if (isMathElement(node) && (node as Element).localName === "mprescripts") {
+			pre = true;
+			continue;
+		}
+		pairs.push([node, children[index + 1], pre]);
+		index++;
+	}
+	for (const [subNode, supNode, isPre] of pairs) {
+		result = attachScripts(
+			result,
+			isEmptyScript(subNode) ? null : layoutNode(subNode!, context),
+			isEmptyScript(supNode) ? null : layoutNode(supNode!, context),
+			subNode,
+			supNode,
+			context,
+			isPre,
+		);
+	}
+	return result;
+}
+
+function parseAlignment(value: string | null, fallback: Alignment): Alignment {
+	const text = value?.trim().toLowerCase();
+	return text === "left" || text === "right" || text === "center"
+		? text
+		: fallback;
+}
+
+/**
+ * A fraction. In display mode the numerator and denominator stack over a
+ * bar one cell wider than either on each side, and the bar row is the
+ * baseline. Inline mode writes a/b, with a side in parentheses when it
+ * is more than one cell and not self-delimiting.
+ */
+function layoutFraction(element: Element, context: MathContext): MathBox {
+	const children = getLayoutChildren(element);
+	const numerator = layoutChild(children[0], context);
+	const denominator = layoutChild(children[1], context);
+	if (!context.display) {
+		return beside(
+			beside(
+				parenthesize(numerator, children[0], FRACTION_UNITS),
+				createTextBox("/", null),
+			),
+			parenthesize(denominator, children[1], FRACTION_UNITS),
+		);
+	}
+	const width = Math.max(numerator.width, denominator.width) + 2;
+	const thickness = parseMathLength(element.getAttribute("linethickness"));
+	const bar = thickness === 0
+		? createEmptyBox(width)
+		: createTextBox(getFractionBar(context.glyphs).repeat(width), null);
+	const top = stack(
+		pad(numerator, 0, 1, 0, 1),
+		bar,
+		parseAlignment(element.getAttribute("numalign"), "center"),
+		numerator.height,
+	);
+	return stack(
+		top,
+		pad(denominator, 0, 1, 0, 1),
+		parseAlignment(element.getAttribute("denomalign"), "center"),
+		top.baseline,
+	);
 }
 
 function findTeXAnnotation(element: Element): string | null {

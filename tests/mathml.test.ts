@@ -142,6 +142,119 @@ test("HTML inside mtext renders as text", async () => {
 	expect(lines).toEqual(["a if x z"]);
 });
 
+test("a script with Unicode forms adds no rows in either mode", async () => {
+	const sup = "<msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><mi>y</mi>";
+	expect(await renderLines(block(sup), 20)).toEqual(["       x² + y"]);
+	expect(await renderLines(inline(sup))).toEqual(["a x² + y z"]);
+	const sub = "<msub><mi>x</mi><mi>i</mi></msub><mo>+</mo><mi>y</mi>";
+	expect(await renderLines(inline(sub))).toEqual(["a xᵢ + y z"]);
+	const both = "<msubsup><mi>x</mi><mn>3</mn><mn>2</mn></msubsup>";
+	expect(await renderLines(inline(both))).toEqual(["a x₃² z"]);
+	const exponent =
+		"<msup><mi>e</mi><mrow><mo>-</mo><mi>i</mi><mi>t</mi></mrow></msup>";
+	expect(await renderLines(inline(exponent))).toEqual(["a e⁻ⁱᵗ z"]);
+});
+
+test("a script without Unicode forms shifts a row in display mode", async () => {
+	const sup = "<msup><mi>x</mi><mi>q</mi></msup><mo>+</mo><mi>y</mi>";
+	expect(await renderLines(block(sup), 20)).toEqual([
+		"        q",
+		"       x  + y",
+	]);
+	const sub = "<mi>x</mi><msub><mi>y</mi><mi>ab</mi></msub>";
+	expect(await renderLines(block(sub), 20)).toEqual([
+		"        xy",
+		"          ab",
+	]);
+	const both = "<msubsup><mi>x</mi><mi>ab</mi><mi>q</mi></msubsup>";
+	expect(await renderLines(block(both), 20)).toEqual([
+		"         q",
+		"        x",
+		"         ab",
+	]);
+});
+
+test("a script without Unicode forms is spelled ^ and _ inline", async () => {
+	expect(
+		await renderLines(inline("<msup><mi>x</mi><mi>q</mi></msup>")),
+	).toEqual(
+		["a x^q z"],
+	);
+	expect(
+		await renderLines(inline("<msub><mi>x</mi><mi>ab</mi></msub>")),
+	).toEqual(
+		["a x_(ab) z"],
+	);
+	expect(
+		await renderLines(
+			inline(
+				"<msubsup><mi>x</mi><mi>ab</mi><mrow><mi>n</mi><mo>+</mo><mi>q</mi></mrow></msubsup>",
+			),
+		),
+	).toEqual(["a x_(ab)^(n + q) z"]);
+});
+
+test("mmultiscripts puts prescripts before the base", async () => {
+	expect(
+		await renderLines(
+			inline(
+				"<mmultiscripts><mi>X</mi><mn>1</mn><mn>2</mn>" +
+				"<mprescripts/><mn>3</mn><none/></mmultiscripts>",
+			),
+		),
+	).toEqual(["a ₃X₁² z"]);
+});
+
+test("a display fraction stacks over a bar with one cell of overhang", async () => {
+	const lines = await renderLines(
+		block(
+			"<mfrac><mrow><mi>n</mi><mo>(</mo><mi>n</mi><mo>+</mo><mn>1</mn><mo>)</mo></mrow><mn>2</mn></mfrac>",
+		),
+		20,
+	);
+	expect(lines).toEqual(["      n(n + 1)", "     ──────────", "         2"]);
+});
+
+test("a fraction beside an equals sign shares its baseline with the bar", async () => {
+	const lines = await renderLines(
+		block("<mi>y</mi><mo>=</mo><mfrac><mi>a</mi><mi>b</mi></mfrac>"),
+		20,
+	);
+	expect(lines).toEqual(["           a", "      y = ───", "           b"]);
+});
+
+test("linethickness=0 leaves an empty bar row", async () => {
+	const lines = await renderLines(
+		block("<mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac>"),
+		10,
+	);
+	expect(lines).toEqual(["    n", "", "    k"]);
+});
+
+test("an inline fraction is a/b with parentheses around a wide mrow", async () => {
+	expect(
+		await renderLines(
+			inline(
+				"<mfrac><mi>a</mi><mrow><mi>b</mi><mo>+</mo><mn>1</mn></mrow></mfrac>",
+			),
+		),
+	).toEqual(["a a/(b + 1) z"]);
+	expect(
+		await renderLines(
+			inline("<mfrac><msup><mi>x</mi><mn>2</mn></msup><mn>2</mn></mfrac>"),
+		),
+	).toEqual(["a x²/2 z"]);
+});
+
+test("math-style: compact forces the inline forms in display mode", async () => {
+	const lines = await renderLines(
+		"<math display=\"block\" style=\"math-style: compact\">" +
+		"<mfrac><mi>a</mi><mi>b</mi></mfrac></math>",
+		10,
+	);
+	expect(lines).toEqual(["   a/b"]);
+});
+
 test("getBoundingClientRect reports the math box in cells", async () => {
 	const {dom} = await render(inline("<mi>x</mi><mo>+</mo><mi>y</mi>"), 40);
 	const rect = dom.document.querySelector("math")!.getBoundingClientRect();
