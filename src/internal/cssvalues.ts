@@ -2986,7 +2986,7 @@ function supportsOperandMatches(
 	part: CSSTree.SupportsNode,
 	source: string,
 ): boolean {
-	const sliceOf = (
+	const getSlice = (
 		node: CSSTree.SupportsNode | null | undefined,
 	): string | null =>
 		node?.loc ? source.slice(node.loc.start.offset, node.loc.end.offset) : null;
@@ -2994,7 +2994,7 @@ function supportsOperandMatches(
 		return supportsConditionMatches(part, source);
 	}
 	if (part.type === "SupportsDeclaration") {
-		const value = sliceOf(part.declaration?.value);
+		const value = getSlice(part.declaration?.value);
 		return (
 			value !== null && cssSupports(part.declaration?.property ?? "", value)
 		);
@@ -3002,7 +3002,7 @@ function supportsOperandMatches(
 	// `selector(...)` asks whether a selector parses, which is exactly what
 	// the cascade's own selector parser decides.
 	if (part.type === "FeatureFunction" && part.feature === "selector") {
-		const selector = sliceOf(part.value);
+		const selector = getSlice(part.value);
 		return selector !== null && parseSelectorList(selector) !== null;
 	}
 	return false;
@@ -3803,13 +3803,13 @@ export function getScopeLimits(prelude: string): {
 	} catch (_err) {
 		scope = undefined;
 	}
-	const sliceOf = (
+	const getSlice = (
 		node: CSSTree.ScopePreludeNode | null | undefined,
 	): string | null =>
 		node?.loc
 			? prelude.slice(node.loc.start.offset, node.loc.end.offset)
 			: null;
-	return {start: sliceOf(scope?.root), end: sliceOf(scope?.limit)};
+	return {start: getSlice(scope?.root), end: getSlice(scope?.limit)};
 }
 
 function serializeIdentifierSource(name: string): string {

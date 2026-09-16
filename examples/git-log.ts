@@ -88,13 +88,13 @@ for (const c of commits) {
 }
 
 // Built detail blocks ride along on their row, so re-expanding is free.
-const detailsOf = new WeakMap<HTMLElement, HTMLElement>();
+const detailsByRow = new WeakMap<HTMLElement, HTMLElement>();
 
 function expand(row: HTMLElement): void {
   if (row.dataset.open === "true") {
     return;
   }
-  let details = detailsOf.get(row);
+  let details = detailsByRow.get(row);
   if (!details) {
     details = document.createElement("div");
     details.className = "details";
@@ -111,7 +111,7 @@ function expand(row: HTMLElement): void {
       div.textContent = line || " ";
       details.appendChild(div);
     }
-    detailsOf.set(row, details);
+    detailsByRow.set(row, details);
   }
   row.after(details);
   row.dataset.open = "true";
@@ -121,7 +121,7 @@ function collapse(row: HTMLElement): void {
   if (row.dataset.open !== "true") {
     return;
   }
-  detailsOf.get(row)?.remove();
+  detailsByRow.get(row)?.remove();
   row.dataset.open = "false";
 }
 

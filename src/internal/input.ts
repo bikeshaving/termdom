@@ -256,7 +256,7 @@ function getWheelScroller(
 			}
 			continue;
 		}
-		const extent = layout.scrollExtentOf(element);
+		const extent = layout.getScrollExtent(element);
 		const port = layout.contentRect(element);
 		if (!extent || !port) {
 			continue;
@@ -394,7 +394,7 @@ export class Input {
 			this[kHoverElement] = target;
 			setHoveredElement(this[kDocument], target);
 			this[kCascade].handleHoverChange(previous, target);
-			const chainOf = (element: Element | null): Element[] => {
+			const getChain = (element: Element | null): Element[] => {
 				const chain: Element[] = [];
 				for (
 					let node: Element | null = element;
@@ -405,8 +405,8 @@ export class Input {
 				}
 				return chain;
 			};
-			const previousChain = chainOf(previous);
-			const targetChain = chainOf(target);
+			const previousChain = getChain(previous);
+			const targetChain = getChain(target);
 			const previousSet = new Set(previousChain);
 			const targetSet = new Set(targetChain);
 			const boundaryInit = {

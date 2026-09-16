@@ -145,7 +145,7 @@ const TESTDRIVER_VENDOR = String.raw`
 			});
 		});
 	}
-	function cellOf(element) {
+	function getCell(element) {
 		const rect = element.getBoundingClientRect();
 		return {
 			col: Math.floor(rect.left + rect.width / 2) + 1,
@@ -193,7 +193,7 @@ const TESTDRIVER_VENDOR = String.raw`
 					if (action.type === "pointerMove") {
 						const origin = action.origin;
 						if (origin && origin.getBoundingClientRect) {
-							const cell = cellOf(origin);
+							const cell = getCell(origin);
 							col = cell.col + (action.x ?? 0);
 							row = cell.row + (action.y ?? 0);
 						} else {
@@ -215,7 +215,7 @@ const TESTDRIVER_VENDOR = String.raw`
 		await settled();
 	};
 	window.test_driver_internal.click = async function(element) {
-		const cell = cellOf(element);
+		const cell = getCell(element);
 		__termdomDriverInput("\x1b[<0;" + cell.col + ";" + cell.row + "M");
 		__termdomDriverInput("\x1b[<0;" + cell.col + ";" + cell.row + "m");
 		await settled();

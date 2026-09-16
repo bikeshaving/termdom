@@ -1479,7 +1479,7 @@ function resolveFlexibleLengths(
 		return;
 	}
 
-	const factorOf = (child: LayoutNode) =>
+	const getFactor = (child: LayoutNode) =>
 		growing
 			? resolveFlexGrow(child)
 			: resolveFlexShrink(child) * base.get(child)!;
@@ -1516,7 +1516,7 @@ function resolveFlexibleLengths(
 
 		let totalFactor = 0;
 		for (const child of unfrozen) {
-			totalFactor += factorOf(child);
+			totalFactor += getFactor(child);
 		}
 		if (totalFactor === 0) {
 			break;
@@ -1528,7 +1528,7 @@ function resolveFlexibleLengths(
 
 		for (const child of unfrozen) {
 			const unclamped =
-				base.get(child)! + (remaining * factorOf(child)) / totalFactor;
+				base.get(child)! + (remaining * getFactor(child)) / totalFactor;
 			const bounded = clampMain(child, unclamped);
 
 			target.set(child, bounded);
@@ -3491,13 +3491,13 @@ function distributeExtraSpace(
 		tracks[index].planned = 0;
 	}
 
-	const startOf = (track: GridTrack) =>
+	const getStart = (track: GridTrack) =>
 		toLimits
 			? track.growthLimit === Infinity ? track.base : track.growthLimit
 			: track.base;
 	// A growth limit has nothing to grow toward unless it is infinitely
 	// growable, and then only up to a fit-content() clamp (§12.5.1).
-	const limitOf = (track: GridTrack) =>
+	const getLimit = (track: GridTrack) =>
 		toLimits
 			? Math.min(
 				track.infinitelyGrowable ? Infinity : track.growthLimit,
@@ -3513,10 +3513,10 @@ function distributeExtraSpace(
 		let used = 0;
 		for (const index of open) {
 			const track = tracks[index];
-			const limit = limitOf(track);
+			const limit = getLimit(track);
 			const room = limit === Infinity
 				? Infinity
-				: Math.max(0, limit - startOf(track) - track.planned);
+				: Math.max(0, limit - getStart(track) - track.planned);
 			const growth = Math.min(share, room);
 			track.planned += growth;
 			used += growth;
@@ -3543,7 +3543,7 @@ function distributeExtraSpace(
 	for (const index of receivers) {
 		const track = tracks[index];
 		if (toLimits) {
-			const from = startOf(track);
+			const from = getStart(track);
 			track.growthLimit = Math.min(from + track.planned, track.fitContentLimit);
 			if (track.growthLimit < track.base) {
 				track.growthLimit = track.base;
@@ -4435,7 +4435,7 @@ function layoutGrid(
 	};
 
 	let columnTracks = sizeColumns(definiteWidth ? innerWidth : NaN);
-	const totalOf = (tracks: GridTrack[], gap: number) => {
+	const getTotal = (tracks: GridTrack[], gap: number) => {
 		let total = 0;
 		let live = 0;
 		for (const track of tracks) {
@@ -4448,7 +4448,7 @@ function layoutGrid(
 		return total + gap * Math.max(0, live - 1);
 	};
 
-	let columnsTotal = totalOf(columnTracks, columnGap);
+	let columnsTotal = getTotal(columnTracks, columnGap);
 	// A shrink-to-fit grid that overflows its bound is re-sized against it.
 	if (
 		widthSpace === "shrink-to-fit" &&
@@ -4456,7 +4456,7 @@ function layoutGrid(
 		columnsTotal > innerWidth + EPSILON
 	) {
 		columnTracks = sizeColumns(innerWidth);
-		columnsTotal = totalOf(columnTracks, columnGap);
+		columnsTotal = getTotal(columnTracks, columnGap);
 	}
 
 	const columnSizes = columnTracks.map((track) => track.base);
@@ -4497,14 +4497,14 @@ function layoutGrid(
 	};
 
 	let rowTracks = sizeRows(definiteHeight ? innerHeight : NaN);
-	let rowsTotal = totalOf(rowTracks, rowGap);
+	let rowsTotal = getTotal(rowTracks, rowGap);
 	if (
 		heightSpace === "shrink-to-fit" &&
 		isDefined(innerHeight) &&
 		rowsTotal > innerHeight + EPSILON
 	) {
 		rowTracks = sizeRows(innerHeight);
-		rowsTotal = totalOf(rowTracks, rowGap);
+		rowsTotal = getTotal(rowTracks, rowGap);
 	}
 
 	const width = widthSpace === "definite"

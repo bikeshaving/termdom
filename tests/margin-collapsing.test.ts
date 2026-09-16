@@ -11,7 +11,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils";
 
-function rectOf(_dom: TermDOM, el: Element): DOMRect {
+function getRect(_dom: TermDOM, el: Element): DOMRect {
 	return (el as HTMLElement).getBoundingClientRect();
 }
 
@@ -34,8 +34,8 @@ test("adjacent sibling margins collapse to the larger", async () => {
 		"<div id=\"a\" style=\"margin-bottom:2px\">A</div>" +
 		"<div id=\"b\" style=\"margin-top:1px\">B</div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const b = rectOf(dom, dom.document.getElementById("b")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const b = getRect(dom, dom.document.getElementById("b")!);
 	expect(b.top - a.bottom).toBe(2);
 	dom.dispose();
 });
@@ -50,10 +50,10 @@ test("a first child's margin collapses through a borderless-top parent", async (
 		"<p id=\"p2\" style=\"margin-top:1px\">second</p>" +
 		"</blockquote>",
 	);
-	const h = rectOf(dom, dom.document.getElementById("h")!);
-	const bq = rectOf(dom, dom.document.getElementById("bq")!);
-	const p1 = rectOf(dom, dom.document.getElementById("p1")!);
-	const p2 = rectOf(dom, dom.document.getElementById("p2")!);
+	const h = getRect(dom, dom.document.getElementById("h")!);
+	const bq = getRect(dom, dom.document.getElementById("bq")!);
+	const p1 = getRect(dom, dom.document.getElementById("p1")!);
+	const p2 = getRect(dom, dom.document.getElementById("p2")!);
 	// One collapsed row of gap above the box; the box starts AT its first text.
 	expect(bq.top - h.bottom).toBe(1);
 	expect(p1.top).toBe(bq.top);
@@ -70,9 +70,9 @@ test("padding-top stops the collapse: the child margin stays inside", async () =
 		"<p id=\"p\" style=\"margin-top:1px\">quote</p>" +
 		"</blockquote>",
 	);
-	const h = rectOf(dom, dom.document.getElementById("h")!);
-	const bq = rectOf(dom, dom.document.getElementById("bq")!);
-	const p = rectOf(dom, dom.document.getElementById("p")!);
+	const h = getRect(dom, dom.document.getElementById("h")!);
+	const bq = getRect(dom, dom.document.getElementById("bq")!);
+	const p = getRect(dom, dom.document.getElementById("p")!);
 	expect(bq.top - h.bottom).toBe(1);
 	// padding row + the paragraph's own margin, both inside the box.
 	expect(p.top - bq.top).toBe(2);
@@ -84,9 +84,9 @@ test("a last child's margin collapses through a borderless-bottom parent", async
 		"<div id=\"wrap\"><p id=\"p\" style=\"margin-bottom:2px\">text</p></div>" +
 		"<div id=\"after\">after</div>",
 	);
-	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
-	const p = rectOf(dom, dom.document.getElementById("p")!);
-	const after = rectOf(dom, dom.document.getElementById("after")!);
+	const wrap = getRect(dom, dom.document.getElementById("wrap")!);
+	const p = getRect(dom, dom.document.getElementById("p")!);
+	const after = getRect(dom, dom.document.getElementById("after")!);
 	expect(wrap.bottom).toBe(p.bottom);
 	expect(after.top - wrap.bottom).toBe(2);
 	dom.dispose();
@@ -99,9 +99,9 @@ test("overflow:hidden establishes a BFC: no collapse through its edges", async (
 		"<p id=\"p\" style=\"margin-top:1px\">inside</p>" +
 		"</div>",
 	);
-	const h = rectOf(dom, dom.document.getElementById("h")!);
-	const box = rectOf(dom, dom.document.getElementById("box")!);
-	const p = rectOf(dom, dom.document.getElementById("p")!);
+	const h = getRect(dom, dom.document.getElementById("h")!);
+	const box = getRect(dom, dom.document.getElementById("box")!);
+	const p = getRect(dom, dom.document.getElementById("p")!);
 	expect(box.top - h.bottom).toBe(1);
 	expect(p.top - box.top).toBe(1);
 	dom.dispose();
@@ -114,8 +114,8 @@ test("flex items never collapse margins", async () => {
 		"<div id=\"b\" style=\"margin-top:1px\">B</div>" +
 		"</div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const b = rectOf(dom, dom.document.getElementById("b")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const b = getRect(dom, dom.document.getElementById("b")!);
 	expect(b.top - a.bottom).toBe(3);
 	dom.dispose();
 });
@@ -124,8 +124,8 @@ test("a negative margin pulls the box up", async () => {
 	const {dom} = await layout(
 		"<div id=\"a\">A</div><div id=\"b\" style=\"margin-top:-1px\">B</div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const b = rectOf(dom, dom.document.getElementById("b")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const b = getRect(dom, dom.document.getElementById("b")!);
 	// B overlaps A's row: the negative margin is real geometry, not clamped.
 	expect(b.top).toBe(a.bottom - 1);
 	dom.dispose();
@@ -138,8 +138,8 @@ test("a negative margin subtracts from the collapsed positive", async () => {
 		"<div id=\"a\" style=\"margin-bottom:2px\">A</div>" +
 		"<div id=\"b\" style=\"margin-top:-1px\">B</div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const b = rectOf(dom, dom.document.getElementById("b")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const b = getRect(dom, dom.document.getElementById("b")!);
 	expect(b.top - a.bottom).toBe(1);
 	dom.dispose();
 });
@@ -148,7 +148,7 @@ test("negative values stay rejected where CSS forbids them", async () => {
 	const {dom} =
 		await layout("<div id=\"w\" style=\"width:-5px;padding-top:-1px\">x</div>");
 	// Invalid declarations fall back: auto width fills the line, padding 0.
-	const w = rectOf(dom, dom.document.getElementById("w")!);
+	const w = getRect(dom, dom.document.getElementById("w")!);
 	expect(w.width).toBe(60);
 	expect(w.height).toBe(1);
 	dom.dispose();
@@ -160,9 +160,9 @@ test("an empty block self-collapses: one margin passes through it", async () => 
 		"<div id=\"e\" style=\"margin-top:2px;margin-bottom:3px\"></div>" +
 		"<div id=\"b\">B</div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const e = rectOf(dom, dom.document.getElementById("e")!);
-	const b = rectOf(dom, dom.document.getElementById("b")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const e = getRect(dom, dom.document.getElementById("e")!);
+	const b = getRect(dom, dom.document.getElementById("b")!);
 	// All four margins adjoin through the zero-height block: max is 3.
 	expect(e.height).toBe(0);
 	expect(b.top - a.bottom).toBe(3);
@@ -176,8 +176,8 @@ test("a chain of empty blocks still collapses to one margin", async () => {
 		"<div style=\"margin-top:1px\"></div>" +
 		"<div id=\"b\" style=\"margin-top:1px\">B</div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const b = rectOf(dom, dom.document.getElementById("b")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const b = getRect(dom, dom.document.getElementById("b")!);
 	expect(b.top - a.bottom).toBe(2);
 	dom.dispose();
 });
@@ -188,8 +188,8 @@ test("border or height stops self-collapse", async () => {
 		"<div id=\"e\" style=\"height:1px;margin-top:1px;margin-bottom:1px\"></div>" +
 		"<div id=\"b\">B</div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const b = rectOf(dom, dom.document.getElementById("b")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const b = getRect(dom, dom.document.getElementById("b")!);
 	// A real box between them: both margins apply around it.
 	expect(b.top - a.bottom).toBe(3);
 	dom.dispose();
@@ -201,10 +201,10 @@ test("a self-collapsing block collapses its parent through both edges", async ()
 		"<div id=\"wrap\"><div id=\"e\" style=\"margin-top:2px;margin-bottom:3px\"></div></div>" +
 		"<div id=\"b\">B</div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
-	const e = rectOf(dom, dom.document.getElementById("e")!);
-	const b = rectOf(dom, dom.document.getElementById("b")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const wrap = getRect(dom, dom.document.getElementById("wrap")!);
+	const e = getRect(dom, dom.document.getElementById("e")!);
+	const b = getRect(dom, dom.document.getElementById("b")!);
 	// Nothing separates any of the six margins: one set, largest positive wins.
 	expect(e.height).toBe(0);
 	expect(wrap.height).toBe(0);
@@ -218,8 +218,8 @@ test("a negative margin inside a self-collapsing block passes through", async ()
 		"<div id=\"e\" style=\"margin-top:-1px;margin-bottom:1px\"></div>" +
 		"<div id=\"b\">B</div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const b = rectOf(dom, dom.document.getElementById("b")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const b = getRect(dom, dom.document.getElementById("b")!);
 	// {3, -1, 1, 0}: largest positive plus most negative.
 	expect(b.top - a.bottom).toBe(2);
 	dom.dispose();
@@ -230,9 +230,9 @@ test("a negative margin collapses through a parent's top edge", async () => {
 		"<div id=\"a\" style=\"margin-bottom:2px\">A</div>" +
 		"<div id=\"wrap\"><div id=\"c\" style=\"margin-top:-1px\">C</div></div>",
 	);
-	const a = rectOf(dom, dom.document.getElementById("a")!);
-	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
-	const c = rectOf(dom, dom.document.getElementById("c")!);
+	const a = getRect(dom, dom.document.getElementById("a")!);
+	const wrap = getRect(dom, dom.document.getElementById("wrap")!);
+	const c = getRect(dom, dom.document.getElementById("c")!);
 	expect(wrap.top - a.bottom).toBe(1);
 	expect(c.top).toBe(wrap.top);
 	dom.dispose();
@@ -243,9 +243,9 @@ test("a trailing self-collapsing child pushes the gap outside its parent", async
 		"<div id=\"wrap\"><div id=\"c\">C</div><div id=\"e\" style=\"margin-top:2px\"></div></div>" +
 		"<div id=\"after\">after</div>",
 	);
-	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
-	const c = rectOf(dom, dom.document.getElementById("c")!);
-	const after = rectOf(dom, dom.document.getElementById("after")!);
+	const wrap = getRect(dom, dom.document.getElementById("wrap")!);
+	const c = getRect(dom, dom.document.getElementById("c")!);
+	const after = getRect(dom, dom.document.getElementById("after")!);
 	// The empty block's margins adjoin the parent's bottom edge and escape it.
 	expect(wrap.bottom).toBe(c.bottom);
 	expect(after.top - wrap.bottom).toBe(2);

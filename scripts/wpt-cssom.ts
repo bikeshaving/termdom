@@ -258,29 +258,33 @@ function installFrames(window: Window): void {
 		return;
 	}
 	framesInstalled = true;
-	const contextOf = (frame: Element): {document: Document; window: unknown} => {
-		let context = frames.get(frame);
-		if (context === undefined) {
-			const inner = mountEngine(
-				frame.getAttribute("srcdoc") ??
-				"<!doctype html><html><head></head><body></body></html>",
-				documentURL,
-			).window;
-			const realm = createRealm(inner, documentURL);
-			context = {
-				document: inner.document,
-				window: runInContext("globalThis", realm),
-			};
-			frames.set(frame, context);
-		}
-		return context;
-	};
+	const getContext =
+		(frame: Element): {document: Document; window: unknown} => {
+			let context = frames.get(frame);
+			if (context === undefined) {
+				const inner = mountEngine(
+					frame.getAttribute("srcdoc") ??
+					"<!doctype html><html><head></head><body></body></html>",
+					documentURL,
+				).window;
+				const realm = createRealm(inner, documentURL);
+				context = {
+					document: inner.document,
+					window: runInContext("globalThis", realm),
+				};
+				frames.set(frame, context);
+			}
+			return context;
+		};
 	const iframePrototype = (
 		window as unknown as {HTMLIFrameElement: {prototype: object}}
 	).HTMLIFrameElement.prototype;
 	for (const [name, read] of [
-		["contentDocument", (frame: Element): unknown => contextOf(frame).document],
-		["contentWindow", (frame: Element): unknown => contextOf(frame).window],
+		[
+			"contentDocument",
+			(frame: Element): unknown => getContext(frame).document,
+		],
+		["contentWindow", (frame: Element): unknown => getContext(frame).window],
 	] as const) {
 		Object.defineProperty(iframePrototype, name, {
 			get(this: Element) {

@@ -142,10 +142,9 @@ test("body's own clientHeight/scrollHeight (viewport height, real content height
 
 test("offsetWidth/Height and clientWidth/Height stay mechanically consistent with border width", async () => {
 	// offsetWidth/Height, clientWidth/Height, and offsetTop/Left are all
-	// derived from the same #layoutRectOf/#getContentBox internals in
-	// termdom.ts, not independently written formulas -- so this identity can't
-	// silently drift out of sync across an edit to just one of them the way
-	// duplicated code could.
+	// derived from the same layout rect, not independently written formulas,
+	// so this identity can't silently drift out of sync across an edit to
+	// just one of them the way duplicated code could.
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `

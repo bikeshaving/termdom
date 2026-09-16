@@ -29,7 +29,7 @@ test("CSS specificity calculation", async () => {
 
 	// Specificity is verified through the cascade -- the most specific matching
 	// rule wins in getComputedStyle -- rather than by reading the parser's table.
-	const colorOf = (className: string, id: string): string => {
+	const getColor = (className: string, id: string): string => {
 		const el = document.createElement("div");
 		if (className) {
 			el.className = className;
@@ -41,11 +41,11 @@ test("CSS specificity calculation", async () => {
 		return termdom.window.getComputedStyle(el).getPropertyValue("color");
 	};
 
-	expect(colorOf("", "")).toBe("rgb(255, 0, 0)"); // div (000-000-001)
-	expect(colorOf("class", "")).toBe("rgb(255, 255, 0)"); // div.class (000-001-001) beats .class
-	expect(colorOf("class other", "")).toBe("rgb(0, 0, 255)"); // .class.other (000-002-000)
-	expect(colorOf("", "id")).toBe("rgb(128, 0, 128)"); // #id (001-000-000)
-	expect(colorOf("class", "id")).toBe("rgb(255, 165, 0)"); // #id.class (001-001-000)
+	expect(getColor("", "")).toBe("rgb(255, 0, 0)"); // div (000-000-001)
+	expect(getColor("class", "")).toBe("rgb(255, 255, 0)"); // div.class (000-001-001) beats .class
+	expect(getColor("class other", "")).toBe("rgb(0, 0, 255)"); // .class.other (000-002-000)
+	expect(getColor("", "id")).toBe("rgb(128, 0, 128)"); // #id (001-000-000)
+	expect(getColor("class", "id")).toBe("rgb(255, 165, 0)"); // #id.class (001-001-000)
 
 	termdom.dispose();
 });
@@ -70,10 +70,10 @@ test("@namespace qualifies the type selectors a sheet writes", async () => {
 	document.body.append(circle, rect);
 	await nextFrame(termdom);
 
-	const colorOf = (el: Element): string =>
+	const getColor = (el: Element): string =>
 		termdom.window.getComputedStyle(el).getPropertyValue("color");
-	expect(colorOf(circle)).toBe("rgb(255, 0, 0)");
-	expect(colorOf(rect)).toBe("rgb(0, 128, 0)");
+	expect(getColor(circle)).toBe("rgb(255, 0, 0)");
+	expect(getColor(rect)).toBe("rgb(0, 128, 0)");
 
 	termdom.dispose();
 });
@@ -133,18 +133,18 @@ test("selector-list pseudo-classes weigh their most specific argument", async ()
 		"<div class=\"has-target a b\"><span id=\"child\"></span></div>";
 	document.body.appendChild(host);
 
-	const colorOf = (selector: string): string => termdom.window
+	const getColor = (selector: string): string => termdom.window
 		.getComputedStyle(document.querySelector(selector)!)
 		.getPropertyValue("color");
 
 	// :is() carries its #nothing branch: 001-001-000 beats 000-003-000.
-	expect(colorOf(".is-target")).toBe("rgb(255, 0, 0)");
+	expect(getColor(".is-target")).toBe("rgb(255, 0, 0)");
 	// :where() carries nothing: 000-001-000 loses to 000-002-000.
-	expect(colorOf(".where-target")).toBe("rgb(0, 0, 255)");
+	expect(getColor(".where-target")).toBe("rgb(0, 0, 255)");
 	// :not(#nothing) is an id's worth of weight.
-	expect(colorOf(".not-target")).toBe("rgb(255, 0, 0)");
+	expect(getColor(".not-target")).toBe("rgb(255, 0, 0)");
 	// So is the id inside :has().
-	expect(colorOf(".has-target")).toBe("rgb(255, 0, 0)");
+	expect(getColor(".has-target")).toBe("rgb(255, 0, 0)");
 
 	termdom.dispose();
 });

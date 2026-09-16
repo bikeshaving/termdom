@@ -122,7 +122,7 @@ for (const file of readdirSync(idlDir)) {
 
 // An interface's attributes with its partials' and its mixins', all from
 // the specs named.
-function attributesOf(
+function getAttributes(
 	name: string,
 	specs: ReadonlySet<string>,
 	withMixins = true,
@@ -142,7 +142,7 @@ function attributesOf(
 		: [];
 	return [
 		...own.flatMap((d) => d.attributes),
-		...mixins.flatMap((mixin) => attributesOf(mixin, specs)),
+		...mixins.flatMap((mixin) => getAttributes(mixin, specs)),
 	];
 }
 
@@ -153,7 +153,7 @@ type Reflection = Record<string, string | number | boolean>;
 // What a Reflect annotation says, as a ReflectSpec. Null for an attribute
 // whose reflection this DOM writes out by hand: a ReflectSetter has its own
 // setter algorithm, and an element or a double reflects through prose.
-function reflectionOf(attribute: Attribute): Reflection | null {
+function getReflection(attribute: Attribute): Reflection | null {
 	const e = attribute.extended;
 	const reflects = Object.keys(e)
 		.some((key) => key.startsWith("Reflect") && key !== "ReflectSetter");
@@ -220,8 +220,8 @@ const interfaces = definitions
 
 const reflections: Record<string, Reflection[]> = {};
 for (const name of interfaces) {
-	const specs = attributesOf(name, HTML)
-		.map(reflectionOf)
+	const specs = getAttributes(name, HTML)
+		.map(getReflection)
 		.filter((spec): spec is Reflection => spec !== null);
 	if (specs.length > 0) {
 		reflections[name] = specs;
@@ -233,7 +233,7 @@ for (const element of elements.elements) {
 	tagInterfaces[element.name] = element.interface;
 }
 
-const aria = attributesOf("ARIAMixin", new Set(["wai-aria"]));
+const aria = getAttributes("ARIAMixin", new Set(["wai-aria"]));
 const ariaAttribute = (attribute: Attribute): string =>
 	typeof attribute.extended.Reflect === "string"
 		? attribute.extended.Reflect
@@ -254,7 +254,7 @@ function handlers(
 	specs: ReadonlySet<string>,
 	withMixins = true,
 ): string[] {
-	return attributesOf(name, specs, withMixins)
+	return getAttributes(name, specs, withMixins)
 		.map((a) => a.name)
 		.filter((n) => n.startsWith("on"))
 		.sort();

@@ -208,7 +208,7 @@ interface Forecast {
 }
 
 /** The color bucket a temperature paints with, coldest to hottest. */
-function bucketOf(temp: number): string {
+function getBucket(temp: number): string {
   const c = celsius ? temp : ((temp - 32) * 5) / 9;
   if (c < 0) {
     return "t0";
@@ -247,7 +247,7 @@ function temperatureChart(temps: number[]): string {
         // still a temperature, and an eighth-block reads as a hole.
         const eighths = Math.round(((t - min) / span) * (ROWS * 8 - 4)) + 4;
         const level = Math.max(0, Math.min(8, eighths - row * 8));
-        return `<span class="${bucketOf(t)}">${EIGHTHS[level]}</span>`;
+        return `<span class="${getBucket(t)}">${EIGHTHS[level]}</span>`;
       })
       .join("");
     const label = row === ROWS - 1

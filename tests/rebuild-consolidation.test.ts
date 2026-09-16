@@ -29,7 +29,7 @@ function makeDOM(): {dom: TermDOM; terminal: MockProcess} {
 	return {dom, terminal};
 }
 
-function frameOf(terminal: MockProcess): string {
+function getFrame(terminal: MockProcess): string {
 	return terminal
 		.getPlainText()
 		.split("\n")
@@ -54,7 +54,7 @@ async function incrementalVersusFresh(
 		step(dom.document as unknown as Document);
 		await nextFrame(dom);
 	}
-	const incremental = frameOf(terminal);
+	const incremental = getFrame(terminal);
 
 	const second = makeDOM();
 	for (const child of Array.from(dom.document.body.childNodes)) {
@@ -63,7 +63,7 @@ async function incrementalVersusFresh(
 		);
 	}
 	await nextFrame(second.dom);
-	const fresh = frameOf(second.terminal);
+	const fresh = getFrame(second.terminal);
 	dom.dispose();
 	second.dom.dispose();
 	return {incremental, fresh};
@@ -82,7 +82,7 @@ test("an element made fixed by a style write solves its auto margins", async () 
 	element.style.bottom = "0";
 	await nextFrame(dom);
 	const incremental = element.getBoundingClientRect().top;
-	const frame = frameOf(terminal);
+	const frame = getFrame(terminal);
 
 	const fresh = makeDOM();
 	fresh.dom.document.body.appendChild(
@@ -95,7 +95,7 @@ test("an element made fixed by a style write solves its auto margins", async () 
 
 	expect(incremental).toBe(freshTop);
 	expect(incremental).toBeGreaterThan(0);
-	expect(frame).toBe(frameOf(fresh.terminal));
+	expect(frame).toBe(getFrame(fresh.terminal));
 	dom.dispose();
 	fresh.dom.dispose();
 });
@@ -110,7 +110,7 @@ test("an element made fixed by the popover attribute solves its auto margins", a
 	element.showPopover();
 	await nextFrame(dom);
 	const incremental = element.getBoundingClientRect().top;
-	const frame = frameOf(terminal);
+	const frame = getFrame(terminal);
 
 	const fresh = makeDOM();
 	fresh.dom.document.body.appendChild(
@@ -122,7 +122,7 @@ test("an element made fixed by the popover attribute solves its auto margins", a
 
 	expect(incremental).toBe(freshElement.getBoundingClientRect().top);
 	expect(incremental).toBeGreaterThan(0);
-	expect(frame).toBe(frameOf(fresh.terminal));
+	expect(frame).toBe(getFrame(fresh.terminal));
 	dom.dispose();
 	fresh.dom.dispose();
 });

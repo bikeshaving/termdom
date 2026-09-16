@@ -59,7 +59,7 @@ function lineTexts(target: Node): Line[] {
 }
 
 /** The box an element paints, or null where it generates none. */
-function boxOf(element: Element): DOMRect | null {
+function getBox(element: Element): DOMRect | null {
 	return element.getClientRects().length === 0
 		? null
 		: element.getBoundingClientRect();
@@ -85,7 +85,7 @@ function layoutDOM(html = "<div></div>"): TermDOM {
 test("a pixel width and height size the box", () => {
 	const dom = layoutDOM("<div style=\"width: 100px; height: 50px;\"></div>");
 	const div = dom.document.querySelector("div")!;
-	const rect = boxOf(div);
+	const rect = getBox(div);
 
 	expect([rect!.width, rect!.height]).toEqual([100, 50]);
 });
@@ -93,7 +93,7 @@ test("a pixel width and height size the box", () => {
 test("a percentage width resolves against the container", () => {
 	const dom = layoutDOM("<div style=\"width: 50%;\"></div>");
 	const div = dom.document.querySelector("div")!;
-	const rect = boxOf(div);
+	const rect = getBox(div);
 
 	// Half of the 300 columns the viewport has.
 	expect(rect!.width).toBe(150);
@@ -102,7 +102,7 @@ test("a percentage width resolves against the container", () => {
 test("a margin offsets the box and takes room from its width", () => {
 	const dom = layoutDOM("<div style=\"margin: 10px;\"></div>");
 	const div = dom.document.querySelector("div")!;
-	const rect = boxOf(div);
+	const rect = getBox(div);
 
 	// Pushed in by 10 on each side, leaving 280 of the 300.
 	expect([rect!.left, rect!.top, rect!.width]).toEqual([10, 10, 280]);
@@ -121,8 +121,8 @@ test("flex factors divide the container between the children", () => {
 	const container = dom.document.querySelector("div")!;
 	const children = Array.from(container.children);
 
-	const child1Rect = boxOf(children[0] as Element);
-	const child2Rect = boxOf(children[1] as Element);
+	const child1Rect = getBox(children[0] as Element);
+	const child2Rect = getBox(children[1] as Element);
 
 	// One share and two shares of 300.
 	expect([child1Rect!.left, child1Rect!.width]).toEqual([0, 100]);
@@ -136,7 +136,7 @@ test("addNode - basic element creation", () => {
 	dom.document.body.appendChild(div);
 
 	// Should create rect after mutation
-	const rect = boxOf(div);
+	const rect = getBox(div);
 	expect(rect).not.toBeNull();
 });
 
@@ -150,7 +150,7 @@ test("addNode - nested elements", () => {
 
 	// Both are in the layout: the parent has a box, and the empty inline
 	// measures zero inside it rather than the container's width.
-	expect(boxOf(parent)).not.toBeNull();
+	expect(getBox(parent)).not.toBeNull();
 	expect(child.getBoundingClientRect().width).toBe(0);
 });
 
@@ -161,7 +161,7 @@ test("addNode - text nodes", () => {
 	dom.document.body.appendChild(div);
 
 	// Text nodes don't get rects directly, but the container should
-	const rect = boxOf(div);
+	const rect = getBox(div);
 	expect(rect).not.toBeNull();
 });
 
@@ -178,7 +178,7 @@ test("inline elements join runs correctly", () => {
 	const container = dom.document.querySelector("div")!;
 
 	// Container should have rect
-	expect(boxOf(container)).not.toBeNull();
+	expect(getBox(container)).not.toBeNull();
 
 	// Inline spans join runs, so they may not have individual rects
 	// This is correct behavior - they'll be handled during text measurement
@@ -198,8 +198,8 @@ test("block elements have separate yoga nodes", () => {
 	const innerDivs = divs.slice(1); // Skip the container div
 
 	// Each block div should have its own rect
-	expect(boxOf(innerDivs[0])).not.toBeNull();
-	expect(boxOf(innerDivs[1])).not.toBeNull();
+	expect(getBox(innerDivs[0])).not.toBeNull();
+	expect(getBox(innerDivs[1])).not.toBeNull();
 });
 
 // Mutation handling tests
@@ -208,14 +208,14 @@ test("style changes trigger layout updates", () => {
 	const div = dom.document.querySelector("div")!;
 
 	// Initial rect
-	let rect = boxOf(div);
+	let rect = getBox(div);
 	expect(rect?.width).toBe(100);
 
 	// Change style
 	div.style.width = "200px";
 
 	// Updated rect
-	rect = boxOf(div);
+	rect = getBox(div);
 	expect(rect?.width).toBe(200);
 });
 
@@ -225,15 +225,15 @@ test("element removal cleans up yoga nodes", () => {
 	const span = dom.document.querySelector("span")!;
 
 	// Both should have rects initially
-	expect(boxOf(div)).not.toBeNull();
-	expect(boxOf(span)).not.toBeNull();
+	expect(getBox(div)).not.toBeNull();
+	expect(getBox(span)).not.toBeNull();
 
 	// Remove span
 	span.remove();
 
 	// Span should no longer have rect
-	expect(boxOf(span)).toBeNull();
-	expect(boxOf(div)).not.toBeNull(); // Parent still exists
+	expect(getBox(span)).toBeNull();
+	expect(getBox(div)).not.toBeNull(); // Parent still exists
 });
 
 // Edge cases
@@ -244,7 +244,7 @@ test("display none elements", () => {
 	// A display:none element generates no box, so there is no geometry to
 	// report: an empty client rect, and resolved values that are the computed
 	// ones.
-	expect(boxOf(div)).toBeNull();
+	expect(getBox(div)).toBeNull();
 });
 
 test("resize updates layout", async () => {
@@ -257,7 +257,7 @@ test("resize updates layout", async () => {
 	await nextFrame(dom);
 
 	// Initial size
-	expect(boxOf(div)?.width).toBe(200);
+	expect(getBox(div)?.width).toBe(200);
 
 	// Resize: the terminal is the viewport, and it says so with SIGWINCH.
 	terminal.resize(400, 200);
@@ -268,7 +268,7 @@ test("resize updates layout", async () => {
 	}
 	await nextFrame(dom);
 
-	expect(boxOf(div)?.width).toBe(400);
+	expect(getBox(div)?.width).toBe(400);
 	dom.dispose();
 });
 
@@ -290,7 +290,7 @@ test("a run whose first node is removed re-measures from the next", () => {
 	// that opens it now: the text that remains starts at the container's
 	// content edge rather than where "head" left off.
 
-	const containerRect = boxOf(container)!;
+	const containerRect = getBox(container)!;
 	const fragments = lineTexts(container.firstChild!);
 	expect(fragments.length).toBe(1);
 	expect(fragments[0].text).toBe("second");
@@ -368,7 +368,7 @@ test("whitespace processing produces correct measurements", () => {
 
 	// The container should have a valid rect since it contains the inline content
 	const container = dom.document.querySelector("div")!;
-	const containerRect = boxOf(container);
+	const containerRect = getBox(container);
 
 	// The inline content should be measured correctly by our fixed whitespace processing
 	// We don't test individual span rects (they're part of inline flow),
@@ -390,15 +390,15 @@ test("inline-block elements should get individual rects", () => {
 		.slice(1);
 
 	// Container should have a rect
-	expect(boxOf(container)).not.toBeNull();
+	expect(getBox(container)).not.toBeNull();
 
 	// Each inline-block should also have its own rect (unlike regular inline elements)
-	expect(boxOf(inlineBlocks[0])).not.toBeNull();
-	expect(boxOf(inlineBlocks[1])).not.toBeNull();
+	expect(getBox(inlineBlocks[0])).not.toBeNull();
+	expect(getBox(inlineBlocks[1])).not.toBeNull();
 
 	// Both elements should have width equal to their content (6 chars each)
-	const rect1 = boxOf(inlineBlocks[0]);
-	const rect2 = boxOf(inlineBlocks[1]);
+	const rect1 = getBox(inlineBlocks[0]);
+	const rect2 = getBox(inlineBlocks[1]);
 	expect(rect1!.width).toBe(6); // "Block1" = 6 chars
 	expect(rect2!.width).toBe(6); // "Block2" = 6 chars
 });
@@ -411,8 +411,8 @@ test("inline head element gets incorrect rect from yoga node", () => {
 	// The head should report width of just its content (4), not the entire run
 	// (8) -- but it reports the run's width, because both spans share the one
 	// layout node their inline run was laid out as.
-	const headRect = boxOf(spans[0]);
-	const tailRect = boxOf(spans[1]);
+	const headRect = getBox(spans[0]);
+	const tailRect = getBox(spans[1]);
 
 	// This test demonstrates the bug: head element reports container width instead of content width
 	// Expected: head should report width 4 ("Head"), tail should report width 4 ("Tail")
@@ -1148,8 +1148,8 @@ test("Block child positioned after parent text content", () => {
 	const child = parent.querySelector("div")!;
 	const textNode = parent.firstChild!;
 
-	const parentRect = boxOf(parent)!;
-	const childRect = boxOf(child)!;
+	const parentRect = getBox(parent)!;
+	const childRect = getBox(child)!;
 	const textRects = lineTexts(textNode);
 
 	// Parent should have height for text + child
@@ -1836,7 +1836,7 @@ test("white space beside an out-of-flow box collapses as if it were absent", () 
 	const dom =
 		layoutDOM("<div id=\"host\">   <b style=\"position: absolute\"></b></div>");
 	const host = dom.document.getElementById("host")!;
-	expect(boxOf(host)!.height).toBe(0);
+	expect(getBox(host)!.height).toBe(0);
 });
 
 test("a broken inline is not sized by an out-of-flow descendant", () => {
@@ -1850,6 +1850,6 @@ test("a broken inline is not sized by an out-of-flow descendant", () => {
 		"<div style=\"display: inline-block; position: absolute\">t000</div></b>",
 	);
 	const split = dom.document.getElementById("split")!;
-	const rect = boxOf(split);
+	const rect = getBox(split);
 	expect(rect === null || rect.width === 0).toBe(true);
 });

@@ -92,7 +92,7 @@ function makeRow(entry: Listing, depth: number): HTMLElement {
 // Each directory row is followed by a sibling container that holds its
 // children while expanded. Collapse detaches the container; the built subtree
 // rides along on the element for free when it is re-attached.
-const childrenOf = new WeakMap<HTMLElement, HTMLElement>();
+const childrenByRow = new WeakMap<HTMLElement, HTMLElement>();
 
 function fill(container: HTMLElement, dir: string, depth: number): void {
   for (const entry of list(dir)) {
@@ -104,16 +104,16 @@ function expand(row: HTMLElement): void {
   if (row.dataset.kind !== "dir" || row.dataset.open === "true") {
     return;
   }
-  let children = childrenOf.get(row);
+  let children = childrenByRow.get(row);
   if (!children) {
     children = document.createElement("div");
     try {
-      fill(children, row.dataset.path!, depthOf(row) + 1);
+      fill(children, row.dataset.path!, getDepth(row) + 1);
     } catch (_err) {
       row.querySelector(".name")!.classList.add("denied");
       return;
     }
-    childrenOf.set(row, children);
+    childrenByRow.set(row, children);
   }
   row.after(children);
   row.dataset.open = "true";
@@ -125,13 +125,13 @@ function collapse(row: HTMLElement): void {
   if (row.dataset.open !== "true") {
     return;
   }
-  childrenOf.get(row)?.remove();
+  childrenByRow.get(row)?.remove();
   row.dataset.open = "false";
   row.querySelector(".marker")!.textContent = "▸ ";
   updateCount();
 }
 
-function depthOf(row: HTMLElement): number {
+function getDepth(row: HTMLElement): number {
   // Reconstruct depth from the indent so rows carry no extra bookkeeping.
   return Math.floor((parseInt(row.style.paddingLeft) - 1) / 2);
 }
@@ -156,11 +156,11 @@ function updateCount(): void {
   header.textContent = ` ${root} · ${rows().length} entries`;
 }
 
-function parentOf(row: HTMLElement): HTMLElement | undefined {
-  const depth = depthOf(row);
+function getParent(row: HTMLElement): HTMLElement | undefined {
+  const depth = getDepth(row);
   const all = rows();
   for (let i = all.indexOf(row) - 1; i >= 0; i--) {
-    if (depthOf(all[i]) < depth) {
+    if (getDepth(all[i]) < depth) {
       return all[i];
     }
   }
@@ -209,7 +209,7 @@ document.addEventListener("keydown", (event: Event) => {
     if (current?.dataset.open === "true") {
       collapse(current);
     } else if (current) {
-      const parent = parentOf(current);
+      const parent = getParent(current);
       if (parent) {
         select(rows().indexOf(parent));
       }

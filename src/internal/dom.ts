@@ -30,8 +30,8 @@ import {
 import * as CSSValues from "./cssvalues.ts";
 import type {Exchange} from "./exchange.ts";
 import {
-	interfaceOf,
-	reflectionsOf,
+	getInterface,
+	getReflections,
 	type ReflectSpec,
 } from "./htmlreflection.ts";
 import type {Layout} from "./layout.ts";
@@ -12934,7 +12934,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 }
 
 // The HTML Standard's element interfaces, each filled in from the table.
-// The reflecting members come from `reflectionsOf`. Members that are
+// The reflecting members come from `getReflections`. Members that are
 // not reflections are written in the class body. A class with an empty
 // body only reflects, which is all its interface does.
 
@@ -19427,7 +19427,7 @@ const HTML_INTERFACE_CLASSES: Record<string, typeof HTMLElement> = {
 // Installs the members each interface reflects and the name it
 // stringifies as.
 for (const [name, constructor] of Object.entries(HTML_INTERFACE_CLASSES)) {
-	for (const reflection of reflectionsOf(name)) {
+	for (const reflection of getReflections(name)) {
 		installReflection(constructor.prototype, reflection);
 	}
 	Object.defineProperty(constructor.prototype, Symbol.toStringTag, {
@@ -19436,7 +19436,7 @@ for (const [name, constructor] of Object.entries(HTML_INTERFACE_CLASSES)) {
 	});
 }
 
-for (const reflection of reflectionsOf("HTMLElement")) {
+for (const reflection of getReflections("HTMLElement")) {
 	installReflection(HTMLElement.prototype, reflection);
 }
 
@@ -19449,7 +19449,7 @@ for (const tag of Object.keys(HTML_TAG_INTERFACES)) {
 	if (tag === "template" || tag === "slot") {
 		continue;
 	}
-	const name = interfaceOf(tag);
+	const name = getInterface(tag);
 	builtinRegistry.define(
 		HTML_NAMESPACE,
 		tag,
@@ -24284,7 +24284,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		if (!element.isConnected) {
 			continue;
 		}
-		const extent = attached[kLayout].scrollExtentOf(element);
+		const extent = attached[kLayout].getScrollExtent(element);
 		const port = attached[kLayout].contentRect(element);
 		if (!extent || !port) {
 			continue;

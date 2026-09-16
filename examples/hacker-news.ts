@@ -207,7 +207,7 @@ function metaText(story: Story): string {
   return parts.join(" ");
 }
 
-function domainOf(url: string | null): string {
+function getDomain(url: string | null): string {
   if (!url) {
     return "";
   }
@@ -260,7 +260,7 @@ function makeRow(story: Story, index: number): HTMLElement {
   title.className = "title";
   title.textContent = story.title;
   headwords.appendChild(title);
-  const domain = domainOf(story.url);
+  const domain = getDomain(story.url);
   if (domain) {
     const site = document.createElement("span");
     site.className = "domain";
@@ -406,7 +406,7 @@ function replyCount(at: number): number {
 }
 
 /** The thread position a reply hangs from, or -1 at the top of the thread. */
-function parentOf(at: number): number {
+function getParent(at: number): number {
   const depth = thread[at][1];
   for (let i = at - 1; i >= 0; i--) {
     if (thread[i][1] < depth) {
@@ -494,7 +494,7 @@ function paintThread(story: Story, target: number): void {
   readerView.replaceChildren(...parts);
   let at = target;
   while (at >= 0 && !showing.includes(at)) {
-    at = parentOf(at);
+    at = getParent(at);
   }
   select(Math.max(0, showing.indexOf(at)));
   refresh();
@@ -520,7 +520,7 @@ function fold(story: Story): void {
     paintThread(story, at);
     return;
   }
-  const parent = parentOf(at);
+  const parent = getParent(at);
   if (parent >= 0) {
     select(showing.indexOf(parent));
     refresh();

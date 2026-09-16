@@ -952,10 +952,10 @@ function *App(this: Context) {
   const TOP_COLS = [0, 1, 3, 4, 5, 6];
 
   const pileAt = (col: number): Card[] => game.tableau[col];
-  const lastOf = (pile: Card[]): number => pile.length - 1;
+  const getLast = (pile: Card[]): number => pile.length - 1;
   const firstUp = (pile: Card[]): number => {
     const index = pile.findIndex((card) => card.up);
-    return index < 0 ? lastOf(pile) : index;
+    return index < 0 ? getLast(pile) : index;
   };
 
   const moveCursor = (dx: number, dy: number): void => {
@@ -971,14 +971,14 @@ function *App(this: Context) {
           };
         } else {
           const col = (cur.col + dx + 7) % 7;
-          cur = {row: "board", col, depth: lastOf(pileAt(col))};
+          cur = {row: "board", col, depth: getLast(pileAt(col))};
         }
         return;
       }
       if (cur.row === "top") {
         if (dy > 0) {
           const col = cur.col === 2 ? 1 : cur.col;
-          cur = {row: "board", col, depth: lastOf(pileAt(col))};
+          cur = {row: "board", col, depth: getLast(pileAt(col))};
         }
         return;
       }
@@ -989,7 +989,7 @@ function *App(this: Context) {
         } else {
           cur = {...cur, depth: cur.depth - 1};
         }
-      } else if (cur.depth < lastOf(pile)) {
+      } else if (cur.depth < getLast(pile)) {
         cur = {...cur, depth: cur.depth + 1};
       }
     });
@@ -1181,7 +1181,7 @@ function *App(this: Context) {
         pile,
         grip?.kind === "tableau" && grip.pile === pile
           ? grip.index
-          : Math.max(0, lastOf(pileAt(pile))),
+          : Math.max(0, getLast(pileAt(pile))),
       );
     }
   };

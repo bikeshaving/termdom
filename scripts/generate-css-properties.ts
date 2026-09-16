@@ -242,7 +242,7 @@ const colors = longhands.filter((name) => {
  * The keywords a grammar production accepts, following the productions it
  * names. Function names and types are not keywords.
  */
-function keywordsOf(name: string, seen = new Set<string>()): string[] {
+function getKeywords(name: string, seen = new Set<string>()): string[] {
 	if (seen.has(name)) {
 		return [];
 	}
@@ -255,7 +255,7 @@ function keywordsOf(name: string, seen = new Set<string>()): string[] {
 	for (const token of syntax.split(/[\s|[\]&#!?*+,{}()]+/)) {
 		const reference = /^<'?([a-z-]+)'?(?:\(\))?>$/.exec(token);
 		if (reference) {
-			out.push(...keywordsOf(reference[1], seen));
+			out.push(...getKeywords(reference[1], seen));
 		} else if (/^[a-z][a-z-]*$/.test(token)) {
 			out.push(token);
 		}
@@ -420,7 +420,7 @@ const NAMED_COLOR_VALUES: Readonly<Record<string, number>> = {
 };
 
 const namedColors: Record<string, number> = {};
-for (const name of keywordsOf("named-color")) {
+for (const name of getKeywords("named-color")) {
 	const color = NAMED_COLOR_VALUES[name];
 	if (color === undefined) {
 		throw new Error(`The grammar names a color the table lacks: ${name}`);
@@ -513,17 +513,17 @@ ${hexRecord(namedColors)}
 
 /** The \`<line-style>\` keywords. */
 export const CSS_LINE_STYLES: readonly string[] = [
-${list(keywordsOf("line-style"))}
+${list(getKeywords("line-style"))}
 ];
 
 /** The easing function keywords, which name a function without arguments. */
 export const CSS_EASING_KEYWORDS: readonly string[] = [
-${list(keywordsOf("easing-function"))}
+${list(getKeywords("easing-function"))}
 ];
 
 /** The generic font family names. */
 export const CSS_GENERIC_FAMILIES: readonly string[] = [
-${list(keywordsOf("generic-family"))}
+${list(getKeywords("generic-family"))}
 ];
 `;
 

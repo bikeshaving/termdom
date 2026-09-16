@@ -4389,7 +4389,7 @@ export class Layout {
 	// so with one present the horizontal extent is unknowable and reported
 	// null. Callers must not clamp against a result that does not exist.
 	// Null overall for a box the tree does not decompose into child boxes.
-	scrollExtentOf(
+	getScrollExtent(
 		element: Element,
 	): {width: number | null; height: number} | null {
 		const layoutNode = this[kNodeMap].get(element);
@@ -4512,7 +4512,7 @@ export class Layout {
 	// A box the tree does not decompose (an inline, a run member) has no
 	// readable extent and falls back to its client size.
 	scrollSize(element: Element): {width: number; height: number} {
-		const extent = element.isConnected ? this.scrollExtentOf(element) : null;
+		const extent = element.isConnected ? this.getScrollExtent(element) : null;
 		const box = getContentBoxSize(this, element);
 		return {
 			width: extent?.width ?? Math.round(box?.width ?? 0),
@@ -4526,7 +4526,7 @@ export class Layout {
 	// programmatically, as in a browser. Null where the layout cannot
 	// determine the extent, which must not be clamped against.
 	scrollRange(element: Element, axis: "left" | "top"): number | null {
-		const extent = this.scrollExtentOf(element);
+		const extent = this.getScrollExtent(element);
 		const port = this.contentRect(element);
 		const size = extent === null
 			? null

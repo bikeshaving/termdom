@@ -1587,7 +1587,7 @@ function routeChunk(session: Exchange, chunk: string): void {
 	flushKeys();
 }
 
-type ReplyOf<K extends WireItem["kind"]> = Extract<WireItem, {kind: K}>;
+type ReplyItem<K extends WireItem["kind"]> = Extract<WireItem, {kind: K}>;
 
 // `read` runs where the item is dispatched, so its side effects happen
 // in stream order. `absent` is the value silence produces. The cursor
@@ -1598,7 +1598,7 @@ function nextReply<K extends WireItem["kind"], T>(
 	options: {
 		ask: string;
 		timeoutMs: number;
-		read: (item: ReplyOf<K>) => T;
+		read: (item: ReplyItem<K>) => T;
 		absent?: T;
 		mode?: string;
 		sequence?: number;
@@ -1616,7 +1616,7 @@ function nextReply<K extends WireItem["kind"], T>(
 				if (options.clipboard) {
 					session[kWireReader].expectClipboardReply(false);
 				}
-				resolve(options.read(item as ReplyOf<K>));
+				resolve(options.read(item as ReplyItem<K>));
 			},
 			giveUp: () => {
 				clearTimeout(entry.timer);

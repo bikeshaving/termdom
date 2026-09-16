@@ -9,7 +9,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils";
 
-function heightOf(_dom: TermDOM, el: Element): number | undefined {
+function getHeight(_dom: TermDOM, el: Element): number | undefined {
 	const rect = (el as HTMLElement).getBoundingClientRect();
 	return rect.width > 0 || rect.height > 0 ? rect.height : undefined;
 }
@@ -21,7 +21,7 @@ test("a bordered inline-block in a flex ROW is not double-counted in height", as
 		"<div style=\"display:flex\"><span>x</span>" +
 		"<div id=\"box\" style=\"display:inline-block;border:1px solid;flex-grow:1\">y</div></div>";
 	await nextFrame(dom);
-	expect(heightOf(dom, dom.document.getElementById("box")!)).toBe(3);
+	expect(getHeight(dom, dom.document.getElementById("box")!)).toBe(3);
 	dom.dispose();
 });
 
@@ -32,7 +32,7 @@ test("an empty rows=1 textarea in a flex ROW is 3 rows: content + border", async
 		"<div style=\"display:flex\"><span>› </span>" +
 		"<textarea rows=\"1\" placeholder=\"message ch.at…\" style=\"flex-grow:1\"></textarea></div>";
 	await nextFrame(dom);
-	expect(heightOf(dom, dom.document.querySelector("textarea")!)).toBe(3);
+	expect(getHeight(dom, dom.document.querySelector("textarea")!)).toBe(3);
 	dom.dispose();
 });
 
@@ -61,7 +61,7 @@ test("a flex-shrink inline-block wraps its content at the shrunk width, not its 
 	await nextFrame(dom);
 	// 29 columns of text in a box shrunk from 40ch to the container's 20:
 	// two lines at the USED width, not one overflowing line at the basis.
-	expect(heightOf(dom, dom.document.getElementById("box")!)).toBe(2);
+	expect(getHeight(dom, dom.document.getElementById("box")!)).toBe(2);
 	dom.dispose();
 });
 
@@ -72,7 +72,7 @@ test("a max-width-capped inline-block wraps its content at the capped width", as
 	await nextFrame(dom);
 	// 11 columns of text capped at 10: the content re-wraps inside the cap
 	// instead of overflowing a box whose reported width was merely clamped.
-	expect(heightOf(dom, dom.document.getElementById("box")!)).toBe(2);
+	expect(getHeight(dom, dom.document.getElementById("box")!)).toBe(2);
 	dom.dispose();
 });
 

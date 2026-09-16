@@ -2767,7 +2767,7 @@ function convertImportRule(
 	} catch (_err) {
 		return null;
 	}
-	const sliceOf = (node: CSSTree.ImportPreludeNode): string =>
+	const getSlice = (node: CSSTree.ImportPreludeNode): string =>
 		node.loc ? text.slice(node.loc.start.offset, node.loc.end.offset) : "";
 	const head = nodes[0];
 	if (!head || (head.type !== "Url" && head.type !== "String")) {
@@ -2806,7 +2806,7 @@ function convertImportRule(
 		// The slice spans the function: its name, its parentheses and the
 		// condition between them. A function whose parenthesis never closes is
 		// recovered ending at the text, with no `)` to leave off.
-		const spelled = sliceOf(node);
+		const spelled = getSlice(node);
 		const opened = (node.name ?? "").length + 1;
 		supportsText = (
 			spelled.endsWith(")") ? spelled.slice(opened, -1) : spelled.slice(opened)
@@ -2820,7 +2820,7 @@ function convertImportRule(
 		if (node.type !== "MediaQueryList") {
 			return null;
 		}
-		mediaText = sliceOf(node);
+		mediaText = getSlice(node);
 		index++;
 	}
 	if (index !== nodes.length) {
@@ -4465,16 +4465,18 @@ interface BorderSides {
 const LINE_KEYWORDS = new Set<string>(LINE_STYLES);
 
 export function resolveBorderSides(element: Element): BorderSides {
-	const sideOf =
-		(width: string, style: string): LineStyle["style"] | undefined => {
-			const parsed = CSSValues.parseBorderWidthValue(width);
-			const widthValue = typeof parsed === "number" ? parsed : NaN;
-			if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
-				return undefined;
-			}
-			// An unknown style keyword draws as solid rather than not at all.
-			return LINE_KEYWORDS.has(style) ? (style as LineStyle["style"]) : "solid";
-		};
+	const getSide = (
+		width: string,
+		style: string,
+	): LineStyle["style"] | undefined => {
+		const parsed = CSSValues.parseBorderWidthValue(width);
+		const widthValue = typeof parsed === "number" ? parsed : NaN;
+		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
+			return undefined;
+		}
+		// An unknown style keyword draws as solid rather than not at all.
+		return LINE_KEYWORDS.has(style) ? (style as LineStyle["style"]) : "solid";
+	};
 
 	// Rounded when the radius is nonzero on BOTH axes, as a browser squares
 	// off a collapsed ellipse. A cell grid has one size of curve.
@@ -4491,7 +4493,7 @@ export function resolveBorderSides(element: Element): BorderSides {
 	};
 
 	const of = (side: string): LineStyle["style"] | undefined =>
-		sideOf(
+		getSide(
 			getComputedValue(element, `border-${side}-width`) ||
 			getComputedValue(element, "border-width"),
 			getComputedValue(element, `border-${side}-style`) ||
@@ -5179,7 +5181,7 @@ export class Cascade {
 	// difference of the two flat-tree chains. The shared ancestors above the
 	// fork were hovered before and are hovered still.
 	handleHoverChange(previous: Element | null, next: Element | null): void {
-		const chainOf = (element: Element | null): Set<Element> => {
+		const getChain = (element: Element | null): Set<Element> => {
 			const chain = new Set<Element>();
 			for (
 				let node: Element | null = element; node; node = flatParentElement(node)
@@ -5188,8 +5190,8 @@ export class Cascade {
 			}
 			return chain;
 		};
-		const previousChain = chainOf(previous);
-		const nextChain = chainOf(next);
+		const previousChain = getChain(previous);
+		const nextChain = getChain(next);
 		const invalidate = (node: Element): void => {
 			invalidateElementCaches(this, node);
 			// A host's hover reaches its shadow tree through :host(:hover).

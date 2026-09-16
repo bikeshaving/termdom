@@ -389,7 +389,7 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 	],
 };
 
-export function reflectionsOf(name: string): readonly ReflectSpec[] {
+export function getReflections(name: string): readonly ReflectSpec[] {
 	const hand = HAND_REFLECTIONS[name] ?? [];
 	const generated = (HTML_REFLECTIONS[name] ?? []).filter(
 		(spec) => !hand.some((own) => own.property === spec.property),
@@ -403,7 +403,7 @@ export function reflectionsOf(name: string): readonly ReflectSpec[] {
 const DROPPED_TAGS: ReadonlySet<string> = new Set(["menuitem"]);
 
 /** The interface a tag constructs as. */
-export function interfaceOf(tag: string): string {
+export function getInterface(tag: string): string {
 	return DROPPED_TAGS.has(tag)
 		? "HTMLUnknownElement"
 		: HTML_TAG_INTERFACES[tag];
