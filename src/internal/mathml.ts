@@ -9,8 +9,10 @@ import {getComputedValue} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {MATHML_NAMESPACE} from "./dom.ts";
 import {
+	type BoxLines,
 	buildHorizontalGlyph,
 	buildVerticalGlyph,
+	getBoxLines,
 	getFractionBar,
 	getOverline,
 	getRadical,
@@ -294,6 +296,14 @@ function layoutNode(node: Node, context: MathContext): MathBox {
 		case "mover":
 		case "munderover":
 			return layoutUnderOver(element, local);
+		case "mtable":
+			return layoutTable(element, local);
+		case "mpadded":
+			return layoutPadded(element, local);
+		case "mphantom":
+			return blankOut(layoutRow(getLayoutChildren(element), element, local));
+		case "merror":
+			return layoutError(element, local);
 		default:
 			return layoutRow(getLayoutChildren(element), element, local);
 	}
@@ -1221,6 +1231,392 @@ function layoutFraction(element: Element, context: MathContext): MathBox {
 		parseAlignment(element.getAttribute("denomalign"), "center"),
 		top.baseline,
 	);
+}
+
+type RowAlignment = "top" | "center" | "bottom" | "baseline";
+
+interface TableCell {
+	box: MathBox;
+	align: Alignment;
+	rowAlign: RowAlignment;
+}
+
+function readKeyword(
+	element: Element | null,
+	name: string,
+): string | undefined {
+	const value = element === null ? null : element.getAttribute(name);
+	return value === null ? undefined : value.trim().toLowerCase();
+}
+
+function parseList(value: string | null): string[] {
+	return value === null ? [] : value.trim().toLowerCase().split(/\s+/);
+}
+
+// The nth entry of a space-separated attribute list, with the last
+// entry repeating past the end.
+function pickListValue(list: string[], index: number): string | undefined {
+	return list.length === 0 ? undefined : list[Math.min(index, list.length - 1)];
+}
+
+function parseRowAlignment(
+	value: string | undefined,
+	fallback: RowAlignment,
+): RowAlignment {
+	switch (value) {
+		case "top":
+		case "center":
+		case "bottom":
+		case "baseline":
+			return value;
+		case "axis":
+			return "baseline";
+		default:
+			return fallback;
+	}
+}
+
+function isLineValue(value: string | undefined): boolean {
+	return value === "solid" || value === "dashed";
+}
+
+function frameBox(
+	box: MathBox,
+	lines: BoxLines,
+	style: CellStyle | null,
+): MathBox {
+	const top = createTextBox(
+		lines.topLeft + lines.horizontal.repeat(box.width) + lines.topRight,
+		style,
+	);
+	const bottom = createTextBox(
+		lines.bottomLeft + lines.horizontal.repeat(box.width) + lines.bottomRight,
+		style,
+	);
+	const side = createRowsBox(
+		new Array<string>(box.height).fill(lines.vertical),
+		box.baseline,
+		style,
+	);
+	const body = beside(beside(side, box), side);
+	return stack(stack(top, body, "left", 0), bottom, "left", body.baseline + 1);
+}
+
+function getTableRows(
+	element: Element,
+): Array<{row: Element | null; cells: Node[]}> {
+	const rows: Array<{row: Element | null; cells: Node[]}> = [];
+	for (const child of getLayoutChildren(element)) {
+		const name = isMathElement(child) ? (child as Element).localName : "";
+		if (name === "mtr" || name === "mlabeledtr") {
+			const cells = getLayoutChildren(child as Element);
+			rows.push({
+				row: child as Element,
+				cells: name === "mlabeledtr" ? cells.slice(1) : cells,
+			});
+		} else {
+			rows.push({row: null, cells: [child]});
+		}
+	}
+	return rows;
+}
+
+/**
+ * A table. Columns take their widest cell; cells center by default and
+ * rows align on their tallest cell's baseline. One cell separates
+ * columns and no row separates rows unless columnspacing or rowspacing
+ * says otherwise, and frame, rowlines and columnlines draw box-drawing
+ * rules. The table's baseline is its center row. Inline mode joins
+ * cells with commas and rows with semicolons.
+ */
+function layoutTable(element: Element, context: MathContext): MathBox {
+	const rows = getTableRows(element);
+	if (rows.length === 0) {
+		return createEmptyBox(1);
+	}
+	if (!context.display) {
+		let result: MathBox | null = null;
+		for (const {cells} of rows) {
+			let line: MathBox | null = null;
+			for (const cell of cells) {
+				const box = layoutNode(cell, context);
+				line = line === null
+					? box
+					: beside(beside(line, createTextBox(", ", null)), box);
+			}
+			line ??= createEmptyBox(1);
+			result = result === null
+				? line
+				: beside(beside(result, createTextBox("; ", null)), line);
+		}
+		return result!;
+	}
+	const columnAligns = parseList(element.getAttribute("columnalign"));
+	const rowAligns = parseList(element.getAttribute("rowalign"));
+	const grid: TableCell[][] = rows.map(({row, cells}, rowIndex) => {
+		const rowColumnAligns = row === null
+			? []
+			: parseList(row.getAttribute("columnalign"));
+		const rowAlign = parseRowAlignment(
+			readKeyword(row, "rowalign") ?? pickListValue(rowAligns, rowIndex),
+			"baseline",
+		);
+		return cells.map((cell, columnIndex) => {
+			const own = isMathElement(cell) ? (cell as Element) : null;
+			return {
+				box: layoutNode(cell, context),
+				align: parseAlignment(
+					own?.getAttribute("columnalign") ??
+					pickListValue(rowColumnAligns, columnIndex) ??
+					pickListValue(columnAligns, columnIndex) ??
+					null,
+					"center",
+				),
+				rowAlign: parseRowAlignment(readKeyword(own, "rowalign"), rowAlign),
+			};
+		});
+	});
+	const columnCount = Math.max(...grid.map((row) => row.length));
+	const columnWidths = new Array<number>(columnCount).fill(0);
+	for (const row of grid) {
+		row.forEach((cell, index) => {
+			columnWidths[index] = Math.max(columnWidths[index], cell.box.width);
+		});
+	}
+	const lines = getBoxLines(context.glyphs);
+	const columnSpacing = Math.max(
+		0,
+		Math.round(parseMathLength(element.getAttribute("columnspacing")) ?? 1),
+	);
+	const rowSpacing = Math.max(
+		0,
+		Math.round(parseMathLength(element.getAttribute("rowspacing")) ?? 0),
+	);
+	const columnLines = parseList(element.getAttribute("columnlines"));
+	const rowLines = parseList(element.getAttribute("rowlines"));
+	const framed = isLineValue(
+		element.getAttribute("frame")?.trim().toLowerCase(),
+	);
+
+	// The columns where a vertical rule runs, for the rule rows to cross.
+	const ruleColumns: number[] = [];
+	const rowBoxes = grid.map((row) => {
+		const ascent = Math.max(
+			0,
+			...row.map((cell) =>
+				cell.rowAlign === "baseline" ? cell.box.baseline : 0,
+			),
+		);
+		const descent = Math.max(
+			0,
+			...row.map((cell) =>
+				cell.rowAlign === "baseline" ? getDescent(cell.box) : 0,
+			),
+		);
+		let height = ascent + descent + 1;
+		for (const cell of row) {
+			height = Math.max(height, cell.box.height);
+		}
+		let rowBox: MathBox | null = null;
+		for (let column = 0; column < columnCount; column++) {
+			const cell = row[column];
+			let box = cell
+				? widenBox(cell.box, columnWidths[column], cell.align)
+				: createEmptyBox(columnWidths[column]);
+			box = alignInRow(box, cell?.rowAlign ?? "baseline", ascent, height);
+			if (rowBox === null) {
+				rowBox = box;
+			} else {
+				const ruled = isLineValue(pickListValue(columnLines, column - 1));
+				if (ruled) {
+					if (ruleColumns.length < columnCount - 1) {
+						ruleColumns.push(rowBox.width + Math.max(0, columnSpacing - 1));
+					}
+					rowBox = beside(
+						beside(rowBox, createEmptyBox(1), Math.max(0, columnSpacing - 1)),
+						box,
+					);
+				} else {
+					rowBox = beside(rowBox, box, columnSpacing);
+				}
+			}
+		}
+		return rowBox!;
+	});
+	const width = Math.max(...rowBoxes.map((row) => row.width));
+	const ruleRow = (): MathBox => {
+		let text = "";
+		for (let x = 0; x < width; x++) {
+			text += ruleColumns.includes(x) ? lines.cross : lines.horizontal;
+		}
+		return createTextBox(text, null);
+	};
+	let result: MathBox | null = null;
+	rowBoxes.forEach((rowBox, index) => {
+		const ruled = drawVerticalRules(rowBox, ruleColumns, lines);
+		if (result === null) {
+			result = ruled;
+			return;
+		}
+		if (isLineValue(pickListValue(rowLines, index - 1))) {
+			result = stack(result, ruleRow(), "left", 0);
+			if (rowSpacing > 1) {
+				result = pad(result, 0, 0, rowSpacing - 1, 0);
+			}
+		} else if (rowSpacing > 0) {
+			result = pad(result, 0, 0, rowSpacing, 0);
+		}
+		result = stack(result, ruled, "left", 0);
+	});
+	let table = result!;
+	if (framed) {
+		table = frameTable(table, ruleColumns, lines);
+	}
+	const align = element.getAttribute("align")?.trim().toLowerCase();
+	const baseline = align === "top"
+		? 0
+		: align === "bottom" ? table.height - 1 : (table.height - 1) >> 1;
+	return {...table, baseline};
+}
+
+function widenBox(box: MathBox, width: number, align: Alignment): MathBox {
+	return {...box, width, cells: widenRows(box, width, align)};
+}
+
+function alignInRow(
+	box: MathBox,
+	align: RowAlignment,
+	ascent: number,
+	height: number,
+): MathBox {
+	const spare = height - box.height;
+	if (align === "baseline") {
+		const top = Math.min(Math.max(0, ascent - box.baseline), spare);
+		return pad(box, top, 0, spare - top, 0);
+	}
+	const top = align === "top" ? 0 : align === "bottom" ? spare : spare >> 1;
+	return pad(box, top, 0, spare - top, 0);
+}
+
+function drawVerticalRules(
+	row: MathBox,
+	columns: number[],
+	lines: BoxLines,
+): MathBox {
+	if (columns.length === 0) {
+		return row;
+	}
+	const rule = createTextBox(lines.vertical, null);
+	let result = row;
+	for (const x of columns) {
+		for (let y = 0; y < row.height; y++) {
+			result = overlay(result, rule, x, y);
+		}
+	}
+	return result;
+}
+
+function frameTable(
+	table: MathBox,
+	columns: number[],
+	lines: BoxLines,
+): MathBox {
+	const edge = (join: string, left: string, right: string): MathBox => {
+		let text = left;
+		for (let x = 0; x < table.width; x++) {
+			text += columns.includes(x) ? join : lines.horizontal;
+		}
+		return createTextBox(text + right, null);
+	};
+	const side = createRowsBox(
+		new Array<string>(table.height).fill(lines.vertical),
+		table.baseline,
+		null,
+	);
+	let body = beside(beside(side, table), side);
+	for (let y = 0; y < table.height; y++) {
+		if (table.cells[y][0]?.text === lines.horizontal) {
+			body = overlay(body, createTextBox(lines.leftJoin, null), 0, y);
+			body = overlay(
+				body,
+				createTextBox(lines.rightJoin, null),
+				table.width + 1,
+				y,
+			);
+		}
+	}
+	return stack(
+		stack(edge(lines.topJoin, lines.topLeft, lines.topRight), body, "left", 0),
+		edge(lines.bottomJoin, lines.bottomLeft, lines.bottomRight),
+		"left",
+		0,
+	);
+}
+
+/**
+ * mpadded's width, height, depth and lspace grow the box (a value below
+ * the content's size leaves it as it is). A leading + or - adjusts the
+ * content's own measure. height and depth are rows above and below the
+ * baseline and apply in display mode only.
+ */
+function layoutPadded(element: Element, context: MathContext): MathBox {
+	const box = layoutRow(getLayoutChildren(element), element, context);
+	const resolve = (name: string, current: number): number => {
+		const raw = element.getAttribute(name);
+		const value = parseMathLength(raw);
+		if (raw === null || value === null) {
+			return current;
+		}
+		const adjusts = /^\s*[+-]/.test(raw);
+		return Math.max(current, Math.round(adjusts ? current + value : value));
+	};
+	const left = Math.max(
+		0,
+		Math.round(parseMathLength(element.getAttribute("lspace")) ?? 0),
+	);
+	const width = resolve("width", box.width + left);
+	const ascent = context.display
+		? resolve("height", box.baseline + 1)
+		: box.baseline + 1;
+	const descent = context.display
+		? resolve("depth", getDescent(box))
+		: getDescent(box);
+	return pad(
+		box,
+		ascent - box.baseline - 1,
+		Math.max(0, width - box.width - left),
+		descent - getDescent(box),
+		left,
+	);
+}
+
+function blankOut(box: MathBox): MathBox {
+	return {
+		...box,
+		cells: box.cells.map((row) =>
+			row.map((cell) => ({
+				text: " ".repeat(cell.width),
+				width: cell.width,
+				style: null,
+			})),
+		),
+	};
+}
+
+// A red border around the content in display mode. Inline mode has no
+// rows to spare, so the content itself turns red.
+function layoutError(element: Element, context: MathContext): MathBox {
+	const box = layoutRow(getLayoutChildren(element), element, context);
+	const red: CellStyle = {fg: CSSValues.cssColorToNumber("red")};
+	if (!context.display) {
+		return {
+			...box,
+			cells: box.cells.map((row) =>
+				row.map((cell) => ({...cell, style: {...cell.style, ...red}})),
+			),
+		};
+	}
+	return frameBox(box, getBoxLines(context.glyphs), red);
 }
 
 function findTeXAnnotation(element: Element): string | null {

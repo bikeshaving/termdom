@@ -258,6 +258,53 @@ const TABLES: Record<GlyphSet, GlyphTable> = {
 	},
 };
 
+export interface BoxLines {
+	horizontal: string;
+	vertical: string;
+	topLeft: string;
+	topRight: string;
+	bottomLeft: string;
+	bottomRight: string;
+	cross: string;
+	topJoin: string;
+	bottomJoin: string;
+	leftJoin: string;
+	rightJoin: string;
+}
+
+const UNICODE_LINES: BoxLines = {
+	horizontal: "─",
+	vertical: "│",
+	topLeft: "┌",
+	topRight: "┐",
+	bottomLeft: "└",
+	bottomRight: "┘",
+	cross: "┼",
+	topJoin: "┬",
+	bottomJoin: "┴",
+	leftJoin: "├",
+	rightJoin: "┤",
+};
+
+const ASCII_LINES: BoxLines = {
+	horizontal: "-",
+	vertical: "|",
+	topLeft: "+",
+	topRight: "+",
+	bottomLeft: "+",
+	bottomRight: "+",
+	cross: "+",
+	topJoin: "+",
+	bottomJoin: "+",
+	leftJoin: "+",
+	rightJoin: "+",
+};
+
+/** The rules and frame of a table or the border of an merror. */
+export function getBoxLines(glyphs: GlyphSet): BoxLines {
+	return glyphs === "ascii" ? ASCII_LINES : UNICODE_LINES;
+}
+
 export function getFractionBar(glyphs: GlyphSet): string {
 	return TABLES[glyphs].fractionBar;
 }
