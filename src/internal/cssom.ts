@@ -5288,7 +5288,7 @@ export class Cascade {
 	 * One object per resolved style, the same until the element's style
 	 * changes. Null for a pseudo-element and while a transition runs.
 	 */
-	styleKeyOf(element: Element): object | null {
+	getStyleKey(element: Element): object | null {
 		if (getPseudoHost(element) !== null || isTransitioning(this, element)) {
 			return null;
 		}
