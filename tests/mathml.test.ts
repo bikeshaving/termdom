@@ -362,6 +362,80 @@ test("the ascii glyph set draws with slashes, pipes and dashes", async () => {
 	}
 });
 
+const TABLE =
+	"<mtable><mtr><mtd><mn>1</mn></mtd><mtd><mn>10</mn></mtd></mtr>" +
+	"<mtr><mtd><mn>100</mn></mtd><mtd><mn>2</mn></mtd></mtr></mtable>";
+
+test("a table sizes columns to their widest cell and centers cells", async () => {
+	expect(await renderLines(block(TABLE), 10)).toEqual(["   1  10", "  100 2"]);
+	expect(
+		await renderLines(
+			block(TABLE.replace("<mtable>", "<mtable columnalign=\"left right\">")),
+			10,
+		),
+	).toEqual(["  1   10", "  100  2"]);
+	expect(await renderLines(inline(TABLE))).toEqual(["a 1, 10; 100, 2 z"]);
+});
+
+test("table rows align on their tallest cell's baseline", async () => {
+	const lines = await renderLines(
+		block(
+			"<mtable><mtr><mtd><mfrac><mi>a</mi><mi>b</mi></mfrac></mtd>" +
+			"<mtd><mi>x</mi></mtd></mtr></mtable>",
+		),
+		10,
+	);
+	expect(lines).toEqual(["   a", "  ─── x", "   b"]);
+});
+
+test("frame, rowlines and columnlines draw box-drawing rules", async () => {
+	const lines = await renderLines(
+		block(
+			"<mtable frame=\"solid\" rowlines=\"solid\" columnlines=\"solid\">" +
+			"<mtr><mtd><mn>1</mn></mtd><mtd><mn>2</mn></mtd></mtr>" +
+			"<mtr><mtd><mn>3</mn></mtd><mtd><mn>4</mn></mtd></mtr></mtable>",
+		),
+		10,
+	);
+	expect(lines).toEqual([
+		"  ┌─┬─┐",
+		"  │1│2│",
+		"  ├─┼─┤",
+		"  │3│4│",
+		"  └─┴─┘",
+	]);
+});
+
+test("mphantom takes space and paints nothing", async () => {
+	expect(
+		await renderLines(
+			inline("<mi>x</mi><mphantom><mi>yy</mi></mphantom><mi>z</mi>"),
+		),
+	).toEqual(["a x  z z"]);
+});
+
+test("mpadded grows the box by its attributes", async () => {
+	expect(
+		await renderLines(
+			inline(
+				"<mpadded width=\"4em\" lspace=\"1em\"><mi>x</mi></mpadded><mi>y</mi>",
+			),
+		),
+	).toEqual(["a  x  y z"]);
+});
+
+test("merror draws a red border in display mode", async () => {
+	expect(
+		await renderLines(
+			block("<merror><mi>x</mi><mo>+</mo><mn>1</mn></merror>"),
+			11,
+		),
+	).toEqual(["  ┌─────┐", "  │x + 1│", "  └─────┘"]);
+	expect(await renderANSI(block("<merror><mi>x</mi></merror>"))).toMatch(
+		/38;2;255;0;0/,
+	);
+});
+
 test("getBoundingClientRect reports the math box in cells", async () => {
 	const {dom} = await render(inline("<mi>x</mi><mo>+</mo><mi>y</mi>"), 40);
 	const rect = dom.document.querySelector("math")!.getBoundingClientRect();
