@@ -5049,7 +5049,7 @@ export class Layout {
 	}
 
 	/** The layout node an element's principal box was laid out as, if any. */
-	nodeOf(element: Element): LayoutNode | null {
+	getLayoutNode(element: Element): LayoutNode | null {
 		return this[kNodeMap].get(element) ?? null;
 	}
 
@@ -5062,7 +5062,7 @@ export class Layout {
 	 * The box whose lines a layout node lays out, when it is a run's. Null
 	 * for a principal box's node.
 	 */
-	runOf(node: LayoutNode): Box | null {
+	getRun(node: LayoutNode): Box | null {
 		const owner = node.owner as Node | null;
 		if (owner === null) {
 			return null;
@@ -5072,7 +5072,7 @@ export class Layout {
 	}
 
 	/** The principal box of an element, or null before its container derived one. */
-	boxOf(element: Element): Box | null {
+	getBox(element: Element): Box | null {
 		return this[kBoxes].get(element) ?? null;
 	}
 }
