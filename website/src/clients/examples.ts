@@ -1201,7 +1201,7 @@ function describeProgram(code: string): string {
 		.trim()
 		.split(/\n\s*\n/)[0];
 	const flat = paragraph.replace(/\s+/g, " ").trim();
-	return flat || "A program written against the DOM, drawn in a terminal.";
+	return flat;
 }
 
 const GALLERY_GEOMETRY = {cols: 48, rows: 12};
@@ -1314,7 +1314,9 @@ function* GalleryCard(this: Context, {example}: {example: PlaygroundExample}) {
 				</div>
 				<div class="caption">
 					<div class="title">${example.label}</div>
-					<p class="blurb">${describeProgram(example.code)}</p>
+					${describeProgram(example.code)
+						? jsx`<p class="blurb">${describeProgram(example.code)}</p>`
+						: null}
 				</div>
 			</a>
 		`;
@@ -1329,12 +1331,6 @@ function Gallery({examples}: {examples: PlaygroundExample[]}) {
 				background: none;
 				padding: 0;
 			`}>Examples</h1>
-			<p class=${css`
-				color: var(--muted-color);
-				margin: 0.5rem 0 0;
-			`}>
-				The library's own examples, running in this page. Open one to edit it and watch the terminal follow.
-			</p>
 			<ul class=${gallery}>
 				${examples.map(
 					(example) => jsx`
