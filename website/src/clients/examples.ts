@@ -64,8 +64,14 @@ const EMBED_GEOMETRY = {
 
 // The page's own size, so the emulator's cells are the page's cells.
 const FONT_SIZE = 16;
+// The emulator measures its cell once, when it opens, so it opens after the
+// page's font has arrived rather than measuring the fallback and painting
+// wider than its box once the swap comes.
+const FONT_READY: Promise<unknown> = document.fonts
+	.load(`${FONT_SIZE}px "Atkinson Hyperlegible Mono"`)
+	.catch(() => undefined);
 // The emulator's cell in the font stack below, measured rather than guessed.
-const CELL_WIDTH = 9.64;
+const CELL_WIDTH = 10.11;
 // What the pane adds around the emulator's own box: its padding.
 const PANE_CHROME = 16;
 // The rule between the two halves, which is all that separates them.
@@ -76,7 +82,7 @@ const SEAM = 1;
 // half of any width that can hold both.
 const EDITOR_MIN_COLUMNS = 64;
 // The editor's own cell, and what its padding, gutter and border add.
-const EDITOR_CELL_WIDTH = 9.6;
+const EDITOR_CELL_WIDTH = 10.11;
 const EDITOR_CHROME = 96;
 
 /**
@@ -448,7 +454,7 @@ function* TerminalPane(
 		allowProposedApi: true,
 		fontSize: FONT_SIZE,
 		fontFamily:
-			'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+			'"Atkinson Hyperlegible Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
 		theme: {
 			background: TERMINAL_BACKGROUND,
 			foreground: TERMINAL_FOREGROUND,
@@ -553,23 +559,25 @@ function* TerminalPane(
 	for ({code, runNonce, onstatus} of this) {
 		if (initial) {
 			this.after(() => {
-				terminal.open(root);
-				// After `open`: the emulator's element and textarea, which the
-				// IME work listens on, are made there.
-				installIMEQuirks(terminal);
-				fit();
-				// The box changes with the window, and the program hears
-				// about it the way a program in a terminal does: the
-				// emulator resizes, and the transport carries the new
-				// size to the session.
-				const observer = new ResizeObserver(() => {
-					if (root.clientWidth > 0 && root.clientHeight > 0) {
-						fit();
-					}
+				void FONT_READY.then(() => {
+					terminal.open(root);
+					// After `open`: the emulator's element and textarea, which
+					// the IME work listens on, are made there.
+					installIMEQuirks(terminal);
+					fit();
+					// The box changes with the window, and the program hears
+					// about it the way a program in a terminal does: the
+					// emulator resizes, and the transport carries the new
+					// size to the session.
+					const observer = new ResizeObserver(() => {
+						if (root.clientWidth > 0 && root.clientHeight > 0) {
+							fit();
+						}
+					});
+					observer.observe(root);
+					this.cleanup(() => observer.disconnect());
+					void run();
 				});
-				observer.observe(root);
-				this.cleanup(() => observer.disconnect());
-				void run();
 			});
 
 			// The half fills whatever the grid gives it, and the emulator sits
