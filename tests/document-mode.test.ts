@@ -254,6 +254,31 @@ test("culling never drops an absolute child positioned far from its parent", asy
 	dom.dispose();
 });
 
+test("culling walks every child of a container whose children are not stacked", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 20});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
+	dom.document.body.innerHTML =
+		"<div style=\"display:flex;flex-direction:column-reverse\">" +
+		Array.from({length: 5}, (_, i) => `<div style="height:2em">ITEM${i}</div>`)
+			.join("") +
+		"</div>";
+	await nextFrame(dom);
+
+	// Item i sits at document row (4 - i) * 2, the reverse of its order in
+	// the tree, and its text is on the first row of its box.
+	for (let top = 0; top <= 6; top++) {
+		dom.window.scrollTo(0, top);
+		await nextFrame(dom);
+		const text = read(terminal, 4).viewport.join("\n");
+		for (let i = 0; i < 5; i++) {
+			const row = (4 - i) * 2;
+			expect(text.includes(`ITEM${i}`)).toBe(row >= top && row < top + 4);
+		}
+	}
+
+	dom.dispose();
+});
+
 test("growing past the prompt keeps the diff aligned with the screen", async () => {
 	// When a document-mode region grows and reserveRows scrolls the prompt away,
 	// the region top moves up by exactly the scrolled amount -- so the previous
