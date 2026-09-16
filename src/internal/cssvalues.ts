@@ -878,6 +878,7 @@ const grammarLexer = CSSTree.fork({
 	properties: {
 		"alignment-baseline": "| text-bottom | text-top",
 		"baseline-shift": "| top | center | bottom",
+		display: "| [ block | inline ]? math",
 		"outline-color": "| invert",
 	},
 	types: {
