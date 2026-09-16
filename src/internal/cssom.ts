@@ -35,9 +35,7 @@ import {
 	TransitionEvent,
 	type Window,
 } from "./dom.ts";
-import {
-	HTML_NAMESPACE,
-} from "./dom.ts";
+import {HTML_NAMESPACE, MATHML_NAMESPACE} from "./dom.ts";
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {getStringWidth} from "./text.ts";
@@ -50,6 +48,9 @@ import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.ts";
 function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
+	if (element.namespaceURI === MATHML_NAMESPACE) {
+		return getMathMLDefaults(element);
+	}
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return undefined;
 	}
@@ -89,6 +90,32 @@ function getElementDefaults(
 		return {width: `${Number.isFinite(size) && size > 0 ? size : 20}ch`};
 	}
 	return undefined;
+}
+
+// MathML Core's presentational hints: mathcolor, mathbackground and
+// displaystyle map onto color, background-color and math-style.
+function getMathMLDefaults(
+	element: Element,
+): Record<string, string> | undefined {
+	let defaults: Record<string, string> | undefined;
+	const color = element.getAttribute("mathcolor");
+	if (color !== null && color.trim() !== "") {
+		(defaults ??= {}).color = color.trim();
+	}
+	const background = element.getAttribute("mathbackground");
+	if (background !== null && background.trim() !== "") {
+		(defaults ??= {})["background-color"] = background.trim();
+	}
+	const displaystyle = element
+		.getAttribute("displaystyle")
+		?.trim()
+		.toLowerCase();
+	if (displaystyle === "true" || displaystyle === "false") {
+		(defaults ??= {})["math-style"] = displaystyle === "true"
+			? "normal"
+			: "compact";
+	}
+	return defaults;
 }
 
 function getInitialStyle(element: Element | null, property: string): string {

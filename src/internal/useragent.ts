@@ -87,6 +87,9 @@ export const UA_ELEMENT_STYLES = `
 	thead { display: table-header-group; }
 	tr { display: table-row; }
 	input[type=checkbox i], input[type=radio i] { width: 3ch; }
+	math { display: inline math; }
+	math[display=block i] { display: block math; text-align: center; }
+	annotation, annotation-xml { display: none; }
 `;
 
 // Applies in every tree scope, as a browser's UA sheet styles shadow

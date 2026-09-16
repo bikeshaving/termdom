@@ -37,6 +37,7 @@ import {
 	toValue,
 	type Wrap,
 } from "./layoutsolver.ts";
+import {isMathRoot, layoutMath, type MathBox} from "./mathml.ts";
 import {
 	getParagraphDirection,
 	getStringWidth,
@@ -148,6 +149,12 @@ const TABLE_DISPLAYS = new Set<string>([
 // computed.
 function getComputedDisplay(element: Element): Display {
 	const value = getComputedValue(element, "display");
+	if (value === "inline math") {
+		return "inline-block";
+	}
+	if (value === "block math" || value === "math") {
+		return "block";
+	}
 	return DISPLAYS.has(value) ? (value as Display) : "block";
 }
 
@@ -1315,6 +1322,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 }
 
 const kBoxes = Symbol("boxes");
+const kMathBoxes = Symbol("mathBoxes");
 
 function getPrincipalBox(
 	layout: Layout,
@@ -1816,6 +1824,16 @@ function addElementNode(
 
 	if (display === "none") {
 		if (layoutNode && parentLayoutNode) {
+			placeChild(parentLayoutNode, layoutNode, flexIndex);
+		}
+		return;
+	} else if (isMathRoot(element)) {
+		layoutNode.measure = () => {
+			const box = measureMath(layout, element);
+			return {width: box.width, height: box.height};
+		};
+		layout[kMeasureNodes].add(layoutNode);
+		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
 		return;
@@ -2708,6 +2726,14 @@ function measureInlineRun(
 	return {width: breakResult.maxLineWidth, height: breakResult.totalHeight};
 }
 
+// A <math> element is laid out whole by the math engine. The block and
+// inline engines see only its size, and never descend into it.
+function measureMath(layout: Layout, element: Element): MathBox {
+	const box = layoutMath(element, !isInlineDisplay(getUsedDisplay(element)));
+	layout[kMathBoxes].set(element, box);
+	return box;
+}
+
 // The members are the box's own, so nothing here decides where a run
 // ends, and a member that has left the tree is not among them.
 function collectLeafNodes(
@@ -2830,6 +2856,19 @@ function collectLeaves(
 			} else if (element.tagName === "BR") {
 				leafNodes.push({type: "br", node: element as HTMLBRElement});
 				cursor = flowNext(node, root, false);
+				if (cursor === null) {
+					break;
+				}
+			} else if (isAtomicInline(display) && isMathRoot(element)) {
+				const box = measureMath(layout, element);
+				leafNodes.push({
+					type: "inline-block",
+					node: element,
+					boxModel: getBoxModel(element),
+					contentWidth: box.width,
+					contentHeight: box.height,
+				});
+				cursor = flowNext(node, root, true);
 				if (cursor === null) {
 					break;
 				}
@@ -4345,6 +4384,10 @@ export interface Layout {
 	// node and fragments.
 	[kBoxes]: WeakMap<Node, Box>;
 
+	// Each <math> element's last laid-out box. Written by whichever
+	// measurement placed the element and read back by the painter.
+	[kMathBoxes]: WeakMap<Element, MathBox>;
+
 	// The reverse of Box.layoutNode, and the registry the sweeps that must
 	// reach every box (resize, pruning, disposal) walk. Strong, because
 	// boxes a re-derivation drops must still be dropped.
@@ -4385,6 +4428,7 @@ export class Layout {
 			Map<Node, TextFragmentEntry[]>
 		>();
 		this[kBoxes] = new WeakMap<Node, Box>();
+		this[kMathBoxes] = new WeakMap<Element, MathBox>();
 		this[kDerivedContainers] = new WeakSet<Element>();
 		this[kAnonymousBoxes] = new Map<LayoutNode, Box>();
 		this[kDirtyRunContainers] = new Set<Element>();
@@ -4654,6 +4698,11 @@ export class Layout {
 			}
 		}
 		return height;
+	}
+
+	/** The cells a <math> element paints, laid out if no pass has yet. */
+	getMathBox(element: Element): MathBox {
+		return this[kMathBoxes].get(element) ?? measureMath(this, element);
 	}
 
 	contentRect(element: Element): DOMRect | null {

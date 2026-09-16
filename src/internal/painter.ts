@@ -37,6 +37,7 @@ import {
 	renderTextFragment,
 } from "./layout.ts";
 import type {LayoutNode} from "./layoutsolver.ts";
+import {isMathRoot} from "./mathml.ts";
 import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
@@ -851,6 +852,14 @@ function paintBlock(
 		afterOwnBox();
 	}
 
+	// The math engine laid the whole subtree out into one box of cells.
+	if (isMathRoot(element)) {
+		if (style.visible) {
+			renderMath(painter, element, rect, ctx);
+		}
+		paintOutline(painter, element, style, rect, ctx);
+		return;
+	}
 	paintContent(painter, element, style, rect, ctx, (origin) => {
 		paintNodes(painter, node, origin, ctx);
 	});
@@ -963,10 +972,10 @@ function paintNodes(
 			paintRun(painter, run, childOrigin, ctx);
 		} else if (
 			owner.nodeType === owner.ELEMENT_NODE &&
-			owner instanceof HTMLElement &&
-			!layout.hoistedToLayer(owner)
+			(owner instanceof HTMLElement || isMathRoot(owner)) &&
+			!layout.hoistedToLayer(owner as Element)
 		) {
-			paintBlock(painter, owner, child, childOrigin, ctx);
+			paintBlock(painter, owner as Element, child, childOrigin, ctx);
 		}
 	}
 }
@@ -1263,6 +1272,13 @@ function paintAtomic(
 	}
 	paintCaret(painter, element, style, ctx);
 
+	if (isMathRoot(element)) {
+		if (style.visible) {
+			renderMath(painter, element, rect, ctx);
+		}
+		paintOutline(painter, element, style, rect, ctx);
+		return;
+	}
 	paintContent(painter, element, style, rect, ctx, (origin) => {
 		if (leaf.breakResult) {
 			const model = leaf.boxModel;
@@ -1572,6 +1588,45 @@ function renderEditingCaret(
 	const content = painter[kLayout].contentRect(box);
 	if (content) {
 		ctx.setCaret(Math.round(content.x), Math.round(content.y));
+	}
+}
+
+// Blits the math box into the content box, placed by text-align when the
+// content box is wider (a block-level <math> is centered by the UA sheet).
+function renderMath(
+	painter: Painter,
+	element: Element,
+	rect: Rect,
+	ctx: CellContext,
+): void {
+	const box = painter[kLayout].getMathBox(element);
+	const boxModel = getBoxModel(element);
+	const contentWidth =
+		Math.round(rect.width) -
+		boxModel.borderLeftWidth -
+		boxModel.borderRightWidth -
+		boxModel.paddingLeft -
+		boxModel.paddingRight;
+	const spare = Math.max(0, contentWidth - box.width);
+	const align = getComputedValue(element, "text-align");
+	const offset = align === "right" || align === "end"
+		? spare
+		: align === "center" ? spare >> 1 : 0;
+	const left =
+		Math.round(rect.left) +
+		boxModel.borderLeftWidth +
+		boxModel.paddingLeft +
+		offset;
+	const top =
+		Math.round(rect.top) + boxModel.borderTopWidth + boxModel.paddingTop;
+	for (let row = 0; row < box.height; row++) {
+		let x = left;
+		for (const cell of box.cells[row]) {
+			if (cell.text !== " " || cell.style?.bg != null) {
+				ctx.drawText(cell.text, x, top + row, cell.style ?? undefined);
+			}
+			x += cell.width;
+		}
 	}
 }
 
