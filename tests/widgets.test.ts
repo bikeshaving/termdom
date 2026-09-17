@@ -176,6 +176,41 @@ test("children added to a live details slot into the right place", async () => {
 	dom.dispose();
 });
 
+/* ------------------------------------------------------- button inputs */
+
+test("a button-type input draws its value, or its type's default label", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 60});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<input type=\"submit\">|<input type=\"submit\" value=\"Go\">|" +
+		"<input type=\"reset\">|<input type=\"button\">|" +
+		"<input type=\"button\" value=\"Next\">|<input type=\"image\" alt=\"Search\">|";
+	await nextFrame(dom);
+
+	expect(terminal.getVisibleText().split("\n")[0].trimEnd()).toBe(
+		"[ Submit ]|[ Go ]|[ Reset ]|[  ]|[ Next ]|[ Search ]|",
+	);
+	const [submit] = dom.document.querySelectorAll("input");
+	expect((submit as HTMLInputElement).value).toBe("");
+	dom.dispose();
+});
+
+test("a button-type input redraws its label when its value changes", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<input id=\"a\" type=\"submit\">|<input id=\"b\" type=\"button\">|";
+	await nextFrame(dom);
+
+	dom.document.getElementById("a")!.setAttribute("value", "Send");
+	(dom.document.getElementById("b") as HTMLInputElement).value = "Next";
+	await nextFrame(dom);
+	expect(terminal.getVisibleText().split("\n")[0].trimEnd()).toBe(
+		"[ Send ]|[ Next ]|",
+	);
+	dom.dispose();
+});
+
 /* ------------------------------------------------------ details/summary */
 
 test("the disclosure marker follows the open state", async () => {

@@ -4370,6 +4370,11 @@ function runActivationBehavior(target: EventTarget, event: Event): void {
 /** Input types that are buttons rather than text controls. */
 const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
 
+/** Whether an input is drawn as a button with a label. */
+export function isButtonInput(input: {type: string}): boolean {
+	return BUTTON_INPUT_TYPES.has(input.type);
+}
+
 /**
  * Which keys activate an element the way a click does, or null for an
  * element no keystroke activates.
@@ -15758,7 +15763,7 @@ export interface HTMLInputElement {
 	// text-like input, "toggle" for checkbox/radio, null until built. The two
 	// are different trees, so a type change rebuilds.
 	[kUpgraded]: boolean;
-	[kKind]: "textControl" | "toggle" | null;
+	[kKind]: "textControl" | "toggle" | "button" | null;
 	[kRoot]: globalThis.ShadowRoot | null;
 	[kValueText]: globalThis.Text | null;
 	[kPlaceholderText]: globalThis.Text | null;
@@ -16422,9 +16427,11 @@ export class HTMLInputElement extends HTMLElement {
 		}
 		if (this[kKind] !== "textControl") {
 			if (this[kGlyphText]) {
-				const mark = this.type === "checkbox"
-					? this.checked ? "[x]" : "[ ]"
-					: this.checked ? "(x)" : "( )";
+				const mark = this[kKind] === "button"
+					? getInputButtonLabel(this)
+					: this.type === "checkbox"
+						? this.checked ? "[x]" : "[ ]"
+						: this.checked ? "(x)" : "( )";
 				if (this[kGlyphText].data !== mark) {
 					this[kGlyphText].data = mark;
 				}
@@ -16562,15 +16569,35 @@ function requireSelectable(input: HTMLInputElement): void {
 	}
 }
 
-function getInputKind(input: HTMLInputElement): "textControl" | "toggle" {
+function getInputKind(
+	input: HTMLInputElement,
+): "textControl" | "toggle" | "button" {
 	const type = input.type;
-	return type === "checkbox" || type === "radio" ? "toggle" : "textControl";
+	if (type === "checkbox" || type === "radio") {
+		return "toggle";
+	}
+	return isButtonInput(input) ? "button" : "textControl";
+}
+
+// `value` reflects only the attribute, so a submit or reset button with
+// none reads as empty while it draws its default label, as in a browser.
+function getInputButtonLabel(input: HTMLInputElement): string {
+	if (input.type === "image") {
+		return input.getAttribute("alt") ?? "Submit";
+	}
+	const value = input.getAttribute("value");
+	if (value !== null) {
+		return value;
+	}
+	return input.type === "submit"
+		? "Submit"
+		: input.type === "reset" ? "Reset" : "";
 }
 
 // The text control tree has value and placeholder parts. The toggle tree has a
 // single glyph part the painter fills from live `.checked`, because a
 // radio's group exclusivity unchecks siblings with no hook to sync
-// on.
+// on. The button tree has a single label part.
 function buildInputWidget(input: HTMLInputElement): void {
 	const attached = getAttachedDocument(input)!;
 	let root = input[kRoot];
@@ -16595,7 +16622,10 @@ function buildInputWidget(input: HTMLInputElement): void {
 	} else {
 		input[kValueText] = null;
 		input[kPlaceholderText] = null;
-		input[kGlyphText] = addPart(root, "glyph").firstChild as globalThis.Text;
+		input[kGlyphText] = addPart(
+			root,
+			input[kKind] === "button" ? "label" : "glyph",
+		).firstChild as globalThis.Text;
 	}
 	attached[kLayout].invalidate(input);
 	syncUAShadowTree(input);
