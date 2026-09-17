@@ -38,7 +38,16 @@ at the first — the page&#039;s view of a browser&#039;s cycle through its chro
 styling apply. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. <code>&lt;input type=&quot;password&quot;&gt;</code>
 masks its value. A number input takes float syntax only, and ArrowUp and
-ArrowDown step it within <code>min</code> and <code>max</code>.</p><h2 id="editing">Editing <a class="heading-anchor" href="#editing">#</a></h2><p>An element with <code>contenteditable</code> is an editing host: click into it and
+ArrowDown step it within <code>min</code> and <code>max</code>.</p><p><code>new FormData(form)</code> builds the form&#039;s entry list: every submittable
+control it owns, in tree order, by the rule its kind has. Submitting a
+form builds the same list. <code>requestSubmit()</code> fires <code>submit</code> first and
+stops there if a listener cancels it; <code>submit()</code> skips that event. Either
+way the form then fires <code>formdata</code>, whose <code>event.formData</code> a listener can
+add to or rewrite before the entries count as sent:</p><pre class="language-typescript"><code class="language-typescript">form<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"formdata"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
+	event<span class="token punctuation">.</span>formData<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span><span class="token string">"token"</span><span class="token punctuation">,</span> token<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+form<span class="token punctuation">.</span><span class="token function">requestSubmit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Submission stops there. There is no page to navigate to, so the form
+never sends anything over the network.</p><h2 id="editing">Editing <a class="heading-anchor" href="#editing">#</a></h2><p>An element with <code>contenteditable</code> is an editing host: click into it and
 the caret becomes the real terminal cursor, and what you type goes into
 the tree. <code>document.designMode = &quot;on&quot;</code> makes the whole body one. A
 <code>contenteditable=&quot;false&quot;</code> element inside a host is stepped over as one
