@@ -1645,7 +1645,7 @@ function compileDir(args: CSSTree.SelectorNode[]): Predicate {
 // bidirectional algorithm's own paragraph rule, so a run of spaces,
 // digits or punctuation before the first letter decides nothing, which
 // is the point of `dir=auto`.
-function getDirectionality(element: Element): "ltr" | "rtl" {
+export function getDirectionality(element: Element): "ltr" | "rtl" {
 	for (
 		let node: Element | null = element;
 		node !== null;
