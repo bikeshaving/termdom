@@ -427,12 +427,7 @@ test("input internals are a UA shadow tree, closed to authors", async () => {
 	dom.dispose();
 });
 
-test("the field design survives the round-trip through the UA stylesheet", async () => {
-	// The field design is scoped CSS on real parts, not painter constants:
-	// the placeholder is the UA gray ghost, and the focus affordance is an
-	// `outline` the painter renders as a box-model-aware underline across the
-	// whole field. This pins the whole pipeline: UA sheet parsing, scope
-	// gating, :host(:focus) matching, focus invalidation, and the outline pass.
+test("a focused text field keeps its placeholder style and takes no outline", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -444,23 +439,16 @@ test("the field design survives the round-trip through the UA stylesheet", async
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
 
-	// Blurred: the placeholder shows as the UA gray ghost, no chrome of its own.
 	expect(cellAt(0, 0).getFgColor()).toBe(0x808080);
 	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
 
 	input.focus();
 	await nextFrame(dom);
-	// Focused: the :host(:focus) outline renders as a solid underline across
-	// the whole field -- the value/placeholder AND the empty tail past it, the
-	// box-model-aware fill a plain text-decoration could never reach.
-	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
-	expect(cellAt(0, 5).isUnderline()).toBeTruthy();
-	expect(cellAt(0, 0).isDim()).toBeFalsy();
-
-	input.blur();
-	await nextFrame(dom);
-	// Blurred again: the outline is gone, the field is plain.
-	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
+	expect(cellAt(0, 0).getFgColor()).toBe(0x808080);
+	for (const col of [0, 5, 19]) {
+		expect(cellAt(0, col).isUnderline()).toBeFalsy();
+		expect(cellAt(0, col).isOverline()).toBeFalsy();
+	}
 
 	dom.dispose();
 });
@@ -567,7 +555,7 @@ test("selection still paints inverse via the UA rule's system colors", async () 
 	dom.dispose();
 });
 
-test("a focused textarea's outline repaints its border in the outline color", async () => {
+test("an outline on a textarea repaints its border in the outline color", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
@@ -580,14 +568,13 @@ test("a focused textarea's outline repaints its border in the outline color", as
 
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
-	// Blurred: the UA border paints in the default foreground, not the accent.
 	expect(cellAt(0, 0).getChars()).toBe("┌");
-	expect(cellAt(0, 0).getFgColor()).not.toBe(0x5fafff);
-
 	textarea.focus();
 	await nextFrame(dom);
-	// Focused: the border ring carries the outline color; the bottom border
-	// row is glyphs, not an underline.
+	expect(cellAt(0, 0).getFgColor()).not.toBe(0x5fafff);
+
+	textarea.style.outline = "1px solid #5fafff";
+	await nextFrame(dom);
 	expect(cellAt(0, 0).getFgColor()).toBe(0x5fafff);
 	expect(cellAt(2, 0).getFgColor()).toBe(0x5fafff);
 	expect(cellAt(2, 0).isUnderline()).toBeFalsy();
@@ -595,7 +582,7 @@ test("a focused textarea's outline repaints its border in the outline color", as
 	dom.dispose();
 });
 
-test("a focused input's outline underline carries the outline color on unclaimed cells", async () => {
+test("an outline on a text field lines both edges in the outline color", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
@@ -603,17 +590,18 @@ test("a focused input's outline underline carries the outline color on unclaimed
 	const {document} = dom;
 	const input = document.createElement("input");
 	input.setAttribute("placeholder", "hint");
+	input.style.outline = "1px solid #5fafff";
 	document.body.appendChild(input);
-	input.focus();
 	await nextFrame(dom);
 
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
-	// A blank cell of the field row: underlined, in the accent.
 	expect(cellAt(0, 19).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 19).isOverline()).toBeTruthy();
 	expect(cellAt(0, 19).getFgColor()).toBe(0x5fafff);
-	// The placeholder's explicit gray wins over the outline's default.
+	// The placeholder's explicit gray wins over the outline's color.
 	expect(cellAt(0, 0).getFgColor()).toBe(0x808080);
+	expect(cellAt(0, 0).isOverline()).toBeTruthy();
 
 	dom.dispose();
 });

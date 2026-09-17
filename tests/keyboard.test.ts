@@ -1653,11 +1653,7 @@ test(":focus rules apply on focus and revert on blur", async () => {
 	dom.dispose();
 });
 
-test("a blurred field is plain; the focused field carries an underline across its extent", async () => {
-	// The focus affordance is an `outline` the painter renders as a
-	// box-model-aware underline: a blurred field is plain, and focusing draws
-	// a solid underline across the WHOLE field -- the value AND the empty tail
-	// past it, the fill a glyph-only text-decoration could never reach.
+test("focusing a field leaves its cells undecorated", async () => {
 	const terminal = new MockProcess({rows: 5, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	const {document} = dom;
@@ -1670,21 +1666,12 @@ test("a blurred field is plain; the focused field carries an underline across it
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
 
-	// Blurred: plain, both the value and the blank tail past it.
-	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
-	expect(cellAt(0, 5).isUnderline()).toBeFalsy();
-	// The neighbouring empty field (input b, cols 20-39) is plain too.
-	expect(cellAt(0, 25).isUnderline()).toBeFalsy();
-
-	// Focused: a solid underline across the whole extent -- value and tail --
-	// and not dim.
 	a.focus();
 	await nextFrame(dom);
-	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
-	expect(cellAt(0, 0).isDim()).toBeFalsy();
-	expect(cellAt(0, 5).isUnderline()).toBeTruthy();
-	// The other field, still blurred, stays plain.
-	expect(cellAt(0, 25).isUnderline()).toBeFalsy();
+	for (const col of [0, 5, 25]) {
+		expect(cellAt(0, col).isUnderline()).toBeFalsy();
+		expect(cellAt(0, col).isOverline()).toBeFalsy();
+	}
 
 	dom.dispose();
 });
@@ -1819,8 +1806,7 @@ test("typing in a width:auto input never clips the lead character", async () => 
 
 test("an empty width:auto input keeps a single caret cell", async () => {
 	// With no value the field still reserves one cell (min-width) instead of
-	// collapsing to zero width and vanishing from the row. Blurred it is plain;
-	// focusing draws the outline underline over that single cell.
+	// collapsing to zero width and vanishing from the row.
 	const terminal = new MockProcess({rows: 4, cols: 30});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -1832,16 +1818,13 @@ test("an empty width:auto input keeps a single caret cell", async () => {
 
 	const line = () => (terminal as any).terminal.buffer.active.getLine(0);
 	expect(line().translateToString(false).trimEnd()).toBe("a:   z");
-	expect(line().getCell(3).isUnderline()).toBeFalsy(); // blurred: plain
 
-	// Focused: the outline underlines the single reserved cell.
 	const input = dom.document.querySelector("input") as HTMLInputElement;
 	input.focus();
 	await nextFrame(dom);
-	expect(line().getCell(3).isUnderline()).toBeTruthy();
 
 	// Typing grows the field; deleting back to empty returns to the single
-	// cell rather than zero width, and the outline still marks it.
+	// cell rather than zero width.
 	(terminal.stdin as any).emit("data", Buffer.from("hi"));
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
@@ -1850,7 +1833,6 @@ test("an empty width:auto input keeps a single caret cell", async () => {
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(line().translateToString(false).trimEnd()).toBe("a:   z");
-	expect(line().getCell(3).isUnderline()).toBeTruthy();
 	dom.dispose();
 });
 
@@ -1902,10 +1884,7 @@ test("an author-colored link keeps its focus ring", async () => {
 	dom.dispose();
 });
 
-test("non-mouse nav: a button takes the outline underline across its whole box on focus", async () => {
-	// A button isn't underlined at rest (it wears [ ] brackets), so it uses the
-	// same `outline` focus as a field -- and the merge op lines the WHOLE box,
-	// brackets included, where an inverse FILL misses the ::before/::after.
+test("non-mouse nav: a button lines both edges of its whole box on Tab focus", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -1920,8 +1899,6 @@ test("non-mouse nav: a button takes the outline underline across its whole box o
 		.translateToString(false)
 		.trimEnd();
 	expect(line0()).toBe("[ go ]");
-	// At rest: no underline on the bracket.
-	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
 
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
 	await new Promise((r) => setTimeout(r, 0));
@@ -1929,9 +1906,11 @@ test("non-mouse nav: a button takes the outline underline across its whole box o
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("BUTTON");
-	// The whole box is underlined, the opening bracket and closing bracket too.
-	expect(cellAt(0, 0).isUnderline()).toBeTruthy(); // "["
-	expect(cellAt(0, 5).isUnderline()).toBeTruthy(); // "]"
+	for (const col of [0, 5]) {
+		expect(cellAt(0, col).isUnderline()).toBeTruthy();
+		expect(cellAt(0, col).isOverline()).toBeTruthy();
+	}
+	expect(cellAt(0, 6).isUnderline()).toBeFalsy();
 	dom.dispose();
 });
 
