@@ -29,6 +29,7 @@ const RUNNABLE = [
 	"codemirror",
 	"commit-editor",
 	"flexbox",
+	"focus",
 	"form",
 	"fullscreen",
 	"fuzzy-finder",
