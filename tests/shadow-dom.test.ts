@@ -427,7 +427,7 @@ test("input internals are a UA shadow tree, closed to authors", async () => {
 	dom.dispose();
 });
 
-test("a text field keeps its UA placeholder style and no focus decoration", async () => {
+test("a focused text field keeps its placeholder style and takes no outline", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -445,9 +445,10 @@ test("a text field keeps its UA placeholder style and no focus decoration", asyn
 	input.focus();
 	await nextFrame(dom);
 	expect(cellAt(0, 0).getFgColor()).toBe(0x808080);
-	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
-	expect(cellAt(0, 0).isOverline()).toBeFalsy();
-	expect(cellAt(0, 5).isUnderline()).toBeFalsy();
+	for (const col of [0, 5, 19]) {
+		expect(cellAt(0, col).isUnderline()).toBeFalsy();
+		expect(cellAt(0, col).isOverline()).toBeFalsy();
+	}
 
 	dom.dispose();
 });

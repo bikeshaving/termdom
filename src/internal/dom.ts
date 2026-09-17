@@ -176,6 +176,25 @@ function isTextControl(element: {tagName: string; type?: string}): boolean {
 	return type !== "checkbox" && type !== "radio" && type !== "hidden";
 }
 
+// Text controls whose value is not edited in place, so focus shows no caret.
+// The UA stylesheet's focus rule lists the same types.
+const CURSORLESS_INPUT_TYPES = new Set([
+	"button",
+	"color",
+	"file",
+	"image",
+	"range",
+	"reset",
+	"submit",
+]);
+
+/** Whether focus on the element shows as the terminal cursor. */
+export function takesTextCursor(
+	element: {tagName: string; type?: string},
+): boolean {
+	return isTextControl(element) && !CURSORLESS_INPUT_TYPES.has(element.type!);
+}
+
 const kUAValueText =
 	Symbol("the text node a control's editable value lives in");
 

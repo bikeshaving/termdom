@@ -472,7 +472,7 @@ test("an inline-block's margins stay outside its box", async () => {
 		const terminal = new MockProcess({cols: 40, rows: 4});
 		const dom = new TermDOM({
 			transport: terminal.transport,
-			html: `<!doctype html><style>${css} button:focus { outline: 1px solid }</style><div><button>Allow</button><button>Deny</button></div>`,
+			html: `<!doctype html><style>${css}</style><div><button>Allow</button><button>Deny</button></div>`,
 		});
 		await nextFrame(dom);
 		const [allow, deny] = dom.document.querySelectorAll("button");

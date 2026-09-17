@@ -90,7 +90,7 @@ test("arrows change the selection in place, skipping disabled options", async ()
 	dom.dispose();
 });
 
-test("a focused select is not underlined", async () => {
+test("a focused select lines both edges of its field", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -103,7 +103,8 @@ test("a focused select is not underlined", async () => {
 
 	select.focus();
 	await nextFrame(dom);
-	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
+	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 0).isOverline()).toBeTruthy();
 
 	dom.dispose();
 });

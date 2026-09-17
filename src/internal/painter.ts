@@ -18,6 +18,7 @@ import {
 	hasPaintedHighlights,
 	HTMLElement,
 	renderedTopLayer,
+	takesTextCursor,
 	type Window,
 } from "./dom.ts";
 import {getEditingCaretPoint} from "./editing.ts";
@@ -1111,6 +1112,11 @@ function paintCaret(
 	const record = getSelectionRecord(element);
 	if (record === null) {
 		renderEditingCaret(painter, element, ctx);
+		return;
+	}
+	// A control with a value but no text to edit, a checkbox or a select,
+	// shows focus as an outline instead.
+	if (!takesTextCursor(element)) {
 		return;
 	}
 	const focus = record.direction === "backward" ? record.start : record.end;

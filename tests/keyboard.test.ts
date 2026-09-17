@@ -1884,7 +1884,7 @@ test("an author-colored link keeps its focus ring", async () => {
 	dom.dispose();
 });
 
-test("non-mouse nav: a button is not decorated on Tab focus", async () => {
+test("non-mouse nav: a button lines both edges of its whole box on Tab focus", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -1906,8 +1906,11 @@ test("non-mouse nav: a button is not decorated on Tab focus", async () => {
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("BUTTON");
-	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
-	expect(cellAt(0, 5).isUnderline()).toBeFalsy();
+	for (const col of [0, 5]) {
+		expect(cellAt(0, col).isUnderline()).toBeTruthy();
+		expect(cellAt(0, col).isOverline()).toBeTruthy();
+	}
+	expect(cellAt(0, 6).isUnderline()).toBeFalsy();
 	dom.dispose();
 });
 
