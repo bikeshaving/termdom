@@ -356,30 +356,6 @@ interface BorderPaint {
 	bottomLeft?: "round";
 }
 
-const kWindow = Symbol("window");
-const kDocument = Symbol("document");
-const kLayout = Symbol("layout");
-const kCascade = Symbol("cascade");
-const kScreen = Symbol("screen");
-const kTopLayer = Symbol("topLayer");
-const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
-const kScrolledRows = Symbol("scrolledRows");
-const kHighlightedText = Symbol("highlightedText");
-const kHighlightStyles = Symbol("highlightStyles");
-
-function getPaintStyle(painter: Painter, element: Element): PaintStyle {
-	const key = painter[kCascade].getStyleKey(element);
-	const known = key === null ? undefined : paintStyles.get(key);
-	if (known !== undefined) {
-		return known;
-	}
-	const style = readPaintStyle(element);
-	if (key !== null) {
-		paintStyles.set(key, style);
-	}
-	return style;
-}
-
 function readPaintStyle(element: Element): PaintStyle {
 	const color = getComputedValue(element, "color");
 	const backgroundColor = getComputedValue(element, "background-color");
@@ -564,7 +540,7 @@ interface TextFragment {
 	visualBase: "ltr" | "rtl" | null;
 }
 
-interface RunPaint {
+interface PainterRun {
 	texts: Map<Text, TextFragment[]>;
 	boxes: Map<Element, Rect[]>;
 	leaves: Map<Element, {rect: Rect; leaf: InlineBlockLeaf}>;
@@ -591,6 +567,16 @@ interface HighlightRun {
 	to: number;
 }
 
+const kWindow = Symbol("window");
+const kDocument = Symbol("document");
+const kLayout = Symbol("layout");
+const kCascade = Symbol("cascade");
+const kScreen = Symbol("screen");
+const kTopLayer = Symbol("topLayer");
+const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
+const kScrolledRows = Symbol("scrolledRows");
+const kHighlightedText = Symbol("highlightedText");
+const kHighlightStyles = Symbol("highlightStyles");
 export interface Painter {
 	[kWindow]: Window;
 	[kDocument]: Document;
@@ -706,6 +692,19 @@ export class Painter {
 			}
 		}
 	}
+}
+
+function getPaintStyle(painter: Painter, element: Element): PaintStyle {
+	const key = painter[kCascade].getStyleKey(element);
+	const known = key === null ? undefined : paintStyles.get(key);
+	if (known !== undefined) {
+		return known;
+	}
+	const style = readPaintStyle(element);
+	if (key !== null) {
+		paintStyles.set(key, style);
+	}
+	return style;
 }
 
 // Whatever the ::backdrop rules resolve to, the UA sheet's included.
@@ -1181,7 +1180,7 @@ function paintLines(
 function paintMember(
 	painter: Painter,
 	node: Node,
-	run: RunPaint,
+	run: PainterRun,
 	ctx: CellContext,
 ): void {
 	if (node.nodeType === node.TEXT_NODE) {
@@ -1206,7 +1205,7 @@ function paintMember(
 function paintInline(
 	painter: Painter,
 	element: Element,
-	run: RunPaint,
+	run: PainterRun,
 	ctx: CellContext,
 ): void {
 	const style = getPaintStyle(painter, element);
@@ -1270,8 +1269,12 @@ function resolveRun(
 	container: Element,
 	alignContainer: Element,
 	origin: Origin,
-): RunPaint {
-	const run: RunPaint = {texts: new Map(), boxes: new Map(), leaves: new Map()};
+): PainterRun {
+	const run: PainterRun = {
+		texts: new Map(),
+		boxes: new Map(),
+		leaves: new Map(),
+	};
 	const boxLines = new Map<Element, Map<number, Rect>>();
 	const shifts = new Map<Node, Origin>();
 	const getShift = (node: Node): Origin => {
@@ -1406,7 +1409,7 @@ function coverAncestors(
 function paintText(
 	painter: Painter,
 	textNode: Text,
-	run: RunPaint,
+	run: PainterRun,
 	ctx: CellContext,
 ): void {
 	const fragments = run.texts.get(textNode);
