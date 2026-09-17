@@ -38,7 +38,29 @@ at the first — the page&#039;s view of a browser&#039;s cycle through its chro
 styling apply. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. <code>&lt;input type=&quot;password&quot;&gt;</code>
 masks its value. A number input takes float syntax only, and ArrowUp and
-ArrowDown step it within <code>min</code> and <code>max</code>.</p><h2 id="selection-and-the-clipboard">Selection and the clipboard <a class="heading-anchor" href="#selection-and-the-clipboard">#</a></h2><p>Drag to select, in the document or inside a field; style it with
+ArrowDown step it within <code>min</code> and <code>max</code>.</p><h2 id="editing">Editing <a class="heading-anchor" href="#editing">#</a></h2><p>An element with <code>contenteditable</code> is an editing host: click into it and
+the caret becomes the real terminal cursor, and what you type goes into
+the tree. <code>document.designMode = &quot;on&quot;</code> makes the whole body one. A
+<code>contenteditable=&quot;false&quot;</code> element inside a host is stepped over as one
+piece and never takes the caret.</p><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>div</span> <span class="token attr-name">id</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>note<span class="token punctuation">"</span></span> <span class="token attr-name">contenteditable</span><span class="token punctuation">></span></span>Type here.<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>div</span><span class="token punctuation">></span></span></code></pre><p>The arrows move the caret by character, Alt or Ctrl with them by word,
+Up and Down by line, and Home and End to the line&#039;s ends; Shift extends
+the selection instead of moving it. Backspace and Delete take one
+grapheme cluster, or the selection. The readline chords the text fields
+use work here too: Ctrl+W takes back a word, Ctrl+U the line before the
+caret, Ctrl+K the line after it. Enter splits the block the caret is in,
+Shift+Enter puts a <code>&lt;br&gt;</code> in, and a block left empty keeps a <code>&lt;br&gt;</code> so
+it stays a line tall — the same tree Chrome writes.</p><p>Every edit is a cancelable <code>beforeinput</code> first and an <code>input</code> after, both
+bubbling from the element the caret is in, with the spec&#039;s input types:
+<code>insertText</code>, <code>insertFromPaste</code>, <code>insertParagraph</code>, <code>insertLineBreak</code>,
+<code>deleteContentBackward</code>, <code>deleteContentForward</code>, <code>deleteWordBackward</code>,
+<code>deleteSoftLineBackward</code> and <code>deleteSoftLineForward</code>. Cancel the
+<code>beforeinput</code> and nothing in the tree moves:</p><pre class="language-typescript"><code class="language-typescript">note<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"beforeinput"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>event<span class="token punctuation">.</span>inputType <span class="token operator">===</span> <span class="token string">"insertParagraph"</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+		event<span class="token punctuation">.</span><span class="token function">preventDefault</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Undo and redo are not here yet, and neither are <code>execCommand</code>, the
+formatting commands, HTML paste, IME composition in a host, or
+spellcheck.</p><h2 id="selection-and-the-clipboard">Selection and the clipboard <a class="heading-anchor" href="#selection-and-the-clipboard">#</a></h2><p>Drag to select, in the document or inside a field; style it with
 <code>::selection</code>. <code>getSelection().modify(alter, direction, granularity)</code>
 moves the caret or drags the focus by character, word, line or line
 boundary; the line granularities read the laid-out lines, so a soft wrap
