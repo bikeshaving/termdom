@@ -40,9 +40,7 @@ import {
 } from "./dom.ts";
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
-import {
-	getStringWidth,
-} from "./text.ts";
+import {getStringWidth} from "./text.ts";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.ts";
 
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
