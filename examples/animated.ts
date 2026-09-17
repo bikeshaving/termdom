@@ -14,8 +14,9 @@ style.textContent = `
   .spinner { color: green; display: inline; }
   .dots { color: yellow; display: inline; }
   .bar-container { display: flex; flex-direction: row; }
-  .bar-track { color: #555; display: inline; }
-  .bar-fill { color: green; display: inline; }
+  .bar { width: 30ch; }
+  .bar::part(bar) { color: green; }
+  .bar::part(groove) { color: #555; }
   .bar-pct { color: white; display: inline; padding-left: 1ch; }
   .braille { color: magenta; display: inline; }
   .clock { color: cyan; display: inline; }
@@ -64,14 +65,13 @@ barLabel.className = "label";
 barLabel.textContent = "Progress:   ";
 const barContainer = document.createElement("div");
 barContainer.className = "bar-container";
-const barFill = document.createElement("span");
-barFill.className = "bar-fill";
-const barTrack = document.createElement("span");
-barTrack.className = "bar-track";
+const bar = document.createElement("progress");
+bar.className = "bar";
+bar.max = 100;
+bar.value = 0;
 const barPct = document.createElement("span");
 barPct.className = "bar-pct";
-barContainer.appendChild(barFill);
-barContainer.appendChild(barTrack);
+barContainer.appendChild(bar);
 barContainer.appendChild(barPct);
 barSection.appendChild(barLabel);
 barSection.appendChild(barContainer);
@@ -155,10 +155,7 @@ function updateAnimations(): void {
     "Please wait" + ".".repeat(dotCount) + " ".repeat(3 - dotCount);
 
   // Progress bar
-  const barWidth = 30;
-  const filled = Math.round((progress / 100) * barWidth);
-  barFill.textContent = "█".repeat(filled);
-  barTrack.textContent = "░".repeat(barWidth - filled);
+  bar.value = progress;
   barPct.textContent = `${Math.round(progress)}%`;
   progress = (progress + 0.5) % 101;
 
