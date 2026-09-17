@@ -7,7 +7,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {captureRawOutput, MockProcess, nextFrame} from "./test-utils";
+import {MockProcess, nextFrame} from "./test-utils";
 
 function getHeight(_dom: TermDOM, el: Element): number | undefined {
 	const rect = (el as HTMLElement).getBoundingClientRect();
@@ -465,15 +465,14 @@ test("a progress bar stays intact when its fill or track empties", async () => {
 // The placeholder an inline-block sits on advances by its margin box.
 // Its rect, and so its outline and background, are the border box.
 test("an inline-block's margins stay outside its box", async () => {
-	for (const [css, left, focused] of [
-		["button { margin-right: 2ch; }", [0, 11], "[ Allow ]"],
-		["button + button { margin-left: 2ch; }", [0, 11], "[ Allow ]"],
+	for (const [css, left] of [
+		["button { margin-right: 2ch; }", [0, 11]],
+		["button + button { margin-left: 2ch; }", [0, 11]],
 	] as const) {
 		const terminal = new MockProcess({cols: 40, rows: 4});
-		const raw = captureRawOutput(terminal);
 		const dom = new TermDOM({
 			transport: terminal.transport,
-			html: `<!doctype html><style>${css}</style><div><button>Allow</button><button>Deny</button></div>`,
+			html: `<!doctype html><style>${css} button:focus { outline: 1px solid }</style><div><button>Allow</button><button>Deny</button></div>`,
 		});
 		await nextFrame(dom);
 		const [allow, deny] = dom.document.querySelectorAll("button");
@@ -484,8 +483,12 @@ test("an inline-block's margins stay outside its box", async () => {
 		expect(deny.getBoundingClientRect().left).toBe(left[1]);
 		expect(deny.getBoundingClientRect().width).toBe(8);
 		expect(terminal.getVisibleText()).toContain("[ Allow ]  [ Deny ]");
-		// The focus underline covers the box and not the margin beside it.
-		expect(raw().match(/\x1b\[[0-9;]*4m([^\x1b]*)/)?.[1]).toBe(focused);
+		// The outline covers the box and not the margin beside it.
+		const row = (terminal as any).terminal.buffer.active.getLine(0);
+		const lined = Array.from({length: 13}, (_, col) =>
+			Boolean(row.getCell(col).isUnderline()));
+		expect(lined.indexOf(false)).toBe(9);
+		expect(lined.slice(9).some(Boolean)).toBe(false);
 		dom.dispose();
 	}
 });

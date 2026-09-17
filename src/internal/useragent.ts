@@ -87,9 +87,6 @@ export const UA_ELEMENT_STYLES = `
 	thead { display: table-header-group; }
 	tr { display: table-row; }
 	input[type=checkbox i], input[type=radio i] { width: 3ch; }
-	input:focus, select:focus, button:focus {
-		text-decoration-line: underline;
-	}
 `;
 
 // Applies in every tree scope, as a browser's UA sheet styles shadow
@@ -135,10 +132,8 @@ export const UA_DOCUMENT_STYLES = `
 	:popover-open::backdrop { background-color: transparent; }
 	details > summary:first-of-type::before { content: "▸ "; }
 	details[open] > summary:first-of-type::before { content: "▾ "; }
-	summary:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 	legend::before, legend::after { content: " "; white-space: pre; }
 	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
-	button:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
 
 // The value text node lays out and paints like any document text. The
@@ -146,16 +141,13 @@ export const UA_DOCUMENT_STYLES = `
 export const TEXTAREA_UA_STYLES = `
 	[part="placeholder"] { color: #808080; }
 	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; }
-	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
 
 // The value and placeholder clip their text. The render loop sets
-// scrollLeft to follow the caret. The outline paints as a bottom
-// underline.
+// scrollLeft to follow the caret.
 export const TEXT_CONTROL_UA_STYLES = `
 	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	[part="placeholder"] { color: #808080; }
-	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
 
 // The disclosure flips the content container's display inline from

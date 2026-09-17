@@ -415,8 +415,8 @@ function readPaintStyle(element: Element): PaintStyle {
 		bottomLeft: sides.bottomLeft,
 	};
 	// An outline repaints a bordered box's ring in its color. A borderless
-	// box gets an underline along its bottom row. Overline (SGR 53) is
-	// unreliable.
+	// box gets an overline along its top row and an underline along its
+	// bottom row.
 	const outlineStyle = getComputedValue(element, "outline-style");
 	let outlineColor: number | undefined | null = null;
 	if (
@@ -1084,6 +1084,12 @@ function paintOutline(
 			},
 		);
 	} else {
+		ctx.drawDecoration(
+			Math.round(rect.left),
+			Math.round(rect.top),
+			Math.round(rect.width),
+			{overline: true, fg: color},
+		);
 		ctx.drawDecoration(
 			Math.round(rect.left),
 			Math.round(rect.top + rect.height) - 1,
