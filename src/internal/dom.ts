@@ -14304,15 +14304,58 @@ class FormDataEvent extends Event {
 			eventInitDict,
 			"An event init",
 		);
-		if (!(init.formData instanceof FormData)) {
-			throw new TypeError("A formdata event needs a FormData");
+		if (init.formData instanceof FormData) {
+			this[kEventFormData] = init.formData;
+		} else {
+			const entries = readFormDataEntries(init.formData);
+			if (entries === null) {
+				throw new TypeError("A formdata event needs a FormData");
+			}
+			const copy = new FormData();
+			copy[kEntryList] = entries;
+			this[kEventFormData] = copy;
 		}
-		this[kEventFormData] = init.formData;
 	}
 
 	get formData(): FormData {
 		return this[kEventFormData];
 	}
+}
+
+// A program that reached for the runtime's FormData still recognizes
+// this one: the prototype chain runs through that class, while every
+// method above is this class's own. The runtime's methods read internal
+// slots this object does not have, so each of them is overridden here.
+const runtimeFormData = (globalThis as {FormData?: unknown}).FormData;
+if (typeof runtimeFormData === "function") {
+	Object.setPrototypeOf(
+		FormData.prototype,
+		(runtimeFormData as {prototype: object}).prototype,
+	);
+}
+
+/**
+ * The entries of a FormData, whether it is this class's or the runtime's.
+ * A form-associated element reports whichever its author reached for.
+ */
+function readFormDataEntries(value: unknown): FormDataEntry[] | null {
+	if (value instanceof FormData) {
+		return value[kEntryList];
+	}
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as {entries?: unknown}).entries !== "function" ||
+		typeof (value as {[Symbol.iterator]?: unknown})[Symbol.iterator] !==
+			"function"
+	) {
+		return null;
+	}
+	const entries: FormDataEntry[] = [];
+	for (const entry of value as Iterable<[string, unknown]>) {
+		entries.push(createEntry(entry[0], entry[1]));
+	}
+	return entries;
 }
 
 Object.defineProperty(FormDataEvent.prototype, Symbol.toStringTag, {
@@ -14391,11 +14434,12 @@ function normalizeToCRLF(value: string): string {
 // a FormData whose entries all join, or null for nothing at all.
 function appendSubmissionValue(entries: FormDataEntry[], field: Element): void {
 	const value = field[kInternals]?.[kSubmissionValue] ?? null;
-	if (value instanceof FormData) {
-		entries.push(...value[kEntryList]);
+	if (value === null) {
 		return;
 	}
-	if (value === null) {
+	const reported = readFormDataEntries(value);
+	if (reported !== null) {
+		entries.push(...reported);
 		return;
 	}
 	const name = field.getAttribute("name");
