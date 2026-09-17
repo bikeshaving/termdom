@@ -37,7 +37,7 @@ import {
 	TransitionEvent,
 	type Window,
 } from "./dom.ts";
-import {HTML_NAMESPACE, MATHML_NAMESPACE} from "./dom.ts";
+import {HTML_NAMESPACE, isButtonInput, MATHML_NAMESPACE} from "./dom.ts";
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {getStringWidth} from "./text.ts";
@@ -81,7 +81,11 @@ function getElementDefaults(
 	}
 	if (name === "input") {
 		const input = element as HTMLInputElement;
-		if (input.type === "checkbox" || input.type === "radio") {
+		if (
+			input.type === "checkbox" ||
+			input.type === "radio" ||
+			isButtonInput(input)
+		) {
 			return undefined;
 		}
 		// A text input's width is attribute state: size columns when the
