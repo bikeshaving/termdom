@@ -8,8 +8,34 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    # The node floor in package.json engines and the newest release. The
-    # floor leg is what holds engines honest.
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+
+      - run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun typecheck
+
+      - name: lib.dom drift
+        run: bun drift
+
+      - name: Lint
+        run: bun lint
+
+  # Node exercises the pure-JS fallbacks (stringWidth, color) that bun's
+  # native paths would otherwise hide. The node floor in package.json
+  # engines and the newest release: the floor leg is what holds engines
+  # honest.
+  node:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         node: [20, 26]
@@ -26,24 +52,40 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Typecheck
-        run: bun typecheck
-
-      - name: lib.dom drift
-        run: bun drift
-
-      - name: Lint
-        run: bun lint
-
-      # Node exercises the pure-JS fallbacks (stringWidth, color) that bun's
-      # native paths would otherwise hide.
       - name: Test on Node
         run: npx libuild test -p node
 
-      # Bun ships one version, so its half of the suite runs once.
+  bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
       - name: Test on Bun
-        if: matrix.node == 26
         run: npx libuild test -p bun
+
+  deno:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - run: bun install --frozen-lockfile
+
+      - name: Test on Deno
+        run: npx libuild test -p deno
 
   # src/generated/ has one author per file: its generator. This job reruns
   # the hermetic generators and fails on any drift -- a hand edit to a

@@ -277,6 +277,100 @@ test("the formdata event carries the entries and a listener can amend them", () 
 	).toThrow(TypeError);
 });
 
+test("a FormData is one to code that reached for the runtime's class", () => {
+	const window = createWindow("<!DOCTYPE html><body></body>");
+	const data = new window.FormData();
+	data.append("a", "1");
+
+	expect(data instanceof window.FormData).toBe(true);
+	expect(data instanceof FormData).toBe(true);
+	expect(Object.prototype.toString.call(data)).toBe("[object FormData]");
+	// The methods are this class's own, over its own entry list.
+	expect(data.get("a")).toBe("1");
+	data.set("b", "2");
+	expect([...data]).toEqual([["a", "1"], ["b", "2"]]);
+});
+
+test("a FormData built from a form posts as a multipart body", async () => {
+	const window = createWindow(
+		'<!DOCTYPE html><body><form id="f"><input name="a" value="1">' +
+		'<input name="b" value="2"></form></body>',
+	);
+	const form = window.document.getElementById("f") as HTMLFormElement;
+	const data = new window.FormData(form);
+
+	const request = new Request("http://example.invalid/", {
+		method: "POST",
+		body: data as unknown as FormData,
+	});
+	expect(request.headers.get("content-type")).toMatch(/^multipart\/form-data;/);
+	const body = await request.text();
+	expect(body).toContain('name="a"');
+	expect(body).toContain('name="b"');
+});
+
+test("a file entry posts under the filename it was stored with", async () => {
+	const window = createWindow("<!DOCTYPE html><body></body>");
+	const data = new window.FormData();
+	data.append("plain", new Blob(["hi"]));
+	data.append("named", new Blob(["hi"]), "note.txt");
+	data.append("renamed", new File(["x"], "given.txt"), "other.txt");
+
+	const body = await new Request("http://example.invalid/", {
+		method: "POST",
+		body: data as unknown as FormData,
+	}).text();
+	for (const filename of ["blob", "note.txt", "other.txt"]) {
+		expect(body).toContain(`filename="${filename}"`);
+	}
+});
+
+test("a control can report the runtime's FormData as its value", () => {
+	const window =
+		createWindow('<!DOCTYPE html><body><form id="f"></form></body>');
+	const {document, customElements} = window;
+
+	class Control extends window.HTMLElement {
+		declare internals: ElementInternals;
+		constructor() {
+			super();
+			this.internals = this.attachInternals();
+		}
+
+		static get formAssociated(): boolean {
+			return true;
+		}
+	}
+
+	customElements.define("x-runtime-control", Control);
+	const form = document.getElementById("f") as HTMLFormElement;
+	form.innerHTML = '<x-runtime-control name="one"></x-runtime-control>';
+	const control = form.querySelector("x-runtime-control") as Control;
+
+	const reported = new FormData();
+	reported.append("inner", "1");
+	reported.append("other", "2");
+	control.internals.setFormValue(reported);
+
+	expect([...new window.FormData(form)]).toEqual([
+		["inner", "1"],
+		["other", "2"],
+	]);
+});
+
+test("a formdata event takes either class and reads out the entries", () => {
+	const window = createWindow("<!DOCTYPE html><body></body>");
+	const reported = new FormData();
+	reported.append("a", "1");
+
+	const event = new window.FormDataEvent("formdata", {formData: reported});
+	expect([...event.formData]).toEqual([["a", "1"]]);
+	expect(event.formData instanceof window.FormData).toBe(true);
+	expect(() =>
+		new window.FormDataEvent("formdata", {formData: {} as unknown as FormData}),
+	).toThrow(TypeError);
+});
+
 function submissionWindow(): ReturnType<typeof createWindow> {
 	return createWindow(
 		'<!DOCTYPE html><body><form id="f"><input name="a" value="1">' +
