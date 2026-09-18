@@ -40,7 +40,7 @@
     "smoke": "node scripts/smoke.js",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.js",
     "support": "bun scripts/support-matrix.ts",
-    "test": "libuild test -p node -p bun --timeout 180000",
+    "test": "libuild test -p node -p bun -p deno --timeout 180000",
     "typecheck": "tsc --noEmit",
     "drift": "bun scripts/lib-dom-drift.ts",
     "verify:examples": "node scripts/verify-examples.ts",
@@ -58,7 +58,7 @@
   "devDependencies": {
     "@b9g/crank": "^0.7.11",
     "@b9g/eslint-config": "^0.1.9",
-    "@b9g/libuild": "^0.2.24",
+    "@b9g/libuild": "^0.2.25",
     "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/language": "^6.12.4",
