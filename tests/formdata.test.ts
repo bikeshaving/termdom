@@ -291,6 +291,40 @@ test("a FormData is one to code that reached for the runtime's class", () => {
 	expect([...data]).toEqual([["a", "1"], ["b", "2"]]);
 });
 
+test("a FormData built from a form posts as a multipart body", async () => {
+	const window = createWindow(
+		'<!DOCTYPE html><body><form id="f"><input name="a" value="1">' +
+		'<input name="b" value="2"></form></body>',
+	);
+	const form = window.document.getElementById("f") as HTMLFormElement;
+	const data = new window.FormData(form);
+
+	const request = new Request("http://example.invalid/", {
+		method: "POST",
+		body: data as unknown as FormData,
+	});
+	expect(request.headers.get("content-type")).toMatch(/^multipart\/form-data;/);
+	const body = await request.text();
+	expect(body).toContain('name="a"');
+	expect(body).toContain('name="b"');
+});
+
+test("a file entry posts under the filename it was stored with", async () => {
+	const window = createWindow("<!DOCTYPE html><body></body>");
+	const data = new window.FormData();
+	data.append("plain", new Blob(["hi"]));
+	data.append("named", new Blob(["hi"]), "note.txt");
+	data.append("renamed", new File(["x"], "given.txt"), "other.txt");
+
+	const body = await new Request("http://example.invalid/", {
+		method: "POST",
+		body: data as unknown as FormData,
+	}).text();
+	for (const filename of ["blob", "note.txt", "other.txt"]) {
+		expect(body).toContain(`filename="${filename}"`);
+	}
+});
+
 test("a control can report the runtime's FormData as its value", () => {
 	const window =
 		createWindow('<!DOCTYPE html><body><form id="f"></form></body>');
