@@ -459,6 +459,9 @@ async function render(termDOM: TermDOM): Promise<void> {
 				do {
 					termDOM[kRenderQueued] = false;
 					await renderOnce(termDOM);
+					// After the paint, never inside the scrollTo() that asked
+					// for it. A listener's mutations queue the next frame.
+					DOM.runScrollSteps(termDOM.document);
 				} while (termDOM[kRenderQueued]);
 				// A callback that schedules another frame re-queues the loop, so
 				// requestAnimationFrame chains tick frame by frame. A disposed
