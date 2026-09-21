@@ -102,64 +102,32 @@ test("mouse reports never leak into keyboard events", async () => {
 	termdom.dispose();
 });
 
-test("wheel at the document top chains to the terminal; a keystroke reclaims", async () => {
+test("the document top is a stop: the mouse stays captured", async () => {
 	const {proc, chunks, termdom} = makeDocumentModeApp();
 	await nextFrame(termdom);
 
 	const disables = () =>
 		chunks().filter((chunk) => chunk.includes(DISABLE)).length;
-	const enables = () =>
-		chunks().filter((chunk) => chunk.includes(ENABLE)).length;
-	expect(enables()).toBe(1);
 
-	// Scrolled down, wheel up consumes normally -- no chaining mid-document.
-	await send(proc, "\x1b[<65;5;3M");
+	await send(proc, "\x1b[<65;5;3M"); // wheel down
 	expect(termdom.window.scrollY).toBe(3);
+	await send(proc, "\x1b[<64;5;3M"); // wheel up, back to the top
+	expect(termdom.window.scrollY).toBe(0);
+
+	// Wheel up AT the top moves nothing and hands nothing to the terminal.
+	await send(proc, "\x1b[<64;5;3M");
 	await send(proc, "\x1b[<64;5;3M");
 	expect(termdom.window.scrollY).toBe(0);
 	expect(disables()).toBe(0);
 
-	// Wheel up AT the top: the scroll escapes to the terminal's scrollback,
-	// so the mouse is handed back.
-	await send(proc, "\x1b[<64;5;3M");
-	expect(disables()).toBe(1);
-
-	// A keystroke reclaims it.
-	await send(proc, "j");
-	expect(enables()).toBe(2);
-	termdom.dispose();
-});
-
-test("a yielded wheel self-heals after the chain timeout, with no keystroke", async () => {
-	const {proc, chunks, termdom} = makeDocumentModeApp();
-	await nextFrame(termdom);
-
-	const disables = () =>
-		chunks().filter((chunk) => chunk.includes(DISABLE)).length;
-	const enables = () =>
-		chunks().filter((chunk) => chunk.includes(ENABLE)).length;
-	expect(enables()).toBe(1);
-
-	// Wheel up at the top yields the mouse -- same as the keystroke-reclaim
-	// test, but here nothing ever types a key. Real timeout, not a shortened
-	// test-only one: wheel activity produces no signal while yielded (that's
-	// the entire mechanism), so there's nothing to fake-clock advance against;
-	// this exercises the actual production constant.
-	await send(proc, "\x1b[<64;5;3M");
-	expect(disables()).toBe(1);
-	expect(enables()).toBe(1); // still yielded
-
-	await new Promise((resolve) => setTimeout(resolve, 400));
-	expect(enables()).toBe(2); // self-healed without any keystroke
-
-	// And scrolling actually works again -- not just the escape sequence.
-	await send(proc, "\x1b[<65;5;3M"); // wheel down
+	// The wheel still works afterwards.
+	await send(proc, "\x1b[<65;5;3M");
 	expect(termdom.window.scrollY).toBe(3);
 	termdom.dispose();
 });
 
-test("preventDefault on wheel opts out of scroll chaining", async () => {
-	const {proc, chunks, termdom, document} = makeDocumentModeApp();
+test("preventDefault on wheel keeps the document from scrolling", async () => {
+	const {proc, termdom, document} = makeDocumentModeApp();
 	await nextFrame(termdom);
 
 	document.body.addEventListener(
@@ -170,8 +138,8 @@ test("preventDefault on wheel opts out of scroll chaining", async () => {
 		{passive: false},
 	);
 
-	await send(proc, "\x1b[<64;5;3M"); // wheel up at the top
-	expect(chunks().filter((c) => c.includes(DISABLE)).length).toBe(0);
+	await send(proc, "\x1b[<65;5;3M"); // wheel down
+	expect(termdom.window.scrollY).toBe(0);
 	termdom.dispose();
 });
 

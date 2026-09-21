@@ -306,8 +306,6 @@ function getWheelScroller(
 const kLastMouse = Symbol("lastMouse");
 const kPendingHover = Symbol("pendingHover");
 const kHoverElement = Symbol("hoverElement");
-const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
-const kScrollChainTimer = Symbol("scrollChainTimer");
 const kMouseDownTarget = Symbol("mouseDownTarget");
 const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
@@ -315,14 +313,6 @@ const kTextControlDragAnchor = Symbol("textControlDragAnchor");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 
-// How long a yield lasts: enough for the next tick of the same wheel
-// gesture to reach the terminal instead of us. Once the terminal is
-// scrolled back it keeps the wheel for itself whatever the reporting
-// mode, and hands it back at the bottom (tmux's copy-mode -e does; the
-// probe of other terminals is pending), so the mouse can come back
-// this soon. A keystroke reclaims it sooner, since terminals snap to
-// the live screen on input.
-const SCROLL_CHAIN_TIMEOUT_MS = 300;
 const DBLCLICK_INTERVAL_MS = 500;
 
 export interface Input {
@@ -345,11 +335,6 @@ export interface Input {
 	} | null;
 
 	[kHoverElement]: Element | null;
-	// The document scroll hit the document top and the user kept scrolling up,
-	// so the wheel belongs to the terminal's scrollback until the next
-	// keystroke (terminals snap to the live screen on input) or the timer.
-	[kMouseCaptureYielded]: boolean;
-	[kScrollChainTimer]: ReturnType<typeof setTimeout> | null;
 	// A mouseup on the same element is a click.
 	[kMouseDownTarget]: Element | null;
 	[kPopoverPressTarget]: Element | null;
@@ -381,8 +366,6 @@ export class Input {
 		this[kLastMouse] = null;
 		this[kPendingHover] = null;
 		this[kHoverElement] = null;
-		this[kMouseCaptureYielded] = false;
-		this[kScrollChainTimer] = null;
 		this[kMouseDownTarget] = null;
 		this[kPopoverPressTarget] = null;
 		this[kSelectionDragAnchor] = null;
@@ -391,16 +374,7 @@ export class Input {
 		this[kLastClickTime] = 0;
 	}
 
-	get mouseCaptureYielded(): boolean {
-		return this[kMouseCaptureYielded];
-	}
-
-	dispose(): void {
-		if (this[kScrollChainTimer] !== null) {
-			clearTimeout(this[kScrollChainTimer]);
-			this[kScrollChainTimer] = null;
-		}
-	}
+	dispose(): void {}
 
 	dispatch(item: WireKey[] | WireMouse | WirePaste): void {
 		// Pseudo-state and the selection move with no mutation record.
@@ -573,19 +547,8 @@ function deliverMouseReport(input: Input, {
 				cancelable: true,
 			}),
 		);
-		if (notCanceled && scrollByWheel(input, target, wheelDeltaY)) {
-			// Scroll chaining. The parent scroller is the terminal's own
-			// scrollback, so the mouse is yielded to it. preventDefault on the
-			// wheel event opts out, as in a browser.
-			input[kMouseCaptureYielded] = true;
-			requestRender(input[kDocument]);
-			if (input[kScrollChainTimer] !== null) {
-				clearTimeout(input[kScrollChainTimer]);
-			}
-			input[kScrollChainTimer] = setTimeout(() => {
-				input[kScrollChainTimer] = null;
-				reclaimMouseCapture(input);
-			}, SCROLL_CHAIN_TIMEOUT_MS);
+		if (notCanceled) {
+			scrollByWheel(input, target, wheelDeltaY);
 		}
 		return;
 	}
@@ -664,12 +627,7 @@ function deliverPaste(input: Input, text: string): void {
 	requestRender(input[kDocument]);
 }
 
-// A keystroke also means the terminal has snapped back to the live
-// screen.
 function deliverKeys(input: Input, keys: WireKey[]): void {
-	if (input[kMouseCaptureYielded]) {
-		reclaimMouseCapture(input);
-	}
 	for (const key of keys) {
 		dispatchKey(input, key);
 	}
@@ -725,31 +683,18 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 	return {x: col - 1, y: isInDocument ? documentRow : 0, isInDocument};
 }
 
-// True when the tick escaped past every scroller and the document scroll.
-function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
+// The nearest scroller that can move takes the tick, else the document
+// scroll does. The document top is a stop: the mouse stays with the
+// app for as long as it runs, as it does under less --mouse or vim, and
+// the terminal's own scrollback is the terminal's to reach, with
+// whatever modifier it gives the wheel for that.
+function scrollByWheel(input: Input, target: Element, deltaY: number): void {
 	const scroller = getWheelScroller(input, target, deltaY);
 	if (scroller) {
 		scroller.scrollTop += deltaY;
-		return false;
-	}
-	if (
-		deltaY < 0 &&
-		input[kScreen].scrollTop === 0 &&
-		input[kDocument].fullscreenElement === null
-	) {
-		return true;
+		return;
 	}
 	input[kScreen].scrollTo(input[kScreen].scrollTop + deltaY);
-	requestRender(input[kDocument]);
-	return false;
-}
-
-function reclaimMouseCapture(input: Input): void {
-	if (input[kScrollChainTimer] !== null) {
-		clearTimeout(input[kScrollChainTimer]);
-		input[kScrollChainTimer] = null;
-	}
-	input[kMouseCaptureYielded] = false;
 	requestRender(input[kDocument]);
 }
 
