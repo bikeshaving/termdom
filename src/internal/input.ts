@@ -103,17 +103,13 @@ function getDOMCode(keyName: string): string {
 	if (keyName in NAMED_KEY_NUMBERS) {
 		return keyName;
 	}
-	if (keyName.length === 1) {
-		const upper = keyName.toUpperCase();
-		if (upper >= "A" && upper <= "Z" && keyName.toLowerCase() !== upper) {
-			return `Key${upper}`;
-		}
-		if (keyName >= "0" && keyName <= "9") {
-			return `Digit${keyName}`;
-		}
-		return PUNCTUATION_CODES[keyName] ?? "";
+	if (/^[a-z]$/i.test(keyName)) {
+		return `Key${keyName.toUpperCase()}`;
 	}
-	return "";
+	if (/^[0-9]$/.test(keyName)) {
+		return `Digit${keyName}`;
+	}
+	return PUNCTUATION_CODES[keyName] ?? "";
 }
 
 // The uppercase code for a character, so Ctrl+A and a typed "a" agree.
