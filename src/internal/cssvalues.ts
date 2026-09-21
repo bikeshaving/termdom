@@ -474,47 +474,130 @@ function parseColor(text: string): {color: number; alpha: number} | null {
 		return {color: packed, alpha};
 	}
 
-	const rgbMatch = color.match(
-		/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+%?))?\s*\)/,
-	);
-	if (rgbMatch) {
-		const r = parseInt(rgbMatch[1], 10);
-		const g = parseInt(rgbMatch[2], 10);
-		const b = parseInt(rgbMatch[3], 10);
-		return {color: (r << 16) | (g << 8) | b, alpha: parseAlpha(rgbMatch[4])};
-	}
-
-	const hslMatch = color.match(
-		/hsla?\(\s*([\d.]+)(?:deg)?\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*(?:,\s*([\d.]+%?))?\s*\)/,
-	);
-	if (hslMatch) {
-		const h = ((parseFloat(hslMatch[1]) % 360) + 360) % 360;
-		const s = Math.min(100, Math.max(0, parseFloat(hslMatch[2]))) / 100;
-		const l = Math.min(100, Math.max(0, parseFloat(hslMatch[3]))) / 100;
-		const c = (1 - Math.abs(2 * l - 1)) * s;
-		const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-		const m = l - c / 2;
-		let r1 = 0, g1 = 0, b1 = 0;
-		if (h < 60) {
-			[r1, g1, b1] = [c, x, 0];
-		} else if (h < 120) {
-			[r1, g1, b1] = [x, c, 0];
-		} else if (h < 180) {
-			[r1, g1, b1] = [0, c, x];
-		} else if (h < 240) {
-			[r1, g1, b1] = [0, x, c];
-		} else if (h < 300) {
-			[r1, g1, b1] = [x, 0, c];
-		} else {
-			[r1, g1, b1] = [c, 0, x];
-		}
-		const r = Math.round((r1 + m) * 255);
-		const g = Math.round((g1 + m) * 255);
-		const b = Math.round((b1 + m) * 255);
-		return {color: (r << 16) | (g << 8) | b, alpha: parseAlpha(hslMatch[4])};
+	const functionMatch = color.match(/^(rgba?|hsla?)\(\s*(.*?)\s*\)$/);
+	if (functionMatch) {
+		return parseColorFunction(functionMatch[1], functionMatch[2]);
 	}
 
 	return null;
+}
+
+// rgb() and hsl() take the legacy comma list and the modern
+// space-separated list with `/ alpha`, in either the rgba()/hsla()
+// spelling or the plain one.
+function parseColorFunction(
+	name: string,
+	args: string,
+): {color: number; alpha: number} | null {
+	let channels: string[];
+	let alpha: string | undefined;
+	if (args.includes(",")) {
+		const list = args.split(",").map((part) => part.trim());
+		if (list.length !== 3 && list.length !== 4) {
+			return null;
+		}
+		channels = list.slice(0, 3);
+		alpha = list[3];
+	} else {
+		const [head, tail, extra] = args.split("/").map((part) => part.trim());
+		if (extra !== undefined || head === "") {
+			return null;
+		}
+		channels = head.split(/\s+/);
+		alpha = tail;
+	}
+	if (channels.length !== 3 || (alpha !== undefined && alpha === "")) {
+		return null;
+	}
+	if (alpha === "none") {
+		alpha = "0";
+	}
+	const rgb = name.startsWith("rgb")
+		? channels.map(parseRGBChannel)
+		: parseHSLChannels(channels);
+	if (rgb === null || rgb.some((channel) => channel === null)) {
+		return null;
+	}
+	const [r, g, b] = rgb as [number, number, number];
+	return {color: (r << 16) | (g << 8) | b, alpha: parseAlpha(alpha)};
+}
+
+// A number or percentage, clamped to 0..255. `none` is a zero channel.
+function parseRGBChannel(raw: string): number | null {
+	if (raw === "none") {
+		return 0;
+	}
+	const percent = raw.endsWith("%");
+	const value = Number(percent ? raw.slice(0, -1) : raw);
+	if (!Number.isFinite(value)) {
+		return null;
+	}
+	const scaled = percent ? (value / 100) * 255 : value;
+	return Math.round(Math.min(255, Math.max(0, scaled)));
+}
+
+function parseHue(raw: string): number | null {
+	if (raw === "none") {
+		return 0;
+	}
+	const match = raw.match(/^(-?[\d.]+)(deg|grad|rad|turn)?$/);
+	if (match === null) {
+		return null;
+	}
+	const value = Number(match[1]);
+	if (!Number.isFinite(value)) {
+		return null;
+	}
+	const degrees = match[2] === "grad"
+		? value * 0.9
+		: match[2] === "rad"
+		? (value * 180) / Math.PI
+		: match[2] === "turn" ? value * 360 : value;
+	return ((degrees % 360) + 360) % 360;
+}
+
+// Saturation and lightness as percentages, or as bare numbers on the
+// same 0..100 scale, which the modern syntax also allows.
+function parseHSLPercent(raw: string): number | null {
+	if (raw === "none") {
+		return 0;
+	}
+	const value = Number(raw.endsWith("%") ? raw.slice(0, -1) : raw);
+	if (!Number.isFinite(value)) {
+		return null;
+	}
+	return Math.min(100, Math.max(0, value)) / 100;
+}
+
+function parseHSLChannels(channels: string[]): [number, number, number] | null {
+	const h = parseHue(channels[0]);
+	const s = parseHSLPercent(channels[1]);
+	const l = parseHSLPercent(channels[2]);
+	if (h === null || s === null || l === null) {
+		return null;
+	}
+	const c = (1 - Math.abs(2 * l - 1)) * s;
+	const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+	const m = l - c / 2;
+	let r1 = 0, g1 = 0, b1 = 0;
+	if (h < 60) {
+		[r1, g1, b1] = [c, x, 0];
+	} else if (h < 120) {
+		[r1, g1, b1] = [x, c, 0];
+	} else if (h < 180) {
+		[r1, g1, b1] = [0, c, x];
+	} else if (h < 240) {
+		[r1, g1, b1] = [0, x, c];
+	} else if (h < 300) {
+		[r1, g1, b1] = [x, 0, c];
+	} else {
+		[r1, g1, b1] = [c, 0, x];
+	}
+	return [
+		Math.round((r1 + m) * 255),
+		Math.round((g1 + m) * 255),
+		Math.round((b1 + m) * 255),
+	];
 }
 
 function parseAlpha(raw: string | undefined): number {
