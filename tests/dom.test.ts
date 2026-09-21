@@ -979,6 +979,27 @@ test("a document parsed from a string keeps its URL and content type", () => {
 	expect(document.title).toBe("t");
 });
 
+test("setting title on an SVG document writes the root's <title>", () => {
+	const document = new realm.DOMParser().parseFromString(
+		"<svg xmlns=\"http://www.w3.org/2000/svg\"><title>old</title></svg>",
+		"image/svg+xml",
+	);
+	expect(document.title).toBe("old");
+	document.title = "new";
+	expect(document.title).toBe("new");
+	expect(document.documentElement.querySelectorAll("title").length).toBe(1);
+
+	const bare = new realm.DOMParser().parseFromString(
+		"<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>",
+		"image/svg+xml",
+	);
+	bare.title = "made";
+	expect(bare.title).toBe("made");
+	const title = bare.documentElement.firstChild as any;
+	expect(title.localName).toBe("title");
+	expect(title.namespaceURI).toBe("http://www.w3.org/2000/svg");
+});
+
 test("a bare Text belongs to the document that made it", () => {
 	const document = make();
 	const text = document.createTextNode("x");
