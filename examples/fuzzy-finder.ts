@@ -79,8 +79,9 @@ function score(item: string, query: string): number | null {
   if (i < needle.length) {
     return null;
   }
-  // Prefer matches that start early and span few characters.
-  return first + (last - first);
+  // Lower is better: a late start costs double, so a tight match far into
+  // the string still loses to an early one of the same span.
+  return first * 2 + (last - first);
 }
 
 // ---- DOM ---------------------------------------------------------------------
