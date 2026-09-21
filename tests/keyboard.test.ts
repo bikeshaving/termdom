@@ -1234,6 +1234,11 @@ test("KeyboardEvent.code reports the physical key, not a formula off .key", asyn
 	await send("a");
 	await send("5");
 	await send(" ");
+	await send(",");
+	await send("?");
+	await send("!");
+	await send("[");
+	await send("é");
 
 	expect(codes).toEqual([
 		"Enter",
@@ -1242,6 +1247,11 @@ test("KeyboardEvent.code reports the physical key, not a formula off .key", asyn
 		"KeyA",
 		"Digit5",
 		"Space",
+		"Comma",
+		"Slash",
+		"Digit1",
+		"BracketLeft",
+		"",
 	]);
 	dom.dispose();
 });
