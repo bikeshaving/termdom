@@ -761,3 +761,16 @@ test("the caret after a tab sits at the tab stop", async () => {
 	expect([caretX(2), caretX(3), caretX(4)]).toEqual([2, 4, 5]);
 	dom.dispose();
 });
+
+test("-moz-tab-size is the tab-size property under its old name", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 4});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"white-space: pre; -moz-tab-size: 2\">\tx|</div>";
+	await nextFrame(dom);
+	const div = dom.document.querySelector("div")!;
+	expect(div.style.tabSize).toBe("2");
+	expect(dom.window.getComputedStyle(div).tabSize).toBe("2");
+	expect(terminal.getPlainText().split("\n")[0]?.trimEnd()).toBe("  x|");
+	dom.dispose();
+});
