@@ -2,7 +2,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {createWindow} from "../src/internal/dom.ts";
-import {MockProcess, nextFrame} from "./test-utils";
+import {MockProcess, nextFrame, until} from "./test-utils";
 
 function filler(rows: number): string {
 	let html = "";
@@ -10,13 +10,6 @@ function filler(rows: number): string {
 		html += `<div>filler ${i}</div>`;
 	}
 	return html;
-}
-
-async function until(condition: () => boolean): Promise<void> {
-	const deadline = Date.now() + 5000;
-	while (!condition() && Date.now() < deadline) {
-		await new Promise((r) => setTimeout(r, 10));
-	}
 }
 
 function closeCountingTransport(terminal: MockProcess): {
