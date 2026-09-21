@@ -186,3 +186,60 @@ test("banded scroll repaints match a from-scratch paint at each offset", async (
 	}
 	dom.dispose();
 });
+
+test("scrolling the document fires scroll on the document and the window", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 5});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+	document.body.innerHTML = Array.from(
+		{length: 30},
+		(_, i) => `<div>${i}</div>`,
+	).join("");
+	await nextFrame(dom);
+
+	const seen: string[] = [];
+	document.addEventListener("scroll", (e) =>
+		seen.push(`document:${e.target === document}`),
+	);
+	window.addEventListener("scroll", (e) =>
+		seen.push(`window:${e.target === document}`),
+	);
+	window.scrollBy(0, 3);
+	expect(seen).toEqual([]);
+	await nextFrame(dom);
+	expect(seen).toEqual(["document:true", "window:true"]);
+
+	// Two moves in one frame are one event; a frame with no move fires none.
+	window.scrollBy(0, 1);
+	window.scrollTo(0, 10);
+	await nextFrame(dom);
+	document.body.appendChild(document.createElement("div"));
+	await nextFrame(dom);
+	expect(seen.length).toBe(4);
+	dom.dispose();
+});
+
+test("scrolling a box fires scroll on the box, without bubbling", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+	document.body.innerHTML =
+		"<div id=\"box\" style=\"height: 3px; overflow-y: auto\">" +
+		Array.from({length: 20}, (_, i) => `<div>${i}</div>`).join("") +
+		"</div>";
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+
+	const seen: string[] = [];
+	box.addEventListener("scroll", () => seen.push("box"));
+	document.addEventListener("scroll", () => seen.push("document"));
+	window.addEventListener("scroll", () => seen.push("window"));
+	box.scrollTop = 5;
+	await nextFrame(dom);
+	expect(seen).toEqual(["box"]);
+
+	box.scrollTop = 5;
+	await nextFrame(dom);
+	expect(seen).toEqual(["box"]);
+	dom.dispose();
+});

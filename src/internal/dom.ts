@@ -24934,6 +24934,12 @@ const scrolledElements = new WeakMap<Document, Set<Element>>();
 // run) stores the write unclamped; the caret-reveal code owns those
 // offsets and keeps them sane. On a headless document the write is
 // stored and read back, and nothing moves.
+// The scroll steps of "update the rendering": each box scrolled since the
+// last frame gets one "scroll" event, and the document one that bubbles
+// to the window, before the frame's callbacks run.
+const pendingScrollTargets = new WeakMap<Document, Set<Element>>();
+const reportedDocumentScrollTop = new WeakMap<Document, number>();
+
 function setScrollOffset(
 	element: Element,
 	axis: "left" | "top",
@@ -24981,7 +24987,34 @@ function setScrollOffset(
 	} else {
 		attached[kScreen].invalidate();
 	}
+	let pending = pendingScrollTargets.get(document);
+	if (pending === undefined) {
+		pending = new Set();
+		pendingScrollTargets.set(document, pending);
+	}
+	pending.add(element);
 	void attached[kRender]();
+}
+
+export function runScrollSteps(document: globalThis.Document): void {
+	const attached = getAttachedDocument(document);
+	if (attached === undefined) {
+		return;
+	}
+	const top = attached[kScreen].scrollTop;
+	if (top !== (reportedDocumentScrollTop.get(attached) ?? 0)) {
+		reportedDocumentScrollTop.set(attached, top);
+		dispatchAsUserAgent(attached, new Event("scroll", {bubbles: true}));
+	}
+	const pending = pendingScrollTargets.get(attached);
+	if (pending === undefined || pending.size === 0) {
+		return;
+	}
+	const targets = [...pending];
+	pending.clear();
+	for (const target of targets) {
+		dispatchAsUserAgent(target, new Event("scroll"));
+	}
 }
 
 // The one box whose vertical scroll this frame can express as a scroll shift,
