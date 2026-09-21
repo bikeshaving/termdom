@@ -1237,6 +1237,18 @@ test("a definition is rejected by name and by a constructor already used", () =>
 	expect(customElements.getName(constructor)).toBe("order-four");
 });
 
+test("observedAttributes must be a list, not a string", () => {
+	expect(() => customElements.define(
+		"order-string",
+		class extends HTMLElement {
+			static observedAttributes = "watched";
+
+			attributeChangedCallback(): void {}
+		},
+	)).toThrow(TypeError);
+	expect(customElements.get("order-string")).toBeUndefined();
+});
+
 test("a constructor called on its own builds an element of its own name", () => {
 	const document = make();
 
