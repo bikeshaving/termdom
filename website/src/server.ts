@@ -242,7 +242,9 @@ async function generateStaticSite(): Promise<void> {
 	for (const route of await allRoutes()) {
 		const response = await fetch(route);
 		if (!response.ok) {
-			continue;
+			throw new Error(
+				`Could not render ${route}: the server answered ${response.status}.`,
+			);
 		}
 		const filePath =
 			route === "/" ? "index.html" : `${route.slice(1)}index.html`;
