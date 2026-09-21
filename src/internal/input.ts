@@ -57,8 +57,45 @@ const NAMED_KEY_NUMBERS: Record<string, number> = {
 	F12: 123,
 };
 
+// The US-layout key each punctuation character sits on, shifted or not.
+const PUNCTUATION_CODES: Record<string, string> = {
+	"`": "Backquote",
+	"~": "Backquote",
+	"-": "Minus",
+	_: "Minus",
+	"=": "Equal",
+	"+": "Equal",
+	"[": "BracketLeft",
+	"{": "BracketLeft",
+	"]": "BracketRight",
+	"}": "BracketRight",
+	"\\": "Backslash",
+	"|": "Backslash",
+	";": "Semicolon",
+	":": "Semicolon",
+	"'": "Quote",
+	'"': "Quote",
+	",": "Comma",
+	"<": "Comma",
+	".": "Period",
+	">": "Period",
+	"/": "Slash",
+	"?": "Slash",
+	"!": "Digit1",
+	"@": "Digit2",
+	"#": "Digit3",
+	$: "Digit4",
+	"%": "Digit5",
+	"^": "Digit6",
+	"&": "Digit7",
+	"*": "Digit8",
+	"(": "Digit9",
+	")": "Digit0",
+};
+
 // The DOM `code`, assuming a US layout. A terminal only says what
-// character a key produced, never which key, so punctuation is a guess.
+// character a key produced, never which key, so punctuation is a guess
+// and a character off the US layout has no code at all.
 function getDOMCode(keyName: string): string {
 	if (keyName === " ") {
 		return "Space";
@@ -68,14 +105,15 @@ function getDOMCode(keyName: string): string {
 	}
 	if (keyName.length === 1) {
 		const upper = keyName.toUpperCase();
-		if (upper >= "A" && upper <= "Z") {
+		if (upper >= "A" && upper <= "Z" && keyName.toLowerCase() !== upper) {
 			return `Key${upper}`;
 		}
 		if (keyName >= "0" && keyName <= "9") {
 			return `Digit${keyName}`;
 		}
+		return PUNCTUATION_CODES[keyName] ?? "";
 	}
-	return `Key${keyName.toUpperCase()}`;
+	return "";
 }
 
 // The uppercase code for a character, so Ctrl+A and a typed "a" agree.
