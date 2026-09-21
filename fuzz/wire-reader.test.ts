@@ -12,10 +12,11 @@ import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 
 const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 40);
-const params = {
-	numRuns: NUM_RUNS,
-	...(process.env.FC_SEED ? {seed: Number(process.env.FC_SEED)} : {}),
-};
+// A fixed seed by default, as the rest of the fuzz suite does: inside
+// `npm test` a fresh sample every run is a fresh verdict every run.
+const SEED = Number(process.env.FC_SEED ?? 1);
+
+const params = {numRuns: NUM_RUNS, seed: SEED};
 
 function send(proc: MockProcess, data: string): Promise<void> {
 	(proc.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
