@@ -11652,9 +11652,7 @@ function isConstructor(value: unknown): boolean {
 
 function toStringSequenceStrict(value: unknown, what: string): string[] {
 	if (value === null || typeof value !== "object") {
-		if (typeof value !== "string") {
-			throw new TypeError(`${what} is not a list`);
-		}
+		throw new TypeError(`${what} is not a list`);
 	}
 	const iterator = (value as Iterable<unknown>)[Symbol.iterator];
 	if (typeof iterator !== "function") {
