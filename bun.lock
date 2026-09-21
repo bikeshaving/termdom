@@ -14,7 +14,7 @@
       "devDependencies": {
         "@b9g/crank": "^0.7.11",
         "@b9g/eslint-config": "^0.1.9",
-        "@b9g/libuild": "^0.2.24",
+        "@b9g/libuild": "^0.2.25",
         "@codemirror/commands": "^6.11.0",
         "@codemirror/lang-javascript": "^6.2.5",
         "@codemirror/language": "^6.12.4",
@@ -59,7 +59,7 @@
 
     "@b9g/eslint-config": ["@b9g/eslint-config@0.1.9", "", { "peerDependencies": { "@eslint/js": ">=9", "@stylistic/eslint-plugin": ">=3", "@typescript-eslint/eslint-plugin": ">=8", "@typescript-eslint/parser": ">=8", "eslint": ">=9", "eslint-plugin-acrocase": ">=0.0.1", "eslint-plugin-crank": ">=0.2.2", "eslint-plugin-esfold": ">=0.1.2" } }, "sha512-EMj5695P21+KEta+AntT0Ams2Drp4ydBUCedj7llQwomp4FBN44BQmsCGd+MLD1S3gSkK5lAmRJTEps10+ze3g=="],
 
-    "@b9g/libuild": ["@b9g/libuild@0.2.24", "", { "dependencies": { "@b9g/async-context": "^0.2.1", "commander": "^15.0.0", "esbuild": "^0.28.1", "expect": "^30.4.1", "glob": "^13.0.6", "pretty-format": "^30.4.1" }, "peerDependencies": { "playwright": "^1.40.0", "typescript": "^5.0.0 || ^6.0.0" }, "optionalPeers": ["playwright", "typescript"], "bin": { "libuild": "cli.js" } }, "sha512-Nl4wc/sANwhF3EQpAxcHR28VYQci3Ru6W2nFm2j27gUV+n6ly86PvrT+5mMVM+a0xEs/EeDx3/fm870AIeVdkw=="],
+    "@b9g/libuild": ["@b9g/libuild@0.2.25", "", { "dependencies": { "@b9g/async-context": "^0.2.1", "commander": "^15.0.0", "esbuild": "^0.28.1", "expect": "^30.4.1", "glob": "^13.0.6", "pretty-format": "^30.4.1" }, "peerDependencies": { "playwright": "^1.40.0", "typescript": "^5.0.0 || ^6.0.0" }, "optionalPeers": ["playwright", "typescript"], "bin": { "libuild": "cli.js" } }, "sha512-gASB1QiejGfe5vIGbp2wwIhMvz4T1ppo9RlmtwI8tpVXld8GqXl/7NliU0HiY5IU3ZqaLDTbiick7BXSkKAJgw=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 

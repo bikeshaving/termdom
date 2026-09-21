@@ -139,6 +139,48 @@ check(
 	40,
 );
 
+// FormData: the entries live in the runtime's own class, so a form's
+// FormData is a body fetch can post, while the naming rules stay the
+// engine's whatever the runtime does with a name.
+document.body.innerHTML =
+	"<form id=\"f\"><input name=\"a\" value=\"1\">" +
+	"<input name=\"b\" value=\"2\"></form>";
+const built = new term.window.FormData(document.getElementById("f"));
+const request = new Request("http://example.invalid/", {
+	method: "POST",
+	body: built,
+});
+// Read before the body: one runtime reports no content type after it is
+// consumed.
+const postedAs = request.headers.get("content-type") ?? "";
+const posted = await request.text();
+const files = new term.window.FormData();
+files.append("plain", new Blob(["hi"]));
+files.append("named", new Blob(["hi"]), "note.txt");
+files.append("renamed", new File(["x"], "given.txt"), "other.txt");
+const wire = await new Request("http://example.invalid/", {
+	method: "POST",
+	body: files,
+}).text();
+
+console.log("\nFormData (via Request):");
+check("instanceof runtime class", built instanceof FormData, true);
+check("posts as multipart", postedAs.startsWith("multipart/form-data"), true);
+check(
+	"carries the fields",
+	posted.includes("name=\"a\"") && posted.includes("name=\"b\""),
+	true,
+);
+check("blob named blob", files.get("plain").name, "blob");
+check("filename argument", files.get("named").name, "note.txt");
+check("file renamed", files.get("renamed").name, "other.txt");
+check(
+	"wire filenames",
+	["blob", "note.txt", "other.txt"].every((name) =>
+		wire.includes(`filename="${name}"`)),
+	true,
+);
+
 if (failures.length > 0) {
 	console.error(`\n${failures.length} failure(s) on ${runtime}:`);
 	for (const failure of failures) {

@@ -14144,89 +14144,47 @@ function createEntry(
 
 const kEntryList = Symbol("the entry list");
 
-interface FormData {
+interface EntryListFormData {
 	[kEntryList]: FormDataEntry[];
 }
 
-/** A list of names and values, the shape a form submission is sent in. */
-class FormData {
-	constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
+/**
+ * The entry list a runtime without its own FormData falls back to. Every
+ * runtime this engine supports has one, and its storage is what `fetch`
+ * reads, so it is the base below whenever it exists.
+ */
+class EntryListFormData {
+	constructor() {
 		this[kEntryList] = [];
-		if (form == null) {
-			return;
-		}
-		if (!(form instanceof HTMLFormElement)) {
-			throw new TypeError("A FormData takes a form element");
-		}
-		if (submitter != null) {
-			if (!(submitter instanceof Element) || !isSubmitButton(submitter)) {
-				throw new TypeError("That element is not a submit button");
-			}
-			if (getFormOwner(submitter) !== form) {
-				throw notFoundError("That button does not belong to this form");
-			}
-		}
-		const entries = constructEntryList(form, submitter ?? null);
-		if (entries === null) {
-			throw domError(
-				"InvalidStateError",
-				"That form is already building its entry list",
-			);
-		}
-		this[kEntryList] = entries;
 	}
 
-	append(name: string, value: string | Blob): void;
-	append(name: string, value: string): void;
-	append(name: string, blobValue: Blob, filename?: string): void;
 	append(name: string, value: string | Blob, filename?: string): void {
-		if (arguments.length < 2) {
-			throw new TypeError("append needs a name and a value");
-		}
 		this[kEntryList].push(createEntry(name, value, filename));
 	}
 
 	delete(name: string): void {
-		if (arguments.length < 1) {
-			throw new TypeError("delete needs a name");
-		}
 		const wanted = toScalarValueString(String(name));
 		this[kEntryList] = this[kEntryList].filter(([key]) => key !== wanted);
 	}
 
 	get(name: string): globalThis.FormDataEntryValue | null {
-		if (arguments.length < 1) {
-			throw new TypeError("get needs a name");
-		}
 		const wanted = toScalarValueString(String(name));
 		const found = this[kEntryList].find(([key]) => key === wanted);
 		return found === undefined ? null : found[1];
 	}
 
 	getAll(name: string): globalThis.FormDataEntryValue[] {
-		if (arguments.length < 1) {
-			throw new TypeError("getAll needs a name");
-		}
 		const wanted = toScalarValueString(String(name));
 		return this[kEntryList]
 			.filter(([key]) => key === wanted).map(([, value]) => value);
 	}
 
 	has(name: string): boolean {
-		if (arguments.length < 1) {
-			throw new TypeError("has needs a name");
-		}
 		const wanted = toScalarValueString(String(name));
 		return this[kEntryList].some(([key]) => key === wanted);
 	}
 
-	set(name: string, value: string | Blob): void;
-	set(name: string, value: string): void;
-	set(name: string, blobValue: Blob, filename?: string): void;
 	set(name: string, value: string | Blob, filename?: string): void {
-		if (arguments.length < 2) {
-			throw new TypeError("set needs a name and a value");
-		}
 		const entry = createEntry(name, value, filename);
 		const entries = this[kEntryList];
 		const at = entries.findIndex(([key]) => key === entry[0]);
@@ -14244,13 +14202,10 @@ class FormData {
 		callbackfn: (
 			value: globalThis.FormDataEntryValue,
 			key: string,
-			parent: FormData,
+			parent: any,
 		) => void,
 		thisArg?: any,
 	): void {
-		if (typeof callbackfn !== "function") {
-			throw new TypeError("forEach needs a function");
-		}
 		for (let index = 0; index < this[kEntryList].length; index++) {
 			const [key, value] = this[kEntryList][index];
 			callbackfn.call(thisArg, value, key, this);
@@ -14280,10 +14235,266 @@ class FormData {
 	}
 }
 
+const FormDataBase: new () => EntryListFormData =
+	typeof (globalThis as {
+		FormData?: unknown;
+	}).FormData === "function"
+		? (globalThis as unknown as {FormData: new () => EntryListFormData})
+			.FormData
+		: EntryListFormData;
+
+// A runtime stores a file under the filename its caller gave, or, in at
+// least one, under the name the file already had. The wire is right
+// either way; only reading an entry back differs, so the filenames are
+// kept here when the runtime reports the wrong one.
+const runtimeKeepsFilenames = ((): boolean => {
+	const Runtime = (globalThis as {FormData?: unknown}).FormData;
+	if (typeof Runtime !== "function") {
+		return true;
+	}
+	try {
+		const probe = new (Runtime as new () => globalThis.FormData)();
+		probe.append("k", new File(["x"], "given"), "wanted");
+		return (probe.get("k") as globalThis.File).name === "wanted";
+	} catch (error) {
+		void error;
+		return true;
+	}
+})();
+
+const kFilenames = Symbol("the filename each entry was stored under");
+const kReadEntry =
+	Symbol("an entry's value under the filename it was stored with");
+
+// One File per stored blob and name, so reading an entry twice gives one
+// object rather than a fresh copy each time.
+const storedFiles = new WeakMap<Blob, Map<string, globalThis.File>>();
+
+function fileNamed(value: Blob, name: string): globalThis.File {
+	let byName = storedFiles.get(value);
+	if (byName === undefined) {
+		byName = new Map();
+		storedFiles.set(value, byName);
+	}
+	let file = byName.get(name);
+	if (file === undefined) {
+		file = createFile([value], name, {type: value.type});
+		byName.set(name, file);
+	}
+	return file;
+}
+
+/**
+ * A list of names and values, the shape a form submission is sent in.
+ *
+ * The entries live in the runtime's own FormData, which is what makes an
+ * instance a body `fetch` can send and an object `instanceof FormData`
+ * answers yes for. What this class adds is the constructor that builds a
+ * form's entry list, and the argument handling the runtimes disagree on:
+ * a blob becomes a file named "blob", and a lone surrogate is replaced.
+ */
+interface FormData {
+	[kFilenames]: Array<{key: string; name: string | null}>;
+}
+
+class FormData extends FormDataBase {
+	constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
+		super();
+		this[kFilenames] = [];
+		if (form == null) {
+			return;
+		}
+		if (!(form instanceof HTMLFormElement)) {
+			throw new TypeError("A FormData takes a form element");
+		}
+		if (submitter != null) {
+			if (!(submitter instanceof Element) || !isSubmitButton(submitter)) {
+				throw new TypeError("That element is not a submit button");
+			}
+			if (getFormOwner(submitter) !== form) {
+				throw notFoundError("That button does not belong to this form");
+			}
+		}
+		const entries = constructEntryList(form, submitter ?? null);
+		if (entries === null) {
+			throw domError(
+				"InvalidStateError",
+				"That form is already building its entry list",
+			);
+		}
+		for (const [name, value] of entries) {
+			this.append(name, value as string);
+		}
+	}
+
+	override append(name: string, value: string | Blob): void;
+	override append(name: string, value: string): void;
+	override append(name: string, blobValue: Blob, filename?: string): void;
+	override append(name: string, value: string | Blob, filename?: string): void {
+		if (arguments.length < 2) {
+			throw new TypeError("append needs a name and a value");
+		}
+		const [key, entryValue] = createEntry(name, value, filename);
+		super.append(key, entryValue);
+		this[kFilenames].push({
+			key,
+			name: typeof entryValue === "string" ? null : entryValue.name,
+		});
+	}
+
+	override delete(name: string): void {
+		if (arguments.length < 1) {
+			throw new TypeError("delete needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		super.delete(wanted);
+		this[kFilenames] = this[kFilenames].filter(({key}) => key !== wanted);
+	}
+
+	override get(name: string): globalThis.FormDataEntryValue | null {
+		if (arguments.length < 1) {
+			throw new TypeError("get needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		const found = super.get(wanted);
+		if (found === null) {
+			return null;
+		}
+		const at = this[kFilenames].findIndex((entry) => entry.key === wanted);
+		return this[kReadEntry](found, at);
+	}
+
+	override getAll(name: string): globalThis.FormDataEntryValue[] {
+		if (arguments.length < 1) {
+			throw new TypeError("getAll needs a name");
+		}
+		const wanted = toScalarValueString(String(name));
+		const at = this[kFilenames]
+			.map((entry, index) => (entry.key === wanted ? index : -1))
+			.filter((index) => index !== -1);
+		return super.getAll(wanted)
+			.map((value, index) => this[kReadEntry](value, at[index] ?? -1));
+	}
+
+	override has(name: string): boolean {
+		if (arguments.length < 1) {
+			throw new TypeError("has needs a name");
+		}
+		return super.has(toScalarValueString(String(name)));
+	}
+
+	override set(name: string, value: string | Blob): void;
+	override set(name: string, value: string): void;
+	override set(name: string, blobValue: Blob, filename?: string): void;
+	override set(name: string, value: string | Blob, filename?: string): void {
+		if (arguments.length < 2) {
+			throw new TypeError("set needs a name and a value");
+		}
+		const [key, entryValue] = createEntry(name, value, filename);
+		super.set(key, entryValue);
+		const held = {
+			key,
+			name: typeof entryValue === "string" ? null : entryValue.name,
+		};
+		const at = this[kFilenames].findIndex((entry) => entry.key === key);
+		if (at === -1) {
+			this[kFilenames].push(held);
+			return;
+		}
+		this[kFilenames][at] = held;
+		this[kFilenames] = this[kFilenames].filter(
+			(entry, index) => index === at || entry.key !== key,
+		);
+	}
+
+	override forEach(
+		callbackfn: (
+			value: globalThis.FormDataEntryValue,
+			key: string,
+			parent: FormData,
+		) => void,
+		thisArg?: any,
+	): void {
+		if (typeof callbackfn !== "function") {
+			throw new TypeError("forEach needs a function");
+		}
+		for (const [key, value] of this.entries()) {
+			callbackfn.call(thisArg, value, key, this);
+		}
+	}
+
+	override entries(): FormDataIterator<[
+		string,
+		globalThis.FormDataEntryValue,
+	]> {
+		return [...super.entries()]
+			.map(([key, value], index): [string, globalThis.FormDataEntryValue] =>
+				[key, this[kReadEntry](value, index)])[Symbol.iterator]();
+	}
+
+	override values(): FormDataIterator<globalThis.FormDataEntryValue> {
+		return [...super.values()]
+			.map((value, index) => this[kReadEntry](value, index))[Symbol.iterator]();
+	}
+
+	override [Symbol.iterator](): FormDataIterator<[
+		string,
+		globalThis.FormDataEntryValue,
+	]> {
+		return this.entries();
+	}
+
+	// The runtime's own value, under the filename this entry was stored
+	// with. A runtime that keeps that filename is taken at its word.
+	[kReadEntry](
+		value: globalThis.FormDataEntryValue,
+		index: number,
+	): globalThis.FormDataEntryValue {
+		if (typeof value === "string" || runtimeKeepsFilenames) {
+			return value;
+		}
+		const name = this[kFilenames][index]?.name;
+		if (name == null || value.name === name) {
+			return value;
+		}
+		return fileNamed(value, name);
+	}
+}
+
 Object.defineProperty(FormData.prototype, Symbol.toStringTag, {
 	value: "FormData",
 	configurable: true,
 });
+
+/** A FormData holding the entries, for a caller that built them itself. */
+function formDataFromEntries(entries: FormDataEntry[]): FormData {
+	const data = new FormData();
+	for (const [name, value] of entries) {
+		data.append(name, value as string);
+	}
+	return data;
+}
+
+/**
+ * The entries of a FormData, whether it is this class's or the runtime's.
+ * A form-associated element reports whichever its author reached for.
+ */
+function readFormDataEntries(value: unknown): FormDataEntry[] | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as {entries?: unknown}).entries !== "function" ||
+		typeof (value as {[Symbol.iterator]?: unknown})[Symbol.iterator] !==
+			"function"
+	) {
+		return null;
+	}
+	const entries: FormDataEntry[] = [];
+	for (const entry of value as Iterable<[string, unknown]>) {
+		entries.push(createEntry(entry[0], entry[1]));
+	}
+	return entries;
+}
 
 interface FormDataEventInit extends EventInit {
 	formData: FormData;
@@ -14304,10 +14515,15 @@ class FormDataEvent extends Event {
 			eventInitDict,
 			"An event init",
 		);
-		if (!(init.formData instanceof FormData)) {
-			throw new TypeError("A formdata event needs a FormData");
+		if (init.formData instanceof FormData) {
+			this[kEventFormData] = init.formData;
+		} else {
+			const entries = readFormDataEntries(init.formData);
+			if (entries === null) {
+				throw new TypeError("A formdata event needs a FormData");
+			}
+			this[kEventFormData] = formDataFromEntries(entries);
 		}
-		this[kEventFormData] = init.formData;
 	}
 
 	get formData(): FormData {
@@ -14391,11 +14607,12 @@ function normalizeToCRLF(value: string): string {
 // a FormData whose entries all join, or null for nothing at all.
 function appendSubmissionValue(entries: FormDataEntry[], field: Element): void {
 	const value = field[kInternals]?.[kSubmissionValue] ?? null;
-	if (value instanceof FormData) {
-		entries.push(...value[kEntryList]);
+	if (value === null) {
 		return;
 	}
-	if (value === null) {
+	const reported = readFormDataEntries(value);
+	if (reported !== null) {
+		entries.push(...reported);
 		return;
 	}
 	const name = field.getAttribute("name");
@@ -14522,11 +14739,13 @@ function constructEntryList(
 		return null;
 	}
 	form[kConstructingEntryList] = true;
-	const data = new FormData();
+	const built: FormDataEntry[] = [];
+	let data: FormData;
 	try {
 		for (const field of getSubmittableElements(form)) {
-			appendFieldEntries(data[kEntryList], field, submitter);
+			appendFieldEntries(built, field, submitter);
 		}
+		data = formDataFromEntries(built);
 		dispatch(
 			form,
 			new FormDataEvent("formdata", {formData: data, bubbles: true}),
@@ -14534,7 +14753,8 @@ function constructEntryList(
 	} finally {
 		form[kConstructingEntryList] = false;
 	}
-	return data[kEntryList].slice();
+	// A listener may have added to, removed from or rewritten the entries.
+	return readFormDataEntries(data)!;
 }
 
 // WebIDL has this inherit HTMLCollection, so it does. What it returns
