@@ -4,8 +4,6 @@
  */
 
 import {EventEmitter} from "events";
-import {existsSync, mkdirSync, writeFileSync} from "fs";
-import {join} from "path";
 
 import xtermPkg from "@xterm/headless";
 
@@ -373,19 +371,6 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	}
 
 	/**
-	 * Write ANSI output to .ansi file after test passes
-	 */
-	writeANSI(testName: string): void {
-		const ansiOutput = this.getStaticANSI();
-		const ansiDir = join(process.cwd(), "tests", "__snapshots__", "ansi");
-		if (!existsSync(ansiDir)) {
-			mkdirSync(ansiDir, {recursive: true});
-		}
-		const ansiFilename = `${testName}.ansi`;
-		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
-	}
-
-	/**
 	 * Detect color depth from environment (same logic as TermDOM)
 	 */
 	[kDetectColorDepth](): ColorDepth {
@@ -400,6 +385,19 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		}
 
 		return "ansi";
+	}
+}
+
+/**
+ * Poll until a condition holds, or give up after five seconds and let the
+ * assertion that follows report what was actually there. For waits on
+ * something that must happen: a sleep long enough to be reliable on a loaded
+ * machine is a sleep every run pays for.
+ */
+export async function until(condition: () => boolean): Promise<void> {
+	const deadline = Date.now() + 5000;
+	while (!condition() && Date.now() < deadline) {
+		await new Promise((r) => setTimeout(r, 10));
 	}
 }
 

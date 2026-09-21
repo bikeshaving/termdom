@@ -56,7 +56,6 @@ test("unordered list style types with snapshots", async () => {
 	});
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("lists-style-types-unordered");
 	dom.dispose();
 });
 
@@ -107,7 +106,6 @@ test("ordered list style types with snapshots", async () => {
 	});
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("lists-style-types-ordered");
 	dom.dispose();
 });
 
@@ -148,7 +146,6 @@ test("nested lists with proper indentation", async () => {
 	expect(output).toContain("▪ Third level I"); // Third level: ▪
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("lists-nesting-indentation");
 	dom.dispose();
 });
 
@@ -195,7 +192,6 @@ test("mixed ordered and unordered nesting", async () => {
 	expect(output).toContain("2. Integration tests");
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("lists-nesting-mixed-types");
 	dom.dispose();
 });
 
@@ -239,7 +235,6 @@ test("list counters and start attribute", async () => {
 	expect(output).toContain("d. Fourth alpha");
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("lists-counters-start-attribute");
 	dom.dispose();
 });
 
@@ -277,7 +272,6 @@ test("lists with mixed inline and block content", async () => {
 	expect(output).toContain("Block content");
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("lists-content-mixed-inline-block");
 	dom.dispose();
 });
 
@@ -319,7 +313,6 @@ test("list edge cases", async () => {
 	expect(output).toContain("Div as list item");
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("lists-edge-cases-empty-items");
 	dom.dispose();
 });
 
@@ -396,7 +389,6 @@ test("lists in flexbox containers", async () => {
 	expect(output).toContain("1. First step");
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("lists-layout-flexbox-containers");
 	dom.dispose();
 });
 

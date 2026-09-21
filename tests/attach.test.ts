@@ -7,12 +7,22 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {captureRawOutput, MockProcess, nextFrame} from "./test-utils";
+import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils";
 
 function countWrites(terminal: MockProcess): {count(): number} {
 	let writes = 0;
 	captureRawOutput(terminal, {onChunk: () => writes++});
 	return {count: () => writes};
+}
+
+/**
+ * Give the engine room to do the thing the test says it must NOT do -- write
+ * before attach(), tear down against a canceled beforeunload -- and then
+ * assert it did not. There is no condition to poll for the absence of, so
+ * these waits stay on the clock where until() replaced the rest.
+ */
+function settle(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 test("mutations produce no stdout before attach()", async () => {
@@ -22,7 +32,7 @@ test("mutations produce no stdout before attach()", async () => {
 	dom.document.body.innerHTML = "<div>should not paint</div>";
 	dom.document.body.appendChild(dom.document.createElement("p"));
 	// Let the mutation observer microtask and any stray timers run.
-	await new Promise((r) => setTimeout(r, 50));
+	await settle(50);
 	expect(writes.count()).toBe(0);
 	dom.dispose();
 });
@@ -31,7 +41,7 @@ test("attach() paints the document built before it", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = "<div>early content</div>";
-	await new Promise((r) => setTimeout(r, 20));
+	await settle(20);
 	expect(terminal.getVisibleText()).not.toContain("early content");
 
 	dom.attach();
@@ -56,7 +66,7 @@ test("dispose() before attach() writes nothing", async () => {
 	const writes = countWrites(terminal);
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = "<div>never shown</div>";
-	await new Promise((r) => setTimeout(r, 20));
+	await settle(20);
 	dom.dispose();
 	expect(writes.count()).toBe(0);
 });
@@ -115,11 +125,11 @@ test("print() writes the rendered HTML through the transport once", async () => 
 	const dom = new TermDOM({transport: terminal.transport});
 	await dom.print("<div>printed line</div>");
 	expect(writes.count()).toBe(1);
-	await new Promise((r) => setTimeout(r, 20));
+	await until(() => terminal.getVisibleText().includes("printed line"));
 	expect(terminal.getVisibleText()).toContain("printed line");
 	// Ordinary command output: no takeover, and dispose owes nothing more.
 	dom.dispose();
-	await new Promise((r) => setTimeout(r, 20));
+	await settle(20);
 	expect(writes.count()).toBe(1);
 });
 
@@ -140,9 +150,9 @@ test("a geometry read never strands the mutations it drained", async () => {
 	el.textContent = "after";
 	// The geometry read drains the queue synchronously...
 	el.getBoundingClientRect();
-	// ...and no rAF, no scroll, no further mutation follows. Wait on wall
-	// clock only: the paint must arrive on its own.
-	await new Promise((r) => setTimeout(r, 80));
+	// ...and no rAF, no scroll, no further mutation follows: the paint must
+	// arrive on its own.
+	await until(() => terminal.getVisibleText().includes("after"));
 	expect(terminal.getVisibleText()).toContain("after");
 
 	// Two mutate+drain cycles back to back -- keystrokes faster than frames.
@@ -151,7 +161,7 @@ test("a geometry read never strands the mutations it drained", async () => {
 	el.getBoundingClientRect();
 	el.textContent = "third";
 	el.getBoundingClientRect();
-	await new Promise((r) => setTimeout(r, 80));
+	await until(() => terminal.getVisibleText().includes("third"));
 	expect(terminal.getVisibleText()).toContain("third");
 	dom.dispose();
 });
@@ -210,7 +220,7 @@ test("window.close() before the first frame leaves prior screen content alone", 
 	dom.attach();
 	dom.document.body.innerHTML = "<div>closing content</div>";
 	dom.window.close();
-	await new Promise((r) => setTimeout(r, 150));
+	await until(() => terminal.getVisibleText().includes("closing content"));
 
 	const text = terminal.getVisibleText();
 	expect(text).toContain("PROMPT-LINE");
@@ -251,7 +261,7 @@ test("window.close() fires beforeunload, then tears down", async () => {
 	const events: any[] = [];
 	dom.window.addEventListener("beforeunload", (event) => events.push(event));
 	dom.window.close();
-	await new Promise((r) => setTimeout(r, 150));
+	await until(() => watched.closes() === 1);
 
 	expect(events.length).toBe(1);
 	expect(events[0].type).toBe("beforeunload");
@@ -275,7 +285,7 @@ test("a beforeunload listener that preventDefaults keeps the session", async () 
 	};
 	dom.window.addEventListener("beforeunload", listener);
 	dom.window.close();
-	await new Promise((r) => setTimeout(r, 150));
+	await settle(150);
 
 	expect(asked).toBe(1);
 	expect(watched.closes()).toBe(0);
@@ -287,7 +297,7 @@ test("a beforeunload listener that preventDefaults keeps the session", async () 
 	// Closing again asks again -- the app's own dialog said yes this time.
 	dom.window.removeEventListener("beforeunload", listener);
 	dom.window.close();
-	await new Promise((r) => setTimeout(r, 150));
+	await until(() => watched.closes() === 1);
 	expect(watched.closes()).toBe(1);
 });
 
@@ -330,13 +340,13 @@ test("window.close() drains cursor-report debt before the transport closes", asy
 	expect(debt).toBeGreaterThan(0);
 
 	dom.window.close();
-	await new Promise((resolve) => setTimeout(resolve, 60));
+	await settle(60);
 	expect(closes).toBe(0);
 
 	for (let i = 0; i < debt; i++) {
 		pushInput(`\x1b[5;${7 + i}R`);
 	}
-	await new Promise((resolve) => setTimeout(resolve, 60));
+	await until(() => closes === 1);
 	expect(closes).toBe(1);
 });
 
@@ -352,7 +362,7 @@ test("a beforeunload returnValue keeps the session", async () => {
 		event.returnValue = "Are you sure?";
 	});
 	dom.window.close();
-	await new Promise((r) => setTimeout(r, 150));
+	await settle(150);
 
 	expect(watched.closes()).toBe(0);
 	await dom.dispose();
@@ -373,14 +383,14 @@ test("Ctrl-C fires beforeunload, and a listener can keep the session", async () 
 	};
 	dom.window.addEventListener("beforeunload", listener);
 	(terminal.stdin as any).emit("data", Buffer.from("\x03"));
-	await new Promise((r) => setTimeout(r, 150));
+	await settle(150);
 
 	expect(asked).toBe(1);
 	expect(watched.closes()).toBe(0);
 
 	dom.window.removeEventListener("beforeunload", listener);
 	(terminal.stdin as any).emit("data", Buffer.from("\x03"));
-	await new Promise((r) => setTimeout(r, 150));
+	await until(() => watched.closes() === 1);
 	expect(watched.closes()).toBe(1);
 });
 
@@ -402,7 +412,7 @@ test("BeforeUnloadEvent is the interface a browser exposes", async () => {
 		event.returnValue = 42;
 	});
 	dom.window.close();
-	await new Promise((r) => setTimeout(r, 150));
+	await settle(150);
 
 	expect(fired).not.toBe(null);
 	expect(fired instanceof dom.window.Event).toBe(true);

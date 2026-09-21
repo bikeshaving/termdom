@@ -173,7 +173,6 @@ test("flexbox-demo layout renders correctly", async () => {
 	}
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("flexbox-demo-full");
 
 	dom.dispose();
 });
@@ -237,7 +236,6 @@ test("nested flexbox containers", async () => {
 	expect(visibleText).toContain("Right");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("nested-flexbox");
 
 	dom.dispose();
 });
@@ -282,7 +280,6 @@ test("flexbox with flex-grow", async () => {
 	expect(visibleText).toContain("This item grows to fill available space");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("flexbox-grow");
 
 	dom.dispose();
 });
@@ -333,7 +330,6 @@ test("flexbox with align-items and justify-content", async () => {
 	expect(visibleText).toContain("Item 3");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("flexbox-alignment");
 
 	dom.dispose();
 });
@@ -374,7 +370,6 @@ test("flexbox wrapping behavior", async () => {
 	}
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("flexbox-wrap");
 
 	dom.dispose();
 });
@@ -460,7 +455,6 @@ test("flexbox column with mixed content", async () => {
 	expect(visibleText).toContain("Welcome to the dashboard");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("flexbox-dashboard");
 
 	dom.dispose();
 });

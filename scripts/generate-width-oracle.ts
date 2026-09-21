@@ -7,6 +7,10 @@
  * tables whenever the Unicode version moves.
  *
  * Run: bun scripts/generate-width-oracle.ts
+ *
+ * An oracle too old for the sweeps writes a cases-only fixture and exits
+ * nonzero, since the width tests demand the sweeps; --cases-only asks for
+ * that fixture on purpose.
  */
 
 import {writeFileSync} from "node:fs";
@@ -22,10 +26,11 @@ if (typeof Bun === "undefined") {
 	throw new Error("The oracle is Bun.stringWidth; run this under bun.");
 }
 const oracle = Bun.stringWidth.bind(Bun);
+const casesOnly = process.argv.includes("--cases-only");
 // The planes sweep only means something against an oracle at least as new
 // as the tables (the trigrams went wide in Unicode 15.1); an older bun
 // still vouches for the named cases.
-const sweepable = oracle("☰") === 2;
+const sweepable = !casesOnly && oracle("☰") === 2;
 
 const cases: Record<string, number> = {};
 for (const [name, input] of ORACLE_CASES) {
@@ -62,5 +67,11 @@ writeFileSync(
 	`${JSON.stringify({cases, planes, mixed})}\n`,
 );
 console.log(
-	`cases: ${Object.keys(cases).length}, sweep: ${sweepable ? "included" : "omitted (old oracle)"}`,
+	`cases: ${Object.keys(cases).length}, sweep: ${sweepable ? "included" : "omitted"}`,
 );
+if (!sweepable && !casesOnly) {
+	console.error(
+		"This bun's tables are older than Unicode 15.1, so the sweeps were omitted and the width tests will fail. Run a newer bun, or pass --cases-only.",
+	);
+	process.exit(1);
+}
