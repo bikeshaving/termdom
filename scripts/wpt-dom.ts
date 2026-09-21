@@ -27,6 +27,7 @@ import type {Document} from "../src/internal/dom.ts";
 import type * as DOM from "../src/internal/dom.ts";
 import type * as TermDOM from "../src/index.ts";
 import type {TerminalTransport} from "../src/internal/exchange.ts";
+import {WPT_COMMIT, WPT_RAW} from "./wpt-ref.ts";
 
 /**
  * A test file's realm: the engine module and the DOM module of one
@@ -379,7 +380,6 @@ function domGlobals(
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
-const RAW = "https://raw.githubusercontent.com/web-platform-tests/wpt/master";
 const SUITES = [
 	"dom/nodes",
 	"dom/traversal",
@@ -404,7 +404,7 @@ async function cached(path: string): Promise<string | null> {
 		const text = readFileSync(file, "utf8");
 		return text === "%%WPT-MISSING%%" ? null : text;
 	}
-	const response = await fetch(`${RAW}/${path}`);
+	const response = await fetch(`${WPT_RAW}/${path}`);
 	mkdirSync(dirname(file), {recursive: true});
 	if (!response.ok) {
 		writeFileSync(file, "%%WPT-MISSING%%");
@@ -435,7 +435,7 @@ const NON_TEST_DIRECTORIES = new Set(["support", "resources", "crashtests"]);
  */
 async function listDirectory(suite: string): Promise<string[]> {
 	const response = await fetch(
-		`https://api.github.com/repos/web-platform-tests/wpt/git/trees/master:${suite}?recursive=1`,
+		`https://api.github.com/repos/web-platform-tests/wpt/git/trees/${WPT_COMMIT}:${suite}?recursive=1`,
 	);
 	const tree = (await response.json()) as {
 		tree?: Entry[];

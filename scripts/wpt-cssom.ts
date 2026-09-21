@@ -25,10 +25,10 @@ import type {
 	TerminalCloseInfo,
 	TerminalSize,
 } from "../src/internal/exchange.ts";
+import {WPT_COMMIT, WPT_RAW} from "./wpt-ref.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
-const RAW = "https://raw.githubusercontent.com/web-platform-tests/wpt/master";
 const SUITE = "css/cssom";
 
 /**
@@ -47,7 +47,7 @@ async function cached(path: string): Promise<string | null> {
 	if (existsSync(file)) {
 		return readFileSync(file, "utf8");
 	}
-	const response = await fetch(`${RAW}/${path}`);
+	const response = await fetch(`${WPT_RAW}/${path}`);
 	if (!response.ok) {
 		return null;
 	}
@@ -63,7 +63,7 @@ async function suiteFiles(): Promise<string[]> {
 		return JSON.parse(readFileSync(listing, "utf8"));
 	}
 	const response = await fetch(
-		`https://api.github.com/repos/web-platform-tests/wpt/contents/${SUITE}`,
+		`https://api.github.com/repos/web-platform-tests/wpt/contents/${SUITE}?ref=${WPT_COMMIT}`,
 	);
 	const entries =
 		(await response.json()) as Array<{name: string; type: string}>;
