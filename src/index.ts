@@ -395,16 +395,9 @@ function closeTermDOM(termDOM: TermDOM): void {
 	})();
 }
 
-/**
- * The mouse is captured while the document owns the document scroll. When the
- * wheel has been yielded to the terminal, capture would take the user's
- * scrollback and selection for nothing.
- */
+/** The mouse is captured for as long as the app is attached and interactive. */
 function syncMouseReporting(termDOM: TermDOM): void {
-	const wanted =
-		isAttached(termDOM) &&
-		termDOM[kTransport].interactive &&
-		!termDOM[kInput].mouseCaptureYielded;
+	const wanted = isAttached(termDOM) && termDOM[kTransport].interactive;
 	if (wanted === termDOM[kMouseReportingEnabled]) {
 		return;
 	}
