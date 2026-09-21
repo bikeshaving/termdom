@@ -149,7 +149,7 @@ test("a yielded wheel self-heals after the chain timeout, with no keystroke", as
 	expect(disables()).toBe(1);
 	expect(enables()).toBe(1); // still yielded
 
-	await new Promise((resolve) => setTimeout(resolve, 3200));
+	await new Promise((resolve) => setTimeout(resolve, 400));
 	expect(enables()).toBe(2); // self-healed without any keystroke
 
 	// And scrolling actually works again -- not just the escape sequence.
