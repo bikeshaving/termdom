@@ -60,6 +60,9 @@ document.body.innerHTML = `
 const theme = EditorView.theme(
   {
     "&": {backgroundColor: "#101418", color: "#d0d0d0"},
+    // The focused editor edits text, so it shows the terminal cursor, not
+    // the dotted outline the base theme draws around the wrapper.
+    "&.cm-focused": {outline: "none"},
     ".cm-scroller": {lineHeight: "1"},
     ".cm-content": {padding: "0", caretColor: "white"},
     ".cm-line": {padding: "0 1ch"},
