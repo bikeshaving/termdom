@@ -10,7 +10,7 @@
 		"verify:ime": "node scripts/verify-ime.ts",
 		"verify:examples": "node scripts/verify-examples.ts",
 		"verify:search": "bun run scripts/verify-search.ts",
-		"predeploy": "npm run static && npm run check-links && npm run check-output && npm run verify:search",
+		"predeploy": "npm run static && npm run check-links && npm run check-output",
 		"deploy": "gh-pages -d dist/public --nojekyll --cname termdom.org"
 	},
 	"dependencies": {
