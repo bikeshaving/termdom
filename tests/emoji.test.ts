@@ -26,7 +26,6 @@ test("renders single emoji correctly", async () => {
 	expect(output).toContain("🚀");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("single-emoji");
 	dom.dispose();
 });
 
@@ -49,7 +48,6 @@ test("renders emoji with text correctly", async () => {
 	expect(ansiOutput).not.toMatch(/🌍(?! )/); // Should not have emoji without following space
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("emoji-with-text");
 	dom.dispose();
 });
 
@@ -87,7 +85,6 @@ test("renders multiple emojis correctly", async () => {
 	expect(output).toContain("Party");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("multiple-emojis");
 	dom.dispose();
 });
 
@@ -116,7 +113,6 @@ test("renders emoji with colors correctly", async () => {
 	expect(output).toContain("Colorful Text");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("emoji-with-colors");
 	dom.dispose();
 });
 
@@ -174,7 +170,6 @@ test("handles emoji width calculation", async () => {
 	expect(output).toContain("Text🚀More");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("emoji-width-layout");
 	dom.dispose();
 });
 
