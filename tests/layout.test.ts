@@ -1128,14 +1128,42 @@ test("Block element removal merging inline runs", async () => {
 });
 
 test("Nested inline element changes", async () => {
-	// This test reveals issues with mutation handling for nested inline elements
-	// The error occurs when changing content of elements that don't have their own Yoga nodes
-	// Same root cause as textContent changes above
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const termdom = new TermDOM({transport: terminal.transport});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML =
+		'Before <span>outer <em id="inner">inner</em> tail</span> after';
+	termdom.document.body.appendChild(div);
+
+	await nextFrame(termdom);
+	expect(terminal.getPlainText()).toContain("Before outer inner tail after");
+
+	termdom.document.getElementById("inner")!.textContent = "CHANGED";
+
+	await nextFrame(termdom);
+	const updatedOutput = terminal.getPlainText();
+	expect(updatedOutput).toContain("Before outer CHANGED tail after");
+	expect(updatedOutput).not.toContain("inner");
 });
 
 test("Complex inline run with mixed content types", async () => {
-	// Similar to nested inline element changes - needs better handling of
-	// mutations within elements that are part of inline runs but don't have Yoga nodes
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const termdom = new TermDOM({transport: terminal.transport});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML =
+		'A <span>b<em id="deep">c</em></span> ' +
+		'<span style="display: inline-block">d</span> e';
+	termdom.document.body.appendChild(div);
+
+	await nextFrame(termdom);
+	expect(terminal.getPlainText()).toContain("A bc d e");
+
+	termdom.document.getElementById("deep")!.textContent = "CC";
+
+	await nextFrame(termdom);
+	expect(terminal.getPlainText()).toContain("A bCC d e");
 });
 
 // Tests for fundamental layout positioning bug
