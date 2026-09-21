@@ -1,6 +1,6 @@
 // CodeMirror: a real code editor on a contenteditable host
 //
-//   node examples/codemirror.ts
+//   node examples/codemirror.ts [file]
 //
 //   Type to edit        Enter    new line, indented
 //   Arrows              move     Esc      quit
@@ -10,6 +10,8 @@
 // with a MutationObserver, and reads the selection back through
 // getSelection(). Nothing here is adapted for the terminal except the
 // theme, which turns its pixel paddings into cells.
+import {readFileSync} from "node:fs";
+
 import {TermDOM} from "@b9g/termdom";
 import {defaultKeymap, history, historyKeymap} from "@codemirror/commands";
 import {javascript} from "@codemirror/lang-javascript";
@@ -34,6 +36,7 @@ for (const name of [
   "Selection",
   "MutationObserver",
   "ResizeObserver",
+  "IntersectionObserver",
   "getComputedStyle",
   "requestAnimationFrame",
   "cancelAnimationFrame",
@@ -113,20 +116,25 @@ const lineKeys = keymap.of([
   {key: "ArrowDown", run: moveLine(true, false), shift: moveLine(true, true)},
 ]);
 
+const sample = [
+  "function greet(name) {",
+  "  const hour = new Date().getHours();",
+  "  const part = hour < 12 ? \"morning\" : \"afternoon\";",
+  "  return `Good ${part}, ${name}!`;",
+  "}",
+  "",
+  "console.log(greet(\"world\"));",
+  "",
+].join("\n");
+const file = process.argv[2];
+const doc = file ? readFileSync(file, "utf8") : sample;
+
 const status = document.querySelector(".status")!;
 const view = new EditorView({
   state: EditorState.create({
-    doc: [
-      "function greet(name) {",
-      "  const hour = new Date().getHours();",
-      "  const part = hour < 12 ? \"morning\" : \"afternoon\";",
-      "  return `Good ${part}, ${name}!`;",
-      "}",
-      "",
-      "console.log(greet(\"world\"));",
-      "",
-    ].join("\n"),
+    doc,
     extensions: [
+      EditorState.tabSize.of(2),
       lineNumbers(),
       history(),
       lineKeys,
