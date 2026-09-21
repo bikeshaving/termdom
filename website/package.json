@@ -6,9 +6,11 @@
 		"static": "MODE=production shovel build src/server.ts --platform node --lifecycle && npm run pagefind",
 		"pagefind": "pagefind --site dist/public",
 		"check-links": "bun run scripts/check-links.ts",
+		"check-output": "bun run scripts/check-output.ts",
 		"verify:ime": "node scripts/verify-ime.ts",
 		"verify:examples": "node scripts/verify-examples.ts",
-		"predeploy": "npm run static && npm run check-links",
+		"verify:search": "bun run scripts/verify-search.ts",
+		"predeploy": "npm run static && npm run check-links && npm run check-output && npm run verify:search",
 		"deploy": "gh-pages -d dist/public --nojekyll --cname termdom.org"
 	},
 	"dependencies": {

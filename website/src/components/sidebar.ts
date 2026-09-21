@@ -39,11 +39,10 @@ export function Sidebar({
 
 	return jsx`
 		<div id="sidebar" class=${css`
-			background-color: var(--bg-color);
 			margin-top: var(--bar-height);
 			padding: 1lh 2ch 1lh;
 			color: var(--text-color);
-			background: var(--rule) bottom 0.5lh center / 100% 1px no-repeat;
+			background: var(--rule) bottom 0.5lh center / 100% 1px no-repeat var(--bg-color);
 
 			@media screen and (min-width: 800px) {
 				position: fixed;
@@ -55,7 +54,7 @@ export function Sidebar({
 				margin: 0;
 				padding: 1lh 2ch 1lh 2ch;
 				text-align: right;
-				background: var(--rule) right 0.5ch center / 1px 100% no-repeat;
+				background: var(--rule) right 0.5ch center / 1px 100% no-repeat var(--bg-color);
 			}
 
 			@media screen and (min-width: 1100px) {

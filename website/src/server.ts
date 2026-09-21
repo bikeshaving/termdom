@@ -207,7 +207,7 @@ async function generateSitemap(): Promise<string> {
 		.map((route) => `\t<url>\n\t\t<loc>${SITE}${route}</loc>\n\t</url>`)
 		.join("\n");
 	return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemap.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls}
 </urlset>
 `;
@@ -242,7 +242,9 @@ async function generateStaticSite(): Promise<void> {
 	for (const route of await allRoutes()) {
 		const response = await fetch(route);
 		if (!response.ok) {
-			continue;
+			throw new Error(
+				`Could not render ${route}: the server answered ${response.status}.`,
+			);
 		}
 		const filePath =
 			route === "/" ? "index.html" : `${route.slice(1)}index.html`;
@@ -256,8 +258,7 @@ async function generateStaticSite(): Promise<void> {
 	);
 
 	// GitHub Pages serves 404.html for anything it cannot find.
-	const notFound = await fetch("/this-path-does-not-exist/");
-	await write("404.html", await notFound.text());
+	await write("404.html", await renderer.render(jsx`<${NotFoundView} />`));
 
 	await write("robots.txt", robotsTxt);
 	await write("sitemap.xml", await generateSitemap());
