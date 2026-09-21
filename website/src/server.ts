@@ -256,8 +256,7 @@ async function generateStaticSite(): Promise<void> {
 	);
 
 	// GitHub Pages serves 404.html for anything it cannot find.
-	const notFound = await fetch("/this-path-does-not-exist/");
-	await write("404.html", await notFound.text());
+	await write("404.html", await renderer.render(jsx`<${NotFoundView} />`));
 
 	await write("robots.txt", robotsTxt);
 	await write("sitemap.xml", await generateSitemap());
