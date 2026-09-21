@@ -23126,28 +23126,47 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	set title(value: string) {
-		const root = this.documentElement;
+		const root = this.documentElement as unknown as Element | null;
 		if (root === null) {
 			return;
 		}
 		let element: Element | null = null;
-		for (const node of descendants(this)) {
-			if (
-				node.nodeType === ELEMENT_NODE &&
-				(node as Element)[kNamespace] === HTML_NAMESPACE &&
-				(node as Element)[kLocalName] === "title"
-			) {
-				element = node as Element;
-				break;
+		if (root[kNamespace] === SVG_NAMESPACE && root[kLocalName] === "svg") {
+			for (let node = root[kFirstChild]; node !== null; node = node[kNext]) {
+				if (
+					node.nodeType === ELEMENT_NODE &&
+					(node as Element)[kNamespace] === SVG_NAMESPACE &&
+					(node as Element)[kLocalName] === "title"
+				) {
+					element = node as Element;
+					break;
+				}
 			}
-		}
-		if (element === null) {
-			const head = this.head as unknown as Element | null;
-			if (head === null) {
-				return;
+			if (element === null) {
+				element = createElementInternal(this, "title", SVG_NAMESPACE);
+				insertNode(element, root, root[kFirstChild], false);
 			}
-			element = createElementInternal(this, "title", HTML_NAMESPACE);
-			appendNode(element, head);
+		} else if (root[kNamespace] === HTML_NAMESPACE) {
+			for (const node of descendants(this)) {
+				if (
+					node.nodeType === ELEMENT_NODE &&
+					(node as Element)[kNamespace] === HTML_NAMESPACE &&
+					(node as Element)[kLocalName] === "title"
+				) {
+					element = node as Element;
+					break;
+				}
+			}
+			if (element === null) {
+				const head = this.head as unknown as Element | null;
+				if (head === null) {
+					return;
+				}
+				element = createElementInternal(this, "title", HTML_NAMESPACE);
+				appendNode(element, head);
+			}
+		} else {
+			return;
 		}
 		setDescendantText(element, String(value));
 		// The terminal's window title is the document's, set in-band. This
