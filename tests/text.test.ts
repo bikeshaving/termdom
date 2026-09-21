@@ -2,12 +2,8 @@ import {readFileSync} from "node:fs";
 
 import {describe, expect, test} from "@b9g/libuild/test";
 
-import {getStringWidth, isWidthUncertain} from "../src/internal/text.ts";
-import {
-	ORACLE_CASES,
-	oracleSweepWidth,
-	randomMixedStrings,
-} from "./width-oracle-domain.js";
+import {getStringWidth} from "../src/internal/text.ts";
+import {ORACLE_CASES, randomMixedStrings} from "./width-oracle-domain.js";
 
 /**
  * Width drives line breaking and cell alignment, so the pure-JS width path
@@ -25,6 +21,19 @@ const oracleFixture = JSON.parse(
 	),
 ) as {cases: Record<string, number>; planes?: string; mixed?: number[]};
 
+/**
+ * The fixture carries the sweeps or the sweeps do not run, so a fixture
+ * regenerated without them has to fail here rather than pass by skipping.
+ */
+function requireSweep<T>(sweep: T | undefined, name: string): T {
+	if (sweep === undefined) {
+		throw new Error(
+			`width-oracle.json has no ${name} sweep; regenerate it with bun scripts/generate-width-oracle.ts`,
+		);
+	}
+	return sweep;
+}
+
 describe("getStringWidth matches the recorded oracle", () => {
 	for (const [name, input] of ORACLE_CASES) {
 		test(name, () => {
@@ -34,46 +43,48 @@ describe("getStringWidth matches the recorded oracle", () => {
 		});
 	}
 
-	// An old oracle cannot vouch for the sweeps; the fixture says so by
-	// omission, and regenerating under a bun with Unicode 15.1 tables
-	// fills them in.
-	(oracleFixture.planes ? test : test.skip)(
-		"every codepoint in the BMP and astral planes",
-		() => {
-			const widths: number[] = [];
-			for (const run of oracleFixture.planes!.split(" ")) {
-				const [width, count] = run.split("*").map(Number);
-				for (let i = 0; i < count; i++) {
-					widths.push(width);
-				}
-			}
-			const mismatches: string[] = [];
-			for (let code = 0; code <= 0x3ffff; code++) {
-				const expected = widths[code];
-				if (expected === -1) {
-					continue;
-				}
-				const actual = oracleSweepWidth(code, getStringWidth, isWidthUncertain);
-				if (actual !== expected) {
-					mismatches.push(`U+${code.toString(16).toUpperCase()}`);
-				}
-			}
-			expect(mismatches).toEqual([]);
-		},
-	);
+	test("the fixture records both sweeps", () => {
+		expect({
+			planes: typeof oracleFixture.planes,
+			mixed: oracleFixture.mixed?.length,
+		}).toEqual({planes: "string", mixed: randomMixedStrings().length});
+	});
 
-	(oracleFixture.mixed ? test : test.skip)(
-		"random strings of mixed scripts and emoji",
-		() => {
-			const mismatches: string[] = [];
-			for (const [i, input] of randomMixedStrings()) {
-				if (getStringWidth(input) !== oracleFixture.mixed![i]) {
-					mismatches.push(JSON.stringify(input));
-				}
+	// The -1 runs are the sweep's exclusions, and the fixture is the only
+	// authority on them: re-deriving them here would ask the running engine
+	// for \p{Cn}, whose table moves with the engine's Unicode version, so
+	// the same fixture would cover different codepoints on node and deno.
+	test("every codepoint in the BMP and astral planes", () => {
+		const widths: number[] = [];
+		for (const run of requireSweep(oracleFixture.planes, "planes").split(" ")) {
+			const [width, count] = run.split("*").map(Number);
+			for (let i = 0; i < count; i++) {
+				widths.push(width);
 			}
-			expect(mismatches).toEqual([]);
-		},
-	);
+		}
+		const mismatches: string[] = [];
+		for (let code = 0; code <= 0x3ffff; code++) {
+			const expected = widths[code];
+			if (expected === -1) {
+				continue;
+			}
+			if (getStringWidth(String.fromCodePoint(code)) !== expected) {
+				mismatches.push(`U+${code.toString(16).toUpperCase()}`);
+			}
+		}
+		expect(mismatches).toEqual([]);
+	});
+
+	test("random strings of mixed scripts and emoji", () => {
+		const mixed = requireSweep(oracleFixture.mixed, "mixed");
+		const mismatches: string[] = [];
+		for (const [i, input] of randomMixedStrings()) {
+			if (getStringWidth(input) !== mixed[i]) {
+				mismatches.push(JSON.stringify(input));
+			}
+		}
+		expect(mismatches).toEqual([]);
+	});
 });
 
 /**
