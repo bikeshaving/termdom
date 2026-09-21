@@ -378,3 +378,22 @@ test("an inline background paints its fragments, not the box enclosing them", as
 
 	dom.dispose();
 });
+
+test("a Canvas box inside a colored parent clears to the default background", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"background-color: red; padding: 1px\">" +
+		"<div style=\"background-color: Canvas\">inner</div></div>";
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	expect(cellAt(0, 0).getBgColor()).toBe(0xff0000);
+	expect(cellAt(1, 1).getChars()).toBe("i");
+	expect(cellAt(1, 1).isBgDefault()).toBeTruthy();
+	expect(cellAt(1, 10).isBgDefault()).toBeTruthy();
+
+	dom.dispose();
+});

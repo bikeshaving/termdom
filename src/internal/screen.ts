@@ -1004,7 +1004,7 @@ export class CellContext {
 		// colors with no assumption about what they are.
 		const style: CellStyle = background === "inverse"
 			? {inverse: true}
-			: {bg: background === "default" ? undefined : background};
+			: {bg: background === "default" ? 0 : background};
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
