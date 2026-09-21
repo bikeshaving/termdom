@@ -40,6 +40,13 @@ export async function* Search(this: Context) {
 	let pagefind: Pagefind | null = null;
 	let loading = false;
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	let blurTimer: ReturnType<typeof setTimeout> | null = null;
+	let latestQuery = 0;
+
+	this.cleanup(() => {
+		if (debounceTimer) clearTimeout(debounceTimer);
+		if (blurTimer) clearTimeout(blurTimer);
+	});
 
 	const loadPagefind = async () => {
 		if (pagefind) return pagefind;
@@ -60,9 +67,12 @@ export async function* Search(this: Context) {
 	};
 
 	const doSearch = async (q: string) => {
+		const queryNumber = ++latestQuery;
+
 		if (!q.trim()) {
 			this.refresh(() => {
 				results = [];
+				loading = false;
 			});
 			return;
 		}
@@ -72,6 +82,10 @@ export async function* Search(this: Context) {
 		});
 
 		const pf = await loadPagefind();
+		if (queryNumber !== latestQuery) {
+			return;
+		}
+
 		if (!pf) {
 			this.refresh(() => {
 				loading = false;
@@ -83,6 +97,10 @@ export async function* Search(this: Context) {
 		const data = await Promise.all(
 			search.results.slice(0, 8).map((r) => r.data()),
 		);
+
+		if (queryNumber !== latestQuery) {
+			return;
+		}
 
 		// Use sub_results to show specific sections instead of page introductions
 		const newResults = data
@@ -120,7 +138,6 @@ export async function* Search(this: Context) {
 
 		if (debounceTimer) clearTimeout(debounceTimer);
 		debounceTimer = setTimeout(() => doSearch(query), 150);
-		this.cleanup(() => clearTimeout(debounceTimer!));
 	};
 
 	const onFocus = () => {
@@ -131,12 +148,12 @@ export async function* Search(this: Context) {
 
 	const onBlur = () => {
 		// Delay to allow click on results
-		const blurTimer = setTimeout(() => {
+		if (blurTimer) clearTimeout(blurTimer);
+		blurTimer = setTimeout(() => {
 			this.refresh(() => {
 				isOpen = false;
 			});
 		}, 200);
-		this.cleanup(() => clearTimeout(blurTimer));
 	};
 
 	const onKeyDown = (e: KeyboardEvent) => {
