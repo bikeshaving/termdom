@@ -397,3 +397,47 @@ test("a Canvas box inside a colored parent clears to the default background", as
 
 	dom.dispose();
 });
+
+test("rgb() and hsl() take the modern space-separated syntax", async () => {
+	const terminal = new MockProcess({rows: 12, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `
+		<div style="color: rgb(255 0 0)">a</div>
+		<div style="color: rgb(0% 100% 0%)">b</div>
+		<div style="color: rgb(0 0 255 / 50%)">c</div>
+		<div style="color: rgba(255 0 255 / 0.5)">d</div>
+		<div style="color: hsl(60 100% 50%)">e</div>
+		<div style="color: hsl(180deg 100% 50% / 1)">f</div>
+		<div style="color: hsl(0.5turn 100 50)">g</div>
+		<div style="color: rgb(255, 128, 0)">h</div>
+	`;
+	await nextFrame(dom);
+
+	const cellAt = (row: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(0);
+	expect(cellAt(0).getFgColor()).toBe(0xff0000);
+	expect(cellAt(1).getFgColor()).toBe(0x00ff00);
+	expect(cellAt(2).getFgColor()).toBe(0x0000ff);
+	expect(cellAt(3).getFgColor()).toBe(0xff00ff);
+	expect(cellAt(4).getFgColor()).toBe(0xffff00);
+	expect(cellAt(5).getFgColor()).toBe(0x00ffff);
+	expect(cellAt(6).getFgColor()).toBe(0x00ffff);
+	expect(cellAt(7).getFgColor()).toBe(0xff8000);
+
+	dom.dispose();
+});
+
+test("a zero-alpha modern rgb() paints nothing", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"background-color: rgb(255 0 0 / 0)\">clear</div>";
+	await nextFrame(dom);
+
+	expect(terminal.getScreenContents()).toContain("clear");
+	expect(terminal.getScreenContents()).not.toMatch(/48;2;/);
+
+	dom.dispose();
+});
