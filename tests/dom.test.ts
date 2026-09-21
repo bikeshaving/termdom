@@ -644,6 +644,7 @@ test("composedPath is the whole path while dispatching, and empty after", () => 
 		document.body,
 		document.documentElement,
 		document,
+		document.defaultView,
 	]);
 	expect(event.composedPath()).toEqual([]);
 });
@@ -755,6 +756,7 @@ test("a platform CustomEvent dispatches through the tree", () => {
 		document.body,
 		document.documentElement,
 		document,
+		document.defaultView,
 	]);
 	expect(event.target).toBe(inner as any);
 	expect(event.currentTarget).toBe(null);

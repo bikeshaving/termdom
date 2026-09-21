@@ -4102,10 +4102,12 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 				slottable = parent as Node;
 			}
 			relatedTarget = retarget(state.relatedTarget, parent);
+			// A window, or a node in the target's own tree, joins the path as
+			// it is. Only a parent past a shadow boundary becomes the target.
 			if (
-				parent instanceof Node &&
-				eventTarget instanceof Node &&
-				isShadowIncludingInclusiveAncestor(getRoot(eventTarget), parent)
+				!(parent instanceof Node) ||
+				(eventTarget instanceof Node &&
+					isShadowIncludingInclusiveAncestor(getRoot(eventTarget), parent))
 			) {
 				if (
 					isActivationEvent &&
@@ -24125,6 +24127,15 @@ export class Document extends Node implements globalThis.Document {
 			globalThis.StartViewTransitionOptions,
 	): globalThis.ViewTransition {
 		throw domError("NotSupportedError", "View transitions are not implemented");
+	}
+
+	// A document's parent in the event path is its window, for every event
+	// but load.
+	override [kGetTheParent](event: Event): EventTarget | null {
+		if (event.type === "load") {
+			return null;
+		}
+		return this[kDefaultView] as EventTarget | null;
 	}
 
 	override [kCloneSingle](_document: Document): Node {

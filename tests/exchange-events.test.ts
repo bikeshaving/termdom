@@ -152,3 +152,27 @@ test("a headless document has no terminal to hide it", () => {
 	expect(window.document.hidden).toBe(false);
 	expect(window.document.visibilityState).toBe("visible");
 });
+
+test("an event that bubbles past the document reaches the window", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 4});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+	document.body.innerHTML = "<button id=\"b\">x</button>";
+	await nextFrame(dom);
+
+	const path: string[] = [];
+	window.addEventListener("click", () => path.push("window"));
+	document.addEventListener("click", () => path.push("document"));
+	const button = document.getElementById("b")!;
+	button.dispatchEvent(new window.Event("click", {bubbles: true}));
+	expect(path).toEqual(["document", "window"]);
+
+	path.length = 0;
+	button.dispatchEvent(new window.Event("click"));
+	expect(path).toEqual([]);
+
+	window.addEventListener("load", () => path.push("window load"));
+	document.dispatchEvent(new window.Event("load", {bubbles: true}));
+	expect(path).toEqual([]);
+	dom.dispose();
+});
