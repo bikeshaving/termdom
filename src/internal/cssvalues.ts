@@ -413,7 +413,7 @@ const SYSTEM_COLORS: Record<string, number> = {
 	buttontext: 0, // a control's label: the default foreground
 	canvas: 0, // the document background: the default background
 	canvastext: 0, // document text: the default foreground
-	textControl: 0, // an input's background: the default background
+	field: 0, // an input's background: the default background
 	fieldtext: 0, // an input's text: the default foreground
 	graytext: 0x808080, // disabled text: bright black, the dim gray
 	highlight: 0x0000ff, // the selection, when inverse cannot express it: blue
