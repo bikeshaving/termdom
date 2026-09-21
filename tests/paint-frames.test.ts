@@ -42,7 +42,6 @@ test("a grid places its items on the tracks it declares", async () => {
 	expect(rows[2]).toContain("wide body");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("grid-tracks-and-spans");
 	dom.dispose();
 });
 
@@ -67,7 +66,6 @@ test("a grid area names where its items go", async () => {
 	expect(rows[1].indexOf("nav")).toBeLessThan(rows[1].indexOf("main"));
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("grid-template-areas");
 	dom.dispose();
 });
 
@@ -91,7 +89,6 @@ test("an absolute box leaves the flow it came from", async () => {
 	expect(rows[1]).toContain("after");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("absolute-out-of-flow");
 	dom.dispose();
 });
 
@@ -112,7 +109,6 @@ test("a fixed box holds its row while the document scrolls under it", async () =
 	expect(rows[1]).toContain("row 16");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("fixed-header-scrolled");
 	dom.dispose();
 });
 
@@ -139,7 +135,6 @@ test("z-index decides which of three stacked boxes is seen", async () => {
 	expect(row).not.toContain("z1");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("stacking-z-index-overlap");
 	dom.dispose();
 });
 
@@ -168,7 +163,6 @@ test("a negative z-index paints behind the content of its stacking context", asy
 	expect(frame).toContain("48;2;102;0;0m");
 
 	expect(frame).toMatchSnapshot();
-	terminal.writeANSI("stacking-negative-z");
 	dom.dispose();
 });
 
@@ -194,6 +188,5 @@ test("a negative z-index hoists past a parent that is no stacking context", asyn
 	expect(frame).not.toContain("48;2;102;0;0m");
 
 	expect(frame).toMatchSnapshot();
-	terminal.writeANSI("stacking-negative-z-hoisted");
 	dom.dispose();
 });

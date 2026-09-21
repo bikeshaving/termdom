@@ -4,8 +4,6 @@
  */
 
 import {EventEmitter} from "events";
-import {existsSync, mkdirSync, writeFileSync} from "fs";
-import {join} from "path";
 
 import xtermPkg from "@xterm/headless";
 
@@ -370,19 +368,6 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		// The frame emitter withholds the final row's line ending (the screen
 		// has nothing below it); the oracle's callers split on lines.
 		return stripControlCodes(screen.endFrame() + "\r\n");
-	}
-
-	/**
-	 * Write ANSI output to .ansi file after test passes
-	 */
-	writeANSI(testName: string): void {
-		const ansiOutput = this.getStaticANSI();
-		const ansiDir = join(process.cwd(), "tests", "__snapshots__", "ansi");
-		if (!existsSync(ansiDir)) {
-			mkdirSync(ansiDir, {recursive: true});
-		}
-		const ansiFilename = `${testName}.ansi`;
-		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
 	}
 
 	/**

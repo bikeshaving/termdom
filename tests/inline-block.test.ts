@@ -111,7 +111,6 @@ test("inline-block elements render side by side", async () => {
 	expect(output).toContain("\x1b[48;2;0;0;255m"); // blue background
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("inline-block-side-by-side");
 
 	dom.dispose();
 });
@@ -145,7 +144,6 @@ test("inline-block elements with padding", async () => {
 	expect(contentLine).toContain("Padded"); // Check for content
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("inline-block-padding");
 
 	dom.dispose();
 });
@@ -178,7 +176,6 @@ test("inline-block elements with margins", async () => {
 	expect(visibleText).toContain("First   Second");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("inline-block-margins");
 
 	dom.dispose();
 });
@@ -214,7 +211,6 @@ test("inline-block elements wrapping to multiple lines", async () => {
 	}
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
-	terminal.writeANSI("inline-block-wrapping");
 
 	dom.dispose();
 });
@@ -257,7 +253,6 @@ test("mixed inline and inline-block elements", async () => {
 	expect(output).toContain("38;2;0;255;255"); // cyan text (may have background reset after)
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("mixed-inline-and-inline-block");
 
 	dom.dispose();
 });
@@ -295,7 +290,6 @@ test("nested inline-block elements", async () => {
 	expect(output).toContain("48;2;255;0;0"); // red background for inner (may be combined with other codes)
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("nested-inline-block");
 
 	dom.dispose();
 });
@@ -330,7 +324,6 @@ test("inline-block with explicit width", async () => {
 	expect(visibleText).toContain("Fixed     Auto"); // "Fixed" + 5 spaces to reach 10 chars + "Auto"
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("inline-block-fixed-width");
 
 	dom.dispose();
 });
@@ -367,7 +360,6 @@ test("inline-block with height", async () => {
 	expect(greenBackgroundLines.length).toBe(3);
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("inline-block-height");
 
 	dom.dispose();
 });
@@ -395,7 +387,6 @@ test("inline-block with borders", async () => {
 	expect(output).toContain("└"); // bottom border
 
 	expect(output).toMatchSnapshot();
-	terminal.writeANSI("inline-block-borders");
 
 	dom.dispose();
 });
