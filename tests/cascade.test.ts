@@ -936,3 +936,35 @@ test("inserting a child restyles the siblings and parent that selectors read", a
 	expect(style("a", "color")).toBe("rgb(0, 0, 0)");
 	expect(style("a", "font-weight")).toBe("bold");
 });
+
+test("appending children one at a time costs linear sibling invalidation", async () => {
+	// Each append is its own mutation record against the same parent. The
+	// sibling invalidation for that parent used to run per record, over
+	// every child, so n appends cost n squared.
+	const timeAppend = async (count: number): Promise<number> => {
+		const terminal = new MockProcess({rows: 20, cols: 60});
+		const dom = new TermDOM({transport: terminal.transport});
+		const {document} = dom;
+		const style = document.createElement("style");
+		style.textContent = ".row + .row { color: red }";
+		document.head.appendChild(style);
+		const list = document.createElement("div");
+		document.body.appendChild(list);
+		await nextFrame(dom);
+		const start = performance.now();
+		for (let i = 0; i < count; i++) {
+			const row = document.createElement("div");
+			row.className = "row";
+			row.textContent = `row ${i}`;
+			list.appendChild(row);
+		}
+		await nextFrame(dom);
+		const elapsed = performance.now() - start;
+		dom.dispose();
+		return elapsed;
+	};
+	await timeAppend(200);
+	const small = await timeAppend(500);
+	const large = await timeAppend(2000);
+	expect(large / small).toBeLessThan(6);
+});

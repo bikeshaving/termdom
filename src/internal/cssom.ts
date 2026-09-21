@@ -5011,6 +5011,7 @@ export class Cascade {
 	handleMutations(mutations: MutationRecord[]): void {
 		const Node = this[kWindow].Node;
 		let shouldSyncStylesheets = false;
+		const changedParents = new Set<Element>();
 
 		// A :has() subject sits ABOVE what changed it, so when such rules exist
 		// every mutation restyles its flat-tree ancestor chain too.
@@ -5085,14 +5086,16 @@ export class Cascade {
 				}
 				// A child that came or went changes what `li + li`,
 				// `:first-child` and `:empty` match on the children around it
-				// and on the parent, none of which the mutation names.
+				// and on the parent, none of which the mutation names. Once
+				// per parent per batch: appending n children one at a time
+				// is n records against the same parent.
 				if (this[kSelectorsReachAncestors]) {
 					this[kDropCache]();
 				} else if (
 					this[kSelectorsReachSiblings] &&
 					mutation.target.nodeType === Node.ELEMENT_NODE
 				) {
-					invalidateChildren(this, mutation.target as Element);
+					changedParents.add(mutation.target as Element);
 				}
 			} else if (mutation.type === "attributes") {
 				const element = mutation.target as Element;
@@ -5159,6 +5162,9 @@ export class Cascade {
 			}
 		}
 
+		for (const parent of changedParents) {
+			invalidateChildren(this, parent);
+		}
 		if (shouldSyncStylesheets) {
 			this.syncStylesheets();
 		}
