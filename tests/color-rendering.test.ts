@@ -80,9 +80,6 @@ test("background colors fill full width", async () => {
 	dom.dispose();
 });
 
-// Skip multi-element test due to layout positioning issues
-// TODO: Re-enable when block layout stacking is fixed
-
 test("mixed foreground and background colors", async () => {
 	const terminal = new MockProcess();
 	const dom = new TermDOM({transport: terminal.transport});
@@ -191,9 +188,6 @@ test("inline elements do not extend background", async () => {
 
 	dom.dispose();
 });
-
-// Skip complex layout tests due to positioning issues
-// TODO: Re-enable when block layout stacking is fixed
 
 test("font-weight maps to the terminal's three weights", async () => {
 	// The terminal has exactly three font weights and CSS names all three:
