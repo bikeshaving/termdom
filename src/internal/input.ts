@@ -315,10 +315,14 @@ const kTextControlDragAnchor = Symbol("textControlDragAnchor");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 
-// Reclaims a yield no keystroke reclaimed. A flat window from the yield,
-// not a debounce. Wheel activity while yielded produces no signal, and a
-// gap between ticks longer than this would re-yield on the next tick.
-const SCROLL_CHAIN_TIMEOUT_MS = 3000;
+// How long a yield lasts: enough for the next tick of the same wheel
+// gesture to reach the terminal instead of us. Once the terminal is
+// scrolled back it keeps the wheel for itself whatever the reporting
+// mode, and hands it back at the bottom (tmux's copy-mode -e does; the
+// probe of other terminals is pending), so the mouse can come back
+// this soon. A keystroke reclaims it sooner, since terminals snap to
+// the live screen on input.
+const SCROLL_CHAIN_TIMEOUT_MS = 300;
 const DBLCLICK_INTERVAL_MS = 500;
 
 export interface Input {
