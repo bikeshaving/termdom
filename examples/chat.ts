@@ -100,9 +100,9 @@ async function send(): Promise<void> {
     .join("\n");
   const url = `https://ch.at/?q=${encodeURIComponent(conversation)}`;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
     const res = await fetch(url, {signal: controller.signal});
     if (!res.ok || !res.body) {
       throw new Error(`HTTP ${res.status}`);
@@ -123,7 +123,6 @@ async function send(): Promise<void> {
         scrollToPrompt();
       }
     }
-    clearTimeout(timeout);
     const answer = answerFrom(raw).trim() || "(no answer)";
     bot.data = answer;
     botMsg.classList.remove("pending");
@@ -133,6 +132,7 @@ async function send(): Promise<void> {
     bot.data = `⚠ ${(err as Error).message}`;
     turns.pop(); // drop the user turn whose reply failed, so context stays clean
   } finally {
+    clearTimeout(timeout);
     busy = false;
     scrollToPrompt();
   }
