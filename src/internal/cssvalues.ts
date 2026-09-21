@@ -3450,7 +3450,10 @@ export function parseDeclarationText(text: string): CSSDeclaration[] {
 
 // A legacy name that is the same property under its standard name, so a
 // declaration made through it serializes as the standard one.
-const LEGACY_PROPERTY_ALIASES = new Map([["-webkit-line-clamp", "line-clamp"]]);
+const LEGACY_PROPERTY_ALIASES = new Map([
+	["-webkit-line-clamp", "line-clamp"],
+	["-moz-tab-size", "tab-size"],
+]);
 
 // Custom properties keep their case. Everything else is
 // ASCII-lowercased.
