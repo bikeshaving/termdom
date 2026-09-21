@@ -850,6 +850,7 @@ const XML_NAME = new RegExp(
 	`^(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
 	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*$`,
 );
+/* eslint-enable no-misleading-character-class */
 
 function isValidLocalName(name: string, forAttribute: boolean): boolean {
 	return forAttribute
@@ -24132,7 +24133,6 @@ export class Document extends Node implements globalThis.Document {
 		return copy;
 	}
 }
-/* eslint-enable no-misleading-character-class */
 
 function validateXMLName(name: string): void {
 	if (!XML_NAME.test(name)) {
