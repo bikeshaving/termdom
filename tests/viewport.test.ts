@@ -1248,3 +1248,63 @@ test("bounded-damage frames match a full repaint exactly", async () => {
 
 	expect(await render(8)).toEqual(await render(1));
 });
+
+test("matchMedia lists without a listener are not retained by the document", async () => {
+	const gc: ((force?: boolean) => unknown) | undefined =
+		(globalThis as any).gc ?? (globalThis as any).Bun?.gc;
+	if (gc === undefined) {
+		return;
+	}
+	const terminal = new MockProcess({cols: 100, rows: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window} = dom;
+
+	const heapUsed = async (): Promise<number> => {
+		for (let attempt = 0; attempt < 5; attempt++) {
+			gc(true);
+			await new Promise((r) => setTimeout(r, 10));
+		}
+		return process.memoryUsage().heapUsed;
+	};
+	const query = (count: number): void => {
+		for (let i = 0; i < count; i++) {
+			window.matchMedia(`(min-width: ${i}px)`);
+		}
+	};
+	query(1000);
+	const before = await heapUsed();
+	query(100000);
+	const after = await heapUsed();
+	expect(after - before).toBeLessThan(8 * 1024 * 1024);
+
+	dom.dispose();
+});
+
+test("a MediaQueryList with a listener stays live without a reference", async () => {
+	const gc: ((force?: boolean) => unknown) | undefined =
+		(globalThis as any).gc ?? (globalThis as any).Bun?.gc;
+	const terminal = new MockProcess({cols: 100, rows: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+
+	const events: boolean[] = [];
+	window
+		.matchMedia("(min-width: 90px)")
+		.addEventListener("change", (ev: any) => events.push(ev.matches));
+	window.matchMedia("(min-width: 80px)").onchange = (ev: any) =>
+		events.push(ev.matches);
+	document.body.innerHTML = "<div>x</div>";
+	await nextFrame(dom);
+	for (let attempt = 0; attempt < 10 && gc !== undefined; attempt++) {
+		gc(true);
+		await new Promise((r) => setTimeout(r, 10));
+	}
+
+	terminal.resize(50, 30);
+	(terminal as any).emit("SIGWINCH");
+	await nextFrame(dom);
+	await new Promise((r) => setTimeout(r, 100));
+	expect(events).toEqual([false, false]);
+
+	dom.dispose();
+});

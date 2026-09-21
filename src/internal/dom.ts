@@ -30471,21 +30471,123 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 
 // State an attached document accepts only from its engine.
 
-// Re-evaluators called when the viewport changes. The lists belong to
-// this module. The resize path is the one place a terminal viewport
-// changes, so the engine decides when to call them.
-const mediaQueryEvaluators = new WeakMap<Document, Set<() => void>>();
+const kMediaQueryDocument = Symbol("media query document");
+const kMediaQueryNotified = Symbol("media query notified");
+const kSyncMediaQuery = Symbol("sync media query");
 
-/**
- * Re-evaluate every live media query list, firing "change" where one flipped.
- */
-export function syncMediaQueries(document: globalThis.Document): void {
-	const updaters = mediaQueryEvaluators.get(document as Document);
-	if (updaters === undefined) {
+// The lists with a listener, which are the only ones a viewport change
+// has anyone to tell. `matches` reads live, so a list without a listener
+// needs no bookkeeping and is the page's to drop. The resize path is the
+// one place a terminal viewport changes, so the engine decides when to
+// re-evaluate.
+const mediaQueryLists = new WeakMap<Document, Set<MediaQueryList>>();
+
+class MediaQueryList extends EventTarget {
+	readonly media: string;
+	[kMediaQueryDocument]: Document;
+	// The value the last "change" event reported, kept while a listener
+	// is on.
+	[kMediaQueryNotified]: boolean;
+
+	constructor(document: Document, media: string) {
+		super();
+		this.media = media;
+		this[kMediaQueryDocument] = document;
+		this[kMediaQueryNotified] = this.matches;
+	}
+
+	get matches(): boolean {
+		const attached = getAttachedDocument(this[kMediaQueryDocument]);
+		return (
+			attached !== undefined && attached[kCascade].mediaQueryMatches(this.media)
+		);
+	}
+
+	get onchange(): EventHandlerValue | null {
+		return getEventHandlerValue(this, "change");
+	}
+
+	set onchange(value: unknown) {
+		setEventHandler(this, "change", value);
+		trackMediaQueryListeners(this);
+	}
+
+	// The pre-2020 MediaQueryList API, which much deployed code still
+	// calls: plain aliases for the EventTarget pair.
+	addListener(callback: globalThis.EventListener | null): void {
+		if (callback) {
+			this.addEventListener("change", callback);
+		}
+	}
+
+	removeListener(callback: globalThis.EventListener | null): void {
+		if (callback) {
+			this.removeEventListener("change", callback);
+		}
+	}
+
+	override addEventListener(
+		type: string,
+		callback: globalThis.EventListenerOrEventListenerObject | null,
+		options?: globalThis.AddEventListenerOptions | boolean,
+	): void {
+		super.addEventListener(type, callback, options);
+		trackMediaQueryListeners(this);
+	}
+
+	override removeEventListener(
+		type: string,
+		callback: globalThis.EventListenerOrEventListenerObject | null,
+		options?: globalThis.EventListenerOptions | boolean,
+	): void {
+		super.removeEventListener(type, callback, options);
+		trackMediaQueryListeners(this);
+	}
+
+	[kSyncMediaQuery](): void {
+		const now = this.matches;
+		if (now === this[kMediaQueryNotified]) {
+			return;
+		}
+		this[kMediaQueryNotified] = now;
+		const event = new Event("change");
+		Object.defineProperties(event, {
+			matches: {value: now, enumerable: true},
+			media: {value: this.media, enumerable: true},
+		});
+		dispatchAsUserAgent(this, event);
+		trackMediaQueryListeners(this);
+	}
+}
+
+function trackMediaQueryListeners(list: MediaQueryList): void {
+	const document = list[kMediaQueryDocument];
+	let lists = mediaQueryLists.get(document);
+	if (list[kListeners].length === 0) {
+		lists?.delete(list);
 		return;
 	}
-	for (const update of updaters) {
-		update();
+	if (lists === undefined) {
+		lists = new Set();
+		mediaQueryLists.set(document, lists);
+	}
+	if (!lists.has(list)) {
+		list[kMediaQueryNotified] = list.matches;
+		lists.add(list);
+	}
+}
+
+/**
+ * Re-evaluate every listened-to media query list, firing "change" where
+ * one flipped.
+ */
+export function syncMediaQueries(document: globalThis.Document): void {
+	const lists = mediaQueryLists.get(document as Document);
+	if (lists === undefined) {
+		return;
+	}
+	for (const list of [...lists]) {
+		list[kSyncMediaQuery]();
 	}
 }
 
@@ -32223,52 +32325,11 @@ export class Window extends EventTarget {
 	// answer flips. That is the browser contract, and it is what makes
 	// responsive terminal layouts a matchMedia listener instead of a custom
 	// resize hook.
-	matchMedia(query: string): MediaQueryList {
-		const media = String(query);
-		const attached = getAttachedDocument(this.document);
-		const matches = (): boolean =>
-			attached !== undefined && attached[kCascade].mediaQueryMatches(media);
-		const list = new EventTarget();
-		// `matches` reads live. This holds the value the last "change" event
-		// reported.
-		let notified = matches();
-		installEventHandler(list, "onchange");
-		Object.defineProperties(list, {
-			media: {get: () => media, enumerable: true, configurable: true},
-			matches: {get: matches, enumerable: true, configurable: true},
-			// The pre-2020 MediaQueryList API, which much deployed code still
-			// calls: plain aliases for the EventTarget pair.
-			addListener: {
-				value: (callback: globalThis.EventListener | null) => {
-					if (callback) {
-						list.addEventListener("change", callback);
-					}
-				},
-				configurable: true,
-			},
-			removeListener: {
-				value: (callback: globalThis.EventListener | null) => {
-					if (callback) {
-						list.removeEventListener("change", callback);
-					}
-				},
-				configurable: true,
-			},
-		});
-		watchMediaQuery(this.document, () => {
-			const now = matches();
-			if (now === notified) {
-				return;
-			}
-			notified = now;
-			const event = new Event("change");
-			Object.defineProperties(event, {
-				matches: {value: now, enumerable: true},
-				media: {value: media, enumerable: true},
-			});
-			dispatchAsUserAgent(list, event);
-		});
-		return list as unknown as MediaQueryList;
+	matchMedia(query: string): globalThis.MediaQueryList {
+		return new MediaQueryList(
+			this.document,
+			String(query),
+		) as unknown as globalThis.MediaQueryList;
 	}
 
 	// Closes the terminal session the way closing a browser tab would.
@@ -32413,15 +32474,6 @@ export class Window extends EventTarget {
 
 function createBeforeUnloadEvent(): BeforeUnloadEvent {
 	return constructInternal(() => new BeforeUnloadEvent());
-}
-
-function watchMediaQuery(document: Document, update: () => void): void {
-	let updaters = mediaQueryEvaluators.get(document);
-	if (updaters === undefined) {
-		updaters = new Set();
-		mediaQueryEvaluators.set(document, updaters);
-	}
-	updaters.add(update);
 }
 
 // A window has both event handler mixins the HTML Standard gives it:
