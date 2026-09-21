@@ -339,6 +339,7 @@ interface PaintStyle {
 	overflowY: string;
 	textTransform: string;
 	whiteSpace: string;
+	tabSize: number;
 	cell: CellStyle;
 	shiftX: number;
 	shiftY: number;
@@ -479,6 +480,7 @@ function readPaintStyle(element: Element): PaintStyle {
 		overflowY: getComputedValue(element, "overflow-y") || overflow,
 		textTransform: getComputedValue(element, "text-transform"),
 		whiteSpace: getComputedValue(element, "white-space"),
+		tabSize: parseTabSize(getComputedValue(element, "tab-size")),
 		shiftX,
 		shiftY,
 		cell: {
@@ -536,6 +538,7 @@ interface Origin {
 
 interface TextFragment {
 	rect: Rect;
+	column: number;
 	startOffset: number;
 	endOffset: number;
 	visualBase: "ltr" | "rtl" | null;
@@ -693,6 +696,11 @@ export class Painter {
 			}
 		}
 	}
+}
+
+function parseTabSize(value: string): number {
+	const size = parseInt(value, 10);
+	return Number.isFinite(size) && size >= 0 ? size : 8;
 }
 
 function getPaintStyle(painter: Painter, element: Element): PaintStyle {
@@ -1327,6 +1335,7 @@ function resolveRun(
 			{
 				left: number;
 				right: number;
+				column: number;
 				start: number;
 				end: number;
 				visualBase: "ltr" | "rtl" | null;
@@ -1342,6 +1351,7 @@ function resolveRun(
 					textSpans.set(leaf.node, {
 						left,
 						right,
+						column: segment.x,
 						start: segment.dataStart,
 						end: segment.dataEnd,
 						visualBase: segment.visualBase,
@@ -1377,6 +1387,7 @@ function resolveRun(
 			}
 			fragments.push({
 				rect,
+				column: span.column,
 				startOffset: span.start,
 				endOffset: span.end,
 				visualBase: span.visualBase,
@@ -1449,6 +1460,7 @@ function paintText(
 			fragment.startOffset,
 			fragment.endOffset,
 			fragment.visualBase,
+			{tabSize: style.tabSize, column: fragment.column},
 		);
 		if (!text) {
 			continue;

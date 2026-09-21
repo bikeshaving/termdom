@@ -377,6 +377,13 @@ function shiftRenderedOffsets(
 	return identity;
 }
 
+// A fragment's tab stops count from the start of its line, so the
+// fragment's column there is what a preserved tab expands against.
+export interface TabStops {
+	tabSize: number;
+	column: number;
+}
+
 /** The characters one line fragment paints, in the line's visual order. */
 export function renderTextFragment(
 	data: string,
@@ -384,8 +391,14 @@ export function renderTextFragment(
 	startOffset: number,
 	endOffset: number,
 	visualBase?: "ltr" | "rtl" | null,
+	tabs?: TabStops,
 ): string {
-	const text = renderWhiteSpace(data.slice(startOffset, endOffset), whiteSpace);
+	let text = renderWhiteSpace(data.slice(startOffset, endOffset), whiteSpace);
+	if (
+		tabs !== undefined && text.includes("\t") && isSpacePreserving(whiteSpace)
+	) {
+		text = expandTabRun(text, null, tabs.tabSize, tabs.column).text;
+	}
 	return visualBase ? toVisualOrder(text, visualBase) : text;
 }
 
@@ -2576,6 +2589,10 @@ interface BreakPoint {
 interface LineFragment {
 	rect: DOMRect;
 
+	// Cells from the start of the line box, where a preserved tab's stops
+	// count from.
+	column: number;
+
 	// Data offset of the line's first character / caret slot.
 	startOffset: number;
 
@@ -2589,6 +2606,7 @@ const kRectTextIndices = Symbol("rectTextIndices");
 interface TextFragmentEntry {
 	line: number;
 	x: number;
+	column: number;
 	width: number;
 	text: string;
 	startOffset: number;
@@ -2602,6 +2620,7 @@ interface TextFragmentEntry {
 // node's data.
 interface RectText {
 	rect: DOMRect;
+	column: number;
 	text: string;
 	startOffset: number;
 	endOffset: number;
@@ -3165,6 +3184,89 @@ function breakNodes(
 	};
 }
 
+// A preserved tab advances to the next tab stop, measured in cells from
+// the start of its line across every leaf on it (css-text-3 §5.2). Each
+// space it becomes maps back to the tab's own data offset.
+function expandTabRun(
+	text: string,
+	offsets: Int32Array | null,
+	tabSize: number,
+	column: number,
+): {text: string; offsets: Int32Array; column: number} {
+	const mapped: number[] = [];
+	let expanded = "";
+	let lineStart = 0;
+	for (let i = 0; i < text.length; i++) {
+		const char = text[i];
+		if (char === "\t") {
+			column += getStringWidth(expanded.slice(lineStart));
+			const count = tabSize > 0 ? tabSize - (column % tabSize) : 0;
+			for (let k = 0; k < count; k++) {
+				expanded += " ";
+				mapped.push(getDataOffset(offsets, i));
+			}
+			column += count;
+			lineStart = expanded.length;
+		} else {
+			if (char === "\n") {
+				column = 0;
+				lineStart = expanded.length + 1;
+			}
+			expanded += char;
+			mapped.push(getDataOffset(offsets, i));
+		}
+	}
+	column += getStringWidth(expanded.slice(lineStart));
+	return {text: expanded, offsets: Int32Array.from(mapped), column};
+}
+
+// Collapsing leaves already rendered their tabs as spaces, so only the
+// preserving ones expand, at the column the leaves before them reached.
+function expandTabs(items: ProcessedContent["items"]): string {
+	let text = "";
+	let column = 0;
+	for (const item of items) {
+		const leaf = item.leafNode;
+		const start = text.length;
+		let content = item.processedContent;
+		if (content === undefined) {
+			content = leaf.type === "br" ? "\n" : "\uFFFC";
+		} else if (
+			leaf.type === "text" &&
+			content.includes("\t") &&
+			isSpacePreserving(getWhiteSpace(leaf.node))
+		) {
+			const expanded = expandTabRun(
+				content,
+				item.dataOffsets ?? null,
+				getTabSize(leaf.node),
+				column,
+			);
+			item.processedContent = expanded.text;
+			item.dataOffsets = expanded.offsets;
+			column = expanded.column;
+			text += expanded.text;
+			item.start = start;
+			item.end = text.length;
+			continue;
+		}
+		const newline = content.lastIndexOf("\n");
+		column = newline === -1
+			? column + getStringWidth(content)
+			: getStringWidth(content.slice(newline + 1));
+		text += content;
+		item.start = start;
+		item.end = text.length;
+	}
+	return text;
+}
+
+function getTabSize(textNode: Text): number {
+	const parent = flatParentElement(textNode);
+	const value = parent ? parseInt(getComputedValue(parent, "tab-size"), 10) : 8;
+	return Number.isFinite(value) && value >= 0 ? value : 8;
+}
+
 const kRenderedLeaves = Symbol("renderedLeaves");
 
 function renderLeaf(
@@ -3244,6 +3346,10 @@ function processWhitespace(
 			text += "\uFFFC";
 			items.push({leafNode: leaf, start, end: text.length});
 		}
+	}
+
+	if (text.includes("\t")) {
+		text = expandTabs(items);
 	}
 
 	// The spaces a run opens and closes on sit at a line's edge, and
@@ -3670,6 +3776,7 @@ function getBreakResultTextIndex(
 				entries.push({
 					line: lineIndex,
 					x: baseX + segment.x,
+					column: segment.x,
 					width: segment.width,
 					text: segment.processedText,
 					startOffset: segment.dataStart,
@@ -4774,6 +4881,7 @@ export class Layout {
 		for (const rectText of getRectTexts(this, textNode)) {
 			lines.push({
 				rect: rectText.rect,
+				column: rectText.column,
 				startOffset: rectText.startOffset,
 				endOffset: rectText.endOffset,
 				visualBase: rectText.visualBase,
@@ -4785,6 +4893,7 @@ export class Layout {
 			const last = lines[lines.length - 1].rect;
 			lines.push({
 				rect: new this[kDOMRect](last.x, last.y + last.height, 0, last.height),
+				column: 0,
 				startOffset: data.length,
 				endOffset: data.length,
 				visualBase: null,
@@ -4812,6 +4921,7 @@ export class Layout {
 							0,
 							this.getRect(parent)!.height || 1,
 						),
+						column: 0,
 						startOffset: 0,
 						endOffset: 0,
 						visualBase: null,
@@ -5532,6 +5642,8 @@ function getCaretRectInFragment(
 		getWhiteSpace(textNode),
 		line.startOffset,
 		Math.max(line.startOffset, Math.min(offset, line.endOffset)),
+		null,
+		{tabSize: getTabSize(textNode), column: line.column},
 	);
 	const x = Math.round(line.rect.x) + getStringWidth(before);
 	return new layout[kDOMRect](x, Math.round(line.rect.y), 0, line.rect.height);
@@ -5545,10 +5657,18 @@ function getOffsetInFragment(
 	fragment: LineFragment,
 	x: number,
 ): {offset: number; distance: number} {
-	const {text, offsets} = renderWhiteSpaceOffsets(
+	let {text, offsets} = renderWhiteSpaceOffsets(
 		textNode.data.slice(fragment.startOffset, fragment.endOffset),
 		whiteSpace,
 	);
+	if (text.includes("\t") && isSpacePreserving(whiteSpace)) {
+		({text, offsets} = expandTabRun(
+			text,
+			offsets,
+			getTabSize(textNode),
+			fragment.column,
+		));
+	}
 	let cellX = fragment.rect.x;
 	let index = 0;
 	for (const {segment} of graphemeSegmenter.segment(text)) {
@@ -5778,6 +5898,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 									if (nestedSegment.leaf.type === "text") {
 										rectTexts.push({
 											text: nestedSegment.processedText,
+											column: nestedSegment.x,
 											startOffset: nestedSegment.dataStart,
 											endOffset: nestedSegment.dataEnd,
 											visualBase: nestedSegment.visualBase,
@@ -5806,6 +5927,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 												if (innerSegment.leaf.type === "text") {
 													rectTexts.push({
 														text: innerSegment.processedText,
+														column: innerSegment.x,
 														startOffset: innerSegment.dataStart,
 														endOffset: innerSegment.dataEnd,
 														visualBase: innerSegment.visualBase,
@@ -6033,6 +6155,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		);
 		rectTexts.push({
 			rect,
+			column: first.column,
 			text: concatenatedText,
 			startOffset: first.startOffset,
 			endOffset: last.endOffset,

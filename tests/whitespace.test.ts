@@ -719,3 +719,45 @@ test("a pre span keeps its own spaces, and only its own", async () => {
 
 	dom.dispose();
 });
+
+test("a preserved tab advances to the next tab stop", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<pre>a\tb|</pre>" +
+		"<div style=\"white-space: pre; tab-size: 4\">ab\tc|\n\t\td|</div>" +
+		"<div style=\"white-space: pre; tab-size: 4\"><span>ab</span>" +
+		"<span>\tx|</span></div>" +
+		"<div style=\"white-space: pre; tab-size: 4\">漢\tb|</div>" +
+		"<div style=\"white-space: pre-wrap; tab-size: 2\">a\tb|</div>" +
+		"<div style=\"white-space: pre; tab-size: 0\">a\tb|</div>";
+	await nextFrame(dom);
+	const lines = terminal.getPlainText().split("\n").map((l) => l.trimEnd());
+	expect(lines.slice(0, 7)).toEqual([
+		"a       b|",
+		"ab  c|",
+		"        d|",
+		"ab  x|",
+		"漢  b|",
+		"a b|",
+		"ab|",
+	]);
+	dom.dispose();
+});
+
+test("the caret after a tab sits at the tab stop", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 4});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"white-space: pre; tab-size: 4\" contenteditable>ab\tc</div>";
+	await nextFrame(dom);
+	const text = dom.document.querySelector("div")!.firstChild!;
+	const range = dom.document.createRange();
+	const caretX = (offset: number): number => {
+		range.setStart(text, offset);
+		range.collapse(true);
+		return range.getBoundingClientRect().x;
+	};
+	expect([caretX(2), caretX(3), caretX(4)]).toEqual([2, 4, 5]);
+	dom.dispose();
+});
