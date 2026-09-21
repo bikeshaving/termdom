@@ -389,6 +389,19 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 }
 
 /**
+ * Poll until a condition holds, or give up after five seconds and let the
+ * assertion that follows report what was actually there. For waits on
+ * something that must happen: a sleep long enough to be reliable on a loaded
+ * machine is a sleep every run pays for.
+ */
+export async function until(condition: () => boolean): Promise<void> {
+	const deadline = Date.now() + 5000;
+	while (!condition() && Date.now() < deadline) {
+		await new Promise((r) => setTimeout(r, 10));
+	}
+}
+
+/**
  * Await the next painted frame. Rendering is automatic (the MutationObserver
  * drives it), so a test mutates the DOM and then awaits a frame -- exactly what a
  * page does with requestAnimationFrame, and the reason TermDOM has no public
