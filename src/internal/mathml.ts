@@ -829,6 +829,9 @@ const MATHML_WHITESPACE = new Set([" ", "\t", "\n", "\r"]);
 
 const TOKENS = new Set(["mi", "mn", "mo", "mtext", "ms"]);
 
+// The bars \overline and \underline write as accents.
+const BAR_ACCENTS = new Set(["‾", "¯", "ˉ", "_", "̄", "̅", "̲", "─"]);
+
 // The widest fraction, bar included, whose bar is an underline.
 const LONG_FRACTION = 12;
 
@@ -2161,6 +2164,24 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 			context,
 		);
 	}
+	// A bar over or under a wider base is a line on the base's edge, as a
+	// radical's is: an underline, an overline where the terminal draws
+	// one, or an underlined blank row above where it does not.
+	if (overNode !== undefined && isBarAccent(overNode)) {
+		result = context.overline
+			? overlineRow(result, 0, 0)
+			: stack(
+				createTextBox(" ".repeat(result.width), {underline: true}),
+				result,
+				"left",
+				result.baseline + 1,
+			);
+		overNode = undefined;
+	}
+	if (underNode !== undefined && isBarAccent(underNode)) {
+		result = underlineRow(result, result.height - 1, 0);
+		underNode = undefined;
+	}
 	const over = overNode === undefined
 		? null
 		: layoutUnderOverScript(result, overNode, scripts);
@@ -2775,15 +2796,37 @@ function placeInWidth(
 }
 
 function overlineRow(box: MathBox, row: number, from: number): MathBox {
+	return decorateRow(box, row, from, "overline");
+}
+
+function underlineRow(box: MathBox, row: number, from: number): MathBox {
+	return decorateRow(box, row, from, "underline");
+}
+
+function decorateRow(
+	box: MathBox,
+	row: number,
+	from: number,
+	line: "underline" | "overline",
+): MathBox {
 	let column = 0;
 	const cells = box.cells[row].map((cell) => {
 		const start = column;
 		column += cell.width;
 		return start < from
 			? cell
-			: {...cell, style: {...cell.style, overline: true}};
+			: {...cell, style: {...cell.style, [line]: true}};
 	});
 	return {...box, cells: box.cells.map((r, i) => (i === row ? cells : r))};
+}
+
+// An mo that is a bar: the accents \overline and \underline write.
+function isBarAccent(node: Node): boolean {
+	if (!isOperatorElement(node)) {
+		return false;
+	}
+	const text = collapseTokenText((node as Element).textContent ?? "");
+	return BAR_ACCENTS.has(text);
 }
 
 function underlineLastRow(box: MathBox): MathBox {
