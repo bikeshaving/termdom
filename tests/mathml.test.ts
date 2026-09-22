@@ -340,8 +340,8 @@ test("large operators stack their limits in display mode", async () => {
 		"<msup><mi>k</mi><mn>2</mn></msup>";
 	expect(await renderMarked(block(sum), 12)).toEqual([
 		"   _n_",
-		"   ╲   k²",
-		"   ╱__",
+		"   ╲",
+		"   ╱__ k²",
 		"   k=1",
 	]);
 	expect(await renderLines(inline(sum))).toEqual(["a ∑ₖ₌₁ⁿ k² z"]);
@@ -671,7 +671,7 @@ test("a large operator keeps its spacing through its scripts, but not inside a f
 			),
 			12,
 		),
-	).toEqual(["  │___  │", "  │╲   a│", "  │╱__  │", "  │ i   │"]);
+	).toEqual(["  │___  │", "  │╲    │", "  │╱__ a│", "  │ i   │"]);
 });
 
 test("double-struck letters use the letterlike block without the variant flag", async () => {
