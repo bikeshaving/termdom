@@ -1052,7 +1052,6 @@ export class Exchange extends EventTarget {
 			// anchor.
 			read: ({row}) => {
 				this[kScreen].documentTop = row - 1;
-				this[kScreen].anchorScrollTop = 1 - row;
 				this[kHasDetectedAnchor] = true;
 				return row;
 			},
@@ -1523,7 +1522,6 @@ function handleResize(session: Exchange): void {
 	// The frame now starts at startRow. Repaint it from there.
 	const redraw = (startRow: number) => {
 		screen.documentTop = startRow;
-		screen.anchorScrollTop = -startRow;
 		screen.replaced(startRow);
 		requestRender(session[kWindow].document);
 

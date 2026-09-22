@@ -720,10 +720,13 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 	// False above the painted region, meaning a shell prompt's rows.
 	isInDocument: boolean;
 } {
+	// Fullscreen paints from the alternate screen's first row, whatever row
+	// the command started on.
 	const screen = input[kScreen];
-	const documentRow = input[kDocument].fullscreenElement !== null
-		? row - 1 + screen.anchorScrollTop
-		: row - 1 - screen.documentTop + screen.scrollTop;
+	const top = input[kDocument].fullscreenElement === null
+		? screen.documentTop
+		: 0;
+	const documentRow = row - 1 - top + screen.scrollTop;
 	const isInDocument = documentRow >= 0;
 	return {x: col - 1, y: isInDocument ? documentRow : 0, isInDocument};
 }
@@ -732,18 +735,18 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 // scroll does. True when the tick escaped past both. A document taller
 // than the screen is a scrolling surface that keeps the wheel, and its
 // top is a stop, as an editor's is; one that fits has nothing to scroll,
-// so the wheel goes to the terminal's scrollback.
+// so the wheel goes to the terminal's scrollback. Fullscreen has no
+// document scroll to move, so a tick past every scroller does nothing.
 function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	const scroller = getWheelScroller(input, target, deltaY);
 	if (scroller) {
 		scroller.scrollTop += deltaY;
 		return false;
 	}
-	if (
-		deltaY < 0 &&
-		input[kScreen].scrollTop === 0 &&
-		input[kDocument].fullscreenElement === null
-	) {
+	if (input[kDocument].fullscreenElement !== null) {
+		return false;
+	}
+	if (deltaY < 0 && input[kScreen].scrollTop === 0) {
 		return input[kLayout].documentPaintHeight() <= input[kScreen].rows;
 	}
 	input[kScreen].scrollTo(input[kScreen].scrollTop + deltaY);
