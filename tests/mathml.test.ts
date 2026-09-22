@@ -270,7 +270,7 @@ test("a fraction beside an equals sign shares its baseline with the bar", async 
 		block("<mi>y</mi><mo>=</mo><mfrac><mi>a</mi><mi>b</mi></mfrac>"),
 		20,
 	);
-	expect(lines).toEqual(["      y = _a_", "           b"]);
+	expect(lines).toEqual(["          _a_", "      y =  b"]);
 });
 
 test("linethickness=0 leaves an empty bar row", async () => {
@@ -351,7 +351,7 @@ test("stretchy fences grow to the height of their siblings", async () => {
 	expect(
 		await renderMarked(block(`<mo>∫</mo>${fraction}<mi>dx</mi>`), 12),
 	).toEqual(
-		["  ⌠", "  ⎮ _a_dx", "  ⌡  b"],
+		["  ⌠ _a_", "  ⎮  b dx", "  ⌡"],
 	);
 	expect(await renderLines(inline(`<mo>(</mo>${fraction}<mo>)</mo>`))).toEqual([
 		"a (a/b) z",
@@ -435,7 +435,7 @@ test("table rows align on their tallest cell's baseline", async () => {
 		),
 		10,
 	);
-	expect(lines).toEqual(["  _a_ x", "   b"]);
+	expect(lines).toEqual(["  _a_", "   b  x"]);
 });
 
 test("frame, rowlines and columnlines draw box-drawing rules", async () => {
@@ -524,7 +524,7 @@ test("stretchy=false keeps a fence plain and minsize grows one", async () => {
 			),
 			10,
 		),
-	).toEqual(["  (_a_)", "    b"]);
+	).toEqual(["   _a_", "  ( b )"]);
 	expect(
 		await renderMarked(block("<mo minsize=\"3\">(</mo><mi>x</mi>"), 10),
 	).toEqual(
@@ -618,8 +618,8 @@ test("golden: Euler's identity", async () => {
 
 test("golden: the Navier-Stokes momentum equation", async () => {
 	expect(await renderMarked(block(NAVIER_STOKES))).toEqual([
-		"    ρ⎛_∂u_ + u⋅∇u⎞ = -∇p + μ∇²u + f",
-		"     ⎝ ∂t        ⎠",
+		"     ⎛_∂u_       ⎞",
+		"    ρ⎝ ∂t  + u⋅∇u⎠ = -∇p + μ∇²u + f",
 	]);
 	expect(await renderLines(`<math>${NAVIER_STOKES}</math>`)).toEqual([
 		"ρ((∂u)/(∂t) + u⋅∇u) = -∇p + μ∇²u + f",
@@ -663,7 +663,7 @@ test("a function name takes a thin space before its argument, not its parenthesi
 			),
 			12,
 		),
-	).toEqual(["  lim _1_", "   n   n"]);
+	).toEqual(["      _1_", "  lim  n", "   n"]);
 });
 
 test("blank mtext is one cell and stands in for an operator's gap", async () => {

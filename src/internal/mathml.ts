@@ -2700,7 +2700,16 @@ function layoutFraction(element: Element, context: MathContext): MathBox {
 				top.height,
 			)
 			: underlineLastRow(top);
-	return stack(barred, bottom, "left", barred.baseline);
+	// An underlined bar is the seam under the numerator, and what stands
+	// beside the fraction sits just below it, on the denominator's row,
+	// as text sits just below the axis in print. A bar row is its own
+	// row, and the neighbors sit on it.
+	return stack(
+		barred,
+		bottom,
+		"left",
+		barred.height === top.height ? barred.height : barred.baseline,
+	);
 }
 
 // A box in a field, centered by its operand with a negation sign
