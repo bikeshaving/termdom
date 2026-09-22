@@ -16,6 +16,7 @@ import {
 	placeTextControlCaret,
 	requestRender,
 	setDocumentFocusVisible,
+	setDocumentVisible,
 	setHoveredElement,
 	setUASelection,
 	topmostModalDialog,
@@ -310,6 +311,7 @@ const kMouseDownTarget = Symbol("mouseDownTarget");
 const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
 const kTextControlDragAnchor = Symbol("textControlDragAnchor");
+const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 const kClickCount = Symbol("clickCount");
@@ -336,6 +338,12 @@ export interface Input {
 	} | null;
 
 	[kHoverElement]: Element | null;
+	// The document scroll hit its top and the user kept scrolling up, so
+	// the wheel belongs to the terminal's scrollback until the next
+	// keystroke: terminals snap to the live screen on input, and none
+	// says when the user has scrolled back down by hand. The document is
+	// hidden meanwhile, as a page in a background tab is.
+	[kMouseCaptureYielded]: boolean;
 	// A mouseup on the same element is a click.
 	[kMouseDownTarget]: Element | null;
 	[kPopoverPressTarget]: Element | null;
@@ -374,9 +382,14 @@ export class Input {
 		this[kPopoverPressTarget] = null;
 		this[kSelectionDragAnchor] = null;
 		this[kTextControlDragAnchor] = null;
+		this[kMouseCaptureYielded] = false;
 		this[kLastClickTarget] = null;
 		this[kLastClickTime] = 0;
 		this[kClickCount] = 0;
+	}
+
+	get mouseCaptureYielded(): boolean {
+		return this[kMouseCaptureYielded];
 	}
 
 	dispose(): void {}
@@ -552,8 +565,13 @@ function deliverMouseReport(input: Input, {
 				cancelable: true,
 			}),
 		);
-		if (notCanceled) {
-			scrollByWheel(input, target, wheelDeltaY);
+		if (notCanceled && scrollByWheel(input, target, wheelDeltaY)) {
+			// Scroll chaining. The parent scroller is the terminal's own
+			// scrollback, so the mouse is yielded to it. preventDefault on
+			// the wheel event opts out, as in a browser.
+			input[kMouseCaptureYielded] = true;
+			setDocumentVisible(input[kDocument], false);
+			requestRender(input[kDocument]);
 		}
 		return;
 	}
@@ -647,7 +665,14 @@ function deliverPaste(input: Input, text: string): void {
 	requestRender(input[kDocument]);
 }
 
+// A keystroke also means the terminal has snapped back to the live
+// screen, so the mouse is taken back before the key is delivered.
 function deliverKeys(input: Input, keys: WireKey[]): void {
+	if (input[kMouseCaptureYielded]) {
+		input[kMouseCaptureYielded] = false;
+		setDocumentVisible(input[kDocument], true);
+		requestRender(input[kDocument]);
+	}
 	for (const key of keys) {
 		dispatchKey(input, key);
 	}
@@ -704,18 +729,24 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 }
 
 // The nearest scroller that can move takes the tick, else the document
-// scroll does. The document top is a stop: the mouse stays with the
-// app for as long as it runs, as it does under less --mouse or vim, and
-// the terminal's own scrollback is the terminal's to reach, with
-// whatever modifier it gives the wheel for that.
-function scrollByWheel(input: Input, target: Element, deltaY: number): void {
+// scroll does. True when the tick escaped past both: the document was
+// already at its top.
+function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	const scroller = getWheelScroller(input, target, deltaY);
 	if (scroller) {
 		scroller.scrollTop += deltaY;
-		return;
+		return false;
+	}
+	if (
+		deltaY < 0 &&
+		input[kScreen].scrollTop === 0 &&
+		input[kDocument].fullscreenElement === null
+	) {
+		return true;
 	}
 	input[kScreen].scrollTo(input[kScreen].scrollTop + deltaY);
 	requestRender(input[kDocument]);
+	return false;
 }
 
 function dragTo(

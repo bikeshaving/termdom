@@ -79,8 +79,9 @@ While attached to the process transport, the Node event loop stays alive
 until `dispose()` or `window.close()`.
 
 `document.visibilityState` is `"hidden"` before `attach()`, `"visible"`
-until `dispose()`, and `"hidden"` after. `visibilitychange` fires on each
-change.
+until `dispose()`, and `"hidden"` after. It is also `"hidden"` while the
+wheel has been handed to the terminal's scrollback, until the next
+keystroke. `visibilitychange` fires on each change.
 
 Passing a transport rebinds the instance to it, only before the first
 attach.
