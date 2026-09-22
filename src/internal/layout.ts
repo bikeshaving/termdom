@@ -172,13 +172,24 @@ function isGridDisplay(display: Display): boolean {
 	return display === "grid" || display === "inline-grid";
 }
 
+// The element whose box holds this node's box. display: contents
+// generates no box, so its children belong to the nearest ancestor
+// that does (css-display-3 §2.5).
+export function boxParentElement(node: Node): Element | null {
+	let parent = flatParentElement(node);
+	while (parent !== null && isDisplayContents(parent)) {
+		parent = flatParentElement(parent);
+	}
+	return parent;
+}
+
 function hasFlexParent(element: Element): boolean {
-	const parent = element.parentElement;
+	const parent = boxParentElement(element);
 	return parent !== null && getComputedDisplay(parent) === "flex";
 }
 
 export function hasItemParent(element: Element): boolean {
-	const parent = element.parentElement;
+	const parent = boxParentElement(element);
 	return parent !== null && hasItemChildren(getComputedDisplay(parent));
 }
 
@@ -243,7 +254,7 @@ function isSplitAroundBlock(element: Element): boolean {
 	}
 	// A grid item is already a block container. Handing its content to the
 	// grid would put its own children in cells of their own.
-	const parent = element.parentElement;
+	const parent = boxParentElement(element);
 	if (parent && isGridDisplay(getComputedDisplay(parent))) {
 		return false;
 	}
@@ -478,7 +489,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 // rendered, or multi-line markup's indentation eats gap and
 // justify-content space.
 function isSuppressedFlexWhitespace(text: Text): boolean {
-	const parent = text.parentElement;
+	const parent = boxParentElement(text);
 	if (!parent) {
 		return false;
 	}
@@ -918,7 +929,7 @@ function styleLayoutNodeProperties(
 	// masked by flex sizing.
 	if (display === "inline-block" && hasFlexParent(element)) {
 		const direction = getComputedValue(
-			element.parentElement!,
+			boxParentElement(element)!,
 			"flex-direction",
 		);
 		const crossEdges: readonly Edge[] =
@@ -2222,7 +2233,7 @@ function flatFirstRenderableChild(element: Element): Node | null {
 // Then the flex algorithm, not the element's own CSS width, owns its
 // used width.
 function isRowFlexItem(element: Element): boolean {
-	const parent = flatParentElement(element);
+	const parent = boxParentElement(element);
 	if (!parent) {
 		return false;
 	}
