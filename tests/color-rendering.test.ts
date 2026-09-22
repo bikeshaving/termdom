@@ -435,3 +435,19 @@ test("a zero-alpha modern rgb() paints nothing", async () => {
 
 	dom.dispose();
 });
+
+test("a link paints in LinkText, underlined; a bare anchor is plain text", async () => {
+	const terminal = new MockProcess({rows: 3, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<a href=\"https://example.com\">link</a> <a>anchor</a>";
+	await nextFrame(dom);
+
+	const cellAt = (col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(0).getCell(col);
+	expect(cellAt(0).getFgColor()).toBe(0x0000ff);
+	expect(cellAt(0).isUnderline()).toBeTruthy();
+	expect(cellAt(5).isFgDefault()).toBeTruthy();
+	expect(cellAt(5).isUnderline()).toBeFalsy();
+	dom.dispose();
+});
