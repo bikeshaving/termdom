@@ -893,3 +893,24 @@ test("white-space: pre keeps whitespace items, per spec", async () => {
 	);
 	dom.dispose();
 });
+
+test("children of a display: contents element are the flex container's items", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `
+		<div style="display: flex; gap: 1ch">
+			<div style="display: contents"><span style="order: 1">A</span><span>B</span></div>
+			<span>C</span>
+		</div>
+		<div style="display: flex; gap: 1ch">
+			<div style="display: contents"><input type="checkbox"><button style="order: 1">x</button></div>
+			<input type="text" value="edit" style="width: auto">
+		</div>
+	`;
+	await nextFrame(dom);
+	const lines = terminal.getPlainText().split("\n").map((l) => l.trimEnd());
+	expect(lines[0]).toBe("B C A");
+	expect(lines[1]).toBe("[ ] edit [ x ]");
+	dom.dispose();
+});
