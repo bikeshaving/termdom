@@ -27,10 +27,17 @@ async function renderLines(html: string, cols = 40): Promise<string[]> {
 	return lines;
 }
 
-// The lines with an underlined blank cell shown as _: the bars of a
-// drawn sum and a radical are underlines, flush with the strokes.
+// The lines with an underlined blank cell shown as _ and an overlined
+// one as ‾: the bars of a drawn sum and a radical are underlines and
+// overlines, flush with the strokes.
 async function renderMarked(html: string, cols = 40): Promise<string[]> {
 	const {dom, terminal} = await render(html, cols);
+	const lines = readMarked(terminal);
+	dom.dispose();
+	return lines;
+}
+
+function readMarked(terminal: MockProcess): string[] {
 	const buffer = (terminal as any).terminal.buffer.active;
 	const lines: string[] = [];
 	for (let y = 0; y < terminal.stdout.rows; y++) {
@@ -42,15 +49,29 @@ async function renderMarked(html: string, cols = 40): Promise<string[]> {
 				continue;
 			}
 			const chars = cell.getChars() || " ";
-			text += chars === " " && cell.isUnderline() ? "_" : chars;
+			text += chars !== " "
+				? chars
+				: cell.isUnderline() ? "_" : cell.isOverline() ? "‾" : " ";
 		}
 		lines.push(text.trimEnd());
 	}
-	dom.dispose();
 	while (lines.length > 0 && lines[lines.length - 1] === "") {
 		lines.pop();
 	}
 	return lines;
+}
+
+// The cells of a row the terminal shows overlined.
+function overlined(terminal: MockProcess, row: number): string {
+	const line = (terminal as any).terminal.buffer.active.getLine(row);
+	let text = "";
+	for (let x = 0; x < terminal.stdout.columns; x++) {
+		const cell = line?.getCell(x);
+		if (cell && cell.getWidth() !== 0 && cell.isOverline()) {
+			text += cell.getChars() || " ";
+		}
+	}
+	return text;
 }
 
 async function renderANSI(html: string): Promise<string> {
@@ -343,8 +364,8 @@ test("large operators stack their limits in display mode", async () => {
 		"<msup><mi>k</mi><mn>2</mn></msup>";
 	expect(await renderMarked(block(sum), 12)).toEqual([
 		"   _n_",
-		"   ╲",
-		"   ╱__ k²",
+		"   ╲   k²",
+		"   ╱__",
 		"   k=1",
 	]);
 	expect(await renderLines(inline(sum))).toEqual(["a ∑ₖ₌₁ⁿ k² z"]);
@@ -674,7 +695,7 @@ test("a large operator keeps its spacing through its scripts, but not inside a f
 			),
 			12,
 		),
-	).toEqual(["  │___  │", "  │╲    │", "  │╱__ a│", "  │ i   │"]);
+	).toEqual(["  │___  │", "  │╲   a│", "  │╱__  │", "  │ i   │"]);
 });
 
 test("double-struck letters use the letterlike block without the variant flag", async () => {
@@ -710,4 +731,48 @@ test("a column lines up its operands under a hanging negation sign", async () =>
 			12,
 		),
 	).toEqual(["  -sin  1", "   cos -10"]);
+});
+
+test("bars become overlines once the terminal reports SGR 53 through DECRQSS", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const output = captureRawOutput(terminal);
+	// The mock terminal answers DECRQSS with a style that leaves 53 out.
+	// A terminal that draws overlines keeps it in.
+	const stdin =
+		terminal.stdin as unknown as {emit(event: string, data: Buffer): boolean};
+	const emit = stdin.emit.bind(stdin);
+	let answered = false;
+	stdin.emit = (event: string, data: Buffer) => {
+		const text = data.toString();
+		if (event === "data" && text.includes("\x1bP1$r0m\x1b\\")) {
+			answered = true;
+			return emit(
+				event,
+				Buffer.from(text.replace("\x1bP1$r0m\x1b\\", "\x1bP1$r0;53m\x1b\\")),
+			);
+		}
+		return emit(event, data);
+	};
+	const dom = new TermDOM({transport: terminal.transport});
+	const sum =
+		"<munderover><mo>∑</mo><mi>i</mi><mi>n</mi></munderover><mi>a</mi>";
+	dom.document.body.innerHTML =
+		block("<msqrt><mi>x</mi><mo>+</mo><mn>1</mn></msqrt>") + block(sum);
+	await nextFrame(dom);
+	// The probe sets the attribute, asks for the style, and resets it.
+	expect(output()).toContain("\x1b[53m\x1bP$qm\x1b\\\x1b[55m");
+	expect(answered).toBe(true);
+	await nextFrame(dom);
+	// The radical needs no row for its bar, and the sum none for its
+	// top bar, which its first stroke carries.
+	expect(readMarked(terminal)).toEqual([
+		"            ⎷x‾+‾1",
+		"             n",
+		"            ╲‾‾ a",
+		"            ╱__",
+		"             i",
+	]);
+	expect(overlined(terminal, 0)).toBe("x + 1");
+	expect(overlined(terminal, 2)).toBe("╲  ");
+	dom.dispose();
 });

@@ -122,12 +122,14 @@ test("no text in a document puts a control byte on the wire", async () => {
 
 			// The bytes the engine never emits for itself. ESC is not among
 			// them -- the engine's own CSI and SGR output is made of them --
-			// so the attacker's ESC-led sequences are checked whole below.
+			// so the attacker's ESC-led sequences are checked whole below,
+			// with the engine's one DCS, the fixed overline probe, set aside.
+			const out = raw().split("\x1b[53m\x1bP$qm\x1b\\\x1b[55m").join("");
 			for (const byte of [0x9b, 0x9d, 0x90, 0x07, 0x08, 0x00, 0x7f]) {
-				expect(raw().includes(String.fromCharCode(byte))).toBe(false);
+				expect(out.includes(String.fromCharCode(byte))).toBe(false);
 			}
 			for (const opener of ["\x1b]", "\x1bP", "\x1b[2J"]) {
-				expect(raw().includes(opener)).toBe(false);
+				expect(out.includes(opener)).toBe(false);
 			}
 
 			// Liveness: every check above passes on a frame that painted

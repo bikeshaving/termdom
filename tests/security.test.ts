@@ -24,6 +24,10 @@ const FORBIDDEN_BYTES: number[] = [
 // Whole attacker sequences that must never appear intact in the output.
 const FORBIDDEN_SEQUENCES = ["\x1b]0;", "\x1b[2J", "\x1b]", "\x1bP"];
 
+// The one DCS the engine writes for itself: the overline probe, a fixed
+// string with nothing of the document in it.
+const OVERLINE_PROBE = "\x1b[53m\x1bP$qm\x1b\\\x1b[55m";
+
 // Each payload with the row it must paint: the control characters gone and
 // every other character kept. Asserting the row is what catches a control
 // character that reached a CELL -- a lone ESC forms none of the sequences
@@ -58,7 +62,7 @@ for (const [payload, painted] of PAYLOADS) {
 			// need: every one of them passes on a frame that painted nothing.
 			expect(t.getVisibleText().split("\n")[0]).toBe(painted);
 
-			const out = raw();
+			const out = raw().split(OVERLINE_PROBE).join("");
 			for (const byte of FORBIDDEN_BYTES) {
 				expect(out.includes(String.fromCharCode(byte))).toBe(false);
 			}

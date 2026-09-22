@@ -56,6 +56,7 @@ export interface RadicalPieces {
 export interface GlyphRow {
 	text: string;
 	underline: boolean;
+	overline?: boolean;
 }
 
 const UNICODE_VERTICAL: Record<string, VerticalPieces> = {
@@ -344,10 +345,18 @@ export function getRadical(glyphs: GlyphSet): RadicalPieces {
 }
 
 // The rows a large operator takes in display mode, where print sets it
-// bigger than the text: three, the least that draws one. Zero for an
-// operator with no pieces to draw.
-export function getDisplayHeight(op: string, glyphs: GlyphSet): number {
-	return op === "∑" || op === "∏" || op in TABLES[glyphs].vertical ? 3 : 0;
+// bigger than the text: the least that draws one. A sum whose top bar
+// is an overline on its first stroke needs no row for the bar. Zero
+// for an operator with no pieces to draw.
+export function getDisplayHeight(
+	op: string,
+	glyphs: GlyphSet,
+	overline: boolean,
+): number {
+	if (op === "∑") {
+		return overline && glyphs !== "ascii" ? 2 : 3;
+	}
+	return op === "∏" || op in TABLES[glyphs].vertical ? 3 : 0;
 }
 
 /**
@@ -387,9 +396,10 @@ export function buildVerticalGlyph(
 	height: number,
 	baseline: number,
 	glyphs: GlyphSet,
+	overline = false,
 ): GlyphRow[] | null {
 	if (op === "∑") {
-		return buildSum(height, glyphs);
+		return buildSum(height, glyphs, overline);
 	}
 	if (op === "∏") {
 		return plainRows(buildProduct(height, glyphs));
@@ -442,14 +452,16 @@ export function buildHorizontalGlyph(
 	return pieces.left + pieces.filler.repeat(width - 2) + pieces.right;
 }
 
-// Two rows are the Unicode pieces. Taller sums take the shape SymPy
-// draws, a backslash and slash meeting in the middle between two bars.
-// The bars are underlines: one on a row of its own above the strokes
-// and one on the last stroke's row, each flush with the strokes.
-function buildSum(height: number, glyphs: GlyphSet): GlyphRow[] {
-	if (height === 2 && glyphs === "unicode") {
-		return plainRows(["⎲", "⎳"]);
-	}
+// The shape SymPy draws, a backslash and slash meeting in the middle
+// between two bars, each flush with the strokes. The bottom bar is an
+// underline on the last stroke's row. The top bar is an overline on
+// the first stroke's row when the terminal draws one, and otherwise an
+// underline on a row of its own above.
+function buildSum(
+	height: number,
+	glyphs: GlyphSet,
+	overline: boolean,
+): GlyphRow[] {
 	if (glyphs === "ascii") {
 		return plainRows([
 			"___",
@@ -457,9 +469,12 @@ function buildSum(height: number, glyphs: GlyphSet): GlyphRow[] {
 			"---",
 		]);
 	}
-	const rows: GlyphRow[] = [{text: "   ", underline: true}];
-	for (const text of buildStrokes(height - 1, "╲", "╱")) {
+	const rows: GlyphRow[] = overline ? [] : [{text: "   ", underline: true}];
+	for (const text of buildStrokes(height - rows.length, "╲", "╱")) {
 		rows.push({text, underline: false});
+	}
+	if (overline) {
+		rows[0].overline = true;
 	}
 	rows[rows.length - 1].underline = true;
 	return rows;
