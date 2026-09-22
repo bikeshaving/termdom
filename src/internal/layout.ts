@@ -3743,6 +3743,9 @@ function getAbsolutePosition(
 	const body = document.body;
 	let x = 0;
 	let y = 0;
+	// A fixed box sits still while the scrollers above it scroll, and so
+	// does everything inside it.
+	let fixed = false;
 	for (
 		let current: LayoutNode | null = layoutNode;
 		current;
@@ -3750,7 +3753,7 @@ function getAbsolutePosition(
 	) {
 		x += current.result.left;
 		y += current.result.top;
-		if (current !== layoutNode) {
+		if (current !== layoutNode && !fixed) {
 			const node = current.owner as Node | undefined;
 			if (
 				node &&
@@ -3761,6 +3764,9 @@ function getAbsolutePosition(
 				x -= (node as Element).scrollLeft || 0;
 				y -= (node as Element).scrollTop || 0;
 			}
+		}
+		if (current.style.positionType === "fixed") {
+			fixed = true;
 		}
 	}
 	return {x, y};
@@ -4679,9 +4685,14 @@ export class Layout {
 		const body = document.body;
 		let rows = 0;
 		for (
-			let current = layoutNode.parent; current; current = current.parent
+			let current: LayoutNode | null = layoutNode;
+			current;
+			current = current.parent
 		) {
-			const node = current.owner as Node | undefined;
+			if (current.style.positionType === "fixed") {
+				break;
+			}
+			const node = current.parent?.owner as Node | undefined;
 			if (
 				node &&
 				node.nodeType === node.ELEMENT_NODE &&
