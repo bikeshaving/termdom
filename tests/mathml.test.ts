@@ -339,8 +339,7 @@ test("large operators stack their limits in display mode", async () => {
 		"<munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>" +
 		"<msup><mi>k</mi><mn>2</mn></msup>";
 	expect(await renderMarked(block(sum), 12)).toEqual([
-		"    n",
-		"   ___",
+		"   _n_",
 		"   ╲   k²",
 		"   ╱__",
 		"   k=1",

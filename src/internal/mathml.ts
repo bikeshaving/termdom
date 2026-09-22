@@ -1183,9 +1183,38 @@ function attachUnderOver(
 			getTokenStyle(node as Element, null),
 		)
 		: layoutNode(node, context);
+	if (side === "over" && script.height === 1 && hasBarOnTop(base)) {
+		return setOnBar(base, script);
+	}
 	return side === "over"
 		? stack(script, base, "center", base.baseline + script.height)
 		: stack(base, script, "center", base.baseline);
+}
+
+// A drawn sum's top row is blank and underlined: a bar with room on it.
+function hasBarOnTop(box: MathBox): boolean {
+	return (
+		box.height > 1 &&
+		box.cells[0].every((cell) => cell.text === " " && cell.style?.underline)
+	);
+}
+
+// The upper limit sits on the bar row, underlined where the bar runs,
+// so the bar is drawn under it and the sum keeps its height.
+function setOnBar(base: MathBox, script: MathBox): MathBox {
+	const width = Math.max(base.width, script.width);
+	const wide = widenBox(base, width, "center");
+	const limit = widenBox(script, width, "center");
+	const top = wide.cells[0].map((cell, index) => {
+		const over = limit.cells[0][index];
+		if (over.text === " " && over.style == null) {
+			return cell;
+		}
+		return cell.style?.underline
+			? {...over, style: {...over.style, underline: true}}
+			: over;
+	});
+	return {...wide, cells: [top, ...wide.cells.slice(1)]};
 }
 
 /**
