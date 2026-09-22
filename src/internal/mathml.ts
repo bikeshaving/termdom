@@ -13,9 +13,10 @@ import {
 	buildHorizontalGlyph,
 	buildVerticalGlyph,
 	getBoxLines,
+	getDisplayHeight,
 	getFractionBar,
-	getOverline,
 	getRadical,
+	type GlyphRow,
 	type GlyphSet,
 	hasHorizontalPieces,
 	hasVerticalPieces,
@@ -328,6 +329,10 @@ function layoutTextToken(
 	context: MathContext,
 ): MathBox {
 	let collapsed = collapseTokenText(text).replace(INVISIBLE_OPERATORS, "");
+	const large = getLargeOperatorRows(element, collapsed, context);
+	if (large !== null) {
+		return large;
+	}
 	let variant = getMathVariant(element);
 	if (
 		variant === null &&
@@ -354,6 +359,37 @@ function layoutTextToken(
 		toPlainGlyphs(collapsed, context.glyphs),
 		getTokenStyle(element, variant === null ? null : {bold, italic}),
 	);
+}
+
+// A large operator at display size: rows for the print convention
+// that sets a sum or integral bigger than the text around it. Null
+// where the text size holds: inline, in a script, or with no pieces.
+function getLargeOperatorRows(
+	element: Element,
+	text: string,
+	context: MathContext,
+): MathBox | null {
+	if (
+		!context.display ||
+		context.tight ||
+		!isOperatorElement(element) ||
+		!lookupOperator(text, "prefix").largeop
+	) {
+		return null;
+	}
+	const height = getDisplayHeight(text, context.glyphs);
+	if (height < 2) {
+		return null;
+	}
+	const baseline = getLargeOperatorBaseline(height);
+	const rows = buildVerticalGlyph(text, height, baseline, context.glyphs);
+	return rows === null
+		? null
+		: createRowsBox(rows, baseline, getTokenStyle(element, null));
+}
+
+function getLargeOperatorBaseline(height: number): number {
+	return (height - 1) >> 1;
 }
 
 interface AlphanumericRange {
@@ -600,9 +636,12 @@ function getOperator(element: Element, index: number, count: number): Operator {
 	const text = collapseTokenText(element.textContent ?? "");
 	const form = getOperatorForm(element, index, count);
 	const found = lookupOperator(text, form);
+	// A fence the author marked as one stretches, whatever the
+	// dictionary says of the character.
+	const fence = readFlag(element, "fence", false);
 	const entry: OperatorEntry = {
 		...found,
-		stretchy: readFlag(element, "stretchy", found.stretchy),
+		stretchy: readFlag(element, "stretchy", found.stretchy || fence),
 		symmetric: readFlag(element, "symmetric", found.symmetric),
 		largeop: readFlag(element, "largeop", found.largeop),
 		accent: readFlag(element, "accent", found.accent),
@@ -614,7 +653,7 @@ function getOperator(element: Element, index: number, count: number): Operator {
 		text,
 		entry,
 		form,
-		fence: readFlag(element, "fence", false),
+		fence,
 		gapBefore:
 			(infix && readSpace(element, "lspace", found.lspace) >= 0.2) ||
 			entry.largeop,
@@ -697,11 +736,12 @@ function isFence(operator: Operator, side: "prefix" | "postfix"): boolean {
 }
 
 function isBlankBox(box: MathBox): boolean {
+	return box.width > 0 && box.cells.every((row) => row.every(isBlankCell));
+}
+
+export function isBlankCell(cell: MathCell): boolean {
 	return (
-		box.width > 0 &&
-		box.cells.every((row) =>
-			row.every((cell) => cell.text === " " && cell.style?.bg == null),
-		)
+		cell.text === " " && cell.style?.bg == null && !cell.style?.underline
 	);
 }
 
@@ -803,10 +843,10 @@ function getSpacing(
 	if (
 		spacing.entry.largeop &&
 		context.display &&
-		box.width > 1 &&
 		(element.localName === "munder" ||
 			element.localName === "mover" ||
-			element.localName === "munderover")
+			element.localName === "munderover") &&
+		box.width > layoutNode(core, context).width
 	) {
 		return {...spacing, gapBefore: false, gapAfter: false};
 	}
@@ -839,6 +879,9 @@ function layoutStretchedOperator(
 	context: MathContext,
 ): MathBox {
 	let height = ascent + descent + 1;
+	if (operator.entry.largeop && !context.tight) {
+		height = Math.max(height, getDisplayHeight(operator.text, context.glyphs));
+	}
 	const minsize = parseMathLength(element.getAttribute("minsize"));
 	const maxsize = parseMathLength(element.getAttribute("maxsize"));
 	if (minsize !== null) {
@@ -847,9 +890,12 @@ function layoutStretchedOperator(
 	if (maxsize !== null) {
 		height = Math.min(height, Math.max(1, Math.round(maxsize)));
 	}
-	// Rows minsize adds go half above and half below.
+	// Rows minsize adds go half above and half below; a large operator
+	// taller than its siblings keeps its own baseline.
 	const spare = Math.max(0, height - (ascent + descent + 1));
-	const baseline = Math.min(ascent + (spare >> 1), height - 1);
+	const baseline = operator.entry.largeop && spare > 0
+		? getLargeOperatorBaseline(height)
+		: Math.min(ascent + (spare >> 1), height - 1);
 	const rows = height > 1
 		? buildVerticalGlyph(operator.text, height, baseline, context.glyphs)
 		: null;
@@ -860,13 +906,18 @@ function layoutStretchedOperator(
 }
 
 function createRowsBox(
-	rows: string[],
+	rows: Array<string | GlyphRow>,
 	baseline: number,
 	style: CellStyle | null,
 ): MathBox {
 	let box: MathBox | null = null;
 	for (const row of rows) {
-		const line = createTextBox(row, style);
+		const line = typeof row === "string"
+			? createTextBox(row, style)
+			: createTextBox(
+				row.text,
+				row.underline ? {...style, underline: true} : style,
+			);
 		box = box === null ? line : stack(box, line, "left", 0);
 	}
 	return {...box!, baseline};
@@ -962,34 +1013,52 @@ function layoutRadical(element: Element, context: MathContext): MathBox {
 			beside(radicand, createTextBox(")", null)),
 		);
 	}
-	const {sign, climb} = getRadical(context.glyphs);
-	const signWidth = getStringWidth(sign);
+	const {foot, stem, bar, shape} = getRadical(context.glyphs);
+	const height = radicand.height;
+	const signWidth = shape === "rises"
+		? height
+		: shape === "climbs" ? height + 1 : 2;
 	const rows: string[] = [];
-	for (let row = 0; row < radicand.height; row++) {
-		rows.push(
-			row < radicand.baseline
-				? climb
-				: row === radicand.baseline ? sign : " ".repeat(signWidth),
-		);
+	for (let row = 0; row < height; row++) {
+		const last = row === height - 1;
+		const column = shape === "rises"
+			? height - 1 - row
+			: shape === "climbs" ? height - row : 1;
+		const cells = Array.from({length: signWidth}, () => " ");
+		if (last) {
+			cells[0] = foot;
+		}
+		if (!(last && shape === "rises")) {
+			cells[column] = stem;
+		}
+		rows.push(cells.join(""));
 	}
 	const column = createRowsBox(rows, radicand.baseline, null);
-	const overline = createTextBox(
-		" ".repeat(signWidth) + getOverline(context.glyphs).repeat(radicand.width),
-		null,
-	);
+	// The bar starts where the stem's top will meet it.
+	const barStart = shape === "stands" ? 1 : signWidth;
+	const overline = bar === null
+		? beside(
+			createTextBox(" ".repeat(barStart), null),
+			createTextBox(" ".repeat(radicand.width + signWidth - barStart), {
+				underline: true,
+			}),
+		)
+		: createTextBox(" ".repeat(barStart) + bar.repeat(radicand.width), null);
 	const body = beside(column, radicand);
 	let result = stack(overline, body, "left", body.baseline + 1);
 	if (index === null) {
 		return result;
 	}
-	const shift = Math.max(0, index.width - signWidth);
+	// The index ends where the bar begins.
+	const room = barStart;
+	const shift = Math.max(0, index.width - room);
 	result = pad(result, 0, 0, 0, shift);
 	let top = result.baseline - index.height;
 	if (top < 0) {
 		result = pad(result, -top, 0, 0, 0);
 		top = 0;
 	}
-	return overlay(result, index, shift + signWidth - index.width, top);
+	return overlay(result, index, shift + room - index.width, top);
 }
 
 /**
