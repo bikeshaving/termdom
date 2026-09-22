@@ -339,11 +339,15 @@ function layoutTextToken(
 	if (large !== null) {
 		return large;
 	}
+	// A one-letter identifier is italic, as print sets variables, by the
+	// user agent's text-transform: math-auto on mi, which an author's
+	// text-transform: none turns off, as in a browser.
 	let variant = getMathVariant(element);
 	if (
 		variant === null &&
 		element.localName === "mi" &&
-		isSingleGrapheme(collapsed)
+		isSingleGrapheme(collapsed) &&
+		getComputedValue(element, "text-transform") === "math-auto"
 	) {
 		variant = "italic";
 	}

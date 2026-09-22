@@ -89,6 +89,7 @@ export const UA_ELEMENT_STYLES = `
 	input[type=checkbox i], input[type=radio i] { width: 3ch; }
 	math { display: inline math; }
 	math[display=block i] { display: block math; text-align: center; }
+	mi { text-transform: math-auto; }
 	annotation, annotation-xml { display: none; }
 `;
 

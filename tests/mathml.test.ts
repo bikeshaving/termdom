@@ -128,12 +128,15 @@ test("an empty mrow is one blank cell", async () => {
 	expect(lines).toEqual(["a x y z"]);
 });
 
-test("a single-letter mi is italic and mathvariant=normal is not", async () => {
+test("a single-letter mi is italic unless mathvariant or text-transform says not", async () => {
 	expect(await renderANSI(block("<mi>x</mi>"))).toContain("\x1b[3m");
 	expect(
 		await renderANSI(block("<mi mathvariant=\"normal\">x</mi>")),
 	).not.toContain("\x1b[3m");
 	expect(await renderANSI(block("<mi>sin</mi>"))).not.toContain("\x1b[3m");
+	expect(
+		await renderANSI(block("<mi style=\"text-transform: none\">x</mi>")),
+	).not.toContain("\x1b[3m");
 });
 
 test("mathcolor and mathbackground color the token's cells", async () => {
