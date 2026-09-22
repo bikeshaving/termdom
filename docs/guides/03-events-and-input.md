@@ -207,7 +207,9 @@ element.scrollIntoView();
 innermost scrollable box under the pointer and hands what remains to its
 ancestors. Past the top of the document, the wheel is handed to the
 terminal itself, so the scrollback above the document scrolls as it does
-for any other command. No terminal says when the user has scrolled back
+for any other command. A tall document stops at its top first: the flick
+that brought it there does not fly on, and the next wheel after a short
+pause crosses. No terminal says when the user has scrolled back
 down, so the mouse comes back on the next keystroke, which also reaches
 the page. While the wheel is the terminal's, `document.visibilityState`
 is `"hidden"`, as it is for a page in a background tab.
