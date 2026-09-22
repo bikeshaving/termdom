@@ -24,6 +24,11 @@ jobs:
         with:
           node-version: 24
 
+      # The suite runs on Deno too.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       # Staged publishing needs npm 11.15 or later.
       - run: npm install -g npm@latest
 
