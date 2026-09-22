@@ -2035,25 +2035,11 @@ function layoutRadical(element: Element, context: MathContext): MathBox {
 	}
 	// The bar starts where the stem's top will meet it.
 	const barStart = shape === "stands" ? 1 : signWidth;
-	// A radicand whose top row is nothing but bars, the roots nested in
-	// it, shares that row: the outer bar runs along it, continuous where
-	// the inner ones break, and the stem stops one row short.
-	const shared =
-		bar === null &&
-		!context.overline &&
-		radicand.height > 1 &&
-		radicand.baseline > 0 &&
-		radicand.cells[0].every((cell) => cell.text === " ");
-	if (shared) {
-		rows[0] = " ".repeat(signWidth);
-	}
 	const column = createRowsBox(rows, radicand.baseline, null);
 	const body = beside(column, radicand);
+	// An overline along the radicand's top row needs no row of its own.
 	let result: MathBox;
-	if (shared) {
-		result = underlineRow(body, 0, barStart);
-	} else if (bar === null && context.overline) {
-		// An overline along the radicand's top row needs no row of its own.
+	if (bar === null && context.overline) {
 		result = overlineRow(body, 0, barStart);
 	} else {
 		const overline = bar === null
@@ -2743,27 +2729,14 @@ function placeInWidth(
 	return pad(box, 0, extra - left, 0, left);
 }
 
-function underlineRow(box: MathBox, row: number, from: number): MathBox {
-	return decorateRow(box, row, from, "underline");
-}
-
 function overlineRow(box: MathBox, row: number, from: number): MathBox {
-	return decorateRow(box, row, from, "overline");
-}
-
-function decorateRow(
-	box: MathBox,
-	row: number,
-	from: number,
-	line: "underline" | "overline",
-): MathBox {
 	let column = 0;
 	const cells = box.cells[row].map((cell) => {
 		const start = column;
 		column += cell.width;
 		return start < from
 			? cell
-			: {...cell, style: {...cell.style, [line]: true}};
+			: {...cell, style: {...cell.style, overline: true}};
 	});
 	return {...box, cells: box.cells.map((r, i) => (i === row ? cells : r))};
 }
