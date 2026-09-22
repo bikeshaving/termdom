@@ -30,9 +30,32 @@ interface GlyphTable {
 	horizontal: Record<string, HorizontalPieces>;
 	fractionBar: string;
 	overline: string;
-	radical: string;
-	radicalClimb: string;
+	radical: RadicalPieces;
 	plain: Record<string, string>;
+}
+
+/**
+ * A radical sign's foot, its stem and the bar over the radicand. A null
+ * bar is an underline on the row above, which the terminal draws along
+ * that row's bottom edge, flush with the stem's top. The shape says how
+ * the stem reaches it: "rises" when the foot glyph carries the stroke
+ * to its own top corner and taller radicands add a diagonal per row;
+ * "climbs" when the foot is a bare stroke and the diagonal starts on
+ * its row, as SymPy draws it; "stands" when the stem is a vertical bar
+ * beside the foot.
+ */
+export interface RadicalPieces {
+	foot: string;
+	stem: string;
+	bar: string | null;
+	shape: "rises" | "climbs" | "stands";
+}
+
+// One row of a drawn glyph. An underlined row is a bar the terminal
+// draws along the row's bottom edge, flush with the strokes below it.
+export interface GlyphRow {
+	text: string;
+	underline: boolean;
 }
 
 const UNICODE_VERTICAL: Record<string, VerticalPieces> = {
@@ -44,6 +67,8 @@ const UNICODE_VERTICAL: Record<string, VerticalPieces> = {
 	"}": {top: "⎫", middle: "⎪", center: "⎬", bottom: "⎭"},
 	"|": {top: "│", middle: "│", bottom: "│"},
 	"‖": {top: "║", middle: "║", bottom: "║"},
+	"∣": {top: "│", middle: "│", bottom: "│"},
+	"∥": {top: "║", middle: "║", bottom: "║"},
 	"∫": {top: "⌠", middle: "⎮", bottom: "⌡"},
 	"⌈": {top: "⌈", middle: "│", bottom: "│"},
 	"⌉": {top: "⌉", middle: "│", bottom: "│"},
@@ -60,6 +85,8 @@ const BOX_DRAWING_VERTICAL: Record<string, VerticalPieces> = {
 	"}": {top: "╮", middle: "│", center: "├", bottom: "╯"},
 	"|": {top: "│", middle: "│", bottom: "│"},
 	"‖": {top: "║", middle: "║", bottom: "║"},
+	"∣": {top: "│", middle: "│", bottom: "│"},
+	"∥": {top: "║", middle: "║", bottom: "║"},
 	"∫": {top: "╭", middle: "│", bottom: "╯"},
 	"⌈": {top: "┌", middle: "│", bottom: "│"},
 	"⌉": {top: "┐", middle: "│", bottom: "│"},
@@ -76,6 +103,8 @@ const ASCII_VERTICAL: Record<string, VerticalPieces> = {
 	"}": {top: "\\", middle: "|", center: "+", bottom: "/"},
 	"|": {top: "|", middle: "|", bottom: "|"},
 	"‖": {top: "||", middle: "||", bottom: "||"},
+	"∣": {top: "|", middle: "|", bottom: "|"},
+	"∥": {top: "||", middle: "||", bottom: "||"},
 	"∫": {top: "/", middle: "|", bottom: "/"},
 	"⌈": {top: "+", middle: "|", bottom: "|"},
 	"⌉": {top: "+", middle: "|", bottom: "|"},
@@ -234,8 +263,7 @@ const TABLES: Record<GlyphSet, GlyphTable> = {
 		horizontal: UNICODE_HORIZONTAL,
 		fractionBar: "─",
 		overline: "─",
-		radical: "√",
-		radicalClimb: "╱",
+		radical: {foot: "⎷", stem: "╱", bar: null, shape: "rises"},
 		plain: {},
 	},
 	"box-drawing": {
@@ -243,8 +271,7 @@ const TABLES: Record<GlyphSet, GlyphTable> = {
 		horizontal: UNICODE_HORIZONTAL,
 		fractionBar: "─",
 		overline: "─",
-		radical: "√",
-		radicalClimb: "╱",
+		radical: {foot: "╲", stem: "│", bar: null, shape: "stands"},
 		plain: {},
 	},
 	ascii: {
@@ -252,8 +279,7 @@ const TABLES: Record<GlyphSet, GlyphTable> = {
 		horizontal: ASCII_HORIZONTAL,
 		fractionBar: "-",
 		overline: "_",
-		radical: "\\/",
-		radicalClimb: " |",
+		radical: {foot: "\\", stem: "/", bar: "_", shape: "climbs"},
 		plain: ASCII_PLAIN,
 	},
 };
@@ -313,8 +339,15 @@ export function getOverline(glyphs: GlyphSet): string {
 	return TABLES[glyphs].overline;
 }
 
-export function getRadical(glyphs: GlyphSet): {sign: string; climb: string} {
-	return {sign: TABLES[glyphs].radical, climb: TABLES[glyphs].radicalClimb};
+export function getRadical(glyphs: GlyphSet): RadicalPieces {
+	return TABLES[glyphs].radical;
+}
+
+// The rows a large operator takes in display mode, where print sets it
+// bigger than the text: three, the least that draws one. Zero for an
+// operator with no pieces to draw.
+export function getDisplayHeight(op: string, glyphs: GlyphSet): number {
+	return op === "∑" || op === "∏" || op in TABLES[glyphs].vertical ? 3 : 0;
 }
 
 /**
@@ -354,15 +387,15 @@ export function buildVerticalGlyph(
 	height: number,
 	baseline: number,
 	glyphs: GlyphSet,
-): string[] | null {
+): GlyphRow[] | null {
 	if (op === "∑") {
 		return buildSum(height, glyphs);
 	}
 	if (op === "∏") {
-		return buildProduct(height, glyphs);
+		return plainRows(buildProduct(height, glyphs));
 	}
 	if (op === "⟨" || op === "⟩") {
-		return buildAngle(op, height, baseline, glyphs);
+		return plainRows(buildAngle(op, height, baseline, glyphs));
 	}
 	const pieces = TABLES[glyphs].vertical[op];
 	if (!pieces) {
@@ -380,7 +413,11 @@ export function buildVerticalGlyph(
 			rows.push(pieces.middle);
 		}
 	}
-	return rows;
+	return plainRows(rows);
+}
+
+function plainRows(rows: string[]): GlyphRow[] {
+	return rows.map((text) => ({text, underline: false}));
 }
 
 /**
@@ -406,27 +443,41 @@ export function buildHorizontalGlyph(
 }
 
 // Two rows are the Unicode pieces. Taller sums take the shape SymPy
-// draws, a slash and backslash meeting in the middle under a bar.
-function buildSum(height: number, glyphs: GlyphSet): string[] {
+// draws, a backslash and slash meeting in the middle between two bars.
+// The bars are underlines: one on a row of its own above the strokes
+// and one on the last stroke's row, each flush with the strokes.
+function buildSum(height: number, glyphs: GlyphSet): GlyphRow[] {
 	if (height === 2 && glyphs === "unicode") {
-		return ["⎲", "⎳"];
+		return plainRows(["⎲", "⎳"]);
 	}
-	const down = glyphs === "ascii" ? "\\" : "╲";
-	const up = glyphs === "ascii" ? "/" : "╱";
-	const bottom = glyphs === "ascii" ? "---" : "‾‾‾";
-	const body = Math.max(1, height - 2);
-	const upper = Math.ceil(body / 2);
-	const rows: string[] = ["___"];
+	if (glyphs === "ascii") {
+		return plainRows([
+			"___",
+			...buildStrokes(Math.max(1, height - 2), "\\", "/"),
+			"---",
+		]);
+	}
+	const rows: GlyphRow[] = [{text: "   ", underline: true}];
+	for (const text of buildStrokes(height - 1, "╲", "╱")) {
+		rows.push({text, underline: false});
+	}
+	rows[rows.length - 1].underline = true;
+	return rows;
+}
+
+// The strokes down and back, stepping out to the third column at most.
+function buildStrokes(count: number, down: string, up: string): string[] {
+	const upper = Math.ceil(count / 2);
+	const rows: string[] = [];
 	for (let i = 0; i < upper; i++) {
 		rows.push(placeAt(down, Math.min(i, 2), 3));
 	}
-	for (let j = upper - 1; j >= 0 && rows.length < height - 1; j--) {
+	for (let j = upper - 1; j >= 0 && rows.length < count; j--) {
 		rows.push(placeAt(up, Math.min(j, 2), 3));
 	}
-	while (rows.length < height - 1) {
+	while (rows.length < count) {
 		rows.push(placeAt(up, 0, 3));
 	}
-	rows.push(bottom);
 	return rows;
 }
 

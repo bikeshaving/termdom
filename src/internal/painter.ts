@@ -37,7 +37,7 @@ import {
 	renderTextFragment,
 } from "./layout.ts";
 import type {LayoutNode} from "./layoutsolver.ts";
-import {isMathRoot} from "./mathml.ts";
+import {isBlankCell, isMathRoot} from "./mathml.ts";
 import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
@@ -1622,7 +1622,7 @@ function renderMath(
 	for (let row = 0; row < box.height; row++) {
 		let x = left;
 		for (const cell of box.cells[row]) {
-			if (cell.text !== " " || cell.style?.bg != null) {
+			if (!isBlankCell(cell)) {
 				ctx.drawText(cell.text, x, top + row, cell.style ?? undefined);
 			}
 			x += cell.width;

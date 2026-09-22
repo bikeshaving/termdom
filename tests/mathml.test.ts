@@ -27,6 +27,32 @@ async function renderLines(html: string, cols = 40): Promise<string[]> {
 	return lines;
 }
 
+// The lines with an underlined blank cell shown as _: the bars of a
+// drawn sum and a radical are underlines, flush with the strokes.
+async function renderMarked(html: string, cols = 40): Promise<string[]> {
+	const {dom, terminal} = await render(html, cols);
+	const buffer = (terminal as any).terminal.buffer.active;
+	const lines: string[] = [];
+	for (let y = 0; y < terminal.stdout.rows; y++) {
+		const line = buffer.getLine(y);
+		let text = "";
+		for (let x = 0; x < terminal.stdout.columns; x++) {
+			const cell = line?.getCell(x);
+			if (!cell || cell.getWidth() === 0) {
+				continue;
+			}
+			const chars = cell.getChars() || " ";
+			text += chars === " " && cell.isUnderline() ? "_" : chars;
+		}
+		lines.push(text.trimEnd());
+	}
+	dom.dispose();
+	while (lines.length > 0 && lines[lines.length - 1] === "") {
+		lines.pop();
+	}
+	return lines;
+}
+
 async function renderANSI(html: string): Promise<string> {
 	const terminal = new MockProcess({cols: 40, rows: 4});
 	const dom = new TermDOM({transport: terminal.transport});
@@ -255,23 +281,23 @@ test("math-style: compact forces the inline forms in display mode", async () => 
 	expect(lines).toEqual(["   a/b"]);
 });
 
-test("a display root draws an overline and a sign on the baseline", async () => {
+test("a display root draws a bar over the radicand that meets the sign", async () => {
 	expect(
-		await renderLines(
+		await renderMarked(
 			block("<msqrt><mi>x</mi><mo>+</mo><mn>1</mn></msqrt>"),
 			20,
 		),
-	).toEqual(["        ─────", "       √x + 1"]);
+	).toEqual(["        _____", "       ⎷x + 1"]);
 	expect(
-		await renderLines(
+		await renderMarked(
 			block("<msqrt><mfrac><mi>a</mi><mi>b</mi></mfrac></msqrt>"),
 			10,
 		),
-	).toEqual(["    ───", "   ╱ a", "   √───", "     b"]);
+	).toEqual(["     ___", "    ╱ a", "   ╱ ───", "  ⎷   b"]);
 	expect(
-		await renderLines(block("<mroot><mi>x</mi><mn>3</mn></mroot>"), 10),
+		await renderMarked(block("<mroot><mi>x</mi><mn>3</mn></mroot>"), 10),
 	).toEqual(
-		["    3─", "    √x"],
+		["    3_", "    ⎷x"],
 	);
 });
 
@@ -312,9 +338,11 @@ test("large operators stack their limits in display mode", async () => {
 	const sum =
 		"<munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>" +
 		"<msup><mi>k</mi><mn>2</mn></msup>";
-	expect(await renderLines(block(sum), 12)).toEqual([
+	expect(await renderMarked(block(sum), 12)).toEqual([
 		"    n",
-		"    ∑ k²",
+		"   ___",
+		"   ╲   k²",
+		"   ╱__",
 		"   k=1",
 	]);
 	expect(await renderLines(inline(sum))).toEqual(["a ∑ₖ₌₁ⁿ k² z"]);
@@ -544,9 +572,9 @@ const FOURIER =
 	"<mi>d</mi><mi>x</mi>";
 
 test("golden: the quadratic formula", async () => {
-	expect(await renderLines(block(QUADRATIC))).toEqual([
-		"                     ────────",
-		"               −b ± √b² − 4ac",
+	expect(await renderMarked(block(QUADRATIC))).toEqual([
+		"                     ________",
+		"               −b ± ⎷b² − 4ac",
 		"          x = ────────────────",
 		"                     2a",
 	]);
@@ -578,9 +606,9 @@ test("golden: the Navier-Stokes momentum equation", async () => {
 
 test("golden: the Fourier transform", async () => {
 	expect(await renderLines(block(FOURIER))).toEqual([
-		"         ⎛ ⎞    ∞   ⎛ ⎞ −2πixξ",
-		"        f̂⎜ξ⎟ = ∫   f⎜x⎟e      dx",
-		"         ⎝ ⎠    −∞  ⎝ ⎠",
+		"         ⎛ ⎞   ⌠∞   ⎛ ⎞ −2πixξ",
+		"        f̂⎜ξ⎟ = ⎮   f⎜x⎟e      dx",
+		"         ⎝ ⎠   ⌡−∞  ⎝ ⎠",
 	]);
 	expect(await renderLines(`<math>${FOURIER}</math>`)).toEqual([
 		"f̂(ξ) = ∫_(−∞)^∞ f(x)e^(−2πixξ)dx",
@@ -639,14 +667,14 @@ test("a large operator keeps its spacing through its scripts, but not inside a f
 		),
 	).toEqual(["a ∫₀¹ x = (∑ k) z"]);
 	expect(
-		await renderLines(
+		await renderMarked(
 			block(
 				"<mo fence=\"true\">∣</mo><munder><mo>∑</mo><mi>i</mi></munder>" +
 				"<mi>a</mi><mo fence=\"true\">∣</mo>",
 			),
 			12,
 		),
-	).toEqual(["   ∣∑ a∣", "    i"]);
+	).toEqual(["  │___  │", "  │╲   a│", "  │╱__  │", "  │ i   │"]);
 });
 
 test("double-struck letters use the letterlike block without the variant flag", async () => {
