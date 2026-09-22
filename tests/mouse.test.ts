@@ -102,32 +102,55 @@ test("mouse reports never leak into keyboard events", async () => {
 	termdom.dispose();
 });
 
-test("the document top is a stop: the mouse stays captured", async () => {
-	const {proc, chunks, termdom} = makeDocumentModeApp();
+test("wheel at the document top hands the mouse to the terminal until a keystroke", async () => {
+	const {proc, chunks, termdom, document} = makeDocumentModeApp();
 	await nextFrame(termdom);
 
 	const disables = () =>
 		chunks().filter((chunk) => chunk.includes(DISABLE)).length;
+	const enables = () =>
+		chunks().filter((chunk) => chunk.includes(ENABLE)).length;
+	const states: string[] = [];
+	document.addEventListener("visibilitychange", () => {
+		states.push(document.visibilityState);
+	});
+	expect(enables()).toBe(1);
 
-	await send(proc, "\x1b[<65;5;3M"); // wheel down
+	// Scrolled down, wheel up consumes normally: no chaining mid-document.
+	await send(proc, "\x1b[<65;5;3M");
 	expect(termdom.window.scrollY).toBe(3);
-	await send(proc, "\x1b[<64;5;3M"); // wheel up, back to the top
-	expect(termdom.window.scrollY).toBe(0);
-
-	// Wheel up AT the top moves nothing and hands nothing to the terminal.
-	await send(proc, "\x1b[<64;5;3M");
 	await send(proc, "\x1b[<64;5;3M");
 	expect(termdom.window.scrollY).toBe(0);
 	expect(disables()).toBe(0);
 
-	// The wheel still works afterwards.
+	// Wheel up AT the top: the scroll escapes to the terminal's scrollback,
+	// so the mouse is handed back and the document is hidden meanwhile.
+	await send(proc, "\x1b[<64;5;3M");
+	expect(disables()).toBe(1);
+	expect(document.visibilityState).toBe("hidden");
+	expect(states).toEqual(["hidden"]);
+
+	// No timer takes it back: nothing says when the user scrolled down.
+	await new Promise((resolve) => setTimeout(resolve, 400));
+	expect(enables()).toBe(1);
+
+	// A keystroke does, before the key reaches the page.
+	const order: string[] = [];
+	document.addEventListener("keydown", () =>
+		order.push(`keydown while ${document.visibilityState}`),
+	);
+	await send(proc, "j");
+	expect(enables()).toBe(2);
+	expect(order).toEqual(["keydown while visible"]);
+	expect(states).toEqual(["hidden", "visible"]);
+
 	await send(proc, "\x1b[<65;5;3M");
 	expect(termdom.window.scrollY).toBe(3);
 	termdom.dispose();
 });
 
-test("preventDefault on wheel keeps the document from scrolling", async () => {
-	const {proc, termdom, document} = makeDocumentModeApp();
+test("preventDefault on wheel opts out of the handoff", async () => {
+	const {proc, chunks, termdom, document} = makeDocumentModeApp();
 	await nextFrame(termdom);
 
 	document.body.addEventListener(
@@ -138,8 +161,9 @@ test("preventDefault on wheel keeps the document from scrolling", async () => {
 		{passive: false},
 	);
 
-	await send(proc, "\x1b[<65;5;3M"); // wheel down
-	expect(termdom.window.scrollY).toBe(0);
+	await send(proc, "\x1b[<64;5;3M"); // wheel up at the top
+	expect(chunks().filter((c) => c.includes(DISABLE)).length).toBe(0);
+	expect(document.visibilityState).toBe("visible");
 	termdom.dispose();
 });
 

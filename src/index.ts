@@ -395,9 +395,16 @@ function closeTermDOM(termDOM: TermDOM): void {
 	})();
 }
 
-/** The mouse is captured for as long as the app is attached and interactive. */
+/**
+ * The mouse is captured while the document owns the document scroll. When the
+ * wheel has been yielded to the terminal, capture would take the user's
+ * scrollback and selection for nothing.
+ */
 function syncMouseReporting(termDOM: TermDOM): void {
-	const wanted = isAttached(termDOM) && termDOM[kTransport].interactive;
+	const wanted =
+		isAttached(termDOM) &&
+		termDOM[kTransport].interactive &&
+		!termDOM[kInput].mouseCaptureYielded;
 	if (wanted === termDOM[kMouseReportingEnabled]) {
 		return;
 	}
@@ -517,12 +524,16 @@ function afterRender(termDOM: TermDOM): void {
 		termDOM[kScreen].cols,
 		termDOM[kScreen].rows,
 	);
-	flushObservers(
-		termDOM.document,
-		termDOM[kLayout],
-		viewport,
-		termDOM[kRenderCount],
-	);
+	// A hidden document gets no observer entries, as a background tab
+	// gets none; they are delivered with the first frame after it shows.
+	if (termDOM.document.visibilityState === "visible") {
+		flushObservers(
+			termDOM.document,
+			termDOM[kLayout],
+			viewport,
+			termDOM[kRenderCount],
+		);
+	}
 	// The stylesheets have parsed, so whether any rule tests :hover is
 	// current.
 	syncMouseReporting(termDOM);
