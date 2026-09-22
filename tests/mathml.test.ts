@@ -696,3 +696,15 @@ test("scripts on a tall base take its top and bottom rows", async () => {
 		),
 	).toEqual(["   ⎛_a_⎞²", "   ⎝ b ⎠ₙ"]);
 });
+
+test("a column lines up its operands under a hanging negation sign", async () => {
+	expect(
+		await renderLines(
+			block(
+				"<mtable><mtr><mtd><mo>−</mo><mi>sin</mi></mtd><mtd><mn>1</mn></mtd></mtr>" +
+				"<mtr><mtd><mi>cos</mi></mtd><mtd><mo>−</mo><mn>10</mn></mtd></mtr></mtable>",
+			),
+			12,
+		),
+	).toEqual(["  -sin  1", "   cos -10"]);
+});

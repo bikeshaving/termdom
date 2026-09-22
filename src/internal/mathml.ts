@@ -1679,15 +1679,27 @@ function layoutFraction(element: Element, context: MathContext): MathBox {
 
 // A box in a field, centered by its operand with a negation sign
 // hanging to the left of it.
-function placeInWidth(box: MathBox, width: number, align: Alignment): MathBox {
+function placeInWidth(
+	box: MathBox,
+	width: number,
+	align: Alignment,
+	room = 0,
+): MathBox {
 	const extra = width - box.width;
 	if (extra < 0) {
 		return box;
 	}
+	// The field's first `room` cells are for hanging signs, so the
+	// operands of a column line up whether or not each has one.
 	const hang = box.hang ?? 0;
-	const left = align === "left"
-		? 0
-		: align === "right" ? extra : Math.max(0, ((extra + hang) >> 1) - hang);
+	const left = align === "right"
+		? extra
+		: Math.max(
+			0,
+			room -
+				hang +
+				(align === "left" ? 0 : (width - room - (box.width - hang)) >> 1),
+		);
 	return pad(box, 0, extra - left, 0, left);
 }
 
@@ -1847,11 +1859,22 @@ function layoutTable(element: Element, context: MathContext): MathBox {
 		});
 	});
 	const columnCount = Math.max(...grid.map((row) => row.length));
+	// A column is as wide as its widest operand plus the widest hanging
+	// sign, so the operands line up down the column.
 	const columnWidths = new Array<number>(columnCount).fill(0);
+	const columnHangs = new Array<number>(columnCount).fill(0);
 	for (const row of grid) {
 		row.forEach((cell, index) => {
-			columnWidths[index] = Math.max(columnWidths[index], cell.box.width);
+			const hang = cell.box.hang ?? 0;
+			columnWidths[index] = Math.max(
+				columnWidths[index],
+				cell.box.width - hang,
+			);
+			columnHangs[index] = Math.max(columnHangs[index], hang);
 		});
+	}
+	for (let index = 0; index < columnCount; index++) {
+		columnWidths[index] += columnHangs[index];
 	}
 	const lines = getBoxLines(context.glyphs);
 	const columnSpacing = Math.max(
@@ -1891,7 +1914,12 @@ function layoutTable(element: Element, context: MathContext): MathBox {
 		for (let column = 0; column < columnCount; column++) {
 			const cell = row[column];
 			let box = cell
-				? widenBox(cell.box, columnWidths[column], cell.align)
+				? placeInWidth(
+					cell.box,
+					columnWidths[column],
+					cell.align,
+					columnHangs[column],
+				)
 				: createEmptyBox(columnWidths[column]);
 			box = alignInRow(box, cell?.rowAlign ?? "baseline", ascent, height);
 			if (rowBox === null) {
