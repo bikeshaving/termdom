@@ -35,10 +35,13 @@ named area; whatever is left over is auto-placed, sparsely or <code>dense</code>
 <code>align-self</code>, <code>justify-content</code> and <code>align-content</code> all apply.</p><p>Flexible tracks tile the terminal exactly: <code>repeat(3, 1fr)</code> across 80 columns
 is 27, 26 and 27 cells, meeting with no gap and no overlap.</p><h2 id="tables">Tables <a class="heading-anchor" href="#tables">#</a></h2><p>A <code>&lt;table&gt;</code> of <code>&lt;tr&gt;</code> and <code>&lt;td&gt;</code> elements lays out as a table: shared column
 widths across rows, <code>colspan</code> and <code>rowspan</code>, <code>border-collapse</code>.</p><h2 id="text">Text <a class="heading-anchor" href="#text">#</a></h2><p>Text wraps at the box&#039;s width; <code>white-space</code>, <code>word-break</code>, and
-<code>overflow-wrap</code> apply. Wide characters — CJK, emoji — take two cells.</p><h2 id="positioning">Positioning <a class="heading-anchor" href="#positioning">#</a></h2><p><code>position: relative</code>, <code>absolute</code>, and <code>fixed</code>, with <code>z-index</code> and stacking
-contexts. <code>overflow: hidden</code> clips to the box. <code>overflow: auto</code> and <code>scroll</code>
-clip too, and make the box scrollable: <code>scrollTop</code>, <code>scrollTo</code>,
-<code>scrollIntoView</code>, and the mouse wheel move its content by whole rows.</p><h2 id="not-implemented">Not implemented <a class="heading-anchor" href="#not-implemented">#</a></h2><p>Floats, <code>subgrid</code> and masonry. The <a href="/compatibility/">compatibility matrix</a> has
+<code>overflow-wrap</code> apply. Wide characters — CJK, emoji — take two cells.</p><h2 id="positioning">Positioning <a class="heading-anchor" href="#positioning">#</a></h2><p><code>position: relative</code>, <code>absolute</code>, <code>fixed</code>, and <code>sticky</code>, with <code>z-index</code> and
+stacking contexts. A sticky box holds its <code>top</code>, <code>bottom</code>, <code>left</code>, or <code>right</code>
+inset against the nearest scrolling box above it, or against the viewport,
+and never leaves the box it flows in. <code>overflow: hidden</code> clips to the box.
+<code>overflow: auto</code> and <code>scroll</code> clip too, and make the box scrollable:
+<code>scrollTop</code>, <code>scrollTo</code>, <code>scrollIntoView</code>, and the mouse wheel move its
+content by whole rows.</p><h2 id="not-implemented">Not implemented <a class="heading-anchor" href="#not-implemented">#</a></h2><p>Floats, <code>subgrid</code> and masonry. The <a href="/compatibility/">compatibility matrix</a> has
 the full list.</p><h2 id="highlights">Highlights <a class="heading-anchor" href="#highlights">#</a></h2><p><code>CSS.highlights.set(&quot;hit&quot;, new Highlight(...ranges))</code> colors ranges through
 <code>::highlight(hit)</code> rules for <code>color</code>, <code>background-color</code> and
 <code>text-decoration-line</code>, without adding elements or moving a line break.
