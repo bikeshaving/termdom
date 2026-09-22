@@ -283,6 +283,49 @@ test("two quick clicks on the same target fire dblclick in addition to two click
 	termdom.dispose();
 });
 
+test("mouse events carry the click count in detail", async () => {
+	const proc = new MockProcess();
+	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
+	const {document} = termdom;
+	const div = document.createElement("div");
+	div.textContent = "clickable";
+	document.body.appendChild(div);
+	await nextFrame(termdom);
+
+	const seen: string[] = [];
+	for (const type of [
+		"mousedown",
+		"mouseup",
+		"click",
+		"dblclick",
+		"mousemove",
+	]) {
+		div.addEventListener(type, (e: any) => seen.push(`${type}:${e.detail}`));
+	}
+	const click = async () => {
+		await send(proc, "\x1b[<0;1;1M");
+		await send(proc, "\x1b[<0;1;1m");
+	};
+
+	await click();
+	expect(seen).toEqual(["mousedown:1", "mouseup:1", "click:1"]);
+	seen.length = 0;
+	await click();
+	expect(seen).toEqual(["mousedown:2", "mouseup:2", "click:2", "dblclick:2"]);
+	seen.length = 0;
+	await click();
+	expect(seen).toEqual(["mousedown:3", "mouseup:3", "click:3"]);
+	seen.length = 0;
+	await send(proc, "\x1b[<35;2;1M");
+	expect(seen).toEqual(["mousemove:0"]);
+	seen.length = 0;
+
+	await new Promise((resolve) => setTimeout(resolve, 600));
+	await click();
+	expect(seen).toEqual(["mousedown:1", "mouseup:1", "click:1"]);
+	termdom.dispose();
+});
+
 test("a click long after the previous one does not fire dblclick", async () => {
 	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
