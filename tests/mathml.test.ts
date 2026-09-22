@@ -884,13 +884,13 @@ test("a labelled arrow reaches across its label and to its minsize", async () =>
 	).toEqual(["  mapping", "  ──────→"]);
 });
 
-test("double and contour integrals are columns of the integral's pieces", async () => {
+test("multiple and contour integrals are columns of the integral's pieces", async () => {
 	expect(
 		await renderLines(block("<msub><mo>∬</mo><mi>S</mi></msub><mi>f</mi>"), 12),
 	).toEqual(["   ⌠⌠", "   ⎮⎮  f", "   ⌡⌡S"]);
 	expect(
 		await renderLines(block("<msub><mo>∮</mo><mi>C</mi></msub><mi>g</mi>"), 12),
-	).toEqual(["    ⌠", "    ∮  g", "    ⌡C"]);
+	).toEqual(["    ⌠", "    ⌽  g", "    ⌡C"]);
 });
 
 test("a bar over or under a wide base is a line on its edge", async () => {
