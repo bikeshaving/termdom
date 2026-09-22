@@ -301,7 +301,7 @@ test("stretchy fences grow to the height of their siblings", async () => {
 	expect(
 		await renderLines(block(`<mo>∫</mo>${fraction}<mi>dx</mi>`), 12),
 	).toEqual(
-		["   ⌠ a", "   ⎮───dx", "   ⌡ b"],
+		["  ⌠  a", "  ⎮ ───dx", "  ⌡  b"],
 	);
 	expect(await renderLines(inline(`<mo>(</mo>${fraction}<mo>)</mo>`))).toEqual([
 		"a (a/b) z",
@@ -317,7 +317,7 @@ test("large operators stack their limits in display mode", async () => {
 		"    ∑ k²",
 		"   k=1",
 	]);
-	expect(await renderLines(inline(sum))).toEqual(["a ∑ₖ₌₁ⁿk² z"]);
+	expect(await renderLines(inline(sum))).toEqual(["a ∑ₖ₌₁ⁿ k² z"]);
 });
 
 test("an accent over a one-cell base is a combining mark", async () => {
@@ -445,7 +445,7 @@ test("an operator's form comes from its position unless form says otherwise", as
 		await renderLines(
 			inline("<mi>f</mi><mo>(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo>)</mo>"),
 		),
-	).toEqual(["a f(x,y) z"]);
+	).toEqual(["a f(x, y) z"]);
 	expect(await renderLines(inline("<mi>a</mi><mo>xor</mo><mi>b</mi>"))).toEqual(
 		["a a xor b z"],
 	);
@@ -578,12 +578,12 @@ test("golden: the Navier-Stokes momentum equation", async () => {
 
 test("golden: the Fourier transform", async () => {
 	expect(await renderLines(block(FOURIER))).toEqual([
-		"         ⎛ ⎞    ∞  ⎛ ⎞ −2πixξ",
-		"        f̂⎜ξ⎟ = ∫  f⎜x⎟e      dx",
-		"         ⎝ ⎠    −∞ ⎝ ⎠",
+		"         ⎛ ⎞    ∞   ⎛ ⎞ −2πixξ",
+		"        f̂⎜ξ⎟ = ∫   f⎜x⎟e      dx",
+		"         ⎝ ⎠    −∞  ⎝ ⎠",
 	]);
 	expect(await renderLines(`<math>${FOURIER}</math>`)).toEqual([
-		"f̂(ξ) = ∫_(−∞)^∞f(x)e^(−2πixξ)dx",
+		"f̂(ξ) = ∫_(−∞)^∞ f(x)e^(−2πixξ)dx",
 	]);
 });
 
@@ -592,4 +592,82 @@ test("getBoundingClientRect reports the math box in cells", async () => {
 	const rect = dom.document.querySelector("math")!.getBoundingClientRect();
 	dom.dispose();
 	expect([rect.x, rect.y, rect.width, rect.height]).toEqual([2, 0, 5, 1]);
+});
+
+test("a function name takes a thin space before its argument, not its parenthesis", async () => {
+	const apply = "<mo>⁡</mo>";
+	expect(await renderLines(inline(`<mi>sin</mi>${apply}<mi>x</mi>`))).toEqual([
+		"a sin x z",
+	]);
+	expect(
+		await renderLines(
+			inline(`<mi>sin</mi>${apply}<mo>(</mo><mi>x</mi><mo>)</mo>`),
+		),
+	).toEqual(["a sin(x) z"]);
+	// KaTeX writes lim as a row ending in function application.
+	expect(
+		await renderLines(
+			block(
+				`<munder><mrow><mi>lim</mi>${apply}</mrow><mi>n</mi></munder>` +
+				"<mfrac><mn>1</mn><mi>n</mi></mfrac>",
+			),
+			12,
+		),
+	).toEqual(["       1", "  lim ───", "   n   n"]);
+});
+
+test("blank mtext is one cell and stands in for an operator's gap", async () => {
+	expect(
+		await renderLines(
+			inline("<mi>x</mi><mtext> </mtext><mo>⟺</mo><mtext> </mtext><mi>y</mi>"),
+		),
+	).toEqual(["a x ⟺ y z"]);
+	expect(
+		await renderLines(
+			inline("<mi>x</mi><mi>y</mi><mtext> </mtext><mi>d</mi><mi>x</mi>"),
+		),
+	).toEqual(["a xy dx z"]);
+});
+
+test("a large operator keeps its spacing through its scripts, but not inside a fence", async () => {
+	expect(
+		await renderLines(
+			inline(
+				"<msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup><mi>x</mi>" +
+				"<mo>=</mo><mo>(</mo><mo>∑</mo><mi>k</mi><mo>)</mo>",
+			),
+		),
+	).toEqual(["a ∫₀¹ x = (∑ k) z"]);
+	expect(
+		await renderLines(
+			block(
+				"<mo fence=\"true\">∣</mo><munder><mo>∑</mo><mi>i</mi></munder>" +
+				"<mi>a</mi><mo fence=\"true\">∣</mo>",
+			),
+			12,
+		),
+	).toEqual(["   ∣∑ a∣", "    i"]);
+});
+
+test("double-struck letters use the letterlike block without the variant flag", async () => {
+	expect(
+		await renderLines(
+			inline(
+				"<mi mathvariant=\"double-struck\">R</mi><mo>,</mo>" +
+				"<mi mathvariant=\"double-struck\">x</mi>",
+			),
+		),
+	).toEqual(["a ℝ, x z"]);
+});
+
+test("scripts on a tall base take its top and bottom rows", async () => {
+	expect(
+		await renderLines(
+			block(
+				"<msubsup><mrow><mo>(</mo><mfrac><mi>a</mi><mi>b</mi></mfrac><mo>)</mo></mrow>" +
+				"<mi>n</mi><mn>2</mn></msubsup>",
+			),
+			12,
+		),
+	).toEqual(["   ⎛ a ⎞²", "   ⎜───⎟", "   ⎝ b ⎠ₙ"]);
 });
