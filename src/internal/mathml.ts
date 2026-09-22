@@ -832,9 +832,6 @@ const TOKENS = new Set(["mi", "mn", "mo", "mtext", "ms"]);
 // The bars \overline and \underline write as accents.
 const BAR_ACCENTS = new Set(["‾", "¯", "ˉ", "_", "̄", "̅", "̲", "─"]);
 
-// The widest fraction, bar included, whose bar is an underline.
-const LONG_FRACTION = 12;
-
 // Function application, invisible times, separator and plus, and the
 // zero-width space: operators with no glyph and no cell.
 const INVISIBLE_OPERATORS = /^[\u2061-\u2064\u200b]$/u;
@@ -2739,34 +2736,14 @@ function layoutFraction(element: Element, context: MathContext): MathBox {
 	);
 	const top = placeInWidth(numerator, width, numalign);
 	const bottom = placeInWidth(denominator, width, denomalign);
-	// The bar is an underline along the numerator's last row, drawn on
-	// that row's bottom edge, so the fraction takes no row for it. A
-	// long one takes a row of its own, since an underline that long
-	// reads as underlined text. The ASCII set draws the row always, since
-	// an underline copies as nothing, and linethickness 0 leaves it empty.
-	const barred =
-		thickness === 0 ||
-		context.glyphs === "ascii" ||
-		width > LONG_FRACTION
-			? stack(
-				top,
-				thickness === 0
-					? createEmptyBox(width)
-					: createTextBox(getFractionBar(context.glyphs).repeat(width), null),
-				"left",
-				top.height,
-			)
-			: underlineLastRow(top);
-	// An underlined bar is the seam under the numerator, and what stands
-	// beside the fraction sits just below it, on the denominator's row,
-	// as text sits just below the axis in print. A bar row is its own
-	// row, and the neighbors sit on it.
-	return stack(
-		barred,
-		bottom,
-		"left",
-		barred.height === top.height ? barred.height : barred.baseline,
-	);
+	// The bar is a row of its own, and what stands beside the fraction
+	// sits on it, centered between the two operands. linethickness 0
+	// leaves the row empty.
+	const bar = thickness === 0
+		? createEmptyBox(width)
+		: createTextBox(getFractionBar(context.glyphs).repeat(width), null);
+	const barred = stack(top, bar, "left", top.height);
+	return stack(barred, bottom, "left", barred.baseline);
 }
 
 // A box in a field, centered by its operand with a negation sign
@@ -2827,18 +2804,6 @@ function isBarAccent(node: Node): boolean {
 	}
 	const text = collapseTokenText((node as Element).textContent ?? "");
 	return BAR_ACCENTS.has(text);
-}
-
-function underlineLastRow(box: MathBox): MathBox {
-	const last = box.cells[box.height - 1].map((cell) => ({
-		...cell,
-		style: {...cell.style, underline: true},
-	}));
-	return {
-		...box,
-		baseline: box.height - 1,
-		cells: [...box.cells.slice(0, -1), last],
-	};
 }
 
 type RowAlignment = "top" | "center" | "bottom" | "baseline";
