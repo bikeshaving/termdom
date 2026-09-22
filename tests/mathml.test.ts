@@ -776,3 +776,76 @@ test("bars become overlines once the terminal reports SGR 53 through DECRQSS", a
 	expect(overlined(terminal, 2)).toBe("╲  ");
 	dom.dispose();
 });
+
+function send(terminal: MockProcess, data: string): Promise<void> {
+	(terminal.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
+		"data",
+		Buffer.from(data),
+	);
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+test("a drag inside display math selects the text its cells render", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		block("<mfrac><mi>a</mi><mi>b</mi></mfrac><mo>=</mo><mi>c</mi>");
+	await nextFrame(dom);
+	const [a, , c] = dom.document.querySelectorAll("mi");
+	const from = a.getBoundingClientRect();
+	const to = c.getBoundingClientRect();
+	// From the a cell to just past the c cell. Print and the rest of the
+	// engine take the offset before the cell the pointer is on, so the
+	// last character comes in from the cell after it.
+	await send(terminal, `\x1b[<0;${from.x + 1};${from.y + 1}M`);
+	await send(terminal, `\x1b[<32;${to.x + 2};${to.y + 1}M`);
+	await send(terminal, `\x1b[<0;${to.x + 2};${to.y + 1}m`);
+	await nextFrame(dom);
+	// Range.toString: the text nodes' data in order, as the DOM has it.
+	expect(dom.window.getSelection()!.toString()).toBe("ab=c");
+	// The cells of the selected text paint with ::selection, the bar and
+	// the blank cells of the fraction do not.
+	const buffer = (terminal as any).terminal.buffer.active;
+	const inverse = (x: number, y: number): boolean =>
+		!!buffer.getLine(y).getCell(x).isInverse();
+	expect(inverse(from.x, from.y)).toBe(true);
+	expect(inverse(from.x, from.y + 1)).toBe(true);
+	expect(inverse(to.x, to.y)).toBe(true);
+	expect(inverse(from.x + 1, from.y)).toBe(false);
+	dom.dispose();
+});
+
+test("a token inside math has the rect of its cells", async () => {
+	const {dom, lines} = await render(
+		block("<mfrac><mi>x</mi><mn>10</mn></mfrac>"),
+		20,
+	);
+	const row = lines[1];
+	const column = row.indexOf("10");
+	const rect = dom.document.querySelector("mn")!.getBoundingClientRect();
+	expect([rect.x, rect.y, rect.width, rect.height]).toEqual([column, 1, 2, 1]);
+	const fraction = dom.document.querySelector("mfrac")!.getBoundingClientRect();
+	expect([fraction.y, fraction.height]).toEqual([0, 2]);
+	dom.dispose();
+});
+
+test("a drag over a drawn stroke takes the nearest text", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = block("<msqrt><mi>x</mi></msqrt>");
+	await nextFrame(dom);
+	const {x, y} = dom.document.querySelector("mi")!.getBoundingClientRect();
+	const drag =
+		async (fromX: number, fromY: number, toX: number, toY: number) => {
+			await send(terminal, `\x1b[<0;${fromX + 1};${fromY + 1}M`);
+			await send(terminal, `\x1b[<32;${toX + 1};${toY + 1}M`);
+			await send(terminal, `\x1b[<0;${toX + 1};${toY + 1}m`);
+			await nextFrame(dom);
+			return dom.window.getSelection()!.toString();
+		};
+	// From the radical sign, left of x, to the cell right of it.
+	expect(await drag(x - 1, y, x + 1, y)).toBe("x");
+	// From the bar row above x, whose nearest text is x, to right of it.
+	expect(await drag(x, y - 1, x + 1, y)).toBe("x");
+	dom.dispose();
+});

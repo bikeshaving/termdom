@@ -36,6 +36,22 @@ export interface MathCell {
 	text: string;
 	width: number;
 	style: CellStyle | null;
+	// The text the cell renders, for selection and geometry. A drawn
+	// stroke or bar has none.
+	source?: CellSource;
+}
+
+export interface CellSource {
+	node: Text;
+	offset: number;
+	length: number;
+}
+
+// One code point of a token's text and where it came from. A quote an
+// ms adds, or a space a collapsed run leaves, comes from nowhere.
+interface SourcedChar {
+	ch: string;
+	source: CellSource | null;
 }
 
 export interface MathBox {
@@ -74,7 +90,7 @@ const BLANK: MathCell = {text: " ", width: 1, style: null};
 
 // Function application, invisible times, separator and plus, and the
 // zero-width space: operators with no glyph and no cell.
-const INVISIBLE_OPERATORS = new RegExp("[\\u2061-\\u2064\\u200b]", "g");
+const INVISIBLE_OPERATORS = /^[\u2061-\u2064\u200b]$/u;
 
 export function isMathRoot(node: Node): boolean {
 	return (
@@ -129,9 +145,28 @@ function blankRow(width: number): MathCell[] {
 }
 
 export function createTextBox(text: string, style: CellStyle | null): MathBox {
+	return createSourcedBox(unsourced(text), style);
+}
+
+function unsourced(text: string): SourcedChar[] {
+	return Array.from(text, (ch) => ({ch, source: null}));
+}
+
+function createSourcedBox(
+	chars: SourcedChar[],
+	style: CellStyle | null,
+): MathBox {
+	let text = "";
+	const sources: Array<CellSource | null> = [];
+	for (const {ch, source} of chars) {
+		for (let i = 0; i < ch.length; i++) {
+			sources.push(source);
+		}
+		text += ch;
+	}
 	const cells: MathCell[] = [];
 	let width = 0;
-	for (const {segment} of graphemeSegmenter.segment(text)) {
+	for (const {segment, index} of graphemeSegmenter.segment(text)) {
 		const cellWidth = getStringWidth(segment);
 		if (cellWidth <= 0) {
 			if (cells.length > 0) {
@@ -140,10 +175,144 @@ export function createTextBox(text: string, style: CellStyle | null): MathBox {
 			}
 			continue;
 		}
-		cells.push({text: segment, width: cellWidth, style});
+		const source = sources[index];
+		cells.push(
+			source === null
+				? {text: segment, width: cellWidth, style}
+				: {text: segment, width: cellWidth, style, source},
+		);
 		width += cellWidth;
 	}
 	return {width, height: 1, baseline: 0, cells: [cells]};
+}
+
+// The code points of the text under an element, each with the text
+// node and offset it sits at.
+function readTokenChars(element: Element): SourcedChar[] {
+	const chars: SourcedChar[] = [];
+	const walk = (node: Node): void => {
+		if (node.nodeType === node.TEXT_NODE) {
+			chars.push(...readTextChars(node as Text));
+			return;
+		}
+		for (const child of node.childNodes) {
+			walk(child);
+		}
+	};
+	walk(element);
+	return chars;
+}
+
+function readTextChars(node: Text): SourcedChar[] {
+	const chars: SourcedChar[] = [];
+	let offset = 0;
+	for (const ch of node.data) {
+		chars.push({ch, source: {node, offset, length: ch.length}});
+		offset += ch.length;
+	}
+	return chars;
+}
+
+// What collapseTokenText does to a string: a run of white space is one
+// space, and none at either end.
+function collapseChars(chars: SourcedChar[]): SourcedChar[] {
+	const out: SourcedChar[] = [];
+	let pendingSpace = false;
+	for (const char of chars) {
+		if (/\s/u.test(char.ch)) {
+			pendingSpace = out.length > 0;
+			continue;
+		}
+		if (pendingSpace) {
+			out.push({ch: " ", source: null});
+			pendingSpace = false;
+		}
+		out.push(char);
+	}
+	return out;
+}
+
+function joinChars(chars: SourcedChar[]): string {
+	return chars.map((char) => char.ch).join("");
+}
+
+// The cells of a box's columns the text-align of a wider content box
+// leaves free on the left.
+export function getMathAlignOffset(spare: number, align: string): number {
+	if (spare <= 0) {
+		return 0;
+	}
+	return align === "right" || align === "end"
+		? spare
+		: align === "center" ? spare >> 1 : 0;
+}
+
+/**
+ * The text position a point in a box's cells stands for: the text the
+ * nearest cell with a source renders, before it, or after it when the
+ * point lies to its right, as a pointer past a line's last character
+ * does. Null for a box with no text in it.
+ */
+export function findMathPosition(
+	box: MathBox,
+	x: number,
+	y: number,
+): {node: Text; offset: number} | null {
+	let best: {source: CellSource; end: number; distance: number} | null = null;
+	for (let row = 0; row < box.height; row++) {
+		let column = 0;
+		for (const cell of box.cells[row]) {
+			if (cell.source !== undefined) {
+				const end = column + cell.width;
+				const dx = x < column ? column - x : x >= end ? x - end + 1 : 0;
+				const distance = Math.abs(row - y) * 1000 + dx;
+				if (best === null || distance < best.distance) {
+					best = {source: cell.source, end, distance};
+				}
+			}
+			column += cell.width;
+		}
+	}
+	if (best === null) {
+		return null;
+	}
+	const {source, end} = best;
+	return {
+		node: source.node,
+		offset: x >= end ? source.offset + source.length : source.offset,
+	};
+}
+
+/** The cells, as rectangles in the box, that render a node's text. */
+export function getMathCellRects(
+	box: MathBox,
+	node: Node,
+): Array<{x: number; y: number; width: number; height: number}> {
+	const rects: Array<{x: number; y: number; width: number; height: number}> =
+		[];
+	for (let row = 0; row < box.height; row++) {
+		let column = 0;
+		for (const cell of box.cells[row]) {
+			const source = cell.source;
+			if (
+				source !== undefined &&
+				(node.nodeType === node.TEXT_NODE
+					? source.node === node
+					: node.contains(source.node))
+			) {
+				const last = rects[rects.length - 1];
+				if (
+					last !== undefined && last.y === row && last.x + last.width === column
+				) {
+					last.width += cell.width;
+				} else {
+					rects.push({x: column, y: row, width: cell.width, height: 1});
+				}
+			}
+			column += cell.width;
+		}
+	}
+	return rects;
 }
 
 export function getDescent(box: MathBox): number {
@@ -256,8 +425,8 @@ function getLayoutChildren(element: Element): Node[] {
 function layoutNode(node: Node, context: MathContext): MathBox {
 	if (node.nodeType === node.TEXT_NODE) {
 		const parent = node.parentElement;
-		return createTextBox(
-			collapseTokenText((node as Text).data),
+		return createSourcedBox(
+			collapseChars(readTextChars(node as Text)),
 			parent ? getTokenStyle(parent, null) : null,
 		);
 	}
@@ -280,14 +449,14 @@ function layoutNode(node: Node, context: MathContext): MathBox {
 				? createEmptyBox(1)
 				: layoutTextToken(element, text, local);
 		}
-		case "ms":
-			return layoutTextToken(
-				element,
-				(element.getAttribute("lquote") ?? "\"") +
-				collapseTokenText(element.textContent ?? "") +
-				(element.getAttribute("rquote") ?? "\""),
-				local,
-			);
+		case "ms": {
+			const quoted = [
+				...unsourced(element.getAttribute("lquote") ?? "\""),
+				...collapseChars(readTokenChars(element)),
+				...unsourced(element.getAttribute("rquote") ?? "\""),
+			];
+			return layoutTextToken(element, joinChars(quoted), local, quoted);
+		}
 		case "mspace": {
 			const width = parseMathLength(element.getAttribute("width")) ?? 0;
 			return createEmptyBox(width > 0 ? Math.max(1, Math.round(width)) : 0);
@@ -338,8 +507,15 @@ function layoutTextToken(
 	element: Element,
 	text: string,
 	context: MathContext,
+	chars?: SourcedChar[],
 ): MathBox {
-	let collapsed = collapseTokenText(text).replace(INVISIBLE_OPERATORS, "");
+	let letters = collapseChars(
+		chars ??
+			(text === (element.textContent ?? "")
+				? readTokenChars(element)
+				: unsourced(text)),
+	).filter((char) => !INVISIBLE_OPERATORS.test(char.ch));
+	const collapsed = joinChars(letters);
 	const large = getLargeOperatorRows(element, collapsed, context);
 	if (large !== null) {
 		return large;
@@ -359,19 +535,21 @@ function layoutTextToken(
 	let bold = variant !== null && variant.includes("bold");
 	let italic = variant !== null && variant.includes("italic");
 	if (variant !== null && context.glyphs !== "ascii") {
-		const mapped = toMathAlphanumeric(
-			collapsed,
-			variant,
-			context.variantGlyphs,
-		);
+		const mapped = toMathAlphanumeric(letters, variant, context.variantGlyphs);
 		if (mapped !== null) {
-			collapsed = mapped;
+			letters = mapped;
 			bold = false;
 			italic = false;
 		}
 	}
-	return createTextBox(
-		toPlainGlyphs(collapsed, context.glyphs),
+	letters = letters.flatMap((char) =>
+		Array.from(toPlainGlyphs(char.ch, context.glyphs), (ch) => ({
+			ch,
+			source: char.source,
+		})),
+	);
+	return createSourcedBox(
+		letters,
 		getTokenStyle(element, variant === null ? null : {bold, italic}),
 	);
 }
@@ -485,43 +663,57 @@ const ALPHANUMERIC_RANGES: Record<string, AlphanumericRange> = {
 // font that has any math at all, so they are used without the flag that
 // opts into the block.
 function toMathAlphanumeric(
-	text: string,
+	chars: SourcedChar[],
 	variant: string,
 	block: boolean,
-): string | null {
+): SourcedChar[] | null {
 	const range = ALPHANUMERIC_RANGES[variant];
 	if (range === undefined) {
 		return null;
 	}
-	let out = "";
-	for (const char of text) {
-		const code = char.codePointAt(0)!;
-		const exception = range.exceptions?.[char];
-		if (exception !== undefined) {
-			out += exception;
-		} else if (!block && char !== " ") {
-			return null;
-		} else if (code >= 0x41 && code <= 0x5a) {
-			out += String.fromCodePoint(range.upper + code - 0x41);
-		} else if (code >= 0x61 && code <= 0x7a) {
-			out += String.fromCodePoint(range.lower + code - 0x61);
-		} else if (code >= 0x30 && code <= 0x39 && range.digits !== undefined) {
-			out += String.fromCodePoint(range.digits + code - 0x30);
-		} else if (
-			code >= 0x391 && code <= 0x3a9 && range.greekUpper !== undefined
-		) {
-			out += String.fromCodePoint(range.greekUpper + code - 0x391);
-		} else if (
-			code >= 0x3b1 && code <= 0x3c9 && range.greekLower !== undefined
-		) {
-			out += String.fromCodePoint(range.greekLower + code - 0x3b1);
-		} else if (char === " ") {
-			out += char;
-		} else {
+	const out: SourcedChar[] = [];
+	for (const {ch, source} of chars) {
+		const mapped = mapAlphanumeric(ch, range, block);
+		if (mapped === null) {
 			return null;
 		}
+		out.push({ch: mapped, source});
 	}
 	return out;
+}
+
+function mapAlphanumeric(
+	char: string,
+	range: AlphanumericRange,
+	block: boolean,
+): string | null {
+	const code = char.codePointAt(0)!;
+	const exception = range.exceptions?.[char];
+	if (exception !== undefined) {
+		return exception;
+	}
+	if (char === " ") {
+		return char;
+	}
+	if (!block) {
+		return null;
+	}
+	if (code >= 0x41 && code <= 0x5a) {
+		return String.fromCodePoint(range.upper + code - 0x41);
+	}
+	if (code >= 0x61 && code <= 0x7a) {
+		return String.fromCodePoint(range.lower + code - 0x61);
+	}
+	if (code >= 0x30 && code <= 0x39 && range.digits !== undefined) {
+		return String.fromCodePoint(range.digits + code - 0x30);
+	}
+	if (code >= 0x391 && code <= 0x3a9 && range.greekUpper !== undefined) {
+		return String.fromCodePoint(range.greekUpper + code - 0x391);
+	}
+	if (code >= 0x3b1 && code <= 0x3c9 && range.greekLower !== undefined) {
+		return String.fromCodePoint(range.greekLower + code - 0x3b1);
+	}
+	return null;
 }
 
 function isSingleGrapheme(text: string): boolean {
@@ -824,8 +1016,11 @@ function layoutRow(
 		// A negation sign is the short dash, and the box it starts hangs
 		// it outside the operand when centered.
 		if (operator !== null && isNegation(operator)) {
-			return createTextBox(
-				toPlainGlyphs("-", context.glyphs),
+			const source =
+				readTokenChars(child as Element).find((char) => char.source !== null)
+					?.source ?? null;
+			return createSourcedBox(
+				Array.from(toPlainGlyphs("-", context.glyphs), (ch) => ({ch, source})),
 				getTokenStyle(child as Element, null),
 			);
 		}

@@ -37,7 +37,14 @@ import {
 	toValue,
 	type Wrap,
 } from "./layoutsolver.ts";
-import {isMathRoot, layoutMath, type MathBox} from "./mathml.ts";
+import {
+	findMathPosition,
+	getMathAlignOffset,
+	getMathCellRects,
+	isMathRoot,
+	layoutMath,
+	type MathBox,
+} from "./mathml.ts";
 import {
 	getParagraphDirection,
 	getStringWidth,
@@ -2726,6 +2733,20 @@ function measureInlineRun(
 	return {width: breakResult.maxLineWidth, height: breakResult.totalHeight};
 }
 
+// The <math> element a node is inside, itself included.
+function getEnclosingMath(node: Node): Element | null {
+	for (
+		let element: Element | null = node.nodeType === node.ELEMENT_NODE
+			? (node as Element)
+			: node.parentElement; element !== null; element = element.parentElement
+	) {
+		if (isMathRoot(element)) {
+			return element;
+		}
+	}
+	return null;
+}
+
 // A <math> element is laid out whole by the math engine. The block and
 // inline engines see only its size, and never descend into it.
 function measureMath(layout: Layout, element: Element): MathBox {
@@ -4705,6 +4726,51 @@ export class Layout {
 		return this[kMathBoxes].get(element) ?? measureMath(this, element);
 	}
 
+	// Where a <math> element's cells start, in document coordinates: its
+	// content box, with the cells placed in it by text-align.
+	getMathOrigin(element: Element): {x: number; y: number} | null {
+		const rect = this.getRect(element);
+		if (rect === null) {
+			return null;
+		}
+		const box = this.getMathBox(element);
+		const model = getBoxModel(element);
+		const contentWidth =
+			Math.round(rect.width) -
+			model.borderLeftWidth -
+			model.borderRightWidth -
+			model.paddingLeft -
+			model.paddingRight;
+		return {
+			x:
+				Math.round(rect.left) +
+				model.borderLeftWidth +
+				model.paddingLeft +
+				getMathAlignOffset(
+					contentWidth - box.width,
+					getComputedValue(element, "text-align"),
+				),
+			y: Math.round(rect.top) + model.borderTopWidth + model.paddingTop,
+		};
+	}
+
+	// The rectangles of the cells inside a <math> element that render a
+	// node's text, in document coordinates.
+	getMathNodeRects(math: Element, node: Node): DOMRect[] {
+		const origin = this.getMathOrigin(math);
+		if (origin === null) {
+			return [];
+		}
+		return getMathCellRects(this.getMathBox(math), node).map((rect) =>
+			new this[kDOMRect](
+				origin.x + rect.x,
+				origin.y + rect.y,
+				rect.width,
+				rect.height,
+			),
+		);
+	}
+
 	contentRect(element: Element): DOMRect | null {
 		const rect = this.getRect(element);
 		if (!rect) {
@@ -4921,6 +4987,13 @@ export class Layout {
 			return null;
 		}
 
+		// An element inside <math> covers the cells that render its text.
+		const math = getEnclosingMath(element);
+		if (math !== null && math !== element) {
+			const rects = this.getMathNodeRects(math, element);
+			return rects.length === 0 ? null : unionRects(this, rects);
+		}
+
 		// A blockified box's layout node is the truth, not the text
 		// union the run machinery below reports, but only once one has been
 		// built.
@@ -4989,6 +5062,10 @@ export class Layout {
 	}
 
 	getRects(node: Node): DOMRect[] {
+		const math = getEnclosingMath(node);
+		if (math !== null && math !== node) {
+			return this.getMathNodeRects(math, node);
+		}
 		// Everything but true inline content is an atomic box with one rect,
 		// inline-block included. An <input> has no text runs at all, and
 		// returning none made it invisible to elementFromPoint.
@@ -5174,6 +5251,14 @@ export class Layout {
 		root: Node,
 		clampToNearestLine = false,
 	): {node: Text; offset: number} | null {
+		// Math has no text runs. Its cells know what text they render.
+		const math = getEnclosingMath(root);
+		if (math !== null) {
+			const origin = this.getMathOrigin(math);
+			return origin === null
+				? null
+				: findMathPosition(this.getMathBox(math), x - origin.x, y - origin.y);
+		}
 		let best: {node: Text; offset: number; distance: number} | null = null;
 		let nearest: {node: Text; fragment: LineFragment; rows: number} | null =
 			null;

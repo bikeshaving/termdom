@@ -37,7 +37,12 @@ import {
 	renderTextFragment,
 } from "./layout.ts";
 import type {LayoutNode} from "./layoutsolver.ts";
-import {isBlankCell, isMathRoot} from "./mathml.ts";
+import {
+	getMathAlignOffset,
+	isBlankCell,
+	isMathRoot,
+	type MathCell,
+} from "./mathml.ts";
 import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
@@ -1607,27 +1612,72 @@ function renderMath(
 		boxModel.borderRightWidth -
 		boxModel.paddingLeft -
 		boxModel.paddingRight;
-	const spare = Math.max(0, contentWidth - box.width);
-	const align = getComputedValue(element, "text-align");
-	const offset = align === "right" || align === "end"
-		? spare
-		: align === "center" ? spare >> 1 : 0;
 	const left =
 		Math.round(rect.left) +
 		boxModel.borderLeftWidth +
 		boxModel.paddingLeft +
-		offset;
+		getMathAlignOffset(
+			contentWidth - box.width,
+			getComputedValue(element, "text-align"),
+		);
 	const top =
 		Math.round(rect.top) + boxModel.borderTopWidth + boxModel.paddingTop;
+	const selections = new Map<Text, MathSelection | null>();
 	for (let row = 0; row < box.height; row++) {
 		let x = left;
 		for (const cell of box.cells[row]) {
-			if (!isBlankCell(cell)) {
-				ctx.drawText(cell.text, x, top + row, cell.style ?? undefined);
+			const style = getMathCellStyle(painter, cell, selections);
+			if (!isBlankCell(cell) || style !== cell.style) {
+				ctx.drawText(cell.text, x, top + row, style ?? undefined);
 			}
 			x += cell.width;
 		}
 	}
+}
+
+interface MathSelection {
+	from: number;
+	to: number;
+	paint: HighlightPaint;
+}
+
+// A cell's style under the highlights and the selection over the text
+// it renders, as a run of text gets in renderTextHighlights.
+function getMathCellStyle(
+	painter: Painter,
+	cell: MathCell,
+	selections: Map<Text, MathSelection | null>,
+): CellStyle | null {
+	const source = cell.source;
+	if (source === undefined) {
+		return cell.style;
+	}
+	const parent = flatParentElement(source.node);
+	if (parent === null) {
+		return cell.style;
+	}
+	let style = cell.style;
+	const covers = (from: number, to: number): boolean =>
+		from <= source.offset && source.offset < to;
+	for (const run of painter[kHighlightedText].get(source.node) ?? []) {
+		if (covers(run.from, run.to)) {
+			const paint = getHighlightStyle(painter, parent, run.name);
+			if (paint !== null) {
+				style = foldHighlight(style ?? {}, paint);
+			}
+		}
+	}
+	let selection = selections.get(source.node);
+	if (selection === undefined) {
+		const selected = getPaintSelectionRange(painter, source.node);
+		const paint = selected && readSelectionStyle(selected.selectionParent);
+		selection = selected && paint ? {...selected, paint} : null;
+		selections.set(source.node, selection);
+	}
+	if (selection !== null && covers(selection.from, selection.to)) {
+		style = foldHighlight(style ?? {}, selection.paint);
+	}
+	return style;
 }
 
 // The context root's clip intersected with the overflow of the
