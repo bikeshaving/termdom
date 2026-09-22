@@ -104,17 +104,27 @@ function getUnderlineCodes(style: UnderlineStyle): string[] {
 
 const kOut = Symbol("out");
 const kColorDepth = Symbol("colorDepth");
+const kOpenLink = Symbol("openLink");
 
 interface FrameWriter {
 	[kColorDepth]: ColorDepth;
 
 	[kOut]: string[];
+	// The OSC 8 hyperlink the emitted text is inside, by id, or 0. A
+	// cursor move ends it: what the terminal links is the text between the
+	// open and the close, wherever the cursor went in between.
+	[kOpenLink]: number;
 }
 
 class FrameWriter {
 	constructor(colorDepth: ColorDepth) {
 		this[kColorDepth] = colorDepth;
 		this[kOut] = [];
+		this[kOpenLink] = 0;
+	}
+
+	get openLink(): number {
+		return this[kOpenLink];
 	}
 
 	take(): string {
@@ -123,37 +133,61 @@ class FrameWriter {
 		return out;
 	}
 
+	hyperlink(id: number, url: string): this {
+		if (this[kOpenLink] === id) {
+			return this;
+		}
+		this[kOpenLink] = id;
+		this[kOut].push(`\x1b]8;id=${id};${url}\x1b\\`);
+		return this;
+	}
+
+	endHyperlink(): this {
+		if (this[kOpenLink] !== 0) {
+			this[kOpenLink] = 0;
+			this[kOut].push("\x1b]8;;\x1b\\");
+		}
+		return this;
+	}
+
 	carriageReturn(): this {
+		this.endHyperlink();
 		this[kOut].push("\r");
 		return this;
 	}
 
 	newLine(rows = 1): this {
+		this.endHyperlink();
 		this[kOut].push("\r\n".repeat(rows));
 		return this;
 	}
 
 	cursorTo(row: number, col: number): this {
+		this.endHyperlink();
 		this[kOut].push(`\x1b[${row};${col}H`);
 		return this;
 	}
 
 	cursorForward(columns: number): this {
+		this.endHyperlink();
 		this[kOut].push(`\x1b[${columns}C`);
 		return this;
 	}
 
 	cursorDown(rows: number): this {
+		this.endHyperlink();
 		this[kOut].push(`\x1b[${rows}B`);
 		return this;
 	}
 
 	saveCursor(): this {
+		this.endHyperlink();
 		this[kOut].push("\x1b7");
 		return this;
 	}
 
 	restoreCursor(): this {
+		this.endHyperlink();
 		this[kOut].push("\x1b8");
 		return this;
 	}
@@ -193,6 +227,7 @@ class FrameWriter {
 	}
 
 	resetStyle(): this {
+		this.endHyperlink();
 		this[kOut].push("\x1b[0m");
 		return this;
 	}
@@ -274,6 +309,8 @@ export interface CellStyle {
 	dim?: boolean;
 	blink?: boolean;
 	overline?: boolean;
+	// An absolute URL the cell's text links to (OSC 8), or nothing.
+	link?: string | null;
 }
 
 interface TextMetrics {
@@ -679,6 +716,29 @@ function getBorderChar(borderEncoding: number): string {
  * two-column glyph covers. The glyph's width text control steps the emitter
  * over it.
  */
+// The URLs a screen's cells link to, by id. Ids are stable for the life
+// of the screen, so a link that repaints keeps its id and a terminal
+// treats its pieces as one link.
+class LinkTable {
+	readonly urls: string[];
+	readonly ids: Map<string, number>;
+
+	constructor() {
+		this.urls = [""];
+		this.ids = new Map();
+	}
+
+	intern(url: string): number {
+		let id = this.ids.get(url);
+		if (id === undefined) {
+			id = this.urls.length;
+			this.urls.push(url);
+			this.ids.set(url, id);
+		}
+		return id;
+	}
+}
+
 class CellGrid {
 	readonly rows: number;
 	readonly cols: number;
@@ -687,8 +747,10 @@ class CellGrid {
 	readonly bg: Uint32Array;
 	readonly attrs: Uint16Array;
 	readonly border: Uint32Array;
+	readonly link: Uint32Array;
+	readonly links: LinkTable;
 
-	constructor(rows: number, cols: number) {
+	constructor(rows: number, cols: number, links = new LinkTable()) {
 		this.rows = rows;
 		this.cols = cols;
 		const size = rows * cols;
@@ -697,6 +759,8 @@ class CellGrid {
 		this.bg = new Uint32Array(size);
 		this.attrs = new Uint16Array(size);
 		this.border = new Uint32Array(size);
+		this.link = new Uint32Array(size);
+		this.links = links;
 	}
 
 	clear(): void {
@@ -705,6 +769,7 @@ class CellGrid {
 		this.bg.fill(0);
 		this.attrs.fill(0);
 		this.border.fill(0);
+		this.link.fill(0);
 	}
 
 	clearRange(start: number, end: number): void {
@@ -716,6 +781,7 @@ class CellGrid {
 		this.bg.fill(0, start, end);
 		this.attrs.fill(0, start, end);
 		this.border.fill(0, start, end);
+		this.link.fill(0, start, end);
 	}
 
 	moveRange(dest: number, srcStart: number, srcEnd: number): void {
@@ -724,6 +790,7 @@ class CellGrid {
 		this.bg.copyWithin(dest, srcStart, srcEnd);
 		this.attrs.copyWithin(dest, srcStart, srcEnd);
 		this.border.copyWithin(dest, srcStart, srcEnd);
+		this.link.copyWithin(dest, srcStart, srcEnd);
 	}
 
 	copyFrom(
@@ -735,10 +802,11 @@ class CellGrid {
 		this.bg.set(source.bg.subarray(start, end), to);
 		this.attrs.set(source.attrs.subarray(start, end), to);
 		this.border.set(source.border.subarray(start, end), to);
+		this.link.set(source.link.subarray(start, end), to);
 	}
 
 	bottomRows(rows: number): CellGrid {
-		const kept = new CellGrid(rows, this.cols);
+		const kept = new CellGrid(rows, this.cols, this.links);
 		kept.copyFrom(this, {
 			to: 0,
 			start: (this.rows - rows) * this.cols,
@@ -762,6 +830,7 @@ class CellGrid {
 			packAttrs(style) |
 			((width < ATTR.WidthWide ? width : ATTR.WidthWide) << ATTR.WidthShift);
 		this.border[index] = 0;
+		this.link[index] = style?.link ? this.links.intern(style.link) : 0;
 	}
 
 	setBorderCell(index: number, border: number, style?: CellStyle): void {
@@ -774,6 +843,7 @@ class CellGrid {
 		this.attrs[index] =
 			(packAttrs(style) & ~ATTR.DoubleUnderline) | (1 << ATTR.WidthShift);
 		this.border[index] = border;
+		this.link[index] = 0;
 	}
 
 	setBlank(index: number): void {
@@ -782,6 +852,7 @@ class CellGrid {
 		this.bg[index] = 0;
 		this.attrs[index] = 1 << ATTR.WidthShift;
 		this.border[index] = 0;
+		this.link[index] = 0;
 	}
 
 	setFrom(index: number, source: CellGrid, sourceIndex: number): void {
@@ -790,6 +861,7 @@ class CellGrid {
 		this.bg[index] = source.bg[sourceIndex];
 		this.attrs[index] = source.attrs[sourceIndex];
 		this.border[index] = source.border[sourceIndex];
+		this.link[index] = source.link[sourceIndex];
 	}
 
 	widthAt(index: number): number {
@@ -806,7 +878,8 @@ class CellGrid {
 			this.bg[index] === other.bg[otherIndex] &&
 			(this.attrs[index] & ATTR.StyleMask) ===
 			(other.attrs[otherIndex] & ATTR.StyleMask) &&
-			this.border[index] === other.border[otherIndex]
+			this.border[index] === other.border[otherIndex] &&
+			this.link[index] === other.link[otherIndex]
 		);
 	}
 }
@@ -1346,6 +1419,14 @@ function getStyleDiff(
 	prev: number,
 	writer: FrameWriter,
 ): void {
+	const link = grid.link[index];
+	if (link !== writer.openLink) {
+		if (link === 0) {
+			writer.endHyperlink();
+		} else {
+			writer.hyperlink(link, grid.links.urls[link]);
+		}
+	}
 	const fg = grid.fg[index];
 	const bg = grid.bg[index];
 	const attrs = grid.attrs[index] & ATTR.StyleMask;
@@ -1715,6 +1796,7 @@ const kRows = Symbol("rows");
 const kCols = Symbol("cols");
 const kWriter = Symbol("writer");
 const kPrev = Symbol("prev");
+const kLinks = Symbol("links");
 const kPrevContentHeight = Symbol("prevContentHeight");
 const kPark = Symbol("park");
 const kSpare = Symbol("spare");
@@ -1738,6 +1820,7 @@ const kCellPixels = Symbol("cellPixels");
 const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
 
 export interface Screen {
+	[kLinks]: LinkTable;
 	[kPrev]: CellGrid | null;
 	// The dropped grid, reused by the next frame of the same size.
 	[kSpare]: CellGrid | null;
@@ -1773,6 +1856,7 @@ export class Screen {
 	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
 		this[kFlushProbes] = false;
 		this[kMeasurer] = null;
+		this[kLinks] = new LinkTable();
 		this[kPrev] = null;
 		this[kSpare] = null;
 		this[kDiff] = null;
@@ -1939,7 +2023,7 @@ export class Screen {
 			return "";
 		}
 		const cols = this[kCols];
-		const grid = new CellGrid(rows, cols);
+		const grid = new CellGrid(rows, cols, this[kLinks]);
 		paint(new CellContext(grid, rows, cols, 0));
 		const lines: string[] = [];
 		for (let row = 0; row < rows; row++) {
@@ -2062,7 +2146,7 @@ export class Screen {
 			// there is nothing to diff against. Print all of it.
 			let diff = this[kDiff];
 			if (diff === null || diff.rows !== frameRows || diff.cols !== cols) {
-				diff = new CellGrid(frameRows, cols);
+				diff = new CellGrid(frameRows, cols, this[kLinks]);
 				this[kDiff] = diff;
 			} else {
 				diff.clear();
@@ -2092,7 +2176,8 @@ export class Screen {
 								next.bg[n] !== prev.bg[p] ||
 								(next.attrs[n] & ATTR.StyleMask) !==
 								(prev.attrs[p] & ATTR.StyleMask) ||
-								next.border[n] !== prev.border[p]
+								next.border[n] !== prev.border[p] ||
+								next.link[n] !== prev.link[p]
 							) {
 								break;
 							}
@@ -2391,7 +2476,7 @@ function takeGrid(screen: Screen, rows: number, cols: number): CellGrid {
 		spare.clear();
 		return spare;
 	}
-	return new CellGrid(rows, cols);
+	return new CellGrid(rows, cols, screen[kLinks]);
 }
 
 function isProbingUseful(exchange: Exchange): boolean {
