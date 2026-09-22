@@ -100,7 +100,7 @@ export const UA_DOCUMENT_STYLES = `
 	button::after { content: " ]"; }
 	input[type=hidden i] { display: none !important; }
 	[hidden]:not([hidden=until-found i]) { display: none; }
-	a[href] { text-decoration: underline; }
+	a[href] { color: LinkText; text-decoration: underline; }
 	/*
 	 * Explicit dir values as attribute selectors, so an unrecognized value
 	 * matches nothing and inherits; :dir() carries the cases that read the
