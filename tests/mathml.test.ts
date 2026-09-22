@@ -597,7 +597,8 @@ const FOURIER =
 test("golden: the quadratic formula", async () => {
 	expect(await renderMarked(block(QUADRATIC))).toEqual([
 		"                    ________",
-		"          x = -b_±_⎷b²_−_4ac_",
+		"              -b ± ⎷b² − 4ac",
+		"          x = ───────────────",
 		"                    2a",
 	]);
 	expect(await renderLines(`<math>${QUADRATIC}</math>`)).toEqual([
@@ -848,4 +849,36 @@ test("a drag over a drawn stroke takes the nearest text", async () => {
 	// From the bar row above x, whose nearest text is x, to right of it.
 	expect(await drag(x, y - 1, x + 1, y)).toBe("x");
 	dom.dispose();
+});
+
+test("a product in display mode is its bar and its legs", async () => {
+	const product =
+		"<munderover><mo>∏</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>" +
+		"<mi>i</mi>";
+	expect(await renderLines(block(product), 12)).toEqual([
+		"    n",
+		"   ┬─┬",
+		"   │ │ i",
+		"   i=1",
+	]);
+});
+
+test("a labelled arrow reaches across its label and to its minsize", async () => {
+	expect(
+		await renderLines(
+			block(
+				"<mi>A</mi><mover><mo stretchy=\"true\" minsize=\"3em\">→</mo>" +
+				"<mpadded width=\"+0.6em\" lspace=\"0.3em\"><mi>f</mi></mpadded></mover><mi>B</mi>",
+			),
+			12,
+		),
+	).toEqual(["     f", "  A ──→ B"]);
+	expect(
+		await renderLines(
+			block(
+				"<mover><mo stretchy=\"true\">→</mo><mrow><mi>map</mi><mi>ping</mi></mrow></mover>",
+			),
+			12,
+		),
+	).toEqual(["  mapping", "  ──────→"]);
 });
