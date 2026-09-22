@@ -351,8 +351,7 @@ test("the ascii glyph set draws with slashes, pipes and dashes", async () => {
 		12,
 	);
 	expect(lines).toEqual([
-		"  /     \\",
-		"  |  a  |",
+		"  /  a  \\",
 		"  |-----|",
 		"  |   _ |",
 		"  \\ \\/b /",
