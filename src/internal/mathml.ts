@@ -535,6 +535,17 @@ function getRadical(glyphs: GlyphSet): RadicalPieces {
 	return TABLES[glyphs].radical;
 }
 
+// Integrals with more than one sign, and with a ring, are columns of
+// the integral's pieces, the ring on the middle row.
+const INTEGRALS: Record<string, {columns: number; ring: boolean}> = {
+	"∫": {columns: 1, ring: false},
+	"∬": {columns: 2, ring: false},
+	"∭": {columns: 3, ring: false},
+	"∮": {columns: 1, ring: true},
+	"∯": {columns: 2, ring: true},
+	"∰": {columns: 3, ring: true},
+};
+
 // The rows a large operator takes in display mode, where print sets it
 // bigger than the text: the least that draws one. A sum whose top bar
 // is an overline on its first stroke needs no row for the bar. Zero
@@ -551,7 +562,7 @@ function getDisplayHeight(
 	if (op === "∏") {
 		return 2;
 	}
-	return op in TABLES[glyphs].vertical ? 3 : 0;
+	return op in TABLES[glyphs].vertical || op in INTEGRALS ? 3 : 0;
 }
 
 /**
@@ -571,6 +582,7 @@ function toPlainGlyphs(text: string, glyphs: GlyphSet): string {
 function hasVerticalPieces(op: string, glyphs: GlyphSet): boolean {
 	return (
 		op in TABLES[glyphs].vertical ||
+		op in INTEGRALS ||
 		op === "∑" ||
 		op === "∏" ||
 		op === "⟨" ||
@@ -601,6 +613,9 @@ function buildVerticalGlyph(
 	}
 	if (op === "⟨" || op === "⟩") {
 		return plainRows(buildAngle(op, height, baseline, glyphs));
+	}
+	if (op in INTEGRALS) {
+		return plainRows(buildIntegral(op, height, baseline, glyphs));
 	}
 	const pieces = TABLES[glyphs].vertical[op];
 	if (!pieces) {
@@ -687,6 +702,27 @@ function buildStrokes(count: number, down: string, up: string): string[] {
 	}
 	while (rows.length < count) {
 		rows.push(placeAt(up, 0, 3));
+	}
+	return rows;
+}
+
+function buildIntegral(
+	op: string,
+	height: number,
+	baseline: number,
+	glyphs: GlyphSet,
+): string[] {
+	const {columns, ring} = INTEGRALS[op];
+	const pieces = TABLES[glyphs].vertical["∫"];
+	const center = glyphs === "ascii" ? "o" : "∮";
+	const rows: string[] = [];
+	for (let row = 0; row < height; row++) {
+		const piece = row === 0
+			? pieces.top
+			: row === height - 1
+				? pieces.bottom
+				: ring && row === baseline ? center : pieces.middle;
+		rows.push(piece.repeat(columns));
 	}
 	return rows;
 }
