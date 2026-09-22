@@ -49,3 +49,26 @@ test("the bar stays pinned while the camera scrolls", async () => {
 	expect(rect.top).toBe(9);
 	dom.dispose();
 });
+
+test("a fixed bar inside a scrolled fullscreen scroller stays on the last row", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div id=\"pane\" style=\"overflow-y:auto\">" +
+		Array.from({length: 30}, (_, i) => `<div>row ${i}</div>`).join("") +
+		"<div id=\"bar\" style=\"position:fixed;bottom:0;left:0;width:100%\">STATUS</div>" +
+		"</div>";
+	await nextFrame(dom);
+	const pane = dom.document.getElementById("pane")!;
+	await pane.requestFullscreen();
+	await nextFrame(dom);
+	pane.scrollTop = 7;
+	await nextFrame(dom);
+	const rows = terminal.getVisibleText().split("\n");
+	expect(rows[0]).toContain("row 7");
+	expect(rows[9]).toContain("STATUS");
+	const bar = dom.document.getElementById("bar")!;
+	expect(bar.getBoundingClientRect().top).toBe(9);
+	expect(dom.document.elementFromPoint(2, 9)).toBe(bar);
+	dom.dispose();
+});
