@@ -1714,7 +1714,6 @@ const kScrollTop = Symbol("scrollTop");
 const kFrameScroll = Symbol("frameScroll");
 const kDirty = Symbol("dirty");
 const kDocumentTop = Symbol("documentTop");
-const kAnchorScrollTop = Symbol("anchorScrollTop");
 const kCellPixels = Symbol("cellPixels");
 // What a cell measures until the terminal says. Most fonts run about
 // twice as tall as wide at any size.
@@ -1744,11 +1743,9 @@ export interface Screen {
 	[kResetAtRow]: number;
 	[kRows]: number;
 	[kCols]: number;
-	// The fullscreen anchor: the alternate screen's row-zero scroll origin.
 	[kScrollTop]: number;
 	[kDocumentTop]: number;
 	[kCellPixels]: {width: number; height: number};
-	[kAnchorScrollTop]: number;
 	[kWriter]: FrameWriter;
 	[kFrameScroll]: number;
 	[kDirty]: boolean;
@@ -1774,7 +1771,6 @@ export class Screen {
 		this[kCols] = cols;
 		this[kScrollTop] = 0;
 		this[kDocumentTop] = 0;
-		this[kAnchorScrollTop] = 0;
 		this[kCellPixels] = {...DEFAULT_CELL_PIXELS};
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
@@ -1823,14 +1819,6 @@ export class Screen {
 
 	set documentTop(row: number) {
 		this[kDocumentTop] = row;
-	}
-
-	get anchorScrollTop(): number {
-		return this[kAnchorScrollTop];
-	}
-
-	set anchorScrollTop(row: number) {
-		this[kAnchorScrollTop] = row;
 	}
 
 	resize(rows: number, cols: number): void {

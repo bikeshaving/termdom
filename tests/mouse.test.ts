@@ -608,3 +608,48 @@ test("a mouse event answers in the standard coordinate spaces", async () => {
 
 	termdom.dispose();
 });
+
+test("fullscreen maps mouse rows from the screen's top, not the command's row", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 30});
+	// Prior output puts the command's start, and so the document's anchor,
+	// on row 4. The alternate screen starts at row 0 regardless.
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("one\r\ntwo\r\nthree\r\nfour\r\n", () => resolve());
+	});
+	const termdom = new TermDOM({transport: terminal.sharedTransport});
+	const {document} = termdom;
+	document.body.innerHTML =
+		"<div id=\"pane\" style=\"overflow-y:auto\">" +
+		Array.from({length: 40}, (_, i) => `<div id="r${i}">row ${i}</div>`)
+			.join("") +
+		"</div>";
+	await nextFrame(termdom);
+	const pane = document.getElementById("pane")!;
+	await pane.requestFullscreen();
+	await nextFrame(termdom);
+
+	const clicked: string[] = [];
+	document.addEventListener("click", (event) => {
+		clicked.push((event.target as Element).id);
+	});
+	// A click on the screen's second row lands on the second row's box.
+	await send(terminal, "\x1b[<0;3;2M");
+	await send(terminal, "\x1b[<0;3;2m");
+	expect(clicked).toEqual(["r1"]);
+
+	// A wheel tick on the first row scrolls the pane, and never the
+	// document behind the alternate screen.
+	await send(terminal, "\x1b[<65;3;1M");
+	await nextFrame(termdom);
+	expect(pane.scrollTop).toBe(3);
+	expect(termdom.window.scrollY).toBe(0);
+	// Past the pane's end the tick has nowhere to go.
+	pane.scrollTop = 100;
+	await nextFrame(termdom);
+	const end = pane.scrollTop;
+	await send(terminal, "\x1b[<65;3;5M");
+	await nextFrame(termdom);
+	expect(pane.scrollTop).toBe(end);
+	expect(termdom.window.scrollY).toBe(0);
+	termdom.dispose();
+});
