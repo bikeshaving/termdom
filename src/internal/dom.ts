@@ -4461,6 +4461,17 @@ function innerInvoke(
 	return found;
 }
 
+/** The terminal behind a document, while it is attached to one. */
+export function getDocumentExchange(
+	document: globalThis.Document | null,
+): Exchange | null {
+	if (document === null) {
+		return null;
+	}
+	const attached = getAttachedDocument(document as unknown as Document);
+	return attached === undefined ? null : attached[kExchange];
+}
+
 function getSessionExchange(target: EventTarget): EventTarget | null {
 	const document = getEventTargetDocument(target);
 	if (document === null) {

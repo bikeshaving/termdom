@@ -7,7 +7,7 @@
 
 import {getComputedValue} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
-import {MATHML_NAMESPACE} from "./dom.ts";
+import {getDocumentExchange, MATHML_NAMESPACE} from "./dom.ts";
 import {
 	type BoxLines,
 	buildHorizontalGlyph,
@@ -54,6 +54,9 @@ interface MathContext {
 	display: boolean;
 	glyphs: GlyphSet;
 	variantGlyphs: boolean;
+	// The terminal draws SGR 53, so a bar over a row can be an overline
+	// on that row rather than an underline on a row above it.
+	overline: boolean;
 	// Inside a script or a limit, where operators get no spacing.
 	tight: boolean;
 }
@@ -98,6 +101,8 @@ export function layoutMath(element: Element, display: boolean): MathBox {
 		glyphs: parseGlyphSet(getComputedValue(element, "--math-glyphs")),
 		variantGlyphs:
 			getComputedValue(element, "--math-variant-glyphs").trim() === "unicode",
+		overline:
+			getDocumentExchange(element.ownerDocument)?.overlineNegotiated() ?? false,
 		tight: false,
 	};
 	return layoutRow(getLayoutChildren(element), element, context);
@@ -387,22 +392,27 @@ function getLargeOperatorRows(
 	) {
 		return null;
 	}
-	const height = getDisplayHeight(text, context.glyphs);
+	const height = getDisplayHeight(text, context.glyphs, context.overline);
 	if (height < 2) {
 		return null;
 	}
-	const baseline = getLargeOperatorBaseline(text, height);
-	const rows = buildVerticalGlyph(text, height, baseline, context.glyphs);
+	const baseline = getLargeOperatorBaseline(height);
+	const rows = buildVerticalGlyph(
+		text,
+		height,
+		baseline,
+		context.glyphs,
+		context.overline,
+	);
 	return rows === null
 		? null
 		: createRowsBox(rows, baseline, getTokenStyle(element, null));
 }
 
-// Text sits just below the axis in print, so beside a drawn sum, whose
-// axis is the seam between its strokes, the summand takes the row
-// under the seam. An integral or product has a middle row and uses it.
-function getLargeOperatorBaseline(text: string, height: number): number {
-	return text === "∑" ? (height + 1) >> 1 : (height - 1) >> 1;
+// The middle row, or the upper of the two middle rows: beside a drawn
+// sum, the summand sits on the row of the first stroke.
+function getLargeOperatorBaseline(height: number): number {
+	return (height - 1) >> 1;
 }
 
 interface AlphanumericRange {
@@ -761,7 +771,10 @@ function isBlankBox(box: MathBox): boolean {
 
 export function isBlankCell(cell: MathCell): boolean {
 	return (
-		cell.text === " " && cell.style?.bg == null && !cell.style?.underline
+		cell.text === " " &&
+		cell.style?.bg == null &&
+		!cell.style?.underline &&
+		!cell.style?.overline
 	);
 }
 
@@ -932,7 +945,10 @@ function layoutStretchedOperator(
 ): MathBox {
 	let height = ascent + descent + 1;
 	if (operator.entry.largeop && !context.tight) {
-		height = Math.max(height, getDisplayHeight(operator.text, context.glyphs));
+		height = Math.max(
+			height,
+			getDisplayHeight(operator.text, context.glyphs, context.overline),
+		);
 	}
 	const minsize = parseMathLength(element.getAttribute("minsize"));
 	const maxsize = parseMathLength(element.getAttribute("maxsize"));
@@ -946,10 +962,16 @@ function layoutStretchedOperator(
 	// taller than its siblings keeps its own baseline.
 	const spare = Math.max(0, height - (ascent + descent + 1));
 	const baseline = operator.entry.largeop && spare > 0
-		? getLargeOperatorBaseline(operator.text, height)
+		? getLargeOperatorBaseline(height)
 		: Math.min(ascent + (spare >> 1), height - 1);
 	const rows = height > 1
-		? buildVerticalGlyph(operator.text, height, baseline, context.glyphs)
+		? buildVerticalGlyph(
+			operator.text,
+			height,
+			baseline,
+			context.glyphs,
+			context.overline,
+		)
 		: null;
 	if (rows === null) {
 		return layoutTextToken(element, operator.text, context);
@@ -966,10 +988,11 @@ function createRowsBox(
 	for (const row of rows) {
 		const line = typeof row === "string"
 			? createTextBox(row, style)
-			: createTextBox(
-				row.text,
-				row.underline ? {...style, underline: true} : style,
-			);
+			: createTextBox(row.text, {
+				...style,
+				...(row.underline ? {underline: true} : {}),
+				...(row.overline ? {overline: true} : {}),
+			});
 		box = box === null ? line : stack(box, line, "left", 0);
 	}
 	return {...box!, baseline};
@@ -1088,16 +1111,22 @@ function layoutRadical(element: Element, context: MathContext): MathBox {
 	const column = createRowsBox(rows, radicand.baseline, null);
 	// The bar starts where the stem's top will meet it.
 	const barStart = shape === "stands" ? 1 : signWidth;
-	const overline = bar === null
-		? beside(
-			createTextBox(" ".repeat(barStart), null),
-			createTextBox(" ".repeat(radicand.width + signWidth - barStart), {
-				underline: true,
-			}),
-		)
-		: createTextBox(" ".repeat(barStart) + bar.repeat(radicand.width), null);
 	const body = beside(column, radicand);
-	let result = stack(overline, body, "left", body.baseline + 1);
+	// An overline along the radicand's top row needs no row of its own.
+	let result: MathBox;
+	if (bar === null && context.overline) {
+		result = overlineRow(body, 0, barStart);
+	} else {
+		const overline = bar === null
+			? beside(
+				createTextBox(" ".repeat(barStart), null),
+				createTextBox(" ".repeat(radicand.width + signWidth - barStart), {
+					underline: true,
+				}),
+			)
+			: createTextBox(" ".repeat(barStart) + bar.repeat(radicand.width), null);
+		result = stack(overline, body, "left", body.baseline + 1);
+	}
 	if (index === null) {
 		return result;
 	}
@@ -1705,6 +1734,18 @@ function placeInWidth(
 				(align === "left" ? 0 : (width - room - (box.width - hang)) >> 1),
 		);
 	return pad(box, 0, extra - left, 0, left);
+}
+
+function overlineRow(box: MathBox, row: number, from: number): MathBox {
+	let column = 0;
+	const cells = box.cells[row].map((cell) => {
+		const start = column;
+		column += cell.width;
+		return start < from
+			? cell
+			: {...cell, style: {...cell.style, overline: true}};
+	});
+	return {...box, cells: box.cells.map((r, i) => (i === row ? cells : r))};
 }
 
 function underlineLastRow(box: MathBox): MathBox {

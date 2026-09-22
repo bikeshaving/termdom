@@ -248,7 +248,8 @@ type WireItem =
 	{kind: "cursor-report"; row: number; col: number} |
 	{kind: "mode-report"; mode: string; value: number} |
 	{kind: "cell-size"; width: number; height: number} |
-	{kind: "clipboard"; text: string | null};
+	{kind: "clipboard"; text: string | null} |
+	{kind: "sgr-report"; params: string | null};
 
 // The one named spelling that carries a modifier.
 const SHIFT_TAB = "\x1b[Z";
@@ -381,6 +382,11 @@ const kExpectingReply = Symbol("expectingReply");
 
 const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
 
+// DECRQSS answered for SGR: the parameters of the terminal's current
+// style, as `0;53`, between DCS 1 $ r and m ST. DCS 0 $ r is a terminal
+// (tmux, say) that has no answer for the request.
+const SGR_REPORT = /^\x1bP([01])\$r([\d;:]*)m?\x1b\\/;
+
 interface WireReader {
 	[kTail]: string;
 	[kPasteBody]: string | null;
@@ -483,6 +489,17 @@ class WireReader {
 			// keys it sends. One that arrives whole is discarded through its
 			// terminator. One with no terminator in the same write is keys:
 			// Escape and then a bracket is what a person typing sends too.
+			if (data[i] === "\x1b" && data[i + 1] === "P") {
+				const report = SGR_REPORT.exec(data.slice(i));
+				if (report !== null) {
+					items.push({
+						kind: "sgr-report",
+						params: report[1] === "1" ? report[2] : null,
+					});
+					i += report[0].length;
+					continue;
+				}
+			}
 			if (
 				data[i] === "\x1b" &&
 				i + 1 < data.length &&
@@ -569,6 +586,10 @@ function splitTrailingEscape(chunk: string): number {
 		return chunk.length - esc;
 	}
 	if (kind === "O" && esc + 2 >= chunk.length) {
+		return chunk.length - esc;
+	}
+	// A DCS reply cut before its terminator.
+	if (kind === "P" && findStringTerminator(chunk, esc + 2) === -1) {
 		return chunk.length - esc;
 	}
 	const tail = chunk.slice(esc);
@@ -658,6 +679,7 @@ const kPendingReplies = Symbol("pendingReplies");
 
 const kPriorBidiMode = Symbol("priorBidiMode");
 const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
+const kOverlineNegotiated = Symbol("overlineNegotiated");
 
 // Most terminals refuse clipboard reads by silence. This is what every
 // readText() waits before rejecting.
@@ -706,6 +728,7 @@ export interface Exchange {
 	// The BDSM state the terminal reported before we touched it.
 	[kPriorBidiMode]: number | null;
 	[kGraphemeClustersNegotiated]: boolean;
+	[kOverlineNegotiated]: boolean;
 	// A terminal replies to DSR in ask order, so this keeps cursor
 	// detection and width probes from taking each other's replies.
 	[kDSRSequence]: number;
@@ -744,6 +767,7 @@ export class Exchange extends EventTarget {
 		this[kPendingReplies] = [];
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
+		this[kOverlineNegotiated] = false;
 		this[kDSRSequence] = 0;
 		this[kProbingEnded] = false;
 		this[kWidths] = createWidthProbes(interactive);
@@ -791,6 +815,10 @@ export class Exchange extends EventTarget {
 
 	clusterWidthsNegotiated(): boolean {
 		return this[kGraphemeClustersNegotiated];
+	}
+
+	overlineNegotiated(): boolean {
+		return this[kOverlineNegotiated];
 	}
 
 	wantsWidth(cluster: string): boolean {
@@ -1036,6 +1064,27 @@ export class Exchange extends EventTarget {
 		}
 	}
 
+	/**
+	 * SGR 53, overline. No terminal advertises it, but one that draws it
+	 * keeps it in its style, and DECRQSS reports the style back. The
+	 * probe sets it, asks, and resets it in one write, so the terminal's
+	 * style is what it was. A terminal that says nothing draws none.
+	 */
+	async negotiateOverline(): Promise<boolean> {
+		if (!this[kInteractive]) {
+			return false;
+		}
+		const answer = await nextReply<"sgr-report", boolean>(this, "sgr-report", {
+			ask: "\x1b[53m\x1bP$qm\x1b\\\x1b[55m",
+			timeoutMs: 1000,
+			absent: false,
+			read: ({params}) =>
+				params !== null && params.split(";").includes("53"),
+		});
+		this[kOverlineNegotiated] = answer;
+		return answer;
+	}
+
 	/** DSR. The cursor row is the anchor. */
 	detectAnchor(): Promise<number> {
 		if (!this[kInteractive]) {
@@ -1195,6 +1244,7 @@ export class Exchange extends EventTarget {
 		}
 		this.restoreEngagedModes();
 		this[kGraphemeClustersNegotiated] = false;
+		this[kOverlineNegotiated] = false;
 		abandonClipboardQuery(this);
 		for (const entry of this[kPendingReplies]) {
 			clearTimeout(entry.timer);

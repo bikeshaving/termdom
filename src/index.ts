@@ -261,6 +261,14 @@ export class TermDOM {
 			this[kExchange].initializeCursorDetection();
 			void this[kExchange].negotiateBidi();
 			void this[kExchange].negotiateGraphemeClusters();
+			// Math draws its bars as overlines once the terminal has agreed
+			// to them, so what was measured before the answer measures again.
+			void this[kExchange].negotiateOverline().then((agreed) => {
+				if (agreed && isAttached(this)) {
+					this[kLayout].invalidateTextMeasurement();
+					void render(this);
+				}
+			});
 			this[kExchange].scrubProbeEcho();
 			// After the erase, which is for the mode probes' echo. What was
 			// painted against the guessed cell repaints when the answer lands.

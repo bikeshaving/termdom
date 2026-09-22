@@ -63,7 +63,7 @@ document.head.innerHTML = `
     math { color: #d7d7af; }
     /* Variables are italic by default, as in print. Terminals draw
        italics unevenly, so this sets them apart by color instead. */
-    mi { text-transform: none; color: #87d7ff; }
+    mi { text-transform: none; color: #ffd787; }
     .help { color: #808080; margin-top: 1em; }
   </style>
 `;
