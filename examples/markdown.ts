@@ -253,5 +253,7 @@ const bindings: Record<string, () => void> = {
 };
 document.addEventListener("keydown", (event: Event) => {
   bindings[(event as KeyboardEvent).key]?.();
-  updateStatus();
 });
+// The wheel and the keys above both move the document; the scroll event
+// is where every move ends up.
+document.addEventListener("scroll", updateStatus);
