@@ -8,7 +8,9 @@
 //   l / right          unfold         space/f/b    page the thread
 //   g / G              ends           r            reload
 //   q                  quit
-//   a click picks a story or a comment; picking a story opens it
+//   a click on a story opens its comments, on a comment picks it, and on
+//   the masthead goes back to the front page; a story's title is a link
+//   to the story itself, for the terminal to open
 //
 // In a thread, h folds the comment under the cursor. On a comment that is
 // folded already, or that has no replies, h steps up to the parent.
@@ -73,6 +75,7 @@ style.textContent = `
     font-weight: bold;
     padding: 0 1ch;
   }
+  .masthead a { color: inherit; text-decoration: none; }
   .masthead .y { background-color: #ffffff; color: #ff6600; }
   .masthead .count { font-weight: normal; }
   /* The reader fills the screen and scrolls its content; the bar sits on
@@ -138,7 +141,9 @@ document.head.appendChild(style);
 
 const masthead = document.createElement("div");
 masthead.className = "masthead";
-const brand = document.createElement("span");
+// The brand is the way home: a link to the top of the page.
+const brand = document.createElement("a");
+brand.setAttribute("href", "#");
 const logo = document.createElement("span");
 logo.className = "y";
 logo.textContent = "Y";
@@ -656,6 +661,16 @@ document.addEventListener("keydown", (event: Event) => {
 
 document.addEventListener("click", (event: Event) => {
   const target = event.target as Element;
+  // The views are pages behind links: the masthead's link leads back to
+  // the front page, and a story's link, being the story's own address,
+  // is the terminal's to open.
+  const link = target.closest("a[href]");
+  if (link?.getAttribute("href") === "#") {
+    if (reading) {
+      back();
+    }
+    return;
+  }
   if (reading) {
     const comment = target.closest(".comment") as HTMLElement | null;
     if (comment) {
