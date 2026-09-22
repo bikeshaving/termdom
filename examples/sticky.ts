@@ -14,11 +14,29 @@ term.attach();
 const {document} = term;
 
 const SECTIONS: Record<string, string> = {
-  Fruit: "apple banana cherry date elderberry fig grape",
-  Vegetables: "artichoke beet carrot daikon endive fennel",
-  Grains: "amaranth barley corn durum einkorn farro",
-  Herbs: "anise basil chervil dill epazote fenugreek",
-  Spices: "allspice cardamom chili elderflower fenugreek ginger",
+  Fruit:
+    "apple apricot banana blackberry cherry date elderberry fig grape guava " +
+    "kiwi lemon lime lychee mango melon nectarine orange papaya peach pear " +
+    "persimmon plum pomegranate quince raspberry tangerine",
+  Vegetables:
+    "artichoke asparagus beet broccoli cabbage carrot cauliflower celery " +
+    "chard daikon eggplant endive fennel kale leek lettuce okra onion " +
+    "parsnip pea potato pumpkin radish shallot spinach squash turnip",
+  Grains:
+    "amaranth barley buckwheat bulgur corn couscous durum einkorn farro " +
+    "freekeh kamut millet oats quinoa rice rye sorghum spelt teff wheat",
+  Legumes:
+    "adzuki black-eyed borlotti cannellini chickpea fava kidney lentil " +
+    "lima mung navy pinto soy",
+  Herbs:
+    "anise basil bay chervil chive cilantro dill epazote lavender lemongrass " +
+    "lovage marjoram mint oregano parsley rosemary sage savory sorrel " +
+    "tarragon thyme",
+  Spices:
+    "allspice cardamom cayenne chili cinnamon clove coriander cumin fennel " +
+    "fenugreek ginger mace nutmeg paprika pepper saffron star-anise sumac " +
+    "turmeric vanilla",
+  Dairy: "butter cheese cream kefir milk yogurt",
 };
 
 document.head.innerHTML = `
