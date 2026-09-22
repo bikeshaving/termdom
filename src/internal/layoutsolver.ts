@@ -44,14 +44,16 @@ type DisplayType =
 	"grid";
 
 // `fixed` is contained by the viewport however deep it is, so no
-// ancestor between may claim it.
-type PositionType = "static" | "relative" | "absolute" | "fixed";
+// ancestor between may claim it. `sticky` flows as static does and is
+// shifted only when its position is read.
+export type PositionType =
+	"static" | "relative" | "absolute" | "fixed" | "sticky";
 
 function isOutOfFlowType(positionType: PositionType): boolean {
 	return positionType === "absolute" || positionType === "fixed";
 }
 
-function isContainingBlockType(positionType: PositionType): boolean {
+export function isContainingBlockType(positionType: PositionType): boolean {
 	return positionType !== "static";
 }
 
@@ -94,7 +96,10 @@ const AUTO_VALUE: CSSValues.Value = {unit: "auto", value: NaN};
 
 export type Length = number | "auto" | {percentage: number} | undefined | null;
 
-function resolveValue(value: CSSValues.Value, ownerSize: number): number {
+export function resolveValue(
+	value: CSSValues.Value,
+	ownerSize: number,
+): number {
 	switch (value.unit) {
 		case "cell":
 			return value.value;
@@ -105,7 +110,7 @@ function resolveValue(value: CSSValues.Value, ownerSize: number): number {
 	}
 }
 
-function isDefined(n: number): boolean {
+export function isDefined(n: number): boolean {
 	return !Number.isNaN(n);
 }
 

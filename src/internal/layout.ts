@@ -25,8 +25,12 @@ import {
 	type Edge,
 	type FlexDirection,
 	type Gutter,
+	isContainingBlockType,
+	isDefined,
 	type Justify,
 	LayoutNode,
+	type PositionType,
+	resolveValue,
 	type Size,
 	type Sizing,
 	type Style,
@@ -1095,6 +1099,9 @@ function styleLayoutNodeProperties(
 		// The viewport contains it, and the document scroll is what keeps it
 		// still.
 		style.positionType = "fixed";
+		applyInsets(style, element, INSET_EDGES, false);
+	} else if (position === "sticky") {
+		style.positionType = "sticky";
 		applyInsets(style, element, INSET_EDGES, false);
 	} else {
 		style.positionType = "static";
@@ -3729,23 +3736,213 @@ function findInlineBlockSegment(
 	return null;
 }
 
-// Subtracts every ANCESTOR's scroll. A box's own scroll shifts its
-// descendants, not itself. Applied in this one function so paint,
-// getRect, hit-testing and Range geometry all inherit it at once.
+// The element whose scroll offsets a box carries as its own: any but html
+// and body, whose scroll is the document's and is applied once at paint.
+function getScrollOwner(layout: Layout, node: LayoutNode): Element | null {
+	const owner = node.owner as Node | undefined;
+	if (!owner || owner.nodeType !== owner.ELEMENT_NODE) {
+		return null;
+	}
+	const element = owner as Element;
+	return isRootBox(layout, element) ? null : element;
+}
+
+function scrollsContent(layout: Layout, node: LayoutNode): boolean {
+	const element = getScrollOwner(layout, node);
+	if (element === null) {
+		return false;
+	}
+	const overflow = getComputedValue(element, "overflow");
+	return (
+		isScrollingOverflow(getComputedValue(element, "overflow-y") || overflow) ||
+		isScrollingOverflow(getComputedValue(element, "overflow-x") || overflow)
+	);
+}
+
+// A sticky box is laid out in flow and then moved, as far as the box it
+// flows in allows, to keep its insets against the scrollport of the
+// nearest scroller above it, or against the viewport when there is none.
+function getStickyShift(
+	layout: Layout,
+	node: LayoutNode,
+): {x: number; y: number} {
+	const parent = node.parent;
+	if (parent === null) {
+		return {x: 0, y: 0};
+	}
+	// The box's position in the scroller's own coordinates, carrying the
+	// shifts of the sticky boxes between.
+	let x = 0;
+	let y = 0;
+	let scroller: LayoutNode | null = null;
+	for (let current = node; current.parent !== null; current = current.parent) {
+		x += current.result.left;
+		y += current.result.top;
+		if (current !== node && current.style.positionType === "sticky") {
+			const shift = getStickyShift(layout, current);
+			x += shift.x;
+			y += shift.y;
+		}
+		if (scrollsContent(layout, current.parent)) {
+			scroller = current.parent;
+			break;
+		}
+	}
+	let portLeft = 0;
+	let portTop = 0;
+	let portWidth: number;
+	let portHeight: number;
+	if (scroller === null) {
+		const window = layout[kWindow];
+		portTop = window.scrollY;
+		portWidth = layout[kInitialContainingBlock].result.width;
+		portHeight = window.innerHeight;
+	} else {
+		const element = scroller.owner as Element;
+		const box = getBoxModel(element);
+		portLeft = (box.borderLeftWidth || 0) + (element.scrollLeft || 0);
+		portTop = (box.borderTopWidth || 0) + (element.scrollTop || 0);
+		portWidth =
+			scroller.result.width -
+			(box.borderLeftWidth || 0) -
+			(box.borderRightWidth || 0);
+		portHeight =
+			scroller.result.height -
+			(box.borderTopWidth || 0) -
+			(box.borderBottomWidth || 0);
+	}
+	// The box the sticky one flows in bounds the shift: its content box,
+	// or everything it scrolls when it is the scroller itself.
+	const parentX = x - node.result.left;
+	const parentY = y - node.result.top;
+	const owner = parent.owner as Node | undefined;
+	const edges = owner && owner.nodeType === owner.ELEMENT_NODE
+		? getBoxModel(owner as Element)
+		: null;
+	let left = parentX + (edges?.borderLeftWidth || 0);
+	let top = parentY + (edges?.borderTopWidth || 0);
+	let right = parentX + parent.result.width - (edges?.borderRightWidth || 0);
+	let bottom = parentY + parent.result.height - (edges?.borderBottomWidth || 0);
+	const scrolled = parent === scroller
+		? layout.getScrollExtent(owner as Element)
+		: null;
+	if (scrolled !== null) {
+		right = scrolled.width === null ? right : left + scrolled.width;
+		bottom = top + scrolled.height;
+	} else {
+		left += edges?.paddingLeft || 0;
+		top += edges?.paddingTop || 0;
+		right -= edges?.paddingRight || 0;
+		bottom -= edges?.paddingBottom || 0;
+	}
+	return {
+		x: stickyShiftAlong(
+			x,
+			node.result.width,
+			portLeft,
+			portWidth,
+			left,
+			right,
+			resolveValue(node.style.position.left, portWidth),
+			resolveValue(node.style.position.right, portWidth),
+		),
+		y: stickyShiftAlong(
+			y,
+			node.result.height,
+			portTop,
+			portHeight,
+			top,
+			bottom,
+			resolveValue(node.style.position.top, portHeight),
+			resolveValue(node.style.position.bottom, portHeight),
+		),
+	};
+}
+
+// The start inset pushes the box down the axis, the end inset pulls it
+// back, and neither takes it past the container's edges.
+function stickyShiftAlong(
+	position: number,
+	size: number,
+	portStart: number,
+	portSize: number,
+	containerStart: number,
+	containerEnd: number,
+	startInset: number,
+	endInset: number,
+): number {
+	let shift = 0;
+	if (isDefined(startInset)) {
+		const wanted = portStart + startInset;
+		if (position < wanted) {
+			shift = Math.min(wanted - position, containerEnd - (position + size));
+		}
+	}
+	if (isDefined(endInset)) {
+		const wanted = portStart + portSize - endInset - size;
+		if (position + shift > wanted) {
+			shift = Math.max(wanted - position, containerStart - position);
+		}
+	}
+	return Math.round(shift);
+}
+
+// What scrolling does to a box's position. The scrollers in its
+// containing block chain move it by their scroll offsets, and a sticky
+// box in that chain, itself included, is shifted to hold its insets. An
+// in-flow box is contained by its parent, so every ancestor is in the
+// chain. An absolute box is contained by the nearest positioned
+// ancestor, so the scrollers below that leave it alone. A fixed box is
+// contained by the viewport, so none of them move it.
+function getScrollShift(
+	layout: Layout,
+	layoutNode: LayoutNode,
+): {x: number; y: number} {
+	let x = 0;
+	let y = 0;
+	let current: LayoutNode | null = layoutNode;
+	while (current !== null) {
+		const type: PositionType = current.style.positionType;
+		if (type === "sticky") {
+			const shift = getStickyShift(layout, current);
+			x += shift.x;
+			y += shift.y;
+		}
+		if (type === "fixed") {
+			break;
+		}
+		let next: LayoutNode | null = current.parent;
+		if (type === "absolute") {
+			while (
+				next !== null &&
+				next.parent !== null &&
+				!isContainingBlockType(next.style.positionType)
+			) {
+				next = next.parent;
+			}
+		}
+		if (next === null) {
+			break;
+		}
+		const scroller = getScrollOwner(layout, next);
+		if (scroller !== null) {
+			x -= scroller.scrollLeft || 0;
+			y -= scroller.scrollTop || 0;
+		}
+		current = next;
+	}
+	return {x, y};
+}
+
+// Document-space geometry: the layout position under what scrolling has
+// done to it. Applied in this one function so paint, getRect,
+// hit-testing and Range geometry all inherit it at once.
 function getAbsolutePosition(
 	layout: Layout,
 	layoutNode: LayoutNode,
 ): {x: number; y: number} {
-	// The document roots' scroll IS the document scroll, applied once at paint.
-	// Only per-element scroll belongs in this document-space geometry.
-	const document = layout[kWindow].document;
-	const root = document.documentElement;
-	const body = document.body;
 	let x = 0;
 	let y = 0;
-	// A fixed box sits still while the scrollers above it scroll, and so
-	// does everything inside it.
-	let fixed = false;
 	for (
 		let current: LayoutNode | null = layoutNode;
 		current;
@@ -3753,23 +3950,9 @@ function getAbsolutePosition(
 	) {
 		x += current.result.left;
 		y += current.result.top;
-		if (current !== layoutNode && !fixed) {
-			const node = current.owner as Node | undefined;
-			if (
-				node &&
-				node.nodeType === node.ELEMENT_NODE &&
-				node !== root &&
-				node !== body
-			) {
-				x -= (node as Element).scrollLeft || 0;
-				y -= (node as Element).scrollTop || 0;
-			}
-		}
-		if (current.style.positionType === "fixed") {
-			fixed = true;
-		}
 	}
-	return {x, y};
+	const shift = getScrollShift(layout, layoutNode);
+	return {x: x + shift.x, y: y + shift.y};
 }
 
 function getBreakResultTextIndex(
@@ -4677,32 +4860,7 @@ export class Layout {
 	scrolledAncestorRows(element: Element): number {
 		const layoutNode =
 			this[kNodeMap].get(element) ?? runLayoutNode(this, element);
-		if (!layoutNode) {
-			return 0;
-		}
-		const document = this[kWindow].document;
-		const root = document.documentElement;
-		const body = document.body;
-		let rows = 0;
-		for (
-			let current: LayoutNode | null = layoutNode;
-			current;
-			current = current.parent
-		) {
-			if (current.style.positionType === "fixed") {
-				break;
-			}
-			const node = current.parent?.owner as Node | undefined;
-			if (
-				node &&
-				node.nodeType === node.ELEMENT_NODE &&
-				node !== root &&
-				node !== body
-			) {
-				rows += (node as Element).scrollTop || 0;
-			}
-		}
-		return rows;
+		return layoutNode ? -getScrollShift(this, layoutNode).y : 0;
 	}
 
 	getRect(element: Element): DOMRect | null {
