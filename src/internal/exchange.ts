@@ -1117,6 +1117,9 @@ export class Exchange extends EventTarget {
 		const push = overflow <= 0 ? 0 : Math.min(overflow, screen.documentTop);
 		if (push > 0) {
 			screen.documentTop -= push;
+			// The scroll moves the cursor to the bottom row first. Hidden, or
+			// it shows there until the frame places it.
+			this.setDisplayType("cursorHidden", true);
 			void this.scrollUp(screen.rows, push);
 			// The previous buffer is not shifted. Its rows are region-relative
 			// and the region top moved by exactly the scroll. A pending

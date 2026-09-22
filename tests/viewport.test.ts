@@ -1343,3 +1343,36 @@ test("a frame callback runs before its frame is painted", async () => {
 	expect(rows()).toEqual(["3", "4", "5"]);
 	dom.dispose();
 });
+
+test("the cursor is hidden while the region scrolls earlier output away", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 20});
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[4;1H", () => resolve());
+	});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
+	const {document} = dom;
+	document.body.innerHTML = "<div>1</div><div>2</div><input autofocus>";
+	await nextFrame(dom);
+
+	const written = captureRawOutput(terminal);
+	for (let i = 0; i < 4; i++) {
+		document.body.insertBefore(
+			document.createElement("div"),
+			document.body.lastChild,
+		)
+			.textContent = `${i + 3}`;
+		await nextFrame(dom);
+	}
+	const output = written();
+	expect(output).toContain("\x1bD");
+	// Every scroll comes after a hide and before the next show.
+	let shown = false;
+	for (const token of output.match(/\x1b\[\?25[hl]|\x1bD/g) ?? []) {
+		if (token === "\x1bD") {
+			expect(shown).toBe(false);
+		} else {
+			shown = token.endsWith("h");
+		}
+	}
+	dom.dispose();
+});
