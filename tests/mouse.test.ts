@@ -102,8 +102,26 @@ test("mouse reports never leak into keyboard events", async () => {
 	termdom.dispose();
 });
 
-test("wheel at the document top hands the mouse to the terminal until a keystroke", async () => {
-	const {proc, chunks, termdom, document} = makeDocumentModeApp();
+test("a tall document keeps the wheel: its top is a stop", async () => {
+	const {proc, chunks, termdom} = makeDocumentModeApp();
+	await nextFrame(termdom);
+	const disables = () =>
+		chunks().filter((chunk) => chunk.includes(DISABLE)).length;
+
+	await send(proc, "\x1b[<65;5;3M");
+	expect(termdom.window.scrollY).toBe(3);
+	await send(proc, "\x1b[<64;5;3M");
+	expect(termdom.window.scrollY).toBe(0);
+	await send(proc, "\x1b[<64;5;3M");
+	await send(proc, "\x1b[<64;5;3M");
+	expect(termdom.window.scrollY).toBe(0);
+	expect(disables()).toBe(0);
+	expect(termdom.document.visibilityState).toBe("visible");
+	termdom.dispose();
+});
+
+test("a document that fits hands the wheel to the terminal until a keystroke", async () => {
+	const {proc, chunks, termdom, document} = makeDocumentModeApp(3);
 	await nextFrame(termdom);
 
 	const disables = () =>
@@ -116,23 +134,8 @@ test("wheel at the document top hands the mouse to the terminal until a keystrok
 	});
 	expect(enables()).toBe(1);
 
-	// Scrolled down, wheel up consumes normally: no chaining mid-document.
-	await send(proc, "\x1b[<65;5;3M");
-	expect(termdom.window.scrollY).toBe(3);
-	await send(proc, "\x1b[<64;5;3M");
-	expect(termdom.window.scrollY).toBe(0);
-	expect(disables()).toBe(0);
-
-	// Wheel up AT the top while the wheel is still turning lands on the
-	// top again: the flick that brought a tall document there does not fly
-	// on into the scrollback.
-	await send(proc, "\x1b[<64;5;3M");
-	await send(proc, "\x1b[<64;5;3M");
-	expect(disables()).toBe(0);
-
-	// A wheel begun after a pause escapes to the terminal's scrollback, so
-	// the mouse is handed back and the document is hidden meanwhile.
-	await new Promise((resolve) => setTimeout(resolve, 350));
+	// The first wheel up escapes to the terminal's scrollback, so the
+	// mouse is handed back and the document is hidden meanwhile.
 	await send(proc, "\x1b[<64;5;3M");
 	expect(disables()).toBe(1);
 	expect(document.visibilityState).toBe("hidden");
@@ -151,17 +154,6 @@ test("wheel at the document top hands the mouse to the terminal until a keystrok
 	expect(enables()).toBe(2);
 	expect(order).toEqual(["keydown while visible"]);
 	expect(states).toEqual(["hidden", "visible"]);
-
-	await send(proc, "\x1b[<65;5;3M");
-	expect(termdom.window.scrollY).toBe(3);
-	termdom.dispose();
-});
-
-test("a document that fits hands the wheel over on the first tick", async () => {
-	const {proc, chunks, termdom} = makeDocumentModeApp(3);
-	await nextFrame(termdom);
-	await send(proc, "\x1b[<64;5;3M");
-	expect(chunks().filter((c) => c.includes(DISABLE)).length).toBe(1);
 	termdom.dispose();
 });
 
