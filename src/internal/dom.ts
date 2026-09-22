@@ -18044,7 +18044,8 @@ export class HTMLSelectElement extends HTMLElement {
 		syncPickerRows(this, picker);
 
 		// Anchor below the text control in DOCUMENT coordinates (the picker's
-		// containing block is the ICB), matching the text control's width.
+		// containing block is the ICB), at least the text control's width
+		// and as wide as its widest row, a grouped option's indent included.
 		const rect = attached[kLayout].getRect(this);
 		if (rect) {
 			const top = `${Math.round(rect.bottom)}px`;
@@ -18056,8 +18057,8 @@ export class HTMLSelectElement extends HTMLElement {
 			if (picker.style.left !== left) {
 				picker.style.left = left;
 			}
-			if (picker.style.width !== width) {
-				picker.style.width = width;
+			if (picker.style.minWidth !== width) {
+				picker.style.minWidth = width;
 			}
 		}
 		if (picker.style.display !== "block") {

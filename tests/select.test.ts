@@ -463,3 +463,31 @@ test("picker: a select taken out of the document closes its picker", async () =>
 
 	dom.dispose();
 });
+
+test("picker: grows to a grouped option wider than the field", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	const {document} = dom;
+	const select = document.createElement("select");
+	select.innerHTML =
+		"<optgroup label=\"group\">" +
+		"<option>first</option>" +
+		"<option selected>second, wider</option>" +
+		"</optgroup>";
+	document.body.appendChild(select);
+	select.focus();
+	await nextFrame(dom);
+	await type(terminal, " ");
+	await nextFrame(dom);
+	// The field is the widest label plus its indicator. The indented option
+	// is wider than that, and the picker takes the option's width.
+	expect(terminal.getVisibleText().split("\n").slice(0, 5)).toEqual([
+		"second, wider ▾",
+		"┌───────────────┐",
+		"│group          │",
+		"│  first        │",
+		"│  second, wider│",
+	]);
+	dom.dispose();
+});

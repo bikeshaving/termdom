@@ -198,6 +198,7 @@ export const SELECT_UA_STYLES = `
 	[part="picker"] {
 		display: none;
 		position: absolute;
+		width: max-content;
 		background-color: Canvas;
 		text-decoration: none;
 		border-top-width: 1px; border-right-width: 1px;
