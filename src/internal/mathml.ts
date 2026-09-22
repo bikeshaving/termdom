@@ -536,7 +536,8 @@ function getRadical(glyphs: GlyphSet): RadicalPieces {
 }
 
 // Integrals with more than one sign, and with a ring, are columns of
-// the integral's pieces, the ring on the middle row.
+// the integral's pieces, the ring on the middle row. Whether the ring
+// joins the pieces above and below is the font's to decide.
 const INTEGRALS: Record<string, {columns: number; ring: boolean}> = {
 	"∫": {columns: 1, ring: false},
 	"∬": {columns: 2, ring: false},
@@ -714,7 +715,11 @@ function buildIntegral(
 ): string[] {
 	const {columns, ring} = INTEGRALS[op];
 	const pieces = TABLES[glyphs].vertical["∫"];
-	const center = glyphs === "ascii" ? "o" : "∮";
+	// The ring on the stroke: the APL circle stile in the Unicode set,
+	// whose stroke runs through the ring, and a bare ring elsewhere.
+	const center = glyphs === "ascii"
+		? "o"
+		: glyphs === "box-drawing" ? "○" : "⌽";
 	const rows: string[] = [];
 	for (let row = 0; row < height; row++) {
 		const piece = row === 0
