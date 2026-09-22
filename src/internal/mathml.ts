@@ -1300,13 +1300,10 @@ function setOnBar(base: MathBox, script: MathBox): MathBox {
 
 /**
  * The one-line text of a <math> element, for innerText and clipboard
- * copies. A TeX annotation is preferred when the markup carries one.
+ * copies. An annotation is display: none by the user agent's sheet, so
+ * it is no more part of the text than in a browser.
  */
 export function linearizeMath(element: Element): string {
-	const annotation = findTeXAnnotation(element);
-	if (annotation !== null) {
-		return annotation;
-	}
 	const box = layoutMath(element, false);
 	return getBoxText(box).join("\n").trim();
 }
@@ -2160,14 +2157,4 @@ function layoutError(element: Element, context: MathContext): MathBox {
 		};
 	}
 	return frameBox(box, getBoxLines(context.glyphs), red);
-}
-
-function findTeXAnnotation(element: Element): string | null {
-	for (const child of element.querySelectorAll("annotation")) {
-		const encoding = child.getAttribute("encoding")?.toLowerCase() ?? "";
-		if (encoding === "application/x-tex" || encoding === "text/x-tex") {
-			return (child.textContent ?? "").trim();
-		}
-	}
-	return null;
 }

@@ -10939,8 +10939,7 @@ class MathMLElement extends Element {
 
 	// Not in the DOM standard, which puts innerText on HTMLElement only.
 	// A formula copied out of a terminal has to fit on one line, so a
-	// <math> element's innerText is its inline linearization, or the TeX
-	// source when an annotation carries one.
+	// <math> element's innerText is its inline linearization.
 	get innerText(): string {
 		return this.localName === "math"
 			? linearizeMath(this as unknown as globalThis.Element)
