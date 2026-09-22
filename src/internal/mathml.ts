@@ -43,6 +43,9 @@ export interface MathBox {
 	height: number;
 	baseline: number;
 	cells: MathCell[][];
+	// Leading cells that hang outside the box when it is centered: a
+	// negation sign, so its operand centers over a denominator.
+	hang?: number;
 }
 
 export type Alignment = "left" | "center" | "right";
@@ -190,7 +193,10 @@ function widenRows(
 	if (extra <= 0) {
 		return box.cells;
 	}
-	const left = align === "left" ? 0 : align === "right" ? extra : extra >> 1;
+	const hang = box.hang ?? 0;
+	const left = align === "left"
+		? 0
+		: align === "right" ? extra : Math.max(0, ((extra + hang) >> 1) - hang);
 	const right = extra - left;
 	return box.cells.map((row) => [
 		...blankRow(left),
@@ -667,6 +673,13 @@ function getOperator(element: Element, index: number, count: number): Operator {
 	};
 }
 
+function isNegation(operator: Operator): boolean {
+	return (
+		operator.form === "prefix" &&
+		(operator.text === "−" || operator.text === "-")
+	);
+}
+
 function isOperatorElement(node: Node): boolean {
 	return isMathElement(node) && (node as Element).localName === "mo";
 }
@@ -764,12 +777,41 @@ function layoutRow(
 			? getOperator(child as Element, index, children.length)
 			: null,
 	);
+	// A minus at the start of a row or after another operator, as in
+	// "= −x", negates rather than subtracts, whatever its position says.
+	for (let index = 0; index < operators.length; index++) {
+		const operator = operators[index];
+		const before = index === 0 ? null : operators[index - 1];
+		if (
+			operator !== null &&
+			operator.form !== "prefix" &&
+			(operator.text === "−" || operator.text === "-") &&
+			(index === 0 || (before !== null && !isFence(before, "postfix")))
+		) {
+			operators[index] = {
+				...operator,
+				form: "prefix",
+				gapBefore: false,
+				gapAfter: false,
+			};
+		}
+	}
 	const boxes = children.map((child, index) => {
 		const operator = operators[index];
-		return operator !== null && isVerticallyStretchy(operator, context)
-			? null
-			: layoutNode(child, context);
+		if (operator !== null && isVerticallyStretchy(operator, context)) {
+			return null;
+		}
+		// A negation sign is the short dash, and the box it starts hangs
+		// it outside the operand when centered.
+		if (operator !== null && isNegation(operator)) {
+			return createTextBox(
+				toPlainGlyphs("-", context.glyphs),
+				getTokenStyle(child as Element, null),
+			);
+		}
+		return layoutNode(child, context);
 	});
+	const hang = operators[0] !== null && isNegation(operators[0]) ? 1 : 0;
 	let ascent = 0;
 	let descent = 0;
 	for (const box of boxes) {
@@ -810,6 +852,9 @@ function layoutRow(
 				(applicationBefore && spacing !== null && isFence(spacing, "prefix"));
 			const gap = !context.tight && wanted && !covered && box.width > 0 ? 1 : 0;
 			result = beside(result, box, gap);
+		}
+		if (hang > 0 && result.width > hang) {
+			result = {...result, hang};
 		}
 		// An invisible operator has no cell of its own; its spacing carries
 		// to the next box that has one.
@@ -1597,23 +1642,62 @@ function layoutFraction(element: Element, context: MathContext): MathBox {
 			parenthesize(denominator, children[1], FRACTION_UNITS),
 		);
 	}
-	const width = Math.max(numerator.width, denominator.width) + 2;
+	// A cell of bar on each side of the wider operand, not counting a
+	// negation sign, which hangs into that cell so its operand centers.
+	const width =
+		Math.max(
+			numerator.width - (numerator.hang ?? 0),
+			denominator.width - (denominator.hang ?? 0),
+		) + 2;
 	const thickness = parseMathLength(element.getAttribute("linethickness"));
-	const bar = thickness === 0
-		? createEmptyBox(width)
-		: createTextBox(getFractionBar(context.glyphs).repeat(width), null);
-	const top = stack(
-		pad(numerator, 0, 1, 0, 1),
-		bar,
-		parseAlignment(element.getAttribute("numalign"), "center"),
-		numerator.height,
+	const numalign = parseAlignment(element.getAttribute("numalign"), "center");
+	const denomalign = parseAlignment(
+		element.getAttribute("denomalign"),
+		"center",
 	);
-	return stack(
-		top,
-		pad(denominator, 0, 1, 0, 1),
-		parseAlignment(element.getAttribute("denomalign"), "center"),
-		top.baseline,
-	);
+	const top = placeInWidth(numerator, width, numalign);
+	const bottom = placeInWidth(denominator, width, denomalign);
+	// The bar is an underline along the numerator's last row, drawn on
+	// that row's bottom edge, so the fraction takes no row for it. The
+	// ASCII set draws a row of dashes, since an underline copies as
+	// nothing, and linethickness 0 leaves the row empty.
+	const barred = thickness === 0 || context.glyphs === "ascii"
+		? stack(
+			top,
+			thickness === 0
+				? createEmptyBox(width)
+				: createTextBox(getFractionBar(context.glyphs).repeat(width), null),
+			"left",
+			top.height,
+		)
+		: underlineLastRow(top);
+	return stack(barred, bottom, "left", barred.baseline);
+}
+
+// A box in a field, centered by its operand with a negation sign
+// hanging to the left of it.
+function placeInWidth(box: MathBox, width: number, align: Alignment): MathBox {
+	const extra = width - box.width;
+	if (extra < 0) {
+		return box;
+	}
+	const hang = box.hang ?? 0;
+	const left = align === "left"
+		? 0
+		: align === "right" ? extra : Math.max(0, ((extra + hang) >> 1) - hang);
+	return pad(box, 0, extra - left, 0, left);
+}
+
+function underlineLastRow(box: MathBox): MathBox {
+	const last = box.cells[box.height - 1].map((cell) => ({
+		...cell,
+		style: {...cell.style, underline: true},
+	}));
+	return {
+		...box,
+		baseline: box.height - 1,
+		cells: [...box.cells.slice(0, -1), last],
+	};
 }
 
 type RowAlignment = "top" | "center" | "bottom" | "baseline";
