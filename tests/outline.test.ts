@@ -106,3 +106,28 @@ test("an outline on a one-row box lines both edges of that row", async () => {
 	expect(cell.isUnderline()).toBeTruthy();
 	dom.dispose();
 });
+
+test("a focused inline broken across lines is outlined along each of its fragments", async () => {
+	const terminal = new MockProcess({cols: 12, rows: 4});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<p>see <a href=\"#\" id=\"a\">a link that wraps</a> here</p>";
+	await nextFrame(dom);
+	dom.document.getElementById("a")!.focus();
+	await nextFrame(dom);
+	const rows = terminal.getVisibleText().split("\n");
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	// Row 0: "see a link" -- the link's first fragment is cols 4..9.
+	expect(rows[0].trimEnd()).toBe("see a link");
+	expect(!!cellAt(0, 4).isUnderline()).toBe(true);
+	expect(!!cellAt(0, 9).isUnderline()).toBe(true);
+	expect(!!cellAt(0, 2).isUnderline()).toBe(false);
+	// Row 1: "that wraps" is the second fragment, then " here" is not.
+	expect(rows[1].trimEnd()).toBe("that wraps");
+	expect(!!cellAt(1, 0).isUnderline()).toBe(true);
+	expect(!!cellAt(1, 9).isUnderline()).toBe(true);
+	expect(!!cellAt(1, 10).isUnderline()).toBe(false);
+	expect(!!cellAt(1, 11).isUnderline()).toBe(false);
+	dom.dispose();
+});

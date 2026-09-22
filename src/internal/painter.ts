@@ -1074,12 +1074,16 @@ function paintBox(
 	}
 }
 
+// A borderless outline is an overline and an underline on each of the
+// box's fragments, so an inline broken across lines is marked along
+// its own text on each line and not across the union of them.
 function paintOutline(
 	painter: Painter,
 	element: Element,
 	style: PaintStyle,
 	rect: Rect,
 	ctx: CellContext,
+	fragments: readonly Rect[] = [rect],
 ): void {
 	if (!style.visible || style.outlineColor === null) {
 		return;
@@ -1107,18 +1111,20 @@ function paintOutline(
 			},
 		);
 	} else {
-		ctx.drawDecoration(
-			Math.round(rect.left),
-			Math.round(rect.top),
-			Math.round(rect.width),
-			{overline: true, fg: color},
-		);
-		ctx.drawDecoration(
-			Math.round(rect.left),
-			Math.round(rect.top + rect.height) - 1,
-			Math.round(rect.width),
-			{underline: true, fg: color},
-		);
+		for (const fragment of fragments) {
+			ctx.drawDecoration(
+				Math.round(fragment.left),
+				Math.round(fragment.top),
+				Math.round(fragment.width),
+				{overline: true, fg: color},
+			);
+			ctx.drawDecoration(
+				Math.round(fragment.left),
+				Math.round(fragment.top + fragment.height) - 1,
+				Math.round(fragment.width),
+				{underline: true, fg: color},
+			);
+		}
 	}
 }
 
@@ -1256,7 +1262,7 @@ function paintInline(
 		paintMember(painter, child, run, ctx);
 	}
 	if (rect !== null) {
-		paintOutline(painter, element, style, rect, ctx);
+		paintOutline(painter, element, style, rect, ctx, fragments);
 	}
 }
 
