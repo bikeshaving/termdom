@@ -704,6 +704,28 @@ export class Painter {
 	}
 }
 
+// The absolute URL of the nearest enclosing link, for the terminal to
+// open (OSC 8). A fragment or a relative URL means nothing outside the
+// document, and an anchor without href is not a link.
+const LINK_SCHEMES = /^(?:https?|mailto|file|ftp):/i;
+
+function getLinkURL(element: Element): string | null {
+	for (
+		let node: Element | null = element;
+		node !== null;
+		node = flatParentElement(node)
+	) {
+		if (
+			(node.localName === "a" || node.localName === "area") &&
+			node.hasAttribute("href")
+		) {
+			const url = (node as HTMLAnchorElement).href;
+			return LINK_SCHEMES.test(url) ? url : null;
+		}
+	}
+	return null;
+}
+
 function parseTabSize(value: string): number {
 	const size = parseInt(value, 10);
 	return Number.isFinite(size) && size >= 0 ? size : 8;
@@ -1476,6 +1498,10 @@ function paintText(
 	if (!style.visible) {
 		return;
 	}
+	// The paint style is shared by every element that resolves to the same
+	// values, and a link is not one of them, so it joins per text node.
+	const link = getLinkURL(parentElement);
+	const cell = link === null ? style.cell : {...style.cell, link};
 	let painted = false;
 	for (const fragment of fragments) {
 		if (fragment.endOffset <= fragment.startOffset) {
@@ -1497,17 +1523,11 @@ function paintText(
 			applyTextTransform(text, style.textTransform),
 			Math.round(fragment.rect.left),
 			Math.round(fragment.rect.top),
-			style.cell,
+			cell,
 		);
 	}
 	if (painted) {
-		renderTextHighlights(
-			painter,
-			textNode,
-			style.cell,
-			style.textTransform,
-			ctx,
-		);
+		renderTextHighlights(painter, textNode, cell, style.textTransform, ctx);
 	}
 }
 
