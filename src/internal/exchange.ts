@@ -862,7 +862,18 @@ export class Exchange extends EventTarget {
 		} else {
 			this[kEngagedModes].delete(name);
 		}
-		void this.write(on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset);
+		let output = on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset;
+		// tmux clears every mouse mode when any one of ?1000 to ?1003 is
+		// reset, so turning motion reporting off took the button mode with
+		// it and clicks stopped arriving. The base capture is asserted again.
+		if (
+			name === "motionReporting" &&
+			!on &&
+			this[kEngagedModes].has("mouseCapture")
+		) {
+			output += MODE_SPELLINGS.mouseCapture.set;
+		}
+		void this.write(output);
 	}
 
 	restoreEngagedModes(): void {
