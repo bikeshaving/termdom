@@ -672,9 +672,11 @@ function isVerticallyStretchy(
 }
 
 /**
- * A stretchy operator grown to its siblings' rows. A symmetric one has
- * the same reach above and below the baseline. minsize and maxsize
- * clamp the height in rows, and a height of one is the plain glyph.
+ * A stretchy operator grown to its siblings' rows, and no further: a
+ * symmetric fence around a two-row matrix takes two rows, since the
+ * blank row symmetry about the baseline would add reads as a gap.
+ * minsize and maxsize clamp the height in rows, and a height of one is
+ * the plain glyph.
  */
 function layoutStretchedOperator(
 	element: Element,
@@ -683,8 +685,7 @@ function layoutStretchedOperator(
 	descent: number,
 	context: MathContext,
 ): MathBox {
-	const reach = Math.max(ascent, descent);
-	let height = operator.entry.symmetric ? reach * 2 + 1 : ascent + descent + 1;
+	let height = ascent + descent + 1;
 	const minsize = parseMathLength(element.getAttribute("minsize"));
 	const maxsize = parseMathLength(element.getAttribute("maxsize"));
 	if (minsize !== null) {
@@ -693,9 +694,9 @@ function layoutStretchedOperator(
 	if (maxsize !== null) {
 		height = Math.min(height, Math.max(1, Math.round(maxsize)));
 	}
-	const baseline = operator.entry.symmetric
-		? (height - 1) >> 1
-		: Math.min(ascent, height - 1);
+	// Rows minsize adds go half above and half below.
+	const spare = Math.max(0, height - (ascent + descent + 1));
+	const baseline = Math.min(ascent + (spare >> 1), height - 1);
 	const rows = height > 1
 		? buildVerticalGlyph(operator.text, height, baseline, context.glyphs)
 		: null;
