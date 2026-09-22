@@ -255,14 +255,14 @@ test("mmultiscripts puts prescripts before the base", async () => {
 	).toEqual(["a ₃X₁² z"]);
 });
 
-test("a display fraction bars its numerator with one cell of overhang", async () => {
+test("a display fraction stacks over a bar with one cell of overhang", async () => {
 	const lines = await renderMarked(
 		block(
 			"<mfrac><mrow><mi>n</mi><mo>(</mo><mi>n</mi><mo>+</mo><mn>1</mn><mo>)</mo></mrow><mn>2</mn></mfrac>",
 		),
 		20,
 	);
-	expect(lines).toEqual(["     _n(n_+_1)_", "         2"]);
+	expect(lines).toEqual(["      n(n + 1)", "     ──────────", "         2"]);
 });
 
 test("a fraction beside an equals sign shares its baseline with the bar", async () => {
@@ -270,7 +270,7 @@ test("a fraction beside an equals sign shares its baseline with the bar", async 
 		block("<mi>y</mi><mo>=</mo><mfrac><mi>a</mi><mi>b</mi></mfrac>"),
 		20,
 	);
-	expect(lines).toEqual(["          _a_", "      y =  b"]);
+	expect(lines).toEqual(["           a", "      y = ───", "           b"]);
 });
 
 test("linethickness=0 leaves an empty bar row", async () => {
@@ -317,7 +317,7 @@ test("a display root stands a stem up from its sign to the bar, index before it"
 			block("<msqrt><mfrac><mi>a</mi><mi>b</mi></mfrac></msqrt>"),
 			10,
 		),
-	).toEqual(["    ___", "   ▕_a_", "   ⎷ b"]);
+	).toEqual(["    ___", "   ▕ a", "   ▕───", "   ⎷ b"]);
 	expect(
 		await renderMarked(block("<mroot><mi>x</mi><mn>3</mn></mroot>"), 10),
 	).toEqual(
@@ -341,17 +341,17 @@ test("stretchy fences grow to the height of their siblings", async () => {
 	expect(
 		await renderMarked(block(`<mo>(</mo>${fraction}<mo>)</mo>`), 10),
 	).toEqual(
-		["  ⎛_a_⎞", "  ⎝ b ⎠"],
+		["  ⎛ a ⎞", "  ⎜───⎟", "  ⎝ b ⎠"],
 	);
 	expect(
 		await renderMarked(block(`<mo>{</mo>${fraction}<mo>}</mo>`), 10),
 	).toEqual(
-		["  ⎧_a_⎫", "  ⎩ b ⎭"],
+		["  ⎧ a ⎫", "  ⎨───⎬", "  ⎩ b ⎭"],
 	);
 	expect(
 		await renderMarked(block(`<mo>∫</mo>${fraction}<mi>dx</mi>`), 12),
 	).toEqual(
-		["  ⌠ _a_", "  ⎮  b dx", "  ⌡"],
+		["  ⌠  a", "  ⎮ ───dx", "  ⌡  b"],
 	);
 	expect(await renderLines(inline(`<mo>(</mo>${fraction}<mo>)</mo>`))).toEqual([
 		"a (a/b) z",
@@ -435,7 +435,7 @@ test("table rows align on their tallest cell's baseline", async () => {
 		),
 		10,
 	);
-	expect(lines).toEqual(["  _a_", "   b  x"]);
+	expect(lines).toEqual(["   a", "  ─── x", "   b"]);
 });
 
 test("frame, rowlines and columnlines draw box-drawing rules", async () => {
@@ -524,7 +524,7 @@ test("stretchy=false keeps a fence plain and minsize grows one", async () => {
 			),
 			10,
 		),
-	).toEqual(["   _a_", "  ( b )"]);
+	).toEqual(["    a", "  (───)", "    b"]);
 	expect(
 		await renderMarked(block("<mo minsize=\"3\">(</mo><mi>x</mi>"), 10),
 	).toEqual(
@@ -618,8 +618,9 @@ test("golden: Euler's identity", async () => {
 
 test("golden: the Navier-Stokes momentum equation", async () => {
 	expect(await renderMarked(block(NAVIER_STOKES))).toEqual([
-		"     ⎛_∂u_       ⎞",
-		"    ρ⎝ ∂t  + u⋅∇u⎠ = -∇p + μ∇²u + f",
+		"     ⎛ ∂u        ⎞",
+		"    ρ⎜──── + u⋅∇u⎟ = -∇p + μ∇²u + f",
+		"     ⎝ ∂t        ⎠",
 	]);
 	expect(await renderLines(`<math>${NAVIER_STOKES}</math>`)).toEqual([
 		"ρ((∂u)/(∂t) + u⋅∇u) = -∇p + μ∇²u + f",
@@ -663,7 +664,7 @@ test("a function name takes a thin space before its argument, not its parenthesi
 			),
 			12,
 		),
-	).toEqual(["      _1_", "  lim  n", "   n"]);
+	).toEqual(["       1", "  lim ───", "   n   n"]);
 });
 
 test("blank mtext is one cell and stands in for an operator's gap", async () => {
@@ -719,7 +720,7 @@ test("scripts on a tall base take its top and bottom rows", async () => {
 			),
 			12,
 		),
-	).toEqual(["   ⎛_a_⎞²", "   ⎝ b ⎠ₙ"]);
+	).toEqual(["   ⎛ a ⎞²", "   ⎜───⎟", "   ⎝ b ⎠ₙ"]);
 });
 
 test("a column lines up its operands under a hanging negation sign", async () => {
@@ -810,7 +811,7 @@ test("a drag inside display math selects the text its cells render", async () =>
 	const inverse = (x: number, y: number): boolean =>
 		!!buffer.getLine(y).getCell(x).isInverse();
 	expect(inverse(from.x, from.y)).toBe(true);
-	expect(inverse(from.x, from.y + 1)).toBe(true);
+	expect(inverse(from.x, from.y + 2)).toBe(true);
 	expect(inverse(to.x, to.y)).toBe(true);
 	expect(inverse(from.x + 1, from.y)).toBe(false);
 	dom.dispose();
@@ -821,12 +822,12 @@ test("a token inside math has the rect of its cells", async () => {
 		block("<mfrac><mi>x</mi><mn>10</mn></mfrac>"),
 		20,
 	);
-	const row = lines[1];
+	const row = lines[2];
 	const column = row.indexOf("10");
 	const rect = dom.document.querySelector("mn")!.getBoundingClientRect();
-	expect([rect.x, rect.y, rect.width, rect.height]).toEqual([column, 1, 2, 1]);
+	expect([rect.x, rect.y, rect.width, rect.height]).toEqual([column, 2, 2, 1]);
 	const fraction = dom.document.querySelector("mfrac")!.getBoundingClientRect();
-	expect([fraction.y, fraction.height]).toEqual([0, 2]);
+	expect([fraction.y, fraction.height]).toEqual([0, 3]);
 	dom.dispose();
 });
 
