@@ -312,6 +312,7 @@ const kSelectionDragAnchor = Symbol("selectionDragAnchor");
 const kTextControlDragAnchor = Symbol("textControlDragAnchor");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
+const kClickCount = Symbol("clickCount");
 
 const DBLCLICK_INTERVAL_MS = 500;
 
@@ -347,8 +348,11 @@ export interface Input {
 		offset: number;
 	} | null;
 
+	// UI Events' click count: mousedown, mouseup and click carry it as
+	// `detail`, and a dblclick is every even click.
 	[kLastClickTarget]: Element | null;
 	[kLastClickTime]: number;
+	[kClickCount]: number;
 }
 
 export class Input {
@@ -372,6 +376,7 @@ export class Input {
 		this[kTextControlDragAnchor] = null;
 		this[kLastClickTarget] = null;
 		this[kLastClickTime] = 0;
+		this[kClickCount] = 0;
 	}
 
 	dispose(): void {}
@@ -559,7 +564,22 @@ function deliverMouseReport(input: Input, {
 		return;
 	}
 	const last = input[kLastMouse];
+	let detail = 0;
+	if (!isMotion) {
+		if (!isRelease) {
+			const now = performance.now();
+			input[kClickCount] =
+				input[kLastClickTarget] === target &&
+				now - input[kLastClickTime] <= DBLCLICK_INTERVAL_MS
+					? input[kClickCount] + 1
+					: 1;
+			input[kLastClickTarget] = target;
+			input[kLastClickTime] = now;
+		}
+		detail = input[kClickCount];
+	}
 	const eventInit = {
+		detail,
 		button,
 		buttons,
 		clientX: x,
@@ -868,21 +888,12 @@ function dispatchRelease(
 			requestRender(input[kDocument]);
 		}
 
-		// In addition to its own click. Reset so a third click starts a pair.
-		const now = performance.now();
-		if (
-			input[kLastClickTarget] === target &&
-			now - input[kLastClickTime] <= DBLCLICK_INTERVAL_MS
-		) {
+		// In addition to its own click, on every second click.
+		if (input[kClickCount] % 2 === 0) {
 			dispatchAsUserAgent(
 				target,
 				new input[kWindow].MouseEvent("dblclick", {...eventInit, buttons: 0}),
 			);
-			input[kLastClickTarget] = null;
-			input[kLastClickTime] = 0;
-		} else {
-			input[kLastClickTarget] = target;
-			input[kLastClickTime] = now;
 		}
 	}
 	input[kMouseDownTarget] = null;
