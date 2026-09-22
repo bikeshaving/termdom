@@ -891,3 +891,28 @@ test("double and contour integrals are columns of the integral's pieces", async 
 		await renderLines(block("<msub><mo>∮</mo><mi>C</mi></msub><mi>g</mi>"), 12),
 	).toEqual(["    ⌠", "    ∮  g", "    ⌡C"]);
 });
+
+test("a bar over or under a wide base is a line on its edge", async () => {
+	expect(
+		await renderMarked(
+			block(
+				"<mover accent=\"true\"><mrow><mi>A</mi><mi>B</mi></mrow><mo stretchy=\"true\">‾</mo></mover>" +
+				"<mo>+</mo>" +
+				"<munder accentunder=\"true\"><mrow><mi>a</mi><mi>b</mi><mi>c</mi></mrow><mo stretchy=\"true\">‾</mo></munder>",
+			),
+			14,
+		),
+	).toEqual(["   __", "   AB + abc"]);
+	const {dom, terminal} = await render(
+		block(
+			"<munder accentunder=\"true\"><mrow><mi>a</mi><mi>b</mi><mi>c</mi></mrow><mo stretchy=\"true\">‾</mo></munder>",
+		),
+		10,
+	);
+	const buffer = (terminal as any).terminal.buffer.active;
+	const row = terminal.getVisibleText().split("\n")[0];
+	const column = row.indexOf("abc");
+	expect(buffer.getLine(0).getCell(column).isUnderline()).toBeTruthy();
+	expect(buffer.getLine(0).getCell(column + 2).isUnderline()).toBeTruthy();
+	dom.dispose();
+});
