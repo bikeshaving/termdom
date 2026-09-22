@@ -68,10 +68,13 @@ Text wraps at the box's width; `white-space`, `word-break`, and
 
 ## Positioning
 
-`position: relative`, `absolute`, and `fixed`, with `z-index` and stacking
-contexts. `overflow: hidden` clips to the box. `overflow: auto` and `scroll`
-clip too, and make the box scrollable: `scrollTop`, `scrollTo`,
-`scrollIntoView`, and the mouse wheel move its content by whole rows.
+`position: relative`, `absolute`, `fixed`, and `sticky`, with `z-index` and
+stacking contexts. A sticky box holds its `top`, `bottom`, `left`, or `right`
+inset against the nearest scrolling box above it, or against the viewport,
+and never leaves the box it flows in. `overflow: hidden` clips to the box.
+`overflow: auto` and `scroll` clip too, and make the box scrollable:
+`scrollTop`, `scrollTo`, `scrollIntoView`, and the mouse wheel move its
+content by whole rows.
 
 ## Not implemented
 
