@@ -305,7 +305,7 @@ test("math-style: compact forces the inline forms in display mode", async () => 
 	expect(lines).toEqual(["   a/b"]);
 });
 
-test("a display root draws a bar over the radicand that meets the sign", async () => {
+test("a display root stands a stem up from its sign to the bar, index before it", async () => {
 	expect(
 		await renderMarked(
 			block("<msqrt><mi>x</mi><mo>+</mo><mn>1</mn></msqrt>"),
@@ -317,11 +317,11 @@ test("a display root draws a bar over the radicand that meets the sign", async (
 			block("<msqrt><mfrac><mi>a</mi><mi>b</mi></mfrac></msqrt>"),
 			10,
 		),
-	).toEqual(["    ___", "   ╱_a_", "  ⎷  b"]);
+	).toEqual(["    ___", "   ▕_a_", "   ⎷ b"]);
 	expect(
 		await renderMarked(block("<mroot><mi>x</mi><mn>3</mn></mroot>"), 10),
 	).toEqual(
-		["    3_", "    ⎷x"],
+		["     _", "   ³⎷x"],
 	);
 });
 
