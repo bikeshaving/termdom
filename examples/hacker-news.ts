@@ -92,7 +92,7 @@ style.textContent = `
   .headline { display: flex; flex-direction: row; }
   .headwords { flex-grow: 1; }
   .story .rank { width: 4ch; flex-shrink: 0; color: #828282; }
-  .story .title { display: inline; }
+  .story .title { display: inline; color: inherit; text-decoration: none; }
   .story .domain { display: inline; color: #828282; }
   .story .meta { color: #828282; padding-left: 4ch; }
   .story.on { background-color: #33291a; }
@@ -256,8 +256,11 @@ function makeRow(story: Story, index: number): HTMLElement {
   rank.textContent = `${String(index + 1).padStart(2)}.`;
   const headwords = document.createElement("span");
   headwords.className = "headwords";
-  const title = document.createElement("span");
+  const title = document.createElement(story.url ? "a" : "span");
   title.className = "title";
+  if (story.url) {
+    title.setAttribute("href", story.url);
+  }
   title.textContent = story.title;
   headwords.appendChild(title);
   const domain = getDomain(story.url);
@@ -372,8 +375,9 @@ function storyHead(story: Story): HTMLElement {
   title.textContent = story.title;
   head.appendChild(title);
   if (story.url) {
-    const link = document.createElement("div");
+    const link = document.createElement("a");
     link.className = "link";
+    link.setAttribute("href", story.url);
     link.textContent = story.url;
     head.appendChild(link);
   }
