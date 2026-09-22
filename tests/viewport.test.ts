@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 test("cursor detection sets window.screenTop from the command-start row", async () => {
 	const terminal = new MockProcess();
@@ -1306,5 +1306,40 @@ test("a MediaQueryList with a listener stays live without a reference", async ()
 	await new Promise((r) => setTimeout(r, 100));
 	expect(events).toEqual([false, false]);
 
+	dom.dispose();
+});
+
+test("a frame callback runs before its frame is painted", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 3});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+	document.body.innerHTML = "<div>1</div><div>2</div><div>3</div>";
+	await nextFrame(dom);
+	const rows = (): string[] =>
+		terminal.getPlainText().split("\n").slice(0, 3).map((l) => l.trim());
+
+	const written = captureRawOutput(terminal);
+	const start = written().length;
+	// A mutation that overflows the screen, and a callback that scrolls to
+	// follow it, as an editor's scrollIntoView does. One frame: the row
+	// that scrolled away is never written.
+	document.body.appendChild(document.createElement("div")).textContent = "4";
+	window.requestAnimationFrame(() => window.scrollBy(0, 1));
+	await nextFrame(dom);
+	expect(rows()).toEqual(["2", "3", "4"]);
+	const output = written().slice(start);
+	expect(output.split("\x1b[?2026h").length - 1).toBe(1);
+
+	// The callback sees the terminal as the last frame left it, and the
+	// frame it changes is the one written next.
+	let before: string[] = [];
+	window.requestAnimationFrame(() => {
+		before = rows();
+		document.body.appendChild(document.createElement("div")).textContent = "5";
+		window.scrollBy(0, 1);
+	});
+	await nextFrame(dom);
+	expect(before).toEqual(["2", "3", "4"]);
+	expect(rows()).toEqual(["3", "4", "5"]);
 	dom.dispose();
 });

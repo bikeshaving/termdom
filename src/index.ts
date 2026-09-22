@@ -449,21 +449,31 @@ async function render(termDOM: TermDOM): Promise<void> {
 	const frames = (async () => {
 		try {
 			do {
-				do {
-					termDOM[kRenderQueued] = false;
-					await renderOnce(termDOM);
-					// After the paint, never inside the scrollTo() that asked
-					// for it. A listener's mutations queue the next frame.
-					DOM.runScrollSteps(termDOM.document);
-				} while (termDOM[kRenderQueued]);
-				// A callback that schedules another frame re-queues the loop, so
-				// requestAnimationFrame chains tick frame by frame. A disposed
-				// engine paints nothing, so a chain that never ends would spin
-				// here forever; it ends with the engine.
+				termDOM[kRenderQueued] = false;
+				if (termDOM[kLifecycle] === "attaching") {
+					await termDOM[kAttachBegun];
+				}
+				// A disposed engine paints nothing, so a callback chain that
+				// never ends would spin here forever; it ends with the engine.
 				if (termDOM[kLifecycle] === "disposed") {
 					break;
 				}
-				framesAwaiting = DOM.runFrameCallbacks(termDOM.document);
+				// The order of "update the rendering": the frame callbacks
+				// first, then style, layout and paint, so what a callback
+				// changes lands in the frame it ran for and nothing is shown
+				// in between. A callback that schedules another frame re-queues
+				// the loop, so requestAnimationFrame chains tick frame by frame.
+				// Never inside the requestAnimationFrame() call that held it:
+				// the loop's first step runs synchronously from there.
+				framesAwaiting = false;
+				if (DOM.hasFrameCallbacks(termDOM.document)) {
+					await Promise.resolve();
+					framesAwaiting = DOM.runFrameCallbacks(termDOM.document);
+				}
+				await renderOnce(termDOM);
+				// After the paint, never inside the scrollTo() that asked
+				// for it. A listener's mutations queue the next frame.
+				DOM.runScrollSteps(termDOM.document);
 			} while (termDOM[kRenderQueued] || framesAwaiting);
 		} finally {
 			termDOM[kRenderInFlight] = null;

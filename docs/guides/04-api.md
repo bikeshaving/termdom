@@ -46,7 +46,8 @@ are wired to the terminal:
 - `scrollY`, `pageYOffset`, `scrollTo()`, `scrollBy()`, `scroll()` —
   document scrolling
 - `requestAnimationFrame()`, `cancelAnimationFrame()` — the callback fires
-  after the frame that includes your pending mutations has been written
+  at the start of the next frame, before it is laid out and painted, as in
+  a browser; what the callback changes lands in that frame
 - `matchMedia()` — live `MediaQueryList`s, re-evaluated on resize
 - `resize` — fired when the terminal size changes, before the
   `MediaQueryList` `change` events that resize triggers

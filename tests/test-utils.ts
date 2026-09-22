@@ -14,6 +14,7 @@ import {
 	type TTYReadStream,
 	type TTYWriteStream,
 } from "../src/index.ts";
+import {framePainted} from "../src/internal/dom.ts";
 import type {ColorDepth} from "../src/internal/exchange.ts";
 import {Screen} from "../src/internal/screen.ts";
 import {getStringWidth} from "../src/internal/text.ts";
@@ -403,13 +404,15 @@ export async function until(condition: () => boolean): Promise<void> {
 
 /**
  * Await the next painted frame. Rendering is automatic (the MutationObserver
- * drives it), so a test mutates the DOM and then awaits a frame -- exactly what a
+ * drives it), so a test mutates the DOM and then awaits a frame -- what a
  * page does with requestAnimationFrame, and the reason TermDOM has no public
- * render(). The engine's own window provides requestAnimationFrame.
+ * render(). The callback runs before the frame is painted, as in a browser,
+ * so the harness then waits for the frame to be written.
  */
-export function nextFrame(
+export async function nextFrame(
 	dom: {
 		window: {requestAnimationFrame(cb: () => void): number};
+		document: globalThis.Document;
 		attach?(): void;
 	},
 ): Promise<void> {
@@ -418,9 +421,10 @@ export function nextFrame(
 	// The attach.test.ts contract tests exercise the unattached state by not
 	// coming through here.
 	dom.attach?.();
-	return new Promise((resolve) =>
+	await new Promise<void>((resolve) =>
 		dom.window.requestAnimationFrame(() => resolve()),
 	);
+	await framePainted(dom.document);
 }
 
 /**

@@ -31558,15 +31558,25 @@ function holdFrameCallback(
 // A fullscreen transition resolves its promise here, once the render
 // that carries the switch has been written.
 function frameSettled(
-	document: Document,
+	_document: Document,
 	attached: AttachedDocument,
 ): Promise<void> {
-	return new Promise((resolve) => {
-		holdFrameCallback(document, () => {
-			resolve();
-		});
-		void attached[kRender]();
-	});
+	return attached[kRender]();
+}
+
+/**
+ * Resolves once the frames in flight have been written to the terminal. A
+ * frame callback runs before its frame is painted, as in a browser, so
+ * "await the paint" is this, after the callback.
+ */
+export function framePainted(document: globalThis.Document): Promise<void> {
+	const attached = getAttachedDocument(document);
+	return attached === undefined ? Promise.resolve() : attached[kRender]();
+}
+
+export function hasFrameCallbacks(document: globalThis.Document): boolean {
+	const state = frameCallbacks.get(document as Document);
+	return state !== undefined && state.held.size > 0;
 }
 
 export function runFrameCallbacks(document: globalThis.Document): boolean {
@@ -32338,10 +32348,9 @@ export class Window extends EventTarget {
 		void attached[kRender]();
 	}
 
-	// requestAnimationFrame is the only way to await a painted frame. It
-	// schedules a render and fires the callback once that render completes,
-	// so "await a frame" always means the frame carrying the pending
-	// mutations has landed.
+	// The callback runs at the start of the next frame, before that
+	// frame's style, layout and paint, as in a browser: what it changes
+	// lands in the frame it ran for.
 	requestAnimationFrame(callback: FrameRequestCallback): number {
 		const attached = getAttachedDocument(this.document);
 		if (attached === undefined) {
