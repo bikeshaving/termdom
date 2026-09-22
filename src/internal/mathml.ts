@@ -2168,8 +2168,10 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 	}
 	// A bar over or under a wider base is a line on the base's edge, as a
 	// radical's is: an underline, an overline where the terminal draws
-	// one, or an underlined blank row above where it does not.
-	if (overNode !== undefined && isBarAccent(overNode)) {
+	// one, or an underlined blank row above where it does not. The ASCII
+	// set is characters only, and draws its bars as rows of dashes.
+	const edges = context.glyphs !== "ascii";
+	if (edges && overNode !== undefined && isBarAccent(overNode)) {
 		result = context.overline
 			? overlineRow(result, 0, 0)
 			: stack(
@@ -2180,7 +2182,7 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 			);
 		overNode = undefined;
 	}
-	if (underNode !== undefined && isBarAccent(underNode)) {
+	if (edges && underNode !== undefined && isBarAccent(underNode)) {
 		result = underlineRow(result, result.height - 1, 0);
 		underNode = undefined;
 	}

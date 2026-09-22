@@ -917,3 +917,18 @@ test("a bar over or under a wide base is a line on its edge", async () => {
 	expect(buffer.getLine(0).getCell(column + 2).isUnderline()).toBeTruthy();
 	dom.dispose();
 });
+
+test("the ascii glyph set draws bar accents as characters, never attributes", async () => {
+	const html =
+		"<math display=\"block\" style=\"--math-glyphs: ascii\">" +
+		"<mover accent=\"true\"><mrow><mi>A</mi><mi>B</mi></mrow><mo stretchy=\"true\">‾</mo></mover>" +
+		"<mo>+</mo>" +
+		"<munder accentunder=\"true\"><mrow><mi>a</mi><mi>b</mi><mi>c</mi></mrow><mo stretchy=\"true\">‾</mo></munder>" +
+		"</math>";
+	expect(await renderMarked(html, 14)).toEqual([
+		"   --",
+		"   AB + abc",
+		"        ---",
+	]);
+	expect(await renderANSI(html)).not.toContain("\x1b[4m");
+});
