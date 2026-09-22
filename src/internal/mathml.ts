@@ -387,15 +387,18 @@ function getLargeOperatorRows(
 	if (height < 2) {
 		return null;
 	}
-	const baseline = getLargeOperatorBaseline(height);
+	const baseline = getLargeOperatorBaseline(text, height);
 	const rows = buildVerticalGlyph(text, height, baseline, context.glyphs);
 	return rows === null
 		? null
 		: createRowsBox(rows, baseline, getTokenStyle(element, null));
 }
 
-function getLargeOperatorBaseline(height: number): number {
-	return (height - 1) >> 1;
+// Text sits just below the axis in print, so beside a drawn sum, whose
+// axis is the seam between its strokes, the summand takes the row
+// under the seam. An integral or product has a middle row and uses it.
+function getLargeOperatorBaseline(text: string, height: number): number {
+	return text === "∑" ? (height + 1) >> 1 : (height - 1) >> 1;
 }
 
 interface AlphanumericRange {
@@ -939,7 +942,7 @@ function layoutStretchedOperator(
 	// taller than its siblings keeps its own baseline.
 	const spare = Math.max(0, height - (ascent + descent + 1));
 	const baseline = operator.entry.largeop && spare > 0
-		? getLargeOperatorBaseline(height)
+		? getLargeOperatorBaseline(operator.text, height)
 		: Math.min(ascent + (spare >> 1), height - 1);
 	const rows = height > 1
 		? buildVerticalGlyph(operator.text, height, baseline, context.glyphs)
