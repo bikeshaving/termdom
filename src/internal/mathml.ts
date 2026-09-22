@@ -23,6 +23,7 @@ import {
 	toPlainGlyphs,
 } from "./mathglyphs.ts";
 import {
+	findOperator,
 	lookupOperator,
 	type OperatorEntry,
 	type OperatorForm,
@@ -56,6 +57,8 @@ interface MathContext {
 interface Operator {
 	text: string;
 	entry: OperatorEntry;
+	form: OperatorForm;
+	fence: boolean;
 	gapBefore: boolean;
 	gapAfter: boolean;
 }
@@ -257,8 +260,14 @@ function layoutNode(node: Node, context: MathContext): MathBox {
 		case "mi":
 		case "mn":
 		case "mo":
-		case "mtext":
 			return layoutTextToken(element, element.textContent ?? "", local);
+		case "mtext": {
+			// TeX's thin and thick spaces arrive as blank mtext.
+			const text = element.textContent ?? "";
+			return text !== "" && text.trim() === ""
+				? createEmptyBox(1)
+				: layoutTextToken(element, text, local);
+		}
 		case "ms":
 			return layoutTextToken(
 				element,
@@ -329,8 +338,12 @@ function layoutTextToken(
 	}
 	let bold = variant !== null && variant.includes("bold");
 	let italic = variant !== null && variant.includes("italic");
-	if (variant !== null && context.variantGlyphs && context.glyphs !== "ascii") {
-		const mapped = toMathAlphanumeric(collapsed, variant);
+	if (variant !== null && context.glyphs !== "ascii") {
+		const mapped = toMathAlphanumeric(
+			collapsed,
+			variant,
+			context.variantGlyphs,
+		);
 		if (mapped !== null) {
 			collapsed = mapped;
 			bold = false;
@@ -408,8 +421,15 @@ const ALPHANUMERIC_RANGES: Record<string, AlphanumericRange> = {
 };
 
 // The text in the block's letters, or null when any character has no
-// form there, so the token falls back to SGR bold and italic.
-function toMathAlphanumeric(text: string, variant: string): string | null {
+// form there, so the token falls back to SGR bold and italic. The
+// letters Unicode encoded before the block (ℝ, ℂ, ℕ, ℋ, ℜ) are in every
+// font that has any math at all, so they are used without the flag that
+// opts into the block.
+function toMathAlphanumeric(
+	text: string,
+	variant: string,
+	block: boolean,
+): string | null {
 	const range = ALPHANUMERIC_RANGES[variant];
 	if (range === undefined) {
 		return null;
@@ -420,6 +440,8 @@ function toMathAlphanumeric(text: string, variant: string): string | null {
 		const exception = range.exceptions?.[char];
 		if (exception !== undefined) {
 			out += exception;
+		} else if (!block && char !== " ") {
+			return null;
 		} else if (code >= 0x41 && code <= 0x5a) {
 			out += String.fromCodePoint(range.upper + code - 0x41);
 		} else if (code >= 0x61 && code <= 0x7a) {
@@ -585,17 +607,102 @@ function getOperator(element: Element, index: number, count: number): Operator {
 		largeop: readFlag(element, "largeop", found.largeop),
 		accent: readFlag(element, "accent", found.accent),
 	};
+	// TeX puts a thin space after a large operator, a function name and
+	// a limit-taking word like lim, and before a large operator.
 	const infix = form === "infix";
 	return {
 		text,
 		entry,
-		gapBefore: infix && readSpace(element, "lspace", found.lspace) >= 0.2,
-		gapAfter: infix && readSpace(element, "rspace", found.rspace) >= 0.2,
+		form,
+		fence: readFlag(element, "fence", false),
+		gapBefore:
+			(infix && readSpace(element, "lspace", found.lspace) >= 0.2) ||
+			entry.largeop,
+		gapAfter:
+			(infix && readSpace(element, "rspace", found.rspace) >= 0.2) ||
+			entry.largeop ||
+			entry.movableLimits ||
+			text === "\u2061" ||
+			text === "," ||
+			text === ";",
 	};
 }
 
 function isOperatorElement(node: Node): boolean {
 	return isMathElement(node) && (node as Element).localName === "mo";
+}
+
+const SCRIPTED = new Set([
+	"msub",
+	"msup",
+	"msubsup",
+	"munder",
+	"mover",
+	"munderover",
+	"mmultiscripts",
+]);
+
+const WRAPPERS = new Set(["mrow", "mstyle", "mpadded", "mphantom"]);
+
+// The operator an element's spacing comes from: itself for an mo; for
+// scripts, limits and a wrapper around one, the operator inside (MathML
+// Core's embellished operator); and for a row ending in function
+// application, as KaTeX writes lim, that operator.
+function getCoreOperator(node: Node): Element | null {
+	if (!isMathElement(node)) {
+		return null;
+	}
+	const element = node as Element;
+	if (element.localName === "mo") {
+		return element;
+	}
+	const children = getLayoutChildren(element);
+	if (SCRIPTED.has(element.localName) && children.length > 0) {
+		return getCoreOperator(children[0]);
+	}
+	if (WRAPPERS.has(element.localName) && children.length === 1) {
+		return getCoreOperator(children[0]);
+	}
+	const last = children[children.length - 1];
+	if (
+		WRAPPERS.has(element.localName) &&
+		last !== undefined &&
+		isOperatorElement(last) &&
+		collapseTokenText((last as Element).textContent ?? "") === "\u2061"
+	) {
+		return last as Element;
+	}
+	return null;
+}
+
+// TeX sets nothing apart from a fence on its inside: not the large
+// operator after an opening one, nor anything before a closing one. A
+// bar is either, so only its position says which.
+function isFence(operator: Operator, side: "prefix" | "postfix"): boolean {
+	if (operator.fence) {
+		return operator.form === side;
+	}
+	const isFenceEntry = (entry: OperatorEntry | undefined): boolean =>
+		entry !== undefined &&
+		entry.stretchy &&
+		!entry.largeop &&
+		entry.lspace === 0 &&
+		entry.rspace === 0;
+	if (!isFenceEntry(findOperator(operator.text, side))) {
+		return false;
+	}
+	const other = side === "prefix" ? "postfix" : "prefix";
+	return !isFenceEntry(findOperator(operator.text, other)) ||
+		operator.form === side;
+}
+
+function isBlankBox(box: MathBox): boolean {
+	return (
+		box.width > 0 &&
+		box.cells.every((row) =>
+			row.every((cell) => cell.text === " " && cell.style?.bg == null),
+		)
+	);
 }
 
 /**
@@ -633,6 +740,9 @@ function layoutRow(
 	}
 	let result: MathBox | null = null;
 	let gapAfter = false;
+	let blankBefore = false;
+	let openBefore = false;
+	let applicationBefore = false;
 	for (let index = 0; index < children.length; index++) {
 		const operator = operators[index];
 		const box =
@@ -644,20 +754,63 @@ function layoutRow(
 				descent,
 				context,
 			);
+		const spacing = operator ?? getSpacing(children[index], box, context);
+		const blank = isBlankBox(box);
 		if (result === null) {
 			result = box;
 		} else {
-			const gap =
-				!context.tight &&
-				(gapAfter || operator?.gapBefore) &&
-				box.width > 0
-					? 1
-					: 0;
+			// A blank cell already keeps the boxes apart, and a function
+			// name meets its parenthesis directly, as sin(x).
+			const wanted = gapAfter || (spacing?.gapBefore ?? false);
+			const covered =
+				blank ||
+				blankBefore ||
+				openBefore ||
+				(spacing !== null && isFence(spacing, "postfix")) ||
+				(applicationBefore && spacing !== null && isFence(spacing, "prefix"));
+			const gap = !context.tight && wanted && !covered && box.width > 0 ? 1 : 0;
 			result = beside(result, box, gap);
 		}
-		gapAfter = operator?.gapAfter ?? false;
+		// An invisible operator has no cell of its own; its spacing carries
+		// to the next box that has one.
+		if (box.width > 0) {
+			gapAfter = spacing?.gapAfter ?? false;
+			blankBefore = blank;
+			openBefore = spacing !== null && isFence(spacing, "prefix");
+			applicationBefore = spacing?.text === "\u2061";
+		} else if (spacing !== null) {
+			gapAfter = gapAfter || spacing.gapAfter;
+			applicationBefore = spacing.text === "\u2061";
+		}
 	}
 	return result!;
+}
+
+// The spacing of a scripted or wrapped operator. A large operator whose
+// limits stand over and under it in display mode is already set apart
+// by them when they are wider than it.
+function getSpacing(
+	node: Node,
+	box: MathBox,
+	context: MathContext,
+): Operator | null {
+	const core = getCoreOperator(node);
+	if (core === null || core === node) {
+		return null;
+	}
+	const spacing = getOperator(core, 1, 3);
+	const element = node as Element;
+	if (
+		spacing.entry.largeop &&
+		context.display &&
+		box.width > 1 &&
+		(element.localName === "munder" ||
+			element.localName === "mover" ||
+			element.localName === "munderover")
+	) {
+		return {...spacing, gapBefore: false, gapAfter: false};
+	}
+	return spacing;
 }
 
 function isVerticallyStretchy(
@@ -1204,7 +1357,22 @@ function attachScripts(
 	const joinTo = (box: MathBox, part: MathBox): MathBox =>
 		pre ? beside(part, box) : beside(box, part);
 	let result = base;
-	if (pre) {
+	if (!pre && base.height > 1 && (subCharacters || supCharacters)) {
+		// Beside a tall base the superscript takes its top row and the
+		// subscript its bottom row, as they do on a fence in print.
+		let column = createEmptyBox(
+			Math.max(subCharacters?.width ?? 0, supCharacters?.width ?? 0),
+			base.height,
+			base.baseline,
+		);
+		if (supCharacters) {
+			column = overlay(column, supCharacters, 0, 0);
+		}
+		if (subCharacters) {
+			column = overlay(column, subCharacters, 0, base.height - 1);
+		}
+		result = beside(result, column);
+	} else if (pre) {
 		if (subCharacters) {
 			result = beside(subCharacters, result);
 		}

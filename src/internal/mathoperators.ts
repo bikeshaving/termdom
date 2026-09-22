@@ -139,6 +139,14 @@ for (const [form, lspace, rspace, flags, operators] of CATEGORIES) {
 	}
 }
 
+/** The dictionary entry for an operator in exactly this form. */
+export function findOperator(
+	text: string,
+	form: OperatorForm,
+): OperatorEntry | undefined {
+	return DICTIONARY.get(`${form} ${text}`);
+}
+
 /**
  * The dictionary entry for an operator in a form. When the form has no
  * entry the other forms are tried in the order the spec gives, and an
