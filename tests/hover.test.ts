@@ -91,6 +91,9 @@ test("a hover-family listener turns motion reporting on; removal turns it off", 
 	await nextFrame(termdom);
 	await flushed(written, MOTION_OFF);
 	expect(written()).toContain(MOTION_OFF);
+	// tmux drops every mouse mode on a ?1003 reset, so the button mode is
+	// asserted again right after it.
+	expect(written()).toContain(MOTION_OFF + "\x1b[?1002h\x1b[?1006h");
 	termdom.dispose();
 });
 
