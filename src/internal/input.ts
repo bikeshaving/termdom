@@ -312,18 +312,11 @@ const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
 const kTextControlDragAnchor = Symbol("textControlDragAnchor");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
-const kLastWheelTick = Symbol("lastWheelTick");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 const kClickCount = Symbol("clickCount");
 
 const DBLCLICK_INTERVAL_MS = 500;
-// A wheel that scrolled a tall document to its top keeps landing there
-// while its ticks keep coming, so a flick ends at the top instead of
-// flying on into the terminal's scrollback. A wheel begun after this
-// pause crosses. A document that fits has nothing to flick, so its
-// first tick crosses at once.
-const SCROLL_BOUNDARY_MS = 300;
 
 export interface Input {
 	[kDocument]: Document;
@@ -351,7 +344,6 @@ export interface Input {
 	// says when the user has scrolled back down by hand. The document is
 	// hidden meanwhile, as a page in a background tab is.
 	[kMouseCaptureYielded]: boolean;
-	[kLastWheelTick]: number;
 	// A mouseup on the same element is a click.
 	[kMouseDownTarget]: Element | null;
 	[kPopoverPressTarget]: Element | null;
@@ -391,7 +383,6 @@ export class Input {
 		this[kSelectionDragAnchor] = null;
 		this[kTextControlDragAnchor] = null;
 		this[kMouseCaptureYielded] = false;
-		this[kLastWheelTick] = 0;
 		this[kLastClickTarget] = null;
 		this[kLastClickTime] = 0;
 		this[kClickCount] = 0;
@@ -738,12 +729,11 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 }
 
 // The nearest scroller that can move takes the tick, else the document
-// scroll does. True when the tick escaped past both: the document was
-// already at its top.
+// scroll does. True when the tick escaped past both. A document taller
+// than the screen is a scrolling surface that keeps the wheel, and its
+// top is a stop, as an editor's is; one that fits has nothing to scroll,
+// so the wheel goes to the terminal's scrollback.
 function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
-	const now = Date.now();
-	const continuing = now - input[kLastWheelTick] < SCROLL_BOUNDARY_MS;
-	input[kLastWheelTick] = now;
 	const scroller = getWheelScroller(input, target, deltaY);
 	if (scroller) {
 		scroller.scrollTop += deltaY;
@@ -754,8 +744,7 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 		input[kScreen].scrollTop === 0 &&
 		input[kDocument].fullscreenElement === null
 	) {
-		const tall = input[kLayout].documentPaintHeight() > input[kScreen].rows;
-		return !(tall && continuing);
+		return input[kLayout].documentPaintHeight() <= input[kScreen].rows;
 	}
 	input[kScreen].scrollTo(input[kScreen].scrollTop + deltaY);
 	requestRender(input[kDocument]);
