@@ -1096,8 +1096,12 @@ function *App(this: Context) {
       return;
     }
     if (key === " ") {
-      seat("top", 0);
-      return act(draw, "The deck and the flip are both empty.");
+      // The cursor follows the turned card to the flip, ready for f or
+      // enter, without picking it up.
+      const before = game.moves;
+      act(draw, "The deck and the flip are both empty.");
+      seat("top", game.moves > before && top(game.waste) ? 1 : 0);
+      return;
     }
     if (key === "f" || key === "0") {
       seat("top", 1);
