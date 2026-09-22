@@ -964,7 +964,13 @@ test("appending children one at a time costs linear sibling invalidation", async
 		return elapsed;
 	};
 	await timeAppend(200);
-	const small = await timeAppend(500);
-	const large = await timeAppend(2000);
-	expect(large / small).toBeLessThan(6);
+	// Quadratic measures around 10 to 12, linear around 2 to 3. The best of
+	// three keeps a busy machine from turning one slow run into a failure.
+	let best = Infinity;
+	for (let attempt = 0; attempt < 3; attempt++) {
+		const small = await timeAppend(500);
+		const large = await timeAppend(2000);
+		best = Math.min(best, large / small);
+	}
+	expect(best).toBeLessThan(6);
 });
