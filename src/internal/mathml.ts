@@ -547,7 +547,11 @@ function getDisplayHeight(
 	if (op === "∑") {
 		return overline && glyphs !== "ascii" ? 2 : 3;
 	}
-	return op === "∏" || op in TABLES[glyphs].vertical ? 3 : 0;
+	// A product is its bar and its legs.
+	if (op === "∏") {
+		return 2;
+	}
+	return op in TABLES[glyphs].vertical ? 3 : 0;
 }
 
 /**
@@ -788,6 +792,9 @@ const BLANK: MathCell = {text: " ", width: 1, style: null};
 const MATHML_WHITESPACE = new Set([" ", "\t", "\n", "\r"]);
 
 const TOKENS = new Set(["mi", "mn", "mo", "mtext", "ms"]);
+
+// The widest fraction, bar included, whose bar is an underline.
+const LONG_FRACTION = 12;
 
 // Function application, invisible times, separator and plus, and the
 // zero-width space: operators with no glyph and no cell.
@@ -1295,7 +1302,7 @@ function getLargeOperatorRows(
 	if (height < 2) {
 		return null;
 	}
-	const baseline = getLargeOperatorBaseline(height);
+	const baseline = getLargeOperatorBaseline(text, height);
 	const rows = buildVerticalGlyph(
 		text,
 		height,
@@ -1309,9 +1316,11 @@ function getLargeOperatorRows(
 }
 
 // The middle row, or the upper of the two middle rows: beside a drawn
-// sum, the summand sits on the row of the first stroke.
-function getLargeOperatorBaseline(height: number): number {
-	return (height - 1) >> 1;
+// sum, the summand sits on the row of the first stroke. A product's
+// top row is its bar, so its operand sits beside the legs.
+function getLargeOperatorBaseline(text: string, height: number): number {
+	const middle = (height - 1) >> 1;
+	return text === "∏" ? Math.max(1, middle) : middle;
 }
 
 interface AlphanumericRange {
@@ -1880,7 +1889,7 @@ function layoutStretchedOperator(
 	// taller than its siblings keeps its own baseline.
 	const spare = Math.max(0, height - (ascent + descent + 1));
 	const baseline = operator.entry.largeop && spare > 0
-		? getLargeOperatorBaseline(height)
+		? getLargeOperatorBaseline(operator.text, height)
 		: Math.min(ascent + (spare >> 1), height - 1);
 	const rows = height > 1
 		? buildVerticalGlyph(
@@ -2024,13 +2033,27 @@ function layoutRadical(element: Element, context: MathContext): MathBox {
 		}
 		rows.push(cells.join(""));
 	}
-	const column = createRowsBox(rows, radicand.baseline, null);
 	// The bar starts where the stem's top will meet it.
 	const barStart = shape === "stands" ? 1 : signWidth;
+	// A radicand whose top row is nothing but bars, the roots nested in
+	// it, shares that row: the outer bar runs along it, continuous where
+	// the inner ones break, and the stem stops one row short.
+	const shared =
+		bar === null &&
+		!context.overline &&
+		radicand.height > 1 &&
+		radicand.baseline > 0 &&
+		radicand.cells[0].every((cell) => cell.text === " ");
+	if (shared) {
+		rows[0] = " ".repeat(signWidth);
+	}
+	const column = createRowsBox(rows, radicand.baseline, null);
 	const body = beside(column, radicand);
-	// An overline along the radicand's top row needs no row of its own.
 	let result: MathBox;
-	if (bar === null && context.overline) {
+	if (shared) {
+		result = underlineRow(body, 0, barStart);
+	} else if (bar === null && context.overline) {
+		// An overline along the radicand's top row needs no row of its own.
 		result = overlineRow(body, 0, barStart);
 	} else {
 		const overline = bar === null
@@ -2116,13 +2139,56 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 			context,
 		);
 	}
-	if (overNode !== undefined) {
-		result = attachUnderOver(result, overNode, "over", scripts);
+	const over = overNode === undefined
+		? null
+		: layoutUnderOverScript(result, overNode, scripts);
+	const under = underNode === undefined
+		? null
+		: layoutUnderOverScript(result, underNode, scripts);
+	// A stretchy base, as the arrow under \xrightarrow's label, reaches
+	// across its limits and to its minsize.
+	result = stretchAcross(
+		children[0],
+		result,
+		Math.max(over?.width ?? 0, under?.width ?? 0),
+		context,
+	);
+	if (over !== null) {
+		result = attachUnderOver(result, over, "over");
 	}
-	if (underNode !== undefined) {
-		result = attachUnderOver(result, underNode, "under", scripts);
+	if (under !== null) {
+		result = attachUnderOver(result, under, "under");
 	}
 	return result;
+}
+
+function stretchAcross(
+	node: Node | undefined,
+	base: MathBox,
+	width: number,
+	context: MathContext,
+): MathBox {
+	if (node === undefined || !isOperatorElement(node)) {
+		return base;
+	}
+	const element = node as Element;
+	const text = collapseTokenText(element.textContent ?? "");
+	const entry = lookupOperator(text, "infix");
+	if (
+		!readFlag(element, "stretchy", entry.stretchy) ||
+		!hasHorizontalPieces(text, context.glyphs)
+	) {
+		return base;
+	}
+	const minsize = parseMathLength(element.getAttribute("minsize"));
+	const target = Math.max(base.width, width, Math.round(minsize ?? 0));
+	if (target <= base.width) {
+		return base;
+	}
+	return createTextBox(
+		buildHorizontalGlyph(text, target, context.glyphs)!,
+		getTokenStyle(element, null),
+	);
 }
 
 function getAccentOperator(
@@ -2169,10 +2235,10 @@ function combineAccent(
 	return {...base, cells: [[{...cell, text: cell.text + mark}]]};
 }
 
-function attachUnderOver(
+// A limit's box: a stretchy operator, as a brace, spans the base.
+function layoutUnderOverScript(
 	base: MathBox,
 	node: Node,
-	side: "over" | "under",
 	context: MathContext,
 ): MathBox {
 	const operator = getAccentOperator(node);
@@ -2180,12 +2246,19 @@ function attachUnderOver(
 		operator !== null &&
 		readFlag(node as Element, "stretchy", operator.entry.stretchy) &&
 		hasHorizontalPieces(operator.text, context.glyphs);
-	const script = stretchy && base.width > 1
+	return stretchy && base.width > 1
 		? createTextBox(
 			buildHorizontalGlyph(operator!.text, base.width, context.glyphs)!,
 			getTokenStyle(node as Element, null),
 		)
 		: layoutNode(node, context);
+}
+
+function attachUnderOver(
+	base: MathBox,
+	script: MathBox,
+	side: "over" | "under",
+): MathBox {
 	if (side === "over" && script.height === 1 && hasBarOnTop(base)) {
 		return setOnBar(base, script);
 	}
@@ -2624,19 +2697,23 @@ function layoutFraction(element: Element, context: MathContext): MathBox {
 	const top = placeInWidth(numerator, width, numalign);
 	const bottom = placeInWidth(denominator, width, denomalign);
 	// The bar is an underline along the numerator's last row, drawn on
-	// that row's bottom edge, so the fraction takes no row for it. The
-	// ASCII set draws a row of dashes, since an underline copies as
-	// nothing, and linethickness 0 leaves the row empty.
-	const barred = thickness === 0 || context.glyphs === "ascii"
-		? stack(
-			top,
-			thickness === 0
-				? createEmptyBox(width)
-				: createTextBox(getFractionBar(context.glyphs).repeat(width), null),
-			"left",
-			top.height,
-		)
-		: underlineLastRow(top);
+	// that row's bottom edge, so the fraction takes no row for it. A
+	// long one takes a row of its own, since an underline that long
+	// reads as underlined text. The ASCII set draws the row always, since
+	// an underline copies as nothing, and linethickness 0 leaves it empty.
+	const barred =
+		thickness === 0 ||
+		context.glyphs === "ascii" ||
+		width > LONG_FRACTION
+			? stack(
+				top,
+				thickness === 0
+					? createEmptyBox(width)
+					: createTextBox(getFractionBar(context.glyphs).repeat(width), null),
+				"left",
+				top.height,
+			)
+			: underlineLastRow(top);
 	return stack(barred, bottom, "left", barred.baseline);
 }
 
@@ -2666,14 +2743,27 @@ function placeInWidth(
 	return pad(box, 0, extra - left, 0, left);
 }
 
+function underlineRow(box: MathBox, row: number, from: number): MathBox {
+	return decorateRow(box, row, from, "underline");
+}
+
 function overlineRow(box: MathBox, row: number, from: number): MathBox {
+	return decorateRow(box, row, from, "overline");
+}
+
+function decorateRow(
+	box: MathBox,
+	row: number,
+	from: number,
+	line: "underline" | "overline",
+): MathBox {
 	let column = 0;
 	const cells = box.cells[row].map((cell) => {
 		const start = column;
 		column += cell.width;
 		return start < from
 			? cell
-			: {...cell, style: {...cell.style, overline: true}};
+			: {...cell, style: {...cell.style, [line]: true}};
 	});
 	return {...box, cells: box.cells.map((r, i) => (i === row ? cells : r))};
 }
@@ -3040,8 +3130,13 @@ function layoutPadded(element: Element, context: MathContext): MathBox {
 		if (raw === null || value === null) {
 			return current;
 		}
+		// An adjustment of less than a cell, the padding TeX puts around
+		// an arrow's label, is no cell.
 		const adjusts = /^\s*[+-]/.test(raw);
-		return Math.max(current, Math.round(adjusts ? current + value : value));
+		return Math.max(
+			current,
+			adjusts ? current + Math.trunc(value) : Math.round(value),
+		);
 	};
 	const left = Math.max(
 		0,
