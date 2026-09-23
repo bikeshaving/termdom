@@ -653,3 +653,76 @@ test("fullscreen maps mouse rows from the screen's top, not the command's row", 
 	expect(termdom.window.scrollY).toBe(0);
 	termdom.dispose();
 });
+
+test("a click reaches a child that overflows its parent's box", async () => {
+	// The parent is narrow and does not clip, so its child spills past it
+	// to the right, as a fanned card does past its pile. The pointer
+	// reaches the child there, as it does in a browser.
+	const proc = new MockProcess();
+	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
+	const {document} = termdom;
+	document.body.innerHTML =
+		"<div id=\"pile\" style=\"width: 5ch\">" +
+		"<div id=\"card\" style=\"width: 14ch; white-space: pre\">a fanned card</div>" +
+		"</div>";
+	await nextFrame(termdom);
+
+	const targets: string[] = [];
+	document.addEventListener("mousedown", (event: any) => {
+		targets.push(event.target.id || event.target.tagName);
+	});
+	await send(proc, "\x1b[<0;12;1M");
+	await send(proc, "\x1b[<0;12;1m");
+	expect(targets).toEqual(["card"]);
+	expect(document.elementFromPoint(11, 0)?.id).toBe("card");
+	termdom.dispose();
+});
+
+test("a press and a release on different elements click their common ancestor", async () => {
+	const proc = new MockProcess();
+	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
+	const {document} = termdom;
+	document.body.innerHTML =
+		"<div id=\"pile\"><div id=\"a\">aaaa</div><div id=\"b\">bbbb</div></div>";
+	await nextFrame(termdom);
+
+	const clicks: string[] = [];
+	document.addEventListener("click", (event: any) =>
+		clicks.push(event.target.id),
+	);
+	await send(proc, "\x1b[<0;1;1M");
+	await send(proc, "\x1b[<0;1;2m");
+	expect(clicks).toEqual(["pile"]);
+	termdom.dispose();
+});
+
+test("a second press on the same cell is a double-click even if the element moved", async () => {
+	// The first click moves the element down a row, as a focus step or a
+	// layout change might. A browser counts the second press by where and
+	// when it happened, and fires dblclick on what is under it then.
+	const proc = new MockProcess();
+	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
+	const {document} = termdom;
+	document.body.innerHTML =
+		"<div id=\"pile\" style=\"height: 4px\"><div id=\"a\">aaaa</div><div id=\"b\">bbbb</div></div>";
+	await nextFrame(termdom);
+	const a = document.getElementById("a")!;
+	const events: string[] = [];
+	a.addEventListener("click", () => {
+		events.push("click a");
+		a.style.marginTop = "1px";
+	});
+	document.getElementById("pile")!.addEventListener(
+		"dblclick",
+		(event: any) => {
+			events.push(`dblclick via ${event.target.id}`);
+		},
+	);
+	await send(proc, "\x1b[<0;1;1M");
+	await send(proc, "\x1b[<0;1;1m");
+	await nextFrame(termdom);
+	await send(proc, "\x1b[<0;1;1M");
+	await send(proc, "\x1b[<0;1;1m");
+	expect(events).toEqual(["click a", "dblclick via pile"]);
+	termdom.dispose();
+});
