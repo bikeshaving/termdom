@@ -413,15 +413,15 @@ function sheet(): string {
   .card.down { background-color: #1d4f8f; color: #4f82c8; }
   /* A held card keeps its suit's colour -- losing it is disorienting when the
      colour is what the next move is chosen by -- and changes its FIELD. */
-  .card.held { background-color: #ffd75f; font-weight: bold; }
+  .card.held { background-color: #b4d4f0; font-weight: bold; }
   .card.drop { background-color: #a9d7b7; }
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
-  /* Where the keyboard is, and what it holds, are one effect: the gold
-     field. A card keeps its suit's colour under it either way. */
-  .cursor { background-color: #ffd75f; font-weight: bold; }
+  /* Where the keyboard is, and what it holds, are one effect: the pale
+     blue field, which leaves a red suit red. */
+  .cursor { background-color: #b4d4f0; font-weight: bold; }
   .card.down.cursor { color: #1d4f8f; }
-  .slot.cursor { background-color: #ffd75f; color: #6b5b1e; }
+  .slot.cursor { background-color: #b4d4f0; color: #2f5a80; }
 
   /* The confirm covers the screen and centers its dialog; the board stays
      visible around the box, the way a modal reads. */
@@ -700,7 +700,7 @@ function *App(this: Context) {
     depth: 0,
   };
   // The cursor exists once the keyboard asks for it -- the :focus-visible
-  // convention. A fresh deal shows no gold, and a mouse game never does.
+  // convention. A fresh deal shows no field, and a mouse game never does.
   let cursorShown = false;
 
   /** Back to the deal's opening position, clock unstarted, cursor down. */
