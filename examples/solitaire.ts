@@ -375,7 +375,7 @@ function sheet(): string {
   // lists the component re-renders on, so the CSS widths and the drawn card
   // faces can never disagree about the size of a card.
   const css = (tier: Tier) => `
-  .card, .slot { width: ${tier.width}ch; }
+  .card, .slot { width: ${tier.width}ch; height: ${tier.height}px; }
   .number, .top .gap { width: ${tier.width}ch; }
   .pile { width: ${tier.width}ch; }
   .place { width: ${tier.width}ch; height: ${tier.height}px; }
@@ -409,7 +409,7 @@ function sheet(): string {
   .number.drop { color: #ffd75f; font-weight: bold; }
   .board { display: flex; flex-direction: row; }
   .pile { display: flex; flex-direction: column; position: relative; z-index: 0; }
-  .fan { display: flex; flex-direction: row; }
+  .fan { display: flex; flex-direction: row; align-items: flex-start; }
   /* Every place a stack lives has the same dark ground under its cards, so
      a card that steps down shows the place behind it. The pile is its own
      stacking context, so the place sits under the cards and over the felt. */
