@@ -379,6 +379,9 @@ function sheet(): string {
   .number, .top .gap { width: ${tier.width}ch; }
   .pile { width: ${tier.width}ch; }
   .place { width: ${tier.width}ch; height: ${tier.height}px; }
+  .pile > .card + .card { margin-top: -${tier.height - 1}px; }
+  .pile > .card + .card:focus { margin-top: -${tier.height - 2}px; }
+  .fan > .card + .card { margin-left: -${tier.width - 2}ch; }
   .top, .numbers, .board, .captions { gap: ${tier.gap}ch; }
   .play { width: ${7 * tier.width + 6 * tier.gap}ch; }
 `;
@@ -406,14 +409,17 @@ function sheet(): string {
   .number.drop { color: #ffd75f; font-weight: bold; }
   .board { display: flex; flex-direction: row; }
   .pile { display: flex; flex-direction: column; position: relative; z-index: 0; }
+  .fan { display: flex; flex-direction: row; }
   /* Every place a stack lives has the same dark ground under its cards, so
      a card that steps down shows the place behind it. The pile is its own
      stacking context, so the place sits under the cards and over the felt. */
   .place { position: absolute; top: 0; left: 0; z-index: -1; background-color: #05381a; }
 
   /* A card's rows are drawn, not written: the blank rows are spaces, and
-     collapsing them would shorten the card. A covered card shows only the
-     row its index is on, which is what makes a pile a stack. */
+     collapsing them would shorten the card. Every card is whole; a pile is
+     cards laid over one another, each all but a row under the next, and
+     the flip's fan lays them over one another sideways, each all but its
+     index under the next. A later card paints over an earlier one. */
   .card, .slot { white-space: pre; }
   .card { background-color: #f0f0e6; color: #202020; }
   .card.red { color: #c02020; }
@@ -425,9 +431,14 @@ function sheet(): string {
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
   /* The focused card steps down a row, the way a hand lifts a card off
      its pile, and it is the document's focus: tab, the arrows, the numbers
-     and a click all move the same thing. Its colours stay its own. */
+     and a click all move the same thing. Its colours stay its own. A card
+     over another uncovers a second row of it; the first card of a pile
+     uncovers the place. */
   .card, .slot { outline: none; }
-  .card:focus, .slot:focus { margin-top: 1px; }
+  .card:focus { margin-top: 1px; }
+  /* An empty place does not move. It takes the focus only as somewhere to
+     put what is held, or as the deck to turn over, and brightens its mark. */
+  .slot:focus { color: #cfe8d8; }
 
   /* The confirm covers the screen and centers its dialog; the board stays
      visible around the box, the way a modal reads. */
@@ -515,8 +526,9 @@ function blank(width: number): string {
 
 /**
  * A card back: a plate with solid half-block rails and a single motif at the
- * center, the way a printed back reads. A covered card shows the plate's top
- * rule, so a pile of backs is ruled lines rather than pattern noise.
+ * center, the way a printed back reads. A card under another shows the
+ * plate's top rule, so a pile of backs is ruled lines rather than pattern
+ * noise.
  */
 function backRows(width: number, height: number): string[] {
   return Array.from({length: height}, (_, row) => {
@@ -580,8 +592,6 @@ interface CardProps {
   card: Card;
   tier: Tier;
 
-  /** A card with another lying over it, showing its index row alone. */
-  covered?: boolean;
   held?: boolean;
   drop?: boolean;
 
@@ -594,7 +604,6 @@ interface CardProps {
 function CardFace({
   card,
   tier,
-  covered,
   held,
   drop,
   id,
@@ -620,7 +629,7 @@ function CardFace({
       tabindex=${id !== undefined ? "0" : undefined}
       onmousedown=${onmousedown}
       ondblclick=${ondblclick}
-    >${(covered ? rows.slice(0, 1) : rows).map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
+    >${rows.map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
   `;
 }
 
@@ -1298,10 +1307,8 @@ function *App(this: Context) {
     // under a king-to-ace run, so a growing pile never pushes the hint
     // down or the felt past the screen. A short terminal gets what is
     // left after the rows above and below.
-    // The top row holds the flip's fan, two covered cards over a third in
-    // three-card draw, whether or not the fan is showing.
     // One row more than the cards, for the focused one to step down into.
-    const topRows = t.height + 1 + (game.draw === 3 ? 2 : 0);
+    const topRows = t.height + 1;
     const boardRows = Math.max(
       t.height,
       Math.min(19 + t.height, term.window.innerHeight - (8 + topRows)),
@@ -1358,12 +1365,11 @@ function *App(this: Context) {
             <div class="place"></div>
             ${
               wasteTop
-                ? game.waste.slice(-(game.draw === 3 ? 3 : 1)).map(
+                ? jsx`<div class="fan">${game.waste.slice(-(game.draw === 3 ? 3 : 1)).map(
                   (card, at, fan) => jsx`<${CardFace}
                         key=${`${card.suit}-${card.rank}`}
                         card=${card}
                         tier=${t}
-                        covered=${at < fan.length - 1}
                         held=${at === fan.length - 1 && grip?.kind === "waste"}
                         id=${at === fan.length - 1 ? "flip" : undefined}
                         onmousedown=${at === fan.length - 1
@@ -1377,8 +1383,8 @@ function *App(this: Context) {
                           : undefined}
                         ondblclick=${at === fan.length - 1 ? () => sendHome({kind: "waste"}) : undefined}
                       />`,
-                )
-                : jsx`<${Slot} tier=${t} id="flip" />`
+                )}</div>`
+                : jsx`<${Slot} tier=${t} />`
             }
           </div>
           <div class="gap"></div>
@@ -1405,7 +1411,7 @@ function *App(this: Context) {
                     : jsx`<${Slot}
                         tier=${t}
                         mark=${SUITS[index]}
-                        id=${`home-${index}`}
+                        id=${card ? `home-${index}` : undefined}
                         drop=${home === index}
                         onmousedown=${press(`foundation-${index}`, () => {
                           seat("top", 3 + index);
@@ -1438,7 +1444,7 @@ function *App(this: Context) {
                     ? jsx`<${Slot}
                         tier=${t}
                         drop=${Boolean(card) && fitsTableau(card, pile)}
-                        id=${`pile-${index}-0`}
+                        id=${card ? `pile-${index}-0` : undefined}
                         onmousedown=${press(`pile-${index}`, () => {
                           seat("board", index);
                           target({kind: "tableau", pile: index});
@@ -1449,7 +1455,6 @@ function *App(this: Context) {
                             key=${`${each.suit}-${each.rank}`}
                             card=${each}
                             tier=${t}
-                            covered=${depth < pile.length - 1}
                             id=${each.up ? `pile-${index}-${depth}` : undefined}
                             held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
                             drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
