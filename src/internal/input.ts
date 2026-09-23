@@ -312,7 +312,7 @@ const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
 const kTextControlDragAnchor = Symbol("textControlDragAnchor");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
-const kLastClickTarget = Symbol("lastClickTarget");
+const kLastClickPoint = Symbol("lastClickPoint");
 const kLastClickTime = Symbol("lastClickTime");
 const kClickCount = Symbol("clickCount");
 
@@ -358,7 +358,7 @@ export interface Input {
 
 	// UI Events' click count: mousedown, mouseup and click carry it as
 	// `detail`, and a dblclick is every even click.
-	[kLastClickTarget]: Element | null;
+	[kLastClickPoint]: {x: number; y: number} | null;
 	[kLastClickTime]: number;
 	[kClickCount]: number;
 }
@@ -383,7 +383,7 @@ export class Input {
 		this[kSelectionDragAnchor] = null;
 		this[kTextControlDragAnchor] = null;
 		this[kMouseCaptureYielded] = false;
-		this[kLastClickTarget] = null;
+		this[kLastClickPoint] = null;
 		this[kLastClickTime] = 0;
 		this[kClickCount] = 0;
 	}
@@ -585,13 +585,20 @@ function deliverMouseReport(input: Input, {
 	let detail = 0;
 	if (!isMotion) {
 		if (!isRelease) {
+			// A browser counts clicks by where and when, not by what was
+			// under the pointer: a second press on the same cell within the
+			// interval is a double-click even if the first click moved the
+			// element out from under it.
 			const now = performance.now();
+			const lastPoint = input[kLastClickPoint];
 			input[kClickCount] =
-				input[kLastClickTarget] === target &&
+				lastPoint !== null &&
+				lastPoint.x === x &&
+				lastPoint.y === y &&
 				now - input[kLastClickTime] <= DBLCLICK_INTERVAL_MS
 					? input[kClickCount] + 1
 					: 1;
-			input[kLastClickTarget] = target;
+			input[kLastClickPoint] = {x, y};
 			input[kLastClickTime] = now;
 		}
 		detail = input[kClickCount];
@@ -875,6 +882,15 @@ function dispatchPress(
 	}
 }
 
+function getCommonInclusiveAncestor(a: Element, b: Element): Element | null {
+	for (let node: Element | null = a; node !== null; node = node.parentElement) {
+		if (node.contains(b)) {
+			return node;
+		}
+	}
+	return null;
+}
+
 function dispatchRelease(
 	input: Input,
 	target: Element,
@@ -903,7 +919,15 @@ function dispatchRelease(
 		input[kMouseDownTarget] = null;
 		return;
 	}
-	if (input[kMouseDownTarget] === target) {
+	// UI Events: a press and a release on different elements click their
+	// nearest common ancestor, so a click still lands when the press moved
+	// the element under the pointer.
+	const pressed = input[kMouseDownTarget];
+	const clickTarget = pressed === null
+		? null
+		: getCommonInclusiveAncestor(pressed, target);
+	if (clickTarget !== null) {
+		target = clickTarget;
 		dispatchAsUserAgent(
 			target,
 			new input[kWindow].MouseEvent("click", {...eventInit, buttons: 0}),

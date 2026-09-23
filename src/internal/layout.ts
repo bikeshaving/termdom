@@ -4090,8 +4090,18 @@ function hitTestInFlow(
 		} catch (_err) {
 			return null;
 		}
+		// A box that does not clip may have a child lying outside it, which
+		// the pointer can still reach. The paint extent says whether any
+		// row of the subtree is there at all.
 		if (!contained && !isSplitAroundBlock(element)) {
-			return null;
+			if (getComputedValue(element, "overflow") !== "visible") {
+				return null;
+			}
+			const node = layout.getLayoutNode(element);
+			const extent = node === null ? undefined : layout.paintExtent(node);
+			if (extent === undefined || y < extent.top || y >= extent.bottom) {
+				return null;
+			}
 		}
 	}
 	// A plain vertical stack knows which children reach the row, so a
