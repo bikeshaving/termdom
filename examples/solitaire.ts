@@ -381,7 +381,7 @@ function sheet(): string {
   .play { width: ${7 * tier.width + 6 * tier.gap}ch; }
 `;
   return `
-  .table { padding: 0 1ch; background-color: #06421f; color: #cfe8d8; }
+  .table { padding: 0 1ch; background-color: #06421f; color: #cfe8d8; user-select: none; }
   /* The felt reaches the edges of the screen it was given. */
   .table:fullscreen { padding: 0 2ch; }
   /* The playfield is as wide as its seven piles, and the auto margins
@@ -394,7 +394,7 @@ function sheet(): string {
   .bar .score { color: #9ec5ab; }
   .bar .win { color: #ffd75f; font-weight: bold; }
 
-  .top { display: flex; flex-direction: row; padding-top: 1px; }
+  .top { display: flex; flex-direction: row; margin-top: 1px; }
   /* Region names, on the deals wide enough to teach them. */
   .captions { display: flex; flex-direction: row; padding-top: 1px; color: #4d8f66; }
   .caption { white-space: pre; }
@@ -582,7 +582,7 @@ interface CardProps {
 
   /** The keyboard cursor rests here. */
   cursor?: boolean;
-  onclick?: (event: MouseEvent) => unknown;
+  onmousedown?: (event: MouseEvent) => unknown;
   ondblclick?: (event: MouseEvent) => unknown;
 }
 
@@ -593,7 +593,7 @@ function CardFace({
   held,
   drop,
   cursor,
-  onclick,
+  onmousedown,
   ondblclick,
 }: CardProps) {
   const classes = ["card"];
@@ -614,7 +614,7 @@ function CardFace({
   return jsx`
     <div
       class=${classes.join(" ")}
-      onclick=${onclick}
+      onmousedown=${onmousedown}
       ondblclick=${ondblclick}
     >${(covered ? rows.slice(0, 1) : rows).map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
   `;
@@ -622,12 +622,12 @@ function CardFace({
 
 /** An empty place on the board: the stock's turnover arrow, or a suit's home. */
 function Slot(
-  {tier, mark, drop, cursor, onclick}: {
+  {tier, mark, drop, cursor, onmousedown}: {
     tier: Tier;
     mark?: string;
     drop?: boolean;
     cursor?: boolean;
-    onclick?: (event: MouseEvent) => unknown;
+    onmousedown?: (event: MouseEvent) => unknown;
   },
 ) {
   const rows = Array.from(
@@ -645,7 +645,9 @@ function Slot(
     classes.push("cursor");
   }
   return jsx`
-    <div class=${classes.join(" ")} onclick=${onclick}>${rows.map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
+    <div class=${classes.join(" ")} onmousedown=${onmousedown}>${rows.map(
+      (row, line) => jsx`<div key=${line}>${row}</div>`,
+    )}</div>
   `;
 }
 
@@ -948,6 +950,43 @@ function *App(this: Context) {
     });
   };
 
+  /**
+   * A click moves the cursor too, but hides it, as a mouse press hides a
+   * browser's focus ring. The arrows pick up from the clicked place.
+   */
+  const place = (row: "top" | "board", col: number, depth = 0): void => {
+    this.refresh(() => {
+      cursorShown = false;
+      cur = {row, col, depth};
+    });
+  };
+
+  /**
+   * The mouse plays by press and release. A press does what a click did:
+   * pick up, drop, or draw. A release somewhere other than where the
+   * press landed drops there, so a card can be dragged as well as
+   * clicked twice.
+   */
+  let pressedOn: string | null = null;
+  const press = (name: string, action: () => void) => (): void => {
+    pressedOn = name;
+    action();
+  };
+  const release = (name: string, drop: Target) => (): void => {
+    const from = pressedOn;
+    pressedOn = null;
+    if (held && from !== name) {
+      target(drop);
+    }
+  };
+
+  /** Draw, and follow the turned card to the flip. */
+  const drawTo = (move: typeof seat): void => {
+    const before = game.moves;
+    act(draw, "The deck and the flip are both empty.");
+    move("top", game.moves > before && top(game.waste) ? 1 : 0);
+  };
+
   /** The top row's occupied columns: the gap at column 2 holds nothing. */
   const TOP_COLS = [0, 1, 3, 4, 5, 6];
 
@@ -1098,9 +1137,7 @@ function *App(this: Context) {
     if (key === " ") {
       // The cursor follows the turned card to the flip, ready for f or
       // enter, without picking it up.
-      const before = game.moves;
-      act(draw, "The deck and the flip are both empty.");
-      seat("top", game.moves > before && top(game.waste) ? 1 : 0);
+      drawTo(seat);
       return;
     }
     if (key === "f" || key === "0") {
@@ -1209,9 +1246,11 @@ function *App(this: Context) {
   const retier = () => this.refresh();
   roomy.addEventListener("change", retier);
   grand.addEventListener("change", retier);
+  term.window.addEventListener("resize", retier);
   this.cleanup(() => {
     roomy.removeEventListener("change", retier);
     grand.removeEventListener("change", retier);
+    term.window.removeEventListener("resize", retier);
   });
   const tier = (): Tier =>
     grand.matches ? TIERS.grand : roomy.matches ? TIERS.roomy : TIERS.compact;
@@ -1255,6 +1294,17 @@ function *App(this: Context) {
     }
     const atTop = (col: number): boolean =>
       cursorShown && cur.row === "top" && cur.col === col;
+    // The board holds the tallest pile the rules allow, six face-down cards
+    // under a king-to-ace run, so a growing pile never pushes the hint
+    // down or the felt past the screen. A short terminal gets what is
+    // left after the rows above and below.
+    // The top row holds the flip's fan, two covered cards over a third in
+    // three-card draw, whether or not the fan is showing.
+    const topRows = t.height + (game.draw === 3 ? 2 : 0);
+    const boardRows = Math.max(
+      t.height,
+      Math.min(18 + t.height, term.window.innerHeight - (8 + topRows)),
+    );
     const grip = holding();
     const ask = asking();
     const carrying = heldCards(game, grip);
@@ -1288,7 +1338,7 @@ function *App(this: Context) {
           <span class="caption"><${CenteredKey} cap="d" width=${t.width} /></span>
           <span class="caption"><${CenteredKey} cap="c" width=${t.width} /></span>
         </div>
-        <div class="top">
+        <div class="top" style=${`min-height: ${topRows}px`}>
           <div class="pile">
             ${
               game.stock.length > 0
@@ -1296,10 +1346,10 @@ function *App(this: Context) {
                     card=${{rank: 1, suit: 0, up: false}}
                     tier=${t}
                     cursor=${atTop(0)}
-                    onclick=${() => act(draw)}
+                    onmousedown=${press("deck", () => drawTo(place))}
                   />`
                 : jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
-                    cursor=${atTop(0)} onclick=${() => act(draw)} />`
+                    cursor=${atTop(0)} onmousedown=${press("deck", () => drawTo(place))} />`
             }
           </div>
           <div class="pile">
@@ -1313,7 +1363,15 @@ function *App(this: Context) {
                         covered=${at < fan.length - 1}
                         held=${at === fan.length - 1 && grip?.kind === "waste"}
                         cursor=${at === fan.length - 1 && atTop(1)}
-                        onclick=${at === fan.length - 1 ? () => grab({kind: "waste"}) : undefined}
+                        onmousedown=${at === fan.length - 1
+                          ? press(
+                            "waste",
+                            () => {
+                              place("top", 1);
+                              grab({kind: "waste"});
+                            },
+                          )
+                          : undefined}
                         ondblclick=${at === fan.length - 1 ? () => sendHome({kind: "waste"}) : undefined}
                       />`,
                 )
@@ -1322,7 +1380,11 @@ function *App(this: Context) {
           </div>
           <div class="gap"></div>
           ${game.foundations.map((foundation, index) => jsx`
-              <div class="pile" key=${`foundation-${index}`}>
+              <div
+                class="pile"
+                key=${`foundation-${index}`}
+                onmouseup=${release(`foundation-${index}`, {kind: "foundation", index})}
+              >
                 ${
                   top(foundation)
                     ? jsx`<${CardFace}
@@ -1331,14 +1393,20 @@ function *App(this: Context) {
                         held=${grip?.kind === "foundation" && grip.index === index}
                         drop=${home === index}
                         cursor=${atTop(3 + index)}
-                        onclick=${() => target({kind: "foundation", index})}
+                        onmousedown=${press(`foundation-${index}`, () => {
+                          place("top", 3 + index);
+                          target({kind: "foundation", index});
+                        })}
                       />`
                     : jsx`<${Slot}
                         tier=${t}
                         mark=${SUITS[index]}
                         cursor=${atTop(3 + index)}
                         drop=${home === index}
-                        onclick=${() => target({kind: "foundation", index})}
+                        onmousedown=${press(`foundation-${index}`, () => {
+                          place("top", 3 + index);
+                          target({kind: "foundation", index});
+                        })}
                       />`
                 }
               </div>
@@ -1353,16 +1421,23 @@ function *App(this: Context) {
               ><${CenteredKey} cap=${String(index + 1)} width=${t.width} /></span>
             `)}
         </div>
-        <div class="board">
+        <div class="board" style=${`min-height: ${boardRows}px`}>
           ${game.tableau.map((pile, index) => jsx`
-              <div class="pile" key=${`pile-${index}`}>
+              <div
+                class="pile"
+                key=${`pile-${index}`}
+                onmouseup=${release(`pile-${index}`, {kind: "tableau", pile: index})}
+              >
                 ${
                   pile.length === 0
                     ? jsx`<${Slot}
                         tier=${t}
                         drop=${Boolean(card) && fitsTableau(card, pile)}
                         cursor=${cursorShown && cur.row === "board" && cur.col === index}
-                        onclick=${() => target({kind: "tableau", pile: index})}
+                        onmousedown=${press(`pile-${index}`, () => {
+                          place("board", index);
+                          target({kind: "tableau", pile: index});
+                        })}
                       />`
                     : pile.map((each, depth) => jsx`
                           <${CardFace}
@@ -1373,13 +1448,14 @@ function *App(this: Context) {
                             cursor=${cursorShown && cur.row === "board" && cur.col === index && cur.depth === depth}
                             held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
                             drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
-                            onclick=${() => {
+                            onmousedown=${press(`pile-${index}`, () => {
+                              place("board", index, depth);
                               if (held || !each.up) {
                                 target({kind: "tableau", pile: index});
                               } else if (isRun(pile, depth)) {
                                 grab({kind: "tableau", pile: index, index: depth});
                               }
-                            }}
+                            })}
                             ondblclick=${() => {
                               if (depth === pile.length - 1 && each.up) {
                                 sendHome({kind: "tableau", pile: index, index: depth});
