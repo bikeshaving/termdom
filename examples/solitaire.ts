@@ -12,9 +12,9 @@
 //   space  draw from the deck (or turn it over when empty; enter draws too
 //          while the cursor is hidden)
 //   f      pick up the flip's top card (0 works too -- the pile left of 1)
-//   1-7    pick up a tableau pile's top card, or drop what you are holding
-//          on it; the same number again picks up one card more of its
-//          run, then round to the top
+//   1-7    pick up a tableau pile's whole face-up stack, or drop what you
+//          are holding on it; the same number again picks up one card
+//          fewer, down to the top card, then the whole stack again
 //   arrows and tab move the focus anywhere on the board; enter takes the
 //          card under it (with its stack) or places what you are holding
 //   s/h/d/c  send that suit's ready card home -- each home takes only the
@@ -1285,9 +1285,10 @@ function *App(this: Context) {
     }
     if (key >= "1" && key <= "7") {
       // A number moves what is held, or what the focus is on, to that pile
-      // when it fits there. Otherwise it picks the pile's top card up, and the same number
-      // again walks the pick up the face-up run, a card at a time, and
-      // round to the top from its start. The focus goes with it.
+      // when it fits there. Otherwise it picks up the pile's whole face-up
+      // stack, and the same number again walks the pick down the stack a
+      // card at a time, to the top card and round to the whole stack. The
+      // focus goes with it.
       const pile = Number(key) - 1;
       const cards = pileAt(pile);
       // With nothing held, the focused card is the one that would move: the
@@ -1304,9 +1305,9 @@ function *App(this: Context) {
       }
       const cur = focused();
       const onPile = cur !== null && cur.row === "board" && cur.col === pile;
-      const depth = onPile && cur.depth > runStart(cards)
-        ? cur.depth - 1
-        : getLast(cards);
+      const depth = onPile && cur.depth < getLast(cards)
+        ? cur.depth + 1
+        : runStart(cards);
       this.refresh(() => {
         held = cards[depth].up && isRun(cards, depth)
           ? {kind: "tableau", pile, index: depth}
