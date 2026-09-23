@@ -61,13 +61,13 @@ report(cards >= 20, "gallery: a card per runnable example", `${cards} cards`);
 report(await waitForText("Hello"), "gallery: the first card runs its program");
 await page.click('[data-card="hello-world"]');
 await page.waitForSelector("select");
-report(await waitForText("Hello"), "playground: opening a card runs it in the workbench");
+report(await waitForText("Hello"), "examples: opening a card runs it in the workbench");
 // The terminal has the frame to itself until the editor is asked for.
 report(
 	(await page.evaluate(() => document.querySelector("content-area") === null)),
 	"workbench: the editor drawer starts shut",
 );
-await page.click("#playground-editor");
+await page.click("#example-editor");
 await page.waitForSelector("content-area");
 report(true, "workbench: the Edit button opens the drawer");
 
@@ -75,17 +75,17 @@ report(true, "workbench: the Edit button opens the drawer");
 // one survives the reset -- a dead realm's queued writes must not drain
 // onto the next program's screen.
 await page.selectOption("select", "flexbox");
-report(await waitForText("TermDOM flexbox"), "playground: switching to flexbox runs it");
+report(await waitForText("TermDOM flexbox"), "examples: switching to flexbox runs it");
 await new Promise((r) => setTimeout(r, 1000));
 report(
 	!(await terminalText()).includes("HTML Terminal"),
-	"playground: previous program's frame is gone after the switch",
+	"examples: previous program's frame is gone after the switch",
 );
 
 // The editor shows the program whole: import, construction, attach, and
 // the TypeScript as written -- bar-chart's casts stand in for types.
 await page.selectOption("select", "bar-chart");
-report(await waitForText("Requests per region", 15000), "playground: bar-chart runs");
+report(await waitForText("Requests per region", 15000), "examples: bar-chart runs");
 const editor = await page.evaluate(
 	() => (document.querySelector("content-area") as HTMLElement)?.innerText ?? "",
 );
@@ -98,36 +98,36 @@ report(editor.includes("as HTMLElement"), "editor shows the types, verbatim");
 // header, and solitaire -- entered through its own main guard against the
 // sandbox's argv -- paints the new-game menu.
 await page.selectOption("select", "todomvc");
-report(await waitForText("todos"), "playground: todomvc renders through mapped crank");
+report(await waitForText("todos"), "examples: todomvc renders through mapped crank");
 await page.selectOption("select", "solitaire");
-report(await waitForText("one card", 20000), "playground: solitaire boots through its main guard");
+report(await waitForText("one card", 20000), "examples: solitaire boots through its main guard");
 
 // CodeMirror reads document and window as globals, which the example
 // supplies because the worker has none of its own.
 await page.selectOption("select", "codemirror");
-report(await waitForText("function greet", 20000), "playground: codemirror runs in the worker");
+report(await waitForText("function greet", 20000), "examples: codemirror runs in the worker");
 
 // Weather runs with the network allowed: its search prompt paints, and a
 // searched city fetches Open-Meteo and charts it (skipped offline -- the
 // prompt is the gate this suite owns).
 await page.selectOption("select", "weather");
-report(await waitForText("city", 15000), "playground: weather paints its search");
+report(await waitForText("city", 15000), "examples: weather paints its search");
 
 // Hacker News paints its masthead and says it is loading before the API
 // answers, so the check holds offline; the stories themselves need the
 // network and are not this suite's gate.
 await page.selectOption("select", "hacker-news");
-report(await waitForText("Hacker News", 15000), "playground: hacker-news paints its masthead");
-report(await waitForText("loading the front page", 5000), "playground: hacker-news says it is loading");
+report(await waitForText("Hacker News", 15000), "examples: hacker-news paints its masthead");
+report(await waitForText("loading the front page", 5000), "examples: hacker-news says it is loading");
 
 // The rest of the roster: chat paints its composer, fuzzy-finder lists and
 // previews the virtual files, and markdown renders its sample through
 // marked and Prism, both from the CDN.
 await page.selectOption("select", "chat");
-report(await waitForText("ch.at", 15000), "playground: chat paints");
+report(await waitForText("ch.at", 15000), "examples: chat paints");
 await page.selectOption("select", "fuzzy-finder");
-report(await waitForText("type to filter", 15000), "playground: fuzzy-finder paints");
-report(await waitForText("01-getting-started.md", 5000), "playground: fuzzy-finder lists the seeded files");
+report(await waitForText("type to filter", 15000), "examples: fuzzy-finder paints");
+report(await waitForText("01-getting-started.md", 5000), "examples: fuzzy-finder lists the seeded files");
 // The shell reads the filesystem the page seeded: the examples directory
 // lists these programs, and cat prints one of them.
 // The address follows the picker, and a shared address opens what it
@@ -137,13 +137,13 @@ await page.goto(`${ORIGIN}/examples/#e=flexbox`);
 await page.waitForSelector(".xterm");
 report(await waitForText("TermDOM flexbox", 15000), "share: #e= opens the named example");
 report(
-	(await page.inputValue("#playground-examples")) === "flexbox",
+	(await page.inputValue("#example-picker")) === "flexbox",
 	"share: the picker shows the example the address named",
 );
 // The emulator's rows fit the pane: a row count one too many paints its
 // last row half under the pane's edge.
 const fitting = await page.evaluate(() => {
-	const term = document.querySelector("#playground-terminal .xterm, .xterm")!;
+	const term = document.querySelector("#example-terminal .xterm, .xterm")!;
 	const screen = term.querySelector(".xterm-screen")!;
 	const box = term.parentElement!.getBoundingClientRect();
 	const rows = screen.getBoundingClientRect();
@@ -163,19 +163,19 @@ await page.waitForSelector(".xterm");
 report(await waitForText("shared program painted", 15000), "share: #c= runs the encoded program on a fresh load");
 await page.goto(`${ORIGIN}/examples/#e=shell`);
 await page.waitForSelector("select");
-report(await waitForText("termdom shell", 15000), "playground: shell paints its banner");
+report(await waitForText("termdom shell", 15000), "examples: shell paints its banner");
 // The emulator's textarea takes the keys. A click on the pane would also
 // be a click in the program, on empty screen, which moves its focus off
 // the prompt.
 await page.locator(".xterm-helper-textarea").first().focus();
 await page.keyboard.type("ls examples");
 await page.keyboard.press("Enter");
-report(await waitForText("hello-world.ts", 5000), "playground: ls lists the seeded examples");
+report(await waitForText("hello-world.ts", 5000), "examples: ls lists the seeded examples");
 await page.keyboard.type("cat examples/hello-world.ts");
 await page.keyboard.press("Enter");
-report(await waitForText("Hello, terminal", 5000), "playground: cat prints a seeded example");
+report(await waitForText("Hello, terminal", 5000), "examples: cat prints a seeded example");
 await page.selectOption("select", "markdown");
-report(await waitForText("Markdown in the Terminal", 15000), "playground: markdown renders through marked and Prism");
+report(await waitForText("Markdown in the Terminal", 15000), "examples: markdown renders through marked and Prism");
 
 // The fenced code blocks sit below the fold, so the pager pages down to
 // them; their token classes must arrive coloured, not as plain text.
@@ -185,7 +185,7 @@ for (let i = 0; i < 8 && !atCode; i++) {
 	await page.keyboard.press("f");
 	atCode = await waitForText("greet", 2000);
 }
-report(atCode, "playground: markdown pages down to its code block");
+report(atCode, "examples: markdown pages down to its code block");
 const codeColours = await page.evaluate(
 	() =>
 		new Set(
@@ -194,13 +194,13 @@ const codeColours = await page.evaluate(
 				.filter(Boolean),
 		).size,
 );
-report(codeColours >= 5, "playground: markdown's code block keeps its token colours", `${codeColours} colours`);
+report(codeColours >= 5, "examples: markdown's code block keeps its token colours", `${codeColours} colours`);
 
 // Prism highlights the sample, its theme colours the token classes, and a
 // number key swaps the language. The colour count is the check that matters:
 // a screen of one colour means the theme reached nothing.
 await page.selectOption("select", "prism");
-report(await waitForText("interface Point", 15000), "playground: prism highlights its TypeScript sample");
+report(await waitForText("interface Point", 15000), "examples: prism highlights its TypeScript sample");
 const colours = await page.evaluate(
 	() =>
 		new Set(
@@ -209,10 +209,10 @@ const colours = await page.evaluate(
 				.filter(Boolean),
 		).size,
 );
-report(colours >= 5, "playground: prism paints the token classes in distinct colours", `${colours} colours`);
+report(colours >= 5, "examples: prism paints the token classes in distinct colours", `${colours} colours`);
 await page.locator(".xterm").first().click();
 await page.keyboard.press("2");
-report(await waitForText(".token.keyword", 5000), "playground: prism switches language on a number key");
+report(await waitForText(".token.keyword", 5000), "examples: prism switches language on a number key");
 
 // The homepage embeds hydrate as they come near and paint their programs.
 // The first one is above the fold, so it is checked where a reader meets
@@ -225,13 +225,13 @@ page = await browser.newPage();
 await page.goto(`${ORIGIN}/`, {waitUntil: "load"});
 // The emulator renders only terminals inside the viewport, so the check
 // scrolls to the embed the way a reader would reach it.
-await page.locator("[data-playground]").first().scrollIntoViewIfNeeded();
+await page.locator("[data-example]").first().scrollIntoViewIfNeeded();
 report(await waitForText("Hello, terminal"), "home: hello-world embed paints");
 
 // The walk down the page mirrors a reader scrolling: each embed comes into
 // view in turn, the observer fires, and its program boots. A walk by page
 // fractions can jump over an embed without it ever intersecting.
-const embeds = page.locator("[data-playground]");
+const embeds = page.locator("[data-example]");
 for (let i = 0, n = await embeds.count(); i < n; i++) {
 	await embeds.nth(i).scrollIntoViewIfNeeded();
 	await new Promise((r) => setTimeout(r, 1000));

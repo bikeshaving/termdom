@@ -1,5 +1,5 @@
 /**
- * The worker a playground program runs in. A worker has no document and
+ * The worker an example program runs in. A worker has no document and
  * no window of its own, so a program that supplies them as globals, the
  * way a program does under Node, finds the same absence here. The page
  * sends one message to start it: the repository's files, the program's

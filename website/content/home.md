@@ -11,7 +11,7 @@ implements a real, spec-compliant DOM and CSSOM API. Make a div, style it,
 append it to the body. Just like the browser there is no render call, and
 changes paint automatically.
 
-![examples/hello-world.ts](playground:hello-world)
+![examples/hello-world.ts](example:hello-world)
 
 ## Styling
 
@@ -20,7 +20,7 @@ writes the computed styles to the screen as ANSI escape sequences. It resolves
 colors against the terminal’s palette and draws text decorations as terminal
 attributes: bold, italic, underline, strikethrough.
 
-![examples/styling.ts](playground:styling)
+![examples/styling.ts](example:styling)
 
 ## Layout
 
@@ -29,7 +29,7 @@ the box model — against a grid of character cells. The cell is the unit basis
 for CSS lengths: `1px` and `1ch` both mean one cell. Text wraps at the edge of
 its box and reflows when the terminal resizes.
 
-![examples/flexbox.ts](playground:flexbox)
+![examples/flexbox.ts](example:flexbox)
 
 ## Events
 
@@ -38,7 +38,7 @@ at real targets: `keydown` at the focused element, `click` on the element
 under the pointer, `paste` with the pasted text. Tab moves focus, and `:focus`
 styles follow it.
 
-![examples/form.ts](playground:form)
+![examples/form.ts](example:form)
 
 ## Libraries & Frameworks
 
@@ -46,7 +46,7 @@ The payoff of implementing a real DOM is that you can use browser libraries in
 the terminal without modification. TermDOM also works with most frontend
 frameworks with [a little bit of setup](/guides/getting-started/#frameworks).
 
-![examples/prism.ts](playground:prism)
+![examples/prism.ts](example:prism)
 
 ## Compatibility
 

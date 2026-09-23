@@ -1,9 +1,9 @@
 /**
- * The programs the playground offers, read from the repository's own
+ * The programs the examples page offers, read from the repository's own
  * `examples/` directory at build time. What a visitor edits is the file that
  * ships with the library, not a copy written for the website.
  */
-export interface PlaygroundExample {
+export interface Example {
 	/** The filename without its extension: `hello-world`. */
 	id: string;
 	/** The filename: `hello-world.ts`. */
@@ -56,10 +56,10 @@ const RUNNABLE = [
 ];
 
 /** The element the sandbox module URLs travel in, read by the client. */
-export const SANDBOX_CONFIG_ID = "playground-sandbox-config";
+export const SANDBOX_CONFIG_ID = "example-sandbox-config";
 
 /** The element the repository's files travel in, read by the client. */
-export const FILES_SCRIPT_ID = "playground-files-data";
+export const FILES_SCRIPT_ID = "example-files-data";
 
 /**
  * The files a program in the sandbox can read, by path under the
@@ -113,13 +113,13 @@ export interface SandboxConfig {
 }
 
 /** The element a page's programs travel in, read by the client bundle. */
-export const EXAMPLES_SCRIPT_ID = "playground-examples-data";
+export const EXAMPLES_SCRIPT_ID = "examples-data";
 
 /**
  * The programs as the JSON body of a `<script>`. `<` is escaped so no example
  * can close the element it is written into.
  */
-export function serializeExamples(examples: PlaygroundExample[]): string {
+export function serializeExamples(examples: Example[]): string {
 	return JSON.stringify(examples).replace(/</g, "\\u003c");
 }
 
@@ -132,8 +132,8 @@ export function serializeExamples(examples: PlaygroundExample[]): string {
  */
 export async function collectExamples(
 	dir: FileSystemDirectoryHandle,
-): Promise<PlaygroundExample[]> {
-	const examples: PlaygroundExample[] = [];
+): Promise<Example[]> {
+	const examples: Example[] = [];
 	for (const id of RUNNABLE) {
 		const label = `${id}.ts`;
 		const fileHandle = await dir.getFileHandle(label);

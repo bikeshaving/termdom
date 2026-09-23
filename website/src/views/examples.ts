@@ -11,7 +11,7 @@ import {
 	FILES_SCRIPT_ID,
 	SANDBOX_CONFIG_ID,
 	serializeFiles,
-} from "../models/playground-examples.js";
+} from "../models/examples.js";
 
 /**
  * The page is a mount point and nothing else. Every other view on this site
@@ -49,7 +49,7 @@ export default async function Examples({url}: {url: string}) {
 			<script type="application/json" id=${SANDBOX_CONFIG_ID}>
 				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript, worker: assets.sandboxWorkerScript})} />
 			</script>
-			<div id="playground">
+			<div id="examples">
 				<noscript class=${css`
 					display: block;
 					max-width: 120ch;

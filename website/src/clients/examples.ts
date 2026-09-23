@@ -1,5 +1,5 @@
 /**
- * The playground: an editor, a terminal, and TermDOM running between them in
+ * The examples page: an editor, a terminal, and TermDOM running between them in
  * the reader's own browser. Nothing here talks to a server -- the code in the
  * editor is compiled and run on the page it is typed on.
  */
@@ -28,17 +28,17 @@ import {
 	EXAMPLES_SCRIPT_ID,
 	FILES_SCRIPT_ID,
 	SANDBOX_CONFIG_ID,
-} from "../models/playground-examples.js";
+} from "../models/examples.js";
 import type {
-	PlaygroundExample,
+	Example,
 	SandboxConfig,
-} from "../models/playground-examples.js";
+} from "../models/examples.js";
 
 if (!window.customElements.get("content-area")) {
 	window.customElements.define("content-area", ContentAreaElement);
 }
 
-function readExamples(): PlaygroundExample[] {
+function readExamples(): Example[] {
 	const script = document.getElementById(EXAMPLES_SCRIPT_ID);
 	return script ? JSON.parse(script.textContent!) : [];
 }
@@ -644,27 +644,21 @@ const toolbar = css`
 		color: var(--muted-color);
 	}
 
-	select,
 	button {
 		font: inherit;
 		color: var(--text-color);
 		background: none;
 		border: none;
 		padding: 0;
-	}
-
-	button {
 		cursor: pointer;
 		font-weight: bold;
 	}
 
-	select:hover,
 	button:hover {
 		background-color: var(--highlight-color);
 		color: var(--bg-color);
 	}
 
-	select:focus-visible,
 	button:focus-visible {
 		outline: 1px solid var(--highlight-color);
 		outline-offset: 0;
@@ -827,7 +821,7 @@ const paneSolo = css`
 	min-height: 0;
 `;
 
-const EDITOR_PREFERENCE = "playground:editor";
+const EDITOR_PREFERENCE = "examples:editor";
 
 function readEditorPreference(): boolean {
 	try {
@@ -1010,7 +1004,7 @@ function* Workbench(
 					</button>
 					<p
 						id=${`${name}-status`}
-						class="playground-status ${statusLine}"
+						class="example-status ${statusLine}"
 						data-state=${status.failed ? "error" : "ok"}>
 						${status.message}
 					</p>
@@ -1122,7 +1116,7 @@ const card = css`
  * on load is not what a visitor asked for, so a card boots itself when
  * it is about to be seen and stays booted.
  */
-function* GalleryCard(this: Context, {example}: {example: PlaygroundExample}) {
+function* GalleryCard(this: Context, {example}: {example: Example}) {
 	let visible = false;
 	let root!: HTMLAnchorElement;
 	this.after(() => {
@@ -1167,7 +1161,7 @@ function* GalleryCard(this: Context, {example}: {example: PlaygroundExample}) {
 	}
 }
 
-function Gallery({examples}: {examples: PlaygroundExample[]}) {
+function Gallery({examples}: {examples: Example[]}) {
 	return jsx`
 		<main class=${container}>
 			<h1 class=${css`
@@ -1191,10 +1185,10 @@ function Gallery({examples}: {examples: PlaygroundExample[]}) {
 /*** Sharing ***/
 
 /**
- * The playground's state as a URL: `#e=<id>` for an example as it ships,
+ * The page's state as a URL: `#e=<id>` for an example as it ships,
  * `#c=<program>` for anything edited, the program deflated and base64url
  * encoded so a whole example fits in an address bar. Written as the
- * reader types and read once on load, so a link is a playground.
+ * reader types and read once on load, so a link is an example.
  */
 const SHARE_DEBOUNCE = 500;
 
@@ -1267,7 +1261,7 @@ function writeShareHash(hash: string): void {
 }
 
 /** The examples page: the picker, and a workbench under it. */
-function* Playground(this: Context) {
+function* Examples(this: Context) {
 	const examples = readExamples();
 	const share = readShareHash();
 	// The page opens on the gallery, and on the workbench when the address
@@ -1400,29 +1394,35 @@ function* Playground(this: Context) {
 				<${Workbench}
 					value=${program ?? example.code}
 					valueEpoch=${pickEpoch}
-					name="playground"
+					name="example"
 					geometry=${PAGE_GEOMETRY}
 					fill
 					drawer
 					oncode=${oncode}
 					controls=${jsx`
 						<a href="#" class=${filename}>‹ Gallery</a>
-						<label for="playground-examples">Example</label>
-						<select id="playground-examples" onchange=${onexamplechange}>
-							<option value="" disabled hidden selected=${custom}>Pick an example…</option>
-							${examples.map(
-								(each) => jsx`
-									<option
-										key=${each.id}
-										value=${each.id}
-										selected=${!custom && each.id === example.id}
-									>
-										${each.label}
-									</option>
-								`,
-							)}
-						</select>
-						<button id="playground-share" type="button" onclick=${() => void copyLink()}>
+						<label for="example-picker">Example</label>
+						<span class="dropdown">
+							<select
+								id="example-picker"
+								style=${`width: ${(custom ? "Pick an example…" : example.label).length + 1}ch`}
+								onchange=${onexamplechange}
+							>
+								<option value="" disabled hidden selected=${custom}>Pick an example…</option>
+								${examples.map(
+									(each) => jsx`
+										<option
+											key=${each.id}
+											value=${each.id}
+											selected=${!custom && each.id === example.id}
+										>
+											${each.label}
+										</option>
+									`,
+								)}
+							</select>
+						</span>
+						<button id="example-share" type="button" onclick=${() => void copyLink()}>
 							Share
 						</button>
 						${shareStatus ? jsx`<span class=${filename}>${shareStatus}</span>` : null}
@@ -1436,7 +1436,7 @@ function* Playground(this: Context) {
 /**
  * The embeds on the home page.
  *
- * Each `<figure data-playground="id">` holds the program, highlighted at build
+ * Each `<figure data-example="id">` holds the program, highlighted at build
  * time, and stays that way until it comes near the viewport: five terminals
  * booting at load is not what someone scrolling a home page asked for. What
  * replaces it is the same workbench the examples page renders, with the
@@ -1444,21 +1444,21 @@ function* Playground(this: Context) {
  */
 function hydrateEmbeds(): void {
 	const embeds = [
-		...document.querySelectorAll<HTMLElement>("[data-playground]"),
-	].filter((embed) => !embed.hasAttribute("data-playground-ready"));
+		...document.querySelectorAll<HTMLElement>("[data-example]"),
+	].filter((embed) => !embed.hasAttribute("data-example-ready"));
 	if (!embeds.length) return;
 
 	const examples = readExamples();
 	const mount = (embed: HTMLElement): void => {
-		const example = examples.find((each) => each.id === embed.dataset.playground);
+		const example = examples.find((each) => each.id === embed.dataset.example);
 		if (!example) return;
-		embed.setAttribute("data-playground-ready", "");
+		embed.setAttribute("data-example-ready", "");
 		embed.textContent = "";
 		renderer.render(
 			jsx`
 				<${Workbench}
 					value=${example.code}
-					name=${`playground-${example.id}`}
+					name=${`example-${example.id}`}
 					title=${example.label}
 					geometry=${EMBED_GEOMETRY}
 				/>
@@ -1481,9 +1481,9 @@ function hydrateEmbeds(): void {
 	for (const embed of embeds) observer.observe(embed);
 }
 
-const root = document.getElementById("playground");
+const root = document.getElementById("examples");
 if (root) {
-	renderer.render(jsx`<${Playground} />`, root);
+	renderer.render(jsx`<${Examples} />`, root);
 }
 
 hydrateEmbeds();

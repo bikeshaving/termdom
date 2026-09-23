@@ -5,7 +5,7 @@ import {Marked} from "@b9g/crankdown";
 import {Root} from "../components/root.js";
 import {components} from "../components/marked-components.js";
 import {assets, castGifs} from "../server.js";
-import type {PlaygroundExample} from "../models/playground-examples.js";
+import type {Example} from "../models/examples.js";
 import {
 	collectExamples,
 	serializeExamples,
@@ -14,7 +14,7 @@ import {
 	FILES_SCRIPT_ID,
 	SANDBOX_CONFIG_ID,
 	serializeFiles,
-} from "../models/playground-examples.js";
+} from "../models/examples.js";
 
 const container = css`
 	max-width: 100ch;
@@ -37,17 +37,17 @@ const content = css`
 		color: var(--muted-color);
 	}
 
-	figure.playground {
+	figure.example {
 		margin: 1lh 0;
 		min-width: 0;
 	}
 
-	.playground-preview {
+	.example-preview {
 		position: relative;
 		padding: 1lh 2ch;
 	}
 
-	.playground-preview::before {
+	.example-preview::before {
 		content: "";
 		position: absolute;
 		inset: 0.5lh 0.5ch;
@@ -55,7 +55,7 @@ const content = css`
 		pointer-events: none;
 	}
 
-	.playground-preview-bar {
+	.example-preview-bar {
 		padding-bottom: 1lh;
 		color: var(--muted-color);
 		background: var(--rule) bottom 0.5lh center / 100% 1px no-repeat;
@@ -63,20 +63,20 @@ const content = css`
 
 	/* About the hydrated editor's height, so booting an embed does not move
 	   the page under the reader. */
-	.playground-preview > pre {
+	.example-preview > pre {
 		margin: 0;
 		padding: 0;
 		max-height: 21lh;
 		overflow: auto;
 	}
 
-	.playground-preview > pre::before {
+	.example-preview > pre::before {
 		content: none;
 	}
 
 `;
 
-/** The programs the page embeds live, as `playground:id` names them. */
+/** The programs the page embeds live, as `example:id` names them. */
 const EMBEDDED = [
 	"hello-world",
 	"styling",
@@ -89,7 +89,7 @@ const EMBEDDED = [
    so it loads when the first embed comes near rather than with the page. */
 function examplesLoader(src: string): string {
 	return `
-const embeds = document.querySelectorAll("[data-playground]");
+const embeds = document.querySelectorAll("[data-example]");
 if (embeds.length) {
 	const observer = new IntersectionObserver((entries) => {
 		if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -115,9 +115,9 @@ export default async function Home({url}: {url: string}) {
 	const files = await collectWorkspaceFiles(
 		await self.directories.open("repo"),
 	);
-	const playgrounds: Record<string, PlaygroundExample> = {};
+	const embedded: Record<string, Example> = {};
 	for (const example of examples) {
-		if (EMBEDDED.includes(example.id)) playgrounds[example.id] = example;
+		if (EMBEDDED.includes(example.id)) embedded[example.id] = example;
 	}
 
 	return jsx`
@@ -144,12 +144,12 @@ export default async function Home({url}: {url: string}) {
 						markdown=${body}
 						components=${components}
 						casts=${casts}
-						playgrounds=${playgrounds}
+						examples=${embedded}
 					/>
 				</div>
 			</main>
 			<script type="application/json" id=${EXAMPLES_SCRIPT_ID}>
-				<${Raw} value=${serializeExamples(Object.values(playgrounds))} />
+				<${Raw} value=${serializeExamples(Object.values(embedded))} />
 			</script>
 			<script type="application/json" id=${FILES_SCRIPT_ID}>
 				<${Raw} value=${serializeFiles(files)} />

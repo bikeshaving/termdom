@@ -16,10 +16,10 @@ export const components = {
 	},
 
 	/**
-	 * `![caption](cast:name)` embeds a recording and `![caption](playground:id)`
+	 * `![caption](cast:name)` embeds a recording and `![caption](example:id)`
 	 * embeds a live one, both through maps the view passes as props on Marked.
 	 *
-	 * A playground embed renders as the program, highlighted here at build
+	 * An example embed renders as the program, highlighted here at build
 	 * time. That is what a reader without JavaScript gets, and what everyone
 	 * sees until the instance scrolls into view and the client puts an editor
 	 * and a terminal in its place. It is framed and titled the way the
@@ -39,13 +39,13 @@ export const components = {
 		}
 
 		const example =
-			href?.startsWith("playground:") &&
-			rootProps.playgrounds?.[href.slice("playground:".length)];
+			href?.startsWith("example:") &&
+			rootProps.examples?.[href.slice("example:".length)];
 		if (example) {
 			return jsx`
-				<figure class="playground" data-playground=${example.id} aria-label=${text}>
-					<div class="playground-preview">
-						<div class="playground-preview-bar">${example.label}</div>
+				<figure class="example" data-example=${example.id} aria-label=${text}>
+					<div class="example-preview">
+						<div class="example-preview-bar">${example.label}</div>
 						<${CodeBlock} code=${example.code} lang="js" />
 					</div>
 				</figure>
