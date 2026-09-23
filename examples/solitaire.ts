@@ -975,6 +975,10 @@ function *App(this: Context) {
    * A click on a card picks it up and focuses it. A click on the card
    * already held puts it back and lets the focus go, so a click toggles.
    */
+  const unfocus = (): void => {
+    (document.activeElement as HTMLElement | null)?.blur();
+  };
+
   const pick = (
     source: Held,
     row: "top" | "board",
@@ -983,7 +987,7 @@ function *App(this: Context) {
   ): void => {
     if (isSame(held, source)) {
       grab(source);
-      (document.activeElement as HTMLElement | null)?.blur();
+      unfocus();
       return;
     }
     seat(row, col, depth);
@@ -1038,11 +1042,16 @@ function *App(this: Context) {
       return;
     }
     act((game) => play(game, source, drop));
-    if (drop.kind === "tableau") {
-      seat("board", drop.pile, Math.max(0, getLast(pileAt(drop.pile))));
-    } else {
-      seat("top", 3 + drop.index);
-    }
+    unfocus();
+  };
+
+  /**
+   * A card put down by the mouse lands and lies still: nothing on the
+   * pile it joins is focused or lifted afterwards.
+   */
+  const place = (drop: Target): void => {
+    target(drop);
+    unfocus();
   };
 
   const moveFocus = (dx: number, dy: number): void => {
@@ -1432,8 +1441,7 @@ function *App(this: Context) {
                         onclick=${() => {
                           const source: Held = {kind: "foundation", index};
                           if (held && !isSame(held, source)) {
-                            seat("top", 3 + index);
-                            target(source);
+                            place({kind: "foundation", index});
                           } else {
                             pick(source, "top", 3 + index);
                           }
@@ -1445,10 +1453,7 @@ function *App(this: Context) {
                         id=${card ? `home-${index}` : undefined}
                         drop=${home === index}
                         onmousedown=${press(`foundation-${index}`)}
-                        onclick=${() => {
-                          seat("top", 3 + index);
-                          target({kind: "foundation", index});
-                        }}
+                        onclick=${() => place({kind: "foundation", index})}
                       />`
                 }
               </div>
@@ -1484,10 +1489,7 @@ function *App(this: Context) {
                         drop=${Boolean(card) && fitsTableau(card, pile)}
                         id=${card ? `pile-${index}-0` : undefined}
                         onmousedown=${press(`pile-${index}`)}
-                        onclick=${() => {
-                          seat("board", index);
-                          target({kind: "tableau", pile: index});
-                        }}
+                        onclick=${() => place({kind: "tableau", pile: index})}
                       />`
                     : pile.map((each, depth) => jsx`
                           <${CardFace}
@@ -1497,21 +1499,21 @@ function *App(this: Context) {
                             id=${each.up ? `pile-${index}-${depth}` : undefined}
                             held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
                             drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
-                            onmousedown=${press(`pile-${index}`, each.up && isRun(pile, depth) ? {kind: "tableau", pile: index, index: depth} : null)}
+                            onmousedown=${press(`pile-${index}`, {kind: "tableau", pile: index, index: each.up ? depth : firstUp(pile)})}
                             onclick=${() => {
-                              const source: Held = {kind: "tableau", pile: index, index: depth};
-                              // A click anywhere on the pile a run was picked up from
-                              // puts the run back; the pick has moved the cards under
-                              // the pointer.
-                              if (held?.kind === "tableau" && held.pile === index) {
-                                return pick(held, "board", index, held.index);
+                              // A face-down card stands for the whole face-up stack
+                              // under it. The focused card again puts it back. Another
+                              // card of the same pile is picked up instead. A card from
+                              // elsewhere is put down here.
+                              const at = each.up ? depth : firstUp(pile);
+                              const source: Held = {kind: "tableau", pile: index, index: at};
+                              if (isSame(held, source)) {
+                                return pick(source, "board", index, at);
                               }
-                              seat("board", index, depth);
-                              if (held || !each.up) {
-                                target({kind: "tableau", pile: index});
-                              } else if (isRun(pile, depth)) {
-                                grab(source);
+                              if (held && !(held.kind === "tableau" && held.pile === index)) {
+                                return place({kind: "tableau", pile: index});
                               }
+                              pick(source, "board", index, at);
                             }}
                           />
                         `)
