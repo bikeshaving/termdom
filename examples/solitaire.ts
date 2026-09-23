@@ -10,18 +10,19 @@
 //   fans its last three and only the top is playable.
 //
 //   space  draw from the deck (or turn it over when empty; enter draws too
-//          while the cursor is hidden)
+//          while nothing is focused)
 //   f      pick up the flip's top card (0 works too -- the pile left of 1)
-//   1-7    pick up a tableau pile's whole face-up stack, or drop what you
-//          are holding on it; the same number again picks up one card
-//          fewer, down to the top card, then the whole stack again
-//   arrows and tab move the focus anywhere on the board; enter takes the
-//          card under it (with its stack) or places what you are holding
+//   1-7    pick up a tableau pile's whole face-up stack, or put what you
+//          are holding down on it; the same number again picks up one
+//          card fewer, down to the top card, then the whole stack again
+//   arrows and tab move the focus anywhere on the board; enter picks up
+//          the card under it (with its stack), puts down what you are
+//          holding, or puts the focused card back
 //   s/h/d/c  send that suit's ready card home -- each home takes only the
 //          suit that labels it, and the letters are the player's pick
 //          where several cards are ready at once
 //   a      send everything that fits home
-//   enter on the held stack's own pile puts it back    u undo    q quit
+//   escape lets go of what you hold    u undo    q quit
 //   n new deal    r retry this deal
 //          (n and r mid-run ask first -- y or enter abandons, n stays)
 //
@@ -723,17 +724,50 @@ function *App(this: Context) {
   const liveRun = (): boolean =>
     startedAt !== null && finishedAt === null && game.moves > 0;
 
-  // The focus is a place on the board, in the board's own geometry: seven
-  // columns, a top row (deck, flip, a gap, four suit homes) and the
-  // tableau below, where a column is a pile and the focus can rest on any
-  // face-up card of it. It is the document's focus, held by the card's
-  // element, so there is one at a time and every input moves the same
-  // one. Enter acts where it is. A fresh deal focuses nothing.
+  // The board is a set of places: the deck, the flip, the four homes, and
+  // every card of every pile. A place has a source, what a hand would pick
+  // up there, and a target, where a hand would put a card down. The state
+  // of play is two things: what is held, and where the focus is. The focus
+  // is the document's, held by a card's element, so there is one and every
+  // input moves the same one.
+  //
+  // One gesture serves every input, choose(place):
+  //   the focused card again          put it back, and let the focus go
+  //   holding a card that fits here   put it down; nothing is focused after
+  //   otherwise                       pick up what is here, and focus it
+  // A click chooses the place under the pointer and Enter the focused one.
+  // A number chooses a pile, with a cycle of its own. A drag is a press and
+  // a release on different piles, and puts the pressed card down on the
+  // second. A double-click on a pile sends its top card home.
   interface Place {
     row: "top" | "board";
     col: number;
     depth: number;
   }
+  const DECK: Place = {row: "top", col: 0, depth: 0};
+  const FLIP: Place = {row: "top", col: 1, depth: 0};
+  const homePlace = (index: number): Place => ({
+    row: "top",
+    col: 3 + index,
+    depth: 0,
+  });
+  const boardPlace = (col: number, depth = 0): Place => ({
+    row: "board",
+    col,
+    depth,
+  });
+
+  /** The top row's occupied columns: the gap at column 2 holds nothing. */
+  const TOP_COLS = [0, 1, 3, 4, 5, 6];
+  const pileAt = (col: number): Card[] => game.tableau[col];
+  const getLast = (pile: Card[]): number => pile.length - 1;
+  const firstUp = (pile: Card[]): number => {
+    const index = pile.findIndex((card) => card.up);
+    return index < 0 ? getLast(pile) : index;
+  };
+  const topOf = (col: number): Place =>
+    boardPlace(col, Math.max(0, getLast(pileAt(col))));
+
   const idAt = ({row, col, depth}: Place): string =>
     row === "board"
       ? `pile-${col}-${depth}`
@@ -741,20 +775,92 @@ function *App(this: Context) {
   const focused = (): Place | null => {
     const id = document.activeElement?.id ?? "";
     if (id === "deck") {
-      return {row: "top", col: 0, depth: 0};
+      return DECK;
     }
     if (id === "flip") {
-      return {row: "top", col: 1, depth: 0};
+      return FLIP;
     }
     const home = /^home-(\d)$/.exec(id);
     if (home) {
-      return {row: "top", col: 3 + Number(home[1]), depth: 0};
+      return homePlace(Number(home[1]));
     }
     const card = /^pile-(\d)-(\d+)$/.exec(id);
     if (card) {
-      return {row: "board", col: Number(card[1]), depth: Number(card[2])};
+      return boardPlace(Number(card[1]), Number(card[2]));
     }
     return null;
+  };
+
+  /** The board is rendered first, so the element is there to take the focus. */
+  const seat = (place: Place): void => {
+    this.refresh();
+    document.getElementById(idAt(place))?.focus();
+  };
+  const unfocus = (): void => {
+    (document.activeElement as HTMLElement | null)?.blur();
+  };
+
+  /** What a hand would pick up at a place: a card, a run, or nothing. */
+  const sourceAt = (place: Place): Held => {
+    if (place.row === "top") {
+      if (place.col === 1) {
+        return top(game.waste) ? {kind: "waste"} : null;
+      }
+      if (place.col >= 3) {
+        const index = place.col - 3;
+        return game.foundations[index].length > 0
+          ? {kind: "foundation", index}
+          : null;
+      }
+      return null;
+    }
+    const pile = pileAt(place.col);
+    // A face-down card stands for the whole face-up stack under it.
+    const index = pile[place.depth]?.up ? place.depth : firstUp(pile);
+    return pile[index]?.up && isRun(pile, index)
+      ? {kind: "tableau", pile: place.col, index}
+      : null;
+  };
+
+  /** The place a source is picked up from: its own card, not the hit slop. */
+  const placeOf = (source: Held): Place =>
+    source?.kind === "tableau"
+      ? boardPlace(source.pile, source.index)
+      : source?.kind === "foundation" ? homePlace(source.index) : FLIP;
+
+  /** Where a hand would put a card down at a place, or nowhere. */
+  const targetAt = (place: Place): Target | null =>
+    place.row === "board"
+      ? {kind: "tableau", pile: place.col}
+      : place.col >= 3 ? {kind: "foundation", index: place.col - 3} : null;
+
+  const onSamePile = (a: Place, b: Place): boolean =>
+    a.row === b.row && a.col === b.col;
+
+  const isSame = (a: Held, b: Held): boolean =>
+    a !== null &&
+    b !== null &&
+    a.kind === b.kind &&
+    (a.kind !== "tableau" ||
+      (b.kind === "tableau" && a.pile === b.pile && a.index === b.index));
+
+  /** Whether a source can go on a target, by the rules of the game. */
+  const fits = (source: Held, drop: Target): boolean => {
+    const cards = heldCards(game, source);
+    if (cards.length === 0) {
+      return false;
+    }
+    if (drop.kind === "tableau") {
+      return (
+        !(source?.kind === "tableau" && source.pile === drop.pile) &&
+        fitsTableau(cards[0], game.tableau[drop.pile])
+      );
+    }
+    return (
+      cards.length === 1 &&
+      cards[0].suit === drop.index &&
+      fitsFoundation(cards[0], game.foundations[drop.index])
+    );
   };
 
   /** Back to the deal's opening position, clock unstarted, cursor down. */
@@ -814,45 +920,48 @@ function *App(this: Context) {
     });
   };
 
-  const isSame = (a: Held, b: Held): boolean =>
-    a !== null &&
-    b !== null &&
-    a.kind === b.kind &&
-    (a.kind !== "tableau" ||
-      (b.kind === "tableau" && a.pile === b.pile && a.index === b.index));
-
-  const grab = (next: Held): void => {
+  /** A card picked up is held and focused, wherever it was picked from. */
+  const pickUp = (source: Held): void => {
     this.refresh(() => {
-      // Picking up what you are already holding puts it back.
-      held = isSame(held, next) ? null : next;
+      held = source;
       message = "";
     });
+    seat(placeOf(source));
   };
 
-  /** Drop on a pile, or -- holding nothing -- pick that pile up instead. */
-  const target = (target: Target): void => {
-    if (held) {
-      // Its own pile takes a held stack BACK: in fullscreen the platform
-      // owns Escape (it exits), so releasing is a move like any other.
-      if (
-        held.kind === "tableau" &&
-        target.kind === "tableau" &&
-        held.pile === target.pile
-      ) {
-        return grab(held);
+  /** A card put back lies where it was, and the focus goes with it. */
+  const putBack = (): void => {
+    this.refresh(() => {
+      held = null;
+      message = "";
+    });
+    unfocus();
+  };
+
+  /**
+   * A card put down lands and lies still: nothing on the pile it joins is
+   * focused or lifted afterwards, by mouse or by key.
+   */
+  const putDown = (source: Held, drop: Target): void => {
+    act((game) => play(game, source, drop));
+    unfocus();
+  };
+
+  /** The one gesture, at a place: put back, put down, or pick up. */
+  const choose = (place: Place): void => {
+    const source = sourceAt(place);
+    if (held !== null) {
+      if (isSame(held, source)) {
+        return putBack();
       }
-      act((game) => play(game, held, target));
-      return;
-    }
-    if (target.kind === "foundation") {
-      if (game.foundations[target.index].length > 0) {
-        grab({kind: "foundation", index: target.index});
+      const drop = targetAt(place);
+      if (drop !== null && fits(held, drop)) {
+        return putDown(held, drop);
       }
-      return;
+      // Holding something that does not go here is a change of mind.
     }
-    const pile = game.tableau[target.pile];
-    if (pile.length > 0) {
-      grab({kind: "tableau", pile: target.pile, index: runStart(pile)});
+    if (source !== null) {
+      pickUp(source);
     }
   };
 
@@ -979,45 +1088,11 @@ function *App(this: Context) {
     }
   };
 
-  /**
-   * Every input is a focus move too: whatever a letter, a number or a
-   * click acts on, the focus lands there, so tab and the arrows continue
-   * from the last action. The board is rendered first, so the element is
-   * there to take it.
-   */
-  const seat = (row: "top" | "board", col: number, depth = 0): void => {
-    this.refresh();
-    document.getElementById(idAt({row, col, depth}))?.focus();
-  };
-
-  /**
-   * A click on a card picks it up and focuses it. A click on the card
-   * already held puts it back and lets the focus go, so a click toggles.
-   */
-  const unfocus = (): void => {
-    (document.activeElement as HTMLElement | null)?.blur();
-  };
-
-  const pick = (
-    source: Held,
-    row: "top" | "board",
-    col: number,
-    depth = 0,
-  ): void => {
-    if (isSame(held, source)) {
-      grab(source);
-      unfocus();
-      return;
-    }
-    seat(row, col, depth);
-    grab(source);
-  };
-
   /** Space: draw, and follow the turned card to the flip. */
   const drawTo = (): void => {
     const before = game.moves;
     act(draw);
-    seat("top", game.moves > before && top(game.waste) ? 1 : 0);
+    seat(game.moves > before && top(game.waste) ? FLIP : DECK);
   };
 
   /** A click on the deck: draw, and leave the focus alone. */
@@ -1026,73 +1101,59 @@ function *App(this: Context) {
     unfocus();
   };
 
-  /** The top row's occupied columns: the gap at column 2 holds nothing. */
-  const TOP_COLS = [0, 1, 3, 4, 5, 6];
-
-  const pileAt = (col: number): Card[] => game.tableau[col];
-  const getLast = (pile: Card[]): number => pile.length - 1;
-  const firstUp = (pile: Card[]): number => {
-    const index = pile.findIndex((card) => card.up);
-    return index < 0 ? getLast(pile) : index;
+  /**
+   * A number: put what is held, or what the focus is on, down on that pile
+   * when it fits. Otherwise pick up the pile's whole face-up stack, and on
+   * the same number again one card fewer, down to the top card and round.
+   */
+  const choosePile = (pile: number): void => {
+    const drop: Target = {kind: "tableau", pile};
+    const cur = focused();
+    const grip = held ?? (cur === null ? null : sourceAt(cur));
+    if (grip !== null && fits(grip, drop)) {
+      return putDown(grip, drop);
+    }
+    const cards = pileAt(pile);
+    if (cards.length === 0) {
+      return seat(boardPlace(pile));
+    }
+    const onPile = cur !== null && cur.row === "board" && cur.col === pile;
+    const index = onPile && cur.depth < getLast(cards)
+      ? cur.depth + 1
+      : runStart(cards);
+    pickUp({kind: "tableau", pile, index});
   };
-
-  const topOf = (col: number): Place => ({
-    row: "board",
-    col,
-    depth: Math.max(0, getLast(pileAt(col))),
-  });
 
   /**
-   * The mouse. A press remembers the card under it and keeps the engine
-   * from focusing it, and nothing moves until the button comes up, so what
-   * is under the pointer at the release is what was there at the press. A
-   * release on another pile drops the pressed card, or the held one,
-   * there: a drag. A click, a press and release in place, picks a card up,
-   * puts the held one down, or puts the picked one back. A double click
-   * on a pile sends its top card home.
+   * The mouse. A press remembers what is under it and keeps the engine
+   * from focusing it, so nothing moves before the button comes up. A
+   * release on another pile puts the pressed card, or the held one, down
+   * there: a drag. A click chooses the place, and a double-click on a
+   * pile sends its top card home.
    */
-  let pressed: {name: string; source: Held} | null = null;
-  const press = (name: string, source: Held = null) => (event: Event): void => {
+  let pressed: {place: Place; source: Held} | null = null;
+  const press = (place: Place) => (event: Event): void => {
     event.preventDefault();
-    pressed = {name, source};
+    pressed = {place, source: sourceAt(place)};
   };
-  const release = (name: string, drop: Target) => (): void => {
+  const release = (place: Place) => (): void => {
     const from = pressed;
     pressed = null;
-    if (from === null || from.name === name) {
+    const drop = targetAt(place);
+    if (from === null || drop === null || onSamePile(from.place, place)) {
       return;
     }
     const source = from.source ?? held;
-    if (source === null) {
-      return;
+    if (source !== null && fits(source, drop)) {
+      putDown(source, drop);
     }
-    act((game) => play(game, source, drop));
-    unfocus();
   };
-
-  /**
-   * A card put down lands and lies still: nothing on the pile it joins
-   * is focused or lifted afterwards, by mouse or by key.
-   */
-  const place = (drop: Target): void => {
-    target(drop);
-    unfocus();
-  };
-
-  /** Whether what is held can go on `drop`. */
-  const fits = (drop: Target): boolean => {
-    const cards = heldCards(game, held);
-    if (cards.length === 0) {
-      return false;
+  const sendTopHome = (pile: number): void => {
+    const cards = pileAt(pile);
+    const last = getLast(cards);
+    if (last >= 0 && cards[last].up) {
+      sendHome({kind: "tableau", pile, index: last});
     }
-    if (drop.kind === "tableau") {
-      return fitsTableau(cards[0], game.tableau[drop.pile]);
-    }
-    return (
-      cards.length === 1 &&
-      cards[0].suit === drop.index &&
-      fitsFoundation(cards[0], game.foundations[drop.index])
-    );
   };
 
   const moveFocus = (dx: number, dy: number): void => {
@@ -1122,66 +1183,7 @@ function *App(this: Context) {
         next = {...cur, depth: cur.depth + 1};
       }
     }
-    seat(next.row, next.col, next.depth);
-  };
-
-  /** The card, or run, under the focus as something that could be held. */
-  const underFocus = (): Held => {
-    const cur = focused();
-    if (cur === null) {
-      return null;
-    }
-    if (cur.row === "top") {
-      if (cur.col === 1) {
-        return top(game.waste) ? {kind: "waste"} : null;
-      }
-      if (cur.col >= 3) {
-        const index = cur.col - 3;
-        return game.foundations[index].length > 0
-          ? {kind: "foundation", index}
-          : null;
-      }
-      return null;
-    }
-    const pile = pileAt(cur.col);
-    const card = pile[cur.depth];
-    return card?.up && isRun(pile, cur.depth)
-      ? {kind: "tableau", pile: cur.col, index: cur.depth}
-      : null;
-  };
-
-  /** Enter, wherever the focus rests: pick up, drop, or draw. */
-  const activate = (cur: Place): void => {
-    if (cur.row === "top") {
-      if (cur.col === 0) {
-        return act(draw);
-      }
-      if (cur.col === 1) {
-        if (held) {
-          return;
-        }
-        if (top(game.waste)) {
-          grab({kind: "waste"});
-        }
-        return;
-      }
-      if (held) {
-        return place({kind: "foundation", index: cur.col - 3});
-      }
-      return target({kind: "foundation", index: cur.col - 3});
-    }
-    const pile = pileAt(cur.col);
-    if (held) {
-      return place({kind: "tableau", pile: cur.col});
-    }
-    if (pile.length === 0) {
-      return;
-    }
-    const card = pile[cur.depth];
-    if (!card?.up || !isRun(pile, cur.depth)) {
-      return;
-    }
-    grab({kind: "tableau", pile: cur.col, index: cur.depth});
+    seat(next);
   };
 
   const onkeydown = (event: KeyboardEvent): void => {
@@ -1206,7 +1208,6 @@ function *App(this: Context) {
       } else if (key === "Enter" || key === " " || key === "y") {
         dealFromMenu();
       } else if ((key === "n" || key === "b") && dealt) {
-        // Back only leads somewhere when a game is behind the menu.
         leaveMenu();
       } else if (key === "q") {
         term.window.close();
@@ -1221,115 +1222,72 @@ function *App(this: Context) {
       }
       return;
     }
-    if (key === "q") {
-      if (!liveRun()) {
-        return term.window.close();
-      }
-      return this.refresh(() => {
-        confirming = {
-          question: "Quit in the middle of a run?",
-          yes: "quit",
-          go: () => term.window.close(),
-        };
-      });
-    }
-    if (key === "n") {
-      this.refresh(() => {
-        menu = true;
-      });
-      return;
-    }
-    if (key === "r") {
-      return guardedReset(game.number, "this deal again");
-    }
-    if (key === "u") {
-      return undo();
-    }
-    if (key === "Escape") {
-      this.refresh(() => {
-        held = null;
-        message = "";
-      });
-      return;
-    }
-    if (key === " ") {
-      // The focus follows the turned card to the flip, ready for f or
-      // enter, without picking it up.
-      drawTo();
-      return;
-    }
-    if (key === "f" || key === "0") {
-      seat("top", 1);
-      if (top(game.waste)) {
-        grab({kind: "waste"});
-      }
-      return;
-    }
-    if (key === "s" || key === "h" || key === "d" || key === "c") {
-      const suit = {s: 0, h: 1, d: 2, c: 3}[key]!;
-      sendSuit(suit);
-      return unfocus();
-    }
-    if (key === "a") {
-      act((game) => autoplay(game) > 0);
-      return;
-    }
-    // Tab is the engine's: it walks the focusable cards in document order.
-    if (key === "ArrowUp") {
-      return moveFocus(0, -1);
-    }
-    if (key === "ArrowDown") {
-      return moveFocus(0, 1);
-    }
-    if (key === "ArrowLeft") {
-      return moveFocus(-1, 0);
-    }
-    if (key === "ArrowRight") {
-      return moveFocus(1, 0);
-    }
-    if (key === "Enter") {
-      // Until something takes the focus, Enter draws -- the typing
-      // player's right hand never leaves home row -- and puts the focus
-      // on the deck, where a second Enter draws again. With the focus
-      // somewhere, Enter takes and places at it.
-      const cur = focused();
-      if (cur === null) {
-        act(draw);
-        return seat("top", 0);
-      }
-      return activate(cur);
-    }
-    if (key >= "1" && key <= "7") {
-      // A number moves what is held, or what the focus is on, to that pile
-      // when it fits there. Otherwise it picks up the pile's whole face-up
-      // stack, and the same number again walks the pick down the stack a
-      // card at a time, to the top card and round to the whole stack. The
-      // focus goes with it.
-      const pile = Number(key) - 1;
-      const cards = pileAt(pile);
-      // With nothing held, the focused card is the one that would move: the
-      // flip's top after a space, a home's top, or a run on the board.
-      const grip = held ?? underFocus();
-      const fromElsewhere =
-        grip !== null && !(grip.kind === "tableau" && grip.pile === pile);
-      if (fromElsewhere && fitsTableau(heldCards(game, grip)[0], cards)) {
-        act((game) => play(game, grip, {kind: "tableau", pile}));
+    switch (key) {
+      case "q":
+        if (!liveRun()) {
+          return term.window.close();
+        }
+        return this.refresh(() => {
+          confirming = {
+            question: "Quit in the middle of a run?",
+            yes: "quit",
+            go: () => term.window.close(),
+          };
+        });
+      case "n":
+        return this.refresh(() => {
+          menu = true;
+        });
+      case "r":
+        return guardedReset(game.number, "this deal again");
+      case "u":
+        return undo();
+      case "Escape":
+        // Lets go of what is held; the focus stays where it is.
+        return this.refresh(() => {
+          held = null;
+          message = "";
+        });
+      case " ":
+        return drawTo();
+      case "f":
+      case "0":
+        return choose(FLIP);
+      case "s":
+      case "h":
+      case "d":
+      case "c":
+        sendSuit({s: 0, h: 1, d: 2, c: 3}[key]!);
         return unfocus();
+      case "a":
+        return act((game) => autoplay(game) > 0);
+      // Tab is the engine's: it walks the focusable cards in document order.
+      case "ArrowUp":
+        return moveFocus(0, -1);
+      case "ArrowDown":
+        return moveFocus(0, 1);
+      case "ArrowLeft":
+        return moveFocus(-1, 0);
+      case "ArrowRight":
+        return moveFocus(1, 0);
+      case "Enter": {
+        // Until something takes the focus, Enter draws -- the typing
+        // player's right hand never leaves home row -- and puts the focus
+        // on the deck, where a second Enter draws again.
+        const cur = focused();
+        if (cur === null) {
+          act(draw);
+          return seat(DECK);
+        }
+        if (onSamePile(cur, DECK)) {
+          return act(draw);
+        }
+        return choose(cur);
       }
-      if (cards.length === 0) {
-        return seat("board", pile);
-      }
-      const cur = focused();
-      const onPile = cur !== null && cur.row === "board" && cur.col === pile;
-      const depth = onPile && cur.depth < getLast(cards)
-        ? cur.depth + 1
-        : runStart(cards);
-      this.refresh(() => {
-        held = cards[depth].up && isRun(cards, depth)
-          ? {kind: "tableau", pile, index: depth}
-          : null;
-      });
-      seat("board", pile, depth);
+      default:
+        if (key >= "1" && key <= "7") {
+          choosePile(Number(key) - 1);
+        }
     }
   };
   document.addEventListener("keydown", onkeydown);
@@ -1415,11 +1373,11 @@ function *App(this: Context) {
                     card=${{rank: 1, suit: 0, up: false}}
                     tier=${t}
                     id="deck"
-                    onmousedown=${press("deck")}
+                    onmousedown=${press(DECK)}
                     onclick=${drawOnly}
                   />`
                 : jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
-                    id="deck" onmousedown=${press("deck")} onclick=${drawOnly} />`
+                    id="deck" onmousedown=${press(DECK)} onclick=${drawOnly} />`
             }
           </div>
           <div
@@ -1436,8 +1394,8 @@ function *App(this: Context) {
                         tier=${t}
                         held=${at === fan.length - 1 && grip?.kind === "waste"}
                         id=${at === fan.length - 1 ? "flip" : undefined}
-                        onmousedown=${at === fan.length - 1 ? press("waste", {kind: "waste"}) : undefined}
-                        onclick=${at === fan.length - 1 ? () => pick({kind: "waste"}, "top", 1) : undefined}
+                        onmousedown=${at === fan.length - 1 ? press(FLIP) : undefined}
+                        onclick=${at === fan.length - 1 ? () => choose(FLIP) : undefined}
                       />`,
                 )}</div>`
                 : jsx`<${Slot} tier=${t} />`
@@ -1448,7 +1406,7 @@ function *App(this: Context) {
               <div
                 class="pile"
                 key=${`foundation-${index}`}
-                onmouseup=${release(`foundation-${index}`, {kind: "foundation", index})}
+                onmouseup=${release(homePlace(index))}
               >
                 <div class="place"></div>
                 ${
@@ -1459,26 +1417,16 @@ function *App(this: Context) {
                         held=${grip?.kind === "foundation" && grip.index === index}
                         drop=${home === index}
                         id=${`home-${index}`}
-                        onmousedown=${press(`foundation-${index}`, {kind: "foundation", index})}
-                        onclick=${() => {
-                          // A held card that fits goes down here; one that does
-                          // not is a change of mind, and this card is picked up
-                          // instead.
-                          const source: Held = {kind: "foundation", index};
-                          if (held && !isSame(held, source) && fits({kind: "foundation", index})) {
-                            place({kind: "foundation", index});
-                          } else {
-                            pick(source, "top", 3 + index);
-                          }
-                        }}
+                        onmousedown=${press(homePlace(index))}
+                        onclick=${() => choose(homePlace(index))}
                       />`
                     : jsx`<${Slot}
                         tier=${t}
                         mark=${SUITS[index]}
                         id=${card ? `home-${index}` : undefined}
                         drop=${home === index}
-                        onmousedown=${press(`foundation-${index}`)}
-                        onclick=${() => place({kind: "foundation", index})}
+                        onmousedown=${press(homePlace(index))}
+                        onclick=${() => choose(homePlace(index))}
                       />`
                 }
               </div>
@@ -1498,13 +1446,8 @@ function *App(this: Context) {
               <div
                 class="pile"
                 key=${`pile-${index}`}
-                onmouseup=${release(`pile-${index}`, {kind: "tableau", pile: index})}
-                ondblclick=${() => {
-                  const last = getLast(pile);
-                  if (last >= 0 && pile[last].up) {
-                    sendHome({kind: "tableau", pile: index, index: last});
-                  }
-                }}
+                onmouseup=${release(boardPlace(index))}
+                ondblclick=${() => sendTopHome(index)}
               >
                 <div class="place"></div>
                 ${
@@ -1513,8 +1456,8 @@ function *App(this: Context) {
                         tier=${t}
                         drop=${Boolean(card) && fitsTableau(card, pile)}
                         id=${card ? `pile-${index}-0` : undefined}
-                        onmousedown=${press(`pile-${index}`)}
-                        onclick=${() => place({kind: "tableau", pile: index})}
+                        onmousedown=${press(boardPlace(index))}
+                        onclick=${() => choose(boardPlace(index))}
                       />`
                     : pile.map((each, depth) => jsx`
                           <${CardFace}
@@ -1524,27 +1467,8 @@ function *App(this: Context) {
                             id=${each.up ? `pile-${index}-${depth}` : undefined}
                             held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
                             drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
-                            onmousedown=${press(`pile-${index}`, {kind: "tableau", pile: index, index: each.up ? depth : firstUp(pile)})}
-                            onclick=${() => {
-                              // A face-down card stands for the whole face-up stack
-                              // under it. The focused card again puts it back. A held
-                              // card that fits goes down here; one that does not is a
-                              // change of mind, and the card clicked is picked up
-                              // instead.
-                              const at = each.up ? depth : firstUp(pile);
-                              const source: Held = {kind: "tableau", pile: index, index: at};
-                              if (isSame(held, source)) {
-                                return pick(source, "board", index, at);
-                              }
-                              if (
-                                held && !(held.kind === "tableau" && held.pile === index) && fits(
-                                  {kind: "tableau", pile: index},
-                                )
-                              ) {
-                                return place({kind: "tableau", pile: index});
-                              }
-                              pick(source, "board", index, at);
-                            }}
+                            onmousedown=${press(boardPlace(index, depth))}
+                            onclick=${() => choose(boardPlace(index, depth))}
                           />
                         `)
                 }
