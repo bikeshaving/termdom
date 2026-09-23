@@ -1079,6 +1079,22 @@ function *App(this: Context) {
     unfocus();
   };
 
+  /** Whether what is held can go on `drop`. */
+  const fits = (drop: Target): boolean => {
+    const cards = heldCards(game, held);
+    if (cards.length === 0) {
+      return false;
+    }
+    if (drop.kind === "tableau") {
+      return fitsTableau(cards[0], game.tableau[drop.pile]);
+    }
+    return (
+      cards.length === 1 &&
+      cards[0].suit === drop.index &&
+      fitsFoundation(cards[0], game.foundations[drop.index])
+    );
+  };
+
   const moveFocus = (dx: number, dy: number): void => {
     const cur = focused() ?? topOf(0);
     let next: Place = cur;
@@ -1445,8 +1461,11 @@ function *App(this: Context) {
                         id=${`home-${index}`}
                         onmousedown=${press(`foundation-${index}`, {kind: "foundation", index})}
                         onclick=${() => {
+                          // A held card that fits goes down here; one that does
+                          // not is a change of mind, and this card is picked up
+                          // instead.
                           const source: Held = {kind: "foundation", index};
-                          if (held && !isSame(held, source)) {
+                          if (held && !isSame(held, source) && fits({kind: "foundation", index})) {
                             place({kind: "foundation", index});
                           } else {
                             pick(source, "top", 3 + index);
@@ -1508,15 +1527,20 @@ function *App(this: Context) {
                             onmousedown=${press(`pile-${index}`, {kind: "tableau", pile: index, index: each.up ? depth : firstUp(pile)})}
                             onclick=${() => {
                               // A face-down card stands for the whole face-up stack
-                              // under it. The focused card again puts it back. Another
-                              // card of the same pile is picked up instead. A card from
-                              // elsewhere is put down here.
+                              // under it. The focused card again puts it back. A held
+                              // card that fits goes down here; one that does not is a
+                              // change of mind, and the card clicked is picked up
+                              // instead.
                               const at = each.up ? depth : firstUp(pile);
                               const source: Held = {kind: "tableau", pile: index, index: at};
                               if (isSame(held, source)) {
                                 return pick(source, "board", index, at);
                               }
-                              if (held && !(held.kind === "tableau" && held.pile === index)) {
+                              if (
+                                held && !(held.kind === "tableau" && held.pile === index) && fits(
+                                  {kind: "tableau", pile: index},
+                                )
+                              ) {
                                 return place({kind: "tableau", pile: index});
                               }
                               pick(source, "board", index, at);
