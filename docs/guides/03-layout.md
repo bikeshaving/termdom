@@ -1,6 +1,6 @@
 ---
 title: Layout
-description: The box model, flexbox, grid and tables on a cell grid.
+description: The box model, flexbox, grid, tables, and MathML on a cell grid.
 ---
 
 The cell is the unit basis: `1px` and `1ch` both mean one cell, and the
@@ -16,10 +16,11 @@ box.style.border = "1px solid";
 box.style.margin = "1px 0";
 ```
 
-Borders draw with box-drawing characters (`solid` and `double`) and take
-one cell per side. Borders that meet in a cell join: a rule that reaches
-a box's side ends in `├` or `┤`, and a column divider crossing it makes
-`┬` or `┴`.
+Borders draw with box-drawing characters and take one cell per side.
+Borders that meet in a cell join: a rule that reaches a box's side ends
+in `├` or `┤`, and a column divider crossing it makes `┬` or `┴`. The
+[styling guide](/guides/styling/#borders) has the glyphs each border
+style draws.
 
 ## Flexbox
 
@@ -75,6 +76,29 @@ and never leaves the box it flows in. `overflow: hidden` clips to the box.
 `overflow: auto` and `scroll` clip too, and make the box scrollable:
 `scrollTop`, `scrollTo`, `scrollIntoView`, and the mouse wheel move its
 content by whole rows.
+
+## MathML
+
+A `<math>` element lays out as MathML Core says, on the cell grid.
+Fractions stack the numerator over a bar of `─` over the denominator.
+Roots draw a `⎷` foot, a stem, and a bar over the radicand, with the
+index of an `<mroot>` as a superscript before the sign. Sums, products,
+and integrals are drawn several rows tall with their limits above and
+below, and fences stretch to the height of what they enclose. Scripts,
+tables, accents, stretched arrows, and `<mpadded>`, `<mphantom>`, and
+`<mspace>` all work.
+
+Variables in `<mi>` are italic by the `text-transform: math-auto` rule
+in the user-agent stylesheet, as in a browser. Terminals draw italics
+unevenly, so an author rule can turn that off and use a color instead:
+
+```css
+mi { text-transform: none; color: #ffd787; }
+```
+
+Everything inside `<math>` can be selected and highlighted by cell.
+[`examples/katex.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/katex.ts)
+renders TeX through KaTeX's MathML output and walks every element.
 
 ## Not implemented
 

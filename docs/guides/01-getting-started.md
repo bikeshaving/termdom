@@ -33,6 +33,12 @@ document.body.appendChild(box);
 no render call: DOM mutations are observed and painted on the next
 frame, so whatever changes the document changes the screen.
 
+The document is drawn below the shell prompt, where a command's output
+goes, and it stays live there until the program ends. Then it is left
+in the scrollback like any other output. This is flow mode, and the
+[rendering guide](/guides/rendering/) describes it, along with
+fullscreen and static output.
+
 For static output, skip `attach()`: `term.renderANSI(html)` returns an
 ANSI string, and `term.print(html)` writes one to stdout.
 
@@ -141,7 +147,12 @@ is a full app.
 
 ## Next
 
-- [Layout](/guides/layout/) — the box model, flexbox, and tables.
+- [Rendering](/guides/rendering/) — flow mode, fullscreen, static
+  output, and what the engine asks the terminal.
+- [Layout](/guides/layout/) — the box model, flexbox, grid, tables, and
+  MathML.
+- [Styling](/guides/styling/) — how each CSS property maps to the
+  terminal.
 - [Events and input](/guides/events-and-input/) — keyboard, mouse, focus,
   and form controls.
 - [API](/guides/api/) — the full surface.

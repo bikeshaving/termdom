@@ -18,7 +18,27 @@ document.addEventListener("keydown", (ev) => {
 ```
 
 Escape sequences from the terminal are decoded into `KeyboardEvent`s with
-`key`, `ctrlKey`, `altKey`, and `shiftKey` set.
+`key`, `ctrlKey`, `altKey`, and `shiftKey` set. `key` is the printed
+character for a printable key, and one of the browser's names for the
+rest:
+
+| Terminal sends | `key` |
+| --- | --- |
+| Carriage return | `Enter` |
+| Tab, and Shift+Tab | `Tab`, with `shiftKey` on the second |
+| Delete byte | `Backspace` |
+| A lone escape | `Escape` |
+| Cursor keys, in either of the two encodings | `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight` |
+| Home and End, in any of the three encodings | `Home`, `End` |
+| The tilde keys | `Insert`, `Delete`, `PageUp`, `PageDown` |
+| Function keys | `F1` through `F12` |
+| A control byte | The letter, lowercase, with `ctrlKey`; NUL is `Ctrl+Space` |
+| A cursor key with a modifier parameter | The key, with `shiftKey`, `altKey`, `ctrlKey`, and `metaKey` from the parameter's bits |
+
+A character outside the Basic Multilingual Plane arrives as one
+character. `keypress` fires after `keydown` for a printable key, and
+`keyup` follows at once, since a terminal never says when a key is
+released.
 
 ### What a terminal can report
 
@@ -58,6 +78,20 @@ byte. These limits apply to every terminal application:
 Mouse events dispatch at the element under the cell: `mousedown` moves
 focus, `click` clicks, `wheel` scrolls. Coordinates are in cells.
 
+| Terminal reports | Event |
+| --- | --- |
+| Left, middle, or right button press | `mousedown` with `button` 0, 1, or 2 |
+| The release | `mouseup`, then `click` when it lands on the same element |
+| Two presses within the double-click interval | `detail` counts them, and `dblclick` fires on the second |
+| Wheel up or down | `wheel` with `deltaY` of −3 or 3 and `deltaMode` of lines |
+| Shift, Alt, or Ctrl held | `shiftKey`, `altKey`, `ctrlKey` |
+| Motion | `mousemove`, and the hover events below |
+
+The terminal reports a wheel notch, not a distance, so a notch is three
+rows, the browser's line-mode convention. The engine turns on mouse
+reporting when it attaches, and the right and middle buttons reach the
+page as ordinary presses; there is no context menu.
+
 ```ts
 row.addEventListener("click", () => open(row.dataset.path!));
 ```
@@ -78,8 +112,22 @@ document.head.innerHTML = "<style>li:hover { background-color: blue }</style>";
 
 Tab traverses focusable elements in document order, `:focus` styles
 apply, and `element.focus()` works. Typing goes to the focused element.
+Enter and Space click a focused button or summary, and Enter follows a
+focused link, as in a browser. Escape closes whatever is on top of the
+top layer, a modal dialog or an open popover, whether or not a `keydown`
+listener canceled it.
 Tab past the last focusable element rests on nothing before re-entering
 at the first — the page's view of a browser's cycle through its chrome.
+
+## Dialogs, popovers, and details
+
+`<dialog>` opens with `show()` or `showModal()`, and a modal one sits in
+the top layer, centered, with a `Canvas` backdrop that covers the page.
+Escape closes it and fires `cancel` then `close`. A `[popover]` opens
+with `showPopover()` or `togglePopover()`, or a `popovertarget` button,
+and light dismiss works: a click outside, or Escape, closes it and
+fires `toggle`. `<details>` opens on a click of its `<summary>`, or
+Enter or Space with the summary focused, and fires `toggle`.
 
 ## Form controls
 
@@ -162,7 +210,12 @@ spellcheck.
 ## Selection and the clipboard
 
 Drag to select, in the document or inside a field; style it with
-`::selection`. `getSelection().modify(alter, direction, granularity)`
+`::selection`. `getSelection().toString()` is the rendered text, as in a
+browser: nothing from a closed `<details>`, a `<select>`'s options, a
+hidden element, or `user-select: none` content, and a line break
+between blocks. `user-select: none` also keeps a drag from anchoring
+or extending into an element, which is what a game board or a toolbar
+wants. `getSelection().modify(alter, direction, granularity)`
 moves the caret or drags the focus by character, word, line or line
 boundary; the line granularities read the laid-out lines, so a soft wrap
 counts as a line.
@@ -192,8 +245,6 @@ gesture — Cmd+C, Shift+drag — and Ctrl+C is the interrupt.
 
 ## Scrolling
 
-Output starts at the command line and flows down; when the document
-outgrows the terminal, earlier rows move into the terminal's scrollback.
 The document scrolls with the standard calls, and so does a box whose
 `overflow` is `auto` or `scroll`:
 
@@ -203,16 +254,13 @@ pane.scrollTop += 5;
 element.scrollIntoView();
 ```
 
-`window.scrollY` reports the document position. The mouse wheel moves the
-innermost scrollable box under the pointer and hands what remains to its
-ancestors. A document taller than the terminal keeps the wheel, and its
-top is a stop, as an editor's is. A document that fits has nothing to
-scroll, so a wheel up hands the wheel to the terminal itself and the
-scrollback above the document scrolls as it does for any other command.
-No terminal says when the user has scrolled back down, so the mouse
-comes back on the next keystroke, which also reaches the page. While
-the wheel is the terminal's, `document.visibilityState` is `"hidden"`,
-as it is for a page in a background tab.
+`scroll` fires on the box, or on the document for the document scroll,
+and `window.scrollY` reports the document position. The mouse wheel
+moves the innermost scrollable box under the pointer and hands what
+remains to its ancestors, and a `wheel` listener that calls
+`preventDefault()` stops it. How the document's own scroll shares the
+wheel with the terminal's scrollback is in the
+[rendering guide](/guides/rendering/#flow-mode).
 
 ## Fullscreen
 
@@ -222,7 +270,8 @@ await element.requestFullscreen();
 
 `requestFullscreen()` takes the alternate screen and applies `:fullscreen`
 styles. Exiting restores the main screen and scrollback. Escape exits;
-if a text field is focused, the first Escape blurs it instead.
+if a text field is focused, the first Escape blurs it instead. The
+[rendering guide](/guides/rendering/#fullscreen) has the details.
 
 ## Resizing
 

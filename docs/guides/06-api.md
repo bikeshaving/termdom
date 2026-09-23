@@ -36,6 +36,8 @@ Options:
 
 `document` is a `Document`. Setting `document.title` sets the terminal
 window title; the previous title is restored on `dispose()`.
+`document.close()` writes the document into the scrollback and seals
+it, and the next mutation starts a fresh document below it.
 
 `window` has the DOM interfaces and event constructors, and these members
 are wired to the terminal:
@@ -67,6 +69,21 @@ are wired to the terminal:
 
 Anything not listed behaves as the DOM and CSSOM standards specify,
 without terminal wiring.
+
+### Parts of the built-in controls
+
+The form controls are shadow trees, and `::part()` styles their pieces:
+
+| Control | Parts |
+| --- | --- |
+| `<input>` text types, `<textarea>` | `value`, `placeholder` |
+| `<select>` | `indicator`, `picker`, `option`, `optgroup` |
+| `<progress>`, `<meter>` | `track`, `groove`, `bar` |
+| `<details>` | `details-content` |
+
+A `<select>`'s highlighted option carries `data-highlighted`, a disabled
+one `data-disabled`, and a `<meter>`'s bar carries `data-level` of
+`optimum`, `suboptimum`, or `even-less-good`.
 
 ### `term.attach(transport?)`
 
