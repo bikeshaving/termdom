@@ -1033,6 +1033,31 @@ function *App(this: Context) {
     seat(next.row, next.col, next.depth);
   };
 
+  /** The card, or run, under the focus as something that could be held. */
+  const underFocus = (): Held => {
+    const cur = focused();
+    if (cur === null) {
+      return null;
+    }
+    if (cur.row === "top") {
+      if (cur.col === 1) {
+        return top(game.waste) ? {kind: "waste"} : null;
+      }
+      if (cur.col >= 3) {
+        const index = cur.col - 3;
+        return game.foundations[index].length > 0
+          ? {kind: "foundation", index}
+          : null;
+      }
+      return null;
+    }
+    const pile = pileAt(cur.col);
+    const card = pile[cur.depth];
+    return card?.up && isRun(pile, cur.depth)
+      ? {kind: "tableau", pile: cur.col, index: cur.depth}
+      : null;
+  };
+
   /** Enter, wherever the focus rests: pick up, drop, or draw. */
   const activate = (cur: Place): void => {
     if (cur.row === "top") {
@@ -1175,17 +1200,19 @@ function *App(this: Context) {
       return activate(cur);
     }
     if (key >= "1" && key <= "7") {
-      // A number drops what is held on that pile when it fits there.
-      // Otherwise it picks the pile's top card up, and the same number
+      // A number moves what is held, or what the focus is on, to that pile
+      // when it fits there. Otherwise it picks the pile's top card up, and the same number
       // again walks the pick up the face-up run, a card at a time, and
       // round to the top from its start. The focus goes with it.
       const pile = Number(key) - 1;
       const cards = pileAt(pile);
-      const grip = held;
+      // With nothing held, the focused card is the one that would move: the
+      // flip's top after a space, a home's top, or a run on the board.
+      const grip = held ?? underFocus();
       const fromElsewhere =
         grip !== null && !(grip.kind === "tableau" && grip.pile === pile);
       if (fromElsewhere && fitsTableau(heldCards(game, grip)[0], cards)) {
-        target({kind: "tableau", pile});
+        act((game) => play(game, grip, {kind: "tableau", pile}));
         return seat("board", pile, Math.max(0, getLast(pileAt(pile))));
       }
       if (cards.length === 0) {
