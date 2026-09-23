@@ -41,11 +41,16 @@ for (const name of [
   "requestAnimationFrame",
   "cancelAnimationFrame",
 ]) {
-  Object.defineProperty(globalThis, name, {
-    value: (window as unknown as Record<string, unknown>)[name],
-    configurable: true,
-    writable: true,
-  });
+  // Only where the runtime has none. Node, Bun and Deno have a navigator
+  // of their own, which serves; a browser has all of these, and its
+  // document and window cannot be replaced.
+  if (!(name in globalThis)) {
+    Object.defineProperty(globalThis, name, {
+      value: (window as unknown as Record<string, unknown>)[name],
+      configurable: true,
+      writable: true,
+    });
+  }
 }
 
 document.head.innerHTML = `

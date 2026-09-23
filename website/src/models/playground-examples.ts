@@ -19,8 +19,10 @@ export interface PlaygroundExample {
  * undefined in the runner), or an npm package the site does not bundle -- or
  * carries an `import` the runner cannot resolve, since a program is compiled
  * as a function body rather than a module. CodeMirror reads `document` and
- * `window` as globals, which the example redefines as the engine's; a
- * browser's are unforgeable, so that program is the terminal's alone.
+ * `window` as globals, which the example supplies where a runtime has
+ * none; in a browser they are the browser's own and cannot be replaced,
+ * so CodeMirror there would build its editor out of the page's DOM. It
+ * runs in the page only once programs run in a worker.
  */
 const RUNNABLE = [
 	"hello-world",
