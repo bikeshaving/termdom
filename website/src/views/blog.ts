@@ -8,6 +8,7 @@ import {Sidebar, Main} from "../components/sidebar.js";
 import {components} from "../components/marked-components.js";
 import {collectDocuments} from "../models/document.js";
 import type {DocInfo} from "../models/document.js";
+import {castGifs} from "../server.js";
 
 /**
  * Posts live in `content/blog/` as `YYYY-MM-DD-slug.md`. The date prefix
@@ -102,6 +103,7 @@ export async function BlogPostView({url}: {url: string}) {
 		body,
 		filename,
 	} = post;
+	const casts = castGifs;
 
 	return jsx`
 		<${Root} title="TermDOM | ${title}" url=${url} description=${description}>
@@ -109,7 +111,12 @@ export async function BlogPostView({url}: {url: string}) {
 			<${Main}>
 				<h1 class=${css`margin-bottom: 0;`}>${title}</h1>
 				<p><${PostDate} date=${date} /></p>
-				<${Marked} markdown=${body} components=${components} basePath="blog" />
+				<${Marked}
+					markdown=${body}
+					components=${components}
+					basePath="blog"
+					casts=${casts}
+				/>
 				<div class=${css`
 					margin-top: 1lh;
 					padding-top: 2lh;
