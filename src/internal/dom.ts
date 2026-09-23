@@ -27194,10 +27194,65 @@ class Selection implements globalThis.Selection {
 		this.setBaseAndExtent(to[0], to[1], to[0], to[1]);
 	}
 
+	// The rendered text, as the Selection API says, rather than the range's
+	// DOM text: nothing from a closed details, a select's options, a
+	// textarea's default value, or user-select: none content.
 	toString(): string {
 		const range = this[kRange];
-		return range === null ? "" : range.toString();
+		if (range === null) {
+			return "";
+		}
+		const document = this[kDocument];
+		const attached = getAttachedDocument(document);
+		// A document nothing renders has no rendered text.
+		if (attached === undefined) {
+			return range.toString();
+		}
+		attached[kLayout].performLayout();
+		const run = flattenSelectionText(getSelectionTextNodes(document, attached));
+		const start = getRenderedIndex(
+			run,
+			range.startContainer,
+			range.startOffset,
+			"start",
+		);
+		const end = getRenderedIndex(
+			run,
+			range.endContainer,
+			range.endOffset,
+			"end",
+		);
+		return end <= start ? "" : run.text.slice(start, end);
 	}
+}
+
+// A range boundary in unpainted content maps to the painted text that
+// follows it, or for an end, that precedes it.
+function getRenderedIndex(
+	run: SelectionText,
+	node: Node,
+	offset: number,
+	side: "start" | "end",
+): number {
+	const index = getSelectionIndex(run, node, offset);
+	if (index !== null) {
+		return index;
+	}
+	if (side === "start") {
+		for (const part of run.parts) {
+			if (comparePoints(node, offset, part.node, 0) <= 0) {
+				return part.start;
+			}
+		}
+		return run.text.length;
+	}
+	for (let i = run.parts.length - 1; i >= 0; i--) {
+		const part = run.parts[i];
+		if (comparePoints(part.node, part.length, node, offset) <= 0) {
+			return part.start + part.length;
+		}
+	}
+	return 0;
 }
 
 // Character and word motion are string operations, and a caret crosses
@@ -27239,7 +27294,8 @@ function isPaintedText(node: Text, layout: Layout | null): boolean {
 			return true;
 		}
 	}
-	return false;
+	// Math lays its text out as cells rather than line fragments.
+	return layout.getRects(node).length > 0;
 }
 
 function isLineBreakElement(node: Node): node is Element {
@@ -27247,7 +27303,8 @@ function isLineBreakElement(node: Node): node is Element {
 }
 
 // The nearest ancestor that is not laid out inline, which is the block
-// whose lines the node's text falls on.
+// whose lines the node's text falls on. An inline-block, an inline
+// flex or grid, or inline math sits on its parent's line.
 function getBlockOf(node: Node): Element | null {
 	for (
 		let ancestor = node.parentElement as Element | null;
@@ -27255,7 +27312,7 @@ function getBlockOf(node: Node): Element | null {
 		ancestor = ancestor.parentElement as Element | null
 	) {
 		const display = getComputedValue(ancestor, "display");
-		if (display !== "inline" && display !== "contents") {
+		if (!display.startsWith("inline") && display !== "contents") {
 			return ancestor;
 		}
 	}

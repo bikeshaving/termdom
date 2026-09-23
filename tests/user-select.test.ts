@@ -107,3 +107,54 @@ test("the painter lays no highlight over user-select: none", async () => {
 
 	dom.dispose();
 });
+
+test("toString is the rendered text, not the range's DOM text", async () => {
+	const {terminal, dom} = mouseDOM();
+	dom.document.body.innerHTML =
+		"<div>a <details><summary>sum</summary>hidden</details>" +
+		"<select><option>one</option></select>" +
+		"<textarea>draft</textarea>" +
+		"<span style=\"display: none\">gone</span> b</div>";
+	await nextFrame(dom);
+
+	await type(terminal, press(1, 1));
+	await type(terminal, drag(39, 5));
+	await type(terminal, release(39, 5));
+	await nextFrame(dom);
+	const text = dom.window.getSelection()!.toString();
+	expect(text).toContain("sum");
+	expect(text).toContain("b");
+	expect(text).not.toContain("hidden");
+	expect(text).not.toContain("one");
+	expect(text).not.toContain("draft");
+	expect(text).not.toContain("gone");
+
+	dom.dispose();
+});
+
+test("toString of a range set around unrendered content", async () => {
+	const {dom} = mouseDOM();
+	dom.document.body.innerHTML =
+		"<div id=\"a\">first</div><div style=\"display: none\">gone</div><div id=\"b\">second</div>";
+	await nextFrame(dom);
+	const selection = dom.window.getSelection()!;
+	selection.setBaseAndExtent(dom.document.body, 0, dom.document.body, 3);
+	expect(selection.toString()).toBe("first\nsecond");
+
+	dom.dispose();
+});
+
+test("toString keeps an inline-block's text on its line", async () => {
+	const {terminal, dom} = mouseDOM();
+	dom.document.body.innerHTML =
+		"<div>a <button>ok</button> <math><mi>x</mi><mo>=</mo><mn>1</mn></math> b</div>";
+	await nextFrame(dom);
+
+	await type(terminal, press(1, 1));
+	await type(terminal, drag(39, 1));
+	await type(terminal, release(39, 1));
+	await nextFrame(dom);
+	expect(dom.window.getSelection()!.toString()).toBe("a ok x=1 b");
+
+	dom.dispose();
+});

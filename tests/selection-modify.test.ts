@@ -211,10 +211,10 @@ test("a line move crosses from one block into the next, and extends", async () =
 	selection.modify("extend", "forward", "line");
 	expect(selection.focusNode).toBe(second);
 	expect(selection.focusOffset).toBe(2);
-	expect(selection.toString()).toBe("cdwx");
+	expect(selection.toString()).toBe("cd\nwx");
 	// Down again is past the last line, so it spends itself on that line's end.
 	selection.modify("extend", "forward", "line");
-	expect(selection.toString()).toBe("cdwxyz");
+	expect(selection.toString()).toBe("cd\nwxyz");
 	dom.dispose();
 });
 
