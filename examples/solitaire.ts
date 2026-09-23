@@ -598,7 +598,7 @@ interface CardProps {
   /** The id the focus moves to it by. A card with one can take the focus. */
   id?: string;
   onmousedown?: (event: MouseEvent) => unknown;
-  ondblclick?: (event: MouseEvent) => unknown;
+  onclick?: (event: MouseEvent) => unknown;
 }
 
 function CardFace({
@@ -608,7 +608,7 @@ function CardFace({
   drop,
   id,
   onmousedown,
-  ondblclick,
+  onclick,
 }: CardProps) {
   const classes = ["card"];
   if (!card.up) {
@@ -628,19 +628,20 @@ function CardFace({
       id=${id}
       tabindex=${id !== undefined ? "0" : undefined}
       onmousedown=${onmousedown}
-      ondblclick=${ondblclick}
+      onclick=${onclick}
     >${rows.map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
   `;
 }
 
 /** An empty place on the board: the stock's turnover arrow, or a suit's home. */
 function Slot(
-  {tier, mark, drop, id, onmousedown}: {
+  {tier, mark, drop, id, onmousedown, onclick}: {
     tier: Tier;
     mark?: string;
     drop?: boolean;
     id?: string;
     onmousedown?: (event: MouseEvent) => unknown;
+    onclick?: (event: MouseEvent) => unknown;
   },
 ) {
   const rows = Array.from(
@@ -660,6 +661,7 @@ function Slot(
       id=${id}
       tabindex=${id !== undefined ? "0" : undefined}
       onmousedown=${onmousedown}
+      onclick=${onclick}
     >${rows.map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
   `;
 }
@@ -988,29 +990,6 @@ function *App(this: Context) {
     grab(source);
   };
 
-  /**
-   * The mouse plays by press and release. A press does what a click did:
-   * pick up, drop, or draw. A release somewhere other than where the
-   * press landed drops there, so a card can be dragged as well as
-   * clicked twice.
-   */
-  let pressedOn: string | null = null;
-  const press = (name: string, action: () => void) => (event: Event): void => {
-    // The engine would focus the pressed card after this handler ran,
-    // over the place the action chose (a press on the deck focuses the
-    // turned card, not the deck).
-    event.preventDefault();
-    pressedOn = name;
-    action();
-  };
-  const release = (name: string, drop: Target) => (): void => {
-    const from = pressedOn;
-    pressedOn = null;
-    if (held && from !== name) {
-      target(drop);
-    }
-  };
-
   /** Draw, and follow the turned card to the flip. */
   const drawTo = (): void => {
     const before = game.moves;
@@ -1033,6 +1012,38 @@ function *App(this: Context) {
     col,
     depth: Math.max(0, getLast(pileAt(col))),
   });
+
+  /**
+   * The mouse. A press remembers the card under it and keeps the engine
+   * from focusing it, and nothing moves until the button comes up, so what
+   * is under the pointer at the release is what was there at the press. A
+   * release on another pile drops the pressed card, or the held one,
+   * there: a drag. A click, a press and release in place, picks a card up,
+   * puts the held one down, or puts the picked one back. A double click
+   * on a pile sends its top card home.
+   */
+  let pressed: {name: string; source: Held} | null = null;
+  const press = (name: string, source: Held = null) => (event: Event): void => {
+    event.preventDefault();
+    pressed = {name, source};
+  };
+  const release = (name: string, drop: Target) => (): void => {
+    const from = pressed;
+    pressed = null;
+    if (from === null || from.name === name) {
+      return;
+    }
+    const source = from.source ?? held;
+    if (source === null) {
+      return;
+    }
+    act((game) => play(game, source, drop));
+    if (drop.kind === "tableau") {
+      seat("board", drop.pile, Math.max(0, getLast(pileAt(drop.pile))));
+    } else {
+      seat("top", 3 + drop.index);
+    }
+  };
 
   const moveFocus = (dx: number, dy: number): void => {
     const cur = focused() ?? topOf(0);
@@ -1373,13 +1384,17 @@ function *App(this: Context) {
                     card=${{rank: 1, suit: 0, up: false}}
                     tier=${t}
                     id="deck"
-                    onmousedown=${press("deck", drawTo)}
+                    onmousedown=${press("deck")}
+                    onclick=${drawTo}
                   />`
                 : jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
-                    id="deck" onmousedown=${press("deck", drawTo)} />`
+                    id="deck" onmousedown=${press("deck")} onclick=${drawTo} />`
             }
           </div>
-          <div class="pile">
+          <div
+            class="pile"
+            ondblclick=${() => wasteTop && sendHome({kind: "waste"})}
+          >
             <div class="place"></div>
             ${
               wasteTop
@@ -1390,14 +1405,8 @@ function *App(this: Context) {
                         tier=${t}
                         held=${at === fan.length - 1 && grip?.kind === "waste"}
                         id=${at === fan.length - 1 ? "flip" : undefined}
-                        onmousedown=${at === fan.length - 1
-                          ? press("waste", () => pick(
-                            {kind: "waste"},
-                            "top",
-                            1,
-                          ))
-                          : undefined}
-                        ondblclick=${at === fan.length - 1 ? () => sendHome({kind: "waste"}) : undefined}
+                        onmousedown=${at === fan.length - 1 ? press("waste", {kind: "waste"}) : undefined}
+                        onclick=${at === fan.length - 1 ? () => pick({kind: "waste"}, "top", 1) : undefined}
                       />`,
                 )}</div>`
                 : jsx`<${Slot} tier=${t} />`
@@ -1419,7 +1428,8 @@ function *App(this: Context) {
                         held=${grip?.kind === "foundation" && grip.index === index}
                         drop=${home === index}
                         id=${`home-${index}`}
-                        onmousedown=${press(`foundation-${index}`, () => {
+                        onmousedown=${press(`foundation-${index}`, {kind: "foundation", index})}
+                        onclick=${() => {
                           const source: Held = {kind: "foundation", index};
                           if (held && !isSame(held, source)) {
                             seat("top", 3 + index);
@@ -1427,17 +1437,18 @@ function *App(this: Context) {
                           } else {
                             pick(source, "top", 3 + index);
                           }
-                        })}
+                        }}
                       />`
                     : jsx`<${Slot}
                         tier=${t}
                         mark=${SUITS[index]}
                         id=${card ? `home-${index}` : undefined}
                         drop=${home === index}
-                        onmousedown=${press(`foundation-${index}`, () => {
+                        onmousedown=${press(`foundation-${index}`)}
+                        onclick=${() => {
                           seat("top", 3 + index);
                           target({kind: "foundation", index});
-                        })}
+                        }}
                       />`
                 }
               </div>
@@ -1458,6 +1469,12 @@ function *App(this: Context) {
                 class="pile"
                 key=${`pile-${index}`}
                 onmouseup=${release(`pile-${index}`, {kind: "tableau", pile: index})}
+                ondblclick=${() => {
+                  const last = getLast(pile);
+                  if (last >= 0 && pile[last].up) {
+                    sendHome({kind: "tableau", pile: index, index: last});
+                  }
+                }}
               >
                 <div class="place"></div>
                 ${
@@ -1466,10 +1483,11 @@ function *App(this: Context) {
                         tier=${t}
                         drop=${Boolean(card) && fitsTableau(card, pile)}
                         id=${card ? `pile-${index}-0` : undefined}
-                        onmousedown=${press(`pile-${index}`, () => {
+                        onmousedown=${press(`pile-${index}`)}
+                        onclick=${() => {
                           seat("board", index);
                           target({kind: "tableau", pile: index});
-                        })}
+                        }}
                       />`
                     : pile.map((each, depth) => jsx`
                           <${CardFace}
@@ -1479,21 +1497,20 @@ function *App(this: Context) {
                             id=${each.up ? `pile-${index}-${depth}` : undefined}
                             held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
                             drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
-                            onmousedown=${press(`pile-${index}`, () => {
+                            onmousedown=${press(`pile-${index}`, each.up && isRun(pile, depth) ? {kind: "tableau", pile: index, index: depth} : null)}
+                            onclick=${() => {
                               const source: Held = {kind: "tableau", pile: index, index: depth};
-                              if (isSame(held, source)) {
-                                return pick(source, "board", index, depth);
+                              // A click anywhere on the pile a run was picked up from
+                              // puts the run back; the pick has moved the cards under
+                              // the pointer.
+                              if (held?.kind === "tableau" && held.pile === index) {
+                                return pick(held, "board", index, held.index);
                               }
                               seat("board", index, depth);
                               if (held || !each.up) {
                                 target({kind: "tableau", pile: index});
                               } else if (isRun(pile, depth)) {
                                 grab(source);
-                              }
-                            })}
-                            ondblclick=${() => {
-                              if (depth === pile.length - 1 && each.up) {
-                                sendHome({kind: "tableau", pile: index, index: depth});
                               }
                             }}
                           />
