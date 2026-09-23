@@ -143,6 +143,10 @@ interface TerminalTransport {
 	readonly rows: number;
 	readonly colorDepth: "ansi" | "256" | "rgb";
 	readonly interactive: boolean; // false: plain line output (a pipe)
+	// Optional. Takes an error's text somewhere the frame does not share;
+	// true when it did. The engine keeps what it cannot place and prints
+	// it below the document at the end.
+	logError?(text: string): boolean;
 	readonly sharesScreen: boolean; // true: anchor below existing content
 	readonly readable: ReadableStream<string>; // user input
 	readonly writable: WritableStream<string>; // frames out
@@ -184,5 +188,6 @@ const term = new TermDOM({transport: transportFromProcess(process)});
 
 The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
 `resizes`, signals → `closed`, `TERM`/`COLORTERM` → `colorDepth`,
-`stdout.isTTY` → `interactive`, and an exit hook that restores the cursor
-if the app exits without disposing.
+`stdout.isTTY` → `interactive`, `stderr` when it is not a terminal →
+`logError`, and an exit hook that restores the cursor if the app exits
+without disposing.

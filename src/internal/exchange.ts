@@ -54,6 +54,14 @@ export interface TerminalTransport {
 	readonly interactive: boolean;
 
 	/**
+	 * Writes an error's text somewhere the frame does not share, such as a
+	 * stderr that is not the terminal. True when it did. The engine holds
+	 * what the transport cannot place until the session ends, and prints
+	 * it below the document then.
+	 */
+	logError?(text: string): boolean;
+
+	/**
 	 * A pty is established at construction. An SSH channel resolves when it
 	 * opens.
 	 */
@@ -1805,6 +1813,7 @@ type ProcessSignal = "SIGWINCH" | "SIGINT" | "SIGTERM" | "SIGHUP" | "exit";
 export interface ProcessLike {
 	stdin?: TTYReadStream;
 	stdout: TTYWriteStream;
+	stderr?: {isTTY?: boolean; write(chunk: string): unknown};
 	on(event: ProcessSignal, listener: () => void): unknown;
 	removeListener?(event: ProcessSignal, listener: () => void): unknown;
 	exit(code?: number): never;
@@ -1992,6 +2001,15 @@ export function transportFromProcess(
 		},
 		sharesScreen,
 		interactive: proc.stdout.isTTY !== false,
+		// A stderr that is a terminal is the one the frame is on.
+		logError(text: string): boolean {
+			const stderr = proc.stderr;
+			if (stderr === undefined || stderr.isTTY) {
+				return false;
+			}
+			stderr.write(text + "\n");
+			return true;
+		},
 		colorDepth: detectColorDepth(proc),
 		ready: Promise.resolve(),
 		readable,

@@ -4,6 +4,12 @@
  * moves. showModal() takes over: top layer, viewport-centered, backdrop
  * clearing the screen, the rest of the page inert until it closes.
  * Tab moves, Enter activates, q quits.
+ *
+ * showModal() on a dialog that is already open throws, as it does in a
+ * browser. The window's error event hears it, and this page shows it in
+ * its status line. Without the listener the error is kept and printed
+ * below the page when the program ends, or written to stderr at once
+ * when stderr is a file: `node examples/dialog.ts 2> errors.log`.
  */
 
 import {TermDOM} from "@b9g/termdom";
@@ -54,6 +60,11 @@ document.addEventListener("keydown", (event) => {
   if ((event as KeyboardEvent).key === "q" && !dialog.open) {
     term.window.close();
   }
+});
+
+term.window.addEventListener("error", (event) => {
+  how.textContent = `error: ${(event as ErrorEvent).message}`;
+  event.preventDefault();
 });
 
 term.attach();

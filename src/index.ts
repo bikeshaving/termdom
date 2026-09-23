@@ -66,6 +66,10 @@ const kLifecycle = Symbol("lifecycle");
 // flow content that is the content's last row, and the shell's next line
 // would land on it.
 const kFlowPainted = Symbol("flowPainted");
+// Errors the page let escape that no log could take live. Printed below
+// the document when the session ends.
+const kHeldErrors = Symbol("heldErrors");
+const HELD_ERROR_LIMIT = 50;
 
 export interface TermDOM {
 	[kScreen]: Screen;
@@ -83,6 +87,7 @@ export interface TermDOM {
 	// frame rather than starting another.
 	[kRenderInFlight]: Promise<void> | null;
 	[kFlowPainted]: boolean;
+	[kHeldErrors]: string[];
 	// Timestamps observer entries.
 	[kRenderCount]: number;
 	[kInput]: Input;
@@ -114,6 +119,7 @@ export class TermDOM {
 		this[kOnAlternateScreen] = false;
 		this[kRenderInFlight] = null;
 		this[kFlowPainted] = false;
+		this[kHeldErrors] = [];
 		this[kRenderCount] = 0;
 		this[kLifecycle] = "detached";
 
@@ -164,6 +170,7 @@ export class TermDOM {
 			this[kExchange],
 			this[kScreen],
 			() => render(this),
+			(error) => reportUncaught(this, error),
 		);
 
 		this[kInput] = new Input(
@@ -346,7 +353,13 @@ export class TermDOM {
 		// entry, and that is the record.
 		const closingFullscreen = isFullscreen(this);
 		if (wasAttached && this[kRenderCount] > 0 && !closingFullscreen) {
-			flushDocument(this);
+			// A paint that fails on the way out must not keep the terminal's
+			// modes from being restored.
+			try {
+				flushDocument(this);
+			} catch (error) {
+				holdError(this, error);
+			}
 		}
 
 		// Leaving the alternate screen puts the cursor where the switch saved
@@ -363,6 +376,10 @@ export class TermDOM {
 		) {
 			void this[kExchange].write("\r\n");
 		}
+		if (this[kHeldErrors].length > 0 && this[kTransport].interactive) {
+			void this[kExchange].writeLines(this[kHeldErrors].join("\r\n") + "\r\n");
+			this[kHeldErrors] = [];
+		}
 
 		this[kExchange].dispose();
 
@@ -378,6 +395,40 @@ export class TermDOM {
 		disconnectObservers(this.document);
 		return this[kExchange].flush();
 	}
+}
+
+/**
+ * An exception the page let escape, once the window's error event has
+ * not handled it. A browser would log it to the console and go on. The
+ * console here is the transport's log when it has one apart from the
+ * screen, and the scrollback below the document at the end otherwise;
+ * the app runs on either way.
+ */
+function reportUncaught(termDOM: TermDOM, error: unknown): void {
+	const text = formatError(error);
+	if (termDOM[kTransport].logError?.(text)) {
+		return;
+	}
+	if (!isAttached(termDOM) || !termDOM[kTransport].interactive) {
+		console.error(text);
+		return;
+	}
+	holdError(termDOM, error);
+}
+
+function holdError(termDOM: TermDOM, error: unknown): void {
+	const held = termDOM[kHeldErrors];
+	held.push(formatError(error));
+	if (held.length > HELD_ERROR_LIMIT) {
+		held.shift();
+	}
+}
+
+function formatError(error: unknown): string {
+	const text = error instanceof Error
+		? error.stack || `${error.name}: ${error.message}`
+		: String(error);
+	return text.replace(/\r?\n/g, "\r\n");
 }
 
 function isFullscreen(termDOM: TermDOM): boolean {
@@ -501,6 +552,17 @@ async function render(termDOM: TermDOM): Promise<void> {
 				// for it. A listener's mutations queue the next frame.
 				DOM.runScrollSteps(termDOM.document);
 			} while (termDOM[kRenderQueued] || framesAwaiting);
+		} catch (error) {
+			// The page's own exceptions were reported where they happened,
+			// so this is the engine failing. Hand the terminal back first, so
+			// the crash reads as one: the last frame in the scrollback, the
+			// shell restored, the stack below.
+			try {
+				await termDOM.dispose();
+			} catch (_err) {
+				// The failure that got us here.
+			}
+			throw error;
 		} finally {
 			termDOM[kRenderInFlight] = null;
 		}
