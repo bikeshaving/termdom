@@ -26,6 +26,7 @@ import examplesScript from "./clients/examples.ts" with {assetBase: "/static/"};
 // "@b9g/termdom" is the engine, "node:fs" and "node:path" are the in-memory
 // filesystem. Programs on the examples page import them as written.
 import sandboxTermdomScript from "./clients/sandbox-termdom.ts" with {assetBase: "/static/"};
+import sandboxWorkerScript from "./clients/sandbox-worker.ts" with {assetBase: "/static/"};
 import virtualFSScript from "./models/virtual-fs.ts" with {assetBase: "/static/"};
 // The terminal emulator's own stylesheet, linked from the examples page alone.
 import xtermCSS from "@xterm/xterm/css/xterm.css" with {assetBase: "/static/"};
@@ -43,6 +44,7 @@ export const assets = {
 	searchScript,
 	examplesScript,
 	sandboxTermdomScript,
+	sandboxWorkerScript,
 	virtualFSScript,
 	xtermCSS,
 	favicon,

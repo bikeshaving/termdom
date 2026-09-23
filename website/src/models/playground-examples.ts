@@ -18,11 +18,10 @@ export interface PlaygroundExample {
  * have -- `node:fs`, `node:child_process`, `process.argv`, `fetch` (bound to
  * undefined in the runner), or an npm package the site does not bundle -- or
  * carries an `import` the runner cannot resolve, since a program is compiled
- * as a function body rather than a module. CodeMirror reads `document` and
- * `window` as globals, which the example supplies where a runtime has
- * none; in a browser they are the browser's own and cannot be replaced,
- * so CodeMirror there would build its editor out of the page's DOM. It
- * runs in the page only once programs run in a worker.
+ * as a function body rather than a module. Programs run in a worker,
+ * which has no document or window, so one that supplies them as globals
+ * for a library that reads them, as the CodeMirror example does, finds
+ * the same absence it finds under Node.
  */
 const RUNNABLE = [
 	"hello-world",
@@ -30,6 +29,7 @@ const RUNNABLE = [
 	"bar-chart",
 	"borders",
 	"chat",
+	"codemirror",
 	"commit-editor",
 	"flexbox",
 	"focus",
@@ -108,6 +108,8 @@ export function serializeFiles(files: Record<string, string>): string {
 export interface SandboxConfig {
 	termdom: string;
 	nodefs: string;
+	/** The module the worker a program runs in starts from. */
+	worker: string;
 }
 
 /** The element a page's programs travel in, read by the client bundle. */

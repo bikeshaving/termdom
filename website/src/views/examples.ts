@@ -47,7 +47,7 @@ export default async function Examples({url}: {url: string}) {
 				<${Raw} value=${serializeFiles(files)} />
 			</script>
 			<script type="application/json" id=${SANDBOX_CONFIG_ID}>
-				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript})} />
+				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript, worker: assets.sandboxWorkerScript})} />
 			</script>
 			<div id="playground">
 				<noscript class=${css`

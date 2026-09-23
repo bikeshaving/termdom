@@ -155,7 +155,7 @@ export default async function Home({url}: {url: string}) {
 				<${Raw} value=${serializeFiles(files)} />
 			</script>
 			<script type="application/json" id=${SANDBOX_CONFIG_ID}>
-				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript})} />
+				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript, worker: assets.sandboxWorkerScript})} />
 			</script>
 			<script type="module">
 				<${Raw} value=${examplesLoader(assets.examplesScript)} />
