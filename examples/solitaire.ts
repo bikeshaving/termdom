@@ -420,11 +420,10 @@ function sheet(): string {
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
   /* The focused card is the one highlight on the board, and it is the
      document's focus: tab, the arrows, the numbers and a click all move
-     the same thing. The pale blue leaves a red suit red. A click focuses
-     without the highlight, as a click does in a browser. */
+     the same thing. The pale blue leaves a red suit red. */
   .card, .slot { outline: none; }
-  .card:focus-visible { background-color: #b4d4f0; font-weight: bold; }
-  .slot:focus-visible { background-color: #b4d4f0; color: #2f5a80; }
+  .card:focus { background-color: #b4d4f0; font-weight: bold; }
+  .slot:focus { background-color: #b4d4f0; color: #2f5a80; }
 
   /* The confirm covers the screen and centers its dialog; the board stays
      visible around the box, the way a modal reads. */
@@ -951,8 +950,7 @@ function *App(this: Context) {
    * Every input is a focus move too: whatever a letter, a number or a
    * click acts on, the focus lands there, so tab and the arrows continue
    * from the last action. The board is rendered first, so the element is
-   * there to take it. Whether the highlight shows is the engine's
-   * :focus-visible: a key shows it, a click does not.
+   * there to take it.
    */
   const seat = (row: "top" | "board", col: number, depth = 0): void => {
     this.refresh();
