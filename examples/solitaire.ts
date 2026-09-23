@@ -450,9 +450,10 @@ function sheet(): string {
 
   /* The confirm covers the screen and centers its dialog; the board stays
      visible around the box, the way a modal reads. */
-  /* Behind the menu the game fades: every colour on the felt drops toward
-     it, so the board reads as where you were rather than what you are
-     doing. */
+  /* Behind the menu a game in progress fades: every colour on the felt
+     drops toward it, so the board reads as where you were rather than what
+     you are doing. Before any game, the menu has the felt to itself. */
+  .fresh .play, .fresh .hint { display: none; }
   .behind .card { background-color: #7a8a7e; color: #46524a; }
   .behind .card.red { color: #7a4a4a; }
   .behind .card.down { background-color: #24476a; color: #3a5f86; }
@@ -1355,7 +1356,7 @@ function *App(this: Context) {
     const home = card ? foundationFor(game, card) : null;
 
     yield jsx`
-      <div class=${inMenu() ? "table behind" : "table"}>
+      <div class=${inMenu() ? (startedAt === null ? "table fresh" : "table behind") : "table"}>
         <div class="play">
         <div class="bar">
           <span class="title">Solitaire</span>
