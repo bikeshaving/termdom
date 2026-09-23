@@ -378,6 +378,7 @@ function sheet(): string {
   .card, .slot { width: ${tier.width}ch; }
   .number, .top .gap { width: ${tier.width}ch; }
   .pile { width: ${tier.width}ch; }
+  .place { width: ${tier.width}ch; height: ${tier.height}px; }
   .top, .numbers, .board, .captions { gap: ${tier.gap}ch; }
   .play { width: ${7 * tier.width + 6 * tier.gap}ch; }
 `;
@@ -404,7 +405,11 @@ function sheet(): string {
   .number { color: #4d8f66; }
   .number.drop { color: #ffd75f; font-weight: bold; }
   .board { display: flex; flex-direction: row; }
-  .pile { display: flex; flex-direction: column; }
+  .pile { display: flex; flex-direction: column; position: relative; z-index: 0; }
+  /* Every place a stack lives has the same dark ground under its cards, so
+     a card that steps down shows the place behind it. The pile is its own
+     stacking context, so the place sits under the cards and over the felt. */
+  .place { position: absolute; top: 0; left: 0; z-index: -1; background-color: #05381a; }
 
   /* A card's rows are drawn, not written: the blank rows are spaces, and
      collapsing them would shorten the card. A covered card shows only the
@@ -418,12 +423,11 @@ function sheet(): string {
   .card.drop { background-color: #a9d7b7; }
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
-  /* The focused card is the one highlight on the board, and it is the
-     document's focus: tab, the arrows, the numbers and a click all move
-     the same thing. The pale blue leaves a red suit red. */
+  /* The focused card steps down a row, the way a hand lifts a card off
+     its pile, and it is the document's focus: tab, the arrows, the numbers
+     and a click all move the same thing. Its colours stay its own. */
   .card, .slot { outline: none; }
-  .card:focus { background-color: #b4d4f0; font-weight: bold; }
-  .slot:focus { background-color: #b4d4f0; color: #2f5a80; }
+  .card:focus, .slot:focus { margin-top: 1px; }
 
   /* The confirm covers the screen and centers its dialog; the board stays
      visible around the box, the way a modal reads. */
@@ -1296,10 +1300,11 @@ function *App(this: Context) {
     // left after the rows above and below.
     // The top row holds the flip's fan, two covered cards over a third in
     // three-card draw, whether or not the fan is showing.
-    const topRows = t.height + (game.draw === 3 ? 2 : 0);
+    // One row more than the cards, for the focused one to step down into.
+    const topRows = t.height + 1 + (game.draw === 3 ? 2 : 0);
     const boardRows = Math.max(
       t.height,
-      Math.min(18 + t.height, term.window.innerHeight - (8 + topRows)),
+      Math.min(19 + t.height, term.window.innerHeight - (8 + topRows)),
     );
     const grip = holding();
     const ask = asking();
@@ -1336,6 +1341,7 @@ function *App(this: Context) {
         </div>
         <div class="top" style=${`min-height: ${topRows}px`}>
           <div class="pile">
+            <div class="place"></div>
             ${
               game.stock.length > 0
                 ? jsx`<${CardFace}
@@ -1349,6 +1355,7 @@ function *App(this: Context) {
             }
           </div>
           <div class="pile">
+            <div class="place"></div>
             ${
               wasteTop
                 ? game.waste.slice(-(game.draw === 3 ? 3 : 1)).map(
@@ -1381,6 +1388,7 @@ function *App(this: Context) {
                 key=${`foundation-${index}`}
                 onmouseup=${release(`foundation-${index}`, {kind: "foundation", index})}
               >
+                <div class="place"></div>
                 ${
                   top(foundation)
                     ? jsx`<${CardFace}
@@ -1424,6 +1432,7 @@ function *App(this: Context) {
                 key=${`pile-${index}`}
                 onmouseup=${release(`pile-${index}`, {kind: "tableau", pile: index})}
               >
+                <div class="place"></div>
                 ${
                   pile.length === 0
                     ? jsx`<${Slot}
