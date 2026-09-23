@@ -39,7 +39,6 @@ import {TermDOM} from "@b9g/termdom";
 // ---- the deck ----------------------------------------------------------------
 
 const SUITS = ["♠", "♥", "♦", "♣"];
-const SUIT_NAMES = ["spade", "heart", "diamond", "club"];
 const RANKS = [
   "A",
   "2",
@@ -735,14 +734,10 @@ function *App(this: Context) {
   };
 
   /** Run a move, keeping the board undoable and the hold consistent. */
-  const act = (change: (game: Game) => boolean, note = ""): void => {
+  const act = (change: (game: Game) => boolean): void => {
     const before = clone(game);
+    // An illegal move is not a mistake worth a history entry.
     if (!change(game)) {
-      // An illegal move is not a mistake worth a history entry, but the
-      // player deserves to know the card did not go.
-      this.refresh(() => {
-        message = note || "That card does not go there.";
-      });
       return;
     }
     this.refresh(() => {
@@ -835,9 +830,6 @@ function *App(this: Context) {
       act((game) => play(game, source, {kind: "foundation", index}));
       return;
     }
-    this.refresh(() => {
-      message = "Nothing is ready to go home.";
-    });
   };
 
   /**
@@ -875,16 +867,12 @@ function *App(this: Context) {
         }
       }
     }
-    this.refresh(() => {
-      message = `No ${SUIT_NAMES[suit]} is ready to go home.`;
-    });
   };
 
   const undo = (): void => {
     this.refresh(() => {
       const before = history.pop();
       if (!before) {
-        message = "Nothing to undo.";
         return;
       }
       game = before;
@@ -983,7 +971,7 @@ function *App(this: Context) {
   /** Draw, and follow the turned card to the flip. */
   const drawTo = (move: typeof seat): void => {
     const before = game.moves;
-    act(draw, "The deck and the flip are both empty.");
+    act(draw);
     move("top", game.moves > before && top(game.waste) ? 1 : 0);
   };
 
@@ -1038,13 +1026,10 @@ function *App(this: Context) {
   const activate = (): void => {
     if (cur.row === "top") {
       if (cur.col === 0) {
-        return act(draw, "The deck and the flip are both empty.");
+        return act(draw);
       }
       if (cur.col === 1) {
         if (held) {
-          this.refresh(() => {
-            message = "The discard takes nothing back.";
-          });
           return;
         }
         if (top(game.waste)) {
@@ -1063,9 +1048,6 @@ function *App(this: Context) {
     }
     const card = pile[cur.depth];
     if (!card?.up || !isRun(pile, cur.depth)) {
-      this.refresh(() => {
-        message = "That card is not free to take.";
-      });
       return;
     }
     grab({kind: "tableau", pile: cur.col, index: cur.depth});
@@ -1153,7 +1135,7 @@ function *App(this: Context) {
       return sendSuit(suit);
     }
     if (key === "a") {
-      act((game) => autoplay(game) > 0, "Nothing is ready for a foundation.");
+      act((game) => autoplay(game) > 0);
       return;
     }
     if (key === "Tab") {
@@ -1199,7 +1181,7 @@ function *App(this: Context) {
       // cursor up, Enter takes and places at it.
       if (!cursorShown) {
         seat("top", 0);
-        return act(draw, "The deck and the flip are both empty.");
+        return act(draw);
       }
       return activate();
     }
