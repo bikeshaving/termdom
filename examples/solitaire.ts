@@ -414,8 +414,10 @@ function sheet(): string {
   .card.red { color: #c02020; }
   .card.down { background-color: #1d4f8f; color: #4f82c8; }
   /* A held card keeps its suit's colour -- losing it is disorienting when the
-     colour is what the next move is chosen by -- and changes its FIELD. */
-  .card.held { font-weight: lighter; }
+     colour is what the next move is chosen by -- and changes its field to
+     the same pale blue the focus uses: what is held and where the keyboard
+     is are one idea, and the focused card is the bold one. */
+  .card.held { background-color: #b4d4f0; }
   .card.drop { background-color: #a9d7b7; }
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
