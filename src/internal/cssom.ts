@@ -5220,6 +5220,13 @@ export class Cascade {
 	// the move, so a :focus rule would never apply or stop applying.
 	handleFocusChange(...elements: Array<Element | null>): void {
 		for (const element of elements) {
+			// What a :focus rule sets on the element, a colour, its children
+			// inherit, so its subtree goes stale with it.
+			if (element !== null) {
+				for (const descendant of element.querySelectorAll("*")) {
+					invalidateElementCaches(this, descendant);
+				}
+			}
 			// The whole flat-tree chain can observe focus (:focus-within,
 			// :host(:focus)), so every element on it goes stale together.
 			for (

@@ -50,3 +50,25 @@ test(":has(:focus) follows the focus into and out of a subtree", async () => {
 	expect(dom.window.getComputedStyle(box).color).not.toBe("rgb(0, 0, 255)");
 	await dom.dispose();
 });
+
+test("a :focus colour reaches the focused element's children", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 20});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<style>#a { color: rgb(0, 255, 0) } #a:focus { color: rgb(255, 0, 0) }</style>" +
+		"<div id=\"a\" tabindex=\"-1\"><div id=\"c\">child</div></div><div id=\"b\" tabindex=\"-1\">b</div>";
+	await nextFrame(dom);
+	const child = document.getElementById("c")!;
+	const cell = () =>
+		(terminal as any).terminal.buffer.active.getLine(0).getCell(0).getFgColor();
+	document.getElementById("a")!.focus();
+	await nextFrame(dom);
+	expect(dom.window.getComputedStyle(child).color).toBe("rgb(255, 0, 0)");
+	expect(cell()).toBe(0xff0000);
+	document.getElementById("b")!.focus();
+	await nextFrame(dom);
+	expect(dom.window.getComputedStyle(child).color).toBe("rgb(0, 255, 0)");
+	expect(cell()).toBe(0x00ff00);
+	await dom.dispose();
+});
