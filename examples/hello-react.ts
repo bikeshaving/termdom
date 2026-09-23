@@ -17,9 +17,18 @@ const term = new TermDOM();
 term.attach();
 const {document} = term;
 // react-dom reads `window.event` to pick an update priority, and
-// `document.documentMode` and `"TextEvent" in window` to detect input features.
-globalThis.document = document as never;
-globalThis.window = term.window as never;
+// `document.documentMode` and `"TextEvent" in window` to detect input
+// features. Supplied only where the runtime has none.
+const globals = {document, window: term.window};
+for (const [name, value] of Object.entries(globals)) {
+  if (!(name in globalThis)) {
+    Object.defineProperty(globalThis, name, {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  }
+}
 
 const style = document.createElement("style");
 style.textContent = `

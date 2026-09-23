@@ -84,16 +84,26 @@ document.addEventListener("keydown", (ev) => {
 ## Frameworks
 
 A framework renders into `term.document` the same way it renders into a
-browser document. Most frameworks read a few DOM globals; assign the
-ones yours needs before rendering.
+browser document. Most frameworks read a few DOM globals. Supply the
+ones yours needs before rendering, and only where the runtime has none:
+a browser has its own `document` and `window` and will not give them
+up, and a program that defines a global that exists already fails there.
 
 React:
 
 ```ts
 import {createRoot} from "react-dom/client";
 
-globalThis.document = term.document;
-globalThis.window = term.window;
+const globals = {document: term.document, window: term.window};
+for (const [name, value] of Object.entries(globals)) {
+	if (!(name in globalThis)) {
+		Object.defineProperty(globalThis, name, {
+			value,
+			configurable: true,
+			writable: true,
+		});
+	}
+}
 createRoot(term.document.body).render(<App />);
 ```
 
@@ -101,10 +111,21 @@ Vue reads `document` when its module loads, so assign the globals before
 a dynamic import:
 
 ```ts
-globalThis.document = term.document;
-globalThis.window = term.window;
-globalThis.Element = term.window.Element;
-globalThis.SVGElement = term.window.SVGElement;
+const globals = {
+	document: term.document,
+	window: term.window,
+	Element: term.window.Element,
+	SVGElement: term.window.SVGElement,
+};
+for (const [name, value] of Object.entries(globals)) {
+	if (!(name in globalThis)) {
+		Object.defineProperty(globalThis, name, {
+			value,
+			configurable: true,
+			writable: true,
+		});
+	}
+}
 
 const {createApp} = await import("vue");
 createApp(App).mount(term.document.body);
@@ -122,12 +143,23 @@ node --conditions=browser app.js
 import {mount} from "svelte";
 import App from "./App.js"; // compiled from App.svelte
 
-globalThis.document = term.document;
-globalThis.window = term.window;
-globalThis.Node = term.window.Node;
-globalThis.Element = term.window.Element;
-globalThis.Text = term.window.Text;
-globalThis.Comment = term.window.Comment;
+const globals = {
+	document: term.document,
+	window: term.window,
+	Node: term.window.Node,
+	Element: term.window.Element,
+	Text: term.window.Text,
+	Comment: term.window.Comment,
+};
+for (const [name, value] of Object.entries(globals)) {
+	if (!(name in globalThis)) {
+		Object.defineProperty(globalThis, name, {
+			value,
+			configurable: true,
+			writable: true,
+		});
+	}
+}
 
 mount(App, {target: term.document.body});
 ```

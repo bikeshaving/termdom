@@ -73,12 +73,24 @@ const {document} = term;
 // init_operations() takes the `firstChild` and `nextSibling` getters off
 // `Node.prototype` and caches lookups on `Element.prototype` and
 // `Text.prototype`; `Comment` identifies the anchor nodes the compiler emits.
-globalThis.document = document as never;
-globalThis.window = term.window as never;
-globalThis.Node = term.window.Node;
-globalThis.Element = term.window.Element as never;
-globalThis.Text = term.window.Text as never;
-globalThis.Comment = term.window.Comment as never;
+// Supplied only where the runtime has none.
+const globals = {
+  document,
+  window: term.window,
+  Node: term.window.Node,
+  Element: term.window.Element,
+  Text: term.window.Text,
+  Comment: term.window.Comment,
+};
+for (const [name, value] of Object.entries(globals)) {
+  if (!(name in globalThis)) {
+    Object.defineProperty(globalThis, name, {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  }
+}
 
 const style = document.createElement("style");
 style.textContent = `
