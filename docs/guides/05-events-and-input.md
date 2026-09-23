@@ -207,6 +207,34 @@ Undo and redo are not here yet, and neither are `execCommand`, the
 formatting commands, HTML paste, IME composition in a host, or
 spellcheck.
 
+## Errors
+
+An exception that escapes a listener, an event handler attribute, an
+observer callback, or a frame callback is reported as a browser reports
+it. The window hears a cancelable `error` event first:
+
+```ts
+window.addEventListener("error", (event) => {
+	status.textContent = event.message;
+	event.preventDefault();
+});
+```
+
+A listener that calls `preventDefault()` has handled the error. An
+unhandled one is not printed over the screen, and it does not stop the
+program. It goes to the transport's log when the transport has one
+apart from the screen: the process transport writes it to stderr when
+stderr is not the terminal, so `node app.ts 2> errors.log` gives a live
+log to tail in another pane. Otherwise the engine keeps it and prints
+it below the document when the session ends, so it is seen either way.
+
+Errors the engine throws at a call, an `InvalidStateError` from
+`showModal()` on an open dialog, a `SyntaxError` from a bad selector,
+are the ones a browser throws, and a caller catches them as it would
+there. A failure inside the engine's own rendering ends the session:
+the last frame is left in the scrollback, the terminal is restored, and
+the error is thrown.
+
 ## Selection and the clipboard
 
 Drag to select, in the document or inside a field; style it with

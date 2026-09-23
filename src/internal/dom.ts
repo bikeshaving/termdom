@@ -224,6 +224,7 @@ const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kScreen = Symbol("screen");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
+const kReportUncaught = Symbol("reportUncaught");
 
 /**
  * The focus offset of a control's selection record, in offsets of the
@@ -4536,8 +4537,10 @@ function callListener(
 }
 
 // HTML's "report an exception": the document's window hears an error
-// event first, and a handler that cancels it has handled the error. With
-// no window, or an unhandled one, the runtime reports it.
+// event first, and a handler that cancels it has handled the error. An
+// unhandled one goes to the engine rendering the document, which owns
+// the terminal the runtime would otherwise print over. With no engine,
+// the runtime reports it.
 function reportError(error: unknown, document: Document | null = null): void {
 	const view = document === null ? null : document[kDefaultView];
 	if (view !== null) {
@@ -4550,6 +4553,13 @@ function reportError(error: unknown, document: Document | null = null): void {
 		if (event.defaultPrevented) {
 			return;
 		}
+	}
+	const attached = document === null
+		? undefined
+		: getAttachedDocument(document);
+	if (attached !== undefined) {
+		attached[kReportUncaught](error);
+		return;
 	}
 	const report = (globalThis as {reportError?: (e: unknown) => void})
 		.reportError;
@@ -22276,7 +22286,11 @@ export function flushObservers(
 	// set mid-iteration would visit a new observer against a layout it has
 	// not been measured for, or skip one that is still live.
 	for (const observer of [...observers]) {
-		checkObserver(observer, layout, viewport, frame);
+		try {
+			checkObserver(observer, layout, viewport, frame);
+		} catch (error) {
+			reportError(error, document as Document);
+		}
 	}
 }
 
@@ -22763,6 +22777,9 @@ export interface Document {
 	[kCascade]: Cascade;
 	[kExchange]: Exchange;
 	[kScreen]: Screen;
+	// Where an exception the page let escape goes once the window's error
+	// event has not handled it. The engine owns the terminal, so it decides.
+	[kReportUncaught]: (error: unknown) => void;
 	// The text control whose caret the next frame reveals. The last edit
 	// before the frame wins.
 	[kPendingCaretReveal]: TextControlOrSelect | null;
@@ -30727,12 +30744,14 @@ export function attachDocument(
 	exchange: Exchange,
 	screen: Screen,
 	render: () => Promise<void>,
+	reportUncaught: (error: unknown) => void,
 ): void {
 	const attached = document as Document;
 	if (attached[kExchange] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
 	attached[kRender] = render;
+	attached[kReportUncaught] = reportUncaught;
 	attached[kVisible] = false;
 	attached[kLayout] = layout;
 	attached[kCascade] = styles;
@@ -31079,6 +31098,7 @@ type AttachedDocument =
 		[kCascade]: Cascade;
 		[kExchange]: Exchange;
 		[kScreen]: Screen;
+		[kReportUncaught]: (error: unknown) => void;
 	};
 
 function getAttachedDocument(
@@ -31667,7 +31687,11 @@ export function runFrameCallbacks(document: globalThis.Document): boolean {
 	state.held.clear();
 	const now = performance.now();
 	for (const callback of callbacks) {
-		callback(now);
+		try {
+			callback(now);
+		} catch (error) {
+			reportError(error, document as Document);
+		}
 	}
 	return state.held.size > 0;
 }
@@ -32587,11 +32611,15 @@ export class Window extends EventTarget {
 		const timer = globalThis.setTimeout(() => {
 			timers.delete(handle);
 			const start = globalThis.performance.now();
-			callback({
-				didTimeout: false,
-				timeRemaining: () =>
-					Math.max(0, 50 - (globalThis.performance.now() - start)),
-			});
+			try {
+				callback({
+					didTimeout: false,
+					timeRemaining: () =>
+						Math.max(0, 50 - (globalThis.performance.now() - start)),
+				});
+			} catch (error) {
+				reportError(error, this.document as unknown as Document);
+			}
 		}, options?.timeout ?? 0);
 		timers.set(handle, timer);
 		return handle;

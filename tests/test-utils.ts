@@ -176,6 +176,9 @@ export interface MockProcess {
 export class MockProcess extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;
 	stdin: MockReadStream;
+
+	/** Absent by default, as a terminal shares one screen for both. */
+	stderr?: {isTTY?: boolean; write(chunk: string): unknown};
 	env: Record<string, string | undefined>;
 	terminal: Terminal;
 
