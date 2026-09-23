@@ -50,7 +50,10 @@ flow-mode region as they were. If a text field has focus, the first
 Escape blurs it instead.</p><p>A program that wants the whole terminal for its lifetime can call
 <code>document.documentElement.requestFullscreen()</code> right after <code>attach()</code>.
 When it exits, nothing of it is left in the scrollback, because the
-alternate screen is discarded on the switch back.</p><p>The document&#039;s scroll position has nothing to move in fullscreen: the
+alternate screen is discarded on the switch back, and the cursor is
+where the command line left it, as vim leaves it. A program that
+painted in flow first exits one line below that content instead, so the
+shell&#039;s prompt does not land on it.</p><p>The document&#039;s scroll position has nothing to move in fullscreen: the
 element fills the screen. Boxes inside it with <code>overflow: auto</code> still
 scroll.</p><h2 id="static-output">Static output <a class="heading-anchor" href="#static-output">#</a></h2><p>Neither mode is needed for output that does not change. <code>renderANSI()</code>
 turns HTML into a string of colored lines, and <code>print()</code> writes one to
