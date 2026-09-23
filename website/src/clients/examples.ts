@@ -18,6 +18,8 @@ import type {
 	TerminalSize,
 	TerminalCloseInfo,
 } from "../../../src/index.ts";
+import {hostTransport} from "./sandbox-bridge.js";
+import type {WorkerMessage} from "./sandbox-bridge.js";
 import {CodeEditor, editorHeight} from "../components/code-editor.js";
 import {installIMEQuirks} from "./ime.js";
 // The programs themselves arrive in the page, in the script element the view
@@ -231,12 +233,6 @@ interface Run {
 	contentRows(): number | null;
 }
 
-interface SandboxWindow extends Window {
-	__start?: (url: string) => Promise<unknown>;
-	__transport?: TerminalTransport;
-	__termdom?: {document: Document};
-}
-
 /** The repository's files the page carries, for the sandbox's filesystem. */
 function readWorkspaceFiles(): Record<string, string> {
 	const script = document.getElementById(FILES_SCRIPT_ID);
@@ -251,74 +247,64 @@ function readSandboxConfig(): SandboxConfig | null {
 /**
  * The specifiers the page serves itself: the repository's own engine, and
  * the browser implementations of the node builtins. Everything else a
- * program imports is someone else's package and comes from the CDN.
+ * program imports is someone else's package and comes from the CDN. The
+ * program runs from a blob URL, which nothing relative can resolve
+ * against, so every one is made absolute.
  */
 function localImports(config: SandboxConfig): Record<string, string> {
+	const absolute = (path: string) => new URL(path, location.href).href;
 	return {
-		"@b9g/termdom": config.termdom,
-		"node:fs": config.nodefs,
-		"node:path": config.nodefs,
-		"node:url": config.nodefs,
-		"node:os": config.nodefs,
+		"@b9g/termdom": absolute(config.termdom),
+		"node:fs": absolute(config.nodefs),
+		"node:path": absolute(config.nodefs),
+		"node:url": absolute(config.nodefs),
+		"node:os": absolute(config.nodefs),
 	};
 }
 
-const IMPORT_SPECIFIER =
-	/(?:^|\n)\s*import\s+(?:[^"'`]*?\s+from\s+)?["']([^"']+)["']/g;
+const STATIC_IMPORT =
+	/(\b(?:import|export)\s*(?:[^"'`;]*?\s+from\s*)?)(["'])([^"'\n]+)\2/g;
+const DYNAMIC_IMPORT = /(\bimport\s*\(\s*)(["'])([^"'\n]+)\2/g;
 
 /**
- * The import map for one program: the page's own modules first, and any
- * bare specifier the code names beyond them resolved to a CDN -- the same
- * open door the crank playground holds. Relative and node-prefixed
- * specifiers are not the map's business.
+ * A worker has no import map, so the program's own imports are resolved
+ * in its text: the page's modules to their URLs, and any bare specifier
+ * beyond them to a CDN -- the same open door the crank playground holds.
+ * A relative specifier is left as written, and fails as it did.
  */
-function importMapFor(config: SandboxConfig, code: string): string {
+function resolveImports(config: SandboxConfig, javascript: string): string {
 	const imports = localImports(config);
-	for (const match of code.matchAll(IMPORT_SPECIFIER)) {
-		const specifier = match[1];
-		if (specifier in imports) continue;
-		if (/^[./]/.test(specifier) || specifier.startsWith("node:")) continue;
-		imports[specifier] = `https://esm.sh/${specifier}`;
-	}
-	return JSON.stringify({imports}).replace(/</g, "\\u003c");
+	const resolve = (specifier: string): string => {
+		if (specifier in imports) return imports[specifier];
+		if (/^[./]/.test(specifier) || /^[a-z]+:/.test(specifier)) {
+			return specifier;
+		}
+		return `https://esm.sh/${specifier}`;
+	};
+	return javascript
+		.replace(
+			STATIC_IMPORT,
+			(_, head: string, quote: string, specifier: string) =>
+				`${head}${quote}${resolve(specifier)}${quote}`,
+		)
+		.replace(
+			DYNAMIC_IMPORT,
+			(_, head: string, quote: string, specifier: string) =>
+				`${head}${quote}${resolve(specifier)}${quote}`,
+		);
 }
 
 /**
- * The sandbox document: the import map, and a bootstrap that runs a module
- * URL on request. `<` is escaped so no asset URL can close the script
- * element it is written into.
- */
-function sandboxHTML(
-	config: SandboxConfig,
-	code: string,
-	files: Record<string, string>,
-): string {
-	const importMap = importMapFor(config, code);
-	const workspace = JSON.stringify(files).replace(/</g, "\\u003c");
-	return [
-		"<!doctype html>",
-		'<meta charset="utf-8">',
-		'<script type="importmap">' + importMap + "</" + "script>",
-		// Read by the filesystem module as it loads, before any program.
-		"<script>globalThis.__workspaceFiles = " + workspace + ";</" + "script>",
-		'<script type="module">',
-		'globalThis.process = {argv: ["node", "example.ts"], env: {},' +
-			' cwd: () => "/workspace/termdom", platform: "linux",' +
-			' stdin: {isTTY: true}, stdout: {isTTY: true}, stderr: {isTTY: true}};',
-		"window.__start = (url) => import(url);",
-		"</" + "script>",
-	].join("\n");
-}
-
-/**
- * Run `code` as an ES module in a fresh same-origin iframe against
- * `terminal`.
+ * Run `code` as an ES module in a fresh worker against `terminal`.
  *
  * The code runs as written -- the import, the construction, the attach --
- * because the iframe's import map resolves `@b9g/termdom` to a build of the
- * engine whose parameterless construction takes the transport the workbench
- * put on the sandbox's globalThis. Stopping a run removes the iframe, and
- * the realm takes its timers, frames and listeners with it.
+ * because `@b9g/termdom` resolves to a build of the engine whose
+ * parameterless construction takes the transport the worker was started
+ * with, and the terminal stays in the page, reached over the bridge. A
+ * worker has no document or window, so a program that supplies them as
+ * globals for a library that reads them finds the same absence it finds
+ * under Node. Stopping a run terminates the worker, and the thread takes
+ * its timers, frames and listeners with it.
  */
 async function runProgram(
 	terminal: Terminal,
@@ -329,67 +315,54 @@ async function runProgram(
 	if (!config) throw new Error("The page carries no sandbox configuration.");
 	const transport = new XtermTransport(terminal);
 
-	const iframe = document.createElement("iframe");
-	iframe.style.display = "none";
-	iframe.setAttribute("aria-hidden", "true");
-	iframe.srcdoc = sandboxHTML(config, code, readWorkspaceFiles());
-	const loaded = new Promise<void>((resolve) => {
-		iframe.addEventListener("load", () => resolve(), {once: true});
-	});
-	document.body.appendChild(iframe);
-	await loaded;
-
-	const sandbox = iframe.contentWindow as SandboxWindow | null;
-	if (!sandbox?.__start) {
-		iframe.remove();
-		throw new Error("The sandbox failed to boot.");
-	}
-
-	sandbox.__transport = transport;
-	sandbox.addEventListener("error", (event) => {
-		const ev = event as ErrorEvent;
-		report(ev.error ?? ev.message);
-	});
-	sandbox.addEventListener("unhandledrejection", (event) => {
-		report((event as PromiseRejectionEvent).reason);
-	});
-
 	// The editor holds TypeScript, the way the repository does; the module
 	// that runs is the same text with the types erased. A type error is a
 	// parse error here, reported like any other.
-	const javascript = transform(code, {transforms: ["typescript"]}).code;
+	const javascript = resolveImports(
+		config,
+		transform(code, {transforms: ["typescript"]}).code,
+	);
 	const url = URL.createObjectURL(
 		new Blob([javascript], {type: "text/javascript"}),
 	);
 
-	// The module about to run is the sandbox's entry point: the guard a
-	// runnable-and-importable example ends with compares itself to argv[1],
-	// and in this realm argv[1] is the workbench's blob.
-	(sandbox as SandboxWindow & {__mainModuleURL?: string}).__mainModuleURL =
-		url;
+	const worker = new Worker(new URL(config.worker, location.href), {
+		type: "module",
+	});
+	worker.addEventListener("error", (event) => {
+		event.preventDefault();
+		report(event.message);
+	});
+	worker.addEventListener("message", (event) => {
+		const message = event.data as WorkerMessage;
+		if (message?.type === "error") report(message.message);
+	});
+
+	let height: number | null = null;
+	const bridge = hostTransport(transport, worker, (rows) => {
+		height = rows;
+	});
 
 	let stopped = false;
 	const stop = async (): Promise<void> => {
 		if (stopped) return;
 		stopped = true;
 		URL.revokeObjectURL(url);
+		bridge.stop();
 		transport.abort();
-		iframe.remove();
+		worker.terminate();
 		transport.close();
 	};
 
-	const contentRows = (): number | null => {
-		if (stopped) return null;
-		const height = sandbox.__termdom?.document.documentElement?.scrollHeight;
-		return height ? height : null;
-	};
+	const contentRows = (): number | null => (stopped ? null : height);
 
-	try {
-		await sandbox.__start(url);
-	} catch (error) {
-		await stop();
-		throw error;
-	}
+	worker.postMessage({
+		type: "init",
+		files: readWorkspaceFiles(),
+		program: url,
+		cols: terminal.cols,
+		rows: terminal.rows,
+	});
 
 	return {stop, contentRows};
 }

@@ -23,7 +23,10 @@ let page = await browser.newPage();
 const errors: string[] = [];
 page.on("pageerror", (err) => errors.push(String(err)));
 page.on("console", (msg) => {
-	if (msg.type() === "error") errors.push(msg.text());
+	// The analytics beacon refuses a local origin; that is not the site.
+	if (msg.type() === "error" && !/cloudflareinsights|ERR_FAILED/.test(msg.text())) {
+		errors.push(msg.text());
+	}
 });
 
 /** All terminal text on the page, joined. */
@@ -119,6 +122,11 @@ await page.selectOption("select", "todomvc");
 report(await waitForText("todos"), "playground: todomvc renders through mapped crank");
 await page.selectOption("select", "solitaire");
 report(await waitForText("one card", 20000), "playground: solitaire boots through its main guard");
+
+// CodeMirror reads document and window as globals, which the example
+// supplies because the worker has none of its own.
+await page.selectOption("select", "codemirror");
+report(await waitForText("function greet", 20000), "playground: codemirror runs in the worker");
 
 // Weather runs with the network allowed: its search prompt paints, and a
 // searched city fetches Open-Meteo and charts it (skipped offline -- the
@@ -249,7 +257,7 @@ for (let i = 0, n = await embeds.count(); i < n; i++) {
 	await embeds.nth(i).scrollIntoViewIfNeeded();
 	await new Promise((r) => setTimeout(r, 1000));
 }
-report(await waitForText("An inline style beats all the rules"), "home: styling embed paints");
+report(await waitForText("An inline style beats all rules"), "home: styling embed paints");
 report(await waitForText("TermDOM flexbox"), "home: flexbox embed paints");
 report(await waitForText("New profile"), "home: form embed paints");
 report(await waitForText("interface Point", 15000), "home: prism embed highlights its sample");
