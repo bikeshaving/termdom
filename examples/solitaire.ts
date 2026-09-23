@@ -794,18 +794,17 @@ function *App(this: Context) {
     });
   };
 
+  const isSame = (a: Held, b: Held): boolean =>
+    a !== null &&
+    b !== null &&
+    a.kind === b.kind &&
+    (a.kind !== "tableau" ||
+      (b.kind === "tableau" && a.pile === b.pile && a.index === b.index));
+
   const grab = (next: Held): void => {
     this.refresh(() => {
       // Picking up what you are already holding puts it back.
-      const same =
-        held &&
-        next &&
-        held.kind === next.kind &&
-        (held.kind !== "tableau" ||
-          (next.kind === "tableau" &&
-            held.pile === next.pile &&
-            held.index === next.index));
-      held = same ? null : next;
+      held = isSame(held, next) ? null : next;
       message = "";
     });
   };
@@ -968,6 +967,25 @@ function *App(this: Context) {
   const seat = (row: "top" | "board", col: number, depth = 0): void => {
     this.refresh();
     document.getElementById(idAt({row, col, depth}))?.focus();
+  };
+
+  /**
+   * A click on a card picks it up and focuses it. A click on the card
+   * already held puts it back and lets the focus go, so a click toggles.
+   */
+  const pick = (
+    source: Held,
+    row: "top" | "board",
+    col: number,
+    depth = 0,
+  ): void => {
+    if (isSame(held, source)) {
+      grab(source);
+      (document.activeElement as HTMLElement | null)?.blur();
+      return;
+    }
+    seat(row, col, depth);
+    grab(source);
   };
 
   /**
@@ -1373,13 +1391,11 @@ function *App(this: Context) {
                         held=${at === fan.length - 1 && grip?.kind === "waste"}
                         id=${at === fan.length - 1 ? "flip" : undefined}
                         onmousedown=${at === fan.length - 1
-                          ? press(
-                            "waste",
-                            () => {
-                              seat("top", 1);
-                              grab({kind: "waste"});
-                            },
-                          )
+                          ? press("waste", () => pick(
+                            {kind: "waste"},
+                            "top",
+                            1,
+                          ))
                           : undefined}
                         ondblclick=${at === fan.length - 1 ? () => sendHome({kind: "waste"}) : undefined}
                       />`,
@@ -1404,8 +1420,13 @@ function *App(this: Context) {
                         drop=${home === index}
                         id=${`home-${index}`}
                         onmousedown=${press(`foundation-${index}`, () => {
-                          seat("top", 3 + index);
-                          target({kind: "foundation", index});
+                          const source: Held = {kind: "foundation", index};
+                          if (held && !isSame(held, source)) {
+                            seat("top", 3 + index);
+                            target(source);
+                          } else {
+                            pick(source, "top", 3 + index);
+                          }
                         })}
                       />`
                     : jsx`<${Slot}
@@ -1459,11 +1480,15 @@ function *App(this: Context) {
                             held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
                             drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
                             onmousedown=${press(`pile-${index}`, () => {
+                              const source: Held = {kind: "tableau", pile: index, index: depth};
+                              if (isSame(held, source)) {
+                                return pick(source, "board", index, depth);
+                              }
                               seat("board", index, depth);
                               if (held || !each.up) {
                                 target({kind: "tableau", pile: index});
                               } else if (isRun(pile, depth)) {
-                                grab({kind: "tableau", pile: index, index: depth});
+                                grab(source);
                               }
                             })}
                             ondblclick=${() => {
