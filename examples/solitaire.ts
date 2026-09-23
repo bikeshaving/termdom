@@ -373,11 +373,11 @@ const HINT_MIN_HEIGHT = 20;
 
 /**
  * The face of a card `depth` cards under the top one, from the top face
- * down four units of each channel a card, so the thirteenth is still a
+ * down five units of each channel a card, so the thirteenth is still a
  * cream and not a grey.
  */
 function faceShade(depth: number): string {
-  const step = Math.min(depth, 12) * 4;
+  const step = Math.min(depth, 12) * 5;
   const hex = (channel: number) =>
     (channel - step).toString(16).padStart(2, "0");
   return `#${hex(0xf0)}${hex(0xf0)}${hex(0xe6)}`;
