@@ -371,6 +371,27 @@ const GRAND_MIN_WIDTH = 96;
 const GRAND_MIN_HEIGHT = 32;
 const HINT_MIN_HEIGHT = 20;
 
+/**
+ * The face of a card `depth` cards under the top one, from the top face
+ * down four units of each channel a card, so the thirteenth is still a
+ * cream and not a grey.
+ */
+function faceShade(depth: number): string {
+  const step = Math.min(depth, 12) * 4;
+  const hex = (channel: number) =>
+    (channel - step).toString(16).padStart(2, "0");
+  return `#${hex(0xf0)}${hex(0xf0)}${hex(0xe6)}`;
+}
+
+function depthShades(): string {
+  return Array.from({length: 12}, (_, i) => {
+    const depth = i + 1;
+    const nth = depth === 12 ? `n+${depth + 1}` : String(depth + 1);
+    return `  .fan > .card:not(.down):nth-last-child(${nth}),
+  .pile > .card:not(.down):nth-last-child(${nth}) { background-color: ${faceShade(depth)}; }`;
+  }).join("\n");
+}
+
 function sheet(): string {
   // One set of numbers drives the stylesheet's @media blocks AND the matchMedia
   // lists the component re-renders on, so the CSS widths and the drawn card
@@ -429,13 +450,10 @@ function sheet(): string {
   /* A held card looks like any other. The one highlight on the board is
      the focus; what is held shows in the green of the places it can go. */
   .card.drop { background-color: #a9d7b7; }
-  /* A card under another is a shade darker, and one two or more under is a
-     shade darker again, so a fan or a run reads as cards rather than as one
-     field. Backs keep their blue. */
-  .fan > .card:not(.down):nth-last-child(2),
-  .pile > .card:not(.down):nth-last-child(2) { background-color: #dcdccf; }
-  .fan > .card:not(.down):nth-last-child(n+3),
-  .pile > .card:not(.down):nth-last-child(n+3) { background-color: #cbcbbe; }
+  /* Each card under another is a shade darker than the one over it, a
+     step a run of thirteen can take without reaching grey, so a fan or a
+     run reads as cards rather than as one field. Backs keep their blue. */
+  ${depthShades()}
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
   /* The focused card steps down a row, the way a hand lifts a card off
