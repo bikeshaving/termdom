@@ -704,7 +704,10 @@ test("a second press on the same cell is a double-click even if the element move
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;
 	document.body.innerHTML =
-		"<div id=\"pile\" style=\"height: 4px\"><div id=\"a\">aaaa</div><div id=\"b\">bbbb</div></div>";
+		// A flex column, so the margin that moves the child does not collapse
+		// through the pile and move the pile with it.
+		"<div id=\"pile\" style=\"display: flex; flex-direction: column; height: 4px\">" +
+		"<div id=\"a\">aaaa</div><div id=\"b\">bbbb</div></div>";
 	await nextFrame(termdom);
 	const a = document.getElementById("a")!;
 	const events: string[] = [];
