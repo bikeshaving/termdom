@@ -361,7 +361,7 @@ interface Tier {
 }
 
 const TIERS = {
-  compact: {width: 3, height: 3, gap: 1},
+  compact: {width: 4, height: 3, gap: 1},
   roomy: {width: 5, height: 3, gap: 2},
   grand: {width: 7, height: 5, gap: 3},
 } as const;
@@ -381,7 +381,7 @@ function sheet(): string {
   .place { width: ${tier.width}ch; height: ${tier.height}px; }
   .pile > .card + .card { margin-top: -${tier.height - 1}px; }
   .pile > .card + .card:focus { margin-top: -${tier.height - 2}px; }
-  .fan > .card + .card { margin-left: -${tier.width - 2}ch; }
+  .fan > .card + .card { margin-left: -${tier.width - 3}ch; }
   .top, .numbers, .board, .captions { gap: ${tier.gap}ch; }
   .play { width: ${7 * tier.width + 6 * tier.gap}ch; }
 `;
@@ -419,7 +419,8 @@ function sheet(): string {
      collapsing them would shorten the card. Every card is whole; a pile is
      cards laid over one another, each all but a row under the next, and
      the flip's fan lays them over one another sideways, each all but its
-     index under the next. A later card paints over an earlier one. */
+     index under the next; three columns, since a 10 takes them. A later
+     card paints over an earlier one. */
   .card, .slot { white-space: pre; }
   .card { background-color: #f0f0e6; color: #202020; }
   .card.red { color: #c02020; }
