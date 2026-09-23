@@ -450,6 +450,19 @@ function sheet(): string {
 
   /* The confirm covers the screen and centers its dialog; the board stays
      visible around the box, the way a modal reads. */
+  /* Behind the menu the game fades: every colour on the felt drops toward
+     it, so the board reads as where you were rather than what you are
+     doing. */
+  .behind .card { background-color: #7a8a7e; color: #46524a; }
+  .behind .card.red { color: #7a4a4a; }
+  .behind .card.down { background-color: #24476a; color: #3a5f86; }
+  .behind .place, .behind .slot { background-color: #063f1e; color: #2a5a3a; }
+  .behind .fan > .card:not(.down):nth-last-child(2),
+  .behind .pile > .card:not(.down):nth-last-child(2),
+  .behind .fan > .card:not(.down):nth-last-child(n+3),
+  .behind .pile > .card:not(.down):nth-last-child(n+3) { background-color: #6f7e72; }
+  .behind .bar, .behind .captions, .behind .numbers, .behind .hint, .behind .number { color: #3f6a4f; }
+  .behind .bar .title, .behind .bar .win, .behind .number.drop { color: #8a7a3f; }
   .scrim { position: fixed; top: 0; left: 0; width: 100%; height: 100%;
            display: flex; align-items: center; justify-content: center; }
   dialog { display: block; width: 48ch; border: 1px solid; border-color: #ffd75f;
@@ -994,11 +1007,17 @@ function *App(this: Context) {
     grab(source);
   };
 
-  /** Draw, and follow the turned card to the flip. */
+  /** Space: draw, and follow the turned card to the flip. */
   const drawTo = (): void => {
     const before = game.moves;
     act(draw);
     seat("top", game.moves > before && top(game.waste) ? 1 : 0);
+  };
+
+  /** A click on the deck: draw, and leave the focus alone. */
+  const drawOnly = (): void => {
+    act(draw);
+    unfocus();
   };
 
   /** The top row's occupied columns: the gap at column 2 holds nothing. */
@@ -1144,9 +1163,14 @@ function *App(this: Context) {
     const key = event.key;
     if (menu) {
       // While the seed field has focus, letters and digits belong to it;
-      // Enter still deals. Tab and Escape blur it -- the engine's own
-      // defaults.
+      // Enter still deals. Tab and Escape leave it, and Tab goes no
+      // further: the board behind the menu is not for walking.
       const typing = (event.target as Element | null)?.tagName === "INPUT";
+      if (key === "Tab" || key === "Escape") {
+        event.preventDefault();
+        unfocus();
+        return;
+      }
       if (typing && key !== "Enter") {
         return;
       }
@@ -1312,34 +1336,6 @@ function *App(this: Context) {
     grand.matches ? TIERS.grand : roomy.matches ? TIERS.roomy : TIERS.compact;
 
   for ({} of this) {
-    if (inMenu()) {
-      yield jsx`
-        <div class="table">
-          <div class="scrim">
-            <dialog open>
-              <div class="ask">Solitaire ${MIDDOT} new game</div>
-              <div class="answers">
-                <span
-                  class=${modeNow() === 1 ? "pick on" : "pick"}
-                  onclick=${() => pickMode(1)}
-                ><kbd>1</kbd>${" one card"}</span>
-                <span class="pickgap"> </span>
-                <span
-                  class=${modeNow() === 3 ? "pick on" : "pick"}
-                  onclick=${() => pickMode(3)}
-                ><kbd>3</kbd>${" three cards"}</span>
-              </div>
-              <div class="again">(press <kbd>${modeNow()}</kbd> again to deal)</div>
-              <div class="answers">seed${" #"}<input id="seed" type="number" min="1" placeholder="random" /></div>
-              <div class="answers"><span onclick=${dealFromMenu}><kbd>Enter</kbd>${" deal"}</span>${
-                startedAt !== null ? jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}><kbd>b</kbd>ack</span>` : ""
-              }<span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => term.window.close()}><kbd>q</kbd>uit</span></div>
-            </dialog>
-          </div>
-        </div>
-      `;
-      continue;
-    }
     const t = tier();
     // The board holds the tallest pile the rules allow, six face-down cards
     // under a king-to-ace run, so a growing pile never pushes the hint
@@ -1359,7 +1355,7 @@ function *App(this: Context) {
     const home = card ? foundationFor(game, card) : null;
 
     yield jsx`
-      <div class="table">
+      <div class=${inMenu() ? "table behind" : "table"}>
         <div class="play">
         <div class="bar">
           <span class="title">Solitaire</span>
@@ -1394,10 +1390,10 @@ function *App(this: Context) {
                     tier=${t}
                     id="deck"
                     onmousedown=${press("deck")}
-                    onclick=${drawTo}
+                    onclick=${drawOnly}
                   />`
                 : jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
-                    id="deck" onmousedown=${press("deck")} onclick=${drawTo} />`
+                    id="deck" onmousedown=${press("deck")} onclick=${drawOnly} />`
             }
           </div>
           <div
@@ -1523,6 +1519,29 @@ function *App(this: Context) {
         </div>
 
         </div>
+        ${
+          inMenu() && jsx`<div class="scrim">
+            <dialog open>
+              <div class="ask">Solitaire ${MIDDOT} new game</div>
+              <div class="answers">
+                <span
+                  class=${modeNow() === 1 ? "pick on" : "pick"}
+                  onclick=${() => pickMode(1)}
+                ><kbd>1</kbd>${" one card"}</span>
+                <span class="pickgap"> </span>
+                <span
+                  class=${modeNow() === 3 ? "pick on" : "pick"}
+                  onclick=${() => pickMode(3)}
+                ><kbd>3</kbd>${" three cards"}</span>
+              </div>
+              <div class="again">(press <kbd>${modeNow()}</kbd> again to deal)</div>
+              <div class="answers">seed${" #"}<input id="seed" type="number" min="1" placeholder="random" /></div>
+              <div class="answers"><span onclick=${dealFromMenu}><kbd>Enter</kbd>${" deal"}</span>${
+                startedAt !== null ? jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}><kbd>b</kbd>ack</span>` : ""
+              }<span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => term.window.close()}><kbd>q</kbd>uit</span></div>
+            </dialog>
+          </div>`
+        }
         ${
           ask && jsx`<div class="scrim">
             <dialog open>
