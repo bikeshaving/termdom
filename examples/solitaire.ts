@@ -444,7 +444,7 @@ function sheet(): string {
      over another uncovers a second row of it; the first card of a pile
      uncovers the place. */
   .card, .slot { outline: none; }
-  .card:focus { margin-top: 1px; }
+  .card:focus { margin-top: 1px; background-color: #fbfbf5; }
   /* An empty place does not move. It takes the focus only as somewhere to
      put what is held, or as the deck to turn over, and brightens its mark. */
   .slot:focus { color: #cfe8d8; }
