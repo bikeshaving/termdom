@@ -5226,6 +5226,18 @@ export class Cascade {
 				let node: Element | null = element; node; node = flatParentElement(node)
 			) {
 				invalidateElementCaches(this, node);
+				// A :has() subject sits above what changed, or before it on the
+				// same level (`:has(+ :focus)`), so the earlier siblings of each
+				// element on the chain go stale as well.
+				if (this[kHasRulesExist]) {
+					for (
+						let sibling = node.previousElementSibling;
+						sibling;
+						sibling = sibling.previousElementSibling
+					) {
+						invalidateElementCaches(this, sibling);
+					}
+				}
 				const shadowRoot = getShadowRoot(node);
 				if (shadowRoot) {
 					for (const descendant of shadowRoot.querySelectorAll("*")) {
