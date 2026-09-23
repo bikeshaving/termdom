@@ -16,7 +16,13 @@
 		<loc>https://termdom.org/guides/getting-started/</loc>
 	</url>
 	<url>
+		<loc>https://termdom.org/guides/rendering/</loc>
+	</url>
+	<url>
 		<loc>https://termdom.org/guides/layout/</loc>
+	</url>
+	<url>
+		<loc>https://termdom.org/guides/styling/</loc>
 	</url>
 	<url>
 		<loc>https://termdom.org/guides/events-and-input/</loc>
