@@ -428,6 +428,13 @@ function sheet(): string {
   /* A held card looks like any other. The one highlight on the board is
      the focus; what is held shows in the green of the places it can go. */
   .card.drop { background-color: #a9d7b7; }
+  /* A card under another is a shade darker, and one two or more under is a
+     shade darker again, so a fan or a run reads as cards rather than as one
+     field. Backs keep their blue. */
+  .fan > .card:not(.down):nth-last-child(2),
+  .pile > .card:not(.down):nth-last-child(2) { background-color: #dcdccf; }
+  .fan > .card:not(.down):nth-last-child(n+3),
+  .pile > .card:not(.down):nth-last-child(n+3) { background-color: #cbcbbe; }
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
   /* The focused card steps down a row, the way a hand lifts a card off
@@ -486,7 +493,7 @@ const T = "▀";
 const B = "▄";
 const L = "▌";
 const R = "▐";
-const MOTIF = "♦";
+const WEAVE = "░";
 const TURN_GLYPH = "↻";
 const DOT = " · ";
 const MIDDOT = "·";
@@ -526,10 +533,9 @@ function blank(width: number): string {
 }
 
 /**
- * A card back: a plate with solid half-block rails and a single motif at the
- * center, the way a printed back reads. A card under another shows the
- * plate's top rule, so a pile of backs is ruled lines rather than pattern
- * noise.
+ * A card back: a plate with solid half-block rails around a dithered weave,
+ * the way a printed back reads. A card under another shows the plate's top
+ * rule, so a pile of backs is ruled lines rather than pattern noise.
  */
 function backRows(width: number, height: number): string[] {
   return Array.from({length: height}, (_, row) => {
@@ -539,14 +545,7 @@ function backRows(width: number, height: number): string[] {
     if (row === height - 1) {
       return BL + B.repeat(width - 2) + BR;
     }
-    const inner = Array.from(
-      {length: width - 2},
-      (_, col) =>
-        row === Math.floor(height / 2) && col === Math.floor((width - 2) / 2)
-          ? MOTIF
-          : " ",
-    ).join("");
-    return L + inner + R;
+    return L + WEAVE.repeat(width - 2) + R;
   });
 }
 
