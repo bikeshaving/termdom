@@ -4,6 +4,11 @@
  * the real transport and pumps its streams into messages; the worker holds
  * a transport whose streams are those messages. Frame ordering rests on a
  * write resolving once the emulator has parsed it, so a write is answered.
+ *
+ * The port is a MessagePort of its own rather than the worker's global
+ * channel. A library that finds no document takes the worker for its own
+ * (Prism parses every message on the global channel as a job), and a
+ * channel of its own keeps the bridge out of its hands.
  */
 import type {
 	TerminalCloseInfo,
@@ -24,9 +29,10 @@ export type WorkerMessage =
 	| {type: "close"; info: TerminalCloseInfo}
 	| {type: "error"; message: string};
 
-/** The part of a Worker or a MessagePort the bridge uses. */
+/** The part of a MessagePort the bridge uses. */
 export interface Port {
 	postMessage(message: unknown): void;
+	start(): void;
 	addEventListener(
 		type: "message",
 		listener: (event: MessageEvent) => void,
@@ -51,6 +57,7 @@ export function hostTransport(
 	const reader = transport.readable.getReader();
 	const resizeReader = transport.resizes.getReader();
 	let stopped = false;
+	port.start();
 
 	void (async () => {
 		for (;;) {
@@ -118,6 +125,7 @@ export function workerTransport(
 		closeSession = resolve;
 	});
 
+	port.start();
 	port.addEventListener("message", (event: MessageEvent) => {
 		const message = event.data as HostMessage;
 		if (typeof message !== "object" || message === null) return;
