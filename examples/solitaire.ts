@@ -1066,8 +1066,8 @@ function *App(this: Context) {
   };
 
   /**
-   * A card put down by the mouse lands and lies still: nothing on the
-   * pile it joins is focused or lifted afterwards.
+   * A card put down lands and lies still: nothing on the pile it joins
+   * is focused or lifted afterwards, by mouse or by key.
    */
   const place = (drop: Target): void => {
     target(drop);
@@ -1144,11 +1144,14 @@ function *App(this: Context) {
         }
         return;
       }
+      if (held) {
+        return place({kind: "foundation", index: cur.col - 3});
+      }
       return target({kind: "foundation", index: cur.col - 3});
     }
     const pile = pileAt(cur.col);
     if (held) {
-      return target({kind: "tableau", pile: cur.col});
+      return place({kind: "tableau", pile: cur.col});
     }
     if (pile.length === 0) {
       return;
@@ -1243,8 +1246,8 @@ function *App(this: Context) {
     }
     if (key === "s" || key === "h" || key === "d" || key === "c") {
       const suit = {s: 0, h: 1, d: 2, c: 3}[key]!;
-      seat("top", 3 + suit);
-      return sendSuit(suit);
+      sendSuit(suit);
+      return unfocus();
     }
     if (key === "a") {
       act((game) => autoplay(game) > 0);
@@ -1289,7 +1292,7 @@ function *App(this: Context) {
         grip !== null && !(grip.kind === "tableau" && grip.pile === pile);
       if (fromElsewhere && fitsTableau(heldCards(game, grip)[0], cards)) {
         act((game) => play(game, grip, {kind: "tableau", pile}));
-        return seat("board", pile, Math.max(0, getLast(pileAt(pile))));
+        return unfocus();
       }
       if (cards.length === 0) {
         return seat("board", pile);
