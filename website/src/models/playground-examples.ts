@@ -18,7 +18,9 @@ export interface PlaygroundExample {
  * have -- `node:fs`, `node:child_process`, `process.argv`, `fetch` (bound to
  * undefined in the runner), or an npm package the site does not bundle -- or
  * carries an `import` the runner cannot resolve, since a program is compiled
- * as a function body rather than a module.
+ * as a function body rather than a module. CodeMirror reads `document` and
+ * `window` as globals, which the example redefines as the engine's; a
+ * browser's are unforgeable, so that program is the terminal's alone.
  */
 const RUNNABLE = [
 	"hello-world",
@@ -26,7 +28,6 @@ const RUNNABLE = [
 	"bar-chart",
 	"borders",
 	"chat",
-	"codemirror",
 	"commit-editor",
 	"flexbox",
 	"focus",
