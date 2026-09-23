@@ -462,10 +462,12 @@ function sheet(): string {
      over another uncovers a second row of it; the first card of a pile
      uncovers the place. */
   .card, .slot { outline: none; }
-  .card:focus { margin-top: 1px; background-color: #e2eefa; }
+  .card:focus { margin-top: 1px; background-color: #cfe2f7; }
+  /* The deck is not picked up, so it does not lift. */
+  #deck:focus { margin-top: 0; }
   /* An empty place does not move. It takes the focus only as somewhere to
      put what is held, or as the deck to turn over, and brightens its mark. */
-  .slot:focus { color: #cfe8d8; }
+  .slot:focus { background-color: #cfe2f7; color: #2f5a80; }
 
   /* The confirm covers the screen and centers its dialog; the board stays
      visible around the box, the way a modal reads. */
@@ -667,13 +669,18 @@ function CardFace({
   `;
 }
 
-/** An empty place on the board: the stock's turnover arrow, or a suit's home. */
+/**
+ * An empty place on the board: the stock's turnover arrow, or a suit's home.
+ * Every one can take the focus, so the arrows reach it; only a `tabbable`
+ * one is in the Tab order, somewhere to put what is held.
+ */
 function Slot(
-  {tier, mark, drop, id, onmousedown, onclick}: {
+  {tier, mark, drop, id, tabbable, onmousedown, onclick}: {
     tier: Tier;
     mark?: string;
     drop?: boolean;
     id?: string;
+    tabbable?: boolean;
     onmousedown?: (event: MouseEvent) => unknown;
     onclick?: (event: MouseEvent) => unknown;
   },
@@ -693,7 +700,7 @@ function Slot(
     <div
       class=${classes.join(" ")}
       id=${id}
-      tabindex=${id !== undefined ? "0" : undefined}
+      tabindex=${id === undefined ? undefined : tabbable ? "0" : "-1"}
       onmousedown=${onmousedown}
       onclick=${onclick}
     >${rows.map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
@@ -1395,7 +1402,7 @@ function *App(this: Context) {
                     onclick=${drawOnly}
                   />`
                 : jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
-                    id="deck" onmousedown=${press(DECK)} onclick=${drawOnly} />`
+                    id="deck" tabbable onmousedown=${press(DECK)} onclick=${drawOnly} />`
             }
           </div>
           <div
@@ -1416,7 +1423,7 @@ function *App(this: Context) {
                         onclick=${at === fan.length - 1 ? () => choose(FLIP) : undefined}
                       />`,
                 )}</div>`
-                : jsx`<${Slot} tier=${t} />`
+                : jsx`<${Slot} tier=${t} id="flip" />`
             }
           </div>
           <div class="gap"></div>
@@ -1441,7 +1448,8 @@ function *App(this: Context) {
                     : jsx`<${Slot}
                         tier=${t}
                         mark=${SUITS[index]}
-                        id=${card ? `home-${index}` : undefined}
+                        id=${`home-${index}`}
+                        tabbable=${Boolean(card)}
                         drop=${home === index}
                         onmousedown=${press(homePlace(index))}
                         onclick=${() => choose(homePlace(index))}
@@ -1473,7 +1481,8 @@ function *App(this: Context) {
                     ? jsx`<${Slot}
                         tier=${t}
                         drop=${Boolean(card) && fitsTableau(card, pile)}
-                        id=${card ? `pile-${index}-0` : undefined}
+                        id=${`pile-${index}-0`}
+                        tabbable=${Boolean(card)}
                         onmousedown=${press(boardPlace(index))}
                         onclick=${() => choose(boardPlace(index))}
                       />`
