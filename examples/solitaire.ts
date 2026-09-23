@@ -452,7 +452,8 @@ function sheet(): string {
      visible around the box, the way a modal reads. */
   /* Behind the menu a game in progress fades: every colour on the felt
      drops toward it, so the board reads as where you were rather than what
-     you are doing. Before any game, the menu has the felt to itself. */
+     you are doing. Before any game is dealt, the menu has the felt to
+     itself. */
   .fresh .play, .fresh .hint { display: none; }
   .behind .card { background-color: #7a8a7e; color: #46524a; }
   .behind .card.red { color: #7a4a4a; }
@@ -692,6 +693,9 @@ function *App(this: Context) {
   // that is the speedrunner's and the verifier's door.
   let mode: 1 | 3 = 1;
   let menu = startInMenu;
+  // Whether a game has been dealt to go back to. The first menu has none
+  // behind it; every later one has the game it was opened from.
+  let dealt = !startInMenu;
   let game = deal(opening, 1);
   let held: Held = null;
   let history: Game[] = [];
@@ -938,6 +942,7 @@ function *App(this: Context) {
       null;
     const seed = Number.parseInt(seedField?.value ?? "", 10);
     menu = false;
+    dealt = true;
     reset(Number.isFinite(seed) && seed > 0 ? seed : someDeal());
   };
 
@@ -1184,7 +1189,7 @@ function *App(this: Context) {
         pickMode(key === "1" ? 1 : 3);
       } else if (key === "Enter" || key === " " || key === "y") {
         dealFromMenu();
-      } else if ((key === "n" || key === "b") && startedAt !== null) {
+      } else if ((key === "n" || key === "b") && dealt) {
         // Back only leads somewhere when a game is behind the menu.
         leaveMenu();
       } else if (key === "q") {
@@ -1359,7 +1364,7 @@ function *App(this: Context) {
     const home = card ? foundationFor(game, card) : null;
 
     yield jsx`
-      <div class=${inMenu() ? (startedAt === null ? "table fresh" : "table behind") : "table"}>
+      <div class=${inMenu() ? (dealt ? "table behind" : "table fresh") : "table"}>
         <div class="play">
         <div class="bar">
           <span class="title">Solitaire</span>
@@ -1541,7 +1546,7 @@ function *App(this: Context) {
               <div class="again">(press <kbd>${modeNow()}</kbd> again to deal)</div>
               <div class="answers">seed${" #"}<input id="seed" type="number" min="1" placeholder="random" /></div>
               <div class="answers"><span onclick=${dealFromMenu}><kbd>Enter</kbd>${" deal"}</span>${
-                startedAt !== null ? jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}><kbd>b</kbd>ack</span>` : ""
+                dealt ? jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}><kbd>b</kbd>ack</span>` : ""
               }<span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => term.window.close()}><kbd>q</kbd>uit</span></div>
             </dialog>
           </div>`
