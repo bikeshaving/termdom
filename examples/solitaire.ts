@@ -12,9 +12,10 @@
 //   space  draw from the deck (or turn it over when empty; enter draws too
 //          while the cursor is hidden)
 //   f      pick up the flip's top card (0 works too -- the pile left of 1)
-//   1-7    pick up a tableau pile, or drop what you are holding on it
-//   arrows move the cursor anywhere on the board; enter takes the card
-//          under it (with its stack) or places what you are holding
+//   1-7    focus that pile's top card; the same number again walks up
+//          its face-up run, then round to the top
+//   arrows and tab move the focus anywhere on the board; enter takes the
+//          card under it (with its stack) or places what you are holding
 //   s/h/d/c  send that suit's ready card home -- each home takes only the
 //          suit that labels it, and the letters are the player's pick
 //          where several cards are ready at once
@@ -413,15 +414,17 @@ function sheet(): string {
   .card.down { background-color: #1d4f8f; color: #4f82c8; }
   /* A held card keeps its suit's colour -- losing it is disorienting when the
      colour is what the next move is chosen by -- and changes its FIELD. */
-  .card.held { background-color: #b4d4f0; font-weight: bold; }
+  .card.held { font-weight: lighter; }
   .card.drop { background-color: #a9d7b7; }
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
-  /* Where the keyboard is, and what it holds, are one effect: the pale
-     blue field, which leaves a red suit red. */
-  .cursor { background-color: #b4d4f0; font-weight: bold; }
-  .card.down.cursor { color: #1d4f8f; }
-  .slot.cursor { background-color: #b4d4f0; color: #2f5a80; }
+  /* The focused card is the one highlight on the board, and it is the
+     document's focus: tab, the arrows, the numbers and a click all move
+     the same thing. The pale blue leaves a red suit red. A click focuses
+     without the highlight, as a click does in a browser. */
+  .card, .slot { outline: none; }
+  .card:focus-visible { background-color: #b4d4f0; font-weight: bold; }
+  .slot:focus-visible { background-color: #b4d4f0; color: #2f5a80; }
 
   /* The confirm covers the screen and centers its dialog; the board stays
      visible around the box, the way a modal reads. */
@@ -579,8 +582,8 @@ interface CardProps {
   held?: boolean;
   drop?: boolean;
 
-  /** The keyboard cursor rests here. */
-  cursor?: boolean;
+  /** The id the focus moves to it by. A card with one can take the focus. */
+  id?: string;
   onmousedown?: (event: MouseEvent) => unknown;
   ondblclick?: (event: MouseEvent) => unknown;
 }
@@ -591,7 +594,7 @@ function CardFace({
   covered,
   held,
   drop,
-  cursor,
+  id,
   onmousedown,
   ondblclick,
 }: CardProps) {
@@ -606,13 +609,12 @@ function CardFace({
   } else if (drop) {
     classes.push("drop");
   }
-  if (cursor) {
-    classes.push("cursor");
-  }
   const rows = faceRows(card, tier);
   return jsx`
     <div
       class=${classes.join(" ")}
+      id=${id}
+      tabindex=${id !== undefined ? "0" : undefined}
       onmousedown=${onmousedown}
       ondblclick=${ondblclick}
     >${(covered ? rows.slice(0, 1) : rows).map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
@@ -621,11 +623,11 @@ function CardFace({
 
 /** An empty place on the board: the stock's turnover arrow, or a suit's home. */
 function Slot(
-  {tier, mark, drop, cursor, onmousedown}: {
+  {tier, mark, drop, id, onmousedown}: {
     tier: Tier;
     mark?: string;
     drop?: boolean;
-    cursor?: boolean;
+    id?: string;
     onmousedown?: (event: MouseEvent) => unknown;
   },
 ) {
@@ -640,13 +642,13 @@ function Slot(
   if (drop) {
     classes.push("drop");
   }
-  if (cursor) {
-    classes.push("cursor");
-  }
   return jsx`
-    <div class=${classes.join(" ")} onmousedown=${onmousedown}>${rows.map(
-      (row, line) => jsx`<div key=${line}>${row}</div>`,
-    )}</div>
+    <div
+      class=${classes.join(" ")}
+      id=${id}
+      tabindex=${id !== undefined ? "0" : undefined}
+      onmousedown=${onmousedown}
+    >${rows.map((row, line) => jsx`<div key=${line}>${row}</div>`)}</div>
   `;
 }
 
@@ -689,19 +691,39 @@ function *App(this: Context) {
   const liveRun = (): boolean =>
     startedAt !== null && finishedAt === null && game.moves > 0;
 
-  // The cursor is a place on the board, in the board's own geometry: seven
+  // The focus is a place on the board, in the board's own geometry: seven
   // columns, a top row (deck, flip, a gap, four suit homes) and the
-  // tableau below, where a column is a pile and the cursor can rest on any
-  // face-up card of it. Enter acts where the cursor is; the arrows move it,
-  // wrapping across columns.
-  let cur: {row: "top" | "board"; col: number; depth: number} = {
-    row: "board",
-    col: 0,
-    depth: 0,
+  // tableau below, where a column is a pile and the focus can rest on any
+  // face-up card of it. It is the document's focus, held by the card's
+  // element, so there is one at a time and every input moves the same
+  // one. Enter acts where it is. A fresh deal focuses nothing.
+  interface Place {
+    row: "top" | "board";
+    col: number;
+    depth: number;
+  }
+  const idAt = ({row, col, depth}: Place): string =>
+    row === "board"
+      ? `pile-${col}-${depth}`
+      : col === 0 ? "deck" : col === 1 ? "flip" : `home-${col - 3}`;
+  const focused = (): Place | null => {
+    const id = document.activeElement?.id ?? "";
+    if (id === "deck") {
+      return {row: "top", col: 0, depth: 0};
+    }
+    if (id === "flip") {
+      return {row: "top", col: 1, depth: 0};
+    }
+    const home = /^home-(\d)$/.exec(id);
+    if (home) {
+      return {row: "top", col: 3 + Number(home[1]), depth: 0};
+    }
+    const card = /^pile-(\d)-(\d+)$/.exec(id);
+    if (card) {
+      return {row: "board", col: Number(card[1]), depth: Number(card[2])};
+    }
+    return null;
   };
-  // The cursor exists once the keyboard asks for it -- the :focus-visible
-  // convention. A fresh deal shows no field, and a mouse game never does.
-  let cursorShown = false;
 
   /** Back to the deal's opening position, clock unstarted, cursor down. */
   const reset = (number: number): void => {
@@ -715,9 +737,8 @@ function *App(this: Context) {
       message = "";
       startedAt = null;
       finishedAt = null;
-      cur = {row: "board", col: 0, depth: 0};
-      cursorShown = false;
     });
+    (document.activeElement as HTMLElement | null)?.blur();
   };
 
   const guardedReset = (number: number, label: string): void => {
@@ -927,26 +948,15 @@ function *App(this: Context) {
   };
 
   /**
-   * A key press is a cursor move too: whatever a letter or number acts on,
-   * the cursor lands there, so tab and the arrows continue from the last
-   * action instead of from a second, parallel position.
+   * Every input is a focus move too: whatever a letter, a number or a
+   * click acts on, the focus lands there, so tab and the arrows continue
+   * from the last action. The board is rendered first, so the element is
+   * there to take it. Whether the highlight shows is the engine's
+   * :focus-visible: a key shows it, a click does not.
    */
   const seat = (row: "top" | "board", col: number, depth = 0): void => {
-    this.refresh(() => {
-      cursorShown = true;
-      cur = {row, col, depth};
-    });
-  };
-
-  /**
-   * A click moves the cursor too, but hides it, as a mouse press hides a
-   * browser's focus ring. The arrows pick up from the clicked place.
-   */
-  const place = (row: "top" | "board", col: number, depth = 0): void => {
-    this.refresh(() => {
-      cursorShown = false;
-      cur = {row, col, depth};
-    });
+    this.refresh();
+    document.getElementById(idAt({row, col, depth}))?.focus();
   };
 
   /**
@@ -956,7 +966,11 @@ function *App(this: Context) {
    * clicked twice.
    */
   let pressedOn: string | null = null;
-  const press = (name: string, action: () => void) => (): void => {
+  const press = (name: string, action: () => void) => (event: Event): void => {
+    // The engine would focus the pressed card after this handler ran,
+    // over the place the action chose (a press on the deck focuses the
+    // turned card, not the deck).
+    event.preventDefault();
     pressedOn = name;
     action();
   };
@@ -969,10 +983,10 @@ function *App(this: Context) {
   };
 
   /** Draw, and follow the turned card to the flip. */
-  const drawTo = (move: typeof seat): void => {
+  const drawTo = (): void => {
     const before = game.moves;
     act(draw);
-    move("top", game.moves > before && top(game.waste) ? 1 : 0);
+    seat("top", game.moves > before && top(game.waste) ? 1 : 0);
   };
 
   /** The top row's occupied columns: the gap at column 2 holds nothing. */
@@ -985,45 +999,44 @@ function *App(this: Context) {
     return index < 0 ? getLast(pile) : index;
   };
 
-  const moveCursor = (dx: number, dy: number): void => {
-    this.refresh(() => {
-      message = "";
-      cursorShown = true;
-      if (dx !== 0) {
-        if (cur.row === "top") {
-          const at = TOP_COLS.indexOf(cur.col);
-          cur = {
-            ...cur,
-            col: TOP_COLS[(at + dx + TOP_COLS.length) % TOP_COLS.length],
-          };
-        } else {
-          const col = (cur.col + dx + 7) % 7;
-          cur = {row: "board", col, depth: getLast(pileAt(col))};
-        }
-        return;
-      }
+  const topOf = (col: number): Place => ({
+    row: "board",
+    col,
+    depth: Math.max(0, getLast(pileAt(col))),
+  });
+
+  const moveFocus = (dx: number, dy: number): void => {
+    const cur = focused() ?? topOf(0);
+    let next: Place = cur;
+    if (dx !== 0) {
       if (cur.row === "top") {
-        if (dy > 0) {
-          const col = cur.col === 2 ? 1 : cur.col;
-          cur = {row: "board", col, depth: getLast(pileAt(col))};
-        }
-        return;
+        const at = TOP_COLS.indexOf(cur.col);
+        next = {
+          ...cur,
+          col: TOP_COLS[(at + dx + TOP_COLS.length) % TOP_COLS.length],
+        };
+      } else {
+        next = topOf((cur.col + dx + 7) % 7);
       }
+    } else if (cur.row === "top") {
+      if (dy > 0) {
+        next = topOf(cur.col === 2 ? 1 : cur.col);
+      }
+    } else {
       const pile = pileAt(cur.col);
       if (dy < 0) {
-        if (pile.length === 0 || cur.depth <= firstUp(pile)) {
-          cur = {row: "top", col: cur.col === 2 ? 1 : cur.col, depth: 0};
-        } else {
-          cur = {...cur, depth: cur.depth - 1};
-        }
+        next = pile.length === 0 || cur.depth <= firstUp(pile)
+          ? {row: "top", col: cur.col === 2 ? 1 : cur.col, depth: 0}
+          : {...cur, depth: cur.depth - 1};
       } else if (cur.depth < getLast(pile)) {
-        cur = {...cur, depth: cur.depth + 1};
+        next = {...cur, depth: cur.depth + 1};
       }
-    });
+    }
+    seat(next.row, next.col, next.depth);
   };
 
-  /** Enter, wherever the cursor rests: pick up, drop, or draw. */
-  const activate = (): void => {
+  /** Enter, wherever the focus rests: pick up, drop, or draw. */
+  const activate = (cur: Place): void => {
     if (cur.row === "top") {
       if (cur.col === 0) {
         return act(draw);
@@ -1117,9 +1130,9 @@ function *App(this: Context) {
       return;
     }
     if (key === " ") {
-      // The cursor follows the turned card to the flip, ready for f or
+      // The focus follows the turned card to the flip, ready for f or
       // enter, without picking it up.
-      drawTo(seat);
+      drawTo();
       return;
     }
     if (key === "f" || key === "0") {
@@ -1138,74 +1151,42 @@ function *App(this: Context) {
       act((game) => autoplay(game) > 0);
       return;
     }
-    if (key === "Tab") {
-      event.preventDefault();
-      const stops: Array<{row: "top" | "board"; col: number}> = [
-        ...Array.from({length: 7}, (_, col) => ({row: "board" as const, col})),
-        ...TOP_COLS.map((col) => ({row: "top" as const, col})),
-      ];
-      const at = stops.findIndex(
-        (stop) => stop.row === cur.row && stop.col === cur.col,
-      );
-      const step = event.shiftKey ? -1 : 1;
-      const next = stops[(at + step + stops.length) % stops.length];
-      this.refresh(() => {
-        message = "";
-        cursorShown = true;
-        cur = {
-          row: next.row,
-          col: next.col,
-          depth: next.row === "board"
-            ? Math.max(0, pileAt(next.col).length - 1)
-            : 0,
-        };
-      });
-      return;
-    }
+    // Tab is the engine's: it walks the focusable cards in document order.
     if (key === "ArrowUp") {
-      return moveCursor(0, -1);
+      return moveFocus(0, -1);
     }
     if (key === "ArrowDown") {
-      return moveCursor(0, 1);
+      return moveFocus(0, 1);
     }
     if (key === "ArrowLeft") {
-      return moveCursor(-1, 0);
+      return moveFocus(-1, 0);
     }
     if (key === "ArrowRight") {
-      return moveCursor(1, 0);
+      return moveFocus(1, 0);
     }
     if (key === "Enter") {
-      // Until something summons the cursor, Enter draws -- the typing
-      // player's right hand never leaves home row -- and seats the
-      // cursor on the deck, where a second Enter draws again. With the
-      // cursor up, Enter takes and places at it.
-      if (!cursorShown) {
-        seat("top", 0);
-        return act(draw);
+      // Until something takes the focus, Enter draws -- the typing
+      // player's right hand never leaves home row -- and puts the focus
+      // on the deck, where a second Enter draws again. With the focus
+      // somewhere, Enter takes and places at it.
+      const cur = focused();
+      if (cur === null) {
+        act(draw);
+        return seat("top", 0);
       }
-      return activate();
+      return activate(cur);
     }
     if (key >= "1" && key <= "7") {
+      // A number focuses the pile's top card. The same number again walks
+      // up the face-up run, and round to the top from its start.
       const pile = Number(key) - 1;
-      // Naming a pile you cannot reach from is a change of mind, not an
-      // error: pick that pile up instead of refusing the move.
-      if (held && !fitsTableau(heldCards(game, held)[0], game.tableau[pile])) {
-        const cards = game.tableau[pile];
-        if (cards.length > 0) {
-          grab({kind: "tableau", pile, index: runStart(cards)});
-          seat("board", pile, runStart(cards));
-          return;
-        }
-      }
-      target({kind: "tableau", pile});
-      const grip = held;
-      seat(
-        "board",
-        pile,
-        grip?.kind === "tableau" && grip.pile === pile
-          ? grip.index
-          : Math.max(0, getLast(pileAt(pile))),
-      );
+      const cards = pileAt(pile);
+      const cur = focused();
+      const onPile = cur !== null && cur.row === "board" && cur.col === pile;
+      const depth = onPile && cur.depth > runStart(cards)
+        ? cur.depth - 1
+        : Math.max(0, getLast(cards));
+      seat("board", pile, depth);
     }
   };
   document.addEventListener("keydown", onkeydown);
@@ -1267,15 +1248,6 @@ function *App(this: Context) {
       continue;
     }
     const t = tier();
-    // The board the cursor was on may have shrunk under it.
-    if (cur.row === "board") {
-      cur = {
-        ...cur,
-        depth: Math.max(0, Math.min(cur.depth, pileAt(cur.col).length - 1)),
-      };
-    }
-    const atTop = (col: number): boolean =>
-      cursorShown && cur.row === "top" && cur.col === col;
     // The board holds the tallest pile the rules allow, six face-down cards
     // under a king-to-ace run, so a growing pile never pushes the hint
     // down or the felt past the screen. A short terminal gets what is
@@ -1327,11 +1299,11 @@ function *App(this: Context) {
                 ? jsx`<${CardFace}
                     card=${{rank: 1, suit: 0, up: false}}
                     tier=${t}
-                    cursor=${atTop(0)}
-                    onmousedown=${press("deck", () => drawTo(place))}
+                    id="deck"
+                    onmousedown=${press("deck", drawTo)}
                   />`
                 : jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
-                    cursor=${atTop(0)} onmousedown=${press("deck", () => drawTo(place))} />`
+                    id="deck" onmousedown=${press("deck", drawTo)} />`
             }
           </div>
           <div class="pile">
@@ -1344,12 +1316,12 @@ function *App(this: Context) {
                         tier=${t}
                         covered=${at < fan.length - 1}
                         held=${at === fan.length - 1 && grip?.kind === "waste"}
-                        cursor=${at === fan.length - 1 && atTop(1)}
+                        id=${at === fan.length - 1 ? "flip" : undefined}
                         onmousedown=${at === fan.length - 1
                           ? press(
                             "waste",
                             () => {
-                              place("top", 1);
+                              seat("top", 1);
                               grab({kind: "waste"});
                             },
                           )
@@ -1357,7 +1329,7 @@ function *App(this: Context) {
                         ondblclick=${at === fan.length - 1 ? () => sendHome({kind: "waste"}) : undefined}
                       />`,
                 )
-                : jsx`<${Slot} tier=${t} cursor=${atTop(1)} />`
+                : jsx`<${Slot} tier=${t} id="flip" />`
             }
           </div>
           <div class="gap"></div>
@@ -1374,19 +1346,19 @@ function *App(this: Context) {
                         tier=${t}
                         held=${grip?.kind === "foundation" && grip.index === index}
                         drop=${home === index}
-                        cursor=${atTop(3 + index)}
+                        id=${`home-${index}`}
                         onmousedown=${press(`foundation-${index}`, () => {
-                          place("top", 3 + index);
+                          seat("top", 3 + index);
                           target({kind: "foundation", index});
                         })}
                       />`
                     : jsx`<${Slot}
                         tier=${t}
                         mark=${SUITS[index]}
-                        cursor=${atTop(3 + index)}
+                        id=${`home-${index}`}
                         drop=${home === index}
                         onmousedown=${press(`foundation-${index}`, () => {
-                          place("top", 3 + index);
+                          seat("top", 3 + index);
                           target({kind: "foundation", index});
                         })}
                       />`
@@ -1415,9 +1387,9 @@ function *App(this: Context) {
                     ? jsx`<${Slot}
                         tier=${t}
                         drop=${Boolean(card) && fitsTableau(card, pile)}
-                        cursor=${cursorShown && cur.row === "board" && cur.col === index}
+                        id=${`pile-${index}-0`}
                         onmousedown=${press(`pile-${index}`, () => {
-                          place("board", index);
+                          seat("board", index);
                           target({kind: "tableau", pile: index});
                         })}
                       />`
@@ -1427,11 +1399,11 @@ function *App(this: Context) {
                             card=${each}
                             tier=${t}
                             covered=${depth < pile.length - 1}
-                            cursor=${cursorShown && cur.row === "board" && cur.col === index && cur.depth === depth}
+                            id=${each.up ? `pile-${index}-${depth}` : undefined}
                             held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
                             drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
                             onmousedown=${press(`pile-${index}`, () => {
-                              place("board", index, depth);
+                              seat("board", index, depth);
                               if (held || !each.up) {
                                 target({kind: "tableau", pile: index});
                               } else if (isRun(pile, depth)) {
