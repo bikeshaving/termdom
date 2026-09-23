@@ -61,6 +61,11 @@ const kStaticSibling = Symbol("staticSibling");
 const kAttachBegun = Symbol("attachBegun");
 type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
 const kLifecycle = Symbol("lifecycle");
+// Whether a frame has been painted in flow, below the prompt. Leaving the
+// alternate screen restores the cursor to where the switch saved it; over
+// flow content that is the content's last row, and the shell's next line
+// would land on it.
+const kFlowPainted = Symbol("flowPainted");
 
 export interface TermDOM {
 	[kScreen]: Screen;
@@ -77,6 +82,7 @@ export interface TermDOM {
 	// The running render loop. A render() during it queues a trailing
 	// frame rather than starting another.
 	[kRenderInFlight]: Promise<void> | null;
+	[kFlowPainted]: boolean;
 	// Timestamps observer entries.
 	[kRenderCount]: number;
 	[kInput]: Input;
@@ -107,6 +113,7 @@ export class TermDOM {
 		this[kRenderQueued] = false;
 		this[kOnAlternateScreen] = false;
 		this[kRenderInFlight] = null;
+		this[kFlowPainted] = false;
 		this[kRenderCount] = 0;
 		this[kLifecycle] = "detached";
 
@@ -349,7 +356,11 @@ export class TermDOM {
 		DOM.dropFullscreen(this.document);
 		this[kHoverReportingEnabled] = false;
 		this[kMouseReportingEnabled] = false;
-		if (closingFullscreen && this[kTransport].interactive) {
+		// A program that was fullscreen from its first frame leaves nothing
+		// behind, as vim does: the cursor returns to the command line.
+		if (
+			closingFullscreen && this[kTransport].interactive && this[kFlowPainted]
+		) {
 			void this[kExchange].write("\r\n");
 		}
 
@@ -720,6 +731,9 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// UI. A focused text control shows it on its caret, where IME composition
 	// anchors.
 	if (ansi) {
+		if (!fullscreen) {
+			termDOM[kFlowPainted] = true;
+		}
 		termDOM[kExchange].setDisplayType("cursorHidden", true);
 		await termDOM[kExchange].write(ansi);
 	}

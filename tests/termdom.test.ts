@@ -308,6 +308,28 @@ test("closing while fullscreen leaves no trace, and the shell lands below", asyn
 	expect(after).toContain("\r\n");
 });
 
+test("a program fullscreen from its first frame leaves the cursor where it was", async () => {
+	// Nothing was painted in flow, so the restore puts the cursor back on
+	// the command line, and a step below it would leave a blank line, the
+	// way vim leaves none.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = "<div id=\"fs\">STAGE</div>";
+	dom.attach();
+	void document.getElementById("fs")!.requestFullscreen();
+	await nextFrame(dom);
+	expect(document.fullscreenElement).not.toBeNull();
+
+	const raw = captureRawOutput(terminal);
+
+	await dom.dispose();
+	const written = raw();
+	const restoreAt = written.indexOf("\x1b[?1049l");
+	expect(restoreAt).toBeGreaterThan(-1);
+	expect(written.slice(restoreAt)).not.toContain("\r\n");
+});
+
 test("no frame straddles a screen switch, even mid-animation", async () => {
 	// An in-flight render finishing its stdout write AFTER ?1049l paints
 	// alternate-screen geometry onto the restored main screen. Transitions

@@ -75,7 +75,10 @@ Escape blurs it instead.
 A program that wants the whole terminal for its lifetime can call
 `document.documentElement.requestFullscreen()` right after `attach()`.
 When it exits, nothing of it is left in the scrollback, because the
-alternate screen is discarded on the switch back.
+alternate screen is discarded on the switch back, and the cursor is
+where the command line left it, as vim leaves it. A program that
+painted in flow first exits one line below that content instead, so the
+shell's prompt does not land on it.
 
 The document's scroll position has nothing to move in fullscreen: the
 element fills the screen. Boxes inside it with `overflow: auto` still
