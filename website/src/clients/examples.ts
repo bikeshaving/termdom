@@ -339,7 +339,8 @@ async function runProgram(
 	});
 
 	let height: number | null = null;
-	const bridge = hostTransport(transport, worker, (rows) => {
+	const channel = new MessageChannel();
+	const bridge = hostTransport(transport, channel.port1, (rows) => {
 		height = rows;
 	});
 
@@ -356,13 +357,17 @@ async function runProgram(
 
 	const contentRows = (): number | null => (stopped ? null : height);
 
-	worker.postMessage({
-		type: "init",
-		files: readWorkspaceFiles(),
-		program: url,
-		cols: terminal.cols,
-		rows: terminal.rows,
-	});
+	worker.postMessage(
+		{
+			type: "init",
+			files: readWorkspaceFiles(),
+			program: url,
+			cols: terminal.cols,
+			rows: terminal.rows,
+			port: channel.port2,
+		},
+		[channel.port2],
+	);
 
 	return {stop, contentRows};
 }

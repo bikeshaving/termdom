@@ -3,8 +3,10 @@
  * no window of its own, so a program that supplies them as globals, the
  * way a program does under Node, finds the same absence here. The page
  * sends one message to start it: the repository's files, the program's
- * URL, and the terminal's size. The terminal itself stays in the page,
- * reached through the bridge.
+ * URL, the terminal's size, and the port the terminal is reached on. The
+ * terminal itself stays in the page, behind the bridge; nothing else
+ * travels on the worker's own channel, which a library may take for
+ * itself.
  */
 import {workerTransport} from "./sandbox-bridge.js";
 import type {WorkerMessage} from "./sandbox-bridge.js";
@@ -15,6 +17,7 @@ interface Init {
 	program: string;
 	cols: number;
 	rows: number;
+	port: MessagePort;
 }
 
 const scope = globalThis as unknown as {
@@ -65,7 +68,7 @@ self.addEventListener("message", (event: MessageEvent) => {
 	// The last TermDOM the program makes reports its document's height
 	// with each frame, so the pane can follow the program.
 	scope.__transport = workerTransport(
-		self,
+		message.port,
 		{cols: message.cols, rows: message.rows},
 		() => scope.__termdom?.document.documentElement?.scrollHeight ?? null,
 	);

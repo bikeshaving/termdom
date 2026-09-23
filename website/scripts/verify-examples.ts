@@ -43,6 +43,14 @@ const terminalText = async () =>
 		)
 	).replace(/\u00a0/g, " ");
 
+/** The status line under the example, which shows a program's uncaught errors. */
+async function statusClean(label: string): Promise<void> {
+	await new Promise((r) => setTimeout(r, 500));
+	const state = await page.getAttribute("#example-status", "data-state");
+	const text = (await page.textContent("#example-status")) ?? "";
+	report(state === "ok", `${label}: the status line shows no error`, text.trim());
+}
+
 async function waitForText(needle: string, timeout = 30000): Promise<boolean> {
 	const deadline = Date.now() + timeout;
 	while (Date.now() < deadline) {
@@ -101,11 +109,13 @@ await page.selectOption("select", "todomvc");
 report(await waitForText("todos"), "examples: todomvc renders through mapped crank");
 await page.selectOption("select", "solitaire");
 report(await waitForText("one card", 20000), "examples: solitaire boots through its main guard");
+await statusClean("solitaire");
 
 // CodeMirror reads document and window as globals, which the example
 // supplies because the worker has none of its own.
 await page.selectOption("select", "codemirror");
 report(await waitForText("function greet", 20000), "examples: codemirror runs in the worker");
+await statusClean("codemirror");
 
 // Weather runs with the network allowed: its search prompt paints, and a
 // searched city fetches Open-Meteo and charts it (skipped offline -- the
@@ -213,6 +223,7 @@ report(colours >= 5, "examples: prism paints the token classes in distinct colou
 await page.locator(".xterm").first().click();
 await page.keyboard.press("2");
 report(await waitForText(".token.keyword", 5000), "examples: prism switches language on a number key");
+await statusClean("prism");
 
 // The homepage embeds hydrate as they come near and paint their programs.
 // The first one is above the fold, so it is checked where a reader meets
