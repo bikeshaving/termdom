@@ -402,7 +402,6 @@ function sheet(): string {
   .pile { width: ${tier.width}ch; }
   .place { width: ${tier.width}ch; height: ${tier.height}px; }
   .pile > .card + .card { margin-top: -${tier.height - 1}px; }
-  .pile > .card + .card:focus { margin-top: -${tier.height - 2}px; }
   .fan > .card + .card { margin-left: -${tier.width - 3}ch; }
   .top, .numbers, .board, .captions { gap: ${tier.gap}ch; }
   .play { width: ${7 * tier.width + 6 * tier.gap}ch; }
@@ -432,9 +431,9 @@ function sheet(): string {
   .board { display: flex; flex-direction: row; }
   .pile { display: flex; flex-direction: column; position: relative; z-index: 0; }
   .fan { display: flex; flex-direction: row; align-items: flex-start; }
-  /* Every place a stack lives has the same dark ground under its cards, so
-     a card that steps down shows the place behind it. The pile is its own
-     stacking context, so the place sits under the cards and over the felt. */
+  /* Every place a stack lives has the same dark ground under its cards.
+     The pile is its own stacking context, so the place sits under the
+     cards and over the felt. */
   .place { position: absolute; top: 0; left: 0; z-index: -1; background-color: #05381a; }
 
   /* A card's rows are drawn, not written: the blank rows are spaces, and
@@ -456,15 +455,11 @@ function sheet(): string {
   ${depthShades()}
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
-  /* The focused card steps down a row, the way a hand lifts a card off
-     its pile, and it is the document's focus: tab, the arrows, the numbers
-     and a click all move the same thing. Its colours stay its own. A card
-     over another uncovers a second row of it; the first card of a pile
-     uncovers the place. */
+  /* The focused card is the one light blue card on the board, and it is
+     the document's focus: tab, the arrows, the numbers and a click all move
+     the same thing. Its suit keeps its colour. */
   .card, .slot { outline: none; }
-  .card:focus { margin-top: 1px; background-color: #cfe2f7; }
-  /* The deck is not picked up, so it does not lift. */
-  #deck:focus { margin-top: 0; }
+  .card:focus { background-color: #cfe2f7; }
   /* An empty place does not move. It takes the focus only as somewhere to
      put what is held, or as the deck to turn over, and brightens its mark. */
   .slot:focus { background-color: #cfe2f7; color: #2f5a80; }
@@ -1350,11 +1345,10 @@ function *App(this: Context) {
     // under a king-to-ace run, so a growing pile never pushes the hint
     // down or the felt past the screen. A short terminal gets what is
     // left after the rows above and below.
-    // One row more than the cards, for the focused one to step down into.
-    const topRows = t.height + 1;
+    const topRows = t.height;
     const boardRows = Math.max(
       t.height,
-      Math.min(19 + t.height, term.window.innerHeight - (8 + topRows)),
+      Math.min(18 + t.height, term.window.innerHeight - (8 + topRows)),
     );
     const grip = holding();
     const ask = asking();
