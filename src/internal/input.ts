@@ -6,6 +6,8 @@ import {
 	getKeyboardActivation,
 	getShadowRoot,
 	getTextControlCaretOffset,
+	getTextControlValueText,
+	getUnitBounds,
 	handleCloseRequest,
 	HTMLInputElement,
 	HTMLLabelElement,
@@ -15,6 +17,8 @@ import {
 	lockDataTransfer,
 	placeTextControlCaret,
 	requestRender,
+	type SelectionUnit,
+	selectUnits,
 	setDocumentFocusVisible,
 	setDocumentVisible,
 	setHoveredElement,
@@ -311,6 +315,7 @@ const kMouseDownTarget = Symbol("mouseDownTarget");
 const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
 const kTextControlDragAnchor = Symbol("textControlDragAnchor");
+const kSelectionUnit = Symbol("selectionUnit");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kLastClickPoint = Symbol("lastClickPoint");
 const kLastClickTime = Symbol("lastClickTime");
@@ -355,6 +360,9 @@ export interface Input {
 		element: HTMLInputElement | HTMLTextAreaElement;
 		offset: number;
 	} | null;
+	// A double click selects by word and a triple click by paragraph, and
+	// the drag that follows extends a whole unit at a time.
+	[kSelectionUnit]: SelectionUnit | null;
 
 	// UI Events' click count: mousedown, mouseup and click carry it as
 	// `detail`, and a dblclick is every even click.
@@ -382,6 +390,7 @@ export class Input {
 		this[kPopoverPressTarget] = null;
 		this[kSelectionDragAnchor] = null;
 		this[kTextControlDragAnchor] = null;
+		this[kSelectionUnit] = null;
 		this[kMouseCaptureYielded] = false;
 		this[kLastClickPoint] = null;
 		this[kLastClickTime] = 0;
@@ -629,7 +638,7 @@ function deliverMouseReport(input: Input, {
 	}
 
 	if (!isRelease) {
-		dispatchPress(input, target, base, x, y, isInDocument, eventInit);
+		dispatchPress(input, target, base, x, y, isInDocument, eventInit, detail);
 		return;
 	}
 
@@ -761,6 +770,26 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	return false;
 }
 
+/**
+ * What a multi-click selects in a text control: a word, the line in a
+ * textarea, or an input's whole value. A password's word is its whole
+ * value too, since its characters say nothing about where words break.
+ */
+function getControlUnitBounds(
+	element: HTMLInputElement | HTMLTextAreaElement,
+	offset: number,
+	unit: SelectionUnit,
+): [number, number] {
+	const text = getTextControlValueText(element)?.data ?? "";
+	if (
+		element instanceof HTMLInputElement &&
+		(unit === "paragraph" || element.type === "password")
+	) {
+		return [0, text.length];
+	}
+	return getUnitBounds(text, offset, unit);
+}
+
 function dragTo(
 	input: Input,
 	x: number,
@@ -772,7 +801,28 @@ function dragTo(
 		const {element: textControlElement, offset: anchor} =
 			input[kTextControlDragAnchor];
 		const focus = getTextControlCaretOffset(textControlElement, x, y);
-		if (focus !== null) {
+		const unit = input[kSelectionUnit];
+		if (focus !== null && unit !== null) {
+			// A whole unit at a time, from the unit the click selected.
+			const [anchorStart, anchorEnd] = getControlUnitBounds(
+				textControlElement,
+				anchor,
+				unit,
+			);
+			const [focusStart, focusEnd] = getControlUnitBounds(
+				textControlElement,
+				focus,
+				unit,
+			);
+			const forward = focus >= anchor;
+			setUASelection(
+				textControlElement,
+				forward ? anchorStart : Math.min(focusStart, anchorStart),
+				forward ? Math.max(focusEnd, anchorEnd) : anchorEnd,
+				forward ? "forward" : "backward",
+			);
+			requestRender(input[kDocument]);
+		} else if (focus !== null) {
 			setUASelection(
 				textControlElement,
 				Math.min(anchor, focus),
@@ -788,14 +838,19 @@ function dragTo(
 		const focus = getTextPosition(input, x, y);
 		if (focus && isSelectable(input, focus)) {
 			const anchor = input[kSelectionDragAnchor];
-			input[kWindow]
-				.getSelection()
-				?.setBaseAndExtent(
-					anchor.node,
-					anchor.offset,
-					focus.node,
-					focus.offset,
-				);
+			const unit = input[kSelectionUnit];
+			if (unit !== null) {
+				selectUnits(input[kDocument], anchor, focus, unit);
+			} else {
+				input[kWindow]
+					.getSelection()
+					?.setBaseAndExtent(
+						anchor.node,
+						anchor.offset,
+						focus.node,
+						focus.offset,
+					);
+			}
 			requestRender(input[kDocument]);
 		}
 	}
@@ -809,8 +864,10 @@ function dispatchPress(
 	y: number,
 	isInDocument: boolean,
 	eventInit: object,
+	clicks: number,
 ): void {
 	input[kMouseDownTarget] = target;
+	input[kSelectionUnit] = null;
 	// Light dismiss is a press and a release in the same place, so a drag
 	// out of a popover does not close it.
 	input[kPopoverPressTarget] = lightDismissPress(target);
@@ -843,11 +900,19 @@ function dispatchPress(
 	const parked = base === 0 && isInDocument
 		? placeTextControlCaret(target, x, y)
 		: null;
+	const unit: SelectionUnit | null = base !== 0
+		? null
+		: clicks >= 3 ? "paragraph" : clicks === 2 ? "word" : null;
 	if (parked) {
-		input[kTextControlDragAnchor] = {
-			element: parked.textControl as HTMLInputElement | HTMLTextAreaElement,
-			offset: parked.offset,
-		};
+		const element = parked.textControl as HTMLInputElement |
+			HTMLTextAreaElement;
+		input[kTextControlDragAnchor] = {element, offset: parked.offset};
+		// A double or triple click selects the unit around the press.
+		if (unit !== null) {
+			input[kSelectionUnit] = unit;
+			const [start, end] = getControlUnitBounds(element, parked.offset, unit);
+			setUASelection(element, start, end, "forward");
+		}
 		// The document selection still clears, as in a browser.
 		const docSelection = input[kWindow].getSelection();
 		if (docSelection && !docSelection.isCollapsed) {
@@ -866,7 +931,12 @@ function dispatchPress(
 		}
 		const hadSelection = !selection.isCollapsed;
 		input[kSelectionDragAnchor] = anchor;
-		if (anchor) {
+		if (anchor && unit !== null) {
+			// A double or triple click selects the unit around the press.
+			input[kSelectionUnit] = unit;
+			selectUnits(input[kDocument], anchor, anchor, unit);
+			requestRender(input[kDocument]);
+		} else if (anchor) {
 			selection.setBaseAndExtent(
 				anchor.node,
 				anchor.offset,
@@ -905,10 +975,14 @@ function dispatchRelease(
 	input[kPopoverPressTarget] = null;
 	let selectedByDrag = false;
 	input[kTextControlDragAnchor] = null;
+	// A word or paragraph a multi-click selected is the click's own work,
+	// not a drag's, so the click and dblclick still fire.
+	const unit = input[kSelectionUnit];
+	input[kSelectionUnit] = null;
 	if (input[kSelectionDragAnchor]) {
 		input[kSelectionDragAnchor] = null;
 		const text = input[kWindow].getSelection()?.toString() ?? "";
-		if (text.length > 0) {
+		if (text.length > 0 && unit === null) {
 			selectedByDrag = true;
 		}
 	}
