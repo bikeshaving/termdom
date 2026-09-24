@@ -27567,6 +27567,86 @@ function selectionLineMove(
 	return [found.node as unknown as Node, found.offset];
 }
 
+/** What a double or triple click selects: a word, or a paragraph. */
+export type SelectionUnit = "word" | "paragraph";
+
+const wordSegmenter = new Intl.Segmenter(undefined, {granularity: "word"});
+
+/**
+ * The span of `text` a multi-click selects around `index`: the word or the
+ * run of spaces there, by the language's word rules, or the paragraph,
+ * the text between line breaks.
+ */
+export function getUnitBounds(
+	text: string,
+	index: number,
+	unit: SelectionUnit,
+): [number, number] {
+	if (unit === "paragraph") {
+		const start = text.lastIndexOf("\n", index - 1) + 1;
+		const end = text.indexOf("\n", index);
+		return [start, end < 0 ? text.length : end];
+	}
+	// Past the end of a line, the pointer is on the line's last word.
+	let at = Math.min(index, text.length);
+	if (
+		at > 0 && (at === text.length || text[at] === "\n") && text[at - 1] !== "\n"
+	) {
+		at--;
+	}
+	if (at >= text.length || text[at] === "\n") {
+		return [at, at];
+	}
+	for (const {segment, index: start} of wordSegmenter.segment(text)) {
+		if (start <= at && at < start + segment.length) {
+			return [start, start + segment.length];
+		}
+	}
+	return [at, at];
+}
+
+/**
+ * The document selection a multi-click makes: the unit around the press,
+ * or, as a drag goes on, from the unit around the press to the unit around
+ * the pointer, a whole unit at a time. Painted text only, so text a
+ * user-select: none rule keeps out is kept out here too.
+ */
+export function selectUnits(
+	document: globalThis.Document,
+	anchor: {node: globalThis.Node; offset: number},
+	focus: {node: globalThis.Node; offset: number},
+	unit: SelectionUnit,
+): void {
+	const attached = getAttachedDocument(document as unknown as Document);
+	attached?.[kLayout].performLayout();
+	const run = flattenSelectionText(
+		getSelectionTextNodes(document as unknown as Document, attached),
+	);
+	const from = getSelectionIndex(run, anchor.node as Node, anchor.offset);
+	const to = getSelectionIndex(run, focus.node as Node, focus.offset);
+	if (from === null || to === null) {
+		return;
+	}
+	const [anchorStart, anchorEnd] = getUnitBounds(run.text, from, unit);
+	const [focusStart, focusEnd] = getUnitBounds(run.text, to, unit);
+	const [base, extent] = to >= from
+		? [anchorStart, Math.max(focusEnd, anchorEnd)]
+		: [anchorEnd, Math.min(focusStart, anchorStart)];
+	const basePoint = getSelectionPoint(run, base, true);
+	const extentPoint = getSelectionPoint(run, extent, extent < base);
+	if (basePoint === null || extentPoint === null) {
+		return;
+	}
+	(document as unknown as Document)
+		.getSelection()
+		?.setBaseAndExtent(
+			basePoint[0],
+			basePoint[1],
+			extentPoint[0],
+			extentPoint[1],
+		);
+}
+
 function getModifiedPoint(
 	selection: Selection,
 	from: [Node, number],

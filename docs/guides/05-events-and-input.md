@@ -210,7 +210,13 @@ spellcheck.
 ## Selection and the clipboard
 
 Drag to select, in the document or inside a field; style it with
-`::selection`. `getSelection().toString()` is the rendered text, as in a
+`::selection`. A double click selects the word under the pointer and a
+triple click the paragraph, or in a `<textarea>` the line and in an
+`<input>` the whole value, and a drag that follows extends the selection
+a whole word or paragraph at a time. Clicks count as a double or triple
+click only on the same cell, within half a second. All of it is the
+default action of `mousedown`, so a listener that calls
+`preventDefault()` does its own selecting, as CodeMirror does. `getSelection().toString()` is the rendered text, as in a
 browser: nothing from a closed `<details>`, a `<select>`'s options, a
 hidden element, or `user-select: none` content, and a line break
 between blocks. `user-select: none` also keeps a drag from anchoring
