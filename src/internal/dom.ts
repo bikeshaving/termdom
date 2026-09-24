@@ -27581,20 +27581,26 @@ export function getUnitBounds(
 	text: string,
 	index: number,
 	unit: SelectionUnit,
+	isBreak: (at: number) => boolean = () => true,
 ): [number, number] {
 	if (unit === "paragraph") {
-		const start = text.lastIndexOf("\n", index - 1) + 1;
-		const end = text.indexOf("\n", index);
-		return [start, end < 0 ? text.length : end];
+		let start = Math.min(index, text.length);
+		while (start > 0 && !(text[start - 1] === "\n" && isBreak(start - 1))) {
+			start--;
+		}
+		let end = Math.min(index, text.length);
+		while (end < text.length && !(text[end] === "\n" && isBreak(end))) {
+			end++;
+		}
+		return [start, end];
 	}
 	// Past the end of a line, the pointer is on the line's last word.
+	const endsLine = (i: number): boolean => text[i] === "\n" && isBreak(i);
 	let at = Math.min(index, text.length);
-	if (
-		at > 0 && (at === text.length || text[at] === "\n") && text[at - 1] !== "\n"
-	) {
+	if (at > 0 && (at === text.length || endsLine(at)) && !endsLine(at - 1)) {
 		at--;
 	}
-	if (at >= text.length || text[at] === "\n") {
+	if (at >= text.length || endsLine(at)) {
 		return [at, at];
 	}
 	for (const {segment, index: start} of wordSegmenter.segment(text)) {
@@ -27627,8 +27633,24 @@ export function selectUnits(
 	if (from === null || to === null) {
 		return;
 	}
-	const [anchorStart, anchorEnd] = getUnitBounds(run.text, from, unit);
-	const [focusStart, focusEnd] = getUnitBounds(run.text, to, unit);
+	// A newline ends a paragraph where it is rendered as one: between
+	// blocks, at a <br>, or in text whose white-space keeps it. A newline in
+	// the source of a wrapped paragraph collapses to a space.
+	const isBreak = (at: number): boolean => {
+		const part = run.parts.find(
+			(each) => each.start <= at && at < each.start + each.length,
+		);
+		if (part === undefined || isLineBreakElement(part.node)) {
+			return true;
+		}
+		const parent = flatParentElement(part.node);
+		const whiteSpace = parent === null
+			? ""
+			: getComputedValue(parent as Element, "white-space");
+		return /^(pre|pre-wrap|pre-line|break-spaces)$/.test(whiteSpace);
+	};
+	const [anchorStart, anchorEnd] = getUnitBounds(run.text, from, unit, isBreak);
+	const [focusStart, focusEnd] = getUnitBounds(run.text, to, unit, isBreak);
 	const [base, extent] = to >= from
 		? [anchorStart, Math.max(focusEnd, anchorEnd)]
 		: [anchorEnd, Math.min(focusStart, anchorStart)];
