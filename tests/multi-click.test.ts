@@ -161,3 +161,22 @@ test("a second press on another cell is a new click, not a double click", async 
 	expect(dom.window.getSelection()!.toString()).toBe("");
 	await dom.dispose();
 });
+
+test("a newline in the source of a paragraph does not end it", async () => {
+	const {terminal, dom} = await page("<p>one two\nthree four</p><p>next</p>");
+	await clicks(terminal, 3, 3, 1);
+	const range = dom.window.getSelection()!.getRangeAt(0);
+	const text = dom.document.querySelector("p")!.firstChild;
+	expect(range.startContainer).toBe(text);
+	expect(range.startOffset).toBe(0);
+	expect(range.endContainer).toBe(text);
+	expect(range.endOffset).toBe("one two\nthree four".length);
+	await dom.dispose();
+});
+
+test("in preformatted text, a triple click selects the line", async () => {
+	const {terminal, dom} = await page("<pre>first line\nsecond line</pre>");
+	await clicks(terminal, 3, 3, 2);
+	expect(dom.window.getSelection()!.toString()).toBe("second line");
+	await dom.dispose();
+});
