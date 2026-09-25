@@ -378,6 +378,7 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 		keyword("autocomplete", "autocomplete", ["on", "off"], "", ""),
 		keyword("wrap", "wrap", ["soft", "hard"], "soft", "soft"),
 	],
+	HTMLTemplateElement: [str("shadowRootCustomElementRegistry")],
 	HTMLTrackElement: [
 		keyword(
 			"kind",

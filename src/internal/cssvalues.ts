@@ -579,7 +579,7 @@ function parseHSLChannels(channels: string[]): [number, number, number] | null {
 	const c = (1 - Math.abs(2 * l - 1)) * s;
 	const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
 	const m = l - c / 2;
-	let r1 = 0, g1 = 0, b1 = 0;
+	let r1: number, g1: number, b1: number;
 	if (h < 60) {
 		[r1, g1, b1] = [c, x, 0];
 	} else if (h < 120) {
@@ -2251,7 +2251,7 @@ function isValidByGrammar(
 	if (memoized !== undefined) {
 		return memoized;
 	}
-	let valid = true;
+	let valid: boolean;
 	try {
 		const match = atRule
 			? grammarLexer.matchAtruleDescriptor(atRule.slice(1), property, text)
@@ -3846,7 +3846,7 @@ export function getContainerParts(prelude: string): {
 	name: string;
 	query: string;
 } {
-	let nodes: CSSTree.ContainerPreludeNode[] = [];
+	let nodes: CSSTree.ContainerPreludeNode[];
 	try {
 		const ast = CSSTree.parse(prelude, {
 			context: "atrulePrelude",

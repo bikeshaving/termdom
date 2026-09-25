@@ -342,6 +342,28 @@ test("popoverTargetElement takes an element, not only an id", async () => {
 	dom.dispose();
 });
 
+test("command reflects its known keywords and custom commands", async () => {
+	const {document, dom, popover} = await open(
+		"<button commandfor=pop command=Show-Popover>Open</button>" +
+		"<div id=pop popover>hi</div>",
+	);
+	const button = document.querySelector("button") as HTMLButtonElement;
+	expect(button.command).toBe("show-popover");
+	expect(button.commandForElement).toBe(popover);
+
+	button.setAttribute("command", "--spin");
+	expect(button.command).toBe("--spin");
+	button.setAttribute("command", "spin");
+	expect(button.command).toBe("");
+
+	button.commandForElement = null;
+	expect(button.hasAttribute("commandfor")).toBe(false);
+	button.commandForElement = popover;
+	expect(button.commandForElement).toBe(popover);
+	expect(button.popoverTargetElement).toBe(null);
+	dom.dispose();
+});
+
 /* ---------------------------------------------------------- light dismiss */
 
 test("a click outside an auto popover closes it, and one inside does not", async () => {
