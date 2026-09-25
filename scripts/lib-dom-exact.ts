@@ -620,7 +620,12 @@ type Overloads<T> = T extends {
 type MapOverloads<T extends Array<[unknown[], unknown]>> = {
 	[I in keyof T]: [ToPlatformTuple<T[I][0]>, ToPlatform<T[I][1]>];
 };
-type MemberDrift<A, B> = [A] extends [Fn]
+// A member declared with lib.dom's own type is exact without mapping,
+// and most are.
+type MemberDrift<A, B> = Identical<A, B> extends true
+	? false
+	: MappedMemberDrift<A, B>;
+type MappedMemberDrift<A, B> = [A] extends [Fn]
 	? [B] extends [Fn]
 		? Identical<MapOverloads<Overloads<A>>, Overloads<B>> extends true
 			? false
