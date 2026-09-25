@@ -29,7 +29,7 @@ import {
 	SelectorError,
 } from "./cssselectors.ts";
 import * as CSSValues from "./cssvalues.ts";
-import {installEditing} from "./editing.ts";
+import {getEditingHost, installEditing} from "./editing.ts";
 import type {Exchange} from "./exchange.ts";
 import {
 	getInterface,
@@ -4318,6 +4318,8 @@ function toggleTheDetails(summary: HTMLElement): void {
 	details.toggleAttribute("open", !details.hasAttribute("open"));
 }
 
+const DIALOG_COMMANDS = new Set(["close", "request-close", "show-modal"]);
+
 function activateButton(button: HTMLButtonElement, event: Event): void {
 	if (isActuallyDisabled(button)) {
 		return;
@@ -4330,7 +4332,62 @@ function activateButton(button: HTMLButtonElement, event: Event): void {
 			form.reset();
 		}
 	}
-	popoverTargetActivationBehavior(button, event.target);
+	const target = getAttributeElement(button, "commandfor");
+	if (target === null) {
+		popoverTargetActivationBehavior(button, event.target);
+		return;
+	}
+	runCommand(button, target);
+}
+
+// HTML's command steps: the target hears a cancelable command event,
+// then runs the built-in command if it has one. A custom command, one
+// starting with "--", is only the event.
+function runCommand(button: HTMLButtonElement, target: Element): void {
+	const command = button.command;
+	if (command === "") {
+		return;
+	}
+	const isPopover = getPopoverAttributeState(target) !== null;
+	const custom = command.startsWith("--");
+	if (
+		!isPopover &&
+		!custom &&
+		!(target instanceof HTMLDialogElement && DIALOG_COMMANDS.has(command))
+	) {
+		return;
+	}
+	const proceed = dispatch(
+		target,
+		new CommandEvent("command", {cancelable: true, command, source: button}),
+	);
+	if (!proceed || !target.isConnected || custom) {
+		return;
+	}
+	if (isPopover) {
+		const showing = isShowingPopover(target);
+		if (
+			(command === "hide-popover" || command === "toggle-popover") && showing
+		) {
+			hidePopover(target, true, true, false, button);
+		} else if (
+			(command === "show-popover" || command === "toggle-popover") &&
+			!showing &&
+			checkPopoverValidity(target, false, null) === true
+		) {
+			showPopover(target, false, button);
+		}
+		return;
+	}
+	const dialog = target as HTMLDialogElement;
+	const open = dialog.hasAttribute("open");
+	if (command === "close" && open) {
+		dialog.close(button.value);
+	} else if (command === "request-close" && open) {
+		dialog.requestClose(button.value);
+	} else if (command === "show-modal" && !open && isConnectedNode(dialog)) {
+		dialog.showModal();
+	}
 }
 
 function activateInput(input: HTMLInputElement, event: Event): void {
@@ -9614,6 +9671,131 @@ Object.defineProperties(Element.prototype, {
 	},
 });
 
+// The HTML Standard's rendered text collection. A string is text, and a
+// number is a count of line breaks a block or paragraph needs around it:
+// neighbouring counts merge into the larger, and none is needed at
+// either end.
+function getInnerText(element: Element): string {
+	const attached = getAttachedDocument(element);
+	if (attached === undefined || !element.isConnected) {
+		return element.textContent ?? "";
+	}
+	flushLayout(element);
+	const layout = attached[kLayout];
+	if (!isElementRendered(layout, element)) {
+		return element.textContent ?? "";
+	}
+	const items: Array<string | number> = [];
+	for (let child = element[kFirstChild]; child !== null; child = child[kNext]) {
+		collectRenderedText(layout, child, items);
+	}
+	let text = "";
+	let breaks = 0;
+	for (const item of items) {
+		if (typeof item === "number") {
+			breaks = Math.max(breaks, item);
+		} else if (item !== "") {
+			if (text !== "") {
+				text += "\n".repeat(breaks);
+			}
+			breaks = 0;
+			text += item;
+		}
+	}
+	return text;
+}
+
+function isElementRendered(layout: Layout, element: Element): boolean {
+	return (
+		getComputedValue(element, "display") === "contents" ||
+		layout.getRects(element).length > 0
+	);
+}
+
+function collectRenderedText(
+	layout: Layout,
+	node: Node,
+	items: Array<string | number>,
+): void {
+	if (node.nodeType === TEXT_NODE) {
+		const parent = node.parentElement as Element | null;
+		if (
+			parent === null || getComputedValue(parent, "visibility") === "visible"
+		) {
+			items.push(layout.getRenderedText(node as unknown as globalThis.Text));
+		}
+		return;
+	}
+	if (node.nodeType !== ELEMENT_NODE) {
+		return;
+	}
+	const element = node as Element;
+	const display = getComputedValue(element, "display");
+	if (display === "none") {
+		return;
+	}
+	const shown =
+		isElementRendered(layout, element) &&
+		getComputedValue(element, "visibility") === "visible";
+	const around = !shown
+		? 0
+		: element.localName === "p" && element.namespaceURI === HTML_NAMESPACE
+			? 2
+			: isBlockLevelDisplay(display) ? 1 : 0;
+	if (around > 0) {
+		items.push(around);
+	}
+	if (
+		shown &&
+		element.localName === "math" &&
+		element.namespaceURI === MATHML_NAMESPACE
+	) {
+		items.push(linearizeMath(element as unknown as globalThis.Element));
+	} else {
+		for (
+			let child = element[kFirstChild]; child !== null; child = child[kNext]
+		) {
+			collectRenderedText(layout, child, items);
+		}
+	}
+	if (!shown) {
+		return;
+	}
+	if (isLineBreakElement(element)) {
+		items.push("\n");
+	} else if (display === "table-cell" && hasLaterSibling(element, display)) {
+		items.push("\t");
+	} else if (display === "table-row" && hasLaterSibling(element, display)) {
+		items.push("\n");
+	}
+	if (around > 0) {
+		items.push(around);
+	}
+}
+
+function isBlockLevelDisplay(display: string): boolean {
+	return (
+		display === "table-caption" ||
+		(!display.startsWith("inline") &&
+			!display.startsWith("table-") &&
+			!display.startsWith("ruby") &&
+			display !== "contents")
+	);
+}
+
+function hasLaterSibling(element: Element, display: string): boolean {
+	for (
+		let next = element.nextElementSibling as Element | null;
+		next !== null;
+		next = next.nextElementSibling as Element | null
+	) {
+		if (getComputedValue(next, "display") === display) {
+			return true;
+		}
+	}
+	return false;
+}
+
 const alreadyConstructed = Symbol("already constructed");
 
 /**
@@ -10066,7 +10248,7 @@ export class HTMLElement extends Element {
 	// path the standard gives an element that is not being rendered: its
 	// descendant text content.
 	get innerText(): string {
-		return this.textContent ?? "";
+		return getInnerText(this);
 	}
 
 	set innerText(value: string) {
@@ -13639,13 +13821,57 @@ class ToggleEvent extends Event {
 		return this[kNewState];
 	}
 
+	// Seen from a listener, as HTML specifies: an invoker inside a shadow
+	// tree the listener cannot see into is its host.
 	get source(): Element | null {
-		return this[kSource];
+		return retarget(
+			this[kSource],
+			this.currentTarget as EventTarget,
+		) as Element |
+			null;
 	}
 }
 
 Object.defineProperty(ToggleEvent.prototype, Symbol.toStringTag, {
 	value: "ToggleEvent",
+	configurable: true,
+});
+
+interface CommandEventInit extends EventInit {
+	source?: Element | null;
+	command?: string;
+}
+
+const kCommand = Symbol("command");
+
+interface CommandEvent {
+	[kSource]: Element | null;
+	[kCommand]: string;
+}
+
+class CommandEvent extends Event {
+	constructor(type: string, eventInitDict: CommandEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<CommandEventInit>(eventInitDict, "An event init");
+		this[kSource] = init.source ?? null;
+		this[kCommand] = String(init.command ?? "");
+	}
+
+	get source(): Element | null {
+		return retarget(
+			this[kSource],
+			this.currentTarget as EventTarget,
+		) as Element |
+			null;
+	}
+
+	get command(): string {
+		return this[kCommand];
+	}
+}
+
+Object.defineProperty(CommandEvent.prototype, Symbol.toStringTag, {
+	value: "CommandEvent",
 	configurable: true,
 });
 
@@ -26654,38 +26880,73 @@ function rangeAnchor(range: Range): Element | null {
 Object.defineProperties(Range.prototype, {
 	getBoundingClientRect: {
 		value(this: Range): globalThis.DOMRect {
-			const attached = getAttachedDocument(this.startContainer);
-			if (attached === undefined) {
-				return new DOMRect(0, 0, 0, 0);
-			}
-			flushLayout(this.startContainer);
-			return toViewportRect(
-				attached,
-				unionRect(attached[kLayout].getRangeRects(this)),
-				rangeAnchor(this),
-			);
+			return getBoundingRect(getRangeClientRects(this));
 		},
 		writable: true,
 		configurable: true,
 	},
 	getClientRects: {
 		value(this: Range): globalThis.DOMRectList {
-			const attached = getAttachedDocument(this.startContainer);
-			if (attached === undefined) {
-				return new DOMRectList();
-			}
-			flushLayout(this.startContainer);
-			const anchor = rangeAnchor(this);
-			return createRectList(
-				attached[kLayout]
-					.getRangeRects(this)
-					.map((rect) => toViewportRect(attached, rect, anchor)),
-			);
+			return createRectList(getRangeClientRects(this));
 		},
 		writable: true,
 		configurable: true,
 	},
 });
+
+// In tree order, as CSSOM View lists them: the border boxes of each
+// element the range contains whose parent it does not, and the selected
+// part of each text node.
+function getRangeClientRects(range: Range): globalThis.DOMRect[] {
+	const attached = getAttachedDocument(range.startContainer);
+	if (attached === undefined) {
+		return [];
+	}
+	flushLayout(range.startContainer);
+	const layout = attached[kLayout];
+	const anchor = rangeAnchor(range);
+	if (range.collapsed) {
+		return layout
+			.getRangeRects(range)
+			.map((rect) => toViewportRect(attached, rect, anchor));
+	}
+	const rects: globalThis.DOMRect[] = [];
+	const visit = (node: Node): void => {
+		if (node.nodeType === TEXT_NODE && range.intersectsNode(node)) {
+			const text = node as Text;
+			const from = range.startContainer === text ? range.startOffset : 0;
+			const to = range.endContainer === text
+				? range.endOffset
+				: text[kData].length;
+			for (const span of layout.getTextSpans(text, from, to)) {
+				rects.push(toViewportRect(attached, span.rect, anchor));
+			}
+		} else if (
+			node.nodeType === ELEMENT_NODE &&
+			isContained(node, range) &&
+			(node[kParent] === null || !isContained(node[kParent]!, range))
+		) {
+			for (const rect of layout.getRects(node as Element)) {
+				rects.push(toViewportRect(attached, rect, node as Element));
+			}
+		}
+		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+			visit(child);
+		}
+	};
+	visit(range.commonAncestorContainer as unknown as Node);
+	return rects;
+}
+
+// All zero with nothing listed, the first rect when every rect is empty,
+// and otherwise the union of the rects that are not.
+function getBoundingRect(rects: globalThis.DOMRect[]): globalThis.DOMRect {
+	if (rects.length === 0) {
+		return new DOMRect(0, 0, 0, 0);
+	}
+	const sized = rects.filter((rect) => rect.width !== 0 && rect.height !== 0);
+	return sized.length === 0 ? rects[0] : unionRect(sized);
+}
 
 // Every change the Range API makes to the boundary points fires a
 // selectionchange event on the selection this range belongs to.
@@ -27557,8 +27818,9 @@ function getSelectionLines(
 	for (const part of run.parts) {
 		if (isLineBreakElement(part.node)) {
 			const rect = layout.getRects(part.node)[0];
+			// The line ends before the break, where its caret rests.
 			if (rect !== undefined) {
-				add(Math.round(rect.y), part.start, part.start + part.length);
+				add(Math.round(rect.y), part.start, part.start);
 			}
 			continue;
 		}
@@ -27765,7 +28027,15 @@ function getModifiedPoint(
 		// just mutated has to be laid out first.
 		layout.performLayout();
 	}
-	const run = flattenSelectionText(getSelectionTextNodes(document, attached));
+	// A caret in an editing host stays in it, as it does in a browser.
+	const host = getEditingHost(from[0] as unknown as globalThis.Node);
+	let nodes = getSelectionTextNodes(document, attached);
+	if (host !== null) {
+		nodes = nodes.filter((node) =>
+			host.contains(node as unknown as globalThis.Node),
+		);
+	}
+	const run = flattenSelectionText(nodes);
 	if (run.parts.length === 0) {
 		return null;
 	}
@@ -32835,6 +33105,7 @@ const platform = {
 	Clipboard,
 	ClipboardEvent,
 	ClipboardItem,
+	CommandEvent,
 	Comment,
 	CompositionEvent,
 	CustomElementRegistry,
@@ -33088,6 +33359,7 @@ export type {
 	HTMLDataListElement,
 	HTMLDetailsElement,
 	ToggleEvent,
+	CommandEvent,
 	HTMLDialogElement,
 	HTMLDirectoryElement,
 	HTMLDivElement,
