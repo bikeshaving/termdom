@@ -14,16 +14,16 @@
 		"deploy": "gh-pages -d dist/public --nojekyll --cname termdom.org"
 	},
 	"dependencies": {
-		"@b9g/assets": "^0.2.1",
-		"@b9g/crank": "^0.7.9",
+		"@b9g/assets": "^0.2.2",
+		"@b9g/crank": "^0.7.12",
 		"@b9g/crankdown": "^0.1.3",
 		"@b9g/filesystem": "^0.2.0",
 		"@b9g/http-errors": "^0.2.1",
-		"@b9g/platform": "^0.1.19",
-		"@b9g/platform-node": "^0.1.17",
+		"@b9g/platform": "^0.1.20",
+		"@b9g/platform-node": "^0.1.18",
 		"@b9g/revise": "^0.1.6",
 		"@b9g/router": "^0.2.5",
-		"@b9g/shovel": "^0.2.21",
+		"@b9g/shovel": "^0.2.23",
 		"@emotion/css": "^11.13.5",
 		"@emotion/server": "^11.11.0",
 		"@xterm/addon-fit": "^0.11.0",
@@ -33,16 +33,14 @@
 		"gh-pages": "^6.3.0",
 		"normalize.css": "^8.0.1",
 		"pagefind": "^1.4.0",
-		"postcss-nested": "^6.2.0",
-		"postcss-preset-env": "^8.5.1",
 		"prism-themes": "^1.9.0",
 		"prismjs": "^1.30.0",
 		"sucrase": "^3.35.1"
 	},
 	"devDependencies": {
 		"@types/prismjs": "^1.26.5",
-		"esbuild": "^0.27.7",
-		"playwright": "^1.62.1",
+		"esbuild": "^0.28.2",
+		"playwright": "^1.63.0",
 		"svg-to-ico": "^2.0.0"
 	}
 }
