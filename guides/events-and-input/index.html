@@ -88,7 +88,13 @@ bubbling from the element the caret is in, with the spec&#039;s input types:
 <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Undo and redo are not here yet, and neither are <code>execCommand</code>, the
 formatting commands, HTML paste, IME composition in a host, or
 spellcheck.</p><h2 id="selection-and-the-clipboard">Selection and the clipboard <a class="heading-anchor" href="#selection-and-the-clipboard">#</a></h2><p>Drag to select, in the document or inside a field; style it with
-<code>::selection</code>. <code>getSelection().toString()</code> is the rendered text, as in a
+<code>::selection</code>. A double click selects the word under the pointer and a
+triple click the paragraph, or in a <code>&lt;textarea&gt;</code> the line and in an
+<code>&lt;input&gt;</code> the whole value, and a drag that follows extends the selection
+a whole word or paragraph at a time. Clicks count as a double or triple
+click only on the same cell, within half a second. All of it is the
+default action of <code>mousedown</code>, so a listener that calls
+<code>preventDefault()</code> does its own selecting, as CodeMirror does. <code>getSelection().toString()</code> is the rendered text, as in a
 browser: nothing from a closed <code>&lt;details&gt;</code>, a <code>&lt;select&gt;</code>&#039;s options, a
 hidden element, or <code>user-select: none</code> content, and a line break
 between blocks. <code>user-select: none</code> also keeps a drag from anchoring
