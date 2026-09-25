@@ -3112,6 +3112,10 @@ class PointerEvent extends MouseEvent {
 		return this[kIsPrimary];
 	}
 
+	get persistentDeviceId(): number {
+		return 0;
+	}
+
 	getCoalescedEvents(): PointerEvent[] {
 		return [...this[kCoalesced]];
 	}
@@ -6906,7 +6910,11 @@ export class NodeList extends LiveList {
 	[index: number]: globalThis.Node;
 	declare [Symbol.iterator]: () => ArrayIterator<globalThis.Node>;
 	declare forEach: (
-		callback: (node: globalThis.Node, index: number, list: NodeList) => void,
+		callback: (
+			node: globalThis.Node,
+			index: number,
+			list: globalThis.NodeList,
+		) => void,
 		thisArg?: any,
 	) => void;
 
@@ -7972,6 +7980,7 @@ export class DocumentFragment
 	declare prepend: globalThis.DocumentFragment["prepend"];
 	declare querySelector: globalThis.DocumentFragment["querySelector"];
 	declare querySelectorAll: globalThis.DocumentFragment["querySelectorAll"];
+	declare moveBefore: globalThis.DocumentFragment["moveBefore"];
 	declare replaceChildren: globalThis.DocumentFragment["replaceChildren"];
 	constructor() {
 		super();
@@ -8529,6 +8538,7 @@ export class Element extends Node implements globalThis.Element {
 	declare prepend: globalThis.Element["prepend"];
 	declare querySelector: globalThis.Element["querySelector"];
 	declare querySelectorAll: globalThis.Element["querySelectorAll"];
+	declare moveBefore: globalThis.Element["moveBefore"];
 	declare replaceChildren: globalThis.Element["replaceChildren"];
 	declare closest: globalThis.Element["closest"];
 	declare matches: globalThis.Element["matches"];
@@ -9671,6 +9681,7 @@ export class HTMLElement extends Element {
 	declare onchange: globalThis.HTMLElement["onchange"];
 	declare onclick: globalThis.HTMLElement["onclick"];
 	declare onclose: globalThis.HTMLElement["onclose"];
+	declare oncommand: globalThis.HTMLElement["oncommand"];
 	declare oncontextlost: globalThis.HTMLElement["oncontextlost"];
 	declare oncontextmenu: globalThis.HTMLElement["oncontextmenu"];
 	declare oncontextrestored: globalThis.HTMLElement["oncontextrestored"];
@@ -9950,20 +9961,15 @@ export class HTMLElement extends Element {
 		}
 	}
 
-	// Typed boolean, as lib.dom types it, even though the third state
-	// returns "until-found". Browsers do the same: they implement the state
-	// and their types still say boolean.
-	get hidden(): boolean {
+	get hidden(): boolean | "until-found" {
 		const value = this.getAttribute("hidden");
 		if (value === null) {
 			return false;
 		}
-		return (
-			toASCIILowercase(value) === "until-found" ? "until-found" : true
-		) as boolean;
+		return toASCIILowercase(value) === "until-found" ? "until-found" : true;
 	}
 
-	set hidden(value: boolean) {
+	set hidden(value: boolean | "until-found") {
 		if (
 			typeof value === "string" && toASCIILowercase(value) === "until-found"
 		) {
@@ -10238,7 +10244,7 @@ export class HTMLElement extends Element {
 
 	// Adds the element to the top layer, above everything else the document
 	// paints, and the UA sheet stops hiding it.
-	showPopover(options?: {source?: Element | null}): void {
+	showPopover(options?: globalThis.ShowPopoverOptions): void {
 		const init = options === undefined
 			? {}
 			: toDictionary<{source?: Element | null}>(options, "Show options");
@@ -10251,9 +10257,7 @@ export class HTMLElement extends Element {
 
 	// force: true only ever shows and force: false only ever hides, so a
 	// caller that knows the state it wants can say so.
-	togglePopover(
-		options?: boolean | {force?: boolean; source?: Element | null},
-	): boolean {
+	togglePopover(options?: boolean | globalThis.TogglePopoverOptions): boolean {
 		let force: boolean | null = null;
 		let source: Element | null = null;
 		if (typeof options === "boolean") {
@@ -10666,6 +10670,7 @@ export class SVGElement extends Element {
 	declare onchange: globalThis.SVGElement["onchange"];
 	declare onclick: globalThis.SVGElement["onclick"];
 	declare onclose: globalThis.SVGElement["onclose"];
+	declare oncommand: globalThis.SVGElement["oncommand"];
 	declare oncontextlost: globalThis.SVGElement["oncontextlost"];
 	declare oncontextmenu: globalThis.SVGElement["oncontextmenu"];
 	declare oncontextrestored: globalThis.SVGElement["oncontextrestored"];
@@ -10849,6 +10854,7 @@ class MathMLElement extends Element {
 	declare onchange: globalThis.MathMLElement["onchange"];
 	declare onclick: globalThis.MathMLElement["onclick"];
 	declare onclose: globalThis.MathMLElement["onclose"];
+	declare oncommand: globalThis.MathMLElement["oncommand"];
 	declare oncontextlost: globalThis.MathMLElement["oncontextlost"];
 	declare oncontextmenu: globalThis.MathMLElement["oncontextmenu"];
 	declare oncontextrestored: globalThis.MathMLElement["oncontextrestored"];
@@ -11488,7 +11494,7 @@ class CustomElementRegistry {
 		}
 		this[kDefinitionIsRunning] = true;
 		let observedAttributes: string[] = [];
-		let formAssociated = false;
+		let formAssociated: boolean;
 		let disableInternals = false;
 		let disableShadow = false;
 		const lifecycleCallbacks = new Map<
@@ -11643,7 +11649,7 @@ class CustomElementRegistry {
 
 	// The realm's document registry cannot claim a document, because a
 	// document holds that registry from the moment it exists.
-	initialize(root: Node): void {
+	initialize(root: globalThis.Node): void {
 		if (!(root instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
@@ -12005,6 +12011,7 @@ export class ShadowRoot
 	declare prepend: globalThis.ShadowRoot["prepend"];
 	declare querySelector: globalThis.ShadowRoot["querySelector"];
 	declare querySelectorAll: globalThis.ShadowRoot["querySelectorAll"];
+	declare moveBefore: globalThis.ShadowRoot["moveBefore"];
 	declare replaceChildren: globalThis.ShadowRoot["replaceChildren"];
 	declare onslotchange: globalThis.ShadowRoot["onslotchange"];
 	constructor() {
@@ -12643,6 +12650,7 @@ interface HTMLTemplateElement {
 // belongs next to the slot. The fragment's host is the template, which is
 // what stops a template from being appended into its own contents.
 class HTMLTemplateElement extends HTMLElement {
+	declare shadowRootCustomElementRegistry: globalThis.HTMLTemplateElement["shadowRootCustomElementRegistry"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kTemplateContent] = null;
@@ -13298,6 +13306,15 @@ class HTMLBRElement extends HTMLElement {
 	declare clear: globalThis.HTMLBRElement["clear"];
 }
 
+const BUTTON_COMMANDS = new Set([
+	"toggle-popover",
+	"show-popover",
+	"hide-popover",
+	"close",
+	"request-close",
+	"show-modal",
+]);
+
 class HTMLButtonElement extends HTMLElement {
 	declare disabled: globalThis.HTMLButtonElement["disabled"];
 	declare name: globalThis.HTMLButtonElement["name"];
@@ -13320,11 +13337,35 @@ class HTMLButtonElement extends HTMLElement {
 	}
 
 	get popoverTargetElement(): Element | null {
-		return getPopoverTargetAttributeElement(this);
+		return getAttributeElement(this, "popovertarget");
 	}
 
 	set popoverTargetElement(value: Element | null) {
-		setPopoverTargetAttributeElement(this, value);
+		setAttributeElement(this, "popovertarget", value);
+	}
+
+	get command(): string {
+		const value = this.getAttribute("command");
+		if (value === null) {
+			return "";
+		}
+		if (value.startsWith("--")) {
+			return value;
+		}
+		const keyword = toASCIILowercase(value);
+		return BUTTON_COMMANDS.has(keyword) ? keyword : "";
+	}
+
+	set command(value: string) {
+		this.setAttribute("command", value);
+	}
+
+	get commandForElement(): Element | null {
+		return getAttributeElement(this, "commandfor");
+	}
+
+	set commandForElement(value: Element | null) {
+		setAttributeElement(this, "commandfor", value);
 	}
 
 	get willValidate(): boolean {
@@ -13622,6 +13663,7 @@ interface HTMLDialogElement {
 
 class HTMLDialogElement extends HTMLElement {
 	declare open: globalThis.HTMLDialogElement["open"];
+	declare closedBy: globalThis.HTMLDialogElement["closedBy"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kReturnValue] = "";
@@ -14887,15 +14929,7 @@ class RadioNodeList extends NodeList {
 	[index: number]: HTMLInputElement;
 	declare item: (index: number) => HTMLInputElement;
 	declare [Symbol.iterator]: () => ArrayIterator<globalThis.HTMLInputElement>;
-	declare forEach: (
-		callback: (
-			node: HTMLInputElement,
-			index: number,
-			list: NodeListOf<HTMLInputElement>,
-		) => void,
-		thisArg?: any,
-	) => void;
-
+	declare forEach: globalThis.RadioNodeList["forEach"];
 	declare values: () => ArrayIterator<globalThis.HTMLInputElement>;
 	declare entries: () => ArrayIterator<[number, globalThis.HTMLInputElement]>;
 	constructor(compute: () => Node[], owner: Node | null = null) {
@@ -15625,11 +15659,11 @@ export class HTMLInputElement extends HTMLElement {
 
 	// Only the types that render as a button can invoke a popover.
 	get popoverTargetElement(): Element | null {
-		return getPopoverTargetAttributeElement(this);
+		return getAttributeElement(this, "popovertarget");
 	}
 
 	set popoverTargetElement(value: Element | null) {
-		setPopoverTargetAttributeElement(this, value);
+		setAttributeElement(this, "popovertarget", value);
 	}
 
 	get willValidate(): boolean {
@@ -17747,7 +17781,7 @@ export class HTMLSelectElement extends HTMLElement {
 				openPicker(this);
 				return;
 			}
-			let target = current;
+			let target: number;
 			if (key === "ArrowDown" || key === "ArrowRight") {
 				target = stepSelectHighlight(this, current, 1);
 			} else if (key === "ArrowUp" || key === "ArrowLeft") {
@@ -19938,20 +19972,20 @@ function queuePopoverToggleEventTask(
 	});
 }
 
-// A popovertarget set to an ELEMENT rather than named by id. The
-// attribute cannot hold an element, so the reference is stored
+// A popovertarget or commandfor set to an ELEMENT rather than named by
+// id. The attribute cannot hold an element, so the reference is stored
 // separately. The getter returns it only while the element is in a tree
 // the invoker composes into.
-const explicitPopoverTargets = new WeakMap<Element, Element>();
+const explicitAttributeElements = new WeakMap<Element, Map<string, Element>>();
 
 // The explicitly set element if it is still reachable, otherwise the
 // element the attribute names by id in the invoker's own tree.
-function getPopoverTargetAttributeElement(node: Node): Element | null {
+function getAttributeElement(node: Node, attribute: string): Element | null {
 	if (node.nodeType !== ELEMENT_NODE) {
 		return null;
 	}
 	const element = node as Element;
-	const explicit = explicitPopoverTargets.get(element);
+	const explicit = explicitAttributeElements.get(element)?.get(attribute);
 	if (explicit !== undefined) {
 		// The reference is valid while the target is in the invoker's own tree
 		// or in one that tree composes into. It goes stale rather than dangling
@@ -19970,7 +20004,7 @@ function getPopoverTargetAttributeElement(node: Node): Element | null {
 			root = getRoot(host);
 		}
 	}
-	const id = element.getAttribute("popovertarget");
+	const id = element.getAttribute(attribute);
 	if (id === null) {
 		return null;
 	}
@@ -19983,17 +20017,23 @@ function getPopoverTargetAttributeElement(node: Node): Element | null {
 		null;
 }
 
-function setPopoverTargetAttributeElement(
+function setAttributeElement(
 	element: Element,
+	attribute: string,
 	value: Element | null,
 ): void {
 	if (value == null) {
-		explicitPopoverTargets.delete(element);
-		element.removeAttribute("popovertarget");
+		explicitAttributeElements.get(element)?.delete(attribute);
+		element.removeAttribute(attribute);
 		return;
 	}
-	explicitPopoverTargets.set(element, value);
-	element.setAttribute("popovertarget", "");
+	let explicit = explicitAttributeElements.get(element);
+	if (explicit === undefined) {
+		explicit = new Map();
+		explicitAttributeElements.set(element, explicit);
+	}
+	explicit.set(attribute, value);
+	element.setAttribute(attribute, "");
 }
 
 // A BUTTON as the popover target attributes define it: the button
@@ -20027,7 +20067,7 @@ function getPopoverTargetElement(node: Node): Element | null {
 	if (getFormOwner(element) !== null && isSubmitButton(element)) {
 		return null;
 	}
-	const popover = getPopoverTargetAttributeElement(element);
+	const popover = getAttributeElement(element, "popovertarget");
 	if (popover === null) {
 		return null;
 	}
@@ -22566,6 +22606,21 @@ const kIntersectionRoot = Symbol("intersection root");
 const ROOT_MARGIN_COMPONENT =
 	/^[+-]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:px|ch|%)|(?:0+(?:\.0*)?|\.0+))$/;
 
+// One to four lengths in px or a percentage, as the spec allows, with
+// ch as the cell grid's own unit. A unit is required, except on zero,
+// which CSS lets any length write bare.
+function checkObserverMargin(margin: string, what: string): string {
+	const parts = margin.trim().split(/\s+/).filter(Boolean);
+	if (
+		parts.length === 0 ||
+		parts.length > 4 ||
+		parts.some((part) => !ROOT_MARGIN_COMPONENT.test(part))
+	) {
+		throw domError("SyntaxError", `"${margin}" is not a ${what} margin`);
+	}
+	return margin;
+}
+
 interface IntersectionObserver {
 	[kIntersectionRoot]: globalThis.Element | globalThis.Document | null;
 }
@@ -22573,6 +22628,7 @@ interface IntersectionObserver {
 class IntersectionObserver
 	extends LayoutObserver<number, IntersectionObserverEntry> {
 	readonly rootMargin: string;
+	readonly scrollMargin: string;
 	readonly thresholds: readonly number[];
 	constructor(
 		callback: IntersectionObserverCallback,
@@ -22581,22 +22637,12 @@ class IntersectionObserver
 		super();
 		this[kObserverCallback] = callback;
 		this[kIntersectionRoot] = init.root ?? null;
-		// An empty rootMargin is the spec's own spelling of the default.
-		this.rootMargin = init.rootMargin || "0px";
-		// One to four lengths in px or a percentage, as the spec allows, with
-		// ch as the cell grid's own unit. A unit is required, except on zero,
-		// which CSS lets any length write bare.
-		const parts = this.rootMargin.trim().split(/\s+/).filter(Boolean);
-		if (
-			parts.length === 0 ||
-			parts.length > 4 ||
-			parts.some((part) => !ROOT_MARGIN_COMPONENT.test(part))
-		) {
-			throw domError(
-				"SyntaxError",
-				`"${this.rootMargin}" is not a root margin`,
-			);
-		}
+		// An empty margin is the spec's own spelling of the default.
+		this.rootMargin = checkObserverMargin(init.rootMargin || "0px", "root");
+		this.scrollMargin = checkObserverMargin(
+			init.scrollMargin || "0px",
+			"scroll",
+		);
 
 		// A single number, an array, or the default of "any intersection at
 		// all".
@@ -22821,6 +22867,7 @@ export class Document extends Node implements globalThis.Document {
 	declare prepend: globalThis.Document["prepend"];
 	declare querySelector: globalThis.Document["querySelector"];
 	declare querySelectorAll: globalThis.Document["querySelectorAll"];
+	declare moveBefore: globalThis.Document["moveBefore"];
 	declare replaceChildren: globalThis.Document["replaceChildren"];
 	declare onfullscreenchange: globalThis.Document["onfullscreenchange"];
 	declare onfullscreenerror: globalThis.Document["onfullscreenerror"];
@@ -22840,6 +22887,7 @@ export class Document extends Node implements globalThis.Document {
 	declare onchange: globalThis.Document["onchange"];
 	declare onclick: globalThis.Document["onclick"];
 	declare onclose: globalThis.Document["onclose"];
+	declare oncommand: globalThis.Document["oncommand"];
 	declare oncontextlost: globalThis.Document["oncontextlost"];
 	declare oncontextmenu: globalThis.Document["oncontextmenu"];
 	declare oncontextrestored: globalThis.Document["oncontextrestored"];
@@ -23342,6 +23390,10 @@ export class Document extends Node implements globalThis.Document {
 
 	get hidden(): boolean {
 		return !isDocumentVisible(this);
+	}
+
+	get activeViewTransition(): globalThis.ViewTransition | null {
+		return null;
 	}
 
 	get visibilityState(): globalThis.DocumentVisibilityState {
@@ -23905,6 +23957,7 @@ export class Document extends Node implements globalThis.Document {
 	createEvent(eventInterface: "BlobEvent"): globalThis.BlobEvent;
 	createEvent(eventInterface: "ClipboardEvent"): globalThis.ClipboardEvent;
 	createEvent(eventInterface: "CloseEvent"): globalThis.CloseEvent;
+	createEvent(eventInterface: "CommandEvent"): globalThis.CommandEvent;
 	createEvent(eventInterface: "CompositionEvent"): globalThis.CompositionEvent;
 	createEvent(eventInterface: "ContentVisibilityAutoStateChangeEvent"): globalThis.ContentVisibilityAutoStateChangeEvent;
 	createEvent(eventInterface: "CookieChangeEvent"): globalThis.CookieChangeEvent;
@@ -23918,6 +23971,7 @@ export class Document extends Node implements globalThis.Document {
 	createEvent(eventInterface: "FocusEvent"): globalThis.FocusEvent;
 	createEvent(eventInterface: "FontFaceSetLoadEvent"): globalThis.FontFaceSetLoadEvent;
 	createEvent(eventInterface: "FormDataEvent"): globalThis.FormDataEvent;
+	createEvent(eventInterface: "GPUUncapturedErrorEvent"): globalThis.GPUUncapturedErrorEvent;
 	createEvent(eventInterface: "GamepadEvent"): globalThis.GamepadEvent;
 	createEvent(eventInterface: "HashChangeEvent"): globalThis.HashChangeEvent;
 	createEvent(eventInterface: "IDBVersionChangeEvent"): globalThis.IDBVersionChangeEvent;
@@ -23932,6 +23986,8 @@ export class Document extends Node implements globalThis.Document {
 	createEvent(eventInterface: "MessageEvent"): globalThis.MessageEvent;
 	createEvent(eventInterface: "MouseEvent"): globalThis.MouseEvent;
 	createEvent(eventInterface: "MouseEvents"): globalThis.MouseEvent;
+	createEvent(eventInterface: "NavigateEvent"): globalThis.NavigateEvent;
+	createEvent(eventInterface: "NavigationCurrentEntryChangeEvent"): globalThis.NavigationCurrentEntryChangeEvent;
 	createEvent(eventInterface: "OfflineAudioCompletionEvent"): globalThis.OfflineAudioCompletionEvent;
 	createEvent(eventInterface: "PageRevealEvent"): globalThis.PageRevealEvent;
 	createEvent(eventInterface: "PageSwapEvent"): globalThis.PageSwapEvent;
@@ -23950,10 +24006,13 @@ export class Document extends Node implements globalThis.Document {
 	createEvent(eventInterface: "RTCPeerConnectionIceEvent"): globalThis.RTCPeerConnectionIceEvent;
 	createEvent(eventInterface: "RTCTrackEvent"): globalThis.RTCTrackEvent;
 	createEvent(eventInterface: "SecurityPolicyViolationEvent"): globalThis.SecurityPolicyViolationEvent;
+	createEvent(eventInterface: "SpeechRecognitionErrorEvent"): globalThis.SpeechRecognitionErrorEvent;
+	createEvent(eventInterface: "SpeechRecognitionEvent"): globalThis.SpeechRecognitionEvent;
 	createEvent(eventInterface: "SpeechSynthesisErrorEvent"): globalThis.SpeechSynthesisErrorEvent;
 	createEvent(eventInterface: "SpeechSynthesisEvent"): globalThis.SpeechSynthesisEvent;
 	createEvent(eventInterface: "StorageEvent"): globalThis.StorageEvent;
 	createEvent(eventInterface: "SubmitEvent"): globalThis.SubmitEvent;
+	createEvent(eventInterface: "TaskPriorityChangeEvent"): globalThis.TaskPriorityChangeEvent;
 	createEvent(eventInterface: "TextEvent"): globalThis.TextEvent;
 	createEvent(eventInterface: "ToggleEvent"): globalThis.ToggleEvent;
 	createEvent(eventInterface: "TouchEvent"): globalThis.TouchEvent;
@@ -26518,7 +26577,7 @@ function insertIntoRange(range: Range, node: Node): void {
 	) {
 		throw hierarchyRequestError("That range cannot take an inserted node");
 	}
-	let referenceNode: Node | null = null;
+	let referenceNode: Node | null;
 	if (startNode instanceof Text) {
 		referenceNode = startNode;
 	} else {
@@ -30050,7 +30109,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		let scope = parentScope;
 		const bindings = new Map<string, string | null>();
 		for (const attribute of attributes) {
-			let boundPrefix: string | null = null;
+			let boundPrefix: string;
 			if (attribute.qualifiedName === "xmlns") {
 				boundPrefix = "";
 			} else if (attribute.qualifiedName.startsWith("xmlns:")) {
@@ -30096,7 +30155,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		);
 		const seen = new Set<string>();
 		for (const attribute of attributes) {
-			let namespace: string | null = null;
+			let namespace: string | null;
 			let prefix: string | null = null;
 			let localName = attribute.qualifiedName;
 			if (attribute.qualifiedName === "xmlns") {
@@ -32040,6 +32099,7 @@ export class Window extends EventTarget {
 	declare onchange: globalThis.Window["onchange"];
 	declare onclick: globalThis.Window["onclick"];
 	declare onclose: globalThis.Window["onclose"];
+	declare oncommand: globalThis.Window["oncommand"];
 	declare oncontextlost: globalThis.Window["oncontextlost"];
 	declare oncontextmenu: globalThis.Window["oncontextmenu"];
 	declare oncontextrestored: globalThis.Window["oncontextrestored"];
@@ -32418,6 +32478,14 @@ export class Window extends EventTarget {
 
 	get indexedDB(): globalThis.IDBFactory {
 		return noWindowFeature("indexed database");
+	}
+
+	get navigation(): globalThis.Navigation {
+		return noWindowFeature("navigation API");
+	}
+
+	get scheduler(): globalThis.Scheduler {
+		return noWindowFeature("task scheduler");
 	}
 
 	get isSecureContext(): boolean {

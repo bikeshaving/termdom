@@ -10,7 +10,7 @@ changed.
 193 features supported, 38 probed and unsupported,
 156 CSS properties not applicable to a character grid,
 128 applicable and not implemented,
-4 not yet probed.
+9 not yet probed.
 
 ## DOM APIs
 
@@ -327,4 +327,4 @@ not act on them.
 
 No probe covers these and they are unclassified.
 
-`border-end-end-radius`, `border-end-start-radius`, `border-start-end-radius`, `border-start-start-radius`
+`border-end-end-radius`, `border-end-start-radius`, `border-start-end-radius`, `border-start-start-radius`, `flex-line-count`, `path-length`, `scroll-axis-lock`, `text-fit`, `window-drag`

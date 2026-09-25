@@ -18,10 +18,10 @@ window's legacy named access to elements by id.
 - Reference tests (no testharness, scored by pixels): 55
 - Excluded, each with its reason below: 356
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 693
-- Files whose harness did not complete: 69
-- Subtests passed: 99712
-- Subtests failed: 870
+- Files whose harness completed: 695
+- Files whose harness did not complete: 67
+- Subtests passed: 99731
+- Subtests failed: 855
 
 ## Exclusions
 
@@ -936,7 +936,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/scrolling/wheel-event-transactions-target-move.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-removal.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-resize.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/shadow-relatedTarget.html | TIMEOUT | 0 | 0 |
+| dom/events/shadow-relatedTarget.html | OK | 2 | 0 |
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
@@ -1033,10 +1033,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html | OK | 11 | 0 |
 | selection/bidi/modify-extend-by-character.html | OK | 18 | 10 |
 | selection/bidi/modify-move-by-character.html | OK | 18 | 10 |
-| selection/bidi/modify.tentative.html | OK | 15 | 21 |
+| selection/bidi/modify.tentative.html | OK | 24 | 12 |
 | selection/canvas-click.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
 | selection/canvas-drag.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
-| selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 1 | 23 |
+| selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 2 | 22 |
 | selection/caret/after-designMode-off.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-1.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-2.html | REFTEST | 0 | 0 |
@@ -1058,7 +1058,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR ("" is not a valid element name) | 0 | 0 |
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 1 | 35 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
-| selection/contenteditable/modify.tentative.html | OK | 2 | 13 |
+| selection/contenteditable/modify.tentative.html | OK | 0 | 15 |
 | selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
 | selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
 | selection/contenteditable/selection-outside-focused-editing-host.tentative.html | TIMEOUT | 0 | 0 |
@@ -1086,7 +1086,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/modify-line-flex-column.tentative.html | OK | 0 | 2 |
 | selection/modify-line-flex-row.tentative.html | OK | 0 | 2 |
 | selection/modify-line-grid-basic.tentative.html | OK | 0 | 2 |
-| selection/modify.tentative.html | OK | 3 | 4 |
+| selection/modify.tentative.html | OK | 7 | 0 |
 | selection/move-by-word-korean.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
 | selection/move-by-word-with-symbol.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
 | selection/move-paragraph-cross-editing-boundary.tentative.html | OK | 0 | 2 |
@@ -1100,13 +1100,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/script-and-style-elements.html | OK | 0 | 1 |
 | selection/select-end-of-line-image.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selectAllChildren.html | OK | 2242 | 0 |
-| selection/selection-content-visibility-hidden.html | OK | 0 | 1 |
+| selection/selection-content-visibility-hidden.html | OK | 1 | 0 |
 | selection/selection-direction-on-double-click.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selection-direction-on-single-click.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selection-direction-on-triple-click.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selection-focused-element-becomes-nonfocusable.html | EXCLUDED (requires-user-input: the element is focused by a pointer action sequence) | 0 | 0 |
 | selection/selection-incremental-change-repaint.html | REFTEST | 0 | 0 |
-| selection/selection-modify-extend-word-generated-content.html | OK | 0 | 2 |
+| selection/selection-modify-extend-word-generated-content.html | OK | 2 | 0 |
 | selection/selection-nested-video.html | OK | 1 | 0 |
 | selection/selection-range-after-editinghost-removed.html | OK | 4 | 0 |
 | selection/selection-range-after-textcontrol-removed.html | OK | 2 | 0 |
@@ -1169,7 +1169,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/assign-slottables-after-removing-shadow-tree-from-document.html | OK | 1 | 0 |
 | shadow-dom/attach-shadow-non-html-namespace.html | OK | 304 | 0 |
 | shadow-dom/attachShadow-with-ShadowRoot.html | OK | 2 | 0 |
-| shadow-dom/build-deep-detached-shadow-then-append-text.html | ERROR (Maximum call stack size exceeded) | 0 | 0 |
+| shadow-dom/build-deep-detached-shadow-then-append-text.html | OK | 1 | 0 |
 | shadow-dom/capturing-and-bubbling-event-listeners-across-shadow-trees.html | OK | 5 | 0 |
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
@@ -1418,7 +1418,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/events/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 0 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 1 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html | REFTEST | 0 | 0 |
@@ -1623,7 +1623,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/state/state-css-selector-nth-of.html | OK | 1 | 2 |
 | custom-elements/state/state-css-selector-shadow-dom.html | ERROR | 0 | 0 |
 | custom-elements/state/state-css-selector.html | OK | 5 | 5 |
-| custom-elements/state/state-pseudo-class.html | OK | 5 | 3 |
+| custom-elements/state/state-pseudo-class.html | OK | 6 | 2 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html | OK | 0 | 11 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html | OK | 0 | 11 |
 | custom-elements/upgrading.html | EXCLUDED (requires-script-execution: the elements upgraded are ones the parser created around the script that defines them) | 0 | 0 |
@@ -1895,11 +1895,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/events/Event-dispatch-bubbles-false.html
 
-- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-bubbles-true.html
 
-- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-click.html
 
@@ -1963,9 +1963,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### selection/bidi/modify-extend-by-character.html
 
 - RTL text in RTL paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
-- RTL text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 11
+- RTL text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 0
 - RTL text in LTR paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
-- RTL text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 10
+- RTL text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 0
 - LTR-RTL context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 11 but got 7
 - LTR-RTL context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 4 but got 8
 - RTL-LTR context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 14 but got 10
@@ -1976,9 +1976,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### selection/bidi/modify-move-by-character.html
 
 - RTL text in RTL paragraph: move right 2 chars: assert_equals: expected 2 but got 6
-- RTL text in RTL paragraph: move left 2 chars: assert_equals: expected 4 but got 11
+- RTL text in RTL paragraph: move left 2 chars: assert_equals: expected 4 but got 0
 - RTL text in LTR paragraph: move right 2 chars: assert_equals: expected 2 but got 6
-- RTL text in LTR paragraph: move left 2 chars: assert_equals: expected 4 but got 10
+- RTL text in LTR paragraph: move left 2 chars: assert_equals: expected 4 but got 0
 - LTR-RTL context in LTR paragraph: move right 3 chars: assert_equals: expected 11 but got 7
 - LTR-RTL context in LTR paragraph: move left 3 chars: assert_equals: expected 4 but got 8
 - RTL-LTR context in LTR paragraph: move right 3 chars: assert_equals: expected 14 but got 10
@@ -1988,51 +1988,41 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/bidi/modify.tentative.html
 
-- RTL text with left direction in ltr context: assert_equals: expected 0 but got 11
-- RTL+LTR text with left direction in ltr context: assert_equals: expected 0 but got 10
-- LTR+RTL text with left direction in ltr context: assert_equals: expected 0 but got 22
-- LTR+RTL+LTR text with left direction in ltr context: assert_equals: expected 0 but got 22
-- RTL+LTR+RTL text with left direction in ltr context: assert_equals: expected 0 but got 34
 - LTR text with left direction in rtl context: assert_equals: expected 11 but got 0
-- RTL text with left direction in rtl context: assert_equals: expected 10 but got 11
-- RTL+LTR text with left direction in rtl context: assert_equals: expected 22 but got 10
-- LTR+RTL+LTR text with left direction in rtl context: assert_equals: expected 34 but got 22
-- RTL+LTR+RTL text with left direction in rtl context: assert_equals: expected 33 but got 34
+- RTL text with left direction in rtl context: assert_equals: expected 10 but got 0
+- RTL+LTR text with left direction in rtl context: assert_equals: expected 22 but got 0
+- LTR+RTL text with left direction in rtl context: assert_equals: expected 22 but got 0
+- LTR+RTL+LTR text with left direction in rtl context: assert_equals: expected 34 but got 0
+- RTL+LTR+RTL text with left direction in rtl context: assert_equals: expected 33 but got 0
 - LTR text with right direction in rtl context: assert_equals: expected 0 but got 11
 - RTL text with right direction in rtl context: assert_equals: expected 0 but got 10
 - RTL+LTR text with right direction in rtl context: assert_equals: expected 0 but got 22
 - LTR+RTL text with right direction in rtl context: assert_equals: expected 0 but got 22
 - LTR+RTL+LTR text with right direction in rtl context: assert_equals: expected 0 but got 34
 - RTL+LTR+RTL text with right direction in rtl context: assert_equals: expected 0 but got 33
-- RTL text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 11
-- RTL+LTR text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 10
-- LTR+RTL text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 22
-- LTR+RTL+LTR text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 22
-- RTL+LTR+RTL text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 34
 
 ### selection/caret-position-should-be-correct-while-moveup-movedown.html
 
-- Caret position should be correct in moving up horizontal div when selection was right to left with line granularity: assert_equals: expected 0 but got 5
-- Caret position should be correct in moving down horizontal div when selection was left to right with line granularity: assert_equals: expected 5 but got 0
-- Caret position should be correct in moving down horizontal div when selection was right to left with line granularity: assert_equals: expected Text node "text2" but got Text node "
+- Caret position should be correct in moving up horizontal div when selection was left to right with line granularity: assert_equals: expected 5 but got 0
+- Caret position should be correct in moving down horizontal div when selection was right to left with line granularity: assert_equals: expected 0 but got 5
 - Caret position should be correct in moving up horizontal div when selection was left to right with paragraph granularity: assert_true: expected true got false
 - Caret position should be correct in moving up horizontal div when selection was right to left with paragraph granularity: assert_true: expected true got false
 - Caret position should be correct in moving down horizontal div when selection was left to right with paragraph granularity: assert_true: expected true got false
 - Caret position should be correct in moving down horizontal div when selection was right to left with paragraph granularity: assert_true: expected true got false
-- Caret position should be correct in move right with line granularity for vertical-lr div when selection was top to bottom: assert_equals: expected Text node "
-- Caret position should be correct in move right with line granularity for vertical-lr div when selection was bottom to top: assert_equals: expected 7 but got 12
+- Caret position should be correct in move right with line granularity for vertical-lr div when selection was top to bottom: assert_equals: expected 12 but got 11
+- Caret position should be correct in move right with line granularity for vertical-lr div when selection was bottom to top: assert_equals: expected 7 but got 11
 - Caret position should be correct in move left with line granularity for vertical-lr div when selection was top to bottom: assert_equals: expected 12 but got 8
 - Caret position should be correct in move left with line granularity for vertical-lr div when selection was bottom to top: assert_equals: expected 7 but got 8
 - Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
 - Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
 - Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
 - Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
-- Caret position should be correct in move left with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected Text node "
-- Caret position should be correct in move left with line granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
+- Caret position should be correct in move left with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 11
+- Caret position should be correct in move left with line granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 11
 - Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 8
 - Caret position should be correct in move right with line granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 8
-- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected Text node "
-- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
+- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 11
+- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 11
 - Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 8
 - Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 8
 
@@ -2101,19 +2091,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/contenteditable/modify.tentative.html
 
-- Selection.modify() must not select outside of the host: assert_equals: expected Element node <div contenteditable="" id="host">Editable</div> but got Element node <div id="inlinehosts">
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
+- Selection.modify() must not select outside of the host: assert_equals: expected Element node <div contenteditable="" id="host">Editable</div> but got Element node <div>Non-editable</div>
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
 - Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: prefix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: standalone: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "Editable"
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusNode should be the text node expected Text node "able" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node "Editable"
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node ":
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node ": Suffix"
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: prefix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: prefix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: standalone: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: standalone: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node "able"
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node "
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Element node <div id="inlinehosts">
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node "
 
 ### selection/extend-selection-backward-on-input.html
 
@@ -2125,25 +2117,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/modify-line-flex-column.tentative.html
 
-- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
-- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
+- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
 ### selection/modify-line-flex-row.tentative.html
 
-- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
-- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
+- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
 ### selection/modify-line-grid-basic.tentative.html
 
-- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
-- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
-
-### selection/modify.tentative.html
-
-- Jump <br> forward: assert_equals: expected 0 but got 1
-- Jump <br> backward: assert_equals: expected 3 but got 2
-- Jump <br> forward which follows a linefeed: assert_equals: expected 0 but got 5
-- Jump <br> backward which follows a linefeed: assert_equals: expected 4 but got 3
+- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
 ### selection/move-paragraph-cross-editing-boundary.tentative.html
 
@@ -2157,16 +2142,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/script-and-style-elements.html
 
-- Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got "\n#not_included{}\n\n  style { display:block; color: green; }\n  script { color: blue; }\n\nfunction not_included(){}\n\nfunction test_block_script() {\n  let pre = document.createElement(\"pre\");\n  pre.append(document.createTextNode(\"PASS\"));\n  document.getElementById(\"p1\").append(pre);\n}\n\nPASS"
-
-### selection/selection-content-visibility-hidden.html
-
-- Text with content-visibility: hidden is not selected: assert_equals: Text with content-visibility: hidden should not be selected expected "" but got "This is hidden text.\n\n  \n    promise_test(async t => {\n      const range = document.createRange();\n      range.selectNodeContents(document.body);\n      const selection = window.getSelection();\n      selection.addRange(range);\n\n      const selectedText = selection.toString().trim();\n      assert_equals(selectedText, '', 'Text with content-visibility: hidden should not be selected');\n    }, 'Text with content-visibility: hidden is not selected');"
-
-### selection/selection-modify-extend-word-generated-content.html
-
-- extending selection from middle of first word of the middle line shouldn't extend the range to the previous line: assert_in_array: The start container should be in the middle line value Text node "previous line" not in array [Element node <p id="middleLine">middle line</p>, Text node "middle line"]
-- extending selection from middle of last word of the middle line shouldn't extend the range to the next line: assert_in_array: The end container should be in the middle line value Text node "last line" not in array [Element node <p id="middleLine">middle line</p>, Text node "middle line"]
+- Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got "PASS"
 
 ### selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html
 
@@ -2218,16 +2194,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/toString-user-select-none.html
 
-- Selection.toString() excludes basic user-select: none content: assert_equals: Basic user-select: none content should be excluded expected "ac" but got "\n    abc\n  "
-- Selection.toString() excludes nested user-select: none content: assert_equals: Nested user-select: none content should be excluded expected "start  end" but got "\n    start unselectable nested\n    text end\n  "
-- Selection.toString() includes selectable children in unselectable container: assert_equals: Selectable children should be included even in unselectable container expected "selectabletext" but got "\n    selectable unselectable\n    text\n  "
+- Selection.toString() excludes basic user-select: none content: assert_equals: Basic user-select: none content should be excluded expected "ac" but got "\n    ac\n  "
+- Selection.toString() excludes nested user-select: none content: assert_equals: Nested user-select: none content should be excluded expected "start  end" but got "\n    start  end\n  "
+- Selection.toString() includes selectable children in unselectable container: assert_equals: Selectable children should be included even in unselectable container expected "selectabletext" but got ""
 
 ### shadow-dom/Document-caretPositionFromPoint.tentative.html
 
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location: caretPositionFromPoint is not implemented
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: The font loading API is not implemented"
-- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: The font loading API is not implemented"
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
+- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: caretPositionFromPoint is not implemented
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: caretPositionFromPoint is not implemented
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: caretPositionFromPoint is not implemented
@@ -2377,7 +2353,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Clicking on non-focusable slot inside focusable div will make the flat-tree focusable ancestor get focused: assert_equals: expected Element node <div id="normalDiv" tabindex="0"><span id="normalSpan">Te... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
 - Select on non-focusable slot inside focusable div will select text: assert_greater_than: expected a number greater than 0 but got 0
-- Select on non-focusable non-editable slot in a contenteditable shadow DOM and inside focusable div will select text: assert_equals: expected Element node <div id="container" contenteditable="true"><span id="slot... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
+- Select on non-focusable non-editable slot in a contenteditable shadow DOM and inside focusable div will select text: assert_greater_than: expected a number greater than 0 but got 0
 
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
@@ -2450,6 +2426,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### shadow-dom/slotchange-customelements.html
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
+
+### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
+
+- A_08_02_03_T01: Test timed out
 
 ### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html
 
@@ -3036,7 +3016,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/state/state-pseudo-class.html
 
-- :state(foo) serialization: Cannot read properties of undefined (reading 'selectorText')
 - :state(foo) and ::part(): assert_equals: :state() matching should be case-sensitive expected "0" but got "0.5"
 - :state(foo) and :host(): assert_equals: expected "dotted" but got "solid"
 

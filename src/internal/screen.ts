@@ -1526,7 +1526,7 @@ function generateANSI(
 	// unmeasured clusters this row has painted. Each can carry the real
 	// cursor a column either side of the predicted one.
 	let run = 0;
-	let unknownInRow = 0;
+	let unknownInRow: number;
 
 	// Clusters the margin has deferred are probed off to the side, before
 	// the frame paints anything. The probes go to cells the first painted

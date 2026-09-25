@@ -3849,7 +3849,7 @@ function getStickyShift(
 		}
 	}
 	let portLeft = 0;
-	let portTop = 0;
+	let portTop: number;
 	let portWidth: number;
 	let portHeight: number;
 	if (scroller === null) {
