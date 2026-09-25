@@ -116,7 +116,7 @@ test("every random MathML tree lays out to a well-formed box", async () => {
 		const dom = new TermDOM({transport: terminal.transport});
 		try {
 			dom.document.body.innerHTML =
-					`<math display="block" id="d">${markup}</math>` +
+				`<math display="block" id="d">${markup}</math>` +
 					`<p><math id="i">${markup}</math></p>` +
 					`<math display="block" id="a" style="--math-glyphs: ascii">${markup}</math>`;
 			await nextFrame(dom);
