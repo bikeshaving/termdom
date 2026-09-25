@@ -23,6 +23,7 @@ import {
 } from "./dom.ts";
 import {getEditingCaretPoint} from "./editing.ts";
 import {
+	applyTextTransform,
 	type Box,
 	type BreakResult,
 	type Display,
@@ -510,24 +511,6 @@ function readPaintStyle(element: Element): PaintStyle {
 			strikethrough: decoration.lineThrough,
 		},
 	};
-}
-
-// Applied at paint time. Case never changes a cell width, so it cannot
-// change wrapping.
-function applyTextTransform(text: string, transform: string): string {
-	switch (transform) {
-		case "capitalize":
-			return text.replace(
-				/\p{L}[\p{L}\p{M}]*/gu,
-				(word) => (word[0]?.toUpperCase() ?? "") + word.slice(1),
-			);
-		case "lowercase":
-			return text.toLowerCase();
-		case "uppercase":
-			return text.toUpperCase();
-		default:
-			return text;
-	}
 }
 
 interface Rect {

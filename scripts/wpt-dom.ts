@@ -240,6 +240,7 @@ function domGlobals(
 		"BeforeUnloadEvent",
 		"CDATASection",
 		"CharacterData",
+		"CommandEvent",
 		"Comment",
 		"CompositionEvent",
 		"CSS",
@@ -923,7 +924,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"selection/modify.tentative.html, bidi/modify-*.html, contenteditable/modify*.html, move-by-word-*.html",
-		'Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, so the line granularities need a document attached in a terminal; on the bare DOM this suite runs against, they do nothing.',
+		'Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, read from the layout of the attached document. A caret in an editing host stays in it.',
 	],
 	[
 		"selection/getSelection.html (excluded), and the defaultView sanity checks in it",

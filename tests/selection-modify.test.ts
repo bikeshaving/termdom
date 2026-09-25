@@ -274,6 +274,36 @@ test("an empty line is a place the caret can rest", async () => {
 	dom.dispose();
 });
 
+test("a line ends before its br, where the caret rests", async () => {
+	const {dom, document} = await attached("<p>ab<span>cd<br>ef</span></p>");
+	const span = document.querySelector("span");
+	const selection = document.getSelection()!;
+	selection.setBaseAndExtent(span.firstChild, 1, span.firstChild, 1);
+	selection.modify("move", "forward", "lineboundary");
+	expect(selection.focusNode).toBe(span.firstChild);
+	expect(selection.focusOffset).toBe(2);
+	dom.dispose();
+});
+
+test("a caret in an editing host stays in it", async () => {
+	const {dom, document} = await attached(
+		"<p>ab <span contenteditable>cd ef</span> gh</p><p>next</p>",
+	);
+	const text = document.querySelector("span").firstChild;
+	const selection = document.getSelection()!;
+	selection.setBaseAndExtent(text, 1, text, 1);
+	selection.modify("move", "backward", "lineboundary");
+	expect(selection.focusNode).toBe(text);
+	expect(selection.focusOffset).toBe(0);
+	selection.modify("move", "forward", "lineboundary");
+	expect(selection.focusNode).toBe(text);
+	expect(selection.focusOffset).toBe(5);
+	selection.modify("extend", "forward", "word");
+	selection.modify("extend", "forward", "word");
+	expect(selection.focusNode).toBe(text);
+	dom.dispose();
+});
+
 test("a modified selection paints where it now is", async () => {
 	const terminal = new MockProcess({cols: 12, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});

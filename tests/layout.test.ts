@@ -377,6 +377,24 @@ test("whitespace processing produces correct measurements", () => {
 	expect(containerRect!.width).toBeGreaterThan(0);
 });
 
+test("a range's rects include the boxes of the elements it holds", () => {
+	const dom =
+		layoutDOM("<p>abc<br>de</p><div style=\"width: 4ch; height: 2px\"></div>");
+	const br = dom.document.querySelector("br")!;
+	const range = dom.document.createRange();
+	range.selectNode(br);
+	expect(range.getBoundingClientRect().toJSON()).toEqual(
+		br.getBoundingClientRect().toJSON(),
+	);
+
+	const div = dom.document.querySelector("div")!;
+	range.selectNode(div);
+	expect(Array.from(range.getClientRects(), (rect) => rect.toJSON())).toEqual([
+		div.getBoundingClientRect().toJSON(),
+	]);
+	dom.dispose();
+});
+
 test("inline-block elements should get individual rects", () => {
 	const dom = layoutDOM(
 		`<div>

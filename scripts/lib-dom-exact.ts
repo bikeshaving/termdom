@@ -218,10 +218,15 @@ type Map1<T> = Identical<T, DOM.CharacterData> extends true
 																													? globalThis.ToggleEvent
 																													: Identical<
 																														T,
-																														DOM.HTMLDialogElement
+																														DOM.CommandEvent
 																													> extends true
-																														? globalThis.HTMLDialogElement
-																														: Map2<T>;
+																														? globalThis.CommandEvent
+																														: Identical<
+																															T,
+																															DOM.HTMLDialogElement
+																														> extends true
+																															? globalThis.HTMLDialogElement
+																															: Map2<T>;
 type Map2<T> = Identical<T, DOM.HTMLDirectoryElement> extends true
 	? globalThis.HTMLDirectoryElement
 	: Identical<T, DOM.HTMLDivElement> extends true
@@ -812,6 +817,10 @@ export type HTMLDetailsElementDrift = Drift<
 	globalThis.HTMLDetailsElement
 >;
 export type ToggleEventDrift = Drift<DOM.ToggleEvent, globalThis.ToggleEvent>;
+export type CommandEventDrift = Drift<
+	DOM.CommandEvent,
+	globalThis.CommandEvent
+>;
 export type HTMLDialogElementDrift = Drift<
 	DOM.HTMLDialogElement,
 	globalThis.HTMLDialogElement

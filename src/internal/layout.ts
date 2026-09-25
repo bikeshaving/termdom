@@ -413,6 +413,24 @@ export interface TabStops {
 	column: number;
 }
 
+// Applied at paint time, and read back by innerText. Case never changes
+// a cell width, so it cannot change wrapping.
+export function applyTextTransform(text: string, transform: string): string {
+	switch (transform) {
+		case "capitalize":
+			return text.replace(
+				/\p{L}[\p{L}\p{M}]*/gu,
+				(word) => (word[0]?.toUpperCase() ?? "") + word.slice(1),
+			);
+		case "lowercase":
+			return text.toLowerCase();
+		case "uppercase":
+			return text.toUpperCase();
+		default:
+			return text;
+	}
+}
+
 /** The characters one line fragment paints, in the line's visual order. */
 export function renderTextFragment(
 	data: string,
@@ -3405,6 +3423,10 @@ function processWhitespace(
 							processed.length,
 						);
 					}
+				} else if (prevItem?.leafNode.type === "br" && processed[0] === " ") {
+					// A line a <br> opens starts on its content, not a space.
+					processed = processed.substring(1);
+					dataOffsets = shiftRenderedOffsets(dataOffsets, 1, processed.length);
 				}
 			}
 
@@ -3418,8 +3440,31 @@ function processWhitespace(
 				dataOffsets,
 			});
 		} else if (leaf.type === "br") {
+			// Nor does the line it ends close on one.
+			const prevItem = items.at(-1);
+			const prevText = prevItem === undefined
+				? undefined
+				: prevItem.processedContent;
+			if (
+				prevItem !== undefined &&
+				prevText !== undefined &&
+				prevText.endsWith(" ") &&
+				prevItem.end === text.length &&
+				prevItem.leafNode.type === "text" &&
+				!isSpacePreserving(getWhiteSpace(prevItem.leafNode.node))
+			) {
+				prevItem.processedContent = prevText.slice(0, -1);
+				prevItem.dataOffsets = shiftRenderedOffsets(
+					prevItem.dataOffsets ?? null,
+					0,
+					prevItem.processedContent.length,
+				);
+				prevItem.end--;
+				text = text.slice(0, -1);
+			}
+			const at = text.length;
 			text += "\n";
-			items.push({leafNode: leaf, start, end: text.length});
+			items.push({leafNode: leaf, start: at, end: text.length});
 		} else if (leaf.type === "inline-block") {
 			text += "\uFFFC";
 			items.push({leafNode: leaf, start, end: text.length});
@@ -5184,6 +5229,39 @@ export class Layout {
 			}
 		}
 		return {from: start, to: end};
+	}
+
+	// The text a text node's boxes show, in logical order, as innerText
+	// reads it: white space processed, case transformed, and a preserved
+	// newline between two lines kept. A soft wrap is no break, and the
+	// space it swallowed is a space again.
+	getRenderedText(textNode: Text): string {
+		const data = textNode.data;
+		const whiteSpace = getWhiteSpace(textNode);
+		const keepsBreaks =
+			isSpacePreserving(whiteSpace) || whiteSpace === "pre-line";
+		let text = "";
+		let previous: number | null = null;
+		for (const fragment of this.lineFragments(textNode)) {
+			if (previous !== null) {
+				const gap = data.slice(previous, fragment.startOffset);
+				const breaks = keepsBreaks ? gap.split("\n").length - 1 : 0;
+				if (breaks > 0) {
+					text += "\n".repeat(breaks);
+				} else if (gap.length > 0 && !text.endsWith(" ")) {
+					text += " ";
+				}
+			}
+			text += renderWhiteSpace(
+				data.slice(fragment.startOffset, fragment.endOffset),
+				whiteSpace,
+			);
+			previous = fragment.endOffset;
+		}
+		const parent = flatParentElement(textNode);
+		return parent === null
+			? text
+			: applyTextTransform(text, getComputedValue(parent, "text-transform"));
 	}
 
 	// The one place laid-out lines get their data ranges. Range geometry,

@@ -20,8 +20,8 @@ window's legacy named access to elements by id.
 - Optional-feature subtests reporting unsupported: 6
 - Files whose harness completed: 695
 - Files whose harness did not complete: 67
-- Subtests passed: 99731
-- Subtests failed: 855
+- Subtests passed: 99752
+- Subtests failed: 834
 
 ## Exclusions
 
@@ -411,7 +411,7 @@ Range.getClientRects() and Range.getBoundingClientRect() are not implemented. Th
 
 ### selection/modify.tentative.html, bidi/modify-*.html, contenteditable/modify*.html, move-by-word-*.html
 
-Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, so the line granularities need a document attached in a terminal; on the bare DOM this suite runs against, they do nothing.
+Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, read from the layout of the attached document. A caret in an editing host stays in it.
 
 ### selection/getSelection.html (excluded), and the defaultView sanity checks in it
 
@@ -1036,7 +1036,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/bidi/modify.tentative.html | OK | 24 | 12 |
 | selection/canvas-click.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
 | selection/canvas-drag.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
-| selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 2 | 22 |
+| selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 8 | 16 |
 | selection/caret/after-designMode-off.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-1.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-2.html | REFTEST | 0 | 0 |
@@ -1058,7 +1058,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR ("" is not a valid element name) | 0 | 0 |
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 1 | 35 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
-| selection/contenteditable/modify.tentative.html | OK | 0 | 15 |
+| selection/contenteditable/modify.tentative.html | OK | 15 | 0 |
 | selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
 | selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
 | selection/contenteditable/selection-outside-focused-editing-host.tentative.html | TIMEOUT | 0 | 0 |
@@ -2009,22 +2009,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Caret position should be correct in moving up horizontal div when selection was right to left with paragraph granularity: assert_true: expected true got false
 - Caret position should be correct in moving down horizontal div when selection was left to right with paragraph granularity: assert_true: expected true got false
 - Caret position should be correct in moving down horizontal div when selection was right to left with paragraph granularity: assert_true: expected true got false
-- Caret position should be correct in move right with line granularity for vertical-lr div when selection was top to bottom: assert_equals: expected 12 but got 11
-- Caret position should be correct in move right with line granularity for vertical-lr div when selection was bottom to top: assert_equals: expected 7 but got 11
-- Caret position should be correct in move left with line granularity for vertical-lr div when selection was top to bottom: assert_equals: expected 12 but got 8
-- Caret position should be correct in move left with line granularity for vertical-lr div when selection was bottom to top: assert_equals: expected 7 but got 8
+- Caret position should be correct in move right with line granularity for vertical-lr div when selection was bottom to top: assert_equals: expected 7 but got 12
+- Caret position should be correct in move left with line granularity for vertical-lr div when selection was top to bottom: assert_equals: expected 12 but got 7
 - Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
 - Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
 - Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
 - Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
-- Caret position should be correct in move left with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 11
-- Caret position should be correct in move left with line granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 11
-- Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 8
-- Caret position should be correct in move right with line granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 8
-- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 11
-- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 11
-- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 8
-- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 8
+- Caret position should be correct in move left with line granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
+- Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 7
+- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
+- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 7
 
 ### selection/contenteditable/collapse.html
 
@@ -2088,24 +2082,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - getSelection().modify("move", "backward", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \" \", 0)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 1)", "(#text \" \", 1)", "(<div contenteditable=\"\">, 0)", "(#text \" \", 0)"]
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \" \", 0)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
-
-### selection/contenteditable/modify.tentative.html
-
-- Selection.modify() must not select outside of the host: assert_equals: expected Element node <div contenteditable="" id="host">Editable</div> but got Element node <div>Non-editable</div>
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: prefix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: prefix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: standalone: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: standalone: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node "able"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node "
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Element node <div id="inlinehosts">
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node "
 
 ### selection/extend-selection-backward-on-input.html
 
