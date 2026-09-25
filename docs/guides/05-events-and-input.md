@@ -92,6 +92,12 @@ rows, the browser's line-mode convention. The engine turns on mouse
 reporting when it attaches, and the right and middle buttons reach the
 page as ordinary presses; there is no context menu.
 
+A link's text is painted as a terminal hyperlink (OSC 8) when its `href`
+resolves to an absolute `http`, `https`, `mailto`, `file` or `ftp` URL, so
+a terminal that supports them opens it on its own modifier-click or hover,
+whether or not the page has the mouse. The engine never follows a link
+itself; a `click` listener is where an app acts on one.
+
 ```ts
 row.addEventListener("click", () => open(row.dataset.path!));
 ```
