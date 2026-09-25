@@ -40,6 +40,7 @@ const RUNNABLE = [
 	"hacker-news",
 	"highlights",
 	"hover",
+	"images",
 	"lists",
 	"markdown",
 	"password",

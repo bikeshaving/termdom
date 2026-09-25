@@ -285,8 +285,13 @@ export class TermDOM {
 			});
 			this[kExchange].scrubProbeEcho();
 			// After the erase, which is for the mode probes' echo. What was
-			// painted against the guessed cell repaints when the answer lands.
-			void this[kExchange].negotiateCellPixels().then(() => {
+			// painted against the guessed cell repaints when the answer lands,
+			// and an image paints as its alt text until the terminal says it
+			// can show pixels.
+			void Promise.all([
+				this[kExchange].negotiateCellPixels(),
+				this[kExchange].negotiateImages(),
+			]).then(() => {
 				if (isAttached(this)) {
 					void render(this);
 				}
@@ -351,6 +356,16 @@ export class TermDOM {
 		// erases would land on someone else's rows, and skip it while
 		// fullscreen, because the screen switch restores what was there before
 		// entry, and that is the record.
+		// Before the document goes out again as text. A kitty placement is
+		// the terminal's until it is told otherwise, and one left behind
+		// would sit over whatever the shell prints next.
+		if (wasAttached) {
+			const released = this[kScreen].releaseImages();
+			if (released) {
+				void this[kExchange].write(released);
+			}
+		}
+
 		const closingFullscreen = isFullscreen(this);
 		if (wasAttached && this[kRenderCount] > 0 && !closingFullscreen) {
 			// A paint that fails on the way out must not keep the terminal's
