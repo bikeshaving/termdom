@@ -23276,14 +23276,16 @@ export class Document extends Node implements globalThis.Document {
 		return this.embeds;
 	}
 
-	get links(): HTMLCollectionOf<globalThis.HTMLAnchorElement |
-	globalThis.HTMLAreaElement> {
+	get links(): HTMLCollectionOf<
+		globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
+	> {
 		return getDocumentCollection(this,
 			(e) =>
 				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
 				e.hasAttribute("href"),
-		) as unknown as HTMLCollectionOf<globalThis.HTMLAnchorElement |
-		globalThis.HTMLAreaElement>;
+		) as unknown as HTMLCollectionOf<
+			globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
+		>;
 	}
 
 	/** Always empty. The applet element was removed from HTML. */
@@ -32454,27 +32456,29 @@ export class Window extends EventTarget {
 		return globalThis.performance;
 	}
 
-	get trustedTypes(): globalThis.TrustedTypePolicyFactory | undefined {
+	// Trusted Types is not implemented, so these name no types of it: the
+	// declarations would ask every consumer for the typings.
+	get trustedTypes(): undefined {
 		return undefined;
 	}
 
-	get TrustedHTML(): globalThis.Window["TrustedHTML"] {
+	get TrustedHTML(): never {
 		return noWindowFeature("trusted types");
 	}
 
-	get TrustedScript(): globalThis.Window["TrustedScript"] {
+	get TrustedScript(): never {
 		return noWindowFeature("trusted types");
 	}
 
-	get TrustedScriptURL(): globalThis.Window["TrustedScriptURL"] {
+	get TrustedScriptURL(): never {
 		return noWindowFeature("trusted types");
 	}
 
-	get TrustedTypePolicy(): globalThis.Window["TrustedTypePolicy"] {
+	get TrustedTypePolicy(): never {
 		return noWindowFeature("trusted types");
 	}
 
-	get TrustedTypePolicyFactory(): globalThis.Window["TrustedTypePolicyFactory"] {
+	get TrustedTypePolicyFactory(): never {
 		return noWindowFeature("trusted types");
 	}
 
