@@ -87,7 +87,23 @@ bubbling from the element the caret is in, with the spec&#039;s input types:
 	<span class="token punctuation">}</span>
 <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Undo and redo are not here yet, and neither are <code>execCommand</code>, the
 formatting commands, HTML paste, IME composition in a host, or
-spellcheck.</p><h2 id="selection-and-the-clipboard">Selection and the clipboard <a class="heading-anchor" href="#selection-and-the-clipboard">#</a></h2><p>Drag to select, in the document or inside a field; style it with
+spellcheck.</p><h2 id="errors">Errors <a class="heading-anchor" href="#errors">#</a></h2><p>An exception that escapes a listener, an event handler attribute, an
+observer callback, or a frame callback is reported as a browser reports
+it. The window hears a cancelable <code>error</code> event first:</p><pre class="language-typescript"><code class="language-typescript">window<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"error"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
+	status<span class="token punctuation">.</span>textContent <span class="token operator">=</span> event<span class="token punctuation">.</span>message<span class="token punctuation">;</span>
+	event<span class="token punctuation">.</span><span class="token function">preventDefault</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>A listener that calls <code>preventDefault()</code> has handled the error. An
+unhandled one is not printed over the screen, and it does not stop the
+program. It goes to the transport&#039;s log when the transport has one
+apart from the screen: the process transport writes it to stderr when
+stderr is not the terminal, so <code>node app.ts 2&gt; errors.log</code> gives a live
+log to tail in another pane. Otherwise the engine keeps it and prints
+it below the document when the session ends, so it is seen either way.</p><p>Errors the engine throws at a call, an <code>InvalidStateError</code> from
+<code>showModal()</code> on an open dialog, a <code>SyntaxError</code> from a bad selector,
+are the ones a browser throws, and a caller catches them as it would
+there. A failure inside the engine&#039;s own rendering ends the session:
+the last frame is left in the scrollback, the terminal is restored, and
+the error is thrown.</p><h2 id="selection-and-the-clipboard">Selection and the clipboard <a class="heading-anchor" href="#selection-and-the-clipboard">#</a></h2><p>Drag to select, in the document or inside a field; style it with
 <code>::selection</code>. A double click selects the word under the pointer and a
 triple click the paragraph, or in a <code>&lt;textarea&gt;</code> the line and in an
 <code>&lt;input&gt;</code> the whole value, and a drag that follows extends the selection
