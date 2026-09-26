@@ -8910,7 +8910,7 @@ export class Element extends Node implements globalThis.Element {
 			Boolean(options.serializable),
 			Boolean(options.delegatesFocus),
 			slotAssignment,
-			registry === undefined ? getGlobalCustomElements() : registry,
+			registry === undefined ? this[kDocument][kRegistry] : registry,
 		);
 		const root = this[kShadowRoot] as ShadowRoot;
 		const attached = getAttachedDocument(this);
@@ -11243,6 +11243,7 @@ function getElementInterface(
 }
 
 let currentDocumentForConstruction: Document | null = null;
+let ambientDocument: Document | null = null;
 
 function buildElement(
 	document: Document,
@@ -11315,8 +11316,16 @@ function createElementInternal(
 			return element;
 		}
 		let result: Element;
+		const previousDocument = currentDocumentForConstruction;
 		try {
-			result = constructCustomElement(definition);
+			// The constructor runs as script of the creating document's window,
+			// so that is the document a bare element construction belongs to.
+			currentDocumentForConstruction = document;
+			try {
+				result = constructCustomElement(definition);
+			} finally {
+				currentDocumentForConstruction = previousDocument;
+			}
 			if (!(result instanceof HTMLElement)) {
 				throw new TypeError("That constructor did not build an HTML element");
 			}
@@ -11596,7 +11605,13 @@ const FORM_CALLBACK_NAMES = [
 	"formStateRestoreCallback",
 ];
 
-const registries: CustomElementRegistry[] = [];
+// Every definition of a constructor, in any registry. A constructor
+// finds its definition here rather than by searching every registry,
+// which would keep every registry alive.
+const constructorDefinitions = new WeakMap<
+	CustomElementConstructor,
+	CustomElementDefinition[]
+>();
 
 const kDefinitions = Symbol("definitions");
 const kDefinitionIsRunning = Symbol("definitionIsRunning");
@@ -11631,7 +11646,6 @@ class CustomElementRegistry {
 				resolve: (value: CustomElementConstructor) => void;
 			}
 		>();
-		registries.push(this);
 	}
 
 	define(
@@ -11739,6 +11753,12 @@ class CustomElementRegistry {
 			disableShadow,
 		};
 		this[kDefinitions].push(definition);
+		const known = constructorDefinitions.get(constructor);
+		if (known === undefined) {
+			constructorDefinitions.set(constructor, [definition]);
+		} else {
+			known.push(definition);
+		}
 		const document = getCurrentDocument();
 		for (const candidate of shadowIncludingInclusiveDescendants(document)) {
 			if (candidate.nodeType !== ELEMENT_NODE) {
@@ -11900,16 +11920,6 @@ function toCallback(
 	return value as (...args: unknown[]) => void;
 }
 
-function getDefinition(
-	registry: CustomElementRegistry,
-	constructor: CustomElementConstructor,
-): CustomElementDefinition | null {
-	return (
-		registry[kDefinitions].find((entry) => entry.constructor === constructor) ??
-		null
-	);
-}
-
 function lookUpDefinition(
 	registry: CustomElementRegistry,
 	namespace: string | null,
@@ -11939,44 +11949,36 @@ Object.defineProperty(CustomElementRegistry.prototype, Symbol.toStringTag, {
 
 // HTML's element constructors look the constructor up in the registry
 // whose upgrade is in flight, and otherwise in the current global
-// object's document registry. Every document here shares one realm, so
-// there is no second global for an iframe's script to run under. The
-// last branch stands in for it: a constructor known only to an iframe's
-// registry resolves as it would from that iframe's own global
-// (custom-elements/htmlconstructor/newtarget.html).
+// object's document registry. Every window here shares one realm, so a
+// bare `new` has no current global to name one. The definition in the
+// ambient window's registry stands in for it, and a constructor known
+// only to another window or an iframe resolves as it would under that
+// global (custom-elements/htmlconstructor/newtarget.html).
 function getConstructorDefinition(
 	constructor: CustomElementConstructor,
 ): CustomElementDefinition | null {
-	for (const registry of registries) {
-		const definition = getDefinition(registry, constructor);
-		if (definition !== null && definition.constructionStack.length > 0) {
-			return definition;
-		}
+	const definitions = constructorDefinitions.get(constructor) ?? [];
+	const upgrading = definitions.find(
+		(definition) => definition.constructionStack.length > 0,
+	);
+	if (upgrading !== undefined) {
+		return upgrading;
 	}
-	const global = getDefinition(getGlobalCustomElements(), constructor);
-	if (global !== null) {
-		return global;
-	}
-	for (const registry of registries) {
-		const definition = getDefinition(registry, constructor);
-		if (definition !== null) {
-			return definition;
-		}
-	}
-	return null;
+	const ambient =
+		(currentDocumentForConstruction ?? ambientDocument)?.[kRegistry] ?? null;
+	return (
+		definitions.find((definition) => definition.registry === ambient) ??
+		definitions[0] ??
+		null
+	);
 }
 
-// Definitions are per realm because the classes that carry them are, so
-// one registry serves every document. A document reaches it through the
-// algorithms below rather than a global, so a tree with no window behind
-// it still resolves its definitions.
-let globalCustomElements: CustomElementRegistry | null = null;
-
-function getGlobalCustomElements(): CustomElementRegistry {
-	if (globalCustomElements === null) {
-		globalCustomElements = constructInternal(() => new CustomElementRegistry());
-	}
-	return globalCustomElements;
+// Each window's document gets a registry of its own. The classes are
+// shared by every window in the realm, but the names defined for them
+// are not, so two windows in one process, such as two terminal sessions,
+// each define their own elements.
+function createWindowRegistry(): CustomElementRegistry {
+	return constructInternal(() => new CustomElementRegistry());
 }
 
 // Every node has a registry. An element takes its document's when
@@ -12500,7 +12502,7 @@ function attachUAShadowTree<T>(target: Element): T {
 	shadow[kConnected] = host[kConnected];
 	shadow[kShadowMode] = "closed";
 	shadow[kUAShadowTree] = true;
-	shadow[kRegistry] = getGlobalCustomElements();
+	shadow[kRegistry] = host[kDocument][kRegistry];
 	host[kShadowRoot] = shadow;
 	return shadow as T;
 }
@@ -15400,17 +15402,17 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 		return;
 	}
 	const srcdoc = frame.getAttribute("srcdoc");
+	const registry = createWindowRegistry();
 	const contentDocument = parseHTMLDocument(
 		srcdoc ?? "",
 		srcdoc === null ? "about:blank" : "about:srcdoc",
-	);
-	contentDocument[kRegistry] = constructInternal(() =>
-		new CustomElementRegistry(),
+		true,
+		registry,
 	);
 	frame[kContentDocument] = contentDocument;
 	frame[kContentWindow] = {
 		document: contentDocument,
-		customElements: contentDocument[kRegistry],
+		customElements: registry,
 		frameElement: frame,
 		HTMLElement,
 	};
@@ -23003,8 +23005,6 @@ function getThresholdIndex(
 	return index;
 }
 
-let ambientDocument: Document | null = null;
-
 // A window here is not the global object, so there is no "current
 // global object" to consult. A bare `new Text()` belongs to whichever
 // document was last attached to a window, or to one created here if
@@ -24854,7 +24854,7 @@ Object.defineProperty(DOMImplementation.prototype, Symbol.toStringTag, {
 function createHTMLDocument(
 	title?: string,
 	url = "about:blank",
-	registry: CustomElementRegistry | null = getGlobalCustomElements(),
+	registry: CustomElementRegistry | null = null,
 ): Document {
 	const document = new Document();
 	document[kRegistry] = registry;
@@ -29840,7 +29840,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 			// none.
 			template.hasAttribute("shadowrootcustomelementregistry")
 				? null
-				: getGlobalCustomElements(),
+				: (host as Element)[kDocument][kRegistry],
 		);
 	} catch (_err) {
 		return false;
@@ -29868,7 +29868,7 @@ function parseHTMLDocument(
 	html: string,
 	url = "about:blank",
 	allowDeclarativeShadowRoots = true,
-	registry: CustomElementRegistry | null = getGlobalCustomElements(),
+	registry: CustomElementRegistry | null = null,
 ): Document {
 	const adapter = createTreeAdapter(null);
 	const outerRegistry = parseRegistry;
@@ -32529,7 +32529,7 @@ export class Window extends EventTarget {
 	}
 
 	get customElements(): globalThis.CustomElementRegistry {
-		return getGlobalCustomElements() as unknown as globalThis.CustomElementRegistry;
+		return this.document[kRegistry] as unknown as globalThis.CustomElementRegistry;
 	}
 
 	// The terminal is both the window and the screen, so the inner and
@@ -33315,9 +33315,12 @@ export function createWindow(
 	contentType = "text/html",
 ): Window {
 	if (contentType === "text/html") {
-		return buildWindow(parseHTMLDocument(source, url));
+		return buildWindow(
+			parseHTMLDocument(source, url, true, createWindowRegistry()),
+		);
 	}
 	const document = parseXMLDocument(source, contentType);
+	document[kRegistry] = createWindowRegistry();
 	if (url !== undefined) {
 		document[kDocumentURL] = url;
 	}

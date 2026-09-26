@@ -31,7 +31,9 @@ function createHTMLDocument(title?: string): Document {
 }
 
 // The interfaces script sees are the window's, so the tests take them from
-// one: a parser, a Window of its own, and the realm's element registry.
+// one: a parser, a Window of its own, and that window's element registry.
+// A test whose elements must upgrade defines them on its own document's
+// window, since each window has a registry of its own.
 const realm = createWindow("<!doctype html>");
 const customElements = realm.customElements;
 
@@ -1174,6 +1176,7 @@ test("a shadow root is cloned with its host only when it is clonable", () => {
 
 test("a reaction runs after the mutation that enqueued it, in tree order", () => {
 	const document = make();
+	const {customElements} = document.defaultView;
 	const order: string[] = [];
 	customElements.define(
 		"order-one",
@@ -1197,6 +1200,7 @@ test("a reaction runs after the mutation that enqueued it, in tree order", () =>
 
 test("an attribute reaction is enqueued only for an observed name", () => {
 	const document = make();
+	const {customElements} = document.defaultView;
 	const seen: unknown[][] = [];
 	customElements.define(
 		"order-two",
@@ -1221,6 +1225,7 @@ test("an attribute reaction is enqueued only for an observed name", () => {
 
 test("an upgrade replays the attributes and the connection it missed", () => {
 	const document = make();
+	const {customElements} = document.defaultView;
 	const seen: string[] = [];
 	const element = document.createElement("order-three");
 	element.setAttribute("a", "1");
@@ -1244,6 +1249,20 @@ test("an upgrade replays the attributes and the connection it missed", () => {
 	customElements.define("order-three", OrderThree);
 	expect(element instanceof OrderThree).toBe(true);
 	expect(seen).toEqual(["attribute a", "connected"]);
+});
+
+test("each window defines its own custom elements", () => {
+	const one = make().defaultView;
+	const two = make().defaultView;
+
+	class First extends HTMLElement {}
+
+	class Second extends HTMLElement {}
+
+	one.customElements.define("own-element", First);
+	two.customElements.define("own-element", Second);
+	expect(one.document.createElement("own-element")).toBeInstanceOf(First);
+	expect(two.document.createElement("own-element")).toBeInstanceOf(Second);
 });
 
 test("a definition is rejected by name and by a constructor already used", () => {
