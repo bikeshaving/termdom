@@ -122,3 +122,23 @@ test("removing open from a modal dialog ends its modality", async () => {
 	expect(dialog.matches(":modal")).toBe(false);
 	dom.dispose();
 });
+
+test("a link to a fragment of the document moves :target and fires hashchange", async () => {
+	const {dom, document} =
+		await mounted("<a href=#second>go</a><p id=first>1</p><p id=second>2</p>");
+	const {window} = dom;
+	const changes: string[] = [];
+	window.addEventListener("hashchange", (event) => {
+		changes.push((event as HashChangeEvent).newURL.split("#")[1]);
+	});
+	document.querySelector("a")!.click();
+	expect(document.getElementById("second")!.matches(":target")).toBe(true);
+	window.location.hash = "first";
+	expect(document.getElementById("first")!.matches(":target")).toBe(true);
+	expect(document.getElementById("second")!.matches(":target")).toBe(false);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(changes).toEqual(["second", "first"]);
+	// Anywhere but a fragment of this document is still nowhere to go.
+	expect(() => window.location.assign("https://example.com/")).toThrow();
+	dom.dispose();
+});
