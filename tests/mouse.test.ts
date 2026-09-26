@@ -609,6 +609,33 @@ test("a mouse event answers in the standard coordinate spaces", async () => {
 	termdom.dispose();
 });
 
+test("a scrolled document reports the pointer in viewport coordinates", async () => {
+	const {proc, termdom, document} = makeDocumentModeApp();
+	await nextFrame(termdom);
+	await send(proc, "\x1b[<65;5;3M");
+	expect(termdom.window.scrollY).toBe(3);
+
+	const seen: Array<{target: string; clientY: number; pageY: number}> = [];
+	document.addEventListener("mousedown", (event) => {
+		const mouse = event as MouseEvent;
+		seen.push({
+			target: (mouse.target as Element).textContent!,
+			clientY: mouse.clientY,
+			pageY: mouse.pageY,
+		});
+	});
+	// Row 2 of the screen shows line 4 once three lines scroll away. Code
+	// that finds the point in client rects, as CodeMirror does, has to see
+	// the same row the box is drawn on.
+	await send(proc, "\x1b[<0;2;2M");
+	await send(proc, "\x1b[<0;2;2m");
+	expect(seen).toEqual([{target: "line 4", clientY: 1, pageY: 4}]);
+	const hit = document.elementFromPoint(1, seen[0].clientY)!;
+	expect(hit.textContent).toBe("line 4");
+	expect(hit.getBoundingClientRect().top).toBe(1);
+	termdom.dispose();
+});
+
 test("fullscreen maps mouse rows from the screen's top, not the command's row", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 30});
 	// Prior output puts the command's start, and so the document's anchor,
