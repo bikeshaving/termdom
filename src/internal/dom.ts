@@ -18272,7 +18272,7 @@ export class HTMLSelectElement extends HTMLElement {
 				openPicker(this);
 				return;
 			}
-			const {clientX: x, clientY: y} = event;
+			const {pageX: x, pageY: y} = event;
 			const picker = this[kPicker]!;
 			const row =
 				(Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
