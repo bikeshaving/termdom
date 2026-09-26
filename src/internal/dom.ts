@@ -158,10 +158,32 @@ export function setUASelection(
 const kSyncUAShadowTree = Symbol("bring a control's UA tree back into step");
 
 /** Notify a control that its state changed so its UA shadow tree can update. */
+// The pseudo-classes that read a control's state rather than its
+// attributes.
+const CONTROL_STATES = [
+	"checked",
+	"indeterminate",
+	"default",
+	"placeholder-shown",
+	"valid",
+	"invalid",
+	"user-valid",
+	"user-invalid",
+	"in-range",
+	"out-of-range",
+	"open",
+	"autofill",
+	"blank",
+];
+
+// A control's own state changed: checkedness, its value, what is
+// selected. Its shadow tree redraws, and the rules that read that state
+// are told, since no mutation record says so.
 function syncUAShadowTree(element: Element): void {
 	(element as unknown as Record<symbol, (() => void) | undefined>)[
 		kSyncUAShadowTree
 	]?.();
+	stateChanged(element, CONTROL_STATES);
 }
 
 // The single definition of which elements are text controls. Painting, caret
@@ -12075,6 +12097,7 @@ function upgradeElement(
 	}
 	definition.constructionStack.pop();
 	element[kCustomState] = "custom";
+	stateChanged(element, ["defined"]);
 	// A form-associated element learns its owner and its disabled state as
 	// it becomes one, which is the first moment it has internals to notify.
 	if (definition.formAssociated) {
@@ -13934,6 +13957,7 @@ class HTMLDialogElement extends HTMLElement {
 		// backdrop, the hit testing that stops clicks reaching the page) reads
 		// membership rather than a separate flag.
 		getTopLayer(this[kDocument]).add(this);
+		stateChanged(this, ["modal"]);
 		this.setAttribute("open", "");
 		focusDialog(this);
 	}
@@ -14005,6 +14029,9 @@ function closeDialog(
 	const wasModal = isModalDialog(dialog);
 	dialog.removeAttribute("open");
 	getTopLayer(document).delete(dialog);
+	if (wasModal) {
+		stateChanged(dialog, ["modal"]);
+	}
 	// Restore focus to where the dialog took it from, if the dialog holds
 	// focus or held the whole page inert as the modal one.
 	const previous = dialog[kPreviouslyFocused];
@@ -15834,6 +15861,7 @@ export class HTMLInputElement extends HTMLElement {
 
 	set indeterminate(value: boolean) {
 		this[kIndeterminate] = Boolean(value);
+		syncUAShadowTree(this);
 	}
 
 	get selectionStart(): number | null {
@@ -19779,17 +19807,31 @@ function getTopmostAutoPopover(
 	return popovers.length === 0 ? null : popovers[popovers.length - 1];
 }
 
-// Showing a popover is not a mutation. The attribute and the tree are
-// unchanged. So the rules that test `:popover-open`, and the frame that
-// would paint what they hide or reveal, have to be notified from here.
-function popoverStateChanged(element: Element): void {
+// State that no attribute and no tree mutation records changed, so no
+// mutation record reaches the cascade. Every such change comes through
+// here, naming the pseudo-classes that read the state, and the frame that
+// would paint the difference is asked for. The frame is asked for from a
+// microtask, as a mutation record's delivery asks for one: a state can
+// change in the middle of the engine's own work, such as a control
+// building its shadow tree while a batch of records is being handled, and
+// a frame started there reads styles the batch has not yet made current.
+function stateChanged(element: Element, states: readonly string[]): void {
 	const attached = getAttachedDocument(element);
 	if (attached === undefined) {
 		return;
 	}
-	attached[kCascade].handleStateChange(element);
+	attached[kCascade].handleStateChange(element, states);
 	attached[kScreen].invalidate();
-	void attached[kRender]();
+	queueMicrotask(() => {
+		void attached[kRender]();
+	});
+}
+
+// Showing a popover is not a mutation. The attribute and the tree are
+// unchanged. So the rules that test `:popover-open`, and the frame that
+// would paint what they hide or reveal, have to be notified from here.
+function popoverStateChanged(element: Element): void {
+	stateChanged(element, ["popover-open", "open"]);
 }
 
 // Returns true, false for a call that should silently do nothing, or the
@@ -21027,16 +21069,28 @@ Object.defineProperty(ValidityState.prototype, Symbol.toStringTag, {
 });
 
 const kStates = Symbol("custom state set");
+const kStateOwner = Symbol("custom state owner");
+
+function customStatesChanged(set: CustomStateSet): void {
+	const owner = set[kStateOwner];
+	if (owner !== null) {
+		stateChanged(owner, ["state"]);
+	}
+}
 
 // The set belongs to the author. A selector engine that supports
 // `:state()` reads it, and nothing else in this DOM does.
 interface CustomStateSet {
 	[kStates]: Set<string>;
+
+	// The element whose :state() the set answers for.
+	[kStateOwner]: Element | null;
 }
 
 class CustomStateSet {
 	constructor() {
 		this[kStates] = new Set<string>();
+		this[kStateOwner] = null;
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
@@ -21050,7 +21104,11 @@ class CustomStateSet {
 		if (arguments.length < 1) {
 			throw new TypeError("add needs a value");
 		}
-		this[kStates].add(String(value));
+		const state = String(value);
+		if (!this[kStates].has(state)) {
+			this[kStates].add(state);
+			customStatesChanged(this);
+		}
 		return this;
 	}
 
@@ -21058,7 +21116,11 @@ class CustomStateSet {
 		if (arguments.length < 1) {
 			throw new TypeError("delete needs a value");
 		}
-		return this[kStates].delete(String(value));
+		const deleted = this[kStates].delete(String(value));
+		if (deleted) {
+			customStatesChanged(this);
+		}
+		return deleted;
 	}
 
 	has(value: string): boolean {
@@ -21069,7 +21131,10 @@ class CustomStateSet {
 	}
 
 	clear(): void {
-		this[kStates].clear();
+		if (this[kStates].size > 0) {
+			this[kStates].clear();
+			customStatesChanged(this);
+		}
 	}
 
 	forEach(
@@ -21213,6 +21278,7 @@ class ElementInternals {
 		let states = this[kStates];
 		if (states === null) {
 			states = constructInternal(() => new CustomStateSet());
+			states[kStateOwner] = this[kElementInternalsTarget];
 			this[kStates] = states;
 		}
 		return states;
