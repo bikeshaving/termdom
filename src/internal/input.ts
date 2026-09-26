@@ -5,6 +5,7 @@ import {
 	flatParentElement,
 	type FocusStartingPoint,
 	getActiveElement,
+	getFocusedElement,
 	getKeyboardActivation,
 	getPointerState,
 	getShadowRoot,
@@ -21,6 +22,7 @@ import {
 	MOUSE_POINTER_ID,
 	placeTextControlCaret,
 	requestRender,
+	runControlDefaultAction,
 	type SelectionUnit,
 	selectUnits,
 	setActiveElement,
@@ -761,7 +763,7 @@ function deliverPaste(input: Input, text: string): void {
 	// A terminal pastes line breaks as CR (tmux documents the replacement).
 	// The DOM's paste carries LF.
 	text = text.replace(/\r\n?/g, "\n");
-	const focused = input[kDocument].activeElement;
+	const focused = getFocusedElement(input[kDocument]);
 	const target = focused && focused !== input[kDocument].body
 		? focused
 		: input[kDocument].body;
@@ -773,20 +775,21 @@ function deliverPaste(input: Input, text: string): void {
 		new input[kWindow].ClipboardEvent("paste", {
 			clipboardData,
 			bubbles: true,
+			composed: true,
 			cancelable: true,
 		}),
 	);
 	const tag = target.tagName;
 	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
-		dispatchAsUserAgent(
-			target,
-			new input[kWindow].InputEvent("beforeinput", {
-				inputType: "insertFromPaste",
-				data: text,
-				bubbles: true,
-				cancelable: true,
-			}),
-		);
+		const event = new input[kWindow].InputEvent("beforeinput", {
+			inputType: "insertFromPaste",
+			data: text,
+			bubbles: true,
+			composed: true,
+			cancelable: true,
+		});
+		dispatchAsUserAgent(target, event);
+		runControlDefaultAction(target, event);
 	} else if (proceed) {
 		requestEditingInsert(target, "insertFromPaste", text);
 	}
@@ -1012,12 +1015,12 @@ function dispatchPress(
 	input[kPopoverPressTarget] = lightDismissPress(target);
 	input[kTextControlDragAnchor] = null;
 	if (setDocumentFocusVisible(input[kDocument], false)) {
-		input[kCascade].handleFocusChange(input[kDocument].activeElement);
+		input[kCascade].handleFocusChange(getFocusedElement(input[kDocument]));
 		requestRender(input[kDocument]);
 	}
+	const mousedown = new input[kWindow].MouseEvent("mousedown", eventInit);
 	const notCanceled =
-		input[kMouseEventsSuppressed] ||
-		dispatchMouseLike(input, "mouse", "mousedown", target, eventInit);
+		input[kMouseEventsSuppressed] || dispatchAsUserAgent(target, mousedown);
 	if (!notCanceled) {
 		return;
 	}
@@ -1026,7 +1029,7 @@ function dispatchPress(
 	while (focusable !== null && !focusable.matches(FOCUSABLE_SELECTOR)) {
 		focusable = flatParentElement(focusable);
 	}
-	const active = input[kDocument].activeElement;
+	const active = getFocusedElement(input[kDocument]);
 	if (focusable && focusable !== active) {
 		(focusable as HTMLElement).focus();
 		requestRender(input[kDocument]);
@@ -1034,6 +1037,7 @@ function dispatchPress(
 		(active as HTMLElement).blur();
 		requestRender(input[kDocument]);
 	}
+	runControlDefaultAction(target, mousedown);
 
 	// Default action: a press in a text control places the caret and anchors a
 	// text control drag. The select UA shadow tree's own mousedown listener ran
@@ -1186,13 +1190,13 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	const keyCode = getLegacyKeyCode(keyName);
 
 	if (setDocumentFocusVisible(input[kDocument], true)) {
-		input[kCascade].handleFocusChange(input[kDocument].activeElement);
+		input[kCascade].handleFocusChange(getFocusedElement(input[kDocument]));
 		requestRender(input[kDocument]);
 	}
 
 	// A fullscreen element is usually not focusable, so keydown falls back
 	// to it before the body.
-	const active = input[kDocument].activeElement;
+	const active = getFocusedElement(input[kDocument]);
 	const targetElement = active && active !== input[kDocument].body
 		? active
 		: input[kDocument].fullscreenElement || input[kDocument].body;
@@ -1208,10 +1212,13 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		altKey,
 		metaKey,
 		bubbles: true,
+		composed: true,
 		cancelable: true,
 	});
 
-	const notCanceled = dispatchAsUserAgent(targetElement, keydownEvent);
+	dispatchAsUserAgent(targetElement, keydownEvent);
+	runControlDefaultAction(targetElement, keydownEvent);
+	const notCanceled = !keydownEvent.defaultPrevented;
 
 	// A close request on the top of the top layer, whether or not keydown
 	// was canceled. It does not exit fullscreen. The alternate screen takes
@@ -1229,8 +1236,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 			moveFocus(input, shiftKey);
 		}
 
-		// Field editing is each UA shadow tree's own keydown listener, run
-		// above.
+		// A control's own editing ran above, and claimed its keys.
 		const activation = getKeyboardActivation(targetElement);
 		if (activation) {
 			if (
@@ -1267,6 +1273,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 			altKey,
 			metaKey,
 			bubbles: true,
+			composed: true,
 			cancelable: true,
 		});
 		if (dispatchAsUserAgent(targetElement, keypressEvent)) {
@@ -1285,6 +1292,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		altKey,
 		metaKey,
 		bubbles: true,
+		composed: true,
 		cancelable: true,
 	});
 	dispatchAsUserAgent(targetElement, keyupEvent);
@@ -1296,15 +1304,15 @@ function insertText(input: Input, target: Element, text: string): void {
 		requestEditingInsert(target, "insertText", text);
 		return;
 	}
-	dispatchAsUserAgent(
-		target,
-		new input[kWindow].InputEvent("beforeinput", {
-			inputType: "insertText",
-			data: text,
-			bubbles: true,
-			cancelable: true,
-		}),
-	);
+	const event = new input[kWindow].InputEvent("beforeinput", {
+		inputType: "insertText",
+		data: text,
+		bubbles: true,
+		composed: true,
+		cancelable: true,
+	});
+	dispatchAsUserAgent(target, event);
+	runControlDefaultAction(target, event);
 }
 
 // The stop Tab reaches from the place a removed focused element left:
@@ -1357,16 +1365,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 	const scope = topmostModalDialog(input[kDocument]) ?? input[kDocument];
 	const entries = getSequentialFocusEntries(scope, input[kLayout]);
 
-	// activeElement retargets to the shadow host. Follow it down.
-	let current = input[kDocument].activeElement;
-	while (current !== null) {
-		const shadow = getShadowRoot(current);
-		const inner = shadow?.activeElement ?? null;
-		if (inner === null) {
-			break;
-		}
-		current = inner;
-	}
+	const current = getFocusedElement(input[kDocument]);
 	const currentIndex = entries.findIndex((entry) => entry.element === current);
 	const currentBarrier = currentIndex === -1
 		? null
