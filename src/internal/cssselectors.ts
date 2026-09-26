@@ -5,6 +5,7 @@ import {
 	type Element,
 	getElementChildren,
 	getFirstChildNode,
+	getHeadingLevel,
 	getNextSiblingNode,
 	getOpenAssignedSlot,
 	getParentNode,
@@ -79,6 +80,7 @@ const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"fullscreen",
 	"future",
 	"has",
+	"heading",
 	"host",
 	"host-context",
 	"hover",
@@ -1076,6 +1078,20 @@ function compilePseudoClass(
 		case "dir":
 			compound.tests.push(compileDir(args));
 			return;
+		case "heading": {
+			// Bare, any heading. With arguments, a heading at one of the
+			// listed levels (selectors-5 §7.4).
+			if (args.length === 0) {
+				compound.tests.push((element) => getHeadingLevel(element) !== null);
+				return;
+			}
+			const levels = getIntegerArguments(args, "heading");
+			compound.tests.push((element) => {
+				const level = getHeadingLevel(element);
+				return level !== null && levels.includes(level);
+			});
+			return;
+		}
 		case "state": {
 			const wanted = getIdentifierArgument(args, "state");
 			compound.tests.push((element) => hasCustomState(element, wanted));
@@ -1209,6 +1225,25 @@ function getIdentifierArgument(
 		throw new SelectorError(`:${name} takes one identifier`);
 	}
 	return CSSTree.ident.decode(text);
+}
+
+/** A comma-separated list of integers, as `:heading(1, 2)` is written. */
+function getIntegerArguments(
+	args: CSSTree.SelectorNode[],
+	name: string,
+): number[] {
+	const text = args
+		.map((argument) =>
+			argument.type === "Raw"
+				? String((argument as {value?: string}).value ?? "")
+				: CSSTree.generate(argument as never),
+		)
+		.join("");
+	const items = text.split(",").map((item) => item.trim());
+	if (items.some((item) => !/^\+?\d+$/.test(item))) {
+		throw new SelectorError(`:${name} takes a list of integers`);
+	}
+	return items.map(Number);
 }
 
 /** Drops the branches that do not parse. */

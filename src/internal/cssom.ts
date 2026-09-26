@@ -302,10 +302,13 @@ Object.defineProperty(CSSNamespace, Symbol.toStringTag, {
 });
 
 // The highlight registry belongs to one document, so each window gets a
-// CSS of its own over the shared namespace rather than the namespace
-// itself.
+// CSS of its own. A namespace object's members are its own properties,
+// class string included, so they are copied rather than inherited.
 function createCSSNamespace(document: Document): typeof CSSNamespace {
-	const namespace = Object.create(CSSNamespace) as typeof CSSNamespace;
+	const namespace =
+		Object.defineProperties({}, Object.getOwnPropertyDescriptors(
+			CSSNamespace,
+		)) as typeof CSSNamespace;
 	Object.defineProperty(namespace, "highlights", {
 		value: getHighlightRegistry(document),
 		enumerable: true,
@@ -1422,6 +1425,50 @@ class CSSFontFaceRule extends CSSDeclarationBlockRule {
 	}
 }
 
+// Declarations that follow a nested rule, or sit in a conditional rule
+// nested in a style rule. They apply with the enclosing style rule's
+// selectors, in the place they were written.
+interface CSSNestedDeclarations {
+	[kStyle]: CSSStyleProperties;
+}
+
+class CSSNestedDeclarations extends CSSRule {
+	constructor(
+		block: readonly CSSValues.CSSDeclaration[],
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(parentStyleSheet, parentRule);
+		this[kStyle] = new CSSStyleProperties({
+			parentRule: this,
+			onChange: () => notifyRule(this),
+		});
+		assignDeclarations(this[kStyle], block);
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get style(): CSSStyleDeclaration {
+		return this[kStyle];
+	}
+
+	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
+	set style(text: string) {
+		this[kStyle].cssText = String(text);
+	}
+
+	get cssText(): string {
+		return this[kStyle].cssText;
+	}
+}
+
+Object.defineProperty(CSSNestedDeclarations.prototype, Symbol.toStringTag, {
+	value: "CSSNestedDeclarations",
+	configurable: true,
+});
+
 interface CSSPageRule {
 	[kSelectorText]: string;
 }
@@ -2473,6 +2520,121 @@ function checkRuleOrder(
 	}
 }
 
+// css-tree reads a style block's items as declarations, and one that
+// fails becomes a Raw node running to the next semicolon, so `.title {}`
+// nested in a rule vanished with everything after it. CSS Syntax reads an
+// item that is not a declaration as a nested rule (css-nesting-1 §2), and
+// so does this: a declaration is tried first, and an item that fails, or
+// that holds a {} block without being a custom property, is read again as
+// a rule.
+const {
+	AtKeyword,
+	Comment,
+	LeftCurlyBracket,
+	RightCurlyBracket,
+	Semicolon,
+	WhiteSpace,
+} = (CSSTree as unknown as {tokenTypes: Record<string, number>}).tokenTypes;
+
+interface BlockParser {
+	eof: boolean;
+	tokenType: number;
+	tokenIndex: number;
+	tokenStart: number;
+	createList(): {push(node: unknown): void};
+	eat(type: number): void;
+	next(): void;
+	skip(count: number): void;
+	getTokenStart(index: number): number;
+	substrToCursor(start: number): string;
+	getLocation(start: number, end: number): unknown;
+	parseWithFallback(consumer: unknown, fallback: unknown): unknown;
+	consumeUntilSemicolonIncluded: unknown;
+	Raw(consumer: unknown, excludeWhiteSpace: boolean): unknown;
+	Rule(): unknown;
+	Declaration(): {property?: string};
+	Atrule(isStyleBlock: boolean): unknown;
+}
+
+function consumeBlockItem(this: BlockParser): unknown {
+	if (this.tokenType === Semicolon) {
+		return this.Raw(this.consumeUntilSemicolonIncluded, true);
+	}
+	const start = this.tokenIndex;
+	const startOffset = this.getTokenStart(start);
+	let declaration: {property?: string} | null;
+	try {
+		declaration = this.Declaration();
+	} catch (_err) {
+		declaration = null;
+	}
+	if (
+		declaration !== null &&
+		(String(declaration.property ?? "").startsWith("--") ||
+			!this.substrToCursor(startOffset).includes("{"))
+	) {
+		if (this.tokenType === Semicolon) {
+			this.next();
+		}
+		return declaration;
+	}
+	this.skip(start - this.tokenIndex);
+	return this.parseWithFallback(this.Rule, function (this: BlockParser) {
+		return this.Raw(this.consumeUntilSemicolonIncluded, true);
+	});
+}
+
+const nestingSyntax = (CSSTree.fork as (extension: object) => typeof CSSTree)({
+	node: {
+		Block: {
+			parse(this: BlockParser, isStyleBlock: boolean) {
+				const start = this.tokenStart;
+				const children = this.createList();
+				this.eat(LeftCurlyBracket);
+				scan: while (!this.eof) {
+					switch (this.tokenType) {
+						case RightCurlyBracket:
+							break scan;
+						case WhiteSpace:
+						case Comment:
+							this.next();
+							break;
+						case AtKeyword:
+							children.push(
+								this.parseWithFallback(
+									() => this.Atrule(isStyleBlock),
+									function (this: BlockParser) {
+										return this.Raw(null, true);
+									},
+								),
+							);
+							break;
+						default:
+							children.push(
+								isStyleBlock
+									? consumeBlockItem.call(this)
+									: this.parseWithFallback(
+										this.Rule,
+										function (this: BlockParser) {
+											return this.Raw(null, true);
+										},
+									),
+							);
+					}
+				}
+				if (!this.eof) {
+					this.eat(RightCurlyBracket);
+				}
+				return {
+					type: "Block",
+					loc: this.getLocation(start, this.tokenStart),
+					children,
+				};
+			},
+		},
+	},
+});
+
 function parseRules(
 	text: string,
 	sheet: CSSStyleSheet | null,
@@ -2485,7 +2647,7 @@ function parseRules(
 		// what a raw-text parse would keep. Positions are on because the value
 		// TEXT serializes from the authored source, not from the parsed
 		// spelling.
-		ast = CSSTree.parse(text, {
+		ast = nestingSyntax.parse(text, {
 			parseValue: true,
 			parseAtrulePrelude: false,
 			parseRulePrelude: false,
@@ -2506,7 +2668,7 @@ function parseRuleText(
 	const source = String(text ?? "");
 	let ast: {children: {toArray(): CSSTree.StyleSheetNode[]}};
 	try {
-		ast = CSSTree.parse(source, {
+		ast = nestingSyntax.parse(source, {
 			parseValue: false,
 			parseAtrulePrelude: false,
 			parseRulePrelude: false,
@@ -2546,7 +2708,30 @@ function convertRules(
 	namespaces: SelectorNamespaces = {default: null, prefixes: new Map()},
 ): CSSRule[] {
 	const rules: CSSRule[] = [];
+	// Declarations among rules nested in a style rule, directly or in a
+	// conditional rule inside one, are gathered into runs.
+	const nestedContext = isInStyleRule(parentRule);
+	let run: CSSTree.StyleSheetNode[] = [];
+	const closeRun = (): void => {
+		if (run.length > 0) {
+			rules.push(
+				new CSSNestedDeclarations(
+					CSSValues.getDeclarations(run, source),
+					sheet,
+					parentRule,
+				),
+			);
+			run = [];
+		}
+	};
 	for (const node of nodes) {
+		if (node.type === "Declaration") {
+			if (nestedContext) {
+				run.push(node);
+			}
+			continue;
+		}
+		closeRun();
 		const rule = convertRule(node, source, sheet, parentRule, namespaces);
 		if (!rule) {
 			continue;
@@ -2563,7 +2748,17 @@ function convertRules(
 		}
 		rules.push(rule);
 	}
+	closeRun();
 	return rules;
+}
+
+function isInStyleRule(rule: CSSRule | null): boolean {
+	for (let current = rule; current !== null; current = current.parentRule) {
+		if (current instanceof CSSStyleRule) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function convertRule(
@@ -2587,19 +2782,21 @@ function convertRule(
 		) {
 			return null;
 		}
+		// The declarations before the first nested rule are the rule's own.
+		// Any that follow a nested rule keep their place among the rules as
+		// nested declarations (css-nesting-1 §3.2).
+		const items = CSSValues.getNodes(node.block ?? {});
+		const split = items.findIndex(
+			(item) => item.type === "Rule" || item.type === "Atrule",
+		);
+		const own = split === -1 ? items : items.slice(0, split);
+		const nested = split === -1 ? [] : items.slice(split);
 		return new CSSStyleRule(
 			selectors,
-			CSSValues.getBlockDeclarations(node, source),
+			CSSValues.getDeclarations(own, source),
 			sheet,
 			parentRule,
-			(rule) =>
-				convertRules(
-					CSSValues.getNestedRules(node),
-					source,
-					sheet,
-					rule,
-					namespaces,
-				),
+			(rule) => convertRules(nested, source, sheet, rule, namespaces),
 		);
 	}
 	if (node.type !== "Atrule") {
@@ -2873,6 +3070,7 @@ for (const type of [
 	CSSNamespaceRule,
 	CSSImportRule,
 	CSSFontFaceRule,
+	CSSNestedDeclarations,
 	CSSPageRule,
 	CSSCounterStyleRule,
 	CSSPropertyRule,
@@ -7107,18 +7305,27 @@ function readScopeCondition(rule: CSSScopeRule): CSSValues.ScopeCondition {
 	};
 }
 
+// `parent` is the selector list of the rule this one is nested in, which
+// its own selectors are resolved against.
 function parseStyleRule(
 	cascade: Cascade,
 	styleRule: CSSStyleRule,
 	scope?: Node,
 	uaOriginSheet?: boolean,
 	context: CSSValues.RuleContext = UNCONDITIONAL,
+	parent: string | null = null,
 ): void {
 	// Each selector of the list is matched and weighed on its own.
 	// `#a::before, #b` is one pseudo rule and one ordinary rule.
 	const block = getDeclarationBlock(styleRule.style);
 	const namespaces = getSheetNamespaces(styleRule.parentStyleSheet);
-	for (const selector of CSSValues.splitSelectorList(styleRule.selectorText)) {
+	const selectors = CSSValues.splitSelectorList(styleRule.selectorText)
+		.map((selector) =>
+			parent === null
+				? selector
+				: CSSValues.resolveNestedSelector(selector, parent),
+		);
+	for (const selector of selectors) {
 		parseSelector(
 			cascade,
 			selector,
@@ -7128,6 +7335,63 @@ function parseStyleRule(
 			namespaces,
 			context,
 		);
+	}
+	parseNestedRules(
+		cascade,
+		styleRule,
+		selectors.join(", "),
+		scope,
+		uaOriginSheet,
+		context,
+	);
+}
+
+// The rules nested in a style rule, and in the conditional rules nested
+// in it, resolved against the style rule's selectors.
+function parseNestedRules(
+	cascade: Cascade,
+	container: CSSGroupingRule,
+	parent: string,
+	scope: Node | undefined,
+	uaOriginSheet: boolean | undefined,
+	context: CSSValues.RuleContext,
+): void {
+	for (const rule of container.cssRules) {
+		if (rule instanceof CSSNestedDeclarations) {
+			const block = getDeclarationBlock(rule.style);
+			const namespaces = getSheetNamespaces(rule.parentStyleSheet);
+			for (const selector of CSSValues.splitSelectorList(parent)) {
+				parseSelector(
+					cascade,
+					selector,
+					block,
+					scope,
+					uaOriginSheet,
+					namespaces,
+					context,
+				);
+			}
+		} else if (rule instanceof CSSStyleRule) {
+			parseStyleRule(cascade, rule, scope, uaOriginSheet, context, parent);
+		} else if (rule instanceof CSSMediaRule) {
+			if (cascade.mediaQueryMatches(rule.conditionText)) {
+				parseNestedRules(cascade, rule, parent, scope, uaOriginSheet, context);
+			}
+		} else if (rule instanceof CSSSupportsRule) {
+			parseNestedRules(cascade, rule, parent, scope, uaOriginSheet, context);
+		} else if (rule instanceof CSSLayerBlockRule) {
+			const layer = rule.name
+				? declareLayer(cascade, context.layer, rule.name)
+				: declareLayer(
+					cascade,
+					context.layer,
+					`\0${cascade[kAnonymousLayers]++}`,
+				);
+			parseNestedRules(cascade, rule, parent, scope, uaOriginSheet, {
+				...context,
+				layer,
+			});
+		}
 	}
 }
 
@@ -7163,10 +7427,11 @@ function indexReachingKeys(
 			continue;
 		}
 		if (
-			keys.tag === null &&
-			keys.classes.length === 0 &&
-			keys.ids.length === 0 &&
-			keys.attributes.length === 0
+			keys.anyElement ||
+			(keys.tag === null &&
+				keys.classes.length === 0 &&
+				keys.ids.length === 0 &&
+				keys.attributes.length === 0)
 		) {
 			cascade[kSiblingsUniversal] = true;
 		}

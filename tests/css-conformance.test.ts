@@ -630,3 +630,45 @@ test("css: an unrecognized grouping rule cascades its rules through", async () =
 		),
 	).toBe(RED);
 });
+
+test("css: a nested rule reaches down from its parent, or names it with &", async () => {
+	const html =
+		"<style>.card { color: rgb(1, 1, 1); .title { color: red } " +
+		"&.hot { color: rgb(3, 3, 3) } > .x { color: rgb(4, 4, 4) } }</style>" +
+		"<div class=card><p class=title>t</p><span class=x>x</span></div>" +
+		"<div class=\"card hot\" id=hot></div>";
+	expect(await getColor(html, ".title")).toBe(RED);
+	expect(await getColor(html, "#hot")).toBe("rgb(3, 3, 3)");
+	expect(await getColor(html, ".x")).toBe("rgb(4, 4, 4)");
+});
+
+test("css: declarations nested in a conditional rule apply with the parent", async () => {
+	expect(
+		await getColor(
+			"<style>.card { color: blue; @media (min-width: 1px) { color: red } }" +
+			"</style><div class=card>x</div>",
+			".card",
+		),
+	).toBe(RED);
+});
+
+test("css: :heading matches a heading, at its level after headingoffset", async () => {
+	const html =
+		"<style>:heading(3) { color: red }</style>" +
+		"<section headingoffset=2><h1 id=a>a</h1></section><h3 id=b>b</h3>" +
+		"<section headingoffset=2><div headingreset><h1 id=c>c</h1></div></section>";
+	expect(await getColor(html, "#a")).toBe(RED);
+	expect(await getColor(html, "#b")).toBe(RED);
+	expect(await getColor(html, "#c")).not.toBe(RED);
+});
+
+test("css: @media in the markup a TermDOM starts with reads its real size", () => {
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		html: "<style>@media (min-width: 1px) { b { color: red } }</style><b>x</b>",
+	});
+	expect(
+		dom.window.getComputedStyle(dom.document.querySelector("b")!).color,
+	).toBe(RED);
+	dom.dispose();
+});
