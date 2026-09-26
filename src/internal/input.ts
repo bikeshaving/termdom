@@ -453,6 +453,7 @@ export class Input {
 			buttons,
 			clientX: x,
 			clientY: y - this[kScreen].scrollTop,
+			...getScreenPoint(this, x, y),
 			shiftKey,
 			altKey,
 			ctrlKey,
@@ -632,6 +633,7 @@ function deliverMouseReport(input: Input, {
 				deltaMode: 1,
 				clientX: x,
 				clientY: y - input[kScreen].scrollTop,
+				...getScreenPoint(input, x, y),
 				shiftKey,
 				altKey,
 				ctrlKey,
@@ -695,6 +697,7 @@ function deliverMouseReport(input: Input, {
 		buttons: state.buttons,
 		clientX: x,
 		clientY: y - input[kScreen].scrollTop,
+		...getScreenPoint(input, x, y),
 		movementX: last === null ? 0 : x - last.x,
 		movementY: last === null ? 0 : y - last.y,
 		shiftKey,
@@ -854,6 +857,20 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 	const documentRow = row - 1 - top + screen.scrollTop;
 	const isInDocument = documentRow >= 0;
 	return {x: col - 1, y: isInDocument ? documentRow : 0, isInDocument};
+}
+
+// The terminal's window is the screen, so screenX and screenY are the
+// cell the report named, counted from 0.
+function getScreenPoint(
+	input: Input,
+	x: number,
+	y: number,
+): {screenX: number; screenY: number} {
+	const screen = input[kScreen];
+	const top = input[kDocument].fullscreenElement === null
+		? screen.documentTop
+		: 0;
+	return {screenX: x, screenY: y - screen.scrollTop + top};
 }
 
 // The nearest scroller that can move takes the tick, else the document
