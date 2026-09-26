@@ -443,3 +443,33 @@ test("a fullscreen transition reaches a document listener once", async () => {
 
 	dom.dispose();
 });
+
+test("a fullscreen element restyles :modal and :has(), and leaves on removal", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<style>body:has(:fullscreen) #mark { color: red }</style>" +
+		"<div id=\"stage\">x</div><p id=\"mark\">m</p>";
+	await nextFrame(dom);
+
+	const stage = dom.document.getElementById("stage")!;
+	const mark = dom.document.getElementById("mark")!;
+	const view = dom.document.defaultView!;
+	expect(view.getComputedStyle(mark).color).not.toBe("rgb(255, 0, 0)");
+
+	const heard: string[] = [];
+	dom.document.addEventListener("fullscreenchange", () => {
+		heard.push("change");
+	});
+	await stage.requestFullscreen();
+	expect(stage.matches(":modal")).toBe(true);
+	expect(view.getComputedStyle(mark).color).toBe("rgb(255, 0, 0)");
+
+	stage.remove();
+	expect(dom.document.fullscreenElement).toBe(null);
+	expect(view.getComputedStyle(mark).color).not.toBe("rgb(255, 0, 0)");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(heard).toEqual(["change", "change"]);
+
+	dom.dispose();
+});

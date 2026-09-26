@@ -1134,7 +1134,10 @@ function compilePseudoClass(
 			compound.tests.push((element) => hasFocusWithin(element));
 			return;
 		case "modal":
-			compound.tests.push((element) => isModalDialog(element));
+			// A dialog shown modally, or an element in fullscreen.
+			compound.tests.push(
+				(element) => isModalDialog(element) || isFullscreenElement(element),
+			);
 			return;
 		case "popover-open":
 			compound.tests.push((element) => isShowingPopover(element));

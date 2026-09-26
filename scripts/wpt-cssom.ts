@@ -166,8 +166,6 @@ const CSSOM_EXCLUSIONS: Record<string, string> = {
 
 /** What css/selectors/invalidation asks for that a terminal cannot give. */
 const INVALIDATION_EXCLUSIONS: Record<string, string> = {
-	"fullscreen-pseudo-class-in-has.html":
-		"fullscreen: a terminal document is already the whole screen and has no Fullscreen API",
 	"media-loading-pseudo-classes-in-has.sub.html":
 		"media: nothing loads or plays audio or video in a terminal",
 	"media-pseudo-classes-in-has.html":

@@ -6185,6 +6185,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			}
 		}
 	}
+	leaveFullscreenOnRemoval(document, node);
 	const parentWasConnected = parent[kConnected];
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		descendant[kConnected] = false;
@@ -9095,10 +9096,7 @@ export class Element extends Node implements globalThis.Element {
 				error instanceof Error ? error : new Error(String(error)),
 			);
 		}
-		// The element's UA styles changed (it now fills the viewport) and
-		// neither a mutation nor a focus move fired to notify the cascade.
-		attached[kCascade].handleFocusChange(this);
-		attached[kLayout].invalidate(this);
+		fullscreenChanged(this);
 		// The screen switch happens on the next frame so no frame straddles it.
 		// The promise resolves once that frame is written.
 		return frameSettled(this[kDocument], attached);
@@ -20790,6 +20788,33 @@ function getFullscreenElement(document: Document): Element | null {
 	return stack?.length ? stack[stack.length - 1] : null;
 }
 
+// A fullscreen element that leaves the document leaves fullscreen, and
+// the document hears it (the Fullscreen Standard's removing steps).
+function leaveFullscreenOnRemoval(document: Document, node: Node): void {
+	const stack = fullscreenStacks.get(document);
+	if (stack === undefined || stack.length === 0) {
+		return;
+	}
+	const top = stack[stack.length - 1];
+	const removed = stack.filter((element) =>
+		isShadowIncludingInclusiveAncestor(node, element),
+	);
+	if (removed.length === 0) {
+		return;
+	}
+	stack.splice(
+		0,
+		stack.length,
+		...stack.filter((element) => !removed.includes(element)),
+	);
+	for (const element of removed) {
+		fullscreenChanged(element);
+	}
+	if (removed.includes(top)) {
+		fireFullscreenEvent("fullscreenchange", top);
+	}
+}
+
 /** Abandon fullscreen without events. Used when the engine is tearing down. */
 export function dropFullscreen(document: globalThis.Document): void {
 	fullscreenStacks.delete(document as Document);
@@ -20799,20 +20824,33 @@ export function dropFullscreen(document: globalThis.Document): void {
 // in the document, otherwise the document. Both events bubble, so a
 // document listener sees them either way. Firing at both would deliver
 // every event twice.
+//
+// The events are queued, not fired inside the call that caused them: the
+// Fullscreen Standard runs them with the next rendering update, so a
+// listener added right after requestFullscreen() still hears it.
 function fireFullscreenEvent(
 	type: "fullscreenchange" | "fullscreenerror",
 	element: Element,
 	detail?: {error: Error},
 ): void {
-	const target = element.isConnected ? element : element[kDocument];
-	dispatchAsUserAgent(
-		target,
-		new CustomEvent(type, {
-			bubbles: true,
-			cancelable: false,
-			...(detail ? {detail} : {}),
-		}),
-	);
+	setTimeout(() => {
+		const target = element.isConnected ? element : element[kDocument];
+		dispatchAsUserAgent(
+			target,
+			new CustomEvent(type, {
+				bubbles: true,
+				cancelable: false,
+				...(detail ? {detail} : {}),
+			}),
+		);
+	}, 0);
+}
+
+// Entering or leaving fullscreen changes what :fullscreen and :modal
+// match, and moves the element's box to fill the viewport or back.
+function fullscreenChanged(element: Element): void {
+	stateChanged(element, ["fullscreen", "modal"]);
+	getAttachedDocument(element)?.[kLayout].invalidate(element);
 }
 
 // The alternate screen comes up holding whatever the terminal left in
@@ -24108,8 +24146,7 @@ export class Document extends Node implements globalThis.Document {
 		}
 		const exiting = leaveFullscreen(this);
 		if (exiting) {
-			attached[kCascade].handleFocusChange(exiting);
-			attached[kLayout].invalidate(exiting);
+			fullscreenChanged(exiting);
 		}
 		return frameSettled(this, attached);
 	}
