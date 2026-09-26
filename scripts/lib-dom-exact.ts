@@ -115,10 +115,15 @@ type Map0<T> = Identical<T, DOM.Event> extends true
 																														? globalThis.HTMLCollection
 																														: Identical<
 																															T,
-																															DOM.DOMTokenList
+																															DOM.HTMLAllCollection
 																														> extends true
-																															? globalThis.DOMTokenList
-																															: Map1<T>;
+																															? globalThis.HTMLAllCollection
+																															: Identical<
+																																T,
+																																DOM.DOMTokenList
+																															> extends true
+																																? globalThis.DOMTokenList
+																																: Map1<T>;
 type Map1<T> = Identical<T, DOM.CharacterData> extends true
 	? globalThis.CharacterData
 	: Identical<T, DOM.Text> extends true
@@ -722,6 +727,10 @@ export type MutationObserverDrift = Drift<
 	globalThis.MutationObserver
 >;
 export type NodeListDrift = Drift<DOM.NodeList, globalThis.NodeList>;
+export type HTMLAllCollectionDrift = Drift<
+	DOM.HTMLAllCollection,
+	globalThis.HTMLAllCollection
+>;
 export type HTMLCollectionDrift = Drift<
 	DOM.HTMLCollection,
 	globalThis.HTMLCollection

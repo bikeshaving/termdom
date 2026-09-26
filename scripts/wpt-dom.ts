@@ -269,6 +269,7 @@ function domGlobals(
 		"HTMLBRElement",
 		"HTMLButtonElement",
 		"HTMLCanvasElement",
+		"HTMLAllCollection",
 		"HTMLCollection",
 		"HTMLDataElement",
 		"HTMLDataListElement",
