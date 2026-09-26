@@ -6238,6 +6238,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 		}
 	}
 	leaveFullscreenOnRemoval(document, node);
+	releasePointerCaptureOnRemoval(document, node);
 	const parentWasConnected = parent[kConnected];
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		descendant[kConnected] = false;
@@ -10632,6 +10633,20 @@ export class HTMLElement extends Element {
 
 	blur(): void {
 		const document = this[kDocument];
+		// A host that delegates focus stands for what it delegated to, so
+		// its blur unfocuses the focused element in its shadow tree.
+		const shadow = this[kShadowRoot] as ShadowRoot | null;
+		const innermost = getInnermostActive(document);
+		if (
+			shadow != null &&
+			shadow[kDelegatesFocus] &&
+			innermost !== null &&
+			innermost !== this &&
+			isShadowIncludingInclusiveAncestor(shadow, innermost as Node)
+		) {
+			(innermost as HTMLElement).blur();
+			return;
+		}
 		const wasFocused = getInnermostActive(document) === this;
 		if (wasFocused) {
 			commitTextControl(this);
@@ -29971,6 +29986,18 @@ export function getPointerState(document: globalThis.Document): PointerState {
 		pointerStates.set(document as Document, state);
 	}
 	return state;
+}
+
+// An element that leaves the document loses its capture at once. A move
+// is not a removal, so moveBefore keeps it.
+function releasePointerCaptureOnRemoval(document: Document, node: Node): void {
+	const state = pointerStates.get(document);
+	if (
+		state?.pending != null &&
+		isShadowIncludingInclusiveAncestor(node, state.pending)
+	) {
+		state.pending = null;
+	}
 }
 
 /** Record what `:hover` should match. */

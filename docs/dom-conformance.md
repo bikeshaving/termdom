@@ -20,8 +20,8 @@ window's legacy named access to elements by id.
 - Optional-feature subtests reporting unsupported: 6
 - Files whose harness completed: 696
 - Files whose harness did not complete: 66
-- Subtests passed: 99794
-- Subtests failed: 791
+- Subtests passed: 99797
+- Subtests failed: 788
 
 ## Exclusions
 
@@ -705,7 +705,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/mutation-observer.html | OK | 2 | 0 |
 | dom/nodes/moveBefore/nonce.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/object-crash-regression.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/pointer-events.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/pointer-events.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/popover-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-script.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-style.html | OK | 0 | 1 |
@@ -1290,7 +1290,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus-within-shadow.html | OK | 1 | 0 |
 | shadow-dom/focus/DocumentOrShadowRoot-activeElement.html | OK | 6 | 0 |
 | shadow-dom/focus/ShadowRoot-delegatesFocus.html | OK | 3 | 0 |
-| shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html | OK | 1 | 1 |
+| shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html | OK | 2 | 0 |
 | shadow-dom/focus/click-focus-delegatesFocus-click.html | OK | 2 | 4 |
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | OK | 0 | 1 |
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | OK | 0 | 1 |
@@ -1494,7 +1494,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
 | custom-elements/form-associated/ElementInternals-validation.html | OK | 13 | 1 |
-| custom-elements/form-associated/disabled-delegatesFocus.html | OK | 0 | 1 |
+| custom-elements/form-associated/disabled-delegatesFocus.html | OK | 1 | 0 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
 | custom-elements/form-associated/form-associated-callback.html | OK | 3 | 2 |
@@ -1789,10 +1789,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/nodes/moveBefore/nonce.html
 
 - Element nonce content attribute is not cleared after move: assert_equals: expected "" but got "8IBTHwOdqNKAWeKl7plt8g=="
-
-### dom/nodes/moveBefore/pointer-events.html
-
-- Pointer capture should not be released when moving: promise_test: Unhandled rejection with value: object "NotSupportedError: Pointer capture is not implemented"
 
 ### dom/nodes/moveBefore/preserve-render-blocking-style.html
 
@@ -2302,10 +2298,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Focus navigation should skip over other menuitems in menubars.: assert_equals: Focus should move forward from before to A expected Element node <menuitem id="A" command="toggle-menu" commandfor="more">... but got Element node <button id="middle">middle</button>
 
-### shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html
-
-- Calling blur() on shadow host with delegatesFocus should remove the focus.: assert_equals: expected Element node <body><div id="host">
-
 ### shadow-dom/focus/click-focus-delegatesFocus-click.html
 
 - click on the host with delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
@@ -2325,7 +2317,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Clicking on non-focusable slot inside focusable div will make the flat-tree focusable ancestor get focused: assert_equals: expected Element node <div id="normalDiv" tabindex="0"><span id="normalSpan">Te... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
 - Select on non-focusable slot inside focusable div will select text: assert_greater_than: expected a number greater than 0 but got 0
-- Select on non-focusable non-editable slot in a contenteditable shadow DOM and inside focusable div will select text: assert_greater_than: expected a number greater than 0 but got 0
+- Select on non-focusable non-editable slot in a contenteditable shadow DOM and inside focusable div will select text: assert_equals: focus is on contenteditable container only expected null but got Element node <div id="shadowDiv" tabindex="0"><slot></slot></div>
 
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
@@ -2515,10 +2507,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/form-associated/ElementInternals-validation.html
 
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
-
-### custom-elements/form-associated/disabled-delegatesFocus.html
-
-- Focus events fire on disabled form-associated custom elements with delegatesFocus: assert_true: Focus event fired on custom control expected true got false
 
 ### custom-elements/form-associated/fieldset-elements.html
 
