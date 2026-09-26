@@ -14661,7 +14661,65 @@ function submitForm(
 			return;
 		}
 	}
+	// A dialog form's submission closes its dialog with the submitter's
+	// value, and sends nothing.
+	const method = submitter !== null && submitter.hasAttribute("formmethod")
+		? (submitter as HTMLButtonElement).formMethod
+		: form.method;
+	if (method === "dialog") {
+		let dialog = form.parentElement;
+		while (dialog !== null && !(dialog instanceof HTMLDialogElement)) {
+			dialog = dialog.parentElement;
+		}
+		if (dialog !== null) {
+			closeDialog(dialog, submitter?.getAttribute("value") ?? undefined);
+		}
+		return;
+	}
 	constructEntryList(form, submitter);
+}
+
+// The input types whose Enter would submit a form of one field. A form
+// with two of them submits on Enter only through its default button.
+const IMPLICIT_SUBMISSION_BLOCKERS = new Set([
+	"text",
+	"search",
+	"url",
+	"tel",
+	"email",
+	"password",
+	"date",
+	"month",
+	"week",
+	"time",
+	"datetime-local",
+	"number",
+]);
+
+// HTML's implicit submission: Enter in a field clicks the form's default
+// button, the first submit button it owns, or submits a form that has no
+// such button and only this one field to fill.
+function implicitlySubmit(input: HTMLInputElement): void {
+	const form = getFormOwner(input);
+	if (form === null) {
+		return;
+	}
+	const listed = getListedElements(form);
+	const defaultButton = listed.find(isSubmitButton);
+	if (defaultButton !== undefined) {
+		if (!isActuallyDisabled(defaultButton)) {
+			(defaultButton as HTMLElement).click();
+		}
+		return;
+	}
+	const blockers = listed.filter(
+		(element) =>
+			element instanceof HTMLInputElement &&
+			IMPLICIT_SUBMISSION_BLOCKERS.has(element.type),
+	);
+	if (blockers.length <= 1) {
+		submitForm(form, null, false);
+	}
 }
 
 const kResetControl = Symbol("put a control back to its default");
@@ -15971,11 +16029,10 @@ export class HTMLInputElement extends HTMLElement {
 			// behavior fires input then change, and a canceled click restores
 			// checkedness.
 			//
-			// Enter toggles here, where a browser does nothing. In a browser
-			// Enter on a checkbox submits the form the control belongs to, and
-			// does nothing outside a form. A terminal has no implicit
-			// submission, so the key would be inert on a focused control. It
-			// toggles for the same reason the readline chords edit.
+			// Enter toggles here. In a browser Enter on a checkbox submits the
+			// form the control belongs to, and does nothing outside a form, so
+			// the key would be inert on most focused checkboxes. It toggles for
+			// the same reason the readline chords edit.
 				if (key === " " || key === "Enter") {
 					this.click();
 				}
@@ -15998,6 +16055,11 @@ export class HTMLInputElement extends HTMLElement {
 					editedSinceChange.delete(this);
 					dispatchUserChange(this);
 				}
+				return;
+			}
+
+			if (key === "Enter" && getInputKind(this) === "textControl") {
+				implicitlySubmit(this);
 				return;
 			}
 
