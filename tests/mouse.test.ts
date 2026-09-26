@@ -578,6 +578,8 @@ test("a mouse event answers in the standard coordinate spaces", async () => {
 			y: mouse.y,
 			pageX: mouse.pageX,
 			pageY: mouse.pageY,
+			screenX: mouse.screenX,
+			screenY: mouse.screenY,
 			offsetY: mouse.offsetY,
 			movementX: mouse.movementX,
 		});
@@ -595,6 +597,8 @@ test("a mouse event answers in the standard coordinate spaces", async () => {
 
 	expect(seen[0].clientX).toBe(1);
 	expect(seen[0].clientY).toBe(2);
+	expect(seen[0].screenX).toBe(1);
+	expect(seen[0].screenY).toBe(2);
 	expect(seen[0].x).toBe(1);
 	expect(seen[0].y).toBe(2);
 	// No scroll: page equals client.
