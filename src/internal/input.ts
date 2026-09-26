@@ -6,6 +6,7 @@ import {
 	type FocusStartingPoint,
 	getActiveElement,
 	getKeyboardActivation,
+	getPointerState,
 	getShadowRoot,
 	getTextControlCaretOffset,
 	getTextControlValueText,
@@ -17,6 +18,7 @@ import {
 	lightDismissPress,
 	lightDismissRelease,
 	lockDataTransfer,
+	MOUSE_POINTER_ID,
 	placeTextControlCaret,
 	requestRender,
 	type SelectionUnit,
@@ -324,6 +326,8 @@ const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kLastClickPoint = Symbol("lastClickPoint");
 const kLastClickTime = Symbol("lastClickTime");
 const kClickCount = Symbol("clickCount");
+const kLastClickButton = Symbol("lastClickButton");
+const kMouseEventsSuppressed = Symbol("mouseEventsSuppressed");
 
 const DBLCLICK_INTERVAL_MS = 500;
 
@@ -373,6 +377,10 @@ export interface Input {
 	[kLastClickPoint]: {x: number; y: number} | null;
 	[kLastClickTime]: number;
 	[kClickCount]: number;
+	[kLastClickButton]: number;
+	// A canceled pointerdown withholds the mouse events of that press,
+	// through the release of its last button.
+	[kMouseEventsSuppressed]: boolean;
 }
 
 export class Input {
@@ -399,6 +407,8 @@ export class Input {
 		this[kLastClickPoint] = null;
 		this[kLastClickTime] = 0;
 		this[kClickCount] = 0;
+		this[kLastClickButton] = 0;
+		this[kMouseEventsSuppressed] = false;
 	}
 
 	get mouseCaptureYielded(): boolean {
@@ -431,9 +441,22 @@ export class Input {
 		}
 		this[kPendingHover] = null;
 		const {x, y, shiftKey, altKey, ctrlKey} = pending;
+		processPendingPointerCapture(this);
+		const buttons = getPointerState(this[kDocument]).buttons;
 		const target =
-			elementAtDocumentPoint(this[kDocument], x, y) || this[kDocument].body;
+			getPointerState(this[kDocument]).active ??
+			(elementAtDocumentPoint(this[kDocument], x, y, null) ||
+				this[kDocument].body);
 		const previous = this[kHoverElement];
+		const init = {
+			button: 0,
+			buttons,
+			clientX: x,
+			clientY: y - this[kScreen].scrollTop,
+			shiftKey,
+			altKey,
+			ctrlKey,
+		};
 		if (target !== previous) {
 			this[kHoverElement] = target;
 			setHoveredElement(this[kDocument], target);
@@ -453,81 +476,119 @@ export class Input {
 			const targetChain = getChain(target);
 			const previousSet = new Set(previousChain);
 			const targetSet = new Set(targetChain);
-			const boundaryInit = {
-				button: 0,
-				buttons: 0,
-				clientX: x,
-				clientY: y - this[kScreen].scrollTop,
-				shiftKey,
-				altKey,
-				ctrlKey,
-			};
-			// UI Events' order: out, leave (exited element up), over, enter
-			// (outermost entered ancestor down), then mousemove.
-			if (previous !== null) {
-				dispatchAsUserAgent(
-					previous,
-					new this[kWindow].MouseEvent("mouseout", {
-						...boundaryInit,
+			const leaving = previousChain.filter((node) => !targetSet.has(node));
+			const entering = targetChain.filter((node) => !previousSet.has(node));
+			// Pointer Events' order, then UI Events' compatibility mouse
+			// events in the same order: out, leave (exited element up), over,
+			// enter (outermost entered ancestor down), then the move.
+			for (const kind of ["pointer", "mouse"] as const) {
+				const fire = (type: string, node: Element, extra: object): void => {
+					dispatchMouseLike(this, kind, `${kind}${type}`, node, {
+						...init,
+						...extra,
+					});
+				};
+				if (previous !== null) {
+					fire("out", previous, {
 						bubbles: true,
 						cancelable: true,
+						composed: true,
 						relatedTarget: target,
-					}),
-				);
-				for (const node of previousChain) {
-					if (!targetSet.has(node)) {
-						dispatchAsUserAgent(
-							node,
-							new this[kWindow].MouseEvent("mouseleave", {
-								...boundaryInit,
-								relatedTarget: target,
-							}),
-						);
+					});
+					for (const node of leaving) {
+						fire("leave", node, {relatedTarget: target});
 					}
 				}
-			}
-			dispatchAsUserAgent(
-				target,
-				new this[kWindow].MouseEvent("mouseover", {
-					...boundaryInit,
+				fire("over", target, {
 					bubbles: true,
 					cancelable: true,
+					composed: true,
 					relatedTarget: previous,
-				}),
-			);
-			const entering = targetChain.filter((node) => !previousSet.has(node));
-			for (let i = entering.length - 1; i >= 0; i--) {
-				dispatchAsUserAgent(
-					entering[i],
-					new this[kWindow].MouseEvent("mouseenter", {
-						...boundaryInit,
-						relatedTarget: previous,
-					}),
-				);
+				});
+				for (let i = entering.length - 1; i >= 0; i--) {
+					fire("enter", entering[i], {relatedTarget: previous});
+				}
 			}
 		}
 		if (!pending.quiet) {
 			const last = this[kLastMouse];
-			dispatchAsUserAgent(
-				target,
-				new this[kWindow].MouseEvent("mousemove", {
-					button: 0,
-					buttons: 0,
-					clientX: x,
-					clientY: y - this[kScreen].scrollTop,
-					movementX: last === null ? 0 : x - last.x,
-					movementY: last === null ? 0 : y - last.y,
-					shiftKey,
-					altKey,
-					ctrlKey,
-					bubbles: true,
-					cancelable: true,
-				}),
-			);
+			const moveInit = {
+				...init,
+				movementX: last === null ? 0 : x - last.x,
+				movementY: last === null ? 0 : y - last.y,
+				bubbles: true,
+				cancelable: true,
+				composed: true,
+			};
+			dispatchMouseLike(this, "pointer", "pointermove", target, {
+				...moveInit,
+				button: -1,
+			});
+			dispatchMouseLike(this, "mouse", "mousemove", target, moveInit);
 			this[kLastMouse] = {x, y};
 		}
 	}
 }
+
+// Every pointer event the mouse fires carries the same pointer. A
+// button held down presses at half pressure, as a browser reports a
+// mouse that cannot sense it.
+function dispatchMouseLike(
+	input: Input,
+	kind: "pointer" | "mouse",
+	type: string,
+	target: Element,
+	init: MouseEventInit,
+): boolean {
+	const event = kind === "mouse"
+		? new input[kWindow].MouseEvent(type, init)
+		: new input[kWindow].PointerEvent(type, {
+			...init,
+			detail: type.startsWith("pointer") ? 0 : init.detail,
+			pointerId: MOUSE_POINTER_ID,
+			pointerType: "mouse",
+			isPrimary: true,
+			pressure: (init.buttons ?? 0) === 0 ? 0 : 0.5,
+		});
+	return dispatchAsUserAgent(target, event);
+}
+
+// The capture setPointerCapture asked for takes effect before the next
+// pointer event. An element that left the document loses it, and the
+// document hears that.
+function processPendingPointerCapture(input: Input): void {
+	const state = getPointerState(input[kDocument]);
+	if (state.pending !== null && !state.pending.isConnected) {
+		state.pending = null;
+	}
+	if (state.active === state.pending) {
+		return;
+	}
+	const lost = state.active;
+	state.active = state.pending;
+	const init = {
+		pointerId: MOUSE_POINTER_ID,
+		pointerType: "mouse",
+		isPrimary: true,
+		bubbles: true,
+		composed: true,
+	};
+	if (lost !== null) {
+		dispatchAsUserAgent(
+			lost.isConnected ? lost : input[kDocument],
+			new input[kWindow].PointerEvent("lostpointercapture", init),
+		);
+	}
+	if (state.active !== null) {
+		dispatchAsUserAgent(
+			state.active,
+			new input[kWindow].PointerEvent("gotpointercapture", init),
+		);
+	}
+}
+
+// MouseEvent.buttons' bit for each MouseEvent.button.
+const BUTTON_BITS = [1, 4, 2];
 
 function deliverMouseReport(input: Input, {
 	button: code,
@@ -559,13 +620,13 @@ function deliverMouseReport(input: Input, {
 		}
 	}
 
-	const target =
-		(isInDocument && elementAtDocumentPoint(input[kDocument], x, y)) ||
+	const hit =
+		(isInDocument && elementAtDocumentPoint(input[kDocument], x, y, null)) ||
 		input[kDocument].body;
 
 	if (wheelDeltaY !== null) {
 		const notCanceled = dispatchAsUserAgent(
-			target,
+			hit,
 			new input[kWindow].WheelEvent("wheel", {
 				deltaY: wheelDeltaY,
 				deltaMode: 1,
@@ -576,9 +637,10 @@ function deliverMouseReport(input: Input, {
 				ctrlKey,
 				bubbles: true,
 				cancelable: true,
+				composed: true,
 			}),
 		);
-		if (notCanceled && scrollByWheel(input, target, wheelDeltaY)) {
+		if (notCanceled && scrollByWheel(input, hit, wheelDeltaY)) {
 			// Scroll chaining. The parent scroller is the terminal's own
 			// scrollback, so the mouse is yielded to it. preventDefault on
 			// the wheel event opts out, as in a browser.
@@ -594,6 +656,15 @@ function deliverMouseReport(input: Input, {
 	if (base > 2) {
 		return;
 	}
+	// The report names one button. The buttons held are tracked here, so a
+	// chord reports all of them, and only the first press and the last
+	// release are a pointerdown and a pointerup.
+	const state = getPointerState(input[kDocument]);
+	const bit = BUTTON_BITS[button];
+	const before = state.buttons;
+	state.buttons = isMotion
+		? before || buttons
+		: isRelease ? before & ~bit : before | bit;
 	const last = input[kLastMouse];
 	let detail = 0;
 	if (!isMotion) {
@@ -601,25 +672,27 @@ function deliverMouseReport(input: Input, {
 			// A browser counts clicks by where and when, not by what was
 			// under the pointer: a second press on the same cell within the
 			// interval is a double-click even if the first click moved the
-			// element out from under it.
+			// element out from under it. Another button starts a new count.
 			const now = performance.now();
 			const lastPoint = input[kLastClickPoint];
 			input[kClickCount] =
 				lastPoint !== null &&
 				lastPoint.x === x &&
 				lastPoint.y === y &&
+				input[kLastClickButton] === button &&
 				now - input[kLastClickTime] <= DBLCLICK_INTERVAL_MS
 					? input[kClickCount] + 1
 					: 1;
 			input[kLastClickPoint] = {x, y};
 			input[kLastClickTime] = now;
+			input[kLastClickButton] = button;
 		}
 		detail = input[kClickCount];
 	}
 	const eventInit = {
 		detail,
 		button,
-		buttons,
+		buttons: state.buttons,
 		clientX: x,
 		clientY: y - input[kScreen].scrollTop,
 		movementX: last === null ? 0 : x - last.x,
@@ -629,24 +702,56 @@ function deliverMouseReport(input: Input, {
 		ctrlKey,
 		bubbles: true,
 		cancelable: true,
+		composed: true,
 	};
 	input[kLastMouse] = {x, y};
 
+	processPendingPointerCapture(input);
+	const target = state.active ?? hit;
 	if (isMotion) {
-		dispatchAsUserAgent(
-			target,
-			new input[kWindow].MouseEvent("mousemove", eventInit),
-		);
+		dispatchMouseLike(input, "pointer", "pointermove", target, {
+			...eventInit,
+			button: -1,
+		});
+		if (!input[kMouseEventsSuppressed]) {
+			dispatchMouseLike(input, "mouse", "mousemove", target, eventInit);
+		}
 		dragTo(input, x, y, isInDocument);
 		return;
 	}
 
 	if (!isRelease) {
+		if (before === 0) {
+			input[kMouseEventsSuppressed] = !dispatchMouseLike(
+				input,
+				"pointer",
+				"pointerdown",
+				target,
+				eventInit,
+			);
+		} else {
+			dispatchMouseLike(input, "pointer", "pointermove", target, eventInit);
+		}
 		dispatchPress(input, target, base, x, y, isInDocument, eventInit, detail);
+		// The menu itself is the browser's, and a terminal has none to open.
+		if (button === 2) {
+			dispatchMouseLike(input, "pointer", "contextmenu", target, eventInit);
+		}
 		return;
 	}
 
-	dispatchRelease(input, target, eventInit);
+	if (state.buttons === 0) {
+		dispatchMouseLike(input, "pointer", "pointerup", target, eventInit);
+		// Capture ends with the press that set it.
+		state.pending = null;
+		processPendingPointerCapture(input);
+	} else {
+		dispatchMouseLike(input, "pointer", "pointermove", target, eventInit);
+	}
+	dispatchRelease(input, target, button, eventInit);
+	if (state.buttons === 0) {
+		input[kMouseEventsSuppressed] = false;
+	}
 }
 
 function deliverPaste(input: Input, text: string): void {
@@ -893,15 +998,17 @@ function dispatchPress(
 		input[kCascade].handleFocusChange(input[kDocument].activeElement);
 		requestRender(input[kDocument]);
 	}
-	const notCanceled = dispatchAsUserAgent(
-		target,
-		new input[kWindow].MouseEvent("mousedown", eventInit),
-	);
+	const notCanceled =
+		input[kMouseEventsSuppressed] ||
+		dispatchMouseLike(input, "mouse", "mousedown", target, eventInit);
 	if (!notCanceled) {
 		return;
 	}
 	// Default action: focus the nearest focusable ancestor, or blur.
-	const focusable = target.closest(FOCUSABLE_SELECTOR);
+	let focusable: Element | null = target;
+	while (focusable !== null && !focusable.matches(FOCUSABLE_SELECTOR)) {
+		focusable = flatParentElement(focusable);
+	}
 	const active = input[kDocument].activeElement;
 	if (focusable && focusable !== active) {
 		(focusable as HTMLElement).focus();
@@ -970,8 +1077,16 @@ function dispatchPress(
 }
 
 function getCommonInclusiveAncestor(a: Element, b: Element): Element | null {
-	for (let node: Element | null = a; node !== null; node = node.parentElement) {
-		if (node.contains(b)) {
+	const ancestors = new Set<Element>();
+	for (let node: Element | null = a;
+		node !== null;
+		node = flatParentElement(node)) {
+		ancestors.add(node);
+	}
+	for (let node: Element | null = b;
+		node !== null;
+		node = flatParentElement(node)) {
+		if (ancestors.has(node)) {
 			return node;
 		}
 	}
@@ -981,13 +1096,13 @@ function getCommonInclusiveAncestor(a: Element, b: Element): Element | null {
 function dispatchRelease(
 	input: Input,
 	target: Element,
-	eventInit: object,
+	button: number,
+	eventInit: MouseEventInit,
 ): void {
 	setPressed(input, null);
-	dispatchAsUserAgent(
-		target,
-		new input[kWindow].MouseEvent("mouseup", eventInit),
-	);
+	if (!input[kMouseEventsSuppressed]) {
+		dispatchMouseLike(input, "mouse", "mouseup", target, eventInit);
+	}
 	// Before the click, as in a browser.
 	lightDismissRelease(target, input[kPopoverPressTarget]);
 	input[kPopoverPressTarget] = null;
@@ -1018,12 +1133,13 @@ function dispatchRelease(
 	const clickTarget = pressed === null
 		? null
 		: getCommonInclusiveAncestor(pressed, target);
-	if (clickTarget !== null) {
+	// Only the main button clicks. The others fire auxclick, and no
+	// activation behavior follows it.
+	if (clickTarget !== null && button !== 0) {
+		dispatchMouseLike(input, "pointer", "auxclick", clickTarget, eventInit);
+	} else if (clickTarget !== null) {
 		target = clickTarget;
-		dispatchAsUserAgent(
-			target,
-			new input[kWindow].MouseEvent("click", {...eventInit, buttons: 0}),
-		);
+		dispatchMouseLike(input, "pointer", "click", target, eventInit);
 		// A label's click focuses its control (the browser's focusing steps,
 		// which activation alone does not do), and a .checked flip is a
 		// property change no mutation record repaints.
@@ -1042,10 +1158,7 @@ function dispatchRelease(
 
 		// In addition to its own click, on every second click.
 		if (input[kClickCount] % 2 === 0) {
-			dispatchAsUserAgent(
-				target,
-				new input[kWindow].MouseEvent("dblclick", {...eventInit, buttons: 0}),
-			);
+			dispatchMouseLike(input, "mouse", "dblclick", target, eventInit);
 		}
 	}
 	input[kMouseDownTarget] = null;
@@ -1111,6 +1224,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 				dispatchAsUserAgent(
 					targetElement,
 					new input[kWindow].PointerEvent("click", {
+						pointerId: -1,
 						bubbles: true,
 						cancelable: true,
 						composed: true,

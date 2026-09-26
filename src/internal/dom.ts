@@ -1987,6 +1987,10 @@ const kClientX = Symbol("clientX");
 const kMovementX = Symbol("movementX");
 const kMovementY = Symbol("movementY");
 const kEventView = Symbol("eventView");
+
+/** The pointerId of the mouse, the one pointer a terminal reports. */
+export const MOUSE_POINTER_ID = 1;
+
 const kTargetRect = Symbol("targetRect");
 const kClientY = Symbol("clientY");
 const kButton = Symbol("button");
@@ -9457,22 +9461,41 @@ export class Element extends Node implements globalThis.Element {
 		return [];
 	}
 
-	hasPointerCapture(_pointerId: number): boolean {
-		return false;
+	// The mouse is the one pointer, and capture holds only while a button
+	// is down, as for a mouse in a browser. The capture takes effect
+	// before the next pointer event, which is when gotpointercapture fires.
+	hasPointerCapture(pointerId: number): boolean {
+		return (
+			toLong(pointerId) === MOUSE_POINTER_ID &&
+			getPointerState(this[kDocument]).pending === this
+		);
 	}
 
-	// Pointer capture and pointer lock both need a pointer that keeps
-	// reporting after it leaves a box. A terminal reports the cell the mouse
-	// is over and stops at the screen edge, so there is nothing to capture
-	// and nowhere to lock to.
-	setPointerCapture(_pointerId: number): void {
-		throw domError("NotSupportedError", "Pointer capture is not implemented");
+	setPointerCapture(pointerId: number): void {
+		if (toLong(pointerId) !== MOUSE_POINTER_ID) {
+			throw domError("NotFoundError", "No active pointer has that id");
+		}
+		if (!this.isConnected) {
+			throw domError("InvalidStateError", "The element is not connected");
+		}
+		const state = getPointerState(this[kDocument]);
+		if (state.buttons !== 0) {
+			state.pending = this;
+		}
 	}
 
-	releasePointerCapture(_pointerId: number): void {
-		throw domError("NotSupportedError", "Pointer capture is not implemented");
+	releasePointerCapture(pointerId: number): void {
+		if (toLong(pointerId) !== MOUSE_POINTER_ID) {
+			throw domError("NotFoundError", "No active pointer has that id");
+		}
+		const state = getPointerState(this[kDocument]);
+		if (state.pending === this) {
+			state.pending = null;
+		}
 	}
 
+	// A terminal reports the cell the mouse is over and stops at the
+	// screen edge, so there is nowhere to lock the pointer to.
 	requestPointerLock(_options?: globalThis.PointerLockOptions): Promise<void> {
 		throw domError("NotSupportedError", "Pointer lock is not implemented");
 	}
@@ -25102,7 +25125,7 @@ export function elementAtDocumentPoint(
 	document: globalThis.Document,
 	x: number,
 	y: number,
-	context: globalThis.Node = document,
+	context: globalThis.Node | null = document,
 ): globalThis.Element | null {
 	const attached = getAttachedDocument(document);
 	if (attached === undefined) {
@@ -25126,24 +25149,48 @@ export function elementAtDocumentPoint(
 		element = host;
 	}
 	// RETARGETED against the asking tree, per CSSOM View. From the
-	// document, a hit inside a shadow tree is the HOST, so a click on an
-	// input's internal value span is a click on the input. From a shadow
+	// document, a hit inside a shadow tree is the HOST. From a shadow
 	// root, a hit inside it stays inside, and one in a nested tree is that
-	// tree's host.
-	element = retarget(
-		element as unknown as EventTarget | null,
-		context as unknown as EventTarget,
-	) as unknown as globalThis.Element | null;
+	// tree's host. With no asking tree, the hit is the element a pointer
+	// event targets: the deepest one, except that a control's own
+	// internals are the control, so a click on an input's value span is a
+	// click on the input.
+	element = context === null
+		? getOutsideUAShadowTrees(element as Element | null)
+		: retarget(
+			element as unknown as EventTarget | null,
+			context as unknown as EventTarget,
+		) as unknown as globalThis.Element | null;
 	// A modal dialog makes the rest of the document inert. A point outside
 	// it lands on its backdrop, and a backdrop hit counts as a hit on the
 	// DIALOG. That is the target a browser reports for a click on the dim
 	// area, and why nothing behind a modal can be clicked or focused while
 	// it is open.
 	const modal = topmostModalDialog(document);
-	if (modal !== null && (element === null || !modal.contains(element))) {
+	if (
+		modal !== null &&
+		(element === null ||
+			!isShadowIncludingInclusiveAncestor(
+				modal as unknown as Node,
+				element as unknown as Node,
+			))
+	) {
 		return modal;
 	}
 	return element;
+}
+
+function getOutsideUAShadowTrees(
+	element: Element | null,
+): globalThis.Element | null {
+	while (element !== null) {
+		const root = getRoot(element);
+		if (!(root instanceof ShadowRoot) || !root[kUAShadowTree]) {
+			break;
+		}
+		element = root[kHost] as Element;
+	}
+	return element as unknown as globalThis.Element | null;
 }
 
 // Hit testing. The point is viewport-relative, and the engine tests it.
@@ -29834,6 +29881,27 @@ export function isActive(element: Element): boolean {
 }
 
 const hoveredElements = new WeakMap<Document, Element>();
+
+/**
+ * The mouse's buttons held down, and its capture: `pending` is what
+ * setPointerCapture asked for, `active` what pointer events target now.
+ */
+export interface PointerState {
+	buttons: number;
+	pending: Element | null;
+	active: Element | null;
+}
+
+const pointerStates = new WeakMap<Document, PointerState>();
+
+export function getPointerState(document: globalThis.Document): PointerState {
+	let state = pointerStates.get(document as Document);
+	if (state === undefined) {
+		state = {buttons: 0, pending: null, active: null};
+		pointerStates.set(document as Document, state);
+	}
+	return state;
+}
 
 /** Record what `:hover` should match. */
 export function setHoveredElement(
