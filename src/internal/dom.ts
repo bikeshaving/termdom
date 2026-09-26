@@ -4343,11 +4343,20 @@ function hasActivationBehavior(target: EventTarget): boolean {
 	);
 }
 
-// A hyperlink's activation behavior is to follow it, which this engine
-// never does. An anchor or area is an activation target that does
-// nothing.
+// A hyperlink's activation behavior is to follow it. The one link a
+// terminal document can follow is to a fragment of itself. Any other is an
+// activation target that does nothing.
 function runActivationBehavior(target: EventTarget, event: Event): void {
-	if (target instanceof HTMLButtonElement) {
+	if (
+		(target instanceof HTMLAnchorElement ||
+			target instanceof HTMLAreaElement) &&
+		target.hasAttribute("href")
+	) {
+		const url = (target as unknown as {href: string}).href;
+		if (isFragmentNavigation(target[kDocument], url)) {
+			navigateToFragment(target[kDocument], url);
+		}
+	} else if (target instanceof HTMLButtonElement) {
 		activateButton(target, event);
 	} else if (target instanceof HTMLInputElement) {
 		activateInput(target, event);
@@ -29851,6 +29860,56 @@ export function isTargetElement(element: Element): boolean {
 	);
 }
 
+// The element the URL's fragment names, or null (HTML's indicated part).
+function getTargetElement(document: Document): Element | null {
+	for (const node of descendants(document)) {
+		if (node.nodeType === ELEMENT_NODE && isTargetElement(node as Element)) {
+			return node as Element;
+		}
+	}
+	return null;
+}
+
+// The part of a URL before its fragment, which is what a same-document
+// navigation keeps.
+function withoutFragment(url: string): string {
+	const hash = url.indexOf("#");
+	return hash === -1 ? url : url.slice(0, hash);
+}
+
+// Whether going to `url` from the document's own URL moves only the
+// fragment: HTML's "navigate to a fragment", the one navigation a
+// terminal document can make.
+function isFragmentNavigation(document: Document, url: string): boolean {
+	return url.includes("#") &&
+		withoutFragment(url) === withoutFragment(document[kDocumentURL]);
+}
+
+function navigateToFragment(document: Document, url: string): void {
+	const oldURL = document[kDocumentURL];
+	const previous = getTargetElement(document);
+	document[kDocumentURL] = url;
+	const next = getTargetElement(document);
+	for (const element of [previous, next]) {
+		if (element !== null) {
+			stateChanged(element, ["target", "target-within"]);
+		}
+	}
+	(next as HTMLElement | null)?.scrollIntoView();
+	if (oldURL === url) {
+		return;
+	}
+	const window = document[kDefaultView] as unknown as EventTarget | null;
+	if (window !== null) {
+		setTimeout(() => {
+			dispatchAsUserAgent(
+				window,
+				new HashChangeEvent("hashchange", {oldURL, newURL: url}),
+			);
+		}, 0);
+	}
+}
+
 const PLACEHOLDER_INPUT_TYPES = new Set([
 	"email",
 	"number",
@@ -32623,8 +32682,8 @@ class Location {
 		return this[kLocationWindow].document[kDocumentURL];
 	}
 
-	set href(_value: string) {
-		throw noNavigation();
+	set href(value: string) {
+		navigateLocation(this, String(value));
 	}
 
 	get origin(): string {
@@ -32683,8 +32742,19 @@ class Location {
 		return getLocationURL(this)?.hash ?? "";
 	}
 
-	set hash(_value: string) {
-		throw noNavigation();
+	// A new fragment on the same URL, which is a navigation to a fragment.
+	// Setting the fragment the URL already has changes nothing.
+	set hash(value: string) {
+		const url = getLocationURL(this);
+		if (url === null) {
+			return;
+		}
+		const next = new URL(url.href);
+		next.hash = String(value);
+		if (next.hash === url.hash) {
+			return;
+		}
+		navigateToFragment(this[kLocationWindow].document, next.href);
 	}
 
 	/** A terminal document is not in a frame, so it has no ancestors. */
@@ -32692,12 +32762,12 @@ class Location {
 		return constructInternal(() => new DOMStringList([]));
 	}
 
-	assign(_url: string | URL): void {
-		throw noNavigation();
+	assign(url: string | URL): void {
+		navigateLocation(this, String(url));
 	}
 
-	replace(_url: string | URL): void {
-		throw noNavigation();
+	replace(url: string | URL): void {
+		navigateLocation(this, String(url));
 	}
 
 	reload(): void {
@@ -32719,6 +32789,21 @@ Object.defineProperty(Location.prototype, Symbol.toStringTag, {
 // back to what a browser returns for an opaque location.
 function getLocationURL(location: Location): URL | null {
 	return URL.canParse(location.href) ? new URL(location.href) : null;
+}
+
+// Only a fragment of the document itself is somewhere to go.
+function navigateLocation(location: Location, value: string): void {
+	const document = location[kLocationWindow].document;
+	let url: string;
+	try {
+		url = new URL(value, document[kDocumentURL]).href;
+	} catch (_err) {
+		throw domError("SyntaxError", `"${value}" is not a URL`);
+	}
+	if (!isFragmentNavigation(document, url)) {
+		throw noNavigation();
+	}
+	navigateToFragment(document, url);
 }
 
 function noNavigation(): DOMException {
