@@ -4113,6 +4113,22 @@ interface CompoundKeys {
 	ids: string[];
 	attributes: string[];
 	states: boolean;
+	// Every pseudo-class the compound tests, arguments included, by name.
+	pseudoClasses: string[];
+	// Whether a sibling combinator follows the compound, so what it tests
+	// on one element decides matches on that element's later siblings.
+	precedesSibling: boolean;
+	// Whether an argument holds a combinator, and so describes elements
+	// other than the one the compound matches.
+	nestedCombinator: boolean;
+	// The keys outside every pseudo-class argument, which the element the
+	// compound matches has all of.
+	required: {
+		tag: string | null;
+		classes: string[];
+		ids: string[];
+		attributes: string[];
+	};
 	// Whether matching this compound reads the element's siblings or
 	// children: it follows a sibling combinator, or tests a tree-structural
 	// pseudo-class or :empty.
@@ -4199,10 +4215,14 @@ function harvestKeys(nodes: CSSTree.SelectorNode[], keys: CompoundKeys): void {
 			}
 			case "PseudoClassSelector": {
 				const name = pseudoName(String(node.name ?? ""));
+				keys.pseudoClasses.push(name);
 				if (STATE_PSEUDO_CLASSES.has(name)) {
 					keys.states = true;
 				}
 				const args = getChildren(node);
+				if (args.some(hasCombinator)) {
+					keys.nestedCombinator = true;
+				}
 				if (name === "not" || args.some(hasCombinator)) {
 					keys.anyElement = true;
 				}
@@ -4219,6 +4239,33 @@ function harvestKeys(nodes: CSSTree.SelectorNode[], keys: CompoundKeys): void {
 					harvestKeys([node.selector], keys);
 				}
 				break;
+		}
+	}
+}
+
+// Only the compound's own simple selectors, none inside an argument.
+function harvestRequiredKeys(
+	parts: CSSTree.SelectorNode[],
+	required: CompoundKeys["required"],
+): void {
+	for (const part of parts) {
+		if (part.type === "ClassSelector") {
+			required.classes.push(CSSTree.ident.decode(String(part.name ?? "")));
+		} else if (part.type === "IdSelector") {
+			required.ids.push(CSSTree.ident.decode(String(part.name ?? "")));
+		} else if (part.type === "AttributeSelector") {
+			const name = String(
+				(part.name as {name: string} | undefined)?.name ?? "",
+			);
+			required.attributes.push(
+				CSSTree.ident.decode(name.slice(name.indexOf("|") + 1)).toLowerCase(),
+			);
+		} else if (part.type === "TypeSelector") {
+			const name = String(part.name ?? "");
+			const local = name.slice(name.indexOf("|") + 1).toLowerCase();
+			if (local !== "*") {
+				required.tag = local;
+			}
 		}
 	}
 }
@@ -4270,10 +4317,15 @@ export function readSelector(selector: string): SelectorReading {
 			ids: [],
 			attributes: [],
 			states: false,
+			pseudoClasses: [],
+			precedesSibling: false,
+			nestedCombinator: false,
+			required: {tag: null, classes: [], ids: [], attributes: []},
 			siblingTested: afterSiblingCombinator || testsSiblings(parts),
 			anyElement: false,
 		};
 		harvestKeys(parts, keys);
+		harvestRequiredKeys(parts, keys.required);
 		compounds.push(keys);
 		parts = [];
 		afterSiblingCombinator = false;
@@ -4283,6 +4335,7 @@ export function readSelector(selector: string): SelectorReading {
 			closeCompound();
 			const name = String(part.name ?? "");
 			afterSiblingCombinator = name === "+" || name === "~";
+			compounds[compounds.length - 1].precedesSibling = afterSiblingCombinator;
 		} else {
 			parts.push(part);
 		}

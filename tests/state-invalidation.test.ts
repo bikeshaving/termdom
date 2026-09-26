@@ -158,3 +158,116 @@ test("everything restyling leaves room for what is added after", () => {
 	expect(button.getBoundingClientRect().height).toBeGreaterThan(0);
 	termdom.dispose();
 });
+
+async function makeStyled(
+	html: string,
+): Promise<{
+	proc: MockProcess;
+	termdom: TermDOM;
+	document: Document;
+	color: (selector: string) => string;
+	display: (selector: string) => string;
+}> {
+	const proc = new MockProcess({cols: 40, rows: 10});
+	const termdom = new TermDOM({transport: proc.transport, html});
+	await nextFrame(termdom);
+	const {document, window} = termdom;
+	const read = (selector: string, property: string): string =>
+		window
+			.getComputedStyle(document.querySelector(selector)!)
+			.getPropertyValue(property);
+	return {
+		proc,
+		termdom,
+		document,
+		color: (selector) => read(selector, "color"),
+		display: (selector) => read(selector, "display"),
+	};
+}
+
+test("a state tested above its subject restyles the element's descendants", async () => {
+	const {proc, termdom, document, color} = await makeStyled(
+		"<style>.row:hover .cell { color: rgb(255, 0, 0); }" +
+			".box:focus-within .hint { color: rgb(0, 0, 255); }</style>" +
+			"<div class=row><span class=cell>cell</span></div>" +
+			"<div class=box><p class=hint>hint</p><input id=f></div>",
+	);
+	await send(proc, "\x1b[<35;2;1M");
+	await nextFrame(termdom);
+	expect(color(".cell")).toBe("rgb(255, 0, 0)");
+	(document.getElementById("f") as HTMLInputElement).focus();
+	expect(color(".hint")).toBe("rgb(0, 0, 255)");
+	(document.getElementById("f") as HTMLInputElement).blur();
+	expect(color(".hint")).toBe("rgb(0, 0, 0)");
+	termdom.dispose();
+});
+
+test("a state rule's inherited value reaches the element's children", async () => {
+	const {termdom, document, color} = await makeStyled(
+		"<style>a[href]:focus { color: rgb(0, 128, 0); }</style>" +
+			"<a href=#x id=link><b>bold</b></a>",
+	);
+	(document.getElementById("link") as HTMLElement).focus();
+	expect(color("b")).toBe("rgb(0, 128, 0)");
+	termdom.dispose();
+});
+
+test("a class tested above a subject restyles that subject, or all it inherits to", async () => {
+	const {termdom, document, color, display} = await makeStyled(
+		"<style>.cursor { display: none; }" +
+			".on .cursor { display: block; }" +
+			".lit .text { color: rgb(255, 0, 0); }" +
+			".warm { color: rgb(255, 128, 0); }</style>" +
+			"<div id=root><p><span class=cursor>|</span>" +
+			"<span class=text>t</span><span class=plain>p</span></p></div>",
+	);
+	const root = document.getElementById("root")!;
+	expect(display(".cursor")).toBe("none");
+	root.classList.add("on");
+	expect(display(".cursor")).toBe("block");
+	root.classList.add("lit");
+	expect(color(".text")).toBe("rgb(255, 0, 0)");
+	expect(color(".plain")).toBe("rgb(0, 0, 0)");
+	root.classList.add("warm");
+	expect(color(".plain")).toBe("rgb(255, 128, 0)");
+	root.classList.remove("on", "lit");
+	expect(display(".cursor")).toBe("none");
+	expect(color(".text")).toBe("rgb(255, 128, 0)");
+	termdom.dispose();
+});
+
+test("a state tested on a shadow host restyles the host's shadow tree", async () => {
+	const {termdom, document} =
+		await makeStyled("<div id=host tabindex=0></div>");
+	const host = document.getElementById("host")!;
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML =
+		"<style>:host(:focus) .mark { color: rgb(255, 0, 0); }</style>" +
+		"<span class=mark>m</span>";
+	await nextFrame(termdom);
+	const mark = shadow.querySelector(".mark")!;
+	const color = (): string =>
+		termdom.window.getComputedStyle(mark).getPropertyValue("color");
+	expect(color()).toBe("rgb(0, 0, 0)");
+	host.focus();
+	expect(color()).toBe("rgb(255, 0, 0)");
+	host.blur();
+	expect(color()).toBe("rgb(0, 0, 0)");
+	termdom.dispose();
+});
+
+test("a checkbox's state reaches only what its rules name", async () => {
+	const {termdom, document, color} = await makeStyled(
+		"<style>input:checked + label { color: rgb(255, 0, 0); }" +
+			"input:checked ~ p .deep { color: rgb(0, 0, 255); }</style>" +
+			"<input type=checkbox id=c><label for=c>label</label>" +
+			"<p><span class=deep>deep</span></p>",
+	);
+	(document.getElementById("c") as HTMLInputElement).click();
+	expect(color("label")).toBe("rgb(255, 0, 0)");
+	expect(color(".deep")).toBe("rgb(0, 0, 255)");
+	(document.getElementById("c") as HTMLInputElement).click();
+	expect(color("label")).toBe("rgb(0, 0, 0)");
+	expect(color(".deep")).toBe("rgb(0, 0, 0)");
+	termdom.dispose();
+});
