@@ -283,6 +283,12 @@ test(":has reaches down, across and no further than it should", () => {
 	expect(ids(HAS, "li:has(~ li.x)")).toEqual(["l1"]);
 	expect(ids(HAS, "ul:has(li li)")).toEqual([]);
 	expect(ids(HAS, "ul:has(li b)")).toEqual(["list"]);
+	// With no combinator of its own, the argument reaches down from the
+	// anchor, even when it holds a sibling combinator, and its compounds
+	// never match the anchor or anything above it.
+	expect(ids(HAS, "ul:has(li + li)")).toEqual(["list"]);
+	expect(ids(HAS, "ul:has(li + b)")).toEqual([]);
+	expect(ids(HAS, "li:has(ul b)")).toEqual([]);
 });
 
 test(":has nests, and :scope inside it still names the query's root", () => {
