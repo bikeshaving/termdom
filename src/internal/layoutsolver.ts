@@ -285,14 +285,56 @@ function isMatchingConstraints(
 	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
+	ownerFree: boolean,
 ): boolean {
 	return (
 		cache.widthSpace === widthSpace &&
 		cache.heightSpace === heightSpace &&
 		isSameConstraint(cache.availableWidth, availableWidth) &&
 		isSameConstraint(cache.availableHeight, availableHeight) &&
-		isSameConstraint(cache.ownerWidth, ownerWidth) &&
-		isSameConstraint(cache.ownerHeight, ownerHeight)
+		(ownerFree ||
+			(isSameConstraint(cache.ownerWidth, ownerWidth) &&
+				isSameConstraint(cache.ownerHeight, ownerHeight)))
+	);
+}
+
+// Whether a style resolves any length against the owner: a percentage
+// anywhere in it. Styles are replaced whole, so the answer is kept per
+// style object.
+const percentStyles = new WeakMap<Style, boolean>();
+
+function hasPercent(value: unknown, depth: number): boolean {
+	if (typeof value !== "object" || value === null || depth > 3) {
+		return false;
+	}
+	if ((value as {unit?: unknown}).unit === "percent") {
+		return true;
+	}
+	for (const key in value) {
+		if (hasPercent((value as Record<string, unknown>)[key], depth + 1)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function usesPercent(style: Style): boolean {
+	let answer = percentStyles.get(style);
+	if (answer === undefined) {
+		answer = hasPercent(style, 0);
+		percentStyles.set(style, answer);
+	}
+	return answer;
+}
+
+// An out-of-flow child resolves against a containing block that may be
+// above this node, so it counts as reading the owner.
+function isOwnerFree(node: LayoutNode): boolean {
+	return (
+		!usesPercent(node.style) &&
+		node.children.every(
+			(child) => child.ownerFree && !isOutOfFlowType(child.style.positionType),
+		)
 	);
 }
 
@@ -378,6 +420,10 @@ export class LayoutNode {
 	// several probes of one child keep their own. `stale` invalidates both.
 	cachedSizes: Array<CachedSize | null>;
 	cachedLayout: CachedSize | null;
+	// Whether nothing in the subtree resolves a percentage against the
+	// owner's size, so a cached result holds whatever that size is. Set by
+	// a full layout, and false until one.
+	ownerFree: boolean;
 
 	// Null for a node no DOM node owns: an anonymous run, an independent
 	// formatting context, the viewport. Stored on the node rather than in a map
@@ -388,6 +434,7 @@ export class LayoutNode {
 	constructor() {
 		this.children = [];
 		this.parent = null;
+		this.ownerFree = false;
 		this[kMeasure] = null;
 		this[kStaticPosition] = null;
 		this.stale = true;
@@ -5145,6 +5192,7 @@ function layoutNode(
 				heightSpace,
 				ownerWidth,
 				ownerHeight,
+				node.ownerFree,
 			)
 		) {
 			hit = node.cachedLayout;
@@ -5156,8 +5204,9 @@ function layoutNode(
 			for (const cached of node.cachedSizes) {
 				if (
 					cached !== null &&
-					isSameConstraint(cached.ownerWidth, ownerWidth) &&
-					isSameConstraint(cached.ownerHeight, ownerHeight) &&
+					(node.ownerFree ||
+						(isSameConstraint(cached.ownerWidth, ownerWidth) &&
+							isSameConstraint(cached.ownerHeight, ownerHeight))) &&
 					cached.width >= 0 &&
 					cached.height >= 0 &&
 					isCachedSizeValid(
@@ -5204,6 +5253,7 @@ function layoutNode(
 		placing,
 	);
 
+	node.ownerFree = isOwnerFree(node);
 	const entry: CachedSize = {
 		availableWidth,
 		availableHeight,
