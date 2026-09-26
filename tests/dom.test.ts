@@ -2055,3 +2055,21 @@ test("a collection's indices answer before anything reads its length", () => {
 	expect(document.getElementsByName("r")[1])
 		.toBe(document.querySelectorAll("input")[1]);
 });
+
+test("document.all holds every element, by index, id and name", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<div id=box></div><input name=field><input name=field><p name=x></p>";
+	const {all} = document;
+	expect(all.length).toBe(document.getElementsByTagName("*").length);
+	expect(all[0]).toBe(document.documentElement);
+	expect(all.box).toBe(document.getElementById("box"));
+	expect(all.item("box")).toBe(all.box);
+	expect(all.item("0")).toBe(document.documentElement);
+	// Several elements by one name come back as a collection of them, and
+	// the name attribute counts only on the elements HTML lists.
+	expect(all.namedItem("field").length).toBe(2);
+	expect(all.namedItem("x")).toBe(null);
+	expect(document.all).toBe(all);
+	expect(document.forms).toBe(document.forms);
+});

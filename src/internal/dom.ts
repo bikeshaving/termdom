@@ -23141,6 +23141,7 @@ const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
 const kDesignMode = Symbol("whether the whole document is editable");
+const kAll = Symbol("document.all");
 
 /**
  * The event handler attributes installed on the prototype below, and the
@@ -23305,7 +23306,6 @@ export class Document extends Node implements globalThis.Document {
 	declare onwebkitanimationstart: globalThis.Document["onwebkitanimationstart"];
 	declare onwebkittransitionend: globalThis.Document["onwebkittransitionend"];
 	declare onwheel: globalThis.Document["onwheel"];
-	declare readonly all: globalThis.Document["all"];
 	declare onpointerlockchange: globalThis.Document["onpointerlockchange"];
 	declare onpointerlockerror: globalThis.Document["onpointerlockerror"];
 	declare onreadystatechange: globalThis.Document["onreadystatechange"];
@@ -23618,15 +23618,28 @@ export class Document extends Node implements globalThis.Document {
 	// filters them, and the colour attributes reflect the body's, as
 	// specified.
 
+	get all(): HTMLAllCollection {
+		let all = (this as unknown as Record<symbol, HTMLAllCollection>)[kAll];
+		if (all === undefined) {
+			all = live(constructInternal(() => new HTMLAllCollection(this)));
+			(this as unknown as Record<symbol, HTMLAllCollection>)[kAll] = all;
+		}
+		return all;
+	}
+
 	get anchors(): HTMLCollectionOf<globalThis.HTMLAnchorElement> {
-		return getDocumentCollection(this,
+		return getDocumentCollection(
+			this,
+			"anchors",
 			(e) => e instanceof HTMLAnchorElement && e.hasAttribute("name"),
+			"name",
 		) as unknown as HTMLCollectionOf<globalThis.HTMLAnchorElement>;
 	}
 
 	get forms(): HTMLCollectionOf<globalThis.HTMLFormElement> {
 		return getDocumentCollection(
 			this,
+			"forms",
 			(e) => e instanceof HTMLFormElement,
 		) as unknown as HTMLCollectionOf<globalThis.HTMLFormElement>;
 	}
@@ -23634,6 +23647,7 @@ export class Document extends Node implements globalThis.Document {
 	get images(): HTMLCollectionOf<globalThis.HTMLImageElement> {
 		return getDocumentCollection(
 			this,
+			"images",
 			(e) => e instanceof HTMLImageElement,
 		) as unknown as HTMLCollectionOf<globalThis.HTMLImageElement>;
 	}
@@ -23641,6 +23655,7 @@ export class Document extends Node implements globalThis.Document {
 	get scripts(): HTMLCollectionOf<globalThis.HTMLScriptElement> {
 		return getDocumentCollection(
 			this,
+			"scripts",
 			(e) => e instanceof HTMLScriptElement,
 		) as unknown as HTMLCollectionOf<globalThis.HTMLScriptElement>;
 	}
@@ -23648,6 +23663,7 @@ export class Document extends Node implements globalThis.Document {
 	get embeds(): HTMLCollectionOf<globalThis.HTMLEmbedElement> {
 		return getDocumentCollection(
 			this,
+			"embeds",
 			(e) => e instanceof HTMLEmbedElement,
 		) as unknown as HTMLCollectionOf<globalThis.HTMLEmbedElement>;
 	}
@@ -23660,10 +23676,13 @@ export class Document extends Node implements globalThis.Document {
 	get links(): HTMLCollectionOf<
 		globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
 	> {
-		return getDocumentCollection(this,
+		return getDocumentCollection(
+			this,
+			"links",
 			(e) =>
 				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
 				e.hasAttribute("href"),
+			"href",
 		) as unknown as HTMLCollectionOf<
 			globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
 		>;
@@ -23673,6 +23692,7 @@ export class Document extends Node implements globalThis.Document {
 	get applets(): HTMLCollectionOf<globalThis.Element> {
 		return getDocumentCollection(
 			this,
+			"applets",
 			() => false,
 		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
@@ -24639,22 +24659,174 @@ function isPotentiallyScrollable(body: Element): boolean {
 	);
 }
 
+// One live collection per document and kind, so `document.forms` is the
+// same object on every read, as the HTML Standard requires. `watched`
+// names the attribute that decides membership, if one does.
+const documentCollections =
+	new WeakMap<Document, Map<string, HTMLCollection>>();
+
 function getDocumentCollection(
 	document: Document,
+	kind: string,
 	match: (element: Element) => boolean,
+	watched: string | null = null,
 ): HTMLCollection {
-	return live(
-		new HTMLCollection(() => {
-			const found: Element[] = [];
-			for (const node of descendants(document)) {
-				if (node.nodeType === ELEMENT_NODE && match(node as Element)) {
-					found.push(node as Element);
+	let collections = documentCollections.get(document);
+	if (collections === undefined) {
+		collections = new Map();
+		documentCollections.set(document, collections);
+	}
+	let collection = collections.get(kind);
+	if (collection === undefined) {
+		collection = live(
+			new HTMLCollection(() => {
+				const found: Element[] = [];
+				for (const node of descendants(document)) {
+					if (node.nodeType === ELEMENT_NODE && match(node as Element)) {
+						found.push(node as Element);
+					}
 				}
-			}
-			return found;
-		}, document),
+				return found;
+			}, document, null, watched),
+		);
+		collections.set(kind, collection);
+	}
+	return collection;
+}
+
+// The elements HTML names by their name attribute in document.all.
+const ALL_NAMED_ELEMENTS = new Set([
+	"a",
+	"button",
+	"embed",
+	"form",
+	"frame",
+	"frameset",
+	"iframe",
+	"img",
+	"input",
+	"map",
+	"meta",
+	"object",
+	"select",
+	"textarea",
+]);
+
+function isAllNamed(element: Element, name: string): boolean {
+	if (element.getAttribute("id") === name) {
+		return true;
+	}
+	return (
+		element.namespaceURI === HTML_NAMESPACE &&
+		ALL_NAMED_ELEMENTS.has(element.localName) &&
+		element.getAttribute("name") === name
 	);
 }
+
+// Every element of the document, in tree order, named by id and by the
+// name attribute of the elements HTML lists. A browser's document.all is
+// also falsy and reports its typeof as "undefined", which no JavaScript
+// object can do, so here it is an ordinary collection.
+class HTMLAllCollection extends LiveList {
+	[index: number]: Element;
+	declare [Symbol.iterator]: () => ArrayIterator<Element>;
+
+	constructor(document: Document) {
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		super(true, document);
+	}
+
+	get length(): number {
+		return ensureList(this).length;
+	}
+
+	override compute(): Node[] {
+		return getDescendantElements(this[kOwner] as Document, []);
+	}
+
+	override namedProperties(items: Node[]): Map<string, Node> {
+		const named = new Map<string, Node>();
+		for (const item of items) {
+			const element = item as Element;
+			const id = element.getAttribute("id");
+			if (id !== null && id !== "" && !named.has(id)) {
+				named.set(id, element);
+			}
+			const name = element.getAttribute("name");
+			if (
+				name !== null &&
+				name !== "" &&
+				!named.has(name) &&
+				isAllNamed(element, name)
+			) {
+				named.set(name, element);
+			}
+		}
+		return named;
+	}
+
+	// An index reads as an index and anything else as a name.
+	item(
+		nameOrIndex?: string,
+	): globalThis.HTMLCollection | globalThis.Element | null {
+		if (nameOrIndex === undefined) {
+			return null;
+		}
+		const key = String(nameOrIndex);
+		if (/^(?:0|[1-9]\d*)$/.test(key) && Number(key) < 4294967295) {
+			const items = ensureList(this);
+			const at = Number(key);
+			return at < items.length
+				? (items[at] as unknown as globalThis.Element)
+				: null;
+		}
+		return this.namedItem(key);
+	}
+
+	// One element by that name, or every one when several share it.
+	namedItem(
+		name: string,
+	): globalThis.HTMLCollection | globalThis.Element | null {
+		const key = String(name);
+		if (key === "") {
+			return null;
+		}
+		const matches = (ensureList(this) as Element[]).filter((element) =>
+			isAllNamed(element, key),
+		);
+		if (matches.length === 0) {
+			return null;
+		}
+		if (matches.length === 1) {
+			return matches[0] as unknown as globalThis.Element;
+		}
+		const document = this[kOwner] as Document;
+		return live(
+			new HTMLCollection(() =>
+				getDescendantElements(document, []).filter((element) =>
+					isAllNamed(element, key),
+				), document, null, anyAttribute),
+		);
+	}
+
+	// An id or name moves the named properties without moving a member.
+	override [kAttributeSync](element: Element, localName: string): void {
+		if (localName !== "id" && localName !== "name") {
+			super[kAttributeSync](element, localName);
+			return;
+		}
+		if (this[kExact]) {
+			defineListProperties(this);
+		}
+	}
+}
+
+Object.defineProperty(HTMLAllCollection.prototype, Symbol.toStringTag, {
+	value: "HTMLAllCollection",
+	configurable: true,
+});
 
 Object.defineProperty(Document.prototype, Symbol.toStringTag, {
 	value: "Document",
@@ -33351,6 +33523,7 @@ const platform = {
 	HTMLAreaElement,
 	HTMLAudioElement,
 	HTMLBRElement,
+	HTMLAllCollection,
 	HTMLBaseElement,
 	HTMLBodyElement,
 	HTMLButtonElement,
@@ -33527,6 +33700,7 @@ export type {
 	Storage,
 	NodeListOf,
 	HTMLCollectionOf,
+	HTMLAllCollection,
 	BeforeUnloadEvent,
 	MessageEvent,
 	HashChangeEvent,
