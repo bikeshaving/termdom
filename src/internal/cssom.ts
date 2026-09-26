@@ -9,6 +9,7 @@ import {
 import {
 	type CompiledSelector,
 	compileSelector,
+	type HasResults,
 	matchesCompiled,
 	parseSelectorList,
 	selectAllCompiled,
@@ -24,6 +25,7 @@ import {
 	ensurePseudoElement,
 	flatParentElement,
 	flushLayout,
+	flushStyle,
 	getHighlightRegistry,
 	getPseudoHost,
 	getPseudoName,
@@ -205,6 +207,7 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 // reads deep inside the cascade itself that have no Cascade in
 // hand.
 const documentCascades = new WeakMap<object, Cascade>();
+const kHasResults = Symbol("hasResults");
 
 // What list-style-type spells, quoted the way a content value is
 // written. Null outside a list.
@@ -4702,9 +4705,11 @@ function isSelectedBy(
 	scope: Node,
 	shadow: Node | null = null,
 ): boolean {
+	const cascade = documentCascades.get(element.ownerDocument as object);
 	return matchesCompiled(element as unknown as DOMElement, selector, {
 		scope: scope as unknown as DOMNode,
 		shadow: shadow as DOMNode | null,
+		hasResults: cascade?.[kHasResults] ?? null,
 	});
 }
 
@@ -4945,6 +4950,10 @@ export interface Cascade {
 	// than on the declarations so a cascade rebuild drops them all at once.
 	[kUsedValues]: WeakMap<object, Map<string, string>>;
 
+	// `:has()` answers, which go stale exactly when computed styles do, so
+	// they are dropped wherever a computed style is.
+	[kHasResults]: HasResults;
+
 	// Set by the layout engine when geometry changed under the used values.
 	[kUsedStale]: boolean;
 
@@ -4997,6 +5006,7 @@ export class Cascade {
 		this[kCounterScopes] = new WeakMap<Element, CSSValues.CounterScope>();
 		this[kFlushing] = false;
 		this[kUsedValues] = new WeakMap();
+		this[kHasResults] = new WeakMap();
 		this[kUsedStale] = true;
 		this[kLayerPaths] = [];
 		this[kAnonymousLayers] = 0;
@@ -5434,6 +5444,7 @@ export class Cascade {
 	// The document is being torn down.
 	dispose(): void {
 		this[kComputedStyleCache] = new WeakMap();
+		this[kHasResults] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
 		if (this[kTransitionTimer] !== null) {
@@ -5450,17 +5461,18 @@ export class Cascade {
 	}
 
 	// Every author-facing style read goes through this flush, so a value
-	// read right after a DOM change describes it. The engine's own reads
-	// never flush. Not re-entrant: layout and paint resolve styles as they
-	// run, and asking for the flush from inside it would compute it inside
-	// itself.
+	// read right after a DOM change describes it. It settles style only: a
+	// value that is measured lays out first through getUsedRect. The
+	// engine's own reads never flush. Not re-entrant: layout and paint
+	// resolve styles as they run, and asking for the flush from inside it
+	// would compute it inside itself.
 	[kFlushStyle](): void {
 		if (this[kFlushing]) {
 			return;
 		}
 		this[kFlushing] = true;
 		try {
-			if (flushLayout(this[kDocument])) {
+			if (flushStyle(this[kDocument])) {
 				this[kUsedValues] = new WeakMap();
 			}
 		} finally {
@@ -5627,6 +5639,7 @@ export class Cascade {
 		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kUsedValues] = new WeakMap();
 		this[kComputedStyleCache] = new WeakMap();
+		this[kHasResults] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
 	}
@@ -6450,6 +6463,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
+	cascade[kHasResults] = new WeakMap();
 	cascade[kPseudoElementStyleCache].delete(element);
 	// A style change can flip display: contents, which moves the node's
 	// flat-tree BOX parent, so every box enumeration is stale.
@@ -6543,6 +6557,7 @@ function invalidateElementCaches(
 		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
+	cascade[kHasResults] = new WeakMap();
 	const droppedPseudos = cascade[kPseudoElementStyleCache].get(element);
 	if (droppedPseudos) {
 		for (const [name, declaration] of droppedPseudos) {

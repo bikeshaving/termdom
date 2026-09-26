@@ -25796,35 +25796,42 @@ function forEachLiveRange(context: Node, steps: (range: Range) => void): void {
 // A node inserted before a child shifts every boundary point in the
 // parent that is past that child.
 function liveRangeInsertSteps(parent: Node, child: Node, count: number): void {
-	const index = getNodeIndex(child);
+	const index = getLazyIndex(child);
 	forEachLiveRange(parent, (range) => {
-		if (range[kStartNode] === parent && range[kStartOffset] > index) {
+		if (range[kStartNode] === parent && range[kStartOffset] > index()) {
 			range[kStartOffset] += count;
 		}
-		if (range[kEndNode] === parent && range[kEndOffset] > index) {
+		if (range[kEndNode] === parent && range[kEndOffset] > index()) {
 			range[kEndOffset] += count;
 		}
 	});
+}
+
+// A node's index costs a walk over its earlier siblings, so it is taken
+// only when a range has a boundary in the parent, and then once.
+function getLazyIndex(node: Node): () => number {
+	let index = -1;
+	return () => (index < 0 ? (index = getNodeIndex(node)) : index);
 }
 
 // A boundary point inside the removed node collapses to the node's own
 // position. A point after it in the parent moves back by one.
 function liveRangePreRemoveSteps(node: Node): void {
 	const parent = node[kParent] as Node;
-	const index = getNodeIndex(node);
+	const index = getLazyIndex(node);
 	forEachLiveRange(node, (range) => {
 		if (isInclusiveAncestor(node, range[kStartNode])) {
 			range[kStartNode] = parent;
-			range[kStartOffset] = index;
+			range[kStartOffset] = index();
 		}
 		if (isInclusiveAncestor(node, range[kEndNode])) {
 			range[kEndNode] = parent;
-			range[kEndOffset] = index;
+			range[kEndOffset] = index();
 		}
-		if (range[kStartNode] === parent && range[kStartOffset] > index) {
+		if (range[kStartNode] === parent && range[kStartOffset] > index()) {
 			range[kStartOffset] -= 1;
 		}
-		if (range[kEndNode] === parent && range[kEndOffset] > index) {
+		if (range[kEndNode] === parent && range[kEndOffset] > index()) {
 			range[kEndOffset] -= 1;
 		}
 	});
@@ -25870,7 +25877,7 @@ function liveRangeSplitSteps(
 	offset: number,
 	parent: Node,
 ): void {
-	const index = getNodeIndex(node);
+	const index = getLazyIndex(node);
 	forEachLiveRange(node, (range) => {
 		if (range[kStartNode] === node && range[kStartOffset] > offset) {
 			range[kStartNode] = newNode;
@@ -25880,10 +25887,10 @@ function liveRangeSplitSteps(
 			range[kEndNode] = newNode;
 			range[kEndOffset] -= offset;
 		}
-		if (range[kStartNode] === parent && range[kStartOffset] === index + 1) {
+		if (range[kStartNode] === parent && range[kStartOffset] === index() + 1) {
 			range[kStartOffset] += 1;
 		}
-		if (range[kEndNode] === parent && range[kEndOffset] === index + 1) {
+		if (range[kEndNode] === parent && range[kEndOffset] === index() + 1) {
 			range[kEndOffset] += 1;
 		}
 	});
@@ -25898,7 +25905,7 @@ function liveRangeNormalizeSteps(
 	length: number,
 ): void {
 	const parent = currentNode[kParent] as Node;
-	const index = getNodeIndex(currentNode);
+	const index = getLazyIndex(currentNode);
 	forEachLiveRange(node, (range) => {
 		if (range[kStartNode] === currentNode) {
 			range[kStartNode] = node;
@@ -25908,11 +25915,11 @@ function liveRangeNormalizeSteps(
 			range[kEndNode] = node;
 			range[kEndOffset] += length;
 		}
-		if (range[kStartNode] === parent && range[kStartOffset] === index) {
+		if (range[kStartNode] === parent && range[kStartOffset] === index()) {
 			range[kStartNode] = node;
 			range[kStartOffset] = length;
 		}
-		if (range[kEndNode] === parent && range[kEndOffset] === index) {
+		if (range[kEndNode] === parent && range[kEndOffset] === index()) {
 			range[kEndNode] = node;
 			range[kEndOffset] = length;
 		}
@@ -31489,6 +31496,27 @@ export function applyMutations(document: globalThis.Document): boolean {
 	}
 	handleMutationRecords(document as Document, records);
 	return true;
+}
+
+/**
+ * Synchronously settle what a style read must see: pending mutations
+ * delivered, so the cascade has dropped what they made stale. Layout is
+ * left for a read that measures, which settles it through flushLayout.
+ */
+export function flushStyle(node: globalThis.Node): boolean {
+	const attached = getAttachedDocument(node);
+	if (attached === undefined) {
+		return false;
+	}
+	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
+	const document = (
+		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
+	) as globalThis.Document;
+	const had = applyMutations(document);
+	if (had) {
+		void attached[kRender]();
+	}
+	return had;
 }
 
 /**

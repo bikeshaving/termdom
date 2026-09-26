@@ -301,7 +301,13 @@ interface MatchState {
 
 	// The node a relative selector inside `:has()` is anchored to.
 	anchor: Node | null;
+
+	// The caller's store of `:has()` answers, by anchor and argument.
+	hasResults: HasResults | null;
 }
+
+/** `:has()` answers, kept by a caller that knows when they go stale. */
+export type HasResults = WeakMap<Element, Map<object, boolean>>;
 
 type Predicate = (element: Element, state: MatchState) => boolean;
 
@@ -539,10 +545,24 @@ const ANCHOR_COMPOUND: CompiledCompound = {
 	host: false,
 };
 
+function mentionsScope(node: CSSTree.SelectorNode): boolean {
+	if (
+		node.type === "PseudoClassSelector" &&
+		pseudoName(String(node.name ?? "")) === "scope"
+	) {
+		return true;
+	}
+	return getChildren(node).some(mentionsScope);
+}
+
+// `anchored` is for an argument of :has(), which with no combinator of its
+// own reaches down from the anchor. An @scope rule's relative reading
+// matches where it stands and is limited by its root elsewhere.
 function compileComplex(
 	selector: CSSTree.SelectorNode,
 	compiling: Compiling,
 	relative: boolean,
+	anchored = false,
 ): CompiledComplex {
 	const parts = getChildren(selector);
 	if (parts.length === 0) {
@@ -552,6 +572,12 @@ function compileComplex(
 	const combinators: Combinator[] = [];
 	let pending: CSSTree.SelectorNode[] = [];
 	let started = false;
+	// `:has(span + span)` is `:has(:scope span + span)`.
+	if (anchored && parts[0].type !== "Combinator") {
+		compounds.push(ANCHOR_COMPOUND);
+		combinators.push(" ");
+		started = true;
+	}
 	for (const [index, part] of parts.entries()) {
 		if (part.type !== "Combinator") {
 			pending.push(part);
@@ -948,8 +974,14 @@ function compilePseudoClass(
 			return;
 		}
 		case "has": {
-			const inner = compileArgumentList(args, compiling, true);
-			compound.tests.push((element, state) => hasMatch(inner, element, state));
+			const inner = compileArgumentList(args, compiling, true, true);
+			// Without :scope, whose meaning changes with each query, the
+			// answer depends only on the anchor and the document, so a caller
+			// can keep it for as long as the document is unchanged.
+			const cacheable = !args.some(mentionsScope);
+			compound.tests.push((element, state) =>
+				hasMatch(inner, element, state, cacheable),
+			);
 			return;
 		}
 		case "host":
@@ -1197,6 +1229,7 @@ function compileArgumentList(
 	args: CSSTree.SelectorNode[],
 	compiling: Compiling,
 	relative: boolean,
+	anchored = false,
 ): CompiledComplex[] {
 	const compiled: CompiledComplex[] = [];
 	for (const argument of args) {
@@ -1208,7 +1241,12 @@ function compileArgumentList(
 				throw new SelectorError("a selector list holds selectors");
 			}
 			compiled.push(
-				compileComplex(selector, {...compiling, nested: true}, relative),
+				compileComplex(
+					selector,
+					{...compiling, nested: true},
+					relative,
+					anchored,
+				),
 			);
 		}
 	}
@@ -1861,6 +1899,29 @@ function hasMatch(
 	inner: CompiledComplex[],
 	element: Element,
 	state: MatchState,
+	cacheable: boolean,
+): boolean {
+	const store = cacheable ? state.hasResults : null;
+	let answers = store?.get(element);
+	const known = answers?.get(inner);
+	if (known !== undefined) {
+		return known;
+	}
+	const result = findHasMatch(inner, element, state);
+	if (store) {
+		if (answers === undefined) {
+			answers = new Map();
+			store.set(element, answers);
+		}
+		answers.set(inner, result);
+	}
+	return result;
+}
+
+function findHasMatch(
+	inner: CompiledComplex[],
+	element: Element,
+	state: MatchState,
 ): boolean {
 	// The anchor is what a leading combinator hangs from. `:scope` is not
 	// changed: inside `:has()` it still refers to whatever the query scoped
@@ -2021,6 +2082,10 @@ interface MatchOptions {
 
 	// The shadow root the selector was written in, for `:host`.
 	shadow?: Node | null;
+
+	// Where `:has()` answers are kept between matches, by a caller that
+	// drops them whenever the document changes.
+	hasResults?: HasResults | null;
 }
 
 interface QueryOptions extends CompileOptions, MatchOptions {}
@@ -2033,6 +2098,7 @@ function createMatchState(options: MatchOptions): MatchState {
 		// `:scope` refers to. Inside `:has()` both become the anchor instead.
 		anchor: options.scope ?? null,
 		siblings: new Map(),
+		hasResults: options.hasResults ?? null,
 	};
 }
 
