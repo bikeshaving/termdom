@@ -5006,7 +5006,21 @@ export class Layout {
 	// Innermost first. Each scroll moves the element in every outer port's
 	// coordinates, so the rect is re-read per level. What remains is the
 	// screen's to reveal.
-	revealInScrollPorts(element: Element): void {
+	alignmentDelta(
+		start: number,
+		end: number,
+		portStart: number,
+		portEnd: number,
+		align: ScrollLogicalPosition,
+	): number {
+		return getAlignmentDelta(start, end, portStart, portEnd, align);
+	}
+
+	revealInScrollPorts(
+		element: Element,
+		block: ScrollLogicalPosition = "nearest",
+		inline: ScrollLogicalPosition = "nearest",
+	): void {
 		for (
 			let ancestor = flatParentElement(element);
 			ancestor && !isRootBox(this, ancestor);
@@ -5021,7 +5035,7 @@ export class Layout {
 					getComputedValue(ancestor, "overflow-x") || overflow,
 				)
 			) {
-				revealInPort(this, element, ancestor);
+				revealInPort(this, element, ancestor, block, inline);
 			}
 		}
 	}
@@ -6599,10 +6613,40 @@ function isRootBox(engine: Layout, element: Element): boolean {
 
 // Document-relative rects on both sides: the element wherever its
 // current offsets put it, against the scroller's padding box.
+// How far a scroll port moves to show [start, end) at the given place in
+// [portStart, portEnd). "nearest" moves the least, and not at all when the
+// span is already in view.
+function getAlignmentDelta(
+	start: number,
+	end: number,
+	portStart: number,
+	portEnd: number,
+	align: ScrollLogicalPosition,
+): number {
+	if (align === "start") {
+		return start - portStart;
+	}
+	if (align === "end") {
+		return end - portEnd;
+	}
+	if (align === "center") {
+		return (start + end) / 2 - (portStart + portEnd) / 2;
+	}
+	if (start < portStart) {
+		return start - portStart;
+	}
+	if (end > portEnd) {
+		return end - portEnd;
+	}
+	return 0;
+}
+
 function revealInPort(
 	engine: Layout,
 	element: Element,
 	scroller: Element,
+	block: ScrollLogicalPosition,
+	inline: ScrollLogicalPosition,
 ): void {
 	const rect = engine.getRect(element);
 	const scrollerRect = engine.getRect(scroller);
@@ -6614,15 +6658,17 @@ function revealInPort(
 	const portBottom = scrollerRect.bottom - (box.borderBottomWidth || 0);
 	const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
 	const portRight = scrollerRect.right - (box.borderRightWidth || 0);
-	if (rect.top < portTop) {
-		scroller.scrollTop -= Math.round(portTop - rect.top);
-	} else if (rect.bottom > portBottom) {
-		scroller.scrollTop += Math.round(rect.bottom - portBottom);
+	const down = Math.round(
+		getAlignmentDelta(rect.top, rect.bottom, portTop, portBottom, block),
+	);
+	if (down !== 0) {
+		scroller.scrollTop += down;
 	}
-	if (rect.left < portLeft) {
-		scroller.scrollLeft -= Math.round(portLeft - rect.left);
-	} else if (rect.right > portRight) {
-		scroller.scrollLeft += Math.round(rect.right - portRight);
+	const across = Math.round(
+		getAlignmentDelta(rect.left, rect.right, portLeft, portRight, inline),
+	);
+	if (across !== 0) {
+		scroller.scrollLeft += across;
 	}
 }
 

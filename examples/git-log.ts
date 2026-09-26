@@ -139,7 +139,7 @@ function select(index: number): void {
 }
 
 function refresh(): void {
-  rows()[selected]?.scrollIntoView();
+  rows()[selected]?.scrollIntoView({block: "nearest"});
   if (selected === 0) {
     window.scrollBy(0, -document.body.scrollHeight);
   }

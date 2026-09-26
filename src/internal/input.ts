@@ -23,6 +23,7 @@ import {
 	placeTextControlCaret,
 	requestRender,
 	runControlDefaultAction,
+	scrollDocumentTo,
 	type SelectionUnit,
 	selectUnits,
 	setActiveElement,
@@ -894,8 +895,7 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	if (deltaY < 0 && input[kScreen].scrollTop === 0) {
 		return input[kLayout].documentPaintHeight() <= input[kScreen].rows;
 	}
-	input[kScreen].scrollTo(input[kScreen].scrollTop + deltaY);
-	requestRender(input[kDocument]);
+	scrollDocumentTo(input[kDocument], input[kScreen].scrollTop + deltaY);
 	return false;
 }
 
