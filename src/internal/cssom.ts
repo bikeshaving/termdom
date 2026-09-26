@@ -208,6 +208,7 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 // hand.
 const documentCascades = new WeakMap<object, Cascade>();
 const kHasResults = Symbol("hasResults");
+const kHasStates = Symbol("hasStates");
 
 // What list-style-type spells, quoted the way a content value is
 // written. Null outside a list.
@@ -4764,6 +4765,8 @@ function attachPseudoElementsToElement(
 const kWindow = Symbol("window");
 const kDocument = Symbol("document");
 const kAttributeReachesDescendants = Symbol("attributeReachesDescendants");
+const kRestyleAll = Symbol("restyleAll");
+const FOCUS_STATES = ["focus", "focus-within", "focus-visible"];
 const kDropCache = Symbol("clearCache");
 const kResolveCounterFunction = Symbol("resolveCounterFunction");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
@@ -4954,6 +4957,11 @@ export interface Cascade {
 	// they are dropped wherever a computed style is.
 	[kHasResults]: HasResults;
 
+	// The pseudo-classes named anywhere inside a :has() argument. A change
+	// to one of those states can restyle an anchor's whole subtree, far
+	// from the element whose state changed.
+	[kHasStates]: Set<string>;
+
 	// Set by the layout engine when geometry changed under the used values.
 	[kUsedStale]: boolean;
 
@@ -5001,6 +5009,7 @@ export class Cascade {
 		this[kListItemRulesExist] = false;
 		this[kScopedRulesExist] = false;
 		this[kHasRulesExist] = false;
+		this[kHasStates] = new Set();
 		this[kHoverRulesExist] = false;
 		this[kParsedStyleSheetCount] = -1;
 		this[kCounterScopes] = new WeakMap<Element, CSSValues.CounterScope>();
@@ -5229,6 +5238,10 @@ export class Cascade {
 	// declarations of the two moved elements hold rule sets matched BEFORE
 	// the move, so a :focus rule would never apply or stop applying.
 	handleFocusChange(...elements: Array<Element | null>): void {
+		if (FOCUS_STATES.some((state) => this[kHasStates].has(state))) {
+			this[kRestyleAll]();
+			return;
+		}
 		for (const element of elements) {
 			// What a :focus rule sets on the element, a colour, its children
 			// inherit, so its subtree goes stale with it.
@@ -5243,18 +5256,6 @@ export class Cascade {
 				let node: Element | null = element; node; node = flatParentElement(node)
 			) {
 				invalidateElementCaches(this, node);
-				// A :has() subject sits above what changed, or before it on the
-				// same level (`:has(+ :focus)`), so the earlier siblings of each
-				// element on the chain go stale as well.
-				if (this[kHasRulesExist]) {
-					for (
-						let sibling = node.previousElementSibling;
-						sibling;
-						sibling = sibling.previousElementSibling
-					) {
-						invalidateElementCaches(this, sibling);
-					}
-				}
 				invalidateLaterSiblings(this, node);
 				const shadowRoot = getShadowRoot(node);
 				if (shadowRoot) {
@@ -5266,10 +5267,20 @@ export class Cascade {
 		}
 	}
 
-	// State no attribute records changed: a popover was shown or hidden,
-	// and the rules that test it (:popover-open) matched before the change.
-	handleStateChange(element: Element): void {
+	// State no attribute or tree records changed: a checkbox was checked, a
+	// custom element defined, a popover shown. `states` names the
+	// pseudo-classes that read it. A rule can test the state on the element
+	// itself, on an ancestor of what it styles, or before a sibling
+	// combinator, so the element's subtree and its later siblings restyle.
+	// One that tests it inside :has() can style anything, so everything
+	// restyles.
+	handleStateChange(element: Element, states: readonly string[]): void {
+		if (states.some((state) => this[kHasStates].has(state))) {
+			this[kRestyleAll]();
+			return;
+		}
 		invalidateSubtree(this, element);
+		invalidateLaterSiblings(this, element);
 		// No mutation record describes the change, so the frame that decides
 		// whether anything needs painting is notified here.
 		this[kLayout].invalidateFrame();
@@ -5279,6 +5290,10 @@ export class Cascade {
 	// difference of the two flat-tree chains. The shared ancestors above the
 	// fork were hovered before and are hovered still.
 	handleHoverChange(previous: Element | null, next: Element | null): void {
+		if (this[kHasStates].has("hover")) {
+			this[kRestyleAll]();
+			return;
+		}
 		const getChain = (element: Element | null): Set<Element> => {
 			const chain = new Set<Element>();
 			for (
@@ -5453,6 +5468,17 @@ export class Cascade {
 		}
 		this[kActiveTransitions].clear();
 		this[kTransitionEvents] = [];
+	}
+
+	// Everything restyles, as it does when a stylesheet changes.
+	[kRestyleAll](): void {
+		this[kDropCache]();
+		const root = this[kDocument].documentElement;
+		if (root) {
+			this[kLayout].invalidate(root);
+		} else {
+			this[kLayout].invalidateFrame();
+		}
 	}
 
 	[kMatchingRules](element: Element): ParsedCSSRule[] {
@@ -6750,6 +6776,7 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	cascade[kListItemRulesExist] = false;
 	cascade[kScopedRulesExist] = false;
 	cascade[kHasRulesExist] = false;
+	cascade[kHasStates] = new Set();
 	cascade[kHoverRulesExist] = false;
 	cascade[kStylesheetsDirty] = false;
 	cascade[kLayerPaths] = [];
@@ -7229,6 +7256,10 @@ function parseSelector(
 	// sweep only for documents that need it.
 	if (selector.includes(":has(")) {
 		cascade[kHasRulesExist] = true;
+		const inside = selector.slice(selector.indexOf(":has(") + 5);
+		for (const match of inside.matchAll(/:([a-zA-Z-]+)/g)) {
+			cascade[kHasStates].add(match[1].toLowerCase());
+		}
 	}
 	if (selector.includes(":hover")) {
 		cascade[kHoverRulesExist] = true;
