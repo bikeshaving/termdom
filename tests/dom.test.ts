@@ -2038,3 +2038,20 @@ test("a wheel or touch listener on the window is passive by default", () => {
 	window.dispatchEvent(active);
 	expect(active.defaultPrevented).toBe(true);
 });
+
+test("a collection's indices answer before anything reads its length", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<form><select><option>a</option><option selected>b</option></select>" +
+		"<input name=r><input name=r></form>" +
+		"<table><tbody><tr><td>1</td></tr></tbody></table>";
+	const select = document.querySelector("select");
+	expect(select.options[1].textContent).toBe("b");
+	expect(select.selectedOptions[0].textContent).toBe("b");
+	expect(document.forms[0]).toBe(document.querySelector("form"));
+	expect(document.querySelector("form").elements[0]).toBe(select);
+	expect(document.querySelector("table").rows[0].cells[0].textContent)
+		.toBe("1");
+	expect(document.getElementsByName("r")[1])
+		.toBe(document.querySelectorAll("input")[1]);
+});
