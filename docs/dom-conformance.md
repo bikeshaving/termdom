@@ -18,10 +18,10 @@ window's legacy named access to elements by id.
 - Reference tests (no testharness, scored by pixels): 55
 - Excluded, each with its reason below: 356
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 695
-- Files whose harness did not complete: 67
-- Subtests passed: 99752
-- Subtests failed: 834
+- Files whose harness completed: 696
+- Files whose harness did not complete: 66
+- Subtests passed: 99794
+- Subtests failed: 791
 
 ## Exclusions
 
@@ -541,7 +541,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Element-childElementCount.html | OK | 1 | 0 |
 | dom/nodes/Element-children.html | OK | 2 | 0 |
 | dom/nodes/Element-classlist.html | OK | 1420 | 0 |
-| dom/nodes/Element-closest.html | OK | 28 | 1 |
+| dom/nodes/Element-closest.html | OK | 29 | 0 |
 | dom/nodes/Element-firstElementChild-namespace.html | OK | 1 | 0 |
 | dom/nodes/Element-firstElementChild.html | OK | 1 | 0 |
 | dom/nodes/Element-getElementsByClassName.html | OK | 3 | 0 |
@@ -612,10 +612,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/NodeList-live-mutations.window.js | OK | 4 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-3.html | ERROR | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-3.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | ERROR | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-append.html | OK | 25 | 0 |
 | dom/nodes/ParentNode-children.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-prepend.html | OK | 22 | 0 |
@@ -1345,8 +1345,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/invalidate-sibling-different-slots.html | REFTEST | 0 | 0 |
 | shadow-dom/layout-slot-no-longer-assigned.html | REFTEST | 0 | 0 |
 | shadow-dom/layout-slot-no-longer-fallback.html | REFTEST | 0 | 0 |
-| shadow-dom/leaktests/get-elements.html | OK | 4 | 1 |
-| shadow-dom/leaktests/html-collection.html | OK | 8 | 1 |
+| shadow-dom/leaktests/get-elements.html | OK | 5 | 0 |
+| shadow-dom/leaktests/html-collection.html | OK | 9 | 0 |
 | shadow-dom/leaktests/selection.html | EXCLUDED (requires-browsing-context: a Selection over a rendered frame) | 0 | 0 |
 | shadow-dom/leaktests/window-frames.html | EXCLUDED (requires-browsing-context: whether a shadow tree's nodes leak into window.frames) | 0 | 0 |
 | shadow-dom/manual-slot-assignment-no-wrong-unassign.html | REFTEST | 0 | 0 |
@@ -1369,7 +1369,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/reference-target/tentative/reference-target-basics.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference/empty.html | REFTEST | 0 | 0 |
-| shadow-dom/scroll-restore-shadow.html | OK | 0 | 1 |
+| shadow-dom/scroll-restore-shadow.html | OK | 1 | 0 |
 | shadow-dom/scroll-to-the-fragment-in-shadow-tree.html | ERROR (window.scrollTo is not a function) | 0 | 0 |
 | shadow-dom/shadow-root-clonable.html | OK | 6 | 0 |
 | shadow-dom/shadow-style-invalidation-vw-units.html | REFTEST | 0 | 0 |
@@ -1418,14 +1418,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/events/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 1 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/reprojection/reprojection-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-002.html | REFTEST | 0 | 0 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | OK | 13 | 1 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | OK | 14 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-002.html | OK | 3 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-001.html | OK | 6 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-002.html | OK | 18 | 0 |
@@ -1452,7 +1452,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/wheel-event-related-target.html | EXCLUDED (requires-user-input: a wheel action sequence driven through testdriver) | 0 | 0 |
 | custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 5 | 0 |
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
-| custom-elements/CustomElementRegistry.html | OK | 45 | 1 |
+| custom-elements/CustomElementRegistry.html | OK | 46 | 0 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
 | custom-elements/Document-createElement.html | OK | 33 | 3 |
 | custom-elements/Document-createElementNS-customized-builtins.html | EXCLUDED (customized built-ins: createElementNS with an is option) | 0 | 0 |
@@ -1482,7 +1482,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html | OK | 7 | 1 |
 | custom-elements/form-associated/ElementInternals-NotSupportedError.html | OK | 1 | 0 |
 | custom-elements/form-associated/ElementInternals-behavior-accessibility.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
-| custom-elements/form-associated/ElementInternals-form.html | OK | 1 | 1 |
+| custom-elements/form-associated/ElementInternals-form.html | OK | 2 | 0 |
 | custom-elements/form-associated/ElementInternals-labels.html | OK | 3 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-bubble-notref.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-bubble.html | REFTEST | 0 | 0 |
@@ -1493,13 +1493,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
-| custom-elements/form-associated/ElementInternals-validation.html | OK | 11 | 3 |
+| custom-elements/form-associated/ElementInternals-validation.html | OK | 13 | 1 |
 | custom-elements/form-associated/disabled-delegatesFocus.html | OK | 0 | 1 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
 | custom-elements/form-associated/form-associated-callback.html | OK | 3 | 2 |
-| custom-elements/form-associated/form-disabled-callback.html | OK | 8 | 2 |
-| custom-elements/form-associated/form-elements-namedItem.html | OK | 0 | 3 |
+| custom-elements/form-associated/form-disabled-callback.html | ERROR | 8 | 2 |
+| custom-elements/form-associated/form-elements-namedItem.html | OK | 1 | 2 |
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
 | custom-elements/form-associated/label-delegatesFocus.html | OK | 0 | 2 |
 | custom-elements/historical.html | OK | 3 | 0 |
@@ -1532,19 +1532,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/reactions/ChildNode.html | OK | 7 | 0 |
 | custom-elements/reactions/DOMStringMap.html | OK | 4 | 4 |
 | custom-elements/reactions/DOMTokenList.html | OK | 19 | 0 |
-| custom-elements/reactions/Document.html | OK | 1 | 11 |
+| custom-elements/reactions/Document.html | OK | 3 | 9 |
 | custom-elements/reactions/Element.html | OK | 47 | 0 |
 | custom-elements/reactions/ElementContentEditable.html | OK | 2 | 0 |
-| custom-elements/reactions/HTMLAnchorElement.html | OK | 0 | 1 |
+| custom-elements/reactions/HTMLAnchorElement.html | OK | 1 | 0 |
 | custom-elements/reactions/HTMLElement.html | OK | 20 | 2 |
 | custom-elements/reactions/HTMLOptionElement.html | OK | 0 | 1 |
-| custom-elements/reactions/HTMLOptionsCollection.html | OK | 0 | 5 |
-| custom-elements/reactions/HTMLOutputElement.html | OK | 0 | 2 |
-| custom-elements/reactions/HTMLSelectElement.html | OK | 0 | 5 |
-| custom-elements/reactions/HTMLTableElement.html | OK | 3 | 7 |
-| custom-elements/reactions/HTMLTableRowElement.html | OK | 0 | 1 |
-| custom-elements/reactions/HTMLTableSectionElement.html | OK | 0 | 2 |
-| custom-elements/reactions/HTMLTitleElement.html | OK | 0 | 1 |
+| custom-elements/reactions/HTMLOptionsCollection.html | OK | 3 | 2 |
+| custom-elements/reactions/HTMLOutputElement.html | OK | 2 | 0 |
+| custom-elements/reactions/HTMLSelectElement.html | OK | 3 | 2 |
+| custom-elements/reactions/HTMLTableElement.html | OK | 10 | 0 |
+| custom-elements/reactions/HTMLTableRowElement.html | OK | 1 | 0 |
+| custom-elements/reactions/HTMLTableSectionElement.html | OK | 2 | 0 |
+| custom-elements/reactions/HTMLTitleElement.html | OK | 1 | 0 |
 | custom-elements/reactions/NamedNodeMap.html | OK | 14 | 0 |
 | custom-elements/reactions/Node.html | OK | 14 | 0 |
 | custom-elements/reactions/ParentNode.html | OK | 4 | 0 |
@@ -1620,17 +1620,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/upgrade.html | OK | 5 | 0 |
 | custom-elements/registries/valid-custom-element-names.html | OK | 1975 | 0 |
 | custom-elements/state/ElementInternals-states.html | OK | 4 | 0 |
-| custom-elements/state/state-css-selector-nth-of.html | OK | 1 | 2 |
+| custom-elements/state/state-css-selector-nth-of.html | OK | 3 | 0 |
 | custom-elements/state/state-css-selector-shadow-dom.html | ERROR | 0 | 0 |
-| custom-elements/state/state-css-selector.html | OK | 5 | 5 |
-| custom-elements/state/state-pseudo-class.html | OK | 6 | 2 |
+| custom-elements/state/state-css-selector.html | OK | 10 | 0 |
+| custom-elements/state/state-pseudo-class.html | OK | 8 | 0 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html | OK | 0 | 11 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html | OK | 0 | 11 |
 | custom-elements/upgrading.html | EXCLUDED (requires-script-execution: the elements upgraded are ones the parser created around the script that defines them) | 0 | 0 |
 | custom-elements/upgrading/Document-importNode-customized-builtins.html | EXCLUDED (customized built-ins: importing an element with an is value) | 0 | 0 |
 | custom-elements/upgrading/Document-importNode.html | OK | 2 | 0 |
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | EXCLUDED (customized built-ins: cloning an element with an is value) | 0 | 0 |
-| custom-elements/upgrading/Node-cloneNode.html | OK | 5 | 4 |
+| custom-elements/upgrading/Node-cloneNode.html | OK | 6 | 3 |
 | custom-elements/upgrading/upgrade-custom-element-error-event.html | EXCLUDED (requires-browsing-context: the failure is counted as an error event at the window) | 0 | 0 |
 | custom-elements/upgrading/upgrading-enqueue-reactions.html | OK | 0 | 5 |
 | custom-elements/upgrading/upgrading-parser-created-element.html | EXCLUDED (requires-script-execution: the element under test is one the parser created around a script it ran) | 0 | 0 |
@@ -1693,10 +1693,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Shouldn't be able to set unsigned properties on a HTMLCollection (non-strict mode): assert_equals: expected (undefined) undefined but got (string) "foopy"
 - Shouldn't be able to set unsigned properties on a HTMLCollection (strict mode): assert_throws_js: function "function() {
-
-### dom/nodes/Element-closest.html
-
-- Element.closest with context node 'test11' and selector ':invalid': assert_equals: :invalid expected "test2" but got ""
 
 ### dom/nodes/Element-getElementsByTagName.html
 
@@ -2374,14 +2370,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Text node fallback should be cleared in a subsequently layout: assert_equals: Fallback content should not be rendered expected 0 but got 1
 - Element fallback should be cleared in a subsequent layout: assert_equals: Fallback content should not be rendered expected 0 but got 1
 
-### shadow-dom/leaktests/get-elements.html
-
-- getElementsByName() should not leak nodes in shadow tree: Cannot read properties of undefined (reading 'getAttribute')
-
-### shadow-dom/leaktests/html-collection.html
-
-- document.all should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-
 ### shadow-dom/offsetParent-across-shadow-boundaries.html
 
 - offsetParent must return the fixed position containing block of an element when the context object is assigned to a slot within a fixed containing block in shadow tree of open mode: assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got null
@@ -2391,33 +2379,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html
 
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: assert_equals: expected 38 but got 10
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: assert_equals: expected 38 but got 30
 - Verifies that HTMLElement.offsetLeft accounts for shadow boundaries.: assert_equals: expected 8 but got 0
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: assert_equals: expected 88 but got 20
-
-### shadow-dom/scroll-restore-shadow.html
-
-- Scroll position restore on shadow tree: assert_equals: scrollTop 1 is reasonable expected 100 but got 0
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: assert_equals: expected 88 but got 80
 
 ### shadow-dom/slotchange-customelements.html
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
 
-### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
-
-- A_08_02_03_T01: Test timed out
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html
-
-- Elements in a shadow tree should not be accessible from owner document's "all" attribute.: Cannot read properties of undefined (reading 'length')
-
 ### custom-elements/CustomElementRegistry-getName.html
 
 - customElements.getName returns the name of the entry with the given customized built in constructor when there is a matching entry.: A customized built-in element is not implemented here
-
-### custom-elements/CustomElementRegistry.html
-
-- customElements.define must not throw when defining another custom element in a different global object during Get(constructor, "prototype"): assert_true: expected true got false
 
 ### custom-elements/Document-createElement.html
 
@@ -2477,10 +2449,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html
 
 - Adopting an element with adoptingCallback while it has a connectedCallback in its custom element reaction queue must result in connectedCallback getting invoked before the adoption completes: assert_array_equals: lengths differ, expected array ["begin", "connected", "adopted", "end"] length 4, got ["adopted", "connected", "begin", "adopted", "end"] length 5
-
-### custom-elements/form-associated/ElementInternals-form.html
-
-- ElementInternals.form should return the target element's form owner: assert_equals: expected (undefined) undefined but got (object) Element node <form id="custom-form">
 
 ### custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html
 
@@ -2547,8 +2515,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/form-associated/ElementInternals-validation.html
 
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
-- Custom control affects validation at the owner form: assert_equals: expected 3 but got 2
-- Custom control affects :valid :invalid for FORM and FIELDSET: assert_true: expected true got false
 
 ### custom-elements/form-associated/disabled-delegatesFocus.html
 
@@ -2556,7 +2522,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/fieldset-elements.html
 
-- Form associated custom elements should work with fieldset.elements: Cannot read properties of undefined (reading 'elements')
+- Form associated custom elements should work with fieldset.elements: assert_array_equals: The items in the collection must be children of the inner fieldset element. lengths differ, expected array [Element node <custom-input-parser name="custom-3">
 
 ### custom-elements/form-associated/focusability.html
 
@@ -2564,19 +2530,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/form-associated-callback.html
 
-- Associate by parser, customized at element creation: assert_equals: fieldset.elements expected (object) Element node <pre-defined id="pd1"></pre-defined> but got (undefined) undefined
+- Associate by parser, customized at element creation: assert_equals: expected 2 but got 0
 - Parsed, connected, then upgraded: assert_equals: form.elements.length expected 3 but got 2
 
 ### custom-elements/form-associated/form-disabled-callback.html
 
 - A disabled form-associated custom element should not provide an entry for it: FormData constructor: Argument 1 could not be converted to: undefined.
-- A disabled form-associated custom element should not submit an entry for it: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'nextSibling')"
+- A disabled form-associated custom element should not submit an entry for it: Test timed out
 
 ### custom-elements/form-associated/form-elements-namedItem.html
 
-- Form associated custom elements should work with document.forms.elements.namedItem(): Cannot read properties of undefined (reading 'elements')
-- Form associated custom elements should work with document.forms.elements.namedItem() after upgrading: Cannot read properties of undefined (reading 'elements')
-- Form associated custom elements should work with document.forms.elements.namedItem() after updating the name attribute: Cannot read properties of undefined (reading 'elements')
+- Form associated custom elements should work with document.forms.elements.namedItem() after upgrading: assert_equals: Single button should be returned after upgrading expected (object) Element node <custom-button id="custom-4" name="upgrade"></custom-button> but got (undefined) undefined
+- Form associated custom elements should work with document.forms.elements.namedItem() after updating the name attribute: assert_array_equals: Repeated names should be contained in RadioNodeList, in tree order after upgrading lengths differ, expected array [Element node <custom-input id="custom-2" name="group"></custom-input>, Element node <custom-input id="custom-3" name="group"></custom-input>, Element node <custom-input id="custom-5" name="group" form="custom-for..., Element node <custom-button id="custom-6" name="group" form="custom-fo...] length 4, got object "[object RadioNodeList]" length 3
 
 ### custom-elements/form-associated/form-reset-callback.html
 
@@ -2640,20 +2605,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/reactions/Document.html
 
 - importNode on Document must construct a new custom element when importing a custom element from a template: assert_array_equals: lengths differ, expected array [] length 0, got ["constructed"] length 1
-- adoptNode on Document must enqueue an adopted reaction when importing a custom element: assert_array_equals: lengths differ, expected array ["adopted"] length 1, got [] length 0
-- execCommand on Document must enqueue a disconnected reaction when deleting a custom element from a contenteditable element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-- title on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-- body on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- execCommand on Document must enqueue a disconnected reaction when deleting a custom element from a contenteditable element: promise_test: Unhandled rejection with value: object "NotSupportedError: execCommand is not implemented"
+- body on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
 - body on Document must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
-- open on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- write on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- open on Document must enqueue disconnectedCallback when removing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- write on Document must enqueue disconnectedCallback when removing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
 - write on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
-- writeln on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- writeln on Document must enqueue disconnectedCallback when removing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
 - writeln on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
-
-### custom-elements/reactions/HTMLAnchorElement.html
-
-- text on HTMLAnchorElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
 
 ### custom-elements/reactions/HTMLElement.html
 
@@ -2666,47 +2625,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/reactions/HTMLOptionsCollection.html
 
-- length on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
 - The indexed setter on HTMLOptionsCollection must enqueue connectedCallback when inserting a custom element: assert_equals: expected 1 but got 0
-- The indexed setter on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-- add on HTMLOptionsCollection must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
-- remove on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-
-### custom-elements/reactions/HTMLOutputElement.html
-
-- value on HTMLOutputElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- defaultValue on HTMLOutputElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- The indexed setter on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_equals: expected 0 but got 1
 
 ### custom-elements/reactions/HTMLSelectElement.html
 
-- length on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
 - The indexed setter on HTMLSelectElement must enqueue connectedCallback when inserting a custom element: assert_equals: expected 1 but got 0
-- The indexed setter on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-- add on HTMLSelectElement must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
-- remove on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-
-### custom-elements/reactions/HTMLTableElement.html
-
-- caption on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteCaption() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- tHead on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteTHead() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- tFoot on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteTFoot() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteRow() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-
-### custom-elements/reactions/HTMLTableRowElement.html
-
-- deleteCell() on HTMLTableRowElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-
-### custom-elements/reactions/HTMLTableSectionElement.html
-
-- deleteRow() on HTMLTableSectionElement on thead must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteRow() on HTMLTableSectionElement on tfoot must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-
-### custom-elements/reactions/HTMLTitleElement.html
-
-- text on HTMLTitleElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
+- The indexed setter on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_equals: expected 0 but got 1
 
 ### custom-elements/reactions/Range.html
 
@@ -2862,7 +2787,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Cloning a custom element candidate with null regsitry should create an element with null registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - HTML parser should create a custom element with null registry if customelementregistry is set: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - Cloning a custom element with null regsitry should create an element with null registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Setting customelementregistry content attribute during constructor should not make it use null registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Setting customelementregistry content attribute during constructor should not make it use null registry: assert_equals: expected object "[object CustomElementRegistry]" but got null
 - Body with customelementregistry attribute during initial parse should have null registry and propagate to children: assert_equals: body should have null registry expected null but got object "[object CustomElementRegistry]"
 - Custom element candidate child of body with customelementregistry should have null registry during initial parse: assert_equals: custom element candidate child of body with customelementregistry should have null registry expected null but got object "[object CustomElementRegistry]"
 - Descendants of body with customelementregistry should all have null registry during initial parse: assert_equals: div child should have null registry expected null but got object "[object CustomElementRegistry]"
@@ -2977,24 +2902,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Serializing a null registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
 - Serializing a scoped registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
 
-### custom-elements/state/state-css-selector-nth-of.html
-
-- state selector has influence on nth-of when state is applied: assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-- style is invalided on clear(): assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-
-### custom-elements/state/state-css-selector.html
-
-- state selector has influence when state is applied: assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-- state selector influences siblings when state is applied: assert_equals: expected "rgb(0, 0, 255)" but got "rgb(255, 0, 0)"
-- state selector influences has() when state is applied: assert_equals: expected "rgb(0, 255, 255)" but got "rgb(0, 0, 0)"
-- states added multiple times counts as one: assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-- style is invalided on clear(): assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-
-### custom-elements/state/state-pseudo-class.html
-
-- :state(foo) and ::part(): assert_equals: :state() matching should be case-sensitive expected "0" but got "0.5"
-- :state(foo) and :host(): assert_equals: expected "dotted" but got "solid"
-
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html
 
 - document.open() must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
@@ -3025,7 +2932,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/upgrading/Node-cloneNode.html
 
-- Node.prototype.cloneNode(false) must be able to clone a custom element inside an iframe: assert_true: expected true got false
 - Node.prototype.cloneNode(true) must be able to clone a descendent custom element: promise_test: Unhandled rejection with value: object "TypeError: Right-hand side of 'instanceof' is not an object"
 - HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: assert_equals: expected "TypeError" but got "InvalidStateError"
 - HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: assert_equals: expected "TypeError" but got "InvalidStateError"
