@@ -11,6 +11,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {createWindow} from "../src/internal/dom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("attachShadow content renders, replacing the host's light children", async () => {
@@ -748,4 +749,17 @@ test("focus() on a host whose shadow root delegates focus lands on the delegate"
 	empty.focus();
 	expect(document.activeElement).toBe(document.body);
 	dom.dispose();
+});
+
+test("blur on a host that delegates focus unfocuses what it delegated to", () => {
+	const window = createWindow("<!doctype html><div id=\"host\"></div>") as any;
+	const {document} = window;
+	const host = document.getElementById("host");
+	const shadow = host.attachShadow({mode: "open", delegatesFocus: true});
+	shadow.innerHTML = "<button id=\"inner\">go</button>";
+	host.focus();
+	expect(shadow.activeElement).toBe(shadow.getElementById("inner"));
+	host.blur();
+	expect(shadow.activeElement).toBe(null);
+	expect(document.activeElement).toBe(document.body);
 });

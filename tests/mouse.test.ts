@@ -948,3 +948,34 @@ test("a captured drag goes to the capturing element until the release", async ()
 	expect(thumb.hasPointerCapture(1)).toBe(false);
 	termdom.dispose();
 });
+
+test("a press on slotted text focuses its focusable ancestor in the flat tree", async () => {
+	const {proc, termdom, document} = await makePointerApp(
+		"<div id=\"container\"><span id=\"slotted\">slotted text</span></div>",
+	);
+	const container = document.getElementById("container")!;
+	const shadow = container.attachShadow({mode: "open"});
+	shadow.innerHTML = "<div id=\"inner\" tabindex=\"0\"><slot></slot></div>";
+	await nextFrame(termdom);
+
+	await send(proc, "\x1b[<0;3;1M");
+	await send(proc, "\x1b[<0;3;1m");
+	expect(document.activeElement).toBe(container);
+	expect(shadow.activeElement).toBe(shadow.getElementById("inner"));
+	termdom.dispose();
+});
+
+test("an element that leaves the document loses its pointer capture", async () => {
+	const {proc, termdom, document} =
+		await makePointerApp("<p id=\"a\">aaaa</p><p id=\"b\">bbbb</p>");
+	const a = document.getElementById("a")!;
+	const b = document.getElementById("b")!;
+	await send(proc, "\x1b[<0;2;1M");
+	a.setPointerCapture(1);
+	b.moveBefore(a, null);
+	expect(a.hasPointerCapture(1)).toBe(true);
+	document.body.append(a);
+	expect(a.hasPointerCapture(1)).toBe(false);
+	await send(proc, "\x1b[<0;2;1m");
+	termdom.dispose();
+});
