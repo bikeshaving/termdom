@@ -2748,3 +2748,55 @@ test("a field's edits fire InputEvents that say what they were", async () => {
 	expect(field.value).toBe("ab");
 	termdom.dispose();
 });
+
+test("Enter in a field submits its form, as a browser's does", async () => {
+	const {termdom, document, type} = await makeKeyApp(
+		"<form id=\"one\"><input id=\"q\" required></form>" +
+			"<form id=\"two\"><input id=\"a\"><input id=\"b\">" +
+			"<button id=\"go\">[go]</button></form>" +
+			"<form id=\"three\"><input id=\"c\"><input id=\"d\"></form>",
+	);
+	const seen: string[] = [];
+	document.addEventListener("submit", (event) => {
+		const submit = event as SubmitEvent;
+		seen.push(
+			`${(event.target as Element).id}:${submit.submitter?.id ?? null}`,
+		);
+		event.preventDefault();
+	});
+	document.addEventListener(
+		"invalid",
+		(event) => seen.push(`invalid:${(event.target as Element).id}`),
+		true,
+	);
+	const focusAndEnter = async (id: string, text = ""): Promise<void> => {
+		(document.getElementById(id) as HTMLInputElement).focus();
+		await type(`${text}\r`);
+	};
+
+	// One field and no button: the form submits, once it is valid.
+	await focusAndEnter("q");
+	await focusAndEnter("q", "x");
+	// A default button is clicked, whatever else the form holds.
+	await focusAndEnter("a");
+	// Two fields and no button: Enter does nothing.
+	await focusAndEnter("c");
+	expect(seen).toEqual(["invalid:q", "one:null", "two:go"]);
+	termdom.dispose();
+});
+
+test("a dialog form's button closes its dialog with the button's value", async () => {
+	const {termdom, document, type} = await makeKeyApp(
+		"<dialog id=\"d\"><form method=\"dialog\">" +
+			"<button id=\"no\" value=\"no\">[no]</button>" +
+			"<button id=\"yes\" value=\"yes\">[yes]</button>" +
+			"</form></dialog>",
+	);
+	const dialog = document.getElementById("d") as HTMLDialogElement;
+	dialog.showModal();
+	(document.getElementById("yes") as HTMLElement).focus();
+	await type("\r");
+	expect(dialog.open).toBe(false);
+	expect(dialog.returnValue).toBe("yes");
+	termdom.dispose();
+});
