@@ -7183,6 +7183,15 @@ function toUnsignedShort(value: unknown): number {
 	return toUnsignedLong(value) % 65536;
 }
 
+// A collection's indexed properties are defined when it first computes
+// its members and registers for changes, so every collection handed out
+// is made live first. Without that, `select.options[0]` read before
+// anything asked for a length was undefined.
+function live<T extends LiveList>(list: T): T {
+	ensureList(list);
+	return list;
+}
+
 function createChildNodeList(node: Node): NodeList {
 	const list =
 		new NodeList(() => getChildNodeArray(node), true, node, () => true);
@@ -13679,15 +13688,17 @@ class HTMLDataListElement extends HTMLElement {
 	get options(): HTMLCollectionOf<HTMLOptionElement> {
 		let options = this[kOptions];
 		if (options === null) {
-			options = new HTMLCollection(() => {
-				const found: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node instanceof HTMLOptionElement) {
-						found.push(node);
+			options = live(
+				new HTMLCollection(() => {
+					const found: Element[] = [];
+					for (const node of descendants(this)) {
+						if (node instanceof HTMLOptionElement) {
+							found.push(node);
+						}
 					}
-				}
-				return found;
-			}, this);
+					return found;
+				}, this),
+			);
 			this[kOptions] = options;
 		}
 		return options as HTMLCollectionOf<HTMLOptionElement>;
@@ -14155,18 +14166,20 @@ class HTMLFieldSetElement extends HTMLElement {
 	get elements(): HTMLCollection {
 		let elements = this[kElements];
 		if (elements === null) {
-			elements = new HTMLCollection(() => {
-				const listed: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node.nodeType !== ELEMENT_NODE) {
-						continue;
+			elements = live(
+				new HTMLCollection(() => {
+					const listed: Element[] = [];
+					for (const node of descendants(this)) {
+						if (node.nodeType !== ELEMENT_NODE) {
+							continue;
+						}
+						if (isListed(node as Element)) {
+							listed.push(node as Element);
+						}
 					}
-					if (isListed(node as Element)) {
-						listed.push(node as Element);
-					}
-				}
-				return listed;
-			}, this);
+					return listed;
+				}, this),
+			);
 			this[kElements] = elements;
 		}
 		return elements;
@@ -14245,8 +14258,9 @@ class HTMLFormElement extends HTMLElement {
 	get elements(): HTMLFormControlsCollection {
 		let elements = this[kElements];
 		if (elements === null) {
-			elements =
-				new HTMLFormControlsCollection(() => getListedElements(this), this);
+			elements = live(
+				new HTMLFormControlsCollection(() => getListedElements(this), this),
+			);
 			this[kElements] = elements;
 		}
 		return elements;
@@ -15123,8 +15137,10 @@ class HTMLFormControlsCollection
 			return matches[0] as Element;
 		}
 		// A shared name returns the list of everything that shares it.
-		return new RadioNodeList(() =>
-			createMatchingCollection(this, key), this[kOwner]) as unknown as Element;
+		return live(
+			new RadioNodeList(() =>
+				createMatchingCollection(this, key), this[kOwner]),
+		) as unknown as Element;
 	}
 
 	override namedProperties(items: Node[]): Map<string, Node> {
@@ -15152,11 +15168,10 @@ class HTMLFormControlsCollection
 				key,
 				list.length === 1
 					? list[0]
-					: (new RadioNodeList(() =>
-						createMatchingCollection(
-							this,
-							key,
-						), this[kOwner]) as unknown as Node),
+					: (live(
+						new RadioNodeList(() =>
+							createMatchingCollection(this, key), this[kOwner]),
+					) as unknown as Node),
 			);
 		}
 		return named;
@@ -16747,15 +16762,17 @@ class HTMLMapElement extends HTMLElement {
 	get areas(): HTMLCollection {
 		let areas = this[kAreas];
 		if (areas === null) {
-			areas = new HTMLCollection(() => {
-				const found: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node instanceof HTMLAreaElement) {
-						found.push(node);
+			areas = live(
+				new HTMLCollection(() => {
+					const found: Element[] = [];
+					for (const node of descendants(this)) {
+						if (node instanceof HTMLAreaElement) {
+							found.push(node);
+						}
 					}
-				}
-				return found;
-			}, this);
+					return found;
+				}, this),
+			);
 			this[kAreas] = areas;
 		}
 		return areas;
@@ -18123,7 +18140,7 @@ export class HTMLSelectElement extends HTMLElement {
 	get options(): HTMLOptionsCollection {
 		let options = this[kOptions];
 		if (options === null) {
-			options = new HTMLOptionsCollection(this);
+			options = live(new HTMLOptionsCollection(this));
 			this[kOptions] = options;
 		}
 		askForAReset(this);
@@ -18141,10 +18158,10 @@ export class HTMLSelectElement extends HTMLElement {
 	get selectedOptions(): HTMLCollectionOf<HTMLOptionElement> {
 		let selected = this[kSelectedOptions];
 		if (selected === null) {
-			selected = new HTMLCollection(() =>
-				getOptions(this).filter(
-					(option) => option[kSelectedness],
-				), this) as HTMLCollectionOf<HTMLOptionElement>;
+			selected = live(
+				new HTMLCollection(() =>
+					getOptions(this).filter((option) => option[kSelectedness]), this),
+			) as HTMLCollectionOf<HTMLOptionElement>;
 			this[kSelectedOptions] = selected;
 		}
 		askForAReset(this);
@@ -18781,10 +18798,12 @@ class HTMLTableElement extends HTMLElement {
 	get tBodies(): HTMLCollectionOf<HTMLTableSectionElement> {
 		let bodies = this[kTBodies];
 		if (bodies === null) {
-			bodies = new HTMLCollection(
-				() => getChildElementsNamed(this, "tbody"),
-				this,
-				(node) => isHTMLElementNamed(node, "tbody"),
+			bodies = live(
+				new HTMLCollection(
+					() => getChildElementsNamed(this, "tbody"),
+					this,
+					(node) => isHTMLElementNamed(node, "tbody"),
+				),
 			);
 			this[kTBodies] = bodies;
 		}
@@ -18794,7 +18813,7 @@ class HTMLTableElement extends HTMLElement {
 	get rows(): HTMLCollectionOf<HTMLTableRowElement> {
 		let rows = this[kRows];
 		if (rows === null) {
-			rows = new HTMLCollection(() => getTableRows(this), this);
+			rows = live(new HTMLCollection(() => getTableRows(this), this));
 			this[kRows] = rows;
 		}
 		return rows as HTMLCollectionOf<HTMLTableRowElement>;
@@ -19012,9 +19031,11 @@ class HTMLTableRowElement extends HTMLElement {
 	get cells(): HTMLCollectionOf<HTMLTableCellElement> {
 		let cells = this[kCells];
 		if (cells === null) {
-			cells = new HTMLCollection(() =>
-				getRowCells(this), this, (node) => node instanceof
-					HTMLTableCellElement);
+			cells = live(
+				new HTMLCollection(() =>
+					getRowCells(this), this, (node) => node instanceof
+					HTMLTableCellElement),
+			);
 			this[kCells] = cells;
 		}
 		return cells as HTMLCollectionOf<HTMLTableCellElement>;
@@ -19088,10 +19109,12 @@ class HTMLTableSectionElement extends HTMLElement {
 	get rows(): HTMLCollectionOf<HTMLTableRowElement> {
 		let rows = this[kRows];
 		if (rows === null) {
-			rows = new HTMLCollection(
-				() => getChildElementsNamed(this, "tr"),
-				this,
-				(node) => isHTMLElementNamed(node, "tr"),
+			rows = live(
+				new HTMLCollection(
+					() => getChildElementsNamed(this, "tr"),
+					this,
+					(node) => isHTMLElementNamed(node, "tr"),
+				),
 			);
 			this[kRows] = rows;
 		}
@@ -23970,34 +23993,34 @@ export class Document extends Node implements globalThis.Document {
 		elementName: string,
 	): globalThis.NodeListOf<globalThis.HTMLElement> {
 		const name = String(elementName);
-		return new NodeList(() => {
-			// Walks the tree instead of reading the all-elements
-			// collection. A list built on another live list would see that
-			// list's stale contents, because the two are resynchronized in
-			// the order they were first read.
-			const matches: Node[] = [];
-			const visit = (node: Node): void => {
-				for (
-					let child = node[kFirstChild]; child !== null; child = child[kNext]
-				) {
-					if (child.nodeType !== ELEMENT_NODE) {
-						continue;
-					}
-					const element = child as Element;
-					if (
-						element.namespaceURI === HTML_NAMESPACE &&
-						element.getAttribute("name") === name
+		return live(
+			new NodeList(() => {
+				// Walks the tree instead of reading the all-elements
+				// collection. A list built on another live list would see that
+				// list's stale contents, because the two are resynchronized in
+				// the order they were first read.
+				const matches: Node[] = [];
+				const visit = (node: Node): void => {
+					for (
+						let child = node[kFirstChild]; child !== null; child = child[kNext]
 					) {
-						matches.push(child);
+						if (child.nodeType !== ELEMENT_NODE) {
+							continue;
+						}
+						const element = child as Element;
+						if (
+							element.namespaceURI === HTML_NAMESPACE &&
+							element.getAttribute("name") === name
+						) {
+							matches.push(child);
+						}
+						visit(child);
 					}
-					visit(child);
-				}
-			};
-			visit(this as unknown as Node);
-			return matches;
-		}, true, this, null, "name") as unknown as globalThis.NodeListOf<
-			globalThis.HTMLElement
-		>;
+				};
+				visit(this as unknown as Node);
+				return matches;
+			}, true, this, null, "name"),
+		) as unknown as globalThis.NodeListOf<globalThis.HTMLElement>;
 	}
 
 	getElementById(elementId: string): globalThis.HTMLElement | null {
@@ -24620,15 +24643,17 @@ function getDocumentCollection(
 	document: Document,
 	match: (element: Element) => boolean,
 ): HTMLCollection {
-	return new HTMLCollection(() => {
-		const found: Element[] = [];
-		for (const node of descendants(document)) {
-			if (node.nodeType === ELEMENT_NODE && match(node as Element)) {
-				found.push(node as Element);
+	return live(
+		new HTMLCollection(() => {
+			const found: Element[] = [];
+			for (const node of descendants(document)) {
+				if (node.nodeType === ELEMENT_NODE && match(node as Element)) {
+					found.push(node as Element);
+				}
 			}
-		}
-		return found;
-	}, document);
+			return found;
+		}, document),
+	);
 }
 
 Object.defineProperty(Document.prototype, Symbol.toStringTag, {
