@@ -659,6 +659,43 @@ const kSetUAValue = Symbol("write a text control's value, as a user edit does");
 // through the value IDL setter. In a browser a user edit changes the value
 // without running the setter, and frameworks rely on that to tell user
 // input from the page's own writes.
+// Text controls the user has edited since the last change event. Leaving
+// one fires change, before blur, as a browser does. A value set by script
+// is not the user's edit, and clears the mark.
+const editedSinceChange = new WeakSet<Element>();
+
+// HTML's user validity: set once the user has committed a change to the
+// control or tried to submit its form, cleared when the form resets. It
+// is what :user-valid and :user-invalid wait for.
+const userValidity = new WeakSet<Element>();
+
+function setUserValidity(element: Element, value: boolean): void {
+	if (userValidity.has(element) === value) {
+		return;
+	}
+	if (value) {
+		userValidity.add(element);
+	} else {
+		userValidity.delete(element);
+	}
+	stateChanged(element, ["user-valid", "user-invalid"]);
+}
+
+/** A user's change to a control, announced: user validity, then change. */
+function dispatchUserChange(control: Element): void {
+	setUserValidity(control, true);
+	dispatch(control, new Event("change", {bubbles: true}));
+}
+
+// Focus leaving a text control the user edited commits the edit.
+function commitTextControl(element: Element | null): void {
+	if (element === null || !editedSinceChange.has(element)) {
+		return;
+	}
+	editedSinceChange.delete(element);
+	dispatchUserChange(element);
+}
+
 function applyTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	result: TextControlEditResult,
@@ -666,6 +703,7 @@ function applyTextControlEdit(
 	const value = textControl[kUAValue];
 	const {start, end, direction} = getSelectionRecord(textControl)!;
 	if (result.value !== value) {
+		editedSinceChange.add(textControl);
 		textControl[kSetUAValue]!(result.value);
 		textControl[kSetUASelection]!(result.start, result.end, result.direction);
 		dispatch(
@@ -699,6 +737,26 @@ function addPart(
 	span.appendChild(document.createTextNode(""));
 	root.appendChild(span);
 	return span;
+}
+
+// Where sequential focus navigation resumes after the focused element
+// left the tree: its tab index, and the place in its parent it left from
+// (HTML's sequential focus navigation starting point).
+export interface FocusStartingPoint {
+	tabIndex: number;
+	parent: Node;
+	next: Node | null;
+}
+
+const focusStartingPoints = new WeakMap<Document, FocusStartingPoint>();
+
+/** The starting point a removal left, consumed by the Tab that uses it. */
+export function takeFocusStartingPoint(
+	document: globalThis.Document,
+): FocusStartingPoint | null {
+	const point = focusStartingPoints.get(document as Document) ?? null;
+	focusStartingPoints.delete(document as Document);
+	return point;
 }
 
 const engineObservers = new WeakMap<Document, MutationObserver>();
@@ -4047,6 +4105,13 @@ const activationDepths = new WeakMap<Document, number>();
 /** Documents the user has ever acted on. */
 const everActivatedDocuments = new WeakSet<Document>();
 
+/** When the user last acted on each document, in performance.now() time. */
+const lastActivations = new WeakMap<Document, number>();
+
+// HTML leaves the transient activation duration to the user agent, "at
+// most a few seconds". Browsers use about five.
+const TRANSIENT_ACTIVATION_MS = 5000;
+
 /** The document a user-agent dispatch counts its activation in. */
 function getActivationDocument(target: EventTarget): Document | null {
 	const shaped = target as {
@@ -4060,9 +4125,26 @@ function getActivationDocument(target: EventTarget): Document | null {
 	return shaped.ownerDocument ?? shaped.document ?? null;
 }
 
-/** Whether an activation-triggering event is being dispatched right now. */
+/**
+ * Whether an activation-triggering event is being dispatched right now.
+ * The clipboard asks this narrower question on purpose: a write to the
+ * user's own clipboard happens inside the gesture or not at all.
+ */
 function isUserActive(document: Document): boolean {
 	return (activationDepths.get(document) ?? 0) > 0;
+}
+
+/**
+ * HTML's transient activation: the user acted on the document a moment
+ * ago, or is acting on it now.
+ */
+function hasTransientActivation(document: Document): boolean {
+	if (isUserActive(document)) {
+		return true;
+	}
+	const last = lastActivations.get(document);
+	return last !== undefined &&
+		performance.now() - last <= TRANSIENT_ACTIVATION_MS;
 }
 
 /**
@@ -4084,6 +4166,7 @@ export function dispatchAsUserAgent(
 	}
 	activationDepths.set(document, (activationDepths.get(document) ?? 0) + 1);
 	everActivatedDocuments.add(document);
+	lastActivations.set(document, performance.now());
 	try {
 		return dispatchFromOutside(target as EventTarget, event as Event, true);
 	} finally {
@@ -4430,7 +4513,7 @@ function activateInput(input: HTMLInputElement, event: Event): void {
 			return;
 		}
 		dispatch(input, new Event("input", {bubbles: true, composed: true}));
-		dispatch(input, new Event("change", {bubbles: true}));
+		dispatchUserChange(input);
 		return;
 	}
 	const form = getFormOwner(input);
@@ -6083,6 +6166,12 @@ function removeNode(node: Node, suppressObservers = false): void {
 		for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 			if (descendant === active) {
 				document[kActiveElement] = null;
+				// Tab carries on from where the focused element was.
+				focusStartingPoints.set(document, {
+					tabIndex: (active as HTMLElement).tabIndex ?? 0,
+					parent,
+					next: oldNextSibling,
+				});
 				break;
 			}
 		}
@@ -10404,6 +10493,10 @@ export class HTMLElement extends Element {
 		// The node-tree root test rejected every element in a shadow tree.
 		if (isFocusableArea(this) && this.isConnected) {
 			document[kActiveElement] = this;
+			// Focusing the body moves nothing a Tab would start from.
+			if (this !== document.body) {
+				focusStartingPoints.delete(document);
+			}
 		}
 		if (previous === this || getInnermostActive(document) !== this) {
 			return;
@@ -10418,6 +10511,9 @@ export class HTMLElement extends Element {
 		attached[kCascade].handleFocusChange(previous, this);
 		attached[kScreen].invalidate();
 		void attached[kRender]();
+		// An edit the user made in the control focus is leaving is committed
+		// first, so change fires before blur.
+		commitTextControl(previous as Element | null);
 		// The body holds focus whenever nothing else does, so moving focus off
 		// the body fires no blur.
 		if (previous !== null && previous !== (document.body as unknown)) {
@@ -10443,6 +10539,9 @@ export class HTMLElement extends Element {
 	blur(): void {
 		const document = this[kDocument];
 		const wasFocused = getInnermostActive(document) === this;
+		if (wasFocused) {
+			commitTextControl(this);
+		}
 		if (document[kActiveElement] === this) {
 			document[kActiveElement] = null;
 		}
@@ -13743,7 +13842,7 @@ class HTMLDetailsElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -13767,7 +13866,7 @@ class HTMLDetailsElement extends HTMLElement {
 		root.appendChild(summarySlot);
 		root.appendChild(content);
 		this[kContent] = content;
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	[kSyncUAShadowTree]?(): void {
@@ -14002,6 +14101,31 @@ class HTMLDialogElement extends HTMLElement {
 		super[kRemovingSteps](oldParent);
 		getTopLayer(this[kDocument]).delete(this);
 	}
+
+	// Removing `open` by hand ends a modal dialog's modality too: it leaves
+	// the top layer, and the page behind it is no longer inert (HTML's
+	// dialog attribute change steps).
+	override [kAttributeChangeSteps](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
+		if (
+			namespace !== null ||
+			localName !== "open" ||
+			value !== null ||
+			oldValue === null
+		) {
+			return;
+		}
+		const topLayer = getTopLayer(this[kDocument]);
+		if (topLayer.has(this)) {
+			topLayer.delete(this);
+			stateChanged(this, ["modal"]);
+		}
+	}
 }
 
 // HTML's dialog focusing steps: the descendant with `autofocus`, else
@@ -14034,6 +14158,7 @@ function focusDialog(dialog: HTMLDialogElement): void {
 	}
 	if (isModalDialog(dialog)) {
 		dialog[kDocument][kActiveElement] = dialog;
+		focusStartingPoints.delete(dialog[kDocument]);
 	}
 }
 
@@ -14392,6 +14517,24 @@ function submitForm(
 		return;
 	}
 	if (!skipEvent) {
+		// A submission the user or requestSubmit() asks for gives every
+		// control user validity, and an invalid control stops it: the
+		// controls hear invalid, and the first takes the focus (HTML's
+		// interactive validation). submit() skips both.
+		const controls = getListedElements(form);
+		for (const control of controls) {
+			setUserValidity(control, true);
+		}
+		const validates =
+			!form.hasAttribute("novalidate") &&
+			!(submitter !== null && submitter.hasAttribute("formnovalidate"));
+		if (validates) {
+			const invalid = controls.filter((control) => !checkValidity(control));
+			if (invalid.length > 0) {
+				(invalid[0] as HTMLElement).focus();
+				return;
+			}
+		}
 		const event = new SubmitEvent("submit", {
 			bubbles: true,
 			cancelable: true,
@@ -14407,6 +14550,8 @@ function submitForm(
 const kResetControl = Symbol("put a control back to its default");
 
 function resetControl(control: Element): void {
+	editedSinceChange.delete(control);
+	setUserValidity(control, false);
 	const resettable = control as unknown as Record<symbol, () => void>;
 	if (typeof resettable[kResetControl] === "function") {
 		resettable[kResetControl]!();
@@ -15729,7 +15874,8 @@ export class HTMLInputElement extends HTMLElement {
 						this,
 						createCollapsedEdit(stepped, stepped.length),
 					);
-					dispatch(this, new Event("change", {bubbles: true}));
+					editedSinceChange.delete(this);
+					dispatchUserChange(this);
 				}
 				return;
 			}
@@ -15815,6 +15961,7 @@ export class HTMLInputElement extends HTMLElement {
 
 	set value(value: string) {
 		const string = value === null ? "" : String(value);
+		editedSinceChange.delete(this);
 		switch (getInputValueMode(this.type)) {
 			case "value": {
 				const previous = this[kValue];
@@ -16234,7 +16381,7 @@ export class HTMLInputElement extends HTMLElement {
 		if (this[kUpgraded]) {
 			// A control that left the tree and came back keeps its tree. Only
 			// the state it missed needs updating.
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -16444,7 +16591,7 @@ function buildInputWidget(input: HTMLInputElement): void {
 		input[kGlyphText] = addPart(root, "glyph").firstChild as globalThis.Text;
 	}
 	attached[kLayout].invalidate(input);
-	input[kSyncUAShadowTree]!();
+	syncUAShadowTree(input);
 }
 
 function getInputValueMode(
@@ -17344,7 +17491,7 @@ class HTMLMeterElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -17353,7 +17500,7 @@ class HTMLMeterElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		this[kBar] = buildGaugeRoot(this, attached, METER_UA_STYLES).bar;
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	[kSyncUAShadowTree]?(): void {
@@ -17378,7 +17525,7 @@ class HTMLMeterElement extends HTMLElement {
 	): void {
 		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace === null && METER_ATTRIBUTES.has(localName)) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 		}
 	}
 }
@@ -17890,7 +18037,7 @@ class HTMLProgressElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -17899,7 +18046,7 @@ class HTMLProgressElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		this[kBar] = buildGaugeRoot(this, attached, PROGRESS_UA_STYLES).bar;
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	[kSyncUAShadowTree]?(): void {
@@ -17918,7 +18065,7 @@ class HTMLProgressElement extends HTMLElement {
 	): void {
 		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace === null && (localName === "value" || localName === "max")) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 		}
 	}
 }
@@ -18046,14 +18193,14 @@ export class HTMLSelectElement extends HTMLElement {
 						commitSelectOption(this, highlight);
 						return;
 					}
-					this[kSyncUAShadowTree]!(); // No change: just close.
+					syncUAShadowTree(this); // No change: just close.
 					return;
 				} else if (key === "Escape") {
 					this[kPickerHighlight] = null;
 				} else {
 					return;
 				}
-				this[kSyncUAShadowTree]!();
+				syncUAShadowTree(this);
 				return;
 			}
 
@@ -18107,7 +18254,7 @@ export class HTMLSelectElement extends HTMLElement {
 					if (index !== this.selectedIndex) {
 						commitSelectOption(this, index);
 					} else {
-						this[kSyncUAShadowTree]!(); // Re-press the selection: just close.
+						syncUAShadowTree(this); // Re-press the selection: just close.
 					}
 				}
 				return;
@@ -18117,13 +18264,13 @@ export class HTMLSelectElement extends HTMLElement {
 			const pickerRect = attached[kLayout].getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
 				this[kPickerHighlight] = null;
-				this[kSyncUAShadowTree]!();
+				syncUAShadowTree(this);
 			}
 		};
 		this[kOnBlur] = (): void => {
 			if (this[kPickerHighlight] !== null) {
 				this[kPickerHighlight] = null;
-				this[kSyncUAShadowTree]!();
+				syncUAShadowTree(this);
 			}
 		};
 	}
@@ -18231,7 +18378,22 @@ export class HTMLSelectElement extends HTMLElement {
 		return this[kValueText];
 	}
 
-	showPicker(): void {}
+	// HTML's showPicker(): a disabled select cannot, a call no user action
+	// led to may not, and otherwise the picker opens as a press would open it.
+	showPicker(): void {
+		if (isActuallyDisabled(this)) {
+			throw domError("InvalidStateError", "A disabled select has no picker");
+		}
+		if (!hasTransientActivation(this[kDocument])) {
+			throw domError(
+				"NotAllowedError",
+				"showPicker needs a user action to have just happened",
+			);
+		}
+		if (this[kPickerHighlight] == null) {
+			openPicker(this);
+		}
+	}
 
 	checkValidity(): boolean {
 		return checkValidity(this);
@@ -18293,7 +18455,7 @@ export class HTMLSelectElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -18329,7 +18491,7 @@ export class HTMLSelectElement extends HTMLElement {
 				characterData: true,
 			});
 
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	// The dropdown is transient interaction state. Leaving the tree ends the
@@ -18339,7 +18501,7 @@ export class HTMLSelectElement extends HTMLElement {
 		super[kRemovingSteps](oldParent);
 		if (this[kPickerHighlight] !== null) {
 			this[kPickerHighlight] = null;
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 		}
 	}
 
@@ -18500,14 +18662,14 @@ function openPicker(select: HTMLSelectElement): void {
 		index = options.findIndex((o) => !optionIsDisabled(o));
 	}
 	select[kPickerHighlight] = index;
-	select[kSyncUAShadowTree]!();
+	syncUAShadowTree(select);
 }
 
 function commitSelectOption(select: HTMLSelectElement, index: number): void {
 	select[kPickerHighlight] = null;
 	select.selectedIndex = index; // The setter reconciles (closes + label).
 	dispatch(select, new Event("input", {bubbles: true, cancelable: false}));
-	dispatch(select, new Event("change", {bubbles: true, cancelable: false}));
+	dispatchUserChange(select);
 }
 
 interface PickerRow {
@@ -19319,6 +19481,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	set value(value: string) {
+		editedSinceChange.delete(this);
 		const previous = this[kUAValue];
 		this[kValue] = normalizeNewlines(value === null ? "" : String(value));
 		this[kDirty] = true;
@@ -19507,7 +19670,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -19534,7 +19697,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
 		this.addEventListener("beforeinput", this[kOnBeforeInput] as UAListener);
 
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	// Placeholder visibility is real CSS (an inline display:none), not
@@ -29556,6 +29719,44 @@ Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, {
 // writes it here as motion reports arrive, and the `:hover` resolver
 // reads it. Absent means nothing is hovered, because the document has no
 // motion reporting or the pointer left.
+const activeElements = new WeakMap<Document, Element>();
+
+/** Record the element a mouse button is held down on, for `:active`. */
+export function setActiveElement(
+	document: globalThis.Document,
+	element: globalThis.Element | null,
+): void {
+	if (element === null) {
+		activeElements.delete(document as Document);
+	} else {
+		activeElements.set(document as Document, element as Element);
+	}
+}
+
+export function getActiveElement(
+	document: globalThis.Document,
+): globalThis.Element | null {
+	return (activeElements.get(document as Document) ??
+		null) as globalThis.Element |
+		null;
+}
+
+// True for the pressed element and anything that contains it in the flat
+// tree, as :hover is.
+export function isActive(element: Element): boolean {
+	const document = element[kDocument];
+	for (
+		let node: Element | null = activeElements.get(document) ?? null;
+		node !== null;
+		node = getFlatTreeParent(node)
+	) {
+		if (node === element) {
+			return true;
+		}
+	}
+	return false;
+}
+
 const hoveredElements = new WeakMap<Document, Element>();
 
 /** Record what `:hover` should match. */
@@ -29949,6 +30150,14 @@ function isInvalidCandidate(element: Element): boolean {
 	return VALIDITY_FLAG_NAMES.some((flag) => flags[flag]);
 }
 
+// What :user-valid and :user-invalid say: the control's validity, once the
+// user has committed a change to it or tried to submit its form.
+export function getUserValidityMatch(
+	element: Element,
+): "valid" | "invalid" | null {
+	return userValidity.has(element) ? getValidityMatch(element) : null;
+}
+
 // What :in-range and :out-of-range say about an input that is being
 // validated and has range limitations, or null for any other element.
 export function getRangeMatch(element: Element): "in" | "out" | null {
@@ -30214,6 +30423,24 @@ function attachDeclarativeShadowRoots(root: Node): void {
 	}
 }
 
+// A shadow root the engine did not watch being filled -- a declarative
+// one, or any the parser built before the document was attached -- is
+// observed from now on, its sheets join the cascade, and the host's boxes
+// are rebuilt around it.
+function connectShadowRoot(root: ShadowRoot): void {
+	const host = root[kHost] as Element | null;
+	if (host === null) {
+		return;
+	}
+	const attached = getAttachedDocument(host);
+	if (attached === undefined) {
+		return;
+	}
+	observeShadowRoot(host[kDocument], root as unknown as globalThis.ShadowRoot);
+	attached[kCascade].syncShadowRoot(root as unknown as globalThis.ShadowRoot);
+	attached[kLayout].invalidate();
+}
+
 function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	const named = template.getAttribute("shadowrootmode");
 	if (named === null) {
@@ -30258,6 +30485,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 		}
 	}
 	attachDeclarativeShadowRoots(shadow);
+	connectShadowRoot(shadow);
 	return true;
 }
 
@@ -31622,6 +31850,20 @@ export function attachDocument(
 		characterData: true,
 	});
 	engineObservers.set(attached, observer);
+	// The markup parsed before the engine came holds controls no insertion
+	// record will ever name, so they are upgraded here, as an insertion
+	// upgrades them.
+	if (attached.documentElement !== null) {
+		ensureUAShadowTrees(attached.documentElement);
+	}
+	for (const node of shadowIncludingInclusiveDescendants(attached)) {
+		const root = node.nodeType === ELEMENT_NODE
+			? (node as Element)[kShadowRoot]
+			: null;
+		if (root !== null) {
+			connectShadowRoot(root);
+		}
+	}
 }
 
 type TextControlOrSelect =

@@ -2379,8 +2379,10 @@ function invalidateNode(layout: Layout, node: Node): void {
 	} else if (node.nodeType === node.ELEMENT_NODE) {
 		const layoutNode = layout[kNodeMap].get(node);
 		if (layoutNode) {
+			// The re-add sweep puts a node back under its parent element, and
+			// the root element has none, so the root stays where it is.
 			const parent = layoutNode.parent;
-			if (parent) {
+			if (parent && node !== node.ownerDocument?.documentElement) {
 				parent.removeChild(layoutNode);
 			}
 

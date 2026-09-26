@@ -141,3 +141,20 @@ test("a custom state restyles what :state() reaches", () => {
 	expect(color("deep")).toBe("rgb(0, 0, 0)");
 	termdom.dispose();
 });
+
+test("everything restyling leaves room for what is added after", () => {
+	const {termdom, color} = page(
+		"<style>#subject:has(#dialog:open) { color: rgb(0, 128, 0); }</style>" +
+		"<div id=subject>text<dialog id=dialog>d</dialog></div>",
+	);
+	const {document} = termdom;
+	(document.getElementById("dialog") as HTMLDialogElement).show();
+	expect(color("subject")).toBe("rgb(0, 128, 0)");
+	// A button's shadow tree reports its state as it is built, which with
+	// :has(:open) restyles everything in the middle of the insertion.
+	const button = document.createElement("button");
+	button.textContent = "late";
+	document.body.appendChild(button);
+	expect(button.getBoundingClientRect().height).toBeGreaterThan(0);
+	termdom.dispose();
+});
