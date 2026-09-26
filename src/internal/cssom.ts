@@ -5245,6 +5245,7 @@ export class Cascade {
 						invalidateElementCaches(this, sibling);
 					}
 				}
+				invalidateLaterSiblings(this, node);
 				const shadowRoot = getShadowRoot(node);
 				if (shadowRoot) {
 					for (const descendant of shadowRoot.querySelectorAll("*")) {
@@ -5281,6 +5282,7 @@ export class Cascade {
 		const nextChain = getChain(next);
 		const invalidate = (node: Element): void => {
 			invalidateElementCaches(this, node);
+			invalidateLaterSiblings(this, node);
 			// A host's hover reaches its shadow tree through :host(:hover).
 			const shadowRoot = getShadowRoot(node);
 			if (shadowRoot) {
@@ -6466,6 +6468,21 @@ function invalidateChildren(cascade: Cascade, element: Element): void {
 	invalidateSibling(cascade, element);
 	for (const child of element.children) {
 		invalidateSibling(cascade, child);
+	}
+}
+
+// `:focus ~ .card` and `:hover + label` match siblings AFTER the element
+// whose state changed, and their cached styles know nothing of it.
+function invalidateLaterSiblings(cascade: Cascade, element: Element): void {
+	if (!cascade[kSelectorsReachSiblings]) {
+		return;
+	}
+	for (
+		let sibling = element.nextElementSibling;
+		sibling;
+		sibling = sibling.nextElementSibling
+	) {
+		invalidateSibling(cascade, sibling);
 	}
 }
 
