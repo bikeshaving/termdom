@@ -4837,6 +4837,10 @@ interface ParsedCSSRule {
 	specificity: string;
 	pseudoElement?: string;
 
+	// The pseudo-classes written after `::part()`, which the part element
+	// itself must match: `::part(inner):dir(rtl)`.
+	partMatcher?: CompiledSelector | null;
+
 	// The tree scope whose stylesheet declared this rule. Undefined for
 	// document rules. A rule only ever matches elements of its own tree,
 	// which is the cascade's encapsulation boundary in both directions.
@@ -4964,6 +4968,7 @@ const kWindow = Symbol("window");
 const kDocument = Symbol("document");
 const kAttributeReachesDescendants = Symbol("attributeReachesDescendants");
 const kRestyleAll = Symbol("restyleAll");
+const kChainStateChange = Symbol("chainStateChange");
 const FOCUS_STATES = ["focus", "focus-within", "focus-visible"];
 const kDropCache = Symbol("clearCache");
 const kResolveCounterFunction = Symbol("resolveCounterFunction");
@@ -5252,6 +5257,16 @@ export class Cascade {
 		this[kSyncShadowRoot](root);
 	}
 
+	// A root filled with its content after it registered, as a declarative
+	// shadow root is, has sheets its registration did not see.
+	syncShadowRoot(root: ShadowRoot): void {
+		if (this[kShadowRoots].has(root)) {
+			this[kSyncShadowRoot](root);
+		} else {
+			this.registerShadowRoot(root);
+		}
+	}
+
 	handleMutations(mutations: MutationRecord[]): void {
 		const Node = this[kWindow].Node;
 		let shouldSyncStylesheets = false;
@@ -5488,42 +5503,13 @@ export class Cascade {
 	// difference of the two flat-tree chains. The shared ancestors above the
 	// fork were hovered before and are hovered still.
 	handleHoverChange(previous: Element | null, next: Element | null): void {
-		if (this[kHasStates].has("hover")) {
-			this[kRestyleAll]();
-			return;
-		}
-		const getChain = (element: Element | null): Set<Element> => {
-			const chain = new Set<Element>();
-			for (
-				let node: Element | null = element; node; node = flatParentElement(node)
-			) {
-				chain.add(node);
-			}
-			return chain;
-		};
-		const previousChain = getChain(previous);
-		const nextChain = getChain(next);
-		const invalidate = (node: Element): void => {
-			invalidateElementCaches(this, node);
-			invalidateLaterSiblings(this, node);
-			// A host's hover reaches its shadow tree through :host(:hover).
-			const shadowRoot = getShadowRoot(node);
-			if (shadowRoot) {
-				for (const descendant of shadowRoot.querySelectorAll("*")) {
-					invalidateElementCaches(this, descendant);
-				}
-			}
-		};
-		for (const node of previousChain) {
-			if (!nextChain.has(node)) {
-				invalidate(node);
-			}
-		}
-		for (const node of nextChain) {
-			if (!previousChain.has(node)) {
-				invalidate(node);
-			}
-		}
+		this[kChainStateChange](previous, next, "hover");
+	}
+
+	// The same for the element a mouse button is held down on, which with
+	// its ancestors is :active.
+	handleActiveChange(previous: Element | null, next: Element | null): void {
+		this[kChainStateChange](previous, next, "active");
 	}
 
 	// A dirty sheet list parses first, so a value read between frames still
@@ -5666,6 +5652,52 @@ export class Cascade {
 		}
 		this[kActiveTransitions].clear();
 		this[kTransitionEvents] = [];
+	}
+
+	// A state that follows one element and its flat-tree ancestors, :hover or
+	// :active, moved from one chain to another. Only the elements on one
+	// chain and not the other changed.
+	[kChainStateChange](
+		previous: Element | null,
+		next: Element | null,
+		state: string,
+	): void {
+		if (this[kHasStates].has(state)) {
+			this[kRestyleAll]();
+			return;
+		}
+		const getChain = (element: Element | null): Set<Element> => {
+			const chain = new Set<Element>();
+			for (
+				let node: Element | null = element; node; node = flatParentElement(node)
+			) {
+				chain.add(node);
+			}
+			return chain;
+		};
+		const previousChain = getChain(previous);
+		const nextChain = getChain(next);
+		const invalidate = (node: Element): void => {
+			invalidateElementCaches(this, node);
+			invalidateLaterSiblings(this, node);
+			// A host's state reaches its shadow tree through :host(:hover).
+			const shadowRoot = getShadowRoot(node);
+			if (shadowRoot) {
+				for (const descendant of shadowRoot.querySelectorAll("*")) {
+					invalidateElementCaches(this, descendant);
+				}
+			}
+		};
+		for (const node of previousChain) {
+			if (!nextChain.has(node)) {
+				invalidate(node);
+			}
+		}
+		for (const node of nextChain) {
+			if (!previousChain.has(node)) {
+				invalidate(node);
+			}
+		}
 	}
 
 	// Everything restyles, as it does when a stylesheet changes.
@@ -7579,8 +7611,16 @@ function parseSelector(
 	);
 
 	if (pseudoMatch) {
-		const [, baseSelector] = pseudoMatch;
+		const [, baseSelector, , trailing] = pseudoMatch;
 		const pseudoElement = unescapeHighlightName(pseudoMatch[2]);
+		let partMatcher: CompiledSelector | null | undefined;
+		if (trailing && pseudoElement.startsWith("::part(")) {
+			try {
+				partMatcher = compileSelector(`*${trailing}`, {namespaces});
+			} catch (_err) {
+				partMatcher = null;
+			}
+		}
 		const rule: ParsedCSSRule = {
 			// A pseudo-element written with no originating selector originates
 			// on every element, which is what `*` means.
@@ -7591,6 +7631,7 @@ function parseSelector(
 			order,
 			specificity,
 			pseudoElement,
+			partMatcher,
 			scope,
 			uaOrigin,
 			reachesHost,
@@ -7646,7 +7687,10 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 				return (
 					shadowHost !== null &&
 					partNames.includes(partArg[1].trim()) &&
-					isRuleMatch(shadowHost, rule)
+					isRuleMatch(shadowHost, rule) &&
+					(rule.partMatcher === undefined ||
+						(rule.partMatcher !== null &&
+							isSelectedBy(element, rule.partMatcher, element)))
 				);
 			}
 			return (

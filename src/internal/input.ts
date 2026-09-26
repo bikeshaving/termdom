@@ -3,6 +3,8 @@ import {
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
 	flatParentElement,
+	type FocusStartingPoint,
+	getActiveElement,
 	getKeyboardActivation,
 	getShadowRoot,
 	getTextControlCaretOffset,
@@ -19,10 +21,12 @@ import {
 	requestRender,
 	type SelectionUnit,
 	selectUnits,
+	setActiveElement,
 	setDocumentFocusVisible,
 	setDocumentVisible,
 	setHoveredElement,
 	setUASelection,
+	takeFocusStartingPoint,
 	topmostModalDialog,
 	type Window,
 } from "./dom.ts";
@@ -856,6 +860,18 @@ function dragTo(
 	}
 }
 
+// :active holds from the press to the release, wherever the release lands.
+function setPressed(input: Input, target: Element | null): void {
+	const document = input[kDocument];
+	const previous = getActiveElement(document) as Element | null;
+	if (previous === target) {
+		return;
+	}
+	setActiveElement(document, target);
+	input[kCascade].handleActiveChange(previous, target);
+	requestRender(document);
+}
+
 function dispatchPress(
 	input: Input,
 	target: Element,
@@ -868,6 +884,7 @@ function dispatchPress(
 ): void {
 	input[kMouseDownTarget] = target;
 	input[kSelectionUnit] = null;
+	setPressed(input, target);
 	// Light dismiss is a press and a release in the same place, so a drag
 	// out of a popover does not close it.
 	input[kPopoverPressTarget] = lightDismissPress(target);
@@ -966,6 +983,7 @@ function dispatchRelease(
 	target: Element,
 	eventInit: object,
 ): void {
+	setPressed(input, null);
 	dispatchAsUserAgent(
 		target,
 		new input[kWindow].MouseEvent("mouseup", eventInit),
@@ -1158,6 +1176,51 @@ function insertText(input: Input, target: Element, text: string): void {
 	);
 }
 
+// The stop Tab reaches from the place a removed focused element left:
+// positive tab indexes come first by value, then the rest in tree order,
+// and the point sits among them at its own tab index.
+function getIndexPastPoint(
+	entries: ReadonlyArray<{element: Element; barrier: Element | null}>,
+	point: FocusStartingPoint,
+	reverse: boolean,
+): number {
+	const FOLLOWING = 4;
+	const CONTAINED_BY = 16;
+	const key = (tabIndex: number): number =>
+		tabIndex > 0 ? tabIndex : Number.POSITIVE_INFINITY;
+	const pointKey = key(point.tabIndex);
+	const next = point.next !== null && point.next.isConnected
+		? point.next
+		: null;
+	const isAfter = (element: Element): boolean => {
+		if (next !== null) {
+			return (element as unknown as Node) === next ||
+				(next.compareDocumentPosition(element) & (FOLLOWING | CONTAINED_BY)) !==
+					0;
+		}
+		const relation = point.parent.compareDocumentPosition(element);
+		return (relation & FOLLOWING) !== 0 && (relation & CONTAINED_BY) === 0;
+	};
+	const beyond = (element: Element): boolean => {
+		const at = key((element as HTMLElement).tabIndex);
+		if (at !== pointKey) {
+			return reverse ? at < pointKey : at > pointKey;
+		}
+		return reverse ? !isAfter(element) : isAfter(element);
+	};
+	const step = reverse ? -1 : 1;
+	for (
+		let i = reverse ? entries.length - 1 : 0;
+		i >= 0 && i < entries.length;
+		i += step
+	) {
+		if (entries[i].barrier === null && beyond(entries[i].element)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 function moveFocus(input: Input, reverse: boolean): void {
 	// Tab cannot leave a modal dialog.
 	const scope = topmostModalDialog(input[kDocument]) ?? input[kDocument];
@@ -1183,7 +1246,13 @@ function moveFocus(input: Input, reverse: boolean): void {
 		entries[index].barrier === currentBarrier;
 	const step = reverse ? -1 : 1;
 	let nextIndex = -1;
-	if (currentIndex === -1) {
+	const point = currentIndex === -1
+		? takeFocusStartingPoint(input[kDocument])
+		: null;
+	if (point !== null) {
+		nextIndex = getIndexPastPoint(entries, point, reverse);
+	}
+	if (nextIndex === -1 && currentIndex === -1) {
 		for (
 			let i = reverse ? entries.length - 1 : 0;
 			i >= 0 && i < entries.length;
@@ -1194,7 +1263,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 				break;
 			}
 		}
-	} else {
+	} else if (nextIndex === -1) {
 		for (
 			let i = currentIndex + step; i >= 0 && i < entries.length; i += step
 		) {

@@ -14,10 +14,12 @@ import {
 	getRangeMatch,
 	getRoot,
 	getShadowHost,
+	getUserValidityMatch,
 	getValidityMatch,
 	hasCustomState,
 	hasFocus,
 	hasFocusWithin,
+	isActive,
 	isActuallyDisabled,
 	isCheckedControl,
 	isDefaultControl,
@@ -39,7 +41,12 @@ import {
 	Node,
 	parentElement,
 } from "./dom.ts";
-import {HTML_NAMESPACE, XML_NAMESPACE} from "./dom.ts";
+import {
+	HTML_NAMESPACE,
+	SVG_NAMESPACE,
+	XLINK_NAMESPACE,
+	XML_NAMESPACE,
+} from "./dom.ts";
 import {toASCIILowercase} from "./text.ts";
 
 // CSS Selectors: the language, and the matcher a selector compiles to.
@@ -538,7 +545,7 @@ function compileList(
 }
 
 // The compound a relative selector hangs from: the element `:has()` was
-// asked about.
+// asked about. That can be a featureless shadow host, asked as :host.
 const ANCHOR_COMPOUND: CompiledCompound = {
 	tests: [
 		(element: Element, state: MatchState): boolean =>
@@ -546,7 +553,7 @@ const ANCHOR_COMPOUND: CompiledCompound = {
 	],
 	origin: null,
 	originTests: [],
-	host: false,
+	host: true,
 };
 
 function mentionsScope(node: CSSTree.SelectorNode): boolean {
@@ -1113,9 +1120,9 @@ function compilePseudoClass(
 			compound.tests.push((element) => isHovered(element));
 			return;
 		case "active":
-			// Nothing here is ever between a press and a release. A terminal
-			// reports the key or the click, not half of it.
-			compound.tests.push(() => false);
+			// Between a mouse press and its release, which a terminal's mouse
+			// reporting sends apart.
+			compound.tests.push((element) => isActive(element));
 			return;
 		case "focus":
 			compound.tests.push((element) => hasFocus(element));
@@ -1173,6 +1180,16 @@ function compilePseudoClass(
 		case "invalid":
 			compound.tests.push((element) => getValidityMatch(element) === "invalid");
 			return;
+		case "user-valid":
+			compound.tests.push(
+				(element) => getUserValidityMatch(element) === "valid",
+			);
+			return;
+		case "user-invalid":
+			compound.tests.push(
+				(element) => getUserValidityMatch(element) === "invalid",
+			);
+			return;
 		case "in-range":
 			compound.tests.push((element) => getRangeMatch(element) === "in");
 			return;
@@ -1196,8 +1213,7 @@ function compilePseudoClass(
 		default:
 			// Everything left names a state this user agent never enters: a
 			// media element's buffering, a page box's side, a spatial
-			// navigation target, autofill, and the validity a user's own
-			// interaction settles, :user-valid and :user-invalid.
+			// navigation target, and autofill.
 			compound.tests.push(matchNothing);
 	}
 }
@@ -1470,13 +1486,20 @@ function matchesAnPlusB(step: AnPlusB, position: number): boolean {
 
 // What `:link` and `:any-link` match: an `a` or `area` with an href. A
 // `link` element points somewhere too, but HTML leaves it out.
+// HTML's a and area with an href, and SVG's a with an href or the older
+// xlink:href.
 function isHyperlink(element: Element): boolean {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
-		return false;
-	}
 	const name = element.localName;
+	if (element.namespaceURI === HTML_NAMESPACE) {
+		return (
+			(name === "a" || name === "area") && element.getAttribute("href") !== null
+		);
+	}
 	return (
-		(name === "a" || name === "area") && element.getAttribute("href") !== null
+		element.namespaceURI === SVG_NAMESPACE &&
+		name === "a" &&
+		(element.hasAttribute("href") ||
+			element.hasAttributeNS(XLINK_NAMESPACE, "href"))
 	);
 }
 
@@ -1652,11 +1675,21 @@ function compileLang(args: CSSTree.SelectorNode[]): Predicate {
 }
 
 // The nearest declaration above the element.
+function getLanguageParent(node: Element): Element | null {
+	const parent = getParentNode(node);
+	if (parent === null) {
+		return null;
+	}
+	return isElement(parent) ? parent : getShadowHost(parent);
+}
+
+// The nearest lang attribute, climbing out of a shadow tree into its host
+// when the tree names none (HTML §3.2.6.2).
 function getElementLanguage(element: Element): string | null {
 	for (
 		let node: Element | null = element;
 		node !== null;
-		node = parentElement(node)
+		node = getLanguageParent(node)
 	) {
 		const attributes = node.attributes;
 		for (let index = 0; index < attributes.length; index++) {
@@ -1917,11 +1950,15 @@ function matchFrom(
 	}
 }
 
-// In a shadow tree the step up ends at the featureless host.
+// In a shadow tree the step up ends at the featureless host. Nothing above
+// the host is in the tree the selector was written for.
 function getParentStep(
 	element: Element,
 	state: MatchState,
 ): {element: Element; featureless: boolean} | null {
+	if (state.shadow !== null && getShadowHost(state.shadow) === element) {
+		return null;
+	}
 	const parent = getParentNode(element);
 	if (parent === null) {
 		return null;
@@ -1949,7 +1986,11 @@ function hasMatch(
 	state: MatchState,
 	cacheable: boolean,
 ): boolean {
-	const store = cacheable ? state.hasResults : null;
+	// Asked of the host from inside its shadow tree, :has() searches that
+	// tree, and the answer is not the one a light-tree rule would get.
+	const hostOfShadow =
+		state.shadow !== null && getShadowHost(state.shadow) === element;
+	const store = cacheable && !hostOfShadow ? state.hasResults : null;
 	let answers = store?.get(element);
 	const known = answers?.get(inner);
 	if (known !== undefined) {
@@ -1975,11 +2016,22 @@ function findHasMatch(
 	// changed: inside `:has()` it still refers to whatever the query scoped
 	// to.
 	const inside: MatchState = {...state, anchor: element};
+	const hostOfShadow =
+		state.shadow !== null && getShadowHost(state.shadow) === element;
 	for (const complex of inner) {
 		const selects = (node: Element): boolean =>
 			matchComplex(complex, node, inside, false);
 		const leading = complex.combinators[0] ?? " ";
-		if (leading === "+" || leading === "~") {
+		if (hostOfShadow) {
+			// The host is the shadow tree's root, which has no siblings.
+			if (
+				leading !== "+" &&
+				leading !== "~" &&
+				walkElements(state.shadow as Node, selects)
+			) {
+				return true;
+			}
+		} else if (leading === "+" || leading === "~") {
 			for (
 				let sibling = getNextElement(element);
 				sibling !== null;
