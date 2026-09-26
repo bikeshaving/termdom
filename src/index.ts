@@ -172,6 +172,10 @@ export class TermDOM {
 			() => render(this),
 			(error) => reportUncaught(this, error),
 		);
+		// The document had no size until it was attached, so an @media rule
+		// in the markup was read against a zero-width viewport. Attaching is
+		// a resize, and flips @media results the same way.
+		this[kCascade].syncStylesheets();
 
 		this[kInput] = new Input(
 			this.document,

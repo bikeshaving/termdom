@@ -414,7 +414,8 @@ test("the constraint validation pseudos match what is being validated", () => {
 	// that is being validated is.
 	expect(ids(FORM, ":invalid")).toEqual(["f", "plain"]);
 	expect(ids(FORM, ":valid")).toEqual(["fs", "in-legend", "sel", "ta"]);
-	const RANGE = "<input id=low type=number min=1 value=0>" +
+	const RANGE =
+		"<input id=low type=number min=1 value=0>" +
 		"<input id=inside type=number min=1 max=9 value=5>" +
 		"<input id=unlimited type=number value=5>" +
 		"<input id=slider type=range>";

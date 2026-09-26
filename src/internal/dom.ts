@@ -9882,6 +9882,9 @@ export class HTMLElement extends Element {
 	declare title: globalThis.HTMLElement["title"];
 	declare writingSuggestions: globalThis.HTMLElement["writingSuggestions"];
 	declare enterKeyHint: globalThis.HTMLElement["enterKeyHint"];
+	// The heading offset reflections, newer than lib.dom's copy of HTML.
+	declare headingOffset: number;
+	declare headingReset: boolean;
 	declare inputMode: globalThis.HTMLElement["inputMode"];
 	declare onabort: globalThis.HTMLElement["onabort"];
 	declare onanimationcancel: globalThis.HTMLElement["onanimationcancel"];
@@ -29813,6 +29816,46 @@ export function isFullscreenElement(element: Element): boolean {
 
 export function isDefinedElement(element: Element): boolean {
 	return element[kCustomState] !== "undefined";
+}
+
+// An h1 to h6 is a heading, at its number plus the heading offset around
+// it: the headingoffset of it and each ancestor, summed until an element
+// with headingreset, and at most 9 (HTML §4.3.6). The ancestors are the
+// document's, not the flat tree's, so a heading slotted somewhere keeps
+// its level.
+export function getHeadingLevel(element: Element): number | null {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
+		return null;
+	}
+	const match = /^h([1-6])$/.exec(element.localName);
+	if (match === null) {
+		return null;
+	}
+	return Math.min(Number(match[1]) + getHeadingOffset(element), 9);
+}
+
+function getHeadingOffset(element: Element): number {
+	let offset = 0;
+	for (
+		let node: Element | null = element;
+		node !== null;
+		node = node.parentElement as Element | null
+	) {
+		if (node.namespaceURI !== HTML_NAMESPACE) {
+			continue;
+		}
+		const attribute = node.getAttribute("headingoffset");
+		const value = attribute === null
+			? null
+			: parseNonNegativeInteger(attribute);
+		if (value !== null) {
+			offset += value;
+		}
+		if (node.hasAttribute("headingreset")) {
+			break;
+		}
+	}
+	return offset;
 }
 
 export function hasCustomState(element: Element, name: string): boolean {

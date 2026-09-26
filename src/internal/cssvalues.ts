@@ -4056,6 +4056,7 @@ function getSelectorSpecificity(selector: CSSTree.SelectorNode): Specificity {
 const STATE_PSEUDO_CLASSES = new Set([
 	"any-link",
 	"checked",
+	"heading",
 	"closed",
 	"default",
 	"defined",
@@ -4082,6 +4083,8 @@ const STATE_PSEUDO_CLASSES = new Set([
 const STATE_ATTRIBUTES = new Set([
 	"checked",
 	"disabled",
+	"headingoffset",
+	"headingreset",
 	"href",
 	"id",
 	"max",
@@ -4114,6 +4117,11 @@ interface CompoundKeys {
 	// children: it follows a sibling combinator, or tests a tree-structural
 	// pseudo-class or :empty.
 	siblingTested: boolean;
+	// Whether the keys above can fail to name the element: some of them
+	// sit inside :not(), or inside an argument with combinators of its own,
+	// where they describe another element. `:not(.b ~ *)` matches elements
+	// with no class at all.
+	anyElement: boolean;
 }
 
 // The subject is the last compound.
@@ -4131,6 +4139,10 @@ export interface SelectorReading {
 }
 
 const STRUCTURAL_PSEUDO = /^(?:nth-|first-|last-|only-|empty)/;
+
+function hasCombinator(node: CSSTree.SelectorNode): boolean {
+	return node.type === "Combinator" || getChildren(node).some(hasCombinator);
+}
 
 function testsSiblings(nodes: CSSTree.SelectorNode[]): boolean {
 	for (const node of nodes) {
@@ -4185,12 +4197,18 @@ function harvestKeys(nodes: CSSTree.SelectorNode[], keys: CompoundKeys): void {
 				}
 				break;
 			}
-			case "PseudoClassSelector":
-				if (STATE_PSEUDO_CLASSES.has(pseudoName(String(node.name ?? "")))) {
+			case "PseudoClassSelector": {
+				const name = pseudoName(String(node.name ?? ""));
+				if (STATE_PSEUDO_CLASSES.has(name)) {
 					keys.states = true;
 				}
-				harvestKeys(getChildren(node), keys);
+				const args = getChildren(node);
+				if (name === "not" || args.some(hasCombinator)) {
+					keys.anyElement = true;
+				}
+				harvestKeys(args, keys);
 				break;
+			}
 			case "PseudoElementSelector":
 			case "SelectorList":
 			case "Selector":
@@ -4253,6 +4271,7 @@ export function readSelector(selector: string): SelectorReading {
 			attributes: [],
 			states: false,
 			siblingTested: afterSiblingCombinator || testsSiblings(parts),
+			anyElement: false,
 		};
 		harvestKeys(parts, keys);
 		compounds.push(keys);
@@ -4334,7 +4353,9 @@ function serializeSelector(
 		}
 		out += serializeSimpleSelector(part, namespaces);
 	}
-	return out;
+	// A nested selector may open with a combinator, which serializes
+	// without the space that would separate it from a compound before it.
+	return out.trimStart();
 }
 
 function serializeSimpleSelector(
@@ -4513,6 +4534,50 @@ export function parsePseudoElementArgument(text: string): string | null {
 	return serializeSimpleSelector(pseudo, undefined);
 }
 
+// A nested rule's selector, made absolute against the rule it is nested
+// in (css-nesting-1 §3). Each `&` stands for the parent's whole list, as
+// :is() does, which also gives it the list's specificity. A selector with
+// no `&` reaches down from the parent, or across from it when it opens
+// with a combinator.
+export function resolveNestedSelector(
+	selector: string,
+	parent: string,
+): string {
+	const replacement = `:is(${parent})`;
+	let out = "";
+	let found = false;
+	let quote = "";
+	let brackets = 0;
+	for (let index = 0; index < selector.length; index++) {
+		const char = selector[index];
+		if (char === "\\") {
+			out += selector.slice(index, index + 2);
+			index++;
+			continue;
+		}
+		if (quote) {
+			if (char === quote) {
+				quote = "";
+			}
+		} else if (char === '"' || char === "'") {
+			quote = char;
+		} else if (char === "[") {
+			brackets++;
+		} else if (char === "]") {
+			brackets--;
+		} else if (char === "&" && brackets === 0) {
+			out += replacement;
+			found = true;
+			continue;
+		}
+		out += char;
+	}
+	if (found) {
+		return out;
+	}
+	return `${replacement} ${selector.trim()}`;
+}
+
 export function splitSelectorList(text: string): string[] {
 	const selectors: string[] = [];
 	let depth = 0;
@@ -4554,11 +4619,16 @@ export function getBlockDeclarations(
 	node: CSSTree.StyleSheetNode,
 	source: string,
 ): CSSDeclaration[] {
+	return node.block ? getDeclarations(getNodes(node.block), source) : [];
+}
+
+/** The declarations among a block's items, in order. */
+export function getDeclarations(
+	nodes: readonly CSSTree.StyleSheetNode[],
+	source: string,
+): CSSDeclaration[] {
 	const declarations: CSSDeclaration[] = [];
-	if (!node.block) {
-		return declarations;
-	}
-	for (const child of getNodes(node.block)) {
+	for (const child of nodes) {
 		if (child.type !== "Declaration" || !child.value) {
 			continue;
 		}
