@@ -115,8 +115,6 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 	}
 }
 
-/** A listener as this file's dispatch calls it. */
-type UAListener = globalThis.EventListener;
 const kUASelection = Symbol("a control's selection, whatever its type");
 
 /**
@@ -604,6 +602,29 @@ function applySharedTextControlEdit(
 	return null;
 }
 
+// The inputType of a key's edit, the name Input Events gives it.
+function getKeyInputType(key: string, ctrlKey: boolean): string {
+	if (key === "Backspace") {
+		return "deleteContentBackward";
+	}
+	if (key === "Delete" || (ctrlKey && key === "d")) {
+		return "deleteContentForward";
+	}
+	if (ctrlKey && key === "w") {
+		return "deleteWordBackward";
+	}
+	if (ctrlKey && key === "k") {
+		return "deleteSoftLineForward";
+	}
+	if (ctrlKey && key === "u") {
+		return "deleteSoftLineBackward";
+	}
+	if (key === "Enter" || (ctrlKey && key === "j")) {
+		return "insertLineBreak";
+	}
+	return "";
+}
+
 // Called from beforeinput, as in a browser: insertion is the keypress
 // default action, and the text control's input event follows.
 function printableTextControlEdit(
@@ -696,20 +717,42 @@ function commitTextControl(element: Element | null): void {
 	dispatchUserChange(element);
 }
 
+// What an edit was, for its input events. An insertion's beforeinput has
+// already been dispatched by the time it is applied, since that event is
+// what asked for it. Any other edit asks here first.
+interface TextControlEditKind {
+	inputType: string;
+	data?: string | null;
+	asked?: boolean;
+}
+
 function applyTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	result: TextControlEditResult,
+	kind: TextControlEditKind = {inputType: "", asked: true},
 ): void {
 	const value = textControl[kUAValue];
 	const {start, end, direction} = getSelectionRecord(textControl)!;
 	if (result.value !== value) {
+		const init = {
+			inputType: kind.inputType,
+			data: kind.data ?? null,
+			bubbles: true,
+			composed: true,
+		};
+		if (
+			kind.asked !== true &&
+			!dispatch(
+				textControl,
+				new InputEvent("beforeinput", {...init, cancelable: true}),
+			)
+		) {
+			return;
+		}
 		editedSinceChange.add(textControl);
 		textControl[kSetUAValue]!(result.value);
 		textControl[kSetUASelection]!(result.start, result.end, result.direction);
-		dispatch(
-			textControl,
-			new Event("input", {bubbles: true, cancelable: false}),
-		);
+		dispatch(textControl, new InputEvent("input", init));
 	} else if (
 		result.start !== start ||
 		result.end !== end ||
@@ -10554,20 +10597,36 @@ export class HTMLElement extends Element {
 		if (previous !== null && previous !== (document.body as unknown)) {
 			dispatchAsUserAgent(
 				previous,
-				new FocusEvent("blur", {relatedTarget: this, bubbles: false}),
+				new FocusEvent("blur", {
+					relatedTarget: this,
+					bubbles: false,
+					composed: true,
+				}),
 			);
 			dispatchAsUserAgent(
 				previous,
-				new FocusEvent("focusout", {relatedTarget: this, bubbles: true}),
+				new FocusEvent("focusout", {
+					relatedTarget: this,
+					bubbles: true,
+					composed: true,
+				}),
 			);
 		}
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("focus", {relatedTarget: previous, bubbles: false}),
+			new FocusEvent("focus", {
+				relatedTarget: previous,
+				bubbles: false,
+				composed: true,
+			}),
 		);
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("focusin", {relatedTarget: previous, bubbles: true}),
+			new FocusEvent("focusin", {
+				relatedTarget: previous,
+				bubbles: true,
+				composed: true,
+			}),
 		);
 	}
 
@@ -10589,11 +10648,19 @@ export class HTMLElement extends Element {
 		void attached[kRender]();
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
+			new FocusEvent("blur", {
+				relatedTarget: null,
+				bubbles: false,
+				composed: true,
+			}),
 		);
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("focusout", {relatedTarget: null, bubbles: true}),
+			new FocusEvent("focusout", {
+				relatedTarget: null,
+				bubbles: true,
+				composed: true,
+			}),
 		);
 	}
 
@@ -15864,14 +15931,18 @@ export class HTMLInputElement extends HTMLElement {
 			}
 			if (event.inputType === "insertText") {
 				event.preventDefault();
-				insertTextControlText(this, event.data);
+				insertTextControlText(this, event.data, "insertText");
 				return;
 			}
 			if (event.inputType !== "insertFromPaste") {
 				return;
 			}
 			event.preventDefault();
-			insertTextControlText(this, event.data.replace(/[\r\n]+/g, ""));
+			insertTextControlText(
+				this,
+				event.data.replace(/[\r\n]+/g, ""),
+				"insertFromPaste",
+			);
 		};
 		this[kOnKeydown] = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) {
@@ -15938,7 +16009,9 @@ export class HTMLInputElement extends HTMLElement {
 				result = applySharedTextControlEdit(this, key, shiftKey, ctrlKey);
 			}
 			if (result) {
-				applyTextControlEdit(this, result);
+				applyTextControlEdit(this, result, {
+					inputType: getKeyInputType(key, ctrlKey),
+				});
 			}
 		};
 	}
@@ -16425,12 +16498,6 @@ export class HTMLInputElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		buildInputWidget(this);
-		// Editing is the control's own default action, like a browser input's,
-		// implemented as a keydown listener. Typed characters and pastes arrive
-		// as beforeinput, which is the default action of the keypress or paste
-		// that produced them.
-		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
-		this.addEventListener("beforeinput", this[kOnBeforeInput] as UAListener);
 	}
 
 	// Updates the rendered content model a width:auto input measures
@@ -16511,6 +16578,7 @@ export class HTMLInputElement extends HTMLElement {
 function insertTextControlText(
 	textControl: HTMLInputElement,
 	text: string,
+	inputType: string,
 ): void {
 	if (!text) {
 		return;
@@ -16524,6 +16592,7 @@ function insertTextControlText(
 	applyTextControlEdit(
 		textControl,
 		createCollapsedEdit(next, start + text.length),
+		{inputType, data: text, asked: true},
 	);
 }
 
@@ -18295,7 +18364,8 @@ export class HTMLSelectElement extends HTMLElement {
 				openPicker(this);
 				return;
 			}
-			const {pageX: x, pageY: y} = event;
+			const x = event.clientX;
+			const y = event.clientY + attached[kScreen].scrollTop;
 			const picker = this[kPicker]!;
 			const row =
 				(Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
@@ -18535,8 +18605,6 @@ export class HTMLSelectElement extends HTMLElement {
 		root.appendChild(picker);
 		this[kPicker] = picker;
 
-		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
-		this.addEventListener("mousedown", this[kOnMousedown] as UAListener);
 		// Losing focus closes the picker.
 		this.addEventListener("blur", this[kOnBlur]);
 		// The displayed label and picker rows track the option list, so a
@@ -18728,7 +18796,7 @@ function openPicker(select: HTMLSelectElement): void {
 function commitSelectOption(select: HTMLSelectElement, index: number): void {
 	select[kPickerHighlight] = null;
 	select.selectedIndex = index; // The setter reconciles (closes + label).
-	dispatch(select, new Event("input", {bubbles: true, cancelable: false}));
+	dispatch(select, new Event("input", {bubbles: true, composed: true}));
 	dispatchUserChange(select);
 }
 
@@ -19428,7 +19496,11 @@ export class HTMLTextAreaElement extends HTMLElement {
 			}
 			if (event.inputType === "insertText") {
 				event.preventDefault();
-				applyTextControlEdit(this, printableTextControlEdit(this, event.data));
+				applyTextControlEdit(this, printableTextControlEdit(this, event.data), {
+					inputType: "insertText",
+					data: event.data,
+					asked: true,
+				});
 				return;
 			}
 			if (event.inputType !== "insertFromPaste") {
@@ -19511,7 +19583,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 				result = applySharedTextControlEdit(this, key, shiftKey, ctrlKey);
 			}
 			if (result) {
-				applyTextControlEdit(this, result);
+				applyTextControlEdit(this, result, {
+					inputType: getKeyInputType(key, ctrlKey),
+				});
 			}
 		};
 	}
@@ -19752,11 +19826,6 @@ export class HTMLTextAreaElement extends HTMLElement {
 		// border.
 		root.appendChild(document.createElement("br"));
 
-		// Editing is the control's own default action, like a browser
-		// textarea's. Its keydown listener does the edit.
-		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
-		this.addEventListener("beforeinput", this[kOnBeforeInput] as UAListener);
-
 		syncUAShadowTree(this);
 	}
 
@@ -19805,6 +19874,7 @@ function insertPaste(
 	applyTextControlEdit(
 		textControl,
 		printableTextControlEdit(textControl, text),
+		{inputType: "insertFromPaste", data: text, asked: true},
 	);
 }
 
@@ -32096,6 +32166,34 @@ function onDisclosureToggle(event: globalThis.Event): void {
 		return;
 	}
 	details.scrollIntoView({block: "nearest"});
+}
+
+/**
+ * A control's own default action for a key, a typed or pasted insertion,
+ * or a press: editing, stepping, opening a picker. It runs once the
+ * event's dispatch is over and only if no listener canceled it, so a
+ * page's listener anywhere on the path can stop it, as in a browser. A
+ * control that claims the event cancels it, which later defaults read.
+ */
+export function runControlDefaultAction(
+	target: globalThis.Element,
+	event: globalThis.Event,
+): void {
+	const control = target as unknown as {
+		[kUpgraded]?: boolean;
+		[kOnKeydown]?: (event: globalThis.Event) => void;
+		[kOnBeforeInput]?: (event: globalThis.Event) => void;
+		[kOnMousedown]?: (event: globalThis.Event) => void;
+	};
+	if (event.defaultPrevented || control[kUpgraded] !== true) {
+		return;
+	}
+	const handler = event.type === "keydown"
+		? control[kOnKeydown]
+		: event.type === "beforeinput"
+			? control[kOnBeforeInput]
+			: event.type === "mousedown" ? control[kOnMousedown] : undefined;
+	handler?.(event);
 }
 
 /** The focused element, through shadow roots. */

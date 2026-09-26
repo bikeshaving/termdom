@@ -193,6 +193,7 @@ function requestEditingInput(
 			inputType,
 			data,
 			bubbles: true,
+			composed: true,
 			cancelable: true,
 		}),
 	);
@@ -217,6 +218,7 @@ function onEditingBeforeInput(event: globalThis.Event): void {
 			inputType: request.inputType,
 			data: request.data,
 			bubbles: true,
+			composed: true,
 		}),
 	);
 }
