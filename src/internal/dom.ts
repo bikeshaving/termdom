@@ -155,24 +155,68 @@ export function setUASelection(
 
 const kSyncUAShadowTree = Symbol("bring a control's UA tree back into step");
 
-/** Notify a control that its state changed so its UA shadow tree can update. */
 // The pseudo-classes that read a control's state rather than its
-// attributes.
-const CONTROL_STATES = [
-	"checked",
-	"indeterminate",
-	"default",
-	"placeholder-shown",
-	"valid",
-	"invalid",
-	"user-valid",
-	"user-invalid",
-	"in-range",
-	"out-of-range",
-	"open",
-	"autofill",
-	"blank",
+// attributes, each with its bit in a snapshot of what an element matches.
+// :autofill and :blank match nothing here, so they never change.
+const CONTROL_STATE_BITS: ReadonlyArray<[string, number]> = [
+	["checked", 1],
+	["indeterminate", 2],
+	["default", 4],
+	["placeholder-shown", 8],
+	["valid", 16],
+	["invalid", 32],
+	["user-valid", 64],
+	["user-invalid", 128],
+	["in-range", 256],
+	["out-of-range", 512],
+	["open", 1024],
 ];
+
+function getControlStateBits(element: Element): number {
+	let bits = 0;
+	if (isCheckedControl(element)) {
+		bits |= 1;
+	}
+	if (isIndeterminateControl(element)) {
+		bits |= 2;
+	}
+	if (isDefaultControl(element)) {
+		bits |= 4;
+	}
+	if (isPlaceholderShown(element)) {
+		bits |= 8;
+	}
+	const validity = getValidityMatch(element);
+	bits |= validity === "valid" ? 16 : validity === "invalid" ? 32 : 0;
+	const userValidity = getUserValidityMatch(element);
+	bits |= userValidity === "valid" ? 64 : userValidity === "invalid" ? 128 : 0;
+	const range = getRangeMatch(element);
+	bits |= range === "in" ? 256 : range === "out" ? 512 : 0;
+	if (isOpenElement(element)) {
+		bits |= 1024;
+	}
+	return bits;
+}
+
+// What each element matched when it was last reported. Restyling for a
+// state is a subtree and its later siblings, so only a state that really
+// changed is reported. Most elements match none of these, and an
+// attribute change on them reports nothing.
+const reportedControlStates = new WeakMap<Element, number>();
+
+function reportControlStates(element: Element): void {
+	const before = reportedControlStates.get(element) ?? 0;
+	const after = getControlStateBits(element);
+	if (after === before) {
+		return;
+	}
+	reportedControlStates.set(element, after);
+	stateChanged(
+		element,
+		CONTROL_STATE_BITS.filter(([, bit]) => ((before ^ after) & bit) !== 0)
+			.map(([state]) => state),
+	);
+}
 
 // A control's own state changed: checkedness, its value, what is
 // selected. Its shadow tree redraws, and the rules that read that state
@@ -181,11 +225,11 @@ function syncUAShadowTree(element: Element): void {
 	(element as unknown as Record<symbol, (() => void) | undefined>)[
 		kSyncUAShadowTree
 	]?.();
-	stateChanged(element, CONTROL_STATES);
+	reportControlStates(element);
 	// A form and every fieldset around the control are :valid or :invalid
 	// by what they hold, so they are told as well.
 	for (const owner of getValidityOwners(element)) {
-		stateChanged(owner, ["valid", "invalid"]);
+		reportControlStates(owner);
 	}
 }
 

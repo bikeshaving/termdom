@@ -4974,6 +4974,10 @@ const kAttributeReachesDescendants = Symbol("attributeReachesDescendants");
 const kRestyleAll = Symbol("restyleAll");
 const kChainStateChange = Symbol("chainStateChange");
 const FOCUS_STATES = ["focus", "focus-within", "focus-visible"];
+const kReachesDescendants = Symbol("reachesDescendants");
+const kReachesSiblings = Symbol("reachesSiblings");
+const kInvalidateForState = Symbol("invalidateForState");
+const kClassChangeSubjects = Symbol("classChangeSubjects");
 const kDropCache = Symbol("clearCache");
 const kResolveCounterFunction = Symbol("resolveCounterFunction");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
@@ -4994,6 +4998,9 @@ const kKeyProperties = Symbol("keyProperties");
 const kReachingIds = Symbol("reachingIds");
 const kReachingAttributes = Symbol("reachingAttributes");
 const kReachingStates = Symbol("reachingStates");
+const kDescendantPseudoClasses = Symbol("descendantPseudoClasses");
+const kClassSubjects = Symbol("classSubjects");
+const kSiblingPseudoClasses = Symbol("siblingPseudoClasses");
 const kPseudoRulesByType = Symbol("pseudoRulesByType");
 const kPseudoSubjectTags = Symbol("pseudoSubjectTags");
 const kCounterRulesExist = Symbol("counterRulesExist");
@@ -5097,6 +5104,16 @@ export interface Cascade {
 	// which is driven by attributes not in the sets above. While this is
 	// set, a change to any state attribute invalidates widely.
 	[kReachingStates]: boolean;
+	// The pseudo-classes whose change on one element can restyle its
+	// descendants: tested on a compound that is not the subject, or on a
+	// rule that sets an inherited property. And those tested before a
+	// sibling combinator, which can restyle its later siblings.
+	[kDescendantPseudoClasses]: Map<string, StateAnchor[]>;
+	// For each class a rule tests above its subject, the subjects that
+	// rule can style, or null when it can style any descendant: its subject
+	// could be anyone, or it sets something they inherit.
+	[kClassSubjects]: Map<string, StateAnchor[] | null>;
+	[kSiblingPseudoClasses]: Map<string, StateAnchor[]>;
 
 	// Rule-existence gates. Attaching pseudo-elements and initializing
 	// counters both build full computed-style declarations per element per
@@ -5211,6 +5228,9 @@ export class Cascade {
 		this[kReachingIds] = new Set<string>();
 		this[kReachingAttributes] = new Set<string>();
 		this[kReachingStates] = false;
+		this[kDescendantPseudoClasses] = new Map();
+		this[kClassSubjects] = new Map();
+		this[kSiblingPseudoClasses] = new Map();
 		this[kPseudoRulesByType] = new Map<string, ParsedCSSRule[]>();
 		this[kCounterRulesExist] = false;
 		this[kListItemRulesExist] = false;
@@ -5382,7 +5402,31 @@ export class Cascade {
 				// When no rule tests the class outside its own subject and none
 				// declares an inherited property, descendant styles are
 				// unchanged.
-				if (
+				const subjects = mutation.attributeName === "class"
+					? this[kClassChangeSubjects](element, mutation.oldValue)
+					: null;
+				if (subjects !== null) {
+					invalidateElementCaches(this, element, notifyLayout);
+					attachPseudoElementsToElement(this, element);
+					if (subjects.length > 0) {
+						for (const descendant of element.querySelectorAll("*")) {
+							const parent = descendant.parentElement;
+							if (
+								subjects.some(
+									(anchor) =>
+										couldAnchor(descendant, anchor) ||
+										(anchor.children === true &&
+											parent !== null &&
+											parent !== element &&
+											couldAnchor(parent, anchor)),
+								)
+							) {
+								invalidateElementCaches(this, descendant, notifyLayout);
+								attachPseudoElementsToElement(this, descendant);
+							}
+						}
+					}
+				} else if (
 					this[kAttributeReachesDescendants](
 						element,
 						mutation.attributeName!,
@@ -5460,26 +5504,12 @@ export class Cascade {
 			return;
 		}
 		for (const element of elements) {
-			// What a :focus rule sets on the element, a colour, its children
-			// inherit, so its subtree goes stale with it.
-			if (element !== null) {
-				for (const descendant of element.querySelectorAll("*")) {
-					invalidateElementCaches(this, descendant);
-				}
-			}
 			// The whole flat-tree chain can observe focus (:focus-within,
 			// :host(:focus)), so every element on it goes stale together.
 			for (
 				let node: Element | null = element; node; node = flatParentElement(node)
 			) {
-				invalidateElementCaches(this, node);
-				invalidateLaterSiblings(this, node);
-				const shadowRoot = getShadowRoot(node);
-				if (shadowRoot) {
-					for (const descendant of shadowRoot.querySelectorAll("*")) {
-						invalidateElementCaches(this, descendant);
-					}
-				}
+				this[kInvalidateForState](node, FOCUS_STATES);
 			}
 		}
 	}
@@ -5496,8 +5526,7 @@ export class Cascade {
 			this[kRestyleAll]();
 			return;
 		}
-		invalidateSubtree(this, element);
-		invalidateLaterSiblings(this, element);
+		this[kInvalidateForState](element, states);
 		// No mutation record describes the change, so the frame that decides
 		// whether anything needs painting is notified here.
 		this[kLayout].invalidateFrame();
@@ -5658,6 +5687,46 @@ export class Cascade {
 		this[kTransitionEvents] = [];
 	}
 
+	// Whether a change to any of these states on the element can restyle
+	// its descendants, or its later siblings, under the rules as parsed.
+	[kReachesDescendants](element: Element, states: readonly string[]): boolean {
+		parseStylesheetsIfStale(this);
+		return states.some((state) =>
+			this[kDescendantPseudoClasses]
+				.get(state)?.some((anchor) => couldAnchor(element, anchor)),
+		);
+	}
+
+	// A state changed on the element. The element restyles. Its subtree and
+	// its shadow tree do when a rule tests the state above what it styles,
+	// as :hover .x or :host(:focus) do, or sets something they inherit.
+	// Its later siblings do when a rule tests it before + or ~.
+	[kInvalidateForState](element: Element, states: readonly string[]): void {
+		if (this[kReachesDescendants](element, states)) {
+			invalidateSubtree(this, element);
+			const shadowRoot = getShadowRoot(element);
+			if (shadowRoot) {
+				for (const descendant of shadowRoot.querySelectorAll("*")) {
+					invalidateElementCaches(this, descendant);
+				}
+			}
+		} else {
+			invalidateElementCaches(this, element);
+			attachPseudoElementsToElement(this, element);
+		}
+		if (this[kReachesSiblings](element, states)) {
+			invalidateLaterSiblings(this, element);
+		}
+	}
+
+	[kReachesSiblings](element: Element, states: readonly string[]): boolean {
+		parseStylesheetsIfStale(this);
+		return states.some((state) =>
+			this[kSiblingPseudoClasses]
+				.get(state)?.some((anchor) => couldAnchor(element, anchor)),
+		);
+	}
+
 	// A state that follows one element and its flat-tree ancestors, :hover or
 	// :active, moved from one chain to another. Only the elements on one
 	// chain and not the other changed.
@@ -5682,15 +5751,7 @@ export class Cascade {
 		const previousChain = getChain(previous);
 		const nextChain = getChain(next);
 		const invalidate = (node: Element): void => {
-			invalidateElementCaches(this, node);
-			invalidateLaterSiblings(this, node);
-			// A host's state reaches its shadow tree through :host(:hover).
-			const shadowRoot = getShadowRoot(node);
-			if (shadowRoot) {
-				for (const descendant of shadowRoot.querySelectorAll("*")) {
-					invalidateElementCaches(this, descendant);
-				}
-			}
+			this[kInvalidateForState](node, [state]);
 		};
 		for (const node of previousChain) {
 			if (!nextChain.has(node)) {
@@ -5892,6 +5953,35 @@ export class Cascade {
 			return true;
 		}
 		return this[kReachingStates] && CSSValues.isStateAttribute(name);
+	}
+
+	// The descendants a class change can restyle, as the subjects of the
+	// rules that test the classes that came or went, or null when the change
+	// needs the general answer: any descendant, or an old value unknown.
+	[kClassChangeSubjects](
+		element: Element,
+		oldValue: string | null,
+	): StateAnchor[] | null {
+		if (oldValue === null || this[kReachingAttributes].has("class")) {
+			return null;
+		}
+		const before = new Set(oldValue.split(/\s+/));
+		const after = element.classList;
+		const changed = [
+			...[...after].filter((token) => !before.has(token)),
+			...[...before].filter((token) => token !== "" && !after.contains(token)),
+		];
+		const anchors: StateAnchor[] = [];
+		for (const token of changed) {
+			const subjects = this[kClassSubjects].get(token);
+			if (subjects === null) {
+				return null;
+			}
+			if (subjects !== undefined) {
+				anchors.push(...subjects);
+			}
+		}
+		return anchors;
 	}
 
 	[kDropCache](): void {
@@ -6806,6 +6896,17 @@ function invalidateElementCaches(
 	// The one place an element's computed style goes stale, so the one
 	// place layout, which measured it under the style being dropped, is
 	// notified, unless the caller knows nothing layout reads changed.
+	if ((globalThis as any).__zz) {
+		const st = new Error().stack!
+			.split("\n")
+			.slice(2, 6)
+			.map((l) => l.trim().split(" ")[1])
+			.join("<");
+		(globalThis as any).__zz.set(
+			st,
+			((globalThis as any).__zz.get(st) ?? 0) + 1,
+		);
+	}
 	if (notifyLayout) {
 		cascade[kLayout].styleInvalidated(element);
 	}
@@ -7004,6 +7105,9 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	cascade[kReachingIds].clear();
 	cascade[kReachingAttributes].clear();
 	cascade[kReachingStates] = false;
+	cascade[kDescendantPseudoClasses] = new Map();
+	cascade[kClassSubjects] = new Map();
+	cascade[kSiblingPseudoClasses] = new Map();
 	cascade[kPseudoRulesByType] = new Map();
 	cascade[kPseudoSubjectTags] = undefined;
 	cascade[kCounterRulesExist] = false;
@@ -7431,6 +7535,62 @@ function parseNestedRules(
 	}
 }
 
+// The element a compound's state is tested on, as far as its keys tell:
+// it has every key the compound names outside an argument. A compound
+// whose arguments hold combinators describes other elements too, and could
+// be anyone. :host tests only a shadow host, and :host-context the
+// ancestors of one.
+interface StateAnchor {
+	anyElement: boolean;
+	host: boolean;
+	// Whether the element's children restyle with it, as a display change
+	// blockifies them.
+	children?: boolean;
+	tag: string | null;
+	classes: string[];
+	ids: string[];
+	attributes: string[];
+}
+
+function getStateAnchor(
+	keys: CSSValues.SelectorReading["compounds"][number],
+): StateAnchor {
+	return {
+		anyElement:
+			keys.nestedCombinator || keys.pseudoClasses.includes("host-context"),
+		host: keys.pseudoClasses.includes("host"),
+		...keys.required,
+	};
+}
+
+function addStateAnchor(
+	anchors: Map<string, StateAnchor[]>,
+	name: string,
+	anchor: StateAnchor,
+): void {
+	const list = anchors.get(name);
+	if (list === undefined) {
+		anchors.set(name, [anchor]);
+	} else {
+		list.push(anchor);
+	}
+}
+
+function couldAnchor(element: Element, anchor: StateAnchor): boolean {
+	if (anchor.anyElement) {
+		return true;
+	}
+	if (anchor.host && getShadowRoot(element) === null) {
+		return false;
+	}
+	return (
+		(anchor.tag === null || anchor.tag === element.localName) &&
+		anchor.classes.every((name) => element.classList.contains(name)) &&
+		anchor.ids.every((id) => element.id === id) &&
+		anchor.attributes.every((name) => element.hasAttribute(name))
+	);
+}
+
 // A key reaches descendants two ways: tested on a NON-SUBJECT compound,
 // or on a rule declaring an INHERITED property. In neither position, it
 // changes nothing but the element's own box.
@@ -7440,18 +7600,18 @@ function indexReachingKeys(
 	declarations: Record<string, string>,
 ): void {
 	let inherits = false;
+	let blockifies = false;
 	for (const property in declarations) {
 		// `display` is not inherited but reaches descendants anyway. A flex
 		// container isBlockified its children (css-display-3 §2.7).
-		if (
-			property === "all" ||
-			property === "display" ||
-			CSSValues.isInheritedProperty(property)
-		) {
+		if (property === "display") {
+			blockifies = true;
+		} else if (property === "all" || CSSValues.isInheritedProperty(property)) {
 			inherits = true;
-			break;
 		}
 	}
+	const subjectInherits = inherits;
+	inherits ||= blockifies;
 	if (
 		reading.reachesSiblings && (reading.siblingsReachDescendants || inherits)
 	) {
@@ -7500,10 +7660,38 @@ function indexReachingKeys(
 		}
 	}
 	const last = inherits ? compounds.length : compounds.length - 1;
+	for (const [i, keys] of compounds.entries()) {
+		// A compound with a combinator inside an argument describes other
+		// elements too, so what it tests can reach anywhere, from anyone.
+		const nested = keys.nestedCombinator;
+		const anchor = getStateAnchor(keys);
+		for (const name of keys.pseudoClasses) {
+			if (i < last || nested) {
+				addStateAnchor(cascade[kDescendantPseudoClasses], name, anchor);
+			}
+			if (keys.precedesSibling || nested) {
+				addStateAnchor(cascade[kSiblingPseudoClasses], name, anchor);
+			}
+		}
+	}
+	const subject = compounds.length === 0
+		? null
+		: getStateAnchor(compounds[compounds.length - 1]);
+	const reach = subjectInherits || subject === null || subject.anyElement
+		? null
+		: {...subject, children: blockifies};
 	for (let i = 0; i < last; i++) {
 		const keys = compounds[i];
 		for (const name of keys.classes) {
 			cascade[kReachingClasses].add(name);
+			const subjects = cascade[kClassSubjects].get(name);
+			if (reach === null || subjects === null) {
+				cascade[kClassSubjects].set(name, null);
+			} else if (subjects === undefined) {
+				cascade[kClassSubjects].set(name, [reach]);
+			} else {
+				subjects.push(reach);
+			}
 		}
 		for (const name of keys.ids) {
 			cascade[kReachingIds].add(name);
