@@ -9,6 +9,7 @@ import {
 import {
 	type CompiledSelector,
 	compileSelector,
+	type HasResults,
 	matchesCompiled,
 	parseSelectorList,
 	selectAllCompiled,
@@ -24,6 +25,7 @@ import {
 	ensurePseudoElement,
 	flatParentElement,
 	flushLayout,
+	flushStyle,
 	getHighlightRegistry,
 	getPseudoHost,
 	getPseudoName,
@@ -35,7 +37,7 @@ import {
 	TransitionEvent,
 	type Window,
 } from "./dom.ts";
-import {HTML_NAMESPACE, MATHML_NAMESPACE} from "./dom.ts";
+import {HTML_NAMESPACE, isButtonInput, MATHML_NAMESPACE} from "./dom.ts";
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {getStringWidth} from "./text.ts";
@@ -79,7 +81,11 @@ function getElementDefaults(
 	}
 	if (name === "input") {
 		const input = element as HTMLInputElement;
-		if (input.type === "checkbox" || input.type === "radio") {
+		if (
+			input.type === "checkbox" ||
+			input.type === "radio" ||
+			isButtonInput(input)
+		) {
 			return undefined;
 		}
 		// A text input's width is attribute state: size columns when the
@@ -205,6 +211,8 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 // reads deep inside the cascade itself that have no Cascade in
 // hand.
 const documentCascades = new WeakMap<object, Cascade>();
+const kHasResults = Symbol("hasResults");
+const kHasStates = Symbol("hasStates");
 
 // What list-style-type spells, quoted the way a content value is
 // written. Null outside a list.
@@ -298,10 +306,13 @@ Object.defineProperty(CSSNamespace, Symbol.toStringTag, {
 });
 
 // The highlight registry belongs to one document, so each window gets a
-// CSS of its own over the shared namespace rather than the namespace
-// itself.
+// CSS of its own. A namespace object's members are its own properties,
+// class string included, so they are copied rather than inherited.
 function createCSSNamespace(document: Document): typeof CSSNamespace {
-	const namespace = Object.create(CSSNamespace) as typeof CSSNamespace;
+	const namespace =
+		Object.defineProperties({}, Object.getOwnPropertyDescriptors(
+			CSSNamespace,
+		)) as typeof CSSNamespace;
 	Object.defineProperty(namespace, "highlights", {
 		value: getHighlightRegistry(document),
 		enumerable: true,
@@ -1418,6 +1429,50 @@ class CSSFontFaceRule extends CSSDeclarationBlockRule {
 	}
 }
 
+// Declarations that follow a nested rule, or sit in a conditional rule
+// nested in a style rule. They apply with the enclosing style rule's
+// selectors, in the place they were written.
+interface CSSNestedDeclarations {
+	[kStyle]: CSSStyleProperties;
+}
+
+class CSSNestedDeclarations extends CSSRule {
+	constructor(
+		block: readonly CSSValues.CSSDeclaration[],
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(parentStyleSheet, parentRule);
+		this[kStyle] = new CSSStyleProperties({
+			parentRule: this,
+			onChange: () => notifyRule(this),
+		});
+		assignDeclarations(this[kStyle], block);
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get style(): CSSStyleDeclaration {
+		return this[kStyle];
+	}
+
+	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
+	set style(text: string) {
+		this[kStyle].cssText = String(text);
+	}
+
+	get cssText(): string {
+		return this[kStyle].cssText;
+	}
+}
+
+Object.defineProperty(CSSNestedDeclarations.prototype, Symbol.toStringTag, {
+	value: "CSSNestedDeclarations",
+	configurable: true,
+});
+
 interface CSSPageRule {
 	[kSelectorText]: string;
 }
@@ -2469,6 +2524,121 @@ function checkRuleOrder(
 	}
 }
 
+// css-tree reads a style block's items as declarations, and one that
+// fails becomes a Raw node running to the next semicolon, so `.title {}`
+// nested in a rule vanished with everything after it. CSS Syntax reads an
+// item that is not a declaration as a nested rule (css-nesting-1 §2), and
+// so does this: a declaration is tried first, and an item that fails, or
+// that holds a {} block without being a custom property, is read again as
+// a rule.
+const {
+	AtKeyword,
+	Comment,
+	LeftCurlyBracket,
+	RightCurlyBracket,
+	Semicolon,
+	WhiteSpace,
+} = (CSSTree as unknown as {tokenTypes: Record<string, number>}).tokenTypes;
+
+interface BlockParser {
+	eof: boolean;
+	tokenType: number;
+	tokenIndex: number;
+	tokenStart: number;
+	createList(): {push(node: unknown): void};
+	eat(type: number): void;
+	next(): void;
+	skip(count: number): void;
+	getTokenStart(index: number): number;
+	substrToCursor(start: number): string;
+	getLocation(start: number, end: number): unknown;
+	parseWithFallback(consumer: unknown, fallback: unknown): unknown;
+	consumeUntilSemicolonIncluded: unknown;
+	Raw(consumer: unknown, excludeWhiteSpace: boolean): unknown;
+	Rule(): unknown;
+	Declaration(): {property?: string};
+	Atrule(isStyleBlock: boolean): unknown;
+}
+
+function consumeBlockItem(this: BlockParser): unknown {
+	if (this.tokenType === Semicolon) {
+		return this.Raw(this.consumeUntilSemicolonIncluded, true);
+	}
+	const start = this.tokenIndex;
+	const startOffset = this.getTokenStart(start);
+	let declaration: {property?: string} | null;
+	try {
+		declaration = this.Declaration();
+	} catch (_err) {
+		declaration = null;
+	}
+	if (
+		declaration !== null &&
+		(String(declaration.property ?? "").startsWith("--") ||
+			!this.substrToCursor(startOffset).includes("{"))
+	) {
+		if (this.tokenType === Semicolon) {
+			this.next();
+		}
+		return declaration;
+	}
+	this.skip(start - this.tokenIndex);
+	return this.parseWithFallback(this.Rule, function (this: BlockParser) {
+		return this.Raw(this.consumeUntilSemicolonIncluded, true);
+	});
+}
+
+const nestingSyntax = (CSSTree.fork as (extension: object) => typeof CSSTree)({
+	node: {
+		Block: {
+			parse(this: BlockParser, isStyleBlock: boolean) {
+				const start = this.tokenStart;
+				const children = this.createList();
+				this.eat(LeftCurlyBracket);
+				scan: while (!this.eof) {
+					switch (this.tokenType) {
+						case RightCurlyBracket:
+							break scan;
+						case WhiteSpace:
+						case Comment:
+							this.next();
+							break;
+						case AtKeyword:
+							children.push(
+								this.parseWithFallback(
+									() => this.Atrule(isStyleBlock),
+									function (this: BlockParser) {
+										return this.Raw(null, true);
+									},
+								),
+							);
+							break;
+						default:
+							children.push(
+								isStyleBlock
+									? consumeBlockItem.call(this)
+									: this.parseWithFallback(
+										this.Rule,
+										function (this: BlockParser) {
+											return this.Raw(null, true);
+										},
+									),
+							);
+					}
+				}
+				if (!this.eof) {
+					this.eat(RightCurlyBracket);
+				}
+				return {
+					type: "Block",
+					loc: this.getLocation(start, this.tokenStart),
+					children,
+				};
+			},
+		},
+	},
+});
+
 function parseRules(
 	text: string,
 	sheet: CSSStyleSheet | null,
@@ -2481,7 +2651,7 @@ function parseRules(
 		// what a raw-text parse would keep. Positions are on because the value
 		// TEXT serializes from the authored source, not from the parsed
 		// spelling.
-		ast = CSSTree.parse(text, {
+		ast = nestingSyntax.parse(text, {
 			parseValue: true,
 			parseAtrulePrelude: false,
 			parseRulePrelude: false,
@@ -2502,7 +2672,7 @@ function parseRuleText(
 	const source = String(text ?? "");
 	let ast: {children: {toArray(): CSSTree.StyleSheetNode[]}};
 	try {
-		ast = CSSTree.parse(source, {
+		ast = nestingSyntax.parse(source, {
 			parseValue: false,
 			parseAtrulePrelude: false,
 			parseRulePrelude: false,
@@ -2542,7 +2712,30 @@ function convertRules(
 	namespaces: SelectorNamespaces = {default: null, prefixes: new Map()},
 ): CSSRule[] {
 	const rules: CSSRule[] = [];
+	// Declarations among rules nested in a style rule, directly or in a
+	// conditional rule inside one, are gathered into runs.
+	const nestedContext = isInStyleRule(parentRule);
+	let run: CSSTree.StyleSheetNode[] = [];
+	const closeRun = (): void => {
+		if (run.length > 0) {
+			rules.push(
+				new CSSNestedDeclarations(
+					CSSValues.getDeclarations(run, source),
+					sheet,
+					parentRule,
+				),
+			);
+			run = [];
+		}
+	};
 	for (const node of nodes) {
+		if (node.type === "Declaration") {
+			if (nestedContext) {
+				run.push(node);
+			}
+			continue;
+		}
+		closeRun();
 		const rule = convertRule(node, source, sheet, parentRule, namespaces);
 		if (!rule) {
 			continue;
@@ -2559,7 +2752,17 @@ function convertRules(
 		}
 		rules.push(rule);
 	}
+	closeRun();
 	return rules;
+}
+
+function isInStyleRule(rule: CSSRule | null): boolean {
+	for (let current = rule; current !== null; current = current.parentRule) {
+		if (current instanceof CSSStyleRule) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function convertRule(
@@ -2583,19 +2786,21 @@ function convertRule(
 		) {
 			return null;
 		}
+		// The declarations before the first nested rule are the rule's own.
+		// Any that follow a nested rule keep their place among the rules as
+		// nested declarations (css-nesting-1 §3.2).
+		const items = CSSValues.getNodes(node.block ?? {});
+		const split = items.findIndex(
+			(item) => item.type === "Rule" || item.type === "Atrule",
+		);
+		const own = split === -1 ? items : items.slice(0, split);
+		const nested = split === -1 ? [] : items.slice(split);
 		return new CSSStyleRule(
 			selectors,
-			CSSValues.getBlockDeclarations(node, source),
+			CSSValues.getDeclarations(own, source),
 			sheet,
 			parentRule,
-			(rule) =>
-				convertRules(
-					CSSValues.getNestedRules(node),
-					source,
-					sheet,
-					rule,
-					namespaces,
-				),
+			(rule) => convertRules(nested, source, sheet, rule, namespaces),
 		);
 	}
 	if (node.type !== "Atrule") {
@@ -2869,6 +3074,7 @@ for (const type of [
 	CSSNamespaceRule,
 	CSSImportRule,
 	CSSFontFaceRule,
+	CSSNestedDeclarations,
 	CSSPageRule,
 	CSSCounterStyleRule,
 	CSSPropertyRule,
@@ -4635,6 +4841,10 @@ interface ParsedCSSRule {
 	specificity: string;
 	pseudoElement?: string;
 
+	// The pseudo-classes written after `::part()`, which the part element
+	// itself must match: `::part(inner):dir(rtl)`.
+	partMatcher?: CompiledSelector | null;
+
 	// The tree scope whose stylesheet declared this rule. Undefined for
 	// document rules. A rule only ever matches elements of its own tree,
 	// which is the cascade's encapsulation boundary in both directions.
@@ -4702,9 +4912,11 @@ function isSelectedBy(
 	scope: Node,
 	shadow: Node | null = null,
 ): boolean {
+	const cascade = documentCascades.get(element.ownerDocument as object);
 	return matchesCompiled(element as unknown as DOMElement, selector, {
 		scope: scope as unknown as DOMNode,
 		shadow: shadow as DOMNode | null,
+		hasResults: cascade?.[kHasResults] ?? null,
 	});
 }
 
@@ -4759,6 +4971,9 @@ function attachPseudoElementsToElement(
 const kWindow = Symbol("window");
 const kDocument = Symbol("document");
 const kAttributeReachesDescendants = Symbol("attributeReachesDescendants");
+const kRestyleAll = Symbol("restyleAll");
+const kChainStateChange = Symbol("chainStateChange");
+const FOCUS_STATES = ["focus", "focus-within", "focus-visible"];
 const kDropCache = Symbol("clearCache");
 const kResolveCounterFunction = Symbol("resolveCounterFunction");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
@@ -4945,6 +5160,15 @@ export interface Cascade {
 	// than on the declarations so a cascade rebuild drops them all at once.
 	[kUsedValues]: WeakMap<object, Map<string, string>>;
 
+	// `:has()` answers, which go stale exactly when computed styles do, so
+	// they are dropped wherever a computed style is.
+	[kHasResults]: HasResults;
+
+	// The pseudo-classes named anywhere inside a :has() argument. A change
+	// to one of those states can restyle an anchor's whole subtree, far
+	// from the element whose state changed.
+	[kHasStates]: Set<string>;
+
 	// Set by the layout engine when geometry changed under the used values.
 	[kUsedStale]: boolean;
 
@@ -4992,11 +5216,13 @@ export class Cascade {
 		this[kListItemRulesExist] = false;
 		this[kScopedRulesExist] = false;
 		this[kHasRulesExist] = false;
+		this[kHasStates] = new Set();
 		this[kHoverRulesExist] = false;
 		this[kParsedStyleSheetCount] = -1;
 		this[kCounterScopes] = new WeakMap<Element, CSSValues.CounterScope>();
 		this[kFlushing] = false;
 		this[kUsedValues] = new WeakMap();
+		this[kHasResults] = new WeakMap();
 		this[kUsedStale] = true;
 		this[kLayerPaths] = [];
 		this[kAnonymousLayers] = 0;
@@ -5033,6 +5259,16 @@ export class Cascade {
 		// Incrementally. Rebuilding every sheet per UA shadow tree upgrade made
 		// a document of n UA shadow trees reparse everything n times.
 		this[kSyncShadowRoot](root);
+	}
+
+	// A root filled with its content after it registered, as a declarative
+	// shadow root is, has sheets its registration did not see.
+	syncShadowRoot(root: ShadowRoot): void {
+		if (this[kShadowRoots].has(root)) {
+			this[kSyncShadowRoot](root);
+		} else {
+			this.registerShadowRoot(root);
+		}
 	}
 
 	handleMutations(mutations: MutationRecord[]): void {
@@ -5219,6 +5455,10 @@ export class Cascade {
 	// declarations of the two moved elements hold rule sets matched BEFORE
 	// the move, so a :focus rule would never apply or stop applying.
 	handleFocusChange(...elements: Array<Element | null>): void {
+		if (FOCUS_STATES.some((state) => this[kHasStates].has(state))) {
+			this[kRestyleAll]();
+			return;
+		}
 		for (const element of elements) {
 			// What a :focus rule sets on the element, a colour, its children
 			// inherit, so its subtree goes stale with it.
@@ -5233,18 +5473,7 @@ export class Cascade {
 				let node: Element | null = element; node; node = flatParentElement(node)
 			) {
 				invalidateElementCaches(this, node);
-				// A :has() subject sits above what changed, or before it on the
-				// same level (`:has(+ :focus)`), so the earlier siblings of each
-				// element on the chain go stale as well.
-				if (this[kHasRulesExist]) {
-					for (
-						let sibling = node.previousElementSibling;
-						sibling;
-						sibling = sibling.previousElementSibling
-					) {
-						invalidateElementCaches(this, sibling);
-					}
-				}
+				invalidateLaterSiblings(this, node);
 				const shadowRoot = getShadowRoot(node);
 				if (shadowRoot) {
 					for (const descendant of shadowRoot.querySelectorAll("*")) {
@@ -5255,10 +5484,20 @@ export class Cascade {
 		}
 	}
 
-	// State no attribute records changed: a popover was shown or hidden,
-	// and the rules that test it (:popover-open) matched before the change.
-	handleStateChange(element: Element): void {
+	// State no attribute or tree records changed: a checkbox was checked, a
+	// custom element defined, a popover shown. `states` names the
+	// pseudo-classes that read it. A rule can test the state on the element
+	// itself, on an ancestor of what it styles, or before a sibling
+	// combinator, so the element's subtree and its later siblings restyle.
+	// One that tests it inside :has() can style anything, so everything
+	// restyles.
+	handleStateChange(element: Element, states: readonly string[]): void {
+		if (states.some((state) => this[kHasStates].has(state))) {
+			this[kRestyleAll]();
+			return;
+		}
 		invalidateSubtree(this, element);
+		invalidateLaterSiblings(this, element);
 		// No mutation record describes the change, so the frame that decides
 		// whether anything needs painting is notified here.
 		this[kLayout].invalidateFrame();
@@ -5268,37 +5507,13 @@ export class Cascade {
 	// difference of the two flat-tree chains. The shared ancestors above the
 	// fork were hovered before and are hovered still.
 	handleHoverChange(previous: Element | null, next: Element | null): void {
-		const getChain = (element: Element | null): Set<Element> => {
-			const chain = new Set<Element>();
-			for (
-				let node: Element | null = element; node; node = flatParentElement(node)
-			) {
-				chain.add(node);
-			}
-			return chain;
-		};
-		const previousChain = getChain(previous);
-		const nextChain = getChain(next);
-		const invalidate = (node: Element): void => {
-			invalidateElementCaches(this, node);
-			// A host's hover reaches its shadow tree through :host(:hover).
-			const shadowRoot = getShadowRoot(node);
-			if (shadowRoot) {
-				for (const descendant of shadowRoot.querySelectorAll("*")) {
-					invalidateElementCaches(this, descendant);
-				}
-			}
-		};
-		for (const node of previousChain) {
-			if (!nextChain.has(node)) {
-				invalidate(node);
-			}
-		}
-		for (const node of nextChain) {
-			if (!previousChain.has(node)) {
-				invalidate(node);
-			}
-		}
+		this[kChainStateChange](previous, next, "hover");
+	}
+
+	// The same for the element a mouse button is held down on, which with
+	// its ancestors is :active.
+	handleActiveChange(previous: Element | null, next: Element | null): void {
+		this[kChainStateChange](previous, next, "active");
 	}
 
 	// A dirty sheet list parses first, so a value read between frames still
@@ -5432,6 +5647,7 @@ export class Cascade {
 	// The document is being torn down.
 	dispose(): void {
 		this[kComputedStyleCache] = new WeakMap();
+		this[kHasResults] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
 		if (this[kTransitionTimer] !== null) {
@@ -5442,23 +5658,81 @@ export class Cascade {
 		this[kTransitionEvents] = [];
 	}
 
+	// A state that follows one element and its flat-tree ancestors, :hover or
+	// :active, moved from one chain to another. Only the elements on one
+	// chain and not the other changed.
+	[kChainStateChange](
+		previous: Element | null,
+		next: Element | null,
+		state: string,
+	): void {
+		if (this[kHasStates].has(state)) {
+			this[kRestyleAll]();
+			return;
+		}
+		const getChain = (element: Element | null): Set<Element> => {
+			const chain = new Set<Element>();
+			for (
+				let node: Element | null = element; node; node = flatParentElement(node)
+			) {
+				chain.add(node);
+			}
+			return chain;
+		};
+		const previousChain = getChain(previous);
+		const nextChain = getChain(next);
+		const invalidate = (node: Element): void => {
+			invalidateElementCaches(this, node);
+			invalidateLaterSiblings(this, node);
+			// A host's state reaches its shadow tree through :host(:hover).
+			const shadowRoot = getShadowRoot(node);
+			if (shadowRoot) {
+				for (const descendant of shadowRoot.querySelectorAll("*")) {
+					invalidateElementCaches(this, descendant);
+				}
+			}
+		};
+		for (const node of previousChain) {
+			if (!nextChain.has(node)) {
+				invalidate(node);
+			}
+		}
+		for (const node of nextChain) {
+			if (!previousChain.has(node)) {
+				invalidate(node);
+			}
+		}
+	}
+
+	// Everything restyles, as it does when a stylesheet changes.
+	[kRestyleAll](): void {
+		this[kDropCache]();
+		const root = this[kDocument].documentElement;
+		if (root) {
+			this[kLayout].invalidate(root);
+		} else {
+			this[kLayout].invalidateFrame();
+		}
+	}
+
 	[kMatchingRules](element: Element): ParsedCSSRule[] {
 		parseStylesheetsIfStale(this);
 		return getMatchingRules(this, element);
 	}
 
 	// Every author-facing style read goes through this flush, so a value
-	// read right after a DOM change describes it. The engine's own reads
-	// never flush. Not re-entrant: layout and paint resolve styles as they
-	// run, and asking for the flush from inside it would compute it inside
-	// itself.
+	// read right after a DOM change describes it. It settles style only: a
+	// value that is measured lays out first through getUsedRect. The
+	// engine's own reads never flush. Not re-entrant: layout and paint
+	// resolve styles as they run, and asking for the flush from inside it
+	// would compute it inside itself.
 	[kFlushStyle](): void {
 		if (this[kFlushing]) {
 			return;
 		}
 		this[kFlushing] = true;
 		try {
-			if (flushLayout(this[kDocument])) {
+			if (flushStyle(this[kDocument])) {
 				this[kUsedValues] = new WeakMap();
 			}
 		} finally {
@@ -5625,6 +5899,7 @@ export class Cascade {
 		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kUsedValues] = new WeakMap();
 		this[kComputedStyleCache] = new WeakMap();
+		this[kHasResults] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
 	}
@@ -6448,6 +6723,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
+	cascade[kHasResults] = new WeakMap();
 	cascade[kPseudoElementStyleCache].delete(element);
 	// A style change can flip display: contents, which moves the node's
 	// flat-tree BOX parent, so every box enumeration is stale.
@@ -6466,6 +6742,21 @@ function invalidateChildren(cascade: Cascade, element: Element): void {
 	invalidateSibling(cascade, element);
 	for (const child of element.children) {
 		invalidateSibling(cascade, child);
+	}
+}
+
+// `:focus ~ .card` and `:hover + label` match siblings AFTER the element
+// whose state changed, and their cached styles know nothing of it.
+function invalidateLaterSiblings(cascade: Cascade, element: Element): void {
+	if (!cascade[kSelectorsReachSiblings]) {
+		return;
+	}
+	for (
+		let sibling = element.nextElementSibling;
+		sibling;
+		sibling = sibling.nextElementSibling
+	) {
+		invalidateSibling(cascade, sibling);
 	}
 }
 
@@ -6526,6 +6817,7 @@ function invalidateElementCaches(
 		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
+	cascade[kHasResults] = new WeakMap();
 	const droppedPseudos = cascade[kPseudoElementStyleCache].get(element);
 	if (droppedPseudos) {
 		for (const [name, declaration] of droppedPseudos) {
@@ -6718,6 +7010,7 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	cascade[kListItemRulesExist] = false;
 	cascade[kScopedRulesExist] = false;
 	cascade[kHasRulesExist] = false;
+	cascade[kHasStates] = new Set();
 	cascade[kHoverRulesExist] = false;
 	cascade[kStylesheetsDirty] = false;
 	cascade[kLayerPaths] = [];
@@ -7048,18 +7341,27 @@ function readScopeCondition(rule: CSSScopeRule): CSSValues.ScopeCondition {
 	};
 }
 
+// `parent` is the selector list of the rule this one is nested in, which
+// its own selectors are resolved against.
 function parseStyleRule(
 	cascade: Cascade,
 	styleRule: CSSStyleRule,
 	scope?: Node,
 	uaOriginSheet?: boolean,
 	context: CSSValues.RuleContext = UNCONDITIONAL,
+	parent: string | null = null,
 ): void {
 	// Each selector of the list is matched and weighed on its own.
 	// `#a::before, #b` is one pseudo rule and one ordinary rule.
 	const block = getDeclarationBlock(styleRule.style);
 	const namespaces = getSheetNamespaces(styleRule.parentStyleSheet);
-	for (const selector of CSSValues.splitSelectorList(styleRule.selectorText)) {
+	const selectors = CSSValues.splitSelectorList(styleRule.selectorText)
+		.map((selector) =>
+			parent === null
+				? selector
+				: CSSValues.resolveNestedSelector(selector, parent),
+		);
+	for (const selector of selectors) {
 		parseSelector(
 			cascade,
 			selector,
@@ -7069,6 +7371,63 @@ function parseStyleRule(
 			namespaces,
 			context,
 		);
+	}
+	parseNestedRules(
+		cascade,
+		styleRule,
+		selectors.join(", "),
+		scope,
+		uaOriginSheet,
+		context,
+	);
+}
+
+// The rules nested in a style rule, and in the conditional rules nested
+// in it, resolved against the style rule's selectors.
+function parseNestedRules(
+	cascade: Cascade,
+	container: CSSGroupingRule,
+	parent: string,
+	scope: Node | undefined,
+	uaOriginSheet: boolean | undefined,
+	context: CSSValues.RuleContext,
+): void {
+	for (const rule of container.cssRules) {
+		if (rule instanceof CSSNestedDeclarations) {
+			const block = getDeclarationBlock(rule.style);
+			const namespaces = getSheetNamespaces(rule.parentStyleSheet);
+			for (const selector of CSSValues.splitSelectorList(parent)) {
+				parseSelector(
+					cascade,
+					selector,
+					block,
+					scope,
+					uaOriginSheet,
+					namespaces,
+					context,
+				);
+			}
+		} else if (rule instanceof CSSStyleRule) {
+			parseStyleRule(cascade, rule, scope, uaOriginSheet, context, parent);
+		} else if (rule instanceof CSSMediaRule) {
+			if (cascade.mediaQueryMatches(rule.conditionText)) {
+				parseNestedRules(cascade, rule, parent, scope, uaOriginSheet, context);
+			}
+		} else if (rule instanceof CSSSupportsRule) {
+			parseNestedRules(cascade, rule, parent, scope, uaOriginSheet, context);
+		} else if (rule instanceof CSSLayerBlockRule) {
+			const layer = rule.name
+				? declareLayer(cascade, context.layer, rule.name)
+				: declareLayer(
+					cascade,
+					context.layer,
+					`\0${cascade[kAnonymousLayers]++}`,
+				);
+			parseNestedRules(cascade, rule, parent, scope, uaOriginSheet, {
+				...context,
+				layer,
+			});
+		}
 	}
 }
 
@@ -7104,10 +7463,11 @@ function indexReachingKeys(
 			continue;
 		}
 		if (
-			keys.tag === null &&
-			keys.classes.length === 0 &&
-			keys.ids.length === 0 &&
-			keys.attributes.length === 0
+			keys.anyElement ||
+			(keys.tag === null &&
+				keys.classes.length === 0 &&
+				keys.ids.length === 0 &&
+				keys.attributes.length === 0)
 		) {
 			cascade[kSiblingsUniversal] = true;
 		}
@@ -7197,6 +7557,10 @@ function parseSelector(
 	// sweep only for documents that need it.
 	if (selector.includes(":has(")) {
 		cascade[kHasRulesExist] = true;
+		const inside = selector.slice(selector.indexOf(":has(") + 5);
+		for (const match of inside.matchAll(/:([a-zA-Z-]+)/g)) {
+			cascade[kHasStates].add(match[1].toLowerCase());
+		}
 	}
 	if (selector.includes(":hover")) {
 		cascade[kHoverRulesExist] = true;
@@ -7251,8 +7615,16 @@ function parseSelector(
 	);
 
 	if (pseudoMatch) {
-		const [, baseSelector] = pseudoMatch;
+		const [, baseSelector, , trailing] = pseudoMatch;
 		const pseudoElement = unescapeHighlightName(pseudoMatch[2]);
+		let partMatcher: CompiledSelector | null | undefined;
+		if (trailing && pseudoElement.startsWith("::part(")) {
+			try {
+				partMatcher = compileSelector(`*${trailing}`, {namespaces});
+			} catch (_err) {
+				partMatcher = null;
+			}
+		}
 		const rule: ParsedCSSRule = {
 			// A pseudo-element written with no originating selector originates
 			// on every element, which is what `*` means.
@@ -7263,6 +7635,7 @@ function parseSelector(
 			order,
 			specificity,
 			pseudoElement,
+			partMatcher,
 			scope,
 			uaOrigin,
 			reachesHost,
@@ -7318,7 +7691,10 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 				return (
 					shadowHost !== null &&
 					partNames.includes(partArg[1].trim()) &&
-					isRuleMatch(shadowHost, rule)
+					isRuleMatch(shadowHost, rule) &&
+					(rule.partMatcher === undefined ||
+						(rule.partMatcher !== null &&
+							isSelectedBy(element, rule.partMatcher, element)))
 				);
 			}
 			return (

@@ -17,16 +17,20 @@ async function type(terminal: MockProcess, data: string): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+// The clicks of a multi-click arrive as one read, as a terminal sends a
+// quick double click, so the interval between them is not the machine's
+// load to decide.
 async function clicks(
 	terminal: MockProcess,
 	count: number,
 	col: number,
 	row: number,
+	then = "",
 ): Promise<void> {
-	for (let i = 0; i < count; i++) {
-		await type(terminal, press(col, row));
-		await type(terminal, release(col, row));
-	}
+	await type(
+		terminal,
+		(press(col, row) + release(col, row)).repeat(count) + then,
+	);
 }
 
 async function page(
@@ -63,18 +67,12 @@ test("a double click past the end of a line selects its last word", async () => 
 
 test("a drag after a double click extends a word at a time", async () => {
 	const {terminal, dom} = await page("<div>one two three four</div>");
-	await clicks(terminal, 1, 6, 1);
-	await type(terminal, press(6, 1));
-	await type(terminal, drag(10, 1));
-	await type(terminal, release(10, 1));
+	await clicks(terminal, 1, 6, 1, press(6, 1) + drag(10, 1) + release(10, 1));
 	expect(dom.window.getSelection()!.toString()).toBe("two three");
 
 	// Past the double-click interval, so the next click counts from one.
 	await new Promise((resolve) => setTimeout(resolve, 600));
-	await clicks(terminal, 1, 10, 1);
-	await type(terminal, press(10, 1));
-	await type(terminal, drag(2, 1));
-	await type(terminal, release(2, 1));
+	await clicks(terminal, 1, 10, 1, press(10, 1) + drag(2, 1) + release(2, 1));
 	expect(dom.window.getSelection()!.toString()).toBe("one two three");
 	await dom.dispose();
 });
@@ -83,10 +81,7 @@ test("a drag after a triple click extends a paragraph at a time", async () => {
 	const {terminal, dom} = await page(
 		"<div>first line here</div><div>second line</div><div>third</div>",
 	);
-	await clicks(terminal, 2, 3, 1);
-	await type(terminal, press(3, 1));
-	await type(terminal, drag(3, 2));
-	await type(terminal, release(3, 2));
+	await clicks(terminal, 2, 3, 1, press(3, 1) + drag(3, 2) + release(3, 2));
 	expect(dom.window.getSelection()!.toString()).toBe(
 		"first line here\nsecond line",
 	);
@@ -132,6 +127,7 @@ test("in an input, a triple click selects the whole value", async () => {
 	expect(input.value.slice(input.selectionStart!, input.selectionEnd!)).toBe(
 		"beta",
 	);
+	// The third click of the triple, arriving a moment after the other two.
 	await clicks(terminal, 1, 8, 1);
 	expect(input.selectionStart).toBe(0);
 	expect(input.selectionEnd).toBe(input.value.length);

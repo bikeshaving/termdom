@@ -554,9 +554,10 @@ test("a leading <br> keeps its line break and the whole run after it", async () 
 	// The run's leading-whitespace trim used to eat the <br>'s newline (losing
 	// the break) and shift every leaf's offsets without shifting the text those
 	// offsets index into -- so the line measured one cell short of what it
-	// painted and clipped the last character: " abcde".
+	// painted and clipped the last character. The line the <br> opens starts
+	// on its content, as in a browser.
 	expect(lines[0]).toBe("");
-	expect(lines[1]).toBe(" abcdef");
+	expect(lines[1]).toBe("abcdef");
 
 	dom.dispose();
 });

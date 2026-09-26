@@ -173,9 +173,9 @@ test("togglePopover flips the state, and force names the half to run", async () 
 
 	expect(popover.togglePopover(true)).toBe(true);
 	expect(popover.togglePopover(true)).toBe(true);
-	// The dictionary form of force, which the ambient DOM types predate.
-	expect((popover as any).togglePopover({force: false})).toBe(false);
-	expect((popover as any).togglePopover({force: false})).toBe(false);
+	// The dictionary form of force.
+	expect(popover.togglePopover({force: false})).toBe(false);
+	expect(popover.togglePopover({force: false})).toBe(false);
 	dom.dispose();
 });
 
@@ -339,6 +339,80 @@ test("popoverTargetElement takes an element, not only an id", async () => {
 	button.popoverTargetElement = null;
 	expect(button.hasAttribute("popovertarget")).toBe(false);
 	expect(button.popoverTargetElement).toBe(null);
+	dom.dispose();
+});
+
+test("command reflects its known keywords and custom commands", async () => {
+	const {document, dom, popover} = await open(
+		"<button commandfor=pop command=Show-Popover>Open</button>" +
+		"<div id=pop popover>hi</div>",
+	);
+	const button = document.querySelector("button") as HTMLButtonElement;
+	expect(button.command).toBe("show-popover");
+	expect(button.commandForElement).toBe(popover);
+
+	button.setAttribute("command", "--spin");
+	expect(button.command).toBe("--spin");
+	button.setAttribute("command", "spin");
+	expect(button.command).toBe("");
+
+	button.commandForElement = null;
+	expect(button.hasAttribute("commandfor")).toBe(false);
+	button.commandForElement = popover;
+	expect(button.commandForElement).toBe(popover);
+	expect(button.popoverTargetElement).toBe(null);
+	dom.dispose();
+});
+
+test("a command button runs its popover command after a command event", async () => {
+	const {document, dom, popover} = await open(
+		"<button commandfor=pop command=toggle-popover>Toggle</button>" +
+		"<div id=pop popover>hi</div>",
+	);
+	const button = document.querySelector("button") as HTMLButtonElement;
+	const heard: Array<[string, Element | null]> = [];
+	popover.addEventListener("command", (event: any) => {
+		heard.push([event.command, event.source]);
+	});
+	button.click();
+	expect(heard).toEqual([["toggle-popover", button]]);
+	expect(popover.matches(":popover-open")).toBe(true);
+	button.click();
+	expect(popover.matches(":popover-open")).toBe(false);
+
+	popover.addEventListener("command", (event) => event.preventDefault());
+	button.click();
+	expect(popover.matches(":popover-open")).toBe(false);
+	dom.dispose();
+});
+
+test("a custom command is only the event", async () => {
+	const {document, dom, popover} = await open(
+		"<button commandfor=pop command=--spin>Spin</button>" +
+		"<div id=pop popover>hi</div>",
+	);
+	let heard = "";
+	popover.addEventListener("command", (event: any) => {
+		heard = event.command;
+	});
+	(document.querySelector("button") as HTMLButtonElement).click();
+	expect(heard).toBe("--spin");
+	expect(popover.matches(":popover-open")).toBe(false);
+	dom.dispose();
+});
+
+test("command buttons open and close a dialog", async () => {
+	const {document, dom} = await open(
+		"<button id=open commandfor=d command=show-modal>Open</button>" +
+		"<dialog id=d><button id=close commandfor=d command=close value=done>" +
+		"Close</button></dialog>",
+	);
+	const dialog = document.querySelector("dialog") as HTMLDialogElement;
+	(document.getElementById("open") as HTMLButtonElement).click();
+	expect(dialog.matches(":modal")).toBe(true);
+	(document.getElementById("close") as HTMLButtonElement).click();
+	expect(dialog.open).toBe(false);
+	expect(dialog.returnValue).toBe("done");
 	dom.dispose();
 });
 

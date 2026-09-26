@@ -2639,3 +2639,164 @@ test("Space toggles a focused checkbox and checks a focused radio", async () => 
 	expect(changes).toEqual(["box", "box", "two"]);
 	termdom.dispose();
 });
+
+async function makeKeyApp(
+	html: string,
+): Promise<{
+	terminal: MockProcess;
+	termdom: TermDOM;
+	document: Document;
+	type: (data: string) => Promise<void>;
+}> {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
+	const {document} = termdom;
+	document.body.innerHTML = html;
+	await nextFrame(termdom);
+	const type = (data: string): Promise<void> => {
+		(terminal.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
+			"data",
+			Buffer.from(data),
+		);
+		return new Promise((resolve) => setTimeout(resolve, 0));
+	};
+	return {terminal, termdom, document, type};
+}
+
+test("keys, pastes and Enter reach a field inside a shadow root", async () => {
+	const {termdom, document, type} = await makeKeyApp("<div id=\"host\"></div>");
+	const shadow = document.getElementById("host")!.attachShadow({mode: "open"});
+	shadow.innerHTML = "<input id=\"field\"><button id=\"go\">[go]</button>";
+	await nextFrame(termdom);
+	const field = shadow.getElementById("field") as HTMLInputElement;
+	const seen: string[] = [];
+	document.addEventListener("keydown", (event) => {
+		seen.push(`${(event.target as Element).id}:${event.composed}`);
+	});
+
+	field.focus();
+	await type("ab");
+	await type("\x1b[200~cd\x1b[201~");
+	expect(field.value).toBe("abcd");
+	// The page hears the keys at the host, as it would in a browser.
+	expect(seen).toEqual(["host:true", "host:true"]);
+
+	let clicks = 0;
+	const go = shadow.getElementById("go")!;
+	go.addEventListener("click", () => clicks++);
+	go.focus();
+	await type("\r");
+	expect(clicks).toBe(1);
+	termdom.dispose();
+});
+
+test("a page listener can cancel what a field does with a key", async () => {
+	const {termdom, document, type} = await makeKeyApp(
+		"<input id=\"f\" value=\"abc\"><textarea id=\"t\">abc</textarea>",
+	);
+	// Canceled on the way up, after the field itself has seen the event.
+	document.addEventListener("beforeinput", (event) => {
+		if ((event as InputEvent).inputType !== "deleteContentBackward") {
+			event.preventDefault();
+		}
+	});
+	document.addEventListener("keydown", (event) => {
+		if (event.key === "Delete") {
+			event.preventDefault();
+		}
+	});
+	for (const id of ["f", "t"]) {
+		const field = document.getElementById(id) as HTMLInputElement;
+		field.focus();
+		field.setSelectionRange(3, 3);
+		await type("x");
+		await type("\x1b[200~y\x1b[201~");
+		expect(field.value).toBe("abc");
+		await type("\x7f");
+		expect(field.value).toBe("ab");
+		field.setSelectionRange(0, 0);
+		await type("\x1b[3~");
+		expect(field.value).toBe("ab");
+	}
+	termdom.dispose();
+});
+
+test("a field's edits fire InputEvents that say what they were", async () => {
+	const {termdom, document, type} = await makeKeyApp("<input id=\"f\">");
+	const field = document.getElementById("f") as HTMLInputElement;
+	const seen: string[] = [];
+	for (const name of ["beforeinput", "input"]) {
+		field.addEventListener(name, (event) => {
+			const input = event as InputEvent;
+			seen.push(`${name}:${input.inputType}:${input.data}`);
+		});
+	}
+	field.focus();
+	await type("a");
+	await type("\x1b[200~bc\x1b[201~");
+	await type("\x7f");
+	expect(seen).toEqual([
+		"beforeinput:insertText:a",
+		"input:insertText:a",
+		"beforeinput:insertFromPaste:bc",
+		"input:insertFromPaste:bc",
+		"beforeinput:deleteContentBackward:null",
+		"input:deleteContentBackward:null",
+	]);
+	expect(field.value).toBe("ab");
+	termdom.dispose();
+});
+
+test("Enter in a field submits its form, as a browser's does", async () => {
+	const {termdom, document, type} = await makeKeyApp(
+		"<form id=\"one\"><input id=\"q\" required></form>" +
+			"<form id=\"two\"><input id=\"a\"><input id=\"b\">" +
+			"<button id=\"go\">[go]</button></form>" +
+			"<form id=\"three\"><input id=\"c\"><input id=\"d\"></form>",
+	);
+	const seen: string[] = [];
+	document.addEventListener("submit", (event) => {
+		const submit = event as SubmitEvent;
+		seen.push(
+			`${(event.target as Element).id}:${submit.submitter?.id ?? null}`,
+		);
+		event.preventDefault();
+	});
+	document.addEventListener(
+		"invalid",
+		(event) => seen.push(`invalid:${(event.target as Element).id}`),
+		true,
+	);
+	const focusAndEnter = async (id: string, text = ""): Promise<void> => {
+		(document.getElementById(id) as HTMLInputElement).focus();
+		await type(`${text}\r`);
+	};
+
+	// One field and no button: the form submits, once it is valid.
+	await focusAndEnter("q");
+	await focusAndEnter("q", "x");
+	// A default button is clicked, whatever else the form holds.
+	await focusAndEnter("a");
+	// Two fields and no button: Enter does nothing.
+	await focusAndEnter("c");
+	expect(seen).toEqual(["invalid:q", "one:null", "two:go"]);
+	termdom.dispose();
+});
+
+test("a dialog form's button closes its dialog with the button's value", async () => {
+	const {termdom, document, type} = await makeKeyApp(
+		"<dialog id=\"d\"><form method=\"dialog\">" +
+			"<button id=\"no\" value=\"no\">[no]</button>" +
+			"<button id=\"yes\" value=\"yes\">[yes]</button>" +
+			"</form></dialog>",
+	);
+	const dialog = document.getElementById("d") as HTMLDialogElement;
+	dialog.showModal();
+	(document.getElementById("yes") as HTMLElement).focus();
+	await type("\r");
+	expect(dialog.open).toBe(false);
+	expect(dialog.returnValue).toBe("yes");
+	termdom.dispose();
+});

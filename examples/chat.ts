@@ -67,7 +67,7 @@ function addMessage(role: "user" | "assistant", text: string): Text {
 }
 
 function scrollToPrompt(): void {
-  prompt.scrollIntoView();
+  prompt.scrollIntoView({block: "nearest"});
 }
 
 // The reply is streamed. ch.at echoes the whole prompt as `Q: ...` then adds a

@@ -383,12 +383,32 @@ function faceShade(depth: number): string {
   return `#${hex(0xf0)}${hex(0xf0)}${hex(0xe6)}`;
 }
 
+/** The focus blue, darkened by depth the way faceShade darkens the cream. */
+function focusShade(depth: number): string {
+  const step = Math.min(depth, 12) * 5;
+  const hex = (channel: number) =>
+    (channel - step).toString(16).padStart(2, "0");
+  return `#${hex(0xcf)}${hex(0xe2)}${hex(0xf7)}`;
+}
+
+/**
+ * The focused card and every card on it, which is what a pick-up takes,
+ * in the focus blue, shaded by depth as the stack is.
+ */
+function focusShades(): string {
+  return Array.from({length: 13}, (_, depth) => {
+    const nth = depth === 12 ? `n+${depth + 1}` : String(depth + 1);
+    return `  .pile > .card:focus:where(:nth-last-child(${nth})),
+  .pile > .card:focus ~ .card:where(:nth-last-child(${nth})) { background-color: ${focusShade(depth)}; }`;
+  }).join("\n");
+}
+
 function depthShades(): string {
   return Array.from({length: 12}, (_, i) => {
     const depth = i + 1;
     const nth = depth === 12 ? `n+${depth + 1}` : String(depth + 1);
-    return `  .fan > .card:not(.down):nth-last-child(${nth}),
-  .pile > .card:not(.down):nth-last-child(${nth}) { background-color: ${faceShade(depth)}; }`;
+    return `  .fan > .card:where(:not(.down):nth-last-child(${nth})),
+  .pile > .card:where(:not(.down):nth-last-child(${nth})) { background-color: ${faceShade(depth)}; }`;
   }).join("\n");
 }
 
@@ -451,15 +471,19 @@ function sheet(): string {
   .card.drop { background-color: #a9d7b7; }
   /* Each card under another is a shade darker than the one over it, a
      step a run of thirteen can take without reaching grey, so a fan or a
-     run reads as cards rather than as one field. Backs keep their blue. */
+     run reads as cards rather than as one field. Backs keep their blue.
+     The depth is in :where(), so the focus below still wins on a card
+     that has others on it. */
   ${depthShades()}
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
-  /* The focused card is the one light blue card on the board, and it is
-     the document's focus: tab, the arrows, the numbers and a click all move
-     the same thing. Its suit keeps its colour. */
+  /* The focused card is the document's focus: tab, the arrows, the
+     numbers and a click all move the same thing. It is light blue, and so
+     is every card on it, since picking it up takes them too. Suits keep
+     their colour. */
   .card, .slot { outline: none; }
   .card:focus { background-color: #cfe2f7; }
+  ${focusShades()}
   /* An empty place does not move. It takes the focus only as somewhere to
      put what is held, or as the deck to turn over, and brightens its mark. */
   .slot:focus { background-color: #cfe2f7; color: #2f5a80; }

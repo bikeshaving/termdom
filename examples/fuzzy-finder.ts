@@ -184,7 +184,7 @@ function move(delta: number): void {
   setSelected(all[selected], false);
   setSelected(all[next], true);
   selected = next;
-  all[selected]?.scrollIntoView();
+  all[selected]?.scrollIntoView({block: "nearest"});
 }
 
 async function finish(pick: string | null): Promise<void> {

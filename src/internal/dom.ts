@@ -29,7 +29,7 @@ import {
 	SelectorError,
 } from "./cssselectors.ts";
 import * as CSSValues from "./cssvalues.ts";
-import {installEditing} from "./editing.ts";
+import {getEditingHost, installEditing} from "./editing.ts";
 import type {Exchange} from "./exchange.ts";
 import {
 	getInterface,
@@ -115,8 +115,6 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 	}
 }
 
-/** A listener as this file's dispatch calls it. */
-type UAListener = globalThis.EventListener;
 const kUASelection = Symbol("a control's selection, whatever its type");
 
 /**
@@ -158,10 +156,37 @@ export function setUASelection(
 const kSyncUAShadowTree = Symbol("bring a control's UA tree back into step");
 
 /** Notify a control that its state changed so its UA shadow tree can update. */
+// The pseudo-classes that read a control's state rather than its
+// attributes.
+const CONTROL_STATES = [
+	"checked",
+	"indeterminate",
+	"default",
+	"placeholder-shown",
+	"valid",
+	"invalid",
+	"user-valid",
+	"user-invalid",
+	"in-range",
+	"out-of-range",
+	"open",
+	"autofill",
+	"blank",
+];
+
+// A control's own state changed: checkedness, its value, what is
+// selected. Its shadow tree redraws, and the rules that read that state
+// are told, since no mutation record says so.
 function syncUAShadowTree(element: Element): void {
 	(element as unknown as Record<symbol, (() => void) | undefined>)[
 		kSyncUAShadowTree
 	]?.();
+	stateChanged(element, CONTROL_STATES);
+	// A form and every fieldset around the control are :valid or :invalid
+	// by what they hold, so they are told as well.
+	for (const owner of getValidityOwners(element)) {
+		stateChanged(owner, ["valid", "invalid"]);
+	}
 }
 
 // The single definition of which elements are text controls. Painting, caret
@@ -577,6 +602,29 @@ function applySharedTextControlEdit(
 	return null;
 }
 
+// The inputType of a key's edit, the name Input Events gives it.
+function getKeyInputType(key: string, ctrlKey: boolean): string {
+	if (key === "Backspace") {
+		return "deleteContentBackward";
+	}
+	if (key === "Delete" || (ctrlKey && key === "d")) {
+		return "deleteContentForward";
+	}
+	if (ctrlKey && key === "w") {
+		return "deleteWordBackward";
+	}
+	if (ctrlKey && key === "k") {
+		return "deleteSoftLineForward";
+	}
+	if (ctrlKey && key === "u") {
+		return "deleteSoftLineBackward";
+	}
+	if (key === "Enter" || (ctrlKey && key === "j")) {
+		return "insertLineBreak";
+	}
+	return "";
+}
+
 // Called from beforeinput, as in a browser: insertion is the keypress
 // default action, and the text control's input event follows.
 function printableTextControlEdit(
@@ -632,19 +680,79 @@ const kSetUAValue = Symbol("write a text control's value, as a user edit does");
 // through the value IDL setter. In a browser a user edit changes the value
 // without running the setter, and frameworks rely on that to tell user
 // input from the page's own writes.
+// Text controls the user has edited since the last change event. Leaving
+// one fires change, before blur, as a browser does. A value set by script
+// is not the user's edit, and clears the mark.
+const editedSinceChange = new WeakSet<Element>();
+
+// HTML's user validity: set once the user has committed a change to the
+// control or tried to submit its form, cleared when the form resets. It
+// is what :user-valid and :user-invalid wait for.
+const userValidity = new WeakSet<Element>();
+
+function setUserValidity(element: Element, value: boolean): void {
+	if (userValidity.has(element) === value) {
+		return;
+	}
+	if (value) {
+		userValidity.add(element);
+	} else {
+		userValidity.delete(element);
+	}
+	stateChanged(element, ["user-valid", "user-invalid"]);
+}
+
+/** A user's change to a control, announced: user validity, then change. */
+function dispatchUserChange(control: Element): void {
+	setUserValidity(control, true);
+	dispatch(control, new Event("change", {bubbles: true}));
+}
+
+// Focus leaving a text control the user edited commits the edit.
+function commitTextControl(element: Element | null): void {
+	if (element === null || !editedSinceChange.has(element)) {
+		return;
+	}
+	editedSinceChange.delete(element);
+	dispatchUserChange(element);
+}
+
+// What an edit was, for its input events. An insertion's beforeinput has
+// already been dispatched by the time it is applied, since that event is
+// what asked for it. Any other edit asks here first.
+interface TextControlEditKind {
+	inputType: string;
+	data?: string | null;
+	asked?: boolean;
+}
+
 function applyTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	result: TextControlEditResult,
+	kind: TextControlEditKind = {inputType: "", asked: true},
 ): void {
 	const value = textControl[kUAValue];
 	const {start, end, direction} = getSelectionRecord(textControl)!;
 	if (result.value !== value) {
+		const init = {
+			inputType: kind.inputType,
+			data: kind.data ?? null,
+			bubbles: true,
+			composed: true,
+		};
+		if (
+			kind.asked !== true &&
+			!dispatch(
+				textControl,
+				new InputEvent("beforeinput", {...init, cancelable: true}),
+			)
+		) {
+			return;
+		}
+		editedSinceChange.add(textControl);
 		textControl[kSetUAValue]!(result.value);
 		textControl[kSetUASelection]!(result.start, result.end, result.direction);
-		dispatch(
-			textControl,
-			new Event("input", {bubbles: true, cancelable: false}),
-		);
+		dispatch(textControl, new InputEvent("input", init));
 	} else if (
 		result.start !== start ||
 		result.end !== end ||
@@ -672,6 +780,26 @@ function addPart(
 	span.appendChild(document.createTextNode(""));
 	root.appendChild(span);
 	return span;
+}
+
+// Where sequential focus navigation resumes after the focused element
+// left the tree: its tab index, and the place in its parent it left from
+// (HTML's sequential focus navigation starting point).
+export interface FocusStartingPoint {
+	tabIndex: number;
+	parent: Node;
+	next: Node | null;
+}
+
+const focusStartingPoints = new WeakMap<Document, FocusStartingPoint>();
+
+/** The starting point a removal left, consumed by the Tab that uses it. */
+export function takeFocusStartingPoint(
+	document: globalThis.Document,
+): FocusStartingPoint | null {
+	const point = focusStartingPoints.get(document as Document) ?? null;
+	focusStartingPoints.delete(document as Document);
+	return point;
 }
 
 const engineObservers = new WeakMap<Document, MutationObserver>();
@@ -1902,6 +2030,10 @@ const kClientX = Symbol("clientX");
 const kMovementX = Symbol("movementX");
 const kMovementY = Symbol("movementY");
 const kEventView = Symbol("eventView");
+
+/** The pointerId of the mouse, the one pointer a terminal reports. */
+export const MOUSE_POINTER_ID = 1;
+
 const kTargetRect = Symbol("targetRect");
 const kClientY = Symbol("clientY");
 const kButton = Symbol("button");
@@ -3112,6 +3244,10 @@ class PointerEvent extends MouseEvent {
 		return this[kIsPrimary];
 	}
 
+	get persistentDeviceId(): number {
+		return 0;
+	}
+
 	getCoalescedEvents(): PointerEvent[] {
 		return [...this[kCoalesced]];
 	}
@@ -4016,6 +4152,13 @@ const activationDepths = new WeakMap<Document, number>();
 /** Documents the user has ever acted on. */
 const everActivatedDocuments = new WeakSet<Document>();
 
+/** When the user last acted on each document, in performance.now() time. */
+const lastActivations = new WeakMap<Document, number>();
+
+// HTML leaves the transient activation duration to the user agent, "at
+// most a few seconds". Browsers use about five.
+const TRANSIENT_ACTIVATION_MS = 5000;
+
 /** The document a user-agent dispatch counts its activation in. */
 function getActivationDocument(target: EventTarget): Document | null {
 	const shaped = target as {
@@ -4029,9 +4172,26 @@ function getActivationDocument(target: EventTarget): Document | null {
 	return shaped.ownerDocument ?? shaped.document ?? null;
 }
 
-/** Whether an activation-triggering event is being dispatched right now. */
+/**
+ * Whether an activation-triggering event is being dispatched right now.
+ * The clipboard asks this narrower question on purpose: a write to the
+ * user's own clipboard happens inside the gesture or not at all.
+ */
 function isUserActive(document: Document): boolean {
 	return (activationDepths.get(document) ?? 0) > 0;
+}
+
+/**
+ * HTML's transient activation: the user acted on the document a moment
+ * ago, or is acting on it now.
+ */
+function hasTransientActivation(document: Document): boolean {
+	if (isUserActive(document)) {
+		return true;
+	}
+	const last = lastActivations.get(document);
+	return last !== undefined &&
+		performance.now() - last <= TRANSIENT_ACTIVATION_MS;
 }
 
 /**
@@ -4053,6 +4213,7 @@ export function dispatchAsUserAgent(
 	}
 	activationDepths.set(document, (activationDepths.get(document) ?? 0) + 1);
 	everActivatedDocuments.add(document);
+	lastActivations.set(document, performance.now());
 	try {
 		return dispatchFromOutside(target as EventTarget, event as Event, true);
 	} finally {
@@ -4229,11 +4390,20 @@ function hasActivationBehavior(target: EventTarget): boolean {
 	);
 }
 
-// A hyperlink's activation behavior is to follow it, which this engine
-// never does. An anchor or area is an activation target that does
-// nothing.
+// A hyperlink's activation behavior is to follow it. The one link a
+// terminal document can follow is to a fragment of itself. Any other is an
+// activation target that does nothing.
 function runActivationBehavior(target: EventTarget, event: Event): void {
-	if (target instanceof HTMLButtonElement) {
+	if (
+		(target instanceof HTMLAnchorElement ||
+			target instanceof HTMLAreaElement) &&
+		target.hasAttribute("href")
+	) {
+		const url = (target as unknown as {href: string}).href;
+		if (isFragmentNavigation(target[kDocument], url)) {
+			navigateToFragment(target[kDocument], url);
+		}
+	} else if (target instanceof HTMLButtonElement) {
 		activateButton(target, event);
 	} else if (target instanceof HTMLInputElement) {
 		activateInput(target, event);
@@ -4246,6 +4416,11 @@ function runActivationBehavior(target: EventTarget, event: Event): void {
 
 /** Input types that are buttons rather than text controls. */
 const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
+
+/** Whether an input is drawn as a button with a label. */
+export function isButtonInput(input: {type: string}): boolean {
+	return BUTTON_INPUT_TYPES.has(input.type);
+}
 
 /**
  * Which keys activate an element the way a click does, or null for an
@@ -4314,6 +4489,8 @@ function toggleTheDetails(summary: HTMLElement): void {
 	details.toggleAttribute("open", !details.hasAttribute("open"));
 }
 
+const DIALOG_COMMANDS = new Set(["close", "request-close", "show-modal"]);
+
 function activateButton(button: HTMLButtonElement, event: Event): void {
 	if (isActuallyDisabled(button)) {
 		return;
@@ -4326,7 +4503,62 @@ function activateButton(button: HTMLButtonElement, event: Event): void {
 			form.reset();
 		}
 	}
-	popoverTargetActivationBehavior(button, event.target);
+	const target = getAttributeElement(button, "commandfor");
+	if (target === null) {
+		popoverTargetActivationBehavior(button, event.target);
+		return;
+	}
+	runCommand(button, target);
+}
+
+// HTML's command steps: the target hears a cancelable command event,
+// then runs the built-in command if it has one. A custom command, one
+// starting with "--", is only the event.
+function runCommand(button: HTMLButtonElement, target: Element): void {
+	const command = button.command;
+	if (command === "") {
+		return;
+	}
+	const isPopover = getPopoverAttributeState(target) !== null;
+	const custom = command.startsWith("--");
+	if (
+		!isPopover &&
+		!custom &&
+		!(target instanceof HTMLDialogElement && DIALOG_COMMANDS.has(command))
+	) {
+		return;
+	}
+	const proceed = dispatch(
+		target,
+		new CommandEvent("command", {cancelable: true, command, source: button}),
+	);
+	if (!proceed || !target.isConnected || custom) {
+		return;
+	}
+	if (isPopover) {
+		const showing = isShowingPopover(target);
+		if (
+			(command === "hide-popover" || command === "toggle-popover") && showing
+		) {
+			hidePopover(target, true, true, false, button);
+		} else if (
+			(command === "show-popover" || command === "toggle-popover") &&
+			!showing &&
+			checkPopoverValidity(target, false, null) === true
+		) {
+			showPopover(target, false, button);
+		}
+		return;
+	}
+	const dialog = target as HTMLDialogElement;
+	const open = dialog.hasAttribute("open");
+	if (command === "close" && open) {
+		dialog.close(button.value);
+	} else if (command === "request-close" && open) {
+		dialog.requestClose(button.value);
+	} else if (command === "show-modal" && !open && isConnectedNode(dialog)) {
+		dialog.showModal();
+	}
 }
 
 function activateInput(input: HTMLInputElement, event: Event): void {
@@ -4342,7 +4574,7 @@ function activateInput(input: HTMLInputElement, event: Event): void {
 			return;
 		}
 		dispatch(input, new Event("input", {bubbles: true, composed: true}));
-		dispatch(input, new Event("change", {bubbles: true}));
+		dispatchUserChange(input);
 		return;
 	}
 	const form = getFormOwner(input);
@@ -5995,10 +6227,18 @@ function removeNode(node: Node, suppressObservers = false): void {
 		for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 			if (descendant === active) {
 				document[kActiveElement] = null;
+				// Tab carries on from where the focused element was.
+				focusStartingPoints.set(document, {
+					tabIndex: (active as HTMLElement).tabIndex ?? 0,
+					parent,
+					next: oldNextSibling,
+				});
 				break;
 			}
 		}
 	}
+	leaveFullscreenOnRemoval(document, node);
+	releasePointerCaptureOnRemoval(document, node);
 	const parentWasConnected = parent[kConnected];
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		descendant[kConnected] = false;
@@ -6906,7 +7146,11 @@ export class NodeList extends LiveList {
 	[index: number]: globalThis.Node;
 	declare [Symbol.iterator]: () => ArrayIterator<globalThis.Node>;
 	declare forEach: (
-		callback: (node: globalThis.Node, index: number, list: NodeList) => void,
+		callback: (
+			node: globalThis.Node,
+			index: number,
+			list: globalThis.NodeList,
+		) => void,
 		thisArg?: any,
 	) => void;
 
@@ -7089,6 +7333,15 @@ function toUnsignedLong(value: unknown): number {
  */
 function toUnsignedShort(value: unknown): number {
 	return toUnsignedLong(value) % 65536;
+}
+
+// A collection's indexed properties are defined when it first computes
+// its members and registers for changes, so every collection handed out
+// is made live first. Without that, `select.options[0]` read before
+// anything asked for a length was undefined.
+function live<T extends LiveList>(list: T): T {
+	ensureList(list);
+	return list;
 }
 
 function createChildNodeList(node: Node): NodeList {
@@ -7972,6 +8225,7 @@ export class DocumentFragment
 	declare prepend: globalThis.DocumentFragment["prepend"];
 	declare querySelector: globalThis.DocumentFragment["querySelector"];
 	declare querySelectorAll: globalThis.DocumentFragment["querySelectorAll"];
+	declare moveBefore: globalThis.DocumentFragment["moveBefore"];
 	declare replaceChildren: globalThis.DocumentFragment["replaceChildren"];
 	constructor() {
 		super();
@@ -8529,6 +8783,7 @@ export class Element extends Node implements globalThis.Element {
 	declare prepend: globalThis.Element["prepend"];
 	declare querySelector: globalThis.Element["querySelector"];
 	declare querySelectorAll: globalThis.Element["querySelectorAll"];
+	declare moveBefore: globalThis.Element["moveBefore"];
 	declare replaceChildren: globalThis.Element["replaceChildren"];
 	declare closest: globalThis.Element["closest"];
 	declare matches: globalThis.Element["matches"];
@@ -8843,7 +9098,7 @@ export class Element extends Node implements globalThis.Element {
 			Boolean(options.serializable),
 			Boolean(options.delegatesFocus),
 			slotAssignment,
-			registry === undefined ? getGlobalCustomElements() : registry,
+			registry === undefined ? this[kDocument][kRegistry] : registry,
 		);
 		const root = this[kShadowRoot] as ShadowRoot;
 		const attached = getAttachedDocument(this);
@@ -8894,10 +9149,7 @@ export class Element extends Node implements globalThis.Element {
 				error instanceof Error ? error : new Error(String(error)),
 			);
 		}
-		// The element's UA styles changed (it now fills the viewport) and
-		// neither a mutation nor a focus move fired to notify the cascade.
-		attached[kCascade].handleFocusChange(this);
-		attached[kLayout].invalidate(this);
+		fullscreenChanged(this);
 		// The screen switch happens on the next frame so no frame straddles it.
 		// The promise resolves once that frame is written.
 		return frameSettled(this[kDocument], attached);
@@ -9253,22 +9505,41 @@ export class Element extends Node implements globalThis.Element {
 		return [];
 	}
 
-	hasPointerCapture(_pointerId: number): boolean {
-		return false;
+	// The mouse is the one pointer, and capture holds only while a button
+	// is down, as for a mouse in a browser. The capture takes effect
+	// before the next pointer event, which is when gotpointercapture fires.
+	hasPointerCapture(pointerId: number): boolean {
+		return (
+			toLong(pointerId) === MOUSE_POINTER_ID &&
+			getPointerState(this[kDocument]).pending === this
+		);
 	}
 
-	// Pointer capture and pointer lock both need a pointer that keeps
-	// reporting after it leaves a box. A terminal reports the cell the mouse
-	// is over and stops at the screen edge, so there is nothing to capture
-	// and nowhere to lock to.
-	setPointerCapture(_pointerId: number): void {
-		throw domError("NotSupportedError", "Pointer capture is not implemented");
+	setPointerCapture(pointerId: number): void {
+		if (toLong(pointerId) !== MOUSE_POINTER_ID) {
+			throw domError("NotFoundError", "No active pointer has that id");
+		}
+		if (!this.isConnected) {
+			throw domError("InvalidStateError", "The element is not connected");
+		}
+		const state = getPointerState(this[kDocument]);
+		if (state.buttons !== 0) {
+			state.pending = this;
+		}
 	}
 
-	releasePointerCapture(_pointerId: number): void {
-		throw domError("NotSupportedError", "Pointer capture is not implemented");
+	releasePointerCapture(pointerId: number): void {
+		if (toLong(pointerId) !== MOUSE_POINTER_ID) {
+			throw domError("NotFoundError", "No active pointer has that id");
+		}
+		const state = getPointerState(this[kDocument]);
+		if (state.pending === this) {
+			state.pending = null;
+		}
 	}
 
+	// A terminal reports the cell the mouse is over and stops at the
+	// screen edge, so there is nowhere to lock the pointer to.
 	requestPointerLock(_options?: globalThis.PointerLockOptions): Promise<void> {
 		throw domError("NotSupportedError", "Pointer lock is not implemented");
 	}
@@ -9604,6 +9875,131 @@ Object.defineProperties(Element.prototype, {
 	},
 });
 
+// The HTML Standard's rendered text collection. A string is text, and a
+// number is a count of line breaks a block or paragraph needs around it:
+// neighbouring counts merge into the larger, and none is needed at
+// either end.
+function getInnerText(element: Element): string {
+	const attached = getAttachedDocument(element);
+	if (attached === undefined || !element.isConnected) {
+		return element.textContent ?? "";
+	}
+	flushLayout(element);
+	const layout = attached[kLayout];
+	if (!isElementRendered(layout, element)) {
+		return element.textContent ?? "";
+	}
+	const items: Array<string | number> = [];
+	for (let child = element[kFirstChild]; child !== null; child = child[kNext]) {
+		collectRenderedText(layout, child, items);
+	}
+	let text = "";
+	let breaks = 0;
+	for (const item of items) {
+		if (typeof item === "number") {
+			breaks = Math.max(breaks, item);
+		} else if (item !== "") {
+			if (text !== "") {
+				text += "\n".repeat(breaks);
+			}
+			breaks = 0;
+			text += item;
+		}
+	}
+	return text;
+}
+
+function isElementRendered(layout: Layout, element: Element): boolean {
+	return (
+		getComputedValue(element, "display") === "contents" ||
+		layout.getRects(element).length > 0
+	);
+}
+
+function collectRenderedText(
+	layout: Layout,
+	node: Node,
+	items: Array<string | number>,
+): void {
+	if (node.nodeType === TEXT_NODE) {
+		const parent = node.parentElement as Element | null;
+		if (
+			parent === null || getComputedValue(parent, "visibility") === "visible"
+		) {
+			items.push(layout.getRenderedText(node as unknown as globalThis.Text));
+		}
+		return;
+	}
+	if (node.nodeType !== ELEMENT_NODE) {
+		return;
+	}
+	const element = node as Element;
+	const display = getComputedValue(element, "display");
+	if (display === "none") {
+		return;
+	}
+	const shown =
+		isElementRendered(layout, element) &&
+		getComputedValue(element, "visibility") === "visible";
+	const around = !shown
+		? 0
+		: element.localName === "p" && element.namespaceURI === HTML_NAMESPACE
+			? 2
+			: isBlockLevelDisplay(display) ? 1 : 0;
+	if (around > 0) {
+		items.push(around);
+	}
+	if (
+		shown &&
+		element.localName === "math" &&
+		element.namespaceURI === MATHML_NAMESPACE
+	) {
+		items.push(linearizeMath(element as unknown as globalThis.Element));
+	} else {
+		for (
+			let child = element[kFirstChild]; child !== null; child = child[kNext]
+		) {
+			collectRenderedText(layout, child, items);
+		}
+	}
+	if (!shown) {
+		return;
+	}
+	if (isLineBreakElement(element)) {
+		items.push("\n");
+	} else if (display === "table-cell" && hasLaterSibling(element, display)) {
+		items.push("\t");
+	} else if (display === "table-row" && hasLaterSibling(element, display)) {
+		items.push("\n");
+	}
+	if (around > 0) {
+		items.push(around);
+	}
+}
+
+function isBlockLevelDisplay(display: string): boolean {
+	return (
+		display === "table-caption" ||
+		(!display.startsWith("inline") &&
+			!display.startsWith("table-") &&
+			!display.startsWith("ruby") &&
+			display !== "contents")
+	);
+}
+
+function hasLaterSibling(element: Element, display: string): boolean {
+	for (
+		let next = element.nextElementSibling as Element | null;
+		next !== null;
+		next = next.nextElementSibling as Element | null
+	) {
+		if (getComputedValue(next, "display") === display) {
+			return true;
+		}
+	}
+	return false;
+}
+
 const alreadyConstructed = Symbol("already constructed");
 
 /**
@@ -9654,6 +10050,9 @@ export class HTMLElement extends Element {
 	declare title: globalThis.HTMLElement["title"];
 	declare writingSuggestions: globalThis.HTMLElement["writingSuggestions"];
 	declare enterKeyHint: globalThis.HTMLElement["enterKeyHint"];
+	// The heading offset reflections, newer than lib.dom's copy of HTML.
+	declare headingOffset: number;
+	declare headingReset: boolean;
 	declare inputMode: globalThis.HTMLElement["inputMode"];
 	declare onabort: globalThis.HTMLElement["onabort"];
 	declare onanimationcancel: globalThis.HTMLElement["onanimationcancel"];
@@ -9671,6 +10070,7 @@ export class HTMLElement extends Element {
 	declare onchange: globalThis.HTMLElement["onchange"];
 	declare onclick: globalThis.HTMLElement["onclick"];
 	declare onclose: globalThis.HTMLElement["onclose"];
+	declare oncommand: globalThis.HTMLElement["oncommand"];
 	declare oncontextlost: globalThis.HTMLElement["oncontextlost"];
 	declare oncontextmenu: globalThis.HTMLElement["oncontextmenu"];
 	declare oncontextrestored: globalThis.HTMLElement["oncontextrestored"];
@@ -9950,20 +10350,15 @@ export class HTMLElement extends Element {
 		}
 	}
 
-	// Typed boolean, as lib.dom types it, even though the third state
-	// returns "until-found". Browsers do the same: they implement the state
-	// and their types still say boolean.
-	get hidden(): boolean {
+	get hidden(): boolean | "until-found" {
 		const value = this.getAttribute("hidden");
 		if (value === null) {
 			return false;
 		}
-		return (
-			toASCIILowercase(value) === "until-found" ? "until-found" : true
-		) as boolean;
+		return toASCIILowercase(value) === "until-found" ? "until-found" : true;
 	}
 
-	set hidden(value: boolean) {
+	set hidden(value: boolean | "until-found") {
 		if (
 			typeof value === "string" && toASCIILowercase(value) === "until-found"
 		) {
@@ -10060,7 +10455,7 @@ export class HTMLElement extends Element {
 	// path the standard gives an element that is not being rendered: its
 	// descendant text content.
 	get innerText(): string {
-		return this.textContent ?? "";
+		return getInnerText(this);
 	}
 
 	set innerText(value: string) {
@@ -10177,6 +10572,10 @@ export class HTMLElement extends Element {
 		// The node-tree root test rejected every element in a shadow tree.
 		if (isFocusableArea(this) && this.isConnected) {
 			document[kActiveElement] = this;
+			// Focusing the body moves nothing a Tab would start from.
+			if (this !== document.body) {
+				focusStartingPoints.delete(document);
+			}
 		}
 		if (previous === this || getInnermostActive(document) !== this) {
 			return;
@@ -10191,31 +10590,67 @@ export class HTMLElement extends Element {
 		attached[kCascade].handleFocusChange(previous, this);
 		attached[kScreen].invalidate();
 		void attached[kRender]();
+		// An edit the user made in the control focus is leaving is committed
+		// first, so change fires before blur.
+		commitTextControl(previous as Element | null);
 		// The body holds focus whenever nothing else does, so moving focus off
 		// the body fires no blur.
 		if (previous !== null && previous !== (document.body as unknown)) {
 			dispatchAsUserAgent(
 				previous,
-				new FocusEvent("blur", {relatedTarget: this, bubbles: false}),
+				new FocusEvent("blur", {
+					relatedTarget: this,
+					bubbles: false,
+					composed: true,
+				}),
 			);
 			dispatchAsUserAgent(
 				previous,
-				new FocusEvent("focusout", {relatedTarget: this, bubbles: true}),
+				new FocusEvent("focusout", {
+					relatedTarget: this,
+					bubbles: true,
+					composed: true,
+				}),
 			);
 		}
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("focus", {relatedTarget: previous, bubbles: false}),
+			new FocusEvent("focus", {
+				relatedTarget: previous,
+				bubbles: false,
+				composed: true,
+			}),
 		);
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("focusin", {relatedTarget: previous, bubbles: true}),
+			new FocusEvent("focusin", {
+				relatedTarget: previous,
+				bubbles: true,
+				composed: true,
+			}),
 		);
 	}
 
 	blur(): void {
 		const document = this[kDocument];
+		// A host that delegates focus stands for what it delegated to, so
+		// its blur unfocuses the focused element in its shadow tree.
+		const shadow = this[kShadowRoot] as ShadowRoot | null;
+		const innermost = getInnermostActive(document);
+		if (
+			shadow != null &&
+			shadow[kDelegatesFocus] &&
+			innermost !== null &&
+			innermost !== this &&
+			isShadowIncludingInclusiveAncestor(shadow, innermost as Node)
+		) {
+			(innermost as HTMLElement).blur();
+			return;
+		}
 		const wasFocused = getInnermostActive(document) === this;
+		if (wasFocused) {
+			commitTextControl(this);
+		}
 		if (document[kActiveElement] === this) {
 			document[kActiveElement] = null;
 		}
@@ -10228,17 +10663,25 @@ export class HTMLElement extends Element {
 		void attached[kRender]();
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
+			new FocusEvent("blur", {
+				relatedTarget: null,
+				bubbles: false,
+				composed: true,
+			}),
 		);
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("focusout", {relatedTarget: null, bubbles: true}),
+			new FocusEvent("focusout", {
+				relatedTarget: null,
+				bubbles: true,
+				composed: true,
+			}),
 		);
 	}
 
 	// Adds the element to the top layer, above everything else the document
 	// paints, and the UA sheet stops hiding it.
-	showPopover(options?: {source?: Element | null}): void {
+	showPopover(options?: globalThis.ShowPopoverOptions): void {
 		const init = options === undefined
 			? {}
 			: toDictionary<{source?: Element | null}>(options, "Show options");
@@ -10251,9 +10694,7 @@ export class HTMLElement extends Element {
 
 	// force: true only ever shows and force: false only ever hides, so a
 	// caller that knows the state it wants can say so.
-	togglePopover(
-		options?: boolean | {force?: boolean; source?: Element | null},
-	): boolean {
+	togglePopover(options?: boolean | globalThis.TogglePopoverOptions): boolean {
 		let force: boolean | null = null;
 		let source: Element | null = null;
 		if (typeof options === "boolean") {
@@ -10499,20 +10940,31 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	// Reveals the element: every scroll box between it and the document
 	// scrolls it into view, and so does the screen. A headless document shows
-	// nothing, so there is nothing to reveal. The options are ignored; every
-	// move is the minimal one, block "nearest".
+	// nothing, so there is nothing to reveal. As in CSSOM View, true means
+	// block "start", false block "end", and a dictionary's block defaults to
+	// "start" and its inline to "nearest".
 	scrollIntoView: {
-		value(this: HTMLElement): void {
+		value(
+			this: HTMLElement,
+			arg?: boolean | globalThis.ScrollIntoViewOptions,
+		): void {
+			let block: ScrollLogicalPosition = "start";
+			let inline: ScrollLogicalPosition = "nearest";
+			if (arg === false) {
+				block = "end";
+			} else if (typeof arg === "object" && arg !== null) {
+				block = arg.block ?? "start";
+				inline = arg.inline ?? "nearest";
+			}
 			const attached = getAttachedDocument(this);
 			if (attached === undefined || !this.isConnected) {
 				return;
 			}
 			flushLayout(this);
-			attached[kLayout].revealInScrollPorts(this);
+			attached[kLayout].revealInScrollPorts(this, block, inline);
 			// The scroll boxes around the element have already revealed it
 			// within themselves. What remains is the document scroll, which
-			// shows [scrollTop, scrollTop + region). Move it the minimal
-			// amount, the standard block: "nearest" behavior. The rect is
+			// shows [scrollTop, scrollTop + region). The rect is
 			// document-relative, so it compares directly against the document
 			// scroll offset.
 			const rect = attached[kLayout].getRect(this);
@@ -10521,12 +10973,17 @@ Object.defineProperties(HTMLElement.prototype, {
 			}
 			const regionHeight = getScrollingRegionHeight(this[kDocument]);
 			const top = attached[kScreen].scrollTop;
-			if (rect.top < top) {
-				attached[kScreen].scrollTo(rect.top);
-				void attached[kRender]();
-			} else if (rect.bottom > top + regionHeight) {
-				attached[kScreen].scrollTo(rect.bottom - regionHeight);
-				void attached[kRender]();
+			const delta = Math.round(
+				attached[kLayout].alignmentDelta(
+					rect.top,
+					rect.bottom,
+					top,
+					top + regionHeight,
+					block,
+				),
+			);
+			if (delta !== 0) {
+				scrollDocumentTo(this[kDocument], top + delta);
 			}
 		},
 		configurable: true,
@@ -10666,6 +11123,7 @@ export class SVGElement extends Element {
 	declare onchange: globalThis.SVGElement["onchange"];
 	declare onclick: globalThis.SVGElement["onclick"];
 	declare onclose: globalThis.SVGElement["onclose"];
+	declare oncommand: globalThis.SVGElement["oncommand"];
 	declare oncontextlost: globalThis.SVGElement["oncontextlost"];
 	declare oncontextmenu: globalThis.SVGElement["oncontextmenu"];
 	declare oncontextrestored: globalThis.SVGElement["oncontextrestored"];
@@ -10849,6 +11307,7 @@ class MathMLElement extends Element {
 	declare onchange: globalThis.MathMLElement["onchange"];
 	declare onclick: globalThis.MathMLElement["onclick"];
 	declare onclose: globalThis.MathMLElement["onclose"];
+	declare oncommand: globalThis.MathMLElement["oncommand"];
 	declare oncontextlost: globalThis.MathMLElement["oncontextlost"];
 	declare oncontextmenu: globalThis.MathMLElement["oncontextmenu"];
 	declare oncontextrestored: globalThis.MathMLElement["oncontextrestored"];
@@ -11055,6 +11514,7 @@ function getElementInterface(
 }
 
 let currentDocumentForConstruction: Document | null = null;
+let ambientDocument: Document | null = null;
 
 function buildElement(
 	document: Document,
@@ -11127,8 +11587,16 @@ function createElementInternal(
 			return element;
 		}
 		let result: Element;
+		const previousDocument = currentDocumentForConstruction;
 		try {
-			result = constructCustomElement(definition);
+			// The constructor runs as script of the creating document's window,
+			// so that is the document a bare element construction belongs to.
+			currentDocumentForConstruction = document;
+			try {
+				result = constructCustomElement(definition);
+			} finally {
+				currentDocumentForConstruction = previousDocument;
+			}
 			if (!(result instanceof HTMLElement)) {
 				throw new TypeError("That constructor did not build an HTML element");
 			}
@@ -11408,7 +11876,13 @@ const FORM_CALLBACK_NAMES = [
 	"formStateRestoreCallback",
 ];
 
-const registries: CustomElementRegistry[] = [];
+// Every definition of a constructor, in any registry. A constructor
+// finds its definition here rather than by searching every registry,
+// which would keep every registry alive.
+const constructorDefinitions = new WeakMap<
+	CustomElementConstructor,
+	CustomElementDefinition[]
+>();
 
 const kDefinitions = Symbol("definitions");
 const kDefinitionIsRunning = Symbol("definitionIsRunning");
@@ -11443,7 +11917,6 @@ class CustomElementRegistry {
 				resolve: (value: CustomElementConstructor) => void;
 			}
 		>();
-		registries.push(this);
 	}
 
 	define(
@@ -11488,7 +11961,7 @@ class CustomElementRegistry {
 		}
 		this[kDefinitionIsRunning] = true;
 		let observedAttributes: string[] = [];
-		let formAssociated = false;
+		let formAssociated: boolean;
 		let disableInternals = false;
 		let disableShadow = false;
 		const lifecycleCallbacks = new Map<
@@ -11551,6 +12024,12 @@ class CustomElementRegistry {
 			disableShadow,
 		};
 		this[kDefinitions].push(definition);
+		const known = constructorDefinitions.get(constructor);
+		if (known === undefined) {
+			constructorDefinitions.set(constructor, [definition]);
+		} else {
+			known.push(definition);
+		}
 		const document = getCurrentDocument();
 		for (const candidate of shadowIncludingInclusiveDescendants(document)) {
 			if (candidate.nodeType !== ELEMENT_NODE) {
@@ -11643,7 +12122,7 @@ class CustomElementRegistry {
 
 	// The realm's document registry cannot claim a document, because a
 	// document holds that registry from the moment it exists.
-	initialize(root: Node): void {
+	initialize(root: globalThis.Node): void {
 		if (!(root instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
@@ -11712,16 +12191,6 @@ function toCallback(
 	return value as (...args: unknown[]) => void;
 }
 
-function getDefinition(
-	registry: CustomElementRegistry,
-	constructor: CustomElementConstructor,
-): CustomElementDefinition | null {
-	return (
-		registry[kDefinitions].find((entry) => entry.constructor === constructor) ??
-		null
-	);
-}
-
 function lookUpDefinition(
 	registry: CustomElementRegistry,
 	namespace: string | null,
@@ -11751,44 +12220,36 @@ Object.defineProperty(CustomElementRegistry.prototype, Symbol.toStringTag, {
 
 // HTML's element constructors look the constructor up in the registry
 // whose upgrade is in flight, and otherwise in the current global
-// object's document registry. Every document here shares one realm, so
-// there is no second global for an iframe's script to run under. The
-// last branch stands in for it: a constructor known only to an iframe's
-// registry resolves as it would from that iframe's own global
-// (custom-elements/htmlconstructor/newtarget.html).
+// object's document registry. Every window here shares one realm, so a
+// bare `new` has no current global to name one. The definition in the
+// ambient window's registry stands in for it, and a constructor known
+// only to another window or an iframe resolves as it would under that
+// global (custom-elements/htmlconstructor/newtarget.html).
 function getConstructorDefinition(
 	constructor: CustomElementConstructor,
 ): CustomElementDefinition | null {
-	for (const registry of registries) {
-		const definition = getDefinition(registry, constructor);
-		if (definition !== null && definition.constructionStack.length > 0) {
-			return definition;
-		}
+	const definitions = constructorDefinitions.get(constructor) ?? [];
+	const upgrading = definitions.find(
+		(definition) => definition.constructionStack.length > 0,
+	);
+	if (upgrading !== undefined) {
+		return upgrading;
 	}
-	const global = getDefinition(getGlobalCustomElements(), constructor);
-	if (global !== null) {
-		return global;
-	}
-	for (const registry of registries) {
-		const definition = getDefinition(registry, constructor);
-		if (definition !== null) {
-			return definition;
-		}
-	}
-	return null;
+	const ambient =
+		(currentDocumentForConstruction ?? ambientDocument)?.[kRegistry] ?? null;
+	return (
+		definitions.find((definition) => definition.registry === ambient) ??
+		definitions[0] ??
+		null
+	);
 }
 
-// Definitions are per realm because the classes that carry them are, so
-// one registry serves every document. A document reaches it through the
-// algorithms below rather than a global, so a tree with no window behind
-// it still resolves its definitions.
-let globalCustomElements: CustomElementRegistry | null = null;
-
-function getGlobalCustomElements(): CustomElementRegistry {
-	if (globalCustomElements === null) {
-		globalCustomElements = constructInternal(() => new CustomElementRegistry());
-	}
-	return globalCustomElements;
+// Each window's document gets a registry of its own. The classes are
+// shared by every window in the realm, but the names defined for them
+// are not, so two windows in one process, such as two terminal sessions,
+// each define their own elements.
+function createWindowRegistry(): CustomElementRegistry {
+	return constructInternal(() => new CustomElementRegistry());
 }
 
 // Every node has a registry. An element takes its document's when
@@ -11885,6 +12346,7 @@ function upgradeElement(
 	}
 	definition.constructionStack.pop();
 	element[kCustomState] = "custom";
+	stateChanged(element, ["defined"]);
 	// A form-associated element learns its owner and its disabled state as
 	// it becomes one, which is the first moment it has internals to notify.
 	if (definition.formAssociated) {
@@ -12005,6 +12467,7 @@ export class ShadowRoot
 	declare prepend: globalThis.ShadowRoot["prepend"];
 	declare querySelector: globalThis.ShadowRoot["querySelector"];
 	declare querySelectorAll: globalThis.ShadowRoot["querySelectorAll"];
+	declare moveBefore: globalThis.ShadowRoot["moveBefore"];
 	declare replaceChildren: globalThis.ShadowRoot["replaceChildren"];
 	declare onslotchange: globalThis.ShadowRoot["onslotchange"];
 	constructor() {
@@ -12311,7 +12774,7 @@ function attachUAShadowTree<T>(target: Element): T {
 	shadow[kConnected] = host[kConnected];
 	shadow[kShadowMode] = "closed";
 	shadow[kUAShadowTree] = true;
-	shadow[kRegistry] = getGlobalCustomElements();
+	shadow[kRegistry] = host[kDocument][kRegistry];
 	host[kShadowRoot] = shadow;
 	return shadow as T;
 }
@@ -12643,6 +13106,7 @@ interface HTMLTemplateElement {
 // belongs next to the slot. The fragment's host is the template, which is
 // what stops a template from being appended into its own contents.
 class HTMLTemplateElement extends HTMLElement {
+	declare shadowRootCustomElementRegistry: globalThis.HTMLTemplateElement["shadowRootCustomElementRegistry"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kTemplateContent] = null;
@@ -13298,6 +13762,15 @@ class HTMLBRElement extends HTMLElement {
 	declare clear: globalThis.HTMLBRElement["clear"];
 }
 
+const BUTTON_COMMANDS = new Set([
+	"toggle-popover",
+	"show-popover",
+	"hide-popover",
+	"close",
+	"request-close",
+	"show-modal",
+]);
+
 class HTMLButtonElement extends HTMLElement {
 	declare disabled: globalThis.HTMLButtonElement["disabled"];
 	declare name: globalThis.HTMLButtonElement["name"];
@@ -13320,11 +13793,35 @@ class HTMLButtonElement extends HTMLElement {
 	}
 
 	get popoverTargetElement(): Element | null {
-		return getPopoverTargetAttributeElement(this);
+		return getAttributeElement(this, "popovertarget");
 	}
 
 	set popoverTargetElement(value: Element | null) {
-		setPopoverTargetAttributeElement(this, value);
+		setAttributeElement(this, "popovertarget", value);
+	}
+
+	get command(): string {
+		const value = this.getAttribute("command");
+		if (value === null) {
+			return "";
+		}
+		if (value.startsWith("--")) {
+			return value;
+		}
+		const keyword = toASCIILowercase(value);
+		return BUTTON_COMMANDS.has(keyword) ? keyword : "";
+	}
+
+	set command(value: string) {
+		this.setAttribute("command", value);
+	}
+
+	get commandForElement(): Element | null {
+		return getAttributeElement(this, "commandfor");
+	}
+
+	set commandForElement(value: Element | null) {
+		setAttributeElement(this, "commandfor", value);
 	}
 
 	get willValidate(): boolean {
@@ -13426,15 +13923,17 @@ class HTMLDataListElement extends HTMLElement {
 	get options(): HTMLCollectionOf<HTMLOptionElement> {
 		let options = this[kOptions];
 		if (options === null) {
-			options = new HTMLCollection(() => {
-				const found: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node instanceof HTMLOptionElement) {
-						found.push(node);
+			options = live(
+				new HTMLCollection(() => {
+					const found: Element[] = [];
+					for (const node of descendants(this)) {
+						if (node instanceof HTMLOptionElement) {
+							found.push(node);
+						}
 					}
-				}
-				return found;
-			}, this);
+					return found;
+				}, this),
+			);
 			this[kOptions] = options;
 		}
 		return options as HTMLCollectionOf<HTMLOptionElement>;
@@ -13476,7 +13975,7 @@ class HTMLDetailsElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -13500,7 +13999,7 @@ class HTMLDetailsElement extends HTMLElement {
 		root.appendChild(summarySlot);
 		root.appendChild(content);
 		this[kContent] = content;
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	[kSyncUAShadowTree]?(): void {
@@ -13598,13 +14097,57 @@ class ToggleEvent extends Event {
 		return this[kNewState];
 	}
 
+	// Seen from a listener, as HTML specifies: an invoker inside a shadow
+	// tree the listener cannot see into is its host.
 	get source(): Element | null {
-		return this[kSource];
+		return retarget(
+			this[kSource],
+			this.currentTarget as EventTarget,
+		) as Element |
+			null;
 	}
 }
 
 Object.defineProperty(ToggleEvent.prototype, Symbol.toStringTag, {
 	value: "ToggleEvent",
+	configurable: true,
+});
+
+interface CommandEventInit extends EventInit {
+	source?: Element | null;
+	command?: string;
+}
+
+const kCommand = Symbol("command");
+
+interface CommandEvent {
+	[kSource]: Element | null;
+	[kCommand]: string;
+}
+
+class CommandEvent extends Event {
+	constructor(type: string, eventInitDict: CommandEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<CommandEventInit>(eventInitDict, "An event init");
+		this[kSource] = init.source ?? null;
+		this[kCommand] = String(init.command ?? "");
+	}
+
+	get source(): Element | null {
+		return retarget(
+			this[kSource],
+			this.currentTarget as EventTarget,
+		) as Element |
+			null;
+	}
+
+	get command(): string {
+		return this[kCommand];
+	}
+}
+
+Object.defineProperty(CommandEvent.prototype, Symbol.toStringTag, {
+	value: "CommandEvent",
 	configurable: true,
 });
 
@@ -13622,6 +14165,7 @@ interface HTMLDialogElement {
 
 class HTMLDialogElement extends HTMLElement {
 	declare open: globalThis.HTMLDialogElement["open"];
+	declare closedBy: globalThis.HTMLDialogElement["closedBy"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kReturnValue] = "";
@@ -13664,6 +14208,7 @@ class HTMLDialogElement extends HTMLElement {
 		// backdrop, the hit testing that stops clicks reaching the page) reads
 		// membership rather than a separate flag.
 		getTopLayer(this[kDocument]).add(this);
+		stateChanged(this, ["modal"]);
 		this.setAttribute("open", "");
 		focusDialog(this);
 	}
@@ -13688,6 +14233,31 @@ class HTMLDialogElement extends HTMLElement {
 	override [kRemovingSteps](oldParent: Node): void {
 		super[kRemovingSteps](oldParent);
 		getTopLayer(this[kDocument]).delete(this);
+	}
+
+	// Removing `open` by hand ends a modal dialog's modality too: it leaves
+	// the top layer, and the page behind it is no longer inert (HTML's
+	// dialog attribute change steps).
+	override [kAttributeChangeSteps](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
+		if (
+			namespace !== null ||
+			localName !== "open" ||
+			value !== null ||
+			oldValue === null
+		) {
+			return;
+		}
+		const topLayer = getTopLayer(this[kDocument]);
+		if (topLayer.has(this)) {
+			topLayer.delete(this);
+			stateChanged(this, ["modal"]);
+		}
 	}
 }
 
@@ -13721,6 +14291,7 @@ function focusDialog(dialog: HTMLDialogElement): void {
 	}
 	if (isModalDialog(dialog)) {
 		dialog[kDocument][kActiveElement] = dialog;
+		focusStartingPoints.delete(dialog[kDocument]);
 	}
 }
 
@@ -13735,6 +14306,9 @@ function closeDialog(
 	const wasModal = isModalDialog(dialog);
 	dialog.removeAttribute("open");
 	getTopLayer(document).delete(dialog);
+	if (wasModal) {
+		stateChanged(dialog, ["modal"]);
+	}
 	// Restore focus to where the dialog took it from, if the dialog holds
 	// focus or held the whole page inert as the modal one.
 	const previous = dialog[kPreviouslyFocused];
@@ -13853,18 +14427,20 @@ class HTMLFieldSetElement extends HTMLElement {
 	get elements(): HTMLCollection {
 		let elements = this[kElements];
 		if (elements === null) {
-			elements = new HTMLCollection(() => {
-				const listed: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node.nodeType !== ELEMENT_NODE) {
-						continue;
+			elements = live(
+				new HTMLCollection(() => {
+					const listed: Element[] = [];
+					for (const node of descendants(this)) {
+						if (node.nodeType !== ELEMENT_NODE) {
+							continue;
+						}
+						if (isListed(node as Element)) {
+							listed.push(node as Element);
+						}
 					}
-					if (isListed(node as Element)) {
-						listed.push(node as Element);
-					}
-				}
-				return listed;
-			}, this);
+					return listed;
+				}, this),
+			);
 			this[kElements] = elements;
 		}
 		return elements;
@@ -13943,8 +14519,9 @@ class HTMLFormElement extends HTMLElement {
 	get elements(): HTMLFormControlsCollection {
 		let elements = this[kElements];
 		if (elements === null) {
-			elements =
-				new HTMLFormControlsCollection(() => getListedElements(this), this);
+			elements = live(
+				new HTMLFormControlsCollection(() => getListedElements(this), this),
+			);
 			this[kElements] = elements;
 		}
 		return elements;
@@ -14073,6 +14650,24 @@ function submitForm(
 		return;
 	}
 	if (!skipEvent) {
+		// A submission the user or requestSubmit() asks for gives every
+		// control user validity, and an invalid control stops it: the
+		// controls hear invalid, and the first takes the focus (HTML's
+		// interactive validation). submit() skips both.
+		const controls = getListedElements(form);
+		for (const control of controls) {
+			setUserValidity(control, true);
+		}
+		const validates =
+			!form.hasAttribute("novalidate") &&
+			!(submitter !== null && submitter.hasAttribute("formnovalidate"));
+		if (validates) {
+			const invalid = controls.filter((control) => !checkValidity(control));
+			if (invalid.length > 0) {
+				(invalid[0] as HTMLElement).focus();
+				return;
+			}
+		}
 		const event = new SubmitEvent("submit", {
 			bubbles: true,
 			cancelable: true,
@@ -14082,12 +14677,72 @@ function submitForm(
 			return;
 		}
 	}
+	// A dialog form's submission closes its dialog with the submitter's
+	// value, and sends nothing.
+	const method = submitter !== null && submitter.hasAttribute("formmethod")
+		? (submitter as HTMLButtonElement).formMethod
+		: form.method;
+	if (method === "dialog") {
+		let dialog = form.parentElement;
+		while (dialog !== null && !(dialog instanceof HTMLDialogElement)) {
+			dialog = dialog.parentElement;
+		}
+		if (dialog !== null) {
+			closeDialog(dialog, submitter?.getAttribute("value") ?? undefined);
+		}
+		return;
+	}
 	constructEntryList(form, submitter);
+}
+
+// The input types whose Enter would submit a form of one field. A form
+// with two of them submits on Enter only through its default button.
+const IMPLICIT_SUBMISSION_BLOCKERS = new Set([
+	"text",
+	"search",
+	"url",
+	"tel",
+	"email",
+	"password",
+	"date",
+	"month",
+	"week",
+	"time",
+	"datetime-local",
+	"number",
+]);
+
+// HTML's implicit submission: Enter in a field clicks the form's default
+// button, the first submit button it owns, or submits a form that has no
+// such button and only this one field to fill.
+function implicitlySubmit(input: HTMLInputElement): void {
+	const form = getFormOwner(input);
+	if (form === null) {
+		return;
+	}
+	const listed = getListedElements(form);
+	const defaultButton = listed.find(isSubmitButton);
+	if (defaultButton !== undefined) {
+		if (!isActuallyDisabled(defaultButton)) {
+			(defaultButton as HTMLElement).click();
+		}
+		return;
+	}
+	const blockers = listed.filter(
+		(element) =>
+			element instanceof HTMLInputElement &&
+			IMPLICIT_SUBMISSION_BLOCKERS.has(element.type),
+	);
+	if (blockers.length <= 1) {
+		submitForm(form, null, false);
+	}
 }
 
 const kResetControl = Symbol("put a control back to its default");
 
 function resetControl(control: Element): void {
+	editedSinceChange.delete(control);
+	setUserValidity(control, false);
 	const resettable = control as unknown as Record<symbol, () => void>;
 	if (typeof resettable[kResetControl] === "function") {
 		resettable[kResetControl]!();
@@ -14821,8 +15476,10 @@ class HTMLFormControlsCollection
 			return matches[0] as Element;
 		}
 		// A shared name returns the list of everything that shares it.
-		return new RadioNodeList(() =>
-			createMatchingCollection(this, key), this[kOwner]) as unknown as Element;
+		return live(
+			new RadioNodeList(() =>
+				createMatchingCollection(this, key), this[kOwner]),
+		) as unknown as Element;
 	}
 
 	override namedProperties(items: Node[]): Map<string, Node> {
@@ -14850,11 +15507,10 @@ class HTMLFormControlsCollection
 				key,
 				list.length === 1
 					? list[0]
-					: (new RadioNodeList(() =>
-						createMatchingCollection(
-							this,
-							key,
-						), this[kOwner]) as unknown as Node),
+					: (live(
+						new RadioNodeList(() =>
+							createMatchingCollection(this, key), this[kOwner]),
+					) as unknown as Node),
 			);
 		}
 		return named;
@@ -14887,15 +15543,7 @@ class RadioNodeList extends NodeList {
 	[index: number]: HTMLInputElement;
 	declare item: (index: number) => HTMLInputElement;
 	declare [Symbol.iterator]: () => ArrayIterator<globalThis.HTMLInputElement>;
-	declare forEach: (
-		callback: (
-			node: HTMLInputElement,
-			index: number,
-			list: NodeListOf<HTMLInputElement>,
-		) => void,
-		thisArg?: any,
-	) => void;
-
+	declare forEach: globalThis.RadioNodeList["forEach"];
 	declare values: () => ArrayIterator<globalThis.HTMLInputElement>;
 	declare entries: () => ArrayIterator<[number, globalThis.HTMLInputElement]>;
 	constructor(compute: () => Node[], owner: Node | null = null) {
@@ -15140,17 +15788,17 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 		return;
 	}
 	const srcdoc = frame.getAttribute("srcdoc");
+	const registry = createWindowRegistry();
 	const contentDocument = parseHTMLDocument(
 		srcdoc ?? "",
 		srcdoc === null ? "about:blank" : "about:srcdoc",
-	);
-	contentDocument[kRegistry] = constructInternal(() =>
-		new CustomElementRegistry(),
+		true,
+		registry,
 	);
 	frame[kContentDocument] = contentDocument;
 	frame[kContentWindow] = {
 		document: contentDocument,
-		customElements: contentDocument[kRegistry],
+		customElements: registry,
 		frameElement: frame,
 		HTMLElement,
 	};
@@ -15294,7 +15942,7 @@ export interface HTMLInputElement {
 	// text-like input, "toggle" for checkbox/radio, null until built. The two
 	// are different trees, so a type change rebuilds.
 	[kUpgraded]: boolean;
-	[kKind]: "textControl" | "toggle" | null;
+	[kKind]: "textControl" | "toggle" | "button" | null;
 	[kRoot]: globalThis.ShadowRoot | null;
 	[kValueText]: globalThis.Text | null;
 	[kPlaceholderText]: globalThis.Text | null;
@@ -15372,14 +16020,18 @@ export class HTMLInputElement extends HTMLElement {
 			}
 			if (event.inputType === "insertText") {
 				event.preventDefault();
-				insertTextControlText(this, event.data);
+				insertTextControlText(this, event.data, "insertText");
 				return;
 			}
 			if (event.inputType !== "insertFromPaste") {
 				return;
 			}
 			event.preventDefault();
-			insertTextControlText(this, event.data.replace(/[\r\n]+/g, ""));
+			insertTextControlText(
+				this,
+				event.data.replace(/[\r\n]+/g, ""),
+				"insertFromPaste",
+			);
 		};
 		this[kOnKeydown] = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) {
@@ -15393,11 +16045,10 @@ export class HTMLInputElement extends HTMLElement {
 			// behavior fires input then change, and a canceled click restores
 			// checkedness.
 			//
-			// Enter toggles here, where a browser does nothing. In a browser
-			// Enter on a checkbox submits the form the control belongs to, and
-			// does nothing outside a form. A terminal has no implicit
-			// submission, so the key would be inert on a focused control. It
-			// toggles for the same reason the readline chords edit.
+			// Enter toggles here. In a browser Enter on a checkbox submits the
+			// form the control belongs to, and does nothing outside a form, so
+			// the key would be inert on most focused checkboxes. It toggles for
+			// the same reason the readline chords edit.
 				if (key === " " || key === "Enter") {
 					this.click();
 				}
@@ -15417,8 +16068,14 @@ export class HTMLInputElement extends HTMLElement {
 						this,
 						createCollapsedEdit(stepped, stepped.length),
 					);
-					dispatch(this, new Event("change", {bubbles: true}));
+					editedSinceChange.delete(this);
+					dispatchUserChange(this);
 				}
+				return;
+			}
+
+			if (key === "Enter" && getInputKind(this) === "textControl") {
+				implicitlySubmit(this);
 				return;
 			}
 
@@ -15445,7 +16102,9 @@ export class HTMLInputElement extends HTMLElement {
 				result = applySharedTextControlEdit(this, key, shiftKey, ctrlKey);
 			}
 			if (result) {
-				applyTextControlEdit(this, result);
+				applyTextControlEdit(this, result, {
+					inputType: getKeyInputType(key, ctrlKey),
+				});
 			}
 		};
 	}
@@ -15503,6 +16162,7 @@ export class HTMLInputElement extends HTMLElement {
 
 	set value(value: string) {
 		const string = value === null ? "" : String(value);
+		editedSinceChange.delete(this);
 		switch (getInputValueMode(this.type)) {
 			case "value": {
 				const previous = this[kValue];
@@ -15572,6 +16232,7 @@ export class HTMLInputElement extends HTMLElement {
 
 	set indeterminate(value: boolean) {
 		this[kIndeterminate] = Boolean(value);
+		syncUAShadowTree(this);
 	}
 
 	get selectionStart(): number | null {
@@ -15625,11 +16286,11 @@ export class HTMLInputElement extends HTMLElement {
 
 	// Only the types that render as a button can invoke a popover.
 	get popoverTargetElement(): Element | null {
-		return getPopoverTargetAttributeElement(this);
+		return getAttributeElement(this, "popovertarget");
 	}
 
 	set popoverTargetElement(value: Element | null) {
-		setPopoverTargetAttributeElement(this, value);
+		setAttributeElement(this, "popovertarget", value);
 	}
 
 	get willValidate(): boolean {
@@ -15921,7 +16582,7 @@ export class HTMLInputElement extends HTMLElement {
 		if (this[kUpgraded]) {
 			// A control that left the tree and came back keeps its tree. Only
 			// the state it missed needs updating.
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -15930,12 +16591,6 @@ export class HTMLInputElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		buildInputWidget(this);
-		// Editing is the control's own default action, like a browser input's,
-		// implemented as a keydown listener. Typed characters and pastes arrive
-		// as beforeinput, which is the default action of the keypress or paste
-		// that produced them.
-		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
-		this.addEventListener("beforeinput", this[kOnBeforeInput] as UAListener);
 	}
 
 	// Updates the rendered content model a width:auto input measures
@@ -15955,9 +16610,11 @@ export class HTMLInputElement extends HTMLElement {
 		}
 		if (this[kKind] !== "textControl") {
 			if (this[kGlyphText]) {
-				const mark = this.type === "checkbox"
-					? this.checked ? "[x]" : "[ ]"
-					: this.checked ? "(x)" : "( )";
+				const mark = this[kKind] === "button"
+					? getInputButtonLabel(this)
+					: this.type === "checkbox"
+						? this.checked ? "[x]" : "[ ]"
+						: this.checked ? "(x)" : "( )";
 				if (this[kGlyphText].data !== mark) {
 					this[kGlyphText].data = mark;
 				}
@@ -16014,6 +16671,7 @@ export class HTMLInputElement extends HTMLElement {
 function insertTextControlText(
 	textControl: HTMLInputElement,
 	text: string,
+	inputType: string,
 ): void {
 	if (!text) {
 		return;
@@ -16027,6 +16685,7 @@ function insertTextControlText(
 	applyTextControlEdit(
 		textControl,
 		createCollapsedEdit(next, start + text.length),
+		{inputType, data: text, asked: true},
 	);
 }
 
@@ -16095,15 +16754,35 @@ function requireSelectable(input: HTMLInputElement): void {
 	}
 }
 
-function getInputKind(input: HTMLInputElement): "textControl" | "toggle" {
+function getInputKind(
+	input: HTMLInputElement,
+): "textControl" | "toggle" | "button" {
 	const type = input.type;
-	return type === "checkbox" || type === "radio" ? "toggle" : "textControl";
+	if (type === "checkbox" || type === "radio") {
+		return "toggle";
+	}
+	return isButtonInput(input) ? "button" : "textControl";
+}
+
+// `value` reflects only the attribute, so a submit or reset button with
+// none reads as empty while it draws its default label, as in a browser.
+function getInputButtonLabel(input: HTMLInputElement): string {
+	if (input.type === "image") {
+		return input.getAttribute("alt") ?? "Submit";
+	}
+	const value = input.getAttribute("value");
+	if (value !== null) {
+		return value;
+	}
+	return input.type === "submit"
+		? "Submit"
+		: input.type === "reset" ? "Reset" : "";
 }
 
 // The text control tree has value and placeholder parts. The toggle tree has a
 // single glyph part the painter fills from live `.checked`, because a
 // radio's group exclusivity unchecks siblings with no hook to sync
-// on.
+// on. The button tree has a single label part.
 function buildInputWidget(input: HTMLInputElement): void {
 	const attached = getAttachedDocument(input)!;
 	let root = input[kRoot];
@@ -16128,10 +16807,13 @@ function buildInputWidget(input: HTMLInputElement): void {
 	} else {
 		input[kValueText] = null;
 		input[kPlaceholderText] = null;
-		input[kGlyphText] = addPart(root, "glyph").firstChild as globalThis.Text;
+		input[kGlyphText] = addPart(
+			root,
+			input[kKind] === "button" ? "label" : "glyph",
+		).firstChild as globalThis.Text;
 	}
 	attached[kLayout].invalidate(input);
-	input[kSyncUAShadowTree]!();
+	syncUAShadowTree(input);
 }
 
 function getInputValueMode(
@@ -16452,15 +17134,17 @@ class HTMLMapElement extends HTMLElement {
 	get areas(): HTMLCollection {
 		let areas = this[kAreas];
 		if (areas === null) {
-			areas = new HTMLCollection(() => {
-				const found: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node instanceof HTMLAreaElement) {
-						found.push(node);
+			areas = live(
+				new HTMLCollection(() => {
+					const found: Element[] = [];
+					for (const node of descendants(this)) {
+						if (node instanceof HTMLAreaElement) {
+							found.push(node);
+						}
 					}
-				}
-				return found;
-			}, this);
+					return found;
+				}, this),
+			);
 			this[kAreas] = areas;
 		}
 		return areas;
@@ -17029,7 +17713,7 @@ class HTMLMeterElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -17038,7 +17722,7 @@ class HTMLMeterElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		this[kBar] = buildGaugeRoot(this, attached, METER_UA_STYLES).bar;
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	[kSyncUAShadowTree]?(): void {
@@ -17063,7 +17747,7 @@ class HTMLMeterElement extends HTMLElement {
 	): void {
 		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace === null && METER_ATTRIBUTES.has(localName)) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 		}
 	}
 }
@@ -17575,7 +18259,7 @@ class HTMLProgressElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -17584,7 +18268,7 @@ class HTMLProgressElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		this[kBar] = buildGaugeRoot(this, attached, PROGRESS_UA_STYLES).bar;
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	[kSyncUAShadowTree]?(): void {
@@ -17603,7 +18287,7 @@ class HTMLProgressElement extends HTMLElement {
 	): void {
 		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
 		if (namespace === null && (localName === "value" || localName === "max")) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 		}
 	}
 }
@@ -17731,14 +18415,14 @@ export class HTMLSelectElement extends HTMLElement {
 						commitSelectOption(this, highlight);
 						return;
 					}
-					this[kSyncUAShadowTree]!(); // No change: just close.
+					syncUAShadowTree(this); // No change: just close.
 					return;
 				} else if (key === "Escape") {
 					this[kPickerHighlight] = null;
 				} else {
 					return;
 				}
-				this[kSyncUAShadowTree]!();
+				syncUAShadowTree(this);
 				return;
 			}
 
@@ -17747,7 +18431,7 @@ export class HTMLSelectElement extends HTMLElement {
 				openPicker(this);
 				return;
 			}
-			let target = current;
+			let target: number;
 			if (key === "ArrowDown" || key === "ArrowRight") {
 				target = stepSelectHighlight(this, current, 1);
 			} else if (key === "ArrowUp" || key === "ArrowLeft") {
@@ -17773,7 +18457,8 @@ export class HTMLSelectElement extends HTMLElement {
 				openPicker(this);
 				return;
 			}
-			const {clientX: x, clientY: y} = event;
+			const x = event.clientX;
+			const y = event.clientY + attached[kScreen].scrollTop;
 			const picker = this[kPicker]!;
 			const row =
 				(Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
@@ -17792,7 +18477,7 @@ export class HTMLSelectElement extends HTMLElement {
 					if (index !== this.selectedIndex) {
 						commitSelectOption(this, index);
 					} else {
-						this[kSyncUAShadowTree]!(); // Re-press the selection: just close.
+						syncUAShadowTree(this); // Re-press the selection: just close.
 					}
 				}
 				return;
@@ -17802,13 +18487,13 @@ export class HTMLSelectElement extends HTMLElement {
 			const pickerRect = attached[kLayout].getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
 				this[kPickerHighlight] = null;
-				this[kSyncUAShadowTree]!();
+				syncUAShadowTree(this);
 			}
 		};
 		this[kOnBlur] = (): void => {
 			if (this[kPickerHighlight] !== null) {
 				this[kPickerHighlight] = null;
-				this[kSyncUAShadowTree]!();
+				syncUAShadowTree(this);
 			}
 		};
 	}
@@ -17828,7 +18513,7 @@ export class HTMLSelectElement extends HTMLElement {
 	get options(): HTMLOptionsCollection {
 		let options = this[kOptions];
 		if (options === null) {
-			options = new HTMLOptionsCollection(this);
+			options = live(new HTMLOptionsCollection(this));
 			this[kOptions] = options;
 		}
 		askForAReset(this);
@@ -17846,10 +18531,10 @@ export class HTMLSelectElement extends HTMLElement {
 	get selectedOptions(): HTMLCollectionOf<HTMLOptionElement> {
 		let selected = this[kSelectedOptions];
 		if (selected === null) {
-			selected = new HTMLCollection(() =>
-				getOptions(this).filter(
-					(option) => option[kSelectedness],
-				), this) as HTMLCollectionOf<HTMLOptionElement>;
+			selected = live(
+				new HTMLCollection(() =>
+					getOptions(this).filter((option) => option[kSelectedness]), this),
+			) as HTMLCollectionOf<HTMLOptionElement>;
 			this[kSelectedOptions] = selected;
 		}
 		askForAReset(this);
@@ -17916,7 +18601,22 @@ export class HTMLSelectElement extends HTMLElement {
 		return this[kValueText];
 	}
 
-	showPicker(): void {}
+	// HTML's showPicker(): a disabled select cannot, a call no user action
+	// led to may not, and otherwise the picker opens as a press would open it.
+	showPicker(): void {
+		if (isActuallyDisabled(this)) {
+			throw domError("InvalidStateError", "A disabled select has no picker");
+		}
+		if (!hasTransientActivation(this[kDocument])) {
+			throw domError(
+				"NotAllowedError",
+				"showPicker needs a user action to have just happened",
+			);
+		}
+		if (this[kPickerHighlight] == null) {
+			openPicker(this);
+		}
+	}
 
 	checkValidity(): boolean {
 		return checkValidity(this);
@@ -17978,7 +18678,7 @@ export class HTMLSelectElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -17998,8 +18698,6 @@ export class HTMLSelectElement extends HTMLElement {
 		root.appendChild(picker);
 		this[kPicker] = picker;
 
-		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
-		this.addEventListener("mousedown", this[kOnMousedown] as UAListener);
 		// Losing focus closes the picker.
 		this.addEventListener("blur", this[kOnBlur]);
 		// The displayed label and picker rows track the option list, so a
@@ -18014,7 +18712,7 @@ export class HTMLSelectElement extends HTMLElement {
 				characterData: true,
 			});
 
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	// The dropdown is transient interaction state. Leaving the tree ends the
@@ -18024,7 +18722,7 @@ export class HTMLSelectElement extends HTMLElement {
 		super[kRemovingSteps](oldParent);
 		if (this[kPickerHighlight] !== null) {
 			this[kPickerHighlight] = null;
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 		}
 	}
 
@@ -18185,14 +18883,14 @@ function openPicker(select: HTMLSelectElement): void {
 		index = options.findIndex((o) => !optionIsDisabled(o));
 	}
 	select[kPickerHighlight] = index;
-	select[kSyncUAShadowTree]!();
+	syncUAShadowTree(select);
 }
 
 function commitSelectOption(select: HTMLSelectElement, index: number): void {
 	select[kPickerHighlight] = null;
 	select.selectedIndex = index; // The setter reconciles (closes + label).
-	dispatch(select, new Event("input", {bubbles: true, cancelable: false}));
-	dispatch(select, new Event("change", {bubbles: true, cancelable: false}));
+	dispatch(select, new Event("input", {bubbles: true, composed: true}));
+	dispatchUserChange(select);
 }
 
 interface PickerRow {
@@ -18486,10 +19184,12 @@ class HTMLTableElement extends HTMLElement {
 	get tBodies(): HTMLCollectionOf<HTMLTableSectionElement> {
 		let bodies = this[kTBodies];
 		if (bodies === null) {
-			bodies = new HTMLCollection(
-				() => getChildElementsNamed(this, "tbody"),
-				this,
-				(node) => isHTMLElementNamed(node, "tbody"),
+			bodies = live(
+				new HTMLCollection(
+					() => getChildElementsNamed(this, "tbody"),
+					this,
+					(node) => isHTMLElementNamed(node, "tbody"),
+				),
 			);
 			this[kTBodies] = bodies;
 		}
@@ -18499,7 +19199,7 @@ class HTMLTableElement extends HTMLElement {
 	get rows(): HTMLCollectionOf<HTMLTableRowElement> {
 		let rows = this[kRows];
 		if (rows === null) {
-			rows = new HTMLCollection(() => getTableRows(this), this);
+			rows = live(new HTMLCollection(() => getTableRows(this), this));
 			this[kRows] = rows;
 		}
 		return rows as HTMLCollectionOf<HTMLTableRowElement>;
@@ -18717,9 +19417,11 @@ class HTMLTableRowElement extends HTMLElement {
 	get cells(): HTMLCollectionOf<HTMLTableCellElement> {
 		let cells = this[kCells];
 		if (cells === null) {
-			cells = new HTMLCollection(() =>
-				getRowCells(this), this, (node) => node instanceof
-					HTMLTableCellElement);
+			cells = live(
+				new HTMLCollection(() =>
+					getRowCells(this), this, (node) => node instanceof
+					HTMLTableCellElement),
+			);
 			this[kCells] = cells;
 		}
 		return cells as HTMLCollectionOf<HTMLTableCellElement>;
@@ -18793,10 +19495,12 @@ class HTMLTableSectionElement extends HTMLElement {
 	get rows(): HTMLCollectionOf<HTMLTableRowElement> {
 		let rows = this[kRows];
 		if (rows === null) {
-			rows = new HTMLCollection(
-				() => getChildElementsNamed(this, "tr"),
-				this,
-				(node) => isHTMLElementNamed(node, "tr"),
+			rows = live(
+				new HTMLCollection(
+					() => getChildElementsNamed(this, "tr"),
+					this,
+					(node) => isHTMLElementNamed(node, "tr"),
+				),
 			);
 			this[kRows] = rows;
 		}
@@ -18885,7 +19589,11 @@ export class HTMLTextAreaElement extends HTMLElement {
 			}
 			if (event.inputType === "insertText") {
 				event.preventDefault();
-				applyTextControlEdit(this, printableTextControlEdit(this, event.data));
+				applyTextControlEdit(this, printableTextControlEdit(this, event.data), {
+					inputType: "insertText",
+					data: event.data,
+					asked: true,
+				});
 				return;
 			}
 			if (event.inputType !== "insertFromPaste") {
@@ -18968,7 +19676,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 				result = applySharedTextControlEdit(this, key, shiftKey, ctrlKey);
 			}
 			if (result) {
-				applyTextControlEdit(this, result);
+				applyTextControlEdit(this, result, {
+					inputType: getKeyInputType(key, ctrlKey),
+				});
 			}
 		};
 	}
@@ -18998,6 +19708,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	set value(value: string) {
+		editedSinceChange.delete(this);
 		const previous = this[kUAValue];
 		this[kValue] = normalizeNewlines(value === null ? "" : String(value));
 		this[kDirty] = true;
@@ -19186,7 +19897,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
-			this[kSyncUAShadowTree]!();
+			syncUAShadowTree(this);
 			return;
 		}
 		const attached = getAttachedDocument(this);
@@ -19208,12 +19919,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		// border.
 		root.appendChild(document.createElement("br"));
 
-		// Editing is the control's own default action, like a browser
-		// textarea's. Its keydown listener does the edit.
-		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
-		this.addEventListener("beforeinput", this[kOnBeforeInput] as UAListener);
-
-		this[kSyncUAShadowTree]!();
+		syncUAShadowTree(this);
 	}
 
 	// Placeholder visibility is real CSS (an inline display:none), not
@@ -19261,6 +19967,7 @@ function insertPaste(
 	applyTextControlEdit(
 		textControl,
 		printableTextControlEdit(textControl, text),
+		{inputType: "insertFromPaste", data: text, asked: true},
 	);
 }
 
@@ -19517,17 +20224,31 @@ function getTopmostAutoPopover(
 	return popovers.length === 0 ? null : popovers[popovers.length - 1];
 }
 
-// Showing a popover is not a mutation. The attribute and the tree are
-// unchanged. So the rules that test `:popover-open`, and the frame that
-// would paint what they hide or reveal, have to be notified from here.
-function popoverStateChanged(element: Element): void {
+// State that no attribute and no tree mutation records changed, so no
+// mutation record reaches the cascade. Every such change comes through
+// here, naming the pseudo-classes that read the state, and the frame that
+// would paint the difference is asked for. The frame is asked for from a
+// microtask, as a mutation record's delivery asks for one: a state can
+// change in the middle of the engine's own work, such as a control
+// building its shadow tree while a batch of records is being handled, and
+// a frame started there reads styles the batch has not yet made current.
+function stateChanged(element: Element, states: readonly string[]): void {
 	const attached = getAttachedDocument(element);
 	if (attached === undefined) {
 		return;
 	}
-	attached[kCascade].handleStateChange(element);
+	attached[kCascade].handleStateChange(element, states);
 	attached[kScreen].invalidate();
-	void attached[kRender]();
+	queueMicrotask(() => {
+		void attached[kRender]();
+	});
+}
+
+// Showing a popover is not a mutation. The attribute and the tree are
+// unchanged. So the rules that test `:popover-open`, and the frame that
+// would paint what they hide or reveal, have to be notified from here.
+function popoverStateChanged(element: Element): void {
+	stateChanged(element, ["popover-open", "open"]);
 }
 
 // Returns true, false for a call that should silently do nothing, or the
@@ -19938,20 +20659,20 @@ function queuePopoverToggleEventTask(
 	});
 }
 
-// A popovertarget set to an ELEMENT rather than named by id. The
-// attribute cannot hold an element, so the reference is stored
+// A popovertarget or commandfor set to an ELEMENT rather than named by
+// id. The attribute cannot hold an element, so the reference is stored
 // separately. The getter returns it only while the element is in a tree
 // the invoker composes into.
-const explicitPopoverTargets = new WeakMap<Element, Element>();
+const explicitAttributeElements = new WeakMap<Element, Map<string, Element>>();
 
 // The explicitly set element if it is still reachable, otherwise the
 // element the attribute names by id in the invoker's own tree.
-function getPopoverTargetAttributeElement(node: Node): Element | null {
+function getAttributeElement(node: Node, attribute: string): Element | null {
 	if (node.nodeType !== ELEMENT_NODE) {
 		return null;
 	}
 	const element = node as Element;
-	const explicit = explicitPopoverTargets.get(element);
+	const explicit = explicitAttributeElements.get(element)?.get(attribute);
 	if (explicit !== undefined) {
 		// The reference is valid while the target is in the invoker's own tree
 		// or in one that tree composes into. It goes stale rather than dangling
@@ -19970,7 +20691,7 @@ function getPopoverTargetAttributeElement(node: Node): Element | null {
 			root = getRoot(host);
 		}
 	}
-	const id = element.getAttribute("popovertarget");
+	const id = element.getAttribute(attribute);
 	if (id === null) {
 		return null;
 	}
@@ -19983,17 +20704,23 @@ function getPopoverTargetAttributeElement(node: Node): Element | null {
 		null;
 }
 
-function setPopoverTargetAttributeElement(
+function setAttributeElement(
 	element: Element,
+	attribute: string,
 	value: Element | null,
 ): void {
 	if (value == null) {
-		explicitPopoverTargets.delete(element);
-		element.removeAttribute("popovertarget");
+		explicitAttributeElements.get(element)?.delete(attribute);
+		element.removeAttribute(attribute);
 		return;
 	}
-	explicitPopoverTargets.set(element, value);
-	element.setAttribute("popovertarget", "");
+	let explicit = explicitAttributeElements.get(element);
+	if (explicit === undefined) {
+		explicit = new Map();
+		explicitAttributeElements.set(element, explicit);
+	}
+	explicit.set(attribute, value);
+	element.setAttribute(attribute, "");
 }
 
 // A BUTTON as the popover target attributes define it: the button
@@ -20027,7 +20754,7 @@ function getPopoverTargetElement(node: Node): Element | null {
 	if (getFormOwner(element) !== null && isSubmitButton(element)) {
 		return null;
 	}
-	const popover = getPopoverTargetAttributeElement(element);
+	const popover = getAttributeElement(element, "popovertarget");
 	if (popover === null) {
 		return null;
 	}
@@ -20277,6 +21004,33 @@ function getFullscreenElement(document: Document): Element | null {
 	return stack?.length ? stack[stack.length - 1] : null;
 }
 
+// A fullscreen element that leaves the document leaves fullscreen, and
+// the document hears it (the Fullscreen Standard's removing steps).
+function leaveFullscreenOnRemoval(document: Document, node: Node): void {
+	const stack = fullscreenStacks.get(document);
+	if (stack === undefined || stack.length === 0) {
+		return;
+	}
+	const top = stack[stack.length - 1];
+	const removed = stack.filter((element) =>
+		isShadowIncludingInclusiveAncestor(node, element),
+	);
+	if (removed.length === 0) {
+		return;
+	}
+	stack.splice(
+		0,
+		stack.length,
+		...stack.filter((element) => !removed.includes(element)),
+	);
+	for (const element of removed) {
+		fullscreenChanged(element);
+	}
+	if (removed.includes(top)) {
+		fireFullscreenEvent("fullscreenchange", top);
+	}
+}
+
 /** Abandon fullscreen without events. Used when the engine is tearing down. */
 export function dropFullscreen(document: globalThis.Document): void {
 	fullscreenStacks.delete(document as Document);
@@ -20286,20 +21040,33 @@ export function dropFullscreen(document: globalThis.Document): void {
 // in the document, otherwise the document. Both events bubble, so a
 // document listener sees them either way. Firing at both would deliver
 // every event twice.
+//
+// The events are queued, not fired inside the call that caused them: the
+// Fullscreen Standard runs them with the next rendering update, so a
+// listener added right after requestFullscreen() still hears it.
 function fireFullscreenEvent(
 	type: "fullscreenchange" | "fullscreenerror",
 	element: Element,
 	detail?: {error: Error},
 ): void {
-	const target = element.isConnected ? element : element[kDocument];
-	dispatchAsUserAgent(
-		target,
-		new CustomEvent(type, {
-			bubbles: true,
-			cancelable: false,
-			...(detail ? {detail} : {}),
-		}),
-	);
+	setTimeout(() => {
+		const target = element.isConnected ? element : element[kDocument];
+		dispatchAsUserAgent(
+			target,
+			new CustomEvent(type, {
+				bubbles: true,
+				cancelable: false,
+				...(detail ? {detail} : {}),
+			}),
+		);
+	}, 0);
+}
+
+// Entering or leaving fullscreen changes what :fullscreen and :modal
+// match, and moves the element's box to fill the viewport or back.
+function fullscreenChanged(element: Element): void {
+	stateChanged(element, ["fullscreen", "modal"]);
+	getAttachedDocument(element)?.[kLayout].invalidate(element);
 }
 
 // The alternate screen comes up holding whatever the terminal left in
@@ -20536,12 +21303,25 @@ export function isActuallyDisabled(element: Element): boolean {
 			return true;
 		}
 		const parent = element[kParent];
-		return (
+		if (
 			element[kLocalName] === "option" &&
 			parent !== null &&
 			isHTMLElementNamed(parent, "optgroup") &&
 			(parent as Element).hasAttribute("disabled")
-		);
+		) {
+			return true;
+		}
+		// A disabled select disables what it offers (whatwg/html#12205),
+		// including a select a fieldset disables.
+		for (let node = parent; node !== null; node = node[kParent]) {
+			if (isHTMLElementNamed(node, "select")) {
+				return isActuallyDisabled(node as Element);
+			}
+			if (isHTMLElementNamed(node, "datalist")) {
+				return false;
+			}
+		}
+		return false;
 	}
 	if (element.hasAttribute("disabled")) {
 		return true;
@@ -20759,16 +21539,28 @@ Object.defineProperty(ValidityState.prototype, Symbol.toStringTag, {
 });
 
 const kStates = Symbol("custom state set");
+const kStateOwner = Symbol("custom state owner");
+
+function customStatesChanged(set: CustomStateSet): void {
+	const owner = set[kStateOwner];
+	if (owner !== null) {
+		stateChanged(owner, ["state"]);
+	}
+}
 
 // The set belongs to the author. A selector engine that supports
 // `:state()` reads it, and nothing else in this DOM does.
 interface CustomStateSet {
 	[kStates]: Set<string>;
+
+	// The element whose :state() the set answers for.
+	[kStateOwner]: Element | null;
 }
 
 class CustomStateSet {
 	constructor() {
 		this[kStates] = new Set<string>();
+		this[kStateOwner] = null;
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
@@ -20782,7 +21574,11 @@ class CustomStateSet {
 		if (arguments.length < 1) {
 			throw new TypeError("add needs a value");
 		}
-		this[kStates].add(String(value));
+		const state = String(value);
+		if (!this[kStates].has(state)) {
+			this[kStates].add(state);
+			customStatesChanged(this);
+		}
 		return this;
 	}
 
@@ -20790,7 +21586,11 @@ class CustomStateSet {
 		if (arguments.length < 1) {
 			throw new TypeError("delete needs a value");
 		}
-		return this[kStates].delete(String(value));
+		const deleted = this[kStates].delete(String(value));
+		if (deleted) {
+			customStatesChanged(this);
+		}
+		return deleted;
 	}
 
 	has(value: string): boolean {
@@ -20801,7 +21601,10 @@ class CustomStateSet {
 	}
 
 	clear(): void {
-		this[kStates].clear();
+		if (this[kStates].size > 0) {
+			this[kStates].clear();
+			customStatesChanged(this);
+		}
 	}
 
 	forEach(
@@ -20945,6 +21748,7 @@ class ElementInternals {
 		let states = this[kStates];
 		if (states === null) {
 			states = constructInternal(() => new CustomStateSet());
+			states[kStateOwner] = this[kElementInternalsTarget];
 			this[kStates] = states;
 		}
 		return states;
@@ -22566,6 +23370,21 @@ const kIntersectionRoot = Symbol("intersection root");
 const ROOT_MARGIN_COMPONENT =
 	/^[+-]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:px|ch|%)|(?:0+(?:\.0*)?|\.0+))$/;
 
+// One to four lengths in px or a percentage, as the spec allows, with
+// ch as the cell grid's own unit. A unit is required, except on zero,
+// which CSS lets any length write bare.
+function checkObserverMargin(margin: string, what: string): string {
+	const parts = margin.trim().split(/\s+/).filter(Boolean);
+	if (
+		parts.length === 0 ||
+		parts.length > 4 ||
+		parts.some((part) => !ROOT_MARGIN_COMPONENT.test(part))
+	) {
+		throw domError("SyntaxError", `"${margin}" is not a ${what} margin`);
+	}
+	return margin;
+}
+
 interface IntersectionObserver {
 	[kIntersectionRoot]: globalThis.Element | globalThis.Document | null;
 }
@@ -22573,6 +23392,7 @@ interface IntersectionObserver {
 class IntersectionObserver
 	extends LayoutObserver<number, IntersectionObserverEntry> {
 	readonly rootMargin: string;
+	readonly scrollMargin: string;
 	readonly thresholds: readonly number[];
 	constructor(
 		callback: IntersectionObserverCallback,
@@ -22581,22 +23401,12 @@ class IntersectionObserver
 		super();
 		this[kObserverCallback] = callback;
 		this[kIntersectionRoot] = init.root ?? null;
-		// An empty rootMargin is the spec's own spelling of the default.
-		this.rootMargin = init.rootMargin || "0px";
-		// One to four lengths in px or a percentage, as the spec allows, with
-		// ch as the cell grid's own unit. A unit is required, except on zero,
-		// which CSS lets any length write bare.
-		const parts = this.rootMargin.trim().split(/\s+/).filter(Boolean);
-		if (
-			parts.length === 0 ||
-			parts.length > 4 ||
-			parts.some((part) => !ROOT_MARGIN_COMPONENT.test(part))
-		) {
-			throw domError(
-				"SyntaxError",
-				`"${this.rootMargin}" is not a root margin`,
-			);
-		}
+		// An empty margin is the spec's own spelling of the default.
+		this.rootMargin = checkObserverMargin(init.rootMargin || "0px", "root");
+		this.scrollMargin = checkObserverMargin(
+			init.scrollMargin || "0px",
+			"scroll",
+		);
 
 		// A single number, an array, or the default of "any intersection at
 		// all".
@@ -22731,8 +23541,6 @@ function getThresholdIndex(
 	return index;
 }
 
-let ambientDocument: Document | null = null;
-
 // A window here is not the global object, so there is no "current
 // global object" to consult. A bare `new Text()` belongs to whichever
 // document was last attached to a window, or to one created here if
@@ -22762,6 +23570,7 @@ const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
 const kDesignMode = Symbol("whether the whole document is editable");
+const kAll = Symbol("document.all");
 
 /**
  * The event handler attributes installed on the prototype below, and the
@@ -22821,6 +23630,7 @@ export class Document extends Node implements globalThis.Document {
 	declare prepend: globalThis.Document["prepend"];
 	declare querySelector: globalThis.Document["querySelector"];
 	declare querySelectorAll: globalThis.Document["querySelectorAll"];
+	declare moveBefore: globalThis.Document["moveBefore"];
 	declare replaceChildren: globalThis.Document["replaceChildren"];
 	declare onfullscreenchange: globalThis.Document["onfullscreenchange"];
 	declare onfullscreenerror: globalThis.Document["onfullscreenerror"];
@@ -22840,6 +23650,7 @@ export class Document extends Node implements globalThis.Document {
 	declare onchange: globalThis.Document["onchange"];
 	declare onclick: globalThis.Document["onclick"];
 	declare onclose: globalThis.Document["onclose"];
+	declare oncommand: globalThis.Document["oncommand"];
 	declare oncontextlost: globalThis.Document["oncontextlost"];
 	declare oncontextmenu: globalThis.Document["oncontextmenu"];
 	declare oncontextrestored: globalThis.Document["oncontextrestored"];
@@ -22924,7 +23735,6 @@ export class Document extends Node implements globalThis.Document {
 	declare onwebkitanimationstart: globalThis.Document["onwebkitanimationstart"];
 	declare onwebkittransitionend: globalThis.Document["onwebkittransitionend"];
 	declare onwheel: globalThis.Document["onwheel"];
-	declare readonly all: globalThis.Document["all"];
 	declare onpointerlockchange: globalThis.Document["onpointerlockchange"];
 	declare onpointerlockerror: globalThis.Document["onpointerlockerror"];
 	declare onreadystatechange: globalThis.Document["onreadystatechange"];
@@ -23237,15 +24047,28 @@ export class Document extends Node implements globalThis.Document {
 	// filters them, and the colour attributes reflect the body's, as
 	// specified.
 
+	get all(): HTMLAllCollection {
+		let all = (this as unknown as Record<symbol, HTMLAllCollection>)[kAll];
+		if (all === undefined) {
+			all = live(constructInternal(() => new HTMLAllCollection(this)));
+			(this as unknown as Record<symbol, HTMLAllCollection>)[kAll] = all;
+		}
+		return all;
+	}
+
 	get anchors(): HTMLCollectionOf<globalThis.HTMLAnchorElement> {
-		return getDocumentCollection(this,
+		return getDocumentCollection(
+			this,
+			"anchors",
 			(e) => e instanceof HTMLAnchorElement && e.hasAttribute("name"),
+			"name",
 		) as unknown as HTMLCollectionOf<globalThis.HTMLAnchorElement>;
 	}
 
 	get forms(): HTMLCollectionOf<globalThis.HTMLFormElement> {
 		return getDocumentCollection(
 			this,
+			"forms",
 			(e) => e instanceof HTMLFormElement,
 		) as unknown as HTMLCollectionOf<globalThis.HTMLFormElement>;
 	}
@@ -23253,6 +24076,7 @@ export class Document extends Node implements globalThis.Document {
 	get images(): HTMLCollectionOf<globalThis.HTMLImageElement> {
 		return getDocumentCollection(
 			this,
+			"images",
 			(e) => e instanceof HTMLImageElement,
 		) as unknown as HTMLCollectionOf<globalThis.HTMLImageElement>;
 	}
@@ -23260,6 +24084,7 @@ export class Document extends Node implements globalThis.Document {
 	get scripts(): HTMLCollectionOf<globalThis.HTMLScriptElement> {
 		return getDocumentCollection(
 			this,
+			"scripts",
 			(e) => e instanceof HTMLScriptElement,
 		) as unknown as HTMLCollectionOf<globalThis.HTMLScriptElement>;
 	}
@@ -23267,6 +24092,7 @@ export class Document extends Node implements globalThis.Document {
 	get embeds(): HTMLCollectionOf<globalThis.HTMLEmbedElement> {
 		return getDocumentCollection(
 			this,
+			"embeds",
 			(e) => e instanceof HTMLEmbedElement,
 		) as unknown as HTMLCollectionOf<globalThis.HTMLEmbedElement>;
 	}
@@ -23276,20 +24102,26 @@ export class Document extends Node implements globalThis.Document {
 		return this.embeds;
 	}
 
-	get links(): HTMLCollectionOf<globalThis.HTMLAnchorElement |
-	globalThis.HTMLAreaElement> {
-		return getDocumentCollection(this,
+	get links(): HTMLCollectionOf<
+		globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
+	> {
+		return getDocumentCollection(
+			this,
+			"links",
 			(e) =>
 				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
 				e.hasAttribute("href"),
-		) as unknown as HTMLCollectionOf<globalThis.HTMLAnchorElement |
-		globalThis.HTMLAreaElement>;
+			"href",
+		) as unknown as HTMLCollectionOf<
+			globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
+		>;
 	}
 
 	/** Always empty. The applet element was removed from HTML. */
 	get applets(): HTMLCollectionOf<globalThis.Element> {
 		return getDocumentCollection(
 			this,
+			"applets",
 			() => false,
 		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
@@ -23340,6 +24172,10 @@ export class Document extends Node implements globalThis.Document {
 
 	get hidden(): boolean {
 		return !isDocumentVisible(this);
+	}
+
+	get activeViewTransition(): globalThis.ViewTransition | null {
+		return null;
 	}
 
 	get visibilityState(): globalThis.DocumentVisibilityState {
@@ -23526,8 +24362,7 @@ export class Document extends Node implements globalThis.Document {
 		}
 		const exiting = leaveFullscreen(this);
 		if (exiting) {
-			attached[kCascade].handleFocusChange(exiting);
-			attached[kLayout].invalidate(exiting);
+			fullscreenChanged(exiting);
 		}
 		return frameSettled(this, attached);
 	}
@@ -23606,34 +24441,34 @@ export class Document extends Node implements globalThis.Document {
 		elementName: string,
 	): globalThis.NodeListOf<globalThis.HTMLElement> {
 		const name = String(elementName);
-		return new NodeList(() => {
-			// Walks the tree instead of reading the all-elements
-			// collection. A list built on another live list would see that
-			// list's stale contents, because the two are resynchronized in
-			// the order they were first read.
-			const matches: Node[] = [];
-			const visit = (node: Node): void => {
-				for (
-					let child = node[kFirstChild]; child !== null; child = child[kNext]
-				) {
-					if (child.nodeType !== ELEMENT_NODE) {
-						continue;
-					}
-					const element = child as Element;
-					if (
-						element.namespaceURI === HTML_NAMESPACE &&
-						element.getAttribute("name") === name
+		return live(
+			new NodeList(() => {
+				// Walks the tree instead of reading the all-elements
+				// collection. A list built on another live list would see that
+				// list's stale contents, because the two are resynchronized in
+				// the order they were first read.
+				const matches: Node[] = [];
+				const visit = (node: Node): void => {
+					for (
+						let child = node[kFirstChild]; child !== null; child = child[kNext]
 					) {
-						matches.push(child);
+						if (child.nodeType !== ELEMENT_NODE) {
+							continue;
+						}
+						const element = child as Element;
+						if (
+							element.namespaceURI === HTML_NAMESPACE &&
+							element.getAttribute("name") === name
+						) {
+							matches.push(child);
+						}
+						visit(child);
 					}
-					visit(child);
-				}
-			};
-			visit(this as unknown as Node);
-			return matches;
-		}, true, this, null, "name") as unknown as globalThis.NodeListOf<
-			globalThis.HTMLElement
-		>;
+				};
+				visit(this as unknown as Node);
+				return matches;
+			}, true, this, null, "name"),
+		) as unknown as globalThis.NodeListOf<globalThis.HTMLElement>;
 	}
 
 	getElementById(elementId: string): globalThis.HTMLElement | null {
@@ -23903,6 +24738,7 @@ export class Document extends Node implements globalThis.Document {
 	createEvent(eventInterface: "BlobEvent"): globalThis.BlobEvent;
 	createEvent(eventInterface: "ClipboardEvent"): globalThis.ClipboardEvent;
 	createEvent(eventInterface: "CloseEvent"): globalThis.CloseEvent;
+	createEvent(eventInterface: "CommandEvent"): globalThis.CommandEvent;
 	createEvent(eventInterface: "CompositionEvent"): globalThis.CompositionEvent;
 	createEvent(eventInterface: "ContentVisibilityAutoStateChangeEvent"): globalThis.ContentVisibilityAutoStateChangeEvent;
 	createEvent(eventInterface: "CookieChangeEvent"): globalThis.CookieChangeEvent;
@@ -23916,6 +24752,7 @@ export class Document extends Node implements globalThis.Document {
 	createEvent(eventInterface: "FocusEvent"): globalThis.FocusEvent;
 	createEvent(eventInterface: "FontFaceSetLoadEvent"): globalThis.FontFaceSetLoadEvent;
 	createEvent(eventInterface: "FormDataEvent"): globalThis.FormDataEvent;
+	createEvent(eventInterface: "GPUUncapturedErrorEvent"): globalThis.GPUUncapturedErrorEvent;
 	createEvent(eventInterface: "GamepadEvent"): globalThis.GamepadEvent;
 	createEvent(eventInterface: "HashChangeEvent"): globalThis.HashChangeEvent;
 	createEvent(eventInterface: "IDBVersionChangeEvent"): globalThis.IDBVersionChangeEvent;
@@ -23930,6 +24767,8 @@ export class Document extends Node implements globalThis.Document {
 	createEvent(eventInterface: "MessageEvent"): globalThis.MessageEvent;
 	createEvent(eventInterface: "MouseEvent"): globalThis.MouseEvent;
 	createEvent(eventInterface: "MouseEvents"): globalThis.MouseEvent;
+	createEvent(eventInterface: "NavigateEvent"): globalThis.NavigateEvent;
+	createEvent(eventInterface: "NavigationCurrentEntryChangeEvent"): globalThis.NavigationCurrentEntryChangeEvent;
 	createEvent(eventInterface: "OfflineAudioCompletionEvent"): globalThis.OfflineAudioCompletionEvent;
 	createEvent(eventInterface: "PageRevealEvent"): globalThis.PageRevealEvent;
 	createEvent(eventInterface: "PageSwapEvent"): globalThis.PageSwapEvent;
@@ -23948,10 +24787,13 @@ export class Document extends Node implements globalThis.Document {
 	createEvent(eventInterface: "RTCPeerConnectionIceEvent"): globalThis.RTCPeerConnectionIceEvent;
 	createEvent(eventInterface: "RTCTrackEvent"): globalThis.RTCTrackEvent;
 	createEvent(eventInterface: "SecurityPolicyViolationEvent"): globalThis.SecurityPolicyViolationEvent;
+	createEvent(eventInterface: "SpeechRecognitionErrorEvent"): globalThis.SpeechRecognitionErrorEvent;
+	createEvent(eventInterface: "SpeechRecognitionEvent"): globalThis.SpeechRecognitionEvent;
 	createEvent(eventInterface: "SpeechSynthesisErrorEvent"): globalThis.SpeechSynthesisErrorEvent;
 	createEvent(eventInterface: "SpeechSynthesisEvent"): globalThis.SpeechSynthesisEvent;
 	createEvent(eventInterface: "StorageEvent"): globalThis.StorageEvent;
 	createEvent(eventInterface: "SubmitEvent"): globalThis.SubmitEvent;
+	createEvent(eventInterface: "TaskPriorityChangeEvent"): globalThis.TaskPriorityChangeEvent;
 	createEvent(eventInterface: "TextEvent"): globalThis.TextEvent;
 	createEvent(eventInterface: "ToggleEvent"): globalThis.ToggleEvent;
 	createEvent(eventInterface: "TouchEvent"): globalThis.TouchEvent;
@@ -24245,20 +25087,174 @@ function isPotentiallyScrollable(body: Element): boolean {
 	);
 }
 
+// One live collection per document and kind, so `document.forms` is the
+// same object on every read, as the HTML Standard requires. `watched`
+// names the attribute that decides membership, if one does.
+const documentCollections =
+	new WeakMap<Document, Map<string, HTMLCollection>>();
+
 function getDocumentCollection(
 	document: Document,
+	kind: string,
 	match: (element: Element) => boolean,
+	watched: string | null = null,
 ): HTMLCollection {
-	return new HTMLCollection(() => {
-		const found: Element[] = [];
-		for (const node of descendants(document)) {
-			if (node.nodeType === ELEMENT_NODE && match(node as Element)) {
-				found.push(node as Element);
+	let collections = documentCollections.get(document);
+	if (collections === undefined) {
+		collections = new Map();
+		documentCollections.set(document, collections);
+	}
+	let collection = collections.get(kind);
+	if (collection === undefined) {
+		collection = live(
+			new HTMLCollection(() => {
+				const found: Element[] = [];
+				for (const node of descendants(document)) {
+					if (node.nodeType === ELEMENT_NODE && match(node as Element)) {
+						found.push(node as Element);
+					}
+				}
+				return found;
+			}, document, null, watched),
+		);
+		collections.set(kind, collection);
+	}
+	return collection;
+}
+
+// The elements HTML names by their name attribute in document.all.
+const ALL_NAMED_ELEMENTS = new Set([
+	"a",
+	"button",
+	"embed",
+	"form",
+	"frame",
+	"frameset",
+	"iframe",
+	"img",
+	"input",
+	"map",
+	"meta",
+	"object",
+	"select",
+	"textarea",
+]);
+
+function isAllNamed(element: Element, name: string): boolean {
+	if (element.getAttribute("id") === name) {
+		return true;
+	}
+	return (
+		element.namespaceURI === HTML_NAMESPACE &&
+		ALL_NAMED_ELEMENTS.has(element.localName) &&
+		element.getAttribute("name") === name
+	);
+}
+
+// Every element of the document, in tree order, named by id and by the
+// name attribute of the elements HTML lists. A browser's document.all is
+// also falsy and reports its typeof as "undefined", which no JavaScript
+// object can do, so here it is an ordinary collection.
+class HTMLAllCollection extends LiveList {
+	[index: number]: Element;
+	declare [Symbol.iterator]: () => ArrayIterator<Element>;
+
+	constructor(document: Document) {
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		super(true, document);
+	}
+
+	get length(): number {
+		return ensureList(this).length;
+	}
+
+	override compute(): Node[] {
+		return getDescendantElements(this[kOwner] as Document, []);
+	}
+
+	override namedProperties(items: Node[]): Map<string, Node> {
+		const named = new Map<string, Node>();
+		for (const item of items) {
+			const element = item as Element;
+			const id = element.getAttribute("id");
+			if (id !== null && id !== "" && !named.has(id)) {
+				named.set(id, element);
+			}
+			const name = element.getAttribute("name");
+			if (
+				name !== null &&
+				name !== "" &&
+				!named.has(name) &&
+				isAllNamed(element, name)
+			) {
+				named.set(name, element);
 			}
 		}
-		return found;
-	}, document);
+		return named;
+	}
+
+	// An index reads as an index and anything else as a name.
+	item(
+		nameOrIndex?: string,
+	): globalThis.HTMLCollection | globalThis.Element | null {
+		if (nameOrIndex === undefined) {
+			return null;
+		}
+		const key = String(nameOrIndex);
+		if (/^(?:0|[1-9]\d*)$/.test(key) && Number(key) < 4294967295) {
+			const items = ensureList(this);
+			const at = Number(key);
+			return at < items.length
+				? (items[at] as unknown as globalThis.Element)
+				: null;
+		}
+		return this.namedItem(key);
+	}
+
+	// One element by that name, or every one when several share it.
+	namedItem(
+		name: string,
+	): globalThis.HTMLCollection | globalThis.Element | null {
+		const key = String(name);
+		if (key === "") {
+			return null;
+		}
+		const matches = (ensureList(this) as Element[]).filter((element) =>
+			isAllNamed(element, key),
+		);
+		if (matches.length === 0) {
+			return null;
+		}
+		if (matches.length === 1) {
+			return matches[0] as unknown as globalThis.Element;
+		}
+		const document = this[kOwner] as Document;
+		return live(
+			new HTMLCollection(() =>
+				getDescendantElements(document, []).filter((element) =>
+					isAllNamed(element, key),
+				), document, null, anyAttribute),
+		);
+	}
+
+	// An id or name moves the named properties without moving a member.
+	override [kAttributeSync](element: Element, localName: string): void {
+		if (localName !== "id" && localName !== "name") {
+			super[kAttributeSync](element, localName);
+			return;
+		}
+		if (this[kExact]) {
+			defineListProperties(this);
+		}
+	}
 }
+
+Object.defineProperty(HTMLAllCollection.prototype, Symbol.toStringTag, {
+	value: "HTMLAllCollection",
+	configurable: true,
+});
 
 Object.defineProperty(Document.prototype, Symbol.toStringTag, {
 	value: "Document",
@@ -24292,7 +25288,7 @@ export function elementAtDocumentPoint(
 	document: globalThis.Document,
 	x: number,
 	y: number,
-	context: globalThis.Node = document,
+	context: globalThis.Node | null = document,
 ): globalThis.Element | null {
 	const attached = getAttachedDocument(document);
 	if (attached === undefined) {
@@ -24316,24 +25312,48 @@ export function elementAtDocumentPoint(
 		element = host;
 	}
 	// RETARGETED against the asking tree, per CSSOM View. From the
-	// document, a hit inside a shadow tree is the HOST, so a click on an
-	// input's internal value span is a click on the input. From a shadow
+	// document, a hit inside a shadow tree is the HOST. From a shadow
 	// root, a hit inside it stays inside, and one in a nested tree is that
-	// tree's host.
-	element = retarget(
-		element as unknown as EventTarget | null,
-		context as unknown as EventTarget,
-	) as unknown as globalThis.Element | null;
+	// tree's host. With no asking tree, the hit is the element a pointer
+	// event targets: the deepest one, except that a control's own
+	// internals are the control, so a click on an input's value span is a
+	// click on the input.
+	element = context === null
+		? getOutsideUAShadowTrees(element as Element | null)
+		: retarget(
+			element as unknown as EventTarget | null,
+			context as unknown as EventTarget,
+		) as unknown as globalThis.Element | null;
 	// A modal dialog makes the rest of the document inert. A point outside
 	// it lands on its backdrop, and a backdrop hit counts as a hit on the
 	// DIALOG. That is the target a browser reports for a click on the dim
 	// area, and why nothing behind a modal can be clicked or focused while
 	// it is open.
 	const modal = topmostModalDialog(document);
-	if (modal !== null && (element === null || !modal.contains(element))) {
+	if (
+		modal !== null &&
+		(element === null ||
+			!isShadowIncludingInclusiveAncestor(
+				modal as unknown as Node,
+				element as unknown as Node,
+			))
+	) {
 		return modal;
 	}
 	return element;
+}
+
+function getOutsideUAShadowTrees(
+	element: Element | null,
+): globalThis.Element | null {
+	while (element !== null) {
+		const root = getRoot(element);
+		if (!(root instanceof ShadowRoot) || !root[kUAShadowTree]) {
+			break;
+		}
+		element = root[kHost] as Element;
+	}
+	return element as unknown as globalThis.Element | null;
 }
 
 // Hit testing. The point is viewport-relative, and the engine tests it.
@@ -24567,7 +25587,7 @@ Object.defineProperty(DOMImplementation.prototype, Symbol.toStringTag, {
 function createHTMLDocument(
 	title?: string,
 	url = "about:blank",
-	registry: CustomElementRegistry | null = getGlobalCustomElements(),
+	registry: CustomElementRegistry | null = null,
 ): Document {
 	const document = new Document();
 	document[kRegistry] = registry;
@@ -24991,8 +26011,7 @@ function setScrollOffset(
 	}
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
-			attached[kScreen].scrollTo(Number(value));
-			void attached[kRender]();
+			scrollDocumentTo(element[kDocument], Number(value));
 		}
 		return;
 	}
@@ -25044,6 +26063,7 @@ export function runScrollSteps(document: globalThis.Document): void {
 	if (top !== (reportedDocumentScrollTop.get(attached) ?? 0)) {
 		reportedDocumentScrollTop.set(attached, top);
 		dispatchAsUserAgent(attached, new Event("scroll", {bubbles: true}));
+		awaitScrollEnd(attached, attached);
 	}
 	const pending = pendingScrollTargets.get(attached);
 	if (pending === undefined || pending.size === 0) {
@@ -25053,7 +26073,41 @@ export function runScrollSteps(document: globalThis.Document): void {
 	pending.clear();
 	for (const target of targets) {
 		dispatchAsUserAgent(target, new Event("scroll"));
+		awaitScrollEnd(attached, target);
 	}
+}
+
+// A scroll ends when nothing has scrolled for a moment. A wheel's ticks
+// arrive a few frames apart, so each one restarts the wait, and the
+// gesture ends once.
+const SCROLL_END_MS = 100;
+
+const scrollEnds = new WeakMap<
+	Document,
+	{targets: Set<Document | Element>; timer: ReturnType<typeof setTimeout>}
+>();
+
+function awaitScrollEnd(document: Document, target: Document | Element): void {
+	const waiting = scrollEnds.get(document);
+	if (waiting !== undefined) {
+		clearTimeout(waiting.timer);
+	}
+	const targets = waiting?.targets ?? new Set<Document | Element>();
+	targets.add(target);
+	const timer = setTimeout(() => {
+		scrollEnds.delete(document);
+		if (getAttachedDocument(document) === undefined) {
+			return;
+		}
+		for (const ended of targets) {
+			if (ended === document) {
+				dispatchAsUserAgent(ended, new Event("scrollend", {bubbles: true}));
+			} else if (ended.isConnected) {
+				dispatchAsUserAgent(ended, new Event("scrollend"));
+			}
+		}
+	}, SCROLL_END_MS);
+	scrollEnds.set(document, {targets, timer});
 }
 
 // The one box whose vertical scroll this frame can express as a scroll shift,
@@ -25509,35 +26563,42 @@ function forEachLiveRange(context: Node, steps: (range: Range) => void): void {
 // A node inserted before a child shifts every boundary point in the
 // parent that is past that child.
 function liveRangeInsertSteps(parent: Node, child: Node, count: number): void {
-	const index = getNodeIndex(child);
+	const index = getLazyIndex(child);
 	forEachLiveRange(parent, (range) => {
-		if (range[kStartNode] === parent && range[kStartOffset] > index) {
+		if (range[kStartNode] === parent && range[kStartOffset] > index()) {
 			range[kStartOffset] += count;
 		}
-		if (range[kEndNode] === parent && range[kEndOffset] > index) {
+		if (range[kEndNode] === parent && range[kEndOffset] > index()) {
 			range[kEndOffset] += count;
 		}
 	});
+}
+
+// A node's index costs a walk over its earlier siblings, so it is taken
+// only when a range has a boundary in the parent, and then once.
+function getLazyIndex(node: Node): () => number {
+	let index = -1;
+	return () => (index < 0 ? (index = getNodeIndex(node)) : index);
 }
 
 // A boundary point inside the removed node collapses to the node's own
 // position. A point after it in the parent moves back by one.
 function liveRangePreRemoveSteps(node: Node): void {
 	const parent = node[kParent] as Node;
-	const index = getNodeIndex(node);
+	const index = getLazyIndex(node);
 	forEachLiveRange(node, (range) => {
 		if (isInclusiveAncestor(node, range[kStartNode])) {
 			range[kStartNode] = parent;
-			range[kStartOffset] = index;
+			range[kStartOffset] = index();
 		}
 		if (isInclusiveAncestor(node, range[kEndNode])) {
 			range[kEndNode] = parent;
-			range[kEndOffset] = index;
+			range[kEndOffset] = index();
 		}
-		if (range[kStartNode] === parent && range[kStartOffset] > index) {
+		if (range[kStartNode] === parent && range[kStartOffset] > index()) {
 			range[kStartOffset] -= 1;
 		}
-		if (range[kEndNode] === parent && range[kEndOffset] > index) {
+		if (range[kEndNode] === parent && range[kEndOffset] > index()) {
 			range[kEndOffset] -= 1;
 		}
 	});
@@ -25583,7 +26644,7 @@ function liveRangeSplitSteps(
 	offset: number,
 	parent: Node,
 ): void {
-	const index = getNodeIndex(node);
+	const index = getLazyIndex(node);
 	forEachLiveRange(node, (range) => {
 		if (range[kStartNode] === node && range[kStartOffset] > offset) {
 			range[kStartNode] = newNode;
@@ -25593,10 +26654,10 @@ function liveRangeSplitSteps(
 			range[kEndNode] = newNode;
 			range[kEndOffset] -= offset;
 		}
-		if (range[kStartNode] === parent && range[kStartOffset] === index + 1) {
+		if (range[kStartNode] === parent && range[kStartOffset] === index() + 1) {
 			range[kStartOffset] += 1;
 		}
-		if (range[kEndNode] === parent && range[kEndOffset] === index + 1) {
+		if (range[kEndNode] === parent && range[kEndOffset] === index() + 1) {
 			range[kEndOffset] += 1;
 		}
 	});
@@ -25611,7 +26672,7 @@ function liveRangeNormalizeSteps(
 	length: number,
 ): void {
 	const parent = currentNode[kParent] as Node;
-	const index = getNodeIndex(currentNode);
+	const index = getLazyIndex(currentNode);
 	forEachLiveRange(node, (range) => {
 		if (range[kStartNode] === currentNode) {
 			range[kStartNode] = node;
@@ -25621,11 +26682,11 @@ function liveRangeNormalizeSteps(
 			range[kEndNode] = node;
 			range[kEndOffset] += length;
 		}
-		if (range[kStartNode] === parent && range[kStartOffset] === index) {
+		if (range[kStartNode] === parent && range[kStartOffset] === index()) {
 			range[kStartNode] = node;
 			range[kStartOffset] = length;
 		}
-		if (range[kEndNode] === parent && range[kEndOffset] === index) {
+		if (range[kEndNode] === parent && range[kEndOffset] === index()) {
 			range[kEndNode] = node;
 			range[kEndOffset] = length;
 		}
@@ -26516,7 +27577,7 @@ function insertIntoRange(range: Range, node: Node): void {
 	) {
 		throw hierarchyRequestError("That range cannot take an inserted node");
 	}
-	let referenceNode: Node | null = null;
+	let referenceNode: Node | null;
 	if (startNode instanceof Text) {
 		referenceNode = startNode;
 	} else {
@@ -26593,38 +27654,73 @@ function rangeAnchor(range: Range): Element | null {
 Object.defineProperties(Range.prototype, {
 	getBoundingClientRect: {
 		value(this: Range): globalThis.DOMRect {
-			const attached = getAttachedDocument(this.startContainer);
-			if (attached === undefined) {
-				return new DOMRect(0, 0, 0, 0);
-			}
-			flushLayout(this.startContainer);
-			return toViewportRect(
-				attached,
-				unionRect(attached[kLayout].getRangeRects(this)),
-				rangeAnchor(this),
-			);
+			return getBoundingRect(getRangeClientRects(this));
 		},
 		writable: true,
 		configurable: true,
 	},
 	getClientRects: {
 		value(this: Range): globalThis.DOMRectList {
-			const attached = getAttachedDocument(this.startContainer);
-			if (attached === undefined) {
-				return new DOMRectList();
-			}
-			flushLayout(this.startContainer);
-			const anchor = rangeAnchor(this);
-			return createRectList(
-				attached[kLayout]
-					.getRangeRects(this)
-					.map((rect) => toViewportRect(attached, rect, anchor)),
-			);
+			return createRectList(getRangeClientRects(this));
 		},
 		writable: true,
 		configurable: true,
 	},
 });
+
+// In tree order, as CSSOM View lists them: the border boxes of each
+// element the range contains whose parent it does not, and the selected
+// part of each text node.
+function getRangeClientRects(range: Range): globalThis.DOMRect[] {
+	const attached = getAttachedDocument(range.startContainer);
+	if (attached === undefined) {
+		return [];
+	}
+	flushLayout(range.startContainer);
+	const layout = attached[kLayout];
+	const anchor = rangeAnchor(range);
+	if (range.collapsed) {
+		return layout
+			.getRangeRects(range)
+			.map((rect) => toViewportRect(attached, rect, anchor));
+	}
+	const rects: globalThis.DOMRect[] = [];
+	const visit = (node: Node): void => {
+		if (node.nodeType === TEXT_NODE && range.intersectsNode(node)) {
+			const text = node as Text;
+			const from = range.startContainer === text ? range.startOffset : 0;
+			const to = range.endContainer === text
+				? range.endOffset
+				: text[kData].length;
+			for (const span of layout.getTextSpans(text, from, to)) {
+				rects.push(toViewportRect(attached, span.rect, anchor));
+			}
+		} else if (
+			node.nodeType === ELEMENT_NODE &&
+			isContained(node, range) &&
+			(node[kParent] === null || !isContained(node[kParent]!, range))
+		) {
+			for (const rect of layout.getRects(node as Element)) {
+				rects.push(toViewportRect(attached, rect, node as Element));
+			}
+		}
+		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+			visit(child);
+		}
+	};
+	visit(range.commonAncestorContainer as unknown as Node);
+	return rects;
+}
+
+// All zero with nothing listed, the first rect when every rect is empty,
+// and otherwise the union of the rects that are not.
+function getBoundingRect(rects: globalThis.DOMRect[]): globalThis.DOMRect {
+	if (rects.length === 0) {
+		return new DOMRect(0, 0, 0, 0);
+	}
+	const sized = rects.filter((rect) => rect.width !== 0 && rect.height !== 0);
+	return sized.length === 0 ? rects[0] : unionRect(sized);
+}
 
 // Every change the Range API makes to the boundary points fires a
 // selectionchange event on the selection this range belongs to.
@@ -27496,8 +28592,9 @@ function getSelectionLines(
 	for (const part of run.parts) {
 		if (isLineBreakElement(part.node)) {
 			const rect = layout.getRects(part.node)[0];
+			// The line ends before the break, where its caret rests.
 			if (rect !== undefined) {
-				add(Math.round(rect.y), part.start, part.start + part.length);
+				add(Math.round(rect.y), part.start, part.start);
 			}
 			continue;
 		}
@@ -27704,7 +28801,15 @@ function getModifiedPoint(
 		// just mutated has to be laid out first.
 		layout.performLayout();
 	}
-	const run = flattenSelectionText(getSelectionTextNodes(document, attached));
+	// A caret in an editing host stays in it, as it does in a browser.
+	const host = getEditingHost(from[0] as unknown as globalThis.Node);
+	let nodes = getSelectionTextNodes(document, attached);
+	if (host !== null) {
+		nodes = nodes.filter((node) =>
+			host.contains(node as unknown as globalThis.Node),
+		);
+	}
+	const run = flattenSelectionText(nodes);
 	if (run.parts.length === 0) {
 		return null;
 	}
@@ -28934,7 +30039,78 @@ Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, {
 // writes it here as motion reports arrive, and the `:hover` resolver
 // reads it. Absent means nothing is hovered, because the document has no
 // motion reporting or the pointer left.
+const activeElements = new WeakMap<Document, Element>();
+
+/** Record the element a mouse button is held down on, for `:active`. */
+export function setActiveElement(
+	document: globalThis.Document,
+	element: globalThis.Element | null,
+): void {
+	if (element === null) {
+		activeElements.delete(document as Document);
+	} else {
+		activeElements.set(document as Document, element as Element);
+	}
+}
+
+export function getActiveElement(
+	document: globalThis.Document,
+): globalThis.Element | null {
+	return (activeElements.get(document as Document) ??
+		null) as globalThis.Element |
+		null;
+}
+
+// True for the pressed element and anything that contains it in the flat
+// tree, as :hover is.
+export function isActive(element: Element): boolean {
+	const document = element[kDocument];
+	for (
+		let node: Element | null = activeElements.get(document) ?? null;
+		node !== null;
+		node = getFlatTreeParent(node)
+	) {
+		if (node === element) {
+			return true;
+		}
+	}
+	return false;
+}
+
 const hoveredElements = new WeakMap<Document, Element>();
+
+/**
+ * The mouse's buttons held down, and its capture: `pending` is what
+ * setPointerCapture asked for, `active` what pointer events target now.
+ */
+export interface PointerState {
+	buttons: number;
+	pending: Element | null;
+	active: Element | null;
+}
+
+const pointerStates = new WeakMap<Document, PointerState>();
+
+export function getPointerState(document: globalThis.Document): PointerState {
+	let state = pointerStates.get(document as Document);
+	if (state === undefined) {
+		state = {buttons: 0, pending: null, active: null};
+		pointerStates.set(document as Document, state);
+	}
+	return state;
+}
+
+// An element that leaves the document loses its capture at once. A move
+// is not a removal, so moveBefore keeps it.
+function releasePointerCaptureOnRemoval(document: Document, node: Node): void {
+	const state = pointerStates.get(document);
+	if (
+		state?.pending != null &&
+		isShadowIncludingInclusiveAncestor(node, state.pending)
+	) {
+		state.pending = null;
+	}
+}
 
 /** Record what `:hover` should match. */
 export function setHoveredElement(
@@ -29028,6 +30204,56 @@ export function isTargetElement(element: Element): boolean {
 	);
 }
 
+// The element the URL's fragment names, or null (HTML's indicated part).
+function getTargetElement(document: Document): Element | null {
+	for (const node of descendants(document)) {
+		if (node.nodeType === ELEMENT_NODE && isTargetElement(node as Element)) {
+			return node as Element;
+		}
+	}
+	return null;
+}
+
+// The part of a URL before its fragment, which is what a same-document
+// navigation keeps.
+function withoutFragment(url: string): string {
+	const hash = url.indexOf("#");
+	return hash === -1 ? url : url.slice(0, hash);
+}
+
+// Whether going to `url` from the document's own URL moves only the
+// fragment: HTML's "navigate to a fragment", the one navigation a
+// terminal document can make.
+function isFragmentNavigation(document: Document, url: string): boolean {
+	return url.includes("#") &&
+		withoutFragment(url) === withoutFragment(document[kDocumentURL]);
+}
+
+function navigateToFragment(document: Document, url: string): void {
+	const oldURL = document[kDocumentURL];
+	const previous = getTargetElement(document);
+	document[kDocumentURL] = url;
+	const next = getTargetElement(document);
+	for (const element of [previous, next]) {
+		if (element !== null) {
+			stateChanged(element, ["target", "target-within"]);
+		}
+	}
+	(next as HTMLElement | null)?.scrollIntoView();
+	if (oldURL === url) {
+		return;
+	}
+	const window = document[kDefaultView] as unknown as EventTarget | null;
+	if (window !== null) {
+		setTimeout(() => {
+			dispatchAsUserAgent(
+				window,
+				new HashChangeEvent("hashchange", {oldURL, newURL: url}),
+			);
+		}, 0);
+	}
+}
+
 const PLACEHOLDER_INPUT_TYPES = new Set([
 	"email",
 	"number",
@@ -29046,10 +30272,9 @@ export function isPlaceholderShown(element: Element): boolean {
 	if (name !== "input" && name !== "textarea") {
 		return false;
 	}
+	// An empty placeholder is still the one presented, as browsers match it.
 	const placeholder = element.getAttribute("placeholder");
-	if (
-		placeholder === null || placeholder === "" || /[\r\n]/.test(placeholder)
-	) {
+	if (placeholder === null || /[\r\n]/.test(placeholder)) {
 		return false;
 	}
 	if (
@@ -29197,6 +30422,46 @@ export function isDefinedElement(element: Element): boolean {
 	return element[kCustomState] !== "undefined";
 }
 
+// An h1 to h6 is a heading, at its number plus the heading offset around
+// it: the headingoffset of it and each ancestor, summed until an element
+// with headingreset, and at most 9 (HTML §4.3.6). The ancestors are the
+// document's, not the flat tree's, so a heading slotted somewhere keeps
+// its level.
+export function getHeadingLevel(element: Element): number | null {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
+		return null;
+	}
+	const match = /^h([1-6])$/.exec(element.localName);
+	if (match === null) {
+		return null;
+	}
+	return Math.min(Number(match[1]) + getHeadingOffset(element), 9);
+}
+
+function getHeadingOffset(element: Element): number {
+	let offset = 0;
+	for (
+		let node: Element | null = element;
+		node !== null;
+		node = node.parentElement as Element | null
+	) {
+		if (node.namespaceURI !== HTML_NAMESPACE) {
+			continue;
+		}
+		const attribute = node.getAttribute("headingoffset");
+		const value = attribute === null
+			? null
+			: parseNonNegativeInteger(attribute);
+		if (value !== null) {
+			offset += value;
+		}
+		if (node.hasAttribute("headingreset")) {
+			break;
+		}
+	}
+	return offset;
+}
+
 export function hasCustomState(element: Element, name: string): boolean {
 	const internals = element[kInternals] ?? null;
 	const states = internals === null ? null : (internals[kStates] ?? null);
@@ -29220,16 +30485,101 @@ export function isCheckedControl(element: Element): boolean {
 	);
 }
 
+// A checkbox whose indeterminate IDL attribute is set, a radio button
+// whose group has nothing checked, and a progress bar with no value.
 export function isIndeterminateControl(element: Element): boolean {
-	if (
-		element.namespaceURI !== HTML_NAMESPACE || element.localName !== "input"
-	) {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
 	}
+	if (element.localName === "progress") {
+		return !element.hasAttribute("value");
+	}
+	if (element.localName !== "input") {
+		return false;
+	}
+	const type = getInputTypeValue(element);
+	if (type === "checkbox") {
+		return (element as unknown as HTMLInputElement).indeterminate;
+	}
 	return (
-		getInputTypeValue(element) === "checkbox" &&
-		(element as unknown as HTMLInputElement).indeterminate
+		type === "radio" &&
+		getRadioGroup(element as unknown as HTMLInputElement).every(
+			(input) => !input.checked,
+		)
 	);
+}
+
+function getValidityOwners(element: Element): Element[] {
+	const owners: Element[] = [];
+	for (let node = element[kParent]; node !== null; node = node[kParent]) {
+		if (isHTMLElementNamed(node, "fieldset")) {
+			owners.push(node as Element);
+		}
+	}
+	const form = isListed(element) ? getFormOwner(element) : null;
+	if (form !== null) {
+		owners.push(form as unknown as Element);
+	}
+	return owners;
+}
+
+// What :valid and :invalid say about an element, or null for one they do
+// not apply to. A form or a fieldset is invalid when anything it holds
+// that is being validated is.
+export function getValidityMatch(element: Element): "valid" | "invalid" | null {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
+		return null;
+	}
+	const name = element.localName;
+	if (name === "form" || name === "fieldset") {
+		const controls = name === "form"
+			? getListedElements(element as unknown as HTMLFormElement)
+			: getDescendantElements(element, []).filter(isListed);
+		return controls.some((control) => isInvalidCandidate(control))
+			? "invalid"
+			: "valid";
+	}
+	if (!willValidate(element)) {
+		return null;
+	}
+	return isInvalidCandidate(element) ? "invalid" : "valid";
+}
+
+function isInvalidCandidate(element: Element): boolean {
+	if (!willValidate(element)) {
+		return false;
+	}
+	const flags = getValidityFlags(element);
+	return VALIDITY_FLAG_NAMES.some((flag) => flags[flag]);
+}
+
+// What :user-valid and :user-invalid say: the control's validity, once the
+// user has committed a change to it or tried to submit its form.
+export function getUserValidityMatch(
+	element: Element,
+): "valid" | "invalid" | null {
+	return userValidity.has(element) ? getValidityMatch(element) : null;
+}
+
+// What :in-range and :out-of-range say about an input that is being
+// validated and has range limitations, or null for any other element.
+export function getRangeMatch(element: Element): "in" | "out" | null {
+	if (!(element instanceof HTMLInputElement) || !willValidate(element)) {
+		return null;
+	}
+	const type = element.type;
+	if (STEP_RULES[type] === undefined) {
+		return null;
+	}
+	const limited =
+		type === "range" ||
+		getInputValueNumber(type, element.getAttribute("min") ?? "") !== null ||
+		getInputValueNumber(type, element.getAttribute("max") ?? "") !== null;
+	if (!limited) {
+		return null;
+	}
+	const flags = getValidityFlags(element);
+	return flags.rangeUnderflow || flags.rangeOverflow ? "out" : "in";
 }
 
 /** A selector the matcher rejects becomes a SyntaxError, per the DOM. */
@@ -29476,6 +30826,24 @@ function attachDeclarativeShadowRoots(root: Node): void {
 	}
 }
 
+// A shadow root the engine did not watch being filled -- a declarative
+// one, or any the parser built before the document was attached -- is
+// observed from now on, its sheets join the cascade, and the host's boxes
+// are rebuilt around it.
+function connectShadowRoot(root: ShadowRoot): void {
+	const host = root[kHost] as Element | null;
+	if (host === null) {
+		return;
+	}
+	const attached = getAttachedDocument(host);
+	if (attached === undefined) {
+		return;
+	}
+	observeShadowRoot(host[kDocument], root as unknown as globalThis.ShadowRoot);
+	attached[kCascade].syncShadowRoot(root as unknown as globalThis.ShadowRoot);
+	attached[kLayout].invalidate();
+}
+
 function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	const named = template.getAttribute("shadowrootmode");
 	if (named === null) {
@@ -29502,7 +30870,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 			// none.
 			template.hasAttribute("shadowrootcustomelementregistry")
 				? null
-				: getGlobalCustomElements(),
+				: (host as Element)[kDocument][kRegistry],
 		);
 	} catch (_err) {
 		return false;
@@ -29520,6 +30888,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 		}
 	}
 	attachDeclarativeShadowRoots(shadow);
+	connectShadowRoot(shadow);
 	return true;
 }
 
@@ -29530,7 +30899,7 @@ function parseHTMLDocument(
 	html: string,
 	url = "about:blank",
 	allowDeclarativeShadowRoots = true,
-	registry: CustomElementRegistry | null = getGlobalCustomElements(),
+	registry: CustomElementRegistry | null = null,
 ): Document {
 	const adapter = createTreeAdapter(null);
 	const outerRegistry = parseRegistry;
@@ -30048,7 +31417,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		let scope = parentScope;
 		const bindings = new Map<string, string | null>();
 		for (const attribute of attributes) {
-			let boundPrefix: string | null = null;
+			let boundPrefix: string;
 			if (attribute.qualifiedName === "xmlns") {
 				boundPrefix = "";
 			} else if (attribute.qualifiedName.startsWith("xmlns:")) {
@@ -30094,7 +31463,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		);
 		const seen = new Set<string>();
 		for (const attribute of attributes) {
-			let namespace: string | null = null;
+			let namespace: string | null;
 			let prefix: string | null = null;
 			let localName = attribute.qualifiedName;
 			if (attribute.qualifiedName === "xmlns") {
@@ -30884,6 +32253,20 @@ export function attachDocument(
 		characterData: true,
 	});
 	engineObservers.set(attached, observer);
+	// The markup parsed before the engine came holds controls no insertion
+	// record will ever name, so they are upgraded here, as an insertion
+	// upgrades them.
+	if (attached.documentElement !== null) {
+		ensureUAShadowTrees(attached.documentElement);
+	}
+	for (const node of shadowIncludingInclusiveDescendants(attached)) {
+		const root = node.nodeType === ELEMENT_NODE
+			? (node as Element)[kShadowRoot]
+			: null;
+		if (root !== null) {
+			connectShadowRoot(root);
+		}
+	}
 }
 
 type TextControlOrSelect =
@@ -30924,6 +32307,34 @@ function onDisclosureToggle(event: globalThis.Event): void {
 	details.scrollIntoView({block: "nearest"});
 }
 
+/**
+ * A control's own default action for a key, a typed or pasted insertion,
+ * or a press: editing, stepping, opening a picker. It runs once the
+ * event's dispatch is over and only if no listener canceled it, so a
+ * page's listener anywhere on the path can stop it, as in a browser. A
+ * control that claims the event cancels it, which later defaults read.
+ */
+export function runControlDefaultAction(
+	target: globalThis.Element,
+	event: globalThis.Event,
+): void {
+	const control = target as unknown as {
+		[kUpgraded]?: boolean;
+		[kOnKeydown]?: (event: globalThis.Event) => void;
+		[kOnBeforeInput]?: (event: globalThis.Event) => void;
+		[kOnMousedown]?: (event: globalThis.Event) => void;
+	};
+	if (event.defaultPrevented || control[kUpgraded] !== true) {
+		return;
+	}
+	const handler = event.type === "keydown"
+		? control[kOnKeydown]
+		: event.type === "beforeinput"
+			? control[kOnBeforeInput]
+			: event.type === "mousedown" ? control[kOnMousedown] : undefined;
+	handler?.(event);
+}
+
 /** The focused element, through shadow roots. */
 export function getFocusedElement(
 	document: globalThis.Document,
@@ -30937,6 +32348,34 @@ export function getFocusedElement(
 		active = inner;
 	}
 	return active;
+}
+
+/**
+ * Moves the document scroll, clamped at once to the rows the document
+ * has, as a browser clamps: a script that scrolls past the end reads back
+ * the end, not the number it asked for. Fullscreen hides the document
+ * scroll, which keeps whatever it is given.
+ */
+export function scrollDocumentTo(
+	document: globalThis.Document,
+	row: number,
+): void {
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached === undefined) {
+		return;
+	}
+	let next = Number.isFinite(row) ? Math.max(0, Math.round(row)) : 0;
+	if (getFullscreenElement(attached) === null) {
+		flushLayout(document);
+		const height = attached[kLayout].documentPaintHeight();
+		const region = Math.min(height, attached[kScreen].rows);
+		next = Math.min(next, Math.max(0, height - region));
+	}
+	if (next === attached[kScreen].scrollTop) {
+		return;
+	}
+	attached[kScreen].scrollTo(next);
+	void attached[kRender]();
 }
 
 // The rows the document scroll shows. Fullscreen owns the screen from row
@@ -31158,6 +32597,27 @@ export function applyMutations(document: globalThis.Document): boolean {
 	}
 	handleMutationRecords(document as Document, records);
 	return true;
+}
+
+/**
+ * Synchronously settle what a style read must see: pending mutations
+ * delivered, so the cascade has dropped what they made stale. Layout is
+ * left for a read that measures, which settles it through flushLayout.
+ */
+export function flushStyle(node: globalThis.Node): boolean {
+	const attached = getAttachedDocument(node);
+	if (attached === undefined) {
+		return false;
+	}
+	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
+	const document = (
+		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
+	) as globalThis.Document;
+	const had = applyMutations(document);
+	if (had) {
+		void attached[kRender]();
+	}
+	return had;
 }
 
 /**
@@ -31622,8 +33082,8 @@ class Location {
 		return this[kLocationWindow].document[kDocumentURL];
 	}
 
-	set href(_value: string) {
-		throw noNavigation();
+	set href(value: string) {
+		navigateLocation(this, String(value));
 	}
 
 	get origin(): string {
@@ -31682,8 +33142,19 @@ class Location {
 		return getLocationURL(this)?.hash ?? "";
 	}
 
-	set hash(_value: string) {
-		throw noNavigation();
+	// A new fragment on the same URL, which is a navigation to a fragment.
+	// Setting the fragment the URL already has changes nothing.
+	set hash(value: string) {
+		const url = getLocationURL(this);
+		if (url === null) {
+			return;
+		}
+		const next = new URL(url.href);
+		next.hash = String(value);
+		if (next.hash === url.hash) {
+			return;
+		}
+		navigateToFragment(this[kLocationWindow].document, next.href);
 	}
 
 	/** A terminal document is not in a frame, so it has no ancestors. */
@@ -31691,12 +33162,12 @@ class Location {
 		return constructInternal(() => new DOMStringList([]));
 	}
 
-	assign(_url: string | URL): void {
-		throw noNavigation();
+	assign(url: string | URL): void {
+		navigateLocation(this, String(url));
 	}
 
-	replace(_url: string | URL): void {
-		throw noNavigation();
+	replace(url: string | URL): void {
+		navigateLocation(this, String(url));
 	}
 
 	reload(): void {
@@ -31718,6 +33189,21 @@ Object.defineProperty(Location.prototype, Symbol.toStringTag, {
 // back to what a browser returns for an opaque location.
 function getLocationURL(location: Location): URL | null {
 	return URL.canParse(location.href) ? new URL(location.href) : null;
+}
+
+// Only a fragment of the document itself is somewhere to go.
+function navigateLocation(location: Location, value: string): void {
+	const document = location[kLocationWindow].document;
+	let url: string;
+	try {
+		url = new URL(value, document[kDocumentURL]).href;
+	} catch (_err) {
+		throw domError("SyntaxError", `"${value}" is not a URL`);
+	}
+	if (!isFragmentNavigation(document, url)) {
+		throw noNavigation();
+	}
+	navigateToFragment(document, url);
 }
 
 function noNavigation(): DOMException {
@@ -32038,6 +33524,7 @@ export class Window extends EventTarget {
 	declare onchange: globalThis.Window["onchange"];
 	declare onclick: globalThis.Window["onclick"];
 	declare onclose: globalThis.Window["onclose"];
+	declare oncommand: globalThis.Window["oncommand"];
 	declare oncontextlost: globalThis.Window["oncontextlost"];
 	declare oncontextmenu: globalThis.Window["oncontextmenu"];
 	declare oncontextrestored: globalThis.Window["oncontextrestored"];
@@ -32169,7 +33656,7 @@ export class Window extends EventTarget {
 	}
 
 	get customElements(): globalThis.CustomElementRegistry {
-		return getGlobalCustomElements() as unknown as globalThis.CustomElementRegistry;
+		return this.document[kRegistry] as unknown as globalThis.CustomElementRegistry;
 	}
 
 	// The terminal is both the window and the screen, so the inner and
@@ -32239,8 +33726,10 @@ export class Window extends EventTarget {
 					get hasBeenActive(): boolean {
 						return everActivatedDocuments.has(document);
 					},
+					// HTML's transient activation, which outlasts the gesture by
+					// a moment. The clipboard asks the narrower question.
 					get isActive(): boolean {
-						return isUserActive(document);
+						return hasTransientActivation(document);
 					},
 				},
 			} as unknown as Navigator;
@@ -32418,6 +33907,14 @@ export class Window extends EventTarget {
 		return noWindowFeature("indexed database");
 	}
 
+	get navigation(): globalThis.Navigation {
+		return noWindowFeature("navigation API");
+	}
+
+	get scheduler(): globalThis.Scheduler {
+		return noWindowFeature("task scheduler");
+	}
+
 	get isSecureContext(): boolean {
 		return true;
 	}
@@ -32454,27 +33951,29 @@ export class Window extends EventTarget {
 		return globalThis.performance;
 	}
 
-	get trustedTypes(): globalThis.TrustedTypePolicyFactory | undefined {
+	// Trusted Types is not implemented, so these name no types of it: the
+	// declarations would ask every consumer for the typings.
+	get trustedTypes(): undefined {
 		return undefined;
 	}
 
-	get TrustedHTML(): globalThis.Window["TrustedHTML"] {
+	get TrustedHTML(): never {
 		return noWindowFeature("trusted types");
 	}
 
-	get TrustedScript(): globalThis.Window["TrustedScript"] {
+	get TrustedScript(): never {
 		return noWindowFeature("trusted types");
 	}
 
-	get TrustedScriptURL(): globalThis.Window["TrustedScriptURL"] {
+	get TrustedScriptURL(): never {
 		return noWindowFeature("trusted types");
 	}
 
-	get TrustedTypePolicy(): globalThis.Window["TrustedTypePolicy"] {
+	get TrustedTypePolicy(): never {
 		return noWindowFeature("trusted types");
 	}
 
-	get TrustedTypePolicyFactory(): globalThis.Window["TrustedTypePolicyFactory"] {
+	get TrustedTypePolicyFactory(): never {
 		return noWindowFeature("trusted types");
 	}
 
@@ -32525,8 +34024,7 @@ export class Window extends EventTarget {
 		const top = typeof xOrOptions === "object" && xOrOptions !== null
 			? (xOrOptions.top ?? attached[kScreen].scrollTop)
 			: (y ?? 0);
-		attached[kScreen].scrollTo(top);
-		void attached[kRender]();
+		scrollDocumentTo(this.document, top);
 	}
 
 	scroll(options?: globalThis.ScrollToOptions): void;
@@ -32549,8 +34047,7 @@ export class Window extends EventTarget {
 		const top = typeof xOrOptions === "object" && xOrOptions !== null
 			? (xOrOptions.top ?? 0)
 			: (y ?? 0);
-		attached[kScreen].scrollTo(attached[kScreen].scrollTop + top);
-		void attached[kRender]();
+		scrollDocumentTo(this.document, attached[kScreen].scrollTop + top);
 	}
 
 	// The callback runs at the start of the next frame, before that
@@ -32763,6 +34260,7 @@ const platform = {
 	Clipboard,
 	ClipboardEvent,
 	ClipboardItem,
+	CommandEvent,
 	Comment,
 	CompositionEvent,
 	CustomElementRegistry,
@@ -32795,6 +34293,7 @@ const platform = {
 	HTMLAreaElement,
 	HTMLAudioElement,
 	HTMLBRElement,
+	HTMLAllCollection,
 	HTMLBaseElement,
 	HTMLBodyElement,
 	HTMLButtonElement,
@@ -32944,9 +34443,12 @@ export function createWindow(
 	contentType = "text/html",
 ): Window {
 	if (contentType === "text/html") {
-		return buildWindow(parseHTMLDocument(source, url));
+		return buildWindow(
+			parseHTMLDocument(source, url, true, createWindowRegistry()),
+		);
 	}
 	const document = parseXMLDocument(source, contentType);
+	document[kRegistry] = createWindowRegistry();
 	if (url !== undefined) {
 		document[kDocumentURL] = url;
 	}
@@ -32968,6 +34470,7 @@ export type {
 	Storage,
 	NodeListOf,
 	HTMLCollectionOf,
+	HTMLAllCollection,
 	BeforeUnloadEvent,
 	MessageEvent,
 	HashChangeEvent,
@@ -33016,6 +34519,7 @@ export type {
 	HTMLDataListElement,
 	HTMLDetailsElement,
 	ToggleEvent,
+	CommandEvent,
 	HTMLDialogElement,
 	HTMLDirectoryElement,
 	HTMLDivElement,

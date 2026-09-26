@@ -413,6 +413,24 @@ export interface TabStops {
 	column: number;
 }
 
+// Applied at paint time, and read back by innerText. Case never changes
+// a cell width, so it cannot change wrapping.
+export function applyTextTransform(text: string, transform: string): string {
+	switch (transform) {
+		case "capitalize":
+			return text.replace(
+				/\p{L}[\p{L}\p{M}]*/gu,
+				(word) => (word[0]?.toUpperCase() ?? "") + word.slice(1),
+			);
+		case "lowercase":
+			return text.toLowerCase();
+		case "uppercase":
+			return text.toUpperCase();
+		default:
+			return text;
+	}
+}
+
 /** The characters one line fragment paints, in the line's visual order. */
 export function renderTextFragment(
 	data: string,
@@ -2361,8 +2379,10 @@ function invalidateNode(layout: Layout, node: Node): void {
 	} else if (node.nodeType === node.ELEMENT_NODE) {
 		const layoutNode = layout[kNodeMap].get(node);
 		if (layoutNode) {
+			// The re-add sweep puts a node back under its parent element, and
+			// the root element has none, so the root stays where it is.
 			const parent = layoutNode.parent;
-			if (parent) {
+			if (parent && node !== node.ownerDocument?.documentElement) {
 				parent.removeChild(layoutNode);
 			}
 
@@ -3405,6 +3425,10 @@ function processWhitespace(
 							processed.length,
 						);
 					}
+				} else if (prevItem?.leafNode.type === "br" && processed[0] === " ") {
+					// A line a <br> opens starts on its content, not a space.
+					processed = processed.substring(1);
+					dataOffsets = shiftRenderedOffsets(dataOffsets, 1, processed.length);
 				}
 			}
 
@@ -3418,8 +3442,31 @@ function processWhitespace(
 				dataOffsets,
 			});
 		} else if (leaf.type === "br") {
+			// Nor does the line it ends close on one.
+			const prevItem = items.at(-1);
+			const prevText = prevItem === undefined
+				? undefined
+				: prevItem.processedContent;
+			if (
+				prevItem !== undefined &&
+				prevText !== undefined &&
+				prevText.endsWith(" ") &&
+				prevItem.end === text.length &&
+				prevItem.leafNode.type === "text" &&
+				!isSpacePreserving(getWhiteSpace(prevItem.leafNode.node))
+			) {
+				prevItem.processedContent = prevText.slice(0, -1);
+				prevItem.dataOffsets = shiftRenderedOffsets(
+					prevItem.dataOffsets ?? null,
+					0,
+					prevItem.processedContent.length,
+				);
+				prevItem.end--;
+				text = text.slice(0, -1);
+			}
+			const at = text.length;
 			text += "\n";
-			items.push({leafNode: leaf, start, end: text.length});
+			items.push({leafNode: leaf, start: at, end: text.length});
 		} else if (leaf.type === "inline-block") {
 			text += "\uFFFC";
 			items.push({leafNode: leaf, start, end: text.length});
@@ -3849,7 +3896,7 @@ function getStickyShift(
 		}
 	}
 	let portLeft = 0;
-	let portTop = 0;
+	let portTop: number;
 	let portWidth: number;
 	let portHeight: number;
 	if (scroller === null) {
@@ -4959,7 +5006,21 @@ export class Layout {
 	// Innermost first. Each scroll moves the element in every outer port's
 	// coordinates, so the rect is re-read per level. What remains is the
 	// screen's to reveal.
-	revealInScrollPorts(element: Element): void {
+	alignmentDelta(
+		start: number,
+		end: number,
+		portStart: number,
+		portEnd: number,
+		align: ScrollLogicalPosition,
+	): number {
+		return getAlignmentDelta(start, end, portStart, portEnd, align);
+	}
+
+	revealInScrollPorts(
+		element: Element,
+		block: ScrollLogicalPosition = "nearest",
+		inline: ScrollLogicalPosition = "nearest",
+	): void {
 		for (
 			let ancestor = flatParentElement(element);
 			ancestor && !isRootBox(this, ancestor);
@@ -4974,7 +5035,7 @@ export class Layout {
 					getComputedValue(ancestor, "overflow-x") || overflow,
 				)
 			) {
-				revealInPort(this, element, ancestor);
+				revealInPort(this, element, ancestor, block, inline);
 			}
 		}
 	}
@@ -5184,6 +5245,39 @@ export class Layout {
 			}
 		}
 		return {from: start, to: end};
+	}
+
+	// The text a text node's boxes show, in logical order, as innerText
+	// reads it: white space processed, case transformed, and a preserved
+	// newline between two lines kept. A soft wrap is no break, and the
+	// space it swallowed is a space again.
+	getRenderedText(textNode: Text): string {
+		const data = textNode.data;
+		const whiteSpace = getWhiteSpace(textNode);
+		const keepsBreaks =
+			isSpacePreserving(whiteSpace) || whiteSpace === "pre-line";
+		let text = "";
+		let previous: number | null = null;
+		for (const fragment of this.lineFragments(textNode)) {
+			if (previous !== null) {
+				const gap = data.slice(previous, fragment.startOffset);
+				const breaks = keepsBreaks ? gap.split("\n").length - 1 : 0;
+				if (breaks > 0) {
+					text += "\n".repeat(breaks);
+				} else if (gap.length > 0 && !text.endsWith(" ")) {
+					text += " ";
+				}
+			}
+			text += renderWhiteSpace(
+				data.slice(fragment.startOffset, fragment.endOffset),
+				whiteSpace,
+			);
+			previous = fragment.endOffset;
+		}
+		const parent = flatParentElement(textNode);
+		return parent === null
+			? text
+			: applyTextTransform(text, getComputedValue(parent, "text-transform"));
 	}
 
 	// The one place laid-out lines get their data ranges. Range geometry,
@@ -6519,10 +6613,40 @@ function isRootBox(engine: Layout, element: Element): boolean {
 
 // Document-relative rects on both sides: the element wherever its
 // current offsets put it, against the scroller's padding box.
+// How far a scroll port moves to show [start, end) at the given place in
+// [portStart, portEnd). "nearest" moves the least, and not at all when the
+// span is already in view.
+function getAlignmentDelta(
+	start: number,
+	end: number,
+	portStart: number,
+	portEnd: number,
+	align: ScrollLogicalPosition,
+): number {
+	if (align === "start") {
+		return start - portStart;
+	}
+	if (align === "end") {
+		return end - portEnd;
+	}
+	if (align === "center") {
+		return (start + end) / 2 - (portStart + portEnd) / 2;
+	}
+	if (start < portStart) {
+		return start - portStart;
+	}
+	if (end > portEnd) {
+		return end - portEnd;
+	}
+	return 0;
+}
+
 function revealInPort(
 	engine: Layout,
 	element: Element,
 	scroller: Element,
+	block: ScrollLogicalPosition,
+	inline: ScrollLogicalPosition,
 ): void {
 	const rect = engine.getRect(element);
 	const scrollerRect = engine.getRect(scroller);
@@ -6534,15 +6658,17 @@ function revealInPort(
 	const portBottom = scrollerRect.bottom - (box.borderBottomWidth || 0);
 	const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
 	const portRight = scrollerRect.right - (box.borderRightWidth || 0);
-	if (rect.top < portTop) {
-		scroller.scrollTop -= Math.round(portTop - rect.top);
-	} else if (rect.bottom > portBottom) {
-		scroller.scrollTop += Math.round(rect.bottom - portBottom);
+	const down = Math.round(
+		getAlignmentDelta(rect.top, rect.bottom, portTop, portBottom, block),
+	);
+	if (down !== 0) {
+		scroller.scrollTop += down;
 	}
-	if (rect.left < portLeft) {
-		scroller.scrollLeft -= Math.round(portLeft - rect.left);
-	} else if (rect.right > portRight) {
-		scroller.scrollLeft += Math.round(rect.right - portRight);
+	const across = Math.round(
+		getAlignmentDelta(rect.left, rect.right, portLeft, portRight, inline),
+	);
+	if (across !== 0) {
+		scroller.scrollLeft += across;
 	}
 }
 

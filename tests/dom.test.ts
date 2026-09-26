@@ -31,7 +31,9 @@ function createHTMLDocument(title?: string): Document {
 }
 
 // The interfaces script sees are the window's, so the tests take them from
-// one: a parser, a Window of its own, and the realm's element registry.
+// one: a parser, a Window of its own, and that window's element registry.
+// A test whose elements must upgrade defines them on its own document's
+// window, since each window has a registry of its own.
 const realm = createWindow("<!doctype html>");
 const customElements = realm.customElements;
 
@@ -1174,6 +1176,7 @@ test("a shadow root is cloned with its host only when it is clonable", () => {
 
 test("a reaction runs after the mutation that enqueued it, in tree order", () => {
 	const document = make();
+	const {customElements} = document.defaultView;
 	const order: string[] = [];
 	customElements.define(
 		"order-one",
@@ -1197,6 +1200,7 @@ test("a reaction runs after the mutation that enqueued it, in tree order", () =>
 
 test("an attribute reaction is enqueued only for an observed name", () => {
 	const document = make();
+	const {customElements} = document.defaultView;
 	const seen: unknown[][] = [];
 	customElements.define(
 		"order-two",
@@ -1221,6 +1225,7 @@ test("an attribute reaction is enqueued only for an observed name", () => {
 
 test("an upgrade replays the attributes and the connection it missed", () => {
 	const document = make();
+	const {customElements} = document.defaultView;
 	const seen: string[] = [];
 	const element = document.createElement("order-three");
 	element.setAttribute("a", "1");
@@ -1244,6 +1249,20 @@ test("an upgrade replays the attributes and the connection it missed", () => {
 	customElements.define("order-three", OrderThree);
 	expect(element instanceof OrderThree).toBe(true);
 	expect(seen).toEqual(["attribute a", "connected"]);
+});
+
+test("each window defines its own custom elements", () => {
+	const one = make().defaultView;
+	const two = make().defaultView;
+
+	class First extends HTMLElement {}
+
+	class Second extends HTMLElement {}
+
+	one.customElements.define("own-element", First);
+	two.customElements.define("own-element", Second);
+	expect(one.document.createElement("own-element")).toBeInstanceOf(First);
+	expect(two.document.createElement("own-element")).toBeInstanceOf(Second);
 });
 
 test("a definition is rejected by name and by a constructor already used", () => {
@@ -2018,4 +2037,39 @@ test("a wheel or touch listener on the window is passive by default", () => {
 	const active = new DOMEvent("wheel", {cancelable: true});
 	window.dispatchEvent(active);
 	expect(active.defaultPrevented).toBe(true);
+});
+
+test("a collection's indices answer before anything reads its length", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<form><select><option>a</option><option selected>b</option></select>" +
+		"<input name=r><input name=r></form>" +
+		"<table><tbody><tr><td>1</td></tr></tbody></table>";
+	const select = document.querySelector("select");
+	expect(select.options[1].textContent).toBe("b");
+	expect(select.selectedOptions[0].textContent).toBe("b");
+	expect(document.forms[0]).toBe(document.querySelector("form"));
+	expect(document.querySelector("form").elements[0]).toBe(select);
+	expect(document.querySelector("table").rows[0].cells[0].textContent)
+		.toBe("1");
+	expect(document.getElementsByName("r")[1])
+		.toBe(document.querySelectorAll("input")[1]);
+});
+
+test("document.all holds every element, by index, id and name", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<div id=box></div><input name=field><input name=field><p name=x></p>";
+	const {all} = document;
+	expect(all.length).toBe(document.getElementsByTagName("*").length);
+	expect(all[0]).toBe(document.documentElement);
+	expect(all.box).toBe(document.getElementById("box"));
+	expect(all.item("box")).toBe(all.box);
+	expect(all.item("0")).toBe(document.documentElement);
+	// Several elements by one name come back as a collection of them, and
+	// the name attribute counts only on the elements HTML lists.
+	expect(all.namedItem("field").length).toBe(2);
+	expect(all.namedItem("x")).toBe(null);
+	expect(document.all).toBe(all);
+	expect(document.forms).toBe(document.forms);
 });

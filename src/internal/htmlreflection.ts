@@ -172,6 +172,8 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 	// translate, spellcheck, hidden and tabIndex are written out in dom.ts.
 	HTMLElement: [
 		keyword("dir", "dir", ["ltr", "rtl", "auto"], "", ""),
+		ulong("headingOffset", "headingoffset", 0),
+		bool("headingReset", "headingreset"),
 		keyword(
 			"enterKeyHint",
 			"enterkeyhint",
@@ -378,6 +380,7 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 		keyword("autocomplete", "autocomplete", ["on", "off"], "", ""),
 		keyword("wrap", "wrap", ["soft", "hard"], "soft", "soft"),
 	],
+	HTMLTemplateElement: [str("shadowRootCustomElementRegistry")],
 	HTMLTrackElement: [
 		keyword(
 			"kind",

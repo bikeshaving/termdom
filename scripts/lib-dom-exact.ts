@@ -115,10 +115,15 @@ type Map0<T> = Identical<T, DOM.Event> extends true
 																														? globalThis.HTMLCollection
 																														: Identical<
 																															T,
-																															DOM.DOMTokenList
+																															DOM.HTMLAllCollection
 																														> extends true
-																															? globalThis.DOMTokenList
-																															: Map1<T>;
+																															? globalThis.HTMLAllCollection
+																															: Identical<
+																																T,
+																																DOM.DOMTokenList
+																															> extends true
+																																? globalThis.DOMTokenList
+																																: Map1<T>;
 type Map1<T> = Identical<T, DOM.CharacterData> extends true
 	? globalThis.CharacterData
 	: Identical<T, DOM.Text> extends true
@@ -218,10 +223,15 @@ type Map1<T> = Identical<T, DOM.CharacterData> extends true
 																													? globalThis.ToggleEvent
 																													: Identical<
 																														T,
-																														DOM.HTMLDialogElement
+																														DOM.CommandEvent
 																													> extends true
-																														? globalThis.HTMLDialogElement
-																														: Map2<T>;
+																														? globalThis.CommandEvent
+																														: Identical<
+																															T,
+																															DOM.HTMLDialogElement
+																														> extends true
+																															? globalThis.HTMLDialogElement
+																															: Map2<T>;
 type Map2<T> = Identical<T, DOM.HTMLDirectoryElement> extends true
 	? globalThis.HTMLDirectoryElement
 	: Identical<T, DOM.HTMLDivElement> extends true
@@ -615,7 +625,12 @@ type Overloads<T> = T extends {
 type MapOverloads<T extends Array<[unknown[], unknown]>> = {
 	[I in keyof T]: [ToPlatformTuple<T[I][0]>, ToPlatform<T[I][1]>];
 };
-type MemberDrift<A, B> = [A] extends [Fn]
+// A member declared with lib.dom's own type is exact without mapping,
+// and most are.
+type MemberDrift<A, B> = Identical<A, B> extends true
+	? false
+	: MappedMemberDrift<A, B>;
+type MappedMemberDrift<A, B> = [A] extends [Fn]
 	? [B] extends [Fn]
 		? Identical<MapOverloads<Overloads<A>>, Overloads<B>> extends true
 			? false
@@ -631,9 +646,6 @@ export type Drift<C, G, Allowed extends string = never> = Exclude<
 	Allowed
 >;
 
-// Members that differ from lib.dom on purpose. Each is the HTML Standard
-// ahead of lib.dom's copy of it.
-type SpecAhead = "showPopover" | "togglePopover";
 export type Extra<C, G> = Exclude<Exclude<keyof C, symbol>, keyof G>;
 
 export type EventDrift = Drift<DOM.Event, globalThis.Event>;
@@ -715,6 +727,10 @@ export type MutationObserverDrift = Drift<
 	globalThis.MutationObserver
 >;
 export type NodeListDrift = Drift<DOM.NodeList, globalThis.NodeList>;
+export type HTMLAllCollectionDrift = Drift<
+	DOM.HTMLAllCollection,
+	globalThis.HTMLAllCollection
+>;
 export type HTMLCollectionDrift = Drift<
 	DOM.HTMLCollection,
 	globalThis.HTMLCollection
@@ -751,15 +767,10 @@ export type NamedNodeMapDrift = Drift<
 	globalThis.NamedNodeMap
 >;
 export type ElementDrift = Drift<DOM.Element, globalThis.Element>;
-export type HTMLElementDrift = Drift<
-	DOM.HTMLElement,
-	globalThis.HTMLElement,
-	SpecAhead
->;
+export type HTMLElementDrift = Drift<DOM.HTMLElement, globalThis.HTMLElement>;
 export type HTMLUnknownElementDrift = Drift<
 	DOM.HTMLUnknownElement,
-	globalThis.HTMLUnknownElement,
-	SpecAhead
+	globalThis.HTMLUnknownElement
 >;
 export type SVGElementDrift = Drift<DOM.SVGElement, globalThis.SVGElement>;
 export type MathMLElementDrift = Drift<
@@ -773,104 +784,88 @@ export type CustomElementRegistryDrift = Drift<
 export type ShadowRootDrift = Drift<DOM.ShadowRoot, globalThis.ShadowRoot>;
 export type HTMLSlotElementDrift = Drift<
 	DOM.HTMLSlotElement,
-	globalThis.HTMLSlotElement,
-	SpecAhead
+	globalThis.HTMLSlotElement
 >;
 export type HTMLTemplateElementDrift = Drift<
 	DOM.HTMLTemplateElement,
-	globalThis.HTMLTemplateElement,
-	SpecAhead
+	globalThis.HTMLTemplateElement
 >;
 export type HTMLAnchorElementDrift = Drift<
 	DOM.HTMLAnchorElement,
-	globalThis.HTMLAnchorElement,
-	SpecAhead
+	globalThis.HTMLAnchorElement
 >;
 export type HTMLAreaElementDrift = Drift<
 	DOM.HTMLAreaElement,
-	globalThis.HTMLAreaElement,
-	SpecAhead
+	globalThis.HTMLAreaElement
 >;
 export type HTMLBaseElementDrift = Drift<
 	DOM.HTMLBaseElement,
-	globalThis.HTMLBaseElement,
-	SpecAhead
+	globalThis.HTMLBaseElement
 >;
 export type HTMLBodyElementDrift = Drift<
 	DOM.HTMLBodyElement,
-	globalThis.HTMLBodyElement,
-	SpecAhead
+	globalThis.HTMLBodyElement
 >;
 export type HTMLBRElementDrift = Drift<
 	DOM.HTMLBRElement,
-	globalThis.HTMLBRElement,
-	SpecAhead
+	globalThis.HTMLBRElement
 >;
 export type HTMLButtonElementDrift = Drift<
 	DOM.HTMLButtonElement,
-	globalThis.HTMLButtonElement,
-	SpecAhead
+	globalThis.HTMLButtonElement
 >;
 export type HTMLCanvasElementDrift = Drift<
 	DOM.HTMLCanvasElement,
-	globalThis.HTMLCanvasElement,
-	SpecAhead
+	globalThis.HTMLCanvasElement
 >;
 export type HTMLDataElementDrift = Drift<
 	DOM.HTMLDataElement,
-	globalThis.HTMLDataElement,
-	SpecAhead
+	globalThis.HTMLDataElement
 >;
 export type HTMLDataListElementDrift = Drift<
 	DOM.HTMLDataListElement,
-	globalThis.HTMLDataListElement,
-	SpecAhead
+	globalThis.HTMLDataListElement
 >;
 export type HTMLDetailsElementDrift = Drift<
 	DOM.HTMLDetailsElement,
-	globalThis.HTMLDetailsElement,
-	SpecAhead
+	globalThis.HTMLDetailsElement
 >;
 export type ToggleEventDrift = Drift<DOM.ToggleEvent, globalThis.ToggleEvent>;
+export type CommandEventDrift = Drift<
+	DOM.CommandEvent,
+	globalThis.CommandEvent
+>;
 export type HTMLDialogElementDrift = Drift<
 	DOM.HTMLDialogElement,
-	globalThis.HTMLDialogElement,
-	SpecAhead
+	globalThis.HTMLDialogElement
 >;
 export type HTMLDirectoryElementDrift = Drift<
 	DOM.HTMLDirectoryElement,
-	globalThis.HTMLDirectoryElement,
-	SpecAhead
+	globalThis.HTMLDirectoryElement
 >;
 export type HTMLDivElementDrift = Drift<
 	DOM.HTMLDivElement,
-	globalThis.HTMLDivElement,
-	SpecAhead
+	globalThis.HTMLDivElement
 >;
 export type HTMLDListElementDrift = Drift<
 	DOM.HTMLDListElement,
-	globalThis.HTMLDListElement,
-	SpecAhead
+	globalThis.HTMLDListElement
 >;
 export type HTMLEmbedElementDrift = Drift<
 	DOM.HTMLEmbedElement,
-	globalThis.HTMLEmbedElement,
-	SpecAhead
+	globalThis.HTMLEmbedElement
 >;
 export type HTMLFieldSetElementDrift = Drift<
 	DOM.HTMLFieldSetElement,
-	globalThis.HTMLFieldSetElement,
-	SpecAhead
+	globalThis.HTMLFieldSetElement
 >;
 export type HTMLFontElementDrift = Drift<
 	DOM.HTMLFontElement,
-	globalThis.HTMLFontElement,
-	SpecAhead
+	globalThis.HTMLFontElement
 >;
 export type HTMLFormElementDrift = Drift<
 	DOM.HTMLFormElement,
-	globalThis.HTMLFormElement,
-	SpecAhead
+	globalThis.HTMLFormElement
 >;
 export type SubmitEventDrift = Drift<DOM.SubmitEvent, globalThis.SubmitEvent>;
 export type HTMLFormControlsCollectionDrift = Drift<
@@ -883,133 +878,107 @@ export type RadioNodeListDrift = Drift<
 >;
 export type HTMLFrameElementDrift = Drift<
 	DOM.HTMLFrameElement,
-	globalThis.HTMLFrameElement,
-	SpecAhead
+	globalThis.HTMLFrameElement
 >;
 export type HTMLFrameSetElementDrift = Drift<
 	DOM.HTMLFrameSetElement,
-	globalThis.HTMLFrameSetElement,
-	SpecAhead
+	globalThis.HTMLFrameSetElement
 >;
 export type HTMLHeadElementDrift = Drift<
 	DOM.HTMLHeadElement,
-	globalThis.HTMLHeadElement,
-	SpecAhead
+	globalThis.HTMLHeadElement
 >;
 export type HTMLHeadingElementDrift = Drift<
 	DOM.HTMLHeadingElement,
-	globalThis.HTMLHeadingElement,
-	SpecAhead
+	globalThis.HTMLHeadingElement
 >;
 export type HTMLHRElementDrift = Drift<
 	DOM.HTMLHRElement,
-	globalThis.HTMLHRElement,
-	SpecAhead
+	globalThis.HTMLHRElement
 >;
 export type HTMLHtmlElementDrift = Drift<
 	DOM.HTMLHtmlElement,
-	globalThis.HTMLHtmlElement,
-	SpecAhead
+	globalThis.HTMLHtmlElement
 >;
 export type HTMLIFrameElementDrift = Drift<
 	DOM.HTMLIFrameElement,
-	globalThis.HTMLIFrameElement,
-	SpecAhead
+	globalThis.HTMLIFrameElement
 >;
 export type HTMLImageElementDrift = Drift<
 	DOM.HTMLImageElement,
-	globalThis.HTMLImageElement,
-	SpecAhead
+	globalThis.HTMLImageElement
 >;
 export type HTMLInputElementDrift = Drift<
 	DOM.HTMLInputElement,
-	globalThis.HTMLInputElement,
-	SpecAhead
+	globalThis.HTMLInputElement
 >;
 export type HTMLLabelElementDrift = Drift<
 	DOM.HTMLLabelElement,
-	globalThis.HTMLLabelElement,
-	SpecAhead
+	globalThis.HTMLLabelElement
 >;
 export type HTMLLegendElementDrift = Drift<
 	DOM.HTMLLegendElement,
-	globalThis.HTMLLegendElement,
-	SpecAhead
+	globalThis.HTMLLegendElement
 >;
 export type HTMLLIElementDrift = Drift<
 	DOM.HTMLLIElement,
-	globalThis.HTMLLIElement,
-	SpecAhead
+	globalThis.HTMLLIElement
 >;
 export type HTMLLinkElementDrift = Drift<
 	DOM.HTMLLinkElement,
-	globalThis.HTMLLinkElement,
-	SpecAhead
+	globalThis.HTMLLinkElement
 >;
 export type HTMLMapElementDrift = Drift<
 	DOM.HTMLMapElement,
-	globalThis.HTMLMapElement,
-	SpecAhead
+	globalThis.HTMLMapElement
 >;
 export type HTMLMarqueeElementDrift = Drift<
 	DOM.HTMLMarqueeElement,
-	globalThis.HTMLMarqueeElement,
-	SpecAhead
+	globalThis.HTMLMarqueeElement
 >;
 export type HTMLMediaElementDrift = Drift<
 	DOM.HTMLMediaElement,
-	globalThis.HTMLMediaElement,
-	SpecAhead
+	globalThis.HTMLMediaElement
 >;
 export type HTMLAudioElementDrift = Drift<
 	DOM.HTMLAudioElement,
-	globalThis.HTMLAudioElement,
-	SpecAhead
+	globalThis.HTMLAudioElement
 >;
 export type HTMLVideoElementDrift = Drift<
 	DOM.HTMLVideoElement,
-	globalThis.HTMLVideoElement,
-	SpecAhead
+	globalThis.HTMLVideoElement
 >;
 export type HTMLMenuElementDrift = Drift<
 	DOM.HTMLMenuElement,
-	globalThis.HTMLMenuElement,
-	SpecAhead
+	globalThis.HTMLMenuElement
 >;
 export type HTMLMetaElementDrift = Drift<
 	DOM.HTMLMetaElement,
-	globalThis.HTMLMetaElement,
-	SpecAhead
+	globalThis.HTMLMetaElement
 >;
 export type HTMLMeterElementDrift = Drift<
 	DOM.HTMLMeterElement,
-	globalThis.HTMLMeterElement,
-	SpecAhead
+	globalThis.HTMLMeterElement
 >;
 export type HTMLModElementDrift = Drift<
 	DOM.HTMLModElement,
-	globalThis.HTMLModElement,
-	SpecAhead
+	globalThis.HTMLModElement
 >;
 export type HTMLObjectElementDrift = Drift<
 	DOM.HTMLObjectElement,
-	globalThis.HTMLObjectElement,
-	SpecAhead
+	globalThis.HTMLObjectElement
 >;
 export type HTMLOListElementDrift = Drift<
 	DOM.HTMLOListElement,
-	globalThis.HTMLOListElement,
-	SpecAhead
+	globalThis.HTMLOListElement
 >;
 export type HTMLOptGroupElementDrift = Drift<
 	DOM.HTMLOptGroupElement,
-	globalThis.HTMLOptGroupElement,
-	SpecAhead
+	globalThis.HTMLOptGroupElement
 >;
 export type HTMLOptionElementDrift = Drift<
 	DOM.HTMLOptionElement,
-	globalThis.HTMLOptionElement,
-	SpecAhead
+	globalThis.HTMLOptionElement
 >;
 export type HTMLOptionsCollectionDrift = Drift<
 	DOM.HTMLOptionsCollection,
@@ -1017,118 +986,95 @@ export type HTMLOptionsCollectionDrift = Drift<
 >;
 export type HTMLOutputElementDrift = Drift<
 	DOM.HTMLOutputElement,
-	globalThis.HTMLOutputElement,
-	SpecAhead
+	globalThis.HTMLOutputElement
 >;
 export type HTMLParagraphElementDrift = Drift<
 	DOM.HTMLParagraphElement,
-	globalThis.HTMLParagraphElement,
-	SpecAhead
+	globalThis.HTMLParagraphElement
 >;
 export type HTMLParamElementDrift = Drift<
 	DOM.HTMLParamElement,
-	globalThis.HTMLParamElement,
-	SpecAhead
+	globalThis.HTMLParamElement
 >;
 export type HTMLPictureElementDrift = Drift<
 	DOM.HTMLPictureElement,
-	globalThis.HTMLPictureElement,
-	SpecAhead
+	globalThis.HTMLPictureElement
 >;
 export type HTMLPreElementDrift = Drift<
 	DOM.HTMLPreElement,
-	globalThis.HTMLPreElement,
-	SpecAhead
+	globalThis.HTMLPreElement
 >;
 export type HTMLProgressElementDrift = Drift<
 	DOM.HTMLProgressElement,
-	globalThis.HTMLProgressElement,
-	SpecAhead
+	globalThis.HTMLProgressElement
 >;
 export type HTMLQuoteElementDrift = Drift<
 	DOM.HTMLQuoteElement,
-	globalThis.HTMLQuoteElement,
-	SpecAhead
+	globalThis.HTMLQuoteElement
 >;
 export type HTMLScriptElementDrift = Drift<
 	DOM.HTMLScriptElement,
-	globalThis.HTMLScriptElement,
-	SpecAhead
+	globalThis.HTMLScriptElement
 >;
 export type HTMLSelectElementDrift = Drift<
 	DOM.HTMLSelectElement,
-	globalThis.HTMLSelectElement,
-	SpecAhead
+	globalThis.HTMLSelectElement
 >;
 export type HTMLSourceElementDrift = Drift<
 	DOM.HTMLSourceElement,
-	globalThis.HTMLSourceElement,
-	SpecAhead
+	globalThis.HTMLSourceElement
 >;
 export type HTMLSpanElementDrift = Drift<
 	DOM.HTMLSpanElement,
-	globalThis.HTMLSpanElement,
-	SpecAhead
+	globalThis.HTMLSpanElement
 >;
 export type HTMLStyleElementDrift = Drift<
 	DOM.HTMLStyleElement,
-	globalThis.HTMLStyleElement,
-	SpecAhead
+	globalThis.HTMLStyleElement
 >;
 export type HTMLTableCaptionElementDrift = Drift<
 	DOM.HTMLTableCaptionElement,
-	globalThis.HTMLTableCaptionElement,
-	SpecAhead
+	globalThis.HTMLTableCaptionElement
 >;
 export type HTMLTableCellElementDrift = Drift<
 	DOM.HTMLTableCellElement,
-	globalThis.HTMLTableCellElement,
-	SpecAhead
+	globalThis.HTMLTableCellElement
 >;
 export type HTMLTableColElementDrift = Drift<
 	DOM.HTMLTableColElement,
-	globalThis.HTMLTableColElement,
-	SpecAhead
+	globalThis.HTMLTableColElement
 >;
 export type HTMLTableElementDrift = Drift<
 	DOM.HTMLTableElement,
-	globalThis.HTMLTableElement,
-	SpecAhead
+	globalThis.HTMLTableElement
 >;
 export type HTMLTableRowElementDrift = Drift<
 	DOM.HTMLTableRowElement,
-	globalThis.HTMLTableRowElement,
-	SpecAhead
+	globalThis.HTMLTableRowElement
 >;
 export type HTMLTableSectionElementDrift = Drift<
 	DOM.HTMLTableSectionElement,
-	globalThis.HTMLTableSectionElement,
-	SpecAhead
+	globalThis.HTMLTableSectionElement
 >;
 export type HTMLTextAreaElementDrift = Drift<
 	DOM.HTMLTextAreaElement,
-	globalThis.HTMLTextAreaElement,
-	SpecAhead
+	globalThis.HTMLTextAreaElement
 >;
 export type HTMLTimeElementDrift = Drift<
 	DOM.HTMLTimeElement,
-	globalThis.HTMLTimeElement,
-	SpecAhead
+	globalThis.HTMLTimeElement
 >;
 export type HTMLTitleElementDrift = Drift<
 	DOM.HTMLTitleElement,
-	globalThis.HTMLTitleElement,
-	SpecAhead
+	globalThis.HTMLTitleElement
 >;
 export type HTMLTrackElementDrift = Drift<
 	DOM.HTMLTrackElement,
-	globalThis.HTMLTrackElement,
-	SpecAhead
+	globalThis.HTMLTrackElement
 >;
 export type HTMLUListElementDrift = Drift<
 	DOM.HTMLUListElement,
-	globalThis.HTMLUListElement,
-	SpecAhead
+	globalThis.HTMLUListElement
 >;
 export type DOMStringMapDrift = Drift<
 	DOM.DOMStringMap,

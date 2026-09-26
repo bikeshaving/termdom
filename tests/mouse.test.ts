@@ -578,6 +578,8 @@ test("a mouse event answers in the standard coordinate spaces", async () => {
 			y: mouse.y,
 			pageX: mouse.pageX,
 			pageY: mouse.pageY,
+			screenX: mouse.screenX,
+			screenY: mouse.screenY,
 			offsetY: mouse.offsetY,
 			movementX: mouse.movementX,
 		});
@@ -595,6 +597,8 @@ test("a mouse event answers in the standard coordinate spaces", async () => {
 
 	expect(seen[0].clientX).toBe(1);
 	expect(seen[0].clientY).toBe(2);
+	expect(seen[0].screenX).toBe(1);
+	expect(seen[0].screenY).toBe(2);
 	expect(seen[0].x).toBe(1);
 	expect(seen[0].y).toBe(2);
 	// No scroll: page equals client.
@@ -606,6 +610,33 @@ test("a mouse event answers in the standard coordinate spaces", async () => {
 	expect(seen[1].movementX).toBe(4);
 	expect(seen[1].movementY).toBe(1);
 
+	termdom.dispose();
+});
+
+test("a scrolled document reports the pointer in viewport coordinates", async () => {
+	const {proc, termdom, document} = makeDocumentModeApp();
+	await nextFrame(termdom);
+	await send(proc, "\x1b[<65;5;3M");
+	expect(termdom.window.scrollY).toBe(3);
+
+	const seen: Array<{target: string; clientY: number; pageY: number}> = [];
+	document.addEventListener("mousedown", (event) => {
+		const mouse = event as MouseEvent;
+		seen.push({
+			target: (mouse.target as Element).textContent!,
+			clientY: mouse.clientY,
+			pageY: mouse.pageY,
+		});
+	});
+	// Row 2 of the screen shows line 4 once three lines scroll away. Code
+	// that finds the point in client rects, as CodeMirror does, has to see
+	// the same row the box is drawn on.
+	await send(proc, "\x1b[<0;2;2M");
+	await send(proc, "\x1b[<0;2;2m");
+	expect(seen).toEqual([{target: "line 4", clientY: 1, pageY: 4}]);
+	const hit = document.elementFromPoint(1, seen[0].clientY)!;
+	expect(hit.textContent).toBe("line 4");
+	expect(hit.getBoundingClientRect().top).toBe(1);
 	termdom.dispose();
 });
 
@@ -727,5 +758,224 @@ test("a second press on the same cell is a double-click even if the element move
 	await send(proc, "\x1b[<0;1;1M");
 	await send(proc, "\x1b[<0;1;1m");
 	expect(events).toEqual(["click a", "dblclick via pile"]);
+	termdom.dispose();
+});
+
+async function makePointerApp(
+	html: string,
+): Promise<{
+	proc: MockProcess;
+	termdom: TermDOM;
+	document: Document;
+	log: string[];
+	listen: (target: EventTarget, types: string[]) => void;
+}> {
+	const proc = new MockProcess({cols: 40, rows: 10});
+	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
+	const {document} = termdom;
+	document.body.innerHTML = html;
+	await nextFrame(termdom);
+	const log: string[] = [];
+	const listen = (target: EventTarget, types: string[]): void => {
+		for (const type of types) {
+			target.addEventListener(type, (event) => {
+				const element = event.target as Element;
+				log.push(`${type}@${element.id || element.localName}`);
+			});
+		}
+	};
+	return {proc, termdom, document, log, listen};
+}
+
+test("a press inside a shadow root targets the element there", async () => {
+	const {proc, termdom, document, log, listen} =
+		await makePointerApp("<div id=\"host\"></div>");
+	const host = document.getElementById("host")!;
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML = "<button id=\"inner\">[shadow]</button>";
+	await nextFrame(termdom);
+	const inner = shadow.getElementById("inner")!;
+	listen(inner, ["mousedown", "click"]);
+	listen(document, ["mousedown", "click"]);
+
+	await send(proc, "\x1b[<0;2;1M");
+	await send(proc, "\x1b[<0;2;1m");
+	// The component hears its own button, and the page hears the host.
+	expect(log).toEqual([
+		"mousedown@inner",
+		"mousedown@host",
+		"click@inner",
+		"click@host",
+	]);
+	expect(shadow.activeElement).toBe(inner);
+	termdom.dispose();
+});
+
+test("a press inside a control's own parts still targets the control", async () => {
+	const {proc, termdom, document, log, listen} =
+		await makePointerApp("<input id=\"field\" value=\"hello\">");
+	listen(document, ["mousedown"]);
+	await send(proc, "\x1b[<0;3;1M");
+	await send(proc, "\x1b[<0;3;1m");
+	expect(log).toEqual(["mousedown@field"]);
+	termdom.dispose();
+});
+
+test("each mouse event follows its pointer event", async () => {
+	const {proc, termdom, document, log, listen} =
+		await makePointerApp("<p id=\"a\">aaaa</p><p id=\"b\">bbbb</p>");
+	listen(document, [
+		"pointerover",
+		"pointerenter",
+		"pointermove",
+		"pointerdown",
+		"pointerup",
+		"mouseover",
+		"mouseenter",
+		"mousemove",
+		"mousedown",
+		"mouseup",
+		"click",
+	]);
+	const kinds: string[] = [];
+	document.addEventListener("click", (event) => {
+		const pointer = event as PointerEvent;
+		kinds.push(
+			`${event.constructor.name}:${pointer.pointerId}:${pointer.pointerType}`,
+		);
+	});
+	await send(proc, "\x1b[<35;2;1M");
+	await nextFrame(termdom);
+	await send(proc, "\x1b[<0;2;1M");
+	await send(proc, "\x1b[<0;2;1m");
+	expect(log.filter((entry) => !entry.includes("enter"))).toEqual([
+		"pointerover@a",
+		"mouseover@a",
+		"pointermove@a",
+		"mousemove@a",
+		"pointerdown@a",
+		"mousedown@a",
+		"pointerup@a",
+		"mouseup@a",
+		"click@a",
+	]);
+	expect(kinds).toEqual(["PointerEvent:1:mouse"]);
+	termdom.dispose();
+});
+
+test("only the main button clicks; the others fire auxclick", async () => {
+	const {proc, termdom, document, log, listen} =
+		await makePointerApp("<p id=\"a\">aaaa</p>");
+	listen(document, ["click", "auxclick", "contextmenu", "dblclick"]);
+	await send(proc, "\x1b[<2;2;1M");
+	await send(proc, "\x1b[<2;2;1m");
+	expect(log).toEqual(["contextmenu@a", "auxclick@a"]);
+
+	// A middle click right after is its own first click, not a double.
+	log.length = 0;
+	await send(proc, "\x1b[<1;2;1M");
+	await send(proc, "\x1b[<1;2;1m");
+	await send(proc, "\x1b[<1;2;1M");
+	await send(proc, "\x1b[<1;2;1m");
+	expect(log).toEqual(["auxclick@a", "auxclick@a"]);
+
+	log.length = 0;
+	await send(proc, "\x1b[<0;2;1M");
+	await send(proc, "\x1b[<0;2;1m");
+	await send(proc, "\x1b[<0;2;1M");
+	await send(proc, "\x1b[<0;2;1m");
+	expect(log).toEqual(["click@a", "click@a", "dblclick@a"]);
+	termdom.dispose();
+});
+
+test("a canceled pointerdown withholds that press's mouse events, not its click", async () => {
+	const {proc, termdom, document, log, listen} =
+		await makePointerApp("<p id=\"a\">aaaa</p>");
+	document.addEventListener("pointerdown", (event) => event.preventDefault());
+	listen(document, [
+		"pointerdown",
+		"mousedown",
+		"pointerup",
+		"mouseup",
+		"click",
+	]);
+	await send(proc, "\x1b[<0;2;1M");
+	await send(proc, "\x1b[<0;2;1m");
+	expect(log).toEqual(["pointerdown@a", "pointerup@a", "click@a"]);
+
+	log.length = 0;
+	await send(proc, "\x1b[<2;2;1M");
+	await send(proc, "\x1b[<2;2;1m");
+	expect(log).toEqual(["pointerdown@a", "pointerup@a"]);
+	termdom.dispose();
+});
+
+test("a captured drag goes to the capturing element until the release", async () => {
+	const {proc, termdom, document, log, listen} = await makePointerApp(
+		"<style>p { user-select: none }</style>" +
+			"<p id=\"thumb\">[=]</p><p id=\"other\">other</p>",
+	);
+	const thumb = document.getElementById("thumb")!;
+	expect(() => thumb.setPointerCapture(7)).toThrow();
+	// With no button down there is nothing to capture.
+	thumb.setPointerCapture(1);
+	expect(thumb.hasPointerCapture(1)).toBe(false);
+
+	thumb.addEventListener("pointerdown", (event) => {
+		thumb.setPointerCapture((event as PointerEvent).pointerId);
+	});
+	listen(document, [
+		"gotpointercapture",
+		"lostpointercapture",
+		"pointermove",
+		"mousemove",
+		"pointerup",
+		"click",
+	]);
+	await send(proc, "\x1b[<0;2;1M");
+	expect(thumb.hasPointerCapture(1)).toBe(true);
+	// Dragged down over the other paragraph, the events stay on the thumb.
+	await send(proc, "\x1b[<32;2;2M");
+	await send(proc, "\x1b[<0;2;2m");
+	expect(log).toEqual([
+		"gotpointercapture@thumb",
+		"pointermove@thumb",
+		"mousemove@thumb",
+		"pointerup@thumb",
+		"lostpointercapture@thumb",
+		"click@thumb",
+	]);
+	expect(thumb.hasPointerCapture(1)).toBe(false);
+	termdom.dispose();
+});
+
+test("a press on slotted text focuses its focusable ancestor in the flat tree", async () => {
+	const {proc, termdom, document} = await makePointerApp(
+		"<div id=\"container\"><span id=\"slotted\">slotted text</span></div>",
+	);
+	const container = document.getElementById("container")!;
+	const shadow = container.attachShadow({mode: "open"});
+	shadow.innerHTML = "<div id=\"inner\" tabindex=\"0\"><slot></slot></div>";
+	await nextFrame(termdom);
+
+	await send(proc, "\x1b[<0;3;1M");
+	await send(proc, "\x1b[<0;3;1m");
+	expect(document.activeElement).toBe(container);
+	expect(shadow.activeElement).toBe(shadow.getElementById("inner"));
+	termdom.dispose();
+});
+
+test("an element that leaves the document loses its pointer capture", async () => {
+	const {proc, termdom, document} =
+		await makePointerApp("<p id=\"a\">aaaa</p><p id=\"b\">bbbb</p>");
+	const a = document.getElementById("a")!;
+	const b = document.getElementById("b")!;
+	await send(proc, "\x1b[<0;2;1M");
+	a.setPointerCapture(1);
+	b.moveBefore(a, null);
+	expect(a.hasPointerCapture(1)).toBe(true);
+	document.body.append(a);
+	expect(a.hasPointerCapture(1)).toBe(false);
+	await send(proc, "\x1b[<0;2;1m");
 	termdom.dispose();
 });

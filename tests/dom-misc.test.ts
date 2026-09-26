@@ -147,7 +147,7 @@ test("a window's location takes the document's URL apart", () => {
 	);
 });
 
-test("a location will not navigate, and an unmounted document has none", () => {
+test("a location navigates only to a fragment, and an unmounted document has none", () => {
 	const window = createWindow("<!doctype html>") as any;
 	const location = window.location;
 	expect(location.href).toBe("about:blank");
@@ -158,7 +158,6 @@ test("a location will not navigate, and an unmounted document has none", () => {
 		() => location.replace("https://example.com/"),
 		() => (location.href = "https://example.com/"),
 		() => (location.pathname = "/elsewhere"),
-		() => (location.hash = "#elsewhere"),
 	]) {
 		let thrown: any = null;
 		try {
@@ -168,6 +167,9 @@ test("a location will not navigate, and an unmounted document has none", () => {
 		}
 		expect(thrown?.name).toBe("NotSupportedError");
 	}
+	// A fragment of the document itself is the one place it can go.
+	location.hash = "#elsewhere";
+	expect(location.href).toBe("about:blank#elsewhere");
 
 	// A document nobody displays is in no browsing context, so it is nowhere.
 	expect(createHTMLDocument().location).toBe(null as never);

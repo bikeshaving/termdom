@@ -5,16 +5,21 @@ import {
 	type Element,
 	getElementChildren,
 	getFirstChildNode,
+	getHeadingLevel,
 	getNextSiblingNode,
 	getOpenAssignedSlot,
 	getParentNode,
 	getPartNames,
 	getPreviousSiblingNode,
+	getRangeMatch,
 	getRoot,
 	getShadowHost,
+	getUserValidityMatch,
+	getValidityMatch,
 	hasCustomState,
 	hasFocus,
 	hasFocusWithin,
+	isActive,
 	isActuallyDisabled,
 	isCheckedControl,
 	isDefaultControl,
@@ -36,7 +41,12 @@ import {
 	Node,
 	parentElement,
 } from "./dom.ts";
-import {HTML_NAMESPACE, XML_NAMESPACE} from "./dom.ts";
+import {
+	HTML_NAMESPACE,
+	SVG_NAMESPACE,
+	XLINK_NAMESPACE,
+	XML_NAMESPACE,
+} from "./dom.ts";
 import {toASCIILowercase} from "./text.ts";
 
 // CSS Selectors: the language, and the matcher a selector compiles to.
@@ -77,6 +87,7 @@ const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"fullscreen",
 	"future",
 	"has",
+	"heading",
 	"host",
 	"host-context",
 	"hover",
@@ -301,7 +312,13 @@ interface MatchState {
 
 	// The node a relative selector inside `:has()` is anchored to.
 	anchor: Node | null;
+
+	// The caller's store of `:has()` answers, by anchor and argument.
+	hasResults: HasResults | null;
 }
+
+/** `:has()` answers, kept by a caller that knows when they go stale. */
+export type HasResults = WeakMap<Element, Map<object, boolean>>;
 
 type Predicate = (element: Element, state: MatchState) => boolean;
 
@@ -528,7 +545,7 @@ function compileList(
 }
 
 // The compound a relative selector hangs from: the element `:has()` was
-// asked about.
+// asked about. That can be a featureless shadow host, asked as :host.
 const ANCHOR_COMPOUND: CompiledCompound = {
 	tests: [
 		(element: Element, state: MatchState): boolean =>
@@ -536,13 +553,27 @@ const ANCHOR_COMPOUND: CompiledCompound = {
 	],
 	origin: null,
 	originTests: [],
-	host: false,
+	host: true,
 };
 
+function mentionsScope(node: CSSTree.SelectorNode): boolean {
+	if (
+		node.type === "PseudoClassSelector" &&
+		pseudoName(String(node.name ?? "")) === "scope"
+	) {
+		return true;
+	}
+	return getChildren(node).some(mentionsScope);
+}
+
+// `anchored` is for an argument of :has(), which with no combinator of its
+// own reaches down from the anchor. An @scope rule's relative reading
+// matches where it stands and is limited by its root elsewhere.
 function compileComplex(
 	selector: CSSTree.SelectorNode,
 	compiling: Compiling,
 	relative: boolean,
+	anchored = false,
 ): CompiledComplex {
 	const parts = getChildren(selector);
 	if (parts.length === 0) {
@@ -552,6 +583,12 @@ function compileComplex(
 	const combinators: Combinator[] = [];
 	let pending: CSSTree.SelectorNode[] = [];
 	let started = false;
+	// `:has(span + span)` is `:has(:scope span + span)`.
+	if (anchored && parts[0].type !== "Combinator") {
+		compounds.push(ANCHOR_COMPOUND);
+		combinators.push(" ");
+		started = true;
+	}
 	for (const [index, part] of parts.entries()) {
 		if (part.type !== "Combinator") {
 			pending.push(part);
@@ -948,8 +985,14 @@ function compilePseudoClass(
 			return;
 		}
 		case "has": {
-			const inner = compileArgumentList(args, compiling, true);
-			compound.tests.push((element, state) => hasMatch(inner, element, state));
+			const inner = compileArgumentList(args, compiling, true, true);
+			// Without :scope, whose meaning changes with each query, the
+			// answer depends only on the anchor and the document, so a caller
+			// can keep it for as long as the document is unchanged.
+			const cacheable = !args.some(mentionsScope);
+			compound.tests.push((element, state) =>
+				hasMatch(inner, element, state, cacheable),
+			);
 			return;
 		}
 		case "host":
@@ -1042,6 +1085,20 @@ function compilePseudoClass(
 		case "dir":
 			compound.tests.push(compileDir(args));
 			return;
+		case "heading": {
+			// Bare, any heading. With arguments, a heading at one of the
+			// listed levels (selectors-5 §7.4).
+			if (args.length === 0) {
+				compound.tests.push((element) => getHeadingLevel(element) !== null);
+				return;
+			}
+			const levels = getIntegerArguments(args, "heading");
+			compound.tests.push((element) => {
+				const level = getHeadingLevel(element);
+				return level !== null && levels.includes(level);
+			});
+			return;
+		}
 		case "state": {
 			const wanted = getIdentifierArgument(args, "state");
 			compound.tests.push((element) => hasCustomState(element, wanted));
@@ -1063,9 +1120,9 @@ function compilePseudoClass(
 			compound.tests.push((element) => isHovered(element));
 			return;
 		case "active":
-			// Nothing here is ever between a press and a release. A terminal
-			// reports the key or the click, not half of it.
-			compound.tests.push(() => false);
+			// Between a mouse press and its release, which a terminal's mouse
+			// reporting sends apart.
+			compound.tests.push((element) => isActive(element));
 			return;
 		case "focus":
 			compound.tests.push((element) => hasFocus(element));
@@ -1077,7 +1134,10 @@ function compilePseudoClass(
 			compound.tests.push((element) => hasFocusWithin(element));
 			return;
 		case "modal":
-			compound.tests.push((element) => isModalDialog(element));
+			// A dialog shown modally, or an element in fullscreen.
+			compound.tests.push(
+				(element) => isModalDialog(element) || isFullscreenElement(element),
+			);
 			return;
 		case "popover-open":
 			compound.tests.push((element) => isShowingPopover(element));
@@ -1117,6 +1177,28 @@ function compilePseudoClass(
 					!isDisabled(element, state),
 			);
 			return;
+		case "valid":
+			compound.tests.push((element) => getValidityMatch(element) === "valid");
+			return;
+		case "invalid":
+			compound.tests.push((element) => getValidityMatch(element) === "invalid");
+			return;
+		case "user-valid":
+			compound.tests.push(
+				(element) => getUserValidityMatch(element) === "valid",
+			);
+			return;
+		case "user-invalid":
+			compound.tests.push(
+				(element) => getUserValidityMatch(element) === "invalid",
+			);
+			return;
+		case "in-range":
+			compound.tests.push((element) => getRangeMatch(element) === "in");
+			return;
+		case "out-of-range":
+			compound.tests.push((element) => getRangeMatch(element) === "out");
+			return;
 		case "required":
 			compound.tests.push((element) =>
 				isRequirable(element) && element.getAttribute("required") !== null);
@@ -1134,9 +1216,7 @@ function compilePseudoClass(
 		default:
 			// Everything left names a state this user agent never enters: a
 			// media element's buffering, a page box's side, a spatial
-			// navigation target, autofill, and the constraint validation
-			// family, which the conformance notes record as deliberately
-			// absent.
+			// navigation target, and autofill.
 			compound.tests.push(matchNothing);
 	}
 }
@@ -1164,6 +1244,25 @@ function getIdentifierArgument(
 		throw new SelectorError(`:${name} takes one identifier`);
 	}
 	return CSSTree.ident.decode(text);
+}
+
+/** A comma-separated list of integers, as `:heading(1, 2)` is written. */
+function getIntegerArguments(
+	args: CSSTree.SelectorNode[],
+	name: string,
+): number[] {
+	const text = args
+		.map((argument) =>
+			argument.type === "Raw"
+				? String((argument as {value?: string}).value ?? "")
+				: CSSTree.generate(argument as never),
+		)
+		.join("");
+	const items = text.split(",").map((item) => item.trim());
+	if (items.some((item) => !/^\+?\d+$/.test(item))) {
+		throw new SelectorError(`:${name} takes a list of integers`);
+	}
+	return items.map(Number);
 }
 
 /** Drops the branches that do not parse. */
@@ -1197,6 +1296,7 @@ function compileArgumentList(
 	args: CSSTree.SelectorNode[],
 	compiling: Compiling,
 	relative: boolean,
+	anchored = false,
 ): CompiledComplex[] {
 	const compiled: CompiledComplex[] = [];
 	for (const argument of args) {
@@ -1208,7 +1308,12 @@ function compileArgumentList(
 				throw new SelectorError("a selector list holds selectors");
 			}
 			compiled.push(
-				compileComplex(selector, {...compiling, nested: true}, relative),
+				compileComplex(
+					selector,
+					{...compiling, nested: true},
+					relative,
+					anchored,
+				),
 			);
 		}
 	}
@@ -1384,13 +1489,20 @@ function matchesAnPlusB(step: AnPlusB, position: number): boolean {
 
 // What `:link` and `:any-link` match: an `a` or `area` with an href. A
 // `link` element points somewhere too, but HTML leaves it out.
+// HTML's a and area with an href, and SVG's a with an href or the older
+// xlink:href.
 function isHyperlink(element: Element): boolean {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
-		return false;
-	}
 	const name = element.localName;
+	if (element.namespaceURI === HTML_NAMESPACE) {
+		return (
+			(name === "a" || name === "area") && element.getAttribute("href") !== null
+		);
+	}
 	return (
-		(name === "a" || name === "area") && element.getAttribute("href") !== null
+		element.namespaceURI === SVG_NAMESPACE &&
+		name === "a" &&
+		(element.hasAttribute("href") ||
+			element.hasAttributeNS(XLINK_NAMESPACE, "href"))
 	);
 }
 
@@ -1566,11 +1678,21 @@ function compileLang(args: CSSTree.SelectorNode[]): Predicate {
 }
 
 // The nearest declaration above the element.
+function getLanguageParent(node: Element): Element | null {
+	const parent = getParentNode(node);
+	if (parent === null) {
+		return null;
+	}
+	return isElement(parent) ? parent : getShadowHost(parent);
+}
+
+// The nearest lang attribute, climbing out of a shadow tree into its host
+// when the tree names none (HTML §3.2.6.2).
 function getElementLanguage(element: Element): string | null {
 	for (
 		let node: Element | null = element;
 		node !== null;
-		node = parentElement(node)
+		node = getLanguageParent(node)
 	) {
 		const attributes = node.attributes;
 		for (let index = 0; index < attributes.length; index++) {
@@ -1831,11 +1953,15 @@ function matchFrom(
 	}
 }
 
-// In a shadow tree the step up ends at the featureless host.
+// In a shadow tree the step up ends at the featureless host. Nothing above
+// the host is in the tree the selector was written for.
 function getParentStep(
 	element: Element,
 	state: MatchState,
 ): {element: Element; featureless: boolean} | null {
+	if (state.shadow !== null && getShadowHost(state.shadow) === element) {
+		return null;
+	}
 	const parent = getParentNode(element);
 	if (parent === null) {
 		return null;
@@ -1861,16 +1987,54 @@ function hasMatch(
 	inner: CompiledComplex[],
 	element: Element,
 	state: MatchState,
+	cacheable: boolean,
+): boolean {
+	// Asked of the host from inside its shadow tree, :has() searches that
+	// tree, and the answer is not the one a light-tree rule would get.
+	const hostOfShadow =
+		state.shadow !== null && getShadowHost(state.shadow) === element;
+	const store = cacheable && !hostOfShadow ? state.hasResults : null;
+	let answers = store?.get(element);
+	const known = answers?.get(inner);
+	if (known !== undefined) {
+		return known;
+	}
+	const result = findHasMatch(inner, element, state);
+	if (store) {
+		if (answers === undefined) {
+			answers = new Map();
+			store.set(element, answers);
+		}
+		answers.set(inner, result);
+	}
+	return result;
+}
+
+function findHasMatch(
+	inner: CompiledComplex[],
+	element: Element,
+	state: MatchState,
 ): boolean {
 	// The anchor is what a leading combinator hangs from. `:scope` is not
 	// changed: inside `:has()` it still refers to whatever the query scoped
 	// to.
 	const inside: MatchState = {...state, anchor: element};
+	const hostOfShadow =
+		state.shadow !== null && getShadowHost(state.shadow) === element;
 	for (const complex of inner) {
 		const selects = (node: Element): boolean =>
 			matchComplex(complex, node, inside, false);
 		const leading = complex.combinators[0] ?? " ";
-		if (leading === "+" || leading === "~") {
+		if (hostOfShadow) {
+			// The host is the shadow tree's root, which has no siblings.
+			if (
+				leading !== "+" &&
+				leading !== "~" &&
+				walkElements(state.shadow as Node, selects)
+			) {
+				return true;
+			}
+		} else if (leading === "+" || leading === "~") {
 			for (
 				let sibling = getNextElement(element);
 				sibling !== null;
@@ -2021,6 +2185,10 @@ interface MatchOptions {
 
 	// The shadow root the selector was written in, for `:host`.
 	shadow?: Node | null;
+
+	// Where `:has()` answers are kept between matches, by a caller that
+	// drops them whenever the document changes.
+	hasResults?: HasResults | null;
 }
 
 interface QueryOptions extends CompileOptions, MatchOptions {}
@@ -2033,6 +2201,7 @@ function createMatchState(options: MatchOptions): MatchState {
 		// `:scope` refers to. Inside `:has()` both become the anchor instead.
 		anchor: options.scope ?? null,
 		siblings: new Map(),
+		hasResults: options.hasResults ?? null,
 	};
 }
 

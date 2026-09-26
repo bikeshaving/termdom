@@ -10,9 +10,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {
-	parseSelectorList,
-} from "../src/internal/cssselectors.ts";
+import {parseSelectorList} from "../src/internal/cssselectors.ts";
 import {
 	createWindow,
 	type Document,
@@ -285,6 +283,12 @@ test(":has reaches down, across and no further than it should", () => {
 	expect(ids(HAS, "li:has(~ li.x)")).toEqual(["l1"]);
 	expect(ids(HAS, "ul:has(li li)")).toEqual([]);
 	expect(ids(HAS, "ul:has(li b)")).toEqual(["list"]);
+	// With no combinator of its own, the argument reaches down from the
+	// anchor, even when it holds a sibling combinator, and its compounds
+	// never match the anchor or anything above it.
+	expect(ids(HAS, "ul:has(li + li)")).toEqual(["list"]);
+	expect(ids(HAS, "ul:has(li + b)")).toEqual([]);
+	expect(ids(HAS, "li:has(ul b)")).toEqual([]);
 });
 
 test(":has nests, and :scope inside it still names the query's root", () => {
@@ -404,10 +408,19 @@ test(":read-only and :read-write split on what the user may type into", () => {
 		.toEqual(["a", "b"]);
 });
 
-test("the constraint validation pseudos are deliberately absent", () => {
-	for (const selector of [":valid", ":invalid", ":in-range", ":out-of-range"]) {
-		expect(ids(FORM, selector)).toEqual([]);
-	}
+test("the constraint validation pseudos match what is being validated", () => {
+	// A disabled or readonly control and a hidden input are not validated,
+	// so they are neither. A form or fieldset is invalid when anything in it
+	// that is being validated is.
+	expect(ids(FORM, ":invalid")).toEqual(["f", "plain"]);
+	expect(ids(FORM, ":valid")).toEqual(["fs", "in-legend", "sel", "ta"]);
+	const RANGE =
+		"<input id=low type=number min=1 value=0>" +
+		"<input id=inside type=number min=1 max=9 value=5>" +
+		"<input id=unlimited type=number value=5>" +
+		"<input id=slider type=range>";
+	expect(ids(RANGE, ":in-range")).toEqual(["inside", "slider"]);
+	expect(ids(RANGE, ":out-of-range")).toEqual(["low"]);
 	expect(ids("<input id=a autocomplete=name>", ":autofill")).toEqual([]);
 });
 

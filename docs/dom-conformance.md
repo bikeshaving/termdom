@@ -18,10 +18,10 @@ window's legacy named access to elements by id.
 - Reference tests (no testharness, scored by pixels): 55
 - Excluded, each with its reason below: 356
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 693
-- Files whose harness did not complete: 69
-- Subtests passed: 99712
-- Subtests failed: 870
+- Files whose harness completed: 696
+- Files whose harness did not complete: 66
+- Subtests passed: 99797
+- Subtests failed: 789
 
 ## Exclusions
 
@@ -411,7 +411,7 @@ Range.getClientRects() and Range.getBoundingClientRect() are not implemented. Th
 
 ### selection/modify.tentative.html, bidi/modify-*.html, contenteditable/modify*.html, move-by-word-*.html
 
-Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, so the line granularities need a document attached in a terminal; on the bare DOM this suite runs against, they do nothing.
+Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, read from the layout of the attached document. A caret in an editing host stays in it.
 
 ### selection/getSelection.html (excluded), and the defaultView sanity checks in it
 
@@ -541,7 +541,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Element-childElementCount.html | OK | 1 | 0 |
 | dom/nodes/Element-children.html | OK | 2 | 0 |
 | dom/nodes/Element-classlist.html | OK | 1420 | 0 |
-| dom/nodes/Element-closest.html | OK | 28 | 1 |
+| dom/nodes/Element-closest.html | OK | 29 | 0 |
 | dom/nodes/Element-firstElementChild-namespace.html | OK | 1 | 0 |
 | dom/nodes/Element-firstElementChild.html | OK | 1 | 0 |
 | dom/nodes/Element-getElementsByClassName.html | OK | 3 | 0 |
@@ -612,10 +612,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/NodeList-live-mutations.window.js | OK | 4 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-3.html | ERROR | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-3.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | ERROR | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-append.html | OK | 25 | 0 |
 | dom/nodes/ParentNode-children.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-prepend.html | OK | 22 | 0 |
@@ -705,7 +705,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/mutation-observer.html | OK | 2 | 0 |
 | dom/nodes/moveBefore/nonce.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/object-crash-regression.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/pointer-events.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/pointer-events.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/popover-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-script.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-style.html | OK | 0 | 1 |
@@ -936,7 +936,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/scrolling/wheel-event-transactions-target-move.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-removal.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-resize.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/shadow-relatedTarget.html | TIMEOUT | 0 | 0 |
+| dom/events/shadow-relatedTarget.html | OK | 2 | 0 |
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
@@ -1033,10 +1033,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html | OK | 11 | 0 |
 | selection/bidi/modify-extend-by-character.html | OK | 18 | 10 |
 | selection/bidi/modify-move-by-character.html | OK | 18 | 10 |
-| selection/bidi/modify.tentative.html | OK | 15 | 21 |
+| selection/bidi/modify.tentative.html | OK | 24 | 12 |
 | selection/canvas-click.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
 | selection/canvas-drag.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
-| selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 1 | 23 |
+| selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 8 | 16 |
 | selection/caret/after-designMode-off.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-1.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-2.html | REFTEST | 0 | 0 |
@@ -1058,7 +1058,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR ("" is not a valid element name) | 0 | 0 |
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 1 | 35 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
-| selection/contenteditable/modify.tentative.html | OK | 2 | 13 |
+| selection/contenteditable/modify.tentative.html | OK | 15 | 0 |
 | selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
 | selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
 | selection/contenteditable/selection-outside-focused-editing-host.tentative.html | TIMEOUT | 0 | 0 |
@@ -1086,7 +1086,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/modify-line-flex-column.tentative.html | OK | 0 | 2 |
 | selection/modify-line-flex-row.tentative.html | OK | 0 | 2 |
 | selection/modify-line-grid-basic.tentative.html | OK | 0 | 2 |
-| selection/modify.tentative.html | OK | 3 | 4 |
+| selection/modify.tentative.html | OK | 7 | 0 |
 | selection/move-by-word-korean.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
 | selection/move-by-word-with-symbol.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
 | selection/move-paragraph-cross-editing-boundary.tentative.html | OK | 0 | 2 |
@@ -1100,13 +1100,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/script-and-style-elements.html | OK | 0 | 1 |
 | selection/select-end-of-line-image.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selectAllChildren.html | OK | 2242 | 0 |
-| selection/selection-content-visibility-hidden.html | OK | 0 | 1 |
+| selection/selection-content-visibility-hidden.html | OK | 1 | 0 |
 | selection/selection-direction-on-double-click.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selection-direction-on-single-click.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selection-direction-on-triple-click.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selection-focused-element-becomes-nonfocusable.html | EXCLUDED (requires-user-input: the element is focused by a pointer action sequence) | 0 | 0 |
 | selection/selection-incremental-change-repaint.html | REFTEST | 0 | 0 |
-| selection/selection-modify-extend-word-generated-content.html | OK | 0 | 2 |
+| selection/selection-modify-extend-word-generated-content.html | OK | 2 | 0 |
 | selection/selection-nested-video.html | OK | 1 | 0 |
 | selection/selection-range-after-editinghost-removed.html | OK | 4 | 0 |
 | selection/selection-range-after-textcontrol-removed.html | OK | 2 | 0 |
@@ -1169,7 +1169,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/assign-slottables-after-removing-shadow-tree-from-document.html | OK | 1 | 0 |
 | shadow-dom/attach-shadow-non-html-namespace.html | OK | 304 | 0 |
 | shadow-dom/attachShadow-with-ShadowRoot.html | OK | 2 | 0 |
-| shadow-dom/build-deep-detached-shadow-then-append-text.html | ERROR (Maximum call stack size exceeded) | 0 | 0 |
+| shadow-dom/build-deep-detached-shadow-then-append-text.html | OK | 1 | 0 |
 | shadow-dom/capturing-and-bubbling-event-listeners-across-shadow-trees.html | OK | 5 | 0 |
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
@@ -1290,7 +1290,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus-within-shadow.html | OK | 1 | 0 |
 | shadow-dom/focus/DocumentOrShadowRoot-activeElement.html | OK | 6 | 0 |
 | shadow-dom/focus/ShadowRoot-delegatesFocus.html | OK | 3 | 0 |
-| shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html | OK | 1 | 1 |
+| shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html | OK | 2 | 0 |
 | shadow-dom/focus/click-focus-delegatesFocus-click.html | OK | 2 | 4 |
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | OK | 0 | 1 |
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | OK | 0 | 1 |
@@ -1345,8 +1345,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/invalidate-sibling-different-slots.html | REFTEST | 0 | 0 |
 | shadow-dom/layout-slot-no-longer-assigned.html | REFTEST | 0 | 0 |
 | shadow-dom/layout-slot-no-longer-fallback.html | REFTEST | 0 | 0 |
-| shadow-dom/leaktests/get-elements.html | OK | 4 | 1 |
-| shadow-dom/leaktests/html-collection.html | OK | 8 | 1 |
+| shadow-dom/leaktests/get-elements.html | OK | 5 | 0 |
+| shadow-dom/leaktests/html-collection.html | OK | 9 | 0 |
 | shadow-dom/leaktests/selection.html | EXCLUDED (requires-browsing-context: a Selection over a rendered frame) | 0 | 0 |
 | shadow-dom/leaktests/window-frames.html | EXCLUDED (requires-browsing-context: whether a shadow tree's nodes leak into window.frames) | 0 | 0 |
 | shadow-dom/manual-slot-assignment-no-wrong-unassign.html | REFTEST | 0 | 0 |
@@ -1369,7 +1369,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/reference-target/tentative/reference-target-basics.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference/empty.html | REFTEST | 0 | 0 |
-| shadow-dom/scroll-restore-shadow.html | OK | 0 | 1 |
+| shadow-dom/scroll-restore-shadow.html | OK | 1 | 0 |
 | shadow-dom/scroll-to-the-fragment-in-shadow-tree.html | ERROR (window.scrollTo is not a function) | 0 | 0 |
 | shadow-dom/shadow-root-clonable.html | OK | 6 | 0 |
 | shadow-dom/shadow-style-invalidation-vw-units.html | REFTEST | 0 | 0 |
@@ -1418,14 +1418,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/events/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 0 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 1 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/reprojection/reprojection-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-002.html | REFTEST | 0 | 0 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | OK | 13 | 1 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | OK | 14 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-002.html | OK | 3 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-001.html | OK | 6 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-002.html | OK | 18 | 0 |
@@ -1452,7 +1452,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/wheel-event-related-target.html | EXCLUDED (requires-user-input: a wheel action sequence driven through testdriver) | 0 | 0 |
 | custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 5 | 0 |
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
-| custom-elements/CustomElementRegistry.html | OK | 45 | 1 |
+| custom-elements/CustomElementRegistry.html | OK | 46 | 0 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
 | custom-elements/Document-createElement.html | OK | 33 | 3 |
 | custom-elements/Document-createElementNS-customized-builtins.html | EXCLUDED (customized built-ins: createElementNS with an is option) | 0 | 0 |
@@ -1482,7 +1482,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html | OK | 7 | 1 |
 | custom-elements/form-associated/ElementInternals-NotSupportedError.html | OK | 1 | 0 |
 | custom-elements/form-associated/ElementInternals-behavior-accessibility.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
-| custom-elements/form-associated/ElementInternals-form.html | OK | 1 | 1 |
+| custom-elements/form-associated/ElementInternals-form.html | OK | 2 | 0 |
 | custom-elements/form-associated/ElementInternals-labels.html | OK | 3 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-bubble-notref.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-bubble.html | REFTEST | 0 | 0 |
@@ -1493,13 +1493,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
-| custom-elements/form-associated/ElementInternals-validation.html | OK | 11 | 3 |
-| custom-elements/form-associated/disabled-delegatesFocus.html | OK | 0 | 1 |
+| custom-elements/form-associated/ElementInternals-validation.html | OK | 13 | 1 |
+| custom-elements/form-associated/disabled-delegatesFocus.html | OK | 1 | 0 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
 | custom-elements/form-associated/form-associated-callback.html | OK | 3 | 2 |
-| custom-elements/form-associated/form-disabled-callback.html | OK | 8 | 2 |
-| custom-elements/form-associated/form-elements-namedItem.html | OK | 0 | 3 |
+| custom-elements/form-associated/form-disabled-callback.html | ERROR | 8 | 2 |
+| custom-elements/form-associated/form-elements-namedItem.html | OK | 1 | 2 |
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
 | custom-elements/form-associated/label-delegatesFocus.html | OK | 0 | 2 |
 | custom-elements/historical.html | OK | 3 | 0 |
@@ -1532,19 +1532,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/reactions/ChildNode.html | OK | 7 | 0 |
 | custom-elements/reactions/DOMStringMap.html | OK | 4 | 4 |
 | custom-elements/reactions/DOMTokenList.html | OK | 19 | 0 |
-| custom-elements/reactions/Document.html | OK | 1 | 11 |
+| custom-elements/reactions/Document.html | OK | 3 | 9 |
 | custom-elements/reactions/Element.html | OK | 47 | 0 |
 | custom-elements/reactions/ElementContentEditable.html | OK | 2 | 0 |
-| custom-elements/reactions/HTMLAnchorElement.html | OK | 0 | 1 |
+| custom-elements/reactions/HTMLAnchorElement.html | OK | 1 | 0 |
 | custom-elements/reactions/HTMLElement.html | OK | 20 | 2 |
 | custom-elements/reactions/HTMLOptionElement.html | OK | 0 | 1 |
-| custom-elements/reactions/HTMLOptionsCollection.html | OK | 0 | 5 |
-| custom-elements/reactions/HTMLOutputElement.html | OK | 0 | 2 |
-| custom-elements/reactions/HTMLSelectElement.html | OK | 0 | 5 |
-| custom-elements/reactions/HTMLTableElement.html | OK | 3 | 7 |
-| custom-elements/reactions/HTMLTableRowElement.html | OK | 0 | 1 |
-| custom-elements/reactions/HTMLTableSectionElement.html | OK | 0 | 2 |
-| custom-elements/reactions/HTMLTitleElement.html | OK | 0 | 1 |
+| custom-elements/reactions/HTMLOptionsCollection.html | OK | 3 | 2 |
+| custom-elements/reactions/HTMLOutputElement.html | OK | 2 | 0 |
+| custom-elements/reactions/HTMLSelectElement.html | OK | 3 | 2 |
+| custom-elements/reactions/HTMLTableElement.html | OK | 10 | 0 |
+| custom-elements/reactions/HTMLTableRowElement.html | OK | 1 | 0 |
+| custom-elements/reactions/HTMLTableSectionElement.html | OK | 2 | 0 |
+| custom-elements/reactions/HTMLTitleElement.html | OK | 1 | 0 |
 | custom-elements/reactions/NamedNodeMap.html | OK | 14 | 0 |
 | custom-elements/reactions/Node.html | OK | 14 | 0 |
 | custom-elements/reactions/ParentNode.html | OK | 4 | 0 |
@@ -1620,17 +1620,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/upgrade.html | OK | 5 | 0 |
 | custom-elements/registries/valid-custom-element-names.html | OK | 1975 | 0 |
 | custom-elements/state/ElementInternals-states.html | OK | 4 | 0 |
-| custom-elements/state/state-css-selector-nth-of.html | OK | 1 | 2 |
+| custom-elements/state/state-css-selector-nth-of.html | OK | 3 | 0 |
 | custom-elements/state/state-css-selector-shadow-dom.html | ERROR | 0 | 0 |
-| custom-elements/state/state-css-selector.html | OK | 5 | 5 |
-| custom-elements/state/state-pseudo-class.html | OK | 5 | 3 |
+| custom-elements/state/state-css-selector.html | OK | 10 | 0 |
+| custom-elements/state/state-pseudo-class.html | OK | 8 | 0 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html | OK | 0 | 11 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html | OK | 0 | 11 |
 | custom-elements/upgrading.html | EXCLUDED (requires-script-execution: the elements upgraded are ones the parser created around the script that defines them) | 0 | 0 |
 | custom-elements/upgrading/Document-importNode-customized-builtins.html | EXCLUDED (customized built-ins: importing an element with an is value) | 0 | 0 |
 | custom-elements/upgrading/Document-importNode.html | OK | 2 | 0 |
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | EXCLUDED (customized built-ins: cloning an element with an is value) | 0 | 0 |
-| custom-elements/upgrading/Node-cloneNode.html | OK | 5 | 4 |
+| custom-elements/upgrading/Node-cloneNode.html | OK | 6 | 3 |
 | custom-elements/upgrading/upgrade-custom-element-error-event.html | EXCLUDED (requires-browsing-context: the failure is counted as an error event at the window) | 0 | 0 |
 | custom-elements/upgrading/upgrading-enqueue-reactions.html | OK | 0 | 5 |
 | custom-elements/upgrading/upgrading-parser-created-element.html | EXCLUDED (requires-script-execution: the element under test is one the parser created around a script it ran) | 0 | 0 |
@@ -1693,10 +1693,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Shouldn't be able to set unsigned properties on a HTMLCollection (non-strict mode): assert_equals: expected (undefined) undefined but got (string) "foopy"
 - Shouldn't be able to set unsigned properties on a HTMLCollection (strict mode): assert_throws_js: function "function() {
-
-### dom/nodes/Element-closest.html
-
-- Element.closest with context node 'test11' and selector ':invalid': assert_equals: :invalid expected "test2" but got ""
 
 ### dom/nodes/Element-getElementsByTagName.html
 
@@ -1793,10 +1789,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/nodes/moveBefore/nonce.html
 
 - Element nonce content attribute is not cleared after move: assert_equals: expected "" but got "8IBTHwOdqNKAWeKl7plt8g=="
-
-### dom/nodes/moveBefore/pointer-events.html
-
-- Pointer capture should not be released when moving: promise_test: Unhandled rejection with value: object "NotSupportedError: Pointer capture is not implemented"
 
 ### dom/nodes/moveBefore/preserve-render-blocking-style.html
 
@@ -1895,11 +1887,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/events/Event-dispatch-bubbles-false.html
 
-- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-bubbles-true.html
 
-- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-click.html
 
@@ -1963,9 +1955,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### selection/bidi/modify-extend-by-character.html
 
 - RTL text in RTL paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
-- RTL text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 11
+- RTL text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 0
 - RTL text in LTR paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
-- RTL text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 10
+- RTL text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 0
 - LTR-RTL context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 11 but got 7
 - LTR-RTL context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 4 but got 8
 - RTL-LTR context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 14 but got 10
@@ -1976,9 +1968,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### selection/bidi/modify-move-by-character.html
 
 - RTL text in RTL paragraph: move right 2 chars: assert_equals: expected 2 but got 6
-- RTL text in RTL paragraph: move left 2 chars: assert_equals: expected 4 but got 11
+- RTL text in RTL paragraph: move left 2 chars: assert_equals: expected 4 but got 0
 - RTL text in LTR paragraph: move right 2 chars: assert_equals: expected 2 but got 6
-- RTL text in LTR paragraph: move left 2 chars: assert_equals: expected 4 but got 10
+- RTL text in LTR paragraph: move left 2 chars: assert_equals: expected 4 but got 0
 - LTR-RTL context in LTR paragraph: move right 3 chars: assert_equals: expected 11 but got 7
 - LTR-RTL context in LTR paragraph: move left 3 chars: assert_equals: expected 4 but got 8
 - RTL-LTR context in LTR paragraph: move right 3 chars: assert_equals: expected 14 but got 10
@@ -1988,53 +1980,37 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/bidi/modify.tentative.html
 
-- RTL text with left direction in ltr context: assert_equals: expected 0 but got 11
-- RTL+LTR text with left direction in ltr context: assert_equals: expected 0 but got 10
-- LTR+RTL text with left direction in ltr context: assert_equals: expected 0 but got 22
-- LTR+RTL+LTR text with left direction in ltr context: assert_equals: expected 0 but got 22
-- RTL+LTR+RTL text with left direction in ltr context: assert_equals: expected 0 but got 34
 - LTR text with left direction in rtl context: assert_equals: expected 11 but got 0
-- RTL text with left direction in rtl context: assert_equals: expected 10 but got 11
-- RTL+LTR text with left direction in rtl context: assert_equals: expected 22 but got 10
-- LTR+RTL+LTR text with left direction in rtl context: assert_equals: expected 34 but got 22
-- RTL+LTR+RTL text with left direction in rtl context: assert_equals: expected 33 but got 34
+- RTL text with left direction in rtl context: assert_equals: expected 10 but got 0
+- RTL+LTR text with left direction in rtl context: assert_equals: expected 22 but got 0
+- LTR+RTL text with left direction in rtl context: assert_equals: expected 22 but got 0
+- LTR+RTL+LTR text with left direction in rtl context: assert_equals: expected 34 but got 0
+- RTL+LTR+RTL text with left direction in rtl context: assert_equals: expected 33 but got 0
 - LTR text with right direction in rtl context: assert_equals: expected 0 but got 11
 - RTL text with right direction in rtl context: assert_equals: expected 0 but got 10
 - RTL+LTR text with right direction in rtl context: assert_equals: expected 0 but got 22
 - LTR+RTL text with right direction in rtl context: assert_equals: expected 0 but got 22
 - LTR+RTL+LTR text with right direction in rtl context: assert_equals: expected 0 but got 34
 - RTL+LTR+RTL text with right direction in rtl context: assert_equals: expected 0 but got 33
-- RTL text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 11
-- RTL+LTR text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 10
-- LTR+RTL text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 22
-- LTR+RTL+LTR text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 22
-- RTL+LTR+RTL text with left direction in ltr context (which was previously rtl): assert_equals: expected 0 but got 34
 
 ### selection/caret-position-should-be-correct-while-moveup-movedown.html
 
-- Caret position should be correct in moving up horizontal div when selection was right to left with line granularity: assert_equals: expected 0 but got 5
-- Caret position should be correct in moving down horizontal div when selection was left to right with line granularity: assert_equals: expected 5 but got 0
-- Caret position should be correct in moving down horizontal div when selection was right to left with line granularity: assert_equals: expected Text node "text2" but got Text node "
+- Caret position should be correct in moving up horizontal div when selection was left to right with line granularity: assert_equals: expected 5 but got 0
+- Caret position should be correct in moving down horizontal div when selection was right to left with line granularity: assert_equals: expected 0 but got 5
 - Caret position should be correct in moving up horizontal div when selection was left to right with paragraph granularity: assert_true: expected true got false
 - Caret position should be correct in moving up horizontal div when selection was right to left with paragraph granularity: assert_true: expected true got false
 - Caret position should be correct in moving down horizontal div when selection was left to right with paragraph granularity: assert_true: expected true got false
 - Caret position should be correct in moving down horizontal div when selection was right to left with paragraph granularity: assert_true: expected true got false
-- Caret position should be correct in move right with line granularity for vertical-lr div when selection was top to bottom: assert_equals: expected Text node "
 - Caret position should be correct in move right with line granularity for vertical-lr div when selection was bottom to top: assert_equals: expected 7 but got 12
-- Caret position should be correct in move left with line granularity for vertical-lr div when selection was top to bottom: assert_equals: expected 12 but got 8
-- Caret position should be correct in move left with line granularity for vertical-lr div when selection was bottom to top: assert_equals: expected 7 but got 8
+- Caret position should be correct in move left with line granularity for vertical-lr div when selection was top to bottom: assert_equals: expected 12 but got 7
 - Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
 - Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
 - Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
 - Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
-- Caret position should be correct in move left with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected Text node "
 - Caret position should be correct in move left with line granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
-- Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 8
-- Caret position should be correct in move right with line granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 8
-- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected Text node "
+- Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 7
 - Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
-- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 8
-- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 8
+- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 7
 
 ### selection/contenteditable/collapse.html
 
@@ -2099,22 +2075,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 1)", "(#text \" \", 1)", "(<div contenteditable=\"\">, 0)", "(#text \" \", 0)"]
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \" \", 0)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
 
-### selection/contenteditable/modify.tentative.html
-
-- Selection.modify() must not select outside of the host: assert_equals: expected Element node <div contenteditable="" id="host">Editable</div> but got Element node <div id="inlinehosts">
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: prefix only: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: standalone: assert_equals: focusNode should be the text node expected Text node "Editable" but got Text node "Editable"
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusNode should be the text node expected Text node "able" but got Text node ": Suffix"
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node "Editable"
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node ":
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusNode should be the text node expected Text node "Edit" but got Text node ": Suffix"
-
 ### selection/extend-selection-backward-on-input.html
 
 - Should not crash if block node is in an inline node and block_flow is a pseudo node: execCommand is not implemented
@@ -2125,25 +2085,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/modify-line-flex-column.tentative.html
 
-- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
-- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
+- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
 ### selection/modify-line-flex-row.tentative.html
 
-- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
-- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
+- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
 ### selection/modify-line-grid-basic.tentative.html
 
-- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
-- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\n  Two\n  Th"
-
-### selection/modify.tentative.html
-
-- Jump <br> forward: assert_equals: expected 0 but got 1
-- Jump <br> backward: assert_equals: expected 3 but got 2
-- Jump <br> forward which follows a linefeed: assert_equals: expected 0 but got 5
-- Jump <br> backward which follows a linefeed: assert_equals: expected 4 but got 3
+- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
 ### selection/move-paragraph-cross-editing-boundary.tentative.html
 
@@ -2157,16 +2110,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/script-and-style-elements.html
 
-- Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got "\n#not_included{}\n\n  style { display:block; color: green; }\n  script { color: blue; }\n\nfunction not_included(){}\n\nfunction test_block_script() {\n  let pre = document.createElement(\"pre\");\n  pre.append(document.createTextNode(\"PASS\"));\n  document.getElementById(\"p1\").append(pre);\n}\n\nPASS"
-
-### selection/selection-content-visibility-hidden.html
-
-- Text with content-visibility: hidden is not selected: assert_equals: Text with content-visibility: hidden should not be selected expected "" but got "This is hidden text.\n\n  \n    promise_test(async t => {\n      const range = document.createRange();\n      range.selectNodeContents(document.body);\n      const selection = window.getSelection();\n      selection.addRange(range);\n\n      const selectedText = selection.toString().trim();\n      assert_equals(selectedText, '', 'Text with content-visibility: hidden should not be selected');\n    }, 'Text with content-visibility: hidden is not selected');"
-
-### selection/selection-modify-extend-word-generated-content.html
-
-- extending selection from middle of first word of the middle line shouldn't extend the range to the previous line: assert_in_array: The start container should be in the middle line value Text node "previous line" not in array [Element node <p id="middleLine">middle line</p>, Text node "middle line"]
-- extending selection from middle of last word of the middle line shouldn't extend the range to the next line: assert_in_array: The end container should be in the middle line value Text node "last line" not in array [Element node <p id="middleLine">middle line</p>, Text node "middle line"]
+- Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got "PASS"
 
 ### selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html
 
@@ -2218,16 +2162,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/toString-user-select-none.html
 
-- Selection.toString() excludes basic user-select: none content: assert_equals: Basic user-select: none content should be excluded expected "ac" but got "\n    abc\n  "
-- Selection.toString() excludes nested user-select: none content: assert_equals: Nested user-select: none content should be excluded expected "start  end" but got "\n    start unselectable nested\n    text end\n  "
-- Selection.toString() includes selectable children in unselectable container: assert_equals: Selectable children should be included even in unselectable container expected "selectabletext" but got "\n    selectable unselectable\n    text\n  "
+- Selection.toString() excludes basic user-select: none content: assert_equals: Basic user-select: none content should be excluded expected "ac" but got "\n    ac\n  "
+- Selection.toString() excludes nested user-select: none content: assert_equals: Nested user-select: none content should be excluded expected "start  end" but got "\n    start  end\n  "
+- Selection.toString() includes selectable children in unselectable container: assert_equals: Selectable children should be included even in unselectable container expected "selectabletext" but got ""
 
 ### shadow-dom/Document-caretPositionFromPoint.tentative.html
 
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location: caretPositionFromPoint is not implemented
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: The font loading API is not implemented"
-- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: The font loading API is not implemented"
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
+- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: caretPositionFromPoint is not implemented
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: caretPositionFromPoint is not implemented
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: caretPositionFromPoint is not implemented
@@ -2354,10 +2298,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Focus navigation should skip over other menuitems in menubars.: assert_equals: Focus should move forward from before to A expected Element node <menuitem id="A" command="toggle-menu" commandfor="more">... but got Element node <button id="middle">middle</button>
 
-### shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html
-
-- Calling blur() on shadow host with delegatesFocus should remove the focus.: assert_equals: expected Element node <body><div id="host">
-
 ### shadow-dom/focus/click-focus-delegatesFocus-click.html
 
 - click on the host with delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
@@ -2377,7 +2317,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Clicking on non-focusable slot inside focusable div will make the flat-tree focusable ancestor get focused: assert_equals: expected Element node <div id="normalDiv" tabindex="0"><span id="normalSpan">Te... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
 - Select on non-focusable slot inside focusable div will select text: assert_greater_than: expected a number greater than 0 but got 0
-- Select on non-focusable non-editable slot in a contenteditable shadow DOM and inside focusable div will select text: assert_equals: expected Element node <div id="container" contenteditable="true"><span id="slot... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
+- Select on non-focusable non-editable slot in a contenteditable shadow DOM and inside focusable div will select text: assert_equals: focus is on contenteditable container only expected null but got Element node <div id="shadowDiv" tabindex="0"><slot></slot></div>
 
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
@@ -2422,14 +2362,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Text node fallback should be cleared in a subsequently layout: assert_equals: Fallback content should not be rendered expected 0 but got 1
 - Element fallback should be cleared in a subsequent layout: assert_equals: Fallback content should not be rendered expected 0 but got 1
 
-### shadow-dom/leaktests/get-elements.html
-
-- getElementsByName() should not leak nodes in shadow tree: Cannot read properties of undefined (reading 'getAttribute')
-
-### shadow-dom/leaktests/html-collection.html
-
-- document.all should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-
 ### shadow-dom/offsetParent-across-shadow-boundaries.html
 
 - offsetParent must return the fixed position containing block of an element when the context object is assigned to a slot within a fixed containing block in shadow tree of open mode: assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got null
@@ -2439,29 +2371,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html
 
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: assert_equals: expected 38 but got 10
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: assert_equals: expected 38 but got 30
 - Verifies that HTMLElement.offsetLeft accounts for shadow boundaries.: assert_equals: expected 8 but got 0
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: assert_equals: expected 88 but got 20
-
-### shadow-dom/scroll-restore-shadow.html
-
-- Scroll position restore on shadow tree: assert_equals: scrollTop 1 is reasonable expected 100 but got 0
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: assert_equals: expected 88 but got 80
 
 ### shadow-dom/slotchange-customelements.html
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
 
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html
+### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
 
-- Elements in a shadow tree should not be accessible from owner document's "all" attribute.: Cannot read properties of undefined (reading 'length')
+- A_08_02_03_T01: Test timed out
 
 ### custom-elements/CustomElementRegistry-getName.html
 
 - customElements.getName returns the name of the entry with the given customized built in constructor when there is a matching entry.: A customized built-in element is not implemented here
-
-### custom-elements/CustomElementRegistry.html
-
-- customElements.define must not throw when defining another custom element in a different global object during Get(constructor, "prototype"): assert_true: expected true got false
 
 ### custom-elements/Document-createElement.html
 
@@ -2521,10 +2445,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html
 
 - Adopting an element with adoptingCallback while it has a connectedCallback in its custom element reaction queue must result in connectedCallback getting invoked before the adoption completes: assert_array_equals: lengths differ, expected array ["begin", "connected", "adopted", "end"] length 4, got ["adopted", "connected", "begin", "adopted", "end"] length 5
-
-### custom-elements/form-associated/ElementInternals-form.html
-
-- ElementInternals.form should return the target element's form owner: assert_equals: expected (undefined) undefined but got (object) Element node <form id="custom-form">
 
 ### custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html
 
@@ -2591,16 +2511,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/form-associated/ElementInternals-validation.html
 
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
-- Custom control affects validation at the owner form: assert_equals: expected 3 but got 2
-- Custom control affects :valid :invalid for FORM and FIELDSET: assert_true: expected true got false
-
-### custom-elements/form-associated/disabled-delegatesFocus.html
-
-- Focus events fire on disabled form-associated custom elements with delegatesFocus: assert_true: Focus event fired on custom control expected true got false
 
 ### custom-elements/form-associated/fieldset-elements.html
 
-- Form associated custom elements should work with fieldset.elements: Cannot read properties of undefined (reading 'elements')
+- Form associated custom elements should work with fieldset.elements: assert_array_equals: The items in the collection must be children of the inner fieldset element. lengths differ, expected array [Element node <custom-input-parser name="custom-3">
 
 ### custom-elements/form-associated/focusability.html
 
@@ -2608,19 +2522,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/form-associated-callback.html
 
-- Associate by parser, customized at element creation: assert_equals: fieldset.elements expected (object) Element node <pre-defined id="pd1"></pre-defined> but got (undefined) undefined
+- Associate by parser, customized at element creation: assert_equals: expected 2 but got 0
 - Parsed, connected, then upgraded: assert_equals: form.elements.length expected 3 but got 2
 
 ### custom-elements/form-associated/form-disabled-callback.html
 
 - A disabled form-associated custom element should not provide an entry for it: FormData constructor: Argument 1 could not be converted to: undefined.
-- A disabled form-associated custom element should not submit an entry for it: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'nextSibling')"
+- A disabled form-associated custom element should not submit an entry for it: Test timed out
 
 ### custom-elements/form-associated/form-elements-namedItem.html
 
-- Form associated custom elements should work with document.forms.elements.namedItem(): Cannot read properties of undefined (reading 'elements')
-- Form associated custom elements should work with document.forms.elements.namedItem() after upgrading: Cannot read properties of undefined (reading 'elements')
-- Form associated custom elements should work with document.forms.elements.namedItem() after updating the name attribute: Cannot read properties of undefined (reading 'elements')
+- Form associated custom elements should work with document.forms.elements.namedItem() after upgrading: assert_equals: Single button should be returned after upgrading expected (object) Element node <custom-button id="custom-4" name="upgrade"></custom-button> but got (undefined) undefined
+- Form associated custom elements should work with document.forms.elements.namedItem() after updating the name attribute: assert_array_equals: Repeated names should be contained in RadioNodeList, in tree order after upgrading lengths differ, expected array [Element node <custom-input id="custom-2" name="group"></custom-input>, Element node <custom-input id="custom-3" name="group"></custom-input>, Element node <custom-input id="custom-5" name="group" form="custom-for..., Element node <custom-button id="custom-6" name="group" form="custom-fo...] length 4, got object "[object RadioNodeList]" length 3
 
 ### custom-elements/form-associated/form-reset-callback.html
 
@@ -2684,20 +2597,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/reactions/Document.html
 
 - importNode on Document must construct a new custom element when importing a custom element from a template: assert_array_equals: lengths differ, expected array [] length 0, got ["constructed"] length 1
-- adoptNode on Document must enqueue an adopted reaction when importing a custom element: assert_array_equals: lengths differ, expected array ["adopted"] length 1, got [] length 0
-- execCommand on Document must enqueue a disconnected reaction when deleting a custom element from a contenteditable element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-- title on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-- body on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- execCommand on Document must enqueue a disconnected reaction when deleting a custom element from a contenteditable element: promise_test: Unhandled rejection with value: object "NotSupportedError: execCommand is not implemented"
+- body on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
 - body on Document must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
-- open on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- write on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- open on Document must enqueue disconnectedCallback when removing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- write on Document must enqueue disconnectedCallback when removing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
 - write on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
-- writeln on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- writeln on Document must enqueue disconnectedCallback when removing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
 - writeln on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
-
-### custom-elements/reactions/HTMLAnchorElement.html
-
-- text on HTMLAnchorElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
 
 ### custom-elements/reactions/HTMLElement.html
 
@@ -2710,47 +2617,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/reactions/HTMLOptionsCollection.html
 
-- length on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
 - The indexed setter on HTMLOptionsCollection must enqueue connectedCallback when inserting a custom element: assert_equals: expected 1 but got 0
-- The indexed setter on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-- add on HTMLOptionsCollection must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
-- remove on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-
-### custom-elements/reactions/HTMLOutputElement.html
-
-- value on HTMLOutputElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- defaultValue on HTMLOutputElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- The indexed setter on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_equals: expected 0 but got 1
 
 ### custom-elements/reactions/HTMLSelectElement.html
 
-- length on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
 - The indexed setter on HTMLSelectElement must enqueue connectedCallback when inserting a custom element: assert_equals: expected 1 but got 0
-- The indexed setter on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-- add on HTMLSelectElement must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
-- remove on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
-
-### custom-elements/reactions/HTMLTableElement.html
-
-- caption on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteCaption() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- tHead on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteTHead() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- tFoot on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteTFoot() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteRow() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-
-### custom-elements/reactions/HTMLTableRowElement.html
-
-- deleteCell() on HTMLTableRowElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-
-### custom-elements/reactions/HTMLTableSectionElement.html
-
-- deleteRow() on HTMLTableSectionElement on thead must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- deleteRow() on HTMLTableSectionElement on tfoot must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-
-### custom-elements/reactions/HTMLTitleElement.html
-
-- text on HTMLTitleElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
+- The indexed setter on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_equals: expected 0 but got 1
 
 ### custom-elements/reactions/Range.html
 
@@ -2906,7 +2779,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Cloning a custom element candidate with null regsitry should create an element with null registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - HTML parser should create a custom element with null registry if customelementregistry is set: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - Cloning a custom element with null regsitry should create an element with null registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Setting customelementregistry content attribute during constructor should not make it use null registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Setting customelementregistry content attribute during constructor should not make it use null registry: assert_equals: expected object "[object CustomElementRegistry]" but got null
 - Body with customelementregistry attribute during initial parse should have null registry and propagate to children: assert_equals: body should have null registry expected null but got object "[object CustomElementRegistry]"
 - Custom element candidate child of body with customelementregistry should have null registry during initial parse: assert_equals: custom element candidate child of body with customelementregistry should have null registry expected null but got object "[object CustomElementRegistry]"
 - Descendants of body with customelementregistry should all have null registry during initial parse: assert_equals: div child should have null registry expected null but got object "[object CustomElementRegistry]"
@@ -3021,25 +2894,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Serializing a null registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
 - Serializing a scoped registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
 
-### custom-elements/state/state-css-selector-nth-of.html
-
-- state selector has influence on nth-of when state is applied: assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-- style is invalided on clear(): assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-
-### custom-elements/state/state-css-selector.html
-
-- state selector has influence when state is applied: assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-- state selector influences siblings when state is applied: assert_equals: expected "rgb(0, 0, 255)" but got "rgb(255, 0, 0)"
-- state selector influences has() when state is applied: assert_equals: expected "rgb(0, 255, 255)" but got "rgb(0, 0, 0)"
-- states added multiple times counts as one: assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-- style is invalided on clear(): assert_equals: expected "rgb(0, 255, 0)" but got "rgb(255, 0, 0)"
-
-### custom-elements/state/state-pseudo-class.html
-
-- :state(foo) serialization: Cannot read properties of undefined (reading 'selectorText')
-- :state(foo) and ::part(): assert_equals: :state() matching should be case-sensitive expected "0" but got "0.5"
-- :state(foo) and :host(): assert_equals: expected "dotted" but got "solid"
-
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html
 
 - document.open() must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
@@ -3070,7 +2924,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/upgrading/Node-cloneNode.html
 
-- Node.prototype.cloneNode(false) must be able to clone a custom element inside an iframe: assert_true: expected true got false
 - Node.prototype.cloneNode(true) must be able to clone a descendent custom element: promise_test: Unhandled rejection with value: object "TypeError: Right-hand side of 'instanceof' is not an object"
 - HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: assert_equals: expected "TypeError" but got "InvalidStateError"
 - HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: assert_equals: expected "TypeError" but got "InvalidStateError"

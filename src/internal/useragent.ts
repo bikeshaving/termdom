@@ -161,6 +161,9 @@ export const TEXTAREA_UA_STYLES = `
 export const TEXT_CONTROL_UA_STYLES = `
 	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	[part="placeholder"] { color: #808080; }
+	[part="label"] { white-space: pre; }
+	[part="label"]::before { content: "[ "; }
+	[part="label"]::after { content: " ]"; }
 `;
 
 // The disclosure flips the content container's display inline from
