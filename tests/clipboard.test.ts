@@ -231,8 +231,8 @@ test("readText rejects when the terminal does not answer", async () => {
 	dom.dispose();
 });
 
-test("navigator.userActivation reports the gate the clipboard asks about", async () => {
-	const {proc, dom} = await mount();
+test("navigator.userActivation reports transient activation, which outlasts the gesture", async () => {
+	const {proc, raw, dom} = await mount();
 	const activation = dom.window.navigator.userActivation;
 	expect(activation.hasBeenActive).toBe(false);
 	expect(activation.isActive).toBe(false);
@@ -242,9 +242,15 @@ test("navigator.userActivation reports the gate the clipboard asks about", async
 	});
 	await send(proc, "x");
 	expect(duringKeydown).toEqual([true, true]);
-	// The gesture is the dispatch, and the dispatch is over.
-	expect(activation.isActive).toBe(false);
+	// Activation lasts a moment past the dispatch, as HTML's does. The
+	// clipboard's gate is the dispatch itself, and that is over.
+	expect(activation.isActive).toBe(true);
 	expect(activation.hasBeenActive).toBe(true);
+	const error = await rejection(
+		dom.window.navigator.clipboard.writeText("late"),
+	);
+	expect(error.name).toBe("NotAllowedError");
+	expect(raw()).not.toContain("\x1b]52;c;");
 	dom.dispose();
 });
 

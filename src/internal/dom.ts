@@ -33326,8 +33326,10 @@ export class Window extends EventTarget {
 					get hasBeenActive(): boolean {
 						return everActivatedDocuments.has(document);
 					},
+					// HTML's transient activation, which outlasts the gesture by
+					// a moment. The clipboard asks the narrower question.
 					get isActive(): boolean {
-						return isUserActive(document);
+						return hasTransientActivation(document);
 					},
 				},
 			} as unknown as Navigator;
