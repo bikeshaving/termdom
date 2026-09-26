@@ -10940,20 +10940,31 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	// Reveals the element: every scroll box between it and the document
 	// scrolls it into view, and so does the screen. A headless document shows
-	// nothing, so there is nothing to reveal. The options are ignored; every
-	// move is the minimal one, block "nearest".
+	// nothing, so there is nothing to reveal. As in CSSOM View, true means
+	// block "start", false block "end", and a dictionary's block defaults to
+	// "start" and its inline to "nearest".
 	scrollIntoView: {
-		value(this: HTMLElement): void {
+		value(
+			this: HTMLElement,
+			arg?: boolean | globalThis.ScrollIntoViewOptions,
+		): void {
+			let block: ScrollLogicalPosition = "start";
+			let inline: ScrollLogicalPosition = "nearest";
+			if (arg === false) {
+				block = "end";
+			} else if (typeof arg === "object" && arg !== null) {
+				block = arg.block ?? "start";
+				inline = arg.inline ?? "nearest";
+			}
 			const attached = getAttachedDocument(this);
 			if (attached === undefined || !this.isConnected) {
 				return;
 			}
 			flushLayout(this);
-			attached[kLayout].revealInScrollPorts(this);
+			attached[kLayout].revealInScrollPorts(this, block, inline);
 			// The scroll boxes around the element have already revealed it
 			// within themselves. What remains is the document scroll, which
-			// shows [scrollTop, scrollTop + region). Move it the minimal
-			// amount, the standard block: "nearest" behavior. The rect is
+			// shows [scrollTop, scrollTop + region). The rect is
 			// document-relative, so it compares directly against the document
 			// scroll offset.
 			const rect = attached[kLayout].getRect(this);
@@ -10962,12 +10973,17 @@ Object.defineProperties(HTMLElement.prototype, {
 			}
 			const regionHeight = getScrollingRegionHeight(this[kDocument]);
 			const top = attached[kScreen].scrollTop;
-			if (rect.top < top) {
-				attached[kScreen].scrollTo(rect.top);
-				void attached[kRender]();
-			} else if (rect.bottom > top + regionHeight) {
-				attached[kScreen].scrollTo(rect.bottom - regionHeight);
-				void attached[kRender]();
+			const delta = Math.round(
+				attached[kLayout].alignmentDelta(
+					rect.top,
+					rect.bottom,
+					top,
+					top + regionHeight,
+					block,
+				),
+			);
+			if (delta !== 0) {
+				scrollDocumentTo(this[kDocument], top + delta);
 			}
 		},
 		configurable: true,
@@ -25995,8 +26011,7 @@ function setScrollOffset(
 	}
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
-			attached[kScreen].scrollTo(Number(value));
-			void attached[kRender]();
+			scrollDocumentTo(element[kDocument], Number(value));
 		}
 		return;
 	}
@@ -26048,6 +26063,7 @@ export function runScrollSteps(document: globalThis.Document): void {
 	if (top !== (reportedDocumentScrollTop.get(attached) ?? 0)) {
 		reportedDocumentScrollTop.set(attached, top);
 		dispatchAsUserAgent(attached, new Event("scroll", {bubbles: true}));
+		awaitScrollEnd(attached, attached);
 	}
 	const pending = pendingScrollTargets.get(attached);
 	if (pending === undefined || pending.size === 0) {
@@ -26057,7 +26073,41 @@ export function runScrollSteps(document: globalThis.Document): void {
 	pending.clear();
 	for (const target of targets) {
 		dispatchAsUserAgent(target, new Event("scroll"));
+		awaitScrollEnd(attached, target);
 	}
+}
+
+// A scroll ends when nothing has scrolled for a moment. A wheel's ticks
+// arrive a few frames apart, so each one restarts the wait, and the
+// gesture ends once.
+const SCROLL_END_MS = 100;
+
+const scrollEnds = new WeakMap<
+	Document,
+	{targets: Set<Document | Element>; timer: ReturnType<typeof setTimeout>}
+>();
+
+function awaitScrollEnd(document: Document, target: Document | Element): void {
+	const waiting = scrollEnds.get(document);
+	if (waiting !== undefined) {
+		clearTimeout(waiting.timer);
+	}
+	const targets = waiting?.targets ?? new Set<Document | Element>();
+	targets.add(target);
+	const timer = setTimeout(() => {
+		scrollEnds.delete(document);
+		if (getAttachedDocument(document) === undefined) {
+			return;
+		}
+		for (const ended of targets) {
+			if (ended === document) {
+				dispatchAsUserAgent(ended, new Event("scrollend", {bubbles: true}));
+			} else if (ended.isConnected) {
+				dispatchAsUserAgent(ended, new Event("scrollend"));
+			}
+		}
+	}, SCROLL_END_MS);
+	scrollEnds.set(document, {targets, timer});
 }
 
 // The one box whose vertical scroll this frame can express as a scroll shift,
@@ -32300,6 +32350,34 @@ export function getFocusedElement(
 	return active;
 }
 
+/**
+ * Moves the document scroll, clamped at once to the rows the document
+ * has, as a browser clamps: a script that scrolls past the end reads back
+ * the end, not the number it asked for. Fullscreen hides the document
+ * scroll, which keeps whatever it is given.
+ */
+export function scrollDocumentTo(
+	document: globalThis.Document,
+	row: number,
+): void {
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached === undefined) {
+		return;
+	}
+	let next = Number.isFinite(row) ? Math.max(0, Math.round(row)) : 0;
+	if (getFullscreenElement(attached) === null) {
+		flushLayout(document);
+		const height = attached[kLayout].documentPaintHeight();
+		const region = Math.min(height, attached[kScreen].rows);
+		next = Math.min(next, Math.max(0, height - region));
+	}
+	if (next === attached[kScreen].scrollTop) {
+		return;
+	}
+	attached[kScreen].scrollTo(next);
+	void attached[kRender]();
+}
+
 // The rows the document scroll shows. Fullscreen owns the screen from row
 // zero, and its element has left the flow, which then measures next to
 // nothing.
@@ -33946,8 +34024,7 @@ export class Window extends EventTarget {
 		const top = typeof xOrOptions === "object" && xOrOptions !== null
 			? (xOrOptions.top ?? attached[kScreen].scrollTop)
 			: (y ?? 0);
-		attached[kScreen].scrollTo(top);
-		void attached[kRender]();
+		scrollDocumentTo(this.document, top);
 	}
 
 	scroll(options?: globalThis.ScrollToOptions): void;
@@ -33970,8 +34047,7 @@ export class Window extends EventTarget {
 		const top = typeof xOrOptions === "object" && xOrOptions !== null
 			? (xOrOptions.top ?? 0)
 			: (y ?? 0);
-		attached[kScreen].scrollTo(attached[kScreen].scrollTop + top);
-		void attached[kRender]();
+		scrollDocumentTo(this.document, attached[kScreen].scrollTop + top);
 	}
 
 	// The callback runs at the start of the next frame, before that

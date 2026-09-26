@@ -21,7 +21,7 @@ window's legacy named access to elements by id.
 - Files whose harness completed: 696
 - Files whose harness did not complete: 66
 - Subtests passed: 99797
-- Subtests failed: 788
+- Subtests failed: 789
 
 ## Exclusions
 
@@ -1418,7 +1418,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/events/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 0 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 1 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html | REFTEST | 0 | 0 |
@@ -2378,6 +2378,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### shadow-dom/slotchange-customelements.html
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
+
+### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
+
+- A_08_02_03_T01: Test timed out
 
 ### custom-elements/CustomElementRegistry-getName.html
 

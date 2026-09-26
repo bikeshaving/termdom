@@ -124,7 +124,7 @@ test("scrollIntoView still brings an off-screen element into view", async () => 
 	await nextFrame(dom);
 
 	const target = dom.document.getElementById("line15")!;
-	target.scrollIntoView();
+	target.scrollIntoView({block: "nearest"});
 	await nextFrame(dom);
 
 	// "nearest" block alignment: the camera moves the minimum amount that
@@ -133,6 +133,12 @@ test("scrollIntoView still brings an off-screen element into view", async () => 
 	const rect = target.getBoundingClientRect();
 	expect(rect.top).toBeGreaterThanOrEqual(0);
 	expect(rect.bottom).toBeLessThanOrEqual(5);
+
+	// With no options the block aligns to the top, as in a browser.
+	dom.window.scrollTo(0, 0);
+	target.scrollIntoView();
+	expect(dom.window.scrollY).toBe(15);
+	expect(target.getBoundingClientRect().top).toBe(0);
 	dom.dispose();
 });
 
@@ -150,5 +156,73 @@ test("an element's own scrollLeft shifts its descendants, distinct from the came
 	// reads scrollLeft live, so the child's box shifts left with no repaint.
 	dom.document.getElementById("s")!.scrollLeft = 3;
 	expect(content.getBoundingClientRect().left).toBe(left0 - 3);
+	dom.dispose();
+});
+
+test("a document scroll past the end reads back the end at once", async () => {
+	const {dom} = makeOverflowingApp();
+	await nextFrame(dom);
+	dom.window.scrollTo(0, 9999);
+	expect(dom.window.scrollY).toBe(15);
+	dom.document.documentElement.scrollTop = -4;
+	expect(dom.window.scrollY).toBe(0);
+	dom.window.scrollBy(0, 100);
+	expect(dom.window.scrollY).toBe(15);
+	dom.dispose();
+});
+
+test("scrollend follows the scroll events once scrolling stops", async () => {
+	const {dom} = makeOverflowingApp();
+	dom.document.body.insertAdjacentHTML(
+		"afterbegin",
+		"<div id=\"box\" style=\"height:3em; overflow-y:auto\">" +
+			"<div>a</div><div>b</div><div>c</div><div>d</div><div>e</div></div>",
+	);
+	await nextFrame(dom);
+	const seen: string[] = [];
+	const box = dom.document.getElementById("box")!;
+	for (const [
+		target,
+		name,
+	] of [[dom.window, "window"], [box, "box"]] as const) {
+		for (const type of ["scroll", "scrollend"]) {
+			target.addEventListener(type, () => seen.push(`${name}:${type}`));
+		}
+	}
+	dom.window.scrollTo(0, 2);
+	box.scrollTop = 1;
+	await nextFrame(dom);
+	box.scrollTop = 2;
+	await nextFrame(dom);
+	expect(seen).toEqual(["window:scroll", "box:scroll", "box:scroll"]);
+	await new Promise((resolve) => setTimeout(resolve, 150));
+	expect(seen.slice(3).sort()).toEqual(["box:scrollend", "window:scrollend"]);
+	dom.dispose();
+});
+
+test("scrollIntoView aligns within a scroll box as asked", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div id=\"box\" style=\"height:3em; overflow-y:auto\">" +
+		Array.from({length: 10}, (_, i) => `<div id="r${i}">row ${i}</div>`)
+			.join("") +
+		"</div>";
+	await nextFrame(dom);
+	const box = dom.document.getElementById("box")!;
+	const row = (i: number) => dom.document.getElementById(`r${i}`)!;
+	row(4).scrollIntoView();
+	expect(box.scrollTop).toBe(4);
+	row(8).scrollIntoView({block: "end"});
+	expect(box.scrollTop).toBe(6);
+	row(5).scrollIntoView({block: "center"});
+	expect(box.scrollTop).toBe(4);
+	row(9).scrollIntoView({block: "nearest"});
+	expect(box.scrollTop).toBe(7);
+	row(8).scrollIntoView({block: "nearest"});
+	expect(box.scrollTop).toBe(7);
+	// The last rows cannot reach the top; the box stops at its end.
+	row(9).scrollIntoView(true);
+	expect(box.scrollTop).toBe(7);
 	dom.dispose();
 });

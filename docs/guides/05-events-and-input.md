@@ -289,7 +289,11 @@ element.scrollIntoView();
 ```
 
 `scroll` fires on the box, or on the document for the document scroll,
-and `window.scrollY` reports the document position. The mouse wheel
+and `scrollend` follows once scrolling stops. `window.scrollY` reports
+the document position, clamped to the end as soon as it is set.
+`scrollIntoView()` aligns the element to the top, as in a browser; pass
+`{block: "nearest"}` to move only as far as it takes to show it, which
+suits a selection moving through a list. The mouse wheel
 moves the innermost scrollable box under the pointer and hands what
 remains to its ancestors, and a `wheel` listener that calls
 `preventDefault()` stops it. How the document's own scroll shares the
