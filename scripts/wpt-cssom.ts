@@ -1,5 +1,6 @@
 /**
- * Run the web-platform-tests css/cssom suite against this engine's CSSOM.
+ * Run the web-platform-tests css/cssom and css/selectors/invalidation suites
+ * against this engine's CSSOM.
  *
  * Each test is a testharness.js document of this engine's own DOM, attached
  * in a window with the engine's CSSOM, which the styles module defines on
@@ -8,8 +9,9 @@
  * global is that window, because nothing here runs a document's scripts on
  * its own.
  *
- * The suite is fetched into .wpt/ on first run and cached. Results are written
- * to docs/cssom-conformance.md.
+ * The suites are fetched into .wpt/ on first run and cached. Results are
+ * written to docs/cssom-conformance.md and
+ * docs/selector-invalidation-conformance.md.
  *
  * Run: bun scripts/wpt-cssom.ts [name-filter]
  */
@@ -26,10 +28,10 @@ import type {
 	TerminalSize,
 } from "../src/internal/exchange.ts";
 import {WPT_COMMIT, WPT_RAW} from "./wpt-ref.ts";
+import {TESTDRIVER_VENDOR} from "./wpt-testdriver.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
-const SUITE = "css/cssom";
 
 /**
  * A test that has not finished in this long is recorded as a timeout.
@@ -41,6 +43,12 @@ const SUITE = "css/cssom";
  * a timeout here is one that never reached even testharness's own limit.
  */
 const TIMEOUT_MS = 15000;
+
+// Everything a file leaves behind: its engines, the frames' engines among
+// them, and the timers its realm set. Each file's are released when it is
+// done. Kept, five hundred documents' worth held gigabytes.
+const fileEngines: TermDOM[] = [];
+const fileTimers = new Set<ReturnType<typeof setTimeout>>();
 
 async function cached(path: string): Promise<string | null> {
 	const file = join(CACHE, path);
@@ -57,13 +65,13 @@ async function cached(path: string): Promise<string | null> {
 	return text;
 }
 
-async function suiteFiles(): Promise<string[]> {
-	const listing = join(CACHE, "listing.json");
+async function suiteFiles(suite: string): Promise<string[]> {
+	const listing = join(CACHE, suite, "listing.json");
 	if (existsSync(listing)) {
 		return JSON.parse(readFileSync(listing, "utf8"));
 	}
 	const response = await fetch(
-		`https://api.github.com/repos/web-platform-tests/wpt/contents/${SUITE}?ref=${WPT_COMMIT}`,
+		`https://api.github.com/repos/web-platform-tests/wpt/contents/${suite}?ref=${WPT_COMMIT}`,
 	);
 	const entries =
 		(await response.json()) as Array<{name: string; type: string}>;
@@ -77,7 +85,7 @@ async function suiteFiles(): Promise<string[]> {
 		)
 		.map((entry) => entry.name)
 		.sort();
-	mkdirSync(CACHE, {recursive: true});
+	mkdirSync(dirname(listing), {recursive: true});
 	writeFileSync(listing, JSON.stringify(names, null, "\t"));
 	return names;
 }
@@ -90,7 +98,7 @@ async function suiteFiles(): Promise<string[]> {
  * or the separate CSSOM View spec. "Hard" is not a reason -- everything else
  * either passes or is a failure this table does not hide.
  */
-const EXCLUSIONS: Record<string, string> = {
+const CSSOM_EXCLUSIONS: Record<string, string> = {
 	// CSSOM View -- a separate spec, hit-testing a rendered box tree.
 	"caretPositionFromPoint-audioVideo.html":
 		"cssom-view: caret position over media elements",
@@ -156,11 +164,21 @@ const EXCLUSIONS: Record<string, string> = {
 		"frames: a style attribute moved between documents",
 };
 
+/** What css/selectors/invalidation asks for that a terminal cannot give. */
+const INVALIDATION_EXCLUSIONS: Record<string, string> = {
+	"fullscreen-pseudo-class-in-has.html":
+		"fullscreen: a terminal document is already the whole screen and has no Fullscreen API",
+	"media-loading-pseudo-classes-in-has.sub.html":
+		"media: nothing loads or plays audio or video in a terminal",
+	"media-pseudo-classes-in-has.html":
+		"media: nothing loads or plays audio or video in a terminal",
+};
+
 /**
  * Failures this engine owns as design, not as gaps. They stay counted in the
  * table; this is what they are and why.
  */
-const DEVIATIONS: Array<[string, string]> = [
+const CSSOM_DEVIATIONS: Array<[string, string]> = [
 	[
 		"getComputedStyle-insets-fixed.html",
 		"CSS transforms are not implemented. A transformed ancestor is the containing block of a fixed box. Every subtest that resolves an inset against `#container-for-fixed` (`transform: scale(1)`) expects that box and gets the viewport, which is the containing block of a fixed box here. That is 216 of the file's 324 subtests. A character grid has no transforms, since cells do not rotate, scale or translate by fractions, so the containing block a transform would establish never exists.",
@@ -191,24 +209,30 @@ interface Outcome {
  * a cell, so the terminal behind it is a grid the same size as the viewport
  * the tests assume. Nothing is written to it: the engine is never attached.
  */
-function mountEngine(html: string, url: string): TermDOM {
+function mountEngine(
+	html: string,
+	url: string,
+	input: ReadableStream<string>,
+	interactive: boolean,
+): TermDOM {
 	const termDOM = new TermDOM({
 		html,
 		url,
 		transport: {
 			cols: 800,
 			rows: 600,
-			readable: new ReadableStream<string>({}, {highWaterMark: 0}),
+			readable: input,
 			writable: new WritableStream<string>({}),
 			resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
 			closed: new Promise<TerminalCloseInfo>(() => {}),
 			ready: Promise.resolve(),
 			colorDepth: "rgb",
-			interactive: false,
+			interactive,
 			sharesScreen: false,
 			close() {},
 		},
 	});
+	fileEngines.push(termDOM);
 	const {window, document} = termDOM;
 
 	// There is no render loop behind this harness, so a frame is the next
@@ -266,8 +290,10 @@ function installFrames(window: Window): void {
 					frame.getAttribute("srcdoc") ??
 					"<!doctype html><html><head></head><body></body></html>",
 					documentURL,
+					new ReadableStream<string>(),
+					false,
 				).window;
-				const realm = createRealm(inner, documentURL);
+				const realm = createRealm(inner);
 				context = {
 					document: inner.document,
 					window: runInContext("globalThis", realm),
@@ -332,24 +358,58 @@ function installFrames(window: Window): void {
 }
 
 /** Resolve a script's src against the suite directory, as a repo path. */
-function resolveScript(src: string): string {
+function resolveScript(src: string, suite: string): string {
 	if (src.startsWith("/")) {
 		return src.slice(1);
 	}
-	return `${SUITE}/${src}`;
+	return `${suite}/${src}`;
 }
 
-async function runFile(file: string): Promise<Outcome> {
-	if (file in EXCLUSIONS) {
-		return {file, harness: "EXCLUDED", subtests: [], error: EXCLUSIONS[file]};
+async function runFile(file: string, suite: Suite): Promise<Outcome> {
+	try {
+		return await runFileIn(file, suite);
+	} finally {
+		for (const timer of fileTimers) {
+			clearTimeout(timer);
+			clearInterval(timer);
+		}
+		fileTimers.clear();
+		for (const engine of fileEngines.splice(0)) {
+			await engine.dispose();
+		}
 	}
-	const html = await cached(`${SUITE}/${file}`);
+}
+
+async function runFileIn(file: string, suite: Suite): Promise<Outcome> {
+	if (file in suite.exclusions) {
+		return {
+			file,
+			harness: "EXCLUDED",
+			subtests: [],
+			error: suite.exclusions[file],
+		};
+	}
+	const html = await cached(`${suite.path}/${file}`);
 	if (html === null) {
 		return {file, harness: "ERROR", subtests: [], error: "not fetched"};
 	}
 
-	const url = `http://web-platform.test/${SUITE}/${file}`;
-	const {window, document} = mountEngine(html, url);
+	const url = `http://web-platform.test/${suite.path}/${file}`;
+	// A file that drives input through testdriver gets an engine attached
+	// to a terminal whose keyboard and mouse are that driver, as the DOM
+	// runner's is. Every other file keeps the unattached engine.
+	const driven = /testdriver\.js/.test(html);
+	let push: (text: string) => void = () => {};
+	const input = new ReadableStream<string>({
+		start(controller) {
+			push = (text) => controller.enqueue(text);
+		},
+	});
+	const engine = mountEngine(html, url, input, driven);
+	if (driven) {
+		await engine.attach();
+	}
+	const {window, document} = engine;
 	documentURL = url;
 	installFrames(window);
 
@@ -385,7 +445,11 @@ async function runFile(file: string): Promise<Outcome> {
 			if (/testharness\.js$/.test(src)) {
 				harnessLoaded = true;
 			}
-			const text = await cached(resolveScript(src));
+			if (/testdriver-vendor\.js$/.test(src)) {
+				sources.push(TESTDRIVER_VENDOR);
+				continue;
+			}
+			const text = await cached(resolveScript(src, suite.path));
 			if (text === null) {
 				return {
 					file,
@@ -396,7 +460,10 @@ async function runFile(file: string): Promise<Outcome> {
 			}
 			sources.push(text);
 		} else if (script.getAttribute("type") === "module") {
-			const flattened = await flattenModule(script.textContent ?? "", file);
+			const flattened = await flattenModule(
+				script.textContent ?? "",
+				suite.path,
+			);
 			if (flattened === null) {
 				return {
 					file,
@@ -417,14 +484,16 @@ async function runFile(file: string): Promise<Outcome> {
 		return {file, harness: "REFTEST", subtests: []};
 	}
 
-	const realm = createRealm(window, url);
+	const realm = createRealm(window);
+	(realm as Record<string, unknown>).__termdomDriverInput = (text: string) =>
+		push(text);
 	try {
 		// One block at global scope for the whole file: the harness and the test
 		// share it exactly as they share a document's script scope. `var` and
 		// function declarations land on the global, where a test that evals a
 		// name finds them; `let` and `const` stay in the file's own scope.
 		runInContext(
-			`{\n${sources.join("\n;\n")}\n;\nadd_completion_callback(__complete);\n}`,
+			`with (__termdomNamedAccess) {\n${sources.join("\n;\n")}\n;\nadd_completion_callback(__complete);\n}`,
 			realm,
 		);
 		// The load event is a task of its own, not the tail of the script that
@@ -485,7 +554,7 @@ function defineAll(
  * engine's, reached across the boundary exactly as a browser's page script
  * reaches the UA's.
  */
-function createRealm(window: Window, url: string): object {
+function createRealm(window: Window): object {
 	// Every name the window carries, own or inherited, enumerable or not: the
 	// DOM and CSSOM interface objects live on Window.prototype and a test reads
 	// them as bare globals. A realm's global is a flat object, so the chain is
@@ -532,22 +601,29 @@ function createRealm(window: Window, url: string): object {
 	// accessors onto the realm, and a getter with no setter refuses a write.
 	defineAll(scope, {
 		document: window.document,
-		location: {
-			href: url,
-			search: "",
-			hash: "",
-			pathname: new URL(url).pathname,
-			origin: new URL(url).origin,
-			toString: () => url,
-		},
+		// The window's own location, on the test's URL. It navigates to a
+		// fragment of the document, which is all a test here asks of it.
+		location: window.location,
 		addEventListener: window.addEventListener.bind(window),
 		removeEventListener: window.removeEventListener.bind(window),
 		dispatchEvent: window.dispatchEvent.bind(window),
 		// Timers and console are the environment's, not the language's, so a
 		// fresh realm has none and testharness.js needs them.
-		setTimeout,
+		// Recorded, so the file's pending timers go when it does.
+		setTimeout: (callback: () => void, delay?: number, ...args: unknown[]) => {
+			const timer = setTimeout(() => {
+				fileTimers.delete(timer);
+				callback(...(args as []));
+			}, delay);
+			fileTimers.add(timer);
+			return timer;
+		},
 		clearTimeout,
-		setInterval,
+		setInterval: (callback: () => void, delay?: number, ...args: unknown[]) => {
+			const timer = setInterval(() => callback(...(args as [])), delay);
+			fileTimers.add(timer);
+			return timer;
+		},
 		clearInterval,
 		queueMicrotask,
 		console,
@@ -556,21 +632,38 @@ function createRealm(window: Window, url: string): object {
 	// its document, and the suite's fixtures read them that way -- `<div
 	// id=target>` and then a bare `target.style`. TermDOM's own window does not
 	// supply those names; that is a documented deviation for authors, and it is
-	// not what these files are testing. This realm stands in for the environment
-	// a test document expects, the way the geometry and matchMedia stand-ins
-	// above do, so the names are here.
-	for (const element of window.document.querySelectorAll("[id]")) {
-		const id = element.getAttribute("id") ?? "";
-		// A name the realm already carries is the realm's -- `document`,
-		// `location`, the CSSOM constructors. An id never takes one of those over.
-		if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) {
-			continue;
-		}
-		if (Object.prototype.hasOwnProperty.call(scope, id)) {
-			continue;
-		}
-		scope[id] = element;
-	}
+	// not what these files are testing. The file's scripts run inside
+	// `with (__termdomNamedAccess)`, and this proxy is that object: a name the
+	// realm does not carry resolves to the element with that id at the moment
+	// of the lookup, so an element a script adds later is as reachable as one
+	// the parser built. An assignment falls through to the realm.
+	const {document} = window;
+	// A `with` scope object must answer `has` for names it cannot enumerate
+	// in advance; only a Proxy can.
+	// eslint-disable-next-line no-restricted-globals
+	scope.__termdomNamedAccess = new Proxy(
+		Object.create(null) as Record<string, unknown>,
+		{
+			has(_target, name): boolean {
+				return (
+					typeof name === "string" &&
+					!(name in scope) &&
+					document.getElementById(name) !== null
+				);
+			},
+			get(_target, name): unknown {
+				return typeof name === "string"
+					? document.getElementById(name)
+					: undefined;
+			},
+			set(_target, name, value): boolean {
+				if (typeof name === "string") {
+					scope[name] = value;
+				}
+				return true;
+			},
+		},
+	);
 	const realm = createContext(scope);
 	// The realm IS the window: a script that writes `window.foo` and later reads
 	// a bare `foo` has to find it.
@@ -600,7 +693,7 @@ function createRealm(window: Window, url: string): object {
  */
 async function flattenModule(
 	source: string,
-	file: string,
+	suite: string,
 ): Promise<string | null> {
 	const imports = [
 		...source.matchAll(/^\s*import\s+[^;]*?from\s*["']([^"']+)["'];?/gm),
@@ -611,12 +704,12 @@ async function flattenModule(
 		const specifier = match[1];
 		const path = specifier.startsWith("/")
 			? specifier.slice(1)
-			: `${SUITE}/${specifier.replace(/^\.\//, "")}`;
+			: `${suite}/${specifier.replace(/^\.\//, "")}`;
 		const text = await cached(path);
 		if (text === null) {
 			return null;
 		}
-		const nested = await flattenModule(text, file);
+		const nested = await flattenModule(text, suite);
 		if (nested === null) {
 			return null;
 		}
@@ -634,125 +727,182 @@ async function flattenModule(
 		.replace(/^\s*export\s*\{[^}]*\};?/gm, "");
 }
 
-const filter = process.argv[2];
-const files = (await suiteFiles()).filter(
-	(file) => !filter || file.includes(filter),
-);
-
-const outcomes: Outcome[] = [];
-for (const file of files) {
-	try {
-		outcomes.push(await runFile(file));
-	} catch (error) {
-		outcomes.push({
-			file,
-			harness: "ERROR",
-			subtests: [],
-			error: (error as Error).message,
-		});
-	}
-	const last = outcomes[outcomes.length - 1];
-	const passed = last.subtests.filter((test) => test.status === 0).length;
-	console.info(
-		`${last.harness.padEnd(8)} ${passed}/${last.subtests.length} ${file}${
-			last.error ? ` -- ${last.error}` : ""
-		}`,
-	);
+interface Suite {
+	path: string;
+	report: string;
+	exclusions: Record<string, string>;
+	deviations: Array<[string, string]>;
+	scope: string;
 }
 
-const all = outcomes.flatMap((outcome) => outcome.subtests);
-const passed = all.filter((test) => test.status === 0);
-const failed = all.filter((test) => test.status !== 0);
-const reftests = outcomes.filter((outcome) => outcome.harness === "REFTEST");
-const excluded = outcomes.filter((outcome) => outcome.harness === "EXCLUDED");
-const brokenFiles = outcomes.filter(
-	(outcome) =>
-		outcome.harness !== "OK" &&
-		outcome.harness !== "REFTEST" &&
-		outcome.harness !== "EXCLUDED",
-);
-
-const lines: string[] = [
-	"# CSSOM conformance: web-platform-tests css/cssom",
-	"",
-	"Generated by `bun scripts/wpt-cssom.ts`.",
-	"",
-	`- Test files in the suite: ${outcomes.length}`,
-	`- Reference tests (scored by pixels, not runnable here): ${reftests.length}`,
-	`- Excluded, each with its reason below: ${excluded.length}`,
-	`- Files whose harness completed: ${
-		outcomes.length - brokenFiles.length - reftests.length - excluded.length
-	}`,
-	`- Files whose harness did not complete: ${brokenFiles.length}`,
-	`- Subtests passed: ${passed.length}`,
-	`- Subtests failed: ${failed.length}`,
-	"",
-	"## Exclusions",
-	"",
-	"A test is excluded only when it asks for something outside CSSOM: a pixel",
-	"comparison, a stylesheet fetched over a network, the WebIDL harness, or the",
-	"separate CSSOM View spec. Everything else either passes or is counted as a",
-	"failure below.",
-	"",
-	"| File | Reason |",
-	"| --- | --- |",
-	...Object.keys(EXCLUSIONS)
-		.sort()
-		.map((file) => `| ${file} | ${EXCLUSIONS[file]} |`),
-	...reftests.map((outcome) =>
-		`| ${outcome.file} | reftest: scored by pixel comparison |`,
-	),
-	"",
-	"## Deliberate deviations",
-	"",
-	"These are failures this engine owns as design. They are counted as",
-	"failures above rather than excluded.",
-	"",
-	...DEVIATIONS.flatMap(([file, reason]) => [`### ${file}`, "", reason, ""]),
-	"## Files",
-	"",
-	"| File | Harness | Passed | Failed |",
-	"| --- | --- | ---: | ---: |",
+const SUITES: Suite[] = [
+	{
+		path: "css/cssom",
+		report: "cssom-conformance.md",
+		exclusions: CSSOM_EXCLUSIONS,
+		deviations: CSSOM_DEVIATIONS,
+		scope: "A test is excluded only when it asks for something outside CSSOM: a pixel\ncomparison, a stylesheet fetched over a network, the WebIDL harness, or the\nseparate CSSOM View spec.",
+	},
+	{
+		path: "css/selectors/invalidation",
+		report: "selector-invalidation-conformance.md",
+		exclusions: INVALIDATION_EXCLUSIONS,
+		deviations: [],
+		scope: "Each test changes the document or an element's state after styles were\nfirst computed, and checks that the styles followed. A test is excluded only\nwhen it needs something no terminal document has.",
+	},
 ];
-for (const outcome of outcomes) {
-	const filePassed = outcome.subtests.filter((test) => test.status === 0);
-	lines.push(
-		`| ${outcome.file} | ${outcome.harness}${
-			outcome.error ? ` (${outcome.error})` : ""
-		} | ${filePassed.length} | ${outcome.subtests.length - filePassed.length} |`,
-	);
-}
 
-lines.push("", "## Failing subtests", "");
-for (const outcome of outcomes) {
-	const fails = outcome.subtests.filter((test) => test.status !== 0);
-	if (fails.length === 0) {
+// A test's promise can reject after its file is scored -- a testdriver
+// action still pending when the harness finished. It belongs to that file,
+// not to the run, which goes on.
+process.on("unhandledRejection", () => {});
+
+const filter = process.argv[2];
+let totalPassed = 0;
+let totalFailed = 0;
+let totalFiles = 0;
+for (const suite of SUITES) {
+	const files = (await suiteFiles(suite.path)).filter(
+		(file) => !filter || `${suite.path}/${file}`.includes(filter),
+	);
+	if (files.length === 0) {
 		continue;
 	}
-	lines.push(`### ${outcome.file}`, "");
-	for (const test of fails) {
-		lines.push(`- ${test.name}: ${(test.message ?? "").split("\n")[0]}`);
-	}
-	lines.push("");
-}
-
-// A filtered run is for looking at one suite, so it reports to the terminal;
-// only a whole run may rewrite the checked-in table.
-if (filter) {
-	for (const outcome of outcomes) {
-		for (const test of outcome.subtests) {
-			if (test.status === 0) {
-				continue;
+	const outcomes = await runSuite(suite, files);
+	const all = outcomes.flatMap((outcome) => outcome.subtests);
+	totalPassed += all.filter((test) => test.status === 0).length;
+	totalFailed += all.filter((test) => test.status !== 0).length;
+	totalFiles += outcomes.length;
+	// A filtered run is for looking at one suite, so it reports to the
+	// terminal; only a whole run may rewrite the checked-in table.
+	if (filter) {
+		for (const outcome of outcomes) {
+			for (const test of outcome.subtests) {
+				if (test.status === 0) {
+					continue;
+				}
+				console.info(
+					`  ${outcome.file} :: ${test.name}: ${test.message ?? ""}`,
+				);
 			}
-			console.info(`  ${outcome.file} :: ${test.name}: ${test.message ?? ""}`);
 		}
+	} else {
+		writeFileSync(
+			join(ROOT, "docs", suite.report),
+			`${renderReport(suite, outcomes).join("\n")}\n`,
+		);
 	}
-} else {
-	writeFileSync(
-		join(ROOT, "docs", "cssom-conformance.md"),
-		`${lines.join("\n")}\n`,
-	);
 }
 console.info(
-	`\n${passed.length} passed, ${failed.length} failed across ${outcomes.length} files`,
+	`\n${totalPassed} passed, ${totalFailed} failed across ${totalFiles} files`,
 );
+
+async function runSuite(suite: Suite, files: string[]): Promise<Outcome[]> {
+	const outcomes: Outcome[] = [];
+	for (const file of files) {
+		try {
+			outcomes.push(await runFile(file, suite));
+		} catch (error) {
+			outcomes.push({
+				file,
+				harness: "ERROR",
+				subtests: [],
+				error: (error as Error).message,
+			});
+		}
+		const last = outcomes[outcomes.length - 1];
+		const passed = last.subtests.filter((test) => test.status === 0).length;
+		console.info(
+			`${last.harness.padEnd(8)} ${passed}/${last.subtests.length} ${suite.path}/${file}${
+				last.error ? ` -- ${last.error}` : ""
+			}`,
+		);
+	}
+	return outcomes;
+}
+
+function renderReport(suite: Suite, outcomes: Outcome[]): string[] {
+	const all = outcomes.flatMap((outcome) => outcome.subtests);
+	const passed = all.filter((test) => test.status === 0);
+	const failed = all.filter((test) => test.status !== 0);
+	const reftests = outcomes.filter((outcome) => outcome.harness === "REFTEST");
+	const excluded = outcomes.filter((outcome) => outcome.harness === "EXCLUDED");
+	const brokenFiles = outcomes.filter(
+		(outcome) =>
+			outcome.harness !== "OK" &&
+			outcome.harness !== "REFTEST" &&
+			outcome.harness !== "EXCLUDED",
+	);
+	const lines: string[] = [
+		`# ${suite.path === "css/cssom" ? "CSSOM" : "Selector invalidation"} conformance: web-platform-tests ${suite.path}`,
+		"",
+		"Generated by `bun scripts/wpt-cssom.ts`.",
+		"",
+		`- Test files in the suite: ${outcomes.length}`,
+		`- Reference tests (scored by pixels, not runnable here): ${reftests.length}`,
+		`- Excluded, each with its reason below: ${excluded.length}`,
+		`- Files whose harness completed: ${
+			outcomes.length - brokenFiles.length - reftests.length - excluded.length
+		}`,
+		`- Files whose harness did not complete: ${brokenFiles.length}`,
+		`- Subtests passed: ${passed.length}`,
+		`- Subtests failed: ${failed.length}`,
+		"",
+		"## Exclusions",
+		"",
+		suite.scope,
+		"Everything else either passes or is counted as a failure below.",
+		"",
+		"| File | Reason |",
+		"| --- | --- |",
+		...Object.keys(suite.exclusions)
+			.sort()
+			.map((file) => `| ${file} | ${suite.exclusions[file]} |`),
+		...reftests.map((outcome) =>
+			`| ${outcome.file} | reftest: scored by pixel comparison |`,
+		),
+		"",
+	];
+	if (suite.deviations.length > 0) {
+		lines.push(
+			"## Deliberate deviations",
+			"",
+			"These are failures this engine owns as design. They are counted as",
+			"failures above rather than excluded.",
+			"",
+			...suite.deviations.flatMap(([file, reason]) => [
+				`### ${file}`,
+				"",
+				reason,
+				"",
+			]),
+		);
+	}
+	lines.push(
+		"## Files",
+		"",
+		"| File | Harness | Passed | Failed |",
+		"| --- | --- | ---: | ---: |",
+	);
+	for (const outcome of outcomes) {
+		const filePassed = outcome.subtests.filter((test) => test.status === 0);
+		lines.push(
+			`| ${outcome.file} | ${outcome.harness}${
+				outcome.error ? ` (${outcome.error})` : ""
+			} | ${filePassed.length} | ${outcome.subtests.length - filePassed.length} |`,
+		);
+	}
+	lines.push("", "## Failing subtests", "");
+	for (const outcome of outcomes) {
+		const fails = outcome.subtests.filter((test) => test.status !== 0);
+		if (fails.length === 0) {
+			continue;
+		}
+		lines.push(`### ${outcome.file}`, "");
+		for (const test of fails) {
+			lines.push(`- ${test.name}: ${(test.message ?? "").split("\n")[0]}`);
+		}
+		lines.push("");
+	}
+	return lines;
+}
