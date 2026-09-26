@@ -184,6 +184,11 @@ function syncUAShadowTree(element: Element): void {
 		kSyncUAShadowTree
 	]?.();
 	stateChanged(element, CONTROL_STATES);
+	// A form and every fieldset around the control are :valid or :invalid
+	// by what they hold, so they are told as well.
+	for (const owner of getValidityOwners(element)) {
+		stateChanged(owner, ["valid", "invalid"]);
+	}
 }
 
 // The single definition of which elements are text controls. Painting, caret
@@ -20846,12 +20851,25 @@ export function isActuallyDisabled(element: Element): boolean {
 			return true;
 		}
 		const parent = element[kParent];
-		return (
+		if (
 			element[kLocalName] === "option" &&
 			parent !== null &&
 			isHTMLElementNamed(parent, "optgroup") &&
 			(parent as Element).hasAttribute("disabled")
-		);
+		) {
+			return true;
+		}
+		// A disabled select disables what it offers (whatwg/html#12205),
+		// including a select a fieldset disables.
+		for (let node = parent; node !== null; node = node[kParent]) {
+			if (isHTMLElementNamed(node, "select")) {
+				return isActuallyDisabled(node as Element);
+			}
+			if (isHTMLElementNamed(node, "datalist")) {
+				return false;
+			}
+		}
+		return false;
 	}
 	if (element.hasAttribute("disabled")) {
 		return true;
@@ -29450,10 +29468,9 @@ export function isPlaceholderShown(element: Element): boolean {
 	if (name !== "input" && name !== "textarea") {
 		return false;
 	}
+	// An empty placeholder is still the one presented, as browsers match it.
 	const placeholder = element.getAttribute("placeholder");
-	if (
-		placeholder === null || placeholder === "" || /[\r\n]/.test(placeholder)
-	) {
+	if (placeholder === null || /[\r\n]/.test(placeholder)) {
 		return false;
 	}
 	if (
@@ -29624,16 +29641,93 @@ export function isCheckedControl(element: Element): boolean {
 	);
 }
 
+// A checkbox whose indeterminate IDL attribute is set, a radio button
+// whose group has nothing checked, and a progress bar with no value.
 export function isIndeterminateControl(element: Element): boolean {
-	if (
-		element.namespaceURI !== HTML_NAMESPACE || element.localName !== "input"
-	) {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
 	}
+	if (element.localName === "progress") {
+		return !element.hasAttribute("value");
+	}
+	if (element.localName !== "input") {
+		return false;
+	}
+	const type = getInputTypeValue(element);
+	if (type === "checkbox") {
+		return (element as unknown as HTMLInputElement).indeterminate;
+	}
 	return (
-		getInputTypeValue(element) === "checkbox" &&
-		(element as unknown as HTMLInputElement).indeterminate
+		type === "radio" &&
+		getRadioGroup(element as unknown as HTMLInputElement).every(
+			(input) => !input.checked,
+		)
 	);
+}
+
+function getValidityOwners(element: Element): Element[] {
+	const owners: Element[] = [];
+	for (let node = element[kParent]; node !== null; node = node[kParent]) {
+		if (isHTMLElementNamed(node, "fieldset")) {
+			owners.push(node as Element);
+		}
+	}
+	const form = isListed(element) ? getFormOwner(element) : null;
+	if (form !== null) {
+		owners.push(form as unknown as Element);
+	}
+	return owners;
+}
+
+// What :valid and :invalid say about an element, or null for one they do
+// not apply to. A form or a fieldset is invalid when anything it holds
+// that is being validated is.
+export function getValidityMatch(element: Element): "valid" | "invalid" | null {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
+		return null;
+	}
+	const name = element.localName;
+	if (name === "form" || name === "fieldset") {
+		const controls = name === "form"
+			? getListedElements(element as unknown as HTMLFormElement)
+			: getDescendantElements(element, []).filter(isListed);
+		return controls.some((control) => isInvalidCandidate(control))
+			? "invalid"
+			: "valid";
+	}
+	if (!willValidate(element)) {
+		return null;
+	}
+	return isInvalidCandidate(element) ? "invalid" : "valid";
+}
+
+function isInvalidCandidate(element: Element): boolean {
+	if (!willValidate(element)) {
+		return false;
+	}
+	const flags = getValidityFlags(element);
+	return VALIDITY_FLAG_NAMES.some((flag) => flags[flag]);
+}
+
+// What :in-range and :out-of-range say about an input that is being
+// validated and has range limitations, or null for any other element.
+export function getRangeMatch(element: Element): "in" | "out" | null {
+	if (!(element instanceof HTMLInputElement) || !willValidate(element)) {
+		return null;
+	}
+	const type = element.type;
+	if (STEP_RULES[type] === undefined) {
+		return null;
+	}
+	const limited =
+		type === "range" ||
+		getInputValueNumber(type, element.getAttribute("min") ?? "") !== null ||
+		getInputValueNumber(type, element.getAttribute("max") ?? "") !== null;
+	if (!limited) {
+		return null;
+	}
+	const flags = getValidityFlags(element);
+	return flags.rangeUnderflow || flags.rangeOverflow ? "out" : "in";
 }
 
 /** A selector the matcher rejects becomes a SyntaxError, per the DOM. */
