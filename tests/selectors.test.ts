@@ -408,10 +408,18 @@ test(":read-only and :read-write split on what the user may type into", () => {
 		.toEqual(["a", "b"]);
 });
 
-test("the constraint validation pseudos are deliberately absent", () => {
-	for (const selector of [":valid", ":invalid", ":in-range", ":out-of-range"]) {
-		expect(ids(FORM, selector)).toEqual([]);
-	}
+test("the constraint validation pseudos match what is being validated", () => {
+	// A disabled or readonly control and a hidden input are not validated,
+	// so they are neither. A form or fieldset is invalid when anything in it
+	// that is being validated is.
+	expect(ids(FORM, ":invalid")).toEqual(["f", "plain"]);
+	expect(ids(FORM, ":valid")).toEqual(["fs", "in-legend", "sel", "ta"]);
+	const RANGE = "<input id=low type=number min=1 value=0>" +
+		"<input id=inside type=number min=1 max=9 value=5>" +
+		"<input id=unlimited type=number value=5>" +
+		"<input id=slider type=range>";
+	expect(ids(RANGE, ":in-range")).toEqual(["inside", "slider"]);
+	expect(ids(RANGE, ":out-of-range")).toEqual(["low"]);
 	expect(ids("<input id=a autocomplete=name>", ":autofill")).toEqual([]);
 });
 

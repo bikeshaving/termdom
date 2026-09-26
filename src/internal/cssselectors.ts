@@ -10,8 +10,10 @@ import {
 	getParentNode,
 	getPartNames,
 	getPreviousSiblingNode,
+	getRangeMatch,
 	getRoot,
 	getShadowHost,
+	getValidityMatch,
 	hasCustomState,
 	hasFocus,
 	hasFocusWithin,
@@ -1149,6 +1151,18 @@ function compilePseudoClass(
 					!isDisabled(element, state),
 			);
 			return;
+		case "valid":
+			compound.tests.push((element) => getValidityMatch(element) === "valid");
+			return;
+		case "invalid":
+			compound.tests.push((element) => getValidityMatch(element) === "invalid");
+			return;
+		case "in-range":
+			compound.tests.push((element) => getRangeMatch(element) === "in");
+			return;
+		case "out-of-range":
+			compound.tests.push((element) => getRangeMatch(element) === "out");
+			return;
 		case "required":
 			compound.tests.push((element) =>
 				isRequirable(element) && element.getAttribute("required") !== null);
@@ -1166,9 +1180,8 @@ function compilePseudoClass(
 		default:
 			// Everything left names a state this user agent never enters: a
 			// media element's buffering, a page box's side, a spatial
-			// navigation target, autofill, and the constraint validation
-			// family, which the conformance notes record as deliberately
-			// absent.
+			// navigation target, autofill, and the validity a user's own
+			// interaction settles, :user-valid and :user-invalid.
 			compound.tests.push(matchNothing);
 	}
 }
