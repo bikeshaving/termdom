@@ -86,8 +86,22 @@ const PRESERVED_WHITE_SPACE = new Set(["pre", "pre-wrap", "break-spaces"]);
 const EDIT_CHORDS: Record<string, string> = {
 	"alt+Backspace": "deleteWordBackward",
 	"ctrl+w": "deleteWordBackward",
+	"alt+d": "deleteWordForward",
+	"alt+Delete": "deleteWordForward",
+	"ctrl+Delete": "deleteWordForward",
+	"ctrl+d": "deleteContentForward",
 	"ctrl+u": "deleteSoftLineBackward",
 	"ctrl+k": "deleteSoftLineForward",
+};
+
+// readline's motions, as a text field takes them.
+const CHORD_MOTIONS: Record<string, Motion> = {
+	"alt+b": {granularity: "word", forward: false},
+	"alt+f": {granularity: "word", forward: true},
+	"ctrl+b": {granularity: "character", forward: false},
+	"ctrl+f": {granularity: "character", forward: true},
+	"ctrl+a": {granularity: "lineboundary", forward: false},
+	"ctrl+e": {granularity: "lineboundary", forward: true},
 };
 
 const ARROW_MOTIONS: Record<string, Motion> = {
@@ -277,6 +291,14 @@ function onEditingKeydown(event: globalThis.Event): void {
 		);
 		return;
 	}
+	const modifier = keyboard.ctrlKey ? "ctrl" : keyboard.altKey ? "alt" : null;
+	const chord = modifier === null
+		? undefined
+		: CHORD_MOTIONS[`${modifier}+${keyboard.key}`];
+	if (chord !== undefined) {
+		moveEditingCaret(host, chord.granularity, chord.forward, false);
+		return;
+	}
 	const inputType = getEditInputType(keyboard);
 	if (inputType !== null) {
 		requestEditingInput(host, inputType, null);
@@ -445,6 +467,8 @@ function applyEditingInput(
 			return deleteEditingContent(host, selection, true);
 		case "deleteWordBackward":
 			return deleteEditingBy(host, selection, "word", false);
+		case "deleteWordForward":
+			return deleteEditingBy(host, selection, "word", true);
 		case "deleteSoftLineBackward":
 			return deleteEditingBy(host, selection, "lineboundary", false);
 		case "deleteSoftLineForward":
