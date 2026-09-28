@@ -11,7 +11,8 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {parseAngle, parseLinearGradient} from "../src/internal/cssvalues.ts";
+import {parseAngle} from "../src/internal/cssvalues.ts";
+import {parseLinearGradient} from "../src/internal/gradients.ts";
 import {MockProcess, nextFrame, scriptReplies} from "./test-utils.js";
 
 /**
