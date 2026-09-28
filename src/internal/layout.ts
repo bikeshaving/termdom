@@ -3168,6 +3168,11 @@ function collectLeaves(
 					finalContentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
 				}
 
+				// Its lines align within the box it ended up, as text-align
+				// asks, not within the space they were broken in.
+				if (inlineBlockResult !== undefined) {
+					inlineBlockResult.containerWidth = finalContentWidth;
+				}
 				leafNodes.push({
 					type: "inline-block",
 					node: element,
@@ -3778,6 +3783,13 @@ export function getLineAlignOffset(
 	if (!container || containerWidth === undefined) {
 		return 0;
 	}
+	const rtl = getComputedValue(container, "direction") === "rtl";
+	// A line too long for its box is start-aligned, whatever text-align
+	// says, and overflows at its end edge (css-text-3 §7.1). In a
+	// right-to-left paragraph that edge is the left.
+	if (lineWidth > containerWidth) {
+		return rtl ? containerWidth - lineWidth : 0;
+	}
 	const align = getComputedValue(container, "text-align");
 	if (align === "center") {
 		return Math.max(0, (containerWidth - lineWidth) / 2);
@@ -3790,7 +3802,6 @@ export function getLineAlignOffset(
 	}
 	// `start` and `end` name the reading direction's ends, trading sides
 	// in an RTL paragraph. An undeclared alignment is `start`.
-	const rtl = getComputedValue(container, "direction") === "rtl";
 	const atRightEdge = align === "end" ? !rtl : rtl;
 	return atRightEdge ? Math.max(0, containerWidth - lineWidth) : 0;
 }
