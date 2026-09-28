@@ -123,7 +123,8 @@ test("a string opener with no terminator in its write is keys, and swallows noth
 	const {proc, dom, keys} = await mount();
 	await send(proc, "\x1b]0;" + "t".repeat(5000));
 	await send(proc, "x");
-	expect(keys[0]).toBe("Escape");
+	// ESC and a key in one write is what a terminal sends for Alt+].
+	expect(keys[0]).toBe("]");
 	expect(keys.at(-1)).toBe("x");
 	for (const key of keys) {
 		expect(key.includes("\x1b")).toBe(false);
