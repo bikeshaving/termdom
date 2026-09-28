@@ -3359,12 +3359,34 @@ export function getComputedValue(
 }
 
 // Only declarations handed to an author materialize an item list. The
-// engine's own computed styles never do.
+// engine's own computed styles never do. Every computed declaration lists
+// the same longhands first, so their indices are accessors on the shared
+// prototype, and an instance holds only its custom properties' indices.
 function getIndexedDeclaration<T extends CSSStyleDeclaration>(
 	declaration: T,
 ): T {
+	const indexed = declaration as unknown as IndexedCollection;
+	if (
+		indexed[kIndexCount] === undefined &&
+		(declaration instanceof ComputedStyleDeclaration ||
+			declaration instanceof PseudoStyleDeclaration)
+	) {
+		indexed[kIndexCount] = CSS_LONGHANDS.length;
+	}
 	syncIndexed(declaration);
 	return declaration;
+}
+
+function defineLonghandIndices(prototype: object): void {
+	for (let index = 0; index < CSS_LONGHANDS.length; index++) {
+		Object.defineProperty(prototype, index, {
+			get(this: IndexedCollection): unknown {
+				return this.item(index);
+			},
+			enumerable: true,
+			configurable: true,
+		});
+	}
 }
 
 const kCSSRules = Symbol("cssRules");
@@ -4645,6 +4667,9 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		return CSSValues.getUsedLength((parseFloat(computed) / 100) * basis);
 	}
 }
+
+defineLonghandIndices(ComputedStyleDeclaration.prototype);
+defineLonghandIndices(PseudoStyleDeclaration.prototype);
 
 function getPseudoTransitionValue(
 	declaration: PseudoStyleDeclaration,
