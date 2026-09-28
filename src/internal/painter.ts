@@ -951,8 +951,9 @@ function *getOwnLineText(element: Element): Generator<Text> {
 
 // What text-overflow puts at each edge a line overflows: nothing for
 // clip, an ellipsis, or a string. One value is for the end edge, the
-// right or, in a right-to-left box, the left. Two are for the left edge
-// and then the right (css-ui-3).
+// right or, in a right-to-left box, the left (css-ui-3). Two are for the
+// line-left edge and then the line-right, and a string is its own
+// marker, as css-overflow-4 drafts it and Firefox ships it.
 function getOverflowMarkers(
 	element: Element,
 ): {left: string; right: string} | null {
