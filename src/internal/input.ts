@@ -35,7 +35,7 @@ import {
 	topmostModalDialog,
 	type Window,
 } from "./dom.ts";
-import {requestEditingInsert} from "./editing.ts";
+import {getEditingHost, requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import type {Layout} from "./layout.ts";
 import type {Screen} from "./screen.ts";
@@ -1051,10 +1051,16 @@ function dispatchPress(
 	if (!notCanceled) {
 		return;
 	}
-	// Default action: focus the nearest focusable ancestor, or blur.
+	// Default action: focus the nearest focusable ancestor, or blur. A
+	// press in editable content focuses its editing host, unless what it
+	// found is part of that content, a field inside it, say.
 	let focusable: Element | null = target;
 	while (focusable !== null && !focusable.matches(FOCUSABLE_SELECTOR)) {
 		focusable = flatParentElement(focusable);
+	}
+	const host = getEditingHost(target);
+	if (host !== null && (focusable === null || !host.contains(focusable))) {
+		focusable = host;
 	}
 	const active = getFocusedElement(input[kDocument]);
 	if (focusable && focusable !== active) {

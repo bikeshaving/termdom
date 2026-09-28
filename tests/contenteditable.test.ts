@@ -723,3 +723,23 @@ test("an editing host takes the same word and readline chords a field does", asy
 	expect(host.textContent).toBe("");
 	dom.dispose();
 });
+
+test("a press in editable content focuses its editing host, not a box its shadow tree wraps it in", async () => {
+	const fixture = await withHost(
+		"<div contenteditable id=host><span id=text>slotted text</span></div>" +
+			"<div contenteditable><input id=field value=inside></div>",
+	);
+	const {document, terminal, dom} = fixture;
+	const host = document.getElementById("host");
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML = "<div id=wrap tabindex=0><slot></slot></div>";
+	await nextFrame(dom);
+	await send(terminal, "\x1b[<0;3;1M\x1b[<0;3;1m");
+	expect(document.activeElement).toBe(host);
+	expect(shadow.activeElement).toBe(null);
+
+	// A field inside an editing host is part of it, and takes the focus.
+	await send(terminal, "\x1b[<0;3;2M\x1b[<0;3;2m");
+	expect(document.activeElement).toBe(document.getElementById("field"));
+	dom.dispose();
+});
