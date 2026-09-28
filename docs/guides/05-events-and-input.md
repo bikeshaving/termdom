@@ -50,7 +50,14 @@ byte. These limits apply to every terminal application:
 - `Enter` is the byte for `Ctrl+M` and `Tab` for `Ctrl+I`; the named key
   is what you get, and those chords never arrive.
 - `Ctrl+C` is the interrupt; it never reaches the document.
+- `Ctrl+L` redraws the screen, as it does in a shell, unless a `keydown`
+  listener calls `preventDefault()`.
 - `Ctrl+Shift+letter` is indistinguishable from `Ctrl+letter`.
+- `Alt+key` arrives as one keypress with `altKey`, as long as the terminal
+  sends Escape and the key together, which terminals do.
+- A terminal that reports extended keys (CSI u, or xterm's
+  `modifyOtherKeys`) lifts the limits above: `Shift+Enter`,
+  `Ctrl+Shift+letter` and the rest arrive as themselves.
 - A key press is one `keydown`, one `keypress` if printable, one `keyup`.
   There is no held-key state and `event.repeat` is always false.
 - A modifier pressed on its own sends nothing.

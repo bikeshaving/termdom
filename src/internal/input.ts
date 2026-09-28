@@ -1268,6 +1268,12 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		if (keyName === "Tab") {
 			moveFocus(input, shiftKey);
 		}
+		// A terminal program's redraw, for a screen stray output scribbled
+		// on: clear what shows and paint the whole document again.
+		if (keyName === "l" && ctrlKey && !altKey && !shiftKey && !metaKey) {
+			input[kScreen].repaintAll();
+			requestRender(input[kDocument]);
+		}
 
 		// A control's own editing ran above, and claimed its keys.
 		const activation = getKeyboardActivation(targetElement);
