@@ -372,6 +372,7 @@ function isMinContent(mode: AvailableSpace, available: number): boolean {
 }
 
 const CACHE_SLOT_COUNT = 9;
+const NO_CACHED_SIZES: ReadonlyArray<CachedSize | null> = [];
 
 // One cache slot per query shape, after Taffy, so the probes one pass makes
 // of a child (min-content, max-content, fixed) never evict each other.
@@ -418,7 +419,8 @@ export class LayoutNode {
 
 	// One sizing result per query shape (getCacheSlot), so a placing pass's
 	// several probes of one child keep their own. `stale` invalidates both.
-	cachedSizes: Array<CachedSize | null>;
+	// Null until a sizing query is first cached, which many nodes never see.
+	cachedSizes: Array<CachedSize | null> | null;
 	cachedLayout: CachedSize | null;
 	// Whether nothing in the subtree resolves a percentage against the
 	// owner's size, so a cached result holds whatever that size is. Set by
@@ -438,7 +440,7 @@ export class LayoutNode {
 		this[kMeasure] = null;
 		this[kStaticPosition] = null;
 		this.stale = true;
-		this.cachedSizes = new Array(CACHE_SLOT_COUNT).fill(null);
+		this.cachedSizes = null;
 		this.cachedLayout = null;
 		this.owner = null;
 		this.style = createStyle();
@@ -550,6 +552,19 @@ export class LayoutNode {
 	}
 }
 
+// The values and edge records nodes share. Most boxes have one of a few
+// margins, paddings, insets, borders and gaps, nearly all zero or unset,
+// and a node's style is never written once the node holds it. So a
+// finished record's edges are swapped for one object per distinct set,
+// where every part is itself shared: a number, or a value this table
+// names. A record holding a one-off value keeps its own, which keeps the
+// table to the sets actually in use.
+const sharedIds = new WeakMap<object, number>();
+let nextSharedId = 0;
+const sharedRecords = new Map<string, object>();
+sharedIds.set(UNDEFINED_VALUE, ++nextSharedId);
+sharedIds.set(AUTO_VALUE, ++nextSharedId);
+
 // A style's values are never written to once built, so one object serves
 // every node with the same whole number of cells or percent. Those are
 // nearly all of them: a margin of 0, a padding of 1, a width of 50%.
@@ -565,7 +580,49 @@ function internValue(
 	if (!Number.isInteger(value) || value < 0 || value >= INTERNED_LIMIT) {
 		return {unit, value};
 	}
-	return (interned[value] ??= Object.freeze({unit, value}) as CSSValues.Value);
+	let shared = interned[value];
+	if (shared === undefined) {
+		shared = {unit, value};
+		interned[value] = shared;
+		sharedIds.set(shared, ++nextSharedId);
+	}
+	return shared;
+}
+
+function getSharedKey(value: unknown): string | null {
+	if (typeof value === "number") {
+		return `${value}`;
+	}
+	const id = typeof value === "object" && value !== null
+		? sharedIds.get(value)
+		: undefined;
+	return id === undefined ? null : `#${id}`;
+}
+
+function shareRecord<T extends object>(kind: string, record: T): T {
+	let key = kind;
+	for (const value of Object.values(record)) {
+		const part = getSharedKey(value);
+		if (part === null) {
+			return record;
+		}
+		key += `,${part}`;
+	}
+	let shared = sharedRecords.get(key);
+	if (shared === undefined) {
+		shared = record;
+		sharedRecords.set(key, shared);
+	}
+	return shared as T;
+}
+
+/** Shares a finished style's edge records with every style that has the same. */
+export function shareStyleEdges(style: Style): void {
+	style.margin = shareRecord("margin", style.margin);
+	style.padding = shareRecord("padding", style.padding);
+	style.position = shareRecord("position", style.position);
+	style.border = shareRecord("border", style.border);
+	style.gap = shareRecord("gap", style.gap);
 }
 
 export function toValue(input: Length): CSSValues.Value {
@@ -5218,7 +5275,7 @@ function layoutNode(
 			// requests are reduced to their content side before being compared.
 			const marginRow = getAxisMargin(node, "row", ownerWidth);
 			const marginColumn = getAxisMargin(node, "column", ownerWidth);
-			for (const cached of node.cachedSizes) {
+			for (const cached of node.cachedSizes ?? NO_CACHED_SIZES) {
 				if (
 					cached !== null &&
 					(node.ownerFree ||
@@ -5256,7 +5313,7 @@ function layoutNode(
 	// Whatever dirtied the node invalidated every cached result.
 	if (node.stale) {
 		node.cachedLayout = null;
-		node.cachedSizes.fill(null);
+		node.cachedSizes = null;
 	}
 
 	layoutNodeImpl(
@@ -5271,22 +5328,45 @@ function layoutNode(
 	);
 
 	node.ownerFree = isOwnerFree(node);
-	const entry: CachedSize = {
-		availableWidth,
-		availableHeight,
-		widthSpace,
-		heightSpace,
-		ownerWidth,
-		ownerHeight,
-		width: node.result.width,
-		height: node.result.height,
+	// An entry already in the slot is written over rather than replaced. A
+	// node laid out every frame would otherwise leave one behind each time.
+	const write = (entry: CachedSize | null): CachedSize => {
+		if (entry === null) {
+			return {
+				availableWidth,
+				availableHeight,
+				widthSpace,
+				heightSpace,
+				ownerWidth,
+				ownerHeight,
+				width: node.result.width,
+				height: node.result.height,
+			};
+		}
+		const target = entry;
+		target.availableWidth = availableWidth;
+		target.availableHeight = availableHeight;
+		target.widthSpace = widthSpace;
+		target.heightSpace = heightSpace;
+		target.ownerWidth = ownerWidth;
+		target.ownerHeight = ownerHeight;
+		target.width = node.result.width;
+		target.height = node.result.height;
+		return target;
 	};
 	if (placing) {
-		node.cachedLayout = entry;
+		node.cachedLayout = write(node.cachedLayout);
 	} else {
-		node.cachedSizes[
-			getCacheSlot(availableWidth, availableHeight, widthSpace, heightSpace)
-		] = entry;
+		const sizes = (node.cachedSizes ??= new Array<CachedSize | null>(
+			CACHE_SLOT_COUNT,
+		).fill(null));
+		const slot = getCacheSlot(
+			availableWidth,
+			availableHeight,
+			widthSpace,
+			heightSpace,
+		);
+		sizes[slot] = write(sizes[slot]);
 	}
 	node.stale = false;
 }
