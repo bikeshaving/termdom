@@ -2899,3 +2899,39 @@ test("a field moves and deletes a word at a time", async () => {
 	expect(field.value).toBe("one ");
 	termdom.dispose();
 });
+
+test("Ctrl+L redraws the screen unless a listener takes it", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const written = captureRawOutput(terminal);
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
+	const {document} = termdom;
+	termdom.attach();
+	document.body.innerHTML = "<p>hello</p>";
+	await nextFrame(termdom);
+	const type = async (data: string): Promise<string> => {
+		const before = written().length;
+		(terminal.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
+			"data",
+			Buffer.from(data),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await nextFrame(termdom);
+		return written().slice(before);
+	};
+
+	// Nothing changed, so only the redraw paints the document again, from
+	// a cleared frame.
+	const redrawn = await type("\x0c");
+	expect(redrawn).toContain("\x1b[J");
+	expect(redrawn).toContain("hello");
+
+	document.addEventListener("keydown", (event) => {
+		if (event.ctrlKey && event.key === "l") {
+			event.preventDefault();
+		}
+	});
+	expect(await type("\x0c")).not.toContain("hello");
+	termdom.dispose();
+});
