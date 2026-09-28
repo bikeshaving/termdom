@@ -685,3 +685,41 @@ test("a field's selection shows no caret, and a field in a shadow root shows one
 	expect(fixture.cursor().y).toBe(1);
 	dom.dispose();
 });
+
+test("an editing host takes the same word and readline chords a field does", async () => {
+	const fixture = await withHost("<div contenteditable>one two three</div>");
+	const {document, host, dom, type} = fixture;
+	host.focus();
+	const text = host.firstChild;
+	const at = (offset: number): void => {
+		document.getSelection().collapse(text, offset);
+	};
+	const offset = (): number => caret(document).offset;
+
+	at(13);
+	await type("\x1bb");
+	expect(offset()).toBe(8);
+	await type("\x1bf");
+	expect(offset()).toBe(13);
+	await type("\x01");
+	expect(offset()).toBe(0);
+	await type("\x05");
+	expect(offset()).toBe(13);
+	await type("\x02");
+	expect(offset()).toBe(12);
+	await type("\x06");
+	expect(offset()).toBe(13);
+
+	at(4);
+	await type("\x1bd");
+	expect(host.textContent).toBe("one  three");
+	await type("\x1b[3;5~");
+	expect(host.textContent).toBe("one ");
+	at(0);
+	await type("\x04");
+	expect(host.textContent).toBe("ne ");
+	at(3);
+	await type("\x1b\x7f");
+	expect(host.textContent).toBe("");
+	dom.dispose();
+});
