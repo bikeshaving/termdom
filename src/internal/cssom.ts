@@ -37,7 +37,12 @@ import {
 	TransitionEvent,
 	type Window,
 } from "./dom.ts";
-import {HTML_NAMESPACE, isButtonInput, MATHML_NAMESPACE} from "./dom.ts";
+import {
+	getClassTokens,
+	HTML_NAMESPACE,
+	isButtonInput,
+	MATHML_NAMESPACE,
+} from "./dom.ts";
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {getStringWidth} from "./text.ts";
@@ -6019,7 +6024,7 @@ export class Cascade {
 			}
 			// Only the classes that came or went can have changed a match.
 			const before = new Set(oldValue.split(/\s+/));
-			const after = element.classList;
+			const after = getClassTokens(element);
 			for (const token of after) {
 				if (!before.has(token) && this[kReachingClasses].has(token)) {
 					return true;
@@ -6027,9 +6032,7 @@ export class Cascade {
 			}
 			for (const token of before) {
 				if (
-					token !== "" &&
-					!after.contains(token) &&
-					this[kReachingClasses].has(token)
+					token !== "" && !after.has(token) && this[kReachingClasses].has(token)
 				) {
 					return true;
 				}
@@ -6063,10 +6066,10 @@ export class Cascade {
 			return null;
 		}
 		const before = new Set(oldValue.split(/\s+/));
-		const after = element.classList;
+		const after = getClassTokens(element);
 		const changed = [
 			...[...after].filter((token) => !before.has(token)),
-			...[...before].filter((token) => token !== "" && !after.contains(token)),
+			...[...before].filter((token) => token !== "" && !after.has(token)),
 		];
 		const anchors: StateAnchor[] = [];
 		for (const token of changed) {
@@ -6968,7 +6971,7 @@ function isSiblingTested(cascade: Cascade, element: Element): boolean {
 	if (keys.has(element.localName)) {
 		return true;
 	}
-	for (const name of element.classList) {
+	for (const name of getClassTokens(element)) {
 		if (keys.has(`.${name}`)) {
 			return true;
 		}
@@ -6977,8 +6980,8 @@ function isSiblingTested(cascade: Cascade, element: Element): boolean {
 	if (id !== null && keys.has(`#${id}`)) {
 		return true;
 	}
-	for (const attribute of element.attributes) {
-		if (keys.has(`[${attribute.localName}]`)) {
+	for (const name of element.getAttributeNames()) {
+		if (keys.has(`[${name.slice(name.indexOf(":") + 1)}]`)) {
 			return true;
 		}
 	}
@@ -7120,7 +7123,7 @@ function isPaintOnlyChange(
 	const keys: string[] = [`[${name}]`];
 	if (name === "class") {
 		const before = oldValue === null ? [] : oldValue.split(/\s+/);
-		for (const token of [...before, ...element.classList]) {
+		for (const token of [...before, ...getClassTokens(element)]) {
 			if (token !== "") {
 				keys.push(`.${token}`);
 			}
@@ -7682,7 +7685,7 @@ function couldAnchor(element: Element, anchor: StateAnchor): boolean {
 	}
 	return (
 		(anchor.tag === null || anchor.tag === element.localName) &&
-		anchor.classes.every((name) => element.classList.contains(name)) &&
+		anchor.classes.every((name) => getClassTokens(element).has(name)) &&
 		anchor.ids.every((id) => element.id === id) &&
 		anchor.attributes.every((name) => element.hasAttribute(name))
 	);

@@ -7642,7 +7642,20 @@ const kClassTokens = Symbol("the parsed class attribute");
 // The parsed set is cached on the element and discarded by the class
 // attribute's change steps, so a walk asking every element for its
 // classes pays only for attributes that changed.
-function getClassTokens(element: Element): ReadonlySet<string> {
+/**
+ * An element's attributes as the element holds them, for engine code that
+ * reads them. `attributes` would build a live NamedNodeMap to hand out.
+ */
+export function getAttributeList(
+	element: globalThis.Element,
+): readonly globalThis.Attr[] {
+	return (element as Element)[kAttributeList] as unknown as globalThis.Attr[];
+}
+
+export function getClassTokens(
+	target: globalThis.Element,
+): ReadonlySet<string> {
+	const element = target as Element;
 	let tokens = element[kClassTokens];
 	if (tokens === null) {
 		const value = element.getAttribute("class");

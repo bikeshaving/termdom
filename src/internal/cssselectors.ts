@@ -3,6 +3,7 @@ import * as CSSTree from "css-tree";
 
 import {
 	type Element,
+	getAttributeList,
 	getElementChildren,
 	getFirstChildNode,
 	getHeadingLevel,
@@ -875,7 +876,7 @@ function compileAttribute(
 	// HTML document lowercases its attribute names.
 	const read = (element: Element): string | null => {
 		const fold = element.namespaceURI === HTML_NAMESPACE && isHTMLNode(element);
-		const attributes = element.attributes;
+		const attributes = getAttributeList(element);
 		for (let index = 0; index < attributes.length; index++) {
 			const attribute = attributes[index];
 			if (namespace !== undefined && attribute.namespaceURI !== namespace) {
@@ -1694,7 +1695,7 @@ function getElementLanguage(element: Element): string | null {
 		node !== null;
 		node = getLanguageParent(node)
 	) {
-		const attributes = node.attributes;
+		const attributes = getAttributeList(node);
 		for (let index = 0; index < attributes.length; index++) {
 			const attribute = attributes[index];
 			if (
