@@ -8,6 +8,7 @@ import * as CSSValues from "./cssvalues.ts";
 import {
 	flatParentElement,
 	flowContent,
+	getFocusedElement,
 	getHighlightedTextNodes,
 	getPaintedHighlights,
 	getSelectionRecord,
@@ -1117,7 +1118,7 @@ function paintCaret(
 	style: PaintStyle,
 	ctx: CellContext,
 ): void {
-	if (!style.visible || element !== painter[kDocument].activeElement) {
+	if (!style.visible || element !== getFocusedElement(painter[kDocument])) {
 		return;
 	}
 	const record = getSelectionRecord(element);
@@ -1126,8 +1127,9 @@ function paintCaret(
 		return;
 	}
 	// A control with a value but no text to edit, a checkbox or a select,
-	// shows focus as an outline instead.
-	if (!takesTextCursor(element)) {
+	// shows focus as an outline instead. A selection shows as its
+	// highlight, with no caret, as in a browser.
+	if (!takesTextCursor(element) || record.start !== record.end) {
 		return;
 	}
 	const focus = record.direction === "backward" ? record.start : record.end;
@@ -1561,14 +1563,19 @@ function renderOutsideMarker(
 }
 
 // A focused editing host parks the cursor at the document selection's
-// focus, the way a focused text control parks it at its own.
+// focus, the way a focused text control parks it at its own, and shows
+// none while the selection holds text.
 function renderEditingCaret(
 	painter: Painter,
 	element: Element,
 	ctx: CellContext,
 ): void {
 	const point = getEditingCaretPoint(painter[kDocument]);
-	if (point === null || !element.contains(point.node)) {
+	if (
+		point === null ||
+		!element.contains(point.node) ||
+		painter[kDocument].getSelection()?.isCollapsed === false
+	) {
 		return;
 	}
 	const rect = painter[kLayout].getCaretRect(point.node, point.offset);

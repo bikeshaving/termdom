@@ -627,3 +627,61 @@ test("a pasted line break starts a new block", async () => {
 	expect(host.innerHTML).toBe("<p>ab</p><p>cd</p>");
 	fixture.dom.dispose();
 });
+
+// Read once the terminal has parsed every frame written so far.
+async function isCursorHidden(fixture: Fixture): Promise<boolean> {
+	const terminal = (fixture.terminal as any).terminal;
+	await new Promise<void>((resolve) => terminal.write("", resolve));
+	return terminal._core.coreService.isCursorHidden;
+}
+
+test("a selection that holds text shows no caret, as in a browser", async () => {
+	const fixture =
+		await withHost("<div contenteditable><div>one</div><div>two</div></div>");
+	const {document, host, dom} = fixture;
+	host.focus();
+	await nextFrame(dom);
+	expect(await isCursorHidden(fixture)).toBe(false);
+
+	// What a triple click in CodeMirror selects: a line and its break, so
+	// the focus is at the start of the next line.
+	const selection = document.getSelection();
+	selection.setBaseAndExtent(
+		host.firstChild.firstChild,
+		0,
+		host.lastChild.firstChild,
+		0,
+	);
+	await nextFrame(dom);
+	expect(await isCursorHidden(fixture)).toBe(true);
+
+	selection.collapseToEnd();
+	await nextFrame(dom);
+	expect(await isCursorHidden(fixture)).toBe(false);
+	dom.dispose();
+});
+
+test("a field's selection shows no caret, and a field in a shadow root shows one", async () => {
+	const fixture = await withHost("<input id=f value=hello><div id=host></div>");
+	const {document, dom} = fixture;
+	const field = document.getElementById("f");
+	field.focus();
+	field.setSelectionRange(1, 4);
+	await nextFrame(dom);
+	expect(await isCursorHidden(fixture)).toBe(true);
+	field.setSelectionRange(2, 2);
+	await nextFrame(dom);
+	expect(await isCursorHidden(fixture)).toBe(false);
+	expect(fixture.cursor().x).toBe(2);
+
+	const shadow = document.getElementById("host").attachShadow({mode: "open"});
+	shadow.innerHTML = "<input id=inner value=abc>";
+	await nextFrame(dom);
+	const inner = shadow.getElementById("inner");
+	inner.focus();
+	inner.setSelectionRange(3, 3);
+	await nextFrame(dom);
+	expect(await isCursorHidden(fixture)).toBe(false);
+	expect(fixture.cursor().y).toBe(1);
+	dom.dispose();
+});
