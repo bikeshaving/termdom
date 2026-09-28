@@ -1478,10 +1478,13 @@ function resolveFlexibleLengths(
 
 	// Free space is measured against an unfrozen item's BASE size, never
 	// the size it was last given, or each pass counts the space it took
-	// twice.
-	const base = new Map<LayoutNode, number>();
-	const target = new Map<LayoutNode, number>();
-	const frozen = new Set<LayoutNode>();
+	// twice. Kept by item index: a line can hold hundreds of items, and this
+	// runs for every probe of it.
+	const items = line.items;
+	const count = items.length;
+	const base = new Float64Array(count);
+	const target = new Float64Array(count);
+	const frozen = new Uint8Array(count);
 
 	// The automatic minimum floors every clamp, not only the hypothetical
 	// size.
@@ -1496,15 +1499,15 @@ function resolveFlexibleLengths(
 		return isDefined(floor) ? Math.max(bounded, floor) : bounded;
 	};
 
-	for (const child of line.items) {
-		const flexBase = child.result.computedFlexBasis;
-		base.set(child, flexBase);
-		target.set(child, clampMain(child, flexBase));
+	for (let i = 0; i < count; i++) {
+		const flexBase = items[i].result.computedFlexBasis;
+		base[i] = flexBase;
+		target[i] = clampMain(items[i], flexBase);
 	}
 
 	const commit = () => {
-		for (const child of line.items) {
-			child.result.computedFlexBasis = target.get(child)!;
+		for (let i = 0; i < count; i++) {
+			items[i].result.computedFlexBasis = target[i];
 		}
 	};
 
@@ -1519,8 +1522,8 @@ function resolveFlexibleLengths(
 	// §9.7.3: grow or shrink is decided once, from the outer hypothetical
 	// sizes.
 	let hypotheticalTotal = 0;
-	for (const child of line.items) {
-		hypotheticalTotal += target.get(child)! + outerMargin(child);
+	for (let i = 0; i < count; i++) {
+		hypotheticalTotal += target[i] + outerMargin(items[i]);
 	}
 	const growing = innerMain - hypotheticalTotal > 0;
 
@@ -1531,83 +1534,77 @@ function resolveFlexibleLengths(
 		return;
 	}
 
-	const getFactor = (child: LayoutNode) =>
-		growing
-			? resolveFlexGrow(child)
-			: resolveFlexShrink(child) * base.get(child)!;
+	const getFactor = (i: number) =>
+		growing ? resolveFlexGrow(items[i]) : resolveFlexShrink(items[i]) * base[i];
 
 	// §9.7.4.a: an item whose base is already past its clamp in the flexing
 	// direction is inflexible.
-	for (const child of line.items) {
-		const flexBase = base.get(child)!;
-		const hypothetical = target.get(child)!;
-		const factor = growing ? resolveFlexGrow(child) : resolveFlexShrink(child);
-
+	for (let i = 0; i < count; i++) {
+		const factor = growing
+			? resolveFlexGrow(items[i])
+			: resolveFlexShrink(items[i]);
 		if (
 			factor === 0 ||
-			(growing && flexBase > hypothetical) ||
-			(!growing && flexBase < hypothetical)
+			(growing && base[i] > target[i]) ||
+			(!growing && base[i] < target[i])
 		) {
-			frozen.add(child);
+			frozen[i] = 1;
 		}
 	}
 
+	// Which way this pass's clamp moved each unfrozen item: 1 up to its
+	// minimum, -1 down to its maximum.
+	const clamped = new Int8Array(count);
+
 	// §9.7.4: each pass freezes at least one item.
-	for (let guard = 0; guard <= line.items.length; guard++) {
-		const unfrozen = line.items.filter((child) => !frozen.has(child));
-		if (unfrozen.length === 0) {
+	for (let guard = 0; guard <= count; guard++) {
+		let unfrozen = 0;
+		for (let i = 0; i < count; i++) {
+			unfrozen += frozen[i] === 0 ? 1 : 0;
+		}
+		if (unfrozen === 0) {
 			break;
 		}
 
 		let used = 0;
-		for (const child of line.items) {
-			const size = frozen.has(child) ? target.get(child)! : base.get(child)!;
-			used += size + outerMargin(child);
+		for (let i = 0; i < count; i++) {
+			used += (frozen[i] === 1 ? target[i] : base[i]) + outerMargin(items[i]);
 		}
 		const remaining = innerMain - used;
 
 		let totalFactor = 0;
-		for (const child of unfrozen) {
-			totalFactor += getFactor(child);
+		for (let i = 0; i < count; i++) {
+			if (frozen[i] === 0) {
+				totalFactor += getFactor(i);
+			}
 		}
 		if (totalFactor === 0) {
 			break;
 		}
 
 		let violation = 0;
-		const minViolations: LayoutNode[] = [];
-		const maxViolations: LayoutNode[] = [];
-
-		for (const child of unfrozen) {
-			const unclamped =
-				base.get(child)! + (remaining * getFactor(child)) / totalFactor;
-			const bounded = clampMain(child, unclamped);
-
-			target.set(child, bounded);
-			violation += bounded - unclamped;
-
-			if (bounded > unclamped) {
-				minViolations.push(child);
-			} else if (bounded < unclamped) {
-				maxViolations.push(child);
+		clamped.fill(0);
+		for (let i = 0; i < count; i++) {
+			if (frozen[i] === 1) {
+				continue;
 			}
+			const unclamped = base[i] + (remaining * getFactor(i)) / totalFactor;
+			const bounded = clampMain(items[i], unclamped);
+			target[i] = bounded;
+			violation += bounded - unclamped;
+			clamped[i] = bounded > unclamped ? 1 : bounded < unclamped ? -1 : 0;
 		}
 
 		// §9.7.4.e: freeze by the sign of the total violation. Freezing both
 		// directions strands the space an over-clamped item gave back.
-		if (violation === 0) {
-			for (const child of unfrozen) {
-				frozen.add(child);
+		const freezing = violation === 0 ? 0 : violation > 0 ? 1 : -1;
+		for (let i = 0; i < count; i++) {
+			if (frozen[i] === 0 && (freezing === 0 || clamped[i] === freezing)) {
+				frozen[i] = 1;
 			}
+		}
+		if (freezing === 0) {
 			break;
-		} else if (violation > 0) {
-			for (const child of minViolations) {
-				frozen.add(child);
-			}
-		} else {
-			for (const child of maxViolations) {
-				frozen.add(child);
-			}
 		}
 	}
 
