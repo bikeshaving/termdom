@@ -45,6 +45,12 @@ export const TESTDRIVER_VENDOR = String.raw`
 			});
 		});
 	}
+	// WebDriver numbers the buttons as MouseEvent.button does: 0 main, 1
+	// middle, 2 secondary. SGR mouse reports number them the same way.
+	const BUTTON_CODES = [0, 1, 2];
+	// The engine's own guess at a cell when the terminal does not say.
+	const CELL_WIDTH = 8;
+	const CELL_HEIGHT = 16;
 	function getCell(element) {
 		const rect = element.getBoundingClientRect();
 		return {
@@ -68,6 +74,8 @@ export const TESTDRIVER_VENDOR = String.raw`
 	};
 	window.test_driver_internal.action_sequence = async function(sources) {
 		const pressed = new Set();
+		// The SGR code of the pointer button held down, or null.
+		let held = null;
 		let col = 1;
 		let row = 1;
 		for (let tick = 0; ; tick++) {
@@ -91,20 +99,38 @@ export const TESTDRIVER_VENDOR = String.raw`
 					}
 				} else if (source.type === "pointer") {
 					if (action.type === "pointerMove") {
+						// An offset from an element or from the pointer is in CSS
+						// pixels, a nudge a test sized for a browser's text, so it
+						// moves by the cells those pixels cover at the size the
+						// engine assumes for a cell. A viewport position is where a
+						// test's own rect read put it, which is already in cells.
 						const origin = action.origin;
+						const dx = Math.round((action.x ?? 0) / CELL_WIDTH);
+						const dy = Math.round((action.y ?? 0) / CELL_HEIGHT);
 						if (origin && origin.getBoundingClientRect) {
 							const cell = getCell(origin);
-							col = cell.col + (action.x ?? 0);
-							row = cell.row + (action.y ?? 0);
+							col = cell.col + dx;
+							row = cell.row + dy;
+						} else if (origin === "pointer") {
+							col += dx;
+							row += dy;
 						} else {
 							col = (action.x ?? 0) + 1;
 							row = (action.y ?? 0) + 1;
 						}
-						__termdomDriverInput("\x1b[<35;" + col + ";" + row + "M");
+						// A move with a button down is a drag, which a terminal
+						// reports as that button with the motion bit.
+						const motion = held === null ? 35 : 32 + held;
+						__termdomDriverInput(
+							"\x1b[<" + motion + ";" + col + ";" + row + "M",
+						);
 					} else if (action.type === "pointerDown") {
-						__termdomDriverInput("\x1b[<0;" + col + ";" + row + "M");
+						held = BUTTON_CODES[action.button ?? 0] ?? 0;
+						__termdomDriverInput("\x1b[<" + held + ";" + col + ";" + row + "M");
 					} else if (action.type === "pointerUp") {
-						__termdomDriverInput("\x1b[<0;" + col + ";" + row + "m");
+						const code = BUTTON_CODES[action.button ?? 0] ?? 0;
+						held = null;
+						__termdomDriverInput("\x1b[<" + code + ";" + col + ";" + row + "m");
 					}
 				}
 			}
