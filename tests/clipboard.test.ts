@@ -637,16 +637,16 @@ test("a reply cut inside its own opening still reads as a reply", async () => {
 	for (const at of [2, 3, 4, 5, 6, 7, 8]) {
 		expect(await readReply([reply.slice(0, at), reply.slice(at)])).toBe("hi");
 	}
-	// An opening that only looks like a reply is keys, and a bare trailing
-	// ESC is the Escape key, held for nothing.
+	// An opening that only looks like a reply is keys, Alt+] and then 2,
+	// and a bare trailing ESC is the Escape key, held for nothing.
 	const {proc, dom} = await mount();
 	const keys: string[] = [];
 	dom.document.addEventListener("keydown", (event: any) => {
-		keys.push(event.key);
+		keys.push(event.altKey ? `Alt+${event.key}` : event.key);
 	});
 	await send(proc, "\x1b]2");
-	expect(keys).toEqual(["Escape", "]", "2"]);
+	expect(keys).toEqual(["Alt+]", "2"]);
 	await send(proc, "\x1b");
-	expect(keys.slice(3)).toEqual(["Escape"]);
+	expect(keys.slice(2)).toEqual(["Escape"]);
 	dom.dispose();
 });

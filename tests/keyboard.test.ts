@@ -2800,3 +2800,102 @@ test("a dialog form's button closes its dialog with the button's value", async (
 	expect(dialog.returnValue).toBe("yes");
 	termdom.dispose();
 });
+
+test("ESC and a key in one write is that key with Alt", async () => {
+	const {termdom, document, type} =
+		await makeKeyApp("<dialog id=d><button>[ok]</button></dialog>");
+	const dialog = document.getElementById("d") as HTMLDialogElement;
+	dialog.showModal();
+	const seen: string[] = [];
+	document.addEventListener("keydown", (event) => {
+		seen.push(`${event.altKey ? "Alt+" : ""}${event.key}`);
+	});
+	let typed = "";
+	document.addEventListener("keypress", (event) => {
+		typed += event.key;
+	});
+	await type("\x1ba");
+	await type("\x1b\x7f");
+	await type("\x1b\r");
+	expect(seen).toEqual(["Alt+a", "Alt+Backspace", "Alt+Enter"]);
+	// No Escape was pressed, so the dialog is still open, and Alt types
+	// nothing.
+	expect(dialog.open).toBe(true);
+	expect(typed).toBe("");
+	await type("\x1b");
+	expect(seen.at(-1)).toBe("Escape");
+	expect(dialog.open).toBe(false);
+	termdom.dispose();
+});
+
+test("keys that spell out their modifiers decode as those keys", async () => {
+	const {termdom, document, type} = await makeKeyApp("<p>p</p>");
+	const seen: string[] = [];
+	document.addEventListener("keydown", (event) => {
+		const mods = [
+			event.ctrlKey && "Ctrl",
+			event.altKey && "Alt",
+			event.shiftKey && "Shift",
+			event.metaKey && "Meta",
+		].filter(Boolean);
+		seen.push([...mods, event.key].join("+"));
+	});
+	// CSI u, xterm's modifyOtherKeys, and modified tilde and F keys.
+	await type("\x1b[97;6u");
+	await type("\x1b[13;2u");
+	await type("\x1b[27;5;13~");
+	await type("\x1b[3;5~");
+	await type("\x1b[15;2~");
+	await type("\x1b[1;5P");
+	await type("\x1b[97;9u");
+	expect(seen).toEqual([
+		"Ctrl+Shift+A",
+		"Shift+Enter",
+		"Ctrl+Enter",
+		"Ctrl+Delete",
+		"Shift+F5",
+		"Ctrl+F1",
+		"Meta+a",
+	]);
+	termdom.dispose();
+});
+
+test("keyCode names the key, not the character", async () => {
+	const {termdom, document, type} = await makeKeyApp("<p>p</p>");
+	const codes: number[] = [];
+	document.addEventListener("keydown", (event) => {
+		codes.push(event.keyCode);
+	});
+	await type("a");
+	await type("A");
+	await type("!");
+	await type(";");
+	await type("_");
+	await type("/");
+	await type("é");
+	expect(codes).toEqual([65, 65, 49, 186, 189, 191, 0]);
+	termdom.dispose();
+});
+
+test("a field moves and deletes a word at a time", async () => {
+	const {termdom, document, type} =
+		await makeKeyApp("<input id=f value=\"one two three\">");
+	const field = document.getElementById("f") as HTMLInputElement;
+	field.focus();
+	field.setSelectionRange(13, 13);
+	await type("\x1b[1;5D");
+	expect(field.selectionStart).toBe(8);
+	await type("\x1bb");
+	expect(field.selectionStart).toBe(4);
+	await type("\x1b[1;3C");
+	expect(field.selectionStart).toBe(7);
+	await type("\x1b[1;6D");
+	expect([field.selectionStart, field.selectionEnd]).toEqual([4, 7]);
+	await type("\x1b[C");
+	await type("\x1b\x7f");
+	expect(field.value).toBe("one  three");
+	expect(field.selectionStart).toBe(4);
+	await type("\x1bd");
+	expect(field.value).toBe("one ");
+	termdom.dispose();
+});

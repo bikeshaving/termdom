@@ -310,11 +310,70 @@ const MODIFIED_CURSOR_KEYS: Record<string, string> = {
 	D: "ArrowLeft",
 	F: "End",
 	H: "Home",
+	P: "F1",
+	Q: "F2",
+	R: "F3",
+	S: "F4",
 };
 
-// xterm's modified cursor key: CSI 1 ; <mod> <letter>, e.g. Alt+Up =
-// CSI 1;3A.
-const MODIFIED_CURSOR_KEY = /^\x1b\[1;(\d+)([ABCDHF])$/;
+// xterm's modified cursor and F1-F4 keys: CSI 1 ; <mod> <letter>, e.g.
+// Alt+Up = CSI 1;3A.
+const MODIFIED_CURSOR_KEY = /^\x1b\[1;(\d+)([ABCDHFPQRS])$/;
+
+// xterm's modified tilde keys: CSI <n> ; <mod> ~, e.g. Ctrl+Delete =
+// CSI 3;5~.
+const MODIFIED_TILDE_KEY = /^\x1b\[(\d+);(\d+)~$/;
+
+// A key with its modifiers spelled out, sent by a terminal that reports
+// them all: CSI u (fixterms and kitty) as CSI <code>[:...] ; <mod>[:...]
+// [; <text>] u, and xterm's modifyOtherKeys as CSI 27 ; <mod> ; <code> ~.
+const CSI_U_KEY = /^\x1b\[(\d+)(?::[\d:]*)?(?:;(\d*)(?::\d*)?)?(?:;[\d:]*)?u$/;
+const OTHER_KEY = /^\x1b\[27;(\d+);(\d+)~$/;
+
+// The keys CSI u names by their control code rather than a character.
+const KEY_BY_CODE: Record<number, string> = {
+	8: "Backspace",
+	9: "Tab",
+	13: "Enter",
+	27: "Escape",
+	127: "Backspace",
+};
+
+// mod - 1 is a bitmask: 1 Shift, 2 Alt, 4 Ctrl, 8 Super, and in CSI u 32
+// Meta. Super is the Meta key a browser reports.
+function decodeModifiers(
+	mod: string | undefined,
+): {shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean} {
+	const bits = mod === undefined || mod === "" ? 0 : parseInt(mod, 10) - 1;
+	return {
+		shiftKey: (bits & 1) !== 0,
+		altKey: (bits & 2) !== 0,
+		ctrlKey: (bits & 4) !== 0,
+		metaKey: (bits & 40) !== 0,
+	};
+}
+
+function decodeCodedKey(codepoint: number, mod: string | undefined): WireKey {
+	const modifiers = decodeModifiers(mod);
+	const named = KEY_BY_CODE[codepoint];
+	let key = named ?? String.fromCodePoint(codepoint);
+	if (named === undefined && modifiers.shiftKey) {
+		key = key.toUpperCase();
+	}
+	const printable = named === undefined || key === " ";
+	return {
+		kind: "key",
+		key,
+		char:
+			printable &&
+				!modifiers.ctrlKey &&
+				!modifiers.altKey &&
+				!modifiers.metaKey
+				? key
+				: "",
+		...modifiers,
+	};
+}
 
 function decodeKeyToken(token: string): WireKey {
 	const code = token.charCodeAt(0);
@@ -348,17 +407,29 @@ function decodeKeyToken(token: string): WireKey {
 
 	const modified = token.match(MODIFIED_CURSOR_KEY);
 	if (modified) {
-		// mod - 1 is a bitmask: 1 Shift, 2 Alt, 4 Ctrl, 8 Meta.
-		const bits = parseInt(modified[1], 10) - 1;
 		return {
 			kind: "key",
 			key: MODIFIED_CURSOR_KEYS[modified[2]],
 			char: "",
-			shiftKey: (bits & 1) !== 0,
-			altKey: (bits & 2) !== 0,
-			ctrlKey: (bits & 4) !== 0,
-			metaKey: (bits & 8) !== 0,
+			...decodeModifiers(modified[1]),
 		};
+	}
+	const other = token.match(OTHER_KEY);
+	if (other) {
+		return decodeCodedKey(parseInt(other[2], 10), other[1]);
+	}
+	const tilde = token.match(MODIFIED_TILDE_KEY);
+	if (tilde && KEY_BY_TOKEN[`\x1b[${tilde[1]}~`] !== undefined) {
+		return {
+			kind: "key",
+			key: KEY_BY_TOKEN[`\x1b[${tilde[1]}~`],
+			char: "",
+			...decodeModifiers(tilde[2]),
+		};
+	}
+	const coded = token.match(CSI_U_KEY);
+	if (coded) {
+		return decodeCodedKey(parseInt(coded[1], 10), coded[2]);
 	}
 
 	// A character outside the basic plane is one character across two
@@ -545,6 +616,19 @@ class WireReader {
 						items.push(item);
 					}
 					i += 3;
+					continue;
+				}
+				// ESC and a key in one write is that key with Alt, the way a
+				// terminal sends it. A person pressing Escape and then a key
+				// sends two writes.
+				const next = data.charCodeAt(i + 1);
+				if (next !== 0x1b && !(next >= 0x80 && next <= 0x9f)) {
+					const width = next >= 0xd800 && next <= 0xdbff && i + 2 < data.length
+						? 2
+						: 1;
+					const item = decodeKeyToken(data.slice(i + 1, i + 1 + width));
+					items.push({...item, char: "", altKey: true});
+					i += 1 + width;
 					continue;
 				}
 			}

@@ -530,6 +530,7 @@ function applySharedTextControlEdit(
 	key: string,
 	shiftKey: boolean,
 	ctrlKey: boolean,
+	altKey: boolean,
 ): TextControlEditResult | null {
 	const value = textControl[kUAValue];
 	const {start, end, direction} = getSelectionRecord(textControl)!;
@@ -537,6 +538,38 @@ function applySharedTextControlEdit(
 	const caret = backward ? start : end;
 	const anchor = backward ? end : start;
 	const hasSelection = start !== end;
+	const withoutSelection = (): TextControlEditResult =>
+		createCollapsedEdit(value.slice(0, start) + value.slice(end), start);
+
+	// A word at a time: Ctrl with an arrow, Backspace or Delete, as on
+	// Linux and Windows, or Option, as on a Mac, which a terminal sends as
+	// Alt. Alt+B, Alt+F and Alt+D are readline's.
+	if ((ctrlKey || altKey) && (key === "ArrowLeft" || key === "ArrowRight")) {
+		const target = key === "ArrowLeft"
+			? getWordStart(value, caret)
+			: getWordEnd(value, caret);
+		return moveTextControlSelection(value, anchor, target, shiftKey);
+	}
+	if (altKey && !ctrlKey && (key === "b" || key === "f")) {
+		const target = key === "b"
+			? getWordStart(value, caret)
+			: getWordEnd(value, caret);
+		return moveTextControlSelection(value, anchor, target, false);
+	}
+	if (altKey && key === "Backspace") {
+		if (hasSelection) {
+			return withoutSelection();
+		}
+		const from = getWordStart(value, caret);
+		return createCollapsedEdit(value.slice(0, from) + value.slice(caret), from);
+	}
+	if (((ctrlKey || altKey) && key === "Delete") || (altKey && key === "d")) {
+		if (hasSelection) {
+			return withoutSelection();
+		}
+		const to = getWordEnd(value, caret);
+		return createCollapsedEdit(value.slice(0, caret) + value.slice(to), caret);
+	}
 
 	// The readline chords a terminal user expects: caret motion or deletion,
 	// never a browser shortcut. Ctrl+A, Ctrl+E, Ctrl+K and Ctrl+U depend on
@@ -647,7 +680,17 @@ function applySharedTextControlEdit(
 }
 
 // The inputType of a key's edit, the name Input Events gives it.
-function getKeyInputType(key: string, ctrlKey: boolean): string {
+function getKeyInputType(
+	key: string,
+	ctrlKey: boolean,
+	altKey: boolean,
+): string {
+	if (altKey && key === "Backspace") {
+		return "deleteWordBackward";
+	}
+	if (((ctrlKey || altKey) && key === "Delete") || (altKey && key === "d")) {
+		return "deleteWordForward";
+	}
 	if (key === "Backspace") {
 		return "deleteContentBackward";
 	}
@@ -16081,7 +16124,7 @@ export class HTMLInputElement extends HTMLElement {
 			if (event.defaultPrevented) {
 				return;
 			}
-			const {key, shiftKey, ctrlKey} = event;
+			const {key, shiftKey, ctrlKey, altKey} = event;
 
 			if (this.type === "checkbox" || this.type === "radio") {
 			// Either key activates the control, and activation is what toggles
@@ -16143,11 +16186,17 @@ export class HTMLInputElement extends HTMLElement {
 			} else if (ctrlKey && key === "u") {
 				result = createCollapsedEdit(value.slice(caret), 0);
 			} else {
-				result = applySharedTextControlEdit(this, key, shiftKey, ctrlKey);
+				result = applySharedTextControlEdit(
+					this,
+					key,
+					shiftKey,
+					ctrlKey,
+					altKey,
+				);
 			}
 			if (result) {
 				applyTextControlEdit(this, result, {
-					inputType: getKeyInputType(key, ctrlKey),
+					inputType: getKeyInputType(key, ctrlKey, altKey),
 				});
 			}
 		};
@@ -19656,7 +19705,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 				return;
 			}
 			const attached = getAttachedDocument(this)!;
-			const {key, shiftKey, ctrlKey} = event;
+			const {key, shiftKey, ctrlKey, altKey} = event;
 			// The goal column survives only an unbroken run of vertical moves.
 			if (key !== "ArrowUp" && key !== "ArrowDown") {
 				this[kGoalColumn] = null;
@@ -19717,11 +19766,17 @@ export class HTMLTextAreaElement extends HTMLElement {
 					);
 				}
 			} else {
-				result = applySharedTextControlEdit(this, key, shiftKey, ctrlKey);
+				result = applySharedTextControlEdit(
+					this,
+					key,
+					shiftKey,
+					ctrlKey,
+					altKey,
+				);
 			}
 			if (result) {
 				applyTextControlEdit(this, result, {
-					inputType: getKeyInputType(key, ctrlKey),
+					inputType: getKeyInputType(key, ctrlKey, altKey),
 				});
 			}
 		};

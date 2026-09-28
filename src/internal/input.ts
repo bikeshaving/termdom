@@ -127,12 +127,39 @@ function getDOMCode(keyName: string): string {
 }
 
 // The uppercase code for a character, so Ctrl+A and a typed "a" agree.
+// The legacy keyCode of each punctuation key on a US layout, which a
+// browser reports on keydown whether or not Shift is held.
+const PUNCTUATION_KEY_NUMBERS: Record<string, number> = {
+	Space: 32,
+	Semicolon: 186,
+	Equal: 187,
+	Comma: 188,
+	Minus: 189,
+	Period: 190,
+	Slash: 191,
+	Backquote: 192,
+	BracketLeft: 219,
+	Backslash: 220,
+	BracketRight: 221,
+	Quote: 222,
+};
+
+// A key's keyCode is the key's, not the character's: a letter's upper
+// case, a digit key's digit whatever Shift makes it, and a punctuation
+// key's number. A character on no known key has none.
 function getLegacyKeyCode(keyName: string): number {
 	const named = NAMED_KEY_NUMBERS[keyName];
 	if (named !== undefined) {
 		return named;
 	}
-	return keyName.length === 1 ? keyName.toUpperCase().charCodeAt(0) : 0;
+	const code = getDOMCode(keyName);
+	if (/^Key[A-Z]$/.test(code)) {
+		return code.charCodeAt(3);
+	}
+	if (/^Digit\d$/.test(code)) {
+		return code.charCodeAt(5);
+	}
+	return PUNCTUATION_KEY_NUMBERS[code] ?? 0;
 }
 
 // What Tab traverses and what a mousedown focuses.
