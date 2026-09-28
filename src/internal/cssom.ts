@@ -38,6 +38,7 @@ import {
 	type Window,
 } from "./dom.ts";
 import {
+	getAttributeList,
 	getClassTokens,
 	HTML_NAMESPACE,
 	isButtonInput,
@@ -3397,6 +3398,7 @@ function defineLonghandIndices(prototype: object): void {
 const kCSSRules = Symbol("cssRules");
 const kSyncResolved = Symbol("syncResolved");
 const kResolved = Symbol("resolved");
+const kStyleVersion = Symbol("styleVersion");
 const kCustom = Symbol("custom");
 const kInlineBlock = Symbol("inlineBlock");
 const kUsedValue = Symbol("usedValue");
@@ -3461,6 +3463,114 @@ const USED_VALUE_PROPERTIES = new Set([
 
 // LIVE: the object an author holds stays valid across class changes and
 // sheet replacements, because it re-resolves rather than being replaced.
+// Style sharing. An element's computed values follow from its matched
+// rules, its attributes (inline style and the presentational hints the UA
+// reads, like an input's size), its tag, and its flat-tree parent's
+// values. Elements alike in all of those resolve every property alike, so
+// they share one table of resolved values, filled as any of them reads.
+// Each parent's values hold the tables of their children, and go with
+// them. The page-facing declaration stays per element: its used values
+// read the element's own boxes.
+const ruleIds = new WeakMap<ParsedCSSRule, number>();
+let nextRuleId = 0;
+const childTables = new WeakMap<
+	Map<string, string>,
+	Map<string, Map<string, string>>
+>();
+const rootTable = new Map<string, Map<string, string>>();
+
+// Counters count elements in document order, so a rule that sets or uses
+// them gives each element its own values.
+const COUNTER_PROPERTIES = [
+	"content",
+	"counter-reset",
+	"counter-increment",
+	"counter-set",
+];
+
+function getRuleId(rule: ParsedCSSRule): number {
+	let id = ruleIds.get(rule);
+	if (id === undefined) {
+		id = COUNTER_PROPERTIES.some((name) =>
+			(rule.declarations[name] ?? "").includes("counter"),
+		)
+			? -1
+			: ++nextRuleId;
+		ruleIds.set(rule, id);
+	}
+	return id;
+}
+
+// An element whose values read more than those inputs keeps its own: the
+// fullscreen element, a select sized by its options, a list whose gutter
+// its markers size and whose marker type its depth picks, a dir=auto
+// element directed by its text, and MathML, which reads its ancestors.
+const UNSHARED_ELEMENTS = new Set(["select", "ul", "ol"]);
+
+function isShareable(element: Element): boolean {
+	return (
+		element.namespaceURI === HTML_NAMESPACE &&
+		!UNSHARED_ELEMENTS.has(element.localName) &&
+		element.getAttribute("dir") !== "auto" &&
+		element.ownerDocument?.fullscreenElement !== element &&
+		getPseudoHost(element) === null
+	);
+}
+
+// The parent's resolved values, current, or null for a parent a
+// transition is moving, whose values are its own.
+function getResolvedValues(
+	cascade: Cascade,
+	element: Element,
+): Map<string, string> | null {
+	if (cascade.getStyleKey(element) === null) {
+		return null;
+	}
+	return cascade.declarationFor(element)[kResolved];
+}
+
+function getSharedResolved(
+	cascade: Cascade,
+	element: Element,
+	rules: readonly ParsedCSSRule[],
+): Map<string, string> {
+	if (!isShareable(element)) {
+		return new Map();
+	}
+	let key = element.localName;
+	for (const rule of rules) {
+		const id = getRuleId(rule);
+		if (id === -1) {
+			return new Map();
+		}
+		key += `,${id}`;
+	}
+	for (const attribute of getAttributeList(element)) {
+		key += `\0${attribute.namespaceURI ?? ""}:${attribute.localName}=${attribute.value}`;
+	}
+	const parent = flatParentElement(element);
+	let table: Map<string, Map<string, string>>;
+	if (parent === null) {
+		if (rootTable.size > 256) {
+			rootTable.clear();
+		}
+		table = rootTable;
+	} else {
+		const parentValues = getResolvedValues(cascade, parent);
+		if (parentValues === null) {
+			return new Map();
+		}
+		table = childTables.get(parentValues) ?? new Map();
+		childTables.set(parentValues, table);
+	}
+	let shared = table.get(key);
+	if (shared === undefined) {
+		shared = new Map();
+		table.set(key, shared);
+	}
+	return shared;
+}
+
 interface ComputedStyleDeclaration {
 	[kElement]: Element;
 	[kCSSRules]: ParsedCSSRule[];
@@ -3474,6 +3584,11 @@ interface ComputedStyleDeclaration {
 	// keystroke. The declaration is discarded wholesale on invalidation, so
 	// the memo needs no invalidation of its own.
 	[kResolved]: Map<string, string>;
+	// Replaced whenever this declaration is resolved again. What the
+	// painter keys its styles by, since the resolved values themselves may
+	// be shared, and a restyle that finds the same shared values still asks
+	// for the paint style to be derived again.
+	[kStyleVersion]: object;
 
 	[kCustom]: string[] | null;
 }
@@ -3487,6 +3602,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		super();
 		this[kCascade] = null;
 		this[kResolved] = new Map<string, string>();
+		this[kStyleVersion] = {};
 		this[kCustom] = null;
 		this[kElement] = element;
 		this[kCSSRules] = cssRules;
@@ -3494,6 +3610,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		if (cascade) {
 			this[kCascade] = cascade;
 			cascade[kCurrentDeclarations].add(this);
+			this[kResolved] = getSharedResolved(cascade, element, cssRules);
 		}
 	}
 
@@ -3673,7 +3790,12 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			"",
 			this[kResolved],
 		);
-		this[kResolved] = new Map();
+		this[kResolved] = getSharedResolved(
+			this[kCascade],
+			this[kElement],
+			this[kCSSRules],
+		);
+		this[kStyleVersion] = {};
 		dropUsedValues(this[kCascade], this);
 		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
 			syncIndexed(this);
@@ -4249,12 +4371,38 @@ function resolvePropertyValue(
 	property: string,
 ): string {
 	const value = resolveCascadedValue(declaration, property);
+	if (property === "font-weight") {
+		return computeFontWeight(declaration[kElement], value);
+	}
 	return property === "display"
 		? blockifyDisplay(
 			declaration[kElement],
 			value || getInitialStyle(null, "display"),
 		)
 		: value;
+}
+
+// css-fonts-4 §2.2: a weight computes to a number. `bolder` and `lighter`
+// step from the parent's weight by the specification's table.
+function computeFontWeight(element: Element | null, value: string): string {
+	const keyword = value.trim().toLowerCase();
+	if (keyword === "normal") {
+		return "400";
+	}
+	if (keyword === "bold") {
+		return "700";
+	}
+	if (keyword !== "bolder" && keyword !== "lighter") {
+		return value;
+	}
+	const parent = element === null ? null : flatParentElement(element);
+	const inherited = parent === null
+		? 400
+		: CSSValues.parseFontWeight(getComputedValue(parent, "font-weight"));
+	if (keyword === "bolder") {
+		return inherited < 350 ? "400" : inherited < 550 ? "700" : "900";
+	}
+	return inherited < 550 ? "100" : inherited < 750 ? "400" : "700";
 }
 
 function resolveCascadedValue(
@@ -5692,7 +5840,7 @@ export class Cascade {
 		if (!this[kCurrentDeclarations].has(declaration)) {
 			declaration[kSyncResolved]();
 		}
-		return declaration[kResolved];
+		return declaration[kStyleVersion];
 	}
 
 	/**

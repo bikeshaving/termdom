@@ -48,7 +48,7 @@ const simple = fc.oneof(
 	),
 );
 
-const tag = fc.constantFrom("", "div", "span", "p", "button", "input");
+const tag = fc.constantFrom("", "div", "span", "p", "button", "input", "li");
 
 const compound = fc
 	.tuple(tag, fc.array(simple, {minLength: 0, maxLength: 2}))
@@ -82,7 +82,7 @@ const rule = fc
 const sheet = fc.array(rule, {minLength: 1, maxLength: 6});
 
 interface NodeSpec {
-	tag: "div" | "span" | "p" | "button" | "checkbox" | "text";
+	tag: "div" | "span" | "p" | "button" | "checkbox" | "text" | "ol" | "li";
 	classes: string[];
 	id: string | null;
 	data: string | null;
@@ -93,8 +93,9 @@ interface NodeSpec {
 const leafTag = fc.constantFrom("button", "checkbox", "text") as fc.Arbitrary<
 	NodeSpec["tag"]
 >;
-const boxTag =
-	fc.constantFrom("div", "span", "p") as fc.Arbitrary<NodeSpec["tag"]>;
+const boxTag = fc.constantFrom("div", "span", "p", "ol", "li") as fc.Arbitrary<
+	NodeSpec["tag"]
+>;
 
 const attributes = fc.record({
 	classes: fc.subarray(CLASSES),
@@ -128,7 +129,8 @@ type Op =
 	{kind: "release"} |
 	{kind: "check"; target: number} |
 	{kind: "disable"; target: number} |
-	{kind: "type"; target: number};
+	{kind: "type"; target: number} |
+	{kind: "style"; target: number; style: string; api: boolean};
 
 const target = fc.nat(40);
 
@@ -164,6 +166,18 @@ const op: fc.Arbitrary<Op> = fc.oneof(
 	fc.record({kind: fc.constant("check" as const), target}),
 	fc.record({kind: fc.constant("disable" as const), target}),
 	fc.record({kind: fc.constant("type" as const), target}),
+	fc.record({
+		kind: fc.constant("style" as const),
+		target,
+		style: fc.constantFrom(
+			"",
+			"color: rgb(1, 2, 3)",
+			"display: none",
+			"font-weight: bold",
+			"padding-left: 2ch",
+		),
+		api: fc.boolean(),
+	}),
 );
 
 function build(document: Document, spec: NodeSpec): Element {
@@ -312,6 +326,16 @@ async function apply(
 		case "disable":
 			pick(change.target)?.toggleAttribute("disabled");
 			break;
+		case "style": {
+			const element = pick(change.target) as HTMLElement | undefined;
+			if (element && change.api) {
+				// Through the CSSOM, which must keep the attribute in step.
+				element.style.cssText = change.style;
+			} else if (element) {
+				element.setAttribute("style", change.style);
+			}
+			break;
+		}
 		case "type": {
 			const element = pick(change.target);
 			if (element instanceof dom.window.HTMLInputElement) {
