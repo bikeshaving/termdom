@@ -69,7 +69,7 @@ describe("getComputedStyle - What We Support", () => {
 			dom.window
 				.getComputedStyle(dom.window.document.getElementById("strong")!)
 				.getPropertyValue("font-weight"),
-		).toBe("bold");
+		).toBe("700");
 
 		// List elements
 		expect(
@@ -917,7 +917,7 @@ test("inserting a child restyles the siblings and parent that selectors read", a
 		.getPropertyValue(property);
 	await nextFrame(dom);
 	expect(style("a", "color")).toBe("rgb(0, 0, 0)");
-	expect(style("a", "font-weight")).toBe("bold");
+	expect(style("a", "font-weight")).toBe("700");
 	expect(style("empty", "color")).toBe("rgb(0, 0, 255)");
 
 	const first = document.createElement("div");
@@ -927,14 +927,14 @@ test("inserting a child restyles the siblings and parent that selectors read", a
 	document.getElementById("empty")!.append(document.createElement("div"));
 	await nextFrame(dom);
 	expect(style("a", "color")).toBe("rgb(255, 0, 0)");
-	expect(style("a", "font-weight")).toBe("normal");
-	expect(style("first", "font-weight")).toBe("bold");
+	expect(style("a", "font-weight")).toBe("400");
+	expect(style("first", "font-weight")).toBe("700");
 	expect(style("empty", "color")).toBe("rgb(0, 0, 0)");
 
 	first.remove();
 	await nextFrame(dom);
 	expect(style("a", "color")).toBe("rgb(0, 0, 0)");
-	expect(style("a", "font-weight")).toBe("bold");
+	expect(style("a", "font-weight")).toBe("700");
 });
 
 test("appending children one at a time costs linear sibling invalidation", async () => {
@@ -1021,5 +1021,33 @@ test("a computed style's indices read through, custom properties last", async ()
 	// from each.
 	const other = window.getComputedStyle(document.body) as any;
 	expect(other[5]).toBe(style[5]);
+	dom.dispose();
+});
+
+test("elements alike in rules, attributes and parent share resolved values, and differ where they differ", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>.row { color: rgb(255, 0, 0) } .row.hot { color: rgb(0, 0, 255) }</style>";
+	document.body.innerHTML =
+		"<div class=\"row\" id=\"a\">a</div><div class=\"row\" id=\"b\">b</div>" +
+		"<div class=\"row\" id=\"c\" style=\"font-weight: bold\">c</div>" +
+		"<ol><li id=\"one\">one</li><li id=\"two\">two</li></ol>";
+	await nextFrame(dom);
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!);
+	expect(style("a").color).toBe("rgb(255, 0, 0)");
+	expect(style("b").color).toBe("rgb(255, 0, 0)");
+	expect(style("c").fontWeight).toBe("700");
+	expect(style("a").fontWeight).toBe("400");
+
+	// A change to one of two alike elements moves only that one.
+	document.getElementById("b")!.classList.add("hot");
+	expect(style("b").color).toBe("rgb(0, 0, 255)");
+	expect(style("a").color).toBe("rgb(255, 0, 0)");
+	document.getElementById("a")!.style.color = "rgb(0, 128, 0)";
+	expect(style("a").color).toBe("rgb(0, 128, 0)");
+	expect(style("b").color).toBe("rgb(0, 0, 255)");
 	dom.dispose();
 });

@@ -685,9 +685,9 @@ test("::part() styles an exposed shadow part from the document, per spec", async
 	const title = root.querySelector('[part="title"]')!;
 	const body = root.querySelector('[part="body"]')!;
 	// The rule reaches the exposed part -- and only that part.
-	expect(window.getComputedStyle(title).fontWeight).toBe("bold");
+	expect(window.getComputedStyle(title).fontWeight).toBe("700");
 	expect(window.getComputedStyle(title).color).toBe("rgb(9, 8, 7)");
-	expect(window.getComputedStyle(body).fontWeight).not.toBe("bold");
+	expect(window.getComputedStyle(body).fontWeight).not.toBe("700");
 
 	dom.dispose();
 });
