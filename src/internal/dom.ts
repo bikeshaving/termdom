@@ -23242,6 +23242,12 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 		}
 		getObservers(document).add(this as unknown as AnyObserver);
 		this[kHomes].add(document);
+		// Observations are gathered in a frame, and nothing else may be
+		// about to draw one.
+		const attached = getAttachedDocument(document as unknown as Node);
+		if (attached !== undefined) {
+			void attached[kRender]();
+		}
 	}
 
 	unobserve(target: globalThis.Element): void {

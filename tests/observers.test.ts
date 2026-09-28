@@ -441,3 +441,25 @@ test("observe() rejects a box name the DOM does not enumerate", () => {
 	ro.observe(box, {box: "device-pixel-content-box"});
 	dom.dispose();
 });
+
+test("observing after the page has settled still delivers the first size", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom as any;
+	document.body.innerHTML = "<div id=box style=\"width:50%\">box</div>";
+	await nextFrame(dom);
+	// Nothing is left to draw, so only observe() can ask for the frame the
+	// first observations are made in.
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	const seen: string[] = [];
+	const box = document.getElementById("box");
+	new window.ResizeObserver((entries: any[]) => {
+		seen.push(`resize ${entries[0].contentRect.width}`);
+	}).observe(box);
+	new window.IntersectionObserver((entries: any[]) => {
+		seen.push(`intersect ${entries[0].isIntersecting}`);
+	}).observe(box);
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	expect(seen.sort()).toEqual(["intersect true", "resize 20"]);
+	dom.dispose();
+});
