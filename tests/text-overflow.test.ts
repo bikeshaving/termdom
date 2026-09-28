@@ -68,3 +68,39 @@ test("an inline-block aligns its lines within its own width", async () => {
 	);
 	expect(lines[0]).toBe("    c|  c  |");
 });
+
+test("two values mark the left edge and the right, and a string is its own marker", async () => {
+	const rows: string[] = [];
+	for (const value of [
+		"ellipsis",
+		"ellipsis ellipsis",
+		"clip ellipsis",
+		"ellipsis clip",
+		"\"<\" \">\"",
+		"\"->\"",
+	]) {
+		const terminal = new MockProcess({cols: 30, rows: 4});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			"<div id=d style='width:8ch;white-space:nowrap;overflow:hidden;" +
+			`text-overflow:${value}'>abcdefghijklmnop</div>`;
+		await nextFrame(dom);
+		// Scrolled sideways, so the line overflows on the left as well.
+		dom.document.getElementById("d")!.scrollLeft = value === "\"->\"" ? 0 : 3;
+		await nextFrame(dom);
+		await new Promise<void>((resolve) =>
+			(terminal as any).terminal.write("", resolve),
+		);
+		rows.push(terminal.getVisibleText().split("\n")[0].trimEnd());
+		dom.dispose();
+	}
+	expect(rows).toEqual([
+		// One value marks only the end edge.
+		"defghij…",
+		"…efghij…",
+		"defghij…",
+		"…efghijk",
+		"<efghij>",
+		"abcdef->",
+	]);
+});
