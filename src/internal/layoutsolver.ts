@@ -550,15 +550,35 @@ export class LayoutNode {
 	}
 }
 
+// A style's values are never written to once built, so one object serves
+// every node with the same whole number of cells or percent. Those are
+// nearly all of them: a margin of 0, a padding of 1, a width of 50%.
+const INTERNED_LIMIT = 1024;
+const internedCells: CSSValues.Value[] = [];
+const internedPercents: CSSValues.Value[] = [];
+
+function internValue(
+	interned: CSSValues.Value[],
+	unit: CSSValues.Value["unit"],
+	value: number,
+): CSSValues.Value {
+	if (!Number.isInteger(value) || value < 0 || value >= INTERNED_LIMIT) {
+		return {unit, value};
+	}
+	return (interned[value] ??= Object.freeze({unit, value}) as CSSValues.Value);
+}
+
 export function toValue(input: Length): CSSValues.Value {
 	if (input == null) {
 		return UNDEFINED_VALUE;
 	}
 	if (typeof input === "object") {
-		return {unit: "percent", value: input.percentage};
+		return internValue(internedPercents, "percent", input.percentage);
 	}
 	if (typeof input === "number") {
-		return Number.isNaN(input) ? UNDEFINED_VALUE : {unit: "cell", value: input};
+		return Number.isNaN(input)
+			? UNDEFINED_VALUE
+			: internValue(internedCells, "cell", input);
 	}
 	return AUTO_VALUE;
 }
