@@ -320,8 +320,9 @@ test("inline-block with explicit width", async () => {
 	const output = terminal.getStaticANSI();
 	const visibleText = terminal.getVisibleText();
 
-	// First block should be exactly 10 characters wide due to width: "10px"
-	expect(visibleText).toContain("Fixed     Auto"); // "Fixed" + 5 spaces to reach 10 chars + "Auto"
+	// The first block is 10 cells wide, with "Fixed" centered in it as its
+	// text-align asks: 2.5 cells either side, rounded as a block rounds it.
+	expect(visibleText).toContain("   Fixed  Auto");
 
 	expect(output).toMatchSnapshot();
 

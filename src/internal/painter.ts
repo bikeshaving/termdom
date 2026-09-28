@@ -925,9 +925,74 @@ function paintContent(
 		} else {
 			paintLayoutChildren(origin);
 		}
+		if (
+			style.overflowX !== "visible" &&
+			getComputedValue(element, "text-overflow") === "ellipsis"
+		) {
+			paintEllipses(painter, element, style, ctx);
+		}
 	} finally {
 		ctx.clipRect = previousClip;
 		painter[kScrolledRows] = previousScrolled;
+	}
+}
+
+// The text an element's own lines hold: its inline content, not what a
+// nested block or inline-block lays out in lines of its own.
+function *getOwnLineText(element: Element): Generator<Text> {
+	for (const child of flowContent(element)) {
+		if (child.nodeType === child.TEXT_NODE) {
+			yield child as Text;
+		} else if (
+			child.nodeType === child.ELEMENT_NODE &&
+			getComputedValue(child as Element, "display") === "inline"
+		) {
+			yield *getOwnLineText(child as Element);
+		}
+	}
+}
+
+// text-overflow: ellipsis. A line that runs past the clipped edge ends
+// in an ellipsis in the last cell that shows, drawn in the element's own
+// text style, at the end the line reads toward.
+function paintEllipses(
+	painter: Painter,
+	element: Element,
+	style: PaintStyle,
+	ctx: CellContext,
+): void {
+	const clip = ctx.clipRect;
+	if (clip === null) {
+		return;
+	}
+	const rtl = getComputedValue(element, "direction") === "rtl";
+	const edge = rtl ? clip.left : clip.right - 1;
+	if (!Number.isFinite(edge)) {
+		return;
+	}
+	const rows = new Map<number, {left: number; right: number}>();
+	for (const text of getOwnLineText(element)) {
+		for (const fragment of painter[kLayout].lineFragments(text)) {
+			if (fragment.endOffset <= fragment.startOffset) {
+				continue;
+			}
+			const row = Math.round(fragment.rect.top);
+			const span = rows.get(row) ?? {left: Infinity, right: -Infinity};
+			span.left = Math.min(span.left, Math.round(fragment.rect.left));
+			span.right = Math.max(
+				span.right,
+				Math.round(fragment.rect.left + fragment.rect.width),
+			);
+			rows.set(row, span);
+		}
+	}
+	for (const [row, span] of rows) {
+		if (row < clip.top || row >= clip.bottom) {
+			continue;
+		}
+		if (rtl ? span.left < clip.left : span.right > clip.right) {
+			ctx.drawText("…", edge, row, style.cell);
+		}
 	}
 }
 
