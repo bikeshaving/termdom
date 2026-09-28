@@ -32651,10 +32651,21 @@ function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 	}
 }
 
-// A mutation that made the focused element unfocusable (an inert
-// ancestor appearing above it, a move into an inert parent, display:none
-// anywhere on its flat chain) unfocuses it, including blur events and
-// restyle.
+/**
+ * HTML's focus fixup, a step of every rendering update. A focused
+ * element that stopped being focusable without a mutation, because a
+ * :focus rule hid it, say, loses the focus.
+ */
+export function runFocusFixup(document: globalThis.Document): void {
+	const attached = getAttachedDocument(document);
+	if (attached !== undefined) {
+		dropUnfocusableFocus(document as Document, attached);
+	}
+}
+
+// A focused element made unfocusable (an inert ancestor appearing above
+// it, a move into an inert parent, display:none anywhere on its flat
+// chain) unfocuses it, including blur events and restyle.
 function dropUnfocusableFocus(
 	document: Document,
 	attached: AttachedDocument,

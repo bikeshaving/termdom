@@ -271,3 +271,20 @@ test("a checkbox's state reaches only what its rules name", async () => {
 	expect(color(".deep")).toBe("rgb(0, 0, 0)");
 	termdom.dispose();
 });
+
+test("a focused element a :focus rule hides loses the focus at the next frame", async () => {
+	const {termdom, document, color} = await makeStyled(
+		"<style>div:focus { display: none } div { color: rgb(0, 0, 0) }</style>" +
+			"<div id=d tabindex=0>d</div>",
+	);
+	const blurs: string[] = [];
+	const div = document.getElementById("d") as HTMLElement;
+	div.addEventListener("blur", () => blurs.push("blur"));
+	div.focus();
+	await nextFrame(termdom);
+	// HTML's focus fixup: no mutation made it unfocusable, the frame did.
+	expect(document.activeElement).toBe(document.body);
+	expect(blurs).toEqual(["blur"]);
+	expect(color("#d")).toBe("rgb(0, 0, 0)");
+	termdom.dispose();
+});
