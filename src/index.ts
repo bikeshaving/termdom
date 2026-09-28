@@ -732,6 +732,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	termDOM[kInput].resolvePendingHover();
 
 	DOM.applyMutations(termDOM.document);
+	DOM.runFocusFixup(termDOM.document);
 
 	termDOM[kLayout].performLayout();
 	DOM.clampScrollOffsets(termDOM.document);
