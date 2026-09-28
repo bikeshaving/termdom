@@ -455,18 +455,8 @@ const EXCLUSIONS: Record<string, string> = {
 	"dom/nodes/MutationObserver-document.html":
 		"requires-script-execution: the observer is installed by a script the parser runs partway through the document, and the records under test are the parser's own insertions",
 
-	// requires-user-input: the test drives a real pointer or keyboard through
-	// testdriver, which asks the browser under test to synthesize input.
-	"dom/events/click-on-absolute-pseudo.html":
-		"requires-user-input: a pointer action sequence over a pseudo-element",
-	"dom/events/focus-event-document-move.html":
-		"requires-user-input: a pointer action sequence that moves the node it presses",
-	"dom/events/handler-count.html":
-		"requires-user-input: pointer action sequences against a running CSS animation",
-	"dom/events/pointer-event-document-move.html":
-		"requires-user-input: a pointer action sequence that moves the node it presses",
-	"dom/events/no-focus-events-at-clicking-editable-content-in-link.html":
-		"requires-user-input: clicks on editable content, and the focus events HTML fires from them",
+	// requires-touch-input: the test drives touches, which a terminal does
+	// not report. Pointer and key actions run through the testdriver shim.
 
 	// requires-css-animations: the events under test are fired by the CSS
 	// animation machinery (@keyframes), which the engine does not run yet.
@@ -537,11 +527,7 @@ const EXCLUSIONS: Record<string, string> = {
 
 	// FocusEvent or a pointer action; none of those interfaces exists here.
 	"shadow-dom/touch-event-retargeting-leak.html":
-		"requires-user-input: a touch action sequence driven through testdriver",
-	"shadow-dom/wheel-event-related-target.html":
-		"requires-user-input: a wheel action sequence driven through testdriver",
-	"shadow-dom/nested-hover-pseudo-class-removal.html":
-		"requires-user-input: a pointer action sequence over a :hover rule",
+		"requires-touch-input: a touch action sequence, and a terminal reports no touches",
 
 	// requires-script-execution: the document's own parser must run a script
 	// partway through, which is what the case is about. This DOM parses
@@ -634,71 +620,8 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: the selection under test is an iframe's, across a document.open()",
 	"selection/deleteFromDocument.html":
 		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
-
-	// requires-user-input: the selection under test is one a pointer or key
-	// action sequence makes, which testdriver asks the browser to synthesize.
-	"selection/anchor-removal.html":
-		"requires-user-input: the selection is dragged out with a pointer action sequence",
-	"selection/canvas-click.html":
-		"requires-user-input: a pointer action sequence over a canvas",
-	"selection/canvas-drag.html":
-		"requires-user-input: a pointer action sequence over a canvas",
-	"selection/drag-disabled-textarea-shadow-dom.html":
-		"requires-user-input: the selection is dragged out with a pointer action sequence",
-	"selection/drag-out-of-floated-content.html":
-		"requires-user-input: the selection is dragged out with a pointer action sequence",
-	"selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html":
-		"requires-user-input: the selection is dragged out with a pointer action sequence",
-	"selection/drag-selection-extend-to-user-select-none.html":
-		"requires-user-input: the selection is dragged out with a pointer action sequence",
-	"selection/extend-selection-in-shadow-tree.html":
-		"requires-user-input: the selection is dragged out with a pointer action sequence",
-	"selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html":
-		"requires-user-input: the character is deleted by a key action sequence",
-	"selection/fire-selectionchange-event-on-pressing-backspace.html":
-		"requires-user-input: the character is deleted by a key action sequence",
-	"selection/fire-selectionchange-event-on-textcontrol-element-on-pressing-backspace.html":
-		"requires-user-input: the character is deleted by a key action sequence",
-	"selection/move-by-word-korean.html":
-		"requires-user-input: the caret is moved by a key action sequence",
-	"selection/move-by-word-with-symbol.html":
-		"requires-user-input: the caret is moved by a key action sequence",
-	"selection/onselectstart-on-key-in-contenteditable.html":
-		"requires-user-input: the selection is made by a key action sequence",
-	"selection/select-end-of-line-image.tentative.html":
-		"requires-user-input: the selection is made by a pointer action sequence",
-	"selection/selection-direction-on-single-click.html":
-		"requires-user-input: the selection is made by a pointer action sequence",
-	"selection/selection-direction-on-double-click.tentative.html":
-		"requires-user-input: the selection is made by a pointer action sequence",
-	"selection/selection-direction-on-triple-click.tentative.html":
-		"requires-user-input: the selection is made by a pointer action sequence",
-	"selection/selection-focused-element-becomes-nonfocusable.html":
-		"requires-user-input: the element is focused by a pointer action sequence",
-	"selection/stringifier_editable_element.tentative.html":
-		"requires-user-input: the selection is made by a pointer action sequence",
-	"selection/user-select-on-input-and-contenteditable.html":
-		"requires-user-input: the selection is made by a pointer action sequence",
-	"selection/anonymous/details-ancestor.html":
-		"requires-user-input: the selection is made by a pointer action sequence",
-	"selection/anonymous/details-mutate.html":
-		"requires-user-input: the selection is made by a pointer action sequence",
-	"selection/caret/move-around-contenteditable-false.html":
-		"requires-user-input: the caret is moved by a key action sequence",
-	"selection/caret/move-around-generated-content.html":
-		"requires-user-input: the caret is moved by a key action sequence",
-	"selection/contenteditable/initial-selection-during-focus-event-propagation.html":
-		"requires-user-input: the editing host is focused by a pointer action sequence",
-	"selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html":
-		"requires-user-input: the selection is modified by a pointer action sequence",
-	"selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html":
-		"requires-user-input: the selection is modified by a pointer action sequence",
-	"selection/textcontrols/initial-selection-during-focus-event-propagation.html":
-		"requires-user-input: the control is focused by a pointer action sequence",
 	"selection/textcontrols/click-input-after-iframe-focus.html":
-		"requires-user-input: the control is clicked by a pointer action sequence",
-	"selection/textcontrols/focus.html":
-		"requires-user-input: the control is focused by a pointer action sequence",
+		"requires-browsing-context: the focus moves in from an iframe",
 
 	// Every subtest of each of these is outside this DOM by construction.
 	"custom-elements/builtin-coverage.html":
@@ -744,7 +667,7 @@ const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 	],
 	[
 		"dom/events/non-cancelable-when-passive/",
-		"requires-user-input: each case drives a touch or wheel action sequence through testdriver",
+		"requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions",
 	],
 	[
 		"dom/nodes/Document-contentType/",

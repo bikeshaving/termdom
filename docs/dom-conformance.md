@@ -15,13 +15,13 @@ what a terminal cannot have: a `location` for the test's URL, and the
 window's legacy named access to elements by id.
 
 - Test files in the suites: 1173
-- Reference tests (no testharness, scored by pixels): 55
-- Excluded, each with its reason below: 356
+- Reference tests (no testharness, scored by pixels): 56
+- Excluded, each with its reason below: 319
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 696
-- Files whose harness did not complete: 66
-- Subtests passed: 99797
-- Subtests failed: 789
+- Files whose harness completed: 725
+- Files whose harness did not complete: 73
+- Subtests passed: 99855
+- Subtests failed: 831
 
 ## Exclusions
 
@@ -97,58 +97,53 @@ window's legacy named access to elements by id.
 | dom/events/EventListener-incumbent-global-subframe-2.sub.html | requires-browsing-context: a subframe of the incumbent-global test |
 | dom/events/EventListener-incumbent-global-subsubframe.sub.html | requires-browsing-context: a subframe of the incumbent-global test |
 | dom/events/EventListener-invoke-legacy.html | requires-css-animations: four of the six subtests await a running CSS animation's events |
-| dom/events/click-on-absolute-pseudo.html | requires-user-input: a pointer action sequence over a pseudo-element |
 | dom/events/event-global-extra.window.js | requires-browsing-context: window.event across frames |
 | dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | requires-browsing-context: window.event during a beforeunload the window fires |
 | dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | requires-browsing-context: window.event inside window.onerror |
 | dom/events/event-global-set-before-handleEvent-lookup.window.js | requires-browsing-context: window.event, which is the window's own slot |
 | dom/events/event-global.html | requires-browsing-context: window.event, which is the window's own slot |
-| dom/events/focus-event-document-move.html | requires-user-input: a pointer action sequence that moves the node it presses |
-| dom/events/handler-count.html | requires-user-input: pointer action sequences against a running CSS animation |
-| dom/events/no-focus-events-at-clicking-editable-content-in-link.html | requires-user-input: clicks on editable content, and the focus events HTML fires from them |
-| dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-div.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-document.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-root.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-window.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-body.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-div.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-document.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-root.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-window.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-body.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-div.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-document.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-root.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-window.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-body.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-div.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-document.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-root.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-window.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-body.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-div.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-document.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-root.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-window.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-body.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-div.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-document.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-root.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-window.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-body.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-div.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-document.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-root.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-window.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-body.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-div.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-document.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
-| dom/events/pointer-event-document-move.html | requires-user-input: a pointer action sequence that moves the node it presses |
+| dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
+| dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
 | dom/events/scrolling/iframe-chains.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
 | dom/events/scrolling/input-text-scroll-event-when-using-arrow-keys.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
 | dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
@@ -283,39 +278,9 @@ window's legacy named access to elements by id.
 | dom/traversal/TreeWalker-acceptNode-filter-cross-realm.html | requires-browsing-context: filters that are objects from another realm |
 | dom/traversal/TreeWalker-realm.html | requires-browsing-context: a TreeWalker built in another realm |
 | selection/Document-open.html | requires-browsing-context: the selection under test is an iframe's, across a document.open() |
-| selection/anchor-removal.html | requires-user-input: the selection is dragged out with a pointer action sequence |
-| selection/anonymous/details-ancestor.html | requires-user-input: the selection is made by a pointer action sequence |
-| selection/anonymous/details-mutate.html | requires-user-input: the selection is made by a pointer action sequence |
-| selection/canvas-click.html | requires-user-input: a pointer action sequence over a canvas |
-| selection/canvas-drag.html | requires-user-input: a pointer action sequence over a canvas |
-| selection/caret/move-around-contenteditable-false.html | requires-user-input: the caret is moved by a key action sequence |
-| selection/caret/move-around-generated-content.html | requires-user-input: the caret is moved by a key action sequence |
-| selection/contenteditable/initial-selection-during-focus-event-propagation.html | requires-user-input: the editing host is focused by a pointer action sequence |
-| selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | requires-user-input: the selection is modified by a pointer action sequence |
-| selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | requires-user-input: the selection is modified by a pointer action sequence |
 | selection/deleteFromDocument.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
-| selection/drag-disabled-textarea-shadow-dom.html | requires-user-input: the selection is dragged out with a pointer action sequence |
-| selection/drag-out-of-floated-content.html | requires-user-input: the selection is dragged out with a pointer action sequence |
-| selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html | requires-user-input: the selection is dragged out with a pointer action sequence |
-| selection/drag-selection-extend-to-user-select-none.html | requires-user-input: the selection is dragged out with a pointer action sequence |
-| selection/extend-selection-in-shadow-tree.html | requires-user-input: the selection is dragged out with a pointer action sequence |
-| selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html | requires-user-input: the character is deleted by a key action sequence |
-| selection/fire-selectionchange-event-on-pressing-backspace.html | requires-user-input: the character is deleted by a key action sequence |
-| selection/fire-selectionchange-event-on-textcontrol-element-on-pressing-backspace.html | requires-user-input: the character is deleted by a key action sequence |
 | selection/getSelection.html | requires-browsing-context: every case is an iframe's selection, or asserts that the document's defaultView is not null |
-| selection/move-by-word-korean.html | requires-user-input: the caret is moved by a key action sequence |
-| selection/move-by-word-with-symbol.html | requires-user-input: the caret is moved by a key action sequence |
-| selection/onselectstart-on-key-in-contenteditable.html | requires-user-input: the selection is made by a key action sequence |
-| selection/select-end-of-line-image.tentative.html | requires-user-input: the selection is made by a pointer action sequence |
-| selection/selection-direction-on-double-click.tentative.html | requires-user-input: the selection is made by a pointer action sequence |
-| selection/selection-direction-on-single-click.html | requires-user-input: the selection is made by a pointer action sequence |
-| selection/selection-direction-on-triple-click.tentative.html | requires-user-input: the selection is made by a pointer action sequence |
-| selection/selection-focused-element-becomes-nonfocusable.html | requires-user-input: the element is focused by a pointer action sequence |
-| selection/stringifier_editable_element.tentative.html | requires-user-input: the selection is made by a pointer action sequence |
-| selection/textcontrols/click-input-after-iframe-focus.html | requires-user-input: the control is clicked by a pointer action sequence |
-| selection/textcontrols/focus.html | requires-user-input: the control is focused by a pointer action sequence |
-| selection/textcontrols/initial-selection-during-focus-event-propagation.html | requires-user-input: the control is focused by a pointer action sequence |
-| selection/user-select-on-input-and-contenteditable.html | requires-user-input: the selection is made by a pointer action sequence |
+| selection/textcontrols/click-input-after-iframe-focus.html | requires-browsing-context: the focus moves in from an iframe |
 | shadow-dom/declarative/declarative-after-attachshadow.html | requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one |
 | shadow-dom/declarative/declarative-parser-interaction.html | requires-script-execution: the case is what a script sees while the parser is still inside the template |
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | requires-script-execution: the opt-in is read by a script the parser runs |
@@ -353,7 +318,6 @@ window's legacy named access to elements by id.
 | shadow-dom/focus-navigation/tentative/focus-scroller-layout-update.html | not-a-standard: focusgroup and the scroller focus rules are proposals, filed under tentative in the suite |
 | shadow-dom/leaktests/selection.html | requires-browsing-context: a Selection over a rendered frame |
 | shadow-dom/leaktests/window-frames.html | requires-browsing-context: whether a shadow tree's nodes leak into window.frames |
-| shadow-dom/nested-hover-pseudo-class-removal.html | requires-user-input: a pointer action sequence over a :hover rule |
 | shadow-dom/reference-target/tentative/aria-labelledby.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/reference-target/tentative/commandfor.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/reference-target/tentative/dom-mutation.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
@@ -369,7 +333,7 @@ window's legacy named access to elements by id.
 | shadow-dom/reference-target/tentative/property-reflection.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/reference-target/tentative/reference-target-basics.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
-| shadow-dom/touch-event-retargeting-leak.html | requires-user-input: a touch action sequence driven through testdriver |
+| shadow-dom/touch-event-retargeting-leak.html | requires-touch-input: a touch action sequence, and a terminal reports no touches |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-004.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/events/event-dispatch/test-002.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/events/event-dispatch/test-003.html | requires-browsing-context: the fixture is a rendered document in a frame |
@@ -382,7 +346,6 @@ window's legacy named access to elements by id.
 | shadow-dom/untriaged/styles/test-005.html | requires-browsing-context: styles applied in a rendered document in a frame |
 | shadow-dom/untriaged/styles/test-008.html | requires-browsing-context: styles applied in a rendered document in a frame |
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html | requires-browsing-context: a Selection over a rendered document in a frame |
-| shadow-dom/wheel-event-related-target.html | requires-user-input: a wheel action sequence driven through testdriver |
 
 ## Deliberate deviations
 
@@ -612,10 +575,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/NodeList-live-mutations.window.js | OK | 4 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-3.html | OK | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-3.html | ERROR | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | OK | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | ERROR | 1 | 0 |
 | dom/nodes/ParentNode-append.html | OK | 25 | 0 |
 | dom/nodes/ParentNode-children.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-prepend.html | OK | 22 | 0 |
@@ -685,7 +648,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/focus-preserve.html | OK | 4 | 0 |
 | dom/nodes/moveBefore/focus-within.html | OK | 5 | 0 |
 | dom/nodes/moveBefore/fullscreen-preserve.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/hover-style-update.html | OK | 0 | 2 |
+| dom/nodes/moveBefore/hover-style-update.html | OK | 1 | 1 |
 | dom/nodes/moveBefore/iframe-document-preserve.window.js | EXCLUDED (requires-browsing-context: the move happens inside a frame's document) | 0 | 0 |
 | dom/nodes/moveBefore/listed-form-element-reset.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/live-range-updates.html | OK | 3 | 0 |
@@ -836,7 +799,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/EventTarget-removeEventListener.any.js | OK | 1 | 0 |
 | dom/events/EventTarget-this-of-listener.html | OK | 6 | 0 |
 | dom/events/KeyEvent-initKeyEvent.html | OK | 3 | 0 |
-| dom/events/click-on-absolute-pseudo.html | EXCLUDED (requires-user-input: a pointer action sequence over a pseudo-element) | 0 | 0 |
+| dom/events/click-on-absolute-pseudo.html | OK | 0 | 1 |
 | dom/events/event-disabled-dynamic.html | OK | 1 | 0 |
 | dom/events/event-global-extra.window.js | EXCLUDED (requires-browsing-context: window.event across frames) | 0 | 0 |
 | dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | EXCLUDED (requires-browsing-context: window.event during a beforeunload the window fires) | 0 | 0 |
@@ -845,56 +808,56 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/event-global.html | EXCLUDED (requires-browsing-context: window.event, which is the window's own slot) | 0 | 0 |
 | dom/events/event-handler-attribute-replace-preserves-passive.html | OK | 2 | 0 |
 | dom/events/event-src-element-nullable.html | OK | 1 | 0 |
-| dom/events/focus-event-document-move.html | EXCLUDED (requires-user-input: a pointer action sequence that moves the node it presses) | 0 | 0 |
-| dom/events/handler-count.html | EXCLUDED (requires-user-input: pointer action sequences against a running CSS animation) | 0 | 0 |
+| dom/events/focus-event-document-move.html | OK | 1 | 0 |
+| dom/events/handler-count.html | OK | 2 | 0 |
 | dom/events/label-default-action.html | OK | 1 | 0 |
 | dom/events/legacy-pre-activation-behavior.window.js | OK | 1 | 0 |
 | dom/events/mouse-event-retarget.html | OK | 1 | 0 |
-| dom/events/no-focus-events-at-clicking-editable-content-in-link.html | EXCLUDED (requires-user-input: clicks on editable content, and the focus events HTML fires from them) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-div.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-document.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-root.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-window.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-div.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-document.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-root.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-window.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-div.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-document.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-root.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-window.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-div.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-document.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-root.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-window.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-div.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-document.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-root.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-window.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-div.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-document.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-root.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-window.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-div.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-document.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-root.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-window.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-div.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-document.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
+| dom/events/no-focus-events-at-clicking-editable-content-in-link.html | OK | 2 | 0 |
+| dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
 | dom/events/passive-by-default.html | OK | 100 | 0 |
-| dom/events/pointer-event-document-move.html | EXCLUDED (requires-user-input: a pointer action sequence that moves the node it presses) | 0 | 0 |
+| dom/events/pointer-event-document-move.html | OK | 0 | 1 |
 | dom/events/preventDefault-during-activation-behavior.html | OK | 1 | 0 |
 | dom/events/relatedTarget.window.js | OK | 1 | 5 |
 | dom/events/remove-all-listeners.html | OK | 2 | 0 |
@@ -1027,23 +990,23 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/addRange-52.html | OK | 232 | 0 |
 | selection/addRange-56.html | OK | 116 | 0 |
 | selection/addRange.tentative.html | OK | 1 | 0 |
-| selection/anchor-removal.html | EXCLUDED (requires-user-input: the selection is dragged out with a pointer action sequence) | 0 | 0 |
-| selection/anonymous/details-ancestor.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
-| selection/anonymous/details-mutate.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
+| selection/anchor-removal.html | OK | 2 | 0 |
+| selection/anonymous/details-ancestor.html | OK | 1 | 0 |
+| selection/anonymous/details-mutate.html | OK | 1 | 0 |
 | selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html | OK | 11 | 0 |
 | selection/bidi/modify-extend-by-character.html | OK | 18 | 10 |
 | selection/bidi/modify-move-by-character.html | OK | 18 | 10 |
 | selection/bidi/modify.tentative.html | OK | 24 | 12 |
-| selection/canvas-click.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
-| selection/canvas-drag.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
+| selection/canvas-click.html | OK | 0 | 1 |
+| selection/canvas-drag.html | OK | 1 | 0 |
 | selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 8 | 16 |
 | selection/caret/after-designMode-off.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-1.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-2.html | REFTEST | 0 | 0 |
 | selection/caret/editing-host-has-only-invisible-br.html | REFTEST | 0 | 0 |
 | selection/caret/empty-elements.html | OK | 1 | 0 |
-| selection/caret/move-around-contenteditable-false.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
-| selection/caret/move-around-generated-content.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
+| selection/caret/move-around-contenteditable-false.html | TIMEOUT | 0 | 5 |
+| selection/caret/move-around-generated-content.html | TIMEOUT | 0 | 3 |
 | selection/collapse-00.html | OK | 2655 | 0 |
 | selection/collapse-15.html | OK | 2655 | 0 |
 | selection/collapse-30.html | OK | 5133 | 0 |
@@ -1054,30 +1017,30 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/collapseToStartEnd.html | OK | 57 | 0 |
 | selection/contenteditable/cefalse-on-boundaries.html | OK | 4 | 0 |
 | selection/contenteditable/collapse.html | OK | 0 | 3 |
-| selection/contenteditable/initial-selection-during-focus-event-propagation.html | EXCLUDED (requires-user-input: the editing host is focused by a pointer action sequence) | 0 | 0 |
+| selection/contenteditable/initial-selection-during-focus-event-propagation.html | OK | 0 | 1 |
 | selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR ("" is not a valid element name) | 0 | 0 |
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 1 | 35 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
 | selection/contenteditable/modify.tentative.html | OK | 15 | 0 |
-| selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
-| selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
+| selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | OK | 3 | 4 |
+| selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | OK | 4 | 3 |
 | selection/contenteditable/selection-outside-focused-editing-host.tentative.html | TIMEOUT | 0 | 0 |
 | selection/deleteFromDocument-HTMLDetails.html | OK | 30 | 0 |
 | selection/deleteFromDocument.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
-| selection/drag-disabled-textarea-shadow-dom.html | EXCLUDED (requires-user-input: the selection is dragged out with a pointer action sequence) | 0 | 0 |
-| selection/drag-out-of-floated-content.html | EXCLUDED (requires-user-input: the selection is dragged out with a pointer action sequence) | 0 | 0 |
-| selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html | EXCLUDED (requires-user-input: the selection is dragged out with a pointer action sequence) | 0 | 0 |
-| selection/drag-selection-extend-to-user-select-none.html | EXCLUDED (requires-user-input: the selection is dragged out with a pointer action sequence) | 0 | 0 |
+| selection/drag-disabled-textarea-shadow-dom.html | OK | 1 | 0 |
+| selection/drag-out-of-floated-content.html | OK | 1 | 0 |
+| selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html | OK | 1 | 0 |
+| selection/drag-selection-extend-to-user-select-none.html | OK | 0 | 4 |
 | selection/extend-00.html | OK | 2024 | 0 |
 | selection/extend-20.html | OK | 2376 | 0 |
 | selection/extend-40.html | OK | 176 | 0 |
 | selection/extend-exception.html | OK | 1 | 0 |
 | selection/extend-selection-backward-on-input.html | OK | 0 | 1 |
-| selection/extend-selection-in-shadow-tree.html | EXCLUDED (requires-user-input: the selection is dragged out with a pointer action sequence) | 0 | 0 |
-| selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html | EXCLUDED (requires-user-input: the character is deleted by a key action sequence) | 0 | 0 |
+| selection/extend-selection-in-shadow-tree.html | OK | 0 | 1 |
+| selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html | OK | 0 | 3 |
 | selection/fire-selectionchange-event-on-document-if-textcontrol-element-is-in-shadow-tree.html | OK | 0 | 1 |
-| selection/fire-selectionchange-event-on-pressing-backspace.html | EXCLUDED (requires-user-input: the character is deleted by a key action sequence) | 0 | 0 |
-| selection/fire-selectionchange-event-on-textcontrol-element-on-pressing-backspace.html | EXCLUDED (requires-user-input: the character is deleted by a key action sequence) | 0 | 0 |
+| selection/fire-selectionchange-event-on-pressing-backspace.html | OK | 0 | 2 |
+| selection/fire-selectionchange-event-on-textcontrol-element-on-pressing-backspace.html | OK | 1 | 0 |
 | selection/getRangeAt.html | OK | 4 | 0 |
 | selection/getSelection.html | EXCLUDED (requires-browsing-context: every case is an iframe's selection, or asserts that the document's defaultView is not null) | 0 | 0 |
 | selection/idlharness.window.js | ERROR (missing script /resources/WebIDLParser.js) | 0 | 0 |
@@ -1087,24 +1050,24 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/modify-line-flex-row.tentative.html | OK | 0 | 2 |
 | selection/modify-line-grid-basic.tentative.html | OK | 0 | 2 |
 | selection/modify.tentative.html | OK | 7 | 0 |
-| selection/move-by-word-korean.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
-| selection/move-by-word-with-symbol.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
+| selection/move-by-word-korean.html | OK | 0 | 4 |
+| selection/move-by-word-with-symbol.html | OK | 2 | 4 |
 | selection/move-paragraph-cross-editing-boundary.tentative.html | OK | 0 | 2 |
 | selection/move-paragraphboundary-cross-editing-boundary.tentative.html | OK | 0 | 2 |
 | selection/move-selection-range-into-different-root.tentative.html | OK | 16 | 0 |
 | selection/onselectionchange-on-distinct-text-controls.html | OK | 2 | 0 |
 | selection/onselectionchange-on-document.html | OK | 4 | 0 |
-| selection/onselectstart-on-key-in-contenteditable.html | EXCLUDED (requires-user-input: the selection is made by a key action sequence) | 0 | 0 |
+| selection/onselectstart-on-key-in-contenteditable.html | OK | 30 | 0 |
 | selection/removeAllRanges.html | OK | 116 | 0 |
 | selection/removeRange.html | OK | 29 | 0 |
 | selection/script-and-style-elements.html | OK | 0 | 1 |
-| selection/select-end-of-line-image.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
+| selection/select-end-of-line-image.tentative.html | OK | 0 | 1 |
 | selection/selectAllChildren.html | OK | 2242 | 0 |
 | selection/selection-content-visibility-hidden.html | OK | 1 | 0 |
-| selection/selection-direction-on-double-click.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
-| selection/selection-direction-on-single-click.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
-| selection/selection-direction-on-triple-click.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
-| selection/selection-focused-element-becomes-nonfocusable.html | EXCLUDED (requires-user-input: the element is focused by a pointer action sequence) | 0 | 0 |
+| selection/selection-direction-on-double-click.tentative.html | OK | 0 | 1 |
+| selection/selection-direction-on-single-click.html | OK | 0 | 1 |
+| selection/selection-direction-on-triple-click.tentative.html | OK | 0 | 1 |
+| selection/selection-focused-element-becomes-nonfocusable.html | TIMEOUT | 0 | 0 |
 | selection/selection-incremental-change-repaint.html | REFTEST | 0 | 0 |
 | selection/selection-modify-extend-word-generated-content.html | OK | 2 | 0 |
 | selection/selection-nested-video.html | OK | 1 | 0 |
@@ -1136,11 +1099,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/shadow-dom/tentative/Selection-isCollapsed.html | OK | 4 | 0 |
 | selection/shadow-dom/tentative/Selection-later-become-slotted-content.html | OK | 1 | 0 |
 | selection/stringifier.tentative.html | OK | 1 | 0 |
-| selection/stringifier_editable_element.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
+| selection/stringifier_editable_element.tentative.html | TIMEOUT | 0 | 0 |
 | selection/test-iframe.html | REFTEST | 0 | 0 |
-| selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-user-input: the control is clicked by a pointer action sequence) | 0 | 0 |
-| selection/textcontrols/focus.html | EXCLUDED (requires-user-input: the control is focused by a pointer action sequence) | 0 | 0 |
-| selection/textcontrols/initial-selection-during-focus-event-propagation.html | EXCLUDED (requires-user-input: the control is focused by a pointer action sequence) | 0 | 0 |
+| selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-browsing-context: the focus moves in from an iframe) | 0 | 0 |
+| selection/textcontrols/focus.html | OK | 0 | 1 |
+| selection/textcontrols/initial-selection-during-focus-event-propagation.html | OK | 0 | 1 |
 | selection/textcontrols/onselectionchange-content-attribute.html | OK | 2 | 0 |
 | selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
@@ -1148,7 +1111,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/toString-ff-bug-001.html | OK | 1 | 0 |
 | selection/toString-user-select-none.html | OK | 0 | 3 |
 | selection/type.html | OK | 29 | 0 |
-| selection/user-select-on-input-and-contenteditable.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
+| selection/user-select-on-input-and-contenteditable.html | OK | 0 | 5 |
 | shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 1 | 13 |
 | shadow-dom/Document-prototype-adoptNode.html | OK | 2 | 0 |
 | shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 2 | 6 |
@@ -1294,7 +1257,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/click-focus-delegatesFocus-click.html | OK | 2 | 4 |
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | OK | 0 | 1 |
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | OK | 0 | 1 |
-| shadow-dom/focus/click-focus-slot-ancestor.html | OK | 0 | 3 |
+| shadow-dom/focus/click-focus-slot-ancestor.html | OK | 3 | 0 |
 | shadow-dom/focus/delegatesFocus-tabindex-change.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-autofocus.html | OK | 5 | 0 |
 | shadow-dom/focus/focus-click-on-shadow-host.html | OK | 0 | 1 |
@@ -1325,7 +1288,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-one.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-scrollable.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero.html | OK | 1 | 0 |
-| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 0 | 1 |
+| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 1 | 0 |
 | shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html | OK | 0 | 1 |
 | shadow-dom/focus/text-selection-with-delegatesFocus.html | OK | 0 | 2 |
 | shadow-dom/form-control-form-attribute.html | OK | 2 | 1 |
@@ -1350,7 +1313,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/leaktests/selection.html | EXCLUDED (requires-browsing-context: a Selection over a rendered frame) | 0 | 0 |
 | shadow-dom/leaktests/window-frames.html | EXCLUDED (requires-browsing-context: whether a shadow tree's nodes leak into window.frames) | 0 | 0 |
 | shadow-dom/manual-slot-assignment-no-wrong-unassign.html | REFTEST | 0 | 0 |
-| shadow-dom/nested-hover-pseudo-class-removal.html | EXCLUDED (requires-user-input: a pointer action sequence over a :hover rule) | 0 | 0 |
+| shadow-dom/nested-hover-pseudo-class-removal.html | REFTEST | 0 | 0 |
 | shadow-dom/offsetParent-across-shadow-boundaries.html | OK | 18 | 4 |
 | shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html | OK | 0 | 3 |
 | shadow-dom/reference-target/tentative/aria-labelledby.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
@@ -1389,7 +1352,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/slots-fallback.html | OK | 13 | 0 |
 | shadow-dom/slots-outside-shadow-dom.html | OK | 1 | 0 |
 | shadow-dom/slots.html | OK | 26 | 0 |
-| shadow-dom/touch-event-retargeting-leak.html | EXCLUDED (requires-user-input: a touch action sequence driven through testdriver) | 0 | 0 |
+| shadow-dom/touch-event-retargeting-leak.html | EXCLUDED (requires-touch-input: a touch action sequence, and a terminal reports no touches) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/attributes/test-006.html | OK | 1 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-002.html | OK | 1 | 0 |
@@ -1418,7 +1381,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/events/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 1 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html | REFTEST | 0 | 0 |
@@ -1449,7 +1412,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/user-interaction/editing/inheritance-of-content-editable-001.html | OK | 3 | 0 |
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html | EXCLUDED (requires-browsing-context: a Selection over a rendered document in a frame) | 0 | 0 |
-| shadow-dom/wheel-event-related-target.html | EXCLUDED (requires-user-input: a wheel action sequence driven through testdriver) | 0 | 0 |
+| shadow-dom/wheel-event-related-target.html | TIMEOUT | 0 | 0 |
 | custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 5 | 0 |
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
 | custom-elements/CustomElementRegistry.html | OK | 46 | 0 |
@@ -1775,8 +1738,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/nodes/moveBefore/hover-style-update.html
 
-- Element loses hover when moved to different position: assert_true: expected true got false
-- Hover works immediately after moved: assert_true: expected true got false
+- Element loses hover when moved to different position: assert_false: expected false got true
 
 ### dom/nodes/moveBefore/moveBefore-id-map.html
 
@@ -1807,8 +1769,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - moveBefore should not reset selection with preceding text: assert_equals: expected Text node "This text does not move" but got Element node <div id="old_parent">
 - moveBefore resets selection that enters a subtree, when the whole selection is moved: assert_equals: expected Text node "Grandparent paragraph" but got Element node <div id="grandparentDiv">
 - moveBefore anchor node moved up to expand selection and absorb nodes: assert_equals: expected Text node "Child paragraph one" but got Element node <div id="parentDiv">
-- moveBefore move intersecting nodes out of a selection: assert_equals: expected Text node "Paragraph two" but got Text node "Grandparent paragraph"
-- moveBefore focus node moved up to shrink selection and exclude nodes; focus node gets reset: assert_equals: expected Text node "Parent paragraph" but got Text node "Grandparent paragraph"
+- moveBefore focus node moved up to shrink selection and exclude nodes; focus node gets reset: assert_equals: expected Text node "Parent paragraph" but got Element node <div id="parentDiv">
+- moveBefore selection is not preserved, especially when underlying range gets inverted: assert_equals: expected Text node "Three" but got Element node <ul id="list">
 
 ### dom/nodes/node-creation-realm.html
 
@@ -1944,6 +1906,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - If the event's initialized flag is not set, an InvalidStateError must be thrown (DeviceMotionEvent).: No event interface is named "DeviceMotionEvent"
 - If the event's initialized flag is not set, an InvalidStateError must be thrown (DeviceOrientationEvent).: No event interface is named "DeviceOrientationEvent"
 
+### dom/events/click-on-absolute-pseudo.html
+
+- Click on pseudo-element that disappears on mousedown: assert_equals: pseudoTarget should be null since the pseudo-element was removed before click dispatch expected (object) null but got (undefined) undefined
+
+### dom/events/pointer-event-document-move.html
+
+- Moving a node to new document should move the registered event listeners together: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+
 ### dom/events/relatedTarget.window.js
 
 - Reset if target pointed to a shadow tree: XMLHttpRequest is not defined
@@ -1993,6 +1963,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - LTR+RTL+LTR text with right direction in rtl context: assert_equals: expected 0 but got 34
 - RTL+LTR+RTL text with right direction in rtl context: assert_equals: expected 0 but got 33
 
+### selection/canvas-click.html
+
+- Clicking on a text-selectable canvas should not select it: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+
 ### selection/caret-position-should-be-correct-while-moveup-movedown.html
 
 - Caret position should be correct in moving up horizontal div when selection was left to right with line granularity: assert_equals: expected 5 but got 0
@@ -2012,11 +1986,29 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
 - Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 7
 
+### selection/caret/move-around-contenteditable-false.html
+
+- Initializing tests: Test timed out
+- Move caret from end of editable text node to <br> following non-editable text in next paragraph: 
+- Move caret from <br> following non-editable text to end of preceding editable text in next paragraph: 
+- Move caret from empty editable paragraph to editable text following non-editable text in next paragraph: 
+- Move caret from start of text following non-editable text to empty preceding editable paragraph: 
+
+### selection/caret/move-around-generated-content.html
+
+- Initializing tests: Test timed out
+- Moving caret between list items using arrow keys: 
+- Moving caret past the block-quote using arrow keys: 
+
 ### selection/contenteditable/collapse.html
 
 - Selection.collapse() must succeed across siblings: assert_equals: expected Element node <div contenteditable="" id="host1"></div> but got Element node <button id="button"></button>
 - Selection.collapse() must succeed for the ancestor: assert_equals: expected Element node <div contenteditable="" id="host4"></div> but got Element node <button id="button"></button>
 - Selection.collapse() must succeed for the descendant: assert_equals: expected Element node <div contenteditable="" id="host3">
+
+### selection/contenteditable/initial-selection-during-focus-event-propagation.html
+
+- Selection should've already been initialized into the editing host when `focus` event is dispatched: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### selection/contenteditable/modify-around-inline-element-boundary.tentative.html
 
@@ -2075,13 +2067,48 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 1)", "(#text \" \", 1)", "(<div contenteditable=\"\">, 0)", "(#text \" \", 0)"]
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \" \", 0)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
 
+### selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html
+
+-  click should move caret in an editable element: assert_equals: Selection should be collapsed in the second <span> element which was clicked by  button expected Text node "second span." but got Text node "first span."
+- Shift +  click should extend the selection: assert_equals: Selection#focusNode should be in the second <span> element which was clicked by  button expected Text node "second span." but got Text node "first span."
+- Shift +  click in a link shouldn't extend the selection: assert_equals: Selection#focusNode should be in the <a href> element which was clicked by  button expected Text node "link." but got Text node "first span."
+-  mouse button down should move caret, but its button up shouldn't move caret: assert_equals: selection should be collapsed in the second <span> element which was clicked by  button before pointerup event expected Text node "second span." but got Text node "first span."
+
+### selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html
+
+- Primary click shouldn't move caret in an editable element if the default of pointerdown event is prevented: assert_equals: Selection should keep collapsed selection in the first <span> element expected Text node "first span." but got Text node "second span."
+- Shift + Primary click should extend the selection: assert_equals: Selection#anchorNode should keep in the first <span> element expected Text node "first span." but got Text node "second span."
+- Shift + Primary click in a link shouldn't extend the selection: assert_equals: Selection#focusNode should be in the <a href> element which was clicked by primary button expected Text node "link." but got Text node "first span."
+
+### selection/drag-selection-extend-to-user-select-none.html
+
+- Text with user-select:text is selectable even if it is inside a user-select:none element.: assert_equals: Anchor node:  expected Text node " dolor sit" but got null
+- Select user-select:text content and then extend selection to user-select:none content.: assert_equals: Anchor node:  expected Text node " dolor sit" but got null
+- Selection starts with user-select:text content and then extends selection to user-select:none content.: assert_equals: Anchor node:  expected Text node " dolor sit" but got null
+- Select user-select:text content and then extend selection to the next user-select:text element by crossing the user-select:none element.: assert_equals: Anchor node:  expected Text node " dolor sit" but got null
+
 ### selection/extend-selection-backward-on-input.html
 
 - Should not crash if block node is in an inline node and block_flow is a pseudo node: execCommand is not implemented
 
+### selection/extend-selection-in-shadow-tree.html
+
+- Extend selection in shadow tree: promise_test: Unhandled rejection with value: object "InvalidStateError: The selection has no range"
+
+### selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html
+
+- selectionchange fires for single character deletion from contenteditable inline element: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- selectionchange fires for single character deletion from nested contenteditable elements: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- selectionchange fires for multi-character deletion from contenteditable inline element (baseline): promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+
 ### selection/fire-selectionchange-event-on-document-if-textcontrol-element-is-in-shadow-tree.html
 
 - selectionchange event fired on the document in case TextControl element is in Shadow Tree: promise_test: Unhandled rejection with value: object "NotSupportedError: execCommand is not implemented"
+
+### selection/fire-selectionchange-event-on-pressing-backspace.html
+
+- Selectionchange event is fired after removing the character: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- Selectionchange event is fired after removing the range: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### selection/modify-line-flex-column.tentative.html
 
@@ -2098,6 +2125,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 - backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
+### selection/move-by-word-korean.html
+
+- Korean/Latin transition should be considered a word boundary when moving forward: assert_equals: Caret should move after the Korean characters expected 2 but got 4
+- Korean/Latin transition should be considered a word boundary when moving backward: assert_equals: Caret should move before the Latin characters expected 2 but got 0
+- Latin/Korean transition should be considered a word boundary when moving forward: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
+- Latin/Korean transition should be considered a word boundary when moving backward: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
+
+### selection/move-by-word-with-symbol.html
+
+- Symbols should be included while moving backward by word in textarea element: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
+- Symbols should be included while moving forward by word in textarea element: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
+- Symbols should be included while moving backward by word in input element: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
+- Symbols should be included while moving forward by word in input element: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
+
 ### selection/move-paragraph-cross-editing-boundary.tentative.html
 
 - cross editing boundary: assert_equals: expected "P1" but got "World"
@@ -2111,6 +2152,22 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### selection/script-and-style-elements.html
 
 - Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got "PASS"
+
+### selection/select-end-of-line-image.tentative.html
+
+- Select image at the end of the line.: assert_equals: The image should be selected and then deleted. expected null but got Element node <img id="target" src="data:image/svg+xml,<svg xmlns="http...
+
+### selection/selection-direction-on-double-click.tentative.html
+
+- direction returns "none" when there is a double click selection(directionless): assert_equals: expected "none" but got "forward"
+
+### selection/selection-direction-on-single-click.html
+
+- direction returns "none" when the selection is collapsed: assert_equals: expected "none" but got "forward"
+
+### selection/selection-direction-on-triple-click.tentative.html
+
+- direction returns "none" when there is a triple click selection(directionless): assert_equals: expected Element node <div id="container">hello, world</div> but got Text node "hello, world"
 
 ### selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html
 
@@ -2136,6 +2193,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html
 
 - If selection crosses shadow boundaries, getRangeAt(0) should throw an IndexSizeError because the end is not in the document tree.: assert_throws_dom: function "function () { selection.getRangeAt(0) }" did not throw
+
+### selection/textcontrols/focus.html
+
+- focus() should cancel selection extension by pointer device: assert_equals: expected Element node <body><p id="p">
+
+### selection/textcontrols/initial-selection-during-focus-event-propagation.html
+
+- Selection should've already been initialized in the text control when `focus` event is dispatched: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### selection/textcontrols/selectionchange-on-shadow-dom.html
 
@@ -2165,6 +2230,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Selection.toString() excludes basic user-select: none content: assert_equals: Basic user-select: none content should be excluded expected "ac" but got "\n    ac\n  "
 - Selection.toString() excludes nested user-select: none content: assert_equals: Nested user-select: none content should be excluded expected "start  end" but got "\n    start  end\n  "
 - Selection.toString() includes selectable children in unselectable container: assert_equals: Selectable children should be included even in unselectable container expected "selectabletext" but got ""
+
+### selection/user-select-on-input-and-contenteditable.html
+
+- selection for auto: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- selection for text: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- selection for none: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- selection for contain: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- selection for all: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### shadow-dom/Document-caretPositionFromPoint.tentative.html
 
@@ -2313,12 +2386,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - click on host with delegatesFocus, all tabindex=0 except spacer: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
-### shadow-dom/focus/click-focus-slot-ancestor.html
-
-- Clicking on non-focusable slot inside focusable div will make the flat-tree focusable ancestor get focused: assert_equals: expected Element node <div id="normalDiv" tabindex="0"><span id="normalSpan">Te... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
-- Select on non-focusable slot inside focusable div will select text: assert_greater_than: expected a number greater than 0 but got 0
-- Select on non-focusable non-editable slot in a contenteditable shadow DOM and inside focusable div will select text: assert_equals: focus is on contenteditable container only expected null but got Element node <div id="shadowDiv" tabindex="0"><slot></slot></div>
-
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
 - :focus should be applied to the host and the child node when the focus is moved by mouse click: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
@@ -2335,10 +2402,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-2.html
 
 - Order with different tabindex on host: assert_equals: expected Element node <div></div> but got Element node <div></div>
-
-### shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html
-
-- select slotted text in shadow root with delegatesFocus.: assert_greater_than: expected a number greater than 0 but got 0
 
 ### shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html
 
@@ -2378,10 +2441,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### shadow-dom/slotchange-customelements.html
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
-
-### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
-
-- A_08_02_03_T01: Test timed out
 
 ### custom-elements/CustomElementRegistry-getName.html
 
