@@ -925,11 +925,8 @@ function paintContent(
 		} else {
 			paintLayoutChildren(origin);
 		}
-		if (
-			style.overflowX !== "visible" &&
-			getComputedValue(element, "text-overflow") === "ellipsis"
-		) {
-			paintEllipses(painter, element, style, ctx);
+		if (style.overflowX !== "visible") {
+			paintOverflowMarkers(painter, element, style, ctx);
 		}
 	} finally {
 		ctx.clipRect = previousClip;
@@ -952,22 +949,45 @@ function *getOwnLineText(element: Element): Generator<Text> {
 	}
 }
 
-// text-overflow: ellipsis. A line that runs past the clipped edge ends
-// in an ellipsis in the last cell that shows, drawn in the element's own
-// text style, at the end the line reads toward.
-function paintEllipses(
+// What text-overflow puts at each edge a line overflows: nothing for
+// clip, an ellipsis, or a string. One value is for the end edge, the
+// right or, in a right-to-left box, the left. Two are for the left edge
+// and then the right (css-ui-3).
+function getOverflowMarkers(
+	element: Element,
+): {left: string; right: string} | null {
+	const value = getComputedValue(element, "text-overflow");
+	if (value === "" || value === "clip") {
+		return null;
+	}
+	const markers = (value.match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s]+/g) ??
+		[])
+		.map((token) =>
+			token === "ellipsis"
+				? "…"
+				: /^["']/.test(token) ? token.slice(1, -1).replace(/\\(.)/g, "$1") : "",
+		);
+	if (markers.length === 2) {
+		return {left: markers[0], right: markers[1]};
+	}
+	const rtl = getComputedValue(element, "direction") === "rtl";
+	return rtl
+		? {left: markers[0] ?? "", right: ""}
+		: {left: "", right: markers[0] ?? ""};
+}
+
+// A line that runs past a clipped edge ends there in the marker
+// text-overflow asks for, in the box's own text style, covering the cells
+// it needs.
+function paintOverflowMarkers(
 	painter: Painter,
 	element: Element,
 	style: PaintStyle,
 	ctx: CellContext,
 ): void {
 	const clip = ctx.clipRect;
-	if (clip === null) {
-		return;
-	}
-	const rtl = getComputedValue(element, "direction") === "rtl";
-	const edge = rtl ? clip.left : clip.right - 1;
-	if (!Number.isFinite(edge)) {
+	const markers = getOverflowMarkers(element);
+	if (clip === null || markers === null) {
 		return;
 	}
 	const rows = new Map<number, {left: number; right: number}>();
@@ -990,8 +1010,16 @@ function paintEllipses(
 		if (row < clip.top || row >= clip.bottom) {
 			continue;
 		}
-		if (rtl ? span.left < clip.left : span.right > clip.right) {
-			ctx.drawText("…", edge, row, style.cell);
+		if (markers.left !== "" && span.left < clip.left) {
+			ctx.drawText(markers.left, clip.left, row, style.cell);
+		}
+		if (
+			markers.right !== "" &&
+			span.right > clip.right &&
+			Number.isFinite(clip.right)
+		) {
+			const width = ctx.measureText(markers.right).width;
+			ctx.drawText(markers.right, clip.right - width, row, style.cell);
 		}
 	}
 }
