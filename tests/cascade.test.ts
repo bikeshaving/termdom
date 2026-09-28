@@ -1005,3 +1005,21 @@ test("the computed display is blockified where CSS Display says", async () => {
 	expect(display(byId("none"))).toBe("none");
 	dom.dispose();
 });
+
+test("a computed style's indices read through, custom properties last", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.body.innerHTML = "<p id=\"p\" style=\"--accent: red\">p</p>";
+	await nextFrame(dom);
+	const style = window.getComputedStyle(document.getElementById("p")!) as any;
+	expect(style.length).toBeGreaterThan(100);
+	expect(style[0]).toBe(style.item(0));
+	expect(style[style.length - 1]).toBe("--accent");
+	expect(style[style.length]).toBe(undefined);
+	// The longhands are shared by every computed style, and read the same
+	// from each.
+	const other = window.getComputedStyle(document.body) as any;
+	expect(other[5]).toBe(style[5]);
+	dom.dispose();
+});
