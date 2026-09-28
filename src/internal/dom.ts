@@ -3538,6 +3538,11 @@ const kHandlers = Symbol("handlers");
 const kListeners = Symbol("event listener list");
 const kGetTheParent = Symbol("get the parent");
 
+// Every target starts on this one empty list, which nothing adds to: most
+// nodes are never listened to, and a list of their own would be one more
+// allocation each.
+const NO_LISTENERS: Listener[] = [];
+
 export interface EventTarget {
 	[kListeners]: Listener[];
 
@@ -3548,7 +3553,7 @@ export interface EventTarget {
 /** An event target: a listener list, and the parent dispatch walks to. */
 export class EventTarget implements globalThis.EventTarget {
 	constructor() {
-		this[kListeners] = [];
+		this[kListeners] = NO_LISTENERS;
 		this[kHandlers] = null;
 	}
 
@@ -3594,7 +3599,7 @@ export class EventTarget implements globalThis.EventTarget {
 			passive,
 			removed: false,
 		};
-		this[kListeners].push(listener);
+		addListener(this, listener);
 		countHoverListener(this, listener);
 		if (flat.signal !== null) {
 			flat.signal.addEventListener("abort", () => {
@@ -3769,6 +3774,13 @@ Object.defineProperty(EventTarget.prototype, Symbol.toStringTag, {
  * Remove a listener from a list and mark it so an in-progress dispatch skips
  * it.
  */
+function addListener(target: EventTarget, listener: Listener): void {
+	if (target[kListeners] === NO_LISTENERS) {
+		target[kListeners] = [];
+	}
+	target[kListeners].push(listener);
+}
+
 function removeListener(listeners: Listener[], listener: Listener): void {
 	listener.removed = true;
 	const index = listeners.indexOf(listener);
@@ -3866,7 +3878,7 @@ function registerHandlerListener(
 		passive: false,
 		removed: false,
 	};
-	target[kListeners].push(listener);
+	addListener(target, listener);
 	countHoverListener(target, listener);
 	return listener;
 }
@@ -4925,6 +4937,7 @@ const kDocumentWideLists = Symbol("live collections over a whole document");
 // (a form's controls, for example) registers on the document under
 // kDocumentWideLists.
 const kLiveLists = Symbol("live collections this node is the root of");
+const kRare = Symbol("rarely used state");
 
 // A collection stays registered for its owner's lifetime, so this only
 // grows. A change in a document that never registered a collection skips
@@ -5067,6 +5080,9 @@ const kDocumentURL = Symbol("document URL");
 
 /** The node-type constants, installed on the prototype below. */
 export interface Node {
+	// The fields in RARE_FIELDS, once one of them is set to anything but its
+	// default. Undefined for most nodes.
+	[kRare]: Record<symbol, unknown> | undefined;
 	[kRegistry]: CustomElementRegistry | null;
 	[kParent]: Node | null;
 	[kConnected]: boolean;
@@ -5136,10 +5152,8 @@ export class Node extends EventTarget implements globalThis.Node {
 		this[kLastChild] = null;
 		this[kPrevious] = null;
 		this[kNext] = null;
-		this[kChildNodes] = null;
-		this[kLiveLists] = null;
+		this[kRare] = undefined;
 		this[kSerial] = ++nodeSerial;
-		this[kRegisteredObservers] = null;
 		if (new.target === Node) {
 			throw new TypeError("Illegal constructor");
 		}
@@ -8974,26 +8988,10 @@ export class Element extends Node implements globalThis.Element {
 		this[kUpperName] = null;
 		this[kLocalName] = "";
 		this[kAttributeList] = [];
-		this[kCustomState] = "uncustomized";
-		this[kDefinition] = null;
-		this[kIsValue] = null;
-		this[kClassList] = null;
 		this[kClassTokens] = null;
-		this[kTokenLists] = null;
-		this[kARIAElements] = null;
-		this[kDataset] = null;
-		this[kClickInProgress] = false;
-		this[kInternals] = null;
-		this[kAttributesMap] = null;
-		this[kChildren] = null;
 		this[kShadowRoot] = null;
-		this[kSlottableName] = "";
 		this[kAssignedSlot] = null;
-		this[kManualSlot] = null;
-		this[kReactionQueue] = null;
-		this[kPseudoElements] = null;
 		this[kPseudoHost] = null;
-		this[kPseudoName] = null;
 		this[kDocument] = getCurrentDocument();
 	}
 
@@ -9777,6 +9775,64 @@ export class Element extends Node implements globalThis.Element {
 		}
 		return copy;
 	}
+}
+
+// State most nodes never have: the custom element machinery, the objects a
+// page asks for (classList, dataset, attributes, children, internals, live
+// lists, observers), slot assignment and pseudo-elements. It lives on a
+// record a node gets the first time one of these is set to anything but its
+// default, so a plain node carries one field for all of them rather than a
+// field each. The accessors keep every `node[kField]` reading and writing as
+// before.
+const RARE_FIELDS: ReadonlyArray<readonly [symbol, unknown]> = [
+	[kChildNodes, null],
+	[kLiveLists, null],
+	[kRegisteredObservers, null],
+	[kCustomState, "uncustomized"],
+	[kDefinition, null],
+	[kIsValue, null],
+	[kClassList, null],
+	[kTokenLists, null],
+	[kARIAElements, null],
+	[kDataset, null],
+	[kClickInProgress, false],
+	[kInternals, null],
+	[kAttributesMap, null],
+	[kChildren, null],
+	[kSlottableName, ""],
+	[kManualSlot, null],
+	[kReactionQueue, null],
+	[kPseudoElements, null],
+	[kPseudoName, null],
+];
+
+function createRareData(): Record<symbol, unknown> {
+	const rare: Record<symbol, unknown> = {};
+	for (const [key, fallback] of RARE_FIELDS) {
+		rare[key] = fallback;
+	}
+	return rare;
+}
+
+for (const [key, fallback] of RARE_FIELDS) {
+	Object.defineProperty(Node.prototype, key, {
+		get(this: Node): unknown {
+			const rare = this[kRare];
+			return rare === undefined ? fallback : rare[key];
+		},
+		set(this: Node, value: unknown): void {
+			let rare = this[kRare];
+			if (rare === undefined) {
+				if (value === fallback) {
+					return;
+				}
+				rare = createRareData();
+				this[kRare] = rare;
+			}
+			rare[key] = value;
+		},
+		configurable: true,
+	});
 }
 
 /** The scroll offsets of every box that has been scrolled. */
