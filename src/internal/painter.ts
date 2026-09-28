@@ -2,6 +2,7 @@ import {
 	type Cascade,
 	getBoxModel,
 	getComputedValue,
+	getDeclaredDisplay,
 	resolveBorderSides,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -273,7 +274,7 @@ function readPaintStyle(element: Element): PaintStyle {
 	return {
 		contentInsetX: model.paddingLeft + model.borderLeftWidth,
 		contentInsetY: model.paddingTop + model.borderTopWidth,
-		display: getComputedValue(element, "display"),
+		display: getDeclaredDisplay(element),
 		visible: getComputedValue(element, "visibility") !== "hidden",
 		fg,
 		bg,

@@ -1,6 +1,11 @@
 import LineBreaker from "linebreak";
 
-import {getBoxModel, getComputedValue, usedValuesChanged} from "./cssom.ts";
+import {
+	getBoxModel,
+	getComputedValue,
+	getDeclaredDisplay,
+	usedValuesChanged,
+} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
 	DOMRectList,
@@ -155,7 +160,11 @@ const TABLE_DISPLAYS = new Set<string>([
 // they had left. `none` and `contents` are on neither axis and are used as
 // computed.
 function getComputedDisplay(element: Element): Display {
-	const value = getComputedValue(element, "display");
+	// The root is on no line and in no container, so the one thing its
+	// blockification changes is its own, and layout reads it computed.
+	const value = element === element.ownerDocument.documentElement
+		? getComputedValue(element, "display")
+		: getDeclaredDisplay(element);
 	if (value === "inline math") {
 		return "inline-block";
 	}
@@ -4653,6 +4662,19 @@ export class Layout {
 				}
 				synced.add(container);
 				syncContainerRuns(this, container);
+			}
+		}
+		// A formatting context a box lays out for itself hangs off that box's
+		// measure, not off the tree, so a sync that changed one leaves the
+		// tree clean. Its box is measured again, and the tree with it.
+		for (const container of synced) {
+			const host = getEnclosingIndependentFormattingContext(this, container);
+			if (
+				host !== null &&
+				host.isConnected &&
+				this[kBoxes].get(host)!.independentFormattingContext!.stale
+			) {
+				invalidateEnclosingMeasure(this, host);
 			}
 		}
 

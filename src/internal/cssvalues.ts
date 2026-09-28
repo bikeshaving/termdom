@@ -4583,6 +4583,7 @@ const BLOCKIFIED_DISPLAYS: Record<string, string> = {
 	"inline-flex": "flex",
 	"inline-grid": "grid",
 	"inline-table": "table",
+	"inline math": "block math",
 };
 
 export function getBlockifiedDisplay(display: string): string {

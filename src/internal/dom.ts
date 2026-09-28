@@ -6320,6 +6320,14 @@ function removeNode(node: Node, suppressObservers = false): void {
 					parent,
 					next: oldNextSibling,
 				});
+				// The ancestors it left were :focus-within, and no longer are.
+				const left = parent instanceof ShadowRoot
+					? (parent[kHost] as Element)
+					: parent.nodeType === ELEMENT_NODE ? (parent as Element) : null;
+				const attached = getAttachedDocument(document);
+				if (left !== null && attached !== undefined) {
+					attached[kCascade].handleFocusChange(left);
+				}
 				break;
 			}
 		}

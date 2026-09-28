@@ -769,3 +769,36 @@ test("an absolute box inside an appended inline subtree reaches its containing b
 
 	dom.dispose();
 });
+
+test("an empty block moved into an inline-block is laid out there", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	const {document} = dom;
+	document.body.innerHTML =
+		"<span id=\"s\">t<div id=\"d\"></div></span><button id=\"b\">x</button>";
+	await nextFrame(dom);
+	// The button takes a formatting context of its own for the block, which
+	// only its measure lays out.
+	document.getElementById("b")!.append(document.getElementById("s")!);
+	await nextFrame(dom);
+	const rect = document.getElementById("d")!.getBoundingClientRect();
+	expect([rect.left, rect.top, rect.width, rect.height]).toEqual([0, 1, 5, 0]);
+	dom.dispose();
+});
+
+test("a root made inline by a rule stays a block", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	const {document} = dom;
+	document.head.innerHTML = "<style>:has(:focus) { display: inline }</style>";
+	document.body.innerHTML = "<button id=\"b\">word</button>";
+	await nextFrame(dom);
+	const button = document.getElementById("b")!;
+	button.focus();
+	await nextFrame(dom);
+	const rect = button.getBoundingClientRect();
+	expect([rect.left, rect.top, rect.width, rect.height]).toEqual([0, 0, 8, 1]);
+	dom.dispose();
+});
