@@ -288,3 +288,16 @@ test("a focused element a :focus rule hides loses the focus at the next frame", 
 	expect(color("#d")).toBe("rgb(0, 0, 0)");
 	termdom.dispose();
 });
+
+test("removing the focused element restyles the ancestors it leaves", async () => {
+	const {termdom, document, color} = await makeStyled(
+		"<style>div:focus-within { color: rgb(255, 0, 0) }</style>" +
+			"<div id=outer><div id=inner><button id=b tabindex=0>x</button></div></div>",
+	);
+	document.getElementById("b")!.focus();
+	expect(color("#outer")).toBe("rgb(255, 0, 0)");
+	document.getElementById("inner")!.remove();
+	await nextFrame(termdom);
+	expect(color("#outer")).toBe("rgb(0, 0, 0)");
+	termdom.dispose();
+});

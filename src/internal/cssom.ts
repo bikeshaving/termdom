@@ -4156,9 +4156,81 @@ function substituteVar(
 	return out;
 }
 
-// What the cascade leaves, with var() substituted and `currentcolor`
-// replaced by the color it names.
+const declaredDisplays = new WeakMap<ComputedStyleDeclaration, string>();
+
+/**
+ * The display an element's rules give it, before blockification. Layout
+ * blockifies for itself, as the used value, since an inline item still
+ * measures its content as lines. Everything else reads the computed
+ * display, blockified.
+ */
+export function getDeclaredDisplay(element: Element): string {
+	const cascade = element.ownerDocument
+		? documentCascades.get(element.ownerDocument)
+		: undefined;
+	if (getPseudoHost(element) !== null || cascade === undefined) {
+		return getComputedValue(element, "display");
+	}
+	const declaration = cascade.declarationFor(element);
+	let display = declaredDisplays.get(declaration);
+	if (display === undefined) {
+		display = CSSValues.getComputedEntry(
+			"display",
+			resolveCascadedValue(declaration, "display") ||
+				getInitialStyle(null, "display"),
+		).value;
+		declaredDisplays.set(declaration, display);
+	}
+	return display;
+}
+
+// css-display-3 §2.7: the root element, an absolutely positioned or
+// floated box, and a flex or grid item are block-level whatever their
+// display says, and their computed display says so. The root's contents
+// is a block too, since the root has no parent to hand its children to.
+function blockifyDisplay(element: Element | null, display: string): string {
+	if (element === null || display === "none") {
+		return display;
+	}
+	if (element === element.ownerDocument?.documentElement) {
+		return display === "contents"
+			? "block"
+			: CSSValues.getBlockifiedDisplay(display);
+	}
+	const position = getComputedValue(element, "position");
+	let parent = flatParentElement(element);
+	while (
+		parent !== null && getComputedValue(parent, "display") === "contents"
+	) {
+		parent = flatParentElement(parent);
+	}
+	if (
+		position === "absolute" ||
+		position === "fixed" ||
+		getComputedValue(element, "float") !== "none" ||
+		(parent !== null && ITEM_DISPLAYS.has(getComputedValue(parent, "display")))
+	) {
+		return CSSValues.getBlockifiedDisplay(display);
+	}
+	return display;
+}
+
+// What the cascade leaves, with var() substituted, `currentcolor`
+// replaced by the color it names, and display blockified.
 function resolvePropertyValue(
+	declaration: ComputedStyleDeclaration,
+	property: string,
+): string {
+	const value = resolveCascadedValue(declaration, property);
+	return property === "display"
+		? blockifyDisplay(
+			declaration[kElement],
+			value || getInitialStyle(null, "display"),
+		)
+		: value;
+}
+
+function resolveCascadedValue(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {

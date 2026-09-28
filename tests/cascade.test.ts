@@ -974,3 +974,34 @@ test("appending children one at a time costs linear sibling invalidation", async
 	}
 	expect(best).toBeLessThan(6);
 });
+
+test("the computed display is blockified where CSS Display says", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML = "<style>html { display: inline }</style>";
+	document.body.innerHTML =
+		"<span id=\"abs\" style=\"position: absolute\">a</span>" +
+		"<span id=\"fixed\" style=\"position: fixed; display: inline-flex\">f</span>" +
+		"<span id=\"float\" style=\"float: left\">l</span>" +
+		"<div style=\"display: flex\"><span id=\"item\">i</span>" +
+		"<span id=\"grid\" style=\"display: inline-grid\">g</span>" +
+		"<div style=\"display: contents\"><span id=\"through\">t</span></div></div>" +
+		"<span id=\"plain\">p</span>" +
+		"<span id=\"none\" style=\"position: absolute; display: none\">n</span>";
+	await nextFrame(dom);
+	const display = (element: Element): string =>
+		window.getComputedStyle(element).display;
+	const byId = (id: string): Element => document.getElementById(id)!;
+	expect(display(document.documentElement)).toBe("block");
+	expect(display(byId("abs"))).toBe("block");
+	expect(display(byId("fixed"))).toBe("flex");
+	expect(display(byId("float"))).toBe("block");
+	expect(display(byId("item"))).toBe("block");
+	expect(display(byId("grid"))).toBe("grid");
+	// A display: contents parent hands its children to the flex container.
+	expect(display(byId("through"))).toBe("block");
+	expect(display(byId("plain"))).toBe("inline");
+	expect(display(byId("none"))).toBe("none");
+	dom.dispose();
+});
