@@ -272,9 +272,19 @@ test("collapsible spaces at a block's edge change nothing", async () => {
 			// Which elements may take the spaces is a question about
 			// computed style, so it takes a laid-out document to answer.
 			const probe = await build(markup);
-			const eligible = (
-				Array.from(probe.dom.document.querySelectorAll("[data-f]")) as any[]
-			)
+			// An id the parser gave more than one element, as it does an
+			// inline it reopens after a block, names none of them: the
+			// padded build would find the first, which may not be the one
+			// that was eligible.
+			const all =
+				Array.from(probe.dom.document.querySelectorAll("[data-f]")) as any[];
+			const counts = new Map<string, number>();
+			for (const element of all) {
+				const id = element.getAttribute("data-f");
+				counts.set(id, (counts.get(id) ?? 0) + 1);
+			}
+			const eligible = all
+				.filter((element) => counts.get(element.getAttribute("data-f")) === 1)
 				.filter((element) => takesEdgeSpaces(probe, element))
 				.map((element) => element.getAttribute("data-f"));
 			const before = rects(probe);
