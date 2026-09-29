@@ -92,7 +92,7 @@ function isOutOfFlow(node: Node): boolean {
 // a slot vanishes from layout while its projected content flows
 // through.
 function isDisplayContents(node: Node): boolean {
-	return getComputedDisplay(node as Element) === "contents";
+	return getLayoutDisplay(node as Element) === "contents";
 }
 
 export type Display =
@@ -156,11 +156,10 @@ const TABLE_DISPLAYS = new Set<string>([
 // own and is still a grid inside. So the outer question (is this box on a line)
 // goes through `isInlineLevel`, which reads the USED display, and the inner
 // ones (hasItemChildren, isGridDisplay, isFlexContainer,
-// establishesIndependentFormattingContext) read the COMPUTED one. Asking an
-// outer question of the computed display put out-of-flow boxes back on lines
-// they had left. `none` and `contents` are on neither axis and are used as
-// computed.
-function getComputedDisplay(element: Element): Display {
+// establishesIndependentFormattingContext) read the display the rules
+// declare, before blockification, whose inner axis is the same. `none` and
+// `contents` are on neither axis and are used as declared.
+function getLayoutDisplay(element: Element): Display {
 	// The root is on no line and in no container, so the one thing its
 	// blockification changes is its own, and layout reads it computed.
 	const value = element === element.ownerDocument.documentElement
@@ -186,7 +185,7 @@ function isInlineDisplay(display: Display): boolean {
 }
 
 function isFlexContainer(element: Element): boolean {
-	const display = getComputedDisplay(element);
+	const display = getLayoutDisplay(element);
 	return display === "flex" || display === "inline-flex";
 }
 
@@ -213,12 +212,12 @@ export function boxParentElement(node: Node): Element | null {
 
 function hasFlexParent(element: Element): boolean {
 	const parent = boxParentElement(element);
-	return parent !== null && getComputedDisplay(parent) === "flex";
+	return parent !== null && getLayoutDisplay(parent) === "flex";
 }
 
 export function hasItemParent(element: Element): boolean {
 	const parent = boxParentElement(element);
-	return parent !== null && hasItemChildren(getComputedDisplay(parent));
+	return parent !== null && hasItemChildren(getLayoutDisplay(parent));
 }
 
 // css-display-3 §2.7.
@@ -227,7 +226,7 @@ function isBlockified(element: Element): boolean {
 }
 
 function getUsedDisplay(element: Element): Display {
-	const display = getComputedDisplay(element);
+	const display = getLayoutDisplay(element);
 	if (!isInlineDisplay(display)) {
 		return display;
 	}
@@ -248,7 +247,7 @@ function isInlineLevel(node: Node): boolean {
 // blockified off its line but still measures its content as one unit
 // under a root of its own, and the used display would take that root away.
 function establishesIndependentFormattingContext(element: Element): boolean {
-	return isAtomicInline(getComputedDisplay(element));
+	return isAtomicInline(getLayoutDisplay(element));
 }
 
 // A blockified inline holding block-level content is a block
@@ -259,7 +258,7 @@ function isMeasuredAsRun(element: Element): boolean {
 	if (isOutOfFlow(element)) {
 		return false;
 	}
-	const display = getComputedDisplay(element);
+	const display = getLayoutDisplay(element);
 	if (!isInlineDisplay(display)) {
 		return false;
 	}
@@ -277,13 +276,13 @@ function isSplitAroundBlock(element: Element): boolean {
 	if (isOutOfFlow(element)) {
 		return false;
 	}
-	if (getComputedDisplay(element) !== "inline") {
+	if (getLayoutDisplay(element) !== "inline") {
 		return false;
 	}
 	// A grid item is already a block container. Handing its content to the
 	// grid would put its own children in cells of their own.
 	const parent = boxParentElement(element);
-	if (parent && isGridDisplay(getComputedDisplay(parent))) {
+	if (parent && isGridDisplay(getLayoutDisplay(parent))) {
 		return false;
 	}
 	return hasBlockLevelBox(element);
@@ -298,7 +297,7 @@ function hasBlockLevelBox(element: Element): boolean {
 		if (isOutOfFlow(childElement)) {
 			continue;
 		}
-		const display = getComputedDisplay(childElement);
+		const display = getLayoutDisplay(childElement);
 		// An atomic inline contains its own blocks without splitting.
 		if (display === "none" || isAtomicInline(display)) {
 			continue;
@@ -484,7 +483,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 
 	// Inside an inline box the space is on a line with content, and is a
 	// space.
-	if (isInlineDisplay(getComputedDisplay(parent))) {
+	if (isInlineDisplay(getLayoutDisplay(parent))) {
 		return false;
 	}
 
@@ -539,7 +538,7 @@ function isSuppressedFlexWhitespace(text: Text): boolean {
 	if (!parent) {
 		return false;
 	}
-	if (!hasItemChildren(getComputedDisplay(parent))) {
+	if (!hasItemChildren(getLayoutDisplay(parent))) {
 		return false;
 	}
 	if (isSpacePreserving(getComputedValue(parent, "white-space"))) {
@@ -888,7 +887,7 @@ function styleLayoutNodeProperties(
 		throw new Error("Element must have an ownerDocument with defaultView");
 	}
 
-	const display = getComputedDisplay(element);
+	const display = getLayoutDisplay(element);
 	// A blockified inline's width applies like any block's. Forced
 	// auto, `<span style="width:30ch">` in a flex row came out as wide as its
 	// text.
@@ -1295,7 +1294,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	for (const child of flowChildren(layout, container)) {
 		if (child.nodeType === child.ELEMENT_NODE) {
 			const element = child as Element;
-			if (getComputedDisplay(element) === "none" || isOutOfFlow(element)) {
+			if (getLayoutDisplay(element) === "none" || isOutOfFlow(element)) {
 				// Named here so the one path that builds a box reaches them.
 				// Neither joins the run around it.
 				const own = getPrincipalBox(layout, child, box);
@@ -1417,7 +1416,7 @@ function isBoxKindMatch(
 		return false;
 	}
 	return (
-		(getComputedDisplay(element) === "none") ===
+		(getLayoutDisplay(element) === "none") ===
 		(layoutNode.style.displayType === "none")
 	);
 }
@@ -1515,9 +1514,7 @@ const kWindow = Symbol("window");
 // box of the container that reached the layout tree.
 function syncContainerRuns(layout: Layout, container: Element): void {
 	layout[kDirtyRunContainers].delete(container);
-	if (
-		getComputedDisplay(container) === "none" || isHiddenByAncestor(container)
-	) {
+	if (getLayoutDisplay(container) === "none" || isHiddenByAncestor(container)) {
 		// The only pass that ever visits a hidden container.
 		dropHiddenContent(layout, container);
 		return;
@@ -1649,7 +1646,7 @@ function getRunContainer(layout: Layout, node: Node): Element | null {
 	}
 	const startsOwnRun =
 		node.nodeType === node.ELEMENT_NODE &&
-		getComputedDisplay(node as Element) !== "inline";
+		getLayoutDisplay(node as Element) !== "inline";
 	return getRunContainerFromParent(layout, parent, startsOwnRun);
 }
 
@@ -1669,7 +1666,7 @@ function getRunContainerFromParent(
 		if (isOutOfFlow(current)) {
 			return current;
 		}
-		const display = getComputedDisplay(current);
+		const display = getLayoutDisplay(current);
 		// An inline box is transparent. Its content belongs to the run around
 		// it.
 		if (display === "inline") {
@@ -1831,7 +1828,7 @@ function addElementNode(
 	parentLayoutNode: LayoutNode | null = null,
 	known?: Box | null,
 ): void {
-	const display = getComputedDisplay(element);
+	const display = getLayoutDisplay(element);
 	const asRun = isMeasuredAsRun(element);
 
 	if (asRun) {
@@ -2003,7 +2000,7 @@ function syncIndependentFormattingContext(
 	element: Element,
 ): void {
 	const box = getPrincipalBox(layout, element);
-	const display = getComputedDisplay(element);
+	const display = getLayoutDisplay(element);
 	// An inline-grid always lays its own content out, because a line cannot
 	// contain a grid piecemeal. An inline-block does so only once it holds a
 	// block-level box. Never a plain inline: it is broken instead, and
@@ -2185,7 +2182,7 @@ function isHiddenByAncestor(node: Node): boolean {
 		ancestor;
 		ancestor = flatParentElement(ancestor)
 	) {
-		if (getComputedDisplay(ancestor) === "none") {
+		if (getLayoutDisplay(ancestor) === "none") {
 			return true;
 		}
 	}
@@ -2282,7 +2279,7 @@ function flatFirstRenderableChild(element: Element): Node | null {
 	for (const child of flowContent(element)) {
 		if (
 			child.nodeType === child.ELEMENT_NODE &&
-			(getComputedDisplay(child as Element) === "none" || isOutOfFlow(child))
+			(getLayoutDisplay(child as Element) === "none" || isOutOfFlow(child))
 		) {
 			continue;
 		}
@@ -2820,7 +2817,7 @@ function collectLeafNodes(
 	// `<span>a<div/>b</span>c` puts "b" and "c" on one line, so the walk
 	// cannot stop at </span>. The climb stops at an out-of-flow inline,
 	// which is blockified and lays its own content out.
-	const parentDisplay = getComputedDisplay(parentElement);
+	const parentDisplay = getLayoutDisplay(parentElement);
 	let traversalRoot: Node;
 	if (hasItemChildren(parentDisplay) && node.nodeType === node.ELEMENT_NODE) {
 		traversalRoot = node;
@@ -2828,7 +2825,7 @@ function collectLeafNodes(
 		let root: Element = parentElement;
 		for (
 			let ancestor = getBoxParentElement(root);
-			ancestor && getComputedDisplay(root) === "inline" && !isOutOfFlow(root);
+			ancestor && getLayoutDisplay(root) === "inline" && !isOutOfFlow(root);
 			ancestor = getBoxParentElement(root)
 		) {
 			root = ancestor;
@@ -2895,9 +2892,9 @@ function collectLeaves(
 			}
 		} else if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			const display = getComputedDisplay(element);
+			const display = getLayoutDisplay(element);
 
-			if (getComputedDisplay(element) === "none" || isOutOfFlow(element)) {
+			if (getLayoutDisplay(element) === "none" || isOutOfFlow(element)) {
 				// Neither occupies run space nor interrupts the run. Before the
 				// display branches, or an absolute inline span measures into
 				// the run it left.
@@ -3179,7 +3176,7 @@ function collectLeaves(
 					finalContentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
 				}
 
-				// Its lines align within the box it ended up, as text-align
+				// Its lines align within the box it ended up in, as text-align
 				// asks, not within the space they were broken in.
 				if (inlineBlockResult !== undefined) {
 					inlineBlockResult.containerWidth = finalContentWidth;
@@ -4215,7 +4212,7 @@ function getStaticPosition(
 	if (!container) {
 		return null;
 	}
-	if (hasItemChildren(getComputedDisplay(container))) {
+	if (hasItemChildren(getLayoutDisplay(container))) {
 		return null;
 	}
 	const containerNode = getContainerLayoutNode(layout, container);
@@ -5085,7 +5082,7 @@ export class Layout {
 	}
 
 	getRect(element: Element): DOMRect | null {
-		const display = getComputedDisplay(element);
+		const display = getLayoutDisplay(element);
 
 		// The layout node a hidden element keeps is a placeholder holding its
 		// slot, not a box (CSSOM View §4).
@@ -5354,7 +5351,7 @@ export class Layout {
 				parent;
 				parent = flatParentElement(parent)
 			) {
-				if (getComputedDisplay(parent) === "inline") {
+				if (getLayoutDisplay(parent) === "inline") {
 					continue;
 				}
 				const content = this.contentRect(parent);
@@ -5665,7 +5662,7 @@ export function isStackingContext(element: Element): boolean {
 // The one place that legitimately holds the computed and used display
 // at once, because it checks whether they disagree.
 function isBlockifiedByLayout(element: Element): boolean {
-	return isInlineDisplay(getComputedDisplay(element)) && isBlockified(element);
+	return isInlineDisplay(getLayoutDisplay(element)) && isBlockified(element);
 }
 
 function unionRects(layout: Layout, rects: readonly DOMRect[]): DOMRect {
@@ -5885,7 +5882,7 @@ function getRunOrigin(
 	const position = getDocumentPosition(layout, runHead, headLayoutNode);
 	if (
 		runHead.nodeType === runHead.ELEMENT_NODE &&
-		isAtomicInline(getComputedDisplay(runHead as Element))
+		isAtomicInline(getLayoutDisplay(runHead as Element))
 	) {
 		position.x -= getBoxModel(runHead as Element).marginLeft;
 	}
@@ -6284,7 +6281,7 @@ function hitTestContext(
 function getRectTexts(layout: Layout, node: Node): RectText[] {
 	if (node.nodeType === node.ELEMENT_NODE) {
 		const element = node as Element;
-		const display = getComputedDisplay(element);
+		const display = getLayoutDisplay(element);
 
 		if (!isInlineDisplay(display)) {
 			return [];
@@ -6445,7 +6442,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	if (runHead.nodeType === runHead.ELEMENT_NODE) {
 		const runHeadElement = runHead as Element;
 		if (
-			getComputedDisplay(runHeadElement) === "inline" &&
+			getLayoutDisplay(runHeadElement) === "inline" &&
 			hasItemParent(runHeadElement)
 		) {
 			const runHeadBox = getBoxModel(runHeadElement);

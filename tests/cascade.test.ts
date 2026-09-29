@@ -1051,3 +1051,31 @@ test("elements alike in rules, attributes and parent share resolved values, and 
 	expect(style("b").color).toBe("rgb(0, 0, 255)");
 	dom.dispose();
 });
+
+test("rules filed by id and class still cascade in order of appearance", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>.a { color: rgb(255, 0, 0) } [id] { color: rgb(0, 128, 0) }" +
+		" .b { color: rgb(0, 0, 255) } .a { font-weight: bold }" +
+		" #x { font-weight: normal } .B { color: rgb(1, 2, 3) }</style>";
+	document.body.innerHTML =
+		"<div id=\"one\" class=\"b a\">1</div><div id=\"x\" class=\"a\">2</div>" +
+		"<div id=\"three\" class=\"a\">3</div><div id=\"four\" class=\"b\">4</div>";
+	await nextFrame(dom);
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!);
+	expect(style("one").color).toBe("rgb(0, 0, 255)");
+	expect(style("one").fontWeight).toBe("700");
+	expect(style("x").color).toBe("rgb(0, 128, 0)");
+	expect(style("x").fontWeight).toBe("400");
+	expect(style("three").color).toBe("rgb(0, 128, 0)");
+	expect(style("three").fontWeight).toBe("700");
+	// Classes match by case in a no-quirks document.
+	expect(style("four").color).toBe("rgb(0, 0, 255)");
+	document.getElementById("three")!.className = "b";
+	expect(style("three").color).toBe("rgb(0, 0, 255)");
+	expect(style("three").fontWeight).toBe("400");
+	dom.dispose();
+});

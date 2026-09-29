@@ -3461,8 +3461,6 @@ const USED_VALUE_PROPERTIES = new Set([
 	"width",
 ]);
 
-// LIVE: the object an author holds stays valid across class changes and
-// sheet replacements, because it re-resolves rather than being replaced.
 // Style sharing. An element's computed values follow from its matched
 // rules, its attributes (inline style and the presentational hints the UA
 // reads, like an input's size), its tag, and its flat-tree parent's
@@ -3571,6 +3569,8 @@ function getSharedResolved(
 	return shared;
 }
 
+// LIVE: the object an author holds stays valid across class changes and
+// sheet replacements, because it re-resolves rather than being replaced.
 interface ComputedStyleDeclaration {
 	[kElement]: Element;
 	[kCSSRules]: ParsedCSSRule[];
@@ -4314,9 +4314,8 @@ const declaredDisplays = new WeakMap<ComputedStyleDeclaration, string>();
  * display, blockified.
  */
 export function getDeclaredDisplay(element: Element): string {
-	const cascade = element.ownerDocument
-		? documentCascades.get(element.ownerDocument)
-		: undefined;
+	const document = element.ownerDocument;
+	const cascade = document ? documentCascades.get(document) : undefined;
 	if (getPseudoHost(element) !== null || cascade === undefined) {
 		return getComputedValue(element, "display");
 	}
@@ -5081,6 +5080,10 @@ interface ParsedCSSRule {
 	// worth of rules about summaries and legends. Absent when any element
 	// could match.
 	subjectTag?: string;
+	// The id or a class the rightmost compound requires, as "#id" or
+	// ".class", which files the rule where only elements with it look.
+	// Absent when the compound requires neither.
+	subjectKey?: string;
 	declarations: Record<string, string>;
 	important: Record<string, boolean>;
 
@@ -5166,7 +5169,9 @@ function isSelectedBy(
 	return matchesCompiled(element as unknown as DOMElement, selector, {
 		scope: scope as unknown as DOMNode,
 		shadow: shadow as DOMNode | null,
-		hasResults: cascade?.[kHasResults] ?? null,
+		hasResults: cascade === undefined
+			? null
+			: (cascade[kHasResults] ??= new WeakMap()),
 	});
 }
 
@@ -5429,7 +5434,7 @@ export interface Cascade {
 
 	// `:has()` answers, which go stale exactly when computed styles do, so
 	// they are dropped wherever a computed style is.
-	[kHasResults]: HasResults;
+	[kHasResults]: HasResults | null;
 
 	// The pseudo-classes named anywhere inside a :has() argument. A change
 	// to one of those states can restyle an anchor's whole subtree, far
@@ -5492,7 +5497,7 @@ export class Cascade {
 		this[kCounterScopes] = new WeakMap<Element, CSSValues.CounterScope>();
 		this[kFlushing] = false;
 		this[kUsedValues] = new WeakMap();
-		this[kHasResults] = new WeakMap();
+		this[kHasResults] = null;
 		this[kUsedStale] = true;
 		this[kLayerPaths] = [];
 		this[kAnonymousLayers] = 0;
@@ -5926,7 +5931,7 @@ export class Cascade {
 	// The document is being torn down.
 	dispose(): void {
 		this[kComputedStyleCache] = new WeakMap();
-		this[kHasResults] = new WeakMap();
+		this[kHasResults] = null;
 		this[kPseudoElementStyleCache] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
 		if (this[kTransitionTimer] !== null) {
@@ -6237,7 +6242,7 @@ export class Cascade {
 		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kUsedValues] = new WeakMap();
 		this[kComputedStyleCache] = new WeakMap();
-		this[kHasResults] = new WeakMap();
+		this[kHasResults] = null;
 		this[kPseudoElementStyleCache] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
 	}
@@ -7061,7 +7066,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
-	cascade[kHasResults] = new WeakMap();
+	cascade[kHasResults] = null;
 	cascade[kPseudoElementStyleCache].delete(element);
 	// A style change can flip display: contents, which moves the node's
 	// flat-tree BOX parent, so every box enumeration is stale.
@@ -7144,17 +7149,6 @@ function invalidateElementCaches(
 	// The one place an element's computed style goes stale, so the one
 	// place layout, which measured it under the style being dropped, is
 	// notified, unless the caller knows nothing layout reads changed.
-	if ((globalThis as any).__zz) {
-		const st = new Error().stack!
-			.split("\n")
-			.slice(2, 6)
-			.map((l) => l.trim().split(" ")[1])
-			.join("<");
-		(globalThis as any).__zz.set(
-			st,
-			((globalThis as any).__zz.get(st) ?? 0) + 1,
-		);
-	}
 	if (notifyLayout) {
 		cascade[kLayout].styleInvalidated(element);
 	}
@@ -7166,7 +7160,7 @@ function invalidateElementCaches(
 		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
-	cascade[kHasResults] = new WeakMap();
+	cascade[kHasResults] = null;
 	const droppedPseudos = cascade[kPseudoElementStyleCache].get(element);
 	if (droppedPseudos) {
 		for (const [name, declaration] of droppedPseudos) {
@@ -8039,6 +8033,12 @@ function parseSelector(
 	}
 
 	const subjectTag = reading.subjectTag;
+	const required = reading.compounds.at(-1)?.required;
+	const subjectKey = required === undefined
+		? undefined
+		: required.ids.length > 0
+			? `#${required.ids[0]}`
+			: required.classes.length > 0 ? `.${required.classes[0]}` : undefined;
 	// A :host rule is tried against the host as well as the tree's
 	// elements.
 	const reachesHost = scope !== undefined && selector.includes(":host");
@@ -8090,6 +8090,7 @@ function parseSelector(
 		cascade[kParsedRules].push({
 			...compileRuleSelector(selector, namespaces, scopes),
 			subjectTag,
+			subjectKey,
 			declarations,
 			important,
 			order,
@@ -8107,6 +8108,117 @@ function parseSelector(
 // Farther from any element than any scoping root can be.
 const UNSCOPED = Number.MAX_SAFE_INTEGER;
 
+// The parsed rules filed by the id or class their rightmost compound
+// requires, as a browser's rule set files them, so an element tries only
+// the rules that could match it. Rebuilt when the rule list changes.
+interface RuleIndex {
+	rules: ParsedCSSRule[];
+	length: number;
+	keyed: Map<string, number[]>;
+	unkeyed: ParsedCSSRule[];
+	unkeyedPositions: number[];
+	// Candidates by the id and classes that chose them, since elements
+	// alike in both, like an editor's lines, try the same rules.
+	candidates: Map<string, ParsedCSSRule[]>;
+}
+
+const ruleIndexes = new WeakMap<Cascade, RuleIndex>();
+
+const MAX_CANDIDATE_LISTS = 4096;
+
+function getRuleIndex(cascade: Cascade): RuleIndex {
+	const rules = cascade[kParsedRules];
+	let index = ruleIndexes.get(cascade);
+	if (
+		index !== undefined &&
+		index.rules === rules &&
+		index.length === rules.length
+	) {
+		return index;
+	}
+	index = {
+		rules,
+		length: rules.length,
+		keyed: new Map(),
+		unkeyed: [],
+		unkeyedPositions: [],
+		candidates: new Map(),
+	};
+	for (const [position, rule] of rules.entries()) {
+		// A pseudo-element's rule matches through its host, and a :host rule
+		// through the tree's host, so neither is filed under the element.
+		if (
+			rule.subjectKey === undefined || rule.pseudoElement || rule.reachesHost
+		) {
+			index.unkeyed.push(rule);
+			index.unkeyedPositions.push(position);
+			continue;
+		}
+		const bucket = index.keyed.get(rule.subjectKey);
+		if (bucket === undefined) {
+			index.keyed.set(rule.subjectKey, [position]);
+		} else {
+			bucket.push(position);
+		}
+	}
+	ruleIndexes.set(cascade, index);
+	return index;
+}
+
+function getIdValue(element: Element): string | null {
+	for (const attribute of getAttributeList(element)) {
+		if (attribute.localName === "id" && attribute.namespaceURI === null) {
+			return attribute.value;
+		}
+	}
+	return null;
+}
+
+// The rules an element could match, in the order they were parsed, which
+// the cascade's order of appearance relies on. A quirks-mode document
+// matches ids and classes without regard to case, so it tries them all.
+function getCandidateRules(
+	cascade: Cascade,
+	element: Element,
+): ParsedCSSRule[] {
+	if (element.ownerDocument?.compatMode === "BackCompat") {
+		return cascade[kParsedRules];
+	}
+	const index = getRuleIndex(cascade);
+	const id = getIdValue(element);
+	const classes = getClassTokens(element);
+	if (id === null && classes.size === 0) {
+		return index.unkeyed;
+	}
+	let key = id === null ? "" : `#${id}`;
+	for (const name of classes) {
+		key += ` .${name}`;
+	}
+	let candidates = index.candidates.get(key);
+	if (candidates !== undefined) {
+		return candidates;
+	}
+	const positions = new Set(index.unkeyedPositions);
+	if (id !== null) {
+		for (const position of index.keyed.get(`#${id}`) ?? []) {
+			positions.add(position);
+		}
+	}
+	for (const name of classes) {
+		for (const position of index.keyed.get(`.${name}`) ?? []) {
+			positions.add(position);
+		}
+	}
+	candidates = Array.from(
+		Int32Array.from(positions).sort(),
+		(position) => index.rules[position],
+	);
+	if (index.candidates.size < MAX_CANDIDATE_LISTS) {
+		index.candidates.set(key, candidates);
+	}
+	return candidates;
+}
+
 function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	// A UA shadow part IS the element its part pseudo styles. The host's
 	// ::placeholder rules cascade onto the [part="placeholder"] span.
@@ -8117,7 +8229,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const partNames = (element.getAttribute("part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
-	const matched = cascade[kParsedRules].filter((rule) => {
+	const matched = getCandidateRules(cascade, element).filter((rule) => {
 		if (rule.pseudoElement) {
 			// ::part(name) matches the shadow's HOST, and its declarations
 			// cascade onto the part element. This is the standard CSS Shadow

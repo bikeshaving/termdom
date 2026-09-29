@@ -126,7 +126,6 @@ function getDOMCode(keyName: string): string {
 	return PUNCTUATION_CODES[keyName] ?? "";
 }
 
-// The uppercase code for a character, so Ctrl+A and a typed "a" agree.
 // The legacy keyCode of each punctuation key on a US layout, which a
 // browser reports on keydown whether or not Shift is held.
 const PUNCTUATION_KEY_NUMBERS: Record<string, number> = {
