@@ -10,18 +10,22 @@ classes. Each file gets its own evaluation of the whole engine graph, so
 a test that tampers with a prototype cannot reach the next file.
 
 The harness realm borrows the engine window's addEventListener,
-getSelection, getComputedStyle and animation frames, and supplies only
-what a terminal cannot have: a `location` for the test's URL, and the
-window's legacy named access to elements by id.
+getSelection, getComputedStyle, location and animation frames. The
+engine runs no page scripts, so the harness runs each file's scripts in
+the parser's place and then fires DOMContentLoaded and load, as HTML
+does at the end of a parse. It sends uncaught errors to the window as
+error and unhandledrejection events. It supplies no behavior of its
+own: no named access to elements by id, and no frame documents, so
+tests that need either fail.
 
 - Test files in the suites: 1173
-- Reference tests (no testharness, scored by pixels): 56
-- Excluded, each with its reason below: 319
+- Reference tests (no testharness, scored by pixels): 59
+- Excluded, each with its reason below: 241
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 725
-- Files whose harness did not complete: 73
-- Subtests passed: 99855
-- Subtests failed: 831
+- Files whose harness completed: 747
+- Files whose harness did not complete: 126
+- Subtests passed: 95681
+- Subtests failed: 1670
 
 ## Exclusions
 
@@ -77,18 +81,9 @@ window's legacy named access to elements by id.
 | custom-elements/upgrading.html | requires-script-execution: the elements upgraded are ones the parser created around the script that defines them |
 | custom-elements/upgrading/Document-importNode-customized-builtins.html | customized built-ins: importing an element with an is value |
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | customized built-ins: cloning an element with an is value |
-| custom-elements/upgrading/upgrade-custom-element-error-event.html | requires-browsing-context: the failure is counted as an error event at the window |
 | custom-elements/upgrading/upgrading-parser-created-element.html | requires-script-execution: the element under test is one the parser created around a script it ran |
-| dom/events/Event-dispatch-handlers-changed.html | requires-browsing-context: the expected propagation path begins at the window |
-| dom/events/Event-dispatch-multiple-cancelBubble.html | requires-browsing-context: the expected propagation path begins at the window |
-| dom/events/Event-dispatch-multiple-stopPropagation.html | requires-browsing-context: the expected propagation path begins at the window |
-| dom/events/Event-dispatch-omitted-capture.html | requires-browsing-context: the expected propagation path begins at the window |
-| dom/events/Event-dispatch-reenter.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-single-activation-behavior.html | requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script |
-| dom/events/Event-dispatch-target-moved.html | requires-browsing-context: the expected propagation path begins at the window |
-| dom/events/Event-dispatch-target-removed.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | requires-browsing-context: which global an error event is fired at, across frames |
-| dom/events/Event-dispatch-throwing.html | requires-browsing-context: a listener's exception is counted as an error event at the window |
 | dom/events/Event-timestamp-cross-realm-getter.html | requires-browsing-context: a timeStamp getter taken from a frame's realm |
 | dom/events/EventListener-handleEvent-cross-realm.html | requires-browsing-context: listener objects built in a frame's realm |
 | dom/events/EventListener-incumbent-global-1.sub.html | requires-browsing-context: which global a listener is called with, across frames |
@@ -98,95 +93,29 @@ window's legacy named access to elements by id.
 | dom/events/EventListener-incumbent-global-subsubframe.sub.html | requires-browsing-context: a subframe of the incumbent-global test |
 | dom/events/EventListener-invoke-legacy.html | requires-css-animations: four of the six subtests await a running CSS animation's events |
 | dom/events/event-global-extra.window.js | requires-browsing-context: window.event across frames |
-| dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | requires-browsing-context: window.event during a beforeunload the window fires |
-| dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | requires-browsing-context: window.event inside window.onerror |
-| dom/events/event-global-set-before-handleEvent-lookup.window.js | requires-browsing-context: window.event, which is the window's own slot |
-| dom/events/event-global.html | requires-browsing-context: window.event, which is the window's own slot |
-| dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-body.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-div.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-document.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions |
-| dom/events/scrolling/iframe-chains.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/input-text-scroll-event-when-using-arrow-keys.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.sub.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scroll-cross-origin-iframes.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scroll-cross-origin-iframes.sub.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scroll-event-fired-to-element.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scroll-event-fired-to-iframe.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-after-sequence-of-scrolls.tentative.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-after-snap.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-for-mandatory-snap-point-after-load.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-to-document.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-to-element-with-overscroll-behavior.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fired-to-window.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fires-for-repeat-key-ending-after-scroll-container-end-is-reached.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fires-on-visual-viewport.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fires-to-iframe-inner-frame.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-fires-to-iframe-window.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-for-user-scroll.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-handler-content-attributes.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-not-fired-after-removing-scroller.tentative.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-fires-to-text-input.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/wheel-event-composed.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/wheel-event-transactions-basic.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/wheel-event-transactions-target-display-change.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/wheel-event-transactions-target-elements.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/wheel-event-transactions-target-move.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/wheel-event-transactions-target-removal.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
-| dom/events/scrolling/wheel-event-transactions-target-resize.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-body.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-div.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-document.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-root.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-window.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-body.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-div.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-document.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-root.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-window.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-body.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-div.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-document.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-root.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-window.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-body.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-div.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-document.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-root.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-window.html | requires-touch-input: the case drives a touch, and a terminal reports no touches |
 | dom/events/webkit-animation-end-event.html | requires-css-animations: a running CSS animation |
 | dom/events/webkit-animation-iteration-event.html | requires-css-animations: a running CSS animation |
 | dom/events/webkit-animation-start-event.html | requires-css-animations: a running CSS animation |
-| dom/events/webkit-transition-end-event.html | requires-window-event-propagation: the harness awaits transitionend on window, and this DOM's dispatch path ends at the document |
-| dom/events/window-event-restored-after-throwing-onerror.html | requires-browsing-context: window.event inside window.onerror |
 | dom/nodes/Document-URL.html | requires-browsing-context: a frame's document URL |
 | dom/nodes/Document-characterSet-normalization-1.html | requires-fetch: encoding labels normalized from fetched documents |
 | dom/nodes/Document-characterSet-normalization-2.html | requires-fetch: encoding labels normalized from fetched documents |
@@ -246,13 +175,11 @@ window's legacy named access to elements by id.
 | dom/nodes/query-target-in-load-event.html | requires-browsing-context: the query runs in a frame's load event |
 | dom/nodes/remove-and-adopt-thcrash.html | requires-browsing-context: adoption into a frame's document |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | requires-browsing-context: the node is adopted into a frame's document |
-| dom/nodes/remove-next-sibling-during-replace-with.html | requires-browsing-context: the fixture is named through the window's named property access |
 | dom/nodes/remove-unscopable.html | requires-script-execution: the test reads its result out of an onclick content attribute |
 | dom/ranges/Range-cloneContents.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
 | dom/ranges/Range-deleteContents.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
 | dom/ranges/Range-extractContents-dynamic-end.html | requires-browsing-context: the end container is removed from inside an iframe's unload event |
 | dom/ranges/Range-extractContents.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
-| dom/ranges/Range-in-shadow-after-the-shadow-removed.html | requires-browsing-context: the shadow mode under test is read out of document.location, which is null here |
 | dom/ranges/Range-insertNode.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
 | dom/ranges/Range-surroundContents.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
 | dom/ranges/tentative/OpaqueRange-auto-disconnect.html | not-a-standard: OpaqueRange and the createValueRange that builds one are a proposal, filed under tentative in the suite |
@@ -279,7 +206,6 @@ window's legacy named access to elements by id.
 | dom/traversal/TreeWalker-realm.html | requires-browsing-context: a TreeWalker built in another realm |
 | selection/Document-open.html | requires-browsing-context: the selection under test is an iframe's, across a document.open() |
 | selection/deleteFromDocument.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
-| selection/getSelection.html | requires-browsing-context: every case is an iframe's selection, or asserts that the document's defaultView is not null |
 | selection/textcontrols/click-input-after-iframe-focus.html | requires-browsing-context: the focus moves in from an iframe |
 | shadow-dom/declarative/declarative-after-attachshadow.html | requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one |
 | shadow-dom/declarative/declarative-parser-interaction.html | requires-script-execution: the case is what a script sees while the parser is still inside the template |
@@ -360,25 +286,13 @@ A collection's indexed and named properties are ordinary own accessors rather th
 
 createEvent builds every name in the legacy table except three: DeviceMotionEvent, DeviceOrientationEvent and TouchEvent throw NotSupportedError, because sensors and touch digitizers name hardware a terminal does not have. The touch subtests declare the optional feature unsupported and score apart from failure; the sensor subtests fail and stay counted.
 
-### dom/events/Event-dispatch-bubbles-false.html, Event-dispatch-bubbles-true.html, passive-by-default.html, EventListener-handleEvent.html
-
-A propagation path ends at the document. The spec continues it to the Window when the document has a browsing context. This DOM has no Window, so the harness supplies a bare event target under that name to let the test files load. The failing subtests are the ones that put the window in an expected path, expect a scroll-blocking listener on the window to be passive by default, or expect a listener's exception to arrive as an error event at the window. Every other subtest in these files passes.
-
 ### dom/events/Event-subclasses-constructors.html
 
 The UI Events interfaces are implemented, and so are DragEvent, MessageEvent, HashChangeEvent, StorageEvent, TextEvent and BeforeUnloadEvent. The failing subtests construct interfaces that remain unimplemented: the sensor events, and the interfaces whose specifications this engine does not enter.
 
-### dom/ranges/Range-getClientRects.html and every selection test that measures a box
-
-Range.getClientRects() and Range.getBoundingClientRect() are not implemented. They belong to CSSOM View rather than the DOM Standard, and they answer with boxes the layout engine owns. The engine reads its own geometry from its layout tree, not from this file. The selection tests that score by rendering fail here rather than being excluded: Selection.modify()'s line and paragraph granularities, toString() over user-select and display:none, and the caret cases.
-
 ### selection/modify.tentative.html, bidi/modify-*.html, contenteditable/modify*.html, move-by-word-*.html
 
 Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, read from the layout of the attached document. A caret in an editing host stays in it.
-
-### selection/getSelection.html (excluded), and the defaultView sanity checks in it
-
-`getSelection()` lives on Document here and always answers with that document's selection. The Selection API defines it to return null for a document with no browsing context, and to put a forwarding copy on the Window. This DOM has no Window and no browsing context, since a document is the top of the tree, so returning null would leave the interface unreachable. The harness supplies the Window's forwarding copy, as it supplies element.style.
 
 ### selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html, Selection-getComposedRanges-range-update.html
 
@@ -390,11 +304,11 @@ A selection whose range is inside a shadow tree of the document still answers `r
 
 ### dom/nodes/querySelector-id-nth-child.html
 
-An element's id does not become a property of a global. Window is not part of this DOM, and the spec's own text calls its named property access a legacy quirk. The document stands alone, with `defaultView` null.
+An element's id does not become a property of the window. The HTML Standard calls the Window's named property access a legacy quirk, and this engine does not implement it, so a test that reaches a fixture by its bare id fails.
 
 ### dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute
 
-The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick="..."` in markup is a function compiled from the attribute's value, and this DOM never executes script, so the attribute sets no handler and the IDL attribute reads back null. The failing subtests in this file either compile a content attribute, or expect a body's or a frameset's forwarded handler to land on a Window. A document with no browsing context has no event handler target for the forwarded set, so the write is dropped and the read answers null, and the harness's window is a bare event target.
+The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick="..."` in markup is a function compiled from the attribute's value, and this engine never compiles script, so the attribute sets no handler and the IDL attribute reads back null.
 
 ### dom/collections/domstringmap-supported-property-names.html, custom-elements/reactions/DOMStringMap.html
 
@@ -403,10 +317,6 @@ The event handler IDL attributes are implemented on HTMLElement, SVGElement, Mat
 ### custom-elements/HTMLElement-attachInternals.html, and the constraint validation members of the built-in controls
 
 `willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented. `:valid`, `:invalid`, `:user-valid`, `:user-invalid`, `:in-range` and `:out-of-range` read the same flags, so they are selectors this engine accepts and matches nothing with -- which is the `:invalid` subtest of dom/nodes/Element-closest.html.
-
-### the focus members, and every subtest that moves focus
-
-`focus()`, `blur()` and `document.activeElement` are implemented in `src/internal/dom.ts` and move the focus state only. The focus, blur, focusin and focusout events are fired by the engine, which also owns the repaint and the caret move that go with a focus change. The engine is not part of this harness, so no focus event is fired here. The autofocus attribute is handled by the engine too, and does nothing under this harness. Four things are absent from the DOM itself: `ShadowRoot.activeElement`, focus delegation through a host with `delegatesFocus`, retargeting of the document's focused area across a shadow boundary, and sequential focus navigation. The failing subtests read a shadow root's activeElement, focus an element inside a shadow tree, expect delegation, or wait for a focus event.
 
 ### SVG and MathML elements
 
@@ -478,8 +388,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_changed.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace.html | OK | 21 | 30 |
-| dom/nodes/Document-createElement.html | OK | 147 | 0 |
-| dom/nodes/Document-createElementNS.html | OK | 596 | 0 |
+| dom/nodes/Document-createElement.html | OK | 49 | 98 |
+| dom/nodes/Document-createElementNS.html | OK | 206 | 390 |
 | dom/nodes/Document-createEvent-touchevent.window.js | OK | 3 | 0 |
 | dom/nodes/Document-createEvent.https.html | OK | 261 | 12 |
 | dom/nodes/Document-createProcessingInstruction.html | OK | 12 | 0 |
@@ -517,7 +427,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Element-insertAdjacentText.html | OK | 6 | 0 |
 | dom/nodes/Element-lastElementChild.html | OK | 1 | 0 |
 | dom/nodes/Element-matches-namespaced-elements.html | OK | 6 | 0 |
-| dom/nodes/Element-matches.html | OK | 667 | 2 |
+| dom/nodes/Element-matches.html | OK | 0 | 1 |
 | dom/nodes/Element-nextElementSibling.html | OK | 1 | 0 |
 | dom/nodes/Element-previousElementSibling.html | OK | 1 | 0 |
 | dom/nodes/Element-remove.html | OK | 4 | 0 |
@@ -527,7 +437,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Element-setAttribute.html | OK | 2 | 0 |
 | dom/nodes/Element-siblingElement-null.html | OK | 1 | 0 |
 | dom/nodes/Element-tagName.html | OK | 6 | 0 |
-| dom/nodes/Element-webkitMatchesSelector.html | OK | 667 | 2 |
+| dom/nodes/Element-webkitMatchesSelector.html | OK | 0 | 1 |
 | dom/nodes/MutationObserver-attributes.html | OK | 42 | 0 |
 | dom/nodes/MutationObserver-callback-arguments.html | OK | 1 | 0 |
 | dom/nodes/MutationObserver-characterData.html | OK | 23 | 0 |
@@ -583,7 +493,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/ParentNode-children.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-prepend.html | OK | 22 | 0 |
 | dom/nodes/ParentNode-querySelector-All-content.html | REFTEST | 0 | 0 |
-| dom/nodes/ParentNode-querySelector-All.html | OK | 1975 | 0 |
+| dom/nodes/ParentNode-querySelector-All.html | OK | 0 | 1 |
 | dom/nodes/ParentNode-querySelector-case-insensitive.html | OK | 2 | 0 |
 | dom/nodes/ParentNode-querySelector-escapes.html | OK | 68 | 0 |
 | dom/nodes/ParentNode-querySelector-scope.html | OK | 4 | 0 |
@@ -640,35 +550,35 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/css-transition-cross-shadow.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/css-transition-to-disconnected-document.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/css-transition-trigger.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/custom-element-move-reactions.html | OK | 7 | 0 |
-| dom/nodes/moveBefore/fieldset-child-blur-event.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/fire-focusin-focusout.html | OK | 5 | 0 |
+| dom/nodes/moveBefore/custom-element-move-reactions.html | OK | 6 | 1 |
+| dom/nodes/moveBefore/fieldset-child-blur-event.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/fire-focusin-focusout.html | OK | 3 | 2 |
 | dom/nodes/moveBefore/focus-preserve-render.html | REFTEST | 0 | 0 |
-| dom/nodes/moveBefore/focus-preserve.html | OK | 4 | 0 |
-| dom/nodes/moveBefore/focus-within.html | OK | 5 | 0 |
+| dom/nodes/moveBefore/focus-preserve.html | OK | 3 | 1 |
+| dom/nodes/moveBefore/focus-within.html | OK | 3 | 2 |
 | dom/nodes/moveBefore/fullscreen-preserve.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/hover-style-update.html | OK | 1 | 1 |
+| dom/nodes/moveBefore/hover-style-update.html | OK | 0 | 2 |
 | dom/nodes/moveBefore/iframe-document-preserve.window.js | EXCLUDED (requires-browsing-context: the move happens inside a frame's document) | 0 | 0 |
 | dom/nodes/moveBefore/listed-form-element-reset.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/live-range-updates.html | OK | 3 | 0 |
+| dom/nodes/moveBefore/live-range-updates.html | OK | 0 | 3 |
 | dom/nodes/moveBefore/modal-dialog.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-as-flex-item.html | REFTEST | 0 | 0 |
-| dom/nodes/moveBefore/moveBefore-dir.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/moveBefore-dir.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/moveBefore-from-light-to-shadow.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-id-map.html | OK | 3 | 1 |
-| dom/nodes/moveBefore/moveBefore-lang.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-name-map.html | OK | 2 | 1 |
+| dom/nodes/moveBefore/moveBefore-id-map.html | OK | 1 | 3 |
+| dom/nodes/moveBefore/moveBefore-lang.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/moveBefore-name-map.html | OK | 1 | 2 |
 | dom/nodes/moveBefore/moveBefore-nodeiterator.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-option-recalc-style.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-selector-matching.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/moveBefore-option-recalc-style.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/moveBefore-selector-matching.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/moveBefore-shadow-inside.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-shadow-root.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-size-query.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/mutation-observer.html | OK | 2 | 0 |
+| dom/nodes/moveBefore/moveBefore-shadow-root.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/moveBefore-size-query.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/mutation-observer.html | OK | 1 | 1 |
 | dom/nodes/moveBefore/nonce.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/object-crash-regression.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/pointer-events.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/object-crash-regression.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/pointer-events.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/popover-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-script.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-style.html | OK | 0 | 1 |
@@ -676,7 +586,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/role-updates-after-move.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/script-move-before.html | OK | 2 | 0 |
 | dom/nodes/moveBefore/select-option-optgroup.html | OK | 1 | 1 |
-| dom/nodes/moveBefore/selection-preserve.html | OK | 1 | 5 |
+| dom/nodes/moveBefore/selection-preserve.html | OK | 0 | 6 |
 | dom/nodes/moveBefore/slotchange-events.html | OK | 4 | 0 |
 | dom/nodes/moveBefore/style-applies.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/throws-exception.html | OK | 1 | 0 |
@@ -690,12 +600,12 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/processing-instruction-attributes.html | EXCLUDED (not-a-standard: the XML parses succeed, but 130 of the 140 subtests test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not) | 0 | 0 |
 | dom/nodes/query-target-in-load-event.html | EXCLUDED (requires-browsing-context: the query runs in a frame's load event) | 0 | 0 |
 | dom/nodes/query-target-in-load-event.part.html | REFTEST | 0 | 0 |
-| dom/nodes/querySelector-empty-id.html | OK | 1 | 0 |
-| dom/nodes/querySelector-id-nth-child.html | OK | 2 | 0 |
+| dom/nodes/querySelector-empty-id.html | OK | 0 | 1 |
+| dom/nodes/querySelector-id-nth-child.html | OK | 1 | 1 |
 | dom/nodes/querySelector-mixed-case.html | OK | 1 | 0 |
 | dom/nodes/remove-and-adopt-thcrash.html | EXCLUDED (requires-browsing-context: adoption into a frame's document) | 0 | 0 |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | EXCLUDED (requires-browsing-context: the node is adopted into a frame's document) | 0 | 0 |
-| dom/nodes/remove-next-sibling-during-replace-with.html | EXCLUDED (requires-browsing-context: the fixture is named through the window's named property access) | 0 | 0 |
+| dom/nodes/remove-next-sibling-during-replace-with.html | OK | 0 | 1 |
 | dom/nodes/remove-unscopable.html | EXCLUDED (requires-script-execution: the test reads its result out of an onclick content attribute) | 0 | 0 |
 | dom/nodes/rootNode.html | OK | 5 | 0 |
 | dom/nodes/svg-template-querySelector.html | OK | 3 | 0 |
@@ -749,23 +659,23 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-dispatch-click.tentative.html | OK | 4 | 2 |
 | dom/events/Event-dispatch-detached-click.html | OK | 2 | 0 |
 | dom/events/Event-dispatch-detached-input-and-change.html | OK | 12 | 0 |
-| dom/events/Event-dispatch-handlers-changed.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
+| dom/events/Event-dispatch-handlers-changed.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-listener-order.window.js | OK | 1 | 0 |
-| dom/events/Event-dispatch-multiple-cancelBubble.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
-| dom/events/Event-dispatch-multiple-stopPropagation.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
-| dom/events/Event-dispatch-omitted-capture.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
+| dom/events/Event-dispatch-multiple-cancelBubble.html | OK | 0 | 1 |
+| dom/events/Event-dispatch-multiple-stopPropagation.html | OK | 0 | 1 |
+| dom/events/Event-dispatch-omitted-capture.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-on-disabled-elements.html | TIMEOUT | 5 | 4 |
 | dom/events/Event-dispatch-order-at-target.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-order.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-other-document.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-propagation-stopped.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-redispatch.html | OK | 2 | 2 |
-| dom/events/Event-dispatch-reenter.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
+| dom/events/Event-dispatch-reenter.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-single-activation-behavior.html | EXCLUDED (requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script) | 0 | 0 |
-| dom/events/Event-dispatch-target-moved.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
-| dom/events/Event-dispatch-target-removed.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
+| dom/events/Event-dispatch-target-moved.html | OK | 0 | 1 |
+| dom/events/Event-dispatch-target-removed.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | EXCLUDED (requires-browsing-context: which global an error event is fired at, across frames) | 0 | 0 |
-| dom/events/Event-dispatch-throwing.html | EXCLUDED (requires-browsing-context: a listener's exception is counted as an error event at the window) | 0 | 0 |
+| dom/events/Event-dispatch-throwing.html | OK | 2 | 0 |
 | dom/events/Event-init-while-dispatching.html | OK | 5 | 0 |
 | dom/events/Event-initEvent.html | OK | 12 | 0 |
 | dom/events/Event-isTrusted.any.js | OK | 1 | 0 |
@@ -802,110 +712,110 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/click-on-absolute-pseudo.html | OK | 0 | 1 |
 | dom/events/event-disabled-dynamic.html | OK | 1 | 0 |
 | dom/events/event-global-extra.window.js | EXCLUDED (requires-browsing-context: window.event across frames) | 0 | 0 |
-| dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | EXCLUDED (requires-browsing-context: window.event during a beforeunload the window fires) | 0 | 0 |
-| dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | EXCLUDED (requires-browsing-context: window.event inside window.onerror) | 0 | 0 |
-| dom/events/event-global-set-before-handleEvent-lookup.window.js | EXCLUDED (requires-browsing-context: window.event, which is the window's own slot) | 0 | 0 |
-| dom/events/event-global.html | EXCLUDED (requires-browsing-context: window.event, which is the window's own slot) | 0 | 0 |
+| dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | OK | 0 | 1 |
+| dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | OK | 0 | 1 |
+| dom/events/event-global-set-before-handleEvent-lookup.window.js | OK | 0 | 1 |
+| dom/events/event-global.html | OK | 0 | 8 |
 | dom/events/event-handler-attribute-replace-preserves-passive.html | OK | 2 | 0 |
 | dom/events/event-src-element-nullable.html | OK | 1 | 0 |
-| dom/events/focus-event-document-move.html | OK | 1 | 0 |
-| dom/events/handler-count.html | OK | 2 | 0 |
+| dom/events/focus-event-document-move.html | ERROR | 0 | 1 |
+| dom/events/handler-count.html | TIMEOUT | 0 | 0 |
 | dom/events/label-default-action.html | OK | 1 | 0 |
 | dom/events/legacy-pre-activation-behavior.window.js | OK | 1 | 0 |
-| dom/events/mouse-event-retarget.html | OK | 1 | 0 |
-| dom/events/no-focus-events-at-clicking-editable-content-in-link.html | OK | 2 | 0 |
-| dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-body.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-div.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-document.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
-| dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | EXCLUDED (requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions) | 0 | 0 |
+| dom/events/mouse-event-retarget.html | OK | 0 | 1 |
+| dom/events/no-focus-events-at-clicking-editable-content-in-link.html | OK | 0 | 2 |
+| dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | OK | 1 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-div.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-document.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-root.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-window.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-body.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-div.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-document.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-root.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchmove-event-listener-on-window.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-body.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-div.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-document.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-root.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-touchstart-event-listener-on-window.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-body.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-div.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-document.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-root.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-window.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-body.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-div.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-document.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-root.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-window.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-body.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-div.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-document.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-root.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchmove-event-listener-on-window.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-body.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-div.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-document.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-root.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-touchstart-event-listener-on-window.html | EXCLUDED (requires-touch-input: the case drives a touch, and a terminal reports no touches) | 0 | 0 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-body.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-div.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-document.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | OK | 0 | 1 |
+| dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | OK | 8 | 4 |
 | dom/events/passive-by-default.html | OK | 100 | 0 |
 | dom/events/pointer-event-document-move.html | OK | 0 | 1 |
 | dom/events/preventDefault-during-activation-behavior.html | OK | 1 | 0 |
 | dom/events/relatedTarget.window.js | OK | 1 | 5 |
 | dom/events/remove-all-listeners.html | OK | 2 | 0 |
-| dom/events/scrolling/iframe-chains.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/input-text-scroll-event-when-using-arrow-keys.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.sub.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scroll-cross-origin-iframes.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scroll-cross-origin-iframes.sub.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scroll-event-fired-to-element.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scroll-event-fired-to-iframe.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-after-sequence-of-scrolls.tentative.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-after-snap.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-mandatory-snap-point-after-load.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-to-document.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-to-element-with-overscroll-behavior.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-to-window.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fires-for-repeat-key-ending-after-scroll-container-end-is-reached.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fires-on-visual-viewport.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fires-to-iframe-inner-frame.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fires-to-iframe-window.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-for-user-scroll.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-handler-content-attributes.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-not-fired-after-removing-scroller.tentative.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-fires-to-text-input.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/wheel-event-composed.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-basic.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-target-display-change.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-target-elements.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-target-move.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-target-removal.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-target-resize.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/shadow-relatedTarget.html | OK | 2 | 0 |
+| dom/events/scrolling/iframe-chains.html | OK | 0 | 1 |
+| dom/events/scrolling/input-text-scroll-event-when-using-arrow-keys.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | ERROR | 0 | 2 |
+| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.sub.html | REFTEST | 0 | 0 |
+| dom/events/scrolling/scroll-cross-origin-iframes.html | ERROR | 0 | 1 |
+| dom/events/scrolling/scroll-cross-origin-iframes.sub.html | REFTEST | 0 | 0 |
+| dom/events/scrolling/scroll-event-fired-to-element.html | OK | 4 | 0 |
+| dom/events/scrolling/scroll-event-fired-to-iframe.html | OK | 0 | 4 |
+| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | ERROR (scroller is not defined) | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/scrollend-event-fired-after-sequence-of-scrolls.tentative.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-after-snap.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-mandatory-snap-point-after-load.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html | ERROR (targetDiv is not defined) | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html | ERROR (targetDiv is not defined) | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-to-document.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-to-element-with-overscroll-behavior.html | ERROR (targetXDiv is not defined) | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-to-window.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fires-for-repeat-key-ending-after-scroll-container-end-is-reached.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fires-on-visual-viewport.html | ERROR | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fires-to-iframe-inner-frame.html | REFTEST | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fires-to-iframe-window.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-for-user-scroll.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-handler-content-attributes.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-not-fired-after-removing-scroller.tentative.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | OK | 0 | 4 |
+| dom/events/scrolling/scrollend-fires-to-text-input.html | OK | 5 | 0 |
+| dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html | ERROR (scroller is not defined) | 0 | 0 |
+| dom/events/scrolling/wheel-event-composed.html | ERROR | 0 | 1 |
+| dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html | OK | 0 | 1 |
+| dom/events/scrolling/wheel-event-transactions-basic.html | ERROR (firstRootSpacer is not defined) | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/wheel-event-transactions-target-display-change.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-target-elements.html | OK | 0 | 1 |
+| dom/events/scrolling/wheel-event-transactions-target-move.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/wheel-event-transactions-target-removal.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/wheel-event-transactions-target-resize.html | TIMEOUT | 0 | 0 |
+| dom/events/shadow-relatedTarget.html | ERROR (host is not defined) | 0 | 0 |
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
-| dom/events/webkit-transition-end-event.html | EXCLUDED (requires-window-event-propagation: the harness awaits transitionend on window, and this DOM's dispatch path ends at the document) | 0 | 0 |
+| dom/events/webkit-transition-end-event.html | OK | 13 | 0 |
 | dom/events/window-composed-path.html | ERROR | 1 | 0 |
-| dom/events/window-event-restored-after-throwing-onerror.html | EXCLUDED (requires-browsing-context: window.event inside window.onerror) | 0 | 0 |
+| dom/events/window-event-restored-after-throwing-onerror.html | OK | 0 | 1 |
 | dom/ranges/Range-adopt-test.html | OK | 4 | 0 |
 | dom/ranges/Range-attribute-nodes.html | OK | 26 | 0 |
 | dom/ranges/Range-attributes.html | OK | 1 | 0 |
@@ -931,7 +841,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/ranges/Range-extractContents-dynamic-end.html | EXCLUDED (requires-browsing-context: the end container is removed from inside an iframe's unload event) | 0 | 0 |
 | dom/ranges/Range-extractContents-in-ShadowRoot.html | OK | 4 | 0 |
 | dom/ranges/Range-extractContents.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
-| dom/ranges/Range-in-shadow-after-the-shadow-removed.html | EXCLUDED (requires-browsing-context: the shadow mode under test is read out of document.location, which is null here) | 0 | 0 |
+| dom/ranges/Range-in-shadow-after-the-shadow-removed.html | OK | 0 | 2 |
 | dom/ranges/Range-insertNode.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
 | dom/ranges/Range-intersectsNode-2.html | OK | 1 | 0 |
 | dom/ranges/Range-intersectsNode-binding.html | OK | 1 | 0 |
@@ -990,13 +900,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/addRange-52.html | OK | 232 | 0 |
 | selection/addRange-56.html | OK | 116 | 0 |
 | selection/addRange.tentative.html | OK | 1 | 0 |
-| selection/anchor-removal.html | OK | 2 | 0 |
-| selection/anonymous/details-ancestor.html | OK | 1 | 0 |
-| selection/anonymous/details-mutate.html | OK | 1 | 0 |
+| selection/anchor-removal.html | OK | 0 | 2 |
+| selection/anonymous/details-ancestor.html | OK | 0 | 1 |
+| selection/anonymous/details-mutate.html | ERROR (d is not defined) | 0 | 0 |
 | selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html | OK | 11 | 0 |
 | selection/bidi/modify-extend-by-character.html | OK | 18 | 10 |
 | selection/bidi/modify-move-by-character.html | OK | 18 | 10 |
-| selection/bidi/modify.tentative.html | OK | 24 | 12 |
+| selection/bidi/modify.tentative.html | ERROR (container is not defined) | 0 | 0 |
 | selection/canvas-click.html | OK | 0 | 1 |
 | selection/canvas-drag.html | OK | 1 | 0 |
 | selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 8 | 16 |
@@ -1004,7 +914,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/caret/collapse-pre-linestart-1.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-2.html | REFTEST | 0 | 0 |
 | selection/caret/editing-host-has-only-invisible-br.html | REFTEST | 0 | 0 |
-| selection/caret/empty-elements.html | OK | 1 | 0 |
+| selection/caret/empty-elements.html | OK | 0 | 1 |
 | selection/caret/move-around-contenteditable-false.html | TIMEOUT | 0 | 5 |
 | selection/caret/move-around-generated-content.html | TIMEOUT | 0 | 3 |
 | selection/collapse-00.html | OK | 2655 | 0 |
@@ -1015,21 +925,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/collapse-common-ancestor-2.html | REFTEST | 0 | 0 |
 | selection/collapse-common-ancestor-3.html | REFTEST | 0 | 0 |
 | selection/collapseToStartEnd.html | OK | 57 | 0 |
-| selection/contenteditable/cefalse-on-boundaries.html | OK | 4 | 0 |
+| selection/contenteditable/cefalse-on-boundaries.html | OK | 0 | 4 |
 | selection/contenteditable/collapse.html | OK | 0 | 3 |
 | selection/contenteditable/initial-selection-during-focus-event-propagation.html | OK | 0 | 1 |
 | selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR ("" is not a valid element name) | 0 | 0 |
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 1 | 35 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
-| selection/contenteditable/modify.tentative.html | OK | 15 | 0 |
+| selection/contenteditable/modify.tentative.html | ERROR (inlinehosts is not defined) | 0 | 0 |
 | selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | OK | 3 | 4 |
 | selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | OK | 4 | 3 |
-| selection/contenteditable/selection-outside-focused-editing-host.tentative.html | TIMEOUT | 0 | 0 |
+| selection/contenteditable/selection-outside-focused-editing-host.tentative.html | OK | 2 | 1 |
 | selection/deleteFromDocument-HTMLDetails.html | OK | 30 | 0 |
 | selection/deleteFromDocument.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
-| selection/drag-disabled-textarea-shadow-dom.html | OK | 1 | 0 |
-| selection/drag-out-of-floated-content.html | OK | 1 | 0 |
-| selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html | OK | 1 | 0 |
+| selection/drag-disabled-textarea-shadow-dom.html | ERROR | 0 | 1 |
+| selection/drag-out-of-floated-content.html | OK | 0 | 1 |
+| selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html | OK | 0 | 1 |
 | selection/drag-selection-extend-to-user-select-none.html | OK | 0 | 4 |
 | selection/extend-00.html | OK | 2024 | 0 |
 | selection/extend-20.html | OK | 2376 | 0 |
@@ -1042,21 +952,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/fire-selectionchange-event-on-pressing-backspace.html | OK | 0 | 2 |
 | selection/fire-selectionchange-event-on-textcontrol-element-on-pressing-backspace.html | OK | 1 | 0 |
 | selection/getRangeAt.html | OK | 4 | 0 |
-| selection/getSelection.html | EXCLUDED (requires-browsing-context: every case is an iframe's selection, or asserts that the document's defaultView is not null) | 0 | 0 |
+| selection/getSelection.html | OK | 6 | 12 |
 | selection/idlharness.window.js | ERROR (missing script /resources/WebIDLParser.js) | 0 | 0 |
 | selection/isCollapsed.html | OK | 29 | 0 |
 | selection/modify-extend-word-trailing-inline-block.tentative.html | OK | 1 | 0 |
 | selection/modify-line-flex-column.tentative.html | OK | 0 | 2 |
 | selection/modify-line-flex-row.tentative.html | OK | 0 | 2 |
 | selection/modify-line-grid-basic.tentative.html | OK | 0 | 2 |
-| selection/modify.tentative.html | OK | 7 | 0 |
+| selection/modify.tentative.html | OK | 6 | 1 |
 | selection/move-by-word-korean.html | OK | 0 | 4 |
 | selection/move-by-word-with-symbol.html | OK | 2 | 4 |
 | selection/move-paragraph-cross-editing-boundary.tentative.html | OK | 0 | 2 |
 | selection/move-paragraphboundary-cross-editing-boundary.tentative.html | OK | 0 | 2 |
 | selection/move-selection-range-into-different-root.tentative.html | OK | 16 | 0 |
-| selection/onselectionchange-on-distinct-text-controls.html | OK | 2 | 0 |
-| selection/onselectionchange-on-document.html | OK | 4 | 0 |
+| selection/onselectionchange-on-distinct-text-controls.html | OK | 0 | 2 |
+| selection/onselectionchange-on-document.html | OK | 0 | 4 |
 | selection/onselectstart-on-key-in-contenteditable.html | OK | 30 | 0 |
 | selection/removeAllRanges.html | OK | 116 | 0 |
 | selection/removeRange.html | OK | 29 | 0 |
@@ -1067,10 +977,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/selection-direction-on-double-click.tentative.html | OK | 0 | 1 |
 | selection/selection-direction-on-single-click.html | OK | 0 | 1 |
 | selection/selection-direction-on-triple-click.tentative.html | OK | 0 | 1 |
-| selection/selection-focused-element-becomes-nonfocusable.html | TIMEOUT | 0 | 0 |
+| selection/selection-focused-element-becomes-nonfocusable.html | ERROR | 0 | 2 |
 | selection/selection-incremental-change-repaint.html | REFTEST | 0 | 0 |
 | selection/selection-modify-extend-word-generated-content.html | OK | 2 | 0 |
-| selection/selection-nested-video.html | OK | 1 | 0 |
+| selection/selection-nested-video.html | TIMEOUT | 0 | 0 |
 | selection/selection-range-after-editinghost-removed.html | OK | 4 | 0 |
 | selection/selection-range-after-textcontrol-removed.html | OK | 2 | 0 |
 | selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html | OK | 0 | 4 |
@@ -1088,26 +998,26 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/shadow-dom/cross-shadow-boundary-select-root.html | REFTEST | 0 | 0 |
 | selection/shadow-dom/selection-at-nodes-not-part-of-flattened-tree.html | OK | 20 | 4 |
 | selection/shadow-dom/tentative/Range-isPointInRange.html | OK | 2 | 0 |
-| selection/shadow-dom/tentative/Selection-collapse-and-extend.html | OK | 4 | 0 |
+| selection/shadow-dom/tentative/Selection-collapse-and-extend.html | ERROR (container is not defined) | 0 | 0 |
 | selection/shadow-dom/tentative/Selection-deleteFromDocument-around-shadow.html | OK | 33 | 0 |
-| selection/shadow-dom/tentative/Selection-direction.html | OK | 7 | 0 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html | OK | 1 | 0 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html | OK | 2 | 4 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html | OK | 8 | 1 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-slot.html | OK | 3 | 0 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges.html | OK | 12 | 0 |
-| selection/shadow-dom/tentative/Selection-isCollapsed.html | OK | 4 | 0 |
-| selection/shadow-dom/tentative/Selection-later-become-slotted-content.html | OK | 1 | 0 |
+| selection/shadow-dom/tentative/Selection-direction.html | OK | 1 | 6 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html | ERROR (host1 is not defined) | 0 | 0 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html | OK | 0 | 6 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html | OK | 1 | 8 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-slot.html | OK | 0 | 3 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges.html | OK | 1 | 11 |
+| selection/shadow-dom/tentative/Selection-isCollapsed.html | ERROR (host is not defined) | 0 | 0 |
+| selection/shadow-dom/tentative/Selection-later-become-slotted-content.html | OK | 0 | 1 |
 | selection/stringifier.tentative.html | OK | 1 | 0 |
-| selection/stringifier_editable_element.tentative.html | TIMEOUT | 0 | 0 |
+| selection/stringifier_editable_element.tentative.html | OK | 0 | 12 |
 | selection/test-iframe.html | REFTEST | 0 | 0 |
 | selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-browsing-context: the focus moves in from an iframe) | 0 | 0 |
 | selection/textcontrols/focus.html | OK | 0 | 1 |
 | selection/textcontrols/initial-selection-during-focus-event-propagation.html | OK | 0 | 1 |
-| selection/textcontrols/onselectionchange-content-attribute.html | OK | 2 | 0 |
-| selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
+| selection/textcontrols/onselectionchange-content-attribute.html | OK | 1 | 1 |
+| selection/textcontrols/selectionchange-bubble.html | ERROR (input is not defined) | 0 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
-| selection/textcontrols/selectionchange.html | OK | 44 | 16 |
+| selection/textcontrols/selectionchange.html | ERROR (input is not defined) | 0 | 0 |
 | selection/toString-ff-bug-001.html | OK | 1 | 0 |
 | selection/toString-user-select-none.html | OK | 0 | 3 |
 | selection/type.html | OK | 29 | 0 |
@@ -1122,7 +1032,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/Element-interface-shadowRoot-attribute.html | OK | 3 | 0 |
 | shadow-dom/Extensions-to-Event-Interface.html | OK | 16 | 0 |
 | shadow-dom/HTMLSlotElement-interface.html | OK | 18 | 0 |
-| shadow-dom/HighlightRegistry-highlightsFromPoint.html | OK | 1 | 3 |
+| shadow-dom/HighlightRegistry-highlightsFromPoint.html | OK | 0 | 4 |
 | shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | OK | 1 | 2 |
 | shadow-dom/Node-prototype-cloneNode.html | OK | 4 | 0 |
 | shadow-dom/Range-prototype-insertNode.html | OK | 1 | 0 |
@@ -1131,8 +1041,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/accesskey.tentative.html | TIMEOUT | 0 | 2 |
 | shadow-dom/assign-slottables-after-removing-shadow-tree-from-document.html | OK | 1 | 0 |
 | shadow-dom/attach-shadow-non-html-namespace.html | OK | 304 | 0 |
-| shadow-dom/attachShadow-with-ShadowRoot.html | OK | 2 | 0 |
-| shadow-dom/build-deep-detached-shadow-then-append-text.html | OK | 1 | 0 |
+| shadow-dom/attachShadow-with-ShadowRoot.html | OK | 0 | 2 |
+| shadow-dom/build-deep-detached-shadow-then-append-text.html | ERROR | 1 | 0 |
 | shadow-dom/capturing-and-bubbling-event-listeners-across-shadow-trees.html | OK | 5 | 0 |
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
@@ -1142,10 +1052,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | EXCLUDED (requires-script-execution: the opt-in is read by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-repeats-2.html | EXCLUDED (requires-script-execution: the second template is judged by a script the parser runs between them) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html | OK | 0 | 2 |
-| shadow-dom/declarative/declarative-shadow-dom-repeats.html | OK | 3 | 0 |
-| shadow-dom/declarative/declarative-shadow-dom-serialization.html | OK | 2 | 0 |
-| shadow-dom/declarative/declarative-shadow-dom-slot-assignment-serialization.html | OK | 1 | 2 |
-| shadow-dom/declarative/declarative-shadow-dom-slot-assignment.html | OK | 3 | 5 |
+| shadow-dom/declarative/declarative-shadow-dom-repeats.html | ERROR | 0 | 3 |
+| shadow-dom/declarative/declarative-shadow-dom-serialization.html | OK | 0 | 2 |
+| shadow-dom/declarative/declarative-shadow-dom-slot-assignment-serialization.html | ERROR | 0 | 3 |
+| shadow-dom/declarative/declarative-shadow-dom-slot-assignment.html | ERROR | 2 | 6 |
 | shadow-dom/declarative/declarative-shadow-dom-write-to-iframe.html | EXCLUDED (requires-browsing-context: the markup is written into a frame's document) | 0 | 0 |
 | shadow-dom/declarative/declarative-with-disabled-shadow.html | EXCLUDED (requires-script-execution: the definition that disables shadow roots is registered by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/gethtml-ordering.html | EXCLUDED (requires-script-execution: the serialization order is read by a script the parser runs mid-document) | 0 | 0 |
@@ -1192,21 +1102,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-serialization.html | ERROR (Unexpected token ':') | 0 | 0 |
 | shadow-dom/directionality-001.tentative.html | REFTEST | 0 | 0 |
 | shadow-dom/directionality-002.tentative.html | REFTEST | 0 | 0 |
-| shadow-dom/dragenter-related-target.html | OK | 0 | 1 |
-| shadow-dom/dragleave-related-target.html | OK | 0 | 1 |
+| shadow-dom/dragenter-related-target.html | ERROR | 0 | 1 |
+| shadow-dom/dragleave-related-target.html | ERROR | 0 | 1 |
 | shadow-dom/event-composed-path-after-dom-mutation.html | OK | 2 | 0 |
-| shadow-dom/event-composed-path-with-related-target.html | OK | 13 | 0 |
-| shadow-dom/event-composed-path.html | OK | 11 | 0 |
-| shadow-dom/event-composed.html | OK | 9 | 0 |
-| shadow-dom/event-dispatch-order.tentative.html | OK | 1 | 0 |
+| shadow-dom/event-composed-path-with-related-target.html | OK | 0 | 13 |
+| shadow-dom/event-composed-path.html | OK | 0 | 11 |
+| shadow-dom/event-composed.html | OK | 2 | 7 |
+| shadow-dom/event-dispatch-order.tentative.html | OK | 0 | 1 |
 | shadow-dom/event-inside-shadow-tree.html | OK | 12 | 0 |
 | shadow-dom/event-inside-slotted-node.html | OK | 20 | 0 |
-| shadow-dom/event-post-dispatch-no-listeners.html | OK | 5 | 0 |
-| shadow-dom/event-post-dispatch.html | OK | 15 | 1 |
+| shadow-dom/event-post-dispatch-no-listeners.html | OK | 0 | 5 |
+| shadow-dom/event-post-dispatch.html | ERROR (test1 is not defined) | 0 | 0 |
 | shadow-dom/event-with-related-target.html | OK | 18 | 0 |
 | shadow-dom/execcommand-insertList-in-shadow.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/delegatesFocus-highlight-sibling.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html | OK | 1 | 0 |
+| shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/focus-navigation-slot-fallback.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-nested-2levels.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-nested-delegatesFocus.html | OK | 1 | 0 |
@@ -1215,15 +1125,15 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus-navigation/focus-navigation-slot-shadow-in-fallback.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-shadow-in-slot.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-with-tabindex.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-navigation-slots-in-slot.html | OK | 1 | 0 |
+| shadow-dom/focus-navigation/focus-navigation-slots-in-slot.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/focus-navigation-slots.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-web-component-radio.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-navigation-with-delegatesFocus.html | OK | 16 | 0 |
+| shadow-dom/focus-navigation/focus-navigation-with-delegatesFocus.html | OK | 0 | 16 |
 | shadow-dom/focus-navigation/focus-navigation.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-nested-slots.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-reverse-unassignable-slot.html | OK | 1 | 0 |
+| shadow-dom/focus-navigation/focus-nested-slots.html | OK | 0 | 1 |
+| shadow-dom/focus-navigation/focus-reverse-unassignable-slot.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/focus-reverse-unassigned-slot.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-unassignable-slot.html | OK | 1 | 0 |
+| shadow-dom/focus-navigation/focus-unassignable-slot.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/focus-with-negative-index.html | OK | 2 | 0 |
 | shadow-dom/focus-navigation/menu/tentative/focus-menu-elements.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/reading-flow/tentative/carousel-grid-order.html | EXCLUDED (not-a-standard: the CSS reading-flow property these navigate by is a proposal, filed under tentative in the suite) | 0 | 0 |
@@ -1254,10 +1164,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/DocumentOrShadowRoot-activeElement.html | OK | 6 | 0 |
 | shadow-dom/focus/ShadowRoot-delegatesFocus.html | OK | 3 | 0 |
 | shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html | OK | 2 | 0 |
-| shadow-dom/focus/click-focus-delegatesFocus-click.html | OK | 2 | 4 |
-| shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | OK | 0 | 1 |
-| shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | OK | 0 | 1 |
-| shadow-dom/focus/click-focus-slot-ancestor.html | OK | 3 | 0 |
+| shadow-dom/focus/click-focus-delegatesFocus-click.html | ERROR (outside is not defined) | 0 | 0 |
+| shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | ERROR (outside is not defined) | 0 | 0 |
+| shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | ERROR (outside is not defined) | 0 | 0 |
+| shadow-dom/focus/click-focus-slot-ancestor.html | ERROR (container is not defined) | 0 | 0 |
 | shadow-dom/focus/delegatesFocus-tabindex-change.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-autofocus.html | OK | 5 | 0 |
 | shadow-dom/focus/focus-click-on-shadow-host.html | OK | 0 | 1 |
@@ -1265,11 +1175,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/focus-method-delegatesFocus.html | OK | 15 | 0 |
 | shadow-dom/focus/focus-method-with-delegatesFocus.html | ERROR (missing script resources/shadow-dom.js) | 0 | 0 |
 | shadow-dom/focus/focus-preserved-on-slot-reorder.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-pseudo-matches-on-shadow-host.html | TIMEOUT | 0 | 0 |
+| shadow-dom/focus/focus-pseudo-matches-on-shadow-host.html | ERROR (defaultFocus is not defined) | 0 | 0 |
 | shadow-dom/focus/focus-pseudo-on-shadow-host-1.html | REFTEST | 0 | 0 |
 | shadow-dom/focus/focus-pseudo-on-shadow-host-2.html | REFTEST | 0 | 0 |
 | shadow-dom/focus/focus-pseudo-on-shadow-host-3.html | REFTEST | 0 | 0 |
-| shadow-dom/focus/focus-scroll-under-delegatesFocus.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-scroll-under-delegatesFocus.html | ERROR | 0 | 1 |
 | shadow-dom/focus/focus-selector-delegatesFocus.html | OK | 12 | 0 |
 | shadow-dom/focus/focus-shadowhost-display-none.html | OK | 0 | 2 |
 | shadow-dom/focus/focus-slot-box-generated-tabindex-0.html | OK | 1 | 0 |
@@ -1288,7 +1198,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-one.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-scrollable.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero.html | OK | 1 | 0 |
-| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 1 | 0 |
+| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 0 | 1 |
 | shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html | OK | 0 | 1 |
 | shadow-dom/focus/text-selection-with-delegatesFocus.html | OK | 0 | 2 |
 | shadow-dom/form-control-form-attribute.html | OK | 2 | 1 |
@@ -1297,8 +1207,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/historical.html | OK | 5 | 0 |
 | shadow-dom/imperative-slot-api-cross-shadow-root.html | OK | 1 | 1 |
 | shadow-dom/imperative-slot-api-disconnected.html | OK | 1 | 0 |
-| shadow-dom/imperative-slot-api-slotchange.html | OK | 13 | 0 |
-| shadow-dom/imperative-slot-api.html | OK | 16 | 0 |
+| shadow-dom/imperative-slot-api-slotchange.html | OK | 0 | 13 |
+| shadow-dom/imperative-slot-api.html | OK | 1 | 15 |
 | shadow-dom/imperative-slot-fallback-clear.html | OK | 0 | 2 |
 | shadow-dom/imperative-slot-initial-fallback.html | OK | 2 | 0 |
 | shadow-dom/imperative-slot-layout-invalidation-001.html | REFTEST | 0 | 0 |
@@ -1344,14 +1254,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/slot-fallback-content-006.html | REFTEST | 0 | 0 |
 | shadow-dom/slot-fallback-content-007.html | REFTEST | 0 | 0 |
 | shadow-dom/slot-fallback-content-008.html | REFTEST | 0 | 0 |
-| shadow-dom/slot-reconciliation-at-node-removal.html | OK | 1 | 0 |
+| shadow-dom/slot-reconciliation-at-node-removal.html | OK | 0 | 1 |
 | shadow-dom/slotchange-customelements.html | OK | 0 | 1 |
 | shadow-dom/slotchange-event.html | OK | 32 | 0 |
-| shadow-dom/slotchange.html | OK | 17 | 0 |
-| shadow-dom/slots-fallback-in-document.html | OK | 2 | 0 |
-| shadow-dom/slots-fallback.html | OK | 13 | 0 |
+| shadow-dom/slotchange.html | OK | 0 | 17 |
+| shadow-dom/slots-fallback-in-document.html | ERROR (test1 is not defined) | 0 | 0 |
+| shadow-dom/slots-fallback.html | OK | 0 | 13 |
 | shadow-dom/slots-outside-shadow-dom.html | OK | 1 | 0 |
-| shadow-dom/slots.html | OK | 26 | 0 |
+| shadow-dom/slots.html | OK | 0 | 26 |
 | shadow-dom/touch-event-retargeting-leak.html | EXCLUDED (requires-touch-input: a touch action sequence, and a terminal reports no touches) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/attributes/test-006.html | OK | 1 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-001.html | OK | 1 | 0 |
@@ -1412,8 +1322,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/user-interaction/editing/inheritance-of-content-editable-001.html | OK | 3 | 0 |
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html | EXCLUDED (requires-browsing-context: a Selection over a rendered document in a frame) | 0 | 0 |
-| shadow-dom/wheel-event-related-target.html | TIMEOUT | 0 | 0 |
-| custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 5 | 0 |
+| shadow-dom/wheel-event-related-target.html | OK | 0 | 1 |
+| custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 1 | 4 |
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
 | custom-elements/CustomElementRegistry.html | OK | 46 | 0 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
@@ -1456,7 +1366,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
-| custom-elements/form-associated/ElementInternals-validation.html | OK | 13 | 1 |
+| custom-elements/form-associated/ElementInternals-validation.html | OK | 12 | 2 |
 | custom-elements/form-associated/disabled-delegatesFocus.html | OK | 1 | 0 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
@@ -1487,7 +1397,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/range-and-constructors.html | OK | 2 | 0 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
 | custom-elements/reactions/Animation.html | OK | 0 | 3 |
-| custom-elements/reactions/AriaMixin-element-attributes.html | OK | 16 | 0 |
+| custom-elements/reactions/AriaMixin-element-attributes.html | OK | 0 | 16 |
 | custom-elements/reactions/AriaMixin-string-attributes.html | OK | 80 | 0 |
 | custom-elements/reactions/AriaMixin-string-attributes.tentative.html | OK | 8 | 0 |
 | custom-elements/reactions/Attr.html | OK | 2 | 0 |
@@ -1545,19 +1455,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/reactions/with-exceptions.html | OK | 0 | 1 |
 | custom-elements/registries/Construct.html | OK | 2 | 1 |
 | custom-elements/registries/CustomElementRegistry-define.html | OK | 3 | 0 |
-| custom-elements/registries/CustomElementRegistry-initialize.html | OK | 13 | 0 |
+| custom-elements/registries/CustomElementRegistry-initialize.html | OK | 7 | 6 |
 | custom-elements/registries/CustomElementRegistry-multi-register.html | OK | 2 | 0 |
 | custom-elements/registries/CustomElementRegistry-upgrade.html | OK | 2 | 3 |
 | custom-elements/registries/Document-createElement.html | OK | 10 | 0 |
 | custom-elements/registries/Document-createElementNS.html | OK | 10 | 0 |
 | custom-elements/registries/Document-customElementRegistry.html | OK | 4 | 0 |
 | custom-elements/registries/Document-importNode-cross-document.window.js | ERROR | 0 | 15 |
-| custom-elements/registries/Document-importNode.html | OK | 13 | 7 |
+| custom-elements/registries/Document-importNode.html | OK | 3 | 17 |
 | custom-elements/registries/Element-customElementRegistry-exceptions.html | OK | 2 | 1 |
 | custom-elements/registries/Element-customElementRegistry.html | OK | 10 | 1 |
-| custom-elements/registries/Element-innerHTML.html | OK | 8 | 4 |
+| custom-elements/registries/Element-innerHTML.html | OK | 7 | 5 |
 | custom-elements/registries/ShadowRoot-init-customElementRegistry.html | OK | 10 | 2 |
-| custom-elements/registries/ShadowRoot-init-declarative.html | OK | 3 | 0 |
+| custom-elements/registries/ShadowRoot-init-declarative.html | OK | 1 | 2 |
 | custom-elements/registries/ShadowRoot-innerHTML.html | OK | 0 | 4 |
 | custom-elements/registries/adoption.window.js | ERROR | 0 | 36 |
 | custom-elements/registries/constructor-direct-call-fallback-registry.window.js | OK | 0 | 2 |
@@ -1565,8 +1475,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/constructor-reentry-with-different-definition.html | OK | 0 | 4 |
 | custom-elements/registries/define-customized-builtins.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
 | custom-elements/registries/define.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
-| custom-elements/registries/element-mutation-null-registry-removal.html | OK | 1 | 0 |
-| custom-elements/registries/element-mutation.html | OK | 15 | 0 |
+| custom-elements/registries/element-mutation-null-registry-removal.html | OK | 0 | 1 |
+| custom-elements/registries/element-mutation.html | OK | 9 | 6 |
 | custom-elements/registries/global.window.js | OK | 0 | 5 |
 | custom-elements/registries/initial-about-blank.window.js | OK | 0 | 1 |
 | custom-elements/registries/per-document.html | OK | 1 | 2 |
@@ -1583,9 +1493,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/upgrade.html | OK | 5 | 0 |
 | custom-elements/registries/valid-custom-element-names.html | OK | 1975 | 0 |
 | custom-elements/state/ElementInternals-states.html | OK | 4 | 0 |
-| custom-elements/state/state-css-selector-nth-of.html | OK | 3 | 0 |
+| custom-elements/state/state-css-selector-nth-of.html | ERROR | 0 | 3 |
 | custom-elements/state/state-css-selector-shadow-dom.html | ERROR | 0 | 0 |
-| custom-elements/state/state-css-selector.html | OK | 10 | 0 |
+| custom-elements/state/state-css-selector.html | OK | 0 | 10 |
 | custom-elements/state/state-pseudo-class.html | OK | 8 | 0 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html | OK | 0 | 11 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html | OK | 0 | 11 |
@@ -1594,7 +1504,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/upgrading/Document-importNode.html | OK | 2 | 0 |
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | EXCLUDED (customized built-ins: cloning an element with an is value) | 0 | 0 |
 | custom-elements/upgrading/Node-cloneNode.html | OK | 6 | 3 |
-| custom-elements/upgrading/upgrade-custom-element-error-event.html | EXCLUDED (requires-browsing-context: the failure is counted as an error event at the window) | 0 | 0 |
+| custom-elements/upgrading/upgrade-custom-element-error-event.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
 | custom-elements/upgrading/upgrading-enqueue-reactions.html | OK | 0 | 5 |
 | custom-elements/upgrading/upgrading-parser-created-element.html | EXCLUDED (requires-script-execution: the element under test is one the parser created around a script it ran) | 0 | 0 |
 
@@ -1637,6 +1547,500 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Created element's namespace in xhtml_ns_changed.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
 - Created element's namespace in xhtml_ns_changed.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
 
+### dom/nodes/Document-createElement.html
+
+- createElement(undefined) in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(undefined) in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement(null) in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(null) in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f1oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f1oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo1") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo1") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("fெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("fெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("fooெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("fooெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement(":") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(":") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement(":foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(":foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f:oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f:oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f:o:o") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f:o:o") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f::oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f::oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f::oo:") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f::oo:") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:0") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:0") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:_") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:_") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:ெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:ெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:fooெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:fooெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("fooெ:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("fooெ:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xml") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xml") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xmlns") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xmlns") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xmlfoo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xmlfoo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xml:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xml:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xmlns:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xmlns:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xmlfoo:bar") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xmlfoo:bar") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("svg") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("svg") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("math") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("math") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("FOO") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("FOO") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("marK") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("marK") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("İnput") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("İnput") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("ınput") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("ınput") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("̀foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("̀foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f}oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f}oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo}") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo}") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("\ufffffoo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("\ufffffoo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f\uffffoo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f\uffffoo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo\uffff") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo\uffff") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f<oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f<oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("̀") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("̀") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("1foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("1foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("1:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("1:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("fo o") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("fo o") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("}foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("}foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("<foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("<foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo>") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo>") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("<foo>") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("<foo>") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("-foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("-foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement(".foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(".foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+
+### dom/nodes/Document-createElementNS.html
+
+- createElementNS test in XML document: null,null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,undefined,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,undefined,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"ெfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"ெfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,";foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,";foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"}foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"}foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f}oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f}oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo}",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo}",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"\ufffffoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"\ufffffoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f\uffffoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f\uffffoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo\uffff",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo\uffff",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"<foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"<foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f<oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f<oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"^^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"^^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"fo o","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"fo o","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f:o:o","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f:o:o","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,":","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,":","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"null:xml","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"null:xml","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,undefined,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,undefined,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"f::oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"f::oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","fo<o",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","fo<o",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/",".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/",".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","f:o:o",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","f:o:o",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","f::oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","f::oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:0","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:0","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","0:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","0:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:_",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:_",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:ெ",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:ெ",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:;",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:;",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:̀",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:̀",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","ெ:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","ெ:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","̀:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","̀:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/",";:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/",";:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:aெ",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:aெ",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","aெ:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","aெ:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xml:test","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xml:test","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlns:test","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlns:test","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","test:xmlns",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","test:xmlns",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","_:_",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","_:_",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","_:h0",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","_:h0",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","_:test",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","_:test",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","l_:_",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","l_:_",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","ns:_0",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","ns:_0",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","ns:a0",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","ns:a0",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","ns0:test",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","ns0:test",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a.b:c",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a.b:c",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a-b:c",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a-b:c",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","XMLNS",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","XMLNS",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","XML:foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","XML:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","XMLNS:foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","XMLNS:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","prefix::local",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","prefix::local",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:{","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:{","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:}","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:}","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:~","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:~","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:'","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:'","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:!","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:!","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:@","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:@","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:#","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:#","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:$","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:$","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:%","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:%","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:&","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:&","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:*","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:*","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:(","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:(","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:)","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:)","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:+","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:+","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:=","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:=","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:[","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:[","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:]","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:]","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:\\","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:\\","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:/","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:/","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:;","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:;","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:`","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:`","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:<","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:<","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:,","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:,","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:a ","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:a ","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:\"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:\"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xml:foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xml:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespaces","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespaces","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/xml/1998/namespace","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/xml/1998/namespace","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","f1oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","f1oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo1","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo1","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xml","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xml","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlns",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlns",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlfoo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlfoo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlns:foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlns:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo:xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo:xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/",null,"NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/",null,"NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+
 ### dom/nodes/Document-createEvent.https.html
 
 - DeviceMotionEvent should be an alias for DeviceMotionEvent.: No event interface is named "DeviceMotionEvent"
@@ -1664,13 +2068,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/nodes/Element-matches.html
 
-- NULL Element.matches no parameter: assert_throws_js: This should throw a TypeError. undefined is not a constructor
-- UNDEFINED Element.matches no parameter: assert_throws_js: This should throw a TypeError. undefined is not a constructor
+- Selectors-API Level 2 Test Suite: HTML with Selectors Level 3: Cannot read properties of null (reading 'appendChild')
 
 ### dom/nodes/Element-webkitMatchesSelector.html
 
-- NULL Element.webkitMatchesSelector no parameter: assert_throws_js: This should throw a TypeError. undefined is not a constructor
-- UNDEFINED Element.webkitMatchesSelector no parameter: assert_throws_js: This should throw a TypeError. undefined is not a constructor
+- Selectors-API Level 2 Test Suite: HTML with Selectors Level 3: Cannot read properties of null (reading 'appendChild')
 
 ### dom/nodes/Node-appendChild-cereactions-vs-script.window.js
 
@@ -1697,6 +2099,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Passing a detached comment from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
 - Passing a non-detached comment from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
 - Calling removeChild on a comment from a frame document with no children should throw NOT_FOUND_ERR.: Cannot read properties of undefined (reading 'document')
+
+### dom/nodes/ParentNode-querySelector-All.html
+
+- Selectors-API Test Suite: HTML: Cannot read properties of null (reading 'appendChild')
 
 ### dom/nodes/Text-constructor.html
 
@@ -1732,25 +2138,97 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Calling commitStyles after Node.moveBefore should commit mid-transition value: Test timed out
 
+### dom/nodes/moveBefore/custom-element-move-reactions.html
+
+- connectedMove runs when custom element is nested within a shadow root: promise_test: Unhandled rejection with value: object "ReferenceError: customElement is not defined"
+
+### dom/nodes/moveBefore/fieldset-child-blur-event.html
+
+- The 'blur' event is not fired on children of HTMLFieldSetElement during moveBefore(): victim is not defined
+
+### dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html
+
+- Neither 'blur' nor 'focusout' is fired on a focused <input type=date> child of HTMLFieldSetElement during moveBefore(): victim is not defined
+
+### dom/nodes/moveBefore/fire-focusin-focusout.html
+
+- Don't fire focusin/out when reparenting focused element directly: new_parent is not defined
+- Don't fire focusin/out when reparenting an element that has focus within: new_parent is not defined
+
+### dom/nodes/moveBefore/focus-preserve.html
+
+- when reparenting an element, don't automatically reset the document focus: new_parent is not defined
+
+### dom/nodes/moveBefore/focus-within.html
+
+- focus-within should be updated when reparenting focused element directly: new_parent is not defined
+- focus-within should be updated when reparenting an element that has focus within: new_parent is not defined
+
 ### dom/nodes/moveBefore/fullscreen-preserve.html
 
 - Document#fullscreenElement: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### dom/nodes/moveBefore/hover-style-update.html
 
-- Element loses hover when moved to different position: assert_false: expected false got true
+- Element loses hover when moved to different position: assert_true: expected true got false
+- Hover works immediately after moved: assert_true: expected true got false
+
+### dom/nodes/moveBefore/live-range-updates.html
+
+- moveBefore still results in range startContainer snapping up to parent when startContainer is moved: start is not defined
+- moveBefore still causes range startContainer to snap up to parent, when startContainer ancestor is moved: start is not defined
+- moveBefore still causes range endContainer to snap up to parent, when endContainer ancestor is moved: start is not defined
+
+### dom/nodes/moveBefore/moveBefore-dir.html
+
+- moveBefore() correctly updates the computed dir for moved nodes: target is not defined
 
 ### dom/nodes/moveBefore/moveBefore-id-map.html
 
-- moveBefore() correctly updates window map when moving id-mapped element into shadow root: assert_equals: expected (object) Element node <div id="target2"></div> but got (undefined) undefined
+- moveBefore() correctly updates id map when moving into shadow root: container is not defined
+- moveBefore() correctly updates window map when moving id-mapped element into shadow root: container2 is not defined
+- moveBefore() correctly updates id map when moving between shadow roots: host1 is not defined
+
+### dom/nodes/moveBefore/moveBefore-lang.html
+
+- moveBefore() correctly updates the computed lang for moved nodes: target is not defined
 
 ### dom/nodes/moveBefore/moveBefore-name-map.html
 
+- moveBefore() correctly updates name map when moving into shadow root: container is not defined
 - moveBefore() correctly updates window map: assert_equals: expected (object) Element node <img name="target2" data-target2=""></img> but got (undefined) undefined
+
+### dom/nodes/moveBefore/moveBefore-option-recalc-style.html
+
+- moveBefore() of an option element between two selects: move_to is not defined
+
+### dom/nodes/moveBefore/moveBefore-selector-matching.html
+
+- moveBefore() should invalidate target when descendant selector changes: new_parent is not defined
+
+### dom/nodes/moveBefore/moveBefore-shadow-root.html
+
+- moveBefore() is allowed in ShadowRoots (i.e., connected DocumentFragments): shadowTarget is not defined
+
+### dom/nodes/moveBefore/moveBefore-size-query.html
+
+- moveBefore() between different size containers invalidates target: new_parent is not defined
+
+### dom/nodes/moveBefore/mutation-observer.html
+
+- [Connected move] MutationObserver removal + insertion is tracked by moveBefore(): promise_test: Unhandled rejection with value: object "ReferenceError: oldParent is not defined"
 
 ### dom/nodes/moveBefore/nonce.html
 
-- Element nonce content attribute is not cleared after move: assert_equals: expected "" but got "8IBTHwOdqNKAWeKl7plt8g=="
+- Element nonce content attribute is not cleared after move: new_parent is not defined
+
+### dom/nodes/moveBefore/object-crash-regression.html
+
+- Moving an object element does not crash: p is not defined
+
+### dom/nodes/moveBefore/pointer-events.html
+
+- Pointer capture should not be released when moving: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (51, -25) is outside the viewport"
 
 ### dom/nodes/moveBefore/preserve-render-blocking-style.html
 
@@ -1758,7 +2236,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/nodes/moveBefore/role-updates-after-move.html
 
-- header elements role should become sectionheader when moved into a section: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- header elements role should become sectionheader when moved into a section: promise_test: Unhandled rejection with value: object "ReferenceError: header is not defined"
 
 ### dom/nodes/moveBefore/select-option-optgroup.html
 
@@ -1766,11 +2244,12 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/nodes/moveBefore/selection-preserve.html
 
-- moveBefore should not reset selection with preceding text: assert_equals: expected Text node "This text does not move" but got Element node <div id="old_parent">
-- moveBefore resets selection that enters a subtree, when the whole selection is moved: assert_equals: expected Text node "Grandparent paragraph" but got Element node <div id="grandparentDiv">
-- moveBefore anchor node moved up to expand selection and absorb nodes: assert_equals: expected Text node "Child paragraph one" but got Element node <div id="parentDiv">
-- moveBefore focus node moved up to shrink selection and exclude nodes; focus node gets reset: assert_equals: expected Text node "Parent paragraph" but got Element node <div id="parentDiv">
-- moveBefore selection is not preserved, especially when underlying range gets inverted: assert_equals: expected Text node "Three" but got Element node <ul id="list">
+- moveBefore should not reset selection with preceding text: promise_test: Unhandled rejection with value: object "ReferenceError: text is not defined"
+- moveBefore resets selection that enters a subtree, when the whole selection is moved: promise_test: Unhandled rejection with value: object "ReferenceError: parentParagraph is not defined"
+- moveBefore anchor node moved up to expand selection and absorb nodes: promise_test: Unhandled rejection with value: object "ReferenceError: parentParagraph is not defined"
+- moveBefore move intersecting nodes out of a selection: promise_test: Unhandled rejection with value: object "ReferenceError: grandparentParagraph is not defined"
+- moveBefore focus node moved up to shrink selection and exclude nodes; focus node gets reset: promise_test: Unhandled rejection with value: object "ReferenceError: grandparentParagraph is not defined"
+- moveBefore selection is not preserved, especially when underlying range gets inverted: promise_test: Unhandled rejection with value: object "ReferenceError: i3 is not defined"
 
 ### dom/nodes/node-creation-realm.html
 
@@ -1805,6 +2284,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Built-in element from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
 - Text node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
 - Comment node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/querySelector-empty-id.html
+
+- querySelector attribute matching empty id: root is not defined
+
+### dom/nodes/querySelector-id-nth-child.html
+
+- querySelector matching #id + constant nth-child(): target is not defined
+
+### dom/nodes/remove-next-sibling-during-replace-with.html
+
+- remove-next-sibling-during-replace-with: target is not defined
 
 ### dom/collections/HTMLCollection-as-prototype.html
 
@@ -1868,6 +2359,22 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - checkbox morphed into another type should not mutate checked state: assert_false: expected false got true
 - radio morphed into another type should not steal the existing checked state: assert_false: expected false got true
 
+### dom/events/Event-dispatch-handlers-changed.html
+
+-  Dispatch additional events inside an event listener : assert_array_equals: actual_targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+
+### dom/events/Event-dispatch-multiple-cancelBubble.html
+
+- Multiple dispatchEvent() and cancelBubble: assert_array_equals: expected property 1 to be object "[object global]" but got object "[object EventTarget]" (expected array [Document node with 2 children, object "[object global]"] got [Document node with 2 children, object "[object EventTarget]"])
+
+### dom/events/Event-dispatch-multiple-stopPropagation.html
+
+-  Multiple dispatchEvent() and stopPropagation() : assert_array_equals: expected property 1 to be object "[object global]" but got object "[object EventTarget]" (expected array [Document node with 2 children, object "[object global]"] got [Document node with 2 children, object "[object EventTarget]"])
+
+### dom/events/Event-dispatch-omitted-capture.html
+
+- EventTarget.addEventListener with the capture argument omitted: assert_array_equals: targets expected property 7 to be object "[object global]" but got object "[object EventTarget]" (expected array [Element node <td id="target">Over the river, Charlie</td>, Element node <tr id="parent">
+
 ### dom/events/Event-dispatch-on-disabled-elements.html
 
 - CSS Transitions transitioncancel event fires on disabled form elements: Test timed out
@@ -1877,8 +2384,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/events/Event-dispatch-redispatch.html
 
-- Redispatching DOMContentLoaded event after being dispatched: Cannot read properties of undefined (reading 'isTrusted')
+- Redispatching DOMContentLoaded event after being dispatched: assert_true: Received DOMContentLoaded event should be trusted before redispatching expected true got false
 - Redispatching mouseup event whose default action dispatches a click event: assert_true: Failed to send mouse click due to Error: element click intercepted error expected true got false
+
+### dom/events/Event-dispatch-reenter.html
+
+-  Dispatch additional events inside an event listener : assert_array_equals: actual_targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+
+### dom/events/Event-dispatch-target-moved.html
+
+- Event propagation path when an element in it is moved within the DOM: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+
+### dom/events/Event-dispatch-target-removed.html
+
+- Event propagation path when an element in it is removed from the DOM: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-stopPropagation-cancel-bubbling.html
 
@@ -1908,7 +2427,130 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/events/click-on-absolute-pseudo.html
 
-- Click on pseudo-element that disappears on mousedown: assert_equals: pseudoTarget should be null since the pseudo-element was removed before click dispatch expected (object) null but got (undefined) undefined
+- Click on pseudo-element that disappears on mousedown: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (50, -26) is outside the viewport"
+
+### dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html
+
+- window.event is still set when 'beforeunload' result is coerced to string: iframe is not defined
+
+### dom/events/event-global-is-still-set-when-reporting-exception-onerror.html
+
+- window.onerror handler restores window.event after it reports an exception: Cannot read properties of undefined (reading 'Function')
+
+### dom/events/event-global-set-before-handleEvent-lookup.window.js
+
+- window.event is set before 'handleEvent' lookup: assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
+
+### dom/events/event-global.html
+
+- event exists on window, which is initially set to undefined: assert_own_property: expected property "event" missing
+- window.event is only defined during dispatch: assert_equals: window.event set to current event during dispatch expected (object) object "[object Event]" but got (undefined) undefined
+- window.event is undefined if the target is in a shadow tree (event dispatched outside shadow tree): assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
+- window.event is undefined if the target is in a shadow tree (event dispatched inside shadow tree): assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
+- window.event is undefined inside window.onerror if the target is in a shadow tree (ErrorEvent dispatched inside shadow tree): assert_equals: expected "object" but got "undefined"
+- window.event is set to the current event during dispatch: Cannot read properties of undefined (reading 'type')
+- window.event is set to the current event, which is the event passed to dispatch: assert_equals: expected (undefined) undefined but got (object) object "[object Event]"
+- window.event is set to the current event, which is the event passed to dispatch (2): XMLHttpRequest is not defined
+
+### dom/events/focus-event-document-move.html
+
+- Moving a node during mousedown should not crash: Test timed out
+
+### dom/events/mouse-event-retarget.html
+
+- offsetX is correctly adjusted: target is not defined
+
+### dom/events/no-focus-events-at-clicking-editable-content-in-link.html
+
+- Click editable element in link: assert_array_equals: Click event shouldn't cause redundant focus events lengths differ, expected array ["type: focus, target: SPAN", "type: focusin, target: SPAN"] length 2, got [] length 0
+- Click editable link: assert_array_equals: Click event shouldn't cause redundant focus events lengths differ, expected array ["type: focus, target: A", "type: focusin, target: A"] length 2, got [] length 0
+
+### dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html
+
+- non-passive mousewheel event listener on body: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-div.html
+
+- non-passive mousewheel event listener on div: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-document.html
+
+- non-passive mousewheel event listener on document: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-root.html
+
+- non-passive mousewheel event listener on root: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-window.html
+
+- non-passive mousewheel event listener on window: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-body.html
+
+- non-passive wheel event listener on body: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-div.html
+
+- non-passive wheel event listener on div: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-document.html
+
+- non-passive wheel event listener on document: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-root.html
+
+- non-passive wheel event listener on root: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/non-passive-wheel-event-listener-on-window.html
+
+- non-passive wheel event listener on window: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-body.html
+
+- passive mousewheel event listener on body: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-div.html
+
+- passive mousewheel event listener on div: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-document.html
+
+- passive mousewheel event listener on document: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-root.html
+
+- passive mousewheel event listener on root: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-mousewheel-event-listener-on-window.html
+
+- passive mousewheel event listener on window: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-body.html
+
+- passive wheel event listener on body: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-div.html
+
+- passive wheel event listener on div: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-document.html
+
+- passive wheel event listener on document: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html
+
+- passive wheel event listener on root: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html
+
+- passive wheel event listener on window: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html
+
+- Synthetic touchstart event with interface TouchEvent is not cancelable: assert_implements: TouchEvent should be supported undefined
+- Synthetic touchmove event with interface TouchEvent is not cancelable: assert_implements: TouchEvent should be supported undefined
+- Synthetic touchend event with interface TouchEvent is not cancelable: assert_implements: TouchEvent should be supported undefined
+- Synthetic touchcancel event with interface TouchEvent is not cancelable: assert_implements: TouchEvent should be supported undefined
 
 ### dom/events/pointer-event-document-move.html
 
@@ -1921,6 +2563,79 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Reset if target pointed to a shadow tree pre-dispatch: XMLHttpRequest is not defined
 - Reset targets on early return: assert_equals: expected null but got DocumentFragment node with 2 children
 - Reset targets before activation behavior: assert_equals: expected null but got Element node <input type="checkbox"></input>
+
+### dom/events/scrolling/iframe-chains.html
+
+- Wheel scroll in iframe chains to containing element.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html
+
+- Ensure that the scroll position is not lost when the local iframe is set to display:none and shown again.: Test timed out
+- Ensure that the scroll position is not lost when the remote iframe is set to display:none and shown again.: 
+
+### dom/events/scrolling/scroll-cross-origin-iframes.html
+
+- Verify sibling cross-origin iframes can wheel-scroll.: Test timed out
+
+### dom/events/scrolling/scroll-event-fired-to-iframe.html
+
+- scrollX and scrollY should fire scroll event.: assert_equals: expected (number) 0 but got (undefined) undefined
+- scrollX and scrollY being set with the same value.: promise_test: Unhandled rejection with value: object "TypeError: target.addEventListener is not a function"
+- scrollX and scrollY being set with invalid scroll Scroll.: promise_test: Unhandled rejection with value: object "TypeError: target.addEventListener is not a function"
+- scrollX and scrollY when scrolling above maximum Scroll.: assert_equals: expected (number) 0 but got (undefined) undefined
+
+### dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html
+
+- scrolling state is false at the end of the test: Test timed out
+
+### dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html
+
+- No scroll via wheel on div shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "ReferenceError: targetButton is not defined"
+- No scroll via keys on div shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "ReferenceError: targetButton is not defined"
+- No scroll via wheel on document shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "ReferenceError: docButton is not defined"
+- No scroll via keys on document shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "ReferenceError: docButton is not defined"
+
+### dom/events/scrolling/wheel-event-composed.html
+
+- wheel event must be composed: Test timed out
+
+### dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html
+
+- When `preventDefault` is called on a WheelEvent, scrolling should be prevented.: promise_test: Unhandled rejection with value: object "ReferenceError: scroller is not defined"
+
+### dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html
+
+- Two separate webdriver action chains should have different wheel event transactions: Test timed out
+
+### dom/events/scrolling/wheel-event-transactions-target-elements.html
+
+- Wheel event transactions target elements: promise_test: Unhandled rejection with value: object "NotSupportedError: Web Animations is not implemented"
+
+### dom/events/scrolling/wheel-event-transactions-target-move.html
+
+- Move the initial wheel event target.: Test timed out
+
+### dom/events/scrolling/wheel-event-transactions-target-removal.html
+
+- Remove the initial wheel event target.: Test timed out
+
+### dom/events/window-event-restored-after-throwing-onerror.html
+
+- window.event is restored after a throwing window.onerror handler: assert_equals: window.event is the outer event before the nested dispatch expected (object) object "[object Event]" but got (undefined) undefined
+
+### dom/ranges/Range-in-shadow-after-the-shadow-removed.html
+
+- Range in shadow should stay in the shadow after the host is removed: null is not a shadow root mode
+- Range in shadow should stay in the shadow after the host parent is removed: null is not a shadow root mode
+
+### selection/anchor-removal.html
+
+- anchorNode snaps up to parent when removed (no asserts): promise_test: Unhandled rejection with value: object "ReferenceError: parentParagraph is not defined"
+- anchorNode snaps up to parent when removed (with asserts): promise_test: Unhandled rejection with value: object "ReferenceError: parentParagraph is not defined"
+
+### selection/anonymous/details-ancestor.html
+
+- Selecting the default summary of <details> should report a DOM-visible ancestor: promise_test: Unhandled rejection with value: object "ReferenceError: details is not defined"
 
 ### selection/bidi/modify-extend-by-character.html
 
@@ -1948,21 +2663,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Mixed context in auto-dir paragraph: move right 3 chars: assert_equals: expected 5 but got 18
 - Mixed context in auto-dir paragraph: move left 3 chars: assert_equals: expected 17 but got 2
 
-### selection/bidi/modify.tentative.html
-
-- LTR text with left direction in rtl context: assert_equals: expected 11 but got 0
-- RTL text with left direction in rtl context: assert_equals: expected 10 but got 0
-- RTL+LTR text with left direction in rtl context: assert_equals: expected 22 but got 0
-- LTR+RTL text with left direction in rtl context: assert_equals: expected 22 but got 0
-- LTR+RTL+LTR text with left direction in rtl context: assert_equals: expected 34 but got 0
-- RTL+LTR+RTL text with left direction in rtl context: assert_equals: expected 33 but got 0
-- LTR text with right direction in rtl context: assert_equals: expected 0 but got 11
-- RTL text with right direction in rtl context: assert_equals: expected 0 but got 10
-- RTL+LTR text with right direction in rtl context: assert_equals: expected 0 but got 22
-- LTR+RTL text with right direction in rtl context: assert_equals: expected 0 but got 22
-- LTR+RTL+LTR text with right direction in rtl context: assert_equals: expected 0 but got 34
-- RTL+LTR+RTL text with right direction in rtl context: assert_equals: expected 0 but got 33
-
 ### selection/canvas-click.html
 
 - Clicking on a text-selectable canvas should not select it: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
@@ -1986,6 +2686,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
 - Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 7
 
+### selection/caret/empty-elements.html
+
+- Selection can be placed inside the empty element: strong is not defined
+
 ### selection/caret/move-around-contenteditable-false.html
 
 - Initializing tests: Test timed out
@@ -2000,11 +2704,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Moving caret between list items using arrow keys: 
 - Moving caret past the block-quote using arrow keys: 
 
+### selection/contenteditable/cefalse-on-boundaries.html
+
+- Selection can start on cE=false element at the beginning of the cE=true element: beginning is not defined
+- Selection can end on cE=false element at the end of the cE=true element: paragraph is not defined
+- Selection can start and end on cE=false elements at the boundaries of cE=true element: beginning is not defined
+- Range#selectNodeContents() correctly select contents of cE=true element with cE=false elements on boundaries: host is not defined
+
 ### selection/contenteditable/collapse.html
 
-- Selection.collapse() must succeed across siblings: assert_equals: expected Element node <div contenteditable="" id="host1"></div> but got Element node <button id="button"></button>
-- Selection.collapse() must succeed for the ancestor: assert_equals: expected Element node <div contenteditable="" id="host4"></div> but got Element node <button id="button"></button>
-- Selection.collapse() must succeed for the descendant: assert_equals: expected Element node <div contenteditable="" id="host3">
+- Selection.collapse() must succeed across siblings: button is not defined
+- Selection.collapse() must succeed for the ancestor: button is not defined
+- Selection.collapse() must succeed for the descendant: button is not defined
 
 ### selection/contenteditable/initial-selection-during-focus-event-propagation.html
 
@@ -2080,12 +2791,28 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Shift + Primary click should extend the selection: assert_equals: Selection#anchorNode should keep in the first <span> element expected Text node "first span." but got Text node "second span."
 - Shift + Primary click in a link shouldn't extend the selection: assert_equals: Selection#focusNode should be in the <a href> element which was clicked by primary button expected Text node "link." but got Text node "first span."
 
+### selection/contenteditable/selection-outside-focused-editing-host.tentative.html
+
+- Modifying selection should do nothing: assert_true: expected true got false
+
+### selection/drag-disabled-textarea-shadow-dom.html
+
+- Shouldn't crash when dragging disabled textarea in shadow dom: Test timed out
+
+### selection/drag-out-of-floated-content.html
+
+- Drag rightward out of a floated block extends the selection forward, not backward to the start of the float's content.: promise_test: Unhandled rejection with value: object "ReferenceError: good is not defined"
+
+### selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html
+
+- Drag from contenteditable into out-of-flow user-select:none extends selection to editable boundary.: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (270, 14) is outside the viewport"
+
 ### selection/drag-selection-extend-to-user-select-none.html
 
-- Text with user-select:text is selectable even if it is inside a user-select:none element.: assert_equals: Anchor node:  expected Text node " dolor sit" but got null
-- Select user-select:text content and then extend selection to user-select:none content.: assert_equals: Anchor node:  expected Text node " dolor sit" but got null
-- Selection starts with user-select:text content and then extends selection to user-select:none content.: assert_equals: Anchor node:  expected Text node " dolor sit" but got null
-- Select user-select:text content and then extend selection to the next user-select:text element by crossing the user-select:none element.: assert_equals: Anchor node:  expected Text node " dolor sit" but got null
+- Text with user-select:text is selectable even if it is inside a user-select:none element.: promise_test: Unhandled rejection with value: object "ReferenceError: target is not defined"
+- Select user-select:text content and then extend selection to user-select:none content.: promise_test: Unhandled rejection with value: object "ReferenceError: target is not defined"
+- Selection starts with user-select:text content and then extends selection to user-select:none content.: promise_test: Unhandled rejection with value: object "ReferenceError: target is not defined"
+- Select user-select:text content and then extend selection to the next user-select:text element by crossing the user-select:none element.: promise_test: Unhandled rejection with value: object "ReferenceError: target is not defined"
 
 ### selection/extend-selection-backward-on-input.html
 
@@ -2110,20 +2837,39 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Selectionchange event is fired after removing the character: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 - Selectionchange event is fired after removing the range: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
+### selection/getSelection.html
+
+- getSelection() on HTML document with null defaultView must be null: assert_equals: expected null but got object ""
+- getSelection() on XML document with null defaultView must be null: assert_equals: expected null but got object ""
+- window.getSelection() instanceof Selection in an iframe onload: assert_true: Sanity check: window must have Selection property expected true got false
+- document.getSelection() instanceof Selection in an iframe onload: assert_true: Sanity check: window must have Selection property expected true got false
+- window.getSelection() === document.getSelection() in an iframe onload: assert_not_equals: Sanity check: document.defaultView must not be null got disallowed value null
+- getSelection() inside and outside iframe must return different objects onload: iframe.contentWindow.getSelection is not a function
+- getSelection() on HTML document with null defaultView must be null inside an iframe onload: assert_equals: expected null but got object ""
+- window.getSelection() instanceof Selection in an iframe immediately after appendChild: assert_true: Sanity check: window must have Selection property expected true got false
+- document.getSelection() instanceof Selection in an iframe immediately after appendChild: assert_true: Sanity check: window must have Selection property expected true got false
+- window.getSelection() === document.getSelection() in an iframe immediately after appendChild: assert_not_equals: Sanity check: document.defaultView must not be null got disallowed value null
+- getSelection() inside and outside iframe must return different objects immediately after appendChild: iframe.contentWindow.getSelection is not a function
+- getSelection() on HTML document with null defaultView must be null inside an iframe immediately after appendChild: assert_equals: expected null but got object ""
+
 ### selection/modify-line-flex-column.tentative.html
 
-- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
-- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- forward: one is not defined
+- backward: three is not defined
 
 ### selection/modify-line-flex-row.tentative.html
 
-- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
-- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- forward: one is not defined
+- backward: three is not defined
 
 ### selection/modify-line-grid-basic.tentative.html
 
-- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
-- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- forward: one is not defined
+- backward: three is not defined
+
+### selection/modify.tentative.html
+
+- Stop at previous word boundary when whitespaces are trimmed: strong is not defined
 
 ### selection/move-by-word-korean.html
 
@@ -2149,25 +2895,42 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - cross editing boundary: assert_equals: expected "this " but got " after"
 - Selection.modify(): move by paragraphboundary cross editing boundary: assert_equals: expected "this " but got " after"
 
+### selection/onselectionchange-on-distinct-text-controls.html
+
+- selectionchange event on each input element fires independently: promise_test: Unhandled rejection with value: object "ReferenceError: input1 is not defined"
+- selectionchange event on each textarea element fires independently: promise_test: Unhandled rejection with value: object "ReferenceError: textarea1 is not defined"
+
+### selection/onselectionchange-on-document.html
+
+- selectionchange event on document fires: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+- selectionchange event on document fires once: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+- task to fire selectionchange event gets queued each time selection is mutated: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+- has scheduled selectionchange event is set to false at the beginning of a task to fire selectionchange event: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+
 ### selection/script-and-style-elements.html
 
 - Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got "PASS"
 
 ### selection/select-end-of-line-image.tentative.html
 
-- Select image at the end of the line.: assert_equals: The image should be selected and then deleted. expected null but got Element node <img id="target" src="data:image/svg+xml,<svg xmlns="http...
+- Select image at the end of the line.: promise_test: Unhandled rejection with value: object "Error: testdriver: the element has no box to point at"
 
 ### selection/selection-direction-on-double-click.tentative.html
 
-- direction returns "none" when there is a double click selection(directionless): assert_equals: expected "none" but got "forward"
+- direction returns "none" when there is a double click selection(directionless): promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
 
 ### selection/selection-direction-on-single-click.html
 
-- direction returns "none" when the selection is collapsed: assert_equals: expected "none" but got "forward"
+- direction returns "none" when the selection is collapsed: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
 
 ### selection/selection-direction-on-triple-click.tentative.html
 
-- direction returns "none" when there is a triple click selection(directionless): assert_equals: expected Element node <div id="container">hello, world</div> but got Text node "hello, world"
+- direction returns "none" when there is a triple click selection(directionless): promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+
+### selection/selection-focused-element-becomes-nonfocusable.html
+
+- Focused element is removed: promise_test: Unhandled rejection with value: object "ReferenceError: button1 is not defined"
+- Focused element is disabled: 
 
 ### selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html
 
@@ -2183,47 +2946,89 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - containsNode of non-assigned node child should return false (when all children of the host is selected): assert_false: expected false got true
 - containsNode of non-assigned node child should return false (when the host is selected): assert_false: expected false got true
 
+### selection/shadow-dom/tentative/Selection-direction.html
+
+- direction returns "forward" when there is a forward-direction selection in the document tree: container is not defined
+- direction returns "backward" when there is a backward-direction selection in the document tree: container is not defined
+- direction returns "forward" when there is a forward selection in the shadow tree: container is not defined
+- direction returns "backward" when there is a backward selection in the shadow tree: container is not defined
+- direction returns "forward" when there is a forward selection that crosses shadow boundaries: container is not defined
+- direction returns "backward" when there is a forward selection that crosses shadow boundaries: container is not defined
+
 ### selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html
 
-- Range is fully in shadow tree. Removing shadow host collapses composed StaticRange. Note it does not update previously returned composed StaticRange.: null is not a shadow root mode
-- Range is fully in shadow tree. Removing parent of shadow host collapses composed StaticRange.: null is not a shadow root mode
-- Range is across shadow trees. Replacing shadowRoot content rescopes new composed range to the shadowRoot.: null is not a shadow root mode
-- Range is across shadow trees. Removing ancestor shadow host rescopes composed range end to parent.: null is not a shadow root mode
+- Range is fully in shadow tree. Removing shadow host collapses composed StaticRange. Note it does not update previously returned composed StaticRange.: container is not defined
+- Range is fully in shadow tree. Removing parent of shadow host collapses composed StaticRange.: container is not defined
+- Range is in light DOM. Removing startContainer rescopes new composed range to its parent.: container is not defined
+- Range is across shadow trees. Replacing shadowRoot content rescopes new composed range to the shadowRoot.: container is not defined
+- Range is across shadow trees. Removing ancestor shadow host rescopes composed range end to parent.: container is not defined
+- Range is between two light slotted contents. Removing start container rescopes to its parent in light tree.: container is not defined
 
 ### selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html
 
-- If selection crosses shadow boundaries, getRangeAt(0) should throw an IndexSizeError because the end is not in the document tree.: assert_throws_dom: function "function () { selection.getRangeAt(0) }" did not throw
+- If selection crosses shadow boundaries, getRangeAt(0) should throw an IndexSizeError because the end is not in the document tree.: light is not defined
+- modify getRangeAt() range: setStart() to disconnected node will collapse and remove the live range from the selection.: light is not defined
+- modify getRangeAt() range: setEnd() crosses shadow boundary into the shadow DOM and after start, which collapses live range. Composed selection range is not collapsed.: light is not defined
+- modify getRangeAt() range: setStart() crosses shadow boundary into the shadow DOM and before end, which collapses live range. Composed selection range is not collapsed.: lightEnd is not defined
+- modify getRangeAt() range: setStart() crosses shadow boundary into the shadow DOM and after end, which collapses both live range and composed selection range.: light is not defined
+- modify getRangeAt() range: selectNode() innerHost for all ranges.: light is not defined
+- modify getRangeAt() range: collapse() collapses all ranges.: light is not defined
+- modify createRange() range: added to selection before setStart/setEnd calls.: light is not defined
+
+### selection/shadow-dom/tentative/Selection-getComposedRanges-slot.html
+
+- Setting the range to start on slotted content and end in shadow tree, should follow DOM tree order.: container is not defined
+- Setting the range to start and end on slotted content, should follow DOM tree order.: container is not defined
+- Setting the range to start on unslotted content and end in shadow tree, should follow DOM tree order.: container is not defined
+
+### selection/shadow-dom/tentative/Selection-getComposedRanges.html
+
+- getComposedRanges should fail if argument is not a shadow root: container is not defined
+- getComposedRanges returns a sequence with a static range when there is a forward-direction selection in the document tree: container is not defined
+- getComposedRanges returns a sequence with a static range when there is a backward-direction selection in the document tree: container is not defined
+- getComposedRanges returns a sequence with a static range pointing to a shadow tree when there is a selection in the shadow tree and the shadow tree is specified as an argument: container is not defined
+- getComposedRanges returns a sequence with a static range pointing to the shadow host when there is a selection in a shadow tree and the shadow tree is not specified as an argument: container is not defined
+- getComposedRanges a sequence with a static range pointing to the shadow host when there is a forward selection that crosses shadow boundaries and the shadow tree is not specified as an argument: container is not defined
+- getComposedRanges a sequence with a static range that crosses shadow boundaries when there is a forward selection that crosses shadow boundaries and the shadow tree is specified as an argument: container is not defined
+- getComposedRanges returns a sequence with a static range pointing to the outer shadow host when there is a selection in an inner shadow tree and no shadow tree is specified as an argument: container is not defined
+- getComposedRanges returns a sequence with a static range pointing to the inner shadow tree when there is a selection in an inner shadow tree and the inner shadow tree is specified as an argument: container is not defined
+- getComposedRanges returns a sequence with a static range pointing to the outer shadow tree when there is a selection in an inner shadow tree and the outer shadow tree is specified as an argument: container is not defined
+- getComposedRanges returns a sequence with a static range without rescoping when there is a selection in an outer shadow tree and the inner shadow tree is specified as an argument: container is not defined
+
+### selection/shadow-dom/tentative/Selection-later-become-slotted-content.html
+
+- test to select a light DOM element and it becomes a slotted content after the selection: slotted is not defined
+
+### selection/stringifier_editable_element.tentative.html
+
+- select the entire input should result all the content: dummyInput is not defined
+- toString() should return empty when the focus is not on the editable content: dummyInput is not defined
+- toString() works with selectionStart and selectionEnd for input: dummyInput is not defined
+- select the entire textarea should result all the content: dummyInput is not defined
+- toString() works with selectionStart and selectionEnd for textarea: dummyInput is not defined
+- toString() works even if a click just occured on a button: dummyInput is not defined
+- toString() works for programatically calling .click() on anchor (without href): dummyInput is not defined
+- toString() doesn't work for actual clicking the anchor (without href): dummyInput is not defined
+- toString() works for programatically calling .click() on anchor (with href): dummyInput is not defined
+- toString() also works for actual clicking the anchor (with href): dummyInput is not defined
+- Click on a text prior to toString() moves the seleciton: dummyInput is not defined
+- Click on a `user-select:none` text prior to toString() doesn't move the seleciton: dummyInput is not defined
 
 ### selection/textcontrols/focus.html
 
-- focus() should cancel selection extension by pointer device: assert_equals: expected Element node <body><p id="p">
+- focus() should cancel selection extension by pointer device: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (50, 50) is outside the viewport"
 
 ### selection/textcontrols/initial-selection-during-focus-event-propagation.html
 
 - Selection should've already been initialized in the text control when `focus` event is dispatched: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
+### selection/textcontrols/onselectionchange-content-attribute.html
+
+- handler set from parser: promise_test: Unhandled rejection with value: object "ReferenceError: testElement is not defined"
+
 ### selection/textcontrols/selectionchange-on-shadow-dom.html
 
 - selectionchange event fired on a shadow dom bubble to the document: assert_equals: expected 1 but got 0
-
-### selection/textcontrols/selectionchange.html
-
-- Setting initial zero selectionStart value on the input element: assert_equals: expected 0 but got 1
-- Setting initial zero selectionEnd value on the input element: assert_equals: expected 0 but got 1
-- Setting initial zero selection range on the input element: assert_equals: expected 0 but got 1
-- Calling setRangeText() on empty the input element: assert_equals: expected 0 but got 1
-- Setting initial zero selectionStart value on the disconnected input element: assert_equals: expected 0 but got 1
-- Setting initial zero selectionEnd value on the disconnected input element: assert_equals: expected 0 but got 1
-- Setting initial zero selection range on the disconnected input element: assert_equals: expected 0 but got 1
-- Calling setRangeText() on empty the disconnected input element: assert_equals: expected 0 but got 1
-- Setting initial zero selectionStart value on the textarea element: assert_equals: expected 0 but got 1
-- Setting initial zero selectionEnd value on the textarea element: assert_equals: expected 0 but got 1
-- Setting initial zero selection range on the textarea element: assert_equals: expected 0 but got 1
-- Calling setRangeText() on empty the textarea element: assert_equals: expected 0 but got 1
-- Setting initial zero selectionStart value on the disconnected textarea element: assert_equals: expected 0 but got 1
-- Setting initial zero selectionEnd value on the disconnected textarea element: assert_equals: expected 0 but got 1
-- Setting initial zero selection range on the disconnected textarea element: assert_equals: expected 0 but got 1
-- Calling setRangeText() on empty the disconnected textarea element: assert_equals: expected 0 but got 1
 
 ### selection/toString-user-select-none.html
 
@@ -2241,19 +3046,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/Document-caretPositionFromPoint.tentative.html
 
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
-- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument: container is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument: container is not defined
 
 ### shadow-dom/Document-prototype-currentScript.html
 
@@ -2301,9 +3106,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/HighlightRegistry-highlightsFromPoint.html
 
-- CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: CSS.highlights.highlightsFromPoint is not a function
-- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: CSS.highlights.highlightsFromPoint is not a function
-- CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.: CSS.highlights.highlightsFromPoint is not a function
+- CSS.highlights.highlightsFromPoint() should throw when called with nodes that are not ShadowRoot objects in options.: assert_throws_js: function "() => { CSS.highlights.highlightsFromPoint(10, 10, {shadowRoots: [container]}); }" threw object "ReferenceError: container is not defined" ("ReferenceError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
+- CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: container is not defined
+- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: container is not defined
+- CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.: container is not defined
 
 ### shadow-dom/MouseEvent-prototype-offsetX-offsetY.html
 
@@ -2320,19 +3126,36 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - button element with accesskey in the shadow tree of open mode: Test timed out
 - button element with accesskey in the shadow tree of closed mode: 
 
+### shadow-dom/attachShadow-with-ShadowRoot.html
+
+- can use ShadowRoot as options for attachShadow: promise_test: Unhandled rejection with value: object "ReferenceError: elementSource is not defined"
+- can use ShadowRoot in document fragment as options for attachShadow: promise_test: Unhandled rejection with value: object "ReferenceError: templateSource is not defined"
+
 ### shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html
 
 - Declarative Shadow DOM: shadow root should be available to element internals: assert_true: expected true got false
 
 ### shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html
 
-- attachShadow() on declarative shadow root with manual slotAssignment: assert_equals: slotAssignment should be "manual" from declarative attribute expected "manual" but got "named"
-- attachShadow() on declarative shadow root does not change slotAssignment: assert_equals: expected "manual" but got "named"
+- attachShadow() on declarative shadow root with manual slotAssignment: manual1 is not defined
+- attachShadow() on declarative shadow root does not change slotAssignment: manual2 is not defined
+
+### shadow-dom/declarative/declarative-shadow-dom-repeats.html
+
+- Repeated declarative shadow roots keep only the first: multiple1 is not defined
+- Calling attachShadow() on declarative shadow root must match mode: 
+- Calling attachShadow() on declarative shadow root must match all parameters: 
+
+### shadow-dom/declarative/declarative-shadow-dom-serialization.html
+
+- shadow root children are serialized inside template: a is not defined
+- nested elements inside shadow root are serialized: b is not defined
 
 ### shadow-dom/declarative/declarative-shadow-dom-slot-assignment-serialization.html
 
-- shadowrootslotassignment=manual is serialized and appears before shadowrootclonable and shadowrootserializable: assert_equals: expected "manual" but got "named"
-- shadowrootslotassignment=manual serializes between shadowrootdelegatesfocus and shadowrootclonable: assert_equals: expected "manual" but got "named"
+- shadowrootslotassignment=manual is serialized and appears before shadowrootclonable and shadowrootserializable: wrapper is not defined
+- shadowrootslotassignment=named is not serialized as it's the default: 
+- shadowrootslotassignment=manual serializes between shadowrootdelegatesfocus and shadowrootclonable: 
 
 ### shadow-dom/declarative/declarative-shadow-dom-slot-assignment.html
 
@@ -2340,7 +3163,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - shadowrootslotassignment reflection, setter: assert_equals: expected (string) "manual" but got (object) null
 - Declarative Shadow DOM: shadowrootslotassignment=manual: assert_equals: slotAssignment should be "manual" expected "manual" but got "named"
 - Declarative Shadow DOM: shadowrootslotassignment is case insensitive: assert_equals: slotAssignment should be "manual" (case insensitive) expected "manual" but got "named"
-- Declarative Shadow DOM: shadowrootslotassignment on closed shadows can be set to manual: assert_true: No shadow root found expected true got false
+- Declarative Shadow DOM: shadowrootslotassignment on closed shadows can be set to manual: 
+- Declarative Shadow DOM: missing shadowrootslotassignment defaults to named: div is not defined
 
 ### shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-feature-detection.html
 
@@ -2353,38 +3177,110 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/dragenter-related-target.html
 
-- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: assert_true: dragenter should have fired on target1 expected true got false
+- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
 
 ### shadow-dom/dragleave-related-target.html
 
-- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: assert_true: dragenter should have fired on target1 expected true got false
+- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
 
-### shadow-dom/event-post-dispatch.html
+### shadow-dom/event-composed-path-with-related-target.html
 
-- Event properties post dispatch when target get moved into the shadow tree by event listener: assert_equals: expected (object) object "[object MouseEvent]" but got (undefined) undefined
+- Event path for an event with a relatedTarget. relatedTarget != target.: test1 is not defined
+- Event path for an event with a relatedTarget. Event should be dispatched even when target and relatedTarget are same.: test1 is not defined
+- Event path for an event with a relatedTarget. Event should stop at the shadow root: test2 is not defined
+- Event path for an event with a relatedTarget which is identical to target. Event should be dispatched and should stop at the shadow root.: test2 is not defined
+- Event path for an event with a relatedTarget. target and relaterTarget do not share any shadow-including ancestor. target is in a shadow tree.: test3_1 is not defined
+- Event path for an event with a relatedTarget. target and relaterTarget do not share any shadow-including ancestor. target is not in a shadow tree: test3_1 is not defined
+- Event path for an event with a relatedTarget. target and relaterTarget share the same shadow-including ancestor. Both are in shadow trees.: test4 is not defined
+- Event path for an event with a relatedTarget. relatedTarget is a shadow-including ancestor of target.: test4 is not defined
+- Event path for an event with a relatedTarget. target is a shadow-including ancestor of relatedTarget.: test4 is not defined
+- Event path for an event with a relatedTarget. target is assigned to a slot.: test5 is not defined
+- Event path for an event with a relatedTarget. relatedTarget is assigned to a slot.: test5 is not defined
+- Event path for an event with a relatedTarget. Event should be dispatched at every slots.: test6 is not defined
+- Event path for an event with a relatedTarget. Event should be dispatched at every slots. relatedTarget should be correctly retargeted.: test6 is not defined
+
+### shadow-dom/event-composed-path.html
+
+- Event Path without ShadowRoots.: test1 is not defined
+- Event Path with an open ShadowRoot.: test2 is not defined
+- Event Path with a closed ShadowRoot.: test3 is not defined
+- Event Path with nested ShadowRoots: open > open.: test4 is not defined
+- Event Path with nested ShadowRoots: open > closed.: test5 is not defined
+- Event Path with nested ShadowRoots: closed > open.: test6 is not defined
+- Event Path with nested ShadowRoots: closed > closed.: test7 is not defined
+- Event Path with a slot in an open Shadow Root.: test8 is not defined
+- Event Path with a slot in a closed Shadow Root.: test9 is not defined
+- Event Path with slots in nested ShadowRoots: open > open.: test10 is not defined
+- Event Path with slots in nested ShadowRoots: closed > closed.: test11 is not defined
+
+### shadow-dom/event-composed.html
+
+- An event should be scoped by default: host is not defined
+- An event should not be scoped if composed is specified: host is not defined
+- A synthetic MouseEvent should be scoped by default: host is not defined
+- A synthetic MouseEvent with composed=true should not be scoped: host is not defined
+- A synthetic FocusEvent should be scoped by default: host is not defined
+- A synthetic FocusEvent with composed=true should not be scoped: host is not defined
+- A UA click event should not be scoped: host is not defined
+
+### shadow-dom/event-dispatch-order.tentative.html
+
+- Event dispatch order: capture listerns should be called in capturing phase at a shadow host: host is not defined
+
+### shadow-dom/event-post-dispatch-no-listeners.html
+
+- Event properties post dispatch with an open ShadowRoot and no listeners (composed: true): test1 is not defined
+- Event properties post dispatch with an open ShadowRoot and no listeners (composed: false): test2 is not defined
+- Event properties post dispatch with a closed ShadowRoot and no listeners (composed: true): test3 is not defined
+- Event properties post dispatch with nested open ShadowRoots and no listeners (composed: true): test4 is not defined
+- Event properties post dispatch with a disabled element in shadow tree and no listeners (composed: true): test5 is not defined
 
 ### shadow-dom/execcommand-insertList-in-shadow.html
 
-- Toggle off List for all the child nodes in the ShadowRoot: promise_test: Unhandled rejection with value: object "NotSupportedError: execCommand is not implemented"
+- Toggle off List for all the child nodes in the ShadowRoot: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+
+### shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html
+
+- Default tabindex for a slot node should be 0.: promise_test: Unhandled rejection with value: object "ReferenceError: host is not defined"
+
+### shadow-dom/focus-navigation/focus-navigation-slots-in-slot.html
+
+- Focus should cover assigned nodes of slot, especially for nested slots in slot scope.: promise_test: Unhandled rejection with value: object "ReferenceError: host is not defined"
+
+### shadow-dom/focus-navigation/focus-navigation-with-delegatesFocus.html
+
+- Testing tab navigation order with mode open, no tabindex and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode open, no tabindex and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode open, tabindex=0 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode open, tabindex=0 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode open, tabindex=-1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode open, tabindex=-1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode open, tabindex=1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode open, tabindex=1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode closed, no tabindex and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode closed, no tabindex and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode closed, tabindex=0 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode closed, tabindex=0 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode closed, tabindex=-1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode closed, tabindex=-1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode closed, tabindex=1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+- Testing tab navigation order with mode closed, tabindex=1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
+
+### shadow-dom/focus-navigation/focus-nested-slots.html
+
+- Verifies that focus order goes in flat tree order with buttons inside nested slots which have a mixture of assigned and unassigned states.: promise_test: Unhandled rejection with value: object "ReferenceError: div1 is not defined"
+
+### shadow-dom/focus-navigation/focus-reverse-unassignable-slot.html
+
+- Verifies that focusing backwards from an input inside a slot which has no shadow root goes to the previous focusable element in light DOM.: promise_test: Unhandled rejection with value: object "ReferenceError: input2 is not defined"
+
+### shadow-dom/focus-navigation/focus-unassignable-slot.html
+
+- Verifies that focusing forwards from an input inside a slot which has no shadow root goes to the next focusable element in light DOM.: promise_test: Unhandled rejection with value: object "ReferenceError: input1 is not defined"
 
 ### shadow-dom/focus-navigation/menu/tentative/focus-menu-elements.html
 
 - Focus navigation should skip over other menuitems in menubars.: assert_equals: Focus should move forward from before to A expected Element node <menuitem id="A" command="toggle-menu" commandfor="more">... but got Element node <button id="middle">middle</button>
-
-### shadow-dom/focus/click-focus-delegatesFocus-click.html
-
-- click on the host with delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- click on the host with delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- click on the host with no delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- click on the host with no delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-
-### shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html
-
-- click on host with delegatesFocus, #aboveSlot tabindex = 2, #slot and #slotted tabindex = 1: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-
-### shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html
-
-- click on host with delegatesFocus, all tabindex=0 except spacer: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
@@ -2392,16 +3288,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/focus/focus-scroll-under-delegatesFocus.html
 
-- delegatesFocus shouldn't cause extra focus steps: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- delegatesFocus shouldn't cause extra focus steps: promise_test: Unhandled rejection with value: object "ReferenceError: anchor is not defined"
 
 ### shadow-dom/focus/focus-shadowhost-display-none.html
 
-- when shadow host itself is focused, it should match display:none, lose focus then becomes display:block again.: assert_equals: expected "none" but got "block"
-- when shadow host with delegatesFocus=true has focused element inside the shadow, it should also match display:none, then lose focus and become display:block again.: assert_equals: expected "none" but got "block"
+- when shadow host itself is focused, it should match display:none, lose focus then becomes display:block again.: sandbox is not defined
+- when shadow host with delegatesFocus=true has focused element inside the shadow, it should also match display:none, then lose focus and become display:block again.: sandbox is not defined
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-2.html
 
 - Order with different tabindex on host: assert_equals: expected Element node <div></div> but got Element node <div></div>
+
+### shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html
+
+- select slotted text in shadow root with delegatesFocus.: promise_test: Unhandled rejection with value: object "ReferenceError: host is not defined"
 
 ### shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html
 
@@ -2410,7 +3310,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### shadow-dom/focus/text-selection-with-delegatesFocus.html
 
 - shadow root has selectable text when focus is not delegated: assert_greater_than: expected a number greater than 0 but got 0
-- shadow root has selectable text when focus is delegated: assert_greater_than: expected a number greater than 0 but got 0
+- shadow root has selectable text when focus is delegated: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (100, 0) is outside the viewport"
 
 ### shadow-dom/form-control-form-attribute.html
 
@@ -2419,6 +3319,40 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### shadow-dom/imperative-slot-api-cross-shadow-root.html
 
 - HTMLSlotElement.assign drops DidSlotChange for previous_slot in different shadow root: assert_equals: slotB slotchange should fire because it gained its assigned node (even if not rendered) expected 1 but got 0
+
+### shadow-dom/imperative-slot-api-slotchange.html
+
+- slotchange event must not fire synchronously.: test_slotchange is not defined
+- slotchange event should not fire when assignments do not change assignedNodes.: test_slotchange is not defined
+- slotchange event should not fire when same node is assigned.: test_slotchange is not defined
+- Fire slotchange event when slot's assigned nodes changes.: test_slotchange is not defined
+- Fire slotchange event on previous slot and new slot when node is reassigned.: test_slotchange is not defined
+- Fire slotchange event on node assignment and when assigned node is removed.: test_slotchange is not defined
+- Fire slotchange event when order of assigned nodes changes.: test_slotchange is not defined
+- Fire slotchange event when assigned node is removed.: test_slotchange is not defined
+- Fire slotchange event when removing a slot from Shadows Root that changes its assigned nodes.: test_slotchange is not defined
+- No slotchange event when adding or removing an empty slot.: test_slotchange is not defined
+- No slotchange event when adding another slotable.: test_slotchange is not defined
+- Fire slotchange event when assign node to nested slot, ensure event bubbles ups.: test_nested_slotchange is not defined
+- Signal a slot change should be done in tree order.: promise_test: Unhandled rejection with value: object "ReferenceError: test_slotchange is not defined"
+
+### shadow-dom/imperative-slot-api.html
+
+- attachShadow can take slotAssignment parameter.: test_basic is not defined
+- slot.attach() should take variadic not sequence.: test_assign is not defined
+- Imperative slot API can assign nodes in manual slot assignment.: test_assign is not defined
+- Order of slottables is preserved in manual slot assignment.: test_assign is not defined
+- Previously assigned slottable is moved to new slot when it's reassigned.: test_assign is not defined
+- Order and assignment of nodes are preserved during multiple assignment in a row.: test_assign is not defined
+- Assigning invalid nodes should be allowed.: test_assign is not defined
+- Moving a slot to a new host, the slot loses its previously assigned slottables.: test_assign is not defined
+- Moving a slot's tree order position within a shadow host has no impact on its assigned slottables.: test_assign is not defined
+- Appending slottable to different host, it loses slot assignment. It can be re-assigned within a new host.: test_assign is not defined
+- Previously assigned node should not be assigned if slot moved to a new shadow root. The node is re-assigned when moved back.: test_assign is not defined
+- Assignment with the same node in parameters should be ignored, first one wins.: test_assign is not defined
+- Removing a slot from DOM resets its slottable's slot assignment.: test_assign is not defined
+- Nodes can be assigned even if slots or nodes aren't in the same tree.: test_assign is not defined
+- Removing a node from the document does not break manually assigned slot linkage.: test_assign is not defined
 
 ### shadow-dom/imperative-slot-fallback-clear.html
 
@@ -2434,13 +3368,93 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html
 
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: assert_equals: expected 38 but got 30
-- Verifies that HTMLElement.offsetLeft accounts for shadow boundaries.: assert_equals: expected 8 but got 0
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: assert_equals: expected 88 but got 80
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: target1 is not defined
+- Verifies that HTMLElement.offsetLeft accounts for shadow boundaries.: target2 is not defined
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: target3 is not defined
+
+### shadow-dom/slot-reconciliation-at-node-removal.html
+
+- Slot reconciliation: assignedNodes should be empty when slot is removed from shadow tree: test_reconciliation_at_removal is not defined
 
 ### shadow-dom/slotchange-customelements.html
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
+
+### shadow-dom/slotchange.html
+
+- slotchange event: Append a child to a host (onslotchange).: test1 is not defined
+- slotchange event: Append a child to a host.: test1 is not defined
+- slotchange event: Remove a child from a host.: test1 is not defined
+- slotchange event: Remove a child before adding an event listener.: test1 is not defined
+- slotchange event: Change slot= attribute to make it un-assigned.: test1 is not defined
+- slotchange event: Change slot's name= attribute so that none is assigned.: test1 is not defined
+- slotchange event: Change slot= attribute to make it assigned.: test2 is not defined
+- slotchange event: Change slot's name= attribute so that a node is assigned to the slot.: test2 is not defined
+- slotchange event: Change fallback content - assignedNodes still empty.: test_fallback is not defined
+- slotchange event: Remove a fallback content - assignedNodes still empty.: test_fallback2 is not defined
+- slotchange event: Add a fallback content to nested slots - assignedNodes still empty.: test_fallback3 is not defined
+- slotchange event: Remove a fallback content from nested slots - assignedNodes still empty.: test_fallback3 is not defined
+- slotchange event: Insert a slot before an existing slot.: test3 is not defined
+- slotchange event: Remove a preceding slot.: test4 is not defined
+- slotchange event: A slot is assigned to another slot.: test5 is not defined
+- slotchange event: Slotchange should be fired if assigned nodes are changed.: test6 is not defined
+- slotchange event: Child content is added to nested slots.: test7 is not defined
+
+### shadow-dom/slots-fallback.html
+
+- Slots fallback: Basic.: test1 is not defined
+- Slots fallback: Basic, elements only.: test1 is not defined
+- Slots fallback: Slots in Slots.: test2 is not defined
+- Slots fallback: Slots in Slots, elements only.: test2 is not defined
+- Slots fallback: Fallback contents should not be used if a node is assigned.: test3 is not defined
+- Slots fallback: Slots in Slots: Assigned nodes should be used as fallback contents of another slot: test4 is not defined
+- Slots fallback: Complex case.: test5 is not defined
+- Slots fallback: Complex case, elements only.: test5 is not defined
+- Slots fallback: Mutation. Append fallback contents.: test5 is not defined
+- Slots fallback: Mutation. Remove fallback contents.: test5 is not defined
+- Slots fallback: Mutation. Assign a node to a slot so that fallback contens are no longer used.: test5 is not defined
+- Slots fallback: Mutation. Remove an assigned node from a slot so that fallback contens will be used.: test5 is not defined
+- Slots fallback: Mutation.  Remove a slot which is a fallback content of another slot.: test5 is not defined
+
+### shadow-dom/slots.html
+
+- Slots: Basic.: test_basic is not defined
+- Slots: Basic, elements only.: test_basic is not defined
+- Slots: Slots in closed.: test_basic_closed is not defined
+- Slots: Slots in closed, elements only.: test_basic_closed is not defined
+- Slots: Slots not in a shadow tree.: test_slot_not_in_shadow is not defined
+- Slots: Slots not in a shadow tree, elements only.: test_slot_not_in_shadow is not defined
+- Slots: Distributed nodes for Slots not in a shadow tree.: test_slot_not_in_shadow_2 is not defined
+- Slots: Name matching: test_slot_name_matching is not defined
+- Slots: No direct host child.: test_no_direct_host_child is not defined
+- Slots: Default Slot.: test_default_slot is not defined
+- Slots: Slot in Slot does not matter in assignment.: test_slot_in_slot is not defined
+- Slots: Slot is assigned to another slot: test_slot_is_assigned_to_slot is not defined
+- Slots: Open > Closed.: test_open_closed is not defined
+- Slots: Closed > Closed.: test_closed_closed is not defined
+- Slots: Closed > Open.: test_closed_open is not defined
+- Slots: Complex case: Basi line.: test_complex is not defined
+- Slots: Mutation: appendChild.: test_complex is not defined
+- Slots: Mutation: Change slot= attribute 1.: test_complex is not defined
+- Slots: Mutation: Change slot= attribute 2.: test_complex is not defined
+- Slots: Mutation: Change slot= attribute 3.: test_complex is not defined
+- Slots: Mutation: Remove a child.: test_complex is not defined
+- Slots: Mutation: Add a slot: after.: test_complex is not defined
+- Slots: Mutation: Add a slot: before.: test_complex is not defined
+- Slots: Mutation: Remove a slot.: test_complex is not defined
+- Slots: Mutation: Change slot name= attribute.: test_complex is not defined
+- Slots: Mutation: Change slot slot= attribute.: test_complex is not defined
+
+### shadow-dom/wheel-event-related-target.html
+
+- wheel relatedTarget should be retargeted to shadow host when entering shadow DOM: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
+### custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html
+
+- connectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: customElementsRoot is not defined"
+- attributeChangedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: customElementsRoot is not defined"
+- disconnectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: customElementsRoot is not defined"
+- adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: emptyIframe is not defined"
 
 ### custom-elements/CustomElementRegistry-getName.html
 
@@ -2498,8 +3512,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Setting ariaLabelledByElements on ElementInternals should change the accessible name of the custom element: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function"
 - Setting aria-labelledby or ariaLabelledByElements on the custom element should supersede the value of ariaLabelledByElements on ElementInternals: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function"
-- Caching invariant different attributes.: assert_equals: Caching invariant for ariaControlsElements expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
-- Caching invariant different elements.: assert_equals: Caching invariant for ariaDescribedByElements in one elemnt expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
+- Caching invariant different attributes.: cachingInvariantMain is not defined
+- Caching invariant different elements.: cachingInvariantMain1 is not defined
 
 ### custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html
 
@@ -2569,6 +3583,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/ElementInternals-validation.html
 
+- willValidate after upgrade (document.createElement): container is not defined
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
 
 ### custom-elements/form-associated/fieldset-elements.html
@@ -2618,13 +3633,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/htmlconstructor/newtarget.html
 
-- If prototype is not object (null), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'length')"
+- If prototype is not object (null), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Invalid value used in weak set"
 - If prototype is not object (null), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
-- If prototype is not object (undefined), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'length')"
+- If prototype is not object (undefined), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Invalid value used in weak set"
 - If prototype is not object (undefined), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
-- If prototype is not object (5), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'length')"
+- If prototype is not object (5), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Invalid value used in weak set"
 - If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
-- If prototype is not object (string), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'length')"
+- If prototype is not object (string), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Invalid value used in weak set"
 - If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
 
 ### custom-elements/perform-microtask-checkpoint-before-construction.html
@@ -2645,6 +3660,25 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Animation.animate must enqueue an attributeChanged reaction when it adds the observed style attribute: Web Animations is not implemented
 - Animation.animate must enqueue an attributeChanged reaction when it mutates the observed style attribute: Web Animations is not implemented
 - Animation.animate must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: Web Animations is not implemented
+
+### custom-elements/reactions/AriaMixin-element-attributes.html
+
+- ariaActiveDescendantElement in Element must enqueue an attributeChanged reaction when adding aria-activedescendant content attribute: parentElement is not defined
+- ariaActiveDescendantElement in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
+- ariaControlsElements in Element must enqueue an attributeChanged reaction when adding aria-controls content attribute: parentElement is not defined
+- ariaControlsElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
+- ariaDescribedByElements in Element must enqueue an attributeChanged reaction when adding aria-describedby content attribute: parentElement is not defined
+- ariaDescribedByElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
+- ariaDetailsElements in Element must enqueue an attributeChanged reaction when adding aria-details content attribute: parentElement is not defined
+- ariaDetailsElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
+- ariaErrorMessageElements in Element must enqueue an attributeChanged reaction when adding aria-errormessage content attribute: parentElement is not defined
+- ariaErrorMessageElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
+- ariaFlowToElements in Element must enqueue an attributeChanged reaction when adding aria-flowto content attribute: parentElement is not defined
+- ariaFlowToElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
+- ariaLabelledByElements in Element must enqueue an attributeChanged reaction when adding aria-labelledby content attribute: parentElement is not defined
+- ariaLabelledByElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
+- ariaOwnsElements in Element must enqueue an attributeChanged reaction when adding aria-owns content attribute: parentElement is not defined
+- ariaOwnsElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
 
 ### custom-elements/reactions/DOMStringMap.html
 
@@ -2686,7 +3720,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/reactions/Range.html
 
-- createContextualFragment on Range must construct a custom element: Cannot read properties of undefined (reading 'length')
+- createContextualFragment on Range must construct a custom element: Invalid value used in weak set
 
 ### custom-elements/reactions/with-exceptions.html
 
@@ -2696,11 +3730,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - A constructor with only a scoped custom element registry definition should fail upon construction: assert_throws_js: function "() => new ABElement" did not throw
 
+### custom-elements/registries/CustomElementRegistry-initialize.html
+
+- initialize sets element.customElementRegistry to the global registry: host is not defined
+- initialize does not set the registry of nested shadow tree to the global registry: host is not defined
+- initialize sets element.customElementRegistry to a scoped registry: host is not defined
+- initialize does not set descendants whose customElementRegistry already uses a different registry: host is not defined
+- initialize does not set the registry of nested shadow tree to a scoped registry: host is not defined
+- initialize sets element.customElementRegistry permantently: host is not defined
+
 ### custom-elements/registries/CustomElementRegistry-upgrade.html
 
-- upgrade is a no-op when called on a shadow root with no association: That is not a node
-- upgrade should upgrade a candidate element when called on a shadow root with an association: That is not a node
-- upgrade should not upgrade a candidate element not associated with a registry: That is not a node
+- upgrade is a no-op when called on a shadow root with no association: host is not defined
+- upgrade should upgrade a candidate element when called on a shadow root with an association: host is not defined
+- upgrade should not upgrade a candidate element not associated with a registry: host is not defined
 
 ### custom-elements/registries/Document-importNode-cross-document.window.js
 
@@ -2723,11 +3766,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/registries/Document-importNode.html
 
 - importNode should clone using the specified registry if target's registry is null: assert_true: expected true got false
-- importNode should clone a shadow host with a declarative shadow DOM using the global registry by default: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- importNode should clone a shadow host with a declarative shadow DOM using a specified scoped registry: assert_equals: expected object "[object CustomElementRegistry]" but got null
+- importNode should preserve null-ness of custom element registry: host is not defined
+- importNode should clone a shadow host with a declarative shadow DOM using the global registry by default: host is not defined
+- importNode should clone a shadow host with a declarative shadow DOM using a specified scoped registry: host is not defined
 - importNode should clone a template content using the global registry by default: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
 - importNode should clone a template content using a specified scoped registry: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
 - importNode should clone a template content with a nested template element using a scoped registry: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
+- importNode: don't pass options argument: root is not defined
+- importNode: pass options argument with value false: root is not defined
+- importNode: pass options argument with value true: root is not defined
+- importNode: pass options argument with value undefined: root is not defined
+- importNode: pass options argument with value { }: root is not defined
+- importNode: pass options argument with value { selfOnly: false }: root is not defined
+- importNode: pass options argument with value { selfOnly: true }: root is not defined
+- importNode: pass options argument with value { customElementRegistry: scopedRegistry }: root is not defined
+- importNode: pass options argument with value { customElementRegistry: null }: assert_throws_js: function "() => document.importNode(root, { customElementRegistry: null })" threw object "ReferenceError: root is not defined" ("ReferenceError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
 - importNode should use the provided fallback registry for null-registry descendants nested under non-null-registry ancestors: assert_equals: imported container with null registry should use the fallback registry expected object "[object CustomElementRegistry]" but got null
 
 ### custom-elements/registries/Element-customElementRegistry-exceptions.html
@@ -2740,7 +3793,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/registries/Element-innerHTML.html
 
-- insertAdjacentHTML should use the element's registry even when the registry is null: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- nested descendants in innerHTML should use the null registry when the container element has null registry: host is not defined
+- insertAdjacentHTML should use the element's registry even when the registry is null: host is not defined
 - createContextualFragment on a range inside a template should use null registry even when the template has a scoped registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - innerHTML on a template with a scoped registry should use the scoped registry of the document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - createContextualFragment on a range inside an element with scoped registry should use the scoped registry of the element: assert_true: expected true got false
@@ -2749,6 +3803,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - A newly attached ShadowRoot should use the global registry by default even if the host is within another shadow tree that uses a custom registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - attachShadow() should use the null registry when the shadow host uses null registry and customElementRegistry is null: assert_equals: expected null but got object "[object CustomElementRegistry]"
+
+### custom-elements/registries/ShadowRoot-init-declarative.html
+
+- Custom element inside 'shadowrootcustomelementregistry' declarative shadow root should use document's registry as attachShadow default registry: host is not defined
+- Built-in element inside 'shadowrootcustomelementregistry' declarative shadow root should use document's registry as attachShadow default registry: host is not defined
 
 ### custom-elements/registries/ShadowRoot-innerHTML.html
 
@@ -2812,6 +3871,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Re-entry via upgrade after calling super(): assert_true: expected true got false
 - Re-entry via direct constructor call before calling super(): assert_true: expected true got false
 - Re-entry via direct constructor call after calling super(): assert_true: expected true got false
+
+### custom-elements/registries/element-mutation-null-registry-removal.html
+
+- An element's null customElementRegistry should not mutate after removal from a declarative shadow root with shadowrootcustomelementregistry.: host is not defined
+
+### custom-elements/registries/element-mutation.html
+
+- An element with scoped registry should not change its registry when run append out of the shadow tree.: host is not defined
+- An element with scoped registry should not change its registry when run append into another shadow tree with different scoped registry.: host is not defined
+- An element with scoped registry should not change its registry when run appendChild out of the shadow tree.: host is not defined
+- An element with scoped registry should not change its registry when run appendChild into another shadow tree with different scoped registry.: host is not defined
+- An element with scoped registry should not change its registry when run prepend out of the shadow tree.: host is not defined
+- An element with scoped registry should not change its registry when run prepend into another shadow tree with different scoped registry.: host is not defined
 
 ### custom-elements/registries/global.window.js
 
@@ -2952,6 +4024,25 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Serializing a scoped registry ShadowRoot with a null registry host (document): assert_equals: expected "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template></span>" but got "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\"></template></span>"
 - Serializing a null registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
 - Serializing a scoped registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
+
+### custom-elements/state/state-css-selector-nth-of.html
+
+- state selector has influence on nth-of when state is applied: myCE is not defined
+- state selector only applies on given ident: 
+- style is invalided on clear(): 
+
+### custom-elements/state/state-css-selector.html
+
+- state selector has no influence when state is not applied: myCE is not defined
+- state selector has no influence on sibling selectors when not applied: myCE is not defined
+- state selector has influence when state is applied: myCE is not defined
+- state selector influences siblings when state is applied: myCE is not defined
+- state selector influences has() when state is applied: myCE is not defined
+- state selector only applies on given ident: myCE is not defined
+- state selector only applies to siblings on given ident: myCE is not defined
+- state selector only applies to has() on given ident: myCE is not defined
+- states added multiple times counts as one: myCE is not defined
+- style is invalided on clear(): myCE is not defined
 
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html
 

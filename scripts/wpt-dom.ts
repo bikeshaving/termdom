@@ -362,15 +362,15 @@ async function suiteFiles(suite: string): Promise<string[]> {
  * The tests this DOM does not run, each with the one reason it does not.
  *
  * Every reason names something outside the tree: a browsing context, a script
- * the document's own parser must execute, a user action, a network fetch, a
- * testdriver call into the browser itself, or a proposal that is not a
- * standard. "Hard" is not a reason, and neither is "later" -- everything
+ * the document's own parser must execute, touch input a terminal does not
+ * report, a network fetch, a testdriver call into the browser itself, or a
+ * proposal that is not a standard. "Hard" is not a reason, and neither is "later" -- everything
  * else either passes or is a failure this table does not hide.
  */
 const EXCLUSIONS: Record<string, string> = {
 	// requires-browsing-context: the test reaches a second document through a
-	// frame, or a second realm through one. This DOM has no window, so
-	// `frames[0]`, `contentDocument` and `defaultView` have nothing to name.
+	// frame whose src must be fetched, or a second JavaScript realm through
+	// one. The engine loads no frame documents, and runs in one realm.
 	"dom/nodes/Document-URL.html":
 		"requires-browsing-context: a frame's document URL",
 	"dom/nodes/Element-getElementsByTagName-change-document-HTMLNess.html":
@@ -393,24 +393,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: filters that are objects from another realm",
 	"dom/traversal/TreeWalker-acceptNode-filter-cross-realm-null-browsing-context.html":
 		"requires-browsing-context: a filter from a detached frame's realm",
-	"dom/nodes/remove-next-sibling-during-replace-with.html":
-		"requires-browsing-context: the fixture is named through the window's named property access",
-	"dom/events/Event-dispatch-handlers-changed.html":
-		"requires-browsing-context: the expected propagation path begins at the window",
-	"dom/events/Event-dispatch-multiple-cancelBubble.html":
-		"requires-browsing-context: the expected propagation path begins at the window",
-	"dom/events/Event-dispatch-multiple-stopPropagation.html":
-		"requires-browsing-context: the expected propagation path begins at the window",
-	"dom/events/Event-dispatch-omitted-capture.html":
-		"requires-browsing-context: the expected propagation path begins at the window",
-	"dom/events/Event-dispatch-reenter.html":
-		"requires-browsing-context: the expected propagation path begins at the window",
-	"dom/events/Event-dispatch-target-moved.html":
-		"requires-browsing-context: the expected propagation path begins at the window",
-	"dom/events/Event-dispatch-target-removed.html":
-		"requires-browsing-context: the expected propagation path begins at the window",
-	"dom/events/Event-dispatch-throwing.html":
-		"requires-browsing-context: a listener's exception is counted as an error event at the window",
 	"dom/events/Event-dispatch-throwing-multiple-globals.html":
 		"requires-browsing-context: which global an error event is fired at, across frames",
 	"dom/events/Event-timestamp-cross-realm-getter.html":
@@ -427,18 +409,8 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: a subframe of the incumbent-global test",
 	"dom/events/EventListener-incumbent-global-subsubframe.sub.html":
 		"requires-browsing-context: a subframe of the incumbent-global test",
-	"dom/events/event-global.html":
-		"requires-browsing-context: window.event, which is the window's own slot",
 	"dom/events/event-global-extra.window.js":
 		"requires-browsing-context: window.event across frames",
-	"dom/events/event-global-set-before-handleEvent-lookup.window.js":
-		"requires-browsing-context: window.event, which is the window's own slot",
-	"dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html":
-		"requires-browsing-context: window.event during a beforeunload the window fires",
-	"dom/events/event-global-is-still-set-when-reporting-exception-onerror.html":
-		"requires-browsing-context: window.event inside window.onerror",
-	"dom/events/window-event-restored-after-throwing-onerror.html":
-		"requires-browsing-context: window.event inside window.onerror",
 
 	// requires-fetch: the document's encoding comes from a response the test
 	// arranges over the network.
@@ -455,9 +427,6 @@ const EXCLUSIONS: Record<string, string> = {
 	"dom/nodes/MutationObserver-document.html":
 		"requires-script-execution: the observer is installed by a script the parser runs partway through the document, and the records under test are the parser's own insertions",
 
-	// requires-touch-input: the test drives touches, which a terminal does
-	// not report. Pointer and key actions run through the testdriver shim.
-
 	// requires-css-animations: the events under test are fired by the CSS
 	// animation machinery (@keyframes), which the engine does not run yet.
 	// Transitions run and fire their events; what keeps their two files out
@@ -470,10 +439,7 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-css-animations: a running CSS animation",
 	"dom/events/webkit-animation-start-event.html":
 		"requires-css-animations: a running CSS animation",
-	"dom/events/webkit-transition-end-event.html":
-		"requires-window-event-propagation: the harness awaits transitionend on window, and this DOM's dispatch path ends at the document",
 
-	// revisited when that phase lands.
 	"dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html":
 		"requires-browsing-context: the node is adopted into a frame's document",
 	"dom/nodes/MutationObserver-cross-realm-callback-report-exception.html":
@@ -481,13 +447,6 @@ const EXCLUSIONS: Record<string, string> = {
 
 	"dom/nodes/processing-instruction-attributes.html":
 		"not-a-standard: the XML parses succeed, but 130 of the 140 subtests test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not",
-
-	// UI Events standard's, and the activation behavior they run belongs to
-	// HTML's elements. Dispatch has the hooks; nothing fills them in yet.
-
-	// requires-layout: the test measures a box. There is no layout in this DOM
-	// -- the engine owns it -- so offsetTop, getBoundingClientRect,
-	// elementFromPoint and their kin have nothing to answer with.
 
 	// requires-browsing-context: the fixture is a rendered document inside an
 	// iframe, which the untriaged suite's shared helper builds for every test
@@ -523,9 +482,8 @@ const EXCLUSIONS: Record<string, string> = {
 	"shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html":
 		"requires-browsing-context: a Selection over a rendered document in a frame",
 
-	// behavior is this DOM's; the interface the test reads it through is not.
-
-	// FocusEvent or a pointer action; none of those interfaces exists here.
+	// requires-touch-input: the test drives touches, which a terminal does
+	// not report.
 	"shadow-dom/touch-event-retargeting-leak.html":
 		"requires-touch-input: a touch action sequence, and a terminal reports no touches",
 
@@ -572,13 +530,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-script-execution: the reaction order under test is the parser's own",
 	"custom-elements/upgrading.html":
 		"requires-script-execution: the elements upgraded are ones the parser created around the script that defines them",
-	"custom-elements/upgrading/upgrade-custom-element-error-event.html":
-		"requires-browsing-context: the failure is counted as an error event at the window",
-
-	// reflection it carries.
-
-	// another standard. The reaction machinery itself is covered by the files
-	// that use DOM interfaces.
 
 	// customized built-ins: the is= form of a custom element. Safari never
 	// shipped it and this DOM does not implement it; the files whose whole
@@ -612,10 +563,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
 	"dom/ranges/Range-extractContents-dynamic-end.html":
 		"requires-browsing-context: the end container is removed from inside an iframe's unload event",
-	"dom/ranges/Range-in-shadow-after-the-shadow-removed.html":
-		"requires-browsing-context: the shadow mode under test is read out of document.location, which is null here",
-	"selection/getSelection.html":
-		"requires-browsing-context: every case is an iframe's selection, or asserts that the document's defaultView is not null",
 	"selection/Document-open.html":
 		"requires-browsing-context: the selection under test is an iframe's, across a document.open()",
 	"selection/deleteFromDocument.html":
@@ -641,12 +588,11 @@ const EXCLUSIONS: Record<string, string> = {
 };
 
 /**
- * Directories the same reason excludes every file of.
+ * Path prefixes the same reason excludes every file under.
  *
- * A directory is here only where its subject is a whole standard this DOM does
- * not implement -- HTML's focus model, its form machinery, a CSSOM interface,
- * an incubation that is in no standard at all. The EXCLUSIONS table above
- * still names every file one by one; this is where the reason is written once.
+ * A prefix is here only where every file under it needs the same thing
+ * outside the tree: a script the parser runs, a fetch, touch input, or an
+ * incubation that is in no standard at all.
  */
 const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 	[
@@ -662,12 +608,12 @@ const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 		"not-a-standard: focusgroup and the scroller focus rules are proposals, filed under tentative in the suite",
 	],
 	[
-		"dom/events/scrolling/",
-		"requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns",
+		"dom/events/non-cancelable-when-passive/passive-touch",
+		"requires-touch-input: the case drives a touch, and a terminal reports no touches",
 	],
 	[
-		"dom/events/non-cancelable-when-passive/",
-		"requires-touch-input: each case drives a touch or wheel action sequence, and the testdriver shim sends no wheel actions",
+		"dom/events/non-cancelable-when-passive/non-passive-touch",
+		"requires-touch-input: the case drives a touch, and a terminal reports no touches",
 	],
 	[
 		"dom/nodes/Document-contentType/",
@@ -711,24 +657,12 @@ const DEVIATIONS: Array<[string, string]> = [
 		"createEvent builds every name in the legacy table except three: DeviceMotionEvent, DeviceOrientationEvent and TouchEvent throw NotSupportedError, because sensors and touch digitizers name hardware a terminal does not have. The touch subtests declare the optional feature unsupported and score apart from failure; the sensor subtests fail and stay counted.",
 	],
 	[
-		"dom/events/Event-dispatch-bubbles-false.html, Event-dispatch-bubbles-true.html, passive-by-default.html, EventListener-handleEvent.html",
-		"A propagation path ends at the document. The spec continues it to the Window when the document has a browsing context. This DOM has no Window, so the harness supplies a bare event target under that name to let the test files load. The failing subtests are the ones that put the window in an expected path, expect a scroll-blocking listener on the window to be passive by default, or expect a listener's exception to arrive as an error event at the window. Every other subtest in these files passes.",
-	],
-	[
 		"dom/events/Event-subclasses-constructors.html",
 		"The UI Events interfaces are implemented, and so are DragEvent, MessageEvent, HashChangeEvent, StorageEvent, TextEvent and BeforeUnloadEvent. The failing subtests construct interfaces that remain unimplemented: the sensor events, and the interfaces whose specifications this engine does not enter.",
 	],
 	[
-		"dom/ranges/Range-getClientRects.html and every selection test that measures a box",
-		"Range.getClientRects() and Range.getBoundingClientRect() are not implemented. They belong to CSSOM View rather than the DOM Standard, and they answer with boxes the layout engine owns. The engine reads its own geometry from its layout tree, not from this file. The selection tests that score by rendering fail here rather than being excluded: Selection.modify()'s line and paragraph granularities, toString() over user-select and display:none, and the caret cases.",
-	],
-	[
 		"selection/modify.tentative.html, bidi/modify-*.html, contenteditable/modify*.html, move-by-word-*.html",
 		'Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, read from the layout of the attached document. A caret in an editing host stays in it.',
-	],
-	[
-		"selection/getSelection.html (excluded), and the defaultView sanity checks in it",
-		"`getSelection()` lives on Document here and always answers with that document's selection. The Selection API defines it to return null for a document with no browsing context, and to put a forwarding copy on the Window. This DOM has no Window and no browsing context, since a document is the top of the tree, so returning null would leave the interface unreachable. The harness supplies the Window's forwarding copy, as it supplies element.style.",
 	],
 	[
 		"selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html, Selection-getComposedRanges-range-update.html",
@@ -740,11 +674,11 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"dom/nodes/querySelector-id-nth-child.html",
-		"An element's id does not become a property of a global. Window is not part of this DOM, and the spec's own text calls its named property access a legacy quirk. The document stands alone, with `defaultView` null.",
+		"An element's id does not become a property of the window. The HTML Standard calls the Window's named property access a legacy quirk, and this engine does not implement it, so a test that reaches a fixture by its bare id fails.",
 	],
 	[
 		"dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute",
-		"The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick=\"...\"` in markup is a function compiled from the attribute's value, and this DOM never executes script, so the attribute sets no handler and the IDL attribute reads back null. The failing subtests in this file either compile a content attribute, or expect a body's or a frameset's forwarded handler to land on a Window. A document with no browsing context has no event handler target for the forwarded set, so the write is dropped and the read answers null, and the harness's window is a bare event target.",
+		"The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick=\"...\"` in markup is a function compiled from the attribute's value, and this engine never compiles script, so the attribute sets no handler and the IDL attribute reads back null.",
 	],
 	[
 		"dom/collections/domstringmap-supported-property-names.html, custom-elements/reactions/DOMStringMap.html",
@@ -753,10 +687,6 @@ const DEVIATIONS: Array<[string, string]> = [
 	[
 		"custom-elements/HTMLElement-attachInternals.html, and the constraint validation members of the built-in controls",
 		"`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented. `:valid`, `:invalid`, `:user-valid`, `:user-invalid`, `:in-range` and `:out-of-range` read the same flags, so they are selectors this engine accepts and matches nothing with -- which is the `:invalid` subtest of dom/nodes/Element-closest.html.",
-	],
-	[
-		"the focus members, and every subtest that moves focus",
-		"`focus()`, `blur()` and `document.activeElement` are implemented in `src/internal/dom.ts` and move the focus state only. The focus, blur, focusin and focusout events are fired by the engine, which also owns the repaint and the caret move that go with a focus change. The engine is not part of this harness, so no focus event is fired here. The autofocus attribute is handled by the engine too, and does nothing under this harness. Four things are absent from the DOM itself: `ShadowRoot.activeElement`, focus delegation through a host with `delegatesFocus`, retargeting of the document's focused area across a shadow boundary, and sequential focus navigation. The failing subtests read a shadow root's activeElement, focus an element inside a shadow tree, expect delegation, or wait for a focus event.",
 	],
 	[
 		"SVG and MathML elements",
@@ -806,141 +736,6 @@ function resolveScript(src: string, file: string): string {
 	return stack.join("/");
 }
 
-/**
- * The documents a test file points a frame at, read out of the cache before
- * the file runs.
- *
- * A frame's `src` names a document to fetch, and this engine fetches nothing,
- * so an unhelped frame holds about:blank forever. The suite's selector corpus
- * is loaded that way -- the 454 selectors of `dom/nodes/selectors.js` are run
- * against a fixture document a frame carries -- so the harness performs the
- * fetch the browser would: every path the file assigns to a `src`, or writes
- * on a frame in its markup, is collected here and handed over below.
- */
-async function framePages(
-	document: Document,
-	html: string,
-	file: string,
-): Promise<Map<string, string>> {
-	const paths = new Set<string>();
-	for (const match of html.matchAll(/\.src\s*=\s*["']([^"']+)["']/g)) {
-		paths.add(match[1]);
-	}
-	for (const frame of document.getElementsByTagName("iframe")) {
-		const src = frame.getAttribute("src");
-		if (src !== null) {
-			paths.add(src);
-		}
-	}
-	const pages = new Map<string, string>();
-	for (const path of paths) {
-		const name = path.split("#")[0];
-		if (frameContentType(name) === null) {
-			continue;
-		}
-		const text = await cached(resolveScript(name, file));
-		if (text !== null) {
-			pages.set(path, text);
-		}
-	}
-	return pages;
-}
-
-/** The content type a frame's src parses as, or null for one not served. */
-function frameContentType(name: string): string | null {
-	if (/\.html$/.test(name)) {
-		return "text/html";
-	}
-	if (/\.xhtml$/.test(name)) {
-		return "application/xhtml+xml";
-	}
-	if (/\.svg$/.test(name)) {
-		return "image/svg+xml";
-	}
-	if (/\.xml$/.test(name)) {
-		return "application/xml";
-	}
-	return null;
-}
-
-/**
- * Give this realm's frames the documents their `src` names.
- *
- * A frame already builds a content document on insertion and fires load from
- * a task; what it cannot do is put anything but about:blank in it. The two
- * accessors below answer with the fetched document instead, parsed at the
- * frame's own URL so that the fragment `:target` reads is the one the src
- * carries. A src the harness did not fetch falls through to the frame's own
- * answer, so every other test file sees the DOM it saw before.
- */
-function installFramePages(
-	dom: DOMModule,
-	document: Document,
-	pages: Map<string, string>,
-	url: string,
-): void {
-	if (pages.size === 0) {
-		return;
-	}
-	const prototype =
-		Object.getPrototypeOf(document.createElement("iframe")) as object;
-	const inherited = {
-		document: Object.getOwnPropertyDescriptor(prototype, "contentDocument")!,
-		window: Object.getOwnPropertyDescriptor(prototype, "contentWindow")!,
-	};
-	const loaded = new WeakMap<object, Document>();
-	const load = (frame: object): Document | null => {
-		const src = (frame as {getAttribute(name: string): string | null})
-			.getAttribute("src");
-		const text = src === null ? undefined : pages.get(src);
-		if (text === undefined) {
-			return null;
-		}
-		let document = loaded.get(frame);
-		if (document === undefined) {
-			const frameWindow = dom.createWindow(
-				text,
-				new URL(src!, url).href,
-				frameContentType(src!.split("#")[0])!,
-			);
-			document = frameWindow.document as unknown as Document;
-			// The frame's window, which the corpus reads its interfaces off
-			// (`doc.defaultView.NodeList`) the way the outer document reads
-			// them off the harness realm. One realm serves both, so the
-			// constructors it names are the same objects either way.
-			Object.defineProperty(document, "defaultView", {
-				value: Object.assign(Object.create(globalThis) as object, {
-					...domGlobals(dom, frameWindow),
-					document,
-				}),
-				configurable: true,
-			});
-			loaded.set(frame, document);
-		}
-		return document;
-	};
-	Object.defineProperty(prototype, "contentDocument", {
-		get(this: object): unknown {
-			return load(this) ?? inherited.document.get!.call(this);
-		},
-		configurable: true,
-	});
-	Object.defineProperty(prototype, "contentWindow", {
-		get(this: object): unknown {
-			const document = load(this);
-			if (document === null) {
-				return inherited.window.get!.call(this);
-			}
-			// The view carries the realm's constructors, which a test reads
-			// off `iframe.contentWindow.Element`.
-			return Object.assign(document.defaultView as object, {
-				frameElement: this,
-			});
-		},
-		configurable: true,
-	});
-}
-
 /** The document a `.any.js` or `.window.js` test would be generated into. */
 function generatedDocument(file: string, source: string): string {
 	const metas = [...source.matchAll(/^\/\/\s*META:\s*script=(\S+)/gm)];
@@ -966,7 +761,6 @@ function installGlobals(
 	dom: DOMModule,
 	engineWindow: DOM.Window,
 	document: Document,
-	url: string,
 ): HarnessGlobals {
 	const scope = globalThis as unknown as Record<string, unknown>;
 	const saved = new Map<string, {had: boolean; value: unknown}>();
@@ -979,6 +773,7 @@ function installGlobals(
 		customElements: unknown;
 		requestAnimationFrame: (callback: (time: number) => void) => number;
 		cancelAnimationFrame: (handle: number) => void;
+		location: unknown;
 	};
 	const windowShim = {
 		addEventListener: win.addEventListener.bind(win),
@@ -996,14 +791,7 @@ function installGlobals(
 		getComputedStyle: win.getComputedStyle.bind(win),
 		requestAnimationFrame: win.requestAnimationFrame.bind(win),
 		cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
-		location: {
-			href: url,
-			search: "",
-			hash: "",
-			pathname: new URL(url).pathname,
-			origin: new URL(url).origin,
-			toString: () => url,
-		},
+		location: win.location,
 		...windowShim,
 	};
 	const names = [
@@ -1051,66 +839,6 @@ function installGlobals(
 			configurable: true,
 		});
 	}
-	// The window's named property access. A great many test files name their
-	// fixture by its id alone -- `createTestTree(test1)` over a `<div
-	// id=test1>` -- which is the Window's legacy named access, not the
-	// tree's. The test body runs inside `with (__termdomNamedAccess)`, and
-	// this proxy is that object: a name no global owns resolves to the
-	// element that carries it as an id -- or as a name, for the four
-	// element kinds the Window names that way -- at the moment of the
-	// lookup, so a fixture built after load is as reachable as one the
-	// parser built. An assignment falls through to the global, which then
-	// shadows the name, as writing a window property does in a browser.
-	const NAMED_BY_NAME = ["embed", "form", "img", "object"];
-	const namedElement = (name: string) => {
-		const byId = document.getElementById(name);
-		if (byId !== null) {
-			return byId;
-		}
-		for (const tag of NAMED_BY_NAME) {
-			for (const element of document.getElementsByTagName(tag)) {
-				if (element.getAttribute("name") === name) {
-					return element;
-				}
-			}
-		}
-		return null;
-	};
-
-	// A `with` scope object must answer `has` for names it cannot
-	// enumerate in advance; only a Proxy can.
-	// eslint-disable-next-line no-restricted-globals
-	const namedAccess = new Proxy(
-		Object.create(null) as Record<string, unknown>,
-		{
-			has(_target, name): boolean {
-				return (
-					typeof name === "string" &&
-					!(name in scope) &&
-					namedElement(name) !== null
-				);
-			},
-			get(_target, name): unknown {
-				return typeof name === "string" ? namedElement(name) : undefined;
-			},
-			set(_target, name, value): boolean {
-				if (typeof name === "string") {
-					scope[name] = value;
-				}
-				return true;
-			},
-		},
-	);
-	saved.set("__termdomNamedAccess", {
-		had: Object.prototype.hasOwnProperty.call(scope, "__termdomNamedAccess"),
-		value: scope.__termdomNamedAccess,
-	});
-	scope.__termdomNamedAccess = namedAccess;
-	// The harness reads this before it decides whether to wait for a load.
-	Object.defineProperty(document, "readyState", {
-		value: "complete",
-		configurable: true,
-	});
 	return {
 		restore(): void {
 			for (const [name, entry] of saved) {
@@ -1126,6 +854,29 @@ function installGlobals(
 		},
 	};
 }
+
+// An error no script caught goes where a browser sends it: an error or
+// unhandledrejection event at the running file's window, which testharness
+// listens for. One from a file already finished, an async test whose timer
+// fired after its globals were gone, is logged and does not stop the run.
+let reportUncaught:
+	((type: "error" | "unhandledrejection", reason: unknown) => void) | null =
+		null;
+
+function onUncaught(
+	type: "error" | "unhandledrejection",
+	reason: unknown,
+): void {
+	if (reportUncaught !== null) {
+		reportUncaught(type, reason);
+	} else {
+		console.error(`uncaught after its file finished (${type}):`, reason);
+	}
+}
+
+process.on("uncaughtException", (error) => onUncaught("error", error));
+process.on("unhandledRejection", (reason) =>
+	onUncaught("unhandledrejection", reason));
 
 async function runFile(file: string): Promise<Outcome> {
 	const reason = EXCLUSIONS[file] ?? excludedDirectory(file);
@@ -1156,7 +907,7 @@ async function runFile(file: string): Promise<Outcome> {
 	}
 	await engine.attach();
 	try {
-		return await runMountedFile(dom, engine, transport, file, html, url);
+		return await runMountedFile(dom, engine, transport, file, html);
 	} finally {
 		engine.dispose();
 	}
@@ -1169,7 +920,6 @@ async function runMountedFile(
 	transport: MockTransport,
 	file: string,
 	html: string,
-	url: string,
 ): Promise<Outcome> {
 	const document = engine.document as unknown as Document;
 
@@ -1221,10 +971,8 @@ async function runMountedFile(
 		return {file, harness: "REFTEST", subtests: []};
 	}
 
-	installFramePages(dom, document, await framePages(document, html, file), url);
-
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
-	const globals = installGlobals(dom, engine.window, document, url);
+	const globals = installGlobals(dom, engine.window, document);
 	const scopeForDriver = globalThis as unknown as Record<string, unknown>;
 	const hadDriverInput = Object.prototype.hasOwnProperty.call(
 		scopeForDriver,
@@ -1237,6 +985,25 @@ async function runMountedFile(
 	// function declarations become properties of the global, and the file's are
 	// dropped once it is done so the next file starts from a bare realm.
 	const before = new Set(Object.keys(scope));
+	const engineWindow = engine.window as unknown as {
+		dispatchEvent(event: object): boolean;
+		ErrorEvent: new (type: string, init: object) => object;
+		Event: new (type: string) => object;
+	};
+	reportUncaught = (type, reason) => {
+		if (type === "error") {
+			engineWindow.dispatchEvent(
+				new engineWindow.ErrorEvent("error", {
+					error: reason,
+					message: (reason as Error)?.message ?? String(reason),
+				}),
+			);
+			return;
+		}
+		const event = new engineWindow.Event("unhandledrejection");
+		Object.defineProperty(event, "reason", {value: reason});
+		engineWindow.dispatchEvent(event);
+	};
 	try {
 		let settle: () => void = () => {};
 		const done = new Promise<void>((resolve) => {
@@ -1277,11 +1044,16 @@ async function runMountedFile(
 			// function declarations land on the global, where a test that evals
 			// a name (`params.map(eval)`) finds them, while `let` and `const`
 			// stay in the file's own scope rather than the realm's.
-			(0, eval)(`with (__termdomNamedAccess) {\n${body}\n}`);
+			(0, eval)(`{\n${body}\n}`);
+			// The engine runs no page scripts, so this harness runs them in the
+			// parser's place, and ends the parse as HTML does once they have
+			// run: DOMContentLoaded at the document, then load at the window.
+			document.dispatchEvent(
+				new dom.Event("DOMContentLoaded", {bubbles: true}),
+			);
 			(scope.dispatchEvent as (event: object) => boolean)(
 				new dom.Event("load"),
 			);
-			document.dispatchEvent(new dom.Event("DOMContentLoaded"));
 		} catch (error) {
 			return {
 				file,
@@ -1300,6 +1072,7 @@ async function runMountedFile(
 		await done;
 		clearTimeout(timer);
 	} finally {
+		reportUncaught = null;
 		delete scope.__complete;
 		if (!hadDriverInput) {
 			delete scopeForDriver.__termdomDriverInput;
@@ -1313,11 +1086,6 @@ async function runMountedFile(
 	}
 	return outcome;
 }
-
-// A test file that is abandoned mid-flight (an async test whose timer fires
-// after the file's globals are gone) must not take the run down with it.
-process.on("uncaughtException", () => {});
-process.on("unhandledRejection", () => {});
 
 // Each fresh evaluation of the engine graph is pinned in the module
 // registry forever, so one process running every file holds O(files)
@@ -1448,9 +1216,13 @@ const lines: string[] = [
 	"a test that tampers with a prototype cannot reach the next file.",
 	"",
 	"The harness realm borrows the engine window's addEventListener,",
-	"getSelection, getComputedStyle and animation frames, and supplies only",
-	"what a terminal cannot have: a `location` for the test's URL, and the",
-	"window's legacy named access to elements by id.",
+	"getSelection, getComputedStyle, location and animation frames. The",
+	"engine runs no page scripts, so the harness runs each file's scripts in",
+	"the parser's place and then fires DOMContentLoaded and load, as HTML",
+	"does at the end of a parse. It sends uncaught errors to the window as",
+	"error and unhandledrejection events. It supplies no behavior of its",
+	"own: no named access to elements by id, and no frame documents, so",
+	"tests that need either fail.",
 	"",
 	`- Test files in the suites: ${outcomes.length}`,
 	`- Reference tests (no testharness, scored by pixels): ${reftests.length}`,
