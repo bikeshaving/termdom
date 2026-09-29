@@ -1385,6 +1385,115 @@ const WHITE_SPACE_KEYWORDS: Record<string, readonly [string, string]> = {
 	"pre-line": ["preserve-breaks", "wrap"],
 };
 
+// The names of the UA's own fonts, which `font` can name alone. A terminal
+// has one font, so they are left whole rather than decomposed.
+const SYSTEM_FONTS = new Set([
+	"caption",
+	"icon",
+	"menu",
+	"message-box",
+	"small-caption",
+	"status-bar",
+]);
+
+const FONT_VARIANT_LONGHANDS = [
+	"font-variant-ligatures",
+	"font-variant-alternates",
+	"font-variant-numeric",
+	"font-variant-east-asian",
+	"font-variant-position",
+	"font-variant-emoji",
+];
+
+function matchesProperty(property: string, text: string): boolean {
+	return grammarLexer.matchProperty(property, text).matched !== null;
+}
+
+/**
+ * css-fonts-4 §2.8: `[ <'font-style'> || <font-variant-css2> ||
+ * <'font-weight'> || <font-width-css3> ]? <'font-size'> [ / <'line-height'> ]?
+ * <'font-family'>#`. Each longhand the value leaves out is reset to its
+ * initial value, the font-variant ones among them. Null for a system font
+ * or a value that does not parse.
+ */
+function expandFont(tokens: string[]): Record<string, string> | null {
+	if (tokens.length === 1 && SYSTEM_FONTS.has(tokens[0].toLowerCase())) {
+		return null;
+	}
+	const out: Record<string, string> = {
+		"font-style": "normal",
+		"font-variant-caps": "normal",
+		"font-weight": "normal",
+		"font-stretch": "normal",
+		"line-height": "normal",
+	};
+	for (const longhand of FONT_VARIANT_LONGHANDS) {
+		out[longhand] = "normal";
+	}
+	const set = new Set<string>();
+	let i = 0;
+	for (; i < tokens.length; i++) {
+		const token = tokens[i];
+		const lower = token.toLowerCase();
+		const size = token.split("/")[0];
+		if (size !== "" && matchesProperty("font-size", size)) {
+			break;
+		}
+		if (set.size >= 4) {
+			return null;
+		}
+		if (lower === "normal") {
+			set.add(`normal${set.size}`);
+		} else if (
+			lower === "oblique" && /deg|rad|turn/i.test(tokens[i + 1] ?? "")
+		) {
+			out["font-style"] = `oblique ${tokens[++i]}`;
+			set.add("font-style");
+		} else if (!set.has("font-style") && matchesProperty("font-style", token)) {
+			out["font-style"] = lower;
+			set.add("font-style");
+		} else if (!set.has("font-variant-caps") && lower === "small-caps") {
+			out["font-variant-caps"] = lower;
+			set.add("font-variant-caps");
+		} else if (
+			!set.has("font-weight") && matchesProperty("font-weight", token)
+		) {
+			out["font-weight"] = lower;
+			set.add("font-weight");
+		} else if (
+			!set.has("font-stretch") && matchesProperty("font-stretch", token)
+		) {
+			out["font-stretch"] = lower;
+			set.add("font-stretch");
+		} else {
+			return null;
+		}
+	}
+	if (i >= tokens.length) {
+		return null;
+	}
+	// The size, and a line height after a slash, whether spaced or not.
+	const rest = tokens.slice(i).join(" ");
+	const match = /^([^\s/]+)\s*(?:\/\s*([^\s]+))?\s+(.+)$/.exec(rest);
+	if (match === null) {
+		return null;
+	}
+	const [, size, lineHeight, family] = match;
+	if (
+		!matchesProperty("font-size", size) ||
+		(lineHeight !== undefined && !matchesProperty("line-height", lineHeight)) ||
+		!matchesProperty("font-family", family)
+	) {
+		return null;
+	}
+	out["font-size"] = size;
+	if (lineHeight !== undefined) {
+		out["line-height"] = lineHeight;
+	}
+	out["font-family"] = family;
+	return out;
+}
+
 const TEXT_WRAP_MODES = new Set(["wrap", "nowrap"]);
 const TEXT_WRAP_STYLES = new Set(["auto", "balance", "stable", "pretty"]);
 
@@ -1459,6 +1568,13 @@ export function expandShorthands(
 				if (longhands !== undefined) {
 					out["white-space-collapse"] = longhands[0];
 					out["text-wrap-mode"] = longhands[1];
+				}
+				break;
+			}
+			case "font": {
+				const longhands = expandFont(values);
+				if (longhands !== null) {
+					Object.assign(out, longhands);
 				}
 				break;
 			}
@@ -3142,6 +3258,31 @@ export function serializeShorthandValue(
 	// both of them where none does.
 	if (shorthand === "white-space") {
 		return serializeWhiteSpace(values[0], values[1]);
+	}
+
+	// css-fonts-4 §2.8: the parts at normal are left out, and a longhand
+	// the shorthand cannot state, a font-variant other than small-caps,
+	// leaves it with no value.
+	if (shorthand === "font") {
+		const at = (longhand: string): string =>
+			values[stated.indexOf(longhand)] ?? "normal";
+		const caps = at("font-variant-caps");
+		if (
+			FONT_VARIANT_LONGHANDS.some((longhand) => at(longhand) !== "normal") ||
+			(caps !== "normal" && caps !== "small-caps")
+		) {
+			return "";
+		}
+		const lineHeight = at("line-height");
+		return [at("font-style"), caps, at("font-weight"), at("font-stretch")]
+			.filter((part) => part !== "normal" && part !== "400" && part !== "100%")
+			.concat(
+				lineHeight === "normal"
+					? [at("font-size")]
+					: [at("font-size"), "/", lineHeight],
+				at("font-family") === "" ? [] : [at("font-family")],
+			)
+			.join(" ");
 	}
 
 	// The shortest form: a longhand at its initial value is left out, and
