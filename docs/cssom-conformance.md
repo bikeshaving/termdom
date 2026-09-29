@@ -838,8 +838,8 @@ A system color computes as its keyword here, not as an rgb(). The name stands fo
 
 ### getComputedStyle-pseudo-shadow.html
 
-- getComputedStyle() returns an empty declaration for ::part(foo): assert_equals: expected 0 but got 507
-- getComputedStyle() returns an empty declaration for ::slotted(foo): assert_equals: expected 0 but got 507
+- getComputedStyle() returns an empty declaration for ::part(foo): assert_equals: expected 0 but got 506
+- getComputedStyle() returns an empty declaration for ::slotted(foo): assert_equals: expected 0 but got 506
 
 ### getComputedStyle-resolved-colors.html
 
