@@ -44,6 +44,11 @@ import {
 	isButtonInput,
 	MATHML_NAMESPACE,
 } from "./dom.ts";
+import {
+	getPresentationalHints,
+	isHintAttribute,
+	isLayoutHintAttribute,
+} from "./hints.ts";
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {getStringWidth} from "./text.ts";
@@ -3486,6 +3491,36 @@ const COUNTER_PROPERTIES = [
 	"counter-set",
 ];
 
+// One rule per set of hints, so elements with the same attributes share
+// their computed values as they would with the same rules.
+const hintRules = new Map<string, ParsedCSSRule>();
+
+function getHintRule(element: Element): ParsedCSSRule | null {
+	const hints = getPresentationalHints(element);
+	if (hints === null) {
+		return null;
+	}
+	const key = JSON.stringify(hints);
+	let rule = hintRules.get(key);
+	if (rule === undefined) {
+		const properties = Object.keys(hints);
+		rule = {
+			matcher: null,
+			relativeMatcher: null,
+			declarations: hints,
+			important: {},
+			order: Object.fromEntries(properties.map((name, i) => [name, i])),
+			specificity: "",
+			layerRank: -1,
+		} as unknown as ParsedCSSRule;
+		if (hintRules.size > 1024) {
+			hintRules.clear();
+		}
+		hintRules.set(key, rule);
+	}
+	return rule;
+}
+
 function getRuleId(rule: ParsedCSSRule): number {
 	let id = ruleIds.get(rule);
 	if (id === undefined) {
@@ -5830,7 +5865,7 @@ export class Cascade {
 			parseStylesheetsIfStale(this);
 			declaration = new ComputedStyleDeclaration(
 				element,
-				getMatchingRules(this, element),
+				this[kMatchingRules](element),
 				this,
 			);
 			this[kComputedStyleCache].set(element, declaration);
@@ -6048,7 +6083,17 @@ export class Cascade {
 
 	[kMatchingRules](element: Element): ParsedCSSRule[] {
 		parseStylesheetsIfStale(this);
-		return getMatchingRules(this, element);
+		const rules = getMatchingRules(this, element);
+		const hints = getHintRule(element);
+		if (hints === null) {
+			return rules;
+		}
+		// Author level, zero specificity, ahead of every author rule and
+		// layer (HTML §15.1).
+		const at = rules.findIndex((rule) => !rule.uaOrigin);
+		return at === -1
+			? [...rules, hints]
+			: [...rules.slice(0, at), hints, ...rules.slice(at)];
 	}
 
 	// Every author-facing style read goes through this flush, so a value
@@ -6170,6 +6215,9 @@ export class Cascade {
 		name: string,
 		oldValue: string | null,
 	): boolean {
+		if (isHintAttribute(element, name)) {
+			return true;
+		}
 		if (name === "style") {
 			if (oldValue === null) {
 				return true;
@@ -7273,6 +7321,7 @@ function isPaintOnlyChange(
 ): boolean {
 	if (
 		name === "style" ||
+		isLayoutHintAttribute(element, name) ||
 		(cascade[kReachingStates] && CSSValues.isStateAttribute(name))
 	) {
 		return false;

@@ -38,6 +38,73 @@ const IMPLEMENTED_HINTS: Record<string, string> = {
 	"*[dir]": "direction",
 	bdi: "direction",
 	"input[type=tel]": "direction",
+	"body[bgcolor]": "background-color",
+	"body[text]": "color",
+	"body[link]": "color on :link",
+	"body[marginheight]": "margin-top and margin-bottom",
+	"body[marginwidth]": "margin-left and margin-right",
+	"font[color]": "color",
+	"table[bgcolor]": "background-color",
+	"tr[bgcolor]": "background-color",
+	"td[bgcolor]": "background-color",
+	"th[bgcolor]": "background-color",
+	"table[bordercolor]": "border colors",
+	"table[border]": "border widths and style",
+	"table[cellspacing]": "border-spacing",
+	"table[cellpadding]": "padding on the table's cells",
+	"table[align=center]": "auto side margins",
+	"hr[color]": "color and border colors",
+	"hr[align]": "side margins",
+	"div[align]": "text-align",
+	"p[align]": "text-align",
+	"caption[align]": "text-align",
+	center: "display: block and text-align: center",
+	"td[align]": "text-align",
+	"th[align]": "text-align",
+	"tr[align]": "text-align",
+	"thead[align]": "text-align",
+	"tbody[align]": "text-align",
+	"tfoot[align]": "text-align",
+	"td[valign]": "vertical-align",
+	"th[valign]": "vertical-align",
+	"tr[valign]": "vertical-align",
+	"td[nowrap]": "white-space: nowrap, unless quirks mode gives the cell a pixel width",
+	"table[height]": "height",
+	"table[width]": "width",
+	"col[width]": "width",
+	"thead[height]": "height",
+	"tbody[height]": "height",
+	"tfoot[height]": "height",
+	"tr[height]": "height",
+	"td[height]": "height",
+	"td[width]": "width",
+	"hr[width]": "width",
+	"img[width]": "width",
+	"img[height]": "height",
+	"embed[width]": "width",
+	"embed[height]": "height",
+	"iframe[width]": "width",
+	"iframe[height]": "height",
+	"object[width]": "width",
+	"object[height]": "height",
+	"video[width]": "width",
+	"video[height]": "height",
+	"input[type=image][width]": "width",
+	"input[type=image][height]": "height",
+	"img[hspace]": "side margins",
+	"img[vspace]": "top and bottom margins",
+	"embed[hspace]": "side margins",
+	"embed[vspace]": "top and bottom margins",
+	"object[hspace]": "side margins",
+	"object[vspace]": "top and bottom margins",
+	"input[type=image][hspace]": "side margins",
+	"input[type=image][vspace]": "top and bottom margins",
+	"img[border]": "border widths and style",
+	"object[border]": "border widths and style",
+	"input[type=image][border]": "border widths and style",
+	"ul[type]": "list-style-type",
+	"ol[type]": "list-style-type",
+	"li[type]": "list-style-type",
 };
 
 /**
@@ -66,32 +133,16 @@ const EXCLUDED_HINTS: Record<string, string> = {
 
 	// Legacy color and font attributes.
 	"body[background]": "background-image: a raster image, which needs pixels",
-	"body[bgcolor]": "background-color: an author writes this in CSS",
-	"body[text]": "color: an author writes this in CSS",
-	"body[link]": "color on :link -- no visited or link history here",
 	"body[vlink]": "color on :visited -- no visited or link history here",
-	"body[alink]": "color on :active :link -- no visited or link history here",
-	"font[color]": "color: an author writes this in CSS",
+	"body[alink]": "color on :active :link -- :active is the pointer's, not a link state",
 	"font[face]": "font-family: one terminal font, chosen by the terminal",
 	"font[size]": "font-size: one cell, and every cell is the same size",
 	"marquee[bgcolor]":
 		"background-color on a marquee, which does not scroll here",
-	"table[bordercolor]": "border-*-color: an author writes this in CSS",
-	"table[bgcolor]": "background-color: an author writes this in CSS",
-	"td[bgcolor]": "background-color: an author writes this in CSS",
 	"table[background]": "background-image: a raster image, which needs pixels",
 	"td[background]": "background-image: a raster image, which needs pixels",
-	"hr[color]": "color on an hr, whose rule is drawn from its border",
 
 	// Alignment attributes, which map to text-align, float and vertical-align.
-	"div[align]": "text-align: the align attribute predates text-align",
-	center: "text-align: center, which the UA sheet could carry but does not",
-	"td[align]": "text-align on a cell",
-	"th[align]": "text-align on a cell",
-	"tr[align]": "text-align on a row",
-	"thead[align]": "text-align on a row group",
-	"tbody[align]": "text-align on a row group",
-	"tfoot[align]": "text-align on a row group",
 	"img[align]": "float and vertical-align on a replaced element",
 	"embed[align]": "float and vertical-align on a replaced element",
 	"iframe[align]": "float and vertical-align on a replaced element",
@@ -99,45 +150,16 @@ const EXCLUDED_HINTS: Record<string, string> = {
 	"input[type=image][align]": "float and vertical-align on a replaced element",
 
 	// Dimension attributes: pixel lengths and aspect ratios.
-	"table[height]": "height as a pixel length",
-	"table[width]": "width as a pixel length",
-	"col[width]": "width as a pixel length",
-	"thead[height]": "height as a pixel length",
-	"tbody[height]": "height as a pixel length",
-	"tfoot[height]": "height as a pixel length",
-	"tr[height]": "height as a pixel length",
-	"td[height]": "height as a pixel length",
-	"td[width]": "width as a pixel length",
-	"hr[width]": "width as a pixel length",
 	"hr[size]": "border widths and height as pixel lengths",
 	"hr[noshade]": "border widths as pixel lengths",
-	"img[width]": "width, height and aspect-ratio on a raster image",
-	"img[height]": "width, height and aspect-ratio on a raster image",
-	"embed[width]": "width and height on embedded content, which needs pixels",
-	"embed[height]": "width and height on embedded content, which needs pixels",
-	"iframe[width]": "width and height on a nested document, which is absent",
-	"iframe[height]": "width and height on a nested document, which is absent",
-	"object[width]": "width and height on embedded content, which needs pixels",
-	"object[height]": "width and height on embedded content, which needs pixels",
-	"video[width]": "width, height and aspect-ratio on a video",
-	"video[height]": "width, height and aspect-ratio on a video",
 	"canvas[width]": "aspect-ratio on a canvas, which paints no pixels here",
 	"canvas[height]": "aspect-ratio on a canvas, which paints no pixels here",
-	"input[type=image][width]": "width and height on an image button",
-	"input[type=image][height]": "width and height on an image button",
-	"img[hspace]": "margins as pixel lengths",
-	"img[vspace]": "margins as pixel lengths",
-	"embed[hspace]": "margins as pixel lengths",
-	"embed[vspace]": "margins as pixel lengths",
-	"object[hspace]": "margins as pixel lengths",
-	"object[vspace]": "margins as pixel lengths",
+	"img aspect-ratio":
+		"aspect-ratio from width and height on a raster image, which needs pixels",
+	"video aspect-ratio":
+		"aspect-ratio from width and height on a video, which needs pixels",
 	"marquee[hspace]": "margins on a marquee, which does not scroll here",
 	"marquee[vspace]": "margins on a marquee, which does not scroll here",
-	"input[type=image][hspace]": "margins as pixel lengths",
-	"input[type=image][vspace]": "margins as pixel lengths",
-	"img[border]": "border widths as pixel lengths",
-	"object[border]": "border widths as pixel lengths",
-	"input[type=image][border]": "border widths as pixel lengths",
 	"iframe[frameborder]": "border widths on a nested document, which is absent",
 
 	// Counters and the rest.
@@ -146,7 +168,6 @@ const EXCLUDED_HINTS: Record<string, string> = {
 	"ol[reversed]":
 		"counter-reset: the list numbering is computed, not a counter",
 	"br[clear]": "clear: no floats to clear",
-	"td[nowrap]": "white-space in quirks mode, gated on a pixel width",
 	"textarea[wrap]":
 		"white-space: pre for wrap=off -- the widget owns its own wrapping",
 	"input[type=color]":
@@ -240,4 +261,92 @@ test("the UA sheet carries the dir rules and no unicode-bidi", () => {
 	expect(UA_DOCUMENT_STYLES).toContain("[dir=rtl i] { direction: rtl; }");
 	expect(UA_DOCUMENT_STYLES).toContain("[dir=auto i]:dir(rtl)");
 	expect(UA_DOCUMENT_STYLES.includes("unicode-bidi:")).toBe(false);
+});
+
+test("a legacy color attribute reads as HTML's legacy color parser reads it", () => {
+	const color = (value: string) =>
+		computed(
+			`<table><tr><td id="c" bgcolor="${value}">x</td></tr></table>`,
+			"c",
+			"background-color",
+		);
+	expect(color("#336699")).toBe("rgb(51, 102, 153)");
+	expect(color("336699")).toBe("rgb(51, 102, 153)");
+	expect(color("#abc")).toBe("rgb(170, 187, 204)");
+	expect(color("red")).toBe("rgb(255, 0, 0)");
+	expect(color("chucknorris")).toBe("rgb(192, 0, 0)");
+	expect(color("transparent")).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("body, font and link colors come from their attributes", () => {
+	const markup =
+		"<font id=\"f\" color=\"green\">x</font><a id=\"a\" href=\"#\">link</a>";
+	const {window, document} = new TermDOM({
+		html: `<!DOCTYPE html><html><body id="b" bgcolor="navy" text="yellow" link="lime">${markup}</body></html>`,
+		transport: new MockProcess().transport,
+	});
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!);
+	expect(style("b").backgroundColor).toBe("rgb(0, 0, 128)");
+	expect(style("b").color).toBe("rgb(255, 255, 0)");
+	expect(style("f").color).toBe("rgb(0, 128, 0)");
+	expect(style("a").color).toBe("rgb(0, 255, 0)");
+});
+
+test("align and valign reach text-align and vertical-align", () => {
+	expect(computed("<div id=\"d\" align=\"center\">x</div>", "d", "text-align"))
+		.toBe("center");
+	expect(computed("<center id=\"d\">x</center>", "d", "text-align")).toBe(
+		"center",
+	);
+	const cell =
+		"<table><tr><td id=\"c\" align=\"right\" valign=\"top\">x</td></tr></table>";
+	expect(computed(cell, "c", "text-align")).toBe("right");
+	expect(computed(cell, "c", "vertical-align")).toBe("top");
+});
+
+test("a table's attributes size it and pad its cells", () => {
+	const markup =
+		"<table id=\"t\" width=\"30\" border=\"2\" cellpadding=\"3\" align=\"center\">" +
+		"<tbody><tr><td id=\"c\" width=\"50%\" nowrap>x</td></tr></tbody></table>";
+	expect(computed(markup, "t", "width")).toBe("30px");
+	expect(computed(markup, "t", "border-top-width")).toBe("2px");
+	expect(computed(markup, "t", "border-top-style")).toBe("outset");
+	expect(computed(markup, "c", "padding-left")).toBe("3px");
+	expect(computed(markup, "c", "text-wrap-mode")).toBe("nowrap");
+});
+
+test("an author rule of any specificity outranks a hint", () => {
+	expect(
+		computed(
+			"<style>@layer base { td { background-color: green } }</style>" +
+				"<table><tr><td id=\"c\" bgcolor=\"red\">x</td></tr></table>",
+			"c",
+			"background-color",
+		),
+	).toBe("rgb(0, 128, 0)");
+});
+
+test("changing a table's cellpadding restyles its cells", () => {
+	const {window, document} = new TermDOM({
+		html:
+			"<!DOCTYPE html><html><body><table id=\"t\" cellpadding=\"1\"><tr>" +
+			"<td id=\"c\">x</td></tr></table></body></html>",
+		transport: new MockProcess().transport,
+	});
+	const cell = document.getElementById("c")!;
+	expect(window.getComputedStyle(cell).paddingLeft).toBe("1px");
+	document.getElementById("t")!.setAttribute("cellpadding", "4");
+	expect(window.getComputedStyle(cell).paddingLeft).toBe("4px");
+});
+
+test("list type attributes reach list-style-type", () => {
+	expect(
+		computed("<ol id=\"o\" type=\"a\"><li>x</li></ol>", "o", "list-style-type"),
+	)
+		.toBe("lower-alpha");
+	expect(
+		computed("<ol><li id=\"l\" type=\"I\">x</li></ol>", "l", "list-style-type"),
+	)
+		.toBe("upper-roman");
 });
