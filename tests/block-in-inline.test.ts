@@ -263,3 +263,18 @@ test("an inline-block inside an inline-block takes a block child", async () => {
 
 	dom.dispose();
 });
+
+test("an inline-block in an inline broken around a block paints where its box is", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<span><span id=\"ib\" style=\"display: inline-block\">t000</span>" +
+		"<div></div></span>";
+	await nextFrame(dom);
+	const line = terminal.getVisibleText().split("\n")[0];
+	expect(line.indexOf("t000")).toBe(0);
+	expect(dom.document.getElementById("ib")!.getBoundingClientRect().left).toBe(
+		0,
+	);
+	dom.dispose();
+});
