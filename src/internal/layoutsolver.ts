@@ -300,8 +300,25 @@ function isMatchingConstraints(
 
 // Whether a style resolves any length against the owner: a percentage
 // anywhere in it. Styles are replaced whole, so the answer is kept per
-// style object.
-const percentStyles = new WeakMap<Style, boolean>();
+// style object, and per part, since parts are shared between styles.
+const percentStyles = new WeakMap<object, boolean>();
+
+const LENGTH_FIELDS = [
+	"flexBasis",
+	"margin",
+	"position",
+	"padding",
+	"width",
+	"height",
+	"minWidth",
+	"minHeight",
+	"maxWidth",
+	"maxHeight",
+	"gridTemplateColumns",
+	"gridTemplateRows",
+	"gridAutoColumns",
+	"gridAutoRows",
+] as const;
 
 function hasPercent(value: unknown, depth: number): boolean {
 	if (typeof value !== "object" || value === null || depth > 3) {
@@ -321,7 +338,19 @@ function hasPercent(value: unknown, depth: number): boolean {
 function usesPercent(style: Style): boolean {
 	let answer = percentStyles.get(style);
 	if (answer === undefined) {
-		answer = hasPercent(style, 0);
+		answer = false;
+		for (const field of LENGTH_FIELDS) {
+			const part: object = style[field];
+			let partAnswer = percentStyles.get(part);
+			if (partAnswer === undefined) {
+				partAnswer = hasPercent(part, 1);
+				percentStyles.set(part, partAnswer);
+			}
+			if (partAnswer) {
+				answer = true;
+				break;
+			}
+		}
 		percentStyles.set(style, answer);
 	}
 	return answer;
@@ -5343,16 +5372,15 @@ function layoutNode(
 				height: node.result.height,
 			};
 		}
-		const target = entry;
-		target.availableWidth = availableWidth;
-		target.availableHeight = availableHeight;
-		target.widthSpace = widthSpace;
-		target.heightSpace = heightSpace;
-		target.ownerWidth = ownerWidth;
-		target.ownerHeight = ownerHeight;
-		target.width = node.result.width;
-		target.height = node.result.height;
-		return target;
+		entry.availableWidth = availableWidth;
+		entry.availableHeight = availableHeight;
+		entry.widthSpace = widthSpace;
+		entry.heightSpace = heightSpace;
+		entry.ownerWidth = ownerWidth;
+		entry.ownerHeight = ownerHeight;
+		entry.width = node.result.width;
+		entry.height = node.result.height;
+		return entry;
 	};
 	if (placing) {
 		node.cachedLayout = write(node.cachedLayout);

@@ -3770,10 +3770,6 @@ Object.defineProperty(EventTarget.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/**
- * Remove a listener from a list and mark it so an in-progress dispatch skips
- * it.
- */
 function addListener(target: EventTarget, listener: Listener): void {
 	if (target[kListeners] === NO_LISTENERS) {
 		target[kListeners] = [];
@@ -3781,6 +3777,10 @@ function addListener(target: EventTarget, listener: Listener): void {
 	target[kListeners].push(listener);
 }
 
+/**
+ * Remove a listener from a list and mark it so an in-progress dispatch skips
+ * it.
+ */
 function removeListener(listeners: Listener[], listener: Listener): void {
 	listener.removed = true;
 	const index = listeners.indexOf(listener);
@@ -5179,9 +5179,8 @@ export class Node extends EventTarget implements globalThis.Node {
 	}
 
 	get ownerDocument(): Document | null {
-		return this.nodeType === DOCUMENT_NODE
-			? null
-			: (this[kDocument] as Document);
+		const document = this[kDocument];
+		return document === (this as unknown) ? null : (document as Document);
 	}
 
 	/** lib.dom types this as ParentNode, the mixin a parent carries. */
@@ -7653,9 +7652,6 @@ function createTagNameNSCollection(
 
 const kClassTokens = Symbol("the parsed class attribute");
 
-// The parsed set is cached on the element and discarded by the class
-// attribute's change steps, so a walk asking every element for its
-// classes pays only for attributes that changed.
 /**
  * An element's attributes as the element holds them, for engine code that
  * reads them. `attributes` would build a live NamedNodeMap to hand out.
@@ -7666,6 +7662,9 @@ export function getAttributeList(
 	return (element as Element)[kAttributeList] as unknown as globalThis.Attr[];
 }
 
+// The parsed set is cached on the element and discarded by the class
+// attribute's change steps, so a walk asking every element for its
+// classes pays only for attributes that changed.
 export function getClassTokens(
 	target: globalThis.Element,
 ): ReadonlySet<string> {
@@ -9782,8 +9781,8 @@ export class Element extends Node implements globalThis.Element {
 // lists, observers), slot assignment and pseudo-elements. It lives on a
 // record a node gets the first time one of these is set to anything but its
 // default, so a plain node carries one field for all of them rather than a
-// field each. The accessors keep every `node[kField]` reading and writing as
-// before.
+// field each. The accessors let code read and write `node[kField]` as if
+// it were a field of its own.
 const RARE_FIELDS: ReadonlyArray<readonly [symbol, unknown]> = [
 	[kChildNodes, null],
 	[kLiveLists, null],
