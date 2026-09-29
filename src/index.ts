@@ -69,6 +69,9 @@ const kFlowPainted = Symbol("flowPainted");
 // Errors the page let escape that no log could take live. Printed below
 // the document when the session ends.
 const kHeldErrors = Symbol("heldErrors");
+const kDroppedErrors = Symbol("droppedErrors");
+// Held errors handed to the output queue whose write has not finished.
+const kUnwrittenErrors = Symbol("unwrittenErrors");
 const HELD_ERROR_LIMIT = 50;
 
 export interface TermDOM {
@@ -88,6 +91,9 @@ export interface TermDOM {
 	[kRenderInFlight]: Promise<void> | null;
 	[kFlowPainted]: boolean;
 	[kHeldErrors]: string[];
+	// Held errors dropped past the limit, counted so the report says so.
+	[kDroppedErrors]: number;
+	[kUnwrittenErrors]: string | null;
 	// Timestamps observer entries.
 	[kRenderCount]: number;
 	[kInput]: Input;
@@ -120,6 +126,8 @@ export class TermDOM {
 		this[kRenderInFlight] = null;
 		this[kFlowPainted] = false;
 		this[kHeldErrors] = [];
+		this[kDroppedErrors] = 0;
+		this[kUnwrittenErrors] = null;
 		this[kRenderCount] = 0;
 		this[kLifecycle] = "detached";
 
@@ -380,10 +388,7 @@ export class TermDOM {
 		) {
 			void this[kExchange].write("\r\n");
 		}
-		if (this[kHeldErrors].length > 0 && this[kTransport].interactive) {
-			void this[kExchange].writeLines(this[kHeldErrors].join("\r\n") + "\r\n");
-			this[kHeldErrors] = [];
-		}
+		writeHeldErrors(this);
 
 		this[kExchange].dispose();
 
@@ -420,12 +425,67 @@ function reportUncaught(termDOM: TermDOM, error: unknown): void {
 	holdError(termDOM, error);
 }
 
+// The sessions holding errors not yet written. However the process ends,
+// by dispose, process.exit(), a signal or a crash, its exit writes what is
+// left, after the transport has restored the terminal.
+const sessionsHoldingErrors = new Set<TermDOM>();
+let heldErrorsExitHookInstalled = false;
+
 function holdError(termDOM: TermDOM, error: unknown): void {
 	const held = termDOM[kHeldErrors];
 	held.push(formatError(error));
 	if (held.length > HELD_ERROR_LIMIT) {
 		held.shift();
+		termDOM[kDroppedErrors]++;
 	}
+	sessionsHoldingErrors.add(termDOM);
+	if (!heldErrorsExitHookInstalled) {
+		heldErrorsExitHookInstalled = true;
+		process.on("exit", () => {
+			for (const session of sessionsHoldingErrors) {
+				const text =
+					(session[kUnwrittenErrors] ?? "") + (takeHeldErrors(session) ?? "");
+				if (text !== "") {
+					session[kTransport].writeSync?.(text);
+				}
+			}
+		});
+	}
+}
+
+// The held errors as the lines to print, emptying the hold.
+function takeHeldErrors(termDOM: TermDOM): string | null {
+	const held = termDOM[kHeldErrors];
+	const dropped = termDOM[kDroppedErrors];
+	termDOM[kHeldErrors] = [];
+	termDOM[kDroppedErrors] = 0;
+	if (held.length === 0 || !termDOM[kTransport].interactive) {
+		return null;
+	}
+	const noun = dropped === 1 ? "error" : "errors";
+	const lines = dropped > 0
+		? [`(${dropped} earlier ${noun} not shown)`, ...held]
+		: held;
+	return lines.join("\r\n") + "\r\n";
+}
+
+// Into the output queue, after the document. Until that write lands, the
+// process's exit writes the text itself.
+function writeHeldErrors(termDOM: TermDOM): void {
+	const text = takeHeldErrors(termDOM);
+	if (text === null) {
+		if (termDOM[kUnwrittenErrors] === null) {
+			sessionsHoldingErrors.delete(termDOM);
+		}
+		return;
+	}
+	termDOM[kUnwrittenErrors] = (termDOM[kUnwrittenErrors] ?? "") + text;
+	void termDOM[kExchange].writeLines(text).then(() => {
+		termDOM[kUnwrittenErrors] = null;
+		if (termDOM[kHeldErrors].length === 0) {
+			sessionsHoldingErrors.delete(termDOM);
+		}
+	});
 }
 
 function formatError(error: unknown): string {

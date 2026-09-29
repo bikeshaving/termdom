@@ -140,3 +140,60 @@ test("an observer's exception is reported and the observer goes on", async () =>
 	expect(calls).toBe(2);
 	await dom.dispose();
 });
+
+test("an error listener that throws is reported once, not fired again", async () => {
+	const terminal = new MockProcess({rows: 40, cols: 80});
+	const dom = attached(terminal);
+	let fired = 0;
+	dom.window.addEventListener("error", () => {
+		fired++;
+		throw new Error("from the listener");
+	});
+	dom.document.getElementById("b")!.addEventListener("click", () => {
+		throw new Error("from the click");
+	});
+	await nextFrame(dom);
+	// Returns rather than overflowing the stack.
+	dom.document.getElementById("b")!.click();
+	expect(fired).toBe(1);
+	await dom.dispose();
+	const screen = terminal.getScreenContents();
+	expect(screen).toContain("Error: from the listener");
+	expect(screen).toContain("Error: from the click");
+});
+
+test("errors held past the limit are counted, not dropped without a word", async () => {
+	const terminal = new MockProcess({rows: 200, cols: 80});
+	const dom = attached(terminal);
+	let count = 0;
+	// A one-line stack each, so all fifty fit on the screen.
+	dom.document.getElementById("b")!.addEventListener("click", () => {
+		const error = new Error(`number ${++count}`);
+		error.stack = error.message;
+		throw error;
+	});
+	await nextFrame(dom);
+	for (let i = 0; i < 55; i++) {
+		dom.document.getElementById("b")!.click();
+	}
+	await dom.dispose();
+	const screen = terminal.getScreenContents();
+	expect(screen).toContain("(5 earlier errors not shown)");
+	expect(screen).toContain("number 6");
+	expect(screen).toContain("number 55");
+	expect(screen.split("\n").some((line) => line.trimEnd() === "number 5"))
+		.toBe(false);
+});
+
+test("an exception in a document the page made is reported by the engine", async () => {
+	const terminal = new MockProcess({rows: 40, cols: 80});
+	const dom = attached(terminal);
+	await nextFrame(dom);
+	const made = dom.document.implementation.createHTMLDocument("made");
+	made.body.addEventListener("click", () => {
+		throw new Error("from a made document");
+	});
+	made.body.click();
+	await dom.dispose();
+	expect(terminal.getScreenContents()).toContain("Error: from a made document");
+});

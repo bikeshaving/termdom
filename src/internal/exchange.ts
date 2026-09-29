@@ -62,6 +62,13 @@ export interface TerminalTransport {
 	logError?(text: string): boolean;
 
 	/**
+	 * Writes to the terminal at once, ahead of anything still queued, for
+	 * what has to reach it as the process ends. Absent on a transport that
+	 * cannot write synchronously.
+	 */
+	writeSync?(text: string): void;
+
+	/**
 	 * A pty is established at construction. An SSH channel resolves when it
 	 * opens.
 	 */
@@ -2130,6 +2137,13 @@ export function transportFromProcess(
 		},
 		sharesScreen,
 		interactive: proc.stdout.isTTY !== false,
+		writeSync(text: string): void {
+			try {
+				proc.stdout.write(text);
+			} catch (_err) {
+				// The stream may already be gone.
+			}
+		},
 		// A stderr that is a terminal is the one the frame is on.
 		logError(text: string): boolean {
 			const stderr = proc.stderr;
