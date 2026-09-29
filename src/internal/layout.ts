@@ -225,11 +225,13 @@ function isBlockified(element: Element): boolean {
 	return isOutOfFlow(element) || hasItemParent(element);
 }
 
-// An inline box, whose content flows on the lines around it. An inline a
-// flex or grid container holds, or one taken out of flow, is blockified
-// into a block container, and lays its content out on lines of its own.
+// An inline box, whose content flows on the lines of the run it heads or
+// joins. A blockified inline holding a block, and one taken out of flow,
+// is a block container instead, and lays its content out on lines of its
+// own. A flex or grid item holding only inline content still measures as a
+// run, headed by itself in its container's.
 function isInlineBox(element: Element): boolean {
-	return getLayoutDisplay(element) === "inline" && !isBlockified(element);
+	return getLayoutDisplay(element) === "inline" && isMeasuredAsRun(element);
 }
 
 function getUsedDisplay(element: Element): Display {

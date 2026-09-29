@@ -943,3 +943,18 @@ test("an inline flex or grid item is a block container, not split around its blo
 		dom.dispose();
 	}
 });
+
+test("text in an inline flex item is where its range says it is", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style='display:flex'><div id='item' style='display:inline'>" +
+		"<div style='display:inline-block'>t000</div>t001</div></div>";
+	await nextFrame(dom);
+	const text = dom.document.getElementById("item")!.lastChild!;
+	const range = dom.document.createRange();
+	range.selectNodeContents(text);
+	expect(range.getBoundingClientRect().left).toBe(4);
+	expect(terminal.getVisibleText().split("\n")[0].indexOf("t001")).toBe(4);
+	dom.dispose();
+});
