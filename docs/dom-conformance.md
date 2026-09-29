@@ -21,10 +21,10 @@ that need them fail.
 - Reference tests (no testharness, scored by pixels): 59
 - Excluded, each with its reason below: 241
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 770
-- Files whose harness did not complete: 103
-- Subtests passed: 96113
-- Subtests failed: 1435
+- Files whose harness completed: 771
+- Files whose harness did not complete: 102
+- Subtests passed: 96134
+- Subtests failed: 1428
 
 ## Exclusions
 
@@ -556,7 +556,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/focus-preserve-render.html | REFTEST | 0 | 0 |
 | dom/nodes/moveBefore/focus-preserve.html | OK | 4 | 0 |
 | dom/nodes/moveBefore/focus-within.html | OK | 5 | 0 |
-| dom/nodes/moveBefore/fullscreen-preserve.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/fullscreen-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/hover-style-update.html | OK | 0 | 2 |
 | dom/nodes/moveBefore/iframe-document-preserve.window.js | EXCLUDED (requires-browsing-context: the move happens inside a frame's document) | 0 | 0 |
 | dom/nodes/moveBefore/listed-form-element-reset.html | OK | 1 | 0 |
@@ -668,7 +668,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-dispatch-order.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-other-document.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-propagation-stopped.html | OK | 1 | 0 |
-| dom/events/Event-dispatch-redispatch.html | OK | 2 | 2 |
+| dom/events/Event-dispatch-redispatch.html | OK | 3 | 1 |
 | dom/events/Event-dispatch-reenter.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-single-activation-behavior.html | EXCLUDED (requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script) | 0 | 0 |
 | dom/events/Event-dispatch-target-moved.html | OK | 0 | 1 |
@@ -714,10 +714,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | OK | 0 | 1 |
 | dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | OK | 0 | 1 |
 | dom/events/event-global-set-before-handleEvent-lookup.window.js | OK | 0 | 1 |
-| dom/events/event-global.html | OK | 0 | 8 |
+| dom/events/event-global.html | OK | 1 | 7 |
 | dom/events/event-handler-attribute-replace-preserves-passive.html | OK | 2 | 0 |
 | dom/events/event-src-element-nullable.html | OK | 1 | 0 |
-| dom/events/focus-event-document-move.html | ERROR | 0 | 1 |
+| dom/events/focus-event-document-move.html | OK | 1 | 0 |
 | dom/events/handler-count.html | ERROR | 0 | 2 |
 | dom/events/label-default-action.html | OK | 1 | 0 |
 | dom/events/legacy-pre-activation-behavior.window.js | OK | 1 | 0 |
@@ -766,7 +766,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | OK | 0 | 1 |
 | dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | OK | 8 | 4 |
 | dom/events/passive-by-default.html | OK | 100 | 0 |
-| dom/events/pointer-event-document-move.html | OK | 0 | 1 |
+| dom/events/pointer-event-document-move.html | OK | 1 | 0 |
 | dom/events/preventDefault-during-activation-behavior.html | OK | 1 | 0 |
 | dom/events/relatedTarget.window.js | OK | 1 | 5 |
 | dom/events/remove-all-listeners.html | OK | 2 | 0 |
@@ -926,7 +926,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/collapseToStartEnd.html | OK | 57 | 0 |
 | selection/contenteditable/cefalse-on-boundaries.html | OK | 4 | 0 |
 | selection/contenteditable/collapse.html | OK | 0 | 3 |
-| selection/contenteditable/initial-selection-during-focus-event-propagation.html | OK | 0 | 1 |
+| selection/contenteditable/initial-selection-during-focus-event-propagation.html | OK | 1 | 2 |
 | selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR ("" is not a valid element name) | 0 | 0 |
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 1 | 35 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
@@ -946,9 +946,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/extend-exception.html | OK | 1 | 0 |
 | selection/extend-selection-backward-on-input.html | OK | 0 | 1 |
 | selection/extend-selection-in-shadow-tree.html | OK | 0 | 1 |
-| selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html | OK | 0 | 3 |
+| selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html | OK | 3 | 0 |
 | selection/fire-selectionchange-event-on-document-if-textcontrol-element-is-in-shadow-tree.html | OK | 0 | 1 |
-| selection/fire-selectionchange-event-on-pressing-backspace.html | OK | 0 | 2 |
+| selection/fire-selectionchange-event-on-pressing-backspace.html | OK | 2 | 0 |
 | selection/fire-selectionchange-event-on-textcontrol-element-on-pressing-backspace.html | OK | 1 | 0 |
 | selection/getRangeAt.html | OK | 4 | 0 |
 | selection/getSelection.html | OK | 6 | 12 |
@@ -1012,7 +1012,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/test-iframe.html | REFTEST | 0 | 0 |
 | selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-browsing-context: the focus moves in from an iframe) | 0 | 0 |
 | selection/textcontrols/focus.html | OK | 0 | 1 |
-| selection/textcontrols/initial-selection-during-focus-event-propagation.html | OK | 0 | 1 |
+| selection/textcontrols/initial-selection-during-focus-event-propagation.html | OK | 3 | 0 |
 | selection/textcontrols/onselectionchange-content-attribute.html | OK | 2 | 0 |
 | selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
@@ -1242,7 +1242,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference/empty.html | REFTEST | 0 | 0 |
 | shadow-dom/scroll-restore-shadow.html | OK | 1 | 0 |
-| shadow-dom/scroll-to-the-fragment-in-shadow-tree.html | ERROR (window.scrollTo is not a function) | 0 | 0 |
+| shadow-dom/scroll-to-the-fragment-in-shadow-tree.html | OK | 10 | 0 |
 | shadow-dom/shadow-root-clonable.html | OK | 6 | 0 |
 | shadow-dom/shadow-style-invalidation-vw-units.html | REFTEST | 0 | 0 |
 | shadow-dom/slot-fallback-content-001.html | REFTEST | 0 | 0 |
@@ -1482,7 +1482,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/pseudo-class-defined.window.js | OK | 3 | 0 |
 | custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html | OK | 6 | 17 |
 | custom-elements/registries/scoped-registry-append.html | OK | 7 | 9 |
-| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | OK | 6 | 8 |
+| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | ERROR | 3 | 11 |
 | custom-elements/registries/scoped-registry-define-upgrade-order.html | OK | 0 | 7 |
 | custom-elements/registries/scoped-registry-effective-global-registry.html | OK | 13 | 53 |
 | custom-elements/registries/scoped-registry-initialize-upgrades.html | OK | 10 | 2 |
@@ -2137,10 +2137,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Calling commitStyles after Node.moveBefore should commit mid-transition value: Test timed out
 
-### dom/nodes/moveBefore/fullscreen-preserve.html
-
-- Document#fullscreenElement: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-
 ### dom/nodes/moveBefore/hover-style-update.html
 
 - Element loses hover when moved to different position: assert_true: expected true got false
@@ -2314,7 +2310,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/events/Event-dispatch-redispatch.html
 
 - Redispatching DOMContentLoaded event after being dispatched: assert_true: Received DOMContentLoaded event should be trusted before redispatching expected true got false
-- Redispatching mouseup event whose default action dispatches a click event: assert_true: Failed to send mouse click due to Error: element click intercepted error expected true got false
 
 ### dom/events/Event-dispatch-reenter.html
 
@@ -2372,7 +2367,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/events/event-global.html
 
-- event exists on window, which is initially set to undefined: assert_own_property: expected property "event" missing
 - window.event is only defined during dispatch: assert_equals: window.event set to current event during dispatch expected (object) object "[object Event]" but got (undefined) undefined
 - window.event is undefined if the target is in a shadow tree (event dispatched outside shadow tree): assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
 - window.event is undefined if the target is in a shadow tree (event dispatched inside shadow tree): assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
@@ -2380,10 +2374,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - window.event is set to the current event during dispatch: Cannot read properties of undefined (reading 'type')
 - window.event is set to the current event, which is the event passed to dispatch: assert_equals: expected (undefined) undefined but got (object) object "[object Event]"
 - window.event is set to the current event, which is the event passed to dispatch (2): XMLHttpRequest is not defined
-
-### dom/events/focus-event-document-move.html
-
-- Moving a node during mousedown should not crash: Test timed out
 
 ### dom/events/handler-count.html
 
@@ -2481,10 +2471,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Synthetic touchmove event with interface TouchEvent is not cancelable: assert_implements: TouchEvent should be supported undefined
 - Synthetic touchend event with interface TouchEvent is not cancelable: assert_implements: TouchEvent should be supported undefined
 - Synthetic touchcancel event with interface TouchEvent is not cancelable: assert_implements: TouchEvent should be supported undefined
-
-### dom/events/pointer-event-document-move.html
-
-- Moving a node to new document should move the registered event listeners together: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### dom/events/relatedTarget.window.js
 
@@ -2659,7 +2645,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/contenteditable/initial-selection-during-focus-event-propagation.html
 
-- Selection should've already been initialized into the editing host when `focus` event is dispatched: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- at the window: assert_equals: Selection when `focus` event listener of window runs should be the same as Selection after the propagation expected "(#text \"ABC\", 0)" but got "null"
+- at the editing host: assert_equals: Selection when `focus` event listener of editing host runs should be the same as Selection after the propagation expected "(#text \"ABC\", 0)" but got "null"
 
 ### selection/contenteditable/modify-around-inline-element-boundary.tentative.html
 
@@ -2762,20 +2749,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Extend selection in shadow tree: promise_test: Unhandled rejection with value: object "InvalidStateError: The selection has no range"
 
-### selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html
-
-- selectionchange fires for single character deletion from contenteditable inline element: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- selectionchange fires for single character deletion from nested contenteditable elements: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- selectionchange fires for multi-character deletion from contenteditable inline element (baseline): promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-
 ### selection/fire-selectionchange-event-on-document-if-textcontrol-element-is-in-shadow-tree.html
 
 - selectionchange event fired on the document in case TextControl element is in Shadow Tree: promise_test: Unhandled rejection with value: object "NotSupportedError: execCommand is not implemented"
-
-### selection/fire-selectionchange-event-on-pressing-backspace.html
-
-- Selectionchange event is fired after removing the character: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- Selectionchange event is fired after removing the range: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### selection/getSelection.html
 
@@ -2897,10 +2873,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### selection/textcontrols/focus.html
 
 - focus() should cancel selection extension by pointer device: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (50, 50) is outside the viewport"
-
-### selection/textcontrols/initial-selection-during-focus-event-propagation.html
-
-- Selection should've already been initialized in the text control when `focus` event is dispatched: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### selection/textcontrols/selectionchange-on-shadow-dom.html
 
@@ -3073,18 +3045,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/focus/click-focus-delegatesFocus-click.html
 
-- click on the host with delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- click on the host with delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- click on the host with no delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- click on the host with no delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- click on the host with delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (40, -477) is outside the viewport"
+- click on the host with delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (40, -477) is outside the viewport"
+- click on the host with no delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (40, -477) is outside the viewport"
+- click on the host with no delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (40, -477) is outside the viewport"
 
 ### shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html
 
-- click on host with delegatesFocus, #aboveSlot tabindex = 2, #slot and #slotted tabindex = 1: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- click on host with delegatesFocus, #aboveSlot tabindex = 2, #slot and #slotted tabindex = 1: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (40, -477) is outside the viewport"
 
 ### shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html
 
-- click on host with delegatesFocus, all tabindex=0 except spacer: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- click on host with delegatesFocus, all tabindex=0 except spacer: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (40, -477) is outside the viewport"
 
 ### shadow-dom/focus/click-focus-slot-ancestor.html
 
@@ -3092,11 +3064,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
-- :focus should be applied to the host and the child node when the focus is moved by mouse click: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- :focus should be applied to the host and the child node when the focus is moved by mouse click: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (40, -476) is outside the viewport"
 
 ### shadow-dom/focus/focus-scroll-under-delegatesFocus.html
 
-- delegatesFocus shouldn't cause extra focus steps: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- delegatesFocus shouldn't cause extra focus steps: assert_false: The document should not scroll expected false got true
 
 ### shadow-dom/focus/focus-shadowhost-display-none.html
 
@@ -3312,8 +3284,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/label-delegatesFocus.html
 
-- Clicking on a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- Clicking on a span in a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- Clicking on a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: assert_true: should have received focus expected true got false
+- Clicking on a span in a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: assert_true: should have received focus expected true got false
 
 ### custom-elements/htmlconstructor/newtarget-customized-builtins.html
 
@@ -3593,8 +3565,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Adding definition to scoped registry should not affect shadow roots using other registries: assert_true: expected true got false
 - Adding definition to scoped registry should upgrade nodes even after the node is moved to a separate shadow tree using a different registry.: assert_true: expected true got false
 - Adding definition to scoped registry affects associated shadow roots in all iframes: assert_true: expected true got false
-- Adding definition to scoped registry affects associated shadow roots in other frame trees: window.open is not a function
-- Adding definition to scoped registry should not upgrade nodes in closed windows: promise_test: Unhandled rejection with value: object "TypeError: window.open is not a function"
+- Adding definition to scoped registry affects associated shadow roots in other frame trees: Cannot read properties of null (reading 'document')
+- Adding definition to scoped registry should not upgrade disconnected elements: 
+- Adding definition to scoped registry should not upgrade nodes in constructed documents: 
+- Adding definition to scoped registry should not upgrade nodes in detached frames: 
+- Adding definition to scoped registry should not upgrade nodes in closed windows: 
 
 ### custom-elements/registries/scoped-registry-define-upgrade-order.html
 
