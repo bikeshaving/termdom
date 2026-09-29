@@ -786,6 +786,10 @@ interface Styling {
 	// of the style record, joined, so a restyle can tell whether the
 	// measurement is still good.
 	measureKey: string;
+	// The display layout read, which the style record does not tell apart:
+	// a block and an inline-block, or a box and display: contents, style
+	// alike and lay out differently.
+	display: Display;
 }
 
 const stylings = new WeakMap<LayoutNode, Styling>();
@@ -846,7 +850,11 @@ function styleLayoutNode(
 	styleLayoutNodeProperties(element, style, positionedElements);
 	shareStyleEdges(style);
 	layoutNode.style = style;
-	stylings.set(layoutNode, {pass, measureKey: getMeasureKey(element)});
+	stylings.set(layoutNode, {
+		pass,
+		measureKey: getMeasureKey(element),
+		display: getLayoutDisplay(element),
+	});
 	layoutNode.invalidate();
 }
 
@@ -5730,9 +5738,12 @@ function applyRestyles(layout: Layout): void {
 				// color, a decoration) changes no box and no measurement, and
 				// rebuilding would restyle every descendant for nothing. A
 				// child whose own style changed is in this set itself.
-				const measureKey = stylings.get(layoutNode!)?.measureKey;
+				const styling = stylings.get(layoutNode!);
+				const measureKey = styling?.measureKey;
+				const sameDisplay = getLayoutDisplay(element) === styling?.display;
 				if (
 					probe.measureKey === measureKey &&
+					sameDisplay &&
 					isSameValue(probe.style, layoutNode!.style)
 				) {
 					continue;
@@ -5740,7 +5751,10 @@ function applyRestyles(layout: Layout): void {
 				// The same kind of box as before takes its parent's box list as
 				// it stands: the node reads its new style, and only a display
 				// or measurement change re-derives its own children.
+				// A display the style record cannot tell apart, block for
+				// inline-block, still changes the box the parent derives.
 				if (
+					sameDisplay &&
 					isBoxKindMatch(layout, element, layoutNode!) &&
 					!isDisplayContents(element) &&
 					probe.style.positionType === layoutNode!.style.positionType

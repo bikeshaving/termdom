@@ -444,6 +444,24 @@ test("a fullscreen transition reaches a document listener once", async () => {
 	dom.dispose();
 });
 
+test("leaving fullscreen for an emptied document clears what the document showed before", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	dom.document.body.innerHTML =
+		"<div id=\"stage\">one</div><div>two</div><div>three</div>";
+	await nextFrame(dom);
+	await dom.document.getElementById("stage")!.requestFullscreen();
+	await nextFrame(dom);
+
+	dom.document.body.innerHTML = "";
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(terminal.getVisibleText().trim()).toBe("");
+
+	dom.dispose();
+});
+
 test("a fullscreen element restyles :modal and :has(), and leaves on removal", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
@@ -472,4 +490,20 @@ test("a fullscreen element restyles :modal and :has(), and leaves on removal", a
 	expect(heard).toEqual(["change", "change"]);
 
 	dom.dispose();
+});
+
+test("a body of any display paints the document", async () => {
+	for (const display of ["block", "inline", "inline-block", "contents"]) {
+		const terminal = new MockProcess({cols: 30, rows: 8});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML = "<div>HEAD</div><div>row</div>";
+		dom.document.body.style.display = display;
+		await nextFrame(dom);
+		const lines = terminal.getVisibleText()
+			.split("\n")
+			.map((line: string) => line.trimEnd())
+			.filter(Boolean);
+		expect([display, ...lines]).toEqual([display, "HEAD", "row"]);
+		dom.dispose();
+	}
 });

@@ -469,7 +469,21 @@ export class Painter {
 		this[kHighlightedText] = collectHighlightedText(this[kDocument]);
 		this[kHighlightStyles] = new Map();
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
-		renderStackingContext(this, this[kDocument].body, ctx, layers);
+		// From the body, the root stacking context's content. A body that
+		// is inline, inline-block or display: contents puts its content in
+		// the root element's boxes rather than its own, so painting starts
+		// at the root.
+		const document = this[kDocument];
+		const bodyDisplay = getDeclaredDisplay(document.body as Element);
+		const fromRoot =
+			document.documentElement !== null &&
+			(bodyDisplay === "contents" || bodyDisplay.startsWith("inline"));
+		renderStackingContext(
+			this,
+			(fromRoot ? document.documentElement : document.body) as Element,
+			ctx,
+			layers,
+		);
 		const rendered = renderedTopLayer(this[kDocument]) as unknown as Element[];
 		for (const element of rendered) {
 			const previousClip = ctx.clipRect;

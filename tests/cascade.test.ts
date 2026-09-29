@@ -1079,3 +1079,19 @@ test("rules filed by id and class still cascade in order of appearance", async (
 	expect(style("three").fontWeight).toBe("400");
 	dom.dispose();
 });
+
+test("a child's blockified display follows its parent's class change both ways", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML = "<style>.flex { display: flex }</style>";
+	document.body.innerHTML = "<span id=\"s\">x</span><div>y</div>";
+	await nextFrame(dom);
+	const span = document.getElementById("s")!;
+	expect(window.getComputedStyle(span).display).toBe("inline");
+	document.body.classList.add("flex");
+	expect(window.getComputedStyle(span).display).toBe("block");
+	document.body.classList.remove("flex");
+	expect(window.getComputedStyle(span).display).toBe("inline");
+	dom.dispose();
+});

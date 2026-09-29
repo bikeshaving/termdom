@@ -5670,10 +5670,11 @@ export class Cascade {
 								subjects.some(
 									(anchor) =>
 										couldAnchor(descendant, anchor) ||
+										// A display change blockifies the changed element's
+										// own children, and those of anyone else it anchors.
 										(anchor.children === true &&
 											parent !== null &&
-											parent !== element &&
-											couldAnchor(parent, anchor)),
+											(parent === element || couldAnchor(parent, anchor))),
 								)
 							) {
 								invalidateElementCaches(this, descendant, notifyLayout);
