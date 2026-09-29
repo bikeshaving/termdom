@@ -4858,7 +4858,10 @@ export class Layout {
 	documentPaintHeight(): number {
 		const root = this[kRootElement];
 		const rootRect = this.getRect(root);
-		let height = rootRect ? Math.ceil(rootRect.height) : 0;
+		let height = Math.max(
+			rootRect ? Math.ceil(rootRect.height) : 0,
+			getDocumentOverflowBottom(this),
+		);
 		const rendered =
 			renderedTopLayer(root.ownerDocument!) as unknown as Element[];
 		for (const element of rendered) {
@@ -5638,7 +5641,10 @@ export class Layout {
 	// is derived is dropped whole.
 	invalidate(node?: Node): void {
 		if (node === undefined) {
+			// Every box re-derives, and takes its style as it does. The root
+			// element is no container's box, so it is restyled on its own.
 			this[kDerivedContainers] = new WeakSet<Element>();
+			this[kRestyled].add(this[kRootElement]);
 			this.invalidateFrame();
 			return;
 		}
@@ -6690,7 +6696,41 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 
 function getDocumentContentHeight(engine: Layout): number {
 	const bodyRect = engine.getRect(engine[kRootElement].ownerDocument?.body);
-	return bodyRect ? Math.ceil(bodyRect.height) : 0;
+	return Math.max(
+		bodyRect ? Math.ceil(bodyRect.height) : 0,
+		getDocumentOverflowBottom(engine),
+	);
+}
+
+// The bottom of the viewport's scrollable overflow (css-overflow-3 §2.2):
+// how far down the in-flow and absolutely positioned boxes reach, past
+// the root's own box. A box that clips its content reaches no further
+// than itself, and a fixed box moves with the viewport, not in it.
+function getDocumentOverflowBottom(engine: Layout): number {
+	const root = engine[kNodeMap].get(engine[kRootElement]);
+	return root ? Math.ceil(getOverflowBottom(root, 0)) : 0;
+}
+
+function getOverflowBottom(node: LayoutNode, originTop: number): number {
+	const top = originTop + node.result.top;
+	let bottom = top + node.getComputedHeight();
+	const element = node.owner as Element | null;
+	if (
+		element?.nodeType === element?.ELEMENT_NODE &&
+		(getComputedValue(element!, "overflow-y") ||
+			getComputedValue(element!, "overflow")) !== "visible"
+	) {
+		return bottom;
+	}
+	for (const child of node.children) {
+		if (
+			child.style.displayType === "none" || child.style.positionType === "fixed"
+		) {
+			continue;
+		}
+		bottom = Math.max(bottom, getOverflowBottom(child, top));
+	}
+	return bottom;
 }
 
 function getContentBoxSize(
