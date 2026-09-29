@@ -981,7 +981,7 @@ export class Exchange extends EventTarget {
 
 	/** Writes on change only. Teardown restores what was engaged. */
 	setDisplayType(name: ModeName, on: boolean): void {
-		if (on === this[kEngagedModes].has(name)) {
+		if (!this[kInteractive] || on === this[kEngagedModes].has(name)) {
 			return;
 		}
 		if (on) {
@@ -1941,6 +1941,9 @@ function installCursorRestoreOnExit(): void {
 	exitHookInstalled = true;
 	process.on("exit", () => {
 		for (const proc of undisposedProcesses) {
+			if (proc.stdout.isTTY !== true) {
+				continue;
+			}
 			try {
 				proc.stdout.write(PANIC_RESTORE);
 			} catch (_err) {
@@ -2014,8 +2017,11 @@ export function transportFromProcess(
 		engaged = false;
 		undisposedProcesses.delete(proc);
 		// Synchronously. The engine's restores go through the writable's queue,
-		// and `dispose(); process.exit()` exits before it flushes.
-		proc.stdout.write(PANIC_RESTORE);
+		// and `dispose(); process.exit()` exits before it flushes. Only a
+		// terminal had modes to restore.
+		if (proc.stdout.isTTY === true) {
+			proc.stdout.write(PANIC_RESTORE);
+		}
 		if (dataListener && proc.stdin) {
 			proc.stdin.removeListener?.("data", dataListener);
 			dataListener = null;
@@ -2136,7 +2142,7 @@ export function transportFromProcess(
 			return proc.stdout.rows || 24;
 		},
 		sharesScreen,
-		interactive: proc.stdout.isTTY !== false,
+		interactive: proc.stdout.isTTY === true,
 		writeSync(text: string): void {
 			try {
 				proc.stdout.write(text);
