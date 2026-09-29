@@ -293,3 +293,26 @@ test("scrollIntoView scrolls ancestor scrollers, then the camera", async () => {
 	expect(terminal.getPlainText()).toContain("deep 5");
 	dom.dispose();
 });
+
+// css-flexbox-1 §4.5 and css-grid-2 §6.6: a scroll container has no
+// content-based minimum, so a flexible item fills its space and scrolls.
+test("a scrolling flex or grid item takes its space, not its content's height", () => {
+	const terminal = new MockProcess({cols: 20, rows: 24});
+	const dom = new TermDOM({transport: terminal.transport});
+	const content = '<div style="height:100px"></div>';
+	dom.document.body.innerHTML =
+		'<div style="display:flex;flex-direction:column;height:10px">' +
+		`<div id="flex" style="flex:1;overflow:auto">${content}</div></div>` +
+		'<div style="display:grid;grid-template-rows:1fr;height:10px">' +
+		`<div id="grid" style="overflow:auto;border:1px solid">${content}</div>` +
+		"</div>" +
+		'<div style="display:grid;grid-template-rows:1fr;height:10px">' +
+		`<div id="visible">${content}</div></div>`;
+	const get = (id: string) => dom.document.getElementById(id)!;
+	expect(get("flex").clientHeight).toBe(10);
+	expect(get("flex").scrollHeight).toBe(100);
+	expect((get("grid") as HTMLElement).offsetHeight).toBe(10);
+	expect(get("grid").clientHeight).toBe(8);
+	expect(get("visible").clientHeight).toBe(100);
+	dom.dispose();
+});
