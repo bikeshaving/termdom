@@ -17,9 +17,9 @@ exports[`list counters and start attribute 1`] = ` 5. Fifth item
                                         
 `;
 
-exports[`list edge cases 1`] = `Orphan item                             
+exports[`list edge cases 1`] = `  •                                     
+Orphan item                             
 Div as list item                        
-                                        
                                         
                                         
                                         

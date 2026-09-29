@@ -1909,3 +1909,15 @@ test("a broken inline is not sized by an out-of-flow descendant", () => {
 	const rect = getBox(split);
 	expect(rect === null || rect.width === 0).toBe(true);
 });
+
+test("min-height in content-box sizing counts the content box", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div id=\"m\" style=\"box-sizing: content-box; min-height: 2em; " +
+		"padding: 1em 0\">x</div>";
+	await nextFrame(dom);
+	expect(dom.document.getElementById("m")!.getBoundingClientRect().height)
+		.toBe(4);
+	dom.dispose();
+});

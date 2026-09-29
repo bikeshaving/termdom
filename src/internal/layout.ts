@@ -611,20 +611,41 @@ const GRID_PLACEMENTS = [
 ] as const;
 
 // Left unset, never pinned to 0. min-width auto is a flex item's
-// content-based minimum, and 0 lets it shrink under its own text.
+// content-based minimum, and 0 lets it shrink under its own text. A length
+// in content-box sizing gets the box's edges, as width and height do.
 function applyMinMax(style: Style, element: Element): void {
-	style.minWidth = toValue(
-		CSSValues.parseUnitValue(getComputedValue(element, "min-width")),
-	);
-	style.minHeight = toValue(
-		CSSValues.parseUnitValue(getComputedValue(element, "min-height")),
-	);
-	style.maxWidth = toValue(
-		CSSValues.parseUnitValue(getComputedValue(element, "max-width")),
-	);
-	style.maxHeight = toValue(
-		CSSValues.parseUnitValue(getComputedValue(element, "max-height")),
-	);
+	const read = (property: string, vertical: boolean): CSSValues.Value => {
+		const value = CSSValues.parseUnitValue(getComputedValue(element, property));
+		return toValue(
+			typeof value === "number"
+				? value + getContentBoxEdges(element, vertical)
+				: value,
+		);
+	};
+	style.minWidth = read("min-width", false);
+	style.minHeight = read("min-height", true);
+	style.maxWidth = read("max-width", false);
+	style.maxHeight = read("max-height", true);
+	// An outside marker sits on a line of the item's own, so an item with
+	// nothing on its lines still has the one the marker needs.
+	if (
+		getLayoutDisplay(element) === "list-item" &&
+		getComputedValue(element, "height") === "auto" &&
+		getComputedValue(element, "list-style-position") !== "inside" &&
+		getComputedValue(element, "list-style-type") !== "none"
+	) {
+		const box = getBoxModel(element);
+		const line =
+			1 +
+			box.paddingTop +
+			box.paddingBottom +
+			box.borderTopWidth +
+			box.borderBottomWidth;
+		const min = style.minHeight;
+		if (!(min.unit === "cell" && min.value >= line)) {
+			style.minHeight = toValue(line);
+		}
+	}
 }
 
 const INSET_EDGES = ["left", "top", "right", "bottom"] as const;
