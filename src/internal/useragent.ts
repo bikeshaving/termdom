@@ -15,6 +15,7 @@ export const UA_ELEMENT_STYLES = `
 	article { display: block; }
 	aside { display: block; }
 	blockquote { display: block; }
+	center { display: block; text-align: center; }
 	body { display: block; }
 	dd { display: block; }
 	details { display: block; }
