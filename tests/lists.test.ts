@@ -441,3 +441,24 @@ test("list rerendering maintains correct layout", async () => {
 
 	dom.dispose();
 });
+
+test("an empty list item keeps the line its marker sits on, through exit", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	dom.document.body.innerHTML = "<div>a</div><ul><li></li><li>b</li></ul>";
+	await nextFrame(dom);
+	const lines = (): string[] => {
+		const all = terminal
+			.getVisibleText()
+			.split("\n")
+			.map((l: string) => l.trimEnd());
+		while (all.length > 0 && all[all.length - 1] === "") {
+			all.pop();
+		}
+		return all;
+	};
+	expect(lines()).toEqual(["a", "  •", "  • b"]);
+	await dom.dispose();
+	expect(lines()).toEqual(["a", "  •", "  • b"]);
+});
