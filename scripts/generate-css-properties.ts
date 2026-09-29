@@ -75,6 +75,11 @@ directLonghands.set("font-variant", [
 	"font-variant-emoji",
 ]);
 
+// css-text-4 §3 makes white-space a shorthand for how white space
+// collapses and whether lines wrap. The property index still lists it as a
+// property of its own.
+directLonghands.set("white-space", ["white-space-collapse", "text-wrap-mode"]);
+
 /** A shorthand's longhands, with nested shorthands (`border`) flattened out. */
 function flatten(name: string, seen = new Set<string>()): string[] {
 	const direct = directLonghands.get(name);

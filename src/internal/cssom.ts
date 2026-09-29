@@ -4305,6 +4305,17 @@ function substituteVar(
 	return out;
 }
 
+/**
+ * The white-space keyword layout lays an element's text out by, from the
+ * two longhands, the nearest keyword where no keyword stands for them.
+ */
+export function getWhiteSpace(element: Element): string {
+	return CSSValues.getLayoutWhiteSpace(
+		getComputedValue(element, "white-space-collapse"),
+		getComputedValue(element, "text-wrap-mode"),
+	);
+}
+
 const declaredDisplays = new WeakMap<ComputedStyleDeclaration, string>();
 
 /**

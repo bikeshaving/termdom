@@ -4,6 +4,7 @@ import {
 	getBoxModel,
 	getComputedValue,
 	getDeclaredDisplay,
+	getWhiteSpace as getElementWhiteSpace,
 	usedValuesChanged,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -482,7 +483,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 	// Under the preserving values a space is content. A card's blank
 	// middle row is three spaces, and this is what makes it a row. Under
 	// pre-line a newline is a forced break and keeps its line.
-	const whiteSpace = getComputedValue(parent, "white-space");
+	const whiteSpace = getElementWhiteSpace(parent);
 	if (isSpacePreserving(whiteSpace)) {
 		return false;
 	}
@@ -553,7 +554,7 @@ function isSuppressedFlexWhitespace(text: Text): boolean {
 	if (!hasItemChildren(getLayoutDisplay(parent))) {
 		return false;
 	}
-	if (isSpacePreserving(getComputedValue(parent, "white-space"))) {
+	if (isSpacePreserving(getElementWhiteSpace(parent))) {
 		return false;
 	}
 	for (let node: Node | null = text; node; node = node.nextSibling) {
@@ -2740,7 +2741,7 @@ interface RectText {
 
 function getWhiteSpace(textNode: Text): string {
 	const parent = flatParentElement(textNode);
-	return parent ? getComputedValue(parent, "white-space") : "normal";
+	return parent ? getElementWhiteSpace(parent) : "normal";
 }
 
 function getInlineBlockWidth(leaf: InlineBlockLeaf): number {
@@ -3289,7 +3290,7 @@ function breakNodes(
 		? flatParentElement(opener)!
 		: (opener as Element);
 
-	const whiteSpace = getComputedValue(styleElement, "white-space");
+	const whiteSpace = getElementWhiteSpace(styleElement);
 	const wordBreak = getComputedValue(styleElement, "word-break");
 	const overflowWrap = getComputedValue(styleElement, "overflow-wrap");
 

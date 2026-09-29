@@ -467,7 +467,6 @@ export const CSS_LONGHANDS: readonly string[] = [
 	"view-transition-name",
 	"view-transition-scope",
 	"visibility",
-	"white-space",
 	"white-space-collapse",
 	"widows",
 	"width",
@@ -1009,7 +1008,6 @@ export const CSS_SHORTHANDS: Readonly<Record<string, readonly string[]>> = {
 		"view-transition-name",
 		"view-transition-scope",
 		"visibility",
-		"white-space",
 		"white-space-collapse",
 		"widows",
 		"width",
@@ -1392,6 +1390,7 @@ export const CSS_SHORTHANDS: Readonly<Record<string, readonly string[]>> = {
 		"transition-behavior",
 	],
 	"view-timeline": ["view-timeline-name", "view-timeline-axis"],
+	"white-space": ["white-space-collapse", "text-wrap-mode"],
 };
 
 /** Every supported property: the longhands and the shorthand names. */
@@ -1949,7 +1948,6 @@ export const CSS_INITIAL_VALUES: Readonly<Record<string, string>> = {
 	"view-transition-name": "none",
 	"view-transition-scope": "none",
 	visibility: "visible",
-	"white-space": "normal",
 	"white-space-collapse": "collapse",
 	widows: "2",
 	width: "auto",
@@ -2085,7 +2083,6 @@ export const CSS_INHERITED_PROPERTIES: readonly string[] = [
 	"text-wrap-mode",
 	"text-wrap-style",
 	"visibility",
-	"white-space",
 	"white-space-collapse",
 	"widows",
 	"window-drag",

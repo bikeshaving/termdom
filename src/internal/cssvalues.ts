@@ -1374,6 +1374,20 @@ const DECORATION_LINE_KEYWORDS = new Set([
 
 // In grammar order. The property index lists a box's sides
 // alphabetically, but the grammar runs top, right, bottom, left.
+// Each white-space keyword as the white-space-collapse and text-wrap-mode
+// it stands for (css-text-4 §3).
+const WHITE_SPACE_KEYWORDS: Record<string, readonly [string, string]> = {
+	normal: ["collapse", "wrap"],
+	pre: ["preserve", "nowrap"],
+	nowrap: ["collapse", "nowrap"],
+	"pre-wrap": ["preserve", "wrap"],
+	"break-spaces": ["break-spaces", "wrap"],
+	"pre-line": ["preserve-breaks", "wrap"],
+};
+
+const TEXT_WRAP_MODES = new Set(["wrap", "nowrap"]);
+const TEXT_WRAP_STYLES = new Set(["auto", "balance", "stable", "pretty"]);
+
 const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
 
 // Declarations are consulted per property, so a shorthand that is never
@@ -1434,6 +1448,38 @@ export function expandShorthands(
 				}
 				for (const longhand of longhands) {
 					out[longhand] = assigned.get(longhand)?.join(" ") ?? "normal";
+				}
+				break;
+			}
+			// css-text-4 §3: white-space is a shorthand for how white space
+			// collapses and whether lines wrap. The shorthand keeps its own
+			// entry, like border's, for the declared value.
+			case "white-space": {
+				const longhands = WHITE_SPACE_KEYWORDS[value.trim().toLowerCase()];
+				if (longhands !== undefined) {
+					out["white-space-collapse"] = longhands[0];
+					out["text-wrap-mode"] = longhands[1];
+				}
+				break;
+			}
+			// css-text-4 §6.1: `<'text-wrap-mode'> || <'text-wrap-style'>`, the
+			// unstated one at its initial value.
+			case "text-wrap": {
+				let mode = "wrap";
+				let style = "auto";
+				let valid = values.length > 0 && values.length <= 2;
+				for (const token of values.map((part) => part.toLowerCase())) {
+					if (TEXT_WRAP_MODES.has(token)) {
+						mode = token;
+					} else if (TEXT_WRAP_STYLES.has(token)) {
+						style = token;
+					} else {
+						valid = false;
+					}
+				}
+				if (valid) {
+					out["text-wrap-mode"] = mode;
+					out["text-wrap-style"] = style;
 				}
 				break;
 			}
@@ -3086,6 +3132,23 @@ export function serializeShorthandValue(
 		: longhands;
 	const values = reset ? stated.map(valueOf) : all;
 
+	// css-text-4 §3: the keyword that stands for the two longhands, or
+	// both of them where none does.
+	if (shorthand === "white-space") {
+		return serializeWhiteSpace(values[0], values[1]);
+	}
+
+	// The shortest form: a longhand at its initial value is left out, and
+	// both at theirs are `wrap`.
+	if (shorthand === "text-wrap") {
+		const [mode, style] = values;
+		const parts = [
+			...(mode === "wrap" ? [] : [mode]),
+			...(style === "auto" ? [] : [style]),
+		];
+		return parts.length === 0 ? "wrap" : parts.join(" ");
+	}
+
 	// css-fonts-4 §6.1: `none` is font-variant-ligatures alone, and no
 	// shorthand spells `none` beside another longhand's value.
 	if (shorthand === "font-variant") {
@@ -4585,6 +4648,47 @@ const BLOCKIFIED_DISPLAYS: Record<string, string> = {
 	"inline-table": "table",
 	"inline math": "block math",
 };
+
+/**
+ * The computed white-space, serialized from its longhands: the keyword that
+ * stands for them, or both longhands when none does.
+ */
+export function serializeWhiteSpace(
+	collapse: string,
+	wrapMode: string,
+): string {
+	for (const [keyword, [c, w]] of Object.entries(WHITE_SPACE_KEYWORDS)) {
+		if (c === collapse && w === wrapMode) {
+			return keyword;
+		}
+	}
+	return `${collapse} ${wrapMode}`;
+}
+
+/**
+ * The white-space keyword layout works to for a pair of longhands. The
+ * pairs no keyword stands for take the nearest: breaks kept without
+ * wrapping lay out as pre-line, and spaces kept without newlines, or
+ * discarded, as the keyword that treats spaces the same way.
+ */
+export function getLayoutWhiteSpace(
+	collapse: string,
+	wrapMode: string,
+): string {
+	const nowrap = wrapMode === "nowrap";
+	switch (collapse) {
+		case "preserve":
+			return nowrap ? "pre" : "pre-wrap";
+		case "break-spaces":
+			return nowrap ? "pre" : "break-spaces";
+		case "preserve-breaks":
+			return "pre-line";
+		case "preserve-spaces":
+			return nowrap ? "pre" : "pre-wrap";
+		default:
+			return nowrap ? "nowrap" : "normal";
+	}
+}
 
 export function getBlockifiedDisplay(display: string): string {
 	return BLOCKIFIED_DISPLAYS[display] ?? display;

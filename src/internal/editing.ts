@@ -7,6 +7,7 @@
  * preventDefault has already been heard.
  */
 
+import {getWhiteSpace} from "./cssom.ts";
 import {dispatchAsUserAgent, getFocusedElement} from "./dom.ts";
 import {getNextGraphemeBoundary, getPreviousGraphemeBoundary} from "./text.ts";
 
@@ -1076,7 +1077,7 @@ function isCollapsibleWhiteSpace(text: globalThis.Text): boolean {
 	if (parent === null || view === null) {
 		return true;
 	}
-	return !PRESERVED_WHITE_SPACE.has(view.getComputedStyle(parent).whiteSpace);
+	return !PRESERVED_WHITE_SPACE.has(getWhiteSpace(parent as Element));
 }
 
 function hasRenderedSibling(
