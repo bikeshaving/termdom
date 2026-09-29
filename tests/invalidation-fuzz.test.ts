@@ -381,7 +381,12 @@ test(
 					dom.dispose();
 				}
 			},
-		), {seed: SEED, numRuns: RUNS, endOnFailure: true});
+		), {
+			seed: SEED,
+			numRuns: RUNS,
+			endOnFailure: true,
+			includeErrorInReport: true,
+		});
 	},
 	120_000,
 );

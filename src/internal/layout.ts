@@ -225,6 +225,13 @@ function isBlockified(element: Element): boolean {
 	return isOutOfFlow(element) || hasItemParent(element);
 }
 
+// An inline box, whose content flows on the lines around it. An inline a
+// flex or grid container holds, or one taken out of flow, is blockified
+// into a block container, and lays its content out on lines of its own.
+function isInlineBox(element: Element): boolean {
+	return getLayoutDisplay(element) === "inline" && !isBlockified(element);
+}
+
 function getUsedDisplay(element: Element): Display {
 	const display = getLayoutDisplay(element);
 	if (!isInlineDisplay(display)) {
@@ -279,10 +286,10 @@ function isSplitAroundBlock(element: Element): boolean {
 	if (getLayoutDisplay(element) !== "inline") {
 		return false;
 	}
-	// A grid item is already a block container. Handing its content to the
-	// grid would put its own children in cells of their own.
+	// A flex or grid item is already a block container. Splitting it would
+	// hand its own children to the container as items of their own.
 	const parent = boxParentElement(element);
-	if (parent && isGridDisplay(getLayoutDisplay(parent))) {
+	if (parent && hasItemChildren(getLayoutDisplay(parent))) {
 		return false;
 	}
 	return hasBlockLevelBox(element);
@@ -483,7 +490,10 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 
 	// Inside an inline box the space is on a line with content, and is a
 	// space.
-	if (isInlineDisplay(getLayoutDisplay(parent))) {
+	if (
+		isInlineDisplay(getLayoutDisplay(parent)) &&
+		(isAtomicInline(getLayoutDisplay(parent)) || isInlineBox(parent))
+	) {
 		return false;
 	}
 
@@ -1653,8 +1663,7 @@ function getRunContainer(layout: Layout, node: Node): Element | null {
 		return null;
 	}
 	const startsOwnRun =
-		node.nodeType === node.ELEMENT_NODE &&
-		getLayoutDisplay(node as Element) !== "inline";
+		node.nodeType === node.ELEMENT_NODE && !isInlineBox(node as Element);
 	return getRunContainerFromParent(layout, parent, startsOwnRun);
 }
 
@@ -1674,12 +1683,12 @@ function getRunContainerFromParent(
 		if (isOutOfFlow(current)) {
 			return current;
 		}
-		const display = getLayoutDisplay(current);
 		// An inline box is transparent. Its content belongs to the run around
 		// it.
-		if (display === "inline") {
+		if (isInlineBox(current)) {
 			continue;
 		}
+		const display = getLayoutDisplay(current);
 		if (isAtomicInline(display)) {
 			// An atomic inline nested in one starts a run there rather than
 			// joining the run its host is in.
@@ -2833,7 +2842,7 @@ function collectLeafNodes(
 		let root: Element = parentElement;
 		for (
 			let ancestor = getBoxParentElement(root);
-			ancestor && getLayoutDisplay(root) === "inline" && !isOutOfFlow(root);
+			ancestor && isInlineBox(root);
 			ancestor = getBoxParentElement(root)
 		) {
 			root = ancestor;
@@ -5359,7 +5368,7 @@ export class Layout {
 				parent;
 				parent = flatParentElement(parent)
 			) {
-				if (getLayoutDisplay(parent) === "inline") {
+				if (isInlineBox(parent)) {
 					continue;
 				}
 				const content = this.contentRect(parent);
@@ -6446,24 +6455,6 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		runHead,
 		layoutNode,
 	);
-
-	// getDocumentPosition gives the border box, and a blockified
-	// inline flex item reserved padding and border in it (styleLayoutNode's
-	// parentIsFlex exception) that its text ignored, painting at the border
-	// edge. Scoped to exactly that case. A normal inline's box model is
-	// cleared, an inline-block's offset is getDocumentPosition's, and a block's
-	// run head is a text node with no box.
-	if (runHead.nodeType === runHead.ELEMENT_NODE) {
-		const runHeadElement = runHead as Element;
-		if (
-			getLayoutDisplay(runHeadElement) === "inline" &&
-			hasItemParent(runHeadElement)
-		) {
-			const runHeadBox = getBoxModel(runHeadElement);
-			containerX += runHeadBox.paddingLeft + runHeadBox.borderLeftWidth;
-			containerY += runHeadBox.paddingTop + runHeadBox.borderTopWidth;
-		}
-	}
 
 	let currentBreakResult = breakResult;
 	let accumulatedOffsetX = 0;

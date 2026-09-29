@@ -914,3 +914,32 @@ test("children of a display: contents element are the flex container's items", a
 	expect(lines[1]).toBe("[ ] edit [ x ]");
 	dom.dispose();
 });
+
+test("an inline flex or grid item is a block container, not split around its blocks", async () => {
+	const cases: Array<[string, string[]]> = [
+		[
+			"<div style='display:flex;gap:1ch'><span>ab<div>cd</div>ef</span><b>g</b></div>",
+			["ab g", "cd", "ef"],
+		],
+		[
+			"<div style='display:flex;gap:1ch'><span style='padding-left:1ch'>hi<div>yo</div></span><b>g</b></div>",
+			[" hi g", " yo"],
+		],
+		[
+			"<div style='display:grid;grid-template-columns:4ch 4ch'><span>ab<div>cd</div>ef</span><b>g</b></div>",
+			["ab  g", "cd", "ef"],
+		],
+	];
+	for (const [html, expected] of cases) {
+		const terminal = new MockProcess({cols: 20, rows: 8});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML = html;
+		await nextFrame(dom);
+		const lines = terminal.getVisibleText()
+			.split("\n")
+			.map((line: string) => line.trimEnd())
+			.filter(Boolean);
+		expect(lines).toEqual(expected);
+		dom.dispose();
+	}
+});
