@@ -723,7 +723,9 @@ const EXPANDED_SHORTHANDS: Record<string, string> = {
 	"place-items": "center start",
 	"place-self": "center start",
 	"text-decoration": "underline",
+	"text-wrap": "nowrap balance",
 	transition: "left 2s ease-in 0.5s, color 1s",
+	"white-space": "pre",
 };
 
 /**
@@ -771,7 +773,6 @@ const UNEXPANDED_SHORTHANDS: Record<string, string> = {
 	"scroll-padding-inline": "scroll snapping",
 	"scroll-timeline": "scroll-driven animations",
 	"text-emphasis": "emphasis marks are finer than a cell",
-	"text-wrap": "text-wrap-style, its second half",
 	"timeline-trigger": "no animation clock",
 	"timeline-trigger-activation-range": "no animation clock",
 	"timeline-trigger-active-range": "no animation clock",
@@ -1093,5 +1094,28 @@ test("a child's blockified display follows its parent's class change both ways",
 	expect(window.getComputedStyle(span).display).toBe("block");
 	document.body.classList.remove("flex");
 	expect(window.getComputedStyle(span).display).toBe("inline");
+	dom.dispose();
+});
+
+test("white-space is the shorthand of its two longhands, both ways", async () => {
+	const terminal = new MockProcess({cols: 12, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<div id=\"a\" style=\"white-space: pre\">x</div>" +
+		"<div id=\"b\" style=\"white-space-collapse: preserve\">x</div>" +
+		"<div id=\"c\" style=\"text-wrap: nowrap\">a b c dddd eeee ffff</div>";
+	await nextFrame(dom);
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!);
+	expect(style("a").getPropertyValue("white-space-collapse")).toBe("preserve");
+	expect(style("a").getPropertyValue("text-wrap-mode")).toBe("nowrap");
+	expect(style("a").whiteSpace).toBe("pre");
+	expect(document.getElementById("a")!.style.whiteSpace).toBe("pre");
+	expect(style("b").whiteSpace).toBe("pre-wrap");
+	expect(style("c").whiteSpace).toBe("nowrap");
+	expect(document.getElementById("c")!.style.textWrap).toBe("nowrap");
+	// Unwrapped, the line runs past the terminal's 12 columns.
+	expect(terminal.getVisibleText()).toContain("a b c dddd e");
 	dom.dispose();
 });

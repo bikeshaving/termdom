@@ -3,6 +3,7 @@ import {
 	getBoxModel,
 	getComputedValue,
 	getDeclaredDisplay,
+	getWhiteSpace,
 	resolveBorderSides,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -287,7 +288,7 @@ function readPaintStyle(element: Element): PaintStyle {
 		overflowX: getComputedValue(element, "overflow-x") || overflow,
 		overflowY: getComputedValue(element, "overflow-y") || overflow,
 		textTransform: getComputedValue(element, "text-transform"),
-		whiteSpace: getComputedValue(element, "white-space"),
+		whiteSpace: getWhiteSpace(element),
 		tabSize: parseTabSize(getComputedValue(element, "tab-size")),
 		shiftX,
 		shiftY,

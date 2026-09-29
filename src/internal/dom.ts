@@ -16,6 +16,7 @@ import {
 	getComputedValue,
 	getInlineStyle,
 	getStyleSheets,
+	getWhiteSpace,
 	styleAttributeChanged,
 	styleElementSheet,
 	styleShadowAttached,
@@ -29023,9 +29024,7 @@ export function selectUnits(
 			return true;
 		}
 		const parent = flatParentElement(part.node);
-		const whiteSpace = parent === null
-			? ""
-			: getComputedValue(parent as Element, "white-space");
+		const whiteSpace = parent === null ? "" : getWhiteSpace(parent as Element);
 		return /^(pre|pre-wrap|pre-line|break-spaces)$/.test(whiteSpace);
 	};
 	const [anchorStart, anchorEnd] = getUnitBounds(run.text, from, unit, isBreak);
