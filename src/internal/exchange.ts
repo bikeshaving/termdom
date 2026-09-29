@@ -1878,10 +1878,13 @@ export interface TTYWriteStream {
 
 export interface TTYReadStream {
 	isTTY: boolean;
+	fd?: number;
 	on(
 		event: "data",
 		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
 	): unknown;
+	on(event: "end", listener: () => void): unknown;
+	listenerCount?(event: string): number;
 	removeListener?(
 		event: "data",
 		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
@@ -1940,6 +1943,41 @@ function installCursorRestoreOnExit(): void {
 	});
 }
 
+function isPipe(stream: TTYReadStream): boolean {
+	const fs = (
+		process as {getBuiltinModule?(name: string): {fstatSync(fd: number): {
+			isFIFO(): boolean;
+			isSocket(): boolean;
+		};} | undefined;}
+	).getBuiltinModule?.("node:fs");
+	if (fs === undefined || typeof stream.fd !== "number") {
+		return false;
+	}
+	try {
+		const stat = fs.fstatSync(stream.fd);
+		return stat.isFIFO() || stat.isSocket();
+	} catch (_err) {
+		// A closed descriptor is no pipe to watch.
+		return false;
+	}
+}
+
+// Without a terminal, a stdin piped from the process that started this one
+// ends when that process does, which sends no hangup. The session ends with
+// it, as it would with the terminal. Stdin from /dev/null or a file ends at
+// once and says nothing about the parent, so it is left alone. An app
+// already reading stdin keeps the reading, and its end still arrives.
+function closeOnPipeEnd(proc: ProcessLike, close: () => void): void {
+	const stdin = proc.stdin;
+	if (stdin === undefined || !isPipe(stdin)) {
+		return;
+	}
+	stdin.on("end", close);
+	if ((stdin.listenerCount?.("data") ?? 0) === 0) {
+		stdin.resume();
+	}
+}
+
 /**
  * Inert until the first read of `readable` engages raw mode and the
  * listeners. Cancelling it hands the tty back.
@@ -1989,7 +2027,14 @@ export function transportFromProcess(
 	const readable = new ReadableStream<string>(
 		{
 			pull: (controller) => {
-				if (engaged || !proc.stdin?.isTTY) {
+				if (engaged) {
+					return;
+				}
+				if (!proc.stdin?.isTTY) {
+					closeOnPipeEnd(proc, () => {
+						closedResolve({});
+						setImmediate(() => proc.exit(0));
+					});
 					return;
 				}
 				engaged = true;
