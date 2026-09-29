@@ -1,11 +1,15 @@
 /**
- * innerHTML is a fixpoint after one round trip.
+ * innerHTML reads back what the reference parser and serializer make of it.
  *
  * Assigning markup and reading it back gives the serialization of what the
- * parser made of it; assigning THAT and reading it back must give the same
- * string. Anything else is a disagreement between the two, and a string that
- * parses into a different tree each time it makes a round trip is the shape
- * mutation XSS is written in.
+ * parser made of it, and parse5, which implements the HTML Standard's
+ * parser and serializer, must give the same string. So must a second round
+ * trip through the first one's output. A second trip need not give back the
+ * first: HTML says a serialization may reparse into another tree, as a
+ * form the parser put inside a paragraph does. What matters is that the
+ * engine changes the tree exactly as the standard does, since a string that
+ * parses differently here than in a browser is the shape mutation XSS is
+ * written in.
  *
  * The generator leans on where the two are most likely to disagree: raw-text
  * elements, entities and bare `<`/`&`, attribute quoting, comments full of
@@ -16,6 +20,7 @@
  */
 import {test} from "@b9g/libuild/test";
 import fc from "fast-check";
+import {defaultTreeAdapter, html, parseFragment, serialize} from "parse5";
 
 import {TermDOM} from "../src/index.ts";
 import {MockProcess} from "../tests/test-utils.js";
@@ -109,12 +114,20 @@ const markupArbitrary = fc.letrec<{markup: string}>((tie) => ({
 		.map(([tag, inner]) => `<${tag}>${inner.join("")}</${tag}>`)),
 })).markup;
 
+// The markup as parse5 parses it into a div and serializes it back.
+const referenceContext =
+	defaultTreeAdapter.createElement("div", html.NS.HTML, []);
+
+function reference(markup: string): string {
+	return serialize(parseFragment(referenceContext, markup, {}));
+}
+
 const documentArbitrary = fc
 	.array(markupArbitrary, {minLength: 1, maxLength: 4})
 	.map((parts) => parts.join(""));
 
 test(
-	"innerHTML reaches a fixpoint after one round trip",
+	"innerHTML round trips as the reference parser and serializer do",
 	async () => {
 		// One document per batch of runs: nothing here paints, so the mutation
 		// records the engine queues on the way in are never drained, and a
@@ -142,11 +155,15 @@ test(
 					const once = host.innerHTML;
 					host.innerHTML = once;
 					const twice = host.innerHTML;
-					if (once !== twice) {
+					const expectedOnce = reference(markup);
+					const expectedTwice = reference(expectedOnce);
+					if (once !== expectedOnce || twice !== expectedTwice) {
 						throw new Error(
 							`markup: ${JSON.stringify(markup)}\n` +
 							`once:   ${JSON.stringify(once)}\n` +
-							`twice:  ${JSON.stringify(twice)}`,
+							`parse5: ${JSON.stringify(expectedOnce)}\n` +
+							`twice:  ${JSON.stringify(twice)}\n` +
+							`parse5: ${JSON.stringify(expectedTwice)}`,
 						);
 					}
 				},
