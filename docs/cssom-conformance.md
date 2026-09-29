@@ -807,10 +807,10 @@ A system color computes as its keyword here, not as an rgb(). The name stands fo
 
 ### getComputedStyle-insets-relpos-inline.html
 
-- OOF with left fixed right auto in relpos inline container: assert_equals: expected "140px" but got "-88px"
-- OOF with left auto right fixed in relpos inline container: assert_equals: expected "140px" but got "-88px"
-- OOF with left fixed right auto in relpos inline container with mixed directions: assert_equals: expected "140px" but got "-88px"
-- OOF with left auto right fixed in relpos inline container with mixed directions: assert_equals: expected "140px" but got "-88px"
+- OOF with left fixed right auto in relpos inline container: assert_equals: expected "140px" but got "-87px"
+- OOF with left auto right fixed in relpos inline container: assert_equals: expected "140px" but got "-87px"
+- OOF with left fixed right auto in relpos inline container with mixed directions: assert_equals: expected "140px" but got "-87px"
+- OOF with left auto right fixed in relpos inline container with mixed directions: assert_equals: expected "140px" but got "-87px"
 
 ### getComputedStyle-line-height.html
 
