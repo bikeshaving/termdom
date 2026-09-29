@@ -301,3 +301,27 @@ test("removing the focused element restyles the ancestors it leaves", async () =
 	expect(color("#outer")).toBe("rgb(0, 0, 0)");
 	termdom.dispose();
 });
+
+test("removing the pressed element leaves :active with its parent, as a full restyle sees it", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	const {document, window} = dom;
+	document.head.innerHTML = "<style>#box:active { color: rgb(255, 0, 0) }</style>";
+	document.body.innerHTML = "<div id=\"box\"><span id=\"inner\">press</span></div>";
+	await nextFrame(dom);
+	// A press with no release, so the button is still down.
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;2;1M"));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	expect(window.getComputedStyle(box).color).toBe("rgb(255, 0, 0)");
+
+	document.getElementById("inner")!.remove();
+	await nextFrame(dom);
+	const incremental = window.getComputedStyle(box).color;
+	document.head.append(document.createElement("style"));
+	expect(window.getComputedStyle(box).color).toBe(incremental);
+	expect(incremental).toBe("rgb(255, 0, 0)");
+	dom.dispose();
+});

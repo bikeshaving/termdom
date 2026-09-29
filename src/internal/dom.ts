@@ -6348,6 +6348,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 	}
 	leaveFullscreenOnRemoval(document, node);
 	releasePointerCaptureOnRemoval(document, node);
+	movePointerStatesOffRemoval(document, node, parent);
 	const parentWasConnected = parent[kConnected];
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		descendant[kConnected] = false;
@@ -30373,6 +30374,32 @@ function releasePointerCaptureOnRemoval(document: Document, node: Node): void {
 		isShadowIncludingInclusiveAncestor(node, state.pending)
 	) {
 		state.pending = null;
+	}
+}
+
+// The pressed or hovered element leaving the tree hands :active and :hover
+// to the parent it left, as browsers do, while the button is still down
+// and the pointer still over the place it was. The parent already matched
+// through it, so nothing changes style.
+function movePointerStatesOffRemoval(
+	document: Document,
+	node: Node,
+	parent: Node,
+): void {
+	const heir = parent instanceof ShadowRoot
+		? (parent[kHost] as Element)
+		: parent.nodeType === ELEMENT_NODE ? (parent as Element) : null;
+	for (const states of [activeElements, hoveredElements]) {
+		const element = states.get(document);
+		if (
+			element !== undefined && isShadowIncludingInclusiveAncestor(node, element)
+		) {
+			if (heir === null) {
+				states.delete(document);
+			} else {
+				states.set(document, heir);
+			}
+		}
 	}
 }
 
