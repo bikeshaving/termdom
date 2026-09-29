@@ -428,11 +428,9 @@ const EXCLUSIONS: Record<string, string> = {
 	"dom/nodes/Document-characterSet-normalization-2.html":
 		"requires-fetch: encoding labels normalized from fetched documents",
 
-	// requires-script-execution: the document's own parser must compile and
-	// run a script -- an event handler content attribute here. This DOM parses
-	// scripts as text, as a terminal document has no script runner.
-	"dom/nodes/remove-unscopable.html":
-		"requires-script-execution: the test reads its result out of an onclick content attribute",
+	// requires-script-execution: the document's own parser must run a script
+	// partway through the document. This DOM parses scripts as text, as a
+	// terminal document has no script runner.
 	"dom/nodes/MutationObserver-document.html":
 		"requires-script-execution: the observer is installed by a script the parser runs partway through the document, and the records under test are the parser's own insertions",
 
@@ -592,8 +590,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite",
 	"custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html":
 		"not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite",
-	"dom/events/Event-dispatch-single-activation-behavior.html":
-		"requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script",
 };
 
 /**
@@ -682,32 +678,12 @@ const DEVIATIONS: Array<[string, string]> = [
 		"`containsNode` answers over the node tree, so a node that a shadow root leaves out of the flattened tree is still contained in a selection over its parent. The four failing subtests expect false, which scores the flattened tree. That is a rendering question.",
 	],
 	[
-		"dom/nodes/querySelector-id-nth-child.html",
-		"An element's id does not become a property of the window. The HTML Standard calls the Window's named property access a legacy quirk, and this engine does not implement it, so a test that reaches a fixture by its bare id fails.",
-	],
-	[
-		"dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute",
-		"The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick=\"...\"` in markup is a function compiled from the attribute's value, and this engine never compiles script, so the attribute sets no handler and the IDL attribute reads back null.",
-	],
-	[
 		"dom/collections/domstringmap-supported-property-names.html, custom-elements/reactions/DOMStringMap.html",
 		"`dataset` answers with a DOMStringMap whose properties are ordinary own accessors, one per data-* attribute, for the same reason a collection's indexed properties are: this tree uses no Proxy anywhere. Reading and writing a name the element already carries goes straight through to the attribute. Assigning a name it does not carry yet creates an ordinary property instead of the attribute.",
 	],
 	[
-		"custom-elements/HTMLElement-attachInternals.html, and the constraint validation members of the built-in controls",
-		"`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented. `:valid`, `:invalid`, `:user-valid`, `:user-invalid`, `:in-range` and `:out-of-range` read the same flags, so they are selectors this engine accepts and matches nothing with -- which is the `:invalid` subtest of dom/nodes/Element-closest.html.",
-	],
-	[
 		"SVG and MathML elements",
 		"An element in the SVG or MathML namespace is an SVGElement or a MathMLElement and nothing more. The SVGGraphicsElement and MathMLMathElement hierarchies, and the geometry and presentation interfaces under them, belong to other specifications and describe rendering this DOM does not do. Every tree operation over a foreign element is implemented: creation, namespace, cloning, serialization and selectors.",
-	],
-	[
-		"shadow-dom/declarative/declarative-shadow-dom-attachment.html",
-		"All 654 subtests pass and the harness reports a timeout. The file builds 654 declarative shadow trees in one document, and every live collection materialized along the way is resynchronized on each later mutation, because indexed properties are accessors rather than a proxy's traps. That cost is quadratic in the number of collections the file has read, and this file reads enough of them to exceed testharness's own ten-second limit.",
-	],
-	[
-		"dom/nodes/NodeList-static-length-getter-tampered-*.html",
-		"These pass their subtests and their harness times out. Each is a 250-million-iteration JIT stress loop over `nodeList[i]`, and an accessor property is slower to read than the exotic indexed getter a browser's binding layer generates.",
 	],
 ];
 

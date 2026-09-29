@@ -19,12 +19,12 @@ that need them fail.
 
 - Test files in the suites: 1173
 - Reference tests (no testharness, scored by pixels): 59
-- Excluded, each with its reason below: 241
+- Excluded, each with its reason below: 239
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 771
+- Files whose harness completed: 773
 - Files whose harness did not complete: 102
-- Subtests passed: 96134
-- Subtests failed: 1428
+- Subtests passed: 96264
+- Subtests failed: 1436
 
 ## Exclusions
 
@@ -81,7 +81,6 @@ that need them fail.
 | custom-elements/upgrading/Document-importNode-customized-builtins.html | customized built-ins: importing an element with an is value |
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | customized built-ins: cloning an element with an is value |
 | custom-elements/upgrading/upgrading-parser-created-element.html | requires-script-execution: the element under test is one the parser created around a script it ran |
-| dom/events/Event-dispatch-single-activation-behavior.html | requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | requires-browsing-context: which global an error event is fired at, across frames |
 | dom/events/Event-timestamp-cross-realm-getter.html | requires-browsing-context: a timeStamp getter taken from a frame's realm |
 | dom/events/EventListener-handleEvent-cross-realm.html | requires-browsing-context: listener objects built in a frame's realm |
@@ -174,7 +173,6 @@ that need them fail.
 | dom/nodes/query-target-in-load-event.html | requires-browsing-context: the query runs in a frame's load event |
 | dom/nodes/remove-and-adopt-thcrash.html | requires-browsing-context: adoption into a frame's document |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | requires-browsing-context: the node is adopted into a frame's document |
-| dom/nodes/remove-unscopable.html | requires-script-execution: the test reads its result out of an onclick content attribute |
 | dom/ranges/Range-cloneContents.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
 | dom/ranges/Range-deleteContents.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
 | dom/ranges/Range-extractContents-dynamic-end.html | requires-browsing-context: the end container is removed from inside an iframe's unload event |
@@ -301,33 +299,13 @@ A selection whose range is inside a shadow tree of the document still answers `r
 
 `containsNode` answers over the node tree, so a node that a shadow root leaves out of the flattened tree is still contained in a selection over its parent. The four failing subtests expect false, which scores the flattened tree. That is a rendering question.
 
-### dom/nodes/querySelector-id-nth-child.html
-
-An element's id does not become a property of the window. The HTML Standard calls the Window's named property access a legacy quirk, and this engine does not implement it, so a test that reaches a fixture by its bare id fails.
-
-### dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute
-
-The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick="..."` in markup is a function compiled from the attribute's value, and this engine never compiles script, so the attribute sets no handler and the IDL attribute reads back null.
-
 ### dom/collections/domstringmap-supported-property-names.html, custom-elements/reactions/DOMStringMap.html
 
 `dataset` answers with a DOMStringMap whose properties are ordinary own accessors, one per data-* attribute, for the same reason a collection's indexed properties are: this tree uses no Proxy anywhere. Reading and writing a name the element already carries goes straight through to the attribute. Assigning a name it does not carry yet creates an ordinary property instead of the attribute.
 
-### custom-elements/HTMLElement-attachInternals.html, and the constraint validation members of the built-in controls
-
-`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented. `:valid`, `:invalid`, `:user-valid`, `:user-invalid`, `:in-range` and `:out-of-range` read the same flags, so they are selectors this engine accepts and matches nothing with -- which is the `:invalid` subtest of dom/nodes/Element-closest.html.
-
 ### SVG and MathML elements
 
 An element in the SVG or MathML namespace is an SVGElement or a MathMLElement and nothing more. The SVGGraphicsElement and MathMLMathElement hierarchies, and the geometry and presentation interfaces under them, belong to other specifications and describe rendering this DOM does not do. Every tree operation over a foreign element is implemented: creation, namespace, cloning, serialization and selectors.
-
-### shadow-dom/declarative/declarative-shadow-dom-attachment.html
-
-All 654 subtests pass and the harness reports a timeout. The file builds 654 declarative shadow trees in one document, and every live collection materialized along the way is resynchronized on each later mutation, because indexed properties are accessors rather than a proxy's traps. That cost is quadratic in the number of collections the file has read, and this file reads enough of them to exceed testharness's own ten-second limit.
-
-### dom/nodes/NodeList-static-length-getter-tampered-*.html
-
-These pass their subtests and their harness times out. Each is a 250-million-iteration JIT stress loop over `nodeList[i]`, and an accessor property is slower to read than the exotic indexed getter a browser's binding layer generates.
 
 ## Files
 
@@ -605,7 +583,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/remove-and-adopt-thcrash.html | EXCLUDED (requires-browsing-context: adoption into a frame's document) | 0 | 0 |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | EXCLUDED (requires-browsing-context: the node is adopted into a frame's document) | 0 | 0 |
 | dom/nodes/remove-next-sibling-during-replace-with.html | OK | 0 | 1 |
-| dom/nodes/remove-unscopable.html | EXCLUDED (requires-script-execution: the test reads its result out of an onclick content attribute) | 0 | 0 |
+| dom/nodes/remove-unscopable.html | OK | 6 | 0 |
 | dom/nodes/rootNode.html | OK | 5 | 0 |
 | dom/nodes/svg-template-querySelector.html | OK | 3 | 0 |
 | dom/traversal/NodeFilter-constants.html | OK | 2 | 0 |
@@ -670,7 +648,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-dispatch-propagation-stopped.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-redispatch.html | OK | 3 | 1 |
 | dom/events/Event-dispatch-reenter.html | OK | 0 | 1 |
-| dom/events/Event-dispatch-single-activation-behavior.html | EXCLUDED (requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script) | 0 | 0 |
+| dom/events/Event-dispatch-single-activation-behavior.html | OK | 124 | 8 |
 | dom/events/Event-dispatch-target-moved.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-target-removed.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | EXCLUDED (requires-browsing-context: which global an error event is fired at, across frames) | 0 | 0 |
@@ -2314,6 +2292,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/events/Event-dispatch-reenter.html
 
 -  Dispatch additional events inside an event listener : assert_array_equals: actual_targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+
+### dom/events/Event-dispatch-single-activation-behavior.html
+
+- When clicking child <FORM><INPUT type=submit></INPUT></FORM> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
+- When clicking child <FORM><INPUT type=submit></INPUT></FORM> of parent <FORM><BUTTON type=submit></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
+- When clicking child <FORM><INPUT type=image></INPUT></FORM> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
+- When clicking child <FORM><INPUT type=image></INPUT></FORM> of parent <FORM><BUTTON type=submit></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
+- When clicking child <FORM><INPUT type=reset></INPUT></FORM> of parent <FORM><BUTTON type=reset></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onreset="activated(this)" class="activates test49">...] length 1, got [Element node <form onreset="activated(this)" class="activates test49">..., Element node <form onreset="activated(this)" class="activates test49">...] length 2
+- When clicking child <FORM><BUTTON type=submit></BUTTON></FORM> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
+- When clicking child <FORM><BUTTON type=submit></BUTTON></FORM> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
+- When clicking child <FORM><BUTTON type=reset></BUTTON></FORM> of parent <FORM><INPUT type=reset></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onreset="activated(this)" class="activates test70">...] length 1, got [Element node <form onreset="activated(this)" class="activates test70">..., Element node <form onreset="activated(this)" class="activates test70">...] length 2
 
 ### dom/events/Event-dispatch-target-moved.html
 
