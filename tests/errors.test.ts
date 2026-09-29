@@ -162,7 +162,7 @@ test("an error listener that throws is reported once, not fired again", async ()
 	expect(screen).toContain("Error: from the click");
 });
 
-test("errors held past the limit are counted, not dropped without a word", async () => {
+test("past the limit, the newest held errors are the ones printed", async () => {
 	const terminal = new MockProcess({rows: 200, cols: 80});
 	const dom = attached(terminal);
 	let count = 0;
@@ -178,7 +178,7 @@ test("errors held past the limit are counted, not dropped without a word", async
 	}
 	await dom.dispose();
 	const screen = terminal.getScreenContents();
-	expect(screen).toContain("(5 earlier errors not shown)");
+	expect(screen).not.toContain("not shown");
 	expect(screen).toContain("number 6");
 	expect(screen).toContain("number 55");
 	expect(screen.split("\n").some((line) => line.trimEnd() === "number 5"))

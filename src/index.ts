@@ -69,7 +69,6 @@ const kFlowPainted = Symbol("flowPainted");
 // Errors the page let escape that no log could take live. Printed below
 // the document when the session ends.
 const kHeldErrors = Symbol("heldErrors");
-const kDroppedErrors = Symbol("droppedErrors");
 // Held errors handed to the output queue whose write has not finished.
 const kUnwrittenErrors = Symbol("unwrittenErrors");
 const HELD_ERROR_LIMIT = 50;
@@ -91,8 +90,6 @@ export interface TermDOM {
 	[kRenderInFlight]: Promise<void> | null;
 	[kFlowPainted]: boolean;
 	[kHeldErrors]: string[];
-	// Held errors dropped past the limit, counted so the report says so.
-	[kDroppedErrors]: number;
 	[kUnwrittenErrors]: string | null;
 	// Timestamps observer entries.
 	[kRenderCount]: number;
@@ -126,7 +123,6 @@ export class TermDOM {
 		this[kRenderInFlight] = null;
 		this[kFlowPainted] = false;
 		this[kHeldErrors] = [];
-		this[kDroppedErrors] = 0;
 		this[kUnwrittenErrors] = null;
 		this[kRenderCount] = 0;
 		this[kLifecycle] = "detached";
@@ -436,7 +432,6 @@ function holdError(termDOM: TermDOM, error: unknown): void {
 	held.push(formatError(error));
 	if (held.length > HELD_ERROR_LIMIT) {
 		held.shift();
-		termDOM[kDroppedErrors]++;
 	}
 	sessionsHoldingErrors.add(termDOM);
 	if (!heldErrorsExitHookInstalled) {
@@ -456,17 +451,11 @@ function holdError(termDOM: TermDOM, error: unknown): void {
 // The held errors as the lines to print, emptying the hold.
 function takeHeldErrors(termDOM: TermDOM): string | null {
 	const held = termDOM[kHeldErrors];
-	const dropped = termDOM[kDroppedErrors];
 	termDOM[kHeldErrors] = [];
-	termDOM[kDroppedErrors] = 0;
 	if (held.length === 0 || !termDOM[kTransport].interactive) {
 		return null;
 	}
-	const noun = dropped === 1 ? "error" : "errors";
-	const lines = dropped > 0
-		? [`(${dropped} earlier ${noun} not shown)`, ...held]
-		: held;
-	return lines.join("\r\n") + "\r\n";
+	return held.join("\r\n") + "\r\n";
 }
 
 // Into the output queue, after the document. Until that write lands, the
