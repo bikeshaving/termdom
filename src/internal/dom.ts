@@ -3538,10 +3538,10 @@ const kHandlers = Symbol("handlers");
 const kListeners = Symbol("event listener list");
 const kGetTheParent = Symbol("get the parent");
 
-// Every target starts on this one empty list, which nothing adds to: most
-// nodes are never listened to, and a list of their own would be one more
-// allocation each.
-const NO_LISTENERS: Listener[] = [];
+// Every target starts on this one empty list, frozen since nothing may add
+// to it: most nodes are never listened to, and a list of their own would
+// be one more allocation each.
+const NO_LISTENERS = Object.freeze([]) as unknown as Listener[];
 
 export interface EventTarget {
 	[kListeners]: Listener[];
@@ -7662,6 +7662,9 @@ export function getAttributeList(
 	return (element as Element)[kAttributeList] as unknown as globalThis.Attr[];
 }
 
+// The one set every element without classes shares.
+const NO_CLASS_TOKENS: ReadonlySet<string> = new Set();
+
 // The parsed set is cached on the element and discarded by the class
 // attribute's change steps, so a walk asking every element for its
 // classes pays only for attributes that changed.
@@ -7672,7 +7675,8 @@ export function getClassTokens(
 	let tokens = element[kClassTokens];
 	if (tokens === null) {
 		const value = element.getAttribute("class");
-		tokens = new Set(value === null ? [] : splitOnASCIIWhitespace(value));
+		const names = value === null ? [] : splitOnASCIIWhitespace(value);
+		tokens = names.length === 0 ? NO_CLASS_TOKENS : new Set(names);
 		element[kClassTokens] = tokens;
 	}
 	return tokens;
@@ -8866,7 +8870,7 @@ export interface Element {
 	[kDefinition]: CustomElementDefinition | null;
 	[kIsValue]: string | null;
 	[kClassList]: DOMTokenList | null;
-	[kClassTokens]: Set<string> | null;
+	[kClassTokens]: ReadonlySet<string> | null;
 	[kTokenLists]: Map<string, DOMTokenList> | null;
 	[kARIAElements]: Map<string, Element[]> | null;
 	[kDataset]: DOMStringMap | null;

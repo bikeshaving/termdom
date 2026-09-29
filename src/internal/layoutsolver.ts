@@ -91,8 +91,11 @@ type StaticPosition = (containingBlock: LayoutNode) => {
 } | null;
 
 // NaN is the undefined length everywhere below. 0 is a length.
-const UNDEFINED_VALUE: CSSValues.Value = {unit: "undefined", value: NaN};
-const AUTO_VALUE: CSSValues.Value = {unit: "auto", value: NaN};
+const UNDEFINED_VALUE: CSSValues.Value = Object.freeze({
+	unit: "undefined",
+	value: NaN,
+});
+const AUTO_VALUE: CSSValues.Value = Object.freeze({unit: "auto", value: NaN});
 
 export type Length = number | "auto" | {percentage: number} | undefined | null;
 
@@ -300,8 +303,8 @@ function isMatchingConstraints(
 
 // Whether a style resolves any length against the owner: a percentage
 // anywhere in it. Styles are replaced whole, so the answer is kept per
-// style object, and per part, since parts are shared between styles.
-const percentStyles = new WeakMap<object, boolean>();
+// style object. Only the fields that hold lengths are looked in.
+const percentStyles = new WeakMap<Style, boolean>();
 
 const LENGTH_FIELDS = [
 	"flexBasis",
@@ -338,19 +341,7 @@ function hasPercent(value: unknown, depth: number): boolean {
 function usesPercent(style: Style): boolean {
 	let answer = percentStyles.get(style);
 	if (answer === undefined) {
-		answer = false;
-		for (const field of LENGTH_FIELDS) {
-			const part: object = style[field];
-			let partAnswer = percentStyles.get(part);
-			if (partAnswer === undefined) {
-				partAnswer = hasPercent(part, 1);
-				percentStyles.set(part, partAnswer);
-			}
-			if (partAnswer) {
-				answer = true;
-				break;
-			}
-		}
+		answer = LENGTH_FIELDS.some((field) => hasPercent(style[field], 1));
 		percentStyles.set(style, answer);
 	}
 	return answer;
@@ -401,7 +392,7 @@ function isMinContent(mode: AvailableSpace, available: number): boolean {
 }
 
 const CACHE_SLOT_COUNT = 9;
-const NO_CACHED_SIZES: ReadonlyArray<CachedSize | null> = [];
+const NO_CACHED_SIZES: ReadonlyArray<CachedSize | null> = Object.freeze([]);
 
 // One cache slot per query shape, after Taffy, so the probes one pass makes
 // of a child (min-content, max-content, fixed) never evict each other.
@@ -587,7 +578,9 @@ export class LayoutNode {
 // finished record's edges are swapped for one object per distinct set,
 // where every part is itself shared: a number, or a value this table
 // names. A record holding a one-off value keeps its own, which keeps the
-// table to the sets actually in use.
+// table to the sets actually in use. What is shared is frozen, so a write
+// meant for one node throws rather than reaching every node that shares
+// it.
 const sharedIds = new WeakMap<object, number>();
 let nextSharedId = 0;
 const sharedRecords = new Map<string, object>();
@@ -611,7 +604,7 @@ function internValue(
 	}
 	let shared = interned[value];
 	if (shared === undefined) {
-		shared = {unit, value};
+		shared = Object.freeze({unit, value});
 		interned[value] = shared;
 		sharedIds.set(shared, ++nextSharedId);
 	}
@@ -639,7 +632,7 @@ function shareRecord<T extends object>(kind: string, record: T): T {
 	}
 	let shared = sharedRecords.get(key);
 	if (shared === undefined) {
-		shared = record;
+		shared = Object.freeze(record);
 		sharedRecords.set(key, shared);
 	}
 	return shared as T;
