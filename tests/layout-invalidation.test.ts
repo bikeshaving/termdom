@@ -783,7 +783,7 @@ test("an empty block moved into an inline-block is laid out there", async () => 
 	document.getElementById("b")!.append(document.getElementById("s")!);
 	await nextFrame(dom);
 	const rect = document.getElementById("d")!.getBoundingClientRect();
-	expect([rect.left, rect.top, rect.width, rect.height]).toEqual([0, 1, 5, 0]);
+	expect([rect.left, rect.top, rect.width, rect.height]).toEqual([0, 1, 4, 0]);
 	dom.dispose();
 });
 

@@ -2811,6 +2811,15 @@ function collectLeafNodes(
 	const leafNodes: Leaf[] = [];
 	if (source.kind === "anonymous") {
 		for (const member of source.members) {
+			// A broken inline heads the run of its first fragment, and its
+			// content is among the members on its own. Walking into it too
+			// would lay that content out twice.
+			if (
+				member.nodeType === member.ELEMENT_NODE &&
+				layout[kBoxes].get(member as Element)?.broken
+			) {
+				continue;
+			}
 			collectLeaves(
 				layout,
 				member,
