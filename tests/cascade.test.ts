@@ -252,10 +252,9 @@ describe("getComputedStyle - What We Support", () => {
 		expect(styles.getPropertyValue("padding")).toBe("1px 2px 3px 4px");
 		expect(styles.getPropertyValue("border")).toBe("2px solid rgb(0, 0, 0)");
 		// The declared 100 and 50 are border-box lengths (box-sizing starts at
-		// border-box here), and the resolved value is the content box inside
-		// them: 100 less two 2px borders and 2+4 of padding, 50 less the rest.
-		expect(styles.getPropertyValue("width")).toBe("90px");
-		expect(styles.getPropertyValue("height")).toBe("42px");
+		// border-box here), and the resolved value names the same box.
+		expect(styles.getPropertyValue("width")).toBe("100px");
+		expect(styles.getPropertyValue("height")).toBe("50px");
 	});
 });
 
