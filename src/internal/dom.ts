@@ -9722,6 +9722,18 @@ export class Element extends Node implements globalThis.Element {
 				}
 			}
 		}
+		if (localName === "name" && namespace === null && isNamedByName(this)) {
+			const root = getRoot(this);
+			if (root.nodeType === DOCUMENT_NODE) {
+				const document = root as Document;
+				if (oldValue !== null && oldValue !== "") {
+					removeNameEntry(document, oldValue, this);
+				}
+				if (value !== null && value !== "") {
+					addNameEntry(document, value, this);
+				}
+			}
+		}
 		if (namespace === null && localName === "slot") {
 			updateSlottableName(this, oldValue, value);
 		}
@@ -23754,6 +23766,7 @@ const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
 const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
+const kNameMap = Symbol("name map");
 const kDesignMode = Symbol("whether the whole document is editable");
 const kAll = Symbol("document.all");
 
@@ -23784,6 +23797,9 @@ export interface Document {
 	[kContentType]: string;
 	[kEncoding]: string;
 	[kIdMap]: Map<string, Element[]>;
+	// The connected embed, form, img and object elements by their name
+	// attribute, which the Window's named properties include.
+	[kNameMap]: Map<string, Element[]>;
 	[kDesignMode]: boolean;
 	[kDocumentWideLists]: Set<LiveCollection> | null;
 	[kSelection]: Selection | null;
@@ -23938,6 +23954,7 @@ export class Document extends Node implements globalThis.Document {
 		this[kContentType] = "application/xml";
 		this[kEncoding] = "UTF-8";
 		this[kIdMap] = new Map<string, Element[]>();
+		this[kNameMap] = new Map<string, Element[]>();
 		this[kDesignMode] = false;
 		this[kSelection] = null;
 		this[kSelectionChangeScheduled] = false;
@@ -25647,6 +25664,10 @@ function addToIdMap(document: Document, element: Element): void {
 	if (id !== null && id !== "") {
 		addIdEntry(document, id, element);
 	}
+	const name = getExposedName(element);
+	if (name !== null) {
+		addNameEntry(document, name, element);
+	}
 }
 
 function removeFromIdMap(document: Document, element: Element): void {
@@ -25654,19 +25675,31 @@ function removeFromIdMap(document: Document, element: Element): void {
 	if (id !== null && id !== "") {
 		removeIdEntry(document, id, element);
 	}
+	const name = getExposedName(element);
+	if (name !== null) {
+		removeNameEntry(document, name, element);
+	}
 }
 
-function addIdEntry(document: Document, id: string, element: Element): void {
-	const entries = document[kIdMap].get(id);
+function addMapEntry(
+	map: Map<string, Element[]>,
+	key: string,
+	element: Element,
+): void {
+	const entries = map.get(key);
 	if (entries === undefined) {
-		document[kIdMap].set(id, [element]);
+		map.set(key, [element]);
 	} else if (!entries.includes(element)) {
 		entries.push(element);
 	}
 }
 
-function removeIdEntry(document: Document, id: string, element: Element): void {
-	const entries = document[kIdMap].get(id);
+function removeMapEntry(
+	map: Map<string, Element[]>,
+	key: string,
+	element: Element,
+): void {
+	const entries = map.get(key);
 	if (entries === undefined) {
 		return;
 	}
@@ -25675,8 +25708,55 @@ function removeIdEntry(document: Document, id: string, element: Element): void {
 		entries.splice(index, 1);
 	}
 	if (entries.length === 0) {
-		document[kIdMap].delete(id);
+		map.delete(key);
 	}
+}
+
+function addIdEntry(document: Document, id: string, element: Element): void {
+	addMapEntry(document[kIdMap], id, element);
+	syncNamedProperty(document, id);
+}
+
+function removeIdEntry(document: Document, id: string, element: Element): void {
+	removeMapEntry(document[kIdMap], id, element);
+	syncNamedProperty(document, id);
+}
+
+function addNameEntry(
+	document: Document,
+	name: string,
+	element: Element,
+): void {
+	addMapEntry(document[kNameMap], name, element);
+	syncNamedProperty(document, name);
+}
+
+function removeNameEntry(
+	document: Document,
+	name: string,
+	element: Element,
+): void {
+	removeMapEntry(document[kNameMap], name, element);
+	syncNamedProperty(document, name);
+}
+
+// The elements whose name attribute names them on the Window, as the HTML
+// Standard lists them.
+const NAMED_BY_NAME = new Set(["embed", "form", "img", "object"]);
+
+function isNamedByName(element: Element): boolean {
+	return (
+		element[kNamespace] === HTML_NAMESPACE &&
+		NAMED_BY_NAME.has(element[kLocalName])
+	);
+}
+
+function getExposedName(element: Element): string | null {
+	if (!isNamedByName(element)) {
+		return null;
+	}
+	const name = element.getAttribute("name");
+	return name === null || name === "" ? null : name;
 }
 
 interface DOMImplementation {
@@ -33570,6 +33650,80 @@ const kScreenInfo = Symbol("screen");
 const kWindowName = Symbol("window name");
 const kWindowStatus = Symbol("window status");
 const kIdleTimers = Symbol("idle timers");
+const kNamedProperties = Symbol("named properties");
+
+/**
+ * The Window's named properties (HTML's "named access on the Window
+ * object"): an element's id, or the name of an embed, form, img or object,
+ * names it on the window. They live on an object between the window and its
+ * prototype, so the window's own properties and every member of its
+ * prototype chain win over them, as the visibility rule asks. Each name has
+ * an accessor, added when the first element takes it and removed when the
+ * last lets it go, rather than a proxy's traps. A name that is an array
+ * index is left to the window's frames.
+ */
+function syncNamedProperty(document: Document, name: string): void {
+	const window = document[kDefaultView] as Window | null;
+	const properties = window?.[kNamedProperties];
+	if (properties === undefined || /^(?:0|[1-9]\d*)$/.test(name)) {
+		return;
+	}
+	const supported = document[kIdMap].has(name) || document[kNameMap].has(name);
+	const defined = Object.prototype.hasOwnProperty.call(properties, name);
+	if (supported && !defined) {
+		if (name in (Object.getPrototypeOf(properties) as object)) {
+			return;
+		}
+		Object.defineProperty(properties, name, {
+			get: (): unknown => getNamedPropertyValue(document, name),
+			// A write makes an ordinary property of the window's own, which
+			// then shadows the element.
+			set(this: object, value: unknown): void {
+				Object.defineProperty(this, name, {
+					value,
+					writable: true,
+					enumerable: true,
+					configurable: true,
+				});
+			},
+			enumerable: false,
+			configurable: true,
+		});
+	} else if (!supported && defined) {
+		delete properties[name];
+	}
+}
+
+// The one element a name picks out, or all of them, live, when several do.
+function getNamedPropertyValue(
+	document: Document,
+	name: string,
+): Element | HTMLCollection | undefined {
+	const elements = new Set([
+		...document[kIdMap].get(name) ?? [],
+		...document[kNameMap].get(name) ?? [],
+	]);
+	if (elements.size === 0) {
+		return undefined;
+	}
+	if (elements.size === 1) {
+		return elements.values().next().value;
+	}
+	const cache = getCollectionCache(document);
+	const key = `window-named:${name}`;
+	let collection = cache.get(key);
+	if (collection === undefined) {
+		collection = new MatchingCollection(
+			document,
+			null,
+			(element) =>
+				element.getAttribute("id") === name || getExposedName(element) === name,
+		);
+		cache.set(key, collection);
+	}
+	return collection;
+}
+
 const kNextIdleHandle = Symbol("next idle handle");
 
 /**
@@ -33591,6 +33745,9 @@ export interface Window {
 	[kWindowStatus]: string;
 	[kIdleTimers]: Map<number, ReturnType<typeof setTimeout>>;
 	[kNextIdleHandle]: number;
+	// The Window's named properties object, between the window and its
+	// prototype.
+	[kNamedProperties]: Record<string, unknown>;
 }
 
 export class Window extends EventTarget {
@@ -33837,6 +33994,16 @@ export class Window extends EventTarget {
 		// document is the one bare node constructors use.
 		document[kDefaultView] = this;
 		ambientDocument = document;
+		this[kNamedProperties] = Object.create(
+			Object.getPrototypeOf(this) as object,
+		) as Record<string, unknown>;
+		Object.setPrototypeOf(this, this[kNamedProperties]);
+		for (const name of new Set([
+			...document[kIdMap].keys(),
+			...document[kNameMap].keys(),
+		])) {
+			syncNamedProperty(document, name);
+		}
 	}
 
 	// One object per window, as the HTML Standard says. The document's
