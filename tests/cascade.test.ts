@@ -699,6 +699,7 @@ const EXPANDED_SHORTHANDS: Record<string, string> = {
 	"border-width": "1px",
 	flex: "1 1 auto",
 	"flex-flow": "column wrap",
+	font: "italic bold 1px monospace",
 	"font-variant": "small-caps oldstyle-nums",
 	gap: "1px 2ch",
 	grid: "auto-flow dense 4px / 1fr 1fr",
@@ -758,7 +759,6 @@ const UNEXPANDED_SHORTHANDS: Record<string, string> = {
 	"corner-right-shape": "corner shapes are finer than a cell",
 	"corner-shape": "corner shapes are finer than a cell",
 	"corner-top-shape": "corner shapes are finer than a cell",
-	font: "system font keywords and a line-height the grid fixes",
 	"interest-delay": "no interest timers",
 	mask: "masking, which needs pixels",
 	"mask-border": "masking, which needs pixels",
@@ -1135,5 +1135,29 @@ test("a shorthand whose longhands inherit restyles the children when it changes"
 	await nextFrame(dom);
 	expect(window.getComputedStyle(child).whiteSpace).toBe("normal");
 	expect(window.getComputedStyle(child).listStyleType).toBe("disc");
+	dom.dispose();
+});
+
+test("the font shorthand sets and serializes its longhands", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.body.innerHTML = "<div id=\"d\">x</div>";
+	const element = document.getElementById("d")!;
+	element.style.font = "italic bold 1em/2 monospace";
+	await nextFrame(dom);
+	const style = window.getComputedStyle(element);
+	expect(style.fontStyle).toBe("italic");
+	expect(style.fontWeight).toBe("700");
+	expect(style.lineHeight).toBe("2");
+	expect(style.fontFamily).toBe("monospace");
+	expect(element.style.font).toBe("italic bold 1em / 2 monospace");
+	// A system font names the UA's own, and stays whole.
+	element.style.font = "menu";
+	expect(element.style.font).toBe("menu");
+	// Bold and italic reach the cells.
+	element.style.font = "italic bold 1px monospace";
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).toContain("\x1b[1;3mx");
 	dom.dispose();
 });
