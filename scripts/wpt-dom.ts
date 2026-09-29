@@ -756,6 +756,39 @@ interface HarnessGlobals {
 	restore(): void;
 }
 
+// The timers the running file set. They are cleared when it is scored, so
+// a callback it left behind cannot throw into the next file, where its
+// error would be counted against a test that never raised it.
+const fileTimers = new Set<ReturnType<typeof setTimeout>>();
+// The runtime's own, taken before a file's scripts replace the globals.
+const {setTimeout: runtimeSetTimeout, setInterval: runtimeSetInterval} =
+	globalThis;
+
+/**
+ * The scope that makes the engine window this realm's global for name
+ * lookup. A name the realm owns, a script's `var` or function or a global
+ * installed above, is the realm's, as it would be the window's own property.
+ * Any other name the engine window answers is read from and written to the
+ * window, receiver and all, so every value is the engine's. A `with` scope
+ * must answer `has` for names it cannot list in advance, which only a Proxy
+ * can.
+ */
+function windowScope(realm: object, window: object): object {
+	// eslint-disable-next-line no-restricted-globals
+	return new Proxy(window, {
+		has(target, name): boolean {
+			return !Object.prototype.hasOwnProperty.call(realm, name) &&
+				name in target;
+		},
+		get(target, name): unknown {
+			return Reflect.get(target, name, target);
+		},
+		set(target, name, value): boolean {
+			return Reflect.set(target, name, value, target);
+		},
+	});
+}
+
 /** Install this realm's DOM as the harness realm's DOM, and hand back the undo. */
 function installGlobals(
 	dom: DOMModule,
@@ -791,6 +824,19 @@ function installGlobals(
 		getComputedStyle: win.getComputedStyle.bind(win),
 		requestAnimationFrame: win.requestAnimationFrame.bind(win),
 		cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
+		setTimeout: (callback: () => void, delay?: number, ...args: unknown[]) => {
+			const timer = runtimeSetTimeout(() => {
+				fileTimers.delete(timer);
+				callback(...(args as []));
+			}, delay);
+			fileTimers.add(timer);
+			return timer;
+		},
+		setInterval: (callback: () => void, delay?: number, ...args: unknown[]) => {
+			const timer = runtimeSetInterval(() => callback(...(args as [])), delay);
+			fileTimers.add(timer);
+			return timer;
+		},
 		location: win.location,
 		...windowShim,
 	};
@@ -821,9 +867,18 @@ function installGlobals(
 	// `window.onerror = ...` and the other window handler attributes land on
 	// the engine window, whose dispatch is what fires them. The harness
 	// window is this realm's global, so each name is an accessor here.
-	const handlerNames = Object.getOwnPropertyNames(
-		Object.getPrototypeOf(engineWindow) as object,
-	).filter((name) => /^on[a-z]/.test(name));
+	const handlerNames: string[] = [];
+	for (
+		let level = Object.getPrototypeOf(engineWindow) as object | null;
+		level !== null;
+		level = Object.getPrototypeOf(level) as object | null
+	) {
+		for (const name of Object.getOwnPropertyNames(level)) {
+			if (/^on[a-z]/.test(name) && !handlerNames.includes(name)) {
+				handlerNames.push(name);
+			}
+		}
+	}
 	const engineHandlers = engineWindow as unknown as Record<string, unknown>;
 	const accessors = new Set(handlerNames);
 	for (const name of handlerNames) {
@@ -1043,8 +1098,12 @@ async function runMountedFile(
 			// block is what a browser gives a classic script -- `var` and
 			// function declarations land on the global, where a test that evals
 			// a name (`params.map(eval)`) finds them, while `let` and `const`
-			// stay in the file's own scope rather than the realm's.
-			(0, eval)(`{\n${body}\n}`);
+			// stay in the file's own scope rather than the realm's. A browser's
+			// global is the window, so a bare name the file's own globals do not
+			// hold resolves through the engine window: its members, then its
+			// named properties.
+			scope.__termdomWindow = windowScope(scope, engine.window);
+			(0, eval)(`with (__termdomWindow) {\n${body}\n}`);
 			// The engine runs no page scripts, so this harness runs them in the
 			// parser's place, and ends the parse as HTML does once they have
 			// run: DOMContentLoaded at the document, then load at the window.
@@ -1073,7 +1132,13 @@ async function runMountedFile(
 		clearTimeout(timer);
 	} finally {
 		reportUncaught = null;
+		for (const timer of fileTimers) {
+			clearTimeout(timer);
+			clearInterval(timer);
+		}
+		fileTimers.clear();
 		delete scope.__complete;
+		delete scope.__termdomWindow;
 		if (!hadDriverInput) {
 			delete scopeForDriver.__termdomDriverInput;
 		}
@@ -1093,7 +1158,7 @@ async function runMountedFile(
 // enough that even one suite's 300 files cross that line. A worker
 // process per bounded slice of a suite hands its memory back on exit;
 // the orchestrator only aggregates.
-const WORKER_FILE_LIMIT = 100;
+const WORKER_FILE_LIMIT = 50;
 const workerSuite = process.argv[2] === "--suite" ? process.argv[3] : null;
 const workerStart = workerSuite !== null && process.argv[4] === "--start"
 	? Number(process.argv[5])
@@ -1215,14 +1280,13 @@ const lines: string[] = [
 	"classes. Each file gets its own evaluation of the whole engine graph, so",
 	"a test that tampers with a prototype cannot reach the next file.",
 	"",
-	"The harness realm borrows the engine window's addEventListener,",
-	"getSelection, getComputedStyle, location and animation frames. The",
-	"engine runs no page scripts, so the harness runs each file's scripts in",
-	"the parser's place and then fires DOMContentLoaded and load, as HTML",
-	"does at the end of a parse. It sends uncaught errors to the window as",
-	"error and unhandledrejection events. It supplies no behavior of its",
-	"own: no named access to elements by id, and no frame documents, so",
-	"tests that need either fail.",
+	"The engine runs no page scripts, so the harness runs each file's",
+	"scripts in the parser's place, with bare names resolving through the",
+	"engine window as a browser's global does, and then fires",
+	"DOMContentLoaded and load, as HTML does at the end of a parse. It sends",
+	"uncaught errors to the window as error and unhandledrejection events.",
+	"It supplies no behavior of its own, and no frame documents, so tests",
+	"that need them fail.",
 	"",
 	`- Test files in the suites: ${outcomes.length}`,
 	`- Reference tests (no testharness, scored by pixels): ${reftests.length}`,

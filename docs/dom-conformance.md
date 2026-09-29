@@ -9,23 +9,22 @@ and the CSSOM are all live under the test, and `document`, `Node`,
 classes. Each file gets its own evaluation of the whole engine graph, so
 a test that tampers with a prototype cannot reach the next file.
 
-The harness realm borrows the engine window's addEventListener,
-getSelection, getComputedStyle, location and animation frames. The
-engine runs no page scripts, so the harness runs each file's scripts in
-the parser's place and then fires DOMContentLoaded and load, as HTML
-does at the end of a parse. It sends uncaught errors to the window as
-error and unhandledrejection events. It supplies no behavior of its
-own: no named access to elements by id, and no frame documents, so
-tests that need either fail.
+The engine runs no page scripts, so the harness runs each file's
+scripts in the parser's place, with bare names resolving through the
+engine window as a browser's global does, and then fires
+DOMContentLoaded and load, as HTML does at the end of a parse. It sends
+uncaught errors to the window as error and unhandledrejection events.
+It supplies no behavior of its own, and no frame documents, so tests
+that need them fail.
 
 - Test files in the suites: 1173
 - Reference tests (no testharness, scored by pixels): 59
 - Excluded, each with its reason below: 241
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 747
-- Files whose harness did not complete: 126
-- Subtests passed: 95681
-- Subtests failed: 1670
+- Files whose harness completed: 770
+- Files whose harness did not complete: 103
+- Subtests passed: 96072
+- Subtests failed: 1325
 
 ## Exclusions
 
@@ -539,45 +538,45 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/insertion-removing-steps/script-does-not-run-on-child-removal.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/moveBefore/Node-moveBefore.html | OK | 31 | 1 |
 | dom/nodes/moveBefore/child-style-preserve.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/continue-css-animation-left.html | TIMEOUT | 0 | 1 |
-| dom/nodes/moveBefore/continue-css-animation-transform.html | TIMEOUT | 0 | 1 |
+| dom/nodes/moveBefore/continue-css-animation-left.html | TIMEOUT | 0 | 0 |
+| dom/nodes/moveBefore/continue-css-animation-transform.html | TIMEOUT | 0 | 0 |
 | dom/nodes/moveBefore/continue-css-transition-left-pseudo.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/continue-css-transition-left.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/continue-css-transition-transform-pseudo.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/continue-css-transition-transform.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/css-animation-commit-styles.html | TIMEOUT | 0 | 1 |
+| dom/nodes/moveBefore/css-animation-commit-styles.html | TIMEOUT | 0 | 0 |
 | dom/nodes/moveBefore/css-transition-cross-document.html | EXCLUDED (requires-browsing-context: the transitioning node moves into a frame's document) | 0 | 0 |
 | dom/nodes/moveBefore/css-transition-cross-shadow.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/css-transition-to-disconnected-document.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/css-transition-trigger.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/custom-element-move-reactions.html | OK | 6 | 1 |
-| dom/nodes/moveBefore/fieldset-child-blur-event.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/fire-focusin-focusout.html | OK | 3 | 2 |
+| dom/nodes/moveBefore/custom-element-move-reactions.html | OK | 7 | 0 |
+| dom/nodes/moveBefore/fieldset-child-blur-event.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/fire-focusin-focusout.html | OK | 5 | 0 |
 | dom/nodes/moveBefore/focus-preserve-render.html | REFTEST | 0 | 0 |
-| dom/nodes/moveBefore/focus-preserve.html | OK | 3 | 1 |
-| dom/nodes/moveBefore/focus-within.html | OK | 3 | 2 |
+| dom/nodes/moveBefore/focus-preserve.html | OK | 4 | 0 |
+| dom/nodes/moveBefore/focus-within.html | OK | 5 | 0 |
 | dom/nodes/moveBefore/fullscreen-preserve.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/hover-style-update.html | OK | 0 | 2 |
 | dom/nodes/moveBefore/iframe-document-preserve.window.js | EXCLUDED (requires-browsing-context: the move happens inside a frame's document) | 0 | 0 |
 | dom/nodes/moveBefore/listed-form-element-reset.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/live-range-updates.html | OK | 0 | 3 |
+| dom/nodes/moveBefore/live-range-updates.html | OK | 3 | 0 |
 | dom/nodes/moveBefore/modal-dialog.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-as-flex-item.html | REFTEST | 0 | 0 |
-| dom/nodes/moveBefore/moveBefore-dir.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/moveBefore-dir.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-from-light-to-shadow.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-id-map.html | OK | 1 | 3 |
-| dom/nodes/moveBefore/moveBefore-lang.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/moveBefore-name-map.html | OK | 1 | 2 |
+| dom/nodes/moveBefore/moveBefore-id-map.html | OK | 3 | 1 |
+| dom/nodes/moveBefore/moveBefore-lang.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/moveBefore-name-map.html | OK | 2 | 1 |
 | dom/nodes/moveBefore/moveBefore-nodeiterator.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-option-recalc-style.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/moveBefore-selector-matching.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/moveBefore-option-recalc-style.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/moveBefore-selector-matching.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-shadow-inside.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-shadow-root.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/moveBefore-size-query.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/mutation-observer.html | OK | 1 | 1 |
+| dom/nodes/moveBefore/moveBefore-shadow-root.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/moveBefore-size-query.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/mutation-observer.html | OK | 2 | 0 |
 | dom/nodes/moveBefore/nonce.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/object-crash-regression.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/object-crash-regression.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/pointer-events.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/popover-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-script.html | OK | 1 | 0 |
@@ -600,8 +599,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/processing-instruction-attributes.html | EXCLUDED (not-a-standard: the XML parses succeed, but 130 of the 140 subtests test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not) | 0 | 0 |
 | dom/nodes/query-target-in-load-event.html | EXCLUDED (requires-browsing-context: the query runs in a frame's load event) | 0 | 0 |
 | dom/nodes/query-target-in-load-event.part.html | REFTEST | 0 | 0 |
-| dom/nodes/querySelector-empty-id.html | OK | 0 | 1 |
-| dom/nodes/querySelector-id-nth-child.html | OK | 1 | 1 |
+| dom/nodes/querySelector-empty-id.html | OK | 1 | 0 |
+| dom/nodes/querySelector-id-nth-child.html | OK | 2 | 0 |
 | dom/nodes/querySelector-mixed-case.html | OK | 1 | 0 |
 | dom/nodes/remove-and-adopt-thcrash.html | EXCLUDED (requires-browsing-context: adoption into a frame's document) | 0 | 0 |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | EXCLUDED (requires-browsing-context: the node is adopted into a frame's document) | 0 | 0 |
@@ -655,7 +654,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-dispatch-bubble-canceled.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-bubbles-false.html | OK | 4 | 1 |
 | dom/events/Event-dispatch-bubbles-true.html | OK | 4 | 1 |
-| dom/events/Event-dispatch-click.html | TIMEOUT | 28 | 5 |
+| dom/events/Event-dispatch-click.html | TIMEOUT | 0 | 0 |
 | dom/events/Event-dispatch-click.tentative.html | OK | 4 | 2 |
 | dom/events/Event-dispatch-detached-click.html | OK | 2 | 0 |
 | dom/events/Event-dispatch-detached-input-and-change.html | OK | 12 | 0 |
@@ -718,11 +717,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/event-global.html | OK | 0 | 8 |
 | dom/events/event-handler-attribute-replace-preserves-passive.html | OK | 2 | 0 |
 | dom/events/event-src-element-nullable.html | OK | 1 | 0 |
-| dom/events/focus-event-document-move.html | ERROR | 0 | 1 |
+| dom/events/focus-event-document-move.html | TIMEOUT | 0 | 0 |
 | dom/events/handler-count.html | TIMEOUT | 0 | 0 |
 | dom/events/label-default-action.html | OK | 1 | 0 |
 | dom/events/legacy-pre-activation-behavior.window.js | OK | 1 | 0 |
-| dom/events/mouse-event-retarget.html | OK | 0 | 1 |
+| dom/events/mouse-event-retarget.html | OK | 1 | 0 |
 | dom/events/no-focus-events-at-clicking-editable-content-in-link.html | OK | 0 | 2 |
 | dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | OK | 1 | 0 |
 | dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | OK | 0 | 1 |
@@ -773,22 +772,22 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/remove-all-listeners.html | OK | 2 | 0 |
 | dom/events/scrolling/iframe-chains.html | OK | 0 | 1 |
 | dom/events/scrolling/input-text-scroll-event-when-using-arrow-keys.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | ERROR | 0 | 2 |
+| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/save-iframe-scroll-offset-when-display-none.sub.html | REFTEST | 0 | 0 |
-| dom/events/scrolling/scroll-cross-origin-iframes.html | ERROR | 0 | 1 |
+| dom/events/scrolling/scroll-cross-origin-iframes.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scroll-cross-origin-iframes.sub.html | REFTEST | 0 | 0 |
 | dom/events/scrolling/scroll-event-fired-to-element.html | OK | 4 | 0 |
 | dom/events/scrolling/scroll-event-fired-to-iframe.html | OK | 0 | 4 |
-| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | ERROR (scroller is not defined) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-after-sequence-of-scrolls.tentative.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-after-snap.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-for-mandatory-snap-point-after-load.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html | ERROR (targetDiv is not defined) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html | ERROR (targetDiv is not defined) | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-to-document.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-to-element-with-overscroll-behavior.html | ERROR (targetXDiv is not defined) | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-to-element-with-overscroll-behavior.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-to-window.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fires-for-repeat-key-ending-after-scroll-container-end-is-reached.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fires-on-visual-viewport.html | ERROR | 0 | 0 |
@@ -797,19 +796,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/scrolling/scrollend-event-for-user-scroll.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-handler-content-attributes.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-not-fired-after-removing-scroller.tentative.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | OK | 0 | 4 |
+| dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | OK | 1 | 3 |
 | dom/events/scrolling/scrollend-fires-to-text-input.html | OK | 5 | 0 |
-| dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html | ERROR (scroller is not defined) | 0 | 0 |
-| dom/events/scrolling/wheel-event-composed.html | ERROR | 0 | 1 |
+| dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html | OK | 0 | 1 |
+| dom/events/scrolling/wheel-event-composed.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html | OK | 0 | 1 |
-| dom/events/scrolling/wheel-event-transactions-basic.html | ERROR (firstRootSpacer is not defined) | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/wheel-event-transactions-basic.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-display-change.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-elements.html | OK | 0 | 1 |
-| dom/events/scrolling/wheel-event-transactions-target-move.html | TIMEOUT | 0 | 1 |
-| dom/events/scrolling/wheel-event-transactions-target-removal.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/wheel-event-transactions-target-move.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-target-removal.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-resize.html | TIMEOUT | 0 | 0 |
-| dom/events/shadow-relatedTarget.html | ERROR (host is not defined) | 0 | 0 |
+| dom/events/shadow-relatedTarget.html | OK | 2 | 0 |
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
@@ -900,13 +899,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/addRange-52.html | OK | 232 | 0 |
 | selection/addRange-56.html | OK | 116 | 0 |
 | selection/addRange.tentative.html | OK | 1 | 0 |
-| selection/anchor-removal.html | OK | 0 | 2 |
+| selection/anchor-removal.html | OK | 2 | 0 |
 | selection/anonymous/details-ancestor.html | OK | 0 | 1 |
-| selection/anonymous/details-mutate.html | ERROR (d is not defined) | 0 | 0 |
+| selection/anonymous/details-mutate.html | OK | 0 | 1 |
 | selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html | OK | 11 | 0 |
 | selection/bidi/modify-extend-by-character.html | OK | 18 | 10 |
 | selection/bidi/modify-move-by-character.html | OK | 18 | 10 |
-| selection/bidi/modify.tentative.html | ERROR (container is not defined) | 0 | 0 |
+| selection/bidi/modify.tentative.html | OK | 24 | 12 |
 | selection/canvas-click.html | OK | 0 | 1 |
 | selection/canvas-drag.html | OK | 1 | 0 |
 | selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 8 | 16 |
@@ -914,9 +913,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/caret/collapse-pre-linestart-1.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-2.html | REFTEST | 0 | 0 |
 | selection/caret/editing-host-has-only-invisible-br.html | REFTEST | 0 | 0 |
-| selection/caret/empty-elements.html | OK | 0 | 1 |
-| selection/caret/move-around-contenteditable-false.html | TIMEOUT | 0 | 5 |
-| selection/caret/move-around-generated-content.html | TIMEOUT | 0 | 3 |
+| selection/caret/empty-elements.html | OK | 1 | 0 |
+| selection/caret/move-around-contenteditable-false.html | TIMEOUT | 0 | 0 |
+| selection/caret/move-around-generated-content.html | TIMEOUT | 0 | 0 |
 | selection/collapse-00.html | OK | 2655 | 0 |
 | selection/collapse-15.html | OK | 2655 | 0 |
 | selection/collapse-30.html | OK | 5133 | 0 |
@@ -925,19 +924,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/collapse-common-ancestor-2.html | REFTEST | 0 | 0 |
 | selection/collapse-common-ancestor-3.html | REFTEST | 0 | 0 |
 | selection/collapseToStartEnd.html | OK | 57 | 0 |
-| selection/contenteditable/cefalse-on-boundaries.html | OK | 0 | 4 |
+| selection/contenteditable/cefalse-on-boundaries.html | OK | 4 | 0 |
 | selection/contenteditable/collapse.html | OK | 0 | 3 |
 | selection/contenteditable/initial-selection-during-focus-event-propagation.html | OK | 0 | 1 |
 | selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR ("" is not a valid element name) | 0 | 0 |
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 1 | 35 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
-| selection/contenteditable/modify.tentative.html | ERROR (inlinehosts is not defined) | 0 | 0 |
+| selection/contenteditable/modify.tentative.html | OK | 15 | 0 |
 | selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | OK | 3 | 4 |
 | selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | OK | 4 | 3 |
 | selection/contenteditable/selection-outside-focused-editing-host.tentative.html | OK | 2 | 1 |
 | selection/deleteFromDocument-HTMLDetails.html | OK | 30 | 0 |
 | selection/deleteFromDocument.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
-| selection/drag-disabled-textarea-shadow-dom.html | ERROR | 0 | 1 |
+| selection/drag-disabled-textarea-shadow-dom.html | TIMEOUT | 0 | 0 |
 | selection/drag-out-of-floated-content.html | OK | 0 | 1 |
 | selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html | OK | 0 | 1 |
 | selection/drag-selection-extend-to-user-select-none.html | OK | 0 | 4 |
@@ -959,14 +958,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/modify-line-flex-column.tentative.html | OK | 0 | 2 |
 | selection/modify-line-flex-row.tentative.html | OK | 0 | 2 |
 | selection/modify-line-grid-basic.tentative.html | OK | 0 | 2 |
-| selection/modify.tentative.html | OK | 6 | 1 |
+| selection/modify.tentative.html | OK | 7 | 0 |
 | selection/move-by-word-korean.html | OK | 0 | 4 |
 | selection/move-by-word-with-symbol.html | OK | 2 | 4 |
 | selection/move-paragraph-cross-editing-boundary.tentative.html | OK | 0 | 2 |
 | selection/move-paragraphboundary-cross-editing-boundary.tentative.html | OK | 0 | 2 |
 | selection/move-selection-range-into-different-root.tentative.html | OK | 16 | 0 |
-| selection/onselectionchange-on-distinct-text-controls.html | OK | 0 | 2 |
-| selection/onselectionchange-on-document.html | OK | 0 | 4 |
+| selection/onselectionchange-on-distinct-text-controls.html | OK | 2 | 0 |
+| selection/onselectionchange-on-document.html | OK | 4 | 0 |
 | selection/onselectstart-on-key-in-contenteditable.html | OK | 30 | 0 |
 | selection/removeAllRanges.html | OK | 116 | 0 |
 | selection/removeRange.html | OK | 29 | 0 |
@@ -977,10 +976,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/selection-direction-on-double-click.tentative.html | OK | 0 | 1 |
 | selection/selection-direction-on-single-click.html | OK | 0 | 1 |
 | selection/selection-direction-on-triple-click.tentative.html | OK | 0 | 1 |
-| selection/selection-focused-element-becomes-nonfocusable.html | ERROR | 0 | 2 |
+| selection/selection-focused-element-becomes-nonfocusable.html | TIMEOUT | 0 | 0 |
 | selection/selection-incremental-change-repaint.html | REFTEST | 0 | 0 |
 | selection/selection-modify-extend-word-generated-content.html | OK | 2 | 0 |
-| selection/selection-nested-video.html | TIMEOUT | 0 | 0 |
+| selection/selection-nested-video.html | OK | 1 | 0 |
 | selection/selection-range-after-editinghost-removed.html | OK | 4 | 0 |
 | selection/selection-range-after-textcontrol-removed.html | OK | 2 | 0 |
 | selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html | OK | 0 | 4 |
@@ -998,33 +997,33 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/shadow-dom/cross-shadow-boundary-select-root.html | REFTEST | 0 | 0 |
 | selection/shadow-dom/selection-at-nodes-not-part-of-flattened-tree.html | OK | 20 | 4 |
 | selection/shadow-dom/tentative/Range-isPointInRange.html | OK | 2 | 0 |
-| selection/shadow-dom/tentative/Selection-collapse-and-extend.html | ERROR (container is not defined) | 0 | 0 |
+| selection/shadow-dom/tentative/Selection-collapse-and-extend.html | OK | 4 | 0 |
 | selection/shadow-dom/tentative/Selection-deleteFromDocument-around-shadow.html | OK | 33 | 0 |
-| selection/shadow-dom/tentative/Selection-direction.html | OK | 1 | 6 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html | ERROR (host1 is not defined) | 0 | 0 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html | OK | 0 | 6 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html | OK | 1 | 8 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-slot.html | OK | 0 | 3 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges.html | OK | 1 | 11 |
-| selection/shadow-dom/tentative/Selection-isCollapsed.html | ERROR (host is not defined) | 0 | 0 |
-| selection/shadow-dom/tentative/Selection-later-become-slotted-content.html | OK | 0 | 1 |
+| selection/shadow-dom/tentative/Selection-direction.html | OK | 7 | 0 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html | OK | 1 | 0 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html | OK | 2 | 4 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html | OK | 8 | 1 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-slot.html | OK | 3 | 0 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges.html | OK | 12 | 0 |
+| selection/shadow-dom/tentative/Selection-isCollapsed.html | OK | 4 | 0 |
+| selection/shadow-dom/tentative/Selection-later-become-slotted-content.html | OK | 1 | 0 |
 | selection/stringifier.tentative.html | OK | 1 | 0 |
-| selection/stringifier_editable_element.tentative.html | OK | 0 | 12 |
+| selection/stringifier_editable_element.tentative.html | TIMEOUT | 0 | 0 |
 | selection/test-iframe.html | REFTEST | 0 | 0 |
 | selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-browsing-context: the focus moves in from an iframe) | 0 | 0 |
 | selection/textcontrols/focus.html | OK | 0 | 1 |
 | selection/textcontrols/initial-selection-during-focus-event-propagation.html | OK | 0 | 1 |
-| selection/textcontrols/onselectionchange-content-attribute.html | OK | 1 | 1 |
-| selection/textcontrols/selectionchange-bubble.html | ERROR (input is not defined) | 0 | 0 |
+| selection/textcontrols/onselectionchange-content-attribute.html | OK | 2 | 0 |
+| selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
-| selection/textcontrols/selectionchange.html | ERROR (input is not defined) | 0 | 0 |
+| selection/textcontrols/selectionchange.html | OK | 44 | 16 |
 | selection/toString-ff-bug-001.html | OK | 1 | 0 |
 | selection/toString-user-select-none.html | OK | 0 | 3 |
 | selection/type.html | OK | 29 | 0 |
 | selection/user-select-on-input-and-contenteditable.html | OK | 0 | 5 |
 | shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 1 | 13 |
 | shadow-dom/Document-prototype-adoptNode.html | OK | 2 | 0 |
-| shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 2 | 6 |
+| shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 0 | 0 |
 | shadow-dom/Document-prototype-importNode.html | OK | 2 | 0 |
 | shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html | OK | 9 | 32 |
 | shadow-dom/Element-interface-attachShadow-custom-element.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
@@ -1032,16 +1031,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/Element-interface-shadowRoot-attribute.html | OK | 3 | 0 |
 | shadow-dom/Extensions-to-Event-Interface.html | OK | 16 | 0 |
 | shadow-dom/HTMLSlotElement-interface.html | OK | 18 | 0 |
-| shadow-dom/HighlightRegistry-highlightsFromPoint.html | OK | 0 | 4 |
+| shadow-dom/HighlightRegistry-highlightsFromPoint.html | OK | 1 | 3 |
 | shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | OK | 1 | 2 |
 | shadow-dom/Node-prototype-cloneNode.html | OK | 4 | 0 |
 | shadow-dom/Range-prototype-insertNode.html | OK | 1 | 0 |
 | shadow-dom/ShadowRoot-interface.html | OK | 10 | 2 |
 | shadow-dom/Slottable-mixin.html | OK | 4 | 0 |
-| shadow-dom/accesskey.tentative.html | TIMEOUT | 0 | 2 |
+| shadow-dom/accesskey.tentative.html | TIMEOUT | 0 | 0 |
 | shadow-dom/assign-slottables-after-removing-shadow-tree-from-document.html | OK | 1 | 0 |
 | shadow-dom/attach-shadow-non-html-namespace.html | OK | 304 | 0 |
-| shadow-dom/attachShadow-with-ShadowRoot.html | OK | 0 | 2 |
+| shadow-dom/attachShadow-with-ShadowRoot.html | OK | 2 | 0 |
 | shadow-dom/build-deep-detached-shadow-then-append-text.html | ERROR | 1 | 0 |
 | shadow-dom/capturing-and-bubbling-event-listeners-across-shadow-trees.html | OK | 5 | 0 |
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
@@ -1052,10 +1051,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | EXCLUDED (requires-script-execution: the opt-in is read by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-repeats-2.html | EXCLUDED (requires-script-execution: the second template is judged by a script the parser runs between them) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html | OK | 0 | 2 |
-| shadow-dom/declarative/declarative-shadow-dom-repeats.html | ERROR | 0 | 3 |
-| shadow-dom/declarative/declarative-shadow-dom-serialization.html | OK | 0 | 2 |
-| shadow-dom/declarative/declarative-shadow-dom-slot-assignment-serialization.html | ERROR | 0 | 3 |
-| shadow-dom/declarative/declarative-shadow-dom-slot-assignment.html | ERROR | 2 | 6 |
+| shadow-dom/declarative/declarative-shadow-dom-repeats.html | OK | 3 | 0 |
+| shadow-dom/declarative/declarative-shadow-dom-serialization.html | OK | 2 | 0 |
+| shadow-dom/declarative/declarative-shadow-dom-slot-assignment-serialization.html | OK | 1 | 2 |
+| shadow-dom/declarative/declarative-shadow-dom-slot-assignment.html | OK | 3 | 5 |
 | shadow-dom/declarative/declarative-shadow-dom-write-to-iframe.html | EXCLUDED (requires-browsing-context: the markup is written into a frame's document) | 0 | 0 |
 | shadow-dom/declarative/declarative-with-disabled-shadow.html | EXCLUDED (requires-script-execution: the definition that disables shadow roots is registered by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/gethtml-ordering.html | EXCLUDED (requires-script-execution: the serialization order is read by a script the parser runs mid-document) | 0 | 0 |
@@ -1102,21 +1101,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-serialization.html | ERROR (Unexpected token ':') | 0 | 0 |
 | shadow-dom/directionality-001.tentative.html | REFTEST | 0 | 0 |
 | shadow-dom/directionality-002.tentative.html | REFTEST | 0 | 0 |
-| shadow-dom/dragenter-related-target.html | ERROR | 0 | 1 |
-| shadow-dom/dragleave-related-target.html | ERROR | 0 | 1 |
+| shadow-dom/dragenter-related-target.html | TIMEOUT | 0 | 0 |
+| shadow-dom/dragleave-related-target.html | TIMEOUT | 0 | 0 |
 | shadow-dom/event-composed-path-after-dom-mutation.html | OK | 2 | 0 |
-| shadow-dom/event-composed-path-with-related-target.html | OK | 0 | 13 |
-| shadow-dom/event-composed-path.html | OK | 0 | 11 |
-| shadow-dom/event-composed.html | OK | 2 | 7 |
-| shadow-dom/event-dispatch-order.tentative.html | OK | 0 | 1 |
+| shadow-dom/event-composed-path-with-related-target.html | OK | 13 | 0 |
+| shadow-dom/event-composed-path.html | OK | 11 | 0 |
+| shadow-dom/event-composed.html | OK | 9 | 0 |
+| shadow-dom/event-dispatch-order.tentative.html | OK | 1 | 0 |
 | shadow-dom/event-inside-shadow-tree.html | OK | 12 | 0 |
 | shadow-dom/event-inside-slotted-node.html | OK | 20 | 0 |
-| shadow-dom/event-post-dispatch-no-listeners.html | OK | 0 | 5 |
-| shadow-dom/event-post-dispatch.html | ERROR (test1 is not defined) | 0 | 0 |
+| shadow-dom/event-post-dispatch-no-listeners.html | OK | 5 | 0 |
+| shadow-dom/event-post-dispatch.html | OK | 15 | 1 |
 | shadow-dom/event-with-related-target.html | OK | 18 | 0 |
 | shadow-dom/execcommand-insertList-in-shadow.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/delegatesFocus-highlight-sibling.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html | OK | 0 | 1 |
+| shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-fallback.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-nested-2levels.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-nested-delegatesFocus.html | OK | 1 | 0 |
@@ -1125,15 +1124,15 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus-navigation/focus-navigation-slot-shadow-in-fallback.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-shadow-in-slot.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-with-tabindex.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-navigation-slots-in-slot.html | OK | 0 | 1 |
+| shadow-dom/focus-navigation/focus-navigation-slots-in-slot.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slots.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-web-component-radio.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-navigation-with-delegatesFocus.html | OK | 0 | 16 |
+| shadow-dom/focus-navigation/focus-navigation-with-delegatesFocus.html | OK | 16 | 0 |
 | shadow-dom/focus-navigation/focus-navigation.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-nested-slots.html | OK | 0 | 1 |
-| shadow-dom/focus-navigation/focus-reverse-unassignable-slot.html | OK | 0 | 1 |
+| shadow-dom/focus-navigation/focus-nested-slots.html | OK | 1 | 0 |
+| shadow-dom/focus-navigation/focus-reverse-unassignable-slot.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-reverse-unassigned-slot.html | OK | 1 | 0 |
-| shadow-dom/focus-navigation/focus-unassignable-slot.html | OK | 0 | 1 |
+| shadow-dom/focus-navigation/focus-unassignable-slot.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-with-negative-index.html | OK | 2 | 0 |
 | shadow-dom/focus-navigation/menu/tentative/focus-menu-elements.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/reading-flow/tentative/carousel-grid-order.html | EXCLUDED (not-a-standard: the CSS reading-flow property these navigate by is a proposal, filed under tentative in the suite) | 0 | 0 |
@@ -1164,10 +1163,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/DocumentOrShadowRoot-activeElement.html | OK | 6 | 0 |
 | shadow-dom/focus/ShadowRoot-delegatesFocus.html | OK | 3 | 0 |
 | shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html | OK | 2 | 0 |
-| shadow-dom/focus/click-focus-delegatesFocus-click.html | ERROR (outside is not defined) | 0 | 0 |
-| shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | ERROR (outside is not defined) | 0 | 0 |
-| shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | ERROR (outside is not defined) | 0 | 0 |
-| shadow-dom/focus/click-focus-slot-ancestor.html | ERROR (container is not defined) | 0 | 0 |
+| shadow-dom/focus/click-focus-delegatesFocus-click.html | OK | 2 | 4 |
+| shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | OK | 0 | 1 |
+| shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | OK | 0 | 1 |
+| shadow-dom/focus/click-focus-slot-ancestor.html | OK | 2 | 1 |
 | shadow-dom/focus/delegatesFocus-tabindex-change.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-autofocus.html | OK | 5 | 0 |
 | shadow-dom/focus/focus-click-on-shadow-host.html | OK | 0 | 1 |
@@ -1175,11 +1174,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/focus-method-delegatesFocus.html | OK | 15 | 0 |
 | shadow-dom/focus/focus-method-with-delegatesFocus.html | ERROR (missing script resources/shadow-dom.js) | 0 | 0 |
 | shadow-dom/focus/focus-preserved-on-slot-reorder.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-pseudo-matches-on-shadow-host.html | ERROR (defaultFocus is not defined) | 0 | 0 |
+| shadow-dom/focus/focus-pseudo-matches-on-shadow-host.html | TIMEOUT | 0 | 0 |
 | shadow-dom/focus/focus-pseudo-on-shadow-host-1.html | REFTEST | 0 | 0 |
 | shadow-dom/focus/focus-pseudo-on-shadow-host-2.html | REFTEST | 0 | 0 |
 | shadow-dom/focus/focus-pseudo-on-shadow-host-3.html | REFTEST | 0 | 0 |
-| shadow-dom/focus/focus-scroll-under-delegatesFocus.html | ERROR | 0 | 1 |
+| shadow-dom/focus/focus-scroll-under-delegatesFocus.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-selector-delegatesFocus.html | OK | 12 | 0 |
 | shadow-dom/focus/focus-shadowhost-display-none.html | OK | 0 | 2 |
 | shadow-dom/focus/focus-slot-box-generated-tabindex-0.html | OK | 1 | 0 |
@@ -1198,7 +1197,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-one.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-scrollable.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero.html | OK | 1 | 0 |
-| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 0 | 1 |
+| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 1 | 0 |
 | shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html | OK | 0 | 1 |
 | shadow-dom/focus/text-selection-with-delegatesFocus.html | OK | 0 | 2 |
 | shadow-dom/form-control-form-attribute.html | OK | 2 | 1 |
@@ -1207,8 +1206,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/historical.html | OK | 5 | 0 |
 | shadow-dom/imperative-slot-api-cross-shadow-root.html | OK | 1 | 1 |
 | shadow-dom/imperative-slot-api-disconnected.html | OK | 1 | 0 |
-| shadow-dom/imperative-slot-api-slotchange.html | OK | 0 | 13 |
-| shadow-dom/imperative-slot-api.html | OK | 1 | 15 |
+| shadow-dom/imperative-slot-api-slotchange.html | OK | 13 | 0 |
+| shadow-dom/imperative-slot-api.html | OK | 16 | 0 |
 | shadow-dom/imperative-slot-fallback-clear.html | OK | 0 | 2 |
 | shadow-dom/imperative-slot-initial-fallback.html | OK | 2 | 0 |
 | shadow-dom/imperative-slot-layout-invalidation-001.html | REFTEST | 0 | 0 |
@@ -1254,14 +1253,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/slot-fallback-content-006.html | REFTEST | 0 | 0 |
 | shadow-dom/slot-fallback-content-007.html | REFTEST | 0 | 0 |
 | shadow-dom/slot-fallback-content-008.html | REFTEST | 0 | 0 |
-| shadow-dom/slot-reconciliation-at-node-removal.html | OK | 0 | 1 |
+| shadow-dom/slot-reconciliation-at-node-removal.html | OK | 1 | 0 |
 | shadow-dom/slotchange-customelements.html | OK | 0 | 1 |
 | shadow-dom/slotchange-event.html | OK | 32 | 0 |
-| shadow-dom/slotchange.html | OK | 0 | 17 |
-| shadow-dom/slots-fallback-in-document.html | ERROR (test1 is not defined) | 0 | 0 |
-| shadow-dom/slots-fallback.html | OK | 0 | 13 |
+| shadow-dom/slotchange.html | OK | 17 | 0 |
+| shadow-dom/slots-fallback-in-document.html | OK | 2 | 0 |
+| shadow-dom/slots-fallback.html | OK | 13 | 0 |
 | shadow-dom/slots-outside-shadow-dom.html | OK | 1 | 0 |
-| shadow-dom/slots.html | OK | 0 | 26 |
+| shadow-dom/slots.html | OK | 26 | 0 |
 | shadow-dom/touch-event-retargeting-leak.html | EXCLUDED (requires-touch-input: a touch action sequence, and a terminal reports no touches) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/attributes/test-006.html | OK | 1 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-001.html | OK | 1 | 0 |
@@ -1323,7 +1322,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html | EXCLUDED (requires-browsing-context: a Selection over a rendered document in a frame) | 0 | 0 |
 | shadow-dom/wheel-event-related-target.html | OK | 0 | 1 |
-| custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 1 | 4 |
+| custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 5 | 0 |
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
 | custom-elements/CustomElementRegistry.html | OK | 46 | 0 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
@@ -1362,16 +1361,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus-notref.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html | OK | 0 | 2 |
-| custom-elements/form-associated/ElementInternals-setFormValue.html | ERROR | 1 | 54 |
+| custom-elements/form-associated/ElementInternals-setFormValue.html | TIMEOUT | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
-| custom-elements/form-associated/ElementInternals-validation.html | OK | 12 | 2 |
+| custom-elements/form-associated/ElementInternals-validation.html | OK | 13 | 1 |
 | custom-elements/form-associated/disabled-delegatesFocus.html | OK | 1 | 0 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
 | custom-elements/form-associated/form-associated-callback.html | OK | 3 | 2 |
-| custom-elements/form-associated/form-disabled-callback.html | ERROR | 8 | 2 |
+| custom-elements/form-associated/form-disabled-callback.html | TIMEOUT | 0 | 0 |
 | custom-elements/form-associated/form-elements-namedItem.html | OK | 1 | 2 |
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
 | custom-elements/form-associated/label-delegatesFocus.html | OK | 0 | 2 |
@@ -1397,11 +1396,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/range-and-constructors.html | OK | 2 | 0 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
 | custom-elements/reactions/Animation.html | OK | 0 | 3 |
-| custom-elements/reactions/AriaMixin-element-attributes.html | OK | 0 | 16 |
+| custom-elements/reactions/AriaMixin-element-attributes.html | OK | 16 | 0 |
 | custom-elements/reactions/AriaMixin-string-attributes.html | OK | 80 | 0 |
 | custom-elements/reactions/AriaMixin-string-attributes.tentative.html | OK | 8 | 0 |
 | custom-elements/reactions/Attr.html | OK | 2 | 0 |
-| custom-elements/reactions/CSSStyleDeclaration.html | ERROR (CSSStyleDeclaration is not defined) | 0 | 0 |
+| custom-elements/reactions/CSSStyleDeclaration.html | OK | 22 | 8 |
 | custom-elements/reactions/ChildNode.html | OK | 7 | 0 |
 | custom-elements/reactions/DOMStringMap.html | OK | 4 | 4 |
 | custom-elements/reactions/DOMTokenList.html | OK | 19 | 0 |
@@ -1455,19 +1454,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/reactions/with-exceptions.html | OK | 0 | 1 |
 | custom-elements/registries/Construct.html | OK | 2 | 1 |
 | custom-elements/registries/CustomElementRegistry-define.html | OK | 3 | 0 |
-| custom-elements/registries/CustomElementRegistry-initialize.html | OK | 7 | 6 |
+| custom-elements/registries/CustomElementRegistry-initialize.html | OK | 13 | 0 |
 | custom-elements/registries/CustomElementRegistry-multi-register.html | OK | 2 | 0 |
 | custom-elements/registries/CustomElementRegistry-upgrade.html | OK | 2 | 3 |
 | custom-elements/registries/Document-createElement.html | OK | 10 | 0 |
 | custom-elements/registries/Document-createElementNS.html | OK | 10 | 0 |
 | custom-elements/registries/Document-customElementRegistry.html | OK | 4 | 0 |
 | custom-elements/registries/Document-importNode-cross-document.window.js | ERROR | 0 | 15 |
-| custom-elements/registries/Document-importNode.html | OK | 3 | 17 |
+| custom-elements/registries/Document-importNode.html | OK | 13 | 7 |
 | custom-elements/registries/Element-customElementRegistry-exceptions.html | OK | 2 | 1 |
 | custom-elements/registries/Element-customElementRegistry.html | OK | 10 | 1 |
-| custom-elements/registries/Element-innerHTML.html | OK | 7 | 5 |
+| custom-elements/registries/Element-innerHTML.html | OK | 8 | 4 |
 | custom-elements/registries/ShadowRoot-init-customElementRegistry.html | OK | 10 | 2 |
-| custom-elements/registries/ShadowRoot-init-declarative.html | OK | 1 | 2 |
+| custom-elements/registries/ShadowRoot-init-declarative.html | OK | 3 | 0 |
 | custom-elements/registries/ShadowRoot-innerHTML.html | OK | 0 | 4 |
 | custom-elements/registries/adoption.window.js | ERROR | 0 | 36 |
 | custom-elements/registries/constructor-direct-call-fallback-registry.window.js | OK | 0 | 2 |
@@ -1475,8 +1474,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/constructor-reentry-with-different-definition.html | OK | 0 | 4 |
 | custom-elements/registries/define-customized-builtins.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
 | custom-elements/registries/define.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
-| custom-elements/registries/element-mutation-null-registry-removal.html | OK | 0 | 1 |
-| custom-elements/registries/element-mutation.html | OK | 9 | 6 |
+| custom-elements/registries/element-mutation-null-registry-removal.html | OK | 1 | 0 |
+| custom-elements/registries/element-mutation.html | OK | 15 | 0 |
 | custom-elements/registries/global.window.js | OK | 0 | 5 |
 | custom-elements/registries/initial-about-blank.window.js | OK | 0 | 1 |
 | custom-elements/registries/per-document.html | OK | 1 | 2 |
@@ -1493,9 +1492,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/upgrade.html | OK | 5 | 0 |
 | custom-elements/registries/valid-custom-element-names.html | OK | 1975 | 0 |
 | custom-elements/state/ElementInternals-states.html | OK | 4 | 0 |
-| custom-elements/state/state-css-selector-nth-of.html | ERROR | 0 | 3 |
-| custom-elements/state/state-css-selector-shadow-dom.html | ERROR | 0 | 0 |
-| custom-elements/state/state-css-selector.html | OK | 0 | 10 |
+| custom-elements/state/state-css-selector-nth-of.html | OK | 3 | 0 |
+| custom-elements/state/state-css-selector-shadow-dom.html | OK | 3 | 0 |
+| custom-elements/state/state-css-selector.html | OK | 10 | 0 |
 | custom-elements/state/state-pseudo-class.html | OK | 8 | 0 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html | OK | 0 | 11 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html | OK | 0 | 11 |
@@ -2122,47 +2121,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - moveBefore() into a Document throws a HierarchyRequestError: Cannot read properties of undefined (reading 'name')
 
-### dom/nodes/moveBefore/continue-css-animation-left.html
-
-- Node.moveBefore should preserve CSS animation state (left): Test timed out
-
-### dom/nodes/moveBefore/continue-css-animation-transform.html
-
-- Node.moveBefore should preserve CSS animation state (transform): Test timed out
-
 ### dom/nodes/moveBefore/continue-css-transition-transform.html
 
 - Node.moveBefore should preserve CSS transition state (transform): assert_equals: expected 200 but got 0
-
-### dom/nodes/moveBefore/css-animation-commit-styles.html
-
-- Calling commitStyles after Node.moveBefore should commit mid-transition value: Test timed out
-
-### dom/nodes/moveBefore/custom-element-move-reactions.html
-
-- connectedMove runs when custom element is nested within a shadow root: promise_test: Unhandled rejection with value: object "ReferenceError: customElement is not defined"
-
-### dom/nodes/moveBefore/fieldset-child-blur-event.html
-
-- The 'blur' event is not fired on children of HTMLFieldSetElement during moveBefore(): victim is not defined
-
-### dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html
-
-- Neither 'blur' nor 'focusout' is fired on a focused <input type=date> child of HTMLFieldSetElement during moveBefore(): victim is not defined
-
-### dom/nodes/moveBefore/fire-focusin-focusout.html
-
-- Don't fire focusin/out when reparenting focused element directly: new_parent is not defined
-- Don't fire focusin/out when reparenting an element that has focus within: new_parent is not defined
-
-### dom/nodes/moveBefore/focus-preserve.html
-
-- when reparenting an element, don't automatically reset the document focus: new_parent is not defined
-
-### dom/nodes/moveBefore/focus-within.html
-
-- focus-within should be updated when reparenting focused element directly: new_parent is not defined
-- focus-within should be updated when reparenting an element that has focus within: new_parent is not defined
 
 ### dom/nodes/moveBefore/fullscreen-preserve.html
 
@@ -2173,58 +2134,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Element loses hover when moved to different position: assert_true: expected true got false
 - Hover works immediately after moved: assert_true: expected true got false
 
-### dom/nodes/moveBefore/live-range-updates.html
-
-- moveBefore still results in range startContainer snapping up to parent when startContainer is moved: start is not defined
-- moveBefore still causes range startContainer to snap up to parent, when startContainer ancestor is moved: start is not defined
-- moveBefore still causes range endContainer to snap up to parent, when endContainer ancestor is moved: start is not defined
-
-### dom/nodes/moveBefore/moveBefore-dir.html
-
-- moveBefore() correctly updates the computed dir for moved nodes: target is not defined
-
 ### dom/nodes/moveBefore/moveBefore-id-map.html
 
-- moveBefore() correctly updates id map when moving into shadow root: container is not defined
-- moveBefore() correctly updates window map when moving id-mapped element into shadow root: container2 is not defined
-- moveBefore() correctly updates id map when moving between shadow roots: host1 is not defined
-
-### dom/nodes/moveBefore/moveBefore-lang.html
-
-- moveBefore() correctly updates the computed lang for moved nodes: target is not defined
+- moveBefore() correctly updates window map when moving id-mapped element into shadow root: assert_equals: expected (object) Element node <div id="target2"></div> but got (undefined) undefined
 
 ### dom/nodes/moveBefore/moveBefore-name-map.html
 
-- moveBefore() correctly updates name map when moving into shadow root: container is not defined
 - moveBefore() correctly updates window map: assert_equals: expected (object) Element node <img name="target2" data-target2=""></img> but got (undefined) undefined
-
-### dom/nodes/moveBefore/moveBefore-option-recalc-style.html
-
-- moveBefore() of an option element between two selects: move_to is not defined
-
-### dom/nodes/moveBefore/moveBefore-selector-matching.html
-
-- moveBefore() should invalidate target when descendant selector changes: new_parent is not defined
-
-### dom/nodes/moveBefore/moveBefore-shadow-root.html
-
-- moveBefore() is allowed in ShadowRoots (i.e., connected DocumentFragments): shadowTarget is not defined
-
-### dom/nodes/moveBefore/moveBefore-size-query.html
-
-- moveBefore() between different size containers invalidates target: new_parent is not defined
-
-### dom/nodes/moveBefore/mutation-observer.html
-
-- [Connected move] MutationObserver removal + insertion is tracked by moveBefore(): promise_test: Unhandled rejection with value: object "ReferenceError: oldParent is not defined"
 
 ### dom/nodes/moveBefore/nonce.html
 
-- Element nonce content attribute is not cleared after move: new_parent is not defined
-
-### dom/nodes/moveBefore/object-crash-regression.html
-
-- Moving an object element does not crash: p is not defined
+- Element nonce content attribute is not cleared after move: assert_equals: expected "" but got "8IBTHwOdqNKAWeKl7plt8g=="
 
 ### dom/nodes/moveBefore/pointer-events.html
 
@@ -2236,7 +2156,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/nodes/moveBefore/role-updates-after-move.html
 
-- header elements role should become sectionheader when moved into a section: promise_test: Unhandled rejection with value: object "ReferenceError: header is not defined"
+- header elements role should become sectionheader when moved into a section: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
 
 ### dom/nodes/moveBefore/select-option-optgroup.html
 
@@ -2244,12 +2164,12 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/nodes/moveBefore/selection-preserve.html
 
-- moveBefore should not reset selection with preceding text: promise_test: Unhandled rejection with value: object "ReferenceError: text is not defined"
-- moveBefore resets selection that enters a subtree, when the whole selection is moved: promise_test: Unhandled rejection with value: object "ReferenceError: parentParagraph is not defined"
-- moveBefore anchor node moved up to expand selection and absorb nodes: promise_test: Unhandled rejection with value: object "ReferenceError: parentParagraph is not defined"
-- moveBefore move intersecting nodes out of a selection: promise_test: Unhandled rejection with value: object "ReferenceError: grandparentParagraph is not defined"
-- moveBefore focus node moved up to shrink selection and exclude nodes; focus node gets reset: promise_test: Unhandled rejection with value: object "ReferenceError: grandparentParagraph is not defined"
-- moveBefore selection is not preserved, especially when underlying range gets inverted: promise_test: Unhandled rejection with value: object "ReferenceError: i3 is not defined"
+- moveBefore should not reset selection with preceding text: assert_equals: expected Text node "This text does not move" but got Element node <div id="old_parent">
+- moveBefore resets selection that enters a subtree, when the whole selection is moved: assert_equals: expected Text node "Grandparent paragraph" but got Element node <div id="grandparentDiv">
+- moveBefore anchor node moved up to expand selection and absorb nodes: assert_equals: expected Text node "Child paragraph one" but got Element node <div id="parentDiv">
+- moveBefore move intersecting nodes out of a selection: assert_equals: expected Text node "Paragraph two" but got Text node "Grandparent paragraph"
+- moveBefore focus node moved up to shrink selection and exclude nodes; focus node gets reset: assert_equals: expected Text node "Parent paragraph" but got Text node "Grandparent paragraph"
+- moveBefore selection is not preserved, especially when underlying range gets inverted: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (118, 4) is outside the viewport"
 
 ### dom/nodes/node-creation-realm.html
 
@@ -2285,17 +2205,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Text node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
 - Comment node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
 
-### dom/nodes/querySelector-empty-id.html
-
-- querySelector attribute matching empty id: root is not defined
-
-### dom/nodes/querySelector-id-nth-child.html
-
-- querySelector matching #id + constant nth-child(): target is not defined
-
 ### dom/nodes/remove-next-sibling-during-replace-with.html
 
-- remove-next-sibling-during-replace-with: target is not defined
+- remove-next-sibling-during-replace-with: assert_equals: expected "<span>New </span><span>content</span>" but got "<span>New </span><span>content</span><b></b>"
 
 ### dom/collections/HTMLCollection-as-prototype.html
 
@@ -2345,14 +2257,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/events/Event-dispatch-bubbles-true.html
 
 - In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
-
-### dom/events/Event-dispatch-click.html
-
-- pick the first with activation behavior <a href>: Test timed out
-- disabling checkbox in onclick listener shouldn't suppress oninput: Test timed out
-- disabling checkbox in onclick listener shouldn't suppress onchange: Test timed out
-- disabling radio in onclick listener shouldn't suppress oninput: Test timed out
-- disabling radio in onclick listener shouldn't suppress onchange: Test timed out
 
 ### dom/events/Event-dispatch-click.tentative.html
 
@@ -2431,7 +2335,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html
 
-- window.event is still set when 'beforeunload' result is coerced to string: iframe is not defined
+- window.event is still set when 'beforeunload' result is coerced to string: Cannot set properties of undefined (setting 'href')
 
 ### dom/events/event-global-is-still-set-when-reporting-exception-onerror.html
 
@@ -2451,14 +2355,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - window.event is set to the current event during dispatch: Cannot read properties of undefined (reading 'type')
 - window.event is set to the current event, which is the event passed to dispatch: assert_equals: expected (undefined) undefined but got (object) object "[object Event]"
 - window.event is set to the current event, which is the event passed to dispatch (2): XMLHttpRequest is not defined
-
-### dom/events/focus-event-document-move.html
-
-- Moving a node during mousedown should not crash: Test timed out
-
-### dom/events/mouse-event-retarget.html
-
-- offsetX is correctly adjusted: target is not defined
 
 ### dom/events/no-focus-events-at-clicking-editable-content-in-link.html
 
@@ -2568,15 +2464,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Wheel scroll in iframe chains to containing element.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
 
-### dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html
-
-- Ensure that the scroll position is not lost when the local iframe is set to display:none and shown again.: Test timed out
-- Ensure that the scroll position is not lost when the remote iframe is set to display:none and shown again.: 
-
-### dom/events/scrolling/scroll-cross-origin-iframes.html
-
-- Verify sibling cross-origin iframes can wheel-scroll.: Test timed out
-
 ### dom/events/scrolling/scroll-event-fired-to-iframe.html
 
 - scrollX and scrollY should fire scroll event.: assert_equals: expected (number) 0 but got (undefined) undefined
@@ -2584,40 +2471,23 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - scrollX and scrollY being set with invalid scroll Scroll.: promise_test: Unhandled rejection with value: object "TypeError: target.addEventListener is not a function"
 - scrollX and scrollY when scrolling above maximum Scroll.: assert_equals: expected (number) 0 but got (undefined) undefined
 
-### dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html
-
-- scrolling state is false at the end of the test: Test timed out
-
 ### dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html
 
-- No scroll via wheel on div shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "ReferenceError: targetButton is not defined"
-- No scroll via keys on div shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "ReferenceError: targetButton is not defined"
-- No scroll via wheel on document shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "ReferenceError: docButton is not defined"
-- No scroll via keys on document shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "ReferenceError: docButton is not defined"
+- No scroll via wheel on div shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+- No scroll via wheel on document shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+- No scroll via keys on document shouldn't fire scrollend.: assert_unreached: no scroll, so no scrollend expected Reached unreachable code
 
-### dom/events/scrolling/wheel-event-composed.html
+### dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html
 
-- wheel event must be composed: Test timed out
+- snap to fractional offset fires scrollend exactly once.: assert_approx_equals: scroller snaps to the left edge of box 2 expected 701 +/- 1 but got 901
 
 ### dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html
 
-- When `preventDefault` is called on a WheelEvent, scrolling should be prevented.: promise_test: Unhandled rejection with value: object "ReferenceError: scroller is not defined"
-
-### dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html
-
-- Two separate webdriver action chains should have different wheel event transactions: Test timed out
+- When `preventDefault` is called on a WheelEvent, scrolling should be prevented.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
 
 ### dom/events/scrolling/wheel-event-transactions-target-elements.html
 
 - Wheel event transactions target elements: promise_test: Unhandled rejection with value: object "NotSupportedError: Web Animations is not implemented"
-
-### dom/events/scrolling/wheel-event-transactions-target-move.html
-
-- Move the initial wheel event target.: Test timed out
-
-### dom/events/scrolling/wheel-event-transactions-target-removal.html
-
-- Remove the initial wheel event target.: Test timed out
 
 ### dom/events/window-event-restored-after-throwing-onerror.html
 
@@ -2628,14 +2498,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Range in shadow should stay in the shadow after the host is removed: null is not a shadow root mode
 - Range in shadow should stay in the shadow after the host parent is removed: null is not a shadow root mode
 
-### selection/anchor-removal.html
-
-- anchorNode snaps up to parent when removed (no asserts): promise_test: Unhandled rejection with value: object "ReferenceError: parentParagraph is not defined"
-- anchorNode snaps up to parent when removed (with asserts): promise_test: Unhandled rejection with value: object "ReferenceError: parentParagraph is not defined"
-
 ### selection/anonymous/details-ancestor.html
 
-- Selecting the default summary of <details> should report a DOM-visible ancestor: promise_test: Unhandled rejection with value: object "ReferenceError: details is not defined"
+- Selecting the default summary of <details> should report a DOM-visible ancestor: promise_test: Unhandled rejection with value: object "Error: testdriver: the element has no box to point at"
+
+### selection/anonymous/details-mutate.html
+
+- Manipulating selection after clicking <details> shouldn't cause a crash: promise_test: Unhandled rejection with value: object "Error: testdriver: the element has no box to point at"
 
 ### selection/bidi/modify-extend-by-character.html
 
@@ -2663,6 +2532,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Mixed context in auto-dir paragraph: move right 3 chars: assert_equals: expected 5 but got 18
 - Mixed context in auto-dir paragraph: move left 3 chars: assert_equals: expected 17 but got 2
 
+### selection/bidi/modify.tentative.html
+
+- LTR text with left direction in rtl context: assert_equals: expected 11 but got 0
+- RTL text with left direction in rtl context: assert_equals: expected 10 but got 0
+- RTL+LTR text with left direction in rtl context: assert_equals: expected 22 but got 0
+- LTR+RTL text with left direction in rtl context: assert_equals: expected 22 but got 0
+- LTR+RTL+LTR text with left direction in rtl context: assert_equals: expected 34 but got 0
+- RTL+LTR+RTL text with left direction in rtl context: assert_equals: expected 33 but got 0
+- LTR text with right direction in rtl context: assert_equals: expected 0 but got 11
+- RTL text with right direction in rtl context: assert_equals: expected 0 but got 10
+- RTL+LTR text with right direction in rtl context: assert_equals: expected 0 but got 22
+- LTR+RTL text with right direction in rtl context: assert_equals: expected 0 but got 22
+- LTR+RTL+LTR text with right direction in rtl context: assert_equals: expected 0 but got 34
+- RTL+LTR+RTL text with right direction in rtl context: assert_equals: expected 0 but got 33
+
 ### selection/canvas-click.html
 
 - Clicking on a text-selectable canvas should not select it: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
@@ -2686,36 +2570,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
 - Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 7
 
-### selection/caret/empty-elements.html
-
-- Selection can be placed inside the empty element: strong is not defined
-
-### selection/caret/move-around-contenteditable-false.html
-
-- Initializing tests: Test timed out
-- Move caret from end of editable text node to <br> following non-editable text in next paragraph: 
-- Move caret from <br> following non-editable text to end of preceding editable text in next paragraph: 
-- Move caret from empty editable paragraph to editable text following non-editable text in next paragraph: 
-- Move caret from start of text following non-editable text to empty preceding editable paragraph: 
-
-### selection/caret/move-around-generated-content.html
-
-- Initializing tests: Test timed out
-- Moving caret between list items using arrow keys: 
-- Moving caret past the block-quote using arrow keys: 
-
-### selection/contenteditable/cefalse-on-boundaries.html
-
-- Selection can start on cE=false element at the beginning of the cE=true element: beginning is not defined
-- Selection can end on cE=false element at the end of the cE=true element: paragraph is not defined
-- Selection can start and end on cE=false elements at the boundaries of cE=true element: beginning is not defined
-- Range#selectNodeContents() correctly select contents of cE=true element with cE=false elements on boundaries: host is not defined
-
 ### selection/contenteditable/collapse.html
 
-- Selection.collapse() must succeed across siblings: button is not defined
-- Selection.collapse() must succeed for the ancestor: button is not defined
-- Selection.collapse() must succeed for the descendant: button is not defined
+- Selection.collapse() must succeed across siblings: assert_equals: expected Element node <div contenteditable="" id="host1"></div> but got Element node <button id="button"></button>
+- Selection.collapse() must succeed for the ancestor: assert_equals: expected Element node <div contenteditable="" id="host4"></div> but got Element node <button id="button"></button>
+- Selection.collapse() must succeed for the descendant: assert_equals: expected Element node <div contenteditable="" id="host3">
 
 ### selection/contenteditable/initial-selection-during-focus-event-propagation.html
 
@@ -2795,13 +2654,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Modifying selection should do nothing: assert_true: expected true got false
 
-### selection/drag-disabled-textarea-shadow-dom.html
-
-- Shouldn't crash when dragging disabled textarea in shadow dom: Test timed out
-
 ### selection/drag-out-of-floated-content.html
 
-- Drag rightward out of a floated block extends the selection forward, not backward to the start of the float's content.: promise_test: Unhandled rejection with value: object "ReferenceError: good is not defined"
+- Drag rightward out of a floated block extends the selection forward, not backward to the start of the float's content.: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (108, 0.5) is outside the viewport"
 
 ### selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html
 
@@ -2809,10 +2664,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/drag-selection-extend-to-user-select-none.html
 
-- Text with user-select:text is selectable even if it is inside a user-select:none element.: promise_test: Unhandled rejection with value: object "ReferenceError: target is not defined"
-- Select user-select:text content and then extend selection to user-select:none content.: promise_test: Unhandled rejection with value: object "ReferenceError: target is not defined"
-- Selection starts with user-select:text content and then extends selection to user-select:none content.: promise_test: Unhandled rejection with value: object "ReferenceError: target is not defined"
-- Select user-select:text content and then extend selection to the next user-select:text element by crossing the user-select:none element.: promise_test: Unhandled rejection with value: object "ReferenceError: target is not defined"
+- Text with user-select:text is selectable even if it is inside a user-select:none element.: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (44, 25) is outside the viewport"
+- Select user-select:text content and then extend selection to user-select:none content.: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (44, 25) is outside the viewport"
+- Selection starts with user-select:text content and then extends selection to user-select:none content.: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (44, 25) is outside the viewport"
+- Select user-select:text content and then extend selection to the next user-select:text element by crossing the user-select:none element.: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (44, 25) is outside the viewport"
 
 ### selection/extend-selection-backward-on-input.html
 
@@ -2854,22 +2709,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/modify-line-flex-column.tentative.html
 
-- forward: one is not defined
-- backward: three is not defined
+- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
 ### selection/modify-line-flex-row.tentative.html
 
-- forward: one is not defined
-- backward: three is not defined
+- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
 ### selection/modify-line-grid-basic.tentative.html
 
-- forward: one is not defined
-- backward: three is not defined
-
-### selection/modify.tentative.html
-
-- Stop at previous word boundary when whitespaces are trimmed: strong is not defined
+- forward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
+- backward: assert_equals: expected "e\n\nTwo\n\nTh" but got "e\nTwo\nTh"
 
 ### selection/move-by-word-korean.html
 
@@ -2895,18 +2746,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - cross editing boundary: assert_equals: expected "this " but got " after"
 - Selection.modify(): move by paragraphboundary cross editing boundary: assert_equals: expected "this " but got " after"
 
-### selection/onselectionchange-on-distinct-text-controls.html
-
-- selectionchange event on each input element fires independently: promise_test: Unhandled rejection with value: object "ReferenceError: input1 is not defined"
-- selectionchange event on each textarea element fires independently: promise_test: Unhandled rejection with value: object "ReferenceError: textarea1 is not defined"
-
-### selection/onselectionchange-on-document.html
-
-- selectionchange event on document fires: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
-- selectionchange event on document fires once: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
-- task to fire selectionchange event gets queued each time selection is mutated: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
-- has scheduled selectionchange event is set to false at the beginning of a task to fire selectionchange event: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
-
 ### selection/script-and-style-elements.html
 
 - Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got "PASS"
@@ -2917,20 +2756,15 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/selection-direction-on-double-click.tentative.html
 
-- direction returns "none" when there is a double click selection(directionless): promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+- direction returns "none" when there is a double click selection(directionless): assert_equals: expected "none" but got "forward"
 
 ### selection/selection-direction-on-single-click.html
 
-- direction returns "none" when the selection is collapsed: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
+- direction returns "none" when the selection is collapsed: assert_equals: expected "none" but got "forward"
 
 ### selection/selection-direction-on-triple-click.tentative.html
 
-- direction returns "none" when there is a triple click selection(directionless): promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
-
-### selection/selection-focused-element-becomes-nonfocusable.html
-
-- Focused element is removed: promise_test: Unhandled rejection with value: object "ReferenceError: button1 is not defined"
-- Focused element is disabled: 
+- direction returns "none" when there is a triple click selection(directionless): assert_equals: expected Element node <div id="container">hello, world</div> but got Text node "hello, world"
 
 ### selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html
 
@@ -2946,73 +2780,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - containsNode of non-assigned node child should return false (when all children of the host is selected): assert_false: expected false got true
 - containsNode of non-assigned node child should return false (when the host is selected): assert_false: expected false got true
 
-### selection/shadow-dom/tentative/Selection-direction.html
-
-- direction returns "forward" when there is a forward-direction selection in the document tree: container is not defined
-- direction returns "backward" when there is a backward-direction selection in the document tree: container is not defined
-- direction returns "forward" when there is a forward selection in the shadow tree: container is not defined
-- direction returns "backward" when there is a backward selection in the shadow tree: container is not defined
-- direction returns "forward" when there is a forward selection that crosses shadow boundaries: container is not defined
-- direction returns "backward" when there is a forward selection that crosses shadow boundaries: container is not defined
-
 ### selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html
 
-- Range is fully in shadow tree. Removing shadow host collapses composed StaticRange. Note it does not update previously returned composed StaticRange.: container is not defined
-- Range is fully in shadow tree. Removing parent of shadow host collapses composed StaticRange.: container is not defined
-- Range is in light DOM. Removing startContainer rescopes new composed range to its parent.: container is not defined
-- Range is across shadow trees. Replacing shadowRoot content rescopes new composed range to the shadowRoot.: container is not defined
-- Range is across shadow trees. Removing ancestor shadow host rescopes composed range end to parent.: container is not defined
-- Range is between two light slotted contents. Removing start container rescopes to its parent in light tree.: container is not defined
+- Range is fully in shadow tree. Removing shadow host collapses composed StaticRange. Note it does not update previously returned composed StaticRange.: null is not a shadow root mode
+- Range is fully in shadow tree. Removing parent of shadow host collapses composed StaticRange.: null is not a shadow root mode
+- Range is across shadow trees. Replacing shadowRoot content rescopes new composed range to the shadowRoot.: null is not a shadow root mode
+- Range is across shadow trees. Removing ancestor shadow host rescopes composed range end to parent.: null is not a shadow root mode
 
 ### selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html
 
-- If selection crosses shadow boundaries, getRangeAt(0) should throw an IndexSizeError because the end is not in the document tree.: light is not defined
-- modify getRangeAt() range: setStart() to disconnected node will collapse and remove the live range from the selection.: light is not defined
-- modify getRangeAt() range: setEnd() crosses shadow boundary into the shadow DOM and after start, which collapses live range. Composed selection range is not collapsed.: light is not defined
-- modify getRangeAt() range: setStart() crosses shadow boundary into the shadow DOM and before end, which collapses live range. Composed selection range is not collapsed.: lightEnd is not defined
-- modify getRangeAt() range: setStart() crosses shadow boundary into the shadow DOM and after end, which collapses both live range and composed selection range.: light is not defined
-- modify getRangeAt() range: selectNode() innerHost for all ranges.: light is not defined
-- modify getRangeAt() range: collapse() collapses all ranges.: light is not defined
-- modify createRange() range: added to selection before setStart/setEnd calls.: light is not defined
-
-### selection/shadow-dom/tentative/Selection-getComposedRanges-slot.html
-
-- Setting the range to start on slotted content and end in shadow tree, should follow DOM tree order.: container is not defined
-- Setting the range to start and end on slotted content, should follow DOM tree order.: container is not defined
-- Setting the range to start on unslotted content and end in shadow tree, should follow DOM tree order.: container is not defined
-
-### selection/shadow-dom/tentative/Selection-getComposedRanges.html
-
-- getComposedRanges should fail if argument is not a shadow root: container is not defined
-- getComposedRanges returns a sequence with a static range when there is a forward-direction selection in the document tree: container is not defined
-- getComposedRanges returns a sequence with a static range when there is a backward-direction selection in the document tree: container is not defined
-- getComposedRanges returns a sequence with a static range pointing to a shadow tree when there is a selection in the shadow tree and the shadow tree is specified as an argument: container is not defined
-- getComposedRanges returns a sequence with a static range pointing to the shadow host when there is a selection in a shadow tree and the shadow tree is not specified as an argument: container is not defined
-- getComposedRanges a sequence with a static range pointing to the shadow host when there is a forward selection that crosses shadow boundaries and the shadow tree is not specified as an argument: container is not defined
-- getComposedRanges a sequence with a static range that crosses shadow boundaries when there is a forward selection that crosses shadow boundaries and the shadow tree is specified as an argument: container is not defined
-- getComposedRanges returns a sequence with a static range pointing to the outer shadow host when there is a selection in an inner shadow tree and no shadow tree is specified as an argument: container is not defined
-- getComposedRanges returns a sequence with a static range pointing to the inner shadow tree when there is a selection in an inner shadow tree and the inner shadow tree is specified as an argument: container is not defined
-- getComposedRanges returns a sequence with a static range pointing to the outer shadow tree when there is a selection in an inner shadow tree and the outer shadow tree is specified as an argument: container is not defined
-- getComposedRanges returns a sequence with a static range without rescoping when there is a selection in an outer shadow tree and the inner shadow tree is specified as an argument: container is not defined
-
-### selection/shadow-dom/tentative/Selection-later-become-slotted-content.html
-
-- test to select a light DOM element and it becomes a slotted content after the selection: slotted is not defined
-
-### selection/stringifier_editable_element.tentative.html
-
-- select the entire input should result all the content: dummyInput is not defined
-- toString() should return empty when the focus is not on the editable content: dummyInput is not defined
-- toString() works with selectionStart and selectionEnd for input: dummyInput is not defined
-- select the entire textarea should result all the content: dummyInput is not defined
-- toString() works with selectionStart and selectionEnd for textarea: dummyInput is not defined
-- toString() works even if a click just occured on a button: dummyInput is not defined
-- toString() works for programatically calling .click() on anchor (without href): dummyInput is not defined
-- toString() doesn't work for actual clicking the anchor (without href): dummyInput is not defined
-- toString() works for programatically calling .click() on anchor (with href): dummyInput is not defined
-- toString() also works for actual clicking the anchor (with href): dummyInput is not defined
-- Click on a text prior to toString() moves the seleciton: dummyInput is not defined
-- Click on a `user-select:none` text prior to toString() doesn't move the seleciton: dummyInput is not defined
+- If selection crosses shadow boundaries, getRangeAt(0) should throw an IndexSizeError because the end is not in the document tree.: assert_throws_dom: function "function () { selection.getRangeAt(0) }" did not throw
 
 ### selection/textcontrols/focus.html
 
@@ -3022,13 +2799,28 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Selection should've already been initialized in the text control when `focus` event is dispatched: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
-### selection/textcontrols/onselectionchange-content-attribute.html
-
-- handler set from parser: promise_test: Unhandled rejection with value: object "ReferenceError: testElement is not defined"
-
 ### selection/textcontrols/selectionchange-on-shadow-dom.html
 
 - selectionchange event fired on a shadow dom bubble to the document: assert_equals: expected 1 but got 0
+
+### selection/textcontrols/selectionchange.html
+
+- Setting initial zero selectionStart value on the input element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionEnd value on the input element: assert_equals: expected 0 but got 1
+- Setting initial zero selection range on the input element: assert_equals: expected 0 but got 1
+- Calling setRangeText() on empty the input element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionStart value on the disconnected input element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionEnd value on the disconnected input element: assert_equals: expected 0 but got 1
+- Setting initial zero selection range on the disconnected input element: assert_equals: expected 0 but got 1
+- Calling setRangeText() on empty the disconnected input element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionStart value on the textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionEnd value on the textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selection range on the textarea element: assert_equals: expected 0 but got 1
+- Calling setRangeText() on empty the textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionStart value on the disconnected textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionEnd value on the disconnected textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selection range on the disconnected textarea element: assert_equals: expected 0 but got 1
+- Calling setRangeText() on empty the disconnected textarea element: assert_equals: expected 0 but got 1
 
 ### selection/toString-user-select-none.html
 
@@ -3046,28 +2838,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/Document-caretPositionFromPoint.tentative.html
 
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
-- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument: container is not defined
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument: container is not defined
-
-### shadow-dom/Document-prototype-currentScript.html
-
-- document.currentScript must be set to a script element that loads an external script in a document tree: Test timed out
-- document.currentScript must be set to a script element that loads an external script in a document tree (2): 
-- document.currentScript must not be set to a script element that loads an external script in an open shadow tree: 
-- document.currentScript must not be set to a script element that loads an external script in a closed shadow tree: 
-- document.currentScript must be set to a script element that loads an external script that was in an open shadow tree and then removed: 
-- document.currentScript must be set to a script element that loads an external script that was in a closed shadow tree and then removed: 
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
+- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument: caretPositionFromPoint is not implemented
 
 ### shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html
 
@@ -3106,10 +2889,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/HighlightRegistry-highlightsFromPoint.html
 
-- CSS.highlights.highlightsFromPoint() should throw when called with nodes that are not ShadowRoot objects in options.: assert_throws_js: function "() => { CSS.highlights.highlightsFromPoint(10, 10, {shadowRoots: [container]}); }" threw object "ReferenceError: container is not defined" ("ReferenceError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
-- CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: container is not defined
-- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: container is not defined
-- CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.: container is not defined
+- CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: CSS.highlights.highlightsFromPoint is not a function
+- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: CSS.highlights.highlightsFromPoint is not a function
+- CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.: CSS.highlights.highlightsFromPoint is not a function
 
 ### shadow-dom/MouseEvent-prototype-offsetX-offsetY.html
 
@@ -3121,41 +2903,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is open.: assert_equals: shadowRoot.styleSheets must be empty when the shadow root is not connected expected 0 but got 2
 - ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is closed.: assert_equals: shadowRoot.styleSheets must be empty when the shadow root is not connected expected 0 but got 2
 
-### shadow-dom/accesskey.tentative.html
-
-- button element with accesskey in the shadow tree of open mode: Test timed out
-- button element with accesskey in the shadow tree of closed mode: 
-
-### shadow-dom/attachShadow-with-ShadowRoot.html
-
-- can use ShadowRoot as options for attachShadow: promise_test: Unhandled rejection with value: object "ReferenceError: elementSource is not defined"
-- can use ShadowRoot in document fragment as options for attachShadow: promise_test: Unhandled rejection with value: object "ReferenceError: templateSource is not defined"
-
 ### shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html
 
 - Declarative Shadow DOM: shadow root should be available to element internals: assert_true: expected true got false
 
 ### shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html
 
-- attachShadow() on declarative shadow root with manual slotAssignment: manual1 is not defined
-- attachShadow() on declarative shadow root does not change slotAssignment: manual2 is not defined
-
-### shadow-dom/declarative/declarative-shadow-dom-repeats.html
-
-- Repeated declarative shadow roots keep only the first: multiple1 is not defined
-- Calling attachShadow() on declarative shadow root must match mode: 
-- Calling attachShadow() on declarative shadow root must match all parameters: 
-
-### shadow-dom/declarative/declarative-shadow-dom-serialization.html
-
-- shadow root children are serialized inside template: a is not defined
-- nested elements inside shadow root are serialized: b is not defined
+- attachShadow() on declarative shadow root with manual slotAssignment: assert_equals: slotAssignment should be "manual" from declarative attribute expected "manual" but got "named"
+- attachShadow() on declarative shadow root does not change slotAssignment: assert_equals: expected "manual" but got "named"
 
 ### shadow-dom/declarative/declarative-shadow-dom-slot-assignment-serialization.html
 
-- shadowrootslotassignment=manual is serialized and appears before shadowrootclonable and shadowrootserializable: wrapper is not defined
-- shadowrootslotassignment=named is not serialized as it's the default: 
-- shadowrootslotassignment=manual serializes between shadowrootdelegatesfocus and shadowrootclonable: 
+- shadowrootslotassignment=manual is serialized and appears before shadowrootclonable and shadowrootserializable: assert_equals: expected "manual" but got "named"
+- shadowrootslotassignment=manual serializes between shadowrootdelegatesfocus and shadowrootclonable: assert_equals: expected "manual" but got "named"
 
 ### shadow-dom/declarative/declarative-shadow-dom-slot-assignment.html
 
@@ -3163,8 +2923,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - shadowrootslotassignment reflection, setter: assert_equals: expected (string) "manual" but got (object) null
 - Declarative Shadow DOM: shadowrootslotassignment=manual: assert_equals: slotAssignment should be "manual" expected "manual" but got "named"
 - Declarative Shadow DOM: shadowrootslotassignment is case insensitive: assert_equals: slotAssignment should be "manual" (case insensitive) expected "manual" but got "named"
-- Declarative Shadow DOM: shadowrootslotassignment on closed shadows can be set to manual: 
-- Declarative Shadow DOM: missing shadowrootslotassignment defaults to named: div is not defined
+- Declarative Shadow DOM: shadowrootslotassignment on closed shadows can be set to manual: assert_true: No shadow root found expected true got false
 
 ### shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-feature-detection.html
 
@@ -3175,112 +2934,36 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - shadowRootAdoptedStyleSheets reflects the shadowrootadoptedstylesheets content attribute.: assert_equals: Setting the IDL attribute must set the content attribute. expected (string) "foo bar" but got (object) null
 - Empty-string assignment and removeAttribute() are distinguishable on shadowRootAdoptedStyleSheets.: assert_equals: After removeAttribute(), the IDL getter must return the empty string. expected "" but got "remove-me"
 
-### shadow-dom/dragenter-related-target.html
+### shadow-dom/event-post-dispatch.html
 
-- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
-
-### shadow-dom/dragleave-related-target.html
-
-- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
-
-### shadow-dom/event-composed-path-with-related-target.html
-
-- Event path for an event with a relatedTarget. relatedTarget != target.: test1 is not defined
-- Event path for an event with a relatedTarget. Event should be dispatched even when target and relatedTarget are same.: test1 is not defined
-- Event path for an event with a relatedTarget. Event should stop at the shadow root: test2 is not defined
-- Event path for an event with a relatedTarget which is identical to target. Event should be dispatched and should stop at the shadow root.: test2 is not defined
-- Event path for an event with a relatedTarget. target and relaterTarget do not share any shadow-including ancestor. target is in a shadow tree.: test3_1 is not defined
-- Event path for an event with a relatedTarget. target and relaterTarget do not share any shadow-including ancestor. target is not in a shadow tree: test3_1 is not defined
-- Event path for an event with a relatedTarget. target and relaterTarget share the same shadow-including ancestor. Both are in shadow trees.: test4 is not defined
-- Event path for an event with a relatedTarget. relatedTarget is a shadow-including ancestor of target.: test4 is not defined
-- Event path for an event with a relatedTarget. target is a shadow-including ancestor of relatedTarget.: test4 is not defined
-- Event path for an event with a relatedTarget. target is assigned to a slot.: test5 is not defined
-- Event path for an event with a relatedTarget. relatedTarget is assigned to a slot.: test5 is not defined
-- Event path for an event with a relatedTarget. Event should be dispatched at every slots.: test6 is not defined
-- Event path for an event with a relatedTarget. Event should be dispatched at every slots. relatedTarget should be correctly retargeted.: test6 is not defined
-
-### shadow-dom/event-composed-path.html
-
-- Event Path without ShadowRoots.: test1 is not defined
-- Event Path with an open ShadowRoot.: test2 is not defined
-- Event Path with a closed ShadowRoot.: test3 is not defined
-- Event Path with nested ShadowRoots: open > open.: test4 is not defined
-- Event Path with nested ShadowRoots: open > closed.: test5 is not defined
-- Event Path with nested ShadowRoots: closed > open.: test6 is not defined
-- Event Path with nested ShadowRoots: closed > closed.: test7 is not defined
-- Event Path with a slot in an open Shadow Root.: test8 is not defined
-- Event Path with a slot in a closed Shadow Root.: test9 is not defined
-- Event Path with slots in nested ShadowRoots: open > open.: test10 is not defined
-- Event Path with slots in nested ShadowRoots: closed > closed.: test11 is not defined
-
-### shadow-dom/event-composed.html
-
-- An event should be scoped by default: host is not defined
-- An event should not be scoped if composed is specified: host is not defined
-- A synthetic MouseEvent should be scoped by default: host is not defined
-- A synthetic MouseEvent with composed=true should not be scoped: host is not defined
-- A synthetic FocusEvent should be scoped by default: host is not defined
-- A synthetic FocusEvent with composed=true should not be scoped: host is not defined
-- A UA click event should not be scoped: host is not defined
-
-### shadow-dom/event-dispatch-order.tentative.html
-
-- Event dispatch order: capture listerns should be called in capturing phase at a shadow host: host is not defined
-
-### shadow-dom/event-post-dispatch-no-listeners.html
-
-- Event properties post dispatch with an open ShadowRoot and no listeners (composed: true): test1 is not defined
-- Event properties post dispatch with an open ShadowRoot and no listeners (composed: false): test2 is not defined
-- Event properties post dispatch with a closed ShadowRoot and no listeners (composed: true): test3 is not defined
-- Event properties post dispatch with nested open ShadowRoots and no listeners (composed: true): test4 is not defined
-- Event properties post dispatch with a disabled element in shadow tree and no listeners (composed: true): test5 is not defined
+- Event properties post dispatch when target get moved into the shadow tree by event listener: assert_equals: expected (object) object "[object MouseEvent]" but got (undefined) undefined
 
 ### shadow-dom/execcommand-insertList-in-shadow.html
 
-- Toggle off List for all the child nodes in the ShadowRoot: promise_test: Unhandled rejection with value: object "ReferenceError: container is not defined"
-
-### shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html
-
-- Default tabindex for a slot node should be 0.: promise_test: Unhandled rejection with value: object "ReferenceError: host is not defined"
-
-### shadow-dom/focus-navigation/focus-navigation-slots-in-slot.html
-
-- Focus should cover assigned nodes of slot, especially for nested slots in slot scope.: promise_test: Unhandled rejection with value: object "ReferenceError: host is not defined"
-
-### shadow-dom/focus-navigation/focus-navigation-with-delegatesFocus.html
-
-- Testing tab navigation order with mode open, no tabindex and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode open, no tabindex and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode open, tabindex=0 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode open, tabindex=0 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode open, tabindex=-1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode open, tabindex=-1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode open, tabindex=1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode open, tabindex=1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode closed, no tabindex and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode closed, no tabindex and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode closed, tabindex=0 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode closed, tabindex=0 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode closed, tabindex=-1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode closed, tabindex=-1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode closed, tabindex=1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-- Testing tab navigation order with mode closed, tabindex=1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: sandbox is not defined"
-
-### shadow-dom/focus-navigation/focus-nested-slots.html
-
-- Verifies that focus order goes in flat tree order with buttons inside nested slots which have a mixture of assigned and unassigned states.: promise_test: Unhandled rejection with value: object "ReferenceError: div1 is not defined"
-
-### shadow-dom/focus-navigation/focus-reverse-unassignable-slot.html
-
-- Verifies that focusing backwards from an input inside a slot which has no shadow root goes to the previous focusable element in light DOM.: promise_test: Unhandled rejection with value: object "ReferenceError: input2 is not defined"
-
-### shadow-dom/focus-navigation/focus-unassignable-slot.html
-
-- Verifies that focusing forwards from an input inside a slot which has no shadow root goes to the next focusable element in light DOM.: promise_test: Unhandled rejection with value: object "ReferenceError: input1 is not defined"
+- Toggle off List for all the child nodes in the ShadowRoot: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (80, 3) is outside the viewport"
 
 ### shadow-dom/focus-navigation/menu/tentative/focus-menu-elements.html
 
 - Focus navigation should skip over other menuitems in menubars.: assert_equals: Focus should move forward from before to A expected Element node <menuitem id="A" command="toggle-menu" commandfor="more">... but got Element node <button id="middle">middle</button>
+
+### shadow-dom/focus/click-focus-delegatesFocus-click.html
+
+- click on the host with delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- click on the host with delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- click on the host with no delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- click on the host with no delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+
+### shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html
+
+- click on host with delegatesFocus, #aboveSlot tabindex = 2, #slot and #slotted tabindex = 1: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+
+### shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html
+
+- click on host with delegatesFocus, all tabindex=0 except spacer: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+
+### shadow-dom/focus/click-focus-slot-ancestor.html
+
+- Clicking on non-focusable slot inside focusable div will make the flat-tree focusable ancestor get focused: assert_equals: expected Element node <div id="normalDiv" tabindex="0"><span id="normalSpan">Te... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
 
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
@@ -3288,20 +2971,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/focus/focus-scroll-under-delegatesFocus.html
 
-- delegatesFocus shouldn't cause extra focus steps: promise_test: Unhandled rejection with value: object "ReferenceError: anchor is not defined"
+- delegatesFocus shouldn't cause extra focus steps: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### shadow-dom/focus/focus-shadowhost-display-none.html
 
-- when shadow host itself is focused, it should match display:none, lose focus then becomes display:block again.: sandbox is not defined
-- when shadow host with delegatesFocus=true has focused element inside the shadow, it should also match display:none, then lose focus and become display:block again.: sandbox is not defined
+- when shadow host itself is focused, it should match display:none, lose focus then becomes display:block again.: assert_equals: expected "none" but got "block"
+- when shadow host with delegatesFocus=true has focused element inside the shadow, it should also match display:none, then lose focus and become display:block again.: assert_equals: expected "none" but got "block"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-2.html
 
 - Order with different tabindex on host: assert_equals: expected Element node <div></div> but got Element node <div></div>
-
-### shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html
-
-- select slotted text in shadow root with delegatesFocus.: promise_test: Unhandled rejection with value: object "ReferenceError: host is not defined"
 
 ### shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html
 
@@ -3320,40 +2999,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - HTMLSlotElement.assign drops DidSlotChange for previous_slot in different shadow root: assert_equals: slotB slotchange should fire because it gained its assigned node (even if not rendered) expected 1 but got 0
 
-### shadow-dom/imperative-slot-api-slotchange.html
-
-- slotchange event must not fire synchronously.: test_slotchange is not defined
-- slotchange event should not fire when assignments do not change assignedNodes.: test_slotchange is not defined
-- slotchange event should not fire when same node is assigned.: test_slotchange is not defined
-- Fire slotchange event when slot's assigned nodes changes.: test_slotchange is not defined
-- Fire slotchange event on previous slot and new slot when node is reassigned.: test_slotchange is not defined
-- Fire slotchange event on node assignment and when assigned node is removed.: test_slotchange is not defined
-- Fire slotchange event when order of assigned nodes changes.: test_slotchange is not defined
-- Fire slotchange event when assigned node is removed.: test_slotchange is not defined
-- Fire slotchange event when removing a slot from Shadows Root that changes its assigned nodes.: test_slotchange is not defined
-- No slotchange event when adding or removing an empty slot.: test_slotchange is not defined
-- No slotchange event when adding another slotable.: test_slotchange is not defined
-- Fire slotchange event when assign node to nested slot, ensure event bubbles ups.: test_nested_slotchange is not defined
-- Signal a slot change should be done in tree order.: promise_test: Unhandled rejection with value: object "ReferenceError: test_slotchange is not defined"
-
-### shadow-dom/imperative-slot-api.html
-
-- attachShadow can take slotAssignment parameter.: test_basic is not defined
-- slot.attach() should take variadic not sequence.: test_assign is not defined
-- Imperative slot API can assign nodes in manual slot assignment.: test_assign is not defined
-- Order of slottables is preserved in manual slot assignment.: test_assign is not defined
-- Previously assigned slottable is moved to new slot when it's reassigned.: test_assign is not defined
-- Order and assignment of nodes are preserved during multiple assignment in a row.: test_assign is not defined
-- Assigning invalid nodes should be allowed.: test_assign is not defined
-- Moving a slot to a new host, the slot loses its previously assigned slottables.: test_assign is not defined
-- Moving a slot's tree order position within a shadow host has no impact on its assigned slottables.: test_assign is not defined
-- Appending slottable to different host, it loses slot assignment. It can be re-assigned within a new host.: test_assign is not defined
-- Previously assigned node should not be assigned if slot moved to a new shadow root. The node is re-assigned when moved back.: test_assign is not defined
-- Assignment with the same node in parameters should be ignored, first one wins.: test_assign is not defined
-- Removing a slot from DOM resets its slottable's slot assignment.: test_assign is not defined
-- Nodes can be assigned even if slots or nodes aren't in the same tree.: test_assign is not defined
-- Removing a node from the document does not break manually assigned slot linkage.: test_assign is not defined
-
 ### shadow-dom/imperative-slot-fallback-clear.html
 
 - Text node fallback should be cleared in a subsequently layout: assert_equals: Fallback content should not be rendered expected 0 but got 1
@@ -3368,93 +3013,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html
 
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: target1 is not defined
-- Verifies that HTMLElement.offsetLeft accounts for shadow boundaries.: target2 is not defined
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: target3 is not defined
-
-### shadow-dom/slot-reconciliation-at-node-removal.html
-
-- Slot reconciliation: assignedNodes should be empty when slot is removed from shadow tree: test_reconciliation_at_removal is not defined
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: assert_equals: expected 38 but got 30
+- Verifies that HTMLElement.offsetLeft accounts for shadow boundaries.: assert_equals: expected 8 but got 0
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: assert_equals: expected 88 but got 80
 
 ### shadow-dom/slotchange-customelements.html
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
 
-### shadow-dom/slotchange.html
-
-- slotchange event: Append a child to a host (onslotchange).: test1 is not defined
-- slotchange event: Append a child to a host.: test1 is not defined
-- slotchange event: Remove a child from a host.: test1 is not defined
-- slotchange event: Remove a child before adding an event listener.: test1 is not defined
-- slotchange event: Change slot= attribute to make it un-assigned.: test1 is not defined
-- slotchange event: Change slot's name= attribute so that none is assigned.: test1 is not defined
-- slotchange event: Change slot= attribute to make it assigned.: test2 is not defined
-- slotchange event: Change slot's name= attribute so that a node is assigned to the slot.: test2 is not defined
-- slotchange event: Change fallback content - assignedNodes still empty.: test_fallback is not defined
-- slotchange event: Remove a fallback content - assignedNodes still empty.: test_fallback2 is not defined
-- slotchange event: Add a fallback content to nested slots - assignedNodes still empty.: test_fallback3 is not defined
-- slotchange event: Remove a fallback content from nested slots - assignedNodes still empty.: test_fallback3 is not defined
-- slotchange event: Insert a slot before an existing slot.: test3 is not defined
-- slotchange event: Remove a preceding slot.: test4 is not defined
-- slotchange event: A slot is assigned to another slot.: test5 is not defined
-- slotchange event: Slotchange should be fired if assigned nodes are changed.: test6 is not defined
-- slotchange event: Child content is added to nested slots.: test7 is not defined
-
-### shadow-dom/slots-fallback.html
-
-- Slots fallback: Basic.: test1 is not defined
-- Slots fallback: Basic, elements only.: test1 is not defined
-- Slots fallback: Slots in Slots.: test2 is not defined
-- Slots fallback: Slots in Slots, elements only.: test2 is not defined
-- Slots fallback: Fallback contents should not be used if a node is assigned.: test3 is not defined
-- Slots fallback: Slots in Slots: Assigned nodes should be used as fallback contents of another slot: test4 is not defined
-- Slots fallback: Complex case.: test5 is not defined
-- Slots fallback: Complex case, elements only.: test5 is not defined
-- Slots fallback: Mutation. Append fallback contents.: test5 is not defined
-- Slots fallback: Mutation. Remove fallback contents.: test5 is not defined
-- Slots fallback: Mutation. Assign a node to a slot so that fallback contens are no longer used.: test5 is not defined
-- Slots fallback: Mutation. Remove an assigned node from a slot so that fallback contens will be used.: test5 is not defined
-- Slots fallback: Mutation.  Remove a slot which is a fallback content of another slot.: test5 is not defined
-
-### shadow-dom/slots.html
-
-- Slots: Basic.: test_basic is not defined
-- Slots: Basic, elements only.: test_basic is not defined
-- Slots: Slots in closed.: test_basic_closed is not defined
-- Slots: Slots in closed, elements only.: test_basic_closed is not defined
-- Slots: Slots not in a shadow tree.: test_slot_not_in_shadow is not defined
-- Slots: Slots not in a shadow tree, elements only.: test_slot_not_in_shadow is not defined
-- Slots: Distributed nodes for Slots not in a shadow tree.: test_slot_not_in_shadow_2 is not defined
-- Slots: Name matching: test_slot_name_matching is not defined
-- Slots: No direct host child.: test_no_direct_host_child is not defined
-- Slots: Default Slot.: test_default_slot is not defined
-- Slots: Slot in Slot does not matter in assignment.: test_slot_in_slot is not defined
-- Slots: Slot is assigned to another slot: test_slot_is_assigned_to_slot is not defined
-- Slots: Open > Closed.: test_open_closed is not defined
-- Slots: Closed > Closed.: test_closed_closed is not defined
-- Slots: Closed > Open.: test_closed_open is not defined
-- Slots: Complex case: Basi line.: test_complex is not defined
-- Slots: Mutation: appendChild.: test_complex is not defined
-- Slots: Mutation: Change slot= attribute 1.: test_complex is not defined
-- Slots: Mutation: Change slot= attribute 2.: test_complex is not defined
-- Slots: Mutation: Change slot= attribute 3.: test_complex is not defined
-- Slots: Mutation: Remove a child.: test_complex is not defined
-- Slots: Mutation: Add a slot: after.: test_complex is not defined
-- Slots: Mutation: Add a slot: before.: test_complex is not defined
-- Slots: Mutation: Remove a slot.: test_complex is not defined
-- Slots: Mutation: Change slot name= attribute.: test_complex is not defined
-- Slots: Mutation: Change slot slot= attribute.: test_complex is not defined
-
 ### shadow-dom/wheel-event-related-target.html
 
 - wheel relatedTarget should be retargeted to shadow host when entering shadow DOM: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
-
-### custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html
-
-- connectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: customElementsRoot is not defined"
-- attributeChangedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: customElementsRoot is not defined"
-- disconnectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: customElementsRoot is not defined"
-- adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: emptyIframe is not defined"
 
 ### custom-elements/CustomElementRegistry-getName.html
 
@@ -3512,8 +3081,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Setting ariaLabelledByElements on ElementInternals should change the accessible name of the custom element: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function"
 - Setting aria-labelledby or ariaLabelledByElements on the custom element should supersede the value of ariaLabelledByElements on ElementInternals: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function"
-- Caching invariant different attributes.: cachingInvariantMain is not defined
-- Caching invariant different elements.: cachingInvariantMain1 is not defined
+- Caching invariant different attributes.: assert_equals: Caching invariant for ariaControlsElements expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
+- Caching invariant different elements.: assert_equals: Caching invariant for ariaDescribedByElements in one elemnt expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
 
 ### custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html
 
@@ -3524,66 +3093,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - ElementInternals.setFormValue(null) clears submission value: FormData constructor: Argument 1 could not be converted to: undefined.
 - ElementInternals.setFormValue(undefined) clears submission value: FormData constructor: Argument 1 could not be converted to: undefined.
 
-### custom-elements/form-associated/ElementInternals-setFormValue.html
-
-- Single value - name is missing: Test timed out
-- Single value - empty name exists: 
-- Single value - Non-empty name exists: 
-- Null value should submit nothing: 
-- Multiple values - name content attribute is ignored: 
-- setFormValue with an empty FormData should submit nothing: 
-- Newline normalization - \n in name (urlencoded): 
-- Newline normalization - \n in name (formdata): 
-- Newline normalization - \r in name (urlencoded): 
-- Newline normalization - \r in name (formdata): 
-- Newline normalization - \r\n in name (urlencoded): 
-- Newline normalization - \r\n in name (formdata): 
-- Newline normalization - \n\r in name (urlencoded): 
-- Newline normalization - \n\r in name (formdata): 
-- Newline normalization - \n in value (urlencoded): 
-- Newline normalization - \n in value (formdata): 
-- Newline normalization - \r in value (urlencoded): 
-- Newline normalization - \r in value (formdata): 
-- Newline normalization - \r\n in value (urlencoded): 
-- Newline normalization - \r\n in value (formdata): 
-- Newline normalization - \n\r in value (urlencoded): 
-- Newline normalization - \n\r in value (formdata): 
-- Newline normalization - \n in filename (urlencoded): 
-- Newline normalization - \n in filename (formdata): 
-- Newline normalization - \r in filename (urlencoded): 
-- Newline normalization - \r in filename (formdata): 
-- Newline normalization - \r\n in filename (urlencoded): 
-- Newline normalization - \r\n in filename (formdata): 
-- Newline normalization - \n\r in filename (urlencoded): 
-- Newline normalization - \n\r in filename (formdata): 
-- Newline normalization - \n in FormData name (urlencoded): 
-- Newline normalization - \n in FormData name (formdata): 
-- Newline normalization - \r in FormData name (urlencoded): 
-- Newline normalization - \r in FormData name (formdata): 
-- Newline normalization - \r\n in FormData name (urlencoded): 
-- Newline normalization - \r\n in FormData name (formdata): 
-- Newline normalization - \n\r in FormData name (urlencoded): 
-- Newline normalization - \n\r in FormData name (formdata): 
-- Newline normalization - \n in FormData value (urlencoded): 
-- Newline normalization - \n in FormData value (formdata): 
-- Newline normalization - \r in FormData value (urlencoded): 
-- Newline normalization - \r in FormData value (formdata): 
-- Newline normalization - \r\n in FormData value (urlencoded): 
-- Newline normalization - \r\n in FormData value (formdata): 
-- Newline normalization - \n\r in FormData value (urlencoded): 
-- Newline normalization - \n\r in FormData value (formdata): 
-- Newline normalization - \n in FormData filename (urlencoded): 
-- Newline normalization - \n in FormData filename (formdata): 
-- Newline normalization - \r in FormData filename (urlencoded): 
-- Newline normalization - \r in FormData filename (formdata): 
-- Newline normalization - \r\n in FormData filename (urlencoded): 
-- Newline normalization - \r\n in FormData filename (formdata): 
-- Newline normalization - \n\r in FormData filename (urlencoded): 
-- Newline normalization - \n\r in FormData filename (formdata): 
-
 ### custom-elements/form-associated/ElementInternals-validation.html
 
-- willValidate after upgrade (document.createElement): container is not defined
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
 
 ### custom-elements/form-associated/fieldset-elements.html
@@ -3598,11 +3109,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Associate by parser, customized at element creation: assert_equals: expected 2 but got 0
 - Parsed, connected, then upgraded: assert_equals: form.elements.length expected 3 but got 2
-
-### custom-elements/form-associated/form-disabled-callback.html
-
-- A disabled form-associated custom element should not provide an entry for it: FormData constructor: Argument 1 could not be converted to: undefined.
-- A disabled form-associated custom element should not submit an entry for it: Test timed out
 
 ### custom-elements/form-associated/form-elements-namedItem.html
 
@@ -3661,24 +3167,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Animation.animate must enqueue an attributeChanged reaction when it mutates the observed style attribute: Web Animations is not implemented
 - Animation.animate must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: Web Animations is not implemented
 
-### custom-elements/reactions/AriaMixin-element-attributes.html
+### custom-elements/reactions/CSSStyleDeclaration.html
 
-- ariaActiveDescendantElement in Element must enqueue an attributeChanged reaction when adding aria-activedescendant content attribute: parentElement is not defined
-- ariaActiveDescendantElement in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
-- ariaControlsElements in Element must enqueue an attributeChanged reaction when adding aria-controls content attribute: parentElement is not defined
-- ariaControlsElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
-- ariaDescribedByElements in Element must enqueue an attributeChanged reaction when adding aria-describedby content attribute: parentElement is not defined
-- ariaDescribedByElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
-- ariaDetailsElements in Element must enqueue an attributeChanged reaction when adding aria-details content attribute: parentElement is not defined
-- ariaDetailsElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
-- ariaErrorMessageElements in Element must enqueue an attributeChanged reaction when adding aria-errormessage content attribute: parentElement is not defined
-- ariaErrorMessageElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
-- ariaFlowToElements in Element must enqueue an attributeChanged reaction when adding aria-flowto content attribute: parentElement is not defined
-- ariaFlowToElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
-- ariaLabelledByElements in Element must enqueue an attributeChanged reaction when adding aria-labelledby content attribute: parentElement is not defined
-- ariaLabelledByElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
-- ariaOwnsElements in Element must enqueue an attributeChanged reaction when adding aria-owns content attribute: parentElement is not defined
-- ariaOwnsElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: parentElement is not defined
+- A webkit prefixed camel case attribute (webkitFilter) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it adds the observed style attribute: assert_equals: expected (string) "filter: grayscale(20%);" but got (object) null
+- A webkit prefixed camel case attribute (webkitFilter) on CSSStyleDeclaration must not enqueue an attributeChanged reaction when it adds the style attribute but the style attribute is not observed: assert_equals: expected (string) "filter: grayscale(20%);" but got (object) null
+- A webkit prefixed camel case attribute (webkitFilter) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it mutates the observed style attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- A webkit prefixed camel case attribute (webkitFilter) on CSSStyleDeclaration must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: assert_equals: expected (string) "filter: grayscale(30%);" but got (object) null
+- A webkit prefixed dashed property (-webkit-filter) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it adds the observed style attribute: assert_equals: expected (string) "filter: grayscale(20%);" but got (object) null
+- A webkit prefixed dashed property (-webkit-filter) on CSSStyleDeclaration must not enqueue an attributeChanged reaction when it adds the style attribute but the style attribute is not observed: assert_equals: expected (string) "filter: grayscale(20%);" but got (object) null
+- A webkit prefixed dashed property (-webkit-filter) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it mutates the observed style attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- A webkit prefixed dashed property (-webkit-filter) on CSSStyleDeclaration must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: assert_equals: expected (string) "filter: grayscale(30%);" but got (object) null
 
 ### custom-elements/reactions/DOMStringMap.html
 
@@ -3730,20 +3228,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - A constructor with only a scoped custom element registry definition should fail upon construction: assert_throws_js: function "() => new ABElement" did not throw
 
-### custom-elements/registries/CustomElementRegistry-initialize.html
-
-- initialize sets element.customElementRegistry to the global registry: host is not defined
-- initialize does not set the registry of nested shadow tree to the global registry: host is not defined
-- initialize sets element.customElementRegistry to a scoped registry: host is not defined
-- initialize does not set descendants whose customElementRegistry already uses a different registry: host is not defined
-- initialize does not set the registry of nested shadow tree to a scoped registry: host is not defined
-- initialize sets element.customElementRegistry permantently: host is not defined
-
 ### custom-elements/registries/CustomElementRegistry-upgrade.html
 
-- upgrade is a no-op when called on a shadow root with no association: host is not defined
-- upgrade should upgrade a candidate element when called on a shadow root with an association: host is not defined
-- upgrade should not upgrade a candidate element not associated with a registry: host is not defined
+- upgrade is a no-op when called on a shadow root with no association: That is not a node
+- upgrade should upgrade a candidate element when called on a shadow root with an association: That is not a node
+- upgrade should not upgrade a candidate element not associated with a registry: That is not a node
 
 ### custom-elements/registries/Document-importNode-cross-document.window.js
 
@@ -3766,21 +3255,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/registries/Document-importNode.html
 
 - importNode should clone using the specified registry if target's registry is null: assert_true: expected true got false
-- importNode should preserve null-ness of custom element registry: host is not defined
-- importNode should clone a shadow host with a declarative shadow DOM using the global registry by default: host is not defined
-- importNode should clone a shadow host with a declarative shadow DOM using a specified scoped registry: host is not defined
+- importNode should clone a shadow host with a declarative shadow DOM using the global registry by default: assert_equals: expected object "[object CustomElementRegistry]" but got null
+- importNode should clone a shadow host with a declarative shadow DOM using a specified scoped registry: assert_equals: expected object "[object CustomElementRegistry]" but got null
 - importNode should clone a template content using the global registry by default: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
 - importNode should clone a template content using a specified scoped registry: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
 - importNode should clone a template content with a nested template element using a scoped registry: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
-- importNode: don't pass options argument: root is not defined
-- importNode: pass options argument with value false: root is not defined
-- importNode: pass options argument with value true: root is not defined
-- importNode: pass options argument with value undefined: root is not defined
-- importNode: pass options argument with value { }: root is not defined
-- importNode: pass options argument with value { selfOnly: false }: root is not defined
-- importNode: pass options argument with value { selfOnly: true }: root is not defined
-- importNode: pass options argument with value { customElementRegistry: scopedRegistry }: root is not defined
-- importNode: pass options argument with value { customElementRegistry: null }: assert_throws_js: function "() => document.importNode(root, { customElementRegistry: null })" threw object "ReferenceError: root is not defined" ("ReferenceError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
 - importNode should use the provided fallback registry for null-registry descendants nested under non-null-registry ancestors: assert_equals: imported container with null registry should use the fallback registry expected object "[object CustomElementRegistry]" but got null
 
 ### custom-elements/registries/Element-customElementRegistry-exceptions.html
@@ -3793,8 +3272,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/registries/Element-innerHTML.html
 
-- nested descendants in innerHTML should use the null registry when the container element has null registry: host is not defined
-- insertAdjacentHTML should use the element's registry even when the registry is null: host is not defined
+- insertAdjacentHTML should use the element's registry even when the registry is null: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - createContextualFragment on a range inside a template should use null registry even when the template has a scoped registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - innerHTML on a template with a scoped registry should use the scoped registry of the document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - createContextualFragment on a range inside an element with scoped registry should use the scoped registry of the element: assert_true: expected true got false
@@ -3803,11 +3281,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - A newly attached ShadowRoot should use the global registry by default even if the host is within another shadow tree that uses a custom registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - attachShadow() should use the null registry when the shadow host uses null registry and customElementRegistry is null: assert_equals: expected null but got object "[object CustomElementRegistry]"
-
-### custom-elements/registries/ShadowRoot-init-declarative.html
-
-- Custom element inside 'shadowrootcustomelementregistry' declarative shadow root should use document's registry as attachShadow default registry: host is not defined
-- Built-in element inside 'shadowrootcustomelementregistry' declarative shadow root should use document's registry as attachShadow default registry: host is not defined
 
 ### custom-elements/registries/ShadowRoot-innerHTML.html
 
@@ -3871,19 +3344,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Re-entry via upgrade after calling super(): assert_true: expected true got false
 - Re-entry via direct constructor call before calling super(): assert_true: expected true got false
 - Re-entry via direct constructor call after calling super(): assert_true: expected true got false
-
-### custom-elements/registries/element-mutation-null-registry-removal.html
-
-- An element's null customElementRegistry should not mutate after removal from a declarative shadow root with shadowrootcustomelementregistry.: host is not defined
-
-### custom-elements/registries/element-mutation.html
-
-- An element with scoped registry should not change its registry when run append out of the shadow tree.: host is not defined
-- An element with scoped registry should not change its registry when run append into another shadow tree with different scoped registry.: host is not defined
-- An element with scoped registry should not change its registry when run appendChild out of the shadow tree.: host is not defined
-- An element with scoped registry should not change its registry when run appendChild into another shadow tree with different scoped registry.: host is not defined
-- An element with scoped registry should not change its registry when run prepend out of the shadow tree.: host is not defined
-- An element with scoped registry should not change its registry when run prepend into another shadow tree with different scoped registry.: host is not defined
 
 ### custom-elements/registries/global.window.js
 
@@ -4024,25 +3484,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Serializing a scoped registry ShadowRoot with a null registry host (document): assert_equals: expected "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template></span>" but got "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\"></template></span>"
 - Serializing a null registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
 - Serializing a scoped registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
-
-### custom-elements/state/state-css-selector-nth-of.html
-
-- state selector has influence on nth-of when state is applied: myCE is not defined
-- state selector only applies on given ident: 
-- style is invalided on clear(): 
-
-### custom-elements/state/state-css-selector.html
-
-- state selector has no influence when state is not applied: myCE is not defined
-- state selector has no influence on sibling selectors when not applied: myCE is not defined
-- state selector has influence when state is applied: myCE is not defined
-- state selector influences siblings when state is applied: myCE is not defined
-- state selector influences has() when state is applied: myCE is not defined
-- state selector only applies on given ident: myCE is not defined
-- state selector only applies to siblings on given ident: myCE is not defined
-- state selector only applies to has() on given ident: myCE is not defined
-- states added multiple times counts as one: myCE is not defined
-- style is invalided on clear(): myCE is not defined
 
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html
 
