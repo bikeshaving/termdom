@@ -627,6 +627,19 @@ function applyMinMax(style: Style, element: Element): void {
 	style.minHeight = read("min-height", true);
 	style.maxWidth = read("max-width", false);
 	style.maxHeight = read("max-height", true);
+	// A scroll container's content scrolls rather than sizes it, so its
+	// automatic minimum is zero (css-flexbox-1 §4.5, css-grid-2 §6.6).
+	const overflow = getComputedValue(element, "overflow");
+	if (
+		isScrollingOverflow(getComputedValue(element, "overflow-x") || overflow) ||
+		isScrollingOverflow(getComputedValue(element, "overflow-y") || overflow)
+	) {
+		for (const key of ["minWidth", "minHeight"] as const) {
+			if (style[key].unit === "auto" || style[key].unit === "undefined") {
+				style[key] = toValue(0);
+			}
+		}
+	}
 	// An outside marker sits on a line of the item's own, so an item with
 	// nothing on its lines still has the one the marker needs.
 	if (

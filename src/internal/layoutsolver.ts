@@ -3598,14 +3598,29 @@ function measureBaselineShims(
 	return shims;
 }
 
-// css-grid-2 §6.6: a fixed max on the one track the item sits in caps its
-// min-content contribution.
+// css-grid-2 §6.6 and §12.4: an item's specified minimum size, or where
+// that is auto, its content-based minimum, which a fixed max on the one
+// track the item sits in caps.
 function getMinimumContribution(
 	sizing: TrackSizing,
 	item: GridItem,
 	start: number,
 	end: number,
 ): number {
+	const child = item.node;
+	const axis = sizing.columns ? "row" : "column";
+	const specified = resolveValue(
+		sizing.columns ? child.style.minWidth : child.style.minHeight,
+		sizing.ownerSize,
+	);
+	if (isDefined(specified)) {
+		return (
+			Math.max(
+				specified,
+				getAxisPaddingAndBorder(child, axis, sizing.ownerWidth),
+			) + getAxisMargin(child, axis, sizing.ownerWidth)
+		);
+	}
 	const minContent = getGridItemContribution(sizing, item, true);
 	if (end - start === 1) {
 		const max = trackLength(sizing.tracks[start].size.max, sizing.ownerSize);
