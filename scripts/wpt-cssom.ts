@@ -22,7 +22,7 @@ import {fileURLToPath} from "node:url";
 import {createContext, runInContext} from "node:vm";
 
 import {TermDOM} from "../src/index.ts";
-import {createWindow, type Window} from "../src/internal/dom.ts";
+import type {Window} from "../src/internal/dom.ts";
 import type {
 	TerminalCloseInfo,
 	TerminalSize,
@@ -48,6 +48,26 @@ const TIMEOUT_MS = 15000;
 // them, and the timers its realm set. Each file's are released when it is
 // done. Kept, five hundred documents' worth held gigabytes.
 const fileEngines: TermDOM[] = [];
+
+// An error no script caught goes where a browser sends it: an error or
+// unhandledrejection event at the running file's window, which testharness
+// listens for. One from a file already scored, a testdriver action still
+// pending when its harness finished, is logged and does not stop the run.
+let reportUncaught:
+	((type: "error" | "unhandledrejection", reason: unknown) => void) | null =
+		null;
+
+function onUncaught(
+	type: "error" | "unhandledrejection",
+	reason: unknown,
+): void {
+	if (reportUncaught !== null) {
+		reportUncaught(type, reason);
+	} else {
+		console.error(`uncaught after its file finished (${type}):`, reason);
+	}
+}
+
 const fileTimers = new Set<ReturnType<typeof setTimeout>>();
 
 async function cached(path: string): Promise<string | null> {
@@ -201,17 +221,15 @@ interface Outcome {
 }
 
 /**
- * A TermDOM for a test document: the CSSOM, a cascade, a layout engine and
- * the environment facts a test document expects to find around it. The suite
- * is written against a browser viewport in CSS pixels; this engine's pixel is
- * a cell, so the terminal behind it is a grid the same size as the viewport
- * the tests assume. Nothing is written to it: the engine is never attached.
+ * A TermDOM for a test document, attached to a terminal whose keyboard and
+ * mouse are the testdriver shim. The suite is written against a browser
+ * viewport of 800 by 600 CSS pixels; this engine's pixel is a cell, so the
+ * terminal behind it is a grid of that size. Its output is discarded.
  */
 function mountEngine(
 	html: string,
 	url: string,
 	input: ReadableStream<string>,
-	interactive: boolean,
 ): TermDOM {
 	const termDOM = new TermDOM({
 		html,
@@ -225,134 +243,13 @@ function mountEngine(
 			closed: new Promise<TerminalCloseInfo>(() => {}),
 			ready: Promise.resolve(),
 			colorDepth: "rgb",
-			interactive,
+			interactive: true,
 			sharesScreen: false,
 			close() {},
 		},
 	});
 	fileEngines.push(termDOM);
-	const {window, document} = termDOM;
-
-	// There is no render loop behind this harness, so a frame is the next
-	// macrotask -- which is what a test that waits for one is really waiting on.
-	(window as unknown as Record<string, unknown>).requestAnimationFrame = (
-		callback: (time: number) => void,
-	): number => Number(setTimeout(() => callback(Date.now()), 0));
-	(window as unknown as Record<string, unknown>).cancelAnimationFrame = (
-		handle: number,
-	): void => clearTimeout(handle as unknown as NodeJS.Timeout);
-
-	// A terminal loads no fonts, so the font set a test waits on is ready the
-	// moment it is asked for.
-	Object.defineProperty(document, "fonts", {
-		value: {ready: Promise.resolve()},
-		configurable: true,
-	});
-
-	// The document is parsed before a line of it runs, so it is complete before
-	// its first script sees it. testharness.js reads this to decide whether to
-	// start its tests now or wait for a load event.
-	Object.defineProperty(document, "readyState", {
-		value: "complete",
-		configurable: true,
-	});
-
 	return termDOM;
-}
-
-/**
- * A nested browsing context behind every `<iframe>`, built the first time one
- * is reached through.
- *
- * A terminal has no frames, so TermDOM gives an iframe no content document --
- * and a fixture that reaches through one is not testing frames, it is using a
- * second document to have a second cascade. The harness gives it that: the
- * iframe's `srcdoc`, or an empty document, attached on an engine of its own and
- * running in a realm of its own, which is what `contentWindow.eval` runs in.
- * Lazily, because a document written into a frame can carry frames of its own.
- */
-const frames = new WeakMap<Element, {document: Document; window: unknown}>();
-let framesInstalled = false;
-let documentURL = "about:blank";
-
-function installFrames(window: Window): void {
-	if (framesInstalled) {
-		return;
-	}
-	framesInstalled = true;
-	const getContext =
-		(frame: Element): {document: Document; window: unknown} => {
-			let context = frames.get(frame);
-			if (context === undefined) {
-				const inner = mountEngine(
-					frame.getAttribute("srcdoc") ??
-					"<!doctype html><html><head></head><body></body></html>",
-					documentURL,
-					new ReadableStream<string>(),
-					false,
-				).window;
-				const realm = createRealm(inner);
-				context = {
-					document: inner.document,
-					window: runInContext("globalThis", realm),
-				};
-				frames.set(frame, context);
-			}
-			return context;
-		};
-	const iframePrototype = (
-		window as unknown as {HTMLIFrameElement: {prototype: object}}
-	).HTMLIFrameElement.prototype;
-	for (const [name, read] of [
-		[
-			"contentDocument",
-			(frame: Element): unknown => getContext(frame).document,
-		],
-		["contentWindow", (frame: Element): unknown => getContext(frame).window],
-	] as const) {
-		Object.defineProperty(iframePrototype, name, {
-			get(this: Element) {
-				return read(this);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-
-	// document.open/write/close, which a fixture uses to put markup in a frame.
-	// One buffer per document, parsed into the document when it is closed.
-	const written = new WeakMap<Document, string>();
-	const documentPrototype = window.Document.prototype as unknown as Record<
-		string,
-		unknown
-	>;
-	documentPrototype.open = function (this: Document): Document {
-		written.set(this, "");
-		return this;
-	};
-	documentPrototype.write = function (this: Document, ...text: string[]): void {
-		written.set(this, (written.get(this) ?? "") + text.join(""));
-	};
-	documentPrototype.close = function (this: Document): void {
-		const html = written.get(this);
-		if (html === undefined) {
-			return;
-		}
-		written.delete(this);
-		const parsed = createWindow(html, documentURL).document;
-		const root = this.documentElement;
-		const source = parsed.documentElement;
-		if (root === null || source === null) {
-			return;
-		}
-		while (root.firstChild !== null) {
-			root.removeChild(root.firstChild);
-		}
-		while (source.firstChild !== null) {
-			root.appendChild(this.importNode(source.firstChild, true));
-			source.removeChild(source.firstChild);
-		}
-	};
 }
 
 /** Resolve a script's src against the suite directory, as a repo path. */
@@ -367,6 +264,7 @@ async function runFile(file: string, suite: Suite): Promise<Outcome> {
 	try {
 		return await runFileIn(file, suite);
 	} finally {
+		reportUncaught = null;
 		for (const timer of fileTimers) {
 			clearTimeout(timer);
 			clearInterval(timer);
@@ -393,23 +291,15 @@ async function runFileIn(file: string, suite: Suite): Promise<Outcome> {
 	}
 
 	const url = `http://web-platform.test/${suite.path}/${file}`;
-	// A file that drives input through testdriver gets an engine attached
-	// to a terminal whose keyboard and mouse are that driver, as the DOM
-	// runner's is. Every other file keeps the unattached engine.
-	const driven = /testdriver\.js/.test(html);
 	let push: (text: string) => void = () => {};
 	const input = new ReadableStream<string>({
 		start(controller) {
 			push = (text) => controller.enqueue(text);
 		},
 	});
-	const engine = mountEngine(html, url, input, driven);
-	if (driven) {
-		await engine.attach();
-	}
+	const engine = mountEngine(html, url, input);
+	await engine.attach();
 	const {window, document} = engine;
-	documentURL = url;
-	installFrames(window);
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	let timer: ReturnType<typeof setTimeout> | null = null;
@@ -482,6 +372,25 @@ async function runFileIn(file: string, suite: Suite): Promise<Outcome> {
 		return {file, harness: "REFTEST", subtests: []};
 	}
 
+	const engineWindow = window as unknown as {
+		dispatchEvent(event: object): boolean;
+		ErrorEvent: new (type: string, init: object) => object;
+		Event: new (type: string) => object;
+	};
+	reportUncaught = (type, reason) => {
+		if (type === "error") {
+			engineWindow.dispatchEvent(
+				new engineWindow.ErrorEvent("error", {
+					error: reason,
+					message: (reason as Error)?.message ?? String(reason),
+				}),
+			);
+			return;
+		}
+		const event = new engineWindow.Event("unhandledrejection");
+		Object.defineProperty(event, "reason", {value: reason});
+		engineWindow.dispatchEvent(event);
+	};
 	const realm = createRealm(window);
 	(realm as Record<string, unknown>).__termdomDriverInput = (text: string) =>
 		push(text);
@@ -491,7 +400,7 @@ async function runFileIn(file: string, suite: Suite): Promise<Outcome> {
 		// function declarations land on the global, where a test that evals a
 		// name finds them; `let` and `const` stay in the file's own scope.
 		runInContext(
-			`with (__termdomNamedAccess) {\n${sources.join("\n;\n")}\n;\nadd_completion_callback(__complete);\n}`,
+			`{\n${sources.join("\n;\n")}\n;\nadd_completion_callback(__complete);\n}`,
 			realm,
 		);
 		// The load event is a task of its own, not the tail of the script that
@@ -626,42 +535,6 @@ function createRealm(window: Window): object {
 		queueMicrotask,
 		console,
 	});
-	// Legacy named access: a browser window carries a property for every id in
-	// its document, and the suite's fixtures read them that way -- `<div
-	// id=target>` and then a bare `target.style`. TermDOM's own window does not
-	// supply those names; that is a documented deviation for authors, and it is
-	// not what these files are testing. The file's scripts run inside
-	// `with (__termdomNamedAccess)`, and this proxy is that object: a name the
-	// realm does not carry resolves to the element with that id at the moment
-	// of the lookup, so an element a script adds later is as reachable as one
-	// the parser built. An assignment falls through to the realm.
-	const {document} = window;
-	// A `with` scope object must answer `has` for names it cannot enumerate
-	// in advance; only a Proxy can.
-	// eslint-disable-next-line no-restricted-globals
-	scope.__termdomNamedAccess = new Proxy(
-		Object.create(null) as Record<string, unknown>,
-		{
-			has(_target, name): boolean {
-				return (
-					typeof name === "string" &&
-					!(name in scope) &&
-					document.getElementById(name) !== null
-				);
-			},
-			get(_target, name): unknown {
-				return typeof name === "string"
-					? document.getElementById(name)
-					: undefined;
-			},
-			set(_target, name, value): boolean {
-				if (typeof name === "string") {
-					scope[name] = value;
-				}
-				return true;
-			},
-		},
-	);
 	const realm = createContext(scope);
 	// The realm IS the window: a script that writes `window.foo` and later reads
 	// a bare `foo` has to find it.
@@ -750,10 +623,9 @@ const SUITES: Suite[] = [
 	},
 ];
 
-// A test's promise can reject after its file is scored -- a testdriver
-// action still pending when the harness finished. It belongs to that file,
-// not to the run, which goes on.
-process.on("unhandledRejection", () => {});
+process.on("uncaughtException", (error) => onUncaught("error", error));
+process.on("unhandledRejection", (reason) =>
+	onUncaught("unhandledrejection", reason));
 
 const filter = process.argv[2];
 let totalPassed = 0;
