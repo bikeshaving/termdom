@@ -450,3 +450,44 @@ test("the mode probes are followed by an erase for any echoed final", async () =
 	expect(scrub).toBeGreaterThan(lastProbe);
 	await dom.dispose();
 });
+
+// css-overflow-3 §2.2: the viewport scrolls over everything the document
+// reaches, not just the root's box.
+test("renderANSI prints content that overflows a full-height html and body", () => {
+	const terminal = new MockProcess({cols: 20, rows: 24});
+	const dom = new TermDOM({transport: terminal.transport});
+	const rows = Array.from({length: 40}, (_, i) => `<div>row ${i + 1}</div>`);
+	const output = dom
+		.renderANSI(
+			`<style>html, body { height: 100%; margin: 0 }</style>${rows.join("")}`,
+		)
+		.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
+		.trimEnd()
+		.split("\n");
+	expect(output.length).toBe(40);
+	expect(output[39]).toBe("row 40");
+	dom.dispose();
+});
+
+test("a clipped box's content does not lengthen the document", () => {
+	const terminal = new MockProcess({cols: 20, rows: 24});
+	const dom = new TermDOM({transport: terminal.transport});
+	const rows = Array.from({length: 40}, (_, i) => `<div>row ${i + 1}</div>`);
+	dom.document.body.innerHTML =
+		`<div style="height:5px;overflow:hidden">${rows.join("")}</div>`;
+	expect(dom.document.documentElement.scrollHeight).toBe(5);
+	dom.dispose();
+});
+
+test("a stylesheet added after the first layout resizes html and body", () => {
+	const terminal = new MockProcess({cols: 20, rows: 24});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = "<p>hi</p>";
+	expect(document.documentElement.offsetHeight).toBe(1);
+	document.body.innerHTML =
+		"<style>html, body { height: 100%; margin: 0 }</style><p>hi</p>";
+	expect(document.documentElement.offsetHeight).toBe(24);
+	expect(document.body.offsetHeight).toBe(24);
+	dom.dispose();
+});
