@@ -51,6 +51,7 @@ const kRenderQueued = Symbol("renderQueued");
 const kOnAlternateScreen = Symbol("onAlternateScreen");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
+const kUnprinted = Symbol("unprinted");
 const kInput = Symbol("input");
 const kAttachReady = Symbol("attachReady");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
@@ -93,6 +94,9 @@ export interface TermDOM {
 	[kUnwrittenErrors]: string | null;
 	// Timestamps observer entries.
 	[kRenderCount]: number;
+	// A stdout that is not a terminal gets the document once, as it stands
+	// when the session ends. True while a frame has changed it since.
+	[kUnprinted]: boolean;
 	[kInput]: Input;
 	// Construction never touches the terminal. attach() does, and dispose()
 	// ends the instance for good.
@@ -125,6 +129,7 @@ export class TermDOM {
 		this[kHeldErrors] = [];
 		this[kUnwrittenErrors] = null;
 		this[kRenderCount] = 0;
+		this[kUnprinted] = false;
 		this[kLifecycle] = "detached";
 
 		this[kMouseReportingEnabled] = false;
@@ -425,7 +430,33 @@ function reportUncaught(termDOM: TermDOM, error: unknown): void {
 // by dispose, process.exit(), a signal or a crash, its exit writes what is
 // left, after the transport has restored the terminal.
 const sessionsHoldingErrors = new Set<TermDOM>();
-let heldErrorsExitHookInstalled = false;
+
+// The sessions whose document a stdout that is not a terminal has not
+// been given. An exit before dispose() prints it.
+const sessionsUnprinted = new Set<TermDOM>();
+let exitHookInstalled = false;
+
+function installExitHook(): void {
+	if (exitHookInstalled) {
+		return;
+	}
+	exitHookInstalled = true;
+	process.on("exit", () => {
+		for (const session of sessionsUnprinted) {
+			const output = takeUnprinted(session);
+			if (output) {
+				session[kTransport].writeSync?.(output);
+			}
+		}
+		for (const session of sessionsHoldingErrors) {
+			const text =
+				(session[kUnwrittenErrors] ?? "") + (takeHeldErrors(session) ?? "");
+			if (text !== "") {
+				session[kTransport].writeSync?.(text);
+			}
+		}
+	});
+}
 
 function holdError(termDOM: TermDOM, error: unknown): void {
 	const held = termDOM[kHeldErrors];
@@ -434,18 +465,7 @@ function holdError(termDOM: TermDOM, error: unknown): void {
 		held.shift();
 	}
 	sessionsHoldingErrors.add(termDOM);
-	if (!heldErrorsExitHookInstalled) {
-		heldErrorsExitHookInstalled = true;
-		process.on("exit", () => {
-			for (const session of sessionsHoldingErrors) {
-				const text =
-					(session[kUnwrittenErrors] ?? "") + (takeHeldErrors(session) ?? "");
-				if (text !== "") {
-					session[kTransport].writeSync?.(text);
-				}
-			}
-		});
-	}
+	installExitHook();
 }
 
 // The held errors as the lines to print, emptying the hold.
@@ -638,7 +658,7 @@ async function renderOnce(termDOM: TermDOM): Promise<void> {
 		return;
 	}
 	if (!termDOM[kTransport].interactive) {
-		await printStatic(termDOM);
+		printStatic(termDOM);
 		return;
 	}
 
@@ -674,23 +694,29 @@ function afterRender(termDOM: TermDOM): void {
 	syncHoverReporting(termDOM);
 }
 
-/** The whole document as plain lines, for a stdout that is not a terminal. */
-async function printStatic(termDOM: TermDOM): Promise<void> {
+/**
+ * A frame for a stdout that is not a terminal. Nothing written can be
+ * redrawn, so the frame lays out for the page's observers and the
+ * document is printed once, when the session ends.
+ */
+function printStatic(termDOM: TermDOM): void {
 	DOM.applyMutations(termDOM.document);
-
 	termDOM[kLayout].performLayout();
-
-	const context = termDOM[kScreen].beginStatic({
-		rows: termDOM[kLayout].documentPaintHeight(),
-	});
-	termDOM[kPainter].paint(context);
-	const output = termDOM[kScreen].endFrame();
 	termDOM[kLayout].framePainted();
-
-	if (output) {
-		await termDOM[kExchange].write(output);
-	}
+	termDOM[kUnprinted] = true;
+	sessionsUnprinted.add(termDOM);
+	installExitHook();
 	afterRender(termDOM);
+}
+
+// The document as plain lines, once, for a stdout that is not a terminal.
+function takeUnprinted(termDOM: TermDOM): string | null {
+	if (!termDOM[kUnprinted]) {
+		return null;
+	}
+	termDOM[kUnprinted] = false;
+	sessionsUnprinted.delete(termDOM);
+	return renderStatic(termDOM, "\n") || null;
 }
 
 /**
@@ -700,6 +726,10 @@ async function printStatic(termDOM: TermDOM): Promise<void> {
  */
 function flushDocument(termDOM: TermDOM): void {
 	if (!termDOM[kTransport].interactive) {
+		const output = takeUnprinted(termDOM);
+		if (output) {
+			void termDOM[kExchange].write(output);
+		}
 		return;
 	}
 

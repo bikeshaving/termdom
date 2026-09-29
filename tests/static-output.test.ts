@@ -95,3 +95,40 @@ test("wide characters keep their columns in static output", async () => {
 	expect(stripped).toContain("🙂 ok");
 	expect(stripped).toContain("a🙂b end");
 });
+
+// A pipe cannot be redrawn, so however many frames run, it gets the
+// document once, when the session ends.
+async function renderPipedFrames(
+	stdoutIsTTY: boolean | undefined,
+): Promise<string> {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	(terminal.stdout as any).isTTY = stdoutIsTTY;
+	const written = captureRawOutput(terminal, {forward: false});
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.attach();
+	dom.document.body.innerHTML = Array.from(
+		{length: 20},
+		(_, i) => `<p>row ${i + 1}</p>`,
+	).join("");
+	await nextFrame(dom);
+	await new Promise((resolve) =>
+		dom.window.requestAnimationFrame(() =>
+			dom.window.requestAnimationFrame(resolve),
+		),
+	);
+	await dom.dispose();
+	return written();
+}
+
+test("an attached session prints the piped document once, whole", async () => {
+	const output = await renderPipedFrames(false);
+	expect(output.match(/row \d+/g)?.length).toBe(20);
+	expect(output).toContain("row 20");
+	expect(output.replace(/\x1b\[0m/g, "")).not.toMatch(/\x1b/);
+});
+
+test("a stdout that does not say it is a terminal is a pipe", async () => {
+	const output = await renderPipedFrames(undefined);
+	expect(output.match(/row \d+/g)?.length).toBe(20);
+	expect(output.replace(/\x1b\[0m/g, "")).not.toMatch(/\x1b/);
+});
