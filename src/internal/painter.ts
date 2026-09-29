@@ -1149,7 +1149,8 @@ function paintInline(
 	const fragments = run.boxes.get(element) ?? [];
 	const rect = fragments.length > 0 ? unionRect(fragments) : null;
 	if (rect !== null) {
-		paintBox(painter, style, fragments, rect, ctx);
+		paintBox(painter, {...style, border: null}, fragments, rect, ctx);
+		paintInlineBorder(style, fragments, ctx);
 		paintCaret(painter, element, style, ctx);
 	}
 	for (const child of flowContent(element)) {
@@ -1157,6 +1158,39 @@ function paintInline(
 	}
 	if (rect !== null) {
 		paintOutline(painter, element, style, rect, ctx, fragments);
+	}
+}
+
+// An inline box is one row of text, with no rows above and below it for
+// a top and a bottom border to take. Its sides close the first fragment
+// on the left and the last on the right.
+function paintInlineBorder(
+	style: PaintStyle,
+	fragments: Rect[],
+	ctx: CellContext,
+): void {
+	if (!style.visible || style.border === null) {
+		return;
+	}
+	const first = fragments[0];
+	const last = fragments[fragments.length - 1];
+	if (style.border.left) {
+		ctx.drawBox(
+			Math.round(first.left),
+			Math.round(first.top),
+			1,
+			Math.round(first.height),
+			{left: style.border.left},
+		);
+	}
+	if (style.border.right) {
+		ctx.drawBox(
+			Math.round(last.left + last.width) - 1,
+			Math.round(last.top),
+			1,
+			Math.round(last.height),
+			{right: style.border.right},
+		);
 	}
 }
 
@@ -1292,6 +1326,23 @@ function resolveRun(
 				};
 				run.leaves.set(leaf.node, {rect, leaf});
 				coverAncestors(boxLines, leaf.node, container, lineY, rect);
+			} else if (leaf.type === "edge") {
+				// The margin is outside the box it edges and inside the ones
+				// around it.
+				const shift = getShift(leaf.node);
+				const rect = {
+					left: lineX + segment.x + shift.x,
+					top: lineY + shift.y,
+					width: segment.width,
+					height: line.height,
+				};
+				coverAncestors(boxLines, leaf.node, container, lineY, rect);
+				const margin = Math.max(0, leaf.margin);
+				coverBox(boxLines, leaf.node, lineY, {
+					...rect,
+					left: leaf.side === "start" ? rect.left + margin : rect.left,
+					width: Math.max(0, rect.width - margin),
+				});
 			}
 		}
 		for (const [textNode, span] of textSpans) {
@@ -1334,19 +1385,28 @@ function coverAncestors(
 		ancestor !== null && ancestor !== container;
 		ancestor = flatParentElement(ancestor)
 	) {
-		let byLine = boxLines.get(ancestor);
-		if (byLine === undefined) {
-			boxLines.set(ancestor, (byLine = new Map()));
-		}
-		const known = byLine.get(lineY);
-		if (known === undefined) {
-			byLine.set(lineY, {...rect});
-		} else {
-			const left = Math.min(known.left, rect.left);
-			const right = Math.max(known.left + known.width, rect.left + rect.width);
-			known.left = left;
-			known.width = right - left;
-		}
+		coverBox(boxLines, ancestor, lineY, rect);
+	}
+}
+
+function coverBox(
+	boxLines: Map<Element, Map<number, Rect>>,
+	element: Element,
+	lineY: number,
+	rect: Rect,
+): void {
+	let byLine = boxLines.get(element);
+	if (byLine === undefined) {
+		boxLines.set(element, (byLine = new Map()));
+	}
+	const known = byLine.get(lineY);
+	if (known === undefined) {
+		byLine.set(lineY, {...rect});
+	} else {
+		const left = Math.min(known.left, rect.left);
+		const right = Math.max(known.left + known.width, rect.left + rect.width);
+		known.left = left;
+		known.width = right - left;
 	}
 }
 

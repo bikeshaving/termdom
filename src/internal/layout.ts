@@ -2641,10 +2641,83 @@ export interface InlineBlockLeaf {
 	contentHeight: number;
 }
 
+// Where an inline box opens or closes on its line (css2 §10.3.1): its
+// margin, border and padding on that side, which take cells of the line.
+// Only the first fragment has the start edge and only the last the end.
+export interface EdgeLeaf {
+	type: "edge";
+	node: Element;
+	side: "start" | "end";
+	margin: number;
+	border: number;
+	padding: number;
+}
+
 type Leaf =
 	InlineBlockLeaf |
+	EdgeLeaf |
 	{type: "text"; node: Text; content: string} |
 	{type: "br"; node: HTMLBRElement};
+
+function getEdgeWidth(leaf: EdgeLeaf): number {
+	return Math.max(0, leaf.margin + leaf.border + leaf.padding);
+}
+
+// A blockified inline lays its edges out in its own box.
+function hasInlineEdges(element: Element): boolean {
+	return getLayoutDisplay(element) === "inline" && !hasItemParent(element);
+}
+
+function pushEdge(
+	leafNodes: Leaf[],
+	element: Element,
+	side: "start" | "end",
+): void {
+	const box = getBoxModel(element);
+	const left =
+		(side === "start") === (getComputedValue(element, "direction") !== "rtl");
+	const leaf: EdgeLeaf = {
+		type: "edge",
+		node: element,
+		side,
+		margin: left ? box.marginLeft : box.marginRight,
+		border: left ? box.borderLeftWidth : box.borderRightWidth,
+		padding: left ? box.paddingLeft : box.paddingRight,
+	};
+	if (getEdgeWidth(leaf) > 0) {
+		leafNodes.push(leaf);
+	}
+}
+
+// The inline boxes a step of the walk from `from` to `next` leaves, inner
+// first, up to and including `root`.
+function pushExitedEdges(
+	leafNodes: Leaf[],
+	from: Node,
+	next: Node | null,
+	root: Node,
+): void {
+	const inside = new Set<Node>();
+	for (let node: Node | null = next;
+		node !== null;
+		node = flatParentElement(node)) {
+		inside.add(node);
+		if (node === root) {
+			break;
+		}
+	}
+	for (
+		let node: Node | null = from;
+		node !== null && !inside.has(node);
+		node = node === root ? null : flatParentElement(node)
+	) {
+		if (
+			node.nodeType === node.ELEMENT_NODE && hasInlineEdges(node as Element)
+		) {
+			pushEdge(leafNodes, node as Element, "end");
+		}
+	}
+}
 
 interface LineResult {
 	segments: Array<
@@ -2738,6 +2811,10 @@ interface TextFragmentEntry {
 	endOffset: number;
 	visualBase: "ltr" | "rtl" | null;
 	ord: number;
+
+	// An inline box's edge, indexed under its element. It widens the rects
+	// of the boxes it is in, and carries no text.
+	edge?: EdgeLeaf;
 }
 
 // A line requested over an ELEMENT merges the fragments of every text
@@ -2781,6 +2858,8 @@ function getPrefixWidths(
 			// The placeholder stands for the whole margin box. A <br>'s newline
 			// stands for nothing.
 			widths[item.end - 1] = getInlineBlockWidth(item.leafNode);
+		} else if (item.leafNode.type === "edge") {
+			widths[item.end - 1] = getEdgeWidth(item.leafNode);
 		}
 	}
 
@@ -2937,6 +3016,7 @@ function collectLeaves(
 
 				if (isWhitespaceOnly && shouldCollapseWhitespaceTextNode(textNode)) {
 					cursor = flowNext(node, root, false);
+					pushExitedEdges(leafNodes, node, cursor, root);
 					if (cursor === null) {
 						break;
 					}
@@ -2950,6 +3030,7 @@ function collectLeaves(
 				});
 			}
 			cursor = flowNext(node, root, false);
+			pushExitedEdges(leafNodes, node, cursor, root);
 			if (cursor === null) {
 				break;
 			}
@@ -2962,12 +3043,14 @@ function collectLeaves(
 				// display branches, or an absolute inline span measures into
 				// the run it left.
 				cursor = flowNext(node, root, true);
+				pushExitedEdges(leafNodes, node, cursor, root);
 				if (cursor === null) {
 					break;
 				}
 			} else if (element.tagName === "BR") {
 				leafNodes.push({type: "br", node: element as HTMLBRElement});
 				cursor = flowNext(node, root, false);
+				pushExitedEdges(leafNodes, node, cursor, root);
 				if (cursor === null) {
 					break;
 				}
@@ -2981,6 +3064,7 @@ function collectLeaves(
 					contentHeight: box.height,
 				});
 				cursor = flowNext(node, root, true);
+				pushExitedEdges(leafNodes, node, cursor, root);
 				if (cursor === null) {
 					break;
 				}
@@ -3254,11 +3338,16 @@ function collectLeaves(
 				});
 				// The children were measured inside the box above.
 				cursor = flowNext(node, root, true);
+				pushExitedEdges(leafNodes, node, cursor, root);
 				if (cursor === null) {
 					break;
 				}
 			} else if (display === "inline") {
+				if (hasInlineEdges(element)) {
+					pushEdge(leafNodes, element, "start");
+				}
 				cursor = flowNext(node, root, false);
+				pushExitedEdges(leafNodes, node, cursor, root);
 				if (cursor === null) {
 					break;
 				}
@@ -3269,6 +3358,7 @@ function collectLeaves(
 			}
 		} else {
 			cursor = flowNext(node, root, false);
+			pushExitedEdges(leafNodes, node, cursor, root);
 			if (cursor === null) {
 				break;
 			}
@@ -3487,10 +3577,17 @@ function processWhitespace(
 				processed.length > 0 &&
 				!isSpacePreserving(leafWhiteSpace)
 			) {
-				const prevItem = items[items.length - 1];
+				// An inline box's edges do not separate its spaces from the
+				// ones around it (css-text-3 §4.1.1).
+				let prevItem: (typeof items)[number] | undefined;
+				for (let i = items.length - 1; i >= 0 && prevItem === undefined; i--) {
+					if (items[i].leafNode.type !== "edge") {
+						prevItem = items[i];
+					}
+				}
 				if (prevItem && prevItem.leafNode.type === "text") {
 					const prevEndsWithSpace =
-						text.length > 0 && text[text.length - 1] === " ";
+						prevItem.end > prevItem.start && text[prevItem.end - 1] === " ";
 					const thisStartsWithSpace = processed[0] === " ";
 
 					if (prevEndsWithSpace && thisStartsWithSpace) {
@@ -3543,7 +3640,7 @@ function processWhitespace(
 			const at = text.length;
 			text += "\n";
 			items.push({leafNode: leaf, start: at, end: text.length});
-		} else if (leaf.type === "inline-block") {
+		} else if (leaf.type === "inline-block" || leaf.type === "edge") {
 			text += "\uFFFC";
 			items.push({leafNode: leaf, start, end: text.length});
 		}
@@ -3637,7 +3734,40 @@ function findBreakPoints(
 		return forced;
 	}
 
-	const breaker = new LineBreaker(content.text);
+	// The breaks are the text's, found without the edges. One falls after
+	// the edges that close boxes and before those that open them, so each
+	// edge stays on the line of the content it borders.
+	const edges = content.items.filter((item) => item.leafNode.type === "edge");
+	let text = content.text;
+	let toContent: ((position: number) => number) | null = null;
+	if (edges.length > 0) {
+		const positions: number[] = [];
+		text = "";
+		let edge = 0;
+		for (let i = 0; i < content.text.length; i++) {
+			if (edge < edges.length && edges[edge].start === i) {
+				edge++;
+				continue;
+			}
+			positions.push(i);
+			text += content.text[i];
+		}
+		positions.push(content.text.length);
+		const opens = new Set(
+			edges
+				.filter((item) => (item.leafNode as EdgeLeaf).side === "start")
+				.map((item) => item.start),
+		);
+		toContent = (position) => {
+			let at = positions[position];
+			while (at > 0 && opens.has(at - 1)) {
+				at--;
+			}
+			return position === text.length ? content.text.length : at;
+		};
+	}
+
+	const breaker = new LineBreaker(text);
 	const breaks: BreakPoint[] = [];
 
 	let lastPos = 0;
@@ -3650,13 +3780,16 @@ function findBreakPoints(
 			whiteSpace === "pre-wrap" ||
 			whiteSpace === "pre-line"
 		) {
-			const segment = content.text.slice(lastPos, bk.position);
+			const segment = text.slice(lastPos, bk.position);
 			if (segment.includes("\n")) {
 				required = true;
 			}
 		}
 
-		breaks.push({position: bk.position, required});
+		breaks.push({
+			position: toContent === null ? bk.position : toContent(bk.position),
+			required,
+		});
 		lastPos = bk.position;
 	}
 
@@ -4173,6 +4306,24 @@ function getBreakResultTextIndex(
 					visualBase: segment.visualBase,
 					ord: ord++,
 				});
+			} else if (segment.leaf.type === "edge") {
+				const node = segment.leaf.node as Node;
+				let entries = index!.get(node);
+				if (!entries) {
+					index!.set(node, (entries = []));
+				}
+				entries.push({
+					line: lineIndex,
+					x: baseX + segment.x,
+					column: segment.x,
+					width: segment.width,
+					text: "",
+					startOffset: 0,
+					endOffset: 0,
+					visualBase: null,
+					ord: ord++,
+					edge: segment.leaf,
+				});
 			} else if (
 				segment.leaf.type === "inline-block" && segment.leaf.breakResult
 			) {
@@ -4450,6 +4601,19 @@ function getNodesInRange(
 					x: x + marginLeft,
 					width: width - marginLeft - marginRight,
 					processedText,
+					dataStart: 0,
+					dataEnd: 0,
+					visualBase: null,
+				});
+			} else if (item.leafNode.type === "edge") {
+				width = getEdgeWidth(item.leafNode);
+				nodes.push({
+					leaf: item.leafNode,
+					start: 0,
+					end: 0,
+					x,
+					width,
+					processedText: "",
 					dataStart: 0,
 					dataEnd: 0,
 					visualBase: null,
@@ -6616,13 +6780,17 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	} else {
 		targetTextNodes = new Set<Node>();
 
+		targetTextNodes.add(node);
 		for (
 			let found = flowNext(node, node, false);
 			found !== null;
 			found = flowNext(found, node, false)
 		) {
-			if (found.nodeType === found.TEXT_NODE) {
-				targetTextNodes.add(found as Text);
+			if (
+				found.nodeType === found.TEXT_NODE ||
+				found.nodeType === found.ELEMENT_NODE
+			) {
+				targetTextNodes.add(found);
 			}
 		}
 	}
@@ -6657,12 +6825,22 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		let maxX = -Infinity;
 		let concatenatedText = "";
 		for (const targetText of bucket) {
-			minX = Math.min(minX, targetText.x);
-			maxX = Math.max(maxX, targetText.x + targetText.width);
+			let {x, width} = targetText;
+			// The node's own margin is outside its box. A descendant's is
+			// inside it.
+			const edge = targetText.edge;
+			if (edge !== undefined && edge.node === node) {
+				const margin = Math.max(0, edge.margin);
+				x += edge.side === "start" ? margin : 0;
+				width = Math.max(0, width - margin);
+			}
+			minX = Math.min(minX, x);
+			maxX = Math.max(maxX, x + width);
 			concatenatedText += targetText.text;
 		}
-		const first = bucket[0];
-		const last = bucket[bucket.length - 1];
+		const texts = bucket.filter((entry) => entry.edge === undefined);
+		const first = texts[0] ?? bucket[0];
+		const last = texts[texts.length - 1] ?? bucket[bucket.length - 1];
 
 		const alignOffset = getLineAlignOffset(
 			alignContainer,
