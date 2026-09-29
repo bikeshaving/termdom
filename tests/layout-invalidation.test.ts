@@ -802,3 +802,20 @@ test("a root made inline by a rule stays a block", async () => {
 	expect([rect.left, rect.top, rect.width, rect.height]).toEqual([0, 0, 8, 1]);
 	dom.dispose();
 });
+
+test("a display change the layout style cannot tell apart still moves the box", async () => {
+	for (const [
+		display,
+		width,
+	] of [["inline-block", 0], ["contents", 0]] as const) {
+		const terminal = new MockProcess({cols: 60, rows: 10});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML = "<div></div>";
+		await nextFrame(dom);
+		expect(dom.document.body.getBoundingClientRect().width).toBe(60);
+		dom.document.body.style.display = display;
+		await nextFrame(dom);
+		expect(dom.document.body.getBoundingClientRect().width).toBe(width);
+		dom.dispose();
+	}
+});

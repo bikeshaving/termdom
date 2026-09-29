@@ -2204,6 +2204,13 @@ export class Screen {
 			if (scrolling) {
 				hasContent = true;
 			}
+			// A repaint asked the screen to be cleared, and the frame that
+			// answers it must be written even with nothing to draw. Leaving
+			// fullscreen for an emptied document shows the rows the document
+			// held before it went fullscreen until something erases them.
+			if (this[kNeedsFullClear]) {
+				hasContent = true;
+			}
 
 			const writer = this[kWriter];
 			let prefix = scrollPrefix;
