@@ -958,3 +958,18 @@ test("text in an inline flex item is where its range says it is", async () => {
 	expect(terminal.getVisibleText().split("\n")[0].indexOf("t001")).toBe(4);
 	dom.dispose();
 });
+
+test("a padded inline flex item's text is inside its padding, painted and measured", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style='display:flex;flex-direction:column'>" +
+		"<em id='item' style='padding:1em 1ch'>t000</em></div>";
+	await nextFrame(dom);
+	const range = dom.document.createRange();
+	range.selectNodeContents(dom.document.getElementById("item")!.firstChild!);
+	const rect = range.getBoundingClientRect();
+	expect([rect.left, rect.top]).toEqual([1, 1]);
+	expect(terminal.getVisibleText().split("\n")[1].indexOf("t000")).toBe(1);
+	dom.dispose();
+});

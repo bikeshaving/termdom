@@ -5579,10 +5579,13 @@ export class Layout {
 		if (!document?.body) {
 			return null;
 		}
-		// Painting starts at the body, unless it generates no box of its own.
+		// Painting starts at the body, unless its content sits in the root's
+		// boxes: a body that is inline, inline-block or display: contents.
+		const bodyDisplay = getDeclaredDisplay(document.body);
 		const paintRoot =
 			root === document.documentElement &&
-			!isDisplayContents(document.body)
+			bodyDisplay !== "contents" &&
+			!bodyDisplay.startsWith("inline")
 				? document.body
 				: root;
 		for (const element of [...topLayer].reverse()) {
@@ -6488,6 +6491,24 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		runHead,
 		layoutNode,
 	);
+
+	// getDocumentPosition gives the border box, and a blockified inline flex
+	// item heading its own run reserved padding and border in it (the
+	// parentIsFlex exception) that its text sits inside, as the painter
+	// insets it. A normal inline's box model is cleared, an inline-block's
+	// offset is getDocumentPosition's, and a block's run head is a text node
+	// with no box.
+	if (runHead.nodeType === runHead.ELEMENT_NODE) {
+		const runHeadElement = runHead as Element;
+		if (
+			getLayoutDisplay(runHeadElement) === "inline" &&
+			hasItemParent(runHeadElement)
+		) {
+			const runHeadBox = getBoxModel(runHeadElement);
+			containerX += runHeadBox.paddingLeft + runHeadBox.borderLeftWidth;
+			containerY += runHeadBox.paddingTop + runHeadBox.borderTopWidth;
+		}
+	}
 
 	let currentBreakResult = breakResult;
 	let accumulatedOffsetX = 0;
