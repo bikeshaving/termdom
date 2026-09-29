@@ -9,6 +9,7 @@ import {
 	flatParentElement,
 	flowContent,
 	getHighlightedTextNodes,
+	getImageCells,
 	getPaintedHighlights,
 	getSelectionRecord,
 	getShadowRoot,
@@ -885,6 +886,11 @@ function paintContent(
 	);
 	painter[kScrolledRows] = previousScrolled + scrolledRows;
 	try {
+		// An image the terminal draws stands in for everything inside the
+		// box, alt text included.
+		if (renderImage(painter, element, ctx, style.visible)) {
+			return;
+		}
 		const box = layout.getBox(element);
 		const context = box?.independentFormattingContext ?? null;
 		const own = box?.fragments ? ownLeaf(box.fragments, element) : null;
@@ -1035,7 +1041,7 @@ function paintBox(
 	}
 	// Over the flat fill, which a transparent stop composites onto.
 	if (style.gradient !== null) {
-		const cell = painter[kScreen].cellPixels;
+		const cell = painter[kLayout].cellPixels;
 		for (const fragment of fragments) {
 			renderGradient(
 				ctx,
@@ -1667,6 +1673,42 @@ function getMathCellStyle(
 		style = foldHighlight(style ?? {}, selection.paint);
 	}
 	return style;
+}
+
+/**
+ * Place an `<img>`'s pixels over its content box, and say whether they
+ * went. They do not when the element is not an image, when the terminal
+ * has no protocol for them, or when nothing has decoded yet -- and each
+ * of those is a box that falls back to its alt text.
+ */
+function renderImage(
+	painter: Painter,
+	element: Element,
+	ctx: CellContext,
+	visible: boolean,
+): boolean {
+	if (!visible || element.tagName !== "IMG") {
+		return false;
+	}
+	if (painter[kScreen].imageProtocol === null) {
+		return false;
+	}
+	const image = getImageCells(element);
+	if (image === null) {
+		return false;
+	}
+	const content = painter[kLayout].contentRect(element);
+	if (content === null) {
+		return false;
+	}
+	ctx.drawImage(
+		Math.round(content.x),
+		Math.round(content.y),
+		Math.round(content.width),
+		Math.round(content.height),
+		image,
+	);
+	return true;
 }
 
 // The context root's clip intersected with the overflow of the

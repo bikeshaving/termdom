@@ -73,6 +73,7 @@ export const UA_ELEMENT_STYLES = `
 	var { display: inline; font-style: italic; }
 	button { display: inline-block; cursor: pointer; }
 	dialog { display: block; border: 1px solid; padding: 0 1ch; background-color: Canvas; }
+	img { display: inline-block; overflow: hidden; white-space: pre; }
 	input { display: inline-block; white-space: pre; }
 	select { display: inline-block; white-space: pre; }
 	textarea { display: inline-block; border: 1px solid; padding: 0 1ch; white-space: pre-wrap; overflow-wrap: break-word; }
@@ -164,6 +165,14 @@ export const TEXT_CONTROL_UA_STYLES = `
 	[part="label"] { white-space: pre; }
 	[part="label"]::before { content: "[ "; }
 	[part="label"]::after { content: " ]"; }
+`;
+
+// The alt text is what the box shows whenever the pixels cannot be: no
+// terminal support, nothing decoded, nothing loaded. It is ordinary text
+// on one pre line, clipped by the host's own overflow to whatever the
+// box measured, so a long alt never widens an attribute-sized image.
+export const IMAGE_UA_STYLES = `
+	[part="alt"] { display: inline-block; white-space: pre; vertical-align: top; }
 `;
 
 // The disclosure flips the content container's display inline from
