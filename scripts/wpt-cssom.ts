@@ -398,9 +398,16 @@ async function runFileIn(file: string, suite: Suite): Promise<Outcome> {
 		// One block at global scope for the whole file: the harness and the test
 		// share it exactly as they share a document's script scope. `var` and
 		// function declarations land on the global, where a test that evals a
-		// name finds them; `let` and `const` stay in the file's own scope.
+		// name finds them; `let` and `const` stay in the file's own scope. A
+		// browser's global is the window: the realm mirrors the window's
+		// members, and a name it does not hold, a named property, resolves
+		// through the engine window.
+		(realm as Record<string, unknown>).__termdomWindow = windowScope(
+			realm,
+			window,
+		);
 		runInContext(
-			`{\n${sources.join("\n;\n")}\n;\nadd_completion_callback(__complete);\n}`,
+			`with (__termdomWindow) {\n${sources.join("\n;\n")}\n;\nadd_completion_callback(__complete);\n}`,
 			realm,
 		);
 		// The load event is a task of its own, not the tail of the script that
@@ -429,6 +436,30 @@ async function runFileIn(file: string, suite: Suite): Promise<Outcome> {
 	// completion one, so let it run before the file is done with.
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	return outcome;
+}
+
+/**
+ * The scope that makes the engine window the realm's global for name
+ * lookup. A name the realm owns is the realm's, as it would be the window's
+ * own property; any other name the engine window answers is read from and
+ * written to the window, so every value is the engine's. A `with` scope
+ * must answer `has` for names it cannot list in advance, which only a Proxy
+ * can.
+ */
+function windowScope(realm: object, window: object): object {
+	// eslint-disable-next-line no-restricted-globals
+	return new Proxy(window, {
+		has(target, name): boolean {
+			return !Object.prototype.hasOwnProperty.call(realm, name) &&
+				name in target;
+		},
+		get(target, name): unknown {
+			return Reflect.get(target, name, target);
+		},
+		set(target, name, value): boolean {
+			return Reflect.set(target, name, value, target);
+		},
+	});
 }
 
 /** Put every name on the realm, over whatever the window already put there. */
@@ -469,12 +500,20 @@ function createRealm(window: Window): object {
 	// which is the object they were written for.
 	const scope: Record<string, unknown> = {};
 	const chain: object[] = [];
+	// The window's named properties object, the one level with no
+	// constructor of its own, is left out: its names come and go with the
+	// document, so they are read live through the window scope instead.
 	for (
 		let level: object | null = window;
 		level !== null && level !== Object.prototype;
 		level = Object.getPrototypeOf(level) as object | null
 	) {
-		chain.unshift(level);
+		if (
+			level === window ||
+			Object.prototype.hasOwnProperty.call(level, "constructor")
+		) {
+			chain.unshift(level);
+		}
 	}
 	for (const level of chain) {
 		for (const [name, descriptor] of Object.entries(
