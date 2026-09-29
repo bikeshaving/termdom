@@ -903,6 +903,57 @@ function installGlobals(
 			configurable: true,
 		});
 	}
+	// The rest of the window's members the runtime's global lacks. The
+	// harness realm's global stands in for the window, so `window.innerWidth`
+	// and the like read the engine window's own, with methods bound to it, as
+	// a browser's global is the window. They are removed again afterwards.
+	const mirrored = new Map<string, PropertyDescriptor | undefined>();
+	for (
+		let level: object | null = engineWindow as unknown as object;
+		level !== null && level !== Object.prototype;
+		level = Object.getPrototypeOf(level) as object | null
+	) {
+		// The named properties object, the one level with no constructor of
+		// its own, is left to the window scope, which reads it live.
+		if (
+			level !== (engineWindow as unknown as object) &&
+			!Object.prototype.hasOwnProperty.call(level, "constructor")
+		) {
+			continue;
+		}
+		for (const name of Object.getOwnPropertyNames(level)) {
+			if (
+				name === "constructor" ||
+				saved.has(name) ||
+				mirrored.has(name) ||
+				/^on[a-z]/.test(name)
+			) {
+				continue;
+			}
+			// A name the runtime's global already has stays the runtime's: the
+			// engine window hands several of those out by reading the global
+			// (performance, crypto), and would read its own mirror.
+			if (!(name in scope)) {
+				mirrored.set(name, undefined);
+			}
+		}
+	}
+	const target = engineWindow as unknown as Record<string, unknown>;
+	for (const name of mirrored.keys()) {
+		Object.defineProperty(scope, name, {
+			get: (): unknown => {
+				const value = target[name];
+				return typeof value === "function" &&
+					(value as {prototype?: unknown}).prototype === undefined
+					? (value as (...args: unknown[]) => unknown).bind(target)
+					: value;
+			},
+			set: (value: unknown) => {
+				target[name] = value;
+			},
+			configurable: true,
+		});
+	}
 	return {
 		restore(): void {
 			for (const [name, entry] of saved) {
@@ -913,6 +964,12 @@ function installGlobals(
 					scope[name] = entry.value;
 				} else if (!accessors.has(name)) {
 					delete scope[name];
+				}
+			}
+			for (const [name, descriptor] of mirrored) {
+				delete scope[name];
+				if (descriptor !== undefined) {
+					Object.defineProperty(scope, name, descriptor);
 				}
 			}
 		},
