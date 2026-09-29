@@ -4873,22 +4873,36 @@ function callListener(
 // unhandled one goes to the engine rendering the document, which owns
 // the terminal the runtime would otherwise print over. With no engine,
 // the runtime reports it.
+// The windows firing an error event now. An exception raised while one
+// is, by an error listener itself, skips the event, as HTML's "in error
+// reporting mode" has it, rather than firing another without end.
+const reportingWindows = new WeakSet<object>();
+
 function reportError(error: unknown, document: Document | null = null): void {
 	const view = document === null ? null : document[kDefaultView];
-	if (view !== null) {
+	if (view !== null && !reportingWindows.has(view)) {
 		const event = new ErrorEvent("error", {
 			cancelable: true,
 			message: error instanceof Error ? error.message : String(error),
 			error,
 		});
-		dispatch(view as unknown as EventTarget, event);
+		reportingWindows.add(view);
+		try {
+			dispatch(view as unknown as EventTarget, event);
+		} finally {
+			reportingWindows.delete(view);
+		}
 		if (event.defaultPrevented) {
 			return;
 		}
 	}
-	const attached = document === null
-		? undefined
-		: getAttachedDocument(document);
+	// A document no engine renders, one a page made with DOMParser or
+	// createHTMLDocument, reports to the engine of the window whose script
+	// made it, as a browser's console is that window's.
+	const ambient = getAmbientDocument();
+	const attached =
+		(document === null ? undefined : getAttachedDocument(document)) ??
+		(ambient === null ? undefined : getAttachedDocument(ambient));
 	if (attached !== undefined) {
 		attached[kReportUncaught](error);
 		return;
@@ -11696,6 +11710,10 @@ function getElementInterface(
 
 let currentDocumentForConstruction: Document | null = null;
 let ambientDocument: Document | null = null;
+
+function getAmbientDocument(): Document | null {
+	return ambientDocument;
+}
 
 function buildElement(
 	document: Document,
