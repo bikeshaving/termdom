@@ -1119,3 +1119,21 @@ test("white-space is the shorthand of its two longhands, both ways", async () =>
 	expect(terminal.getVisibleText()).toContain("a b c dddd e");
 	dom.dispose();
 });
+
+test("a shorthand whose longhands inherit restyles the children when it changes", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.body.innerHTML = "<div id=\"d\">x</div>";
+	await nextFrame(dom);
+	const child = document.getElementById("d")!;
+	document.body.setAttribute("style", "white-space: pre; list-style: square");
+	await nextFrame(dom);
+	expect(window.getComputedStyle(child).whiteSpace).toBe("pre");
+	expect(window.getComputedStyle(child).listStyleType).toBe("square");
+	document.body.setAttribute("style", "");
+	await nextFrame(dom);
+	expect(window.getComputedStyle(child).whiteSpace).toBe("normal");
+	expect(window.getComputedStyle(child).listStyleType).toBe("disc");
+	dom.dispose();
+});

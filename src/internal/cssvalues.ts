@@ -1782,8 +1782,14 @@ const INHERITED_PROPERTIES = new Set([
 	"text-decoration-thickness",
 ]);
 
+// A shorthand counts as inherited when any longhand it sets is: a change
+// to `font` or `white-space` reaches the children through them.
 export function isInheritedProperty(property: string): boolean {
-	return property.startsWith("--") || INHERITED_PROPERTIES.has(property);
+	if (property.startsWith("--") || INHERITED_PROPERTIES.has(property)) {
+		return true;
+	}
+	return SHORTHAND_LONGHANDS.get(property)
+		?.some((longhand) => INHERITED_PROPERTIES.has(longhand)) ?? false;
 }
 
 export type UnitValue = number | {percentage: number} | null;

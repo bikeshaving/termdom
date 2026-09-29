@@ -507,3 +507,17 @@ test("a body of any display paints the document", async () => {
 		dom.dispose();
 	}
 });
+
+test("hit-testing finds text in the root's boxes when the body is inline", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div id=\"t\" style=\"display: contents\">text</div><div></div>";
+	dom.document.body.style.display = "inline";
+	await nextFrame(dom);
+	expect(terminal.getVisibleText().split("\n")[0].trimEnd()).toBe("text");
+	const hit = dom.document.elementFromPoint(1, 0);
+	expect(hit === dom.document.body || hit === dom.document.documentElement)
+		.toBe(true);
+	dom.dispose();
+});
