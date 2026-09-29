@@ -2455,7 +2455,7 @@ export function isFontRelativePercentage(property: string): boolean {
 	return FONT_RELATIVE_PERCENTAGES.has(property);
 }
 
-const RELATIVE_UNIT = /[\d.](?:r?em|ex|ch|vw|vh|vmin|vmax)\b/i;
+const RELATIVE_UNIT = /[\d.](?:r?em|ex|ch|ic|vw|vh|vmin|vmax)\b/i;
 
 // `contextual` means computing the value needs the element (a relative
 // length, a calc(), a font-relative percentage). Decided once per
@@ -2544,6 +2544,9 @@ function getUnitFactor(unit: string, context: LengthContext): number | null {
 		// cannot resize the grid's column.
 		case "ch":
 			return 1;
+		// The advance of 水, which a terminal draws two cells wide.
+		case "ic":
+			return context.font * 2;
 		case "vw":
 			return context.viewportWidth / 100;
 		case "vh":
@@ -5466,47 +5469,6 @@ function cubicBezierEasing(
 		}
 		return sample(y1, y2, solve(input));
 	};
-}
-
-// Null for a value outside the grammar, which leaves the feature
-// unevaluated.
-export function getMediaLength(
-	node: CSSTree.ValueNode | null | undefined,
-): number | null {
-	let length: number | null = null;
-	if (node?.type === "Number") {
-		length = parseFloat(node.value ?? "");
-	} else if (node?.type === "Dimension") {
-		const unit = (node.unit ?? "").toLowerCase();
-		if (unit === "px" || unit === "ch") {
-			length = parseFloat(node.value ?? "");
-		}
-	}
-	if (length === null || !Number.isFinite(length) || length < 0) {
-		return null;
-	}
-	return length;
-}
-
-export function mediaComparison(
-	left: number,
-	comparison: string | null | undefined,
-	right: number,
-): boolean {
-	switch (comparison) {
-		case "<":
-			return left < right;
-		case "<=":
-			return left <= right;
-		case ">":
-			return left > right;
-		case ">=":
-			return left >= right;
-		case "=":
-			return left === right;
-		default:
-			return true;
-	}
 }
 
 export interface CounterScope {
