@@ -165,7 +165,12 @@ async function play(
 ): Promise<void> {
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({transport: terminal.transport}) as any;
-	dom.document.body.innerHTML = `<${tag}></${tag}>`;
+	// Home, End and the line chords act on the visual line, as a browser's
+	// do, and the model knows logical lines only. Unwrapped, the two are the
+	// same; keyboard.test.ts covers a wrapped one.
+	dom.document.body.innerHTML = tag === "textarea"
+		? "<textarea style=\"white-space: pre\"></textarea>"
+		: `<${tag}></${tag}>`;
 	await nextFrame(dom);
 	const field = dom.document.querySelector(tag);
 	field.focus();

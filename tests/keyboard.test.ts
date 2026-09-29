@@ -890,6 +890,31 @@ test("the readline chords move and cut, as a terminal user expects", async () =>
 	dom.dispose();
 });
 
+test("in a wrapped textarea the line chords work on the visual line", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const textarea = dom.document.createElement("textarea");
+	textarea.cols = 10;
+	dom.document.body.appendChild(textarea);
+	textarea.focus();
+	await nextFrame(dom);
+	const send = async (bytes: string) => {
+		(terminal.stdin as any).emit("data", Buffer.from(bytes));
+		await new Promise((r) => setTimeout(r, 0));
+		await new Promise((r) => setTimeout(r, 0));
+	};
+
+	await send("aaaa bbbb cccc");
+	// The text wraps after "bbbb ", so the caret's line is "cccc", and
+	// Ctrl+U takes only that, as Home would stop at its start.
+	await send("\x15");
+	expect(textarea.value).toBe("aaaa bbbb ");
+
+	dom.dispose();
+});
+
 test("a selection paints as inverse video over the selected cells", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
