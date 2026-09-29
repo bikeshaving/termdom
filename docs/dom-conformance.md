@@ -23,8 +23,8 @@ that need them fail.
 - Optional-feature subtests reporting unsupported: 6
 - Files whose harness completed: 770
 - Files whose harness did not complete: 103
-- Subtests passed: 96072
-- Subtests failed: 1325
+- Subtests passed: 96113
+- Subtests failed: 1435
 
 ## Exclusions
 
@@ -538,13 +538,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/insertion-removing-steps/script-does-not-run-on-child-removal.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/moveBefore/Node-moveBefore.html | OK | 31 | 1 |
 | dom/nodes/moveBefore/child-style-preserve.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/continue-css-animation-left.html | TIMEOUT | 0 | 0 |
-| dom/nodes/moveBefore/continue-css-animation-transform.html | TIMEOUT | 0 | 0 |
+| dom/nodes/moveBefore/continue-css-animation-left.html | TIMEOUT | 0 | 1 |
+| dom/nodes/moveBefore/continue-css-animation-transform.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/continue-css-transition-left-pseudo.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/continue-css-transition-left.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/continue-css-transition-transform-pseudo.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/continue-css-transition-transform.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/css-animation-commit-styles.html | TIMEOUT | 0 | 0 |
+| dom/nodes/moveBefore/css-animation-commit-styles.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/css-transition-cross-document.html | EXCLUDED (requires-browsing-context: the transitioning node moves into a frame's document) | 0 | 0 |
 | dom/nodes/moveBefore/css-transition-cross-shadow.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/css-transition-to-disconnected-document.html | OK | 1 | 0 |
@@ -581,7 +581,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/popover-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-script.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-style.html | OK | 0 | 1 |
-| dom/nodes/moveBefore/relevant-mutations.html | TIMEOUT | 0 | 0 |
+| dom/nodes/moveBefore/relevant-mutations.html | TIMEOUT | 0 | 2 |
 | dom/nodes/moveBefore/role-updates-after-move.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/script-move-before.html | OK | 2 | 0 |
 | dom/nodes/moveBefore/select-option-optgroup.html | OK | 1 | 1 |
@@ -654,7 +654,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-dispatch-bubble-canceled.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-bubbles-false.html | OK | 4 | 1 |
 | dom/events/Event-dispatch-bubbles-true.html | OK | 4 | 1 |
-| dom/events/Event-dispatch-click.html | TIMEOUT | 0 | 0 |
+| dom/events/Event-dispatch-click.html | TIMEOUT | 28 | 5 |
 | dom/events/Event-dispatch-click.tentative.html | OK | 4 | 2 |
 | dom/events/Event-dispatch-detached-click.html | OK | 2 | 0 |
 | dom/events/Event-dispatch-detached-input-and-change.html | OK | 12 | 0 |
@@ -717,8 +717,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/event-global.html | OK | 0 | 8 |
 | dom/events/event-handler-attribute-replace-preserves-passive.html | OK | 2 | 0 |
 | dom/events/event-src-element-nullable.html | OK | 1 | 0 |
-| dom/events/focus-event-document-move.html | TIMEOUT | 0 | 0 |
-| dom/events/handler-count.html | TIMEOUT | 0 | 0 |
+| dom/events/focus-event-document-move.html | ERROR | 0 | 1 |
+| dom/events/handler-count.html | ERROR | 0 | 2 |
 | dom/events/label-default-action.html | OK | 1 | 0 |
 | dom/events/legacy-pre-activation-behavior.window.js | OK | 1 | 0 |
 | dom/events/mouse-event-retarget.html | OK | 1 | 0 |
@@ -772,14 +772,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/remove-all-listeners.html | OK | 2 | 0 |
 | dom/events/scrolling/iframe-chains.html | OK | 0 | 1 |
 | dom/events/scrolling/input-text-scroll-event-when-using-arrow-keys.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | ERROR | 0 | 2 |
 | dom/events/scrolling/save-iframe-scroll-offset-when-display-none.sub.html | REFTEST | 0 | 0 |
-| dom/events/scrolling/scroll-cross-origin-iframes.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scroll-cross-origin-iframes.html | ERROR | 0 | 1 |
 | dom/events/scrolling/scroll-cross-origin-iframes.sub.html | REFTEST | 0 | 0 |
 | dom/events/scrolling/scroll-event-fired-to-element.html | OK | 4 | 0 |
 | dom/events/scrolling/scroll-event-fired-to-iframe.html | OK | 0 | 4 |
-| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/scrollend-event-fired-after-sequence-of-scrolls.tentative.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-after-snap.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-for-mandatory-snap-point-after-load.html | TIMEOUT | 0 | 0 |
@@ -799,14 +799,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | OK | 1 | 3 |
 | dom/events/scrolling/scrollend-fires-to-text-input.html | OK | 5 | 0 |
 | dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html | OK | 0 | 1 |
-| dom/events/scrolling/wheel-event-composed.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-composed.html | ERROR | 0 | 1 |
 | dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html | OK | 0 | 1 |
 | dom/events/scrolling/wheel-event-transactions-basic.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/wheel-event-transactions-target-display-change.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-elements.html | OK | 0 | 1 |
-| dom/events/scrolling/wheel-event-transactions-target-move.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-target-removal.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-target-move.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/wheel-event-transactions-target-removal.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/wheel-event-transactions-target-resize.html | TIMEOUT | 0 | 0 |
 | dom/events/shadow-relatedTarget.html | OK | 2 | 0 |
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
@@ -914,8 +914,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/caret/collapse-pre-linestart-2.html | REFTEST | 0 | 0 |
 | selection/caret/editing-host-has-only-invisible-br.html | REFTEST | 0 | 0 |
 | selection/caret/empty-elements.html | OK | 1 | 0 |
-| selection/caret/move-around-contenteditable-false.html | TIMEOUT | 0 | 0 |
-| selection/caret/move-around-generated-content.html | TIMEOUT | 0 | 0 |
+| selection/caret/move-around-contenteditable-false.html | TIMEOUT | 0 | 5 |
+| selection/caret/move-around-generated-content.html | TIMEOUT | 0 | 3 |
 | selection/collapse-00.html | OK | 2655 | 0 |
 | selection/collapse-15.html | OK | 2655 | 0 |
 | selection/collapse-30.html | OK | 5133 | 0 |
@@ -936,7 +936,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/contenteditable/selection-outside-focused-editing-host.tentative.html | OK | 2 | 1 |
 | selection/deleteFromDocument-HTMLDetails.html | OK | 30 | 0 |
 | selection/deleteFromDocument.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
-| selection/drag-disabled-textarea-shadow-dom.html | TIMEOUT | 0 | 0 |
+| selection/drag-disabled-textarea-shadow-dom.html | ERROR | 0 | 1 |
 | selection/drag-out-of-floated-content.html | OK | 0 | 1 |
 | selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html | OK | 0 | 1 |
 | selection/drag-selection-extend-to-user-select-none.html | OK | 0 | 4 |
@@ -976,7 +976,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/selection-direction-on-double-click.tentative.html | OK | 0 | 1 |
 | selection/selection-direction-on-single-click.html | OK | 0 | 1 |
 | selection/selection-direction-on-triple-click.tentative.html | OK | 0 | 1 |
-| selection/selection-focused-element-becomes-nonfocusable.html | TIMEOUT | 0 | 0 |
+| selection/selection-focused-element-becomes-nonfocusable.html | TIMEOUT | 1 | 1 |
 | selection/selection-incremental-change-repaint.html | REFTEST | 0 | 0 |
 | selection/selection-modify-extend-word-generated-content.html | OK | 2 | 0 |
 | selection/selection-nested-video.html | OK | 1 | 0 |
@@ -1008,7 +1008,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/shadow-dom/tentative/Selection-isCollapsed.html | OK | 4 | 0 |
 | selection/shadow-dom/tentative/Selection-later-become-slotted-content.html | OK | 1 | 0 |
 | selection/stringifier.tentative.html | OK | 1 | 0 |
-| selection/stringifier_editable_element.tentative.html | TIMEOUT | 0 | 0 |
+| selection/stringifier_editable_element.tentative.html | ERROR | 1 | 11 |
 | selection/test-iframe.html | REFTEST | 0 | 0 |
 | selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-browsing-context: the focus moves in from an iframe) | 0 | 0 |
 | selection/textcontrols/focus.html | OK | 0 | 1 |
@@ -1023,7 +1023,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/user-select-on-input-and-contenteditable.html | OK | 0 | 5 |
 | shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 1 | 13 |
 | shadow-dom/Document-prototype-adoptNode.html | OK | 2 | 0 |
-| shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 0 | 0 |
+| shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 2 | 6 |
 | shadow-dom/Document-prototype-importNode.html | OK | 2 | 0 |
 | shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html | OK | 9 | 32 |
 | shadow-dom/Element-interface-attachShadow-custom-element.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
@@ -1037,7 +1037,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/Range-prototype-insertNode.html | OK | 1 | 0 |
 | shadow-dom/ShadowRoot-interface.html | OK | 10 | 2 |
 | shadow-dom/Slottable-mixin.html | OK | 4 | 0 |
-| shadow-dom/accesskey.tentative.html | TIMEOUT | 0 | 0 |
+| shadow-dom/accesskey.tentative.html | TIMEOUT | 0 | 2 |
 | shadow-dom/assign-slottables-after-removing-shadow-tree-from-document.html | OK | 1 | 0 |
 | shadow-dom/attach-shadow-non-html-namespace.html | OK | 304 | 0 |
 | shadow-dom/attachShadow-with-ShadowRoot.html | OK | 2 | 0 |
@@ -1101,8 +1101,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-serialization.html | ERROR (Unexpected token ':') | 0 | 0 |
 | shadow-dom/directionality-001.tentative.html | REFTEST | 0 | 0 |
 | shadow-dom/directionality-002.tentative.html | REFTEST | 0 | 0 |
-| shadow-dom/dragenter-related-target.html | TIMEOUT | 0 | 0 |
-| shadow-dom/dragleave-related-target.html | TIMEOUT | 0 | 0 |
+| shadow-dom/dragenter-related-target.html | ERROR | 0 | 1 |
+| shadow-dom/dragleave-related-target.html | ERROR | 0 | 1 |
 | shadow-dom/event-composed-path-after-dom-mutation.html | OK | 2 | 0 |
 | shadow-dom/event-composed-path-with-related-target.html | OK | 13 | 0 |
 | shadow-dom/event-composed-path.html | OK | 11 | 0 |
@@ -1290,7 +1290,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/events/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 0 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 1 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html | REFTEST | 0 | 0 |
@@ -1361,7 +1361,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus-notref.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html | OK | 0 | 2 |
-| custom-elements/form-associated/ElementInternals-setFormValue.html | TIMEOUT | 0 | 0 |
+| custom-elements/form-associated/ElementInternals-setFormValue.html | ERROR | 1 | 54 |
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
@@ -1370,7 +1370,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
 | custom-elements/form-associated/form-associated-callback.html | OK | 3 | 2 |
-| custom-elements/form-associated/form-disabled-callback.html | TIMEOUT | 0 | 0 |
+| custom-elements/form-associated/form-disabled-callback.html | ERROR | 8 | 2 |
 | custom-elements/form-associated/form-elements-namedItem.html | OK | 1 | 2 |
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
 | custom-elements/form-associated/label-delegatesFocus.html | OK | 0 | 2 |
@@ -2121,9 +2121,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - moveBefore() into a Document throws a HierarchyRequestError: Cannot read properties of undefined (reading 'name')
 
+### dom/nodes/moveBefore/continue-css-animation-left.html
+
+- Node.moveBefore should preserve CSS animation state (left): Test timed out
+
+### dom/nodes/moveBefore/continue-css-animation-transform.html
+
+- Node.moveBefore should preserve CSS animation state (transform): Test timed out
+
 ### dom/nodes/moveBefore/continue-css-transition-transform.html
 
 - Node.moveBefore should preserve CSS transition state (transform): assert_equals: expected 200 but got 0
+
+### dom/nodes/moveBefore/css-animation-commit-styles.html
+
+- Calling commitStyles after Node.moveBefore should commit mid-transition value: Test timed out
 
 ### dom/nodes/moveBefore/fullscreen-preserve.html
 
@@ -2153,6 +2165,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/nodes/moveBefore/preserve-render-blocking-style.html
 
 - A moved script should keep its render-blocking state: assert_equals: expected "rgb(0, 128, 0)" but got "rgba(0, 0, 0, 0)"
+
+### dom/nodes/moveBefore/relevant-mutations.html
+
+- Moving <source> out of <picture> triggers a relevant mutation on sibling <img>: Test timed out
+- Moving <img> into a <picture> triggers a relevant mutation on the <img>, loading <source>: 
 
 ### dom/nodes/moveBefore/role-updates-after-move.html
 
@@ -2258,6 +2275,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
+### dom/events/Event-dispatch-click.html
+
+- pick the first with activation behavior <a href>: Test timed out
+- disabling checkbox in onclick listener shouldn't suppress oninput: Test timed out
+- disabling checkbox in onclick listener shouldn't suppress onchange: Test timed out
+- disabling radio in onclick listener shouldn't suppress oninput: Test timed out
+- disabling radio in onclick listener shouldn't suppress onchange: Test timed out
+
 ### dom/events/Event-dispatch-click.tentative.html
 
 - checkbox morphed into another type should not mutate checked state: assert_false: expected false got true
@@ -2355,6 +2380,15 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - window.event is set to the current event during dispatch: Cannot read properties of undefined (reading 'type')
 - window.event is set to the current event, which is the event passed to dispatch: assert_equals: expected (undefined) undefined but got (object) object "[object Event]"
 - window.event is set to the current event, which is the event passed to dispatch (2): XMLHttpRequest is not defined
+
+### dom/events/focus-event-document-move.html
+
+- Moving a node during mousedown should not crash: Test timed out
+
+### dom/events/handler-count.html
+
+- Test addEventListener/removeEventListener on the window.: Test timed out
+- Test setting onanimationstart handler on the window.: 
 
 ### dom/events/no-focus-events-at-clicking-editable-content-in-link.html
 
@@ -2464,12 +2498,29 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Wheel scroll in iframe chains to containing element.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
 
+### dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html
+
+- Ensure that the scroll position is not lost when the local iframe is set to display:none and shown again.: Test timed out
+- Ensure that the scroll position is not lost when the remote iframe is set to display:none and shown again.: 
+
+### dom/events/scrolling/scroll-cross-origin-iframes.html
+
+- Verify sibling cross-origin iframes can wheel-scroll.: Test timed out
+
 ### dom/events/scrolling/scroll-event-fired-to-iframe.html
 
 - scrollX and scrollY should fire scroll event.: assert_equals: expected (number) 0 but got (undefined) undefined
 - scrollX and scrollY being set with the same value.: promise_test: Unhandled rejection with value: object "TypeError: target.addEventListener is not a function"
 - scrollX and scrollY being set with invalid scroll Scroll.: promise_test: Unhandled rejection with value: object "TypeError: target.addEventListener is not a function"
 - scrollX and scrollY when scrolling above maximum Scroll.: assert_equals: expected (number) 0 but got (undefined) undefined
+
+### dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html
+
+- scrollIntoView-in-onscroll-to-sticky: Test timed out
+
+### dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html
+
+- scrolling state is false at the end of the test: Test timed out
 
 ### dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html
 
@@ -2481,13 +2532,29 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - snap to fractional offset fires scrollend exactly once.: assert_approx_equals: scroller snaps to the left edge of box 2 expected 701 +/- 1 but got 901
 
+### dom/events/scrolling/wheel-event-composed.html
+
+- wheel event must be composed: Test timed out
+
 ### dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html
 
 - When `preventDefault` is called on a WheelEvent, scrolling should be prevented.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
 
+### dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html
+
+- Two separate webdriver action chains should have different wheel event transactions: Test timed out
+
 ### dom/events/scrolling/wheel-event-transactions-target-elements.html
 
 - Wheel event transactions target elements: promise_test: Unhandled rejection with value: object "NotSupportedError: Web Animations is not implemented"
+
+### dom/events/scrolling/wheel-event-transactions-target-move.html
+
+- Move the initial wheel event target.: Test timed out
+
+### dom/events/scrolling/wheel-event-transactions-target-removal.html
+
+- Remove the initial wheel event target.: Test timed out
 
 ### dom/events/window-event-restored-after-throwing-onerror.html
 
@@ -2569,6 +2636,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 7
 - Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_equals: expected 7 but got 12
 - Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_equals: expected 12 but got 7
+
+### selection/caret/move-around-contenteditable-false.html
+
+- Initializing tests: Test timed out
+- Move caret from end of editable text node to <br> following non-editable text in next paragraph: 
+- Move caret from <br> following non-editable text to end of preceding editable text in next paragraph: 
+- Move caret from empty editable paragraph to editable text following non-editable text in next paragraph: 
+- Move caret from start of text following non-editable text to empty preceding editable paragraph: 
+
+### selection/caret/move-around-generated-content.html
+
+- Initializing tests: Test timed out
+- Moving caret between list items using arrow keys: 
+- Moving caret past the block-quote using arrow keys: 
 
 ### selection/contenteditable/collapse.html
 
@@ -2653,6 +2734,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### selection/contenteditable/selection-outside-focused-editing-host.tentative.html
 
 - Modifying selection should do nothing: assert_true: expected true got false
+
+### selection/drag-disabled-textarea-shadow-dom.html
+
+- Shouldn't crash when dragging disabled textarea in shadow dom: Test timed out
 
 ### selection/drag-out-of-floated-content.html
 
@@ -2766,6 +2851,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - direction returns "none" when there is a triple click selection(directionless): assert_equals: expected Element node <div id="container">hello, world</div> but got Text node "hello, world"
 
+### selection/selection-focused-element-becomes-nonfocusable.html
+
+- Focused element is disabled: Test timed out
+
 ### selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html
 
 - Selection range in shadow should not be as a selection range after the host is removed: null is not a shadow root mode
@@ -2790,6 +2879,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html
 
 - If selection crosses shadow boundaries, getRangeAt(0) should throw an IndexSizeError because the end is not in the document tree.: assert_throws_dom: function "function () { selection.getRangeAt(0) }" did not throw
+
+### selection/stringifier_editable_element.tentative.html
+
+- select the entire input should result all the content: assert_equals: expected Element node <input id="textInput" value="This is a text"></input> but got Element node <input id="dummyInput"></input>
+- toString() works with selectionStart and selectionEnd for input: assert_equals: expected "s is" but got ""
+- select the entire textarea should result all the content: assert_equals: expected Element node <textarea id="textArea" rows="5" cols="40">
+- toString() works with selectionStart and selectionEnd for textarea: assert_equals: expected "Line one\n" but got ""
+- toString() works even if a click just occured on a button: assert_equals: expected "This is a text" but got ""
+- toString() works for programatically calling .click() on anchor (without href): Test timed out
+- toString() doesn't work for actual clicking the anchor (without href): 
+- toString() works for programatically calling .click() on anchor (with href): 
+- toString() also works for actual clicking the anchor (with href): 
+- Click on a text prior to toString() moves the seleciton: 
+- Click on a `user-select:none` text prior to toString() doesn't move the seleciton: 
 
 ### selection/textcontrols/focus.html
 
@@ -2852,6 +2955,15 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument: caretPositionFromPoint is not implemented
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument: caretPositionFromPoint is not implemented
 
+### shadow-dom/Document-prototype-currentScript.html
+
+- document.currentScript must be set to a script element that loads an external script in a document tree: Test timed out
+- document.currentScript must be set to a script element that loads an external script in a document tree (2): 
+- document.currentScript must not be set to a script element that loads an external script in an open shadow tree: 
+- document.currentScript must not be set to a script element that loads an external script in a closed shadow tree: 
+- document.currentScript must be set to a script element that loads an external script that was in an open shadow tree and then removed: 
+- document.currentScript must be set to a script element that loads an external script that was in a closed shadow tree and then removed: 
+
 ### shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html
 
 - document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: assert_equals: expected Element node <test-element style="display: inline;"></test-element> but got null
@@ -2903,6 +3015,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is open.: assert_equals: shadowRoot.styleSheets must be empty when the shadow root is not connected expected 0 but got 2
 - ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is closed.: assert_equals: shadowRoot.styleSheets must be empty when the shadow root is not connected expected 0 but got 2
 
+### shadow-dom/accesskey.tentative.html
+
+- button element with accesskey in the shadow tree of open mode: Test timed out
+- button element with accesskey in the shadow tree of closed mode: 
+
 ### shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html
 
 - Declarative Shadow DOM: shadow root should be available to element internals: assert_true: expected true got false
@@ -2933,6 +3050,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - shadowRootAdoptedStyleSheets reflects the shadowrootadoptedstylesheets content attribute.: assert_equals: Setting the IDL attribute must set the content attribute. expected (string) "foo bar" but got (object) null
 - Empty-string assignment and removeAttribute() are distinguishable on shadowRootAdoptedStyleSheets.: assert_equals: After removeAttribute(), the IDL getter must return the empty string. expected "" but got "remove-me"
+
+### shadow-dom/dragenter-related-target.html
+
+- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
+
+### shadow-dom/dragleave-related-target.html
+
+- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
 
 ### shadow-dom/event-post-dispatch.html
 
@@ -3021,6 +3146,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
 
+### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
+
+- A_08_02_03_T01: Test timed out
+
 ### shadow-dom/wheel-event-related-target.html
 
 - wheel relatedTarget should be retargeted to shadow host when entering shadow DOM: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
@@ -3093,6 +3222,63 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - ElementInternals.setFormValue(null) clears submission value: FormData constructor: Argument 1 could not be converted to: undefined.
 - ElementInternals.setFormValue(undefined) clears submission value: FormData constructor: Argument 1 could not be converted to: undefined.
 
+### custom-elements/form-associated/ElementInternals-setFormValue.html
+
+- Single value - name is missing: Test timed out
+- Single value - empty name exists: 
+- Single value - Non-empty name exists: 
+- Null value should submit nothing: 
+- Multiple values - name content attribute is ignored: 
+- setFormValue with an empty FormData should submit nothing: 
+- Newline normalization - \n in name (urlencoded): 
+- Newline normalization - \n in name (formdata): 
+- Newline normalization - \r in name (urlencoded): 
+- Newline normalization - \r in name (formdata): 
+- Newline normalization - \r\n in name (urlencoded): 
+- Newline normalization - \r\n in name (formdata): 
+- Newline normalization - \n\r in name (urlencoded): 
+- Newline normalization - \n\r in name (formdata): 
+- Newline normalization - \n in value (urlencoded): 
+- Newline normalization - \n in value (formdata): 
+- Newline normalization - \r in value (urlencoded): 
+- Newline normalization - \r in value (formdata): 
+- Newline normalization - \r\n in value (urlencoded): 
+- Newline normalization - \r\n in value (formdata): 
+- Newline normalization - \n\r in value (urlencoded): 
+- Newline normalization - \n\r in value (formdata): 
+- Newline normalization - \n in filename (urlencoded): 
+- Newline normalization - \n in filename (formdata): 
+- Newline normalization - \r in filename (urlencoded): 
+- Newline normalization - \r in filename (formdata): 
+- Newline normalization - \r\n in filename (urlencoded): 
+- Newline normalization - \r\n in filename (formdata): 
+- Newline normalization - \n\r in filename (urlencoded): 
+- Newline normalization - \n\r in filename (formdata): 
+- Newline normalization - \n in FormData name (urlencoded): 
+- Newline normalization - \n in FormData name (formdata): 
+- Newline normalization - \r in FormData name (urlencoded): 
+- Newline normalization - \r in FormData name (formdata): 
+- Newline normalization - \r\n in FormData name (urlencoded): 
+- Newline normalization - \r\n in FormData name (formdata): 
+- Newline normalization - \n\r in FormData name (urlencoded): 
+- Newline normalization - \n\r in FormData name (formdata): 
+- Newline normalization - \n in FormData value (urlencoded): 
+- Newline normalization - \n in FormData value (formdata): 
+- Newline normalization - \r in FormData value (urlencoded): 
+- Newline normalization - \r in FormData value (formdata): 
+- Newline normalization - \r\n in FormData value (urlencoded): 
+- Newline normalization - \r\n in FormData value (formdata): 
+- Newline normalization - \n\r in FormData value (urlencoded): 
+- Newline normalization - \n\r in FormData value (formdata): 
+- Newline normalization - \n in FormData filename (urlencoded): 
+- Newline normalization - \n in FormData filename (formdata): 
+- Newline normalization - \r in FormData filename (urlencoded): 
+- Newline normalization - \r in FormData filename (formdata): 
+- Newline normalization - \r\n in FormData filename (urlencoded): 
+- Newline normalization - \r\n in FormData filename (formdata): 
+- Newline normalization - \n\r in FormData filename (urlencoded): 
+- Newline normalization - \n\r in FormData filename (formdata): 
+
 ### custom-elements/form-associated/ElementInternals-validation.html
 
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
@@ -3109,6 +3295,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Associate by parser, customized at element creation: assert_equals: expected 2 but got 0
 - Parsed, connected, then upgraded: assert_equals: form.elements.length expected 3 but got 2
+
+### custom-elements/form-associated/form-disabled-callback.html
+
+- A disabled form-associated custom element should not provide an entry for it: FormData constructor: Argument 1 could not be converted to: undefined.
+- A disabled form-associated custom element should not submit an entry for it: Test timed out
 
 ### custom-elements/form-associated/form-elements-namedItem.html
 

@@ -270,8 +270,17 @@ const SUITES = [
 	"custom-elements",
 ];
 
-/** A test that has not finished in this long is recorded as a timeout. */
+/**
+ * How long a file runs before the runner ends it. testharness is set up with
+ * an explicit timeout, as WPT's own runner sets it up, so ending it is a call
+ * to its `timeout()`: every subtest still running is marked timed out and the
+ * file reports what finished. A file whose harness never answers that is
+ * recorded as a timeout with nothing reported.
+ */
 const TIMEOUT_MS = 5000;
+
+/** How long a harness gets to report once it has been told to time out. */
+const REPORT_GRACE_MS = 1000;
 
 /** What `<meta name=timeout content=long>` buys a test. */
 const LONG_TIMEOUT_MS = 60000;
@@ -998,7 +1007,7 @@ async function runMountedFile(
 					};
 				}
 				sources.push(harness);
-				sources.push("setup({output: false});");
+				sources.push("setup({output: false, explicit_timeout: true});");
 				continue;
 			}
 			if (/testdriver-vendor\.js$/.test(src)) {
@@ -1121,15 +1130,25 @@ async function runMountedFile(
 				error: (error as Error).message,
 			};
 		}
-		const timer = setTimeout(
-			settle,
-			/<meta\s+name=["']?timeout["']?\s+content=["']?long/i.test(html)
-				? LONG_TIMEOUT_MS
-				: TIMEOUT_MS,
-		);
-		timer.unref?.();
+		let grace: ReturnType<typeof setTimeout> | null = null;
+		const timer = runtimeSetTimeout(() => {
+			const timeout = scope.timeout;
+			if (typeof timeout === "function") {
+				try {
+					timeout();
+				} catch (_err) {
+					// A harness that throws here reports nothing; the grace ends it.
+				}
+			}
+			grace = runtimeSetTimeout(settle, REPORT_GRACE_MS);
+		}, /<meta\s+name=["']?timeout["']?\s+content=["']?long/i.test(html)
+			? LONG_TIMEOUT_MS
+			: TIMEOUT_MS);
 		await done;
 		clearTimeout(timer);
+		if (grace !== null) {
+			clearTimeout(grace);
+		}
 	} finally {
 		reportUncaught = null;
 		for (const timer of fileTimers) {
