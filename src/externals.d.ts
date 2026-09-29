@@ -50,6 +50,8 @@ declare module "css-tree" {
 		value?: string;
 		unit?: string;
 		children?: {toArray(): ValueNode[]};
+		left?: ValueNode | null;
+		right?: ValueNode | null;
 	}
 
 	/** A rule, at-rule or declaration of a parsed stylesheet. */

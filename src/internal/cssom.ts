@@ -5875,21 +5875,22 @@ export class Cascade {
 		);
 	}
 
-	// Only width/height features are meaningful on the one screen a
-	// terminal has. Every other feature matches rather than silently
-	// dropping rules. Public because window.matchMedia uses the SAME
-	// evaluator @media does, so a stylesheet and a script can never
-	// disagree.
+	// Public because window.matchMedia uses the SAME evaluator @media
+	// does, so a stylesheet and a script can never disagree. A query that
+	// does not parse is `not all`, and the rest of its list still counts.
 	mediaQueryMatches(mediaText: string): boolean {
 		const text = mediaText.trim();
 		if (!text) {
 			return true;
 		}
 		const queries = CSSValues.parseMediaQueryList(text);
-		if (!queries) {
-			return true;
+		if (queries) {
+			return queries.some((query) => mediaQueryNodeMatches(this, query));
 		}
-		return queries.some((query) => mediaQueryNodeMatches(this, query));
+		return CSSValues.splitMediaQueryList(text).some((piece) => {
+			const parsed = CSSValues.parseMediaQueryList(piece);
+			return parsed?.length === 1 && mediaQueryNodeMatches(this, parsed[0]);
+		});
 	}
 
 	/** The text a list item's marker draws, or null when it draws none. */
@@ -7537,6 +7538,13 @@ function parseStyleSheet(
 	}
 }
 
+// Media Queries 4 evaluates with three values: true, false and unknown
+// (null here). A feature this engine does not know, a value outside a
+// feature's grammar, or text in parentheses that is no feature is
+// unknown. `not` keeps unknown unknown, and a whole query that comes out
+// unknown does not match.
+type MediaResult = boolean | null;
+
 // Only `all` and `screen` name this screen, so `print`, `speech` and
 // the deprecated types match nothing.
 function mediaQueryNodeMatches(
@@ -7544,20 +7552,21 @@ function mediaQueryNodeMatches(
 	query: CSSTree.MediaQueryNode,
 ): boolean {
 	const type = (query.mediaType ?? "").toLowerCase();
-	let matches = type === "" || type === "all" || type === "screen";
-	if (matches && query.condition) {
-		matches = mediaConditionMatches(cascade, query.condition);
+	let result: MediaResult = type === "" || type === "all" || type === "screen";
+	if (result && query.condition) {
+		result = mediaConditionMatches(cascade, query.condition);
 	}
-	return (query.modifier ?? "").toLowerCase() === "not" ? !matches : matches;
+	if (result !== null && (query.modifier ?? "").toLowerCase() === "not") {
+		result = !result;
+	}
+	return result === true;
 }
 
-// A word where neither a joiner nor a negation belongs leaves the
-// condition unevaluated, and so matching.
 function mediaConditionMatches(
 	cascade: Cascade,
 	condition: CSSTree.MediaConditionNode,
-): boolean {
-	let matches: boolean | null = null;
+): MediaResult {
+	let result: MediaResult | undefined;
 	let disjunction = false;
 	let negate = false;
 	for (const part of CSSValues.getMediaConditionParts(condition)) {
@@ -7568,26 +7577,34 @@ function mediaConditionMatches(
 			} else if (word === "and" || word === "or") {
 				disjunction = word === "or";
 			} else {
-				return true;
+				return null;
 			}
 			continue;
 		}
 		let operand = mediaOperandMatches(cascade, part);
 		if (negate) {
-			operand = !operand;
+			operand = operand === null ? null : !operand;
 			negate = false;
 		}
-		matches = matches === null
-			? operand
-			: disjunction ? matches || operand : matches && operand;
+		if (result === undefined) {
+			result = operand;
+		} else if (disjunction) {
+			result = result === true || operand === true
+				? true
+				: result === null || operand === null ? null : false;
+		} else {
+			result = result === false || operand === false
+				? false
+				: result === null || operand === null ? null : true;
+		}
 	}
-	return matches ?? true;
+	return result === undefined ? null : result;
 }
 
 function mediaOperandMatches(
 	cascade: Cascade,
 	part: CSSTree.MediaConditionNode,
-): boolean {
+): MediaResult {
 	if (part.type === "Condition") {
 		return mediaConditionMatches(cascade, part);
 	}
@@ -7597,88 +7614,314 @@ function mediaOperandMatches(
 	if (part.type === "FeatureRange") {
 		return mediaFeatureRangeMatches(cascade, part);
 	}
-	return true;
-}
-
-function getViewportLength(cascade: Cascade, dimension: string): number | null {
-	if (dimension === "width") {
-		return cascade[kWindow].innerWidth;
-	}
-	if (dimension === "height") {
-		return cascade[kWindow].innerHeight;
-	}
 	return null;
 }
 
-// A feature this engine does not track returns true, the permissive
-// default, as does a value outside the grammar.
+type MediaRangeKind = "length" | "ratio" | "resolution" | "integer";
+
+// What a range feature measures on this terminal. Its px are cells.
+const MEDIA_RANGE_FEATURES: Record<
+	string,
+	{kind: MediaRangeKind; value(window: Window): number}
+> = {
+	width: {kind: "length", value: (window) => window.innerWidth},
+	height: {kind: "length", value: (window) => window.innerHeight},
+	"device-width": {kind: "length", value: (window) => window.screen.width},
+	"device-height": {kind: "length", value: (window) => window.screen.height},
+	"aspect-ratio": {
+		kind: "ratio",
+		value: (window) => window.innerWidth / window.innerHeight,
+	},
+	"device-aspect-ratio": {
+		kind: "ratio",
+		value: (window) => window.screen.width / window.screen.height,
+	},
+	resolution: {kind: "resolution", value: (window) => window.devicePixelRatio},
+	color: {kind: "integer", value: (window) => window.screen.colorDepth / 3},
+	"color-index": {kind: "integer", value: () => 0},
+	monochrome: {kind: "integer", value: () => 0},
+};
+
+// What a discrete feature is on this terminal, among the values its
+// grammar allows. `falsy` is the value the boolean context reads as
+// false. A terminal reports the pointer it has, and no preference a
+// person has not given it.
+const MEDIA_DISCRETE_FEATURES: Record<
+	string,
+	{values: readonly string[]; falsy?: string; value(window: Window): string}
+> = {
+	orientation: {
+		values: ["portrait", "landscape"],
+		value: (window) =>
+			window.innerHeight >= window.innerWidth ? "portrait" : "landscape",
+	},
+	hover: {values: ["none", "hover"], falsy: "none", value: () => "hover"},
+	"any-hover": {values: ["none", "hover"], falsy: "none", value: () => "hover"},
+	pointer: {
+		values: ["none", "coarse", "fine"],
+		falsy: "none",
+		value: () => "fine",
+	},
+	"any-pointer": {
+		values: ["none", "coarse", "fine"],
+		falsy: "none",
+		value: () => "fine",
+	},
+	scan: {values: ["interlace", "progressive"], value: () => "progressive"},
+	update: {
+		values: ["none", "slow", "fast"],
+		falsy: "none",
+		value: () => "fast",
+	},
+	"overflow-block": {
+		values: ["none", "scroll", "paged"],
+		falsy: "none",
+		value: () => "scroll",
+	},
+	"overflow-inline": {
+		values: ["none", "scroll"],
+		falsy: "none",
+		value: () => "scroll",
+	},
+	"color-gamut": {values: ["srgb", "p3", "rec2020"], value: () => "srgb"},
+	"dynamic-range": {values: ["standard", "high"], value: () => "standard"},
+	"video-dynamic-range": {
+		values: ["standard", "high"],
+		value: () => "standard",
+	},
+	"display-mode": {
+		values: [
+			"browser",
+			"fullscreen",
+			"standalone",
+			"minimal-ui",
+			"picture-in-picture",
+		],
+		value: () => "browser",
+	},
+	scripting: {
+		values: ["none", "initial-only", "enabled"],
+		falsy: "none",
+		value: () => "enabled",
+	},
+	"forced-colors": {
+		values: ["none", "active"],
+		falsy: "none",
+		value: () => "none",
+	},
+	"inverted-colors": {
+		values: ["none", "inverted"],
+		falsy: "none",
+		value: () => "none",
+	},
+	"prefers-color-scheme": {values: ["light", "dark"], value: () => "light"},
+	"prefers-contrast": {
+		values: ["no-preference", "more", "less", "custom"],
+		falsy: "no-preference",
+		value: () => "no-preference",
+	},
+	"prefers-reduced-motion": {
+		values: ["no-preference", "reduce"],
+		falsy: "no-preference",
+		value: () => "no-preference",
+	},
+	"prefers-reduced-transparency": {
+		values: ["no-preference", "reduce"],
+		falsy: "no-preference",
+		value: () => "no-preference",
+	},
+	"prefers-reduced-data": {
+		values: ["no-preference", "reduce"],
+		falsy: "no-preference",
+		value: () => "no-preference",
+	},
+};
+
+// `em` and `rem` in a media query are the initial font size, one cell.
+function getMediaLength(
+	cascade: Cascade,
+	node: CSSTree.ValueNode,
+): number | null {
+	if (node.type === "Number") {
+		return parseFloat(node.value ?? "") === 0 ? 0 : null;
+	}
+	if (node.type !== "Dimension" && node.type !== "Function") {
+		return null;
+	}
+	const window = cascade[kWindow];
+	const text = CSSValues.absolutizeLengths(
+		CSSTree.generate(node as unknown as CSSTree.CSSTreeNode),
+		{
+			font: 1,
+			root: 1,
+			viewportWidth: window.innerWidth,
+			viewportHeight: window.innerHeight,
+			percent: null,
+		},
+	);
+	const match = /^(-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)px$/i.exec(text);
+	return match ? parseFloat(match[1]) : null;
+}
+
+function getMediaValue(
+	cascade: Cascade,
+	kind: MediaRangeKind,
+	node: CSSTree.ValueNode | null | undefined,
+): number | null {
+	if (!node) {
+		return null;
+	}
+	switch (kind) {
+		case "length":
+			return getMediaLength(cascade, node);
+		case "integer":
+			return node.type === "Number" && /^[+-]?\d+$/.test(node.value ?? "")
+				? parseInt(node.value ?? "", 10)
+				: null;
+		case "ratio": {
+			if (node.type === "Number") {
+				const value = parseFloat(node.value ?? "");
+				return value >= 0 ? value : null;
+			}
+			if (
+				node.type !== "Ratio" ||
+				node.left?.type !== "Number" ||
+				(node.right && node.right.type !== "Number")
+			) {
+				return null;
+			}
+			const left = parseFloat(node.left.value ?? "");
+			const right = node.right ? parseFloat(node.right.value ?? "") : 1;
+			if (!(left >= 0 && right >= 0)) {
+				return null;
+			}
+			// A degenerate ratio, 0/0, equals nothing.
+			return left === 0 && right === 0 ? NaN : left / right;
+		}
+		case "resolution": {
+			const value = parseFloat(node.value ?? "");
+			if (node.type !== "Dimension" || !(value >= 0)) {
+				return null;
+			}
+			switch ((node.unit ?? "").toLowerCase()) {
+				case "dppx":
+				case "x":
+					return value;
+				case "dpi":
+					return value / 96;
+				case "dpcm":
+					return (value * 2.54) / 96;
+				default:
+					return null;
+			}
+		}
+	}
+}
+
+function compareMedia(
+	left: number,
+	comparison: string | null | undefined,
+	right: number,
+): boolean {
+	switch (comparison) {
+		case "<":
+			return left < right;
+		case "<=":
+			return left <= right;
+		case ">":
+			return left > right;
+		case ">=":
+			return left >= right;
+		default:
+			return left === right;
+	}
+}
+
 function mediaFeatureMatches(
 	cascade: Cascade,
 	feature: CSSTree.MediaConditionNode,
-): boolean {
+): MediaResult {
+	const window = cascade[kWindow];
 	const name = (feature.name ?? "").toLowerCase();
 	const value = feature.value ?? null;
-	// Motion reporting turns on whenever the document observes hover, so
-	// the result is unconditional. A bare `(hover)` is the boolean context.
-	if (name === "hover" || name === "any-hover") {
-		return (
-			value === null ||
-			(value.type === "Identifier" &&
-				(value.name ?? "").toLowerCase() === "hover")
-		);
+	const discrete = MEDIA_DISCRETE_FEATURES[name];
+	if (discrete) {
+		const actual = discrete.value(window);
+		if (value === null) {
+			return actual !== discrete.falsy;
+		}
+		const wanted = value.type === "Identifier"
+			? (value.name ?? "").toLowerCase()
+			: "";
+		return discrete.values.includes(wanted) ? wanted === actual : null;
 	}
-	if (value === null) {
-		return true;
+	// A terminal draws on a cell grid, but its px are those cells, so it
+	// is the bitmap device the rest of CSS already measures.
+	if (name === "grid") {
+		if (value === null) {
+			return false;
+		}
+		return value.type === "Number" && /^[01]$/.test(value.value ?? "")
+			? value.value === "0"
+			: null;
 	}
 	const bound = name.startsWith("min-")
-		? "min"
-		: name.startsWith("max-") ? "max" : null;
-	const actual = getViewportLength(
-		cascade,
-		bound === null ? name : name.slice(4),
-	);
-	const length = CSSValues.getMediaLength(value);
-	if (actual === null || length === null) {
-		return true;
+		? ">="
+		: name.startsWith("max-") ? "<=" : null;
+	const range = MEDIA_RANGE_FEATURES[bound === null ? name : name.slice(4)];
+	if (!range || (bound !== null && value === null)) {
+		return null;
 	}
-	if (bound === "min") {
-		return actual >= length;
+	const actual = range.value(window);
+	if (value === null) {
+		return actual !== 0;
 	}
-	if (bound === "max") {
-		return actual <= length;
-	}
-	return actual === length;
+	const wanted = getMediaValue(cascade, range.kind, value);
+	return wanted === null ? null : compareMedia(actual, bound, wanted);
 }
 
-// The feature name is in the middle of a two-sided range, and opposite
-// the value in a one-sided one.
+// The feature name is in the middle of a two-sided range, and on either
+// side of the value in a one-sided one.
 function mediaFeatureRangeMatches(
 	cascade: Cascade,
 	range: CSSTree.MediaConditionNode,
-): boolean {
+): MediaResult {
 	const named = (node: CSSTree.ValueNode | null | undefined): string =>
 		node?.type === "Identifier" ? (node.name ?? "").toLowerCase() : "";
+	const window = cascade[kWindow];
 	if (range.right) {
-		const actual = getViewportLength(cascade, named(range.middle));
-		const low = CSSValues.getMediaLength(range.left);
-		const high = CSSValues.getMediaLength(range.right);
-		if (actual === null || low === null || high === null) {
-			return true;
+		const feature = MEDIA_RANGE_FEATURES[named(range.middle)];
+		if (!feature) {
+			return null;
 		}
+		const low = getMediaValue(cascade, feature.kind, range.left);
+		const high = getMediaValue(cascade, feature.kind, range.right);
+		if (low === null || high === null) {
+			return null;
+		}
+		const actual = feature.value(window);
 		return (
-			CSSValues.mediaComparison(low, range.leftComparison, actual) &&
-			CSSValues.mediaComparison(actual, range.rightComparison, high)
+			compareMedia(low, range.leftComparison, actual) &&
+			compareMedia(actual, range.rightComparison, high)
 		);
 	}
 	const leftName = named(range.left);
-	const actual = getViewportLength(cascade, leftName || named(range.middle));
-	const length = CSSValues.getMediaLength(leftName ? range.middle : range.left);
-	if (actual === null || length === null) {
-		return true;
+	const feature = MEDIA_RANGE_FEATURES[leftName || named(range.middle)];
+	if (!feature) {
+		return null;
 	}
+	const wanted = getMediaValue(
+		cascade,
+		feature.kind,
+		leftName ? range.middle : range.left,
+	);
+	if (wanted === null) {
+		return null;
+	}
+	const actual = feature.value(window);
 	return leftName
-		? CSSValues.mediaComparison(actual, range.leftComparison, length)
-		: CSSValues.mediaComparison(length, range.leftComparison, actual);
+		? compareMedia(actual, range.leftComparison, wanted)
+		: compareMedia(wanted, range.leftComparison, actual);
 }
 
 function readScopeCondition(rule: CSSScopeRule): CSSValues.ScopeCondition {
