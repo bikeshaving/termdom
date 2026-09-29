@@ -3930,6 +3930,12 @@ function measureUsedValue(
 
 	if (property === "width" || property === "height") {
 		const vertical = property === "height";
+		const border = vertical ? rect.height : rect.width;
+		// The used value of width is the box box-sizing names, so a
+		// border-box element reads its border box (css-sizing-3 §3.1).
+		if (declaration.getComputedValue("box-sizing") === "border-box") {
+			return CSSValues.getUsedLength(Math.max(0, border));
+		}
 		const edges =
 			getEdgeLength(
 				declaration,
@@ -3941,10 +3947,6 @@ function measureUsedValue(
 			) +
 			getEdgeLength(declaration, vertical ? "padding-top" : "padding-left") +
 			getEdgeLength(declaration, vertical ? "padding-bottom" : "padding-right");
-		// The rect is the border box whichever way the box was sized, and the
-		// resolved value of width is the CONTENT width either way (cssom-view
-		// §7.1), so the edges are subtracted regardless of box-sizing.
-		const border = vertical ? rect.height : rect.width;
 		return CSSValues.getUsedLength(Math.max(0, border - edges));
 	}
 

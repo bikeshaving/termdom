@@ -1478,10 +1478,11 @@ test("box-sizing decides what a declared width names", async () => {
 	// content-box names the content alone, so the box grows by its edges.
 	expect(rect("c").width).toBe(14);
 
-	// Either way the resolved value is the content width, which is what the
-	// content-box declaration asked for and what the border-box one has left.
+	// The resolved value is the used width, which names the box box-sizing
+	// does, as in a browser: the border box for one, the content for the
+	// other.
 	expect(window.getComputedStyle(document.getElementById("b")!).width)
-		.toBe("6px");
+		.toBe("10px");
 	expect(window.getComputedStyle(document.getElementById("c")!).width)
 		.toBe("10px");
 });
@@ -1519,13 +1520,16 @@ test("a resolved value measures the layout the last style write asked for", asyn
 
 	// A used value is measured, so the write before it has to reach layout:
 	// the read takes the same flush a rect read does.
-	// The resolved value of width is the CONTENT width, so the 4 cells of
-	// padding come off the border box the declaration sized.
+	// Under border-box, the default here, the resolved width is the border
+	// box the declaration sized, padding and all.
 	target.style.paddingLeft = "4ch";
 	target.style.width = "10ch";
-	expect(window.getComputedStyle(target).width).toBe("6px");
+	expect(window.getComputedStyle(target).width).toBe("10px");
 	target.style.width = "20ch";
-	expect(window.getComputedStyle(target).width).toBe("16px");
+	expect(window.getComputedStyle(target).width).toBe("20px");
+	target.style.boxSizing = "content-box";
+	expect(window.getComputedStyle(target).width).toBe("20px");
+	expect(target.offsetWidth).toBe(24);
 });
 
 // === LAYOUT INVALIDATION TESTS ===
