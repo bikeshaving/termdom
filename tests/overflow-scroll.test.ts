@@ -316,3 +316,34 @@ test("a scrolling flex or grid item takes its space, not its content's height", 
 	expect(get("visible").clientHeight).toBe(100);
 	dom.dispose();
 });
+
+// css-overflow-3 §2.2: a scroll container's scrollable overflow takes in
+// what overflows the boxes it holds, unless one of them clips it.
+test("a scroll container scrolls over what overflows its children", () => {
+	const terminal = new MockProcess({cols: 30, rows: 20});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		'<div id="full" style="height:10px;overflow:auto">' +
+		'<div style="height:100%"><div style="height:50px"></div></div></div>' +
+		'<div id="short" style="height:10px;overflow:auto">' +
+		'<div style="height:5px"><div style="height:50px"></div></div></div>' +
+		'<div id="clipped" style="height:10px;overflow:auto">' +
+		'<div style="height:5px;overflow:hidden"><div style="height:50px"></div>' +
+		"</div></div>" +
+		'<div id="wide" style="width:10px;overflow:auto">' +
+		'<div style="width:5px"><div style="width:40px;height:1px"></div></div>' +
+		"</div>";
+	const get = (id: string) => dom.document.getElementById(id)!;
+	for (const id of ["full", "short"]) {
+		get(id).scrollTop = 100;
+		expect(get(id).scrollHeight).toBe(50);
+		expect(get(id).scrollTop).toBe(40);
+	}
+	get("clipped").scrollTop = 100;
+	expect(get("clipped").scrollHeight).toBe(10);
+	expect(get("clipped").scrollTop).toBe(0);
+	get("wide").scrollLeft = 100;
+	expect(get("wide").scrollWidth).toBe(40);
+	expect(get("wide").scrollLeft).toBe(30);
+	dom.dispose();
+});

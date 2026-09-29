@@ -5128,12 +5128,11 @@ export class Layout {
 			if (child.style.displayType === "none") {
 				continue;
 			}
+			const reach = getOverflowExtent(child, 0, 0);
 			if (right !== null) {
-				right = child.measure !== null
-					? null
-					: Math.max(right, child.result.left + child.getComputedWidth());
+				right = child.measure !== null ? null : Math.max(right, reach.right);
 			}
-			bottom = Math.max(bottom, child.result.top + child.getComputedHeight());
+			bottom = Math.max(bottom, reach.bottom);
 		}
 		const clientWidth =
 			layoutNode.getComputedWidth() -
@@ -6886,19 +6885,25 @@ function getDocumentContentHeight(engine: Layout): number {
 // than itself, and a fixed box moves with the viewport, not in it.
 function getDocumentOverflowBottom(engine: Layout): number {
 	const root = engine[kNodeMap].get(engine[kRootElement]);
-	return root ? Math.ceil(getOverflowBottom(root, 0)) : 0;
+	return root ? Math.ceil(getOverflowExtent(root, 0, 0).bottom) : 0;
 }
 
-function getOverflowBottom(node: LayoutNode, originTop: number): number {
+// Where a box's border box and its scrollable overflow reach, relative to
+// its parent's origin: its own box, and past it the overflow of the boxes
+// it holds, unless it clips them (css-overflow-3 §2.2).
+function getOverflowExtent(
+	node: LayoutNode,
+	originLeft: number,
+	originTop: number,
+): {right: number; bottom: number} {
+	const left = originLeft + node.result.left;
 	const top = originTop + node.result.top;
-	let bottom = top + node.getComputedHeight();
-	const element = node.owner as Element | null;
-	if (
-		element?.nodeType === element?.ELEMENT_NODE &&
-		(getComputedValue(element!, "overflow-y") ||
-			getComputedValue(element!, "overflow")) !== "visible"
-	) {
-		return bottom;
+	const extent = {
+		right: left + node.getComputedWidth(),
+		bottom: top + node.getComputedHeight(),
+	};
+	if (clipsOverflow(node)) {
+		return extent;
 	}
 	for (const child of node.children) {
 		if (
@@ -6906,9 +6911,23 @@ function getOverflowBottom(node: LayoutNode, originTop: number): number {
 		) {
 			continue;
 		}
-		bottom = Math.max(bottom, getOverflowBottom(child, top));
+		const reach = getOverflowExtent(child, left, top);
+		extent.right = Math.max(extent.right, reach.right);
+		extent.bottom = Math.max(extent.bottom, reach.bottom);
 	}
-	return bottom;
+	return extent;
+}
+
+function clipsOverflow(node: LayoutNode): boolean {
+	const element = node.owner as Element | null;
+	if (element === null || element.nodeType !== element.ELEMENT_NODE) {
+		return false;
+	}
+	const overflow = getComputedValue(element, "overflow");
+	return (
+		(getComputedValue(element, "overflow-x") || overflow) !== "visible" ||
+		(getComputedValue(element, "overflow-y") || overflow) !== "visible"
+	);
 }
 
 function getContentBoxSize(
