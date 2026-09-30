@@ -2960,3 +2960,30 @@ test("Ctrl+L redraws the screen unless a listener takes it", async () => {
 	expect(await type("\x0c")).not.toContain("hello");
 	termdom.dispose();
 });
+
+// HTML's focus(): the focusing steps, then a scroll into view unless the
+// caller passed preventScroll.
+test("focus() scrolls its element into view unless told not to", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		Array.from({length: 30}, (_, i) => `<div>line ${i}</div>`).join("") +
+		"<button id=\"far\">far</button><button id=\"farther\">farther</button>";
+	await dom.attach();
+	await nextFrame(dom);
+	expect(window.scrollY).toBe(0);
+
+	const far = document.getElementById("far")!;
+	far.focus();
+	await nextFrame(dom);
+	const top = far.getBoundingClientRect().top;
+	expect(top).toBeGreaterThanOrEqual(0);
+	expect(top).toBeLessThan(window.innerHeight);
+
+	window.scrollTo(0, 0);
+	document.getElementById("farther")!.focus({preventScroll: true});
+	await nextFrame(dom);
+	expect(window.scrollY).toBe(0);
+	dom.dispose();
+});
