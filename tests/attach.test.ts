@@ -491,3 +491,47 @@ test("a stylesheet added after the first layout resizes html and body", () => {
 	expect(document.body.offsetHeight).toBe(24);
 	dom.dispose();
 });
+
+test("renderANSI with no argument renders the document as it stands", () => {
+	const terminal = new MockProcess({cols: 20, rows: 5});
+	const dom = new TermDOM({transport: terminal.transport});
+	const rows = Array.from({length: 8}, (_, i) => `<div>row ${i + 1}</div>`);
+	dom.document.body.innerHTML = rows.join("");
+	const lines = dom
+		.renderANSI()
+		.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
+		.trimEnd()
+		.split("\n");
+	expect(lines).toEqual(Array.from({length: 8}, (_, i) => `row ${i + 1}`));
+	dom.dispose();
+});
+
+test("rendering the document leaves a live session's next frame alone", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 5});
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.attach();
+	dom.document.body.innerHTML = "<p id=\"p\">before</p>";
+	await nextFrame(dom);
+	dom.document.getElementById("p")!.textContent = "after";
+	expect(dom.renderANSI()).toContain("after");
+	await nextFrame(dom);
+	const screen = (terminal as unknown as {
+		terminal: {
+			buffer: {active: {getLine(row: number): {translateToString(): string}}};
+		};
+	}).terminal.buffer.active;
+	await until(() => screen.getLine(0).translateToString().includes("after"));
+	expect(screen.getLine(0).translateToString().trim()).toBe("after");
+	dom.dispose();
+});
+
+test("print with no argument writes the document through the transport", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 5});
+	(terminal.stdout as unknown as {isTTY: boolean}).isTTY = false;
+	const written = captureRawOutput(terminal, {forward: false});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = "<p>hello</p>";
+	await dom.print();
+	expect(written().replace(/\x1b\[[0-9;]*m/g, "")).toBe("hello\n");
+	dom.dispose();
+});

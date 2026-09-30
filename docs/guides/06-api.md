@@ -121,22 +121,29 @@ keystroke. `visibilitychange` fires on each change.
 Passing a transport rebinds the instance to it, only before the first
 attach.
 
-### `term.renderANSI(html)`
+### `term.renderANSI(html?)`
 
-Renders an HTML string to an ANSI string at the transport's width: colors
-and line breaks only, no cursor controls or mode changes. `<style>`
-elements in the fragment join the cascade. The instance's own document is
+Renders to an ANSI string at the transport's width: colors and line
+breaks only, no cursor controls or mode changes.
+
+Without an argument it renders the document as it stands, whole, however
+far it runs past the screen. A page built with DOM calls becomes text
+this way, attached or not, without disturbing a live session's frame.
+
+With an HTML string it renders that markup instead. `<style>` elements in
+the fragment join the cascade, and the instance's own document is
 untouched.
 
 ```ts
+const page = term.renderANSI();
 const ansi = term.renderANSI(`<div style="color:red">error</div>`);
 ```
 
-### `term.print(html)`
+### `term.print(html?)`
 
-`renderANSI(html)` written through the transport, as ordinary command
-output. Returns a promise that resolves when the bytes have reached the
-transport; await it before exiting.
+`renderANSI(html)`, or the document without an argument, written through
+the transport as ordinary command output. Returns a promise that resolves
+when the bytes have reached the transport; await it before exiting.
 
 ### `term.dispose()`
 
