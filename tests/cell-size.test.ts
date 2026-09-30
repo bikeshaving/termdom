@@ -162,6 +162,18 @@ test("auto takes the size the terminal reports before the first frame", async ()
 	dom.dispose();
 });
 
+test("auto does not wait on a terminal that answers DA1 but not the size", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	scriptReplies(terminal, [{ask: "\x1b[c", reply: "\x1b[?62c"}]);
+	const dom = new TermDOM({transport: terminal.transport, cellSize: "auto"});
+	const start = performance.now();
+	await dom.attach();
+	await nextFrame(dom);
+	expect(performance.now() - start).toBeLessThan(500);
+	expect(dom.window.innerWidth).toBe(320);
+	dom.dispose();
+});
+
 test("auto without a terminal to ask is typical", () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	(terminal.stdout as unknown as {isTTY: boolean}).isTTY = false;
