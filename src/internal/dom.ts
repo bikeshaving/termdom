@@ -293,7 +293,6 @@ const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kScreen = Symbol("screen");
-const kFocus = Symbol("focus");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kReportUncaught = Symbol("reportUncaught");
 
@@ -10742,7 +10741,7 @@ export class HTMLElement extends Element {
 	// steps fire, then brings the element into view unless asked not to. A
 	// headless document paints nothing, so it only moves the state.
 	focus(options?: globalThis.FocusOptions): void {
-		this[kFocus]();
+		runFocusingSteps(this);
 		const focused = getInnermostActive(this[kDocument]);
 		if (
 			options?.preventScroll !== true &&
@@ -10888,92 +10887,94 @@ export class HTMLElement extends Element {
 		state.previouslyFocused = null;
 		popoverStateChanged(this);
 	}
+}
 
-	[kFocus](): void {
-		const document = this[kDocument];
-		const previous = getInnermostActive(document);
-		// A host whose shadow root delegates focus hands the call to its
-		// focus delegate (HTML's focusing steps, step 3), keeps the focus
-		// where it is when its own tree already holds it, and does nothing
-		// at all without a delegate.
-		const shadow = this[kShadowRoot];
-		if (shadow !== null && shadow[kDelegatesFocus]) {
-			if (
-				previous !== null &&
-				previous !== this &&
-				isShadowIncludingInclusiveAncestor(this, previous)
-			) {
-				return;
-			}
-			const delegate = getFocusDelegate(this);
-			if (delegate !== null) {
-				(delegate as HTMLElement)[kFocus]();
-			}
+// HTML's focusing steps: the focus moves and its events fire. focus()
+// adds the scroll into view.
+function runFocusingSteps(element: HTMLElement): void {
+	const document = element[kDocument];
+	const previous = getInnermostActive(document);
+	// A host whose shadow root delegates focus hands the call to its
+	// focus delegate (HTML's focusing steps, step 3), keeps the focus
+	// where it is when its own tree already holds it, and does nothing
+	// at all without a delegate.
+	const shadow = element[kShadowRoot];
+	if (shadow !== null && shadow[kDelegatesFocus]) {
+		if (
+			previous !== null &&
+			previous !== element &&
+			isShadowIncludingInclusiveAncestor(element, previous)
+		) {
 			return;
 		}
-		// Uses shadow-including connectedness. A node whose tree root is a
-		// shadow root is focusable when its host chain reaches the document.
-		// The node-tree root test rejected every element in a shadow tree.
-		if (isFocusableArea(this) && this.isConnected) {
-			document[kActiveElement] = this;
-			// Focusing the body moves nothing a Tab would start from.
-			if (this !== document.body) {
-				focusStartingPoints.delete(document);
-			}
+		const delegate = getFocusDelegate(element);
+		if (delegate !== null) {
+			runFocusingSteps(delegate as HTMLElement);
 		}
-		if (previous === this || getInnermostActive(document) !== this) {
-			return;
+		return;
+	}
+	// Uses shadow-including connectedness. A node whose tree root is a
+	// shadow root is focusable when its host chain reaches the document.
+	// The node-tree root test rejected every element in a shadow tree.
+	if (isFocusableArea(element) && element.isConnected) {
+		document[kActiveElement] = element;
+		// Focusing the body moves nothing a Tab would start from.
+		if (element !== document.body) {
+			focusStartingPoints.delete(document);
 		}
-		const attached = getAttachedDocument(this);
-		if (attached === undefined) {
-			return;
-		}
-		// :focus rules match live and a focus move is not a mutation, so both
-		// elements' resolved styles are stale whether or not a listener changes
-		// anything.
-		attached[kCascade].handleFocusChange(previous, this);
-		attached[kScreen].invalidate();
-		void attached[kRender]();
-		// An edit the user made in the control focus is leaving is committed
-		// first, so change fires before blur.
-		commitTextControl(previous as Element | null);
-		// The body holds focus whenever nothing else does, so moving focus off
-		// the body fires no blur.
-		if (previous !== null && previous !== (document.body as unknown)) {
-			dispatchAsUserAgent(
-				previous,
-				new FocusEvent("blur", {
-					relatedTarget: this,
-					bubbles: false,
-					composed: true,
-				}),
-			);
-			dispatchAsUserAgent(
-				previous,
-				new FocusEvent("focusout", {
-					relatedTarget: this,
-					bubbles: true,
-					composed: true,
-				}),
-			);
-		}
+	}
+	if (previous === element || getInnermostActive(document) !== element) {
+		return;
+	}
+	const attached = getAttachedDocument(element);
+	if (attached === undefined) {
+		return;
+	}
+	// :focus rules match live and a focus move is not a mutation, so both
+	// elements' resolved styles are stale whether or not a listener changes
+	// anything.
+	attached[kCascade].handleFocusChange(previous, element);
+	attached[kScreen].invalidate();
+	void attached[kRender]();
+	// An edit the user made in the control focus is leaving is committed
+	// first, so change fires before blur.
+	commitTextControl(previous as Element | null);
+	// The body holds focus whenever nothing else does, so moving focus off
+	// the body fires no blur.
+	if (previous !== null && previous !== (document.body as unknown)) {
 		dispatchAsUserAgent(
-			this,
-			new FocusEvent("focus", {
-				relatedTarget: previous,
+			previous,
+			new FocusEvent("blur", {
+				relatedTarget: element,
 				bubbles: false,
 				composed: true,
 			}),
 		);
 		dispatchAsUserAgent(
-			this,
-			new FocusEvent("focusin", {
-				relatedTarget: previous,
+			previous,
+			new FocusEvent("focusout", {
+				relatedTarget: element,
 				bubbles: true,
 				composed: true,
 			}),
 		);
 	}
+	dispatchAsUserAgent(
+		element,
+		new FocusEvent("focus", {
+			relatedTarget: previous,
+			bubbles: false,
+			composed: true,
+		}),
+	);
+	dispatchAsUserAgent(
+		element,
+		new FocusEvent("focusin", {
+			relatedTarget: previous,
+			bubbles: true,
+			composed: true,
+		}),
+	);
 }
 
 // document.activeElement retargets through the host chain, so a focus
