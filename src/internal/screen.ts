@@ -1905,7 +1905,9 @@ export class Screen {
 
 	/**
 	 * A static rendering painted apart from the live frame, whose pending
-	 * scroll and repaint it leaves as they were.
+	 * scroll and repaint it leaves as they were. A file wants a bare
+	 * newline. A terminal wants CRLF: a lone LF moves the cursor down
+	 * without returning it to column 0, so the lines would staircase.
 	 */
 	renderStatic(
 		rows: number,
@@ -1923,36 +1925,6 @@ export class Screen {
 			lines.push(getGridLine(grid, row, this[kWriter]));
 		}
 		return lines.join(lineEnding) + lineEnding;
-	}
-
-	beginStatic(
-		{rows: contentRows, lineEnding = "\n"}: {
-			rows: number;
-			lineEnding?: "\n" | "\r\n";
-		},
-	): CellContext {
-		const rows = Math.max(0, contentRows);
-		if (rows === 0) {
-			const empty = new CellGrid(0, this[kCols]);
-			this[kEndFrame] = () => "";
-			return new CellContext(empty, 0, this[kCols], 0);
-		}
-
-		const cols = this[kCols];
-		const grid = new CellGrid(rows, cols);
-		const context = new CellContext(grid, rows, cols, 0);
-		this[kEndFrame] = (): string => {
-			const lines: string[] = [];
-			for (let row = 0; row < rows; row++) {
-				lines.push(getGridLine(grid, row, this[kWriter]));
-			}
-
-			// A file wants a bare newline. A terminal wants CRLF. A lone LF
-			// moves the cursor down without returning it to column 0, so the
-			// lines would staircase across the screen.
-			return lines.join(lineEnding) + lineEnding;
-		};
-		return context;
 	}
 
 	beginFrame(

@@ -498,13 +498,17 @@ export function renderFrame(
 
 /** The same, for a frame that stands alone. */
 export function renderStatic(
-	renderer: {beginStatic(options: any): any; endFrame(): string},
-	options: {rows: number} & Record<string, unknown>,
+	renderer: {
+		renderStatic(
+			rows: number,
+			lineEnding: "\n" | "\r\n",
+			paint: (ctx: any) => void,
+		): string;
+	},
+	options: {rows: number; lineEnding?: "\n" | "\r\n"},
 	draw: (ctx: any) => void,
 ): string {
-	const context = renderer.beginStatic(options);
-	draw(context);
-	return renderer.endFrame();
+	return renderer.renderStatic(options.rows, options.lineEnding ?? "\n", draw);
 }
 
 /**
