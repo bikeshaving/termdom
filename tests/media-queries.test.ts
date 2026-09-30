@@ -92,3 +92,26 @@ test("matchMedia serializes its list, each bad query as not all", () => {
 	expect(media(" ")).toBe("");
 	termdom.dispose();
 });
+
+test("the color features and screen.colorDepth follow the terminal's colors", () => {
+	const answers: Array<[string, number, boolean, boolean]> = [];
+	for (const depth of ["rgb", "256", "ansi"] as const) {
+		const proc = new MockProcess({cols: 20, rows: 5});
+		const termdom = new TermDOM({
+			transport: {...proc.transport, colorDepth: depth},
+		});
+		answers.push([
+			depth,
+			termdom.window.screen.colorDepth,
+			matches(termdom, "(color-index: 256)"),
+			matches(termdom, "(color-gamut)"),
+		]);
+		expect(matches(termdom, "(color)")).toBe(true);
+		termdom.dispose();
+	}
+	expect(answers).toEqual([
+		["rgb", 24, false, true],
+		["256", 8, true, false],
+		["ansi", 4, false, false],
+	]);
+});

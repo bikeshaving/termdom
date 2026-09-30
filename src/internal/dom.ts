@@ -34275,8 +34275,16 @@ export class Window extends EventTarget {
 				get height(): number {
 					return window.innerHeight;
 				},
-				colorDepth: 24,
-				pixelDepth: 24,
+				// Bits per pixel: 24 for true color, and the index's width
+				// for a palette of 256 or 16.
+				get colorDepth(): number {
+					const attached = getAttachedDocument(window.document);
+					const depth = attached?.[kScreen].colorDepth ?? "rgb";
+					return depth === "rgb" ? 24 : depth === "256" ? 8 : 4;
+				},
+				get pixelDepth(): number {
+					return this.colorDepth;
+				},
 				get orientation(): globalThis.ScreenOrientation {
 					return noWindowFeature("screen orientation");
 				},
