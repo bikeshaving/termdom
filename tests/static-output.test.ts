@@ -128,6 +128,18 @@ test("an attached session prints the piped document once, whole", async () => {
 	expect(output.replace(/\x1b\[0m/g, "")).not.toMatch(/\x1b/);
 });
 
+test("print() with no argument takes the place of the print at the end", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	(terminal.stdout as any).isTTY = false;
+	const written = captureRawOutput(terminal, {forward: false});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = "<div>once</div>";
+	await nextFrame(dom);
+	await dom.print();
+	await dom.dispose();
+	expect(written().match(/once/g)?.length).toBe(1);
+});
+
 test("a stdout that does not say it is a terminal is a pipe", async () => {
 	const output = await renderPipedFrames(undefined);
 	expect(output.match(/row \d+/g)?.length).toBe(20);
