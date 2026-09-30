@@ -37,9 +37,6 @@ Options:
   nearest cell and a border that is there at all is one cell wide.
   - `"unit"`, the default: a cell is one CSS pixel each way, so `1px`
     and `1ch` are both one cell.
-
-  Whatever the size, `ch` is a column and `lh` a row, so a stylesheet
-  written in those units lays out the same under every setting.
   - `"typical"`: 8 by 16, the usual terminal cell. Web code that
     assumes a 16px line and a 600px layout sizes itself as it would in
     a browser.
@@ -52,6 +49,14 @@ Options:
   ```ts
   const term = new TermDOM({cellSize: "auto"});
   ```
+
+  Two units count cells whatever the size, so a stylesheet written in
+  them lays out the same under every setting:
+  - `ch` is one cell along the axis it is used on: a column in `width`
+    or `padding-left`, a row in `height` or `margin-top`. CSS takes `ch`
+    across on both axes; a cell grid does not.
+  - `lh` is one line as the terminal draws it, which is one row:
+    `line-height` does not change how tall a line is drawn.
 
 ### `term.document`, `term.window`
 

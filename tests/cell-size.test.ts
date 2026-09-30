@@ -181,19 +181,38 @@ test("a size that is not one throws", () => {
 	}
 });
 
-test("lh is one line, a row whatever the cell size", () => {
-	for (const [cellSize, row] of [["unit", 1], ["typical", 16]] as const) {
+test("ch is a cell along its axis, and lh a line as the terminal draws it", () => {
+	for (const [
+		cellSize,
+		column,
+		row,
+	] of [["unit", 1, 1], ["typical", 8, 16]] as const) {
 		const {dom} = make(cellSize);
-		const {document} = dom;
+		const {document, window} = dom;
 		document.body.innerHTML =
-			"<div id=\"a\" style=\"height: 2lh\"></div>" +
-			"<div style=\"line-height: 2\"><div id=\"b\" style=\"height: 1lh\">" +
-			"</div></div><div id=\"c\" style=\"height: 1rlh\"></div>";
-		const height = (id: string) =>
-			document.getElementById(id)!.getBoundingClientRect().height;
-		expect(height("a")).toBe(2 * row);
-		expect(height("b")).toBe(2 * row);
-		expect(height("c")).toBe(row);
+			"<div id=\"box\" style=\"width: 3ch; height: 3ch; padding: 1ch\"></div>" +
+			"<div style=\"line-height: 2\"><div id=\"line\" style=\"height: 2lh\">" +
+			"</div></div><div id=\"root\" style=\"height: 1rlh\"></div>";
+		const rect = (id: string) =>
+			document.getElementById(id)!.getBoundingClientRect();
+		// Three cells each way, and a cell of padding on every side of them
+		// taken from inside, as border-box sizes it.
+		expect([rect("box").width, rect("box").height]).toEqual([
+			3 * column,
+			3 * row,
+		]);
+		expect(document.getElementById("box")!.clientHeight).toBe(3 * row);
+		expect(
+			window.getComputedStyle(document.getElementById("box")!)
+				.paddingTop,
+		).toBe(`${row}px`);
+		// Every line is drawn one row tall, whatever line-height says.
+		expect(rect("line").height).toBe(2 * row);
+		expect(rect("root").height).toBe(row);
+		expect(
+			window.matchMedia(`(min-height: ${window.innerHeight / row}ch)`)
+				.matches,
+		).toBe(true);
 		dom.dispose();
 	}
 });

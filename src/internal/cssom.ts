@@ -3919,6 +3919,25 @@ function getAbsolutizedValue(
 	return CSSValues.collapseRadius(property, absolute);
 }
 
+// Whether a property's lengths run down the page. A font's size and a
+// line's height are heights, and a flex basis runs along its container.
+const VERTICAL_LENGTH = /(?:^|-)(?:top|bottom|height|block|rows?)(?:-|$)/;
+
+function isVerticalLength(element: Element, property: string): boolean {
+	if (property === "flex-basis") {
+		const parent = flatParentElement(element);
+		return parent !== null &&
+			getComputedValue(parent, "flex-direction").startsWith("column");
+	}
+	return (
+		VERTICAL_LENGTH.test(property) ||
+		property === "row-gap" ||
+		property === "line-height" ||
+		property === "font-size" ||
+		property === "vertical-align"
+	);
+}
+
 // `font-size` measures against the PARENT's font size, so it is the one
 // property whose own computed value is not in its own context.
 function getLengthContext(
@@ -3938,22 +3957,16 @@ function getLengthContext(
 	const cascade = declaration[kCascade];
 	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
 	const cell = getCellSize(declaration[kElement]);
-	// `lh` in font-size or line-height is the parent's line, as `em` in
-	// font-size is the parent's font.
-	const lineOwner = own || property === "line-height"
-		? flatParentElement(declaration[kElement])
-		: declaration[kElement];
-	const rootElement = declaration[kElement].ownerDocument?.documentElement;
 	return {
 		font,
 		root,
 		cellWidth: cell.width,
-		line: getLineHeight(lineOwner, cell.height),
-		rootLine:
-			rootElement === declaration[kElement] &&
-				(own || property === "line-height")
-				? cell.height
-				: getLineHeight(rootElement ?? null, cell.height),
+		cellAlong: isVerticalLength(declaration[kElement], property)
+			? cell.height
+			: cell.width,
+		// Every line is drawn one row tall, so a line is a cell's height
+		// whatever line-height says.
+		line: cell.height,
 		viewportWidth: block ? block.width * cell.width : 0,
 		viewportHeight: block ? block.height * cell.height : 0,
 		// A percentage is font-relative on exactly two properties. On
@@ -3961,26 +3974,6 @@ function getLengthContext(
 		// element's own. Everywhere else it stays a percentage until used.
 		percent: CSSValues.isFontRelativePercentage(property) ? font / 100 : null,
 	};
-}
-
-// A line is one row whatever the font, so `normal` is a cell tall. A
-// number multiplies the element's font size, and a length is itself.
-function getLineHeight(element: Element | null, row: number): number {
-	if (element === null) {
-		return row;
-	}
-	const value = getComputedValue(element, "line-height");
-	if (!value || value === "normal") {
-		return row;
-	}
-	const number = parseFloat(value);
-	if (!Number.isFinite(number)) {
-		return row;
-	}
-	return /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())
-		? number *
-			CSSValues.getFontSize(getComputedValue(element, "font-size"), row)
-		: number;
 }
 
 function getRootFontSize(
@@ -7798,7 +7791,7 @@ function mediaOperandMatches(
 	return null;
 }
 
-type MediaRangeKind = "length" | "ratio" | "resolution" | "integer";
+type MediaRangeKind = "length" | "height" | "ratio" | "resolution" | "integer";
 
 const colorSchemes = new WeakMap<object, () => "light" | "dark">();
 
@@ -7820,9 +7813,9 @@ const MEDIA_RANGE_FEATURES: Record<
 	{kind: MediaRangeKind; value(window: Window): number}
 > = {
 	width: {kind: "length", value: (window) => window.innerWidth},
-	height: {kind: "length", value: (window) => window.innerHeight},
+	height: {kind: "height", value: (window) => window.innerHeight},
 	"device-width": {kind: "length", value: (window) => window.screen.width},
-	"device-height": {kind: "length", value: (window) => window.screen.height},
+	"device-height": {kind: "height", value: (window) => window.screen.height},
 	"aspect-ratio": {
 		kind: "ratio",
 		value: (window) => window.innerWidth / window.innerHeight,
@@ -7953,6 +7946,7 @@ const MEDIA_DISCRETE_FEATURES: Record<
 function getMediaLength(
 	cascade: Cascade,
 	node: CSSTree.ValueNode,
+	vertical: boolean,
 ): number | null {
 	if (node.type === "Number") {
 		return parseFloat(node.value ?? "") === 0 ? 0 : null;
@@ -7968,8 +7962,8 @@ function getMediaLength(
 			font: cell.height,
 			root: cell.height,
 			cellWidth: cell.width,
+			cellAlong: vertical ? cell.height : cell.width,
 			line: cell.height,
-			rootLine: cell.height,
 			viewportWidth: window.innerWidth,
 			viewportHeight: window.innerHeight,
 			percent: null,
@@ -7989,7 +7983,9 @@ function getMediaValue(
 	}
 	switch (kind) {
 		case "length":
-			return getMediaLength(cascade, node);
+			return getMediaLength(cascade, node, false);
+		case "height":
+			return getMediaLength(cascade, node, true);
 		case "integer":
 			return node.type === "Number" && /^[+-]?\d+$/.test(node.value ?? "")
 				? parseInt(node.value ?? "", 10)
