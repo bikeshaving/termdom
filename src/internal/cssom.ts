@@ -6,6 +6,7 @@ import {
 	CSS_LONGHANDS,
 	CSS_PROPERTIES,
 } from "../generated/cssproperties.ts";
+import {cellsToPx, getCellSize, pxToCells, UNIT_CELL} from "./cellsize.ts";
 import {
 	type CompiledSelector,
 	compileSelector,
@@ -76,7 +77,7 @@ function getElementDefaults(
 				position: "fixed",
 				top: "0px",
 				left: "0px",
-				width: `${window.innerWidth}ch`,
+				width: `${window.innerWidth}px`,
 				height: `${window.innerHeight}px`,
 				"background-color": "Canvas",
 			};
@@ -140,45 +141,68 @@ function getInitialStyle(element: Element | null, property: string): string {
 	if (elementDefaults && elementDefaults[property]) {
 		return elementDefaults[property];
 	}
-	return CSSValues.getInitialValue(property);
+	return getInitialValueFor(element, property);
+}
+
+// A cell's height is the medium font size: one line of text is one row.
+function getInitialValueFor(node: Node | null, property: string): string {
+	return property === "font-size"
+		? `${getCellSize(node).height}px`
+		: CSSValues.getInitialValue(property);
+}
+
+/**
+ * A length the engine reads, in whole cells along its axis. A percentage
+ * stays one, for the caller to resolve against a basis in cells.
+ */
+export function toCellLength(
+	value: CSSValues.UnitValue,
+	vertical: boolean,
+	node: Node,
+): CSSValues.UnitValue {
+	return typeof value === "number" ? pxToCells(value, vertical, node) : value;
+}
+
+// A border a terminal draws is a line of glyphs, so a border that is
+// there at all is at least one cell.
+export function toCellBorder(
+	value: CSSValues.UnitValue,
+	vertical: boolean,
+	node: Node,
+): CSSValues.UnitValue {
+	if (typeof value !== "number" || value <= 0) {
+		return value;
+	}
+	const cell = getCellSize(node);
+	return (vertical ? cell.height : cell.width) === 1
+		? value
+		: Math.max(1, pxToCells(value, vertical, node));
 }
 
 /** An element's margins, borders and padding, in cells. */
 export function getBoxModel(element: Element): CSSValues.BoxModel {
 	// The engine's own read: the cascade's declaration directly, without
 	// the author path's resolved-value work.
-	const widthValue = CSSValues.parseUnitValue(
-		getComputedValue(element, "width"),
-	);
-	const heightValue = CSSValues.parseUnitValue(
-		getComputedValue(element, "height"),
-	);
+	const length = (property: string, vertical: boolean, signed = false) =>
+		toCellLength(
+			signed
+				? CSSValues.parseSignedUnitValue(getComputedValue(element, property))
+				: CSSValues.parseUnitValue(getComputedValue(element, property)),
+			vertical,
+			element,
+		);
+	const widthValue = length("width", false);
+	const heightValue = length("height", true);
 
-	const paddingTop = CSSValues.parseUnitValue(
-		getComputedValue(element, "padding-top"),
-	);
-	const paddingRight = CSSValues.parseUnitValue(
-		getComputedValue(element, "padding-right"),
-	);
-	const paddingBottom = CSSValues.parseUnitValue(
-		getComputedValue(element, "padding-bottom"),
-	);
-	const paddingLeft = CSSValues.parseUnitValue(
-		getComputedValue(element, "padding-left"),
-	);
+	const paddingTop = length("padding-top", true);
+	const paddingRight = length("padding-right", false);
+	const paddingBottom = length("padding-bottom", true);
+	const paddingLeft = length("padding-left", false);
 
-	const marginTop = CSSValues.parseSignedUnitValue(
-		getComputedValue(element, "margin-top"),
-	);
-	const marginRight = CSSValues.parseSignedUnitValue(
-		getComputedValue(element, "margin-right"),
-	);
-	const marginBottom = CSSValues.parseSignedUnitValue(
-		getComputedValue(element, "margin-bottom"),
-	);
-	const marginLeft = CSSValues.parseSignedUnitValue(
-		getComputedValue(element, "margin-left"),
-	);
+	const marginTop = length("margin-top", true, true);
+	const marginRight = length("margin-right", false, true);
+	const marginBottom = length("margin-bottom", true, true);
+	const marginLeft = length("margin-left", false, true);
 
 	// The used width is 0 when the side's style is none or hidden
 	// (css-backgrounds §3.3). `border-style: none` must release the space.
@@ -187,8 +211,12 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 		if (!style || style === "none" || style === "hidden") {
 			return null;
 		}
-		return CSSValues.parseBorderWidthValue(
-			getComputedValue(element, `border-${side}-width`),
+		return toCellBorder(
+			CSSValues.parseBorderWidthValue(
+				getComputedValue(element, `border-${side}-width`),
+			),
+			side === "top" || side === "bottom",
+			element,
 		);
 	};
 	const borderTopWidth = borderWidthFor("top");
@@ -3899,19 +3927,23 @@ function getLengthContext(
 ): CSSValues.LengthContext {
 	const own = property === "font-size";
 	const parent = own ? flatParentElement(declaration[kElement]) : null;
+	const initial = getCellSize(declaration[kElement]).height;
 	const font = CSSValues.getFontSize(
 		own
 			? parent ? getComputedValue(parent, "font-size") : ""
 			: declaration.getComputedValue("font-size"),
+		initial,
 	);
 	const root = getRootFontSize(declaration, own);
 	const cascade = declaration[kCascade];
 	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
+	const cell = getCellSize(declaration[kElement]);
 	return {
 		font,
 		root,
-		viewportWidth: block ? block.width : 0,
-		viewportHeight: block ? block.height : 0,
+		cellWidth: cell.width,
+		viewportWidth: block ? block.width * cell.width : 0,
+		viewportHeight: block ? block.height * cell.height : 0,
 		// A percentage is font-relative on exactly two properties. On
 		// `font-size` it is a share of the parent's, on `line-height` of this
 		// element's own. Everywhere else it stays a percentage until used.
@@ -3932,6 +3964,7 @@ function getRootFontSize(
 			: root === declaration[kElement]
 				? declaration.getComputedValue("font-size")
 				: getComputedValue(root, "font-size"),
+		getCellSize(declaration[kElement]).height,
 	);
 }
 
@@ -4188,8 +4221,8 @@ function getViewportBox(declaration: MeasuredDeclaration): DOMRect | null {
 	return new (rect.constructor as typeof DOMRect)(
 		0,
 		0,
-		block.width,
-		block.height,
+		cellsToPx(block.width, false, declaration[kElement]),
+		cellsToPx(block.height, true, declaration[kElement]),
 	);
 }
 
@@ -4594,7 +4627,7 @@ function resolvePropertyValueRaw(
 		return resolveFromParent(declaration, property) ?? "";
 	}
 	if (declared === "initial") {
-		return CSSValues.getInitialValue(property);
+		return getInitialValueFor(declaration[kElement], property);
 	}
 	if (declared !== "" && !CSSValues.isCSSWideKeyword(declared)) {
 		return declared;
@@ -4656,7 +4689,7 @@ function resolvePropertyValueRaw(
 	}
 
 	// 5. The property's initial value.
-	return CSSValues.getInitialValue(property);
+	return getInitialValueFor(declaration[kElement], property);
 }
 
 // This element's own custom properties and every ancestor's, since a
@@ -6028,7 +6061,9 @@ function usedGridTracks(
 	if (!getUsedRect(cascade, element)) {
 		return null;
 	}
-	return cascade[kLayout].gridTracks(element, rows);
+	return cascade[kLayout].gridTracks(element, rows)
+		?.map((size) => cellsToPx(size, rows, element),
+		) ?? null;
 }
 
 // Re-parse ONE shadow root's sheets in place. Only trees the root's
@@ -6240,7 +6275,7 @@ function contentBox(cascade: Cascade, element: Element): DOMRect | null {
 	if (!getUsedRect(cascade, element)) {
 		return null;
 	}
-	return cascade[kLayout].contentRect(element);
+	return toPxRect(cascade[kLayout].contentRect(element), element);
 }
 
 // The descendants a class change can restyle, as the subjects of the
@@ -6382,13 +6417,26 @@ function attributeReachesDescendants(
 // The flush runs once per change, not once per read. A caller reading
 // four properties off two hundred elements pays one flush, not eight
 // hundred. Nothing under the flush can call back into this.
+// In CSS pixels, the unit every used value is reported in.
 function getUsedRect(cascade: Cascade, element: Element): DOMRect | null {
 	if (cascade[kUsedStale]) {
 		flushLayout(cascade[kDocument]);
 		cascade[kUsedStale] = false;
 		cascade[kUsedValues] = new WeakMap();
 	}
-	return cascade[kLayout].getRect(element);
+	return toPxRect(cascade[kLayout].getRect(element), element);
+}
+
+function toPxRect(rect: DOMRect | null, node: Node): DOMRect | null {
+	if (rect === null || getCellSize(node) === UNIT_CELL) {
+		return rect;
+	}
+	return new (rect.constructor as typeof DOMRect)(
+		cellsToPx(rect.x, false, node),
+		cellsToPx(rect.y, true, node),
+		cellsToPx(rect.width, false, node),
+		cellsToPx(rect.height, true, node),
+	);
 }
 
 // A pseudo-element's declaration, on the same internal read path.
@@ -7868,7 +7916,8 @@ const MEDIA_DISCRETE_FEATURES: Record<
 	},
 };
 
-// `em` and `rem` in a media query are the initial font size, one cell.
+// `em` and `rem` in a media query are the initial font size, one cell
+// tall.
 function getMediaLength(
 	cascade: Cascade,
 	node: CSSTree.ValueNode,
@@ -7880,11 +7929,13 @@ function getMediaLength(
 		return null;
 	}
 	const window = cascade[kWindow];
+	const cell = getCellSize(cascade[kDocument]);
 	const text = CSSValues.absolutizeLengths(
 		CSSTree.generate(node as unknown as CSSTree.CSSTreeNode),
 		{
-			font: 1,
-			root: 1,
+			font: cell.height,
+			root: cell.height,
+			cellWidth: cell.width,
 			viewportWidth: window.innerWidth,
 			viewportHeight: window.innerHeight,
 			percent: null,

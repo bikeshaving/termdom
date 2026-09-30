@@ -1,5 +1,12 @@
 import "./internal/inspector.ts";
 
+import {
+	type CellSize,
+	getCellSize,
+	setCellSizeSource,
+	TYPICAL_CELL,
+	UNIT_CELL,
+} from "./internal/cellsize.ts";
 import {Cascade, setColorSchemeSource} from "./internal/cssom.ts";
 import * as DOM from "./internal/dom.ts";
 import {
@@ -40,6 +47,49 @@ export interface TermDOMOptions {
 
 	/** The initial document's URL. */
 	url?: string;
+
+	/**
+	 * What one terminal cell measures in CSS pixels. Layout places boxes
+	 * on whole cells, so lengths round to the nearest one, and a border
+	 * that is there at all is one cell wide.
+	 *
+	 * - `"unit"` (the default): a cell is one CSS pixel each way.
+	 * - `"typical"`: 8 by 16, the usual terminal cell.
+	 * - `"auto"`: the size the terminal reports, asked for before the
+	 *   first frame. `"typical"` when it cannot answer, as on a pipe.
+	 * - `{width, height}`: that size.
+	 */
+	cellSize?: "unit" | "typical" | "auto" | CellSize;
+}
+
+function getCellSizeSource(
+	option: TermDOMOptions["cellSize"],
+	getTransport: () => TerminalTransport,
+	screen: Screen,
+): () => Readonly<CellSize> {
+	if (option === undefined || option === "unit") {
+		return () => UNIT_CELL;
+	}
+	if (option === "typical") {
+		return () => TYPICAL_CELL;
+	}
+	if (option === "auto") {
+		return () => getTransport().interactive ? screen.cellPixels : TYPICAL_CELL;
+	}
+	if (
+		typeof option === "object" &&
+		option !== null &&
+		Number.isFinite(option.width) &&
+		Number.isFinite(option.height) &&
+		option.width > 0 &&
+		option.height > 0
+	) {
+		const cell = Object.freeze({width: option.width, height: option.height});
+		return () => cell;
+	}
+	throw new TypeError(
+		'cellSize must be "unit", "typical", "auto" or {width, height} with positive sizes',
+	);
 }
 
 const kScreen = Symbol("screen");
@@ -52,6 +102,7 @@ const kOnAlternateScreen = Symbol("onAlternateScreen");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
 const kFirstFrame = Symbol("firstFrame");
+const kMeasuresCell = Symbol("measuresCell");
 const kUnprinted = Symbol("unprinted");
 const kInput = Symbol("input");
 const kAttachReady = Symbol("attachReady");
@@ -98,6 +149,8 @@ export interface TermDOM {
 	// What the first frame waits for: the terminal's answers that decide
 	// how the page looks.
 	[kFirstFrame]: Promise<void> | null;
+	// Whether the page's lengths follow the terminal's measured cell.
+	[kMeasuresCell]: boolean;
 	// A stdout that is not a terminal gets the document once, as it stands
 	// when the session ends. True while a frame has changed it since.
 	[kUnprinted]: boolean;
@@ -177,6 +230,16 @@ export class TermDOM {
 		// The screen measures widths over the exchange's probe channel.
 		this[kScreen].measurer = exchange;
 		setColorSchemeSource(document, () => getColorScheme(this));
+
+		this[kMeasuresCell] = options.cellSize === "auto";
+		setCellSizeSource(
+			document,
+			getCellSizeSource(
+				options.cellSize,
+				() => this[kTransport],
+				this[kScreen],
+			),
+		);
 
 		DOM.attachDocument(
 			document,
@@ -324,14 +387,36 @@ export class TermDOM {
 			this[kExchange].scrubProbeEcho();
 			// After the erase, which is for the mode probes' echo. What was
 			// painted against the guessed cell repaints when the answer lands.
-			void this[kExchange].negotiateCellPixels().then(() => {
-				if (isAttached(this)) {
-					void render(this);
+			// When the cell sizes the page, the first frame waits for it, so
+			// the page never lays out against the guess.
+			const before = getCellSize(this.document);
+			const cellAnswered = this[kExchange].negotiateCellPixels().then(() => {
+				if (!isAttached(this)) {
+					return;
 				}
+				if (getCellSize(this.document) !== before) {
+					cellSizeChanged(this);
+				}
+				void render(this);
 			});
-			// The first frame is drawn in the colors the terminal chose. Input
-			// does not wait for it.
-			this[kFirstFrame] = schemeSettled;
+			// The first frame is drawn in the colors the terminal chose, and,
+			// when the cell sizes the page, at the size it reported. Input does
+			// not wait for either.
+			this[kFirstFrame] = this[kMeasuresCell]
+				? Promise.all([schemeSettled, cellAnswered]).then(() => {})
+				: schemeSettled;
+			if (this[kMeasuresCell]) {
+				// A font zoom resizes the grid, and the cell with it.
+				this[kExchange].addEventListener("terminalresize", () => {
+					const previous = getCellSize(this.document);
+					void this[kExchange].negotiateCellPixels().then(() => {
+						if (isAttached(this) && getCellSize(this.document) !== previous) {
+							cellSizeChanged(this);
+							void render(this);
+						}
+					});
+				});
+			}
 			this[kLifecycle] = "attached";
 			begun();
 
@@ -603,6 +688,15 @@ function getColorScheme(termDOM: TermDOM): "light" | "dark" {
 	return (
 		termDOM[kExchange].colorScheme ?? termDOM[kTransport].colorScheme ?? "light"
 	);
+}
+
+// Every length the page wrote measures differently now, and so does the
+// viewport, as after a resize.
+function cellSizeChanged(termDOM: TermDOM): void {
+	termDOM[kCascade].syncStylesheets();
+	const window = termDOM.window;
+	DOM.dispatchAsUserAgent(window, new window.Event("resize"));
+	DOM.syncMediaQueries(termDOM.document);
 }
 
 async function render(termDOM: TermDOM): Promise<void> {
@@ -939,8 +1033,11 @@ function renderStaticHTML(
 	lineEnding: "\n" | "\r\n",
 ): string {
 	const cols = termDOM[kTransport].cols;
+	const cell = getCellSize(termDOM.document);
 	if (
-		termDOM[kStaticSibling] && termDOM[kStaticSibling][kScreen].cols !== cols
+		termDOM[kStaticSibling] &&
+		(termDOM[kStaticSibling][kScreen].cols !== cols ||
+			getCellSize(termDOM[kStaticSibling].document) !== cell)
 	) {
 		void termDOM[kStaticSibling].dispose();
 		termDOM[kStaticSibling] = null;
@@ -962,6 +1059,7 @@ function renderStaticHTML(
 	});
 
 	const renderer = termDOM[kStaticSibling];
+	setCellSizeSource(renderer.document, () => cell);
 	renderer.document.body.innerHTML = html;
 	return renderStatic(renderer, lineEnding);
 }

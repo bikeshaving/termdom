@@ -31,6 +31,24 @@ Options:
 
 - `url?: string` — the document's URL, as `document.URL` and
   `location.href` report it.
+- `cellSize?: "unit" | "typical" | "auto" | {width, height}` — what one
+  terminal cell measures in CSS pixels. Pages write and read CSS pixels,
+  and layout places boxes on whole cells, so lengths round to the
+  nearest cell and a border that is there at all is one cell wide.
+  - `"unit"`, the default: a cell is one CSS pixel each way, so `1px`
+    and `1ch` are both one cell.
+  - `"typical"`: 8 by 16, the usual terminal cell. Web code that
+    assumes a 16px line and a 600px layout sizes itself as it would in
+    a browser.
+  - `"auto"`: the size the terminal reports. The first frame waits for
+    the answer, and a resize asks again. Without a terminal to ask, as
+    on a pipe, it is `"typical"`.
+  - `{width, height}`: that size, for output that should not depend on
+    the terminal.
+
+  ```ts
+  const term = new TermDOM({cellSize: "auto"});
+  ```
 
 ### `term.document`, `term.window`
 

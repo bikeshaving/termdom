@@ -1,10 +1,13 @@
 import LineBreaker from "linebreak";
 
+import {getCellSize, UNIT_CELL} from "./cellsize.ts";
 import {
 	getBoxModel,
 	getComputedValue,
 	getDeclaredDisplay,
 	getWhiteSpace as getElementWhiteSpace,
+	toCellBorder,
+	toCellLength,
 	usedValuesChanged,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -16,6 +19,7 @@ import {
 	flatParentElement,
 	flowContent,
 	flowNext,
+	getScrollOffset,
 	getShadowRoot,
 	isInFlatTree,
 	isModalDialog,
@@ -647,7 +651,11 @@ function applyLegacyAlignment(
 // in content-box sizing gets the box's edges, as width and height do.
 function applyMinMax(style: Style, element: Element): void {
 	const read = (property: string, vertical: boolean): CSSValues.Value => {
-		const value = CSSValues.parseUnitValue(getComputedValue(element, property));
+		const value = toCellLength(
+			CSSValues.parseUnitValue(getComputedValue(element, property)),
+			vertical,
+			element,
+		);
 		return toValue(
 			typeof value === "number"
 				? value + getContentBoxEdges(element, vertical)
@@ -705,8 +713,10 @@ function applyInsets(
 	autoWhenUnset: boolean,
 ): void {
 	for (const edge of edges) {
-		const value = CSSValues.parseSignedUnitValue(
-			getComputedValue(element, edge),
+		const value = toCellLength(
+			CSSValues.parseSignedUnitValue(getComputedValue(element, edge)),
+			edge === "top" || edge === "bottom",
+			element,
 		);
 		if (value !== null) {
 			style.position[edge] = toValue(value);
@@ -785,18 +795,79 @@ function getJustifyContentConstant(value: string): Justify {
 	return constant === undefined ? "normal" : constant;
 }
 
+// A track's lengths in cells along its axis. The parsed lists are shared,
+// so these are copies.
+function toCellValue(
+	value: CSSValues.Value,
+	vertical: boolean,
+	element: Element,
+): CSSValues.Value {
+	return value.unit === "cell"
+		? toValue(toCellLength(value.value, vertical, element) as number)
+		: value;
+}
+
+function toCellBreadth(
+	breadth: CSSValues.TrackBreadth,
+	vertical: boolean,
+	element: Element,
+): CSSValues.TrackBreadth {
+	return breadth.kind === "length"
+		? {kind: "length", value: toCellValue(breadth.value, vertical, element)}
+		: breadth;
+}
+
+function toCellTrackSize(
+	size: CSSValues.TrackSize,
+	vertical: boolean,
+	element: Element,
+): CSSValues.TrackSize {
+	return {
+		min: toCellBreadth(size.min, vertical, element),
+		max: toCellBreadth(size.max, vertical, element),
+		...(size.fitContent
+			? {fitContent: toCellValue(size.fitContent, vertical, element)}
+			: {}),
+	};
+}
+
+function toCellTrackList(
+	list: CSSValues.TrackList,
+	vertical: boolean,
+	element: Element,
+): CSSValues.TrackList {
+	if (getCellSize(element) === UNIT_CELL) {
+		return list;
+	}
+	const track = (entry: CSSValues.TrackListTrack) => ({
+		names: entry.names,
+		size: toCellTrackSize(entry.size, vertical, element),
+	});
+	return {
+		endNames: list.endNames,
+		parts: list.parts.map((part) =>
+			part.type === "track"
+				? {type: "track", track: track(part.track)}
+				: {
+					type: "repeat",
+					repeat: {...part.repeat, tracks: part.repeat.tracks.map(track)},
+				},
+		),
+	};
+}
+
 function applyGridContainer(style: Style, element: Element): void {
 	const columns = CSSValues.parseTrackList(
 		getComputedValue(element, "grid-template-columns"),
 	);
 	if (columns) {
-		style.gridTemplateColumns = columns;
+		style.gridTemplateColumns = toCellTrackList(columns, false, element);
 	}
 	const rows = CSSValues.parseTrackList(
 		getComputedValue(element, "grid-template-rows"),
 	);
 	if (rows) {
-		style.gridTemplateRows = rows;
+		style.gridTemplateRows = toCellTrackList(rows, true, element);
 	}
 	style.gridTemplateAreas = CSSValues.parseGridAreas(
 		getComputedValue(element, "grid-template-areas"),
@@ -805,13 +876,17 @@ function applyGridContainer(style: Style, element: Element): void {
 		getComputedValue(element, "grid-auto-columns"),
 	);
 	if (autoColumns && autoColumns.length > 0) {
-		style.gridAutoColumns = autoColumns;
+		style.gridAutoColumns = autoColumns.map((size) =>
+			toCellTrackSize(size, false, element),
+		);
 	}
 	const autoRows = CSSValues.parseTrackSizeList(
 		getComputedValue(element, "grid-auto-rows"),
 	);
 	if (autoRows && autoRows.length > 0) {
-		style.gridAutoRows = autoRows;
+		style.gridAutoRows = autoRows.map((size) =>
+			toCellTrackSize(size, true, element),
+		);
 	}
 
 	const flow = CSSValues.parseGridAutoFlow(
@@ -1006,7 +1081,11 @@ function styleLayoutNodeProperties(
 		applyMinMax(style, element);
 	} else {
 		const widthValue = getComputedValue(element, "width");
-		const width = CSSValues.parseUnitValue(widthValue);
+		const width = toCellLength(
+			CSSValues.parseUnitValue(widthValue),
+			false,
+			element,
+		);
 		style.width = toValue(
 			typeof width === "number"
 				? width + getContentBoxEdges(element, false)
@@ -1014,8 +1093,10 @@ function styleLayoutNodeProperties(
 		);
 		style.widthSizing = getWidthSizingConstant(widthValue);
 
-		const height = CSSValues.parseUnitValue(
-			getComputedValue(element, "height"),
+		const height = toCellLength(
+			CSSValues.parseUnitValue(getComputedValue(element, "height")),
+			true,
+			element,
 		);
 		style.height = toValue(
 			typeof height === "number"
@@ -1030,11 +1111,13 @@ function styleLayoutNodeProperties(
 		const ratio = CSSValues.parseAspectRatio(
 			getComputedValue(element, "aspect-ratio"),
 		);
+		// The ratio is of CSS pixels, and layout's is of cells.
+		const cell = getCellSize(element);
 		style.aspectRatio =
 			ratio !== undefined &&
 			Number.isFinite(ratio) &&
 			ratio > 0
-				? ratio
+				? (ratio * cell.height) / cell.width
 				: NaN;
 
 		// A blockified inline flex item keeps its padding, margin and
@@ -1043,15 +1126,24 @@ function styleLayoutNodeProperties(
 		// padding.
 		for (const edge of EDGES) {
 			const property = `margin-${edge}`;
-			const margin = CSSValues.parseSignedUnitValue(
-				getComputedValue(element, property),
+			const vertical = edge === "top" || edge === "bottom";
+			const margin = toCellLength(
+				CSSValues.parseSignedUnitValue(getComputedValue(element, property)),
+				vertical,
+				element,
 			);
 			style.margin[edge] = toValue(
 				margin ??
 				(getComputedValue(element, property) === "auto" ? "auto" : undefined),
 			);
 			style.padding[edge] = toValue(
-				CSSValues.parseUnitValue(getComputedValue(element, `padding-${edge}`)),
+				toCellLength(
+					CSSValues.parseUnitValue(
+						getComputedValue(element, `padding-${edge}`),
+					),
+					vertical,
+					element,
+				),
 			);
 			// The used width is 0 when the side's style is none or hidden
 			// (css-backgrounds §3.3), the same rule as getBoxModel, or the two
@@ -1062,8 +1154,12 @@ function styleLayoutNodeProperties(
 				borderStyle === "none" ||
 				borderStyle === "hidden"
 					? null
-					: CSSValues.parseBorderWidthValue(
-						getComputedValue(element, `border-${edge}-width`),
+					: toCellBorder(
+						CSSValues.parseBorderWidthValue(
+							getComputedValue(element, `border-${edge}-width`),
+						),
+						vertical,
+						element,
 					);
 			style.border[edge] = typeof borderWidth === "number" && borderWidth > 0
 				? borderWidth
@@ -1103,8 +1199,15 @@ function styleLayoutNodeProperties(
 	const shrink = CSSValues.parseCSSNumber(item("flex-shrink", "1"));
 	style.flexShrink = shrink !== null && shrink >= 0 ? shrink : NaN;
 
+	// A basis runs along the container's main axis.
 	const flexBasisText = item("flex-basis", "auto");
-	const flexBasis = CSSValues.parseUnitValue(flexBasisText);
+	const flexBasis = toCellLength(
+		CSSValues.parseUnitValue(flexBasisText),
+		parentIsFlex &&
+		getComputedValue(boxParentElement(element)!, "flex-direction")
+			.startsWith("column"),
+		element,
+	);
 	style.flexBasis = toValue(
 		flexBasis ?? (flexBasisText === "auto" ? "auto" : undefined),
 	);
@@ -1125,15 +1228,19 @@ function styleLayoutNodeProperties(
 	// The gap shorthand is expanded in the cascade. The longhands are
 	// enough, and only a flex or grid container has a gap.
 	if (hasItemChildren(display)) {
-		const rowGap = CSSValues.parseUnitValue(
-			getComputedValue(element, "row-gap"),
+		const rowGap = toCellLength(
+			CSSValues.parseUnitValue(getComputedValue(element, "row-gap")),
+			true,
+			element,
 		);
 		if (typeof rowGap === "number") {
 			style.gap.row = Math.max(0, rowGap);
 		}
 
-		const columnGap = CSSValues.parseUnitValue(
-			getComputedValue(element, "column-gap"),
+		const columnGap = toCellLength(
+			CSSValues.parseUnitValue(getComputedValue(element, "column-gap")),
+			false,
+			element,
 		);
 		if (typeof columnGap === "number") {
 			style.gap.column = Math.max(0, columnGap);
@@ -2141,7 +2248,11 @@ function syncIndependentFormattingContext(
 			["column-gap", "column"],
 		];
 		for (const [property, gutter] of gaps) {
-			const gap = CSSValues.parseUnitValue(getComputedValue(element, property));
+			const gap = toCellLength(
+				CSSValues.parseUnitValue(getComputedValue(element, property)),
+				gutter === "row",
+				element,
+			);
 			style.gap[gutter] = typeof gap === "number" ? Math.max(0, gap) : 0;
 		}
 	}
@@ -3248,8 +3359,10 @@ function collectLeaves(
 				// run's available width, or `max-width: 100%` (every text
 				// control's value part) broke at its natural width and
 				// overflowed its text control.
-				const maxWidthValue = CSSValues.parseUnitValue(
-					getComputedValue(element, "max-width"),
+				const maxWidthValue = toCellLength(
+					CSSValues.parseUnitValue(getComputedValue(element, "max-width")),
+					false,
+					element,
 				);
 				let maxWidthCap: number | undefined;
 				if (typeof maxWidthValue === "number") {
@@ -3376,8 +3489,10 @@ function collectLeaves(
 				// This leaf IS where an inline-block's box gets its size (the
 				// layout node only reports the whole run), so min/max apply here.
 				// Values are border-box. Convert to content-box.
-				const minWidthValue = CSSValues.parseUnitValue(
-					getComputedValue(element, "min-width"),
+				const minWidthValue = toCellLength(
+					CSSValues.parseUnitValue(getComputedValue(element, "min-width")),
+					false,
+					element,
 				);
 				if (typeof minWidthValue === "number") {
 					finalContentWidth = Math.max(
@@ -3385,8 +3500,10 @@ function collectLeaves(
 						minWidthValue - horizontalBoxSpace,
 					);
 				}
-				const minHeightValue = CSSValues.parseUnitValue(
-					getComputedValue(element, "min-height"),
+				const minHeightValue = toCellLength(
+					CSSValues.parseUnitValue(getComputedValue(element, "min-height")),
+					true,
+					element,
 				);
 				if (typeof minHeightValue === "number") {
 					finalContentHeight = Math.max(
@@ -3400,8 +3517,10 @@ function collectLeaves(
 						maxWidthValue - horizontalBoxSpace,
 					);
 				}
-				const maxHeightValue = CSSValues.parseUnitValue(
-					getComputedValue(element, "max-height"),
+				const maxHeightValue = toCellLength(
+					CSSValues.parseUnitValue(getComputedValue(element, "max-height")),
+					true,
+					element,
 				);
 				if (typeof maxHeightValue === "number") {
 					finalContentHeight = Math.min(
@@ -4135,8 +4254,10 @@ export function getLineIndent(
 	if (!isFirstLine || !container) {
 		return 0;
 	}
-	const parsed = CSSValues.parseUnitValue(
-		getComputedValue(container, "text-indent"),
+	const parsed = toCellLength(
+		CSSValues.parseUnitValue(getComputedValue(container, "text-indent")),
+		false,
+		container,
 	);
 	if (parsed === null) {
 		return 0;
@@ -6860,8 +6981,8 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 			// A text control's windowed value shifts its content by its own
 			// scroll, so the caret stays in view, independent of whether its
 			// segment is found below.
-			accumulatedOffsetX -= (parent as Element).scrollLeft || 0;
-			accumulatedOffsetY -= (parent as Element).scrollTop || 0;
+			accumulatedOffsetX -= getScrollOffset(parent as Element, "left");
+			accumulatedOffsetY -= getScrollOffset(parent as Element, "top");
 			let found = false;
 			for (const line of currentBreakResult.lines) {
 				for (const segment of line.segments) {
@@ -6907,11 +7028,15 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		ancestor = flatParentElement(ancestor)
 	) {
 		if (getPosition(ancestor) === "relative") {
-			const left = CSSValues.parseSignedUnitValue(
-				getComputedValue(ancestor, "left"),
+			const left = toCellLength(
+				CSSValues.parseSignedUnitValue(getComputedValue(ancestor, "left")),
+				false,
+				ancestor,
 			);
-			const top = CSSValues.parseSignedUnitValue(
-				getComputedValue(ancestor, "top"),
+			const top = toCellLength(
+				CSSValues.parseSignedUnitValue(getComputedValue(ancestor, "top")),
+				true,
+				ancestor,
 			);
 			if (typeof left === "number") {
 				containerX += left;

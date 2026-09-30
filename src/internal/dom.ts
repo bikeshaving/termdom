@@ -8,6 +8,7 @@ import {
 	HTML_TAG_INTERFACES,
 	WINDOW_EVENT_HANDLERS,
 } from "../generated/htmlidl.ts";
+import {cellsToPx, getCellSize, UNIT_CELL} from "./cellsize.ts";
 import {
 	adoptStyleSheets,
 	type Cascade,
@@ -417,7 +418,10 @@ export function revealTextControlCaret(document: globalThis.Document): void {
 
 	const shown = valueText.data;
 	// Seed from the current scrollLeft so a settled window doesn't jitter.
-	const currentScroll = Math.max(0, Math.round(valueSpan.scrollLeft));
+	const currentScroll = Math.max(
+		0,
+		Math.round(getScrollOffset(valueSpan, "left")),
+	);
 	let scrollOffset = 0;
 	for (let acc = 0; scrollOffset < shown.length && acc < currentScroll;) {
 		acc += getStringWidth(shown[scrollOffset]);
@@ -448,7 +452,7 @@ export function revealTextControlCaret(document: globalThis.Document): void {
 	}
 	const scrollLeft = getStringWidth(shown.slice(0, scrollOffset));
 	if (scrollLeft !== currentScroll) {
-		valueSpan.scrollLeft = scrollLeft;
+		valueSpan.scrollLeft = cellsToPx(scrollLeft, false, valueSpan);
 	}
 }
 
@@ -9875,6 +9879,17 @@ const scrollOffsets = new WeakMap<
 	{left: number; top: number}
 >();
 
+/**
+ * How far a box is scrolled, in cells: what layout and paint offset its
+ * content by. scrollTop and scrollLeft report it in CSS pixels.
+ */
+export function getScrollOffset(
+	element: globalThis.Element,
+	axis: "left" | "top",
+): number {
+	return scrollOffsets.get(element as unknown as Element)?.[axis] ?? 0;
+}
+
 Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 	value: "Element",
 	configurable: true,
@@ -9926,9 +9941,13 @@ Object.defineProperties(Element.prototype, {
 	// headless document a write is stored and read back but moves nothing.
 	scrollLeft: {
 		get(this: Element): number {
-			return isDocumentScroller(this)
-				? 0
-				: (scrollOffsets.get(this)?.left ?? 0);
+			if (isDocumentScroller(this)) {
+				return 0;
+			}
+			const left = scrollOffsets.get(this)?.left ?? 0;
+			return getAttachedDocument(this) === undefined
+				? left
+				: cellsToPx(left, false, this);
 		},
 		set(this: Element, value: number) {
 			setScrollOffset(this, "left", value);
@@ -9941,9 +9960,13 @@ Object.defineProperties(Element.prototype, {
 			const attached = isDocumentScroller(this)
 				? getAttachedDocument(this)
 				: undefined;
-			return attached
-				? attached[kScreen].scrollTop
-				: (scrollOffsets.get(this)?.top ?? 0);
+			if (attached) {
+				return cellsToPx(attached[kScreen].scrollTop, true, this);
+			}
+			const top = scrollOffsets.get(this)?.top ?? 0;
+			return getAttachedDocument(this) === undefined
+				? top
+				: cellsToPx(top, true, this);
 		},
 		set(this: Element, value: number) {
 			setScrollOffset(this, "top", value);
@@ -10025,14 +10048,31 @@ function toViewportRect(
 	rect: globalThis.DOMRect,
 	element: Element | null,
 ): globalThis.DOMRect {
-	if (element !== null && attached[kLayout].isInFixedSpace(element)) {
+	const scrolled = element !== null && attached[kLayout].isInFixedSpace(element)
+		? rect
+		: new DOMRect(
+			rect.x,
+			rect.y - attached[kScreen].scrollTop,
+			rect.width,
+			rect.height,
+		);
+	return toPixelRect(attached as unknown as Node, scrolled);
+}
+
+// Cells to the CSS pixels every geometry API reports in.
+function toPixelRect(
+	node: Node | globalThis.Node,
+	rect: globalThis.DOMRect,
+): globalThis.DOMRect {
+	const cell = getCellSize(node as globalThis.Node);
+	if (cell === UNIT_CELL) {
 		return rect;
 	}
 	return new DOMRect(
-		rect.x,
-		rect.y - attached[kScreen].scrollTop,
-		rect.width,
-		rect.height,
+		rect.x * cell.width,
+		rect.y * cell.height,
+		rect.width * cell.width,
+		rect.height * cell.height,
 	);
 }
 
@@ -11071,28 +11111,44 @@ function getSettledLayout(element: Element): Layout | undefined {
 Object.defineProperties(HTMLElement.prototype, {
 	offsetWidth: {
 		get(this: HTMLElement): number {
-			return getSettledLayout(this)?.offsetSize(this).width ?? 0;
+			return cellsToPx(
+				getSettledLayout(this)?.offsetSize(this).width ?? 0,
+				false,
+				this,
+			);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetHeight: {
 		get(this: HTMLElement): number {
-			return getSettledLayout(this)?.offsetSize(this).height ?? 0;
+			return cellsToPx(
+				getSettledLayout(this)?.offsetSize(this).height ?? 0,
+				true,
+				this,
+			);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetTop: {
 		get(this: HTMLElement): number {
-			return getSettledLayout(this)?.offsetPosition(this).top ?? 0;
+			return cellsToPx(
+				getSettledLayout(this)?.offsetPosition(this).top ?? 0,
+				true,
+				this,
+			);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetLeft: {
 		get(this: HTMLElement): number {
-			return getSettledLayout(this)?.offsetPosition(this).left ?? 0;
+			return cellsToPx(
+				getSettledLayout(this)?.offsetPosition(this).left ?? 0,
+				false,
+				this,
+			);
 		},
 		configurable: true,
 		enumerable: true,
@@ -11112,14 +11168,22 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	clientWidth: {
 		get(this: HTMLElement): number {
-			return getSettledLayout(this)?.clientSize(this).width ?? 0;
+			return cellsToPx(
+				getSettledLayout(this)?.clientSize(this).width ?? 0,
+				false,
+				this,
+			);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientHeight: {
 		get(this: HTMLElement): number {
-			return getSettledLayout(this)?.clientSize(this).height ?? 0;
+			return cellsToPx(
+				getSettledLayout(this)?.clientSize(this).height ?? 0,
+				true,
+				this,
+			);
 		},
 		configurable: true,
 		enumerable: true,
@@ -11127,28 +11191,36 @@ Object.defineProperties(HTMLElement.prototype, {
 	// The border widths, which only the cascade decides.
 	clientLeft: {
 		get(this: HTMLElement): number {
-			return getBoxModel(this).borderLeftWidth;
+			return cellsToPx(getBoxModel(this).borderLeftWidth, false, this);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientTop: {
 		get(this: HTMLElement): number {
-			return getBoxModel(this).borderTopWidth;
+			return cellsToPx(getBoxModel(this).borderTopWidth, true, this);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollWidth: {
 		get(this: HTMLElement): number {
-			return getSettledLayout(this)?.scrollSize(this).width ?? 0;
+			return cellsToPx(
+				getSettledLayout(this)?.scrollSize(this).width ?? 0,
+				false,
+				this,
+			);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollHeight: {
 		get(this: HTMLElement): number {
-			return getSettledLayout(this)?.scrollSize(this).height ?? 0;
+			return cellsToPx(
+				getSettledLayout(this)?.scrollSize(this).height ?? 0,
+				true,
+				this,
+			);
 		},
 		configurable: true,
 		enumerable: true,
@@ -12858,10 +12930,11 @@ export class ShadowRoot
 		if (attached === undefined) {
 			return null;
 		}
+		const cell = getCellSize(this[kDocument] as unknown as Node);
 		return elementAtDocumentPoint(
 			this[kDocument] as unknown as globalThis.Document,
-			toDouble(x),
-			toDouble(y) + attached[kScreen].scrollTop,
+			toDouble(x) / cell.width,
+			toDouble(y) / cell.height + attached[kScreen].scrollTop,
 			this as unknown as globalThis.Node,
 		) as unknown as Element | null;
 	}
@@ -17796,7 +17869,9 @@ const GAUGE_GROOVE_GLYPH = "░";
 function getGaugeGlyphs(host: Element, glyph: string): string {
 	const view = (host.ownerDocument as {defaultView?: {innerWidth?: number}})
 		.defaultView;
-	const width = view?.innerWidth;
+	const width = view?.innerWidth === undefined
+		? undefined
+		: view.innerWidth / getCellSize(host).width;
 	return glyph.repeat(
 		Math.max(40, typeof width === "number" && width > 0 ? width : 40),
 	);
@@ -23522,12 +23597,19 @@ class ResizeObserver
 		// that size is zero. Reporting it is how the DOM lets a component
 		// notice it has been hidden. Skipping it left the last size it ever had
 		// stuck.
-		const content =
+		const cells =
 			getContentBox(target, layout) ?? {width: 0, height: 0, top: 0, left: 0};
+		const content = {
+			width: cellsToPx(cells.width, false, target),
+			height: cellsToPx(cells.height, true, target),
+			top: cellsToPx(cells.top, true, target),
+			left: cellsToPx(cells.left, false, target),
+		};
 
-		const border = layout.getRect(target);
-		// device-pixel-content-box is the content box. A cell is the device
-		// pixel here, so the two can never differ.
+		const borderCells = layout.getRect(target);
+		const border = borderCells && toPixelRect(target, borderCells);
+		// device-pixel-content-box is the content box: devicePixelRatio is 1,
+		// so a CSS pixel is a device pixel.
 		const watched = options?.box === "border-box"
 			? {
 				width: border?.width ?? content.width,
@@ -23564,7 +23646,6 @@ class ResizeObserver
 						blockSize: border?.height ?? content.height,
 					},
 				],
-				// A cell is the device pixel here, so these coincide.
 				devicePixelContentBoxSize: [box],
 			},
 		};
@@ -23691,21 +23772,23 @@ class IntersectionObserver
 		viewport: globalThis.DOMRect,
 		frame: number,
 	): {state: number; entry: IntersectionObserverEntry} | null {
-		const box = layout.getRect(target);
-		if (!box) {
+		const boxCells = layout.getRect(target);
+		if (!boxCells) {
 			return null;
 		}
+		const box = toPixelRect(target, boxCells);
 
 		// The root is an explicit element's border box or the viewport. Either
 		// way it is grown by rootMargin, which is the point of that option: it
 		// lets a list start loading a row before it scrolls into view.
 		const root = this[kIntersectionRoot];
-		const rootBox = root && root.nodeType === ELEMENT_NODE
+		const rootCells = root && root.nodeType === ELEMENT_NODE
 			? layout.getRect(root as globalThis.Element)
 			: viewport;
-		if (!rootBox) {
+		if (!rootCells) {
 			return null;
 		}
+		const rootBox = toPixelRect(target, rootCells);
 		const rootBounds = applyRootMargin(rootBox, this.rootMargin);
 
 		const {ratio, rect} = getIntersectionRatio(box, rootBounds);
@@ -23750,10 +23833,8 @@ function getIntersectionRatio(
 }
 
 // The root-margin rules: one to four lengths, in the order top, right,
-// bottom, left. Lengths are cells whatever unit is written (a row
-// vertically, a column horizontally), so `px` and `ch` mean the same
-// thing here, as everywhere in the box model. Percentages are resolved
-// against the root's own size, as the spec requires.
+// bottom, left, in CSS pixels like the rects they grow. Percentages are
+// resolved against the root's own size, as the spec requires.
 function applyRootMargin(
 	rect: globalThis.DOMRect,
 	margin: string,
@@ -25633,7 +25714,12 @@ Object.defineProperties(Document.prototype, {
 			// Per CSSOM View, x/y are viewport-relative. Convert to the
 			// document-relative space hit testing works in, the same conversion
 			// getBoundingClientRect makes in the other direction.
-			return elementAtDocumentPoint(this, x, y + attached[kScreen].scrollTop);
+			const cell = getCellSize(this);
+			return elementAtDocumentPoint(
+				this,
+				x / cell.width,
+				y / cell.height + attached[kScreen].scrollTop,
+			);
 		},
 		writable: true,
 		configurable: true,
@@ -25647,9 +25733,14 @@ Object.defineProperties(Document.prototype, {
 		value(this: Document, x: number, y: number): globalThis.Element[] {
 			const stack: globalThis.Element[] = [];
 			const attached = getAttachedDocument(this);
+			const cell = getCellSize(this);
 			let hit = attached === undefined
 				? null
-				: elementAtDocumentPoint(this, x, y + attached[kScreen].scrollTop);
+				: elementAtDocumentPoint(
+					this,
+					x / cell.width,
+					y / cell.height + attached[kScreen].scrollTop,
+				);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
 				hit = getFlatTreeParent(hit as unknown as Element);
@@ -26337,13 +26428,15 @@ function setScrollOffset(
 		writeScrollOffset(element, axis, toDouble(value));
 		return;
 	}
+	const cell = getCellSize(element);
+	const size = axis === "top" ? cell.height : cell.width;
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
-			scrollDocumentTo(element[kDocument], Number(value));
+			scrollDocumentTo(element[kDocument], Number(value) / size);
 		}
 		return;
 	}
-	const numeric = Number(value);
+	const numeric = Number(value) / size;
 	let next = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
 	if (element.isConnected) {
 		flushLayout(element);
@@ -34114,7 +34207,9 @@ export class Window extends EventTarget {
 	// size the terminal had when the engine was built.
 	get innerWidth(): number {
 		const attached = getAttachedDocument(this.document);
-		return attached === undefined ? 0 : attached[kScreen].cols;
+		return attached === undefined
+			? 0
+			: cellsToPx(attached[kScreen].cols, false, this.document);
 	}
 
 	get outerWidth(): number {
@@ -34123,7 +34218,9 @@ export class Window extends EventTarget {
 
 	get innerHeight(): number {
 		const attached = getAttachedDocument(this.document);
-		return attached === undefined ? 0 : attached[kScreen].rows;
+		return attached === undefined
+			? 0
+			: cellsToPx(attached[kScreen].rows, true, this.document);
 	}
 
 	get outerHeight(): number {
@@ -34134,7 +34231,9 @@ export class Window extends EventTarget {
 	// moves the anchor after the window is built.
 	get screenTop(): number {
 		const attached = getAttachedDocument(this.document);
-		return attached === undefined ? 0 : attached[kScreen].documentTop;
+		return attached === undefined
+			? 0
+			: cellsToPx(attached[kScreen].documentTop, true, this.document);
 	}
 
 	// Standard window scrolling, mapped onto the document scroll. scrollY is
@@ -34143,7 +34242,9 @@ export class Window extends EventTarget {
 	// 0.
 	get scrollY(): number {
 		const attached = getAttachedDocument(this.document);
-		return attached === undefined ? 0 : attached[kScreen].scrollTop;
+		return attached === undefined
+			? 0
+			: cellsToPx(attached[kScreen].scrollTop, true, this.document);
 	}
 
 	get pageYOffset(): number {
@@ -34479,9 +34580,9 @@ export class Window extends EventTarget {
 			return;
 		}
 		const top = typeof xOrOptions === "object" && xOrOptions !== null
-			? (xOrOptions.top ?? attached[kScreen].scrollTop)
+			? (xOrOptions.top ?? this.scrollY)
 			: (y ?? 0);
-		scrollDocumentTo(this.document, top);
+		scrollDocumentTo(this.document, top / getCellSize(this.document).height);
 	}
 
 	scroll(options?: globalThis.ScrollToOptions): void;
@@ -34504,7 +34605,10 @@ export class Window extends EventTarget {
 		const top = typeof xOrOptions === "object" && xOrOptions !== null
 			? (xOrOptions.top ?? 0)
 			: (y ?? 0);
-		scrollDocumentTo(this.document, attached[kScreen].scrollTop + top);
+		scrollDocumentTo(
+			this.document,
+			attached[kScreen].scrollTop + top / getCellSize(this.document).height,
+		);
 	}
 
 	// The callback runs at the start of the next frame, before that

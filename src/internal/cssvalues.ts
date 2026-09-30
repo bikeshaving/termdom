@@ -2587,6 +2587,9 @@ export function getComputedValueEntry(
 export interface LengthContext {
 	font: number;
 
+	// One cell's width in CSS pixels: the advance of every glyph.
+	cellWidth: number;
+
 	// For `rem`.
 	root: number;
 	viewportWidth: number;
@@ -2596,13 +2599,11 @@ export interface LengthContext {
 	percent: number | null;
 }
 
-// One cell. `1em` is one cell in a document that declares no font size,
-// and a document that declares a size still gets the spec's arithmetic.
-const INITIAL_FONT_SIZE = 1;
-
-export function getFontSize(fontSize: string): number {
+// Without a size of its own a document's font is the initial one, a
+// cell tall, and a declared size still gets the spec's arithmetic.
+export function getFontSize(fontSize: string, initial: number): number {
 	const size = parseFloat(fontSize);
-	return Number.isFinite(size) ? size : INITIAL_FONT_SIZE;
+	return Number.isFinite(size) ? size : initial;
 }
 
 function getUnitFactor(unit: string, context: LengthContext): number | null {
@@ -2618,11 +2619,11 @@ function getUnitFactor(unit: string, context: LengthContext): number | null {
 		// One cell wide whatever font size the document declares. A style
 		// cannot resize the grid's column.
 		case "ch":
-			return 1;
+			return context.cellWidth;
 		// The width of 水, which a terminal draws two cells wide whatever the
 		// font size, as it draws every character in whole cells.
 		case "ic":
-			return 2;
+			return context.cellWidth * 2;
 		case "vw":
 			return context.viewportWidth / 100;
 		case "vh":
@@ -5732,7 +5733,7 @@ interface TrackRepeat {
 	endNames: string[];
 }
 
-type TrackListPart =
+export type TrackListPart =
 	{type: "track"; track: TrackListTrack} |
 	{type: "repeat"; repeat: TrackRepeat};
 
