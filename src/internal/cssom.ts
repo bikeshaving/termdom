@@ -4297,11 +4297,25 @@ function getResolvedMinSize(
 	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 }
 
+// As layout drew it: a whole number of cells, given back in CSS pixels, so
+// it measures against the rects it is subtracted from.
 function getEdgeLength(
 	declaration: MeasuredDeclaration,
 	property: string,
 ): number {
-	return parseFloat(declaration.getPropertyValue(property)) || 0;
+	return toDrawnEdge(
+		declaration[kElement],
+		property,
+		parseFloat(declaration.getPropertyValue(property)) || 0,
+	);
+}
+
+function toDrawnEdge(element: Element, property: string, px: number): number {
+	const vertical = /-(?:top|bottom)(?:-|$)/.test(property);
+	const cells = property.startsWith("border-")
+		? toCellBorder(px, vertical, element)
+		: toCellLength(px, vertical, element);
+	return cellsToPx(cells as number, vertical, element);
 }
 
 // The space an `auto` margin actually took, measured from the two
@@ -4319,7 +4333,7 @@ function getAutoMargin(
 		return 0;
 	}
 	const edge = (name: string): number =>
-		parseFloat(getComputedValue(parent, name)) || 0;
+		toDrawnEdge(parent, name, parseFloat(getComputedValue(parent, name)) || 0);
 	const left = parentRect.x + edge("border-left-width") + edge("padding-left");
 	const top = parentRect.y + edge("border-top-width") + edge("padding-top");
 	const right =

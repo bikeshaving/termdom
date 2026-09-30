@@ -121,6 +121,20 @@ test("scroll offsets are written and read in CSS pixels", () => {
 	dom.dispose();
 });
 
+test("a used width takes away the edges as they were drawn", () => {
+	const {dom} = make("typical");
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<div id=\"box\" style=\"box-sizing: content-box; width: 80px; " +
+		"padding: 5px; border: 1px solid\">x</div>";
+	const style = window.getComputedStyle(document.getElementById("box")!);
+	// Five pixels of padding is a cell across and nothing down, and a border
+	// is at least a cell either way.
+	expect(style.width).toBe("80px");
+	expect(style.height).toBe("16px");
+	dom.dispose();
+});
+
 test("a point in CSS pixels hits the cell it falls in", () => {
 	const {dom} = make("typical");
 	const {document} = dom;
