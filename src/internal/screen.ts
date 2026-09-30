@@ -1809,12 +1809,12 @@ export class Screen {
 		};
 	}
 
-	/** One cell in terminal pixels. */
 	/** The colors the terminal draws: true color, 256 or 16. */
 	get colorDepth(): ColorDepth {
 		return this[kWriter][kColorDepth];
 	}
 
+	/** One cell in terminal pixels. */
 	get cellPixels(): {width: number; height: number} {
 		return this[kCellPixels];
 	}

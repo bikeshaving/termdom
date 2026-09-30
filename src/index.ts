@@ -28,6 +28,7 @@ import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
 import {Screen} from "./internal/screen.ts";
 
+export type {CellSize} from "./internal/cellsize.ts";
 export {transportFromProcess} from "./internal/exchange.ts";
 export type {
 	ProcessLike,
@@ -57,7 +58,8 @@ export interface TermDOMOptions {
 	 * - `"unit"` (the default): a cell is one CSS pixel each way.
 	 * - `"typical"`: 8 by 16, the usual terminal cell.
 	 * - `"auto"`: the size the terminal reports, asked for before the
-	 *   first frame. `"typical"` when it cannot answer, as on a pipe.
+	 *   first frame, which waits a second at most. `"typical"` when it
+	 *   cannot answer, as on a pipe.
 	 * - `{width, height}`: that size.
 	 */
 	cellSize?: "unit" | "typical" | "auto" | CellSize;
@@ -65,8 +67,7 @@ export interface TermDOMOptions {
 
 function getCellSizeSource(
 	option: TermDOMOptions["cellSize"],
-	getTransport: () => TerminalTransport,
-	screen: Screen,
+	measured: () => Readonly<CellSize>,
 ): () => Readonly<CellSize> {
 	if (option === undefined || option === "unit") {
 		return () => UNIT_CELL;
@@ -75,7 +76,7 @@ function getCellSizeSource(
 		return () => TYPICAL_CELL;
 	}
 	if (option === "auto") {
-		return () => getTransport().interactive ? screen.cellPixels : TYPICAL_CELL;
+		return measured;
 	}
 	if (
 		typeof option === "object" &&
@@ -178,6 +179,9 @@ export class TermDOM {
 	readonly window: Window;
 
 	constructor(options: TermDOMOptions = {}) {
+		const cellSize = getCellSizeSource(options.cellSize, () =>
+			this[kTransport].interactive ? this[kScreen].cellPixels : TYPICAL_CELL,
+		);
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -233,14 +237,7 @@ export class TermDOM {
 		setColorSchemeSource(document, () => getColorScheme(this));
 
 		this[kMeasuresCell] = options.cellSize === "auto";
-		setCellSizeSource(
-			document,
-			getCellSizeSource(
-				options.cellSize,
-				() => this[kTransport],
-				this[kScreen],
-			),
-		);
+		setCellSizeSource(document, cellSize);
 
 		DOM.attachDocument(
 			document,
