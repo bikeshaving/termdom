@@ -188,6 +188,29 @@ test("auto does not wait on a terminal that answers DA1 but not the size", async
 	dom.dispose();
 });
 
+test("a font zoom is one resize, at the new cell", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const cell = {ask: "\x1b[16t", reply: "\x1b[6;20;10t"};
+	scriptReplies(terminal, [cell]);
+	const dom = new TermDOM({transport: terminal.transport, cellSize: "auto"});
+	await dom.attach();
+	await nextFrame(dom);
+	const sizes: Array<[number, number]> = [];
+	dom.window.addEventListener("resize", () => {
+		sizes.push([dom.window.innerWidth, dom.window.innerHeight]);
+	});
+	// Zoomed out: twice the cells, each half the size.
+	cell.reply = "\x1b[6;10;5t";
+	terminal.resize(80, 20);
+	(terminal as any).emit("SIGWINCH");
+	for (let waited = 0; sizes.length === 0 && waited < 2000; waited += 25) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	expect(sizes).toEqual([[400, 200]]);
+	dom.dispose();
+});
+
 test("auto without a terminal to ask is typical", () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	(terminal.stdout as unknown as {isTTY: boolean}).isTTY = false;

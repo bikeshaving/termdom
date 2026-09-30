@@ -794,6 +794,7 @@ const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kResizeTimer = Symbol("resizeTimer");
 const kSettlingResize = Symbol("settlingResize");
 const kTransportClosed = Symbol("transportClosed");
+const kDefersResize = Symbol("defersResize");
 const kWindow = Symbol("window");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
@@ -849,6 +850,7 @@ export interface Exchange {
 	// began is abandoned. Null between bursts.
 	[kSettlingResize]: object | null;
 	[kTransportClosed]: boolean;
+	[kDefersResize]: boolean;
 	[kInput]: Input | null;
 	[kWriter]: WritableStreamDefaultWriter<string> | null;
 	[kReader]: ReadableStreamDefaultReader<string> | null;
@@ -924,6 +926,7 @@ export class Exchange extends EventTarget {
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
 		this[kTransportClosed] = false;
+		this[kDefersResize] = false;
 	}
 
 	get interactive(): boolean {
@@ -949,6 +952,11 @@ export class Exchange extends EventTarget {
 	 */
 	get cursorDetectionPending(): Promise<void> | null {
 		return this[kCursorDetectionPromise];
+	}
+
+	/** Leave the page's resize event to whoever handles terminalresize. */
+	deferResizeEvent(): void {
+		this[kDefersResize] = true;
 	}
 
 	/**
@@ -1719,6 +1727,14 @@ async function resizeLoop(
 	}
 }
 
+export class TerminalResizeEvent extends Event {
+	readonly sizeChanged: boolean;
+	constructor(sizeChanged: boolean) {
+		super("terminalresize");
+		this.sizeChanged = sizeChanged;
+	}
+}
+
 const RESIZE_DEBOUNCE_MS = 40;
 
 // A drag fires a SIGWINCH per width, and each redraw leaves reflowed
@@ -1749,11 +1765,11 @@ function terminalResized(
 	// A size change can flip any @media result and every vw/vh value.
 	session[kCascade].syncStylesheets();
 	const window = session[kWindow];
-	if (sizeChanged) {
+	if (sizeChanged && !session[kDefersResize]) {
 		dispatchAsUserAgent(window, new window.Event("resize"));
 	}
 	syncMediaQueries(window.document);
-	session.dispatchEvent(new Event("terminalresize"));
+	session.dispatchEvent(new TerminalResizeEvent(sizeChanged));
 }
 
 // The terminal has rewrapped the old frame with the text above it. The
