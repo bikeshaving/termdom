@@ -87,6 +87,8 @@ export const UA_ELEMENT_STYLES = `
 	th { display: table-cell; border-top-width: 1px; border-right-width: 1px; border-bottom-width: 1px; border-left-width: 1px; border-top-style: solid; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; padding-left: 1ch; padding-right: 1ch; font-weight: bold; }
 	thead { display: table-header-group; }
 	tr { display: table-row; }
+	thead, tbody, tfoot, tr { vertical-align: middle; }
+	td, th { vertical-align: inherit; }
 	input[type=checkbox i], input[type=radio i] { width: 3ch; }
 	math { display: inline math; }
 	math[display=block i] { display: block math; text-align: center; }

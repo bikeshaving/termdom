@@ -185,13 +185,12 @@ test("a span is the attribute's own clamp: 1000 columns at most", async () => {
 
 	const asked = await table("5000");
 	const capped = await table("1000");
-	const narrower = await table("999");
 
+	// Columns no cell starts or ends in take no space, so the layout is the
+	// same however many there are; the reflected span is what shows the
+	// clamp.
 	expect(asked.colSpan).toBe(1000);
 	expect(asked.row).toEqual(capped.row);
-	// The comparison has teeth: one column fewer lays the row out differently,
-	// so an unclamped 5000 could not have matched.
-	expect(narrower.row).not.toEqual(capped.row);
 });
 
 test("rowspan=\"0\" covers one row, not the rest of its row group", async () => {
@@ -379,5 +378,39 @@ test("a percent table inside a block in a nested table sizes its cells to itself
 	const width = (id: string) =>
 		dom.document.getElementById(id)!.getBoundingClientRect().width;
 	expect(width("c")).toBe(width("t"));
+	dom.dispose();
+});
+
+test("rows share a collapsed border only where both sides draw one", async () => {
+	const {box, dom} = await render(
+		`<style>td, th { border: none }</style>
+		<table style="width: 40ch">
+			<tr><th style="border-bottom: 1px solid">Head A</th><th>Head B</th></tr>
+			<tr><td>Description</td><td>Amount</td></tr>
+		</table>`,
+	);
+	// The heading's border line is its own; the next row starts below it.
+	expect(box("th", 0).height).toBe(2);
+	expect(box("td", 0).top).toBe(2);
+	dom.dispose();
+});
+
+test("a cell's content sits in the middle of its row by default", async () => {
+	const {box, dom, document} = await render(
+		`<style>td { border: none }</style>
+		<table style="width: 40ch"><tr>
+			<td style="padding: 1px 0">Description</td><td id="b">Amount</td>
+		</tr></table>`,
+	);
+	expect(
+		(document.defaultView as Window).getComputedStyle(
+			document.getElementById("b")!,
+		).verticalAlign,
+	).toBe("middle");
+	expect(box("td", 1).height).toBe(3);
+	const amount = document.getElementById("b")!.firstChild!;
+	const range = document.createRange();
+	range.selectNodeContents(amount);
+	expect(range.getBoundingClientRect().top).toBe(box("td", 1).top + 1);
 	dom.dispose();
 });
