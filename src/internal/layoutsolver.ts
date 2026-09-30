@@ -442,6 +442,10 @@ export class LayoutNode {
 	// Null until a sizing query is first cached, which many nodes never see.
 	cachedSizes: Array<CachedSize | null> | null;
 	cachedLayout: CachedSize | null;
+
+	// A baseline-aligned table cell's content moves down this far, to its
+	// row's baseline. Set by the table before the cell is placed.
+	cellBaselineShift: number;
 	// Whether nothing in the subtree resolves a percentage against the
 	// owner's size, so a cached result holds whatever that size is. Set by
 	// a full layout, and false until one.
@@ -462,6 +466,7 @@ export class LayoutNode {
 		this.stale = true;
 		this.cachedSizes = null;
 		this.cachedLayout = null;
+		this.cellBaselineShift = 0;
 		this.owner = null;
 		this.style = createStyle();
 		this.result = createResult();
@@ -817,6 +822,29 @@ function getAlignSelf(parent: LayoutNode, child: LayoutNode): Align {
 // (css-flexbox-1 §8.5), and an empty one its content edge. Not
 // flex-start: leading border and padding push the first row down, and
 // this compensates for them.
+// Where a box's first line sits below its border edge, read from its
+// styles alone, so a box only measured, and not yet placed, has one.
+function getFirstLineOffset(node: LayoutNode, ownerWidth: number): number {
+	const top = getEdgePaddingAndBorder(node, "top", ownerWidth);
+	if (node.measure !== null) {
+		return top;
+	}
+	for (const child of node.children) {
+		if (
+			child.style.displayType === "none" ||
+			isOutOfFlowType(child.style.positionType)
+		) {
+			continue;
+		}
+		return (
+			top +
+			resolveMargin(child.style.margin.top, ownerWidth) +
+			getFirstLineOffset(child, ownerWidth)
+		);
+	}
+	return top;
+}
+
 function getBaselineWithinBorderBox(
 	node: LayoutNode,
 	ownerWidth: number,
@@ -2876,6 +2904,32 @@ function layoutTable(
 				rowHeights[cell.row],
 				cell.node.result.height,
 			);
+		}
+	}
+
+	// CSS 2.1 §17.5.3: the baseline-aligned cells of a row line up their
+	// first lines, each moved down to the lowest of them, and the row grows
+	// by what that takes.
+	const baselines = new Map<TableCell, number>();
+	const rowBaselines = new Array<number>(rows.length).fill(-1);
+	for (const cell of cells) {
+		if (cell.rowSpan !== 1 || cell.node.style.alignContent !== "baseline") {
+			continue;
+		}
+		const baseline = getFirstLineOffset(cell.node, ownerWidth);
+		baselines.set(cell, baseline);
+		rowBaselines[cell.row] = Math.max(rowBaselines[cell.row], baseline);
+	}
+	for (const [cell, baseline] of baselines) {
+		const shift = rowBaselines[cell.row] - baseline;
+		rowHeights[cell.row] = Math.max(
+			rowHeights[cell.row],
+			cell.node.result.height + shift,
+		);
+		if (cell.node.cellBaselineShift !== shift) {
+			// Its content moves, which a layout cached for its size would not.
+			cell.node.cellBaselineShift = shift;
+			cell.node.cachedLayout = null;
 		}
 	}
 
@@ -5301,11 +5355,15 @@ function layoutBlock(
 	// A table cell taller than its content places the content by its
 	// vertical-align, which is align-content on a block.
 	const spare = node.result.height - paddingBorderColumn - contentHeight;
-	const alignShift = node.style.displayType !== "table-cell" || spare <= 0
+	const alignShift = node.style.displayType !== "table-cell"
 		? 0
-		: node.style.alignContent === "center"
-			? Math.floor(spare / 2)
-			: node.style.alignContent === "flex-end" ? spare : 0;
+		: node.style.alignContent === "baseline"
+			? node.cellBaselineShift
+			: spare <= 0
+				? 0
+				: node.style.alignContent === "center"
+					? Math.floor(spare / 2)
+					: node.style.alignContent === "flex-end" ? spare : 0;
 
 	for (let i = 0; i < inFlow.length; i++) {
 		const child = inFlow[i];

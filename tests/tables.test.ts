@@ -414,3 +414,26 @@ test("a cell's content sits in the middle of its row by default", async () => {
 	expect(range.getBoundingClientRect().top).toBe(box("td", 1).top + 1);
 	dom.dispose();
 });
+
+// CSS 2.1 §17.5.3: baseline cells line up their first lines.
+test("baseline cells in a row line up their first lines", async () => {
+	const {dom, document} = await render(
+		`<style>td { border: none; vertical-align: baseline }</style>
+		<table><tr>
+			<td style="padding: 2px 0">padded</td>
+			<td id="plain">plain</td>
+			<td style="padding-top: 1px">one</td>
+		</tr></table>`,
+	);
+	const top = (text: string) => {
+		const cell = [...document.querySelectorAll("td")].find((td) =>
+			td.textContent === text,
+		)!;
+		const range = document.createRange();
+		range.selectNodeContents(cell.firstChild!);
+		return range.getBoundingClientRect().top;
+	};
+	expect(top("plain")).toBe(top("padded"));
+	expect(top("one")).toBe(top("padded"));
+	dom.dispose();
+});
