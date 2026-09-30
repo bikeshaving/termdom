@@ -3808,7 +3808,9 @@ export function splitMediaQueryList(text: string): string[] {
 		if (character === "(") {
 			depth++;
 		} else if (character === ")") {
-			depth--;
+			// A `)` that closes nothing is a token of its own (css-syntax-3
+			// §5.4.7), which leaves the commas after it at the top level.
+			depth = Math.max(0, depth - 1);
 		} else if (character === "," && depth === 0) {
 			queries.push(text.slice(start, index));
 			start = index + 1;
@@ -3816,6 +3818,71 @@ export function splitMediaQueryList(text: string): string[] {
 	}
 	queries.push(text.slice(start));
 	return queries;
+}
+
+const RESERVED_MEDIA_TYPES = new Set(["only", "not", "and", "or", "layer"]);
+
+// A query as its own list parses it: its open blocks close at its end,
+// and one that is not a media query becomes `not all` (mediaqueries-4
+// §3.2).
+function readMediaQuery(piece: string): string {
+	let depth = 0;
+	for (const character of piece) {
+		if (character === "(") {
+			depth++;
+		} else if (character === ")") {
+			depth = Math.max(0, depth - 1);
+		}
+	}
+	const closed = piece.trim() + ")".repeat(depth);
+	const queries = closed === "" ? null : parseMediaQueryList(closed);
+	const query = queries?.length === 1 ? queries[0] : null;
+	if (
+		query === null ||
+		RESERVED_MEDIA_TYPES.has((query.mediaType ?? "").toLowerCase()) ||
+		!isWellFormedCondition(query.condition ?? null)
+	) {
+		return "not all";
+	}
+	return serializeMediaQuery(closed) || "not all";
+}
+
+// Joiners sit between conditions, and `not` before one.
+function isWellFormedCondition(
+	condition: CSSTree.MediaConditionNode | null,
+): boolean {
+	if (condition === null) {
+		return true;
+	}
+	const parts = getMediaConditionParts(condition);
+	let expectOperand = true;
+	for (const part of parts) {
+		if (part.type === "Identifier") {
+			const word = (part.name ?? "").toLowerCase();
+			if (word === "not" && expectOperand) {
+				continue;
+			}
+			if ((word === "and" || word === "or") && !expectOperand) {
+				expectOperand = true;
+				continue;
+			}
+			return false;
+		}
+		if (part.type === "Condition" && !isWellFormedCondition(part)) {
+			return false;
+		}
+		expectOperand = false;
+	}
+	return !expectOperand;
+}
+
+/** A media query list as CSSOM serializes it: each query canonical. */
+export function serializeMediaQueryList(text: string): string {
+	const stripped = stripCSSComments(String(text ?? ""));
+	if (stripped.trim() === "") {
+		return "";
+	}
+	return splitMediaQueryList(stripped).map(readMediaQuery).join(", ");
 }
 
 // A prefix no `@namespace` declared names no namespace, and a selector
