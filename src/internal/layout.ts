@@ -3412,8 +3412,17 @@ function collectLeaves(
 
 				// Explicit dimensions win, unless the request owned the width
 				// above. An intrinsic probe's result must be the content's.
+				// max-width still caps a width, and min-width floors both
+				// (css2 §10.4).
 				if (boxModel.width !== undefined && !offerOwnsWidth) {
-					finalContentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
+					let width = boxModel.width;
+					if (maxWidthCap !== undefined) {
+						width = Math.min(width, maxWidthCap);
+					}
+					if (typeof minWidthValue === "number") {
+						width = Math.max(width, minWidthValue);
+					}
+					finalContentWidth = Math.max(0, width - horizontalBoxSpace);
 				}
 				if (boxModel.height !== undefined) {
 					finalContentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
