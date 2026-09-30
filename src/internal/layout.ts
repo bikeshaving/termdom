@@ -722,6 +722,7 @@ function applyInsets(
 const CELL_ALIGNMENTS: Record<string, Align> = {
 	middle: "center",
 	bottom: "flex-end",
+	baseline: "baseline",
 };
 
 // safe/unsafe make no difference on whole cells (the item overflows
