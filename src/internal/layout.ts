@@ -719,11 +719,21 @@ function applyInsets(
 	}
 }
 
-const CELL_ALIGNMENTS: Record<string, Align> = {
-	middle: "center",
-	bottom: "flex-end",
-	baseline: "baseline",
-};
+// A table cell's vertical-align, as the align-content that places its
+// content in the row (css-align-3 §5.1). Any value but these four aligns
+// a cell at the baseline (CSS 2.1 §17.5.4).
+function getCellAlignment(verticalAlign: string): Align {
+	switch (verticalAlign) {
+		case "top":
+			return "flex-start";
+		case "middle":
+			return "center";
+		case "bottom":
+			return "flex-end";
+		default:
+			return "baseline";
+	}
+}
 
 // safe/unsafe make no difference on whole cells (the item overflows
 // either way). first/last baseline both name the one baseline a cell
@@ -1156,12 +1166,9 @@ function styleLayoutNodeProperties(
 		style.displayType = "table-row";
 	} else if (display === "table-cell") {
 		style.displayType = "table-cell";
-		// A cell's vertical-align places its content in the row's height, as
-		// align-content does in a block (css-align-3 §5.1).
-		style.alignContent =
-			CELL_ALIGNMENTS[
-				getComputedValue(element, "vertical-align")
-			] ?? "flex-start";
+		style.alignContent = getCellAlignment(
+			getComputedValue(element, "vertical-align"),
+		);
 		// The reflected properties carry HTML's ranges. rowspan 0 ("to the end
 		// of the row group") is not implemented. Such a cell covers one row.
 		const cell = element as {colSpan?: number; rowSpan?: number};

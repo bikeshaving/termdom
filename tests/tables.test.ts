@@ -437,3 +437,25 @@ test("baseline cells in a row line up their first lines", async () => {
 	expect(top("one")).toBe(top("padded"));
 	dom.dispose();
 });
+
+// CSS 2.1 §17.5.4: a vertical-align other than top, middle, bottom and
+// baseline does not apply to a cell, which aligns at the baseline.
+test("a cell with another vertical-align aligns at the baseline", async () => {
+	const {dom, document} = await render(
+		`<style>td { border: none }</style>
+		<table><tr>
+			<td style="padding: 2px 0; vertical-align: baseline">padded</td>
+			<td style="vertical-align: sub">sub</td>
+		</tr></table>`,
+	);
+	const top = (text: string) => {
+		const cell = [...document.querySelectorAll("td")].find((td) =>
+			td.textContent === text,
+		)!;
+		const range = document.createRange();
+		range.selectNodeContents(cell.firstChild!);
+		return range.getBoundingClientRect().top;
+	};
+	expect(top("sub")).toBe(top("padded"));
+	dom.dispose();
+});
