@@ -2562,9 +2562,10 @@ function getUnitFactor(unit: string, context: LengthContext): number | null {
 		// cannot resize the grid's column.
 		case "ch":
 			return 1;
-		// The advance of 水, which a terminal draws two cells wide.
+		// The width of 水, which a terminal draws two cells wide whatever the
+		// font size, as it draws every character in whole cells.
 		case "ic":
-			return context.font * 2;
+			return 2;
 		case "vw":
 			return context.viewportWidth / 100;
 		case "vh":
