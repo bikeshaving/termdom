@@ -31,34 +31,33 @@ Options:
 
 - `url?: string` — the document's URL, as `document.URL` and
   `location.href` report it.
-- `cellSize?: "unit" | "typical" | "auto" | {width, height}` — what one
-  terminal cell measures in CSS pixels. Pages write and read CSS pixels,
-  and layout places boxes on whole cells, so lengths round to the
-  nearest cell and a border that is there at all is one cell wide.
-  - `"unit"`, the default: a cell is one CSS pixel each way, so `1px`
-    and `1ch` are both one cell.
-  - `"typical"`: 8 by 16, the usual terminal cell. Web code that
-    assumes a 16px line and a 600px layout sizes itself as it would in
-    a browser.
-  - `"auto"`: the size the terminal reports. The first frame waits for
-    the answer, and a resize asks again. A terminal that does not know
-    the question is taken as `"typical"` once it answers the next one,
-    and one that answers nothing at all after a second. Without a
-    terminal to ask, as on a pipe, it is `"typical"`.
-  - `{width, height}`: that size, for output that should not depend on
-    the terminal.
+- `cellSize?: "unit" | "typical" | "auto" | {width, height}` — how many
+  CSS pixels one terminal cell is.
+
+  Leave it alone for an app written for the terminal. Set it to `"auto"`
+  to show a page written for a browser, like a 600px-wide email, at
+  about the size it would be in one.
 
   ```ts
   const term = new TermDOM({cellSize: "auto"});
   ```
 
-  Two units count cells whatever the size, so a stylesheet written in
-  them lays out the same under every setting:
-  - `ch` is one cell along the axis it is used on: a column in `width`
-    or `padding-left`, a row in `height` or `margin-top`. CSS takes `ch`
-    across on both axes; a cell grid does not.
-  - `lh` is one line as the terminal draws it, which is one row:
-    `line-height` does not change how tall a line is drawn.
+  | Value | One cell is |
+  | --- | --- |
+  | `"unit"` (default) | 1×1 px |
+  | `"typical"` | 8×16 px |
+  | `"auto"` | what the terminal reports, or 8×16 if it can't say |
+  | `{width, height}` | that size |
+
+  With `"auto"`, the first frame waits for the terminal's answer, a
+  second at most, and a font zoom asks again.
+
+  Whatever the size:
+  - Lengths round to whole cells, and a border is always one cell.
+  - `1ch` is one cell: a column across, a row down.
+  - `1lh` is one row.
+
+  So a stylesheet written in `ch` and `lh` looks the same at every size.
 
 ### `term.document`, `term.window`
 
@@ -133,27 +132,21 @@ attach.
 
 ### `term.renderANSI(html?)`
 
-Renders to an ANSI string at the transport's width: colors and line
-breaks only, no cursor controls or mode changes.
-
-Without an argument it renders the document as it stands, whole, however
-far it runs past the screen. A page built with DOM calls becomes text
-this way, attached or not, without disturbing a live session's frame.
-
-With an HTML string it renders that markup instead. `<style>` elements in
-the fragment join the cascade, and the instance's own document is
-untouched.
+Returns the whole document as an ANSI string at the terminal's width:
+colors and line breaks, no cursor movement. Pass an HTML string to
+render that instead; the document is left alone.
 
 ```ts
 const page = term.renderANSI();
-const ansi = term.renderANSI(`<div style="color:red">error</div>`);
+const error = term.renderANSI(`<div style="color:red">error</div>`);
 ```
+
+It works attached or not, and doesn't disturb a live session.
 
 ### `term.print(html?)`
 
-`renderANSI(html)`, or the document without an argument, written through
-the transport as ordinary command output. Returns a promise that resolves
-when the bytes have reached the transport; await it before exiting.
+Writes `renderANSI(html)` to the terminal as ordinary output. Await it
+before exiting.
 
 ### `term.dispose()`
 
