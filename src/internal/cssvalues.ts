@@ -704,6 +704,8 @@ function perEnd(values: string[]): [string, string] {
 const grammarLexer = CSSTree.fork({
 	properties: {
 		"alignment-baseline": "| text-bottom | text-top",
+		"text-align":
+			"| -webkit-left | -webkit-center | -webkit-right | -moz-left | -moz-center | -moz-right",
 		"baseline-shift": "| top | center | bottom",
 		display: "| [ block | inline ]? math",
 		"outline-color": "| invert",
@@ -1909,6 +1911,21 @@ export function isInheritedProperty(property: string): boolean {
 }
 
 export type UnitValue = number | {percentage: number} | null;
+
+// The legacy alignments `<center>` and `align` give, which every browser
+// keeps: they align lines as their plain names do, and also line up the
+// block-level boxes inside. Chrome spells them -webkit-, Firefox -moz-.
+export function getLegacyAlignment(
+	textAlign: string,
+): "left" | "center" | "right" | null {
+	const match = /^-(?:webkit|moz)-(left|center|right)$/i.exec(textAlign.trim());
+	return match ? (match[1].toLowerCase() as "left" | "center" | "right") : null;
+}
+
+/** text-align with the legacy spellings read as the plain ones. */
+export function getLineAlignment(textAlign: string): string {
+	return getLegacyAlignment(textAlign) ?? textAlign;
+}
 
 // The unit collapses to the count (px and ch both measure one cell), and
 // a percentage keeps its mark for the caller to resolve against a basis.

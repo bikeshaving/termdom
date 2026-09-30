@@ -991,10 +991,11 @@ function joinChars(chars: SourcedChar[]): string {
 
 // The cells of a box's columns the text-align of a wider content box
 // leaves free on the left.
-export function getMathAlignOffset(spare: number, align: string): number {
+export function getMathAlignOffset(spare: number, textAlign: string): number {
 	if (spare <= 0) {
 		return 0;
 	}
+	const align = CSSValues.getLineAlignment(textAlign);
 	return align === "right" || align === "end"
 		? spare
 		: align === "center" ? spare >> 1 : 0;

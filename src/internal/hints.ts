@@ -118,12 +118,14 @@ function setEdges(hints: Hints, property: string, value: string): void {
 	}
 }
 
-// §15.3.3 and §15.3.8: align on block and table parts is text-align.
+// §15.3.3 and §15.3.8: align on block and table parts aligns the text
+// and the block-level boxes inside, which browsers spell as the legacy
+// text-align values.
 const ALIGNMENTS: Record<string, string> = {
-	left: "left",
-	right: "right",
-	center: "center",
-	middle: "center",
+	left: "-webkit-left",
+	right: "-webkit-right",
+	center: "-webkit-center",
+	middle: "-webkit-center",
 	justify: "justify",
 };
 

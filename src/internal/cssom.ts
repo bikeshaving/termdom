@@ -4421,6 +4421,15 @@ function resolvePropertyValue(
 	if (property === "font-weight") {
 		return computeFontWeight(declaration[kElement], value);
 	}
+	// Every browser resets a legacy alignment at a table, so a centered
+	// table's cells start their text where they would anywhere else.
+	if (
+		property === "text-align" &&
+		CSSValues.getLegacyAlignment(value) !== null &&
+		/^(?:inline-)?table$/.test(declaration.getComputedValue("display"))
+	) {
+		return "start";
+	}
 	return property === "display"
 		? blockifyDisplay(
 			declaration[kElement],
