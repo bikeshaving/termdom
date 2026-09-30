@@ -1903,6 +1903,28 @@ export class Screen {
 		this[kRenderedLines].clear();
 	}
 
+	/**
+	 * A static rendering painted apart from the live frame, whose pending
+	 * scroll and repaint it leaves as they were.
+	 */
+	renderStatic(
+		rows: number,
+		lineEnding: "\n" | "\r\n",
+		paint: (context: CellContext) => void,
+	): string {
+		if (rows <= 0) {
+			return "";
+		}
+		const cols = this[kCols];
+		const grid = new CellGrid(rows, cols);
+		paint(new CellContext(grid, rows, cols, 0));
+		const lines: string[] = [];
+		for (let row = 0; row < rows; row++) {
+			lines.push(getGridLine(grid, row, this[kWriter]));
+		}
+		return lines.join(lineEnding) + lineEnding;
+	}
+
 	beginStatic(
 		{rows: contentRows, lineEnding = "\n"}: {
 			rows: number;

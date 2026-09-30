@@ -429,23 +429,28 @@ export class TermDOM {
 	}
 
 	/**
-	 * Render HTML to ANSI at the transport's width: colors and line breaks,
-	 * no cursor controls, no modes. The instance's document is untouched.
+	 * Render to ANSI at the transport's width: colors and line breaks, no
+	 * cursor controls, no modes. Without an argument, the document as it
+	 * stands; with HTML, that markup, leaving the document untouched.
 	 */
-	renderANSI(html: string): string {
-		return renderStaticHTML(this, html, "\n");
+	renderANSI(html?: string): string {
+		return html === undefined
+			? renderStatic(this, "\n")
+			: renderStaticHTML(this, html, "\n");
 	}
 
 	/**
-	 * Write renderANSI(html) through the transport as ordinary output. Uses
-	 * CRLF while a raw-mode session holds the terminal.
+	 * Write renderANSI(html), or the document without an argument, through
+	 * the transport as ordinary output. Uses CRLF while a raw-mode session
+	 * holds the terminal.
 	 */
-	print(html: string): Promise<void> {
-		const output = renderStaticHTML(
-			this,
-			html,
-			isAttached(this) && this[kTransport].interactive ? "\r\n" : "\n",
-		);
+	print(html?: string): Promise<void> {
+		const lineEnding = isAttached(this) && this[kTransport].interactive
+			? "\r\n"
+			: "\n";
+		const output = html === undefined
+			? renderStatic(this, lineEnding)
+			: renderStaticHTML(this, html, lineEnding);
 		if (!output) {
 			return Promise.resolve();
 		}
@@ -888,16 +893,11 @@ function flushDocument(termDOM: TermDOM): void {
 /** The document as ANSI: colors and line breaks, no cursor controls, no modes. */
 function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
 	DOM.flushLayout(termDOM.document);
-	const contentHeight = termDOM[kLayout].documentPaintHeight();
-	if (contentHeight === 0) {
-		return "";
-	}
-	const context = termDOM[kScreen].beginStatic({
-		rows: contentHeight,
+	return termDOM[kScreen].renderStatic(
+		termDOM[kLayout].documentPaintHeight(),
 		lineEnding,
-	});
-	termDOM[kPainter].paint(context);
-	return termDOM[kScreen].endFrame();
+		(context) => termDOM[kPainter].paint(context),
+	);
 }
 
 /**
