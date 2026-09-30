@@ -3118,9 +3118,19 @@ function collectLeaves(
 				let contentHeightMode: AvailableSpace = "indefinite";
 
 				// A sizing keyword picks the probe the content is measured under.
-				const widthSizing = boxModel.width === undefined
+				// An auto width fits its content to the line, as fit-content
+				// does, wherever the line's width is known.
+				const declaredSizing = boxModel.width === undefined
 					? getWidthSizingConstant(getComputedValue(element, "width"))
 					: "none";
+				const widthSizing =
+					declaredSizing === "none" &&
+						boxModel.width === undefined &&
+						element.tagName !== "TEXTAREA" &&
+						Number.isFinite(availableWidth) &&
+						availableWidth < Number.MAX_SAFE_INTEGER
+						? "fit-content"
+						: declaredSizing;
 				if (boxModel.width !== undefined) {
 					contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
 					contentWidthMode = "definite";
@@ -3132,7 +3142,15 @@ function collectLeaves(
 					Number.isFinite(availableWidth) &&
 					availableWidth < Number.MAX_SAFE_INTEGER
 				) {
-					contentWidth = Math.max(0, availableWidth - horizontalBoxSpace);
+					// The content's widest line, capped at the space the line
+					// offers less the box's own edges (css2 §10.3.9, §10.3.5).
+					contentWidth = Math.max(
+						0,
+						availableWidth -
+						horizontalBoxSpace -
+						boxModel.marginLeft -
+						boxModel.marginRight,
+					);
 					contentWidthMode = "shrink-to-fit";
 				} else if (element.tagName === "TEXTAREA") {
 					// cols sizes the CONTENT box (spec default 20). The UA
@@ -3241,6 +3259,28 @@ function collectLeaves(
 					}
 					finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
 					finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
+					// Shrink-to-fit is the lesser of the preferred width and the
+					// space offered, so content that had to wrap takes all the
+					// space, not its longest line (css2 §10.3.5).
+					if (
+						contentStart &&
+						widthSizing === "fit-content" &&
+						contentWidthMode === "shrink-to-fit" &&
+						inlineBlockResult !== undefined &&
+						inlineBlockResult.lines.length > 1 &&
+						finalContentWidth < contentWidth
+					) {
+						const preferred = breakNodes(
+							layout,
+							getPrincipalBox(layout, contentStart),
+							Number.MAX_SAFE_INTEGER,
+							"indefinite",
+						).maxLineWidth;
+						finalContentWidth = Math.max(
+							finalContentWidth,
+							Math.min(preferred, contentWidth),
+						);
+					}
 				}
 
 				// And the REPORTED box. Content that cannot wrap (a single-line
