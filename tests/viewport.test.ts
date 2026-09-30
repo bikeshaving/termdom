@@ -1393,3 +1393,16 @@ test("absolute units convert to pixels at 96 to the inch", () => {
 	expect(dom.window.matchMedia("(min-width: 1in)").matches).toBe(true);
 	dom.dispose();
 });
+
+test("ic is two cells, whatever the font size", () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 40, rows: 5}).transport,
+	});
+	dom.document.body.innerHTML =
+		"<div style=\"width: 3ic\"></div>" +
+		"<div style=\"font-size: 2px; width: 3ic\"></div>";
+	for (const div of dom.document.body.children) {
+		expect(div.getBoundingClientRect().width).toBe(6);
+	}
+	dom.dispose();
+});
