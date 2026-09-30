@@ -4359,8 +4359,9 @@ function getStickyShift(
 	let portWidth: number;
 	let portHeight: number;
 	if (scroller === null) {
+		// scrollY is CSS pixels: a whole number of rows, each a cell tall.
 		const window = layout[kWindow];
-		portTop = window.scrollY;
+		portTop = window.scrollY / getCellSize(window.document).height;
 		portWidth = layout[kInitialContainingBlock].result.width;
 		portHeight = layout[kInitialContainingBlock].style.height.value;
 	} else {

@@ -273,3 +273,17 @@ test("a select's picker opens under it and takes clicks under a larger cell", as
 	expect((document.getElementById("s") as HTMLSelectElement).value).toBe("c");
 	dom.dispose();
 });
+
+test("a sticky box holds to the top of the scrolled document under a larger cell", async () => {
+	const {dom} = make("typical", 30, 8);
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<div id=\"bar\" style=\"position: sticky; top: 0\">bar</div>" +
+		Array.from({length: 30}, (_, i) => `<div>row ${i}</div>`).join("");
+	await dom.attach();
+	await nextFrame(dom);
+	window.scrollTo(0, 5 * 16);
+	await nextFrame(dom);
+	expect(document.getElementById("bar")!.getBoundingClientRect().top).toBe(0);
+	dom.dispose();
+});
