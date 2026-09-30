@@ -2530,7 +2530,7 @@ export function isFontRelativePercentage(property: string): boolean {
 }
 
 const RELATIVE_UNIT =
-	/[\d.](?:r?em|ex|ch|ic|vw|vh|vmin|vmax|in|cm|mm|q|pt|pc)\b/i;
+	/[\d.](?:r?em|ex|ch|ic|r?lh|vw|vh|vmin|vmax|in|cm|mm|q|pt|pc)\b/i;
 
 // `contextual` means computing the value needs the element (a relative
 // length, a calc(), a font-relative percentage). Decided once per
@@ -2590,6 +2590,10 @@ export interface LengthContext {
 	// One cell's width in CSS pixels: the advance of every glyph.
 	cellWidth: number;
 
+	// The line height, and the root's, for `lh` and `rlh`.
+	line: number;
+	rootLine: number;
+
 	// For `rem`.
 	root: number;
 	viewportWidth: number;
@@ -2624,6 +2628,10 @@ function getUnitFactor(unit: string, context: LengthContext): number | null {
 		// font size, as it draws every character in whole cells.
 		case "ic":
 			return context.cellWidth * 2;
+		case "lh":
+			return context.line;
+		case "rlh":
+			return context.rootLine;
 		case "vw":
 			return context.viewportWidth / 100;
 		case "vh":

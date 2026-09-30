@@ -180,3 +180,20 @@ test("a size that is not one throws", () => {
 		).toThrow(TypeError);
 	}
 });
+
+test("lh is one line, a row whatever the cell size", () => {
+	for (const [cellSize, row] of [["unit", 1], ["typical", 16]] as const) {
+		const {dom} = make(cellSize);
+		const {document} = dom;
+		document.body.innerHTML =
+			"<div id=\"a\" style=\"height: 2lh\"></div>" +
+			"<div style=\"line-height: 2\"><div id=\"b\" style=\"height: 1lh\">" +
+			"</div></div><div id=\"c\" style=\"height: 1rlh\"></div>";
+		const height = (id: string) =>
+			document.getElementById(id)!.getBoundingClientRect().height;
+		expect(height("a")).toBe(2 * row);
+		expect(height("b")).toBe(2 * row);
+		expect(height("c")).toBe(row);
+		dom.dispose();
+	}
+});
