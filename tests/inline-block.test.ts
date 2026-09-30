@@ -518,11 +518,17 @@ test("an inline-block starting a line sizes against the block it is in", () => {
 	document.body.innerHTML =
 		"<div style=\"width: 80px\"><div id=\"capped\" " +
 		"style=\"display: inline-block; width: 50%; max-width: 50%\">a</div></div>" +
+		"<div style=\"width: 80px\"><div id=\"full\" " +
+		"style=\"display: inline-block; width: 100%; max-width: 50%\">a</div></div>" +
+		"<div id=\"floored\" style=\"display: inline-block; width: 10px; " +
+		"max-width: 20px; min-width: 30px\">a</div>" +
 		"<div id=\"line\"><div id=\"framed\" style=\"display: inline-block; " +
 		"margin-left: 5px; border: 1px solid\">b</div>c</div>";
 	const rect = (id: string) =>
 		document.getElementById(id)!.getBoundingClientRect();
 	expect(rect("capped").width).toBe(40);
+	expect(rect("full").width).toBe(40);
+	expect(rect("floored").width).toBe(30);
 	expect(rect("line").height).toBe(3);
 	expect(rect("framed").left).toBe(5);
 	dom.dispose();
