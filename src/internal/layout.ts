@@ -1648,9 +1648,14 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 	for (const entry of children) {
 		if (entry.kind === "anonymous") {
 			let layoutNode = entry.layoutNode;
-			const styledFrom = entry.head.nodeType === entry.head.ELEMENT_NODE
-				? (entry.head as Element)
-				: null;
+			// A flex or grid item measured as a run is that item's box. In a
+			// block, a run is an anonymous box, which takes nothing from the
+			// element it starts with.
+			const styledFrom =
+				entry.head.nodeType === entry.head.ELEMENT_NODE &&
+				hasItemChildren(getLayoutDisplay(container))
+					? (entry.head as Element)
+					: null;
 			// A run that changes hands starts fresh rather than keeping the
 			// last head's margins and flex factors.
 			if (layoutNode && entry.styledFrom !== styledFrom) {
@@ -6203,11 +6208,11 @@ function *getTextNodes(root: Node): Generator<Text> {
 	}
 }
 
-// Where a run head's lines count from. An atomic inline heading its run
-// has the run's layout node, which the container's layout placed at the
-// head's own margin edge, while the segments count from its margin box:
-// its own segment sits one margin in. Every other head's node is where
-// its lines start.
+// Where a run head's lines count from. An atomic inline heading a run
+// styled from it, as a flex or grid item's is, has the run's layout node,
+// which the container's layout placed at the head's own margin edge,
+// while the segments count from its margin box: its own segment sits one
+// margin in. Every other head's node is where its lines start.
 function getRunOrigin(
 	layout: Layout,
 	runHead: Node,
@@ -6215,7 +6220,7 @@ function getRunOrigin(
 ): {x: number; y: number} {
 	const position = getDocumentPosition(layout, runHead, headLayoutNode);
 	if (
-		runHead.nodeType === runHead.ELEMENT_NODE &&
+		layout[kAnonymousBoxes].get(headLayoutNode)?.styledFrom === runHead &&
 		isAtomicInline(getLayoutDisplay(runHead as Element))
 	) {
 		position.x -= getBoxModel(runHead as Element).marginLeft;
@@ -6318,9 +6323,11 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 	}
 
 	// Once the walk descends into a nested measurement, any layout node the
-	// box still holds belongs to a layout it is no longer part of.
+	// box still holds belongs to a layout it is no longer part of. The run
+	// a box heads in a block is not its box.
 	const ownLayoutNode = descended ? undefined : runLayoutNode(layout, element);
-	if (ownLayoutNode) {
+	const anonymous = ownLayoutNode && layout[kAnonymousBoxes].get(ownLayoutNode);
+	if (ownLayoutNode && (!anonymous || anonymous.styledFrom === element)) {
 		const {x, y} = getDocumentPosition(layout, element, ownLayoutNode);
 		return new layout[kDOMRect](x, y, target.segment.width, target.line.height);
 	}

@@ -1065,8 +1065,8 @@ function paintCaret(
 }
 
 // A run's lines, from the box that broke them. The origin is the run's
-// layout node's; an atomic inline heading its run has that node at its
-// margin edge while its segment counts from its margin box.
+// layout node's; an atomic inline heading a run styled from it has that
+// node at its margin edge while its segment counts from its margin box.
 function paintRun(
 	painter: Painter,
 	box: Box,
@@ -1080,7 +1080,7 @@ function paintRun(
 	const head = box.head;
 	let x = origin.x;
 	if (
-		head.nodeType === head.ELEMENT_NODE &&
+		box.styledFrom === head &&
 		isAtomicInline(getPaintStyle(painter, head as Element).display as Display)
 	) {
 		x -= getBoxModel(head as Element).marginLeft;
