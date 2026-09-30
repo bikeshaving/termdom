@@ -3938,10 +3938,22 @@ function getLengthContext(
 	const cascade = declaration[kCascade];
 	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
 	const cell = getCellSize(declaration[kElement]);
+	// `lh` in font-size or line-height is the parent's line, as `em` in
+	// font-size is the parent's font.
+	const lineOwner = own || property === "line-height"
+		? flatParentElement(declaration[kElement])
+		: declaration[kElement];
+	const rootElement = declaration[kElement].ownerDocument?.documentElement;
 	return {
 		font,
 		root,
 		cellWidth: cell.width,
+		line: getLineHeight(lineOwner, cell.height),
+		rootLine:
+			rootElement === declaration[kElement] &&
+				(own || property === "line-height")
+				? cell.height
+				: getLineHeight(rootElement ?? null, cell.height),
 		viewportWidth: block ? block.width * cell.width : 0,
 		viewportHeight: block ? block.height * cell.height : 0,
 		// A percentage is font-relative on exactly two properties. On
@@ -3949,6 +3961,26 @@ function getLengthContext(
 		// element's own. Everywhere else it stays a percentage until used.
 		percent: CSSValues.isFontRelativePercentage(property) ? font / 100 : null,
 	};
+}
+
+// A line is one row whatever the font, so `normal` is a cell tall. A
+// number multiplies the element's font size, and a length is itself.
+function getLineHeight(element: Element | null, row: number): number {
+	if (element === null) {
+		return row;
+	}
+	const value = getComputedValue(element, "line-height");
+	if (!value || value === "normal") {
+		return row;
+	}
+	const number = parseFloat(value);
+	if (!Number.isFinite(number)) {
+		return row;
+	}
+	return /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())
+		? number *
+			CSSValues.getFontSize(getComputedValue(element, "font-size"), row)
+		: number;
 }
 
 function getRootFontSize(
@@ -7936,6 +7968,8 @@ function getMediaLength(
 			font: cell.height,
 			root: cell.height,
 			cellWidth: cell.width,
+			line: cell.height,
+			rootLine: cell.height,
 			viewportWidth: window.innerWidth,
 			viewportHeight: window.innerHeight,
 			percent: null,

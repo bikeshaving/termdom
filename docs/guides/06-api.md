@@ -37,6 +37,9 @@ Options:
   nearest cell and a border that is there at all is one cell wide.
   - `"unit"`, the default: a cell is one CSS pixel each way, so `1px`
     and `1ch` are both one cell.
+
+  Whatever the size, `ch` is a column and `lh` a row, so a stylesheet
+  written in those units lays out the same under every setting.
   - `"typical"`: 8 by 16, the usual terminal cell. Web code that
     assumes a 16px line and a 600px layout sizes itself as it would in
     a browser.
