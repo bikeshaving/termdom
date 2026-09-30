@@ -3520,10 +3520,17 @@ function breakNodes(
 		(wordBreak === "break-all" ||
 			overflowWrap === "anywhere" ||
 			(overflowWrap === "break-word" && maxWidth > 0));
-	// Undeclared, the first strong character wins (UAX #9 §P2), which is
-	// what makes an Arabic string in an undeclared <div> come out right.
+	// The base direction is the block's the lines are in, not whatever
+	// opens them (css-writing-modes-3 §2.4), unless the run is an item's own
+	// box. Undeclared, the first strong character wins (UAX #9 §P2), which
+	// is what makes an Arabic string in an undeclared <div> come out right.
 	// That is how such a string usually arrives.
-	const declared = getComputedValue(styleElement, "direction");
+	const declared = getComputedValue(
+		source.styledFrom ??
+		(source.parent ? source.container : flatParentElement(opener)) ??
+		styleElement,
+		"direction",
+	);
 	const base: "ltr" | "rtl" = declared === "rtl"
 		? "rtl"
 		: declared === "ltr" ? "ltr" : getParagraphDirection(processedContent.text);
