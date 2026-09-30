@@ -18756,8 +18756,10 @@ export class HTMLSelectElement extends HTMLElement {
 				openPicker(this);
 				return;
 			}
-			const x = event.clientX;
-			const y = event.clientY + attached[kScreen].scrollTop;
+			// The event's point is CSS pixels, and the rows' rects are cells.
+			const cell = getCellSize(this);
+			const x = event.clientX / cell.width;
+			const y = event.clientY / cell.height + attached[kScreen].scrollTop;
 			const picker = this[kPicker]!;
 			const row =
 				(Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
@@ -19055,8 +19057,9 @@ export class HTMLSelectElement extends HTMLElement {
 		// and as wide as its widest row, a grouped option's indent included.
 		const rect = attached[kLayout].getRect(this);
 		if (rect) {
-			const top = `${Math.round(rect.bottom)}px`;
-			const left = `${Math.round(rect.left)}px`;
+			// The picker's style is CSS pixels, and the select's rect is cells.
+			const top = `${cellsToPx(Math.round(rect.bottom), true, this)}px`;
+			const left = `${cellsToPx(Math.round(rect.left), false, this)}px`;
 			const width = `${Math.max(4, Math.round(rect.width))}ch`;
 			if (picker.style.top !== top) {
 				picker.style.top = top;

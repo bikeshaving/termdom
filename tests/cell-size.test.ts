@@ -246,3 +246,30 @@ test("the built-in styles lay out the same under every cell size", () => {
 	]);
 	expect(render("typical")).toBe(unit);
 });
+
+test("a select's picker opens under it and takes clicks under a larger cell", async () => {
+	const {terminal, dom} = make("typical", 40, 12);
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div>one</div><div>two</div><select id=\"s\">" +
+		"<option value=\"a\">Alpha</option><option value=\"b\">Beta</option>" +
+		"<option value=\"c\">Gamma</option></select>";
+	await dom.attach();
+	await nextFrame(dom);
+	const click = async (col: number, row: number) => {
+		terminal.stdin.simulateResponse(
+			`\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		await nextFrame(dom);
+	};
+	// The select is on row 3; its picker opens below it, border first.
+	await click(2, 3);
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toContain("one");
+	expect(rows[3]).toContain("┌");
+	// Rows: 3 field, 4 border, 5 Alpha, 6 Beta, 7 Gamma.
+	await click(3, 7);
+	expect((document.getElementById("s") as HTMLSelectElement).value).toBe("c");
+	dom.dispose();
+});
