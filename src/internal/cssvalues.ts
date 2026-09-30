@@ -2590,9 +2590,12 @@ export interface LengthContext {
 	// One cell's width in CSS pixels: the advance of every glyph.
 	cellWidth: number;
 
-	// The line height, and the root's, for `lh` and `rlh`.
+	// One cell along the axis of the property being resolved, for `ch`: a
+	// column across, a row down.
+	cellAlong: number;
+
+	// The height of a line as the terminal draws it, for `lh` and `rlh`.
 	line: number;
-	rootLine: number;
 
 	// For `rem`.
 	root: number;
@@ -2620,18 +2623,18 @@ function getUnitFactor(unit: string, context: LengthContext): number | null {
 		// x-height a browser would measure is the half-em fallback.
 		case "ex":
 			return context.font / 2;
-		// One cell wide whatever font size the document declares. A style
-		// cannot resize the grid's column.
+		// One cell along the property's axis whatever font size the document
+		// declares, so a stylesheet counts cells the same way across and
+		// down. CSS takes ch across on both; a cell grid does not.
 		case "ch":
-			return context.cellWidth;
+			return context.cellAlong;
 		// The width of 水, which a terminal draws two cells wide whatever the
 		// font size, as it draws every character in whole cells.
 		case "ic":
 			return context.cellWidth * 2;
 		case "lh":
-			return context.line;
 		case "rlh":
-			return context.rootLine;
+			return context.line;
 		case "vw":
 			return context.viewportWidth / 100;
 		case "vh":
