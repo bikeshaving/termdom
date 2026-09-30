@@ -448,6 +448,9 @@ export class TermDOM {
 		const lineEnding = isAttached(this) && this[kTransport].interactive
 			? "\r\n"
 			: "\n";
+		if (html === undefined) {
+			markPrinted(this);
+		}
 		const output = html === undefined
 			? renderStatic(this, lineEnding)
 			: renderStaticHTML(this, html, lineEnding);
@@ -856,9 +859,13 @@ function takeUnprinted(termDOM: TermDOM): string | null {
 	if (!termDOM[kUnprinted]) {
 		return null;
 	}
+	markPrinted(termDOM);
+	return renderStatic(termDOM, "\n") || null;
+}
+
+function markPrinted(termDOM: TermDOM): void {
 	termDOM[kUnprinted] = false;
 	sessionsUnprinted.delete(termDOM);
-	return renderStatic(termDOM, "\n") || null;
 }
 
 /**
