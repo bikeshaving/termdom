@@ -2561,6 +2561,51 @@ function distributeAcross(
 	}
 }
 
+interface TrackLines {
+	// Whether any cell ends (or starts) at line i, and whether every one
+	// that does has a border there.
+	ends: boolean[];
+	endsBordered: boolean[];
+	starts: boolean[];
+	startsBordered: boolean[];
+}
+
+function getTrackLines(count: number): TrackLines {
+	return {
+		ends: new Array<boolean>(count).fill(false),
+		endsBordered: new Array<boolean>(count).fill(true),
+		starts: new Array<boolean>(count).fill(false),
+		startsBordered: new Array<boolean>(count).fill(true),
+	};
+}
+
+function markTrackLine(
+	lines: TrackLines,
+	line: number,
+	border: number,
+	ending: boolean,
+): void {
+	if (line < 0 || line >= lines.ends.length) {
+		return;
+	}
+	if (ending) {
+		lines.ends[line] = true;
+		lines.endsBordered[line] &&= border > 0;
+	} else {
+		lines.starts[line] = true;
+		lines.startsBordered[line] &&= border > 0;
+	}
+}
+
+function sharesTrackLine(lines: TrackLines, line: number): number {
+	return lines.ends[line] &&
+			lines.endsBordered[line] &&
+			lines.starts[line] &&
+			lines.startsBordered[line]
+		? 1
+		: 0;
+}
+
 // CSS 2.1 §17.5.2.2. `available` already includes the cells collapsed
 // borders overlap away.
 function resolveColumnWidths(
@@ -2725,9 +2770,44 @@ function layoutTable(
 	const {rows, captions, groups} = collectTableRows(node);
 	const {cells, columnCount} = buildTableGrid(rows);
 
-	// Collapsed borders share the one cell both neighbours draw a border in.
-	const overlap = node.style.borderCollapse ? 1 : 0;
-	const columnOverlap = overlap * Math.max(0, columnCount - 1);
+	// Collapsed borders share the one cell both neighbours draw a border
+	// in. Where either side has none there is nothing to share, and the
+	// neighbours keep their own cells.
+	const collapse = node.style.borderCollapse;
+	// Per line between tracks: whether every cell ending there has a border
+	// on it, whether every cell starting there does, and whether any does.
+	const columnLines = getTrackLines(columnCount + 1);
+	const rowLines = getTrackLines(rows.length + 1);
+	if (collapse) {
+		for (const cell of cells) {
+			const {border} = cell.node.style;
+			markTrackLine(
+				columnLines,
+				cell.column + cell.colSpan,
+				border.right,
+				true,
+			);
+			markTrackLine(columnLines, cell.column, border.left, false);
+			markTrackLine(rowLines, cell.row + cell.rowSpan, border.bottom, true);
+			markTrackLine(rowLines, cell.row, border.top, false);
+		}
+	}
+	// Entry j is the overlap before column j, summed from the first.
+	const columnOverlaps = new Array<number>(columnCount).fill(0);
+	for (let j = 1; j < columnCount; j++) {
+		columnOverlaps[j] = columnOverlaps[j - 1] + sharesTrackLine(columnLines, j);
+	}
+	const columnOverlap = columnCount > 0 ? columnOverlaps[columnCount - 1] : 0;
+	// The line below row `above` against the line above row `below`, which
+	// are the same line unless empty rows lie between them.
+	const rowOverlap = (above: number, below: number): number =>
+		collapse &&
+			rowLines.endsBordered[above + 1] &&
+			rowLines.ends[above + 1] &&
+			rowLines.startsBordered[below] &&
+			rowLines.starts[below]
+			? 1
+			: 0;
 
 	const innerWidth = isDefined(availableWidth)
 		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
@@ -2749,9 +2829,12 @@ function layoutTable(
 		columnEdges[i + 1] = columnEdges[i] + columnWidths[i];
 	}
 
-	const columnStart = (index: number) => columnEdges[index] - overlap * index;
+	const columnStart = (index: number) =>
+		columnEdges[index] - columnOverlaps[index];
 	const spanWidth = (index: number, span: number) =>
-		columnEdges[index + span] - columnEdges[index] - overlap * (span - 1);
+		columnEdges[index + span] -
+		columnEdges[index] -
+		(columnOverlaps[index + span - 1] - columnOverlaps[index]);
 
 	const contentWidth = Math.max(0, columnEdges[columnCount] - columnOverlap);
 
@@ -2801,9 +2884,12 @@ function layoutTable(
 			continue;
 		}
 
-		let covered = -overlap * (cell.rowSpan - 1);
+		let covered = 0;
 		for (let i = 0; i < cell.rowSpan && cell.row + i < rows.length; i++) {
 			covered += rowHeights[cell.row + i];
+			if (i > 0) {
+				covered -= rowOverlap(cell.row + i - 1, cell.row + i);
+			}
 		}
 
 		const deficit = cell.node.result.height - covered;
@@ -2817,19 +2903,19 @@ function layoutTable(
 	// consume an overlap, or every later row would move up one.
 	const rowTops = new Array<number>(rows.length).fill(0);
 	let cursor = 0;
-	let previousVisible = false;
+	let previousVisible = -1;
 
 	for (let i = 0; i < rows.length; i++) {
 		if (rowHeights[i] <= 0) {
 			rowTops[i] = cursor;
 			continue;
 		}
-		if (previousVisible) {
-			cursor -= overlap;
+		if (previousVisible >= 0) {
+			cursor -= rowOverlap(previousVisible, i);
 		}
 		rowTops[i] = cursor;
 		cursor += rowHeights[i];
-		previousVisible = true;
+		previousVisible = i;
 	}
 
 	const rowStart = (index: number) => rowTops[index];
@@ -5212,6 +5298,15 @@ function layoutBlock(
 		return;
 	}
 
+	// A table cell taller than its content places the content by its
+	// vertical-align, which is align-content on a block.
+	const spare = node.result.height - paddingBorderColumn - contentHeight;
+	const alignShift = node.style.displayType !== "table-cell" || spare <= 0
+		? 0
+		: node.style.alignContent === "center"
+			? Math.floor(spare / 2)
+			: node.style.alignContent === "flex-end" ? spare : 0;
+
 	for (let i = 0; i < inFlow.length; i++) {
 		const child = inFlow[i];
 		const leading = child.result.margin.left;
@@ -5228,7 +5323,7 @@ function layoutBlock(
 		}
 
 		child.result.left = leftPaddingBorder + leading + offset;
-		child.result.top = topPaddingBorder + tops[i];
+		child.result.top = topPaddingBorder + tops[i] + alignShift;
 	}
 
 	const innerWidthFinal = node.result.width - paddingBorderRow;
