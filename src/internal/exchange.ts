@@ -1979,6 +1979,7 @@ export interface TTYWriteStream {
 	columns: number;
 	rows: number;
 	isTTY: boolean;
+	on?(event: "error", listener: (error: unknown) => void): unknown;
 }
 
 export interface TTYReadStream {
@@ -1989,6 +1990,7 @@ export interface TTYReadStream {
 		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
 	): unknown;
 	on(event: "end", listener: () => void): unknown;
+	on(event: "error", listener: (error: unknown) => void): unknown;
 	listenerCount?(event: string): number;
 	removeListener?(
 		event: "data",
@@ -2113,6 +2115,23 @@ export function transportFromProcess(
 		closedResolve = resolve;
 	});
 
+	// A stream that fails (EPIPE when the reading end of a pipe has gone,
+	// EIO when the terminal has) is a terminal that is gone. The session
+	// closes as when its input ends, instead of crashing or hanging.
+	let broken = false;
+	const onBroken = () => {
+		if (broken) {
+			return;
+		}
+		broken = true;
+		closedResolve({});
+		setImmediate(() => proc.exit(0));
+	};
+	proc.stdout.on?.("error", onBroken);
+	if (typeof proc.stdin?.on === "function") {
+		proc.stdin.on("error", onBroken);
+	}
+
 	let engaged = false;
 	let dataListener:
 		((chunk: string | Uint8Array | ArrayBuffer) => void) | null = null;
@@ -2128,7 +2147,11 @@ export function transportFromProcess(
 		// and `dispose(); process.exit()` exits before it flushes. Only a
 		// terminal had modes to restore.
 		if (proc.stdout.isTTY === true) {
-			proc.stdout.write(PANIC_RESTORE);
+			try {
+				proc.stdout.write(PANIC_RESTORE);
+			} catch (_err) {
+				// The terminal is gone, and its modes with it.
+			}
 		}
 		if (dataListener && proc.stdin) {
 			proc.stdin.removeListener?.("data", dataListener);

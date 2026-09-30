@@ -14,6 +14,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {transportFromProcess} from "../src/internal/exchange.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 /** Render to a non-terminal stdout and return exactly what was written. */
@@ -131,4 +132,30 @@ test("a stdout that does not say it is a terminal is a pipe", async () => {
 	const output = await renderPipedFrames(undefined);
 	expect(output.match(/row \d+/g)?.length).toBe(20);
 	expect(output.replace(/\x1b\[0m/g, "")).not.toMatch(/\x1b/);
+});
+
+// A stream that fails is a terminal that is gone: the session closes as
+// when its input ends, instead of crashing on the unhandled error.
+test("a failing stdout closes the session instead of crashing", async () => {
+	const {EventEmitter} = await import("node:events");
+	const stdout = Object.assign(new EventEmitter(), {
+		write: () => true,
+		columns: 20,
+		rows: 5,
+		isTTY: false,
+	});
+	let exited: number | undefined;
+	const transport = transportFromProcess({
+		stdout,
+		env: {},
+		on: () => {},
+		exit: ((code?: number) => {
+			exited = code;
+		}) as (code?: number) => never,
+	});
+	const error = Object.assign(new Error("write EPIPE"), {code: "EPIPE"});
+	stdout.emit("error", error);
+	expect(await transport.closed).toEqual({});
+	await new Promise((resolve) => setImmediate(resolve));
+	expect(exited).toBe(0);
 });
