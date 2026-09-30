@@ -1,6 +1,6 @@
 import LineBreaker from "linebreak";
 
-import {getCellSize, UNIT_CELL} from "./cellsize.ts";
+import {cellsToPx, getCellSize, UNIT_CELL} from "./cellsize.ts";
 import {
 	getBoxModel,
 	getComputedValue,
@@ -4353,12 +4353,12 @@ function getStickyShift(
 		const window = layout[kWindow];
 		portTop = window.scrollY;
 		portWidth = layout[kInitialContainingBlock].result.width;
-		portHeight = window.innerHeight;
+		portHeight = layout[kInitialContainingBlock].style.height.value;
 	} else {
 		const element = scroller.owner as Element;
 		const box = getBoxModel(element);
-		portLeft = (box.borderLeftWidth || 0) + (element.scrollLeft || 0);
-		portTop = (box.borderTopWidth || 0) + (element.scrollTop || 0);
+		portLeft = (box.borderLeftWidth || 0) + getScrollOffset(element, "left");
+		portTop = (box.borderTopWidth || 0) + getScrollOffset(element, "top");
 		portWidth =
 			scroller.result.width -
 			(box.borderLeftWidth || 0) -
@@ -4483,8 +4483,8 @@ function getScrollShift(
 		}
 		const scroller = getScrollOwner(layout, next);
 		if (scroller !== null) {
-			x -= scroller.scrollLeft || 0;
-			y -= scroller.scrollTop || 0;
+			x -= getScrollOffset(scroller, "left");
+			y -= getScrollOffset(scroller, "top");
 		}
 		current = next;
 	}
@@ -4624,7 +4624,7 @@ function hitTestInFlow(
 	// are unscrolled document rows, so only an unscrolled element asks.
 	const candidates =
 		layout.scrolledAncestorRows(element) === 0 &&
-		(element.scrollTop || 0) === 0
+		getScrollOffset(element, "top") === 0
 			? layout.getVisibleChildren(element, y, y + 1)
 			: null;
 	const children: Element[] = [];
@@ -7306,14 +7306,15 @@ function revealInPort(
 	const down = Math.round(
 		getAlignmentDelta(rect.top, rect.bottom, portTop, portBottom, block),
 	);
+	// The offsets are cells here, and scrollTop is CSS pixels.
 	if (down !== 0) {
-		scroller.scrollTop += down;
+		scroller.scrollTop += cellsToPx(down, true, scroller);
 	}
 	const across = Math.round(
 		getAlignmentDelta(rect.left, rect.right, portLeft, portRight, inline),
 	);
 	if (across !== 0) {
-		scroller.scrollLeft += across;
+		scroller.scrollLeft += cellsToPx(across, false, scroller);
 	}
 }
 

@@ -197,3 +197,30 @@ test("lh is one line, a row whatever the cell size", () => {
 		dom.dispose();
 	}
 });
+
+test("Tab and focus() scroll a pane by the pixels its cells take", async () => {
+	const {terminal, dom} = make({width: 8, height: 16});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div id=\"s\" style=\"height: 5lh; overflow: auto\">" +
+		"<div style=\"height: 9lh\"></div><a id=\"a\" href=\"#x\">link</a>" +
+		"<div style=\"height: 9lh\"></div><a id=\"b\" href=\"#y\">far</a></div>";
+	await dom.attach();
+	await nextFrame(dom);
+	const pane = document.getElementById("s")!;
+	const inPane = (id: string) => {
+		const link = document.getElementById(id)!.getBoundingClientRect();
+		const port = pane.getBoundingClientRect();
+		return link.top >= port.top && link.bottom <= port.bottom;
+	};
+
+	terminal.stdin.simulateResponse("\t");
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(document.activeElement?.id).toBe("a");
+	expect(pane.scrollTop).toBe(5 * 16);
+	expect(inPane("a")).toBe(true);
+
+	document.getElementById("b")!.focus();
+	expect(inPane("b")).toBe(true);
+	dom.dispose();
+});
