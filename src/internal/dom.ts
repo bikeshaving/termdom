@@ -32427,7 +32427,7 @@ class MediaQueryList extends EventTarget {
 
 	constructor(document: Document, media: string) {
 		super();
-		this.media = media;
+		this.media = CSSValues.serializeMediaQueryList(media);
 		this[kMediaQueryDocument] = document;
 		this[kMediaQueryNotified] = this.matches;
 	}

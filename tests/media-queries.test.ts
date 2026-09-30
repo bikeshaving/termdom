@@ -80,3 +80,15 @@ test("the terminal's shape answers orientation and aspect-ratio", () => {
 	expect(matches(termdom, "(min-aspect-ratio: 0/0)")).toBe(false);
 	termdom.dispose();
 });
+
+test("matchMedia serializes its list, each bad query as not all", () => {
+	const termdom = makeApp();
+	const media = (query: string) => termdom.window.matchMedia(query).media;
+	expect(media("  all , all ")).toBe("all, all");
+	expect(media(" ( color   ")).toBe("(color)");
+	expect(media("  color ), ( color")).toBe("not all, (color)");
+	expect(media(" foo,")).toBe("foo, not all");
+	expect(media("(color) and")).toBe("not all");
+	expect(media(" ")).toBe("");
+	termdom.dispose();
+});
