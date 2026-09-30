@@ -41,8 +41,10 @@ Options:
     assumes a 16px line and a 600px layout sizes itself as it would in
     a browser.
   - `"auto"`: the size the terminal reports. The first frame waits for
-    the answer, and a resize asks again. Without a terminal to ask, as
-    on a pipe, it is `"typical"`.
+    the answer, and a resize asks again. A terminal that does not know
+    the question is taken as `"typical"` once it answers the next one,
+    and one that answers nothing at all after a second. Without a
+    terminal to ask, as on a pipe, it is `"typical"`.
   - `{width, height}`: that size, for output that should not depend on
     the terminal.
 
