@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame, scriptReplies} from "./test-utils.js";
 
 function makeApp(html = ""): TermDOM {
 	const proc = new MockProcess();
@@ -114,4 +114,36 @@ test("the color features and screen.colorDepth follow the terminal's colors", ()
 		["256", 8, true, false],
 		["ansi", 4, false, false],
 	]);
+});
+
+test("a dark terminal background is prefers-color-scheme: dark from the first frame", async () => {
+	const proc = new MockProcess({cols: 20, rows: 5});
+	scriptReplies(proc, [
+		{ask: "\x1b]11;?\x1b\\", reply: "\x1b]11;rgb:1e1e/1e1e/2e2e\x1b\\"},
+	]);
+	const termdom = new TermDOM({transport: proc.transport});
+	const schemes: boolean[] = [];
+	termdom.window.requestAnimationFrame(() =>
+		schemes.push(matches(termdom, "(prefers-color-scheme: dark)")),
+	);
+	await termdom.attach();
+	await nextFrame(termdom);
+	expect(schemes).toEqual([true]);
+	termdom.dispose();
+});
+
+test("the environment's background stands until the terminal says otherwise", async () => {
+	const proc = new MockProcess({cols: 20, rows: 5});
+	const termdom = new TermDOM({
+		transport: {...proc.transport, colorScheme: "dark"},
+	});
+	expect(matches(termdom, "(prefers-color-scheme: dark)")).toBe(true);
+	termdom.dispose();
+
+	const silent = new MockProcess({cols: 20, rows: 5});
+	const light = new TermDOM({transport: silent.transport});
+	await light.attach();
+	await nextFrame(light);
+	expect(matches(light, "(prefers-color-scheme: light)")).toBe(true);
+	light.dispose();
 });
