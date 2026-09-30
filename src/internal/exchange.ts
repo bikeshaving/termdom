@@ -1155,25 +1155,32 @@ export class Exchange extends EventTarget {
 	/**
 	 * What one cell measures in pixels. Silence leaves the guessed cell
 	 * standing, which is the contract an unanswered question gives
-	 * everywhere else here.
+	 * everywhere else here. A DA1 asked behind it ends the wait on a
+	 * terminal that does not answer.
 	 */
 	async negotiateCellPixels(): Promise<void> {
 		if (!this[kInteractive]) {
 			return;
 		}
-		const cell = await nextReply<
+		let answered!: () => void;
+		const until = new Promise<void>((resolve) => (answered = resolve));
+		const cell = nextReply<"cell-size", {width: number; height: number} | null>(
+			this,
 			"cell-size",
-			{width: number; height: number} | null
-		>(this, "cell-size", {
-			ask: CELL_SIZE_QUERY,
-			timeoutMs: 1000,
-			absent: null,
-			// A terminal with no window reports zeroes. That is not a cell.
-			read: ({width, height}) =>
-				width > 0 && height > 0 ? {width, height} : null,
-		});
-		if (cell !== null && !this[kDisposed]) {
-			this[kScreen].adoptCellPixels(cell.width, cell.height);
+			{
+				ask: CELL_SIZE_QUERY,
+				timeoutMs: 1000,
+				absent: null,
+				until,
+				// A terminal with no window reports zeroes. That is not a cell.
+				read: ({width, height}) =>
+					width > 0 && height > 0 ? {width, height} : null,
+			},
+		);
+		void this.queryDeviceAttributes().then(answered);
+		const answer = await cell;
+		if (answer !== null && !this[kDisposed]) {
+			this[kScreen].adoptCellPixels(answer.width, answer.height);
 		}
 	}
 
@@ -1857,7 +1864,8 @@ type ReplyItem<K extends WireItem["kind"]> = Extract<WireItem, {kind: K}>;
 
 // `read` runs where the item is dispatched, so its side effects happen
 // in stream order. `absent` is the value silence produces. The cursor
-// questions have none and reject instead.
+// questions have none and reject instead. A question whose answer has not
+// come by the time `until` settles is given up then.
 function nextReply<K extends WireItem["kind"], T>(
 	session: Exchange,
 	kind: K,
@@ -1866,6 +1874,7 @@ function nextReply<K extends WireItem["kind"], T>(
 		timeoutMs: number;
 		read: (item: ReplyItem<K>) => T;
 		absent?: T;
+		until?: Promise<unknown>;
 		mode?: string;
 		sequence?: number;
 		clipboard?: boolean;
@@ -1908,6 +1917,13 @@ function nextReply<K extends WireItem["kind"], T>(
 			session[kWireReader].expectClipboardReply(true);
 		}
 		void session.write(options.ask);
+		void options.until?.then(() => {
+			const index = session[kPendingReplies].indexOf(entry);
+			if (index !== -1) {
+				session[kPendingReplies].splice(index, 1);
+				entry.giveUp();
+			}
+		});
 	});
 }
 
