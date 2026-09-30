@@ -7697,8 +7697,14 @@ const MEDIA_RANGE_FEATURES: Record<
 		value: (window) => window.screen.width / window.screen.height,
 	},
 	resolution: {kind: "resolution", value: (window) => window.devicePixelRatio},
-	color: {kind: "integer", value: (window) => window.screen.colorDepth / 3},
-	"color-index": {kind: "integer", value: () => 0},
+	// A palette's entries are full RGB, so an indexed terminal still has 8
+	// bits a component; what tells it apart is the size of its index.
+	color: {kind: "integer", value: () => 8},
+	"color-index": {
+		kind: "integer",
+		value: (window) =>
+			window.screen.colorDepth === 24 ? 0 : 2 ** window.screen.colorDepth,
+	},
 	monochrome: {kind: "integer", value: () => 0},
 };
 
@@ -7743,7 +7749,12 @@ const MEDIA_DISCRETE_FEATURES: Record<
 		falsy: "none",
 		value: () => "scroll",
 	},
-	"color-gamut": {values: ["srgb", "p3", "rec2020"], value: () => "srgb"},
+	// Only true color reaches sRGB; a palette of 256 or 16 matches none.
+	"color-gamut": {
+		values: ["srgb", "p3", "rec2020"],
+		falsy: "",
+		value: (window) => window.screen.colorDepth === 24 ? "srgb" : "",
+	},
 	"dynamic-range": {values: ["standard", "high"], value: () => "standard"},
 	"video-dynamic-range": {
 		values: ["standard", "high"],
