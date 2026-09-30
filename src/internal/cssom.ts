@@ -179,6 +179,22 @@ export function toCellBorder(
 		: Math.max(1, pxToCells(value, vertical, node));
 }
 
+/**
+ * How many cells a tab stop spans: a count of spaces, each a cell, or a
+ * length measured across. 8 where the value is neither.
+ */
+export function getTabSize(element: Element | null): number {
+	if (element === null) {
+		return 8;
+	}
+	const value = getComputedValue(element, "tab-size").trim();
+	if (/^\d+(?:\.\d+)?$/.test(value)) {
+		return parseFloat(value);
+	}
+	const length = toCellLength(CSSValues.parseUnitValue(value), false, element);
+	return typeof length === "number" && length >= 0 ? length : 8;
+}
+
 /** An element's margins, borders and padding, in cells. */
 export function getBoxModel(element: Element): CSSValues.BoxModel {
 	// The engine's own read: the cascade's declaration directly, without

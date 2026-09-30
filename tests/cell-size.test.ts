@@ -306,3 +306,15 @@ test("a sticky box holds to the top of the scrolled document under a larger cell
 	expect(document.getElementById("bar")!.getBoundingClientRect().top).toBe(0);
 	dom.dispose();
 });
+
+test("a tab-size length is measured across, a count in spaces", () => {
+	const {dom} = make("typical", 40, 5);
+	const render = (tabSize: string) =>
+		dom
+			.renderANSI(`<pre style="tab-size: ${tabSize}">a\tb</pre>`)
+			.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
+			.split("\n")[0];
+	expect(render("32px")).toBe("a   b");
+	expect(render("4")).toBe("a   b");
+	dom.dispose();
+});

@@ -3,6 +3,7 @@ import {
 	getBoxModel,
 	getComputedValue,
 	getDeclaredDisplay,
+	getTabSize,
 	getWhiteSpace,
 	resolveBorderSides,
 	toCellLength,
@@ -295,7 +296,7 @@ function readPaintStyle(element: Element): PaintStyle {
 		overflowY: getComputedValue(element, "overflow-y") || overflow,
 		textTransform: getComputedValue(element, "text-transform"),
 		whiteSpace: getWhiteSpace(element),
-		tabSize: parseTabSize(getComputedValue(element, "tab-size")),
+		tabSize: getTabSize(element),
 		shiftX,
 		shiftY,
 		cell: {
@@ -507,11 +508,6 @@ export class Painter {
 			}
 		}
 	}
-}
-
-function parseTabSize(value: string): number {
-	const size = parseInt(value, 10);
-	return Number.isFinite(size) && size >= 0 ? size : 8;
 }
 
 function getPaintStyle(painter: Painter, element: Element): PaintStyle {
