@@ -37,6 +37,13 @@ export interface TerminalTransport {
 	readonly colorDepth: ColorDepth;
 
 	/**
+	 * Whether the terminal's background is dark, where the environment
+	 * says (COLORFGBG). The terminal's own answer, when it gives one,
+	 * replaces it.
+	 */
+	readonly colorScheme?: "light" | "dark";
+
+	/**
 	 * Chunks are strings, so code points never split. Escape sequences may
 	 * split, and the exchange reassembles them.
 	 */
@@ -264,7 +271,9 @@ type WireItem =
 	{kind: "mode-report"; mode: string; value: number} |
 	{kind: "cell-size"; width: number; height: number} |
 	{kind: "clipboard"; text: string | null} |
-	{kind: "sgr-report"; params: string | null};
+	{kind: "sgr-report"; params: string | null} |
+	{kind: "background"; red: number; green: number; blue: number} |
+	{kind: "device-attributes"};
 
 // The one named spelling that carries a modifier.
 const SHIFT_TAB = "\x1b[Z";
@@ -468,6 +477,19 @@ const kExpectingReply = Symbol("expectingReply");
 
 const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
 
+// OSC 11 answered: the default background, each channel one to four hex
+// digits, ended by BEL or ST.
+const BACKGROUND_REPLY =
+	/^\x1b\]11;rgba?:([0-9a-f]{1,4})\/([0-9a-f]{1,4})\/([0-9a-f]{1,4})(?:\/[0-9a-f]{1,4})?(?:\x07|\x1b\\)/i;
+
+const BACKGROUND_QUERY = "\x1b]11;?\x1b\\";
+
+const DEVICE_ATTRIBUTES_QUERY = "\x1b[c";
+
+function readChannel(hex: string): number {
+	return parseInt(hex, 16) / (16 ** hex.length - 1);
+}
+
 // DECRQSS answered for SGR: the parameters of the terminal's current
 // style, as `0;53`, between DCS 1 $ r and m ST. DCS 0 $ r is a terminal
 // (tmux, say) that has no answer for the request.
@@ -583,6 +605,19 @@ class WireReader {
 						params: report[1] === "1" ? report[2] : null,
 					});
 					i += report[0].length;
+					continue;
+				}
+			}
+			if (data[i] === "\x1b" && data[i + 1] === "]") {
+				const background = BACKGROUND_REPLY.exec(data.slice(i));
+				if (background !== null) {
+					items.push({
+						kind: "background",
+						red: readChannel(background[1]),
+						green: readChannel(background[2]),
+						blue: readChannel(background[3]),
+					});
+					i += background[0].length;
 					continue;
 				}
 			}
@@ -705,6 +740,9 @@ function decodeControlToken(token: string): WireItem {
 	if (mouse) {
 		return {kind: "mouse", ...mouse};
 	}
+	if (/^\x1b\[\?[\d;]*c$/.test(token)) {
+		return {kind: "device-attributes"};
+	}
 	const cursor = token.match(/^\x1b\[(\d+);(\d+)R$/);
 	if (cursor) {
 		return {
@@ -774,6 +812,7 @@ const kWireReader = Symbol("wireReader");
 const kHasDetectedAnchor = Symbol("hasDetectedAnchor");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
 const kDSRSequence = Symbol("dsrSequence");
+const kColorScheme = Symbol("colorScheme");
 const kPendingReplies = Symbol("pendingReplies");
 
 const kPriorBidiMode = Symbol("priorBidiMode");
@@ -824,6 +863,7 @@ export interface Exchange {
 	// Oldest first. Two mode negotiations can be outstanding at once. Each
 	// names its mode, so neither takes the other's reply.
 	[kPendingReplies]: PendingReply[];
+	[kColorScheme]: "light" | "dark" | null;
 	// The BDSM state the terminal reported before we touched it.
 	[kPriorBidiMode]: number | null;
 	[kGraphemeClustersNegotiated]: boolean;
@@ -864,6 +904,7 @@ export class Exchange extends EventTarget {
 		this[kHasDetectedAnchor] = false;
 		this[kCursorDetectionPromise] = null;
 		this[kPendingReplies] = [];
+		this[kColorScheme] = null;
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
 		this[kOverlineNegotiated] = false;
@@ -895,6 +936,11 @@ export class Exchange extends EventTarget {
 
 	get transportClosed(): boolean {
 		return this[kTransportClosed];
+	}
+
+	/** What the terminal said of its background, once it has. */
+	get colorScheme(): "light" | "dark" | null {
+		return this[kColorScheme];
 	}
 
 	/**
@@ -1128,6 +1174,58 @@ export class Exchange extends EventTarget {
 		});
 		if (cell !== null && !this[kDisposed]) {
 			this[kScreen].adoptCellPixels(cell.width, cell.height);
+		}
+	}
+
+	/**
+	 * The terminal's default background, as light or dark. Asked before
+	 * the cursor's position, which a terminal answers after it, so the
+	 * first frame's wait for the cursor covers this answer too.
+	 */
+	async negotiateColorScheme(): Promise<"light" | "dark" | null> {
+		if (!this[kInteractive]) {
+			return null;
+		}
+		return await nextReply<"background", "light" | "dark" | null>(
+			this,
+			"background",
+			{
+				ask: BACKGROUND_QUERY,
+				timeoutMs: 1000,
+				absent: null,
+				read: ({red, green, blue}) =>
+					(this[kColorScheme] =
+						0.2126 * red + 0.7152 * green + 0.0722 * blue <
+						0.5
+							? "dark"
+							: "light"),
+			},
+		);
+	}
+
+	/**
+	 * DA1, which every terminal answers, and answers after whatever it was
+	 * asked before: a marker that the questions ahead of it are settled.
+	 */
+	queryDeviceAttributes(): Promise<void> {
+		if (!this[kInteractive]) {
+			return Promise.resolve();
+		}
+		return nextReply<"device-attributes", boolean>(this, "device-attributes", {
+			ask: DEVICE_ATTRIBUTES_QUERY,
+			timeoutMs: 1000,
+			absent: false,
+			read: () => true,
+		}).then(() => {});
+	}
+
+	/** A terminal that answered a later question will not answer this. */
+	abandonColorSchemeQuery(): void {
+		const pending = this[kPendingReplies];
+		const index = pending.findIndex((entry) => entry.kind === "background");
+		if (index !== -1) {
+			const [entry] = pending.splice(index, 1);
+			entry.giveUp();
 		}
 	}
 
@@ -1914,6 +2012,16 @@ export interface ProcessLike {
 	env: Record<string, string | undefined>;
 }
 
+// COLORFGBG is "foreground;background" (or with a middle field), color
+// indices: 0 to 6 and 8 are dark backgrounds, 7 and 9 to 15 light.
+function detectColorScheme(proc: ProcessLike): "light" | "dark" | undefined {
+	const background = Number(proc.env.COLORFGBG?.split(";").at(-1));
+	if (!Number.isInteger(background) || background < 0 || background > 15) {
+		return undefined;
+	}
+	return background <= 6 || background === 8 ? "dark" : "light";
+}
+
 function detectColorDepth(proc: ProcessLike): ColorDepth {
 	const colorterm = proc.env.COLORTERM;
 	if (colorterm === "truecolor" || colorterm === "24bit") {
@@ -2160,6 +2268,7 @@ export function transportFromProcess(
 			return true;
 		},
 		colorDepth: detectColorDepth(proc),
+		colorScheme: detectColorScheme(proc),
 		ready: Promise.resolve(),
 		readable,
 		writable,

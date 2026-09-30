@@ -24,9 +24,11 @@ const FORBIDDEN_BYTES: number[] = [
 // Whole attacker sequences that must never appear intact in the output.
 const FORBIDDEN_SEQUENCES = ["\x1b]0;", "\x1b[2J", "\x1b]", "\x1bP"];
 
-// The one DCS the engine writes for itself: the overline probe, a fixed
-// string with nothing of the document in it.
+// The strings the engine writes for itself: the overline probe and the
+// question about the background, fixed, with nothing of the document in
+// them.
 const OVERLINE_PROBE = "\x1b[53m\x1bP$qm\x1b\\\x1b[55m";
+const BACKGROUND_QUERY = "\x1b]11;?\x1b\\";
 
 // Each payload with the row it must paint: the control characters gone and
 // every other character kept. Asserting the row is what catches a control
@@ -62,7 +64,11 @@ for (const [payload, painted] of PAYLOADS) {
 			// need: every one of them passes on a frame that painted nothing.
 			expect(t.getVisibleText().split("\n")[0]).toBe(painted);
 
-			const out = raw().split(OVERLINE_PROBE).join("");
+			const out = raw()
+				.split(OVERLINE_PROBE)
+				.join("")
+				.split(BACKGROUND_QUERY)
+				.join("");
 			for (const byte of FORBIDDEN_BYTES) {
 				expect(out.includes(String.fromCharCode(byte))).toBe(false);
 			}

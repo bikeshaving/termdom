@@ -7679,6 +7679,16 @@ function mediaOperandMatches(
 
 type MediaRangeKind = "length" | "ratio" | "resolution" | "integer";
 
+const colorSchemes = new WeakMap<object, () => "light" | "dark">();
+
+/** Where a document's prefers-color-scheme comes from. */
+export function setColorSchemeSource(
+	document: object,
+	source: () => "light" | "dark",
+): void {
+	colorSchemes.set(document, source);
+}
+
 // What a range feature measures on this terminal. Its px are cells.
 const MEDIA_RANGE_FEATURES: Record<
 	string,
@@ -7785,7 +7795,12 @@ const MEDIA_DISCRETE_FEATURES: Record<
 		falsy: "none",
 		value: () => "none",
 	},
-	"prefers-color-scheme": {values: ["light", "dark"], value: () => "light"},
+	// Light unless the terminal's background is dark, which a person
+	// chose when they chose it.
+	"prefers-color-scheme": {
+		values: ["light", "dark"],
+		value: (window) => colorSchemes.get(window.document)?.() ?? "light",
+	},
 	"prefers-contrast": {
 		values: ["no-preference", "more", "less", "custom"],
 		falsy: "no-preference",

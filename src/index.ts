@@ -1,6 +1,6 @@
 import "./internal/inspector.ts";
 
-import {Cascade} from "./internal/cssom.ts";
+import {Cascade, setColorSchemeSource} from "./internal/cssom.ts";
 import * as DOM from "./internal/dom.ts";
 import {
 	createWindow,
@@ -51,6 +51,7 @@ const kRenderQueued = Symbol("renderQueued");
 const kOnAlternateScreen = Symbol("onAlternateScreen");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
+const kFirstFrame = Symbol("firstFrame");
 const kUnprinted = Symbol("unprinted");
 const kInput = Symbol("input");
 const kAttachReady = Symbol("attachReady");
@@ -94,6 +95,9 @@ export interface TermDOM {
 	[kUnwrittenErrors]: string | null;
 	// Timestamps observer entries.
 	[kRenderCount]: number;
+	// What the first frame waits for: the terminal's answers that decide
+	// how the page looks.
+	[kFirstFrame]: Promise<void> | null;
 	// A stdout that is not a terminal gets the document once, as it stands
 	// when the session ends. True while a frame has changed it since.
 	[kUnprinted]: boolean;
@@ -129,6 +133,7 @@ export class TermDOM {
 		this[kHeldErrors] = [];
 		this[kUnwrittenErrors] = null;
 		this[kRenderCount] = 0;
+		this[kFirstFrame] = null;
 		this[kUnprinted] = false;
 		this[kLifecycle] = "detached";
 
@@ -171,6 +176,7 @@ export class TermDOM {
 
 		// The screen measures widths over the exchange's probe channel.
 		this[kScreen].measurer = exchange;
+		setColorSchemeSource(document, () => getColorScheme(this));
 
 		DOM.attachDocument(
 			document,
@@ -285,7 +291,26 @@ export class TermDOM {
 			}
 			syncMouseReporting(this);
 			syncHoverReporting(this);
+			// The terminal's background, asked first so the first frame can
+			// wait for it.
+			const schemeBefore = getColorScheme(this);
+			void this[kExchange].negotiateColorScheme().then(() => {
+				if (isAttached(this) && getColorScheme(this) !== schemeBefore) {
+					this[kCascade].syncStylesheets();
+					DOM.syncMediaQueries(this.document);
+					void render(this);
+				}
+			});
+			// A terminal answers in the order it was asked, so once it answers
+			// DA1, one that said nothing of its background never will.
+			const answered = this[kExchange].queryDeviceAttributes();
 			this[kExchange].initializeCursorDetection();
+			// A terminal that answers nothing is not waited on past the cursor
+			// question the anchor already waits for.
+			const cursor = this[kExchange].cursorDetectionPending;
+			const schemeSettled = (
+				cursor === null ? answered : Promise.race([answered, cursor])
+			).then(() => this[kExchange].abandonColorSchemeQuery());
 			void this[kExchange].negotiateBidi();
 			void this[kExchange].negotiateGraphemeClusters();
 			// Math draws its bars as overlines once the terminal has agreed
@@ -304,6 +329,9 @@ export class TermDOM {
 					void render(this);
 				}
 			});
+			// The first frame is drawn in the colors the terminal chose. Input
+			// does not wait for it.
+			this[kFirstFrame] = schemeSettled;
 			this[kLifecycle] = "attached";
 			begun();
 
@@ -571,6 +599,12 @@ function syncHoverReporting(termDOM: TermDOM): void {
 	termDOM[kExchange].setDisplayType("motionReporting", wanted);
 }
 
+function getColorScheme(termDOM: TermDOM): "light" | "dark" {
+	return (
+		termDOM[kExchange].colorScheme ?? termDOM[kTransport].colorScheme ?? "light"
+	);
+}
+
 async function render(termDOM: TermDOM): Promise<void> {
 	// Until attach(), mutations keep the DOM and layout live but write
 	// nothing.
@@ -602,6 +636,15 @@ async function render(termDOM: TermDOM): Promise<void> {
 				termDOM[kRenderQueued] = false;
 				if (termDOM[kLifecycle] === "attaching") {
 					await termDOM[kAttachBegun];
+				}
+				// The first frame, its callbacks included, waits for what
+				// decides how the page looks.
+				if (termDOM[kFirstFrame] !== null) {
+					const first = termDOM[kFirstFrame];
+					await first;
+					if (termDOM[kFirstFrame] === first) {
+						termDOM[kFirstFrame] = null;
+					}
 				}
 				// A disposed engine paints nothing, so a callback chain that
 				// never ends would spin here forever; it ends with the engine.

@@ -3,6 +3,7 @@ import {
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
 	flatParentElement,
+	flushLayout,
 	type FocusStartingPoint,
 	getActiveElement,
 	getFocusedElement,
@@ -1399,6 +1400,9 @@ function getIndexPastPoint(
 }
 
 function moveFocus(input: Input, reverse: boolean): void {
+	// Which elements are focusable depends on what renders, so the layout
+	// is brought up to date first, whether or not a frame has painted it.
+	flushLayout(input[kDocument]);
 	// Tab cannot leave a modal dialog.
 	const scope = topmostModalDialog(input[kDocument]) ?? input[kDocument];
 	const entries = getSequentialFocusEntries(scope, input[kLayout]);
