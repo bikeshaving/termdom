@@ -23600,22 +23600,46 @@ type IntersectionObserverCallback = (
 
 const kIntersectionRoot = Symbol("intersection root");
 
-const ROOT_MARGIN_COMPONENT =
-	/^[+-]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:px|ch|%)|(?:0+(?:\.0*)?|\.0+))$/;
+// The absolute lengths a margin may use, in pixels each.
+const MARGIN_UNITS: Record<string, number> = {
+	px: 1,
+	in: 96,
+	cm: 96 / 2.54,
+	mm: 96 / 25.4,
+	q: 96 / 101.6,
+	pt: 96 / 72,
+	pc: 16,
+};
 
-// One to four lengths in px or a percentage, as the spec allows, with
-// ch as the cell grid's own unit. A unit is required, except on zero,
-// which CSS lets any length write bare.
+const MARGIN_COMPONENT =
+	/^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(px|in|cm|mm|q|pt|pc|%)$/i;
+
+// IntersectionObserver's "parse a margin": one to four absolute lengths
+// or percentages, a length in pixels, and the four sides written out as
+// the getter serializes them. Anything else is a SyntaxError.
 function checkObserverMargin(margin: string, what: string): string {
 	const parts = margin.trim().split(/\s+/).filter(Boolean);
+	const values = parts.map((part) => {
+		const match = MARGIN_COMPONENT.exec(part);
+		if (match === null) {
+			return null;
+		}
+		const unit = match[2].toLowerCase();
+		if (unit === "%") {
+			return `${Number(match[1])}%`;
+		}
+		const px = Number(match[1]) * MARGIN_UNITS[unit];
+		return `${Math.round(px * 1e6) / 1e6}px`;
+	});
 	if (
-		parts.length === 0 ||
-		parts.length > 4 ||
-		parts.some((part) => !ROOT_MARGIN_COMPONENT.test(part))
+		values.length === 0 ||
+		values.length > 4 ||
+		values.some((value) => value === null)
 	) {
 		throw domError("SyntaxError", `"${margin}" is not a ${what} margin`);
 	}
-	return margin;
+	const [top, right = top, bottom = top, left = right] = values as string[];
+	return `${top} ${right} ${bottom} ${left}`;
 }
 
 interface IntersectionObserver {

@@ -370,7 +370,7 @@ test("IntersectionObserver exposes root, rootMargin and thresholds", () => {
 	);
 
 	expect(io.root).toBe(root);
-	expect(io.rootMargin).toBe("10px");
+	expect(io.rootMargin).toBe("10px 10px 10px 10px");
 	expect(io.thresholds).toEqual([0, 0.5, 1]); // sorted, as the DOM requires
 	expect(typeof io.takeRecords).toBe("function");
 	expect(io.takeRecords()).toEqual([]);
@@ -378,21 +378,24 @@ test("IntersectionObserver exposes root, rootMargin and thresholds", () => {
 	dom.dispose();
 });
 
-test("a rootMargin needs one to four lengths, each with a unit", () => {
+test("a rootMargin is one to four absolute lengths or percentages", () => {
 	const {dom, window} = make() as any;
 	const io = (rootMargin: string) =>
 		new window.IntersectionObserver(() => {}, {rootMargin});
 
-	expect(io("+10px").rootMargin).toBe("+10px");
-	expect(io("-5%").rootMargin).toBe("-5%");
-	expect(io("0").rootMargin).toBe("0");
-	expect(io("4px 2ch -1% 0").rootMargin).toBe("4px 2ch -1% 0");
+	// Serialized as its four sides, a length in pixels.
+	expect(io("+10px").rootMargin).toBe("10px 10px 10px 10px");
+	expect(io("-5%").rootMargin).toBe("-5% -5% -5% -5%");
+	expect(io("4px 1in").rootMargin).toBe("4px 96px 4px 96px");
+	expect(io("4px 2% -1%").rootMargin).toBe("4px 2% -1% 2%");
 	// An empty rootMargin is the default, not a margin of no lengths.
-	expect(io("").rootMargin).toBe("0px");
+	expect(io("").rootMargin).toBe("0px 0px 0px 0px");
 
+	expect(() => io("0")).toThrow();
 	expect(() => io("10")).toThrow();
 	expect(() => io("5em")).toThrow();
-	expect(() => io("1 2 3 4 5")).toThrow();
+	expect(() => io("2ch")).toThrow();
+	expect(() => io("1px 2px 3px 4px 5px")).toThrow();
 
 	dom.dispose();
 });
