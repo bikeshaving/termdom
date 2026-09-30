@@ -1376,3 +1376,20 @@ test("the cursor is hidden while the region scrolls earlier output away", async 
 	}
 	dom.dispose();
 });
+
+// css-values-4 §6.2: the absolute units are fixed to the pixel, 96 to
+// the inch.
+test("absolute units convert to pixels at 96 to the inch", () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 200, rows: 10}).transport,
+	});
+	const units = ["1in", "2.54cm", "25.4mm", "101.6q", "72pt", "6pc"];
+	dom.document.body.innerHTML = units
+		.map((width) => `<div style="width: ${width}"></div>`)
+		.join("");
+	for (const div of dom.document.body.children) {
+		expect(Math.round(div.getBoundingClientRect().width)).toBe(96);
+	}
+	expect(dom.window.matchMedia("(min-width: 1in)").matches).toBe(true);
+	dom.dispose();
+});

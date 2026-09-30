@@ -2472,7 +2472,8 @@ export function isFontRelativePercentage(property: string): boolean {
 	return FONT_RELATIVE_PERCENTAGES.has(property);
 }
 
-const RELATIVE_UNIT = /[\d.](?:r?em|ex|ch|ic|vw|vh|vmin|vmax)\b/i;
+const RELATIVE_UNIT =
+	/[\d.](?:r?em|ex|ch|ic|vw|vh|vmin|vmax|in|cm|mm|q|pt|pc)\b/i;
 
 // `contextual` means computing the value needs the element (a relative
 // length, a calc(), a font-relative percentage). Decided once per
@@ -2572,6 +2573,20 @@ function getUnitFactor(unit: string, context: LengthContext): number | null {
 			return Math.min(context.viewportWidth, context.viewportHeight) / 100;
 		case "vmax":
 			return Math.max(context.viewportWidth, context.viewportHeight) / 100;
+		// The absolute units, fixed to the pixel as css-values-4 §6.2 fixes
+		// them: 96 to the inch.
+		case "in":
+			return 96;
+		case "cm":
+			return 96 / 2.54;
+		case "mm":
+			return 96 / 25.4;
+		case "q":
+			return 96 / 101.6;
+		case "pt":
+			return 96 / 72;
+		case "pc":
+			return 16;
 		case "%":
 			return context.percent;
 		default:
