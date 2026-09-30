@@ -484,3 +484,27 @@ test("an inline-block's margins stay outside its box", async () => {
 		dom.dispose();
 	}
 });
+
+// css2 §10.3.9 and §10.3.5: an auto-width inline-block shrinks to fit,
+// its content's widest line capped at the width the line offers.
+test("an auto-width inline-block wraps within the width it is offered", () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 60, rows: 20}).transport,
+	});
+	const text =
+		"This purchase will appear on your credit card statement for your " +
+		"card ending in four and so on.";
+	dom.document.body.innerHTML =
+		`<div style="width: 40ch"><div id="text" style="display: inline-block">` +
+		`${text}</div></div>` +
+		`<div id="short" style="display: inline-block">short</div>` +
+		`<div style="display: inline-block" id="host"><table><tr><td><div>` +
+		`<p>${text}</p><table width="100%"><tr><td></td></tr></table></div>` +
+		"</td></tr></table></div>";
+	const width = (id: string) =>
+		dom.document.getElementById(id)!.getBoundingClientRect().width;
+	expect(width("text")).toBe(40);
+	expect(width("short")).toBe(5);
+	expect(width("host")).toBe(60);
+	dom.dispose();
+});
