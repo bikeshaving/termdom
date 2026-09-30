@@ -291,3 +291,23 @@ test("shaped Arabic ends exactly at the RTL padding boundary", async () => {
 	expect(inner.trim().length).toBe(13);
 	dom.dispose();
 });
+
+// The line's direction is its block's, whatever opens the line. Email
+// lays columns out this way: first in the source, rightmost on screen.
+test("an rtl block lays inline-blocks out right to left", () => {
+	const terminal = new MockProcess({cols: 100, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"width: 80px; direction: rtl\">" +
+		"<div id=\"first\" style=\"direction: ltr; display: inline-block; " +
+		"width: 25%\">A</div><div id=\"second\" style=\"direction: ltr; " +
+		"display: inline-block; width: 75%\">B</div></div>";
+	const span = (id: string) => {
+		const rect = document.getElementById(id)!.getBoundingClientRect();
+		return [rect.left, rect.right];
+	};
+	expect(span("first")).toEqual([60, 80]);
+	expect(span("second")).toEqual([0, 60]);
+	dom.dispose();
+});
