@@ -5393,6 +5393,9 @@ function layoutNode(
 	if (placing) {
 		node.cachedLayout = write(node.cachedLayout);
 	} else {
+		// A sizing pass that ran wrote its own results over the subtree the
+		// last full layout placed, so that layout no longer stands.
+		node.cachedLayout = null;
 		const sizes = (node.cachedSizes ??= new Array<CachedSize | null>(
 			CACHE_SLOT_COUNT,
 		).fill(null));

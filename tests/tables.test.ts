@@ -362,3 +362,22 @@ test("a long word widens its column instead of overflowing into the next cell", 
 	expect(rows.some((row) => row.includes("abcdefghijklmno"))).toBe(true);
 	dom.dispose();
 });
+
+// A sizing pass over a table inside a table writes its own results over
+// the cells, so the layout placed before it cannot be reused afterwards.
+test("a percent table inside a block in a nested table sizes its cells to itself", () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 80, rows: 24}).transport,
+	});
+	const text =
+		"Lorem ipsum dolor sit amet consectetur adipiscing elit sed do " +
+		"eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim";
+	dom.document.body.innerHTML =
+		`<table><tr><td><table width="40"><tr><td><div>` +
+		`<table id="t" width="100%"><tr><td id="c"><p>${text}</p></td></tr>` +
+		"</table></div></td></tr></table></td></tr></table>";
+	const width = (id: string) =>
+		dom.document.getElementById(id)!.getBoundingClientRect().width;
+	expect(width("c")).toBe(width("t"));
+	dom.dispose();
+});
