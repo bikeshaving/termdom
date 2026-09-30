@@ -294,15 +294,36 @@ test("body, font and link colors come from their attributes", () => {
 });
 
 test("align and valign reach text-align and vertical-align", () => {
+	// Browsers spell the alignment align and center give as the legacy
+	// values, which also line up the block-level boxes inside.
 	expect(computed("<div id=\"d\" align=\"center\">x</div>", "d", "text-align"))
-		.toBe("center");
+		.toBe("-webkit-center");
 	expect(computed("<center id=\"d\">x</center>", "d", "text-align")).toBe(
-		"center",
+		"-webkit-center",
 	);
 	const cell =
 		"<table><tr><td id=\"c\" align=\"right\" valign=\"top\">x</td></tr></table>";
-	expect(computed(cell, "c", "text-align")).toBe("right");
+	expect(computed(cell, "c", "text-align")).toBe("-webkit-right");
 	expect(computed(cell, "c", "vertical-align")).toBe("top");
+});
+
+test("a table resets a legacy alignment, and lines up inside one", () => {
+	const {window, document} = new TermDOM({
+		html:
+			"<!DOCTYPE html><html><body><center><table id=\"t\" width=\"20\">" +
+			"<tr><td id=\"a\">text</td></tr></table>" +
+			"<div id=\"n\" style=\"width: 10px\">div</div></center></body></html>",
+		transport: new MockProcess({cols: 40, rows: 10}).transport,
+	});
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!).textAlign;
+	expect(style("t")).toBe("start");
+	expect(style("a")).toBe("start");
+	expect(style("n")).toBe("-webkit-center");
+	const x =
+		(id: string) => document.getElementById(id)!.getBoundingClientRect().x;
+	expect(x("t")).toBe(10);
+	expect(x("n")).toBe(15);
 });
 
 test("a table's attributes size it and pad its cells", () => {

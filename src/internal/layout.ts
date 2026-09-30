@@ -611,6 +611,37 @@ const GRID_PLACEMENTS = [
 	["gridColumnEnd", "grid-column-end"],
 ] as const;
 
+// A block-level box in a container with a legacy alignment (a <center>,
+// an align attribute) lines up as its margins would put it, were the
+// margins toward that side auto (HTML §15.3.3, "align descendants").
+function applyLegacyAlignment(
+	style: Style,
+	element: Element,
+	display: Display,
+	parentIsFlex: boolean,
+): void {
+	if (parentIsFlex || isInlineDisplay(display) || isOutOfFlow(element)) {
+		return;
+	}
+	const parent = boxParentElement(element);
+	const legacy = parent === null
+		? null
+		: CSSValues.getLegacyAlignment(getComputedValue(parent, "text-align"));
+	if (
+		legacy === null ||
+		getComputedValue(element, "margin-left") === "auto" ||
+		getComputedValue(element, "margin-right") === "auto"
+	) {
+		return;
+	}
+	if (legacy !== "left") {
+		style.margin.left = toValue("auto");
+	}
+	if (legacy !== "right") {
+		style.margin.right = toValue("auto");
+	}
+}
+
 // Left unset, never pinned to 0. min-width auto is a flex item's
 // content-based minimum, and 0 lets it shrink under its own text. A length
 // in content-box sizing gets the box's edges, as width and height do.
@@ -1022,6 +1053,7 @@ function styleLayoutNodeProperties(
 				? borderWidth
 				: 0;
 		}
+		applyLegacyAlignment(style, element, display, parentIsFlex);
 	}
 
 	// An inline-block flex item's measure returns a border-box size, so
@@ -4034,7 +4066,9 @@ export function getLineAlignOffset(
 	if (lineWidth > containerWidth) {
 		return rtl ? containerWidth - lineWidth : 0;
 	}
-	const align = getComputedValue(container, "text-align");
+	const align = CSSValues.getLineAlignment(
+		getComputedValue(container, "text-align"),
+	);
 	if (align === "center") {
 		return Math.max(0, (containerWidth - lineWidth) / 2);
 	}
