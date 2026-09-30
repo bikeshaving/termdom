@@ -18,6 +18,7 @@ import {
 import {
 	Exchange,
 	type TerminalCloseInfo,
+	type TerminalResizeEvent,
 	type TerminalSize,
 	type TerminalTransport,
 	transportFromProcess,
@@ -406,13 +407,24 @@ export class TermDOM {
 				? Promise.all([schemeSettled, cellAnswered]).then(() => {})
 				: schemeSettled;
 			if (this[kMeasuresCell]) {
-				// A font zoom resizes the grid, and the cell with it.
-				this[kExchange].addEventListener("terminalresize", () => {
+				// A font zoom resizes the grid, and the cell with it. The page
+				// hears of it once, when the cell is known.
+				this[kExchange].deferResizeEvent();
+				this[kExchange].addEventListener("terminalresize", (event) => {
+					const {sizeChanged} = event as TerminalResizeEvent;
 					const previous = getCellSize(this.document);
 					void this[kExchange].negotiateCellPixels().then(() => {
-						if (isAttached(this) && getCellSize(this.document) !== previous) {
+						if (!isAttached(this)) {
+							return;
+						}
+						if (getCellSize(this.document) !== previous) {
 							cellSizeChanged(this);
 							void render(this);
+						} else if (sizeChanged) {
+							DOM.dispatchAsUserAgent(
+								this.window,
+								new this.window.Event("resize"),
+							);
 						}
 					});
 				});
