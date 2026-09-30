@@ -1746,6 +1746,7 @@ function terminalResized(
 		dispatchAsUserAgent(window, new window.Event("resize"));
 	}
 	syncMediaQueries(window.document);
+	session.dispatchEvent(new Event("terminalresize"));
 }
 
 // The terminal has rewrapped the old frame with the text above it. The

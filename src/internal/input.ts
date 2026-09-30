@@ -1,3 +1,4 @@
+import {cellsToPx} from "./cellsize.ts";
 import {type Cascade, getComputedValue} from "./cssom.ts";
 import {
 	dispatchAsUserAgent,
@@ -9,6 +10,7 @@ import {
 	getFocusedElement,
 	getKeyboardActivation,
 	getPointerState,
+	getScrollOffset,
 	getShadowRoot,
 	getTextControlCaretOffset,
 	getTextControlValueText,
@@ -327,7 +329,7 @@ function getWheelScroller(
 			continue;
 		}
 		if (deltaY < 0) {
-			if (element.scrollTop > 0) {
+			if (getScrollOffset(element, "top") > 0) {
 				return element;
 			}
 			continue;
@@ -337,7 +339,9 @@ function getWheelScroller(
 		if (!extent || !port) {
 			continue;
 		}
-		if (element.scrollTop < extent.height - Math.round(port.height)) {
+		if (
+			getScrollOffset(element, "top") < extent.height - Math.round(port.height)
+		) {
 			return element;
 		}
 	}
@@ -481,8 +485,7 @@ export class Input {
 		const init = {
 			button: 0,
 			buttons,
-			clientX: x,
-			clientY: y - this[kScreen].scrollTop,
+			...getClientPoint(this, x, y),
 			...getScreenPoint(this, x, y),
 			shiftKey,
 			altKey,
@@ -545,8 +548,7 @@ export class Input {
 			const last = this[kLastMouse];
 			const moveInit = {
 				...init,
-				movementX: last === null ? 0 : x - last.x,
-				movementY: last === null ? 0 : y - last.y,
+				...getMovement(this, x, y, last),
 				bubbles: true,
 				cancelable: true,
 				composed: true,
@@ -661,8 +663,7 @@ function deliverMouseReport(input: Input, {
 			new input[kWindow].WheelEvent("wheel", {
 				deltaY: wheelDeltaY,
 				deltaMode: 1,
-				clientX: x,
-				clientY: y - input[kScreen].scrollTop,
+				...getClientPoint(input, x, y),
 				...getScreenPoint(input, x, y),
 				shiftKey,
 				altKey,
@@ -725,11 +726,9 @@ function deliverMouseReport(input: Input, {
 		detail,
 		button,
 		buttons: state.buttons,
-		clientX: x,
-		clientY: y - input[kScreen].scrollTop,
+		...getClientPoint(input, x, y),
 		...getScreenPoint(input, x, y),
-		movementX: last === null ? 0 : x - last.x,
-		movementY: last === null ? 0 : y - last.y,
+		...getMovement(input, x, y, last),
 		shiftKey,
 		altKey,
 		ctrlKey,
@@ -890,6 +889,33 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 	return {x: col - 1, y: isInDocument ? documentRow : 0, isInDocument};
 }
 
+// The cell a report named, at its top left corner in CSS pixels, so a
+// point read back from an event hits the same cell.
+function getClientPoint(
+	input: Input,
+	x: number,
+	y: number,
+): {clientX: number; clientY: number} {
+	return {
+		clientX: cellsToPx(x, false, input[kDocument]),
+		clientY: cellsToPx(y - input[kScreen].scrollTop, true, input[kDocument]),
+	};
+}
+
+function getMovement(
+	input: Input,
+	x: number,
+	y: number,
+	last: {x: number; y: number} | null,
+): {movementX: number; movementY: number} {
+	return last === null
+		? {movementX: 0, movementY: 0}
+		: {
+			movementX: cellsToPx(x - last.x, false, input[kDocument]),
+			movementY: cellsToPx(y - last.y, true, input[kDocument]),
+		};
+}
+
 // The terminal's window is the screen, so screenX and screenY are the
 // cell the report named, counted from 0.
 function getScreenPoint(
@@ -901,7 +927,10 @@ function getScreenPoint(
 	const top = input[kDocument].fullscreenElement === null
 		? screen.documentTop
 		: 0;
-	return {screenX: x, screenY: y - screen.scrollTop + top};
+	return {
+		screenX: cellsToPx(x, false, input[kDocument]),
+		screenY: cellsToPx(y - screen.scrollTop + top, true, input[kDocument]),
+	};
 }
 
 // The nearest scroller that can move takes the tick, else the document
@@ -913,7 +942,7 @@ function getScreenPoint(
 function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	const scroller = getWheelScroller(input, target, deltaY);
 	if (scroller) {
-		scroller.scrollTop += deltaY;
+		scroller.scrollTop += cellsToPx(deltaY, true, input[kDocument]);
 		return false;
 	}
 	if (input[kDocument].fullscreenElement !== null) {

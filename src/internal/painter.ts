@@ -5,6 +5,7 @@ import {
 	getDeclaredDisplay,
 	getWhiteSpace,
 	resolveBorderSides,
+	toCellLength,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
@@ -13,6 +14,7 @@ import {
 	getFocusedElement,
 	getHighlightedTextNodes,
 	getPaintedHighlights,
+	getScrollOffset,
 	getSelectionRecord,
 	getShadowRoot,
 	getTextControlSelectionRange,
@@ -255,11 +257,15 @@ function readPaintStyle(element: Element): PaintStyle {
 	let shiftX = 0;
 	let shiftY = 0;
 	if (getComputedValue(element, "position") === "relative") {
-		const left = CSSValues.parseSignedUnitValue(
-			getComputedValue(element, "left"),
+		const left = toCellLength(
+			CSSValues.parseSignedUnitValue(getComputedValue(element, "left")),
+			false,
+			element,
 		);
-		const top = CSSValues.parseSignedUnitValue(
-			getComputedValue(element, "top"),
+		const top = toCellLength(
+			CSSValues.parseSignedUnitValue(getComputedValue(element, "top")),
+			true,
+			element,
 		);
 		shiftX = typeof left === "number" ? left : 0;
 		shiftY = typeof top === "number" ? top : 0;
@@ -682,8 +688,8 @@ function paintContent(
 	const isRoot =
 		element === painter[kDocument].body ||
 		element === painter[kDocument].documentElement;
-	const scrolledRows = isRoot ? 0 : element.scrollTop || 0;
-	const scrolledCols = isRoot ? 0 : element.scrollLeft || 0;
+	const scrolledRows = isRoot ? 0 : getScrollOffset(element, "top");
+	const scrolledCols = isRoot ? 0 : getScrollOffset(element, "left");
 	const origin: Origin = {
 		x: rect.left - scrolledCols,
 		y: rect.top - scrolledRows,
