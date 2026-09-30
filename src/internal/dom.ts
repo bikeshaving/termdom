@@ -15166,8 +15166,6 @@ const runtimeKeepsFilenames = ((): boolean => {
 })();
 
 const kFilenames = Symbol("the filename each entry was stored under");
-const kReadEntry =
-	Symbol("an entry's value under the filename it was stored with");
 
 // One File per stored blob and name, so reading an entry twice gives one
 // object rather than a fresh copy each time.
@@ -15264,7 +15262,7 @@ class FormData extends FormDataBase {
 			return null;
 		}
 		const at = this[kFilenames].findIndex((entry) => entry.key === wanted);
-		return this[kReadEntry](found, at);
+		return readEntry(this, found, at);
 	}
 
 	override getAll(name: string): globalThis.FormDataEntryValue[] {
@@ -15276,7 +15274,7 @@ class FormData extends FormDataBase {
 			.map((entry, index) => (entry.key === wanted ? index : -1))
 			.filter((index) => index !== -1);
 		return super.getAll(wanted)
-			.map((value, index) => this[kReadEntry](value, at[index] ?? -1));
+			.map((value, index) => readEntry(this, value, at[index] ?? -1));
 	}
 
 	override has(name: string): boolean {
@@ -15332,12 +15330,12 @@ class FormData extends FormDataBase {
 	]> {
 		return [...super.entries()]
 			.map(([key, value], index): [string, globalThis.FormDataEntryValue] =>
-				[key, this[kReadEntry](value, index)])[Symbol.iterator]();
+				[key, readEntry(this, value, index)])[Symbol.iterator]();
 	}
 
 	override values(): FormDataIterator<globalThis.FormDataEntryValue> {
 		return [...super.values()]
-			.map((value, index) => this[kReadEntry](value, index))[Symbol.iterator]();
+			.map((value, index) => readEntry(this, value, index))[Symbol.iterator]();
 	}
 
 	override [Symbol.iterator](): FormDataIterator<[
@@ -15346,22 +15344,23 @@ class FormData extends FormDataBase {
 	]> {
 		return this.entries();
 	}
+}
 
-	// The runtime's own value, under the filename this entry was stored
-	// with. A runtime that keeps that filename is taken at its word.
-	[kReadEntry](
-		value: globalThis.FormDataEntryValue,
-		index: number,
-	): globalThis.FormDataEntryValue {
-		if (typeof value === "string" || runtimeKeepsFilenames) {
-			return value;
-		}
-		const name = this[kFilenames][index]?.name;
-		if (name == null || value.name === name) {
-			return value;
-		}
-		return fileNamed(value, name);
+// The runtime's own value, under the filename this entry was stored
+// with. A runtime that keeps that filename is taken at its word.
+function readEntry(
+	formData: FormData,
+	value: globalThis.FormDataEntryValue,
+	index: number,
+): globalThis.FormDataEntryValue {
+	if (typeof value === "string" || runtimeKeepsFilenames) {
+		return value;
 	}
+	const name = formData[kFilenames][index]?.name;
+	if (name == null || value.name === name) {
+		return value;
+	}
+	return fileNamed(value, name);
 }
 
 Object.defineProperty(FormData.prototype, Symbol.toStringTag, {
@@ -32434,7 +32433,6 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 
 const kMediaQueryDocument = Symbol("media query document");
 const kMediaQueryNotified = Symbol("media query notified");
-const kSyncMediaQuery = Symbol("sync media query");
 
 // The lists with a listener, which are the only ones a viewport change
 // has anyone to tell. `matches` reads live, so a list without a listener
@@ -32504,21 +32502,21 @@ class MediaQueryList extends EventTarget {
 		super.removeEventListener(type, callback, options);
 		trackMediaQueryListeners(this);
 	}
+}
 
-	[kSyncMediaQuery](): void {
-		const now = this.matches;
-		if (now === this[kMediaQueryNotified]) {
-			return;
-		}
-		this[kMediaQueryNotified] = now;
-		const event = new Event("change");
-		Object.defineProperties(event, {
-			matches: {value: now, enumerable: true},
-			media: {value: this.media, enumerable: true},
-		});
-		dispatchAsUserAgent(this, event);
-		trackMediaQueryListeners(this);
+function syncMediaQuery(mediaQueryList: MediaQueryList): void {
+	const now = mediaQueryList.matches;
+	if (now === mediaQueryList[kMediaQueryNotified]) {
+		return;
 	}
+	mediaQueryList[kMediaQueryNotified] = now;
+	const event = new Event("change");
+	Object.defineProperties(event, {
+		matches: {value: now, enumerable: true},
+		media: {value: mediaQueryList.media, enumerable: true},
+	});
+	dispatchAsUserAgent(mediaQueryList, event);
+	trackMediaQueryListeners(mediaQueryList);
 }
 
 function trackMediaQueryListeners(list: MediaQueryList): void {
@@ -32548,7 +32546,7 @@ export function syncMediaQueries(document: globalThis.Document): void {
 		return;
 	}
 	for (const list of [...lists]) {
-		list[kSyncMediaQuery]();
+		syncMediaQuery(list);
 	}
 }
 

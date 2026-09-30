@@ -3112,8 +3112,6 @@ const elementSheets = new WeakMap<Element, CSSStyleSheet>();
 
 const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
 
-const kSyncShadowRoot = Symbol("syncShadowRoot");
-
 // A bare fragment is a document fragment too and hosts nothing, which
 // is what separates it from a tree some element composes.
 function isShadowRoot(root: Node): root is ShadowRoot {
@@ -3133,7 +3131,7 @@ function getSheet(element: Element): CSSStyleSheet {
 			// sheet's change rebuilds the document cascade.
 			const root = element.getRootNode();
 			if (isShadowRoot(root)) {
-				cascade[kSyncShadowRoot](root);
+				syncShadowRoot(cascade, root);
 			} else {
 				cascade.syncStylesheets();
 			}
@@ -3410,9 +3408,6 @@ const kUsedValue = Symbol("usedValue");
 const kBaseValue = Symbol("baseValue");
 const kActiveTransitions = Symbol("activeTransitions");
 const kCurrentDeclarations = Symbol("currentDeclarations");
-const kUsedGridTracks = Symbol("usedGridTracks");
-const kFlushStyle = Symbol("flushStyle");
-const kMatchingRules = Symbol("matchingRules");
 
 // Writing a computed style is an error, not a no-op. It throws the
 // document's own DOMException, since one from another global is not
@@ -3692,7 +3687,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// The author's read describes the DOM as it currently is. The engine
 		// reads through getComputedValue, which does not flush, because style
 		// is resolved from inside layout, which a flush would re-enter.
-		this[kCascade]?.[kFlushStyle]();
+		if (this[kCascade]) {
+			flushCascadeStyle(this[kCascade]);
+		}
 		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			this[kSyncResolved]();
@@ -3707,7 +3704,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			return getResolvedMinSize(this, this.getComputedValue(property));
 		}
 		if (this[kCascade] && USED_TRACK_PROPERTIES.has(property)) {
-			const tracks = this[kCascade][kUsedGridTracks](
+			const tracks = usedGridTracks(
+				this[kCascade],
 				this[kElement],
 				property === "grid-template-rows",
 			);
@@ -3816,7 +3814,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// Before the work, because resolving below reads back through this
 		// declaration.
 		this[kCascade][kCurrentDeclarations].add(this);
-		this[kCSSRules] = this[kCascade][kMatchingRules](this[kElement]);
+		this[kCSSRules] = getCascadeRules(this[kCascade], this[kElement]);
 		this[kInlineBlock] = null;
 		this[kCustom] = null;
 		storeTransitionFallback(
@@ -4665,8 +4663,6 @@ const kPseudoDeclarations = Symbol("pseudo declarations");
 const kPseudoElement = Symbol("pseudoElement");
 const kNodeResolved = Symbol("nodeResolved");
 const kBoxView = Symbol("boxView");
-const kPseudoDeclarationsFor = Symbol("pseudoDeclarationsFor");
-const kContentBox = Symbol("contentBox");
 
 // A flat declaration set: the matched rules plus what the
 // pseudo-element inherits from its originating element. LIVE, for the
@@ -4755,7 +4751,9 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override getPropertyValue(property: string): string {
-		this[kCascade]?.[kFlushStyle]();
+		if (this[kCascade]) {
+			flushCascadeStyle(this[kCascade]);
+		}
 		const computed =
 			this.getComputedValue(property) ||
 			CSSValues.getComputedValueEntry(
@@ -4789,7 +4787,8 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		// declaration.
 		this[kCascade]?.[kCurrentDeclarations].add(this);
 		if (this[kCascade] && this[kElement] && this[kPseudoElement]) {
-			this[kPseudoDeclarations] = this[kCascade][kPseudoDeclarationsFor](
+			this[kPseudoDeclarations] = pseudoDeclarationsFor(
+				this[kCascade],
 				this[kElement],
 				this[kPseudoElement],
 			);
@@ -4864,7 +4863,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		while (host && getComputedValue(host, "display") === "contents") {
 			host = flatParentElement(host);
 		}
-		const box = host && this[kCascade]![kContentBox](host);
+		const box = host && contentBox(this[kCascade]!, host);
 		if (!box) {
 			return computed;
 		}
@@ -5282,16 +5281,7 @@ function attachPseudoElementsToElement(
 
 const kWindow = Symbol("window");
 const kDocument = Symbol("document");
-const kAttributeReachesDescendants = Symbol("attributeReachesDescendants");
-const kRestyleAll = Symbol("restyleAll");
-const kChainStateChange = Symbol("chainStateChange");
 const FOCUS_STATES = ["focus", "focus-within", "focus-visible"];
-const kReachesDescendants = Symbol("reachesDescendants");
-const kReachesSiblings = Symbol("reachesSiblings");
-const kInvalidateForState = Symbol("invalidateForState");
-const kClassChangeSubjects = Symbol("classChangeSubjects");
-const kDropCache = Symbol("clearCache");
-const kResolveCounterFunction = Symbol("resolveCounterFunction");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
 const kFlushing = Symbol("flushing");
 const kUsedValues = Symbol("usedValues");
@@ -5590,14 +5580,14 @@ export class Cascade {
 		this[kShadowRoots].add(root);
 		// Incrementally. Rebuilding every sheet per UA shadow tree upgrade made
 		// a document of n UA shadow trees reparse everything n times.
-		this[kSyncShadowRoot](root);
+		syncShadowRoot(this, root);
 	}
 
 	// A root filled with its content after it registered, as a declarative
 	// shadow root is, has sheets its registration did not see.
 	syncShadowRoot(root: ShadowRoot): void {
 		if (this[kShadowRoots].has(root)) {
-			this[kSyncShadowRoot](root);
+			syncShadowRoot(this, root);
 		} else {
 			this.registerShadowRoot(root);
 		}
@@ -5633,7 +5623,7 @@ export class Cascade {
 					reparseOwnerText(getSheet(mutation.target as Element));
 					const styleRoot = mutation.target.getRootNode();
 					if (isShadowRoot(styleRoot)) {
-						this[kSyncShadowRoot](styleRoot);
+						syncShadowRoot(this, styleRoot);
 					} else {
 						shouldSyncStylesheets = true;
 					}
@@ -5654,7 +5644,7 @@ export class Cascade {
 								? element.getRootNode()
 								: null;
 							if (addedRoot !== null && isShadowRoot(addedRoot)) {
-								this[kSyncShadowRoot](addedRoot);
+								syncShadowRoot(this, addedRoot);
 							} else {
 								shouldSyncStylesheets = true;
 							}
@@ -5685,7 +5675,7 @@ export class Cascade {
 				// per parent per batch: appending n children one at a time
 				// is n records against the same parent.
 				if (this[kSelectorsReachAncestors]) {
-					this[kDropCache]();
+					dropCache(this);
 				} else if (
 					this[kSelectorsReachSiblings] &&
 					mutation.target.nodeType === Node.ELEMENT_NODE
@@ -5715,7 +5705,7 @@ export class Cascade {
 				// declares an inherited property, descendant styles are
 				// unchanged.
 				const subjects = mutation.attributeName === "class"
-					? this[kClassChangeSubjects](element, mutation.oldValue)
+					? classChangeSubjects(this, element, mutation.oldValue)
 					: null;
 				if (subjects !== null) {
 					invalidateElementCaches(this, element, notifyLayout);
@@ -5740,7 +5730,8 @@ export class Cascade {
 						}
 					}
 				} else if (
-					this[kAttributeReachesDescendants](
+					attributeReachesDescendants(
+						this,
 						element,
 						mutation.attributeName!,
 						mutation.oldValue,
@@ -5758,7 +5749,7 @@ export class Cascade {
 				// styles know nothing of this change. :has() reaches ancestors,
 				// and the only correct response is to drop every cached style.
 				if (this[kSelectorsReachAncestors]) {
-					this[kDropCache]();
+					dropCache(this);
 				} else if (this[kSelectorsReachSiblings]) {
 					for (
 						let sibling = element.nextElementSibling;
@@ -5774,7 +5765,7 @@ export class Cascade {
 					reparseOwnerText(getSheet(owner));
 					const ownerRoot = owner.getRootNode();
 					if (isShadowRoot(ownerRoot)) {
-						this[kSyncShadowRoot](ownerRoot);
+						syncShadowRoot(this, ownerRoot);
 					} else {
 						shouldSyncStylesheets = true;
 					}
@@ -5813,7 +5804,7 @@ export class Cascade {
 	// the move, so a :focus rule would never apply or stop applying.
 	handleFocusChange(...elements: Array<Element | null>): void {
 		if (FOCUS_STATES.some((state) => this[kHasStates].has(state))) {
-			this[kRestyleAll]();
+			restyleAll(this);
 			return;
 		}
 		for (const element of elements) {
@@ -5822,7 +5813,7 @@ export class Cascade {
 			for (
 				let node: Element | null = element; node; node = flatParentElement(node)
 			) {
-				this[kInvalidateForState](node, FOCUS_STATES);
+				invalidateForState(this, node, FOCUS_STATES);
 			}
 		}
 	}
@@ -5836,10 +5827,10 @@ export class Cascade {
 	// restyles.
 	handleStateChange(element: Element, states: readonly string[]): void {
 		if (states.some((state) => this[kHasStates].has(state))) {
-			this[kRestyleAll]();
+			restyleAll(this);
 			return;
 		}
-		this[kInvalidateForState](element, states);
+		invalidateForState(this, element, states);
 		// No mutation record describes the change, so the frame that decides
 		// whether anything needs painting is notified here.
 		this[kLayout].invalidateFrame();
@@ -5849,13 +5840,13 @@ export class Cascade {
 	// difference of the two flat-tree chains. The shared ancestors above the
 	// fork were hovered before and are hovered still.
 	handleHoverChange(previous: Element | null, next: Element | null): void {
-		this[kChainStateChange](previous, next, "hover");
+		chainStateChange(this, previous, next, "hover");
 	}
 
 	// The same for the element a mouse button is held down on, which with
 	// its ancestors is :active.
 	handleActiveChange(previous: Element | null, next: Element | null): void {
-		this[kChainStateChange](previous, next, "active");
+		chainStateChange(this, previous, next, "active");
 	}
 
 	// A dirty sheet list parses first, so a value read between frames still
@@ -5874,7 +5865,7 @@ export class Cascade {
 			parseStylesheetsIfStale(this);
 			declaration = new ComputedStyleDeclaration(
 				element,
-				this[kMatchingRules](element),
+				getCascadeRules(this, element),
 				this,
 			);
 			this[kComputedStyleCache].set(element, declaration);
@@ -5964,7 +5955,7 @@ export class Cascade {
 
 		let textContent = CSSValues.unquoteContent(content);
 
-		textContent = this[kResolveCounterFunction](hostElement, textContent);
+		textContent = resolveCounterFunction(this, hostElement, textContent);
 
 		return textContent;
 	}
@@ -6000,342 +5991,367 @@ export class Cascade {
 		this[kActiveTransitions].clear();
 		this[kTransitionEvents] = [];
 	}
+}
 
-	// Whether a change to any of these states on the element can restyle
-	// its descendants, or its later siblings, under the rules as parsed.
-	[kReachesDescendants](element: Element, states: readonly string[]): boolean {
-		parseStylesheetsIfStale(this);
-		return states.some((state) =>
-			this[kDescendantPseudoClasses]
-				.get(state)?.some((anchor) => couldAnchor(element, anchor)),
-		);
+// Null for a box that generated no grid. The resolved value then stays
+// the computed track list, as CSSOM says.
+function usedGridTracks(
+	cascade: Cascade,
+	element: Element,
+	rows: boolean,
+): number[] | null {
+	if (!getUsedRect(cascade, element)) {
+		return null;
 	}
+	return cascade[kLayout].gridTracks(element, rows);
+}
 
-	// A state changed on the element. The element restyles. Its subtree and
-	// its shadow tree do when a rule tests the state above what it styles,
-	// as :hover .x or :host(:focus) do, or sets something they inherit.
-	// Its later siblings do when a rule tests it before + or ~.
-	[kInvalidateForState](element: Element, states: readonly string[]): void {
-		if (this[kReachesDescendants](element, states)) {
-			invalidateSubtree(this, element);
-			const shadowRoot = getShadowRoot(element);
-			if (shadowRoot) {
-				for (const descendant of shadowRoot.querySelectorAll("*")) {
-					invalidateElementCaches(this, descendant);
-				}
-			}
-		} else {
-			invalidateElementCaches(this, element);
-			attachPseudoElementsToElement(this, element);
-		}
-		if (this[kReachesSiblings](element, states)) {
-			invalidateLaterSiblings(this, element);
-		}
+// Re-parse ONE shadow root's sheets in place. Only trees the root's
+// rules can reach restyle. A pending full rebuild covers this root.
+function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
+	if (cascade[kStylesheetsDirty] || cascade[kParsedStyleSheetCount] < 0) {
+		cascade[kStylesheetsDirty] = true;
+		return;
 	}
-
-	[kReachesSiblings](element: Element, states: readonly string[]): boolean {
-		parseStylesheetsIfStale(this);
-		return states.some((state) =>
-			this[kSiblingPseudoClasses]
-				.get(state)?.some((anchor) => couldAnchor(element, anchor)),
-		);
+	cascade[kParsedRules] = cascade[kParsedRules].filter(
+		(rule) => rule.scope !== root,
+	);
+	const before = cascade[kParsedRules].length;
+	for (const sheet of getShadowStyleSheets(root)) {
+		parseStyleSheet(cascade, sheet, root);
 	}
-
-	// A state that follows one element and its flat-tree ancestors, :hover or
-	// :active, moved from one chain to another. Only the elements on one
-	// chain and not the other changed.
-	[kChainStateChange](
-		previous: Element | null,
-		next: Element | null,
-		state: string,
-	): void {
-		if (this[kHasStates].has(state)) {
-			this[kRestyleAll]();
-			return;
-		}
-		const getChain = (element: Element | null): Set<Element> => {
-			const chain = new Set<Element>();
-			for (
-				let node: Element | null = element; node; node = flatParentElement(node)
-			) {
-				chain.add(node);
-			}
-			return chain;
-		};
-		const previousChain = getChain(previous);
-		const nextChain = getChain(next);
-		const invalidate = (node: Element): void => {
-			this[kInvalidateForState](node, [state]);
-		};
-		for (const node of previousChain) {
-			if (!nextChain.has(node)) {
-				invalidate(node);
-			}
-		}
-		for (const node of nextChain) {
-			if (!previousChain.has(node)) {
-				invalidate(node);
-			}
+	// Without this sync the drift check orders the full rebuild this path
+	// exists to avoid, once per UA shadow tree.
+	cascade[kParsedStyleSheetCount] = getStyleSheetCount(cascade);
+	const fresh = cascade[kParsedRules].slice(before);
+	if (fresh.length === 0) {
+		return;
+	}
+	const layerRanks = rankLayers(cascade);
+	for (const rule of cascade[kParsedRules]) {
+		rule.layerRank = rule.layer === null
+			? cascade[kUnlayeredRank]
+			: (layerRanks.get(rule.layer) ?? cascade[kUnlayeredRank]);
+	}
+	sortRulesForCascade(cascade);
+	const host = root.host as Element | null;
+	if (host) {
+		invalidateSubtree(cascade, host);
+	} else {
+		for (const child of root.children) {
+			invalidateSubtree(cascade, child);
 		}
 	}
-
-	// Everything restyles, as it does when a stylesheet changes.
-	[kRestyleAll](): void {
-		this[kDropCache]();
-		const root = this[kDocument].documentElement;
-		if (root) {
-			this[kLayout].invalidate(root);
-		} else {
-			this[kLayout].invalidateFrame();
-		}
+	// The UA shadow trees' sheets have no pseudo-generating rules, so the
+	// attach sweep runs only for an author shadow root that does.
+	if (fresh.some((rule) => generatesPseudoElement(rule.pseudoElement))) {
+		attachPseudoElements(cascade);
 	}
+}
 
-	[kMatchingRules](element: Element): ParsedCSSRule[] {
-		parseStylesheetsIfStale(this);
-		const rules = getMatchingRules(this, element);
-		const hints = getHintRule(element);
-		if (hints === null) {
-			return rules;
-		}
-		// Author level, zero specificity, ahead of every author rule and
-		// layer (HTML §15.1).
-		const at = rules.findIndex((rule) => !rule.uaOrigin);
-		return at === -1
-			? [...rules, hints]
-			: [...rules.slice(0, at), hints, ...rules.slice(at)];
+// Everything restyles, as it does when a stylesheet changes.
+function restyleAll(cascade: Cascade): void {
+	dropCache(cascade);
+	const root = cascade[kDocument].documentElement;
+	if (root) {
+		cascade[kLayout].invalidate(root);
+	} else {
+		cascade[kLayout].invalidateFrame();
 	}
+}
 
-	// Every author-facing style read goes through this flush, so a value
-	// read right after a DOM change describes it. It settles style only: a
-	// value that is measured lays out first through getUsedRect. The
-	// engine's own reads never flush. Not re-entrant: layout and paint
-	// resolve styles as they run, and asking for the flush from inside it
-	// would compute it inside itself.
-	[kFlushStyle](): void {
-		if (this[kFlushing]) {
-			return;
-		}
-		this[kFlushing] = true;
-		try {
-			if (flushStyle(this[kDocument])) {
-				this[kUsedValues] = new WeakMap();
-			}
-		} finally {
-			this[kFlushing] = false;
-		}
-	}
-
-	// The box a child's or a pseudo-element's percentage resolves against,
-	// measured behind the same flush a rect read takes.
-	[kContentBox](element: Element): DOMRect | null {
-		if (!getUsedRect(this, element)) {
-			return null;
-		}
-		return this[kLayout].contentRect(element);
-	}
-
-	// Null for a box that generated no grid. The resolved value then stays
-	// the computed track list, as CSSOM says.
-	[kUsedGridTracks](element: Element, rows: boolean): number[] | null {
-		if (!getUsedRect(this, element)) {
-			return null;
-		}
-		return this[kLayout].gridTracks(element, rows);
-	}
-
-	// Re-parse ONE shadow root's sheets in place. Only trees the root's
-	// rules can reach restyle. A pending full rebuild covers this root.
-	[kSyncShadowRoot](root: ShadowRoot): void {
-		if (this[kStylesheetsDirty] || this[kParsedStyleSheetCount] < 0) {
-			this[kStylesheetsDirty] = true;
-			return;
-		}
-		this[kParsedRules] = this[kParsedRules].filter(
-			(rule) => rule.scope !== root,
-		);
-		const before = this[kParsedRules].length;
-		for (const sheet of getShadowStyleSheets(root)) {
-			parseStyleSheet(this, sheet, root);
-		}
-		// Without this sync the drift check orders the full rebuild this path
-		// exists to avoid, once per UA shadow tree.
-		this[kParsedStyleSheetCount] = getStyleSheetCount(this);
-		const fresh = this[kParsedRules].slice(before);
-		if (fresh.length === 0) {
-			return;
-		}
-		const layerRanks = rankLayers(this);
-		for (const rule of this[kParsedRules]) {
-			rule.layerRank = rule.layer === null
-				? this[kUnlayeredRank]
-				: (layerRanks.get(rule.layer) ?? this[kUnlayeredRank]);
-		}
-		sortRulesForCascade(this);
-		const host = root.host as Element | null;
-		if (host) {
-			invalidateSubtree(this, host);
-		} else {
-			for (const child of root.children) {
-				invalidateSubtree(this, child);
-			}
-		}
-		// The UA shadow trees' sheets have no pseudo-generating rules, so the
-		// attach sweep runs only for an author shadow root that does.
-		if (fresh.some((rule) => generatesPseudoElement(rule.pseudoElement))) {
-			attachPseudoElements(this);
-		}
-	}
-
-	[kPseudoDeclarationsFor](
-		element: Element,
-		pseudoElement: string,
-	): Record<string, string> {
-		const declarations: Record<string, string> = {
-			...computePseudoElementStyle(this, element, pseudoElement),
-		};
-		// A pseudo-element INHERITS from its originating element. Rule
-		// declarations win, and inherited values only fill the gaps.
-		const hostStyle = this.declarationFor(element);
-		inheritedProperties ??=
-			CSS_PROPERTIES.filter(CSSValues.isInheritedProperty);
-		for (const property of inheritedProperties) {
-			if (!declarations[property]) {
-				const inherited = hostStyle.getComputedValue(property);
-				if (inherited) {
-					declarations[property] = inherited;
-				}
-			}
-		}
-		// A pseudo-element of a flex or grid container is one of its items,
-		// and an item's display isBlockified, including the initial `inline`.
-		if (ITEM_DISPLAYS.has(hostStyle.getComputedValue("display"))) {
-			declarations.display = CSSValues.getBlockifiedDisplay(
-				declarations.display || getInitialStyle(null, "display"),
+// Replace each counter(name[, style]) with the number it stands at
+// here.
+function resolveCounterFunction(
+	cascade: Cascade,
+	element: Element,
+	content: string,
+): string {
+	initializeCounters(cascade, element);
+	const scope = cascade[kCounterScopes].get(element);
+	return content.replace(
+		/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
+		(_match, counterName, style) => {
+			const trimmedName = counterName.trim();
+			const trimmedStyle = style?.trim() || "decimal";
+			return CSSValues.formatCounterValue(
+				CSSValues.getCounterValueInScope(scope, trimmedName),
+				trimmedStyle,
 			);
-		}
-		return declarations;
-	}
+		},
+	);
+}
 
-	// Whether this attribute change can affect a DESCENDANT's style, by a
-	// rule that matches one or a value they inherit. An inline style always
-	// can, because what it declares is not known until parsed.
-	[kAttributeReachesDescendants](
-		element: Element,
-		name: string,
-		oldValue: string | null,
-	): boolean {
-		if (isHintAttribute(element, name)) {
+function reachesSiblings(
+	cascade: Cascade,
+	element: Element,
+	states: readonly string[],
+): boolean {
+	parseStylesheetsIfStale(cascade);
+	return states.some((state) =>
+		cascade[kSiblingPseudoClasses]
+			.get(state)?.some((anchor) => couldAnchor(element, anchor)),
+	);
+}
+
+// Whether a change to any of these states on the element can restyle
+// its descendants, or its later siblings, under the rules as parsed.
+function reachesDescendants(
+	cascade: Cascade,
+	element: Element,
+	states: readonly string[],
+): boolean {
+	parseStylesheetsIfStale(cascade);
+	return states.some((state) =>
+		cascade[kDescendantPseudoClasses]
+			.get(state)?.some((anchor) => couldAnchor(element, anchor)),
+	);
+}
+
+function pseudoDeclarationsFor(
+	cascade: Cascade,
+	element: Element,
+	pseudoElement: string,
+): Record<string, string> {
+	const declarations: Record<string, string> = {
+		...computePseudoElementStyle(cascade, element, pseudoElement),
+	};
+	// A pseudo-element INHERITS from its originating element. Rule
+	// declarations win, and inherited values only fill the gaps.
+	const hostStyle = cascade.declarationFor(element);
+	inheritedProperties ??= CSS_PROPERTIES.filter(CSSValues.isInheritedProperty);
+	for (const property of inheritedProperties) {
+		if (!declarations[property]) {
+			const inherited = hostStyle.getComputedValue(property);
+			if (inherited) {
+				declarations[property] = inherited;
+			}
+		}
+	}
+	// A pseudo-element of a flex or grid container is one of its items,
+	// and an item's display isBlockified, including the initial `inline`.
+	if (ITEM_DISPLAYS.has(hostStyle.getComputedValue("display"))) {
+		declarations.display = CSSValues.getBlockifiedDisplay(
+			declarations.display || getInitialStyle(null, "display"),
+		);
+	}
+	return declarations;
+}
+
+function getCascadeRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
+	parseStylesheetsIfStale(cascade);
+	const rules = getMatchingRules(cascade, element);
+	const hints = getHintRule(element);
+	if (hints === null) {
+		return rules;
+	}
+	// Author level, zero specificity, ahead of every author rule and
+	// layer (HTML §15.1).
+	const at = rules.findIndex((rule) => !rule.uaOrigin);
+	return at === -1
+		? [...rules, hints]
+		: [...rules.slice(0, at), hints, ...rules.slice(at)];
+}
+
+// A state changed on the element. The element restyles. Its subtree and
+// its shadow tree do when a rule tests the state above what it styles,
+// as :hover .x or :host(:focus) do, or sets something they inherit.
+// Its later siblings do when a rule tests it before + or ~.
+function invalidateForState(
+	cascade: Cascade,
+	element: Element,
+	states: readonly string[],
+): void {
+	if (reachesDescendants(cascade, element, states)) {
+		invalidateSubtree(cascade, element);
+		const shadowRoot = getShadowRoot(element);
+		if (shadowRoot) {
+			for (const descendant of shadowRoot.querySelectorAll("*")) {
+				invalidateElementCaches(cascade, descendant);
+			}
+		}
+	} else {
+		invalidateElementCaches(cascade, element);
+		attachPseudoElementsToElement(cascade, element);
+	}
+	if (reachesSiblings(cascade, element, states)) {
+		invalidateLaterSiblings(cascade, element);
+	}
+}
+
+// Every author-facing style read goes through this flush, so a value
+// read right after a DOM change describes it. It settles style only: a
+// value that is measured lays out first through getUsedRect. The
+// engine's own reads never flush. Not re-entrant: layout and paint
+// resolve styles as they run, and asking for the flush from inside it
+// would compute it inside itself.
+function flushCascadeStyle(cascade: Cascade): void {
+	if (cascade[kFlushing]) {
+		return;
+	}
+	cascade[kFlushing] = true;
+	try {
+		if (flushStyle(cascade[kDocument])) {
+			cascade[kUsedValues] = new WeakMap();
+		}
+	} finally {
+		cascade[kFlushing] = false;
+	}
+}
+
+function dropCache(cascade: Cascade): void {
+	// Every computed style ever handed out re-resolves on its next read.
+	cascade[kCurrentDeclarations] = new WeakSet<object>();
+	cascade[kUsedValues] = new WeakMap();
+	cascade[kComputedStyleCache] = new WeakMap();
+	cascade[kHasResults] = null;
+	cascade[kPseudoElementStyleCache] = new WeakMap();
+	cascade[kCounterScopes] = new WeakMap();
+}
+
+// The box a child's or a pseudo-element's percentage resolves against,
+// measured behind the same flush a rect read takes.
+function contentBox(cascade: Cascade, element: Element): DOMRect | null {
+	if (!getUsedRect(cascade, element)) {
+		return null;
+	}
+	return cascade[kLayout].contentRect(element);
+}
+
+// The descendants a class change can restyle, as the subjects of the
+// rules that test the classes that came or went, or null when the change
+// needs the general answer: any descendant, or an old value unknown.
+function classChangeSubjects(
+	cascade: Cascade,
+	element: Element,
+	oldValue: string | null,
+): StateAnchor[] | null {
+	if (oldValue === null || cascade[kReachingAttributes].has("class")) {
+		return null;
+	}
+	const before = new Set(oldValue.split(/\s+/));
+	const after = getClassTokens(element);
+	const changed = [
+		...[...after].filter((token) => !before.has(token)),
+		...[...before].filter((token) => token !== "" && !after.has(token)),
+	];
+	const anchors: StateAnchor[] = [];
+	for (const token of changed) {
+		const subjects = cascade[kClassSubjects].get(token);
+		if (subjects === null) {
+			return null;
+		}
+		if (subjects !== undefined) {
+			anchors.push(...subjects);
+		}
+	}
+	return anchors;
+}
+
+// A state that follows one element and its flat-tree ancestors, :hover or
+// :active, moved from one chain to another. Only the elements on one
+// chain and not the other changed.
+function chainStateChange(
+	cascade: Cascade,
+	previous: Element | null,
+	next: Element | null,
+	state: string,
+): void {
+	if (cascade[kHasStates].has(state)) {
+		restyleAll(cascade);
+		return;
+	}
+	const getChain = (element: Element | null): Set<Element> => {
+		const chain = new Set<Element>();
+		for (
+			let node: Element | null = element; node; node = flatParentElement(node)
+		) {
+			chain.add(node);
+		}
+		return chain;
+	};
+	const previousChain = getChain(previous);
+	const nextChain = getChain(next);
+	const invalidate = (node: Element): void => {
+		invalidateForState(cascade, node, [state]);
+	};
+	for (const node of previousChain) {
+		if (!nextChain.has(node)) {
+			invalidate(node);
+		}
+	}
+	for (const node of nextChain) {
+		if (!previousChain.has(node)) {
+			invalidate(node);
+		}
+	}
+}
+
+// Whether this attribute change can affect a DESCENDANT's style, by a
+// rule that matches one or a value they inherit. An inline style always
+// can, because what it declares is not known until parsed.
+function attributeReachesDescendants(
+	cascade: Cascade,
+	element: Element,
+	name: string,
+	oldValue: string | null,
+): boolean {
+	if (isHintAttribute(element, name)) {
+		return true;
+	}
+	if (name === "style") {
+		if (oldValue === null) {
 			return true;
 		}
-		if (name === "style") {
-			if (oldValue === null) {
-				return true;
-			}
-			return inlineChangeReachesDescendants(
-				oldValue,
-				element.getAttribute("style") ?? "",
-			);
+		return inlineChangeReachesDescendants(
+			oldValue,
+			element.getAttribute("style") ?? "",
+		);
+	}
+	if (name === "class") {
+		if (cascade[kReachingAttributes].has("class")) {
+			return true;
 		}
-		if (name === "class") {
-			if (this[kReachingAttributes].has("class")) {
-				return true;
-			}
-			if (this[kReachingClasses].size === 0) {
-				return false;
-			}
-			// With no old value, the classes that LEFT cannot be known.
-			if (oldValue === null) {
-				return element.hasAttribute("class");
-			}
-			// Only the classes that came or went can have changed a match.
-			const before = new Set(oldValue.split(/\s+/));
-			const after = getClassTokens(element);
-			for (const token of after) {
-				if (!before.has(token) && this[kReachingClasses].has(token)) {
-					return true;
-				}
-			}
-			for (const token of before) {
-				if (
-					token !== "" && !after.has(token) && this[kReachingClasses].has(token)
-				) {
-					return true;
-				}
-			}
+		if (cascade[kReachingClasses].size === 0) {
 			return false;
 		}
-		if (name === "id") {
-			if (this[kReachingAttributes].has("id")) {
-				return true;
-			}
-			if (oldValue !== null && this[kReachingIds].has(oldValue)) {
-				return true;
-			}
-			const id = element.getAttribute("id");
-			return id !== null && this[kReachingIds].has(id);
+		// With no old value, the classes that LEFT cannot be known.
+		if (oldValue === null) {
+			return element.hasAttribute("class");
 		}
-		if (this[kReachingAttributes].has(name)) {
-			return true;
-		}
-		return this[kReachingStates] && CSSValues.isStateAttribute(name);
-	}
-
-	// The descendants a class change can restyle, as the subjects of the
-	// rules that test the classes that came or went, or null when the change
-	// needs the general answer: any descendant, or an old value unknown.
-	[kClassChangeSubjects](
-		element: Element,
-		oldValue: string | null,
-	): StateAnchor[] | null {
-		if (oldValue === null || this[kReachingAttributes].has("class")) {
-			return null;
-		}
+		// Only the classes that came or went can have changed a match.
 		const before = new Set(oldValue.split(/\s+/));
 		const after = getClassTokens(element);
-		const changed = [
-			...[...after].filter((token) => !before.has(token)),
-			...[...before].filter((token) => token !== "" && !after.has(token)),
-		];
-		const anchors: StateAnchor[] = [];
-		for (const token of changed) {
-			const subjects = this[kClassSubjects].get(token);
-			if (subjects === null) {
-				return null;
-			}
-			if (subjects !== undefined) {
-				anchors.push(...subjects);
+		for (const token of after) {
+			if (!before.has(token) && cascade[kReachingClasses].has(token)) {
+				return true;
 			}
 		}
-		return anchors;
+		for (const token of before) {
+			if (
+				token !== "" &&
+				!after.has(token) &&
+				cascade[kReachingClasses].has(token)
+			) {
+				return true;
+			}
+		}
+		return false;
 	}
-
-	[kDropCache](): void {
-		// Every computed style ever handed out re-resolves on its next read.
-		this[kCurrentDeclarations] = new WeakSet<object>();
-		this[kUsedValues] = new WeakMap();
-		this[kComputedStyleCache] = new WeakMap();
-		this[kHasResults] = null;
-		this[kPseudoElementStyleCache] = new WeakMap();
-		this[kCounterScopes] = new WeakMap();
+	if (name === "id") {
+		if (cascade[kReachingAttributes].has("id")) {
+			return true;
+		}
+		if (oldValue !== null && cascade[kReachingIds].has(oldValue)) {
+			return true;
+		}
+		const id = element.getAttribute("id");
+		return id !== null && cascade[kReachingIds].has(id);
 	}
-
-	// Replace each counter(name[, style]) with the number it stands at
-	// here.
-	[kResolveCounterFunction](element: Element, content: string): string {
-		initializeCounters(this, element);
-		const scope = this[kCounterScopes].get(element);
-		return content.replace(
-			/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
-			(_match, counterName, style) => {
-				const trimmedName = counterName.trim();
-				const trimmedStyle = style?.trim() || "decimal";
-				return CSSValues.formatCounterValue(
-					CSSValues.getCounterValueInScope(scope, trimmedName),
-					trimmedStyle,
-				);
-			},
-		);
+	if (cascade[kReachingAttributes].has(name)) {
+		return true;
 	}
+	return cascade[kReachingStates] && CSSValues.isStateAttribute(name);
 }
 
 // The flush runs once per change, not once per read. A caller reading
@@ -6361,7 +6377,7 @@ function getPseudoDeclaration(
 	if (cached) {
 		return cached;
 	}
-	const declarations = cascade[kPseudoDeclarationsFor](element, pseudoElement);
+	const declarations = pseudoDeclarationsFor(cascade, element, pseudoElement);
 	const declaration = new PseudoStyleDeclaration(
 		declarations,
 		element,
@@ -6673,7 +6689,7 @@ function getResolvedStyle(
 	element: Element,
 	pseudoElt?: string | null,
 ): globalThis.CSSStyleDeclaration {
-	cascade[kFlushStyle]();
+	flushCascadeStyle(cascade);
 	parseStylesheetsIfStale(cascade);
 	// An element out of the document, or out of the flat tree it composes,
 	// has no style to report. Only an author read comes through here.
@@ -7460,7 +7476,7 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	}
 
 	sortRulesForCascade(cascade);
-	cascade[kDropCache]();
+	dropCache(cascade);
 	// Only now, because invalidated layout re-derives boxes by asking the
 	// cascade for display, and the result must come from the rules just
 	// parsed.
@@ -8842,7 +8858,7 @@ function getPseudoContent(
 
 	const textContent = CSSValues.unquoteContent(content);
 
-	return cascade[kResolveCounterFunction](hostElement, textContent);
+	return resolveCounterFunction(cascade, hostElement, textContent);
 }
 
 function attachPseudoElements(cascade: Cascade): void {
