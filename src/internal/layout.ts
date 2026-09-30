@@ -6,6 +6,7 @@ import {
 	getComputedValue,
 	getDeclaredDisplay,
 	getWhiteSpace as getElementWhiteSpace,
+	getTabSize,
 	toCellBorder,
 	toCellLength,
 	usedValuesChanged,
@@ -3730,7 +3731,7 @@ function expandTabs(items: ProcessedContent["items"]): string {
 			const expanded = expandTabRun(
 				content,
 				item.dataOffsets ?? null,
-				getTabSize(leaf.node),
+				getTextTabSize(leaf.node),
 				column,
 			);
 			item.processedContent = expanded.text;
@@ -3752,10 +3753,8 @@ function expandTabs(items: ProcessedContent["items"]): string {
 	return text;
 }
 
-function getTabSize(textNode: Text): number {
-	const parent = flatParentElement(textNode);
-	const value = parent ? parseInt(getComputedValue(parent, "tab-size"), 10) : 8;
-	return Number.isFinite(value) && value >= 0 ? value : 8;
+function getTextTabSize(textNode: Text): number {
+	return getTabSize(flatParentElement(textNode));
 }
 
 const kRenderedLeaves = Symbol("renderedLeaves");
@@ -6636,7 +6635,7 @@ function getCaretRectInFragment(
 		line.startOffset,
 		Math.max(line.startOffset, Math.min(offset, line.endOffset)),
 		null,
-		{tabSize: getTabSize(textNode), column: line.column},
+		{tabSize: getTextTabSize(textNode), column: line.column},
 	);
 	const x = Math.round(line.rect.x) + getStringWidth(before);
 	return new layout[kDOMRect](x, Math.round(line.rect.y), 0, line.rect.height);
@@ -6658,7 +6657,7 @@ function getOffsetInFragment(
 		({text, offsets} = expandTabRun(
 			text,
 			offsets,
-			getTabSize(textNode),
+			getTextTabSize(textNode),
 			fragment.column,
 		));
 	}
