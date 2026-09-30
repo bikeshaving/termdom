@@ -224,3 +224,25 @@ test("Tab and focus() scroll a pane by the pixels its cells take", async () => {
 	expect(inPane("b")).toBe(true);
 	dom.dispose();
 });
+
+test("the built-in styles lay out the same under every cell size", () => {
+	const html =
+		"<p>Before.</p><blockquote><p>Quoted.</p>" +
+		"<blockquote>Nested.</blockquote></blockquote><p>After.</p>" +
+		"<fieldset><legend>Title</legend>x</fieldset>";
+	const render = (cellSize: TermDOMOptions["cellSize"]) => {
+		const {dom} = make(cellSize, 30, 12);
+		const text = dom.renderANSI(html).replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "");
+		dom.dispose();
+		return text;
+	};
+	const unit = render("unit");
+	expect(unit.split("\n").slice(0, 5)).toEqual([
+		"Before.",
+		"│ Quoted.",
+		"│ │ Nested.",
+		"After.",
+		"┌─ Title ────────────────────┐",
+	]);
+	expect(render("typical")).toBe(unit);
+});

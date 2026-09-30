@@ -14,7 +14,7 @@ export const UA_ELEMENT_STYLES = `
 	title { display: none; }
 	article { display: block; }
 	aside { display: block; }
-	blockquote { display: block; }
+	blockquote { display: block; border-left: 1px solid; padding-left: 1ch; }
 	center { display: block; text-align: -webkit-center; }
 	body { display: block; }
 	dd { display: block; }
@@ -24,7 +24,7 @@ export const UA_ELEMENT_STYLES = `
 	dl { display: block; }
 	dt { display: block; }
 	fieldset { display: block; border: 1px solid; padding: 0 1ch; }
-	legend { display: block; margin-top: -1px; font-weight: bold; }
+	legend { display: block; margin-top: -1lh; font-weight: bold; }
 	figcaption { display: block; }
 	figure { display: block; }
 	footer { display: block; }
