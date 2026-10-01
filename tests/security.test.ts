@@ -143,3 +143,123 @@ test("a <script> in rendered HTML is inert, and a handler attribute is the app's
 	expect(flags.__termdomHandler).toBe(true);
 	dom.dispose();
 });
+
+// A document an author builds through the DOM -- a DOMParser result,
+// createHTMLDocument, a <template>'s contents, an iframe's content document --
+// has no browsing context, so scripting is disabled for it. Its handler
+// content attributes must stay inert: they never compile or run, even for the
+// events the engine dispatches on its own (a <details open> toggle, an
+// <iframe> load), and they reflect as null. This is the guarantee a sanitizer
+// such as DOMPurify leans on -- it parses hostile markup into exactly these
+// documents, measures it, and strips the handlers before any node is adopted
+// into the live, scripted document. If the inert pass could execute, sanitizing
+// the markup would run it.
+
+// A spin past the microtask queue and one macrotask: `<details open>` queues
+// its toggle in a microtask, an `<iframe>` fires load from a `setTimeout(0)`.
+async function settle(): Promise<void> {
+	await Promise.resolve();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+// Markup whose handlers fire with no user interaction: the open details
+// toggles and the iframe loads as soon as each is parsed into a document.
+const AUTO_FIRING =
+	"<details open ontoggle=\"globalThis.__termdomInert = true\"></details>" +
+	"<iframe onload=\"globalThis.__termdomInert = true\"></iframe>";
+
+type InertFlags = {__termdomInert?: boolean};
+
+test("a handler in a DOMParser document is inert and reflects as null", async () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const flags = globalThis as unknown as InertFlags;
+	flags.__termdomInert = false;
+
+	const parsed = new dom.window.DOMParser().parseFromString(
+		`<body ontoggle="globalThis.__termdomInert = true">${AUTO_FIRING}</body>`,
+		"text/html",
+	);
+	// Reading the reflected handler must not compile it either.
+	expect(parsed.body.onload).toBe(null);
+	const details = parsed.querySelector("details");
+	details?.removeAttribute("open");
+	details?.setAttribute("open", "");
+	await settle();
+
+	expect(flags.__termdomInert).toBe(false);
+	dom.dispose();
+});
+
+test("a handler in a createHTMLDocument document is inert", async () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const flags = globalThis as unknown as InertFlags;
+	flags.__termdomInert = false;
+
+	const built = dom.document.implementation.createHTMLDocument("x");
+	built.body.innerHTML = AUTO_FIRING;
+	const details = built.querySelector("details");
+	expect(details?.ontoggle).toBe(null);
+	details?.removeAttribute("open");
+	details?.setAttribute("open", "");
+	await settle();
+
+	expect(flags.__termdomInert).toBe(false);
+	dom.dispose();
+});
+
+test("a handler in a <template>'s contents is inert", async () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const flags = globalThis as unknown as InertFlags;
+	flags.__termdomInert = false;
+
+	const template = dom.document.createElement("template");
+	template.innerHTML = AUTO_FIRING;
+	const details = template.content.querySelector("details");
+	expect(details?.ontoggle).toBe(null);
+	details?.removeAttribute("open");
+	details?.setAttribute("open", "");
+	await settle();
+
+	expect(flags.__termdomInert).toBe(false);
+	dom.dispose();
+});
+
+test("a handler in an iframe's content document is inert", async () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const flags = globalThis as unknown as InertFlags;
+	flags.__termdomInert = false;
+
+	const iframe = dom.document.createElement("iframe");
+	iframe.setAttribute("srcdoc", AUTO_FIRING);
+	dom.document.body.append(iframe);
+	// Build the content document, as reading it in the app would.
+	void iframe.contentDocument;
+	await settle();
+
+	expect(flags.__termdomInert).toBe(false);
+	dom.dispose();
+});
+
+test("a handler compiles once its node is adopted into the live document", async () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const flags = globalThis as unknown as InertFlags;
+	flags.__termdomInert = false;
+
+	// Built in an inert document, the handler does not compile...
+	const built = dom.document.implementation.createHTMLDocument("x");
+	built.body.innerHTML =
+		"<div onclick=\"globalThis.__termdomInert = true\">text</div>";
+	const div = built.querySelector("div")!;
+	expect(div.onclick).toBe(null);
+
+	// ...but adopting it into the live, scripted document makes it the app's
+	// own markup again, exactly as in a browser.
+	dom.document.body.append(dom.document.adoptNode(div));
+	const adopted = div as unknown as {onclick: unknown};
+	expect(typeof adopted.onclick).toBe("function");
+	div.dispatchEvent(new dom.window.MouseEvent("click", {bubbles: true}));
+	await nextFrame(dom);
+	expect(flags.__termdomInert).toBe(true);
+	dom.dispose();
+});

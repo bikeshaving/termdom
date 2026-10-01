@@ -3996,6 +3996,23 @@ const HANDLER_ATTRIBUTES: ReadonlySet<string> = new Set([
 const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> =
 	new Set(FORWARDED_BODY_EVENT_HANDLERS);
 
+// Scripting is enabled for a document only while it has a browsing
+// context, i.e. a window (its default view). The documents an author
+// builds through the DOM -- a DOMParser result, createHTMLDocument, the
+// contents of a <template>, an iframe's content document -- have none, so
+// their markup is inert: `new Function` is never called for a handler
+// content attribute in them, and the attribute reflects as null. This is
+// the guarantee HTML sanitizers such as DOMPurify rely on when they parse
+// hostile markup into an inert document, measure it, and strip the
+// handlers before any tree they produced is ever adopted into a live,
+// scripted document. Without the gate a UA-dispatched event (a <details
+// open> toggle, an <iframe> load) compiles and runs the attribute's
+// source during that inert pass, turning sanitization itself into
+// execution.
+function isScriptingEnabled(document: Document | null): boolean {
+	return document !== null && document[kDefaultView] !== null;
+}
+
 function compileEventHandler(
 	target: EventTarget,
 	type: string,
@@ -4004,6 +4021,13 @@ function compileEventHandler(
 	const value = record.value;
 	if (!(value instanceof UncompiledHandler)) {
 		return value;
+	}
+	// Leave the handler uncompiled (and report nothing) while its document
+	// is inert. The source stays as an UncompiledHandler, so if the element
+	// is later adopted into a scripted document the attribute compiles then,
+	// exactly as it would in a browser.
+	if (!isScriptingEnabled(value.element[kDocument])) {
+		return null;
 	}
 	try {
 		record.value = new Function("event", value.source) as EventHandlerValue;
