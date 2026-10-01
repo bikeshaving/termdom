@@ -328,8 +328,8 @@ test("SelectedItem paints inverse video, like the Highlight pair", async () => {
 test("deprecated system colors resolve through their modern equivalents", async () => {
 	// CSS Color 4 keeps the desktop-era names as aliases: MenuText is
 	// CanvasText, ThreeDFace is ButtonFace, InactiveCaptionText is GrayText.
-	// The declarations are valid, keep their keyword spelling, and paint as
-	// what they alias.
+	// The declarations are valid, keep their keyword spelling, and paint and
+	// read back as what they alias.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -341,7 +341,7 @@ test("deprecated system colors resolve through their modern equivalents", async 
 	document.body.appendChild(div);
 	expect(div.style.color).toBe("InactiveCaptionText");
 	expect(div.style.backgroundColor).toBe("ThreeDFace");
-	expect(dom.window.getComputedStyle(div).color).toBe("InactiveCaptionText");
+	expect(dom.window.getComputedStyle(div).color).toBe("rgb(128, 128, 128)");
 
 	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
@@ -349,6 +349,36 @@ test("deprecated system colors resolve through their modern equivalents", async 
 	expect(snapshot).not.toMatch(/48;2;/); // ButtonFace: default background
 
 	dom.dispose();
+});
+
+// Black is a color like any other, and the terminal's own is no color.
+// A system color reads back as what the terminal's scheme puts there.
+test("black paints black, and unstyled text the terminal's own color", async () => {
+	for (const scheme of ["light", "dark"] as const) {
+		const terminal = new MockProcess({rows: 4, cols: 20});
+		const dom = new TermDOM({
+			transport: {...terminal.transport, colorScheme: scheme},
+		});
+		const {document} = dom;
+		document.body.innerHTML =
+			"<div id=\"card\" style=\"background: #fff; color: #000\">card</div>" +
+			"<div id=\"plain\">plain</div>";
+		await nextFrame(dom);
+		const cellAt = (row: number) =>
+			(terminal as any).terminal.buffer.active.getLine(row).getCell(0);
+		expect([cellAt(0).isFgRGB(), cellAt(0).getFgColor()]).toEqual([true, 0]);
+		expect(cellAt(1).isFgDefault()).toBeTruthy();
+		const plain = dom.window.getComputedStyle(
+			document.getElementById("plain")!,
+		);
+		expect(plain.color).toBe(
+			scheme === "light" ? "rgb(0, 0, 0)" : "rgb(255, 255, 255)",
+		);
+		expect(
+			dom.window.getComputedStyle(document.getElementById("card")!).color,
+		).toBe("rgb(0, 0, 0)");
+		dom.dispose();
+	}
 });
 
 test("an inline background paints its fragments, not the box enclosing them", async () => {
