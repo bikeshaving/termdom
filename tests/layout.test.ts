@@ -1925,3 +1925,30 @@ test("min-height in content-box sizing counts the content box", async () => {
 		.toBe(4);
 	dom.dispose();
 });
+
+// An auto width fills, and auto margins take what is left (css2 §10.3.3):
+// nothing, unless a width or max-width leaves some, which they center.
+test("auto margins center a narrower block and leave an auto one filling", () => {
+	const terminal = new MockProcess({cols: 120, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"width: 100px\">" +
+		"<div id=\"capped\" style=\"max-width: 20px; margin: 0 auto\">a</div>" +
+		"<div id=\"auto\" style=\"margin: 0 auto\">b</div></div>" +
+		"<center><div id=\"centered\">c</div></center>" +
+		"<div style=\"width: 70px\"><table style=\"width: 100%\"><tr><td>" +
+		"<div style=\"max-width: 70px; margin: 0 auto\">" +
+		"<table id=\"inner\" style=\"width: 100%\"><tr><td>Logo</td></tr>" +
+		"</table></div></td></tr></table></div>";
+	const box = (id: string) => {
+		const rect = document.getElementById(id)!.getBoundingClientRect();
+		return [rect.left, rect.width];
+	};
+	expect(box("capped")).toEqual([40, 20]);
+	expect(box("auto")).toEqual([0, 100]);
+	expect(box("centered")).toEqual([0, 120]);
+	expect(document.getElementById("inner")!.getBoundingClientRect().width)
+		.toBeGreaterThan(60);
+	dom.dispose();
+});
