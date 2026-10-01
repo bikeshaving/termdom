@@ -367,3 +367,21 @@ test("a tab-size length is measured across, a count in spaces", () => {
 	expect(render("4")).toBe("a   b");
 	dom.dispose();
 });
+
+test("a span scroller's scroll moves its text by the pixels it scrolled", async () => {
+	const {dom} = make("typical", 20, 4);
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"display: flex\"><span id=\"h\" style=\"flex: 1; " +
+		"min-width: 0; overflow: hidden; white-space: nowrap\">" +
+		"aaaaaaaaaaaaaaaaaaaaaa <span id=\"c\">cccc</span></span>" +
+		"<span>X</span></div>";
+	await dom.attach();
+	await nextFrame(dom);
+	const before = document.getElementById("c")!.getBoundingClientRect().left;
+	document.getElementById("h")!.scrollLeft = 40;
+	await nextFrame(dom);
+	expect(document.getElementById("c")!.getBoundingClientRect().left)
+		.toBe(before - 40);
+	dom.dispose();
+});

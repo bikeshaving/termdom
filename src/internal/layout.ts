@@ -6394,8 +6394,8 @@ function getRunOrigin(
 	if (head === document.documentElement || head === document.body) {
 		return position;
 	}
-	position.x -= head.scrollLeft || 0;
-	position.y -= head.scrollTop || 0;
+	position.x -= getScrollOffset(head, "left");
+	position.y -= getScrollOffset(head, "top");
 	return position;
 }
 
