@@ -375,3 +375,43 @@ test("a scroller clips a relative box, not one contained outside it", async () =
 	expect(rows[5]).toContain("FIX");
 	dom.dispose();
 });
+
+// Text that does not wrap runs past its box, and the scrolling area
+// reaches as far as the text does (CSSOM View), overflow hidden or auto.
+test("scrollWidth reaches the end of a line that does not wrap", () => {
+	const terminal = new MockProcess({cols: 20, rows: 4});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div id=\"hidden\" style=\"width: 10ch; overflow: hidden; " +
+		"white-space: nowrap\">aaaaaaaaaa <span>cccc</span></div>" +
+		"<div id=\"auto\" style=\"width: 10ch; overflow: auto; " +
+		"white-space: nowrap\">aaaaaaaaaa <span>cccc</span></div>";
+	for (const id of ["hidden", "auto"]) {
+		const box = dom.document.getElementById(id)!;
+		expect([box.scrollWidth, box.clientWidth]).toEqual([15, 10]);
+	}
+	dom.dispose();
+});
+
+// A flex item is a block whatever its tag, so a span scroller moves what
+// it holds in the geometry APIs as a div does.
+test("a span scroller's scroll moves the rects inside it", async () => {
+	for (const tag of ["span", "div"]) {
+		const terminal = new MockProcess({cols: 20, rows: 4});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			`<div style="display: flex"><${tag} id="h" style="flex: 1; ` +
+			"min-width: 0; overflow: hidden; white-space: nowrap\">" +
+			`aaaaaaaaaaaaaaaaaaaaaa <span id="c">cccc</span></${tag}>` +
+			"<span>X</span></div>";
+		await dom.attach();
+		await nextFrame(dom);
+		const scroller = dom.document.getElementById("h")!;
+		expect(scroller.scrollWidth).toBe(27);
+		scroller.scrollLeft = 5;
+		await nextFrame(dom);
+		expect(dom.document.getElementById("c")!.getBoundingClientRect().left)
+			.toBe(18);
+		dom.dispose();
+	}
+});
