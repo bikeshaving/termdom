@@ -731,12 +731,21 @@ function paintContent(
 				ctx,
 			);
 		} else if (context !== null) {
-			paintNodes(
-				painter,
-				context,
-				{x: origin.x + style.contentInsetX, y: origin.y + style.contentInsetY},
-				ctx,
-			);
+			// The box lays its content out from 0, so what the viewport shows
+			// of it is counted from where it paints, not from the document.
+			const top = origin.y + style.contentInsetY;
+			const scrolled = painter[kScrolledRows];
+			painter[kScrolledRows] = -top;
+			try {
+				paintNodes(
+					painter,
+					context,
+					{x: origin.x + style.contentInsetX, y: top},
+					ctx,
+				);
+			} finally {
+				painter[kScrolledRows] = scrolled;
+			}
 		} else {
 			paintLayoutChildren(origin);
 		}
