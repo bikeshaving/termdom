@@ -53,7 +53,8 @@ Options:
   second at most, and a font zoom asks again.
 
   Whatever the size:
-  - Lengths round to whole cells, and a border is always one cell.
+  - A box's edges round to the nearest cell, so columns that add up to
+    their container still fit it. A border is always one cell.
   - `1ch` is one cell: a column across, a row down.
   - `1lh` is one row.
 

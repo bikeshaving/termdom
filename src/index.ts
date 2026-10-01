@@ -51,9 +51,9 @@ export interface TermDOMOptions {
 	url?: string;
 
 	/**
-	 * What one terminal cell measures in CSS pixels. Layout places boxes
-	 * on whole cells, so lengths round to the nearest one, and a border
-	 * that is there at all is one cell wide.
+	 * What one terminal cell measures in CSS pixels. Layout places each
+	 * box's edges on the nearest cell, so widths that add up still fit,
+	 * and a border that is there at all is one cell wide.
 	 *
 	 * - `"unit"` (the default): a cell is one CSS pixel each way.
 	 * - `"typical"`: 8 by 16, the usual terminal cell.

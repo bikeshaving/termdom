@@ -29,7 +29,11 @@ export function getCellSize(node: Node | null | undefined): Readonly<CellSize> {
 	return sources.get(document)?.() ?? UNIT_CELL;
 }
 
-/** CSS pixels along one axis as whole cells, to the nearest. */
+/**
+ * CSS pixels along one axis as cells, fractions kept. Layout rounds the
+ * edges of the boxes it places, not each length, so lengths that add up
+ * still add up.
+ */
 export function pxToCells(
 	px: number,
 	vertical: boolean,
@@ -37,7 +41,7 @@ export function pxToCells(
 ): number {
 	const cell = getCellSize(node);
 	const size = vertical ? cell.height : cell.width;
-	return size === 1 ? px : Math.round(px / size);
+	return px / size;
 }
 
 /** Cells along one axis as CSS pixels. */
