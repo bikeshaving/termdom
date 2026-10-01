@@ -5231,20 +5231,37 @@ export class Layout {
 		element: Element,
 	): {width: number | null; height: number} | null {
 		const layoutNode = this[kNodeMap].get(element);
-		if (!layoutNode || layoutNode.measure !== null) {
+		if (!layoutNode) {
 			return null;
 		}
 		const box = getBoxModel(element);
 		let right: number | null = 0;
 		let bottom = 0;
+		if (layoutNode.measure !== null) {
+			// Its own lines are its content.
+			const lines = getMeasuredLines(this, layoutNode);
+			if (lines === undefined) {
+				return null;
+			}
+			right =
+				(box.borderLeftWidth || 0) +
+				(box.paddingLeft || 0) +
+				lines.maxLineWidth;
+			bottom =
+				(box.borderTopWidth || 0) + (box.paddingTop || 0) + lines.totalHeight;
+		}
 		for (const child of layoutNode.children) {
 			// A display:none placeholder holds a stale layout.
 			if (child.style.displayType === "none") {
 				continue;
 			}
-			const reach = getOverflowExtent(child, 0, 0);
+			const reach = getOverflowExtent(this, child, 0, 0);
 			if (right !== null) {
-				right = child.measure !== null ? null : Math.max(right, reach.right);
+				right =
+					child.measure !== null &&
+						getMeasuredLines(this, child) === undefined
+						? null
+						: Math.max(right, reach.right);
 			}
 			bottom = Math.max(bottom, reach.bottom);
 		}
@@ -6228,19 +6245,36 @@ function *getTextNodes(root: Node): Generator<Text> {
 // styled from it, as a flex or grid item's is, has the run's layout node,
 // which the container's layout placed at the head's own margin edge,
 // while the segments count from its margin box: its own segment sits one
-// margin in. Every other head's node is where its lines start.
+// margin in. Every other head's node is where its lines start. A head
+// whose own box holds the lines, as a flex item's of only text does,
+// scrolls them by its own offsets.
 function getRunOrigin(
 	layout: Layout,
 	runHead: Node,
 	headLayoutNode: LayoutNode,
 ): {x: number; y: number} {
 	const position = getDocumentPosition(layout, runHead, headLayoutNode);
-	if (
-		layout[kAnonymousBoxes].get(headLayoutNode)?.styledFrom === runHead &&
-		isAtomicInline(getLayoutDisplay(runHead as Element))
-	) {
-		position.x -= getBoxModel(runHead as Element).marginLeft;
+	if (runHead.nodeType !== runHead.ELEMENT_NODE) {
+		return position;
 	}
+	const head = runHead as Element;
+	const anonymous = layout[kAnonymousBoxes].get(headLayoutNode);
+	if (anonymous !== undefined && anonymous.styledFrom !== head) {
+		return position;
+	}
+	if (isAtomicInline(getLayoutDisplay(head))) {
+		if (anonymous !== undefined) {
+			position.x -= getBoxModel(head).marginLeft;
+		}
+		return position;
+	}
+	// html and body report the document scroll, which is applied elsewhere.
+	const document = head.ownerDocument;
+	if (head === document.documentElement || head === document.body) {
+		return position;
+	}
+	position.x -= head.scrollLeft || 0;
+	position.y -= head.scrollTop || 0;
 	return position;
 }
 
@@ -7001,13 +7035,14 @@ function getDocumentContentHeight(engine: Layout): number {
 // than itself, and a fixed box moves with the viewport, not in it.
 function getDocumentOverflowBottom(engine: Layout): number {
 	const root = engine[kNodeMap].get(engine[kRootElement]);
-	return root ? Math.ceil(getOverflowExtent(root, 0, 0).bottom) : 0;
+	return root ? Math.ceil(getOverflowExtent(engine, root, 0, 0).bottom) : 0;
 }
 
 // Where a box's border box and its scrollable overflow reach, relative to
 // its parent's origin: its own box, and past it the overflow of the boxes
 // it holds, unless it clips them (css-overflow-3 §2.2).
 function getOverflowExtent(
+	layout: Layout,
 	node: LayoutNode,
 	originLeft: number,
 	originTop: number,
@@ -7021,17 +7056,45 @@ function getOverflowExtent(
 	if (clipsOverflow(node)) {
 		return extent;
 	}
+	// Lines that do not wrap run past their box.
+	const lines = node.measure === null
+		? undefined
+		: getMeasuredLines(layout, node);
+	if (lines !== undefined) {
+		extent.right = Math.max(
+			extent.right,
+			left +
+			node.style.border.left +
+			node.result.padding.left +
+				lines.maxLineWidth,
+		);
+	}
 	for (const child of node.children) {
 		if (
 			child.style.displayType === "none" || child.style.positionType === "fixed"
 		) {
 			continue;
 		}
-		const reach = getOverflowExtent(child, left, top);
+		const reach = getOverflowExtent(layout, child, left, top);
 		extent.right = Math.max(extent.right, reach.right);
 		extent.bottom = Math.max(extent.bottom, reach.bottom);
 	}
 	return extent;
+}
+
+// The lines a measured node broke: an anonymous run's, or those of the
+// element whose own box is the run.
+function getMeasuredLines(
+	layout: Layout,
+	node: LayoutNode,
+): BreakResult | undefined {
+	const anonymous = layout[kAnonymousBoxes].get(node);
+	if (anonymous !== undefined) {
+		return anonymous.fragments ?? undefined;
+	}
+	return node.owner === null
+		? undefined
+		: runBreakResult(layout, node.owner as Node);
 }
 
 function clipsOverflow(node: LayoutNode): boolean {
