@@ -467,13 +467,15 @@ test("a cell with another vertical-align aligns at the baseline", async () => {
 test("deeply nested tables lay out in time that grows with their number", () => {
 	const terminal = new MockProcess({cols: 200, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
-	let html = "x";
-	for (let i = 0; i < 63; i++) {
-		html = `<table><tr><td>${html}</td></tr></table>`;
+	for (const width of ["auto", "100%"]) {
+		let html = "x";
+		for (let i = 0; i < 63; i++) {
+			html = `<table style="width: ${width}"><tr><td>${html}</td></tr></table>`;
+		}
+		const start = performance.now();
+		const output = dom.renderANSI(html);
+		expect(performance.now() - start).toBeLessThan(5000);
+		expect(stripControlCodes(output)).toContain("x");
 	}
-	const start = performance.now();
-	const output = dom.renderANSI(html);
-	expect(performance.now() - start).toBeLessThan(5000);
-	expect(stripControlCodes(output)).toContain("x");
 	dom.dispose();
 });

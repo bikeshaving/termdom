@@ -5243,23 +5243,20 @@ function layoutBlock(
 
 	// The width is resolved before the children lay out, min/max included,
 	// so each is measured once at the width it keeps.
+	// While the width is being found, a child's percentage of it is
+	// cyclic and counts as auto (css-sizing-3 §5.2.1). Read against the
+	// probe, `width: 100%` turned every probe into a definite width of
+	// its own, and nested tables were laid out again for each.
 	let borderBoxWidth: number;
 	if (widthSpace === "definite") {
 		borderBoxWidth = availableWidth - marginRow;
 	} else {
 		let widest = 0;
 		for (const child of inFlow) {
-			layoutBlockChild(
-				child,
-				innerWidth,
-				false,
-				innerWidth,
-				innerHeight,
-				false,
-			);
+			layoutBlockChild(child, innerWidth, false, NaN, innerHeight, false);
 			widest = Math.max(
 				widest,
-				child.result.width + getAxisMargin(child, "row", innerWidth),
+				child.result.width + getAxisMargin(child, "row", NaN),
 			);
 		}
 		borderBoxWidth = widest + paddingBorderRow;
