@@ -415,3 +415,40 @@ test("a span scroller's scroll moves the rects inside it", async () => {
 		dom.dispose();
 	}
 });
+
+// An inline-block lays its content out from its own top, so what shows of
+// it is counted from where it paints. Counted against the document, it all
+// fell outside the view once anything scrolled, and MJML mail, an
+// inline-block per column, went blank.
+test("inline-block content paints after a scroll", async () => {
+	const rows = (count: number, extra = "") =>
+		Array.from({length: count}, (_, i) =>
+			"<div><div style=\"display: inline-block; width: 100%; " +
+			`${extra}"><div style="font-size: 1px">line ${i}</div></div></div>`)
+			.join("");
+
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div>HEADER</div><div id=\"s\" style=\"height: 5px; overflow: auto\">" +
+		`${rows(12, "font-size: 0")}</div>`;
+	await dom.attach();
+	await nextFrame(dom);
+	dom.document.getElementById("s")!.scrollTop = 3;
+	await nextFrame(dom);
+	expect(
+		terminal.getVisibleText().split("\n").slice(0, 3)
+			.map((row) => row.trimEnd()),
+	).toEqual(["HEADER", "line 3", "line 4"]);
+	dom.dispose();
+
+	const page = new MockProcess({cols: 30, rows: 8});
+	const long = new TermDOM({transport: page.transport});
+	long.document.body.innerHTML = rows(40);
+	await long.attach();
+	await nextFrame(long);
+	long.window.scrollTo(0, 20);
+	await nextFrame(long);
+	expect(page.getVisibleText().split("\n")[0].trimEnd()).toBe("line 20");
+	long.dispose();
+});
