@@ -29007,7 +29007,14 @@ function selectionLineMove(
 		return getSelectionPoint(run, lines[lines.length - 1].end);
 	}
 	const column = getCaretColumn(layout, from);
-	const root = document.body ?? document.documentElement;
+	// Within the target line's own block. Scrolled out of its box, the
+	// line shares its rows with whatever covers them there, and a search of
+	// the whole document landed in that instead.
+	const lineStart = getSelectionPoint(run, lines[target].start, true);
+	const root =
+		(lineStart === null ? null : getBlockOf(lineStart[0])) ??
+		document.body ??
+		document.documentElement;
 	const found = column === null || root === null
 		? null
 		: layout.caretPositionFromPoint(
@@ -33010,6 +33017,21 @@ export function flushStyle(node: globalThis.Node): boolean {
  * drain takes records from the observer callback that would have painted
  * them, so this requests the frame on the caller's behalf.
  */
+/**
+ * Scrolls the boxes around an editing host's caret so the caret shows, as
+ * a browser does after a key moves it or an edit lands.
+ */
+export function revealEditingCaret(host: globalThis.Element): void {
+	const attached = getAttachedDocument(host as unknown as Node);
+	const selection = attached?.getSelection();
+	const node = selection?.focusNode;
+	if (attached === undefined || !node || !host.contains(node)) {
+		return;
+	}
+	flushLayout(host);
+	attached[kLayout].revealCaret(node as Node, selection!.focusOffset);
+}
+
 export function flushLayout(node: globalThis.Node): boolean {
 	const attached = getAttachedDocument(node);
 	if (attached === undefined) {

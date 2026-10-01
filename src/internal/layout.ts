@@ -5422,23 +5422,39 @@ export class Layout {
 		block: ScrollLogicalPosition = "nearest",
 		inline: ScrollLogicalPosition = "nearest",
 	): void {
-		for (
-			let ancestor = flatParentElement(element);
-			ancestor && !isRootBox(this, ancestor);
-			ancestor = flatParentElement(ancestor)
-		) {
-			const overflow = getComputedValue(ancestor, "overflow");
-			if (
-				isScrollingOverflow(
-					getComputedValue(ancestor, "overflow-y") || overflow,
-				) ||
-				isScrollingOverflow(
-					getComputedValue(ancestor, "overflow-x") || overflow,
-				)
-			) {
-				revealInPort(this, element, ancestor, block, inline);
-			}
+		revealRectInScrollPorts(
+			this,
+			element,
+			() => this.getRect(element),
+			block,
+			inline,
+		);
+	}
+
+	/** Scrolls every port around a caret so the caret shows, nearest first. */
+	revealCaret(node: Node, offset: number): void {
+		const box = node.nodeType === node.ELEMENT_NODE
+			? (node as Element)
+			: flatParentElement(node);
+		if (box === null) {
+			return;
 		}
+		revealRectInScrollPorts(
+			this,
+			box,
+			() => {
+				const caret = this.getCaretRect(node, offset);
+				if (caret !== null) {
+					return new this[kDOMRect](caret.x, caret.y, 1, 1);
+				}
+				const content = this.contentRect(box);
+				return content === null
+					? null
+					: new this[kDOMRect](content.x, content.y, 1, 1);
+			},
+			"nearest",
+			"nearest",
+		);
 	}
 
 	// Paint extents are cached in unscrolled layout rows, so viewport culling
@@ -7167,23 +7183,55 @@ function getAlignmentDelta(
 	if (align === "center") {
 		return (start + end) / 2 - (portStart + portEnd) / 2;
 	}
+	// "nearest" (CSSOM View): a box that overhangs both edges stays put, and
+	// one that overhangs one edge lines that edge up if it fits, or the
+	// other edge if it does not.
+	const fits = end - start <= portEnd - portStart;
+	if (start < portStart && end > portEnd) {
+		return 0;
+	}
 	if (start < portStart) {
-		return start - portStart;
+		return fits ? start - portStart : end - portEnd;
 	}
 	if (end > portEnd) {
-		return end - portEnd;
+		return fits ? end - portEnd : start - portStart;
 	}
 	return 0;
 }
 
-function revealInPort(
+// Innermost port first. Each scroll moves the target in every outer
+// port's coordinates, so the rect is read again for each.
+function revealRectInScrollPorts(
 	engine: Layout,
 	element: Element,
+	getRect: () => DOMRect | null,
+	block: ScrollLogicalPosition,
+	inline: ScrollLogicalPosition,
+): void {
+	for (
+		let ancestor = flatParentElement(element);
+		ancestor && !isRootBox(engine, ancestor);
+		ancestor = flatParentElement(ancestor)
+	) {
+		const overflow = getComputedValue(ancestor, "overflow");
+		if (
+			isScrollingOverflow(
+				getComputedValue(ancestor, "overflow-y") || overflow,
+			) ||
+			isScrollingOverflow(getComputedValue(ancestor, "overflow-x") || overflow)
+		) {
+			revealInPort(engine, getRect(), ancestor, block, inline);
+		}
+	}
+}
+
+function revealInPort(
+	engine: Layout,
+	rect: DOMRect | null,
 	scroller: Element,
 	block: ScrollLogicalPosition,
 	inline: ScrollLogicalPosition,
 ): void {
-	const rect = engine.getRect(element);
 	const scrollerRect = engine.getRect(scroller);
 	if (!rect || !scrollerRect) {
 		return;

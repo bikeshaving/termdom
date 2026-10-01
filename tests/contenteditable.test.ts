@@ -759,3 +759,49 @@ test("a press in editable content focuses its editing host, not a box its shadow
 	expect(document.activeElement).toBe(document.getElementById("field"));
 	dom.dispose();
 });
+
+// An empty line holds no text, but it is a place the caret can go: its
+// start, where typing puts text.
+test("a click on an empty line puts the caret there", async () => {
+	const fixture = await withHost(
+		"<div contenteditable><div>first</div><div><br></div><div>third</div></div>",
+	);
+	const {document, host} = fixture;
+	host.focus();
+	await nextFrame(fixture.dom);
+	await fixture.type("\x1b[<0;3;2M\x1b[<0;3;2m");
+	expect(caret(document)).toEqual({node: host.children[1], offset: 0});
+	await fixture.type("X");
+	expect(host.innerHTML)
+		.toBe("<div>first</div><div>X</div><div>third</div>");
+	fixture.dom.dispose();
+});
+
+// A key that moves the caret scrolls the box around it so the caret shows,
+// and a line scrolled out of view keeps the caret's column.
+test("arrow keys keep the caret in view and on its column", async () => {
+	const lines = Array.from({length: 25}, (_, i) => `<div>line ${i}</div>`);
+	const fixture = await withHost(
+		"<div>TITLE</div><div id=\"pane\" style=\"height: 6px; overflow: auto\">" +
+		`<div contenteditable>${lines.join("")}</div></div>`,
+	);
+	const {document, host} = fixture;
+	const pane = document.getElementById("pane");
+	host.focus();
+	await nextFrame(fixture.dom);
+	expect(pane.scrollTop).toBe(0);
+	const last = host.lastElementChild.firstChild;
+	document.getSelection().collapse(last, 2);
+	pane.scrollTop = 19;
+	await nextFrame(fixture.dom);
+	for (let i = 0; i < 12; i++) {
+		await fixture.type("\x1b[A");
+	}
+	expect(caret(document)).toEqual({
+		node: host.children[12].firstChild,
+		offset: 2,
+	});
+	expect(pane.scrollTop).toBe(12);
+	expect(fixture.cursor()).toEqual({x: 2, y: 1});
+	fixture.dom.dispose();
+});
