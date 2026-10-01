@@ -28769,8 +28769,29 @@ function getSelectionTextNodes(
 ): Array<Text | Element> {
 	const layout = attached === undefined ? null : attached[kLayout];
 	const nodes: Array<Text | Element> = [];
+	// What renders inside a node: an author shadow root's content in place
+	// of the host's children, and a slot's assigned nodes in place of its
+	// fallback. A UA shadow tree is a control's own, not document text.
+	const renderedChildren = (node: Node): Node[] => {
+		const shadow = node.nodeType === ELEMENT_NODE
+			? (node as Element)[kShadowRoot]
+			: null;
+		const source = shadow !== null && !shadow[kUAShadowTree] ? shadow : node;
+		if (
+			source instanceof HTMLSlotElement && source[kAssignedNodes].length > 0
+		) {
+			return [...source[kAssignedNodes]] as Node[];
+		}
+		const children: Node[] = [];
+		for (let child = source[kFirstChild];
+			child !== null;
+			child = child[kNext]) {
+			children.push(child);
+		}
+		return children;
+	};
 	const collect = (node: Node): void => {
-		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+		for (const child of renderedChildren(node)) {
 			if (child.nodeType === TEXT_NODE) {
 				if (
 					isPaintedText(child as Text, layout) &&
