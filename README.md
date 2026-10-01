@@ -73,6 +73,9 @@ setInterval(() => {
   by grapheme, and text fields bind the readline chords (Ctrl+A/E/K/U/W).
 - **Fullscreen** `Element.requestFullscreen()` renders to the alternate
   screen; exiting restores the shell and its scrollback.
+- **Images and canvas** `<img>` decodes PNG, JPEG, GIF and BMP, and
+  `<canvas>` has a 2D context and a `"charactergrid"` context; pixels
+  are drawn two to a cell with half blocks.
 
 ## How it works
 
@@ -108,6 +111,10 @@ and dispatched to DOM nodes.
   document of its own, rendered over the session's channel.
 - [`shell.ts`](./examples/shell.ts) — `ls`, `cat`, `less`, `cd` and `pwd`
   over the filesystem, which on termdom.org is this repository.
+- [`images.ts`](./examples/images.ts) — an `<img>` at its natural size and
+  under each `object-fit`; pass a path or URL to show your own image.
+- [`canvas.ts`](./examples/canvas.ts) — an animated 2D canvas beside
+  Conway's Life on a `"charactergrid"` canvas.
 
 More runnable examples can be found in [`examples/`](./examples). Most of
 them also run in the browser at

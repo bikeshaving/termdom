@@ -265,10 +265,10 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 		referrerPolicy(),
 		loading(),
 	],
+	// width and height are the element's own: they report the rendered
+	// size, not the attribute.
 	HTMLImageElement: [
 		crossOrigin(),
-		ulong("width", "width", 0),
-		ulong("height", "height", 0),
 		referrerPolicy(),
 		keyword("decoding", "decoding", ["sync", "async", "auto"], "auto", "auto"),
 		loading(),

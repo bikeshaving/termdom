@@ -1842,14 +1842,18 @@ export class Screen {
 		this[kScrollTop] = next;
 	}
 
-	/** XTWINOPS answered. Whatever was painted against the guess repaints. */
-	adoptCellPixels(width: number, height: number): void {
+	/**
+	 * XTWINOPS answered. Whatever was painted against the guess repaints.
+	 * Whether the size changed, which images sized from it need to know.
+	 */
+	adoptCellPixels(width: number, height: number): boolean {
 		const cell = this[kCellPixels];
 		if (cell.width === width && cell.height === height) {
-			return;
+			return false;
 		}
 		this[kCellPixels] = {width, height};
 		this.invalidate();
+		return true;
 	}
 
 	invalidate(): void {
