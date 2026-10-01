@@ -1717,6 +1717,20 @@ test("a disconnected control has no owner, and gains one on insertion", () => {
 	expect(input.form).toBe(null);
 });
 
+test("a control removed inside a subtree loses its owner", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<form id=f><div id=wrap><p><input id=a></p></div></form>" +
+		"<input id=b form=f>";
+	const form = document.getElementById("f");
+	const input = document.getElementById("a");
+	document.getElementById("wrap").remove();
+	expect(input.form).toBe(null);
+	expect(form.elements.length).toBe(1);
+	form.remove();
+	expect(document.getElementById("b").form).toBe(null);
+});
+
 test("a label reaches its control by for, and by containing it", () => {
 	const document = make();
 	document.body.innerHTML =
