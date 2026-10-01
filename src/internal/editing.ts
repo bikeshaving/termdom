@@ -8,7 +8,11 @@
  */
 
 import {getWhiteSpace} from "./cssom.ts";
-import {dispatchAsUserAgent, getFocusedElement} from "./dom.ts";
+import {
+	dispatchAsUserAgent,
+	getFocusedElement,
+	revealEditingCaret,
+} from "./dom.ts";
 import {getNextGraphemeBoundary, getPreviousGraphemeBoundary} from "./text.ts";
 
 /** A caret or selection endpoint. */
@@ -236,6 +240,7 @@ function onEditingBeforeInput(event: globalThis.Event): void {
 			composed: true,
 		}),
 	);
+	revealEditingCaret(host);
 }
 
 /** The deepest element around the caret, which is where an edit happens. */
@@ -346,6 +351,7 @@ function moveEditingCaret(
 		selection.modify(alter, direction, "lineboundary");
 	}
 	skipUneditable(host, selection, forward, extend);
+	revealEditingCaret(host);
 }
 
 // A contenteditable="false" island is one unit: the caret lands on the

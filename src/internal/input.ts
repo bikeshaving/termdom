@@ -1121,6 +1121,8 @@ function dispatchPress(
 				anchor.node,
 				anchor.offset,
 			);
+		} else if (isInDocument && collapseInEmptyLine(input, selection, x, y)) {
+			requestRender(input[kDocument]);
 		} else if (selection.rangeCount > 0) {
 			selection.removeAllRanges();
 		}
@@ -1532,6 +1534,27 @@ function getTextPosition(
 		return null;
 	}
 	return input[kLayout].caretPositionFromPoint(x, y, element);
+}
+
+// An editable line with no text, one holding only its placeholder <br>,
+// is still somewhere the caret can go: its start, where typing would put
+// text.
+function collapseInEmptyLine(
+	input: Input,
+	selection: Selection,
+	x: number,
+	y: number,
+): boolean {
+	const element = elementAtDocumentPoint(input[kDocument], x, y, null);
+	if (
+		element === null ||
+		!(element as HTMLElement).isContentEditable ||
+		(element.textContent ?? "") !== ""
+	) {
+		return false;
+	}
+	selection.collapse(element, 0);
+	return true;
 }
 
 function isSelectable(
