@@ -15,7 +15,7 @@ declare module "linebreak" {
 	}
 }
 
-declare module "css-tree" {
+declare module "css-tree/dist/csstree.esm" {
 	// The CSS text parser behind this engine's CSSOM: it turns stylesheet,
 	// selector and value text into ASTs, which cssom.ts serializes per the
 	// CSSOM algorithms and matches the cascade against. Only the parse,

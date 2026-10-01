@@ -1,4 +1,4 @@
-import * as CSSTree from "css-tree";
+import * as CSSTree from "css-tree/dist/csstree.esm";
 
 import {
 	CSS_AT_RULE_DESCRIPTORS,

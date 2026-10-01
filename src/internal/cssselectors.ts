@@ -1,5 +1,5 @@
 import bidiFactory from "bidi-js";
-import * as CSSTree from "css-tree";
+import * as CSSTree from "css-tree/dist/csstree.esm";
 
 import {
 	type Element,
