@@ -9702,7 +9702,10 @@ export class Element extends Node implements globalThis.Element {
 		if (root.nodeType === DOCUMENT_NODE) {
 			removeFromIdMap(root as Document, this);
 		}
-		resetFormOwners(this);
+		// The steps run once for every element of a removed tree, as on
+		// insertion, so this element only resets itself.
+		resetTheFormOwner(this);
+		syncFormDisabled(this);
 		if (
 			this instanceof HTMLFormElement || this instanceof HTMLFieldSetElement
 		) {
