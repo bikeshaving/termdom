@@ -456,6 +456,22 @@ test("Enter splits the caret's block and leaves an empty one one line tall", asy
 	fixture.dom.dispose();
 });
 
+// A <br> holds nothing, so the caret goes before it, and what comes in
+// with the Enter, as fast typing does, lands on the new line.
+test("Enter after an element leaves the caret before the new line's <br>", async () => {
+	const fixture =
+		await withHost("<div contenteditable><div>Hello <b>world</b></div></div>");
+	const {document, host} = fixture;
+	host.focus();
+	const line = host.firstChild;
+	document.getSelection().collapse(line, 2);
+	await nextFrame(fixture.dom);
+	await fixture.type("\rSec");
+	expect(host.innerHTML).toBe("<div>Hello <b>world</b></div><div>Sec</div>");
+	expect(host.querySelector("br")).toBe(null);
+	fixture.dom.dispose();
+});
+
 test("Enter at the end of a heading starts a div", async () => {
 	const fixture = await withHost("<div contenteditable><h1>title</h1></div>");
 	const {host} = fixture;

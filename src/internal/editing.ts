@@ -405,10 +405,12 @@ function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 				return {node, offset: data.search(/[^ \t\n\r\f]/)};
 			}
 			fallback ??= {node, offset: 0};
+		} else if (isAtomic(node)) {
+			fallback ??= {node: node.parentNode!, offset: getChildIndex(node)};
 		} else if (node.nodeType === ELEMENT_NODE && node.firstChild === null) {
 			fallback ??= {node, offset: 0};
 		}
-		if (node.firstChild !== null) {
+		if (node.firstChild !== null && !isAtomic(node)) {
 			node = node.firstChild;
 		} else {
 			while (node !== null && node !== element && node.nextSibling === null) {
