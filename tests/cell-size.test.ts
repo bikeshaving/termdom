@@ -9,6 +9,8 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM, type TermDOMOptions} from "../src/index.ts";
 import {MockProcess, nextFrame, scriptReplies} from "./test-utils.js";
 
+const EIGHT_BY_SIXTEEN = {width: 8, height: 16};
+
 function make(
 	cellSize: TermDOMOptions["cellSize"],
 	cols = 60,
@@ -30,8 +32,8 @@ test("the default unit cell is one CSS pixel each way", () => {
 	dom.dispose();
 });
 
-test("a typical cell is 8 by 16 CSS pixels", () => {
-	const {dom} = make("typical");
+test("an 8 by 16 cell is 8 by 16 CSS pixels", () => {
+	const {dom} = make(EIGHT_BY_SIXTEEN);
 	const {window, document} = dom;
 	expect(window.innerWidth).toBe(480);
 	expect(window.innerHeight).toBe(320);
@@ -67,7 +69,7 @@ test("lengths round to the nearest cell, and a border is at least one", () => {
 });
 
 test("em follows the font, ch the cell, and vw the viewport", () => {
-	const {dom} = make("typical");
+	const {dom} = make(EIGHT_BY_SIXTEEN);
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div id=\"em\" style=\"width: 2em\"></div>" +
@@ -82,7 +84,7 @@ test("em follows the font, ch the cell, and vw the viewport", () => {
 });
 
 test("media queries compare CSS pixels", () => {
-	const {dom} = make("typical");
+	const {dom} = make(EIGHT_BY_SIXTEEN);
 	const {window} = dom;
 	expect(window.matchMedia("(max-width: 600px)").matches).toBe(true);
 	expect(window.matchMedia("(max-width: 400px)").matches).toBe(false);
@@ -91,7 +93,7 @@ test("media queries compare CSS pixels", () => {
 });
 
 test("a grid track and an aspect ratio are CSS pixels", () => {
-	const {dom} = make("typical");
+	const {dom} = make(EIGHT_BY_SIXTEEN);
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div style=\"display: grid; grid-template-columns: 80px 1fr\">" +
@@ -106,7 +108,7 @@ test("a grid track and an aspect ratio are CSS pixels", () => {
 });
 
 test("scroll offsets are written and read in CSS pixels", () => {
-	const {dom} = make("typical");
+	const {dom} = make(EIGHT_BY_SIXTEEN);
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div id=\"s\" style=\"height: 64px; overflow: auto\">" +
@@ -122,7 +124,7 @@ test("scroll offsets are written and read in CSS pixels", () => {
 });
 
 test("a used width takes away the edges as they were drawn", () => {
-	const {dom} = make("typical");
+	const {dom} = make(EIGHT_BY_SIXTEEN);
 	const {document, window} = dom;
 	document.body.innerHTML =
 		"<div id=\"box\" style=\"box-sizing: content-box; width: 80px; " +
@@ -161,7 +163,7 @@ test("columns that fill their container stay on one line", () => {
 });
 
 test("a point in CSS pixels hits the cell it falls in", () => {
-	const {dom} = make("typical");
+	const {dom} = make(EIGHT_BY_SIXTEEN);
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div style=\"display: flex\"><span id=\"a\">aa</span>" +
@@ -172,7 +174,7 @@ test("a point in CSS pixels hits the cell it falls in", () => {
 });
 
 test("a mouse event reports the cell's corner in CSS pixels", async () => {
-	const {terminal, dom} = make("typical");
+	const {terminal, dom} = make(EIGHT_BY_SIXTEEN);
 	const {document} = dom;
 	document.body.innerHTML = "<div id=\"t\" style=\"height: 64px\">x</div>";
 	await dom.attach();
@@ -236,7 +238,7 @@ test("a font zoom is one resize, at the new cell", async () => {
 	dom.dispose();
 });
 
-test("auto without a terminal to ask is typical", () => {
+test("auto without a terminal to ask is 8 by 16", () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	(terminal.stdout as unknown as {isTTY: boolean}).isTTY = false;
 	const dom = new TermDOM({transport: terminal.transport, cellSize: "auto"});
@@ -245,7 +247,12 @@ test("auto without a terminal to ask is typical", () => {
 });
 
 test("a size that is not one throws", () => {
-	for (const cellSize of [{width: 0, height: 16}, {width: 8}, "big"]) {
+	for (const cellSize of [
+		{width: 0, height: 16},
+		{width: 8},
+		"big",
+		"typical",
+	]) {
 		expect(() =>
 			new TermDOM({
 				transport: new MockProcess().transport,
@@ -256,11 +263,10 @@ test("a size that is not one throws", () => {
 });
 
 test("ch is a cell along its axis, and lh a line as the terminal draws it", () => {
-	for (const [
-		cellSize,
-		column,
-		row,
-	] of [["unit", 1, 1], ["typical", 8, 16]] as const) {
+	for (const [cellSize, column, row] of [
+		["unit", 1, 1],
+		[EIGHT_BY_SIXTEEN, 8, 16],
+	] as const) {
 		const {dom} = make(cellSize);
 		const {document, window} = dom;
 		document.body.innerHTML =
@@ -337,11 +343,11 @@ test("the built-in styles lay out the same under every cell size", () => {
 		"After.",
 		"┌─ Title ────────────────────┐",
 	]);
-	expect(render("typical")).toBe(unit);
+	expect(render(EIGHT_BY_SIXTEEN)).toBe(unit);
 });
 
 test("a select's picker opens under it and takes clicks under a larger cell", async () => {
-	const {terminal, dom} = make("typical", 40, 12);
+	const {terminal, dom} = make(EIGHT_BY_SIXTEEN, 40, 12);
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div>one</div><div>two</div><select id=\"s\">" +
@@ -368,7 +374,7 @@ test("a select's picker opens under it and takes clicks under a larger cell", as
 });
 
 test("a sticky box holds to the top of the scrolled document under a larger cell", async () => {
-	const {dom} = make("typical", 30, 8);
+	const {dom} = make(EIGHT_BY_SIXTEEN, 30, 8);
 	const {document, window} = dom;
 	document.body.innerHTML =
 		"<div id=\"bar\" style=\"position: sticky; top: 0\">bar</div>" +
@@ -382,7 +388,7 @@ test("a sticky box holds to the top of the scrolled document under a larger cell
 });
 
 test("a tab-size length is measured across, a count in spaces", () => {
-	const {dom} = make("typical", 40, 5);
+	const {dom} = make(EIGHT_BY_SIXTEEN, 40, 5);
 	const render = (tabSize: string) =>
 		dom
 			.renderANSI(`<pre style="tab-size: ${tabSize}">a\tb</pre>`)
@@ -394,7 +400,7 @@ test("a tab-size length is measured across, a count in spaces", () => {
 });
 
 test("a span scroller's scroll moves its text by the pixels it scrolled", async () => {
-	const {dom} = make("typical", 20, 4);
+	const {dom} = make(EIGHT_BY_SIXTEEN, 20, 4);
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div style=\"display: flex\"><span id=\"h\" style=\"flex: 1; " +
@@ -412,7 +418,7 @@ test("a span scroller's scroll moves its text by the pixels it scrolled", async 
 });
 
 test("a border is whole cells, and a tab stop a whole column", () => {
-	const {dom} = make("typical");
+	const {dom} = make(EIGHT_BY_SIXTEEN);
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div id=\"thick\" style=\"width: 80px; border-left: 11px solid\">x</div>" +

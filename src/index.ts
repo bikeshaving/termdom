@@ -2,9 +2,9 @@ import "./internal/inspector.ts";
 
 import {
 	type CellSize,
+	FALLBACK_CELL,
 	getCellSize,
 	setCellSizeSource,
-	TYPICAL_CELL,
 	UNIT_CELL,
 } from "./internal/cellsize.ts";
 import {Cascade, setColorSchemeSource} from "./internal/cssom.ts";
@@ -56,13 +56,12 @@ export interface TermDOMOptions {
 	 * and a border that is there at all is one cell wide.
 	 *
 	 * - `"unit"` (the default): a cell is one CSS pixel each way.
-	 * - `"typical"`: 8 by 16, the usual terminal cell.
 	 * - `"auto"`: the size the terminal reports, asked for before the
-	 *   first frame, which waits a second at most. `"typical"` when it
-	 *   cannot answer, as on a pipe.
+	 *   first frame, which waits a second at most. 8 by 16 when it cannot
+	 *   answer, as on a pipe.
 	 * - `{width, height}`: that size.
 	 */
-	cellSize?: "unit" | "typical" | "auto" | CellSize;
+	cellSize?: "unit" | "auto" | CellSize;
 }
 
 function getCellSizeSource(
@@ -71,9 +70,6 @@ function getCellSizeSource(
 ): () => Readonly<CellSize> {
 	if (option === undefined || option === "unit") {
 		return () => UNIT_CELL;
-	}
-	if (option === "typical") {
-		return () => TYPICAL_CELL;
 	}
 	if (option === "auto") {
 		return measured;
@@ -90,7 +86,7 @@ function getCellSizeSource(
 		return () => cell;
 	}
 	throw new TypeError(
-		'cellSize must be "unit", "typical", "auto" or {width, height} with positive sizes',
+		'cellSize must be "unit", "auto" or {width, height} with positive sizes',
 	);
 }
 
@@ -180,7 +176,7 @@ export class TermDOM {
 
 	constructor(options: TermDOMOptions = {}) {
 		const cellSize = getCellSizeSource(options.cellSize, () =>
-			this[kTransport].interactive ? this[kScreen].cellPixels : TYPICAL_CELL,
+			this[kTransport].interactive ? this[kScreen].cellPixels : FALLBACK_CELL,
 		);
 		this[kSealed] = false;
 
