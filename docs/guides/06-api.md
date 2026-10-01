@@ -31,7 +31,7 @@ Options:
 
 - `url?: string` — the document's URL, as `document.URL` and
   `location.href` report it.
-- `cellSize?: "unit" | "typical" | "auto" | {width, height}` — how many
+- `cellSize?: "unit" | "auto" | {width, height}` — how many
   CSS pixels one terminal cell is.
 
   Leave it alone for an app written for the terminal. Set it to `"auto"`
@@ -45,16 +45,15 @@ Options:
   | Value | One cell is |
   | --- | --- |
   | `"unit"` (default) | 1×1 px |
-  | `"typical"` | 8×16 px |
   | `"auto"` | what the terminal reports, or 8×16 if it can't say |
-  | `{width, height}` | that size |
+  | `{width, height}` | that size, such as `{width: 8, height: 16}` |
 
   With `"auto"`, the first frame waits for the terminal's answer, a
   second at most, and a font zoom asks again.
 
   Whatever the size:
   - A box's edges round to the nearest cell, so columns that add up to
-    their container still fit it. A border is always one cell.
+    their container still fit it. A border is whole cells, at least one.
   - `1ch` is one cell: a column across, a row down.
   - `1lh` is one row.
 

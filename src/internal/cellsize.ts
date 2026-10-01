@@ -9,8 +9,9 @@ export interface CellSize {
 
 export const UNIT_CELL: Readonly<CellSize> = {width: 1, height: 1};
 
-// Most terminal fonts run about twice as tall as wide.
-export const TYPICAL_CELL: Readonly<CellSize> = {width: 8, height: 16};
+// What "auto" takes when the terminal cannot say. Most terminal fonts
+// run about twice as tall as wide.
+export const FALLBACK_CELL: Readonly<CellSize> = {width: 8, height: 16};
 
 const sources = new WeakMap<object, () => Readonly<CellSize>>();
 
