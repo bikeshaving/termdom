@@ -4172,6 +4172,19 @@ function findInlineBlockSegment(
 	return null;
 }
 
+// Where a line's boxes start across its container: text-align's offset
+// and the first line's indent, as the painter places them.
+function getLineStart(
+	container: Element | null,
+	lines: BreakResult,
+	line: LineResult,
+): number {
+	return (
+		getLineAlignOffset(container, lines.containerWidth, line.width) +
+		getLineIndent(line === lines.lines[0], container, lines.containerWidth)
+	);
+}
+
 // The element whose scroll offsets a box carries as its own: any but html
 // and body, whose scroll is the document's and is applied once at paint.
 function getScrollOwner(layout: Layout, node: LayoutNode): Element | null {
@@ -6344,6 +6357,7 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 		}
 	}
 	let descended = false;
+	let alignContainer: Element | null = flatParentElement(runHead);
 	for (const ancestor of enclosing) {
 		if (!establishesIndependentFormattingContext(ancestor)) {
 			continue;
@@ -6354,6 +6368,7 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 		}
 		// Border and padding both occupy cells.
 		originX +=
+			getLineStart(alignContainer, breakResult, hop.line) +
 			hop.segment.x +
 			hop.segment.leaf.boxModel.paddingLeft +
 			hop.segment.leaf.boxModel.borderLeftWidth;
@@ -6363,6 +6378,7 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 			hop.segment.leaf.boxModel.borderTopWidth;
 		if (hop.segment.leaf.breakResult) {
 			breakResult = hop.segment.leaf.breakResult;
+			alignContainer = ancestor;
 			descended = true;
 		}
 	}
@@ -6382,7 +6398,9 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 		return new layout[kDOMRect](x, y, target.segment.width, target.line.height);
 	}
 	return new layout[kDOMRect](
-		originX + target.segment.x,
+		originX +
+		getLineStart(alignContainer, breakResult, target.line) +
+			target.segment.x,
 		originY + target.line.y,
 		target.segment.width,
 		target.line.height,
@@ -6870,6 +6888,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 					) {
 						// To the CONTENT edge. Border and padding occupy cells.
 						accumulatedOffsetX +=
+							getLineStart(alignContainer, currentBreakResult, line) +
 							segment.x +
 							segment.leaf.boxModel.paddingLeft +
 							segment.leaf.boxModel.borderLeftWidth;

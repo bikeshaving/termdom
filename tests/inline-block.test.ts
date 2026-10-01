@@ -533,3 +533,25 @@ test("an inline-block starting a line sizes against the block it is in", () => {
 	expect(rect("framed").left).toBe(5);
 	dom.dispose();
 });
+
+// A line's boxes start where text-align puts them, and the geometry
+// APIs report them there, as the painter draws them.
+test("text-align moves an inline-block's rect with its paint", async () => {
+	const terminal = new MockProcess({cols: 105, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"width: 100px; text-align: center\"><div id=\"box\" " +
+		"style=\"display: inline-block; width: 48px; text-align: left\">" +
+		"<span id=\"text\">Learner</span></div></div>";
+	await dom.attach();
+	await nextFrame(dom);
+	expect(terminal.getVisibleText().split("\n")[0].indexOf("Learner")).toBe(26);
+	expect(document.getElementById("box")!.getBoundingClientRect().left)
+		.toBe(26);
+	expect(document.getElementById("text")!.getBoundingClientRect().left)
+		.toBe(26);
+	expect(document.elementFromPoint(27, 0)?.id).toBe("text");
+	expect(document.elementFromPoint(2, 0)?.id).not.toBe("text");
+	dom.dispose();
+});
