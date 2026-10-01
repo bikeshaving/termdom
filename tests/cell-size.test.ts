@@ -126,12 +126,37 @@ test("a used width takes away the edges as they were drawn", () => {
 	const {document, window} = dom;
 	document.body.innerHTML =
 		"<div id=\"box\" style=\"box-sizing: content-box; width: 80px; " +
-		"padding: 5px; border: 1px solid\">x</div>";
-	const style = window.getComputedStyle(document.getElementById("box")!);
-	// Five pixels of padding is a cell across and nothing down, and a border
-	// is at least a cell either way.
+		"padding: 8px 4px; border: 1px solid\">x</div>";
+	const box = document.getElementById("box")!;
+	const style = window.getComputedStyle(box);
+	// A border is drawn a cell wide however thin it is, so the box is 13
+	// cells by 4 rows, and what is left inside is the width asked for.
+	expect([box.getBoundingClientRect().width, box.offsetHeight])
+		.toEqual([104, 64]);
 	expect(style.width).toBe("80px");
 	expect(style.height).toBe("16px");
+	dom.dispose();
+});
+
+// Each box's edges round to the grid, not each length on its own, so
+// widths that add up to their container still fit it.
+test("columns that fill their container stay on one line", () => {
+	const {dom} = make({width: 7, height: 15}, 120);
+	const {document} = dom;
+	const column = (id: string, width: number) =>
+		`<div id="${id}" style="display: inline-block; width: ${width}px">` +
+		"<span style=\"font-size: 15px\">x</span></div>";
+	document.body.innerHTML =
+		`<div style="width: 700px; font-size: 0">${column("a", 334)}` +
+		`${column("b", 32)}${column("c", 334)}</div>`;
+	const rect = (id: string) => document.getElementById(id)!
+		.getBoundingClientRect();
+	expect(["a", "b", "c"].map((id) => [rect(id).left, rect(id).top]))
+		.toEqual([[0, 0], [334, 0], [366, 0]]);
+	expect(
+		dom.renderANSI().split("\n")[0].replace(/\x1b\[[0-9;]*m/g, "")
+			.trimEnd(),
+	).toBe(`x${" ".repeat(47)}x${" ".repeat(3)}x`);
 	dom.dispose();
 });
 
@@ -383,5 +408,18 @@ test("a span scroller's scroll moves its text by the pixels it scrolled", async 
 	await nextFrame(dom);
 	expect(document.getElementById("c")!.getBoundingClientRect().left)
 		.toBe(before - 40);
+	dom.dispose();
+});
+
+test("a border is whole cells, and a tab stop a whole column", () => {
+	const {dom} = make("typical");
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div id=\"thick\" style=\"width: 80px; border-left: 11px solid\">x</div>" +
+		"<pre style=\"tab-size: 28px\">a\tb</pre>";
+	const thick = document.getElementById("thick")!;
+	expect(thick.clientLeft).toBe(8);
+	expect(dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "").split("\n")[1])
+		.toMatch(/^a {3}b/);
 	dom.dispose();
 });

@@ -176,7 +176,7 @@ export function toCellBorder(
 	const cell = getCellSize(node);
 	return (vertical ? cell.height : cell.width) === 1
 		? value
-		: Math.max(1, pxToCells(value, vertical, node));
+		: Math.max(1, Math.round(pxToCells(value, vertical, node)));
 }
 
 /**
@@ -192,7 +192,7 @@ export function getTabSize(element: Element | null): number {
 		return parseFloat(value);
 	}
 	const length = toCellLength(CSSValues.parseUnitValue(value), false, element);
-	return typeof length === "number" && length >= 0 ? length : 8;
+	return typeof length === "number" && length >= 0 ? Math.round(length) : 8;
 }
 
 /** An element's margins, borders and padding, in cells. */
