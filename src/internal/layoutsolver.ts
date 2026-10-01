@@ -5184,12 +5184,10 @@ function hasNoLineBox(child: LayoutNode): boolean {
 	return child.measure !== null && child.result.height === 0;
 }
 
+// Auto margins take what is left over (css2 §10.3.3), so they do not
+// stop an auto width from filling.
 function isStretchFit(child: LayoutNode): boolean {
-	return (
-		!isShrinkToFitWidth(child) &&
-		child.style.margin.left.unit !== "auto" &&
-		child.style.margin.right.unit !== "auto"
-	);
+	return !isShrinkToFitWidth(child);
 }
 
 // One running set of adjoining margins. It starts open at the top edge
