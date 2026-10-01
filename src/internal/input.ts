@@ -1533,7 +1533,30 @@ function getTextPosition(
 	) {
 		return null;
 	}
-	return input[kLayout].caretPositionFromPoint(x, y, element);
+	const layout = input[kLayout];
+	const exact = layout.caretPositionFromPoint(x, y, element);
+	if (exact !== null || isEmptyEditableLine(element)) {
+		return exact;
+	}
+	// Off the text, in padding, a margin or the space past the content, a
+	// press lands on the nearest line of the nearest box that has one, as
+	// in a browser.
+	for (
+		let box: Element | null = element;
+		box !== null;
+		box = flatParentElement(box)
+	) {
+		const near = layout.caretPositionFromPoint(x, y, box, true);
+		if (near !== null) {
+			return near;
+		}
+	}
+	return null;
+}
+
+function isEmptyEditableLine(element: Element): boolean {
+	return (element as HTMLElement).isContentEditable &&
+		(element.textContent ?? "") === "";
 }
 
 // An editable line with no text, one holding only its placeholder <br>,
@@ -1546,11 +1569,7 @@ function collapseInEmptyLine(
 	y: number,
 ): boolean {
 	const element = elementAtDocumentPoint(input[kDocument], x, y, null);
-	if (
-		element === null ||
-		!(element as HTMLElement).isContentEditable ||
-		(element.textContent ?? "") !== ""
-	) {
+	if (element === null || !isEmptyEditableLine(element)) {
 		return false;
 	}
 	selection.collapse(element, 0);

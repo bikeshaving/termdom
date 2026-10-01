@@ -184,3 +184,26 @@ test("a drag selects text inside a shadow root", async () => {
 
 	dom.dispose();
 });
+
+// Off the text, in padding or a margin, a press lands on the nearest
+// line, so a drag that starts there still selects.
+test("a drag that starts in padding or a margin selects from the nearest line", async () => {
+	const cases: Array<[number, number, string]> = [
+		[2, 3, "Hello"],
+		[6, 2, "llo"],
+		[6, 1, "llo"],
+	];
+	for (const [col, row, expected] of cases) {
+		const {terminal, dom} = mouseDOM();
+		dom.document.body.innerHTML =
+			"<div style=\"margin-top: 1px; padding: 1px 3px\">" +
+			"<p style=\"margin: 0\">Hello selectable world</p></div>";
+		await nextFrame(dom);
+		await type(terminal, press(col, row));
+		await type(terminal, drag(9, 3));
+		await type(terminal, release(9, 3));
+		await nextFrame(dom);
+		expect(dom.window.getSelection()!.toString()).toEqual(expected);
+		dom.dispose();
+	}
+});
