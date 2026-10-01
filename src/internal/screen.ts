@@ -276,7 +276,8 @@ interface TextMetrics {
 	width: number;
 }
 
-const COLOR_MASK = 0xffffff;
+// The channels and COLOR_SET, which tells black from no color.
+const COLOR_MASK = 0x1ffffff;
 
 const ATTR_FLAGS = {
 	Bold: 1 << 0,

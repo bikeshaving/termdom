@@ -398,16 +398,28 @@ export function serializeCSSIdentifier(value: string): string {
 	return out;
 }
 
+/**
+ * Set on every color a cell holds, above its 24 bits of RGB, so that 0
+ * alone means no color: the terminal's own. Black is this bit and nothing
+ * else. Readers mask the channels and never see it.
+ */
+export const COLOR_SET = 0x1000000;
+
+/** Packed RGB as a cell holds it. */
+export function toCellColor(rgb: number): number {
+	return COLOR_SET | rgb;
+}
+
 // The system colors mapped onto what a terminal already has. 0 is the
-// cell grid's "no SGR color" sentinel, meaning the terminal's own
-// default, and a nonzero value is packed RGB. Canvas and the
+// cell grid's "no SGR color", meaning the terminal's own default, and
+// anything else is a cell color. Canvas and the
 // Highlight/SelectedItem pairs have special painter translations; these
 // values are used only on paths those guards do not intercept, such as a
 // border or outline color.
 const SYSTEM_COLORS: Record<string, number> = {
-	accentcolor: 0x0000ff, // the accent: blue
+	accentcolor: toCellColor(0x0000ff), // the accent: blue
 	accentcolortext: 0, // text on the accent: the terminal's default background
-	activetext: 0xff0000, // an active link: red
+	activetext: toCellColor(0xff0000), // an active link: red
 	buttonborder: 0, // a control's border: the default foreground
 	buttonface: 0, // a control's face: the default background
 	buttontext: 0, // a control's label: the default foreground
@@ -415,15 +427,15 @@ const SYSTEM_COLORS: Record<string, number> = {
 	canvastext: 0, // document text: the default foreground
 	field: 0, // an input's background: the default background
 	fieldtext: 0, // an input's text: the default foreground
-	graytext: 0x808080, // disabled text: bright black, the dim gray
-	highlight: 0x0000ff, // the selection, when inverse cannot express it: blue
+	graytext: toCellColor(0x808080), // disabled text: bright black, the dim gray
+	highlight: toCellColor(0x0000ff), // the selection, when inverse cannot express it: blue
 	highlighttext: 0, // selected text, likewise: the default background
-	linktext: 0x0000ff, // a link: blue
-	mark: 0xffff00, // a <mark>'s background: yellow
-	marktext: 0, // a <mark>'s text: black, which this engine stores as 0
-	selecteditem: 0x0000ff, // a selected item, when not inverse: blue
+	linktext: toCellColor(0x0000ff), // a link: blue
+	mark: toCellColor(0xffff00), // a <mark>'s background: yellow
+	marktext: toCellColor(0x000000), // a <mark>'s text: black
+	selecteditem: toCellColor(0x0000ff), // a selected item, when not inverse: blue
 	selecteditemtext: 0, // its text, likewise: the default background
-	visitedtext: 0xff00ff, // a visited link: magenta
+	visitedtext: toCellColor(0xff00ff), // a visited link: magenta
 	activeborder: 0, // deprecated -> ButtonBorder
 	activecaption: 0, // deprecated -> Canvas
 	appworkspace: 0, // deprecated -> Canvas
@@ -433,7 +445,7 @@ const SYSTEM_COLORS: Record<string, number> = {
 	captiontext: 0, // deprecated -> CanvasText
 	inactiveborder: 0, // deprecated -> ButtonBorder
 	inactivecaption: 0, // deprecated -> Canvas
-	inactivecaptiontext: 0x808080, // deprecated -> GrayText
+	inactivecaptiontext: toCellColor(0x808080), // deprecated -> GrayText
 	infobackground: 0, // deprecated -> Canvas
 	infotext: 0, // deprecated -> CanvasText
 	menu: 0, // deprecated -> Canvas
@@ -660,9 +672,53 @@ function parseCSSColorComponents(
 	];
 }
 
+// The system colors that stand for the terminal's own background. The
+// rest of those it fills in stand for its text.
+const BACKGROUND_SYSTEM_COLORS = new Set([
+	"accentcolortext",
+	"activecaption",
+	"appworkspace",
+	"background",
+	"buttonface",
+	"buttonhighlight",
+	"buttonshadow",
+	"canvas",
+	"field",
+	"highlighttext",
+	"inactivecaption",
+	"infobackground",
+	"menu",
+	"scrollbar",
+	"selecteditemtext",
+	"threedface",
+	"window",
+]);
+
 /**
- * Packed 24-bit RGB. Unrecognized, transparent and system-default colors
- * all resolve to 0, because the painter has no null to put in a cell.
+ * A system color as a page reads it back: rgb(), as a browser gives it.
+ * One the terminal fills in reads as black or white, whichever the
+ * terminal's scheme puts there. Null for anything else.
+ */
+export function resolveSystemColor(
+	value: string,
+	scheme: "light" | "dark",
+): string | null {
+	const keyword = value.trim().toLowerCase();
+	const cell = SYSTEM_COLORS[keyword];
+	if (cell === undefined) {
+		return null;
+	}
+	if (cell !== 0) {
+		return `rgb(${(cell >> 16) & 0xff}, ${(cell >> 8) & 0xff}, ${cell & 0xff})`;
+	}
+	const light = BACKGROUND_SYSTEM_COLORS.has(keyword) === (scheme === "light");
+	return light ? "rgb(255, 255, 255)" : "rgb(0, 0, 0)";
+}
+
+/**
+ * A cell color. Unrecognized, transparent and system-default colors all
+ * resolve to 0, the terminal's own, because the painter has no null to put
+ * in a cell.
  */
 export function cssColorToNumber(cssColor: string): number {
 	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
@@ -672,7 +728,8 @@ export function cssColorToNumber(cssColor: string): number {
 	if (system !== undefined) {
 		return system;
 	}
-	return parseColor(cssColor)?.color ?? 0;
+	const parsed = parseColor(cssColor);
+	return parsed === null || parsed.alpha === 0 ? 0 : toCellColor(parsed.color);
 }
 
 const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
@@ -1850,7 +1907,7 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"border-bottom-color": "currentColor",
 	"border-left-color": "currentColor",
 	"background-color": "transparent",
-	color: "#000000",
+	color: "canvastext",
 	// One cell tall. The terminal's font is the grid, so a length in em is
 	// a length in cells.
 	"font-size": "1px",

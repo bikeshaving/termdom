@@ -9,6 +9,7 @@ import {
 	getCSSValueChildren,
 	parseAngle,
 	parseColor,
+	toCellColor,
 	type UnitValue,
 } from "./cssvalues.ts";
 import type {CellContext} from "./screen.ts";
@@ -279,7 +280,7 @@ function mixColors(before: number, after: number, ratio: number): number {
 		const to = (after >> shift) & 0xff;
 		return Math.round(from + (to - from) * ratio) << shift;
 	};
-	return channel(16) | channel(8) | channel(0);
+	return toCellColor(channel(16) | channel(8) | channel(0));
 }
 
 // Null where the gradient is more transparent than it is opaque, which

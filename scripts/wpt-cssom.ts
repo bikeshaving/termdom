@@ -203,7 +203,7 @@ const CSSOM_DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"getComputedStyle-resolved-colors.html",
-		"A system color computes as its keyword here, not as an rgb(). The name stands for whatever the user's environment says, which on a terminal is the theme-resolved palette: every system color maps onto the terminal's default colors and ANSI palette at paint time, but the process cannot state the theme's actual channel values, so `getComputedStyle` reports `Menu` as `Menu` where these tests expect a resolved rgb(). The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is how this engine spells \"swap the cell's colors\", which the selection painter renders as inverse video. Giving the keywords rgb() values would erase the signal the painter reads.",
+		"A system color computes as its keyword and reads back as rgb(): the color it paints, or, for one the terminal fills in from its theme, black or white as the terminal's light or dark scheme puts there. A system color inside a longer value, such as a box-shadow, still reads back as its keyword.",
 	],
 ];
 

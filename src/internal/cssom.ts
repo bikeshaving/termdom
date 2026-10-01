@@ -3715,17 +3715,25 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 					: "none";
 			}
 		}
-		if (AUTO_COLOR_PROPERTIES.has(property)) {
-			const computed = this.getComputedValue(property);
-			return computed === "auto" ? this.getPropertyValue("color") : computed;
-		}
 		const longhands = CSSValues.getLonghands(property);
 		if (longhands) {
 			return CSSValues.resolveShorthand(property, longhands, (longhand) =>
 				this.getPropertyValue(longhand),
 			);
 		}
-		return this.getComputedValue(property);
+		let computed = this.getComputedValue(property);
+		if (AUTO_COLOR_PROPERTIES.has(property) && computed === "auto") {
+			computed = this.getComputedValue("color");
+		}
+		// A system color computes as its keyword, and reads back as the color
+		// it stands for here.
+		if (this[kCascade] && CSSValues.isColorProperty(property)) {
+			return CSSValues.resolveSystemColor(
+				computed,
+				getColorScheme(this[kElement].ownerDocument),
+			) ?? computed;
+		}
+		return computed;
 	}
 
 	override setProperty(): void {
@@ -7697,6 +7705,10 @@ type MediaRangeKind = "length" | "ratio" | "resolution" | "integer";
 
 const colorSchemes = new WeakMap<object, () => "light" | "dark">();
 
+function getColorScheme(document: object): "light" | "dark" {
+	return colorSchemes.get(document)?.() ?? "light";
+}
+
 /** Where a document's prefers-color-scheme comes from. */
 export function setColorSchemeSource(
 	document: object,
@@ -7815,7 +7827,7 @@ const MEDIA_DISCRETE_FEATURES: Record<
 	// chose when they chose it.
 	"prefers-color-scheme": {
 		values: ["light", "dark"],
-		value: (window) => colorSchemes.get(window.document)?.() ?? "light",
+		value: (window) => getColorScheme(window.document),
 	},
 	"prefers-contrast": {
 		values: ["no-preference", "more", "less", "custom"],
