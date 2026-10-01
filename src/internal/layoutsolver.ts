@@ -2650,8 +2650,11 @@ function resolveColumnWidths(
 	// is inflated by the slack it was meant to give away.
 	const fixed = new Array<boolean>(columnCount).fill(false);
 
+	// A cell's percentage is of the table (css2 §17.5.2.2), and resolves
+	// only once the table's width is known.
+	const percentBasis = widthIsDefinite ? available : NaN;
 	for (const cell of cells) {
-		const styleWidth = resolveValue(cell.node.style.width, ownerWidth);
+		const styleWidth = resolveValue(cell.node.style.width, percentBasis);
 		if (isDefined(styleWidth)) {
 			cell.minWidth = styleWidth;
 			cell.maxWidth = styleWidth;
