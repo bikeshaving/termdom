@@ -1521,7 +1521,9 @@ function getTextPosition(
 	x: number,
 	y: number,
 ): {node: Text; offset: number} | null {
-	const element = elementAtDocumentPoint(input[kDocument], x, y);
+	// The deepest element, as a pointer event targets: text a user drags
+	// across in a shadow tree is still text they can select.
+	const element = elementAtDocumentPoint(input[kDocument], x, y, null);
 	if (
 		!element ||
 		element instanceof HTMLInputElement ||

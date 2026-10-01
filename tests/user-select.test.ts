@@ -158,3 +158,29 @@ test("toString keeps an inline-block's text on its line", async () => {
 
 	dom.dispose();
 });
+
+// Text in a shadow tree is text a user can select, through the slots
+// that place light content in it too.
+test("a drag selects text inside a shadow root", async () => {
+	const {terminal, dom} = mouseDOM();
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div id=\"host\"><span>slotted words</span></div>";
+	const root = document.getElementById("host")!.attachShadow({mode: "open"});
+	root.innerHTML = "<p style=\"margin: 0\">Hello selectable world</p><slot></slot>";
+	await nextFrame(dom);
+
+	await type(terminal, press(1, 1));
+	await type(terminal, drag(9, 1));
+	await type(terminal, release(9, 1));
+	await nextFrame(dom);
+	expect(dom.window.getSelection()!.toString()).toEqual("Hello se");
+
+	await type(terminal, press(1, 2));
+	await type(terminal, drag(8, 2));
+	await type(terminal, release(8, 2));
+	await nextFrame(dom);
+	expect(dom.window.getSelection()!.toString()).toEqual("slotted");
+
+	dom.dispose();
+});
