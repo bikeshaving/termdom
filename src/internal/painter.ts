@@ -1645,9 +1645,11 @@ function getMathCellStyle(
 	return style;
 }
 
-// The context root's clip intersected with the overflow of the
-// positioned ancestors only. A non-positioned overflow ancestor does not
-// contain the box.
+// The context root's clip intersected with the overflow of the ancestors
+// in the box's containing block chain (css-overflow-3 §3). A relative or
+// sticky box is contained by its parent, so every scroller around it
+// clips it. An absolute box skips to its nearest positioned ancestor, and
+// a fixed box to the viewport.
 function getPositionedClip(
 	painter: Painter,
 	element: Element,
@@ -1655,14 +1657,19 @@ function getPositionedClip(
 	contextClip: ClipRect | null,
 ): ClipRect | null {
 	let clip = contextClip;
+	let position = getComputedValue(element, "position");
 	for (
 		let ancestor = flatParentElement(element);
 		ancestor && ancestor !== contextRoot;
 		ancestor = flatParentElement(ancestor)
 	) {
-		if (!isPositioned(ancestor)) {
+		if (
+			position === "fixed" ||
+			(position === "absolute" && !isPositioned(ancestor))
+		) {
 			continue;
 		}
+		position = getComputedValue(ancestor, "position");
 		const overflow = getComputedValue(ancestor, "overflow");
 		const overflowX = getComputedValue(ancestor, "overflow-x") || overflow;
 		const overflowY = getComputedValue(ancestor, "overflow-y") || overflow;

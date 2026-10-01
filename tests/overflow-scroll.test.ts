@@ -347,3 +347,31 @@ test("a scroll container scrolls over what overflows its children", () => {
 	expect(get("wide").scrollLeft).toBe(30);
 	dom.dispose();
 });
+
+// A scroller clips the boxes it contains: a relative one, whose
+// containing block is its parent, but not an absolute one contained by a
+// positioned box outside, nor a fixed one (css-overflow-3 §3).
+test("a scroller clips a relative box, not one contained outside it", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"position: relative\"><div>HEADER</div>" +
+		"<div id=\"s\" style=\"height: 3px; overflow: auto\"><div>one</div>" +
+		"<div>two</div><div style=\"position: relative\">three</div>" +
+		"<div>four</div><div>five</div><div>six</div>" +
+		"<div style=\"position: absolute; top: 4px; left: 10px\">ABS</div>" +
+		"<div style=\"position: fixed; top: 5px; left: 10px\">FIX</div>" +
+		"</div></div>";
+	await dom.attach();
+	await nextFrame(dom);
+	dom.document.getElementById("s")!.scrollTop = 3;
+	await nextFrame(dom);
+	const rows = terminal
+		.getVisibleText()
+		.split("\n")
+		.map((row) => row.trimEnd());
+	expect(rows.slice(0, 4)).toEqual(["HEADER", "four", "five", "six"]);
+	expect(rows[4]).toContain("ABS");
+	expect(rows[5]).toContain("FIX");
+	dom.dispose();
+});
