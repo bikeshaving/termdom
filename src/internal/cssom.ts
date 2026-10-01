@@ -926,9 +926,28 @@ function domException(
 // should not see.
 const sheetNotifiers = new WeakMap<CSSStyleSheet, () => void>();
 
+// A rule tells its sheet when it changes, and a rule being built changes
+// as it is filled in. Those changes are the sheet's own construction, so
+// they reach no one: told per rule, a shadow root's sheet re-ran its
+// root's restyle once for every rule, from inside the parse that restyle
+// had started.
+const sheetsBeingBuilt = new WeakSet<CSSStyleSheet>();
+
 function sheetChanged(sheet: CSSStyleSheet | null | undefined): void {
-	if (sheet) {
+	if (sheet && !sheetsBeingBuilt.has(sheet)) {
 		sheetNotifiers.get(sheet)?.();
+	}
+}
+
+function buildRules<T>(sheet: CSSStyleSheet | null, build: () => T): T {
+	if (sheet === null || sheetsBeingBuilt.has(sheet)) {
+		return build();
+	}
+	sheetsBeingBuilt.add(sheet);
+	try {
+		return build();
+	} finally {
+		sheetsBeingBuilt.delete(sheet);
 	}
 }
 
@@ -2672,7 +2691,9 @@ function parseRules(
 	} catch (_err) {
 		return [];
 	}
-	return convertRules(ast.children.toArray(), text, sheet, parentRule);
+	return buildRules(sheet, () =>
+		convertRules(ast.children.toArray(), text, sheet, parentRule),
+	);
 }
 
 function parseRuleText(
@@ -2699,12 +2720,8 @@ function parseRuleText(
 	if (nodes.length !== 1) {
 		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
 	}
-	const rule = convertRule(
-		nodes[0],
-		source,
-		sheet,
-		parentRule,
-		getSheetNamespaces(sheet),
+	const rule = buildRules(sheet, () =>
+		convertRule(nodes[0], source, sheet, parentRule, getSheetNamespaces(sheet)),
 	);
 	if (!rule) {
 		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
