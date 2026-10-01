@@ -1174,17 +1174,6 @@ function styleLayoutNodeProperties(
 		const cell = element as {colSpan?: number; rowSpan?: number};
 		style.colSpan = Math.max(1, Math.floor(cell.colSpan ?? 1) || 1);
 		style.rowSpan = Math.max(1, Math.floor(cell.rowSpan ?? 1) || 1);
-
-		// A cell with no horizontal padding gets one cell either side, so
-		// neighbouring columns' text does not run together.
-		const paddingLeft = getComputedValue(element, "padding-left");
-		const paddingRight = getComputedValue(element, "padding-right");
-		if (!paddingLeft || paddingLeft === "0px") {
-			style.padding.left = toValue(1);
-		}
-		if (!paddingRight || paddingRight === "0px") {
-			style.padding.right = toValue(1);
-		}
 	}
 
 	if (display === "flex") {

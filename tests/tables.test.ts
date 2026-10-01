@@ -496,3 +496,21 @@ test("a 100% cell fills a fixed-width table, not the table's container", () => {
 	expect(width("c")).toBe(60);
 	dom.dispose();
 });
+
+// A cell's padding is its own. The UA sheet gives cells a column either
+// side; an author's padding: 0 takes it away.
+test("a cell with padding 0 holds content edge to edge", () => {
+	const terminal = new MockProcess({cols: 120, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<table><tr><td id=\"bare\" style=\"width: 70px; padding: 0; border: 0\">" +
+		"<div id=\"a\">plain</div></td><td id=\"ua\"><div id=\"b\">ua</div></td>" +
+		"</tr></table>";
+	const rect = (id: string) =>
+		document.getElementById(id)!.getBoundingClientRect();
+	expect([rect("a").left - rect("bare").left, rect("a").width])
+		.toEqual([0, 70]);
+	expect(rect("b").left - rect("ua").left).toBe(2);
+	dom.dispose();
+});
