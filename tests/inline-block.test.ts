@@ -555,3 +555,22 @@ test("text-align moves an inline-block's rect with its paint", async () => {
 	expect(document.elementFromPoint(2, 0)?.id).not.toBe("text");
 	dom.dispose();
 });
+
+// A space is as wide as its font, and at font-size 0 takes no room, so
+// columns that fill their row still fit with whitespace between them.
+test("whitespace between columns takes no room at font-size 0", () => {
+	const terminal = new MockProcess({cols: 120, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	const column = (id: string, width: number) =>
+		`<div id="${id}" style="display: inline-block; width: ${width}px; ` +
+		`font-size: 1px">${id}</div>`;
+	for (const [size, wraps] of [["0px", false], ["1px", true]] as const) {
+		document.body.innerHTML =
+			`<div style="width: 70px; font-size: ${size}">\n` +
+			`${column("a", 33)}\n${column("b", 4)}\n${column("c", 33)}\n</div>`;
+		const top = document.getElementById("c")!.getBoundingClientRect().top;
+		expect(top > 0).toBe(wraps);
+	}
+	dom.dispose();
+});

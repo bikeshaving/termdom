@@ -491,6 +491,13 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 		return false;
 	}
 
+	// A space is as wide as its font makes it, and at font-size 0 that is
+	// nothing (css-text-3 §4.1.1). Mail sets it on a row of inline-block
+	// columns so the spaces between them take no room.
+	if (parseFloat(getComputedValue(parent, "font-size")) === 0) {
+		return true;
+	}
+
 	// Inside an inline box the space is on a line with content, and is a
 	// space.
 	if (
