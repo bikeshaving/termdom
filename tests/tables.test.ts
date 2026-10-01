@@ -479,3 +479,20 @@ test("deeply nested tables lay out in time that grows with their number", () => 
 	}
 	dom.dispose();
 });
+
+// A cell's percentage width is of its table, not of what holds the table.
+test("a 100% cell fills a fixed-width table, not the table's container", () => {
+	const terminal = new MockProcess({cols: 120, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"width: 90px\"><table id=\"t\" style=\"width: 60px; " +
+		"border-collapse: collapse\"><tr><td id=\"c\" style=\"width: 100%; " +
+		"padding: 0; border: none\">words that wrap inside the card</td></tr>" +
+		"</table></div>";
+	const width = (id: string) =>
+		document.getElementById(id)!.getBoundingClientRect().width;
+	expect(width("t")).toBe(60);
+	expect(width("c")).toBe(60);
+	dom.dispose();
+});
