@@ -365,3 +365,43 @@ test("pseudo-element nodes follow the rules that reach their hosts", async () =>
 	expect(pseudoElement(normalDiv, "::before")).toBeNull();
 	termdom.dispose();
 });
+
+// Filling in a sheet's rules is the sheet being built, not changed. Told
+// per rule, a shadow root's sheets each re-ran the root's restyle, which
+// parsed the others, and a newsletter's eleven <style> blocks took
+// several times what they take in the document.
+test("a shadow root's style blocks cost about what the document's do", () => {
+	const rules = Array.from(
+		{length: 150},
+		(_, i) =>
+			`.c${i} a { color: #${(i * 4567 % 0xffffff).toString(16).padStart(6, "0")}; }`,
+	);
+	const blocks = Array.from({length: 15}, (_, block) =>
+		`<style>${rules.filter((_, i) => i % 15 === block).join("\n")}</style>`);
+	const body = Array.from({length: 150}, (_, i) =>
+		`<p class="c${i}"><a href="#">l</a> <span style="color: red">s</span></p>`);
+	const time = (shadow: boolean): number => {
+		const dom = new TermDOM({
+			transport: new MockProcess({cols: 100, rows: 20}).transport,
+		});
+		dom.document.body.innerHTML = "<div id=\"host\"></div>";
+		const host = dom.document.getElementById("host")!;
+		const root = shadow ? host.attachShadow({mode: "open"}) : host;
+		const mail = new dom.window.DOMParser().parseFromString(
+			`<head>${blocks.join("")}</head><body>${body.join("")}</body>`,
+			"text/html",
+		);
+		const start = performance.now();
+		root.append(
+			...[...mail.head.querySelectorAll("style"), ...mail.body.childNodes]
+				.map((node) => dom.document.adoptNode(node)),
+		);
+		host.getBoundingClientRect();
+		const elapsed = performance.now() - start;
+		dom.dispose();
+		return elapsed;
+	};
+	time(false);
+	time(true);
+	expect(time(true)).toBeLessThan(3 * time(false));
+});
