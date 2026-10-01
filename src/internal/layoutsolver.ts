@@ -5184,12 +5184,6 @@ function hasNoLineBox(child: LayoutNode): boolean {
 	return child.measure !== null && child.result.height === 0;
 }
 
-// Auto margins take what is left over (css2 §10.3.3), so they do not
-// stop an auto width from filling.
-function isStretchFit(child: LayoutNode): boolean {
-	return !isShrinkToFitWidth(child);
-}
-
 // One running set of adjoining margins. It starts open at the top edge
 // when nothing separates the container's margin from its first child's.
 // Those margins escape, and the container above applies them. A border,
@@ -5295,7 +5289,7 @@ function layoutBlock(
 		layoutBlockChild(
 			child,
 			contentWidth,
-			isStretchFit(child),
+			!isShrinkToFitWidth(child),
 			contentWidth,
 			innerHeight,
 			placing,
