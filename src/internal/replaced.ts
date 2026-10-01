@@ -1,0 +1,594 @@
+/**
+ * Replaced elements: <img> and <canvas>. Their content comes from
+ * outside the CSS formatting model, so they size from their natural
+ * dimensions (CSS 2 §10.3.2, §10.6.2) and paint what they hold into
+ * their content box instead of laying out children.
+ *
+ * A pixel is a cell everywhere else in this engine. An image's pixels
+ * are the screen's, so its natural size in cells is its size over a
+ * cell's size in pixels, which the terminal reports (XTWINOPS 16) and
+ * which is guessed at 8 by 16 until it does. A charactergrid canvas is
+ * already in cells.
+ */
+import {type CanvasTextRun, halfBlockCell} from "./canvas.ts";
+import {getBoxModel, getComputedValue} from "./cssom.ts";
+import * as CSSValues from "./cssvalues.ts";
+import {
+	type Bitmap,
+	getReplacedContent,
+	type GridCell,
+	isReplacedElement,
+	type ReplacedContent,
+	sampleBitmap,
+} from "./images.ts";
+import type {CellContext, CellStyle} from "./screen.ts";
+import {getStringWidth} from "./text.ts";
+
+export {isReplacedElement};
+
+const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
+
+const cellPixelSources = new WeakMap<
+	object,
+	() => {width: number; height: number}
+>();
+
+/** Where a document's cell size comes from, once it has a screen. */
+export function registerCellPixels(
+	document: object,
+	read: () => {width: number; height: number},
+): void {
+	cellPixelSources.set(document, read);
+}
+
+export function getCellPixels(element: Element): {
+	width: number;
+	height: number;
+} {
+	const document = element.ownerDocument;
+	return (document && cellPixelSources.get(document)?.()) ??
+		DEFAULT_CELL_PIXELS;
+}
+
+/** The natural size in cells, or null for content with none. */
+export function getNaturalSize(
+	element: Element,
+	content: ReplacedContent = getReplacedContent(element),
+): {width: number; height: number} | null {
+	if (content === null) {
+		return null;
+	}
+	if (content.kind === "grid") {
+		return {width: content.grid.cols, height: content.grid.rows};
+	}
+	if (content.kind === "text") {
+		return {width: textWidth(content.text), height: content.text ? 1 : 0};
+	}
+	const {width, height} = content.kind === "blank" ? content : content.bitmap;
+	if (width === 0 || height === 0) {
+		return {width: 0, height: 0};
+	}
+	const cell = getCellPixels(element);
+	return {
+		width: Math.max(1, Math.round(width / cell.width)),
+		height: Math.max(1, Math.round(height / cell.height)),
+	};
+}
+
+/** Width over height in cells, unrounded, or NaN for content with none. */
+export function getNaturalRatio(
+	element: Element,
+	content: ReplacedContent = getReplacedContent(element),
+): number {
+	if (content === null || content.kind === "text") {
+		return NaN;
+	}
+	if (content.kind === "grid") {
+		return content.grid.rows > 0 ? content.grid.cols / content.grid.rows : NaN;
+	}
+	const {width, height} = content.kind === "blank" ? content : content.bitmap;
+	if (width === 0 || height === 0) {
+		return NaN;
+	}
+	const cell = getCellPixels(element);
+	return (width / cell.width) / (height / cell.height);
+}
+
+function textWidth(text: string): number {
+	let width = 0;
+	for (const char of text) {
+		width += Math.max(0, getStringWidth(char));
+	}
+	return width;
+}
+
+// A length or a percentage of `base`, in cells, or undefined for auto,
+// none, or a percentage with no base to resolve against.
+function resolveLength(value: string, base: number): number | undefined {
+	const parsed = CSSValues.parseUnitValue(value);
+	if (typeof parsed === "number") {
+		return parsed;
+	}
+	if (
+		parsed !== null &&
+		typeof parsed === "object" &&
+		"percentage" in parsed &&
+		Number.isFinite(base)
+	) {
+		return (parsed.percentage / 100) * base;
+	}
+	return undefined;
+}
+
+/**
+ * The content box's used size in cells: CSS 2's rules for a replaced
+ * element. A size set on one axis takes the other from the natural
+ * ratio; with neither set, the natural size; then min and max clamp,
+ * carrying the ratio across to an axis that was not set. `width` and
+ * `height` here are border-box lengths, as this engine computes them.
+ */
+export function getReplacedSize(
+	element: Element,
+	availableWidth = NaN,
+): {width: number; height: number} {
+	const box = getBoxModel(element);
+	const horizontal =
+		box.paddingLeft +
+		box.paddingRight +
+		box.borderLeftWidth +
+		box.borderRightWidth;
+	const vertical =
+		box.paddingTop +
+		box.paddingBottom +
+		box.borderTopWidth +
+		box.borderBottomWidth;
+	const content = getReplacedContent(element);
+	const natural = getNaturalSize(element, content);
+	const ratio = getNaturalRatio(element, content);
+	const hasRatio = Number.isFinite(ratio) && ratio > 0;
+
+	const cssWidth = resolveLength(
+		getComputedValue(element, "width"),
+		availableWidth,
+	);
+	const cssHeight = box.height;
+	let width = cssWidth === undefined
+		? undefined
+		: Math.max(0, cssWidth - horizontal);
+	let height = cssHeight === undefined
+		? undefined
+		: Math.max(0, cssHeight - vertical);
+	const widthSet = width !== undefined;
+	const heightSet = height !== undefined;
+	if (width === undefined && height === undefined) {
+		width = natural?.width ?? 0;
+		height = natural?.height ?? 0;
+	} else if (width === undefined) {
+		width = hasRatio ? height! * ratio : (natural?.width ?? 0);
+	} else if (height === undefined) {
+		height = hasRatio ? width / ratio : (natural?.height ?? 0);
+	}
+
+	const edge = (property: string, base: number, inset: number) => {
+		const value = resolveLength(getComputedValue(element, property), base);
+		return value === undefined ? undefined : Math.max(0, value - inset);
+	};
+	const maxWidth = edge("max-width", availableWidth, horizontal);
+	const minWidth = edge("min-width", availableWidth, horizontal);
+	const maxHeight = edge("max-height", NaN, vertical);
+	const minHeight = edge("min-height", NaN, vertical);
+	if (maxWidth !== undefined && width! > maxWidth) {
+		width = maxWidth;
+		if (!heightSet && hasRatio) {
+			height = width / ratio;
+		}
+	}
+	if (minWidth !== undefined && width! < minWidth) {
+		width = minWidth;
+		if (!heightSet && hasRatio) {
+			height = width / ratio;
+		}
+	}
+	if (maxHeight !== undefined && height! > maxHeight) {
+		height = maxHeight;
+		if (!widthSet && hasRatio) {
+			width = height * ratio;
+		}
+	}
+	if (minHeight !== undefined && height! < minHeight) {
+		height = minHeight;
+		if (!widthSet && hasRatio) {
+			width = height * ratio;
+		}
+	}
+	return {
+		width: Math.max(0, Math.round(width!)),
+		height: Math.max(0, Math.round(height!)),
+	};
+}
+
+/**
+ * The measure for a replaced element's layout node: offered a definite
+ * width, the height follows from the ratio; otherwise the natural size.
+ */
+export function measureReplaced(
+	element: Element,
+	width: number,
+	widthSpace: string,
+): {width: number; height: number} {
+	if (widthSpace === "definite" && Number.isFinite(width)) {
+		const content = getReplacedContent(element);
+		const ratio = getNaturalRatio(element, content);
+		const natural = getNaturalSize(element, content);
+		return {
+			width,
+			height: Number.isFinite(ratio) && ratio > 0
+				? Math.round(width / ratio)
+				: (natural?.height ?? 0),
+		};
+	}
+	return getReplacedSize(element, width);
+}
+
+// ---------------------------------------------------------------------------
+// Painting.
+
+interface Placement {
+	// The image's box in the content box, in columns and half rows, which
+	// may run past the content box (object-fit: cover, none).
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+// object-position: two keywords, lengths or percentages, center by default.
+function readObjectPosition(element: Element): [string, string] {
+	const value = getComputedValue(element, "object-position")
+		.trim()
+		.toLowerCase();
+	const parts = value === "" ? ["50%", "50%"] : value.split(/\s+/);
+	let x = "50%";
+	let y = "50%";
+	const vertical = new Set(["top", "bottom"]);
+	const horizontal = new Set(["left", "right"]);
+	if (parts.length === 1) {
+		if (vertical.has(parts[0])) {
+			y = parts[0];
+		} else {
+			x = parts[0];
+		}
+	} else if (vertical.has(parts[0]) || horizontal.has(parts[1])) {
+		y = parts[0];
+		x = parts[1];
+	} else {
+		x = parts[0];
+		y = parts[1];
+	}
+	return [x, y];
+}
+
+function positionOffset(value: string, free: number, unit: number): number {
+	switch (value) {
+		case "left":
+		case "top":
+			return 0;
+		case "right":
+		case "bottom":
+			return free;
+		case "center":
+			return free / 2;
+	}
+	const parsed = CSSValues.parseSignedUnitValue(value);
+	if (typeof parsed === "number") {
+		return parsed * unit;
+	}
+	const percent = /^(-?[\d.]+)%$/.exec(value);
+	return percent ? (parseFloat(percent[1]) / 100) * free : free / 2;
+}
+
+// Where object-fit and object-position put an image of `natural` cells
+// (unrounded) in a content box `cols` by `rows`.
+function placeImage(
+	element: Element,
+	cols: number,
+	rows: number,
+	naturalWidth: number,
+	naturalHeight: number,
+): Placement {
+	const boxWidth = cols;
+	const boxHeight = rows * 2;
+	const imageWidth = naturalWidth;
+	const imageHeight = naturalHeight * 2;
+	const fit =
+		getComputedValue(element, "object-fit").trim().toLowerCase() || "fill";
+	if (fit === "fill" || imageWidth <= 0 || imageHeight <= 0) {
+		return {x: 0, y: 0, width: boxWidth, height: boxHeight};
+	}
+	const contain = Math.min(boxWidth / imageWidth, boxHeight / imageHeight);
+	const scale = fit === "contain"
+		? contain
+		: fit === "cover"
+			? Math.max(boxWidth / imageWidth, boxHeight / imageHeight)
+			: fit === "scale-down" ? Math.min(1, contain) : 1;
+	const width = imageWidth * scale;
+	const height = imageHeight * scale;
+	const [px, py] = readObjectPosition(element);
+	return {
+		x: positionOffset(px, boxWidth - width, 1),
+		y: positionOffset(py, boxHeight - height, 2),
+		width,
+		height,
+	};
+}
+
+interface CellCache {
+	key: string;
+	cells: Array<GridCell | null>;
+}
+
+const bitmapCells = new WeakMap<Bitmap, CellCache>();
+
+// The bitmap as cells over a content box `cols` by `rows`, kept until
+// the pixels, the box or the placement change.
+function getBitmapCells(
+	element: Element,
+	content: Extract<ReplacedContent, {kind: "bitmap"}>,
+	cols: number,
+	rows: number,
+	under: number | null,
+): Array<GridCell | null> {
+	const {bitmap} = content;
+	const cell = getCellPixels(element);
+	const naturalWidth = bitmap.width / cell.width;
+	const naturalHeight = bitmap.height / cell.height;
+	const place = placeImage(element, cols, rows, naturalWidth, naturalHeight);
+	const rendering = getComputedValue(element, "image-rendering")
+		.trim()
+		.toLowerCase();
+	const smooth =
+		content.smooth && rendering !== "pixelated" && rendering !== "crisp-edges";
+	const key = [
+		content.version,
+		cols,
+		rows,
+		under,
+		place.x,
+		place.y,
+		place.width,
+		place.height,
+		smooth,
+	].join(",");
+	const cached = bitmapCells.get(bitmap);
+	if (cached !== undefined && cached.key === key) {
+		return cached.cells;
+	}
+	// The part of the image inside the content box, snapped to whole
+	// columns and half rows.
+	const left = Math.max(0, Math.round(place.x));
+	const top = Math.max(0, Math.round(place.y));
+	const right = Math.min(cols, Math.round(place.x + place.width));
+	const bottom = Math.min(rows * 2, Math.round(place.y + place.height));
+	const pixels = new Uint8ClampedArray(cols * rows * 2 * 4);
+	if (right > left && bottom > top && place.width > 0 && place.height > 0) {
+		const scaleX = bitmap.width / place.width;
+		const scaleY = bitmap.height / place.height;
+		const sampled = sampleBitmap(
+			bitmap,
+			right - left,
+			bottom - top,
+			{
+				x: (left - place.x) * scaleX,
+				y: (top - place.y) * scaleY,
+				width: (right - left) * scaleX,
+				height: (bottom - top) * scaleY,
+			},
+			smooth,
+		);
+		const width = right - left;
+		for (let y = top; y < bottom; y++) {
+			pixels.set(
+				sampled.subarray((y - top) * width * 4, (y - top + 1) * width * 4),
+				(y * cols + left) * 4,
+			);
+		}
+	}
+	const cells: Array<GridCell | null> = [];
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			cells.push(
+				halfBlockCell(
+					pixels,
+					(row * 2 * cols + col) * 4,
+					((row * 2 + 1) * cols + col) * 4,
+					under,
+				),
+			);
+		}
+	}
+	bitmapCells.set(bitmap, {key, cells});
+	return cells;
+}
+
+function drawCell(
+	ctx: CellContext,
+	cell: GridCell,
+	x: number,
+	y: number,
+	fallback: CellStyle,
+): void {
+	// The second column of a wide glyph belongs to the glyph before it.
+	if (cell.char === "") {
+		return;
+	}
+	if (cell.char === null) {
+		if (cell.bg !== null) {
+			ctx.drawRect(x, y, 1, 1, cell.bg);
+		}
+		return;
+	}
+	ctx.drawText(cell.char, x, y, {
+		fg: cell.fg ?? fallback.fg,
+		bg: cell.bg ?? undefined,
+		bold: cell.bold || undefined,
+		italic: cell.italic || undefined,
+		underline: cell.underline || undefined,
+		dim: cell.dim || undefined,
+		inverse: cell.inverse || undefined,
+	});
+}
+
+/**
+ * Paint what a replaced element holds into its content box, whose border
+ * box is `rect`. `style` is the element's text style, for alt text and
+ * for grid cells in the terminal's own colors. `under` is the element's
+ * background as a cell color, which partly transparent pixels blend
+ * over, or null to let only pixels at least half opaque show.
+ */
+export function renderReplaced(
+	element: Element,
+	rect: {left: number; top: number; width: number; height: number},
+	ctx: CellContext,
+	style: CellStyle,
+	under: number | null,
+	textRuns: CanvasTextRun[] = [],
+): void {
+	const content = getReplacedContent(element);
+	if (content === null || content.kind === "blank") {
+		return;
+	}
+	const box = getBoxModel(element);
+	const left = Math.round(rect.left + box.borderLeftWidth + box.paddingLeft);
+	const top = Math.round(rect.top + box.borderTopWidth + box.paddingTop);
+	const cols = Math.max(
+		0,
+		Math.round(
+			rect.width -
+			box.borderLeftWidth -
+			box.paddingLeft -
+			box.borderRightWidth -
+				box.paddingRight,
+		),
+	);
+	const rows = Math.max(
+		0,
+		Math.round(
+			rect.height -
+			box.borderTopWidth -
+			box.paddingTop -
+			box.borderBottomWidth -
+				box.paddingBottom,
+		),
+	);
+	if (cols === 0 || rows === 0) {
+		return;
+	}
+	// The content box clips what the element draws, inside any clip
+	// already in force.
+	const previous = ctx.clipRect;
+	const own = {left, top, right: left + cols, bottom: top + rows};
+	ctx.clipRect = previous === null
+		? own
+		: {
+			left: Math.max(previous.left, own.left),
+			top: Math.max(previous.top, own.top),
+			right: Math.min(previous.right, own.right),
+			bottom: Math.min(previous.bottom, own.bottom),
+		};
+	try {
+		if (content.kind === "text") {
+			ctx.drawText(content.text, left, top, style);
+		} else if (content.kind === "grid") {
+			const {grid} = content;
+			for (let row = 0; row < Math.min(rows, grid.rows); row++) {
+				for (let col = 0; col < Math.min(cols, grid.cols); col++) {
+					const cell = grid.cells[row * grid.cols + col];
+					if (cell !== null) {
+						drawCell(ctx, cell, left + col, top + row, style);
+					}
+				}
+			}
+		} else {
+			const cells = getBitmapCells(element, content, cols, rows, under);
+			for (let row = 0; row < rows; row++) {
+				for (let col = 0; col < cols; col++) {
+					const cell = cells[row * cols + col];
+					if (cell !== null) {
+						drawCell(ctx, cell, left + col, top + row, style);
+					}
+				}
+			}
+			if (textRuns.length > 0) {
+				paintTextRuns(
+					element,
+					content.bitmap,
+					textRuns,
+					left,
+					top,
+					cols,
+					rows,
+					ctx,
+				);
+			}
+		}
+	} finally {
+		ctx.clipRect = previous;
+	}
+}
+
+// A 2d context's text at the cells its anchors fall in, through the same
+// placement as the pixels.
+function paintTextRuns(
+	element: Element,
+	bitmap: Bitmap,
+	runs: CanvasTextRun[],
+	left: number,
+	top: number,
+	cols: number,
+	rows: number,
+	ctx: CellContext,
+): void {
+	const cell = getCellPixels(element);
+	const place = placeImage(
+		element,
+		cols,
+		rows,
+		bitmap.width / cell.width,
+		bitmap.height / cell.height,
+	);
+	const perCol = place.width / bitmap.width;
+	const perRow = place.height / 2 / bitmap.height;
+	for (const run of runs) {
+		if (run.color.a < 0.5) {
+			continue;
+		}
+		const width = textWidth(run.text);
+		const anchorCol = place.x + run.x * perCol;
+		// Text sits above an alphabetic, ideographic or bottom baseline, so
+		// a baseline on a row's top edge puts the text in the row above.
+		const anchorRow = place.y / 2 + run.y * perRow;
+		const row =
+			run.baseline === "top" ||
+			run.baseline === "hanging" ||
+			run.baseline === "middle"
+				? Math.floor(anchorRow)
+				: Math.ceil(anchorRow) - 1;
+		let col = Math.round(anchorCol);
+		if (run.align === "center") {
+			col = Math.round(anchorCol - width / 2);
+		} else if (run.align === "right") {
+			col = Math.round(anchorCol - width);
+		}
+		if (row < 0 || row >= rows) {
+			continue;
+		}
+		const {r, g, b} = run.color;
+		ctx.drawText(run.text, left + col, top + row, {
+			fg: CSSValues.toCellColor(
+				(Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b),
+			),
+			bold: run.bold || undefined,
+			italic: run.italic || undefined,
+		});
+	}
+}

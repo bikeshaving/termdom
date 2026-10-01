@@ -10,6 +10,7 @@ import * as CSSValues from "./cssvalues.ts";
 import {
 	flatParentElement,
 	flowContent,
+	getCanvasTextRuns,
 	getFocusedElement,
 	getHighlightedTextNodes,
 	getPaintedHighlights,
@@ -35,6 +36,7 @@ import {
 	type Box,
 	type BreakResult,
 	type Display,
+	getAtomicHeight,
 	getLineAlignOffset,
 	getLineIndent,
 	hasItemParent,
@@ -52,6 +54,7 @@ import {
 	isMathRoot,
 	type MathCell,
 } from "./mathml.ts";
+import {isReplacedElement, renderReplaced} from "./replaced.ts";
 import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
@@ -656,6 +659,12 @@ function paintBlock(
 		afterOwnBox();
 	}
 
+	if (isReplacedElement(element)) {
+		paintReplaced(element, style, rect, ctx);
+		paintOutline(painter, element, style, rect, ctx);
+		return;
+	}
+
 	// The math engine laid the whole subtree out into one box of cells.
 	if (isMathRoot(element)) {
 		if (style.visible) {
@@ -1127,7 +1136,8 @@ function paintMember(
 	const element = node as Element;
 	const leaf = run.leaves.get(element);
 	if (leaf !== undefined) {
-		paintAtomic(painter, element, leaf.leaf, leaf.rect, ctx);
+		const height = getAtomicHeight(element, leaf.leaf, leaf.rect.height);
+		paintAtomic(painter, element, leaf.leaf, {...leaf.rect, height}, ctx);
 		return;
 	}
 	if (painter[kLayout].hoistedToLayer(element)) {
@@ -1194,6 +1204,28 @@ function paintInlineBorder(
 	}
 }
 
+// An image's or a canvas's pixels, cells or alt text in its content box.
+// Pixels that are partly transparent blend over the element's own
+// background where it has one.
+function paintReplaced(
+	element: Element,
+	style: PaintStyle,
+	rect: Rect,
+	ctx: CellContext,
+): void {
+	if (!style.visible) {
+		return;
+	}
+	renderReplaced(
+		element,
+		rect,
+		ctx,
+		style.cell,
+		style.bg === undefined ? null : style.bg,
+		getCanvasTextRuns(element),
+	);
+}
+
 function paintAtomic(
 	painter: Painter,
 	element: Element,
@@ -1211,6 +1243,11 @@ function paintAtomic(
 	}
 	paintCaret(painter, element, style, ctx);
 
+	if (isReplacedElement(element)) {
+		paintReplaced(element, style, rect, ctx);
+		paintOutline(painter, element, style, rect, ctx);
+		return;
+	}
 	if (isMathRoot(element)) {
 		if (style.visible) {
 			renderMath(painter, element, rect, ctx);

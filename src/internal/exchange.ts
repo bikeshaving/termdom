@@ -3,6 +3,7 @@ import {
 	dispatchAsUserAgent,
 	Event,
 	EventTarget,
+	relayoutReplacedElements,
 	requestRender,
 	syncMediaQueries,
 	type Window,
@@ -1172,8 +1173,13 @@ export class Exchange extends EventTarget {
 			read: ({width, height}) =>
 				width > 0 && height > 0 ? {width, height} : null,
 		});
-		if (cell !== null && !this[kDisposed]) {
-			this[kScreen].adoptCellPixels(cell.width, cell.height);
+		if (
+			cell !== null &&
+			!this[kDisposed] &&
+			this[kScreen].adoptCellPixels(cell.width, cell.height)
+		) {
+			// An image's natural size in cells is its pixels over the cell's.
+			relayoutReplacedElements(this[kWindow].document);
 		}
 	}
 

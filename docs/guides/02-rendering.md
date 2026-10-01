@@ -137,6 +137,7 @@ terminal that does not answer gets the conservative behavior.
 | Mode 2027 | Measuring text by grapheme cluster, so a terminal that does agrees with the engine on the width of emoji sequences |
 | Mode 8 | Whether the terminal reorders bidirectional text itself, in which case the engine leaves the order to it |
 | SGR 53 by DECRQSS | Whether the terminal draws an overline, which MathML uses for the bar of a root |
+| XTWINOPS 16 | A cell's size in pixels, which sets the angle of a gradient and the natural size of an image or a canvas in cells |
 | OSC 52 query | Reading the clipboard in `navigator.clipboard.readText()` |
 
 The one exception is color depth, which the process transport reads
