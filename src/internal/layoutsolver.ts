@@ -2886,6 +2886,9 @@ function layoutTable(
 
 	const rowHeights = new Array<number>(rows.length).fill(0);
 
+	// Measured, not placed: the pass below places each cell once, at its
+	// row's height. Placing here as well laid every cell out twice, which
+	// doubled the work at each level of nested tables.
 	for (const cell of cells) {
 		const width = spanWidth(cell.column, cell.colSpan);
 		layoutNode(
@@ -2896,7 +2899,7 @@ function layoutTable(
 			"indefinite",
 			ownerWidth,
 			ownerHeight,
-			placing,
+			false,
 		);
 
 		if (cell.rowSpan === 1) {
@@ -2989,6 +2992,17 @@ function layoutTable(
 		: contentHeight + paddingBorderColumn;
 
 	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
+
+	// Rows and groups are sized here, never through layoutNode, so their
+	// independence from the owner is read off their cells here too. A table
+	// that never counted as independent was measured afresh for every
+	// owner size, at every level of nesting.
+	for (const row of rows) {
+		row.node.ownerFree = isOwnerFree(row.node);
+	}
+	for (const group of groups) {
+		group.ownerFree = isOwnerFree(group);
+	}
 
 	if (!placing) {
 		return;
