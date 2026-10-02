@@ -4242,17 +4242,19 @@ export function getLineAlignOffset(
 	// A line too long for its box is start-aligned, whatever text-align
 	// says, and overflows at its end edge (css-text-3 §7.1). In a
 	// right-to-left paragraph that edge is the left.
+	// Whole cells: a line starts at a column. Centered, the odd cell goes
+	// before the line.
 	if (lineWidth > containerWidth) {
-		return rtl ? containerWidth - lineWidth : 0;
+		return rtl ? Math.round(containerWidth - lineWidth) : 0;
 	}
 	const align = CSSValues.getLineAlignment(
 		getComputedValue(container, "text-align"),
 	);
 	if (align === "center") {
-		return Math.max(0, (containerWidth - lineWidth) / 2);
+		return Math.max(0, Math.round((containerWidth - lineWidth) / 2));
 	}
 	if (align === "right") {
-		return Math.max(0, containerWidth - lineWidth);
+		return Math.max(0, Math.round(containerWidth - lineWidth));
 	}
 	if (align === "left") {
 		return 0;
@@ -4260,7 +4262,7 @@ export function getLineAlignOffset(
 	// `start` and `end` name the reading direction's ends, trading sides
 	// in an RTL paragraph. An undeclared alignment is `start`.
 	const atRightEdge = align === "end" ? !rtl : rtl;
-	return atRightEdge ? Math.max(0, containerWidth - lineWidth) : 0;
+	return atRightEdge ? Math.max(0, Math.round(containerWidth - lineWidth)) : 0;
 }
 
 // Added on top of text-align's offset rather than shrinking the line
