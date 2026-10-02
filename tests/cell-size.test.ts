@@ -462,3 +462,21 @@ test("a fractional margin does not wrap the word after it", () => {
 		.toBe("│ Like│");
 	dom.dispose();
 });
+
+// A line starts at a column, and a box inside it fills whole cells. A
+// centered line in a box of a fractional width left an inline-block a
+// fraction of a column over, and its cells' backgrounds painted nowhere.
+test("a centered inline-block in a fractional box paints its background", () => {
+	const {dom} = make({width: 7, height: 15}, 60, 12);
+	const {document} = dom;
+	document.body.innerHTML =
+		"<table style=\"width: 600px\"><tr><td align=\"center\" " +
+		"style=\"background: #f6e3dd; padding: 0 40px\"><table " +
+		"style=\"display: inline-block\"><tr><td id=\"red\" " +
+		"style=\"background: #600820\">GO</td></tr></table></td></tr></table>";
+	const left = document.getElementById("red")!.getBoundingClientRect().left;
+	expect(Number.isInteger(left / 7)).toBe(true);
+	const row = dom.renderANSI().split("\n").find((line) => line.includes("GO"))!;
+	expect(row.slice(0, row.indexOf("GO"))).toMatch(/48;2;96;8;32m[^\x1b]*$/);
+	dom.dispose();
+});
