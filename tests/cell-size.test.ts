@@ -496,3 +496,20 @@ test("an inline-block with fractional padding keeps inside its cell's border", (
 	expect(rows[bottom]).toMatch(/^└─+┘$/);
 	dom.dispose();
 });
+
+// A box after one of a fractional width starts a fraction of a column
+// over. Its fill paints the cells its border would, or it landed on no
+// cell at all.
+test("an inline-block after a fractional width paints its background", () => {
+	const {dom} = make({width: 7, height: 15}, 60, 12);
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"font-size: 0\"><div style=\"display: inline-block; " +
+		"width: 200px\"></div><span id=\"go\" style=\"display: inline-block; " +
+		"font-size: 15px; padding: 0 14px; background: #600820\">GO</span></div>";
+	const left = document.getElementById("go")!.getBoundingClientRect().left;
+	expect(Number.isInteger(left / 7)).toBe(false);
+	const row = dom.renderANSI().split("\n")[0];
+	expect(row).toMatch(/48;2;96;8;32m {2}GO {2}/);
+	dom.dispose();
+});
