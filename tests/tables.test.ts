@@ -581,3 +581,21 @@ test("a 100% cell beside others takes what they leave", () => {
 	expect([last.left, last.width]).toEqual([20, 40]);
 	dom.dispose();
 });
+
+// A word longer than the table is wide makes the cell as wide as the word.
+// Its height is then that of its lines at that width, not of the one word
+// per line that measuring its narrowest width produced.
+test("a cell widened by a long word is as tall as its lines at that width", () => {
+	const terminal = new MockProcess({cols: 60, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<table style=\"width: 14px\"><tr><td id=\"cell\" " +
+		"style=\"padding: 0; border: 0\"><div id=\"text\">aa bb cc dd ee ff " +
+		`gg hh ii jj kk ll mm nn ${"x".repeat(30)}</div></td></tr></table>`;
+	const cell = document.getElementById("cell")!.getBoundingClientRect();
+	const text = document.getElementById("text")!.getBoundingClientRect();
+	expect([cell.width, cell.height]).toEqual([30, 3]);
+	expect([text.top, text.height]).toEqual([cell.top, 3]);
+	dom.dispose();
+});
