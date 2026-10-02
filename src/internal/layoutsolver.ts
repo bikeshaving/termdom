@@ -2441,6 +2441,11 @@ interface TableCell {
 	rowSpan: number;
 	minWidth: number;
 	maxWidth: number;
+
+	// A block in a row, which is no cell, stands in the anonymous cell
+	// that wraps it (css-tables-3 §3.3): it fills the cell up to its own
+	// width limits, and its auto margins center it there.
+	anonymous: boolean;
 }
 
 interface TableRow {
@@ -2506,6 +2511,32 @@ function collectTableRows(table: LayoutNode): {
 	return {rows: [...header, ...body, ...footer], captions, groups};
 }
 
+function placeAnonymousCellContent(
+	node: LayoutNode,
+	cellWidth: number,
+	cellLeft: number,
+): void {
+	resolveNodeMargins(node, cellWidth);
+	layoutBlockChild(node, cellWidth, true, cellWidth, NaN, true);
+	const leading = node.result.margin.left;
+	const free =
+		cellWidth - node.result.width - leading - node.result.margin.right;
+	const leadingAuto = node.style.margin.left.unit === "auto";
+	const trailingAuto = node.style.margin.right.unit === "auto";
+	const offset = leadingAuto && trailingAuto
+		? Math.max(free, 0) / 2
+		: leadingAuto ? Math.max(free, 0) : 0;
+	node.result.left = cellLeft + leading + offset;
+	node.result.top = node.result.margin.top;
+}
+
+function isAnonymousCellContent(node: LayoutNode): boolean {
+	const type = node.style.displayType;
+	return type !== "none" &&
+		!type.startsWith("table") &&
+		!isOutOfFlowType(node.style.positionType);
+}
+
 // A rowspan reserves its slots in the rows below.
 function buildTableGrid(rows: TableRow[]): {
 	cells: TableCell[];
@@ -2519,7 +2550,8 @@ function buildTableGrid(rows: TableRow[]): {
 		let column = 0;
 
 		for (const node of row.node.children) {
-			if (node.style.displayType !== "table-cell") {
+			const anonymous = isAnonymousCellContent(node);
+			if (node.style.displayType !== "table-cell" && !anonymous) {
 				zeroLayout(node);
 				continue;
 			}
@@ -2545,6 +2577,7 @@ function buildTableGrid(rows: TableRow[]): {
 				rowSpan,
 				minWidth: 0,
 				maxWidth: 0,
+				anonymous,
 			});
 
 			column += colSpan;
@@ -2894,16 +2927,22 @@ function layoutTable(
 	// doubled the work at each level of nested tables.
 	for (const cell of cells) {
 		const width = spanWidth(cell.column, cell.colSpan);
-		layoutNode(
-			cell.node,
-			width,
-			NaN,
-			"definite",
-			"indefinite",
-			ownerWidth,
-			ownerHeight,
-			false,
-		);
+		if (cell.anonymous) {
+			resolveNodeMargins(cell.node, width);
+			layoutBlockChild(cell.node, width, true, width, NaN, false);
+			cell.node.result.height += getAxisMargin(cell.node, "column", width);
+		} else {
+			layoutNode(
+				cell.node,
+				width,
+				NaN,
+				"definite",
+				"indefinite",
+				ownerWidth,
+				ownerHeight,
+				false,
+			);
+		}
 
 		if (cell.rowSpan === 1) {
 			rowHeights[cell.row] = Math.max(
@@ -3034,6 +3073,11 @@ function layoutTable(
 	for (const cell of cells) {
 		const cellWidth = spanWidth(cell.column, cell.colSpan);
 		const cellHeight = spanHeight(cell.row, cell.rowSpan);
+
+		if (cell.anonymous) {
+			placeAnonymousCellContent(cell.node, cellWidth, columnStart(cell.column));
+			continue;
+		}
 
 		// The last measure of the cell's text is the one whose line breaks
 		// paint.

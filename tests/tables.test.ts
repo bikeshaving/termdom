@@ -514,3 +514,30 @@ test("a cell with padding 0 holds content edge to edge", () => {
 	expect(rect("b").left - rect("ua").left).toBe(2);
 	dom.dispose();
 });
+
+// A block in a row is no cell, so it stands in an anonymous one, which
+// sizes with the columns. The block fills it up to its own width limits,
+// centered by its auto margins.
+test("a block in a table row lays out in an anonymous cell", () => {
+	const terminal = new MockProcess({cols: 120, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	const row = (style: string) =>
+		"<div style=\"width: 70px\"><table style=\"width: 100%; " +
+		"border-collapse: collapse\"><tr><td style=\"padding: 0; border: 0\">" +
+		`</td><td id="c" style="${style}; padding: 0; border: 0"><p id="p" ` +
+		"style=\"margin: 0\">the article body</p></td><td style=\"padding: 0; " +
+		"border: 0\"></td></tr></table></div>";
+	const rect = (id: string) =>
+		document.getElementById(id)!.getBoundingClientRect();
+	document.body.innerHTML =
+		row("display: block; max-width: 60px; margin: 0 auto");
+	expect([rect("c").left, rect("c").width, rect("p").width]).toEqual([
+		5,
+		60,
+		60,
+	]);
+	document.body.innerHTML = row("display: block");
+	expect(rect("p").width).toBe(70);
+	dom.dispose();
+});
