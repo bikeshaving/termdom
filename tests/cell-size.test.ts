@@ -513,3 +513,24 @@ test("an inline-block after a fractional width paints its background", () => {
 	expect(row).toMatch(/48;2;96;8;32m {2}GO {2}/);
 	dom.dispose();
 });
+
+// A box that clips at a fraction of a column clips at the cell its own
+// border box starts on, so a child flush with its edge keeps its border.
+test("an overflow: hidden box at a fractional column keeps its child's left border", () => {
+	const {dom} = make({width: 7, height: 15}, 60, 12);
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"font-size: 0\"><div style=\"display: inline-block; " +
+		"width: 150px\"></div><div id=\"clip\" style=\"display: inline-block; " +
+		"overflow: hidden; font-size: 15px\"><span style=\"display: " +
+		"inline-block; border: 1px solid\">abc</span></div></div>";
+	const left = document.getElementById("clip")!.getBoundingClientRect().left;
+	expect(Number.isInteger(left / 7)).toBe(false);
+	const rows = dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "").split("\n");
+	expect(rows.slice(0, 3).map((row) => row.trim())).toEqual([
+		"┌───┐",
+		"│abc│",
+		"└───┘",
+	]);
+	dom.dispose();
+});
