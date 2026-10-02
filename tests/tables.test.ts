@@ -541,3 +541,22 @@ test("a block in a table row lays out in an anonymous cell", () => {
 	expect(rect("p").width).toBe(70);
 	dom.dispose();
 });
+
+// The white space between a row's cells renders nothing, so it is no
+// anonymous cell and takes no column.
+test("white space between cells takes no column", () => {
+	const terminal = new MockProcess({cols: 120, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = "<div id=\"host\" style=\"width: 60px\"></div>";
+	const parsed = new dom.window.DOMParser().parseFromString(
+		"<table style=\"width: 100%\"><tr>\n  <td id=\"c\" " +
+		"style=\"padding: 0; border: none\"><div></div></td>\n</tr></table>",
+		"text/html",
+	);
+	document.getElementById("host")!.append(
+		document.adoptNode(parsed.body.firstElementChild!),
+	);
+	expect(document.getElementById("c")!.getBoundingClientRect().width).toBe(60);
+	dom.dispose();
+});
