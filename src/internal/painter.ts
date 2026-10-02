@@ -72,8 +72,9 @@ function isClippingOverflow(value: string): boolean {
 }
 
 // The clip is the padding box, so scrolled-out content does not paint
-// over the border glyphs. An axis that stays visible is unbounded, per
-// axis.
+// over the border glyphs. Its edges round as the box's own border and
+// fill do, so a child flush with the box keeps its first column. An axis
+// that stays visible is unbounded, per axis.
 function getOverflowClipRect(
 	element: Element,
 	rect: {left: number; top: number; width: number; height: number} | null,
@@ -91,13 +92,15 @@ function getOverflowClipRect(
 	}
 
 	const box = getBoxModel(element);
-	const left = clipsX ? rect.left + (box.borderLeftWidth || 0) : -Infinity;
+	const x = Math.round(rect.left);
+	const y = Math.round(rect.top);
+	const left = clipsX ? x + (box.borderLeftWidth || 0) : -Infinity;
 	const right = clipsX
-		? rect.left + rect.width - (box.borderRightWidth || 0)
+		? x + Math.round(rect.width) - (box.borderRightWidth || 0)
 		: Infinity;
-	const top = clipsY ? rect.top + (box.borderTopWidth || 0) : -Infinity;
+	const top = clipsY ? y + (box.borderTopWidth || 0) : -Infinity;
 	const bottom = clipsY
-		? rect.top + rect.height - (box.borderBottomWidth || 0)
+		? y + Math.round(rect.height) - (box.borderBottomWidth || 0)
 		: Infinity;
 
 	if (!parent) {
