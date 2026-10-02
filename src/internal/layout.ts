@@ -3620,10 +3620,12 @@ function breakNodes(
 
 	// A width of 0 is a real constraint, the min-content probe. Treated as
 	// unlimited it returned max-content, making min-content zero
-	// everywhere.
+	// everywhere. A line fits a width when both round to the same cells,
+	// since its pieces are drawn at whole columns: a fraction of a margin
+	// does not wrap the word after it.
 	const maxWidth = widthSpace === "indefinite"
 		? Number.MAX_SAFE_INTEGER
-		: width;
+		: width > 0 ? Math.round(width) + 0.4999 : width;
 
 	const processedContent = processWhitespace(layout, leafNodes);
 	// `pre` suppresses wrapping as `nowrap` does. Treating it as wrappable

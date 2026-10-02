@@ -444,3 +444,21 @@ test("a list item's text starts where its marker ends", () => {
 		.toBe("  • Amazon");
 	dom.dispose();
 });
+
+// Pieces of a line are drawn at whole columns, so a line fits a width
+// when both round to the same cells. A fraction of a margin before a word
+// does not break the word, even where it may break anywhere.
+test("a fractional margin does not wrap the word after it", () => {
+	const {dom} = make({width: 7, height: 15}, 60, 12);
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"overflow-wrap: anywhere\"><table style=\"border-collapse: " +
+		"collapse\"><tr><td style=\"padding: 0; border: 0\"><a id=\"a\" " +
+		"style=\"display: inline-block; border: 1px solid\"><span " +
+		"style=\"display: inline-block; margin-right: 8px\"></span>Like</a>" +
+		"</td></tr></table></div>";
+	expect(document.getElementById("a")!.getBoundingClientRect().height).toBe(45);
+	expect(dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "").split("\n")[1])
+		.toBe("│ Like│");
+	dom.dispose();
+});
