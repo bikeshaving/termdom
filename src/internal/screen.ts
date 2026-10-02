@@ -374,6 +374,36 @@ function decodeGrapheme(char: number): string {
 		: String.fromCodePoint(char);
 }
 
+// A cluster terminals draw at different widths: an emoji with a variation
+// selector, a skin tone, a ZWJ sequence or a flag. Under a multiplexer the
+// width the engine measures is the multiplexer's, and the terminal outside
+// it may draw the cluster wider or narrower.
+const disputedIds = new Map<number, boolean>();
+
+function isDisputedCell(char: number): boolean {
+	if (char < CHAR_INTERNED) {
+		return false;
+	}
+	let disputed = disputedIds.get(char);
+	if (disputed === undefined) {
+		disputed = false;
+		for (const piece of decodeGrapheme(char)) {
+			const code = piece.codePointAt(0)!;
+			if (
+				code === 0xfe0f ||
+				code === 0x200d ||
+				(code >= 0x1f3fb && code <= 0x1f3ff) ||
+				(code >= 0x1f1e6 && code <= 0x1f1ff)
+			) {
+				disputed = true;
+				break;
+			}
+		}
+		disputedIds.set(char, disputed);
+	}
+	return disputed;
+}
+
 const BORDER_EDGE_STYLE = {
 	// Style values (bits 3-0)
 	None: 0b0000,
@@ -2048,6 +2078,8 @@ export class Screen {
 			}
 
 			const prev = this[kPrev];
+			const erasesDisputedRows =
+				this[kMeasurer] !== null && !this[kMeasurer].clusterWidthsNegotiated();
 			if (prev === null || overflowing) {
 				diff.copyFrom(next, {to: 0, start: 0, end: frameRows * cols});
 			} else {
@@ -2078,6 +2110,27 @@ export class Screen {
 							col++;
 						}
 						if (col === cols) {
+							continue;
+						}
+						// A terminal that drew a cluster of the old row at another
+						// width than the engine measured has the rest of that row
+						// shifted. Cells rewritten after it would land beside the
+						// old ones, so the row is erased and written whole.
+						if (
+							erasesDisputedRows &&
+							hasDisputedCellBefore(prev, prevRow, cols, next, nextRow)
+						) {
+							this[kRenderedLines].delete(row);
+							let empty = true;
+							for (let c = 0; c < cols; c++) {
+								if (next.cluster[nextRow + c] !== 0) {
+									diff.setFrom(nextRow + c, next, nextRow + c);
+									empty = false;
+								}
+							}
+							if (empty) {
+								diff.setBlank(nextRow);
+							}
 							continue;
 						}
 					}
@@ -2361,6 +2414,28 @@ export class Screen {
 		this[kDirty] = false;
 		return ansi;
 	}
+}
+
+// Whether the old row held a disputed cluster at or before its last
+// changed cell. A change only before every such cluster cannot meet a
+// shifted tail.
+function hasDisputedCellBefore(
+	prev: CellGrid,
+	prevRow: number,
+	cols: number,
+	next: CellGrid,
+	nextRow: number,
+): boolean {
+	let last = cols - 1;
+	while (last >= 0 && next.equalCells(nextRow + last, prev, prevRow + last)) {
+		last--;
+	}
+	for (let col = 0; col <= last; col++) {
+		if (isDisputedCell(prev.cluster[prevRow + col])) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function takeGrid(screen: Screen, rows: number, cols: number): CellGrid {
