@@ -480,3 +480,19 @@ test("a centered inline-block in a fractional box paints its background", () => 
 	expect(row.slice(0, row.indexOf("GO"))).toMatch(/48;2;96;8;32m[^\x1b]*$/);
 	dom.dispose();
 });
+
+// A line is whole rows. An inline-block a fraction of a row taller than
+// the rows its line rounds to painted its background over the border
+// below it.
+test("an inline-block with fractional padding keeps inside its cell's border", () => {
+	const {dom} = make({width: 7, height: 15}, 60, 12);
+	const {document} = dom;
+	document.body.innerHTML =
+		"<table style=\"border-collapse: separate\"><tr><td style=\"border: 1px " +
+		"solid #fff; background: #000\"><a style=\"display: inline-block; " +
+		"background: #000; padding: 11px 30px\">Claim</a></td></tr></table>";
+	const rows = dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "").split("\n");
+	const bottom = rows.findIndex((row) => row.startsWith("└"));
+	expect(rows[bottom]).toMatch(/^└─+┘$/);
+	dom.dispose();
+});
