@@ -429,3 +429,18 @@ test("a border is whole cells, and a tab stop a whole column", () => {
 		.toMatch(/^a {3}b/);
 	dom.dispose();
 });
+
+// Text starts at its box's content edge rounded to the nearest cell, as
+// the marker beside it is placed, so a fractional padding leaves the
+// marker's space between them.
+test("a list item's text starts where its marker ends", () => {
+	const {dom} = make({width: 7, height: 15}, 100, 10);
+	const {document} = dom;
+	document.body.innerHTML =
+		"<ul style=\"margin: 0; padding-left: 21px\"><li id=\"li\" " +
+		"style=\"padding-left: 5.4px\"><span id=\"t\">Amazon</span></li></ul>";
+	expect(document.getElementById("t")!.getBoundingClientRect().left).toBe(28);
+	expect(dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "").split("\n")[0])
+		.toBe("  • Amazon");
+	dom.dispose();
+});
