@@ -1,6 +1,6 @@
 {
   "name": "@b9g/termdom",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "HTML, CSS and DOM for terminal emulators.",
   "license": "MIT",
   "author": "Brian Kim",
@@ -98,6 +98,6 @@
   },
   "module": "./dist/index.js",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.19.0"
   }
 }
