@@ -56,6 +56,7 @@ import {
 	type MathCell,
 } from "./mathml.ts";
 import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
+import {getStringWidth} from "./text.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
 // edge computed from an infinite origin and size is NaN.
@@ -343,6 +344,27 @@ interface TextFragment {
 	startOffset: number;
 	endOffset: number;
 	visualBase: "ltr" | "rtl" | null;
+}
+
+// The spaces a line hangs past its end are in the fragment's data, for the
+// caret, but not in its rect, and drawing them would cover what lies past
+// the box. Right to left, the end of the line is its left.
+function withoutHangingSpaces(text: string, fragment: TextFragment): string {
+	let excess = getStringWidth(text) - Math.round(fragment.rect.width);
+	if (fragment.visualBase === "rtl") {
+		let start = 0;
+		while (excess > 0 && text[start] === " ") {
+			start++;
+			excess--;
+		}
+		return text.slice(start);
+	}
+	let end = text.length;
+	while (excess > 0 && text[end - 1] === " ") {
+		end--;
+		excess--;
+	}
+	return text.slice(0, end);
 }
 
 interface PainterRun {
@@ -1464,7 +1486,7 @@ function paintText(
 		if (fragment.endOffset <= fragment.startOffset) {
 			continue;
 		}
-		const text = renderTextFragment(
+		let text = renderTextFragment(
 			textNode.data,
 			style.whiteSpace,
 			fragment.startOffset,
@@ -1472,6 +1494,7 @@ function paintText(
 			fragment.visualBase,
 			{tabSize: style.tabSize, column: fragment.column},
 		);
+		text = withoutHangingSpaces(text, fragment);
 		if (!text) {
 			continue;
 		}

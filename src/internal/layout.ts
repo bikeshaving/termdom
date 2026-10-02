@@ -2913,6 +2913,9 @@ export interface BreakResult {
 	lines: LineResult[];
 	maxLineWidth: number;
 	totalHeight: number;
+	// Whether a line ended where nothing forced it to, so the text is wider
+	// unbroken than the width it broke against.
+	wrapped?: boolean;
 
 	// The width lines broke against, for text-align to offset within. Unset
 	// when the constraint was not finite (nothing to center within).
@@ -3055,7 +3058,17 @@ function measureInlineRun(
 		box.fragments = breakResult;
 	}
 
-	return {width: breakResult.maxLineWidth, height: breakResult.totalHeight};
+	// css2 §10.3.5: shrink-to-fit is the lesser of the preferred width and
+	// the space offered, so text that had to wrap takes all the space, not
+	// its longest line.
+	const fills =
+		widthSpace === "shrink-to-fit" && width > 0 && breakResult.wrapped === true;
+	return {
+		width: fills
+			? Math.max(breakResult.maxLineWidth, width)
+			: breakResult.maxLineWidth,
+		height: breakResult.totalHeight,
+	};
 }
 
 // The <math> element a node is inside, itself included.
@@ -3659,7 +3672,7 @@ function breakNodes(
 		? "rtl"
 		: declared === "ltr" ? "ltr" : getParagraphDirection(processedContent.text);
 
-	const lines = buildLines(
+	const {lines, wrapped} = buildLines(
 		layout,
 		processedContent,
 		breaks,
@@ -3672,6 +3685,7 @@ function breakNodes(
 		lines,
 		totalHeight: lines.reduce((sum, line) => sum + line.height, 0),
 		maxLineWidth: Math.max(...lines.map((l) => l.width), 0),
+		wrapped,
 	};
 }
 
@@ -4054,8 +4068,9 @@ function buildLines(
 	maxWidth: number,
 	breakAnywhere: boolean,
 	base: "ltr" | "rtl" = "ltr",
-): LineResult[] {
+): {lines: LineResult[]; wrapped: boolean} {
 	const lines: LineResult[] = [];
+	let wrapped = false;
 	let currentY = 0;
 	let lineStart = 0;
 	// Break positions ascend, so a line's candidates are a suffix of the
@@ -4071,7 +4086,6 @@ function buildLines(
 
 	while (lineStart < content.text.length) {
 		let bestBreak = lineStart;
-		let bestBreakWidth = 0;
 
 		while (cursor < breaks.length && breaks[cursor].position <= lineStart) {
 			cursor++;
@@ -4083,7 +4097,9 @@ function buildLines(
 		let lastFitting = cursor - 1;
 		while (low <= high) {
 			const mid = (low + high) >> 1;
-			if (measureText(content, lineStart, breaks[mid].position) <= maxWidth) {
+			const end = breaks[mid].position;
+			const hang = getHangingSpaces(content, lineStart, end);
+			if (measureText(content, lineStart, end - hang) <= maxWidth) {
 				lastFitting = mid;
 				low = mid + 1;
 			} else {
@@ -4096,7 +4112,6 @@ function buildLines(
 		const chosen = required <= lastFitting ? required : lastFitting;
 		if (chosen >= cursor) {
 			bestBreak = breaks[chosen].position;
-			bestBreakWidth = measureText(content, lineStart, bestBreak);
 		}
 
 		// No break opportunity fits. The line takes the whole unbreakable unit
@@ -4105,7 +4120,6 @@ function buildLines(
 			bestBreak = cursor < breaks.length
 				? breaks[cursor].position
 				: content.text.length;
-			bestBreakWidth = measureText(content, lineStart, bestBreak);
 		}
 
 		if (bestBreak === lineStart) {
@@ -4134,10 +4148,15 @@ function buildLines(
 				pos++;
 			}
 			bestBreak = Math.min(pos, content.text.length);
-			bestBreakWidth = measureText(content, lineStart, bestBreak);
 		}
 
+		const hang = getHangingSpaces(content, lineStart, bestBreak);
+		const bestBreakWidth = measureText(content, lineStart, bestBreak - hang);
 		const lineNodes = getNodesInRange(content.items, lineStart, bestBreak);
+		const last = lineNodes[lineNodes.length - 1];
+		if (hang > 0 && last?.leaf.type === "text") {
+			last.width = Math.max(0, last.width - hang);
+		}
 
 		if (lineNodes.length > 0) {
 			// Whole rows: a line is drawn on rows, and an inline-block a
@@ -4172,10 +4191,47 @@ function buildLines(
 			currentY += lineHeight;
 		}
 
+		if (
+			bestBreak < content.text.length && content.text[bestBreak - 1] !== "\n"
+		) {
+			wrapped = true;
+		}
 		lineStart = bestBreak;
 	}
 
-	return lines;
+	return {lines, wrapped};
+}
+
+// css-text-3 §4.1.3: the spaces that end a line hang, so they neither keep
+// it from fitting nor count toward its width or its last segment's. They
+// stay in the segment's data range, where the caret and selection walk.
+// `pre` and `break-spaces` keep theirs. A line of nothing but spaces keeps
+// one, so it still has a box.
+function getHangingSpaces(
+	content: ProcessedContent,
+	start: number,
+	end: number,
+): number {
+	let count = 0;
+	while (end - count - 1 > start && content.text[end - count - 1] === " ") {
+		count++;
+	}
+	if (count === 0) {
+		return 0;
+	}
+	for (const item of content.items) {
+		if (
+			item.leafNode.type === "text" &&
+			item.start < end &&
+			item.end > end - count
+		) {
+			const whiteSpace = getWhiteSpace(item.leafNode.node);
+			if (whiteSpace === "pre" || whiteSpace === "break-spaces") {
+				return 0;
+			}
+		}
+	}
+	return count;
 }
 
 function measureText(

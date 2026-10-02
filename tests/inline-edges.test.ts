@@ -60,7 +60,7 @@ test("the start edge goes to the next line with the text it borders", () => {
 		render(
 			"<p style=\"width:12px\">aaaa <span style=\"padding:0 3px\">bbbb</span> cc</p>",
 		),
-	).toEqual(["aaaa ", "   bbbb    ", "cc"]);
+	).toEqual(["aaaa", "   bbbb", "cc"]);
 });
 
 test("a broken line's border opens on the first fragment and closes on the last", () => {
@@ -68,7 +68,7 @@ test("a broken line's border opens on the first fragment and closes on the last"
 		render(
 			"<p style=\"width:8px\"><span style=\"border:1px solid\">aaa bbb ccc</span></p>",
 		),
-	).toEqual(["│aaa ", "bbb ccc│"]);
+	).toEqual(["│aaa bbb", "ccc│"]);
 });
 
 test("an inline box's rect is its border box, holding the margins of what it holds", () => {
