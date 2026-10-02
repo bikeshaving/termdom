@@ -560,3 +560,24 @@ test("white space between cells takes no column", () => {
 	expect(document.getElementById("c")!.getBoundingClientRect().width).toBe(60);
 	dom.dispose();
 });
+
+// A percentage column takes its share of the table only from what the
+// other columns leave, so the row never runs past the table.
+test("a 100% cell beside others takes what they leave", () => {
+	const terminal = new MockProcess({cols: 120, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	const cell = (body: string, style = "") =>
+		`<td style="padding: 0; border: 0;${style}">${body}</td>`;
+	document.body.innerHTML =
+		"<div style=\"width: 60px\"><table style=\"width: 100%; " +
+		"border-collapse: collapse\"><tr>" +
+		cell("Substack", " white-space: nowrap") +
+		cell("", " width: 2px") +
+		cell("You follow", " white-space: nowrap") +
+		`<td id="last" style="padding: 0; border: 0; width: 100%; ` +
+		"text-align: right\">7d</td></tr></table></div>";
+	const last = document.getElementById("last")!.getBoundingClientRect();
+	expect([last.left, last.width]).toEqual([20, 40]);
+	dom.dispose();
+});

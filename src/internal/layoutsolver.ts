@@ -2686,13 +2686,29 @@ function resolveColumnWidths(
 	// Surplus goes to the auto columns. Otherwise `<td style="width:8ch">`
 	// is inflated by the slack it was meant to give away.
 	const fixed = new Array<boolean>(columnCount).fill(false);
+	// A percentage column asks for its share of the table, but takes only
+	// what the other columns leave: it can't push the table past its width
+	// (css-tables-3 §3.9.3).
+	const percent = new Array<boolean>(columnCount).fill(false);
 
 	// A cell's percentage is of the table (css2 §17.5.2.2), and resolves
 	// only once the table's width is known.
 	const percentBasis = widthIsDefinite ? available : NaN;
 	for (const cell of cells) {
 		const styleWidth = resolveValue(cell.node.style.width, percentBasis);
-		if (isDefined(styleWidth)) {
+		if (isDefined(styleWidth) && cell.node.style.width.unit === "percent") {
+			cell.minWidth = getIntrinsicCellWidth(
+				cell.node,
+				true,
+				ownerWidth,
+				ownerHeight,
+			);
+			cell.maxWidth = Math.max(styleWidth, cell.minWidth);
+			if (cell.colSpan === 1) {
+				fixed[cell.column] = true;
+				percent[cell.column] = true;
+			}
+		} else if (isDefined(styleWidth)) {
 			cell.minWidth = styleWidth;
 			cell.maxWidth = styleWidth;
 			if (cell.colSpan === 1) {
@@ -2757,7 +2773,9 @@ function resolveColumnWidths(
 		return widths;
 	}
 
-	if (target >= totalMax) {
+	if (widthIsDefinite && percent.some(Boolean)) {
+		fitPercentColumns(widths, mins, maxs, fixed, percent, target);
+	} else if (target >= totalMax) {
 		// Before the cannot-fit case. With totalMin === totalMax that case
 		// would give the surplus to the fixed columns too.
 		for (let i = 0; i < columnCount; i++) {
@@ -2809,6 +2827,64 @@ function resolveColumnWidths(
 	}
 
 	return snapped;
+}
+
+// The other columns first, up to their max-content, then the percentage
+// columns, each up to its percentage, from what is left. Space still left
+// goes to the auto columns, or to all of them when every one is fixed.
+function fitPercentColumns(
+	widths: number[],
+	mins: number[],
+	maxs: number[],
+	fixed: boolean[],
+	percent: boolean[],
+	target: number,
+): void {
+	const count = widths.length;
+	let percentMin = 0;
+	let otherMin = 0;
+	let otherMax = 0;
+	for (let i = 0; i < count; i++) {
+		if (percent[i]) {
+			percentMin += mins[i];
+		} else {
+			otherMin += mins[i];
+			otherMax += maxs[i];
+		}
+	}
+	const forOthers = Math.max(0, target - percentMin);
+	const ratio = otherMax > otherMin
+		? Math.min(1, Math.max(0, (forOthers - otherMin) / (otherMax - otherMin)))
+		: 1;
+	let used = 0;
+	for (let i = 0; i < count; i++) {
+		if (!percent[i]) {
+			widths[i] = mins[i] + (maxs[i] - mins[i]) * ratio;
+			used += widths[i];
+		}
+	}
+	let left = Math.max(0, target - used - percentMin);
+	for (let i = 0; i < count; i++) {
+		if (percent[i]) {
+			const grow = Math.min(maxs[i] - mins[i], left);
+			widths[i] = mins[i] + grow;
+			left -= grow;
+		}
+	}
+	if (left > 0) {
+		const receivers = [];
+		for (let i = 0; i < count; i++) {
+			if (!fixed[i]) {
+				receivers.push(i);
+			}
+		}
+		const to = receivers.length > 0
+			? receivers
+			: Array.from({length: count}, (_, i) => i);
+		for (const i of to) {
+			widths[i] += left / to.length;
+		}
+	}
 }
 
 // CSS 2.1 §17: a column's width is decided by every cell in it, across
