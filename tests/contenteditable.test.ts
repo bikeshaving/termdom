@@ -805,3 +805,26 @@ test("arrow keys keep the caret in view and on its column", async () => {
 	expect(fixture.cursor()).toEqual({x: 2, y: 1});
 	fixture.dom.dispose();
 });
+
+// A fullscreen element is painted against the document scroll, and its
+// caret has to be too: a long editor, revealed when focused, scrolls the
+// document beneath the fullscreen view.
+test("the caret of a long editor in fullscreen is on its line", async () => {
+	const lines = Array.from({length: 30}, (_, i) => `<div>line ${i}</div>`);
+	const fixture = await withHost(
+		"<style>html, body { height: 100%; margin: 0 }" +
+		" .app { display: flex; flex-direction: column; height: 100% }" +
+		" .pane { flex: 1; min-height: 0; overflow: auto }</style>" +
+		"<div class=\"app\"><div>TITLE</div><div>header</div><div class=\"pane\">" +
+		`<div contenteditable>${lines.join("")}</div></div><div>status</div></div>`,
+	);
+	const {document, host} = fixture;
+	await document.querySelector(".app").requestFullscreen();
+	await nextFrame(fixture.dom);
+	host.focus();
+	document.getSelection().collapse(host.firstElementChild.firstChild, 0);
+	await nextFrame(fixture.dom);
+	await fixture.type("ab");
+	expect(fixture.cursor()).toEqual({x: 2, y: 2});
+	fixture.dom.dispose();
+});
