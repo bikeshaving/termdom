@@ -3028,6 +3028,13 @@ function layoutTable(
 				ownerHeight,
 				false,
 			);
+			// css2 §17.5.3: a cell's height is the least its row takes.
+			if (isStyleDimensionDefined(cell.node, "column", ownerHeight)) {
+				cell.node.result.height = Math.max(
+					cell.node.result.height,
+					resolveValue(cell.node.style.height, ownerHeight),
+				);
+			}
 		}
 
 		if (cell.rowSpan === 1) {
@@ -3112,11 +3119,16 @@ function layoutTable(
 	const gridHeight = Math.max(0, cursor);
 	const contentHeight = captionHeight + gridHeight;
 
+	// CSS 2.1 §17.5.2 and §17.5.3: a table's width and height are the least
+	// it takes, and it grows to hold its columns and rows.
 	const width = widthSpace === "definite"
-		? availableWidth - marginRow
+		? Math.max(availableWidth - marginRow, contentWidth + paddingBorderRow)
 		: contentWidth + paddingBorderRow;
 	const height = heightSpace === "definite"
-		? availableHeight - marginColumn
+		? Math.max(
+			availableHeight - marginColumn,
+			contentHeight + paddingBorderColumn,
+		)
 		: contentHeight + paddingBorderColumn;
 
 	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
