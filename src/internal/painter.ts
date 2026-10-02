@@ -1074,8 +1074,23 @@ function paintCaret(
 		}
 	}
 	if (caret !== null) {
-		ctx.setCaret(caret.x, caret.y);
+		setCaretAt(painter, element, ctx, caret.x, caret.y);
 	}
+}
+
+// A caret in fixed space, as a fullscreen element is, moves with the
+// boxes there, which are painted against the document scroll.
+function setCaretAt(
+	painter: Painter,
+	element: Element,
+	ctx: CellContext,
+	x: number,
+	y: number,
+): void {
+	const lift = painter[kLayout].isInFixedSpace(element)
+		? painter[kScreen].scrollTop
+		: 0;
+	ctx.setCaret(x, y + lift);
 }
 
 // A run's lines, from the box that broke them. The origin is the run's
@@ -1563,7 +1578,7 @@ function renderEditingCaret(
 	}
 	const rect = painter[kLayout].getCaretRect(point.node, point.offset);
 	if (rect !== null) {
-		ctx.setCaret(Math.round(rect.x), Math.round(rect.y));
+		setCaretAt(painter, element, ctx, Math.round(rect.x), Math.round(rect.y));
 		return;
 	}
 	const box = point.node.nodeType === point.node.ELEMENT_NODE
@@ -1571,7 +1586,13 @@ function renderEditingCaret(
 		: (flatParentElement(point.node) ?? element);
 	const content = painter[kLayout].contentRect(box);
 	if (content) {
-		ctx.setCaret(Math.round(content.x), Math.round(content.y));
+		setCaretAt(
+			painter,
+			element,
+			ctx,
+			Math.round(content.x),
+			Math.round(content.y),
+		);
 	}
 }
 
