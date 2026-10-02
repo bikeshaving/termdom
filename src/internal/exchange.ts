@@ -814,6 +814,7 @@ const kHasDetectedAnchor = Symbol("hasDetectedAnchor");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
 const kDSRSequence = Symbol("dsrSequence");
 const kColorScheme = Symbol("colorScheme");
+const kTerminalBackground = Symbol("terminalBackground");
 const kPendingReplies = Symbol("pendingReplies");
 
 const kPriorBidiMode = Symbol("priorBidiMode");
@@ -866,6 +867,7 @@ export interface Exchange {
 	// names its mode, so neither takes the other's reply.
 	[kPendingReplies]: PendingReply[];
 	[kColorScheme]: "light" | "dark" | null;
+	[kTerminalBackground]: number | null;
 	// The BDSM state the terminal reported before we touched it.
 	[kPriorBidiMode]: number | null;
 	[kGraphemeClustersNegotiated]: boolean;
@@ -907,6 +909,7 @@ export class Exchange extends EventTarget {
 		this[kCursorDetectionPromise] = null;
 		this[kPendingReplies] = [];
 		this[kColorScheme] = null;
+		this[kTerminalBackground] = null;
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
 		this[kOverlineNegotiated] = false;
@@ -939,6 +942,11 @@ export class Exchange extends EventTarget {
 
 	get transportClosed(): boolean {
 		return this[kTransportClosed];
+	}
+
+	/** The terminal's background as packed RGB, once it has said. */
+	get terminalBackground(): number | null {
+		return this[kTerminalBackground];
 	}
 
 	/** What the terminal said of its background, once it has. */
@@ -1208,12 +1216,19 @@ export class Exchange extends EventTarget {
 				ask: BACKGROUND_QUERY,
 				timeoutMs: 1000,
 				absent: null,
-				read: ({red, green, blue}) =>
-					(this[kColorScheme] =
-						0.2126 * red + 0.7152 * green + 0.0722 * blue <
+				read: ({red, green, blue}) => {
+					this[kTerminalBackground] =
+						(Math.round(red * 255) << 16) |
+						(Math.round(green * 255) << 8) |
+						Math.round(blue * 255);
+					return (
+						this[kColorScheme] =
+							0.2126 * red + 0.7152 * green + 0.0722 * blue <
 						0.5
-							? "dark"
-							: "light"),
+								? "dark"
+								: "light"
+					);
+				},
 			},
 		);
 	}

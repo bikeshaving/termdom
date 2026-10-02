@@ -1,3 +1,4 @@
+import {blendColor, getColorAlpha, TRANSPARENCY_UNIT} from "./cssvalues.ts";
 import type {ColorDepth, Exchange} from "./exchange.ts";
 import {
 	getStringWidth,
@@ -967,6 +968,9 @@ export class CellContext {
 	// The overflow:hidden clip in document (row, col) space. An edge is
 	// +-Infinity on an axis that is not clipped. Null when none is active.
 	clipRect: {left: number; top: number; right: number; bottom: number} | null;
+	// The terminal's own background as packed RGB, where it has said, for
+	// a translucent color painted where nothing else is.
+	backdrop: number | null;
 
 	constructor(
 		grid: CellGrid,
@@ -976,6 +980,7 @@ export class CellContext {
 	) {
 		this.caret = null;
 		this.clipRect = null;
+		this.backdrop = null;
 		this.grid = grid;
 		this.rows = rows;
 		this.cols = cols;
@@ -1289,9 +1294,31 @@ function setCell(
 	let bgColor: number | undefined;
 	if (style && style.bg == null && grid.cluster[index] !== 0) {
 		bgColor = grid.bg[index];
+	} else if (style?.bg != null && style.bg >= TRANSPARENCY_UNIT) {
+		bgColor = blendOntoCell(context, index, style.bg);
 	}
 
 	grid.setCell(index, char, {style, background: bgColor});
+}
+
+// A translucent color over what the cell already shows, or over the
+// terminal's background where nothing is painted. A terminal that has not
+// said what its background is keeps it for a faint tint, and takes the
+// color for a strong one.
+function blendOntoCell(
+	context: CellContext,
+	index: number,
+	color: number,
+): number {
+	const grid = context.grid;
+	const under = grid.cluster[index] !== 0 ? grid.bg[index] : 0;
+	if (under !== 0) {
+		return blendColor(color, under);
+	}
+	if (context.backdrop !== null) {
+		return blendColor(color, context.backdrop);
+	}
+	return getColorAlpha(color) < 0.5 ? 0 : color & COLOR_MASK;
 }
 
 function setBorderCell(
@@ -2025,6 +2052,7 @@ export class Screen {
 		}
 
 		const context = new CellContext(next, frameRows, cols, offset);
+		context.backdrop = this[kMeasurer]?.terminalBackground ?? null;
 		this[kEndFrame] = (): string => {
 			const measurer =
 				this[kMeasurer] !== null &&

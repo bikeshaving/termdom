@@ -8,7 +8,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, scriptReplies} from "./test-utils.js";
 
 /**
  * How many cells of a painted row carry a background colour.
@@ -480,4 +480,39 @@ test("a link paints in LinkText, underlined; a bare anchor is plain text", async
 	expect(cellAt(5).isFgDefault()).toBeTruthy();
 	expect(cellAt(5).isUnderline()).toBeFalsy();
 	dom.dispose();
+});
+
+// A translucent background is laid over what is under it, once: the box
+// it is on, or the terminal's own background where the terminal has said
+// what that is. Unsaid, a faint tint is left out rather than painted solid.
+test("a translucent background blends over what is under it", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 30, rows: 4}).transport,
+	});
+	const first = (html: string) => dom.renderANSI(html).split("\n")[0];
+	expect(
+		first(
+			"<div style=\"background: #fff\">a <code>b</code> " +
+		"<span style=\"background: rgba(0, 0, 0, 0.1)\">c</span></div>",
+		),
+	).toContain("48;2;229;229;229mc");
+	expect(first("<div style=\"background: #fff\">a <code>b</code></div>"))
+		.toContain("48;2;229;229;229mb");
+	expect(first("<p style=\"margin: 0\">a <code>b</code></p>"))
+		.not.toMatch(/48;2/);
+	expect(first("<div style=\"background: rgba(255, 0, 0, 0.9)\">x</div>"))
+		.toContain("48;2;255;0;0");
+	dom.dispose();
+
+	const terminal = new MockProcess({cols: 30, rows: 4});
+	scriptReplies(terminal, [
+		{ask: "\x1b]11;?\x1b\\", reply: "\x1b]11;rgb:ffff/ffff/ffff\x1b\\"},
+	]);
+	const live = new TermDOM({transport: terminal.transport});
+	live.document.body.innerHTML = "<p style=\"margin: 0\">a <code>b</code></p>";
+	await live.attach();
+	await nextFrame(live);
+	const cell = (terminal as any).terminal.buffer.active.getLine(0).getCell(2);
+	expect([cell.isBgRGB(), cell.getBgColor()]).toEqual([true, 0xe5e5e5]);
+	live.dispose();
 });
