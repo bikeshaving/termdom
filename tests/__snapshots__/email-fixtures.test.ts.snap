@@ -4,27 +4,27 @@ exports[`email fixture: calendar-rtl.html 1`] = `
   ╭─────────────────────────────────────────────────────────────────────────────────────────────╮
   │                                                                                             │
   │                                                                                             │
-  │      xxx                                                                                    │
-  │      xxxxxxx xxx xxx xxxx x xxxx x xxxx xxxxxxxx             xxxx xxxx xxxxxx xxxx          │
-  │      xxxxxxx xxxx x xxxxxxxx                                                                │
+  │     xxxx                                                                                    │
+  │     xxxxxxxx xxx xxx xxxx x xxxx x xxxx xxxxxxxx             xxxx xxxx xxxxxx xxxx          │
+  │     xxxxxxxx xxxx x xxxxxxxx                                                                │
   │                                                                                             │
   │                                                          xxxxxxx xxxx                       │
-  │      xxxxx                                               xxxxxxxxxxxxxxxxxxxxxxxxxxxx       │
-  │      xxxxx xxxxxxx x xxxxxxxxx                                                              │
-  │      xxxxxxxxxxxxxxxxxxxx                                                                   │
-  │      xxx xxx xxxxx xxxx                                  xxxx xx xxxxx                      │
+  │     xxxxxx                                               xxxxxxxxxxxxxxxxxxxxxxxxxxxx       │
+  │     xxxxxx xxxxxxx x xxxxxxxxx                                                              │
+  │     xxxxxxxxxxxxxxxxxxxxx                                                                   │
+  │     xxxx xxx xxxxx xxxx                                  xxxx xx xxxxx                      │
   │                                                          xxxx xxxx xxx xxxx                 │
   │                                                          xxxx xxxxxxxxx                     │
-  │      xxxx xxx xxxxxxxxxxxxxxxxxxxxx                                                         │
+  │     xxxxx xxx xxxxxxxxxxxxxxxxxxxxx                                                         │
   │                                                          xxxx xxxxx xxxxxxx                 │
-  │      ───────────────────────╮                                                               │
-  │        xxx  │  xx │  xxxxx  │                                                               │
-  │             │     │         │                                                               │
-  │      ───────────────────────╯                                                               │
-  │      ────────────────╮                                                                      │
-  │        xxxx xxxxxxx  │                                                                      │
-  │                      │                                                                      │
-  │      ────────────────╯                                                                      │
+  │     ╭───────────────────────╮                                                               │
+  │     │  xxx  │  xx │  xxxxx  │                                                               │
+  │     │       │     │         │                                                               │
+  │     ╰───────────────────────╯                                                               │
+  │     ╭────────────────╮                                                                      │
+  │     │  xxxx xxxxxxx  │                                                                      │
+  │     │                │                                                                      │
+  │     ╰────────────────╯                                                                      │
   │                                                                                             │
   │                                                                                             │
   ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -38,7 +38,9 @@ exports[`email fixture: calendar-rtl.html 1`] = `
     xxxxx xx xxx xxxxx xxxxx xxxxxx xxxxxx xxxxxxxxxx xx xxxxx xxx xxxxxxxxxx xxxxxxx xx xxxxxx
     xxxx xxxxx xxxxx xxxx
 
--- backgrounds --`;
+-- backgrounds --
+4: 61-89 #1a73e8
+5: 61-89 #1a73e8`;
 
 exports[`email fixture: card-percent-cell.html 1`] = `
            xxxxxxxxx xxxxxxx xx xxxx                    xxxxxxxx xx xxxx xxxxxx xxxxxxxx
