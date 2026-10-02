@@ -312,7 +312,13 @@ function readPaintStyle(element: Element): PaintStyle {
 			// A gradient gives every cell its own background, so naming one
 			// here would repaint the run flat under the text. An undefined
 			// background leaves each cell the color the gradient put there.
-			bg: gradient === null ? bg : undefined,
+			// A translucent one is blended once, by the fill, and the text
+			// sits on what that left.
+			bg:
+				gradient === null &&
+				(bg === undefined || bg < CSSValues.TRANSPARENCY_UNIT)
+					? bg
+					: undefined,
 			// The background alone carries inverse. color: HighlightText alone
 			// resolves to nothing, so an author color does not defeat it.
 			inverse: isHighlightBox || undefined,
