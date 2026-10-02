@@ -91,11 +91,12 @@ focus, `click` clicks, `wheel` scrolls. Coordinates are in cells.
 | The release | `mouseup`, then `click` when it lands on the same element |
 | Two presses within the double-click interval | `detail` counts them, and `dblclick` fires on the second |
 | Wheel up or down | `wheel` with `deltaY` of −3 or 3 and `deltaMode` of lines |
+| Wheel left or right, or Shift with wheel up or down | `wheel` with `deltaX` of −3 or 3 |
 | Shift, Alt, or Ctrl held | `shiftKey`, `altKey`, `ctrlKey` |
 | Motion | `mousemove`, and the hover events below |
 
 The terminal reports a wheel notch, not a distance, so a notch is three
-rows, the browser's line-mode convention. The engine turns on mouse
+rows or columns, the browser's line-mode convention. The engine turns on mouse
 reporting when it attaches, and the right and middle buttons reach the
 page as ordinary presses; there is no context menu.
 
@@ -303,7 +304,8 @@ the document position, clamped to the end as soon as it is set.
 suits a selection moving through a list. The mouse wheel
 moves the innermost scrollable box under the pointer and hands what
 remains to its ancestors, and a `wheel` listener that calls
-`preventDefault()` stops it. How the document's own scroll shares the
+`preventDefault()` stops it. A sideways notch moves the innermost box
+that can scroll sideways; the document itself never scrolls sideways. How the document's own scroll shares the
 wheel with the terminal's scrollback is in the
 [rendering guide](/guides/rendering/#flow-mode).
 

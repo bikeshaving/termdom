@@ -310,7 +310,8 @@ const kScreen = Symbol("screen");
 function getWheelScroller(
 	input: Input,
 	target: Element,
-	deltaY: number,
+	delta: number,
+	axis: "top" | "left",
 ): Element | null {
 	const document = input[kDocument];
 	const layout = input[kLayout];
@@ -321,26 +322,20 @@ function getWheelScroller(
 		element !== document.documentElement;
 		element = flatParentElement(element)
 	) {
-		const overflowY =
-			getComputedValue(element, "overflow-y") ||
+		const overflow =
+			getComputedValue(element, axis === "top" ? "overflow-y" : "overflow-x") ||
 			getComputedValue(element, "overflow");
-		if (overflowY !== "auto" && overflowY !== "scroll") {
+		if (overflow !== "auto" && overflow !== "scroll") {
 			continue;
 		}
-		if (deltaY < 0) {
-			if (getScrollOffset(element, "top") > 0) {
+		if (delta < 0) {
+			if (getScrollOffset(element, axis) > 0) {
 				return element;
 			}
 			continue;
 		}
-		const extent = layout.getScrollExtent(element);
-		const port = layout.contentRect(element);
-		if (!extent || !port) {
-			continue;
-		}
-		if (
-			getScrollOffset(element, "top") < extent.height - Math.round(port.height)
-		) {
+		const room = layout.scrollRange(element, axis);
+		if (room !== null && getScrollOffset(element, axis) < room) {
 			return element;
 		}
 	}
@@ -635,6 +630,7 @@ function deliverMouseReport(input: Input, {
 		isMotion,
 		base,
 		wheelDeltaY,
+		wheelDeltaX,
 		button,
 		buttons,
 	} = decodeMouseReport(code, isRelease);
@@ -679,6 +675,33 @@ function deliverMouseReport(input: Input, {
 			input[kMouseCaptureYielded] = true;
 			setDocumentVisible(input[kDocument], false);
 			requestRender(input[kDocument]);
+		}
+		return;
+	}
+
+	if (wheelDeltaX !== null) {
+		const notCanceled = dispatchAsUserAgent(
+			hit,
+			new input[kWindow].WheelEvent("wheel", {
+				deltaX: wheelDeltaX,
+				deltaMode: 1,
+				...getClientPoint(input, x, y),
+				...getScreenPoint(input, x, y),
+				shiftKey,
+				altKey,
+				ctrlKey,
+				bubbles: true,
+				cancelable: true,
+				composed: true,
+			}),
+		);
+		// The document never scrolls sideways, so a notch no box takes
+		// goes nowhere.
+		const scroller = notCanceled
+			? getWheelScroller(input, hit, wheelDeltaX, "left")
+			: null;
+		if (scroller !== null) {
+			scroller.scrollLeft += pxFromCells(wheelDeltaX, false, input[kDocument]);
 		}
 		return;
 	}
@@ -842,8 +865,11 @@ function decodeMouseReport(code: number, isRelease: boolean): {
 	isMotion: boolean;
 	// The button or wheel code without the modifier and motion bits.
 	base: number;
-	// One notch is three rows, the browser's line-mode convention.
+	// One notch is three rows or columns, the browser's line-mode
+	// convention. Wheel buttons 66 and 67 tilt sideways, and Shift turns a
+	// vertical notch sideways, as a browser does.
 	wheelDeltaY: number | null;
+	wheelDeltaX: number | null;
 	// Valid when base <= 2.
 	button: number;
 	buttons: number;
@@ -854,7 +880,10 @@ function decodeMouseReport(code: number, isRelease: boolean): {
 	const isMotion = (code & 32) !== 0;
 	const base = code & ~(4 | 8 | 16 | 32);
 
-	const wheelDeltaY = base === 64 ? -3 : base === 65 ? 3 : null;
+	const vertical = base === 64 ? -3 : base === 65 ? 3 : null;
+	const sideways = base === 66 ? -3 : base === 67 ? 3 : null;
+	const wheelDeltaY = shiftKey ? null : vertical;
+	const wheelDeltaX = sideways ?? (shiftKey ? vertical : null);
 
 	const button = base === 1 ? 1 : base === 2 ? 2 : 0;
 	const buttons = isRelease ? 0 : base === 1 ? 4 : base === 2 ? 2 : 1;
@@ -866,6 +895,7 @@ function decodeMouseReport(code: number, isRelease: boolean): {
 		isMotion,
 		base,
 		wheelDeltaY,
+		wheelDeltaX,
 		button,
 		buttons,
 	};
@@ -939,7 +969,7 @@ function getScreenPoint(
 // so the wheel goes to the terminal's scrollback. Fullscreen has no
 // document scroll to move, so a tick past every scroller does nothing.
 function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
-	const scroller = getWheelScroller(input, target, deltaY);
+	const scroller = getWheelScroller(input, target, deltaY, "top");
 	if (scroller) {
 		scroller.scrollTop += pxFromCells(deltaY, true, input[kDocument]);
 		return false;
