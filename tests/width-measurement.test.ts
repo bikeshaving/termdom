@@ -17,7 +17,12 @@ import {TermDOM} from "../src/index.ts";
 import type {Exchange} from "../src/internal/exchange.ts";
 import {Screen} from "../src/internal/screen.ts";
 import {getStringWidth, recordClusterAdvance} from "../src/internal/text.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {
+	captureRawOutput,
+	MockProcess,
+	nextFrame,
+	scriptReplies,
+} from "./test-utils.js";
 
 /** A measurer that records what it was offered instead of asking anything. */
 function recordingMeasurer(starved = new Set<string>()): {
@@ -775,4 +780,38 @@ test("a transport with no terminal behind it is never probed", async () => {
 	expect(chunks.join("")).not.toContain("\x1b[6n");
 
 	dom.dispose();
+});
+
+// A terminal behind a multiplexer may draw a disputed cluster wider than
+// the multiplexer measured it, so cells rewritten after it land beside the
+// old ones. A row that held one is erased and written whole.
+test("a row that held a disputed cluster is erased before it changes", async () => {
+	const family = "\u{1F468}‍\u{1F469}‍\u{1F467}";
+	const run = async (agree: boolean) => {
+		const terminal = new MockProcess({cols: 30, rows: 4});
+		if (agree) {
+			scriptReplies(terminal, [{ask: "\x1b[?2027$p", reply: "\x1b[?2027;1$y"}]);
+		}
+		const written = captureRawOutput(terminal);
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			`<div id="emoji">${family} ab</div><div id="plain">plain ab</div>`;
+		await dom.attach();
+		await nextFrame(dom);
+		await settle();
+		const before = written().length;
+		dom.document.getElementById("emoji")!.textContent = `${family} cd`;
+		dom.document.getElementById("plain")!.textContent = "plain cd";
+		await nextFrame(dom);
+		const frame = written().slice(before);
+		dom.dispose();
+		return frame;
+	};
+
+	const frame = await run(false);
+	expect(frame).toContain(`\r\x1b[K${family}`);
+	expect(frame).not.toContain("plain");
+
+	// A terminal that clusters as the engine does draws the same widths.
+	expect(await run(true)).not.toContain(family);
 });
