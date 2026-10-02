@@ -627,3 +627,19 @@ test("the space a line hangs leaves the cell's border drawn", async () => {
 	]);
 	dom.dispose();
 });
+
+// A table's width and height are the least it takes (css2 §17.5.2,
+// §17.5.3). A cell as big as the table makes it grow around the cell, and
+// the cell no longer covers the table's border.
+test("a table grows to hold a cell as big as the table", async () => {
+	const {rows, box, dom} = await render(
+		"<table style=\"width: 6px; height: 3px; border: 1px solid\"><tr>" +
+			"<td style=\"width: 6px; height: 3px; padding: 0; border: 0; " +
+			"background: #5c6bc0\">x</td></tr></table>",
+	);
+	expect(box("table")).toEqual({left: 0, top: 0, width: 8, height: 5});
+	expect(box("td")).toEqual({left: 1, top: 1, width: 6, height: 3});
+	expect(rows.map((row) => row.replace(/\x1b\[[0-9;]*m/g, "").trimEnd()))
+		.toEqual(["┌──────┐", "│      │", "│x     │", "│      │", "└──────┘"]);
+	dom.dispose();
+});
