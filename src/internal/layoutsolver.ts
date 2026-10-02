@@ -373,7 +373,13 @@ function isCachedSizeValid(
 	if (cachedSpace === mode && isSameConstraint(cachedAvailable, available)) {
 		return true;
 	}
-	if (mode === "definite" && available === cachedComputed) {
+	// A size measured under a narrower request than it came out at broke its
+	// lines for that request, and at its own width they would break fewer.
+	if (
+		mode === "definite" &&
+		available === cachedComputed &&
+		(cachedSpace === "indefinite" || !(cachedAvailable < cachedComputed))
+	) {
 		return true;
 	}
 	if (mode === "shrink-to-fit") {
