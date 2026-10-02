@@ -4140,17 +4140,22 @@ function buildLines(
 		const lineNodes = getNodesInRange(content.items, lineStart, bestBreak);
 
 		if (lineNodes.length > 0) {
-			const lineHeight = Math.max(
-				...lineNodes.map((n) =>
-					n.leaf.type === "inline-block"
-						? n.leaf.contentHeight +
+			// Whole rows: a line is drawn on rows, and an inline-block a
+			// fraction of a row taller than its line filled the next row,
+			// over the border below it.
+			const lineHeight = Math.round(
+				Math.max(
+					...lineNodes.map((n) =>
+						n.leaf.type === "inline-block"
+							? n.leaf.contentHeight +
 						n.leaf.boxModel.paddingTop +
 						n.leaf.boxModel.paddingBottom +
 						n.leaf.boxModel.borderTopWidth +
 						n.leaf.boxModel.borderBottomWidth
-						: 1,
+							: 1,
+					),
+					1,
 				),
-				1,
 			);
 
 			// Visual order here rather than at paint time, so hit-testing and
