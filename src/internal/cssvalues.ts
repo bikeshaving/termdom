@@ -410,6 +410,29 @@ export function toCellColor(rgb: number): number {
 	return COLOR_SET | rgb;
 }
 
+/**
+ * A translucent color carries how far it lets what is under it show
+ * through, in 127ths, above COLOR_SET, until the cell it is painted on
+ * blends it. An opaque color carries nothing there.
+ */
+export const TRANSPARENCY_UNIT = 0x2000000;
+
+/** How opaque a color is, 0 to 1. */
+export function getColorAlpha(color: number): number {
+	return 1 - Math.floor(color / TRANSPARENCY_UNIT) / 127;
+}
+
+/** A color laid at its alpha over an opaque one. */
+export function blendColor(color: number, under: number): number {
+	const alpha = getColorAlpha(color);
+	const channel = (shift: number): number => {
+		const top = (color >> shift) & 0xff;
+		const bottom = (under >> shift) & 0xff;
+		return Math.round(bottom + (top - bottom) * alpha) << shift;
+	};
+	return toCellColor(channel(16) | channel(8) | channel(0));
+}
+
 // The system colors mapped onto what a terminal already has. 0 is the
 // cell grid's "no SGR color", meaning the terminal's own default, and
 // anything else is a cell color. Canvas and the
@@ -729,7 +752,11 @@ export function numberFromCSSColor(cssColor: string): number {
 		return system;
 	}
 	const parsed = parseColor(cssColor);
-	return parsed === null || parsed.alpha === 0 ? 0 : toCellColor(parsed.color);
+	if (parsed === null || parsed.alpha === 0) {
+		return 0;
+	}
+	const transparency = Math.round((1 - parsed.alpha) * 127);
+	return transparency * TRANSPARENCY_UNIT + toCellColor(parsed.color);
 }
 
 const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);

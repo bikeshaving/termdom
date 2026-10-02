@@ -1609,7 +1609,7 @@ exports[`email fixture: inline-code.html 1`] = `
 16: 93-100 #fafcfb
 17: 0-7 #fafcfb
 17: 7-33 #ffffff
-17: 33-41 #000000
+17: 33-41 #e5e5e5
 17: 41-93 #ffffff
 17: 93-100 #fafcfb
 18: 0-7 #fafcfb
@@ -1776,7 +1776,7 @@ exports[`email fixture: inline-code.html 1`] = `
 71: 93-100 #fafcfb
 72: 0-7 #fafcfb
 72: 7-55 #ffffff
-72: 55-76 #000000
+72: 55-76 #e5e5e5
 72: 76-93 #ffffff
 72: 93-100 #fafcfb
 73: 0-7 #fafcfb
