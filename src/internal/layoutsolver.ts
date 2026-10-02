@@ -2530,9 +2530,13 @@ function placeAnonymousCellContent(
 	node.result.top = node.result.margin.top;
 }
 
+// An element only. The white space between a row's cells is a run of
+// text the row holds too, and it renders nothing (css-tables-3 §3.3).
 function isAnonymousCellContent(node: LayoutNode): boolean {
 	const type = node.style.displayType;
-	return type !== "none" &&
+	const owner = node.owner as {nodeType?: number} | null;
+	return owner?.nodeType === 1 &&
+		type !== "none" &&
 		!type.startsWith("table") &&
 		!isOutOfFlowType(node.style.positionType);
 }
