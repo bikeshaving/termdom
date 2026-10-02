@@ -826,5 +826,8 @@ test("the caret of a long editor in fullscreen is on its line", async () => {
 	await nextFrame(fixture.dom);
 	await fixture.type("ab");
 	expect(fixture.cursor()).toEqual({x: 2, y: 2});
+	// A fixed box does not move with the document scroll, so revealing it
+	// leaves the document where it was.
+	expect(fixture.dom.window.scrollY).toBe(0);
 	fixture.dom.dispose();
 });

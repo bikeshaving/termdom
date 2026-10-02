@@ -11273,6 +11273,11 @@ Object.defineProperties(HTMLElement.prototype, {
 			}
 			flushLayout(this);
 			attached[kLayout].revealInScrollPorts(this, block, inline);
+			// A fixed box, as a fullscreen one is, does not move with the
+			// document scroll, so scrolling the document reveals nothing.
+			if (attached[kLayout].isInFixedSpace(this)) {
+				return;
+			}
 			// The scroll boxes around the element have already revealed it
 			// within themselves. What remains is the document scroll, which
 			// shows [scrollTop, scrollTop + region). The rect is
