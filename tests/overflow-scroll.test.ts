@@ -452,3 +452,26 @@ test("inline-block content paints after a scroll", async () => {
 	expect(page.getVisibleText().split("\n")[0].trimEnd()).toBe("line 20");
 	long.dispose();
 });
+
+// A sideways notch (wheel buttons 66 and 67), or a vertical one with
+// Shift, scrolls the nearest box that can move sideways, as in a browser,
+// so a pane scrolled sideways can be scrolled back.
+test("a sideways wheel, or Shift with the wheel, scrolls a box sideways", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div id=\"s\" style=\"width: 10px; overflow: auto; white-space: nowrap\">" +
+		"0123456789abcdefghijklmnop</div>";
+	await dom.attach();
+	await nextFrame(dom);
+	const box = dom.document.getElementById("s")!;
+	await send(terminal, "\x1b[<67;2;1M");
+	expect(box.scrollLeft).toBe(3);
+	await send(terminal, "\x1b[<69;2;1M");
+	expect(box.scrollLeft).toBe(6);
+	await send(terminal, "\x1b[<66;2;1M");
+	await send(terminal, "\x1b[<68;2;1M");
+	expect(box.scrollLeft).toBe(0);
+	expect(dom.window.scrollY).toBe(0);
+	dom.dispose();
+});
