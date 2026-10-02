@@ -3631,19 +3631,16 @@ function breakNodes(
 	// `pre` suppresses wrapping as `nowrap` does. Treating it as wrappable
 	// folds text a browser lets overflow.
 	const preservesLines = whiteSpace === "pre";
-	const nowrap =
-		preservesLines ||
-		(whiteSpace || "normal") === "nowrap" ||
-		hasNowrapLeaf(processedContent);
-	const breaks = findBreakPoints(
+	const nowrap = preservesLines || (whiteSpace || "normal") === "nowrap";
+	const breaks = withoutBreaksInsideNowrap(
 		processedContent,
-		whiteSpace || "normal",
-		nowrap,
+		findBreakPoints(processedContent, whiteSpace || "normal", nowrap),
 	);
 	// break-word does NOT shrink min-content (the word still measures whole
 	// at the `shrink-to-fit` 0 probe), while anywhere and break-all do.
 	const breakAnywhere =
 		!nowrap &&
+		!hasNowrapLeaf(processedContent) &&
 		(wordBreak === "break-all" ||
 			overflowWrap === "anywhere" ||
 			(overflowWrap === "break-word" && maxWidth > 0));
@@ -3940,6 +3937,32 @@ function hasNowrapLeaf(content: ProcessedContent): boolean {
 		}
 		return false;
 	});
+}
+
+// white-space applies to the text it styles, not to the line (css-text-3
+// §5.1). A nowrap span keeps its own text whole, and the text around it
+// still breaks, at the span's edges too.
+function withoutBreaksInsideNowrap(
+	content: ProcessedContent,
+	breaks: BreakPoint[],
+): BreakPoint[] {
+	if (!hasNowrapLeaf(content)) {
+		return breaks;
+	}
+	const nowrapAt = new Uint8Array(content.text.length);
+	for (const item of content.items) {
+		if (
+			item.leafNode.type === "text" &&
+			getWhiteSpace(item.leafNode.node) === "nowrap"
+		) {
+			nowrapAt.fill(1, item.start, item.end);
+		}
+	}
+	return breaks.filter(({position, required}) =>
+		required ||
+		position >= content.text.length ||
+		!(nowrapAt[position - 1] === 1 && nowrapAt[position] === 1),
+	);
 }
 
 function findBreakPoints(

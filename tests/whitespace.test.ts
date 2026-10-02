@@ -775,3 +775,20 @@ test("-moz-tab-size is the tab-size property under its old name", async () => {
 	expect(terminal.getPlainText().split("\n")[0]?.trimEnd()).toBe("  x|");
 	dom.dispose();
 });
+
+// white-space styles the text it is on, not the line: a nowrap span keeps
+// itself whole and the paragraph around it still wraps.
+test("a nowrap span keeps itself whole and lets the paragraph wrap", () => {
+	const terminal = new MockProcess({cols: 60, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"width: 31px\"><p style=\"margin: 0\">affirmed the suit " +
+		"against <span style=\"white-space: nowrap\">Jack Poulson</span> " +
+		"was without merit.</p></div>";
+	expect(
+		dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "").split("\n")
+			.slice(0, 2).map((line) => line.trimEnd()),
+	)
+		.toEqual(["affirmed the suit against", "Jack Poulson was without merit."]);
+	dom.dispose();
+});
