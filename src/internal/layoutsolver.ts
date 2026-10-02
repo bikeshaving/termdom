@@ -5747,8 +5747,9 @@ function getPadding(node: LayoutNode, edge: Edge, ownerWidth: number): number {
 
 // Snap to whole cells from rounded absolute EDGES, not rounded widths:
 // 26.67 x 3 rounded separately is 81 columns in an 80-column terminal. A
-// measured leaf ceils its trailing edge so text never gets less room than it
-// measured.
+// position is the difference of two rounded edges too, so text inside a
+// fractional padding starts where a marker beside it ends. A measured leaf
+// ceils its trailing edge so text never gets less room than it measured.
 function roundToGrid(
 	node: LayoutNode,
 	absoluteLeft: number,
@@ -5766,8 +5767,10 @@ function roundToGrid(
 
 	const isText = node.measure !== null;
 
-	node.result.left = roundValue(nodeLeft, false, isText);
-	node.result.top = roundValue(nodeTop, false, isText);
+	node.result.left =
+		roundValue(absLeft, false, false) - roundValue(absoluteLeft, false, false);
+	node.result.top =
+		roundValue(absTop, false, false) - roundValue(absoluteTop, false, false);
 
 	node.result.width =
 		roundValue(absRight, isText, false) - roundValue(absLeft, isText, false);
