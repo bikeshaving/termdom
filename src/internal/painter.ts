@@ -971,10 +971,10 @@ function paintBox(
 	if (style.fill !== null) {
 		for (const fragment of fragments) {
 			ctx.drawRect(
-				fragment.left,
-				fragment.top,
-				fragment.width,
-				fragment.height,
+				Math.round(fragment.left),
+				Math.round(fragment.top),
+				Math.round(fragment.width),
+				Math.round(fragment.height),
 				style.fill,
 			);
 		}
