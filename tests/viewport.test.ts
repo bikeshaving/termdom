@@ -609,12 +609,12 @@ test("resizing narrower reprints cleanly instead of layering over reflowed remna
 
 	// The rewrap arrives after the resize debounce plus a cursor-query round
 	// trip; poll for the final wrap rather than a fixed delay the parallel
-	// runner can outrun. The settled marker is the narrow wrap of the first
-	// line -- an intermediate render can leave a wider break ("...for the demo")
-	// on the way there.
+	// runner can outrun. The settled marker is the second row of the new wrap:
+	// the terminal's own reflow of the old frame splits the header at the same
+	// column, but leaves " application" under it.
 	for (
 		let waited = 0;
-		line(0) !== "Header line for the" && waited < 2000;
+		line(1) !== "application here." && waited < 2000;
 		waited += 25
 	) {
 		await new Promise((resolve) => setTimeout(resolve, 25));
@@ -634,8 +634,8 @@ test("resizing narrower reprints cleanly instead of layering over reflowed remna
 	expect(headerRows.length).toBe(1);
 
 	// And the render is the clean rewrap at the new width, from the top.
-	expect(line(0)).toBe("Header line for the");
-	expect(line(1)).toBe("demo application here.");
+	expect(line(0)).toBe("Header line for the demo");
+	expect(line(1)).toBe("application here.");
 
 	dom.dispose();
 });

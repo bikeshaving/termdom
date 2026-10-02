@@ -277,7 +277,8 @@ test("css: overflow-x:hidden alone does not clip vertical overflow", async () =>
 	});
 	// height:1px is not clipped because only overflow-x, not overflow-y, is
 	// hidden -- all three wrapped lines still show, just narrowed to 6 columns.
-	expect(text).toBe("aa bb \ncc dd \nee\n");
+	// The space each wraps at hangs, undrawn.
+	expect(text).toBe("aa bb\ncc dd\nee\n");
 });
 
 test("css: nested overflow:hidden clips intersect", async () => {
@@ -333,7 +334,8 @@ test("css: text-align:center re-centers each wrapped line independently", async 
 	const lines = text.split("\n").filter((l) => l.trim());
 	// Each wrapped line is a different length, so a shared center offset would
 	// prove alignment is only computed once for the block rather than per line.
-	expect(lines).toEqual([" aa bb cc dd ee ff ", "  gg hh ii jj kk ll"]);
+	// The first fills the 20 columns exactly; the space after it hangs.
+	expect(lines).toEqual(["aa bb cc dd ee ff gg", "   hh ii jj kk ll"]);
 });
 
 // text-indent shifts only a block's first formatted line.
@@ -354,7 +356,7 @@ test("css: text-indent affects only the first wrapped line, not later ones", asy
 		html: "<div style=\"text-indent:3px; width:10px\">aa bb cc dd ee</div>",
 	});
 	const lines = text.split("\n").filter(Boolean);
-	expect(lines).toEqual(["   aa bb cc ", "dd ee"]);
+	expect(lines).toEqual(["   aa bb cc", "dd ee"]);
 });
 
 test("css: text-indent resolves a percentage against the container width", async () => {

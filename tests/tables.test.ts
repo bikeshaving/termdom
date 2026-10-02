@@ -599,3 +599,31 @@ test("a cell widened by a long word is as tall as its lines at that width", () =
 	expect([text.top, text.height]).toEqual([cell.top, 3]);
 	dom.dispose();
 });
+
+// The space after a word that ends a line hangs past it (css-text-3
+// §4.1.3), so it does not widen the narrowest the cell can be.
+test("a space a long word wraps at adds nothing to its cell's width", () => {
+	const terminal = new MockProcess({cols: 60, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<table style=\"width: 14px\"><tr><td id=\"cell\" " +
+		`style="padding: 0; border: 0">${"x".repeat(30)} aa</td></tr></table>`;
+	const cell = document.getElementById("cell")!.getBoundingClientRect();
+	expect([cell.width, cell.height]).toEqual([30, 2]);
+	dom.dispose();
+});
+
+test("the space a line hangs leaves the cell's border drawn", async () => {
+	const {rows, dom} = await render(
+		"<table style=\"width: 4px\"><tr><td style=\"padding: 0\">" +
+			`${"x".repeat(10)} aa</td></tr></table>`,
+	);
+	expect(rows).toEqual([
+		"┌──────────┐",
+		`│${"x".repeat(10)}│`,
+		"│aa        │",
+		"└──────────┘",
+	]);
+	dom.dispose();
+});
