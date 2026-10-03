@@ -4154,9 +4154,7 @@ function buildLines(
 		}
 
 		if (lineNodes.length > 0) {
-			// Whole rows: a line is drawn on rows, and an inline-block a
-			// fraction of a row taller than its line filled the next row,
-			// over the border below it.
+			// Whole rows: a line is drawn on rows.
 			const lineHeight = Math.round(
 				Math.max(
 					...lineNodes.map((n) =>

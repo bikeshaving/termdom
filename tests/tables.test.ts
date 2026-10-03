@@ -481,9 +481,7 @@ test("deeply nested tables lay out in time that grows with their number", () => 
 });
 
 // A table tries what it holds at several widths, and a table inside it
-// tries its own cells at several widths for each of those. When each try
-// evicted the last answer, every level multiplied the work: a newsletter
-// of centered tables eight deep took seconds to open.
+// tries its own cells at several widths for each of those.
 test("nested centered tables lay out without measuring each level anew", () => {
 	const terminal = new MockProcess({cols: 200, rows: 10});
 	const dom = new TermDOM({

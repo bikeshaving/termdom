@@ -766,10 +766,7 @@ test("blur on a host that delegates focus unfocuses what it delegated to", () =>
 
 const collect = await findCollector();
 
-// A removed host's shadow tree is garbage like any other subtree. The
-// cascade kept every root it had registered, and the document's mutation
-// observer every node it watched, so each email a mail client opened in a
-// shadow root stayed in memory after it closed.
+// A removed host's shadow tree is garbage like any other subtree.
 (collect === null ? test.skip : test)(
 	"a removed host's shadow tree is collected",
 	async () => {

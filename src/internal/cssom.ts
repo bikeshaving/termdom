@@ -253,19 +253,14 @@ export function getTabSize(element: Element | null): number {
 	return typeof length === "number" && length >= 0 ? Math.round(length) : 8;
 }
 
-/**
- * A length in whole cells, an exact half rounding toward zero. A gap that
- * is a fraction of a row puts what follows it at a fraction too, and
- * equal gaps then draw as one row and none by turns.
- */
+/** A length in whole cells, an exact half rounding toward zero. */
 export function toWholeCells(cells: number): number {
 	return Math.sign(cells) * Math.ceil(Math.abs(cells) - 0.5);
 }
 
 /**
- * An element's vertical margin, in cells, or what toCellLength gives one it
- * cannot resolve yet. A whole number of rows, so blocks one under another
- * stay on whole rows and the same margin draws the same gap every time.
+ * An element's vertical margin in whole rows, so the same margin draws the
+ * same gap, or what toCellLength gives one it cannot resolve yet.
  */
 export function getCellBlockMargin(
 	element: Element,
@@ -279,13 +274,7 @@ export function getCellBlockMargin(
 	return typeof margin === "number" ? toWholeCells(margin) : margin;
 }
 
-/**
- * A vertical size property (height, min-height, max-height) in cells, or
- * what toCellLength gives one it cannot resolve yet. A whole number of
- * rows, for the reason a vertical margin is: a box a fraction of a row
- * tall puts what follows it at a fraction, and the same spacer then draws
- * as a row or none by turns.
- */
+/** A vertical size in whole rows, as a vertical margin is. */
 export function getCellBlockSize(
 	element: Element,
 	property: "height" | "min-height" | "max-height",
@@ -299,11 +288,9 @@ export function getCellBlockSize(
 }
 
 /**
- * An element's padding, in cells, or what toCellLength gives a side it
+ * An element's padding in cells, or what toCellLength gives a side it
  * cannot resolve yet. Equal opposite sides stay equal: each is a whole
- * number of cells, an exact half rounding down. Placed by rounding its two
- * edges, a 9px pair at 15px rows drew a row above a button's label and
- * none below it.
+ * number of cells, an exact half rounding down.
  */
 export function getCellPadding(
 	element: Element,
@@ -520,10 +507,9 @@ const kLayout = Symbol("layout");
 const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsing = Symbol("parsing");
 const kPseudoHosts = Symbol("pseudoHosts");
-// The root of the shared tables. Per cascade, and emptied by a full parse:
-// every key holds rule ids, and a parse gives every rule a new one, so no
-// table under the old root can be reached again. Kept for the process,
-// every parse of every document left a whole tree of tables behind.
+// The root of the shared tables, emptied by a full parse: every key holds
+// rule ids, which a parse renews, so nothing under the old root is reached
+// again.
 const kSharedRoot = Symbol("sharedRoot");
 const kElement = Symbol("element");
 const kParentRule = Symbol("parentRule");
@@ -3797,10 +3783,8 @@ function getSharedResolved(
 		if (parentValues === null) {
 			return new Map();
 		}
-		// The top of a shadow tree keeps its tables on the tree. The host's
-		// values are shared by every host like it, and outlive the tree: a
-		// mail client's every email parses its sheets anew, so its elements
-		// key new tables, and under the host they stayed after it closed.
+		// The top of a shadow tree keeps its tables on the tree, so they go
+		// with it. The host's values outlive the tree.
 		const scope = element.parentNode;
 		if (scope !== null && isShadowRoot(scope)) {
 			let byParent = treeTables.get(scope);
@@ -3814,9 +3798,8 @@ function getSharedResolved(
 			table = childTables.get(parentValues) ?? new Map();
 			childTables.set(parentValues, table);
 		}
-		// Bounded as the root's is. A parent's values outlive the page that
-		// made them, since every element like it shares them, and each child
-		// with an inline style of its own adds a table there.
+		// Bounded as the root's is: each child with an inline style of its
+		// own adds a table.
 		if (table.size > 256) {
 			table.clear();
 		}
@@ -6076,12 +6059,10 @@ export class Cascade {
 		for (const parent of changedParents) {
 			invalidateChildren(this, parent);
 		}
-		// A root whose host left the document lets go of its tree, and its
-		// rules with it. Kept, every shadow tree ever removed stayed alive.
-		// A host connected again registers its root again on the way in.
+		// What left the document is let go: elements given a pseudo-element,
+		// and shadow roots with their rules. A host connected again registers
+		// its root on the way in.
 		if (removedElements) {
-			// The same for an element given a pseudo-element: kept, every
-			// link, button and form control a page ever removed stayed alive.
 			for (const host of this[kPseudoHosts]) {
 				if (!host.isConnected) {
 					this[kPseudoHosts].delete(host);
@@ -6349,10 +6330,8 @@ function registerConnectedShadowRoots(
 	}
 }
 
-// A root whose host left the document takes its rules with it. In place:
-// a full parse gives every rule a new identity, so no element shares its
-// values with one styled before it, and the tables of every parse stay
-// behind, one set for each host a page removed.
+// In place rather than by a full parse, which renews every rule's id and
+// leaves no shared table reusable.
 function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	dropScopedRules(cascade, root);
 	// A parse already due builds without the root. One that is not would
@@ -6362,9 +6341,8 @@ function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	}
 }
 
-// A tree's rules, wherever the cascade files them. The pseudo-element
-// rules are filed twice, and a copy left behind kept its tree, and its
-// host, alive, or matched twice once the tree parsed again.
+// A tree's rules, wherever the cascade files them: the pseudo-element rules
+// are filed twice.
 function dropScopedRules(cascade: Cascade, root: ShadowRoot): void {
 	cascade[kParsedRules] = cascade[kParsedRules].filter(
 		(rule) => rule.scope !== root,

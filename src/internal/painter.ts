@@ -284,9 +284,7 @@ function readPaintStyle(element: Element): PaintStyle {
 	const gradient = getGradient(element);
 	const model = getBoxModel(element);
 	return {
-		// Whole cells, as layout rounds the content edge: a padding of a
-		// fraction of a cell would otherwise start the content between
-		// columns, where a fill paints nothing.
+		// Whole cells, as layout rounds the content edge.
 		contentInsetX: Math.round(model.paddingLeft + model.borderLeftWidth),
 		contentInsetY: Math.round(model.paddingTop + model.borderTopWidth),
 		display: getDeclaredDisplay(element),
