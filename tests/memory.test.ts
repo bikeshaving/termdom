@@ -67,14 +67,20 @@ async function mountAndRemove(dom: TermDOM, html: string): Promise<void> {
 	},
 );
 
+// Measured from after a warm-up: the first rounds fill caches and compile
+// code, which Deno counts as some megabytes of heap that then stay level.
+const WARM_UP = 10;
+
 // The heap after a forced collection, before and after a churn. A leak
 // of a few kilobytes per element is megabytes here, well clear of noise.
 async function growth(html: (round: number) => string): Promise<number> {
 	const dom = create();
-	await mountAndRemove(dom, html(0));
+	for (let round = 0; round < WARM_UP; round++) {
+		await mountAndRemove(dom, html(round));
+	}
 	await settle();
 	const before = process.memoryUsage().heapUsed;
-	for (let round = 1; round <= 40; round++) {
+	for (let round = WARM_UP; round < WARM_UP + 40; round++) {
 		await mountAndRemove(dom, html(round));
 	}
 	await settle();
@@ -134,7 +140,9 @@ const MB = 6;
 			host.remove();
 			await nextFrame(dom);
 		};
-		await open();
+		for (let i = 0; i < WARM_UP; i++) {
+			await open();
+		}
 		await settle();
 		const before = process.memoryUsage().heapUsed;
 		for (let i = 0; i < 40; i++) {
