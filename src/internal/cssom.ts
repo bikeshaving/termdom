@@ -3681,6 +3681,10 @@ const childTables = new WeakMap<
 	Map<string, string>,
 	Map<string, Map<string, string>>
 >();
+const treeTables = new WeakMap<
+	ShadowRoot,
+	Map<Map<string, string>, Map<string, Map<string, string>>>
+>();
 
 // Counters count elements in document order, so a rule that sets or uses
 // them gives each element its own values.
@@ -3793,8 +3797,23 @@ function getSharedResolved(
 		if (parentValues === null) {
 			return new Map();
 		}
-		table = childTables.get(parentValues) ?? new Map();
-		childTables.set(parentValues, table);
+		// The top of a shadow tree keeps its tables on the tree. The host's
+		// values are shared by every host like it, and outlive the tree: a
+		// mail client's every email parses its sheets anew, so its elements
+		// key new tables, and under the host they stayed after it closed.
+		const scope = element.parentNode;
+		if (scope !== null && isShadowRoot(scope)) {
+			let byParent = treeTables.get(scope);
+			if (byParent === undefined) {
+				byParent = new Map();
+				treeTables.set(scope, byParent);
+			}
+			table = byParent.get(parentValues) ?? new Map();
+			byParent.set(parentValues, table);
+		} else {
+			table = childTables.get(parentValues) ?? new Map();
+			childTables.set(parentValues, table);
+		}
 		// Bounded as the root's is. A parent's values outlive the page that
 		// made them, since every element like it shares them, and each child
 		// with an inline style of its own adds a table there.
