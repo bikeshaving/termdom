@@ -31,7 +31,7 @@ function rgbTo256(color: number): number {
 	return 16 + 36 * r6 + 6 * g6 + b6;
 }
 
-function rgbToBasic8(color: number): number {
+function basic8FromRGB(color: number): number {
 	const r = (color >> 16) & 0xff;
 	const g = (color >> 8) & 0xff;
 	const b = color & 0xff;
@@ -64,7 +64,7 @@ function getColorParameters(
 		case "256":
 			return `${isFg ? 38 : 48};5;${rgbTo256(color)}`;
 		case "ansi":
-			return String((isFg ? 30 : 40) + rgbToBasic8(color));
+			return String((isFg ? 30 : 40) + basic8FromRGB(color));
 	}
 }
 

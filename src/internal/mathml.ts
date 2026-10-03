@@ -1533,7 +1533,7 @@ function getTokenStyle(
 	const style: CellStyle = {};
 	let any = false;
 	if (color && color !== "initial" && !CSSValues.isHighlightColor(color)) {
-		style.fg = CSSValues.cssColorToNumber(color);
+		style.fg = CSSValues.numberFromCSSColor(color);
 		any = true;
 	}
 	if (
@@ -1543,7 +1543,7 @@ function getTokenStyle(
 		!CSSValues.isCanvasColor(background) &&
 		!CSSValues.isHighlightColor(background)
 	) {
-		style.bg = CSSValues.cssColorToNumber(background);
+		style.bg = CSSValues.numberFromCSSColor(background);
 		any = true;
 	}
 	if (bold) {
@@ -3209,7 +3209,7 @@ function blankOut(box: MathBox): MathBox {
 // rows for a border, so the content is red instead.
 function layoutError(element: Element, context: MathContext): MathBox {
 	const box = layoutRow(getLayoutChildren(element), element, context);
-	const red: CellStyle = {fg: CSSValues.cssColorToNumber("red")};
+	const red: CellStyle = {fg: CSSValues.numberFromCSSColor("red")};
 	if (!context.display) {
 		return {
 			...box,

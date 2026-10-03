@@ -132,7 +132,7 @@ function getBackgroundFill(
 	if (CSSValues.isHighlightColor(value)) {
 		return "inverse";
 	}
-	return CSSValues.cssColorToNumber(value);
+	return CSSValues.numberFromCSSColor(value);
 }
 
 function getGradient(element: Element): Gradient | null {
@@ -178,7 +178,7 @@ function readPaintStyle(element: Element): PaintStyle {
 	const color = getComputedValue(element, "color");
 	const backgroundColor = getComputedValue(element, "background-color");
 	const fg = color && color !== "initial" && !CSSValues.isHighlightColor(color)
-		? CSSValues.cssColorToNumber(color)
+		? CSSValues.numberFromCSSColor(color)
 		: undefined;
 	// Canvas clears the box to the terminal's default background, opaque in
 	// every theme. Highlight fills it with inverse.
@@ -192,7 +192,7 @@ function readPaintStyle(element: Element): PaintStyle {
 		backgroundColor !== "initial" &&
 		!CSSValues.isTransparentColor(backgroundColor) &&
 		!CSSValues.isHighlightColor(backgroundColor)
-			? CSSValues.cssColorToNumber(backgroundColor)
+			? CSSValues.numberFromCSSColor(backgroundColor)
 			: undefined;
 	const fill = bg != null || isCanvasBg || isHighlightBox
 		? isCanvasBg ? "default" : isHighlightBox ? "inverse" : bg!
@@ -218,7 +218,7 @@ function readPaintStyle(element: Element): PaintStyle {
 				borderColor &&
 				borderColor !== "currentcolor" &&
 				borderColor !== "currentColor"
-					? CSSValues.cssColorToNumber(borderColor)
+					? CSSValues.numberFromCSSColor(borderColor)
 					: fg,
 		};
 	};
@@ -256,7 +256,7 @@ function readPaintStyle(element: Element): PaintStyle {
 			!CSSValues.isHighlightColor(outline);
 		// `auto`, the initial value and what `outline: 1px solid` leaves,
 		// takes the element's own color, as a border's currentcolor does.
-		outlineColor = hasColor ? CSSValues.cssColorToNumber(outline) : fg;
+		outlineColor = hasColor ? CSSValues.numberFromCSSColor(outline) : fg;
 	}
 	const overflow = getComputedValue(element, "overflow");
 	let shiftX = 0;
@@ -1565,7 +1565,7 @@ function renderOutsideMarker(
 
 	const markerTextStyle = {
 		fg: markerColor && markerColor !== "initial"
-			? CSSValues.cssColorToNumber(markerColor)
+			? CSSValues.numberFromCSSColor(markerColor)
 			: undefined,
 		bold: markerBold,
 		dim: markerDim,
@@ -1837,7 +1837,7 @@ function readHighlightStyle(
 	if (declared.has("color")) {
 		const color = getComputedValue(element, "color", pseudo);
 		paint.fg = color && !CSSValues.isHighlightColor(color)
-			? CSSValues.cssColorToNumber(color)
+			? CSSValues.numberFromCSSColor(color)
 			: undefined;
 	}
 	if (declared.has("background-color")) {
@@ -1851,7 +1851,7 @@ function readHighlightStyle(
 			!CSSValues.isTransparentColor(background) &&
 			!CSSValues.isCanvasColor(background)
 		) {
-			paint.bg = CSSValues.cssColorToNumber(background);
+			paint.bg = CSSValues.numberFromCSSColor(background);
 		}
 	}
 	if (declared.has("text-decoration-line")) {
@@ -1891,10 +1891,10 @@ function readSelectionStyle(element: Element): HighlightPaint | null {
 		return paint;
 	}
 	if (fgAuthored) {
-		paint.fg = CSSValues.cssColorToNumber(fg);
+		paint.fg = CSSValues.numberFromCSSColor(fg);
 	}
 	if (bgAuthored) {
-		paint.bg = CSSValues.cssColorToNumber(bg);
+		paint.bg = CSSValues.numberFromCSSColor(bg);
 	}
 	return paint;
 }

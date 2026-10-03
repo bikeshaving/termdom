@@ -1,4 +1,4 @@
-import {type Cascade, cellsToPx, getComputedValue} from "./cssom.ts";
+import {type Cascade, getComputedValue, pxFromCells} from "./cssom.ts";
 import {
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
@@ -896,8 +896,8 @@ function getClientPoint(
 	y: number,
 ): {clientX: number; clientY: number} {
 	return {
-		clientX: cellsToPx(x, false, input[kDocument]),
-		clientY: cellsToPx(y - input[kScreen].scrollTop, true, input[kDocument]),
+		clientX: pxFromCells(x, false, input[kDocument]),
+		clientY: pxFromCells(y - input[kScreen].scrollTop, true, input[kDocument]),
 	};
 }
 
@@ -910,8 +910,8 @@ function getMovement(
 	return last === null
 		? {movementX: 0, movementY: 0}
 		: {
-			movementX: cellsToPx(x - last.x, false, input[kDocument]),
-			movementY: cellsToPx(y - last.y, true, input[kDocument]),
+			movementX: pxFromCells(x - last.x, false, input[kDocument]),
+			movementY: pxFromCells(y - last.y, true, input[kDocument]),
 		};
 }
 
@@ -927,8 +927,8 @@ function getScreenPoint(
 		? screen.documentTop
 		: 0;
 	return {
-		screenX: cellsToPx(x, false, input[kDocument]),
-		screenY: cellsToPx(y - screen.scrollTop + top, true, input[kDocument]),
+		screenX: pxFromCells(x, false, input[kDocument]),
+		screenY: pxFromCells(y - screen.scrollTop + top, true, input[kDocument]),
 	};
 }
 
@@ -941,7 +941,7 @@ function getScreenPoint(
 function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	const scroller = getWheelScroller(input, target, deltaY);
 	if (scroller) {
-		scroller.scrollTop += cellsToPx(deltaY, true, input[kDocument]);
+		scroller.scrollTop += pxFromCells(deltaY, true, input[kDocument]);
 		return false;
 	}
 	if (input[kDocument].fullscreenElement !== null) {
