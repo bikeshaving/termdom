@@ -1,13 +1,14 @@
 import "./internal/inspector.ts";
 
 import {
+	Cascade,
 	type CellSize,
 	FALLBACK_CELL,
 	getCellSize,
 	setCellSizeSource,
+	setColorSchemeSource,
 	UNIT_CELL,
-} from "./internal/cellsize.ts";
-import {Cascade, setColorSchemeSource} from "./internal/cssom.ts";
+} from "./internal/cssom.ts";
 import * as DOM from "./internal/dom.ts";
 import {
 	createWindow,
@@ -28,7 +29,7 @@ import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
 import {Screen} from "./internal/screen.ts";
 
-export type {CellSize} from "./internal/cellsize.ts";
+export type {CellSize} from "./internal/cssom.ts";
 export {transportFromProcess} from "./internal/exchange.ts";
 export type {
 	ProcessLike,
