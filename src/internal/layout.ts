@@ -3,6 +3,7 @@ import LineBreaker from "linebreak";
 import {cellsToPx, getCellSize, UNIT_CELL} from "./cellsize.ts";
 import {
 	getBoxModel,
+	getCellBlockMargin,
 	getCellPadding,
 	getComputedValue,
 	getDeclaredDisplay,
@@ -1137,11 +1138,13 @@ function styleLayoutNodeProperties(
 		for (const edge of EDGES) {
 			const property = `margin-${edge}`;
 			const vertical = edge === "top" || edge === "bottom";
-			const margin = toCellLength(
-				CSSValues.parseSignedUnitValue(getComputedValue(element, property)),
-				vertical,
-				element,
-			);
+			const margin = vertical
+				? getCellBlockMargin(element, edge as "top" | "bottom")
+				: toCellLength(
+					CSSValues.parseSignedUnitValue(getComputedValue(element, property)),
+					false,
+					element,
+				);
 			style.margin[edge] = toValue(
 				margin ??
 				(getComputedValue(element, property) === "auto" ? "auto" : undefined),

@@ -196,6 +196,32 @@ export function getTabSize(element: Element | null): number {
 }
 
 /**
+ * A length in whole cells, an exact half rounding toward zero. A gap that
+ * is a fraction of a row puts what follows it at a fraction too, and
+ * equal gaps then draw as one row and none by turns.
+ */
+export function toWholeCells(cells: number): number {
+	return Math.sign(cells) * Math.ceil(Math.abs(cells) - 0.5);
+}
+
+/**
+ * An element's vertical margin, in cells, or what toCellLength gives one it
+ * cannot resolve yet. A whole number of rows, so blocks one under another
+ * stay on whole rows and the same margin draws the same gap every time.
+ */
+export function getCellBlockMargin(
+	element: Element,
+	edge: "top" | "bottom",
+): ReturnType<typeof toCellLength> {
+	const margin = toCellLength(
+		CSSValues.parseSignedUnitValue(getComputedValue(element, `margin-${edge}`)),
+		true,
+		element,
+	);
+	return typeof margin === "number" ? toWholeCells(margin) : margin;
+}
+
+/**
  * An element's padding, in cells, or what toCellLength gives a side it
  * cannot resolve yet. Equal opposite sides stay equal: each is a whole
  * number of cells, an exact half rounding down. Placed by rounding its two
@@ -223,7 +249,7 @@ export function getCellPadding(
 	for (const [start, end] of [["top", "bottom"], ["left", "right"]] as const) {
 		const length = padding[start];
 		if (typeof length === "number" && length === padding[end]) {
-			padding[start] = padding[end] = Math.ceil(length - 0.5);
+			padding[start] = padding[end] = toWholeCells(length);
 		}
 	}
 	return padding;
@@ -251,9 +277,9 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 		left: paddingLeft,
 	} = getCellPadding(element);
 
-	const marginTop = length("margin-top", true, true);
+	const marginTop = getCellBlockMargin(element, "top");
 	const marginRight = length("margin-right", false, true);
-	const marginBottom = length("margin-bottom", true, true);
+	const marginBottom = getCellBlockMargin(element, "bottom");
 	const marginLeft = length("margin-left", false, true);
 
 	// The used width is 0 when the side's style is none or hidden
