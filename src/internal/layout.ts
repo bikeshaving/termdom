@@ -1,7 +1,6 @@
 import LineBreaker from "linebreak";
 
 import {
-	cellsToPx,
 	getBoxModel,
 	getCellBlockMargin,
 	getCellBlockSize,
@@ -11,6 +10,7 @@ import {
 	getDeclaredDisplay,
 	getWhiteSpace as getElementWhiteSpace,
 	getTabSize,
+	pxFromCells,
 	toCellBorder,
 	toCellLength,
 	toWholeCells,
@@ -7490,13 +7490,13 @@ function revealInPort(
 	);
 	// The offsets are cells here, and scrollTop is CSS pixels.
 	if (down !== 0) {
-		scroller.scrollTop += cellsToPx(down, true, scroller);
+		scroller.scrollTop += pxFromCells(down, true, scroller);
 	}
 	const across = Math.round(
 		getAlignmentDelta(rect.left, rect.right, portLeft, portRight, inline),
 	);
 	if (across !== 0) {
-		scroller.scrollLeft += cellsToPx(across, false, scroller);
+		scroller.scrollLeft += pxFromCells(across, false, scroller);
 	}
 }
 

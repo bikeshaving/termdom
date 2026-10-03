@@ -720,7 +720,7 @@ export function resolveSystemColor(
  * resolve to 0, the terminal's own, because the painter has no null to put
  * in a cell.
  */
-export function cssColorToNumber(cssColor: string): number {
+export function numberFromCSSColor(cssColor: string): number {
 	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
 		return 0;
 	}

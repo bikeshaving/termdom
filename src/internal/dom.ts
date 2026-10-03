@@ -11,7 +11,6 @@ import {
 import {
 	adoptStyleSheets,
 	type Cascade,
-	cellsToPx,
 	getAdoptedStyleSheets,
 	getBoxModel,
 	getCellSize,
@@ -19,6 +18,7 @@ import {
 	getInlineStyle,
 	getStyleSheets,
 	getWhiteSpace,
+	pxFromCells,
 	styleAttributeChanged,
 	styleElementSheet,
 	styleShadowAttached,
@@ -454,7 +454,7 @@ export function revealTextControlCaret(document: globalThis.Document): void {
 	}
 	const scrollLeft = getStringWidth(shown.slice(0, scrollOffset));
 	if (scrollLeft !== currentScroll) {
-		valueSpan.scrollLeft = cellsToPx(scrollLeft, false, valueSpan);
+		valueSpan.scrollLeft = pxFromCells(scrollLeft, false, valueSpan);
 	}
 }
 
@@ -3287,7 +3287,7 @@ class PointerEvent extends MouseEvent {
 		if (this[kAltitudeAngle] === null && this[kAzimuthAngle] === null) {
 			return 0;
 		}
-		return sphericalToTilt(
+		return tiltFromSpherical(
 			this[kAltitudeAngle] ?? Math.PI / 2,
 			this[kAzimuthAngle] ?? 0,
 		)[0];
@@ -3300,7 +3300,7 @@ class PointerEvent extends MouseEvent {
 		if (this[kAltitudeAngle] === null && this[kAzimuthAngle] === null) {
 			return 0;
 		}
-		return sphericalToTilt(
+		return tiltFromSpherical(
 			this[kAltitudeAngle] ?? Math.PI / 2,
 			this[kAzimuthAngle] ?? 0,
 		)[1];
@@ -3317,7 +3317,7 @@ class PointerEvent extends MouseEvent {
 		if (this[kTiltX] === null && this[kTiltY] === null) {
 			return Math.PI / 2;
 		}
-		return tiltToSpherical(this[kTiltX] ?? 0, this[kTiltY] ?? 0)[0];
+		return sphericalFromTilt(this[kTiltX] ?? 0, this[kTiltY] ?? 0)[0];
 	}
 
 	get azimuthAngle(): number {
@@ -3327,7 +3327,7 @@ class PointerEvent extends MouseEvent {
 		if (this[kTiltX] === null && this[kTiltY] === null) {
 			return 0;
 		}
-		return tiltToSpherical(this[kTiltX] ?? 0, this[kTiltY] ?? 0)[1];
+		return sphericalFromTilt(this[kTiltX] ?? 0, this[kTiltY] ?? 0)[1];
 	}
 
 	get pointerType(): string {
@@ -3385,7 +3385,10 @@ Object.defineProperty(DragEvent.prototype, Symbol.toStringTag, {
 });
 
 /** Convert a pen's altitude and azimuth to tilt angles in degrees. */
-function sphericalToTilt(altitude: number, azimuth: number): [number, number] {
+function tiltFromSpherical(
+	altitude: number,
+	azimuth: number,
+): [number, number] {
 	if (altitude === 0) {
 		if (azimuth === 0 || azimuth === 2 * Math.PI) {
 			return [90, 0];
@@ -3410,7 +3413,7 @@ function sphericalToTilt(altitude: number, azimuth: number): [number, number] {
 }
 
 /** Convert a pen's tilt angles to altitude and azimuth in radians. */
-function tiltToSpherical(tiltX: number, tiltY: number): [number, number] {
+function sphericalFromTilt(tiltX: number, tiltY: number): [number, number] {
 	const radiansX = (tiltX * Math.PI) / 180;
 	const radiansY = (tiltY * Math.PI) / 180;
 	const tanX = Math.tan(radiansX);
@@ -9973,7 +9976,7 @@ Object.defineProperties(Element.prototype, {
 			const left = scrollOffsets.get(this)?.left ?? 0;
 			return getAttachedDocument(this) === undefined
 				? left
-				: cellsToPx(left, false, this);
+				: pxFromCells(left, false, this);
 		},
 		set(this: Element, value: number) {
 			setScrollOffset(this, "left", value);
@@ -9987,12 +9990,12 @@ Object.defineProperties(Element.prototype, {
 				? getAttachedDocument(this)
 				: undefined;
 			if (attached) {
-				return cellsToPx(attached[kScreen].scrollTop, true, this);
+				return pxFromCells(attached[kScreen].scrollTop, true, this);
 			}
 			const top = scrollOffsets.get(this)?.top ?? 0;
 			return getAttachedDocument(this) === undefined
 				? top
-				: cellsToPx(top, true, this);
+				: pxFromCells(top, true, this);
 		},
 		set(this: Element, value: number) {
 			setScrollOffset(this, "top", value);
@@ -11137,7 +11140,7 @@ function getSettledLayout(element: Element): Layout | undefined {
 Object.defineProperties(HTMLElement.prototype, {
 	offsetWidth: {
 		get(this: HTMLElement): number {
-			return cellsToPx(
+			return pxFromCells(
 				getSettledLayout(this)?.offsetSize(this).width ?? 0,
 				false,
 				this,
@@ -11148,7 +11151,7 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	offsetHeight: {
 		get(this: HTMLElement): number {
-			return cellsToPx(
+			return pxFromCells(
 				getSettledLayout(this)?.offsetSize(this).height ?? 0,
 				true,
 				this,
@@ -11159,7 +11162,7 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	offsetTop: {
 		get(this: HTMLElement): number {
-			return cellsToPx(
+			return pxFromCells(
 				getSettledLayout(this)?.offsetPosition(this).top ?? 0,
 				true,
 				this,
@@ -11170,7 +11173,7 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	offsetLeft: {
 		get(this: HTMLElement): number {
-			return cellsToPx(
+			return pxFromCells(
 				getSettledLayout(this)?.offsetPosition(this).left ?? 0,
 				false,
 				this,
@@ -11194,7 +11197,7 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	clientWidth: {
 		get(this: HTMLElement): number {
-			return cellsToPx(
+			return pxFromCells(
 				getSettledLayout(this)?.clientSize(this).width ?? 0,
 				false,
 				this,
@@ -11205,7 +11208,7 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	clientHeight: {
 		get(this: HTMLElement): number {
-			return cellsToPx(
+			return pxFromCells(
 				getSettledLayout(this)?.clientSize(this).height ?? 0,
 				true,
 				this,
@@ -11217,21 +11220,21 @@ Object.defineProperties(HTMLElement.prototype, {
 	// The border widths, which only the cascade decides.
 	clientLeft: {
 		get(this: HTMLElement): number {
-			return cellsToPx(getBoxModel(this).borderLeftWidth, false, this);
+			return pxFromCells(getBoxModel(this).borderLeftWidth, false, this);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientTop: {
 		get(this: HTMLElement): number {
-			return cellsToPx(getBoxModel(this).borderTopWidth, true, this);
+			return pxFromCells(getBoxModel(this).borderTopWidth, true, this);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollWidth: {
 		get(this: HTMLElement): number {
-			return cellsToPx(
+			return pxFromCells(
 				getSettledLayout(this)?.scrollSize(this).width ?? 0,
 				false,
 				this,
@@ -11242,7 +11245,7 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	scrollHeight: {
 		get(this: HTMLElement): number {
-			return cellsToPx(
+			return pxFromCells(
 				getSettledLayout(this)?.scrollSize(this).height ?? 0,
 				true,
 				this,
@@ -19089,8 +19092,8 @@ export class HTMLSelectElement extends HTMLElement {
 		const rect = attached[kLayout].getRect(this);
 		if (rect) {
 			// The picker's style is CSS pixels, and the select's rect is cells.
-			const top = `${cellsToPx(Math.round(rect.bottom), true, this)}px`;
-			const left = `${cellsToPx(Math.round(rect.left), false, this)}px`;
+			const top = `${pxFromCells(Math.round(rect.bottom), true, this)}px`;
+			const left = `${pxFromCells(Math.round(rect.left), false, this)}px`;
 			const width = `${Math.max(4, Math.round(rect.width))}ch`;
 			if (picker.style.top !== top) {
 				picker.style.top = top;
@@ -23634,10 +23637,10 @@ class ResizeObserver
 		const cells =
 			getContentBox(target, layout) ?? {width: 0, height: 0, top: 0, left: 0};
 		const content = {
-			width: cellsToPx(cells.width, false, target),
-			height: cellsToPx(cells.height, true, target),
-			top: cellsToPx(cells.top, true, target),
-			left: cellsToPx(cells.left, false, target),
+			width: pxFromCells(cells.width, false, target),
+			height: pxFromCells(cells.height, true, target),
+			top: pxFromCells(cells.top, true, target),
+			left: pxFromCells(cells.left, false, target),
 		};
 
 		const borderCells = layout.getRect(target);
@@ -34286,7 +34289,7 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: cellsToPx(attached[kScreen].cols, false, this.document);
+			: pxFromCells(attached[kScreen].cols, false, this.document);
 	}
 
 	get outerWidth(): number {
@@ -34297,7 +34300,7 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: cellsToPx(attached[kScreen].rows, true, this.document);
+			: pxFromCells(attached[kScreen].rows, true, this.document);
 	}
 
 	get outerHeight(): number {
@@ -34310,7 +34313,7 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: cellsToPx(attached[kScreen].documentTop, true, this.document);
+			: pxFromCells(attached[kScreen].documentTop, true, this.document);
 	}
 
 	// Standard window scrolling, mapped onto the document scroll. scrollY is
@@ -34321,7 +34324,7 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: cellsToPx(attached[kScreen].scrollTop, true, this.document);
+			: pxFromCells(attached[kScreen].scrollTop, true, this.document);
 	}
 
 	get pageYOffset(): number {

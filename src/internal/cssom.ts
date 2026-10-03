@@ -91,7 +91,7 @@ export function getCellSize(node: Node | null | undefined): Readonly<CellSize> {
  * edges of the boxes it places, not each length, so lengths that add up
  * still add up.
  */
-export function pxToCells(
+export function cellsFromPx(
 	px: number,
 	vertical: boolean,
 	node: Node | null | undefined,
@@ -102,7 +102,7 @@ export function pxToCells(
 }
 
 /** Cells along one axis as CSS pixels. */
-export function cellsToPx(
+export function pxFromCells(
 	cells: number,
 	vertical: boolean,
 	node: Node | null | undefined,
@@ -216,7 +216,7 @@ export function toCellLength(
 	vertical: boolean,
 	node: Node,
 ): CSSValues.UnitValue {
-	return typeof value === "number" ? pxToCells(value, vertical, node) : value;
+	return typeof value === "number" ? cellsFromPx(value, vertical, node) : value;
 }
 
 // A border a terminal draws is a line of glyphs, so a border that is
@@ -232,7 +232,7 @@ export function toCellBorder(
 	const cell = getCellSize(node);
 	return (vertical ? cell.height : cell.width) === 1
 		? value
-		: Math.max(1, Math.round(pxToCells(value, vertical, node)));
+		: Math.max(1, Math.round(cellsFromPx(value, vertical, node)));
 }
 
 /**
@@ -4399,8 +4399,8 @@ function getViewportBox(declaration: MeasuredDeclaration): DOMRect | null {
 	return new (rect.constructor as typeof DOMRect)(
 		0,
 		0,
-		cellsToPx(block.width, false, declaration[kElement]),
-		cellsToPx(block.height, true, declaration[kElement]),
+		pxFromCells(block.width, false, declaration[kElement]),
+		pxFromCells(block.height, true, declaration[kElement]),
 	);
 }
 
@@ -4450,7 +4450,7 @@ function getEdgeLength(
 function toDrawnEdge(element: Element, property: string, px: number): number {
 	const vertical = /-(?:top|bottom)(?:-|$)/.test(property);
 	if (property.startsWith("border-")) {
-		return cellsToPx(
+		return pxFromCells(
 			toCellBorder(px, vertical, element) as number,
 			vertical,
 			element,
@@ -4464,7 +4464,7 @@ function toDrawnEdge(element: Element, property: string, px: number): number {
 	const cells = typeof paired === "number"
 		? paired
 		: toCellLength(px, vertical, element);
-	return cellsToPx(cells as number, vertical, element);
+	return pxFromCells(cells as number, vertical, element);
 }
 
 // The space an `auto` margin actually took, measured from the two
@@ -6266,7 +6266,7 @@ function usedGridTracks(
 		return null;
 	}
 	return cascade[kLayout].gridTracks(element, rows)
-		?.map((size) => cellsToPx(size, rows, element),
+		?.map((size) => pxFromCells(size, rows, element),
 		) ?? null;
 }
 
@@ -6636,10 +6636,10 @@ function toPxRect(rect: DOMRect | null, node: Node): DOMRect | null {
 		return rect;
 	}
 	return new (rect.constructor as typeof DOMRect)(
-		cellsToPx(rect.x, false, node),
-		cellsToPx(rect.y, true, node),
-		cellsToPx(rect.width, false, node),
-		cellsToPx(rect.height, true, node),
+		pxFromCells(rect.x, false, node),
+		pxFromCells(rect.y, true, node),
+		pxFromCells(rect.width, false, node),
+		pxFromCells(rect.height, true, node),
 	);
 }
 
