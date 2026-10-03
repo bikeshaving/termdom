@@ -556,3 +556,23 @@ export function scriptReplies(
 		return true;
 	};
 }
+
+// Forcing a collection takes Bun's gc, or V8's switched on for this
+// process. A runtime offering neither skips the test rather than pass it.
+export async function findCollector(): Promise<(() => void) | null> {
+	const bun = (globalThis as {Bun?: {gc(force: boolean): void}}).Bun;
+	if (bun !== undefined) {
+		return () => bun.gc(true);
+	}
+	try {
+		const v8 = await import("node:v8");
+		const vm = await import("node:vm");
+		v8.setFlagsFromString("--expose-gc");
+		const gc = vm.runInNewContext("gc");
+		return typeof gc === "function" ? gc : null;
+	} catch (error) {
+		// A runtime without node:v8 or node:vm forces no collection.
+		void error;
+		return null;
+	}
+}

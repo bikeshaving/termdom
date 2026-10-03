@@ -5900,6 +5900,9 @@ function memoizeGridValue<T>(
 		return parsedGridValues.get(key) as T;
 	}
 	const parsed = parse(value);
+	if (parsedGridValues.size > 1024) {
+		parsedGridValues.clear();
+	}
 	parsedGridValues.set(key, parsed);
 	return parsed;
 }
