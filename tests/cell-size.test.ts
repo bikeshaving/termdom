@@ -209,6 +209,22 @@ test("a line takes the rows its line-height asks for from two up", () => {
 	dom.dispose();
 });
 
+// A height is a whole number of rows, as a margin is. Spacers 12 pixels
+// tall at 15-pixel rows drew a row and none by turns.
+test("the same spacer height draws the same gap down a column", () => {
+	const {dom} = make({width: 7, height: 15});
+	const {document} = dom;
+	const spacer = "<div style=\"height: 12px\"></div>";
+	document.body.innerHTML = ["a", "b", "c", "d"]
+		.map((text) => `<div class="line">${text}</div>${spacer}`)
+		.join("");
+	const tops = [...document.querySelectorAll(".line")].map((line) =>
+		line.getBoundingClientRect().top / 15,
+	);
+	expect(tops).toEqual([0, 2, 4, 6]);
+	dom.dispose();
+});
+
 // Each box's edges round to the grid, not each length on its own, so
 // widths that add up to their container still fit it.
 test("columns that fill their container stay on one line", () => {
