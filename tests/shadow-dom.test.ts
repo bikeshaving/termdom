@@ -763,3 +763,79 @@ test("blur on a host that delegates focus unfocuses what it delegated to", () =>
 	expect(shadow.activeElement).toBe(null);
 	expect(document.activeElement).toBe(document.body);
 });
+
+// Forcing a collection takes Bun's gc, or V8's switched on for this
+// process. A runtime offering neither skips the test rather than pass it.
+async function findCollector(): Promise<(() => void) | null> {
+	const bun = (globalThis as {Bun?: {gc(force: boolean): void}}).Bun;
+	if (bun !== undefined) {
+		return () => bun.gc(true);
+	}
+	try {
+		const v8 = await import("node:v8");
+		const vm = await import("node:vm");
+		v8.setFlagsFromString("--expose-gc");
+		const gc = vm.runInNewContext("gc");
+		return typeof gc === "function" ? gc : null;
+	} catch (error) {
+		// A runtime without node:v8 or node:vm forces no collection.
+		void error;
+		return null;
+	}
+}
+
+const collect = await findCollector();
+
+// A removed host's shadow tree is garbage like any other subtree. The
+// cascade kept every root it had registered, and the document's mutation
+// observer every node it watched, so each email a mail client opened in a
+// shadow root stayed in memory after it closed.
+(collect === null ? test.skip : test)(
+	"a removed host's shadow tree is collected",
+	async () => {
+		const terminal = new MockProcess({rows: 6, cols: 40});
+		const dom = new TermDOM({transport: terminal.transport});
+		await nextFrame(dom);
+		// In a function of its own: what an async function holds across an
+		// await, it holds until it returns.
+		const mountAndRemove = async (): Promise<WeakRef<ShadowRoot>> => {
+			const host = dom.document.createElement("div");
+			dom.document.body.append(host);
+			const shadow = host.attachShadow({mode: "open"});
+			shadow.innerHTML = "<style>p { color: red }</style><p>mail</p>";
+			await nextFrame(dom);
+			host.remove();
+			await nextFrame(dom);
+			// Whether a value was collected is only seen through a weak
+			// reference, which is the thing under test.
+			// eslint-disable-next-line no-restricted-globals
+			return new WeakRef(shadow);
+		};
+		const root = await mountAndRemove();
+		for (let i = 0; i < 10 && root.deref() !== undefined; i++) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			collect!();
+		}
+		expect(root.deref()).toBeUndefined();
+		dom.dispose();
+	},
+);
+
+// Letting a removed root go must not lose it: the host can come back.
+test("a host added back keeps its shadow tree's styles", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const host = dom.document.createElement("div");
+	dom.document.body.append(host);
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML = "<style>p { display: none }</style><p>hidden</p><b>shown</b>";
+	await nextFrame(dom);
+	host.remove();
+	await nextFrame(dom);
+	dom.document.body.append(host);
+	await nextFrame(dom);
+	const text = terminal.getVisibleText();
+	expect(text).toContain("shown");
+	expect(text).not.toContain("hidden");
+	dom.dispose();
+});

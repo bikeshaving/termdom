@@ -6858,11 +6858,47 @@ function normalizeObserverOptions(
 	};
 }
 
+/**
+ * Whether the document's own observer watches a shadow root. The cascade
+ * lets a root go when its host leaves the document, and the observer must
+ * too: it lives as long as the document, and every node it watches with it.
+ */
+export function setShadowRootObserved(
+	root: globalThis.ShadowRoot,
+	observed: boolean,
+): void {
+	const document = (root.host as Element)[kDocument];
+	if (observed) {
+		observeShadowRoot(document, root);
+		return;
+	}
+	const observer = engineObservers.get(document);
+	const list = (root as unknown as Node)[kRegisteredObservers];
+	if (observer === undefined || list === null) {
+		return;
+	}
+	for (let index = list.length - 1; index >= 0; index--) {
+		if (list[index].observer === observer) {
+			list.splice(index, 1);
+			registeredObserverCount--;
+		}
+	}
+	observer[kNodes].delete(root as unknown as Node);
+}
+
 function notifyObserver(observer: MutationObserver): void {
 	const records = observer[kRecords];
 	observer[kRecords] = [];
+	// A node the observer knew only through a transient registration is
+	// done with once that registration goes. Kept, the document's own
+	// observer held every node ever removed from under it.
 	for (const node of [...observer[kNodes]]) {
 		removeTransientObservers(node, () => true);
+		if (!(node[kRegisteredObservers] ?? []).some((registered) =>
+			registered.observer === observer,
+		)) {
+			observer[kNodes].delete(node);
+		}
 	}
 	for (const node of transientNodes) {
 		removeTransientObservers(node, (entry) => entry.observer === observer);
