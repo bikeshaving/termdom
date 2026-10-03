@@ -166,6 +166,23 @@ test("equal padding on opposite sides draws as equal rows", () => {
 	dom.dispose();
 });
 
+// A vertical margin is a whole number of rows, so the same margin is the
+// same gap every time. Half a row of margin between list items drew a gap,
+// none and a gap again as the fractions added up.
+test("the same margin draws the same gap down a list", () => {
+	const {dom} = make({width: 7, height: 15});
+	const {document} = dom;
+	document.body.style.fontSize = "17px";
+	const item = (text: string) => `<li style="margin: 0.5em 0">${text}</li>`;
+	document.body.innerHTML =
+		`<ul style="margin: 0">${item("a")}${item("b")}${item("c")}${item("d")}</ul>`;
+	const tops = [...document.querySelectorAll("li")].map((li) =>
+		li.getBoundingClientRect().top / 15,
+	);
+	expect(tops).toEqual([1, 3, 5, 7]);
+	dom.dispose();
+});
+
 // Each box's edges round to the grid, not each length on its own, so
 // widths that add up to their container still fit it.
 test("columns that fill their container stay on one line", () => {
