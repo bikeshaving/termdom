@@ -91,9 +91,7 @@ async function growth(html: (round: number) => string): Promise<number> {
 
 const MB = 6;
 
-// A control's UA tree parses its own copy of the UA sheet, and removing it
-// reparses every sheet. Rule identity followed the parsed rule, so neither
-// shared with what came before, and every round left a chain of tables.
+// Each control's UA tree parses its own copy of the UA sheet.
 (collect === null ? test.skip : test)(
 	"mounting and removing form controls does not grow the heap",
 	async () => {
@@ -116,11 +114,8 @@ const MB = 6;
 	},
 );
 
-// A mail client opens each email in a shadow root of its own, whose sheets
-// parse anew each time. The tree's own sheet styles its top element, so
-// that element keys a new table each time, and every table below it
-// hangs from that one. They hung under the host's values, which every
-// host like it shares, and stayed after the email closed.
+// A mail client opens each email in a shadow root of its own, whose sheet
+// styles its top element, so every open keys tables of its own.
 (collect === null ? test.skip : test)(
 	"opening and closing styled shadow trees does not grow the heap",
 	async () => {

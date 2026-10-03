@@ -141,9 +141,7 @@ test("a used width takes away the edges as they were drawn", () => {
 	dom.dispose();
 });
 
-// Padding the same on both sides stays the same once drawn. Placed by
-// rounding its edges, 9px of padding at 15px rows was a row above a
-// button's label and none below it.
+// Padding the same on both sides stays the same once drawn.
 test("equal padding on opposite sides draws as equal rows", () => {
 	const {dom} = make({width: 7, height: 15});
 	const {document} = dom;
@@ -167,8 +165,7 @@ test("equal padding on opposite sides draws as equal rows", () => {
 });
 
 // A vertical margin is a whole number of rows, so the same margin is the
-// same gap every time. Half a row of margin between list items drew a gap,
-// none and a gap again as the fractions added up.
+// same gap every time.
 test("the same margin draws the same gap down a list", () => {
 	const {dom} = make({width: 7, height: 15});
 	const {document} = dom;
@@ -209,8 +206,7 @@ test("a line takes the rows its line-height asks for from two up", () => {
 	dom.dispose();
 });
 
-// A height is a whole number of rows, as a margin is. Spacers 12 pixels
-// tall at 15-pixel rows drew a row and none by turns.
+// A height is a whole number of rows, as a margin is.
 test("the same spacer height draws the same gap down a column", () => {
 	const {dom} = make({width: 7, height: 15});
 	const {document} = dom;
@@ -226,9 +222,7 @@ test("the same spacer height draws the same gap down a column", () => {
 });
 
 // A table's columns round where their edges land, as every box does, so
-// they fill a table that starts part way into a column. Rounded from the
-// table's own left edge, the one column of a table at 4.43 cells came out
-// 91 wide in a table drawn 92, and the border under it stopped short.
+// they fill a table that starts part way into a column.
 test("a table that starts part way into a column is filled by its cells", () => {
 	const {dom} = make({width: 7, height: 15});
 	const {document} = dom;
@@ -565,9 +559,7 @@ test("a fractional margin does not wrap the word after it", () => {
 	dom.dispose();
 });
 
-// A line starts at a column, and a box inside it fills whole cells. A
-// centered line in a box of a fractional width left an inline-block a
-// fraction of a column over, and its cells' backgrounds painted nowhere.
+// A line starts at a column, and a box inside it fills whole cells.
 test("a centered inline-block in a fractional box paints its background", () => {
 	const {dom} = make({width: 7, height: 15}, 60, 12);
 	const {document} = dom;
@@ -583,9 +575,8 @@ test("a centered inline-block in a fractional box paints its background", () => 
 	dom.dispose();
 });
 
-// A line is whole rows. An inline-block a fraction of a row taller than
-// the rows its line rounds to painted its background over the border
-// below it.
+// A line is whole rows, so an inline-block on it stays above the border
+// below.
 test("an inline-block with fractional padding keeps inside its cell's border", () => {
 	const {dom} = make({width: 7, height: 15}, 60, 12);
 	const {document} = dom;
@@ -600,8 +591,7 @@ test("an inline-block with fractional padding keeps inside its cell's border", (
 });
 
 // A box after one of a fractional width starts a fraction of a column
-// over. Its fill paints the cells its border would, or it landed on no
-// cell at all.
+// over, and its fill paints the cells its border would.
 test("an inline-block after a fractional width paints its background", () => {
 	const {dom} = make({width: 7, height: 15}, 60, 12);
 	const {document} = dom;

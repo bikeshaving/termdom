@@ -399,9 +399,8 @@ function isMinContent(mode: AvailableSpace, available: number): boolean {
 
 const CACHE_SLOT_COUNT = 9;
 // Answers kept per query shape. A table measures what it holds at every
-// width its own parent tries, and a nested table at every width each of
-// those gives it. With one answer per shape each try evicted the last,
-// and the work multiplied at every level of nesting. Yoga keeps sixteen.
+// width its parent tries, and a nested table at every width each of those
+// gives it.
 const CACHE_SLOT_DEPTH = 4;
 const NO_CACHED_SIZES: ReadonlyArray<CachedSize | null> = Object.freeze([]);
 
@@ -2830,9 +2829,7 @@ function resolveColumnWidths(
 	}
 
 	// Left as fractions. Every box's edges round where they land on the
-	// grid, so the cells tile the table wherever it starts. Snapped from the
-	// table's own left edge, they came out a column short of a table that
-	// started part way into one.
+	// grid, so the cells tile the table wherever it starts.
 	return widths;
 }
 

@@ -27,9 +27,8 @@ describe("cells through the pen", () => {
 	});
 
 	// Mail puts a zero-width non-joiner between the letters of an address
-	// so a phone does not link it. It rides in the letter's cluster, and a
-	// terminal that gives it a cell drew "M a r k". Nothing invisible goes
-	// out but the joiners that hold an emoji together.
+	// so a phone does not link it. Nothing invisible goes out but the
+	// joiners that hold an emoji together.
 	test("invisible characters in a cluster stay off the wire", () => {
 		const family = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
 		const renderer = new Screen(1, 20);

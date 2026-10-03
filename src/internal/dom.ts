@@ -6874,9 +6874,7 @@ function normalizeObserverOptions(
 
 /**
  * The document's own observer lets go of what it watches that has left the
- * document. It lives as long as the document, and with it every shadow root
- * and select it was told to watch. One that comes back is watched again on
- * the way in.
+ * document. It lives as long as the document does.
  */
 export function releaseRemovedNodes(document: globalThis.Document): void {
 	const observer = engineObservers.get(document as unknown as Document);
@@ -6916,8 +6914,7 @@ function notifyObserver(observer: MutationObserver): void {
 	const records = observer[kRecords];
 	observer[kRecords] = [];
 	// A node the observer knew only through a transient registration is
-	// done with once that registration goes. Kept, the document's own
-	// observer held every node ever removed from under it.
+	// done with once that registration goes.
 	for (const node of [...observer[kNodes]]) {
 		removeTransientObservers(node, () => true);
 		if (!(node[kRegisteredObservers] ?? []).some((registered) =>
