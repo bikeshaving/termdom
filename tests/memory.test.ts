@@ -109,3 +109,40 @@ const MB = 6;
 		expect(await growth(html)).toBeLessThan(MB);
 	},
 );
+
+// A mail client opens each email in a shadow root of its own, whose sheets
+// parse anew each time. The tree's own sheet styles its top element, so
+// that element keys a new table each time, and every table below it
+// hangs from that one. They hung under the host's values, which every
+// host like it shares, and stayed after the email closed.
+(collect === null ? test.skip : test)(
+	"opening and closing styled shadow trees does not grow the heap",
+	async () => {
+		const dom = create();
+		const open = async () => {
+			const host = dom.document.createElement("mail-view");
+			dom.document.body.append(host);
+			const root = host.attachShadow({mode: "open"});
+			root.innerHTML =
+				"<style>div { margin: 0 } p { color: #333 }</style><div>" +
+				Array.from(
+					{length: 300},
+					(_, n) => `<p style="padding: ${n}px"><b>row</b> text</p>`,
+				).join("") +
+				"</div>";
+			await nextFrame(dom);
+			host.remove();
+			await nextFrame(dom);
+		};
+		await open();
+		await settle();
+		const before = process.memoryUsage().heapUsed;
+		for (let i = 0; i < 40; i++) {
+			await open();
+		}
+		await settle();
+		const grown = (process.memoryUsage().heapUsed - before) / 1e6;
+		dom.dispose();
+		expect(grown).toBeLessThan(MB);
+	},
+);
