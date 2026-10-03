@@ -956,6 +956,13 @@ function getGraphemeColumns(grapheme: string): number {
 	return getStringWidth(grapheme);
 }
 
+// Default-ignorable characters (Unicode §5.21) that ride along in the
+// cluster before them. Measured, they have no width, but a terminal that
+// gives one a cell opens a gap after every letter they follow. A joiner
+// stays where it joins emoji.
+const INVISIBLE_IN_CLUSTER =
+	/\u034F|\u200C|\u17B4|\u17B5|\u200D(?!\p{Extended_Pictographic})/gu;
+
 export class CellContext {
 	grid: CellGrid;
 	rows: number;
@@ -1062,7 +1069,13 @@ export class CellContext {
 				break;
 			}
 
-			setCell(this, y, currentX, char, style);
+			setCell(
+				this,
+				y,
+				currentX,
+				char.length > 1 ? char.replace(INVISIBLE_IN_CLUSTER, "") : char,
+				style,
+			);
 			currentX += width;
 		}
 	}

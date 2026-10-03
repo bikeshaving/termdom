@@ -26,6 +26,26 @@ describe("cells through the pen", () => {
 		expect(output).toContain("日");
 	});
 
+	// Mail puts a zero-width non-joiner between the letters of an address
+	// so a phone does not link it. It rides in the letter's cluster, and a
+	// terminal that gives it a cell drew "M a r k". Nothing invisible goes
+	// out but the joiners that hold an emoji together.
+	test("invisible characters in a cluster stay off the wire", () => {
+		const family = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
+		const renderer = new Screen(1, 20);
+		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			ctx.drawText("M\u200c\u200ba\u200cr\u034fk", 0, 0);
+			ctx.drawText("e\u200dt", 5, 0);
+			ctx.drawText(family, 8, 0);
+		});
+
+		expect(stripControlCodes(output)).toContain("Mark");
+		expect(stripControlCodes(output)).toContain("et");
+		expect(output).not.toMatch(/[\u034f\u200b\u200c]/u);
+		expect(output.match(/\u200d/gu)).toHaveLength(2);
+		expect(output).toContain(family);
+	});
+
 	test("measureText and the layout agree on widths", () => {
 		const renderer = new Screen(1, 10);
 		const context = renderer.beginFrame({offset: 0});
