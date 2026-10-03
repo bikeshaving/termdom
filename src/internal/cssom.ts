@@ -33,6 +33,7 @@ import {
 	isUAShadowTree,
 	pseudoElement,
 	pseudoElementCount,
+	setShadowRootObserved,
 	styleElementCount,
 	TransitionEvent,
 	type Window,
@@ -5858,6 +5859,7 @@ export class Cascade {
 	handleMutations(mutations: MutationRecord[]): void {
 		const Node = this[kWindow].Node;
 		let shouldSyncStylesheets = false;
+		let removedElements = false;
 		const changedParents = new Set<Element>();
 
 		// A :has() subject sits ABOVE what changed it, so when such rules exist
@@ -5913,11 +5915,13 @@ export class Cascade {
 						} else {
 							invalidateElementCaches(this, element);
 							attachPseudoElementsToElement(this, element);
+							registerConnectedShadowRoots(this, element);
 
 							const childElements = element.querySelectorAll("*");
 							for (const childElement of childElements) {
 								invalidateElementCaches(this, childElement);
 								attachPseudoElementsToElement(this, childElement);
+								registerConnectedShadowRoots(this, childElement);
 							}
 						}
 					}
@@ -5929,6 +5933,7 @@ export class Cascade {
 						if (isStyleElement(element)) {
 							shouldSyncStylesheets = true;
 						}
+						removedElements = true;
 					}
 				}
 				// A child that came or went changes what `li + li`,
@@ -6037,6 +6042,18 @@ export class Cascade {
 
 		for (const parent of changedParents) {
 			invalidateChildren(this, parent);
+		}
+		// A root whose host left the document lets go of its tree, and its
+		// rules with it. Kept, every shadow tree ever removed stayed alive.
+		// A host connected again registers its root again on the way in.
+		if (removedElements) {
+			for (const root of this[kShadowRoots]) {
+				if (!root.host.isConnected) {
+					this[kShadowRoots].delete(root);
+					setShadowRootObserved(root, false);
+					shouldSyncStylesheets = true;
+				}
+			}
 		}
 		if (shouldSyncStylesheets) {
 			this.syncStylesheets();
@@ -6272,6 +6289,26 @@ function usedGridTracks(
 
 // Re-parse ONE shadow root's sheets in place. Only trees the root's
 // rules can reach restyle. A pending full rebuild covers this root.
+// An element arriving connected brings its shadow tree, and any nested in
+// it, back into the cascade: one it registered on attach is let go when it
+// leaves the document.
+function registerConnectedShadowRoots(
+	cascade: Cascade,
+	element: Element,
+): void {
+	const root = getShadowRoot(element) as ShadowRoot | null;
+	if (
+		root === null || !element.isConnected || cascade[kShadowRoots].has(root)
+	) {
+		return;
+	}
+	setShadowRootObserved(root, true);
+	cascade.registerShadowRoot(root);
+	for (const child of root.querySelectorAll("*")) {
+		registerConnectedShadowRoots(cascade, child);
+	}
+}
+
 function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	if (cascade[kStylesheetsDirty] || cascade[kParsedStyleSheetCount] < 0) {
 		cascade[kStylesheetsDirty] = true;
