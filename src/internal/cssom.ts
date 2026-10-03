@@ -195,6 +195,40 @@ export function getTabSize(element: Element | null): number {
 	return typeof length === "number" && length >= 0 ? Math.round(length) : 8;
 }
 
+/**
+ * An element's padding, in cells, or what toCellLength gives a side it
+ * cannot resolve yet. Equal opposite sides stay equal: each is a whole
+ * number of cells, an exact half rounding down. Placed by rounding its two
+ * edges, a 9px pair at 15px rows drew a row above a button's label and
+ * none below it.
+ */
+export function getCellPadding(
+	element: Element,
+): Record<
+	"top" | "right" | "bottom" | "left",
+	ReturnType<typeof toCellLength>
+> {
+	const side = (edge: string, vertical: boolean) =>
+		toCellLength(
+			CSSValues.parseUnitValue(getComputedValue(element, `padding-${edge}`)),
+			vertical,
+			element,
+		);
+	const padding = {
+		top: side("top", true),
+		right: side("right", false),
+		bottom: side("bottom", true),
+		left: side("left", false),
+	};
+	for (const [start, end] of [["top", "bottom"], ["left", "right"]] as const) {
+		const length = padding[start];
+		if (typeof length === "number" && length === padding[end]) {
+			padding[start] = padding[end] = Math.ceil(length - 0.5);
+		}
+	}
+	return padding;
+}
+
 /** An element's margins, borders and padding, in cells. */
 export function getBoxModel(element: Element): CSSValues.BoxModel {
 	// The engine's own read: the cascade's declaration directly, without
@@ -210,10 +244,12 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 	const widthValue = length("width", false);
 	const heightValue = length("height", true);
 
-	const paddingTop = length("padding-top", true);
-	const paddingRight = length("padding-right", false);
-	const paddingBottom = length("padding-bottom", true);
-	const paddingLeft = length("padding-left", false);
+	const {
+		top: paddingTop,
+		right: paddingRight,
+		bottom: paddingBottom,
+		left: paddingLeft,
+	} = getCellPadding(element);
 
 	const marginTop = length("margin-top", true, true);
 	const marginRight = length("margin-right", false, true);
@@ -4312,8 +4348,20 @@ function getEdgeLength(
 
 function toDrawnEdge(element: Element, property: string, px: number): number {
 	const vertical = /-(?:top|bottom)(?:-|$)/.test(property);
-	const cells = property.startsWith("border-")
-		? toCellBorder(px, vertical, element)
+	if (property.startsWith("border-")) {
+		return cellsToPx(
+			toCellBorder(px, vertical, element) as number,
+			vertical,
+			element,
+		);
+	}
+	const paired = property.startsWith("padding-")
+		? getCellPadding(element)[
+			property.slice("padding-".length) as "top" | "right" | "bottom" | "left"
+		]
+		: undefined;
+	const cells = typeof paired === "number"
+		? paired
 		: toCellLength(px, vertical, element);
 	return cellsToPx(cells as number, vertical, element);
 }

@@ -3,6 +3,7 @@ import LineBreaker from "linebreak";
 import {cellsToPx, getCellSize, UNIT_CELL} from "./cellsize.ts";
 import {
 	getBoxModel,
+	getCellPadding,
 	getComputedValue,
 	getDeclaredDisplay,
 	getWhiteSpace as getElementWhiteSpace,
@@ -1132,6 +1133,7 @@ function styleLayoutNodeProperties(
 		// border like any block (css-display-3 §2.7). Without the parentIsFlex
 		// exception, `.row{display:flex} .row span{padding:1}` dropped the span's
 		// padding.
+		const padding = getCellPadding(element);
 		for (const edge of EDGES) {
 			const property = `margin-${edge}`;
 			const vertical = edge === "top" || edge === "bottom";
@@ -1144,15 +1146,7 @@ function styleLayoutNodeProperties(
 				margin ??
 				(getComputedValue(element, property) === "auto" ? "auto" : undefined),
 			);
-			style.padding[edge] = toValue(
-				toCellLength(
-					CSSValues.parseUnitValue(
-						getComputedValue(element, `padding-${edge}`),
-					),
-					vertical,
-					element,
-				),
-			);
+			style.padding[edge] = toValue(padding[edge]);
 			// The used width is 0 when the side's style is none or hidden
 			// (css-backgrounds §3.3), the same rule as getBoxModel, or the two
 			// box models disagree about the same element.
