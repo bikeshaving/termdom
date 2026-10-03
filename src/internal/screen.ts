@@ -168,8 +168,12 @@ class FrameWriter {
 		return this;
 	}
 
+	/**
+	 * Origin mode goes off first. Another program can leave it on, and it
+	 * measures cursor moves from the top margin.
+	 */
 	setScrollRegion(top: number, bottom: number): this {
-		this[kOut].push(`\x1b[${top};${bottom}r`);
+		this[kOut].push(`\x1b[?6l\x1b[${top};${bottom}r`);
 		return this;
 	}
 

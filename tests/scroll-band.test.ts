@@ -116,7 +116,7 @@ describe("banded element scroll", () => {
 		// the margins, so the terminal never moves them and the frame never
 		// mentions them. Only the three rows the delete exposed are painted.
 		expect(terminal.taken()).toBe(
-			"\x1b[?2026h\x1b[2;10r\x1b[2;1H\x1b[3M\x1b[r" +
+			"\x1b[?2026h\x1b[?6l\x1b[2;10r\x1b[2;1H\x1b[3M\x1b[r" +
 			"\x1b[1;1H\x1b7" +
 			"\r\n\r\n\r\n\r\n\r\n\r\n\r\n" +
 			"\r\x1b[Krow 9                                   " +
@@ -141,7 +141,7 @@ describe("banded element scroll", () => {
 		await nextFrame(dom);
 
 		expect(terminal.taken()).toBe(
-			"\x1b[?2026h\x1b[2;10r\x1b[2;1H\x1b[2M\x1b[r" +
+			"\x1b[?2026h\x1b[?6l\x1b[2;10r\x1b[2;1H\x1b[2M\x1b[r" +
 			"\x1b[1;1H\x1b7" +
 			"\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n" +
 			"\r\x1b[Krow 9\r\n\r\x1b[Krow 10" +
@@ -167,7 +167,7 @@ describe("banded element scroll", () => {
 		await nextFrame(dom);
 
 		expect(terminal.taken()).toBe(
-			"\x1b[?2026h\x1b[2;10r\x1b[2;1H\x1b[2L\x1b[r" +
+			"\x1b[?2026h\x1b[?6l\x1b[2;10r\x1b[2;1H\x1b[2L\x1b[r" +
 			"\x1b[1;1H\x1b7" +
 			"\r\n\r\x1b[Krow 3\r\n\r\x1b[Krow 4" +
 			"\x1b[11;1H\x1b[?2026l",
@@ -255,4 +255,36 @@ describe("banded element scroll", () => {
 		);
 		dom.dispose();
 	});
+});
+
+// Another program can leave origin mode on, which measures cursor moves
+// from the top margin and puts the band's delete or insert a row low.
+test("a band scrolls in a terminal left in origin mode", async () => {
+	const proc = new MockProcess({cols: 40, rows: 12});
+	await new Promise<void>((resolve) =>
+		proc.terminal.write("\x1b[?6h", resolve),
+	);
+	const dom = new TermDOM({transport: transportFromProcess(proc as any)});
+	dom.attach();
+	const stage = dom.document.createElement("div");
+	stage.innerHTML = CHROME_AND_PANE;
+	dom.document.body.appendChild(stage);
+	await stage.requestFullscreen();
+	await nextFrame(dom);
+
+	const pane = dom.document.getElementById("pane")!;
+	const rows = (from: number) => [
+		"HEADER",
+		...Array.from({length: 9}, (_, i) => `row ${from + i}`),
+		"FOOTER",
+	];
+	const screen = () =>
+		proc.getPlainText().split("\n").slice(0, 11).map((line) => line.trimEnd());
+	pane.scrollTop = 3;
+	await nextFrame(dom);
+	expect(screen()).toEqual(rows(3));
+	pane.scrollTop = 1;
+	await nextFrame(dom);
+	expect(screen()).toEqual(rows(1));
+	dom.dispose();
 });
