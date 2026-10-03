@@ -17,12 +17,9 @@ exports[`email fixture: calendar-rtl.html 1`] = `
   │                                                          xxxx xxxx xxx xxxx                  │
   │     xxxxx xxx xxxxxxxxxxxxxxxxxxxxx                      xxxx xxxxxxxxx                      │
   │                                                                                              │
-  │     ╭────────────────────────╮                           xxxx xxxxx xxxxxxx                  │
-  │     │  xxx  │  xx  │  xxxxx  │                                                               │
-  │     ╰────────────────────────╯                                                               │
-  │     ╭────────────────╮                                                                       │
-  │     │  xxxx xxxxxxx  │                                                                       │
-  │     ╰────────────────╯                                                                       │
+  │     ╭────────────────────────╮  ╭────────────────╮       xxxx xxxxx xxxxxxx                  │
+  │     │  xxx  │  xx  │  xxxxx  │  │  xxxx xxxxxxx  │                                           │
+  │     ╰────────────────────────╯  ╰────────────────╯                                           │
   │                                                                                              │
   │                                                                                              │
   │                                                                                              │
@@ -49,7 +46,7 @@ exports[`email fixture: card-percent-cell.html 1`] = `
 
 
 
-                                      x xxxxxxx xxxx xxxxxxxxxx
+                                     x xxxxxxx xxxx xxxxxxxxxx
 
 
            ──────────────────────────────────────────────────────────────────────────────
@@ -79,12 +76,13 @@ exports[`email fixture: card-percent-cell.html 1`] = `
            xxxx xxxxxxxxx xx xxxxxx xxx xxxxxx xx xxxx xxx xxxx xxxxxx xx xx xxxxxxxx xxx
            xxx xxxx xxxxxxxx xxxxxxxxx
 
-
             ╭──────────────────────────────────────────────────────────────────────────╮
             │                                                                          │
             │                          xxxxxx xx xxxxxxxxxx xx                         │
             │                                                                          │
+            │                                                                          │
             ╰──────────────────────────────────────────────────────────────────────────╯
+
 
 
 
@@ -118,7 +116,6 @@ exports[`email fixture: card-percent-cell.html 1`] = `
      xxxxxxxxxx xx xxxxxxx xxxxxx xx xxxxxxxxxxxxx xxxxx xxxx xxxx xx xx xxxxxxx xxx xxxxxxxxxx
                                       xx xxxxxxxxxxxxx xxxxxxx
 
-
       xxxx xxxxxxxxx xxxx xxxxxx xxxxxxxxx xxx xxxx xxxxxx xxxxxxxxxxxxxx xxx xxx xxxxxxxxxxxxx
       xxxxxxxx xxxxx xxx xxx xxx x xxxxxxxxxxxxxxx xxxxxxxxxxxxx xx xxxxxxxx xxxxxx xxxxxxxx xx
           xxx xxxxxxxxxx xxxxxxxxx xxxxxxxxx xx xxxxxxx xxxxxx xxx xxxxxxxxxxx xxxxxxx xxxx
@@ -138,6 +135,7 @@ exports[`email fixture: card-percent-cell.html 1`] = `
                                      xxxxxxxx xxxx x xx xxx xxxx
 
                            xxx xxxx xxxx xxxx xxxxx xxxx xxxxxxxx xx xxxxx
+
 
                                  xxxxxxx xxxxxx xxx xxxxx xx xxxxxxx
 
@@ -248,7 +246,9 @@ exports[`email fixture: card-percent-cell.html 1`] = `
 36: 7-93 #ffffff
 36: 93-100 #f5f5f5
 37: 0-7 #f5f5f5
-37: 7-93 #ffffff
+37: 7-12 #ffffff
+37: 12-88 #1b16b2
+37: 88-93 #ffffff
 37: 93-100 #f5f5f5
 38: 0-7 #f5f5f5
 38: 7-12 #ffffff
@@ -442,11 +442,16 @@ exports[`email fixture: card-percent-cell.html 1`] = `
 97: 99-100 #f5f5f5
 98: 0-1 #f5f5f5
 98: 1-99 #303345
-98: 99-100 #f5f5f5`;
+98: 99-100 #f5f5f5
+99: 0-1 #f5f5f5
+99: 1-99 #303345
+99: 99-100 #f5f5f5`;
 
 exports[`email fixture: ghost-article.html 1`] = `
 
+
        xxxxxx xx xxxx
+
 
        xx xxxxx x x xxx xxxx                                                  View in browser
 
@@ -463,12 +468,14 @@ exports[`email fixture: ghost-article.html 1`] = `
 
        xxxxxxxx xxxxx xx x xxxxxx xxxxxxx xx xxxx xxxxxxx xxx xxxxxx xxxxxx xxx xxxx xxx
 
+
        xx xx xxxxx
 
 
          • xxxxxx xxx xxxxxxx xxx xxxxx xxxx xxx xxxxx
 
          • xxx xxxxxxxxxx xxxxxxx xxxx xxxxxxxx xxxxxxx xx xxx xx xx xxx
+
          • xx xxx xxxx xxxxxxx xxxx xx x xxxxxxxx xxxxxxx xxxxxxxx xx xxx xxxxxxxx xx
            xxxxx
 
@@ -489,14 +496,15 @@ exports[`email fixture: ghost-article.html 1`] = `
 
 
 
+
                                     xxxxxxx xx xxxxxxxx xxxxxxxx
 
                    xxxxxx x xxxx xxxxxx xx xx xxxxxx xx xxx xxxxxx xx xxx xxxxxxx
                                               xxxxxxxx
 
 
-
                                                Upgrade
+
 
 
 
@@ -513,8 +521,8 @@ exports[`email fixture: ghost-article.html 1`] = `
 
 
        xx xxxxxx xxxxxxx xxxxxx xxx xxxx
-
        xxxxx xx xxxxxxxxx x xxxx xxxxxxxxxx xx xxxxxxx xxxx xxxxxxxxxxx
+
 
 
 
@@ -539,17 +547,18 @@ exports[`email fixture: ghost-article.html 1`] = `
 
 
 
+
        ──────────────────────────────────────────────────────────────────────────────────────
 
 
 
 
-            xx xxxxxx xx xxx xxxxxxx xxx x xx xxxxxxxxxx xxxx xxx xxxxxxxx xxxxxxxx xxxxx
+           xx xxxxxx xx xxx xxxxxxx xxx x xx xxxxxxxxxx xxxx xxx xxxxxxxx xxxxxxxx xxxxx
            xxx xx xxxxxxxx xx xx xxxx xxxxxxxx xxx xxxxxx xxxxxx xxxxxxxx xxxxx xxxx xxxx
-                                            xx xxxxxxxxxx
+                                           xx xxxxxxxxxx
 
-                                        xxxxx xxxxxxx xxxxxxx
-                                xxxxxx xxxxxxxx xxxxxx xxxxxx xxxxxxx
+                                       xxxxx xxxxxxx xxxxxxx
+                               xxxxxx xxxxxxxx xxxxxx xxxxxx xxxxxxx
 
 
 
@@ -607,17 +616,17 @@ exports[`email fixture: ghost-article.html 1`] = `
 48: 0-100 #faf9f5
 49: 0-100 #faf9f5
 50: 0-100 #faf9f5
-51: 0-44 #faf9f5
-51: 44-57 #191a16
-51: 57-100 #faf9f5
-52: 0-44 #faf9f5
-52: 44-57 #191a16
-52: 57-100 #faf9f5
+51: 0-100 #faf9f5
+52: 0-100 #faf9f5
 53: 0-100 #faf9f5
 54: 0-100 #faf9f5
 55: 0-100 #faf9f5
-56: 0-100 #faf9f5
-57: 0-100 #faf9f5
+56: 0-44 #faf9f5
+56: 44-57 #191a16
+56: 57-100 #faf9f5
+57: 0-44 #faf9f5
+57: 44-57 #191a16
+57: 57-100 #faf9f5
 58: 0-100 #faf9f5
 59: 0-100 #faf9f5
 60: 0-100 #faf9f5
@@ -672,7 +681,13 @@ exports[`email fixture: ghost-article.html 1`] = `
 109: 0-100 #faf9f5
 110: 0-100 #faf9f5
 111: 0-100 #faf9f5
-112: 0-100 #faf9f5`;
+112: 0-100 #faf9f5
+113: 0-100 #faf9f5
+114: 0-100 #faf9f5
+115: 0-100 #faf9f5
+116: 0-100 #faf9f5
+117: 0-100 #faf9f5
+118: 0-100 #faf9f5`;
 
 exports[`email fixture: inline-block-button.html 1`] = `
 
@@ -698,35 +713,35 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
 
 
-
-
                                        XXXXXXXXXX XXX XXXXXXX
 
-                                      xxxx xxxx x xxxxx xxxxxx
-                                          XXXXXXX XXXX XXXX
 
+                                      xxxx xxxx x xxxxx xxxxxx
+
+
+                                         XXXXXXX XXXX XXXX
 
 
 
                            xxxxxxxxxxxx x xxx xxxx xxxxx x xx xxxx xxxxxx
-                                    XXXXX XXXXXXX X XXXX XXXXXXXX
 
+                                   XXXXX XXXXXXX X XXXX XXXXXXXX
 
-              xxxx xxxx xxxxxxxx xxxxxxxx xx xxxxxxxx xxxxx xxxx xxxx xxxxxxx xxxx xxxx
+             xxxx xxxx xxxxxxxx xxxxxxxx xx xxxxxxxx xxxxx xxxx xxxx xxxxxxx xxxx xxxx
                xxxxxxx xxxxxxx x xxx xxxx xxx xxxxxxx xxx xxx xxxx xxxxxxxxxx xxxx xx
-                                   xxxx xx xxx xxxx xxxxxxxx xxxxx
+                                  xxxx xx xxx xxxx xxxxxxxx xxxxx
 
 
                                          X  XXXXX XXX XXXXX
 
 
-                                                  ╭──────────────────────╮
-                                                  │                      │
-                                GET TICKETS       │     WATCH ONLINE     │
-                                                  │                      │
-                                                  ╰──────────────────────╯
+                                                 ╭──────────────────────╮
+                                                 │                      │
+                               GET TICKETS       │     WATCH ONLINE     │
+                                                 │                      │
+                                                 ╰──────────────────────╯
 
-                                       xxx xxx xxxx xxxx xxxxx
+                                      xxx xxx xxxx xxxx xxxxx
                                  xx xxxxxxxxxxx xxxx xxx xxxxx xxxx
 
 
@@ -734,7 +749,7 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
                                          xxxxx xx xxx xxxxx
 
-                                       XXXXXXXXX XXXXX XXXXXXX
+                                      XXXXXXXXX XXXXX XXXXXXX
                                     xxx xx xxxx xxxxxxx xxx xxxx
 
                                    XXXXXXX XXXXXXX X  X  XXXXXXXX
@@ -744,20 +759,7 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
                                             XXXXXXX XXXX
 
-                                 XXXXXXX XXXXX XXXXXXX XXXXXXXXXXXXX
-
-
-
-
-
-
-
-               xxxx xxxxxxx      xxxxxxx xxxxxxxx       xxxxxxxxx      xxxxxxxx xxxxxxxx
-                  xxxxxxx       xxxxxxxxxx xx xxx       xxxxxxxxx           xxxxxxxx
-                xxxxxxxxxx             xxx               xxxxxxx
-
-
-                                             XXXXXXXXXXX
+                                XXXXXXX XXXXX XXXXXXX XXXXXXXXXXXXX
 
 
 
@@ -766,20 +768,34 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
 
 
-                    xxx xxxx                 xxx xxxxxx             xxxxxxxx xxxxxxxx
-                    xxxxxxxx                  xxx xxxxx                 xxxxxxxxx
+               xxxx xxxxxxx      xxxxxxx xxxxxxxx      xxxxxxxxx      xxxxxxxx xxxxxxxx
+                 xxxxxxx        xxxxxxxxxx xx xxx      xxxxxxxxx           xxxxxxxx
+                xxxxxxxxxx             xxx              xxxxxxx
 
 
-                                          XXXXXX X XXXXXXXX
-
-
-
-
+                                            XXXXXXXXXXX
 
 
 
-                  xxxxxx xxxxx               xxxx xxxxxx              xxxxx xxxxxx
-                  xxx xxxxxxxxx                  xxx                       xxx
+
+
+
+
+                    xxx xxxx                 xxx xxxxxx            xxxxxxxx xxxxxxxx
+                    xxxxxxxx                 xxx xxxxx                 xxxxxxxxx
+
+
+                                         XXXXXX X XXXXXXXX
+
+
+
+
+
+
+
+
+                  xxxxxx xxxxx              xxxx xxxxxx               xxxxx xxxxxx
+                 xxx xxxxxxxxx                  xxx                       xxx
 
 
                                              XXXXXXXXXX
@@ -791,7 +807,7 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
 
 
-                   xxxxx xxxxx               xxxxx xxxxx             xxxxx xxxxxxxxx
+                  xxxxx xxxxx               xxxxx xxxxx             xxxxx xxxxxxxxx
                  xxxx xxxxxxxxx        xxxxxxxxxxxxx xxxxxxxx         xxxxxxxxxxxx
 
 
@@ -799,44 +815,47 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
                                        xxxxxxx xxxxxx xx xxxx
 
-                 xxxxx xxx xxx xx xxxx xxxx xxxx xxxxxxxxx xxx xxxxxxx xxxxx xxxxxxx
-                xxxxx xxxxxx xxxxxxxx xxxxx xxxxxx xx xxxxxx xx xxx xxxxxxxxx xx xxxx
+
+                xxxxx xxx xxx xx xxxx xxxx xxxx xxxxxxxxx xxx xxxxxxx xxxxx xxxxxxx
+               xxxxx xxxxxx xxxxxxxx xxxxx xxxxxx xx xxxxxx xx xxx xxxxxxxxx xx xxxx
                                                xxxxxx
 
 
-                   ┌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐
-                   ┆                                                             ┆
-                   ┆                                                             ┆
-                   ┆                        XXXXXXX XXXXX                        ┆
-                   ┆              XX XXXXXXXXXXX XXXX XXX XXXXX XXXX             ┆
-                   ┆                                                             ┆
-                   ┆                           xxx xxx                           ┆
-                   ┆                                                             ┆
-                   ┆                            XXXXX                            ┆
-                   ┆                                                             ┆
-                   ┆                                                             ┆
-                   ┆      xxxxx xxx xxxx xx xxxxxxxxx xxxxx xx xxxxxxxxx xxx     ┆
-                   ┆                      xxxxxxxxx xxxxxxxx                     ┆
-                   ┆                                                             ┆
-                   └╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘
+                   ┌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐
+                   ┆                                                            ┆
+                   ┆                                                            ┆
+                   ┆                        XXXXXXX XXXXX                       ┆
+                   ┆             XX XXXXXXXXXXX XXXX XXX XXXXX XXXX             ┆
+                   ┆                                                            ┆
+                   ┆                           xxx xxx                          ┆
+                   ┆                                                            ┆
+                   ┆                                                            ┆
+                   ┆                            XXXXX                           ┆
+                   ┆                                                            ┆
+                   ┆                                                            ┆
+                   ┆     xxxxx xxx xxxx xx xxxxxxxxx xxxxx xx xxxxxxxxx xxx     ┆
+                   ┆                     xxxxxxxxx xxxxxxxx                     ┆
+                   ┆                                                            ┆
+                   └╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘
 
 
 
-                                             GET TICKETS
+                                            GET TICKETS
 
 
-                xx xxxxxx xx xxx xxxxxxxxx xxxxx xxxxxxxx xx xxxxxxxxx xxxx xxxxxxxxx
-
+               xx xxxxxx xx xxx xxxxxxxxx xxxxx xxxxxxxx xx xxxxxxxxx xxxx xxxxxxxxx
 
 
 
 
                                      XXXXX XXXX XX XX XXX XXXXX
-                                        xxx xxxxxx xxxxxxxxxx
+
+                                       xxx xxxxxx xxxxxxxxxx
+
 
              xxxxx xxxxxxxxxxxxxxx xxxxxxxxxx xx xxx xxxxxxx xxxxxx xxxxxxxxx xxxxx xxx
              xxxxxxx xxxx xxxxxxxxx xxxxxxxx x xxxxxxx xx xxxxxxx xxxx xxx xxxx xxxxxxx
-                                           xx xxxx xxxxxxx
+                                          xx xxxx xxxxxxx
 
 
 
@@ -845,27 +864,28 @@ exports[`email fixture: inline-block-button.html 1`] = `
                                      XXX XXXX   │   XXXXXXXXXXXX
 
 
-                                           XXXX XXX XXXXXX
+
+                                          XXXX XXX XXXXXX
 
 
                                     xx xxxxx xxx xxxx xxxxx xxxx
 
-                                          xx xxxx xxxxxxxxx
+                                         xx xxxx xxxxxxxxx
 
 
 
 
 
-                                   XXXXXX  XXXXXXXX  XXX XXXXXXXXX
+                                  XXXXXX  XXXXXXXX  XXX XXXXXXXXX
 
                         xxxxxxxxx xx xxxxxxxxxxxxxxx  x  xxxxxxxxxxxxxxxxxxx
-                                     xxxxxxxx xxxxxxx xx xxxxxxx
-                                xxxxxxxxx x xxxx xxxxxxxxxxxxxxx xxxx
+                                    xxxxxxxx xxxxxxx xx xxxxxxx
+                               xxxxxxxxx x xxxx xxxxxxxxxxxxxxx xxxx
 
-                          xxxx xxxxx xxx xxxx xx xxxxxxxxxxxxxxxxxxxxxxxxxx
+                         xxxx xxxxx xxx xxxx xx xxxxxxxxxxxxxxxxxxxxxxxxxx
                  xxx xxx x xxx xxxxx xxxxxxxxxxx xxxx xxxx xxxx xxxxxx xxxxxxxxxxxx
-                                             xxxxxxxxxxx
-                  xxx xxxxx xxxx x xxxxx xxxxxxx xxxx x xxxxxxx xx xxxxxxxxxx x xxx
+                                            xxxxxxxxxxx
+                 xxx xxxxx xxxx x xxxxx xxxxxxx xxxx x xxxxxxx xx xxxxxxxxxx x xxx
 
 
 
@@ -1021,29 +1041,29 @@ exports[`email fixture: inline-block-button.html 1`] = `
 45: 7-93 #ffffff
 45: 93-100 #e7e9ed
 46: 0-7 #e7e9ed
-46: 7-27 #ffffff
-46: 27-48 #600820
-46: 48-93 #ffffff
+46: 7-26 #ffffff
+46: 26-47 #600820
+46: 47-93 #ffffff
 46: 93-100 #e7e9ed
 47: 0-7 #e7e9ed
-47: 7-27 #ffffff
-47: 27-48 #600820
-47: 48-93 #ffffff
+47: 7-26 #ffffff
+47: 26-47 #600820
+47: 47-93 #ffffff
 47: 93-100 #e7e9ed
 48: 0-7 #e7e9ed
-48: 7-27 #ffffff
-48: 27-48 #600820
-48: 48-93 #ffffff
+48: 7-26 #ffffff
+48: 26-47 #600820
+48: 47-93 #ffffff
 48: 93-100 #e7e9ed
 49: 0-7 #e7e9ed
-49: 7-27 #ffffff
-49: 27-48 #600820
-49: 48-93 #ffffff
+49: 7-26 #ffffff
+49: 26-47 #600820
+49: 47-93 #ffffff
 49: 93-100 #e7e9ed
 50: 0-7 #e7e9ed
-50: 7-27 #ffffff
-50: 27-48 #600820
-50: 48-93 #ffffff
+50: 7-26 #ffffff
+50: 26-47 #600820
+50: 47-93 #ffffff
 50: 93-100 #e7e9ed
 51: 0-7 #e7e9ed
 51: 7-93 #ffffff
@@ -1145,9 +1165,7 @@ exports[`email fixture: inline-block-button.html 1`] = `
 118: 0-100 #e7e9ed
 119: 0-100 #e7e9ed
 120: 0-100 #e7e9ed
-121: 0-7 #e7e9ed
-121: 7-93 #f6e3dd
-121: 93-100 #e7e9ed
+121: 0-100 #e7e9ed
 122: 0-7 #e7e9ed
 122: 7-93 #f6e3dd
 122: 93-100 #e7e9ed
@@ -1173,127 +1191,129 @@ exports[`email fixture: inline-block-button.html 1`] = `
 129: 7-93 #f6e3dd
 129: 93-100 #e7e9ed
 130: 0-7 #e7e9ed
-130: 7-19 #f6e3dd
-130: 19-82 #ffffff
-130: 82-93 #f6e3dd
+130: 7-93 #f6e3dd
 130: 93-100 #e7e9ed
 131: 0-7 #e7e9ed
-131: 7-19 #f6e3dd
-131: 19-82 #ffffff
-131: 82-93 #f6e3dd
+131: 7-93 #f6e3dd
 131: 93-100 #e7e9ed
 132: 0-7 #e7e9ed
 132: 7-19 #f6e3dd
-132: 19-82 #ffffff
-132: 82-93 #f6e3dd
+132: 19-81 #ffffff
+132: 81-93 #f6e3dd
 132: 93-100 #e7e9ed
 133: 0-7 #e7e9ed
 133: 7-19 #f6e3dd
-133: 19-82 #ffffff
-133: 82-93 #f6e3dd
+133: 19-81 #ffffff
+133: 81-93 #f6e3dd
 133: 93-100 #e7e9ed
 134: 0-7 #e7e9ed
 134: 7-19 #f6e3dd
-134: 19-82 #ffffff
-134: 82-93 #f6e3dd
+134: 19-81 #ffffff
+134: 81-93 #f6e3dd
 134: 93-100 #e7e9ed
 135: 0-7 #e7e9ed
 135: 7-19 #f6e3dd
-135: 19-82 #ffffff
-135: 82-93 #f6e3dd
+135: 19-81 #ffffff
+135: 81-93 #f6e3dd
 135: 93-100 #e7e9ed
 136: 0-7 #e7e9ed
 136: 7-19 #f6e3dd
-136: 19-82 #ffffff
-136: 82-93 #f6e3dd
+136: 19-81 #ffffff
+136: 81-93 #f6e3dd
 136: 93-100 #e7e9ed
 137: 0-7 #e7e9ed
 137: 7-19 #f6e3dd
-137: 19-44 #ffffff
-137: 44-57 #1c2127
-137: 57-82 #ffffff
-137: 82-93 #f6e3dd
+137: 19-81 #ffffff
+137: 81-93 #f6e3dd
 137: 93-100 #e7e9ed
 138: 0-7 #e7e9ed
 138: 7-19 #f6e3dd
-138: 19-44 #ffffff
-138: 44-57 #1c2127
-138: 57-82 #ffffff
-138: 82-93 #f6e3dd
+138: 19-81 #ffffff
+138: 81-93 #f6e3dd
 138: 93-100 #e7e9ed
 139: 0-7 #e7e9ed
 139: 7-19 #f6e3dd
-139: 19-44 #ffffff
-139: 44-57 #1c2127
-139: 57-82 #ffffff
-139: 82-93 #f6e3dd
+139: 19-81 #ffffff
+139: 81-93 #f6e3dd
 139: 93-100 #e7e9ed
 140: 0-7 #e7e9ed
 140: 7-19 #f6e3dd
-140: 19-82 #ffffff
-140: 82-93 #f6e3dd
+140: 19-44 #ffffff
+140: 44-57 #1c2127
+140: 57-81 #ffffff
+140: 81-93 #f6e3dd
 140: 93-100 #e7e9ed
 141: 0-7 #e7e9ed
 141: 7-19 #f6e3dd
-141: 19-82 #ffffff
-141: 82-93 #f6e3dd
+141: 19-44 #ffffff
+141: 44-57 #1c2127
+141: 57-81 #ffffff
+141: 81-93 #f6e3dd
 141: 93-100 #e7e9ed
 142: 0-7 #e7e9ed
 142: 7-19 #f6e3dd
-142: 19-82 #ffffff
-142: 82-93 #f6e3dd
+142: 19-44 #ffffff
+142: 44-57 #1c2127
+142: 57-81 #ffffff
+142: 81-93 #f6e3dd
 142: 93-100 #e7e9ed
 143: 0-7 #e7e9ed
 143: 7-19 #f6e3dd
-143: 19-82 #ffffff
-143: 82-93 #f6e3dd
+143: 19-81 #ffffff
+143: 81-93 #f6e3dd
 143: 93-100 #e7e9ed
 144: 0-7 #e7e9ed
 144: 7-19 #f6e3dd
-144: 19-82 #ffffff
-144: 82-93 #f6e3dd
+144: 19-81 #ffffff
+144: 81-93 #f6e3dd
 144: 93-100 #e7e9ed
 145: 0-7 #e7e9ed
-145: 7-93 #f6e3dd
+145: 7-19 #f6e3dd
+145: 19-81 #ffffff
+145: 81-93 #f6e3dd
 145: 93-100 #e7e9ed
 146: 0-7 #e7e9ed
-146: 7-93 #f6e3dd
+146: 7-19 #f6e3dd
+146: 19-81 #ffffff
+146: 81-93 #f6e3dd
 146: 93-100 #e7e9ed
 147: 0-7 #e7e9ed
-147: 7-40 #f6e3dd
-147: 40-61 #600820
-147: 61-93 #f6e3dd
+147: 7-19 #f6e3dd
+147: 19-81 #ffffff
+147: 81-93 #f6e3dd
 147: 93-100 #e7e9ed
 148: 0-7 #e7e9ed
-148: 7-40 #f6e3dd
-148: 40-61 #600820
-148: 61-93 #f6e3dd
+148: 7-93 #f6e3dd
 148: 93-100 #e7e9ed
 149: 0-7 #e7e9ed
-149: 7-40 #f6e3dd
-149: 40-61 #600820
-149: 61-93 #f6e3dd
+149: 7-93 #f6e3dd
 149: 93-100 #e7e9ed
 150: 0-7 #e7e9ed
-150: 7-93 #f6e3dd
+150: 7-39 #f6e3dd
+150: 39-60 #600820
+150: 60-93 #f6e3dd
 150: 93-100 #e7e9ed
 151: 0-7 #e7e9ed
-151: 7-93 #f6e3dd
+151: 7-39 #f6e3dd
+151: 39-60 #600820
+151: 60-93 #f6e3dd
 151: 93-100 #e7e9ed
 152: 0-7 #e7e9ed
-152: 7-93 #f6e3dd
+152: 7-39 #f6e3dd
+152: 39-60 #600820
+152: 60-93 #f6e3dd
 152: 93-100 #e7e9ed
 153: 0-7 #e7e9ed
 153: 7-93 #f6e3dd
 153: 93-100 #e7e9ed
 154: 0-7 #e7e9ed
-154: 7-93 #ab2914
+154: 7-93 #f6e3dd
 154: 93-100 #e7e9ed
 155: 0-7 #e7e9ed
-155: 7-93 #ffffff
+155: 7-93 #f6e3dd
 155: 93-100 #e7e9ed
 156: 0-7 #e7e9ed
-156: 7-93 #ffffff
+156: 7-93 #f6e3dd
 156: 93-100 #e7e9ed
 157: 0-7 #e7e9ed
 157: 7-93 #ffffff
@@ -1335,19 +1355,13 @@ exports[`email fixture: inline-block-button.html 1`] = `
 169: 7-93 #ffffff
 169: 93-100 #e7e9ed
 170: 0-7 #e7e9ed
-170: 7-38 #ffffff
-170: 38-63 #600820
-170: 63-93 #ffffff
+170: 7-93 #ffffff
 170: 93-100 #e7e9ed
 171: 0-7 #e7e9ed
-171: 7-38 #ffffff
-171: 38-63 #600820
-171: 63-93 #ffffff
+171: 7-93 #ffffff
 171: 93-100 #e7e9ed
 172: 0-7 #e7e9ed
-172: 7-38 #ffffff
-172: 38-63 #600820
-172: 63-93 #ffffff
+172: 7-93 #ffffff
 172: 93-100 #e7e9ed
 173: 0-7 #e7e9ed
 173: 7-93 #ffffff
@@ -1356,31 +1370,37 @@ exports[`email fixture: inline-block-button.html 1`] = `
 174: 7-93 #ffffff
 174: 93-100 #e7e9ed
 175: 0-7 #e7e9ed
-175: 7-93 #ffffff
+175: 7-37 #ffffff
+175: 37-62 #600820
+175: 62-93 #ffffff
 175: 93-100 #e7e9ed
 176: 0-7 #e7e9ed
-176: 7-93 #ffffff
+176: 7-37 #ffffff
+176: 37-62 #600820
+176: 62-93 #ffffff
 176: 93-100 #e7e9ed
 177: 0-7 #e7e9ed
-177: 7-93 #ffffff
+177: 7-37 #ffffff
+177: 37-62 #600820
+177: 62-93 #ffffff
 177: 93-100 #e7e9ed
 178: 0-7 #e7e9ed
 178: 7-93 #ffffff
 178: 93-100 #e7e9ed
 179: 0-7 #e7e9ed
-179: 7-93 #1c2127
+179: 7-93 #ffffff
 179: 93-100 #e7e9ed
 180: 0-7 #e7e9ed
-180: 7-93 #1c2127
+180: 7-93 #ffffff
 180: 93-100 #e7e9ed
 181: 0-7 #e7e9ed
-181: 7-93 #1c2127
+181: 7-93 #ffffff
 181: 93-100 #e7e9ed
 182: 0-7 #e7e9ed
-182: 7-93 #1c2127
+182: 7-93 #ffffff
 182: 93-100 #e7e9ed
 183: 0-7 #e7e9ed
-183: 7-93 #1c2127
+183: 7-93 #ffffff
 183: 93-100 #e7e9ed
 184: 0-7 #e7e9ed
 184: 7-93 #1c2127
@@ -1415,18 +1435,32 @@ exports[`email fixture: inline-block-button.html 1`] = `
 194: 0-7 #e7e9ed
 194: 7-93 #1c2127
 194: 93-100 #e7e9ed
-195: 0-100 #e7e9ed
-196: 0-100 #e7e9ed
-197: 0-100 #e7e9ed
-198: 0-100 #e7e9ed
-199: 0-100 #e7e9ed
+195: 0-7 #e7e9ed
+195: 7-93 #1c2127
+195: 93-100 #e7e9ed
+196: 0-7 #e7e9ed
+196: 7-93 #1c2127
+196: 93-100 #e7e9ed
+197: 0-7 #e7e9ed
+197: 7-93 #1c2127
+197: 93-100 #e7e9ed
+198: 0-7 #e7e9ed
+198: 7-93 #1c2127
+198: 93-100 #e7e9ed
+199: 0-7 #e7e9ed
+199: 7-93 #1c2127
+199: 93-100 #e7e9ed
 200: 0-100 #e7e9ed
 201: 0-100 #e7e9ed
 202: 0-100 #e7e9ed
-203: 0-100 #ffffff
-204: 0-100 #ffffff
-205: 0-100 #ffffff
-206: 0-100 #ffffff`;
+203: 0-100 #e7e9ed
+204: 0-100 #e7e9ed
+205: 0-100 #e7e9ed
+206: 0-100 #e7e9ed
+207: 0-100 #e7e9ed
+208: 0-100 #ffffff
+209: 0-100 #ffffff
+210: 0-100 #ffffff`;
 
 exports[`email fixture: inline-code.html 1`] = `
 
@@ -1437,8 +1471,8 @@ exports[`email fixture: inline-code.html 1`] = `
        │                                                                                    │
        │                                                                                    │
        │     xxxxxx xxxxxx x xxxxx xx                                                       │
-       │     xxxxx xxx                                                                      │
        │                                                                                    │
+       │     xxxxx xxx                                                                      │
        │                                                                                    │
        │     xxx xxxx x xxxxxxx xxxx xxxxxxxxxx xxxxxx xxxxx xx xxx xxx xxxxx xxxxxxxx      │
        │     xxxxx xx xxxx xxxx xxxx xxxxx xxxxx xxxxx xxxx xxx xxxxx xxxx xxxxxx           │
@@ -1452,6 +1486,7 @@ exports[`email fixture: inline-code.html 1`] = `
        │                                                                                    │
        │                                                                                    │
        │     XXXXXXXX                                                                       │
+       │                                                                                    │
        │     ──────────────────────────────────────────────────────────────────────────     │
        │                                                                                    │
        │                                                                                    │
@@ -1460,7 +1495,6 @@ exports[`email fixture: inline-code.html 1`] = `
        │     xxxxx xxxxxxx xxxxxxx xxx xxxxxxxxxx xxxxxx xx xxx xxxxx xxxxxx xxxxx          │
        │     xxxxxxxx xxxx xx xxxxx xxxxx xxxx xx xxxxxx xxxxxxxxx xxxxxxxxxx               │
        │                                                                                    │
-       │                                                                                    │
        │     xxxxxxxxx xxxx xxxxxxxxxxx xx xxxxxxxx xxxx xxx                                │
        │     xxxxxxxxxxx                                                                    │
        │     xxxxxxxx xxxxxxxxxxx xxxx xxxxx xxx xxxxxxxxxxxxxxxx xxxx xxxx xxxxxxxx        │
@@ -1468,10 +1502,10 @@ exports[`email fixture: inline-code.html 1`] = `
        │                                                                                    │
        │     xxx xxxxxxxxxx xxxxxxxxx x xxxxxxxxxxxx xxxx xxxxxxxx xxxxxxxxxxxxx xx         │
        │     xxxxxxxxxx                                                                     │
-       │                                                                                    │
        │     xxxxxxxxxxxxxxxxxxx                                                            │
        │     xx xxxxxx xxxxxxxxxxx xx xxxxxxxxxxxxxxxxxx xxxxxxx xxxxxxx xxxxxxxxx          │
        │     xxxxxxx                                                                        │
+       │                                                                                    │
        │                                                                                    │
        │                                                                                    │
        │     XXXXX                                                                          │
@@ -1480,43 +1514,41 @@ exports[`email fixture: inline-code.html 1`] = `
        │                                                                                    │
        │     xx xx xxxxxxxxx xxxxx                                                          │
        │     xxxxxxxxxxxxxxx                                                                │
-       │                                                                                    │
        │     x xxxxx xxxxxxxxx xxxx xxxxxxx xxxxxxx x xxxxx xxxxxxxx xxxxxxxxx xxxxx        │
        │     xxxx xxxxxx xxxxx xxx xxxxx xxxxxxxxxx xxx                                     │
        │                                                                                    │
        │                                                                                    │
        │     XXXXXXXXX                                                                      │
-       │     ──────────────────────────────────────────────────────────────────────────     │
        │                                                                                    │
+       │     ──────────────────────────────────────────────────────────────────────────     │
        │                                                                                    │
        │     xxxxxxxx xxxxx xx xxxxxxx xxxxx xxxx xx xxxxxxx xxxxxxx                        │
        │     xxxxxxxxxxxxxxx                                                                │
        │     xx xxx xxxxxxx xx xxxxxxx xxxxx xxx xxxxxx xxxx xx xxxxxxx xxxxxxx xx          │
        │     xxxxxx xxxxxxxxxxxx xxxxxx xxxxxxx xxxxx xx xxxx xx x xxxx xxxx                │
        │                                                                                    │
-       │     xxxx xxxxxxxxxx xx x xxxxxxx xxxx xxx xxxxxxxxxxxxxxxxxxx xxxxxx xxxxxxx       │
        │                                                                                    │
+       │     xxxx xxxxxxxxxx xx x xxxxxxx xxxx xxx xxxxxxxxxxxxxxxxxxx xxxxxx xxxxxxx       │
        │     xxxxxxx                                                                        │
        │     xxxxxx xxxxx x xxxxxxxxxxxxxxx xxxxxx xxxxxxx xxxx xxxxxxxxxx                  │
        │     xxxxxxxxxxxxxxxxxxxx                                                           │
        │                                                                                    │
        │     xxxxxxx xxxxxx xxxxx xxxxx xx xxxxxxx                                          │
        │     xxxxxxxxxxxxxxxx                                                               │
-       │                                                                                    │
        │     x xxxxxxxxx xxxxxxxxx xxx xxxxxxx xxxxxxx xxxxxxxxxxxxxxxxxxxxxx xxxxxx xx     │
        │     xxxxxx xxxx xxx xxxxxxx xxxxx                                                  │
        │                                                                                    │
        │     xxxxxx xxx xxxxxxx xxxxxxxx x xxxxxxxxxxxxx xxxxxx xxxxx xxxx xxxxxxxx xxx     │
        │     xxx                                                                            │
        │     xxxxxxxxxxxx                                                                   │
-       │                                                                                    │
        │     xxxxx xxx xx xxxx xxx xxxxx xxxxxx xxxxxxxxxxxx xxxx xxx xxxxx                 │
        │     xxxxxxxxxxxx xxxxx xxxxxx xxxx xxxxxxxxx xxxxxxx xxx xxxx                      │
        │                                                                                    │
        │                                                                                    │
-       │     XX                                                                             │
-       │     ──────────────────────────────────────────────────────────────────────────     │
        │                                                                                    │
+       │     XX                                                                             │
+       │                                                                                    │
+       │     ──────────────────────────────────────────────────────────────────────────     │
        │                                                                                    │
        │     xxxxxxxxx xxxx xxxxxxxx x xxxxxx xx xxxxxxxx xxx xxxxxxx xxxxxxxx              │
        │     xxxxxxxxxxx                                                                    │
@@ -1524,14 +1556,13 @@ exports[`email fixture: inline-code.html 1`] = `
        │     xxxxxxxxxx xxxxx xxxxxxxxxxx xxxx xx xx xxxxxxx xx xxxx xxxxxx xxx             │
        │     xxxxxxxxx xxx xxxxxxxxx xxxxxxxxxxxx xxxxxx xxxxxx                             │
        │                                                                                    │
-       │                                                                                    │
        │     xxxxxxxx xxxxxxxxxxx xxxxxxxxx xx xxx xx xxx                                   │
        │     xxxxxxxxxx                                                                     │
        │     xxxx xxxxx xx xxxx xxxxxxxxxxxxx xxxx xxxxx xxx xxxxxxxx xxxxxxx               │
        │     xxxxxxxxxx xxx xxxxxxxxxxxx xxxxxxxxxxxx xxx x xxx xxxxx                       │
        │                                                                                    │
-       │     xx xxxxx xx x xxxx xx                                                          │
        │                                                                                    │
+       │     xx xxxxx xx x xxxx xx                                                          │
        │     xxxxxxxxxxxxxxxxxxxxxx                                                         │
        │     xx xxxxxx xxxxxxx xxxx xxxx xxx xxxxxxxxxxx xxxx xxx xx xxxxxx xx xxxxx        │
        │     xxx xxx                                                                        │
@@ -1552,9 +1583,8 @@ exports[`email fixture: inline-code.html 1`] = `
        │                                                                                    │
        ╰────────────────────────────────────────────────────────────────────────────────────╯
 
-
-                                     xxxxxxxxxxx  x  xxxx xxxxxx
-                                        xxxxxxx xx xxxxx xxxx
+                                    xxxxxxxxxxx  x  xxxx xxxxxx
+                                       xxxxxxx xx xxxxx xxxx
 
 -- backgrounds --
 0: 0-100 #fafcfb
@@ -1771,15 +1801,15 @@ exports[`email fixture: inline-code.html 1`] = `
 72: 7-93 #ffffff
 72: 93-100 #fafcfb
 73: 0-7 #fafcfb
-73: 7-93 #ffffff
+73: 7-55 #ffffff
+73: 55-76 #000000
+73: 76-93 #ffffff
 73: 93-100 #fafcfb
 74: 0-7 #fafcfb
 74: 7-93 #ffffff
 74: 93-100 #fafcfb
 75: 0-7 #fafcfb
-75: 7-55 #ffffff
-75: 55-76 #000000
-75: 76-93 #ffffff
+75: 7-93 #ffffff
 75: 93-100 #fafcfb
 76: 0-7 #fafcfb
 76: 7-93 #ffffff
@@ -1913,21 +1943,12 @@ exports[`email fixture: inline-code.html 1`] = `
 119: 0-7 #fafcfb
 119: 7-93 #ffffff
 119: 93-100 #fafcfb
-120: 0-7 #fafcfb
-120: 7-93 #ffffff
-120: 93-100 #fafcfb
-121: 0-7 #fafcfb
-121: 7-93 #ffffff
-121: 93-100 #fafcfb
-122: 0-7 #fafcfb
-122: 7-93 #ffffff
-122: 93-100 #fafcfb
+120: 0-100 #fafcfb
+121: 0-100 #fafcfb
+122: 0-100 #fafcfb
 123: 0-100 #fafcfb
 124: 0-100 #fafcfb
-125: 0-100 #fafcfb
-126: 0-100 #fafcfb
-127: 0-100 #fafcfb
-128: 0-100 #fafcfb`;
+125: 0-100 #fafcfb`;
 
 exports[`email fixture: mjml-columns.html 1`] = `
 
@@ -1956,13 +1977,12 @@ xxx xxx xxxx x xxxxxx xxxx xxxxxxxxx xxxx xxx xxxx xxxxxxxx xxxxx xxxx xxxxxx xx
 
 xxxx xxxxxxxx
 
-
 xxxxxxx xxxxxxxxxxx xxxxxxx xxxxxxx
 
 
 
-   xxxx x xxxxxx
 
+   xxxx x xxxxxx
 
 
 
@@ -1974,6 +1994,7 @@ xxxxxxx xxxxxxxxxxx xxxxxxx xxxxxxx
 
 
 xxxxxxx xxxx xxxxxx
+
 xxxxxxxx xxx xxxxxxxx
 
 xxxxxxxxxxxxx xxxxxxxxxxx
@@ -2027,8 +2048,7 @@ xxxxxxxx x xxxx xxxx xx xxxxxx xxxxx xxxxx xxxx xxxxxxxx xxxxx xx xxxxx xxx
 32: 19-100 #ffffff
 33: 0-19 #0056d2
 33: 19-100 #ffffff
-34: 0-19 #0056d2
-34: 19-100 #ffffff
+34: 0-100 #ffffff
 35: 0-100 #ffffff
 36: 0-100 #ffffff
 37: 0-100 #ffffff
@@ -2058,7 +2078,7 @@ xxxxxxxx x xxxx xxxx xx xxxxxx xxxxx xxxxx xxxx xxxxxxxx xxxxx xx xxxxx xxx
 exports[`email fixture: nested-tables.html 1`] = `
          ╭╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╮
          ┆                                                                                ┆
-         ┆                              xxxxxx xxx xxx xxxxx                              ┆
+         ┆                             xxxxxx xxx xxx xxxxx                               ┆
          ┆                                                                                ┆
          ┆                                                                                ┆
          ┆                       xxx xxxx xxxxxxxxx xxx xxxx xxxxxxxx                     ┆
@@ -2168,128 +2188,128 @@ exports[`email fixture: notes-digest-row.html 1`] = `
 
 
                  xxxxxxxxx xxxxxxxxx xxxx xxx xxx xxxxxx xxxxxx xxx xxxxx
-                 ╭─────────────────────────────────────────────────────────────────╮
-                 │                                                                 │
-                 │                                                                 │
-                 │               ╭────────────╮                                    │
-                 │     xxxxxxxx  │ You follow │                               7d   │
-                 │               ╰────────────╯                                    │
-                 │     xxxxxxx xxxxxx xxxxx x xxxxxx xxxxxxx xxxxx xxx xxxxxxx     │
-                 │     xx x xxx xxxx xx xxxxxxxxxx xxxxxxxxxx xxx xxxxxxxxxxx      │
-                 │        XXX      XX      XX                                      │
-                 │                                                                 │
-                 │                                                                 │
-                 ╰─────────────────────────────────────────────────────────────────╯
-                 ╭─────────────────────────────────────────────────────────────────╮
-                 │                                                                 │
-                 │                                                                 │
-                 │                      ╭────────────╮                             │
-                 │     xxxxxxxxx xxx    │ You follow │                        xx   │
-                 │                      ╰────────────╯                             │
-                 │     xxxxxxxxxxx xxxxxxxx xxxx xxxxxxx xx xxxxxxx x xx xxx xx    │
-                 │     xxxx x xxxxx xxxxxxxx xxxx xx xxxxxx xx xxx xxxxxx xxxxxx   │
-                 │     xxx xxxxxxxxx xxxxxxxxxxxxxx xxxxx xxxxxxxxxxx xxx xxxxx    │
-                 │     xxx xxxxx xxxx xx xxxxxxxxx x xxxxxxx xxx xxxxx xxxxxx      │
-                 │     xxxxx xxx xxx xxxxxxx xxxxxxx x xxxxxxxx xxxx xx xxx x      │
-                 │     xxxxxxxxxxxx xxxxx xxx xxx xxxxxxx xxx xxxxx xxxx xxxx xx   │
-                 │     xxxxxx xxxxx xxxxxx xxxx xxxxxxxxxxx xxxx xxx xxxxxx xxx    │
-                 │     xxxxx xxxxxxx xxxxxx xxxxxx xxxx xxxx xxxx xxxxx xxx        │
-                 │     xxxxxxxxx xxxxxx xx xxxxxx xxxx x xxxxxxx xxxx xx xxxxxxx   │
-                 │     x xxxxxxx xxx xxxxxxxxxxx xxx xxxxx xxx xxxx xxxx xxxxxx    │
-                 │     xxxx xx xxx xx xxxxxxx xxxxxxxxxx xxx xxx xxxx xxxxx        │
-                 │     xxxxx xx xxx xxxxxxx xxxxxxxx xx xxxxx xx xx xxxxxx xxxxx   │
-                 │     xx xxxxx xxx xxxxxxxxx xxxxx xxxxxxxx xxxxxxxxxx xxxx       │
-                 │     xxxxx xxxxxx xxxx xxx xxxxx xxx xxxxxxxx xx xxxx xxxxx xx   │
-                 │     xxx xxxxxxxxxxx xxxxxx xxx xxx xxxx xxxxx xxx xxxx xx       │
-                 │     xxxxx xxx xxxxxxxxx xxxxxx xx xxx xxxxxxx xxxxx xxx x       │
-                 │     xxxxx xxxxx xxxx xxx xxxx xx xxx xxxxxxxxxx                 │
-                 │     xxxxxxxxxxxxxxxxxxxxxxxx xxxxx xxxxxxxxx xxx x xxxxxxx      │
-                 │     Read More                                                   │
-                 │        XX       X       X                                       │
-                 │                                                                 │
-                 │                                                                 │
-                 ╰─────────────────────────────────────────────────────────────────╯
-                 ╭─────────────────────────────────────────────────────────────────╮
-                 │                                                                 │
-                 │                                                                 │
-                 │                                                                 │
-                 │                                                                 │
-                 ╰─────────────────────────────────────────────────────────────────╯
+                 ╭────────────────────────────────────────────────────────────────╮
+                 │                                                                │
+                 │                                                                │
+                 │              ╭────────────╮                                    │
+                 │    xxxxxxxx  │ You follow │                                7d  │
+                 │              ╰────────────╯                                    │
+                 │    xxxxxxx xxxxxx xxxxx x xxxxxx xxxxxxx xxxxx xxx xxxxxxx     │
+                 │    xx x xxx xxxx xx xxxxxxxxxx xxxxxxxxxx xxx xxxxxxxxxxx      │
+                 │       XXX      XX      XX                                      │
+                 │                                                                │
+                 │                                                                │
+                 ╰────────────────────────────────────────────────────────────────╯
+                 ╭────────────────────────────────────────────────────────────────╮
+                 │                                                                │
+                 │                                                                │
+                 │                     ╭────────────╮                             │
+                 │    xxxxxxxxx xxx    │ You follow │                        xx   │
+                 │                     ╰────────────╯                             │
+                 │    xxxxxxxxxxx xxxxxxxx xxxx xxxxxxx xx xxxxxxx x xx xxx xx    │
+                 │    xxxx x xxxxx xxxxxxxx xxxx xx xxxxxx xx xxx xxxxxx xxxxxx   │
+                 │    xxx xxxxxxxxx xxxxxxxxxxxxxx xxxxx xxxxxxxxxxx xxx xxxxx    │
+                 │    xxx xxxxx xxxx xx xxxxxxxxx x xxxxxxx xxx xxxxx xxxxxx      │
+                 │    xxxxx xxx xxx xxxxxxx xxxxxxx x xxxxxxxx xxxx xx xxx x      │
+                 │    xxxxxxxxxxxx xxxxx xxx xxx xxxxxxx xxx xxxxx xxxx xxxx xx   │
+                 │    xxxxxx xxxxx xxxxxx xxxx xxxxxxxxxxx xxxx xxx xxxxxx xxx    │
+                 │    xxxxx xxxxxxx xxxxxx xxxxxx xxxx xxxx xxxx xxxxx xxx        │
+                 │    xxxxxxxxx xxxxxx xx xxxxxx xxxx x xxxxxxx xxxx xx xxxxxxx   │
+                 │    x xxxxxxx xxx xxxxxxxxxxx xxx xxxxx xxx xxxx xxxx xxxxxx    │
+                 │    xxxx xx xxx xx xxxxxxx xxxxxxxxxx xxx xxx xxxx xxxxx        │
+                 │    xxxxx xx xxx xxxxxxx xxxxxxxx xx xxxxx xx xx xxxxxx xxxxx   │
+                 │    xx xxxxx xxx xxxxxxxxx xxxxx xxxxxxxx xxxxxxxxxx xxxx       │
+                 │    xxxxx xxxxxx xxxx xxx xxxxx xxx xxxxxxxx xx xxxx xxxxx xx   │
+                 │    xxx xxxxxxxxxxx xxxxxx xxx xxx xxxx xxxxx xxx xxxx xx       │
+                 │    xxxxx xxx xxxxxxxxx xxxxxx xx xxx xxxxxxx xxxxx xxx x       │
+                 │    xxxxx xxxxx xxxx xxx xxxx xx xxx xxxxxxxxxx                 │
+                 │    xxxxxxxxxxxxxxxxxxxxxxxx xxxxx xxxxxxxxx xxx x xxxxxxx      │
+                 │    Read More                                                   │
+                 │       XX       X       X                                       │
+                 │                                                                │
+                 │                                                                │
+                 ╰────────────────────────────────────────────────────────────────╯
+                 ╭────────────────────────────────────────────────────────────────╮
+                 │                                                                │
+                 │                                                                │
+                 │                                                                │
+                 │                                                                │
+                 ╰────────────────────────────────────────────────────────────────╯
 
                                   xxx xxxx xxxxx xx xxx xxxxxxxx xxx
 
 
 
-                                         x xxxx xxxxxxxx xxxx
-                         xxx xxxxxx xxxxxx xxx xxxxxx xxx xxxxxxxxxx xx xxxxx
+                                        x xxxx xxxxxxxx xxxx
+                        xxx xxxxxx xxxxxx xxx xxxxxx xxx xxxxxxxxxx xx xxxxx
                                              xxxxxxxxxxx
 
 -- backgrounds --
-0: 17-23 #ffffff
-1: 17-23 #ffffff
-2: 17-23 #ffffff
-4: 17-84 #ffffff
-5: 17-84 #ffffff
-6: 17-84 #ffffff
-7: 17-33 #ffffff
-7: 33-47 #eeeeee
-7: 47-84 #ffffff
-8: 17-33 #ffffff
-8: 33-47 #eeeeee
-8: 47-84 #ffffff
-9: 17-33 #ffffff
-9: 33-47 #eeeeee
-9: 47-84 #ffffff
-10: 17-84 #ffffff
-11: 17-84 #ffffff
-12: 17-84 #ffffff
-13: 17-84 #ffffff
-14: 17-84 #ffffff
-15: 17-84 #ffffff
-16: 17-84 #ffffff
-17: 17-84 #ffffff
-18: 17-84 #ffffff
-19: 17-40 #ffffff
-19: 40-54 #eeeeee
-19: 54-84 #ffffff
-20: 17-40 #ffffff
-20: 40-54 #eeeeee
-20: 54-84 #ffffff
-21: 17-40 #ffffff
-21: 40-54 #eeeeee
-21: 54-84 #ffffff
-22: 17-84 #ffffff
-23: 17-84 #ffffff
-24: 17-84 #ffffff
-25: 17-84 #ffffff
-26: 17-84 #ffffff
-27: 17-84 #ffffff
-28: 17-84 #ffffff
-29: 17-84 #ffffff
-30: 17-84 #ffffff
-31: 17-84 #ffffff
-32: 17-84 #ffffff
-33: 17-84 #ffffff
-34: 17-84 #ffffff
-35: 17-84 #ffffff
-36: 17-84 #ffffff
-37: 17-84 #ffffff
-38: 17-84 #ffffff
-39: 17-84 #ffffff
-40: 17-84 #ffffff
-41: 17-84 #ffffff
-42: 17-84 #ffffff
-43: 17-84 #ffffff
-44: 17-84 #ffffff
-45: 17-84 #ffffff
-46: 17-84 #ffffff
-47: 17-84 #ffffff
-48: 17-84 #ffffff
-49: 17-84 #ffffff
-50: 17-84 #ffffff
-51: 17-84 #ff6719
-52: 17-84 #ff6719
-53: 17-84 #ff6719`;
+0: 17-22 #ffffff
+1: 17-22 #ffffff
+2: 17-22 #ffffff
+4: 17-83 #ffffff
+5: 17-83 #ffffff
+6: 17-83 #ffffff
+7: 17-32 #ffffff
+7: 32-46 #eeeeee
+7: 46-83 #ffffff
+8: 17-32 #ffffff
+8: 32-46 #eeeeee
+8: 46-83 #ffffff
+9: 17-32 #ffffff
+9: 32-46 #eeeeee
+9: 46-83 #ffffff
+10: 17-83 #ffffff
+11: 17-83 #ffffff
+12: 17-83 #ffffff
+13: 17-83 #ffffff
+14: 17-83 #ffffff
+15: 17-83 #ffffff
+16: 17-83 #ffffff
+17: 17-83 #ffffff
+18: 17-83 #ffffff
+19: 17-39 #ffffff
+19: 39-53 #eeeeee
+19: 53-83 #ffffff
+20: 17-39 #ffffff
+20: 39-53 #eeeeee
+20: 53-83 #ffffff
+21: 17-39 #ffffff
+21: 39-53 #eeeeee
+21: 53-83 #ffffff
+22: 17-83 #ffffff
+23: 17-83 #ffffff
+24: 17-83 #ffffff
+25: 17-83 #ffffff
+26: 17-83 #ffffff
+27: 17-83 #ffffff
+28: 17-83 #ffffff
+29: 17-83 #ffffff
+30: 17-83 #ffffff
+31: 17-83 #ffffff
+32: 17-83 #ffffff
+33: 17-83 #ffffff
+34: 17-83 #ffffff
+35: 17-83 #ffffff
+36: 17-83 #ffffff
+37: 17-83 #ffffff
+38: 17-83 #ffffff
+39: 17-83 #ffffff
+40: 17-83 #ffffff
+41: 17-83 #ffffff
+42: 17-83 #ffffff
+43: 17-83 #ffffff
+44: 17-83 #ffffff
+45: 17-83 #ffffff
+46: 17-83 #ffffff
+47: 17-83 #ffffff
+48: 17-83 #ffffff
+49: 17-83 #ffffff
+50: 17-83 #ffffff
+51: 17-83 #ff6719
+52: 17-83 #ff6719
+53: 17-83 #ff6719`;
 
 exports[`email fixture: pill-button.html 1`] = `   ┌────────────────────────────────────────────────────────────────────────────────────────────┐
    │                                                                                            │
@@ -2327,7 +2347,7 @@ exports[`email fixture: pill-button.html 1`] = `   ┌────────�
    │                                                                                            │
    │                                                                                            │
    │                                                                                            │
-   │─────────────────────────────────────────────────────────────────────────────────────────── │
+   │────────────────────────────────────────────────────────────────────────────────────────────│
    │                                                                                            │
    │                                                                                            │
    │   xxx xxxxxxxxxxx xxxxxxx xxxx xxx xxxx xx xxxxxxxxx xx xxxxxxxxx                          │
@@ -2472,18 +2492,18 @@ exports[`email fixture: post-buttons-mention.html 1`] = `                       
 
            x xxx xxxxx xx xxxxx x xxxxxxxxxx xxxx xxxxxxxx xx xxxxxxx
 
-           xxxx xxxxx xx xxxxxxx xxxxxxx xxx xxx xxxx xxxxxx
 
+           xxxx xxxxx xx xxxxxxx xxxxxxx xxx xxx xxxx xxxxxx
 
 
 
            ──────────────────────────────────────────────────────────────────────────────
 
-           ╭───╮  ╭───╮ ╭───╮                                          ╭────────────────╮
-           │   │  │   │ │   │                                          │                │
-           │   │  │   │ │   │                                          │  XXXX XX XXX   │
-           ╰───╯  ╰───╯ ╰───╯                                          │                │
-                                                                       ╰────────────────╯
+           ╭───╮ ╭───╮  ╭───╮                                           ╭────────────────╮
+           │   │ │   │  │   │                                           │                │
+           │   │ │   │  │   │                                           │  XXXX XX XXX   │
+           ╰───╯ ╰───╯  ╰───╯                                           │                │
+                                                                        ╰────────────────╯
 
            ──────────────────────────────────────────────────────────────────────────────
 
@@ -2511,16 +2531,16 @@ exports[`email fixture: post-buttons-mention.html 1`] = `                       
            xxx xxxxxxxx xxxx xxxx xxx xxxxxxxx xxx xxxxxxxxxxxxxxxx xx xxxxx xxxxxxxxx xx
            xxxxx xxxxxxxxx xx xxx xxxxx xxxxxxxxxx xxx xxxxxxxx xx xxxxxx xx xxx xxxxxxxx
            xx xxxxxxxxx xx xxxxxxx xx xxxxx xxxx xxx xxxx xx xxxxxxxxxx xx xx xxxxx xxxxx
-           xxxxxx xxxxx xxxxxxxxxx xxxx xxxxxxxxxx xxxx xxxx xxxx xxxxx xxx xxxxx
-           xxxxxxxx xxxx xxxxxxxx xxxxxxxx xxxx x xxxxxxxxxxx xx xxxx xxxxx xxxxxxxx xx
-           xxxxx xxx xxxxxxxxx xx xxxx xxxxxxx xxxxxxx xxxx xxxxx xxxxxxx xx xxxx xxxx
-           xxx xxxx xxxxxxxxxx xxxx xx xxxx xxxxx xxx xxxxx xxx xxxx xxxxxx xxx xxxxxx
-           xxx xxxxxxxx xx xxxxxxxxxx xxxx xx xxx xxxxxxxxxxx
-
+           xxxxxx xxxxx xxxxxxxxxx xxxx xxxxxxxxxx xxxx xxxx xxxx xxxxx xxx xxxxx xxxxxxxx
+           xxxx xxxxxxxx xxxxxxxx xxxx x xxxxxxxxxxx xx xxxx xxxxx xxxxxxxx xx xxxxx xxx
+           xxxxxxxxx xx xxxx xxxxxxx xxxxxxx xxxx xxxxx xxxxxxx xx xxxx xxxx xxx xxxx
+           xxxxxxxxxx xxxx xx xxxx xxxxx xxx xxxxx xxx xxxx xxxxxx xxx xxxxxx xxx xxxxxxxx
+           xx xxxxxxxxxx xxxx xx xxx xxxxxxxxxxx
 
            xx xxxx xx xxxxxxx xxx xxxxxxxx xx xxxxx xxxx xxxxx xx xxxxxxxxx xxxxxx
            xxxxxxxxx xxx xxxx xxxxxxxxxxx xxxxxxxxxx xxx xxxxxxx xxxxxxxx xxxxx xx
            xxxxxxxx
+
 
 
 
@@ -2531,8 +2551,8 @@ exports[`email fixture: post-buttons-mention.html 1`] = `                       
                 xxxxxxx xxx xxxxxxxxxxx xx x xxxxxxxxxxx xxxxx xxxxxxx xxx xxxxxxx
                 xxxxxxxx xxxxxxx xxxxx xxxxxxxxxx xxx xxxxxxxx xxxxxxxxxx xxxxxxx
                 xxxxxxx xxxxx xx xxxxxxx xxxxxxxxx xxxxxx xx xxxxxx xxx xxxxxxxxx
-                xxxxxxx xxx xxxxxxxxxx xxx xxxx xxxxx xxxxxxxxxxx xx xxxxxxxx
-                xxxxxxx xx xxxxx xxxxx
+                xxxxxxx xxx xxxxxxxxxx xxx xxxx xxxxx xxxxxxxxxxx xx xxxxxxxx xxxxxxx
+                xx xxxxx xxxxx
 
 
                                              xxxxx xxxx
@@ -2554,11 +2574,11 @@ exports[`email fixture: post-buttons-mention.html 1`] = `                       
 
            ──────────────────────────────────────────────────────────────────────────────
 
-             ╭────────────────────────────────────────────────────────────────────────╮
-             │                                                                        │
-             │                                  XXXXX                                 │
-             │                                                                        │
-             ╰────────────────────────────────────────────────────────────────────────╯
+             ╭─────────────────────────────────────────────────────────────────────────╮
+             │                                                                         │
+             │                                  XXXXX                                  │
+             │                                                                         │
+             ╰─────────────────────────────────────────────────────────────────────────╯
 
            ──────────────────────────────────────────────────────────────────────────────
 
@@ -2568,7 +2588,6 @@ exports[`email fixture: post-buttons-mention.html 1`] = `                       
                                       │         │ │          │
                                       ╰─────────╯ ╰──────────╯
 
-
            ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -2577,6 +2596,7 @@ exports[`email fixture: post-buttons-mention.html 1`] = `                       
                                              xxxxxxxxxxx
 
 -- backgrounds --
+57: 11-89 #eeeeee
 58: 11-89 #eeeeee
 59: 11-89 #eeeeee
 60: 11-89 #eeeeee
@@ -2621,12 +2641,11 @@ exports[`email fixture: relative-cards.html 1`] = `
            │  │        │   xxx xxxxxxx xxxxxxxxxx                                       │
            │  └────────┘                                                                │
            │                xxx xx xxxxxxxxx                                            │
-           │                                                                            │
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxx xxxxxxxxx xxxxxxxx xxxxxxxxx                            │
-           │  │    x   │   xxxxxxxx xxxxxxxxxxxx                                        │
-           │  │        │   xxxxxx xxxxx xxx xxxxxx xxxxxx                               │
+           │  │        │   xxxxxxxx xxxxxxxxxxxx                                        │
+           │  │    x   │   xxxxxx xxxxx xxx xxxxxx xxxxxx                               │
            │  │        │   xxx xxxxxxxxxxxx                                             │
            │  │        │                                                                │
            │  └────────┘    xxx xx xxxxxxxxx                                            │
@@ -2634,24 +2653,22 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxxxxxxxxx xxxxxxxxx xxxxxxxxxx xxxxxxxx x xxx xxxx         │
-           │  │    x   │   xxxxxxxx x xxxxxxxxxxx xxxxxx x xxxxxxxxxxx xxxxxxx x        │
-           │  │        │   xxxxxxxxxxx xx xxxx x xxxxxx x xxxxxxx xxxxxxxx              │
+           │  │        │   xxxxxxxx x xxxxxxxxxxx xxxxxx x xxxxxxxxxxx xxxxxxx x        │
+           │  │    x   │   xxxxxxxxxxx xx xxxx x xxxxxx x xxxxxxx xxxxxxxx              │
            │  │        │   xxxxx xxxxx                                                  │
            │  │        │   xxx xxxxx xxx xxxxxx xxxxxx                                  │
            │  └────────┘   xxx xxxxxxxx                                                 │
            │                                                                            │
            │                xxx xx xxxxxxxxx                                            │
-           │                                                                            │
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxxxx xxxxxxxxx xxxxxxxxxx xxxxxxxxxxxxxxxx xxxx            │
-           │  │    x   │   xxxxxxxx                                                     │
-           │  │        │   xxxxxxxxxxx                                                  │
+           │  │        │   xxxxxxxx                                                     │
+           │  │    x   │   xxxxxxxxxxx                                                  │
            │  │        │   xxxxxx xxxxx xxx xxxxxx xxxxxx                               │
            │  │        │   xxx xxxxx                                                    │
            │  └────────┘                                                                │
            │                xxx xx xxxxxxxxx                                            │
-           │                                                                            │
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxxx xxx xxxx xxxx xxxx                                     │
@@ -2664,8 +2681,8 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxxxx xxxxx xxxxxxxx xxxxxxxx x xxxxxx x xx                 │
-           │  │    x   │   xxxxxxx xxxxxxxxx xxxxxxx xxxx                               │
-           │  │        │   xxxxxx xxxxxxxx xxx xxxxxx xxxxxx                            │
+           │  │        │   xxxxxxx xxxxxxxxx xxxxxxx xxxx                               │
+           │  │    x   │   xxxxxx xxxxxxxx xxx xxxxxx xxxxxx                            │
            │  │        │   xxx xxxxxxxxxx                                               │
            │  │        │                                                                │
            │  └────────┘    xxx xx xxxxxxxxx                                            │
@@ -2682,8 +2699,8 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xx xxxxxxxx x xxxxxxxxxxxxxxxxx xxxxxx xx xxxxxxxxxx         │
-           │  │    x   │   xxx                                                          │
-           │  │        │   xxxxxxxxxxxxxxx xxxxxx xxx xxxxxx xxxxxx                     │
+           │  │        │   xxx                                                          │
+           │  │    x   │   xxxxxxxxxxxxxxx xxxxxx xxx xxxxxx xxxxxx                     │
            │  │        │   xxx xxxxxxxx                                                 │
            │  │        │                                                                │
            │  └────────┘    xxx xx xxxxxxxxx                                            │
@@ -2700,8 +2717,8 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxxxx xxxxxxxx xxxxxxxxx xxx xx x xxx xxxxxxxxxxx           │
-           │  │    x   │   xxxxx                                                        │
-           │  │        │   xxxxxxxxxx xxx xxxxxx xxxxxx                                 │
+           │  │        │   xxxxx                                                        │
+           │  │    x   │   xxxxxxxxxx xxx xxxxxx xxxxxx                                 │
            │  │        │   xxx xxxxxxxxxx                                               │
            │  │        │                                                                │
            │  └────────┘    xxx xx xxxxxxxxx                                            │
@@ -2717,17 +2734,17 @@ exports[`email fixture: relative-cards.html 1`] = `
 
 
                     xxx xxxxxxxx xxxx xxxxx xxxxxxx xxx xxxxxx xx xxx xx xxxxx xx
-                                                xxxxxx
+                                               xxxxxx
 
 
-                              XXXXXX XXXXXX                     XXXXXXXXXXX
+                              XXXXXX XXXXXX                   XXXXXXXXXXX
 
 
-                  ─────────────────────────────────────────────────────────────────
+                  ────────────────────────────────────────────────────────────────
 
 
                                 xxxxxx xxxx xxxx xxxxxxxxxxxx xxxxxxx
-                                     xxxxxxxx xxxxx xx xxxxxx xxx
+                                    xxxxxxxx xxxxx xx xxxxxx xxx
 
 -- backgrounds --
 0: 1-99 #4285f4
@@ -2746,477 +2763,352 @@ exports[`email fixture: relative-cards.html 1`] = `
 11: 89-99 #4285f4
 12: 1-12 #eeeeee
 12: 12-88 #ffffff
-12: 88-98 #eeeeee
-12: 98-99 #4285f4
+12: 88-99 #eeeeee
 13: 1-12 #eeeeee
 13: 12-88 #ffffff
-13: 88-98 #eeeeee
-13: 98-99 #4285f4
+13: 88-99 #eeeeee
 14: 1-12 #eeeeee
 14: 12-88 #ffffff
-14: 88-98 #eeeeee
-14: 98-99 #4285f4
+14: 88-99 #eeeeee
 15: 1-12 #eeeeee
 15: 12-88 #ffffff
-15: 88-98 #eeeeee
-15: 98-99 #4285f4
+15: 88-99 #eeeeee
 16: 1-12 #eeeeee
 16: 12-88 #ffffff
-16: 88-98 #eeeeee
-16: 98-99 #4285f4
+16: 88-99 #eeeeee
 17: 1-12 #eeeeee
 17: 12-88 #ffffff
-17: 88-98 #eeeeee
-17: 98-99 #4285f4
+17: 88-99 #eeeeee
 18: 1-12 #eeeeee
 18: 12-88 #ffffff
-18: 88-98 #eeeeee
-18: 98-99 #4285f4
+18: 88-99 #eeeeee
 19: 1-12 #eeeeee
 19: 12-88 #ffffff
-19: 88-98 #eeeeee
-19: 98-99 #4285f4
+19: 88-99 #eeeeee
 20: 1-12 #eeeeee
 20: 12-88 #ffffff
-20: 88-98 #eeeeee
-20: 98-99 #4285f4
+20: 88-99 #eeeeee
 21: 1-12 #eeeeee
 21: 12-88 #ffffff
-21: 88-98 #eeeeee
-21: 98-99 #4285f4
+21: 88-99 #eeeeee
 22: 1-12 #eeeeee
 22: 12-88 #ffffff
-22: 88-98 #eeeeee
-22: 98-99 #4285f4
+22: 88-99 #eeeeee
 23: 1-12 #eeeeee
-23: 12-88 #ffffff
-23: 88-98 #eeeeee
-23: 98-99 #4285f4
+23: 12-15 #ffffff
+23: 15-23 #5c6bc0
+23: 23-88 #ffffff
+23: 88-99 #eeeeee
 24: 1-12 #eeeeee
 24: 12-15 #ffffff
 24: 15-23 #5c6bc0
 24: 23-88 #ffffff
-24: 88-98 #eeeeee
-24: 98-99 #4285f4
+24: 88-99 #eeeeee
 25: 1-12 #eeeeee
 25: 12-15 #ffffff
 25: 15-23 #5c6bc0
 25: 23-88 #ffffff
-25: 88-98 #eeeeee
-25: 98-99 #4285f4
+25: 88-99 #eeeeee
 26: 1-12 #eeeeee
 26: 12-15 #ffffff
 26: 15-23 #5c6bc0
 26: 23-88 #ffffff
-26: 88-98 #eeeeee
-26: 98-99 #4285f4
+26: 88-99 #eeeeee
 27: 1-12 #eeeeee
-27: 12-15 #ffffff
-27: 15-23 #5c6bc0
-27: 23-88 #ffffff
-27: 88-98 #eeeeee
-27: 98-99 #4285f4
+27: 12-88 #ffffff
+27: 88-99 #eeeeee
 28: 1-12 #eeeeee
 28: 12-88 #ffffff
-28: 88-98 #eeeeee
-28: 98-99 #4285f4
+28: 88-99 #eeeeee
 29: 1-12 #eeeeee
 29: 12-88 #ffffff
-29: 88-98 #eeeeee
-29: 98-99 #4285f4
+29: 88-99 #eeeeee
 30: 1-12 #eeeeee
 30: 12-88 #ffffff
-30: 88-98 #eeeeee
-30: 98-99 #4285f4
+30: 88-99 #eeeeee
 31: 1-12 #eeeeee
 31: 12-88 #ffffff
-31: 88-98 #eeeeee
-31: 98-99 #4285f4
+31: 88-99 #eeeeee
 32: 1-12 #eeeeee
-32: 12-88 #ffffff
-32: 88-98 #eeeeee
-32: 98-99 #4285f4
+32: 12-15 #ffffff
+32: 15-23 #7b1fa2
+32: 23-88 #ffffff
+32: 88-99 #eeeeee
 33: 1-12 #eeeeee
 33: 12-15 #ffffff
 33: 15-23 #7b1fa2
 33: 23-88 #ffffff
-33: 88-98 #eeeeee
-33: 98-99 #4285f4
+33: 88-99 #eeeeee
 34: 1-12 #eeeeee
 34: 12-15 #ffffff
 34: 15-23 #7b1fa2
 34: 23-88 #ffffff
-34: 88-98 #eeeeee
-34: 98-99 #4285f4
+34: 88-99 #eeeeee
 35: 1-12 #eeeeee
 35: 12-15 #ffffff
 35: 15-23 #7b1fa2
 35: 23-88 #ffffff
-35: 88-98 #eeeeee
-35: 98-99 #4285f4
+35: 88-99 #eeeeee
 36: 1-12 #eeeeee
-36: 12-15 #ffffff
-36: 15-23 #7b1fa2
-36: 23-88 #ffffff
-36: 88-98 #eeeeee
-36: 98-99 #4285f4
+36: 12-88 #ffffff
+36: 88-99 #eeeeee
 37: 1-12 #eeeeee
 37: 12-88 #ffffff
-37: 88-98 #eeeeee
-37: 98-99 #4285f4
+37: 88-99 #eeeeee
 38: 1-12 #eeeeee
 38: 12-88 #ffffff
-38: 88-98 #eeeeee
-38: 98-99 #4285f4
+38: 88-99 #eeeeee
 39: 1-12 #eeeeee
 39: 12-88 #ffffff
-39: 88-98 #eeeeee
-39: 98-99 #4285f4
+39: 88-99 #eeeeee
 40: 1-12 #eeeeee
 40: 12-88 #ffffff
-40: 88-98 #eeeeee
-40: 98-99 #4285f4
+40: 88-99 #eeeeee
 41: 1-12 #eeeeee
 41: 12-88 #ffffff
-41: 88-98 #eeeeee
-41: 98-99 #4285f4
+41: 88-99 #eeeeee
 42: 1-12 #eeeeee
-42: 12-88 #ffffff
-42: 88-98 #eeeeee
-42: 98-99 #4285f4
+42: 12-15 #ffffff
+42: 15-23 #512da8
+42: 23-88 #ffffff
+42: 88-99 #eeeeee
 43: 1-12 #eeeeee
-43: 12-88 #ffffff
-43: 88-98 #eeeeee
-43: 98-99 #4285f4
+43: 12-15 #ffffff
+43: 15-23 #512da8
+43: 23-88 #ffffff
+43: 88-99 #eeeeee
 44: 1-12 #eeeeee
 44: 12-15 #ffffff
 44: 15-23 #512da8
 44: 23-88 #ffffff
-44: 88-98 #eeeeee
-44: 98-99 #4285f4
+44: 88-99 #eeeeee
 45: 1-12 #eeeeee
 45: 12-15 #ffffff
 45: 15-23 #512da8
 45: 23-88 #ffffff
-45: 88-98 #eeeeee
-45: 98-99 #4285f4
+45: 88-99 #eeeeee
 46: 1-12 #eeeeee
-46: 12-15 #ffffff
-46: 15-23 #512da8
-46: 23-88 #ffffff
-46: 88-98 #eeeeee
-46: 98-99 #4285f4
+46: 12-88 #ffffff
+46: 88-99 #eeeeee
 47: 1-12 #eeeeee
-47: 12-15 #ffffff
-47: 15-23 #512da8
-47: 23-88 #ffffff
-47: 88-98 #eeeeee
-47: 98-99 #4285f4
+47: 12-88 #ffffff
+47: 88-99 #eeeeee
 48: 1-12 #eeeeee
 48: 12-88 #ffffff
-48: 88-98 #eeeeee
-48: 98-99 #4285f4
+48: 88-99 #eeeeee
 49: 1-12 #eeeeee
 49: 12-88 #ffffff
-49: 88-98 #eeeeee
-49: 98-99 #4285f4
+49: 88-99 #eeeeee
 50: 1-12 #eeeeee
 50: 12-88 #ffffff
-50: 88-98 #eeeeee
-50: 98-99 #4285f4
+50: 88-99 #eeeeee
 51: 1-12 #eeeeee
 51: 12-88 #ffffff
-51: 88-98 #eeeeee
-51: 98-99 #4285f4
+51: 88-99 #eeeeee
 52: 1-12 #eeeeee
 52: 12-88 #ffffff
-52: 88-98 #eeeeee
-52: 98-99 #4285f4
+52: 88-99 #eeeeee
 53: 1-12 #eeeeee
 53: 12-88 #ffffff
-53: 88-98 #eeeeee
-53: 98-99 #4285f4
+53: 88-99 #eeeeee
 54: 1-12 #eeeeee
 54: 12-88 #ffffff
-54: 88-98 #eeeeee
-54: 98-99 #4285f4
+54: 88-99 #eeeeee
 55: 1-12 #eeeeee
 55: 12-88 #ffffff
-55: 88-98 #eeeeee
-55: 98-99 #4285f4
+55: 88-99 #eeeeee
 56: 1-12 #eeeeee
 56: 12-88 #ffffff
-56: 88-98 #eeeeee
-56: 98-99 #4285f4
+56: 88-99 #eeeeee
 57: 1-12 #eeeeee
 57: 12-88 #ffffff
-57: 88-98 #eeeeee
-57: 98-99 #4285f4
+57: 88-99 #eeeeee
 58: 1-12 #eeeeee
 58: 12-88 #ffffff
-58: 88-98 #eeeeee
-58: 98-99 #4285f4
+58: 88-99 #eeeeee
 59: 1-12 #eeeeee
 59: 12-88 #ffffff
-59: 88-98 #eeeeee
-59: 98-99 #4285f4
+59: 88-99 #eeeeee
 60: 1-12 #eeeeee
-60: 12-88 #ffffff
-60: 88-98 #eeeeee
-60: 98-99 #4285f4
+60: 12-15 #ffffff
+60: 15-23 #78909c
+60: 23-88 #ffffff
+60: 88-99 #eeeeee
 61: 1-12 #eeeeee
-61: 12-88 #ffffff
-61: 88-98 #eeeeee
-61: 98-99 #4285f4
+61: 12-15 #ffffff
+61: 15-23 #78909c
+61: 23-88 #ffffff
+61: 88-99 #eeeeee
 62: 1-12 #eeeeee
-62: 12-88 #ffffff
-62: 88-98 #eeeeee
-62: 98-99 #4285f4
+62: 12-15 #ffffff
+62: 15-23 #78909c
+62: 23-88 #ffffff
+62: 88-99 #eeeeee
 63: 1-12 #eeeeee
 63: 12-15 #ffffff
 63: 15-23 #78909c
 63: 23-88 #ffffff
-63: 88-98 #eeeeee
-63: 98-99 #4285f4
+63: 88-99 #eeeeee
 64: 1-12 #eeeeee
-64: 12-15 #ffffff
-64: 15-23 #78909c
-64: 23-88 #ffffff
-64: 88-98 #eeeeee
-64: 98-99 #4285f4
+64: 12-88 #ffffff
+64: 88-99 #eeeeee
 65: 1-12 #eeeeee
-65: 12-15 #ffffff
-65: 15-23 #78909c
-65: 23-88 #ffffff
-65: 88-98 #eeeeee
-65: 98-99 #4285f4
+65: 12-88 #ffffff
+65: 88-99 #eeeeee
 66: 1-12 #eeeeee
-66: 12-15 #ffffff
-66: 15-23 #78909c
-66: 23-88 #ffffff
-66: 88-98 #eeeeee
-66: 98-99 #4285f4
+66: 12-88 #ffffff
+66: 88-99 #eeeeee
 67: 1-12 #eeeeee
 67: 12-88 #ffffff
-67: 88-98 #eeeeee
-67: 98-99 #4285f4
+67: 88-99 #eeeeee
 68: 1-12 #eeeeee
 68: 12-88 #ffffff
-68: 88-98 #eeeeee
-68: 98-99 #4285f4
+68: 88-99 #eeeeee
 69: 1-12 #eeeeee
 69: 12-88 #ffffff
-69: 88-98 #eeeeee
-69: 98-99 #4285f4
+69: 88-99 #eeeeee
 70: 1-12 #eeeeee
 70: 12-88 #ffffff
-70: 88-98 #eeeeee
-70: 98-99 #4285f4
+70: 88-99 #eeeeee
 71: 1-12 #eeeeee
 71: 12-88 #ffffff
-71: 88-98 #eeeeee
-71: 98-99 #4285f4
+71: 88-99 #eeeeee
 72: 1-12 #eeeeee
 72: 12-88 #ffffff
-72: 88-98 #eeeeee
-72: 98-99 #4285f4
+72: 88-99 #eeeeee
 73: 1-12 #eeeeee
 73: 12-88 #ffffff
-73: 88-98 #eeeeee
-73: 98-99 #4285f4
+73: 88-99 #eeeeee
 74: 1-12 #eeeeee
 74: 12-88 #ffffff
-74: 88-98 #eeeeee
-74: 98-99 #4285f4
+74: 88-99 #eeeeee
 75: 1-12 #eeeeee
 75: 12-88 #ffffff
-75: 88-98 #eeeeee
-75: 98-99 #4285f4
+75: 88-99 #eeeeee
 76: 1-12 #eeeeee
 76: 12-88 #ffffff
-76: 88-98 #eeeeee
-76: 98-99 #4285f4
+76: 88-99 #eeeeee
 77: 1-12 #eeeeee
 77: 12-88 #ffffff
-77: 88-98 #eeeeee
-77: 98-99 #4285f4
+77: 88-99 #eeeeee
 78: 1-12 #eeeeee
-78: 12-88 #ffffff
-78: 88-98 #eeeeee
-78: 98-99 #4285f4
+78: 12-15 #ffffff
+78: 15-23 #33691e
+78: 23-88 #ffffff
+78: 88-99 #eeeeee
 79: 1-12 #eeeeee
-79: 12-88 #ffffff
-79: 88-98 #eeeeee
-79: 98-99 #4285f4
+79: 12-15 #ffffff
+79: 15-23 #33691e
+79: 23-88 #ffffff
+79: 88-99 #eeeeee
 80: 1-12 #eeeeee
-80: 12-88 #ffffff
-80: 88-98 #eeeeee
-80: 98-99 #4285f4
+80: 12-15 #ffffff
+80: 15-23 #33691e
+80: 23-88 #ffffff
+80: 88-99 #eeeeee
 81: 1-12 #eeeeee
 81: 12-15 #ffffff
 81: 15-23 #33691e
 81: 23-88 #ffffff
-81: 88-98 #eeeeee
-81: 98-99 #4285f4
+81: 88-99 #eeeeee
 82: 1-12 #eeeeee
-82: 12-15 #ffffff
-82: 15-23 #33691e
-82: 23-88 #ffffff
-82: 88-98 #eeeeee
-82: 98-99 #4285f4
+82: 12-88 #ffffff
+82: 88-99 #eeeeee
 83: 1-12 #eeeeee
-83: 12-15 #ffffff
-83: 15-23 #33691e
-83: 23-88 #ffffff
-83: 88-98 #eeeeee
-83: 98-99 #4285f4
+83: 12-88 #ffffff
+83: 88-99 #eeeeee
 84: 1-12 #eeeeee
-84: 12-15 #ffffff
-84: 15-23 #33691e
-84: 23-88 #ffffff
-84: 88-98 #eeeeee
-84: 98-99 #4285f4
+84: 12-88 #ffffff
+84: 88-99 #eeeeee
 85: 1-12 #eeeeee
 85: 12-88 #ffffff
-85: 88-98 #eeeeee
-85: 98-99 #4285f4
+85: 88-99 #eeeeee
 86: 1-12 #eeeeee
 86: 12-88 #ffffff
-86: 88-98 #eeeeee
-86: 98-99 #4285f4
+86: 88-99 #eeeeee
 87: 1-12 #eeeeee
 87: 12-88 #ffffff
-87: 88-98 #eeeeee
-87: 98-99 #4285f4
+87: 88-99 #eeeeee
 88: 1-12 #eeeeee
 88: 12-88 #ffffff
-88: 88-98 #eeeeee
-88: 98-99 #4285f4
+88: 88-99 #eeeeee
 89: 1-12 #eeeeee
 89: 12-88 #ffffff
-89: 88-98 #eeeeee
-89: 98-99 #4285f4
+89: 88-99 #eeeeee
 90: 1-12 #eeeeee
 90: 12-88 #ffffff
-90: 88-98 #eeeeee
-90: 98-99 #4285f4
+90: 88-99 #eeeeee
 91: 1-12 #eeeeee
 91: 12-88 #ffffff
-91: 88-98 #eeeeee
-91: 98-99 #4285f4
+91: 88-99 #eeeeee
 92: 1-12 #eeeeee
 92: 12-88 #ffffff
-92: 88-98 #eeeeee
-92: 98-99 #4285f4
+92: 88-99 #eeeeee
 93: 1-12 #eeeeee
 93: 12-88 #ffffff
-93: 88-98 #eeeeee
-93: 98-99 #4285f4
+93: 88-99 #eeeeee
 94: 1-12 #eeeeee
 94: 12-88 #ffffff
-94: 88-98 #eeeeee
-94: 98-99 #4285f4
+94: 88-99 #eeeeee
 95: 1-12 #eeeeee
 95: 12-88 #ffffff
-95: 88-98 #eeeeee
-95: 98-99 #4285f4
+95: 88-99 #eeeeee
 96: 1-12 #eeeeee
-96: 12-88 #ffffff
-96: 88-98 #eeeeee
-96: 98-99 #4285f4
+96: 12-15 #ffffff
+96: 15-23 #ab47bc
+96: 23-88 #ffffff
+96: 88-99 #eeeeee
 97: 1-12 #eeeeee
-97: 12-88 #ffffff
-97: 88-98 #eeeeee
-97: 98-99 #4285f4
+97: 12-15 #ffffff
+97: 15-23 #ab47bc
+97: 23-88 #ffffff
+97: 88-99 #eeeeee
 98: 1-12 #eeeeee
-98: 12-88 #ffffff
-98: 88-98 #eeeeee
-98: 98-99 #4285f4
+98: 12-15 #ffffff
+98: 15-23 #ab47bc
+98: 23-88 #ffffff
+98: 88-99 #eeeeee
 99: 1-12 #eeeeee
 99: 12-15 #ffffff
 99: 15-23 #ab47bc
 99: 23-88 #ffffff
-99: 88-98 #eeeeee
-99: 98-99 #4285f4
+99: 88-99 #eeeeee
 100: 1-12 #eeeeee
-100: 12-15 #ffffff
-100: 15-23 #ab47bc
-100: 23-88 #ffffff
-100: 88-98 #eeeeee
-100: 98-99 #4285f4
+100: 12-88 #ffffff
+100: 88-99 #eeeeee
 101: 1-12 #eeeeee
-101: 12-15 #ffffff
-101: 15-23 #ab47bc
-101: 23-88 #ffffff
-101: 88-98 #eeeeee
-101: 98-99 #4285f4
+101: 12-88 #ffffff
+101: 88-99 #eeeeee
 102: 1-12 #eeeeee
-102: 12-15 #ffffff
-102: 15-23 #ab47bc
-102: 23-88 #ffffff
-102: 88-98 #eeeeee
-102: 98-99 #4285f4
+102: 12-88 #ffffff
+102: 88-99 #eeeeee
 103: 1-12 #eeeeee
 103: 12-88 #ffffff
-103: 88-98 #eeeeee
-103: 98-99 #4285f4
+103: 88-99 #eeeeee
 104: 1-12 #eeeeee
 104: 12-88 #ffffff
-104: 88-98 #eeeeee
-104: 98-99 #4285f4
+104: 88-99 #eeeeee
 105: 1-12 #eeeeee
 105: 12-88 #ffffff
-105: 88-98 #eeeeee
-105: 98-99 #4285f4
+105: 88-99 #eeeeee
 106: 1-12 #eeeeee
 106: 12-88 #ffffff
-106: 88-98 #eeeeee
-106: 98-99 #4285f4
-107: 1-12 #eeeeee
-107: 12-88 #ffffff
-107: 88-98 #eeeeee
-107: 98-99 #4285f4
-108: 1-12 #eeeeee
-108: 12-88 #ffffff
-108: 88-98 #eeeeee
-108: 98-99 #4285f4
-109: 1-12 #eeeeee
-109: 12-88 #ffffff
-109: 88-98 #eeeeee
-109: 98-99 #4285f4
-110: 1-98 #eeeeee
-110: 98-99 #4285f4
-111: 1-98 #eeeeee
-111: 98-99 #4285f4
-112: 1-98 #eeeeee
-112: 98-99 #4285f4
-113: 1-98 #eeeeee
-113: 98-99 #4285f4
-114: 1-98 #eeeeee
-114: 98-99 #4285f4
-115: 1-98 #eeeeee
-115: 98-99 #4285f4
-116: 1-98 #eeeeee
-116: 98-99 #4285f4
-117: 1-98 #eeeeee
-117: 98-99 #4285f4
-118: 1-98 #eeeeee
-118: 98-99 #4285f4
-119: 1-98 #eeeeee
-119: 98-99 #4285f4
-120: 1-98 #eeeeee
-120: 98-99 #4285f4
-121: 1-98 #eeeeee
-121: 98-99 #4285f4
-122: 1-98 #eeeeee
-122: 98-99 #4285f4
-123: 1-98 #eeeeee
-123: 98-99 #4285f4
-124: 1-98 #eeeeee
-124: 98-99 #4285f4
-125: 1-98 #eeeeee
-125: 98-99 #4285f4
-126: 1-98 #eeeeee
-126: 98-99 #4285f4
-127: 1-98 #eeeeee
-127: 98-99 #4285f4`;
+106: 88-99 #eeeeee
+107: 1-99 #eeeeee
+108: 1-99 #eeeeee
+109: 1-99 #eeeeee
+110: 1-99 #eeeeee
+111: 1-99 #eeeeee
+112: 1-99 #eeeeee
+113: 1-99 #eeeeee
+114: 1-99 #eeeeee
+115: 1-99 #eeeeee
+116: 1-99 #eeeeee
+117: 1-99 #eeeeee
+118: 1-99 #eeeeee
+119: 1-99 #eeeeee
+120: 1-99 #eeeeee
+121: 1-99 #eeeeee
+122: 1-99 #eeeeee
+123: 1-99 #eeeeee
+124: 1-99 #eeeeee`;
