@@ -225,6 +225,23 @@ test("the same spacer height draws the same gap down a column", () => {
 	dom.dispose();
 });
 
+// A table's columns round where their edges land, as every box does, so
+// they fill a table that starts part way into a column. Rounded from the
+// table's own left edge, the one column of a table at 4.43 cells came out
+// 91 wide in a table drawn 92, and the border under it stopped short.
+test("a table that starts part way into a column is filled by its cells", () => {
+	const {dom} = make({width: 7, height: 15});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"margin-left: 31px; width: 638px\"><table " +
+		"style=\"width: 100%; border-collapse: collapse\"><tr><td " +
+		"style=\"padding: 0; border: 0\">x</td></tr></table></div>";
+	const table = document.querySelector("table")!.getBoundingClientRect();
+	const cell = document.querySelector("td")!.getBoundingClientRect();
+	expect([cell.left, cell.right]).toEqual([table.left, table.right]);
+	dom.dispose();
+});
+
 // Each box's edges round to the grid, not each length on its own, so
 // widths that add up to their container still fit it.
 test("columns that fill their container stay on one line", () => {

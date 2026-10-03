@@ -2829,16 +2829,11 @@ function resolveColumnWidths(
 		}
 	}
 
-	// Rounded at the column EDGES, so the columns tile the table exactly.
-	const snapped = new Array<number>(columnCount).fill(0);
-	let edge = 0;
-	for (let i = 0; i < columnCount; i++) {
-		const next = edge + widths[i];
-		snapped[i] = Math.round(next) - Math.round(edge);
-		edge = next;
-	}
-
-	return snapped;
+	// Left as fractions. Every box's edges round where they land on the
+	// grid, so the cells tile the table wherever it starts. Snapped from the
+	// table's own left edge, they came out a column short of a table that
+	// started part way into one.
+	return widths;
 }
 
 // The other columns first, up to their max-content, then the percentage
