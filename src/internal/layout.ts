@@ -12,6 +12,7 @@ import {
 	getTabSize,
 	toCellBorder,
 	toCellLength,
+	toWholeCells,
 	UNIT_CELL,
 	usedValuesChanged,
 } from "./cssom.ts";
@@ -3661,28 +3662,28 @@ function breakNodes(
 	// box. Undeclared, the first strong character wins (UAX #9 §P2), which
 	// is what makes an Arabic string in an undeclared <div> come out right.
 	// That is how such a string usually arrives.
-	const declared = getComputedValue(
+	const block =
 		source.styledFrom ??
 		(source.parent ? source.container : flatParentElement(opener)) ??
-		styleElement,
-		"direction",
-	);
+		styleElement;
+	const declared = getComputedValue(block, "direction");
 	const base: "ltr" | "rtl" = declared === "rtl"
 		? "rtl"
 		: declared === "ltr" ? "ltr" : getParagraphDirection(processedContent.text);
 
-	const {lines, wrapped} = buildLines(
+	const {lines, wrapped, height} = buildLines(
 		layout,
 		processedContent,
 		breaks,
 		maxWidth,
 		breakAnywhere,
+		block,
 		base,
 	);
 
 	return {
 		lines,
-		totalHeight: lines.reduce((sum, line) => sum + line.height, 0),
+		totalHeight: height,
 		maxLineWidth: Math.max(...lines.map((l) => l.width), 0),
 		wrapped,
 	};
@@ -4066,10 +4067,13 @@ function buildLines(
 	breaks: BreakPoint[],
 	maxWidth: number,
 	breakAnywhere: boolean,
+	block: Element,
 	base: "ltr" | "rtl" = "ltr",
-): {lines: LineResult[]; wrapped: boolean} {
+): {lines: LineResult[]; wrapped: boolean; height: number} {
 	const lines: LineResult[] = [];
 	let wrapped = false;
+	const blockRows = getLineHeightRows(block);
+	const rowsByElement = new Map<Element, number>([[block, blockRows]]);
 	let currentY = 0;
 	let lineStart = 0;
 	// Break positions ascend, so a line's candidates are a suffix of the
@@ -4176,18 +4180,39 @@ function buildLines(
 				),
 			);
 
+			// css2 §10.8.1: a line is as tall as the line-height of its block
+			// and of the text on it, with the leading split above and below.
+			// The odd row goes below.
+			let rows = blockRows;
+			for (const node of lineNodes) {
+				if (node.leaf.type !== "text") {
+					continue;
+				}
+				const element = flatParentElement(node.leaf.node);
+				if (element === null) {
+					continue;
+				}
+				let own = rowsByElement.get(element);
+				if (own === undefined) {
+					own = getLineHeightRows(element);
+					rowsByElement.set(element, own);
+				}
+				rows = Math.max(rows, own);
+			}
+			const leading = Math.max(0, rows - lineHeight);
+
 			// Visual order here rather than at paint time, so hit-testing and
 			// selection read the coordinates the user is looking at.
 			toVisualLine(layout, lineNodes, bestBreakWidth, base);
 
 			lines.push({
 				segments: lineNodes,
-				y: currentY,
+				y: currentY + Math.floor(leading / 2),
 				height: lineHeight,
 				width: bestBreakWidth,
 			});
 
-			currentY += lineHeight;
+			currentY += lineHeight + leading;
 		}
 
 		if (
@@ -4198,7 +4223,22 @@ function buildLines(
 		lineStart = bestBreak;
 	}
 
-	return {lines, wrapped};
+	return {lines, wrapped, height: currentY};
+}
+
+// The rows a line-height asks for: one below two rows, so text set a little
+// apart stays one line to a row, and the nearest whole number from two up,
+// an exact half rounding down. One that resolves to no length (normal, or
+// a font size the engine cannot measure) is one row.
+function getLineHeightRows(element: Element): number {
+	const value = getComputedValue(element, "line-height");
+	const px = value.endsWith("px")
+		? parseFloat(value)
+		: /^\d*\.?\d+$/.test(value)
+		? parseFloat(value) * parseFloat(getComputedValue(element, "font-size"))
+		: NaN;
+	const rows = px / getCellSize(element).height;
+	return rows >= 2 ? toWholeCells(rows) : 1;
 }
 
 // css-text-3 §4.1.3: the spaces that end a line hang, so they neither keep

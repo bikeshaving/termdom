@@ -183,6 +183,32 @@ test("the same margin draws the same gap down a list", () => {
 	dom.dispose();
 });
 
+// A line-height under two rows is one row, so body text set a little apart
+// stays one line to a row. From two rows up it rounds to the nearest row,
+// and the text sits in the middle of them.
+test("a line takes the rows its line-height asks for from two up", () => {
+	const {dom} = make({width: 7, height: 15});
+	const {document} = dom;
+	const line = (id: string, lineHeight: string) =>
+		`<div id="${id}" style="font-size: 16px; line-height: ${lineHeight}">` +
+		"x</div>";
+	document.body.innerHTML =
+		line("body", "1.5") + line("heading", "34px") + line("tall", "45px");
+	const rows = (id: string) => {
+		const box = document.getElementById(id)!;
+		const range = document.createRange();
+		range.selectNodeContents(box);
+		return [
+			(range.getBoundingClientRect().top - box.getBoundingClientRect().top) /
+			15,
+			box.getBoundingClientRect().height / 15,
+		];
+	};
+	expect([rows("body"), rows("heading"), rows("tall")])
+		.toEqual([[0, 1], [0, 2], [1, 3]]);
+	dom.dispose();
+});
+
 // Each box's edges round to the grid, not each length on its own, so
 // widths that add up to their container still fit it.
 test("columns that fill their container stay on one line", () => {
