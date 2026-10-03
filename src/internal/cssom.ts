@@ -278,6 +278,25 @@ export function getCellBlockMargin(
 }
 
 /**
+ * A vertical size property (height, min-height, max-height) in cells, or
+ * what toCellLength gives one it cannot resolve yet. A whole number of
+ * rows, for the reason a vertical margin is: a box a fraction of a row
+ * tall puts what follows it at a fraction, and the same spacer then draws
+ * as a row or none by turns.
+ */
+export function getCellBlockSize(
+	element: Element,
+	property: "height" | "min-height" | "max-height",
+): ReturnType<typeof toCellLength> {
+	const size = toCellLength(
+		CSSValues.parseUnitValue(getComputedValue(element, property)),
+		true,
+		element,
+	);
+	return typeof size === "number" ? toWholeCells(size) : size;
+}
+
+/**
  * An element's padding, in cells, or what toCellLength gives a side it
  * cannot resolve yet. Equal opposite sides stay equal: each is a whole
  * number of cells, an exact half rounding down. Placed by rounding its two
@@ -324,7 +343,7 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 			element,
 		);
 	const widthValue = length("width", false);
-	const heightValue = length("height", true);
+	const heightValue = getCellBlockSize(element, "height");
 
 	const {
 		top: paddingTop,

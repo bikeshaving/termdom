@@ -4,6 +4,7 @@ import {
 	cellsToPx,
 	getBoxModel,
 	getCellBlockMargin,
+	getCellBlockSize,
 	getCellPadding,
 	getCellSize,
 	getComputedValue,
@@ -664,11 +665,13 @@ function applyLegacyAlignment(
 // in content-box sizing gets the box's edges, as width and height do.
 function applyMinMax(style: Style, element: Element): void {
 	const read = (property: string, vertical: boolean): CSSValues.Value => {
-		const value = toCellLength(
-			CSSValues.parseUnitValue(getComputedValue(element, property)),
-			vertical,
-			element,
-		);
+		const value = vertical
+			? getCellBlockSize(element, property as "min-height" | "max-height")
+			: toCellLength(
+				CSSValues.parseUnitValue(getComputedValue(element, property)),
+				false,
+				element,
+			);
 		return toValue(
 			typeof value === "number"
 				? value + getContentBoxEdges(element, vertical)
@@ -1106,11 +1109,7 @@ function styleLayoutNodeProperties(
 		);
 		style.widthSizing = getWidthSizingConstant(widthValue);
 
-		const height = toCellLength(
-			CSSValues.parseUnitValue(getComputedValue(element, "height")),
-			true,
-			element,
-		);
+		const height = getCellBlockSize(element, "height");
 		style.height = toValue(
 			typeof height === "number"
 				? height + getContentBoxEdges(element, true)
@@ -1241,8 +1240,9 @@ function styleLayoutNodeProperties(
 			true,
 			element,
 		);
+		// Whole rows, as a vertical margin is, so equal gaps draw equal.
 		if (typeof rowGap === "number") {
-			style.gap.row = Math.max(0, rowGap);
+			style.gap.row = Math.max(0, toWholeCells(rowGap));
 		}
 
 		const columnGap = toCellLength(
@@ -3510,11 +3510,7 @@ function collectLeaves(
 						minWidthValue - horizontalBoxSpace,
 					);
 				}
-				const minHeightValue = toCellLength(
-					CSSValues.parseUnitValue(getComputedValue(element, "min-height")),
-					true,
-					element,
-				);
+				const minHeightValue = getCellBlockSize(element, "min-height");
 				if (typeof minHeightValue === "number") {
 					finalContentHeight = Math.max(
 						finalContentHeight,
@@ -3527,11 +3523,7 @@ function collectLeaves(
 						maxWidthValue - horizontalBoxSpace,
 					);
 				}
-				const maxHeightValue = toCellLength(
-					CSSValues.parseUnitValue(getComputedValue(element, "max-height")),
-					true,
-					element,
-				);
+				const maxHeightValue = getCellBlockSize(element, "max-height");
 				if (typeof maxHeightValue === "number") {
 					finalContentHeight = Math.min(
 						finalContentHeight,
