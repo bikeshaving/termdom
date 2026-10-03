@@ -480,6 +480,29 @@ test("deeply nested tables lay out in time that grows with their number", () => 
 	dom.dispose();
 });
 
+// A table tries what it holds at several widths, and a table inside it
+// tries its own cells at several widths for each of those. When each try
+// evicted the last answer, every level multiplied the work: a newsletter
+// of centered tables eight deep took seconds to open.
+test("nested centered tables lay out without measuring each level anew", () => {
+	const terminal = new MockProcess({cols: 200, rows: 10});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		cellSize: {width: 7, height: 15},
+	});
+	let html = "x y z";
+	for (let i = 0; i < 14; i++) {
+		html =
+			"<center><table width=\"90%\"><tr><td align=\"center\" " +
+			`style="padding: 4px">${html}</td></tr></table></center>`;
+	}
+	const start = performance.now();
+	const output = dom.renderANSI(html);
+	expect(performance.now() - start).toBeLessThan(2000);
+	expect(stripControlCodes(output)).toContain("x y z");
+	dom.dispose();
+});
+
 // A cell's percentage width is of its table, not of what holds the table.
 test("a 100% cell fills a fixed-width table, not the table's container", () => {
 	const terminal = new MockProcess({cols: 120, rows: 10});

@@ -398,10 +398,16 @@ function isMinContent(mode: AvailableSpace, available: number): boolean {
 }
 
 const CACHE_SLOT_COUNT = 9;
+// Answers kept per query shape. A table measures what it holds at every
+// width its own parent tries, and a nested table at every width each of
+// those gives it. With one answer per shape each try evicted the last,
+// and the work multiplied at every level of nesting. Yoga keeps sixteen.
+const CACHE_SLOT_DEPTH = 4;
 const NO_CACHED_SIZES: ReadonlyArray<CachedSize | null> = Object.freeze([]);
 
 // One cache slot per query shape, after Taffy, so the probes one pass makes
-// of a child (min-content, max-content, fixed) never evict each other.
+// of a child (min-content, max-content, fixed) never evict each other. A
+// slot holds the last CACHE_SLOT_DEPTH answers, oldest first.
 function getCacheSlot(
 	availableWidth: number,
 	availableHeight: number,
@@ -5698,15 +5704,36 @@ function layoutNode(
 		// last full layout placed, so that layout no longer stands.
 		node.cachedLayout = null;
 		const sizes = (node.cachedSizes ??= new Array<CachedSize | null>(
-			CACHE_SLOT_COUNT,
+			CACHE_SLOT_COUNT * CACHE_SLOT_DEPTH,
 		).fill(null));
-		const slot = getCacheSlot(
-			availableWidth,
-			availableHeight,
-			widthSpace,
-			heightSpace,
-		);
-		sizes[slot] = write(sizes[slot]);
+		const start =
+			CACHE_SLOT_DEPTH *
+			getCacheSlot(availableWidth, availableHeight, widthSpace, heightSpace);
+		const end = start + CACHE_SLOT_DEPTH;
+		let index = start;
+		while (
+			index < end &&
+			sizes[index] !== null &&
+			!isMatchingConstraints(
+				sizes[index]!,
+				availableWidth,
+				availableHeight,
+				widthSpace,
+				heightSpace,
+				ownerWidth,
+				ownerHeight,
+				false,
+			)
+		) {
+			index++;
+		}
+		if (index === end) {
+			const oldest = sizes[start];
+			sizes.copyWithin(start, start + 1, end);
+			index = end - 1;
+			sizes[index] = oldest;
+		}
+		sizes[index] = write(sizes[index]);
 	}
 	node.stale = false;
 }
