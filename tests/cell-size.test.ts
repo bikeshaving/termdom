@@ -131,12 +131,38 @@ test("a used width takes away the edges as they were drawn", () => {
 		"padding: 8px 4px; border: 1px solid\">x</div>";
 	const box = document.getElementById("box")!;
 	const style = window.getComputedStyle(box);
-	// A border is drawn a cell wide however thin it is, so the box is 13
-	// cells by 4 rows, and what is left inside is the width asked for.
+	// A border is drawn a cell wide however thin it is, and padding of half
+	// a cell on both sides rounds to none, so the box is 12 cells by 3 rows,
+	// and what is left inside is the width asked for.
 	expect([box.getBoundingClientRect().width, box.offsetHeight])
-		.toEqual([104, 64]);
+		.toEqual([96, 48]);
 	expect(style.width).toBe("80px");
 	expect(style.height).toBe("16px");
+	dom.dispose();
+});
+
+// Padding the same on both sides stays the same once drawn. Placed by
+// rounding its edges, 9px of padding at 15px rows was a row above a
+// button's label and none below it.
+test("equal padding on opposite sides draws as equal rows", () => {
+	const {dom} = make({width: 7, height: 15});
+	const {document} = dom;
+	const button = (padding: string) =>
+		"<a style=\"display: inline-block; border: 1px solid; " +
+		`padding: ${padding}; line-height: 12px">LIKE</a>`;
+	document.body.innerHTML =
+		`<div>${button("9px 14px")}</div>` + `<div>${button("4px 14px")}</div>`;
+	const rows = dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "").split("\n");
+	expect(rows.slice(0, 8).map((row) => row.trimEnd())).toEqual([
+		"┌────────┐",
+		"│        │",
+		"│  LIKE  │",
+		"│        │",
+		"└────────┘",
+		"┌────────┐",
+		"│  LIKE  │",
+		"└────────┘",
+	]);
 	dom.dispose();
 });
 
