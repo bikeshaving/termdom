@@ -917,6 +917,20 @@ function observeShadowRoot(
 
 const kDocument = Symbol("node document");
 
+// The displayed label and picker rows track the option list, so a
+// framework mutating the options must trigger a sync. Selection changes
+// reach the tree through the control's own setters.
+function observeOptionList(select: Element): void {
+	engineObservers
+		.get(select[kDocument])
+		?.observe(select, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			characterData: true,
+		});
+}
+
 // The root is registered with the cascade BEFORE it is populated, so
 // populating it is the invalidation that swaps in the new composed tree.
 function buildUAShadowTree(
@@ -6859,31 +6873,43 @@ function normalizeObserverOptions(
 }
 
 /**
- * Whether the document's own observer watches a shadow root. The cascade
- * lets a root go when its host leaves the document, and the observer must
- * too: it lives as long as the document, and every node it watches with it.
+ * The document's own observer lets go of what it watches that has left the
+ * document. It lives as long as the document, and with it every shadow root
+ * and select it was told to watch. One that comes back is watched again on
+ * the way in.
  */
-export function setShadowRootObserved(
-	root: globalThis.ShadowRoot,
-	observed: boolean,
-): void {
-	const document = (root.host as Element)[kDocument];
-	if (observed) {
-		observeShadowRoot(document, root);
+export function releaseRemovedNodes(document: globalThis.Document): void {
+	const observer = engineObservers.get(document as unknown as Document);
+	if (observer === undefined) {
 		return;
 	}
-	const observer = engineObservers.get(document);
-	const list = (root as unknown as Node)[kRegisteredObservers];
-	if (observer === undefined || list === null) {
-		return;
-	}
-	for (let index = list.length - 1; index >= 0; index--) {
-		if (list[index].observer === observer) {
-			list.splice(index, 1);
-			registeredObserverCount--;
+	for (const node of [...observer[kNodes]]) {
+		if (node.isConnected) {
+			continue;
 		}
+		const list = node[kRegisteredObservers];
+		if (list !== null) {
+			for (let index = list.length - 1; index >= 0; index--) {
+				if (list[index].observer === observer) {
+					list.splice(index, 1);
+					registeredObserverCount--;
+				}
+			}
+		}
+		observer[kNodes].delete(node);
 	}
-	observer[kNodes].delete(root as unknown as Node);
+}
+
+/** A shadow root whose host came back is watched again. */
+export function reobserveShadowRoot(root: globalThis.ShadowRoot): void {
+	observeShadowRoot((root.host as Element)[kDocument], root);
+}
+
+function isWatchedByDocument(node: Node, document: Document): boolean {
+	const observer = engineObservers.get(document);
+	return (node[kRegisteredObservers] ?? []).some((registered) =>
+		registered.observer === observer && registered.source === null,
+	);
 }
 
 function notifyObserver(observer: MutationObserver): void {
@@ -19049,6 +19075,10 @@ export class HTMLSelectElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		if (this[kUpgraded]) {
+			// Removed, the document's observer let go of it.
+			if (!isWatchedByDocument(this, this[kDocument])) {
+				observeOptionList(this);
+			}
 			syncUAShadowTree(this);
 			return;
 		}
@@ -19071,17 +19101,7 @@ export class HTMLSelectElement extends HTMLElement {
 
 		// Losing focus closes the picker.
 		this.addEventListener("blur", this[kOnBlur]);
-		// The displayed label and picker rows track the option list, so a
-		// framework mutating the options must trigger a sync. Selection
-		// changes reach the tree through the control's own setters.
-		engineObservers
-			.get(this[kDocument])
-			?.observe(this, {
-				childList: true,
-				subtree: true,
-				attributes: true,
-				characterData: true,
-			});
+		observeOptionList(this);
 
 		syncUAShadowTree(this);
 	}

@@ -33,7 +33,8 @@ import {
 	isUAShadowTree,
 	pseudoElement,
 	pseudoElementCount,
-	setShadowRootObserved,
+	releaseRemovedNodes,
+	reobserveShadowRoot,
 	styleElementCount,
 	TransitionEvent,
 	type Window,
@@ -519,6 +520,11 @@ const kLayout = Symbol("layout");
 const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsing = Symbol("parsing");
 const kPseudoHosts = Symbol("pseudoHosts");
+// The root of the shared tables. Per cascade, and emptied by a full parse:
+// every key holds rule ids, and a parse gives every rule a new one, so no
+// table under the old root can be reached again. Kept for the process,
+// every parse of every document left a whole tree of tables behind.
+const kSharedRoot = Symbol("sharedRoot");
 const kElement = Symbol("element");
 const kParentRule = Symbol("parentRule");
 const kOnChange = Symbol("onChange");
@@ -3670,11 +3676,11 @@ const USED_VALUE_PROPERTIES = new Set([
 // read the element's own boxes.
 const ruleIds = new WeakMap<ParsedCSSRule, number>();
 let nextRuleId = 0;
+const ruleIndexes = new WeakMap<Cascade, RuleIndex>();
 const childTables = new WeakMap<
 	Map<string, string>,
 	Map<string, Map<string, string>>
 >();
-const rootTable = new Map<string, Map<string, string>>();
 
 // Counters count elements in document order, so a rule that sets or uses
 // them gives each element its own values.
@@ -3778,10 +3784,10 @@ function getSharedResolved(
 	const parent = flatParentElement(element);
 	let table: Map<string, Map<string, string>>;
 	if (parent === null) {
-		if (rootTable.size > 256) {
-			rootTable.clear();
+		table = cascade[kSharedRoot];
+		if (table.size > 256) {
+			table.clear();
 		}
-		table = rootTable;
 	} else {
 		const parentValues = getResolvedValues(cascade, parent);
 		if (parentValues === null) {
@@ -3789,6 +3795,12 @@ function getSharedResolved(
 		}
 		table = childTables.get(parentValues) ?? new Map();
 		childTables.set(parentValues, table);
+		// Bounded as the root's is. A parent's values outlive the page that
+		// made them, since every element like it shares them, and each child
+		// with an inline style of its own adds a table there.
+		if (table.size > 256) {
+			table.clear();
+		}
 	}
 	let shared = table.get(key);
 	if (shared === undefined) {
@@ -5628,6 +5640,7 @@ export interface Cascade {
 
 	// Nothing else tracks a shadow tree's sheets, so a parse walks these.
 	[kShadowRoots]: Set<ShadowRoot>;
+	[kSharedRoot]: Map<string, Map<string, string>>;
 	[kPseudoElementStyleCache]: WeakMap<
 		Element,
 		Map<string, PseudoStyleDeclaration>
@@ -5775,6 +5788,7 @@ export class Cascade {
 			new WeakMap<Element, ComputedStyleDeclaration>();
 		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kShadowRoots] = new Set<ShadowRoot>();
+		this[kSharedRoot] = new Map();
 		this[kPseudoElementStyleCache] = new WeakMap<
 			Element,
 			Map<string, PseudoStyleDeclaration>
@@ -6047,13 +6061,20 @@ export class Cascade {
 		// rules with it. Kept, every shadow tree ever removed stayed alive.
 		// A host connected again registers its root again on the way in.
 		if (removedElements) {
+			// The same for an element given a pseudo-element: kept, every
+			// link, button and form control a page ever removed stayed alive.
+			for (const host of this[kPseudoHosts]) {
+				if (!host.isConnected) {
+					this[kPseudoHosts].delete(host);
+				}
+			}
 			for (const root of this[kShadowRoots]) {
 				if (!root.host.isConnected) {
 					this[kShadowRoots].delete(root);
-					setShadowRootObserved(root, false);
-					shouldSyncStylesheets = true;
+					forgetShadowRoot(this, root);
 				}
 			}
+			releaseRemovedNodes(this[kDocument]);
 		}
 		if (shouldSyncStylesheets) {
 			this.syncStylesheets();
@@ -6302,11 +6323,43 @@ function registerConnectedShadowRoots(
 	) {
 		return;
 	}
-	setShadowRootObserved(root, true);
+	reobserveShadowRoot(root);
 	cascade.registerShadowRoot(root);
 	for (const child of root.querySelectorAll("*")) {
 		registerConnectedShadowRoots(cascade, child);
 	}
+}
+
+// A root whose host left the document takes its rules with it. In place:
+// a full parse gives every rule a new identity, so no element shares its
+// values with one styled before it, and the tables of every parse stay
+// behind, one set for each host a page removed.
+function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
+	dropScopedRules(cascade, root);
+	// A parse already due builds without the root. One that is not would
+	// see the sheet count drop and rebuild everything.
+	if (!cascade[kStylesheetsDirty] && cascade[kParsedStyleSheetCount] >= 0) {
+		cascade[kParsedStyleSheetCount] = getStyleSheetCount(cascade);
+	}
+}
+
+// A tree's rules, wherever the cascade files them. The pseudo-element
+// rules are filed twice, and a copy left behind kept its tree, and its
+// host, alive, or matched twice once the tree parsed again.
+function dropScopedRules(cascade: Cascade, root: ShadowRoot): void {
+	cascade[kParsedRules] = cascade[kParsedRules].filter(
+		(rule) => rule.scope !== root,
+	);
+	for (const [type, rules] of cascade[kPseudoRulesByType]) {
+		const kept = rules.filter((rule) => rule.scope !== root);
+		if (kept.length === 0) {
+			cascade[kPseudoRulesByType].delete(type);
+		} else if (kept.length !== rules.length) {
+			cascade[kPseudoRulesByType].set(type, kept);
+		}
+	}
+	// Rebuilt on the next match, which may not come soon after a removal.
+	ruleIndexes.delete(cascade);
 }
 
 function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
@@ -6314,9 +6367,7 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 		cascade[kStylesheetsDirty] = true;
 		return;
 	}
-	cascade[kParsedRules] = cascade[kParsedRules].filter(
-		(rule) => rule.scope !== root,
-	);
+	dropScopedRules(cascade, root);
 	const before = cascade[kParsedRules].length;
 	for (const sheet of getShadowStyleSheets(root)) {
 		parseStyleSheet(cascade, sheet, root);
@@ -7740,6 +7791,7 @@ function parseStylesheets(cascade: Cascade): void {
 function parseStylesheetsNow(cascade: Cascade): void {
 	const document = cascade[kDocument];
 	cascade[kParsedRules] = [];
+	cascade[kSharedRoot] = new Map();
 	cascade[kSelectorsReachSiblings] = false;
 	cascade[kSiblingsReachDescendants] = false;
 	cascade[kSiblingKeys] = new Set();
@@ -8804,8 +8856,6 @@ interface RuleIndex {
 	// alike in both, like an editor's lines, try the same rules.
 	candidates: Map<string, ParsedCSSRule[]>;
 }
-
-const ruleIndexes = new WeakMap<Cascade, RuleIndex>();
 
 const MAX_CANDIDATE_LISTS = 4096;
 

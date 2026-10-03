@@ -12,7 +12,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {createWindow} from "../src/internal/dom.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {findCollector, MockProcess, nextFrame} from "./test-utils.js";
 
 test("attachShadow content renders, replacing the host's light children", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
@@ -763,26 +763,6 @@ test("blur on a host that delegates focus unfocuses what it delegated to", () =>
 	expect(shadow.activeElement).toBe(null);
 	expect(document.activeElement).toBe(document.body);
 });
-
-// Forcing a collection takes Bun's gc, or V8's switched on for this
-// process. A runtime offering neither skips the test rather than pass it.
-async function findCollector(): Promise<(() => void) | null> {
-	const bun = (globalThis as {Bun?: {gc(force: boolean): void}}).Bun;
-	if (bun !== undefined) {
-		return () => bun.gc(true);
-	}
-	try {
-		const v8 = await import("node:v8");
-		const vm = await import("node:vm");
-		v8.setFlagsFromString("--expose-gc");
-		const gc = vm.runInNewContext("gc");
-		return typeof gc === "function" ? gc : null;
-	} catch (error) {
-		// A runtime without node:v8 or node:vm forces no collection.
-		void error;
-		return null;
-	}
-}
 
 const collect = await findCollector();
 
