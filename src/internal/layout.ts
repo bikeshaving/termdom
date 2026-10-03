@@ -1,16 +1,18 @@
 import LineBreaker from "linebreak";
 
-import {cellsToPx, getCellSize, UNIT_CELL} from "./cellsize.ts";
 import {
+	cellsToPx,
 	getBoxModel,
 	getCellBlockMargin,
 	getCellPadding,
+	getCellSize,
 	getComputedValue,
 	getDeclaredDisplay,
 	getWhiteSpace as getElementWhiteSpace,
 	getTabSize,
 	toCellBorder,
 	toCellLength,
+	UNIT_CELL,
 	usedValuesChanged,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";

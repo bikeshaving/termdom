@@ -1,5 +1,4 @@
-import {cellsToPx} from "./cellsize.ts";
-import {type Cascade, getComputedValue} from "./cssom.ts";
+import {type Cascade, cellsToPx, getComputedValue} from "./cssom.ts";
 import {
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,

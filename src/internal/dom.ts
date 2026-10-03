@@ -8,12 +8,13 @@ import {
 	HTML_TAG_INTERFACES,
 	WINDOW_EVENT_HANDLERS,
 } from "../generated/htmlidl.ts";
-import {cellsToPx, getCellSize, UNIT_CELL} from "./cellsize.ts";
 import {
 	adoptStyleSheets,
 	type Cascade,
+	cellsToPx,
 	getAdoptedStyleSheets,
 	getBoxModel,
+	getCellSize,
 	getComputedValue,
 	getInlineStyle,
 	getStyleSheets,
@@ -21,6 +22,7 @@ import {
 	styleAttributeChanged,
 	styleElementSheet,
 	styleShadowAttached,
+	UNIT_CELL,
 } from "./cssom.ts";
 import {
 	closestSelector,
