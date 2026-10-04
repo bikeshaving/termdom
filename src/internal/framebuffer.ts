@@ -1790,9 +1790,12 @@ const kFrameScroll = Symbol("frameScroll");
 const kDirty = Symbol("dirty");
 const kDocumentTop = Symbol("documentTop");
 const kCellPixels = Symbol("cellPixels");
-// What a cell measures until the terminal says. Most fonts run about
-// twice as tall as wide at any size.
-const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
+// What a cell measures in pixels until the terminal says, or when it
+// cannot. Most fonts run about twice as tall as wide at any size.
+export const FALLBACK_CELL: Readonly<{width: number; height: number}> = {
+	width: 8,
+	height: 16,
+};
 
 export interface Framebuffer {
 	[kPrev]: CellGrid | null;
@@ -1846,7 +1849,7 @@ export class Framebuffer {
 		this[kCols] = cols;
 		this[kScrollTop] = 0;
 		this[kDocumentTop] = 0;
-		this[kCellPixels] = {...DEFAULT_CELL_PIXELS};
+		this[kCellPixels] = {...FALLBACK_CELL};
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
 		this[kWriter] = new FrameWriter(colorDepth);

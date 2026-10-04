@@ -30,6 +30,7 @@ import {
 	getBoxModel,
 	getCellSize,
 	getComputedValue,
+	getImageCellSize,
 	getInlineStyle,
 	getStyleSheets,
 	getWhiteSpace,
@@ -67,7 +68,6 @@ import {
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
 import {linearizeMath} from "./mathml.ts";
-import {getCellPixels, registerCellPixels} from "./replaced.ts";
 import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
@@ -14384,7 +14384,7 @@ class HTMLCanvasElement extends HTMLElement {
 					if (rect && rect.width > 0 && rect.height > 0) {
 						return {x: this.width / rect.width, y: this.height / rect.height};
 					}
-					const cell = getCellPixels(this);
+					const cell = getImageCellSize(this as unknown as Node);
 					return {x: cell.width, y: cell.height};
 				},
 			});
@@ -14393,7 +14393,7 @@ class HTMLCanvasElement extends HTMLElement {
 				canvas: this,
 				grid: () => getCanvasGrid(this),
 				changed,
-				cellPixels: () => getCellPixels(this),
+				cellPixels: () => getImageCellSize(this as unknown as Node),
 			});
 			// The natural size is now in cells, not pixels.
 			invalidateReplaced(this, true);
@@ -33368,7 +33368,6 @@ export function attachDocument(
 	attached[kFramebuffer] = framebuffer;
 	attached[kPendingCaretReveal] = null;
 	attached[kPendingEditingReveal] = null;
-	registerCellPixels(attached, () => framebuffer.cellPixels);
 	for (const type of ["input", "select", "change", "selectionchange"]) {
 		exchange.addEventListener(type, onTextControlEditEvent);
 	}
