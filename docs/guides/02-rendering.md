@@ -142,9 +142,11 @@ terminal that does not answer gets the conservative behavior.
 | XTWINOPS 16 | A cell's size in pixels, which sets the angle of a gradient and the natural size of an image or a canvas in cells |
 | OSC 52 query | Reading the clipboard in `navigator.clipboard.readText()` |
 
-The one exception is color depth, which the process transport reads
-from `COLORTERM` and `TERM` because no terminal answers a query for it.
-A transport of your own can set `colorDepth` any way it likes.
+Color depth is the one thing no terminal reports, and the engine reads
+nothing but the terminal: no environment variables. It sends 24-bit
+color unless the transport says otherwise. tmux converts it for a
+terminal without 24-bit color; a terminal without it on its own may
+show other colors, and a program that knows sets `colorDepth`.
 
 The modes the engine sets, and resets on exit, are mouse reporting,
 mouse motion reporting while something watches hover, bracketed paste,

@@ -227,9 +227,12 @@ const term = new TermDOM({transport: transportFromProcess(process)});
 - `options.sharesScreen` — overrides `sharesScreen`, which defaults to
   true for the global process (it sits below a shell) and false for
   anything else.
+- `options.colorDepth` — `"rgb"`, `"256"` or `"ansi"`; `"rgb"` when
+  absent.
+- `options.colorScheme` — `"light"` or `"dark"`, for the frames before
+  the terminal reports its background.
 
 The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
-`resizes`, signals → `closed`, `TERM`/`COLORTERM` → `colorDepth`,
-`stdout.isTTY` → `interactive`, `stderr` when it is not a terminal →
+`resizes`, signals → `closed`, `stdout.isTTY` → `interactive`, `stderr` when it is not a terminal →
 `logError`, and an exit hook that restores the cursor if the app exits
 without disposing.

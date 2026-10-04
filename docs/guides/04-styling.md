@@ -33,8 +33,9 @@ the depth the terminal has:
 | `256` | The nearest of the 256-color palette: the 6×6×6 cube, or the gray ramp for grays |
 | `ansi` | The nearest of the eight basic colors, by whether each channel is above half |
 
-The process transport picks the depth from `COLORTERM` and `TERM`. A
-transport of your own sets it directly.
+The process transport sends 24-bit color unless it is told otherwise,
+with `transportFromProcess(process, {colorDepth})`. A transport of your
+own sets it directly.
 
 A cell has no alpha. A color with alpha `0` paints nothing, and any
 other alpha paints the color as if opaque, except in a gradient, where
