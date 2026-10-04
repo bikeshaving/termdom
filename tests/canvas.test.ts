@@ -13,6 +13,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {createImageBitmapFrom, ImageBitmap} from "../src/internal/canvas.ts";
 import {decodeImage, encodePNG} from "../src/internal/images.ts";
 import {MockProcess, nextFrame, until} from "./test-utils.ts";
 
@@ -921,15 +922,47 @@ test("ImageData past the pixel limit throws, and so does getImageData", async ()
 	dom.dispose();
 });
 
-test("a charactergrid draws nothing for an image sized past the pixel limit", async () => {
+test("a charactergrid samples only the cells an image lands on, however large", async () => {
 	const {dom, document} = await mount(
 		"<canvas id=g width=4 height=2></canvas><canvas id=src width=2 height=2></canvas>",
 	);
 	const source =
 		(document.getElementById("src") as HTMLCanvasElement).getContext("2d")!;
-	source.fillRect(0, 0, 2, 2);
+	source.fillStyle = "#ff0000";
+	source.fillRect(0, 0, 1, 2);
+	source.fillStyle = "#0000ff";
+	source.fillRect(1, 0, 1, 2);
 	const ctx = grid(document);
-	ctx.drawImage(document.getElementById("src"), 0, 0, 1e6, 1e6);
-	expect(ctx.getCell(0, 0)).toBeNull();
+	ctx.drawImage(document.getElementById("src"), -1e6 + 2, 0, 2e6, 1e6);
+	expect(ctx.getCell(1, 0).background).toBe("#ff0000");
+	expect(ctx.getCell(2, 0).background).toBe("#0000ff");
+	expect(ctx.getCell(3, 1).background).toBe("#0000ff");
+	dom.dispose();
+});
+
+test("createImageBitmap from a kept-down image crops by each side's ratio, and past the edge is clear", async () => {
+	const data = new Uint8ClampedArray(4 * 2 * 4);
+	for (let i = 0; i < data.length; i += 4) {
+		data.set([255, 0, 0, 255], i);
+	}
+	const image = new ImageBitmap({
+		width: 4,
+		height: 2,
+		data,
+		naturalWidth: 8,
+		naturalHeight: 8,
+	});
+	const copy = createImageBitmapFrom(image, 4, 4, 8, 8);
+	expect([copy.width, copy.height]).toEqual([8, 8]);
+	const {dom, document} =
+		await mount("<canvas id=c width=8 height=8></canvas>");
+	const ctx =
+		(document.getElementById("c") as HTMLCanvasElement).getContext("2d")!;
+	ctx.imageSmoothingEnabled = false;
+	ctx.drawImage(copy as unknown as CanvasImageSource, 0, 0);
+	const alphaAt =
+		(x: number, y: number) => ctx.getImageData(x, y, 1, 1).data[3];
+	expect([alphaAt(1, 1), alphaAt(3, 3)]).toEqual([255, 255]);
+	expect([alphaAt(6, 1), alphaAt(1, 6), alphaAt(6, 6)]).toEqual([0, 0, 0]);
 	dom.dispose();
 });

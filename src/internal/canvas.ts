@@ -180,17 +180,36 @@ export function createImageBitmapFrom(
 		return new ImageBitmap(copy);
 	}
 	// From an image kept smaller than it is, the copy is kept as small,
-	// and measures the crop.
-	const kept = bitmap.width / naturalWidthOf(bitmap);
-	const keptWidth = Math.max(1, Math.round(width * kept));
-	const keptHeight = Math.max(1, Math.round(height * kept));
-	return new ImageBitmap({
-		width: keptWidth,
-		height: keptHeight,
-		data: sampleBitmap(bitmap, keptWidth, keptHeight, {x, y, width, height}),
-		naturalWidth: width,
-		naturalHeight: height,
-	});
+	// and measures the crop. What the crop takes past the image's edge is
+	// transparent.
+	const keptX = bitmap.width / naturalWidthOf(bitmap);
+	const keptY = bitmap.height / naturalHeightOf(bitmap);
+	const copy = createBitmap(
+		Math.max(1, Math.round(width * keptX)),
+		Math.max(1, Math.round(height * keptY)),
+	);
+	const left = Math.max(x, 0);
+	const top = Math.max(y, 0);
+	const right = Math.min(x + width, naturalWidthOf(bitmap));
+	const bottom = Math.min(y + height, naturalHeightOf(bitmap));
+	const toLeft = Math.round((left - x) * keptX);
+	const toTop = Math.round((top - y) * keptY);
+	const toWidth = Math.round((right - x) * keptX) - toLeft;
+	const toHeight = Math.round((bottom - y) * keptY) - toTop;
+	if (toWidth > 0 && toHeight > 0) {
+		const part = {
+			width: toWidth,
+			height: toHeight,
+			data: sampleBitmap(bitmap, toWidth, toHeight, {
+				x: left,
+				y: top,
+				width: right - left,
+				height: bottom - top,
+			}),
+		};
+		copyRect(part, 0, 0, copy, toLeft, toTop, toWidth, toHeight);
+	}
+	return new ImageBitmap({...copy, naturalWidth: width, naturalHeight: height});
 }
 
 function copyRect(
@@ -3247,31 +3266,37 @@ export class CanvasCharacterGridContext {
 		}
 		const cols = Math.round(dw);
 		const rows = Math.round(dh);
-		if (cols <= 0 || rows <= 0 || cols * rows * 2 > MAX_IMAGE_PIXELS) {
+		if (cols <= 0 || rows <= 0) {
 			return;
 		}
-		const pixels = sampleBitmap(bitmap, cols, rows * 2, {
-			x: sx,
-			y: sy,
-			width: sw,
-			height: sh,
-		});
 		const left = Math.round(dx);
 		const top = Math.round(dy);
 		const cells = this[kGridHost].cells();
 		const {grid} = cells;
-		for (let row = 0; row < rows; row++) {
-			for (let col = 0; col < cols; col++) {
-				const x = left + col;
-				const y = top + row;
-				if (x < 0 || y < 0 || x >= cells.cols || y >= cells.rows) {
-					continue;
-				}
+		// Only the cells on the grid are sampled, from the part of the
+		// source that lands on them.
+		const firstCol = Math.max(0, -left);
+		const firstRow = Math.max(0, -top);
+		const shownCols = Math.min(cols, cells.cols - left) - firstCol;
+		const shownRows = Math.min(rows, cells.rows - top) - firstRow;
+		if (shownCols <= 0 || shownRows <= 0) {
+			return;
+		}
+		const pixels = sampleBitmap(bitmap, shownCols, shownRows * 2, {
+			x: sx + (firstCol / cols) * sw,
+			y: sy + (firstRow / rows) * sh,
+			width: (shownCols / cols) * sw,
+			height: (shownRows / rows) * sh,
+		});
+		for (let row = 0; row < shownRows; row++) {
+			for (let col = 0; col < shownCols; col++) {
+				const x = left + firstCol + col;
+				const y = top + firstRow + row;
 				const index = y * cells.cols + x;
 				const half = halfBlockCell(
 					pixels,
-					(row * 2 * cols + col) * 4,
-					((row * 2 + 1) * cols + col) * 4,
+					(row * 2 * shownCols + col) * 4,
+					((row * 2 + 1) * shownCols + col) * 4,
 					grid.cluster[index] !== 0 && grid.bg[index] !== 0
 						? grid.bg[index]
 						: null,
