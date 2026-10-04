@@ -708,3 +708,36 @@ test("an image is a box while it loads", async () => {
 	expect(rowText(terminal, 1)).toBe("│a│");
 	dom.dispose();
 });
+
+test("an image larger than a page keeps measures as large as it is", async () => {
+	// 1500 by 800 is past MAX_KEPT_PIXELS, so fewer pixels are kept. Red
+	// on the left half, blue on the right.
+	const wide = png(1500, 800, (x) => x < 750 ? RED : BLUE);
+	const {dom, document} = await mount(
+		`<img id=a src="${wide}" style="display: block; width: 40ch">` +
+		"<canvas id=c width=1500 height=800></canvas>",
+	);
+	const image = document.getElementById("a") as HTMLImageElement;
+	await loaded(image);
+	await nextFrame(dom);
+	expect([image.naturalWidth, image.naturalHeight]).toEqual([1500, 800]);
+	// 1500 by 800 pixels under the 8 by 16 guess is 187.5 by 50 cells.
+	const box = image.getBoundingClientRect();
+	expect(box.height).toBe(Math.round(40 * 50 / 187.5));
+
+	const canvas = document.getElementById("c") as HTMLCanvasElement;
+	const context = canvas.getContext("2d")!;
+	// A source rectangle in the image's own pixels: its right half.
+	context.drawImage(image, 750, 0, 750, 800, 0, 0, 10, 10);
+	expect([...context.getImageData(5, 5, 1, 1).data]).toEqual(BLUE);
+
+	const bitmap = await dom.window.createImageBitmap(image);
+	expect([bitmap.width, bitmap.height]).toEqual([1500, 800]);
+
+	const pattern = context.createPattern(image, "repeat")!;
+	context.fillStyle = pattern;
+	context.fillRect(0, 0, 1500, 800);
+	expect([...context.getImageData(100, 400, 1, 1).data]).toEqual(RED);
+	expect([...context.getImageData(1400, 400, 1, 1).data]).toEqual(BLUE);
+	dom.dispose();
+});

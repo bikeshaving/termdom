@@ -15,7 +15,9 @@ import {
 	decodeImage,
 	decodeImageOffThread,
 	encodePNG,
+	keepAtMost,
 	MAX_IMAGE_BYTES,
+	MAX_KEPT_PIXELS,
 	readImageResponse,
 	resolveImageURL,
 	sampleBitmap,
@@ -496,4 +498,21 @@ test("where no worker starts, images decode on this thread", async () => {
 	} finally {
 		setDecodeWorkerURL(null);
 	}
+});
+
+test("an image past MAX_KEPT_PIXELS is kept averaged down, with its natural size", () => {
+	const width = 2000;
+	const height = 1000;
+	const data = new Uint8ClampedArray(width * height * 4);
+	for (let i = 0; i < width * height; i++) {
+		data.set(i % width < 1000 ? [255, 0, 0, 255] : [0, 0, 255, 255], i * 4);
+	}
+	const kept = keepAtMost({width, height, data});
+	expect(kept.width * kept.height).toBeLessThanOrEqual(MAX_KEPT_PIXELS);
+	expect([kept.naturalWidth, kept.naturalHeight]).toEqual([2000, 1000]);
+	expect(kept.width / kept.height).toBeCloseTo(2, 1);
+	expect(pixel(kept, 0, 0)).toEqual([255, 0, 0, 255]);
+	expect(pixel(kept, kept.width - 1, 0)).toEqual([0, 0, 255, 255]);
+	const small = {width: 10, height: 10, data: new Uint8ClampedArray(400)};
+	expect(keepAtMost(small)).toBe(small);
 });

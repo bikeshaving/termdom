@@ -26,6 +26,8 @@ import {
 	createBitmap,
 	encodePNG,
 	MAX_IMAGE_PIXELS,
+	naturalHeightOf,
+	naturalWidthOf,
 	sampleBitmap,
 } from "./images.ts";
 import {getStringWidth, graphemeSegmenter} from "./text.ts";
@@ -136,11 +138,13 @@ export class ImageBitmap {
 	}
 
 	get width(): number {
-		return this[kBitmapData]?.width ?? 0;
+		const bitmap = this[kBitmapData];
+		return bitmap ? naturalWidthOf(bitmap) : 0;
 	}
 
 	get height(): number {
-		return this[kBitmapData]?.height ?? 0;
+		const bitmap = this[kBitmapData];
+		return bitmap ? naturalHeightOf(bitmap) : 0;
 	}
 
 	close(): void {
@@ -165,14 +169,28 @@ export function createImageBitmapFrom(
 	}
 	const x = Math.floor(sx ?? 0);
 	const y = Math.floor(sy ?? 0);
-	const width = Math.floor(sw ?? bitmap.width);
-	const height = Math.floor(sh ?? bitmap.height);
+	const width = Math.floor(sw ?? naturalWidthOf(bitmap));
+	const height = Math.floor(sh ?? naturalHeightOf(bitmap));
 	if (width <= 0 || height <= 0) {
 		throw domException("IndexSizeError", "The crop rectangle is empty");
 	}
-	const copy = createBitmap(width, height);
-	copyRect(bitmap, x, y, copy, 0, 0, width, height);
-	return new ImageBitmap(copy);
+	if (bitmap.width === naturalWidthOf(bitmap)) {
+		const copy = createBitmap(width, height);
+		copyRect(bitmap, x, y, copy, 0, 0, width, height);
+		return new ImageBitmap(copy);
+	}
+	// From an image kept smaller than it is, the copy is kept as small,
+	// and measures the crop.
+	const kept = bitmap.width / naturalWidthOf(bitmap);
+	const keptWidth = Math.max(1, Math.round(width * kept));
+	const keptHeight = Math.max(1, Math.round(height * kept));
+	return new ImageBitmap({
+		width: keptWidth,
+		height: keptHeight,
+		data: sampleBitmap(bitmap, keptWidth, keptHeight, {x, y, width, height}),
+		naturalWidth: width,
+		naturalHeight: height,
+	});
 }
 
 function copyRect(
@@ -1474,9 +1492,11 @@ export class CanvasPattern {
 		if (inverse !== null) {
 			[x, y] = apply(inverse, x, y);
 		}
-		const {width, height, data} = this[kPatternBitmap];
-		let px = Math.floor(x);
-		let py = Math.floor(y);
+		const bitmap = this[kPatternBitmap];
+		const {width, height, data} = bitmap;
+		// The pattern tiles at the image's natural size.
+		let px = Math.floor((x * width) / naturalWidthOf(bitmap));
+		let py = Math.floor((y * height) / naturalHeightOf(bitmap));
 		if (this[kRepeatX]) {
 			px = ((px % width) + width) % width;
 		}
@@ -2107,6 +2127,8 @@ export class CanvasRenderingContext2D {
 		}
 		const copy = createBitmap(bitmap.width, bitmap.height);
 		copy.data.set(bitmap.data);
+		copy.naturalWidth = naturalWidthOf(bitmap);
+		copy.naturalHeight = naturalHeightOf(bitmap);
 		return new CanvasPattern(copy, mode);
 	}
 
@@ -2363,8 +2385,8 @@ export class CanvasRenderingContext2D {
 		}
 		let sx = 0;
 		let sy = 0;
-		let sw = bitmap.width;
-		let sh = bitmap.height;
+		let sw = naturalWidthOf(bitmap);
+		let sh = naturalHeightOf(bitmap);
 		let dx: number;
 		let dy: number;
 		let dw: number;
@@ -2401,8 +2423,8 @@ export class CanvasRenderingContext2D {
 		const scaleY = dh / sh;
 		const clippedX = Math.max(0, sx);
 		const clippedY = Math.max(0, sy);
-		const clippedRight = Math.min(bitmap.width, sx + sw);
-		const clippedBottom = Math.min(bitmap.height, sy + sh);
+		const clippedRight = Math.min(naturalWidthOf(bitmap), sx + sw);
+		const clippedBottom = Math.min(naturalHeightOf(bitmap), sy + sh);
 		if (clippedRight <= clippedX || clippedBottom <= clippedY) {
 			return;
 		}
@@ -2438,9 +2460,12 @@ export class CanvasRenderingContext2D {
 		const clip = this[kState].clip;
 		const smooth = this[kState].imageSmoothingEnabled;
 		const {width, height, data} = target;
+		// The source rectangle is in natural pixels. An image may keep fewer.
+		const keptX = source.width / naturalWidthOf(source);
+		const keptY = source.height / naturalHeightOf(source);
 		const sample = (u: number, v: number): RGBA => {
-			const px = sx + ((u - dx) / dw) * sw;
-			const py = sy + ((v - dy) / dh) * sh;
+			const px = (sx + ((u - dx) / dw) * sw) * keptX;
+			const py = (sy + ((v - dy) / dh) * sh) * keptY;
 			if (!smooth) {
 				const ix = Math.min(source.width - 1, Math.max(0, Math.floor(px)));
 				const iy = Math.min(source.height - 1, Math.max(0, Math.floor(py)));
@@ -3199,8 +3224,8 @@ export class CanvasCharacterGridContext {
 		}
 		let sx = 0;
 		let sy = 0;
-		let sw = bitmap.width;
-		let sh = bitmap.height;
+		let sw = naturalWidthOf(bitmap);
+		let sh = naturalHeightOf(bitmap);
 		let dx: number;
 		let dy: number;
 		let dw: number;
