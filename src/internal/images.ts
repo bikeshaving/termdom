@@ -39,15 +39,11 @@ export function naturalHeightOf(bitmap: Bitmap): number {
  * pixels, so a few bytes can ask for any amount of memory. Like a
  * browser, a decoder refuses a size past these before it allocates.
  */
-export const MAX_IMAGE_SIDE = 32768;
+const MAX_IMAGE_SIDE = 32768;
 export const MAX_IMAGE_PIXELS = 1 << 26;
 
 /** Throws for a size an image may not have. */
-export function checkImageSize(
-	width: number,
-	height: number,
-	format: string,
-): void {
+function checkImageSize(width: number, height: number, format: string): void {
 	if (
 		!Number.isInteger(width) ||
 		!Number.isInteger(height) ||

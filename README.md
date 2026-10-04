@@ -73,9 +73,11 @@ setInterval(() => {
   by grapheme, and text fields bind the readline chords (Ctrl+A/E/K/U/W).
 - **Fullscreen** `Element.requestFullscreen()` renders to the alternate
   screen; exiting restores the shell and its scrollback.
-- **Images and canvas** `<img>` decodes PNG, JPEG, GIF and BMP, and
-  `<canvas>` has a 2D context and a `"charactergrid"` context; pixels
-  are drawn two to a cell with half blocks.
+- **Images and canvas** `<img>` decodes PNG, JPEG, GIF and BMP on a
+  worker, and `<canvas>` has a 2D context and a `"charactergrid"`
+  context; pixels are drawn two to a cell with half blocks. Images load
+  only when the program says so: `new TermDOM({fetch})`, or a
+  `"request"` listener that answers each load.
 
 ## How it works
 
