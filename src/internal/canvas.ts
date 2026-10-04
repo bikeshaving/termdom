@@ -14,15 +14,20 @@
  */
 import {parseColor, toCellColor} from "./cssvalues.ts";
 import {
+	type CellContext,
+	type CellStyle,
+	LINE_STYLES,
+	type LineStyle,
+	readCell,
+} from "./framebuffer.ts";
+import {
 	averageBitmap,
 	type Bitmap,
-	type CharacterGrid,
 	createBitmap,
 	encodePNG,
-	type GridCell,
 	sampleBitmap,
 } from "./images.ts";
-import {getStringWidth} from "./text.ts";
+import {getStringWidth, graphemeSegmenter} from "./text.ts";
 
 // ---------------------------------------------------------------------------
 // What drawImage() and createPattern() take.
@@ -2889,7 +2894,8 @@ export function canvasToPNG(bitmap: Bitmap): Uint8Array {
 /** What the grid context needs from its canvas. */
 export interface GridHost {
 	canvas: object;
-	grid(): CharacterGrid;
+	// The canvas's cells, `width` columns by `height` rows.
+	cells(): CellContext;
 	changed(): void;
 	// Terminal pixels per cell, for drawing images at their natural size.
 	cellPixels(): {width: number; height: number};
@@ -2897,39 +2903,45 @@ export interface GridHost {
 
 const kGridHost = Symbol("gridHost");
 
-/**
- * getContext("charactergrid"): the canvas as `width` columns by `height`
- * rows of cells. fillText() writes glyphs in the fill color over the
- * cells' backgrounds, fillRect() fills cells' backgrounds, drawImage()
- * draws an image two pixels a cell, and clearRect() empties cells.
- * Coordinates are cells. Colors are any CSS color, and `currentcolor`,
- * the default, is the terminal's own foreground.
- */
 const kFillStyle = Symbol("fillStyle");
+const kGridStrokeStyle = Symbol("gridStrokeStyle");
+const kLineStyle = Symbol("lineStyle");
+const kLineJoin = Symbol("lineJoin");
 const kFont = Symbol("font");
 const kTextAlign = Symbol("textAlign");
 const kTextDecoration = Symbol("textDecoration");
-const kColor = Symbol("color");
-const kCell = Symbol("cell");
-const kSet = Symbol("set");
-const kEmptyCell = Symbol("emptyCell");
 const kRect = Symbol("rect");
 
 export interface CanvasCharacterGridContext {
 	[kGridHost]: GridHost;
 	[kFillStyle]: string;
+	[kGridStrokeStyle]: string;
+	[kLineStyle]: LineStyle["style"];
+	[kLineJoin]: "miter" | "round";
 	[kFont]: string;
 	[kTextAlign]: string;
 	[kTextDecoration]: string;
 }
 
+/**
+ * getContext("charactergrid"): the canvas as `width` columns by `height`
+ * rows of cells. fillText() writes glyphs in the fill color over the
+ * cells' backgrounds, fillRect() fills cells' backgrounds, strokeLine()
+ * and strokeRect() draw box-drawing lines that join where they meet,
+ * drawImage() draws an image two pixels a cell, and clearRect() empties
+ * cells. Coordinates are cells. Colors are any CSS color, and
+ * `currentcolor`, the default, is the terminal's own foreground.
+ */
 export class CanvasCharacterGridContext {
 	constructor(host: GridHost) {
+		this[kGridHost] = host;
 		this[kFillStyle] = "currentcolor";
+		this[kGridStrokeStyle] = "currentcolor";
+		this[kLineStyle] = "solid";
+		this[kLineJoin] = "miter";
 		this[kFont] = "";
 		this[kTextAlign] = "left";
 		this[kTextDecoration] = "none";
-		this[kGridHost] = host;
 	}
 
 	get canvas(): object {
@@ -2937,11 +2949,11 @@ export class CanvasCharacterGridContext {
 	}
 
 	get columns(): number {
-		return this[kGridHost].grid().cols;
+		return this[kGridHost].cells().cols;
 	}
 
 	get rows(): number {
-		return this[kGridHost].grid().rows;
+		return this[kGridHost].cells().rows;
 	}
 
 	get fillStyle(): string {
@@ -2949,14 +2961,37 @@ export class CanvasCharacterGridContext {
 	}
 
 	set fillStyle(value: string) {
-		const text = String(value).trim().toLowerCase();
-		if (text === "currentcolor") {
-			this[kFillStyle] = "currentcolor";
-			return;
+		this[kFillStyle] = readGridColor(value) ?? this[kFillStyle];
+	}
+
+	get strokeStyle(): string {
+		return this[kGridStrokeStyle];
+	}
+
+	set strokeStyle(value: string) {
+		this[kGridStrokeStyle] = readGridColor(value) ?? this[kGridStrokeStyle];
+	}
+
+	/** A CSS border style: solid, double, dashed, dotted and the rest. */
+	get lineStyle(): string {
+		return this[kLineStyle];
+	}
+
+	set lineStyle(value: string) {
+		const style = LINE_STYLES.find((name) => name === value);
+		if (style !== undefined) {
+			this[kLineStyle] = style;
 		}
-		const color = parseCanvasColor(text);
-		if (color !== null) {
-			this[kFillStyle] = serializeColor(color);
+	}
+
+	/** miter, round. A round join curves strokeRect()'s corners. */
+	get lineJoin(): string {
+		return this[kLineJoin];
+	}
+
+	set lineJoin(value: string) {
+		if (value === "miter" || value === "round") {
+			this[kLineJoin] = value;
 		}
 	}
 
@@ -2992,21 +3027,14 @@ export class CanvasCharacterGridContext {
 
 	fillRect(x: number, y: number, w: number, h: number): void {
 		const rect = this[kRect](x, y, w, h);
-		const color = this[kColor]();
+		const color = toGridColor(this[kFillStyle]);
 		if (rect === null || color === undefined) {
 			return;
 		}
 		const [x0, y0, x1, y1] = rect;
-		for (let row = y0; row < y1; row++) {
-			for (let col = x0; col < x1; col++) {
-				const cell = this[kEmptyCell]();
-				cell.char = " ";
-				// The terminal's foreground as a background is its inverse.
-				cell.bg = color;
-				cell.inverse = color === null;
-				this[kSet](col, row, cell);
-			}
-		}
+		// The terminal's foreground as a background is its inverse.
+		this[kGridHost].cells()
+			.drawRect(x0, y0, x1 - x0, y1 - y0, color ?? "inverse");
 		this[kGridHost].changed();
 	}
 
@@ -3015,11 +3043,11 @@ export class CanvasCharacterGridContext {
 		if (rect === null) {
 			return;
 		}
-		const [x0, y0, x1, y1] = rect;
-		for (let row = y0; row < y1; row++) {
-			for (let col = x0; col < x1; col++) {
-				this[kSet](col, row, null);
-			}
+		const {grid, cols, rows} = this[kGridHost].cells();
+		const x0 = Math.max(0, rect[0]);
+		const x1 = Math.min(cols, rect[2]);
+		for (let row = Math.max(0, rect[1]); row < Math.min(rows, rect[3]); row++) {
+			grid.clearRange(row * cols + x0, row * cols + x1);
 		}
 		this[kGridHost].changed();
 	}
@@ -3028,13 +3056,13 @@ export class CanvasCharacterGridContext {
 		if (!isFiniteAll(x, y)) {
 			return;
 		}
-		const color = this[kColor]();
+		const color = toGridColor(this[kFillStyle]);
 		if (color === undefined) {
 			return;
 		}
-		const segmenter = new Intl.Segmenter(undefined, {granularity: "grapheme"});
+		const cells = this[kGridHost].cells();
 		const clusters = [
-			...segmenter.segment(String(text).replace(/[\t\n\f\r]/g, " ")),
+			...graphemeSegmenter.segment(String(text).replace(/[\t\n\f\r]/g, " ")),
 		]
 			.map((segment) => segment.segment)
 			.filter((cluster) => getStringWidth(cluster) > 0);
@@ -3054,50 +3082,102 @@ export class CanvasCharacterGridContext {
 			? col + Math.max(0, Math.floor(maxWidth))
 			: Infinity;
 		const words = this[kFont].toLowerCase().split(/\s+/);
-		const bold = words.includes("bold") || words.includes("bolder");
-		const italic = words.includes("italic") || words.includes("oblique");
-		const dim = words.includes("lighter");
+		const base: CellStyle = {
+			bold: words.includes("bold") || words.includes("bolder"),
+			italic: words.includes("italic") || words.includes("oblique"),
+			dim: words.includes("lighter"),
+			underline: this[kTextDecoration] === "underline",
+		};
+		const {grid} = cells;
 		for (const cluster of clusters) {
 			const columns = getStringWidth(cluster);
 			if (col + columns > limit) {
 				break;
 			}
-			const previous = this[kCell](col, row);
+			const index = row * cells.cols + col;
+			const inside =
+				row >= 0 && row < cells.rows && col >= 0 && col < cells.cols;
 			// Over a cell filled with the terminal's foreground, which only
 			// inverse video can show, the cell stays inverse: its background
-			// attribute is then what shows as the glyph's color.
-			const inverse = previous?.inverse === true;
-			const cell: GridCell = {
-				char: cluster,
-				fg: inverse ? null : color,
-				bg: inverse ? color : previous?.bg ?? null,
-				bold,
-				italic,
-				underline: this[kTextDecoration] === "underline",
-				dim,
-				inverse,
-			};
-			this[kSet](col, row, cell);
-			// A wide glyph's second column is covered by it.
+			// is then what shows as the glyph's color.
+			const inverse =
+				inside &&
+				grid.cluster[index] !== 0 &&
+				readCell(grid, index)?.inverse === true;
+			cells.drawText(
+				cluster,
+				col,
+				row,
+				inverse ? {...base, inverse: true, bg: color} : {...base, fg: color},
+			);
+			// A wide glyph covers the columns after its first.
 			for (let extra = 1; extra < columns; extra++) {
-				const next = this[kCell](col + extra, row);
-				this[kSet](col + extra, row, {
-					...this[kEmptyCell](),
-					char: "",
-					bg: next?.bg ?? null,
-				});
+				if (inside && col + extra < cells.cols) {
+					grid.cluster[index + extra] = 0;
+				}
 			}
 			col += columns;
 		}
 		this[kGridHost].changed();
 	}
 
-	measureText(text: string): {width: number} {
-		let width = 0;
-		for (const char of String(text)) {
-			width += Math.max(0, getStringWidth(char));
+	/**
+	 * A line from the cell at (x1, y1) to the cell at (x2, y2), both
+	 * included, in strokeStyle and lineStyle. A line meeting another
+	 * joins it in a corner, a tee or a cross. Only rows and columns: a
+	 * slanted line draws nothing.
+	 */
+	strokeLine(x1: number, y1: number, x2: number, y2: number): void {
+		if (!isFiniteAll(x1, y1, x2, y2)) {
+			return;
 		}
-		return {width};
+		const color = toGridColor(this[kGridStrokeStyle]);
+		if (color === undefined) {
+			return;
+		}
+		const [a, b, c, d] = [x1, y1, x2, y2].map(Math.round);
+		const line: LineStyle = {style: this[kLineStyle], color};
+		const cells = this[kGridHost].cells();
+		if (b === d) {
+			cells.drawLine(Math.min(a, c), b, Math.max(a, c) + 1, b, {
+				...line,
+				startCap: a === c ? "square" : undefined,
+				endCap: a === c ? "square" : undefined,
+			});
+		} else if (a === c) {
+			cells.drawLine(a, Math.min(b, d), a, Math.max(b, d) + 1, line);
+		} else {
+			return;
+		}
+		this[kGridHost].changed();
+	}
+
+	/** A box on the cells `w` by `h` from (x, y), in strokeStyle and lineStyle. */
+	strokeRect(x: number, y: number, w: number, h: number): void {
+		const rect = this[kRect](x, y, w, h);
+		const color = toGridColor(this[kGridStrokeStyle]);
+		if (rect === null || color === undefined) {
+			return;
+		}
+		const [x0, y0, x1, y1] = rect;
+		const side: LineStyle = {style: this[kLineStyle], color};
+		const corner = this[kLineJoin] === "round" ? "round" : undefined;
+		this[kGridHost].cells()
+			.drawBox(x0, y0, x1 - x0, y1 - y0, {
+				top: side,
+				right: side,
+				bottom: side,
+				left: side,
+				topLeft: corner,
+				topRight: corner,
+				bottomRight: corner,
+				bottomLeft: corner,
+			});
+		this[kGridHost].changed();
+	}
+
+	measureText(text: string): {width: number} {
+		return this[kGridHost].cells().measureText(String(text));
 	}
 
 	/**
@@ -3147,22 +3227,26 @@ export class CanvasCharacterGridContext {
 		});
 		const left = Math.round(dx);
 		const top = Math.round(dy);
+		const cells = this[kGridHost].cells();
+		const {grid} = cells;
 		for (let row = 0; row < rows; row++) {
 			for (let col = 0; col < cols; col++) {
-				const upper = (row * 2 * cols + col) * 4;
-				const lower = ((row * 2 + 1) * cols + col) * 4;
-				const previous = this[kCell](left + col, top + row);
-				if (previous === undefined) {
+				const x = left + col;
+				const y = top + row;
+				if (x < 0 || y < 0 || x >= cells.cols || y >= cells.rows) {
 					continue;
 				}
-				const cellOut = halfBlockCell(
+				const index = y * cells.cols + x;
+				const half = halfBlockCell(
 					pixels,
-					upper,
-					lower,
-					previous?.bg ?? null,
+					(row * 2 * cols + col) * 4,
+					((row * 2 + 1) * cols + col) * 4,
+					grid.cluster[index] !== 0 && grid.bg[index] !== 0
+						? grid.bg[index]
+						: null,
 				);
-				if (cellOut !== null) {
-					this[kSet](left + col, top + row, cellOut);
+				if (half !== null) {
+					cells.drawText(half.char, x, y, half.style);
 				}
 			}
 		}
@@ -3181,12 +3265,18 @@ export class CanvasCharacterGridContext {
 		italic: boolean;
 		underline: boolean;
 	} | null {
-		const cell = this[kCell](Math.floor(x), Math.floor(y));
-		if (cell == null) {
+		const {grid, cols, rows} = this[kGridHost].cells();
+		const col = Math.floor(x);
+		const row = Math.floor(y);
+		if (col < 0 || row < 0 || col >= cols || row >= rows) {
 			return null;
 		}
-		const css = (value: number | null) => {
-			if (value === null) {
+		const cell = readCell(grid, row * cols + col);
+		if (cell === null) {
+			return null;
+		}
+		const css = (value: number) => {
+			if (value === 0) {
 				return null;
 			}
 			const rgb = value & 0xffffff;
@@ -3198,7 +3288,7 @@ export class CanvasCharacterGridContext {
 			});
 		};
 		return {
-			char: cell.char ?? "",
+			char: cell.char,
 			color: css(cell.fg),
 			background: css(cell.bg),
 			bold: cell.bold,
@@ -3208,55 +3298,15 @@ export class CanvasCharacterGridContext {
 	}
 
 	reset(): void {
-		const grid = this[kGridHost].grid();
-		grid.cells.fill(null);
+		this[kGridHost].cells().grid.clear();
 		this[kFillStyle] = "currentcolor";
+		this[kGridStrokeStyle] = "currentcolor";
+		this[kLineStyle] = "solid";
+		this[kLineJoin] = "miter";
 		this[kFont] = "";
 		this[kTextAlign] = "left";
 		this[kTextDecoration] = "none";
 		this[kGridHost].changed();
-	}
-
-	// The fill color as a cell color, null for the terminal's foreground,
-	// or undefined for a transparent color.
-	[kColor](): number | null | undefined {
-		if (this[kFillStyle] === "currentcolor") {
-			return null;
-		}
-		const color = parseCanvasColor(this[kFillStyle])!;
-		if (color.a === 0) {
-			return undefined;
-		}
-		return toCellColor((color.r << 16) | (color.g << 8) | color.b);
-	}
-
-	[kCell](x: number, y: number): GridCell | null | undefined {
-		const grid = this[kGridHost].grid();
-		if (x < 0 || y < 0 || x >= grid.cols || y >= grid.rows) {
-			return undefined;
-		}
-		return grid.cells[y * grid.cols + x];
-	}
-
-	[kSet](x: number, y: number, cell: GridCell | null): void {
-		const grid = this[kGridHost].grid();
-		if (x < 0 || y < 0 || x >= grid.cols || y >= grid.rows) {
-			return;
-		}
-		grid.cells[y * grid.cols + x] = cell;
-	}
-
-	[kEmptyCell](): GridCell {
-		return {
-			char: null,
-			fg: null,
-			bg: null,
-			bold: false,
-			italic: false,
-			underline: false,
-			dim: false,
-			inverse: false,
-		};
 	}
 
 	[kRect](
@@ -3280,20 +3330,44 @@ export class CanvasCharacterGridContext {
 	}
 }
 
+// A color as the grid context keeps it, serialized, or null when the
+// value is not a color.
+function readGridColor(value: string): string | null {
+	const text = String(value).trim().toLowerCase();
+	if (text === "currentcolor") {
+		return "currentcolor";
+	}
+	const color = parseCanvasColor(text);
+	return color === null ? null : serializeColor(color);
+}
+
+// A kept color as a cell color: null for the terminal's foreground, or
+// undefined for a transparent one, which draws nothing.
+function toGridColor(value: string): number | null | undefined {
+	if (value === "currentcolor") {
+		return null;
+	}
+	const color = parseCanvasColor(value)!;
+	if (color.a === 0) {
+		return undefined;
+	}
+	return toCellColor((color.r << 16) | (color.g << 8) | color.b);
+}
+
 /**
  * The cell two stacked pixels make: the upper half block in the upper
  * pixel's color over the lower pixel's, a lower half block when only the
  * lower pixel shows, a space in one color when both match, and null when
  * neither shows. A pixel at least half opaque shows; a partly
  * transparent one is first blended over `under` when there is a color
- * under it.
+ * under it. A half block with no background keeps the one under it.
  */
 export function halfBlockCell(
 	pixels: Uint8ClampedArray,
 	upper: number,
 	lower: number,
 	under: number | null,
-): GridCell | null {
+): {char: string; style: CellStyle} | null {
 	const read = (at: number): number | null => {
 		const alpha = pixels[at + 3] / 255;
 		let r = pixels[at];
@@ -3316,27 +3390,14 @@ export function halfBlockCell(
 	};
 	const top = read(upper);
 	const bottom = read(lower);
-	const cell: GridCell = {
-		char: "▀",
-		fg: top,
-		bg: bottom,
-		bold: false,
-		italic: false,
-		underline: false,
-		dim: false,
-		inverse: false,
-	};
 	if (top === null && bottom === null) {
 		return null;
 	}
 	if (top === null) {
-		cell.char = "▄";
-		cell.fg = bottom;
-		cell.bg = null;
-	} else if (top === bottom) {
-		cell.char = " ";
-		cell.fg = null;
-		cell.bg = top;
+		return {char: "▄", style: {fg: bottom}};
 	}
-	return cell;
+	if (top === bottom) {
+		return {char: " ", style: {bg: top}};
+	}
+	return {char: "▀", style: {fg: top, bg: bottom ?? undefined}};
 }

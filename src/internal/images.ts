@@ -12,6 +12,7 @@
  * and the canvas and the painter read it back through the registry at
  * the bottom.
  */
+import type {CellGrid} from "./framebuffer.ts";
 
 /** Straight (not premultiplied) RGBA, four bytes a pixel, rows top down. */
 export interface Bitmap {
@@ -1835,28 +1836,9 @@ export type ReplacedContent =
 	} |
 	// A canvas not drawn on yet: its size, and nothing to paint.
 	{kind: "blank"; width: number; height: number} |
-	{kind: "grid"; grid: CharacterGrid; version: number} |
+	{kind: "grid"; grid: CellGrid; version: number} |
 	{kind: "text"; text: string} |
 	null;
-
-/** One cell of a character grid. A null char leaves the cell's text alone. */
-export interface GridCell {
-	char: string | null;
-	fg: number | null;
-	bg: number | null;
-	bold: boolean;
-	italic: boolean;
-	underline: boolean;
-	dim: boolean;
-	// Painted in the terminal's own colors, swapped.
-	inverse: boolean;
-}
-
-export interface CharacterGrid {
-	cols: number;
-	rows: number;
-	cells: Array<GridCell | null>;
-}
 
 const replacedSources = new WeakMap<object, () => ReplacedContent>();
 

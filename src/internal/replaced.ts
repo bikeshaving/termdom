@@ -19,11 +19,15 @@ import {
 	toCellLength,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
-import type {CellContext, CellStyle} from "./framebuffer.ts";
+import {
+	CellContext,
+	CellGrid,
+	type CellStyle,
+	settleBorders,
+} from "./framebuffer.ts";
 import {
 	type Bitmap,
 	getReplacedContent,
-	type GridCell,
 	isReplacedElement,
 	type ReplacedContent,
 	sampleBitmap,
@@ -327,7 +331,7 @@ function placeImage(
 
 interface CellCache {
 	key: string;
-	cells: Array<GridCell | null>;
+	cells: CellGrid;
 }
 
 const bitmapCells = new WeakMap<Bitmap, CellCache>();
@@ -340,7 +344,7 @@ function getBitmapCells(
 	cols: number,
 	rows: number,
 	under: number | null,
-): Array<GridCell | null> {
+): CellGrid {
 	const {bitmap} = content;
 	const cell = getImageCellSize(element as unknown as Node);
 	const naturalWidth = bitmap.width / cell.width;
@@ -396,49 +400,39 @@ function getBitmapCells(
 			);
 		}
 	}
-	const cells: Array<GridCell | null> = [];
+	const cells = new CellContext(new CellGrid(rows, cols), rows, cols, 0);
 	for (let row = 0; row < rows; row++) {
 		for (let col = 0; col < cols; col++) {
-			cells.push(
-				halfBlockCell(
-					pixels,
-					(row * 2 * cols + col) * 4,
-					((row * 2 + 1) * cols + col) * 4,
-					under,
-				),
+			const half = halfBlockCell(
+				pixels,
+				(row * 2 * cols + col) * 4,
+				((row * 2 + 1) * cols + col) * 4,
+				under,
 			);
+			if (half !== null) {
+				cells.drawText(half.char, col, row, half.style);
+			}
 		}
 	}
-	bitmapCells.set(bitmap, {key, cells});
-	return cells;
+	bitmapCells.set(bitmap, {key, cells: cells.grid});
+	return cells.grid;
 }
 
-function drawCell(
-	ctx: CellContext,
-	cell: GridCell,
-	x: number,
-	y: number,
-	fallback: CellStyle,
-): void {
-	// The second column of a wide glyph belongs to the glyph before it.
-	if (cell.char === "") {
-		return;
+const settledGrids = new WeakMap<CellGrid, {version: number; grid: CellGrid}>();
+
+// A charactergrid's cells with its lines joined among themselves and
+// drawn, kept until the canvas draws again.
+function getSettledGrid(
+	content: Extract<ReplacedContent, {kind: "grid"}>,
+): CellGrid {
+	const cached = settledGrids.get(content.grid);
+	if (cached?.version === content.version) {
+		return cached.grid;
 	}
-	if (cell.char === null) {
-		if (cell.bg !== null) {
-			ctx.drawRect(x, y, 1, 1, cell.bg);
-		}
-		return;
-	}
-	ctx.drawText(cell.char, x, y, {
-		fg: cell.fg ?? fallback.fg,
-		bg: cell.bg ?? undefined,
-		bold: cell.bold || undefined,
-		italic: cell.italic || undefined,
-		underline: cell.underline || undefined,
-		dim: cell.dim || undefined,
-		inverse: cell.inverse || undefined,
-	});
+	const grid = content.grid.clone();
+	settleBorders(grid);
+	settledGrids.set(content.grid, {version: content.version, grid});
+	return grid;
 }
 
 /**
@@ -502,25 +496,14 @@ export function renderReplaced(
 		if (content.kind === "text") {
 			ctx.drawText(content.text, left, top, style);
 		} else if (content.kind === "grid") {
-			const {grid} = content;
-			for (let row = 0; row < Math.min(rows, grid.rows); row++) {
-				for (let col = 0; col < Math.min(cols, grid.cols); col++) {
-					const cell = grid.cells[row * grid.cols + col];
-					if (cell !== null) {
-						drawCell(ctx, cell, left + col, top + row, style);
-					}
-				}
-			}
+			ctx.drawGrid(getSettledGrid(content), left, top, style);
 		} else {
-			const cells = getBitmapCells(element, content, cols, rows, under);
-			for (let row = 0; row < rows; row++) {
-				for (let col = 0; col < cols; col++) {
-					const cell = cells[row * cols + col];
-					if (cell !== null) {
-						drawCell(ctx, cell, left + col, top + row, style);
-					}
-				}
-			}
+			ctx.drawGrid(
+				getBitmapCells(element, content, cols, rows, under),
+				left,
+				top,
+				style,
+			);
 			if (textRuns.length > 0) {
 				paintTextRuns(
 					element,
