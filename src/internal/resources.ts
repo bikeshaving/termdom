@@ -1,6 +1,6 @@
 /**
- * Loading what a document's markup asks for: an <img>'s source now,
- * stylesheets and the rest later. Each load is a plain Request, which
+ * Loading what a document's markup asks for, such as an <img>'s
+ * source. Each load is a plain Request, which
  * a TermDOM hands to its "request" listeners as a RequestEvent, with
  * what asked for it. A listener answers with respondWith(), as a
  * Service Worker answers a fetch event. A request no listener answers

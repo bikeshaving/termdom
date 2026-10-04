@@ -92,7 +92,7 @@ function createYielder(deadline: number): () => Promise<void> | undefined {
 /**
  * The most pixels a decoded image keeps, 4 MB of them. A terminal shows a
  * few hundred thousand at most, so a larger image is kept averaged down
- * to this, and reports its natural size as before.
+ * to this, and still reports its full size as its natural size.
  */
 export const MAX_KEPT_PIXELS = 1 << 20;
 
