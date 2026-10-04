@@ -2048,7 +2048,6 @@ export function isReplacedElement(owner: object): boolean {
 // Reading what a src names.
 
 interface ProcessWithBuiltins {
-	cwd?: () => string;
 	getBuiltinModule?: (name: string) => unknown;
 }
 
@@ -2057,25 +2056,16 @@ function getProcess(): ProcessWithBuiltins | undefined {
 }
 
 /**
- * Where a relative src points. A document at about:blank has no base,
- * and a program in a terminal works in its working directory, so a
- * relative path there is a file under it.
+ * The URL a src names, against the document's URL, or null. A relative
+ * src in a document with no URL of its own, at about:blank, names
+ * nothing.
  */
 export function resolveImageURL(src: string, base: string): string | null {
 	// A Windows path's drive letter would read as a URL scheme.
 	if (/^[a-z]:[\\/]/i.test(src)) {
 		return new URL(`file:///${src.replace(/\\/g, "/")}`).href;
 	}
-	if (URL.canParse(src, base)) {
-		return new URL(src, base).href;
-	}
-	const process = getProcess();
-	if (process?.cwd === undefined) {
-		return null;
-	}
-	const dir = process.cwd().replace(/\\/g, "/");
-	const root = `file://${dir.startsWith("/") ? "" : "/"}${dir}/`;
-	return URL.canParse(src, root) ? new URL(src, root).href : null;
+	return URL.canParse(src, base) ? new URL(src, base).href : null;
 }
 
 /** The most bytes an image file may have before it decodes. */

@@ -23,9 +23,10 @@ redraw like text, and they work over SSH and inside tmux.
 ```
 
 `src` is a URL: `https:`, `data:`, `file:` or any other. A path is
-relative to the document's URL. A document at `about:blank` has no URL
-to resolve against, so a path there is a `file:` URL under the working
-directory.
+relative to the document's URL, given by the `url` option. A document
+at `about:blank` has no URL to resolve against, so a path there names
+nothing; a program that shows local files sets `url` to a `file:` URL,
+such as its working directory.
 
 ### Loading
 
@@ -58,9 +59,10 @@ element that asked. `Response.error()`, or a promise that rejects,
 fails the request.
 
 The request waits for the script that set the source to finish, so a
-listener added just after the markup sees its images. A document whose
-URL is not `file:` or `about:` loads no `file:` URL, whatever would
-answer it. Node's `fetch` reads no files, and Bun's and Deno's do, so a
+listener added just after the markup sees its images. Only a document
+whose own URL is `file:` loads `file:` URLs, whatever would answer
+them, so untrusted markup in a page at `about:blank` or `https:` cannot
+read local files. Node's `fetch` reads no files, and Bun's and Deno's do, so a
 program that wants local files on every runtime answers them itself.
 
 The page's own `window.fetch` is the `fetch` given, or the runtime's

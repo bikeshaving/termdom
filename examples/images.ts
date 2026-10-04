@@ -1,4 +1,5 @@
 import {readFile} from "node:fs/promises";
+import {pathToFileURL} from "node:url";
 
 import {TermDOM} from "@b9g/termdom";
 
@@ -10,8 +11,10 @@ const source = typeof process === "undefined" ? undefined : process.argv[2];
 
 // Images load only through the fetch a TermDOM is given. This one reads
 // a file: URL from disk, which Node's own fetch does not, and leaves the
-// rest to the runtime.
+// rest to the runtime. The document's URL is the working directory, so
+// a path given on the command line resolves under it.
 const term = new TermDOM({
+  url: pathToFileURL(`${process.cwd()}/`).href,
   async fetch(request) {
     if (request.url.startsWith("file:")) {
       return new Response(await readFile(new URL(request.url)));

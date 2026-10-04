@@ -134,7 +134,7 @@ test("a listener added after the constructor's markup hears its images", async (
 	dom.dispose();
 });
 
-test("a document that is not a file loads no file, whatever answers", async () => {
+test("only a document that is a file loads files, whatever answers", async () => {
 	let heard = 0;
 	const dom = create({
 		url: "https://mail.example/message/1",
@@ -148,9 +148,25 @@ test("a document that is not a file loads no file, whatever answers", async () =
 	expect(heard).toBe(0);
 	dom.dispose();
 
-	const local = create({fetch: async () => new Response(PNG)});
+	const blank = create({fetch: async () => new Response(PNG)});
+	blank.document.body.innerHTML =
+		"<img id=a src=\"file:///etc/hosts\"><img id=b src=\"cover.png\">";
+	const blankImages = [...blank.document.querySelectorAll("img")];
+	expect(await Promise.all(blankImages.map(settled)))
+		.toEqual(["broken", "broken"]);
+	blank.dispose();
+
+	const asked: string[] = [];
+	const local = create({
+		url: "file:///home/me/art/",
+		fetch: async (request) => {
+			asked.push(request.url);
+			return new Response(PNG);
+		},
+	});
 	local.document.body.innerHTML = "<img src=\"cover.png\">";
 	expect(await settled(local.document.querySelector("img")!)).toBe("loaded");
+	expect(asked).toEqual(["file:///home/me/art/cover.png"]);
 	local.dispose();
 });
 
