@@ -81,7 +81,7 @@ export class RequestEvent extends Event {
 }
 
 /** How a document's loads are answered, set by the TermDOM that owns it. */
-export type ResourceLoader = (
+type ResourceLoader = (
 	request: Request,
 	context: RequestContext,
 ) => Promise<Response>;
