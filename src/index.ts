@@ -7,6 +7,7 @@ import {
 	getCellSize,
 	setCellSizeSource,
 	setColorSchemeSource,
+	setScreenCellSource,
 	UNIT_CELL,
 } from "./internal/cssom.ts";
 import {
@@ -195,11 +196,11 @@ export class TermDOM {
 	readonly window: Window;
 
 	constructor(options: TermDOMOptions = {}) {
-		const cellSize = getCellSizeSource(options.cellSize, () =>
+		const screenCell = () =>
 			this[kTransport].interactive
 				? this[kFramebuffer].cellPixels
-				: FALLBACK_CELL,
-		);
+				: FALLBACK_CELL;
+		const cellSize = getCellSizeSource(options.cellSize, screenCell);
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -255,6 +256,7 @@ export class TermDOM {
 
 		this[kMeasuresCell] = options.cellSize === "auto";
 		setCellSizeSource(document, cellSize);
+		setScreenCellSource(document, screenCell);
 
 		attachDocument(
 			document,

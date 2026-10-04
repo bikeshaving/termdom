@@ -14,8 +14,8 @@
 import {type CanvasTextRun, halfBlockCell} from "./canvas.ts";
 import {
 	getBoxModel,
-	getCellSize,
 	getComputedValue,
+	getImageCellSize,
 	toCellLength,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -31,34 +31,6 @@ import {
 import {getStringWidth} from "./text.ts";
 
 export {isReplacedElement};
-
-const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
-
-const cellPixelSources = new WeakMap<
-	object,
-	() => {width: number; height: number}
->();
-
-/** Where a document's cell size comes from, once it has a screen. */
-export function registerCellPixels(
-	document: object,
-	read: () => {width: number; height: number},
-): void {
-	cellPixelSources.set(document, read);
-}
-
-export function getCellPixels(element: Element): {
-	width: number;
-	height: number;
-} {
-	const page = getCellSize(element as unknown as Node);
-	if (page.width !== 1 || page.height !== 1) {
-		return page;
-	}
-	const document = element.ownerDocument;
-	return (document && cellPixelSources.get(document)?.()) ??
-		DEFAULT_CELL_PIXELS;
-}
 
 /** The natural size in cells, or null for content with none. */
 export function getNaturalSize(
@@ -78,7 +50,7 @@ export function getNaturalSize(
 	if (width === 0 || height === 0) {
 		return {width: 0, height: 0};
 	}
-	const cell = getCellPixels(element);
+	const cell = getImageCellSize(element as unknown as Node);
 	return {
 		width: Math.max(1, Math.round(width / cell.width)),
 		height: Math.max(1, Math.round(height / cell.height)),
@@ -100,7 +72,7 @@ export function getNaturalRatio(
 	if (width === 0 || height === 0) {
 		return NaN;
 	}
-	const cell = getCellPixels(element);
+	const cell = getImageCellSize(element as unknown as Node);
 	return (width / cell.width) / (height / cell.height);
 }
 
@@ -370,7 +342,7 @@ function getBitmapCells(
 	under: number | null,
 ): Array<GridCell | null> {
 	const {bitmap} = content;
-	const cell = getCellPixels(element);
+	const cell = getImageCellSize(element as unknown as Node);
 	const naturalWidth = bitmap.width / cell.width;
 	const naturalHeight = bitmap.height / cell.height;
 	const place = placeImage(element, cols, rows, naturalWidth, naturalHeight);
@@ -579,7 +551,7 @@ function paintTextRuns(
 	rows: number,
 	ctx: CellContext,
 ): void {
-	const cell = getCellPixels(element);
+	const cell = getImageCellSize(element as unknown as Node);
 	const place = placeImage(
 		element,
 		cols,

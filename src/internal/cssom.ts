@@ -46,7 +46,7 @@ import {
 	isButtonInput,
 	MATHML_NAMESPACE,
 } from "./dom.ts";
-import {LINE_STYLES, type LineStyle} from "./framebuffer.ts";
+import {FALLBACK_CELL, LINE_STYLES, type LineStyle} from "./framebuffer.ts";
 import {
 	getPresentationalHints,
 	isHintAttribute,
@@ -71,11 +71,10 @@ export interface CellSize {
 
 export const UNIT_CELL: Readonly<CellSize> = {width: 1, height: 1};
 
-// What "auto" takes when the terminal cannot say. Most terminal fonts
-// run about twice as tall as wide.
-export const FALLBACK_CELL: Readonly<CellSize> = {width: 8, height: 16};
+export {FALLBACK_CELL};
 
 const cellSizeSources = new WeakMap<object, () => Readonly<CellSize>>();
+const screenCellSources = new WeakMap<object, () => Readonly<CellSize>>();
 
 export function setCellSizeSource(
 	document: object,
@@ -90,6 +89,30 @@ export function getCellSize(node: Node | null | undefined): Readonly<CellSize> {
 	}
 	const document = node.ownerDocument ?? node;
 	return cellSizeSources.get(document)?.() ?? UNIT_CELL;
+}
+
+/** The cell the terminal draws, in its pixels. */
+export function setScreenCellSource(
+	document: object,
+	source: () => Readonly<CellSize>,
+): void {
+	screenCellSources.set(document, source);
+}
+
+/**
+ * The cell an image's pixels divide by. An image's pixels are CSS
+ * pixels, so this is the page's cell. Under the unit cell that would be
+ * a cell per pixel, so the screen's cell stands in.
+ */
+export function getImageCellSize(
+	node: Node | null | undefined,
+): Readonly<CellSize> {
+	const page = getCellSize(node);
+	if (page !== UNIT_CELL) {
+		return page;
+	}
+	const document = node?.ownerDocument ?? node;
+	return (document && screenCellSources.get(document)?.()) ?? FALLBACK_CELL;
 }
 
 /**
