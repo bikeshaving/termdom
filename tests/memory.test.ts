@@ -78,6 +78,43 @@ async function mountAndRemove(dom: TermDOM, html: string): Promise<void> {
 	},
 );
 
+// Scrolled boxes are tracked to clamp their offsets and to send
+// scrollend, and a box another box's scrolling keeps waiting is still
+// a box that was removed.
+(collect === null ? test.skip : test)(
+	"a removed box that was scrolled is collected while another scrolls",
+	async () => {
+		const dom = create();
+		await dom.attach();
+		const scroller = (): HTMLElement => {
+			const box = dom.document.createElement("div");
+			box.style.cssText = "height: 64px; overflow: auto";
+			box.innerHTML = "<p>line</p>".repeat(40);
+			dom.document.body.append(box);
+			return box;
+		};
+		const other = scroller();
+		const mount = async () => {
+			const box = scroller();
+			await nextFrame(dom);
+			box.scrollTop = 64;
+			await nextFrame(dom);
+			box.remove();
+			await nextFrame(dom);
+			// eslint-disable-next-line no-restricted-globals
+			return new WeakRef(box);
+		};
+		const ref = await mount();
+		for (let i = 0; i < 10 && ref.deref(); i++) {
+			other.scrollTop = 16 * (i % 2);
+			await nextFrame(dom);
+			await settle();
+		}
+		expect(ref.deref()).toBeUndefined();
+		dom.dispose();
+	},
+);
+
 // Measured from after a warm-up: the first rounds fill caches and compile
 // code, which Deno counts as some megabytes of heap that then stay level.
 const WARM_UP = 10;
@@ -103,7 +140,7 @@ async function growth(html: (round: number) => string): Promise<number> {
 	return (after - before) / 1e6;
 }
 
-// Each control's UA tree parses its own copy of the UA sheet.
+// Each control builds a shadow tree that the cascade registers.
 (collect === null ? test.skip : test)(
 	"mounting and removing form controls does not grow the heap",
 	async () => {

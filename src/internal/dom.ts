@@ -27157,6 +27157,13 @@ function awaitScrollEnd(document: Document, target: Document | Element): void {
 		clearTimeout(waiting.timer);
 	}
 	const targets = waiting?.targets ?? new Set<Document | Element>();
+	// A removed box gets no scrollend, so the wait does not keep it alive
+	// while other boxes go on scrolling.
+	for (const held of targets) {
+		if (held !== document && !(held as Element).isConnected) {
+			targets.delete(held);
+		}
+	}
 	targets.add(target);
 	const timer = setTimeout(() => {
 		scrollEnds.delete(document);
@@ -27203,7 +27210,11 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 			held.delete(element);
 			continue;
 		}
+		// A removed box has no box to be scrolled in, so it keeps no offset,
+		// as a browser's does not, and the set does not keep it alive.
 		if (!element.isConnected) {
+			scrollOffsets.delete(element);
+			held.delete(element);
 			continue;
 		}
 		const extent = attached[kLayout].getScrollExtent(element);
