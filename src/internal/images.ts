@@ -3,8 +3,8 @@
  * encoding a bitmap as PNG, and sampling a bitmap down to the two
  * pixels a cell shows.
  *
- * A cell draws two pixels stacked: the upper half block (U+2580) in the
- * foreground color over the background color. Everything a terminal can
+ * A cell draws two pixels stacked: the lower half block (U+2584) in the
+ * foreground color under the background color. Everything a terminal can
  * show of an image goes through cells that way, so an image scrolls,
  * clips and diffs like any other text, over SSH and inside tmux too.
  *

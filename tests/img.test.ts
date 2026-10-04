@@ -141,9 +141,9 @@ test("an image paints two pixels a cell in their own colors", async () => {
 		[1, 1, BLUE, WHITE],
 	] as const) {
 		const painted = cell(terminal, col, row);
-		expect(painted.char).toBe("▀");
-		expect(painted.fg).toBe(hex(top));
-		expect(painted.bg).toBe(hex(bottom));
+		expect(painted.char).toBe("▄");
+		expect(painted.fg).toBe(hex(bottom));
+		expect(painted.bg).toBe(hex(top));
 	}
 	// Two columns wide and no more.
 	expect(cell(terminal, 2, 0).char).toBe(" ");
@@ -266,7 +266,7 @@ test("an image sits on a line with the text around it", async () => {
 		await mount(`<p>before <img src="${BANDS}"> after</p>`);
 	await loaded(document.querySelector("img")!);
 	await nextFrame(dom);
-	expect(rowText(terminal, 0)).toBe("before ▀▀ after");
+	expect(rowText(terminal, 0)).toBe("before ▄▄ after");
 	// The image's computed display stays inline, as in a browser.
 	expect(
 		dom.window.getComputedStyle(document.querySelector("img")!).display,
@@ -460,9 +460,9 @@ test("an image keeps its own height on a line with a taller neighbor", async () 
 	// tall, and the pixels are not stretched to fill it.
 	expect(image.getBoundingClientRect().height).toBe(2);
 	expect(cell(terminal, 0, 1)).toEqual({
-		char: "▀",
-		fg: hex(BLUE),
-		bg: hex(WHITE),
+		char: "▄",
+		fg: hex(WHITE),
+		bg: hex(BLUE),
 	});
 	expect(cell(terminal, 0, 2).char).toBe(" ");
 	dom.dispose();

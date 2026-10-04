@@ -131,14 +131,14 @@ test("drawing repaints the canvas's cells without any DOM change", async () => {
 	ctx.fillRect(0, 8, 16, 8);
 	await nextFrame(dom);
 	expect(cell(terminal, 0, 0)).toMatchObject({
-		char: "▀",
-		fg: 0xff0000,
-		bg: 0x0000ff,
+		char: "▄",
+		fg: 0x0000ff,
+		bg: 0xff0000,
 	});
 	expect(cell(terminal, 1, 0)).toMatchObject({
-		char: "▀",
-		fg: 0xff0000,
-		bg: 0x0000ff,
+		char: "▄",
+		fg: 0x0000ff,
+		bg: 0xff0000,
 	});
 	// The second row of cells is still empty.
 	expect(cell(terminal, 0, 1).char).toBe(" ");
@@ -693,14 +693,14 @@ test("drawImage draws pixels into cells, two a cell", async () => {
 	ctx.drawImage(document.getElementById("src"), 1, 0, 2, 1);
 	await nextFrame(dom);
 	expect(cell(terminal, 1, 0)).toMatchObject({
-		char: "▀",
-		fg: 0xff0000,
-		bg: 0x00ff00,
+		char: "▄",
+		fg: 0x00ff00,
+		bg: 0xff0000,
 	});
 	expect(cell(terminal, 2, 0)).toMatchObject({
-		char: "▀",
-		fg: 0xff0000,
-		bg: 0x00ff00,
+		char: "▄",
+		fg: 0x00ff00,
+		bg: 0xff0000,
 	});
 	expect(cell(terminal, 0, 0).char).toBe(" ");
 	dom.dispose();
