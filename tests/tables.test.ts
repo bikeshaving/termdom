@@ -664,3 +664,56 @@ test("a table grows to hold a cell as big as the table", async () => {
 		.toEqual(["┌──────┐", "│      │", "│x     │", "│      │", "└──────┘"]);
 	dom.dispose();
 });
+
+// CSS 2.1 §17.2.1, rule 2: cells a table holds with no row between share
+// an anonymous row. Mail built on MJML lays out every column this way.
+test("cells directly in a table share an anonymous row", async () => {
+	const variants = [
+		"table-layout:fixed;width:100%|width:100%",
+		"width:100%|width:100%",
+		"table-layout:fixed;width:100%|",
+		"width:100%|",
+	];
+	for (const variant of variants) {
+		const [table, cell] = variant.split("|");
+		const {box, rows, dom} = await render(
+			`<div style="display:table;${table}">\n` +
+			`<div id=c style="display:table-cell;${cell}"><p>hello</p></div>\n` +
+			"</div>",
+		);
+		expect(box("#c")).toMatchObject({left: 0, top: 0, width: 60});
+		expect(box("#c").height).toBeGreaterThan(0);
+		expect(rows.some((row) => row.includes("hello"))).toBe(true);
+		dom.dispose();
+	}
+});
+
+test("consecutive stray cells form one row, and a real row closes it", async () => {
+	const {box, dom} = await render(
+		"<div style=\"display:table;width:30ch\">" +
+		"<div id=a style=\"display:table-cell\">a</div>" +
+		"<div id=b style=\"display:table-cell\">b</div>" +
+		"<div style=\"display:table-row\"><div id=r style=\"display:table-cell\">r</div></div>" +
+		"<div id=c style=\"display:table-cell\">c</div>" +
+		"</div>",
+	);
+	expect(box("#a").top).toBe(0);
+	expect(box("#b").top).toBe(0);
+	expect(box("#b").left).toBeGreaterThan(box("#a").left);
+	expect(box("#r").top).toBe(1);
+	expect(box("#c").top).toBe(2);
+	expect(box("#a").width + box("#b").width).toBe(30);
+	dom.dispose();
+});
+
+test("stray cells in a row group share an anonymous row too", async () => {
+	const {box, dom} = await render(
+		"<div style=\"display:table;width:20ch\"><div style=\"display:table-row-group\">" +
+		"<div id=a style=\"display:table-cell\">a</div>" +
+		"<div id=b style=\"display:table-cell\">b</div>" +
+		"</div></div>",
+	);
+	expect([box("#a").top, box("#b").top]).toEqual([0, 0]);
+	expect(box("#a").width + box("#b").width).toBe(20);
+	dom.dispose();
+});
