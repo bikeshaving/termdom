@@ -2091,11 +2091,15 @@ export const IMAGE_ACCEPT =
 export async function readImageResponse(
 	response: Response,
 ): Promise<Uint8Array> {
+	// A body left unread holds its connection open.
+	const discard = () => response.body?.cancel().catch(() => {});
 	if (!response.ok) {
+		await discard();
 		throw new Error(`The image request failed with status ${response.status}`);
 	}
 	const declared = Number(response.headers.get("content-length") ?? NaN);
-	if (Number.isFinite(declared)) {
+	if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
+		await discard();
 		checkImageBytes(declared);
 	}
 	if (response.body === null) {

@@ -77,7 +77,8 @@ export class RequestEvent extends Event {
 
 	/** Work the listener goes on with after it answers. */
 	waitUntil(promise: PromiseLike<unknown>): void {
-		this[kExtensions].push(Promise.resolve(promise));
+		// Nothing waits on it, so a rejection must not go unhandled.
+		this[kExtensions].push(Promise.resolve(promise).catch(() => {}));
 	}
 }
 

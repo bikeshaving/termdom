@@ -171,9 +171,17 @@ test("only a document that is a file loads files, whatever answers", async () =>
 });
 
 test("window.fetch is the fetch given, and the runtime's without one", async () => {
-	const given = async () => new Response("given");
-	const dom = create({fetch: given});
-	expect(dom.window.fetch).toBe(given);
+	const asked: Array<[string, string]> = [];
+	const dom = create({
+		url: "https://app.example/",
+		fetch: async (request) => {
+			asked.push([request.method, request.url]);
+			return new Response("given");
+		},
+	});
+	const answer = await dom.window.fetch("/data", {method: "POST", body: "x"});
+	expect(await answer.text()).toBe("given");
+	expect(asked).toEqual([["POST", "https://app.example/data"]]);
 	dom.dispose();
 
 	const plain = create();
