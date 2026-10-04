@@ -24,6 +24,17 @@ async function settle(): Promise<void> {
 	}
 }
 
+// The lowest of three readings. What a collection misses only adds, so
+// the lowest is the nearest to what is still held.
+async function heldHeap(): Promise<number> {
+	let lowest = Infinity;
+	for (let i = 0; i < 3; i++) {
+		await settle();
+		lowest = Math.min(lowest, process.memoryUsage().heapUsed);
+	}
+	return lowest;
+}
+
 // Mounted, painted, removed and painted again, in a function of its own:
 // what an async function holds across an await, it holds until it returns.
 async function mountAndRemove(dom: TermDOM, html: string): Promise<void> {
@@ -71,25 +82,26 @@ async function mountAndRemove(dom: TermDOM, html: string): Promise<void> {
 // code, which Deno counts as some megabytes of heap that then stay level.
 const WARM_UP = 10;
 
-// The heap after a forced collection, before and after a churn. A leak
-// of a few kilobytes per element is megabytes here, well clear of noise.
+// Each leak these tests were written for held at least 17 MB over 80
+// rounds on every runtime, twice what it held over 40. Without them the
+// heap wanders by up to 7 MB, more rounds or fewer.
+const ROUNDS = 80;
+const MB = 12;
+
+// The heap held before and after a churn.
 async function growth(html: (round: number) => string): Promise<number> {
 	const dom = create();
 	for (let round = 0; round < WARM_UP; round++) {
 		await mountAndRemove(dom, html(round));
 	}
-	await settle();
-	const before = process.memoryUsage().heapUsed;
-	for (let round = WARM_UP; round < WARM_UP + 40; round++) {
+	const before = await heldHeap();
+	for (let round = WARM_UP; round < WARM_UP + ROUNDS; round++) {
 		await mountAndRemove(dom, html(round));
 	}
-	await settle();
-	const after = process.memoryUsage().heapUsed;
+	const after = await heldHeap();
 	dom.dispose();
 	return (after - before) / 1e6;
 }
-
-const MB = 6;
 
 // Each control's UA tree parses its own copy of the UA sheet.
 (collect === null ? test.skip : test)(
@@ -138,13 +150,11 @@ const MB = 6;
 		for (let i = 0; i < WARM_UP; i++) {
 			await open();
 		}
-		await settle();
-		const before = process.memoryUsage().heapUsed;
-		for (let i = 0; i < 40; i++) {
+		const before = await heldHeap();
+		for (let i = 0; i < ROUNDS; i++) {
 			await open();
 		}
-		await settle();
-		const grown = (process.memoryUsage().heapUsed - before) / 1e6;
+		const grown = (await heldHeap() - before) / 1e6;
 		dom.dispose();
 		expect(grown).toBeLessThan(MB);
 	},
