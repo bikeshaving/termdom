@@ -81,7 +81,7 @@ document.body.innerHTML = `
         <img class="box" style="object-fit: cover">
       </div>
     </div>
-    <p>A broken image shows its alt text: <img src="missing.png" alt="[no cover art]"></p>
+    <p>A broken image is a box with its alt text: <img src="missing.png" alt="no cover art"></p>
   </div>
 `;
 
