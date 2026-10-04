@@ -415,6 +415,44 @@ test("a meter's level reads its value against low, high and optimum", async () =
 	dom.dispose();
 });
 
+test("a page styles a control's states through ::part() with several names", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<style>meter::part(bar suboptimum) { color: #0000ff; }</style>" +
+		"<meter min=\"0\" max=\"10\" low=\"3\" high=\"7\" optimum=\"9\" value=\"5\"></meter>";
+	await nextFrame(dom);
+	const getSgr = (): string => {
+		const match = terminal.getStaticANSI().match(/38;2;(\d+);(\d+);(\d+)/);
+		return match ? `${match[1]},${match[2]},${match[3]}` : "none";
+	};
+	expect(getSgr()).toBe("0,0,255");
+	// The bar has the name bar, but not optimum.
+	document.querySelector("meter")!.setAttribute("value", "9");
+	await nextFrame(dom);
+	expect(getSgr()).toBe("95,175,95");
+	dom.dispose();
+});
+
+test("a page restyles a part's ::before and a details' ::details-content", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<style>" +
+		"input::part(label)::before { content: \"< \"; }" +
+		"input::part(label)::after { content: \" >\"; }" +
+		"details::details-content { padding-left: 2ch; }" +
+		"</style>" +
+		"<input type=\"button\" value=\"Go\">" +
+		"<details open><summary>More</summary>inside</details>";
+	await nextFrame(dom);
+	const text = terminal.getPlainText();
+	expect(text).toContain("< Go >");
+	expect(text).toContain("\n  inside");
+	dom.dispose();
+});
+
 /* --------------------------------------------------- fieldset and legend */
 
 test("a fieldset draws a border its legend interrupts", async () => {

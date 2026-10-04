@@ -152,56 +152,46 @@ export const UA_DOCUMENT_STYLES = `
 	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
 `;
 
-// The value text node lays out and paints like any document text. The
-// sync hides the placeholder inline whenever a value exists.
-export const TEXTAREA_UA_STYLES = `
-	[part="placeholder"] { color: #808080; }
-	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; }
-`;
+// The insides of the built-in controls, reached as a page reaches them:
+// through ::placeholder, ::details-content and ::part().
+//
+// A text field's value and placeholder clip their text, and the render
+// loop sets scrollLeft to follow the caret. A textarea's value text node
+// lays out and paints like any document text. The sync hides a
+// placeholder inline whenever a value exists.
+//
+// A details element's disclosure flips the content container's display
+// inline from `open`, which hides a closed details' text children
+// without any rule in the light tree.
+//
+// A gauge's bar is as wide as the fraction filled. The groove follows it
+// in the same clip, so an empty bar still reads as a bar, and an
+// indeterminate progress bar shows only the groove. A meter's bar also
+// has the part name of its level against low, high and optimum, so the
+// color is a rule and not a choice the painter makes.
+//
+// A select's picker rows also have the part names highlighted, disabled
+// and grouped while those apply.
+export const UA_CONTROL_STYLES = `
+	input::placeholder, textarea::placeholder { color: #808080; }
+	textarea:not(:focus)::placeholder { font-weight: lighter; }
+	input::part(value), input::placeholder { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
+	input::part(label) { white-space: pre; }
+	input::part(label)::before { content: "[ "; }
+	input::part(label)::after { content: " ]"; }
 
-// The value and placeholder clip their text. The render loop sets
-// scrollLeft to follow the caret.
-export const TEXT_CONTROL_UA_STYLES = `
-	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
-	[part="placeholder"] { color: #808080; }
-	[part="label"] { white-space: pre; }
-	[part="label"]::before { content: "[ "; }
-	[part="label"]::after { content: " ]"; }
-`;
+	details::details-content { display: block; }
 
-// The disclosure flips the content container's display inline from
-// `open`, which hides a closed details' text children without any rule
-// in the light tree.
-export const DETAILS_UA_STYLES = `
-	[part="details-content"] { display: block; }
-`;
+	meter::part(track), progress::part(track) { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; }
+	meter::part(groove), progress::part(groove) { color: #808080; font-weight: lighter; }
+	meter::part(bar), progress::part(bar) { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
+	progress::part(bar) { color: #5fafff; }
+	meter::part(bar optimum) { color: #5faf5f; }
+	meter::part(bar suboptimum) { color: #d7af5f; }
+	meter::part(bar even-less-good) { color: #d75f5f; }
 
-// The bar's width is the fraction filled. The groove follows it in the
-// same clip, so an empty bar still reads as a bar.
-const GAUGE_UA_STYLES = `
-	[part="track"] { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; }
-	[part="groove"] { color: #808080; font-weight: lighter; }
-	[part="bar"] { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
-`;
-
-// An indeterminate bar has no bar at all. Only the groove shows.
-export const PROGRESS_UA_STYLES = `
-	${GAUGE_UA_STYLES}
-	[part="bar"] { color: #5fafff; }
-`;
-
-// The level the value falls in against low/high/optimum is an
-// attribute a rule matches, not a color the painter picks.
-export const METER_UA_STYLES = `
-	${GAUGE_UA_STYLES}
-	[part="bar"][data-level="optimum"] { color: #5faf5f; }
-	[part="bar"][data-level="suboptimum"] { color: #d7af5f; }
-	[part="bar"][data-level="even-less-good"] { color: #d75f5f; }
-`;
-
-export const SELECT_UA_STYLES = `
-	[part="indicator"] { font-weight: lighter; }
-	[part="picker"] {
+	select::part(indicator) { font-weight: lighter; }
+	select::part(picker) {
 		display: none;
 		position: absolute;
 		width: max-content;
@@ -212,9 +202,9 @@ export const SELECT_UA_STYLES = `
 		border-top-style: solid; border-right-style: solid;
 		border-bottom-style: solid; border-left-style: solid;
 	}
-	[part="option"] { display: block; white-space: pre; }
-	[part="option"][data-highlighted] { background-color: Highlight; color: HighlightText; }
-	[part="option"][data-disabled] { font-weight: lighter; }
-	[part="optgroup"] { display: block; white-space: pre; font-weight: bold; }
-	[part="option"][data-grouped] { padding-left: 2ch; }
+	select::part(option) { display: block; white-space: pre; }
+	select::part(option highlighted) { background-color: Highlight; color: HighlightText; }
+	select::part(option disabled) { font-weight: lighter; }
+	select::part(optgroup) { display: block; white-space: pre; font-weight: bold; }
+	select::part(option grouped) { padding-left: 2ch; }
 `;

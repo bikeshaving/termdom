@@ -54,7 +54,11 @@ import {
 import type {Layout} from "./layout.ts";
 import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {getStringWidth} from "./text.ts";
-import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.ts";
+import {
+	UA_CONTROL_STYLES,
+	UA_DOCUMENT_STYLES,
+	UA_ELEMENT_STYLES,
+} from "./useragent.ts";
 
 // What one terminal cell measures in CSS pixels, per document. Layout
 // counts cells; everything a page writes or reads counts CSS pixels. At
@@ -3500,7 +3504,9 @@ let uaDocumentSheet: CSSStyleSheet | null = null;
 function getUAStyleSheet(): CSSStyleSheet {
 	if (!uaDocumentSheet) {
 		uaDocumentSheet = new CSSStyleSheet();
-		uaDocumentSheet.replaceSync(UA_ELEMENT_STYLES + UA_DOCUMENT_STYLES);
+		uaDocumentSheet.replaceSync(
+			UA_ELEMENT_STYLES + UA_DOCUMENT_STYLES + UA_CONTROL_STYLES,
+		);
 	}
 	return uaDocumentSheet;
 }
@@ -5440,6 +5446,10 @@ interface ParsedCSSRule {
 	// stylesheet belongs to.
 	reachesHost?: boolean;
 
+	// A pseudo-element of a part, as `input::part(label)::before` is. It
+	// originates on the part element, inside the host's shadow tree.
+	ofPart?: boolean;
+
 	// Cascade ORIGIN, the tier above specificity. Every author rule beats
 	// every UA rule, which lets `input::placeholder { color }` beat the UA
 	// sheet's gray despite that selector's higher specificity.
@@ -5545,6 +5555,7 @@ function attachPseudoElementsToElement(
 	if (
 		tags !== null &&
 		!tags.has(element.tagName) &&
+		!element.hasAttribute("part") &&
 		pseudoElementCount(element) === 0 &&
 		!(element.getAttribute("style") ?? "").includes("list-item")
 	) {
@@ -6785,6 +6796,7 @@ function generatesPseudoElement(
 		pseudoElement &&
 		pseudoElement !== "::placeholder" &&
 		pseudoElement !== "::selection" &&
+		pseudoElement !== "::details-content" &&
 		!pseudoElement.startsWith("::part(") &&
 		!pseudoElement.startsWith("::highlight("),
 	);
@@ -6812,6 +6824,13 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 			const scope = (rule.scope ?? cascade[kDocument]) as Node;
 			for (const element of selectForRule(scope, rule)) {
 				matchingElements.add(element);
+			}
+			if (rule.ofPart) {
+				for (const root of cascade[kShadowRoots]) {
+					for (const element of selectForRule(root, rule)) {
+						matchingElements.add(element);
+					}
+				}
 			}
 			const host = rule.reachesHost
 				? ((rule.scope as ShadowRoot).host as Element | null)
@@ -8685,10 +8704,11 @@ function compileRuleSelector(
 	selector: string,
 	namespaces: SelectorNamespaces | undefined,
 	scopes: readonly CSSValues.ScopeCondition[] | undefined,
+	pseudoElements = false,
 ): Pick<ParsedCSSRule, "matcher" | "relativeMatcher"> {
 	const read = (relative: boolean): CompiledSelector | null => {
 		try {
-			return compileSelector(selector, {namespaces, relative});
+			return compileSelector(selector, {namespaces, relative, pseudoElements});
 		} catch (_err) {
 			// Only the shape of a sheet's selector was checked when the rule
 			// was parsed. A prefix no `@namespace` declared is rejected here.
@@ -8793,11 +8813,18 @@ function parseSelector(
 				partMatcher = null;
 			}
 		}
+		const ofPart = baseSelector.includes("::part(");
 		const rule: ParsedCSSRule = {
 			// A pseudo-element written with no originating selector originates
 			// on every element, which is what `*` means.
-			...compileRuleSelector(baseSelector.trim() || "*", namespaces, scopes),
-			subjectTag: reading.subjectTag,
+			...compileRuleSelector(
+				baseSelector.trim() || "*",
+				namespaces,
+				scopes,
+				ofPart,
+			),
+			subjectTag: ofPart ? undefined : reading.subjectTag,
+			ofPart,
 			declarations,
 			important,
 			order,
@@ -8968,7 +8995,8 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 			if (partArg) {
 				return (
 					shadowHost !== null &&
-					partNames.includes(partArg[1].trim()) &&
+					partArg[1]
+						.trim().split(/\s+/).every((name) => partNames.includes(name)) &&
 					isRuleMatch(shadowHost, rule) &&
 					(rule.partMatcher === undefined ||
 						(rule.partMatcher !== null &&
@@ -9115,7 +9143,11 @@ function getPartPseudo(element: Element): string | null {
 	const root = element.getRootNode();
 	if (isUAShadowTree(root)) {
 		const part = element.getAttribute("part");
-		if (part === "placeholder" || part === "selection") {
+		if (
+			part === "placeholder" ||
+			part === "selection" ||
+			part === "details-content"
+		) {
 			return `::${part}`;
 		}
 	}
@@ -9147,6 +9179,10 @@ function isRuleMatch(
 		}
 	}
 	if (rule.scope) {
+		return matchesRule(element, rule);
+	}
+	// The selector itself checks the host the part belongs to.
+	if (rule.ofPart) {
 		return matchesRule(element, rule);
 	}
 	// UA document rules apply in EVERY tree scope, as a browser's own UA
@@ -9267,6 +9303,9 @@ function getPseudoSubjects(cascade: Cascade): Set<string> | null {
 	// live on nodes the UA shadow tree trees already hold.
 	for (const type of ["::before", "::after"]) {
 		for (const rule of cascade[kPseudoRulesByType].get(type) ?? []) {
+			if (rule.ofPart) {
+				continue;
+			}
 			if (!rule.subjectTag) {
 				return (cascade[kPseudoSubjectTags] = null);
 			}
