@@ -44,6 +44,7 @@ import {
 	transportFromProcess,
 } from "./internal/exchange.ts";
 import {Framebuffer} from "./internal/framebuffer.ts";
+import {setDecodeWorkerURL} from "./internal/images.ts";
 import {Input} from "./internal/input.ts";
 import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
@@ -58,6 +59,18 @@ export type {
 	TerminalSize,
 	TerminalTransport,
 } from "./internal/exchange.ts";
+
+// Images decode on a worker running src/decode-worker.ts, which builds to
+// dist/decode-worker.js beside this file. A CommonJS build has no
+// import.meta.url, and decodes on this thread instead.
+setDecodeWorkerURL(
+	typeof import.meta.url === "string"
+		? new URL(
+			`./decode-worker.${import.meta.url.endsWith(".ts") ? "ts" : "js"}`,
+			import.meta.url,
+		)
+		: null,
+);
 
 export interface TermDOMOptions {
 

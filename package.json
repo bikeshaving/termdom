@@ -26,6 +26,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./decode-worker": "./src/decode-worker.ts",
     "./package.json": "./package.json"
   },
   "files": [
