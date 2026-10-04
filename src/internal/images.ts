@@ -1997,40 +1997,7 @@ export function isReplacedElement(owner: object): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Fetching what a src names.
-
-/** The bytes of a data: URL, or null when it is not one. */
-export function readDataURL(url: string): Uint8Array | null {
-	const match = /^data:([^,]*?)(;base64)?,(.*)$/is.exec(url);
-	if (match === null) {
-		return null;
-	}
-	const body = percentDecode(match[3]);
-	if (!match[2]) {
-		return body;
-	}
-	const binary = atob(
-		new TextDecoder("latin1").decode(body).replace(/\s+/g, ""),
-	);
-	return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
-
-// URL's percent-decode: each %XX is that byte, and the rest is UTF-8.
-function percentDecode(text: string): Uint8Array {
-	const input = new TextEncoder().encode(text);
-	const out = new Uint8Array(input.length);
-	let length = 0;
-	for (let i = 0; i < input.length; i++) {
-		const hex = String.fromCharCode(input[i + 1] ?? 0, input[i + 2] ?? 0);
-		if (input[i] === 0x25 && /^[0-9a-f]{2}$/i.test(hex)) {
-			out[length++] = parseInt(hex, 16);
-			i += 2;
-		} else {
-			out[length++] = input[i];
-		}
-	}
-	return out.subarray(0, length);
-}
+// Reading what a src names.
 
 interface ProcessWithBuiltins {
 	cwd?: () => string;
@@ -2063,32 +2030,6 @@ export function resolveImageURL(src: string, base: string): string | null {
 	return URL.canParse(src, root) ? new URL(src, root).href : null;
 }
 
-interface FileSystem {
-	readFile(path: URL, options?: {signal?: AbortSignal}): Promise<Uint8Array>;
-	stat(path: URL): Promise<{size: number}>;
-}
-
-// Node's file system, which Bun and Deno provide too. getBuiltinModule
-// is synchronous and needs no import a bundler would follow; Node before
-// 20.16 lacks it and gets the dynamic import, whose specifier is built at
-// run time for the same reason.
-async function getFileSystem(): Promise<FileSystem | undefined> {
-	const process = getProcess();
-	if (process === undefined) {
-		return undefined;
-	}
-	if (process.getBuiltinModule !== undefined) {
-		return process.getBuiltinModule("node:fs/promises") as FileSystem |
-			undefined;
-	}
-	const specifier = ["node:fs", "promises"].join("/");
-	try {
-		return await import(specifier) as FileSystem;
-	} catch (_error) {
-		return undefined;
-	}
-}
-
 /** The most bytes an image file may have before it decodes. */
 export const MAX_IMAGE_BYTES = 1 << 26;
 
@@ -2099,33 +2040,23 @@ function checkImageBytes(length: number): void {
 }
 
 /**
- * The bytes a URL names, up to MAX_IMAGE_BYTES. data: is read here.
- * file: goes through the runtime's file system where it has one (Node's
- * fetch does not read files), and anything else through fetch, which
- * `signal` cancels.
+ * The image types the decoders read, for a request's Accept header, so a
+ * server that picks a format by it picks one of these.
  */
-export async function fetchImageBytes(
-	url: string,
-	signal?: AbortSignal,
+export const IMAGE_ACCEPT =
+	"image/png,image/jpeg,image/gif,image/bmp;q=0.9,*/*;q=0.5";
+
+/**
+ * A response's bytes, up to MAX_IMAGE_BYTES: by its declared length when
+ * it has one, and while reading when it has not.
+ */
+export async function readImageResponse(
+	response: Response,
 ): Promise<Uint8Array> {
-	const inline = readDataURL(url);
-	if (inline !== null) {
-		checkImageBytes(inline.length);
-		return inline;
-	}
-	if (url.startsWith("file:")) {
-		const fs = await getFileSystem();
-		if (fs !== undefined) {
-			const path = new URL(url);
-			checkImageBytes((await fs.stat(path)).size);
-			return new Uint8Array(await fs.readFile(path, {signal}));
-		}
-	}
-	const response = await fetch(url, {signal});
 	if (!response.ok) {
 		throw new Error(`The image request failed with status ${response.status}`);
 	}
-	const declared = Number(response.headers.get("content-length"));
+	const declared = Number(response.headers.get("content-length") ?? NaN);
 	if (Number.isFinite(declared)) {
 		checkImageBytes(declared);
 	}

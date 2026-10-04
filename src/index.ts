@@ -48,9 +48,11 @@ import {setDecodeWorkerURL} from "./internal/images.ts";
 import {Input} from "./internal/input.ts";
 import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
+import {answerRequest, setResourceLoader} from "./internal/resources.ts";
 
 export type {CellSize} from "./internal/cssom.ts";
 export {transportFromProcess} from "./internal/exchange.ts";
+export {RequestEvent, type RequestEventInit} from "./internal/resources.ts";
 export type {
 	ProcessLike,
 	TTYReadStream,
@@ -95,6 +97,14 @@ export interface TermDOMOptions {
 	 * - `{width, height}`: that size.
 	 */
 	cellSize?: "unit" | "auto" | CellSize;
+
+	/**
+	 * Where the loads the document's markup asks for go, an <img>'s source
+	 * among them, when no "request" listener answers them, and what the
+	 * page's own `window.fetch` calls. Without one, markup loads nothing,
+	 * and `window.fetch` is the runtime's.
+	 */
+	fetch?: (request: Request) => Promise<Response>;
 }
 
 function getCellSizeSource(
@@ -204,11 +214,16 @@ export interface TermDOM {
 	[kStaticSibling]: TermDOM | null;
 }
 
-export class TermDOM {
+/**
+ * A document drawn in a terminal. It is the target of a "request" event
+ * for each load its markup asks for (see RequestEvent).
+ */
+export class TermDOM extends EventTarget {
 	readonly document: Document;
 	readonly window: Window;
 
 	constructor(options: TermDOMOptions = {}) {
+		super();
 		const screenCell = () =>
 			this[kTransport].interactive
 				? this[kFramebuffer].cellPixels
@@ -241,6 +256,12 @@ export class TermDOM {
 		);
 
 		const document = this.document = this.window.document;
+		if (options.fetch !== undefined) {
+			this.window.fetch = options.fetch as typeof this.window.fetch;
+		}
+		setResourceLoader(document, (request, context) =>
+			answerRequest(this, document.URL, request, context, options.fetch),
+		);
 
 		this[kLayout] = new Layout(
 			this.window,

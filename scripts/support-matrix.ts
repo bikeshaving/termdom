@@ -1065,7 +1065,10 @@ function apiProbe(
 		category,
 		async run() {
 			const terminal = new MockProcess({cols: 40, rows: 12});
-			const dom = new TermDOM({transport: terminal.transport});
+			const dom = new TermDOM({
+				transport: terminal.transport,
+				fetch: (request) => fetch(request),
+			});
 			try {
 				return {supported: await run(dom), note};
 			} catch (_err) {

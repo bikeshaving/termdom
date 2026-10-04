@@ -50,7 +50,10 @@ async function mount(
 	rows = 12,
 ): Promise<{dom: TermDOM; terminal: MockProcess; document: Document}> {
 	const terminal = new MockProcess({cols, rows});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		fetch: (request) => fetch(request),
+	});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	return {dom, terminal, document: dom.document};
