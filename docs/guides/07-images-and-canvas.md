@@ -137,10 +137,11 @@ asks for before it allocates, and an image past a limit fails to load:
 - a PNG's data inflated only as far as its image needs
 - a JPEG of at most four components and 500 scans
 
-Images decode on a worker thread, so a large one does not stall the
-page, and a decode that takes more than 10 seconds is stopped and the
-image fails. Where no worker can start, as in a CommonJS build,
-images decode on the page's thread a slice at a time.
+Images decode on a worker thread, one at a time, so a large one does
+not stall the page. A decode that takes more than 10 seconds is
+stopped and that image fails; the images behind it still decode. Where
+no worker can start, as in a CommonJS build, images decode on the
+page's thread a slice at a time, under the same limit.
 
 A new `src` cancels the request the old one started. An image whose
 box would sample more than 2^26 pixels draws nothing, as does a 2D
