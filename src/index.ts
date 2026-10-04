@@ -48,7 +48,11 @@ import {setDecodeWorkerURL} from "./internal/images.ts";
 import {Input} from "./internal/input.ts";
 import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
-import {answerRequest, setResourceLoader} from "./internal/resources.ts";
+import {
+	answerRequest,
+	type RequestEvent,
+	setResourceLoader,
+} from "./internal/resources.ts";
 
 export type {CellSize} from "./internal/cssom.ts";
 export {transportFromProcess} from "./internal/exchange.ts";
@@ -166,6 +170,11 @@ const kHeldErrors = Symbol("heldErrors");
 // Held errors handed to the output queue whose write has not finished.
 const kUnwrittenErrors = Symbol("unwrittenErrors");
 const HELD_ERROR_LIMIT = 50;
+
+/** The events a TermDOM dispatches, by type. */
+export interface TermDOMEventMap {
+	request: RequestEvent;
+}
 
 export interface TermDOM {
 	[kFramebuffer]: Framebuffer;
@@ -509,6 +518,43 @@ export class TermDOM extends EventTarget {
 			await render(this);
 		})();
 		return this[kAttachReady];
+	}
+
+	// lib.dom's shape: the keyed overload first.
+	override addEventListener<K extends keyof TermDOMEventMap>(
+		type: K,
+		listener: (this: TermDOM, event: TermDOMEventMap[K]) => unknown,
+		options?: boolean | AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject | null,
+		options?: boolean | AddEventListenerOptions,
+	): void;
+	override addEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject | null,
+		options?: boolean | AddEventListenerOptions,
+	): void {
+		super.addEventListener(type, listener, options);
+	}
+
+	override removeEventListener<K extends keyof TermDOMEventMap>(
+		type: K,
+		listener: (this: TermDOM, event: TermDOMEventMap[K]) => unknown,
+		options?: boolean | EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject | null,
+		options?: boolean | EventListenerOptions,
+	): void;
+	override removeEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject | null,
+		options?: boolean | EventListenerOptions,
+	): void {
+		super.removeEventListener(type, listener, options);
 	}
 
 	/**

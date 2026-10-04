@@ -50,7 +50,7 @@ test("a listener answers what markup asks for, and says what asked", async () =>
 	const dom = create();
 	const seen: Array<Partial<RequestEvent>> = [];
 	dom.addEventListener("request", (event) => {
-		const request = event as RequestEvent;
+		const request = event;
 		seen.push(request);
 		if (request.request.url.startsWith("cid:")) {
 			request.respondWith(new Response(PNG));
@@ -85,7 +85,7 @@ test("a request no listener answers goes to the fetch given", async () => {
 test("Response.error() or a rejection refuses the request", async () => {
 	const dom = create({fetch: async () => new Response(PNG)});
 	dom.addEventListener("request", (event) => {
-		const request = event as RequestEvent;
+		const request = event;
 		request.respondWith(
 			request.request.url.endsWith("a.png")
 				? Response.error()
@@ -106,7 +106,7 @@ test("respondWith() is called once, during the event", async () => {
 	let late: RequestEvent | null = null;
 	const errors: string[] = [];
 	dom.addEventListener("request", (event) => {
-		const request = event as RequestEvent;
+		const request = event;
 		late = request;
 		request.respondWith(new Response(PNG));
 		try {
@@ -128,7 +128,7 @@ test("respondWith() is called once, during the event", async () => {
 test("a listener added after the constructor's markup hears its images", async () => {
 	const dom = create({html: "<img src=\"cid:a\">"});
 	dom.addEventListener("request", (event) => {
-		(event as RequestEvent).respondWith(new Response(PNG));
+		event.respondWith(new Response(PNG));
 	});
 	expect(await settled(dom.document.querySelector("img")!)).toBe("loaded");
 	dom.dispose();
