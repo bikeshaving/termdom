@@ -63,6 +63,8 @@ import {
 	decodeImageOffThread,
 	IMAGE_ACCEPT,
 	MAX_IMAGE_PIXELS,
+	naturalHeightOf,
+	naturalWidthOf,
 	readImageResponse,
 	registerReplacedContent,
 	resolveImageURL,
@@ -16589,11 +16591,13 @@ class HTMLImageElement extends HTMLElement {
 	}
 
 	get naturalWidth(): number {
-		return this[kImageState].bitmap?.width ?? 0;
+		const bitmap = this[kImageState].bitmap;
+		return bitmap === null ? 0 : naturalWidthOf(bitmap);
 	}
 
 	get naturalHeight(): number {
-		return this[kImageState].bitmap?.height ?? 0;
+		const bitmap = this[kImageState].bitmap;
+		return bitmap === null ? 0 : naturalHeightOf(bitmap);
 	}
 
 	// The rendered width in cells when the image is rendered, which is

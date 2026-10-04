@@ -1,13 +1,14 @@
 /**
  * The thread images decode on. It takes `{id, bytes}` and answers
- * `{id, width, height, data}` with the pixels' buffer transferred, or
+ * `{id, width, height, naturalWidth, naturalHeight, data}` with the
+ * pixels' buffer transferred, kept at most MAX_KEPT_PIXELS, or
  * `{id, error}`. It answers `{ready: true}` first, so the page can tell
  * a worker that never started from one that failed on an image.
  *
  * A web worker answers through its global scope. Node's worker_threads
  * answer through parentPort.
  */
-import {decodeImage} from "./internal/images.ts";
+import {decodeImageForPage} from "./internal/images.ts";
 
 interface Port {
 	postMessage(message: unknown, transfer?: Transferable[]): void;
@@ -40,10 +41,17 @@ const port: Port = nodeParent ?? (globalThis as unknown as Port);
 async function answer(data: unknown): Promise<void> {
 	const {id, bytes} = data as {id: number; bytes: ArrayBuffer};
 	try {
-		const bitmap = await decodeImage(new Uint8Array(bytes));
+		const bitmap = await decodeImageForPage(new Uint8Array(bytes));
 		const pixels = bitmap.data.buffer as ArrayBuffer;
 		port.postMessage(
-			{id, width: bitmap.width, height: bitmap.height, data: pixels},
+			{
+				id,
+				width: bitmap.width,
+				height: bitmap.height,
+				naturalWidth: bitmap.naturalWidth,
+				naturalHeight: bitmap.naturalHeight,
+				data: pixels,
+			},
 			[pixels],
 		);
 	} catch (error) {

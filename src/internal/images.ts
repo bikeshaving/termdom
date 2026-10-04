@@ -19,6 +19,18 @@ export interface Bitmap {
 	width: number;
 	height: number;
 	data: Uint8ClampedArray;
+	// The size the image is, when its pixels were kept smaller than that.
+	// Everything outside the pixels themselves measures this one.
+	naturalWidth?: number;
+	naturalHeight?: number;
+}
+
+export function naturalWidthOf(bitmap: Bitmap): number {
+	return bitmap.naturalWidth ?? bitmap.width;
+}
+
+export function naturalHeightOf(bitmap: Bitmap): number {
+	return bitmap.naturalHeight ?? bitmap.height;
 }
 
 /**
@@ -74,6 +86,36 @@ function createYielder(): () => Promise<void> | undefined {
 			}, 0);
 		});
 	};
+}
+
+/**
+ * The most pixels a decoded image keeps, 4 MB of them. A terminal shows a
+ * few hundred thousand at most, so a larger image is kept averaged down
+ * to this, and reports its natural size as before.
+ */
+export const MAX_KEPT_PIXELS = 1 << 20;
+
+/** The image as a page keeps it: at most MAX_KEPT_PIXELS. */
+export function keepAtMost(bitmap: Bitmap): Bitmap {
+	const {width, height} = bitmap;
+	if (width * height <= MAX_KEPT_PIXELS) {
+		return bitmap;
+	}
+	const scale = Math.sqrt(MAX_KEPT_PIXELS / (width * height));
+	const keptWidth = Math.max(1, Math.floor(width * scale));
+	const keptHeight = Math.max(1, Math.floor(height * scale));
+	return {
+		width: keptWidth,
+		height: keptHeight,
+		data: sampleBitmap(bitmap, keptWidth, keptHeight),
+		naturalWidth: width,
+		naturalHeight: height,
+	};
+}
+
+/** Decode, and keep at most MAX_KEPT_PIXELS. */
+export async function decodeImageForPage(bytes: Uint8Array): Promise<Bitmap> {
+	return keepAtMost(await decodeImage(bytes));
 }
 
 export function createBitmap(width: number, height: number): Bitmap {
@@ -1852,21 +1894,31 @@ export function sampleBitmap(
 	bitmap: Bitmap,
 	outWidth: number,
 	outHeight: number,
-	source: {x: number; y: number; width: number; height: number} = {
+	natural: {x: number; y: number; width: number; height: number} = {
 		x: 0,
 		y: 0,
-		width: bitmap.width,
-		height: bitmap.height,
+		width: naturalWidthOf(bitmap),
+		height: naturalHeightOf(bitmap),
 	},
 	smooth = true,
 ): Uint8ClampedArray {
 	const out = new Uint8ClampedArray(Math.max(0, outWidth * outHeight * 4));
 	if (
-		outWidth <= 0 || outHeight <= 0 || source.width <= 0 || source.height <= 0
+		outWidth <= 0 || outHeight <= 0 || natural.width <= 0 || natural.height <= 0
 	) {
 		return out;
 	}
 	const {width, height, data} = bitmap;
+	// The rectangle is in the image's natural pixels, and the pixels kept
+	// may be fewer.
+	const keptX = width / naturalWidthOf(bitmap);
+	const keptY = height / naturalHeightOf(bitmap);
+	const source = {
+		x: natural.x * keptX,
+		y: natural.y * keptY,
+		width: natural.width * keptX,
+		height: natural.height * keptY,
+	};
 	const scaleX = source.width / outWidth;
 	const scaleY = source.height / outHeight;
 	for (let oy = 0; oy < outHeight; oy++) {
@@ -2150,7 +2202,7 @@ export function setDecodeTimeout(ms: number): void {
 export function decodeImageOffThread(bytes: Uint8Array): Promise<Bitmap> {
 	const state = workersWork ? getWorker() : null;
 	if (state === null) {
-		return decodeImage(bytes);
+		return decodeImageForPage(bytes);
 	}
 	const id = nextRequest++;
 	// A copy the worker can take, whatever buffer the bytes sit in.
@@ -2197,6 +2249,8 @@ function getWorker(): WorkerState | null {
 			id?: number;
 			width?: number;
 			height?: number;
+			naturalWidth?: number;
+			naturalHeight?: number;
 			data?: ArrayBuffer;
 			error?: string;
 		};
@@ -2218,6 +2272,8 @@ function getWorker(): WorkerState | null {
 				width: message.width!,
 				height: message.height!,
 				data: new Uint8ClampedArray(message.data!),
+				naturalWidth: message.naturalWidth,
+				naturalHeight: message.naturalHeight,
 			});
 		}
 		if (state.pending.size === 0) {
@@ -2239,7 +2295,7 @@ function getWorker(): WorkerState | null {
 			for (const [id, bytes] of queued) {
 				const request = pending.get(id)!;
 				clearTimeout(request.timer);
-				decodeImage(bytes).then(request.resolve, request.reject);
+				decodeImageForPage(bytes).then(request.resolve, request.reject);
 			}
 			return;
 		}
