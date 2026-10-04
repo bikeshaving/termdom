@@ -51,7 +51,7 @@ import {
 import * as CSSValues from "./cssvalues.ts";
 import {getEditingHost, installEditing} from "./editing.ts";
 import type {Exchange} from "./exchange.ts";
-import type {Framebuffer} from "./framebuffer.ts";
+import {CellContext, CellGrid, type Framebuffer} from "./framebuffer.ts";
 import {
 	getInterface,
 	getReflections,
@@ -59,7 +59,6 @@ import {
 } from "./htmlreflection.ts";
 import {
 	type Bitmap,
-	type CharacterGrid,
 	createBitmap,
 	decodeImage,
 	fetchImageBytes,
@@ -14275,7 +14274,7 @@ class HTMLCanvasElement extends HTMLElement {
 	declare height: globalThis.HTMLCanvasElement["height"];
 	declare width: globalThis.HTMLCanvasElement["width"];
 	[kCanvasBitmap]: Bitmap | null;
-	[kCanvasGrid]: CharacterGrid | null;
+	[kCanvasGrid]: CellContext | null;
 	[kCanvasContext]: CanvasRenderingContext2D |
 		CanvasCharacterGridContext |
 		null;
@@ -14294,7 +14293,7 @@ class HTMLCanvasElement extends HTMLElement {
 			if (this[kCanvasContext] instanceof CanvasCharacterGridContext) {
 				return {
 					kind: "grid",
-					grid: getCanvasGrid(this),
+					grid: getCanvasGrid(this).grid,
 					version: this[kCanvasVersion],
 				};
 			}
@@ -14391,7 +14390,7 @@ class HTMLCanvasElement extends HTMLElement {
 		} else if (id === "charactergrid") {
 			this[kCanvasContext] = new CanvasCharacterGridContext({
 				canvas: this,
-				grid: () => getCanvasGrid(this),
+				cells: () => getCanvasGrid(this),
 				changed,
 				cellPixels: () => getImageCellSize(this as unknown as Node),
 			});
@@ -14496,17 +14495,17 @@ function getCanvasBitmap(canvas: HTMLCanvasElement): Bitmap {
 	return bitmap;
 }
 
-function getCanvasGrid(canvas: HTMLCanvasElement): CharacterGrid {
+function getCanvasGrid(canvas: HTMLCanvasElement): CellContext {
 	const fits = canvas.width * canvas.height <= CANVAS_PIXEL_LIMIT;
 	const cols = fits ? canvas.width : 0;
 	const rows = fits ? canvas.height : 0;
-	let grid = canvas[kCanvasGrid];
-	if (grid === null || grid.cols !== cols || grid.rows !== rows) {
-		grid =
+	let cells = canvas[kCanvasGrid];
+	if (cells === null || cells.cols !== cols || cells.rows !== rows) {
+		cells =
 			canvas[kCanvasGrid] =
-			{cols, rows, cells: new Array(cols * rows).fill(null)};
+			new CellContext(new CellGrid(rows, cols), rows, cols, 0);
 	}
-	return grid;
+	return cells;
 }
 
 // Resizing a canvas resets its context to the default state (HTML

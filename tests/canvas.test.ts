@@ -849,3 +849,61 @@ test("text over a currentcolor fill stays in inverse video", async () => {
 	expect(cell(terminal, 0, 0)).toMatchObject({char: " ", inverse: true});
 	dom.dispose();
 });
+
+test("strokeRect draws a box and strokeLine joins it as tees", async () => {
+	const {dom, terminal, document} =
+		await mount("<canvas id=g width=6 height=4></canvas>");
+	const ctx = grid(document);
+	ctx.strokeRect(0, 0, 6, 4);
+	ctx.strokeLine(0, 2, 5, 2);
+	ctx.strokeLine(3, 0, 3, 2);
+	await nextFrame(dom);
+	expect(rowText(terminal, 0)).toBe("┌──┬─┐");
+	expect(rowText(terminal, 1)).toBe("│  │ │");
+	expect(rowText(terminal, 2)).toBe("├──┴─┤");
+	expect(rowText(terminal, 3)).toBe("└────┘");
+	expect(ctx.getCell(3, 2).char).toBe("┴");
+	dom.dispose();
+});
+
+test("lineStyle, lineJoin and strokeStyle set how lines draw", async () => {
+	const {dom, terminal, document} =
+		await mount("<canvas id=g width=4 height=6></canvas>");
+	const ctx = grid(document);
+	ctx.lineStyle = "double";
+	ctx.strokeRect(0, 0, 4, 3);
+	ctx.lineStyle = "solid";
+	ctx.lineJoin = "round";
+	ctx.strokeStyle = "#ff0000";
+	ctx.strokeRect(0, 3, 4, 3);
+	ctx.lineStyle = "wavy";
+	expect(ctx.lineStyle).toBe("solid");
+	await nextFrame(dom);
+	expect(rowText(terminal, 0)).toBe("╔══╗");
+	expect(rowText(terminal, 2)).toBe("╚══╝");
+	expect(rowText(terminal, 3)).toBe("╭──╮");
+	expect(cell(terminal, 1, 3)).toMatchObject({char: "─", fg: 0xff0000});
+	expect(cell(terminal, 1, 0).fg).toBe(-1);
+	dom.dispose();
+});
+
+test("a slanted line draws nothing", async () => {
+	const {dom, document} =
+		await mount("<canvas id=g width=4 height=4></canvas>");
+	const ctx = grid(document);
+	ctx.strokeLine(0, 0, 3, 3);
+	expect(ctx.getCell(0, 0)).toBeNull();
+	dom.dispose();
+});
+
+test("a canvas's lines do not join the page's borders beside it", async () => {
+	const {dom, terminal, document} = await mount(
+		"<div style=\"border: 1px solid; width: 6ch\">" +
+		"<canvas id=g width=4 height=3 style=\"display: block\"></canvas></div>",
+	);
+	const ctx = grid(document);
+	ctx.strokeLine(0, 1, 0, 1);
+	await nextFrame(dom);
+	expect(rowText(terminal, 2).slice(0, 2)).toBe("│─");
+	dom.dispose();
+});

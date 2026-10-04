@@ -131,18 +131,30 @@ grid.fillRect(0, 0, 20, 3);
 grid.fillStyle = "#ffcc00";
 grid.font = "bold";
 grid.fillText("score: 42", 1, 1);
+grid.strokeStyle = "#5fafff";
+grid.lineJoin = "round";
+grid.strokeRect(0, 0, 20, 3);
 document.body.append(canvas);
 ```
+
+Lines are box-drawing glyphs. Where two meet they join in a corner, a
+tee or a cross, as borders do. A canvas's lines join each other but
+not the page's borders around the canvas.
 
 | Member | What it does |
 | --- | --- |
 | `fillStyle` | A CSS color. `currentcolor`, the default, is the terminal's foreground |
+| `strokeStyle` | The lines' color, the same way |
+| `lineStyle` | A CSS `border-style`: `solid`, the default, `double`, `dashed`, `dotted` and the rest |
+| `lineJoin` | `miter`, the default, or `round`, which curves `strokeRect()`'s corners |
 | `font` | Keywords from the CSS `font` shorthand: `bold`, `italic`, `lighter` |
 | `textAlign` | `left`, `right`, `center`, `start` or `end` |
 | `textDecoration` | `none` or `underline` |
 | `fillText(text, x, y, maxWidth?)` | Writes glyphs in the fill color, over the cells' backgrounds. A wide glyph takes two columns |
 | `fillRect(x, y, w, h)` | Fills cells with the fill color as their background. `currentcolor` fills them in inverse video |
 | `clearRect(x, y, w, h)` | Empties cells |
+| `strokeLine(x1, y1, x2, y2)` | A line from one cell to another, both included, along a row or a column. A slanted line draws nothing |
+| `strokeRect(x, y, w, h)` | A box around the cells `w` by `h` from (x, y) |
 | `drawImage(image, ...)` | Draws an image's pixels, two to a cell. Without a size, the image takes its natural size in cells |
 | `getCell(x, y)` | The cell's glyph, colors and attributes, or `null` |
 | `measureText(text)` | The text's width in columns |

@@ -710,7 +710,7 @@ function getBorderChar(borderEncoding: number): string {
  * two-column glyph covers. The glyph's width text control steps the emitter
  * over it.
  */
-class CellGrid {
+export class CellGrid {
 	readonly rows: number;
 	readonly cols: number;
 	readonly cluster: Uint32Array;
@@ -766,6 +766,12 @@ class CellGrid {
 		this.bg.set(source.bg.subarray(start, end), to);
 		this.attrs.set(source.attrs.subarray(start, end), to);
 		this.border.set(source.border.subarray(start, end), to);
+	}
+
+	clone(): CellGrid {
+		const copy = new CellGrid(this.rows, this.cols);
+		copy.copyFrom(this, {to: 0, start: 0, end: this.rows * this.cols});
+		return copy;
 	}
 
 	bottomRows(rows: number): CellGrid {
@@ -861,6 +867,52 @@ function meetEdges(existing: number, incoming: number): number {
 	}
 
 	return met;
+}
+
+/**
+ * A grid's lines joined where they touch and drawn as their glyphs, so
+ * the grid copies into another without joining what is there.
+ */
+export function settleBorders(grid: CellGrid): void {
+	joinTouchingBorders(grid);
+	const {border, cluster} = grid;
+	for (let index = 0; index < border.length; index++) {
+		if (border[index] > 0) {
+			cluster[index] = encodeGrapheme(getBorderChar(border[index]));
+			border[index] = 0;
+		}
+	}
+}
+
+/** A cell's glyph, colors and attributes, or null for an empty cell. */
+export function readCell(
+	grid: CellGrid,
+	index: number,
+): {
+	char: string;
+	fg: number;
+	bg: number;
+	bold: boolean;
+	italic: boolean;
+	underline: boolean;
+	inverse: boolean;
+} | null {
+	if (grid.cluster[index] === 0) {
+		return null;
+	}
+	const attrs = grid.attrs[index];
+	const border = grid.border[index];
+	return {
+		char: border > 0
+			? getBorderChar(border)
+			: decodeGrapheme(grid.cluster[index]),
+		fg: grid.fg[index],
+		bg: grid.bg[index],
+		bold: (attrs & ATTR.Bold) !== 0,
+		italic: (attrs & ATTR.Italic) !== 0,
+		underline: (attrs & (ATTR.Underline | ATTR.DoubleUnderline)) !== 0,
+		inverse: (attrs & ATTR.Inverse) !== 0,
+	};
 }
 
 function joinTouchingBorders(grid: CellGrid): void {
@@ -1116,6 +1168,37 @@ export class CellContext {
 				style,
 			);
 			currentX += width;
+		}
+	}
+
+	/**
+	 * Another grid's cells with its top left at (x, y). An empty cell
+	 * leaves what is under it, one with no background takes the
+	 * background under it, and one in the default foreground takes
+	 * `fallback.fg`.
+	 */
+	drawGrid(source: CellGrid, x: number, y: number, fallback?: CellStyle): void {
+		const grid = this.grid;
+		const fg = (fallback?.fg ?? 0) & COLOR_MASK;
+		for (let row = 0; row < source.rows; row++) {
+			for (let col = 0; col < source.cols; col++) {
+				const from = row * source.cols + col;
+				if (source.cluster[from] === 0) {
+					continue;
+				}
+				const index = getGuardedWriteIndex(this, y + row, x + col);
+				if (index < 0) {
+					continue;
+				}
+				const under = grid.cluster[index] !== 0 ? grid.bg[index] : 0;
+				grid.setFrom(index, source, from);
+				if (grid.fg[index] === 0) {
+					grid.fg[index] = fg;
+				}
+				if (grid.bg[index] === 0) {
+					grid.bg[index] = under;
+				}
+			}
 		}
 	}
 
