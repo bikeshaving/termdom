@@ -466,38 +466,101 @@ function fakeWorker(reply: string): URL {
 	return new URL(`data:text/javascript,${encodeURIComponent(source)}`);
 }
 
-test("a decode that runs past its time on the worker fails, and the next one starts over", async () => {
+// A one-byte image stands for a slow or broken one in these workers.
+const STAND_IN = new Uint8Array([0]);
+
+// How each decode ended: its width, or its error.
+function outcomes(decodes: Array<Promise<{width: number}>>): Promise<string[]> {
+	return Promise.all(
+		decodes.map((decode) =>
+			decode.then((bitmap) =>
+				`${bitmap.width} wide`, (error: Error) => error.message),
+		),
+	);
+}
+
+const ANSWER =
+	"port.postMessage({id: data.id, width: 1, height: 1, data: new ArrayBuffer(4)})";
+
+test("an image past its time fails alone, and the images behind it decode", async () => {
 	try {
-		setDecodeTimeout(50);
-		setDecodeWorkerURL(fakeWorker(""));
-		await expect(decodeImageOffThread(bytesOf("png-rgb.png")))
-			.rejects.toThrow("more than 50 ms");
-		setDecodeTimeout(10_000);
+		setDecodeTimeout(200);
 		setDecodeWorkerURL(
-			fakeWorker("port.postMessage({id: data.id, error: \"from the worker\"})"),
+			fakeWorker(`if (data.bytes.byteLength !== 1) ${ANSWER};`),
 		);
-		await expect(decodeImageOffThread(bytesOf("png-rgb.png")))
-			.rejects.toThrow("from the worker");
+		expect(
+			await outcomes([
+				decodeImageOffThread(STAND_IN),
+				decodeImageOffThread(bytesOf("png-rgb.png")),
+				decodeImageOffThread(bytesOf("png-rgb.png")),
+			]),
+		).toEqual([
+			"The image took more than 200 ms to decode",
+			"1 wide",
+			"1 wide",
+		]);
 	} finally {
 		setDecodeTimeout(10_000);
 		setDecodeWorkerURL(null);
 	}
 });
 
-test("where no worker starts, images decode on this thread", async () => {
+test("a worker that fails on an image fails that image alone", async () => {
+	try {
+		setDecodeWorkerURL(
+			fakeWorker(
+				`if (data.bytes.byteLength === 1) throw new Error("broke"); ${ANSWER};`,
+			),
+		);
+		const [before, broken, after] = await outcomes([
+			decodeImageOffThread(bytesOf("png-rgb.png")),
+			decodeImageOffThread(STAND_IN),
+			decodeImageOffThread(bytesOf("png-rgb.png")),
+		]);
+		expect([before, after]).toEqual(["1 wide", "1 wide"]);
+		expect(broken).toContain("broke");
+		setDecodeWorkerURL(
+			fakeWorker("port.postMessage({id: data.id, error: \"from the worker\"})"),
+		);
+		await expect(decodeImageOffThread(bytesOf("png-rgb.png")))
+			.rejects.toThrow("from the worker");
+	} finally {
+		setDecodeWorkerURL(null);
+	}
+});
+
+test("where no worker starts, every image decodes on this thread", async () => {
 	try {
 		setDecodeWorkerURL(
 			new URL(
 				`data:text/javascript,${encodeURIComponent("throw new Error(\"no\");")}`,
 			),
 		);
-		const bitmap = await decodeImageOffThread(bytesOf("png-rgb.png"));
-		expect([bitmap.width, bitmap.height]).toEqual([16, 16]);
-		setDecodeWorkerURL(null);
-		const again = await decodeImageOffThread(bytesOf("png-rgb.png"));
-		expect(again.width).toBe(16);
+		const bitmaps = await Promise.all(
+			[0, 1, 2].map(() => decodeImageOffThread(bytesOf("png-rgb.png"))),
+		);
+		expect(bitmaps.map((bitmap) => [bitmap.width, bitmap.height]))
+			.toEqual([[16, 16], [16, 16], [16, 16]]);
 	} finally {
 		setDecodeWorkerURL(null);
+	}
+});
+
+test("a decode on this thread stops past its time", async () => {
+	const width = 1500;
+	const data = new Uint8ClampedArray(width * width * 4);
+	for (let i = 0; i < data.length; i++) {
+		data[i] = (i * 2654435761) >>> 24;
+	}
+	const png = encodePNG({width, height: width, data});
+	try {
+		setDecodeTimeout(0);
+		await expect(decodeImageOffThread(png)).rejects.toThrow("too long");
+		setDecodeTimeout(10_000);
+		const bitmap = await decodeImageOffThread(png);
+		expect(bitmap.naturalWidth ?? bitmap.width).toBe(width);
+	} finally {
+		setDecodeTimeout(10_000);
 	}
 });
 
