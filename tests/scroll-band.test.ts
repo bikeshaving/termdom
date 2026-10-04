@@ -42,7 +42,6 @@ function rawTerminal(
 				off: () => {},
 			},
 			exit: () => {},
-			env: {},
 			on: () => {},
 			emit: () => false,
 			removeListener: () => {},

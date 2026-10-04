@@ -2111,31 +2111,6 @@ export interface ProcessLike {
 	on(event: ProcessSignal, listener: () => void): unknown;
 	removeListener?(event: ProcessSignal, listener: () => void): unknown;
 	exit(code?: number): never;
-	env: Record<string, string | undefined>;
-}
-
-// COLORFGBG is "foreground;background" (or with a middle field), color
-// indices: 0 to 6 and 8 are dark backgrounds, 7 and 9 to 15 light.
-function detectColorScheme(proc: ProcessLike): "light" | "dark" | undefined {
-	const background = Number(proc.env.COLORFGBG?.split(";").at(-1));
-	if (!Number.isInteger(background) || background < 0 || background > 15) {
-		return undefined;
-	}
-	return background <= 6 || background === 8 ? "dark" : "light";
-}
-
-function detectColorDepth(proc: ProcessLike): ColorDepth {
-	const colorterm = proc.env.COLORTERM;
-	if (colorterm === "truecolor" || colorterm === "24bit") {
-		return "rgb";
-	}
-
-	const term = proc.env.TERM || "";
-	if (term.includes("256color") || term.includes("256")) {
-		return "256";
-	}
-
-	return "ansi";
 }
 
 // An app that exits without disposing would strand the shell with no
@@ -2205,8 +2180,14 @@ function closeOnPipeEnd(proc: ProcessLike, close: () => void): void {
 export function transportFromProcess(
 	proc: ProcessLike = process as unknown as ProcessLike,
 	// The global process sits below a shell. A mock or relay owns its
-	// screen.
-	options: {sharesScreen?: boolean} = {},
+	// screen. What the terminal cannot be asked comes from the caller,
+	// never from the environment: 24-bit color unless it says otherwise,
+	// and the background the terminal reports.
+	options: {
+		sharesScreen?: boolean;
+		colorDepth?: ColorDepth;
+		colorScheme?: "light" | "dark";
+	} = {},
 ): TerminalTransport {
 	const sharesScreen =
 		options.sharesScreen ?? proc === (process as unknown as ProcessLike);
@@ -2390,8 +2371,8 @@ export function transportFromProcess(
 			stderr.write(text + "\n");
 			return true;
 		},
-		colorDepth: detectColorDepth(proc),
-		colorScheme: detectColorScheme(proc),
+		colorDepth: options.colorDepth ?? "rgb",
+		colorScheme: options.colorScheme,
 		ready: Promise.resolve(),
 		readable,
 		writable,

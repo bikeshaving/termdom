@@ -522,7 +522,6 @@ test("non-TTY environment doesn't set up keyboard handling", async () => {
 			isTTY: false,
 			// No setRawMode
 		},
-		env: {},
 		on: () => {},
 		exit: () => {
 			throw new Error("exit");

@@ -167,7 +167,6 @@ class MockReadStream extends EventEmitter implements TTYReadStream {
 }
 
 const kTransport = Symbol("transport");
-const kDetectColorDepth = Symbol("detectColorDepth");
 
 export interface MockProcess {
 	[kTransport]: TerminalTransport | null;
@@ -179,15 +178,11 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 
 	/** Absent by default, as a terminal shares one screen for both. */
 	stderr?: {isTTY?: boolean; write(chunk: string): unknown};
-	env: Record<string, string | undefined>;
+	colorDepth: ColorDepth;
 	terminal: Terminal;
 
 	constructor(
-		options: {
-			cols?: number;
-			rows?: number;
-			env?: Record<string, string | undefined>;
-		} = {},
+		options: {cols?: number; rows?: number; colorDepth?: ColorDepth} = {},
 	) {
 		super();
 		this[kTransport] = null;
@@ -195,8 +190,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		const cols = options.cols || 80;
 		const rows = options.rows || 24;
 
-		// Set up environment for testing (defaults to 24-bit color support)
-		this.env = options.env || {COLORTERM: "truecolor", TERM: "xterm-256color"};
+		this.colorDepth = options.colorDepth ?? "rgb";
 
 		// Create headless xterm instance with standard color theme
 		this.terminal = new Terminal({
@@ -239,7 +233,11 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 
 	/** This mock as a TerminalTransport, the shape TermDOM takes. */
 	get transport(): TerminalTransport {
-		return (this[kTransport] ??= transportFromProcess(this));
+		return (
+			this[kTransport] ??= transportFromProcess(this, {
+				colorDepth: this.colorDepth,
+			})
+		);
 	}
 
 	/**
@@ -249,7 +247,10 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	 * attach several instances to the same mock terminal in sequence.
 	 */
 	get sharedTransport(): TerminalTransport {
-		return transportFromProcess(this, {sharesScreen: true});
+		return transportFromProcess(this, {
+			sharesScreen: true,
+			colorDepth: this.colorDepth,
+		});
 	}
 
 	/**
@@ -325,7 +326,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		const screen = new Screen(
 			this.terminal.rows,
 			this.terminal.cols,
-			this[kDetectColorDepth](),
+			this.colorDepth,
 		);
 		const context = screen.beginFrame({offset: 0});
 
@@ -372,23 +373,6 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		// The frame emitter withholds the final row's line ending (the screen
 		// has nothing below it); the oracle's callers split on lines.
 		return stripControlCodes(screen.endFrame() + "\r\n");
-	}
-
-	/**
-	 * Detect color depth from environment (same logic as TermDOM)
-	 */
-	[kDetectColorDepth](): ColorDepth {
-		const colorterm = this.env.COLORTERM;
-		if (colorterm === "truecolor" || colorterm === "24bit") {
-			return "rgb";
-		}
-
-		const term = this.env.TERM || "";
-		if (term.includes("256color") || term.includes("256")) {
-			return "256";
-		}
-
-		return "ansi";
 	}
 }
 

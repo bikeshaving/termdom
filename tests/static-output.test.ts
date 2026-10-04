@@ -159,7 +159,6 @@ test("a failing stdout closes the session instead of crashing", async () => {
 	let exited: number | undefined;
 	const transport = transportFromProcess({
 		stdout,
-		env: {},
 		on: () => {},
 		exit: ((code?: number) => {
 			exited = code;

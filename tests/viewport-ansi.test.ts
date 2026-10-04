@@ -41,7 +41,6 @@ function createRawMockProcess(
 				off: () => {},
 			},
 			exit: () => {},
-			env: {},
 			on: () => {},
 			emit: () => false,
 			removeListener: () => {},
