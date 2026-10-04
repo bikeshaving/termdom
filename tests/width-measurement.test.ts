@@ -481,6 +481,55 @@ test("a reply split across chunks is still a reply", async () => {
 	dom.dispose();
 });
 
+test("a reply cut right after its ESC is still a reply", async () => {
+	const cluster = "\u{1F333}"; // 🌳
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
+	scriptTerminal(terminal, () => null);
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<div>${cluster}</div>`;
+
+	await nextFrame(dom);
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (event) => {
+		keys.push((event as KeyboardEvent).key);
+	});
+	// A busy page reads its input late and in large pieces, so a piece can
+	// end on a reply's ESC. Read as Escape, the rest would be typed and the
+	// next probe would take the reply after its own.
+	stdin.simulateResponse("\x1b");
+	await settle(10);
+	stdin.simulateResponse("[1;3R");
+	await settle();
+
+	expect(keys).toEqual([]);
+
+	dom.dispose();
+});
+
+test("Escape pressed while a reply is due still arrives", async () => {
+	const cluster = "\u{1F344}"; // 🍄
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
+	scriptTerminal(terminal, () => null);
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<div>${cluster}</div>`;
+
+	await nextFrame(dom);
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (event) => {
+		keys.push((event as KeyboardEvent).key);
+	});
+	stdin.simulateResponse("\x1b");
+	await settle(100);
+
+	expect(keys).toEqual(["Escape"]);
+
+	dom.dispose();
+});
+
 test("replies interleaved with typing reach the right side of the demux", async () => {
 	const cluster = "\u{1F327}️"; // 🌧️
 	const terminal = new MockProcess({cols: 20, rows: 6});
