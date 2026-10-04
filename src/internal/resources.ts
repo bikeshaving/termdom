@@ -5,7 +5,8 @@
  * what asked for it. A listener answers with respondWith(), as a
  * Service Worker answers a fetch event. A request no listener answers
  * goes to the `fetch` the TermDOM was made with, and without one it
- * fails: nothing loads unless the program says so.
+ * fails: nothing loads unless the program says so. Only a document that
+ * is itself a file: URL loads file: URLs.
  */
 
 /** What a RequestEvent carries besides the request itself. */
@@ -114,7 +115,7 @@ export function loadResource(
 /**
  * Dispatch the request to `target`'s listeners and settle it: their
  * answer, else `fallback`, else a network error. As in a browser, a
- * document that is not a file loads no file.
+ * document that is not a file loads no file, about:blank included.
  */
 export function answerRequest(
 	target: EventTarget,
@@ -125,7 +126,7 @@ export function answerRequest(
 ): Promise<Response> {
 	if (
 		new URL(request.url).protocol === "file:" &&
-		!/^(?:file|about):/.test(documentURL)
+		!documentURL.startsWith("file:")
 	) {
 		return Promise.reject(
 			new TypeError("A document that is not a file cannot load a file"),

@@ -302,13 +302,14 @@ test("a Windows path is a file URL, not a URL with a drive-letter scheme", () =>
 	);
 });
 
-test("a relative src resolves against the document, or the working directory", () => {
+test("a relative src resolves against the document's URL, and at about:blank to nothing", () => {
 	expect(resolveImageURL("b.png", "https://example.com/a/")).toBe(
 		"https://example.com/a/b.png",
 	);
-	const local = resolveImageURL("art/cover.png", "about:blank");
-	expect(local?.startsWith("file:///")).toBe(true);
-	expect(local?.endsWith("/art/cover.png")).toBe(true);
+	expect(resolveImageURL("art/cover.png", "file:///home/me/")).toBe(
+		"file:///home/me/art/cover.png",
+	);
+	expect(resolveImageURL("art/cover.png", "about:blank")).toBeNull();
 });
 
 // Images that ask for more than they are: a header's size, a stream
