@@ -49,7 +49,9 @@ export function getNaturalSize(
 		return {width: content.grid.cols, height: content.grid.rows};
 	}
 	if (content.kind === "text") {
-		return {width: textWidth(content.text), height: content.text ? 1 : 0};
+		// The alt text on one line inside a border, or an empty cell
+		// inside one when there is none.
+		return {width: Math.max(1, textWidth(content.text)) + 2, height: 3};
 	}
 	const {width, height} = content.kind === "blank" ? content : content.bitmap;
 	if (width === 0 || height === 0) {
@@ -495,7 +497,7 @@ export function renderReplaced(
 		};
 	try {
 		if (content.kind === "text") {
-			ctx.drawText(content.text, left, top, style);
+			drawPlaceholder(content.text, left, top, cols, rows, ctx, style);
 		} else if (content.kind === "grid") {
 			ctx.drawGrid(getSettledGrid(content), left, top, style);
 		} else if (cols * rows * 2 <= MAX_IMAGE_PIXELS) {
@@ -523,6 +525,55 @@ export function renderReplaced(
 	} finally {
 		ctx.clipRect = previous;
 	}
+}
+
+/**
+ * An image that is not showing: a box around the content box with the
+ * alt text inside it, cut to fit. A box too small for a border holds
+ * the text alone.
+ */
+function drawPlaceholder(
+	text: string,
+	left: number,
+	top: number,
+	cols: number,
+	rows: number,
+	ctx: CellContext,
+	style: CellStyle,
+): void {
+	if (cols < 3 || rows < 3) {
+		ctx.drawText(fitText(text, cols), left, top, style);
+		return;
+	}
+	const side = {style: "solid" as const, color: style.fg};
+	ctx.drawBox(left, top, cols, rows, {
+		top: side,
+		right: side,
+		bottom: side,
+		left: side,
+	});
+	ctx.drawText(fitText(text, cols - 2), left + 1, top + 1, style);
+}
+
+// The text cut to `width` columns, with an ellipsis where it was cut.
+function fitText(text: string, width: number): string {
+	if (textWidth(text) <= width) {
+		return text;
+	}
+	if (width <= 0) {
+		return "";
+	}
+	let out = "";
+	let used = 0;
+	for (const char of text) {
+		const columns = Math.max(0, getStringWidth(char));
+		if (used + columns > width - 1) {
+			break;
+		}
+		out += char;
+		used += columns;
+	}
+	return out + "…";
 }
 
 // A 2d context's text at the cells its anchors fall in, through the same

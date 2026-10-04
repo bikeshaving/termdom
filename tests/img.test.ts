@@ -305,7 +305,7 @@ test("object-fit: contain centers the image and leaves the rest alone", async ()
 	dom.dispose();
 });
 
-test("a broken image fires error, rejects decode() and shows its alt text", async () => {
+test("a broken image fires error, rejects decode() and shows a box with its alt text", async () => {
 	const {dom, terminal, document} = await mount("<p></p>");
 	const image = document.createElement("img");
 	image.alt = "cover art";
@@ -325,7 +325,9 @@ test("a broken image fires error, rejects decode() and shows its alt text", asyn
 	});
 	expect((rejected as Error | null)?.name).toBe("EncodingError");
 	await nextFrame(dom);
-	expect(rowText(terminal, 0)).toBe("[cover art]");
+	expect(rowText(terminal, 0)).toBe("[┌─────────┐]");
+	expect(rowText(terminal, 1)).toBe(" │cover art│");
+	expect(rowText(terminal, 2)).toBe(" └─────────┘");
 	dom.dispose();
 });
 
@@ -660,4 +662,45 @@ test("an image whose box is past the pixel limit paints nothing", async () => {
 	await nextFrame(dom);
 	expect(cell(terminal, 0, 0).bg).toBe(-1);
 	dom.dispose();
+});
+
+test("an image that is not showing is a box, sized as the image is", async () => {
+	const {dom, terminal, document} = await mount(
+		"<div><img src=missing.png></div>" +
+		"<div><img src=missing.png alt=\"\">|</div>" +
+		"<div><img src=missing.png alt=\"the band on stage\" style=\"width: 10ch; height: 4em\"></div>" +
+		"<div><img src=missing.png alt=\"logo\" width=3 height=1></div>",
+	);
+	await until(() =>
+		[...document.querySelectorAll("img")].every((image) => image.complete),
+	);
+	await nextFrame(dom);
+	expect([0, 1, 2].map((row) => rowText(terminal, row))).toEqual([
+		"┌─┐",
+		"│ │",
+		"└─┘",
+	]);
+	expect(rowText(terminal, 3)).toBe("|");
+	expect([4, 5, 6, 7].map((row) => rowText(terminal, row))).toEqual([
+		"┌────────┐",
+		"│the ban…│",
+		"│        │",
+		"└────────┘",
+	]);
+	expect(rowText(terminal, 8)).toBe("lo…");
+	dom.dispose();
+});
+
+test("an image is a box while it loads", async () => {
+	const original = globalThis.fetch;
+	try {
+		globalThis.fetch = (() => new Promise<Response>(() => {})) as typeof fetch;
+		const {dom, terminal} =
+			await mount("<img src=\"https://example.com/a.png\" alt=\"a\">");
+		await nextFrame(dom);
+		expect(rowText(terminal, 1)).toBe("│a│");
+		dom.dispose();
+	} finally {
+		globalThis.fetch = original;
+	}
 });
