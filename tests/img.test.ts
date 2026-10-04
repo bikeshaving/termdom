@@ -14,7 +14,7 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {type RequestEvent, TermDOM} from "../src/index.ts";
+import {TermDOM} from "../src/index.ts";
 import {encodePNG} from "../src/internal/images.ts";
 import {MockProcess, nextFrame, scriptReplies, until} from "./test-utils.ts";
 
@@ -640,9 +640,9 @@ test("a new src cancels the request the old one started", async () => {
 	const {dom, document} = await mount("<img id=i>");
 	const signals: AbortSignal[] = [];
 	dom.addEventListener("request", (event) => {
-		const {signal} = (event as RequestEvent).request;
+		const {signal} = event.request;
 		signals.push(signal);
-		(event as RequestEvent).respondWith(
+		event.respondWith(
 			new Promise<Response>((_resolve, reject) => {
 				signal.addEventListener("abort", () => reject(signal.reason));
 			}),
@@ -699,7 +699,7 @@ test("an image is a box while it loads", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.addEventListener("request", (event) => {
-		(event as RequestEvent).respondWith(new Promise<Response>(() => {}));
+		event.respondWith(new Promise<Response>(() => {}));
 	});
 	dom.document.body.innerHTML =
 		"<img src=\"https://example.com/a.png\" alt=\"a\">";
