@@ -2,7 +2,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {transportFromProcess} from "../src/internal/exchange.ts";
-import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.js";
 
 test("keyboard events are dispatched to elements", async () => {
 	const terminal = new MockProcess();
@@ -2847,8 +2847,10 @@ test("ESC and a key in one write is that key with Alt", async () => {
 	// nothing.
 	expect(dialog.open).toBe(true);
 	expect(typed).toBe("");
+	// A startup query is still unanswered, so a bare ESC waits briefly in
+	// case it begins the reply.
 	await type("\x1b");
-	expect(seen.at(-1)).toBe("Escape");
+	await until(() => seen.at(-1) === "Escape");
 	expect(dialog.open).toBe(false);
 	termdom.dispose();
 });

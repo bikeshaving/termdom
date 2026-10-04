@@ -519,6 +519,15 @@ class WireReader {
 		this[kExpectingReply] = false;
 	}
 
+	holdsEscape(): boolean {
+		return this[kTail] === "\x1b";
+	}
+
+	/** What a held ESC meant once nothing followed it: the Escape key. */
+	release(): WireItem[] {
+		return this.feed("");
+	}
+
 	/**
 	 * A clipboard reply nobody asked for is discarded whole rather than
 	 * typed as keystrokes, and one still open when the asker gives up is
@@ -531,10 +540,20 @@ class WireReader {
 		}
 	}
 
-	feed(chunk: string): WireItem[] {
+	/**
+	 * `holdEscape` is for when a reply is due: a bare trailing ESC is then
+	 * more likely a reply cut after its first byte than the Escape key, so
+	 * it waits for the next chunk or for release().
+	 */
+	feed(chunk: string, holdEscape = false): WireItem[] {
 		let data = this[kTail] + chunk;
 		this[kTail] = "";
-		const held = splitTrailingEscape(data);
+		const held =
+			holdEscape &&
+			data.endsWith("\x1b") &&
+			!data.endsWith("\x1b\x1b")
+				? 1
+				: splitTrailingEscape(data);
 		if (held > 0 && held <= HOLD_LIMIT) {
 			this[kTail] = data.slice(-held);
 			data = data.slice(0, -held);
@@ -835,9 +854,14 @@ const kWidths = Symbol("widths");
 const WIDTH_PROBE_TIMEOUT_MS = 2000;
 // Long enough that anything still animating or typing carries the probes.
 const WIDTH_DEFERRAL_WAIT_MS = 500;
+// A reply cut after its ESC has the rest in the next read. A person's
+// Escape waits this long while a reply is due.
+const ESCAPE_HOLD_MS = 50;
+const kEscapeTimer = Symbol("escapeTimer");
 
 export interface Exchange {
 	[kTransport]: TerminalTransport;
+	[kEscapeTimer]: ReturnType<typeof setTimeout> | null;
 	[kInteractive]: boolean;
 	[kEngagedModes]: Set<ModeName>;
 	[kAnchorDetectionEnabled]: boolean;
@@ -903,6 +927,7 @@ export class Exchange extends EventTarget {
 		this[kDisposed] = false;
 		this[kLastWrite] = Promise.resolve();
 		this[kWireReader] = new WireReader();
+		this[kEscapeTimer] = null;
 		this[kHasDetectedAnchor] = false;
 		this[kCursorDetectionPromise] = null;
 		this[kPendingReplies] = [];
@@ -1448,6 +1473,10 @@ export class Exchange extends EventTarget {
 			clearTimeout(this[kResizeTimer]);
 			this[kResizeTimer] = null;
 		}
+		if (this[kEscapeTimer] !== null) {
+			clearTimeout(this[kEscapeTimer]);
+			this[kEscapeTimer] = null;
+		}
 
 		// Only when it was set. Reset is where we left it anyway.
 		if (this[kPriorBidiMode] === 1) {
@@ -1842,6 +1871,23 @@ function handleResize(session: Exchange): void {
 // Contiguous keystrokes are one dispatch. Everything else is dispatched
 // in place, so a report glued to fast keystrokes eats neither side.
 function routeChunk(session: Exchange, chunk: string): void {
+	if (session[kEscapeTimer] !== null) {
+		clearTimeout(session[kEscapeTimer]);
+		session[kEscapeTimer] = null;
+	}
+	const reader = session[kWireReader];
+	const replyDue =
+		session[kWidths].pending.length > 0 || session[kPendingReplies].length > 0;
+	routeItems(session, reader.feed(chunk, replyDue));
+	if (reader.holdsEscape()) {
+		session[kEscapeTimer] = setTimeout(() => {
+			session[kEscapeTimer] = null;
+			routeItems(session, reader.release());
+		}, ESCAPE_HOLD_MS);
+	}
+}
+
+function routeItems(session: Exchange, items: WireItem[]): void {
 	let keys: WireKey[] = [];
 	const input = session[kInput]!;
 	const flushKeys = () => {
@@ -1850,7 +1896,7 @@ function routeChunk(session: Exchange, chunk: string): void {
 			keys = [];
 		}
 	};
-	for (const item of session[kWireReader].feed(chunk)) {
+	for (const item of items) {
 		switch (item.kind) {
 			case "key":
 				// Raw mode delivers Ctrl-C as data. Closing is the window's
