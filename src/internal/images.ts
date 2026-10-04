@@ -21,6 +21,40 @@ export interface Bitmap {
 	data: Uint8ClampedArray;
 }
 
+/**
+ * The largest image anything here allocates: 32768 pixels to a side and
+ * 2^26 in all, 256 MB as RGBA. A file states its size before its
+ * pixels, so a few bytes can ask for any amount of memory. Like a
+ * browser, a decoder refuses a size past these before it allocates.
+ */
+export const MAX_IMAGE_SIDE = 32768;
+export const MAX_IMAGE_PIXELS = 1 << 26;
+
+/** Throws for a size an image may not have. */
+export function checkImageSize(
+	width: number,
+	height: number,
+	format: string,
+): void {
+	if (
+		!Number.isInteger(width) ||
+		!Number.isInteger(height) ||
+		width <= 0 ||
+		height <= 0
+	) {
+		throw new Error(`The ${format} image has no size`);
+	}
+	if (
+		width > MAX_IMAGE_SIDE ||
+		height > MAX_IMAGE_SIDE ||
+		width * height > MAX_IMAGE_PIXELS
+	) {
+		throw new Error(
+			`The ${format} image is ${width} by ${height} pixels, more than an image may be`,
+		);
+	}
+}
+
 export function createBitmap(width: number, height: number): Bitmap {
 	return {width, height, data: new Uint8ClampedArray(width * height * 4)};
 }
@@ -89,11 +123,26 @@ function readUint32(bytes: Uint8Array, offset: number): number {
 
 // zlib, which is what CompressionStream calls "deflate". Node, Bun, Deno
 // and browsers all have it, and nothing else here needs a platform API.
-async function inflate(data: Uint8Array): Promise<Uint8Array> {
-	const stream = new Blob([data as BlobPart])
+// Reading stops at `limit` bytes: deflate shrinks a run of zeros a
+// thousandfold, so what a stream would inflate to is no bound at all.
+async function inflate(data: Uint8Array, limit: number): Promise<Uint8Array> {
+	const reader = new Blob([data as BlobPart])
 		.stream()
-		.pipeThrough(new DecompressionStream("deflate"));
-	return new Uint8Array(await new Response(stream).arrayBuffer());
+		.pipeThrough(new DecompressionStream("deflate"))
+		.getReader();
+	const out = new Uint8Array(limit);
+	let length = 0;
+	while (length < limit) {
+		const {done, value} = await reader.read();
+		if (done) {
+			break;
+		}
+		const take = Math.min(value.length, limit - length);
+		out.set(value.subarray(0, take), length);
+		length += take;
+	}
+	await reader.cancel().catch(() => {});
+	return out.subarray(0, length);
 }
 
 // Adam7: the start and step of each pass, columns then rows.
@@ -106,6 +155,28 @@ const ADAM7 = [
 	[1, 0, 2, 2],
 	[0, 1, 1, 2],
 ];
+
+// The bytes a PNG's image data inflates to: each row's filter byte and
+// samples, over each Adam7 pass when interlaced.
+function getPNGDataSize(
+	width: number,
+	height: number,
+	bitsPerPixel: number,
+	interlaced: boolean,
+): number {
+	const rowSize = (columns: number) =>
+		columns === 0 ? 0 : 1 + Math.ceil((columns * bitsPerPixel) / 8);
+	if (!interlaced) {
+		return height * rowSize(width);
+	}
+	let size = 0;
+	for (const [x0, y0, dx, dy] of ADAM7) {
+		const columns = Math.ceil(Math.max(0, width - x0) / dx);
+		const rows = Math.ceil(Math.max(0, height - y0) / dy);
+		size += rows * rowSize(columns);
+	}
+	return size;
+}
 
 async function decodePNG(bytes: Uint8Array): Promise<Bitmap> {
 	for (let i = 0; i < 8; i++) {
@@ -178,6 +249,7 @@ async function decodePNG(bytes: Uint8Array): Promise<Bitmap> {
 	if (channels === undefined || ![1, 2, 4, 8, 16].includes(depth)) {
 		throw new Error("The PNG image has an unknown color type or depth");
 	}
+	checkImageSize(width, height, "PNG");
 	let joined = parts[0];
 	if (parts.length > 1) {
 		joined = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -187,9 +259,12 @@ async function decodePNG(bytes: Uint8Array): Promise<Bitmap> {
 			at += part.length;
 		}
 	}
-	const raw = await inflate(joined);
-	const bitmap = createBitmap(width, height);
 	const bitsPerPixel = channels * depth;
+	const raw = await inflate(
+		joined,
+		getPNGDataSize(width, height, bitsPerPixel, interlace === 1),
+	);
+	const bitmap = createBitmap(width, height);
 	const bytesPerPixel = Math.max(1, bitsPerPixel >> 3);
 	const max = (1 << depth) - 1;
 
@@ -408,6 +483,9 @@ export function encodePNG(bitmap: Bitmap): Uint8Array {
 // JPEG: baseline and progressive Huffman coding (ITU T.81), any sampling
 // factors, grayscale, YCbCr, and Adobe's RGB, CMYK and YCCK. Arithmetic
 // coding and lossless JPEG are rare enough to be left out.
+
+// libjpeg-turbo's suggested limit. A progressive image has ten or so.
+const MAX_JPEG_SCANS = 500;
 
 const ZIGZAG = new Int32Array([
 	0,
@@ -985,6 +1063,7 @@ function decodeJPEG(data: Uint8Array): Bitmap {
 	const acTables: HuffmanTable[] = [];
 	let frame: JPEGFrame | null = null;
 	let resetInterval = 0;
+	let scans = 0;
 	let adobeTransform = -1;
 	let jfif = false;
 	let orientation = 1;
@@ -1059,6 +1138,12 @@ function decodeJPEG(data: Uint8Array): Bitmap {
 				const height = (data[start + 1] << 8) | data[start + 2];
 				const width = (data[start + 3] << 8) | data[start + 4];
 				const count = data[start + 5];
+				checkImageSize(width, height, "JPEG");
+				// Each component is a plane the size of the image, and an image
+				// is gray, YCbCr or CMYK.
+				if (count < 1 || count > 4) {
+					throw new Error("The JPEG image has more than four components");
+				}
 				const components: JPEGComponent[] = [];
 				let maxH = 1;
 				let maxV = 1;
@@ -1066,6 +1151,9 @@ function decodeJPEG(data: Uint8Array): Bitmap {
 					const at = start + 6 + i * 3;
 					const h = data[at + 1] >> 4 || 1;
 					const v = data[at + 1] & 15 || 1;
+					if (h > 4 || v > 4) {
+						throw new Error("The JPEG image samples a component past four");
+					}
 					maxH = Math.max(maxH, h);
 					maxV = Math.max(maxV, v);
 					components.push({
@@ -1081,9 +1169,6 @@ function decodeJPEG(data: Uint8Array): Bitmap {
 						acTable: null,
 						pred: 0,
 					});
-				}
-				if (width === 0 || height === 0) {
-					throw new Error("The JPEG image has no size");
 				}
 				const mcusPerLine = Math.ceil(width / (8 * maxH));
 				const mcusPerColumn = Math.ceil(height / (8 * maxV));
@@ -1115,6 +1200,13 @@ function decodeJPEG(data: Uint8Array): Bitmap {
 			case 0xda: {
 				if (frame === null) {
 					throw new Error("The JPEG scan comes before its frame");
+				}
+				// Each scan passes over the whole image, so a file of a few
+				// kilobytes could ask for any number of passes.
+				if (++scans > MAX_JPEG_SCANS) {
+					throw new Error(
+						`The JPEG image has more than ${MAX_JPEG_SCANS} scans`,
+					);
 				}
 				const count = data[start];
 				const scanComponents: JPEGComponent[] = [];
@@ -1414,20 +1506,28 @@ function decodeGIF(data: Uint8Array): Bitmap {
 		if (table === null) {
 			throw new Error("The GIF image has no color table");
 		}
+		checkImageSize(frameWidth, frameHeight, "GIF");
+		checkImageSize(width || frameWidth, height || frameHeight, "GIF");
 		const minCodeSize = data[offset++];
-		const chunks: number[] = [];
+		if (minCodeSize < 2 || minCodeSize > 8) {
+			throw new Error("The GIF frame's code size is not 2 to 8 bits");
+		}
+		const chunks: Uint8Array[] = [];
+		let length = 0;
 		while (offset < data.length && data[offset] !== 0) {
 			const size = data[offset++];
-			for (let i = 0; i < size; i++) {
-				chunks.push(data[offset + i]);
-			}
+			const chunk = data.subarray(offset, offset + size);
+			chunks.push(chunk);
+			length += chunk.length;
 			offset += size;
 		}
-		const indices = decodeLZW(
-			Uint8Array.from(chunks),
-			minCodeSize,
-			frameWidth * frameHeight,
-		);
+		const joined = new Uint8Array(length);
+		let at = 0;
+		for (const chunk of chunks) {
+			joined.set(chunk, at);
+			at += chunk.length;
+		}
+		const indices = decodeLZW(joined, minCodeSize, frameWidth * frameHeight);
 		const bitmap = createBitmap(width || frameWidth, height || frameHeight);
 		const interlaced = (flags & 0x40) !== 0;
 		const rowOrder = interlaced ? interlacedRows(frameHeight) : null;
@@ -1555,9 +1655,7 @@ function decodeBMP(data: Uint8Array): Bitmap {
 	const compression = headerSize >= 40 ? view.getUint32(30, true) : 0;
 	const height = Math.abs(rawHeight);
 	const bottomUp = rawHeight > 0;
-	if (width <= 0 || height === 0) {
-		throw new Error("The BMP image has no size");
-	}
+	checkImageSize(width, height, "BMP");
 	const rle =
 		(compression === 1 && bits === 8) || (compression === 2 && bits === 4);
 	if (compression !== 0 && compression !== 3 && !rle) {
@@ -1926,7 +2024,8 @@ export function resolveImageURL(src: string, base: string): string | null {
 }
 
 interface FileSystem {
-	readFile(path: URL): Promise<Uint8Array>;
+	readFile(path: URL, options?: {signal?: AbortSignal}): Promise<Uint8Array>;
+	stat(path: URL): Promise<{size: number}>;
 }
 
 // Node's file system, which Bun and Deno provide too. getBuiltinModule
@@ -1950,25 +2049,71 @@ async function getFileSystem(): Promise<FileSystem | undefined> {
 	}
 }
 
+/** The most bytes an image file may have before it decodes. */
+export const MAX_IMAGE_BYTES = 1 << 26;
+
+function checkImageBytes(length: number): void {
+	if (length > MAX_IMAGE_BYTES) {
+		throw new Error(`The image file is more than ${MAX_IMAGE_BYTES} bytes`);
+	}
+}
+
 /**
- * The bytes a URL names. data: is read here. file: goes through the
- * runtime's file system where it has one (Node's fetch does not read
- * files), and anything else through fetch.
+ * The bytes a URL names, up to MAX_IMAGE_BYTES. data: is read here.
+ * file: goes through the runtime's file system where it has one (Node's
+ * fetch does not read files), and anything else through fetch, which
+ * `signal` cancels.
  */
-export async function fetchImageBytes(url: string): Promise<Uint8Array> {
+export async function fetchImageBytes(
+	url: string,
+	signal?: AbortSignal,
+): Promise<Uint8Array> {
 	const inline = readDataURL(url);
 	if (inline !== null) {
+		checkImageBytes(inline.length);
 		return inline;
 	}
 	if (url.startsWith("file:")) {
 		const fs = await getFileSystem();
 		if (fs !== undefined) {
-			return new Uint8Array(await fs.readFile(new URL(url)));
+			const path = new URL(url);
+			checkImageBytes((await fs.stat(path)).size);
+			return new Uint8Array(await fs.readFile(path, {signal}));
 		}
 	}
-	const response = await fetch(url);
+	const response = await fetch(url, {signal});
 	if (!response.ok) {
 		throw new Error(`The image request failed with status ${response.status}`);
 	}
-	return new Uint8Array(await response.arrayBuffer());
+	const declared = Number(response.headers.get("content-length"));
+	if (Number.isFinite(declared)) {
+		checkImageBytes(declared);
+	}
+	if (response.body === null) {
+		return new Uint8Array(0);
+	}
+	// The length a server declares is not a promise. The body is read
+	// a piece at a time and given up past the limit.
+	const reader = response.body.getReader();
+	const pieces: Uint8Array[] = [];
+	let length = 0;
+	for (;;) {
+		const {done, value} = await reader.read();
+		if (done) {
+			break;
+		}
+		length += value.length;
+		if (length > MAX_IMAGE_BYTES) {
+			await reader.cancel().catch(() => {});
+			checkImageBytes(length);
+		}
+		pieces.push(value);
+	}
+	const bytes = new Uint8Array(length);
+	let at = 0;
+	for (const piece of pieces) {
+		bytes.set(piece, at);
+		at += piece.length;
+	}
+	return bytes;
 }

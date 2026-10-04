@@ -29,6 +29,7 @@ import {
 	type Bitmap,
 	getReplacedContent,
 	isReplacedElement,
+	MAX_IMAGE_PIXELS,
 	type ReplacedContent,
 	sampleBitmap,
 } from "./images.ts";
@@ -497,7 +498,9 @@ export function renderReplaced(
 			ctx.drawText(content.text, left, top, style);
 		} else if (content.kind === "grid") {
 			ctx.drawGrid(getSettledGrid(content), left, top, style);
-		} else {
+		} else if (cols * rows * 2 <= MAX_IMAGE_PIXELS) {
+			// Past the limit the pixels a box samples are more than an image
+			// may hold, and like a canvas past it, the box shows nothing.
 			ctx.drawGrid(
 				getBitmapCells(element, content, cols, rows, under),
 				left,

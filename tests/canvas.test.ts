@@ -907,3 +907,26 @@ test("a canvas's lines do not join the page's borders beside it", async () => {
 	expect(rowText(terminal, 2).slice(0, 2)).toBe("│─");
 	dom.dispose();
 });
+
+test("ImageData past the pixel limit throws, and so does getImageData", async () => {
+	const {dom, document} =
+		await mount("<canvas id=c width=4 height=4></canvas>");
+	const ctx =
+		(document.getElementById("c") as HTMLCanvasElement).getContext("2d")!;
+	expect(() => ctx.createImageData(1 << 14, 1 << 13)).toThrow(RangeError);
+	expect(() => ctx.getImageData(0, 0, 1 << 14, 1 << 13)).toThrow(RangeError);
+	dom.dispose();
+});
+
+test("a charactergrid draws nothing for an image sized past the pixel limit", async () => {
+	const {dom, document} = await mount(
+		"<canvas id=g width=4 height=2></canvas><canvas id=src width=2 height=2></canvas>",
+	);
+	const source =
+		(document.getElementById("src") as HTMLCanvasElement).getContext("2d")!;
+	source.fillRect(0, 0, 2, 2);
+	const ctx = grid(document);
+	ctx.drawImage(document.getElementById("src"), 0, 0, 1e6, 1e6);
+	expect(ctx.getCell(0, 0)).toBeNull();
+	dom.dispose();
+});
