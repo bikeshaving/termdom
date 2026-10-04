@@ -35,7 +35,14 @@ lossless JPEGs.
 `load` and `error` fire as they do in a browser, and `decode()`,
 `complete`, `naturalWidth`, `naturalHeight` and `currentSrc` report the
 image. `new Image()` makes an `<img>`. `srcset` is read for its `1x`
-candidate. An image that fails to load shows its `alt` text.
+candidate.
+
+An image that is not showing, because it is still loading, failed to
+load or was blocked, is a box with its `alt` text inside, cut with an
+ellipsis when it does not fit. The box takes the image's size when the
+page gives one, and otherwise fits the text. An empty `alt` marks an
+image that is only decoration, and it shows nothing, as does an
+`<img>` with neither a `src` nor an `alt`.
 
 ### Size
 

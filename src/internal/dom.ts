@@ -16567,12 +16567,15 @@ class HTMLImageElement extends HTMLElement {
 					smooth: true,
 				};
 			}
-			// Alt text stands in for an image that is not there.
+			// An image not showing, whether loading, broken or blocked, is a
+			// box with its alt text. An empty alt marks one that is only
+			// decoration, and with no source and no alt there is nothing to
+			// stand in for: both show nothing.
 			const alt = this.getAttribute("alt");
-			if (alt !== null && alt !== "" && state.status !== "loading") {
-				return {kind: "text", text: alt};
+			if (alt === "" || (alt === null && state.status === "unavailable")) {
+				return null;
 			}
-			return null;
+			return {kind: "text", text: alt ?? ""};
 		});
 		registerDrawable(this, () => {
 			const state = this[kImageState];
