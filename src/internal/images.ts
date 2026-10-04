@@ -55,6 +55,27 @@ export function checkImageSize(
 	}
 }
 
+// A browser decodes on another thread. On one, a decoder hands the event
+// loop a turn this often, so a large image does not stall the page
+// while it decodes.
+const DECODE_SLICE_MS = 16;
+
+// Returns a promise to await when a turn is due, and undefined between.
+function createYielder(): () => Promise<void> | undefined {
+	let last = performance.now();
+	return () => {
+		if (performance.now() - last < DECODE_SLICE_MS) {
+			return undefined;
+		}
+		return new Promise<void>((resolve) => {
+			setTimeout(() => {
+				last = performance.now();
+				resolve();
+			}, 0);
+		});
+	};
+}
+
 export function createBitmap(width: number, height: number): Bitmap {
 	return {width, height, data: new Uint8ClampedArray(width * height * 4)};
 }
@@ -97,7 +118,7 @@ export async function decodeImage(bytes: Uint8Array): Promise<Bitmap> {
 		case "image/png":
 			return await decodePNG(bytes);
 		case "image/jpeg":
-			return decodeJPEG(bytes);
+			return await decodeJPEG(bytes);
 		case "image/gif":
 			return decodeGIF(bytes);
 		case "image/bmp":
@@ -323,7 +344,8 @@ async function decodePNG(bytes: Uint8Array): Promise<Bitmap> {
 	};
 
 	let at = 0;
-	const unfilter = (
+	const pause = createYielder();
+	const unfilter = async (
 		passWidth: number,
 		passHeight: number,
 		emit: (line: Uint8Array, y: number) => void,
@@ -366,6 +388,7 @@ async function decodePNG(bytes: Uint8Array): Promise<Bitmap> {
 			}
 			emit(current, y);
 			[previous, current] = [current, previous];
+			await pause();
 		}
 	};
 
@@ -376,12 +399,12 @@ async function decodePNG(bytes: Uint8Array): Promise<Bitmap> {
 			if (passWidth <= 0 || passHeight <= 0) {
 				continue;
 			}
-			unfilter(passWidth, passHeight, (line, y) =>
+			await unfilter(passWidth, passHeight, (line, y) =>
 				store(line, passWidth, x0, dx, y0 + y * dy),
 			);
 		}
 	} else {
-		unfilter(width, height, (line, y) => store(line, width, 0, 1, y));
+		await unfilter(width, height, (line, y) => store(line, width, 0, 1, y));
 	}
 	return bitmap;
 }
@@ -745,7 +768,7 @@ class BitReader {
 	}
 }
 
-function decodeScan(
+async function decodeScan(
 	data: Uint8Array,
 	offset: number,
 	frame: JPEGFrame,
@@ -755,7 +778,8 @@ function decodeScan(
 	spectralEnd: number,
 	successivePrev: number,
 	successive: number,
-): number {
+	pause: () => Promise<void> | undefined,
+): Promise<number> {
 	const reader = new BitReader(data, offset);
 	const progressive = frame.progressive;
 	let eobrun = 0;
@@ -921,6 +945,10 @@ function decodeScan(
 		eobrun = 0;
 		successiveState = 0;
 		for (let n = 0; n < interval && mcu < total; n++, mcu++) {
+			const turn = (mcu & 63) === 0 ? pause() : undefined;
+			if (turn !== undefined) {
+				await turn;
+			}
 			if (components.length === 1) {
 				const component = components[0];
 				const row = Math.floor(mcu / component.blocksPerLine);
@@ -1057,7 +1085,8 @@ function readExifOrientation(
 	return 1;
 }
 
-function decodeJPEG(data: Uint8Array): Bitmap {
+async function decodeJPEG(data: Uint8Array): Promise<Bitmap> {
+	const pause = createYielder();
 	const quantTables: Uint16Array[] = [];
 	const dcTables: HuffmanTable[] = [];
 	const acTables: HuffmanTable[] = [];
@@ -1222,7 +1251,7 @@ function decodeJPEG(data: Uint8Array): Bitmap {
 					scanComponents.push(component);
 				}
 				const at = start + 1 + count * 2;
-				offset = decodeScan(
+				offset = await decodeScan(
 					data,
 					end,
 					frame,
@@ -1232,6 +1261,7 @@ function decodeJPEG(data: Uint8Array): Bitmap {
 					data[at + 1],
 					data[at + 2] >> 4,
 					data[at + 2] & 15,
+					pause,
 				);
 				continue;
 			}
@@ -1252,20 +1282,28 @@ function decodeJPEG(data: Uint8Array): Bitmap {
 		throw new Error("The JPEG image has no frame");
 	}
 	return orient(
-		buildJPEGBitmap(frame, quantTables, adobeTransform, jfif),
+		await buildJPEGBitmap(frame, quantTables, adobeTransform, jfif, pause),
 		orientation,
 	);
 }
 
-function buildJPEGBitmap(
+async function buildJPEGBitmap(
 	frame: JPEGFrame,
 	quantTables: Uint16Array[],
 	adobeTransform: number,
 	jfif: boolean,
-): Bitmap {
+	pause: () => Promise<void> | undefined,
+): Promise<Bitmap> {
 	const {width, height, components} = frame;
 	// Each component's samples at its own resolution.
-	const planes = components.map((component) => {
+	const planes: Array<{
+		plane: Uint8ClampedArray;
+		planeWidth: number;
+		planeHeight: number;
+		scaleX: number;
+		scaleY: number;
+	}> = [];
+	for (const component of components) {
 		const planeWidth = component.blocksPerLineForMcu * 8;
 		const rows =
 			(component.blocks.length / 64 / component.blocksPerLineForMcu) * 8;
@@ -1279,6 +1317,7 @@ function buildJPEGBitmap(
 		const blocksPerRow = component.blocksPerLineForMcu;
 		const blockRows = rows / 8;
 		for (let blockRow = 0; blockRow < blockRows; blockRow++) {
+			await pause();
 			for (let blockCol = 0; blockCol < blocksPerRow; blockCol++) {
 				inverseDCT(
 					component.blocks,
@@ -1295,14 +1334,14 @@ function buildJPEGBitmap(
 				}
 			}
 		}
-		return {
+		planes.push({
 			plane,
 			planeWidth,
 			planeHeight: rows,
 			scaleX: component.h / frame.maxH,
 			scaleY: component.v / frame.maxV,
-		};
-	});
+		});
+	}
 
 	const bitmap = createBitmap(width, height);
 	const data = bitmap.data;
@@ -1321,6 +1360,7 @@ function buildJPEGBitmap(
 		);
 	const sample = new Float32Array(4);
 	for (let y = 0; y < height; y++) {
+		await pause();
 		for (let x = 0; x < width; x++) {
 			for (let c = 0; c < count; c++) {
 				const {plane, planeWidth, planeHeight, scaleX, scaleY} = planes[c];
@@ -2116,4 +2156,258 @@ export async function fetchImageBytes(
 		at += piece.length;
 	}
 	return bytes;
+}
+
+// ---------------------------------------------------------------------------
+// Decoding off the page's thread.
+
+/**
+ * How long an image may take to decode on the worker. Past it, the
+ * worker is ended, which ends the decode with it, and the image fails.
+ */
+let decodeTimeout = 10_000;
+// A worker with nothing to do is ended, so it keeps no process alive.
+const WORKER_IDLE_MS = 1_000;
+
+let workerURL: URL | null = null;
+
+interface DecodeWorker {
+	post(message: unknown, transfer: Transferable[]): void;
+	terminate(): void;
+}
+
+interface Pending {
+	resolve(bitmap: Bitmap): void;
+	reject(error: unknown): void;
+	timer: ReturnType<typeof setTimeout>;
+}
+
+interface WorkerState {
+	worker: DecodeWorker;
+	// Until the worker says it started, a failure means it cannot start.
+	ready: boolean;
+	pending: Map<number, Pending>;
+	idle: ReturnType<typeof setTimeout> | null;
+	// Requests sent before the worker answered, in case it never does.
+	queued: Map<number, Uint8Array>;
+}
+
+let current: WorkerState | null = null;
+// False for good once a worker fails to start: decoding stays here.
+let workersWork = true;
+let nextRequest = 0;
+
+/** The module src/decode-worker.ts builds to, which decodes off-thread. */
+export function setDecodeWorkerURL(url: URL | null): void {
+	if (current !== null) {
+		endWorker(current, new Error("The image decoder was replaced"));
+	}
+	workerURL = url;
+	workersWork = url !== null;
+}
+
+/** How long a decode may take on the worker before it is ended. */
+export function setDecodeTimeout(ms: number): void {
+	decodeTimeout = ms;
+}
+
+/**
+ * Decode on a worker thread, where the runtime has one, so a large image
+ * neither stalls the page nor runs past decodeTimeout. Where no worker
+ * starts, the decode runs here, a slice at a time.
+ */
+export function decodeImageOffThread(bytes: Uint8Array): Promise<Bitmap> {
+	const state = workersWork ? getWorker() : null;
+	if (state === null) {
+		return decodeImage(bytes);
+	}
+	const id = nextRequest++;
+	// A copy the worker can take, whatever buffer the bytes sit in.
+	const copy = bytes.slice();
+	return new Promise<Bitmap>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			state.pending.delete(id);
+			reject(
+				new Error(`The image took more than ${decodeTimeout} ms to decode`),
+			);
+			// What else this worker held fails with it: whatever stalled it
+			// may stall the next one too.
+			endWorker(state, new Error("The image decoder was stopped"));
+		}, decodeTimeout);
+		state.pending.set(id, {resolve, reject, timer});
+		if (state.idle !== null) {
+			clearTimeout(state.idle);
+			state.idle = null;
+		}
+		if (!state.ready) {
+			state.queued.set(id, copy);
+		}
+		state.worker.post({id, bytes: copy.buffer}, state.ready
+			? [copy.buffer]
+			: []);
+	});
+}
+
+function getWorker(): WorkerState | null {
+	if (current !== null) {
+		return current;
+	}
+	const url = workerURL;
+	if (url === null) {
+		return null;
+	}
+	let state: WorkerState | null = null;
+	const onMessage = (data: unknown) => {
+		if (state === null) {
+			return;
+		}
+		const message = data as {
+			ready?: boolean;
+			id?: number;
+			width?: number;
+			height?: number;
+			data?: ArrayBuffer;
+			error?: string;
+		};
+		if (message.ready) {
+			state.ready = true;
+			state.queued.clear();
+			return;
+		}
+		const pending = state.pending.get(message.id!);
+		if (pending === undefined) {
+			return;
+		}
+		state.pending.delete(message.id!);
+		clearTimeout(pending.timer);
+		if (message.error !== undefined) {
+			pending.reject(new Error(message.error));
+		} else {
+			pending.resolve({
+				width: message.width!,
+				height: message.height!,
+				data: new Uint8ClampedArray(message.data!),
+			});
+		}
+		if (state.pending.size === 0) {
+			const idle = state;
+			state.idle = setTimeout(() => endWorker(idle, null), WORKER_IDLE_MS);
+			(state.idle as {unref?(): void}).unref?.();
+		}
+	};
+	const onError = (error: unknown) => {
+		if (state === null) {
+			return;
+		}
+		if (!state.ready) {
+			// It never started: decode here from now on, these included.
+			workersWork = false;
+			const queued = new Map(state.queued);
+			const pending = new Map(state.pending);
+			endWorker(state, null);
+			for (const [id, bytes] of queued) {
+				const request = pending.get(id)!;
+				clearTimeout(request.timer);
+				decodeImage(bytes).then(request.resolve, request.reject);
+			}
+			return;
+		}
+		endWorker(
+			state,
+			error instanceof Error ? error : new Error("The image decoder failed"),
+		);
+	};
+	const worker = startWorker(url, onMessage, onError);
+	if (worker === null) {
+		workersWork = false;
+		return null;
+	}
+	state = {
+		worker,
+		ready: false,
+		pending: new Map(),
+		idle: null,
+		queued: new Map(),
+	};
+	current = state;
+	return state;
+}
+
+// Ends the worker. What it still held fails with `error`, or is left
+// to the caller when null.
+function endWorker(state: WorkerState, error: Error | null): void {
+	if (current === state) {
+		current = null;
+	}
+	if (state.idle !== null) {
+		clearTimeout(state.idle);
+	}
+	state.worker.terminate();
+	if (error !== null) {
+		for (const pending of state.pending.values()) {
+			clearTimeout(pending.timer);
+			pending.reject(error);
+		}
+	}
+	state.pending.clear();
+}
+
+// A web worker where the runtime has one, Node's worker_threads where it
+// has not. Either way, one that would keep the process alive is unref'd.
+function startWorker(
+	url: URL,
+	onMessage: (data: unknown) => void,
+	onError: (error: unknown) => void,
+): DecodeWorker | null {
+	try {
+		const Web = (globalThis as {Worker?: new (
+			url: URL,
+			options: {type: "module"}
+		) => {
+			postMessage(message: unknown, transfer: Transferable[]): void;
+			addEventListener(type: string, listener: (event: any) => void): void;
+			terminate(): void;
+			unref?(): void;
+		};}).Worker;
+		if (Web !== undefined) {
+			const worker = new Web(url, {type: "module"});
+			worker.addEventListener("message", (event) => onMessage(event.data));
+			worker.addEventListener("error", (event) => {
+				event.preventDefault?.();
+				onError(event.error ?? event);
+			});
+			worker.unref?.();
+			return {
+				post: (message, transfer) => worker.postMessage(message, transfer),
+				terminate: () => worker.terminate(),
+			};
+		}
+		const process = getProcess();
+		if (process?.getBuiltinModule === undefined) {
+			return null;
+		}
+		const threads = process.getBuiltinModule("node:worker_threads") as {
+			Worker: new (url: URL) => {
+				postMessage(message: unknown, transfer: Transferable[]): void;
+				on(type: string, listener: (value: any) => void): void;
+				terminate(): Promise<number>;
+				unref(): void;
+			};
+		} | undefined;
+		if (threads === undefined) {
+			return null;
+		}
+		const worker = new threads.Worker(url);
+		worker.on("message", onMessage);
+		worker.on("error", onError);
+		worker.unref();
+		return {
+			post: (message, transfer) => worker.postMessage(message, transfer),
+			terminate: () => {
+				worker.terminate().catch(() => {});
+			},
+		};
+	} catch (_error) {
+		return null;
+	}
 }

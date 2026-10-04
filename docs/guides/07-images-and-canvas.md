@@ -80,6 +80,11 @@ asks for before it allocates, and an image past a limit fails to load:
 - a PNG's data inflated only as far as its image needs
 - a JPEG of at most four components and 500 scans
 
+Images decode on a worker thread, so a large one does not stall the
+page, and a decode that takes more than 10 seconds is stopped and the
+image fails. Where no worker can start, as in a CommonJS build,
+images decode on the page's thread a slice at a time.
+
 A new `src` cancels the request the old one started. An image whose
 box would sample more than 2^26 pixels draws nothing, as does a 2D
 canvas past that size. `ImageData` past it throws a `RangeError`, and

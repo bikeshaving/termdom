@@ -60,7 +60,7 @@ import {
 import {
 	type Bitmap,
 	createBitmap,
-	decodeImage,
+	decodeImageOffThread,
 	fetchImageBytes,
 	MAX_IMAGE_PIXELS,
 	registerReplacedContent,
@@ -16794,7 +16794,7 @@ function updateImageData(image: HTMLImageElement): void {
 	invalidateReplaced(image, false);
 	const abort = state.abort = new AbortController();
 	fetchImageBytes(url, abort.signal)
-		.then((bytes) => decodeImage(bytes))
+		.then((bytes) => decodeImageOffThread(bytes))
 		.then(
 			(bitmap) => settle("complete", bitmap),
 			(error) => settle("broken", null, error),
@@ -35546,7 +35546,7 @@ export class Window extends EventTarget {
 		// A Blob is decoded first; an image still loading is waited for.
 		if (typeof Blob !== "undefined" && image instanceof Blob) {
 			return image.arrayBuffer()
-				.then((buffer) => decodeImage(new Uint8Array(buffer)))
+				.then((buffer) => decodeImageOffThread(new Uint8Array(buffer)))
 				.then((bitmap) => settle(new ImageBitmap(bitmap)));
 		}
 		if (image instanceof HTMLImageElement && !image.complete) {

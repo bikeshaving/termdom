@@ -13,12 +13,15 @@ import {expect, test} from "@b9g/libuild/test";
 import {
 	type Bitmap,
 	decodeImage,
+	decodeImageOffThread,
 	encodePNG,
 	fetchImageBytes,
 	MAX_IMAGE_BYTES,
 	readDataURL,
 	resolveImageURL,
 	sampleBitmap,
+	setDecodeTimeout,
+	setDecodeWorkerURL,
 	sniffImageType,
 } from "../src/internal/images.ts";
 import {IMAGES} from "./fixtures/images.ts";
@@ -472,5 +475,55 @@ test("an image file past the byte limit is not read whole", async () => {
 		expect(pulled).toBeLessThanOrEqual(MAX_IMAGE_BYTES / piece.length + 2);
 	} finally {
 		globalThis.fetch = original;
+	}
+});
+
+// A worker from source text: it reports ready, then answers each
+// request as `reply` says, or never.
+function fakeWorker(reply: string): URL {
+	const source =
+		"const t = globalThis.process?.getBuiltinModule?.(\"node:worker_threads\");" +
+		"const port = t?.parentPort ?? globalThis;" +
+		"const answer = (data) => {" +
+		reply +
+		"};" +
+		"if (t?.parentPort) t.parentPort.on(\"message\", answer);" +
+		"else globalThis.addEventListener(\"message\", (e) => answer(e.data));" +
+		"port.postMessage({ready: true});";
+	return new URL(`data:text/javascript,${encodeURIComponent(source)}`);
+}
+
+test("a decode that runs past its time on the worker fails, and the next one starts over", async () => {
+	try {
+		setDecodeTimeout(50);
+		setDecodeWorkerURL(fakeWorker(""));
+		await expect(decodeImageOffThread(bytesOf("png-rgb.png")))
+			.rejects.toThrow("more than 50 ms");
+		setDecodeTimeout(10_000);
+		setDecodeWorkerURL(
+			fakeWorker("port.postMessage({id: data.id, error: \"from the worker\"})"),
+		);
+		await expect(decodeImageOffThread(bytesOf("png-rgb.png")))
+			.rejects.toThrow("from the worker");
+	} finally {
+		setDecodeTimeout(10_000);
+		setDecodeWorkerURL(null);
+	}
+});
+
+test("where no worker starts, images decode on this thread", async () => {
+	try {
+		setDecodeWorkerURL(
+			new URL(
+				`data:text/javascript,${encodeURIComponent("throw new Error(\"no\");")}`,
+			),
+		);
+		const bitmap = await decodeImageOffThread(bytesOf("png-rgb.png"));
+		expect([bitmap.width, bitmap.height]).toEqual([16, 16]);
+		setDecodeWorkerURL(null);
+		const again = await decodeImageOffThread(bytesOf("png-rgb.png"));
+		expect(again.width).toBe(16);
+	} finally {
+		setDecodeWorkerURL(null);
 	}
 });
