@@ -3,9 +3,17 @@ title: Images and canvas
 description: How <img> and <canvas> draw pixels in cells.
 ---
 
-A cell can show two pixels: the upper half block, `▀`, in the
-foreground color over the background color. `<img>` and `<canvas>`
-draw that way. The pixels are ordinary cells, so they scroll, clip and
+A cell can show two pixels: the lower half block, `▄`, in the
+foreground color under the background color. `<img>` and `<canvas>`
+draw that way.
+
+Most terminals draw block characters themselves, so either half fills
+its half of the cell exactly. Terminal.app draws them from the font,
+and Menlo's and SF Mono's sit low in the cell: the upper half block
+leaves a sliver of the wrong color at the top and runs past the
+middle. The background fills whatever the glyph leaves, so with the
+lower half block only the seam between the two pixels is a little
+low. The pixels are ordinary cells, so they scroll, clip and
 redraw like text, and they work over SSH and inside tmux.
 
 ## `<img>`
@@ -229,13 +237,13 @@ not the page's borders around the canvas.
 
 ## Text alone
 
-Pixels can also be written as text: an upper half block in a span
-whose `color` is the upper pixel and whose `background-color` is the
-lower one.
+Pixels can also be written as text: a lower half block in a span
+whose `color` is the lower pixel and whose `background-color` is the
+upper one.
 
 ```html
-<pre><span style="color: #e06c75; background-color: #61afef">▀▀▀</span>
-<span style="color: #98c379; background-color: #e5c07b">▀▀▀</span></pre>
+<pre><span style="color: #61afef; background-color: #e06c75">▄▄▄</span>
+<span style="color: #e5c07b; background-color: #98c379">▄▄▄</span></pre>
 ```
 
 That stays aligned through scrolling, clipping and repaints, as any

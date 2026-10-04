@@ -3361,12 +3361,20 @@ function toGridColor(value: string): number | null | undefined {
 }
 
 /**
- * The cell two stacked pixels make: the upper half block in the upper
- * pixel's color over the lower pixel's, a lower half block when only the
- * lower pixel shows, a space in one color when both match, and null when
- * neither shows. A pixel at least half opaque shows; a partly
- * transparent one is first blended over `under` when there is a color
- * under it. A half block with no background keeps the one under it.
+ * The cell two stacked pixels make: the lower half block in the lower
+ * pixel's color over a background in the upper's, the upper half block
+ * when only the upper pixel shows, a space in one color when both match,
+ * and null when neither shows. A pixel at least half opaque shows; a
+ * partly transparent one is first blended over `under` when there is a
+ * color under it. A half block with no background keeps the one under it.
+ *
+ * Two colors go in the lower half block, not the upper, because a
+ * terminal that draws block characters from the font shows the font's
+ * glyph, and Menlo's and SF Mono's both sit low in the cell: the upper
+ * one leaves the cell's top in the wrong color and runs past the middle.
+ * The background fills whatever the glyph leaves, so with the lower half
+ * block only the seam is off. Terminals that draw the blocks themselves
+ * show either one exactly.
  */
 export function halfBlockCell(
 	pixels: Uint8ClampedArray,
@@ -3402,8 +3410,11 @@ export function halfBlockCell(
 	if (top === null) {
 		return {char: "▄", style: {fg: bottom}};
 	}
+	if (bottom === null) {
+		return {char: "▀", style: {fg: top}};
+	}
 	if (top === bottom) {
 		return {char: " ", style: {bg: top}};
 	}
-	return {char: "▀", style: {fg: top, bg: bottom ?? undefined}};
+	return {char: "▄", style: {fg: bottom, bg: top}};
 }
