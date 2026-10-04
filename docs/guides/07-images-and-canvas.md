@@ -39,15 +39,18 @@ candidate. An image that fails to load shows its `alt` text.
 
 ### Size
 
-An image's pixels are the screen's pixels, so its natural size in
-cells is its size in pixels divided by the size of a cell in pixels.
-The engine asks the terminal for the cell size (XTWINOPS 16) and
-assumes 8 by 16 until the terminal answers. A 400 by 400 image is 50
-columns by 25 rows under that assumption.
+An image's pixels are CSS pixels, so its natural size in cells is its
+size divided by the size of a cell. With the `cellSize` option set,
+that is the page's cell. With the default unit cell, where a CSS pixel
+is a whole cell, an image takes the terminal's cell instead: the engine
+asks for its size (XTWINOPS 16) and assumes 8 by 16 until the terminal
+answers. A 400 by 400 image is 50 columns by 25 rows under that
+assumption.
 
-`width` and `height`, as attributes or in CSS, are cells, like every
-other length. With only one of them set, the other follows the image's
-ratio. `max-width: 100%` keeps an image inside its container.
+`width` and `height`, as attributes or in CSS, are lengths like any
+other: CSS pixels, which are cells under the unit cell. With only one
+of them set, the other follows the image's ratio. `max-width: 100%`
+keeps an image inside its container.
 
 On a line, an image is as tall as itself and its top is at the top of
 the line.
