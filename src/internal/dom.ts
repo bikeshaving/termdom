@@ -35916,7 +35916,7 @@ function buildWindow(document: Document): Window {
 }
 
 // Images the parser built before their document had a window wait for
-// one. The document has one now.
+// one, and start here, once it does.
 function startPendingImages(
 	root: globalThis.Document | globalThis.ShadowRoot,
 ): void {
