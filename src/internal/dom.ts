@@ -74,14 +74,6 @@ import {
 	getStringWidth,
 	toASCIILowercase,
 } from "./text.ts";
-import {
-	DETAILS_UA_STYLES,
-	METER_UA_STYLES,
-	PROGRESS_UA_STYLES,
-	SELECT_UA_STYLES,
-	TEXT_CONTROL_UA_STYLES,
-	TEXTAREA_UA_STYLES,
-} from "./useragent.ts";
 
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -958,31 +950,17 @@ function observeOptionList(select: Element): void {
 
 // The root is registered with the cascade BEFORE it is populated, so
 // populating it is the invalidation that swaps in the new composed tree.
+// The tree has no stylesheet of its own: the UA sheet styles it through
+// ::part() and the pseudo-elements that reach a control's parts.
 function buildUAShadowTree(
 	host: Element,
 	attached: AttachedDocument,
-	styles: string,
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowTree<globalThis.ShadowRoot>(host);
 	attached[kLayout].invalidate();
 	observeShadowRoot(host[kDocument], root);
-	// The sheet has to be in the root BEFORE the cascade is told about the
-	// root, so the registration's incremental parse picks it up. Registering
-	// first and populating after left the cascade to notice the sheet by count
-	// drift, which forced a full rebuild of every sheet per UA shadow tree.
-	root.appendChild(createUAStyleElement(host, styles));
 	attached[kCascade].registerShadowRoot(root);
 	return root;
-}
-
-/** The `<style>` element that carries a widget's UA stylesheet. */
-function createUAStyleElement(
-	host: Element,
-	styles: string,
-): globalThis.HTMLElement {
-	const style = getUADocument(host).createElement("style");
-	style.textContent = styles;
-	return style;
 }
 
 // Applies the text selection API's clamping and direction rules. The
@@ -14656,7 +14634,7 @@ class HTMLDetailsElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		const document = getUADocument(this);
-		const root = buildUAShadowTree(this, attached, DETAILS_UA_STYLES);
+		const root = buildUAShadowTree(this, attached);
 		const shadow = root as unknown as ShadowRoot;
 		const summarySlot = document.createElement("slot");
 		const content = document.createElement("div");
@@ -17747,15 +17725,14 @@ function buildInputWidget(input: HTMLInputElement): void {
 	const attached = getAttachedDocument(input)!;
 	let root = input[kRoot];
 	if (root === null) {
-		root = buildUAShadowTree(input, attached, TEXT_CONTROL_UA_STYLES);
+		root = buildUAShadowTree(input, attached);
 	} else {
 		// A rebuild keeps the root and its observer registration and replaces
-		// only what is under it, including the stylesheet.
+		// only what is under it.
 		while (root.firstChild) {
 			root.removeChild(root.firstChild);
 		}
 		attached[kLayout].invalidate();
-		root.appendChild(createUAStyleElement(input, TEXT_CONTROL_UA_STYLES));
 	}
 	input[kRoot] = root;
 	input[kKind] = getInputKind(input);
@@ -18545,10 +18522,9 @@ function getGaugeGlyphs(host: Element, glyph: string): string {
 function buildGaugeRoot(
 	host: Element,
 	attached: AttachedDocument,
-	styles: string,
 ): {bar: globalThis.HTMLElement; groove: globalThis.Text} {
 	const document = getUADocument(host);
-	const root = buildUAShadowTree(host, attached, styles);
+	const root = buildUAShadowTree(host, attached);
 	const track = addPart(root, "track");
 	track.removeChild(track.firstChild!);
 	const bar = document.createElement("span");
@@ -18683,7 +18659,7 @@ class HTMLMeterElement extends HTMLElement {
 			return;
 		}
 		this[kUpgraded] = true;
-		this[kBar] = buildGaugeRoot(this, attached, METER_UA_STYLES).bar;
+		this[kBar] = buildGaugeRoot(this, attached).bar;
 		syncUAShadowTree(this);
 	}
 
@@ -18698,6 +18674,7 @@ class HTMLMeterElement extends HTMLElement {
 		const barLevel = getMeterLevel(this);
 		if (bar.getAttribute("data-level") !== barLevel) {
 			bar.setAttribute("data-level", barLevel);
+			bar.setAttribute("part", `bar ${barLevel}`);
 		}
 	}
 
@@ -19229,7 +19206,7 @@ class HTMLProgressElement extends HTMLElement {
 			return;
 		}
 		this[kUpgraded] = true;
-		this[kBar] = buildGaugeRoot(this, attached, PROGRESS_UA_STYLES).bar;
+		this[kBar] = buildGaugeRoot(this, attached).bar;
 		syncUAShadowTree(this);
 	}
 
@@ -19658,7 +19635,7 @@ export class HTMLSelectElement extends HTMLElement {
 		// The tree: the selected option's label (part=value), the ▾ indicator
 		// (part=indicator), and the picker popover (part=picker, one row per
 		// option). Composition hides the light option list.
-		const root = buildUAShadowTree(this, attached, SELECT_UA_STYLES);
+		const root = buildUAShadowTree(this, attached);
 		this[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		(addPart(root, "indicator").firstChild as globalThis.Text).data = " ▾";
 		const picker = document.createElement("div");
@@ -19804,8 +19781,14 @@ function syncPickerRows(
 		// Attribute writes are guarded because setAttribute queues a mutation
 		// record even when the value is unchanged, and this root is observed.
 		// An unconditional write is an infinite render loop.
-		if (node.getAttribute("part") !== row.part) {
-			node.setAttribute("part", row.part);
+		const part = [
+			row.part,
+			...(row.highlighted ? ["highlighted"] : []),
+			...(row.disabled ? ["disabled"] : []),
+			...(row.grouped ? ["grouped"] : []),
+		].join(" ");
+		if (node.getAttribute("part") !== part) {
+			node.setAttribute("part", part);
 		}
 		if (node.textContent !== row.label) {
 			node.textContent = row.label;
@@ -19901,7 +19884,7 @@ function getOptionIndex(
 	picker: globalThis.HTMLElement,
 	row: globalThis.HTMLElement,
 ): number {
-	if (row.getAttribute("part") !== "option") {
+	if (!getPartNames(row as unknown as Element).includes("option")) {
 		return -1;
 	}
 	let index = 0;
@@ -19909,7 +19892,7 @@ function getOptionIndex(
 		if (child === row) {
 			return index;
 		}
-		if (child.getAttribute("part") === "option") {
+		if (getPartNames(child as unknown as Element).includes("option")) {
 			index++;
 		}
 	}
@@ -20871,7 +20854,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		const document = getUADocument(this);
-		const root = buildUAShadowTree(this, attached, TEXTAREA_UA_STYLES);
+		const root = buildUAShadowTree(this, attached);
 		this[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		this[kPlaceholderSpan] = addPart(root, "placeholder");
 		this[kPlaceholderText] =

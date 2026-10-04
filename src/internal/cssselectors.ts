@@ -1247,6 +1247,26 @@ function getIdentifierArgument(
 	return CSSTree.ident.decode(text);
 }
 
+/** One or more identifiers, as `::part(option highlighted)` is written. */
+function getIdentifierListArgument(
+	args: CSSTree.SelectorNode[],
+	name: string,
+): string[] {
+	const words = args
+		.map((argument) =>
+			argument.type === "Raw"
+				? String((argument as {value?: string}).value ?? "")
+				: argument.type === "Identifier" ? String(argument.name ?? "") : " ",
+		)
+		.join("")
+		.trim()
+		.split(/\s+/);
+	if (!words.every((word) => CSS_IDENTIFIER.test(word))) {
+		throw new SelectorError(`::${name} takes identifiers`);
+	}
+	return words.map((word) => CSSTree.ident.decode(word));
+}
+
 /** A comma-separated list of integers, as `:heading(1, 2)` is written. */
 function getIntegerArguments(
 	args: CSSTree.SelectorNode[],
@@ -1360,7 +1380,7 @@ function compilePseudoElement(
 		return;
 	}
 	if (name === "part") {
-		const wanted = getIdentifierArgument(args, "part");
+		const wanted = getIdentifierListArgument(args, "part");
 		if (!compiling.pseudoElements) {
 			compound.tests.push(matchNothing);
 			return;
@@ -1370,7 +1390,10 @@ function compilePseudoElement(
 		compound.originTests = compound.tests;
 		compound.tests = [];
 		compound.origin = (element) => getShadowHost(getRoot(element));
-		compound.tests.push((element) => getPartNames(element).includes(wanted));
+		compound.tests.push((element) => {
+			const names = getPartNames(element);
+			return wanted.every((name) => names.includes(name));
+		});
 		return;
 	}
 	if (name === "picker") {

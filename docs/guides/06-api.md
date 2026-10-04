@@ -104,13 +104,27 @@ The form controls are shadow trees, and `::part()` styles their pieces:
 | Control | Parts |
 | --- | --- |
 | `<input>` text types, `<textarea>` | `value`, `placeholder` |
+| `<input>` button types | `label` |
 | `<select>` | `indicator`, `picker`, `option`, `optgroup` |
 | `<progress>`, `<meter>` | `track`, `groove`, `bar` |
 | `<details>` | `details-content` |
 
-A `<select>`'s highlighted option carries `data-highlighted`, a disabled
-one `data-disabled`, and a `<meter>`'s bar carries `data-level` of
-`optimum`, `suboptimum`, or `even-less-good`.
+A part can have more than one name, and `::part()` with several names
+matches a part that has them all. A `<select>`'s option rows also have
+the names `highlighted`, `disabled` and `grouped` while those apply, and
+a `<meter>`'s bar has the name of its level: `optimum`, `suboptimum` or
+`even-less-good`. They still carry `data-highlighted`, `data-disabled`,
+`data-grouped` and `data-level`, too.
+
+```css
+select::part(option highlighted) { background-color: #005f87; }
+meter::part(bar even-less-good) { color: orange; }
+input::part(label)::before { content: "< "; }
+```
+
+`::placeholder` and `::details-content` work as in a browser. TermDOM's
+own sheet styles the controls with these same selectors, so a page's
+rules override it as they would any built-in style.
 
 ### `term.attach(transport?)`
 
