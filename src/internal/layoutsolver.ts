@@ -2460,8 +2460,12 @@ interface TableCell {
 }
 
 interface TableRow {
-	node: LayoutNode;
+	// Null for the anonymous row around cells a table or a group holds
+	// with no row between (CSS 2.1 §17.2.1, rule 2). Its cells are then
+	// the table's or the group's children.
+	node: LayoutNode | null;
 	group: LayoutNode | null;
+	cells: LayoutNode[];
 }
 
 // Visual order: header groups first and footer groups last, wherever they
@@ -2477,15 +2481,38 @@ function collectTableRows(table: LayoutNode): {
 	const body: TableRow[] = [];
 	const footer: TableRow[] = [];
 
+	// Consecutive children that are no proper child of a table or a
+	// group share one anonymous row. An element only: the white space
+	// between them is dropped (rule 1).
+	let anonymous: TableRow | null = null;
+	const collectStray = (
+		child: LayoutNode,
+		group: LayoutNode | null,
+		into: TableRow[],
+	) => {
+		if (!isAnonymousRowContent(child)) {
+			zeroLayout(child);
+			return;
+		}
+		if (anonymous === null) {
+			anonymous = {node: null, group, cells: []};
+			into.push(anonymous);
+		}
+		anonymous.cells.push(child);
+	};
+
 	const collectGroup = (group: LayoutNode, into: TableRow[]) => {
 		groups.push(group);
+		anonymous = null;
 		for (const child of group.children) {
 			if (child.style.displayType === "table-row") {
-				into.push({node: child, group});
+				anonymous = null;
+				into.push({node: child, group, cells: child.children});
 			} else {
-				zeroLayout(child);
+				collectStray(child, group, into);
 			}
 		}
+		anonymous = null;
 	};
 
 	for (const child of table.children) {
@@ -2497,7 +2524,17 @@ function collectTableRows(table: LayoutNode): {
 			continue;
 		}
 
-		switch (child.style.displayType) {
+		const type = child.style.displayType;
+		if (
+			type === "table-caption" ||
+			type === "table-header-group" ||
+			type === "table-footer-group" ||
+			type === "table-row-group" ||
+			type === "table-row"
+		) {
+			anonymous = null;
+		}
+		switch (type) {
 			case "table-caption":
 				captions.push(child);
 				break;
@@ -2511,15 +2548,22 @@ function collectTableRows(table: LayoutNode): {
 				collectGroup(child, body);
 				break;
 			case "table-row":
-				body.push({node: child, group: null});
+				body.push({node: child, group: null, cells: child.children});
 				break;
 			default:
-				zeroLayout(child);
+				collectStray(child, null, body);
 				break;
 		}
 	}
 
 	return {rows: [...header, ...body, ...footer], captions, groups};
+}
+
+// A cell, or an element an anonymous cell would wrap. A column is
+// neither, and a row or a group closes the anonymous row.
+function isAnonymousRowContent(node: LayoutNode): boolean {
+	return node.style.displayType === "table-cell" ||
+		isAnonymousCellContent(node);
 }
 
 function placeAnonymousCellContent(
@@ -2564,7 +2608,7 @@ function buildTableGrid(rows: TableRow[]): {
 	rows.forEach((row, rowIndex) => {
 		let column = 0;
 
-		for (const node of row.node.children) {
+		for (const node of row.cells) {
 			const anonymous = isAnonymousCellContent(node);
 			if (node.style.displayType !== "table-cell" && !anonymous) {
 				zeroLayout(node);
@@ -3136,7 +3180,9 @@ function layoutTable(
 	// that never counted as independent was measured afresh for every
 	// owner size, at every level of nesting.
 	for (const row of rows) {
-		row.node.ownerFree = isOwnerFree(row.node);
+		if (row.node !== null) {
+			row.node.ownerFree = isOwnerFree(row.node);
+		}
 	}
 	for (const group of groups) {
 		group.ownerFree = isOwnerFree(group);
@@ -3157,11 +3203,16 @@ function layoutTable(
 		group.result.height = gridHeight;
 	}
 
+	const rowLeft = (row: TableRow) => row.group ? 0 : leftPaddingBorder;
+	const rowTop = (row: TableRow, index: number) =>
+		row.group ? rowStart(index) : gridTop + rowStart(index);
+
 	rows.forEach((row, index) => {
-		row.node.result.left = row.group ? 0 : leftPaddingBorder;
-		row.node.result.top = row.group
-			? rowStart(index)
-			: gridTop + rowStart(index);
+		if (row.node === null) {
+			return;
+		}
+		row.node.result.left = rowLeft(row);
+		row.node.result.top = rowTop(row, index);
 		row.node.result.width = contentWidth;
 		row.node.result.height = rowHeights[index];
 	});
@@ -3169,9 +3220,18 @@ function layoutTable(
 	for (const cell of cells) {
 		const cellWidth = spanWidth(cell.column, cell.colSpan);
 		const cellHeight = spanHeight(cell.row, cell.rowSpan);
+		// A cell of an anonymous row is placed in the row's parent.
+		const row = rows[cell.row];
+		const left = row.node === null ? rowLeft(row) : 0;
+		const top = row.node === null ? rowTop(row, cell.row) : 0;
 
 		if (cell.anonymous) {
-			placeAnonymousCellContent(cell.node, cellWidth, columnStart(cell.column));
+			placeAnonymousCellContent(
+				cell.node,
+				cellWidth,
+				left + columnStart(cell.column),
+			);
+			cell.node.result.top += top;
 			continue;
 		}
 
@@ -3188,8 +3248,8 @@ function layoutTable(
 			true,
 		);
 
-		cell.node.result.left = columnStart(cell.column);
-		cell.node.result.top = 0;
+		cell.node.result.left = left + columnStart(cell.column);
+		cell.node.result.top = top;
 	}
 }
 
