@@ -85,6 +85,39 @@ const FLEX = "#parent { display: flex; }";
 const GRID = "#parent { display: grid; grid-template-columns: 12ch 12ch; }";
 const NARROW = "#probe { width: 10ch; }";
 
+/**
+ * A canvas, left half red and right half blue, painted in a box of
+ * another shape under `css`, as ANSI: what object-fit and its relatives
+ * change, which neither the probe document nor its geometry shows.
+ */
+async function replacedFrame(css: string): Promise<string> {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	try {
+		const canvas = dom.document.createElement("canvas");
+		canvas.width = 32;
+		canvas.height = 16;
+		const ctx = canvas.getContext("2d")!;
+		for (let x = 0; x < 32; x++) {
+			ctx.fillStyle = x % 2 === 0 ? "#ff0000" : "#0000ff";
+			ctx.fillRect(x, 0, 1, 16);
+		}
+		canvas.setAttribute(
+			"style",
+			`display: block; width: 8ch; height: 4px; ${css}`,
+		);
+		dom.document.body.appendChild(canvas);
+		await nextFrame(dom);
+		await nextFrame(dom);
+		return terminal.getStaticANSI();
+	} finally {
+		dom.dispose();
+	}
+}
+
+const changesReplaced = (css: string) => async (): Promise<boolean> =>
+	(await replacedFrame("")) !== (await replacedFrame(css));
+
 const FEATURES: Record<string, Feature> = {
 	// Box model
 	width: {value: "12ch"},
@@ -173,6 +206,18 @@ const FEATURES: Record<string, Feature> = {
 			'<div id="sibling">sibling</div></div>',
 	},
 	float: {value: "right"},
+	"object-fit": {
+		value: "contain",
+		behaves: changesReplaced("object-fit: contain"),
+	},
+	"object-position": {
+		value: "left",
+		behaves: changesReplaced("object-fit: none; object-position: left"),
+	},
+	"image-rendering": {
+		value: "pixelated",
+		behaves: changesReplaced("image-rendering: pixelated"),
+	},
 	// user-select changes what a selection may take, not what paints, so
 	// the probe drives Selection.modify past a none run and asks where the
 	// focus landed.
@@ -634,7 +679,6 @@ const NOT_APPLICABLE: Array<[string, string[]]> = [
 			"clip-path",
 			"dynamic-range-limit",
 			"image-orientation",
-			"image-rendering",
 			"mask",
 			"mask-border",
 			"mask-border-mode",
@@ -652,8 +696,6 @@ const NOT_APPLICABLE: Array<[string, string[]]> = [
 			"mask-repeat",
 			"mask-size",
 			"mix-blend-mode",
-			"object-fit",
-			"object-position",
 			"shape-image-threshold",
 			"shape-margin",
 			"shape-outside",
@@ -1173,6 +1215,7 @@ const CATEGORIES: Array<[string, string[]]> = [
 		"Graphical effects",
 		["transition", "animation", "box-shadow", "filter", "cursor"],
 	],
+	["Images", ["object-fit", "object-position", "image-rendering"]],
 ];
 
 function buildProbes(): Probe[] {
@@ -1272,6 +1315,32 @@ function buildProbes(): Probe[] {
 		apiProbe("Fullscreen API", "DOM APIs", (dom) =>
 			typeof (dom.document.body as {requestFullscreen?: unknown})
 				.requestFullscreen === "function"),
+		apiProbe("<img>", "DOM APIs", async (dom) => {
+			const image = dom.document.createElement("img");
+			const canvas = dom.document.createElement("canvas");
+			canvas.width = 8;
+			canvas.height = 16;
+			image.src = canvas.toDataURL();
+			dom.document.body.appendChild(image);
+			await image.decode();
+			return image.naturalWidth === 8;
+		}),
+		apiProbe("<canvas> 2d context", "DOM APIs", (dom) => {
+			const canvas = dom.document.createElement("canvas");
+			const ctx = canvas.getContext("2d")!;
+			ctx.fillStyle = "#ff0000";
+			ctx.fillRect(0, 0, 1, 1);
+			return ctx.getImageData(0, 0, 1, 1).data[0] === 255;
+		}),
+		apiProbe("<canvas> charactergrid context", "DOM APIs", (dom) => {
+			const canvas = dom.document.createElement("canvas");
+			const grid = canvas.getContext("charactergrid" as "2d") as unknown as {
+				fillText(text: string, x: number, y: number): void;
+				getCell(x: number, y: number): {char: string} | null;
+			};
+			grid.fillText("x", 0, 0);
+			return grid.getCell(0, 0)?.char === "x";
+		}),
 		apiProbe("FormData", "DOM APIs", (dom) => {
 			const form = dom.document.createElement("form");
 			form.innerHTML = '<input name="probe" value="1">';

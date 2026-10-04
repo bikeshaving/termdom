@@ -64,6 +64,13 @@ import {
 	type MathBox,
 } from "./mathml.ts";
 import {
+	getNaturalRatio,
+	getNaturalSize,
+	getReplacedSize,
+	isReplacedElement,
+	measureReplaced,
+} from "./replaced.ts";
+import {
 	getParagraphDirection,
 	getStringWidth,
 	graphemeSegmenter,
@@ -178,6 +185,11 @@ function getLayoutDisplay(element: Element): Display {
 		? getComputedValue(element, "display")
 		: getDeclaredDisplay(element);
 	if (value === "inline math") {
+		return "inline-block";
+	}
+	// An image or a canvas on a line sits there whole, as an inline-block
+	// does, though its computed display stays inline.
+	if (value === "inline" && isReplacedElement(element)) {
 		return "inline-block";
 	}
 	if (value === "block math" || value === "math") {
@@ -1043,6 +1055,59 @@ function styleLayoutNode(
 	layoutNode.invalidate();
 }
 
+// A block-level image or canvas with an auto width is as wide as its
+// natural size, or as its height through its natural ratio, and does not
+// stretch to its container (CSS 2 §10.3.4). Its height then follows from
+// the used width in its measure, after max-width has clamped it. In a
+// grid, `normal` self-alignment is `start` for a box with a ratio.
+function sizeReplacedBox(
+	element: Element,
+	style: Style,
+	display: Display,
+): void {
+	// On a line, an atomic inline sizes itself; a flex or grid item is
+	// blockified and sizes here.
+	if (isAtomicInline(display) && !hasItemParent(element)) {
+		return;
+	}
+	const width = CSSValues.parseUnitValue(getComputedValue(element, "width"));
+	if (width == null) {
+		const box = getBoxModel(element);
+		const horizontal =
+			box.paddingLeft +
+			box.paddingRight +
+			box.borderLeftWidth +
+			box.borderRightWidth;
+		const vertical =
+			box.paddingTop +
+			box.paddingBottom +
+			box.borderTopWidth +
+			box.borderBottomWidth;
+		const natural = getNaturalSize(element);
+		const ratio = getNaturalRatio(element);
+		const height = CSSValues.parseUnitValue(
+			getComputedValue(element, "height"),
+		);
+		const contentWidth =
+			typeof height === "number" &&
+			Number.isFinite(ratio) &&
+				ratio > 0
+				? Math.max(0, height + getContentBoxEdges(element, true) - vertical) *
+				ratio
+				: (natural?.width ?? 0);
+		style.width = toValue(Math.round(contentWidth) + horizontal);
+	}
+	const parent = flatParentElement(element);
+	if (parent !== null && isGridDisplay(getLayoutDisplay(parent))) {
+		if (style.alignSelf === "auto" || style.alignSelf === "normal") {
+			style.alignSelf = "flex-start";
+		}
+		if (style.justifySelf === "auto" || style.justifySelf === "normal") {
+			style.justifySelf = "flex-start";
+		}
+	}
+}
+
 // What the run measurer reads beyond the style record: the properties
 // that decide where text breaks and how wide it is.
 const MEASURE_PROPERTIES = [
@@ -1224,6 +1289,9 @@ function styleLayoutNodeProperties(
 		item("justify-self", "auto"),
 		"auto",
 	);
+	if (isReplacedElement(element) && !inlineBox) {
+		sizeReplacedBox(element, style, display);
+	}
 
 	for (const [key, property] of GRID_PLACEMENTS) {
 		const placement = CSSValues.parseGridPlacement(item(property, "auto"));
@@ -2071,6 +2139,14 @@ function addElementNode(
 
 	if (display === "none") {
 		if (layoutNode && parentLayoutNode) {
+			placeChild(parentLayoutNode, layoutNode, flexIndex);
+		}
+		return;
+	} else if (isReplacedElement(element)) {
+		layoutNode.measure = (width, widthSpace) =>
+			measureReplaced(element, width, widthSpace);
+		layout[kMeasureNodes].add(layoutNode);
+		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
 		return;
@@ -3227,6 +3303,20 @@ function collectLeaves(
 			} else if (element.tagName === "BR") {
 				leafNodes.push({type: "br", node: element as HTMLBRElement});
 				cursor = flowNext(node, root, false);
+				pushExitedEdges(leafNodes, node, cursor, root);
+				if (cursor === null) {
+					break;
+				}
+			} else if (isAtomicInline(display) && isReplacedElement(element)) {
+				const size = getReplacedSize(element, availableWidth);
+				leafNodes.push({
+					type: "inline-block",
+					node: element,
+					boxModel: getBoxModel(element),
+					contentWidth: size.width,
+					contentHeight: size.height,
+				});
+				cursor = flowNext(node, root, true);
 				pushExitedEdges(leafNodes, node, cursor, root);
 				if (cursor === null) {
 					break;
@@ -6643,9 +6733,14 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 	// a box heads in a block is not its box.
 	const ownLayoutNode = descended ? undefined : runLayoutNode(layout, element);
 	const anonymous = ownLayoutNode && layout[kAnonymousBoxes].get(ownLayoutNode);
+	const height = getAtomicHeight(
+		element,
+		target.segment.leaf,
+		target.line.height,
+	);
 	if (ownLayoutNode && (!anonymous || anonymous.styledFrom === element)) {
 		const {x, y} = getDocumentPosition(layout, element, ownLayoutNode);
-		return new layout[kDOMRect](x, y, target.segment.width, target.line.height);
+		return new layout[kDOMRect](x, y, target.segment.width, height);
 	}
 	return new layout[kDOMRect](
 		originX +
@@ -6653,7 +6748,31 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 			target.segment.x,
 		originY + target.line.y,
 		target.segment.width,
-		target.line.height,
+		height,
+	);
+}
+
+/**
+ * An atomic inline's height on its line. An inline-block fills the line,
+ * as this engine lays lines out, but an image or a canvas is as tall as
+ * its own content, so a taller neighbor does not stretch its pixels.
+ */
+export function getAtomicHeight(
+	element: Element,
+	leaf: InlineBlockLeaf,
+	lineHeight: number,
+): number {
+	if (!isReplacedElement(element)) {
+		return lineHeight;
+	}
+	const box = leaf.boxModel;
+	return Math.min(
+		lineHeight,
+		leaf.contentHeight +
+		box.paddingTop +
+		box.paddingBottom +
+			box.borderTopWidth +
+		box.borderBottomWidth,
 	);
 }
 

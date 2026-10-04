@@ -9,6 +9,21 @@ import {
 	WINDOW_EVENT_HANDLERS,
 } from "../generated/htmlidl.ts";
 import {
+	CanvasCharacterGridContext,
+	CanvasGradient,
+	CanvasPattern,
+	CanvasRenderingContext2D,
+	canvasToPNG,
+	clearCanvasText,
+	createImageBitmapFrom,
+	getCanvasText,
+	ImageBitmap,
+	ImageData,
+	Path2D,
+	registerDrawable,
+	resetContextState,
+} from "./canvas.ts";
+import {
 	adoptStyleSheets,
 	type Cascade,
 	getAdoptedStyleSheets,
@@ -40,8 +55,18 @@ import {
 	getReflections,
 	type ReflectSpec,
 } from "./htmlreflection.ts";
+import {
+	type Bitmap,
+	type CharacterGrid,
+	createBitmap,
+	decodeImage,
+	fetchImageBytes,
+	registerReplacedContent,
+	resolveImageURL,
+} from "./images.ts";
 import type {Layout} from "./layout.ts";
 import {linearizeMath} from "./mathml.ts";
+import {getCellPixels, registerCellPixels} from "./replaced.ts";
 import type {Screen} from "./screen.ts";
 import {
 	getNextGraphemeBoundary,
@@ -14237,9 +14262,90 @@ class HTMLButtonElement extends HTMLElement {
 	}
 }
 
+const kCanvasBitmap = Symbol("canvasBitmap");
+const kCanvasGrid = Symbol("canvasGrid");
+const kCanvasContext = Symbol("canvasContext");
+const kCanvasVersion = Symbol("canvasVersion");
+const kCanvasRepaint = Symbol("canvasRepaint");
+
+// A change to what a replaced element shows. A new size reflows the
+// element; new pixels only repaint it. Neither is a DOM mutation, so the
+// engine is asked here, once a microtask, however many draw calls came.
+function invalidateReplaced(element: Element, reflow: boolean): void {
+	const attached = getAttachedDocument(element);
+	// A canvas drawn on only as a buffer, or an image not in the document,
+	// changes nothing on screen.
+	if (attached === undefined || !element.isConnected) {
+		return;
+	}
+	if (reflow) {
+		attached[kLayout].invalidate(element);
+	}
+	attached[kScreen].invalidate();
+	void attached[kRender]();
+}
+
+/**
+ * <canvas>: "2d" draws pixels, shown two to a cell, and "charactergrid"
+ * draws cells, `width` columns by `height` rows. A 2d canvas shows at
+ * its pixel size over the terminal's cell size, as an image does. The
+ * other context types (webgl, webgpu, bitmaprenderer) are null, as they
+ * are in a browser that cannot create them.
+ */
 class HTMLCanvasElement extends HTMLElement {
 	declare height: globalThis.HTMLCanvasElement["height"];
 	declare width: globalThis.HTMLCanvasElement["width"];
+	[kCanvasBitmap]: Bitmap | null;
+	[kCanvasGrid]: CharacterGrid | null;
+	[kCanvasContext]: CanvasRenderingContext2D |
+		CanvasCharacterGridContext |
+		null;
+
+	[kCanvasVersion]: number;
+	[kCanvasRepaint]: boolean;
+
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kCanvasBitmap] = null;
+		this[kCanvasGrid] = null;
+		this[kCanvasContext] = null;
+		this[kCanvasVersion] = 0;
+		this[kCanvasRepaint] = false;
+		registerReplacedContent(this, () => {
+			if (this[kCanvasContext] instanceof CanvasCharacterGridContext) {
+				return {
+					kind: "grid",
+					grid: getCanvasGrid(this),
+					version: this[kCanvasVersion],
+				};
+			}
+			// Nothing drawn yet: the size without the pixels, so a large
+			// canvas is not allocated just to be laid out. Text alone
+			// still needs the pixels it is drawn over.
+			const bitmap = getCanvasTextRuns(this).length > 0
+				? getCanvasBitmap(this)
+				: this[kCanvasBitmap];
+			if (
+				bitmap === null ||
+				bitmap.width !== this.width ||
+				bitmap.height !== this.height
+			) {
+				return {kind: "blank", width: this.width, height: this.height};
+			}
+			return {
+				kind: "bitmap",
+				bitmap,
+				version: this[kCanvasVersion],
+				smooth: true,
+			};
+		});
+		registerDrawable(this, () =>
+			this[kCanvasContext] instanceof CanvasCharacterGridContext
+				? null
+				: getCanvasBitmap(this),
+		);
+	}
+
 	captureStream(_frameRequestRate?: number): globalThis.MediaStream {
 		return noMediaPipeline("media stream");
 	}
@@ -14268,25 +14374,206 @@ class HTMLCanvasElement extends HTMLElement {
 		if (arguments.length < 1) {
 			throw new TypeError("getContext needs a context id");
 		}
-		void contextId;
-		return null;
+		const id = String(contextId);
+		const current = this[kCanvasContext];
+		// Once a canvas has a context, asking for another kind is null.
+		if (current !== null) {
+			const kind = current instanceof CanvasCharacterGridContext
+				? "charactergrid"
+				: "2d";
+			return (kind === id ? current : null) as unknown as
+				globalThis.RenderingContext | null;
+		}
+		const changed = () => {
+			this[kCanvasVersion]++;
+			if (!this[kCanvasRepaint]) {
+				this[kCanvasRepaint] = true;
+				queueMicrotask(() => {
+					this[kCanvasRepaint] = false;
+					invalidateReplaced(this, false);
+				});
+			}
+		};
+		if (id === "2d") {
+			this[kCanvasContext] = new CanvasRenderingContext2D({
+				canvas: this,
+				bitmap: () => getCanvasBitmap(this),
+				changed,
+				pixelsPerCell: () => {
+					const attached = getAttachedDocument(this);
+					const rect = attached?.[kLayout].contentRect(this);
+					if (rect && rect.width > 0 && rect.height > 0) {
+						return {x: this.width / rect.width, y: this.height / rect.height};
+					}
+					const cell = getCellPixels(this);
+					return {x: cell.width, y: cell.height};
+				},
+			});
+		} else if (id === "charactergrid") {
+			this[kCanvasContext] = new CanvasCharacterGridContext({
+				canvas: this,
+				grid: () => getCanvasGrid(this),
+				changed,
+				cellPixels: () => getCellPixels(this),
+			});
+			// The natural size is now in cells, not pixels.
+			invalidateReplaced(this, true);
+		} else {
+			return null;
+		}
+		return this[kCanvasContext] as unknown as globalThis.RenderingContext;
 	}
 
 	toBlob(
 		callback: globalThis.BlobCallback,
-		_type?: string,
+		type?: string,
 		_quality?: number,
 	): void {
-		queueMicrotask(() => callback(null));
+		if (typeof callback !== "function") {
+			throw new TypeError("toBlob needs a callback");
+		}
+		const bitmap = this[kCanvasContext] instanceof CanvasCharacterGridContext
+			? null
+			: getCanvasBitmap(this);
+		const bytes = bitmap === null || bitmap.width === 0 || bitmap.height === 0
+			? null
+			: canvasToPNG(bitmap);
+		void type;
+		setTimeout(() =>
+			callback(
+				bytes === null
+					? null
+					: new Blob(
+						[bytes as BlobPart],
+						{type: "image/png"},
+					) as globalThis.Blob,
+			),
+		);
 	}
 
+	// PNG is the one type every canvas encodes; any other asks for it too.
 	toDataURL(_type?: string, _quality?: number): string {
-		return "data:,";
+		if (this[kCanvasContext] instanceof CanvasCharacterGridContext) {
+			return "data:,";
+		}
+		const bitmap = getCanvasBitmap(this);
+		if (bitmap.width === 0 || bitmap.height === 0) {
+			return "data:,";
+		}
+		const bytes = canvasToPNG(bitmap);
+		let binary = "";
+		for (let i = 0; i < bytes.length; i += 0x8000) {
+			binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+		}
+		return `data:image/png;base64,${btoa(binary)}`;
 	}
 
 	transferControlToOffscreen(): globalThis.OffscreenCanvas {
 		return noMediaPipeline("bitmap");
 	}
+
+	override [kAttributeChangeSteps](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
+		// A new size clears the canvas and resets its context's state, even
+		// set to the size it already had.
+		if (
+			namespace === null && (localName === "width" || localName === "height")
+		) {
+			this[kCanvasBitmap] = null;
+			this[kCanvasGrid] = null;
+			const context = this[kCanvasContext];
+			if (context instanceof CanvasRenderingContext2D) {
+				clearCanvasText(context);
+				resetCanvasContext(context);
+			}
+			this[kCanvasVersion]++;
+			invalidateReplaced(this, true);
+		}
+	}
+}
+
+// The bitmap, made at the canvas's size when first needed.
+// Past this many pixels a canvas gets no bitmap and draws nothing, as a
+// browser's canvas does past its own limit, rather than failing to
+// allocate.
+const CANVAS_PIXEL_LIMIT = 1 << 26;
+
+// The bitmap, made at the canvas's size when first drawn on.
+function getCanvasBitmap(canvas: HTMLCanvasElement): Bitmap {
+	const width = canvas.width;
+	const height = canvas.height;
+	if (width * height > CANVAS_PIXEL_LIMIT) {
+		return createBitmap(0, 0);
+	}
+	let bitmap = canvas[kCanvasBitmap];
+	if (bitmap === null || bitmap.width !== width || bitmap.height !== height) {
+		bitmap = canvas[kCanvasBitmap] = createBitmap(width, height);
+	}
+	return bitmap;
+}
+
+function getCanvasGrid(canvas: HTMLCanvasElement): CharacterGrid {
+	const fits = canvas.width * canvas.height <= CANVAS_PIXEL_LIMIT;
+	const cols = fits ? canvas.width : 0;
+	const rows = fits ? canvas.height : 0;
+	let grid = canvas[kCanvasGrid];
+	if (grid === null || grid.cols !== cols || grid.rows !== rows) {
+		grid =
+			canvas[kCanvasGrid] =
+			{cols, rows, cells: new Array(cols * rows).fill(null)};
+	}
+	return grid;
+}
+
+// Resizing a canvas resets its context to the default state (HTML
+// §4.12.5.1.1), which is what reset() does apart from clearing.
+function resetCanvasContext(context: CanvasRenderingContext2D): void {
+	resetContextState(context);
+}
+
+/**
+ * Every <img> and <canvas> in a tree, shadow trees included, laid out
+ * again: their natural sizes in cells changed with the cell's size.
+ */
+export function relayoutReplacedElements(
+	root: globalThis.Document | globalThis.ShadowRoot,
+): void {
+	const attached = getAttachedDocument(root as unknown as Node);
+	if (attached === undefined) {
+		return;
+	}
+	const visit = (scope: globalThis.Document | globalThis.ShadowRoot) => {
+		for (const element of scope.querySelectorAll("*")) {
+			if (
+				element instanceof HTMLImageElement ||
+				element instanceof HTMLCanvasElement
+			) {
+				attached[kLayout].invalidate(element as unknown as Node);
+			}
+			const shadow = getShadowRoot(element);
+			if (shadow !== null) {
+				visit(shadow);
+			}
+		}
+	};
+	visit(root);
+	attached[kScreen].invalidate();
+	void attached[kRender]();
+}
+
+/** The text a canvas's 2d context drew, for the painter to draw as cells. */
+export function getCanvasTextRuns(
+	element: globalThis.Element,
+): ReturnType<typeof getCanvasText> {
+	const context = (element as unknown as HTMLCanvasElement)[kCanvasContext];
+	return context instanceof CanvasRenderingContext2D
+		? getCanvasText(context)
+		: [];
 }
 
 class HTMLDataElement extends HTMLElement {
@@ -16192,12 +16479,74 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 // dimensions are zero, the current source is empty, and decoding
 // rejects. The width and height an author reads are the attributes,
 // which is what the spec returns for an image that is not rendered.
+const kImageState = Symbol("imageState");
+
+interface ImageState {
+	// HTML's image request states.
+	status: "unavailable" | "loading" | "complete" | "broken";
+	url: string;
+	bitmap: Bitmap | null;
+	// Bumped with each new request, so a slow one that finishes after a
+	// newer one started is dropped.
+	generation: number;
+	version: number;
+	waiters: Array<{resolve: () => void; reject: (error: unknown) => void}>;
+	// A source set while the document had no window, loaded on insertion
+	// into one that has.
+	pending: boolean;
+}
+
+// The URL a srcset names for one pixel per pixel: a 1x candidate, the
+// candidate with no descriptor, or else the first. A terminal's cells
+// are coarse enough that a denser candidate shows nothing more. The
+// candidates split as HTML's srcset parser splits them: a URL is a run
+// without whitespace, so a data: URL's commas stay in it, and a comma
+// ends the descriptors after it.
+function pickSourceSet(srcset: string): string | null {
+	const candidates: Array<{url: string; descriptor: string}> = [];
+	let at = 0;
+	while (at < srcset.length) {
+		while (at < srcset.length && /[\s,]/.test(srcset[at])) {
+			at++;
+		}
+		let end = at;
+		while (end < srcset.length && !/\s/.test(srcset[end])) {
+			end++;
+		}
+		let url = srcset.slice(at, end);
+		at = end;
+		let descriptor = "";
+		if (url.endsWith(",")) {
+			url = url.replace(/,+$/, "");
+		} else {
+			const comma = srcset.indexOf(",", at);
+			const stop = comma === -1 ? srcset.length : comma;
+			descriptor = srcset.slice(at, stop).trim();
+			at = stop + 1;
+		}
+		if (url !== "") {
+			candidates.push({url, descriptor});
+		}
+	}
+	if (candidates.length === 0) {
+		return null;
+	}
+	const plain = candidates.find(({descriptor}) =>
+		descriptor === "" || descriptor === "1x",
+	);
+	return (plain ?? candidates[0]).url;
+}
+
+/**
+ * <img>: the image is fetched (data:, file: and paths read directly,
+ * anything else through fetch), decoded, and drawn into the content box
+ * two pixels a cell. load and error fire as they do in a browser. A
+ * broken image shows its alt text.
+ */
 class HTMLImageElement extends HTMLElement {
 	declare alt: globalThis.HTMLImageElement["alt"];
 	declare referrerPolicy: globalThis.HTMLImageElement["referrerPolicy"];
 	declare name: globalThis.HTMLImageElement["name"];
-	declare height: globalThis.HTMLImageElement["height"];
-	declare width: globalThis.HTMLImageElement["width"];
 	declare align: globalThis.HTMLImageElement["align"];
 	declare src: globalThis.HTMLImageElement["src"];
 	declare longDesc: globalThis.HTMLImageElement["longDesc"];
@@ -16213,20 +16562,84 @@ class HTMLImageElement extends HTMLElement {
 	declare srcset: globalThis.HTMLImageElement["srcset"];
 	declare useMap: globalThis.HTMLImageElement["useMap"];
 	declare vspace: globalThis.HTMLImageElement["vspace"];
+	[kImageState]: ImageState;
+
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kImageState] = {
+			status: "unavailable",
+			url: "",
+			bitmap: null,
+			generation: 0,
+			version: 0,
+			waiters: [],
+			pending: false,
+		};
+		registerReplacedContent(this, () => {
+			const state = this[kImageState];
+			if (state.bitmap !== null) {
+				return {
+					kind: "bitmap",
+					bitmap: state.bitmap,
+					version: state.version,
+					smooth: true,
+				};
+			}
+			// Alt text stands in for an image that is not there.
+			const alt = this.getAttribute("alt");
+			if (alt !== null && alt !== "" && state.status !== "loading") {
+				return {kind: "text", text: alt};
+			}
+			return null;
+		});
+		registerDrawable(this, () => {
+			const state = this[kImageState];
+			if (state.status === "broken") {
+				throw domError("InvalidStateError", "The image is broken");
+			}
+			return state.bitmap;
+		});
+	}
+
 	get naturalWidth(): number {
-		return 0;
+		return this[kImageState].bitmap?.width ?? 0;
 	}
 
 	get naturalHeight(): number {
-		return 0;
+		return this[kImageState].bitmap?.height ?? 0;
+	}
+
+	// The rendered width in cells when the image is rendered, which is
+	// what a browser reports in CSS pixels. Otherwise the attribute, or
+	// the natural width.
+	get width(): number {
+		return readImageDimension(this, "width");
+	}
+
+	set width(value: number) {
+		this.setAttribute("width", String(toImageDimension(value)));
+	}
+
+	get height(): number {
+		return readImageDimension(this, "height");
+	}
+
+	set height(value: number) {
+		this.setAttribute("height", String(toImageDimension(value)));
 	}
 
 	get currentSrc(): string {
-		return "";
+		return this[kImageState].url;
 	}
 
 	get complete(): boolean {
-		return !this.hasAttribute("src") && !this.hasAttribute("srcset");
+		const state = this[kImageState];
+		const src = this.getAttribute("src");
+		const srcset = this.getAttribute("srcset");
+		if ((src === null || src === "") && (srcset === null || srcset === "")) {
+			return true;
+		}
+		return state.status === "complete" || state.status === "broken";
 	}
 
 	// Deprecated members that report the rendered position. This engine
@@ -16240,10 +16653,167 @@ class HTMLImageElement extends HTMLElement {
 	}
 
 	decode(): Promise<void> {
+		const state = this[kImageState];
+		if (state.status === "complete") {
+			return Promise.resolve();
+		}
+		if (state.status === "loading") {
+			return new Promise((resolve, reject) => {
+				state.waiters.push({resolve, reject});
+			});
+		}
 		return Promise.reject(
 			domError("EncodingError", "There is no image data to decode"),
 		);
 	}
+
+	override [kInsertionSteps](): void {
+		super[kInsertionSteps]();
+		if (this[kImageState].pending) {
+			updateImageData(this);
+		}
+	}
+
+	override [kAdoptingSteps](oldDocument: Document): void {
+		super[kAdoptingSteps](oldDocument);
+		// The fragment parser builds a <template>'s contents in the
+		// template's document and then moves them. A load that started
+		// there stops, and waits for a document with a window.
+		if (
+			this[kImageState].status === "loading" &&
+			this.ownerDocument?.defaultView == null
+		) {
+			updateImageData(this);
+		}
+	}
+
+	override [kAttributeChangeSteps](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChangeSteps](localName, oldValue, value, namespace);
+		if (namespace !== null) {
+			return;
+		}
+		if (localName === "src" || localName === "srcset") {
+			updateImageData(this);
+		} else if (localName === "alt" && this[kImageState].status !== "complete") {
+			invalidateReplaced(this, true);
+		}
+	}
+}
+
+function toImageDimension(value: number): number {
+	const number = Math.trunc(Number(value));
+	return Number.isFinite(number) && number >= 0 && number <= 0x7fffffff
+		? number
+		: 0;
+}
+
+function readImageDimension(
+	image: HTMLImageElement,
+	axis: "width" | "height",
+): number {
+	const attached = getAttachedDocument(image);
+	if (attached !== undefined && image.isConnected) {
+		const rect = attached[kLayout].contentRect(image);
+		if (rect !== null) {
+			return Math.round(axis === "width" ? rect.width : rect.height);
+		}
+	}
+	const attribute = parseInt(image.getAttribute(axis) ?? "", 10);
+	if (Number.isFinite(attribute) && attribute >= 0) {
+		return attribute;
+	}
+	const bitmap = image[kImageState].bitmap;
+	return bitmap === null ? 0 : axis === "width" ? bitmap.width : bitmap.height;
+}
+
+// HTML's "update the image data": the request starts again from the
+// current src or srcset, and only the newest request's result counts.
+function updateImageData(image: HTMLImageElement): void {
+	const state = image[kImageState];
+	const generation = ++state.generation;
+	// decode() calls waiting on the request this one replaces reject, as
+	// HTML's "update the image data" says.
+	for (const waiter of state.waiters.splice(0)) {
+		waiter.reject(
+			domError("EncodingError", "The image's source changed before it decoded"),
+		);
+	}
+	const srcset = image.getAttribute("srcset");
+	const src = image.getAttribute("src");
+	const chosen =
+		(srcset !== null && srcset.trim() !== "" ? pickSourceSet(srcset) : null) ??
+		src;
+	state.pending = false;
+	if (chosen === null) {
+		// No source at all: nothing to load and nothing to report.
+		state.status = "unavailable";
+		state.url = "";
+		state.bitmap = null;
+		state.version++;
+		invalidateReplaced(image, true);
+		return;
+	}
+	// A document with no window, such as a <template>'s contents or what
+	// DOMParser returns, loads no images and runs no handlers, as in a
+	// browser. Inserting the image into a document with one starts it.
+	if (image.ownerDocument?.defaultView == null) {
+		state.pending = true;
+		return;
+	}
+	const settle = (
+		status: "complete" | "broken",
+		bitmap: Bitmap | null,
+		error?: unknown,
+	) => {
+		if (state.generation !== generation) {
+			return;
+		}
+		state.status = status;
+		state.bitmap = bitmap;
+		state.version++;
+		const waiters = state.waiters.splice(0);
+		invalidateReplaced(image, true);
+		// Fired as a task, after the change is visible to layout.
+		setTimeout(() => {
+			for (const waiter of waiters) {
+				if (status === "complete") {
+					waiter.resolve();
+				} else {
+					const message = error instanceof Error
+						? error.message
+						: "The image could not be decoded";
+					waiter.reject(domError("EncodingError", message));
+				}
+			}
+			// A newer request reports for itself.
+			if (state.generation === generation) {
+				dispatch(image, new Event(status === "complete" ? "load" : "error"));
+			}
+		});
+	};
+	const url = chosen.trim() === ""
+		? null
+		: resolveImageURL(chosen.trim(), image.ownerDocument.baseURI);
+	state.url = url ?? "";
+	if (url === null) {
+		settle("broken", null, new Error("The image source is empty or not a URL"));
+		return;
+	}
+	// The current image stays up until the new one is ready, so swapping
+	// a src does not collapse the box in between.
+	state.status = "loading";
+	invalidateReplaced(image, false);
+	fetchImageBytes(url)
+		.then((bytes) => decodeImage(bytes))
+		.then(
+			(bitmap) => settle("complete", bitmap),
+			(error) => settle("broken", null, error),
+		);
 }
 
 const kDirtyValue = Symbol("dirtyValue");
@@ -32791,6 +33361,7 @@ export function attachDocument(
 	attached[kExchange] = exchange;
 	attached[kScreen] = screen;
 	attached[kPendingCaretReveal] = null;
+	registerCellPixels(attached, () => screen.cellPixels);
 	for (const type of ["input", "select", "change", "selectionchange"]) {
 		exchange.addEventListener(type, onTextControlEditEvent);
 	}
@@ -34832,10 +35403,37 @@ export class Window extends EventTarget {
 		sh: number,
 		options?: globalThis.ImageBitmapOptions,
 	): Promise<globalThis.ImageBitmap>;
-	createImageBitmap(): Promise<globalThis.ImageBitmap> {
-		return Promise.reject(
-			domError("NotSupportedError", "A terminal has no bitmaps"),
-		);
+	createImageBitmap(
+		image?: unknown,
+		sx?: unknown,
+		sy?: number,
+		sw?: number,
+		sh?: number,
+		_options?: unknown,
+	): Promise<globalThis.ImageBitmap> {
+		const crop = typeof sx === "number";
+		const settle = (source: unknown) =>
+			createImageBitmapFrom(
+				source,
+				crop ? sx : undefined,
+				crop ? sy : undefined,
+				crop ? sw : undefined,
+				crop ? sh : undefined,
+			) as unknown as globalThis.ImageBitmap;
+		// A Blob is decoded first; an image still loading is waited for.
+		if (typeof Blob !== "undefined" && image instanceof Blob) {
+			return image.arrayBuffer()
+				.then((buffer) => decodeImage(new Uint8Array(buffer)))
+				.then((bitmap) => settle(new ImageBitmap(bitmap)));
+		}
+		if (image instanceof HTMLImageElement && !image.complete) {
+			return image.decode().then(() => settle(image));
+		}
+		try {
+			return Promise.resolve(settle(image));
+		} catch (error) {
+			return Promise.reject(error);
+		}
 	}
 
 	focus(): void {}
@@ -35120,6 +35718,38 @@ function buildWindow(document: Document): Window {
 		btoa: globalThis.btoa.bind(globalThis),
 		fetch: globalThis.fetch.bind(globalThis),
 		structuredClone: globalThis.structuredClone.bind(globalThis),
+	});
+	// HTML's legacy factory: new Image(width, height) is an <img> in this
+	// window's document.
+	const Image = function Image(this: unknown, width?: number, height?: number) {
+		if (new.target === undefined) {
+			throw new TypeError("Image is a constructor");
+		}
+		const image = document.createElement("img");
+		if (width !== undefined) {
+			image.setAttribute("width", String(toImageDimension(width)));
+		}
+		if (height !== undefined) {
+			image.setAttribute("height", String(toImageDimension(height)));
+		}
+		return image;
+	} as unknown as typeof HTMLImageElement;
+	Object.defineProperty(Image, "prototype", {
+		value: HTMLImageElement.prototype,
+	});
+	window.Image = Image;
+	// Read here rather than in the module's interface table: canvas.ts is
+	// part of the import cycle through cssvalues, and a table built at
+	// module load would read its classes before they exist when canvas.ts
+	// is the first module imported.
+	Object.assign(window, {
+		CanvasCharacterGridContext,
+		CanvasGradient,
+		CanvasPattern,
+		CanvasRenderingContext2D,
+		ImageBitmap,
+		ImageData,
+		Path2D,
 	});
 	window.window = window;
 	window.self = window;
