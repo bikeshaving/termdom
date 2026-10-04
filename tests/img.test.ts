@@ -580,3 +580,31 @@ test("decode() settles when src changes, and the current image stays up meanwhil
 	expect(image.naturalWidth).toBe(16);
 	dom.dispose();
 });
+
+test("with a cell size, an image's pixels and lengths are CSS pixels", async () => {
+	// 70 by 30 pixels is 10 by 2 cells of 7 by 15.
+	const wide = png(70, 30, () => RED);
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		cellSize: {width: 7, height: 15},
+	});
+	dom.document.body.innerHTML =
+		`<img id=natural src="${wide}">` +
+		`<img id=styled src="${wide}" style="width: 56px; height: 45px">` +
+		`<img id=attributes src="${wide}" width="14" height="15">` +
+		`<img id=ratio src="${wide}" style="display: block; height: 45px">`;
+	for (const image of dom.document.querySelectorAll("img")) {
+		await loaded(image as HTMLImageElement);
+	}
+	await nextFrame(dom);
+	const cells = (id: string) => {
+		const rect = dom.document.getElementById(id)!.getBoundingClientRect();
+		return [rect.width / 7, rect.height / 15];
+	};
+	expect(cells("natural")).toEqual([10, 2]);
+	expect(cells("styled")).toEqual([8, 3]);
+	expect(cells("attributes")).toEqual([2, 1]);
+	expect(cells("ratio")).toEqual([15, 3]);
+	dom.dispose();
+});

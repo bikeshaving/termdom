@@ -1085,9 +1085,7 @@ function sizeReplacedBox(
 			box.borderBottomWidth;
 		const natural = getNaturalSize(element);
 		const ratio = getNaturalRatio(element);
-		const height = CSSValues.parseUnitValue(
-			getComputedValue(element, "height"),
-		);
+		const height = getCellBlockSize(element, "height");
 		const contentWidth =
 			typeof height === "number" &&
 			Number.isFinite(ratio) &&

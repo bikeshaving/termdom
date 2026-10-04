@@ -4,14 +4,20 @@
  * dimensions (CSS 2 §10.3.2, §10.6.2) and paint what they hold into
  * their content box instead of laying out children.
  *
- * A pixel is a cell everywhere else in this engine. An image's pixels
- * are the screen's, so its natural size in cells is its size over a
- * cell's size in pixels, which the terminal reports (XTWINOPS 16) and
- * which is guessed at 8 by 16 until it does. A charactergrid canvas is
- * already in cells.
+ * An image's pixels are CSS pixels, so its natural size in cells is its
+ * size over the page's cell size. Under the default unit cell, where a
+ * CSS pixel is a cell, that would be one cell per pixel, so the image
+ * takes the screen's cell size instead, which the terminal reports
+ * (XTWINOPS 16) and which is guessed at 8 by 16 until it does. A
+ * charactergrid canvas is already in cells.
  */
 import {type CanvasTextRun, halfBlockCell} from "./canvas.ts";
-import {getBoxModel, getComputedValue} from "./cssom.ts";
+import {
+	getBoxModel,
+	getCellSize,
+	getComputedValue,
+	toCellLength,
+} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
 	type Bitmap,
@@ -45,6 +51,10 @@ export function getCellPixels(element: Element): {
 	width: number;
 	height: number;
 } {
+	const page = getCellSize(element as unknown as Node);
+	if (page.width !== 1 || page.height !== 1) {
+		return page;
+	}
 	const document = element.ownerDocument;
 	return (document && cellPixelSources.get(document)?.()) ??
 		DEFAULT_CELL_PIXELS;
@@ -104,8 +114,17 @@ function textWidth(text: string): number {
 
 // A length or a percentage of `base`, in cells, or undefined for auto,
 // none, or a percentage with no base to resolve against.
-function resolveLength(value: string, base: number): number | undefined {
-	const parsed = CSSValues.parseUnitValue(value);
+function resolveLength(
+	element: Element,
+	value: string,
+	base: number,
+	vertical: boolean,
+): number | undefined {
+	const parsed = toCellLength(
+		CSSValues.parseUnitValue(value),
+		vertical,
+		element as unknown as Node,
+	);
 	if (typeof parsed === "number") {
 		return parsed;
 	}
@@ -148,8 +167,10 @@ export function getReplacedSize(
 	const hasRatio = Number.isFinite(ratio) && ratio > 0;
 
 	const cssWidth = resolveLength(
+		element,
 		getComputedValue(element, "width"),
 		availableWidth,
+		false,
 	);
 	const cssHeight = box.height;
 	let width = cssWidth === undefined
@@ -169,14 +190,24 @@ export function getReplacedSize(
 		height = hasRatio ? width / ratio : (natural?.height ?? 0);
 	}
 
-	const edge = (property: string, base: number, inset: number) => {
-		const value = resolveLength(getComputedValue(element, property), base);
+	const edge = (
+		property: string,
+		base: number,
+		inset: number,
+		isVertical: boolean,
+	) => {
+		const value = resolveLength(
+			element,
+			getComputedValue(element, property),
+			base,
+			isVertical,
+		);
 		return value === undefined ? undefined : Math.max(0, value - inset);
 	};
-	const maxWidth = edge("max-width", availableWidth, horizontal);
-	const minWidth = edge("min-width", availableWidth, horizontal);
-	const maxHeight = edge("max-height", NaN, vertical);
-	const minHeight = edge("min-height", NaN, vertical);
+	const maxWidth = edge("max-width", availableWidth, horizontal, false);
+	const minWidth = edge("min-width", availableWidth, horizontal, false);
+	const maxHeight = edge("max-height", NaN, vertical, true);
+	const minHeight = edge("min-height", NaN, vertical, true);
 	if (maxWidth !== undefined && width! > maxWidth) {
 		width = maxWidth;
 		if (!heightSet && hasRatio) {
