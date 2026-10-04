@@ -14,7 +14,7 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/index.ts";
+import {type RequestEvent, TermDOM} from "../src/index.ts";
 import {encodePNG} from "../src/internal/images.ts";
 import {MockProcess, nextFrame, scriptReplies, until} from "./test-utils.ts";
 
@@ -93,7 +93,10 @@ async function mount(
 			{ask: "\x1b[16t", reply: `\x1b[6;${height};${width}t`},
 		]);
 	}
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		fetch: (request) => fetch(request),
+	});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	return {dom, terminal, document: dom.document};
@@ -581,7 +584,8 @@ test("decode() settles when src changes, and the current image stays up meanwhil
 		release = resolve;
 	});
 	globalThis.fetch = (async (input: RequestInfo | URL) => {
-		if (String(input) === "https://images.test/bands.png") {
+		const url = input instanceof Request ? input.url : String(input);
+		if (url === "https://images.test/bands.png") {
 			await held;
 			return new Response(bands);
 		}
@@ -610,6 +614,7 @@ test("with a cell size, an image's pixels and lengths are CSS pixels", async () 
 	const dom = new TermDOM({
 		transport: terminal.transport,
 		cellSize: {width: 7, height: 15},
+		fetch: (request) => fetch(request),
 	});
 	dom.document.body.innerHTML =
 		`<img id=natural src="${wide}">` +
@@ -632,25 +637,24 @@ test("with a cell size, an image's pixels and lengths are CSS pixels", async () 
 });
 
 test("a new src cancels the request the old one started", async () => {
-	const original = globalThis.fetch;
+	const {dom, document} = await mount("<img id=i>");
 	const signals: AbortSignal[] = [];
-	try {
-		globalThis.fetch = ((_url: unknown, init?: RequestInit) => {
-			const signal = init!.signal!;
-			signals.push(signal);
-			return new Promise<Response>((_resolve, reject) => {
+	dom.addEventListener("request", (event) => {
+		const {signal} = (event as RequestEvent).request;
+		signals.push(signal);
+		(event as RequestEvent).respondWith(
+			new Promise<Response>((_resolve, reject) => {
 				signal.addEventListener("abort", () => reject(signal.reason));
-			});
-		}) as typeof fetch;
-		const {dom, document} = await mount("<img id=i>");
-		const image = document.getElementById("i") as HTMLImageElement;
-		image.src = "https://example.com/first.png";
-		image.src = "https://example.com/second.png";
-		expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
-		dom.dispose();
-	} finally {
-		globalThis.fetch = original;
-	}
+			}),
+		);
+	});
+	const image = document.getElementById("i") as HTMLImageElement;
+	image.src = "https://example.com/first.png";
+	await until(() => signals.length === 1);
+	image.src = "https://example.com/second.png";
+	await until(() => signals.length === 2);
+	expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+	dom.dispose();
 });
 
 test("an image whose box is past the pixel limit paints nothing", async () => {
@@ -692,15 +696,15 @@ test("an image that is not showing is a box, sized as the image is", async () =>
 });
 
 test("an image is a box while it loads", async () => {
-	const original = globalThis.fetch;
-	try {
-		globalThis.fetch = (() => new Promise<Response>(() => {})) as typeof fetch;
-		const {dom, terminal} =
-			await mount("<img src=\"https://example.com/a.png\" alt=\"a\">");
-		await nextFrame(dom);
-		expect(rowText(terminal, 1)).toBe("│a│");
-		dom.dispose();
-	} finally {
-		globalThis.fetch = original;
-	}
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.addEventListener("request", (event) => {
+		(event as RequestEvent).respondWith(new Promise<Response>(() => {}));
+	});
+	dom.document.body.innerHTML =
+		"<img src=\"https://example.com/a.png\" alt=\"a\">";
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(rowText(terminal, 1)).toBe("│a│");
+	dom.dispose();
 });

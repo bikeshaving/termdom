@@ -14,11 +14,50 @@ redraw like text, and they work over SSH and inside tmux.
 <img src="cover.jpg" alt="Album cover">
 ```
 
-`src` can be a `data:` URL, a `file:` URL, a path, or an `http:` or
-`https:` URL. A path is relative to the document's URL. A document at
-`about:blank` has no URL to resolve against, so a path there is
-relative to the working directory. `http:` and `https:` go through
-`fetch()`.
+`src` is a URL: `https:`, `data:`, `file:` or any other. A path is
+relative to the document's URL. A document at `about:blank` has no URL
+to resolve against, so a path there is a `file:` URL under the working
+directory.
+
+### Loading
+
+Nothing loads unless the program says so. Each load the markup asks for
+is a plain `Request`, which the TermDOM dispatches as a `"request"`
+event. A listener answers it with `respondWith()`, as a Service Worker
+answers a fetch event, and the first answer wins. A request no listener
+answers goes to the `fetch` the TermDOM was made with. Without one, it
+fails, and the image shows as a box with its `alt` text.
+
+```ts
+// Load what a browser would: the runtime's fetch.
+const term = new TermDOM({fetch});
+
+// Or decide request by request.
+term.addEventListener("request", (event) => {
+  const {request, destination, initiatorType, initiator} = event;
+  if (request.url.startsWith("cid:")) {
+    event.respondWith(new Response(attachment(request.url)));
+  } else if (!remoteImagesAllowed(initiator)) {
+    event.respondWith(Response.error());
+  }
+});
+```
+
+The event carries what the request does not: `destination`, the Fetch
+standard's name for what the load is for (`"image"`), `initiatorType`,
+Resource Timing's name for what asked (`"img"`), and `initiator`, the
+element that asked. `Response.error()`, or a promise that rejects,
+fails the request.
+
+The request waits for the script that set the source to finish, so a
+listener added just after the markup sees its images. A document whose
+URL is not `file:` or `about:` loads no `file:` URL, whatever would
+answer it. Node's `fetch` reads no files, and Bun's and Deno's do, so a
+program that wants local files on every runtime answers them itself.
+
+The page's own `window.fetch` is the `fetch` given, or the runtime's
+when there is none. It dispatches no event: a script that calls it has
+asked for the load.
 
 PNG, JPEG, GIF and BMP decode:
 
@@ -82,7 +121,7 @@ An image file names its size before its pixels, so a few bytes can
 ask for gigabytes. As a browser does, the engine checks what a file
 asks for before it allocates, and an image past a limit fails to load:
 
-- a file of at most 64 MB, whether `data:`, `file:` or fetched
+- a response of at most 64 MB, by its declared length and while reading
 - at most 32768 pixels to a side and 2^26 pixels in all
 - a PNG's data inflated only as far as its image needs
 - a JPEG of at most four components and 500 scans

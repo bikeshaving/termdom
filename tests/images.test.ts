@@ -15,9 +15,8 @@ import {
 	decodeImage,
 	decodeImageOffThread,
 	encodePNG,
-	fetchImageBytes,
 	MAX_IMAGE_BYTES,
-	readDataURL,
+	readImageResponse,
 	resolveImageURL,
 	sampleBitmap,
 	setDecodeTimeout,
@@ -295,26 +294,10 @@ test("sampling averages the pixels a cell half covers, weighted by alpha", () =>
 		.toEqual([0, 0, 255, 255]);
 });
 
-test("data: URLs decode percent-encoded bytes, binary ones included", () => {
-	const bytes = readDataURL("data:application/octet-stream,%89PNG%0d%0a");
-	expect(Array.from(bytes!)).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
-	expect(Array.from(readDataURL("data:;base64,AQ%3D%3D")!)).toEqual([1]);
-});
-
 test("a Windows path is a file URL, not a URL with a drive-letter scheme", () => {
 	expect(resolveImageURL("C:\\art\\cover.png", "about:blank")).toBe(
 		"file:///C:/art/cover.png",
 	);
-});
-
-test("data: URLs decode base64 and percent-encoding", () => {
-	expect(Array.from(readDataURL("data:image/png;base64,AQID")!)).toEqual([
-		1,
-		2,
-		3,
-	]);
-	expect(new TextDecoder().decode(readDataURL("data:,a%20b")!)).toBe("a b");
-	expect(readDataURL("https://example.com/a.png")).toBeNull();
 });
 
 test("a relative src resolves against the document, or the working directory", () => {
@@ -444,38 +427,25 @@ test("PNG data that inflates past its image is read only as far as the image", a
 	expect(pixel(bitmap, 15, 15)).toEqual([240, 240, 240, 255]);
 });
 
-test("an image file past the byte limit is not read whole", async () => {
-	const original = globalThis.fetch;
-	const signals: Array<AbortSignal | undefined> = [];
+test("an image response past the byte limit is not read whole", async () => {
 	const piece = new Uint8Array(1 << 20);
+	const declared = new Response(piece, {
+		headers: {"content-length": String(MAX_IMAGE_BYTES + 1)},
+	});
+	await expect(readImageResponse(declared)).rejects.toThrow("more than");
 	let pulled = 0;
-	try {
-		globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
-			signals.push(init?.signal ?? undefined);
-			if (signals.length === 1) {
-				return new Response(piece, {
-					headers: {"content-length": String(MAX_IMAGE_BYTES + 1)},
-				});
-			}
-			return new Response(
-				new ReadableStream<Uint8Array>({
-					pull(controller) {
-						pulled++;
-						controller.enqueue(piece);
-					},
-				}),
-			);
-		}) as typeof fetch;
-		const abort = new AbortController();
-		await expect(fetchImageBytes("https://example.com/a.png", abort.signal))
-			.rejects.toThrow("more than");
-		expect(signals[0]).toBe(abort.signal);
-		await expect(fetchImageBytes("https://example.com/b.png"))
-			.rejects.toThrow("more than");
-		expect(pulled).toBeLessThanOrEqual(MAX_IMAGE_BYTES / piece.length + 2);
-	} finally {
-		globalThis.fetch = original;
-	}
+	const endless = new Response(
+		new ReadableStream<Uint8Array>({
+			pull(controller) {
+				pulled++;
+				controller.enqueue(piece);
+			},
+		}),
+	);
+	await expect(readImageResponse(endless)).rejects.toThrow("more than");
+	expect(pulled).toBeLessThanOrEqual(MAX_IMAGE_BYTES / piece.length + 2);
+	await expect(readImageResponse(new Response(null, {status: 404})))
+		.rejects.toThrow("status 404");
 });
 
 // A worker from source text: it reports ready, then answers each

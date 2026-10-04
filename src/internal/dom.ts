@@ -61,13 +61,15 @@ import {
 	type Bitmap,
 	createBitmap,
 	decodeImageOffThread,
-	fetchImageBytes,
+	IMAGE_ACCEPT,
 	MAX_IMAGE_PIXELS,
+	readImageResponse,
 	registerReplacedContent,
 	resolveImageURL,
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
 import {linearizeMath} from "./mathml.ts";
+import {loadResource} from "./resources.ts";
 import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
@@ -16796,12 +16798,36 @@ function updateImageData(image: HTMLImageElement): void {
 	state.status = "loading";
 	invalidateReplaced(image, false);
 	const abort = state.abort = new AbortController();
-	fetchImageBytes(url, abort.signal)
-		.then((bytes) => decodeImageOffThread(bytes))
-		.then(
-			(bitmap) => settle("complete", bitmap),
-			(error) => settle("broken", null, error),
-		);
+	const document = image.ownerDocument;
+	// As HTML's "update the image data" does, the request waits for the
+	// script that set the source to finish. A listener added just after
+	// the markup that holds the image sees it.
+	queueMicrotask(() => {
+		if (state.generation !== generation) {
+			return;
+		}
+		let request: Request;
+		try {
+			request = new Request(url, {
+				headers: {accept: IMAGE_ACCEPT},
+				signal: abort.signal,
+			});
+		} catch (error) {
+			settle("broken", null, error);
+			return;
+		}
+		loadResource(document, request, {
+			destination: "image",
+			initiatorType: "img",
+			initiator: image as unknown as globalThis.Element,
+		})
+			.then((response) => readImageResponse(response))
+			.then((bytes) => decodeImageOffThread(bytes))
+			.then(
+				(bitmap) => settle("complete", bitmap),
+				(error) => settle("broken", null, error),
+			);
+	});
 }
 
 const kDirtyValue = Symbol("dirtyValue");
@@ -35881,7 +35907,24 @@ function buildWindow(document: Document): Window {
 	});
 	window.window = window;
 	window.self = window;
+	startPendingImages(document as unknown as globalThis.Document);
 	return window as unknown as Window;
+}
+
+// Images the parser built before their document had a window wait for
+// one. The document has one now.
+function startPendingImages(
+	root: globalThis.Document | globalThis.ShadowRoot,
+): void {
+	for (const element of root.querySelectorAll("*")) {
+		if (element instanceof HTMLImageElement && element[kImageState].pending) {
+			updateImageData(element);
+		}
+		const shadow = getShadowRoot(element);
+		if (shadow !== null) {
+			startPendingImages(shadow);
+		}
+	}
 }
 
 /**
