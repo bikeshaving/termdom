@@ -265,9 +265,16 @@ export class TermDOM extends EventTarget {
 		);
 
 		const document = this.document = this.window.document;
-		if (options.fetch !== undefined) {
-			this.window.fetch = options.fetch as typeof this.window.fetch;
-		}
+		// The page's fetch resolves a relative URL against the document, as a
+		// browser's does, and goes to the fetch given or the runtime's.
+		const pageFetch = options.fetch ?? ((request: Request) => fetch(request));
+		this.window.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+			pageFetch(
+				new Request(
+					typeof input === "string" ? new URL(input, document.baseURI) : input,
+					init,
+				),
+			)) as typeof this.window.fetch;
 		setResourceLoader(document, (request, context) =>
 			answerRequest(this, document.URL, request, context, options.fetch),
 		);

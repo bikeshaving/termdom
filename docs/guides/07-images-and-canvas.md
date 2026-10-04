@@ -66,7 +66,8 @@ read local files. Node's `fetch` reads no files, and Bun's and Deno's do, so a
 program that wants local files on every runtime answers them itself.
 
 The page's own `window.fetch` is the `fetch` given, or the runtime's
-when there is none. It dispatches no event: a script that calls it has
+when there is none, and it resolves a relative URL against the
+document's, as a browser's does. It dispatches no event: a script that calls it has
 asked for the load.
 
 PNG, JPEG, GIF and BMP decode:
