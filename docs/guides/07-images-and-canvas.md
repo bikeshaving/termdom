@@ -69,6 +69,22 @@ A pixel at least half opaque shows, and the rest leave the cell under
 them as it was. On an element with a `background-color`, translucent
 pixels blend over that color instead.
 
+### Limits
+
+An image file names its size before its pixels, so a few bytes can
+ask for gigabytes. As a browser does, the engine checks what a file
+asks for before it allocates, and an image past a limit fails to load:
+
+- a file of at most 64 MB, whether `data:`, `file:` or fetched
+- at most 32768 pixels to a side and 2^26 pixels in all
+- a PNG's data inflated only as far as its image needs
+- a JPEG of at most four components and 500 scans
+
+A new `src` cancels the request the old one started. An image whose
+box would sample more than 2^26 pixels draws nothing, as does a 2D
+canvas past that size. `ImageData` past it throws a `RangeError`, and
+a character grid stops at 2^22 cells.
+
 ## `<canvas>`
 
 `getContext()` takes two context types.

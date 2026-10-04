@@ -628,3 +628,36 @@ test("with a cell size, an image's pixels and lengths are CSS pixels", async () 
 	expect(cells("ratio")).toEqual([15, 3]);
 	dom.dispose();
 });
+
+test("a new src cancels the request the old one started", async () => {
+	const original = globalThis.fetch;
+	const signals: AbortSignal[] = [];
+	try {
+		globalThis.fetch = ((_url: unknown, init?: RequestInit) => {
+			const signal = init!.signal!;
+			signals.push(signal);
+			return new Promise<Response>((_resolve, reject) => {
+				signal.addEventListener("abort", () => reject(signal.reason));
+			});
+		}) as typeof fetch;
+		const {dom, document} = await mount("<img id=i>");
+		const image = document.getElementById("i") as HTMLImageElement;
+		image.src = "https://example.com/first.png";
+		image.src = "https://example.com/second.png";
+		expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+		dom.dispose();
+	} finally {
+		globalThis.fetch = original;
+	}
+});
+
+test("an image whose box is past the pixel limit paints nothing", async () => {
+	const square = png(4, 4, () => RED);
+	const {dom, terminal, document} = await mount(
+		`<img src="${square}" style="display: block; width: 50000px; height: 50000px">`,
+	);
+	await loaded(document.querySelector("img")!);
+	await nextFrame(dom);
+	expect(cell(terminal, 0, 0).bg).toBe(-1);
+	dom.dispose();
+});

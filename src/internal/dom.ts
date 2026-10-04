@@ -62,6 +62,7 @@ import {
 	createBitmap,
 	decodeImage,
 	fetchImageBytes,
+	MAX_IMAGE_PIXELS,
 	registerReplacedContent,
 	resolveImageURL,
 } from "./images.ts";
@@ -14476,16 +14477,16 @@ class HTMLCanvasElement extends HTMLElement {
 }
 
 // The bitmap, made at the canvas's size when first needed.
-// Past this many pixels a canvas gets no bitmap and draws nothing, as a
+// Past MAX_IMAGE_PIXELS a canvas gets no bitmap and draws nothing, as a
 // browser's canvas does past its own limit, rather than failing to
-// allocate.
-const CANVAS_PIXEL_LIMIT = 1 << 26;
+// allocate. A cell takes 18 bytes, so a character grid stops sooner.
+const GRID_CELL_LIMIT = 1 << 22;
 
 // The bitmap, made at the canvas's size when first drawn on.
 function getCanvasBitmap(canvas: HTMLCanvasElement): Bitmap {
 	const width = canvas.width;
 	const height = canvas.height;
-	if (width * height > CANVAS_PIXEL_LIMIT) {
+	if (width * height > MAX_IMAGE_PIXELS) {
 		return createBitmap(0, 0);
 	}
 	let bitmap = canvas[kCanvasBitmap];
@@ -14496,7 +14497,7 @@ function getCanvasBitmap(canvas: HTMLCanvasElement): Bitmap {
 }
 
 function getCanvasGrid(canvas: HTMLCanvasElement): CellContext {
-	const fits = canvas.width * canvas.height <= CANVAS_PIXEL_LIMIT;
+	const fits = canvas.width * canvas.height <= GRID_CELL_LIMIT;
 	const cols = fits ? canvas.width : 0;
 	const rows = fits ? canvas.height : 0;
 	let cells = canvas[kCanvasGrid];
@@ -16467,6 +16468,8 @@ interface ImageState {
 	// Bumped with each new request, so a slow one that finishes after a
 	// newer one started is dropped.
 	generation: number;
+	// Cancels the request in flight when a newer one replaces it.
+	abort: AbortController | null;
 	version: number;
 	waiters: Array<{resolve: () => void; reject: (error: unknown) => void}>;
 	// A source set while the document had no window, loaded on insertion
@@ -16549,6 +16552,7 @@ class HTMLImageElement extends HTMLElement {
 			url: "",
 			bitmap: null,
 			generation: 0,
+			abort: null,
 			version: 0,
 			waiters: [],
 			pending: false,
@@ -16714,6 +16718,8 @@ function readImageDimension(
 function updateImageData(image: HTMLImageElement): void {
 	const state = image[kImageState];
 	const generation = ++state.generation;
+	state.abort?.abort();
+	state.abort = null;
 	// decode() calls waiting on the request this one replaces reject, as
 	// HTML's "update the image data" says.
 	for (const waiter of state.waiters.splice(0)) {
@@ -16786,7 +16792,8 @@ function updateImageData(image: HTMLImageElement): void {
 	// a src does not collapse the box in between.
 	state.status = "loading";
 	invalidateReplaced(image, false);
-	fetchImageBytes(url)
+	const abort = state.abort = new AbortController();
+	fetchImageBytes(url, abort.signal)
 		.then((bytes) => decodeImage(bytes))
 		.then(
 			(bitmap) => settle("complete", bitmap),

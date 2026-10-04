@@ -25,6 +25,7 @@ import {
 	type Bitmap,
 	createBitmap,
 	encodePNG,
+	MAX_IMAGE_PIXELS,
 	sampleBitmap,
 } from "./images.ts";
 import {getStringWidth, graphemeSegmenter} from "./text.ts";
@@ -86,6 +87,11 @@ export class ImageData {
 				throw domException(
 					"IndexSizeError",
 					"The width and height must be positive",
+				);
+			}
+			if (width * height > MAX_IMAGE_PIXELS) {
+				throw new RangeError(
+					`ImageData is limited to ${MAX_IMAGE_PIXELS} pixels`,
 				);
 			}
 			data = new Uint8ClampedArray(width * height * 4);
@@ -3216,7 +3222,7 @@ export class CanvasCharacterGridContext {
 		}
 		const cols = Math.round(dw);
 		const rows = Math.round(dh);
-		if (cols <= 0 || rows <= 0) {
+		if (cols <= 0 || rows <= 0 || cols * rows * 2 > MAX_IMAGE_PIXELS) {
 			return;
 		}
 		const pixels = sampleBitmap(bitmap, cols, rows * 2, {

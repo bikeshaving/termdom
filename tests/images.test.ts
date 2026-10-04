@@ -14,6 +14,8 @@ import {
 	type Bitmap,
 	decodeImage,
 	encodePNG,
+	fetchImageBytes,
+	MAX_IMAGE_BYTES,
 	readDataURL,
 	resolveImageURL,
 	sampleBitmap,
@@ -319,4 +321,156 @@ test("a relative src resolves against the document, or the working directory", (
 	const local = resolveImageURL("art/cover.png", "about:blank");
 	expect(local?.startsWith("file:///")).toBe(true);
 	expect(local?.endsWith("/art/cover.png")).toBe(true);
+});
+
+// Images that ask for more than they are: a header's size, a stream
+// that inflates past its image, more scans or components than an image
+// has, or more bytes than an image file may have.
+
+function patched(name: string, at: number, ...values: number[]): Uint8Array {
+	const bytes = bytesOf(name).slice();
+	bytes.set(values, at);
+	return bytes;
+}
+
+function findMarker(bytes: Uint8Array, marker: number): number {
+	for (let i = 2; i < bytes.length - 1; i++) {
+		if (bytes[i] === 0xff && bytes[i + 1] === marker) {
+			return i;
+		}
+	}
+	throw new Error(`no marker ${marker.toString(16)}`);
+}
+
+test("a size no image may have rejects before it is allocated", async () => {
+	const big = [0x00, 0x01, 0x86, 0xa0];
+	await expect(decodeImage(patched("png-rgb.png", 16, ...big, ...big)))
+		.rejects.toThrow("more than an image may be");
+	await expect(decodeImage(patched("png-rgb.png", 16, 0, 0, 0x9c, 0x40)))
+		.rejects.toThrow("more than an image may be");
+	const sof = findMarker(bytesOf("jpeg-444.jpg"), 0xc0);
+	await expect(
+		decodeImage(patched("jpeg-444.jpg", sof + 5, 0xff, 0xff, 0xff, 0xff)),
+	).rejects.toThrow("more than an image may be");
+	await expect(decodeImage(patched("gif.gif", 6, 0xff, 0xff, 0xff, 0xff)))
+		.rejects.toThrow("more than an image may be");
+	await expect(
+		decodeImage(
+			patched("bmp-24.bmp", 18, 0xa0, 0x86, 0x01, 0x00, 0xa0, 0x86, 0x01, 0x00),
+		),
+	).rejects.toThrow("more than an image may be");
+});
+
+test("a JPEG with more components, sampling or scans than an image has rejects", async () => {
+	const sof = findMarker(bytesOf("jpeg-444.jpg"), 0xc0);
+	await expect(decodeImage(patched("jpeg-444.jpg", sof + 9, 5)))
+		.rejects.toThrow("more than four components");
+	await expect(decodeImage(patched("jpeg-444.jpg", sof + 11, 0x55)))
+		.rejects.toThrow("past four");
+	// The last scan again and again, ahead of the end marker.
+	const bytes = bytesOf("jpeg-progressive.jpg");
+	let last = -1;
+	for (let at = findMarker(bytes, 0xda); at !== -1;) {
+		last = at;
+		let next = -1;
+		for (let i = at + 2; i < bytes.length - 1; i++) {
+			if (bytes[i] === 0xff && bytes[i + 1] === 0xda) {
+				next = i;
+				break;
+			}
+		}
+		at = next;
+	}
+	const end = bytes.length - 2;
+	const scan = bytes.subarray(last, end);
+	const many = new Uint8Array(last + scan.length * 501 + 2);
+	many.set(bytes.subarray(0, last));
+	for (let i = 0; i < 501; i++) {
+		many.set(scan, last + i * scan.length);
+	}
+	many.set([0xff, 0xd9], many.length - 2);
+	await expect(decodeImage(many)).rejects.toThrow("more than 500 scans");
+});
+
+test("a GIF frame's code size past 8 bits rejects", async () => {
+	const bytes = bytesOf("gif.gif");
+	const descriptor = bytes.indexOf(0x2c, 13);
+	const flags = bytes[descriptor + 9];
+	const table = flags & 0x80 ? 3 * (1 << ((flags & 7) + 1)) : 0;
+	await expect(decodeImage(patched("gif.gif", descriptor + 10 + table, 12)))
+		.rejects.toThrow("code size");
+});
+
+test("PNG data that inflates past its image is read only as far as the image", async () => {
+	// 16 by 16 gray, filter byte 0 and a ramp on each row, and then
+	// megabytes of zeros the image has no room for.
+	const raw = new Uint8Array(16 * 17 + (1 << 24));
+	for (let y = 0; y < 16; y++) {
+		for (let x = 0; x < 16; x++) {
+			raw[y * 17 + 1 + x] = x * 16;
+		}
+	}
+	const deflated = new Uint8Array(
+		await new Response(
+			new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate")),
+		).arrayBuffer(),
+	);
+	const header = new Uint8Array(13);
+	header.set([0, 0, 0, 16, 0, 0, 0, 16, 8, 0, 0, 0, 0]);
+	const chunk = (type: string, data: Uint8Array) => {
+		const out = new Uint8Array(12 + data.length);
+		new DataView(out.buffer).setUint32(0, data.length);
+		out.set([...type].map((c) => c.charCodeAt(0)), 4);
+		out.set(data, 8);
+		return out;
+	};
+	const parts = [
+		new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+		chunk("IHDR", header),
+		chunk("IDAT", deflated),
+		chunk("IEND", new Uint8Array(0)),
+	];
+	const png = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+	let at = 0;
+	for (const part of parts) {
+		png.set(part, at);
+		at += part.length;
+	}
+	const bitmap = await decodeImage(png);
+	expect([bitmap.width, bitmap.height]).toEqual([16, 16]);
+	expect(pixel(bitmap, 15, 15)).toEqual([240, 240, 240, 255]);
+});
+
+test("an image file past the byte limit is not read whole", async () => {
+	const original = globalThis.fetch;
+	const signals: Array<AbortSignal | undefined> = [];
+	const piece = new Uint8Array(1 << 20);
+	let pulled = 0;
+	try {
+		globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+			signals.push(init?.signal ?? undefined);
+			if (signals.length === 1) {
+				return new Response(piece, {
+					headers: {"content-length": String(MAX_IMAGE_BYTES + 1)},
+				});
+			}
+			return new Response(
+				new ReadableStream<Uint8Array>({
+					pull(controller) {
+						pulled++;
+						controller.enqueue(piece);
+					},
+				}),
+			);
+		}) as typeof fetch;
+		const abort = new AbortController();
+		await expect(fetchImageBytes("https://example.com/a.png", abort.signal))
+			.rejects.toThrow("more than");
+		expect(signals[0]).toBe(abort.signal);
+		await expect(fetchImageBytes("https://example.com/b.png"))
+			.rejects.toThrow("more than");
+		expect(pulled).toBeLessThanOrEqual(MAX_IMAGE_BYTES / piece.length + 2);
+	} finally {
+		globalThis.fetch = original;
+	}
 });
