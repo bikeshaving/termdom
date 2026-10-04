@@ -69,16 +69,21 @@ function checkImageSize(width: number, height: number, format: string): void {
 const DECODE_SLICE_MS = 16;
 
 // Returns a promise to await when a turn is due, and undefined between.
-function createYielder(): () => Promise<void> | undefined {
+// Past `deadline`, a time from Date.now(), the promise rejects instead.
+function createYielder(deadline: number): () => Promise<void> | undefined {
 	let last = performance.now();
 	return () => {
 		if (performance.now() - last < DECODE_SLICE_MS) {
 			return undefined;
 		}
-		return new Promise<void>((resolve) => {
+		return new Promise<void>((resolve, reject) => {
 			setTimeout(() => {
 				last = performance.now();
-				resolve();
+				if (Date.now() > deadline) {
+					reject(new Error("The image took too long to decode"));
+				} else {
+					resolve();
+				}
 			}, 0);
 		});
 	};
@@ -109,9 +114,15 @@ export function keepAtMost(bitmap: Bitmap): Bitmap {
 	};
 }
 
-/** Decode, and keep at most MAX_KEPT_PIXELS. */
-export async function decodeImageForPage(bytes: Uint8Array): Promise<Bitmap> {
-	return keepAtMost(await decodeImage(bytes));
+/**
+ * Decode, and keep at most MAX_KEPT_PIXELS. A decode still running at
+ * `deadline` stops at its next yield.
+ */
+export async function decodeImageForPage(
+	bytes: Uint8Array,
+	deadline = Infinity,
+): Promise<Bitmap> {
+	return keepAtMost(await decodeImage(bytes, deadline));
 }
 
 export function createBitmap(width: number, height: number): Bitmap {
@@ -151,12 +162,15 @@ export function sniffImageType(bytes: Uint8Array): string | null {
  * sniffs it, not from a name or a content type. Rejects with the reason
  * a format is unsupported or the data is damaged.
  */
-export async function decodeImage(bytes: Uint8Array): Promise<Bitmap> {
+export async function decodeImage(
+	bytes: Uint8Array,
+	deadline = Infinity,
+): Promise<Bitmap> {
 	switch (sniffImageType(bytes)) {
 		case "image/png":
-			return await decodePNG(bytes);
+			return await decodePNG(bytes, deadline);
 		case "image/jpeg":
-			return await decodeJPEG(bytes);
+			return await decodeJPEG(bytes, deadline);
 		case "image/gif":
 			return decodeGIF(bytes);
 		case "image/bmp":
@@ -237,7 +251,7 @@ function getPNGDataSize(
 	return size;
 }
 
-async function decodePNG(bytes: Uint8Array): Promise<Bitmap> {
+async function decodePNG(bytes: Uint8Array, deadline: number): Promise<Bitmap> {
 	for (let i = 0; i < 8; i++) {
 		if (bytes[i] !== PNG_SIGNATURE[i]) {
 			throw new Error("Not a PNG image");
@@ -382,7 +396,7 @@ async function decodePNG(bytes: Uint8Array): Promise<Bitmap> {
 	};
 
 	let at = 0;
-	const pause = createYielder();
+	const pause = createYielder(deadline);
 	const unfilter = async (
 		passWidth: number,
 		passHeight: number,
@@ -1123,8 +1137,8 @@ function readExifOrientation(
 	return 1;
 }
 
-async function decodeJPEG(data: Uint8Array): Promise<Bitmap> {
-	const pause = createYielder();
+async function decodeJPEG(data: Uint8Array, deadline: number): Promise<Bitmap> {
+	const pause = createYielder(deadline);
 	const quantTables: Uint16Array[] = [];
 	const dcTables: HuffmanTable[] = [];
 	const acTables: HuffmanTable[] = [];
@@ -2135,8 +2149,9 @@ export async function readImageResponse(
 // Decoding off the page's thread.
 
 /**
- * How long an image may take to decode on the worker. Past it, the
- * worker is ended, which ends the decode with it, and the image fails.
+ * How long an image may take to decode. Past it, the worker is ended,
+ * which ends the decode with it, or the decode here stops at its next
+ * yield, and the image fails.
  */
 let decodeTimeout = 10_000;
 // A worker with nothing to do is ended, so it keeps no process alive.
@@ -2149,22 +2164,29 @@ interface DecodeWorker {
 	terminate(): void;
 }
 
-interface Pending {
+interface Job {
+	bytes: Uint8Array;
 	resolve(bitmap: Bitmap): void;
 	reject(error: unknown): void;
-	timer: ReturnType<typeof setTimeout>;
 }
 
 interface WorkerState {
 	worker: DecodeWorker;
 	// Until the worker says it started, a failure means it cannot start.
 	ready: boolean;
-	pending: Map<number, Pending>;
 	idle: ReturnType<typeof setTimeout> | null;
-	// Requests sent before the worker answered, in case it never does.
-	queued: Map<number, Uint8Array>;
 }
 
+// Images decode one at a time, in the order they ask. A decode's time
+// limit then counts its own work and not the line ahead of it, and one
+// decode's memory is all the decoding a page holds at once.
+const waiting: Job[] = [];
+let running: {
+	job: Job;
+	id: number;
+	timer: ReturnType<typeof setTimeout> | null;
+} |
+	null = null;
 let current: WorkerState | null = null;
 // False for good once a worker fails to start: decoding stays here.
 let workersWork = true;
@@ -2173,52 +2195,95 @@ let nextRequest = 0;
 /** The module src/decode-worker.ts builds to, which decodes off-thread. */
 export function setDecodeWorkerURL(url: URL | null): void {
 	if (current !== null) {
-		endWorker(current, new Error("The image decoder was replaced"));
+		endWorker(current);
 	}
 	workerURL = url;
 	workersWork = url !== null;
+	// An image the ended worker had goes to whatever decodes next.
+	if (running !== null && running.timer !== null) {
+		clearTimeout(running.timer);
+		waiting.unshift(running.job);
+		running = null;
+		startNextDecode();
+	}
 }
 
-/** How long a decode may take on the worker before it is ended. */
+/** How long a decode may take before it is stopped. */
 export function setDecodeTimeout(ms: number): void {
 	decodeTimeout = ms;
 }
 
 /**
  * Decode on a worker thread, where the runtime has one, so a large image
- * neither stalls the page nor runs past decodeTimeout. Where no worker
- * starts, the decode runs here, a slice at a time.
+ * does not stall the page. Where no worker starts, the decode runs here,
+ * a slice at a time. Either way it stops past decodeTimeout.
  */
 export function decodeImageOffThread(bytes: Uint8Array): Promise<Bitmap> {
-	const state = workersWork ? getWorker() : null;
-	if (state === null) {
-		return decodeImageForPage(bytes);
+	return new Promise<Bitmap>((resolve, reject) => {
+		waiting.push({bytes, resolve, reject});
+		startNextDecode();
+	});
+}
+
+function startNextDecode(): void {
+	if (running !== null) {
+		return;
+	}
+	const job = waiting.shift();
+	if (job === undefined) {
+		const idle = current;
+		if (idle !== null && idle.idle === null) {
+			idle.idle = setTimeout(() => endWorker(idle), WORKER_IDLE_MS);
+			(idle.idle as {unref?(): void}).unref?.();
+		}
+		return;
 	}
 	const id = nextRequest++;
-	// A copy the worker can take, whatever buffer the bytes sit in.
-	const copy = bytes.slice();
-	return new Promise<Bitmap>((resolve, reject) => {
-		const timer = setTimeout(() => {
-			state.pending.delete(id);
-			reject(
-				new Error(`The image took more than ${decodeTimeout} ms to decode`),
-			);
-			// What else this worker held fails with it: whatever stalled it
-			// may stall the next one too.
-			endWorker(state, new Error("The image decoder was stopped"));
-		}, decodeTimeout);
-		state.pending.set(id, {resolve, reject, timer});
-		if (state.idle !== null) {
-			clearTimeout(state.idle);
-			state.idle = null;
+	const state = workersWork ? getWorker() : null;
+	if (state === null) {
+		running = {job, id, timer: null};
+		decodeImageForPage(job.bytes, Date.now() + decodeTimeout)
+			.then(job.resolve, job.reject)
+			.finally(() => {
+				running = null;
+				startNextDecode();
+			});
+		return;
+	}
+	if (state.idle !== null) {
+		clearTimeout(state.idle);
+		state.idle = null;
+	}
+	const timer = setTimeout(() => {
+		if (running?.id !== id) {
+			return;
 		}
-		if (!state.ready) {
-			state.queued.set(id, copy);
-		}
-		state.worker.post({id, bytes: copy.buffer}, state.ready
-			? [copy.buffer]
-			: []);
-	});
+		running = null;
+		job.reject(
+			new Error(`The image took more than ${decodeTimeout} ms to decode`),
+		);
+		// Ending the worker ends the decode. A new one takes the next image.
+		endWorker(state);
+		startNextDecode();
+	}, decodeTimeout);
+	running = {job, id, timer};
+	// A copy the worker can take, whatever buffer the bytes sit in. The
+	// job keeps its own, in case the worker never starts.
+	const copy = job.bytes.slice();
+	state.worker.post({id, bytes: copy.buffer}, [copy.buffer]);
+}
+
+function finishDecode(id: number, settle: (job: Job) => void): void {
+	if (running?.id !== id) {
+		return;
+	}
+	const {job, timer} = running;
+	if (timer !== null) {
+		clearTimeout(timer);
+	}
+	running = null;
+	settle(job);
+	startNextDecode();
 }
 
 function getWorker(): WorkerState | null {
@@ -2231,7 +2296,7 @@ function getWorker(): WorkerState | null {
 	}
 	let state: WorkerState | null = null;
 	const onMessage = (data: unknown) => {
-		if (state === null) {
+		if (state === null || current !== state) {
 			return;
 		}
 		const message = data as {
@@ -2246,87 +2311,75 @@ function getWorker(): WorkerState | null {
 		};
 		if (message.ready) {
 			state.ready = true;
-			state.queued.clear();
 			return;
 		}
-		const pending = state.pending.get(message.id!);
-		if (pending === undefined) {
-			return;
-		}
-		state.pending.delete(message.id!);
-		clearTimeout(pending.timer);
-		if (message.error !== undefined) {
-			pending.reject(new Error(message.error));
-		} else {
-			pending.resolve({
-				width: message.width!,
-				height: message.height!,
-				data: new Uint8ClampedArray(message.data!),
-				naturalWidth: message.naturalWidth,
-				naturalHeight: message.naturalHeight,
-			});
-		}
-		if (state.pending.size === 0) {
-			const idle = state;
-			state.idle = setTimeout(() => endWorker(idle, null), WORKER_IDLE_MS);
-			(state.idle as {unref?(): void}).unref?.();
-		}
+		finishDecode(message.id!, (job) => {
+			if (message.error !== undefined) {
+				job.reject(new Error(message.error));
+			} else {
+				job.resolve({
+					width: message.width!,
+					height: message.height!,
+					data: new Uint8ClampedArray(message.data!),
+					naturalWidth: message.naturalWidth,
+					naturalHeight: message.naturalHeight,
+				});
+			}
+		});
 	};
 	const onError = (error: unknown) => {
-		if (state === null) {
+		if (state === null || current !== state) {
 			return;
 		}
-		if (!state.ready) {
-			// It never started: decode here from now on, these included.
+		const started = state.ready;
+		endWorker(state);
+		if (!started) {
+			// It never started: the image in hand decodes here, and so does
+			// every one after it.
 			workersWork = false;
-			const queued = new Map(state.queued);
-			const pending = new Map(state.pending);
-			endWorker(state, null);
-			for (const [id, bytes] of queued) {
-				const request = pending.get(id)!;
-				clearTimeout(request.timer);
-				decodeImageForPage(bytes).then(request.resolve, request.reject);
+			if (running !== null) {
+				const {job, timer} = running;
+				if (timer !== null) {
+					clearTimeout(timer);
+				}
+				running = null;
+				waiting.unshift(job);
 			}
+			startNextDecode();
 			return;
 		}
-		endWorker(
-			state,
-			error instanceof Error ? error : new Error("The image decoder failed"),
-		);
+		// It started and then failed on this image. The image fails, and a
+		// new worker takes the next.
+		if (running !== null) {
+			finishDecode(running.id, (job) =>
+				job.reject(
+					new Error(
+						(error as {message?: string} | null)?.message ||
+							"The image decoder failed",
+					),
+				),
+			);
+		}
 	};
 	const worker = startWorker(url, onMessage, onError);
 	if (worker === null) {
 		workersWork = false;
 		return null;
 	}
-	state = {
-		worker,
-		ready: false,
-		pending: new Map(),
-		idle: null,
-		queued: new Map(),
-	};
+	state = {worker, ready: false, idle: null};
 	current = state;
 	return state;
 }
 
-// Ends the worker. What it still held fails with `error`, or is left
-// to the caller when null.
-function endWorker(state: WorkerState, error: Error | null): void {
+function endWorker(state: WorkerState): void {
 	if (current === state) {
 		current = null;
 	}
 	if (state.idle !== null) {
 		clearTimeout(state.idle);
+		state.idle = null;
 	}
 	state.worker.terminate();
-	if (error !== null) {
-		for (const pending of state.pending.values()) {
-			clearTimeout(pending.timer);
-			pending.reject(error);
-		}
-	}
-	state.pending.clear();
 }
 
 // A web worker where the runtime has one, Node's worker_threads where it
