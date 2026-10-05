@@ -1,6 +1,7 @@
 import LineBreaker from "linebreak";
 
 import {
+	type CellSize,
 	getBoxModel,
 	getCellBlockMargin,
 	getCellBlockSize,
@@ -8,6 +9,7 @@ import {
 	getCellSize,
 	getComputedValue,
 	getDeclaredDisplay,
+	getElementStyleKey,
 	getWhiteSpace as getElementWhiteSpace,
 	getTabSize,
 	pxFromCells,
@@ -987,6 +989,13 @@ interface Styling {
 	// a block and an inline-block, or a box and display: contents, style
 	// alike and lay out differently.
 	display: Display;
+	// What the style record was derived from: the element's resolved style,
+	// its box parent's, which decides whether it is an item, and the cell
+	// its lengths were measured in. While all three are the same objects,
+	// deriving it again gives the same record.
+	styleKey: object | null;
+	parentStyleKey: object | null;
+	cell: Readonly<CellSize>;
 }
 
 const stylings = new WeakMap<LayoutNode, Styling>();
@@ -1047,12 +1056,36 @@ function styleLayoutNode(
 	styleLayoutNodeProperties(element, style, positionedElements);
 	shareStyleEdges(style);
 	layoutNode.style = style;
+	const parent = boxParentElement(element);
 	stylings.set(layoutNode, {
 		pass,
 		measureKey: getMeasureKey(element),
 		display: getLayoutDisplay(element),
+		styleKey: getElementStyleKey(element),
+		parentStyleKey: parent === null ? null : getElementStyleKey(parent),
+		cell: getCellSize(element),
 	});
 	layoutNode.invalidate();
+}
+
+// Whether a node's style record was derived from what the element's style
+// is now, so re-deriving it would change nothing.
+function isStylingCurrent(element: Element, layoutNode: LayoutNode): boolean {
+	const styling = stylings.get(layoutNode);
+	if (
+		styling === undefined ||
+		styling.styleKey === null ||
+		layoutNode.measure !== null
+	) {
+		return false;
+	}
+	const parent = boxParentElement(element);
+	return (
+		styling.styleKey === getElementStyleKey(element) &&
+		styling.parentStyleKey ===
+			(parent === null ? null : getElementStyleKey(parent)) &&
+		styling.cell === getCellSize(element)
+	);
 }
 
 // A block-level image or canvas with an auto width is as wide as its
@@ -1848,7 +1881,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 			} else if (layoutNode.owner !== entry.head) {
 				layoutNode.owner = entry.head;
 			}
-			if (containerFlex.getChildIndex(layoutNode) !== index) {
+			if (containerFlex.children[index] !== layoutNode) {
 				layoutNode.parent?.removeChild(layoutNode);
 				containerFlex.insertChild(layoutNode, index);
 			}
@@ -1869,7 +1902,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 		if (layoutNode && layoutNode.parent === containerFlex) {
 			// DOM siblings know nothing of the anonymous boxes between them, so
 			// the position is decided here, with the whole list available.
-			if (containerFlex.getChildIndex(layoutNode) !== index) {
+			if (containerFlex.children[index] !== layoutNode) {
 				containerFlex.removeChild(layoutNode);
 				containerFlex.insertChild(layoutNode, index);
 			}
@@ -2066,8 +2099,11 @@ function addNode(
 				return;
 			}
 			// Whatever moved the node may also have restyled it, unless this
-			// pass already styled it.
-			if (stylings.get(existingLayoutNode)?.pass !== layout[kPass]) {
+			// pass already styled it or nothing it was styled from changed.
+			if (
+				stylings.get(existingLayoutNode)?.pass !== layout[kPass] &&
+				!isStylingCurrent(element, existingLayoutNode)
+			) {
 				styleNode(layout, element, existingLayoutNode);
 			}
 			// A kept box is re-derived exactly as if built from scratch.
