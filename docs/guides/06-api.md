@@ -210,6 +210,22 @@ It returns a function that removes what it defined. One TermDOM's
 globals can be installed at a time; calling it again before uninstalling
 throws.
 
+Some runtimes have window-like globals of their own, and those stay the
+runtime's. A bare call to one of these reaches the runtime, not the
+TermDOM, so write `window.` before it:
+
+| Name | Runtime that has its own |
+| --- | --- |
+| `addEventListener`, `removeEventListener`, `dispatchEvent` | Bun, Deno |
+| `close` (it exits Deno) | Deno |
+| `location`, `name` | Deno |
+| `alert`, `confirm`, `prompt`, `self`, `onerror` | Bun, Deno |
+| `localStorage` | Node, Deno |
+
+Events made with the runtime's `Event` or `CustomEvent` reach the
+document's listeners, and the document's events are instances of the
+runtime's `Event`.
+
 ## `TerminalTransport`
 
 The interface between the engine and a terminal, for embedding TermDOM
