@@ -74,12 +74,10 @@ function makeRecorder(
 	const proc = new (class extends EventEmitter {
 		stdout: typeof stdout;
 		stdin: typeof stdin;
-		env: {TERM: string; COLORTERM: string};
 		constructor(...args: ConstructorParameters<typeof EventEmitter>) {
 			super(...args);
 			this.stdout = stdout;
 			this.stdin = stdin;
-			this.env = {TERM: "xterm-256color", COLORTERM: "truecolor"};
 		}
 
 		exit(): never {
@@ -110,7 +108,9 @@ async function record(
 	rows = ROWS,
 ): Promise<void> {
 	const {proc, events, pressKey, clock} = makeRecorder(cols, rows);
-	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(proc as any, {colorDepth: "rgb"}),
+	});
 	termdom.attach();
 	const teardown = await setup(termdom);
 	await new Promise<void>((r) =>
