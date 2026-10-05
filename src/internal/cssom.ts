@@ -3361,15 +3361,6 @@ function getShadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 	return [...getDeclaredStyleSheets(root), ...(adoptedSheets.get(root) ?? [])];
 }
 
-/**
- * One object per resolved style of an element, the same until the style
- * changes. Null where there is none to keep: no cascade, a pseudo-element,
- * or a transition under way.
- */
-export function getElementStyleKey(element: Element): object | null {
-	return getTreeCascade(element)?.getStyleKey(element) ?? null;
-}
-
 function getTreeCascade(tree: Node): Cascade | undefined {
 	const document = tree.nodeType === tree.DOCUMENT_NODE
 		? (tree as Document)

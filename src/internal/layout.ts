@@ -1,7 +1,6 @@
 import LineBreaker from "linebreak";
 
 import {
-	type CellSize,
 	getBoxModel,
 	getCellBlockMargin,
 	getCellBlockSize,
@@ -9,7 +8,6 @@ import {
 	getCellSize,
 	getComputedValue,
 	getDeclaredDisplay,
-	getElementStyleKey,
 	getWhiteSpace as getElementWhiteSpace,
 	getTabSize,
 	pxFromCells,
@@ -989,13 +987,6 @@ interface Styling {
 	// a block and an inline-block, or a box and display: contents, style
 	// alike and lay out differently.
 	display: Display;
-	// What the style record was derived from: the element's resolved style,
-	// its box parent's, which decides whether it is an item, and the cell
-	// its lengths were measured in. While all three are the same objects,
-	// deriving it again gives the same record.
-	styleKey: object | null;
-	parentStyleKey: object | null;
-	cell: Readonly<CellSize>;
 }
 
 const stylings = new WeakMap<LayoutNode, Styling>();
@@ -1056,36 +1047,12 @@ function styleLayoutNode(
 	styleLayoutNodeProperties(element, style, positionedElements);
 	shareStyleEdges(style);
 	layoutNode.style = style;
-	const parent = boxParentElement(element);
 	stylings.set(layoutNode, {
 		pass,
 		measureKey: getMeasureKey(element),
 		display: getLayoutDisplay(element),
-		styleKey: getElementStyleKey(element),
-		parentStyleKey: parent === null ? null : getElementStyleKey(parent),
-		cell: getCellSize(element),
 	});
 	layoutNode.invalidate();
-}
-
-// Whether a node's style record was derived from what the element's style
-// is now, so re-deriving it would change nothing.
-function isStylingCurrent(element: Element, layoutNode: LayoutNode): boolean {
-	const styling = stylings.get(layoutNode);
-	if (
-		styling === undefined ||
-		styling.styleKey === null ||
-		layoutNode.measure !== null
-	) {
-		return false;
-	}
-	const parent = boxParentElement(element);
-	return (
-		styling.styleKey === getElementStyleKey(element) &&
-		styling.parentStyleKey ===
-			(parent === null ? null : getElementStyleKey(parent)) &&
-		styling.cell === getCellSize(element)
-	);
 }
 
 // A block-level image or canvas with an auto width is as wide as its
@@ -1461,6 +1428,7 @@ function styleLayoutNodeProperties(
 
 const kPass = Symbol("pass");
 const kScrollExtents = Symbol("scroll extents");
+const kTouched = Symbol("touched");
 const kPositionedElements = Symbol("positionedElements");
 
 // Only an out-of-flow box is asked where it would have been, so only it
@@ -1889,10 +1857,14 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 			syncRunMembers(layout, entry);
 			continue;
 		}
-		// A box a fresh build would have made differently is remade. The rest
-		// is re-derived onto the existing node.
+		// A box a fresh build would have made differently is remade, and one
+		// whose own box changed is re-derived onto its node. The rest keep
+		// their nodes and only move into place.
 		const node = entry.node!;
-		addNode(layout, node, containerFlex, null);
+		const kept = layout[kNodeMap].get(node);
+		if (kept?.parent !== containerFlex || isTouched(layout, node)) {
+			addNode(layout, node, containerFlex, null);
+		}
 		// An out-of-flow box hangs from its containing block, which the build
 		// above hoisted it to, and takes no place among the boxes counted here.
 		if (isOutOfFlow(node)) {
@@ -2099,11 +2071,8 @@ function addNode(
 				return;
 			}
 			// Whatever moved the node may also have restyled it, unless this
-			// pass already styled it or nothing it was styled from changed.
-			if (
-				stylings.get(existingLayoutNode)?.pass !== layout[kPass] &&
-				!isStylingCurrent(element, existingLayoutNode)
-			) {
+			// pass already styled it.
+			if (stylings.get(existingLayoutNode)?.pass !== layout[kPass]) {
 				styleNode(layout, element, existingLayoutNode);
 			}
 			// A kept box is re-derived exactly as if built from scratch.
@@ -2645,6 +2614,7 @@ function invalidateContainerDerivation(
 }
 
 function invalidateBoxDerivation(layout: Layout, node: Node): void {
+	touch(layout, node);
 	const container = getRunContainer(layout, node);
 	if (container) {
 		invalidateContainerDerivation(layout, container);
@@ -2661,6 +2631,9 @@ function invalidateChildDerivation(layout: Layout, parent: Element): void {
 	if (!box) {
 		return;
 	}
+	// What a box holds decides whether it measures its content as a run or
+	// lays out boxes of its own, so the box itself is derived again.
+	touch(layout, box);
 	invalidateContainerDerivation(layout, box);
 	const container = getRunContainerFromParent(layout, box, false);
 	if (container) {
@@ -2682,9 +2655,30 @@ function invalidateSubtreeDerivation(layout: Layout, node: Node): void {
 	// The flat tree, not the flow. Which elements dissolve is the cascade's
 	// question, and marking one that generates no box costs nothing.
 	for (const child of flatDescendants(node)) {
+		touch(layout, child);
 		if (child.nodeType === child.ELEMENT_NODE) {
 			invalidateContainerDerivation(layout, child as Element);
 		}
+	}
+}
+
+function touch(layout: Layout, node: Node): void {
+	const touched = layout[kTouched];
+	if (touched !== "all") {
+		touched.add(node);
+	}
+}
+
+function isTouched(layout: Layout, node: Node): boolean {
+	const touched = layout[kTouched];
+	return touched === "all" || touched.has(node);
+}
+
+// A container whose own display changed can make items of its children,
+// or stop, and their boxes are derived again.
+function touchChildren(layout: Layout, element: Element): void {
+	for (const child of flatChildren(element)) {
+		touch(layout, child);
 	}
 }
 
@@ -2710,6 +2704,7 @@ function invalidateInlineRun(layout: Layout, node: Node): void {
 
 function invalidateNode(layout: Layout, node: Node): void {
 	layout[kInvalidatedNodes].add(node);
+	touch(layout, node);
 
 	if (isInlineLevel(node)) {
 		invalidateInlineRun(layout, node);
@@ -5162,6 +5157,12 @@ export interface Layout {
 
 	[kInvalidatedNodes]: Set<Node>;
 
+	// The nodes whose own box changed since the last pass: invalidated,
+	// re-derived, or under a subtree that was. A container's sync builds and
+	// styles these and only moves its other children into place. Everything,
+	// after an invalidation of the whole layout.
+	[kTouched]: Set<Node> | "all";
+
 	// Each scroll container's extent as getScrollExtent measured it, until
 	// a pass that changes a box, or a restyle, which can change a box's
 	// overflow without changing a box.
@@ -5261,6 +5262,7 @@ export class Layout {
 		this[kRootElement] = window.document.documentElement;
 		this[kNodeMap] = new Map<Node, LayoutNode>();
 		this[kInvalidatedNodes] = new Set<Node>();
+		this[kTouched] = new Set<Node>();
 		this[kMeasureNodes] = new Set<LayoutNode>();
 
 		const root = new LayoutNode();
@@ -5390,6 +5392,7 @@ export class Layout {
 				syncContainerRuns(this, container);
 			}
 		}
+		this[kTouched] = new Set<Node>();
 		// A formatting context a box lays out for itself hangs off that box's
 		// measure, not off the tree, so a sync that changed one leaves the
 		// tree clean. Its box is measured again, and the tree with it.
@@ -6289,6 +6292,7 @@ export class Layout {
 			// element is no container's box, so it is restyled on its own.
 			this[kDerivedContainers] = new WeakSet<Element>();
 			this[kRestyled].add(this[kRootElement]);
+			this[kTouched] = "all";
 			this.invalidateFrame();
 			return;
 		}
@@ -6472,6 +6476,7 @@ function applyRestyles(layout: Layout): void {
 					const measureChanged = probe.measureKey !== measureKey;
 					styleNode(layout, element, layoutNode!);
 					if (displayChanged || measureChanged) {
+						touchChildren(layout, element);
 						invalidateChildDerivation(layout, element);
 						if (layout[kBoxes].get(element)?.children) {
 							invalidateContainerBoxes(layout, element);
@@ -6483,6 +6488,7 @@ function applyRestyles(layout: Layout): void {
 			}
 			invalidateBoxDerivation(layout, element);
 			invalidateEnclosingMeasure(layout, element);
+			touchChildren(layout, element);
 			invalidateChildDerivation(layout, element);
 			if (layout[kBoxes].get(element)?.children) {
 				invalidateContainerBoxes(layout, element);
