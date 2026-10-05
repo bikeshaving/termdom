@@ -28815,10 +28815,15 @@ function scheduleSelectionChange(document: Document): void {
 	// A selection move is not a mutation and no record names the rows it
 	// covers, so the repaint is requested here, before the coalescing guard
 	// below. That guard drops the second move in a task but not its paint.
+	// An idle render loop lays out and paints at once, so the request waits
+	// for the code that moved the selection, which is often an edit with
+	// more to change, and joins the frame those changes ask for.
 	const attached = getAttachedDocument(document);
 	if (attached !== undefined) {
 		attached[kScreen].invalidate();
-		void attached[kRender]();
+		queueMicrotask(() => {
+			void attached[kRender]();
+		});
 	}
 	if (document[kSelectionChangeScheduled]) {
 		return;
