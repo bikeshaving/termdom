@@ -1373,3 +1373,65 @@ function renderStaticHTML(
 	renderer.document.body.innerHTML = html;
 	return renderStatic(renderer, lineEnding);
 }
+
+let globalsInstalled = false;
+
+/**
+ * Defines the window's names on globalThis, for code that reaches for
+ * `document`, `window`, `Element` or `requestAnimationFrame` as globals
+ * the way browser code does: frameworks, editors, DOM libraries. Names
+ * the runtime defines already are left alone, so Node's `Event` and
+ * `fetch` stay Node's, and in a browser nothing changes. Methods are
+ * bound to the window and other properties read through to it, so
+ * `scrollY` stays current. Returns a function that removes them again.
+ */
+export function installGlobals(termDOM: TermDOM): () => void {
+	if (globalsInstalled) {
+		throw new Error("TermDOM's globals are already installed.");
+	}
+	const window = termDOM.window as unknown as Record<string, unknown>;
+	const installed: string[] = [];
+	for (
+		let object: object | null = window;
+		object && object !== Object.prototype;
+		object = Object.getPrototypeOf(object)
+	) {
+		for (const name of Object.getOwnPropertyNames(object)) {
+			if (name === "constructor" || name in globalThis) {
+				continue;
+			}
+			const descriptor = Object.getOwnPropertyDescriptor(object, name)!;
+			const value = descriptor.value;
+			Object.defineProperty(
+				globalThis,
+				name,
+				typeof value !== "function"
+					? {
+						get: () => window[name],
+						set: (next) => {
+							window[name] = next;
+						},
+						configurable: true,
+					}
+					: {
+						value: /^[a-z]/.test(name) ? value.bind(window) : value,
+						configurable: true,
+						writable: true,
+					},
+			);
+			installed.push(name);
+		}
+	}
+	globalsInstalled = true;
+	let uninstalled = false;
+	return () => {
+		if (uninstalled) {
+			return;
+		}
+		uninstalled = true;
+		for (const name of installed) {
+			delete (globalThis as Record<string, unknown>)[name];
+		}
+		globalsInstalled = false;
+	};
+}

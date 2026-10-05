@@ -21,7 +21,7 @@ if (!import.meta.resolve("svelte").endsWith("index-client.js")) {
   process.exit(status ?? 0);
 }
 
-const {TermDOM} = await import("@b9g/termdom");
+const {installGlobals, TermDOM} = await import("@b9g/termdom");
 const {compile} = await import("svelte/compiler");
 const {mount} = await import("svelte");
 
@@ -73,24 +73,7 @@ const {document} = term;
 // init_operations() takes the `firstChild` and `nextSibling` getters off
 // `Node.prototype` and caches lookups on `Element.prototype` and
 // `Text.prototype`; `Comment` identifies the anchor nodes the compiler emits.
-// Supplied only where the runtime has none.
-const globals = {
-  document,
-  window: term.window,
-  Node: term.window.Node,
-  Element: term.window.Element,
-  Text: term.window.Text,
-  Comment: term.window.Comment,
-};
-for (const [name, value] of Object.entries(globals)) {
-  if (!(name in globalThis)) {
-    Object.defineProperty(globalThis, name, {
-      value,
-      configurable: true,
-      writable: true,
-    });
-  }
-}
+installGlobals(term);
 
 const style = document.createElement("style");
 style.textContent = `

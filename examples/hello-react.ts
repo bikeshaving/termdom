@@ -4,7 +4,7 @@
 //
 //   any key  increments the counter
 //   q        quit
-import {TermDOM} from "@b9g/termdom";
+import {installGlobals, TermDOM} from "@b9g/termdom";
 import htm from "htm";
 import {createElement, useEffect, useState} from "react";
 import {createRoot} from "react-dom/client";
@@ -18,17 +18,8 @@ term.attach();
 const {document} = term;
 // react-dom reads `window.event` to pick an update priority, and
 // `document.documentMode` and `"TextEvent" in window` to detect input
-// features. Supplied only where the runtime has none.
-const globals = {document, window: term.window};
-for (const [name, value] of Object.entries(globals)) {
-  if (!(name in globalThis)) {
-    Object.defineProperty(globalThis, name, {
-      value,
-      configurable: true,
-      writable: true,
-    });
-  }
-}
+// features.
+installGlobals(term);
 
 const style = document.createElement("style");
 style.textContent = `

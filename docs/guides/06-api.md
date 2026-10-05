@@ -1,6 +1,6 @@
 ---
 title: API
-description: The TermDOM class, the TerminalTransport interface, and transportFromProcess.
+description: The TermDOM class, installGlobals, the TerminalTransport interface, and transportFromProcess.
 ---
 
 ## `new TermDOM(options?)`
@@ -189,6 +189,26 @@ writing further output. The process transport also restores
 shell-critical modes synchronously, so a caller that exits without
 awaiting still leaves the shell usable. `using term = new TermDOM()`
 disposes on scope exit.
+
+## `installGlobals(term)`
+
+Defines the window's names on `globalThis`, for code that reads
+`document`, `window`, `Element`, `getSelection` and the like as globals:
+React, Vue, Svelte, CodeMirror. Only names the runtime lacks are
+defined, so Node's `Event`, `fetch` and `navigator` stay Node's, and in a
+browser nothing changes. Methods are bound to the window, and other
+properties read and write through to it, so `scrollY` stays current.
+
+```ts
+import {installGlobals, TermDOM} from "@b9g/termdom";
+
+const term = new TermDOM();
+const uninstall = installGlobals(term);
+```
+
+It returns a function that removes what it defined. One TermDOM's
+globals can be installed at a time; calling it again before uninstalling
+throws.
 
 ## `TerminalTransport`
 
