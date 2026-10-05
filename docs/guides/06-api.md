@@ -234,6 +234,6 @@ const term = new TermDOM({transport: transportFromProcess(process)});
   the terminal reports its background.
 
 The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
-`resizes`, signals → `closed`, `stdout.isTTY` → `interactive`, `stderr` when it is not a terminal →
-`logError`, and an exit hook that restores the cursor if the app exits
-without disposing.
+`resizes`, signals → `closed`, `stdout.isTTY` → `interactive`, `stderr`
+when it is not a terminal → `logError`, and an exit hook that restores
+the cursor if the app exits without disposing.
