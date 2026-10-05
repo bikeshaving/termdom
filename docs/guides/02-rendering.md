@@ -141,12 +141,18 @@ terminal that does not answer gets the conservative behavior.
 | SGR 53 by DECRQSS | Whether the terminal draws an overline, which MathML uses for the bar of a root |
 | XTWINOPS 16 | A cell's size in pixels, which sets the angle of a gradient and the natural size of an image or a canvas in cells |
 | OSC 52 query | Reading the clipboard in `navigator.clipboard.readText()` |
+| 24-bit SGR by DECRQSS, XTGETTCAP `RGB` and `Tc`, DA2 | Whether to send 24-bit color, unless the transport names its `colorDepth` |
 
-Color depth is the one thing no terminal reports, and the engine reads
-nothing but the terminal: no environment variables. It sends 24-bit
-color unless the transport says otherwise. tmux converts it for a
-terminal without 24-bit color; a terminal without it on its own may
-show other colors, and a program that knows sets `colorDepth`.
+The engine reads nothing but the terminal: no environment variables.
+A terminal gets 24-bit color when it says so: it keeps a 24-bit color in
+its style and reports it back, or answers XTGETTCAP for `RGB` or `Tc`.
+tmux says neither, but it converts 24-bit color for the terminal it runs
+in, so a DA2 answer of `84` (tmux) counts too. Every other terminal gets
+256 colors. Some terminals with 24-bit color, such as Terminal.app,
+Alacritty, Konsole and VS Code, never say so; a program that knows passes
+`colorDepth`. A terminal without 24-bit color can read its parameters as
+other attributes, such as hidden or inverse text, so the engine never
+guesses it.
 
 The modes the engine sets, and resets on exit, are mouse reporting,
 mouse motion reporting while something watches hover, bracketed paste,

@@ -1659,7 +1659,9 @@ test(":focus rules apply on focus and revert on blur", async () => {
 	// the cache held a rule set matched before the focus moved, so a :focus
 	// rule never applied, and once focused would never have un-applied.
 	const terminal = new MockProcess({rows: 5, cols: 40});
-	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	const dom = new TermDOM({
+		transport: transportFromProcess(terminal as any, {colorDepth: "rgb"}),
+	});
 	const {document, window} = dom;
 	const style = document.createElement("style");
 	style.textContent = "input:focus { background: #264f78; }";

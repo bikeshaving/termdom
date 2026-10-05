@@ -35,12 +35,18 @@ export interface TerminalTransport {
 	/** Live. After `resizes` emits, these return the new size. */
 	readonly cols: number;
 	readonly rows: number;
-	readonly colorDepth: ColorDepth;
 
 	/**
-	 * Whether the terminal's background is dark, where the environment
-	 * says (COLORFGBG). The terminal's own answer, when it gives one,
-	 * replaces it.
+	 * The colors the terminal shows. Left out, TermDOM asks the terminal:
+	 * 24-bit color when the terminal says it has it, or when it is tmux,
+	 * which converts 24-bit color for the terminal it runs in, and 256
+	 * colors otherwise.
+	 */
+	readonly colorDepth?: ColorDepth;
+
+	/**
+	 * Whether the terminal's background is dark, where the program knows.
+	 * The terminal's own answer, when it gives one, replaces it.
 	 */
 	readonly colorScheme?: "light" | "dark";
 
@@ -273,6 +279,8 @@ type WireItem =
 	{kind: "cell-size"; width: number; height: number} |
 	{kind: "clipboard"; text: string | null} |
 	{kind: "sgr-report"; params: string | null} |
+	{kind: "capability-report"; known: boolean} |
+	{kind: "secondary-attributes"; params: string} |
 	{kind: "background"; red: number; green: number; blue: number} |
 	{kind: "device-attributes"};
 
@@ -486,6 +494,11 @@ const BACKGROUND_REPLY =
 const BACKGROUND_QUERY = "\x1b]11;?\x1b\\";
 
 const DEVICE_ATTRIBUTES_QUERY = "\x1b[c";
+const SECONDARY_ATTRIBUTES_QUERY = "\x1b[>c";
+
+// XTGETTCAP names its capabilities in hex.
+const RGB_CAPABILITY = "524742";
+const TC_CAPABILITY = "5463";
 
 function readChannel(hex: string): number {
 	return parseInt(hex, 16) / (16 ** hex.length - 1);
@@ -495,6 +508,20 @@ function readChannel(hex: string): number {
 // style, as `0;53`, between DCS 1 $ r and m ST. DCS 0 $ r is a terminal
 // (tmux, say) that has no answer for the request.
 const SGR_REPORT = /^\x1bP([01])\$r([\d;:]*)m?\x1b\\/;
+
+// XTGETTCAP answered: DCS 1 + r for a capability the terminal has, with
+// its value when it has one, and DCS 0 + r for one it does not.
+const CAPABILITY_REPORT = /^\x1bP([01])\+r[^\x1b]*\x1b\\/;
+
+// Asked after setting a 24-bit color: the color comes back in the
+// terminal's style when it keeps 24-bit color. Some write the color space
+// slot of the colon form empty and iTerm2 writes 1, so only the last
+// three numbers are read.
+const RGB_STYLE = /(?:^|;)[34]8[:;]2(?:[:;]\d*)?[:;]1[:;]2[:;]3(?:;|$)/;
+
+// The secondary device attributes tmux answers with, 84 being "T". No
+// other terminal sends it.
+const TMUX_ATTRIBUTES = /^84;/;
 
 interface WireReader {
 	[kTail]: string;
@@ -625,6 +652,12 @@ class WireReader {
 						params: report[1] === "1" ? report[2] : null,
 					});
 					i += report[0].length;
+					continue;
+				}
+				const capability = CAPABILITY_REPORT.exec(data.slice(i));
+				if (capability !== null) {
+					items.push({kind: "capability-report", known: capability[1] === "1"});
+					i += capability[0].length;
 					continue;
 				}
 			}
@@ -763,6 +796,10 @@ function decodeControlToken(token: string): WireItem {
 	if (/^\x1b\[\?[\d;]*c$/.test(token)) {
 		return {kind: "device-attributes"};
 	}
+	const secondary = token.match(/^\x1b\[>([\d;]*)c$/);
+	if (secondary) {
+		return {kind: "secondary-attributes", params: secondary[1]};
+	}
 	const cursor = token.match(/^\x1b\[(\d+);(\d+)R$/);
 	if (cursor) {
 		return {
@@ -805,6 +842,8 @@ interface PendingReply {
 	// Cursor questions only: DSR send order, shared with the width probes.
 	sequence?: number;
 	clipboard?: boolean;
+	// The questions given up together, as the color depth's are.
+	group?: string;
 }
 
 const kTransport = Symbol("transport");
@@ -1278,6 +1317,62 @@ export class Exchange extends EventTarget {
 			absent: false,
 			read: () => true,
 		}).then(() => {});
+	}
+
+	/**
+	 * Whether the terminal shows 24-bit color, from what it says over the
+	 * wire. It does when it keeps a 24-bit color in its style, or answers
+	 * XTGETTCAP for RGB or Tc. tmux says neither, but converts 24-bit color
+	 * for whatever terminal it runs in, so it counts too. Anything else gets
+	 * 256 colors, which every terminal in use draws.
+	 */
+	async negotiateColorDepth(): Promise<ColorDepth> {
+		if (!this[kInteractive]) {
+			return "256";
+		}
+		const ask = <K extends WireItem["kind"]>(
+			kind: K,
+			question: string,
+			read: (item: ReplyItem<K>) => boolean,
+		) =>
+			nextReply<K, boolean>(this, kind, {
+				ask: question,
+				timeoutMs: 1000,
+				absent: false,
+				read,
+				group: "color-depth",
+			});
+		const answers = await Promise.all([
+			ask(
+				"sgr-report",
+				"\x1b[38;2;1;2;3m\x1bP$qm\x1b\\\x1b[39m",
+				({params}) => params !== null && RGB_STYLE.test(params),
+			),
+			ask(
+				"capability-report",
+				`\x1bP+q${RGB_CAPABILITY}\x1b\\`,
+				({known}) => known,
+			),
+			ask(
+				"capability-report",
+				`\x1bP+q${TC_CAPABILITY}\x1b\\`,
+				({known}) => known,
+			),
+			ask("secondary-attributes", SECONDARY_ATTRIBUTES_QUERY, ({params}) =>
+				TMUX_ATTRIBUTES.test(params)),
+		]);
+		return answers.includes(true) ? "rgb" : "256";
+	}
+
+	/** A terminal that answered a later question will not answer these. */
+	abandonColorDepthQuery(): void {
+		const pending = this[kPendingReplies];
+		for (const entry of pending.filter(
+			(entry) => entry.group === "color-depth",
+		)) {
+			pending.splice(pending.indexOf(entry), 1);
+			entry.giveUp();
+		}
 	}
 
 	/** A terminal that answered a later question will not answer this. */
@@ -1961,6 +2056,7 @@ function nextReply<K extends WireItem["kind"], T>(
 		mode?: string;
 		sequence?: number;
 		clipboard?: boolean;
+		group?: string;
 	},
 ): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
@@ -1969,6 +2065,7 @@ function nextReply<K extends WireItem["kind"], T>(
 			mode: options.mode,
 			sequence: options.sequence,
 			clipboard: options.clipboard,
+			group: options.group,
 			settle: (item) => {
 				clearTimeout(entry.timer);
 				if (options.clipboard) {
@@ -2180,9 +2277,8 @@ function closeOnPipeEnd(proc: ProcessLike, close: () => void): void {
 export function transportFromProcess(
 	proc: ProcessLike = process as unknown as ProcessLike,
 	// The global process sits below a shell. A mock or relay owns its
-	// screen. What the terminal cannot be asked comes from the caller,
-	// never from the environment: 24-bit color unless it says otherwise,
-	// and the background the terminal reports.
+	// screen. What the caller passes is used as given, and the rest is
+	// asked of the terminal, never read from the environment.
 	options: {
 		sharesScreen?: boolean;
 		colorDepth?: ColorDepth;
@@ -2371,7 +2467,7 @@ export function transportFromProcess(
 			stderr.write(text + "\n");
 			return true;
 		},
-		colorDepth: options.colorDepth ?? "rgb",
+		colorDepth: options.colorDepth,
 		colorScheme: options.colorScheme,
 		ready: Promise.resolve(),
 		readable,
