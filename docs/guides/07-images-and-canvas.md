@@ -52,7 +52,9 @@ the network, as `about:blank` and `file:` are not, the network schemes.
 
 A page can narrow the policy with its own
 `<meta http-equiv="Content-Security-Policy">` in its head, and never
-widen it: a load must pass every policy. A load a policy blocks fires
+widen it: a load must pass every policy. As in a browser, the tag's
+policy holds from when it is inserted into the head, and removing the
+tag or changing its `content` later changes nothing. A load a policy blocks fires
 `securitypolicyviolation` at its element, a `SecurityPolicyViolationEvent`
 that bubbles to the document and names the URL, the directive and the
 policy. The image shows as a box with its `alt` text. When the program
@@ -179,7 +181,8 @@ stopped and that image fails; the images behind it still decode. Where
 no worker can start, as in a CommonJS build, images decode on the
 page's thread a slice at a time, under the same limit.
 
-A new `src` cancels the request the old one started. An image whose
+A new `src` cancels the request the old one started, and drops its
+decode if it is still waiting for its turn. An image whose
 box would sample more than 2^26 pixels draws nothing, as does a 2D
 canvas past that size. `ImageData` past it throws a `RangeError`, and
 a character grid stops at 2^22 cells.

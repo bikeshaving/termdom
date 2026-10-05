@@ -505,6 +505,42 @@ test("an image past its time fails alone, and the images behind it decode", asyn
 	}
 });
 
+test("a decode aborted while it waits is dropped, and the line moves on", async () => {
+	try {
+		setDecodeTimeout(1000);
+		setDecodeWorkerURL(
+			fakeWorker(`if (data.bytes.byteLength !== 1) ${ANSWER};`),
+		);
+		const abort = new AbortController();
+		const started = Date.now();
+		let droppedAfter = -1;
+		// The stand-in, ahead of it, holds the worker until its time is up.
+		const stalled = decodeImageOffThread(STAND_IN);
+		const dropped = decodeImageOffThread(bytesOf("png-rgb.png"), abort.signal)
+			.finally(() => {
+				droppedAfter = Date.now() - started;
+			});
+		const decodes = [
+			stalled,
+			dropped,
+			decodeImageOffThread(bytesOf("png-rgb.png")),
+		];
+		abort.abort(new Error("The source changed"));
+		expect(await outcomes(decodes)).toEqual([
+			"The image took more than 1000 ms to decode",
+			"The source changed",
+			"1 wide",
+		]);
+		expect(droppedAfter).toBeLessThan(500);
+		await expect(
+			decodeImageOffThread(bytesOf("png-rgb.png"), abort.signal),
+		).rejects.toThrow("The source changed");
+	} finally {
+		setDecodeTimeout(10_000);
+		setDecodeWorkerURL(null);
+	}
+});
+
 test("a worker that fails on an image fails that image alone", async () => {
 	try {
 		setDecodeWorkerURL(

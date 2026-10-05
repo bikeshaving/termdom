@@ -331,8 +331,11 @@ export class TermDOM extends EventTarget {
 				}
 			},
 		};
-		setResourceLoader(document, (request, context) =>
-			answerRequest(this, document, request, context, requestPolicy),
+		setResourceLoader(
+			document,
+			(request, context) =>
+				answerRequest(this, document, request, context, requestPolicy),
+			this[kLoads].signal,
 		);
 
 		this[kLayout] = new Layout(
