@@ -516,8 +516,12 @@ const CAPABILITY_REPORT = /^\x1bP([01])\+r[^\x1b]*\x1b\\/;
 // Asked after setting a 24-bit color: the color comes back in the
 // terminal's style when it keeps 24-bit color. Some write the color space
 // slot of the colon form empty and iTerm2 writes 1, so only the last
-// three numbers are read.
-const RGB_STYLE = /(?:^|;)[34]8[:;]2(?:[:;]\d*)?[:;]1[:;]2[:;]3(?:;|$)/;
+// three numbers are read. A terminal without 24-bit color can read each
+// number as an attribute of its own, so the channels are past every
+// attribute's number and only the 2 lands, as faint, which 22 undoes.
+const RGB_PROBE = "\x1b[38;2;111;122;133m\x1bP$qm\x1b\\\x1b[39;22m";
+const RGB_STYLE =
+	/(?:^|;)[34]8[:;]2(?:[:;]\d*)?[:;]111[:;]122[:;]133(?:;|$)/;
 
 // The secondary device attributes tmux answers with, 84 being "T". No
 // other terminal sends it.
@@ -1345,7 +1349,7 @@ export class Exchange extends EventTarget {
 		const answers = await Promise.all([
 			ask(
 				"sgr-report",
-				"\x1b[38;2;1;2;3m\x1bP$qm\x1b\\\x1b[39m",
+				RGB_PROBE,
 				({params}) => params !== null && RGB_STYLE.test(params),
 			),
 			ask(

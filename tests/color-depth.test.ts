@@ -83,10 +83,10 @@ async function depthOn(
 
 test("a terminal that keeps a 24-bit color in its style gets 24-bit color", async () => {
 	for (const style of [
-		"0;38:2::1:2:3",
-		"0;38:2:1:2:3",
-		"38:2:1:1:2:3",
-		"0;38;2;1;2;3",
+		"0;38:2::111:122:133",
+		"0;38:2:111:122:133",
+		"38:2:1:111:122:133",
+		"0;38;2;111;122;133",
 	]) {
 		const {depth, output} =
 			await depthOn({[DECRQSS]: `\x1bP1$r${style}m\x1b\\`});
@@ -140,8 +140,8 @@ test("a transport that names its color depth is not asked", async () => {
 	const named = await depthOn({[DA2]: "\x1b[>1;95;0c"}, "rgb");
 	expect(named.depth).toBe(24);
 	expect(named.output).not.toContain(XTGETTCAP_RGB);
-	expect(named.output).not.toContain("\x1b[38;2;1;2;3m");
+	expect(named.output).not.toContain("\x1b[38;2;111;122;133m");
 	const ansi =
-		await depthOn({[DECRQSS]: "\x1bP1$r0;38:2::1:2:3m\x1b\\"}, "ansi");
+		await depthOn({[DECRQSS]: "\x1bP1$r0;38:2::111:122:133m\x1b\\"}, "ansi");
 	expect(ansi.depth).toBe(4);
 });
