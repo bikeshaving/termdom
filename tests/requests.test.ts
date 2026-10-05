@@ -222,6 +222,31 @@ test("a page's own meta policy narrows the program's, and never widens it", asyn
 	dom.dispose();
 });
 
+test("a meta policy holds from its insertion into the head, whatever becomes of the element", async () => {
+	const dom = create({csp: "img-src https:"});
+	dom.addEventListener("fetch", (event) => {
+		event.respondWith(new Response(PNG));
+	});
+	const load = async (src: string): Promise<string> => {
+		const image = dom.document.createElement("img");
+		image.src = src;
+		dom.document.body.append(image);
+		return settled(image);
+	};
+	const meta = dom.document.createElement("meta");
+	meta.httpEquiv = "Content-Security-Policy";
+	meta.content = "img-src https://cdn.example";
+	dom.document.body.append(meta.cloneNode());
+	expect(await load("https://other.example/a.png")).toBe("loaded");
+	dom.document.head.append(meta);
+	expect(await load("https://other.example/b.png")).toBe("broken");
+	meta.content = "img-src https:";
+	meta.remove();
+	expect(await load("https://other.example/c.png")).toBe("broken");
+	expect(await load("https://cdn.example/d.png")).toBe("loaded");
+	dom.dispose();
+});
+
 test("Response.error(), a rejection, or preventDefault() without an answer fails the load", async () => {
 	const dom = create({csp: "img-src https:"});
 	const handled: Array<Promise<undefined>> = [];

@@ -71,7 +71,12 @@ import {
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
 import {linearizeMath} from "./mathml.ts";
-import {loadResource, setRequestDestination} from "./resources.ts";
+import {
+	addDocumentPolicy,
+	getLoadSignal,
+	loadResource,
+	setRequestDestination,
+} from "./resources.ts";
 import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
@@ -16942,11 +16947,18 @@ function updateImageData(image: HTMLImageElement): void {
 			return;
 		}
 		setRequestDestination(request, "image");
+		// Disposing the TermDOM aborts the load, the request and a decode
+		// still waiting for its turn alike. Listened for only while the
+		// load runs, so the TermDOM holds no image it has finished with.
+		const ended = getLoadSignal(document);
+		const onEnded = () => abort.abort(ended!.reason);
+		ended?.addEventListener("abort", onEnded, {once: true});
 		loadResource(document, request, {
 			initiator: image as unknown as globalThis.Element,
 		})
 			.then((response) => readImageResponse(response))
-			.then((bytes) => decodeImageOffThread(bytes))
+			.then((bytes) => decodeImageOffThread(bytes, abort.signal))
+			.finally(() => ended?.removeEventListener("abort", onEnded))
 			.then(
 				(bitmap) => settle("complete", bitmap),
 				(error) => settle("broken", null, error),
@@ -18657,6 +18669,24 @@ class HTMLMetaElement extends HTMLElement {
 	declare content: globalThis.HTMLMetaElement["content"];
 	declare httpEquiv: globalThis.HTMLMetaElement["httpEquiv"];
 	declare scheme: globalThis.HTMLMetaElement["scheme"];
+
+	// HTML §4.2.5.3: the Content-Security-Policy pragma runs when the
+	// element is inserted into a document as a child of its head.
+	override [kInsertionSteps](): void {
+		super[kInsertionSteps]();
+		const content = this.getAttribute("content");
+		if (
+			this.isConnected &&
+			this.parentNode?.nodeType === ELEMENT_NODE &&
+			(this.parentNode as Element).localName === "head" &&
+			(this.parentNode as Element).namespaceURI === HTML_NAMESPACE &&
+			this.getAttribute("http-equiv")?.toLowerCase() ===
+				"content-security-policy" &&
+			content
+		) {
+			addDocumentPolicy(this.ownerDocument, content);
+		}
+	}
 }
 
 // A run of full blocks for the filled bar and a run of light shade for

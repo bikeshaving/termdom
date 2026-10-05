@@ -2168,6 +2168,8 @@ interface Job {
 	bytes: Uint8Array;
 	resolve(bitmap: Bitmap): void;
 	reject(error: unknown): void;
+	// Called when the job leaves the line to decode.
+	started(): void;
 }
 
 interface WorkerState {
@@ -2218,9 +2220,30 @@ export function setDecodeTimeout(ms: number): void {
  * does not stall the page. Where no worker starts, the decode runs here,
  * a slice at a time. Either way it stops past decodeTimeout.
  */
-export function decodeImageOffThread(bytes: Uint8Array): Promise<Bitmap> {
+export function decodeImageOffThread(
+	bytes: Uint8Array,
+	signal?: AbortSignal,
+): Promise<Bitmap> {
 	return new Promise<Bitmap>((resolve, reject) => {
-		waiting.push({bytes, resolve, reject});
+		if (signal?.aborted) {
+			reject(signal.reason);
+			return;
+		}
+		const job: Job = {bytes, resolve, reject, started: () => {}};
+		// A decode that has not started is dropped, with its bytes. One
+		// that has runs to its end or its time limit.
+		if (signal !== undefined) {
+			const onAbort = () => {
+				const index = waiting.indexOf(job);
+				if (index !== -1) {
+					waiting.splice(index, 1);
+					reject(signal.reason);
+				}
+			};
+			signal.addEventListener("abort", onAbort, {once: true});
+			job.started = () => signal.removeEventListener("abort", onAbort);
+		}
+		waiting.push(job);
 		startNextDecode();
 	});
 }
@@ -2230,6 +2253,7 @@ function startNextDecode(): void {
 		return;
 	}
 	const job = waiting.shift();
+	job?.started();
 	if (job === undefined) {
 		const idle = current;
 		if (idle !== null && idle.idle === null) {
@@ -2254,10 +2278,24 @@ function startNextDecode(): void {
 		clearTimeout(state.idle);
 		state.idle = null;
 	}
-	const timer = setTimeout(() => {
+	running = {job, id, timer: startDecodeTimer(id, state)};
+	// A copy the worker can take, whatever buffer the bytes sit in. The
+	// job keeps its own, in case the worker never starts.
+	const copy = job.bytes.slice();
+	state.worker.post({id, bytes: copy.buffer}, [copy.buffer]);
+}
+
+// The running decode's time limit, counted again once the worker is
+// ready, so a worker's start does not count against its first image.
+function startDecodeTimer(
+	id: number,
+	state: WorkerState,
+): ReturnType<typeof setTimeout> {
+	return setTimeout(() => {
 		if (running?.id !== id) {
 			return;
 		}
+		const {job} = running;
 		running = null;
 		job.reject(
 			new Error(`The image took more than ${decodeTimeout} ms to decode`),
@@ -2266,11 +2304,6 @@ function startNextDecode(): void {
 		endWorker(state);
 		startNextDecode();
 	}, decodeTimeout);
-	running = {job, id, timer};
-	// A copy the worker can take, whatever buffer the bytes sit in. The
-	// job keeps its own, in case the worker never starts.
-	const copy = job.bytes.slice();
-	state.worker.post({id, bytes: copy.buffer}, [copy.buffer]);
 }
 
 function finishDecode(id: number, settle: (job: Job) => void): void {
@@ -2311,6 +2344,10 @@ function getWorker(): WorkerState | null {
 		};
 		if (message.ready) {
 			state.ready = true;
+			if (running !== null && running.timer !== null) {
+				clearTimeout(running.timer);
+				running.timer = startDecodeTimer(running.id, state);
+			}
 			return;
 		}
 		finishDecode(message.id!, (job) => {

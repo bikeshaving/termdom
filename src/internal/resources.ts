@@ -158,13 +158,26 @@ type ResourceLoader = (
 	context: RequestContext,
 ) => Promise<Response>;
 
-const loaders = new WeakMap<object, ResourceLoader>();
+const loaders = new WeakMap<
+	object,
+	{loader: ResourceLoader; signal: AbortSignal}
+>();
 
+/** `signal` aborts when the TermDOM that owns the document is disposed. */
 export function setResourceLoader(
 	document: object,
 	loader: ResourceLoader,
+	signal: AbortSignal,
 ): void {
-	loaders.set(document, loader);
+	loaders.set(document, {loader, signal});
+}
+
+/**
+ * Aborts when the document's loads end for good, or null for a document
+ * no TermDOM owns.
+ */
+export function getLoadSignal(document: object): AbortSignal | null {
+	return loaders.get(document)?.signal ?? null;
 }
 
 /**
@@ -176,11 +189,11 @@ export function loadResource(
 	request: Request,
 	context: RequestContext,
 ): Promise<Response> {
-	const loader = loaders.get(document);
-	if (loader === undefined) {
+	const entry = loaders.get(document);
+	if (entry === undefined) {
 		return Promise.reject(new TypeError("This document loads nothing"));
 	}
-	return loader(request, context);
+	return entry.loader(request, context);
 }
 
 /** What a TermDOM decides a document's loads by. */
@@ -192,7 +205,7 @@ export interface RequestPolicy {
 	violate(at: EventTarget, init: SecurityPolicyViolationEventInit): void;
 	// Takes the work a listener asked the TermDOM to wait for.
 	extend(promise: Promise<unknown>): void;
-	// Aborts every load when the TermDOM is disposed.
+	// Aborted when the TermDOM is disposed, after which nothing loads.
 	signal: AbortSignal;
 }
 
@@ -215,10 +228,6 @@ export async function answerRequest(
 ): Promise<Response> {
 	policy.signal.throwIfAborted();
 	const destination = request.destination;
-	request = new Request(request, {
-		signal: AbortSignal.any([request.signal, policy.signal]),
-	});
-	setRequestDestination(request, destination);
 	checkRequest(document, request, new URL(request.url), 0, context, policy);
 	let response =
 		await dispatchFetchEvent(target, request, policy) ??
@@ -345,27 +354,30 @@ async function dispatchFetchEvent(
 	}
 }
 
-// A policy a page states for itself in its head (HTML §4.2.5.3), which a
-// load must also satisfy.
-function getDocumentPolicies(document: Document): ContentSecurityPolicy[] {
-	const head = document.head;
-	if (head === null) {
-		return [];
+// The policies a page stated for itself with <meta> in its head.
+const documentPolicies = new WeakMap<object, ContentSecurityPolicy[]>();
+
+/**
+ * A `<meta http-equiv="Content-Security-Policy">` inserted as a child of
+ * a head (HTML §4.2.5.3): its policy holds for the document from then on,
+ * whatever later becomes of the element. A meta policy cannot report,
+ * frame or sandbox, so those directives are dropped.
+ */
+export function addDocumentPolicy(document: object, content: string): void {
+	const policy = parseContentSecurityPolicy(content);
+	for (const directive of ["report-uri", "frame-ancestors", "sandbox"]) {
+		policy.directives.delete(directive);
 	}
-	const policies: ContentSecurityPolicy[] = [];
-	for (const meta of head.children) {
-		if (
-			meta.localName === "meta" &&
-			meta.getAttribute("http-equiv")?.toLowerCase() ===
-				"content-security-policy" &&
-			meta.hasAttribute("content")
-		) {
-			policies.push(
-				...parseContentSecurityPolicies(meta.getAttribute("content")!),
-			);
-		}
+	const policies = documentPolicies.get(document);
+	if (policies === undefined) {
+		documentPolicies.set(document, [policy]);
+	} else {
+		policies.push(policy);
 	}
-	return policies;
+}
+
+function getDocumentPolicies(document: object): ContentSecurityPolicy[] {
+	return documentPolicies.get(document) ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -385,22 +397,23 @@ export interface ContentSecurityPolicy {
 export function parseContentSecurityPolicies(
 	serialized: string,
 ): ContentSecurityPolicy[] {
-	const policies: ContentSecurityPolicy[] = [];
-	for (const text of serialized.split(",")) {
-		const directives = new Map<string, string[]>();
-		for (const token of text.split(";")) {
-			const [name, ...values] = token.trim().split(/[\t\n\f\r ]+/);
-			if (!name || !/^[a-zA-Z0-9-]+$/.test(name)) {
-				continue;
-			}
-			const key = name.toLowerCase();
-			if (!directives.has(key)) {
-				directives.set(key, values.filter(Boolean));
-			}
+	return serialized.split(",").map(parseContentSecurityPolicy);
+}
+
+/** One serialized policy, as a meta tag carries it (CSP3 §2.2.1). */
+function parseContentSecurityPolicy(text: string): ContentSecurityPolicy {
+	const directives = new Map<string, string[]>();
+	for (const token of text.split(";")) {
+		const [name, ...values] = token.trim().split(/[\t\n\f\r ]+/);
+		if (!name || !/^[a-zA-Z0-9-]+$/.test(name)) {
+			continue;
 		}
-		policies.push({text: text.trim(), directives});
+		const key = name.toLowerCase();
+		if (!directives.has(key)) {
+			directives.set(key, values.filter(Boolean));
+		}
 	}
-	return policies;
+	return {text: text.trim(), directives};
 }
 
 // The directive that governs a destination, and the one it falls back to.
