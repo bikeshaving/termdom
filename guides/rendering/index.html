@@ -63,9 +63,11 @@ mode changes, so it can be piped to a file, logged, or written to
 stderr. <code>attach()</code> is not called, and the process does not stay alive.</p><p>When stdout is not a terminal, <code>attach()</code> behaves like <code>print()</code>: the
 document is written once as plain lines when the program ends, and
 input is not read. A program can be run under a pipe or in a CI log
-without a code path for it.</p><h2 id="frames">Frames <a class="heading-anchor" href="#frames">#</a></h2><p>A frame is painted when the document has changed and the next tick of
-the event loop arrives. Mutations are observed, so nothing calls a
-render. Style and layout are recomputed for what changed, the document
+without a code path for it.</p><h2 id="frames">Frames <a class="heading-anchor" href="#frames">#</a></h2><p>A frame is painted when the document has changed, after the task that
+changed it and every microtask that task queued have run, as a browser
+renders. A change and whatever answers it in a microtask, such as an
+editor library updating the line a keystroke edited, land in one frame.
+Mutations are observed, so nothing calls a render. Style and layout are recomputed for what changed, the document
 is painted into a buffer of cells, the buffer is diffed against the
 previous frame, and only the difference is written. A frame is wrapped
 in synchronized output markers so a terminal that supports them shows
