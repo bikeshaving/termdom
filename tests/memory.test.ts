@@ -252,7 +252,7 @@ async function showImages(dom: TermDOM, round: number): Promise<void> {
 	async () => {
 		const dom = new TermDOM({
 			transport: new MockProcess({cols: 100, rows: 40}).transport,
-			fetch: (request) => fetch(request),
+			contentSecurityPolicy: "img-src data: https:",
 		});
 		for (let round = 0; round < WARM_UP; round++) {
 			await showImages(dom, round);

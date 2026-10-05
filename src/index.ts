@@ -50,7 +50,9 @@ import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
 import {
 	answerRequest,
+	parseContentSecurityPolicies,
 	type RequestEvent,
+	type RequestPolicy,
 	setResourceLoader,
 } from "./internal/resources.ts";
 
@@ -103,13 +105,23 @@ export interface TermDOMOptions {
 	cellSize?: "unit" | "auto" | CellSize;
 
 	/**
-	 * Where the loads the document's markup asks for go, an <img>'s source
-	 * among them, when no "request" listener answers them, and what the
-	 * page's own `window.fetch` calls. Without one, markup loads nothing,
-	 * and `window.fetch` is the runtime's.
+	 * The Content Security Policy the document's loads are checked against,
+	 * as a `Content-Security-Policy` header would state it: an <img> loads
+	 * only what `img-src`, or `default-src` without it, allows. A page's own
+	 * `<meta http-equiv="Content-Security-Policy">` can narrow it, never
+	 * widen it. Defaults to `"default-src 'none'"`, so markup loads nothing
+	 * unless the program allows it.
+	 */
+	contentSecurityPolicy?: string;
+
+	/**
+	 * Where an allowed load no "request" listener answers goes, and what the
+	 * page's own `window.fetch` calls. Defaults to the runtime's `fetch`.
 	 */
 	fetch?: (request: Request) => Promise<Response>;
 }
+
+const DEFAULT_CONTENT_SECURITY_POLICY = "default-src 'none'";
 
 function getCellSizeSource(
 	option: TermDOMOptions["cellSize"],
@@ -275,8 +287,37 @@ export class TermDOM extends EventTarget {
 					init,
 				),
 			)) as typeof this.window.fetch;
+		const policy = options.contentSecurityPolicy;
+		let hinted = false;
+		const requestPolicy: RequestPolicy = {
+			policies: parseContentSecurityPolicies(
+				policy ?? DEFAULT_CONTENT_SECURITY_POLICY,
+			),
+			fetch: pageFetch,
+			violate: (at, init) => {
+				const window = this.window as unknown as typeof globalThis;
+				dispatchAsUserAgent(
+					at as never,
+					new window.SecurityPolicyViolationEvent(
+						"securitypolicyviolation",
+						init,
+					) as never,
+				);
+				// A program that set no policy may not know markup loads
+				// nothing until it does.
+				if (policy === undefined && !hinted) {
+					hinted = true;
+					reportUncaught(
+						this,
+						`TermDOM blocked ${init.blockedURI}, and loads nothing the ` +
+						"document's markup asks for until a contentSecurityPolicy " +
+						"allows it, such as \"img-src data: https:\".",
+					);
+				}
+			},
+		};
 		setResourceLoader(document, (request, context) =>
-			answerRequest(this, document.URL, request, context, options.fetch),
+			answerRequest(this, document, request, context, requestPolicy),
 		);
 
 		this[kLayout] = new Layout(
