@@ -2593,6 +2593,25 @@ function collectTableRows(table: LayoutNode): {
 	return {rows: [...header, ...body, ...footer], captions, groups};
 }
 
+function isStrayTablePart(node: LayoutNode): boolean {
+	const type = node.style.displayType;
+	const parent = node.parent?.style.displayType;
+	if (
+		type === "table-row-group" ||
+		type === "table-header-group" ||
+		type === "table-footer-group"
+	) {
+		return parent !== "table";
+	}
+	return (
+		type === "table-row" &&
+		parent !== "table" &&
+		parent !== "table-row-group" &&
+		parent !== "table-header-group" &&
+		parent !== "table-footer-group"
+	);
+}
+
 // A cell, or an element an anonymous cell would wrap. A column is
 // neither, and a row or a group closes the anonymous row.
 function isAnonymousRowContent(node: LayoutNode): boolean {
@@ -5343,7 +5362,9 @@ function readCollapseBottom(child: LayoutNode, into: MarginSet): void {
 
 function isShrinkToFitWidth(node: LayoutNode): boolean {
 	return (
-		node.style.displayType === "table" || node.style.widthSizing !== "none"
+		node.style.displayType === "table" ||
+		isStrayTablePart(node) ||
+		node.style.widthSizing !== "none"
 	);
 }
 
@@ -5888,6 +5909,23 @@ function layoutNodeImpl(
 	}
 
 	if (node.style.displayType === "table") {
+		layoutTable(
+			node,
+			availableWidth,
+			availableHeight,
+			widthSpace,
+			heightSpace,
+			ownerWidth,
+			ownerHeight,
+			placing,
+		);
+		return;
+	}
+
+	// A row group or a row whose parent cannot hold it is wrapped in an
+	// anonymous table (CSS 2.1 §17.2.1, rule 3). That table has no style of
+	// its own, so the box lays out as the table it would be wrapped in.
+	if (isStrayTablePart(node)) {
 		layoutTable(
 			node,
 			availableWidth,

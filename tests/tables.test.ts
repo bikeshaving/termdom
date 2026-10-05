@@ -717,3 +717,22 @@ test("stray cells in a row group share an anonymous row too", async () => {
 	expect(box("#a").width + box("#b").width).toBe(20);
 	dom.dispose();
 });
+
+// CSS 2.1 §17.2.1, rule 3: a row group or a row whose parent is no table
+// is wrapped in an anonymous table, which stacks the rows and shrinks to
+// them. A newsletter's display:block table holds its sections this way.
+test("rows of a display:block table stack in an anonymous table", async () => {
+	for (const markup of [
+		"<tbody><tr><td id=a>A</td></tr><tr><td id=b>B</td></tr></tbody>",
+		"<div style=\"display:table-row\"><div id=a style=\"display:table-cell\">A</div></div>" +
+			"<div style=\"display:table-row\"><div id=b style=\"display:table-cell\">B</div></div>",
+	]) {
+		const {box, dom} =
+			await render(`<table style="display:block;width:50ch">${markup}</table>`);
+		expect(box("#a").left).toBe(0);
+		expect(box("#b").left).toBe(0);
+		expect(box("#b").top).toBeGreaterThan(box("#a").top);
+		expect(box("#a").width).toBeLessThan(10);
+		dom.dispose();
+	}
+});
