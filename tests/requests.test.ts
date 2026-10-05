@@ -21,7 +21,7 @@ function create(
 		html?: string;
 		url?: string;
 		fetch?: (request: Request) => Promise<Response>;
-		contentSecurityPolicy?: string;
+		csp?: string;
 	} = {},
 ): TermDOM {
 	return new TermDOM({
@@ -69,7 +69,7 @@ test("without a policy, markup loads nothing, and the block is reported", async 
 });
 
 test("a listener answers what the policy allows, and says what asked", async () => {
-	const dom = create({contentSecurityPolicy: "img-src cid:"});
+	const dom = create({csp: "img-src cid:"});
 	const seen: Array<Partial<RequestEvent>> = [];
 	dom.addEventListener("request", (event) => {
 		seen.push(event);
@@ -92,7 +92,7 @@ test("a listener answers what the policy allows, and says what asked", async () 
 test("an allowed request no listener answers goes to the fetch given, or the runtime's", async () => {
 	const asked: string[] = [];
 	const dom = create({
-		contentSecurityPolicy: "img-src https:",
+		csp: "img-src https:",
 		fetch: async (request) => {
 			asked.push(request.url);
 			return new Response(PNG);
@@ -103,7 +103,7 @@ test("an allowed request no listener answers goes to the fetch given, or the run
 	expect(asked).toEqual(["https://example.com/a.png"]);
 	dom.dispose();
 
-	const runtime = create({contentSecurityPolicy: "img-src data:"});
+	const runtime = create({csp: "img-src data:"});
 	runtime.document.body.innerHTML =
 		`<img src="data:image/png;base64,${Buffer.from(PNG).toString("base64")}">`;
 	expect(await settled(runtime.document.querySelector("img")!)).toBe("loaded");
@@ -111,7 +111,7 @@ test("an allowed request no listener answers goes to the fetch given, or the run
 });
 
 test("a page's own meta policy narrows the program's, and never widens it", async () => {
-	const dom = create({contentSecurityPolicy: "img-src https:"});
+	const dom = create({csp: "img-src https:"});
 	dom.addEventListener("request", (event) => {
 		event.respondWith(new Response(PNG));
 	});
@@ -130,7 +130,7 @@ test("a page's own meta policy narrows the program's, and never widens it", asyn
 
 test("Response.error() or a rejection refuses the request", async () => {
 	const dom = create({
-		contentSecurityPolicy: "img-src https:",
+		csp: "img-src https:",
 		fetch: async () => new Response(PNG),
 	});
 	dom.addEventListener("request", (event) => {
@@ -150,7 +150,7 @@ test("Response.error() or a rejection refuses the request", async () => {
 });
 
 test("respondWith() is called once, during the event", async () => {
-	const dom = create({contentSecurityPolicy: "img-src https:"});
+	const dom = create({csp: "img-src https:"});
 	let late: RequestEvent | null = null;
 	const errors: string[] = [];
 	dom.addEventListener("request", (event) => {
@@ -173,10 +173,7 @@ test("respondWith() is called once, during the event", async () => {
 });
 
 test("a listener added after the constructor's markup hears its images", async () => {
-	const dom = create({
-		html: "<img src=\"cid:a\">",
-		contentSecurityPolicy: "img-src cid:",
-	});
+	const dom = create({html: "<img src=\"cid:a\">", csp: "img-src cid:"});
 	dom.addEventListener("request", (event) => {
 		event.respondWith(new Response(PNG));
 	});
@@ -188,7 +185,7 @@ test("only a document that is a file loads files, whatever the policy", async ()
 	let heard = 0;
 	const dom = create({
 		url: "https://mail.example/message/1",
-		contentSecurityPolicy: "img-src *",
+		csp: "img-src *",
 		fetch: async () => new Response(PNG),
 	});
 	dom.addEventListener("request", () => {
@@ -202,7 +199,7 @@ test("only a document that is a file loads files, whatever the policy", async ()
 	const asked: string[] = [];
 	const local = create({
 		url: "file:///home/me/art/",
-		contentSecurityPolicy: "img-src file:",
+		csp: "img-src file:",
 		fetch: async (request) => {
 			asked.push(request.url);
 			return new Response(PNG);
@@ -289,13 +286,13 @@ test("a program with no policy hears once that markup loads nothing until one al
 	const images = [...dom.document.querySelectorAll("img")];
 	await Promise.all(images.map(settled));
 	expect(logged).toHaveLength(1);
-	expect(logged[0]).toContain("contentSecurityPolicy");
+	expect(logged[0]).toContain("csp");
 	dom.dispose();
 
 	const quiet: string[] = [];
 	const set = new TermDOM({
 		transport: {...transport, logError: (text: string) => quiet.push(text) > 0},
-		contentSecurityPolicy: "img-src 'none'",
+		csp: "img-src 'none'",
 	});
 	set.document.body.innerHTML = "<img src=\"https://example.com/a.png\">";
 	await settled(set.document.querySelector("img")!);

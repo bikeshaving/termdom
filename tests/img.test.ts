@@ -95,7 +95,7 @@ async function mount(
 	}
 	const dom = new TermDOM({
 		transport: terminal.transport,
-		contentSecurityPolicy: "img-src data: https:",
+		csp: "img-src data: https:",
 	});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
@@ -614,7 +614,7 @@ test("with a cell size, an image's pixels and lengths are CSS pixels", async () 
 	const dom = new TermDOM({
 		transport: terminal.transport,
 		cellSize: {width: 7, height: 15},
-		contentSecurityPolicy: "img-src data: https:",
+		csp: "img-src data: https:",
 	});
 	dom.document.body.innerHTML =
 		`<img id=natural src="${wide}">` +

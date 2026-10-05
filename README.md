@@ -77,7 +77,7 @@ setInterval(() => {
   worker, and `<canvas>` has a 2D context and a `"charactergrid"`
   context; pixels are drawn two to a cell with half blocks. Images load
   only what the program's Content Security Policy allows, such as
-  `new TermDOM({contentSecurityPolicy: "img-src https: data:"})`, and a
+  `new TermDOM({csp: "img-src https: data:"})`, and a
   `"request"` listener can answer each load.
 
 ## How it works

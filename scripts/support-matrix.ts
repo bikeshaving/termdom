@@ -1067,7 +1067,7 @@ function apiProbe(
 			const terminal = new MockProcess({cols: 40, rows: 12});
 			const dom = new TermDOM({
 				transport: terminal.transport,
-				contentSecurityPolicy: "img-src data: https:",
+				csp: "img-src data: https:",
 			});
 			try {
 				return {supported: await run(dom), note};

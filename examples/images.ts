@@ -16,7 +16,7 @@ const source = typeof process === "undefined" ? undefined : process.argv[2];
 // command line resolves under it.
 const term = new TermDOM({
   url: pathToFileURL(`${process.cwd()}/`).href,
-  contentSecurityPolicy: "img-src file: data: https:",
+  csp: "img-src file: data: https:",
   async fetch(request) {
     if (request.url.startsWith("file:")) {
       return new Response(await readFile(new URL(request.url)));

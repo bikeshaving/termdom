@@ -31,17 +31,16 @@ such as its working directory.
 ### Loading
 
 Nothing loads unless the program allows it. Which loads a document may
-make is a Content Security Policy, given as the `contentSecurityPolicy`
-option in the syntax of a `Content-Security-Policy` header. An `<img>`
-loads only what `img-src` allows, or `default-src` when there is no
-`img-src`. The default is `default-src 'none'`.
+make is a Content Security Policy, given as the `csp` option in the
+syntax of a `Content-Security-Policy` header. An `<img>` loads only what
+`img-src` allows, or `default-src` when there is no `img-src`. The default is `default-src 'none'`.
 
 ```ts
 // Images from anywhere on the web, and data: URLs.
-new TermDOM({contentSecurityPolicy: "img-src https: data:"});
+new TermDOM({csp: "img-src https: data:"});
 
 // A mail client: attachments by cid:, nothing remote.
-new TermDOM({contentSecurityPolicy: "img-src cid: data:"});
+new TermDOM({csp: "img-src cid: data:"});
 ```
 
 Source expressions match as CSP Level 3 defines them: `'none'`,
@@ -67,7 +66,7 @@ first answer wins. A request no listener answers goes to the `fetch`
 the TermDOM was made with, the runtime's by default.
 
 ```ts
-const term = new TermDOM({contentSecurityPolicy: "img-src cid: https:"});
+const term = new TermDOM({csp: "img-src cid: https:"});
 term.addEventListener("request", (event) => {
   const {request, destination, initiatorType, initiator} = event;
   if (request.url.startsWith("cid:")) {

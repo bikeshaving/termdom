@@ -53,7 +53,7 @@ async function mount(
 	const terminal = new MockProcess({cols, rows});
 	const dom = new TermDOM({
 		transport: terminal.transport,
-		contentSecurityPolicy: "img-src data: https:",
+		csp: "img-src data: https:",
 	});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
