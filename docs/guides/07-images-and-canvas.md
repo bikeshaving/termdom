@@ -59,29 +59,40 @@ policy. The image shows as a box with its `alt` text. When the program
 set no policy, the first blocked load is also reported once where
 uncaught errors go: the transport's log, or the scrollback at exit.
 
-A load the policy allows is a plain `Request`, which the TermDOM
-dispatches as a `"request"` event. A listener answers it with
-`respondWith()`, as a Service Worker answers a fetch event, and the
-first answer wins. A request no listener answers goes to the `fetch`
-the TermDOM was made with, the runtime's by default.
+A load the policy allows goes to the TermDOM as a `"fetch"` event, a
+`FetchEvent`, as a Service Worker hears it, and to the network when no
+listener answers. A listener answers with `respondWith()`, which stops
+the other listeners. `Response.error()`, a promise that rejects, or
+`preventDefault()` without an answer fails the load.
 
 ```ts
 const term = new TermDOM({csp: "img-src cid: https:"});
-term.addEventListener("request", (event) => {
-  const {request, destination, initiatorType, initiator} = event;
-  if (request.url.startsWith("cid:")) {
+term.addEventListener("fetch", (event) => {
+  const {request} = event;
+  if (request.destination === "image" && request.url.startsWith("cid:")) {
     event.respondWith(new Response(attachment(request.url)));
-  } else if (!remoteImagesAllowed(initiator)) {
-    event.respondWith(Response.error());
   }
 });
 ```
 
-The event carries what the request does not: `destination`, the Fetch
-standard's name for what the load is for (`"image"`), `initiatorType`,
-Resource Timing's name for what asked (`"img"`), and `initiator`, the
-element that asked. `Response.error()`, or a promise that rejects,
-fails the request.
+The policy comes first, as a page's policy does before its Service
+Worker: a load the listener answers must be allowed too, so serving
+`cid:` takes both `img-src cid:` and the listener. `request.destination`
+says what the load is for (`"image"`). `handled` settles once the load
+is answered, and `waitUntil()` keeps `dispose()` waiting for work a
+listener goes on with. `dispose()` aborts loads still in flight, which a
+listener sees on `request.signal`.
+
+A redirect, from the network or from a listener's `Response.redirect()`,
+is checked against the policy again and followed on the network, not
+offered to the listeners, as a browser follows one without its Service
+Worker. A violation names the URL the document asked for, never where
+it was redirected. A listener that calls `fetch(event.request)` itself
+follows redirects on its own, as a Service Worker's fetch does.
+
+To decide image by image, such as no remote images in quoted mail,
+change the markup before it is inserted, as a mail client cleans what
+it shows.
 
 The request waits for the script that set the source to finish, so a
 listener added just after the markup sees its images. Only a document
@@ -90,10 +101,10 @@ so untrusted markup in a page at `about:blank` or `https:` cannot read
 local files. Node's `fetch` reads no files, and Bun's and Deno's do, so
 a program that allows local files on every runtime answers them itself.
 
-The page's own `window.fetch` is the `fetch` given, or the runtime's,
-and it resolves a relative URL against the document's, as a browser's
-does. No policy governs it and it dispatches no event: in a terminal
-it is the program, not untrusted markup, that calls it.
+The page's own `window.fetch` is the runtime's, and it resolves a
+relative URL against the document's, as a browser's does. No policy
+governs it and it dispatches no event: in a terminal it is the program,
+not untrusted markup, that calls it.
 
 PNG, JPEG, GIF and BMP decode:
 

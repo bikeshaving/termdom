@@ -50,15 +50,19 @@ import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
 import {
 	answerRequest,
+	type FetchEvent,
 	parseContentSecurityPolicies,
-	type RequestEvent,
 	type RequestPolicy,
 	setResourceLoader,
 } from "./internal/resources.ts";
 
 export type {CellSize} from "./internal/cssom.ts";
 export {transportFromProcess} from "./internal/exchange.ts";
-export {RequestEvent, type RequestEventInit} from "./internal/resources.ts";
+export {
+	ExtendableEvent,
+	FetchEvent,
+	type FetchEventInit,
+} from "./internal/resources.ts";
 export type {
 	ProcessLike,
 	TTYReadStream,
@@ -110,15 +114,10 @@ export interface TermDOMOptions {
 	 * only what `img-src`, or `default-src` without it, allows. A page's own
 	 * `<meta http-equiv="Content-Security-Policy">` can narrow it, never
 	 * widen it. Defaults to `"default-src 'none'"`, so markup loads nothing
-	 * unless the program allows it.
+	 * unless the program allows it. The empty string, like a header with
+	 * no directives, sets no policy and allows every load.
 	 */
 	csp?: string;
-
-	/**
-	 * Where an allowed load no "request" listener answers goes, and what the
-	 * page's own `window.fetch` calls. Defaults to the runtime's `fetch`.
-	 */
-	fetch?: (request: Request) => Promise<Response>;
 }
 
 const DEFAULT_CONTENT_SECURITY_POLICY = "default-src 'none'";
@@ -168,6 +167,8 @@ const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kTransport = Symbol("transport");
 const kExchange = Symbol("exchange");
 const kStaticSibling = Symbol("staticSibling");
+const kLifetimes = Symbol("lifetimes");
+const kLoads = Symbol("loads");
 const kAttachBegun = Symbol("attachBegun");
 type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
 const kLifecycle = Symbol("lifecycle");
@@ -185,7 +186,7 @@ const HELD_ERROR_LIMIT = 50;
 
 /** The events a TermDOM dispatches, by type. */
 export interface TermDOMEventMap {
-	request: RequestEvent;
+	fetch: FetchEvent;
 }
 
 export interface TermDOM {
@@ -233,11 +234,15 @@ export interface TermDOM {
 	// The engine behind renderANSI and print, rebuilt when the width, the
 	// cell or the screen's colors change.
 	[kStaticSibling]: TermDOM | null;
+	// What "fetch" listeners passed to waitUntil(). dispose() waits for it.
+	[kLifetimes]: Set<Promise<void>>;
+	// Aborts the document's loads when the TermDOM is disposed.
+	[kLoads]: AbortController;
 }
 
 /**
- * A document drawn in a terminal. It is the target of a "request" event
- * for each load its markup asks for (see RequestEvent).
+ * A document drawn in a terminal. It is the target of a "fetch" event for
+ * each load its markup asks for that its policy allows (see FetchEvent).
  */
 export class TermDOM extends EventTarget {
 	readonly document: Document;
@@ -269,6 +274,8 @@ export class TermDOM extends EventTarget {
 		this[kAttachReady] = Promise.resolve();
 		this[kAttachBegun] = Promise.resolve();
 		this[kStaticSibling] = null;
+		this[kLifetimes] = new Set();
+		this[kLoads] = new AbortController();
 		this[kTransport] = options.transport ?? transportFromProcess();
 
 		this.window = createWindow(
@@ -278,10 +285,9 @@ export class TermDOM extends EventTarget {
 
 		const document = this.document = this.window.document;
 		// The page's fetch resolves a relative URL against the document, as a
-		// browser's does, and goes to the fetch given or the runtime's.
-		const pageFetch = options.fetch ?? ((request: Request) => fetch(request));
-		this.window.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
-			pageFetch(
+		// browser's does, and goes to the runtime's.
+		this.window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
+			fetch(
 				new Request(
 					typeof input === "string" ? new URL(input, document.baseURI) : input,
 					init,
@@ -293,7 +299,12 @@ export class TermDOM extends EventTarget {
 			policies: parseContentSecurityPolicies(
 				policy ?? DEFAULT_CONTENT_SECURITY_POLICY,
 			),
-			fetch: pageFetch,
+			signal: this[kLoads].signal,
+			extend: (promise) => {
+				const lifetime = promise.then(() => {}, () => {});
+				this[kLifetimes].add(lifetime);
+				void lifetime.then(() => this[kLifetimes].delete(lifetime));
+			},
 			violate: (at, init) => {
 				const window = this.window as unknown as typeof globalThis;
 				dispatchAsUserAgent(
@@ -307,9 +318,13 @@ export class TermDOM extends EventTarget {
 				// nothing until it does.
 				if (policy === undefined && !hinted) {
 					hinted = true;
+					// A URL that is not HTTP(S) is reported as its scheme alone.
+					const blocked = init.blockedURI!.includes(":")
+						? init.blockedURI
+						: `a ${init.blockedURI}: URL`;
 					reportUncaught(
 						this,
-						`TermDOM blocked ${init.blockedURI}. The document's markup ` +
+						`TermDOM blocked ${blocked}. The document's markup ` +
 						"loads nothing until a Content Security Policy allows it: " +
 						"new TermDOM({csp: \"img-src data: https:\"}), for one.",
 					);
@@ -646,9 +661,10 @@ export class TermDOM extends EventTarget {
 
 	/**
 	 * Hand the terminal back. Resolves when every restore has reached the
-	 * transport. The process transport also restores the shell-critical
-	 * modes synchronously, so exiting without awaiting leaves the shell
-	 * usable.
+	 * transport and what "fetch" listeners passed to waitUntil() has
+	 * settled. Loads still in flight are aborted. The process transport
+	 * also restores the shell-critical modes synchronously, so exiting
+	 * without awaiting leaves the shell usable.
 	 */
 	dispose(): Promise<void> {
 		if (this[kLifecycle] === "disposed") {
@@ -657,6 +673,7 @@ export class TermDOM extends EventTarget {
 
 		const wasAttached = isAttached(this);
 		this[kLifecycle] = "disposed";
+		this[kLoads].abort();
 		setDocumentVisible(this.document, false);
 
 		// Frames painted in place, so nothing reached the scrollback. Write the
@@ -703,7 +720,8 @@ export class TermDOM extends EventTarget {
 		this[kLayout].dispose();
 		clearHighlights(this.document);
 		disconnectObservers(this.document);
-		return this[kExchange].flush();
+		return Promise.all([this[kExchange].flush(), ...this[kLifetimes]])
+			.then(() => {});
 	}
 }
 

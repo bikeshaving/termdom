@@ -58,6 +58,56 @@ test("a scheme matches itself and its secure counterpart", () => {
 	expect(allows("img-src CID:", "cid:logo@example.com")).toBe(true);
 	expect(allows("img-src http:", "https://cdn.example/a.png")).toBe(true);
 	expect(allows("img-src https:", "http://cdn.example/a.png")).toBe(false);
+	// ws also matches the http schemes.
+	expect(allows("img-src ws:", "http://cdn.example/a.png")).toBe(true);
+	expect(allows("img-src ws:", "https://cdn.example/a.png")).toBe(true);
+	expect(allows("img-src wss:", "http://cdn.example/a.png")).toBe(false);
+});
+
+test("a path is compared piece by piece, each piece percent-decoded", () => {
+	expect(
+		allows(
+			"img-src https://cdn.example/a%20b/",
+			"https://cdn.example/a b/c.png",
+		),
+	)
+		.toBe(true);
+	// An encoded slash is part of a piece, not a separator.
+	expect(allows("img-src https://c.example/a/b", "https://c.example/a%2Fb"))
+		.toBe(false);
+	// A malformed escape compares as itself rather than failing.
+	expect(
+		allows(
+			"img-src https://cdn.example/images/",
+			"https://cdn.example/images/%E0.png",
+		),
+	)
+		.toBe(true);
+	expect(allows("img-src https://cdn.example/%E0", "https://cdn.example/%E0"))
+		.toBe(true);
+	expect(allows("img-src https://cdn.example/", "https://cdn.example/a/b.png"))
+		.toBe(true);
+});
+
+test("a redirect's target is matched without its path", () => {
+	const policies =
+		parseContentSecurityPolicies("img-src https://cdn.example/img/");
+	const self = new URL("https://mail.example/");
+	const elsewhere = new URL("https://cdn.example/other/a.png");
+	expect(getBlockingDirective(policies, elsewhere, "image", self, 0))
+		.not.toBeNull();
+	expect(getBlockingDirective(policies, elsewhere, "image", self, 1))
+		.toBeNull();
+	expect(
+		getBlockingDirective(
+			policies,
+			new URL("https://evil.example/img/a.png"),
+			"image",
+			self,
+			1,
+		),
+	)
+		.not.toBeNull();
 });
 
 test("a host matches itself, a wildcard its subdomains, and a port or path narrows it", () => {
@@ -131,6 +181,29 @@ test("'self' matches the document's origin and its upgrade, and nothing for an o
 	expect(allows("img-src 'self'", "file:///a.png", "file:///home/me/")).toBe(
 		false,
 	);
+	// The same host over wss, and the port must agree.
+	expect(
+		allows("img-src 'self'", "wss://mail.example/a", "https://mail.example/"),
+	)
+		.toBe(true);
+	expect(
+		allows(
+			"img-src 'self'",
+			"https://mail.example/a.png",
+			"http://mail.example:8080/",
+		),
+	)
+		.toBe(false);
+	expect(
+		allows(
+			"img-src 'self'",
+			"https://mail.example:8080/a.png",
+			"http://mail.example:8080/",
+		),
+	)
+		.toBe(true);
+	// An https document does not allow http from its own host.
+	expect(allows("img-src 'self'", "http://mail.example/a.png")).toBe(false);
 });
 
 test("every policy in a list must allow a load", () => {
