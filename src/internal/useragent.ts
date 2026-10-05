@@ -137,8 +137,12 @@ export const UA_DOCUMENT_STYLES = `
 		background-color: Canvas;
 	}
 	:popover-open::backdrop { background-color: transparent; }
-	details > summary:first-of-type::before { content: "▸ "; }
-	details[open] > summary:first-of-type::before { content: "▾ "; }
+	details > summary:first-of-type {
+		display: list-item;
+		counter-increment: list-item 0;
+		list-style: disclosure-closed inside;
+	}
+	details[open] > summary:first-of-type { list-style-type: disclosure-open; }
 	legend::before, legend::after { content: " "; white-space: pre; }
 	/*
 	 * Focus on an element that edits text shows as the terminal cursor.
