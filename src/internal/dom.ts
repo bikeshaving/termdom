@@ -29905,12 +29905,17 @@ function getModifiedPoint(
 		// just mutated has to be laid out first.
 		layout.performLayout();
 	}
-	// A caret in an editing host stays in it, as it does in a browser.
+	// A caret in an editing host stays in it, as it does in a browser. Moving
+	// between lines, it stops only on text it can edit, so a line that is
+	// all contenteditable=false island is no stop. Along a line, the island
+	// stays in the run, so stepping over it is one step.
 	const host = getEditingHost(from[0] as unknown as globalThis.Node);
 	let nodes = getSelectionTextNodes(document, attached);
 	if (host !== null) {
 		nodes = nodes.filter((node) =>
-			host.contains(node as unknown as globalThis.Node),
+			granularity === "line"
+				? getEditingHost(node as unknown as globalThis.Node) === host
+				: host.contains(node as unknown as globalThis.Node),
 		);
 	}
 	const run = flattenSelectionText(nodes);
