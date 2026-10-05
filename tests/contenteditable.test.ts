@@ -870,3 +870,26 @@ test("an edit and what answers it in a microtask are one frame", async () => {
 	expect(terminal.getPlainText()).toContain(" abcd");
 	dom.dispose();
 });
+
+test("the arrow keys step over a contenteditable=false island and stop only on editable text", async () => {
+	const {document, host, type, dom} = await withHost(
+		"<div contenteditable><div>Thanks!</div><div><br></div>" +
+		"<details open><summary contenteditable=\"false\">Ada wrote</summary>" +
+		"<div>On Monday</div><div>&gt; Hi</div></details></div>",
+	);
+	const first = host.firstElementChild.firstChild;
+	host.focus();
+	document.getSelection().setBaseAndExtent(first, 0, first, 0);
+	await nextFrame(dom);
+	const line = () => {
+		const node = document.getSelection().focusNode;
+		return (node.nodeType === 1 ? node : node.parentElement).textContent;
+	};
+	const seen: string[] = [];
+	for (const key of ["\x1b[B", "\x1b[B", "\x1b[B", "\x1b[A", "\x1b[A"]) {
+		await type(key);
+		seen.push(line());
+	}
+	expect(seen).toEqual(["", "On Monday", "> Hi", "On Monday", ""]);
+	dom.dispose();
+});
