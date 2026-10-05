@@ -1000,24 +1000,51 @@ export interface Extent {
 	// ones, and display:none ones, whose result.top is never updated. The
 	// children are sorted by extent top only when this is 0.
 	unstackedChildren: number;
+	// Where the box and its scrollable overflow reach, from the box's own
+	// origin: its border box, and past it the lines it measures and the
+	// boxes it holds, unless it clips them (css-overflow-3 §2.2). A fixed
+	// box moves with the viewport, so it is no one's overflow.
+	overflowRight: number;
+	overflowBottom: number;
 }
 
 // Written after every solve, and read by the painter's row culling for
 // every child, so the records are kept and rewritten rather than remade.
 const extents = new WeakMap<LayoutNode, Extent>();
 
-function computePaintExtents(node: LayoutNode, originTop: number): Extent {
+function computePaintExtents(
+	layout: Layout,
+	node: LayoutNode,
+	originTop: number,
+): Extent {
 	const top = originTop + node.result.top;
 	let extent = extents.get(node);
 	if (extent === undefined) {
-		extent = {top, bottom: top, unstackedChildren: 0};
+		extent = {
+			top,
+			bottom: top,
+			unstackedChildren: 0,
+			overflowRight: 0,
+			overflowBottom: 0,
+		};
 		extents.set(node, extent);
 	}
 	let highest = top;
 	let lowest = top + node.getComputedHeight();
 	let unstacked = 0;
+	let right = node.getComputedWidth();
+	let bottom = node.getComputedHeight();
+	const lines = node.style.clipsOverflow || node.measure === null
+		? undefined
+		: getMeasuredLines(layout, node);
+	if (lines !== undefined) {
+		right = Math.max(
+			right,
+			node.style.border.left + node.result.padding.left + lines.maxLineWidth,
+		);
+	}
 	for (const child of node.children) {
-		const childExtent = computePaintExtents(child, top);
+		const childExtent = computePaintExtents(layout, child, top);
 		if (
 			child.style.positionType !== "static" ||
 			child.style.displayType === "none"
@@ -1030,10 +1057,20 @@ function computePaintExtents(node: LayoutNode, originTop: number): Extent {
 		if (childExtent.bottom > lowest) {
 			lowest = childExtent.bottom;
 		}
+		if (
+			!node.style.clipsOverflow &&
+			child.style.displayType !== "none" &&
+			child.style.positionType !== "fixed"
+		) {
+			right = Math.max(right, child.result.left + childExtent.overflowRight);
+			bottom = Math.max(bottom, child.result.top + childExtent.overflowBottom);
+		}
 	}
 	extent.top = highest;
 	extent.bottom = lowest;
 	extent.unstackedChildren = unstacked;
+	extent.overflowRight = right;
+	extent.overflowBottom = bottom;
 	return extent;
 }
 
@@ -1144,6 +1181,10 @@ function styleLayoutNodeProperties(
 	}
 
 	const display = getLayoutDisplay(element);
+	const overflow = getComputedValue(element, "overflow");
+	style.clipsOverflow =
+		(getComputedValue(element, "overflow-x") || overflow) !== "visible" ||
+		(getComputedValue(element, "overflow-y") || overflow) !== "visible";
 	// A blockified inline's width applies like any block's. Forced
 	// auto, `<span style="width:30ch">` in a flex row came out as wide as its
 	// text.
@@ -1427,7 +1468,6 @@ function styleLayoutNodeProperties(
 }
 
 const kPass = Symbol("pass");
-const kScrollExtents = Symbol("scroll extents");
 const kTouched = Symbol("touched");
 const kPositionedElements = Symbol("positionedElements");
 
@@ -3543,7 +3583,7 @@ function collectLeaves(
 							: Number.NaN,
 						contentHeightMode === "definite" ? contentHeight : Number.NaN,
 					);
-					computePaintExtents(independentFormattingContext, 0);
+					computePaintExtents(layout, independentFormattingContext, 0);
 					finalContentWidth = independentFormattingContext.getComputedWidth();
 					finalContentHeight = independentFormattingContext.getComputedHeight();
 				} else {
@@ -5163,14 +5203,6 @@ export interface Layout {
 	// after an invalidation of the whole layout.
 	[kTouched]: Set<Node> | "all";
 
-	// Each scroll container's extent as getScrollExtent measured it, until
-	// a pass that changes a box, or a restyle, which can change a box's
-	// overflow without changing a box.
-	[kScrollExtents]: WeakMap<
-		Element,
-		{width: number | null; height: number} | null
-	>;
-
 	// A SUPERSET hint. An element whose position went static without a
 	// restyle reaching its node is still listed, so every reader checks
 	// isPositioned too and uses the set only for the enumeration it saves.
@@ -5240,7 +5272,6 @@ export class Layout {
 	constructor(window: Window, width: number, height: number) {
 		this[kMoved] = false;
 		this[kPass] = 0;
-		this[kScrollExtents] = new WeakMap();
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
 		this[kRectTextIndices] = new WeakMap<
@@ -5329,9 +5360,6 @@ export class Layout {
 		if (!this[kNodeMap].has(this[kRootElement])) {
 			addNode(this, this[kRootElement], this[kInitialContainingBlock]);
 		}
-		if (this[kRestyled].size > 0) {
-			this[kScrollExtents] = new WeakMap();
-		}
 		// The cascade has finished for this frame, so the boxes it unsettled
 		// can be resolved against the current styles.
 		applyRestyles(this);
@@ -5345,8 +5373,6 @@ export class Layout {
 		) {
 			return;
 		}
-
-		this[kScrollExtents] = new WeakMap();
 
 		// Callers may run synchronously after a DOM removal, before the
 		// MutationObserver microtask, and a detached run head measured then has
@@ -5419,7 +5445,7 @@ export class Layout {
 		// viewport units against it.
 		const root = this[kInitialContainingBlock];
 		root.performLayout(root.style.width.value, root.style.height.value);
-		computePaintExtents(root, 0);
+		computePaintExtents(this, root, 0);
 	}
 
 	dispose(): void {
@@ -5619,13 +5645,7 @@ export class Layout {
 	getScrollExtent(
 		element: Element,
 	): {width: number | null; height: number} | null {
-		const extents = this[kScrollExtents];
-		if (extents.has(element)) {
-			return extents.get(element)!;
-		}
-		const extent = measureScrollExtent(this, element);
-		extents.set(element, extent);
-		return extent;
+		return measureScrollExtent(this, element);
 	}
 
 	offsetSize(element: Element): {width: number; height: number} {
@@ -7430,7 +7450,8 @@ function getDocumentContentHeight(engine: Layout): number {
 // than itself, and a fixed box moves with the viewport, not in it.
 function getDocumentOverflowBottom(engine: Layout): number {
 	const root = engine[kNodeMap].get(engine[kRootElement]);
-	return root ? Math.ceil(getOverflowExtent(engine, root, 0, 0).bottom) : 0;
+	const extent = root ? extents.get(root) : undefined;
+	return extent ? Math.ceil(root!.result.top + extent.overflowBottom) : 0;
 }
 
 function measureScrollExtent(
@@ -7460,15 +7481,15 @@ function measureScrollExtent(
 		if (child.style.displayType === "none") {
 			continue;
 		}
-		const reach = getOverflowExtent(layout, child, 0, 0);
+		const reach = extents.get(child)!;
 		if (right !== null) {
 			right =
 				child.measure !== null &&
 					getMeasuredLines(layout, child) === undefined
 					? null
-					: Math.max(right, reach.right);
+					: Math.max(right, child.result.left + reach.overflowRight);
 		}
-		bottom = Math.max(bottom, reach.bottom);
+		bottom = Math.max(bottom, child.result.top + reach.overflowBottom);
 	}
 	const clientWidth =
 		layoutNode.getComputedWidth() -
@@ -7496,50 +7517,6 @@ function measureScrollExtent(
 	};
 }
 
-// Where a box's border box and its scrollable overflow reach, relative to
-// its parent's origin: its own box, and past it the overflow of the boxes
-// it holds, unless it clips them (css-overflow-3 §2.2).
-function getOverflowExtent(
-	layout: Layout,
-	node: LayoutNode,
-	originLeft: number,
-	originTop: number,
-): {right: number; bottom: number} {
-	const left = originLeft + node.result.left;
-	const top = originTop + node.result.top;
-	const extent = {
-		right: left + node.getComputedWidth(),
-		bottom: top + node.getComputedHeight(),
-	};
-	if (clipsOverflow(node)) {
-		return extent;
-	}
-	// Lines that do not wrap run past their box.
-	const lines = node.measure === null
-		? undefined
-		: getMeasuredLines(layout, node);
-	if (lines !== undefined) {
-		extent.right = Math.max(
-			extent.right,
-			left +
-			node.style.border.left +
-			node.result.padding.left +
-				lines.maxLineWidth,
-		);
-	}
-	for (const child of node.children) {
-		if (
-			child.style.displayType === "none" || child.style.positionType === "fixed"
-		) {
-			continue;
-		}
-		const reach = getOverflowExtent(layout, child, left, top);
-		extent.right = Math.max(extent.right, reach.right);
-		extent.bottom = Math.max(extent.bottom, reach.bottom);
-	}
-	return extent;
-}
-
 // The lines a measured node broke: an anonymous run's, or those of the
 // element whose own box is the run.
 function getMeasuredLines(
@@ -7553,18 +7530,6 @@ function getMeasuredLines(
 	return node.owner === null
 		? undefined
 		: runBreakResult(layout, node.owner as Node);
-}
-
-function clipsOverflow(node: LayoutNode): boolean {
-	const element = node.owner as Element | null;
-	if (element === null || element.nodeType !== element.ELEMENT_NODE) {
-		return false;
-	}
-	const overflow = getComputedValue(element, "overflow");
-	return (
-		(getComputedValue(element, "overflow-x") || overflow) !== "visible" ||
-		(getComputedValue(element, "overflow-y") || overflow) !== "visible"
-	);
 }
 
 function getContentBoxSize(

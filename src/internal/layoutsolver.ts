@@ -176,6 +176,9 @@ export interface Style {
 	positionType: PositionType;
 	flexWrap: Wrap;
 	displayType: DisplayType;
+	// Whether the box clips what overflows it, so its scrollable overflow
+	// stops at its own edges (css-overflow-3 §2.2).
+	clipsOverflow: boolean;
 
 	gap: {column: number; row: number};
 
@@ -716,6 +719,7 @@ export function createStyle(): Style {
 		positionType: "relative",
 		flexWrap: "nowrap",
 		displayType: "flex",
+		clipsOverflow: false,
 
 		gap: {column: 0, row: 0},
 
