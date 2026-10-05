@@ -1427,6 +1427,7 @@ function styleLayoutNodeProperties(
 }
 
 const kPass = Symbol("pass");
+const kScrollExtents = Symbol("scroll extents");
 const kPositionedElements = Symbol("positionedElements");
 
 // Only an out-of-flow box is asked where it would have been, so only it
@@ -5125,6 +5126,14 @@ export interface Layout {
 
 	[kInvalidatedNodes]: Set<Node>;
 
+	// Each scroll container's extent as getScrollExtent measured it, until
+	// a pass that changes a box, or a restyle, which can change a box's
+	// overflow without changing a box.
+	[kScrollExtents]: WeakMap<
+		Element,
+		{width: number | null; height: number} | null
+	>;
+
 	// A SUPERSET hint. An element whose position went static without a
 	// restyle reaching its node is still listed, so every reader checks
 	// isPositioned too and uses the set only for the enumeration it saves.
@@ -5194,6 +5203,7 @@ export class Layout {
 	constructor(window: Window, width: number, height: number) {
 		this[kMoved] = false;
 		this[kPass] = 0;
+		this[kScrollExtents] = new WeakMap();
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
 		this[kRectTextIndices] = new WeakMap<
@@ -5281,6 +5291,9 @@ export class Layout {
 		if (!this[kNodeMap].has(this[kRootElement])) {
 			addNode(this, this[kRootElement], this[kInitialContainingBlock]);
 		}
+		if (this[kRestyled].size > 0) {
+			this[kScrollExtents] = new WeakMap();
+		}
 		// The cascade has finished for this frame, so the boxes it unsettled
 		// can be resolved against the current styles.
 		applyRestyles(this);
@@ -5294,6 +5307,8 @@ export class Layout {
 		) {
 			return;
 		}
+
+		this[kScrollExtents] = new WeakMap();
 
 		// Callers may run synchronously after a DOM removal, before the
 		// MutationObserver microtask, and a detached run head measured then has
@@ -5565,65 +5580,13 @@ export class Layout {
 	getScrollExtent(
 		element: Element,
 	): {width: number | null; height: number} | null {
-		const layoutNode = this[kNodeMap].get(element);
-		if (!layoutNode) {
-			return null;
+		const extents = this[kScrollExtents];
+		if (extents.has(element)) {
+			return extents.get(element)!;
 		}
-		const box = getBoxModel(element);
-		let right: number | null = 0;
-		let bottom = 0;
-		if (layoutNode.measure !== null) {
-			// Its own lines are its content.
-			const lines = getMeasuredLines(this, layoutNode);
-			if (lines === undefined) {
-				return null;
-			}
-			right =
-				(box.borderLeftWidth || 0) +
-				(box.paddingLeft || 0) +
-				lines.maxLineWidth;
-			bottom =
-				(box.borderTopWidth || 0) + (box.paddingTop || 0) + lines.totalHeight;
-		}
-		for (const child of layoutNode.children) {
-			// A display:none placeholder holds a stale layout.
-			if (child.style.displayType === "none") {
-				continue;
-			}
-			const reach = getOverflowExtent(this, child, 0, 0);
-			if (right !== null) {
-				right =
-					child.measure !== null &&
-						getMeasuredLines(this, child) === undefined
-						? null
-						: Math.max(right, reach.right);
-			}
-			bottom = Math.max(bottom, reach.bottom);
-		}
-		const clientWidth =
-			layoutNode.getComputedWidth() -
-			(box.borderLeftWidth || 0) -
-			(box.borderRightWidth || 0);
-		const clientHeight =
-			layoutNode.getComputedHeight() -
-			(box.borderTopWidth || 0) -
-			(box.borderBottomWidth || 0);
-		return {
-			width: right === null
-				? null
-				: Math.round(
-					Math.max(
-						clientWidth,
-						right - (box.borderLeftWidth || 0) + (box.paddingRight || 0),
-					),
-				),
-			height: Math.round(
-				Math.max(
-					clientHeight,
-					bottom - (box.borderTopWidth || 0) + (box.paddingBottom || 0),
-				),
-			),
-		};
+		const extent = measureScrollExtent(this, element);
+		extents.set(element, extent);
+		return extent;
 	}
 
 	offsetSize(element: Element): {width: number; height: number} {
@@ -7426,6 +7389,69 @@ function getDocumentContentHeight(engine: Layout): number {
 function getDocumentOverflowBottom(engine: Layout): number {
 	const root = engine[kNodeMap].get(engine[kRootElement]);
 	return root ? Math.ceil(getOverflowExtent(engine, root, 0, 0).bottom) : 0;
+}
+
+function measureScrollExtent(
+	layout: Layout,
+	element: Element,
+): {width: number | null; height: number} | null {
+	const layoutNode = layout[kNodeMap].get(element);
+	if (!layoutNode) {
+		return null;
+	}
+	const box = getBoxModel(element);
+	let right: number | null = 0;
+	let bottom = 0;
+	if (layoutNode.measure !== null) {
+		// Its own lines are its content.
+		const lines = getMeasuredLines(layout, layoutNode);
+		if (lines === undefined) {
+			return null;
+		}
+		right =
+			(box.borderLeftWidth || 0) + (box.paddingLeft || 0) + lines.maxLineWidth;
+		bottom =
+			(box.borderTopWidth || 0) + (box.paddingTop || 0) + lines.totalHeight;
+	}
+	for (const child of layoutNode.children) {
+		// A display:none placeholder holds a stale layout.
+		if (child.style.displayType === "none") {
+			continue;
+		}
+		const reach = getOverflowExtent(layout, child, 0, 0);
+		if (right !== null) {
+			right =
+				child.measure !== null &&
+					getMeasuredLines(layout, child) === undefined
+					? null
+					: Math.max(right, reach.right);
+		}
+		bottom = Math.max(bottom, reach.bottom);
+	}
+	const clientWidth =
+		layoutNode.getComputedWidth() -
+		(box.borderLeftWidth || 0) -
+		(box.borderRightWidth || 0);
+	const clientHeight =
+		layoutNode.getComputedHeight() -
+		(box.borderTopWidth || 0) -
+		(box.borderBottomWidth || 0);
+	return {
+		width: right === null
+			? null
+			: Math.round(
+				Math.max(
+					clientWidth,
+					right - (box.borderLeftWidth || 0) + (box.paddingRight || 0),
+				),
+			),
+		height: Math.round(
+			Math.max(
+				clientHeight,
+				bottom - (box.borderTopWidth || 0) + (box.paddingBottom || 0),
+			),
+		),
+	};
 }
 
 // Where a box's border box and its scrollable overflow reach, relative to
