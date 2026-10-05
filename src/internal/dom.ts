@@ -314,6 +314,7 @@ const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kScreen = Symbol("screen");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
+const kPendingEditingReveal = Symbol("pendingEditingReveal");
 const kReportUncaught = Symbol("reportUncaught");
 
 /**
@@ -24577,6 +24578,8 @@ export interface Document {
 	// The text control whose caret the next frame reveals. The last edit
 	// before the frame wins.
 	[kPendingCaretReveal]: TextControlOrSelect | null;
+	// The editing host whose caret the next frame reveals, after its layout.
+	[kPendingEditingReveal]: globalThis.Element | null;
 	[kImplementation]: DOMImplementation | null;
 	[kDocumentURL]: string;
 	[kMode]: "no-quirks" | "quirks" | "limited-quirks";
@@ -28815,15 +28818,10 @@ function scheduleSelectionChange(document: Document): void {
 	// A selection move is not a mutation and no record names the rows it
 	// covers, so the repaint is requested here, before the coalescing guard
 	// below. That guard drops the second move in a task but not its paint.
-	// An idle render loop lays out and paints at once, so the request waits
-	// for the code that moved the selection, which is often an edit with
-	// more to change, and joins the frame those changes ask for.
 	const attached = getAttachedDocument(document);
 	if (attached !== undefined) {
 		attached[kScreen].invalidate();
-		queueMicrotask(() => {
-			void attached[kRender]();
-		});
+		void attached[kRender]();
 	}
 	if (document[kSelectionChangeScheduled]) {
 		return;
@@ -33360,6 +33358,7 @@ export function attachDocument(
 	attached[kExchange] = exchange;
 	attached[kScreen] = screen;
 	attached[kPendingCaretReveal] = null;
+	attached[kPendingEditingReveal] = null;
 	registerCellPixels(attached, () => screen.cellPixels);
 	for (const type of ["input", "select", "change", "selectionchange"]) {
 		exchange.addEventListener(type, onTextControlEditEvent);
@@ -33776,9 +33775,26 @@ export function flushStyle(node: globalThis.Node): boolean {
  */
 export function revealEditingCaret(host: globalThis.Element): void {
 	const attached = getAttachedDocument(host as unknown as Node);
-	const selection = attached?.getSelection();
+	if (attached === undefined) {
+		return;
+	}
+	// In the next frame, as a browser does, once the layout the edit and
+	// whatever answers it ask for has been done once.
+	attached[kPendingEditingReveal] = host;
+	void attached[kRender]();
+}
+
+/** Scroll to the caret an edit or a caret motion left, if one is due. */
+export function revealPendingEditingCaret(document: globalThis.Document): void {
+	const attached = document as Document;
+	const host = attached[kPendingEditingReveal];
+	if (host === null) {
+		return;
+	}
+	attached[kPendingEditingReveal] = null;
+	const selection = attached.getSelection();
 	const node = selection?.focusNode;
-	if (attached === undefined || !node || !host.contains(node)) {
+	if (!node || !host.contains(node)) {
 		return;
 	}
 	flushLayout(host);

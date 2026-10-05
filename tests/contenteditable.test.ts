@@ -848,3 +848,25 @@ test("a selection moved in the middle of an edit paints with the edit, not befor
 	expect(terminal.getPlainText()).toContain("axybc");
 	dom.dispose();
 });
+
+test("an edit and what answers it in a microtask are one frame", async () => {
+	const {terminal, dom, host, type} =
+		await withHost("<div contenteditable><div>abc</div></div>");
+	const line = host.firstElementChild;
+	const text = line.firstChild;
+	host.focus();
+	host.ownerDocument.getSelection().setBaseAndExtent(text, 3, text, 3);
+	await nextFrame(dom);
+	host.addEventListener("input", () => {
+		queueMicrotask(() => {
+			line.setAttribute("data-answered", "yes");
+			line.style.paddingLeft = "1ch";
+			line.scrollIntoView({block: "nearest"});
+		});
+	});
+	const written = captureRawOutput(terminal);
+	await type("d");
+	expect(written().split("\x1b[?2026h").length - 1).toBe(1);
+	expect(terminal.getPlainText()).toContain(" abcd");
+	dom.dispose();
+});

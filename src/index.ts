@@ -740,6 +740,10 @@ async function render(termDOM: TermDOM): Promise<void> {
 	let framesAwaiting = false;
 	const frames = (async () => {
 		try {
+			// After the task that asked, and every microtask it queued, as a
+			// browser renders: an edit and whatever answers it in its own
+			// microtasks are one frame, not a frame of the half-done edit.
+			await new Promise((resolve) => setTimeout(resolve, 0));
 			do {
 				termDOM[kRenderQueued] = false;
 				if (termDOM[kLifecycle] === "attaching") {
@@ -967,6 +971,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	DOM.clampScrollOffsets(termDOM.document);
 
 	DOM.revealPendingCaret(termDOM.document);
+	DOM.revealPendingEditingCaret(termDOM.document);
 
 	// Nothing this frame could paint differs from the screen, so skip the
 	// paint.
