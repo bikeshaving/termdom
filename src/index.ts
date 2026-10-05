@@ -218,7 +218,7 @@ export class TermDOM {
 		this[kScreen] = new Screen(
 			this[kTransport].rows,
 			this[kTransport].cols,
-			this[kTransport].colorDepth,
+			this[kTransport].colorDepth ?? "256",
 		);
 
 		const exchange = this[kExchange] = new Exchange(
@@ -319,7 +319,7 @@ export class TermDOM {
 		// first frame.
 		if (rebinding) {
 			this[kTransport] = transport;
-			this[kScreen].rebind(transport.colorDepth);
+			this[kScreen].rebind(transport.colorDepth ?? "256");
 			this[kExchange].rebind(transport);
 		}
 		// Resolves when the first frame has been written. The negotiations'
@@ -359,6 +359,17 @@ export class TermDOM {
 					void render(this);
 				}
 			});
+			// What colors the terminal shows, when the transport leaves it to
+			// the terminal to say. Asked before DA1, like the background.
+			const depthSettled = this[kTransport].colorDepth === undefined
+				? this[kExchange].negotiateColorDepth().then((depth) => {
+					if (isAttached(this) && depth !== this[kScreen].colorDepth) {
+						this[kScreen].rebind(depth);
+						DOM.syncMediaQueries(this.document);
+						void render(this);
+					}
+				})
+				: Promise.resolve();
 			// A terminal answers in the order it was asked, so once it answers
 			// DA1, one that said nothing of its background never will.
 			const answered = this[kExchange].queryDeviceAttributes();
@@ -368,7 +379,10 @@ export class TermDOM {
 			const cursor = this[kExchange].cursorDetectionPending;
 			const schemeSettled = (
 				cursor === null ? answered : Promise.race([answered, cursor])
-			).then(() => this[kExchange].abandonColorSchemeQuery());
+			).then(() => {
+				this[kExchange].abandonColorSchemeQuery();
+				this[kExchange].abandonColorDepthQuery();
+			});
 			void this[kExchange].negotiateBidi();
 			void this[kExchange].negotiateGraphemeClusters();
 			// Math draws its bars as overlines once the terminal has agreed
@@ -394,12 +408,14 @@ export class TermDOM {
 				}
 				void render(this);
 			});
-			// The first frame is drawn in the colors the terminal chose, and,
-			// when the cell sizes the page, at the size it reported. Input does
-			// not wait for either.
-			this[kFirstFrame] = this[kMeasuresCell]
-				? Promise.all([schemeSettled, cellAnswered]).then(() => {})
-				: schemeSettled;
+			// The first frame is drawn in the colors the terminal chose and can
+			// show, and, when the cell sizes the page, at the size it reported.
+			// Input does not wait for any of them.
+			this[kFirstFrame] = Promise.all([
+				schemeSettled,
+				depthSettled,
+				...(this[kMeasuresCell] ? [cellAnswered] : []),
+			]).then(() => {});
 			if (this[kMeasuresCell]) {
 				// A font zoom resizes the grid, and the cell with it. The page
 				// hears of it once, when the cell is known.

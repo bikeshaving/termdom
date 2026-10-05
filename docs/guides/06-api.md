@@ -183,7 +183,7 @@ test harness:
 interface TerminalTransport {
 	readonly cols: number; // live: always the current size
 	readonly rows: number;
-	readonly colorDepth: "ansi" | "256" | "rgb";
+	readonly colorDepth?: "ansi" | "256" | "rgb"; // absent: ask the terminal
 	readonly interactive: boolean; // false: plain line output (a pipe)
 	// Optional. Takes an error's text somewhere the frame does not share;
 	// true when it did. The engine keeps what it cannot place and prints
@@ -227,8 +227,9 @@ const term = new TermDOM({transport: transportFromProcess(process)});
 - `options.sharesScreen` — overrides `sharesScreen`, which defaults to
   true for the global process (it sits below a shell) and false for
   anything else.
-- `options.colorDepth` — `"rgb"`, `"256"` or `"ansi"`; `"rgb"` when
-  absent.
+- `options.colorDepth` — `"rgb"`, `"256"` or `"ansi"`. When absent,
+  TermDOM asks the terminal: 24-bit when it says it has it or is tmux,
+  256 otherwise, as the rendering guide describes.
 - `options.colorScheme` — `"light"` or `"dark"`, for the frames before
   the terminal reports its background.
 

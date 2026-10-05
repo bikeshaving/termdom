@@ -33,9 +33,13 @@ the depth the terminal has:
 | `256` | The nearest of the 256-color palette: the 6×6×6 cube, or the gray ramp for grays |
 | `ansi` | The nearest of the eight basic colors, by whether each channel is above half |
 
-The process transport sends 24-bit color unless it is told otherwise,
-with `transportFromProcess(process, {colorDepth})`. A transport of your
-own sets it directly.
+Unless told the depth, TermDOM asks the terminal when it attaches, and
+uses 24-bit color when the terminal says it has it, or when the
+terminal is tmux. Everything else gets 256 colors, which every terminal
+in use draws. To name the depth instead, pass
+`transportFromProcess(process, {colorDepth})`, or set `colorDepth` on a
+transport of your own. A page reads the depth in use from
+`screen.colorDepth` (24, 8 or 4) and the `color-index` media feature.
 
 A cell has no alpha. A color with alpha `0` paints nothing, and any
 other alpha paints the color as if opaque, except in a gradient, where
