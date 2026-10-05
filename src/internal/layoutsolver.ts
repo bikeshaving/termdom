@@ -434,6 +434,12 @@ function getCacheSlot(
 const kMeasure = Symbol("measure");
 const kStaticPosition = Symbol("staticPosition");
 
+// While a pass runs, the boxes that are or hold an absolutely or fixed
+// positioned box. Every container searches its boxes for those it
+// places, and nested containers search the same boxes again, so a
+// search skips what holds none. Outside a pass it searches everything.
+let outOfFlowHolders: WeakSet<LayoutNode> | null = null;
+
 export interface LayoutNode {
 	[kMeasure]: Measure | null;
 	[kStaticPosition]: StaticPosition | null;
@@ -572,16 +578,22 @@ export class LayoutNode {
 		}
 		const availableHeight = isDefined(height) ? height : ownerHeight;
 
-		layoutNode(
-			this,
-			availableWidth,
-			availableHeight,
-			widthSpace,
-			isDefined(availableHeight) ? "definite" : "indefinite",
-			ownerWidth,
-			ownerHeight,
-			true,
-		);
+		const enclosing = outOfFlowHolders;
+		outOfFlowHolders = indexOutOfFlowHolders(this);
+		try {
+			layoutNode(
+				this,
+				availableWidth,
+				availableHeight,
+				widthSpace,
+				isDefined(availableHeight) ? "definite" : "indefinite",
+				ownerWidth,
+				ownerHeight,
+				true,
+			);
+		} finally {
+			outOfFlowHolders = enclosing;
+		}
 
 		roundToGrid(this, 0, 0);
 		this.stale = false;
@@ -1546,6 +1558,25 @@ function layoutFlexbox(
 	}
 }
 
+function indexOutOfFlowHolders(root: LayoutNode): WeakSet<LayoutNode> {
+	const holders = new WeakSet<LayoutNode>();
+	const visit = (node: LayoutNode): boolean => {
+		const type = node.style.positionType;
+		let holds = type === "absolute" || type === "fixed";
+		for (const child of node.children) {
+			if (child.style.displayType !== "none" && visit(child)) {
+				holds = true;
+			}
+		}
+		if (holds) {
+			holders.add(node);
+		}
+		return holds;
+	};
+	visit(root);
+	return holders;
+}
+
 // An out-of-flow box is placed by its containing block, not by the box
 // that contains it, so the search reaches through in-flow boxes and
 // stops at any containing block. Whatever is under that one is its to
@@ -1557,7 +1588,10 @@ function getOutOfFlowDescendants(
 	const found: LayoutNode[] = [];
 	const enter = (parent: LayoutNode): void => {
 		for (const child of parent.children) {
-			if (child.style.displayType === "none") {
+			if (
+				child.style.displayType === "none" ||
+				(outOfFlowHolders !== null && !outOfFlowHolders.has(child))
+			) {
 				continue;
 			}
 			const type = child.style.positionType;
