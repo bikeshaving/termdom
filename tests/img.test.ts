@@ -570,14 +570,34 @@ test("decode() settles when src changes, and the current image stays up meanwhil
 	});
 	expect(outcome).toBe("EncodingError");
 	await loaded(image);
-	// While a new image loads, the current one keeps its place.
-	image.src = BANDS;
-	expect(image.complete).toBe(false);
-	expect(image.naturalWidth).toBe(8);
-	await nextFrame(dom);
-	expect(cell(terminal, 0, 0).bg).toBe(hex(RED));
-	await image.decode();
-	expect(image.naturalWidth).toBe(16);
+	// While a new image loads, the current one keeps its place. The load
+	// is held open until the frame has been drawn.
+	const realFetch = globalThis.fetch;
+	const bands = await (await realFetch(BANDS)).arrayBuffer();
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	globalThis.fetch = (async (input: RequestInfo | URL) => {
+		if (String(input) === "https://images.test/bands.png") {
+			await held;
+			return new Response(bands);
+		}
+		return realFetch(input);
+	}) as typeof fetch;
+	try {
+		image.src = "https://images.test/bands.png";
+		expect(image.complete).toBe(false);
+		expect(image.naturalWidth).toBe(8);
+		await nextFrame(dom);
+		expect(image.complete).toBe(false);
+		expect(cell(terminal, 0, 0).bg).toBe(hex(RED));
+		release();
+		await image.decode();
+		expect(image.naturalWidth).toBe(16);
+	} finally {
+		globalThis.fetch = realFetch;
+	}
 	dom.dispose();
 });
 

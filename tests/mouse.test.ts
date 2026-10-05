@@ -13,7 +13,10 @@ function send(proc: MockProcess, data: string): Promise<void> {
 		"data",
 		Buffer.from(data),
 	);
-	return new Promise((resolve) => setTimeout(resolve, 0));
+	// The frame the input asks for starts in the next task, and writes in
+	// the one after.
+	return new Promise((resolve) =>
+		setTimeout(() => setTimeout(resolve, 0), 0));
 }
 
 function makeDocumentModeApp(lines = 30): {

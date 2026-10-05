@@ -106,9 +106,11 @@ without a code path for it.
 
 ## Frames
 
-A frame is painted when the document has changed and the next tick of
-the event loop arrives. Mutations are observed, so nothing calls a
-render. Style and layout are recomputed for what changed, the document
+A frame is painted when the document has changed, after the task that
+changed it and every microtask that task queued have run, as a browser
+renders. A change and whatever answers it in a microtask, such as an
+editor library updating the line a keystroke edited, land in one frame.
+Mutations are observed, so nothing calls a render. Style and layout are recomputed for what changed, the document
 is painted into a buffer of cells, the buffer is diffed against the
 previous frame, and only the difference is written. A frame is wrapped
 in synchronized output markers so a terminal that supports them shows
