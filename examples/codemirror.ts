@@ -12,7 +12,7 @@
 // theme, which turns its pixel paddings into cells.
 import {readFileSync} from "node:fs";
 
-import {TermDOM} from "@b9g/termdom";
+import {installGlobals, TermDOM} from "@b9g/termdom";
 import {defaultKeymap, history, historyKeymap} from "@codemirror/commands";
 import {javascript} from "@codemirror/lang-javascript";
 import {defaultHighlightStyle, syntaxHighlighting} from "@codemirror/language";
@@ -21,37 +21,10 @@ import {EditorView, keymap, lineNumbers} from "@codemirror/view";
 
 const term = new TermDOM();
 term.attach();
-const {document, window} = term;
+const {document} = term;
 
-// CodeMirror reads these as globals.
-for (const name of [
-  "document",
-  "window",
-  "navigator",
-  "Window",
-  "Node",
-  "Element",
-  "Text",
-  "Range",
-  "Selection",
-  "MutationObserver",
-  "ResizeObserver",
-  "IntersectionObserver",
-  "getComputedStyle",
-  "requestAnimationFrame",
-  "cancelAnimationFrame",
-]) {
-  // Only where the runtime has none. Node, Bun and Deno have a navigator
-  // of their own, which serves; a browser has all of these, and its
-  // document and window cannot be replaced.
-  if (!(name in globalThis)) {
-    Object.defineProperty(globalThis, name, {
-      value: (window as unknown as Record<string, unknown>)[name],
-      configurable: true,
-      writable: true,
-    });
-  }
-}
+// CodeMirror reads document, window, getSelection and the rest as globals.
+installGlobals(term);
 
 document.head.innerHTML = `
   <style>
@@ -163,6 +136,6 @@ view.dispatch({selection: {anchor: 0}});
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    window.close();
+    term.window.close();
   }
 });

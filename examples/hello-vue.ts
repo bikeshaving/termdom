@@ -4,30 +4,14 @@
 //
 //   any key  increments the counter
 //   q        quit
-import {TermDOM} from "@b9g/termdom";
+import {installGlobals, TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
 term.attach();
 const {document} = term;
-// @vue/runtime-dom captures `document` when its module loads to create nodes,
-// and mount() tests the container with `instanceof Element` and `instanceof
-// SVGElement`, so the globals go up before the import. Supplied only where
-// the runtime has none.
-const globals = {
-  document,
-  window: term.window,
-  Element: term.window.Element,
-  SVGElement: term.window.SVGElement,
-};
-for (const [name, value] of Object.entries(globals)) {
-  if (!(name in globalThis)) {
-    Object.defineProperty(globalThis, name, {
-      value,
-      configurable: true,
-      writable: true,
-    });
-  }
-}
+// @vue/runtime-dom captures `document` when its module loads, so the globals
+// go up before the import.
+installGlobals(term);
 
 const {createApp, ref, onMounted, onUnmounted} = await import("vue");
 
