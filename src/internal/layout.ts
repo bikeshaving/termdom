@@ -4341,19 +4341,19 @@ function buildLines(
 	return {lines, wrapped, height: currentY};
 }
 
-// The rows a line-height asks for: one below two rows, so text set a little
-// apart stays one line to a row, and the nearest whole number from two up,
-// an exact half rounding down. One that resolves to no length (normal, or
-// a font size the engine cannot measure) is one row.
+// The rows a line-height asks for: as many as it is times the text's font
+// size, rounded down, and at least one. A terminal draws every glyph one row
+// tall whatever its size, so the ratio is what carries the spacing the
+// author set: 1.5 is one row and 2 is two, at any font size and any cell.
+// One that resolves to no length (normal, or a font size the engine cannot
+// measure) is one row.
 function getLineHeightRows(element: Element): number {
 	const value = getComputedValue(element, "line-height");
-	const px = value.endsWith("px")
-		? parseFloat(value)
-		: /^\d*\.?\d+$/.test(value)
-		? parseFloat(value) * parseFloat(getComputedValue(element, "font-size"))
-		: NaN;
-	const rows = px / getCellSize(element).height;
-	return rows >= 2 ? toWholeCells(rows) : 1;
+	const fontSize = parseFloat(getComputedValue(element, "font-size"));
+	const ratio = value.endsWith("px")
+		? parseFloat(value) / fontSize
+		: /^\d*\.?\d+$/.test(value) ? parseFloat(value) : NaN;
+	return ratio >= 2 && Number.isFinite(ratio) ? Math.floor(ratio) : 1;
 }
 
 // css-text-3 §4.1.3: the spaces that end a line hang, so they neither keep

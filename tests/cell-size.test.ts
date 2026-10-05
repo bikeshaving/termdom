@@ -180,30 +180,41 @@ test("the same margin draws the same gap down a list", () => {
 	dom.dispose();
 });
 
-// A line-height under two rows is one row, so body text set a little apart
-// stays one line to a row. From two rows up it rounds to the nearest row,
-// and the text sits in the middle of them.
-test("a line takes the rows its line-height asks for from two up", () => {
-	const {dom} = make({width: 7, height: 15});
-	const {document} = dom;
-	const line = (id: string, lineHeight: string) =>
-		`<div id="${id}" style="font-size: 16px; line-height: ${lineHeight}">` +
-		"x</div>";
-	document.body.innerHTML =
-		line("body", "1.5") + line("heading", "34px") + line("tall", "45px");
-	const rows = (id: string) => {
-		const box = document.getElementById(id)!;
-		const range = document.createRange();
-		range.selectNodeContents(box);
-		return [
-			(range.getBoundingClientRect().top - box.getBoundingClientRect().top) /
-			15,
-			box.getBoundingClientRect().height / 15,
-		];
-	};
-	expect([rows("body"), rows("heading"), rows("tall")])
-		.toEqual([[0, 1], [0, 2], [1, 3]]);
-	dom.dispose();
+// A line takes as many rows as its line-height is times its font size,
+// rounded down and at least one, so the spacing an author set reads the
+// same at any font size and any cell. The text sits in the middle of the
+// rows, the odd one below.
+test("a line takes the rows its line-height asks for relative to its font size", () => {
+	for (const cell of [15, 16]) {
+		const {dom} = make({width: 7, height: cell});
+		const {document} = dom;
+		const line = (id: string, style: string) =>
+			`<div id="${id}" style="${style}">x</div>`;
+		document.body.innerHTML =
+			line("body", "font-size: 20px; line-height: 1.5") +
+			line("normal", "font-size: 20px; line-height: normal") +
+			line("double", "font-size: 16px; line-height: 2") +
+			line("pixels", "font-size: 16px; line-height: 34px") +
+			line("triple", "font-size: 10px; line-height: 3");
+		const rows = (id: string) => {
+			const box = document.getElementById(id)!;
+			const range = document.createRange();
+			range.selectNodeContents(box);
+			return [
+				(range.getBoundingClientRect().top - box.getBoundingClientRect().top) /
+				cell,
+				box.getBoundingClientRect().height / cell,
+			];
+		};
+		expect([
+			rows("body"),
+			rows("normal"),
+			rows("double"),
+			rows("pixels"),
+			rows("triple"),
+		]).toEqual([[0, 1], [0, 1], [0, 2], [0, 2], [1, 3]]);
+		dom.dispose();
+	}
 });
 
 // A height is a whole number of rows, as a margin is.

@@ -449,9 +449,7 @@ exports[`email fixture: card-percent-cell.html 1`] = `
 
 exports[`email fixture: ghost-article.html 1`] = `
 
-
        xxxxxx xx xxxx
-
 
        xx xxxxx x x xxx xxxx                                                  View in browser
 
@@ -619,14 +617,14 @@ exports[`email fixture: ghost-article.html 1`] = `
 51: 0-100 #faf9f5
 52: 0-100 #faf9f5
 53: 0-100 #faf9f5
-54: 0-100 #faf9f5
-55: 0-100 #faf9f5
-56: 0-44 #faf9f5
-56: 44-57 #191a16
-56: 57-100 #faf9f5
-57: 0-44 #faf9f5
-57: 44-57 #191a16
-57: 57-100 #faf9f5
+54: 0-44 #faf9f5
+54: 44-57 #191a16
+54: 57-100 #faf9f5
+55: 0-44 #faf9f5
+55: 44-57 #191a16
+55: 57-100 #faf9f5
+56: 0-100 #faf9f5
+57: 0-100 #faf9f5
 58: 0-100 #faf9f5
 59: 0-100 #faf9f5
 60: 0-100 #faf9f5
@@ -685,9 +683,7 @@ exports[`email fixture: ghost-article.html 1`] = `
 113: 0-100 #faf9f5
 114: 0-100 #faf9f5
 115: 0-100 #faf9f5
-116: 0-100 #faf9f5
-117: 0-100 #faf9f5
-118: 0-100 #faf9f5`;
+116: 0-100 #faf9f5`;
 
 exports[`email fixture: inline-block-button.html 1`] = `
 
@@ -713,11 +709,11 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
 
 
+
+
                                        XXXXXXXXXX XXX XXXXXXX
 
-
                                       xxxx xxxx x xxxxx xxxxxx
-
 
                                          XXXXXXX XXXX XXXX
 
@@ -815,7 +811,6 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
                                        xxxxxxx xxxxxx xx xxxx
 
-
                 xxxxx xxx xxx xx xxxx xxxx xxxx xxxxxxxxx xxx xxxxxxx xxxxx xxxxxxx
                xxxxx xxxxxx xxxxxxxx xxxxx xxxxxx xx xxxxxx xx xxx xxxxxxxxx xx xxxx
                                                xxxxxx
@@ -828,7 +823,6 @@ exports[`email fixture: inline-block-button.html 1`] = `
                    ┆             XX XXXXXXXXXXX XXXX XXX XXXXX XXXX             ┆
                    ┆                                                            ┆
                    ┆                           xxx xxx                          ┆
-                   ┆                                                            ┆
                    ┆                                                            ┆
                    ┆                            XXXXX                           ┆
                    ┆                                                            ┆
@@ -852,7 +846,6 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
                                        xxx xxxxxx xxxxxxxxxx
 
-
              xxxxx xxxxxxxxxxxxxxx xxxxxxxxxx xx xxx xxxxxxx xxxxxx xxxxxxxxx xxxxx xxx
              xxxxxxx xxxx xxxxxxxxx xxxxxxxx x xxxxxxx xx xxxxxxx xxxx xxx xxxx xxxxxxx
                                           xx xxxx xxxxxxx
@@ -860,7 +853,6 @@ exports[`email fixture: inline-block-button.html 1`] = `
 
 
                                         xxx     │        xxx
-                                                │
                                      XXX XXXX   │   XXXXXXXXXXXX
 
 
@@ -1194,7 +1186,9 @@ exports[`email fixture: inline-block-button.html 1`] = `
 130: 7-93 #f6e3dd
 130: 93-100 #e7e9ed
 131: 0-7 #e7e9ed
-131: 7-93 #f6e3dd
+131: 7-19 #f6e3dd
+131: 19-81 #ffffff
+131: 81-93 #f6e3dd
 131: 93-100 #e7e9ed
 132: 0-7 #e7e9ed
 132: 7-19 #f6e3dd
@@ -1228,12 +1222,16 @@ exports[`email fixture: inline-block-button.html 1`] = `
 137: 93-100 #e7e9ed
 138: 0-7 #e7e9ed
 138: 7-19 #f6e3dd
-138: 19-81 #ffffff
+138: 19-44 #ffffff
+138: 44-57 #1c2127
+138: 57-81 #ffffff
 138: 81-93 #f6e3dd
 138: 93-100 #e7e9ed
 139: 0-7 #e7e9ed
 139: 7-19 #f6e3dd
-139: 19-81 #ffffff
+139: 19-44 #ffffff
+139: 44-57 #1c2127
+139: 57-81 #ffffff
 139: 81-93 #f6e3dd
 139: 93-100 #e7e9ed
 140: 0-7 #e7e9ed
@@ -1245,16 +1243,12 @@ exports[`email fixture: inline-block-button.html 1`] = `
 140: 93-100 #e7e9ed
 141: 0-7 #e7e9ed
 141: 7-19 #f6e3dd
-141: 19-44 #ffffff
-141: 44-57 #1c2127
-141: 57-81 #ffffff
+141: 19-81 #ffffff
 141: 81-93 #f6e3dd
 141: 93-100 #e7e9ed
 142: 0-7 #e7e9ed
 142: 7-19 #f6e3dd
-142: 19-44 #ffffff
-142: 44-57 #1c2127
-142: 57-81 #ffffff
+142: 19-81 #ffffff
 142: 81-93 #f6e3dd
 142: 93-100 #e7e9ed
 143: 0-7 #e7e9ed
@@ -1273,20 +1267,20 @@ exports[`email fixture: inline-block-button.html 1`] = `
 145: 81-93 #f6e3dd
 145: 93-100 #e7e9ed
 146: 0-7 #e7e9ed
-146: 7-19 #f6e3dd
-146: 19-81 #ffffff
-146: 81-93 #f6e3dd
+146: 7-93 #f6e3dd
 146: 93-100 #e7e9ed
 147: 0-7 #e7e9ed
-147: 7-19 #f6e3dd
-147: 19-81 #ffffff
-147: 81-93 #f6e3dd
+147: 7-93 #f6e3dd
 147: 93-100 #e7e9ed
 148: 0-7 #e7e9ed
-148: 7-93 #f6e3dd
+148: 7-39 #f6e3dd
+148: 39-60 #600820
+148: 60-93 #f6e3dd
 148: 93-100 #e7e9ed
 149: 0-7 #e7e9ed
-149: 7-93 #f6e3dd
+149: 7-39 #f6e3dd
+149: 39-60 #600820
+149: 60-93 #f6e3dd
 149: 93-100 #e7e9ed
 150: 0-7 #e7e9ed
 150: 7-39 #f6e3dd
@@ -1294,14 +1288,10 @@ exports[`email fixture: inline-block-button.html 1`] = `
 150: 60-93 #f6e3dd
 150: 93-100 #e7e9ed
 151: 0-7 #e7e9ed
-151: 7-39 #f6e3dd
-151: 39-60 #600820
-151: 60-93 #f6e3dd
+151: 7-93 #f6e3dd
 151: 93-100 #e7e9ed
 152: 0-7 #e7e9ed
-152: 7-39 #f6e3dd
-152: 39-60 #600820
-152: 60-93 #f6e3dd
+152: 7-93 #f6e3dd
 152: 93-100 #e7e9ed
 153: 0-7 #e7e9ed
 153: 7-93 #f6e3dd
@@ -1310,10 +1300,10 @@ exports[`email fixture: inline-block-button.html 1`] = `
 154: 7-93 #f6e3dd
 154: 93-100 #e7e9ed
 155: 0-7 #e7e9ed
-155: 7-93 #f6e3dd
+155: 7-93 #ffffff
 155: 93-100 #e7e9ed
 156: 0-7 #e7e9ed
-156: 7-93 #f6e3dd
+156: 7-93 #ffffff
 156: 93-100 #e7e9ed
 157: 0-7 #e7e9ed
 157: 7-93 #ffffff
@@ -1358,31 +1348,31 @@ exports[`email fixture: inline-block-button.html 1`] = `
 170: 7-93 #ffffff
 170: 93-100 #e7e9ed
 171: 0-7 #e7e9ed
-171: 7-93 #ffffff
+171: 7-37 #ffffff
+171: 37-62 #600820
+171: 62-93 #ffffff
 171: 93-100 #e7e9ed
 172: 0-7 #e7e9ed
-172: 7-93 #ffffff
+172: 7-37 #ffffff
+172: 37-62 #600820
+172: 62-93 #ffffff
 172: 93-100 #e7e9ed
 173: 0-7 #e7e9ed
-173: 7-93 #ffffff
+173: 7-37 #ffffff
+173: 37-62 #600820
+173: 62-93 #ffffff
 173: 93-100 #e7e9ed
 174: 0-7 #e7e9ed
 174: 7-93 #ffffff
 174: 93-100 #e7e9ed
 175: 0-7 #e7e9ed
-175: 7-37 #ffffff
-175: 37-62 #600820
-175: 62-93 #ffffff
+175: 7-93 #ffffff
 175: 93-100 #e7e9ed
 176: 0-7 #e7e9ed
-176: 7-37 #ffffff
-176: 37-62 #600820
-176: 62-93 #ffffff
+176: 7-93 #ffffff
 176: 93-100 #e7e9ed
 177: 0-7 #e7e9ed
-177: 7-37 #ffffff
-177: 37-62 #600820
-177: 62-93 #ffffff
+177: 7-93 #ffffff
 177: 93-100 #e7e9ed
 178: 0-7 #e7e9ed
 178: 7-93 #ffffff
@@ -1391,16 +1381,16 @@ exports[`email fixture: inline-block-button.html 1`] = `
 179: 7-93 #ffffff
 179: 93-100 #e7e9ed
 180: 0-7 #e7e9ed
-180: 7-93 #ffffff
+180: 7-93 #1c2127
 180: 93-100 #e7e9ed
 181: 0-7 #e7e9ed
-181: 7-93 #ffffff
+181: 7-93 #1c2127
 181: 93-100 #e7e9ed
 182: 0-7 #e7e9ed
-182: 7-93 #ffffff
+182: 7-93 #1c2127
 182: 93-100 #e7e9ed
 183: 0-7 #e7e9ed
-183: 7-93 #ffffff
+183: 7-93 #1c2127
 183: 93-100 #e7e9ed
 184: 0-7 #e7e9ed
 184: 7-93 #1c2127
@@ -1438,29 +1428,17 @@ exports[`email fixture: inline-block-button.html 1`] = `
 195: 0-7 #e7e9ed
 195: 7-93 #1c2127
 195: 93-100 #e7e9ed
-196: 0-7 #e7e9ed
-196: 7-93 #1c2127
-196: 93-100 #e7e9ed
-197: 0-7 #e7e9ed
-197: 7-93 #1c2127
-197: 93-100 #e7e9ed
-198: 0-7 #e7e9ed
-198: 7-93 #1c2127
-198: 93-100 #e7e9ed
-199: 0-7 #e7e9ed
-199: 7-93 #1c2127
-199: 93-100 #e7e9ed
+196: 0-100 #e7e9ed
+197: 0-100 #e7e9ed
+198: 0-100 #e7e9ed
+199: 0-100 #e7e9ed
 200: 0-100 #e7e9ed
 201: 0-100 #e7e9ed
 202: 0-100 #e7e9ed
 203: 0-100 #e7e9ed
-204: 0-100 #e7e9ed
-205: 0-100 #e7e9ed
-206: 0-100 #e7e9ed
-207: 0-100 #e7e9ed
-208: 0-100 #ffffff
-209: 0-100 #ffffff
-210: 0-100 #ffffff`;
+204: 0-100 #ffffff
+205: 0-100 #ffffff
+206: 0-100 #ffffff`;
 
 exports[`email fixture: inline-code.html 1`] = `
 
@@ -1471,7 +1449,6 @@ exports[`email fixture: inline-code.html 1`] = `
        │                                                                                    │
        │                                                                                    │
        │     xxxxxx xxxxxx x xxxxx xx                                                       │
-       │                                                                                    │
        │     xxxxx xxx                                                                      │
        │                                                                                    │
        │     xxx xxxx x xxxxxxx xxxx xxxxxxxxxx xxxxxx xxxxx xx xxx xxx xxxxx xxxxxxxx      │
@@ -1631,12 +1608,12 @@ exports[`email fixture: inline-code.html 1`] = `
 16: 7-93 #ffffff
 16: 93-100 #fafcfb
 17: 0-7 #fafcfb
-17: 7-93 #ffffff
+17: 7-33 #ffffff
+17: 33-41 #000000
+17: 41-93 #ffffff
 17: 93-100 #fafcfb
 18: 0-7 #fafcfb
-18: 7-33 #ffffff
-18: 33-41 #000000
-18: 41-93 #ffffff
+18: 7-93 #ffffff
 18: 93-100 #fafcfb
 19: 0-7 #fafcfb
 19: 7-93 #ffffff
@@ -1798,12 +1775,12 @@ exports[`email fixture: inline-code.html 1`] = `
 71: 7-93 #ffffff
 71: 93-100 #fafcfb
 72: 0-7 #fafcfb
-72: 7-93 #ffffff
+72: 7-55 #ffffff
+72: 55-76 #000000
+72: 76-93 #ffffff
 72: 93-100 #fafcfb
 73: 0-7 #fafcfb
-73: 7-55 #ffffff
-73: 55-76 #000000
-73: 76-93 #ffffff
+73: 7-93 #ffffff
 73: 93-100 #fafcfb
 74: 0-7 #fafcfb
 74: 7-93 #ffffff
@@ -1940,15 +1917,12 @@ exports[`email fixture: inline-code.html 1`] = `
 118: 0-7 #fafcfb
 118: 7-93 #ffffff
 118: 93-100 #fafcfb
-119: 0-7 #fafcfb
-119: 7-93 #ffffff
-119: 93-100 #fafcfb
+119: 0-100 #fafcfb
 120: 0-100 #fafcfb
 121: 0-100 #fafcfb
 122: 0-100 #fafcfb
 123: 0-100 #fafcfb
-124: 0-100 #fafcfb
-125: 0-100 #fafcfb`;
+124: 0-100 #fafcfb`;
 
 exports[`email fixture: mjml-columns.html 1`] = `
 
@@ -2508,7 +2482,6 @@ exports[`email fixture: post-buttons-mention.html 1`] = `
 
            x xxx xxxxx xx xxxxx x xxxxxxxxxx xxxx xxxxxxxx xx xxxxxxx
 
-
            xxxx xxxxx xx xxxxxxx xxxxxxx xxx xxx xxxx xxxxxx
 
            XXX X
@@ -2612,6 +2585,7 @@ exports[`email fixture: post-buttons-mention.html 1`] = `
                                              xxxxxxxxxxx
 
 -- backgrounds --
+57: 11-89 #eeeeee
 58: 11-89 #eeeeee
 59: 11-89 #eeeeee
 60: 11-89 #eeeeee
@@ -2621,21 +2595,20 @@ exports[`email fixture: post-buttons-mention.html 1`] = `
 64: 11-89 #eeeeee
 65: 11-89 #eeeeee
 66: 11-89 #eeeeee
-67: 11-89 #eeeeee
+67: 11-42 #eeeeee
+67: 42-58 #ff6719
+67: 58-89 #eeeeee
 68: 11-42 #eeeeee
 68: 42-58 #ff6719
 68: 58-89 #eeeeee
 69: 11-42 #eeeeee
 69: 42-58 #ff6719
 69: 58-89 #eeeeee
-70: 11-42 #eeeeee
-70: 42-58 #ff6719
-70: 58-89 #eeeeee
+70: 11-89 #eeeeee
 71: 11-89 #eeeeee
-72: 11-89 #eeeeee
+80: 45-56 #ff6719
 81: 45-56 #ff6719
-82: 45-56 #ff6719
-83: 45-56 #ff6719`;
+82: 45-56 #ff6719`;
 
 exports[`email fixture: relative-cards.html 1`] = `
 
@@ -2661,8 +2634,8 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxx xxxxxxxxx xxxxxxxx xxxxxxxxx                            │
-           │  │        │   xxxxxxxx xxxxxxxxxxxx                                        │
-           │  │    x   │   xxxxxx xxxxx xxx xxxxxx xxxxxx                               │
+           │  │    x   │   xxxxxxxx xxxxxxxxxxxx                                        │
+           │  │        │   xxxxxx xxxxx xxx xxxxxx xxxxxx                               │
            │  │        │   xxx xxxxxxxxxxxx                                             │
            │  │        │                                                                │
            │  └────────┘       xxx xx    xxxxxxxxx                                      │
@@ -2670,8 +2643,8 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxxxxxxxxx xxxxxxxxx xxxxxxxxxx xxxxxxxx x xxx xxxx         │
-           │  │        │   xxxxxxxx x xxxxxxxxxxx xxxxxx x xxxxxxxxxxx xxxxxxx x        │
-           │  │    x   │   xxxxxxxxxxx xx xxxx x xxxxxx x xxxxxxx xxxxxxxx              │
+           │  │    x   │   xxxxxxxx x xxxxxxxxxxx xxxxxx x xxxxxxxxxxx xxxxxxx x        │
+           │  │        │   xxxxxxxxxxx xx xxxx x xxxxxx x xxxxxxx xxxxxxxx              │
            │  │        │   xxxxx xxxxx                                                  │
            │  │        │   xxx xxxxx xxx xxxxxx xxxxxx                                  │
            │  └────────┘   xxx xxxxxxxx                                                 │
@@ -2680,8 +2653,8 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxxxx xxxxxxxxx xxxxxxxxxx xxxxxxxxxxxxxxxx xxxx            │
-           │  │        │   xxxxxxxx                                                     │
-           │  │    x   │   xxxxxxxxxxx                                                  │
+           │  │    x   │   xxxxxxxx                                                     │
+           │  │        │   xxxxxxxxxxx                                                  │
            │  │        │   xxxxxx xxxxx xxx xxxxxx xxxxxx                               │
            │  │        │   xxx xxxxx                                                    │
            │  └────────┘                                                                │
@@ -2698,8 +2671,8 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxxxx xxxxx xxxxxxxx xxxxxxxx x xxxxxx x xx                 │
-           │  │        │   xxxxxxx xxxxxxxxx xxxxxxx xxxx                               │
-           │  │    x   │   xxxxxx xxxxxxxx xxx xxxxxx xxxxxx                            │
+           │  │    x   │   xxxxxxx xxxxxxxxx xxxxxxx xxxx                               │
+           │  │        │   xxxxxx xxxxxxxx xxx xxxxxx xxxxxx                            │
            │  │        │   xxx xxxxxxxxxx                                               │
            │  │        │                                                                │
            │  └────────┘       xxx xx    xxxxxxxxx                                      │
@@ -2716,8 +2689,8 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xx xxxxxxxx x xxxxxxxxxxxxxxxxx xxxxxx xx xxxxxxxxxx         │
-           │  │        │   xxx                                                          │
-           │  │    x   │   xxxxxxxxxxxxxxx xxxxxx xxx xxxxxx xxxxxx                     │
+           │  │    x   │   xxx                                                          │
+           │  │        │   xxxxxxxxxxxxxxx xxxxxx xxx xxxxxx xxxxxx                     │
            │  │        │   xxx xxxxxxxx                                                 │
            │  │        │                                                                │
            │  └────────┘       xxx xx    xxxxxxxxx                                      │
@@ -2734,8 +2707,8 @@ exports[`email fixture: relative-cards.html 1`] = `
            │────────────────────────────────────────────────────────────────────────────│
            │                                                                            │
            │  ┌────────┐   xxxxxx xxxxxxxx xxxxxxxxx xxx xx x xxx xxxxxxxxxxx           │
-           │  │        │   xxxxx                                                        │
-           │  │    x   │   xxxxxxxxxx xxx xxxxxx xxxxxx                                 │
+           │  │    x   │   xxxxx                                                        │
+           │  │        │   xxxxxxxxxx xxx xxxxxx xxxxxx                                 │
            │  │        │   xxx xxxxxxxxxx                                               │
            │  │        │                                                                │
            │  └────────┘       xxx xx    xxxxxxxxx                                      │
