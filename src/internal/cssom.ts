@@ -6957,7 +6957,7 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	// content on its own, so the items are found by tag, by inline style,
 	// and by every rule that declares the display.
 	const listItems = new Set<Element>(
-		cascade[kDocument].querySelectorAll('[style*="list-item"], li'),
+		cascade[kDocument].querySelectorAll('[style*="list-item"], li, summary'),
 	);
 	for (const rule of cascade[kParsedRules]) {
 		if (rule.declarations["display"] === "list-item" && !rule.uaOrigin) {
@@ -9408,8 +9408,9 @@ function getPseudoSubjects(cascade: Cascade): Set<string> | null {
 		return (cascade[kPseudoSubjectTags] = null);
 	}
 	// A list carries the one counter no rule declares, and its items carry
-	// the markers that counter numbers.
-	const tags = new Set(["OL", "UL", "LI"]);
+	// the markers that counter numbers. A details' summary is a list item
+	// by the UA sheet, for its disclosure marker.
+	const tags = new Set(["OL", "UL", "LI", "SUMMARY"]);
 	// Only the pseudo-elements this function attaches. ::marker reaches
 	// list items, handled above, and ::placeholder, ::selection and ::part
 	// live on nodes the UA shadow tree trees already hold.
@@ -9440,6 +9441,7 @@ function pseudoRuleCouldMatch(
 		// Markers exist only on display:list-item boxes.
 		return (
 			element.tagName === "LI" ||
+			element.tagName === "SUMMARY" ||
 			cascade[kListItemRulesExist] ||
 			(element.getAttribute("style") ?? "").includes("list-item")
 		);

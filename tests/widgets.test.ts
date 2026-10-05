@@ -305,6 +305,29 @@ test("toggling a details keeps its summary on its row, from a script or from the
 	dom.dispose();
 });
 
+test("a summary's disclosure marker is its ::marker, and list-style: none removes it", async () => {
+	for (const [css, closed, open] of [
+		["", "▸ More", "▾ Open"],
+		["summary { list-style: none }", "More", "Open"],
+		["summary::marker { color: red }", "▸ More", "▾ Open"],
+	]) {
+		const terminal = new MockProcess({rows: 6, cols: 40});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			`<style>${css}</style>` +
+			"<details><summary>More</summary><p>x</p></details>" +
+			"<details open><summary>Open</summary><p>body</p></details>";
+		await nextFrame(dom);
+		const lines = terminal
+			.getPlainText()
+			.split("\n")
+			.map((line) => line.trimEnd());
+		expect(lines).toContain(closed);
+		expect(lines).toContain(open);
+		dom.dispose();
+	}
+});
+
 /* ------------------------------------------------------------ the keycap */
 
 /** The cell at a screen position, for reading its attributes. */

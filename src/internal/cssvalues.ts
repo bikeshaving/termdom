@@ -5098,6 +5098,8 @@ const BULLET_MARKERS: Record<string, string> = {
 	disc: "\u2022",
 	circle: "\u25e6",
 	square: "\u25aa",
+	"disclosure-closed": "\u25b8",
+	"disclosure-open": "\u25be",
 };
 
 /** The list-style-types that count, and so draw a marker ending in a dot. */
