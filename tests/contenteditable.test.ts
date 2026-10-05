@@ -6,7 +6,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 /** Feed bytes as the terminal would, and let the read side see them. */
 function send(terminal: MockProcess, data: string): Promise<void> {
@@ -830,4 +830,21 @@ test("the caret of a long editor in fullscreen is on its line", async () => {
 	// leaves the document where it was.
 	expect(fixture.dom.window.scrollY).toBe(0);
 	fixture.dom.dispose();
+});
+
+test("a selection moved in the middle of an edit paints with the edit, not before it", async () => {
+	const {terminal, dom, document, host} =
+		await withHost("<div contenteditable>abc</div>");
+	const text = host.firstChild;
+	const written = captureRawOutput(terminal);
+	const frames = () => written().split("\x1b[?2026h").length - 1;
+	const before = frames();
+	text.insertData(1, "x");
+	document.getSelection().setBaseAndExtent(text, 2, text, 2);
+	text.insertData(2, "y");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	await nextFrame(dom);
+	expect(frames() - before).toBe(1);
+	expect(terminal.getPlainText()).toContain("axybc");
+	dom.dispose();
 });
