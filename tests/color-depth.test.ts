@@ -20,6 +20,10 @@ const DA2 = "\x1b[>c";
 function fakeTerminal(
 	answers: Record<string, string>,
 	colorDepth?: string,
+	// split: each answer arrives in two chunks. delay: every answer but
+	// DA1's arrives that many ms late, after the terminal has moved on.
+	// interactive: false for a pipe.
+	options: {split?: boolean; delay?: number; interactive?: boolean} = {},
 ): {transport: unknown; output(): string} {
 	let output = "";
 	let push!: (text: string) => void;
@@ -48,7 +52,20 @@ function fakeTerminal(
 					const [at, question] = found;
 					const answer = answers[question];
 					if (answer !== undefined) {
-						push(answer);
+						const send = () => {
+							if (options.split) {
+								const half = Math.floor(answer.length / 2);
+								push(answer.slice(0, half));
+								push(answer.slice(half));
+							} else {
+								push(answer);
+							}
+						};
+						if (options.delay === undefined || question === DA1) {
+							send();
+						} else {
+							setTimeout(send, options.delay);
+						}
 					}
 					rest = rest.slice(at + question.length);
 				}
@@ -56,7 +73,7 @@ function fakeTerminal(
 		}),
 		resizes: new ReadableStream({start() {}}),
 		sharesScreen: false,
-		interactive: true,
+		interactive: options.interactive ?? true,
 		ready: Promise.resolve(),
 		closed: new Promise(() => {}),
 		close() {},
@@ -67,9 +84,10 @@ function fakeTerminal(
 async function depthOn(
 	answers: Record<string, string>,
 	colorDepth?: string,
+	options?: {split?: boolean; delay?: number; interactive?: boolean},
 ): Promise<{depth: number; output: string; ms: number}> {
 	const terminal =
-		fakeTerminal({[DA1]: "\x1b[?62;22c", ...answers}, colorDepth);
+		fakeTerminal({[DA1]: "\x1b[?62;22c", ...answers}, colorDepth, options);
 	const dom = new TermDOM({transport: terminal.transport as never});
 	const start = performance.now();
 	await dom.attach();
@@ -144,4 +162,72 @@ test("a transport that names its color depth is not asked", async () => {
 	const ansi =
 		await depthOn({[DECRQSS]: "\x1bP1$r0;38:2::111:122:133m\x1b\\"}, "ansi");
 	expect(ansi.depth).toBe(4);
+});
+
+test("an answer split across reads still counts", async () => {
+	const {depth} = await depthOn(
+		{[DECRQSS]: "\x1bP1$r0;38:2::111:122:133m\x1b\\", [DA2]: "\x1b[>84;0;0c"},
+		undefined,
+		{split: true},
+	);
+	expect(depth).toBe(24);
+});
+
+test("answers that come after the terminal moved on are not typed into the page", async () => {
+	const terminal = fakeTerminal(
+		{
+			[DA1]: "\x1b[?62;22c",
+			[DECRQSS]: "\x1bP1$r0;38:2::111:122:133m\x1b\\",
+			[XTGETTCAP_RGB]: "\x1bP1+r524742=382F382F38\x1b\\",
+			[DA2]: "\x1b[>84;0;0c",
+		},
+		undefined,
+		{delay: 30},
+	);
+	const dom = new TermDOM({transport: terminal.transport as never});
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (event) => {
+		keys.push((event as KeyboardEvent).key);
+	});
+	await dom.attach();
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	expect(keys).toEqual([]);
+	dom.dispose();
+});
+
+test("a terminal that answers nothing still gets its first frame, in 256 colors", async () => {
+	const terminal = fakeTerminal({});
+	const dom = new TermDOM({transport: terminal.transport as never});
+	dom.document.body.innerHTML = "<p style=\"color: #123456\">x</p>";
+	const start = performance.now();
+	await dom.attach();
+	expect(performance.now() - start).toBeLessThan(3000);
+	expect(dom.window.screen.colorDepth).toBe(8);
+	expect(terminal.output()).toContain("38;5;");
+	dom.dispose();
+});
+
+test("a pipe is not asked, and gets 256 colors", async () => {
+	const {depth, output} = await depthOn(
+		{[DA2]: "\x1b[>84;0;0c"},
+		undefined,
+		{interactive: false},
+	);
+	expect(depth).toBe(8);
+	expect(output).not.toContain(DECRQSS);
+	expect(output).not.toContain(DA2);
+});
+
+test("renderANSI() with markup uses the screen's colors", async () => {
+	const terminal = fakeTerminal({[DA1]: "\x1b[?62;22c"}, "256");
+	const dom = new TermDOM({transport: terminal.transport as never});
+	const html = "<p style=\"color: #123456\">x</p>";
+	expect(dom.renderANSI(html)).toContain("38;5;");
+	expect(dom.renderANSI(html)).not.toContain("38;2;");
+	dom.dispose();
+	const rgb = new TermDOM({
+		transport: fakeTerminal({}, "rgb").transport as never,
+	});
+	expect(rgb.renderANSI(html)).toContain("38;2;18;52;86");
+	rgb.dispose();
 });

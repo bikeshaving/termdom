@@ -167,7 +167,8 @@ export interface TermDOM {
 	// attaching, because an unconditional await would defer every frame a
 	// microtask, and the scrollTop clamp is synchronous by contract.
 	[kAttachBegun]: Promise<void>;
-	// The engine behind renderANSI and print, rebuilt when the width changes.
+	// The engine behind renderANSI and print, rebuilt when the width, the
+	// cell or the screen's colors change.
 	[kStaticSibling]: TermDOM | null;
 }
 
@@ -454,6 +455,8 @@ export class TermDOM {
 	 * Render to ANSI at the transport's width: colors and line breaks, no
 	 * cursor controls, no modes. Without an argument, the document as it
 	 * stands; with HTML, that markup, leaving the document untouched.
+	 * Colors are the screen's: the transport's `colorDepth`, or what the
+	 * terminal said when attached, and 256 colors before it is asked.
 	 */
 	renderANSI(html?: string): string {
 		return html === undefined
@@ -1068,9 +1071,11 @@ function renderStaticHTML(
 ): string {
 	const cols = termDOM[kTransport].cols;
 	const cell = getCellSize(termDOM.document);
+	const colorDepth = termDOM[kScreen].colorDepth;
 	if (
 		termDOM[kStaticSibling] &&
 		(termDOM[kStaticSibling][kScreen].cols !== cols ||
+			termDOM[kStaticSibling][kScreen].colorDepth !== colorDepth ||
 			getCellSize(termDOM[kStaticSibling].document) !== cell)
 	) {
 		void termDOM[kStaticSibling].dispose();
@@ -1085,7 +1090,7 @@ function renderStaticHTML(
 			resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
 			closed: new Promise<TerminalCloseInfo>(() => {}),
 			ready: Promise.resolve(),
-			colorDepth: "rgb",
+			colorDepth,
 			interactive: false,
 			sharesScreen: false,
 			close() {},

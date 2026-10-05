@@ -154,6 +154,17 @@ Alacritty, Konsole and VS Code, never say so; a program that knows passes
 other attributes, such as hidden or inverse text, so the engine never
 guesses it.
 
+The terminal is asked when `attach()` takes it, since its answers come
+back as input. `print()` and `renderANSI()` before `attach()` therefore
+use 256 colors, unless the transport names its `colorDepth`:
+
+```ts
+const term = new TermDOM({
+	transport: transportFromProcess(process, {colorDepth: "rgb"}),
+});
+term.print("<p style='color: #ff8800'>orange</p>");
+```
+
 The modes the engine sets, and resets on exit, are mouse reporting,
 mouse motion reporting while something watches hover, bracketed paste,
 the alternate screen in fullscreen, the title stack when the document
