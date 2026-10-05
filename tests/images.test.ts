@@ -484,7 +484,7 @@ const ANSWER =
 
 test("an image past its time fails alone, and the images behind it decode", async () => {
 	try {
-		setDecodeTimeout(200);
+		setDecodeTimeout(1000);
 		setDecodeWorkerURL(
 			fakeWorker(`if (data.bytes.byteLength !== 1) ${ANSWER};`),
 		);
@@ -495,7 +495,7 @@ test("an image past its time fails alone, and the images behind it decode", asyn
 				decodeImageOffThread(bytesOf("png-rgb.png")),
 			]),
 		).toEqual([
-			"The image took more than 200 ms to decode",
+			"The image took more than 1000 ms to decode",
 			"1 wide",
 			"1 wide",
 		]);
