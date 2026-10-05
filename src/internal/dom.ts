@@ -2655,6 +2655,127 @@ Object.defineProperty(InputEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+// WebIDL's USVString: a lone surrogate becomes U+FFFD.
+function toUSVString(value: unknown): string {
+	return String(value).replace(
+		/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+		"\uFFFD",
+	);
+}
+
+const kViolation = Symbol("violation");
+
+interface SecurityPolicyViolation {
+	documentURI: string;
+	referrer: string;
+	blockedURI: string;
+	effectiveDirective: string;
+	originalPolicy: string;
+	sourceFile: string;
+	sample: string;
+	disposition: globalThis.SecurityPolicyViolationEventDisposition;
+	statusCode: number;
+	lineNumber: number;
+	columnNumber: number;
+}
+
+interface SecurityPolicyViolationEvent {
+	[kViolation]: SecurityPolicyViolation;
+}
+
+/**
+ * Fired at an element whose load a Content Security Policy blocked, and
+ * bubbling to its document (CSP3 §5.1).
+ */
+class SecurityPolicyViolationEvent extends Event {
+	constructor(
+		type: string,
+		eventInitDict: globalThis.SecurityPolicyViolationEventInit = {},
+	) {
+		super(type, eventInitDict);
+		const init = toDictionary<globalThis.SecurityPolicyViolationEventInit>(
+			eventInitDict,
+			"A security policy violation event init",
+		);
+		const disposition = String(init.disposition ?? "enforce");
+		if (disposition !== "enforce" && disposition !== "report") {
+			throw new TypeError(
+				`"${disposition}" is not a security policy violation disposition`,
+			);
+		}
+		this[kViolation] = {
+			documentURI: toUSVString(init.documentURI ?? ""),
+			referrer: toUSVString(init.referrer ?? ""),
+			blockedURI: toUSVString(init.blockedURI ?? ""),
+			effectiveDirective: String(
+				init.effectiveDirective || init.violatedDirective || "",
+			),
+			originalPolicy: String(init.originalPolicy ?? ""),
+			sourceFile: toUSVString(init.sourceFile ?? ""),
+			sample: String(init.sample ?? ""),
+			disposition,
+			statusCode: toUnsignedShort(init.statusCode ?? 0),
+			lineNumber: toUnsignedLong(init.lineNumber ?? 0),
+			columnNumber: toUnsignedLong(init.columnNumber ?? 0),
+		};
+	}
+
+	get documentURI(): string {
+		return this[kViolation].documentURI;
+	}
+
+	get referrer(): string {
+		return this[kViolation].referrer;
+	}
+
+	get blockedURI(): string {
+		return this[kViolation].blockedURI;
+	}
+
+	get effectiveDirective(): string {
+		return this[kViolation].effectiveDirective;
+	}
+
+	// A historical alias of effectiveDirective.
+	get violatedDirective(): string {
+		return this[kViolation].effectiveDirective;
+	}
+
+	get originalPolicy(): string {
+		return this[kViolation].originalPolicy;
+	}
+
+	get sourceFile(): string {
+		return this[kViolation].sourceFile;
+	}
+
+	get sample(): string {
+		return this[kViolation].sample;
+	}
+
+	get disposition(): globalThis.SecurityPolicyViolationEventDisposition {
+		return this[kViolation].disposition;
+	}
+
+	get statusCode(): number {
+		return this[kViolation].statusCode;
+	}
+
+	get lineNumber(): number {
+		return this[kViolation].lineNumber;
+	}
+
+	get columnNumber(): number {
+		return this[kViolation].columnNumber;
+	}
+}
+
+Object.defineProperty(
+	SecurityPolicyViolationEvent.prototype,
+	Symbol.toStringTag,
+	{value: "SecurityPolicyViolationEvent", configurable: true},
+);
+
 // A transfer here carries text under format names and nothing else. There
 // is no drag and drop in a terminal and no files to hand over, so
 // `dropEffect`, `effectAllowed`, `setDragImage()` and `files` exist,
@@ -35840,6 +35961,7 @@ const platform = {
 	SVGElement,
 	Screen,
 	ScreenOrientation,
+	SecurityPolicyViolationEvent,
 	Selection,
 	ShadowRoot,
 	StaticRange,
@@ -35983,6 +36105,7 @@ export type {
 	CompositionEvent,
 	TextEvent,
 	InputEvent,
+	SecurityPolicyViolationEvent,
 	FileList,
 	DataTransferItem,
 	DataTransferItemList,
