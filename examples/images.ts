@@ -9,12 +9,14 @@ import {TermDOM} from "@b9g/termdom";
 // to <img> as a data: URL, so the example runs anywhere.
 const source = typeof process === "undefined" ? undefined : process.argv[2];
 
-// Images load only through the fetch a TermDOM is given. This one reads
-// a file: URL from disk, which Node's own fetch does not, and leaves the
-// rest to the runtime. The document's URL is the working directory, so
-// a path given on the command line resolves under it.
+// Images load only what the Content Security Policy allows: here files,
+// data: URLs and the web. The fetch reads a file: URL from disk, which
+// Node's own fetch does not, and leaves the rest to the runtime. The
+// document's URL is the working directory, so a path given on the
+// command line resolves under it.
 const term = new TermDOM({
   url: pathToFileURL(`${process.cwd()}/`).href,
+  contentSecurityPolicy: "img-src file: data: https:",
   async fetch(request) {
     if (request.url.startsWith("file:")) {
       return new Response(await readFile(new URL(request.url)));

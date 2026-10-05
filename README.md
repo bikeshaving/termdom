@@ -76,8 +76,9 @@ setInterval(() => {
 - **Images and canvas** `<img>` decodes PNG, JPEG, GIF and BMP on a
   worker, and `<canvas>` has a 2D context and a `"charactergrid"`
   context; pixels are drawn two to a cell with half blocks. Images load
-  only when the program says so: `new TermDOM({fetch})`, or a
-  `"request"` listener that answers each load.
+  only what the program's Content Security Policy allows, such as
+  `new TermDOM({contentSecurityPolicy: "img-src https: data:"})`, and a
+  `"request"` listener can answer each load.
 
 ## How it works
 

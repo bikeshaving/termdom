@@ -30,18 +30,44 @@ such as its working directory.
 
 ### Loading
 
-Nothing loads unless the program says so. Each load the markup asks for
-is a plain `Request`, which the TermDOM dispatches as a `"request"`
-event. A listener answers it with `respondWith()`, as a Service Worker
-answers a fetch event, and the first answer wins. A request no listener
-answers goes to the `fetch` the TermDOM was made with. Without one, it
-fails, and the image shows as a box with its `alt` text.
+Nothing loads unless the program allows it. Which loads a document may
+make is a Content Security Policy, given as the `contentSecurityPolicy`
+option in the syntax of a `Content-Security-Policy` header. An `<img>`
+loads only what `img-src` allows, or `default-src` when there is no
+`img-src`. The default is `default-src 'none'`.
 
 ```ts
-// Load what a browser would: the runtime's fetch.
-const term = new TermDOM({fetch});
+// Images from anywhere on the web, and data: URLs.
+new TermDOM({contentSecurityPolicy: "img-src https: data:"});
 
-// Or decide request by request.
+// A mail client: attachments by cid:, nothing remote.
+new TermDOM({contentSecurityPolicy: "img-src cid: data:"});
+```
+
+Source expressions match as CSP Level 3 defines them: `'none'`,
+`'self'`, `*`, a scheme such as `https:` or `cid:`, and a host such as
+`https://*.example.com:8443/img/`. `*` covers the network schemes and
+the document's own, not `data:` or `cid:`. A host given without a
+scheme takes the document's scheme, and for a document not served over
+the network, as `about:blank` and `file:` are not, the network schemes.
+
+A page can narrow the policy with its own
+`<meta http-equiv="Content-Security-Policy">` in its head, and never
+widen it: a load must pass every policy. A load a policy blocks fires
+`securitypolicyviolation` at its element, a `SecurityPolicyViolationEvent`
+that bubbles to the document and names the URL, the directive and the
+policy. The image shows as a box with its `alt` text. When the program
+set no policy, the first blocked load is also reported once where
+uncaught errors go: the transport's log, or the scrollback at exit.
+
+A load the policy allows is a plain `Request`, which the TermDOM
+dispatches as a `"request"` event. A listener answers it with
+`respondWith()`, as a Service Worker answers a fetch event, and the
+first answer wins. A request no listener answers goes to the `fetch`
+the TermDOM was made with, the runtime's by default.
+
+```ts
+const term = new TermDOM({contentSecurityPolicy: "img-src cid: https:"});
 term.addEventListener("request", (event) => {
   const {request, destination, initiatorType, initiator} = event;
   if (request.url.startsWith("cid:")) {
@@ -60,15 +86,15 @@ fails the request.
 
 The request waits for the script that set the source to finish, so a
 listener added just after the markup sees its images. Only a document
-whose own URL is `file:` loads `file:` URLs, whatever would answer
-them, so untrusted markup in a page at `about:blank` or `https:` cannot
-read local files. Node's `fetch` reads no files, and Bun's and Deno's do, so a
-program that wants local files on every runtime answers them itself.
+whose own URL is `file:` loads `file:` URLs, whatever the policy says,
+so untrusted markup in a page at `about:blank` or `https:` cannot read
+local files. Node's `fetch` reads no files, and Bun's and Deno's do, so
+a program that allows local files on every runtime answers them itself.
 
-The page's own `window.fetch` is the `fetch` given, or the runtime's
-when there is none, and it resolves a relative URL against the
-document's, as a browser's does. It dispatches no event: a script that calls it has
-asked for the load.
+The page's own `window.fetch` is the `fetch` given, or the runtime's,
+and it resolves a relative URL against the document's, as a browser's
+does. No policy governs it and it dispatches no event: in a terminal
+it is the program, not untrusted markup, that calls it.
 
 PNG, JPEG, GIF and BMP decode:
 
