@@ -112,7 +112,7 @@ export interface TermDOMOptions {
 	 * widen it. Defaults to `"default-src 'none'"`, so markup loads nothing
 	 * unless the program allows it.
 	 */
-	contentSecurityPolicy?: string;
+	csp?: string;
 
 	/**
 	 * Where an allowed load no "request" listener answers goes, and what the
@@ -287,7 +287,7 @@ export class TermDOM extends EventTarget {
 					init,
 				),
 			)) as typeof this.window.fetch;
-		const policy = options.contentSecurityPolicy;
+		const policy = options.csp;
 		let hinted = false;
 		const requestPolicy: RequestPolicy = {
 			policies: parseContentSecurityPolicies(
@@ -309,9 +309,9 @@ export class TermDOM extends EventTarget {
 					hinted = true;
 					reportUncaught(
 						this,
-						`TermDOM blocked ${init.blockedURI}, and loads nothing the ` +
-						"document's markup asks for until a contentSecurityPolicy " +
-						"allows it, such as \"img-src data: https:\".",
+						`TermDOM blocked ${init.blockedURI}. The document's markup ` +
+						"loads nothing until a Content Security Policy allows it: " +
+						"new TermDOM({csp: \"img-src data: https:\"}), for one.",
 					);
 				}
 			},
