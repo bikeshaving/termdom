@@ -71,7 +71,7 @@ import {
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
 import {linearizeMath} from "./mathml.ts";
-import {loadResource} from "./resources.ts";
+import {loadResource, setRequestDestination} from "./resources.ts";
 import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
@@ -16941,9 +16941,8 @@ function updateImageData(image: HTMLImageElement): void {
 			settle("broken", null, error);
 			return;
 		}
+		setRequestDestination(request, "image");
 		loadResource(document, request, {
-			destination: "image",
-			initiatorType: "img",
 			initiator: image as unknown as globalThis.Element,
 		})
 			.then((response) => readImageResponse(response))

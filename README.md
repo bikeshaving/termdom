@@ -78,7 +78,7 @@ setInterval(() => {
   context; pixels are drawn two to a cell with half blocks. Images load
   only what the program's Content Security Policy allows, such as
   `new TermDOM({csp: "img-src https: data:"})`, and a
-  `"request"` listener can answer each load.
+  `"fetch"` listener can answer each load, as a Service Worker does.
 
 ## How it works
 

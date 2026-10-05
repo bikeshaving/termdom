@@ -10,19 +10,20 @@ import {TermDOM} from "@b9g/termdom";
 const source = typeof process === "undefined" ? undefined : process.argv[2];
 
 // Images load only what the Content Security Policy allows: here files,
-// data: URLs and the web. The fetch reads a file: URL from disk, which
-// Node's own fetch does not, and leaves the rest to the runtime. The
-// document's URL is the working directory, so a path given on the
+// data: URLs and the web. A fetch listener reads a file: URL from disk,
+// which Node's own fetch does not, and leaves the rest to the runtime.
+// The document's URL is the working directory, so a path given on the
 // command line resolves under it.
 const term = new TermDOM({
   url: pathToFileURL(`${process.cwd()}/`).href,
   csp: "img-src file: data: https:",
-  async fetch(request) {
-    if (request.url.startsWith("file:")) {
-      return new Response(await readFile(new URL(request.url)));
-    }
-    return fetch(request);
-  },
+});
+term.addEventListener("fetch", (event) => {
+  if (event.request.url.startsWith("file:")) {
+    event.respondWith(
+      readFile(new URL(event.request.url)).then((bytes) => new Response(bytes)),
+    );
+  }
 });
 term.attach();
 const {document} = term;

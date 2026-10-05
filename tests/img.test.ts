@@ -639,7 +639,7 @@ test("with a cell size, an image's pixels and lengths are CSS pixels", async () 
 test("a new src cancels the request the old one started", async () => {
 	const {dom, document} = await mount("<img id=i>");
 	const signals: AbortSignal[] = [];
-	dom.addEventListener("request", (event) => {
+	dom.addEventListener("fetch", (event) => {
 		const {signal} = event.request;
 		signals.push(signal);
 		event.respondWith(
@@ -698,7 +698,7 @@ test("an image that is not showing is a box, sized as the image is", async () =>
 test("an image is a box while it loads", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.addEventListener("request", (event) => {
+	dom.addEventListener("fetch", (event) => {
 		event.respondWith(new Promise<Response>(() => {}));
 	});
 	dom.document.body.innerHTML =

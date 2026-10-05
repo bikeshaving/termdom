@@ -1,12 +1,16 @@
 /**
  * What a document's markup loads is first checked against its Content
  * Security Policy. What the policy allows goes to the TermDOM as a
- * "request" event, then to the `fetch` it was given, the runtime's by
- * default.
+ * "fetch" event, as a Service Worker hears it, and to the network when no
+ * listener answers. A redirect is checked against the policy again and
+ * followed on the network.
  */
+import {createServer} from "node:http";
+import type {AddressInfo} from "node:net";
+
 import {expect, test} from "@b9g/libuild/test";
 
-import {RequestEvent, TermDOM} from "../src/index.ts";
+import {ExtendableEvent, FetchEvent, TermDOM} from "../src/index.ts";
 import {encodePNG} from "../src/internal/images.ts";
 import {MockProcess, until} from "./test-utils.ts";
 
@@ -17,12 +21,7 @@ const PNG = encodePNG({
 }) as Uint8Array<ArrayBuffer>;
 
 function create(
-	options: {
-		html?: string;
-		url?: string;
-		fetch?: (request: Request) => Promise<Response>;
-		csp?: string;
-	} = {},
+	options: {html?: string; url?: string; csp?: string} = {},
 ): TermDOM {
 	return new TermDOM({
 		transport: new MockProcess({cols: 40, rows: 12}).transport,
@@ -35,31 +34,73 @@ async function settled(image: HTMLImageElement): Promise<string> {
 	return image.naturalWidth > 0 ? "loaded" : "broken";
 }
 
+interface Server {
+	origin: string;
+	port: number;
+	// Each request the server heard, as "METHOD /path".
+	heard: string[];
+	close(): Promise<void>;
+}
+
+// A server that answers /redirect?to=URL with a 302 to it, and any other
+// path with the PNG.
+async function serve(): Promise<Server> {
+	const heard: string[] = [];
+	const server = createServer((request, response) => {
+		heard.push(`${request.method} ${request.url}`);
+		const url = new URL(request.url!, "http://localhost");
+		if (url.pathname === "/redirect") {
+			response.writeHead(302, {location: url.searchParams.get("to")!});
+			response.end();
+			return;
+		}
+		response.writeHead(200, {"content-type": "image/png"});
+		response.end(PNG);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const {port} = server.address() as AddressInfo;
+	return {
+		origin: `http://127.0.0.1:${port}`,
+		port,
+		heard,
+		close: () => new Promise((resolve) => {
+			server.closeAllConnections?.();
+			server.close(() => resolve());
+		}),
+	};
+}
+
 test("without a policy, markup loads nothing, and the block is reported", async () => {
-	const dom = create({fetch: async () => new Response(PNG)});
+	const dom = create();
 	let heard = 0;
-	dom.addEventListener("request", () => {
+	dom.addEventListener("fetch", () => {
 		heard++;
 	});
 	const violations: Array<Partial<SecurityPolicyViolationEvent>> = [];
 	dom.document.addEventListener("securitypolicyviolation", (event) => {
 		violations.push(event as SecurityPolicyViolationEvent);
 	});
-	dom.document.body.innerHTML = "<img src=\"https://example.com/a.png\" alt=\"logo\">";
-	const image = dom.document.querySelector("img")!;
-	expect(await settled(image)).toBe("broken");
+	dom.document.body.innerHTML =
+		"<img src=\"https://example.com/a.png#top\" alt=\"logo\">" +
+		"<img src=\"data:image/png;base64,AAAA\">";
+	const images = [...dom.document.querySelectorAll("img")];
+	expect(await Promise.all(images.map(settled))).toEqual(["broken", "broken"]);
 	expect(heard).toBe(0);
-	expect(violations).toHaveLength(1);
+	expect(violations).toHaveLength(2);
 	const [violation] = violations;
-	expect(violation.target).toBe(image);
+	expect(violation.target).toBe(images[0]);
+	// A report carries no fragment, and only the scheme of a URL that is
+	// not HTTP(S).
 	expect([
 		violation.blockedURI,
+		violations[1].blockedURI,
 		violation.effectiveDirective,
 		violation.originalPolicy,
 		violation.disposition,
 		violation.isTrusted,
 	]).toEqual([
 		"https://example.com/a.png",
+		"data",
 		"default-src",
 		"default-src 'none'",
 		"enforce",
@@ -68,10 +109,10 @@ test("without a policy, markup loads nothing, and the block is reported", async 
 	dom.dispose();
 });
 
-test("a listener answers what the policy allows, and says what asked", async () => {
+test("a listener answers what the policy allows, as a Service Worker does", async () => {
 	const dom = create({csp: "img-src cid:"});
-	const seen: Array<Partial<RequestEvent>> = [];
-	dom.addEventListener("request", (event) => {
+	const seen: FetchEvent[] = [];
+	dom.addEventListener("fetch", (event) => {
 		seen.push(event);
 		event.respondWith(new Response(PNG));
 	});
@@ -81,38 +122,91 @@ test("a listener answers what the policy allows, and says what asked", async () 
 	const b = dom.document.getElementById("b") as HTMLImageElement;
 	expect([await settled(a), await settled(b)]).toEqual(["loaded", "broken"]);
 	expect(seen).toHaveLength(1);
-	expect(seen[0].request!.url).toBe("cid:logo@example.com");
-	expect(seen[0].request!.headers.get("accept")).toContain("image/png");
-	expect(seen[0].destination).toBe("image");
-	expect(seen[0].initiatorType).toBe("img");
-	expect(seen[0].initiator).toBe(a);
+	const [event] = seen;
+	expect(event).toBeInstanceOf(FetchEvent);
+	expect(event).toBeInstanceOf(ExtendableEvent);
+	expect([
+		event.type,
+		event.cancelable,
+		event.request.url,
+		event.request.destination,
+		event.clientId,
+		event.resultingClientId,
+		event.replacesClientId,
+	]).toEqual(["fetch", true, "cid:logo@example.com", "image", "", "", ""]);
+	expect(event.request.headers.get("accept")).toContain("image/png");
+	expect(await event.preloadResponse).toBeUndefined();
+	expect(await event.handled).toBeUndefined();
 	dom.dispose();
 });
 
-test("an allowed request no listener answers goes to the fetch given, or the runtime's", async () => {
-	const asked: string[] = [];
-	const dom = create({
-		csp: "img-src https:",
-		fetch: async (request) => {
-			asked.push(request.url);
-			return new Response(PNG);
-		},
+test("an allowed request no listener answers goes to the network", async () => {
+	const server = await serve();
+	const dom = create({csp: `img-src ${server.origin}`});
+	let heard = 0;
+	dom.addEventListener("fetch", () => {
+		heard++;
 	});
-	dom.document.body.innerHTML = "<img src=\"https://example.com/a.png\">";
+	dom.document.body.innerHTML = `<img src="${server.origin}/a.png">`;
 	expect(await settled(dom.document.querySelector("img")!)).toBe("loaded");
-	expect(asked).toEqual(["https://example.com/a.png"]);
+	expect(heard).toBe(1);
+	expect(server.heard).toEqual(["GET /a.png"]);
 	dom.dispose();
+	await server.close();
 
-	const runtime = create({csp: "img-src data:"});
-	runtime.document.body.innerHTML =
+	const data = create({csp: "img-src data:"});
+	data.document.body.innerHTML =
 		`<img src="data:image/png;base64,${Buffer.from(PNG).toString("base64")}">`;
-	expect(await settled(runtime.document.querySelector("img")!)).toBe("loaded");
-	runtime.dispose();
+	expect(await settled(data.document.querySelector("img")!)).toBe("loaded");
+	data.dispose();
+});
+
+test("a redirect is checked against the policy again, and reported as the URL asked for", async () => {
+	const server = await serve();
+	const elsewhere = `http://localhost:${server.port}/tracker.png`;
+	const dom = create({csp: `img-src ${server.origin}`});
+	const violations: SecurityPolicyViolationEvent[] = [];
+	dom.document.addEventListener("securitypolicyviolation", (event) => {
+		violations.push(event as SecurityPolicyViolationEvent);
+	});
+	const away = `${server.origin}/redirect?to=${encodeURIComponent(elsewhere)}`;
+	const home = `${server.origin}/redirect?to=%2Fhome.png`;
+	dom.document.body.innerHTML = `<img id=a src="${away}"><img id=b src="${home}">`;
+	const a = dom.document.getElementById("a") as HTMLImageElement;
+	const b = dom.document.getElementById("b") as HTMLImageElement;
+	expect([await settled(a), await settled(b)]).toEqual(["broken", "loaded"]);
+	expect(server.heard).not.toContain("GET /tracker.png");
+	expect(server.heard).toContain("GET /home.png");
+	expect(violations.map((violation) => violation.blockedURI)).toEqual([away]);
+	dom.dispose();
+	await server.close();
+});
+
+test("a listener's redirect is followed on the network, and checked", async () => {
+	const server = await serve();
+	const dom = create({csp: `img-src cid: ${server.origin}`});
+	let heard = 0;
+	dom.addEventListener("fetch", (event) => {
+		heard++;
+		const to = event.request.url === "cid:a"
+			? `${server.origin}/a.png`
+			: "https://elsewhere.example/b.png";
+		event.respondWith(Response.redirect(to, 302));
+	});
+	dom.document.body.innerHTML = "<img id=a src=\"cid:a\"><img id=b src=\"cid:b\">";
+	const a = dom.document.getElementById("a") as HTMLImageElement;
+	const b = dom.document.getElementById("b") as HTMLImageElement;
+	expect([await settled(a), await settled(b)]).toEqual(["loaded", "broken"]);
+	// The redirect goes to the network, not back to the listener.
+	expect(heard).toBe(2);
+	expect(server.heard).toEqual(["GET /a.png"]);
+	dom.dispose();
+	await server.close();
 });
 
 test("a page's own meta policy narrows the program's, and never widens it", async () => {
 	const dom = create({csp: "img-src https:"});
-	dom.addEventListener("request", (event) => {
+	dom.addEventListener("fetch", (event) => {
 		event.respondWith(new Response(PNG));
 	});
 	dom.document.head.innerHTML =
@@ -128,32 +222,41 @@ test("a page's own meta policy narrows the program's, and never widens it", asyn
 	dom.dispose();
 });
 
-test("Response.error() or a rejection refuses the request", async () => {
-	const dom = create({
-		csp: "img-src https:",
-		fetch: async () => new Response(PNG),
-	});
-	dom.addEventListener("request", (event) => {
-		event.respondWith(
-			event.request.url.endsWith("a.png")
-				? Response.error()
-				: Promise.reject(new Error("no")),
-		);
+test("Response.error(), a rejection, or preventDefault() without an answer fails the load", async () => {
+	const dom = create({csp: "img-src https:"});
+	const handled: Array<Promise<undefined>> = [];
+	dom.addEventListener("fetch", (event) => {
+		handled.push(event.handled);
+		const name = event.request.url.slice(-5);
+		if (name === "a.png") {
+			event.respondWith(Response.error());
+		} else if (name === "b.png") {
+			event.respondWith(Promise.reject(new Error("no")));
+		} else {
+			event.preventDefault();
+		}
 	});
 	dom.document.body.innerHTML =
 		"<img id=a src=\"https://example.com/a.png\">" +
-		"<img id=b src=\"https://example.com/b.png\">";
-	const a = dom.document.getElementById("a") as HTMLImageElement;
-	const b = dom.document.getElementById("b") as HTMLImageElement;
-	expect([await settled(a), await settled(b)]).toEqual(["broken", "broken"]);
+		"<img id=b src=\"https://example.com/b.png\">" +
+		"<img id=c src=\"https://example.com/c.png\">";
+	const images = ["a", "b", "c"].map((id) =>
+		dom.document.getElementById(id) as HTMLImageElement);
+	expect(await Promise.all(images.map(settled)))
+		.toEqual(["broken", "broken", "broken"]);
+	const outcomes = await Promise.all(
+		handled.map((promise) =>
+			promise.then(() => "resolved", (error: DOMException) => error.name)),
+	);
+	expect(outcomes).toEqual(["resolved", "NetworkError", "NetworkError"]);
 	dom.dispose();
 });
 
-test("respondWith() is called once, during the event", async () => {
+test("respondWith() is called once, during the event, and stops the other listeners", async () => {
 	const dom = create({csp: "img-src https:"});
-	let late: RequestEvent | null = null;
+	let late: FetchEvent | null = null;
 	const errors: string[] = [];
-	dom.addEventListener("request", (event) => {
+	dom.addEventListener("fetch", (event) => {
 		late = event;
 		event.respondWith(new Response(PNG));
 		try {
@@ -162,7 +265,7 @@ test("respondWith() is called once, during the event", async () => {
 			errors.push((error as DOMException).name);
 		}
 	});
-	dom.addEventListener("request", () => {
+	dom.addEventListener("fetch", () => {
 		errors.push("second listener ran");
 	});
 	dom.document.body.innerHTML = "<img src=\"https://example.com/a.png\">";
@@ -172,9 +275,36 @@ test("respondWith() is called once, during the event", async () => {
 	dom.dispose();
 });
 
+test("waitUntil() keeps dispose() waiting, and dispose() aborts loads in flight", async () => {
+	const dom = create({csp: "img-src https:"});
+	let finish!: () => void;
+	let signal!: AbortSignal;
+	dom.addEventListener("fetch", (event) => {
+		signal = event.request.signal;
+		event.waitUntil(
+			new Promise<void>((resolve) => {
+				finish = resolve;
+			}),
+		);
+		event.respondWith(new Promise<Response>(() => {}));
+	});
+	dom.document.body.innerHTML = "<img src=\"https://example.com/a.png\">";
+	await until(() => signal !== undefined);
+	let disposed = false;
+	const disposing = dom.dispose().then(() => {
+		disposed = true;
+	});
+	expect(signal.aborted).toBe(true);
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(disposed).toBe(false);
+	finish();
+	await disposing;
+	expect(disposed).toBe(true);
+});
+
 test("a listener added after the constructor's markup hears its images", async () => {
 	const dom = create({html: "<img src=\"cid:a\">", csp: "img-src cid:"});
-	dom.addEventListener("request", (event) => {
+	dom.addEventListener("fetch", (event) => {
 		event.respondWith(new Response(PNG));
 	});
 	expect(await settled(dom.document.querySelector("img")!)).toBe("loaded");
@@ -183,13 +313,10 @@ test("a listener added after the constructor's markup hears its images", async (
 
 test("only a document that is a file loads files, whatever the policy", async () => {
 	let heard = 0;
-	const dom = create({
-		url: "https://mail.example/message/1",
-		csp: "img-src *",
-		fetch: async () => new Response(PNG),
-	});
-	dom.addEventListener("request", () => {
+	const dom = create({url: "https://mail.example/message/1", csp: "img-src *"});
+	dom.addEventListener("fetch", (event) => {
 		heard++;
+		event.respondWith(new Response(PNG));
 	});
 	dom.document.body.innerHTML = "<img src=\"file:///etc/hosts\">";
 	expect(await settled(dom.document.querySelector("img")!)).toBe("broken");
@@ -197,13 +324,10 @@ test("only a document that is a file loads files, whatever the policy", async ()
 	dom.dispose();
 
 	const asked: string[] = [];
-	const local = create({
-		url: "file:///home/me/art/",
-		csp: "img-src file:",
-		fetch: async (request) => {
-			asked.push(request.url);
-			return new Response(PNG);
-		},
+	const local = create({url: "file:///home/me/art/", csp: "img-src file:"});
+	local.addEventListener("fetch", (event) => {
+		asked.push(event.request.url);
+		event.respondWith(new Response(PNG));
 	});
 	local.document.body.innerHTML = "<img src=\"cover.png\">";
 	expect(await settled(local.document.querySelector("img")!)).toBe("loaded");
@@ -211,33 +335,46 @@ test("only a document that is a file loads files, whatever the policy", async ()
 	local.dispose();
 });
 
-test("window.fetch is the fetch given, the runtime's without one, and no policy governs it", async () => {
-	const asked: Array<[string, string]> = [];
-	const dom = create({
-		url: "https://app.example/",
-		fetch: async (request) => {
-			asked.push([request.method, request.url]);
-			return new Response("given");
-		},
+test("window.fetch is the runtime's, resolved against the document, and no policy or listener governs it", async () => {
+	const server = await serve();
+	const dom = create({url: `${server.origin}/app/`});
+	let heard = 0;
+	dom.addEventListener("fetch", () => {
+		heard++;
 	});
-	const answer = await dom.window.fetch("/data", {method: "POST", body: "x"});
-	expect(await answer.text()).toBe("given");
-	expect(asked).toEqual([["POST", "https://app.example/data"]]);
+	const answer = await dom.window.fetch("data", {method: "POST", body: "x"});
+	expect(answer.status).toBe(200);
+	await answer.arrayBuffer();
+	expect(server.heard).toEqual(["POST /app/data"]);
+	expect(heard).toBe(0);
 	dom.dispose();
-
-	const plain = create();
-	const response = await plain.window.fetch("data:text/plain,platform");
-	expect(await response.text()).toBe("platform");
-	plain.dispose();
+	await server.close();
 });
 
-test("a RequestEvent can be made and dispatched by hand", () => {
+test("a FetchEvent can be made by hand, and only TermDOM's can be answered or extended", () => {
 	const request = new Request("https://example.com/");
-	const event = new RequestEvent("request", {request, destination: "image"});
-	expect(event.destination).toBe("image");
-	expect(event.initiatorType).toBe("other");
-	expect(event.initiator).toBeNull();
+	const event = new FetchEvent("fetch", {request});
+	expect([
+		event.request,
+		event.clientId,
+		event.resultingClientId,
+		event.replacesClientId,
+		event.cancelable,
+	]).toEqual([request, "", "", "", false]);
+	expect(event.handled).toBeInstanceOf(Promise);
 	expect(() => event.respondWith(new Response(""))).toThrow();
+	expect(() => event.waitUntil(Promise.resolve())).toThrow();
+	const target = new EventTarget();
+	const errors: string[] = [];
+	target.addEventListener("fetch", (dispatched) => {
+		try {
+			(dispatched as FetchEvent).respondWith(new Response(""));
+		} catch (error) {
+			errors.push((error as DOMException).name);
+		}
+	});
+	target.dispatchEvent(new FetchEvent("fetch", {request}));
+	expect(errors).toEqual(["InvalidStateError"]);
 });
 
 test("a SecurityPolicyViolationEvent takes its init, with violatedDirective an alias", () => {

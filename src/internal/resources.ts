@@ -1,65 +1,113 @@
 /**
- * Loading what a document's markup asks for, such as an <img>'s
- * source. Each load is a plain Request, which
- * a TermDOM hands to its "request" listeners as a RequestEvent, with
- * what asked for it. A listener answers with respondWith(), as a
- * Service Worker answers a fetch event. A request no listener answers
- * goes to the `fetch` the TermDOM was made with, and without one it
- * fails: nothing loads unless the program says so. Only a document that
- * is itself a file: URL loads file: URLs.
+ * Loading what a document's markup asks for, such as an <img>'s source,
+ * in the order Fetch takes a browser's loads. The document's Content
+ * Security Policy decides whether a load may be made at all. One it
+ * allows goes to the TermDOM's "fetch" listeners as a FetchEvent, which
+ * answer it as a Service Worker does, and to the network when none does.
+ * Each redirect is checked against the policy again and followed on the
+ * network. Only a document that is itself a file: URL loads file: URLs.
  */
 
-/** What a RequestEvent carries besides the request itself. */
-export interface RequestContext {
-	// The Fetch standard's request destination: "image" for an <img>.
-	destination: RequestDestination;
-	// Resource Timing's initiator type: "img" for an <img>.
-	initiatorType: string;
-	// The element that asked, or null.
-	initiator: Element | null;
+const kExtend = Symbol("extend");
+const kPending = Symbol("pending");
+
+export interface ExtendableEvent {
+	// Where waitUntil()'s promises go: the TermDOM that dispatched the
+	// event. Null for an event a program made, which nothing waits on.
+	[kExtend]: ((promise: Promise<unknown>) => void) | null;
+	[kPending]: number;
 }
 
-export interface RequestEventInit extends EventInit, Partial<RequestContext> {
+/** An event whose listeners can ask the TermDOM to wait for their work. */
+export class ExtendableEvent extends Event {
+	constructor(type: string, init?: EventInit) {
+		super(type, init);
+		this[kExtend] = null;
+		this[kPending] = 0;
+	}
+
+	/** Keeps the TermDOM's dispose() waiting until `promise` settles. */
+	waitUntil(promise: PromiseLike<unknown>): void {
+		const lifetime = Promise.resolve(promise);
+		addLifetimePromise(this, lifetime);
+		this[kExtend]!(lifetime);
+	}
+}
+
+// Service Workers §4.4.1: an event is active while it is dispatched, or
+// while a promise it was given is pending.
+function addLifetimePromise(
+	event: ExtendableEvent,
+	promise: Promise<unknown>,
+): void {
+	if (event[kExtend] === null) {
+		throw new DOMException(
+			"Only an event TermDOM dispatches can be extended",
+			"InvalidStateError",
+		);
+	}
+	if (event.eventPhase === Event.NONE && event[kPending] === 0) {
+		throw new DOMException(
+			"The event is no longer active",
+			"InvalidStateError",
+		);
+	}
+	event[kPending]++;
+	const settled = () => {
+		queueMicrotask(() => event[kPending]--);
+	};
+	promise.then(settled, settled);
+}
+
+export interface FetchEventInit extends EventInit {
 	request: Request;
+	preloadResponse?: Promise<unknown>;
+	clientId?: string;
+	resultingClientId?: string;
+	replacesClientId?: string;
+	handled?: Promise<undefined>;
 }
 
 const kResponse = Symbol("response");
-const kDispatching = Symbol("dispatching");
-const kExtensions = Symbol("extensions");
 
-export interface RequestEvent {
+export interface FetchEvent {
 	[kResponse]: Promise<Response> | null;
-	[kDispatching]: boolean;
-	[kExtensions]: Array<Promise<unknown>>;
 }
 
 /**
- * A load a document's markup asks for. A listener that answers it calls
- * respondWith() before it returns, and the first answer wins.
+ * A load the document's markup asks for, dispatched at the TermDOM as a
+ * Service Worker's fetch event is at its global scope. A listener answers
+ * it with respondWith(), which stops the other listeners. One that calls
+ * preventDefault() without answering fails the load.
  */
-export class RequestEvent extends Event {
+export class FetchEvent extends ExtendableEvent {
 	readonly request: Request;
-	readonly destination: RequestDestination;
-	readonly initiatorType: string;
-	readonly initiator: Element | null;
+	readonly preloadResponse: Promise<unknown>;
+	readonly clientId: string;
+	readonly resultingClientId: string;
+	readonly replacesClientId: string;
+	// Settles once the load is answered: rejects with a NetworkError when
+	// it fails.
+	readonly handled: Promise<undefined>;
 
-	constructor(type: string, init: RequestEventInit) {
+	constructor(type: string, init: FetchEventInit) {
 		super(type, init);
 		this.request = init.request;
-		this.destination = init.destination ?? "";
-		this.initiatorType = init.initiatorType ?? "other";
-		this.initiator = init.initiator ?? null;
+		this.preloadResponse = init.preloadResponse ?? Promise.resolve(undefined);
+		this.clientId = init.clientId ?? "";
+		this.resultingClientId = init.resultingClientId ?? "";
+		this.replacesClientId = init.replacesClientId ?? "";
+		this.handled = init.handled ?? new Promise<undefined>(() => {});
 		this[kResponse] = null;
-		this[kDispatching] = false;
-		this[kExtensions] = [];
 	}
 
 	/**
-	 * Answer the request, during the event. Response.error(), or a
-	 * promise that rejects, fails it as a network error does.
+	 * Answer the request, during the event. Response.error(), a promise
+	 * that rejects, or a value that is not a Response fails it as a
+	 * network error does.
 	 */
 	respondWith(response: Response | PromiseLike<Response>): void {
-		if (!this[kDispatching]) {
+		if (this.eventPhase === Event.NONE) {
 			throw new DOMException(
 				"respondWith() is only called while the event is dispatched",
 				"InvalidStateError",
@@ -71,15 +119,37 @@ export class RequestEvent extends Event {
 				"InvalidStateError",
 			);
 		}
-		this[kResponse] = Promise.resolve(response);
+		const answer = Promise.resolve(response);
+		addLifetimePromise(this, answer);
 		this.stopImmediatePropagation();
+		this[kResponse] = answer.then((value) => {
+			if (!(value instanceof Response)) {
+				throw new TypeError("respondWith() takes a Response");
+			}
+			return value;
+		});
 	}
+}
 
-	/** Work the listener goes on with after it answers. */
-	waitUntil(promise: PromiseLike<unknown>): void {
-		// Nothing waits on it, so a rejection must not go unhandled.
-		this[kExtensions].push(Promise.resolve(promise).catch(() => {}));
-	}
+/**
+ * Gives a request its Fetch destination, such as "image", which a
+ * runtime's Request leaves empty.
+ */
+export function setRequestDestination(
+	request: Request,
+	destination: RequestDestination,
+): void {
+	Object.defineProperty(request, "destination", {
+		value: destination,
+		enumerable: true,
+		configurable: true,
+	});
+}
+
+/** What a load knows of what asked for it. */
+export interface RequestContext {
+	// The element that asked, where a policy violation is reported.
+	initiator: Element | null;
 }
 
 /** How a document's loads are answered, set by the TermDOM that owns it. */
@@ -118,72 +188,161 @@ export interface RequestPolicy {
 	// The program's policy, or the default that allows nothing. A page's
 	// own meta tags are read with each request and can only narrow it.
 	policies: readonly ContentSecurityPolicy[];
-	// Where an allowed request no listener answers goes.
-	fetch: (request: Request) => Promise<Response>;
 	// Tells of a load a policy blocked.
 	violate(at: EventTarget, init: SecurityPolicyViolationEventInit): void;
+	// Takes the work a listener asked the TermDOM to wait for.
+	extend(promise: Promise<unknown>): void;
+	// Aborts every load when the TermDOM is disposed.
+	signal: AbortSignal;
 }
 
+const REDIRECT_LIMIT = 20;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
 /**
- * Settle a load the document's markup asks for. The document's policies
- * decide whether it may be made at all. One allowed goes to `target`'s
- * "request" listeners, and to `policy.fetch` when none answers. As in a
- * browser, a document that is not a file loads no file, about:blank
- * included.
+ * Settle a load the document's markup asks for: checked against the
+ * document's policies, offered to `target`'s "fetch" listeners, and sent
+ * to the network when none answers. A redirect, from a listener or the
+ * network, is checked again and followed on the network, as Fetch follows
+ * one without its Service Worker.
  */
-export function answerRequest(
+export async function answerRequest(
 	target: EventTarget,
 	document: Document,
 	request: Request,
 	context: RequestContext,
 	policy: RequestPolicy,
 ): Promise<Response> {
-	const url = new URL(request.url);
+	policy.signal.throwIfAborted();
+	const destination = request.destination;
+	request = new Request(request, {
+		signal: AbortSignal.any([request.signal, policy.signal]),
+	});
+	setRequestDestination(request, destination);
+	checkRequest(document, request, new URL(request.url), 0, context, policy);
+	let response =
+		await dispatchFetchEvent(target, request, policy) ??
+		await fetch(new Request(request, {redirect: "manual"}));
+	let current = new URL(request.url);
+	for (let redirects = 1; isRedirect(response); redirects++) {
+		if (request.redirect !== "follow") {
+			throw new TypeError(`${request.url} redirects`);
+		}
+		if (redirects > REDIRECT_LIMIT) {
+			throw new TypeError(`${request.url} redirects too many times`);
+		}
+		current = new URL(response.headers.get("location")!, current);
+		await response.body?.cancel().catch(() => {});
+		checkRequest(document, request, current, redirects, context, policy);
+		const next = new Request(current, {
+			headers: request.headers,
+			signal: request.signal,
+			redirect: "manual",
+		});
+		setRequestDestination(next, destination);
+		response = await fetch(next);
+	}
+	if (response.type === "error") {
+		throw new TypeError("The request was refused");
+	}
+	return response;
+}
+
+function isRedirect(response: Response): boolean {
+	return REDIRECT_STATUSES.has(response.status) &&
+		response.headers.has("location");
+}
+
+// Fetch's "should request be blocked", for the request's URL or a URL it
+// was redirected to. As in a browser, a document that is not a file loads
+// no file, about:blank included.
+function checkRequest(
+	document: Document,
+	request: Request,
+	url: URL,
+	redirects: number,
+	context: RequestContext,
+	policy: RequestPolicy,
+): void {
 	const self = new URL(document.URL);
 	if (url.protocol === "file:" && self.protocol !== "file:") {
-		return Promise.reject(
-			new TypeError("A document that is not a file cannot load a file"),
-		);
+		throw new TypeError("A document that is not a file cannot load a file");
 	}
 	const blocked = getBlockingDirective([
 		...policy.policies,
 		...getDocumentPolicies(document),
-	], url, context.destination, self);
-	if (blocked !== null) {
-		const at = context.initiator?.isConnected ? context.initiator : document;
-		policy.violate(at, {
-			documentURI: document.URL,
-			blockedURI: request.url,
-			effectiveDirective: blocked.directive,
-			originalPolicy: blocked.policy.text,
-			disposition: "enforce",
-			bubbles: true,
-			composed: true,
-		});
-		return Promise.reject(
-			new TypeError(
-				`The Content Security Policy directive "${blocked.directive}" ` +
-				`blocked ${request.url}`,
-			),
-		);
+	], url, request.destination, self, redirects);
+	if (blocked === null) {
+		return;
 	}
-	const event = new RequestEvent("request", {request, ...context});
-	event[kDispatching] = true;
-	try {
-		target.dispatchEvent(event);
-	} finally {
-		event[kDispatching] = false;
+	const at = context.initiator?.isConnected ? context.initiator : document;
+	// The URL the document asked for, never where it was redirected
+	// (CSP3 §2.4.2), and only as much of it as a report may carry.
+	policy.violate(at, {
+		documentURI: stripURLForReport(new URL(document.URL)),
+		blockedURI: stripURLForReport(new URL(request.url)),
+		effectiveDirective: blocked.directive,
+		originalPolicy: blocked.policy.text,
+		disposition: "enforce",
+		bubbles: true,
+		composed: true,
+	});
+	throw new TypeError(
+		`The Content Security Policy directive "${blocked.directive}" ` +
+		`blocked ${stripURLForReport(new URL(request.url))}`,
+	);
+}
+
+// CSP3 §5.4: a URL that is not HTTP(S) reports as its scheme alone, and
+// one that is reports without its fragment and credentials.
+function stripURLForReport(url: URL): string {
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		return url.protocol.slice(0, -1);
 	}
+	const stripped = new URL(url);
+	stripped.hash = "";
+	stripped.username = "";
+	stripped.password = "";
+	return stripped.href;
+}
+
+// Service Workers' Handle Fetch, as far as a page's load needs it: the
+// listener's response, or null when none answered and the load goes to
+// the network.
+async function dispatchFetchEvent(
+	target: EventTarget,
+	request: Request,
+	policy: RequestPolicy,
+): Promise<Response | null> {
+	let resolveHandled!: () => void;
+	let rejectHandled!: (error: DOMException) => void;
+	const handled = new Promise<undefined>((resolve, reject) => {
+		resolveHandled = () => resolve(undefined);
+		rejectHandled = reject;
+	});
+	handled.catch(() => {});
+	const event = new FetchEvent("fetch", {request, handled, cancelable: true});
+	event[kExtend] = (promise) => {
+		policy.extend(promise);
+	};
+	target.dispatchEvent(event);
 	const answer = event[kResponse];
-	if (answer !== null) {
-		return answer.then((response) => {
-			if (response.type === "error") {
-				throw new TypeError("The request was refused");
-			}
-			return response;
-		});
+	if (answer === null) {
+		if (event.defaultPrevented) {
+			rejectHandled(new DOMException("The load was canceled", "NetworkError"));
+			throw new TypeError("A fetch listener canceled the load");
+		}
+		resolveHandled();
+		return null;
 	}
-	return policy.fetch(request);
+	try {
+		const response = await answer;
+		resolveHandled();
+		return response;
+	} catch (error) {
+		rejectHandled(new DOMException("The load failed", "NetworkError"));
+		throw error;
+	}
 }
 
 // A policy a page states for itself in its head (HTML §4.2.5.3), which a
@@ -269,19 +428,25 @@ function getEffectiveDirective(
 /**
  * The first policy and directive that block a load of `url` for
  * `destination`, from a document at `self`, or null when every policy
- * allows it.
+ * allows it. `redirects` counts the redirects that led to `url`.
  */
 export function getBlockingDirective(
 	policies: readonly ContentSecurityPolicy[],
 	url: URL,
 	destination: RequestDestination,
 	self: URL,
+	redirects = 0,
 ): {policy: ContentSecurityPolicy; directive: string} | null {
 	for (const policy of policies) {
 		const directive = getEffectiveDirective(policy, destination);
 		if (
 			directive !== null &&
-			!matchesSourceList(policy.directives.get(directive)!, url, self)
+			!matchesSourceList(
+				policy.directives.get(directive)!,
+				url,
+				self,
+				redirects,
+			)
 		) {
 			return {policy, directive};
 		}
@@ -290,8 +455,13 @@ export function getBlockingDirective(
 }
 
 // CSP3 §6.7.2.6. An empty list, or one that is just 'none', matches nothing.
-function matchesSourceList(sources: string[], url: URL, self: URL): boolean {
-	return sources.some((source) => matchesSource(source, url, self));
+function matchesSourceList(
+	sources: string[],
+	url: URL,
+	self: URL,
+	redirects: number,
+): boolean {
+	return sources.some((source) => matchesSource(source, url, self, redirects));
 }
 
 const NETWORK_SCHEMES = new Set(["http", "https", "ws", "wss"]);
@@ -300,7 +470,12 @@ const SCHEME_SOURCE = /^([a-zA-Z][a-zA-Z0-9+.-]*):$/;
 const HOST_SOURCE =
 	/^(?:([a-zA-Z][a-zA-Z0-9+.-]*):\/\/)?(\*|(?:\*\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*)(?::(\*|\d+))?(\/[^?#]*)?$/;
 
-function matchesSource(source: string, url: URL, self: URL): boolean {
+function matchesSource(
+	source: string,
+	url: URL,
+	self: URL,
+	redirects: number,
+): boolean {
 	const scheme = url.protocol.slice(0, -1);
 	const selfScheme = self.protocol.slice(0, -1);
 	const lower = source.toLowerCase();
@@ -343,15 +518,19 @@ function matchesSource(source: string, url: URL, self: URL): boolean {
 	if (!portPartMatches(port, url)) {
 		return false;
 	}
-	return path === undefined || path === "/" || pathPartMatches(path, url);
+	// A redirect's target is matched without its path, which would tell
+	// the page where a cross-origin redirect went (§6.7.2.5).
+	return path === undefined || redirects > 0 || pathPartMatches(path, url);
 }
 
-// §6.7.2.8: a scheme matches itself, and its secure counterpart.
+// §6.7.2.8: a scheme matches itself and its secure counterpart, and ws
+// matches the http schemes too.
 function schemePartMatches(expression: string, scheme: string): boolean {
 	return (
 		expression === scheme ||
 		(expression === "http" && scheme === "https") ||
-		(expression === "ws" && (scheme === "wss" || scheme === "https")) ||
+		(expression === "ws" &&
+			(scheme === "wss" || scheme === "http" || scheme === "https")) ||
 		(expression === "wss" && scheme === "https")
 	);
 }
@@ -389,16 +568,41 @@ function portPartMatches(port: string | undefined, url: URL): boolean {
 }
 
 // §6.7.2.11: a path ending in a slash matches what is under it, and any
-// other the one resource it names.
+// other the one resource it names, compared piece by piece once each
+// piece is percent-decoded.
 function pathPartMatches(path: string, url: URL): boolean {
-	const expression = decodeURIComponent(path);
-	const target = decodeURIComponent(url.pathname);
-	return expression.endsWith("/")
-		? target.startsWith(expression)
-		: target === expression;
+	if (path === "" || (path === "/" && url.pathname === "")) {
+		return true;
+	}
+	const exact = !path.endsWith("/");
+	const expected = path.split("/");
+	const actual = url.pathname.split("/");
+	if (expected.length > actual.length) {
+		return false;
+	}
+	if (exact && expected.length !== actual.length) {
+		return false;
+	}
+	if (!exact) {
+		expected.pop();
+	}
+	return expected.every((piece, i) =>
+		percentDecode(piece) === percentDecode(actual[i]),
+	);
 }
 
-// §6.7.2.6: the document's own origin, or its upgrade to https or wss.
+// The URL Standard's percent-decode, which leaves a malformed sequence as
+// it is, comparing as bytes.
+function percentDecode(text: string): string {
+	const bytes = String.fromCharCode(...new TextEncoder().encode(text));
+	return bytes.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) =>
+		String.fromCharCode(parseInt(hex, 16)),
+	);
+}
+
+// §6.7.2.7: the document's own origin, or the same host and port, over
+// https or wss, or over http or ws from an http document. The URL parser
+// leaves a scheme's default port empty, so two defaults compare equal.
 function matchesSelf(url: URL, self: URL): boolean {
 	if (self.origin === "null" || url.origin === "null") {
 		return false;
@@ -406,11 +610,13 @@ function matchesSelf(url: URL, self: URL): boolean {
 	if (url.origin === self.origin) {
 		return true;
 	}
+	const scheme = url.protocol.slice(0, -1);
+	const selfScheme = self.protocol.slice(0, -1);
 	return (
 		url.hostname === self.hostname &&
-		((self.protocol === "http:" &&
-			(url.protocol === "https:" || url.protocol === "wss:")) ||
-			(self.protocol === "ws:" && url.protocol === "wss:")) &&
-		(url.port === self.port || url.port === "")
+		url.port === self.port &&
+		(scheme === "https" ||
+			scheme === "wss" ||
+			(selfScheme === "http" && (scheme === "http" || scheme === "ws")))
 	);
 }
