@@ -257,9 +257,7 @@ interface TerminalTransport {
 }
 
 interface TerminalCloseInfo {
-	status?: number; // process-exit semantics
-	signal?: string; // "SIGHUP", "SIGTERM", ... when a signal ended it
-	reason?: string;
+	status?: number; // the exit status: process.exit, or SSH's exit-status
 }
 ```
 
@@ -267,6 +265,9 @@ Chunks on `readable` are strings; a byte-backed wrapper must decode with
 a streaming decoder so code points never split. Escape sequences may
 split across chunks; the engine reassembles them. When `closed` fulfills,
 the engine disposes in response.
+
+[`examples/ssh.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/ssh.ts)
+implements one over an SSH session's channel.
 
 ## `transportFromProcess(proc?, options?)`
 
