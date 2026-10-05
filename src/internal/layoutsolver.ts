@@ -436,22 +436,20 @@ function getCacheSlot(
 
 const kMeasure = Symbol("measure");
 const kStaticPosition = Symbol("staticPosition");
-
-// While a pass runs, the boxes that are or hold an absolutely or fixed
-// positioned box. Every container searches its boxes for those it
-// places, and nested containers search the same boxes again, so a
-// search skips what holds none. Outside a pass it searches everything.
-let outOfFlowHolders: WeakSet<LayoutNode> | null = null;
+const kStyle = Symbol("style");
+const kOutOfFlowCount = Symbol("outOfFlowCount");
 
 export interface LayoutNode {
 	[kMeasure]: Measure | null;
 	[kStaticPosition]: StaticPosition | null;
+	[kStyle]: Style;
+	// How many absolutely or fixed positioned boxes the subtree holds, this
+	// one included, kept as boxes join, leave and change position. A search
+	// for the boxes a container places skips a subtree that holds none.
+	[kOutOfFlowCount]: number;
 }
 
 export class LayoutNode {
-	// Replaced whole by a restyle or written in place, with invalidate()
-	// after either.
-	style: Style;
 	result: LayoutResult;
 	children: LayoutNode[];
 	parent: LayoutNode | null;
@@ -488,8 +486,29 @@ export class LayoutNode {
 		this.cachedLayout = null;
 		this.cellBaselineShift = 0;
 		this.owner = null;
-		this.style = createStyle();
+		this[kOutOfFlowCount] = 0;
+		this[kStyle] = createStyle();
 		this.result = createResult();
+	}
+
+	// Replaced whole by a restyle or written in place, with invalidate()
+	// after either. Only a replacement can change the position type.
+	get style(): Style {
+		return this[kStyle];
+	}
+
+	set style(style: Style) {
+		const change =
+			Number(isOutOfFlowType(style.positionType)) -
+			Number(isOutOfFlowType(this[kStyle].positionType));
+		this[kStyle] = style;
+		if (change !== 0) {
+			countOutOfFlow(this, change);
+		}
+	}
+
+	get holdsOutOfFlow(): boolean {
+		return this[kOutOfFlowCount] > 0;
 	}
 
 	get measure(): Measure | null {
@@ -513,6 +532,9 @@ export class LayoutNode {
 	insertChild(child: LayoutNode, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
+		if (child[kOutOfFlowCount] !== 0) {
+			countOutOfFlow(this, child[kOutOfFlowCount]);
+		}
 		invalidateAncestors(this);
 	}
 
@@ -521,6 +543,9 @@ export class LayoutNode {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
+			if (child[kOutOfFlowCount] !== 0) {
+				countOutOfFlow(this, -child[kOutOfFlowCount]);
+			}
 			invalidateAncestors(this);
 		}
 	}
@@ -581,22 +606,16 @@ export class LayoutNode {
 		}
 		const availableHeight = isDefined(height) ? height : ownerHeight;
 
-		const enclosing = outOfFlowHolders;
-		outOfFlowHolders = indexOutOfFlowHolders(this);
-		try {
-			layoutNode(
-				this,
-				availableWidth,
-				availableHeight,
-				widthSpace,
-				isDefined(availableHeight) ? "definite" : "indefinite",
-				ownerWidth,
-				ownerHeight,
-				true,
-			);
-		} finally {
-			outOfFlowHolders = enclosing;
-		}
+		layoutNode(
+			this,
+			availableWidth,
+			availableHeight,
+			widthSpace,
+			isDefined(availableHeight) ? "definite" : "indefinite",
+			ownerWidth,
+			ownerHeight,
+			true,
+		);
 
 		roundToGrid(this, 0, 0);
 		this.stale = false;
@@ -800,6 +819,12 @@ function createResult(): LayoutResult {
 		collapseBottomNegative: 0,
 		selfCollapsing: false,
 	};
+}
+
+function countOutOfFlow(start: LayoutNode, change: number): void {
+	for (let node: LayoutNode | null = start; node; node = node.parent) {
+		node[kOutOfFlowCount] += change;
+	}
 }
 
 function invalidateAncestors(start: LayoutNode): void {
@@ -1562,25 +1587,6 @@ function layoutFlexbox(
 	}
 }
 
-function indexOutOfFlowHolders(root: LayoutNode): WeakSet<LayoutNode> {
-	const holders = new WeakSet<LayoutNode>();
-	const visit = (node: LayoutNode): boolean => {
-		const type = node.style.positionType;
-		let holds = type === "absolute" || type === "fixed";
-		for (const child of node.children) {
-			if (child.style.displayType !== "none" && visit(child)) {
-				holds = true;
-			}
-		}
-		if (holds) {
-			holders.add(node);
-		}
-		return holds;
-	};
-	visit(root);
-	return holders;
-}
-
 // An out-of-flow box is placed by its containing block, not by the box
 // that contains it, so the search reaches through in-flow boxes and
 // stops at any containing block. Whatever is under that one is its to
@@ -1592,10 +1598,7 @@ function getOutOfFlowDescendants(
 	const found: LayoutNode[] = [];
 	const enter = (parent: LayoutNode): void => {
 		for (const child of parent.children) {
-			if (
-				child.style.displayType === "none" ||
-				(outOfFlowHolders !== null && !outOfFlowHolders.has(child))
-			) {
+			if (child.style.displayType === "none" || !child.holdsOutOfFlow) {
 				continue;
 			}
 			const type = child.style.positionType;
