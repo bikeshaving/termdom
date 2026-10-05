@@ -274,6 +274,37 @@ test("Enter on a focused summary toggles the disclosure", async () => {
 	dom.dispose();
 });
 
+test("toggling a details keeps its summary on its row, from a script or from the summary", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div id=box style=\"height: 3em; overflow: auto\">" +
+		"<p>one</p><p>two</p>" +
+		"<details><summary>More</summary><p>a</p><p>b</p><p>c</p></details>" +
+		"</div>";
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	const details = document.querySelector("details") as HTMLDetailsElement;
+	const summary = document.querySelector("summary") as HTMLElement;
+	const row = () => summary.getBoundingClientRect().top;
+	const before = row();
+
+	details.open = true;
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect([box.scrollTop, row()]).toEqual([0, before]);
+
+	details.open = false;
+	await nextFrame(dom);
+	summary.click();
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect([details.open, box.scrollTop, row()]).toEqual([true, 0, before]);
+
+	dom.dispose();
+});
+
 /* ------------------------------------------------------------ the keycap */
 
 /** The cell at a screen position, for reading its attributes. */

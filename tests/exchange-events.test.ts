@@ -31,24 +31,6 @@ function closeCountingTransport(terminal: MockProcess): {
 	};
 }
 
-test("a details opened inside a shadow root scrolls into view", async () => {
-	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({transport: terminal.transport});
-	const {document} = dom;
-	document.body.innerHTML = filler(20) + "<div id=host></div>";
-	const root = document.getElementById("host")!.attachShadow({mode: "open"});
-	root.innerHTML = "<details><summary>more</summary>revealed body</details>";
-	await nextFrame(dom);
-	expect(terminal.getVisibleText()).toContain("filler 0");
-	expect(terminal.getVisibleText()).not.toContain("revealed body");
-
-	root.querySelector("details")!.open = true;
-	await new Promise((r) => setTimeout(r, 20));
-	await nextFrame(dom);
-	expect(terminal.getVisibleText()).toContain("revealed body");
-	await dom.dispose();
-});
-
 test("a change inside a shadow root reveals the control", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
