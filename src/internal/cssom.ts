@@ -5450,6 +5450,11 @@ interface ParsedCSSRule {
 	// originates on the part element, inside the host's shadow tree.
 	ofPart?: boolean;
 
+	// For a rule with a :has(), what its anchors must have, as kHasAnchors
+	// keeps them, and the pseudo-classes inside it.
+	hasAnchors?: readonly string[];
+	hasStates?: readonly string[];
+
 	// Cascade ORIGIN, the tier above specificity. Every author rule beats
 	// every UA rule, which lets `input::placeholder { color }` beat the UA
 	// sheet's gray despite that selector's higher specificity.
@@ -5575,7 +5580,6 @@ const kFlushing = Symbol("flushing");
 const kUsedValues = Symbol("usedValues");
 const kUsedStale = Symbol("used values stale");
 const kShadowRoots = Symbol("shadowRoots");
-const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
 const kSiblingsReachDescendants = Symbol("siblingsReachDescendants");
 const kSiblingKeys = Symbol("siblingKeys");
@@ -5597,6 +5601,7 @@ const kCounterRulesExist = Symbol("counterRulesExist");
 const kListItemRulesExist = Symbol("listItemRulesExist");
 const kScopedRulesExist = Symbol("scopedRulesExist");
 const kHasRulesExist = Symbol("hasRulesExist");
+const kHasAnchors = Symbol("hasAnchors");
 const kHoverRulesExist = Symbol("hoverRulesExist");
 const kLayerPaths = Symbol("layerPaths");
 const kAnonymousLayers = Symbol("anonymousLayers");
@@ -5677,7 +5682,6 @@ export interface Cascade {
 	// children such a compound could name.
 	[kSiblingKeys]: Set<string>;
 	[kSiblingsUniversal]: boolean;
-	[kSelectorsReachAncestors]: boolean;
 
 	// The keys whose change can affect an element's DESCENDANTS: those a
 	// selector tests left of a combinator (`.editing .view`), and those on
@@ -5718,6 +5722,12 @@ export interface Cascade {
 	// Whether any rule is scoped, which is what adds proximity to the sort.
 	[kScopedRulesExist]: boolean;
 	[kHasRulesExist]: boolean;
+
+	// What an element must have for a :has() to be tested on it: an id as
+	// "#id", a class as ".class", a local name, or "*" for anything. A
+	// change inside an element that has none of them leaves every :has()
+	// as it was.
+	[kHasAnchors]: Set<string>;
 
 	// The engine reads this to decide whether the terminal must report
 	// pointer motion. A sheet that never tests :hover cannot show it, and
@@ -5814,7 +5824,6 @@ export class Cascade {
 		this[kSiblingsReachDescendants] = false;
 		this[kSiblingKeys] = new Set();
 		this[kSiblingsUniversal] = false;
-		this[kSelectorsReachAncestors] = false;
 		this[kReachingClasses] = new Set<string>();
 		this[kKeyProperties] = new Map<string, Set<string>>();
 		this[kReachingIds] = new Set<string>();
@@ -5828,6 +5837,7 @@ export class Cascade {
 		this[kListItemRulesExist] = false;
 		this[kScopedRulesExist] = false;
 		this[kHasRulesExist] = false;
+		this[kHasAnchors] = new Set();
 		this[kHasStates] = new Set();
 		this[kHoverRulesExist] = false;
 		this[kParsedStyleSheetCount] = -1;
@@ -5889,9 +5899,12 @@ export class Cascade {
 		let removedElements = false;
 		const changedParents = new Set<Element>();
 
-		// A :has() subject sits ABOVE what changed it, so when such rules exist
-		// every mutation restyles its flat-tree ancestor chain too.
+		// A :has() anchor sits above what changed it, or before it among its
+		// siblings for :has(+ x) and :has(~ x), and the rule can style the
+		// anchor's descendants too. So each such element a :has() could be
+		// tested on restyles, with everything under it.
 		if (this[kHasRulesExist]) {
+			const anchors = new Set<Element>();
 			for (const mutation of mutations) {
 				const start = mutation.target.nodeType === 1
 					? (mutation.target as Element)
@@ -5901,7 +5914,16 @@ export class Cascade {
 					ancestor;
 					ancestor = flatParentElement(ancestor)
 				) {
-					invalidateElementCaches(this, ancestor);
+					for (
+						let element: Element | null = ancestor;
+						element !== null;
+						element = element.previousElementSibling
+					) {
+						if (!anchors.has(element) && couldAnchorHas(this, element)) {
+							anchors.add(element);
+							invalidateSubtree(this, element);
+						}
+					}
 				}
 			}
 		}
@@ -5968,9 +5990,7 @@ export class Cascade {
 				// and on the parent, none of which the mutation names. Once
 				// per parent per batch: appending n children one at a time
 				// is n records against the same parent.
-				if (this[kSelectorsReachAncestors]) {
-					dropCache(this);
-				} else if (
+				if (
 					this[kSelectorsReachSiblings] &&
 					mutation.target.nodeType === Node.ELEMENT_NODE
 				) {
@@ -6040,11 +6060,8 @@ export class Cascade {
 					this[kLayout].invalidateFrame();
 				}
 				// `.on ~ .light` matches a FOLLOWING sibling whose cached
-				// styles know nothing of this change. :has() reaches ancestors,
-				// and the only correct response is to drop every cached style.
-				if (this[kSelectorsReachAncestors]) {
-					dropCache(this);
-				} else if (this[kSelectorsReachSiblings]) {
+				// styles know nothing of this change.
+				if (this[kSelectorsReachSiblings]) {
 					for (
 						let sibling = element.nextElementSibling;
 						sibling;
@@ -6343,8 +6360,99 @@ function registerConnectedShadowRoots(
 
 // In place rather than by a full parse, which renews every rule's id and
 // leaves no shared table reusable.
+function noteHasRule(
+	cascade: Cascade,
+	anchors: readonly string[],
+	states: readonly string[],
+): void {
+	cascade[kHasRulesExist] = true;
+	for (const anchor of anchors) {
+		cascade[kHasAnchors].add(anchor);
+	}
+	for (const state of states) {
+		cascade[kHasStates].add(state);
+	}
+}
+
+// For each :has() in a selector, what the compound it is written on asks
+// of an element: its id, else a class, else its local name, else
+// anything. What a functional pseudo-class or an attribute selector asks
+// is left out, so the answer only ever asks for less.
+function getHasAnchors(selector: string): string[] {
+	const anchors: string[] = [];
+	for (
+		let at = selector.indexOf(":has(");
+		at !== -1;
+		at = selector.indexOf(":has(", at + 5)
+	) {
+		let start = at;
+		let depth = 0;
+		while (start > 0) {
+			const char = selector[start - 1];
+			if (char === ")" || char === "]") {
+				depth++;
+			} else if (char === "(" || char === "[") {
+				if (depth === 0) {
+					break;
+				}
+				depth--;
+			} else if (depth === 0 && /[\s>+~,]/.test(char)) {
+				break;
+			}
+			start--;
+		}
+		let compound = selector.slice(start, at);
+		if (/[\\|]/.test(compound)) {
+			anchors.push("*");
+			continue;
+		}
+		let previous;
+		do {
+			previous = compound;
+			compound = compound
+				.replace(/:[\w-]+\([^()]*\)/g, "")
+				.replace(/\[[^[\]]*\]/g, "");
+		} while (compound !== previous);
+		const id = /#([\w-]+)/.exec(compound);
+		const className = /\.([\w-]+)/.exec(compound);
+		const tag = /^([a-zA-Z][\w-]*)/.exec(compound);
+		anchors.push(
+			id
+				? `#${id[1]}`
+				: className ? `.${className[1]}` : tag ? tag[1].toLowerCase() : "*",
+		);
+	}
+	return anchors;
+}
+
+function couldAnchorHas(cascade: Cascade, element: Element): boolean {
+	const anchors = cascade[kHasAnchors];
+	if (anchors.has("*") || anchors.has(element.localName.toLowerCase())) {
+		return true;
+	}
+	const id = element.getAttribute("id");
+	if (id !== null && anchors.has(`#${id}`)) {
+		return true;
+	}
+	for (const className of element.classList) {
+		if (anchors.has(`.${className}`)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	dropScopedRules(cascade, root);
+	// The root's :has() rules went with it, and so does what they asked for.
+	cascade[kHasRulesExist] = false;
+	cascade[kHasAnchors] = new Set();
+	cascade[kHasStates] = new Set();
+	for (const rule of cascade[kParsedRules]) {
+		if (rule.hasAnchors !== undefined) {
+			noteHasRule(cascade, rule.hasAnchors, rule.hasStates ?? []);
+		}
+	}
 	// A parse already due builds without the root. One that is not would
 	// see the sheet count drop and rebuild everything.
 	if (!cascade[kStylesheetsDirty] && cascade[kParsedStyleSheetCount] >= 0) {
@@ -7812,7 +7920,6 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	cascade[kSiblingsReachDescendants] = false;
 	cascade[kSiblingKeys] = new Set();
 	cascade[kSiblingsUniversal] = false;
-	cascade[kSelectorsReachAncestors] = false;
 	cascade[kReachingClasses].clear();
 	cascade[kKeyProperties].clear();
 	cascade[kReachingIds].clear();
@@ -7827,6 +7934,7 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	cascade[kListItemRulesExist] = false;
 	cascade[kScopedRulesExist] = false;
 	cascade[kHasRulesExist] = false;
+	cascade[kHasAnchors] = new Set();
 	cascade[kHasStates] = new Set();
 	cascade[kHoverRulesExist] = false;
 	cascade[kStylesheetsDirty] = false;
@@ -8737,12 +8845,15 @@ function parseSelector(
 	// A :has() rule reads DOWN the tree, the one relational direction the
 	// per-target invalidation cannot see, so the flag enables the ancestor
 	// sweep only for documents that need it.
+	let hasAnchors: string[] | undefined;
+	let hasStates: string[] | undefined;
 	if (selector.includes(":has(")) {
-		cascade[kHasRulesExist] = true;
+		hasAnchors = getHasAnchors(selector);
 		const inside = selector.slice(selector.indexOf(":has(") + 5);
-		for (const match of inside.matchAll(/:([a-zA-Z-]+)/g)) {
-			cascade[kHasStates].add(match[1].toLowerCase());
-		}
+		hasStates = Array.from(inside.matchAll(/:([a-zA-Z-]+)/g), (match) =>
+			match[1].toLowerCase(),
+		);
+		noteHasRule(cascade, hasAnchors, hasStates);
 	}
 	if (selector.includes(":hover")) {
 		cascade[kHoverRulesExist] = true;
@@ -8757,9 +8868,6 @@ function parseSelector(
 		!CSSValues.namespacePrefixesDeclared(selector, namespaces)
 	) {
 		return;
-	}
-	if (selector.includes(":has")) {
-		cascade[kSelectorsReachAncestors] = true;
 	}
 	const reading = CSSValues.readSelector(selector);
 	if (reading.reachesSiblings) {
@@ -8834,6 +8942,8 @@ function parseSelector(
 			scope,
 			uaOrigin,
 			reachesHost,
+			hasAnchors,
+			hasStates,
 			layer,
 			layerRank: 0,
 			scopes,
@@ -8857,6 +8967,8 @@ function parseSelector(
 			scope,
 			uaOrigin,
 			reachesHost,
+			hasAnchors,
+			hasStates,
 			layer,
 			layerRank: 0,
 			scopes,

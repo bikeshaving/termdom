@@ -405,3 +405,46 @@ test("a shadow root's style blocks cost about what the document's do", () => {
 	time(true);
 	expect(time(true)).toBeLessThan(3 * time(false));
 });
+
+test(":has() restyles its anchor, its siblings and what it styles below when a change reaches it", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+	const style = document.createElement("style");
+	style.textContent = `
+		figure:has(a) { color: rgb(255, 0, 0); }
+		figure:has(a) p { color: rgb(0, 0, 255); }
+		li:has(+ li.on) { color: rgb(0, 128, 0); }
+		.card:has(img.big) .title { color: rgb(1, 2, 3); }
+	`;
+	document.head.appendChild(style);
+	document.body.innerHTML =
+		"<figure><p>caption</p></figure>" +
+		"<ul><li id=\"first\">a</li><li id=\"second\">b</li></ul>" +
+		"<div class=\"card\"><div class=\"title\">t</div><img></div>";
+	await nextFrame(termdom);
+	const color = (selector: string): string => termdom.window
+		.getComputedStyle(document.querySelector(selector)!)
+		.getPropertyValue("color");
+	const plain = color("figure");
+
+	const link = document.createElement("a");
+	document.querySelector("figure")!.appendChild(link);
+	await nextFrame(termdom);
+	expect(color("figure")).toBe("rgb(255, 0, 0)");
+	expect(color("figure p")).toBe("rgb(0, 0, 255)");
+
+	link.remove();
+	await nextFrame(termdom);
+	expect(color("figure")).toBe(plain);
+	expect(color("figure p")).toBe(plain);
+
+	document.getElementById("second")!.className = "on";
+	await nextFrame(termdom);
+	expect(color("#first")).toBe("rgb(0, 128, 0)");
+
+	document.querySelector("img")!.className = "big";
+	await nextFrame(termdom);
+	expect(color(".title")).toBe("rgb(1, 2, 3)");
+	termdom.dispose();
+});
