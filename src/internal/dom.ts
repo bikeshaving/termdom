@@ -33363,7 +33363,6 @@ export function attachDocument(
 	for (const type of ["input", "select", "change", "selectionchange"]) {
 		exchange.addEventListener(type, onTextControlEditEvent);
 	}
-	exchange.addEventListener("toggle", onDisclosureToggle);
 	installEditing(exchange);
 	hoverListenerCounts.set(
 		attached,
@@ -33425,17 +33424,6 @@ function onTextControlEditEvent(event: globalThis.Event): void {
 	// either.
 	attached[kScreen].invalidate();
 	void attached[kRender]();
-}
-
-// A terminal page is one screen tall, and what a details opened is often
-// below the fold. A details that closes took content away, so only opening
-// reveals.
-function onDisclosureToggle(event: globalThis.Event): void {
-	const details = event.target;
-	if (!(details instanceof HTMLDetailsElement) || !details.open) {
-		return;
-	}
-	details.scrollIntoView({block: "nearest"});
 }
 
 /**
