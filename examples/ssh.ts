@@ -1,44 +1,43 @@
 /**
  * A TermDOM behind an SSH server. Every shell session that connects gets a
- * document of its own, rendered over that session's channel: the channel
- * stands in for the pty, the pty request gives the size and TERM, and a
- * window-change becomes the resize a local terminal would signal.
+ * document of its own, rendered over that session's channel through a
+ * TerminalTransport: the channel carries input and frames, the pty request
+ * gives the size and TERM, and a window-change becomes a resize.
  *
- *   node examples/ssh.ts
+ *   node examples/ssh.ts [port]
  *   ssh -p 2222 localhost          # from another terminal; any password
  *
- * The host key is generated on the first start and kept under the user's
- * cache directory, so a client that connected before is not warned that
- * the host changed. Set SSH_HOST_KEY to a PEM file to use one of your own.
- * Set SSH_PORT to listen elsewhere than 2222.
+ * The ed25519 host key is generated on the first start and kept at
+ * ~/.cache/termdom/ssh-host-key, so a client that connected before is not
+ * warned that the host changed. Replace that file to use a key of your own.
+ *
+ * This server accepts everyone, which suits a demo. To serve an app to
+ * real users, let OpenSSH do the SSH: a Match block in sshd_config with
+ * `ForceCommand node /path/to/app.ts` runs the app in place of a shell,
+ * on a real pty, and the app needs nothing but `new TermDOM()`.
  */
-import {generateKeyPairSync} from "node:crypto";
-import {EventEmitter} from "node:events";
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {homedir} from "node:os";
 import {join} from "node:path";
 
-import {type ProcessLike, TermDOM, transportFromProcess} from "@b9g/termdom";
+import {
+  TermDOM,
+  type TerminalCloseInfo,
+  type TerminalSize,
+  type TerminalTransport,
+} from "@b9g/termdom";
 import ssh2, {type ServerChannel} from "ssh2";
 
-const PORT = Number(process.env.SSH_PORT ?? 2222);
+const PORT = Number(process.argv[2] ?? 2222);
 
 function hostKey(): string {
-  const path =
-    process.env.SSH_HOST_KEY ??
-    join(
-      process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"),
-      "termdom",
-      "ssh-host-key.pem",
-    );
+  const path = join(homedir(), ".cache", "termdom", "ssh-host-key");
   if (existsSync(path)) {
     return readFileSync(path, "utf8");
   }
-  const {privateKey} = generateKeyPairSync("rsa", {
-    modulusLength: 2048,
-    publicKeyEncoding: {type: "pkcs1", format: "pem"},
-    privateKeyEncoding: {type: "pkcs1", format: "pem"},
-  });
+  // OpenSSH's own key format, which ssh2 reads for ed25519 where it does
+  // not read node:crypto's PKCS8.
+  const {private: privateKey} = ssh2.utils.generateKeyPairSync("ed25519");
   mkdirSync(join(path, ".."), {recursive: true});
   writeFileSync(path, privateKey, {mode: 0o600});
   return privateKey;
@@ -50,79 +49,93 @@ interface Pty {
   rows: number;
 }
 
+interface Session {
+  transport: TerminalTransport;
+  resize(cols: number, rows: number): void;
+}
+
 /**
- * The process-shaped view of one SSH session that transportFromProcess
- * reads: stdin is the channel, stdout writes back to it and carries the
- * pty's size, SIGWINCH fires on a window-change, and exit ends the
- * channel with the app's status.
+ * One SSH session as a terminal. Closing it ends the channel with the
+ * app's status; the client hanging up closes the session.
  */
-class SessionProcess extends EventEmitter implements ProcessLike {
-  readonly stdin: ProcessLike["stdin"];
-  readonly stdout: ProcessLike["stdout"];
-  readonly channel: ServerChannel;
-
-  constructor(channel: ServerChannel, pty: Pty) {
-    super();
-    this.channel = channel;
-    const stdin = channel as unknown as NonNullable<ProcessLike["stdin"]>;
-    stdin.isTTY = true;
-    stdin.setRawMode = () => stdin;
-    this.stdin = stdin;
-    this.stdout = {
-      isTTY: true,
-      columns: pty.cols,
-      rows: pty.rows,
-      write: (chunk, encoding, callback) => {
-        const done = typeof encoding === "function" ? encoding : callback;
-        channel.write(chunk, (error) => done?.(error ?? undefined));
-        return true;
+function sessionFromChannel(
+  channel: ServerChannel,
+  pty: Pty,
+  connection: {on(event: "close", listener: () => void): unknown},
+): Session {
+  let {cols, rows} = pty;
+  let resized: ReadableStreamDefaultController<TerminalSize> | null = null;
+  const closed = new Promise<TerminalCloseInfo>((resolve) => {
+    channel.on("close", () => resolve({}));
+    connection.on("close", () => resolve({}));
+  });
+  const decoder = new TextDecoder();
+  let onData: ((chunk: Uint8Array) => void) | null = null;
+  const transport: TerminalTransport = {
+    get cols() {
+      return cols;
+    },
+    get rows() {
+      return rows;
+    },
+    // The client's terminal keeps its shell above the connection, so the
+    // document anchors under the ssh command as a local one does under
+    // its prompt, and paints from there down.
+    sharesScreen: true,
+    interactive: true,
+    readable: new ReadableStream<string>({
+      start(controller) {
+        onData = (chunk) => {
+          controller.enqueue(decoder.decode(chunk, {stream: true}));
+        };
+        channel.on("data", onData);
       },
-    };
-  }
-
-  resize(cols: number, rows: number): void {
-    this.stdout.columns = cols;
-    this.stdout.rows = rows;
-    this.emit("SIGWINCH");
-  }
-
-  exit(code = 0): never {
-    this.channel.exit(code);
-    this.channel.end();
-    this.channel.close();
-    return undefined as never;
-  }
+      cancel() {
+        channel.off("data", onData!);
+      },
+    }),
+    writable: new WritableStream<string>({
+      write: (chunk) => new Promise<void>((resolve, reject) => {
+        channel.write(chunk, (error) => (error ? reject(error) : resolve()));
+      }),
+    }),
+    resizes: new ReadableStream<TerminalSize>({
+      start(controller) {
+        resized = controller;
+      },
+      cancel() {
+        resized = null;
+      },
+    }),
+    ready: Promise.resolve(),
+    closed,
+    close(info) {
+      channel.exit(info?.status ?? 0);
+      channel.end();
+    },
+  };
+  return {
+    transport,
+    resize(nextCols, nextRows) {
+      cols = nextCols;
+      rows = nextRows;
+      resized?.enqueue({cols, rows});
+    },
+  };
 }
 
 const sessions = new Set<TermDOM>();
 let served = 0;
 
-function serve(
-  channel: ServerChannel,
-  pty: Pty,
-  connection: {on(event: "close", listener: () => void): unknown},
-): SessionProcess {
-  const proc = new SessionProcess(channel, pty);
-  const termdom = new TermDOM({
-    // The client's terminal keeps its shell above the connection, so the
-    // document anchors under the ssh command as a local one does under
-    // its prompt, and paints from there down.
-    transport: transportFromProcess(proc, {sharesScreen: true}),
-  });
+function serve(session: Session, pty: Pty): void {
+  const termdom = new TermDOM({transport: session.transport});
   const {document, window} = termdom;
   served++;
   sessions.add(termdom);
-  // The channel closes when the app quits; the connection closes when
-  // the client hangs up. Either ends the session.
-  const ended = (): void => {
-    if (!sessions.delete(termdom)) {
-      return;
-    }
-    proc.emit("SIGHUP");
+  session.transport.closed.then(() => {
+    sessions.delete(termdom);
     refreshStatus();
-  };
-  channel.on("close", ended);
-  connection.on("close", ended);
+  });
 
   document.body.innerHTML = `
     <style>
@@ -153,7 +166,6 @@ function serve(
   });
   termdom.attach();
   refreshStatus();
-  return proc;
 }
 
 // ssh2 is CommonJS, so its classes come off the default export.
@@ -164,7 +176,7 @@ const server = new ssh2.Server({hostKeys: [hostKey()]}, (client) => {
     client.on("session", (acceptSession) => {
       const session = acceptSession();
       const pty: Pty = {term: "xterm-256color", cols: 80, rows: 24};
-      let proc: SessionProcess | null = null;
+      let current: Session | null = null;
       session.on("pty", (accept, _reject, info) => {
         pty.term = info.term || pty.term;
         pty.cols = info.cols || pty.cols;
@@ -172,11 +184,12 @@ const server = new ssh2.Server({hostKeys: [hostKey()]}, (client) => {
         accept?.();
       });
       session.on("window-change", (accept, _reject, info) => {
-        proc?.resize(info.cols, info.rows);
+        current?.resize(info.cols, info.rows);
         accept?.();
       });
       session.on("shell", (accept) => {
-        proc = serve(accept(), pty, client);
+        current = sessionFromChannel(accept(), pty, client);
+        serve(current, pty);
       });
     });
   });
