@@ -59,13 +59,11 @@ interface Pty {
 class SessionProcess extends EventEmitter implements ProcessLike {
   readonly stdin: ProcessLike["stdin"];
   readonly stdout: ProcessLike["stdout"];
-  readonly env: Record<string, string | undefined>;
   readonly channel: ServerChannel;
 
-  constructor(channel: ServerChannel, pty: Pty, env: Record<string, string>) {
+  constructor(channel: ServerChannel, pty: Pty) {
     super();
     this.channel = channel;
-    this.env = {TERM: pty.term, ...env};
     const stdin = channel as unknown as NonNullable<ProcessLike["stdin"]>;
     stdin.isTTY = true;
     stdin.setRawMode = () => stdin;
@@ -102,10 +100,9 @@ let served = 0;
 function serve(
   channel: ServerChannel,
   pty: Pty,
-  env: Record<string, string>,
   connection: {on(event: "close", listener: () => void): unknown},
 ): SessionProcess {
-  const proc = new SessionProcess(channel, pty, env);
+  const proc = new SessionProcess(channel, pty);
   const termdom = new TermDOM({
     // The client's terminal keeps its shell above the connection, so the
     // document anchors under the ssh command as a local one does under
@@ -167,7 +164,6 @@ const server = new ssh2.Server({hostKeys: [hostKey()]}, (client) => {
     client.on("session", (acceptSession) => {
       const session = acceptSession();
       const pty: Pty = {term: "xterm-256color", cols: 80, rows: 24};
-      const env: Record<string, string> = {};
       let proc: SessionProcess | null = null;
       session.on("pty", (accept, _reject, info) => {
         pty.term = info.term || pty.term;
@@ -175,16 +171,12 @@ const server = new ssh2.Server({hostKeys: [hostKey()]}, (client) => {
         pty.rows = info.rows || pty.rows;
         accept?.();
       });
-      session.on("env", (accept, _reject, info) => {
-        env[info.key] = info.val;
-        accept?.();
-      });
       session.on("window-change", (accept, _reject, info) => {
         proc?.resize(info.cols, info.rows);
         accept?.();
       });
       session.on("shell", (accept) => {
-        proc = serve(accept(), pty, env, client);
+        proc = serve(accept(), pty, client);
       });
     });
   });

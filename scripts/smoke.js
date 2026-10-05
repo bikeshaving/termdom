@@ -38,7 +38,6 @@ console.log(`\ntermdom smoke test on ${runtime}\n`);
 // whose width IS the string's cell width. Kana, CJK punctuation and
 // grapheme clusters are what a naive fallback gets wrong.
 const layoutProc = {
-	env: {},
 	stdout: {write: () => true, isTTY: false, columns: 60, rows: 10},
 	stdin: undefined,
 	on() {},
@@ -81,7 +80,6 @@ widthCases.forEach(([label, , cells], i) => {
 // verbatim.
 let out = "";
 const proc = {
-	env: {COLORTERM: "truecolor", TERM: "xterm-256color"},
 	stdout: {
 		write(chunk, enc, cb) {
 			out += String(chunk);
@@ -100,7 +98,9 @@ const proc = {
 	off() {},
 	removeListener() {},
 };
-const colorTerm = new TermDOM({transport: transportFromProcess(proc)});
+const colorTerm = new TermDOM({
+	transport: transportFromProcess(proc, {colorDepth: "rgb"}),
+});
 colorTerm.attach();
 colorTerm.document.body.innerHTML =
 	"<div style=\"color:#ff8000\">hex</div>" +
