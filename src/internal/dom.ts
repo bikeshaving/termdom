@@ -26,6 +26,7 @@ import {
 import {
 	adoptStyleSheets,
 	type Cascade,
+	type CellSizeSetting,
 	getAdoptedStyleSheets,
 	getBoxModel,
 	getCellSize,
@@ -322,6 +323,7 @@ const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kFramebuffer = Symbol("framebuffer");
+const kCellSize = Symbol("cellSize");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kPendingEditingReveal = Symbol("pendingEditingReveal");
 const kReportUncaught = Symbol("reportUncaught");
@@ -24750,6 +24752,8 @@ export interface Document {
 	[kCascade]: Cascade;
 	[kExchange]: Exchange;
 	[kFramebuffer]: Framebuffer;
+	// The program's cellSize option, which getCellSize reads.
+	[kCellSize]: CellSizeSetting;
 	// Where an exception the page let escape goes once the window's error
 	// event has not handled it. The engine owns the terminal, so it decides.
 	[kReportUncaught]: (error: unknown) => void;
@@ -33528,6 +33532,7 @@ export function attachDocument(
 	styles: Cascade,
 	exchange: Exchange,
 	framebuffer: Framebuffer,
+	cellSize: CellSizeSetting,
 	render: () => Promise<void>,
 	reportUncaught: (error: unknown) => void,
 ): void {
@@ -33542,6 +33547,7 @@ export function attachDocument(
 	attached[kCascade] = styles;
 	attached[kExchange] = exchange;
 	attached[kFramebuffer] = framebuffer;
+	attached[kCellSize] = cellSize;
 	attached[kPendingCaretReveal] = null;
 	attached[kPendingEditingReveal] = null;
 	for (const type of ["input", "select", "change", "selectionchange"]) {
@@ -34007,6 +34013,7 @@ type AttachedDocument =
 		[kCascade]: Cascade;
 		[kExchange]: Exchange;
 		[kFramebuffer]: Framebuffer;
+		[kCellSize]: CellSizeSetting;
 		[kReportUncaught]: (error: unknown) => void;
 	};
 
@@ -34020,6 +34027,13 @@ function getAttachedDocument(
 	return document !== null && document[kExchange] !== undefined
 		? (document as AttachedDocument)
 		: undefined;
+}
+
+/** The cellSize option of the TermDOM drawing the node's document. */
+export function getCellSizeSetting(
+	node: globalThis.Node,
+): CellSizeSetting | undefined {
+	return getAttachedDocument(node)?.[kCellSize];
 }
 
 /**

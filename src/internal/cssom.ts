@@ -27,6 +27,7 @@ import {
 	flushLayout,
 	flushStyle,
 	getCellPixels,
+	getCellSizeSetting,
 	getHighlightRegistry,
 	getPseudoHost,
 	getPseudoName,
@@ -72,21 +73,18 @@ export interface CellSize {
 
 export const UNIT_CELL: Readonly<CellSize> = {width: 1, height: 1};
 
-const cellSizeSources = new WeakMap<object, () => Readonly<CellSize>>();
-
-export function setCellSizeSource(
-	document: object,
-	source: () => Readonly<CellSize>,
-): void {
-	cellSizeSources.set(document, source);
-}
+/**
+ * How the page's lengths map to cells: one CSS pixel a cell, the
+ * terminal's pixels once it reports them, or a size the program gives.
+ */
+export type CellSizeSetting = "unit" | "auto" | Readonly<CellSize>;
 
 export function getCellSize(node: Node | null | undefined): Readonly<CellSize> {
-	if (!node) {
+	const setting = node ? getCellSizeSetting(node) : undefined;
+	if (setting === undefined || setting === "unit") {
 		return UNIT_CELL;
 	}
-	const document = node.ownerDocument ?? node;
-	return cellSizeSources.get(document)?.() ?? UNIT_CELL;
+	return setting === "auto" ? getCellPixels(node!)! : setting;
 }
 
 /**
