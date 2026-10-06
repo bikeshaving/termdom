@@ -152,49 +152,11 @@ export interface RequestContext {
 	initiator: Element | null;
 }
 
-/** How a document's loads are answered, set by the TermDOM that owns it. */
-type ResourceLoader = (
+/** How a document's loads are answered, by the TermDOM that draws it. */
+export type ResourceLoader = (
 	request: Request,
 	context: RequestContext,
 ) => Promise<Response>;
-
-const loaders = new WeakMap<
-	object,
-	{loader: ResourceLoader; signal: AbortSignal}
->();
-
-/** `signal` aborts when the TermDOM that owns the document is disposed. */
-export function setResourceLoader(
-	document: object,
-	loader: ResourceLoader,
-	signal: AbortSignal,
-): void {
-	loaders.set(document, {loader, signal});
-}
-
-/**
- * Aborts when the document's loads end for good, or null for a document
- * no TermDOM owns.
- */
-export function getLoadSignal(document: object): AbortSignal | null {
-	return loaders.get(document)?.signal ?? null;
-}
-
-/**
- * The response to a load the document's markup asks for. A document no
- * TermDOM owns, such as DOMParser's, loads nothing.
- */
-export function loadResource(
-	document: object,
-	request: Request,
-	context: RequestContext,
-): Promise<Response> {
-	const entry = loaders.get(document);
-	if (entry === undefined) {
-		return Promise.reject(new TypeError("This document loads nothing"));
-	}
-	return entry.loader(request, context);
-}
 
 /** What a TermDOM decides a document's loads by. */
 export interface RequestPolicy {
