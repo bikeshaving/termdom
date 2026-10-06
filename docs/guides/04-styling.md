@@ -24,22 +24,7 @@ at one size.
 
 `color` and `background-color` take named colors, hex in three, four,
 six, or eight digits, and `rgb()` and `hsl()` in both the comma form and
-the modern space-separated form with `/ alpha`. The color is sent at
-the depth the terminal has:
-
-| Depth | Sent as |
-| --- | --- |
-| `rgb` | The exact color, as 24-bit SGR |
-| `256` | The nearest of the 256-color palette: the 6×6×6 cube, or the gray ramp for grays |
-| `ansi` | The nearest of the eight basic colors, by whether each channel is above half |
-
-Unless told the depth, TermDOM asks the terminal when it attaches, and
-uses 24-bit color when the terminal says it has it, or when the
-terminal is tmux. Everything else gets 256 colors, which every terminal
-in use draws. To name the depth instead, pass
-`transportFromProcess(process, {colorDepth})`, or set `colorDepth` on a
-transport of your own. A page reads the depth in use from
-`screen.colorDepth` (24, 8 or 4) and the `color-index` media feature.
+the modern space-separated form with `/ alpha`.
 
 A cell has no alpha. A color with alpha `0` paints nothing, and any
 other alpha paints the color as if opaque, except in a gradient, where
@@ -60,6 +45,37 @@ A `background-image` with a `linear-gradient()` paints each cell the
 color the gradient has at that cell's center. `radial-gradient()` and
 `url()` have no effect. `opacity`, `filter`, `box-shadow`, and
 `mix-blend-mode` have no effect either.
+
+### Color depth
+
+Terminals differ in how many colors they can show. The `colorDepth`
+option says which TermDOM draws with:
+
+| `colorDepth` | Colors | How a CSS color is drawn |
+| --- | --- | --- |
+| `"rgb"` | Any color | Exactly |
+| `"256"` | 256 | As the closest of the 256 |
+| `"ansi"` | 8 basic colors | As the closest basic color |
+
+Without the option, TermDOM asks the terminal when `attach()` runs. It
+uses `"rgb"` if the terminal says it has 24-bit color, or if it is tmux,
+which converts 24-bit color for the terminal it runs in. Otherwise it
+uses `"256"`, which every terminal in use supports. It does not guess,
+because a terminal without 24-bit color can show a 24-bit color as
+something else, such as hidden text.
+
+Some terminals have 24-bit color but do not say so, among them
+Alacritty, Konsole and VS Code's terminal. A program that knows it runs
+in one can set the option:
+
+```ts
+new TermDOM({
+	transport: transportFromProcess(process, {colorDepth: "rgb"}),
+});
+```
+
+A page can check for `"rgb"` with the `color-gamut` media query, and for
+`"256"` with `(color-index: 256)`.
 
 ## Text attributes
 
