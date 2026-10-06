@@ -406,6 +406,67 @@ test("a shadow root's style blocks cost about what the document's do", () => {
 	expect(time(true)).toBeLessThan(3 * time(false));
 });
 
+test("a shadow root's sibling selectors restyle nothing outside it, attached or removed", () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 100, rows: 20}).transport,
+	});
+	const {document} = dom;
+	document.body.innerHTML = Array.from(
+		{length: 2000},
+		(_, i) => `<div class="row"><span>${i}</span><span>${i}</span></div>`,
+	).join("");
+	const rows = document.querySelectorAll(".row");
+	let at = 0;
+	const moves = (): number => {
+		const times: number[] = [];
+		for (let i = 0; i < 15; i++) {
+			rows[at].classList.remove("selected");
+			rows[++at].classList.add("selected");
+			const start = performance.now();
+			rows[at].getBoundingClientRect();
+			times.push(performance.now() - start);
+		}
+		return times.sort((a, b) => a - b)[7];
+	};
+	moves();
+	const before = moves();
+	const host = document.createElement("div");
+	document.body.append(host);
+	host.attachShadow({mode: "open"}).innerHTML =
+		"<style>* + * { color: red; } div + div { color: blue; }</style><p>a</p><p>b</p>";
+	host.getBoundingClientRect();
+	const attached = moves();
+	host.remove();
+	host.getBoundingClientRect();
+	const removed = moves();
+	// The selectors reaching the document's rows made this a hundred times
+	// slower; the margin leaves room for a loaded machine.
+	expect(attached).toBeLessThan(10 * Math.max(before, 0.05));
+	expect(removed).toBeLessThan(10 * Math.max(before, 0.05));
+	dom.dispose();
+});
+
+test("sibling selectors still restyle within their own tree", () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<style>.a + .b { color: rgb(0, 128, 0); }</style>" +
+		"<p id=first>x</p><p id=second class=b>y</p><div id=host></div>";
+	const host = document.getElementById("host")!;
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML =
+		"<style>.on + p { color: rgb(255, 0, 0); }</style><p id=one>1</p><p id=two>2</p>";
+	const two = shadow.getElementById("two")!;
+	expect(window.getComputedStyle(two).color).not.toBe("rgb(255, 0, 0)");
+	shadow.getElementById("one")!.classList.add("on");
+	expect(window.getComputedStyle(two).color).toBe("rgb(255, 0, 0)");
+	const second = document.getElementById("second")!;
+	expect(window.getComputedStyle(second).color).not.toBe("rgb(0, 128, 0)");
+	document.getElementById("first")!.classList.add("a");
+	expect(window.getComputedStyle(second).color).toBe("rgb(0, 128, 0)");
+	dom.dispose();
+});
+
 test(":has() restyles its anchor, its siblings and what it styles below when a change reaches it", async () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
