@@ -3662,17 +3662,6 @@ function countHoverListener(target: EventTarget, listener: Listener): void {
 	}
 }
 
-// One watcher per document, which is the engine displaying it. The
-// returned function reads the current count.
-function watchHoverListeners(
-	document: Document,
-	onChange: () => void,
-): () => number {
-	const hoverCount = getHoverCount(document);
-	hoverCount.onChange = onChange;
-	return () => hoverCount.count;
-}
-
 interface Listener {
 	type: string;
 	callback: globalThis.EventListenerOrEventListenerObject;
@@ -33529,8 +33518,6 @@ export function syncMediaQueries(document: globalThis.Document): void {
 	}
 }
 
-const hoverListenerCounts = new WeakMap<Document, () => number>();
-
 /**
  * Once per document. A second engine would build every widget a second
  * time, and the two would disagree about what is on screen.
@@ -33561,10 +33548,8 @@ export function attachDocument(
 		exchange.addEventListener(type, onTextControlEditEvent);
 	}
 	installEditing(exchange);
-	hoverListenerCounts.set(
-		attached,
-		watchHoverListeners(attached, () => render()),
-	);
+	// One watcher per document, the engine displaying it.
+	getHoverCount(attached).onChange = () => render();
 	// The document owns the observer. Mutations fan out to the cascade, the
 	// layout tree and the UA default actions here, and the engine is only
 	// asked to render the frame that shows the result.
@@ -34008,7 +33993,7 @@ export function flushLayout(node: globalThis.Node): boolean {
 }
 
 export function hoverListenerCount(document: globalThis.Document): number {
-	return hoverListenerCounts.get(document as Document)?.() ?? 0;
+	return hoverListenerCounters.get(document as Document)?.count ?? 0;
 }
 
 // A document that has been adopted. It renders, and knows what it
