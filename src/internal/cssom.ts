@@ -6229,7 +6229,14 @@ export class Cascade {
 				}
 				// `.on ~ .light` matches a FOLLOWING sibling whose cached
 				// styles know nothing of this change.
-				if (getSiblingIndex(this, element)?.reachesSiblings) {
+				if (
+					changeReachesLaterSiblings(
+						getSiblingIndex(this, element),
+						element,
+						mutation.attributeName!,
+						mutation.oldValue,
+					)
+				) {
 					for (
 						let sibling = element.nextElementSibling;
 						sibling;
@@ -7886,6 +7893,13 @@ interface SiblingIndex {
 	// children such a compound could name.
 	keys: Set<string>;
 	universal: boolean;
+	// The class, id and attribute keys of every compound before a sibling
+	// combinator, the `.on` of `.on ~ .light`, whose change on one element
+	// changes what its later siblings match. Universal when that can't be
+	// told from keys: an anchor under :not(), one with a pseudo-class an
+	// attribute can flip, or an `of S` that counts siblings.
+	anchorKeys: Set<string>;
+	anchorsUniversal: boolean;
 }
 
 // The index of the tree whose rules could match the element: its shadow
@@ -7912,10 +7926,53 @@ function getOrCreateSiblingIndex(
 			reachesDescendants: false,
 			keys: new Set(),
 			universal: false,
+			anchorKeys: new Set(),
+			anchorsUniversal: false,
 		};
 		cascade[kSiblingIndexes].set(key, index);
 	}
 	return index;
+}
+
+// Whether an attribute change could change what a sibling-tested
+// compound makes of the element, and so what its later siblings match.
+// Only a class, id or attribute such a compound names can: `.on ~ .light`
+// cares about `on`, and `summary:first-of-type` about no attribute at all.
+function changeReachesLaterSiblings(
+	index: SiblingIndex | undefined,
+	element: Element,
+	attributeName: string,
+	oldValue: string | null,
+): boolean {
+	if (index === undefined || !index.reachesSiblings) {
+		return false;
+	}
+	if (index.anchorsUniversal) {
+		return true;
+	}
+	const keys = index.anchorKeys;
+	if (attributeName === "class") {
+		const before = new Set((oldValue ?? "").split(/[\t\n\f\r ]+/));
+		const after = new Set(getClassTokens(element));
+		for (const token of before) {
+			if (token !== "" && !after.has(token) && keys.has(`.${token}`)) {
+				return true;
+			}
+		}
+		for (const token of after) {
+			if (!before.has(token) && keys.has(`.${token}`)) {
+				return true;
+			}
+		}
+		return false;
+	}
+	if (attributeName === "id") {
+		const id = element.getAttribute("id");
+		return (oldValue !== null && keys.has(`#${oldValue}`)) ||
+			(id !== null && keys.has(`#${id}`)) ||
+			keys.has("[id]");
+	}
+	return keys.has(`[${attributeName.slice(attributeName.indexOf(":") + 1)}]`);
 }
 
 // Whether some sibling-tested compound could name the element.
@@ -8912,6 +8969,7 @@ function couldAnchor(element: Element, anchor: StateAnchor): boolean {
 // changes nothing but the element's own box.
 function indexReachingKeys(
 	cascade: Cascade,
+	selector: string,
 	reading: CSSValues.SelectorReading,
 	declarations: Record<string, string>,
 	scope: Node | undefined,
@@ -8935,6 +8993,24 @@ function indexReachingKeys(
 		index.reachesSiblings = true;
 		if (reading.siblingsReachDescendants || inherits) {
 			index.reachesDescendants = true;
+		}
+		if (/:nth-[a-z-]*\([^)]*\bof\b/i.test(selector)) {
+			index.anchorsUniversal = true;
+		}
+		for (const keys of compounds) {
+			if (!keys.precedesSibling) {
+				continue;
+			}
+			if (keys.anyElement || keys.pseudoClasses.length > 0 || keys.states) {
+				index.anchorsUniversal = true;
+			}
+			for (const key of [
+				...keys.classes.map((name) => `.${name}`),
+				...keys.ids.map((name) => `#${name}`),
+				...keys.attributes.map((name) => `[${name}]`),
+			]) {
+				index.anchorKeys.add(key);
+			}
 		}
 	}
 	for (const keys of compounds) {
@@ -9089,7 +9165,7 @@ function parseSelector(
 		return;
 	}
 	const reading = CSSValues.readSelector(selector);
-	indexReachingKeys(cascade, reading, declarations, scope);
+	indexReachingKeys(cascade, selector, reading, declarations, scope);
 	if (
 		declarations["counter-reset"] ||
 		declarations["counter-increment"] ||
