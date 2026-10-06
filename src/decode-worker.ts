@@ -1,49 +1,29 @@
 /**
- * The thread images decode on. It takes `{id, bytes}` and answers
- * `{id, width, height, naturalWidth, naturalHeight, data}` with the
- * pixels' buffer transferred, kept at most MAX_KEPT_PIXELS, or
- * `{id, error}`. It answers `{ready: true}` first, so the page can tell
- * a worker that never started from one that failed on an image.
- *
- * A web worker answers through its global scope. Node's worker_threads
- * answer through parentPort.
+ * The thread images decode on, started as a web Worker. It takes
+ * `{id, bytes}` and answers `{id, width, height, naturalWidth,
+ * naturalHeight, data}` with the pixels' buffer transferred, kept at most
+ * MAX_KEPT_PIXELS, or `{id, error}`. It answers `{ready: true}` first, so
+ * the page can tell a worker that never started from one that failed on
+ * an image.
  */
 import {decodeImageForPage} from "./internal/images.ts";
 
-interface Port {
+interface WorkerScope {
 	postMessage(message: unknown, transfer?: Transferable[]): void;
-	on?(type: "message", listener: (data: unknown) => void): void;
-	addEventListener?(
+	addEventListener(
 		type: "message",
 		listener: (event: {data: unknown}) => void,
 	): void;
 }
 
-interface WorkerThreads {
-	parentPort?: Port | null;
-}
-
-interface NodeProcess {
-	getBuiltinModule?(id: string): WorkerThreads | undefined;
-}
-
-function getNodeParent(): Port | null {
-	const process = (globalThis as {process?: NodeProcess}).process;
-	if (process?.getBuiltinModule === undefined) {
-		return null;
-	}
-	return process.getBuiltinModule("node:worker_threads")?.parentPort ?? null;
-}
-
-const nodeParent = getNodeParent();
-const port: Port = nodeParent ?? (globalThis as unknown as Port);
+const scope = globalThis as unknown as WorkerScope;
 
 async function answer(data: unknown): Promise<void> {
 	const {id, bytes} = data as {id: number; bytes: ArrayBuffer};
 	try {
 		const bitmap = await decodeImageForPage(new Uint8Array(bytes));
 		const pixels = bitmap.data.buffer as ArrayBuffer;
-		port.postMessage(
+		scope.postMessage(
 			{
 				id,
 				width: bitmap.width,
@@ -55,20 +35,14 @@ async function answer(data: unknown): Promise<void> {
 			[pixels],
 		);
 	} catch (error) {
-		port.postMessage({
+		scope.postMessage({
 			id,
 			error: error instanceof Error ? error.message : String(error),
 		});
 	}
 }
 
-if (nodeParent !== null) {
-	nodeParent.on!("message", (data) => {
-		answer(data).catch(() => {});
-	});
-} else {
-	port.addEventListener!("message", (event) => {
-		answer(event.data).catch(() => {});
-	});
-}
-port.postMessage({ready: true});
+scope.addEventListener("message", (event) => {
+	answer(event.data).catch(() => {});
+});
+scope.postMessage({ready: true});

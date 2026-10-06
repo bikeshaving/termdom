@@ -19,7 +19,9 @@ import {
 	MAX_IMAGE_BYTES,
 	MAX_KEPT_PIXELS,
 	readImageResponse,
+	releaseDecoder,
 	resolveImageURL,
+	retainDecoder,
 	sampleBitmap,
 	setDecodeTimeout,
 	setDecodeWorkerURL,
@@ -455,16 +457,23 @@ test("an image response past the byte limit is not read whole", async () => {
 // request as `reply` says, or never.
 function fakeWorker(reply: string): URL {
 	const source =
-		"const t = globalThis.process?.getBuiltinModule?.(\"node:worker_threads\");" +
-		"const port = t?.parentPort ?? globalThis;" +
+		"const port = globalThis;" +
 		"const answer = (data) => {" +
 		reply +
 		"};" +
-		"if (t?.parentPort) t.parentPort.on(\"message\", answer);" +
-		"else globalThis.addEventListener(\"message\", (e) => answer(e.data));" +
-		"port.postMessage({ready: true});";
+		"addEventListener(\"message\", (e) => answer(e.data));" +
+		"postMessage({ready: true});";
 	return new URL(`data:text/javascript,${encodeURIComponent(source)}`);
 }
+
+// These need the runtime's own Worker, which Node has only with
+// --experimental-web-worker. Without one, images decode on this thread,
+// which the tests after them cover.
+const withWorker =
+	typeof (globalThis as {Worker?: unknown}).Worker ===
+		"function"
+		? test
+		: test.skip;
 
 // A one-byte image stands for a slow or broken one in these workers.
 const STAND_IN = new Uint8Array([0]);
@@ -482,88 +491,117 @@ function outcomes(decodes: Array<Promise<{width: number}>>): Promise<string[]> {
 const ANSWER =
 	"port.postMessage({id: data.id, width: 1, height: 1, data: new ArrayBuffer(4)})";
 
-test("an image past its time fails alone, and the images behind it decode", async () => {
-	try {
-		setDecodeTimeout(1000);
-		setDecodeWorkerURL(
-			fakeWorker(`if (data.bytes.byteLength !== 1) ${ANSWER};`),
-		);
-		expect(
-			await outcomes([
+withWorker(
+	"an image past its time fails alone, and the images behind it decode",
+	async () => {
+		try {
+			setDecodeTimeout(1000);
+			setDecodeWorkerURL(
+				fakeWorker(`if (data.bytes.byteLength !== 1) ${ANSWER};`),
+			);
+			expect(
+				await outcomes([
+					decodeImageOffThread(STAND_IN),
+					decodeImageOffThread(bytesOf("png-rgb.png")),
+					decodeImageOffThread(bytesOf("png-rgb.png")),
+				]),
+			).toEqual([
+				"The image took more than 1000 ms to decode",
+				"1 wide",
+				"1 wide",
+			]);
+		} finally {
+			setDecodeTimeout(10_000);
+			setDecodeWorkerURL(null);
+		}
+	},
+);
+
+withWorker(
+	"a decode aborted while it waits is dropped, and the line moves on",
+	async () => {
+		try {
+			setDecodeTimeout(1000);
+			setDecodeWorkerURL(
+				fakeWorker(`if (data.bytes.byteLength !== 1) ${ANSWER};`),
+			);
+			const abort = new AbortController();
+			const started = Date.now();
+			let droppedAfter = -1;
+			// The stand-in, ahead of it, holds the worker until its time is up.
+			const stalled = decodeImageOffThread(STAND_IN);
+			const dropped = decodeImageOffThread(bytesOf("png-rgb.png"), abort.signal)
+				.finally(() => {
+					droppedAfter = Date.now() - started;
+				});
+			const decodes = [
+				stalled,
+				dropped,
+				decodeImageOffThread(bytesOf("png-rgb.png")),
+			];
+			abort.abort(new Error("The source changed"));
+			expect(await outcomes(decodes)).toEqual([
+				"The image took more than 1000 ms to decode",
+				"The source changed",
+				"1 wide",
+			]);
+			expect(droppedAfter).toBeLessThan(500);
+			await expect(
+				decodeImageOffThread(bytesOf("png-rgb.png"), abort.signal),
+			).rejects.toThrow("The source changed");
+		} finally {
+			setDecodeTimeout(10_000);
+			setDecodeWorkerURL(null);
+		}
+	},
+);
+
+withWorker(
+	"a worker that fails on an image fails that image alone",
+	async () => {
+		try {
+			setDecodeWorkerURL(
+				fakeWorker(
+					`if (data.bytes.byteLength === 1) throw new Error("broke"); ${ANSWER};`,
+				),
+			);
+			const [before, broken, after] = await outcomes([
+				decodeImageOffThread(bytesOf("png-rgb.png")),
 				decodeImageOffThread(STAND_IN),
 				decodeImageOffThread(bytesOf("png-rgb.png")),
-				decodeImageOffThread(bytesOf("png-rgb.png")),
-			]),
-		).toEqual([
-			"The image took more than 1000 ms to decode",
-			"1 wide",
-			"1 wide",
-		]);
-	} finally {
-		setDecodeTimeout(10_000);
-		setDecodeWorkerURL(null);
-	}
-});
+			]);
+			expect([before, after]).toEqual(["1 wide", "1 wide"]);
+			expect(broken).toContain("broke");
+			setDecodeWorkerURL(
+				fakeWorker(
+					"port.postMessage({id: data.id, error: \"from the worker\"})",
+				),
+			);
+			await expect(decodeImageOffThread(bytesOf("png-rgb.png")))
+				.rejects.toThrow("from the worker");
+		} finally {
+			setDecodeWorkerURL(null);
+		}
+	},
+);
 
-test("a decode aborted while it waits is dropped, and the line moves on", async () => {
-	try {
-		setDecodeTimeout(1000);
-		setDecodeWorkerURL(
-			fakeWorker(`if (data.bytes.byteLength !== 1) ${ANSWER};`),
-		);
-		const abort = new AbortController();
-		const started = Date.now();
-		let droppedAfter = -1;
-		// The stand-in, ahead of it, holds the worker until its time is up.
-		const stalled = decodeImageOffThread(STAND_IN);
-		const dropped = decodeImageOffThread(bytesOf("png-rgb.png"), abort.signal)
-			.finally(() => {
-				droppedAfter = Date.now() - started;
-			});
-		const decodes = [
-			stalled,
-			dropped,
-			decodeImageOffThread(bytesOf("png-rgb.png")),
-		];
-		abort.abort(new Error("The source changed"));
-		expect(await outcomes(decodes)).toEqual([
-			"The image took more than 1000 ms to decode",
-			"The source changed",
-			"1 wide",
-		]);
-		expect(droppedAfter).toBeLessThan(500);
-		await expect(
-			decodeImageOffThread(bytesOf("png-rgb.png"), abort.signal),
-		).rejects.toThrow("The source changed");
-	} finally {
-		setDecodeTimeout(10_000);
-		setDecodeWorkerURL(null);
-	}
-});
-
-test("a worker that fails on an image fails that image alone", async () => {
-	try {
-		setDecodeWorkerURL(
-			fakeWorker(
-				`if (data.bytes.byteLength === 1) throw new Error("broke"); ${ANSWER};`,
-			),
-		);
-		const [before, broken, after] = await outcomes([
-			decodeImageOffThread(bytesOf("png-rgb.png")),
-			decodeImageOffThread(STAND_IN),
-			decodeImageOffThread(bytesOf("png-rgb.png")),
-		]);
-		expect([before, after]).toEqual(["1 wide", "1 wide"]);
-		expect(broken).toContain("broke");
-		setDecodeWorkerURL(
-			fakeWorker("port.postMessage({id: data.id, error: \"from the worker\"})"),
-		);
-		await expect(decodeImageOffThread(bytesOf("png-rgb.png")))
-			.rejects.toThrow("from the worker");
-	} finally {
-		setDecodeWorkerURL(null);
-	}
-});
+withWorker(
+	"the last TermDOM disposed ends the worker, and the decode it ran",
+	async () => {
+		try {
+			setDecodeWorkerURL(fakeWorker(""));
+			retainDecoder();
+			const decode = decodeImageOffThread(bytesOf("png-rgb.png"));
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			releaseDecoder();
+			const outcome = await decode.then(() => "decoded", (error: Error) =>
+				error.name);
+			expect(outcome).toBe("AbortError");
+		} finally {
+			setDecodeWorkerURL(null);
+		}
+	},
+);
 
 test("where no worker starts, every image decodes on this thread", async () => {
 	try {

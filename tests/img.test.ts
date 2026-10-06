@@ -266,7 +266,9 @@ test("an image sits on a line with the text around it", async () => {
 		await mount(`<p>before <img src="${BANDS}"> after</p>`);
 	await loaded(document.querySelector("img")!);
 	await nextFrame(dom);
-	expect(rowText(terminal, 0)).toBe("before ▄▄ after");
+	// A frame drawn while it loaded showed its wider loading box, whose
+	// last cell was erased.
+	expect(rowText(terminal, 0).trimEnd()).toBe("before ▄▄ after");
 	// The image's computed display stays inline, as in a browser.
 	expect(
 		dom.window.getComputedStyle(document.querySelector("img")!).display,

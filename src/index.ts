@@ -44,7 +44,11 @@ import {
 	transportFromProcess,
 } from "./internal/exchange.ts";
 import {Framebuffer} from "./internal/framebuffer.ts";
-import {setDecodeWorkerURL} from "./internal/images.ts";
+import {
+	releaseDecoder,
+	retainDecoder,
+	setDecodeWorkerURL,
+} from "./internal/images.ts";
 import {Input} from "./internal/input.ts";
 import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
@@ -72,9 +76,10 @@ export type {
 	TerminalTransport,
 } from "./internal/exchange.ts";
 
-// Images decode on a worker running src/decode-worker.ts, which builds to
-// dist/decode-worker.js beside this file. A CommonJS build has no
-// import.meta.url, and decodes on this thread instead.
+// Images decode on the runtime's web Worker, running src/decode-worker.ts,
+// which builds to dist/decode-worker.js beside this file. A runtime with
+// no Worker, as Node is without --experimental-web-worker, and a CommonJS
+// build, which has no import.meta.url, decode on this thread instead.
 setDecodeWorkerURL(
 	typeof import.meta.url === "string"
 		? new URL(
@@ -275,6 +280,7 @@ export class TermDOM extends EventTarget {
 		this[kAttachBegun] = Promise.resolve();
 		this[kStaticSibling] = null;
 		this[kLifetimes] = new Set();
+		retainDecoder();
 		this[kLoads] = new AbortController();
 		this[kTransport] = options.transport ?? transportFromProcess();
 
@@ -677,6 +683,7 @@ export class TermDOM extends EventTarget {
 		const wasAttached = isAttached(this);
 		this[kLifecycle] = "disposed";
 		this[kLoads].abort();
+		releaseDecoder();
 		setDocumentVisible(this.document, false);
 
 		// Frames painted in place, so nothing reached the scrollback. Write the
