@@ -28,6 +28,7 @@ import {
 	flushStyle,
 	getCellPixels,
 	getCellSizeSetting,
+	getDocumentExchange,
 	getHighlightRegistry,
 	getPseudoHost,
 	getPseudoName,
@@ -8196,18 +8197,11 @@ function mediaOperandMatches(
 
 type MediaRangeKind = "length" | "height" | "ratio" | "resolution" | "integer";
 
-const colorSchemes = new WeakMap<object, () => "light" | "dark">();
-
-function getColorScheme(document: object): "light" | "dark" {
-	return colorSchemes.get(document)?.() ?? "light";
-}
-
-/** Where a document's prefers-color-scheme comes from. */
-export function setColorSchemeSource(
-	document: object,
-	source: () => "light" | "dark",
-): void {
-	colorSchemes.set(document, source);
+// The terminal's, for a document a TermDOM draws.
+function getColorScheme(
+	document: globalThis.Document | null,
+): "light" | "dark" {
+	return getDocumentExchange(document)?.colorScheme ?? "light";
 }
 
 // What a range feature measures on this terminal. Its px are cells.

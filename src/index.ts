@@ -5,7 +5,6 @@ import {
 	type CellSize,
 	type CellSizeSetting,
 	getCellSize,
-	setColorSchemeSource,
 	UNIT_CELL,
 } from "./internal/cssom.ts";
 import {
@@ -361,7 +360,6 @@ export class TermDOM extends EventTarget {
 
 		// The framebuffer measures widths over the exchange's probe channel.
 		this[kFramebuffer].measurer = exchange;
-		setColorSchemeSource(document, () => getColorScheme(this));
 
 		attachDocument(
 			document,
@@ -479,9 +477,9 @@ export class TermDOM extends EventTarget {
 			syncHoverReporting(this);
 			// The terminal's background, asked first so the first frame can
 			// wait for it.
-			const schemeBefore = getColorScheme(this);
+			const schemeBefore = this[kExchange].colorScheme;
 			void this[kExchange].negotiateColorScheme().then(() => {
-				if (isAttached(this) && getColorScheme(this) !== schemeBefore) {
+				if (isAttached(this) && this[kExchange].colorScheme !== schemeBefore) {
 					this[kCascade].syncStylesheets();
 					syncMediaQueries(this.document);
 					void render(this);
@@ -885,12 +883,6 @@ function syncHoverReporting(termDOM: TermDOM): void {
 	}
 	termDOM[kHoverReportingEnabled] = wanted;
 	termDOM[kExchange].setDisplayType("motionReporting", wanted);
-}
-
-function getColorScheme(termDOM: TermDOM): "light" | "dark" {
-	return (
-		termDOM[kExchange].colorScheme ?? termDOM[kTransport].colorScheme ?? "light"
-	);
 }
 
 // An image's or a canvas's natural size in cells is its pixels over the
