@@ -57,7 +57,7 @@ policy holds from when it is inserted into the head, and removing the
 tag or changing its `content` later changes nothing. A load a policy blocks fires
 `securitypolicyviolation` at its element, a `SecurityPolicyViolationEvent`
 that bubbles to the document and names the URL, the directive and the
-policy. The image shows as a box with its `alt` text. When the program
+policy. The image shows its `alt` text instead. When the program
 set no policy, the first blocked load is also reported once where
 uncaught errors go: the transport's log, or the scrollback at exit.
 
@@ -130,12 +130,16 @@ lossless JPEGs.
 image. `new Image()` makes an `<img>`. `srcset` is read for its `1x`
 candidate.
 
-An image that is not showing, because it is still loading, failed to
-load or was blocked, is a box with its `alt` text inside, cut with an
-ellipsis when it does not fit. The box takes the image's size when the
-page gives one, and otherwise fits the text. An empty `alt` marks an
-image that is only decoration, and it shows nothing, as does an
-`<img>` with neither a `src` nor an `alt`.
+An image that is not showing follows HTML's rendering rules:
+
+- An image that failed to load, was blocked or has no `src` shows its
+  `alt` text in the line, as plain text that wraps like any other.
+- An image that has a size, from `width` and `height` or from CSS, is a
+  box of that size with its `alt` text inside, cut with an ellipsis when
+  it does not fit, while it is still loading, when it has no `alt`, or
+  in a document in quirks mode (one with no `<!doctype html>`).
+- An empty `alt` marks an image that is only decoration, and it shows
+  nothing, as does an `<img>` with neither a `src` nor an `alt`.
 
 ### Size
 

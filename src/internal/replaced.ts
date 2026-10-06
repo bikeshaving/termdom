@@ -28,6 +28,7 @@ import {
 import {
 	type Bitmap,
 	getReplacedContent,
+	isReplacedElement,
 	MAX_IMAGE_PIXELS,
 	naturalHeightOf,
 	naturalWidthOf,
@@ -35,6 +36,28 @@ import {
 	sampleBitmap,
 } from "./images.ts";
 import {getStringWidth} from "./text.ts";
+
+/**
+ * Whether the element lays out as a replaced element. An image that is
+ * not showing stays one only where HTML's rendering rules (§15.4.2) make
+ * it a box: it has a size and may still load, or has no alt text, or
+ * its document is in quirks mode. Otherwise its alt text lays out as an
+ * inline element's would.
+ */
+export function isReplacedBox(element: Element): boolean {
+	if (!isReplacedElement(element)) {
+		return false;
+	}
+	const content = getReplacedContent(element);
+	if (content === null || content.kind !== "text" || content.text === "") {
+		return true;
+	}
+	return (
+		(content.loading || element.ownerDocument.compatMode === "BackCompat") &&
+		getComputedValue(element, "width") !== "auto" &&
+		getComputedValue(element, "height") !== "auto"
+	);
+}
 
 /** The natural size in cells, or null for content with none. */
 export function getNaturalSize(

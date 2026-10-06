@@ -35,7 +35,6 @@ import {
 	renderedTopLayer,
 	type Window,
 } from "./dom.ts";
-import {isReplacedElement} from "./images.ts";
 import {
 	type Align,
 	type AvailableSpace,
@@ -68,6 +67,7 @@ import {
 	getNaturalRatio,
 	getNaturalSize,
 	getReplacedSize,
+	isReplacedBox,
 	measureReplaced,
 } from "./replaced.ts";
 import {
@@ -189,7 +189,7 @@ function getLayoutDisplay(element: Element): Display {
 	}
 	// An image or a canvas on a line sits there whole, as an inline-block
 	// does, though its computed display stays inline.
-	if (value === "inline" && isReplacedElement(element)) {
+	if (value === "inline" && isReplacedBox(element)) {
 		return "inline-block";
 	}
 	if (value === "block math" || value === "math") {
@@ -1328,7 +1328,7 @@ function styleLayoutNodeProperties(
 		item("justify-self", "auto"),
 		"auto",
 	);
-	if (isReplacedElement(element) && !inlineBox) {
+	if (isReplacedBox(element) && !inlineBox) {
 		sizeReplacedBox(element, style, display);
 	}
 
@@ -2186,7 +2186,7 @@ function addElementNode(
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
 		return;
-	} else if (isReplacedElement(element)) {
+	} else if (isReplacedBox(element)) {
 		layoutNode.measure = (width, widthSpace) =>
 			measureReplaced(element, width, widthSpace);
 		layout[kMeasureNodes].add(layoutNode);
@@ -3377,7 +3377,7 @@ function collectLeaves(
 				if (cursor === null) {
 					break;
 				}
-			} else if (isAtomicInline(display) && isReplacedElement(element)) {
+			} else if (isAtomicInline(display) && isReplacedBox(element)) {
 				const size = getReplacedSize(element, availableWidth);
 				leafNodes.push({
 					type: "inline-block",
@@ -6785,7 +6785,7 @@ export function getAtomicHeight(
 	leaf: InlineBlockLeaf,
 	lineHeight: number,
 ): number {
-	if (!isReplacedElement(element)) {
+	if (!isReplacedBox(element)) {
 		return lineHeight;
 	}
 	const box = leaf.boxModel;

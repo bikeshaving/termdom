@@ -310,7 +310,7 @@ test("object-fit: contain centers the image and leaves the rest alone", async ()
 	dom.dispose();
 });
 
-test("a broken image fires error, rejects decode() and shows a box with its alt text", async () => {
+test("a broken image fires error, rejects decode() and shows its alt text", async () => {
 	const {dom, terminal, document} = await mount("<p></p>");
 	const image = document.createElement("img");
 	image.alt = "cover art";
@@ -330,9 +330,7 @@ test("a broken image fires error, rejects decode() and shows a box with its alt 
 	});
 	expect((rejected as Error | null)?.name).toBe("EncodingError");
 	await nextFrame(dom);
-	expect(rowText(terminal, 0)).toBe("[┌─────────┐]");
-	expect(rowText(terminal, 1)).toBe(" │cover art│");
-	expect(rowText(terminal, 2)).toBe(" └─────────┘");
+	expect(rowText(terminal, 0)).toBe("[cover art]");
 	dom.dispose();
 });
 
@@ -670,44 +668,72 @@ test("an image whose box is past the pixel limit paints nothing", async () => {
 	dom.dispose();
 });
 
-test("an image that is not showing is a box, sized as the image is", async () => {
+test("an image that will not show is its alt text, inline", async () => {
 	const {dom, terminal, document} = await mount(
 		"<div><img src=missing.png></div>" +
 		"<div><img src=missing.png alt=\"\">|</div>" +
 		"<div><img src=missing.png alt=\"the band on stage\" style=\"width: 10ch; height: 4em\"></div>" +
-		"<div><img src=missing.png alt=\"logo\" width=3 height=1></div>",
+		"<div>[<img src=missing.png alt=\"logo\" width=3 height=1>]</div>" +
+		"<div>[<img alt=\"no source\">]</div>",
 	);
 	await until(() =>
 		[...document.querySelectorAll("img")].every((image) => image.complete),
 	);
 	await nextFrame(dom);
-	expect([0, 1, 2].map((row) => rowText(terminal, row))).toEqual([
+	expect([0, 1, 2, 3, 4, 5, 6].map((row) => rowText(terminal, row))).toEqual([
 		"┌─┐",
 		"│ │",
 		"└─┘",
+		"|",
+		"the band on stage",
+		"[logo]",
+		"[no source]",
 	]);
-	expect(rowText(terminal, 3)).toBe("|");
-	expect([4, 5, 6, 7].map((row) => rowText(terminal, row))).toEqual([
+	dom.dispose();
+});
+
+test("in quirks mode, an image with a size that will not show is a box", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		html: "<div><img src=missing.png alt=\"the band on stage\" style=\"width: 10ch; height: 4em\"></div>" +
+			"<div><img src=missing.png alt=\"logo\" width=3 height=1></div>" +
+			"<div>[<img src=missing.png alt=\"no size\">]</div>",
+	});
+	const {document} = dom;
+	expect(document.compatMode).toBe("BackCompat");
+	await until(() =>
+		[...document.querySelectorAll("img")].every((image) => image.complete),
+	);
+	await nextFrame(dom);
+	expect([0, 1, 2, 3, 4, 5].map((row) => rowText(terminal, row))).toEqual([
 		"┌────────┐",
 		"│the ban…│",
 		"│        │",
 		"└────────┘",
+		"lo…",
+		"[no size]",
 	]);
-	expect(rowText(terminal, 8)).toBe("lo…");
 	dom.dispose();
 });
 
-test("an image is a box while it loads", async () => {
+test("an image is a box while it loads only when it has a size", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, csp: "img-src https:"});
 	dom.addEventListener("fetch", (event) => {
 		event.respondWith(new Promise<Response>(() => {}));
 	});
 	dom.document.body.innerHTML =
-		"<img src=\"https://example.com/a.png\" alt=\"a\">";
+		"<img src=\"https://example.com/a.png\" alt=\"a\" width=3 height=3>" +
+		"<div>[<img src=\"https://example.com/b.png\" alt=\"b\">]</div>";
 	await nextFrame(dom);
 	await nextFrame(dom);
-	expect(rowText(terminal, 1)).toBe("│a│");
+	expect([0, 1, 2, 3].map((row) => rowText(terminal, row))).toEqual([
+		"┌─┐",
+		"│a│",
+		"└─┘",
+		"[b]",
+	]);
 	dom.dispose();
 });
 
