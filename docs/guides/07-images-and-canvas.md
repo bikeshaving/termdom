@@ -180,11 +180,17 @@ asks for before it allocates, and an image past a limit fails to load:
 - a PNG's data inflated only as far as its image needs
 - a JPEG of at most four components and 500 scans
 
-Images decode on a worker thread, one at a time, so a large one does
-not stall the page. A decode that takes more than 10 seconds is
-stopped and that image fails; the images behind it still decode. Where
-no worker can start, as in a CommonJS build, images decode on the
-page's thread a slice at a time, under the same limit.
+Images decode one at a time on the runtime's web `Worker`, so a large
+one does not stall the page. Bun and Deno have one. Node has one from
+26.9 behind a flag, so run `node --experimental-web-worker`, or set
+`NODE_OPTIONS=--experimental-web-worker`, to decode off the page's
+thread there. Without a `Worker`, and in a CommonJS build, images decode
+on the page's thread a slice at a time, so input and frames go on
+between slices. A decode that takes more than 10 seconds is stopped
+and that image fails; the images behind it still decode.
+
+The worker ends a second after its last decode, and when the last
+TermDOM is disposed, so it never keeps a finished program running.
 
 A new `src` cancels the request the old one started, and drops its
 decode if it is still waiting for its turn. An image whose

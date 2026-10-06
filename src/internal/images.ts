@@ -2061,14 +2061,6 @@ export function isReplacedElement(owner: object): boolean {
 // ---------------------------------------------------------------------------
 // Reading what a src names.
 
-interface ProcessWithBuiltins {
-	getBuiltinModule?: (name: string) => unknown;
-}
-
-function getProcess(): ProcessWithBuiltins | undefined {
-	return (globalThis as {process?: ProcessWithBuiltins}).process;
-}
-
 /**
  * The URL a src names, against the document's URL, or null. A relative
  * src in a document with no URL of its own, at about:blank, names
@@ -2154,7 +2146,8 @@ export async function readImageResponse(
  * yield, and the image fails.
  */
 let decodeTimeout = 10_000;
-// A worker with nothing to do is ended, so it keeps no process alive.
+// A worker with nothing to do is ended, so it keeps the runtime alive for
+// a second at most.
 const WORKER_IDLE_MS = 1_000;
 
 let workerURL: URL | null = null;
@@ -2258,7 +2251,6 @@ function startNextDecode(): void {
 		const idle = current;
 		if (idle !== null && idle.idle === null) {
 			idle.idle = setTimeout(() => endWorker(idle), WORKER_IDLE_MS);
-			(idle.idle as {unref?(): void}).unref?.();
 		}
 		return;
 	}
@@ -2419,62 +2411,62 @@ function endWorker(state: WorkerState): void {
 	state.worker.terminate();
 }
 
-// A web worker where the runtime has one, Node's worker_threads where it
-// has not. Either way, one that would keep the process alive is unref'd.
+interface WebWorker {
+	postMessage(message: unknown, transfer: Transferable[]): void;
+	addEventListener(type: string, listener: (event: any) => void): void;
+	terminate(): void;
+}
+
+// The runtime's own web Worker, where it has one: Bun, Deno, a browser,
+// and Node from 26.9 with --experimental-web-worker. Without one, images
+// decode on this thread.
 function startWorker(
 	url: URL,
 	onMessage: (data: unknown) => void,
 	onError: (error: unknown) => void,
 ): DecodeWorker | null {
+	const Worker = (globalThis as {Worker?: new (
+		url: URL,
+		options: {type: "module"},
+	) => WebWorker;}).Worker;
+	if (Worker === undefined) {
+		return null;
+	}
 	try {
-		const Web = (globalThis as {Worker?: new (
-			url: URL,
-			options: {type: "module"}
-		) => {
-			postMessage(message: unknown, transfer: Transferable[]): void;
-			addEventListener(type: string, listener: (event: any) => void): void;
-			terminate(): void;
-			unref?(): void;
-		};}).Worker;
-		if (Web !== undefined) {
-			const worker = new Web(url, {type: "module"});
-			worker.addEventListener("message", (event) => onMessage(event.data));
-			worker.addEventListener("error", (event) => {
-				event.preventDefault?.();
-				onError(event.error ?? event);
-			});
-			worker.unref?.();
-			return {
-				post: (message, transfer) => worker.postMessage(message, transfer),
-				terminate: () => worker.terminate(),
-			};
-		}
-		const process = getProcess();
-		if (process?.getBuiltinModule === undefined) {
-			return null;
-		}
-		const threads = process.getBuiltinModule("node:worker_threads") as {
-			Worker: new (url: URL) => {
-				postMessage(message: unknown, transfer: Transferable[]): void;
-				on(type: string, listener: (value: any) => void): void;
-				terminate(): Promise<number>;
-				unref(): void;
-			};
-		} | undefined;
-		if (threads === undefined) {
-			return null;
-		}
-		const worker = new threads.Worker(url);
-		worker.on("message", onMessage);
-		worker.on("error", onError);
-		worker.unref();
+		const worker = new Worker(url, {type: "module"});
+		worker.addEventListener("message", (event) => onMessage(event.data));
+		worker.addEventListener("error", (event) => {
+			event.preventDefault?.();
+			onError(event.error ?? event);
+		});
 		return {
 			post: (message, transfer) => worker.postMessage(message, transfer),
-			terminate: () => {
-				worker.terminate().catch(() => {});
-			},
+			terminate: () => worker.terminate(),
 		};
 	} catch (_error) {
 		return null;
 	}
+}
+
+// The TermDOMs alive that may decode. A running worker keeps the runtime
+// alive, so when the last is disposed the worker ends with it, and with
+// it any decode still running.
+let decoderUsers = 0;
+
+export function retainDecoder(): void {
+	decoderUsers++;
+}
+
+export function releaseDecoder(): void {
+	decoderUsers = Math.max(0, decoderUsers - 1);
+	if (decoderUsers > 0 || current === null) {
+		return;
+	}
+	if (running !== null && running.timer !== null) {
+		clearTimeout(running.timer);
+		const {job} = running;
+		running = null;
+		job.reject(new DOMException("The decoder was closed", "AbortError"));
+	}
+	endWorker(current);
 }
