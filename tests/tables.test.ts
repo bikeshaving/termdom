@@ -563,6 +563,43 @@ test("a block in a table row lays out in an anonymous cell", () => {
 	dom.dispose();
 });
 
+// Consecutive blocks in a row share one anonymous cell (CSS 2.1
+// §17.2.1), so they stack in it at its width: the responsive email that
+// turns its columns into blocks on a narrow screen.
+test("consecutive blocks in a table row stack in one anonymous cell", () => {
+	const terminal = new MockProcess({cols: 120, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	const td = (id: string, style: string) =>
+		`<td id="${id}" style="padding: 0; border: 0; ${style}">${id}</td>`;
+	const rect = (id: string) => {
+		const {left, top, width} = document.getElementById(id)!
+			.getBoundingClientRect();
+		return [left, top, width];
+	};
+	document.body.innerHTML =
+		"<table style=\"width: 40px; border-collapse: collapse\"><tr>" +
+		td("a", "display: block; width: 100%") +
+		td("b", "display: block; width: 100%") +
+		"</tr></table>";
+	expect([rect("a"), rect("b")]).toEqual([[0, 0, 40], [0, 1, 40]]);
+	document.body.innerHTML =
+		"<table style=\"width: 40px; border-collapse: collapse\"><tr>" +
+		td("x", "") +
+		td("a", "display: block; margin-bottom: 1px") +
+		td("b", "display: block; margin-top: 2px") +
+		td("y", "") +
+		"</tr></table>";
+	const [a, b] = [rect("a"), rect("b")];
+	expect(a[0]).toBe(b[0]);
+	expect(a[2]).toBe(b[2]);
+	// The margins between the two collapse to the larger.
+	expect(b[1] - a[1]).toBe(3);
+	expect(rect("x")[0]).toBe(0);
+	expect(rect("y")[0]).toBeGreaterThan(a[0]);
+	dom.dispose();
+});
+
 // The white space between a row's cells renders nothing, so it is no
 // anonymous cell and takes no column.
 test("white space between cells takes no column", () => {

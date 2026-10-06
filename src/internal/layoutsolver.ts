@@ -2498,6 +2498,12 @@ interface TableCell {
 	// that wraps it (css-tables-3 §3.3): it fills the cell up to its own
 	// width limits, and its auto margins center it there.
 	anonymous: boolean;
+	// What the anonymous cell wraps: a run of consecutive non-cells in the
+	// row, which share the one cell and stack in it (CSS 2.1 §17.2.1). A
+	// cell's own node alone otherwise.
+	run: LayoutNode[];
+	// The height the cell asks of its row, margins included.
+	height: number;
 }
 
 interface TableRow {
@@ -2645,6 +2651,35 @@ function placeAnonymousCellContent(
 	node.result.top = node.result.margin.top;
 }
 
+// The blocks an anonymous cell wraps, one below another, with the
+// margins that meet between them collapsed as a block's children's do.
+// Measured, or placed at the cell's left and top. Returns the height they
+// take, margins included.
+function stackAnonymousCell(
+	run: LayoutNode[],
+	cellWidth: number,
+	cellLeft: number,
+	cellTop: number,
+	placing: boolean,
+): number {
+	let height = 0;
+	let below = 0;
+	run.forEach((node, index) => {
+		if (placing) {
+			placeAnonymousCellContent(node, cellWidth, cellLeft);
+		} else {
+			resolveNodeMargins(node, cellWidth);
+			layoutBlockChild(node, cellWidth, true, cellWidth, NaN, false);
+		}
+		const {top, bottom} = node.result.margin;
+		const gap = index === 0 ? top : Math.max(below, top);
+		node.result.top = cellTop + height + gap;
+		height += gap + node.result.height;
+		below = bottom;
+	});
+	return height + below;
+}
+
 // An element only. The white space between a row's cells is a run of
 // text the row holds too, and it renders nothing (css-tables-3 §3.3).
 function isAnonymousCellContent(node: LayoutNode): boolean {
@@ -2667,11 +2702,16 @@ function buildTableGrid(rows: TableRow[]): {
 
 	rows.forEach((row, rowIndex) => {
 		let column = 0;
+		let open: TableCell | null = null;
 
 		for (const node of row.cells) {
 			const anonymous = isAnonymousCellContent(node);
 			if (node.style.displayType !== "table-cell" && !anonymous) {
 				zeroLayout(node);
+				continue;
+			}
+			if (anonymous && open !== null) {
+				open.run.push(node);
 				continue;
 			}
 
@@ -2688,7 +2728,7 @@ function buildTableGrid(rows: TableRow[]): {
 				}
 			}
 
-			cells.push({
+			const cell: TableCell = {
 				node,
 				row: rowIndex,
 				column,
@@ -2697,7 +2737,11 @@ function buildTableGrid(rows: TableRow[]): {
 				minWidth: 0,
 				maxWidth: 0,
 				anonymous,
-			});
+				run: [node],
+				height: 0,
+			};
+			cells.push(cell);
+			open = anonymous ? cell : null;
 
 			column += colSpan;
 			columnCount = Math.max(columnCount, column);
@@ -2810,38 +2854,32 @@ function resolveColumnWidths(
 	// only once the table's width is known.
 	const percentBasis = widthIsDefinite ? available : NaN;
 	for (const cell of cells) {
-		const styleWidth = resolveValue(cell.node.style.width, percentBasis);
-		if (isDefined(styleWidth) && cell.node.style.width.unit === "percent") {
-			cell.minWidth = getIntrinsicCellWidth(
-				cell.node,
-				true,
-				ownerWidth,
-				ownerHeight,
-			);
-			cell.maxWidth = Math.max(styleWidth, cell.minWidth);
-			if (cell.colSpan === 1) {
-				fixed[cell.column] = true;
-				percent[cell.column] = true;
+		// An anonymous cell is as wide as the widest block it wraps.
+		cell.minWidth = 0;
+		cell.maxWidth = 0;
+		for (const node of cell.run) {
+			const styleWidth = resolveValue(node.style.width, percentBasis);
+			let minWidth: number;
+			let maxWidth: number;
+			if (isDefined(styleWidth) && node.style.width.unit === "percent") {
+				minWidth = getIntrinsicCellWidth(node, true, ownerWidth, ownerHeight);
+				maxWidth = Math.max(styleWidth, minWidth);
+				if (cell.colSpan === 1) {
+					fixed[cell.column] = true;
+					percent[cell.column] = true;
+				}
+			} else if (isDefined(styleWidth)) {
+				minWidth = styleWidth;
+				maxWidth = styleWidth;
+				if (cell.colSpan === 1) {
+					fixed[cell.column] = true;
+				}
+			} else {
+				minWidth = getIntrinsicCellWidth(node, true, ownerWidth, ownerHeight);
+				maxWidth = getIntrinsicCellWidth(node, false, ownerWidth, ownerHeight);
 			}
-		} else if (isDefined(styleWidth)) {
-			cell.minWidth = styleWidth;
-			cell.maxWidth = styleWidth;
-			if (cell.colSpan === 1) {
-				fixed[cell.column] = true;
-			}
-		} else {
-			cell.minWidth = getIntrinsicCellWidth(
-				cell.node,
-				true,
-				ownerWidth,
-				ownerHeight,
-			);
-			cell.maxWidth = getIntrinsicCellWidth(
-				cell.node,
-				false,
-				ownerWidth,
-				ownerHeight,
-			);
+			cell.minWidth = Math.max(cell.minWidth, minWidth);
+			cell.maxWidth = Math.max(cell.maxWidth, maxWidth);
 		}
 
 		if (cell.colSpan === 1) {
@@ -3116,9 +3154,7 @@ function layoutTable(
 	for (const cell of cells) {
 		const width = spanWidth(cell.column, cell.colSpan);
 		if (cell.anonymous) {
-			resolveNodeMargins(cell.node, width);
-			layoutBlockChild(cell.node, width, true, width, NaN, false);
-			cell.node.result.height += getAxisMargin(cell.node, "column", width);
+			cell.height = stackAnonymousCell(cell.run, width, 0, 0, false);
 		} else {
 			layoutNode(
 				cell.node,
@@ -3137,13 +3173,11 @@ function layoutTable(
 					resolveValue(cell.node.style.height, ownerHeight),
 				);
 			}
+			cell.height = cell.node.result.height;
 		}
 
 		if (cell.rowSpan === 1) {
-			rowHeights[cell.row] = Math.max(
-				rowHeights[cell.row],
-				cell.node.result.height,
-			);
+			rowHeights[cell.row] = Math.max(rowHeights[cell.row], cell.height);
 		}
 	}
 
@@ -3162,10 +3196,7 @@ function layoutTable(
 	}
 	for (const [cell, baseline] of baselines) {
 		const shift = rowBaselines[cell.row] - baseline;
-		rowHeights[cell.row] = Math.max(
-			rowHeights[cell.row],
-			cell.node.result.height + shift,
-		);
+		rowHeights[cell.row] = Math.max(rowHeights[cell.row], cell.height + shift);
 		if (cell.node.cellBaselineShift !== shift) {
 			// Its content moves, which a layout cached for its size would not.
 			cell.node.cellBaselineShift = shift;
@@ -3186,7 +3217,7 @@ function layoutTable(
 			}
 		}
 
-		const deficit = cell.node.result.height - covered;
+		const deficit = cell.height - covered;
 		if (deficit > 0) {
 			const last = Math.min(cell.row + cell.rowSpan - 1, rows.length - 1);
 			rowHeights[last] += deficit;
@@ -3286,12 +3317,13 @@ function layoutTable(
 		const top = row.node === null ? rowTop(row, cell.row) : 0;
 
 		if (cell.anonymous) {
-			placeAnonymousCellContent(
-				cell.node,
+			stackAnonymousCell(
+				cell.run,
 				cellWidth,
 				left + columnStart(cell.column),
+				top,
+				true,
 			);
-			cell.node.result.top += top;
 			continue;
 		}
 
