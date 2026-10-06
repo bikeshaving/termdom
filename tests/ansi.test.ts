@@ -12,8 +12,8 @@ describe("cells through the pen", () => {
 	// emitted bytes, so its round trips are asserted there.
 	test("a multi-code-point grapheme survives to the output whole", () => {
 		const family = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
-		const renderer = new Framebuffer(1, 8);
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const framebuffer = new Framebuffer(1, 8);
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawText(family, 0, 0);
 			ctx.drawText("é", 2, 0);
 			ctx.drawText("\u{1f1ef}\u{1f1f5}", 3, 0);
@@ -31,8 +31,8 @@ describe("cells through the pen", () => {
 	// joiners that hold an emoji together.
 	test("invisible characters in a cluster stay off the wire", () => {
 		const family = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
-		const renderer = new Framebuffer(1, 20);
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const framebuffer = new Framebuffer(1, 20);
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawText("M\u200c\u200ba\u200cr\u034fk", 0, 0);
 			ctx.drawText("e\u200dt", 5, 0);
 			ctx.drawText(family, 8, 0);
@@ -46,8 +46,8 @@ describe("cells through the pen", () => {
 	});
 
 	test("measureText and the layout agree on widths", () => {
-		const renderer = new Framebuffer(1, 10);
-		const context = renderer.beginFrame({offset: 0});
+		const framebuffer = new Framebuffer(1, 10);
+		const context = framebuffer.beginFrame({offset: 0});
 		expect(
 			context.measureText("\u{1f468}\u200d\u{1f469}\u200d\u{1f467}")
 				.width,
@@ -60,11 +60,11 @@ describe("cells through the pen", () => {
 
 describe("Framebuffer", () => {
 	describe("initialization", () => {
-		test("creates renderer with specified dimensions", () => {
-			const renderer = new Framebuffer(5, 10);
+		test("creates a framebuffer with the given dimensions", () => {
+			const framebuffer = new Framebuffer(5, 10);
 
 			// Test basic drawing functionality
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("X", 0, 0);
 			});
 
@@ -72,9 +72,9 @@ describe("Framebuffer", () => {
 		});
 
 		test("handles color depth settings", () => {
-			const renderer = new Framebuffer(5, 10, "ansi");
+			const framebuffer = new Framebuffer(5, 10, "ansi");
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("X", 0, 0, {fg: 0xff0000});
 			});
 
@@ -85,9 +85,9 @@ describe("Framebuffer", () => {
 
 	describe("drawing operations", () => {
 		test("drawText draws text at position", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("Hello", 1, 2);
 			});
 
@@ -95,9 +95,9 @@ describe("Framebuffer", () => {
 		});
 
 		test("drawRect fills rectangular area", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawRect(0, 0, 3, 2, 0xff0000);
 			});
 
@@ -106,9 +106,9 @@ describe("Framebuffer", () => {
 		});
 
 		test("handles viewport offset", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 2}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 2}, (ctx) => {
 				ctx.drawText("Test", 0, 0);
 			});
 
@@ -119,9 +119,9 @@ describe("Framebuffer", () => {
 
 	describe("frame management", () => {
 		test("generates proper ANSI framing", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("Test", 0, 0);
 			});
 
@@ -133,17 +133,17 @@ describe("Framebuffer", () => {
 		});
 
 		test("clears previous buffer", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
 			// First frame
-			renderFrame(renderer, {offset: 0}, (ctx) => {
+			renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("First", 0, 0);
 			});
 
-			renderer.repaintAll();
+			framebuffer.repaintAll();
 
 			// Second frame should render everything (no diff)
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("Second", 0, 0);
 			});
 
@@ -157,13 +157,13 @@ describe("Framebuffer", () => {
 		// through the frame, and SU commits rows to the scrollback, which
 		// document mode promises never to do.
 		test("increasing the offset repaints; it never emits SU", () => {
-			const renderer = new Framebuffer(10, 40);
+			const framebuffer = new Framebuffer(10, 40);
 
-			renderFrame(renderer, {offset: 0}, (ctx) => {
+			renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("Initial", 0, 0);
 			});
 
-			const output = renderFrame(renderer, {offset: 3}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 3}, (ctx) => {
 				ctx.drawText("Scrolled", 0, 0);
 			});
 
@@ -173,13 +173,13 @@ describe("Framebuffer", () => {
 		});
 
 		test("decreasing the offset repaints; it never emits SD", () => {
-			const renderer = new Framebuffer(10, 40);
+			const framebuffer = new Framebuffer(10, 40);
 
-			renderFrame(renderer, {offset: 3}, (ctx) => {
+			renderFrame(framebuffer, {offset: 3}, (ctx) => {
 				ctx.drawText("Initial", 0, 0);
 			});
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("Scrolled", 0, 0);
 			});
 
@@ -189,15 +189,15 @@ describe("Framebuffer", () => {
 		});
 
 		test("no scroll command when offset unchanged", () => {
-			const renderer = new Framebuffer(10, 40);
+			const framebuffer = new Framebuffer(10, 40);
 
 			// Frame 1
-			renderFrame(renderer, {offset: 2}, (ctx) => {
+			renderFrame(framebuffer, {offset: 2}, (ctx) => {
 				ctx.drawText("Frame1", 0, 0);
 			});
 
 			// Frame 2 with same offset
-			const output = renderFrame(renderer, {offset: 2}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 2}, (ctx) => {
 				ctx.drawText("Frame2", 0, 1);
 			});
 
@@ -208,9 +208,9 @@ describe("Framebuffer", () => {
 
 	describe("content optimization", () => {
 		test("generates empty output when no content", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (_ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (_ctx) => {
 				// No drawing operations
 			});
 
@@ -218,16 +218,16 @@ describe("Framebuffer", () => {
 		});
 
 		test("only outputs changed cells between frames", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
 			// First frame
-			renderFrame(renderer, {offset: 0}, (ctx) => {
+			renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("Hello", 0, 0);
 				ctx.drawText("World", 1, 0);
 			});
 
 			// Second frame - only change second line
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("Hello", 0, 0); // Same
 				ctx.drawText("Test", 1, 0); // Changed
 			});
@@ -256,8 +256,8 @@ describe("glyphs where lines meet", () => {
 		cols: number,
 		draw: (ctx: CellContext) => void,
 	): string {
-		const renderer = new Framebuffer(rows, cols);
-		return stripControlCodes(renderFrame(renderer, {offset: 0}, draw));
+		const framebuffer = new Framebuffer(rows, cols);
+		return stripControlCodes(renderFrame(framebuffer, {offset: 0}, draw));
 	}
 
 	test("two lines turning in a cell make its corner", () => {
@@ -345,9 +345,9 @@ describe("glyphs where lines meet", () => {
 describe("Border Drawing", () => {
 	describe("drawBorder method", () => {
 		test("draws simple rectangle border", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
@@ -363,9 +363,9 @@ describe("Border Drawing", () => {
 		});
 
 		test("draws partial borders", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "solid"},
 					bottom: {style: "solid"},
@@ -381,9 +381,9 @@ describe("Border Drawing", () => {
 		});
 
 		test("handles border merging at intersections", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				// Draw two overlapping rectangles to create border intersections
 				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "solid"},
@@ -407,13 +407,13 @@ describe("Border Drawing", () => {
 		});
 
 		test("weaves junctions where separate borders touch", () => {
-			const renderer = new Framebuffer(6, 12);
+			const framebuffer = new Framebuffer(6, 12);
 
 			// A page box, and a rule running wall to wall inside it -- a
 			// masthead's border-bottom. The rule's ends reach the cells of the
 			// page's verticals, which take the connecting stub: ├ and ┤, as a
 			// browser's touching one-pixel lines would draw.
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawBox(0, 0, 10, 5, {
 					top: {style: "solid"},
 					right: {style: "solid"},
@@ -427,12 +427,12 @@ describe("Border Drawing", () => {
 		});
 
 		test("boxes that sit flush stay separate", () => {
-			const renderer = new Framebuffer(4, 12);
+			const framebuffer = new Framebuffer(4, 12);
 
 			// Two bordered siblings side by side: their verticals touch as
 			// parallel strokes, which meet nothing head-on. No junction forms
 			// -- the seam stays ┐┌, the way two browser boxes stay two boxes.
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawBox(0, 0, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
@@ -453,9 +453,9 @@ describe("Border Drawing", () => {
 		});
 
 		test("respects viewport offset", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 2}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 2}, (ctx) => {
 				ctx.drawBox(0, 0, 3, 2, {
 					top: {style: "solid"},
 					right: {style: "solid"},
@@ -470,9 +470,9 @@ describe("Border Drawing", () => {
 		});
 
 		test("handles different border styles", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "double"},
 					right: {style: "double"},
@@ -488,9 +488,9 @@ describe("Border Drawing", () => {
 		});
 
 		test("no sides given draws nothing", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawBox(1, 1, 4, 3, {});
 			});
 
@@ -499,9 +499,9 @@ describe("Border Drawing", () => {
 		});
 
 		test("handles border colors and styles", () => {
-			const renderer = new Framebuffer(5, 10);
+			const framebuffer = new Framebuffer(5, 10);
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "solid", color: 0xff0000},
 					right: {style: "solid", color: 0xff0000},
@@ -516,9 +516,9 @@ describe("Border Drawing", () => {
 		});
 
 		test("clips borders to viewport bounds", () => {
-			const renderer = new Framebuffer(3, 5); // Small viewport
+			const framebuffer = new Framebuffer(3, 5); // Small viewport
 
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				// Draw border that extends beyond viewport
 				ctx.drawBox(0, 0, 10, 10, {
 					top: {style: "solid"},
@@ -531,16 +531,16 @@ describe("Border Drawing", () => {
 			// Should only render visible border portions without crashing
 			expect(output).toContain("┌────"); // Top-left and horizontal line should be visible
 			expect(output).toContain("│"); // Left vertical should be visible
-			// Border extends beyond viewport but renderer handles clipping gracefully
+			// Border extends beyond viewport but the framebuffer clips it
 		});
 	});
 });
 
 describe("Border Integration", () => {
 	test("renders complete border box without styles", () => {
-		const renderer = new Framebuffer(4, 8);
+		const framebuffer = new Framebuffer(4, 8);
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(1, 0, 6, 4, {
 				top: {style: "solid"},
 				right: {style: "solid"},
@@ -561,9 +561,9 @@ describe("Border Integration", () => {
 	});
 
 	test("renders borders with text content", () => {
-		const renderer = new Framebuffer(5, 10);
+		const framebuffer = new Framebuffer(5, 10);
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw border
 			ctx.drawBox(1, 1, 6, 3, {
 				top: {style: "solid"},
@@ -582,9 +582,9 @@ describe("Border Integration", () => {
 	});
 
 	test("borders work with drawRect backgrounds", () => {
-		const renderer = new Framebuffer(5, 10);
+		const framebuffer = new Framebuffer(5, 10);
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Fill background
 			ctx.drawRect(1, 1, 4, 3, 0x00ff00);
 
@@ -602,9 +602,9 @@ describe("Border Integration", () => {
 	});
 
 	test("renders double border box without styles", () => {
-		const renderer = new Framebuffer(5, 7);
+		const framebuffer = new Framebuffer(5, 7);
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(0, 0, 5, 4, {
 				top: {style: "double"},
 				right: {style: "double"},
@@ -621,9 +621,9 @@ describe("Border Integration", () => {
 	});
 
 	test("renders partial border without right edge", () => {
-		const renderer = new Framebuffer(5, 8);
+		const framebuffer = new Framebuffer(5, 8);
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(0, 0, 6, 4, {
 				top: {style: "solid"},
 				bottom: {style: "solid"},
@@ -641,9 +641,9 @@ describe("Border Integration", () => {
 	});
 
 	test("renders text with no ANSI color styles", () => {
-		const renderer = new Framebuffer(3, 10);
+		const framebuffer = new Framebuffer(3, 10);
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawText("Hello", 0, 0);
 			ctx.drawText("World", 0, 1);
 			ctx.drawText("Test", 0, 2);
@@ -651,7 +651,7 @@ describe("Border Integration", () => {
 
 		// Strip control codes but keep ANSI colors for testing
 		const cleanOutput = stripControlCodes(output);
-		// The renderer optimizes output with cursor movements, so we check contains
+		// The framebuffer optimizes output with cursor movements, so we check contains
 		expect(cleanOutput).toContain("Hello");
 		expect(cleanOutput).toContain("World");
 		expect(cleanOutput).toContain("Test");
@@ -664,9 +664,9 @@ describe("Border Integration", () => {
 	});
 
 	test("renders overlapping borders", () => {
-		const renderer = new Framebuffer(6, 10);
+		const framebuffer = new Framebuffer(6, 10);
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// First box
 			ctx.drawBox(0, 0, 5, 4, {
 				top: {style: "solid"},
@@ -696,12 +696,12 @@ describe("Border Integration", () => {
 	});
 
 	test("renders simple border pattern", () => {
-		const renderer = new Framebuffer(5, 10);
+		const framebuffer = new Framebuffer(5, 10);
 
 		// Clear previous buffer to ensure output
-		renderer.repaintAll();
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw a simple box that fits in viewport
 			ctx.drawBox(1, 1, 3, 3, {
 				top: {style: "solid"},
@@ -723,10 +723,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders exact multi-line text output", () => {
-		const renderer = new Framebuffer(4, 12);
+		const framebuffer = new Framebuffer(4, 12);
 
 		// First render to establish baseline
-		renderFrame(renderer, {offset: 0}, (ctx) => {
+		renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawText("Line 1", 0, 0);
 			ctx.drawText("Line 2", 0, 1);
 			ctx.drawText("Line 3", 0, 2);
@@ -734,14 +734,14 @@ describe("Border Integration", () => {
 		});
 
 		// Second render with minimal changes
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawText("Line 1", 0, 0);
 			ctx.drawText("Line TWO", 0, 1); // Changed
 			ctx.drawText("Line 3", 0, 2);
 			ctx.drawText("Line 4", 0, 3);
 		});
 
-		// The renderer optimizes by only updating changed content
+		// The framebuffer optimizes by only updating changed content
 		const cleanOutput = stripControlCodes(output);
 		expect(cleanOutput).toContain("TWO"); // Changed part
 		expect(cleanOutput).not.toContain("Line 1"); // Unchanged
@@ -750,12 +750,12 @@ describe("Border Integration", () => {
 	});
 
 	test("renders box with text inside - full output", () => {
-		const renderer = new Framebuffer(5, 8);
+		const framebuffer = new Framebuffer(5, 8);
 
 		// Clear any previous state
-		renderer.repaintAll();
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw box
 			ctx.drawBox(0, 0, 8, 5, {
 				top: {style: "solid"},
@@ -779,11 +779,11 @@ describe("Border Integration", () => {
 	});
 
 	test("renders collapsed table borders - 2x2 grid", () => {
-		const renderer = new Framebuffer(5, 9);
+		const framebuffer = new Framebuffer(5, 9);
 
-		renderer.repaintAll();
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Simulate CSS collapsed table borders by drawing each cell's borders
 			// This should create proper junctions where borders meet
 
@@ -838,11 +838,11 @@ describe("Border Integration", () => {
 	});
 
 	test("renders collapsed table borders - mixed border styles", () => {
-		const renderer = new Framebuffer(3, 11);
+		const framebuffer = new Framebuffer(3, 11);
 
-		renderer.repaintAll();
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Test border merging with different styles
 			// Left cell with solid borders
 			ctx.drawBox(0, 0, 6, 3, {
@@ -875,11 +875,11 @@ describe("Border Integration", () => {
 	});
 
 	test("renders collapsed table borders - header and data rows", () => {
-		const renderer = new Framebuffer(5, 13); // 3 columns x 4 chars + 1 = 13 width
+		const framebuffer = new Framebuffer(5, 13); // 3 columns x 4 chars + 1 = 13 width
 
-		renderer.repaintAll();
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Simulate a typical HTML table with header and data rows
 			// For collapsed borders, cells share borders at their edges
 
@@ -945,10 +945,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders simple single cell with border", () => {
-		const renderer = new Framebuffer(4, 6);
-		renderer.repaintAll();
+		const framebuffer = new Framebuffer(4, 6);
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(1, 1, 4, 2, {
 				top: {style: "solid"},
 				right: {style: "solid"},
@@ -965,10 +965,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders double border box", () => {
-		const renderer = new Framebuffer(5, 8);
-		renderer.repaintAll();
+		const framebuffer = new Framebuffer(5, 8);
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(1, 1, 6, 3, {
 				top: {style: "double"},
 				right: {style: "double"},
@@ -987,10 +987,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders partial borders - top and left only", () => {
-		const renderer = new Framebuffer(4, 6);
-		renderer.repaintAll();
+		const framebuffer = new Framebuffer(4, 6);
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(0, 0, 5, 3, {top: {style: "solid"}, left: {style: "solid"}});
 			ctx.drawText("Part", 1, 1);
 		});
@@ -1008,10 +1008,10 @@ describe("Border Integration", () => {
 		// No top or bottom edge means no corner cells -- the vertical run owns
 		// the end rows too. Skipping them is what cut a blockquote's border
 		// off at its first and last row.
-		const renderer = new Framebuffer(5, 8);
-		renderer.repaintAll();
+		const framebuffer = new Framebuffer(5, 8);
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(0, 0, 6, 4, {left: {style: "solid"}});
 			ctx.drawText("Quote", 2, 1);
 		});
@@ -1024,10 +1024,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders L-shaped table border pattern", () => {
-		const renderer = new Framebuffer(4, 7);
-		renderer.repaintAll();
+		const framebuffer = new Framebuffer(4, 7);
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Top row - 2 cells
 			ctx.drawBox(0, 0, 4, 2, {
 				top: {style: "solid"},
@@ -1063,10 +1063,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders mixed border styles in adjacent cells", () => {
-		const renderer = new Framebuffer(3, 9);
-		renderer.repaintAll();
+		const framebuffer = new Framebuffer(3, 9);
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Solid border cell
 			ctx.drawBox(0, 0, 3, 3, {
 				top: {style: "solid"},
@@ -1105,10 +1105,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders nested borders", () => {
-		const renderer = new Framebuffer(7, 11); // Wider to accommodate text
-		renderer.repaintAll();
+		const framebuffer = new Framebuffer(7, 11); // Wider to accommodate text
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Outer border
 			ctx.drawBox(0, 0, 9, 7, {
 				top: {style: "double"},
@@ -1141,10 +1141,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders grid layout - 3x3 table", () => {
-		const renderer = new Framebuffer(7, 11);
-		renderer.repaintAll();
+		const framebuffer = new Framebuffer(7, 11);
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw 3x3 grid of cells
 			for (let row = 0; row < 3; row++) {
 				for (let col = 0; col < 3; col++) {
@@ -1173,10 +1173,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders borders with background colors", () => {
-		const renderer = new Framebuffer(3, 7);
-		renderer.repaintAll();
+		const framebuffer = new Framebuffer(3, 7);
+		framebuffer.repaintAll();
 
-		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawRect(1, 0, 5, 3, 0x00ff00);
 			ctx.drawBox(1, 0, 5, 3, {
 				top: {style: "solid", color: 0xff0000},

@@ -9,9 +9,13 @@ import {Framebuffer} from "../src/internal/framebuffer.ts";
 import {renderStatic} from "./test-utils.js";
 
 test("a zero-width cluster takes no cell and the line still ends", () => {
-	const screen = new Framebuffer(1, 10);
-	const output = renderStatic(screen, {rows: 1, lineEnding: "\n"}, (ctx) => {
-		ctx.drawText("a­b​c", 0, 0);
-	});
+	const framebuffer = new Framebuffer(1, 10);
+	const output = renderStatic(
+		framebuffer,
+		{rows: 1, lineEnding: "\n"},
+		(ctx) => {
+			ctx.drawText("a­b​c", 0, 0);
+		},
+	);
 	expect(output.replace(/\x1b\[[0-9;]*m/g, "")).toBe("abc\n");
 });

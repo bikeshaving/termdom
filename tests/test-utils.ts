@@ -323,12 +323,12 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	 */
 	getStaticANSI(): string {
 		const buffer = this.terminal.buffer.active;
-		const screen = new Framebuffer(
+		const framebuffer = new Framebuffer(
 			this.terminal.rows,
 			this.terminal.cols,
 			this.colorDepth,
 		);
-		const context = screen.beginFrame({offset: 0});
+		const context = framebuffer.beginFrame({offset: 0});
 
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(buffer.viewportY + row);
@@ -372,7 +372,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 
 		// The frame emitter withholds the final row's line ending (the screen
 		// has nothing below it); the oracle's callers split on lines.
-		return stripControlCodes(screen.endFrame() + "\r\n");
+		return stripControlCodes(framebuffer.endFrame() + "\r\n");
 	}
 }
 

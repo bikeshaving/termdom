@@ -5,12 +5,12 @@ import {Framebuffer} from "../src/internal/framebuffer.ts";
 import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 test("a cell written inside a wide cluster's span is dropped, not emitted", () => {
-	const screen = new Framebuffer(2, 12, "rgb");
-	const ctx = screen.beginFrame({offset: 0});
+	const framebuffer = new Framebuffer(2, 12, "rgb");
+	const ctx = framebuffer.beginFrame({offset: 0});
 	ctx.drawText("काा", 2, 0);
 	ctx.drawText("ab", 3, 0);
 	ctx.drawText("cd", 6, 0);
-	const frame = stripControlCodes(screen.endFrame());
+	const frame = stripControlCodes(framebuffer.endFrame());
 	expect(frame).toContain("काा");
 	expect(frame).toContain("cd");
 	expect(frame).not.toContain("a");

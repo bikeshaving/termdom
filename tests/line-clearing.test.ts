@@ -133,25 +133,29 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 	// erases itself) plus one partial erase below the content, which never
 	// qualifies as a whole-screen clear.
 	const terminal = new MockProcess({cols: 20, rows: 6});
-	const renderer = new Framebuffer(6, 20, "rgb");
+	const framebuffer = new Framebuffer(6, 20, "rgb");
 	const write = (s: string) =>
 		new Promise<void>((r) => terminal.stdout.write(s, () => r()));
 
 	// An initial frame fills five rows.
 	await write(
-		renderFrame(renderer, {offset: 0, cursorRow: 0, regionRows: 5}, (ctx) => {
-			for (let i = 0; i < 5; i++) {
-				ctx.drawText(`stale row ${i}`, 0, i);
-			}
-		}),
+		renderFrame(
+			framebuffer,
+			{offset: 0, cursorRow: 0, regionRows: 5},
+			(ctx) => {
+				for (let i = 0; i < 5; i++) {
+					ctx.drawText(`stale row ${i}`, 0, i);
+				}
+			},
+		),
 	);
 	expect(terminal.getVisibleText()).toContain("stale row 4");
 
 	// The resize path resets the screen; the new frame is shorter and leaves
 	// row 1 blank.
-	renderer.replaced(0);
+	framebuffer.replaced(0);
 	const out = renderFrame(
-		renderer,
+		framebuffer,
 		{offset: 0, cursorRow: 0, regionRows: 3},
 		(ctx) => {
 			ctx.drawText("fresh top", 0, 0);

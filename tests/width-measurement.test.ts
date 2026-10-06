@@ -43,7 +43,7 @@ function recordingMeasurer(starved = new Set<string>()): {
 		probes,
 		deferred,
 		starved,
-		// The screen asks its exchange six things; this double answers them
+		// The framebuffer asks its exchange six things; this double answers them
 		// and records the asks, and is nothing else an exchange is.
 		measurer: {
 			probing: () => true,
@@ -121,7 +121,7 @@ function scriptTerminal(
 
 /**
  * One frame through the public surface: clusters drawn at their columns,
- * the measurer wired to the screen, the emitted bytes returned. The
+ * the measurer wired to the framebuffer, the emitted bytes returned. The
  * emitter is what is under test; the pen is just how cells get there.
  */
 function emit(
@@ -130,13 +130,13 @@ function emit(
 	cells: Array<[number, string]>,
 	measurer: Exchange,
 ): string {
-	const screen = new Framebuffer(rows, cols, "rgb");
-	screen.measurer = measurer;
-	const context = screen.beginFrame({offset: 0});
+	const framebuffer = new Framebuffer(rows, cols, "rgb");
+	framebuffer.measurer = measurer;
+	const context = framebuffer.beginFrame({offset: 0});
 	for (const [index, cluster] of cells) {
 		context.drawText(cluster, index % cols, Math.floor(index / cols));
 	}
-	return screen.endFrame();
+	return framebuffer.endFrame();
 }
 
 function settle(ms = 60): Promise<void> {
