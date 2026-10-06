@@ -9,11 +9,29 @@ import {
 	setColorSchemeSource,
 	UNIT_CELL,
 } from "./internal/cssom.ts";
-import * as DOM from "./internal/dom.ts";
 import {
+	applyMutations,
+	attachDocument,
+	clampScrollOffsets,
+	clearHighlights,
 	createWindow,
 	disconnectObservers,
+	dispatchAsUserAgent,
+	dropFullscreen,
+	flushLayout,
 	flushObservers,
+	hasFrameCallbacks,
+	hoverListenerCount,
+	relayoutReplacedElements,
+	revealPendingCaret,
+	revealPendingEditingCaret,
+	revealTextControlCaret,
+	runFocusFixup,
+	runFrameCallbacks,
+	runScrollSteps,
+	setDocumentVisible,
+	syncMediaQueries,
+	takeScrollShift,
 	type Window,
 } from "./internal/dom.ts";
 import {
@@ -208,8 +226,7 @@ export class TermDOM {
 			options.url,
 		);
 
-		const document =
-			this.document = this.window.document as unknown as DOM.Document;
+		const document = this.document = this.window.document;
 
 		this[kLayout] = new Layout(
 			this.window,
@@ -239,7 +256,7 @@ export class TermDOM {
 		this[kMeasuresCell] = options.cellSize === "auto";
 		setCellSizeSource(document, cellSize);
 
-		DOM.attachDocument(
+		attachDocument(
 			document,
 			this[kLayout],
 			this[kCascade],
@@ -328,7 +345,7 @@ export class TermDOM {
 		// Resolves when the first frame has been written. The negotiations'
 		// silence timeouts must not delay that.
 		this[kLifecycle] = "attaching";
-		DOM.setDocumentVisible(this.document, true);
+		setDocumentVisible(this.document, true);
 		let begun!: () => void;
 		this[kAttachBegun] = new Promise<void>((resolve) => {
 			begun = resolve;
@@ -358,7 +375,7 @@ export class TermDOM {
 			void this[kExchange].negotiateColorScheme().then(() => {
 				if (isAttached(this) && getColorScheme(this) !== schemeBefore) {
 					this[kCascade].syncStylesheets();
-					DOM.syncMediaQueries(this.document);
+					syncMediaQueries(this.document);
 					void render(this);
 				}
 			});
@@ -368,7 +385,7 @@ export class TermDOM {
 				? this[kExchange].negotiateColorDepth().then((depth) => {
 					if (isAttached(this) && depth !== this[kFramebuffer].colorDepth) {
 						this[kFramebuffer].rebind(depth);
-						DOM.syncMediaQueries(this.document);
+						syncMediaQueries(this.document);
 						void render(this);
 					}
 				})
@@ -442,10 +459,7 @@ export class TermDOM {
 							cellSizeChanged(this);
 							void render(this);
 						} else if (sizeChanged) {
-							DOM.dispatchAsUserAgent(
-								this.window,
-								new this.window.Event("resize"),
-							);
+							dispatchAsUserAgent(this.window, new this.window.Event("resize"));
 						}
 					});
 				});
@@ -513,7 +527,7 @@ export class TermDOM {
 
 		const wasAttached = isAttached(this);
 		this[kLifecycle] = "disposed";
-		DOM.setDocumentVisible(this.document, false);
+		setDocumentVisible(this.document, false);
 
 		// Frames painted in place, so nothing reached the scrollback. Write the
 		// document out now. Skip this if no frame was ever painted, because the
@@ -535,7 +549,7 @@ export class TermDOM {
 		// it, on the flow content's bottom row. Step below it, or the shell's
 		// next line lands on ours.
 		this[kExchange].restoreEngagedModes();
-		DOM.dropFullscreen(this.document);
+		dropFullscreen(this.document);
 		this[kHoverReportingEnabled] = false;
 		this[kMouseReportingEnabled] = false;
 		// A program that was fullscreen from its first frame leaves nothing
@@ -557,7 +571,7 @@ export class TermDOM {
 		}
 		this[kCascade].dispose();
 		this[kLayout].dispose();
-		DOM.clearHighlights(this.document);
+		clearHighlights(this.document);
 		disconnectObservers(this.document);
 		return this[kExchange].flush();
 	}
@@ -718,7 +732,7 @@ function syncMouseReporting(termDOM: TermDOM): void {
 function syncHoverReporting(termDOM: TermDOM): void {
 	const wanted =
 		termDOM[kMouseReportingEnabled] &&
-		(DOM.hoverListenerCount(termDOM.document) > 0 ||
+		(hoverListenerCount(termDOM.document) > 0 ||
 			termDOM[kCascade].hoverRulesExist());
 	if (wanted === termDOM[kHoverReportingEnabled]) {
 		return;
@@ -736,7 +750,7 @@ function getColorScheme(termDOM: TermDOM): "light" | "dark" {
 // An image's or a canvas's natural size in cells is its pixels over the
 // cell's, so a cell measured anew lays them out again.
 function cellPixelsChanged(termDOM: TermDOM): void {
-	DOM.relayoutReplacedElements(termDOM.document);
+	relayoutReplacedElements(termDOM.document);
 }
 
 // Every length the page wrote measures differently now, and so does the
@@ -744,8 +758,8 @@ function cellPixelsChanged(termDOM: TermDOM): void {
 function cellSizeChanged(termDOM: TermDOM): void {
 	termDOM[kCascade].syncStylesheets();
 	const window = termDOM.window;
-	DOM.dispatchAsUserAgent(window, new window.Event("resize"));
-	DOM.syncMediaQueries(termDOM.document);
+	dispatchAsUserAgent(window, new window.Event("resize"));
+	syncMediaQueries(termDOM.document);
 }
 
 async function render(termDOM: TermDOM): Promise<void> {
@@ -806,14 +820,14 @@ async function render(termDOM: TermDOM): Promise<void> {
 				// Never inside the requestAnimationFrame() call that held it:
 				// the loop's first step runs synchronously from there.
 				framesAwaiting = false;
-				if (DOM.hasFrameCallbacks(termDOM.document)) {
+				if (hasFrameCallbacks(termDOM.document)) {
 					await Promise.resolve();
-					framesAwaiting = DOM.runFrameCallbacks(termDOM.document);
+					framesAwaiting = runFrameCallbacks(termDOM.document);
 				}
 				await renderOnce(termDOM);
 				// After the paint, never inside the scrollTo() that asked
 				// for it. A listener's mutations queue the next frame.
-				DOM.runScrollSteps(termDOM.document);
+				runScrollSteps(termDOM.document);
 			} while (termDOM[kRenderQueued] || framesAwaiting);
 		} catch (error) {
 			// The page's own exceptions were reported where they happened,
@@ -890,7 +904,7 @@ function afterRender(termDOM: TermDOM): void {
  * document is printed once, when the session ends.
  */
 function printStatic(termDOM: TermDOM): void {
-	DOM.applyMutations(termDOM.document);
+	applyMutations(termDOM.document);
 	termDOM[kLayout].performLayout();
 	termDOM[kLayout].framePainted();
 	termDOM[kUnprinted] = true;
@@ -944,7 +958,7 @@ function flushDocument(termDOM: TermDOM): void {
 
 /** The document as ANSI: colors and line breaks, no cursor controls, no modes. */
 function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
-	DOM.flushLayout(termDOM.document);
+	flushLayout(termDOM.document);
 	return termDOM[kFramebuffer].renderStatic(
 		termDOM[kLayout].documentPaintHeight(),
 		lineEnding,
@@ -999,18 +1013,18 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// First, so a hover listener's mutations join the records taken below.
 	termDOM[kInput].resolvePendingHover();
 
-	DOM.applyMutations(termDOM.document);
-	DOM.runFocusFixup(termDOM.document);
+	applyMutations(termDOM.document);
+	runFocusFixup(termDOM.document);
 
 	termDOM[kLayout].performLayout();
-	DOM.clampScrollOffsets(termDOM.document);
+	clampScrollOffsets(termDOM.document);
 
-	DOM.revealPendingCaret(termDOM.document);
-	DOM.revealPendingEditingCaret(termDOM.document);
+	revealPendingCaret(termDOM.document);
+	revealPendingEditingCaret(termDOM.document);
 
 	// Nothing this frame could paint differs from the screen, so skip the
 	// paint.
-	const journalled = DOM.takeScrollShift(termDOM.document) as {
+	const journalled = takeScrollShift(termDOM.document) as {
 		element: Element;
 		delta: number;
 	} | null;
@@ -1027,7 +1041,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		return;
 	}
 
-	DOM.revealTextControlCaret(termDOM.document);
+	revealTextControlCaret(termDOM.document);
 
 	// Fullscreen owns the alternate screen from row zero. The document's
 	// scroll position survives underneath.
