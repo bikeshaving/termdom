@@ -42,6 +42,8 @@ import {
 	nextInTree,
 	Node,
 	parentElement,
+	READONLY_INPUT_TYPES,
+	REQUIRED_INPUT_TYPES,
 	SVG_NAMESPACE,
 	XLINK_NAMESPACE,
 	XML_NAMESPACE,
@@ -1550,17 +1552,6 @@ function isDisabled(element: Element, _state: MatchState): boolean {
 	return isActuallyDisabled(element);
 }
 
-const UNREQUIRABLE_INPUT_TYPES = new Set([
-	"button",
-	"checkbox",
-	"color",
-	"hidden",
-	"image",
-	"range",
-	"reset",
-	"submit",
-]);
-
 function isRequirable(element: Element): boolean {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
@@ -1572,22 +1563,9 @@ function isRequirable(element: Element): boolean {
 	if (name !== "input") {
 		return false;
 	}
-	const type = toASCIILowercase(element.getAttribute("type") ?? "text");
-	return !UNREQUIRABLE_INPUT_TYPES.has(type);
+	// The type property, which an unknown type reads as text.
+	return REQUIRED_INPUT_TYPES.has((element as unknown as {type: string}).type);
 }
-
-const IMMUTABLE_INPUT_TYPES = new Set([
-	"button",
-	"checkbox",
-	"color",
-	"file",
-	"hidden",
-	"image",
-	"radio",
-	"range",
-	"reset",
-	"submit",
-]);
 
 // `:read-write`: a text control the user can type into, or anything an
 // editing host contains.
@@ -1596,9 +1574,9 @@ function isMutable(element: Element, state: MatchState): boolean {
 		const name = element.localName;
 		if (name === "input" || name === "textarea") {
 			const type = name === "input"
-				? toASCIILowercase(element.getAttribute("type") ?? "text")
+				? (element as unknown as {type: string}).type
 				: "text";
-			if (!IMMUTABLE_INPUT_TYPES.has(type)) {
+			if (READONLY_INPUT_TYPES.has(type)) {
 				return (
 					element.getAttribute("readonly") === null &&
 					!isDisabled(element, state)
