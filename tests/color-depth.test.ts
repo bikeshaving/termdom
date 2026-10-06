@@ -192,6 +192,11 @@ test("answers that come after the terminal moved on are not typed into the page"
 	await dom.attach();
 	await new Promise((resolve) => setTimeout(resolve, 100));
 	expect(keys).toEqual([]);
+	// Answers that came too late do not change the colors either.
+	expect(dom.window.screen.colorDepth).toBe(8);
+	dom.document.body.innerHTML = "<p style=\"color: #123456\">x</p>";
+	await nextFrame(dom);
+	expect(terminal.output()).not.toContain("38;2;18;52;86");
 	dom.dispose();
 });
 
@@ -230,4 +235,16 @@ test("renderANSI() with markup uses the screen's colors", async () => {
 	});
 	expect(rgb.renderANSI(html)).toContain("38;2;18;52;86");
 	rgb.dispose();
+	// Before attach() the terminal has not been asked; after, its answer
+	// holds for markup too.
+	const tmux = new TermDOM({
+		transport: fakeTerminal({
+			[DA1]: "\x1b[?62;22c",
+			[DA2]: "\x1b[>84;0;0c",
+		}).transport as never,
+	});
+	expect(tmux.renderANSI(html)).toContain("38;5;");
+	await tmux.attach();
+	expect(tmux.renderANSI(html)).toContain("38;2;18;52;86");
+	tmux.dispose();
 });
