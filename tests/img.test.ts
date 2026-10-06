@@ -696,7 +696,8 @@ test("in quirks mode, an image with a size that will not show is a box", async (
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({
 		transport: terminal.transport,
-		html: "<div><img src=missing.png alt=\"the band on stage\" style=\"width: 10ch; height: 4em\"></div>" +
+		html:
+			"<div><img src=missing.png alt=\"the band on stage\" style=\"width: 10ch; height: 4em\"></div>" +
 			"<div><img src=missing.png alt=\"logo\" width=3 height=1></div>" +
 			"<div>[<img src=missing.png alt=\"no size\">]</div>",
 	});
@@ -719,7 +720,10 @@ test("in quirks mode, an image with a size that will not show is a box", async (
 
 test("an image is a box while it loads only when it has a size", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
-	const dom = new TermDOM({transport: terminal.transport, csp: "img-src https:"});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		csp: "img-src https:",
+	});
 	dom.addEventListener("fetch", (event) => {
 		event.respondWith(new Promise<Response>(() => {}));
 	});

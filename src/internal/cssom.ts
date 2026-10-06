@@ -526,6 +526,7 @@ const kPseudoHosts = Symbol("pseudoHosts");
 // again.
 const kSharedRoot = Symbol("sharedRoot");
 const kElement = Symbol("element");
+const kViewOf = Symbol("viewOf");
 const kComputedValue = Symbol("computedValue");
 const kCustomProperties = Symbol("customProperties");
 const kParentRule = Symbol("parentRule");
@@ -546,6 +547,9 @@ const kSync = Symbol("sync");
 // either way, and an attribute write reparses on the next read, detected
 // by the text differing from what this object last serialized.
 interface CSSStyleDeclaration {
+	// Set on what getComputedStyle() hands a page: a plain declaration
+	// that reads through to the engine's own computed one.
+	[kViewOf]?: CSSStyleDeclaration;
 	[kElement]: Element | null;
 	[kParentRule]: CSSRule | null;
 	[kOnChange]: (() => void) | null;
@@ -596,20 +600,34 @@ class CSSStyleDeclaration {
 	}
 
 	get parentRule(): CSSRule | null {
+		if (this[kViewOf] !== undefined) {
+			return this[kViewOf].parentRule;
+		}
 		return this[kParentRule];
 	}
 
 	get length(): number {
+		if (this[kViewOf] !== undefined) {
+			syncViewIndices(this);
+			return this[kViewOf].length;
+		}
 		this[kSync]!();
 		return this[kDeclarations].length;
 	}
 
 	get cssText(): string {
+		if (this[kViewOf] !== undefined) {
+			return this[kViewOf].cssText;
+		}
 		this[kSync]!();
 		return serializeDeclarations(this);
 	}
 
 	set cssText(text: string) {
+		if (this[kViewOf] !== undefined) {
+			this[kViewOf].cssText = text;
+			return;
+		}
 		this[kSync]!();
 		this[kDeclarations] = [];
 		this[kByName].clear();
@@ -629,16 +647,26 @@ class CSSStyleDeclaration {
 	}
 
 	item(index: number): string {
+		if (this[kViewOf] !== undefined) {
+			return this[kViewOf].item(index);
+		}
 		this[kSync]!();
 		return this[kDeclarations][index]?.name ?? "";
 	}
 
 	[Symbol.iterator](): IterableIterator<string> {
+		if (this[kViewOf] !== undefined) {
+			syncViewIndices(this);
+			return this[kViewOf][Symbol.iterator]();
+		}
 		this[kSync]!();
 		return this[kDeclarations].map((entry) => entry.name)[Symbol.iterator]();
 	}
 
 	getPropertyValue(property: string): string {
+		if (this[kViewOf] !== undefined) {
+			return this[kViewOf].getPropertyValue(property);
+		}
 		this[kSync]!();
 		const name = CSSValues.normalizePropertyName(property);
 		const declared = findDeclaration(this, name);
@@ -650,6 +678,9 @@ class CSSStyleDeclaration {
 	}
 
 	getPropertyPriority(property: string): string {
+		if (this[kViewOf] !== undefined) {
+			return this[kViewOf].getPropertyPriority(property);
+		}
 		this[kSync]!();
 		const name = CSSValues.normalizePropertyName(property);
 		const declared = findDeclaration(this, name);
@@ -667,6 +698,10 @@ class CSSStyleDeclaration {
 	}
 
 	setProperty(property: string, value: string, priority?: string): void {
+		if (this[kViewOf] !== undefined) {
+			this[kViewOf].setProperty(property, value, priority);
+			return;
+		}
 		this[kSync]!();
 		const name = CSSValues.normalizePropertyName(property);
 		if (!isSupportedDeclaration(this, name)) {
@@ -694,6 +729,9 @@ class CSSStyleDeclaration {
 	}
 
 	removeProperty(property: string): string {
+		if (this[kViewOf] !== undefined) {
+			return this[kViewOf].removeProperty(property);
+		}
 		this[kSync]!();
 		const name = CSSValues.normalizePropertyName(property);
 		const previous = this.getPropertyValue(name);
@@ -1075,6 +1113,43 @@ for (const property of CSS_PROPERTIES) {
 			enumerable: index === 0,
 		});
 	}
+}
+
+const pageViews = new WeakMap<CSSStyleDeclaration, CSSStyleProperties>();
+
+// The engine resolves a computed style through classes of its own, which
+// a page must not find in a prototype chain. What a page gets is a plain
+// CSSStyleProperties that reads through to the engine's, one per
+// declaration, so asking again returns the same object.
+function getPageView(source: CSSStyleDeclaration): CSSStyleProperties {
+	let view = pageViews.get(source);
+	if (view === undefined) {
+		view = Object.create(CSSStyleProperties.prototype) as CSSStyleProperties;
+		view[kViewOf] = source;
+		view[kIndexed] = 0;
+		pageViews.set(source, view);
+	}
+	syncViewIndices(view);
+	return view;
+}
+
+// A computed style lists a custom property only while one applies, so
+// its indices follow its length each time the page reads it.
+function syncViewIndices(view: CSSStyleDeclaration): void {
+	const length = view[kViewOf]!.length;
+	for (let index = view[kIndexed]; index < length; index++) {
+		Object.defineProperty(view, index, {
+			get(this: CSSStyleDeclaration): string {
+				return this.item(index);
+			},
+			enumerable: true,
+			configurable: true,
+		});
+	}
+	for (let index = length; index < view[kIndexed]; index++) {
+		delete (view as unknown as Record<number, string>)[index];
+	}
+	view[kIndexed] = length;
 }
 
 // An error thrown out of a stylesheet has to be the document's own
@@ -1551,9 +1626,6 @@ function getSheetNamespaces(
 // One class per at-rule that declares descriptors. A descriptor is
 // named only inside its own at-rule, so `src` exists on
 // CSSFontFaceDescriptors and nothing else.
-const kRulePrelude = Symbol("rulePrelude");
-const kAtKeyword = Symbol("atKeyword");
-const kAtRule = Symbol("atRule");
 
 const DESCRIPTOR_BLOCKS = new Map<string, typeof CSSStyleDeclaration>();
 
@@ -1589,34 +1661,58 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 	DESCRIPTOR_BLOCKS.set(atRule, block);
 }
 
-interface CSSDeclarationBlockRule {
+interface CSSDeclarationBlockOwner extends CSSRule {
 	[kStyle]: CSSStyleDeclaration;
 }
 
-abstract class CSSDeclarationBlockRule extends CSSRule {
+// The block an at-rule with descriptors holds: @font-face, @page, a
+// keyframe, @counter-style, @property and @font-palette-values each call
+// this from their constructor.
+function initDeclarationBlock(
+	rule: CSSDeclarationBlockOwner,
+	atRule: string,
+	block: string | readonly CSSValues.CSSDeclaration[],
+): void {
+	const Block =
+		(atRule ? DESCRIPTOR_BLOCKS.get(atRule) : undefined) ?? CSSStyleProperties;
+	rule[kStyle] = new Block({
+		parentRule: rule,
+		onChange: () => notifyRule(rule),
+		// A descriptor block declares descriptors, not CSS properties, so
+		// the property index does not restrict what it may hold.
+		descriptors: atRule,
+		keyframe: rule instanceof CSSKeyframeRule,
+	});
+	if (typeof block === "string") {
+		rule[kStyle].cssText = block;
+	} else {
+		assignDeclarations(rule[kStyle], block);
+	}
+}
+
+function declarationBlockText(
+	prelude: string,
+	style: CSSStyleDeclaration,
+): string {
+	const declarations = style.cssText;
+	return declarations ? `${prelude} { ${declarations} }` : `${prelude} { }`;
+}
+
+interface CSSFontFaceRule extends CSSDeclarationBlockOwner {}
+
+/** `@font-face`: the descriptors of a font this terminal will never load. */
+class CSSFontFaceRule extends CSSRule {
 	constructor(
 		block: string | readonly CSSValues.CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
 		super(parentStyleSheet, parentRule);
-		const atRule = (this.constructor as unknown as {[kAtRule]?: string})[kAtRule];
-		const Block =
-			(atRule ? DESCRIPTOR_BLOCKS.get(atRule) : undefined) ??
-			CSSStyleProperties;
-		this[kStyle] = new Block({
-			parentRule: this,
-			onChange: () => notifyRule(this),
-			// A descriptor block declares descriptors, not CSS properties, so
-			// the property index does not restrict what it may hold.
-			descriptors: atRule ?? "",
-			keyframe: this instanceof CSSKeyframeRule,
-		});
-		if (typeof block === "string") {
-			this[kStyle].cssText = block;
-		} else {
-			assignDeclarations(this[kStyle], block);
-		}
+		initDeclarationBlock(this, "@font-face", block);
+	}
+
+	get type(): number {
+		return RULE_TYPES.FONT_FACE_RULE;
 	}
 
 	get style(): CSSStyleDeclaration {
@@ -1628,28 +1724,8 @@ abstract class CSSDeclarationBlockRule extends CSSRule {
 		this[kStyle].cssText = String(text);
 	}
 
-	/** The at-keyword and prelude this rule's text opens with. */
-	abstract get [kRulePrelude](): string;
-
 	get cssText(): string {
-		const declarations = this[kStyle].cssText;
-		return declarations
-			? `${this[kRulePrelude]} { ${declarations} }`
-			: `${this[kRulePrelude]} { }`;
-	}
-}
-
-/** `@font-face`: the descriptors of a font this terminal will never load. */
-class CSSFontFaceRule extends CSSDeclarationBlockRule {
-	/** The at-rule whose descriptors this rule's block holds. */
-	static readonly [kAtRule] = "@font-face";
-
-	get type(): number {
-		return RULE_TYPES.FONT_FACE_RULE;
-	}
-
-	get [kRulePrelude](): string {
-		return "@font-face";
+		return declarationBlockText("@font-face", this[kStyle]);
 	}
 }
 
@@ -1697,22 +1773,20 @@ Object.defineProperty(CSSNestedDeclarations.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-interface CSSPageRule {
+interface CSSPageRule extends CSSDeclarationBlockOwner {
 	[kSelectorText]: string;
 }
 
 /** `@page`: the page selector and its descriptors. */
-class CSSPageRule extends CSSDeclarationBlockRule {
-	/** The at-rule whose descriptors this rule's block holds. */
-	static readonly [kAtRule] = "@page";
-
+class CSSPageRule extends CSSRule {
 	constructor(
 		selectorText: string,
 		block: string | readonly CSSValues.CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
-		super(block, parentStyleSheet, parentRule);
+		super(parentStyleSheet, parentRule);
+		initDeclarationBlock(this, "@page", block);
 		this[kSelectorText] = CSSValues.serializePageSelector(selectorText);
 	}
 
@@ -1729,32 +1803,88 @@ class CSSPageRule extends CSSDeclarationBlockRule {
 		notifyRule(this);
 	}
 
-	get [kRulePrelude](): string {
-		return this[kSelectorText] ? `@page ${this[kSelectorText]}` : "@page";
+	get style(): CSSStyleDeclaration {
+		return this[kStyle];
+	}
+
+	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
+	set style(text: string) {
+		this[kStyle].cssText = String(text);
+	}
+
+	get cssText(): string {
+		return declarationBlockText(
+			this[kSelectorText] ? `@page ${this[kSelectorText]}` : "@page",
+			this[kStyle],
+		);
 	}
 }
 
 const kName = Symbol("name");
 
-interface CSSNamedDeclarationRule {
+// A named at-rule with a descriptor block, `@counter-style x { ... }`
+// and the like: the name is the prelude and the block holds the
+// descriptors.
+interface CSSNamedRule extends CSSDeclarationBlockOwner {
 	[kName]: string;
 }
 
-/**
- * A named at-rule with a descriptor block: `@counter-style x { ... }` and
- * similar. The name is the prelude and the block holds the declarations.
- */
-class CSSNamedDeclarationRule extends CSSDeclarationBlockRule {
-	/** The at-rule whose descriptors this rule's block holds. */
-	static readonly [kAtRule]: string = "";
+function initNamedRule(
+	rule: CSSNamedRule,
+	atRule: string,
+	name: string,
+	block: string | readonly CSSValues.CSSDeclaration[],
+): void {
+	initDeclarationBlock(rule, atRule, block);
+	rule[kName] = name.trim();
+}
 
+interface CSSCounterStyleRule extends CSSNamedRule {}
+
+/** `@counter-style`: a counter's name and the descriptors that define it. */
+class CSSCounterStyleRule extends CSSRule {
 	constructor(
 		name: string,
 		block: string | readonly CSSValues.CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 	) {
-		super(block, parentStyleSheet, null);
-		this[kName] = name.trim();
+		super(parentStyleSheet, null);
+		initNamedRule(this, "@counter-style", name, block);
+	}
+
+	get type(): number {
+		return RULE_TYPES.COUNTER_STYLE_RULE;
+	}
+
+	get name(): string {
+		return this[kName];
+	}
+
+	set name(name: string) {
+		const text = String(name).trim();
+		if (!text) {
+			return;
+		}
+		this[kName] = text;
+		notifyRule(this);
+	}
+
+	get cssText(): string {
+		return declarationBlockText(`@counter-style ${this[kName]}`, this[kStyle]);
+	}
+}
+
+interface CSSPropertyRule extends CSSNamedRule {}
+
+/** `@property`: a custom property's registration. */
+class CSSPropertyRule extends CSSRule {
+	constructor(
+		name: string,
+		block: string | readonly CSSValues.CSSDeclaration[],
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(parentStyleSheet, null);
+		initNamedRule(this, "@property", name, block);
 	}
 
 	get type(): number {
@@ -1765,84 +1895,80 @@ class CSSNamedDeclarationRule extends CSSDeclarationBlockRule {
 		return this[kName];
 	}
 
-	get [kRulePrelude](): string {
-		return `${(this.constructor as typeof CSSNamedDeclarationRule)[kAtRule]} ${
-			this[kName]
-		}`;
-	}
-}
-
-/** `@counter-style`: a counter's name and the descriptors that define it. */
-class CSSCounterStyleRule extends CSSNamedDeclarationRule {
-	static override readonly [kAtRule] = "@counter-style";
-
-	override get type(): number {
-		return RULE_TYPES.COUNTER_STYLE_RULE;
-	}
-
-	override get name(): string {
-		return this[kName];
-	}
-
-	override set name(name: string) {
-		const text = String(name).trim();
-		if (!text) {
-			return;
-		}
-		this[kName] = text;
-		notifyRule(this);
-	}
-}
-
-/** `@property`: a custom property's registration. */
-class CSSPropertyRule extends CSSNamedDeclarationRule {
-	static override readonly [kAtRule] = "@property";
-
 	get syntax(): string {
-		return this.style.getPropertyValue("syntax");
+		return this[kStyle].getPropertyValue("syntax");
 	}
 
 	get inherits(): boolean {
-		return this.style.getPropertyValue("inherits") === "true";
+		return this[kStyle].getPropertyValue("inherits") === "true";
 	}
 
 	get initialValue(): string | null {
-		return this.style.getPropertyValue("initial-value") || null;
+		return this[kStyle].getPropertyValue("initial-value") || null;
+	}
+
+	get cssText(): string {
+		return declarationBlockText(`@property ${this[kName]}`, this[kStyle]);
 	}
 }
 
+interface CSSFontPaletteValuesRule extends CSSNamedRule {}
+
 /** `@font-palette-values`: a palette's name and its descriptors. */
-class CSSFontPaletteValuesRule extends CSSNamedDeclarationRule {
-	static override readonly [kAtRule] = "@font-palette-values";
+class CSSFontPaletteValuesRule extends CSSRule {
+	constructor(
+		name: string,
+		block: string | readonly CSSValues.CSSDeclaration[],
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(parentStyleSheet, null);
+		initNamedRule(this, "@font-palette-values", name, block);
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get name(): string {
+		return this[kName];
+	}
 
 	get fontFamily(): string {
-		return this.style.getPropertyValue("font-family");
+		return this[kStyle].getPropertyValue("font-family");
 	}
 
 	get basePalette(): string {
-		return this.style.getPropertyValue("base-palette");
+		return this[kStyle].getPropertyValue("base-palette");
 	}
 
 	get overrideColors(): string {
-		return this.style.getPropertyValue("override-colors");
+		return this[kStyle].getPropertyValue("override-colors");
+	}
+
+	get cssText(): string {
+		return declarationBlockText(
+			`@font-palette-values ${this[kName]}`,
+			this[kStyle],
+		);
 	}
 }
 
 const kKeyText = Symbol("keyText");
 
-interface CSSKeyframeRule {
+interface CSSKeyframeRule extends CSSDeclarationBlockOwner {
 	[kKeyText]: string;
 }
 
 /** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
-class CSSKeyframeRule extends CSSDeclarationBlockRule {
+class CSSKeyframeRule extends CSSRule {
 	constructor(
 		keyText: string,
 		block: string | readonly CSSValues.CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
-		super(block, parentStyleSheet, parentRule);
+		super(parentStyleSheet, parentRule);
+		initDeclarationBlock(this, "", block);
 		this[kKeyText] = CSSValues.serializeKeyText(keyText);
 	}
 
@@ -1867,8 +1993,17 @@ class CSSKeyframeRule extends CSSDeclarationBlockRule {
 		notifyRule(this);
 	}
 
-	get [kRulePrelude](): string {
-		return this[kKeyText];
+	get style(): CSSStyleDeclaration {
+		return this[kStyle];
+	}
+
+	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
+	set style(text: string) {
+		this[kStyle].cssText = String(text);
+	}
+
+	get cssText(): string {
+		return declarationBlockText(this[kKeyText], this[kStyle]);
 	}
 }
 
@@ -1913,12 +2048,23 @@ class CSSMediaRule extends CSSConditionRule {
 
 const kConditionText = Symbol("conditionText");
 
-interface CSSTextConditionRule {
+// The text of a condition rule this engine keeps as authored:
+// `@supports` and `@container`.
+function conditionRuleText(
+	atKeyword: string,
+	conditionText: string,
+	rule: CSSGroupingRule,
+): string {
+	const condition = conditionText ? ` ${conditionText}` : "";
+	return `${atKeyword}${condition} {${serializeGroupRules(rule)}\n}`;
+}
+
+/** `@supports`: its rules apply, since what this engine supports it renders. */
+interface CSSSupportsRule {
 	[kConditionText]: string;
 }
 
-/** A grouping rule whose condition this engine keeps as authored text. */
-abstract class CSSTextConditionRule extends CSSConditionRule {
+class CSSSupportsRule extends CSSConditionRule {
 	constructor(
 		conditionText: string,
 		parentStyleSheet: CSSStyleSheet | null,
@@ -1929,26 +2075,16 @@ abstract class CSSTextConditionRule extends CSSConditionRule {
 		this[kConditionText] = conditionText.trim();
 	}
 
-	get conditionText(): string {
-		return this[kConditionText];
-	}
-
-	abstract get [kAtKeyword](): string;
-
-	get cssText(): string {
-		const condition = this[kConditionText] ? ` ${this[kConditionText]}` : "";
-		return `${this[kAtKeyword]}${condition} {${serializeGroupRules(this)}\n}`;
-	}
-}
-
-/** `@supports`: its rules apply, since what this engine supports it renders. */
-class CSSSupportsRule extends CSSTextConditionRule {
 	get type(): number {
 		return RULE_TYPES.SUPPORTS_RULE;
 	}
 
-	get [kAtKeyword](): string {
-		return "@supports";
+	get conditionText(): string {
+		return this[kConditionText];
+	}
+
+	get cssText(): string {
+		return conditionRuleText("@supports", this[kConditionText], this);
 	}
 }
 
@@ -1956,19 +2092,21 @@ const kContainerName = Symbol("containerName");
 const kContainerQuery = Symbol("containerQuery");
 
 interface CSSContainerRule {
+	[kConditionText]: string;
 	[kContainerName]: string;
 	[kContainerQuery]: string;
 }
 
 /** `@container`: parsed, with no container query engine behind it. */
-class CSSContainerRule extends CSSTextConditionRule {
+class CSSContainerRule extends CSSConditionRule {
 	constructor(
 		conditionText: string,
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
-		super(conditionText, parentStyleSheet, parentRule, build);
+		super(parentStyleSheet, parentRule, build);
+		this[kConditionText] = conditionText.trim();
 		// The prelude does not change for this rule, so its parts are read
 		// once here.
 		const parts = CSSValues.getContainerParts(this.conditionText);
@@ -1980,8 +2118,12 @@ class CSSContainerRule extends CSSTextConditionRule {
 		return 0;
 	}
 
-	get [kAtKeyword](): string {
-		return "@container";
+	get conditionText(): string {
+		return this[kConditionText];
+	}
+
+	get cssText(): string {
+		return conditionRuleText("@container", this[kConditionText], this);
 	}
 
 	get containerName(): string {
@@ -3895,27 +4037,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return null;
 	}
 
-	[kComputedValue](property: string): string {
-		const current = this[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(this)) {
-			this[kSyncResolved]();
-		}
-		const value = this[kBaseValue](property);
-		const cascade = this[kCascade];
-		if (cascade !== null && cascade[kActiveTransitions].size > 0) {
-			const transitional = getTransitionValue(
-				cascade,
-				this[kElement],
-				"",
-				property,
-			);
-			if (transitional !== null) {
-				return transitional;
-			}
-		}
-		return value;
-	}
-
 	// Fully lazy. Most elements are only ever asked a handful of
 	// properties. The composition walker asks each element only `display`.
 	override getPropertyValue(property: string): string {
@@ -4084,6 +4205,27 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			(property) => this[kBaseValue](property),
 			"",
 		);
+	}
+
+	[kComputedValue](property: string): string {
+		const current = this[kCascade]?.[kCurrentDeclarations];
+		if (current !== undefined && !current.has(this)) {
+			this[kSyncResolved]();
+		}
+		const value = this[kBaseValue](property);
+		const cascade = this[kCascade];
+		if (cascade !== null && cascade[kActiveTransitions].size > 0) {
+			const transitional = getTransitionValue(
+				cascade,
+				this[kElement],
+				"",
+				property,
+			);
+			if (transitional !== null) {
+				return transitional;
+			}
+		}
+		return value;
 	}
 }
 
@@ -5014,19 +5156,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		throw readOnlyDeclaration(this[kElement] ?? undefined);
 	}
 
-	// The engine's read. An empty result means no rule reached the
-	// pseudo-element, which is what the ::selection and ::marker painters
-	// check.
-	[kComputedValue](property: string): string {
-		const current = this[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(this)) {
-			this[kSyncResolved]();
-		}
-		const value = this[kBaseValue](property);
-		const transitional = getPseudoTransitionValue(this, property);
-		return transitional ?? value;
-	}
-
 	// The style of the NODE a pseudo-element generates: the declarations
 	// completed with initial values, so a box is never laid out without a
 	// `display`.
@@ -5172,6 +5301,19 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			property === "height" || property === "top" || property === "bottom";
 		const basis = vertical ? box.height : box.width;
 		return CSSValues.getUsedLength((parseFloat(computed) / 100) * basis);
+	}
+
+	// The engine's read. An empty result means no rule reached the
+	// pseudo-element, which is what the ::selection and ::marker painters
+	// check.
+	[kComputedValue](property: string): string {
+		const current = this[kCascade]?.[kCurrentDeclarations];
+		if (current !== undefined && !current.has(this)) {
+			this[kSyncResolved]();
+		}
+		const value = this[kBaseValue](property);
+		const transitional = getPseudoTransitionValue(this, property);
+		return transitional ?? value;
 	}
 }
 
@@ -5882,7 +6024,10 @@ export class Cascade {
 			element: Element,
 			pseudoElt?: string | null,
 		): globalThis.CSSStyleDeclaration =>
-			getResolvedStyle(this, element, pseudoElt);
+			getPageView(
+				getResolvedStyle(this, element, pseudoElt) as unknown as
+					CSSStyleDeclaration,
+			) as unknown as globalThis.CSSStyleDeclaration;
 
 		setupInvalidationHooks(this);
 
@@ -9341,9 +9486,8 @@ function computePseudoElementStyle(
 			if (!CSSValues.hasSlotAliases(name)) {
 				continue;
 			}
-			direction ??= cascade
-				.declarationFor(element)
-				[kComputedValue]("direction");
+			direction ??=
+				cascade.declarationFor(element)[kComputedValue]("direction");
 			for (const other of CSSValues.getSlotNames(name, direction)) {
 				computedStyle[other] = value;
 			}

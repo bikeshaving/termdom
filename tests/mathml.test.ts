@@ -550,7 +550,9 @@ test("border and padding on <math> use the box model", async () => {
 
 test("innerText reads math as the one-line form, and an annotation is no part of it", async () => {
 	const {dom} = await render(
-		"<p>" + block("<mfrac><mi>a</mi><mi>b</mi></mfrac>") + "</p>" +
+		"<p>" +
+		block("<mfrac><mi>a</mi><mi>b</mi></mfrac>") +
+		"</p>" +
 		"<p><math id=\"t\"><semantics><mi>x</mi>" +
 		"<annotation encoding=\"application/x-tex\">\\frac{1}{2}</annotation>" +
 		"</semantics></math></p>",

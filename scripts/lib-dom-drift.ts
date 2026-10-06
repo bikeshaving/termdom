@@ -54,20 +54,23 @@ console.log(`\n${exact} exact, ${drifting} drifting`);
 const globals = new Map<string, Set<string>>();
 const scope = checker.getSymbolsInScope(
 	sf,
-	ts.SymbolFlags.Interface | ts.SymbolFlags.Variable |
-		ts.SymbolFlags.Function | ts.SymbolFlags.Namespace,
+	ts.SymbolFlags.Interface |
+	ts.SymbolFlags.Variable |
+		ts.SymbolFlags.Function |
+	ts.SymbolFlags.Namespace,
 );
 const globalNames = new Set<string>();
 for (const symbol of scope) {
 	const fromLib = symbol.declarations?.some((declaration) =>
-		program.isSourceFileDefaultLibrary(declaration.getSourceFile())
+		program.isSourceFileDefaultLibrary(declaration.getSourceFile()),
 	);
 	if (!fromLib) {
 		continue;
 	}
 	if (
 		symbol.flags &
-		(ts.SymbolFlags.Variable | ts.SymbolFlags.Function |
+		(ts.SymbolFlags.Variable |
+			ts.SymbolFlags.Function |
 			ts.SymbolFlags.Namespace)
 	) {
 		globalNames.add(symbol.name);
@@ -88,16 +91,16 @@ for (const symbol of scope) {
 	}
 }
 
-const statics = (name: string): Set<string> => {
+function statics(name: string): Set<string> {
 	const symbol = scope.find((s) =>
-		s.name === name && s.flags & ts.SymbolFlags.Variable
+		s.name === name && s.flags & ts.SymbolFlags.Variable,
 	);
 	if (symbol === undefined) {
 		return new Set();
 	}
 	const type = checker.getTypeOfSymbol(symbol);
 	return new Set(checker.getPropertiesOfType(type).map((p) => p.name));
-};
+}
 
 // Members a current standard defines that this TypeScript's lib.dom does
 // not have yet. Each names where it is defined.
@@ -106,9 +109,7 @@ const AHEAD_OF_LIB_DOM: Record<string, Record<string, string>> = {
 		headingOffset: "https://html.spec.whatwg.org/#dom-headingoffset",
 		headingReset: "https://html.spec.whatwg.org/#dom-headingreset",
 	},
-	HTMLInputElement: {
-		alpha: "https://html.spec.whatwg.org/#dom-input-alpha",
-	},
+	HTMLInputElement: {alpha: "https://html.spec.whatwg.org/#dom-input-alpha"},
 	HTMLImageElement: {
 		controls: "https://html.spec.whatwg.org/#dom-img-controls",
 	},
@@ -154,7 +155,8 @@ const TERMDOM_OWN = new Set(["CanvasCharacterGridContext"]);
 const {CSS_PROPERTIES} = await import("../src/generated/cssproperties.ts");
 const CSS_PROPERTY_NAMES = new Set<string>();
 for (const property of CSS_PROPERTIES) {
-	const camel = property.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+	const camel =
+		property.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
 	CSS_PROPERTY_NAMES.add(property).add(camel);
 	if (property.startsWith("-webkit-")) {
 		CSS_PROPERTY_NAMES.add(camel[0].toUpperCase() + camel.slice(1));
@@ -162,6 +164,18 @@ for (const property of CSS_PROPERTIES) {
 	}
 }
 const DECLARATIONS = new Set(["CSSStyleDeclaration", "CSSStyleProperties"]);
+
+// Interfaces with a named getter: an instance's own properties are the
+// names of what it holds, an id or a name, which no ledger can list.
+const NAMED_GETTERS = new Set([
+	"HTMLCollection",
+	"HTMLAllCollection",
+	"HTMLFormControlsCollection",
+	"HTMLOptionsCollection",
+	"NamedNodeMap",
+	"DOMStringMap",
+	"StyleSheetList",
+]);
 
 const {TermDOM} = await import("../src/index.ts");
 const termDOM = new TermDOM({
@@ -171,7 +185,7 @@ const termDOM = new TermDOM({
 const window = termDOM.window as unknown as Record<string, unknown>;
 const document = window.document as Document;
 const extras: string[] = [];
-const checked = new Set<object>();
+const checked = new Map<object, Set<string>>();
 
 function allowedOn(name: string): Set<string> {
 	const allowed = new Set(globals.get(name));
@@ -208,17 +222,22 @@ const INTRINSICS = new Set<object>([
 function check(name: string, object: object): void {
 	const allowed = allowedOn(name);
 	let proto: object | null = object;
-	for (; proto !== null && !INTRINSICS.has(proto); proto = Object.getPrototypeOf(proto)) {
+	for (; proto !== null &&
+		!INTRINSICS.has(proto); proto = Object.getPrototypeOf(proto)) {
 		const owner = proto === object
 			? name
 			: (proto as {constructor?: {name?: string}}).constructor?.name ?? name;
 		if (owner !== name && !globals.has(owner)) {
 			extras.push(`${name} inherits from ${owner}`);
 		}
-		if (checked.has(proto)) {
+		// A parent's prototype is checked once for each interface above it,
+		// since what that interface may have differs.
+		const seen = checked.get(proto) ?? new Set<string>();
+		if (seen.has(name)) {
 			continue;
 		}
-		checked.add(proto);
+		seen.add(name);
+		checked.set(proto, seen);
 		const own = owner === name ? allowed : allowedOn(owner);
 		for (const key of Object.getOwnPropertyNames(proto)) {
 			// An indexed property is the interface's indexed getter.
@@ -228,13 +247,17 @@ function check(name: string, object: object): void {
 			if (DECLARATIONS.has(name) && CSS_PROPERTY_NAMES.has(key)) {
 				continue;
 			}
+			if (proto === object && NAMED_GETTERS.has(name)) {
+				continue;
+			}
 			if (key !== "constructor" && !own.has(key) && !allowed.has(key)) {
 				extras.push(`${owner}.${key}`);
 			}
 		}
 	}
 	if (
-		proto !== null && proto !== Object.prototype &&
+		proto !== null &&
+		proto !== Object.prototype &&
 		!(proto === Error.prototype && name === "DOMException")
 	) {
 		extras.push(`${name} inherits from ${proto.constructor.name}.prototype`);
@@ -244,7 +267,8 @@ function check(name: string, object: object): void {
 for (const key of Object.getOwnPropertyNames(window)) {
 	const value = window[key];
 	if (
-		typeof value !== "function" || !/^[A-Z]/.test(key) ||
+		typeof value !== "function" ||
+		!/^[A-Z]/.test(key) ||
 		!(value as {prototype?: object}).prototype
 	) {
 		continue;
@@ -261,9 +285,14 @@ for (const key of Object.getOwnPropertyNames(window)) {
 	const allowedStatics = statics(key);
 	for (const member of Object.getOwnPropertyNames(value)) {
 		if (
-			!["length", "name", "prototype", "caller", "arguments"].includes(
-				member,
-			) && !allowedStatics.has(member)
+			![
+				"length",
+				"name",
+				"prototype",
+				"caller",
+				"arguments",
+			].includes(member) &&
+			!allowedStatics.has(member)
 		) {
 			extras.push(`${key}.${member} (static)`);
 		}
@@ -283,11 +312,62 @@ for (
 		["Performance", window.performance],
 		["Storage", window.localStorage],
 		["CSS", window.CSS],
-		["CSSStyleDeclaration", (termDOM.window as unknown as Window).getComputedStyle(document.body)],
+		[
+			"CSSStyleDeclaration",
+			(termDOM.window as unknown as Window).getComputedStyle(document.body),
+		],
 		["CanvasRenderingContext2D", canvas.getContext("2d")],
 	] as Array<[string, object | undefined]>
 ) {
 	if (object != null) {
+		check(name, object);
+	}
+}
+// What a page gets back from a call is an instance of the interface
+// itself, never of a subclass the engine made for its own use.
+document.body.innerHTML =
+	"<p class=x name=n>a</p><form><input name=i><select><option>o</select></form>";
+const form = document.querySelector("form")!;
+const page = termDOM.window as unknown as Window;
+for (
+	const [name, object] of [
+		["HTMLCollection", document.getElementsByClassName("x")],
+		["HTMLCollection", document.getElementsByTagName("p")],
+		["HTMLCollection", document.body.children],
+		["NodeList", document.querySelectorAll("p")],
+		["NodeList", document.body.childNodes],
+		["NodeList", document.getElementsByName("n")],
+		["DOMTokenList", document.body.classList],
+		["NamedNodeMap", document.body.attributes],
+		["HTMLAllCollection", document.all],
+		["HTMLFormControlsCollection", form.elements],
+		["HTMLOptionsCollection", form.querySelector("select")!.options],
+		["DOMStringMap", document.body.dataset],
+		["ValidityState", form.querySelector("input")!.validity],
+		["CSSStyleProperties", page.getComputedStyle(document.body)],
+		["CSSStyleProperties", page.getComputedStyle(document.body, "::before")],
+		["CSSStyleProperties", page.getComputedStyle(document.body, "::nonsense")],
+		["CSSStyleProperties", document.body.style],
+		["DOMRectList", document.body.getClientRects()],
+		["DOMRect", document.body.getBoundingClientRect()],
+		["StyleSheetList", document.styleSheets],
+		["DOMImplementation", document.implementation],
+		["TreeWalker", document.createTreeWalker(document.body)],
+		["NodeIterator", document.createNodeIterator(document.body)],
+		["Range", document.createRange()],
+		["Selection", page.getSelection()],
+	] as Array<[string, object | null]>
+) {
+	const expected = (window[name] as {prototype?: object} | undefined)
+		?.prototype;
+	if (object !== null && Object.getPrototypeOf(object) !== expected) {
+		extras.push(
+			`a page's ${name} is a ${
+				(object as {constructor?: {name?: string}}).constructor?.name
+			}`,
+		);
+	}
+	if (object !== null) {
 		check(name, object);
 	}
 }

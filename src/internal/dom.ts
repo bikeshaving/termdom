@@ -7181,6 +7181,8 @@ const kOwner = Symbol("owner");
 const kChildMember = Symbol("childMember");
 const kExact = Symbol("exact");
 const kItems = Symbol("items");
+const kMatches = Symbol("matches");
+const kMembers = Symbol("members");
 const kListMembers = Symbol("listMembers");
 const kListNames = Symbol("listNames");
 const kChangedMembers = Symbol("changedMembers");
@@ -7191,6 +7193,24 @@ const kDefined = Symbol("defined");
 const kNames = Symbol("names");
 
 const anyAttribute = Symbol("any attribute");
+
+// Copies an internal base's methods onto an interface's prototype, where
+// the interface does not define its own, so the base shares its code
+// without standing in the interface's prototype chain.
+function shareMethods(
+	target: abstract new (...args: never[]) => unknown,
+	source: abstract new (...args: never[]) => unknown,
+): void {
+	for (const key of Reflect.ownKeys(source.prototype)) {
+		if (key !== "constructor" && !Object.hasOwn(target.prototype, key)) {
+			Object.defineProperty(
+				target.prototype,
+				key,
+				Object.getOwnPropertyDescriptor(source.prototype, key)!,
+			);
+		}
+	}
+}
 
 // The list is computed once and kept until a change invalidates it. A
 // collection registers wherever the changes that can affect it are
@@ -7213,32 +7233,10 @@ interface LiveList {
 	[kNames]: string[];
 }
 
+// The methods every live list shares. It is never in a prototype chain,
+// where a page would see it: shareMethods() copies its methods onto each
+// list interface.
 abstract class LiveList implements LiveCollection {
-	// childMember: the list draws only from the owner's direct children, so
-	// a change anywhere deeper in the owner's tree leaves it untouched, and
-	// the children a change carries are exactly the members it carries.
-	// watched: the attribute the list reads, `anyAttribute` if it reads any,
-	// null if none. wide: the members come from anywhere in the document
-	// rather than from under the owner.
-	constructor(
-		live: boolean,
-		owner: Node | null = null,
-		childMember: ((node: Node) => boolean) | null = null,
-		watched: string | symbol | null = null,
-		wide = false,
-	) {
-		this[kItems] = [];
-		this[kDefined] = 0;
-		this[kRegistered] = null;
-		this[kExact] = false;
-		this[kNames] = [];
-		this[kLive] = live;
-		this[kOwner] = owner;
-		this[kChildMember] = childMember;
-		this[kWatched] = watched;
-		this[kDocumentWide] = wide;
-	}
-
 	abstract [kListMembers](): Node[];
 
 	[kListNames](_items: Node[]): Map<string, Node> | null {
@@ -7319,6 +7317,34 @@ abstract class LiveList implements LiveCollection {
 			this[kSync]();
 		}
 	}
+}
+
+// The fields a live list starts with. Each list interface calls this
+// where it would call a base class constructor. childMember: the list
+// draws only from the owner's direct children, so a change anywhere
+// deeper in the owner's tree leaves it untouched, and the children a
+// change carries are exactly the members it carries. watched: the
+// attribute the list reads, `anyAttribute` if it reads any, null if
+// none. wide: the members come from anywhere in the document rather
+// than from under the owner.
+function initLiveList(
+	list: LiveList,
+	live: boolean,
+	owner: Node | null = null,
+	childMember: ((node: Node) => boolean) | null = null,
+	watched: string | symbol | null = null,
+	wide = false,
+): void {
+	list[kItems] = [];
+	list[kDefined] = 0;
+	list[kRegistered] = null;
+	list[kExact] = false;
+	list[kNames] = [];
+	list[kLive] = live;
+	list[kOwner] = owner;
+	list[kChildMember] = childMember;
+	list[kWatched] = watched;
+	list[kDocumentWide] = wide;
 }
 
 // The own properties stay defined. An index reads through to the list
@@ -7486,11 +7512,11 @@ function ensureList(list: LiveList): Node[] {
 
 const kCompute = Symbol("compute");
 
-export interface NodeList {
+export interface NodeList extends LiveList {
 	[kCompute]: () => Node[];
 }
 
-export class NodeList extends LiveList {
+export class NodeList {
 	[index: number]: globalThis.Node;
 	declare [Symbol.iterator]: () => ArrayIterator<globalThis.Node>;
 	declare forEach: (
@@ -7513,7 +7539,7 @@ export class NodeList extends LiveList {
 		watched: string | symbol | null = null,
 		wide = false,
 	) {
-		super(live, owner, childMember, watched, wide);
+		initLiveList(this, live, owner, childMember, watched, wide);
 		this[kCompute] = compute;
 	}
 
@@ -7521,14 +7547,14 @@ export class NodeList extends LiveList {
 		return ensureList(this).length;
 	}
 
-	override [kListMembers](): Node[] {
-		return this[kCompute]();
-	}
-
 	item(index: number): globalThis.Node | null {
 		const items = ensureList(this);
 		const at = toUnsignedLong(index);
 		return at < items.length ? (items[at] as unknown as globalThis.Node) : null;
+	}
+
+	[kListMembers](): Node[] {
+		return this[kCompute]();
 	}
 }
 
@@ -7536,6 +7562,7 @@ Object.defineProperty(NodeList.prototype, Symbol.toStringTag, {
 	value: "NodeList",
 	configurable: true,
 });
+shareMethods(NodeList, LiveList);
 
 // lib.dom's NodeListOf: the members are known, so `item` never returns
 // null. The engine's own NodeList is the general one.
@@ -7552,12 +7579,17 @@ interface NodeListOf<T extends globalThis.Node> extends NodeList {
 	[Symbol.iterator](): ArrayIterator<T>;
 }
 
-interface HTMLCollectionBase {
-
+// A collection that selects by a test per element, as getElementsBy*
+// do, keeps the test, so an attribute change checks the one element it
+// touched instead of walking the tree again.
+interface HTMLCollection extends LiveList {
 	[kCompute]: () => Element[];
+	[kRoot]?: Node;
+	[kMatches]?: (element: Element) => boolean;
+	[kMembers]?: Set<Node> | null;
 }
 
-class HTMLCollectionBase extends LiveList {
+class HTMLCollection {
 	[index: number]: Element;
 	declare [Symbol.iterator]: () => ArrayIterator<Element>;
 
@@ -7568,42 +7600,12 @@ class HTMLCollectionBase extends LiveList {
 		watched: string | symbol | null = null,
 		wide = false,
 	) {
-		super(true, owner, childMember, watched, wide);
+		initLiveList(this, true, owner, childMember, watched, wide);
 		this[kCompute] = compute;
 	}
 
 	get length(): number {
 		return ensureList(this).length;
-	}
-
-	override [kListMembers](): Node[] {
-		return this[kCompute]();
-	}
-
-	override [kChangedMembers](changed: readonly Node[]): Node[] | null {
-		const members = super[kChangedMembers](changed);
-		if (members === null || isNameless(members)) {
-			return members;
-		}
-		return null;
-	}
-
-	override [kListNames](items: Node[]): Map<string, Node> {
-		const named = new Map<string, Node>();
-		for (const item of items) {
-			const element = item as Element;
-			const id = element.getAttribute("id");
-			if (id !== null && id !== "" && !named.has(id)) {
-				named.set(id, element);
-			}
-			if (element.namespaceURI === HTML_NAMESPACE) {
-				const name = element.getAttribute("name");
-				if (name !== null && name !== "" && !named.has(name)) {
-					named.set(name, element);
-				}
-			}
-		}
-		return named;
 	}
 
 	item(index: number): Element | null {
@@ -7612,27 +7614,6 @@ class HTMLCollectionBase extends LiveList {
 		return at < items.length ? (items[at] as Element) : null;
 	}
 
-	// A collection is addressable by the id and name of its members, so a
-	// change to either moves its named properties. No collection here selects
-	// members by id or name, so the members stay and only the names are
-	// rebuilt.
-	override [kAttributeSync](element: Element, localName: string): void {
-		if (localName !== "id" && localName !== "name") {
-			super[kAttributeSync](element, localName);
-			return;
-		}
-		if (this[kChildMember] !== null && element[kParent] !== this[kOwner]) {
-			return;
-		}
-		if (this[kDocumentWide]) {
-			dropList(this);
-		} else if (this[kExact]) {
-			defineListProperties(this);
-		}
-	}
-}
-
-class HTMLCollection extends HTMLCollectionBase {
 	namedItem(name: string): Element | null {
 		if (name === "") {
 			return null;
@@ -7652,15 +7633,83 @@ class HTMLCollection extends HTMLCollectionBase {
 		}
 		return null;
 	}
+
+	[kListMembers](): Node[] {
+		return this[kCompute]();
+	}
+
+	[kChangedMembers](changed: readonly Node[]): Node[] | null {
+		const matches = this[kMatches];
+		if (matches !== undefined) {
+			return matchingChangedMembers(this, matches, changed);
+		}
+		const members = LiveList.prototype[kChangedMembers].call(this, changed);
+		if (members === null || isNameless(members)) {
+			return members;
+		}
+		return null;
+	}
+
+	[kListNames](items: Node[]): Map<string, Node> {
+		const named = new Map<string, Node>();
+		for (const item of items) {
+			const element = item as Element;
+			const id = element.getAttribute("id");
+			if (id !== null && id !== "" && !named.has(id)) {
+				named.set(id, element);
+			}
+			if (element.namespaceURI === HTML_NAMESPACE) {
+				const name = element.getAttribute("name");
+				if (name !== null && name !== "" && !named.has(name)) {
+					named.set(name, element);
+				}
+			}
+		}
+		return named;
+	}
+
+	// A collection is addressable by the id and name of its members, so a
+	// change to either moves its named properties. No collection here selects
+	// members by id or name, so the members stay and only the names are
+	// rebuilt.
+	[kAttributeSync](element: Element, localName: string): void {
+		const matches = this[kMatches];
+		if (matches !== undefined && localName === this[kWatched]) {
+			matchingAttributeSync(this, matches, element);
+			return;
+		}
+		if (localName !== "id" && localName !== "name") {
+			LiveList.prototype[kAttributeSync].call(this, element, localName);
+			return;
+		}
+		if (this[kChildMember] !== null && element[kParent] !== this[kOwner]) {
+			return;
+		}
+		if (this[kDocumentWide]) {
+			dropList(this);
+		} else if (this[kExact]) {
+			defineListProperties(this);
+		}
+	}
+
+	[kMembersMoved](): void {
+		if (this[kMembers] !== undefined) {
+			this[kMembers] = null;
+		}
+	}
 }
 
 Object.defineProperty(HTMLCollection.prototype, Symbol.toStringTag, {
 	value: "HTMLCollection",
 	configurable: true,
 });
+shareMethods(HTMLCollection, LiveList);
 
 interface HTMLCollectionOf<T>
-	extends Omit<HTMLCollectionBase, "item" | number | typeof Symbol.iterator> {
+	extends Omit<
+		HTMLCollection,
+		"item" | "namedItem" | number | typeof Symbol.iterator
+	> {
 	item(index: number): T | null;
 	namedItem(name: string): T | null;
 	[index: number]: T;
@@ -7747,80 +7796,68 @@ function isNameless(members: readonly Node[]): boolean {
 	return true;
 }
 
-const kMatches = Symbol("matches");
-const kMembers = Symbol("members");
-
-// The test is per element, so an attribute change checks the one element
-// that changed instead of walking the tree again.
-interface MatchingCollection {
-	[kRoot]: Node;
-	[kMatches]: (element: Element) => boolean;
-	[kMembers]: Set<Node> | null;
+// watched: the attribute the test reads, if any.
+function createMatchingHTMLCollection(
+	root: Node,
+	watched: string | null,
+	matches: (element: Element) => boolean,
+): HTMLCollection {
+	const collection = new HTMLCollection(() => {
+		const found: Element[] = [];
+		for (const element of getDescendantElements(root, [])) {
+			if (matches(element)) {
+				found.push(element);
+			}
+		}
+		return found;
+	}, root, null, watched);
+	collection[kMembers] = null;
+	collection[kRoot] = root;
+	collection[kMatches] = matches;
+	return collection;
 }
 
-class MatchingCollection extends HTMLCollection {
-	// watched: the attribute the test reads, if any.
-	constructor(
-		root: Node,
-		watched: string | null,
-		matches: (element: Element) => boolean,
-	) {
-		super(() => {
-			const found: Element[] = [];
-			for (const element of getDescendantElements(root, [])) {
-				if (matches(element)) {
-					found.push(element);
-				}
-			}
-			return found;
-		}, root, null, watched);
-		this[kMembers] = null;
-		this[kRoot] = root;
-		this[kMatches] = matches;
-	}
-
-	// Runs the test over the changed subtree rather than over the tree it
-	// moved in or out of.
-	override [kChangedMembers](changed: readonly Node[]): Node[] | null {
-		const members: Node[] = [];
-		for (const node of changed) {
-			const elements = node.nodeType === ELEMENT_NODE
-				? getDescendantElements(node, [node as Element])
-				: getDescendantElements(node, []);
-			for (const element of elements) {
-				if (this[kMatches](element)) {
-					members.push(element);
-				}
+// Runs the test over the changed subtree rather than over the tree it
+// moved in or out of.
+function matchingChangedMembers(
+	collection: HTMLCollection,
+	matches: (element: Element) => boolean,
+	changed: readonly Node[],
+): Node[] | null {
+	const members: Node[] = [];
+	for (const node of changed) {
+		const elements = node.nodeType === ELEMENT_NODE
+			? getDescendantElements(node, [node as Element])
+			: getDescendantElements(node, []);
+		for (const element of elements) {
+			if (matches(element)) {
+				members.push(element);
 			}
 		}
-		return isNameless(members) ? members : null;
 	}
+	return isNameless(members) ? members : null;
+}
 
-	override [kMembersMoved](): void {
-		this[kMembers] = null;
-	}
-
-	override [kAttributeSync](element: Element, localName: string): void {
-		if (localName !== this[kWatched]) {
-			super[kAttributeSync](element, localName);
+function matchingAttributeSync(
+	collection: HTMLCollection,
+	matches: (element: Element) => boolean,
+	element: Element,
+): void {
+	const items = computed(collection);
+	if (items !== null) {
+		let members = collection[kMembers] ?? null;
+		if (members === null) {
+			members = new Set(items);
+			collection[kMembers] = members;
+		}
+		if (
+			matches(element) === members.has(element) ||
+			!isInclusiveAncestor(collection[kRoot]!, element)
+		) {
 			return;
 		}
-		const items = computed(this);
-		if (items !== null) {
-			let members = this[kMembers];
-			if (members === null) {
-				members = new Set(items);
-				this[kMembers] = members;
-			}
-			if (
-				this[kMatches](element) === members.has(element) ||
-				!isInclusiveAncestor(this[kRoot], element)
-			) {
-				return;
-			}
-		}
-		this[kSync]();
 	}
+	collection[kSync]();
 }
 
 function getDescendantElements(root: Node, into: Element[]): Element[] {
@@ -7850,7 +7887,7 @@ function createTagNameCollection(
 	let collection = cache.get(key);
 	if (collection === undefined) {
 		const lowered = toASCIILowercase(qualifiedName);
-		collection = new MatchingCollection(root, null, (element) => {
+		collection = createMatchingHTMLCollection(root, null, (element) => {
 			if (qualifiedName === "*") {
 				return true;
 			}
@@ -7877,7 +7914,7 @@ function createTagNameNSCollection(
 	const key = `tagns:${ns}:${localName}`;
 	let collection = cache.get(key);
 	if (collection === undefined) {
-		collection = new MatchingCollection(
+		collection = createMatchingHTMLCollection(
 			root,
 			null,
 			(element) =>
@@ -7936,7 +7973,7 @@ function createClassNameCollection(
 		const quirks = root[kDocument][kMode] === "quirks"
 			? classes.map((name) => toASCIILowercase(name))
 			: classes;
-		collection = new MatchingCollection(root, "class", (element) => {
+		collection = createMatchingHTMLCollection(root, "class", (element) => {
 			if (classes.length === 0) {
 				return false;
 			}
@@ -7981,13 +8018,13 @@ const kAttribute = Symbol("attribute");
 const kSupported = Symbol("supported");
 const kTokens = Symbol("tokens");
 
-interface DOMTokenList {
+interface DOMTokenList extends LiveList {
 	[kElement]: Element;
 	[kAttribute]: string;
 	[kSupported]: Set<string> | null;
 }
 
-class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
+class DOMTokenList implements globalThis.DOMTokenList {
 	[index: number]: string;
 	declare [Symbol.iterator]: () => ArrayIterator<string>;
 	declare forEach: (
@@ -7999,7 +8036,7 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	declare values: () => ArrayIterator<string>;
 	declare entries: () => ArrayIterator<[number, string]>;
 	constructor(element: Element, attribute: string, supported?: string[]) {
-		super(true, element);
+		initLiveList(this, true, element);
 		this[kElement] = element;
 		this[kAttribute] = attribute;
 		this[kSupported] = supported === undefined ? null : new Set(supported);
@@ -8019,23 +8056,6 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 
 	get [kTokens](): string[] {
 		return ensureList(this) as unknown as string[];
-	}
-
-	// An attribute's tokens are not part of the tree's shape.
-	override [kChangedMembers](): Node[] {
-		return [];
-	}
-
-	override [kListMembers](): Node[] {
-		const value = this[kElement].getAttribute(this[kAttribute]);
-		const tokens = value === null ? [] : splitOnASCIIWhitespace(value);
-		const ordered: string[] = [];
-		for (const token of tokens) {
-			if (!ordered.includes(token)) {
-				ordered.push(token);
-			}
-		}
-		return ordered as unknown as Node[];
 	}
 
 	item(index: number): string | null {
@@ -8123,10 +8143,29 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 		return this[kSupported].has(toASCIILowercase(String(token)));
 	}
 
-	override toString(): string {
+	toString(): string {
 		return this.value;
 	}
+
+	// An attribute's tokens are not part of the tree's shape.
+	[kChangedMembers](): Node[] {
+		return [];
+	}
+
+	[kListMembers](): Node[] {
+		const value = this[kElement].getAttribute(this[kAttribute]);
+		const tokens = value === null ? [] : splitOnASCIIWhitespace(value);
+		const ordered: string[] = [];
+		for (const token of tokens) {
+			if (!ordered.includes(token)) {
+				ordered.push(token);
+			}
+		}
+		return ordered as unknown as Node[];
+	}
 }
+
+shareMethods(DOMTokenList, LiveList);
 
 function writeTokenList(list: DOMTokenList, tokens: string[]): void {
 	if (
@@ -8927,47 +8966,20 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 	return null;
 }
 
-interface NamedNodeMap {
+interface NamedNodeMap extends LiveList {
 	[kElement]: Element;
 }
 
-class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
+class NamedNodeMap implements globalThis.NamedNodeMap {
 	[index: number]: Attr;
 	declare [Symbol.iterator]: () => ArrayIterator<Attr>;
 	constructor(element: Element) {
-		super(true, element);
+		initLiveList(this, true, element);
 		this[kElement] = element;
 	}
 
 	get length(): number {
 		return ensureList(this).length;
-	}
-
-	// An element's attributes are not part of the tree's shape.
-	override [kChangedMembers](): Node[] {
-		return [];
-	}
-
-	override [kListMembers](): Node[] {
-		return this[kElement][kAttributeList].slice();
-	}
-
-	override [kListNames](items: Node[]): Map<string, Node> {
-		const named = new Map<string, Node>();
-		const html =
-			this[kElement][kNamespace] === HTML_NAMESPACE &&
-			isHTMLDocument(this[kElement][kDocument]);
-		for (const item of items) {
-			const attribute = item as Attr;
-			const name = attribute[kQualifiedName];
-			if (html && toASCIILowercase(name) !== name) {
-				continue;
-			}
-			if (!named.has(name)) {
-				named.set(name, attribute);
-			}
-		}
-		return named;
 	}
 
 	item(index: number): Attr | null {
@@ -9017,7 +9029,36 @@ class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
 		removeAttributeNode(this[kElement], attribute);
 		return attribute;
 	}
+
+	// An element's attributes are not part of the tree's shape.
+	[kChangedMembers](): Node[] {
+		return [];
+	}
+
+	[kListMembers](): Node[] {
+		return this[kElement][kAttributeList].slice();
+	}
+
+	[kListNames](items: Node[]): Map<string, Node> {
+		const named = new Map<string, Node>();
+		const html =
+			this[kElement][kNamespace] === HTML_NAMESPACE &&
+			isHTMLDocument(this[kElement][kDocument]);
+		for (const item of items) {
+			const attribute = item as Attr;
+			const name = attribute[kQualifiedName];
+			if (html && toASCIILowercase(name) !== name) {
+				continue;
+			}
+			if (!named.has(name)) {
+				named.set(name, attribute);
+			}
+		}
+		return named;
+	}
 }
+
+shareMethods(NamedNodeMap, LiveList);
 
 Object.defineProperty(NamedNodeMap.prototype, Symbol.toStringTag, {
 	value: "NamedNodeMap",
@@ -10223,9 +10264,7 @@ Object.defineProperties(Element.prototype, {
 function createRectList(
 	rects: readonly globalThis.DOMRect[],
 ): globalThis.DOMRectList {
-	const list = new DOMRectList();
-	list.push(...rects);
-	return list;
+	return new DOMRectList(rects);
 }
 
 // An empty set gives a zero rect at the origin, which is what both public
@@ -16219,7 +16258,9 @@ interface HTMLFormControlsCollection {
 }
 
 class HTMLFormControlsCollection
-	extends (HTMLCollection as typeof HTMLCollectionBase) {
+	extends (HTMLCollection as new (
+		...args: ConstructorParameters<typeof HTMLCollection>
+	) => Omit<HTMLCollection, "namedItem" | typeof kListNames>) {
 	constructor(compute: () => Element[], owner: Node | null = null) {
 		// The form attribute can associate a control anywhere in the tree, and
 		// what counts as a control depends on its attributes, so the list is
@@ -16247,7 +16288,7 @@ class HTMLFormControlsCollection
 		) as unknown as Element;
 	}
 
-	override [kListNames](items: Node[]): Map<string, Node> {
+	[kListNames](items: Node[]): Map<string, Node> {
 		const counts = new Map<string, Node[]>();
 		for (const item of items) {
 			const element = item as Element;
@@ -24188,20 +24229,42 @@ Object.defineProperty(DOMRect.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export class DOMRectList
-	extends Array<globalThis.DOMRect>
-	implements globalThis.DOMRectList {
-	item(index: number): globalThis.DOMRect | null {
-		if (index < 0 || index >= this.length) {
-			return null;
+const kRects = Symbol("rects");
+
+export class DOMRectList implements globalThis.DOMRectList {
+	[index: number]: globalThis.DOMRect;
+	declare [Symbol.iterator]: () => ArrayIterator<globalThis.DOMRect>;
+	declare [kRects]: readonly globalThis.DOMRect[];
+
+	constructor(rects: readonly globalThis.DOMRect[] = []) {
+		this[kRects] = [...rects];
+		for (let i = 0; i < rects.length; i++) {
+			Object.defineProperty(this, i, {
+				value: rects[i],
+				enumerable: true,
+				configurable: true,
+			});
 		}
-		return this[index];
+	}
+
+	get length(): number {
+		return this[kRects].length;
+	}
+
+	item(index: number): globalThis.DOMRect | null {
+		return this[kRects][toUnsignedLong(index)] ?? null;
 	}
 }
 
-Object.defineProperty(DOMRectList.prototype, Symbol.toStringTag, {
-	value: "DOMRectList",
-	configurable: true,
+Object.defineProperties(DOMRectList.prototype, {
+	[Symbol.toStringTag]: {value: "DOMRectList", configurable: true},
+	// An interface with an indexed getter and a length iterates its
+	// indices, with Array.prototype's own iterator, as Web IDL says.
+	[Symbol.iterator]: {
+		value: Array.prototype.values,
+		writable: true,
+		configurable: true,
+	},
 });
 
 // The content box's size, plus the offset of its top-left corner INSIDE
@@ -24218,8 +24281,9 @@ interface ContentBox {
 	left: number;
 }
 
-// Symbol-keyed rather than named. These are subclass hooks and shared
-// state, and author code must never see them on an observer it holds.
+// Symbol-keyed rather than named. These are the observers' shared state
+// and their measuring hook, and author code must never see them on an
+// observer it holds.
 const kTargets = Symbol("targets");
 const kHomes = Symbol("homes");
 const kMeasure = Symbol("measure");
@@ -24263,13 +24327,11 @@ export function disconnectObservers(document: globalThis.Document): void {
 	engineObservers.get(document as Document)?.disconnect();
 }
 
-// The part shared by both observer kinds: which elements are watched,
-// what was last reported for each, and registration with the manager.
-// Subclasses supply only how to measure one target (kMeasure) and how to
-// build an entry from that measurement.
-interface LayoutObserver<TState, TEntry, TOptions = void> {
-	[kObserverCallback]: (entries: TEntry[], observer: this) => void;
-
+// What ResizeObserver and IntersectionObserver both hold: which elements
+// are watched, what was last reported for each, and the documents whose
+// frames measure them. Each supplies only how to measure one target.
+interface ObserverState<TState, TEntry, TOptions> {
+	[kObserverCallback]: (entries: TEntry[], observer: never) => void;
 	// One entry per target, as the DOM says. A second observe() of the same
 	// target replaces the first's options.
 	[kTargets]: Map<
@@ -24278,61 +24340,7 @@ interface LayoutObserver<TState, TEntry, TOptions = void> {
 	>;
 	// One entry per document the observer has a target in.
 	[kHomes]: Set<object>;
-}
-
-abstract class LayoutObserver<TState, TEntry, TOptions = void> {
-	constructor() {
-		this[kTargets] = new Map<
-			globalThis.Element,
-			{options: TOptions | undefined; last: TState | null}
-		>();
-		this[kHomes] = new Set<object>();
-	}
-
-	observe(target: globalThis.Element, options?: TOptions): void {
-		// A fresh target has no last state, so its first measurement always
-		// counts as a change. That fires the initial callback the DOM promises.
-		this[kTargets].set(target, {
-			options,
-			last: this[kTargets].get(target)?.last ?? null,
-		});
-		const document = target.ownerDocument;
-		if (document === null) {
-			return;
-		}
-		getObservers(document).add(this as unknown as AnyObserver);
-		this[kHomes].add(document);
-		// Observations are gathered in a frame, and nothing else may be
-		// about to draw one.
-		const attached = getAttachedDocument(document as unknown as Node);
-		if (attached !== undefined) {
-			void attached[kRender]();
-		}
-	}
-
-	unobserve(target: globalThis.Element): void {
-		this[kTargets].delete(target);
-		if (this[kTargets].size === 0) {
-			this.disconnect();
-		}
-	}
-
-	disconnect(): void {
-		this[kTargets].clear();
-		for (const document of this[kHomes]) {
-			documentObservers.get(document)?.delete(this as unknown as AnyObserver);
-		}
-		this[kHomes].clear();
-	}
-
-	// Records are computed and delivered in the same pass (see the
-	// manager's flush), so nothing is ever queued undelivered and this is
-	// always empty. It exists because the DOM has it and code checks for it.
-	takeRecords(): TEntry[] {
-		return [];
-	}
-
-	abstract [kMeasure](
+	[kMeasure](
 		target: globalThis.Element,
 		last: TState | null,
 		layout: Layout,
@@ -24340,6 +24348,51 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 		frame: number,
 		options: TOptions | undefined,
 	): {state: TState; entry: TEntry} | null;
+}
+
+type AnyObserver = ObserverState<unknown, unknown, unknown>;
+
+function observeTarget<TState, TEntry, TOptions>(
+	observer: ObserverState<TState, TEntry, TOptions>,
+	target: globalThis.Element,
+	options: TOptions | undefined,
+): void {
+	// A fresh target has no last state, so its first measurement always
+	// counts as a change. That fires the initial callback the DOM promises.
+	observer[kTargets].set(target, {
+		options,
+		last: observer[kTargets].get(target)?.last ?? null,
+	});
+	const document = target.ownerDocument;
+	if (document === null) {
+		return;
+	}
+	getObservers(document).add(observer as unknown as AnyObserver);
+	observer[kHomes].add(document);
+	// Observations are gathered in a frame, and nothing else may be about
+	// to draw one.
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached !== undefined) {
+		void attached[kRender]();
+	}
+}
+
+function unobserveTarget(
+	observer: AnyObserver,
+	target: globalThis.Element,
+): void {
+	observer[kTargets].delete(target);
+	if (observer[kTargets].size === 0) {
+		disconnectObserver(observer);
+	}
+}
+
+function disconnectObserver(observer: AnyObserver): void {
+	observer[kTargets].clear();
+	for (const document of observer[kHomes]) {
+		documentObservers.get(document)?.delete(observer);
+	}
+	observer[kHomes].clear();
 }
 
 function getObservers(document: globalThis.Document): Set<AnyObserver> {
@@ -24351,8 +24404,8 @@ function getObservers(document: globalThis.Document): Set<AnyObserver> {
 	return observers;
 }
 
-function checkObserver<TState, TEntry, TOptions = void>(
-	observer: LayoutObserver<TState, TEntry, TOptions>,
+function checkObserver<TState, TEntry, TOptions>(
+	observer: ObserverState<TState, TEntry, TOptions>,
 	layout: Layout,
 	viewport: globalThis.DOMRect,
 	frame: number,
@@ -24374,11 +24427,9 @@ function checkObserver<TState, TEntry, TOptions = void>(
 		entries.push(result.entry);
 	}
 	if (entries.length > 0) {
-		observer[kObserverCallback](entries, observer);
+		observer[kObserverCallback](entries, observer as never);
 	}
 }
-
-type AnyObserver = LayoutObserver<unknown, unknown, unknown>;
 
 interface ResizeObserverSize {
 	inlineSize: number;
@@ -24411,32 +24462,41 @@ const RESIZE_BOXES = new Set([
 
 type ResizeObserverOptions = globalThis.ResizeObserverOptions;
 
-class ResizeObserver
-	extends LayoutObserver<
+interface ResizeObserver
+	extends ObserverState<
 		ResizeSize,
 		ResizeObserverEntry,
 		ResizeObserverOptions
-	> {
+	> {}
+
+class ResizeObserver {
 	constructor(callback: ResizeObserverCallback) {
-		super();
-		this[kObserverCallback] = callback;
+		this[kObserverCallback] =
+			callback as ResizeObserver[typeof kObserverCallback];
+		this[kTargets] = new Map();
+		this[kHomes] = new Set();
 	}
 
 	// `box` names which box's size change is worth reporting. Every entry
 	// still carries all of them, as the DOM says. An unrecognized value is
 	// rejected by the enumeration, as WebIDL requires, rather than quietly
 	// ignored.
-	override observe(
-		target: globalThis.Element,
-		options?: ResizeObserverOptions,
-	): void {
+	observe(target: globalThis.Element, options?: ResizeObserverOptions): void {
 		const box = options?.box;
 		if (box !== undefined && !RESIZE_BOXES.has(box)) {
 			throw new TypeError(
 				`Failed to execute 'observe' on 'ResizeObserver': The provided value '${box}' is not a valid enum value of type ResizeObserverBoxOptions.`,
 			);
 		}
-		super.observe(target, options);
+		observeTarget(this, target, options);
+	}
+
+	unobserve(target: globalThis.Element): void {
+		unobserveTarget(this as unknown as AnyObserver, target);
+	}
+
+	disconnect(): void {
+		disconnectObserver(this as unknown as AnyObserver);
 	}
 
 	[kMeasure](
@@ -24579,12 +24639,13 @@ function checkObserverMargin(margin: string, what: string): string {
 	return `${top} ${right} ${bottom} ${left}`;
 }
 
+interface IntersectionObserver
+	extends ObserverState<number, IntersectionObserverEntry, void> {}
 interface IntersectionObserver {
 	[kIntersectionRoot]: globalThis.Element | globalThis.Document | null;
 }
 
-class IntersectionObserver
-	extends LayoutObserver<number, IntersectionObserverEntry> {
+class IntersectionObserver {
 	readonly rootMargin: string;
 	readonly scrollMargin: string;
 	readonly thresholds: readonly number[];
@@ -24592,8 +24653,10 @@ class IntersectionObserver
 		callback: IntersectionObserverCallback,
 		init: IntersectionObserverInit = {},
 	) {
-		super();
-		this[kObserverCallback] = callback;
+		this[kObserverCallback] =
+			callback as IntersectionObserver[typeof kObserverCallback];
+		this[kTargets] = new Map();
+		this[kHomes] = new Set();
 		this[kIntersectionRoot] = init.root ?? null;
 		// An empty margin is the spec's own spelling of the default.
 		this.rootMargin = checkObserverMargin(init.rootMargin || "0px", "root");
@@ -24614,8 +24677,24 @@ class IntersectionObserver
 		return this[kIntersectionRoot];
 	}
 
-	override observe(target: globalThis.Element): void {
-		super.observe(target);
+	observe(target: globalThis.Element): void {
+		observeTarget(this, target, undefined);
+	}
+
+	unobserve(target: globalThis.Element): void {
+		unobserveTarget(this as unknown as AnyObserver, target);
+	}
+
+	disconnect(): void {
+		disconnectObserver(this as unknown as AnyObserver);
+	}
+
+	// Records are computed and delivered in the same pass (see the
+	// manager's flush), so nothing is ever queued undelivered and this is
+	// always empty. It exists because the interface has it and code checks
+	// for it.
+	takeRecords(): IntersectionObserverEntry[] {
+		return [];
 	}
 
 	[kMeasure](
@@ -26360,7 +26439,9 @@ function isAllNamed(element: Element, name: string): boolean {
 // name attribute of the elements HTML lists. A browser's document.all is
 // also falsy and reports its typeof as "undefined", which no JavaScript
 // object can do, so here it is an ordinary collection.
-class HTMLAllCollection extends LiveList {
+interface HTMLAllCollection extends LiveList {}
+
+class HTMLAllCollection {
 	[index: number]: Element;
 	declare [Symbol.iterator]: () => ArrayIterator<Element>;
 
@@ -26368,36 +26449,11 @@ class HTMLAllCollection extends LiveList {
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
-		super(true, document);
+		initLiveList(this, true, document);
 	}
 
 	get length(): number {
 		return ensureList(this).length;
-	}
-
-	override [kListMembers](): Node[] {
-		return getDescendantElements(this[kOwner] as Document, []);
-	}
-
-	override [kListNames](items: Node[]): Map<string, Node> {
-		const named = new Map<string, Node>();
-		for (const item of items) {
-			const element = item as Element;
-			const id = element.getAttribute("id");
-			if (id !== null && id !== "" && !named.has(id)) {
-				named.set(id, element);
-			}
-			const name = element.getAttribute("name");
-			if (
-				name !== null &&
-				name !== "" &&
-				!named.has(name) &&
-				isAllNamed(element, name)
-			) {
-				named.set(name, element);
-			}
-		}
-		return named;
 	}
 
 	// An index reads as an index and anything else as a name.
@@ -26444,10 +26500,35 @@ class HTMLAllCollection extends LiveList {
 		);
 	}
 
+	[kListMembers](): Node[] {
+		return getDescendantElements(this[kOwner] as Document, []);
+	}
+
+	[kListNames](items: Node[]): Map<string, Node> {
+		const named = new Map<string, Node>();
+		for (const item of items) {
+			const element = item as Element;
+			const id = element.getAttribute("id");
+			if (id !== null && id !== "" && !named.has(id)) {
+				named.set(id, element);
+			}
+			const name = element.getAttribute("name");
+			if (
+				name !== null &&
+				name !== "" &&
+				!named.has(name) &&
+				isAllNamed(element, name)
+			) {
+				named.set(name, element);
+			}
+		}
+		return named;
+	}
+
 	// An id or name moves the named properties without moving a member.
-	override [kAttributeSync](element: Element, localName: string): void {
+	[kAttributeSync](element: Element, localName: string): void {
 		if (localName !== "id" && localName !== "name") {
-			super[kAttributeSync](element, localName);
+			LiveList.prototype[kAttributeSync].call(this, element, localName);
 			return;
 		}
 		if (this[kExact]) {
@@ -26455,6 +26536,8 @@ class HTMLAllCollection extends LiveList {
 		}
 	}
 }
+
+shareMethods(HTMLAllCollection, LiveList);
 
 Object.defineProperty(HTMLAllCollection.prototype, Symbol.toStringTag, {
 	value: "HTMLAllCollection",
@@ -33874,7 +33957,7 @@ function handleMutationRecords(
 	attached[kCascade].handleMutations(relevant);
 	attached[kLayout].handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
-	dropUnfocusableFocus(document, attached);
+	dropUnfocusableFocus(document);
 }
 
 // An element with `autofocus` gets focused as soon as it connects, as a
@@ -33908,17 +33991,14 @@ function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 export function runFocusFixup(document: globalThis.Document): void {
 	const attached = getAttachedDocument(document);
 	if (attached !== undefined) {
-		dropUnfocusableFocus(document as Document, attached);
+		dropUnfocusableFocus(document as Document);
 	}
 }
 
 // A focused element made unfocusable (an inert ancestor appearing above
 // it, a move into an inert parent, display:none anywhere on its flat
 // chain) unfocuses it, including blur events and restyle.
-function dropUnfocusableFocus(
-	document: Document,
-	attached: AttachedDocument,
-): void {
+function dropUnfocusableFocus(document: Document): void {
 	let active = document.activeElement;
 	while (active !== null) {
 		const shadow = (active as Element)[kShadowRoot];
@@ -34986,7 +35066,7 @@ function getNamedPropertyValue(
 	const key = `window-named:${name}`;
 	let collection = cache.get(key);
 	if (collection === undefined) {
-		collection = new MatchingCollection(
+		collection = createMatchingHTMLCollection(
 			document,
 			null,
 			(element) =>
@@ -36202,7 +36282,6 @@ export type {
 	MutationRecord,
 	LiveList,
 	HTMLCollection,
-	MatchingCollection,
 	DOMTokenList,
 	CharacterData,
 	CDATASection,
@@ -36290,7 +36369,6 @@ export type {
 	CustomStateSet,
 	ElementInternals,
 	DOMRectReadOnly,
-	LayoutObserver,
 	ResizeObserver,
 	IntersectionObserver,
 	XMLDocument,
