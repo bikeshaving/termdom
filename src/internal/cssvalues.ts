@@ -13,13 +13,14 @@ import {
 	CSS_SHORTHANDS,
 } from "../generated/cssproperties.ts";
 import {
+	type CompiledSelector,
 	compileSelector,
 	getChildren,
 	isLegacyPseudoElement,
 	parseSelectorList,
 	pseudoName,
+	type SelectorNamespaces,
 } from "./cssselectors.ts";
-import type {CompiledSelector, SelectorNamespaces} from "./cssselectors.ts";
 
 type Unit = "undefined" | "cell" | "percent" | "auto";
 
@@ -4949,14 +4950,6 @@ export function getPreludeText(node: CSSTree.StyleSheetNode): string {
 	return (node.prelude?.value ?? "").trim();
 }
 
-export function getNestedRules(
-	node: CSSTree.StyleSheetNode,
-): CSSTree.StyleSheetNode[] {
-	return getNodes(node.block ?? {}).filter(
-		(child) => child.type === "Rule" || child.type === "Atrule",
-	);
-}
-
 // The empty list for the anonymous block. Null for a prelude outside
 // the grammar, which drops the at-rule.
 export function getLayerNames(prelude: string): string[] | null {
@@ -4999,10 +4992,7 @@ const BLOCKIFIED_DISPLAYS: Record<string, string> = {
  * The computed white-space, serialized from its longhands: the keyword that
  * stands for them, or both longhands when none does.
  */
-export function serializeWhiteSpace(
-	collapse: string,
-	wrapMode: string,
-): string {
+function serializeWhiteSpace(collapse: string, wrapMode: string): string {
 	for (const [keyword, [c, w]] of Object.entries(WHITE_SPACE_KEYWORDS)) {
 		if (c === collapse && w === wrapMode) {
 			return keyword;
@@ -5773,7 +5763,7 @@ interface TrackRepeat {
 	endNames: string[];
 }
 
-export type TrackListPart =
+type TrackListPart =
 	{type: "track"; track: TrackListTrack} |
 	{type: "repeat"; repeat: TrackRepeat};
 

@@ -20,6 +20,7 @@ import {
 	hasCustomState,
 	hasFocus,
 	hasFocusWithin,
+	HTML_NAMESPACE,
 	isActive,
 	isActuallyDisabled,
 	isCheckedControl,
@@ -41,9 +42,6 @@ import {
 	nextInTree,
 	Node,
 	parentElement,
-} from "./dom.ts";
-import {
-	HTML_NAMESPACE,
 	SVG_NAMESPACE,
 	XLINK_NAMESPACE,
 	XML_NAMESPACE,

@@ -326,7 +326,7 @@ function isFiniteAll(...values: number[]): boolean {
 }
 
 /** A DOMMatrix's 2D members, for getTransform(). */
-export class CanvasMatrix {
+class CanvasMatrix {
 	a: number;
 	b: number;
 	c: number;
@@ -1709,7 +1709,7 @@ function defaultState(): State {
 }
 
 /** What a context needs from its canvas element. */
-export interface CanvasHost {
+interface CanvasHost {
 	canvas: object;
 	bitmap(): Bitmap;
 	// Called after every change to the pixels or the text runs.
@@ -2942,7 +2942,7 @@ export function canvasToPNG(bitmap: Bitmap): Uint8Array {
 // The charactergrid context.
 
 /** What the grid context needs from its canvas. */
-export interface GridHost {
+interface GridHost {
 	canvas: object;
 	// The canvas's cells, `width` columns by `height` rows.
 	cells(): CellContext;

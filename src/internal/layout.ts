@@ -35,6 +35,7 @@ import {
 	renderedTopLayer,
 	type Window,
 } from "./dom.ts";
+import {isReplacedElement} from "./images.ts";
 import {
 	type Align,
 	type AvailableSpace,
@@ -67,7 +68,6 @@ import {
 	getNaturalRatio,
 	getNaturalSize,
 	getReplacedSize,
-	isReplacedElement,
 	measureReplaced,
 } from "./replaced.ts";
 import {
@@ -226,7 +226,7 @@ function isGridDisplay(display: Display): boolean {
 // The element whose box holds this node's box. display: contents
 // generates no box, so its children belong to the nearest ancestor
 // that does (css-display-3 §2.5).
-export function boxParentElement(node: Node): Element | null {
+function boxParentElement(node: Node): Element | null {
 	let parent = flatParentElement(node);
 	while (parent !== null && isDisplayContents(parent)) {
 		parent = flatParentElement(parent);
@@ -450,7 +450,7 @@ function shiftRenderedOffsets(
 
 // A fragment's tab stops count from the start of its line, so the
 // fragment's column there is what a preserved tab expands against.
-export interface TabStops {
+interface TabStops {
 	tabSize: number;
 	column: number;
 }
@@ -991,7 +991,7 @@ interface Styling {
 
 const stylings = new WeakMap<LayoutNode, Styling>();
 
-export interface Extent {
+interface Extent {
 	// The rows the subtree can paint, in absolute document rows. Absolutely
 	// positioned children push it outside the box.
 	top: number;
@@ -2954,7 +2954,7 @@ export interface InlineBlockLeaf {
 // Where an inline box opens or closes on its line (css2 §10.3.1): its
 // margin, border and padding on that side, which take cells of the line.
 // Only the first fragment has the start edge and only the last the end.
-export interface EdgeLeaf {
+interface EdgeLeaf {
 	type: "edge";
 	node: Element;
 	side: "start" | "end";

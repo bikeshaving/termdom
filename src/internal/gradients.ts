@@ -20,7 +20,7 @@ import type {CellContext} from "./framebuffer.ts";
  * fills in. The color is packed RGB, with alpha kept apart because a
  * cell either takes a color or keeps what is under it.
  */
-export interface GradientStop {
+interface GradientStop {
 	color: number;
 	alpha: number;
 	position: UnitValue;

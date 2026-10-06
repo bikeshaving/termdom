@@ -97,7 +97,7 @@ const UNDEFINED_VALUE: CSSValues.Value = Object.freeze({
 });
 const AUTO_VALUE: CSSValues.Value = Object.freeze({unit: "auto", value: NaN});
 
-export type Length = number | "auto" | {percentage: number} | undefined | null;
+type Length = number | "auto" | {percentage: number} | undefined | null;
 
 export function resolveValue(
 	value: CSSValues.Value,
