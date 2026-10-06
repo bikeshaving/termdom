@@ -16,6 +16,17 @@ export function isControlByte(code: number): boolean {
 	return code < 0x20 || (code >= 0x7f && code < 0xa0);
 }
 
+// HTML's ASCII whitespace: tab, line feed, form feed, carriage return and
+// space, and never the other spaces Unicode has.
+export function trimASCIIWhitespace(value: string): string {
+	return value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+}
+
+export function splitOnASCIIWhitespace(value: string): string[] {
+	const trimmed = trimASCIIWhitespace(value);
+	return trimmed === "" ? [] : trimmed.split(/[\t\n\f\r ]+/);
+}
+
 // What HTML and CSS case-fold with. Never the locale.
 export function toASCIILowercase(value: string): string {
 	return value.replace(/[A-Z]/g, (character) =>

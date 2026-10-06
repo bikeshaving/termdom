@@ -81,7 +81,9 @@ import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
 	getStringWidth,
+	splitOnASCIIWhitespace,
 	toASCIILowercase,
+	trimASCIIWhitespace,
 } from "./text.ts";
 
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
@@ -7958,16 +7960,6 @@ function createClassNameCollection(
 	return collection;
 }
 
-const ASCII_WHITESPACE = /[\t\n\f\r ]+/;
-
-function splitOnASCIIWhitespace(value: string): string[] {
-	const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
-	if (trimmed === "") {
-		return [];
-	}
-	return trimmed.split(ASCII_WHITESPACE);
-}
-
 function toASCIIUppercase(value: string): string {
 	// toUpperCase is Unicode-aware, which is only wrong outside ASCII.
 	for (let i = 0; i < value.length; i++) {
@@ -13833,7 +13825,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 				if (value === null) {
 					return "";
 				}
-				const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+				const trimmed = trimASCIIWhitespace(value);
 				return parseURL(trimmed, getDocumentBaseURL(this[kDocument])) ??
 					trimmed;
 			};
@@ -14030,7 +14022,7 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 			if (value === null) {
 				return "";
 			}
-			const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+			const trimmed = trimASCIIWhitespace(value);
 			return parseURL(trimmed, getDocumentBaseURL(this[kDocument])) ?? trimmed;
 		},
 		set(this: Element, value: string): void {
@@ -14116,7 +14108,7 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 			if (value === null) {
 				return "";
 			}
-			const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+			const trimmed = trimASCIIWhitespace(value);
 			return parseURL(trimmed, getDocumentBaseURL(this[kDocument])) ?? trimmed;
 		},
 		writable: true,
@@ -14130,7 +14122,7 @@ function getHyperlinkURL(element: Element): URL | null {
 	if (value === null) {
 		return null;
 	}
-	const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+	const trimmed = trimASCIIWhitespace(value);
 	try {
 		return new URL(trimmed, getDocumentBaseURL(element[kDocument]));
 	} catch (_err) {
@@ -18059,15 +18051,15 @@ function sanitizeInputValue(input: HTMLInputElement, value: string): string {
 		case "password":
 			return stripped;
 		case "url":
-			return stripped.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+			return trimASCIIWhitespace(stripped);
 		case "email":
 			if (input.hasAttribute("multiple")) {
 				return stripped
 					.split(",")
-					.map((part) => part.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, ""))
+					.map((part) => trimASCIIWhitespace(part))
 					.join(",");
 			}
-			return stripped.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+			return trimASCIIWhitespace(stripped);
 		case "date":
 			return VALID_DATE.test(value) ? value : "";
 		case "month":

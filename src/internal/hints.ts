@@ -4,6 +4,7 @@
 // rule an author writes outranks them. A pixel here is a cell, as it is
 // everywhere else in this engine.
 import {CSS_NAMED_COLORS} from "../generated/cssproperties.ts";
+import {trimASCIIWhitespace} from "./text.ts";
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
@@ -16,7 +17,7 @@ function parseLegacyColor(value: string | null): string | null {
 	if (value === null) {
 		return null;
 	}
-	let input = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+	let input = trimASCIIWhitespace(value);
 	if (input === "" || input.toLowerCase() === "transparent") {
 		return null;
 	}

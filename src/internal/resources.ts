@@ -7,6 +7,7 @@
  * Each redirect is checked against the policy again and followed on the
  * network. Only a document that is itself a file: URL loads file: URLs.
  */
+import {splitOnASCIIWhitespace} from "./text.ts";
 
 const kExtend = Symbol("extend");
 const kPending = Symbol("pending");
@@ -418,7 +419,7 @@ export function parseContentSecurityPolicies(
 function parseContentSecurityPolicy(text: string): ContentSecurityPolicy {
 	const directives = new Map<string, string[]>();
 	for (const token of text.split(";")) {
-		const [name, ...values] = token.trim().split(/[\t\n\f\r ]+/);
+		const [name, ...values] = splitOnASCIIWhitespace(token);
 		if (!name || !/^[a-zA-Z0-9-]+$/.test(name)) {
 			continue;
 		}
