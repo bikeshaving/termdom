@@ -69,3 +69,45 @@ test("installGlobals throws while installed, and uninstalling removes every name
 	installGlobals(term)();
 	term.dispose();
 });
+
+test("what a terminal does not have is left undefined, for feature detection", () => {
+	const term = new TermDOM();
+	expect(() => term.window.indexedDB).toThrow();
+	const uninstall = installGlobals(term);
+	try {
+		expect(typeof global.indexedDB).toBe("undefined");
+		expect(typeof global.cookieStore).toBe("undefined");
+		expect("indexedDB" in globalThis).toBe(false);
+	} finally {
+		uninstall();
+		term.dispose();
+	}
+});
+
+test("uninstalling leaves a name that other code has since redefined", () => {
+	const term = new TermDOM();
+	const uninstall = installGlobals(term);
+	Object.defineProperty(globalThis, "scrollY", {
+		value: 42,
+		configurable: true,
+		writable: true,
+	});
+	uninstall();
+	expect(global.scrollY).toBe(42);
+	delete global.scrollY;
+	expect("document" in globalThis).toBe(false);
+	term.dispose();
+});
+
+test("the installed state is shared by every copy of the module", () => {
+	const term = new TermDOM();
+	const uninstall = installGlobals(term);
+	try {
+		expect(Reflect.get(globalThis, Symbol.for("@b9g/termdom.globalsInstalled")))
+			.toBe(true);
+	} finally {
+		uninstall();
+		term.dispose();
+	}
+	expect(Symbol.for("@b9g/termdom.globalsInstalled") in globalThis).toBe(false);
+});

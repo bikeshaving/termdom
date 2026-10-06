@@ -1374,7 +1374,9 @@ function renderStaticHTML(
 	return renderStatic(renderer, lineEnding);
 }
 
-let globalsInstalled = false;
+// Shared by every copy of this module a process loads, so two copies
+// cannot each install a TermDOM's globals.
+const kGlobalsInstalled = Symbol.for("@b9g/termdom.globalsInstalled");
 
 /**
  * Defines the window's names on globalThis, for code that reaches for
@@ -1386,11 +1388,12 @@ let globalsInstalled = false;
  * `scrollY` stays current. Returns a function that removes them again.
  */
 export function installGlobals(termDOM: TermDOM): () => void {
-	if (globalsInstalled) {
+	const global = globalThis as Record<string | symbol, unknown>;
+	if (global[kGlobalsInstalled]) {
 		throw new Error("TermDOM's globals are already installed.");
 	}
 	const window = termDOM.window as unknown as Record<string, unknown>;
-	const installed: string[] = [];
+	const installed = new Map<string, PropertyDescriptor>();
 	for (
 		let object: object | null = window;
 		object && object !== Object.prototype;
@@ -1400,38 +1403,53 @@ export function installGlobals(termDOM: TermDOM): () => void {
 			if (name === "constructor" || name in globalThis) {
 				continue;
 			}
-			const descriptor = Object.getOwnPropertyDescriptor(object, name)!;
-			const value = descriptor.value;
-			Object.defineProperty(
-				globalThis,
-				name,
-				typeof value !== "function"
-					? {
-						get: () => window[name],
-						set: (next) => {
-							window[name] = next;
-						},
-						configurable: true,
-					}
-					: {
-						value: /^[a-z]/.test(name) ? value.bind(window) : value,
-						configurable: true,
-						writable: true,
+			const value = Object.getOwnPropertyDescriptor(object, name)!.value;
+			let descriptor: PropertyDescriptor;
+			if (typeof value === "function") {
+				descriptor = {
+					value: /^[a-z]/.test(name) ? value.bind(window) : value,
+					configurable: true,
+					writable: true,
+				};
+			} else {
+				// What a terminal does not have, such as indexedDB, throws when
+				// read. Left undefined, `typeof indexedDB` finds it missing, as
+				// feature detection expects.
+				try {
+					void window[name];
+				} catch (_err) {
+					continue;
+				}
+				descriptor = {
+					get: () => window[name],
+					set: (next) => {
+						window[name] = next;
 					},
-			);
-			installed.push(name);
+					configurable: true,
+				};
+			}
+			Object.defineProperty(globalThis, name, descriptor);
+			installed.set(name, descriptor);
 		}
 	}
-	globalsInstalled = true;
+	global[kGlobalsInstalled] = true;
 	let uninstalled = false;
 	return () => {
 		if (uninstalled) {
 			return;
 		}
 		uninstalled = true;
-		for (const name of installed) {
-			delete (globalThis as Record<string, unknown>)[name];
+		// A name something else has since redefined is that code's now.
+		for (const [name, ours] of installed) {
+			const current = Object.getOwnPropertyDescriptor(globalThis, name);
+			if (
+				current !== undefined &&
+				current.get === ours.get &&
+				current.value === ours.value
+			) {
+				delete global[name];
+			}
 		}
-		globalsInstalled = false;
+		delete global[kGlobalsInstalled];
 	};
 }
