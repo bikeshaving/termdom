@@ -5757,10 +5757,7 @@ const kFlushing = Symbol("flushing");
 const kUsedValues = Symbol("usedValues");
 const kUsedStale = Symbol("used values stale");
 const kShadowRoots = Symbol("shadowRoots");
-const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
-const kSiblingsReachDescendants = Symbol("siblingsReachDescendants");
-const kSiblingKeys = Symbol("siblingKeys");
-const kSiblingsUniversal = Symbol("siblingsUniversal");
+const kSiblingIndexes = Symbol("siblingIndexes");
 const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
 const kParsedRules = Symbol("parsedRules");
@@ -5848,17 +5845,11 @@ export interface Cascade {
 	// reconsiders them without walking the document.
 	[kPseudoHosts]: Set<Element>;
 
-	// Whether any parsed selector can reach OUTSIDE a mutated element's
-	// subtree. Sibling combinators reach following siblings, and :has()
-	// reaches ancestors. The string tests are deliberately loose. A false
-	// positive only widens the rebuild.
-	[kSelectorsReachSiblings]: boolean;
-	[kSiblingsReachDescendants]: boolean;
-	// The tag, class, id and attribute keys of every sibling-tested
-	// compound, so a change among an element's children restyles only the
-	// children such a compound could name.
-	[kSiblingKeys]: Set<string>;
-	[kSiblingsUniversal]: boolean;
+	// What each tree's sibling selectors can reach, by the tree whose
+	// sheets declared them: the document, or a shadow root. A rule matches
+	// only in its own tree (css-scoping-1 §3.3), so `* + *` in a shadow
+	// root restyles nothing in the document.
+	[kSiblingIndexes]: Map<Node, SiblingIndex>;
 
 	// The keys whose change can affect an element's DESCENDANTS: those a
 	// selector tests left of a combinator (`.editing .view`), and those on
@@ -5997,10 +5988,7 @@ export class Cascade {
 		this[kStylesheetsDirty] = false;
 		this[kParsing] = false;
 		this[kPseudoHosts] = new Set();
-		this[kSelectorsReachSiblings] = false;
-		this[kSiblingsReachDescendants] = false;
-		this[kSiblingKeys] = new Set();
-		this[kSiblingsUniversal] = false;
+		this[kSiblingIndexes] = new Map();
 		this[kReachingClasses] = new Set<string>();
 		this[kKeyProperties] = new Map<string, Set<string>>();
 		this[kReachingIds] = new Set<string>();
@@ -6171,8 +6159,8 @@ export class Cascade {
 				// per parent per batch: appending n children one at a time
 				// is n records against the same parent.
 				if (
-					this[kSelectorsReachSiblings] &&
-					mutation.target.nodeType === Node.ELEMENT_NODE
+					mutation.target.nodeType === Node.ELEMENT_NODE &&
+					getSiblingIndex(this, mutation.target as Element)?.reachesSiblings
 				) {
 					changedParents.add(mutation.target as Element);
 				}
@@ -6241,7 +6229,7 @@ export class Cascade {
 				}
 				// `.on ~ .light` matches a FOLLOWING sibling whose cached
 				// styles know nothing of this change.
-				if (this[kSelectorsReachSiblings]) {
+				if (getSiblingIndex(this, element)?.reachesSiblings) {
 					for (
 						let sibling = element.nextElementSibling;
 						sibling;
@@ -6623,6 +6611,7 @@ function couldAnchorHas(cascade: Cascade, element: Element): boolean {
 
 function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	dropScopedRules(cascade, root);
+	cascade[kSiblingIndexes].delete(root);
 	// The root's :has() rules went with it, and so does what they asked for.
 	cascade[kHasRulesExist] = false;
 	cascade[kHasAnchors] = new Set();
@@ -7848,7 +7837,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 // descendants only follow when a sheet tests siblings outside a subject
 // or inherits through one.
 function invalidateChildren(cascade: Cascade, element: Element): void {
-	if (cascade[kSiblingsReachDescendants]) {
+	if (getSiblingIndex(cascade, element)?.reachesDescendants) {
 		invalidateSubtree(cascade, element);
 		return;
 	}
@@ -7861,7 +7850,7 @@ function invalidateChildren(cascade: Cascade, element: Element): void {
 // `:focus ~ .card` and `:hover + label` match siblings AFTER the element
 // whose state changed, and their cached styles know nothing of it.
 function invalidateLaterSiblings(cascade: Cascade, element: Element): void {
-	if (!cascade[kSelectorsReachSiblings]) {
+	if (!getSiblingIndex(cascade, element)?.reachesSiblings) {
 		return;
 	}
 	for (
@@ -7874,10 +7863,11 @@ function invalidateLaterSiblings(cascade: Cascade, element: Element): void {
 }
 
 function invalidateSibling(cascade: Cascade, element: Element): void {
-	if (!isSiblingTested(cascade, element)) {
+	const index = getSiblingIndex(cascade, element);
+	if (index === undefined || !isSiblingTested(index, element)) {
 		return;
 	}
-	if (cascade[kSiblingsReachDescendants]) {
+	if (index.reachesDescendants) {
 		invalidateSubtree(cascade, element);
 		return;
 	}
@@ -7885,12 +7875,55 @@ function invalidateSibling(cascade: Cascade, element: Element): void {
 	attachPseudoElementsToElement(cascade, element);
 }
 
+interface SiblingIndex {
+	// Whether a selector can reach OUTSIDE a mutated element's subtree, to
+	// its following siblings. The string tests are deliberately loose. A
+	// false positive only widens the rebuild.
+	reachesSiblings: boolean;
+	reachesDescendants: boolean;
+	// The tag, class, id and attribute keys of every sibling-tested
+	// compound, so a change among an element's children restyles only the
+	// children such a compound could name.
+	keys: Set<string>;
+	universal: boolean;
+}
+
+// The index of the tree whose rules could match the element: its shadow
+// root's, or the document's.
+function getSiblingIndex(
+	cascade: Cascade,
+	element: Element,
+): SiblingIndex | undefined {
+	const root = element.getRootNode();
+	return cascade[kSiblingIndexes].get(
+		isShadowRoot(root) ? root : cascade[kDocument],
+	);
+}
+
+function getOrCreateSiblingIndex(
+	cascade: Cascade,
+	scope: Node | undefined,
+): SiblingIndex {
+	const key = scope ?? cascade[kDocument];
+	let index = cascade[kSiblingIndexes].get(key);
+	if (index === undefined) {
+		index = {
+			reachesSiblings: false,
+			reachesDescendants: false,
+			keys: new Set(),
+			universal: false,
+		};
+		cascade[kSiblingIndexes].set(key, index);
+	}
+	return index;
+}
+
 // Whether some sibling-tested compound could name the element.
-function isSiblingTested(cascade: Cascade, element: Element): boolean {
-	if (cascade[kSiblingsUniversal]) {
+function isSiblingTested(index: SiblingIndex, element: Element): boolean {
+	if (index.universal) {
 		return true;
 	}
-	const keys = cascade[kSiblingKeys];
+	const keys = index.keys;
 	if (keys.has(element.localName)) {
 		return true;
 	}
@@ -8108,10 +8141,7 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	const document = cascade[kDocument];
 	cascade[kParsedRules] = [];
 	cascade[kSharedRoot] = new Map();
-	cascade[kSelectorsReachSiblings] = false;
-	cascade[kSiblingsReachDescendants] = false;
-	cascade[kSiblingKeys] = new Set();
-	cascade[kSiblingsUniversal] = false;
+	cascade[kSiblingIndexes] = new Map();
 	cascade[kReachingClasses].clear();
 	cascade[kKeyProperties].clear();
 	cascade[kReachingIds].clear();
@@ -8884,6 +8914,7 @@ function indexReachingKeys(
 	cascade: Cascade,
 	reading: CSSValues.SelectorReading,
 	declarations: Record<string, string>,
+	scope: Node | undefined,
 ): void {
 	let inherits = false;
 	let blockifies = false;
@@ -8898,16 +8929,19 @@ function indexReachingKeys(
 	}
 	const subjectInherits = inherits;
 	inherits ||= blockifies;
-	if (
-		reading.reachesSiblings && (reading.siblingsReachDescendants || inherits)
-	) {
-		cascade[kSiblingsReachDescendants] = true;
-	}
 	const compounds = reading.compounds;
+	if (reading.reachesSiblings) {
+		const index = getOrCreateSiblingIndex(cascade, scope);
+		index.reachesSiblings = true;
+		if (reading.siblingsReachDescendants || inherits) {
+			index.reachesDescendants = true;
+		}
+	}
 	for (const keys of compounds) {
 		if (!keys.siblingTested) {
 			continue;
 		}
+		const index = getOrCreateSiblingIndex(cascade, scope);
 		if (
 			keys.anyElement ||
 			(keys.tag === null &&
@@ -8915,17 +8949,17 @@ function indexReachingKeys(
 				keys.ids.length === 0 &&
 				keys.attributes.length === 0)
 		) {
-			cascade[kSiblingsUniversal] = true;
+			index.universal = true;
 		}
 		if (keys.tag !== null) {
-			cascade[kSiblingKeys].add(keys.tag);
+			index.keys.add(keys.tag);
 		}
 		for (const key of [
 			...keys.classes.map((name) => `.${name}`),
 			...keys.ids.map((name) => `#${name}`),
 			...keys.attributes.map((name) => `[${name}]`),
 		]) {
-			cascade[kSiblingKeys].add(key);
+			index.keys.add(key);
 		}
 	}
 	const names = Object.keys(declarations);
@@ -9055,10 +9089,7 @@ function parseSelector(
 		return;
 	}
 	const reading = CSSValues.readSelector(selector);
-	if (reading.reachesSiblings) {
-		cascade[kSelectorsReachSiblings] = true;
-	}
-	indexReachingKeys(cascade, reading, declarations);
+	indexReachingKeys(cascade, reading, declarations, scope);
 	if (
 		declarations["counter-reset"] ||
 		declarations["counter-increment"] ||
