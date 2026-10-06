@@ -34037,6 +34037,16 @@ function getAttachedDocument(
 		: undefined;
 }
 
+/**
+ * One cell in the terminal's pixels, as the framebuffer drawing the
+ * node's document has it, or null for a document no TermDOM draws.
+ */
+export function getCellPixels(
+	node: globalThis.Node,
+): Readonly<{width: number; height: number}> | null {
+	return getAttachedDocument(node)?.[kFramebuffer].cellPixels ?? null;
+}
+
 /** OSC 52 carries text and only text. */
 const CLIPBOARD_TEXT_TYPE = "text/plain";
 
