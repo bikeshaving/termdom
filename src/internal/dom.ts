@@ -33327,6 +33327,10 @@ function trackMediaQueryListeners(list: MediaQueryList): void {
  * one flipped.
  */
 export function syncMediaQueries(document: globalThis.Document): void {
+	const window = (document as Document).defaultView;
+	if (window !== null) {
+		syncScreenOrientation(window as unknown as Window);
+	}
 	const lists = mediaQueryLists.get(document as Document);
 	if (lists === undefined) {
 		return;
@@ -34536,11 +34540,143 @@ function noWindowFeature(what: string): never {
 	throw domError("NotSupportedError", `A terminal has no ${what}`);
 }
 
+const kScreenInfo = Symbol("screen");
+const kScreenWindow = Symbol("screen window");
+const kScreenOrientation = Symbol("screen orientation");
+const kOrientationType = Symbol("orientation type");
+
+interface Screen {
+	[kScreenWindow]: Window;
+	[kScreenOrientation]: ScreenOrientation | null;
+}
+
+// CSSOM View's Screen. The terminal is the screen: its size is the
+// window's, nothing on it is taken from the page, and its color depth is
+// the one frames are drawn at.
+class Screen {
+	constructor(window?: Window) {
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kScreenWindow] = window as Window;
+		this[kScreenOrientation] = null;
+	}
+
+	get availWidth(): number {
+		return this[kScreenWindow].innerWidth;
+	}
+
+	get availHeight(): number {
+		return this[kScreenWindow].innerHeight;
+	}
+
+	get width(): number {
+		return this[kScreenWindow].innerWidth;
+	}
+
+	get height(): number {
+		return this[kScreenWindow].innerHeight;
+	}
+
+	// Bits per pixel: 24 for true color, and the index's width for a
+	// palette of 256 or 8.
+	get colorDepth(): number {
+		const attached = getAttachedDocument(this[kScreenWindow].document);
+		const depth = attached?.[kFramebuffer].colorDepth ?? "rgb";
+		return depth === "rgb" ? 24 : depth === "256" ? 8 : 3;
+	}
+
+	get pixelDepth(): number {
+		return this.colorDepth;
+	}
+
+	get orientation(): ScreenOrientation {
+		let orientation = this[kScreenOrientation];
+		if (orientation === null) {
+			orientation =
+				this[kScreenOrientation] =
+				constructInternal(() => new ScreenOrientation(this));
+		}
+		return orientation;
+	}
+}
+
+interface ScreenOrientation {
+	[kScreenWindow]: Window;
+	// The type the last change event reported.
+	[kOrientationType]: OrientationType;
+}
+
+// The Screen Orientation spec's interface. A terminal does not turn, so
+// its angle is always 0 and it cannot be locked; it is portrait when its
+// window is at least as tall as it is wide, as the orientation media
+// feature says.
+class ScreenOrientation extends EventTarget {
+	constructor(screen?: Screen) {
+		super();
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kScreenWindow] = (screen as Screen)[kScreenWindow];
+		this[kOrientationType] = this.type;
+	}
+
+	get type(): OrientationType {
+		const window = this[kScreenWindow];
+		return window.innerHeight >= window.innerWidth
+			? "portrait-primary"
+			: "landscape-primary";
+	}
+
+	get angle(): number {
+		return 0;
+	}
+
+	get onchange(): EventHandlerValue | null {
+		return getEventHandlerValue(this, "change");
+	}
+
+	set onchange(value: unknown) {
+		setEventHandler(this, "change", value);
+	}
+
+	lock(_orientation: OrientationLockType): Promise<void> {
+		return Promise.reject(
+			domError("NotSupportedError", "A terminal cannot be turned"),
+		);
+	}
+
+	unlock(): void {}
+}
+
+Object.defineProperty(Screen.prototype, Symbol.toStringTag, {
+	value: "Screen",
+	configurable: true,
+});
+
+Object.defineProperty(ScreenOrientation.prototype, Symbol.toStringTag, {
+	value: "ScreenOrientation",
+	configurable: true,
+});
+
+// After a resize: a window that turned from wide to tall, or back, fires
+// change at its screen's orientation.
+function syncScreenOrientation(window: Window): void {
+	const orientation = window[kScreenInfo]?.[kScreenOrientation];
+	if (orientation == null) {
+		return;
+	}
+	const type = orientation.type;
+	if (type !== orientation[kOrientationType]) {
+		orientation[kOrientationType] = type;
+		dispatchAsUserAgent(orientation, new Event("change"));
+	}
+}
+
 const kClosed = Symbol("closed");
 const kHistory = Symbol("history");
 const kLocalStorage = Symbol("local storage");
 const kSessionStorage = Symbol("session storage");
-const kScreenInfo = Symbol("screen");
 const kWindowName = Symbol("window name");
 const kWindowStatus = Symbol("window status");
 const kIdleTimers = Symbol("idle timers");
@@ -34634,7 +34770,7 @@ export interface Window {
 	[kHistory]: globalThis.History;
 	[kLocalStorage]: Storage;
 	[kSessionStorage]: Storage;
-	[kScreenInfo]: globalThis.Screen;
+	[kScreenInfo]: Screen | undefined;
 	[kWindowName]: string;
 	[kWindowStatus]: string;
 	[kIdleTimers]: Map<number, ReturnType<typeof setTimeout>>;
@@ -35098,42 +35234,12 @@ export class Window extends EventTarget {
 		return this;
 	}
 
-	// The terminal is the screen: its size is the window's, and its color
-	// depth is the one frames are drawn at.
 	get screen(): globalThis.Screen {
 		let screen = this[kScreenInfo];
 		if (screen === undefined) {
-			const window = this;
-			screen = {
-				get availWidth(): number {
-					return window.innerWidth;
-				},
-				get availHeight(): number {
-					return window.innerHeight;
-				},
-				get width(): number {
-					return window.innerWidth;
-				},
-				get height(): number {
-					return window.innerHeight;
-				},
-				// Bits per pixel: 24 for true color, and the index's width
-				// for a palette of 256 or 8.
-				get colorDepth(): number {
-					const attached = getAttachedDocument(window.document);
-					const depth = attached?.[kFramebuffer].colorDepth ?? "rgb";
-					return depth === "rgb" ? 24 : depth === "256" ? 8 : 3;
-				},
-				get pixelDepth(): number {
-					return this.colorDepth;
-				},
-				get orientation(): globalThis.ScreenOrientation {
-					return noWindowFeature("screen orientation");
-				},
-			};
-			this[kScreenInfo] = screen;
+			screen = this[kScreenInfo] = constructInternal(() => new Screen(this));
 		}
-		return screen;
+		return screen as unknown as globalThis.Screen;
 	}
 
 	get screenLeft(): number {
@@ -35694,6 +35800,8 @@ const platform = {
 	Range,
 	ResizeObserver,
 	SVGElement,
+	Screen,
+	ScreenOrientation,
 	Selection,
 	ShadowRoot,
 	StaticRange,
@@ -35804,6 +35912,8 @@ export function parentElement(node: Node): Element | null {
 // each one to the platform interface it implements.
 export type {
 	Storage,
+	Screen,
+	ScreenOrientation,
 	NodeListOf,
 	HTMLCollectionOf,
 	HTMLAllCollection,
