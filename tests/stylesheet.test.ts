@@ -446,6 +446,66 @@ test("a shadow root's sibling selectors restyle nothing outside it, attached or 
 	dom.dispose();
 });
 
+test("a class change no sibling selector names costs the same in a long list", () => {
+	const median = (count: number): number => {
+		const dom = new TermDOM({
+			transport: new MockProcess({cols: 100, rows: 20}).transport,
+		});
+		const {document} = dom;
+		document.body.innerHTML = Array.from(
+			{length: count},
+			(_, i) => `<div class="row"><span>${i}</span></div>`,
+		).join("");
+		const rows = document.querySelectorAll(".row");
+		const times: number[] = [];
+		for (let i = 0; i < 41; i++) {
+			rows[i].classList.remove("selected");
+			rows[i + 1].classList.add("selected");
+			const start = performance.now();
+			rows[i + 1].getBoundingClientRect();
+			times.push(performance.now() - start);
+		}
+		dom.dispose();
+		return times.sort((a, b) => a - b)[20];
+	};
+	median(100);
+	const short = median(100);
+	const long = median(3000);
+	// Each change walked every later row, which made a 3000-row list
+	// about ten times slower than a 100-row one.
+	expect(long).toBeLessThan(4 * Math.max(short, 0.05));
+});
+
+test("a class a sibling selector names restyles the siblings after it", () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<style>.on ~ .light { color: rgb(0, 0, 255); }</style>" +
+		"<p id=switch>s</p><p>x</p><p id=light class=light>l</p>";
+	const light = document.getElementById("light")!;
+	expect(window.getComputedStyle(light).color).not.toBe("rgb(0, 0, 255)");
+	document.getElementById("switch")!.classList.add("unrelated");
+	expect(window.getComputedStyle(light).color).not.toBe("rgb(0, 0, 255)");
+	document.getElementById("switch")!.classList.add("on");
+	expect(window.getComputedStyle(light).color).toBe("rgb(0, 0, 255)");
+	document.getElementById("switch")!.classList.remove("on");
+	expect(window.getComputedStyle(light).color).not.toBe("rgb(0, 0, 255)");
+	document.body.innerHTML =
+		"<style>[data-on] ~ .light { color: rgb(0, 128, 0); }" +
+		"#on ~ .light { background-color: rgb(1, 2, 3); }</style>" +
+		"<p id=switch>s</p><p id=light class=light>l</p>";
+	const next = document.getElementById("light")!;
+	const toggle = document.getElementById("switch")!;
+	toggle.setAttribute("data-on", "");
+	expect(window.getComputedStyle(next).color).toBe("rgb(0, 128, 0)");
+	toggle.id = "on";
+	expect(window.getComputedStyle(next).backgroundColor).toBe("rgb(1, 2, 3)");
+	toggle.id = "off";
+	expect(window.getComputedStyle(next).backgroundColor)
+		.not.toBe("rgb(1, 2, 3)");
+	dom.dispose();
+});
+
 test("sibling selectors still restyle within their own tree", () => {
 	const dom = new TermDOM({transport: new MockProcess().transport});
 	const {document, window} = dom;
