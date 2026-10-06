@@ -46,7 +46,7 @@ import {
 	XLINK_NAMESPACE,
 	XML_NAMESPACE,
 } from "./dom.ts";
-import {toASCIILowercase} from "./text.ts";
+import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
 
 // CSS Selectors: the language, and the matcher a selector compiles to.
 // css-tree parses the selector. It is checked against the pseudo-classes
@@ -694,7 +694,7 @@ function compileSimple(
 					return false;
 				}
 				const quirks = isInQuirksMode(element);
-				for (const token of splitOnWhitespace(value)) {
+				for (const token of splitOnASCIIWhitespace(value)) {
 					if (quirks ? toASCIILowercase(token) === folded : token === name) {
 						return true;
 					}
@@ -926,7 +926,7 @@ function compileAttribute(
 				if (target === "" || /[\t\n\f\r ]/.test(target)) {
 					return false;
 				}
-				return splitOnWhitespace(subject).includes(target);
+				return splitOnASCIIWhitespace(subject).includes(target);
 			case "|=":
 				return subject === target || subject.startsWith(`${target}-`);
 			case "^=":
@@ -2144,10 +2144,6 @@ function getOfTypeIndex(
 		return 0;
 	}
 	return fromEnd ? siblings.length - index : index + 1;
-}
-
-function splitOnWhitespace(text: string): string[] {
-	return text.split(/[\t\n\f\r ]+/).filter((token) => token !== "");
 }
 
 // Keyed by text and the namespaces it was compiled against. A selector
