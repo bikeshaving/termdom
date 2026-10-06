@@ -99,10 +99,10 @@ The string has colors and line breaks only, no cursor movement and no
 mode changes, so it can be piped to a file, logged, or written to
 stderr. `attach()` is not called, and the process does not stay alive.
 
-Static output uses 256 colors unless the program names the color depth.
-The terminal is only asked once `attach()` takes it, since its answers
-come back as input, and a pipe or a file has no terminal to ask. To
-print in 24-bit color:
+`print()` and `renderANSI()` draw with `colorDepth: "256"` until
+`attach()` has asked the terminal, and always when output goes to a
+pipe or a file, since there is no terminal to ask. To print in 24-bit
+color, set it yourself:
 
 ```ts
 const term = new TermDOM({
@@ -154,14 +154,6 @@ terminal that does not answer gets the conservative behavior.
 | XTWINOPS 16 | A cell's size in pixels, which sets the angle of a gradient and the natural size of an image or a canvas in cells |
 | OSC 52 query | Reading the clipboard in `navigator.clipboard.readText()` |
 | 24-bit SGR by DECRQSS, XTGETTCAP `RGB` and `Tc`, DA2 | Whether to send 24-bit color, unless the transport names its `colorDepth` |
-
-A terminal without 24-bit color can misread a 24-bit color as other
-attributes, such as hidden or inverse text. So the engine sends 24-bit
-color only to a terminal that says it can show it, or to tmux, which
-converts it for the terminal it runs in, and 256 colors to every other
-terminal. Some terminals with 24-bit color never say so, among them
-Alacritty, Konsole and VS Code's terminal. The Colors section of the
-styling guide shows how a program names the depth itself.
 
 The modes the engine sets, and resets on exit, are mouse reporting,
 mouse motion reporting while something watches hover, bracketed paste,

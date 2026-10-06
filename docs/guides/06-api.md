@@ -227,9 +227,8 @@ const term = new TermDOM({transport: transportFromProcess(process)});
 - `options.sharesScreen` — overrides `sharesScreen`, which defaults to
   true for the global process (it sits below a shell) and false for
   anything else.
-- `options.colorDepth` — `"rgb"`, `"256"` or `"ansi"`. When absent,
-  TermDOM asks the terminal: 24-bit when it says it has it or is tmux,
-  256 otherwise, as the rendering guide describes.
+- `options.colorDepth` — `"rgb"`, `"256"` or `"ansi"`. Without it,
+  TermDOM asks the terminal. See "Color depth" in the styling guide.
 - `options.colorScheme` — `"light"` or `"dark"`, for the frames before
   the terminal reports its background.
 
