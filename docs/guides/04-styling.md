@@ -165,8 +165,8 @@ browser.
 `::selection` styles selected text, and `::highlight()` styles the
 ranges in `CSS.highlights`. `::placeholder` styles a text control's
 placeholder. `::backdrop` styles what a modal dialog or popover covers.
-`::part()` reaches into the built-in controls, which are shadow trees;
-the API guide lists the parts each has.
+The built-in controls' insides take the pseudo-elements the API guide
+lists, such as `::slider-fill` and `::picker(select)`.
 
 ## Default looks
 

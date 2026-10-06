@@ -469,12 +469,12 @@ test("a meter's level reads its value against low, high and optimum", async () =
 	dom.dispose();
 });
 
-test("a page styles a control's states through ::part() with several names", async () => {
+test("a page styles a meter's level through its prefixed pseudo-element", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML =
-		"<style>meter::part(bar suboptimum) { color: #0000ff; }</style>" +
+		"<style>meter::-termdom-meter-suboptimum-value { color: #0000ff; }</style>" +
 		"<meter min=\"0\" max=\"10\" low=\"3\" high=\"7\" optimum=\"9\" value=\"5\"></meter>";
 	await nextFrame(dom);
 	const getSgr = (): string => {
@@ -482,27 +482,60 @@ test("a page styles a control's states through ::part() with several names", asy
 		return match ? `${match[1]},${match[2]},${match[3]}` : "none";
 	};
 	expect(getSgr()).toBe("0,0,255");
-	// The bar has the name bar, but not optimum.
 	document.querySelector("meter")!.setAttribute("value", "9");
 	await nextFrame(dom);
 	expect(getSgr()).toBe("95,175,95");
 	dom.dispose();
 });
 
-test("a page restyles a part's ::before and a details' ::details-content", async () => {
+test("a page styles a gauge through ::slider-fill, and ::part() does not reach it", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<style>" +
+		"progress::part(bar) { color: #ff0000; }" +
+		"progress::slider-fill { color: #00ff00; }" +
+		"</style>" +
+		"<progress max=\"10\" value=\"10\"></progress>";
+	await nextFrame(dom);
+	const ansi = terminal.getStaticANSI();
+	expect(ansi).toContain("38;2;0;255;0");
+	expect(ansi).not.toContain("38;2;255;0;0");
+	dom.dispose();
+});
+
+test("a page styles a field's text, a select's icon and a gauge's track", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<style>" +
+		"input::field-content { color: #010203; }" +
+		"select::picker-icon { color: #040506; }" +
+		"progress::slider-track { color: #070809; }" +
+		"</style>" +
+		"<input value=\"x\"><select><option>a</option></select>" +
+		"<progress max=\"10\" value=\"0\"></progress>";
+	await nextFrame(dom);
+	const ansi = terminal.getStaticANSI();
+	expect(ansi).toContain("38;2;1;2;3");
+	expect(ansi).toContain("38;2;4;5;6");
+	expect(ansi).toContain("38;2;7;8;9");
+	dom.dispose();
+});
+
+test("a page restyles a details' ::details-content, and not a button's insides", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		"<style>" +
 		"input::part(label)::before { content: \"< \"; }" +
-		"input::part(label)::after { content: \" >\"; }" +
 		"details::details-content { padding-left: 2ch; }" +
 		"</style>" +
 		"<input type=\"button\" value=\"Go\">" +
 		"<details open><summary>More</summary>inside</details>";
 	await nextFrame(dom);
 	const text = terminal.getPlainText();
-	expect(text).toContain("< Go >");
+	expect(text).toContain("[ Go ]");
 	expect(text).toContain("\n  inside");
 	dom.dispose();
 });

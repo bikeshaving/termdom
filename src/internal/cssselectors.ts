@@ -142,6 +142,9 @@ const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 ]);
 
 const PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
+	"-termdom-meter-even-less-good-value",
+	"-termdom-meter-optimum-value",
+	"-termdom-meter-suboptimum-value",
 	"after",
 	"backdrop",
 	"before",
@@ -150,6 +153,7 @@ const PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"cue",
 	"cue-region",
 	"details-content",
+	"field-content",
 	"file-selector-button",
 	"first-letter",
 	"first-line",
@@ -164,6 +168,9 @@ const PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"scroll-marker",
 	"scroll-marker-group",
 	"selection",
+	"slider-fill",
+	"slider-thumb",
+	"slider-track",
 	"slotted",
 	"spelling-error",
 	"target-text",

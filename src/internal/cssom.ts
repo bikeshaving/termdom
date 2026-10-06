@@ -7054,6 +7054,32 @@ function unescapeHighlightName(pseudoElement: string): string {
 	return `::highlight(${CSSTree.ident.decode(written[1].trim())})`;
 }
 
+// The pseudo-elements a page styles a built-in control's parts through,
+// by the part names its UA shadow tree gives them. Author shadow trees
+// are not eligible: their parts are theirs to style from inside.
+const PART_PSEUDOS: Readonly<Record<string, Readonly<Record<string, string>>>> =
+	{
+		"*": {
+			placeholder: "::placeholder",
+			selection: "::selection",
+			"details-content": "::details-content",
+		},
+		INPUT: {value: "::field-content"},
+		METER: {
+			track: "::slider-track",
+			bar: "::slider-fill",
+			optimum: "::-termdom-meter-optimum-value",
+			suboptimum: "::-termdom-meter-suboptimum-value",
+			"even-less-good": "::-termdom-meter-even-less-good-value",
+		},
+		PROGRESS: {track: "::slider-track", bar: "::slider-fill"},
+		SELECT: {picker: "::picker(select)", indicator: "::picker-icon"},
+	};
+
+const PART_PSEUDO_NAMES = new Set(
+	Object.values(PART_PSEUDOS).flatMap((names) => Object.values(names)),
+);
+
 // True for a pseudo-element the tree needs a node of its own for. The
 // rest -- ::placeholder, ::selection, ::part() and ::highlight() --
 // style boxes that already exist.
@@ -7065,6 +7091,7 @@ function generatesPseudoElement(
 		pseudoElement !== "::placeholder" &&
 		pseudoElement !== "::selection" &&
 		pseudoElement !== "::details-content" &&
+		!PART_PSEUDO_NAMES.has(pseudoElement) &&
 		!pseudoElement.startsWith("::part(") &&
 		!pseudoElement.startsWith("::highlight("),
 	);
@@ -9242,8 +9269,8 @@ function getCandidateRules(
 function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	// A UA shadow part IS the element its part pseudo styles. The host's
 	// ::placeholder rules cascade onto the [part="placeholder"] span.
-	const partPseudo = getPartPseudo(element);
 	const root = element.getRootNode();
+	const partPseudos = getPartPseudos(element, root as unknown as Node);
 	const rootNode = root as unknown as Node;
 	const shadowHost = isShadowRoot(root) ? root.host : null;
 	const partNames = (element.getAttribute("part") ?? "")
@@ -9253,11 +9280,14 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 		if (rule.pseudoElement) {
 			// ::part(name) matches the shadow's HOST, and its declarations
 			// cascade onto the part element. This is the standard CSS Shadow
-			// Parts crossing.
+			// Parts crossing. A built-in control's parts are the UA's, as in
+			// every browser, and a page reaches them only through the
+			// pseudo-elements above.
 			const partArg = rule.pseudoElement.match(/^::part\((.+)\)$/);
 			if (partArg) {
 				return (
 					shadowHost !== null &&
+					(rule.uaOrigin || !isUAShadowTree(root)) &&
 					partArg[1]
 						.trim().split(/\s+/).every((name) => partNames.includes(name)) &&
 					isRuleMatch(shadowHost, rule) &&
@@ -9267,9 +9297,8 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 				);
 			}
 			return (
-				partPseudo !== null &&
 				shadowHost !== null &&
-				rule.pseudoElement === partPseudo &&
+				partPseudos.includes(rule.pseudoElement) &&
 				isRuleMatch(shadowHost, rule)
 			);
 		}
@@ -9400,21 +9429,23 @@ function getScopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 	return outer;
 }
 
-// Author shadow trees are not eligible. Their parts are theirs to style
-// from inside.
-function getPartPseudo(element: Element): string | null {
-	const root = element.getRootNode();
-	if (isUAShadowTree(root)) {
-		const part = element.getAttribute("part");
-		if (
-			part === "placeholder" ||
-			part === "selection" ||
-			part === "details-content"
-		) {
-			return `::${part}`;
+function getPartPseudos(element: Element, root: Node): string[] {
+	if (!isUAShadowTree(root)) {
+		return [];
+	}
+	const part = element.getAttribute("part");
+	if (part === null) {
+		return [];
+	}
+	const host = (root as unknown as ShadowRoot).host.tagName;
+	const pseudos: string[] = [];
+	for (const name of part.split(/\s+/)) {
+		const pseudo = PART_PSEUDOS["*"][name] ?? PART_PSEUDOS[host]?.[name];
+		if (pseudo !== undefined) {
+			pseudos.push(pseudo);
 		}
 	}
-	return null;
+	return pseudos;
 }
 
 // A rule matches only elements of the tree its stylesheet belongs to,
@@ -9444,9 +9475,11 @@ function isRuleMatch(
 	if (rule.scope) {
 		return matchesRule(element, rule);
 	}
-	// The selector itself checks the host the part belongs to.
+	// The selector itself checks the host the part belongs to. A built-in
+	// control's parts are the UA's alone.
 	if (rule.ofPart) {
-		return matchesRule(element, rule);
+		return (rule.uaOrigin || !isUAShadowTree(root)) &&
+			matchesRule(element, rule);
 	}
 	// UA document rules apply in EVERY tree scope, as a browser's own UA
 	// sheet styles shadow trees.
