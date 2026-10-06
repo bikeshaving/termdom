@@ -3,8 +3,8 @@ import "./internal/inspector.ts";
 import {
 	Cascade,
 	type CellSize,
+	type CellSizeSetting,
 	getCellSize,
-	setCellSizeSource,
 	setColorSchemeSource,
 	UNIT_CELL,
 } from "./internal/cssom.ts";
@@ -19,6 +19,7 @@ import {
 	dropFullscreen,
 	flushLayout,
 	flushObservers,
+	getCellSizeSetting,
 	hasFrameCallbacks,
 	hoverListenerCount,
 	relayoutReplacedElements,
@@ -125,15 +126,18 @@ export interface TermDOMOptions {
 
 const DEFAULT_CONTENT_SECURITY_POLICY = "default-src 'none'";
 
-function getCellSizeSource(
+function isSameCell(a: Readonly<CellSize>, b: Readonly<CellSize>): boolean {
+	return a.width === b.width && a.height === b.height;
+}
+
+function toCellSizeSetting(
 	option: TermDOMOptions["cellSize"],
-	measured: () => Readonly<CellSize>,
-): () => Readonly<CellSize> {
+): CellSizeSetting {
 	if (option === undefined || option === "unit") {
-		return () => UNIT_CELL;
+		return "unit";
 	}
 	if (option === "auto") {
-		return measured;
+		return "auto";
 	}
 	if (
 		typeof option === "object" &&
@@ -143,8 +147,7 @@ function getCellSizeSource(
 		option.width > 0 &&
 		option.height > 0
 	) {
-		const cell = Object.freeze({width: option.width, height: option.height});
-		return () => cell;
+		return Object.freeze({width: option.width, height: option.height});
 	}
 	throw new TypeError(
 		'cellSize must be "unit", "auto" or {width, height} with positive sizes',
@@ -161,7 +164,6 @@ const kOnAlternateScreen = Symbol("onAlternateScreen");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
 const kFirstFrame = Symbol("firstFrame");
-const kMeasuresCell = Symbol("measuresCell");
 const kUnprinted = Symbol("unprinted");
 const kInput = Symbol("input");
 const kAttachReady = Symbol("attachReady");
@@ -215,8 +217,6 @@ export interface TermDOM {
 	// What the first frame waits for: the terminal's answers that decide
 	// how the page looks.
 	[kFirstFrame]: Promise<void> | null;
-	// Whether the page's lengths follow the terminal's measured cell.
-	[kMeasuresCell]: boolean;
 	// A stdout that is not a terminal gets the document once, as it stands
 	// when the session ends. True while a frame has changed it since.
 	[kUnprinted]: boolean;
@@ -253,10 +253,7 @@ export class TermDOM extends EventTarget {
 
 	constructor(options: TermDOMOptions = {}) {
 		super();
-		const cellSize = getCellSizeSource(
-			options.cellSize,
-			() => this[kFramebuffer].cellPixels,
-		);
+		const cellSize = toCellSizeSetting(options.cellSize);
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -366,15 +363,13 @@ export class TermDOM extends EventTarget {
 		this[kFramebuffer].measurer = exchange;
 		setColorSchemeSource(document, () => getColorScheme(this));
 
-		this[kMeasuresCell] = options.cellSize === "auto";
-		setCellSizeSource(document, cellSize);
-
 		attachDocument(
 			document,
 			this[kLayout],
 			this[kCascade],
 			this[kExchange],
 			this[kFramebuffer],
+			cellSize,
 			() => render(this),
 			(error) => reportUncaught(this, error),
 		);
@@ -531,7 +526,7 @@ export class TermDOM extends EventTarget {
 			// painted against the guessed cell repaints when the answer lands.
 			// When the cell sizes the page, the first frame waits for it, so
 			// the page never lays out against the guess.
-			const before = getCellSize(this.document);
+			const measuresCell = getCellSizeSetting(this.document) === "auto";
 			const cellAnswered = this[kExchange].negotiateCellPixels().then(
 				(cellChanged) => {
 					if (!isAttached(this)) {
@@ -539,9 +534,9 @@ export class TermDOM extends EventTarget {
 					}
 					if (cellChanged) {
 						cellPixelsChanged(this);
-					}
-					if (getCellSize(this.document) !== before) {
-						cellSizeChanged(this);
+						if (measuresCell) {
+							cellSizeChanged(this);
+						}
 					}
 					void render(this);
 				},
@@ -552,23 +547,20 @@ export class TermDOM extends EventTarget {
 			this[kFirstFrame] = Promise.all([
 				schemeSettled,
 				depthSettled,
-				...(this[kMeasuresCell] ? [cellAnswered] : []),
+				...(measuresCell ? [cellAnswered] : []),
 			]).then(() => {});
-			if (this[kMeasuresCell]) {
+			if (measuresCell) {
 				// A font zoom resizes the grid, and the cell with it. The page
 				// hears of it once, when the cell is known.
 				this[kExchange].deferResizeEvent();
 				this[kExchange].addEventListener("terminalresize", (event) => {
 					const {sizeChanged} = event as TerminalResizeEvent;
-					const previous = getCellSize(this.document);
 					void this[kExchange].negotiateCellPixels().then((cellChanged) => {
 						if (!isAttached(this)) {
 							return;
 						}
 						if (cellChanged) {
 							cellPixelsChanged(this);
-						}
-						if (getCellSize(this.document) !== previous) {
 							cellSizeChanged(this);
 							void render(this);
 						} else if (sizeChanged) {
@@ -1262,12 +1254,13 @@ function renderStaticHTML(
 		termDOM[kStaticSibling] &&
 		(termDOM[kStaticSibling][kFramebuffer].cols !== cols ||
 			termDOM[kStaticSibling][kFramebuffer].colorDepth !== colorDepth ||
-			getCellSize(termDOM[kStaticSibling].document) !== cell)
+			!isSameCell(getCellSize(termDOM[kStaticSibling].document), cell))
 	) {
 		void termDOM[kStaticSibling].dispose();
 		termDOM[kStaticSibling] = null;
 	}
 	termDOM[kStaticSibling] ??= new TermDOM({
+		cellSize: cell === UNIT_CELL ? "unit" : cell,
 		transport: {
 			cols,
 			rows: 24,
@@ -1284,7 +1277,6 @@ function renderStaticHTML(
 	});
 
 	const renderer = termDOM[kStaticSibling];
-	setCellSizeSource(renderer.document, () => cell);
 	renderer.document.body.innerHTML = html;
 	return renderStatic(renderer, lineEnding);
 }
