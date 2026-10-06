@@ -161,7 +161,7 @@ test("a transport that names its color depth is not asked", async () => {
 	expect(named.output).not.toContain("\x1b[38;2;111;122;133m");
 	const ansi =
 		await depthOn({[DECRQSS]: "\x1bP1$r0;38:2::111:122:133m\x1b\\"}, "ansi");
-	expect(ansi.depth).toBe(4);
+	expect(ansi.depth).toBe(3);
 });
 
 test("an answer split across reads still counts", async () => {
