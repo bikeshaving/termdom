@@ -526,6 +526,8 @@ const kPseudoHosts = Symbol("pseudoHosts");
 // again.
 const kSharedRoot = Symbol("sharedRoot");
 const kElement = Symbol("element");
+const kComputedValue = Symbol("computedValue");
+const kCustomProperties = Symbol("customProperties");
 const kParentRule = Symbol("parentRule");
 const kOnChange = Symbol("onChange");
 const kDescriptors = Symbol("descriptors");
@@ -1549,6 +1551,10 @@ function getSheetNamespaces(
 // One class per at-rule that declares descriptors. A descriptor is
 // named only inside its own at-rule, so `src` exists on
 // CSSFontFaceDescriptors and nothing else.
+const kRulePrelude = Symbol("rulePrelude");
+const kAtKeyword = Symbol("atKeyword");
+const kAtRule = Symbol("atRule");
+
 const DESCRIPTOR_BLOCKS = new Map<string, typeof CSSStyleDeclaration>();
 
 for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
@@ -1594,7 +1600,7 @@ abstract class CSSDeclarationBlockRule extends CSSRule {
 		parentRule: CSSRule | null,
 	) {
 		super(parentStyleSheet, parentRule);
-		const atRule = (this.constructor as unknown as {atRule?: string}).atRule;
+		const atRule = (this.constructor as unknown as {[kAtRule]?: string})[kAtRule];
 		const Block =
 			(atRule ? DESCRIPTOR_BLOCKS.get(atRule) : undefined) ??
 			CSSStyleProperties;
@@ -1623,26 +1629,26 @@ abstract class CSSDeclarationBlockRule extends CSSRule {
 	}
 
 	/** The at-keyword and prelude this rule's text opens with. */
-	abstract get prelude(): string;
+	abstract get [kRulePrelude](): string;
 
 	get cssText(): string {
 		const declarations = this[kStyle].cssText;
 		return declarations
-			? `${this.prelude} { ${declarations} }`
-			: `${this.prelude} { }`;
+			? `${this[kRulePrelude]} { ${declarations} }`
+			: `${this[kRulePrelude]} { }`;
 	}
 }
 
 /** `@font-face`: the descriptors of a font this terminal will never load. */
 class CSSFontFaceRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
-	static readonly atRule = "@font-face";
+	static readonly [kAtRule] = "@font-face";
 
 	get type(): number {
 		return RULE_TYPES.FONT_FACE_RULE;
 	}
 
-	get prelude(): string {
+	get [kRulePrelude](): string {
 		return "@font-face";
 	}
 }
@@ -1698,7 +1704,7 @@ interface CSSPageRule {
 /** `@page`: the page selector and its descriptors. */
 class CSSPageRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
-	static readonly atRule = "@page";
+	static readonly [kAtRule] = "@page";
 
 	constructor(
 		selectorText: string,
@@ -1723,7 +1729,7 @@ class CSSPageRule extends CSSDeclarationBlockRule {
 		notifyRule(this);
 	}
 
-	get prelude(): string {
+	get [kRulePrelude](): string {
 		return this[kSelectorText] ? `@page ${this[kSelectorText]}` : "@page";
 	}
 }
@@ -1740,7 +1746,7 @@ interface CSSNamedDeclarationRule {
  */
 class CSSNamedDeclarationRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
-	static readonly atRule: string = "";
+	static readonly [kAtRule]: string = "";
 
 	constructor(
 		name: string,
@@ -1759,8 +1765,8 @@ class CSSNamedDeclarationRule extends CSSDeclarationBlockRule {
 		return this[kName];
 	}
 
-	get prelude(): string {
-		return `${(this.constructor as typeof CSSNamedDeclarationRule).atRule} ${
+	get [kRulePrelude](): string {
+		return `${(this.constructor as typeof CSSNamedDeclarationRule)[kAtRule]} ${
 			this[kName]
 		}`;
 	}
@@ -1768,7 +1774,7 @@ class CSSNamedDeclarationRule extends CSSDeclarationBlockRule {
 
 /** `@counter-style`: a counter's name and the descriptors that define it. */
 class CSSCounterStyleRule extends CSSNamedDeclarationRule {
-	static override readonly atRule = "@counter-style";
+	static override readonly [kAtRule] = "@counter-style";
 
 	override get type(): number {
 		return RULE_TYPES.COUNTER_STYLE_RULE;
@@ -1790,7 +1796,7 @@ class CSSCounterStyleRule extends CSSNamedDeclarationRule {
 
 /** `@property`: a custom property's registration. */
 class CSSPropertyRule extends CSSNamedDeclarationRule {
-	static override readonly atRule = "@property";
+	static override readonly [kAtRule] = "@property";
 
 	get syntax(): string {
 		return this.style.getPropertyValue("syntax");
@@ -1807,7 +1813,7 @@ class CSSPropertyRule extends CSSNamedDeclarationRule {
 
 /** `@font-palette-values`: a palette's name and its descriptors. */
 class CSSFontPaletteValuesRule extends CSSNamedDeclarationRule {
-	static override readonly atRule = "@font-palette-values";
+	static override readonly [kAtRule] = "@font-palette-values";
 
 	get fontFamily(): string {
 		return this.style.getPropertyValue("font-family");
@@ -1861,7 +1867,7 @@ class CSSKeyframeRule extends CSSDeclarationBlockRule {
 		notifyRule(this);
 	}
 
-	get prelude(): string {
+	get [kRulePrelude](): string {
 		return this[kKeyText];
 	}
 }
@@ -1927,11 +1933,11 @@ abstract class CSSTextConditionRule extends CSSConditionRule {
 		return this[kConditionText];
 	}
 
-	abstract get atKeyword(): string;
+	abstract get [kAtKeyword](): string;
 
 	get cssText(): string {
 		const condition = this[kConditionText] ? ` ${this[kConditionText]}` : "";
-		return `${this.atKeyword}${condition} {${serializeGroupRules(this)}\n}`;
+		return `${this[kAtKeyword]}${condition} {${serializeGroupRules(this)}\n}`;
 	}
 }
 
@@ -1941,7 +1947,7 @@ class CSSSupportsRule extends CSSTextConditionRule {
 		return RULE_TYPES.SUPPORTS_RULE;
 	}
 
-	get atKeyword(): string {
+	get [kAtKeyword](): string {
 		return "@supports";
 	}
 }
@@ -1974,7 +1980,7 @@ class CSSContainerRule extends CSSTextConditionRule {
 		return 0;
 	}
 
-	get atKeyword(): string {
+	get [kAtKeyword](): string {
 		return "@container";
 	}
 
@@ -3529,7 +3535,7 @@ const kCascade = Symbol("cascade");
 interface MeasuredDeclaration {
 	[kElement]: Element;
 	[kCascade]: Cascade | null;
-	getComputedValue(property: string): string;
+	[kComputedValue](property: string): string;
 	getPropertyValue(property: string): string;
 }
 
@@ -3571,7 +3577,7 @@ export function getComputedValue(
 	const declaration = pseudoElement
 		? getPseudoDeclaration(cascade, element, pseudoElement)
 		: cascade.declarationFor(element);
-	return declaration.getComputedValue(property);
+	return declaration[kComputedValue](property);
 }
 
 // Only declarations handed to an author materialize an item list. The
@@ -3889,7 +3895,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return null;
 	}
 
-	getComputedValue(property: string): string {
+	[kComputedValue](property: string): string {
 		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			this[kSyncResolved]();
@@ -3930,7 +3936,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			return this[kUsedValue](property);
 		}
 		if (this[kCascade] && MIN_SIZE_PROPERTIES.has(property)) {
-			return getResolvedMinSize(this, this.getComputedValue(property));
+			return getResolvedMinSize(this, this[kComputedValue](property));
 		}
 		if (this[kCascade] && USED_TRACK_PROPERTIES.has(property)) {
 			const tracks = usedGridTracks(
@@ -3950,9 +3956,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 				this.getPropertyValue(longhand),
 			);
 		}
-		let computed = this.getComputedValue(property);
+		let computed = this[kComputedValue](property);
 		if (AUTO_COLOR_PROPERTIES.has(property) && computed === "auto") {
-			computed = this.getComputedValue("color");
+			computed = this[kComputedValue]("color");
 		}
 		// A system color computes as its keyword, and reads back as the color
 		// it stands for here.
@@ -3991,7 +3997,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return [...CSS_LONGHANDS, ...getCustomNames(this)][Symbol.iterator]();
 	}
 
-	declaredCustomProperties(): string[] {
+	[kCustomProperties](): string[] {
 		const names: string[] = [];
 		for (const rule of this[kCSSRules]) {
 			for (const name of Object.keys(rule.declarations)) {
@@ -4019,7 +4025,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			return memoized;
 		}
 
-		const computed = this.getComputedValue(property);
+		const computed = this[kComputedValue](property);
 		const value = measureUsedValue(this, property, computed);
 		used.set(property, value);
 		return value;
@@ -4134,7 +4140,7 @@ function getLengthContext(
 	const font = CSSValues.getFontSize(
 		own
 			? parent ? getComputedValue(parent, "font-size") : ""
-			: declaration.getComputedValue("font-size"),
+			: declaration[kComputedValue]("font-size"),
 		initial,
 	);
 	const root = getRootFontSize(declaration, own);
@@ -4171,7 +4177,7 @@ function getRootFontSize(
 		!root || (ownFontSize && root === declaration[kElement])
 			? ""
 			: root === declaration[kElement]
-				? declaration.getComputedValue("font-size")
+				? declaration[kComputedValue]("font-size")
 				: getComputedValue(root, "font-size"),
 		getCellSize(declaration[kElement]).height,
 	);
@@ -4187,7 +4193,7 @@ function toPhysicalProperty(
 	return (
 		CSSValues.getPhysicalProperty(
 			property,
-			declaration.getComputedValue("direction"),
+			declaration[kComputedValue]("direction"),
 		) ?? property
 	);
 }
@@ -4202,7 +4208,7 @@ function measureUsedValue(
 	// A border with no style draws nothing and takes no space, whatever
 	// width it declares.
 	if (property.startsWith("border-") && property.endsWith("-width")) {
-		const style = declaration.getComputedValue(
+		const style = declaration[kComputedValue](
 			`${property.slice(0, -"-width".length)}-style`,
 		);
 		if (!style || style === "none" || style === "hidden") {
@@ -4233,7 +4239,7 @@ function measureUsedValue(
 		const border = vertical ? rect.height : rect.width;
 		// The used value of width is the box box-sizing names, so a
 		// border-box element reads its border box (css-sizing-3 §3.1).
-		if (declaration.getComputedValue("box-sizing") === "border-box") {
+		if (declaration[kComputedValue]("box-sizing") === "border-box") {
 			return CSSValues.getUsedLength(Math.max(0, border));
 		}
 		const edges =
@@ -4303,7 +4309,7 @@ function getUsedInset(
 
 	const opposite = OPPOSITE_INSET[property];
 	const other = CSSValues.getInsetLength(
-		declaration.getComputedValue(opposite),
+		declaration[kComputedValue](opposite),
 		basis,
 	);
 	// A relatively positioned box is offset from where it already was, so
@@ -4457,7 +4463,7 @@ function getResolvedMinSize(
 			return "0px";
 		}
 	}
-	if (declaration.getComputedValue("aspect-ratio") !== "auto") {
+	if (declaration[kComputedValue]("aspect-ratio") !== "auto") {
 		return "auto";
 	}
 	const parent = flatParentElement(declaration[kElement]);
@@ -4717,7 +4723,7 @@ function resolvePropertyValue(
 	if (
 		property === "text-align" &&
 		CSSValues.getLegacyAlignment(value) !== null &&
-		/^(?:inline-)?table$/.test(declaration.getComputedValue("display"))
+		/^(?:inline-)?table$/.test(declaration[kComputedValue]("display"))
 	) {
 		return "start";
 	}
@@ -4778,7 +4784,7 @@ function resolveCascadedValue(
 		// on.
 		return property === "color"
 			? (resolveFromParent(declaration, "color") ?? "")
-			: declaration.getComputedValue("color");
+			: declaration[kComputedValue]("color");
 	}
 	return value;
 }
@@ -4798,7 +4804,7 @@ function resolvePropertyValueRaw(
 			name === property ||
 			CSSValues.getPhysicalProperty(
 				name,
-				(direction ??= declaration.getComputedValue("direction")),
+				(direction ??= declaration[kComputedValue]("direction")),
 			) === property;
 
 	const inline = getInlineDeclarations(declaration);
@@ -4944,7 +4950,7 @@ function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 		element = flatParentElement(element)
 	) {
 		const declaration = computed[kCascade]?.declarationFor(element);
-		for (const name of declaration?.declaredCustomProperties() ?? []) {
+		for (const name of declaration?.[kCustomProperties]() ?? []) {
 			names.add(name);
 		}
 	}
@@ -5011,7 +5017,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// The engine's read. An empty result means no rule reached the
 	// pseudo-element, which is what the ::selection and ::marker painters
 	// check.
-	getComputedValue(property: string): string {
+	[kComputedValue](property: string): string {
 		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			this[kSyncResolved]();
@@ -5048,7 +5054,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			flushCascadeStyle(this[kCascade]);
 		}
 		const computed =
-			this.getComputedValue(property) ||
+			this[kComputedValue](property) ||
 			CSSValues.getComputedValueEntry(
 				property,
 				getInitialStyle(null, property),
@@ -5205,7 +5211,7 @@ function getBoxView(
 		view = {
 			[kElement]: node,
 			[kCascade]: declaration[kCascade],
-			getComputedValue: (property: string): string =>
+			[kComputedValue]: (property: string): string =>
 				declaration.nodeValue(property),
 			getPropertyValue: (property: string): string =>
 				declaration.getPropertyValue(property),
@@ -5540,9 +5546,9 @@ function shouldCreatePseudoElement(
 ): boolean {
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(element);
-		const display = computedStyle.getComputedValue("display");
+		const display = computedStyle[kComputedValue]("display");
 		const listStylePosition =
-			computedStyle.getComputedValue("list-style-position") || "outside";
+			computedStyle[kComputedValue]("list-style-position") || "outside";
 
 		if (display === "list-item" && listStylePosition !== "outside") {
 			return true;
@@ -6275,7 +6281,7 @@ export class Cascade {
 		}
 
 		const computedStyle = this.declarationFor(hostElement);
-		const display = computedStyle.getComputedValue("display");
+		const display = computedStyle[kComputedValue]("display");
 
 		if (display !== "list-item") {
 			return null;
@@ -6599,7 +6605,7 @@ function pseudoDeclarationsFor(
 	inheritedProperties ??= CSS_PROPERTIES.filter(CSSValues.isInheritedProperty);
 	for (const property of inheritedProperties) {
 		if (!declarations[property]) {
-			const inherited = hostStyle.getComputedValue(property);
+			const inherited = hostStyle[kComputedValue](property);
 			if (inherited) {
 				declarations[property] = inherited;
 			}
@@ -6607,7 +6613,7 @@ function pseudoDeclarationsFor(
 	}
 	// A pseudo-element of a flex or grid container is one of its items,
 	// and an item's display isBlockified, including the initial `inline`.
-	if (ITEM_DISPLAYS.has(hostStyle.getComputedValue("display"))) {
+	if (ITEM_DISPLAYS.has(hostStyle[kComputedValue]("display"))) {
 		declarations.display = CSSValues.getBlockifiedDisplay(
 			declarations.display || getInitialStyle(null, "display"),
 		);
@@ -6978,9 +6984,9 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	}
 	for (const element of listItems) {
 		const computedStyle = cascade.declarationFor(element);
-		const display = computedStyle.getComputedValue("display");
+		const display = computedStyle[kComputedValue]("display");
 		const listStylePosition =
-			computedStyle.getComputedValue("list-style-position") || "outside";
+			computedStyle[kComputedValue]("list-style-position") || "outside";
 
 		if (display === "list-item" && listStylePosition !== "outside") {
 			attachPseudoElementToElementForType(cascade, element, "::marker");
@@ -7021,8 +7027,8 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 	}
 
 	const computedStyle = cascade.declarationFor(element);
-	const counterReset = computedStyle.getComputedValue("counter-reset");
-	const counterIncrement = computedStyle.getComputedValue("counter-increment");
+	const counterReset = computedStyle[kComputedValue]("counter-reset");
+	const counterIncrement = computedStyle[kComputedValue]("counter-increment");
 
 	const parentElement = element.parentElement;
 	const parentScope = parentElement
@@ -9337,7 +9343,7 @@ function computePseudoElementStyle(
 			}
 			direction ??= cascade
 				.declarationFor(element)
-				.getComputedValue("direction");
+				[kComputedValue]("direction");
 			for (const other of CSSValues.getSlotNames(name, direction)) {
 				computedStyle[other] = value;
 			}
@@ -9357,11 +9363,11 @@ function getPseudoContent(
 
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(hostElement);
-		const display = computedStyle.getComputedValue("display");
+		const display = computedStyle[kComputedValue]("display");
 
 		if (display === "list-item") {
 			const listStylePosition =
-				computedStyle.getComputedValue("list-style-position") || "outside";
+				computedStyle[kComputedValue]("list-style-position") || "outside";
 
 			if (listStylePosition === "outside") {
 				return null;
@@ -9477,9 +9483,9 @@ function attachPseudoElementToElementForType(
 
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(element);
-		const display = computedStyle.getComputedValue("display");
+		const display = computedStyle[kComputedValue]("display");
 		const listStylePosition =
-			computedStyle.getComputedValue("list-style-position") || "outside";
+			computedStyle[kComputedValue]("list-style-position") || "outside";
 
 		if (display !== "list-item") {
 			return;

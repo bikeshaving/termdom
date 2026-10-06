@@ -548,16 +548,16 @@ test("border and padding on <math> use the box model", async () => {
 	).toEqual(["  x + 1"]);
 });
 
-test("innerText is the one-line form, and an annotation is no part of it", async () => {
+test("innerText reads math as the one-line form, and an annotation is no part of it", async () => {
 	const {dom} = await render(
-		block("<mfrac><mi>a</mi><mi>b</mi></mfrac>") +
-		"<math id=\"t\"><semantics><mi>x</mi>" +
+		"<p>" + block("<mfrac><mi>a</mi><mi>b</mi></mfrac>") + "</p>" +
+		"<p><math id=\"t\"><semantics><mi>x</mi>" +
 		"<annotation encoding=\"application/x-tex\">\\frac{1}{2}</annotation>" +
-		"</semantics></math>",
+		"</semantics></math></p>",
 	);
-	const [display, tex] = dom.document.querySelectorAll("math");
-	expect((display as HTMLElement).innerText).toBe("a/b");
-	expect((tex as HTMLElement).innerText).toBe("x");
+	const [display, tex] = dom.document.querySelectorAll("p");
+	expect(display.innerText).toBe("a/b");
+	expect(tex.innerText).toBe("x");
 	dom.dispose();
 });
 

@@ -1,6 +1,7 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
 import {CSS_SHORTHANDS} from "../src/generated/cssproperties.ts";
+import {getComputedValue} from "../src/internal/cssom.ts";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -658,12 +659,12 @@ test("an author's shorthand read does not poison the computed value", async () =
 	dom.document.body.appendChild(div);
 	await nextFrame(dom);
 
-	const declaration = dom.window.getComputedStyle(div) as any;
+	const declaration = dom.window.getComputedStyle(div);
 	// The author's read resolves the percentage against the containing block.
 	expect(declaration.margin).toBe("20px");
 	// The engine's read still answers what the cascade said.
-	expect(declaration.getComputedValue("margin")).toBe("50%");
-	expect(declaration.getComputedValue("margin-top")).toBe("50%");
+	expect(getComputedValue(div as never, "margin")).toBe("50%");
+	expect(getComputedValue(div as never, "margin-top")).toBe("50%");
 
 	dom.dispose();
 });

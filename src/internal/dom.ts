@@ -7181,6 +7181,9 @@ const kOwner = Symbol("owner");
 const kChildMember = Symbol("childMember");
 const kExact = Symbol("exact");
 const kItems = Symbol("items");
+const kListMembers = Symbol("listMembers");
+const kListNames = Symbol("listNames");
+const kChangedMembers = Symbol("changedMembers");
 const kRegistered = Symbol("registered at");
 const kDocumentWide = Symbol("over a whole document");
 const kWatched = Symbol("watched attribute");
@@ -7236,16 +7239,16 @@ abstract class LiveList implements LiveCollection {
 		this[kDocumentWide] = wide;
 	}
 
-	abstract compute(): Node[];
+	abstract [kListMembers](): Node[];
 
-	namedProperties(_items: Node[]): Map<string, Node> | null {
+	[kListNames](_items: Node[]): Map<string, Node> | null {
 		return null;
 	}
 
 	// The members the changed nodes carry, if the collection can determine
 	// that from those nodes alone and knows its named properties did not
 	// move. Null if the list has to be recomputed to find out.
-	getChangedMembers(changed: readonly Node[]): Node[] | null {
+	[kChangedMembers](changed: readonly Node[]): Node[] | null {
 		const member = this[kChildMember];
 		if (member === null) {
 			return null;
@@ -7300,7 +7303,7 @@ abstract class LiveList implements LiveCollection {
 				return;
 			}
 			if (changed !== null) {
-				const members = this.getChangedMembers(changed);
+				const members = this[kChangedMembers](changed);
 				if (members !== null && splice(this, point, changed, members, added)) {
 					return;
 				}
@@ -7329,7 +7332,7 @@ function dropList(list: LiveList): void {
 }
 
 function recomputeList(list: LiveList): void {
-	list[kItems] = list.compute();
+	list[kItems] = list[kListMembers]();
 	list[kExact] = true;
 	list[kMembersMoved]();
 	defineListProperties(list);
@@ -7423,7 +7426,7 @@ function defineListProperties(list: LiveList): void {
 		delete record[name];
 	}
 	list[kNames] = [];
-	const named = list.namedProperties(items);
+	const named = list[kListNames](items);
 	if (named !== null) {
 		for (const [name, node] of named) {
 			if (name === "" || Object.prototype.hasOwnProperty.call(list, name)) {
@@ -7518,7 +7521,7 @@ export class NodeList extends LiveList {
 		return ensureList(this).length;
 	}
 
-	override compute(): Node[] {
+	override [kListMembers](): Node[] {
 		return this[kCompute]();
 	}
 
@@ -7573,19 +7576,19 @@ class HTMLCollectionBase extends LiveList {
 		return ensureList(this).length;
 	}
 
-	override compute(): Node[] {
+	override [kListMembers](): Node[] {
 		return this[kCompute]();
 	}
 
-	override getChangedMembers(changed: readonly Node[]): Node[] | null {
-		const members = super.getChangedMembers(changed);
+	override [kChangedMembers](changed: readonly Node[]): Node[] | null {
+		const members = super[kChangedMembers](changed);
 		if (members === null || isNameless(members)) {
 			return members;
 		}
 		return null;
 	}
 
-	override namedProperties(items: Node[]): Map<string, Node> {
+	override [kListNames](items: Node[]): Map<string, Node> {
 		const named = new Map<string, Node>();
 		for (const item of items) {
 			const element = item as Element;
@@ -7778,7 +7781,7 @@ class MatchingCollection extends HTMLCollection {
 
 	// Runs the test over the changed subtree rather than over the tree it
 	// moved in or out of.
-	override getChangedMembers(changed: readonly Node[]): Node[] | null {
+	override [kChangedMembers](changed: readonly Node[]): Node[] | null {
 		const members: Node[] = [];
 		for (const node of changed) {
 			const elements = node.nodeType === ELEMENT_NODE
@@ -8019,11 +8022,11 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	}
 
 	// An attribute's tokens are not part of the tree's shape.
-	override getChangedMembers(): Node[] {
+	override [kChangedMembers](): Node[] {
 		return [];
 	}
 
-	override compute(): Node[] {
+	override [kListMembers](): Node[] {
 		const value = this[kElement].getAttribute(this[kAttribute]);
 		const tokens = value === null ? [] : splitOnASCIIWhitespace(value);
 		const ordered: string[] = [];
@@ -8941,15 +8944,15 @@ class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
 	}
 
 	// An element's attributes are not part of the tree's shape.
-	override getChangedMembers(): Node[] {
+	override [kChangedMembers](): Node[] {
 		return [];
 	}
 
-	override compute(): Node[] {
+	override [kListMembers](): Node[] {
 		return this[kElement][kAttributeList].slice();
 	}
 
-	override namedProperties(items: Node[]): Map<string, Node> {
+	override [kListNames](items: Node[]): Map<string, Node> {
 		const named = new Map<string, Node>();
 		const html =
 			this[kElement][kNamespace] === HTML_NAMESPACE &&
@@ -11903,15 +11906,6 @@ class MathMLElement extends Element {
 
 	set style(value: unknown) {
 		getInlineStyle(this).cssText = value == null ? "" : `${value}`;
-	}
-
-	// Not in the DOM standard, which puts innerText on HTMLElement only.
-	// A formula copied out of a terminal has to fit on one line, so a
-	// <math> element's innerText is its inline linearization.
-	get innerText(): string {
-		return this.localName === "math"
-			? linearizeMath(this as unknown as globalThis.Element)
-			: (this.textContent ?? "");
 	}
 
 	get attributeStyleMap(): globalThis.StylePropertyMap {
@@ -16253,7 +16247,7 @@ class HTMLFormControlsCollection
 		) as unknown as Element;
 	}
 
-	override namedProperties(items: Node[]): Map<string, Node> {
+	override [kListNames](items: Node[]): Map<string, Node> {
 		const counts = new Map<string, Node[]>();
 		for (const item of items) {
 			const element = item as Element;
@@ -26381,11 +26375,11 @@ class HTMLAllCollection extends LiveList {
 		return ensureList(this).length;
 	}
 
-	override compute(): Node[] {
+	override [kListMembers](): Node[] {
 		return getDescendantElements(this[kOwner] as Document, []);
 	}
 
-	override namedProperties(items: Node[]): Map<string, Node> {
+	override [kListNames](items: Node[]): Map<string, Node> {
 		const named = new Map<string, Node>();
 		for (const item of items) {
 			const element = item as Element;
@@ -33943,8 +33937,8 @@ function dropUnfocusableFocus(
 		node = flatParentElement(node)
 	) {
 		if (
-			node.hasAttribute("inert") || attached[kCascade]
-				.declarationFor(node as Element).getComputedValue("display") === "none"
+			node.hasAttribute("inert") ||
+			getComputedValue(node as Element, "display") === "none"
 		) {
 			(active as globalThis.HTMLElement).blur();
 			return;
