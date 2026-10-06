@@ -400,6 +400,19 @@ test(":required and :optional only speak of controls that can be required", () =
 	expect(ids(FORM, "input:optional")).toEqual(["in-legend", "in-body", "ro"]);
 });
 
+test(":required follows the types the required attribute applies to", () => {
+	const TYPES =
+		"<input id=box type=checkbox required>" +
+		"<input id=dot type=radio required>" +
+		"<input id=pick type=file required>" +
+		"<input id=odd type=nonsense required>" +
+		"<input id=slider type=range required>" +
+		"<input id=swatch type=color required>" +
+		"<input id=go type=submit required>";
+	expect(ids(TYPES, ":required")).toEqual(["box", "dot", "pick", "odd"]);
+	expect(ids(TYPES, ":optional")).toEqual([]);
+});
+
 test(":read-only and :read-write split on what the user may type into", () => {
 	expect(ids(FORM, "input:read-write")).toEqual(["in-legend", "plain"]);
 	expect(ids(FORM, "#ro:read-only")).toEqual(["ro"]);

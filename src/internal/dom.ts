@@ -23250,7 +23250,7 @@ const UNSUBMITTABLE_INPUT_TYPES = new Set([
 	"image",
 ]);
 
-const READONLY_INPUT_TYPES = new Set([
+export const READONLY_INPUT_TYPES = new Set([
 	"text",
 	"search",
 	"url",
@@ -23360,7 +23360,7 @@ function getValidityFlags(element: Element): ValidityFlags {
 	return flags;
 }
 
-const REQUIRED_INPUT_TYPES = new Set([
+export const REQUIRED_INPUT_TYPES = new Set([
 	"text",
 	"search",
 	"url",
