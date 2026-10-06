@@ -1,7 +1,7 @@
 /**
  * Byte-exact ANSI scenarios.
  *
- * Each scenario is a deterministic sequence of renderer calls whose emitted
+ * Each scenario is a deterministic sequence of framebuffer calls whose emitted
  * bytes are recorded in `fixtures/ansi-output.ts`. The recorded strings are
  * the contract: any change to the cell buffer, the diff, or the SGR emitter
  * that alters a single byte fails the fixture test.
@@ -50,8 +50,12 @@ const EVERY_ATTRIBUTE: Array<[string, CellStyle]> = [
 ];
 
 function attributeSweep(colorDepth: ColorDepth): string {
-	const renderer = new Framebuffer(EVERY_ATTRIBUTE.length + 2, 40, colorDepth);
-	return renderFrame(renderer, {offset: 0}, (ctx) => {
+	const framebuffer = new Framebuffer(
+		EVERY_ATTRIBUTE.length + 2,
+		40,
+		colorDepth,
+	);
+	return renderFrame(framebuffer, {offset: 0}, (ctx) => {
 		EVERY_ATTRIBUTE.forEach(([label, style], row) => {
 			ctx.drawText(label.padEnd(12), 0, row, style);
 			ctx.drawText("Sample", 14, row, style);
@@ -69,8 +73,8 @@ export const scenarios: Scenario[] = [
 		// separated by a row reset) never reaches.
 		name: "SGR delta across adjacent cells",
 		run: (): string => {
-			const renderer = new Framebuffer(4, 40, "rgb");
-			return renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(4, 40, "rgb");
+			return renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("AB", 0, 0, {bold: true, underline: true, fg: 0xff0000});
 				ctx.drawText("CD", 2, 0, {underline: true, fg: 0xff0000});
 				ctx.drawText("EF", 4, 0, {
@@ -91,8 +95,8 @@ export const scenarios: Scenario[] = [
 	{
 		name: "wide characters and combining marks",
 		run: (): string => {
-			const renderer = new Framebuffer(8, 30, "rgb");
-			return renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(8, 30, "rgb");
+			return renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("CJK 日本語 end", 0, 0);
 				ctx.drawText("emoji 👍🏽 end", 0, 1);
 				ctx.drawText("zwj 👨‍👩‍👧‍👦 end", 0, 2);
@@ -112,18 +116,18 @@ export const scenarios: Scenario[] = [
 		// that hole.
 		name: "wide-char boundary rewrite",
 		run: (): string => {
-			const renderer = new Framebuffer(4, 20, "rgb");
-			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(4, 20, "rgb");
+			let out = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("ab日本cd", 0, 0);
 				ctx.drawText("日本日本", 0, 1);
 			});
 			out += "|";
-			out += renderFrame(renderer, {offset: 0}, (ctx) => {
+			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("abxycd", 0, 0);
 				ctx.drawText("日xy日本", 0, 1);
 			});
 			out += "|";
-			out += renderFrame(renderer, {offset: 0}, (ctx) => {
+			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("ab日本cd", 0, 0);
 				ctx.drawText("日本日本", 0, 1);
 			});
@@ -133,8 +137,8 @@ export const scenarios: Scenario[] = [
 	{
 		name: "borders, merged and styled",
 		run: (): string => {
-			const renderer = new Framebuffer(9, 24, "rgb");
-			return renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(9, 24, "rgb");
+			return renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawBox(0, 0, 6, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
@@ -182,8 +186,8 @@ export const scenarios: Scenario[] = [
 	{
 		name: "drawRect backgrounds, default and inverse",
 		run: (): string => {
-			const renderer = new Framebuffer(6, 20, "rgb");
-			return renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(6, 20, "rgb");
+			return renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawRect(0, 0, 20, 2, 0x202020);
 				ctx.drawText("selected text", 1, 0);
 				ctx.drawRect(1, 0, 8, 1, "inverse");
@@ -200,8 +204,8 @@ export const scenarios: Scenario[] = [
 		// cell.
 		name: "inherited background and zero-width graphemes",
 		run: (): string => {
-			const renderer = new Framebuffer(5, 20, "rgb");
-			return renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(5, 20, "rgb");
+			return renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawRect(0, 0, 12, 1, 0x004000);
 				ctx.drawText("over", 2, 0, {fg: 0xffff00, bold: true});
 				ctx.drawRect(0, 1, 12, 1, 0x400000);
@@ -218,8 +222,8 @@ export const scenarios: Scenario[] = [
 		// axis bounds the write.
 		name: "clip rect with unbounded axes",
 		run: (): string => {
-			const renderer = new Framebuffer(6, 24, "rgb");
-			return renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(6, 24, "rgb");
+			return renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.clipRect = {left: 4, top: -Infinity, right: 12, bottom: Infinity};
 				ctx.drawText("horizontally bounded", 0, 0);
 				ctx.clipRect = {left: -Infinity, top: 2, right: Infinity, bottom: 4};
@@ -235,18 +239,18 @@ export const scenarios: Scenario[] = [
 		// widths it recorded, so the number is a property of the buffer.
 		name: "wrapped rows above the cursor park",
 		run: (): string => {
-			const renderer = new Framebuffer(4, 20, "rgb");
-			renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(4, 20, "rgb");
+			renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("a short line", 0, 0);
 				ctx.drawText("日本語 wide and long", 0, 1);
 				ctx.drawText("x", 0, 2);
 				ctx.drawText("last", 0, 3);
 			});
 			const before = [20, 10, 7, 5].map((cols) =>
-				renderer.wrappedRowsAbovePark(cols),
+				framebuffer.wrappedRowsAbovePark(cols),
 			);
 			// A caret park moves the measurement point.
-			renderFrame(renderer, {offset: 0}, (ctx) => {
+			renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("a short line", 0, 0);
 				ctx.drawText("日本語 wide and long", 0, 1);
 				ctx.drawText("x", 0, 2);
@@ -254,7 +258,7 @@ export const scenarios: Scenario[] = [
 				ctx.setCaret(3, 1);
 			});
 			const after = [20, 10, 7, 5].map((cols) =>
-				renderer.wrappedRowsAbovePark(cols),
+				framebuffer.wrappedRowsAbovePark(cols),
 			);
 			return JSON.stringify({before, after});
 		},
@@ -262,8 +266,8 @@ export const scenarios: Scenario[] = [
 	{
 		name: "drawDecoration outline over existing cells",
 		run: (): string => {
-			const renderer = new Framebuffer(5, 20, "rgb");
-			return renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(5, 20, "rgb");
+			return renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("boxed", 0, 1, {fg: 0xff0000, bold: true});
 				ctx.drawDecoration(0, 1, 12, {underline: true, fg: 0x5fafff});
 				ctx.drawText("over", 0, 3, {italic: true});
@@ -274,15 +278,15 @@ export const scenarios: Scenario[] = [
 	{
 		name: "incremental diff across frames",
 		run: (): string => {
-			const renderer = new Framebuffer(6, 24, "rgb");
-			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(6, 24, "rgb");
+			let out = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				for (let row = 0; row < 6; row++) {
 					ctx.drawText(`row ${row} content`, 0, row);
 				}
 			});
 			out += "|";
 			// One cell changes.
-			out += renderFrame(renderer, {offset: 0}, (ctx) => {
+			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				for (let row = 0; row < 6; row++) {
 					ctx.drawText(
 						row === 3 ? "row X content" : `row ${row} content`,
@@ -293,7 +297,7 @@ export const scenarios: Scenario[] = [
 			});
 			out += "|";
 			// Nothing changes.
-			out += renderFrame(renderer, {offset: 0}, (ctx) => {
+			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				for (let row = 0; row < 6; row++) {
 					ctx.drawText(
 						row === 3 ? "row X content" : `row ${row} content`,
@@ -304,7 +308,7 @@ export const scenarios: Scenario[] = [
 			});
 			out += "|";
 			// Content shrinks, leaving stale rows to clear.
-			out += renderFrame(renderer, {offset: 0}, (ctx) => {
+			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("row 0 content", 0, 0);
 			});
 			return out;
@@ -313,7 +317,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "scroll transform frames",
 		run: (): string => {
-			const renderer = new Framebuffer(10, 24, "rgb");
+			const framebuffer = new Framebuffer(10, 24, "rgb");
 			const paint = (top: number) => (ctx: CellContext) => {
 				for (let row = 0; row < 10; row++) {
 					ctx.drawText(`line ${top + row}`.padEnd(12), 0, row, {
@@ -322,26 +326,26 @@ export const scenarios: Scenario[] = [
 				}
 			};
 			let out = renderFrame(
-				renderer,
+				framebuffer,
 				{offset: 0, cursorRow: 0, regionRows: 10},
 				paint(0),
 			);
 			out += "|";
 			out += renderFrame(
-				renderer,
+				framebuffer,
 				{offset: 0, cursorRow: 0, regionRows: 10, delta: 3},
 				paint(3),
 			);
 			out += "|";
 			out += renderFrame(
-				renderer,
+				framebuffer,
 				{offset: 0, cursorRow: 0, regionRows: 10, delta: -2},
 				paint(1),
 			);
 			out += "|";
 			// Delta zero: a plain repaint with no terminal scroll.
 			out += renderFrame(
-				renderer,
+				framebuffer,
 				{offset: 0, cursorRow: 0, regionRows: 10, delta: 0},
 				paint(1),
 			);
@@ -351,9 +355,9 @@ export const scenarios: Scenario[] = [
 	{
 		name: "overflowing growth frame then reset",
 		run: (): string => {
-			const renderer = new Framebuffer(5, 20, "rgb");
+			const framebuffer = new Framebuffer(5, 20, "rgb");
 			let out = renderFrame(
-				renderer,
+				framebuffer,
 				{offset: 0, cursorRow: 0, regionRows: 9},
 				(ctx) => {
 					for (let row = 0; row < 9; row++) {
@@ -362,13 +366,13 @@ export const scenarios: Scenario[] = [
 				},
 			);
 			out += "|";
-			renderer.replaced(2);
-			out += renderFrame(renderer, {offset: 0}, (ctx) => {
+			framebuffer.replaced(2);
+			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("after reset", 0, 0);
 			});
 			out += "|";
-			renderer.repaintAll();
-			out += renderFrame(renderer, {offset: 0}, (ctx) => {
+			framebuffer.repaintAll();
+			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("after clear", 0, 0);
 			});
 			return out;
@@ -377,19 +381,19 @@ export const scenarios: Scenario[] = [
 	{
 		name: "caret parking",
 		run: (): string => {
-			const renderer = new Framebuffer(6, 20, "rgb");
-			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
+			const framebuffer = new Framebuffer(6, 20, "rgb");
+			let out = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("value", 0, 0);
 				ctx.setCaret(5, 0);
 			});
 			out += "|";
-			out += renderFrame(renderer, {offset: 0}, (ctx) => {
+			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("value!", 0, 0);
 				ctx.setCaret(6, 0);
 			});
 			out += "|";
 			// Caret goes away: the frame still emits, to re-park the cursor.
-			out += renderFrame(renderer, {offset: 0}, (ctx) => {
+			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("value!", 0, 0);
 			});
 			return out;
@@ -398,8 +402,8 @@ export const scenarios: Scenario[] = [
 	{
 		name: "clipRect and viewport offset",
 		run: (): string => {
-			const renderer = new Framebuffer(8, 24, "rgb");
-			return renderFrame(renderer, {offset: 2}, (ctx) => {
+			const framebuffer = new Framebuffer(8, 24, "rgb");
+			return renderFrame(framebuffer, {offset: 2}, (ctx) => {
 				ctx.drawText("visible row", 0, 0);
 				ctx.clipRect = {left: 2, top: 1, right: 10, bottom: 3};
 				ctx.drawText("clipped horizontally", 0, 1);
@@ -419,8 +423,8 @@ export const scenarios: Scenario[] = [
 	{
 		name: "static render to a pipe",
 		run: (): string => {
-			const renderer = new Framebuffer(6, 30, "rgb");
-			let out = renderStatic(renderer, {rows: 5}, (ctx) => {
+			const framebuffer = new Framebuffer(6, 30, "rgb");
+			let out = renderStatic(framebuffer, {rows: 5}, (ctx) => {
 				ctx.drawText("plain", 0, 0);
 				ctx.drawText("styled", 0, 1, {fg: 0xff0000, bold: true});
 				ctx.drawText("日本語 wide", 0, 2);
@@ -433,7 +437,7 @@ export const scenarios: Scenario[] = [
 				ctx.drawText("👍 tail", 10, 3);
 			});
 			out += "|";
-			out += renderStatic(renderer, {rows: 2, lineEnding: "\r\n"}, (ctx) => {
+			out += renderStatic(framebuffer, {rows: 2, lineEnding: "\r\n"}, (ctx) => {
 				ctx.drawText("crlf", 0, 0);
 				ctx.drawText("lines", 0, 1);
 			});
