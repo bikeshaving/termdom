@@ -3,13 +3,10 @@ import type {ColorDepth, Exchange} from "./exchange.ts";
 import {
 	getStringWidth,
 	graphemeSegmenter,
+	isControlByte,
 	isWidthUncertain,
 	PRINTABLE_ASCII,
 } from "./text.ts";
-
-function isControlByte(code: number): boolean {
-	return code < 0x20 || (code >= 0x7f && code < 0xa0);
-}
 
 function rgbTo256(color: number): number {
 	const r = (color >> 16) & 0xff;
