@@ -3,7 +3,7 @@
  *
  * "2d" rasterizes into a bitmap that is shown two pixels a cell, like an
  * image; most tests read the bitmap back with getImageData(), which is
- * exact, and a few read the painted cells. "charactergrid" writes cells
+ * exact, and a few read the painted cells. "termdom-chargrid" writes cells
  * directly, and its tests read the cells.
  *
  * A canvas shows at its pixel size over the cell size, 8 by 16 until
@@ -12,7 +12,7 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/index.ts";
+import {CanvasCharGridContext, TermDOM} from "../src/index.ts";
 import {createImageBitmapFrom, ImageBitmap} from "../src/internal/canvas.ts";
 import {decodeImage, encodePNG} from "../src/internal/images.ts";
 import {MockProcess, nextFrame, until} from "./test-utils.ts";
@@ -77,14 +77,15 @@ test("getContext hands back one context per canvas, and null for the rest", asyn
 	expect(ctx).not.toBeNull();
 	expect(a.getContext("2d")).toBe(ctx);
 	expect(ctx!.canvas).toBe(a);
-	expect(a.getContext("charactergrid" as "2d")).toBeNull();
+	expect(a.getContext("termdom-chargrid" as "2d")).toBeNull();
 	expect(a.getContext("webgl")).toBeNull();
 	expect(b.getContext("bitmaprenderer")).toBeNull();
-	const grid = b.getContext("charactergrid" as "2d");
+	const grid = b.getContext("termdom-chargrid" as "2d");
 	expect(grid).not.toBeNull();
 	expect(b.getContext("2d")).toBeNull();
 	expect(ctx).toBeInstanceOf((dom.window as any).CanvasRenderingContext2D);
-	expect(grid).toBeInstanceOf((dom.window as any).CanvasCharacterGridContext);
+	expect(grid).toBeInstanceOf(CanvasCharGridContext);
+	expect("CanvasCharGridContext" in dom.window).toBe(false);
 	dom.dispose();
 });
 
@@ -597,14 +598,14 @@ test("a canvas stretched by CSS scales its pixels to the box", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// charactergrid
+// chargrid
 
 function grid(document: Document, id = "g"): any {
 	return (document.getElementById(id) as HTMLCanvasElement)
-		.getContext("charactergrid" as "2d");
+		.getContext("termdom-chargrid" as "2d");
 }
 
-test("a charactergrid canvas is width columns by height rows of cells", async () => {
+test("a chargrid canvas is width columns by height rows of cells", async () => {
 	const {dom, document} =
 		await mount("<canvas id=g width=12 height=3></canvas>");
 	const ctx = grid(document);
@@ -707,7 +708,7 @@ test("drawImage draws pixels into cells, two a cell", async () => {
 	dom.dispose();
 });
 
-test("resizing a charactergrid canvas resizes and clears its grid", async () => {
+test("resizing a chargrid canvas resizes and clears its grid", async () => {
 	const {dom, document} =
 		await mount("<canvas id=g width=4 height=1></canvas>");
 	const canvas = document.getElementById("g") as HTMLCanvasElement;
@@ -922,7 +923,7 @@ test("ImageData past the pixel limit throws, and so does getImageData", async ()
 	dom.dispose();
 });
 
-test("a charactergrid samples only the cells an image lands on, however large", async () => {
+test("a chargrid samples only the cells an image lands on, however large", async () => {
 	const {dom, document} = await mount(
 		"<canvas id=g width=4 height=2></canvas><canvas id=src width=2 height=2></canvas>",
 	);

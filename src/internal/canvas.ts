@@ -1,6 +1,6 @@
 /**
  * <canvas> contexts: "2d", a pixel bitmap drawn into cells two pixels
- * at a time, and "charactergrid", a grid of cells written directly.
+ * at a time, and "termdom-chargrid", a grid of cells written directly.
  *
  * The 2d context rasterizes in software into an RGBA bitmap: paths with
  * the nonzero and even-odd rules, strokes with joins, caps and dashes,
@@ -9,7 +9,7 @@
  * 2d context draws stays text: it is painted as cells over the pixels,
  * at the cell its anchor falls in.
  *
- * The charactergrid context is for drawing in cells, the way terminal
+ * The chargrid context is for drawing in cells, the way terminal
  * programs draw: one glyph, one color and one background a cell.
  */
 import {parseColor, toCellColor} from "./cssvalues.ts";
@@ -2940,7 +2940,7 @@ export function canvasToPNG(bitmap: Bitmap): Uint8Array {
 }
 
 // ---------------------------------------------------------------------------
-// The charactergrid context.
+// The chargrid context.
 
 /** What the grid context needs from its canvas. */
 interface GridHost {
@@ -2963,7 +2963,7 @@ const kTextAlign = Symbol("textAlign");
 const kTextDecoration = Symbol("textDecoration");
 const kRect = Symbol("rect");
 
-export interface CanvasCharacterGridContext {
+export interface CanvasCharGridContext {
 	[kGridHost]: GridHost;
 	[kFillStyle]: string;
 	[kGridStrokeStyle]: string;
@@ -2975,7 +2975,7 @@ export interface CanvasCharacterGridContext {
 }
 
 /**
- * getContext("charactergrid"): the canvas as `width` columns by `height`
+ * getContext("termdom-chargrid"): the canvas as `width` columns by `height`
  * rows of cells. fillText() writes glyphs in the fill color over the
  * cells' backgrounds, fillRect() fills cells' backgrounds, strokeLine()
  * and strokeRect() draw box-drawing lines that join where they meet,
@@ -2983,7 +2983,7 @@ export interface CanvasCharacterGridContext {
  * cells. Coordinates are cells. Colors are any CSS color, and
  * `currentcolor`, the default, is the terminal's own foreground.
  */
-export class CanvasCharacterGridContext {
+export class CanvasCharGridContext {
 	constructor(host: GridHost) {
 		this[kGridHost] = host;
 		this[kFillStyle] = "currentcolor";

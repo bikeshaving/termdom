@@ -261,16 +261,20 @@ document.body.append(canvas);
 
 Drawing repaints the canvas on the next frame. No DOM change is needed.
 
-### `"charactergrid"`
+### `"termdom-chargrid"`
 
 The character grid context draws cells instead of pixels. The canvas is
-`width` columns by `height` rows, and that is its natural size.
+`width` columns by `height` rows, and that is its natural size. It is
+TermDOM's own, so its name carries TermDOM's prefix, as a browser's own
+context types once carried theirs (`"moz-webgl"`, `"webkit-3d"`). Its
+interface is not on `window`. The `termdom` package exports it as
+`CanvasCharGridContext`.
 
 ```ts
 const canvas = document.createElement("canvas");
 canvas.width = 20;
 canvas.height = 3;
-const grid = canvas.getContext("charactergrid");
+const grid = canvas.getContext("termdom-chargrid");
 grid.fillStyle = "#003366";
 grid.fillRect(0, 0, 20, 3);
 grid.fillStyle = "#ffcc00";
