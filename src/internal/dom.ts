@@ -35095,8 +35095,8 @@ export class Window extends EventTarget {
 		return this;
 	}
 
-	// The terminal is the screen. Color depth is what a truecolor terminal
-	// shows; the engine does not read the terminal's actual depth.
+	// The terminal is the screen: its size is the window's, and its color
+	// depth is the one frames are drawn at.
 	get screen(): globalThis.Screen {
 		let screen = this[kScreenInfo];
 		if (screen === undefined) {

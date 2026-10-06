@@ -1883,7 +1883,7 @@ export class Screen {
 		};
 	}
 
-	/** The colors the terminal draws: true color, 256 or 16. */
+	/** The colors the terminal draws: true color, 256 or 8. */
 	get colorDepth(): ColorDepth {
 		return this[kWriter][kColorDepth];
 	}

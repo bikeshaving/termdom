@@ -8269,7 +8269,7 @@ const MEDIA_DISCRETE_FEATURES: Record<
 		falsy: "none",
 		value: () => "scroll",
 	},
-	// Only true color reaches sRGB; a palette of 256 or 16 matches none.
+	// Only true color reaches sRGB; a palette of 256 or 8 matches none.
 	"color-gamut": {
 		values: ["srgb", "p3", "rec2020"],
 		falsy: "",
