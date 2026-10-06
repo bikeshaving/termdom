@@ -1017,9 +1017,13 @@ export class Exchange extends EventTarget {
 		return this[kTerminalBackground];
 	}
 
-	/** What the terminal said of its background, once it has. */
-	get colorScheme(): "light" | "dark" | null {
-		return this[kColorScheme];
+	/**
+	 * Whether the terminal's background is light or dark: what the terminal
+	 * said, or before it has, what the transport knows, and light without
+	 * either.
+	 */
+	get colorScheme(): "light" | "dark" {
+		return this[kColorScheme] ?? this[kTransport].colorScheme ?? "light";
 	}
 
 	/**
