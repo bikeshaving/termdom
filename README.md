@@ -26,8 +26,6 @@ document.body.innerHTML = `
     .card { border: 1px solid #5fafff; padding: 0 1ch; width: 36ch; }
     .title { color: #5fafff; font-weight: bold; }
     progress { width: 25ch; }
-    progress::slider-fill { color: green; }
-    progress::slider-track { color: #444; }
     .pct { color: #888; }
   </style>
   <div class="card">

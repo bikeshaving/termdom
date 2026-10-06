@@ -7064,15 +7064,6 @@ const PART_PSEUDOS: Readonly<Record<string, Readonly<Record<string, string>>>> =
 			selection: "::selection",
 			"details-content": "::details-content",
 		},
-		INPUT: {value: "::field-content"},
-		METER: {
-			track: "::slider-track",
-			bar: "::slider-fill",
-			optimum: "::-termdom-meter-optimum-value",
-			suboptimum: "::-termdom-meter-suboptimum-value",
-			"even-less-good": "::-termdom-meter-even-less-good-value",
-		},
-		PROGRESS: {track: "::slider-track", bar: "::slider-fill"},
 		SELECT: {picker: "::picker(select)", indicator: "::picker-icon"},
 	};
 
