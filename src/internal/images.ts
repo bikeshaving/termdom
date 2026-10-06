@@ -2037,7 +2037,7 @@ export type ReplacedContent =
 	// A canvas not drawn on yet: its size, and nothing to paint.
 	{kind: "blank"; width: number; height: number} |
 	{kind: "grid"; grid: CellGrid; version: number} |
-	{kind: "text"; text: string} |
+	{kind: "text"; text: string; loading: boolean} |
 	null;
 
 const replacedSources = new WeakMap<object, () => ReplacedContent>();

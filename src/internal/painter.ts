@@ -40,7 +40,6 @@ import {
 	parseLinearGradient,
 	renderGradient,
 } from "./gradients.ts";
-import {isReplacedElement} from "./images.ts";
 import {
 	applyTextTransform,
 	type Box,
@@ -64,7 +63,7 @@ import {
 	isMathRoot,
 	type MathCell,
 } from "./mathml.ts";
-import {renderReplaced} from "./replaced.ts";
+import {isReplacedBox, renderReplaced} from "./replaced.ts";
 import {getStringWidth} from "./text.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
@@ -701,7 +700,7 @@ function paintBlock(
 		afterOwnBox();
 	}
 
-	if (isReplacedElement(element)) {
+	if (isReplacedBox(element)) {
 		paintReplaced(element, style, rect, ctx);
 		paintOutline(painter, element, style, rect, ctx);
 		return;
@@ -1309,7 +1308,7 @@ function paintAtomic(
 	}
 	paintCaret(painter, element, style, ctx);
 
-	if (isReplacedElement(element)) {
+	if (isReplacedBox(element)) {
 		paintReplaced(element, style, rect, ctx);
 		paintOutline(painter, element, style, rect, ctx);
 		return;

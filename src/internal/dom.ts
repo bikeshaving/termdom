@@ -105,8 +105,9 @@ function ensureUAShadowTree(element: globalThis.Element): void {
 }
 
 // Built-in tags that get a UA shadow tree when they connect.
-const UPGRADEABLE_CONTROLS = new Set([
+const UA_SHADOW_HOSTS = new Set([
 	"DETAILS",
+	"IMG",
 	"INPUT",
 	"METER",
 	"PROGRESS",
@@ -136,7 +137,7 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 	const stack: Element[] = [root as Element];
 	while (stack.length > 0) {
 		const element = stack.pop()!;
-		if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
+		if (UA_SHADOW_HOSTS.has(element.tagName)) {
 			ensureUAShadowTree(element);
 		}
 		for (let node = element[kFirstChild]; node !== null; node = node[kNext]) {
@@ -14371,8 +14372,14 @@ function invalidateReplaced(element: Element, reflow: boolean): void {
 	if (attached === undefined || !element.isConnected) {
 		return;
 	}
+	ensureUAShadowTree(element);
 	if (reflow) {
 		attached[kLayout].invalidate(element);
+		// Whether an image is a box or a run of text can change with it.
+		const parent = flatParentElement(element);
+		if (parent !== null) {
+			attached[kLayout].invalidate(parent as unknown as Node);
+		}
 	}
 	attached[kFramebuffer].invalidate();
 	void attached[kRender]();
@@ -16573,6 +16580,7 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 // rejects. The width and height an author reads are the attributes,
 // which is what the spec returns for an image that is not rendered.
 const kImageState = Symbol("imageState");
+const kAltText = Symbol("altText");
 
 interface ImageState {
 	// HTML's image request states.
@@ -16658,9 +16666,11 @@ class HTMLImageElement extends HTMLElement {
 	declare useMap: globalThis.HTMLImageElement["useMap"];
 	declare vspace: globalThis.HTMLImageElement["vspace"];
 	[kImageState]: ImageState;
+	[kAltText]: Text | null;
 
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
+		this[kAltText] = null;
 		this[kImageState] = {
 			status: "unavailable",
 			url: "",
@@ -16681,15 +16691,18 @@ class HTMLImageElement extends HTMLElement {
 					smooth: true,
 				};
 			}
-			// An image not showing, whether loading, broken or blocked, is a
-			// box with its alt text. An empty alt marks one that is only
-			// decoration, and with no source and no alt there is nothing to
-			// stand in for: both show nothing.
+			// An empty alt marks an image that is only decoration, and with
+			// no source and no alt there is nothing to stand in for: both
+			// show nothing.
 			const alt = this.getAttribute("alt");
 			if (alt === "" || (alt === null && state.status === "unavailable")) {
 				return null;
 			}
-			return {kind: "text", text: alt ?? ""};
+			return {
+				kind: "text",
+				text: alt ?? "",
+				loading: state.status === "loading",
+			};
 		});
 		registerDrawable(this, () => {
 			const state = this[kImageState];
@@ -16768,6 +16781,31 @@ class HTMLImageElement extends HTMLElement {
 		);
 	}
 
+	// An image that is not showing and has alt text lays out as that text,
+	// as an inline element would, unless HTML's rendering rules keep it a
+	// box. Its UA shadow tree holds the text, built the first time it can
+	// be needed.
+	[kEnsureUAShadowTree]?(): void {
+		const alt = this.getAttribute("alt") ?? "";
+		const text = this[kAltText];
+		if (text !== null) {
+			if (text.data !== alt) {
+				text.data = alt;
+			}
+			return;
+		}
+		if (alt === "" || this[kImageState].bitmap !== null) {
+			return;
+		}
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
+			return;
+		}
+		const root = buildUAShadowTree(this, attached);
+		this[kAltText] = this[kDocument].createTextNode(alt) as unknown as Text;
+		root.appendChild(this[kAltText] as unknown as globalThis.Text);
+	}
+
 	override [kInsertionSteps](): void {
 		super[kInsertionSteps]();
 		if (this[kImageState].pending) {
@@ -16800,8 +16838,8 @@ class HTMLImageElement extends HTMLElement {
 		}
 		if (localName === "src" || localName === "srcset") {
 			updateImageData(this);
-		} else if (localName === "alt" && this[kImageState].status !== "complete") {
-			invalidateReplaced(this, true);
+		} else if (localName === "alt") {
+			invalidateReplaced(this, this[kImageState].status !== "complete");
 		}
 	}
 }
@@ -16910,7 +16948,7 @@ function updateImageData(image: HTMLImageElement): void {
 	// The current image stays up until the new one is ready, so swapping
 	// a src does not collapse the box in between.
 	state.status = "loading";
-	invalidateReplaced(image, false);
+	invalidateReplaced(image, true);
 	const abort = state.abort = new AbortController();
 	const document = image.ownerDocument;
 	// As HTML's "update the image data" does, the request waits for the
