@@ -65,17 +65,36 @@ because a terminal without 24-bit color can show a 24-bit color as
 something else, such as hidden text.
 
 Some terminals have 24-bit color but do not say so, among them
-Alacritty, Konsole and VS Code's terminal. A program that knows it runs
-in one can set the option:
+Alacritty, Konsole and VS Code's terminal. Most of them set the
+`COLORTERM` environment variable to `truecolor`. TermDOM does not read
+the environment, but a program can, and pass what it finds:
 
 ```ts
-new TermDOM({
-	transport: transportFromProcess(process, {colorDepth: "rgb"}),
+const truecolor =
+	process.env.COLORTERM === "truecolor" || process.env.COLORTERM === "24bit";
+const term = new TermDOM({
+	transport: transportFromProcess(process, {
+		colorDepth: truecolor ? "rgb" : undefined,
+	}),
 });
 ```
 
-A page can check for `"rgb"` with the `color-gamut` media query, and for
-`"256"` with `(color-index: 256)`.
+Left `undefined`, the option falls back to asking the terminal.
+
+A page can style for each depth with media queries: `color-gamut`
+matches `"rgb"`, and `(color-index: 256)` matches `"256"`.
+
+```css
+.banner { background: navy; }
+
+@media (color-gamut: srgb) {
+	.banner { background: linear-gradient(to right, #1e3a8a, #9333ea); }
+}
+
+@media (color-index: 256) {
+	.banner { background: #5f00af; }
+}
+```
 
 ## Text attributes
 
