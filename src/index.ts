@@ -19,6 +19,8 @@ import {
 	flushLayout,
 	flushObservers,
 	getCellSizeSetting,
+	getGraphicsSetting,
+	type GraphicsSetting,
 	hasFrameCallbacks,
 	hoverListenerCount,
 	relayoutReplacedElements,
@@ -122,6 +124,33 @@ export interface TermDOMOptions {
 	 * no directives, sets no policy and allows every load.
 	 */
 	csp?: string;
+
+	/**
+	 * How the document draws pixels, for an <img> and a canvas's "2d"
+	 * context.
+	 *
+	 * - `true` (the default): the best way the terminal has. Today that is
+	 *   cells: two pixels to a cell in half blocks, which every terminal
+	 *   shows.
+	 * - `"cells"`: cells, whatever else the terminal could do.
+	 * - `false`: no pixels. An <img> loads nothing and shows its alt text,
+	 *   as HTML renders one when images are disabled, and
+	 *   `getContext("2d")` returns null, so a canvas shows its fallback
+	 *   content.
+	 */
+	graphics?: boolean | "cells";
+}
+
+function toGraphicsSetting(
+	option: TermDOMOptions["graphics"],
+): GraphicsSetting {
+	if (option === undefined || option === true || option === "cells") {
+		return "cells";
+	}
+	if (option === false) {
+		return false;
+	}
+	throw new TypeError('graphics must be true, false or "cells"');
 }
 
 const DEFAULT_CONTENT_SECURITY_POLICY = "default-src 'none'";
@@ -254,6 +283,7 @@ export class TermDOM extends EventTarget {
 	constructor(options: TermDOMOptions = {}) {
 		super();
 		const cellSize = toCellSizeSetting(options.cellSize);
+		const graphics = toGraphicsSetting(options.graphics);
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -362,6 +392,7 @@ export class TermDOM extends EventTarget {
 			exchange: this[kExchange],
 			framebuffer: this[kFramebuffer],
 			cellSize,
+			graphics,
 			load: (request, context) =>
 				answerRequest(this, document, request, context, requestPolicy),
 			loadSignal: this[kLoads].signal,
@@ -1239,10 +1270,12 @@ function renderStaticHTML(
 	const cols = termDOM[kTransport].cols;
 	const cell = getCellSize(termDOM.document);
 	const colorDepth = termDOM[kFramebuffer].colorDepth;
+	const graphics = getGraphicsSetting(termDOM.document)!;
 	if (
 		termDOM[kStaticSibling] &&
 		(termDOM[kStaticSibling][kFramebuffer].cols !== cols ||
 			termDOM[kStaticSibling][kFramebuffer].colorDepth !== colorDepth ||
+			getGraphicsSetting(termDOM[kStaticSibling].document) !== graphics ||
 			!isSameCell(getCellSize(termDOM[kStaticSibling].document), cell))
 	) {
 		void termDOM[kStaticSibling].dispose();
@@ -1250,6 +1283,7 @@ function renderStaticHTML(
 	}
 	termDOM[kStaticSibling] ??= new TermDOM({
 		cellSize: cell === UNIT_CELL ? "unit" : cell,
+		graphics,
 		transport: {
 			cols,
 			rows: DEFAULT_ROWS,

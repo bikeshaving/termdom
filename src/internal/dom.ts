@@ -326,6 +326,7 @@ const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kFramebuffer = Symbol("framebuffer");
 const kCellSize = Symbol("cellSize");
+const kGraphics = Symbol("graphics");
 const kLoad = Symbol("load");
 const kLoadSignal = Symbol("loadSignal");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
@@ -14526,6 +14527,11 @@ class HTMLCanvasElement extends HTMLElement {
 			}
 		};
 		if (id === "2d") {
+			// A document that draws no pixels has no 2d context, and the
+			// canvas shows its fallback content.
+			if (getAttachedDocument(this)?.[kGraphics] === false) {
+				return null;
+			}
 			this[kCanvasContext] = new CanvasRenderingContext2D({
 				canvas: this,
 				bitmap: () => getCanvasBitmap(this),
@@ -16923,8 +16929,10 @@ function updateImageData(image: HTMLImageElement): void {
 		(srcset !== null && srcset.trim() !== "" ? pickSourceSet(srcset) : null) ??
 		src;
 	state.pending = false;
-	if (chosen === null) {
-		// No source at all: nothing to load and nothing to report.
+	// No source, or images disabled, as HTML's "update the image data"
+	// puts it: the request ends unavailable with nothing to report, and the
+	// image shows its alt text.
+	if (chosen === null || getAttachedDocument(image)?.[kGraphics] === false) {
 		state.status = "unavailable";
 		state.url = "";
 		state.bitmap = null;
@@ -24842,6 +24850,8 @@ export interface Document {
 	[kFramebuffer]: Framebuffer;
 	// The program's cellSize option, which getCellSize reads.
 	[kCellSize]: CellSizeSetting;
+	// How the document draws pixels, or false when it draws none.
+	[kGraphics]: GraphicsSetting;
 	[kLoad]: ResourceLoader;
 	[kLoadSignal]: AbortSignal;
 	// Where an exception the page let escape goes once the window's error
@@ -33617,12 +33627,16 @@ export function syncMediaQueries(document: globalThis.Document): void {
 }
 
 /** What a TermDOM hands the document it draws. */
+/** How pixels reach the terminal, or false for not at all. */
+export type GraphicsSetting = "cells" | false;
+
 export interface DocumentEngine {
 	layout: Layout;
 	cascade: Cascade;
 	exchange: Exchange;
 	framebuffer: Framebuffer;
 	cellSize: CellSizeSetting;
+	graphics: GraphicsSetting;
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
 	// Aborts when the TermDOM is disposed, and the document's loads with it.
@@ -33643,7 +33657,7 @@ export function attachDocument(
 	if (attached[kExchange] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
-	const {layout, cascade, exchange, framebuffer, cellSize} = engine;
+	const {layout, cascade, exchange, framebuffer, cellSize, graphics} = engine;
 	const render = () => engine.render();
 	attached[kRender] = render;
 	attached[kReportUncaught] = (error) => engine.reportUncaught(error);
@@ -33655,6 +33669,7 @@ export function attachDocument(
 	attached[kExchange] = exchange;
 	attached[kFramebuffer] = framebuffer;
 	attached[kCellSize] = cellSize;
+	attached[kGraphics] = graphics;
 	attached[kPendingCaretReveal] = null;
 	attached[kPendingEditingReveal] = null;
 	for (const type of ["input", "select", "change", "selectionchange"]) {
@@ -34118,6 +34133,7 @@ type AttachedDocument =
 		[kExchange]: Exchange;
 		[kFramebuffer]: Framebuffer;
 		[kCellSize]: CellSizeSetting;
+		[kGraphics]: GraphicsSetting;
 		[kLoad]: ResourceLoader;
 		[kLoadSignal]: AbortSignal;
 		[kReportUncaught]: (error: unknown) => void;
@@ -34133,6 +34149,13 @@ function getAttachedDocument(
 	return document !== null && document[kExchange] !== undefined
 		? (document as AttachedDocument)
 		: undefined;
+}
+
+/** The graphics option of the TermDOM drawing the node's document. */
+export function getGraphicsSetting(
+	node: globalThis.Node,
+): GraphicsSetting | undefined {
+	return getAttachedDocument(node)?.[kGraphics];
 }
 
 /** The cellSize option of the TermDOM drawing the node's document. */

@@ -718,6 +718,40 @@ test("in quirks mode, an image with a size that will not show is a box", async (
 	dom.dispose();
 });
 
+test("with graphics off, an image loads nothing and shows its alt text", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		csp: "",
+		graphics: false,
+	});
+	let fetched = 0;
+	dom.addEventListener("fetch", () => {
+		fetched++;
+	});
+	const events: string[] = [];
+	const image = dom.document.createElement("img");
+	image.addEventListener("load", () => events.push("load"));
+	image.addEventListener("error", () => events.push("error"));
+	image.alt = "cover art";
+	image.src = "https://example.com/a.png";
+	dom.document.body.append("[", image, "]");
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(fetched).toBe(0);
+	expect(events).toEqual([]);
+	expect(image.complete).toBe(false);
+	expect(rowText(terminal, 0)).toBe("[cover art]");
+	dom.dispose();
+});
+
+test("graphics is true, false or \"cells\"", () => {
+	for (const graphics of [true, false, "cells"] as const) {
+		new TermDOM({transport: new MockProcess().transport, graphics}).dispose();
+	}
+	expect(() => new TermDOM({graphics: "kitty" as "cells"})).toThrow(TypeError);
+});
+
 test("an image is a box while it loads only when it has a size", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({
