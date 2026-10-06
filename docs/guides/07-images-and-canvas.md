@@ -192,6 +192,18 @@ and that image fails; the images behind it still decode.
 The worker ends a second after its last decode, and when the last
 TermDOM is disposed, so it never keeps a finished program running.
 
+On a Node without the flag, a program can supply a `Worker` itself.
+TermDOM uses whatever global `Worker` there is, so the
+[`@b9g/node-webworker`](https://www.npmjs.com/package/@b9g/node-webworker)
+shim gives it one on any Node 18 or later:
+
+```ts
+import {Worker} from "@b9g/node-webworker";
+globalThis.Worker ??= Worker;
+```
+
+Where Node has its own `Worker`, the `??=` leaves it in place.
+
 A new `src` cancels the request the old one started, and drops its
 decode if it is still waiting for its turn. An image whose
 box would sample more than 2^26 pixels draws nothing, as does a 2D
