@@ -126,6 +126,7 @@ export class ImageData {
 }
 
 const kBitmapData = Symbol("bitmapData");
+const kColorAt = Symbol("colorAt");
 
 export interface ImageBitmap {
 	[kBitmapData]: Bitmap | null;
@@ -1436,7 +1437,7 @@ export class CanvasGradient {
 	}
 
 	/** The color at a user-space point, or null where the gradient has none. */
-	colorAt(x: number, y: number): RGBA | null {
+	[kColorAt](x: number, y: number): RGBA | null {
 		const stops = this[kStops];
 		if (stops.length === 0) {
 			return {r: 0, g: 0, b: 0, a: 0};
@@ -1506,7 +1507,7 @@ export class CanvasPattern {
 		];
 	}
 
-	colorAt(x: number, y: number): RGBA {
+	[kColorAt](x: number, y: number): RGBA {
 		const inverse = invert(this[kPatternTransform]);
 		if (inverse !== null) {
 			[x, y] = apply(inverse, x, y);
@@ -2801,7 +2802,7 @@ export class CanvasRenderingContext2D {
 				let color: RGBA | null = solid;
 				if (color === null && cover > 0 && inverse !== null) {
 					const [ux, uy] = apply(inverse, x + 0.5, y + 0.5);
-					color = (paint as CanvasGradient | CanvasPattern).colorAt(ux, uy);
+					color = (paint as CanvasGradient | CanvasPattern)[kColorAt](ux, uy);
 				}
 				const sa = color === null ? 0 : color.a * alpha * cover;
 				if (clipCover < 1) {
@@ -2869,7 +2870,7 @@ export class CanvasRenderingContext2D {
 		const [px, py] = apply(this[kState].transform, x, y);
 		const color = typeof paint === "string"
 			? parseCanvasColor(paint)
-			: (paint as CanvasGradient | CanvasPattern).colorAt(x, y);
+			: (paint as CanvasGradient | CanvasPattern)[kColorAt](x, y);
 		if (color === null || color.a * this[kState].globalAlpha === 0) {
 			return;
 		}
