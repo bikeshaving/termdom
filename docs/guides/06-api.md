@@ -100,34 +100,28 @@ without terminal wiring.
 ### Styling the built-in controls
 
 A page styles the insides of the form controls through the
-pseudo-elements a browser gives them:
+pseudo-elements browsers give them:
 
 | Control | Pseudo-elements |
 | --- | --- |
-| `<input>` text types | `::field-content`, `::placeholder` |
-| `<textarea>` | `::placeholder` |
-| `<select>` | `::picker-icon`, `::picker(select)` |
-| `<progress>`, `<meter>` | `::slider-track`, `::slider-fill` |
+| `<input>` text types, `<textarea>` | `::placeholder` |
+| `<select>` | `::picker(select)`, `::picker-icon` |
 | `<details>` | `::details-content` |
 
-`::field-content`, `::slider-track` and `::slider-fill` are from the CSS
-Form Control Styling draft, and `::picker(select)` and `::picker-icon`
-are a customizable `<select>`'s. A `<meter>`'s fill also takes the
-pseudo-element of its level, as a WebKit browser gives it one, with
-TermDOM's prefix: `::-termdom-meter-optimum-value`,
-`::-termdom-meter-suboptimum-value` or
-`::-termdom-meter-even-less-good-value`.
+`::picker(select)` and `::picker-icon` are a customizable `<select>`'s,
+as Chromium ships them.
 
 ```css
-progress::slider-fill { color: green; }
-meter::-termdom-meter-even-less-good-value { color: orange; }
 select::picker(select) { background-color: #1c1c1c; }
+select::picker-icon { color: gray; }
 ```
 
-The controls are shadow trees inside, and as in a browser, `::part()`
-does not reach into them. TermDOM's own sheet styles the controls with
-the same pseudo-elements, so a page's rules override it as they would
-any built-in style.
+The rest of a control's insides, such as a progress bar's fill or a
+button's brackets, are TermDOM's own, as they are a browser's: the
+controls are shadow trees inside, and `::part()` does not reach into
+them. TermDOM's own sheet styles the controls with the same
+pseudo-elements, so a page's rules override it as they would any
+built-in style.
 
 ### `term.attach(transport?)`
 

@@ -165,8 +165,9 @@ browser.
 `::selection` styles selected text, and `::highlight()` styles the
 ranges in `CSS.highlights`. `::placeholder` styles a text control's
 placeholder. `::backdrop` styles what a modal dialog or popover covers.
-The built-in controls' insides take the pseudo-elements the API guide
-lists, such as `::slider-fill` and `::picker(select)`.
+A `<select>`'s picker and icon take `::picker(select)` and
+`::picker-icon`, and the API guide lists what else a page can style
+inside the built-in controls.
 
 ## Default looks
 

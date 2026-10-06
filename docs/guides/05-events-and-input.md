@@ -152,8 +152,7 @@ Enter or Space with the summary focused, and fires `toggle`.
 field.addEventListener("input", updatePreview);
 ```
 
-`::placeholder` and `::field-content` style a field's placeholder and
-its text. The caret is the real terminal cursor, and IME composition
+`::placeholder` styles a field's placeholder. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. `<input type="password">`
 masks its value. A number input takes float syntax only, and ArrowUp and
 ArrowDown step it within `min` and `max`.

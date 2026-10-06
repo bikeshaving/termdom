@@ -469,57 +469,27 @@ test("a meter's level reads its value against low, high and optimum", async () =
 	dom.dispose();
 });
 
-test("a page styles a meter's level through its prefixed pseudo-element", async () => {
-	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
-	const {document} = dom;
-	document.body.innerHTML =
-		"<style>meter::-termdom-meter-suboptimum-value { color: #0000ff; }</style>" +
-		"<meter min=\"0\" max=\"10\" low=\"3\" high=\"7\" optimum=\"9\" value=\"5\"></meter>";
-	await nextFrame(dom);
-	const getSgr = (): string => {
-		const match = terminal.getStaticANSI().match(/38;2;(\d+);(\d+);(\d+)/);
-		return match ? `${match[1]},${match[2]},${match[3]}` : "none";
-	};
-	expect(getSgr()).toBe("0,0,255");
-	document.querySelector("meter")!.setAttribute("value", "9");
-	await nextFrame(dom);
-	expect(getSgr()).toBe("95,175,95");
-	dom.dispose();
-});
-
-test("a page styles a gauge through ::slider-fill, and ::part() does not reach it", async () => {
+test("a page's ::part() does not reach a gauge's insides", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		"<style>" +
-		"progress::part(bar) { color: #ff0000; }" +
-		"progress::slider-fill { color: #00ff00; }" +
-		"</style>" +
+		"<style>progress::part(bar) { color: #ff0000; }</style>" +
 		"<progress max=\"10\" value=\"10\"></progress>";
 	await nextFrame(dom);
 	const ansi = terminal.getStaticANSI();
-	expect(ansi).toContain("38;2;0;255;0");
+	expect(ansi).toContain("38;2;95;175;255");
 	expect(ansi).not.toContain("38;2;255;0;0");
 	dom.dispose();
 });
 
-test("a page styles a field's text, a select's icon and a gauge's track", async () => {
+test("a page styles a select's icon through ::picker-icon", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		"<style>" +
-		"input::field-content { color: #010203; }" +
-		"select::picker-icon { color: #040506; }" +
-		"progress::slider-track { color: #070809; }" +
-		"</style>" +
-		"<input value=\"x\"><select><option>a</option></select>" +
-		"<progress max=\"10\" value=\"0\"></progress>";
+		"<style>select::picker-icon { color: #040506; }</style>" +
+		"<select><option>a</option></select>";
 	await nextFrame(dom);
-	const ansi = terminal.getStaticANSI();
-	expect(ansi).toContain("38;2;1;2;3");
-	expect(ansi).toContain("38;2;4;5;6");
-	expect(ansi).toContain("38;2;7;8;9");
+	expect(terminal.getStaticANSI()).toContain("38;2;4;5;6");
 	dom.dispose();
 });
 
