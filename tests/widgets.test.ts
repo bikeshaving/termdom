@@ -482,6 +482,37 @@ test("a page's ::part() does not reach a gauge's insides", async () => {
 	dom.dispose();
 });
 
+test("a control's insides follow a change to what they inherit", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"color: #010203\"><input value=\"x\"></div>";
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).toContain("38;2;1;2;3");
+	dom.document.querySelector("div")!.style.color = "#040506";
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).toContain("38;2;4;5;6");
+	dom.dispose();
+});
+
+test("a progress bar's fill takes its accent-color", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<style>.done { accent-color: #00ff00; }</style>" +
+		"<progress class=\"done\" max=\"10\" value=\"10\"></progress>";
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).toContain("38;2;0;255;0");
+	dom.document.querySelector("progress")!.style.accentColor = "#ff00ff";
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).toContain("38;2;255;0;255");
+	dom.document.querySelector("progress")!.style.accentColor = "auto";
+	dom.document.querySelector("progress")!.className = "";
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).toContain("38;2;95;175;255");
+	dom.dispose();
+});
+
 test("a page styles a select's icon through ::picker-icon", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});

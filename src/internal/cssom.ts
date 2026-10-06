@@ -4850,12 +4850,31 @@ function blockifyDisplay(element: Element | null, display: string): string {
 	return display;
 }
 
+// A progress bar's fill, inside the UA shadow tree of a <progress>.
+function isProgressFill(element: Element | null): boolean {
+	if (element === null) {
+		return false;
+	}
+	const root = element.getRootNode();
+	return isUAShadowTree(root) &&
+		(root as unknown as ShadowRoot).host.tagName === "PROGRESS" &&
+		(element.getAttribute("part") ?? "").split(" ").includes("bar");
+}
+
 // What the cascade leaves, with var() substituted, `currentcolor`
 // replaced by the color it names, and display blockified.
 function resolvePropertyValue(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
+	// css-ui-4 §6.1: a <progress> draws in its accent color, when the page
+	// gives it one.
+	if (property === "color" && isProgressFill(declaration[kElement])) {
+		const accent = declaration[kComputedValue]("accent-color");
+		if (accent !== "" && accent.toLowerCase() !== "auto") {
+			return accent;
+		}
+	}
 	const value = resolveCascadedValue(declaration, property);
 	if (property === "font-weight") {
 		return computeFontWeight(declaration[kElement], value);
@@ -7793,20 +7812,17 @@ function invalidateSubtree(
 	// A paint-only change cannot create or remove a pseudo-element, since
 	// `content` is not a paint property, so the attachment pass is skipped
 	// with layout.
-	invalidateElementCaches(cascade, element, notifyLayout);
-	if (notifyLayout) {
-		attachPseudoElementsToElement(cascade, element);
-	}
-	for (const descendant of element.querySelectorAll("*")) {
-		invalidateElementCaches(cascade, descendant, notifyLayout);
+	for (const each of [element, ...element.querySelectorAll("*")]) {
+		invalidateElementCaches(cascade, each, notifyLayout);
 		if (notifyLayout) {
-			attachPseudoElementsToElement(cascade, descendant);
+			attachPseudoElementsToElement(cascade, each);
 		}
-	}
-	const root = element.shadowRoot;
-	if (root) {
-		for (const descendant of root.querySelectorAll("*")) {
-			invalidateSubtree(cascade, descendant);
+		// Closed and UA shadow trees inherit as an open one does.
+		const root = getShadowRoot(each);
+		if (root) {
+			for (const child of root.children) {
+				invalidateSubtree(cascade, child as Element, notifyLayout);
+			}
 		}
 	}
 }

@@ -116,8 +116,14 @@ select::picker(select) { background-color: #1c1c1c; }
 select::picker-icon { color: gray; }
 ```
 
-The rest of a control's insides, such as a progress bar's fill or a
-button's brackets, are TermDOM's own, as they are a browser's: the
+A `<progress>` draws its fill in its `accent-color`, as browsers do.
+
+```css
+progress { accent-color: green; }
+```
+
+The rest of a control's insides, such as a meter's fill or a button's
+brackets, are TermDOM's own, as they are a browser's: the
 controls are shadow trees inside, and `::part()` does not reach into
 them. TermDOM's own sheet styles the controls with the same
 pseudo-elements, so a page's rules override it as they would any
