@@ -4434,7 +4434,7 @@ function measureText(
 const kTerminalReordersText = Symbol("terminalReordersText");
 const kMoved = Symbol("moved");
 
-// Both halves are needed. Each segment's characters reorder (bidi.ts),
+// Both halves are needed. Each segment's characters reorder (bidi-js, through text.ts),
 // and in an RTL paragraph the segments mirror across the line.
 // Reordering stays within each leaf. Whole-line reordering would merge
 // and re-split segments, losing the leaf identity painting, hit-testing

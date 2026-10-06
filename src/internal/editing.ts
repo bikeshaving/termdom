@@ -37,7 +37,7 @@ const NBSP = "\u00a0";
 const COLLAPSIBLE_ONLY = /^[ \t\n\r\f]*$/;
 
 // A control edits its own value and keeps its keys, whatever it sits in.
-const TEXT_CONTROL_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+const FORM_CONTROL_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
 const HEADING_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 
@@ -187,7 +187,7 @@ export function requestEditingInsert(
 	inputType: string,
 	data: string,
 ): boolean {
-	const host = isTextControl(target) ? null : getEditingHost(target);
+	const host = isFormControl(target) ? null : getEditingHost(target);
 	if (host === null) {
 		return false;
 	}
@@ -220,7 +220,7 @@ function requestEditingInput(
 
 function onEditingBeforeInput(event: globalThis.Event): void {
 	const request = event as globalThis.InputEvent;
-	if (request.defaultPrevented || isTextControl(asNode(event.target))) {
+	if (request.defaultPrevented || isFormControl(asNode(event.target))) {
 		return;
 	}
 	const host = getEditingHost(asNode(event.target));
@@ -277,7 +277,7 @@ function ensureCaretInside(
 
 function onEditingKeydown(event: globalThis.Event): void {
 	const keyboard = event as globalThis.KeyboardEvent;
-	if (keyboard.defaultPrevented || isTextControl(asNode(event.target))) {
+	if (keyboard.defaultPrevented || isFormControl(asNode(event.target))) {
 		return;
 	}
 	const host = getEditingHost(asNode(event.target));
@@ -1176,9 +1176,9 @@ function collapseTo(
 	);
 }
 
-function isTextControl(node: globalThis.Node | null): boolean {
+function isFormControl(node: globalThis.Node | null): boolean {
 	const element = node === null ? null : asElement(node);
-	return element !== null && TEXT_CONTROL_TAGS.has(element.tagName);
+	return element !== null && FORM_CONTROL_TAGS.has(element.tagName);
 }
 
 function getChildIndex(node: globalThis.Node): number {
