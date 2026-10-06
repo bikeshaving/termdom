@@ -217,14 +217,18 @@ TermDOM, so write `window.` before it:
 | Name | Runtime that has its own |
 | --- | --- |
 | `addEventListener`, `removeEventListener`, `dispatchEvent` | Bun, Deno |
+| `postMessage` | Bun |
 | `close` (it exits Deno) | Deno |
-| `location`, `name` | Deno |
+| `location`, `name`, `closed` | Deno |
 | `alert`, `confirm`, `prompt`, `self`, `onerror` | Bun, Deno |
-| `localStorage` | Node, Deno |
+| `localStorage`, `sessionStorage` | Node, Deno |
 
 Events made with the runtime's `Event` or `CustomEvent` reach the
 document's listeners, and the document's events are instances of the
-runtime's `Event`.
+runtime's `Event`. What a terminal does not have, such as `indexedDB`
+or `caches`, is not installed, so `typeof indexedDB` is `"undefined"`
+and feature detection takes its fallback. Uninstalling leaves any name
+that other code has redefined since.
 
 ## `TerminalTransport`
 
