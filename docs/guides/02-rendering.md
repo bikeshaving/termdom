@@ -99,6 +99,18 @@ The string has colors and line breaks only, no cursor movement and no
 mode changes, so it can be piped to a file, logged, or written to
 stderr. `attach()` is not called, and the process does not stay alive.
 
+Static output uses 256 colors unless the program names the color depth.
+The terminal is only asked once `attach()` takes it, since its answers
+come back as input, and a pipe or a file has no terminal to ask. To
+print in 24-bit color:
+
+```ts
+const term = new TermDOM({
+	transport: transportFromProcess(process, {colorDepth: "rgb"}),
+});
+await term.print(`<div style="color: #ff8800">orange</div>`);
+```
+
 When stdout is not a terminal, `attach()` behaves like `print()`: the
 document is written once as plain lines when the program ends, and
 input is not read. A program can be run under a pipe or in a CI log
@@ -143,28 +155,13 @@ terminal that does not answer gets the conservative behavior.
 | OSC 52 query | Reading the clipboard in `navigator.clipboard.readText()` |
 | 24-bit SGR by DECRQSS, XTGETTCAP `RGB` and `Tc`, DA2 | Whether to send 24-bit color, unless the transport names its `colorDepth` |
 
-The engine reads nothing but the terminal: no environment variables.
-A terminal gets 24-bit color when it says so: it keeps a 24-bit color in
-its style and reports it back, or answers XTGETTCAP for `RGB` or `Tc`.
-tmux says neither, but it converts 24-bit color for the terminal it runs
-in, so a DA2 answer of `84` (tmux) counts too. Every other terminal gets
-256 colors. Some terminals with 24-bit color, such as Terminal.app,
-Alacritty, Konsole and VS Code, never say so; a program that knows passes
-`colorDepth`. A terminal without 24-bit color can read its parameters as
-other attributes, such as hidden or inverse text, so the engine never
-guesses it.
-
-The terminal is asked when `attach()` takes it, since its answers come
-back as input. `print()` and `renderANSI()` before `attach()` therefore
-use 256 colors, and so does output to a pipe or a file, which has no
-terminal to ask, unless the transport names its `colorDepth`:
-
-```ts
-const term = new TermDOM({
-	transport: transportFromProcess(process, {colorDepth: "rgb"}),
-});
-term.print("<p style='color: #ff8800'>orange</p>");
-```
+A terminal without 24-bit color can misread a 24-bit color as other
+attributes, such as hidden or inverse text. So the engine sends 24-bit
+color only to a terminal that says it can show it, or to tmux, which
+converts it for the terminal it runs in, and 256 colors to every other
+terminal. Some terminals with 24-bit color never say so, among them
+Alacritty, Konsole and VS Code's terminal. The Colors section of the
+styling guide shows how a program names the depth itself.
 
 The modes the engine sets, and resets on exit, are mouse reporting,
 mouse motion reporting while something watches hover, bracketed paste,
