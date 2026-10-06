@@ -1873,9 +1873,10 @@ const kFrameScroll = Symbol("frameScroll");
 const kDirty = Symbol("dirty");
 const kDocumentTop = Symbol("documentTop");
 const kCellPixels = Symbol("cellPixels");
-// What a cell measures in pixels until the terminal says, or when it
-// cannot. Most fonts run about twice as tall as wide at any size.
-export const FALLBACK_CELL: Readonly<{width: number; height: number}> = {
+// What a cell measures in pixels until the terminal says, and for good
+// when it cannot, as through a pipe. Most fonts run about twice as tall
+// as wide at any size.
+const GUESSED_CELL_PIXELS: Readonly<{width: number; height: number}> = {
 	width: 8,
 	height: 16,
 };
@@ -1932,7 +1933,7 @@ export class Framebuffer {
 		this[kCols] = cols;
 		this[kScrollTop] = 0;
 		this[kDocumentTop] = 0;
-		this[kCellPixels] = {...FALLBACK_CELL};
+		this[kCellPixels] = {...GUESSED_CELL_PIXELS};
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
 		this[kWriter] = new FrameWriter(colorDepth);

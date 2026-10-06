@@ -3,11 +3,9 @@ import "./internal/inspector.ts";
 import {
 	Cascade,
 	type CellSize,
-	FALLBACK_CELL,
 	getCellSize,
 	setCellSizeSource,
 	setColorSchemeSource,
-	setScreenCellSource,
 	UNIT_CELL,
 } from "./internal/cssom.ts";
 import {
@@ -255,11 +253,10 @@ export class TermDOM extends EventTarget {
 
 	constructor(options: TermDOMOptions = {}) {
 		super();
-		const screenCell = () =>
-			this[kTransport].interactive
-				? this[kFramebuffer].cellPixels
-				: FALLBACK_CELL;
-		const cellSize = getCellSizeSource(options.cellSize, screenCell);
+		const cellSize = getCellSizeSource(
+			options.cellSize,
+			() => this[kFramebuffer].cellPixels,
+		);
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -371,7 +368,6 @@ export class TermDOM extends EventTarget {
 
 		this[kMeasuresCell] = options.cellSize === "auto";
 		setCellSizeSource(document, cellSize);
-		setScreenCellSource(document, screenCell);
 
 		attachDocument(
 			document,
