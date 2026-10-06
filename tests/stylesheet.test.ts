@@ -506,6 +506,42 @@ test("a class a sibling selector names restyles the siblings after it", () => {
 	dom.dispose();
 });
 
+test("a shadow root's sheets added a rule at a time cost about what one sheet does", () => {
+	const time = (pieces: boolean): number => {
+		const dom = new TermDOM({
+			transport: new MockProcess({cols: 100, rows: 20}).transport,
+		});
+		const host = dom.document.createElement("div");
+		dom.document.body.append(host);
+		const root = host.attachShadow({mode: "open"});
+		root.innerHTML = Array.from(
+			{length: 600},
+			(_, i) => `<p class="c${i % 50}">${i}</p>`,
+		).join("");
+		host.getBoundingClientRect();
+		const rules = Array.from(
+			{length: 100},
+			(_, i) =>
+				`.c${i % 50} { color: #${(i * 4567 % 0xffffff).toString(16).padStart(6, "0")}; }`,
+		);
+		const start = performance.now();
+		for (const text of pieces ? rules : [rules.join("\n")]) {
+			const style = dom.document.createElement("style");
+			style.textContent = text;
+			root.prepend(style);
+		}
+		host.getBoundingClientRect();
+		const elapsed = performance.now() - start;
+		dom.dispose();
+		return elapsed;
+	};
+	time(true);
+	time(false);
+	// A restyle of the whole tree per sheet made the pieces about a hundred
+	// times slower.
+	expect(time(true)).toBeLessThan(5 * Math.max(time(false), 1));
+});
+
 test("sibling selectors still restyle within their own tree", () => {
 	const dom = new TermDOM({transport: new MockProcess().transport});
 	const {document, window} = dom;
