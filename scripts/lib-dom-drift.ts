@@ -147,9 +147,6 @@ const FROM_THE_RUNTIME: Record<string, Set<string>> = {
 	),
 };
 
-// TermDOM's own, and the only names allowed to be.
-const TERMDOM_OWN = new Set(["CanvasCharacterGridContext"]);
-
 // CSSOM gives a declaration an attribute for every supported property,
 // camel-cased, dashed and webkit-cased, which lib.dom lists only some of.
 const {CSS_PROPERTIES} = await import("../src/generated/cssproperties.ts");
@@ -192,9 +189,6 @@ function allowedOn(name: string): Set<string> {
 	if (name === "Window") {
 		for (const global of globalNames) {
 			allowed.add(global);
-		}
-		for (const own of TERMDOM_OWN) {
-			allowed.add(own);
 		}
 	}
 	for (const member of Object.keys(AHEAD_OF_LIB_DOM[name] ?? {})) {
@@ -271,9 +265,6 @@ for (const key of Object.getOwnPropertyNames(window)) {
 		!/^[A-Z]/.test(key) ||
 		!(value as {prototype?: object}).prototype
 	) {
-		continue;
-	}
-	if (TERMDOM_OWN.has(key)) {
 		continue;
 	}
 	if (!globals.has(key)) {

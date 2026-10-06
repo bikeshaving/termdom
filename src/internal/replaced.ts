@@ -9,7 +9,7 @@
  * CSS pixel is a cell, that would be one cell per pixel, so the image
  * takes the screen's cell size instead, which the terminal reports
  * (XTWINOPS 16) and which is guessed at 8 by 16 until it does. A
- * charactergrid canvas is already in cells.
+ * chargrid canvas is already in cells.
  */
 import {type CanvasTextRun, halfBlockCell} from "./canvas.ts";
 import {
@@ -455,7 +455,7 @@ function getBitmapCells(
 
 const settledGrids = new WeakMap<CellGrid, {version: number; grid: CellGrid}>();
 
-// A charactergrid's cells with its lines joined among themselves and
+// A chargrid's cells with its lines joined among themselves and
 // drawn, kept until the canvas draws again.
 function getSettledGrid(
 	content: Extract<ReplacedContent, {kind: "grid"}>,
