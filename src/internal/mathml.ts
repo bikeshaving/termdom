@@ -196,16 +196,7 @@ function lookupOperator(text: string, form: OperatorForm): OperatorEntry {
 // ---------------------------------------------------------------------
 //
 // The glyphs the engine assembles stretched operators, radicals and
-// fraction bars from, in three sets: Unicode's Miscellaneous Technical
-// pieces, box drawing only (for fonts without those pieces), and ASCII
-// (for TERM=dumb, log files and plain-text copies).
-
-type GlyphSet = "unicode" | "box-drawing" | "ascii";
-
-function parseGlyphSet(value: string): GlyphSet {
-	const text = value.trim().toLowerCase();
-	return text === "ascii" || text === "box-drawing" ? text : "unicode";
-}
+// fraction bars from: Unicode's Miscellaneous Technical pieces.
 
 interface VerticalPieces {
 	top: string;
@@ -220,31 +211,13 @@ interface HorizontalPieces {
 	right: string;
 }
 
-interface GlyphTable {
-	vertical: Record<string, VerticalPieces>;
-	horizontal: Record<string, HorizontalPieces>;
-	fractionBar: string;
-	overline: string;
-	radical: RadicalPieces;
-	plain: Record<string, string>;
-}
-
-/**
- * A radical sign's foot, its stem and the bar over the radicand. A null
- * bar is an underline on the row above, which the terminal draws along
- * that row's bottom edge, flush with the stem's top. The shape says how
- * the stem reaches it: "rises" when the foot glyph carries the stroke
- * to its own top right corner and the stem, a bar on that edge of the
- * cell, stands straight up from it; "climbs" when the foot is a bare
- * stroke and a diagonal steps a column per row, as SymPy draws it;
- * "stands" when the stem is a vertical bar beside the foot.
- */
-interface RadicalPieces {
-	foot: string;
-	stem: string;
-	bar: string | null;
-	shape: "rises" | "climbs" | "stands";
-}
+// A radical sign is a foot glyph that carries the stroke to its own top
+// right corner and a stem, a bar on that edge of the cell, standing
+// straight up from it. The bar over the radicand is an underline on the
+// row above, which the terminal draws along that row's bottom edge,
+// flush with the stem's top.
+const RADICAL_FOOT = "⎷";
+const RADICAL_STEM = "▕";
 
 // One row of a drawn glyph. An underlined row is a bar the terminal
 // draws along the row's bottom edge, flush with the strokes below it.
@@ -254,7 +227,7 @@ interface GlyphRow {
 	overline?: boolean;
 }
 
-const UNICODE_VERTICAL: Record<string, VerticalPieces> = {
+const VERTICAL_PIECES: Record<string, VerticalPieces> = {
 	"(": {top: "⎛", middle: "⎜", bottom: "⎝"},
 	")": {top: "⎞", middle: "⎟", bottom: "⎠"},
 	"[": {top: "⎡", middle: "⎢", bottom: "⎣"},
@@ -272,43 +245,7 @@ const UNICODE_VERTICAL: Record<string, VerticalPieces> = {
 	"⌋": {top: "│", middle: "│", bottom: "⌋"},
 };
 
-const BOX_DRAWING_VERTICAL: Record<string, VerticalPieces> = {
-	"(": {top: "╭", middle: "│", bottom: "╰"},
-	")": {top: "╮", middle: "│", bottom: "╯"},
-	"[": {top: "┌", middle: "│", bottom: "└"},
-	"]": {top: "┐", middle: "│", bottom: "┘"},
-	"{": {top: "╭", middle: "│", center: "┤", bottom: "╰"},
-	"}": {top: "╮", middle: "│", center: "├", bottom: "╯"},
-	"|": {top: "│", middle: "│", bottom: "│"},
-	"‖": {top: "║", middle: "║", bottom: "║"},
-	"∣": {top: "│", middle: "│", bottom: "│"},
-	"∥": {top: "║", middle: "║", bottom: "║"},
-	"∫": {top: "╭", middle: "│", bottom: "╯"},
-	"⌈": {top: "┌", middle: "│", bottom: "│"},
-	"⌉": {top: "┐", middle: "│", bottom: "│"},
-	"⌊": {top: "│", middle: "│", bottom: "└"},
-	"⌋": {top: "│", middle: "│", bottom: "┘"},
-};
-
-const ASCII_VERTICAL: Record<string, VerticalPieces> = {
-	"(": {top: "/", middle: "|", bottom: "\\"},
-	")": {top: "\\", middle: "|", bottom: "/"},
-	"[": {top: "+", middle: "|", bottom: "+"},
-	"]": {top: "+", middle: "|", bottom: "+"},
-	"{": {top: "/", middle: "|", center: "+", bottom: "\\"},
-	"}": {top: "\\", middle: "|", center: "+", bottom: "/"},
-	"|": {top: "|", middle: "|", bottom: "|"},
-	"‖": {top: "||", middle: "||", bottom: "||"},
-	"∣": {top: "|", middle: "|", bottom: "|"},
-	"∥": {top: "||", middle: "||", bottom: "||"},
-	"∫": {top: "/", middle: "|", bottom: "/"},
-	"⌈": {top: "+", middle: "|", bottom: "|"},
-	"⌉": {top: "+", middle: "|", bottom: "|"},
-	"⌊": {top: "|", middle: "|", bottom: "+"},
-	"⌋": {top: "|", middle: "|", bottom: "+"},
-};
-
-const UNICODE_HORIZONTAL: Record<string, HorizontalPieces> = {
+const HORIZONTAL_PIECES: Record<string, HorizontalPieces> = {
 	"⏞": {left: "╭", filler: "─", right: "╮"},
 	"⏟": {left: "╰", filler: "─", right: "╯"},
 	"→": {left: "─", filler: "─", right: "→"},
@@ -331,155 +268,6 @@ const UNICODE_HORIZONTAL: Record<string, HorizontalPieces> = {
 	"⎵": {left: "└", filler: "─", right: "┘"},
 };
 
-const ASCII_HORIZONTAL: Record<string, HorizontalPieces> = {
-	"⏞": {left: "/", filler: "-", right: "\\"},
-	"⏟": {left: "\\", filler: "-", right: "/"},
-	"→": {left: "-", filler: "-", right: ">"},
-	"←": {left: "<", filler: "-", right: "-"},
-	"↔": {left: "<", filler: "-", right: ">"},
-	"⟶": {left: "-", filler: "-", right: ">"},
-	"⟵": {left: "<", filler: "-", right: "-"},
-	"⟷": {left: "<", filler: "-", right: ">"},
-	"‾": {left: "-", filler: "-", right: "-"},
-	"¯": {left: "-", filler: "-", right: "-"},
-	_: {left: "-", filler: "-", right: "-"},
-	"─": {left: "-", filler: "-", right: "-"},
-	"~": {left: "~", filler: "~", right: "~"},
-	"˜": {left: "~", filler: "~", right: "~"},
-	"^": {left: "^", filler: "^", right: "^"},
-	ˆ: {left: "^", filler: "^", right: "^"},
-	"⏜": {left: "/", filler: "-", right: "\\"},
-	"⏝": {left: "\\", filler: "-", right: "/"},
-	"⎴": {left: "+", filler: "-", right: "+"},
-	"⎵": {left: "+", filler: "-", right: "+"},
-};
-
-// Every character the ASCII set may emit for one it cannot draw. Anything
-// not listed passes through, since the set exists for glyph shapes, not
-// for the operators an author chose.
-const ASCII_PLAIN: Record<string, string> = {
-	"−": "-",
-	"×": "x",
-	"÷": "/",
-	"⋅": ".",
-	"·": ".",
-	"∗": "*",
-	"≤": "<=",
-	"≥": ">=",
-	"≠": "!=",
-	"≈": "~=",
-	"≡": "==",
-	"→": "->",
-	"←": "<-",
-	"↔": "<->",
-	"⇒": "=>",
-	"⇐": "<=",
-	"⇔": "<=>",
-	"±": "+-",
-	"∓": "-+",
-	"∞": "oo",
-	"√": "sqrt",
-	"∑": "sum",
-	"∏": "prod",
-	"∫": "integral",
-	"∂": "d",
-	"∇": "nabla",
-	"‖": "||",
-	"⟨": "<",
-	"⟩": ">",
-	"⌈": "|",
-	"⌉": "|",
-	"⌊": "|",
-	"⌋": "|",
-	"⁡": "",
-	"⁢": "",
-	"⁣": "",
-	"⁤": "",
-	"…": "...",
-	"⋯": "...",
-	"′": "'",
-	"″": "''",
-	"‴": "'''",
-	"°": "deg",
-	"∈": "in",
-	"∉": "!in",
-	"∀": "forall",
-	"∃": "exists",
-	"¬": "not",
-	"∧": "and",
-	"∨": "or",
-	"∩": "n",
-	"∪": "u",
-	"∅": "{}",
-	α: "alpha",
-	β: "beta",
-	γ: "gamma",
-	δ: "delta",
-	ε: "epsilon",
-	ζ: "zeta",
-	η: "eta",
-	θ: "theta",
-	ι: "iota",
-	κ: "kappa",
-	λ: "lambda",
-	μ: "mu",
-	ν: "nu",
-	ξ: "xi",
-	π: "pi",
-	ρ: "rho",
-	σ: "sigma",
-	τ: "tau",
-	υ: "upsilon",
-	φ: "phi",
-	χ: "chi",
-	ψ: "psi",
-	ω: "omega",
-	Γ: "Gamma",
-	Δ: "Delta",
-	Θ: "Theta",
-	Λ: "Lambda",
-	Ξ: "Xi",
-	Π: "Pi",
-	Σ: "Sigma",
-	Φ: "Phi",
-	Ψ: "Psi",
-	Ω: "Omega",
-	ℝ: "R",
-	ℂ: "C",
-	ℕ: "N",
-	ℤ: "Z",
-	ℚ: "Q",
-	ℏ: "hbar",
-	ℓ: "l",
-};
-
-const TABLES: Record<GlyphSet, GlyphTable> = {
-	unicode: {
-		vertical: UNICODE_VERTICAL,
-		horizontal: UNICODE_HORIZONTAL,
-		fractionBar: "─",
-		overline: "─",
-		radical: {foot: "⎷", stem: "▕", bar: null, shape: "rises"},
-		plain: {},
-	},
-	"box-drawing": {
-		vertical: BOX_DRAWING_VERTICAL,
-		horizontal: UNICODE_HORIZONTAL,
-		fractionBar: "─",
-		overline: "─",
-		radical: {foot: "╲", stem: "│", bar: null, shape: "stands"},
-		plain: {},
-	},
-	ascii: {
-		vertical: ASCII_VERTICAL,
-		horizontal: ASCII_HORIZONTAL,
-		fractionBar: "-",
-		overline: "_",
-		radical: {foot: "\\", stem: "/", bar: "_", shape: "climbs"},
-		plain: ASCII_PLAIN,
-	},
-};
-
 interface BoxLines {
 	horizontal: string;
 	vertical: string;
@@ -494,7 +282,8 @@ interface BoxLines {
 	rightJoin: string;
 }
 
-const UNICODE_LINES: BoxLines = {
+/** The rules and frame of a table or the border of an merror. */
+const BOX_LINES: BoxLines = {
 	horizontal: "─",
 	vertical: "│",
 	topLeft: "┌",
@@ -507,33 +296,6 @@ const UNICODE_LINES: BoxLines = {
 	leftJoin: "├",
 	rightJoin: "┤",
 };
-
-const ASCII_LINES: BoxLines = {
-	horizontal: "-",
-	vertical: "|",
-	topLeft: "+",
-	topRight: "+",
-	bottomLeft: "+",
-	bottomRight: "+",
-	cross: "+",
-	topJoin: "+",
-	bottomJoin: "+",
-	leftJoin: "+",
-	rightJoin: "+",
-};
-
-/** The rules and frame of a table or the border of an merror. */
-function getBoxLines(glyphs: GlyphSet): BoxLines {
-	return glyphs === "ascii" ? ASCII_LINES : UNICODE_LINES;
-}
-
-function getFractionBar(glyphs: GlyphSet): string {
-	return TABLES[glyphs].fractionBar;
-}
-
-function getRadical(glyphs: GlyphSet): RadicalPieces {
-	return TABLES[glyphs].radical;
-}
 
 // Integrals with more than one sign, and with a ring, are columns of
 // the integral's pieces, the ring on the middle row. Whether the ring
@@ -551,38 +313,20 @@ const INTEGRALS: Record<string, {columns: number; ring: boolean}> = {
 // bigger than the text: the least that draws one. A sum whose top bar
 // is an overline on its first stroke needs no row for the bar. Zero
 // for an operator with no pieces to draw.
-function getDisplayHeight(
-	op: string,
-	glyphs: GlyphSet,
-	overline: boolean,
-): number {
+function getDisplayHeight(op: string, overline: boolean): number {
 	if (op === "∑") {
-		return overline && glyphs !== "ascii" ? 2 : 3;
+		return overline ? 2 : 3;
 	}
 	// A product is its bar and its legs.
 	if (op === "∏") {
 		return 2;
 	}
-	return op in TABLES[glyphs].vertical || op in INTEGRALS ? 3 : 0;
+	return op in VERTICAL_PIECES || op in INTEGRALS ? 3 : 0;
 }
 
-/**
- * The text a token paints in a glyph set. Only the ASCII set rewrites
- * anything; a character it has no spelling for stays as it is.
- */
-function toPlainGlyphs(text: string, glyphs: GlyphSet): string {
-	const plain = TABLES[glyphs].plain;
-	let out = "";
-	for (const char of text) {
-		const replacement = plain[char];
-		out += replacement === undefined ? char : replacement;
-	}
-	return out;
-}
-
-function hasVerticalPieces(op: string, glyphs: GlyphSet): boolean {
+function hasVerticalPieces(op: string): boolean {
 	return (
-		op in TABLES[glyphs].vertical ||
+		op in VERTICAL_PIECES ||
 		op in INTEGRALS ||
 		op === "∑" ||
 		op === "∏" ||
@@ -591,8 +335,8 @@ function hasVerticalPieces(op: string, glyphs: GlyphSet): boolean {
 	);
 }
 
-function hasHorizontalPieces(op: string, glyphs: GlyphSet): boolean {
-	return op in TABLES[glyphs].horizontal;
+function hasHorizontalPieces(op: string): boolean {
+	return op in HORIZONTAL_PIECES;
 }
 
 /**
@@ -603,22 +347,21 @@ function buildVerticalGlyph(
 	op: string,
 	height: number,
 	baseline: number,
-	glyphs: GlyphSet,
 	overline = false,
 ): GlyphRow[] | null {
 	if (op === "∑") {
-		return buildSum(height, glyphs, overline);
+		return buildSum(height, overline);
 	}
 	if (op === "∏") {
-		return plainRows(buildProduct(height, glyphs));
+		return plainRows(buildProduct(height));
 	}
 	if (op === "⟨" || op === "⟩") {
-		return plainRows(buildAngle(op, height, baseline, glyphs));
+		return plainRows(buildAngle(op, height));
 	}
 	if (op in INTEGRALS) {
-		return plainRows(buildIntegral(op, height, baseline, glyphs));
+		return plainRows(buildIntegral(op, height, baseline));
 	}
-	const pieces = TABLES[glyphs].vertical[op];
+	const pieces = VERTICAL_PIECES[op];
 	if (!pieces) {
 		return null;
 	}
@@ -645,17 +388,13 @@ function plainRows(rows: string[]): GlyphRow[] {
  * A horizontally stretched operator (an accent or arrow over or under a
  * base) as one row of the given width.
  */
-function buildHorizontalGlyph(
-	op: string,
-	width: number,
-	glyphs: GlyphSet,
-): string | null {
-	const pieces = TABLES[glyphs].horizontal[op];
+function buildHorizontalGlyph(op: string, width: number): string | null {
+	const pieces = HORIZONTAL_PIECES[op];
 	if (!pieces) {
 		return null;
 	}
 	if (width <= 1) {
-		return glyphs === "ascii" ? pieces.filler : op;
+		return op;
 	}
 	if (width === 2) {
 		return pieces.left + pieces.right;
@@ -668,18 +407,7 @@ function buildHorizontalGlyph(
 // underline on the last stroke's row. The top bar is an overline on
 // the first stroke's row when the terminal draws one, and otherwise an
 // underline on a row of its own above.
-function buildSum(
-	height: number,
-	glyphs: GlyphSet,
-	overline: boolean,
-): GlyphRow[] {
-	if (glyphs === "ascii") {
-		return plainRows([
-			"___",
-			...buildStrokes(Math.max(1, height - 2), "\\", "/"),
-			"---",
-		]);
-	}
+function buildSum(height: number, overline: boolean): GlyphRow[] {
 	const rows: GlyphRow[] = overline ? [] : [{text: "   ", underline: true}];
 	for (const text of buildStrokes(height - rows.length, "╲", "╱")) {
 		rows.push({text, underline: false});
@@ -707,19 +435,12 @@ function buildStrokes(count: number, down: string, up: string): string[] {
 	return rows;
 }
 
-function buildIntegral(
-	op: string,
-	height: number,
-	baseline: number,
-	glyphs: GlyphSet,
-): string[] {
+function buildIntegral(op: string, height: number, baseline: number): string[] {
 	const {columns, ring} = INTEGRALS[op];
-	const pieces = TABLES[glyphs].vertical["∫"];
-	// The ring on the stroke: the APL circle stile in the Unicode set,
-	// whose stroke runs through the ring, and a bare ring elsewhere.
-	const center = glyphs === "ascii"
-		? "o"
-		: glyphs === "box-drawing" ? "○" : "⌽";
+	const pieces = VERTICAL_PIECES["∫"];
+	// The ring on the stroke: the APL circle stile, whose stroke runs
+	// through the ring.
+	const center = "⌽";
 	const rows: string[] = [];
 	for (let row = 0; row < height; row++) {
 		const piece = row === 0
@@ -732,31 +453,24 @@ function buildIntegral(
 	return rows;
 }
 
-function buildProduct(height: number, glyphs: GlyphSet): string[] {
-	const ascii = glyphs === "ascii";
-	const rows: string[] = [ascii ? "+-+" : "┬─┬"];
+function buildProduct(height: number): string[] {
+	const rows: string[] = ["┬─┬"];
 	for (let row = 1; row < height; row++) {
-		rows.push(ascii ? "| |" : "│ │");
+		rows.push("│ │");
 	}
 	return rows;
 }
 
-function buildAngle(
-	op: string,
-	height: number,
-	_baseline: number,
-	glyphs: GlyphSet,
-): string[] {
-	const ascii = glyphs === "ascii";
-	const down = ascii ? "\\" : "╲";
-	const up = ascii ? "/" : "╱";
+function buildAngle(op: string, height: number): string[] {
+	const down = "╲";
+	const up = "╱";
 	// The point is on the middle row when there is one, and otherwise
 	// the strokes meet at the seam between the two middle rows.
 	const rows: string[] = [];
 	const point = height % 2 === 1 ? (height - 1) >> 1 : -1;
 	for (let row = 0; row < height; row++) {
 		if (row === point) {
-			rows.push(ascii ? (op === "⟨" ? "<" : ">") : op);
+			rows.push(op);
 		} else if (row < height / 2) {
 			rows.push(op === "⟨" ? up : down);
 		} else {
@@ -810,8 +524,6 @@ export type Alignment = "left" | "center" | "right";
 
 interface MathContext {
 	display: boolean;
-	glyphs: GlyphSet;
-	variantGlyphs: boolean;
 	// The terminal draws SGR 53, so a bar over a row can be an overline
 	// on that row rather than an underline on a row above it.
 	overline: boolean;
@@ -863,9 +575,6 @@ function isMathElement(node: Node): boolean {
 export function layoutMath(element: Element, display: boolean): MathBox {
 	const context: MathContext = {
 		display,
-		glyphs: parseGlyphSet(getComputedValue(element, "--math-glyphs")),
-		variantGlyphs:
-			getComputedValue(element, "--math-variant-glyphs").trim() === "unicode",
 		overline:
 			getDocumentExchange(element.ownerDocument)?.overlineNegotiated() ?? false,
 		tight: false,
@@ -1304,20 +1013,14 @@ function layoutTextToken(
 	}
 	let bold = variant !== null && variant.includes("bold");
 	let italic = variant !== null && variant.includes("italic");
-	if (variant !== null && context.glyphs !== "ascii") {
-		const mapped = toMathAlphanumeric(letters, variant, context.variantGlyphs);
+	if (variant !== null) {
+		const mapped = toMathAlphanumeric(letters, variant);
 		if (mapped !== null) {
 			letters = mapped;
 			bold = false;
 			italic = false;
 		}
 	}
-	letters = letters.flatMap((char) =>
-		Array.from(toPlainGlyphs(char.ch, context.glyphs), (ch) => ({
-			ch,
-			source: char.source,
-		})),
-	);
 	return createSourcedBox(
 		letters,
 		getTokenStyle(element, variant === null ? null : {bold, italic}),
@@ -1340,18 +1043,12 @@ function getLargeOperatorRows(
 	) {
 		return null;
 	}
-	const height = getDisplayHeight(text, context.glyphs, context.overline);
+	const height = getDisplayHeight(text, context.overline);
 	if (height < 2) {
 		return null;
 	}
 	const baseline = getLargeOperatorBaseline(text, height);
-	const rows = buildVerticalGlyph(
-		text,
-		height,
-		baseline,
-		context.glyphs,
-		context.overline,
-	);
+	const rows = buildVerticalGlyph(text, height, baseline, context.overline);
 	return rows === null
 		? null
 		: createRowsBox(rows, baseline, getTokenStyle(element, null));
@@ -1365,127 +1062,51 @@ function getLargeOperatorBaseline(text: string, height: number): number {
 	return text === "∏" ? Math.max(1, middle) : middle;
 }
 
-interface AlphanumericRange {
-	upper: number;
-	lower: number;
-	digits?: number;
-	greekUpper?: number;
-	greekLower?: number;
-	exceptions?: Record<string, string>;
-}
-
-// The Mathematical Alphanumeric Symbols block, by mathvariant. The
-// exceptions are the letters Unicode had encoded before the block.
-const ALPHANUMERIC_RANGES: Record<string, AlphanumericRange> = {
-	bold: {
-		upper: 0x1d400,
-		lower: 0x1d41a,
-		digits: 0x1d7ce,
-		greekUpper: 0x1d6a8,
-		greekLower: 0x1d6c2,
-	},
-	italic: {
-		upper: 0x1d434,
-		lower: 0x1d44e,
-		greekUpper: 0x1d6e2,
-		greekLower: 0x1d6fc,
-		exceptions: {h: "ℎ"},
-	},
-	"bold-italic": {
-		upper: 0x1d468,
-		lower: 0x1d482,
-		greekUpper: 0x1d71c,
-		greekLower: 0x1d736,
-	},
+// The letters Unicode encoded before the Mathematical Alphanumeric
+// Symbols block, by mathvariant. They are in every font that has any
+// math at all. A variant with none maps nothing but spaces.
+const ALPHANUMERIC_EXCEPTIONS: Record<string, Record<string, string>> = {
+	bold: {},
+	italic: {h: "ℎ"},
+	"bold-italic": {},
 	script: {
-		upper: 0x1d49c,
-		lower: 0x1d4b6,
-		exceptions: {
-			B: "ℬ",
-			E: "ℰ",
-			F: "ℱ",
-			H: "ℋ",
-			I: "ℐ",
-			L: "ℒ",
-			M: "ℳ",
-			R: "ℛ",
-			e: "ℯ",
-			g: "ℊ",
-			o: "ℴ",
-		},
+		B: "ℬ",
+		E: "ℰ",
+		F: "ℱ",
+		H: "ℋ",
+		I: "ℐ",
+		L: "ℒ",
+		M: "ℳ",
+		R: "ℛ",
+		e: "ℯ",
+		g: "ℊ",
+		o: "ℴ",
 	},
-	fraktur: {
-		upper: 0x1d504,
-		lower: 0x1d51e,
-		exceptions: {C: "ℭ", H: "ℌ", I: "ℑ", R: "ℜ", Z: "ℨ"},
-	},
-	"double-struck": {
-		upper: 0x1d538,
-		lower: 0x1d552,
-		digits: 0x1d7d8,
-		exceptions: {C: "ℂ", H: "ℍ", N: "ℕ", P: "ℙ", Q: "ℚ", R: "ℝ", Z: "ℤ"},
-	},
-	"sans-serif": {upper: 0x1d5a0, lower: 0x1d5ba, digits: 0x1d7e2},
-	monospace: {upper: 0x1d670, lower: 0x1d68a, digits: 0x1d7f6},
+	fraktur: {C: "ℭ", H: "ℌ", I: "ℑ", R: "ℜ", Z: "ℨ"},
+	"double-struck": {C: "ℂ", H: "ℍ", N: "ℕ", P: "ℙ", Q: "ℚ", R: "ℝ", Z: "ℤ"},
+	"sans-serif": {},
+	monospace: {},
 };
 
-// The text in the block's letters, or null when any character has no
-// form there, so the token falls back to SGR bold and italic. The
-// letters Unicode encoded before the block (ℝ, ℂ, ℕ, ℋ, ℜ) are in every
-// font that has any math at all, so they are used without the flag that
-// opts into the block.
+// The text in those letters, or null when any character has no form
+// there, so the token falls back to SGR bold and italic.
 function toMathAlphanumeric(
 	chars: SourcedChar[],
 	variant: string,
-	block: boolean,
 ): SourcedChar[] | null {
-	const range = ALPHANUMERIC_RANGES[variant];
-	if (range === undefined) {
+	const exceptions = ALPHANUMERIC_EXCEPTIONS[variant];
+	if (exceptions === undefined) {
 		return null;
 	}
 	const out: SourcedChar[] = [];
 	for (const {ch, source} of chars) {
-		const mapped = mapAlphanumeric(ch, range, block);
-		if (mapped === null) {
+		const mapped = ch === " " ? ch : exceptions[ch];
+		if (mapped === undefined) {
 			return null;
 		}
 		out.push({ch: mapped, source});
 	}
 	return out;
-}
-
-function mapAlphanumeric(
-	char: string,
-	range: AlphanumericRange,
-	block: boolean,
-): string | null {
-	const code = char.codePointAt(0)!;
-	const exception = range.exceptions?.[char];
-	if (exception !== undefined) {
-		return exception;
-	}
-	if (char === " ") {
-		return char;
-	}
-	if (!block) {
-		return null;
-	}
-	if (code >= 0x41 && code <= 0x5a) {
-		return String.fromCodePoint(range.upper + code - 0x41);
-	}
-	if (code >= 0x61 && code <= 0x7a) {
-		return String.fromCodePoint(range.lower + code - 0x61);
-	}
-	if (code >= 0x30 && code <= 0x39 && range.digits !== undefined) {
-		return String.fromCodePoint(range.digits + code - 0x30);
-	}
-	if (code >= 0x391 && code <= 0x3a9 && range.greekUpper !== undefined) {
-		return String.fromCodePoint(range.greekUpper + code - 0x391);
-	}
-	if (code >= 0x3b1 && code <= 0x3c9 && range.greekLower !== undefined) {
-		return String.fromCodePoint(range.greekLower + code - 0x3b1);
-	}
-	return null;
 }
 
 function isSingleGrapheme(text: string): boolean {
@@ -1793,10 +1414,10 @@ function layoutRow(
 			const source =
 				readTokenChars(child as Element).find((char) => char.source !== null)
 					?.source ?? null;
-			return createSourcedBox(
-				Array.from(toPlainGlyphs("-", context.glyphs), (ch) => ({ch, source})),
-				getTokenStyle(child as Element, null),
-			);
+			return createSourcedBox([{ch: "-", source}], getTokenStyle(
+				child as Element,
+				null,
+			));
 		}
 		return layoutNode(child, context);
 	});
@@ -1894,7 +1515,7 @@ function isVerticallyStretchy(
 	return (
 		context.display &&
 		operator.entry.stretchy &&
-		hasVerticalPieces(operator.text, context.glyphs)
+		hasVerticalPieces(operator.text)
 	);
 }
 
@@ -1916,7 +1537,7 @@ function layoutStretchedOperator(
 	if (operator.entry.largeop && !context.tight) {
 		height = Math.max(
 			height,
-			getDisplayHeight(operator.text, context.glyphs, context.overline),
+			getDisplayHeight(operator.text, context.overline),
 		);
 	}
 	const minsize = parseMathLength(element.getAttribute("minsize"));
@@ -1934,13 +1555,7 @@ function layoutStretchedOperator(
 		? getLargeOperatorBaseline(operator.text, height)
 		: Math.min(ascent + (spare >> 1), height - 1);
 	const rows = height > 1
-		? buildVerticalGlyph(
-			operator.text,
-			height,
-			baseline,
-			context.glyphs,
-			context.overline,
-		)
+		? buildVerticalGlyph(operator.text, height, baseline, context.overline)
 		: null;
 	if (rows === null) {
 		return layoutTextToken(element, operator.text, context);
@@ -2041,11 +1656,11 @@ function layoutRadical(element: Element, context: MathContext): MathBox {
 			beside(createTextBox("(", null), radicand),
 			createTextBox(")", null),
 		);
-		const sign = createTextBox(toPlainGlyphs("√", context.glyphs), null);
+		const sign = createTextBox("√", null);
 		if (index === null) {
 			return beside(sign, body);
 		}
-		const indexCharacters = toScriptCharacters(index, "sup", context);
+		const indexCharacters = toScriptCharacters(index, "sup");
 		if (indexCharacters !== null) {
 			return beside(beside(indexCharacters, sign), body);
 		}
@@ -2057,41 +1672,22 @@ function layoutRadical(element: Element, context: MathContext): MathBox {
 			beside(radicand, createTextBox(")", null)),
 		);
 	}
-	const {foot, stem, bar, shape} = getRadical(context.glyphs);
 	const height = radicand.height;
-	const signWidth = shape === "rises" ? 1 : shape === "climbs" ? height + 1 : 2;
 	const rows: string[] = [];
 	for (let row = 0; row < height; row++) {
-		const last = row === height - 1;
-		const column = shape === "rises"
-			? 0
-			: shape === "climbs" ? height - row : 1;
-		const cells = Array.from({length: signWidth}, () => " ");
-		if (last) {
-			cells[0] = foot;
-		}
-		if (!(last && shape === "rises")) {
-			cells[column] = stem;
-		}
-		rows.push(cells.join(""));
+		rows.push(row === height - 1 ? RADICAL_FOOT : RADICAL_STEM);
 	}
-	// The bar starts where the stem's top will meet it.
-	const barStart = shape === "stands" ? 1 : signWidth;
 	const column = createRowsBox(rows, radicand.baseline, null);
 	const body = beside(column, radicand);
 	// An overline along the radicand's top row needs no row of its own.
 	let result: MathBox;
-	if (bar === null && context.overline) {
-		result = overlineRow(body, 0, barStart);
+	if (context.overline) {
+		result = overlineRow(body, 0, 1);
 	} else {
-		const overline = bar === null
-			? beside(
-				createTextBox(" ".repeat(barStart), null),
-				createTextBox(" ".repeat(radicand.width + signWidth - barStart), {
-					underline: true,
-				}),
-			)
-			: createTextBox(" ".repeat(barStart) + bar.repeat(radicand.width), null);
+		const overline = beside(
+			createTextBox(" ", null),
+			createTextBox(" ".repeat(radicand.width), {underline: true}),
+		);
 		result = stack(overline, body, "left", body.baseline + 1);
 	}
 	if (index === null) {
@@ -2099,12 +1695,12 @@ function layoutRadical(element: Element, context: MathContext): MathBox {
 	}
 	// The index is a superscript before the sign when it has the
 	// characters, and otherwise sits above the sign.
-	const superscript = toScriptCharacters(index, "sup", context);
+	const superscript = toScriptCharacters(index, "sup");
 	if (superscript !== null) {
 		return beside(superscript, result);
 	}
 	// The index ends where the bar begins.
-	const room = barStart;
+	const room = 1;
 	const shift = Math.max(0, index.width - room);
 	result = pad(result, 0, 0, 0, shift);
 	let top = result.baseline - index.height;
@@ -2136,7 +1732,6 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 			overNode,
 			"over",
 			element.getAttribute("accent"),
-			context,
 		);
 		if (combined !== null) {
 			result = combined;
@@ -2149,7 +1744,6 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 			underNode,
 			"under",
 			element.getAttribute("accentunder"),
-			context,
 		);
 		if (combined !== null) {
 			result = combined;
@@ -2169,10 +1763,8 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 	}
 	// A bar over or under a wider base is a line on the base's edge, as a
 	// radical's is: an underline, an overline where the terminal draws
-	// one, or an underlined blank row above where it does not. The ASCII
-	// set is characters only, and draws its bars as rows of dashes.
-	const edges = context.glyphs !== "ascii";
-	if (edges && overNode !== undefined && isBarAccent(overNode)) {
+	// one, or an underlined blank row above where it does not.
+	if (overNode !== undefined && isBarAccent(overNode)) {
 		result = context.overline
 			? overlineRow(result, 0, 0)
 			: stack(
@@ -2183,7 +1775,7 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 			);
 		overNode = undefined;
 	}
-	if (edges && underNode !== undefined && isBarAccent(underNode)) {
+	if (underNode !== undefined && isBarAccent(underNode)) {
 		result = underlineRow(result, result.height - 1, 0);
 		underNode = undefined;
 	}
@@ -2199,7 +1791,6 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 		children[0],
 		result,
 		Math.max(over?.width ?? 0, under?.width ?? 0),
-		context,
 	);
 	if (over !== null) {
 		result = attachUnderOver(result, over, "over");
@@ -2214,7 +1805,6 @@ function stretchAcross(
 	node: Node | undefined,
 	base: MathBox,
 	width: number,
-	context: MathContext,
 ): MathBox {
 	if (node === undefined || !isOperatorElement(node)) {
 		return base;
@@ -2223,8 +1813,7 @@ function stretchAcross(
 	const text = collapseTokenText(element.textContent ?? "");
 	const entry = lookupOperator(text, "infix");
 	if (
-		!readFlag(element, "stretchy", entry.stretchy) ||
-		!hasHorizontalPieces(text, context.glyphs)
+		!readFlag(element, "stretchy", entry.stretchy) || !hasHorizontalPieces(text)
 	) {
 		return base;
 	}
@@ -2234,7 +1823,7 @@ function stretchAcross(
 		return base;
 	}
 	return createTextBox(
-		buildHorizontalGlyph(text, target, context.glyphs)!,
+		buildHorizontalGlyph(text, target)!,
 		getTokenStyle(element, null),
 	);
 }
@@ -2257,7 +1846,6 @@ function combineAccent(
 	node: Node,
 	side: "over" | "under",
 	accentAttribute: string | null,
-	context: MathContext,
 ): MathBox | null {
 	const operator = getAccentOperator(node);
 	const accentFlag = accentAttribute?.trim().toLowerCase();
@@ -2267,7 +1855,6 @@ function combineAccent(
 	if (
 		!accent ||
 		operator === null ||
-		context.glyphs === "ascii" ||
 		base.height !== 1 ||
 		base.cells[0].length !== 1
 	) {
@@ -2293,10 +1880,10 @@ function layoutUnderOverScript(
 	const stretchy =
 		operator !== null &&
 		readFlag(node as Element, "stretchy", operator.entry.stretchy) &&
-		hasHorizontalPieces(operator.text, context.glyphs);
+		hasHorizontalPieces(operator.text);
 	return stretchy && base.width > 1
 		? createTextBox(
-			buildHorizontalGlyph(operator!.text, base.width, context.glyphs)!,
+			buildHorizontalGlyph(operator!.text, base.width)!,
 			getTokenStyle(node as Element, null),
 		)
 		: layoutNode(node, context);
@@ -2503,14 +2090,10 @@ function scriptContext(context: MathContext): MathContext {
 
 /**
  * A one-row script as Unicode superscript or subscript characters, or
- * null when any grapheme in it has no such form. The ASCII set has none.
+ * null when any grapheme in it has no such form.
  */
-function toScriptCharacters(
-	box: MathBox,
-	kind: "sub" | "sup",
-	context: MathContext,
-): MathBox | null {
-	if (box.height !== 1 || box.width === 0 || context.glyphs === "ascii") {
+function toScriptCharacters(box: MathBox, kind: "sub" | "sup"): MathBox | null {
+	if (box.height !== 1 || box.width === 0) {
 		return null;
 	}
 	const table = kind === "sup" ? SUPERSCRIPTS : SUBSCRIPTS;
@@ -2580,8 +2163,8 @@ function attachScripts(
 	context: MathContext,
 	pre = false,
 ): MathBox {
-	const subCharacters = sub && toScriptCharacters(sub, "sub", context);
-	const supCharacters = sup && toScriptCharacters(sup, "sup", context);
+	const subCharacters = sub && toScriptCharacters(sub, "sub");
+	const supCharacters = sup && toScriptCharacters(sup, "sup");
 	const shiftedSub = subCharacters ? null : sub;
 	const shiftedSup = supCharacters ? null : sup;
 	const joinTo = (box: MathBox, part: MathBox): MathBox =>
@@ -2749,7 +2332,7 @@ function layoutFraction(element: Element, context: MathContext): MathBox {
 	// leaves the row empty.
 	const bar = thickness === 0
 		? createEmptyBox(width)
-		: createTextBox(getFractionBar(context.glyphs).repeat(width), null);
+		: createTextBox("─".repeat(width), null);
 	const barred = stack(top, bar, "left", top.height);
 	return stack(barred, bottom, "left", barred.baseline);
 }
@@ -2975,7 +2558,7 @@ function layoutTable(element: Element, context: MathContext): MathBox {
 	for (let index = 0; index < columnCount; index++) {
 		columnWidths[index] += columnHangs[index];
 	}
-	const lines = getBoxLines(context.glyphs);
+	const lines = BOX_LINES;
 	const columnSpacing = Math.max(
 		0,
 		Math.round(parseMathLength(element.getAttribute("columnspacing")) ?? 1),
@@ -3218,5 +2801,5 @@ function layoutError(element: Element, context: MathContext): MathBox {
 			),
 		};
 	}
-	return frameBox(box, getBoxLines(context.glyphs), red);
+	return frameBox(box, BOX_LINES, red);
 }

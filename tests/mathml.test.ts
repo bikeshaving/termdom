@@ -395,23 +395,6 @@ test("an accent over a one-cell base is a combining mark", async () => {
 	).toEqual(["   lim", "   n→∞"]);
 });
 
-test("the ascii glyph set draws with slashes, pipes and dashes", async () => {
-	const lines = await renderLines(
-		"<math display=\"block\" style=\"--math-glyphs: ascii\"><mo>(</mo>" +
-		"<mfrac><mi>a</mi><msqrt><mi>b</mi></msqrt></mfrac><mo>)</mo></math>",
-		12,
-	);
-	expect(lines).toEqual([
-		"  /  a  \\",
-		"  |-----|",
-		"  |   _ |",
-		"  \\ \\/b /",
-	]);
-	for (const line of lines) {
-		expect(/^[\x00-\x7f]*$/.test(line)).toBe(true);
-	}
-});
-
 const TABLE =
 	"<mtable><mtr><mtd><mn>1</mn></mtd><mtd><mn>10</mn></mtd></mtr>" +
 	"<mtr><mtd><mn>100</mn></mtd><mtd><mn>2</mn></mtd></mtr></mtable>";
@@ -563,15 +546,6 @@ test("innerText reads math as the one-line form, and an annotation is no part of
 	dom.dispose();
 });
 
-test("--math-variant-glyphs: unicode uses the alphanumeric block", async () => {
-	const html =
-		"<math display=\"block\" style=\"--math-variant-glyphs: unicode\">" +
-		"<mi>x</mi><mi mathvariant=\"bold\">A</mi>" +
-		"<mi mathvariant=\"double-struck\">R</mi><mi>sin</mi></math>";
-	expect(await renderLines(html, 10)).toEqual(["  𝑥𝐀ℝsin"]);
-	expect(await renderANSI(html)).not.toContain("\x1b[3m");
-});
-
 test("font-style and font-weight on tokens become SGR", async () => {
 	const output = await renderANSI(
 		block("<mn style=\"font-style: italic; font-weight: bold\">7</mn>"),
@@ -702,7 +676,7 @@ test("a large operator keeps its spacing through its scripts, but not inside a f
 	).toEqual(["  │___  │", "  │╲   a│", "  │╱__  │", "  │ i   │"]);
 });
 
-test("double-struck letters use the letterlike block without the variant flag", async () => {
+test("double-struck letters with a letterlike form take it", async () => {
 	expect(
 		await renderLines(
 			inline(
@@ -918,19 +892,4 @@ test("a bar over or under a wide base is a line on its edge", async () => {
 	expect(buffer.getLine(0).getCell(column).isUnderline()).toBeTruthy();
 	expect(buffer.getLine(0).getCell(column + 2).isUnderline()).toBeTruthy();
 	dom.dispose();
-});
-
-test("the ascii glyph set draws bar accents as characters, never attributes", async () => {
-	const html =
-		"<math display=\"block\" style=\"--math-glyphs: ascii\">" +
-		"<mover accent=\"true\"><mrow><mi>A</mi><mi>B</mi></mrow><mo stretchy=\"true\">‾</mo></mover>" +
-		"<mo>+</mo>" +
-		"<munder accentunder=\"true\"><mrow><mi>a</mi><mi>b</mi><mi>c</mi></mrow><mo stretchy=\"true\">‾</mo></munder>" +
-		"</math>";
-	expect(await renderMarked(html, 14)).toEqual([
-		"   --",
-		"   AB + abc",
-		"        ---",
-	]);
-	expect(await renderANSI(html)).not.toContain("\x1b[4m");
 });

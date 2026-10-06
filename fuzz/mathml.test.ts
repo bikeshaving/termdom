@@ -90,7 +90,7 @@ const tree = fc.letrec<{node: string}>((tie) => ({
 	)),
 }));
 
-function checkBox(box: MathBox, ascii: boolean): void {
+function checkBox(box: MathBox): void {
 	expect(box.height).toBeGreaterThanOrEqual(1);
 	expect(box.baseline).toBeGreaterThanOrEqual(0);
 	expect(box.baseline).toBeLessThan(box.height);
@@ -100,11 +100,6 @@ function checkBox(box: MathBox, ascii: boolean): void {
 		for (const cell of row) {
 			expect(getStringWidth(cell.text)).toBe(cell.width);
 			width += cell.width;
-			if (ascii) {
-				for (const char of cell.text) {
-					expect(char.codePointAt(0)!).toBeLessThanOrEqual(0x7f);
-				}
-			}
 		}
 		expect(width).toBe(box.width);
 	}
@@ -117,18 +112,14 @@ test("every random MathML tree lays out to a well-formed box", async () => {
 		try {
 			dom.document.body.innerHTML =
 				`<math display="block" id="d">${markup}</math>` +
-					`<p><math id="i">${markup}</math></p>` +
-					`<math display="block" id="a" style="--math-glyphs: ascii">${markup}</math>`;
+					`<p><math id="i">${markup}</math></p>`;
 			await nextFrame(dom);
 			const display = dom.document.getElementById("d")!;
 			const inline = dom.document.getElementById("i")!;
-			const ascii = dom.document.getElementById("a")!;
-			checkBox(layoutMath(display, true), false);
+			checkBox(layoutMath(display, true));
 			const one = layoutMath(inline, false);
-			checkBox(one, false);
+			checkBox(one);
 			expect(one.height).toBe(1);
-			checkBox(layoutMath(ascii, true), true);
-			checkBox(layoutMath(ascii, false), true);
 		} finally {
 			dom.dispose();
 		}
