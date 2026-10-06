@@ -967,3 +967,16 @@ test("createImageBitmap from a kept-down image crops by each side's ratio, and p
 	expect([alphaAt(6, 1), alphaAt(1, 6), alphaAt(6, 6)]).toEqual([0, 0, 0]);
 	dom.dispose();
 });
+
+test("with graphics off, a canvas has no 2d context and keeps its chargrid", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport, graphics: false});
+	const a = dom.document.createElement("canvas");
+	const b = dom.document.createElement("canvas");
+	dom.document.body.append(a, b);
+	expect(a.getContext("2d")).toBeNull();
+	expect(b.getContext("termdom-chargrid" as "2d")).toBeInstanceOf(
+		CanvasCharGridContext,
+	);
+	dom.dispose();
+});

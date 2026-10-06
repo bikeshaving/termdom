@@ -16,6 +16,17 @@ lower half block only the seam between the two pixels is a little
 low. The pixels are ordinary cells, so they scroll, clip and
 redraw like text, and they work over SSH and inside tmux.
 
+The `graphics` option says how pixels are drawn. `true`, the default,
+uses the best way the terminal has, which today is always cells.
+`"cells"` draws cells whatever the terminal could do. `false` draws no
+pixels at all: an `<img>` loads nothing and shows its `alt` text, as a
+browser does with images turned off, and `getContext("2d")` returns
+`null`, so a canvas shows its fallback content.
+
+```ts
+new TermDOM({graphics: false});
+```
+
 ## `<img>`
 
 ```html
@@ -30,10 +41,7 @@ such as its working directory.
 
 ### Loading
 
-Nothing loads unless the program allows it. Which loads a document may
-make is a Content Security Policy, given as the `csp` option in the
-syntax of a `Content-Security-Policy` header. An `<img>` loads only what
-`img-src` allows, or `default-src` when there is no `img-src`. The default is `default-src 'none'`.
+Nothing loads unless the program allows it, with the `csp` option:
 
 ```ts
 // Images from anywhere on the web, and data: URLs.
@@ -41,7 +49,15 @@ new TermDOM({csp: "img-src https: data:"});
 
 // A mail client: attachments by cid:, nothing remote.
 new TermDOM({csp: "img-src cid: data:"});
+
+// Anything, as a browser with no policy loads.
+new TermDOM({csp: ""});
 ```
+
+The option is a Content Security Policy, in the syntax of a
+`Content-Security-Policy` header. An `<img>` loads only what `img-src`
+allows, or `default-src` when there is no `img-src`. The default is
+`default-src 'none'`.
 
 Source expressions match as CSP Level 3 defines them: `'none'`,
 `'self'`, `*`, a scheme such as `https:` or `cid:`, and a host such as
