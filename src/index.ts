@@ -402,15 +402,20 @@ export class TermDOM {
 			// When the cell sizes the page, the first frame waits for it, so
 			// the page never lays out against the guess.
 			const before = getCellSize(this.document);
-			const cellAnswered = this[kExchange].negotiateCellPixels().then(() => {
-				if (!isAttached(this)) {
-					return;
-				}
-				if (getCellSize(this.document) !== before) {
-					cellSizeChanged(this);
-				}
-				void render(this);
-			});
+			const cellAnswered = this[kExchange].negotiateCellPixels().then(
+				(cellChanged) => {
+					if (!isAttached(this)) {
+						return;
+					}
+					if (cellChanged) {
+						cellPixelsChanged(this);
+					}
+					if (getCellSize(this.document) !== before) {
+						cellSizeChanged(this);
+					}
+					void render(this);
+				},
+			);
 			// The first frame is drawn in the colors the terminal chose and can
 			// show, and, when the cell sizes the page, at the size it reported.
 			// Input does not wait for any of them.
@@ -426,9 +431,12 @@ export class TermDOM {
 				this[kExchange].addEventListener("terminalresize", (event) => {
 					const {sizeChanged} = event as TerminalResizeEvent;
 					const previous = getCellSize(this.document);
-					void this[kExchange].negotiateCellPixels().then(() => {
+					void this[kExchange].negotiateCellPixels().then((cellChanged) => {
 						if (!isAttached(this)) {
 							return;
+						}
+						if (cellChanged) {
+							cellPixelsChanged(this);
 						}
 						if (getCellSize(this.document) !== previous) {
 							cellSizeChanged(this);
@@ -723,6 +731,12 @@ function getColorScheme(termDOM: TermDOM): "light" | "dark" {
 	return (
 		termDOM[kExchange].colorScheme ?? termDOM[kTransport].colorScheme ?? "light"
 	);
+}
+
+// An image's or a canvas's natural size in cells is its pixels over the
+// cell's, so a cell measured anew lays them out again.
+function cellPixelsChanged(termDOM: TermDOM): void {
+	DOM.relayoutReplacedElements(termDOM.document);
 }
 
 // Every length the page wrote measures differently now, and so does the
