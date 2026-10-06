@@ -1,8 +1,8 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
 import {CSS_SHORTHANDS} from "../src/generated/cssproperties.ts";
-import {getComputedValue} from "../src/internal/cssom.ts";
 import {TermDOM} from "../src/index.ts";
+import {getComputedValue} from "../src/internal/cssom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 /** This markup in a DOM of its own, over a terminal nothing reads. */
