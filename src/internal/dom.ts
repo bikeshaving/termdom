@@ -50,6 +50,7 @@ import {
 import * as CSSValues from "./cssvalues.ts";
 import {getEditingHost, installEditing} from "./editing.ts";
 import type {Exchange} from "./exchange.ts";
+import type {Framebuffer} from "./framebuffer.ts";
 import {
 	getInterface,
 	getReflections,
@@ -67,7 +68,6 @@ import {
 import type {Layout} from "./layout.ts";
 import {linearizeMath} from "./mathml.ts";
 import {getCellPixels, registerCellPixels} from "./replaced.ts";
-import type {Screen} from "./screen.ts";
 import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
@@ -312,7 +312,7 @@ const kVisible = Symbol("visible");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
-const kScreen = Symbol("screen");
+const kFramebuffer = Symbol("framebuffer");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kPendingEditingReveal = Symbol("pendingEditingReveal");
 const kReportUncaught = Symbol("reportUncaught");
@@ -9339,7 +9339,7 @@ export class Element extends Node implements globalThis.Element {
 			// subtree and repaint.
 			if (this.isConnected) {
 				attached[kLayout].invalidate(this);
-				attached[kScreen].invalidate();
+				attached[kFramebuffer].invalidate();
 				void attached[kRender]();
 			}
 		}
@@ -10053,7 +10053,7 @@ Object.defineProperties(Element.prototype, {
 				? getAttachedDocument(this)
 				: undefined;
 			if (attached) {
-				return pxFromCells(attached[kScreen].scrollTop, true, this);
+				return pxFromCells(attached[kFramebuffer].scrollTop, true, this);
 			}
 			const top = scrollOffsets.get(this)?.top ?? 0;
 			return getAttachedDocument(this) === undefined
@@ -10144,7 +10144,7 @@ function toViewportRect(
 		? rect
 		: new DOMRect(
 			rect.x,
-			rect.y - attached[kScreen].scrollTop,
+			rect.y - attached[kFramebuffer].scrollTop,
 			rect.width,
 			rect.height,
 		);
@@ -10918,7 +10918,7 @@ export class HTMLElement extends Element {
 			return;
 		}
 		attached[kCascade].handleFocusChange(this, null);
-		attached[kScreen].invalidate();
+		attached[kFramebuffer].invalidate();
 		void attached[kRender]();
 		dispatchAsUserAgent(
 			this,
@@ -11069,7 +11069,7 @@ function runFocusingSteps(element: HTMLElement): void {
 	// elements' resolved styles are stale whether or not a listener changes
 	// anything.
 	attached[kCascade].handleFocusChange(previous, element);
-	attached[kScreen].invalidate();
+	attached[kFramebuffer].invalidate();
 	void attached[kRender]();
 	// An edit the user made in the control focus is leaving is committed
 	// first, so change fires before blur.
@@ -11356,7 +11356,7 @@ Object.defineProperties(HTMLElement.prototype, {
 				return;
 			}
 			const regionHeight = getScrollingRegionHeight(this[kDocument]);
-			const top = attached[kScreen].scrollTop;
+			const top = attached[kFramebuffer].scrollTop;
 			const delta = Math.round(
 				attached[kLayout].alignmentDelta(
 					rect.top,
@@ -13031,7 +13031,7 @@ export class ShadowRoot
 		return elementAtDocumentPoint(
 			this[kDocument] as unknown as globalThis.Document,
 			toDouble(x) / cell.width,
-			toDouble(y) / cell.height + attached[kScreen].scrollTop,
+			toDouble(y) / cell.height + attached[kFramebuffer].scrollTop,
 			this as unknown as globalThis.Node,
 		) as unknown as Element | null;
 	}
@@ -14260,7 +14260,7 @@ function invalidateReplaced(element: Element, reflow: boolean): void {
 	if (reflow) {
 		attached[kLayout].invalidate(element);
 	}
-	attached[kScreen].invalidate();
+	attached[kFramebuffer].invalidate();
 	void attached[kRender]();
 }
 
@@ -14541,7 +14541,7 @@ export function relayoutReplacedElements(
 		}
 	};
 	visit(root);
-	attached[kScreen].invalidate();
+	attached[kFramebuffer].invalidate();
 	void attached[kRender]();
 }
 
@@ -19400,7 +19400,7 @@ export class HTMLSelectElement extends HTMLElement {
 			// The event's point is CSS pixels, and the rows' rects are cells.
 			const cell = getCellSize(this);
 			const x = event.clientX / cell.width;
-			const y = event.clientY / cell.height + attached[kScreen].scrollTop;
+			const y = event.clientY / cell.height + attached[kFramebuffer].scrollTop;
 			const picker = this[kPicker]!;
 			const row =
 				(Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
@@ -21187,7 +21187,7 @@ function stateChanged(element: Element, states: readonly string[]): void {
 		return;
 	}
 	attached[kCascade].handleStateChange(element, states);
-	attached[kScreen].invalidate();
+	attached[kFramebuffer].invalidate();
 	queueMicrotask(() => {
 		void attached[kRender]();
 	});
@@ -24571,7 +24571,7 @@ export interface Document {
 	[kLayout]: Layout;
 	[kCascade]: Cascade;
 	[kExchange]: Exchange;
-	[kScreen]: Screen;
+	[kFramebuffer]: Framebuffer;
 	// Where an exception the page let escape goes once the window's error
 	// event has not handled it. The engine owns the terminal, so it decides.
 	[kReportUncaught]: (error: unknown) => void;
@@ -26292,7 +26292,7 @@ export function elementAtDocumentPoint(
 		x,
 		y,
 		getTopLayer(document) as unknown as Set<globalThis.Element>,
-		attached[kScreen].scrollTop,
+		attached[kFramebuffer].scrollTop,
 	);
 	// The DOM cannot hand out a pseudo-element, so a hit on the content it
 	// generates is a hit on the element it originates from.
@@ -26364,7 +26364,7 @@ Object.defineProperties(Document.prototype, {
 			return elementAtDocumentPoint(
 				this,
 				x / cell.width,
-				y / cell.height + attached[kScreen].scrollTop,
+				y / cell.height + attached[kFramebuffer].scrollTop,
 			);
 		},
 		writable: true,
@@ -26385,7 +26385,7 @@ Object.defineProperties(Document.prototype, {
 				: elementAtDocumentPoint(
 					this,
 					x / cell.width,
-					y / cell.height + attached[kScreen].scrollTop,
+					y / cell.height + attached[kFramebuffer].scrollTop,
 				);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
@@ -27110,7 +27110,7 @@ function setScrollOffset(
 	if (axis === "top") {
 		recordScrollShift(attached, document, element, next - previous);
 	} else {
-		attached[kScreen].invalidate();
+		attached[kFramebuffer].invalidate();
 	}
 	let pending = pendingScrollTargets.get(document);
 	if (pending === undefined) {
@@ -27126,7 +27126,7 @@ export function runScrollSteps(document: globalThis.Document): void {
 	if (attached === undefined) {
 		return;
 	}
-	const top = attached[kScreen].scrollTop;
+	const top = attached[kFramebuffer].scrollTop;
 	if (top !== (reportedDocumentScrollTop.get(attached) ?? 0)) {
 		reportedDocumentScrollTop.set(attached, top);
 		dispatchAsUserAgent(attached, new Event("scroll", {bubbles: true}));
@@ -27239,7 +27239,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	}
 	if (changed) {
 		scrollShifts.delete(document as Document);
-		attached[kScreen].invalidate();
+		attached[kFramebuffer].invalidate();
 		void attached[kRender]();
 	}
 }
@@ -27257,7 +27257,7 @@ function recordScrollShift(
 		shift.delta += delta;
 	} else {
 		scrollShifts.delete(document);
-		attached[kScreen].invalidate();
+		attached[kFramebuffer].invalidate();
 	}
 }
 
@@ -28820,7 +28820,7 @@ function scheduleSelectionChange(document: Document): void {
 	// below. That guard drops the second move in a task but not its paint.
 	const attached = getAttachedDocument(document);
 	if (attached !== undefined) {
-		attached[kScreen].invalidate();
+		attached[kFramebuffer].invalidate();
 		void attached[kRender]();
 	}
 	if (document[kSelectionChangeScheduled]) {
@@ -30562,7 +30562,7 @@ function invalidateHighlights(document: Document): void {
 	if (attached === undefined) {
 		return;
 	}
-	attached[kScreen].invalidate();
+	attached[kFramebuffer].invalidate();
 	void attached[kRender]();
 }
 
@@ -33347,7 +33347,7 @@ export function attachDocument(
 	layout: Layout,
 	styles: Cascade,
 	exchange: Exchange,
-	screen: Screen,
+	framebuffer: Framebuffer,
 	render: () => Promise<void>,
 	reportUncaught: (error: unknown) => void,
 ): void {
@@ -33361,10 +33361,10 @@ export function attachDocument(
 	attached[kLayout] = layout;
 	attached[kCascade] = styles;
 	attached[kExchange] = exchange;
-	attached[kScreen] = screen;
+	attached[kFramebuffer] = framebuffer;
 	attached[kPendingCaretReveal] = null;
 	attached[kPendingEditingReveal] = null;
-	registerCellPixels(attached, () => screen.cellPixels);
+	registerCellPixels(attached, () => framebuffer.cellPixels);
 	for (const type of ["input", "select", "change", "selectionchange"]) {
 		exchange.addEventListener(type, onTextControlEditEvent);
 	}
@@ -33427,7 +33427,7 @@ function onTextControlEditEvent(event: globalThis.Event): void {
 	attached[kPendingCaretReveal] = target;
 	// A document scroll move and a caret move. No mutation record describes
 	// either.
-	attached[kScreen].invalidate();
+	attached[kFramebuffer].invalidate();
 	void attached[kRender]();
 }
 
@@ -33492,13 +33492,13 @@ export function scrollDocumentTo(
 	if (getFullscreenElement(attached) === null) {
 		flushLayout(document);
 		const height = attached[kLayout].documentPaintHeight();
-		const region = Math.min(height, attached[kScreen].rows);
+		const region = Math.min(height, attached[kFramebuffer].rows);
 		next = Math.min(next, Math.max(0, height - region));
 	}
-	if (next === attached[kScreen].scrollTop) {
+	if (next === attached[kFramebuffer].scrollTop) {
 		return;
 	}
-	attached[kScreen].scrollTo(next);
+	attached[kFramebuffer].scrollTo(next);
 	void attached[kRender]();
 }
 
@@ -33508,10 +33508,13 @@ export function scrollDocumentTo(
 function getScrollingRegionHeight(document: globalThis.Document): number {
 	const attached = getAttachedDocument(document as unknown as Node)!;
 	if (getFullscreenElement(attached) !== null) {
-		return attached[kScreen].rows;
+		return attached[kFramebuffer].rows;
 	}
 	const flow = attached[kLayout].getRect(document.documentElement!);
-	return Math.min(attached[kScreen].rows, flow ? Math.ceil(flow.height) : 0);
+	return Math.min(
+		attached[kFramebuffer].rows,
+		flow ? Math.ceil(flow.height) : 0,
+	);
 }
 
 // The caret as the painter derives it: the selection focus, measured
@@ -33578,14 +33581,14 @@ export function revealPendingCaret(document: globalThis.Document): void {
 		revealBottom = Math.round(rect.bottom);
 	}
 	const regionHeight = getScrollingRegionHeight(document);
-	const top = attached[kScreen].scrollTop;
+	const top = attached[kFramebuffer].scrollTop;
 	const delta = revealTop < top
 		? revealTop - top
 		: revealBottom > top + regionHeight
 				? revealBottom - (top + regionHeight)
 				: 0;
 	if (delta) {
-		attached[kScreen].scrollTo(top + delta);
+		attached[kFramebuffer].scrollTo(top + delta);
 		// No mutation record describes a document scroll move.
 		void attached[kRender]();
 	}
@@ -33826,7 +33829,7 @@ type AttachedDocument =
 		[kLayout]: Layout;
 		[kCascade]: Cascade;
 		[kExchange]: Exchange;
-		[kScreen]: Screen;
+		[kFramebuffer]: Framebuffer;
 		[kReportUncaught]: (error: unknown) => void;
 	};
 
@@ -34921,7 +34924,7 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: pxFromCells(attached[kScreen].cols, false, this.document);
+			: pxFromCells(attached[kFramebuffer].cols, false, this.document);
 	}
 
 	get outerWidth(): number {
@@ -34932,7 +34935,7 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: pxFromCells(attached[kScreen].rows, true, this.document);
+			: pxFromCells(attached[kFramebuffer].rows, true, this.document);
 	}
 
 	get outerHeight(): number {
@@ -34945,7 +34948,7 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: pxFromCells(attached[kScreen].documentTop, true, this.document);
+			: pxFromCells(attached[kFramebuffer].documentTop, true, this.document);
 	}
 
 	// Standard window scrolling, mapped onto the document scroll. scrollY is
@@ -34956,7 +34959,7 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: pxFromCells(attached[kScreen].scrollTop, true, this.document);
+			: pxFromCells(attached[kFramebuffer].scrollTop, true, this.document);
 	}
 
 	get pageYOffset(): number {
@@ -35118,7 +35121,7 @@ export class Window extends EventTarget {
 				// for a palette of 256 or 8.
 				get colorDepth(): number {
 					const attached = getAttachedDocument(window.document);
-					const depth = attached?.[kScreen].colorDepth ?? "rgb";
+					const depth = attached?.[kFramebuffer].colorDepth ?? "rgb";
 					return depth === "rgb" ? 24 : depth === "256" ? 8 : 3;
 				},
 				get pixelDepth(): number {
@@ -35319,7 +35322,8 @@ export class Window extends EventTarget {
 			: (y ?? 0);
 		scrollDocumentTo(
 			this.document,
-			attached[kScreen].scrollTop + top / getCellSize(this.document).height,
+			attached[kFramebuffer].scrollTop +
+			top / getCellSize(this.document).height,
 		);
 	}
 

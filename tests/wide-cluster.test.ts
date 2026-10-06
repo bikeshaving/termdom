@@ -1,11 +1,11 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {Screen} from "../src/internal/screen.ts";
+import {Framebuffer} from "../src/internal/framebuffer.ts";
 import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 test("a cell written inside a wide cluster's span is dropped, not emitted", () => {
-	const screen = new Screen(2, 12, "rgb");
+	const screen = new Framebuffer(2, 12, "rgb");
 	const ctx = screen.beginFrame({offset: 0});
 	ctx.drawText("काा", 2, 0);
 	ctx.drawText("ab", 3, 0);

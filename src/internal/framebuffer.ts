@@ -1794,7 +1794,7 @@ const kCellPixels = Symbol("cellPixels");
 // twice as tall as wide at any size.
 const DEFAULT_CELL_PIXELS = {width: 8, height: 16};
 
-export interface Screen {
+export interface Framebuffer {
 	[kPrev]: CellGrid | null;
 	// The dropped grid, reused by the next frame of the same size.
 	[kSpare]: CellGrid | null;
@@ -1826,7 +1826,7 @@ export interface Screen {
 	[kDirty]: boolean;
 }
 
-export class Screen {
+export class Framebuffer {
 	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
 		this[kFlushProbes] = false;
 		this[kMeasurer] = null;
@@ -2487,7 +2487,7 @@ function hasDisputedCellBefore(
 	return false;
 }
 
-function takeGrid(screen: Screen, rows: number, cols: number): CellGrid {
+function takeGrid(screen: Framebuffer, rows: number, cols: number): CellGrid {
 	const spare = screen[kSpare];
 	if (spare !== null && spare.rows === rows && spare.cols === cols) {
 		screen[kSpare] = null;

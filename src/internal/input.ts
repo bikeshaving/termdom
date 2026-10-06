@@ -39,8 +39,8 @@ import {
 } from "./dom.ts";
 import {getEditingHost, requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
+import type {Framebuffer} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
-import type {Screen} from "./screen.ts";
 
 // The keys a terminal names, with the legacy keyCode plenty of code
 // still reads. Also the list of names that are physical key identities.
@@ -302,7 +302,7 @@ const kDocument = Symbol("document");
 const kWindow = Symbol("window");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
-const kScreen = Symbol("screen");
+const kFramebuffer = Symbol("framebuffer");
 
 // The nearest scroll container (overflow auto or scroll; hidden does
 // not take the wheel) that can still move in the tick's direction, or
@@ -364,7 +364,7 @@ export interface Input {
 	[kWindow]: Window;
 	[kLayout]: Layout;
 	[kCascade]: Cascade;
-	[kScreen]: Screen;
+	[kFramebuffer]: Framebuffer;
 	// What movementX/movementY measure from.
 	[kLastMouse]: {x: number; y: number} | null;
 	// Motion coalesced to one hit-test per frame. `quiet` marks a drag's
@@ -416,13 +416,13 @@ export class Input {
 		document: Document,
 		layout: Layout,
 		styles: Cascade,
-		screen: Screen,
+		framebuffer: Framebuffer,
 	) {
 		this[kDocument] = document;
 		this[kWindow] = document.defaultView as unknown as Window;
 		this[kLayout] = layout;
 		this[kCascade] = styles;
-		this[kScreen] = screen;
+		this[kFramebuffer] = framebuffer;
 		this[kLastMouse] = null;
 		this[kPendingHover] = null;
 		this[kHoverElement] = null;
@@ -447,7 +447,7 @@ export class Input {
 
 	dispatch(item: WireKey[] | WireMouse | WirePaste): void {
 		// Pseudo-state and the selection move with no mutation record.
-		this[kScreen].invalidate();
+		this[kFramebuffer].invalidate();
 		if (Array.isArray(item)) {
 			deliverKeys(this, item);
 			return;
@@ -909,11 +909,11 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 } {
 	// Fullscreen paints from the alternate screen's first row, whatever row
 	// the command started on.
-	const screen = input[kScreen];
+	const framebuffer = input[kFramebuffer];
 	const top = input[kDocument].fullscreenElement === null
-		? screen.documentTop
+		? framebuffer.documentTop
 		: 0;
-	const documentRow = row - 1 - top + screen.scrollTop;
+	const documentRow = row - 1 - top + framebuffer.scrollTop;
 	const isInDocument = documentRow >= 0;
 	return {x: col - 1, y: isInDocument ? documentRow : 0, isInDocument};
 }
@@ -927,7 +927,11 @@ function getClientPoint(
 ): {clientX: number; clientY: number} {
 	return {
 		clientX: pxFromCells(x, false, input[kDocument]),
-		clientY: pxFromCells(y - input[kScreen].scrollTop, true, input[kDocument]),
+		clientY: pxFromCells(
+			y - input[kFramebuffer].scrollTop,
+			true,
+			input[kDocument],
+		),
 	};
 }
 
@@ -952,13 +956,17 @@ function getScreenPoint(
 	x: number,
 	y: number,
 ): {screenX: number; screenY: number} {
-	const screen = input[kScreen];
+	const framebuffer = input[kFramebuffer];
 	const top = input[kDocument].fullscreenElement === null
-		? screen.documentTop
+		? framebuffer.documentTop
 		: 0;
 	return {
 		screenX: pxFromCells(x, false, input[kDocument]),
-		screenY: pxFromCells(y - screen.scrollTop + top, true, input[kDocument]),
+		screenY: pxFromCells(
+			y - framebuffer.scrollTop + top,
+			true,
+			input[kDocument],
+		),
 	};
 }
 
@@ -977,10 +985,10 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	if (input[kDocument].fullscreenElement !== null) {
 		return false;
 	}
-	if (deltaY < 0 && input[kScreen].scrollTop === 0) {
-		return input[kLayout].documentPaintHeight() <= input[kScreen].rows;
+	if (deltaY < 0 && input[kFramebuffer].scrollTop === 0) {
+		return input[kLayout].documentPaintHeight() <= input[kFramebuffer].rows;
 	}
-	scrollDocumentTo(input[kDocument], input[kScreen].scrollTop + deltaY);
+	scrollDocumentTo(input[kDocument], input[kFramebuffer].scrollTop + deltaY);
 	return false;
 }
 
@@ -1331,7 +1339,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		// A terminal program's redraw, for a screen stray output scribbled
 		// on: clear what shows and paint the whole document again.
 		if (keyName === "l" && ctrlKey && !altKey && !shiftKey && !metaKey) {
-			input[kScreen].repaintAll();
+			input[kFramebuffer].repaintAll();
 			requestRender(input[kDocument]);
 		}
 

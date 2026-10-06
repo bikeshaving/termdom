@@ -19,6 +19,7 @@ import {
 	toCellLength,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
+import type {CellContext, CellStyle} from "./framebuffer.ts";
 import {
 	type Bitmap,
 	getReplacedContent,
@@ -27,7 +28,6 @@ import {
 	type ReplacedContent,
 	sampleBitmap,
 } from "./images.ts";
-import type {CellContext, CellStyle} from "./screen.ts";
 import {getStringWidth} from "./text.ts";
 
 export {isReplacedElement};

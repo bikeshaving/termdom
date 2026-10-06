@@ -8,7 +8,7 @@
 import {getComputedValue} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {getDocumentExchange, MATHML_NAMESPACE} from "./dom.ts";
-import type {CellStyle} from "./screen.ts";
+import type {CellStyle} from "./framebuffer.ts";
 import {getStringWidth, graphemeSegmenter} from "./text.ts";
 
 // ---------------------------------------------------------------------

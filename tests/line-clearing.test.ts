@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {Screen} from "../src/internal/screen.ts";
+import {Framebuffer} from "../src/internal/framebuffer.ts";
 import {MockProcess, nextFrame, renderFrame} from "./test-utils.js";
 
 test("line clearing removes terminal artifacts from previous commands", async () => {
@@ -133,7 +133,7 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 	// erases itself) plus one partial erase below the content, which never
 	// qualifies as a whole-screen clear.
 	const terminal = new MockProcess({cols: 20, rows: 6});
-	const renderer = new Screen(6, 20, "rgb");
+	const renderer = new Framebuffer(6, 20, "rgb");
 	const write = (s: string) =>
 		new Promise<void>((r) => terminal.stdout.write(s, () => r()));
 

@@ -15,7 +15,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import type {Exchange} from "../src/internal/exchange.ts";
-import {Screen} from "../src/internal/screen.ts";
+import {Framebuffer} from "../src/internal/framebuffer.ts";
 import {getStringWidth, recordClusterAdvance} from "../src/internal/text.ts";
 import {
 	captureRawOutput,
@@ -130,7 +130,7 @@ function emit(
 	cells: Array<[number, string]>,
 	measurer: Exchange,
 ): string {
-	const screen = new Screen(rows, cols, "rgb");
+	const screen = new Framebuffer(rows, cols, "rgb");
 	screen.measurer = measurer;
 	const context = screen.beginFrame({offset: 0});
 	for (const [index, cluster] of cells) {

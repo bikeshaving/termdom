@@ -46,13 +46,13 @@ import {
 	isButtonInput,
 	MATHML_NAMESPACE,
 } from "./dom.ts";
+import {LINE_STYLES, type LineStyle} from "./framebuffer.ts";
 import {
 	getPresentationalHints,
 	isHintAttribute,
 	isLayoutHintAttribute,
 } from "./hints.ts";
 import type {Layout} from "./layout.ts";
-import {LINE_STYLES, type LineStyle} from "./screen.ts";
 import {getStringWidth} from "./text.ts";
 import {
 	UA_CONTROL_STYLES,

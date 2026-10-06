@@ -24,10 +24,10 @@ import {
 	type TerminalTransport,
 	transportFromProcess,
 } from "./internal/exchange.ts";
+import {Framebuffer} from "./internal/framebuffer.ts";
 import {Input} from "./internal/input.ts";
 import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
-import {Screen} from "./internal/screen.ts";
 
 export type {CellSize} from "./internal/cssom.ts";
 export {transportFromProcess} from "./internal/exchange.ts";
@@ -91,7 +91,7 @@ function getCellSizeSource(
 	);
 }
 
-const kScreen = Symbol("screen");
+const kFramebuffer = Symbol("framebuffer");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kPainter = Symbol("painter");
@@ -126,7 +126,7 @@ const kUnwrittenErrors = Symbol("unwrittenErrors");
 const HELD_ERROR_LIMIT = 50;
 
 export interface TermDOM {
-	[kScreen]: Screen;
+	[kFramebuffer]: Framebuffer;
 	[kLayout]: Layout;
 	[kCascade]: Cascade;
 	[kPainter]: Painter;
@@ -178,7 +178,9 @@ export class TermDOM {
 
 	constructor(options: TermDOMOptions = {}) {
 		const cellSize = getCellSizeSource(options.cellSize, () =>
-			this[kTransport].interactive ? this[kScreen].cellPixels : FALLBACK_CELL,
+			this[kTransport].interactive
+				? this[kFramebuffer].cellPixels
+				: FALLBACK_CELL,
 		);
 		this[kSealed] = false;
 
@@ -216,7 +218,7 @@ export class TermDOM {
 		);
 		this[kCascade] = new Cascade(this.window, this[kLayout]);
 
-		this[kScreen] = new Screen(
+		this[kFramebuffer] = new Framebuffer(
 			this[kTransport].rows,
 			this[kTransport].cols,
 			this[kTransport].colorDepth ?? "256",
@@ -227,11 +229,11 @@ export class TermDOM {
 			this.window,
 			this[kLayout],
 			this[kCascade],
-			this[kScreen],
+			this[kFramebuffer],
 		);
 
-		// The screen measures widths over the exchange's probe channel.
-		this[kScreen].measurer = exchange;
+		// The framebuffer measures widths over the exchange's probe channel.
+		this[kFramebuffer].measurer = exchange;
 		setColorSchemeSource(document, () => getColorScheme(this));
 
 		this[kMeasuresCell] = options.cellSize === "auto";
@@ -242,7 +244,7 @@ export class TermDOM {
 			this[kLayout],
 			this[kCascade],
 			this[kExchange],
-			this[kScreen],
+			this[kFramebuffer],
 			() => render(this),
 			(error) => reportUncaught(this, error),
 		);
@@ -255,14 +257,14 @@ export class TermDOM {
 			this.document,
 			this[kLayout],
 			this[kCascade],
-			this[kScreen],
+			this[kFramebuffer],
 		);
 
 		this[kPainter] = new Painter(
 			this.document,
 			this[kLayout],
 			this[kCascade],
-			this[kScreen],
+			this[kFramebuffer],
 		);
 
 		// A canceled or untrusted beforeunload does not close.
@@ -320,7 +322,7 @@ export class TermDOM {
 		// first frame.
 		if (rebinding) {
 			this[kTransport] = transport;
-			this[kScreen].rebind(transport.colorDepth ?? "256");
+			this[kFramebuffer].rebind(transport.colorDepth ?? "256");
 			this[kExchange].rebind(transport);
 		}
 		// Resolves when the first frame has been written. The negotiations'
@@ -364,8 +366,8 @@ export class TermDOM {
 			// the terminal to say. Asked before DA1, like the background.
 			const depthSettled = this[kTransport].colorDepth === undefined
 				? this[kExchange].negotiateColorDepth().then((depth) => {
-					if (isAttached(this) && depth !== this[kScreen].colorDepth) {
-						this[kScreen].rebind(depth);
+					if (isAttached(this) && depth !== this[kFramebuffer].colorDepth) {
+						this[kFramebuffer].rebind(depth);
 						DOM.syncMediaQueries(this.document);
 						void render(this);
 					}
@@ -455,7 +457,7 @@ export class TermDOM {
 	 * Render to ANSI at the transport's width: colors and line breaks, no
 	 * cursor controls, no modes. Without an argument, the document as it
 	 * stands; with HTML, that markup, leaving the document untouched.
-	 * Colors are the screen's: the transport's `colorDepth`, or what the
+	 * Colors are the framebuffer's: the transport's `colorDepth`, or what the
 	 * terminal said when attached, and 256 colors before it is asked.
 	 */
 	renderANSI(html?: string): string {
@@ -848,9 +850,9 @@ function afterRender(termDOM: TermDOM): void {
 	// The viewport in document coordinates, for IntersectionObserver.
 	const viewport = new termDOM.window.DOMRect(
 		0,
-		termDOM[kScreen].scrollTop,
-		termDOM[kScreen].cols,
-		termDOM[kScreen].rows,
+		termDOM[kFramebuffer].scrollTop,
+		termDOM[kFramebuffer].cols,
+		termDOM[kFramebuffer].rows,
 	);
 	// A hidden document gets no observer entries, as a background tab
 	// gets none; they are delivered with the first frame after it shows.
@@ -911,7 +913,7 @@ function flushDocument(termDOM: TermDOM): void {
 		return;
 	}
 
-	const top = termDOM[kScreen].documentTop;
+	const top = termDOM[kFramebuffer].documentTop;
 	const output = renderStatic(termDOM, "\r\n");
 	if (!output) {
 		return;
@@ -929,7 +931,7 @@ function flushDocument(termDOM: TermDOM): void {
 /** The document as ANSI: colors and line breaks, no cursor controls, no modes. */
 function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
 	DOM.flushLayout(termDOM.document);
-	return termDOM[kScreen].renderStatic(
+	return termDOM[kFramebuffer].renderStatic(
 		termDOM[kLayout].documentPaintHeight(),
 		lineEnding,
 		(context) => termDOM[kPainter].paint(context),
@@ -945,8 +947,8 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// close() sealed the previous document. Start a fresh one below it.
 	if (termDOM[kSealed]) {
 		termDOM[kSealed] = false;
-		termDOM[kScreen].scrollTo(0);
-		termDOM[kScreen].repaintAll();
+		termDOM[kFramebuffer].scrollTo(0);
+		termDOM[kFramebuffer].repaintAll();
 		// detectAnchor reads a reply, so the listener must be attached.
 		if (termDOM[kTransport].interactive) {
 			termDOM.attach();
@@ -975,7 +977,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		}
 		// Drop the diff model, or this frame patches one screen against the
 		// other's content.
-		termDOM[kScreen].repaintAll();
+		termDOM[kFramebuffer].repaintAll();
 		syncMouseReporting(termDOM);
 		syncHoverReporting(termDOM);
 	}
@@ -998,7 +1000,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		element: Element;
 		delta: number;
 	} | null;
-	const journal = termDOM[kScreen].journal;
+	const journal = termDOM[kFramebuffer].journal;
 	if (
 		!journal.dirty &&
 		!termDOM[kLayout].moved &&
@@ -1017,9 +1019,9 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// scroll position survives underneath.
 	const fullscreen = isFullscreen(termDOM);
 	const contentHeight = fullscreen
-		? termDOM[kScreen].rows
+		? termDOM[kFramebuffer].rows
 		: termDOM[kLayout].documentPaintHeight();
-	const regionHeight = Math.min(contentHeight, termDOM[kScreen].rows);
+	const regionHeight = Math.min(contentHeight, termDOM[kFramebuffer].rows);
 
 	const top = fullscreen ? 0 : termDOM[kExchange].reserveRows(regionHeight);
 
@@ -1027,23 +1029,25 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		// Through scrollTo, so the journal's delta is what the screen is about
 		// to be shifted by.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		termDOM[kScreen].scrollTo(Math.min(termDOM[kScreen].scrollTop, maxScroll));
+		termDOM[kFramebuffer].scrollTo(
+			Math.min(termDOM[kFramebuffer].scrollTop, maxScroll),
+		);
 	}
 
 	// The document scroll has nothing to move in fullscreen. A scroll box
 	// inside it still does, under DECSTBM margins.
 	const shift = termDOM[kPainter].resolveScrollShift(regionHeight, journalled);
 	// Read after the clamp, which adds to the journal.
-	const clamped = termDOM[kScreen].journal;
-	const context = termDOM[kScreen].beginFrame({
-		offset: -termDOM[kScreen].scrollTop,
+	const clamped = termDOM[kFramebuffer].journal;
+	const context = termDOM[kFramebuffer].beginFrame({
+		offset: -termDOM[kFramebuffer].scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
 		delta: shift ? shift.delta : fullscreen ? 0 : clamped.frameScroll,
 		shift: shift ?? undefined,
 	});
 	termDOM[kPainter].paint(context);
-	const ansi = termDOM[kScreen].endFrame();
+	const ansi = termDOM[kFramebuffer].endFrame();
 	termDOM[kLayout].framePainted();
 
 	// The cursor stays hidden while a frame paints and between frames. It
@@ -1059,7 +1063,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	}
 	termDOM[kExchange].setDisplayType(
 		"cursorHidden",
-		!termDOM[kScreen].caretVisible,
+		!termDOM[kFramebuffer].caretVisible,
 	);
 	afterRender(termDOM);
 }
@@ -1071,11 +1075,11 @@ function renderStaticHTML(
 ): string {
 	const cols = termDOM[kTransport].cols;
 	const cell = getCellSize(termDOM.document);
-	const colorDepth = termDOM[kScreen].colorDepth;
+	const colorDepth = termDOM[kFramebuffer].colorDepth;
 	if (
 		termDOM[kStaticSibling] &&
-		(termDOM[kStaticSibling][kScreen].cols !== cols ||
-			termDOM[kStaticSibling][kScreen].colorDepth !== colorDepth ||
+		(termDOM[kStaticSibling][kFramebuffer].cols !== cols ||
+			termDOM[kStaticSibling][kFramebuffer].colorDepth !== colorDepth ||
 			getCellSize(termDOM[kStaticSibling].document) !== cell)
 	) {
 		void termDOM[kStaticSibling].dispose();
