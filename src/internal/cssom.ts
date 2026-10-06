@@ -6096,6 +6096,10 @@ export class Cascade {
 			}
 		}
 
+		// A root's sheets sync once a batch, after its records: each sync
+		// restyles the whole tree, and a page that fills its sheets a rule at
+		// a time sent a record per rule.
+		const rootsToSync = new Set<ShadowRoot>();
 		for (const mutation of mutations) {
 			if (mutation.type === "childList") {
 				// A <style>'s children ARE its stylesheet text. A shadow
@@ -6104,7 +6108,7 @@ export class Cascade {
 					reparseOwnerText(getSheet(mutation.target as Element));
 					const styleRoot = mutation.target.getRootNode();
 					if (isShadowRoot(styleRoot)) {
-						syncShadowRoot(this, styleRoot);
+						rootsToSync.add(styleRoot);
 					} else {
 						shouldSyncStylesheets = true;
 					}
@@ -6125,7 +6129,7 @@ export class Cascade {
 								? element.getRootNode()
 								: null;
 							if (addedRoot !== null && isShadowRoot(addedRoot)) {
-								syncShadowRoot(this, addedRoot);
+								rootsToSync.add(addedRoot);
 							} else {
 								shouldSyncStylesheets = true;
 							}
@@ -6251,12 +6255,15 @@ export class Cascade {
 					reparseOwnerText(getSheet(owner));
 					const ownerRoot = owner.getRootNode();
 					if (isShadowRoot(ownerRoot)) {
-						syncShadowRoot(this, ownerRoot);
+						rootsToSync.add(ownerRoot);
 					} else {
 						shouldSyncStylesheets = true;
 					}
 				}
 			}
+		}
+		for (const root of rootsToSync) {
+			syncShadowRoot(this, root);
 		}
 
 		for (const parent of changedParents) {
@@ -9713,7 +9720,7 @@ function getPseudoSubjects(cascade: Cascade): Set<string> | null {
 	// live on nodes the UA shadow tree trees already hold.
 	for (const type of ["::before", "::after"]) {
 		for (const rule of cascade[kPseudoRulesByType].get(type) ?? []) {
-			if (rule.ofPart) {
+			if (rule.ofPart || !mayGiveContent(rule)) {
 				continue;
 			}
 			if (!rule.subjectTag) {
@@ -9748,11 +9755,20 @@ function pseudoRuleCouldMatch(
 		return false;
 	}
 	for (const rule of rules) {
-		if (ruleSelectorMatches(element, rule)) {
+		if (mayGiveContent(rule) && ruleSelectorMatches(element, rule)) {
 			return true;
 		}
 	}
 	return false;
+}
+
+// A ::before or ::after exists only while its content is something, and
+// content is not inherited, so only a rule that sets it can make one. The
+// common reset `*, ::before, ::after { box-sizing: border-box }` matches
+// every element's and makes none.
+function mayGiveContent(rule: ParsedCSSRule): boolean {
+	return rule.declarations.content !== undefined ||
+		rule.declarations.all !== undefined;
 }
 
 function attachPseudoElementToElementForType(
