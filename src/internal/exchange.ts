@@ -3,7 +3,6 @@ import {
 	dispatchAsUserAgent,
 	Event,
 	EventTarget,
-	relayoutReplacedElements,
 	requestRender,
 	syncMediaQueries,
 	type Window,
@@ -1241,11 +1240,11 @@ export class Exchange extends EventTarget {
 	 * What one cell measures in pixels. Silence leaves the guessed cell
 	 * standing, which is the contract an unanswered question gives
 	 * everywhere else here. A DA1 asked behind it ends the wait on a
-	 * terminal that does not answer.
+	 * terminal that does not answer. True when the cell changed.
 	 */
-	async negotiateCellPixels(): Promise<void> {
+	async negotiateCellPixels(): Promise<boolean> {
 		if (!this[kInteractive]) {
-			return;
+			return false;
 		}
 		let answered!: () => void;
 		const until = new Promise<void>((resolve) => (answered = resolve));
@@ -1264,14 +1263,11 @@ export class Exchange extends EventTarget {
 		);
 		void this.queryDeviceAttributes().then(answered);
 		const answer = await cell;
-		if (
+		return (
 			answer !== null &&
 			!this[kDisposed] &&
 			this[kFramebuffer].adoptCellPixels(answer.width, answer.height)
-		) {
-			// An image's natural size in cells is its pixels over the cell's.
-			relayoutReplacedElements(this[kWindow].document);
-		}
+		);
 	}
 
 	/**
