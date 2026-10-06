@@ -38,8 +38,16 @@ function hostKey(): string {
   // OpenSSH's own key format, which ssh2 reads for ed25519 where it does
   // not read node:crypto's PKCS8.
   const {private: privateKey} = ssh2.utils.generateKeyPairSync("ed25519");
-  mkdirSync(join(path, ".."), {recursive: true});
-  writeFileSync(path, privateKey, {mode: 0o600});
+  mkdirSync(join(path, ".."), {recursive: true, mode: 0o700});
+  try {
+    writeFileSync(path, privateKey, {mode: 0o600, flag: "wx"});
+  } catch (error) {
+    // Another server started at the same moment and wrote its key first.
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return readFileSync(path, "utf8");
+    }
+    throw error;
+  }
   return privateKey;
 }
 
@@ -52,6 +60,14 @@ interface Pty {
 interface Session {
   transport: TerminalTransport;
   resize(cols: number, rows: number): void;
+  // Settles when the client's input ends, as with ssh host < /dev/null.
+  // Its terminal is still there, so the app quits as it would on its own.
+  inputEnded: Promise<void>;
+}
+
+interface Connection {
+  on(event: "close", listener: () => void): unknown;
+  off(event: "close", listener: () => void): unknown;
 }
 
 /**
@@ -61,13 +77,19 @@ interface Session {
 function sessionFromChannel(
   channel: ServerChannel,
   pty: Pty,
-  connection: {on(event: "close", listener: () => void): unknown},
+  connection: Connection,
 ): Session {
   let {cols, rows} = pty;
   let resized: ReadableStreamDefaultController<TerminalSize> | null = null;
+  // One connection can carry many shells, so each takes its listener off
+  // the connection when its own channel closes.
   const closed = new Promise<TerminalCloseInfo>((resolve) => {
-    channel.on("close", () => resolve({}));
-    connection.on("close", () => resolve({}));
+    const hangUp = () => resolve({});
+    connection.on("close", hangUp);
+    channel.on("close", () => {
+      connection.off("close", hangUp);
+      hangUp();
+    });
   });
   const decoder = new TextDecoder();
   let onData: ((chunk: Uint8Array) => void) | null = null;
@@ -116,6 +138,7 @@ function sessionFromChannel(
   };
   return {
     transport,
+    inputEnded: new Promise((resolve) => channel.once("end", resolve)),
     resize(nextCols, nextRows) {
       cols = nextCols;
       rows = nextRows;
@@ -136,6 +159,7 @@ function serve(session: Session, pty: Pty): void {
     sessions.delete(termdom);
     refreshStatus();
   });
+  void session.inputEnded.then(() => window.close());
 
   document.body.innerHTML = `
     <style>
