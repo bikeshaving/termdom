@@ -10,7 +10,7 @@ import {
 import type {Framebuffer} from "./framebuffer.ts";
 import type {Input} from "./input.ts";
 import type {Layout} from "./layout.ts";
-import {recordClusterAdvance} from "./text.ts";
+import {isControlByte, recordClusterAdvance} from "./text.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
 
@@ -178,10 +178,6 @@ function createModeQuery(mode: string): string {
 
 // C0, DEL and the C1 range. In untrusted text one would end the
 // sequence around it or start one of its own.
-function isControlByte(code: number): boolean {
-	return code < 0x20 || (code >= 0x7f && code < 0xa0);
-}
-
 // Every mode the engine sets, so teardown can reset what was engaged
 // (in this order) and the panic paths can reset the union. A mode
 // written anywhere else is a restore leak.
@@ -883,6 +879,11 @@ const kPriorBidiMode = Symbol("priorBidiMode");
 const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
 const kOverlineNegotiated = Symbol("overlineNegotiated");
 
+// How long a question to the terminal waits for an answer before it is
+// taken as unanswered. A terminal that answers DA1 asked after it ends the
+// wait sooner.
+const QUERY_TIMEOUT_MS = 1000;
+
 // Most terminals refuse clipboard reads by silence. This is what every
 // readText() waits before rejecting.
 const CLIPBOARD_QUERY_TIMEOUT_MS = 500;
@@ -1207,7 +1208,7 @@ export class Exchange extends EventTarget {
 		if (this[kAnchorDetectionEnabled]) {
 			this[kCursorDetectionPromise] = Promise.race([
 				this.detectAnchor().then(() => {}),
-				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+				new Promise<void>((resolve) => setTimeout(resolve, QUERY_TIMEOUT_MS)),
 			])
 				.catch(() => {
 					this[kHasDetectedAnchor] = false;
@@ -1257,7 +1258,7 @@ export class Exchange extends EventTarget {
 			"cell-size",
 			{
 				ask: CELL_SIZE_QUERY,
-				timeoutMs: 1000,
+				timeoutMs: QUERY_TIMEOUT_MS,
 				absent: null,
 				until,
 				// A terminal with no window reports zeroes. That is not a cell.
@@ -1288,7 +1289,7 @@ export class Exchange extends EventTarget {
 			"background",
 			{
 				ask: BACKGROUND_QUERY,
-				timeoutMs: 1000,
+				timeoutMs: QUERY_TIMEOUT_MS,
 				absent: null,
 				read: ({red, green, blue}) => {
 					this[kTerminalBackground] =
@@ -1317,7 +1318,7 @@ export class Exchange extends EventTarget {
 		}
 		return nextReply<"device-attributes", boolean>(this, "device-attributes", {
 			ask: DEVICE_ATTRIBUTES_QUERY,
-			timeoutMs: 1000,
+			timeoutMs: QUERY_TIMEOUT_MS,
 			absent: false,
 			read: () => true,
 		}).then(() => {});
@@ -1341,7 +1342,7 @@ export class Exchange extends EventTarget {
 		) =>
 			nextReply<K, boolean>(this, kind, {
 				ask: question,
-				timeoutMs: 1000,
+				timeoutMs: QUERY_TIMEOUT_MS,
 				absent: false,
 				read,
 				group: "color-depth",
@@ -1433,7 +1434,7 @@ export class Exchange extends EventTarget {
 		}
 		const answer = await nextReply<"sgr-report", boolean>(this, "sgr-report", {
 			ask: "\x1b[53m\x1bP$qm\x1b\\\x1b[55m",
-			timeoutMs: 1000,
+			timeoutMs: QUERY_TIMEOUT_MS,
 			absent: false,
 			read: ({params}) =>
 				params !== null && params.split(";").includes("53"),
@@ -1452,7 +1453,7 @@ export class Exchange extends EventTarget {
 		// A cold start or a slow link can outlast a tighter window.
 		return nextReply(this, "cursor-report", {
 			ask: CURSOR_QUERY,
-			timeoutMs: 1000,
+			timeoutMs: QUERY_TIMEOUT_MS,
 			sequence: this[kDSRSequence]++,
 			// The 1-based row the command started on becomes the 0-based
 			// anchor.
@@ -2165,7 +2166,7 @@ function queryMode(
 ): Promise<number | null> {
 	return nextReply<"mode-report", number | null>(session, "mode-report", {
 		ask: prelude + createModeQuery(mode),
-		timeoutMs: 1000,
+		timeoutMs: QUERY_TIMEOUT_MS,
 		absent: null,
 		mode,
 		read: ({value}) => value,
@@ -2275,6 +2276,10 @@ function closeOnPipeEnd(proc: ProcessLike, close: () => void): void {
 		stdin.resume();
 	}
 }
+
+// The size a terminal that reports none is taken to have, as a VT100's.
+export const DEFAULT_COLS = 80;
+export const DEFAULT_ROWS = 24;
 
 /**
  * Inert until the first read of `readable` engages raw mode and the
@@ -2432,8 +2437,8 @@ export function transportFromProcess(
 				}
 				resizeListener = () => {
 					controller.enqueue({
-						cols: proc.stdout.columns || 80,
-						rows: proc.stdout.rows || 24,
+						cols: proc.stdout.columns || DEFAULT_COLS,
+						rows: proc.stdout.rows || DEFAULT_ROWS,
 					});
 				};
 				proc.on("SIGWINCH", resizeListener);
@@ -2450,10 +2455,10 @@ export function transportFromProcess(
 
 	return {
 		get cols() {
-			return proc.stdout.columns || 80;
+			return proc.stdout.columns || DEFAULT_COLS;
 		},
 		get rows() {
-			return proc.stdout.rows || 24;
+			return proc.stdout.rows || DEFAULT_ROWS;
 		},
 		sharesScreen,
 		interactive: proc.stdout.isTTY === true,

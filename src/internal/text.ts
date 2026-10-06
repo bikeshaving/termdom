@@ -10,6 +10,12 @@ import {
 // Bun has a native getStringWidth. Node and Deno use the fallback.
 const bun = globalThis.Bun;
 
+// The C0 and C1 controls and DEL, which a terminal acts on rather than
+// draws.
+export function isControlByte(code: number): boolean {
+	return code < 0x20 || (code >= 0x7f && code < 0xa0);
+}
+
 // What HTML and CSS case-fold with. Never the locale.
 export function toASCIILowercase(value: string): string {
 	return value.replace(/[A-Z]/g, (character) =>

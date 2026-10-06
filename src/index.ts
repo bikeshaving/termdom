@@ -34,6 +34,7 @@ import {
 	type Window,
 } from "./internal/dom.ts";
 import {
+	DEFAULT_ROWS,
 	Exchange,
 	type TerminalCloseInfo,
 	type TerminalResizeEvent,
@@ -1250,7 +1251,7 @@ function renderStaticHTML(
 		cellSize: cell === UNIT_CELL ? "unit" : cell,
 		transport: {
 			cols,
-			rows: 24,
+			rows: DEFAULT_ROWS,
 			readable: new ReadableStream<string>({}, {highWaterMark: 0}),
 			writable: new WritableStream<string>({}),
 			resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
