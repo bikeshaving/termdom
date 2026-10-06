@@ -35115,11 +35115,11 @@ export class Window extends EventTarget {
 					return window.innerHeight;
 				},
 				// Bits per pixel: 24 for true color, and the index's width
-				// for a palette of 256 or 16.
+				// for a palette of 256 or 8.
 				get colorDepth(): number {
 					const attached = getAttachedDocument(window.document);
 					const depth = attached?.[kScreen].colorDepth ?? "rgb";
-					return depth === "rgb" ? 24 : depth === "256" ? 8 : 4;
+					return depth === "rgb" ? 24 : depth === "256" ? 8 : 3;
 				},
 				get pixelDepth(): number {
 					return this.colorDepth;
