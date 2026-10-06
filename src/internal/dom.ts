@@ -74,8 +74,7 @@ import type {Layout} from "./layout.ts";
 import {linearizeMath} from "./mathml.ts";
 import {
 	addDocumentPolicy,
-	getLoadSignal,
-	loadResource,
+	type ResourceLoader,
 	setRequestDestination,
 } from "./resources.ts";
 import {
@@ -324,6 +323,8 @@ const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kFramebuffer = Symbol("framebuffer");
 const kCellSize = Symbol("cellSize");
+const kLoad = Symbol("load");
+const kLoadSignal = Symbol("loadSignal");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kPendingEditingReveal = Symbol("pendingEditingReveal");
 const kReportUncaught = Symbol("reportUncaught");
@@ -16941,15 +16942,20 @@ function updateImageData(image: HTMLImageElement): void {
 		// Disposing the TermDOM aborts the load, the request and a decode
 		// still waiting for its turn alike. Listened for only while the
 		// load runs, so the TermDOM holds no image it has finished with.
-		const ended = getLoadSignal(document);
-		const onEnded = () => abort.abort(ended!.reason);
-		ended?.addEventListener("abort", onEnded, {once: true});
-		loadResource(document, request, {
+		const attached = getAttachedDocument(document as unknown as Node);
+		if (attached === undefined) {
+			settle("broken", null, new TypeError("This document loads nothing"));
+			return;
+		}
+		const ended = attached[kLoadSignal];
+		const onEnded = () => abort.abort(ended.reason);
+		ended.addEventListener("abort", onEnded, {once: true});
+		attached[kLoad](request, {
 			initiator: image as unknown as globalThis.Element,
 		})
 			.then((response) => readImageResponse(response))
 			.then((bytes) => decodeImageOffThread(bytes, abort.signal))
-			.finally(() => ended?.removeEventListener("abort", onEnded))
+			.finally(() => ended.removeEventListener("abort", onEnded))
 			.then(
 				(bitmap) => settle("complete", bitmap),
 				(error) => settle("broken", null, error),
@@ -24754,6 +24760,8 @@ export interface Document {
 	[kFramebuffer]: Framebuffer;
 	// The program's cellSize option, which getCellSize reads.
 	[kCellSize]: CellSizeSetting;
+	[kLoad]: ResourceLoader;
+	[kLoadSignal]: AbortSignal;
 	// Where an exception the page let escape goes once the window's error
 	// event has not handled it. The engine owns the terminal, so it decides.
 	[kReportUncaught]: (error: unknown) => void;
@@ -33522,29 +33530,42 @@ export function syncMediaQueries(document: globalThis.Document): void {
 	}
 }
 
+/** What a TermDOM hands the document it draws. */
+export interface DocumentEngine {
+	layout: Layout;
+	cascade: Cascade;
+	exchange: Exchange;
+	framebuffer: Framebuffer;
+	cellSize: CellSizeSetting;
+	// Answers the loads the document's markup asks for.
+	load: ResourceLoader;
+	// Aborts when the TermDOM is disposed, and the document's loads with it.
+	loadSignal: AbortSignal;
+	render(): Promise<void>;
+	reportUncaught(error: unknown): void;
+}
+
 /**
  * Once per document. A second engine would build every widget a second
  * time, and the two would disagree about what is on screen.
  */
 export function attachDocument(
 	document: globalThis.Document,
-	layout: Layout,
-	styles: Cascade,
-	exchange: Exchange,
-	framebuffer: Framebuffer,
-	cellSize: CellSizeSetting,
-	render: () => Promise<void>,
-	reportUncaught: (error: unknown) => void,
+	engine: DocumentEngine,
 ): void {
 	const attached = document as Document;
 	if (attached[kExchange] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
+	const {layout, cascade, exchange, framebuffer, cellSize} = engine;
+	const render = () => engine.render();
 	attached[kRender] = render;
-	attached[kReportUncaught] = reportUncaught;
+	attached[kReportUncaught] = (error) => engine.reportUncaught(error);
+	attached[kLoad] = engine.load;
+	attached[kLoadSignal] = engine.loadSignal;
 	attached[kVisible] = false;
 	attached[kLayout] = layout;
-	attached[kCascade] = styles;
+	attached[kCascade] = cascade;
 	attached[kExchange] = exchange;
 	attached[kFramebuffer] = framebuffer;
 	attached[kCellSize] = cellSize;
@@ -34014,6 +34035,8 @@ type AttachedDocument =
 		[kExchange]: Exchange;
 		[kFramebuffer]: Framebuffer;
 		[kCellSize]: CellSizeSetting;
+		[kLoad]: ResourceLoader;
+		[kLoadSignal]: AbortSignal;
 		[kReportUncaught]: (error: unknown) => void;
 	};
 

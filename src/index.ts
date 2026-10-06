@@ -55,7 +55,6 @@ import {
 	type FetchEvent,
 	parseContentSecurityPolicies,
 	type RequestPolicy,
-	setResourceLoader,
 } from "./internal/resources.ts";
 
 export type {CellSize} from "./internal/cssom.ts";
@@ -330,12 +329,6 @@ export class TermDOM extends EventTarget {
 				}
 			},
 		};
-		setResourceLoader(
-			document,
-			(request, context) =>
-				answerRequest(this, document, request, context, requestPolicy),
-			this[kLoads].signal,
-		);
 
 		this[kLayout] = new Layout(
 			this.window,
@@ -361,16 +354,18 @@ export class TermDOM extends EventTarget {
 		// The framebuffer measures widths over the exchange's probe channel.
 		this[kFramebuffer].measurer = exchange;
 
-		attachDocument(
-			document,
-			this[kLayout],
-			this[kCascade],
-			this[kExchange],
-			this[kFramebuffer],
+		attachDocument(document, {
+			layout: this[kLayout],
+			cascade: this[kCascade],
+			exchange: this[kExchange],
+			framebuffer: this[kFramebuffer],
 			cellSize,
-			() => render(this),
-			(error) => reportUncaught(this, error),
-		);
+			load: (request, context) =>
+				answerRequest(this, document, request, context, requestPolicy),
+			loadSignal: this[kLoads].signal,
+			render: () => render(this),
+			reportUncaught: (error) => reportUncaught(this, error),
+		});
 		// The document had no size until it was attached, so an @media rule
 		// in the markup was read against a zero-width viewport. Attaching is
 		// a resize, and flips @media results the same way.
