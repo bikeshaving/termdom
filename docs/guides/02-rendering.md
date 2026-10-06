@@ -156,7 +156,8 @@ guesses it.
 
 The terminal is asked when `attach()` takes it, since its answers come
 back as input. `print()` and `renderANSI()` before `attach()` therefore
-use 256 colors, unless the transport names its `colorDepth`:
+use 256 colors, and so does output to a pipe or a file, which has no
+terminal to ask, unless the transport names its `colorDepth`:
 
 ```ts
 const term = new TermDOM({
