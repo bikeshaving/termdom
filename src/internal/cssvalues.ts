@@ -2967,10 +2967,10 @@ const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
 		map(`${prefix}block-size`, `${prefix}height`);
 		map(`${prefix}inline-size`, `${prefix}width`);
 	}
-	// `grid-row-gap` and `grid-column-gap` are not flow-relative at all.
-	// They are the OLD SPELLING of the gap properties (css-align-3 §8.4).
-	// But sharing a cascade slot is what an alias is, so they are declared
-	// here: one slot, under whichever name the winning declaration used.
+	// `grid-row-gap` and `grid-column-gap` are not flow-relative. They are
+	// legacy names of the gap properties (css-align-3 §8.4), and an alias
+	// shares its cascade slot: one slot, under whichever name the winning
+	// declaration used.
 	map("grid-row-gap", "row-gap");
 	map("grid-column-gap", "column-gap");
 }
@@ -5796,7 +5796,7 @@ export interface GridPlacement {
 }
 
 // Rejected rather than approximated. `subgrid` takes its tracks from an
-// ancestor grid, so a grid's sizing could no longer be decided from its
+// ancestor grid, so a grid's sizing cannot be decided from its
 // own box, and `masonry` is not a grid in its second axis. A track list
 // naming either falls back to `none`, which is what a browser that does
 // not implement them does.

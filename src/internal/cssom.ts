@@ -6306,10 +6306,9 @@ export class Cascade {
 		}
 		parseStylesheets(this);
 
-		// Boxes may have been built under the pre-parse styles. A
-		// .view{display:none} arriving in the same batch as its markup left the
-		// hidden subtree's stale boxes behind. Rebuild from the root.
-		// Stylesheet changes are rare.
+		// Boxes may have been built under the pre-parse styles, such as a
+		// subtree a .view{display:none} in the same batch hides. Rebuild from
+		// the root. Stylesheet changes are rare.
 		const body = this[kDocument].body;
 		if (body) {
 			this[kLayout].invalidate(body);
@@ -6994,8 +6993,7 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 // Built on first read, not on invalidation: a counter's value depends
 // on the element's ancestors, and for a list item on the items before
 // it, so the parent is built first and a dropped scope comes back when
-// something next asks. A full restyle used to build every element's
-// computed style here for the counters alone.
+// something next asks.
 function initializeCounters(cascade: Cascade, element: Element): void {
 	if (cascade[kCounterScopes].has(element)) {
 		return;
@@ -7880,9 +7878,8 @@ function isPaintOnlyChange(
 }
 
 // The list's padding-left is a function of its items' markers and
-// their ordinals. Only the NEAREST list is affected.
-// TODO(box-tree): the gutter is a layout question answered here in the
-// cascade; computing it during block layout deletes this.
+// their ordinals. Only the NEAREST list is affected. See
+// mutationChangesListItems for why this lives in the cascade.
 function invalidateEnclosingList(cascade: Cascade, target: Node): void {
 	let element: Element | null =
 		target.nodeType ===

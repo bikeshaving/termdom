@@ -263,9 +263,9 @@ function syncUAShadowTree(element: Element): void {
 	}
 }
 
-// The single definition of which elements are text controls. Painting, caret
-// scrolling and the mousedown default action all use it, so they agree.
-// checkbox and radio render a toggle, and hidden renders nothing.
+// Which elements are text controls. Painting, caret scrolling and the
+// mousedown default action all use it, so they agree. checkbox and radio
+// render a toggle, and hidden renders nothing.
 function isTextControl(element: {tagName: string; type?: string}): boolean {
 	if (element.tagName === "TEXTAREA") {
 		return true;
@@ -24425,8 +24425,7 @@ class ResizeObserver
 	): {state: ResizeSize; entry: ResizeObserverEntry} | null {
 		// An element with no box (display:none, or detached) has a size, and
 		// that size is zero. Reporting it is how the DOM lets a component
-		// notice it has been hidden. Skipping it left the last size it ever had
-		// stuck.
+		// notice it has been hidden.
 		const cells =
 			getContentBox(target, layout) ?? {width: 0, height: 0, top: 0, left: 0};
 		const content = {
