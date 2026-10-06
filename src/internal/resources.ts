@@ -229,11 +229,34 @@ export async function answerRequest(
 	policy.signal.throwIfAborted();
 	const destination = request.destination;
 	checkRequest(document, request, new URL(request.url), 0, context, policy);
-	let response =
-		await dispatchFetchEvent(target, request, policy) ??
-		await fetch(new Request(request, {redirect: "manual"}));
-	let current = new URL(request.url);
+	let response = await dispatchFetchEvent(target, request, policy);
+	if (response === null) {
+		response = await fetch(new Request(request, {redirect: "manual"}));
+	} else if (response.url !== "" && response.url !== request.url) {
+		// A listener's response that came from somewhere, such as its own
+		// fetch(event.request), is checked where it ended up, as Fetch checks
+		// a Service Worker's response against the page's policy.
+		const final = new URL(response.url);
+		try {
+			if (response.redirected) {
+				checkRedirectScheme(request, final);
+			}
+			checkRequest(
+				document,
+				request,
+				final,
+				response.redirected ? 1 : 0,
+				context,
+				policy,
+			);
+		} catch (error) {
+			await response.body?.cancel().catch(() => {});
+			throw error;
+		}
+	}
+	let current = new URL(response.url || request.url);
 	for (let redirects = 1; isRedirect(response); redirects++) {
+		await response.body?.cancel().catch(() => {});
 		if (request.redirect !== "follow") {
 			throw new TypeError(`${request.url} redirects`);
 		}
@@ -241,7 +264,7 @@ export async function answerRequest(
 			throw new TypeError(`${request.url} redirects too many times`);
 		}
 		current = new URL(response.headers.get("location")!, current);
-		await response.body?.cancel().catch(() => {});
+		checkRedirectScheme(request, current);
 		checkRequest(document, request, current, redirects, context, policy);
 		const next = new Request(current, {
 			headers: request.headers,
@@ -255,6 +278,16 @@ export async function answerRequest(
 		throw new TypeError("The request was refused");
 	}
 	return response;
+}
+
+// Fetch's "HTTP-redirect fetch": a redirect goes only to another HTTP(S)
+// URL, never to a file, data: or anything the network does not serve.
+function checkRedirectScheme(request: Request, url: URL): void {
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		throw new TypeError(
+			`${request.url} redirects to a URL that is not HTTP(S)`,
+		);
+	}
 }
 
 function isRedirect(response: Response): boolean {
@@ -345,13 +378,32 @@ async function dispatchFetchEvent(
 		return null;
 	}
 	try {
-		const response = await answer;
+		const response = await whileNotAborted(answer, request.signal);
 		resolveHandled();
 		return response;
 	} catch (error) {
 		rejectHandled(new DOMException("The load failed", "NetworkError"));
 		throw error;
 	}
+}
+
+// An answer still pending when its request is aborted, by a new source or
+// the TermDOM's disposal, ends the load then, as Fetch ends a fetch
+// whatever its Service Worker is doing.
+function whileNotAborted<T>(
+	promise: Promise<T>,
+	signal: AbortSignal,
+): Promise<T> {
+	if (signal.aborted) {
+		return Promise.reject(signal.reason);
+	}
+	return new Promise<T>((resolve, reject) => {
+		const onAbort = () => reject(signal.reason);
+		signal.addEventListener("abort", onAbort, {once: true});
+		promise.then(resolve, reject).finally(() => {
+			signal.removeEventListener("abort", onAbort);
+		});
+	});
 }
 
 // The policies a page stated for itself with <meta> in its head.

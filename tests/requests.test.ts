@@ -5,8 +5,12 @@
  * listener answers. A redirect is checked against the policy again and
  * followed on the network.
  */
+import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {createServer} from "node:http";
 import type {AddressInfo} from "node:net";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {pathToFileURL} from "node:url";
 
 import {expect, test} from "@b9g/libuild/test";
 
@@ -42,8 +46,8 @@ interface Server {
 	close(): Promise<void>;
 }
 
-// A server that answers /redirect?to=URL with a 302 to it, and any other
-// path with the PNG.
+// A server that answers /redirect?to=URL with a 302 to it, /hop/N with a
+// 302 to /hop/N-1 until /hop/0, and any other path with the PNG.
 async function serve(): Promise<Server> {
 	const heard: string[] = [];
 	const server = createServer((request, response) => {
@@ -51,6 +55,12 @@ async function serve(): Promise<Server> {
 		const url = new URL(request.url!, "http://localhost");
 		if (url.pathname === "/redirect") {
 			response.writeHead(302, {location: url.searchParams.get("to")!});
+			response.end();
+			return;
+		}
+		const hop = /^\/hop\/(\d+)$/.exec(url.pathname);
+		if (hop !== null && hop[1] !== "0") {
+			response.writeHead(302, {location: `/hop/${Number(hop[1]) - 1}`});
 			response.end();
 			return;
 		}
@@ -180,6 +190,101 @@ test("a redirect is checked against the policy again, and reported as the URL as
 	expect(violations.map((violation) => violation.blockedURI)).toEqual([away]);
 	dom.dispose();
 	await server.close();
+});
+
+test("a redirect goes only to another HTTP(S) URL", async () => {
+	const server = await serve();
+	const folder = mkdtempSync(join(tmpdir(), "termdom-redirect-"));
+	try {
+		writeFileSync(join(folder, "secret.png"), PNG);
+		const file = pathToFileURL(join(folder, "secret.png")).href;
+		const data = `data:image/png;base64,${Buffer.from(PNG).toString("base64")}`;
+		const dom = create({
+			url: pathToFileURL(`${folder}/`).href,
+			csp: `img-src file: data: cid: ${server.origin}`,
+		});
+		// The file loads when the page asks for it, through the listener,
+		// which a redirect never reaches.
+		const answered: string[] = [];
+		dom.addEventListener("fetch", (event) => {
+			if (event.request.url.startsWith("file:")) {
+				answered.push(event.request.url);
+				event.respondWith(new Response(PNG));
+			}
+		});
+		const to = (target: string) =>
+			`${server.origin}/redirect?to=${encodeURIComponent(target)}`;
+		dom.document.body.innerHTML =
+			`<img src="${to(file)}"><img src="${to(data)}"><img src="${to("cid:a")}">` +
+			`<img src="${file}">`;
+		const images = [...dom.document.querySelectorAll("img")];
+		expect(await Promise.all(images.map(settled)))
+			.toEqual(["broken", "broken", "broken", "loaded"]);
+		expect(answered).toEqual([file]);
+		dom.dispose();
+	} finally {
+		await server.close();
+		rmSync(folder, {recursive: true});
+	}
+});
+
+test("twenty redirects are followed, and a twenty-first fails", async () => {
+	const server = await serve();
+	const dom = create({csp: `img-src ${server.origin}`});
+	dom.document.body.innerHTML =
+		`<img id=a src="${server.origin}/hop/20"><img id=b src="${server.origin}/hop/21">`;
+	const a = dom.document.getElementById("a") as HTMLImageElement;
+	const b = dom.document.getElementById("b") as HTMLImageElement;
+	expect([await settled(a), await settled(b)]).toEqual(["loaded", "broken"]);
+	dom.dispose();
+	await server.close();
+});
+
+test("a listener that passes the load on is checked where the load ended up", async () => {
+	const server = await serve();
+	const elsewhere = `http://localhost:${server.port}/secret.png`;
+	const dom = create({csp: `img-src ${server.origin}`});
+	dom.addEventListener("fetch", (event) => {
+		event.respondWith(fetch(event.request));
+	});
+	const violations: SecurityPolicyViolationEvent[] = [];
+	dom.document.addEventListener("securitypolicyviolation", (event) => {
+		violations.push(event as SecurityPolicyViolationEvent);
+	});
+	const away = `${server.origin}/redirect?to=${encodeURIComponent(elsewhere)}`;
+	dom.document.body.innerHTML =
+		`<img id=a src="${away}"><img id=b src="${server.origin}/b.png">`;
+	const a = dom.document.getElementById("a") as HTMLImageElement;
+	const b = dom.document.getElementById("b") as HTMLImageElement;
+	expect([await settled(a), await settled(b)]).toEqual(["broken", "loaded"]);
+	expect(violations.map((violation) => violation.blockedURI)).toEqual([away]);
+	dom.dispose();
+	await server.close();
+});
+
+test("an answer still pending ends when the source changes or the TermDOM is disposed", async () => {
+	const dom = create({csp: "img-src https:"});
+	const handled: Array<Promise<undefined>> = [];
+	dom.addEventListener("fetch", (event) => {
+		handled.push(event.handled);
+		event.respondWith(new Promise<Response>(() => {}));
+	});
+	dom.document.body.innerHTML = "<img src=\"https://example.com/a.png\">";
+	const image = dom.document.querySelector("img")!;
+	await until(() => handled.length === 1);
+	image.src = "https://example.com/b.png";
+	await until(() => handled.length === 2);
+	const first = await handled[0].then(() => "resolved", (error: DOMException) =>
+		error.name);
+	expect(first).toBe("NetworkError");
+	void dom.dispose();
+	expect(await settled(image)).toBe("broken");
+	const second = await handled[1].then(
+		() => "resolved",
+		(error: DOMException) =>
+			error.name,
+	);
+	expect(second).toBe("NetworkError");
 });
 
 test("a listener's redirect is followed on the network, and checked", async () => {

@@ -83,14 +83,19 @@ Worker: a load the listener answers must be allowed too, so serving
 says what the load is for (`"image"`). `handled` settles once the load
 is answered, and `waitUntil()` keeps `dispose()` waiting for work a
 listener goes on with. `dispose()` aborts loads still in flight, which a
-listener sees on `request.signal`.
+listener sees on `request.signal`. A load waiting on a listener's answer
+ends when its `src` changes or the TermDOM is disposed, whether or not
+the answer ever comes.
 
 A redirect, from the network or from a listener's `Response.redirect()`,
 is checked against the policy again and followed on the network, not
 offered to the listeners, as a browser follows one without its Service
-Worker. A violation names the URL the document asked for, never where
-it was redirected. A listener that calls `fetch(event.request)` itself
-follows redirects on its own, as a Service Worker's fetch does.
+Worker. A redirect goes only to another `http:` or `https:` URL, and at
+most 20 are followed. A listener that answers with `fetch(event.request)`
+follows redirects on its own, and its response is checked against the
+policy where it ended up, as a browser checks a Service Worker's
+response. A violation names the URL the document asked for, never where
+it was redirected.
 
 To decide image by image, such as no remote images in quoted mail,
 change the markup before it is inserted, as a mail client cleans what
