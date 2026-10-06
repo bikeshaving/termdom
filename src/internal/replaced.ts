@@ -28,7 +28,6 @@ import {
 import {
 	type Bitmap,
 	getReplacedContent,
-	isReplacedElement,
 	MAX_IMAGE_PIXELS,
 	naturalHeightOf,
 	naturalWidthOf,
@@ -36,8 +35,6 @@ import {
 	sampleBitmap,
 } from "./images.ts";
 import {getStringWidth} from "./text.ts";
-
-export {isReplacedElement};
 
 /** The natural size in cells, or null for content with none. */
 export function getNaturalSize(

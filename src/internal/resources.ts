@@ -147,7 +147,7 @@ export function setRequestDestination(
 }
 
 /** What a load knows of what asked for it. */
-export interface RequestContext {
+interface RequestContext {
 	// The element that asked, where a policy violation is reported.
 	initiator: Element | null;
 }
@@ -398,7 +398,7 @@ function getDocumentPolicies(document: object): ContentSecurityPolicy[] {
 // Content Security Policy (CSP3): which loads a document may make.
 
 /** One parsed policy: each directive's source expressions, by name. */
-export interface ContentSecurityPolicy {
+interface ContentSecurityPolicy {
 	text: string;
 	directives: Map<string, string[]>;
 }

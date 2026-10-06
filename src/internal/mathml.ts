@@ -783,7 +783,7 @@ export interface MathCell {
 	source?: CellSource;
 }
 
-export interface CellSource {
+interface CellSource {
 	node: Text;
 	offset: number;
 	length: number;

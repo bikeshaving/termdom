@@ -12,7 +12,7 @@ type Hints = Record<string, string>;
 const EDGES = ["top", "right", "bottom", "left"] as const;
 
 // The rules for parsing a legacy colour value (HTML §2.3.6).
-export function parseLegacyColor(value: string | null): string | null {
+function parseLegacyColor(value: string | null): string | null {
 	if (value === null) {
 		return null;
 	}
@@ -66,10 +66,7 @@ function toRGB(r: number, g: number, b: number): string {
 
 // The rules for parsing dimension values (HTML §2.3.4.4): a length in
 // pixels, or a percentage.
-export function parseDimension(
-	value: string | null,
-	nonzero = false,
-): string | null {
+function parseDimension(value: string | null, nonzero = false): string | null {
 	if (value === null) {
 		return null;
 	}
@@ -85,7 +82,7 @@ export function parseDimension(
 }
 
 // The rules for parsing non-negative integers (HTML §2.3.4.2), as pixels.
-export function parsePixels(value: string | null): string | null {
+function parsePixels(value: string | null): string | null {
 	if (value === null) {
 		return null;
 	}

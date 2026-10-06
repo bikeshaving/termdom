@@ -40,6 +40,7 @@ import {
 	parseLinearGradient,
 	renderGradient,
 } from "./gradients.ts";
+import {isReplacedElement} from "./images.ts";
 import {
 	applyTextTransform,
 	type Box,
@@ -63,7 +64,7 @@ import {
 	isMathRoot,
 	type MathCell,
 } from "./mathml.ts";
-import {isReplacedElement, renderReplaced} from "./replaced.ts";
+import {renderReplaced} from "./replaced.ts";
 import {getStringWidth} from "./text.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an

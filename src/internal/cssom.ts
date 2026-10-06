@@ -26,14 +26,19 @@ import {
 	flatParentElement,
 	flushLayout,
 	flushStyle,
+	getAttributeList,
 	getCellPixels,
 	getCellSizeSetting,
+	getClassTokens,
 	getDocumentExchange,
 	getHighlightRegistry,
 	getPseudoHost,
 	getPseudoName,
 	getShadowRoot,
+	HTML_NAMESPACE,
+	isButtonInput,
 	isUAShadowTree,
+	MATHML_NAMESPACE,
 	pseudoElement,
 	pseudoElementCount,
 	releaseRemovedNodes,
@@ -41,13 +46,6 @@ import {
 	styleElementCount,
 	TransitionEvent,
 	type Window,
-} from "./dom.ts";
-import {
-	getAttributeList,
-	getClassTokens,
-	HTML_NAMESPACE,
-	isButtonInput,
-	MATHML_NAMESPACE,
 } from "./dom.ts";
 import {LINE_STYLES, type LineStyle} from "./framebuffer.ts";
 import {
@@ -109,7 +107,7 @@ export function getImageCellSize(
  * edges of the boxes it places, not each length, so lengths that add up
  * still add up.
  */
-export function cellsFromPx(
+function cellsFromPx(
 	px: number,
 	vertical: boolean,
 	node: Node | null | undefined,

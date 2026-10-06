@@ -16,7 +16,7 @@ import {
 import {getNextGraphemeBoundary, getPreviousGraphemeBoundary} from "./text.ts";
 
 /** A caret or selection endpoint. */
-export interface EditingPoint {
+interface EditingPoint {
 	node: globalThis.Node;
 	offset: number;
 }

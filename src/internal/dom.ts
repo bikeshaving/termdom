@@ -89,7 +89,7 @@ export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
 export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 export const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
 export const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
-export const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
+const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 
 const kEnsureUAShadowTree = Symbol("build a control's UA shadow tree");
 
@@ -333,7 +333,7 @@ const kReportUncaught = Symbol("reportUncaught");
  * The focus offset of a control's selection record, in offsets of the
  * value text. Null for an element with no selection record.
  */
-export function getSelectionFocus(element: globalThis.Element): number | null {
+function getSelectionFocus(element: globalThis.Element): number | null {
 	const record = getSelectionRecord(element);
 	if (record === null) {
 		return null;
@@ -16991,7 +16991,7 @@ const SELECTABLE_INPUT_TYPES = new Set([
 	"password",
 ]);
 
-export function parseWeekString(value: string): Date | null {
+function parseWeekString(value: string): Date | null {
 	const match = /^(\d{4,})-W(\d{2})$/.exec(value);
 	if (match === null) {
 		return null;
@@ -23826,7 +23826,7 @@ export function *flatChildren(
  * The node after `node` in the flat tree, depth first and within `root`,
  * or null at the end. `skipChildren` steps past node's subtree.
  */
-export function flatStep(
+function flatStep(
 	node: globalThis.Node,
 	root: globalThis.Node,
 	skipChildren: boolean,
@@ -30757,7 +30757,7 @@ function invalidateHighlights(document: Document): void {
 }
 
 /** A registered highlight and what it covers, for the painter. */
-export interface PaintedHighlight {
+interface PaintedHighlight {
 	name: string;
 	ranges: globalThis.AbstractRange[];
 }
@@ -30839,7 +30839,7 @@ export function getHighlightedTextNodes(
  * when it covers none of it. A static range whose boundary points no
  * longer describe the tree describes nothing.
  */
-export function getHighlightedOffsets(
+function getHighlightedOffsets(
 	range: globalThis.AbstractRange,
 	textNode: globalThis.Text,
 ): {from: number; to: number} | null {
