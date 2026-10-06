@@ -29,6 +29,12 @@ import {
 	type Window,
 } from "./dom.ts";
 import {getEditingCaretPoint} from "./editing.ts";
+import type {
+	CellContext,
+	CellStyle,
+	Framebuffer,
+	LineStyle,
+} from "./framebuffer.ts";
 import {
 	type Gradient,
 	parseLinearGradient,
@@ -58,7 +64,6 @@ import {
 	type MathCell,
 } from "./mathml.ts";
 import {isReplacedElement, renderReplaced} from "./replaced.ts";
-import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.ts";
 import {getStringWidth} from "./text.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
@@ -408,7 +413,7 @@ const kWindow = Symbol("window");
 const kDocument = Symbol("document");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
-const kScreen = Symbol("screen");
+const kFramebuffer = Symbol("framebuffer");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
@@ -419,7 +424,7 @@ export interface Painter {
 	[kDocument]: Document;
 	[kLayout]: Layout;
 	[kCascade]: Cascade;
-	[kScreen]: Screen;
+	[kFramebuffer]: Framebuffer;
 	[kTopLayer]: Set<Element>;
 	// Each list marker paints at most once per frame.
 	[kRenderedOutsideMarkers]: WeakSet<Element>;
@@ -435,7 +440,7 @@ export class Painter {
 		document: Document,
 		layout: Layout,
 		cascade: Cascade,
-		screen: Screen,
+		framebuffer: Framebuffer,
 	) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
@@ -445,7 +450,7 @@ export class Painter {
 		this[kDocument] = document;
 		this[kLayout] = layout;
 		this[kCascade] = cascade;
-		this[kScreen] = screen;
+		this[kFramebuffer] = framebuffer;
 		this[kTopLayer] = getTopLayer(document) as unknown as Set<Element>;
 	}
 
@@ -459,14 +464,14 @@ export class Painter {
 		regionHeight: number,
 		record: {element: Element; delta: number} | null,
 	): {delta: number; top: number; end: number} | null {
-		const screen = this[kScreen];
+		const framebuffer = this[kFramebuffer];
 		const layout = this[kLayout];
 		if (
 			record === null ||
 			record.delta === 0 ||
 			// One scroll shift per frame. The document scroll's region already
 			// contains this box.
-			screen.journal.frameScroll !== 0 ||
+			framebuffer.journal.frameScroll !== 0 ||
 			// The rows the terminal would shift are not the rows the last
 			// frame painted.
 			layout.moved ||
@@ -484,14 +489,16 @@ export class Painter {
 		const box = getBoxModel(record.element);
 		const left = rect.left + (box.borderLeftWidth || 0);
 		const right = rect.left + rect.width - (box.borderRightWidth || 0);
-		if (left > 0 || right < screen.cols) {
+		if (left > 0 || right < framebuffer.cols) {
 			return null;
 		}
 
 		// Layout rows are document rows. Buffer rows are the document
 		// scroll's. A fixed box is laid out in viewport rows and the paint
 		// cancels the document scroll for it.
-		const lift = layout.isInFixedSpace(record.element) ? 0 : screen.scrollTop;
+		const lift = layout.isInFixedSpace(record.element)
+			? 0
+			: framebuffer.scrollTop;
 		const top = Math.max(
 			0,
 			Math.round(rect.top + (box.borderTopWidth || 0)) - lift,
@@ -596,7 +603,7 @@ function renderStackingContext(
 		// Fixed space cancels the document scroll for the whole subtree. An
 		// absolute box inside a fixed bar moves with it.
 		if (painter[kLayout].isInFixedSpace(element)) {
-			ctx.viewportOffset = previousOffset + painter[kScreen].scrollTop;
+			ctx.viewportOffset = previousOffset + painter[kFramebuffer].scrollTop;
 		}
 		try {
 			if (isStackingContext(element)) {
@@ -997,7 +1004,7 @@ function paintBox(
 	}
 	// Over the flat fill, which a transparent stop composites onto.
 	if (style.gradient !== null) {
-		const cell = painter[kScreen].cellPixels;
+		const cell = painter[kFramebuffer].cellPixels;
 		for (const fragment of fragments) {
 			renderGradient(
 				ctx,
@@ -1126,7 +1133,7 @@ function setCaretAt(
 	y: number,
 ): void {
 	const lift = painter[kLayout].isInFixedSpace(element)
-		? painter[kScreen].scrollTop
+		? painter[kFramebuffer].scrollTop
 		: 0;
 	ctx.setCaret(x, y + lift);
 }

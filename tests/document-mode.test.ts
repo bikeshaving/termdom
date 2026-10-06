@@ -1,7 +1,7 @@
 /**
  * Document mode.
  *
- * Screen ownership and scroll strategy are independent axes, and conflating them
+ * Framebuffer ownership and scroll strategy are independent axes, and conflating them
  * is easy:
  *
  * - `requestFullscreen()` is about *screen ownership* -- "I take over the whole
@@ -24,12 +24,12 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-interface Screen {
+interface Framebuffer {
 	scrollback: string[];
 	viewport: string[];
 }
 
-function read(terminal: MockProcess, rows: number): Screen {
+function read(terminal: MockProcess, rows: number): Framebuffer {
 	const buffer = (terminal as any).terminal.buffer.active;
 	const line = (index: number): string =>
 		buffer.getLine(index)?.translateToString(true) ?? "";

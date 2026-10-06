@@ -16,7 +16,7 @@ import {
 } from "../src/index.ts";
 import {framePainted} from "../src/internal/dom.ts";
 import type {ColorDepth} from "../src/internal/exchange.ts";
-import {Screen} from "../src/internal/screen.ts";
+import {Framebuffer} from "../src/internal/framebuffer.ts";
 import {getStringWidth} from "../src/internal/text.ts";
 
 const {Terminal} = xtermPkg;
@@ -323,7 +323,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	 */
 	getStaticANSI(): string {
 		const buffer = this.terminal.buffer.active;
-		const screen = new Screen(
+		const screen = new Framebuffer(
 			this.terminal.rows,
 			this.terminal.cols,
 			this.colorDepth,

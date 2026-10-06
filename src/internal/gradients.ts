@@ -12,7 +12,7 @@ import {
 	toCellColor,
 	type UnitValue,
 } from "./cssvalues.ts";
-import type {CellContext} from "./screen.ts";
+import type {CellContext} from "./framebuffer.ts";
 
 /**
  * One `<color-stop>`. The position is what the author wrote: a fraction

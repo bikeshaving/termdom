@@ -8,9 +8,9 @@ import {
 	syncMediaQueries,
 	type Window,
 } from "./dom.ts";
+import type {Framebuffer} from "./framebuffer.ts";
 import type {Input} from "./input.ts";
 import type {Layout} from "./layout.ts";
-import type {Screen} from "./screen.ts";
 import {recordClusterAdvance} from "./text.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
@@ -861,7 +861,7 @@ const kDefersResize = Symbol("defersResize");
 const kWindow = Symbol("window");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
-const kScreen = Symbol("screen");
+const kFramebuffer = Symbol("framebuffer");
 const kInput = Symbol("input");
 
 const kWriter = Symbol("writer");
@@ -913,7 +913,7 @@ export interface Exchange {
 	[kWindow]: Window;
 	[kLayout]: Layout;
 	[kCascade]: Cascade;
-	[kScreen]: Screen;
+	[kFramebuffer]: Framebuffer;
 	[kResizeTimer]: ReturnType<typeof setTimeout> | null;
 	// A token per resize burst, so a redraw that lands after a newer burst
 	// began is abandoned. Null between bursts.
@@ -962,7 +962,7 @@ export class Exchange extends EventTarget {
 		window: Window,
 		layout: Layout,
 		styles: Cascade,
-		screen: Screen,
+		framebuffer: Framebuffer,
 	) {
 		super();
 		const interactive = transport.interactive;
@@ -993,7 +993,7 @@ export class Exchange extends EventTarget {
 		this[kWindow] = window;
 		this[kLayout] = layout;
 		this[kCascade] = styles;
-		this[kScreen] = screen;
+		this[kFramebuffer] = framebuffer;
 		this[kInput] = null;
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
@@ -1267,7 +1267,7 @@ export class Exchange extends EventTarget {
 		if (
 			answer !== null &&
 			!this[kDisposed] &&
-			this[kScreen].adoptCellPixels(answer.width, answer.height)
+			this[kFramebuffer].adoptCellPixels(answer.width, answer.height)
 		) {
 			// An image's natural size in cells is its pixels over the cell's.
 			relayoutReplacedElements(this[kWindow].document);
@@ -1457,7 +1457,7 @@ export class Exchange extends EventTarget {
 			// The 1-based row the command started on becomes the 0-based
 			// anchor.
 			read: ({row}) => {
-				this[kScreen].documentTop = row - 1;
+				this[kFramebuffer].documentTop = row - 1;
 				this[kHasDetectedAnchor] = true;
 				return row;
 			},
@@ -1528,21 +1528,23 @@ export class Exchange extends EventTarget {
 	 * row the region starts at.
 	 */
 	reserveRows(rows: number): number {
-		const screen = this[kScreen];
-		const overflow = screen.documentTop + rows - screen.rows;
-		const push = overflow <= 0 ? 0 : Math.min(overflow, screen.documentTop);
+		const framebuffer = this[kFramebuffer];
+		const overflow = framebuffer.documentTop + rows - framebuffer.rows;
+		const push = overflow <= 0
+			? 0
+			: Math.min(overflow, framebuffer.documentTop);
 		if (push > 0) {
-			screen.documentTop -= push;
+			framebuffer.documentTop -= push;
 			// The scroll moves the cursor to the bottom row first. Hidden, or
 			// it shows there until the frame places it.
 			this.setDisplayType("cursorHidden", true);
-			void this.scrollUp(screen.rows, push);
+			void this.scrollUp(framebuffer.rows, push);
 			// The previous buffer is not shifted. Its rows are region-relative
 			// and the region top moved by exactly the scroll. A pending
 			// post-resize reset is screen-absolute and does shift.
-			screen.scrolled(push);
+			framebuffer.scrolled(push);
 		}
-		return screen.documentTop;
+		return framebuffer.documentTop;
 	}
 
 	/**
@@ -1732,7 +1734,7 @@ function requestDeferredProbeFrame(session: Exchange): void {
 			return;
 		}
 		// Deferred probes go out with the next frame even if nothing changed.
-		session[kScreen].flushProbes();
+		session[kFramebuffer].flushProbes();
 		requestRender(session[kWindow].document);
 	}, WIDTH_DEFERRAL_WAIT_MS);
 }
@@ -1824,7 +1826,7 @@ function settleWidthProbe(
 	// corrected measurements.
 	if (recordClusterAdvance(probe.cluster, advance)) {
 		session[kLayout].invalidateTextMeasurement();
-		session[kScreen].repaintAll();
+		session[kFramebuffer].repaintAll();
 		requestRender(session[kWindow].document);
 	}
 }
@@ -1906,10 +1908,10 @@ function terminalResized(
 	width: number,
 	height: number,
 ): void {
-	const screen = session[kScreen];
+	const framebuffer = session[kFramebuffer];
 	// A SIGWINCH with an unchanged size still redraws but fires no event.
-	const sizeChanged = width !== screen.cols || height !== screen.rows;
-	screen.resize(height, width);
+	const sizeChanged = width !== framebuffer.cols || height !== framebuffer.rows;
+	framebuffer.resize(height, width);
 	session[kLayout].resize(width, height);
 	// A size change can flip any @media result and every vw/vh value.
 	session[kCascade].syncStylesheets();
@@ -1931,18 +1933,18 @@ function handleResize(session: Exchange): void {
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
 	terminalResized(session, newWidth, newHeight);
 	// Where the frame is after the resize, for the re-anchor.
-	const screen = session[kScreen];
+	const framebuffer = session[kFramebuffer];
 	const layout = session[kLayout];
 	layout.performLayout();
 	const contentHeight = layout.documentPaintHeight();
-	const wrappedRowsAbove = screen.wrappedRowsAbovePark(newWidth);
-	const documentTop = screen.documentTop;
+	const wrappedRowsAbove = framebuffer.wrappedRowsAbovePark(newWidth);
+	const documentTop = framebuffer.documentTop;
 	const settling = session[kSettlingResize];
 
 	// The frame now starts at startRow. Repaint it from there.
 	const redraw = (startRow: number) => {
-		screen.documentTop = startRow;
-		screen.replaced(startRow);
+		framebuffer.documentTop = startRow;
+		framebuffer.replaced(startRow);
 		requestRender(session[kWindow].document);
 
 		// The frame is placed by the screen reset. Cursor detection is
