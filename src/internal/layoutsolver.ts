@@ -311,15 +311,19 @@ const percentStyles = new WeakMap<Style, boolean>();
 
 const LENGTH_FIELDS = [
 	"flexBasis",
-	"margin",
-	"position",
-	"padding",
 	"width",
 	"height",
 	"minWidth",
 	"minHeight",
 	"maxWidth",
 	"maxHeight",
+] as const;
+
+const EDGE_FIELDS = ["margin", "position", "padding"] as const;
+
+// Track lists nest their lengths, so they are walked, and only a grid
+// container's are read.
+const TRACK_FIELDS = [
 	"gridTemplateColumns",
 	"gridTemplateRows",
 	"gridAutoColumns",
@@ -344,7 +348,17 @@ function hasPercent(value: unknown, depth: number): boolean {
 function usesPercent(style: Style): boolean {
 	let answer = percentStyles.get(style);
 	if (answer === undefined) {
-		answer = LENGTH_FIELDS.some((field) => hasPercent(style[field], 1));
+		answer =
+			LENGTH_FIELDS.some((field) => style[field].unit === "percent") ||
+			EDGE_FIELDS.some((field) => {
+				const {left, top, right, bottom} = style[field];
+				return left.unit === "percent" ||
+					top.unit === "percent" ||
+					right.unit === "percent" ||
+					bottom.unit === "percent";
+			}) ||
+			(style.displayType === "grid" &&
+				TRACK_FIELDS.some((field) => hasPercent(style[field], 1)));
 		percentStyles.set(style, answer);
 	}
 	return answer;
