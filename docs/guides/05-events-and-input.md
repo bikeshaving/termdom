@@ -152,8 +152,8 @@ Enter or Space with the summary focused, and fires `toggle`.
 field.addEventListener("input", updatePreview);
 ```
 
-The controls are UA shadow trees, so `::placeholder` and `::part()`
-styling apply. The caret is the real terminal cursor, and IME composition
+`::placeholder` and `::field-content` style a field's placeholder and
+its text. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. `<input type="password">`
 masks its value. A number input takes float syntax only, and ArrowUp and
 ArrowDown step it within `min` and `max`.

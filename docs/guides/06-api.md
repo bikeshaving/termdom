@@ -97,34 +97,37 @@ are wired to the terminal:
 Anything not listed behaves as the DOM and CSSOM standards specify,
 without terminal wiring.
 
-### Parts of the built-in controls
+### Styling the built-in controls
 
-The form controls are shadow trees, and `::part()` styles their pieces:
+A page styles the insides of the form controls through the
+pseudo-elements a browser gives them:
 
-| Control | Parts |
+| Control | Pseudo-elements |
 | --- | --- |
-| `<input>` text types, `<textarea>` | `value`, `placeholder` |
-| `<input>` button types | `label` |
-| `<select>` | `indicator`, `picker`, `option`, `optgroup` |
-| `<progress>`, `<meter>` | `track`, `groove`, `bar` |
-| `<details>` | `details-content` |
+| `<input>` text types | `::field-content`, `::placeholder` |
+| `<textarea>` | `::placeholder` |
+| `<select>` | `::picker-icon`, `::picker(select)` |
+| `<progress>`, `<meter>` | `::slider-track`, `::slider-fill` |
+| `<details>` | `::details-content` |
 
-A part can have more than one name, and `::part()` with several names
-matches a part that has them all. A `<select>`'s option rows also have
-the names `highlighted`, `disabled` and `grouped` while those apply, and
-a `<meter>`'s bar has the name of its level: `optimum`, `suboptimum` or
-`even-less-good`. They still carry `data-highlighted`, `data-disabled`,
-`data-grouped` and `data-level`, too.
+`::field-content`, `::slider-track` and `::slider-fill` are from the CSS
+Form Control Styling draft, and `::picker(select)` and `::picker-icon`
+are a customizable `<select>`'s. A `<meter>`'s fill also takes the
+pseudo-element of its level, as a WebKit browser gives it one, with
+TermDOM's prefix: `::-termdom-meter-optimum-value`,
+`::-termdom-meter-suboptimum-value` or
+`::-termdom-meter-even-less-good-value`.
 
 ```css
-select::part(option highlighted) { background-color: #005f87; }
-meter::part(bar even-less-good) { color: orange; }
-input::part(label)::before { content: "< "; }
+progress::slider-fill { color: green; }
+meter::-termdom-meter-even-less-good-value { color: orange; }
+select::picker(select) { background-color: #1c1c1c; }
 ```
 
-`::placeholder` and `::details-content` work as in a browser. TermDOM's
-own sheet styles the controls with these same selectors, so a page's
-rules override it as they would any built-in style.
+The controls are shadow trees inside, and as in a browser, `::part()`
+does not reach into them. TermDOM's own sheet styles the controls with
+the same pseudo-elements, so a page's rules override it as they would
+any built-in style.
 
 ### `term.attach(transport?)`
 

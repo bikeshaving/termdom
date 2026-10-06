@@ -156,8 +156,12 @@ export const UA_DOCUMENT_STYLES = `
 	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
 `;
 
-// The insides of the built-in controls, reached as a page reaches them:
-// through ::placeholder, ::details-content and ::part().
+// The insides of the built-in controls. A page reaches them through the
+// standard pseudo-elements (::placeholder, ::field-content,
+// ::slider-track, ::slider-fill, ::picker(select), ::picker-icon and
+// ::details-content) and a meter's level through
+// ::-termdom-meter-*-value. The rest are this sheet's alone, through
+// ::part(), which reaches no page's rules into a built-in control.
 //
 // A text field's value and placeholder clip their text, and the render
 // loop sets scrollLeft to follow the caret. A textarea's value text node
@@ -179,23 +183,23 @@ export const UA_DOCUMENT_STYLES = `
 export const UA_CONTROL_STYLES = `
 	input::placeholder, textarea::placeholder { color: #808080; }
 	textarea:not(:focus)::placeholder { font-weight: lighter; }
-	input::part(value), input::placeholder { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
+	input::field-content, input::placeholder { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	input::part(label) { white-space: pre; }
 	input::part(label)::before { content: "[ "; }
 	input::part(label)::after { content: " ]"; }
 
 	details::details-content { display: block; }
 
-	meter::part(track), progress::part(track) { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; }
-	meter::part(groove), progress::part(groove) { color: #808080; font-weight: lighter; }
-	meter::part(bar), progress::part(bar) { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
-	progress::part(bar) { color: #5fafff; }
-	meter::part(bar optimum) { color: #5faf5f; }
-	meter::part(bar suboptimum) { color: #d7af5f; }
-	meter::part(bar even-less-good) { color: #d75f5f; }
+	meter::slider-track, progress::slider-track { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; color: #808080; }
+	meter::part(groove), progress::part(groove) { font-weight: lighter; }
+	meter::slider-fill, progress::slider-fill { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
+	progress::slider-fill { color: #5fafff; }
+	meter::-termdom-meter-optimum-value { color: #5faf5f; }
+	meter::-termdom-meter-suboptimum-value { color: #d7af5f; }
+	meter::-termdom-meter-even-less-good-value { color: #d75f5f; }
 
-	select::part(indicator) { font-weight: lighter; }
-	select::part(picker) {
+	select::picker-icon { font-weight: lighter; }
+	select::picker(select) {
 		display: none;
 		position: absolute;
 		width: max-content;

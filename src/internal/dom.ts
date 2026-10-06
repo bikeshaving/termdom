@@ -18924,9 +18924,9 @@ class HTMLMeterElement extends HTMLElement {
 		const span = this.max - min;
 		setGaugeFill(bar, span > 0 ? (this.value - min) / span : 0);
 		const barLevel = getMeterLevel(this);
-		if (bar.getAttribute("data-level") !== barLevel) {
-			bar.setAttribute("data-level", barLevel);
-			bar.setAttribute("part", `bar ${barLevel}`);
+		const part = `bar ${barLevel}`;
+		if (bar.getAttribute("part") !== part) {
+			bar.setAttribute("part", part);
 		}
 	}
 
@@ -20045,9 +20045,6 @@ function syncPickerRows(
 		if (node.textContent !== row.label) {
 			node.textContent = row.label;
 		}
-		setRowFlag(node, "data-disabled", row.disabled);
-		setRowFlag(node, "data-grouped", row.grouped);
-		setRowFlag(node, "data-highlighted", row.highlighted);
 	});
 }
 
@@ -20114,21 +20111,6 @@ function rectContains(rect: globalThis.DOMRect, x: number, y: number): boolean {
 		y >= rect.y &&
 		y < rect.y + rect.height
 	);
-}
-
-function setRowFlag(
-	row: globalThis.HTMLElement,
-	name: string,
-	on: boolean,
-): void {
-	if (on === row.hasAttribute(name)) {
-		return;
-	}
-	if (on) {
-		row.setAttribute(name, "");
-	} else {
-		row.removeAttribute(name);
-	}
 }
 
 // Counts only the rows that are options, in tree order.
