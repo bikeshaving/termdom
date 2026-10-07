@@ -29,3 +29,22 @@ test("a selection boundary inside a cluster takes the cluster whole", async () =
 	expect(terminal.getPlainText().split("\n")[1]).toContain("abकााcd");
 	dom.dispose();
 });
+
+test("text that replaces wide characters on a fill rewrites every column", () => {
+	// A terminal blanks both columns of a wide character when either is
+	// written, so a frame may skip neither.
+	const framebuffer = new Framebuffer(1, 20, "rgb");
+	const white = {bg: 0x1000000 | 0xffffff, fg: 0x1000000};
+	let ctx = framebuffer.beginFrame({offset: 0});
+	ctx.drawText(" ".repeat(20), 0, 0, white);
+	ctx.drawText("日本語のテキストです", 0, 0, white);
+	framebuffer.endFrame();
+	ctx = framebuffer.beginFrame({offset: 0});
+	ctx.drawText(" ".repeat(20), 0, 0, white);
+	ctx.drawText("a", 0, 0, white);
+	const update = framebuffer.endFrame();
+	expect(update).not.toMatch(/\x1b\[\d*C/);
+	expect(update.replace(/\x1b(?:\[[?\d;]*[A-Za-z]|[78])|\r/g, "")).toBe(
+		"a" + " ".repeat(19),
+	);
+});

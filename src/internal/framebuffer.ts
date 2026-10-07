@@ -822,6 +822,25 @@ export class CellGrid {
 			packAttrs(style) |
 			((width < ATTR.WidthWide ? width : ATTR.WidthWide) << ATTR.WidthShift);
 		this.border[index] = 0;
+		this.settleWide(index, width);
+	}
+
+	/**
+	 * A terminal draws a wide glyph over the columns after its own, so the
+	 * grid holds nothing there, as the screen does. A fill painted under the
+	 * glyph would otherwise stay in its second column, and when the glyph
+	 * goes, a frame painting the same fill there again skips a cell the
+	 * terminal blanked when the glyph was overwritten.
+	 */
+	settleWide(index: number, width: number): void {
+		const end = Math.min(
+			index + width,
+			index - (index % this.cols) + this.cols,
+		);
+		for (let covered = index + 1; covered < end; covered++) {
+			this.cluster[covered] = 0;
+			this.border[covered] = 0;
+		}
 	}
 
 	setBorderCell(index: number, border: number, style?: CellStyle): void {
@@ -1215,6 +1234,7 @@ export class CellContext {
 				}
 				const under = grid.cluster[index] !== 0 ? grid.bg[index] : 0;
 				grid.setFrom(index, source, from);
+				grid.settleWide(index, grid.widthAt(index));
 				if (grid.fg[index] === 0) {
 					grid.fg[index] = fg;
 				}
