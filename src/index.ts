@@ -249,6 +249,11 @@ const kLifecycle = Symbol("lifecycle");
 // flow content that is the content's last row, and the shell's next line
 // would land on it.
 const kFlowPainted = Symbol("flowPainted");
+// When the last frame began, so the next waits out the rest of its
+// interval.
+const kLastFrameAt = Symbol("lastFrameAt");
+// About a display's refresh. Changes that come faster share a frame.
+const FRAME_INTERVAL_MS = 16;
 // Errors the page let escape that no log could take live. Printed below
 // the document when the session ends.
 const kHeldErrors = Symbol("heldErrors");
@@ -277,6 +282,7 @@ export interface TermDOM {
 	// frame rather than starting another.
 	[kRenderInFlight]: Promise<void> | null;
 	[kFlowPainted]: boolean;
+	[kLastFrameAt]: number;
 	[kHeldErrors]: string[];
 	[kUnwrittenErrors]: string | null;
 	// Timestamps observer entries.
@@ -330,6 +336,7 @@ export class TermDOM extends EventTarget {
 		this[kOnAlternateScreen] = false;
 		this[kRenderInFlight] = null;
 		this[kFlowPainted] = false;
+		this[kLastFrameAt] = -Infinity;
 		this[kHeldErrors] = [];
 		this[kUnwrittenErrors] = null;
 		this[kRenderCount] = 0;
@@ -1018,6 +1025,17 @@ async function render(termDOM: TermDOM): Promise<void> {
 				if (termDOM[kLifecycle] === "disposed") {
 					break;
 				}
+				// One frame per interval at most. What changes in the wait,
+				// a burst of keys or a timer's updates, is drawn once.
+				const wait =
+					termDOM[kLastFrameAt] + FRAME_INTERVAL_MS - performance.now();
+				if (wait > 0) {
+					await new Promise((resolve) => setTimeout(resolve, wait));
+					if ((termDOM[kLifecycle] as Lifecycle) === "disposed") {
+						break;
+					}
+				}
+				termDOM[kLastFrameAt] = performance.now();
 				// The order of "update the rendering": the frame callbacks
 				// first, then style, layout and paint, so what a callback
 				// changes lands in the frame it ran for and nothing is shown

@@ -140,6 +140,7 @@ test("a document that fits hands the wheel to the terminal until a keystroke", a
 	// The first wheel up escapes to the terminal's scrollback, so the
 	// mouse is handed back and the document is hidden meanwhile.
 	await send(proc, "\x1b[<64;5;3M");
+	await nextFrame(termdom);
 	expect(disables()).toBe(1);
 	expect(document.visibilityState).toBe("hidden");
 	expect(states).toEqual(["hidden"]);
@@ -154,6 +155,7 @@ test("a document that fits hands the wheel to the terminal until a keystroke", a
 		order.push(`keydown while ${document.visibilityState}`),
 	);
 	await send(proc, "j");
+	await nextFrame(termdom);
 	expect(enables()).toBe(2);
 	expect(order).toEqual(["keydown while visible"]);
 	expect(states).toEqual(["hidden", "visible"]);
@@ -352,6 +354,7 @@ test("mouse events carry the click count in detail", async () => {
 	expect(seen).toEqual(["mousedown:3", "mouseup:3", "click:3"]);
 	seen.length = 0;
 	await send(proc, "\x1b[<35;2;1M");
+	await nextFrame(termdom);
 	expect(seen).toEqual(["mousemove:0"]);
 	seen.length = 0;
 
