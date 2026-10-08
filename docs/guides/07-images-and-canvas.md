@@ -16,15 +16,15 @@ lower half block only the seam between the two pixels is a little
 low. The pixels are ordinary cells, so they scroll, clip and
 redraw like text, and they work over SSH and inside tmux.
 
-The `graphics` option says how pixels are drawn. `true`, the default,
-uses the best way the terminal has, which today is always cells.
-`"cells"` draws cells whatever the terminal could do. `false` draws no
-pixels at all: an `<img>` loads nothing and shows its `alt` text, as a
+The `graphics` option says how pixels are drawn. `"auto"`, the
+default, uses the best way the terminal has, which today is always
+cells. `"cells"` draws cells whatever the terminal could do. `"none"`
+draws no pixels at all: an `<img>` loads nothing and shows its `alt` text, as a
 browser does with images turned off, and `getContext("2d")` returns
 `null`, so a canvas shows its fallback content.
 
 ```ts
-new TermDOM({graphics: false});
+new TermDOM({graphics: "none"});
 ```
 
 ## `<img>`

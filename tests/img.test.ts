@@ -723,7 +723,7 @@ test("with graphics off, an image loads nothing and shows its alt text", async (
 	const dom = new TermDOM({
 		transport: terminal.transport,
 		csp: "",
-		graphics: false,
+		graphics: "none",
 	});
 	let fetched = 0;
 	dom.addEventListener("fetch", () => {
@@ -745,8 +745,8 @@ test("with graphics off, an image loads nothing and shows its alt text", async (
 	dom.dispose();
 });
 
-test("graphics is true, false or \"cells\"", () => {
-	for (const graphics of [true, false, "cells"] as const) {
+test("graphics is \"auto\", \"cells\" or \"none\"", () => {
+	for (const graphics of ["auto", "cells", "none"] as const) {
 		new TermDOM({transport: new MockProcess().transport, graphics}).dispose();
 	}
 	expect(() => new TermDOM({graphics: "kitty" as "cells"})).toThrow(TypeError);

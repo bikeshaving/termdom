@@ -130,25 +130,26 @@ export interface TermDOMOptions {
 	 * How the document draws pixels, for an <img> and a canvas's "2d"
 	 * context.
 	 *
-	 * - `true` (the default): the best way the terminal has. Today that is
-	 *   cells: two pixels to a cell in half blocks, which every terminal
-	 *   shows.
+	 * - `"auto"` (the default): the best way the terminal has. Today that
+	 *   is cells: two pixels to a cell in half blocks, which every
+	 *   terminal shows.
 	 * - `"cells"`: cells, whatever else the terminal could do.
-	 * - `false`: no pixels. An <img> loads nothing and shows its alt text,
+	 * - `"none"`: no pixels. An <img> loads nothing and shows its alt text,
 	 *   as HTML renders one when images are disabled, and
 	 *   `getContext("2d")` returns null, so a canvas shows its fallback
 	 *   content.
 	 */
-	graphics?: boolean | "cells";
+	graphics?: "auto" | "cells" | "none";
 
 	/**
 	 * The colors the terminal shows: `"rgb"` for 24-bit color, `"256"` for
 	 * the 256-color palette, `"ansi"` for the 8 basic colors and their
-	 * bright forms. Left out, TermDOM asks the terminal: `"rgb"` when it
-	 * says it has 24-bit color, or when it is tmux, which converts 24-bit
-	 * color for the terminal it runs in, and `"256"` otherwise.
+	 * bright forms. With `"auto"`, the default, TermDOM asks the terminal:
+	 * `"rgb"` when it says it has 24-bit color, or when it is tmux, which
+	 * converts 24-bit color for the terminal it runs in, and `"256"`
+	 * otherwise.
 	 */
-	colorDepth?: ColorDepth;
+	colorDepth?: "auto" | ColorDepth;
 }
 
 const COLOR_DEPTHS = new Set<unknown>(["rgb", "256", "ansi"]);
@@ -156,22 +157,25 @@ const COLOR_DEPTHS = new Set<unknown>(["rgb", "256", "ansi"]);
 function toColorDepth(
 	option: TermDOMOptions["colorDepth"],
 ): ColorDepth | undefined {
-	if (option === undefined || COLOR_DEPTHS.has(option)) {
+	if (option === undefined || option === "auto") {
+		return undefined;
+	}
+	if (COLOR_DEPTHS.has(option)) {
 		return option;
 	}
-	throw new TypeError('colorDepth must be "rgb", "256" or "ansi"');
+	throw new TypeError('colorDepth must be "auto", "rgb", "256" or "ansi"');
 }
 
 function toGraphicsSetting(
 	option: TermDOMOptions["graphics"],
 ): GraphicsSetting {
-	if (option === undefined || option === true || option === "cells") {
+	if (option === undefined || option === "auto" || option === "cells") {
 		return "cells";
 	}
-	if (option === false) {
-		return false;
+	if (option === "none") {
+		return "none";
 	}
-	throw new TypeError('graphics must be true, false or "cells"');
+	throw new TypeError('graphics must be "auto", "cells" or "none"');
 }
 
 const DEFAULT_CONTENT_SECURITY_POLICY = "default-src 'none'";
