@@ -2991,3 +2991,39 @@ test("focus() scrolls its element into view unless told not to", async () => {
 	expect(window.scrollY).toBe(0);
 	dom.dispose();
 });
+
+// A text area scrolls inside its border to keep the caret in view, as a
+// browser's does, and what overflows it stays inside the border.
+test("typing and moving in a long textarea keep the caret's line in view", async () => {
+	const terminal = new MockProcess({rows: 12, cols: 30});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const textarea = dom.document.createElement("textarea");
+	textarea.style.cssText = "width: 100%; height: 6em";
+	textarea.value = Array.from({length: 12}, (_, i) => `line ${i}`).join("\n");
+	dom.document.body.appendChild(textarea);
+	textarea.focus();
+	await nextFrame(dom);
+	const send = async (bytes: string) => {
+		(terminal.stdin as any).emit("data", Buffer.from(bytes));
+		await nextFrame(dom);
+		await new Promise((r) => setTimeout(r, 20));
+	};
+	const rows = () => terminal.getPlainText().split("\n").slice(0, 6);
+
+	// The border stays whole however much the value overflows.
+	expect(rows()[5]).toMatch(/^└─+┘$/);
+
+	await send("x");
+	expect(textarea.value.endsWith("line 11x")).toBe(true);
+	expect(rows()[4]).toContain("line 11x");
+	expect(rows()[5]).toMatch(/^└─+┘$/);
+
+	// Up past the top of what shows scrolls back to the caret.
+	for (let i = 0; i < 11; i++) {
+		await send("\x1b[A");
+	}
+	expect(rows()[1]).toContain("line 0");
+	dom.dispose();
+});

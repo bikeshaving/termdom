@@ -76,7 +76,7 @@ export const UA_ELEMENT_STYLES = `
 	dialog { display: block; border: 1px solid; padding: 0 1ch; background-color: Canvas; }
 	input { display: inline-block; white-space: pre; }
 	select { display: inline-block; white-space: pre; }
-	textarea { display: inline-block; border: 1px solid; padding: 0 1ch; white-space: pre-wrap; overflow-wrap: break-word; }
+	textarea { display: inline-block; border: 1px solid; padding: 0 1ch; white-space: pre-wrap; overflow-wrap: break-word; overflow: auto; }
 	caption { display: table-caption; }
 	col { display: table-column; }
 	colgroup { display: table-column-group; }
