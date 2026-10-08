@@ -34905,11 +34905,11 @@ class Screen {
 	}
 
 	// Bits per pixel: 24 for true color, and the index's width for a
-	// palette of 256 or 8.
+	// palette of 256 or 16.
 	get colorDepth(): number {
 		const attached = getAttachedDocument(this[kScreenWindow].document);
 		const depth = attached?.[kFramebuffer].colorDepth ?? "rgb";
-		return depth === "rgb" ? 24 : depth === "256" ? 8 : 3;
+		return depth === "rgb" ? 24 : depth === "256" ? 8 : 4;
 	}
 
 	get pixelDepth(): number {

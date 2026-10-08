@@ -68,10 +68,10 @@ Options:
   (default) uses the best way the terminal has, `"cells"` draws them two
   to a cell in half blocks, and `"none"` draws none: images show their `alt` text and
   `getContext("2d")` returns `null`.
-- `colorDepth?: "auto" | 24 | 8 | 3` — the colors the terminal shows,
+- `colorDepth?: "auto" | 24 | 8 | 4` — the colors the terminal shows,
   in the bits `screen.colorDepth` reports. With `"auto"` (default),
   TermDOM asks the terminal. `"rgb"`, `"256"` and `"ansi"` name 24, 8
-  and 3. See "Color depth" in the styling
+  and 4. See "Color depth" in the styling
   guide.
 
 ### `term.document`, `term.window`
