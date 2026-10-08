@@ -695,9 +695,11 @@ function compileSimple(
 				if (value === null) {
 					return false;
 				}
-				const quirks = isInQuirksMode(element);
+				if (!isInQuirksMode(element)) {
+					return hasToken(value, name);
+				}
 				for (const token of splitOnASCIIWhitespace(value)) {
-					if (quirks ? toASCIILowercase(token) === folded : token === name) {
+					if (toASCIILowercase(token) === folded) {
 						return true;
 					}
 				}
@@ -2122,6 +2124,32 @@ function getOfTypeIndex(
 		return 0;
 	}
 	return fromEnd ? siblings.length - index : index + 1;
+}
+
+// Whether the whitespace-separated list holds the token, found in place
+// rather than by splitting the list.
+function hasToken(list: string, token: string): boolean {
+	for (let at = list.indexOf(token);
+		at !== -1;
+		at = list.indexOf(token, at + 1)) {
+		const end = at + token.length;
+		if (
+			(at === 0 || isTokenSeparator(list.charCodeAt(at - 1))) &&
+			(end === list.length || isTokenSeparator(list.charCodeAt(end)))
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// ASCII whitespace: tab, line feed, form feed, carriage return, space.
+function isTokenSeparator(code: number): boolean {
+	return code === 0x20 ||
+		code === 0x09 ||
+		code === 0x0a ||
+		code === 0x0c ||
+		code === 0x0d;
 }
 
 // Keyed by text and the namespaces it was compiled against. A selector
