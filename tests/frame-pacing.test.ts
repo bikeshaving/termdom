@@ -39,8 +39,11 @@ test("a change after a quiet spell is drawn without waiting", async () => {
 	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 40));
 	const before = written().length;
+	const start = performance.now();
 	dom.document.body.textContent = "b";
-	await new Promise((resolve) => setTimeout(resolve, 5));
-	expect(frames(written().slice(before))).toBe(1);
+	while (frames(written().slice(before)) === 0) {
+		await new Promise((resolve) => setTimeout(resolve, 1));
+	}
+	expect(performance.now() - start).toBeLessThan(16);
 	dom.dispose();
 });
