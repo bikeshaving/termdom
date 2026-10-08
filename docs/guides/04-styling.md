@@ -53,14 +53,15 @@ option says which TermDOM draws with:
 
 | `colorDepth` | Colors | How a CSS color is drawn |
 | --- | --- | --- |
+| `"auto"` (default) | What the terminal says | As one of the three below |
 | `"rgb"` | Any color | Exactly |
 | `"256"` | 256 | As the closest of the 256 |
 | `"ansi"` | 8 basic colors | As the closest basic color |
 
-Without the option, TermDOM asks the terminal when `attach()` runs. It
-uses `"rgb"` if the terminal says it has 24-bit color, or if it is tmux,
-which converts 24-bit color for the terminal it runs in. Otherwise it
-uses `"256"`, which every terminal in use supports. It does not guess,
+With `"auto"`, the default, TermDOM asks the terminal when `attach()`
+runs. It uses `"rgb"` if the terminal says it has 24-bit color, or if it
+is tmux, which converts 24-bit color for the terminal it runs in.
+Otherwise it uses `"256"`, which every terminal in use supports. It does not guess,
 because a terminal without 24-bit color can show a 24-bit color as
 something else, such as hidden text.
 
@@ -72,7 +73,7 @@ the environment, but a program can, and pass what it finds:
 ```ts
 const truecolor =
 	process.env.COLORTERM === "truecolor" || process.env.COLORTERM === "24bit";
-const term = new TermDOM({colorDepth: truecolor ? "rgb" : undefined});
+const term = new TermDOM({colorDepth: truecolor ? "rgb" : "auto"});
 ```
 
 Left `undefined`, the option falls back to asking the terminal.

@@ -63,13 +63,13 @@ Options:
   `Content-Security-Policy` header states it. Defaults to
   `"default-src 'none'"`, so nothing loads until the program allows it;
   `""` sets no policy. The images guide has recipes.
-- `graphics?: boolean | "cells"` — how the document draws pixels, for an
-  `<img>` and a canvas's `"2d"` context. `true` (default) uses the best
-  way the terminal has, `"cells"` draws them two to a cell in half
-  blocks, and `false` draws none: images show their `alt` text and
+- `graphics?: "auto" | "cells" | "none"` — how the document draws
+  pixels, for an `<img>` and a canvas's `"2d"` context. `"auto"`
+  (default) uses the best way the terminal has, `"cells"` draws them two
+  to a cell in half blocks, and `"none"` draws none: images show their `alt` text and
   `getContext("2d")` returns `null`.
-- `colorDepth?: "rgb" | "256" | "ansi"` — the colors the terminal shows.
-  Left out, TermDOM asks the terminal. See "Color depth" in the styling
+- `colorDepth?: "auto" | "rgb" | "256" | "ansi"` — the colors the
+  terminal shows. With `"auto"` (default), TermDOM asks the terminal. See "Color depth" in the styling
   guide.
 
 ### `term.document`, `term.window`

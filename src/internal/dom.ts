@@ -14529,7 +14529,7 @@ class HTMLCanvasElement extends HTMLElement {
 		if (id === "2d") {
 			// A document that draws no pixels has no 2d context, and the
 			// canvas shows its fallback content.
-			if (getAttachedDocument(this)?.[kGraphics] === false) {
+			if (getAttachedDocument(this)?.[kGraphics] === "none") {
 				return null;
 			}
 			this[kCanvasContext] = new CanvasRenderingContext2D({
@@ -16932,7 +16932,7 @@ function updateImageData(image: HTMLImageElement): void {
 	// No source, or images disabled, as HTML's "update the image data"
 	// puts it: the request ends unavailable with nothing to report, and the
 	// image shows its alt text.
-	if (chosen === null || getAttachedDocument(image)?.[kGraphics] === false) {
+	if (chosen === null || getAttachedDocument(image)?.[kGraphics] === "none") {
 		state.status = "unavailable";
 		state.url = "";
 		state.bitmap = null;
@@ -24850,7 +24850,7 @@ export interface Document {
 	[kFramebuffer]: Framebuffer;
 	// The program's cellSize option, which getCellSize reads.
 	[kCellSize]: CellSizeSetting;
-	// How the document draws pixels, or false when it draws none.
+	// How the document draws pixels, or "none" when it draws none.
 	[kGraphics]: GraphicsSetting;
 	[kLoad]: ResourceLoader;
 	[kLoadSignal]: AbortSignal;
@@ -33627,8 +33627,8 @@ export function syncMediaQueries(document: globalThis.Document): void {
 }
 
 /** What a TermDOM hands the document it draws. */
-/** How pixels reach the terminal, or false for not at all. */
-export type GraphicsSetting = "cells" | false;
+/** How pixels reach the terminal, or "none" for not at all. */
+export type GraphicsSetting = "cells" | "none";
 
 export interface DocumentEngine {
 	layout: Layout;
