@@ -142,17 +142,25 @@ export interface TermDOMOptions {
 	graphics?: "auto" | "cells" | "none";
 
 	/**
-	 * The colors the terminal shows: `"rgb"` for 24-bit color, `"256"` for
-	 * the 256-color palette, `"ansi"` for the 8 basic colors and their
-	 * bright forms. With `"auto"`, the default, TermDOM asks the terminal:
-	 * `"rgb"` when it says it has 24-bit color, or when it is tmux, which
-	 * converts 24-bit color for the terminal it runs in, and `"256"`
+	 * The colors the terminal shows, in the bits `screen.colorDepth`
+	 * reports: `24` for 24-bit color, `8` for the 256-color palette, `3`
+	 * for the 8 basic colors and their bright forms. `"rgb"`, `"256"` and
+	 * `"ansi"` name the same three. With `"auto"`, the default, TermDOM
+	 * asks the terminal: 24 when it says it has 24-bit color, or when it is
+	 * tmux, which converts 24-bit color for the terminal it runs in, and 8
 	 * otherwise.
 	 */
-	colorDepth?: "auto" | ColorDepth;
+	colorDepth?: "auto" | 24 | 8 | 3 | ColorDepth;
 }
 
-const COLOR_DEPTHS = new Set<unknown>(["rgb", "256", "ansi"]);
+const COLOR_DEPTHS = new Map<unknown, ColorDepth>([
+	[24, "rgb"],
+	[8, "256"],
+	[3, "ansi"],
+	["rgb", "rgb"],
+	["256", "256"],
+	["ansi", "ansi"],
+]);
 
 function toColorDepth(
 	option: TermDOMOptions["colorDepth"],
@@ -160,10 +168,13 @@ function toColorDepth(
 	if (option === undefined || option === "auto") {
 		return undefined;
 	}
-	if (COLOR_DEPTHS.has(option)) {
-		return option;
+	const depth = COLOR_DEPTHS.get(option);
+	if (depth === undefined) {
+		throw new TypeError(
+			'colorDepth must be "auto", 24, 8 or 3 ("rgb", "256" or "ansi")',
+		);
 	}
-	throw new TypeError('colorDepth must be "auto", "rgb", "256" or "ansi"');
+	return depth;
 }
 
 function toGraphicsSetting(

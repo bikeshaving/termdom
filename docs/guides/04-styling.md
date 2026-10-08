@@ -49,21 +49,24 @@ color the gradient has at that cell's center. `radial-gradient()` and
 ### Color depth
 
 Terminals differ in how many colors they can show. The `colorDepth`
-option says which TermDOM draws with:
+option says which TermDOM draws with, in the bits `screen.colorDepth`
+reports:
 
 | `colorDepth` | Colors | How a CSS color is drawn |
 | --- | --- | --- |
 | `"auto"` (default) | What the terminal says | As one of the three below |
-| `"rgb"` | Any color | Exactly |
-| `"256"` | 256 | As the closest of the 256 |
-| `"ansi"` | 8 basic colors | As the closest basic color |
+| `24` | Any color | Exactly |
+| `8` | 256 | As the closest of the 256 |
+| `3` | 8 basic colors | As the closest basic color |
 
-With `"auto"`, the default, TermDOM asks the terminal when `attach()`
-runs. It uses `"rgb"` if the terminal says it has 24-bit color, or if it
-is tmux, which converts 24-bit color for the terminal it runs in.
-Otherwise it uses `"256"`, which every terminal in use supports. It does not guess,
-because a terminal without 24-bit color can show a 24-bit color as
-something else, such as hidden text.
+`"rgb"`, `"256"` and `"ansi"` name the same three.
+
+With `"auto"`, TermDOM asks the terminal when `attach()` runs. It uses
+24 if the terminal says it has 24-bit color, or if it is tmux, which
+converts 24-bit color for the terminal it runs in. Otherwise it uses 8,
+which every terminal in use supports. It does not guess, because a
+terminal without 24-bit color can show a 24-bit color as something
+else, such as hidden text.
 
 Some terminals have 24-bit color but do not say so, among them
 Alacritty, Konsole and VS Code's terminal. Most of them set the
@@ -73,10 +76,8 @@ the environment, but a program can, and pass what it finds:
 ```ts
 const truecolor =
 	process.env.COLORTERM === "truecolor" || process.env.COLORTERM === "24bit";
-const term = new TermDOM({colorDepth: truecolor ? "rgb" : "auto"});
+const term = new TermDOM({colorDepth: truecolor ? 24 : "auto"});
 ```
-
-Left `undefined`, the option falls back to asking the terminal.
 
 A page can style for each depth with media queries: `color-gamut`
 matches `"rgb"`, and `(color-index: 256)` matches `"256"`.

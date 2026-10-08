@@ -99,13 +99,13 @@ The string has colors and line breaks only, no cursor movement and no
 mode changes, so it can be piped to a file, logged, or written to
 stderr. `attach()` is not called, and the process does not stay alive.
 
-`print()` and `renderANSI()` draw with `colorDepth: "256"` until
+`print()` and `renderANSI()` draw with `colorDepth: 8` until
 `attach()` has asked the terminal, and always when output goes to a
 pipe or a file, since there is no terminal to ask. To print in 24-bit
 color, set it yourself:
 
 ```ts
-const term = new TermDOM({colorDepth: "rgb"});
+const term = new TermDOM({colorDepth: 24});
 await term.print(`<div style="color: #ff8800">orange</div>`);
 ```
 

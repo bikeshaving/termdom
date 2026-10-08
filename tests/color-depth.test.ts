@@ -251,3 +251,24 @@ test("renderANSI() with markup uses the screen's colors", async () => {
 	expect(tmux.renderANSI(html)).toContain("38;2;18;52;86");
 	tmux.dispose();
 });
+
+test("colorDepth takes what screen.colorDepth reports, or its name", () => {
+	const transport = () => fakeTerminal({}).transport as never;
+	for (const [option, bits] of [
+		[24, 24],
+		[8, 8],
+		[3, 3],
+		["rgb", 24],
+		["256", 8],
+		["ansi", 3],
+	] as const) {
+		const dom = new TermDOM({transport: transport(), colorDepth: option});
+		expect(dom.window.screen.colorDepth).toBe(bits);
+		dom.dispose();
+	}
+	for (const option of [16, 32, 0, "truecolor"]) {
+		expect(() =>
+			new TermDOM({transport: transport(), colorDepth: option as never}),
+		).toThrow(TypeError);
+	}
+});
