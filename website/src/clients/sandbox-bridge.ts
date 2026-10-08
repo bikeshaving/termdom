@@ -157,7 +157,6 @@ export function workerTransport(
 		get rows() {
 			return rows;
 		},
-		colorDepth: "rgb",
 		sharesScreen: false,
 		interactive: true,
 		ready: Promise.resolve(),

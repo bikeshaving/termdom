@@ -9,9 +9,7 @@ document.body.innerHTML = `
   <style>
     .card { border: 1px solid #5fafff; padding: 0 1ch; width: 36ch; }
     .title { color: #5fafff; font-weight: bold; }
-    progress { width: 25ch; }
-    progress::part(bar) { color: green; }
-    progress::part(groove) { color: #444; }
+    progress { width: 25ch; accent-color: green; }
     .pct { color: #888; }
   </style>
   <div class="card">

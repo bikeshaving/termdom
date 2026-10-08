@@ -80,7 +80,8 @@ const term = new TermDOM({colorDepth: truecolor ? 24 : "auto"});
 ```
 
 A page can style for each depth with media queries: `color-gamut`
-matches `"rgb"`, and `(color-index: 256)` matches `"256"`.
+matches `"rgb"`, `(color-index: 256)` matches `"256"`, and
+`(color-index: 16)` matches `"ansi"`.
 
 ```css
 .banner { background: navy; }

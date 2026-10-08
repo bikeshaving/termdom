@@ -226,3 +226,14 @@ test("scrollIntoView aligns within a scroll box as asked", async () => {
 	expect(box.scrollTop).toBe(7);
 	dom.dispose();
 });
+
+test("a DOMRectList comes only from getClientRects()", () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const window = dom.window as unknown as {DOMRectList: new () => unknown};
+	expect(() => new window.DOMRectList()).toThrow(TypeError);
+	const rects = dom.document.createElement("div").getClientRects();
+	expect(rects).toBeInstanceOf(window.DOMRectList);
+	expect(rects.length).toBe(0);
+	dom.dispose();
+});
