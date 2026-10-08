@@ -155,7 +155,7 @@ function checkTransport(transport: TerminalTransport): TerminalTransport {
 	if ("colorDepth" in transport) {
 		throw new TypeError(
 			"colorDepth is an option of TermDOM, not of its transport: " +
-			"new TermDOM({colorDepth: 24})",
+			"new TermDOM({colorDepth: \"rgb\"})",
 		);
 	}
 	return transport;
