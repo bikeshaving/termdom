@@ -419,6 +419,7 @@ const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
 const kHighlightedText = Symbol("highlightedText");
 const kHighlightStyles = Symbol("highlightStyles");
+const kPaintedText = Symbol("paintedText");
 export interface Painter {
 	[kWindow]: Window;
 	[kDocument]: Document;
@@ -433,6 +434,9 @@ export interface Painter {
 	[kScrolledRows]: number;
 	[kHighlightedText]: Map<Text, HighlightRun[]>;
 	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
+	// Where this frame painted each text, for the overflow markers drawn
+	// after it, which would otherwise ask layout to place it again.
+	[kPaintedText]: Map<Text, TextFragment[]>;
 }
 
 export class Painter {
@@ -446,6 +450,7 @@ export class Painter {
 		this[kScrolledRows] = 0;
 		this[kHighlightedText] = new Map();
 		this[kHighlightStyles] = new Map();
+		this[kPaintedText] = new Map();
 		this[kWindow] = document.defaultView as unknown as Window;
 		this[kDocument] = document;
 		this[kLayout] = layout;
@@ -514,6 +519,7 @@ export class Painter {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
 		this[kHighlightedText] = collectHighlightedText(this[kDocument]);
+		this[kPaintedText].clear();
 		this[kHighlightStyles] = new Map();
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		// From the body, the root stacking context's content. A body that
@@ -864,7 +870,9 @@ function paintOverflowMarkers(
 	}
 	const rows = new Map<number, {left: number; right: number}>();
 	for (const text of getOwnLineText(element)) {
-		for (const fragment of painter[kLayout].lineFragments(text)) {
+		const fragments = painter[kPaintedText].get(text) ??
+			painter[kLayout].lineFragments(text);
+		for (const fragment of fragments) {
 			if (fragment.endOffset <= fragment.startOffset) {
 				continue;
 			}
@@ -1519,6 +1527,7 @@ function paintText(
 	if (fragments === undefined || !textNode.data) {
 		return;
 	}
+	painter[kPaintedText].set(textNode, fragments);
 	// The flat-tree parent. Slotted text inherits through the slot, not
 	// the host.
 	const parentElement = flatParentElement(textNode);
