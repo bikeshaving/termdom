@@ -6311,7 +6311,11 @@ export class Layout {
 	fullWidthFixedRows(cols: number): Array<[number, number]> {
 		const rows: Array<[number, number]> = [];
 		for (const element of this[kPositionedElements]) {
-			if (!element.isConnected || getPosition(element) !== "fixed") {
+			if (
+				!element.isConnected ||
+				getPosition(element) !== "fixed" ||
+				!this.isInFixedSpace(element)
+			) {
 				continue;
 			}
 			const rect = this.getRect(element);
