@@ -15,7 +15,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {CanvasCellGridContext, TermDOM} from "../src/index.ts";
 import {createImageBitmapFrom, ImageBitmap} from "../src/internal/canvas.ts";
 import {decodeImage, encodePNG} from "../src/internal/images.ts";
-import {MockProcess, nextFrame, until} from "./test-utils.ts";
+import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.ts";
 
 interface Cell {
 	char: string;
@@ -1065,5 +1065,66 @@ test("a 2d canvas wider than a box that clips it paints nothing past the box", a
 	await nextFrame(dom);
 	expect(cell(terminal, 4, 0).bg).toBe(0xff0000);
 	expect(cell(terminal, 5, 0).bg).toBe(-1);
+	dom.dispose();
+});
+
+// A scroller taller than the rows it moves is shifted by the terminal,
+// under scroll margins, and only the rows scrolled in are written. A
+// canvas's rows are cells like any other, so they move with it.
+test("a 2d canvas in a scroller shifts with the terminal's scroll", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const written = captureRawOutput(terminal);
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.attach();
+	dom.document.body.innerHTML =
+		"<div id=s style=\"height: 6px; overflow: hidden\">" +
+		"<canvas id=c width=8 height=192 style=\"display: block\"></canvas>" +
+		"</div>";
+	const ctx = context2d(dom.document);
+	const band = (row: number) => (row * 0x151515 + 0x203040) & 0xffffff;
+	for (let row = 0; row < 12; row++) {
+		ctx.fillStyle = `#${band(row).toString(16).padStart(6, "0")}`;
+		ctx.fillRect(0, row * 16, 8, 16);
+	}
+	await nextFrame(dom);
+	const before = written().length;
+	dom.document.getElementById("s")!.scrollTop = 1;
+	await nextFrame(dom);
+	expect(written().slice(before)).toContain("\x1b[1;6r");
+	for (let row = 0; row < 6; row++) {
+		expect(cell(terminal, 0, row).bg).toBe(band(row + 1));
+	}
+	dom.dispose();
+});
+
+test("a cell grid in a scroller shifts with the terminal's scroll", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const written = captureRawOutput(terminal);
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.attach();
+	dom.document.body.innerHTML =
+		"<div id=s style=\"height: 6px; overflow: hidden\">" +
+		"<canvas id=c width=10 height=12 style=\"display: block\"></canvas>" +
+		"</div>";
+	const canvas = dom.document.getElementById("c") as HTMLCanvasElement;
+	const grid = canvas.getContext("termdom-cellgrid" as "2d") as unknown as {
+		fillText(text: string, x: number, y: number): void;
+	};
+	for (let row = 0; row < 12; row++) {
+		grid.fillText(`row ${row}`, 0, row);
+	}
+	await nextFrame(dom);
+	const before = written().length;
+	dom.document.getElementById("s")!.scrollTop = 2;
+	await nextFrame(dom);
+	expect(written().slice(before)).toContain("\x1b[1;6r");
+	expect([0, 1, 2, 3, 4, 5].map((row) => rowText(terminal, row))).toEqual([
+		"row 2",
+		"row 3",
+		"row 4",
+		"row 5",
+		"row 6",
+		"row 7",
+	]);
 	dom.dispose();
 });
