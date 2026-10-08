@@ -541,6 +541,19 @@ test("a page restyles a details' ::details-content, and not a button's insides",
 	dom.dispose();
 });
 
+test("a control's insides follow a change to what they inherit", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"color: #010203\"><input value=\"x\"></div>";
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).toContain("38;2;1;2;3");
+	dom.document.querySelector("div")!.style.color = "#040506";
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).toContain("38;2;4;5;6");
+	dom.dispose();
+});
+
 /* --------------------------------------------------- fieldset and legend */
 
 test("a fieldset draws a border its legend interrupts", async () => {
