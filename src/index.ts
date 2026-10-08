@@ -151,16 +151,6 @@ export interface TermDOMOptions {
 	colorDepth?: ColorDepth;
 }
 
-function checkTransport(transport: TerminalTransport): TerminalTransport {
-	if ("colorDepth" in transport) {
-		throw new TypeError(
-			"colorDepth is an option of TermDOM, not of its transport: " +
-			"new TermDOM({colorDepth: \"rgb\"})",
-		);
-	}
-	return transport;
-}
-
 const COLOR_DEPTHS = new Set<unknown>(["rgb", "256", "ansi"]);
 
 function toColorDepth(
@@ -341,9 +331,7 @@ export class TermDOM extends EventTarget {
 		this[kLifetimes] = new Set();
 		retainDecoder();
 		this[kLoads] = new AbortController();
-		this[kTransport] = checkTransport(
-			options.transport ?? transportFromProcess(),
-		);
+		this[kTransport] = options.transport ?? transportFromProcess();
 
 		this.window = createWindow(
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
@@ -509,7 +497,7 @@ export class TermDOM extends EventTarget {
 		// Re-derive everything that comes from the transport. Only before the
 		// first frame.
 		if (rebinding) {
-			this[kTransport] = checkTransport(transport);
+			this[kTransport] = transport;
 			this[kFramebuffer].rebind(this[kColorDepth] ?? "256");
 			this[kExchange].rebind(transport);
 		}

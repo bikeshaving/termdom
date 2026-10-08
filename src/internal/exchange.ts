@@ -2284,12 +2284,6 @@ export function transportFromProcess(
 	// asked of the terminal, never read from the environment.
 	options: {sharesScreen?: boolean; colorScheme?: "light" | "dark"} = {},
 ): TerminalTransport {
-	if ("colorDepth" in options) {
-		throw new TypeError(
-			"colorDepth is an option of TermDOM, not of its transport: " +
-			"new TermDOM({colorDepth: \"rgb\"})",
-		);
-	}
 	const sharesScreen =
 		options.sharesScreen ?? proc === (process as unknown as ProcessLike);
 	let closedResolve!: (info: TerminalCloseInfo) => void;
