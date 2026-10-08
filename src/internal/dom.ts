@@ -33849,6 +33849,31 @@ function getCaretRect(
 	return {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
 }
 
+// A text area scrolls its own content so the caret's row shows, as a
+// browser keeps the caret in view while typing and moving through it.
+function revealCaretInTextArea(
+	attached: Document,
+	area: HTMLTextAreaElement,
+): void {
+	const caret = getCaretRect(attached, area);
+	const port = attached[kLayout].contentRect(area);
+	if (caret === null || port === null) {
+		return;
+	}
+	const top = Math.round(port.top);
+	const bottom = Math.round(port.top + port.height);
+	const delta = caret.y < top
+		? caret.y - top
+		: caret.y >= bottom ? caret.y + 1 - bottom : 0;
+	if (delta !== 0) {
+		setScrollOffset(
+			area,
+			"top",
+			(getScrollOffset(area, "top") + delta) * getCellSize(area).height,
+		);
+	}
+}
+
 /**
  * Scrolls the document to the caret of the text control an edit queued,
  * after layout. Skipped if focus has moved on: revealing a control the user
@@ -33866,6 +33891,9 @@ export function revealPendingCaret(document: globalThis.Document): void {
 		return;
 	}
 	flushLayout(element);
+	if (element instanceof HTMLTextAreaElement) {
+		revealCaretInTextArea(attached, element);
+	}
 	const rect = attached[kLayout].getRect(element);
 	if (!rect) {
 		return;
