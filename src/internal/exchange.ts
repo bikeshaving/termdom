@@ -2287,7 +2287,7 @@ export function transportFromProcess(
 	if ("colorDepth" in options) {
 		throw new TypeError(
 			"colorDepth is an option of TermDOM, not of its transport: " +
-			"new TermDOM({colorDepth: 24})",
+			"new TermDOM({colorDepth: \"rgb\"})",
 		);
 	}
 	const sharesScreen =
