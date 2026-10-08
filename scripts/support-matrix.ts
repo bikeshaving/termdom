@@ -1335,15 +1335,6 @@ function buildProbes(): Probe[] {
 			ctx.fillRect(0, 0, 1, 1);
 			return ctx.getImageData(0, 0, 1, 1).data[0] === 255;
 		}),
-		apiProbe("<canvas> cellgrid context", "DOM APIs", (dom) => {
-			const canvas = dom.document.createElement("canvas");
-			const grid = canvas.getContext("termdom-cellgrid" as "2d") as unknown as {
-				fillText(text: string, x: number, y: number): void;
-				getCell(x: number, y: number): {char: string} | null;
-			};
-			grid.fillText("x", 0, 0);
-			return grid.getCell(0, 0)?.char === "x";
-		}),
 		apiProbe("FormData", "DOM APIs", (dom) => {
 			const form = dom.document.createElement("form");
 			form.innerHTML = '<input name="probe" value="1">';
