@@ -17,18 +17,26 @@ leaves a sliver of the wrong color at the top and runs past the
 middle. The background fills whatever the glyph leaves, so with the
 lower half block only the seam between the two pixels is a little
 low. The pixels are ordinary cells, so they scroll, clip and
-redraw like text, and they work over SSH and inside tmux.</p><h2 id="img"><code>&lt;img&gt;</code> <a class="heading-anchor" href="#img">#</a></h2><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>img</span> <span class="token attr-name">src</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cover.jpg<span class="token punctuation">"</span></span> <span class="token attr-name">alt</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Album cover<span class="token punctuation">"</span></span><span class="token punctuation">></span></span></code></pre><p><code>src</code> is a URL: <code>https:</code>, <code>data:</code>, <code>file:</code> or any other. A path is
+redraw like text, and they work over SSH and inside tmux.</p><p>The <code>graphics</code> option says how pixels are drawn. <code>&quot;auto&quot;</code>, the
+default, uses the best way the terminal has, which today is always
+cells. <code>&quot;cells&quot;</code> draws cells whatever the terminal could do. <code>&quot;none&quot;</code>
+draws no pixels at all: an <code>&lt;img&gt;</code> loads nothing and shows its <code>alt</code> text, as a
+browser does with images turned off, and <code>getContext(&quot;2d&quot;)</code> returns
+<code>null</code>, so a canvas shows its fallback content.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>graphics<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><h2 id="img"><code>&lt;img&gt;</code> <a class="heading-anchor" href="#img">#</a></h2><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>img</span> <span class="token attr-name">src</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cover.jpg<span class="token punctuation">"</span></span> <span class="token attr-name">alt</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Album cover<span class="token punctuation">"</span></span><span class="token punctuation">></span></span></code></pre><p><code>src</code> is a URL: <code>https:</code>, <code>data:</code>, <code>file:</code> or any other. A path is
 relative to the document&#039;s URL, given by the <code>url</code> option. A document
 at <code>about:blank</code> has no URL to resolve against, so a path there names
 nothing; a program that shows local files sets <code>url</code> to a <code>file:</code> URL,
-such as its working directory.</p><h3 id="loading">Loading <a class="heading-anchor" href="#loading">#</a></h3><p>Nothing loads unless the program allows it. Which loads a document may
-make is a Content Security Policy, given as the <code>csp</code> option in the
-syntax of a <code>Content-Security-Policy</code> header. An <code>&lt;img&gt;</code> loads only what
-<code>img-src</code> allows, or <code>default-src</code> when there is no <code>img-src</code>. The default is <code>default-src &#039;none&#039;</code>.</p><pre class="language-typescript"><code class="language-typescript"><span class="token comment">// Images from anywhere on the web, and data: URLs.</span>
+such as its working directory.</p><h3 id="loading">Loading <a class="heading-anchor" href="#loading">#</a></h3><p>Nothing loads unless the program allows it, with the <code>csp</code> option:</p><pre class="language-typescript"><code class="language-typescript"><span class="token comment">// Images from anywhere on the web, and data: URLs.</span>
 <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src https: data:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 
 <span class="token comment">// A mail client: attachments by cid:, nothing remote.</span>
-<span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src cid: data:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Source expressions match as CSP Level 3 defines them: <code>&#039;none&#039;</code>,
+<span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src cid: data:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">// Anything, as a browser with no policy loads.</span>
+<span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">""</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The option is a Content Security Policy, in the syntax of a
+<code>Content-Security-Policy</code> header. An <code>&lt;img&gt;</code> loads only what <code>img-src</code>
+allows, or <code>default-src</code> when there is no <code>img-src</code>. The default is
+<code>default-src &#039;none&#039;</code>.</p><p>Source expressions match as CSP Level 3 defines them: <code>&#039;none&#039;</code>,
 <code>&#039;self&#039;</code>, <code>*</code>, a scheme such as <code>https:</code> or <code>cid:</code>, and a host such as
 <code>https://*.example.com:8443/img/</code>. <code>*</code> covers the network schemes and
 the document&#039;s own, not <code>data:</code> or <code>cid:</code>. A host given without a
@@ -40,7 +48,7 @@ policy holds from when it is inserted into the head, and removing the
 tag or changing its <code>content</code> later changes nothing. A load a policy blocks fires
 <code>securitypolicyviolation</code> at its element, a <code>SecurityPolicyViolationEvent</code>
 that bubbles to the document and names the URL, the directive and the
-policy. The image shows as a box with its <code>alt</code> text. When the program
+policy. The image shows its <code>alt</code> text instead. When the program
 set no policy, the first blocked load is also reported once where
 uncaught errors go: the transport&#039;s log, or the scrollback at exit.</p><p>A load the policy allows goes to the TermDOM as a <code>&quot;fetch&quot;</code> event, a
 <code>FetchEvent</code>, as a Service Worker hears it, and to the network when no
@@ -82,12 +90,12 @@ not untrusted markup, that calls it.</p><p>PNG, JPEG, GIF and BMP decode:</p><ta
 lossless JPEGs.</p><p><code>load</code> and <code>error</code> fire as they do in a browser, and <code>decode()</code>,
 <code>complete</code>, <code>naturalWidth</code>, <code>naturalHeight</code> and <code>currentSrc</code> report the
 image. <code>new Image()</code> makes an <code>&lt;img&gt;</code>. <code>srcset</code> is read for its <code>1x</code>
-candidate.</p><p>An image that is not showing, because it is still loading, failed to
-load or was blocked, is a box with its <code>alt</code> text inside, cut with an
-ellipsis when it does not fit. The box takes the image&#039;s size when the
-page gives one, and otherwise fits the text. An empty <code>alt</code> marks an
-image that is only decoration, and it shows nothing, as does an
-<code>&lt;img&gt;</code> with neither a <code>src</code> nor an <code>alt</code>.</p><h3 id="size">Size <a class="heading-anchor" href="#size">#</a></h3><p>An image&#039;s pixels are CSS pixels, so its natural size in cells is its
+candidate.</p><p>An image that is not showing follows HTML&#039;s rendering rules:</p><ul><li>An image that failed to load, was blocked or has no <code>src</code> shows its
+<code>alt</code> text in the line, as plain text that wraps like any other.</li><li>An image that has a size, from <code>width</code> and <code>height</code> or from CSS, is a
+box of that size with its <code>alt</code> text inside, cut with an ellipsis when
+it does not fit, while it is still loading, when it has no <code>alt</code>, or
+in a document in quirks mode (one with no <code>&lt;!doctype html&gt;</code>).</li><li>An empty <code>alt</code> marks an image that is only decoration, and it shows
+nothing, as does an <code>&lt;img&gt;</code> with neither a <code>src</code> nor an <code>alt</code>.</li></ul><h3 id="size">Size <a class="heading-anchor" href="#size">#</a></h3><p>An image&#039;s pixels are CSS pixels, so its natural size in cells is its
 size divided by the size of a cell. With the <code>cellSize</code> option set,
 that is the page&#039;s cell. With the default unit cell, where a CSS pixel
 is a whole cell, an image takes the terminal&#039;s cell instead: the engine
@@ -121,7 +129,7 @@ globalThis<span class="token punctuation">.</span>Worker <span class="token oper
 decode if it is still waiting for its turn. An image whose
 box would sample more than 2^26 pixels draws nothing, as does a 2D
 canvas past that size. <code>ImageData</code> past it throws a <code>RangeError</code>, and
-a character grid stops at 2^22 cells.</p><h2 id="canvas"><code>&lt;canvas&gt;</code> <a class="heading-anchor" href="#canvas">#</a></h2><p><code>getContext()</code> takes two context types.</p><h3 id="2d"><code>&quot;2d&quot;</code> <a class="heading-anchor" href="#2d">#</a></h3><p>The 2D context draws pixels into a bitmap, <code>width</code> by <code>height</code>, which
+a cell grid stops at 2^22 cells.</p><h2 id="canvas"><code>&lt;canvas&gt;</code> <a class="heading-anchor" href="#canvas">#</a></h2><p><code>getContext()</code> takes two context types.</p><h3 id="2d"><code>&quot;2d&quot;</code> <a class="heading-anchor" href="#2d">#</a></h3><p>The 2D context draws pixels into a bitmap, <code>width</code> by <code>height</code>, which
 shows like an image. It implements:</p><ul><li>rectangles, paths (lines, arcs, ellipses, Bézier curves, <code>arcTo</code>,
 <code>roundRect</code>), <code>Path2D</code> with SVG path data, filling with the <code>nonzero</code>
 and <code>evenodd</code> rules, stroking with widths, caps, joins and dashes,
@@ -143,11 +151,15 @@ ctx<span class="token punctuation">.</span>fillStyle <span class="token operator
 ctx<span class="token punctuation">.</span><span class="token function">beginPath</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 ctx<span class="token punctuation">.</span><span class="token function">arc</span><span class="token punctuation">(</span><span class="token number">80</span><span class="token punctuation">,</span> <span class="token number">48</span><span class="token punctuation">,</span> <span class="token number">30</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> Math<span class="token punctuation">.</span><span class="token constant">PI</span> <span class="token operator">*</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 ctx<span class="token punctuation">.</span><span class="token function">fill</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-document<span class="token punctuation">.</span>body<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span>canvas<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Drawing repaints the canvas on the next frame. No DOM change is needed.</p><h3 id="charactergrid"><code>&quot;charactergrid&quot;</code> <a class="heading-anchor" href="#charactergrid">#</a></h3><p>The character grid context draws cells instead of pixels. The canvas is
-<code>width</code> columns by <code>height</code> rows, and that is its natural size.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+document<span class="token punctuation">.</span>body<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span>canvas<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Drawing repaints the canvas on the next frame. No DOM change is needed.</p><h3 id="termdom-cellgrid"><code>&quot;termdom-cellgrid&quot;</code> <a class="heading-anchor" href="#termdom-cellgrid">#</a></h3><p>The cell grid context draws cells instead of pixels. The canvas is
+<code>width</code> columns by <code>height</code> rows, and that is its natural size. It is
+TermDOM&#039;s own, so its name carries TermDOM&#039;s prefix, as a browser&#039;s own
+context types once carried theirs (<code>&quot;moz-webgl&quot;</code>, <code>&quot;webkit-3d&quot;</code>). Its
+interface is not on <code>window</code>. The <code>termdom</code> package exports it as
+<code>CanvasCellGridContext</code>.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>width <span class="token operator">=</span> <span class="token number">20</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>height <span class="token operator">=</span> <span class="token number">3</span><span class="token punctuation">;</span>
-<span class="token keyword">const</span> grid <span class="token operator">=</span> canvas<span class="token punctuation">.</span><span class="token function">getContext</span><span class="token punctuation">(</span><span class="token string">"charactergrid"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">const</span> grid <span class="token operator">=</span> canvas<span class="token punctuation">.</span><span class="token function">getContext</span><span class="token punctuation">(</span><span class="token string">"termdom-cellgrid"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 grid<span class="token punctuation">.</span>fillStyle <span class="token operator">=</span> <span class="token string">"#003366"</span><span class="token punctuation">;</span>
 grid<span class="token punctuation">.</span><span class="token function">fillRect</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 grid<span class="token punctuation">.</span>fillStyle <span class="token operator">=</span> <span class="token string">"#ffcc00"</span><span class="token punctuation">;</span>
