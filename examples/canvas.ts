@@ -3,7 +3,7 @@ import {TermDOM} from "@b9g/termdom";
 const term = new TermDOM();
 term.attach();
 
-// Two canvases. "2d" draws pixels, two to a cell; "termdom-chargrid" draws
+// Two canvases. "2d" draws pixels, two to a cell; "termdom-cellgrid" draws
 // cells directly, one glyph and two colors each.
 const {document, window} = term;
 document.body.innerHTML = `
@@ -21,7 +21,7 @@ document.body.innerHTML = `
         <canvas id="pixels" width="240" height="192"></canvas>
       </div>
       <div>
-        <div class="label">getContext("termdom-chargrid")</div>
+        <div class="label">getContext("termdom-cellgrid")</div>
         <canvas id="cells" width="30" height="16"></canvas>
       </div>
     </div>
@@ -37,7 +37,7 @@ pixels.style.height = "16px";
 const ctx = pixels.getContext("2d")!;
 
 const grid = (document.getElementById("cells") as HTMLCanvasElement)
-  .getContext("termdom-chargrid" as "2d") as any;
+  .getContext("termdom-cellgrid" as "2d") as any;
 
 // Conway's Life on the grid, seeded with a glider, blinkers, a toad and
 // an R-pentomino, which keeps changing for a long time.
