@@ -228,7 +228,7 @@ describe("banded element scroll", () => {
 		dom.dispose();
 	});
 
-	test("a scroll alongside a mutation repaints instead", async () => {
+	test("a scroll alongside a mutation still shifts, and the diff takes the rest", async () => {
 		const terminal = rawTerminal(12, 40);
 		const dom = new TermDOM({
 			transport: transportFromProcess(terminal.process as any),
@@ -244,12 +244,13 @@ describe("banded element scroll", () => {
 			dom.document.getElementById("head")!.textContent = "CHANGED";
 		});
 
-		// Layout moved under the band, so the rows the terminal would shift
-		// are not the rows the last frame painted.
+		// The previous frame shifts with the screen, so the diff writes the
+		// changed header and the three rows the scroll brought in.
 		expect(terminal.taken()).toBe(
-			"\x1b[?2026h\x1b[1;1H\x1b7CH\x1b[1CNGED\r\n" +
-			"\x1b[4C3\r\n\x1b[4C4\r\n\x1b[4C5\r\n\x1b[4C6\r\n\x1b[4C7\r\n" +
-			"\x1b[4C8\r\n\x1b[4C9\r\n\x1b[4C10\r\n\x1b[4C11" +
+			"\x1b[?2026h\x1b[?6l\x1b[2;10r\x1b[2;1H\x1b[3M\x1b[r" +
+			"\x1b[1;1H\x1b7CH\x1b[1CNGED" +
+			"\r\n".repeat(7) +
+			"\r\x1b[Krow 9\r\n\r\x1b[Krow 10\r\n\r\x1b[Krow 11" +
 			"\x1b[10;1H\x1b[?2026l",
 		);
 		dom.dispose();
@@ -286,4 +287,39 @@ test("a band scrolls in a terminal left in origin mode", async () => {
 	await nextFrame(dom);
 	expect(screen()).toEqual(rows(1));
 	dom.dispose();
+});
+
+// The shift moves the previous frame with the screen, so whatever else
+// the frame changed is diffed against what the terminal really shows.
+test("a scroll and a change in one frame leave the screen as a fresh frame would", async () => {
+	const html =
+		"<div id=\"head\">HEADER</div>" + scrollPane("pane", 9, 40, "row");
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	dom.document.body.innerHTML = html;
+	await nextFrame(dom);
+	for (const [
+		top,
+		text,
+	] of [[3, "CHANGED"], [5, "AGAIN"], [2, "BACK"]] as const) {
+		dom.document.getElementById("pane")!.scrollTop = top;
+		dom.document.getElementById("head")!.textContent = text;
+		await nextFrame(dom);
+	}
+
+	const fresh = new MockProcess({cols: 40, rows: 12});
+	const again = new TermDOM({transport: transportFromProcess(fresh as any)});
+	again.attach();
+	again.document.body.innerHTML = html;
+	again.document.getElementById("head")!.textContent = "BACK";
+	await nextFrame(again);
+	again.document.getElementById("pane")!.scrollTop = 2;
+	await nextFrame(again);
+	// An erased cell reads as a space. What shows is the same.
+	const lines = (text: string) =>
+		text.split("\n").map((line) => line.trimEnd());
+	expect(lines(terminal.getPlainText())).toEqual(lines(fresh.getPlainText()));
+	dom.dispose();
+	again.dispose();
 });
