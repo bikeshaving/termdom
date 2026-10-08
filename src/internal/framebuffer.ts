@@ -822,7 +822,9 @@ export class CellGrid {
 			packAttrs(style) |
 			((width < ATTR.WidthWide ? width : ATTR.WidthWide) << ATTR.WidthShift);
 		this.border[index] = 0;
-		this.settleWide(index, width);
+		if (width > 1) {
+			this.settleWide(index, width);
+		}
 	}
 
 	/**
@@ -1143,6 +1145,41 @@ export class CellContext {
 		// theme is. "inverse" fills with SGR inverse instead. That is the
 		// Highlight/HighlightText system-color pair, swapping each cell's
 		// colors with no assumption about what they are.
+		// An opaque fill writes one cell everywhere it lands, so it is
+		// clipped once rather than cell by cell. A page's background fills
+		// the whole screen every frame.
+		if (
+			background !== "inverse" &&
+			(background === "default" || background < TRANSPARENCY_UNIT) &&
+			Number.isInteger(x) &&
+			Number.isInteger(y)
+		) {
+			const bg = background === "default" ? 0 : background & COLOR_MASK;
+			const clip = this.clipRect;
+			const offset = this.viewportOffset;
+			const top = Math.max(y, clip?.top ?? y, -offset);
+			const bottom = Math.min(
+				y + height,
+				clip?.bottom ?? y + height,
+				this.rows - offset,
+			);
+			const left = Math.max(x, clip?.left ?? x, 0);
+			const right = Math.min(x + width, clip?.right ?? x + width, this.cols);
+			const grid = this.grid;
+			const attrs = 1 << ATTR.WidthShift;
+			for (let row = top; row < bottom; row++) {
+				const start = (row + offset) * this.cols;
+				for (let index = start + left; index < start + right; index++) {
+					grid.cluster[index] = 0x20;
+					grid.fg[index] = 0;
+					grid.bg[index] = bg;
+					grid.attrs[index] = attrs;
+					grid.border[index] = 0;
+				}
+			}
+			return;
+		}
+
 		const style: CellStyle = background === "inverse"
 			? {inverse: true}
 			: {bg: background === "default" ? 0 : background};
