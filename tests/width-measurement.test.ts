@@ -814,3 +814,22 @@ test("a row that held a disputed cluster is erased before it changes", async () 
 	// A terminal that clusters as the engine does draws the same widths.
 	expect(await run(true)).not.toContain(family);
 });
+
+// A multiplexer that counts a disputed cluster wider than the terminal
+// under it draws it never writes the extra column, which keeps the old
+// row's glyph. A row that gains one is erased and written whole.
+test("a row that gains a disputed cluster is erased before it is written", async () => {
+	const bell = "\u{1F6CE}\u{FE0F}";
+	const terminal = new MockProcess({cols: 30, rows: 4});
+	const written = captureRawOutput(terminal);
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = "<div id=\"line\">abcdefghijklmn</div>";
+	await dom.attach();
+	await nextFrame(dom);
+	await settle();
+	const before = written().length;
+	dom.document.getElementById("line")!.textContent = `${bell} Silicon`;
+	await nextFrame(dom);
+	expect(written().slice(before)).toContain(`\r\x1b[K${bell}`);
+	dom.dispose();
+});

@@ -2294,7 +2294,11 @@ export class Framebuffer {
 						// A terminal that drew a cluster of the old row at another
 						// width than the engine measured has the rest of that row
 						// shifted. Cells rewritten after it would land beside the
-						// old ones, so the row is erased and written whole.
+						// old ones, so the row is erased and written whole. A
+						// cluster of the new row is the same in reverse: a
+						// multiplexer that counts it wider than the terminal under
+						// it draws it never writes the extra column, and that
+						// column would keep the old row's glyph.
 						if (
 							erasesDisputedRows &&
 							hasDisputedCellBefore(prev, prevRow, cols, next, nextRow)
@@ -2595,9 +2599,9 @@ export class Framebuffer {
 	}
 }
 
-// Whether the old row held a disputed cluster at or before its last
-// changed cell. A change only before every such cluster cannot meet a
-// shifted tail.
+// Whether the old row or the new one holds a disputed cluster at or
+// before the last changed cell. A change only before every such cluster
+// cannot meet a shifted tail.
 function hasDisputedCellBefore(
 	prev: CellGrid,
 	prevRow: number,
@@ -2610,7 +2614,10 @@ function hasDisputedCellBefore(
 		last--;
 	}
 	for (let col = 0; col <= last; col++) {
-		if (isDisputedCell(prev.cluster[prevRow + col])) {
+		if (
+			isDisputedCell(prev.cluster[prevRow + col]) ||
+			isDisputedCell(next.cluster[nextRow + col])
+		) {
 			return true;
 		}
 	}
