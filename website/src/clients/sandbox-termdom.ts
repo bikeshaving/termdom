@@ -22,7 +22,7 @@ interface SandboxGlobals {
 export class TermDOM extends EngineTermDOM {
 	constructor(options?: TermDOMOptions) {
 		const globals = globalThis as SandboxGlobals;
-		super({transport: globals.__transport, ...options});
+		super({transport: globals.__transport, colorDepth: 24, ...options});
 		globals.__termdom = this;
 	}
 }

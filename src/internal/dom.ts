@@ -10265,7 +10265,7 @@ Object.defineProperties(Element.prototype, {
 function createRectList(
 	rects: readonly globalThis.DOMRect[],
 ): globalThis.DOMRectList {
-	return new DOMRectList(rects);
+	return constructInternal(() => new DOMRectList(rects));
 }
 
 // An empty set gives a zero rect at the origin, which is what both public
@@ -10350,7 +10350,7 @@ Object.defineProperties(Element.prototype, {
 		value(this: Element): globalThis.DOMRectList {
 			const attached = getAttachedDocument(this);
 			if (attached === undefined || !this.isConnected) {
-				return new DOMRectList();
+				return createRectList([]);
 			}
 			flushLayout(this);
 			return createRectList(
@@ -24224,7 +24224,10 @@ export class DOMRectList implements globalThis.DOMRectList {
 	declare [Symbol.iterator]: () => ArrayIterator<globalThis.DOMRect>;
 	declare [kRects]: readonly globalThis.DOMRect[];
 
-	constructor(rects: readonly globalThis.DOMRect[] = []) {
+	constructor(rects: readonly globalThis.DOMRect[]) {
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
 		this[kRects] = [...rects];
 		for (let i = 0; i < rects.length; i++) {
 			Object.defineProperty(this, i, {

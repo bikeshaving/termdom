@@ -54,7 +54,7 @@ import {
 	isLayoutHintAttribute,
 } from "./hints.ts";
 import type {Layout} from "./layout.ts";
-import {getStringWidth} from "./text.ts";
+import {getStringWidth, splitOnASCIIWhitespace} from "./text.ts";
 import {
 	UA_CONTROL_STYLES,
 	UA_DOCUMENT_STYLES,
@@ -8454,7 +8454,7 @@ const MEDIA_DISCRETE_FEATURES: Record<
 		falsy: "none",
 		value: () => "scroll",
 	},
-	// Only true color reaches sRGB; a palette of 256 or 8 matches none.
+	// Only true color reaches sRGB; a palette of 256 or 16 matches none.
 	"color-gamut": {
 		values: ["srgb", "p3", "rec2020"],
 		falsy: "",
@@ -9295,8 +9295,8 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 				return (
 					shadowHost !== null &&
 					(rule.uaOrigin || !isUAShadowTree(root)) &&
-					partArg[1]
-						.trim().split(/\s+/).every((name) => partNames.includes(name)) &&
+					splitOnASCIIWhitespace(partArg[1])
+						.every((name) => partNames.includes(name)) &&
 					isRuleMatch(shadowHost, rule) &&
 					(rule.partMatcher === undefined ||
 						(rule.partMatcher !== null &&

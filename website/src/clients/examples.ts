@@ -116,7 +116,7 @@ const RUN_KEY_LABEL = /Mac|iPhone|iPad/.test(navigator.platform)
 /**
  * An xterm.js instance as a TerminalTransport.
  *
- * The engine asks a transport for its size, its color depth, and its two
+ * The engine asks a transport for its size and its two
  * streams, and this answers with the emulator's: writes are `Terminal.write`,
  * reads are `onData` (keys, mouse reports, bracketed-paste bodies and the
  * emulator's own replies to the engine's queries, all interleaved, which is
@@ -127,7 +127,6 @@ const RUN_KEY_LABEL = /Mac|iPhone|iPad/.test(navigator.platform)
  * row 0.
  */
 class XtermTransport implements TerminalTransport {
-	readonly colorDepth = "rgb" as const;
 	readonly sharesScreen = false;
 	readonly interactive = true;
 	readonly ready = Promise.resolve();

@@ -140,9 +140,8 @@ progress { accent-color: green; }
 The rest of a control's insides, such as a meter's fill or a button's
 brackets, are TermDOM's own, as they are a browser's: the
 controls are shadow trees inside, and `::part()` does not reach into
-them. TermDOM's own sheet styles the controls with the same
-pseudo-elements, so a page's rules override it as they would any
-built-in style.
+them. TermDOM's own rules come first, so a page's `::placeholder` and the
+rest override them as they would any built-in style.
 
 ### `term.attach(transport?)`
 
