@@ -9781,11 +9781,15 @@ function pseudoRuleCouldMatch(
 }
 
 // The tag, id or class the rule's subject requires rules most elements
-// out without running the selector. A rule through ::part() or :host
-// names a host, not the element, and in quirks mode a class matches
+// out without running the selector. A rule through ::part() reaches only
+// an element with a part attribute, and its compounds name the host. One
+// through :host names the host too, and in quirks mode a class matches
 // whatever its case.
 function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
-	if (rule.ofPart || rule.reachesHost) {
+	if (rule.ofPart) {
+		return element.hasAttribute("part");
+	}
+	if (rule.reachesHost) {
 		return true;
 	}
 	const tag = rule.subjectTag;
