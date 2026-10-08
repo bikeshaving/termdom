@@ -870,8 +870,8 @@ function paintOverflowMarkers(
 	}
 	const rows = new Map<number, {left: number; right: number}>();
 	for (const text of getOwnLineText(element)) {
-		const fragments = painter[kPaintedText].get(text) ??
-			painter[kLayout].lineFragments(text);
+		const fragments =
+			painter[kPaintedText].get(text) ?? painter[kLayout].lineFragments(text);
 		for (const fragment of fragments) {
 			if (fragment.endOffset <= fragment.startOffset) {
 				continue;
