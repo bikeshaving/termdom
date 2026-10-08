@@ -61,7 +61,7 @@ import {
 	type RequestPolicy,
 } from "./internal/resources.ts";
 
-export {CanvasCharGridContext} from "./internal/canvas.ts";
+export {CanvasCellGridContext} from "./internal/canvas.ts";
 export type {CellSize} from "./internal/cssom.ts";
 export {transportFromProcess} from "./internal/exchange.ts";
 export {

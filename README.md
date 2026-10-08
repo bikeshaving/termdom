@@ -73,7 +73,7 @@ setInterval(() => {
   screen; exiting restores the shell and its scrollback.
 - **Images and canvas** `<img>` decodes PNG, JPEG, GIF and BMP on the
   runtime's web `Worker` where there is one, and `<canvas>` has a 2D
-  context and a `"termdom-chargrid"` context; pixels are drawn two to a cell with half blocks. Images load
+  context and a `"termdom-cellgrid"` context; pixels are drawn two to a cell with half blocks. Images load
   only what the program's Content Security Policy allows, such as
   `new TermDOM({csp: "img-src https: data:"})`, and a
   `"fetch"` listener can answer each load, as a Service Worker does.
@@ -115,7 +115,7 @@ and dispatched to DOM nodes.
 - [`images.ts`](./examples/images.ts) — an `<img>` at its natural size and
   under each `object-fit`; pass a path or URL to show your own image.
 - [`canvas.ts`](./examples/canvas.ts) — an animated 2D canvas beside
-  Conway's Life on a `"termdom-chargrid"` canvas.
+  Conway's Life on a `"termdom-cellgrid"` canvas.
 
 More runnable examples can be found in [`examples/`](./examples). Most of
 them also run in the browser at

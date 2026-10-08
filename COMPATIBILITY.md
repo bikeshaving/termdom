@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-203 features supported, 34 probed and unsupported,
+204 features supported, 33 probed and unsupported,
 153 CSS properties not applicable to a character grid,
 128 applicable and not implemented,
 9 not yet probed.
@@ -30,7 +30,7 @@ changed.
 | `Fullscreen API` | yes |
 | `<img>` | yes |
 | `<canvas> 2d context` | yes |
-| `<canvas> charactergrid context` | yes |
+| `<canvas> cellgrid context` | yes |
 | `FormData` | yes |
 
 ## Selectors
@@ -208,7 +208,7 @@ changed.
 | `white-space` | yes |
 | `word-break` | yes |
 | `overflow-wrap` | yes |
-| `line-height` | no (no effect) |
+| `line-height` | yes |
 | `direction` | yes |
 | `opacity` | no (no effect) |
 | `font-family` | no (no effect) |

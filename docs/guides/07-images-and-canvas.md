@@ -228,7 +228,7 @@ A new `src` cancels the request the old one started, and drops its
 decode if it is still waiting for its turn. An image whose
 box would sample more than 2^26 pixels draws nothing, as does a 2D
 canvas past that size. `ImageData` past it throws a `RangeError`, and
-a character grid stops at 2^22 cells.
+a cell grid stops at 2^22 cells.
 
 ## `<canvas>`
 
@@ -277,20 +277,20 @@ document.body.append(canvas);
 
 Drawing repaints the canvas on the next frame. No DOM change is needed.
 
-### `"termdom-chargrid"`
+### `"termdom-cellgrid"`
 
-The character grid context draws cells instead of pixels. The canvas is
+The cell grid context draws cells instead of pixels. The canvas is
 `width` columns by `height` rows, and that is its natural size. It is
 TermDOM's own, so its name carries TermDOM's prefix, as a browser's own
 context types once carried theirs (`"moz-webgl"`, `"webkit-3d"`). Its
 interface is not on `window`. The `termdom` package exports it as
-`CanvasCharGridContext`.
+`CanvasCellGridContext`.
 
 ```ts
 const canvas = document.createElement("canvas");
 canvas.width = 20;
 canvas.height = 3;
-const grid = canvas.getContext("termdom-chargrid");
+const grid = canvas.getContext("termdom-cellgrid");
 grid.fillStyle = "#003366";
 grid.fillRect(0, 0, 20, 3);
 grid.fillStyle = "#ffcc00";

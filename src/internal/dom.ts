@@ -9,7 +9,7 @@ import {
 	WINDOW_EVENT_HANDLERS,
 } from "../generated/htmlidl.ts";
 import {
-	CanvasCharGridContext,
+	CanvasCellGridContext,
 	CanvasGradient,
 	CanvasPattern,
 	CanvasRenderingContext2D,
@@ -14420,7 +14420,7 @@ function invalidateReplaced(element: Element, reflow: boolean): void {
 }
 
 /**
- * <canvas>: "2d" draws pixels, shown two to a cell, and "termdom-chargrid"
+ * <canvas>: "2d" draws pixels, shown two to a cell, and "termdom-cellgrid"
  * draws cells, `width` columns by `height` rows. A 2d canvas shows at
  * its pixel size over the terminal's cell size, as an image does. The
  * other context types (webgl, webgpu, bitmaprenderer) are null, as they
@@ -14431,7 +14431,7 @@ class HTMLCanvasElement extends HTMLElement {
 	declare width: globalThis.HTMLCanvasElement["width"];
 	[kCanvasBitmap]: Bitmap | null;
 	[kCanvasGrid]: CellContext | null;
-	[kCanvasContext]: CanvasRenderingContext2D | CanvasCharGridContext | null;
+	[kCanvasContext]: CanvasRenderingContext2D | CanvasCellGridContext | null;
 
 	[kCanvasVersion]: number;
 	[kCanvasRepaint]: boolean;
@@ -14444,7 +14444,7 @@ class HTMLCanvasElement extends HTMLElement {
 		this[kCanvasVersion] = 0;
 		this[kCanvasRepaint] = false;
 		registerReplacedContent(this, () => {
-			if (this[kCanvasContext] instanceof CanvasCharGridContext) {
+			if (this[kCanvasContext] instanceof CanvasCellGridContext) {
 				return {
 					kind: "grid",
 					grid: getCanvasGrid(this).grid,
@@ -14472,7 +14472,7 @@ class HTMLCanvasElement extends HTMLElement {
 			};
 		});
 		registerDrawable(this, () =>
-			this[kCanvasContext] instanceof CanvasCharGridContext
+			this[kCanvasContext] instanceof CanvasCellGridContext
 				? null
 				: getCanvasBitmap(this),
 		);
@@ -14510,8 +14510,8 @@ class HTMLCanvasElement extends HTMLElement {
 		const current = this[kCanvasContext];
 		// Once a canvas has a context, asking for another kind is null.
 		if (current !== null) {
-			const kind = current instanceof CanvasCharGridContext
-				? "termdom-chargrid"
+			const kind = current instanceof CanvasCellGridContext
+				? "termdom-cellgrid"
 				: "2d";
 			return (kind === id ? current : null) as unknown as
 				globalThis.RenderingContext | null;
@@ -14546,8 +14546,8 @@ class HTMLCanvasElement extends HTMLElement {
 					return {x: cell.width, y: cell.height};
 				},
 			});
-		} else if (id === "termdom-chargrid") {
-			this[kCanvasContext] = new CanvasCharGridContext({
+		} else if (id === "termdom-cellgrid") {
+			this[kCanvasContext] = new CanvasCellGridContext({
 				canvas: this,
 				cells: () => getCanvasGrid(this),
 				changed,
@@ -14569,7 +14569,7 @@ class HTMLCanvasElement extends HTMLElement {
 		if (typeof callback !== "function") {
 			throw new TypeError("toBlob needs a callback");
 		}
-		const bitmap = this[kCanvasContext] instanceof CanvasCharGridContext
+		const bitmap = this[kCanvasContext] instanceof CanvasCellGridContext
 			? null
 			: getCanvasBitmap(this);
 		const bytes = bitmap === null || bitmap.width === 0 || bitmap.height === 0
@@ -14590,7 +14590,7 @@ class HTMLCanvasElement extends HTMLElement {
 
 	// PNG is the one type every canvas encodes; any other asks for it too.
 	toDataURL(_type?: string, _quality?: number): string {
-		if (this[kCanvasContext] instanceof CanvasCharGridContext) {
+		if (this[kCanvasContext] instanceof CanvasCellGridContext) {
 			return "data:,";
 		}
 		const bitmap = getCanvasBitmap(this);
@@ -14637,7 +14637,7 @@ class HTMLCanvasElement extends HTMLElement {
 // The bitmap, made at the canvas's size when first needed.
 // Past MAX_IMAGE_PIXELS a canvas gets no bitmap and draws nothing, as a
 // browser's canvas does past its own limit, rather than failing to
-// allocate. A cell takes 18 bytes, so a character grid stops sooner.
+// allocate. A cell takes 18 bytes, so a cell grid stops sooner.
 const GRID_CELL_LIMIT = 1 << 22;
 
 // The bitmap, made at the canvas's size when first drawn on.
