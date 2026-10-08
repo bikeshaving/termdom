@@ -161,7 +161,7 @@ test("a program that names the color depth does not ask", async () => {
 	expect(named.output).not.toContain("\x1b[38;2;111;122;133m");
 	const ansi =
 		await depthOn({[DECRQSS]: "\x1bP1$r0;38:2::111:122:133m\x1b\\"}, "ansi");
-	expect(ansi.depth).toBe(3);
+	expect(ansi.depth).toBe(4);
 });
 
 test("an answer split across reads still counts", async () => {
@@ -257,16 +257,16 @@ test("colorDepth takes what screen.colorDepth reports, or its name", () => {
 	for (const [option, bits] of [
 		[24, 24],
 		[8, 8],
-		[3, 3],
+		[4, 4],
 		["rgb", 24],
 		["256", 8],
-		["ansi", 3],
+		["ansi", 4],
 	] as const) {
 		const dom = new TermDOM({transport: transport(), colorDepth: option});
 		expect(dom.window.screen.colorDepth).toBe(bits);
 		dom.dispose();
 	}
-	for (const option of [16, 32, 0, "truecolor"]) {
+	for (const option of [3, 16, 32, 0, "truecolor"]) {
 		expect(() =>
 			new TermDOM({transport: transport(), colorDepth: option as never}),
 		).toThrow(TypeError);

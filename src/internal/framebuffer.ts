@@ -29,22 +29,44 @@ function rgbTo256(color: number): number {
 	return 16 + 36 * r6 + 6 * g6 + b6;
 }
 
-function basic8FromRGB(color: number): number {
+// The 16 SGR colors as xterm draws them by default.
+const ANSI_PALETTE = [
+	0x000000,
+	0xcd0000,
+	0x00cd00,
+	0xcdcd00,
+	0x0000ee,
+	0xcd00cd,
+	0x00cdcd,
+	0xe5e5e5,
+	0x7f7f7f,
+	0xff0000,
+	0x00ff00,
+	0xffff00,
+	0x5c5cff,
+	0xff00ff,
+	0x00ffff,
+	0xffffff,
+];
+
+function ansiFromRGB(color: number): number {
 	const r = (color >> 16) & 0xff;
 	const g = (color >> 8) & 0xff;
 	const b = color & 0xff;
-
-	let ansiColor = 0;
-	if (r > 127) {
-		ansiColor |= 1;
+	let nearest = 0;
+	let best = Infinity;
+	for (let index = 0; index < ANSI_PALETTE.length; index++) {
+		const entry = ANSI_PALETTE[index];
+		const dr = r - ((entry >> 16) & 0xff);
+		const dg = g - ((entry >> 8) & 0xff);
+		const db = b - (entry & 0xff);
+		const distance = dr * dr + dg * dg + db * db;
+		if (distance < best) {
+			best = distance;
+			nearest = index;
+		}
 	}
-	if (g > 127) {
-		ansiColor |= 2;
-	}
-	if (b > 127) {
-		ansiColor |= 4;
-	}
-	return ansiColor;
+	return nearest;
 }
 
 function getColorParameters(
@@ -61,8 +83,12 @@ function getColorParameters(
 		}
 		case "256":
 			return `${isFg ? 38 : 48};5;${rgbTo256(color)}`;
-		case "ansi":
-			return String((isFg ? 30 : 40) + basic8FromRGB(color));
+		case "ansi": {
+			const index = ansiFromRGB(color);
+			return index < 8
+				? String((isFg ? 30 : 40) + index)
+				: String((isFg ? 90 : 100) + index - 8);
+		}
 	}
 }
 

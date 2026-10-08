@@ -143,20 +143,20 @@ export interface TermDOMOptions {
 
 	/**
 	 * The colors the terminal shows, in the bits `screen.colorDepth`
-	 * reports: `24` for 24-bit color, `8` for the 256-color palette, `3`
-	 * for the 8 basic colors and their bright forms. `"rgb"`, `"256"` and
-	 * `"ansi"` name the same three. With `"auto"`, the default, TermDOM
+	 * reports: `24` for 24-bit color, `8` for the 256-color palette, `4`
+	 * for the 16 basic colors. `"rgb"`, `"256"` and `"ansi"` name the same
+	 * three. With `"auto"`, the default, TermDOM
 	 * asks the terminal: 24 when it says it has 24-bit color, or when it is
 	 * tmux, which converts 24-bit color for the terminal it runs in, and 8
 	 * otherwise.
 	 */
-	colorDepth?: "auto" | 24 | 8 | 3 | ColorDepth;
+	colorDepth?: "auto" | 24 | 8 | 4 | ColorDepth;
 }
 
 const COLOR_DEPTHS = new Map<unknown, ColorDepth>([
 	[24, "rgb"],
 	[8, "256"],
-	[3, "ansi"],
+	[4, "ansi"],
 	["rgb", "rgb"],
 	["256", "256"],
 	["ansi", "ansi"],
@@ -171,7 +171,7 @@ function toColorDepth(
 	const depth = COLOR_DEPTHS.get(option);
 	if (depth === undefined) {
 		throw new TypeError(
-			'colorDepth must be "auto", 24, 8 or 3 ("rgb", "256" or "ansi")',
+			'colorDepth must be "auto", 24, 8 or 4 ("rgb", "256" or "ansi")',
 		);
 	}
 	return depth;

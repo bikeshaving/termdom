@@ -75,11 +75,14 @@ describe("Framebuffer", () => {
 			const framebuffer = new Framebuffer(5, 10, "ansi");
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("X", 0, 0, {fg: 0xff0000});
+				ctx.drawText("X", 0, 0, {fg: 0xcd0000});
+				ctx.drawText("Y", 1, 0, {fg: 0xff0000});
+				ctx.drawText("Z", 2, 0, {bg: 0x7f7f7f});
 			});
 
-			// Should contain ANSI color codes for red
-			expect(output).toContain("\x1b[31m");
+			expect(output).toContain("\x1b[31mX");
+			expect(output).toContain("\x1b[91mY");
+			expect(output).toContain("\x1b[39;100mZ");
 		});
 	});
 

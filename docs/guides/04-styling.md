@@ -57,7 +57,7 @@ reports:
 | `"auto"` (default) | What the terminal says | As one of the three below |
 | `24` | Any color | Exactly |
 | `8` | 256 | As the closest of the 256 |
-| `3` | 8 basic colors | As the closest basic color |
+| `4` | 16 basic colors | As the closest basic color |
 
 `"rgb"`, `"256"` and `"ansi"` name the same three.
 
