@@ -27,8 +27,13 @@ export function splitOnASCIIWhitespace(value: string): string[] {
 	return trimmed === "" ? [] : trimmed.split(/[\t\n\f\r ]+/);
 }
 
+const ASCII_UPPER = /[A-Z]/;
+
 // What HTML and CSS case-fold with. Never the locale.
 export function toASCIILowercase(value: string): string {
+	if (!ASCII_UPPER.test(value)) {
+		return value;
+	}
 	return value.replace(/[A-Z]/g, (character) =>
 		String.fromCharCode(character.charCodeAt(0) + 32),
 	);

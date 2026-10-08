@@ -9769,11 +9769,39 @@ function pseudoRuleCouldMatch(
 		return false;
 	}
 	for (const rule of rules) {
-		if (mayGiveContent(rule) && ruleSelectorMatches(element, rule)) {
+		if (
+			mayGiveContent(rule) &&
+			subjectCouldMatch(element, rule) &&
+			ruleSelectorMatches(element, rule)
+		) {
 			return true;
 		}
 	}
 	return false;
+}
+
+// The tag, id or class the rule's subject requires rules most elements
+// out without running the selector. A rule through ::part() or :host
+// names a host, not the element, and in quirks mode a class matches
+// whatever its case.
+function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
+	if (rule.ofPart || rule.reachesHost) {
+		return true;
+	}
+	const tag = rule.subjectTag;
+	if (tag !== undefined) {
+		const local = element.localName;
+		if (local !== tag && local.toLowerCase() !== tag) {
+			return false;
+		}
+	}
+	const key = rule.subjectKey;
+	if (key === undefined || element.ownerDocument?.compatMode === "BackCompat") {
+		return true;
+	}
+	return key[0] === "#"
+		? getIdValue(element) === key.slice(1)
+		: getClassTokens(element).has(key.slice(1));
 }
 
 // A ::before or ::after exists only while its content is something, and
