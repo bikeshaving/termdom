@@ -980,3 +980,90 @@ test("with graphics off, a canvas has no 2d context and keeps its cellgrid", asy
 	);
 	dom.dispose();
 });
+
+// A canvas is clipped like any other content: by a box that clips its
+// overflow, scrolled or not, and by its own content box.
+test("a 2d canvas clips to a scroller and paints the rows scrolled into view", async () => {
+	const {dom, terminal, document} = await mount(
+		"<div id=s style=\"height: 2px; overflow: hidden\">" +
+		"<canvas id=c width=8 height=64 style=\"display: block\"></canvas>" +
+		"</div><p>below</p>",
+	);
+	const ctx = context2d(document);
+	const bands = ["#ff0000", "#00ff00", "#0000ff", "#ffffff"];
+	bands.forEach((color, band) => {
+		ctx.fillStyle = color;
+		ctx.fillRect(0, band * 16, 8, 16);
+	});
+	await nextFrame(dom);
+	expect(cell(terminal, 0, 0).bg).toBe(0xff0000);
+	expect(cell(terminal, 0, 1).bg).toBe(0x00ff00);
+	expect(rowText(terminal, 2)).toBe("below");
+	document.getElementById("s")!.scrollTop = 2;
+	await nextFrame(dom);
+	expect(cell(terminal, 0, 0).bg).toBe(0x0000ff);
+	expect(cell(terminal, 0, 1).bg).toBe(0xffffff);
+	expect(rowText(terminal, 2)).toBe("below");
+	dom.dispose();
+});
+
+test("a cell grid clips to a scroller and paints the rows scrolled into view", async () => {
+	const {dom, terminal, document} = await mount(
+		"<div id=s style=\"height: 3px; overflow: hidden\">" +
+		"<canvas id=c width=10 height=6 style=\"display: block\"></canvas>" +
+		"</div><p>below</p>",
+	);
+	const canvas = document.getElementById("c") as HTMLCanvasElement;
+	const grid = canvas.getContext("termdom-cellgrid" as "2d") as unknown as {
+		fillText(text: string, x: number, y: number): void;
+	};
+	for (let row = 0; row < 6; row++) {
+		grid.fillText(`row ${row}`, 0, row);
+	}
+	await nextFrame(dom);
+	expect([0, 1, 2, 3].map((row) => rowText(terminal, row))).toEqual([
+		"row 0",
+		"row 1",
+		"row 2",
+		"below",
+	]);
+	document.getElementById("s")!.scrollTop = 3;
+	await nextFrame(dom);
+	expect([0, 1, 2, 3].map((row) => rowText(terminal, row))).toEqual([
+		"row 3",
+		"row 4",
+		"row 5",
+		"below",
+	]);
+	dom.dispose();
+});
+
+test("a cell grid narrower than its columns is cut at its content box", async () => {
+	const {dom, terminal, document} = await mount(
+		"<p><canvas id=c width=20 height=1 style=\"width: 5ch; height: 1px\">" +
+		"</canvas>|</p>",
+	);
+	const canvas = document.getElementById("c") as HTMLCanvasElement;
+	const grid = canvas.getContext("termdom-cellgrid" as "2d") as unknown as {
+		fillText(text: string, x: number, y: number): void;
+	};
+	grid.fillText("abcdefghijklmnop", 0, 0);
+	await nextFrame(dom);
+	expect(rowText(terminal, 0)).toBe("abcde|");
+	dom.dispose();
+});
+
+test("a 2d canvas wider than a box that clips it paints nothing past the box", async () => {
+	const {dom, terminal, document} = await mount(
+		"<div style=\"width: 5ch; overflow: hidden\">" +
+		"<canvas id=c width=160 height=16 style=\"display: block\"></canvas>" +
+		"</div>",
+	);
+	const ctx = context2d(document);
+	ctx.fillStyle = "#ff0000";
+	ctx.fillRect(0, 0, 160, 16);
+	await nextFrame(dom);
+	expect(cell(terminal, 4, 0).bg).toBe(0xff0000);
+	expect(cell(terminal, 5, 0).bg).toBe(-1);
+	dom.dispose();
+});
