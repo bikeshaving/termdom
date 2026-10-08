@@ -5664,11 +5664,27 @@ export class Layout {
 		if (!rect) {
 			return null;
 		}
-		const box = getBoxModel(element);
-		const left = (box.borderLeftWidth || 0) + (box.paddingLeft || 0);
-		const top = (box.borderTopWidth || 0) + (box.paddingTop || 0);
-		const right = (box.borderRightWidth || 0) + (box.paddingRight || 0);
-		const bottom = (box.borderBottomWidth || 0) + (box.paddingBottom || 0);
+		// A box of its own has its border and padding in the solver's
+		// result. A box inside a run has only the cascade's.
+		const node = this[kNodeMap].get(element);
+		let left: number;
+		let top: number;
+		let right: number;
+		let bottom: number;
+		if (node !== undefined) {
+			const {border} = node.style;
+			const {padding} = node.result;
+			left = border.left + padding.left;
+			top = border.top + padding.top;
+			right = border.right + padding.right;
+			bottom = border.bottom + padding.bottom;
+		} else {
+			const box = getBoxModel(element);
+			left = (box.borderLeftWidth || 0) + (box.paddingLeft || 0);
+			top = (box.borderTopWidth || 0) + (box.paddingTop || 0);
+			right = (box.borderRightWidth || 0) + (box.paddingRight || 0);
+			bottom = (box.borderBottomWidth || 0) + (box.paddingBottom || 0);
+		}
 		return new this[kDOMRect](
 			rect.x + left,
 			rect.y + top,
