@@ -1035,6 +1035,11 @@ async function render(termDOM: TermDOM): Promise<void> {
 						break;
 					}
 				}
+				// A resize that began in the wait draws its own frame once
+				// it settles.
+				if (termDOM[kExchange].resizing) {
+					break;
+				}
 				termDOM[kLastFrameAt] = performance.now();
 				// The order of "update the rendering": the frame callbacks
 				// first, then style, layout and paint, so what a callback
