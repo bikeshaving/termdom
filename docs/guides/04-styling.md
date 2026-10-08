@@ -72,11 +72,7 @@ the environment, but a program can, and pass what it finds:
 ```ts
 const truecolor =
 	process.env.COLORTERM === "truecolor" || process.env.COLORTERM === "24bit";
-const term = new TermDOM({
-	transport: transportFromProcess(process, {
-		colorDepth: truecolor ? "rgb" : undefined,
-	}),
-});
+const term = new TermDOM({colorDepth: truecolor ? "rgb" : undefined});
 ```
 
 Left `undefined`, the option falls back to asking the terminal.

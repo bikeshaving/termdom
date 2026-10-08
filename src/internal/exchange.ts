@@ -36,14 +36,6 @@ export interface TerminalTransport {
 	readonly rows: number;
 
 	/**
-	 * The colors the terminal shows. Left out, TermDOM asks the terminal:
-	 * 24-bit color when the terminal says it has it, or when it is tmux,
-	 * which converts 24-bit color for the terminal it runs in, and 256
-	 * colors otherwise.
-	 */
-	readonly colorDepth?: ColorDepth;
-
-	/**
 	 * Whether the terminal's background is dark, where the program knows.
 	 * The terminal's own answer, when it gives one, replaces it.
 	 */
@@ -2290,12 +2282,14 @@ export function transportFromProcess(
 	// The global process sits below a shell. A mock or relay owns its
 	// screen. What the caller passes is used as given, and the rest is
 	// asked of the terminal, never read from the environment.
-	options: {
-		sharesScreen?: boolean;
-		colorDepth?: ColorDepth;
-		colorScheme?: "light" | "dark";
-	} = {},
+	options: {sharesScreen?: boolean; colorScheme?: "light" | "dark"} = {},
 ): TerminalTransport {
+	if ("colorDepth" in options) {
+		throw new TypeError(
+			"colorDepth is an option of TermDOM, not of its transport: " +
+			"new TermDOM({colorDepth: 24})",
+		);
+	}
 	const sharesScreen =
 		options.sharesScreen ?? proc === (process as unknown as ProcessLike);
 	let closedResolve!: (info: TerminalCloseInfo) => void;
@@ -2478,7 +2472,6 @@ export function transportFromProcess(
 			stderr.write(text + "\n");
 			return true;
 		},
-		colorDepth: options.colorDepth,
 		colorScheme: options.colorScheme,
 		ready: Promise.resolve(),
 		readable,

@@ -98,7 +98,7 @@ test("renderANSI leaves the gap between two backgrounds unpainted", () => {
 test("renderANSI transforms HTML at the transport's width, touching nothing", () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	dom.document.body.innerHTML = "<div>the instance's own document</div>";
 
 	const ansi = dom.renderANSI("<div style=\"color:red\">static content</div>");
@@ -312,7 +312,6 @@ test("window.close() drains cursor-report debt before the transport closes", asy
 	const transport = {
 		cols: 40,
 		rows: 10,
-		colorDepth: "rgb",
 		readable: new ReadableStream<string>({
 			start(controller) {
 				pushInput = (text) => controller.enqueue(text);

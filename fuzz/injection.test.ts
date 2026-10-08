@@ -80,7 +80,10 @@ test("a title carries no command but the one that frames it", async () => {
 	await fc.assert(
 		fc.asyncProperty(dangerous, async (payload) => {
 			const terminal = new MockProcess({rows: 4, cols: 20});
-			const dom = new TermDOM({transport: terminal.transport});
+			const dom = new TermDOM({
+				transport: terminal.transport,
+				colorDepth: "rgb",
+			});
 			await nextFrame(dom);
 			const rawOutput = captureRawOutput(terminal);
 			dom.document.title = payload;
@@ -116,7 +119,10 @@ test("no text in a document puts a control byte on the wire", async () => {
 		fc.asyncProperty(dangerous, async (payload) => {
 			const terminal = new MockProcess({rows: 4, cols: 20});
 			const raw = captureRawOutput(terminal);
-			const dom = new TermDOM({transport: terminal.transport});
+			const dom = new TermDOM({
+				transport: terminal.transport,
+				colorDepth: "rgb",
+			});
 			dom.document.body.textContent = payload;
 			await nextFrame(dom);
 

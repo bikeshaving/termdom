@@ -1660,7 +1660,8 @@ test(":focus rules apply on focus and revert on blur", async () => {
 	// rule never applied, and once focused would never have un-applied.
 	const terminal = new MockProcess({rows: 5, cols: 40});
 	const dom = new TermDOM({
-		transport: transportFromProcess(terminal as any, {colorDepth: "rgb"}),
+		transport: transportFromProcess(terminal as any),
+		colorDepth: "rgb",
 	});
 	const {document, window} = dom;
 	const style = document.createElement("style");

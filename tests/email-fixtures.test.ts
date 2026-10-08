@@ -95,6 +95,7 @@ for (const name of files) {
 		const html = readFileSync(new URL(name, FIXTURES), "utf8");
 		const dom = new TermDOM({
 			transport: new MockProcess({cols: 100, rows: 40}).transport,
+			colorDepth: "rgb",
 			cellSize: {width: 7, height: 15},
 		});
 		const parsed = new dom.window.DOMParser().parseFromString(

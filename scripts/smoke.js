@@ -99,7 +99,8 @@ const proc = {
 	removeListener() {},
 };
 const colorTerm = new TermDOM({
-	transport: transportFromProcess(proc, {colorDepth: "rgb"}),
+	transport: transportFromProcess(proc),
+	colorDepth: "rgb",
 });
 colorTerm.attach();
 colorTerm.document.body.innerHTML =

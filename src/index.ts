@@ -36,6 +36,7 @@ import {
 	type Window,
 } from "./internal/dom.ts";
 import {
+	type ColorDepth,
 	DEFAULT_ROWS,
 	Exchange,
 	type TerminalCloseInfo,
@@ -139,6 +140,36 @@ export interface TermDOMOptions {
 	 *   content.
 	 */
 	graphics?: boolean | "cells";
+
+	/**
+	 * The colors the terminal shows: `"rgb"` for 24-bit color, `"256"` for
+	 * the 256-color palette, `"ansi"` for the 8 basic colors and their
+	 * bright forms. Left out, TermDOM asks the terminal: `"rgb"` when it
+	 * says it has 24-bit color, or when it is tmux, which converts 24-bit
+	 * color for the terminal it runs in, and `"256"` otherwise.
+	 */
+	colorDepth?: ColorDepth;
+}
+
+function checkTransport(transport: TerminalTransport): TerminalTransport {
+	if ("colorDepth" in transport) {
+		throw new TypeError(
+			"colorDepth is an option of TermDOM, not of its transport: " +
+			"new TermDOM({colorDepth: 24})",
+		);
+	}
+	return transport;
+}
+
+const COLOR_DEPTHS = new Set<unknown>(["rgb", "256", "ansi"]);
+
+function toColorDepth(
+	option: TermDOMOptions["colorDepth"],
+): ColorDepth | undefined {
+	if (option === undefined || COLOR_DEPTHS.has(option)) {
+		return option;
+	}
+	throw new TypeError('colorDepth must be "rgb", "256" or "ansi"');
 }
 
 function toGraphicsSetting(
@@ -199,6 +230,8 @@ const kAttachReady = Symbol("attachReady");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kTransport = Symbol("transport");
+// The colorDepth option, or undefined when the terminal is to be asked.
+const kColorDepth = Symbol("colorDepth");
 const kExchange = Symbol("exchange");
 const kStaticSibling = Symbol("staticSibling");
 const kLifetimes = Symbol("lifetimes");
@@ -256,6 +289,7 @@ export interface TermDOM {
 	[kMouseReportingEnabled]: boolean;
 	[kHoverReportingEnabled]: boolean;
 	[kTransport]: TerminalTransport;
+	[kColorDepth]: ColorDepth | undefined;
 	[kExchange]: Exchange;
 	// Resolves once the session is established and the first frame written.
 	[kAttachReady]: Promise<void>;
@@ -284,6 +318,7 @@ export class TermDOM extends EventTarget {
 		super();
 		const cellSize = toCellSizeSetting(options.cellSize);
 		const graphics = toGraphicsSetting(options.graphics);
+		this[kColorDepth] = toColorDepth(options.colorDepth);
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -306,7 +341,9 @@ export class TermDOM extends EventTarget {
 		this[kLifetimes] = new Set();
 		retainDecoder();
 		this[kLoads] = new AbortController();
-		this[kTransport] = options.transport ?? transportFromProcess();
+		this[kTransport] = checkTransport(
+			options.transport ?? transportFromProcess(),
+		);
 
 		this.window = createWindow(
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
@@ -372,7 +409,7 @@ export class TermDOM extends EventTarget {
 		this[kFramebuffer] = new Framebuffer(
 			this[kTransport].rows,
 			this[kTransport].cols,
-			this[kTransport].colorDepth ?? "256",
+			this[kColorDepth] ?? "256",
 		);
 
 		const exchange = this[kExchange] = new Exchange(
@@ -472,8 +509,8 @@ export class TermDOM extends EventTarget {
 		// Re-derive everything that comes from the transport. Only before the
 		// first frame.
 		if (rebinding) {
-			this[kTransport] = transport;
-			this[kFramebuffer].rebind(transport.colorDepth ?? "256");
+			this[kTransport] = checkTransport(transport);
+			this[kFramebuffer].rebind(this[kColorDepth] ?? "256");
 			this[kExchange].rebind(transport);
 		}
 		// Resolves when the first frame has been written. The negotiations'
@@ -513,9 +550,9 @@ export class TermDOM extends EventTarget {
 					void render(this);
 				}
 			});
-			// What colors the terminal shows, when the transport leaves it to
-			// the terminal to say. Asked before DA1, like the background.
-			const depthSettled = this[kTransport].colorDepth === undefined
+			// What colors the terminal shows, when the program leaves it to the
+			// terminal to say. Asked before DA1, like the background.
+			const depthSettled = this[kColorDepth] === undefined
 				? this[kExchange].negotiateColorDepth().then((depth) => {
 					if (isAttached(this) && depth !== this[kFramebuffer].colorDepth) {
 						this[kFramebuffer].rebind(depth);
@@ -647,7 +684,7 @@ export class TermDOM extends EventTarget {
 	 * Render to ANSI at the transport's width: colors and line breaks, no
 	 * cursor controls, no modes. Without an argument, the document as it
 	 * stands; with HTML, that markup, leaving the document untouched.
-	 * Colors are the framebuffer's: the transport's `colorDepth`, or what the
+	 * Colors are the framebuffer's: the `colorDepth` option, or what the
 	 * terminal said when attached, and 256 colors before it is asked.
 	 */
 	renderANSI(html?: string): string {
@@ -1284,6 +1321,7 @@ function renderStaticHTML(
 	termDOM[kStaticSibling] ??= new TermDOM({
 		cellSize: cell === UNIT_CELL ? "unit" : cell,
 		graphics,
+		colorDepth,
 		transport: {
 			cols,
 			rows: DEFAULT_ROWS,
@@ -1292,7 +1330,6 @@ function renderStaticHTML(
 			resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
 			closed: new Promise<TerminalCloseInfo>(() => {}),
 			ready: Promise.resolve(),
-			colorDepth,
 			interactive: false,
 			sharesScreen: false,
 			close() {},
