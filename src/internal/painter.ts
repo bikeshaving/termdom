@@ -472,9 +472,6 @@ export class Painter {
 			// One scroll shift per frame. The document scroll's region already
 			// contains this box.
 			framebuffer.journal.frameScroll !== 0 ||
-			// The rows the terminal would shift are not the rows the last
-			// frame painted.
-			layout.moved ||
 			hasPaintedHighlights(this[kDocument]) ||
 			!record.element.isConnected
 		) {
