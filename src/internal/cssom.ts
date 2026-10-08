@@ -333,6 +333,37 @@ export function getCellPadding(
 	return padding;
 }
 
+/** An element's border widths in cells, 0 for a side that has none. */
+export function getCellBorderWidths(
+	element: Element,
+): Record<"top" | "right" | "bottom" | "left", number> {
+	// The used width is 0 when the side's style is none or hidden
+	// (css-backgrounds §3.3). `border-style: none` must release the space.
+	const borderWidthFor = (side: string) => {
+		const style = getComputedValue(element, `border-${side}-style`);
+		if (!style || style === "none" || style === "hidden") {
+			return null;
+		}
+		return toCellBorder(
+			CSSValues.parseBorderWidthValue(
+				getComputedValue(element, `border-${side}-width`),
+			),
+			side === "top" || side === "bottom",
+			element,
+		);
+	};
+	const width = (side: string): number => {
+		const value = borderWidthFor(side);
+		return typeof value === "number" ? value : 0;
+	};
+	return {
+		top: width("top"),
+		right: width("right"),
+		bottom: width("bottom"),
+		left: width("left"),
+	};
+}
+
 /** An element's margins, borders and padding, in cells. */
 export function getBoxModel(element: Element): CSSValues.BoxModel {
 	// The engine's own read: the cascade's declaration directly, without
@@ -360,25 +391,12 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 	const marginBottom = getCellBlockMargin(element, "bottom");
 	const marginLeft = length("margin-left", false, true);
 
-	// The used width is 0 when the side's style is none or hidden
-	// (css-backgrounds §3.3). `border-style: none` must release the space.
-	const borderWidthFor = (side: string) => {
-		const style = getComputedValue(element, `border-${side}-style`);
-		if (!style || style === "none" || style === "hidden") {
-			return null;
-		}
-		return toCellBorder(
-			CSSValues.parseBorderWidthValue(
-				getComputedValue(element, `border-${side}-width`),
-			),
-			side === "top" || side === "bottom",
-			element,
-		);
-	};
-	const borderTopWidth = borderWidthFor("top");
-	const borderRightWidth = borderWidthFor("right");
-	const borderBottomWidth = borderWidthFor("bottom");
-	const borderLeftWidth = borderWidthFor("left");
+	const {
+		top: borderTopWidth,
+		right: borderRightWidth,
+		bottom: borderBottomWidth,
+		left: borderLeftWidth,
+	} = getCellBorderWidths(element);
 
 	return {
 		width: typeof widthValue === "number" ? widthValue : undefined,
@@ -391,14 +409,10 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 		marginRight: typeof marginRight === "number" ? marginRight : 0,
 		marginBottom: typeof marginBottom === "number" ? marginBottom : 0,
 		marginLeft: typeof marginLeft === "number" ? marginLeft : 0,
-		borderTopWidth: typeof borderTopWidth === "number" ? borderTopWidth : 0,
-		borderRightWidth: typeof borderRightWidth === "number"
-			? borderRightWidth
-			: 0,
-		borderBottomWidth: typeof borderBottomWidth === "number"
-			? borderBottomWidth
-			: 0,
-		borderLeftWidth: typeof borderLeftWidth === "number" ? borderLeftWidth : 0,
+		borderTopWidth,
+		borderRightWidth,
+		borderBottomWidth,
+		borderLeftWidth,
 	};
 }
 

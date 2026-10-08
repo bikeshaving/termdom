@@ -1,6 +1,7 @@
 import {
 	type Cascade,
 	getBoxModel,
+	getCellBorderWidths,
 	getComputedValue,
 	getDeclaredDisplay,
 	getTabSize,
@@ -99,16 +100,14 @@ function getOverflowClipRect(
 		return parent;
 	}
 
-	const box = getBoxModel(element);
+	const border = getCellBorderWidths(element);
 	const x = Math.round(rect.left);
 	const y = Math.round(rect.top);
-	const left = clipsX ? x + (box.borderLeftWidth || 0) : -Infinity;
-	const right = clipsX
-		? x + Math.round(rect.width) - (box.borderRightWidth || 0)
-		: Infinity;
-	const top = clipsY ? y + (box.borderTopWidth || 0) : -Infinity;
+	const left = clipsX ? x + border.left : -Infinity;
+	const right = clipsX ? x + Math.round(rect.width) - border.right : Infinity;
+	const top = clipsY ? y + border.top : -Infinity;
 	const bottom = clipsY
-		? y + Math.round(rect.height) - (box.borderBottomWidth || 0)
+		? y + Math.round(rect.height) - border.bottom
 		: Infinity;
 
 	if (!parent) {
@@ -488,9 +487,9 @@ export class Painter {
 		}
 
 		// The scroll port is the padding box.
-		const box = getBoxModel(record.element);
-		const left = rect.left + (box.borderLeftWidth || 0);
-		const right = rect.left + rect.width - (box.borderRightWidth || 0);
+		const border = getCellBorderWidths(record.element);
+		const left = rect.left + border.left;
+		const right = rect.left + rect.width - border.right;
 		if (left > 0 || right < framebuffer.cols) {
 			return null;
 		}
@@ -501,13 +500,10 @@ export class Painter {
 		const lift = layout.isInFixedSpace(record.element)
 			? 0
 			: framebuffer.scrollTop;
-		const top = Math.max(
-			0,
-			Math.round(rect.top + (box.borderTopWidth || 0)) - lift,
-		);
+		const top = Math.max(0, Math.round(rect.top + border.top) - lift);
 		const end = Math.min(
 			regionHeight,
-			Math.round(rect.top + rect.height - (box.borderBottomWidth || 0)) - lift,
+			Math.round(rect.top + rect.height - border.bottom) - lift,
 		);
 		if (end - top <= Math.abs(record.delta)) {
 			return null;

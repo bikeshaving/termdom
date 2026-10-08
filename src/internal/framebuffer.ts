@@ -141,10 +141,15 @@ class FrameWriter {
 		this[kOut] = [];
 	}
 
+	// Most takes hold one piece or none.
 	take(): string {
-		const out = this[kOut].join("");
-		this[kOut].length = 0;
-		return out;
+		const out = this[kOut];
+		if (out.length === 0) {
+			return "";
+		}
+		const taken = out.length === 1 ? out[0] : out.join("");
+		out.length = 0;
+		return taken;
 	}
 
 	carriageReturn(): this {
@@ -230,6 +235,10 @@ class FrameWriter {
 	}
 
 	text(glyphs: string): this {
+		if (PRINTABLE_ASCII.test(glyphs)) {
+			this[kOut].push(glyphs);
+			return this;
+		}
 		let safe = "";
 		// Text is the document's own. A control byte in it would end the
 		// sequence around it and hand the rest of the string to the terminal as
