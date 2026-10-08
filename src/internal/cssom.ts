@@ -7829,19 +7829,42 @@ function invalidateSubtree(
 	// A paint-only change cannot create or remove a pseudo-element, since
 	// `content` is not a paint property, so the attachment pass is skipped
 	// with layout.
-	for (const each of [element, ...element.querySelectorAll("*")]) {
-		invalidateElementCaches(cascade, each, notifyLayout);
+	for (
+		let node: Element | null = element;
+		node !== null;
+		node = nextElementUnder(node, element)
+	) {
+		invalidateElementCaches(cascade, node, notifyLayout);
 		if (notifyLayout) {
-			attachPseudoElementsToElement(cascade, each);
+			attachPseudoElementsToElement(cascade, node);
 		}
 		// Closed and UA shadow trees inherit as an open one does.
-		const root = getShadowRoot(each);
-		if (root) {
-			for (const child of root.children) {
-				invalidateSubtree(cascade, child as Element, notifyLayout);
-			}
+		const root = getShadowRoot(node);
+		for (
+			let child = root?.firstElementChild ?? null;
+			child !== null;
+			child = child.nextElementSibling
+		) {
+			invalidateSubtree(cascade, child as Element, notifyLayout);
 		}
 	}
+}
+
+// The element after `node` in tree order, never leaving `root`. A walk
+// rather than a query, which would build a list of the whole subtree.
+function nextElementUnder(node: Element, root: Element): Element | null {
+	const first = node.firstElementChild;
+	if (first !== null) {
+		return first as Element;
+	}
+	for (let at: Element | null = node; at !== null && at !== root;) {
+		const next = at.nextElementSibling;
+		if (next !== null) {
+			return next as Element;
+		}
+		at = at.parentElement as Element | null;
+	}
+	return null;
 }
 
 function invalidateElement(cascade: Cascade, element: Element): void {
