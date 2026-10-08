@@ -511,6 +511,40 @@ export class Painter {
 		return {delta: record.delta, top, end};
 	}
 
+	/**
+	 * The rows a document scroll shifts: the region, less the full-width
+	 * fixed bars at its top and bottom edges, which stay where they are on
+	 * screen. Null when no bar trims it.
+	 */
+	resolveDocumentScrollBand(
+		regionHeight: number,
+		delta: number,
+	): {delta: number; top: number; end: number} | null {
+		const bars = this[kLayout].fullWidthFixedRows(this[kFramebuffer].cols);
+		if (bars.length === 0) {
+			return null;
+		}
+		let top = 0;
+		let end = regionHeight;
+		for (let trimmed = true; trimmed;) {
+			trimmed = false;
+			for (const [barTop, barBottom] of bars) {
+				if (barTop <= top && barBottom > top) {
+					top = barBottom;
+					trimmed = true;
+				}
+				if (barTop < end && barBottom >= end) {
+					end = barTop;
+					trimmed = true;
+				}
+			}
+		}
+		if ((top === 0 && end === regionHeight) || end - top <= Math.abs(delta)) {
+			return null;
+		}
+		return {delta, top, end};
+	}
+
 	paint(ctx: CellContext): void {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;

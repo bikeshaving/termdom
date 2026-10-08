@@ -1288,7 +1288,14 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 
 	// The document scroll has nothing to move in fullscreen. A scroll box
 	// inside it still does, under DECSTBM margins.
-	const shift = termDOM[kPainter].resolveScrollShift(regionHeight, journalled);
+	const shift =
+		termDOM[kPainter].resolveScrollShift(regionHeight, journalled) ??
+		(fullscreen || termDOM[kFramebuffer].journal.frameScroll === 0
+			? null
+			: termDOM[kPainter].resolveDocumentScrollBand(
+				regionHeight,
+				termDOM[kFramebuffer].journal.frameScroll,
+			));
 	// Read after the clamp, which adds to the journal.
 	const clamped = termDOM[kFramebuffer].journal;
 	const context = termDOM[kFramebuffer].beginFrame({

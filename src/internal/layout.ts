@@ -6303,6 +6303,31 @@ export class Layout {
 		return layers;
 	}
 
+	/**
+	 * The viewport rows covered by fixed boxes as wide as the viewport, as
+	 * [top, bottom) pairs: a header or a status bar the document scrolls
+	 * under.
+	 */
+	fullWidthFixedRows(cols: number): Array<[number, number]> {
+		const rows: Array<[number, number]> = [];
+		for (const element of this[kPositionedElements]) {
+			if (!element.isConnected || getPosition(element) !== "fixed") {
+				continue;
+			}
+			const rect = this.getRect(element);
+			if (
+				rect === null ||
+				rect.height <= 0 ||
+				Math.round(rect.left) > 0 ||
+				Math.round(rect.left + rect.width) < cols
+			) {
+				continue;
+			}
+			rows.push([Math.round(rect.top), Math.round(rect.top + rect.height)]);
+		}
+		return rows;
+	}
+
 	// The inverse of the paint order collectStackingLayers produces. A
 	// positioned box is probed at its CONTEXT, not through its parents, so a
 	// box hanging outside its parent's rect is still clickable.
