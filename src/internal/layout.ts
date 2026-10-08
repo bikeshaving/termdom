@@ -1006,6 +1006,12 @@ interface Extent {
 	// box moves with the viewport, so it is no one's overflow.
 	overflowRight: number;
 	overflowBottom: number;
+	// For a box that clips, where its content reaches from its own origin:
+	// what it scrolls through. The right edge is null when a line inside
+	// took the width it was offered and the true one is unknowable, and
+	// both are null when the box's own lines are not broken yet.
+	scrollRight: number | null;
+	scrollBottom: number | null;
 }
 
 // Written after every solve, and read by the painter's row culling for
@@ -1026,6 +1032,8 @@ function computePaintExtents(
 			unstackedChildren: 0,
 			overflowRight: 0,
 			overflowBottom: 0,
+			scrollRight: null,
+			scrollBottom: null,
 		};
 		extents.set(node, extent);
 	}
@@ -1043,8 +1051,38 @@ function computePaintExtents(
 			node.style.border.left + node.result.padding.left + lines.maxLineWidth,
 		);
 	}
+	const clips = node.style.clipsOverflow;
+	let scrollRight: number | null = 0;
+	let scrollBottom: number | null = 0;
+	if (clips && node.measure !== null) {
+		const own = getMeasuredLines(layout, node);
+		if (own === undefined) {
+			scrollRight = scrollBottom = null;
+		} else {
+			scrollRight =
+				node.style.border.left + node.result.padding.left + own.maxLineWidth;
+			scrollBottom =
+				node.style.border.top + node.result.padding.top + own.totalHeight;
+		}
+	}
 	for (const child of node.children) {
 		const childExtent = computePaintExtents(layout, child, top);
+		if (clips && scrollBottom !== null && child.style.displayType !== "none") {
+			if (scrollRight !== null) {
+				scrollRight =
+					child.measure !== null &&
+						getMeasuredLines(layout, child) === undefined
+						? null
+						: Math.max(
+							scrollRight,
+							child.result.left + childExtent.overflowRight,
+						);
+			}
+			scrollBottom = Math.max(
+				scrollBottom,
+				child.result.top + childExtent.overflowBottom,
+			);
+		}
 		if (
 			child.style.positionType !== "static" ||
 			child.style.displayType === "none"
@@ -1071,6 +1109,8 @@ function computePaintExtents(
 	extent.unstackedChildren = unstacked;
 	extent.overflowRight = right;
 	extent.overflowBottom = bottom;
+	extent.scrollRight = clips ? scrollRight : null;
+	extent.scrollBottom = clips ? scrollBottom : null;
 	return extent;
 }
 
@@ -7462,57 +7502,56 @@ function measureScrollExtent(
 	if (!layoutNode) {
 		return null;
 	}
-	const box = getBoxModel(element);
+	const border = layoutNode.style.border;
+	const padding = layoutNode.result.padding;
 	let right: number | null = 0;
 	let bottom = 0;
-	if (layoutNode.measure !== null) {
-		// Its own lines are its content.
-		const lines = getMeasuredLines(layout, layoutNode);
-		if (lines === undefined) {
+	const extent = layoutNode.style.clipsOverflow
+		? extents.get(layoutNode)
+		: undefined;
+	if (extent !== undefined) {
+		// The layout pass found it.
+		if (extent.scrollBottom === null) {
 			return null;
 		}
-		right =
-			(box.borderLeftWidth || 0) + (box.paddingLeft || 0) + lines.maxLineWidth;
-		bottom =
-			(box.borderTopWidth || 0) + (box.paddingTop || 0) + lines.totalHeight;
-	}
-	for (const child of layoutNode.children) {
-		// A display:none placeholder holds a stale layout.
-		if (child.style.displayType === "none") {
-			continue;
+		right = extent.scrollRight;
+		bottom = extent.scrollBottom;
+	} else {
+		if (layoutNode.measure !== null) {
+			// Its own lines are its content.
+			const lines = getMeasuredLines(layout, layoutNode);
+			if (lines === undefined) {
+				return null;
+			}
+			right = border.left + padding.left + lines.maxLineWidth;
+			bottom = border.top + padding.top + lines.totalHeight;
 		}
-		const reach = extents.get(child)!;
-		if (right !== null) {
-			right =
-				child.measure !== null &&
-					getMeasuredLines(layout, child) === undefined
-					? null
-					: Math.max(right, child.result.left + reach.overflowRight);
+		for (const child of layoutNode.children) {
+			// A display:none placeholder holds a stale layout.
+			if (child.style.displayType === "none") {
+				continue;
+			}
+			const reach = extents.get(child)!;
+			if (right !== null) {
+				right =
+					child.measure !== null &&
+						getMeasuredLines(layout, child) === undefined
+						? null
+						: Math.max(right, child.result.left + reach.overflowRight);
+			}
+			bottom = Math.max(bottom, child.result.top + reach.overflowBottom);
 		}
-		bottom = Math.max(bottom, child.result.top + reach.overflowBottom);
 	}
 	const clientWidth =
-		layoutNode.getComputedWidth() -
-		(box.borderLeftWidth || 0) -
-		(box.borderRightWidth || 0);
+		layoutNode.getComputedWidth() - border.left - border.right;
 	const clientHeight =
-		layoutNode.getComputedHeight() -
-		(box.borderTopWidth || 0) -
-		(box.borderBottomWidth || 0);
+		layoutNode.getComputedHeight() - border.top - border.bottom;
 	return {
 		width: right === null
 			? null
-			: Math.round(
-				Math.max(
-					clientWidth,
-					right - (box.borderLeftWidth || 0) + (box.paddingRight || 0),
-				),
-			),
+			: Math.round(Math.max(clientWidth, right - border.left + padding.right)),
 		height: Math.round(
-			Math.max(
-				clientHeight,
-				bottom - (box.borderTopWidth || 0) + (box.paddingBottom || 0),
-			),
+			Math.max(clientHeight, bottom - border.top + padding.bottom),
 		),
 	};
 }
