@@ -1,7 +1,7 @@
 /**
  * A terminal shows 24-bit color when it says so over the wire, or when it
  * is tmux, which converts 24-bit color for the terminal it runs in.
- * Anything else gets 256 colors, and a transport that names its depth is
+ * Anything else gets 256 colors, and a program that names the depth is
  * taken at its word.
  */
 import {expect, test} from "@b9g/libuild/test";
@@ -19,7 +19,6 @@ const DA2 = "\x1b[>c";
 // and says nothing to the rest.
 function fakeTerminal(
 	answers: Record<string, string>,
-	colorDepth?: string,
 	// split: each answer arrives in two chunks. delay: every answer but
 	// DA1's arrives that many ms late, after the terminal has moved on.
 	// interactive: false for a pipe.
@@ -31,7 +30,6 @@ function fakeTerminal(
 	const transport = {
 		cols: 40,
 		rows: 6,
-		colorDepth,
 		readable: new ReadableStream<string>({
 			start(controller) {
 				push = (text) => controller.enqueue(text);
@@ -86,9 +84,11 @@ async function depthOn(
 	colorDepth?: string,
 	options?: {split?: boolean; delay?: number; interactive?: boolean},
 ): Promise<{depth: number; output: string; ms: number}> {
-	const terminal =
-		fakeTerminal({[DA1]: "\x1b[?62;22c", ...answers}, colorDepth, options);
-	const dom = new TermDOM({transport: terminal.transport as never});
+	const terminal = fakeTerminal({[DA1]: "\x1b[?62;22c", ...answers}, options);
+	const dom = new TermDOM({
+		transport: terminal.transport as never,
+		colorDepth: colorDepth as never,
+	});
 	const start = performance.now();
 	await dom.attach();
 	const ms = performance.now() - start;
@@ -154,7 +154,7 @@ test("a terminal that says nothing of 24-bit color gets 256, without waiting out
 	expect(downgraded.depth).toBe(8);
 });
 
-test("a transport that names its color depth is not asked", async () => {
+test("a program that names the color depth does not ask", async () => {
 	const named = await depthOn({[DA2]: "\x1b[>1;95;0c"}, "rgb");
 	expect(named.depth).toBe(24);
 	expect(named.output).not.toContain(XTGETTCAP_RGB);
@@ -181,7 +181,6 @@ test("answers that come after the terminal moved on are not typed into the page"
 			[XTGETTCAP_RGB]: "\x1bP1+r524742=382F382F38\x1b\\",
 			[DA2]: "\x1b[>84;0;0c",
 		},
-		undefined,
 		{delay: 30},
 	);
 	const dom = new TermDOM({transport: terminal.transport as never});
@@ -224,14 +223,18 @@ test("a pipe is not asked, and gets 256 colors", async () => {
 });
 
 test("renderANSI() with markup uses the screen's colors", async () => {
-	const terminal = fakeTerminal({[DA1]: "\x1b[?62;22c"}, "256");
-	const dom = new TermDOM({transport: terminal.transport as never});
+	const terminal = fakeTerminal({[DA1]: "\x1b[?62;22c"});
+	const dom = new TermDOM({
+		transport: terminal.transport as never,
+		colorDepth: "256",
+	});
 	const html = "<p style=\"color: #123456\">x</p>";
 	expect(dom.renderANSI(html)).toContain("38;5;");
 	expect(dom.renderANSI(html)).not.toContain("38;2;");
 	dom.dispose();
 	const rgb = new TermDOM({
-		transport: fakeTerminal({}, "rgb").transport as never,
+		transport: fakeTerminal({}).transport as never,
+		colorDepth: "rgb",
 	});
 	expect(rgb.renderANSI(html)).toContain("38;2;18;52;86");
 	rgb.dispose();

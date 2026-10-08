@@ -55,7 +55,7 @@ for (const [payload, painted] of PAYLOADS) {
 		async () => {
 			const t = new MockProcess({rows: 4, cols: 20});
 			const raw = captureRawOutput(t);
-			const dom = new TermDOM({transport: t.transport});
+			const dom = new TermDOM({transport: t.transport, colorDepth: "rgb"});
 			dom.document.body.textContent = payload;
 			await nextFrame(dom);
 
@@ -87,7 +87,7 @@ for (const [payload, painted] of PAYLOADS) {
  */
 test("a title never carries its own escape sequences to the terminal", async () => {
 	const t = new MockProcess({rows: 4, cols: 20});
-	const dom = new TermDOM({transport: t.transport});
+	const dom = new TermDOM({transport: t.transport, colorDepth: "rgb"});
 	await nextFrame(dom);
 	const raw = captureRawOutput(t);
 
@@ -118,7 +118,7 @@ test("a title never carries its own escape sequences to the terminal", async () 
 
 test("a <script> in rendered HTML is inert, and a handler attribute is the app's", async () => {
 	const t = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: t.transport});
+	const dom = new TermDOM({transport: t.transport, colorDepth: "rgb"});
 	const flags = globalThis as unknown as {
 		__termdomScript?: boolean;
 		__termdomHandler?: boolean;
@@ -172,7 +172,10 @@ const AUTO_FIRING =
 type InertFlags = {__termdomInert?: boolean};
 
 test("a handler in a DOMParser document is inert and reflects as null", async () => {
-	const dom = new TermDOM({transport: new MockProcess().transport});
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		colorDepth: "rgb",
+	});
 	const flags = globalThis as unknown as InertFlags;
 	flags.__termdomInert = false;
 
@@ -192,7 +195,10 @@ test("a handler in a DOMParser document is inert and reflects as null", async ()
 });
 
 test("a handler in a createHTMLDocument document is inert", async () => {
-	const dom = new TermDOM({transport: new MockProcess().transport});
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		colorDepth: "rgb",
+	});
 	const flags = globalThis as unknown as InertFlags;
 	flags.__termdomInert = false;
 
@@ -209,7 +215,10 @@ test("a handler in a createHTMLDocument document is inert", async () => {
 });
 
 test("a handler in a <template>'s contents is inert", async () => {
-	const dom = new TermDOM({transport: new MockProcess().transport});
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		colorDepth: "rgb",
+	});
 	const flags = globalThis as unknown as InertFlags;
 	flags.__termdomInert = false;
 
@@ -226,7 +235,10 @@ test("a handler in a <template>'s contents is inert", async () => {
 });
 
 test("a handler in an iframe's content document is inert", async () => {
-	const dom = new TermDOM({transport: new MockProcess().transport});
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		colorDepth: "rgb",
+	});
 	const flags = globalThis as unknown as InertFlags;
 	flags.__termdomInert = false;
 
@@ -242,7 +254,10 @@ test("a handler in an iframe's content document is inert", async () => {
 });
 
 test("a handler compiles once its node is adopted into the live document", async () => {
-	const dom = new TermDOM({transport: new MockProcess().transport});
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		colorDepth: "rgb",
+	});
 	const flags = globalThis as unknown as InertFlags;
 	flags.__termdomInert = false;
 

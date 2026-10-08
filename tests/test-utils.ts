@@ -86,12 +86,16 @@ const TABLE_UNICODE_VERSION = {
 };
 
 const kStdin = Symbol("stdin");
+const RGB_CAPABILITY_QUERY = "\x1bP+q524742\x1b\\";
+const RGB_CAPABILITY_REPLY = "\x1bP1+r524742\x1b\\";
+const kColorDepth = Symbol("colorDepth");
 
 /**
  * Mock WriteStream for testing that implements our minimal TTYWriteStream interface
  */
 interface MockWriteStream {
 	[kStdin]: MockReadStream;
+	[kColorDepth]: () => ColorDepth;
 }
 
 class MockWriteStream extends EventEmitter implements TTYWriteStream {
@@ -100,8 +104,15 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	isTTY: boolean;
 	terminal: Terminal;
 
-	constructor(terminal: Terminal, stdin: MockReadStream, cols = 80, rows = 24) {
+	constructor(
+		terminal: Terminal,
+		stdin: MockReadStream,
+		cols = 80,
+		rows = 24,
+		colorDepth: () => ColorDepth = () => "rgb",
+	) {
 		super();
+		this[kColorDepth] = colorDepth;
 		this.isTTY = true;
 		this.terminal = terminal;
 		this[kStdin] = stdin;
@@ -130,6 +141,12 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 		const data = typeof chunk === "string"
 			? chunk
 			: chunk.toString(encoding || "utf8");
+
+		// xterm-headless keeps no terminfo, so the mock answers the question
+		// TermDOM asks a terminal about 24-bit color, as one that has it does.
+		if (data.includes(RGB_CAPABILITY_QUERY) && this[kColorDepth]() === "rgb") {
+			this[kStdin].simulateResponse(RGB_CAPABILITY_REPLY);
+		}
 
 		// Feed data to xterm terminal - it will handle cursor queries automatically
 		this.terminal.write(data, callback);
@@ -228,16 +245,18 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		// The terminal should be ready to receive data without needing DOM
 
 		this.stdin = new MockReadStream();
-		this.stdout = new MockWriteStream(this.terminal, this.stdin, cols, rows);
+		this.stdout = new MockWriteStream(
+			this.terminal,
+			this.stdin,
+			cols,
+			rows,
+			() => this.colorDepth,
+		);
 	}
 
 	/** This mock as a TerminalTransport, the shape TermDOM takes. */
 	get transport(): TerminalTransport {
-		return (
-			this[kTransport] ??= transportFromProcess(this, {
-				colorDepth: this.colorDepth,
-			})
-		);
+		return (this[kTransport] ??= transportFromProcess(this));
 	}
 
 	/**
@@ -247,10 +266,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	 * attach several instances to the same mock terminal in sequence.
 	 */
 	get sharedTransport(): TerminalTransport {
-		return transportFromProcess(this, {
-			sharesScreen: true,
-			colorDepth: this.colorDepth,
-		});
+		return transportFromProcess(this, {sharesScreen: true});
 	}
 
 	/**

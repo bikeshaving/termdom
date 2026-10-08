@@ -232,6 +232,7 @@ function mountEngine(
 	input: ReadableStream<string>,
 ): TermDOM {
 	const termDOM = new TermDOM({
+		colorDepth: "rgb",
 		html,
 		url,
 		transport: {
@@ -242,7 +243,6 @@ function mountEngine(
 			resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
 			closed: new Promise<TerminalCloseInfo>(() => {}),
 			ready: Promise.resolve(),
-			colorDepth: "rgb",
 			interactive: true,
 			sharesScreen: false,
 			close() {},

@@ -754,7 +754,6 @@ test("a transport with no terminal behind it is never probed", async () => {
 		transport: {
 			cols: 40,
 			rows: 10,
-			colorDepth: "rgb",
 			readable: new ReadableStream<string>({}, {highWaterMark: 0}),
 			writable: new WritableStream<string>({
 				write(chunk) {

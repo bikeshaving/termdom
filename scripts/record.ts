@@ -109,7 +109,8 @@ async function record(
 ): Promise<void> {
 	const {proc, events, pressKey, clock} = makeRecorder(cols, rows);
 	const termdom = new TermDOM({
-		transport: transportFromProcess(proc as any, {colorDepth: "rgb"}),
+		transport: transportFromProcess(proc as any),
+		colorDepth: "rgb",
 	});
 	termdom.attach();
 	const teardown = await setup(termdom);

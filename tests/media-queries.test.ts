@@ -97,9 +97,7 @@ test("the color features and screen.colorDepth follow the terminal's colors", ()
 	const answers: Array<[string, number, boolean, boolean, boolean]> = [];
 	for (const depth of ["rgb", "256", "ansi"] as const) {
 		const proc = new MockProcess({cols: 20, rows: 5});
-		const termdom = new TermDOM({
-			transport: {...proc.transport, colorDepth: depth},
-		});
+		const termdom = new TermDOM({transport: proc.transport, colorDepth: depth});
 		answers.push([
 			depth,
 			termdom.window.screen.colorDepth,

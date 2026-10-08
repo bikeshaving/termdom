@@ -19,7 +19,11 @@ function make(
 	const terminal = new MockProcess({cols, rows});
 	return {
 		terminal,
-		dom: new TermDOM({transport: terminal.transport, cellSize}),
+		dom: new TermDOM({
+			transport: terminal.transport,
+			colorDepth: "rgb",
+			cellSize,
+		}),
 	};
 }
 
@@ -300,7 +304,11 @@ test("a mouse event reports the cell's corner in CSS pixels", async () => {
 test("auto takes the size the terminal reports before the first frame", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;20;10t"}]);
-	const dom = new TermDOM({transport: terminal.transport, cellSize: "auto"});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		cellSize: "auto",
+	});
 	const widths: number[] = [];
 	dom.window.requestAnimationFrame(() => widths.push(dom.window.innerWidth));
 	await dom.attach();
@@ -313,7 +321,11 @@ test("auto takes the size the terminal reports before the first frame", async ()
 test("auto does not wait on a terminal that answers DA1 but not the size", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	scriptReplies(terminal, [{ask: "\x1b[c", reply: "\x1b[?62c"}]);
-	const dom = new TermDOM({transport: terminal.transport, cellSize: "auto"});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		cellSize: "auto",
+	});
 	const start = performance.now();
 	await dom.attach();
 	await nextFrame(dom);
@@ -326,7 +338,11 @@ test("a font zoom is one resize, at the new cell", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const cell = {ask: "\x1b[16t", reply: "\x1b[6;20;10t"};
 	scriptReplies(terminal, [cell]);
-	const dom = new TermDOM({transport: terminal.transport, cellSize: "auto"});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		cellSize: "auto",
+	});
 	await dom.attach();
 	await nextFrame(dom);
 	const sizes: Array<[number, number]> = [];
@@ -348,7 +364,11 @@ test("a font zoom is one resize, at the new cell", async () => {
 test("auto without a terminal to ask is 8 by 16", () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	(terminal.stdout as unknown as {isTTY: boolean}).isTTY = false;
-	const dom = new TermDOM({transport: terminal.transport, cellSize: "auto"});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		cellSize: "auto",
+	});
 	expect(dom.window.innerWidth).toBe(320);
 	dom.dispose();
 });

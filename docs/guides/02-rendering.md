@@ -105,9 +105,7 @@ pipe or a file, since there is no terminal to ask. To print in 24-bit
 color, set it yourself:
 
 ```ts
-const term = new TermDOM({
-	transport: transportFromProcess(process, {colorDepth: "rgb"}),
-});
+const term = new TermDOM({colorDepth: "rgb"});
 await term.print(`<div style="color: #ff8800">orange</div>`);
 ```
 
@@ -153,7 +151,7 @@ terminal that does not answer gets the conservative behavior.
 | SGR 53 by DECRQSS | Whether the terminal draws an overline, which MathML uses for the bar of a root |
 | XTWINOPS 16 | A cell's size in pixels, which sets the angle of a gradient and the natural size of an image or a canvas in cells |
 | OSC 52 query | Reading the clipboard in `navigator.clipboard.readText()` |
-| 24-bit SGR by DECRQSS, XTGETTCAP `RGB` and `Tc`, DA2 | Whether to send 24-bit color, unless the transport names its `colorDepth` |
+| 24-bit SGR by DECRQSS, XTGETTCAP `RGB` and `Tc`, DA2 | Whether to send 24-bit color, unless the `colorDepth` option names it |
 
 The modes the engine sets, and resets on exit, are mouse reporting,
 mouse motion reporting while something watches hover, bracketed paste,

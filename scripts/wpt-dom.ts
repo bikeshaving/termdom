@@ -81,7 +81,6 @@ function mockTransport(): MockTransport {
 	return {
 		cols: 80,
 		rows: 24,
-		colorDepth: "rgb",
 		readable: new ReadableStream<string>({
 			start(controller) {
 				input = controller;
@@ -993,7 +992,7 @@ async function runFile(file: string): Promise<Outcome> {
 	const transport = mockTransport();
 	let engine: InstanceType<EngineModule["TermDOM"]>;
 	try {
-		engine = new termdom.TermDOM({transport, html, url});
+		engine = new termdom.TermDOM({transport, html, url, colorDepth: "rgb"});
 	} catch (error) {
 		return {
 			file,

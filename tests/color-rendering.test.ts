@@ -31,7 +31,7 @@ function backgroundCells(terminal: MockProcess, row: number): number {
 
 test("red foreground color renders correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -53,7 +53,7 @@ test("red foreground color renders correctly", async () => {
 
 test("background colors fill full width", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -82,7 +82,7 @@ test("background colors fill full width", async () => {
 
 test("mixed foreground and background colors", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -106,7 +106,7 @@ test("mixed foreground and background colors", async () => {
 
 test("CSS color formats are handled correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 
 	// RGB format
@@ -141,7 +141,7 @@ test("CSS color formats are handled correctly", async () => {
 
 test("style combinations work correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -167,7 +167,7 @@ test("style combinations work correctly", async () => {
 
 test("inline elements do not extend background", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 
 	const span = document.createElement("span");
@@ -195,7 +195,7 @@ test("font-weight maps to the terminal's three weights", async () => {
 	// Numeric weights count too -- font-weight: 700 was previously not even
 	// recognized as bold (only the literal string "bold" was).
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 	document.body.innerHTML = `
 		<div style="font-weight: lighter">faint keyword</div>
@@ -218,7 +218,7 @@ test("font-weight maps to the terminal's three weights", async () => {
 
 test("a blockquote's left border covers margin rows and every paragraph", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 10});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	dom.document.head.innerHTML = `<style>
 		blockquote { border-left: 1px solid #5f5f5f; padding-left: 1ch; margin-top: 1px; }
 		p { margin-top: 1px; }
@@ -244,7 +244,7 @@ test("a blockquote's left border covers margin rows and every paragraph", async 
 
 test("each border side paints its own border color", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 6});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 
 	document.body.innerHTML =
@@ -268,7 +268,7 @@ test("system colors map onto the terminal palette", async () => {
 	// terminal is the theme-resolved palette: GrayText the dim gray, the link
 	// trio blue/magenta/red, Mark the yellow of a highlighter.
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 	document.body.innerHTML = `
 		<div style="color: GrayText">disabled</div>
@@ -294,7 +294,7 @@ test("Field and ButtonFace clear to the terminal's default background", async ()
 	// box is filled, but with no SGR background color asserted -- the same
 	// clear background-color: Canvas paints.
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div style=\"background-color: Field; display: block\">field row</div>" +
@@ -311,7 +311,7 @@ test("Field and ButtonFace clear to the terminal's default background", async ()
 
 test("SelectedItem paints inverse video, like the Highlight pair", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div style=\"background-color: SelectedItem; color: SelectedItemText\">" +
@@ -331,7 +331,7 @@ test("deprecated system colors resolve through their modern equivalents", async 
 	// The declarations are valid, keep their keyword spelling, and paint and
 	// read back as what they alias.
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -387,7 +387,7 @@ test("an inline background paints its fragments, not the box enclosing them", as
 	// width of every line it spans, erasing the neighbours that own those
 	// cells -- the text before it on its first line, and after it on its last.
 	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 	document.body.innerHTML =
 		"<p>aaaaaaaaaa <span id=\"s\" style=\"background-color: #202020\">" +
@@ -405,7 +405,7 @@ test("an inline background paints its fragments, not the box enclosing them", as
 
 test("a Canvas box inside a colored parent clears to the default background", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div style=\"background-color: red; padding: 1px\">" +
@@ -424,7 +424,7 @@ test("a Canvas box inside a colored parent clears to the default background", as
 
 test("rgb() and hsl() take the modern space-separated syntax", async () => {
 	const terminal = new MockProcess({rows: 12, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 	document.body.innerHTML = `
 		<div style="color: rgb(255 0 0)">a</div>
@@ -454,7 +454,7 @@ test("rgb() and hsl() take the modern space-separated syntax", async () => {
 
 test("a zero-alpha modern rgb() paints nothing", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div style=\"background-color: rgb(255 0 0 / 0)\">clear</div>";
@@ -468,7 +468,7 @@ test("a zero-alpha modern rgb() paints nothing", async () => {
 
 test("a link paints in LinkText, underlined; a bare anchor is plain text", async () => {
 	const terminal = new MockProcess({rows: 3, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	dom.document.body.innerHTML =
 		"<a href=\"https://example.com\">link</a> <a>anchor</a>";
 	await nextFrame(dom);
@@ -488,6 +488,7 @@ test("a link paints in LinkText, underlined; a bare anchor is plain text", async
 test("a translucent background blends over what is under it", async () => {
 	const dom = new TermDOM({
 		transport: new MockProcess({cols: 30, rows: 4}).transport,
+		colorDepth: "rgb",
 	});
 	const first = (html: string) => dom.renderANSI(html).split("\n")[0];
 	expect(
@@ -508,7 +509,7 @@ test("a translucent background blends over what is under it", async () => {
 	scriptReplies(terminal, [
 		{ask: "\x1b]11;?\x1b\\", reply: "\x1b]11;rgb:ffff/ffff/ffff\x1b\\"},
 	]);
-	const live = new TermDOM({transport: terminal.transport});
+	const live = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	live.document.body.innerHTML = "<p style=\"margin: 0\">a <code>b</code></p>";
 	await live.attach();
 	await nextFrame(live);

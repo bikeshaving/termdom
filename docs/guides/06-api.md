@@ -59,6 +59,19 @@ Options:
 
   So a stylesheet written in `ch` and `lh` looks the same at every size.
 
+- `csp?: string` — what the document's markup may load, as a
+  `Content-Security-Policy` header states it. Defaults to
+  `"default-src 'none'"`, so nothing loads until the program allows it;
+  `""` sets no policy. The images guide has recipes.
+- `graphics?: boolean | "cells"` — how the document draws pixels, for an
+  `<img>` and a canvas's `"2d"` context. `true` (default) uses the best
+  way the terminal has, `"cells"` draws them two to a cell in half
+  blocks, and `false` draws none: images show their `alt` text and
+  `getContext("2d")` returns `null`.
+- `colorDepth?: "rgb" | "256" | "ansi"` — the colors the terminal shows.
+  Left out, TermDOM asks the terminal. See "Color depth" in the styling
+  guide.
+
 ### `term.document`, `term.window`
 
 `document` is a `Document`. Setting `document.title` sets the terminal
@@ -186,7 +199,6 @@ test harness:
 interface TerminalTransport {
 	readonly cols: number; // live: always the current size
 	readonly rows: number;
-	readonly colorDepth?: "ansi" | "256" | "rgb"; // absent: ask the terminal
 	readonly interactive: boolean; // false: plain line output (a pipe)
 	// Optional. Takes an error's text somewhere the frame does not share;
 	// true when it did. The engine keeps what it cannot place and prints
@@ -230,8 +242,6 @@ const term = new TermDOM({transport: transportFromProcess(process)});
 - `options.sharesScreen` — overrides `sharesScreen`, which defaults to
   true for the global process (it sits below a shell) and false for
   anything else.
-- `options.colorDepth` — `"rgb"`, `"256"` or `"ansi"`. Without it,
-  TermDOM asks the terminal. See "Color depth" in the styling guide.
 - `options.colorScheme` — `"light"` or `"dark"`, for the frames before
   the terminal reports its background.
 
