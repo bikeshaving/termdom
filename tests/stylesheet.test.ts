@@ -439,8 +439,8 @@ test("a shadow root's sibling selectors restyle nothing outside it, attached or 
 	host.remove();
 	host.getBoundingClientRect();
 	const removed = moves();
-	// The selectors reaching the document's rows made this a hundred times
-	// slower; the margin leaves room for a loaded machine.
+	// A shadow root's sibling selectors must not slow the document's rows.
+	// The margin leaves room for a loaded machine.
 	expect(attached).toBeLessThan(10 * Math.max(before, 0.05));
 	expect(removed).toBeLessThan(10 * Math.max(before, 0.05));
 	dom.dispose();
@@ -471,8 +471,8 @@ test("a class change no sibling selector names costs the same in a long list", (
 	median(100);
 	const short = median(100);
 	const long = median(3000);
-	// Each change walked every later row, which made a 3000-row list
-	// about ten times slower than a 100-row one.
+	// A change must not walk every later row, so a 3000-row list costs
+	// about what a 100-row one does.
 	expect(long).toBeLessThan(4 * Math.max(short, 0.05));
 });
 
@@ -537,12 +537,11 @@ test("a shadow root's sheets added a rule at a time cost about what one sheet do
 	};
 	time(true);
 	time(false);
-	// A restyle of the whole tree per sheet made the pieces about a hundred
-	// times slower.
+	// Each sheet must not restyle the whole tree.
 	expect(time(true)).toBeLessThan(5 * Math.max(time(false), 1));
 });
 
-test("sibling selectors still restyle within their own tree", () => {
+test("sibling selectors restyle within their own tree", () => {
 	const dom = new TermDOM({transport: new MockProcess().transport});
 	const {document, window} = dom;
 	document.body.innerHTML =
@@ -560,6 +559,24 @@ test("sibling selectors still restyle within their own tree", () => {
 	expect(window.getComputedStyle(second).color).not.toBe("rgb(0, 128, 0)");
 	document.getElementById("first")!.classList.add("a");
 	expect(window.getComputedStyle(second).color).toBe("rgb(0, 128, 0)");
+	dom.dispose();
+});
+
+test("the UA sheet's sibling selectors restyle inside a shadow root", () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document, window} = dom;
+	document.body.innerHTML = "<div id=plain></div><div id=styled></div>";
+	for (const [id, sheet] of [
+		["plain", ""],
+		["styled", "<style>.on + p { color: red; }</style>"],
+	]) {
+		const shadow = document.getElementById(id)!.attachShadow({mode: "open"});
+		shadow.innerHTML = `${sheet}<details><summary id=old>a</summary></details>`;
+		const old = shadow.getElementById("old")!;
+		expect(window.getComputedStyle(old).display).toBe("list-item");
+		old.before(document.createElement("summary"));
+		expect([id, window.getComputedStyle(old).display]).toEqual([id, "block"]);
+	}
 	dom.dispose();
 });
 

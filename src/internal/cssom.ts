@@ -5772,6 +5772,7 @@ const kUsedValues = Symbol("usedValues");
 const kUsedStale = Symbol("used values stale");
 const kShadowRoots = Symbol("shadowRoots");
 const kSiblingIndexes = Symbol("siblingIndexes");
+const kUASiblingIndex = Symbol("uaSiblingIndex");
 const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
 const kParsedRules = Symbol("parsedRules");
@@ -5864,6 +5865,7 @@ export interface Cascade {
 	// only in its own tree (css-scoping-1 §3.3), so `* + *` in a shadow
 	// root restyles nothing in the document.
 	[kSiblingIndexes]: Map<Node, SiblingIndex>;
+	[kUASiblingIndex]: SiblingIndex | undefined;
 
 	// The keys whose change can affect an element's DESCENDANTS: those a
 	// selector tests left of a combinator (`.editing .view`), and those on
@@ -6003,6 +6005,7 @@ export class Cascade {
 		this[kParsing] = false;
 		this[kPseudoHosts] = new Set();
 		this[kSiblingIndexes] = new Map();
+		this[kUASiblingIndex] = undefined;
 		this[kReachingClasses] = new Set<string>();
 		this[kKeyProperties] = new Map<string, Set<string>>();
 		this[kReachingIds] = new Set<string>();
@@ -6680,6 +6683,7 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 		return;
 	}
 	dropScopedRules(cascade, root);
+	cascade[kSiblingIndexes].delete(root);
 	const before = cascade[kParsedRules].length;
 	for (const sheet of getShadowStyleSheets(root)) {
 		parseStyleSheet(cascade, sheet, root);
@@ -7947,7 +7951,8 @@ interface SiblingIndex {
 }
 
 // The index of the tree whose rules could match the element: its shadow
-// root's, or the document's.
+// root's, or the document's. The UA sheet's rules match in every tree, so
+// each tree's index starts from theirs.
 function getSiblingIndex(
 	cascade: Cascade,
 	element: Element,
@@ -7955,7 +7960,7 @@ function getSiblingIndex(
 	const root = element.getRootNode();
 	return cascade[kSiblingIndexes].get(
 		isShadowRoot(root) ? root : cascade[kDocument],
-	);
+	) ?? cascade[kUASiblingIndex];
 }
 
 function getOrCreateSiblingIndex(
@@ -7965,13 +7970,14 @@ function getOrCreateSiblingIndex(
 	const key = scope ?? cascade[kDocument];
 	let index = cascade[kSiblingIndexes].get(key);
 	if (index === undefined) {
+		const ua = cascade[kUASiblingIndex];
 		index = {
-			reachesSiblings: false,
-			reachesDescendants: false,
-			keys: new Set(),
-			universal: false,
-			anchorKeys: new Set(),
-			anchorsUniversal: false,
+			reachesSiblings: ua?.reachesSiblings ?? false,
+			reachesDescendants: ua?.reachesDescendants ?? false,
+			keys: new Set(ua?.keys),
+			universal: ua?.universal ?? false,
+			anchorKeys: new Set(ua?.anchorKeys),
+			anchorsUniversal: ua?.anchorsUniversal ?? false,
 		};
 		cascade[kSiblingIndexes].set(key, index);
 	}
@@ -8243,6 +8249,7 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	cascade[kParsedRules] = [];
 	cascade[kSharedRoot] = new Map();
 	cascade[kSiblingIndexes] = new Map();
+	cascade[kUASiblingIndex] = undefined;
 	cascade[kReachingClasses].clear();
 	cascade[kKeyProperties].clear();
 	cascade[kReachingIds].clear();
@@ -8268,6 +8275,14 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	// Origin ordering, not source order, keeps the UA sheet beneath every
 	// author rule.
 	parseStyleSheet(cascade, getUAStyleSheet(), undefined, true);
+	const uaIndex = cascade[kSiblingIndexes].get(document);
+	if (uaIndex !== undefined) {
+		cascade[kUASiblingIndex] = {
+			...uaIndex,
+			keys: new Set(uaIndex.keys),
+			anchorKeys: new Set(uaIndex.anchorKeys),
+		};
+	}
 
 	for (const sheet of getDocumentStyleSheets(document)) {
 		parseStyleSheet(cascade, sheet);
