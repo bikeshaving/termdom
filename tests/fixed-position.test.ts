@@ -8,7 +8,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils";
 
 function makeTallDoc(dom: TermDOM): void {
 	dom.document.body.innerHTML =
@@ -205,4 +205,36 @@ test("a fixed bar under a scroller stays put while the camera scrolls too", asyn
 	expect(bar.getBoundingClientRect().top).toBe(9);
 	expect(dom.document.elementFromPoint(2, 9)).toBe(bar);
 	dom.dispose();
+});
+
+// A vim-style page: the document scrolls between a fixed header and a
+// fixed status bar, which the terminal's scroll margins leave in place.
+test("a document scroll shifts only the rows between full-width fixed bars", async () => {
+	const html =
+		"<div style=\"position:fixed;top:0;left:0;right:0;background:#036\">HEAD</div>" +
+		Array.from({length: 30}, (_, i) => `<div>row ${i}</div>`).join("") +
+		"<div style=\"position:fixed;bottom:0;left:0;right:0;background:#333\">FOOT</div>";
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const written = captureRawOutput(terminal);
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.attach();
+	dom.document.body.innerHTML = html;
+	await nextFrame(dom);
+	const before = written().length;
+	dom.window.scrollBy(0, 3);
+	await nextFrame(dom);
+	const frame = written().slice(before);
+	expect(frame).toContain("\x1b[2;9r");
+	expect(frame).not.toContain("HEAD");
+	expect(frame).not.toContain("FOOT");
+
+	const fresh = new MockProcess({cols: 40, rows: 10});
+	const again = new TermDOM({transport: fresh.transport});
+	await again.attach();
+	again.document.body.innerHTML = html;
+	again.window.scrollBy(0, 3);
+	await nextFrame(again);
+	expect(terminal.getStaticANSI()).toBe(fresh.getStaticANSI());
+	dom.dispose();
+	again.dispose();
 });
