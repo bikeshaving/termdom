@@ -293,6 +293,10 @@ interface TerminalTransport {
 	readonly resizes: ReadableStream<{cols: number; rows: number}>;
 	readonly ready: Promise<void>; // established; Promise.resolve() if born so
 	readonly closed: Promise<TerminalCloseInfo>; // the terminal went away
+	// Optional. Stops the program as a shell's job control does, and
+	// resolves when it continues; the engine hands the terminal back before
+	// and takes it again after. Without it, Ctrl+Z is an ordinary key.
+	suspend?(): Promise<void>;
 	// Ends the medium if the transport owns it (the process transport exits
 	// the process); a no-op otherwise.
 	close(info?: TerminalCloseInfo): void;
@@ -327,8 +331,10 @@ const term = new TermDOM({transport: transportFromProcess(process)});
 
 The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
 `resizes`, signals → `closed`, `stdout.isTTY` → `interactive`, `stderr`
-when it is not a terminal → `logError`, and an exit hook that restores
-the cursor if the app exits without disposing.
+when it is not a terminal → `logError`, `suspend()` by leaving raw
+mode and sending the process `SIGTSTP` until `SIGCONT` (not on Windows),
+and an exit hook that restores the cursor if the app exits without
+disposing.
 
 ## `transportFromSSH(session, options?)`
 

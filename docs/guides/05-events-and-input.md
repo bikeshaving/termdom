@@ -49,7 +49,15 @@ byte. These limits apply to every terminal application:
   second action instead.
 - `Enter` is the byte for `Ctrl+M` and `Tab` for `Ctrl+I`; the named key
   is what you get, and those chords never arrive.
-- `Ctrl+C` is the interrupt; it never reaches the document.
+- `Ctrl+C` is the interrupt; it never reaches the document. It calls
+  `window.close()`, and a `beforeunload` listener that calls
+  `preventDefault()` keeps the session.
+- `Ctrl+Z` suspends the program, as a shell's job control does, and
+  never reaches the document either. The terminal is handed back and
+  `document.visibilityState` is `"hidden"` until the shell continues the
+  program with `fg`; a document in flow starts again below the shell's
+  lines. Over SSH, and on Windows, where nothing can suspend the program,
+  `Ctrl+Z` is an ordinary key.
 - `Ctrl+L` redraws the screen, as it does in a shell, unless a `keydown`
   listener calls `preventDefault()`.
 - `Ctrl+Shift+letter` is indistinguishable from `Ctrl+letter`.
@@ -156,7 +164,8 @@ field.addEventListener("input", updatePreview);
 `::placeholder` styles a field's placeholder. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. `<input type="password">`
 masks its value. A `<textarea>` scrolls to keep its caret in view. A number input takes float syntax only, and ArrowUp and
-ArrowDown step it within `min` and `max`.
+ArrowDown step it within `min` and `max`. The arrows move a radio's
+check to the previous or next radio of its group, wrapping at the ends.
 
 `new FormData(form)` builds the form's entry list: every submittable
 control it owns, in tree order, by the rule its kind has. Submitting a
@@ -296,6 +305,15 @@ window.scrollTo(0, 0);
 pane.scrollTop += 5;
 element.scrollIntoView();
 ```
+
+The keys scroll as a browser's do, as the default action of a `keydown`
+no listener canceled: ArrowUp and ArrowDown a row, PageUp, PageDown and
+Space a page, keeping one row of the last in view, and Home and End to
+an edge. The nearest box around the focused element that can scroll
+that way takes the key, and the document otherwise. Keys a field, a
+`<select>` or editable content takes, and Space on a button, do not
+scroll. A program that uses those keys itself calls `preventDefault()`,
+as it would in a browser.
 
 `scroll` fires on the box, or on the document for the document scroll,
 and `scrollend` follows once scrolling stops. `window.scrollY` reports
