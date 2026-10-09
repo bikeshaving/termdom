@@ -26,9 +26,11 @@ at one size.
 six, or eight digits, and `rgb()` and `hsl()` in both the comma form and
 the modern space-separated form with `/ alpha`.
 
-A cell has no alpha. A color with alpha `0` paints nothing, and any
-other alpha paints the color as if opaque, except in a gradient, where
-stops composite over the color beneath them.
+A cell has no alpha, so a translucent `background-color` is blended with
+what the cell already shows, or with the terminal's own background where
+nothing has been painted, and the cell gets the result. A color with
+alpha `0` paints nothing. In a gradient, stops composite over the color
+beneath them.
 
 The system colors mean what they mean in a terminal:
 
@@ -109,7 +111,9 @@ matches `"rgb"`, `(color-index: 256)` matches `"256"`, and
 | `text-transform` | `uppercase`, `lowercase`, and `capitalize` change the characters at paint time |
 
 `text-decoration-color`, `text-decoration-thickness`, `letter-spacing`,
-`word-spacing`, and `line-height` have no effect. A line is one row.
+and `word-spacing` have no effect. A line takes `line-height` divided by
+`font-size` rows, rounded down and at least one, so `1.5` is one row and
+`2` is two.
 
 Terminals differ in how they draw italic and dim, and some draw
 neither. A design that must read the same everywhere uses color.
@@ -146,7 +150,8 @@ space. `outline-offset` has no effect.
 ## Generated content
 
 `::before` and `::after` with a string `content` work; `counter()` in
-`content` is not implemented. `::marker` styles a list item's bullet.
+`content` is not implemented. `::marker` styles a list item's bullet
+and a `<summary>`'s arrow.
 `list-style-type` draws `•`, `◦`, and `▪` for `disc`, `circle`, and
 `square`, and the counting styles, `decimal`, `lower-roman`,
 `upper-alpha`, and the rest, draw a number followed by a dot. An
@@ -165,8 +170,9 @@ browser.
 ranges in `CSS.highlights`. `::placeholder` styles a text control's
 placeholder. `::backdrop` styles what a modal dialog or popover covers.
 A `<select>`'s picker and icon take `::picker(select)` and
-`::picker-icon`, and the API guide lists what else a page can style
-inside the built-in controls.
+`::picker-icon`, and a `<details>`' content takes `::details-content`.
+A `<progress>` fills with its `accent-color`. `::part()` from a page
+does not reach inside the built-in controls, as in a browser.
 
 ## Default looks
 
@@ -188,8 +194,8 @@ Any of them can be overridden by an ordinary rule.
 | `fieldset`, `textarea`, `dialog`, `[popover]` | A solid border with `0 1ch` padding |
 | `td`, `th` | A solid border with `0 1ch` padding, collapsed with the table's |
 | `button` | The label between `[` and `]` |
-| `summary` | `▸` closed and `▾` open |
-| `progress`, `meter` | A `10ch` bar, with a `groove` part and a `bar` part |
+| `summary` | `▸` closed and `▾` open, as its `::marker`; `list-style: none` hides it |
+| `progress`, `meter` | A `10ch` bar, filled to the value over a gray track; `meter` is green, yellow, or red by how good the value is, and `progress` is blue |
 | `input`, `select` | Inline, `white-space: pre` |
 | `input[type=checkbox]`, `input[type=radio]` | `3ch` wide, `[x]` or `(x)` |
 | `dialog:modal`, `[popover]` | Centered by `position: fixed` and auto margins, on a `Canvas` background |

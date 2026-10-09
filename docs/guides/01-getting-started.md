@@ -44,9 +44,10 @@ ANSI string, and `term.print(html)` writes one to stdout.
 
 ## Units
 
-A terminal is a grid of character cells. `1px` and `1ch` are both one
-cell, so `width: 12ch` is twelve columns and `height: 3px` is three rows.
-Lengths that land between cells resolve to whole cells.
+A terminal is a grid of character cells. By default `1px` and `1ch` are
+both one cell, so `width: 12ch` is twelve columns and `height: 3px` is
+three rows. Lengths that land between cells resolve to whole cells. The
+`cellSize` option changes how many CSS pixels a cell is.
 
 ## Stylesheets
 

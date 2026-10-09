@@ -3,8 +3,9 @@ title: Layout
 description: The box model, flexbox, grid, tables, and MathML on a cell grid.
 ---
 
-The cell is the unit basis: `1px` and `1ch` both mean one cell, and the
-property supplies the axis. Lengths that land between cells resolve to whole
+The cell is the unit basis: by default `1px` and `1ch` both mean one
+cell, and the property supplies the axis. The `cellSize` option changes
+how many CSS pixels a cell is. Lengths that land between cells resolve to whole
 cells.
 
 ## Boxes
@@ -66,6 +67,9 @@ widths across rows, `colspan` and `rowspan`, `border-collapse`.
 
 Text wraps at the box's width; `white-space`, `word-break`, and
 `overflow-wrap` apply. Wide characters — CJK, emoji — take two cells.
+
+A line takes `floor(line-height / font-size)` rows, and at least one, so
+`line-height: 2` spaces lines two rows apart.
 
 ## Positioning
 
