@@ -14559,6 +14559,7 @@ class HTMLCanvasElement extends HTMLElement {
 				cells: () => getCanvasGrid(this),
 				changed,
 				cellPixels: () => getImageCellSize(this as unknown as Node),
+				color: () => getComputedValue(this, "color"),
 				direction: () => getCanvasDirection(this),
 			});
 			// The natural size is now in cells, not pixels.
