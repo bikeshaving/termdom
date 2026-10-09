@@ -176,7 +176,7 @@ placeholder. `::backdrop` styles what a modal dialog or popover covers.
 A `<select>`'s picker and icon take `::picker(select)` and
 `::picker-icon`, and a `<details>`' content takes `::details-content`.
 A `<progress>` or `<meter>` takes `::slider-track` and `::slider-fill`,
-and a meter's levels match `:optimal-value`, `:low-value` and
+an `<input type="range">` those and `::slider-thumb`, and a meter's levels match `:optimal-value`, `:low-value` and
 `:high-value`, from a CSS draft that may still change; the API guide
 lists the WebKit and Firefox names, which won't. `::part()` from a page does not reach inside the
 built-in controls, as in a browser.
@@ -206,6 +206,7 @@ Any of them can be overridden by an ordinary rule.
 | `progress`, `meter` | A `10ch` bar, filled to the value over a gray track; `meter` is green, yellow, or red by how good the value is, and `progress` is blue |
 | `input`, `select` | Inline, `white-space: pre` |
 | `input[type=checkbox]`, `input[type=radio]` | `3ch` wide, `[x]` or `(x)` |
+| `input[type=range]` | A `20ch` slider: a blue fill, then a `●` thumb at the value, over a gray track |
 | `dialog:modal`, `[popover]` | Centered by `position: fixed` and auto margins, on a `Canvas` background |
 | `math` | Inline; `display="block"` centers it |
 

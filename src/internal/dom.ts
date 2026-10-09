@@ -17136,6 +17136,7 @@ const kOnBeforeInput = Symbol("onBeforeInput");
 const kKind = Symbol("kind");
 const kPlaceholderText = Symbol("placeholderText");
 const kGlyphText = Symbol("glyphText");
+const kSliderFill = Symbol("sliderFill");
 
 const SELECTABLE_INPUT_TYPES = new Set([
 	"text",
@@ -17194,14 +17195,15 @@ export interface HTMLInputElement {
 	[kPreviouslyIndeterminate]: boolean;
 	[kPreviousRadio]: HTMLInputElement | null;
 	// The rendered tree and what it was built for: "text control" for a
-	// text-like input, "toggle" for checkbox/radio, null until built. The two
-	// are different trees, so a type change rebuilds.
+	// text-like input, "toggle" for checkbox/radio, "slider" for range, null
+	// until built. They are different trees, so a type change rebuilds.
 	[kUpgraded]: boolean;
-	[kKind]: "textControl" | "toggle" | "button" | null;
+	[kKind]: InputKind | null;
 	[kRoot]: globalThis.ShadowRoot | null;
 	[kValueText]: globalThis.Text | null;
 	[kPlaceholderText]: globalThis.Text | null;
 	[kGlyphText]: globalThis.Text | null;
+	[kSliderFill]: globalThis.HTMLElement | null;
 	// A typed character arrives as insertText. A paste arrives as
 	// insertFromPaste, and a single-line input strips its line breaks (HTML
 	// value sanitization). A toggle accepts neither, since it holds no text.
@@ -17266,6 +17268,7 @@ export class HTMLInputElement extends HTMLElement {
 		this[kValueText] = null;
 		this[kPlaceholderText] = null;
 		this[kGlyphText] = null;
+		this[kSliderFill] = null;
 		this[kOnBeforeInput] = (event: InputEvent): void => {
 			if (event.defaultPrevented || event.data == null) {
 				return;
@@ -17323,6 +17326,22 @@ export class HTMLInputElement extends HTMLElement {
 					if (next !== this) {
 						next.focus();
 						next.click();
+					}
+				}
+				return;
+			}
+
+			// The arrows move a slider's thumb a step, PageUp and PageDown a
+			// tenth of its range, and Home and End to its ends, as a browser's
+			// do. Each move is a user edit, so it fires input then change.
+			if (this.type === "range") {
+				const next = getRangeKeyValue(this, key);
+				if (next !== null) {
+					event.preventDefault();
+					if (next !== this.value) {
+						this.value = next;
+						dispatch(this, new Event("input", {bubbles: true, composed: true}));
+						dispatchUserChange(this);
 					}
 				}
 				return;
@@ -17831,7 +17850,10 @@ export class HTMLInputElement extends HTMLElement {
 			this[kValue] = sanitizeInputValue(this, value ?? "");
 		} else if (localName === "checked" && !this[kDirtyChecked]) {
 			setCheckedness(this, value !== null);
-		} else if (localName === "type") {
+		} else if (
+			localName === "type" ||
+			(this.type === "range" && (localName === "min" || localName === "max"))
+		) {
 			this[kValue] = sanitizeInputValue(this, this[kValue]);
 		}
 	}
@@ -17885,6 +17907,15 @@ export class HTMLInputElement extends HTMLElement {
 		// A type change means a different tree, not a different value.
 		if (getInputKind(this) !== this[kKind]) {
 			buildInputWidget(this);
+			return;
+		}
+		if (this[kKind] === "slider") {
+			const {min, max} = getRangeBounds(this);
+			const value = parseFloatingPoint(this.value) ?? min;
+			setGaugeFill(
+				this[kSliderFill]!,
+				max > min ? (value - min) / (max - min) : 0,
+			);
 			return;
 		}
 		if (this[kKind] !== "textControl") {
@@ -18033,12 +18064,15 @@ function requireSelectable(input: HTMLInputElement): void {
 	}
 }
 
-function getInputKind(
-	input: HTMLInputElement,
-): "textControl" | "toggle" | "button" {
+type InputKind = "textControl" | "toggle" | "button" | "slider";
+
+function getInputKind(input: HTMLInputElement): InputKind {
 	const type = input.type;
 	if (type === "checkbox" || type === "radio") {
 		return "toggle";
+	}
+	if (type === "range") {
+		return "slider";
 	}
 	return isButtonInput(input) ? "button" : "textControl";
 }
@@ -18061,7 +18095,9 @@ function getInputButtonLabel(input: HTMLInputElement): string {
 // The text control tree has value and placeholder parts. The toggle tree has a
 // single glyph part the painter fills from live `.checked`, because a
 // radio's group exclusivity unchecks siblings with no hook to sync
-// on. The button tree has a single label part.
+// on. The button tree has a single label part. The slider tree is a
+// gauge's track, its fill as wide as the value's place in the range, with
+// a thumb after the fill.
 function buildInputWidget(input: HTMLInputElement): void {
 	const attached = getAttachedDocument(input)!;
 	let root = input[kRoot];
@@ -18078,10 +18114,16 @@ function buildInputWidget(input: HTMLInputElement): void {
 	input[kRoot] = root;
 	input[kKind] = getInputKind(input);
 
+	input[kSliderFill] = null;
 	if (input[kKind] === "textControl") {
 		input[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		input[kPlaceholderText] =
 			addPart(root, "placeholder").firstChild as globalThis.Text;
+	} else if (input[kKind] === "slider") {
+		input[kValueText] = null;
+		input[kPlaceholderText] = null;
+		input[kGlyphText] = null;
+		input[kSliderFill] = buildSlider(input, root);
 	} else {
 		input[kValueText] = null;
 		input[kPlaceholderText] = null;
@@ -18265,6 +18307,13 @@ function sanitizeInputValue(input: HTMLInputElement, value: string): string {
 	}
 }
 
+// A range's max below its min leaves the range a single point, the min.
+function getRangeBounds(input: HTMLInputElement): {min: number; max: number} {
+	const min = parseFloatingPoint(input.getAttribute("min") ?? "") ?? 0;
+	const max = parseFloatingPoint(input.getAttribute("max") ?? "") ?? 100;
+	return {min, max: Math.max(min, max)};
+}
+
 function clampRangeValue(input: HTMLInputElement, value: string): number {
 	const min = parseFloatingPoint(input.getAttribute("min") ?? "") ?? 0;
 	const max = parseFloatingPoint(input.getAttribute("max") ?? "") ?? 100;
@@ -18280,6 +18329,145 @@ function clampRangeValue(input: HTMLInputElement, value: string): number {
 		return max;
 	}
 	return number;
+}
+
+// A range's step, 1 unless it names another, and null for "any".
+function getRangeStep(input: HTMLInputElement): number | null {
+	const attribute = input.getAttribute("step")?.trim();
+	if (attribute !== undefined && /^any$/i.test(attribute)) {
+		return null;
+	}
+	const step = parseFloatingPoint(attribute ?? "");
+	return step !== null && step > 0 ? step : 1;
+}
+
+// The range's value nearest `number` that its step grid, anchored at its
+// min, holds between its min and max.
+function snapRangeValue(input: HTMLInputElement, number: number): string {
+	const {min, max} = getRangeBounds(input);
+	const step = getRangeStep(input);
+	let value = Math.min(max, Math.max(min, number));
+	if (step !== null) {
+		value = min + Math.round((value - min) / step) * step;
+		if (value > max) {
+			value = min + Math.floor((max - min) / step) * step;
+		}
+	}
+	const places = Math.max(
+		getDecimalPlaces(input.getAttribute("step")),
+		getDecimalPlaces(input.getAttribute("min")),
+	);
+	return String(Number(value.toFixed(Math.min(places, 20))));
+}
+
+// Where a key moves a slider's thumb, or null for a key that does not.
+function getRangeKeyValue(input: HTMLInputElement, key: string): string | null {
+	const {min, max} = getRangeBounds(input);
+	const step = getRangeStep(input) ?? 1;
+	const value = parseFloatingPoint(input.value) ?? min;
+	const page = Math.max(step, (max - min) / 10);
+	switch (key) {
+		case "ArrowRight":
+		case "ArrowUp":
+			return snapRangeValue(input, value + step);
+		case "ArrowLeft":
+		case "ArrowDown":
+			return snapRangeValue(input, value - step);
+		case "PageUp":
+			return snapRangeValue(input, value + page);
+		case "PageDown":
+			return snapRangeValue(input, value - page);
+		case "Home":
+			return snapRangeValue(input, min);
+		case "End":
+			return snapRangeValue(input, max);
+		default:
+			return null;
+	}
+}
+
+// A run of heavy rule for the fill and of light rule for the groove past
+// the thumb, clipped as a gauge's are.
+const SLIDER_FILL_GLYPH = "━";
+const SLIDER_GROOVE_GLYPH = "─";
+const SLIDER_THUMB_GLYPH = "●";
+
+function buildSlider(
+	input: HTMLInputElement,
+	root: globalThis.ShadowRoot,
+): globalThis.HTMLElement {
+	const document = getUADocument(root);
+	const track = addPart(root, "track");
+	track.removeChild(track.firstChild!);
+	const parts: Array<[string, string]> = [
+		["fill", getGaugeGlyphs(input, SLIDER_FILL_GLYPH)],
+		["thumb", SLIDER_THUMB_GLYPH],
+		["groove", getGaugeGlyphs(input, SLIDER_GROOVE_GLYPH)],
+	];
+	for (const [part, text] of parts) {
+		const span = document.createElement("span");
+		span.setAttribute("part", part);
+		span.appendChild(document.createTextNode(text));
+		track.appendChild(span);
+	}
+	return track.firstChild as globalThis.HTMLElement;
+}
+
+const rangeDragStarts = new WeakMap<Element, string>();
+
+/**
+ * A press at column `x` on a slider, or a drag that press began, moves
+ * its thumb there, to the nearest value its step allows, and fires input
+ * when the value changes. False for anything that is not an enabled
+ * slider, which the press leaves alone.
+ */
+export function moveRangeThumb(
+	element: globalThis.Element,
+	x: number,
+	press: boolean,
+): boolean {
+	if (
+		!(element instanceof HTMLInputElement) ||
+		element[kKind] !== "slider" ||
+		isActuallyDisabled(element)
+	) {
+		return false;
+	}
+	const track = element[kSliderFill]?.parentElement;
+	const rect = track
+		? getAttachedDocument(element)?.[kLayout].getRect(track)
+		: undefined;
+	if (!rect) {
+		return false;
+	}
+	if (press) {
+		rangeDragStarts.set(element, element.value);
+	}
+	// The thumb takes a cell of the track, so it has the track's width less
+	// one places to be.
+	const span = Math.round(rect.width) - 1;
+	const fraction = span > 0
+		? Math.min(1, Math.max(0, (x - Math.round(rect.left)) / span))
+		: 0;
+	const {min, max} = getRangeBounds(element);
+	const next = snapRangeValue(element, min + fraction * (max - min));
+	if (next !== element.value) {
+		element.value = next;
+		dispatch(element, new Event("input", {bubbles: true, composed: true}));
+	}
+	return true;
+}
+
+/** The release that ends a press on a slider fires change if it moved. */
+export function commitRangeThumb(element: globalThis.Element): void {
+	if (!(element instanceof HTMLInputElement)) {
+		return;
+	}
+	const before = rangeDragStarts.get(element);
+	rangeDragStarts.delete(element);
+	if (before !== undefined && element.value !== before) {
+		dispatchUserChange(element);
+	}
 }
 
 /** The group is defined by the input's name, form and tree. */

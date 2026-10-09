@@ -168,6 +168,7 @@ function getElementDefaults(
 		if (
 			input.type === "checkbox" ||
 			input.type === "radio" ||
+			input.type === "range" ||
 			isButtonInput(input)
 		) {
 			return undefined;
@@ -7131,6 +7132,11 @@ const PART_PSEUDOS: Readonly<Record<
 		"details-content": ["::details-content"],
 	},
 	SELECT: {picker: ["::picker(select)"], indicator: ["::picker-icon"]},
+	INPUT: {
+		track: ["::slider-track"],
+		fill: ["::slider-fill"],
+		thumb: ["::slider-thumb"],
+	},
 	PROGRESS: {
 		track: ["::slider-track", "::-webkit-progress-bar"],
 		bar: ["::slider-fill", "::-webkit-progress-value", "::-moz-progress-bar"],

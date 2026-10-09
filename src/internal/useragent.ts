@@ -90,6 +90,7 @@ export const UA_ELEMENT_STYLES = `
 	thead, tbody, tfoot, tr { vertical-align: middle; }
 	td, th { vertical-align: inherit; }
 	input[type=checkbox i], input[type=radio i] { width: 3ch; }
+	input[type=range i] { width: 20ch; }
 	math { display: inline math; }
 	math[display=block i] { display: block math; text-align: center; }
 	mi { text-transform: math-auto; }
@@ -158,9 +159,10 @@ export const UA_DOCUMENT_STYLES = `
 
 // The insides of the built-in controls. A page reaches the ones a browser
 // lets it, through ::placeholder, ::picker(select), ::picker-icon,
-// ::details-content, and a gauge's ::slider-track and ::slider-fill with
-// their prefixed aliases. The rest are this sheet's alone, through
-// ::part(), which reaches no page's rules into a built-in control.
+// ::details-content, a gauge's ::slider-track and ::slider-fill with
+// their prefixed aliases, and a range input's ::slider-track,
+// ::slider-fill and ::slider-thumb. The rest are this sheet's alone,
+// through ::part(), which reaches no page's rules into a built-in control.
 //
 // A text field's value and placeholder clip their text, and the render
 // loop sets scrollLeft to follow the caret. A textarea's value text node
@@ -176,7 +178,9 @@ export const UA_DOCUMENT_STYLES = `
 // indeterminate progress bar shows only the groove. The groove takes the
 // track's color, so ::slider-track colors it. A meter's bar also
 // has the part name of its level against low, high and optimum, so the
-// color is a rule and not a choice the painter makes.
+// color is a rule and not a choice the painter makes. A range input's
+// track keeps a cell clear at its end for the thumb, which follows the
+// fill, so the thumb shows at either end of the range.
 //
 // A select's picker rows also have the part names highlighted, disabled
 // and grouped while those apply.
@@ -194,6 +198,9 @@ export const UA_CONTROL_STYLES = `
 	meter::part(groove), progress::part(groove) { font-weight: lighter; }
 	meter::part(bar), progress::part(bar) { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
 	progress::part(bar) { color: #5fafff; }
+	input::part(track) { display: inline-block; box-sizing: border-box; width: 100%; padding-right: 1ch; overflow: hidden; white-space: pre; vertical-align: top; color: #808080; }
+	input::part(fill) { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; color: #5fafff; }
+	input::part(thumb) { color: CanvasText; }
 	meter::part(bar optimum) { color: #5faf5f; }
 	meter::part(bar suboptimum) { color: #d7af5f; }
 	meter::part(bar even-less-good) { color: #d75f5f; }

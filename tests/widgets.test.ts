@@ -629,6 +629,131 @@ test("a control's insides follow a change to what they inherit", async () => {
 	dom.dispose();
 });
 
+/* ------------------------------------------------------- range sliders */
+
+async function mountSlider(
+	html: string,
+): Promise<{terminal: MockProcess; dom: TermDOM; input: HTMLInputElement}> {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = html;
+	await nextFrame(dom);
+	const input = dom.document.querySelector("input") as HTMLInputElement;
+	return {terminal, dom, input};
+}
+
+// The input and change events a slider fires, with the value each saw.
+function recordEvents(input: HTMLInputElement): string[] {
+	const events: string[] = [];
+	for (const type of ["input", "change"]) {
+		input.addEventListener(type, () => events.push(`${type} ${input.value}`));
+	}
+	return events;
+}
+
+test("a range input is a slider with its thumb at its value", async () => {
+	const {terminal, dom} = await mountSlider(
+		"<input type=\"range\">|<br>" +
+		"<input type=\"range\" min=\"0\" max=\"10\" value=\"10\">|<br>" +
+		"<input type=\"range\" value=\"0\">|",
+	);
+	expect(terminal.getPlainText().split("\n").slice(0, 3)).toEqual([
+		"━━━━━━━━━━●─────────|",
+		"━━━━━━━━━━━━━━━━━━━●|",
+		"●───────────────────|",
+	]);
+	expect(terminal.getPlainText()).not.toContain("50");
+	const input = dom.document.querySelector("input")!;
+	input.setAttribute("max", "40");
+	expect(input.value).toBe("40");
+	await nextFrame(dom);
+	expect(terminal.getPlainText().split("\n")[0]).toBe("━━━━━━━━━━━━━━━━━━━●|");
+	dom.dispose();
+});
+
+test("the keys move a slider's thumb and fire input then change", async () => {
+	const {terminal, dom, input} = await mountSlider(
+		"<input type=\"range\" min=\"0\" max=\"100\" step=\"5\" value=\"50\">",
+	);
+	const events = recordEvents(input);
+	input.focus();
+	await type(terminal, "\x1b[C");
+	expect(input.value).toBe("55");
+	await type(terminal, "\x1b[D\x1b[D");
+	expect(input.value).toBe("45");
+	await type(terminal, "\x1b[5~");
+	expect(input.value).toBe("55");
+	await type(terminal, "\x1b[6~");
+	expect(input.value).toBe("45");
+	await type(terminal, "\x1b[F");
+	expect(input.value).toBe("100");
+	await type(terminal, "\x1b[C");
+	await type(terminal, "\x1b[H");
+	expect(input.value).toBe("0");
+	expect(events).toEqual([
+		"input 55",
+		"change 55",
+		"input 50",
+		"change 50",
+		"input 45",
+		"change 45",
+		"input 55",
+		"change 55",
+		"input 45",
+		"change 45",
+		"input 100",
+		"change 100",
+		"input 0",
+		"change 0",
+	]);
+	await nextFrame(dom);
+	expect(terminal.getPlainText().split("\n")[0]).toBe("●───────────────────");
+	dom.dispose();
+});
+
+test("a press on a slider's track moves the thumb there and a drag carries it", async () => {
+	const {terminal, dom, input} = await mountSlider(
+		"<input type=\"range\" min=\"0\" max=\"19\" value=\"0\">",
+	);
+	const events = recordEvents(input);
+	await type(terminal, "\x1b[<0;6;1M");
+	expect(input.value).toBe("5");
+	expect(dom.document.activeElement).toBe(input);
+	await type(terminal, "\x1b[<32;11;1M");
+	expect(input.value).toBe("10");
+	await type(terminal, "\x1b[<32;40;1M");
+	expect(input.value).toBe("19");
+	await type(terminal, "\x1b[<0;40;1m");
+	expect(events).toEqual(["input 5", "input 10", "input 19", "change 19"]);
+	await nextFrame(dom);
+	expect(terminal.getPlainText().split("\n")[0]).toBe("━━━━━━━━━━━━━━━━━━━●");
+	dom.dispose();
+});
+
+test("a canceled press leaves a slider where it was", async () => {
+	const {terminal, dom, input} = await mountSlider(
+		"<input type=\"range\" min=\"0\" max=\"19\" value=\"0\">",
+	);
+	input.addEventListener("mousedown", (event) => event.preventDefault());
+	await type(terminal, "\x1b[<0;6;1M\x1b[<32;11;1M\x1b[<0;11;1m");
+	expect(input.value).toBe("0");
+	dom.dispose();
+});
+
+test("a page styles a slider through ::slider-track, ::slider-fill and ::slider-thumb", async () => {
+	const ansi = await gaugeANSI(
+		"<style>" +
+		"input::slider-fill { color: #010203; }" +
+		"input::slider-track { color: #040506; }" +
+		"input::slider-thumb { color: #070809; }" +
+		"</style>" +
+		"<input type=\"range\">",
+	);
+	expect(ansi).toContain("38;2;1;2;3");
+	expect(ansi).toContain("38;2;4;5;6");
+	expect(ansi).toContain("38;2;7;8;9");
+});
+
 /* --------------------------------------------------- fieldset and legend */
 
 test("a fieldset draws a border its legend interrupts", async () => {

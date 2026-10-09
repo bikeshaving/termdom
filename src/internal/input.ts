@@ -1,5 +1,6 @@
 import {type Cascade, getComputedValue, pxFromCells} from "./cssom.ts";
 import {
+	commitRangeThumb,
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
 	flatParentElement,
@@ -22,6 +23,7 @@ import {
 	lightDismissRelease,
 	lockDataTransfer,
 	MOUSE_POINTER_ID,
+	moveRangeThumb,
 	placeTextControlCaret,
 	requestRender,
 	runControlDefaultAction,
@@ -349,6 +351,7 @@ const kMouseDownTarget = Symbol("mouseDownTarget");
 const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
 const kTextControlDragAnchor = Symbol("textControlDragAnchor");
+const kRangeDrag = Symbol("rangeDrag");
 const kSelectionUnit = Symbol("selectionUnit");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kLastClickPoint = Symbol("lastClickPoint");
@@ -396,6 +399,8 @@ export interface Input {
 		element: HTMLInputElement | HTMLTextAreaElement;
 		offset: number;
 	} | null;
+	// A press on a range input's slider moves its thumb until the release.
+	[kRangeDrag]: Element | null;
 	// A double click selects by word and a triple click by paragraph, and
 	// the drag that follows extends a whole unit at a time.
 	[kSelectionUnit]: SelectionUnit | null;
@@ -430,6 +435,7 @@ export class Input {
 		this[kPopoverPressTarget] = null;
 		this[kSelectionDragAnchor] = null;
 		this[kTextControlDragAnchor] = null;
+		this[kRangeDrag] = null;
 		this[kSelectionUnit] = null;
 		this[kMouseCaptureYielded] = false;
 		this[kLastClickPoint] = null;
@@ -1090,6 +1096,11 @@ function dragTo(
 	y: number,
 	isInDocument: boolean,
 ): void {
+	if (input[kRangeDrag] && isInDocument) {
+		moveRangeThumb(input[kRangeDrag], x, false);
+		requestRender(input[kDocument]);
+		return;
+	}
 	// Clamped into the text control, whichever element the pointer is over now.
 	if (input[kTextControlDragAnchor] && isInDocument) {
 		const {element: textControlElement, offset: anchor} =
@@ -1173,6 +1184,7 @@ function dispatchPress(
 	clicks: number,
 ): void {
 	input[kMouseDownTarget] = target;
+	input[kRangeDrag] = null;
 	input[kSelectionUnit] = null;
 	setPressed(input, target);
 	// Light dismiss is a press and a release in the same place, so a drag
@@ -1209,6 +1221,14 @@ function dispatchPress(
 		requestRender(input[kDocument]);
 	}
 	runControlDefaultAction(target, mousedown);
+
+	// Default action: a press on a slider moves its thumb to the press, and
+	// a drag carries it along.
+	if (base === 0 && isInDocument && moveRangeThumb(target, x, true)) {
+		input[kRangeDrag] = target;
+		requestRender(input[kDocument]);
+		return;
+	}
 
 	// Default action: a press in a text control places the caret and anchors a
 	// text control drag. The select UA shadow tree's own mousedown listener ran
@@ -1302,6 +1322,10 @@ function dispatchRelease(
 	input[kPopoverPressTarget] = null;
 	let selectedByDrag = false;
 	input[kTextControlDragAnchor] = null;
+	if (input[kRangeDrag] !== null) {
+		commitRangeThumb(input[kRangeDrag]);
+		input[kRangeDrag] = null;
+	}
 	// A word or paragraph a multi-click selected is the click's own work,
 	// not a drag's, so the click and dblclick still fire.
 	const unit = input[kSelectionUnit];

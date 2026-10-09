@@ -62,8 +62,9 @@ setInterval(() => {
   cell-based layout.
 - **Events** Keyboard, mouse, focus, and paste events fire on elements, the
   document, and the window, decoded from stdin.
-- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios have
-  terminal-native looks, restylable with CSS; Tab and `:focus` work.
+- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, radios, and
+  sliders have terminal-native looks, restylable with CSS; Tab and
+  `:focus` work.
 - **Scrolling** Documents and `overflow` boxes taller than the terminal
   scroll with the wheel, the arrow and page keys, `window.scrollTo()` and
   `element.scrollIntoView()`.

@@ -148,8 +148,9 @@ scrolls nothing.
 
 ## Form controls
 
-`<input>` (text, number, checkbox, radio), `<textarea>`, `<select>`, and
-`<button>` are implemented and fire `input` and `change`:
+`<input>` (text, number, checkbox, radio, range), `<textarea>`,
+`<select>`, and `<button>` are implemented and fire `input` and
+`change`:
 
 ```html
 <div class="field">
@@ -166,6 +167,10 @@ works: CJK input methods compose in the field. `<input type="password">`
 masks its value. A `<textarea>` scrolls to keep its caret in view. A number input takes float syntax only, and ArrowUp and
 ArrowDown step it within `min` and `max`. The arrows move a radio's
 check to the previous or next radio of its group, wrapping at the ends.
+A range input is a slider: the arrows move its thumb a step, PageUp and
+PageDown a tenth of the range, and Home and End to its ends, each firing
+`input` and `change`. A press on its track moves the thumb there and a
+drag carries it, firing `input` as it moves and `change` on release.
 
 `new FormData(form)` builds the form's entry list: every submittable
 control it owns, in tree order, by the rule its kind has. Submitting a
