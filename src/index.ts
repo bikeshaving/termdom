@@ -274,6 +274,7 @@ const kStaticSibling = Symbol("staticSibling");
 const kLifetimes = Symbol("lifetimes");
 const kLoads = Symbol("loads");
 const kAttachBegun = Symbol("attachBegun");
+const kDisposal = Symbol("disposal");
 type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
 const kLifecycle = Symbol("lifecycle");
 // Whether a frame has been painted in flow, below the prompt. Leaving the
@@ -351,6 +352,8 @@ export interface TermDOM {
 	[kLifetimes]: Set<Promise<void>>;
 	// Aborts the document's loads when the TermDOM is disposed.
 	[kLoads]: AbortController;
+	// What dispose() returns, to every call.
+	[kDisposal]: Promise<void>;
 }
 
 /**
@@ -390,6 +393,7 @@ export class TermDOM extends EventTarget {
 		this[kAttachBegun] = Promise.resolve();
 		this[kStaticSibling] = null;
 		this[kLifetimes] = new Set();
+		this[kDisposal] = Promise.resolve();
 		retainDecoder();
 		this[kLoads] = new AbortController();
 		this[kTransport] = options.transport ?? transportFromProcess();
@@ -749,14 +753,16 @@ export class TermDOM extends EventTarget {
 
 	/**
 	 * Hand the terminal back. Resolves when every restore has reached the
-	 * transport and what "fetch" listeners passed to waitUntil() has
-	 * settled. Loads still in flight are aborted. The process transport
-	 * also restores the shell-critical modes synchronously, so exiting
-	 * without awaiting leaves the shell usable.
+	 * transport, the replies the terminal still owes have been read or
+	 * waited on for 200ms, and what "fetch" listeners passed to waitUntil()
+	 * has settled. Every call returns the same promise. Loads still in
+	 * flight are aborted. The process transport also restores the
+	 * shell-critical modes synchronously, or at exit while replies are
+	 * still owed, so exiting without awaiting leaves the shell usable.
 	 */
 	dispose(): Promise<void> {
 		if (this[kLifecycle] === "disposed") {
-			return Promise.resolve();
+			return this[kDisposal];
 		}
 
 		const wasAttached = isAttached(this);
@@ -797,7 +803,10 @@ export class TermDOM extends EventTarget {
 		}
 		writeHeldErrors(this);
 
-		this[kExchange].dispose();
+		// The last frames' DSR replies may be on the wire. The exchange reads
+		// them before it hands the terminal back, or the shell receives them
+		// as typing.
+		const drained = this[kExchange].dispose();
 
 		this[kInput].dispose();
 
@@ -809,8 +818,12 @@ export class TermDOM extends EventTarget {
 		this[kLayout].dispose();
 		clearHighlights(this.document);
 		disconnectObservers(this.document);
-		return Promise.all([this[kExchange].flush(), ...this[kLifetimes]])
-			.then(() => {});
+		this[kDisposal] = Promise.all([
+			this[kExchange].flush(),
+			drained,
+			...this[kLifetimes],
+		]).then(() => {});
+		return this[kDisposal];
 	}
 }
 
@@ -987,10 +1000,6 @@ function closeTermDOM(termDOM: TermDOM): void {
 	void (async () => {
 		if (live) {
 			await termDOM[kAttachReady];
-			// The last frames' DSR replies are on the wire. Read them while the
-			// session still owns the terminal, or the shell receives them as
-			// typing.
-			await termDOM[kExchange].drainQueries(200);
 		}
 		await termDOM.dispose();
 		if (live) {
@@ -1281,7 +1290,15 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		// detectAnchor reads a reply, so the listener must be attached.
 		if (termDOM[kTransport].interactive) {
 			termDOM.attach();
-			await termDOM[kExchange].detectAnchor();
+			try {
+				await termDOM[kExchange].detectAnchor();
+			} catch (error) {
+				// dispose() gives the question up.
+				if (termDOM[kLifecycle] === "disposed") {
+					return;
+				}
+				throw error;
+			}
 		}
 	}
 

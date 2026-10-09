@@ -899,6 +899,11 @@ const WIDTH_DEFERRAL_WAIT_MS = 500;
 // Escape waits this long while a reply is due.
 const ESCAPE_HOLD_MS = 50;
 const kEscapeTimer = Symbol("escapeTimer");
+// How long dispose reads the cursor replies still owed.
+const REPLY_DRAIN_MS = 200;
+const kOwedReplies = Symbol("owedReplies");
+const kEndDrain = Symbol("endDrain");
+const kDrained = Symbol("drained");
 
 export interface Exchange {
 	[kTransport]: TerminalTransport;
@@ -944,6 +949,9 @@ export interface Exchange {
 	// Teardown has begun. No frame may send another probe.
 	[kProbingEnded]: boolean;
 	[kWidths]: WidthProbes;
+	[kOwedReplies]: number;
+	[kEndDrain]: (() => void) | null;
+	[kDrained]: Promise<void>;
 }
 
 /**
@@ -986,6 +994,9 @@ export class Exchange extends EventTarget {
 		this[kDSRSequence] = 0;
 		this[kProbingEnded] = false;
 		this[kWidths] = createWidthProbes(interactive);
+		this[kOwedReplies] = 0;
+		this[kEndDrain] = null;
+		this[kDrained] = Promise.resolve();
 		this[kTransport] = transport;
 		this[kInteractive] = interactive;
 		this[kEngagedModes] = new Set<ModeName>();
@@ -1586,38 +1597,20 @@ export class Exchange extends EventTarget {
 	}
 
 	/**
-	 * Wait for every outstanding cursor query, or give up at the deadline. A
-	 * reply after the tty is handed back is typed into the shell. Mode
-	 * queries are not waited on. Their stragglers are scrubbed.
+	 * Hand the transport back. Cursor replies still owed are read for a
+	 * while first, because a reply after the tty is handed back is typed
+	 * into the shell. Mode queries are not waited on. Their stragglers are
+	 * scrubbed. Resolves once the reader is let go.
 	 */
-	drainQueries(deadlineMs: number): Promise<void> {
-		this[kProbingEnded] = true;
-		if (!this[kInteractive] || this[kDisposed]) {
-			return Promise.resolve();
-		}
-		const settled = () =>
-			this[kWidths].pending.length === 0 &&
-			!this[kPendingReplies].some((entry) => entry.sequence !== undefined);
-		if (settled()) {
-			return Promise.resolve();
-		}
-		return new Promise((resolve) => {
-			const deadline = Date.now() + deadlineMs;
-			const timer = setInterval(() => {
-				if (settled() || Date.now() >= deadline) {
-					clearInterval(timer);
-					resolve();
-				}
-			}, 10);
-			timer.unref?.();
-		});
-	}
-
-	dispose(): void {
+	dispose(): Promise<void> {
 		if (this[kDisposed]) {
-			return;
+			return this[kDrained];
 		}
 		this[kDisposed] = true;
+		const owed =
+			this[kWidths].pending.length +
+			this[kPendingReplies].filter((entry) => entry.sequence !== undefined)
+				.length;
 		this[kProbingEnded] = true;
 		if (this[kResizeTimer] !== null) {
 			clearTimeout(this[kResizeTimer]);
@@ -1637,10 +1630,9 @@ export class Exchange extends EventTarget {
 		this[kGraphemeClustersNegotiated] = false;
 		this[kOverlineNegotiated] = false;
 		abandonClipboardQuery(this);
-		for (const entry of this[kPendingReplies]) {
-			clearTimeout(entry.timer);
+		for (const entry of this[kPendingReplies].splice(0)) {
+			entry.giveUp();
 		}
-		this[kPendingReplies].length = 0;
 		const widths = this[kWidths];
 		if (widths.timer !== null) {
 			clearTimeout(widths.timer);
@@ -1655,9 +1647,21 @@ export class Exchange extends EventTarget {
 
 		// Cancelling the readable hands a process transport its tty back. The
 		// writer is released after the restores queued above.
-		if (this[kReader]) {
-			void this[kReader].cancel().catch(() => {});
-			this[kReader] = null;
+		this[kDrained] = new Promise((resolve) => {
+			const timer = setTimeout(() => this[kEndDrain]?.(), REPLY_DRAIN_MS);
+			this[kOwedReplies] = owed;
+			this[kEndDrain] = () => {
+				clearTimeout(timer);
+				this[kEndDrain] = null;
+				if (this[kReader]) {
+					void this[kReader].cancel().catch(() => {});
+					this[kReader] = null;
+				}
+				resolve();
+			};
+		});
+		if (owed === 0 || !this[kInteractive] || this[kTransportClosed]) {
+			this[kEndDrain]?.();
 		}
 		if (this[kResizeReader]) {
 			void this[kResizeReader].cancel().catch(() => {});
@@ -1668,6 +1672,7 @@ export class Exchange extends EventTarget {
 			this[kWriter] = null;
 			void this[kLastWrite].then(() => writer.releaseLock());
 		}
+		return this[kDrained];
 	}
 }
 
@@ -2021,6 +2026,10 @@ function handleResize(session: Exchange): void {
 // Contiguous keystrokes are one dispatch. Everything else is dispatched
 // in place, so a report glued to fast keystrokes eats neither side.
 function routeChunk(session: Exchange, chunk: string): void {
+	if (session[kDisposed]) {
+		drainChunk(session, chunk);
+		return;
+	}
 	if (session[kEscapeTimer] !== null) {
 		clearTimeout(session[kEscapeTimer]);
 		session[kEscapeTimer] = null;
@@ -2034,6 +2043,19 @@ function routeChunk(session: Exchange, chunk: string): void {
 			session[kEscapeTimer] = null;
 			routeItems(session, reader.release());
 		}, ESCAPE_HOLD_MS);
+	}
+}
+
+// After dispose, only the cursor replies still owed are read, and the
+// reader is let go once they are in.
+function drainChunk(session: Exchange, chunk: string): void {
+	for (const item of session[kWireReader].feed(chunk, true)) {
+		if (item.kind === "cursor-report") {
+			session[kOwedReplies]--;
+		}
+	}
+	if (session[kOwedReplies] <= 0) {
+		session[kEndDrain]?.();
 	}
 }
 

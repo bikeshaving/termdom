@@ -349,6 +349,126 @@ test("window.close() drains cursor-report debt before the transport closes", asy
 	expect(closes).toBe(1);
 });
 
+test("dispose() reads cursor-report debt before handing the tty back", async () => {
+	let output = "";
+	let canceled = false;
+	let pushInput!: (text: string) => void;
+	const transport = {
+		cols: 40,
+		rows: 10,
+		readable: new ReadableStream<string>(
+			{
+				start(controller) {
+					pushInput = (text) => controller.enqueue(text);
+				},
+				cancel() {
+					canceled = true;
+				},
+			},
+			{highWaterMark: 0},
+		),
+		writable: new WritableStream<string>({
+			write(chunk) {
+				output += String(chunk);
+			},
+		}),
+		resizes: new ReadableStream({start() {}}),
+		sharesScreen: false,
+		interactive: true,
+		ready: Promise.resolve(),
+		closed: new Promise(() => {}),
+		close: () => {},
+	};
+	const dom = new TermDOM({transport: transport as never});
+	await dom.attach();
+	dom.document.body.innerHTML = "<div>\u{1F31E} weather</div>";
+	await nextFrame(dom);
+	const debt = output.split("\x1b[6n").length - 1;
+	expect(debt).toBeGreaterThan(0);
+
+	let disposed = false;
+	void dom.dispose().then(() => {
+		disposed = true;
+	});
+	await settle(30);
+	expect(canceled).toBe(false);
+	expect(disposed).toBe(false);
+
+	for (let i = 0; i < debt; i++) {
+		pushInput(`\x1b[1;${3 + i}R`);
+	}
+	await until(() => disposed);
+	expect(canceled).toBe(true);
+	expect(disposed).toBe(true);
+});
+
+function silentTransport(): any {
+	return {
+		cols: 40,
+		rows: 8,
+		readable: new ReadableStream<string>({}, {highWaterMark: 0}),
+		writable: new WritableStream<string>({}),
+		resizes: new ReadableStream({}, {highWaterMark: 0}),
+		closed: new Promise(() => {}),
+		ready: Promise.resolve(),
+		interactive: true,
+		sharesScreen: false,
+		close() {},
+	};
+}
+
+test("dispose() while attach() waits on a silent terminal settles attach()", async () => {
+	const dom = new TermDOM({transport: silentTransport()});
+	let settled = false;
+	void dom.attach().then(() => {
+		settled = true;
+	});
+	await settle(5);
+	await dom.dispose();
+	await until(() => settled);
+	expect(settled).toBe(true);
+});
+
+test("a second dispose() waits for the first one's restores", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	let hold = false;
+	const held: Array<() => void> = [];
+	const base = terminal.transport;
+	const writer = base.writable.getWriter();
+	const transport = {
+		...base,
+		cols: base.cols,
+		rows: base.rows,
+		writable: new WritableStream<string>({
+			async write(chunk) {
+				if (hold) {
+					await new Promise<void>((resolve) => held.push(resolve));
+				}
+				await writer.write(chunk);
+			},
+		}),
+	};
+	const dom = new TermDOM({transport});
+	dom.attach();
+	dom.document.body.innerHTML = "<div>restored</div>";
+	await nextFrame(dom);
+
+	hold = true;
+	void dom.dispose();
+	let second = false;
+	void dom.dispose().then(() => {
+		second = true;
+	});
+	await settle(20);
+	expect(second).toBe(false);
+	hold = false;
+	for (const release of held) {
+		release();
+	}
+	await until(() => second);
+	expect(second).toBe(true);
+});
+
 test("a beforeunload returnValue keeps the session", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const watched = closeCountingTransport(terminal);
