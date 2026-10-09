@@ -171,8 +171,10 @@ ranges in `CSS.highlights`. `::placeholder` styles a text control's
 placeholder. `::backdrop` styles what a modal dialog or popover covers.
 A `<select>`'s picker and icon take `::picker(select)` and
 `::picker-icon`, and a `<details>`' content takes `::details-content`.
-A `<progress>` fills with its `accent-color`. `::part()` from a page
-does not reach inside the built-in controls, as in a browser.
+A `<progress>` or `<meter>` takes `::slider-track` and `::slider-fill`,
+and a meter's levels match `:optimal-value`, `:low-value` and
+`:high-value`. `::part()` from a page does not reach inside the
+built-in controls, as in a browser.
 
 ## Default looks
 

@@ -18935,7 +18935,7 @@ class HTMLMeterElement extends HTMLElement {
 		const min = this.min;
 		const span = this.max - min;
 		setGaugeFill(bar, span > 0 ? (this.value - min) / span : 0);
-		const barLevel = getMeterLevel(this);
+		const barLevel = getMeterLevel(this)!;
 		const part = `bar ${barLevel}`;
 		if (bar.getAttribute("part") !== part) {
 			bar.setAttribute("part", part);
@@ -18959,8 +18959,11 @@ class HTMLMeterElement extends HTMLElement {
 // where `optimum` sits relative to `low` and `high`. A value in that
 // region is optimum, one region away is suboptimum, and two away is even
 // less good.
-function getMeterLevel(meter: HTMLMeterElement): string {
-	const {low, high, optimum, value} = meter;
+export function getMeterLevel(element: Element): string | null {
+	if (!(element instanceof HTMLMeterElement)) {
+		return null;
+	}
+	const {low, high, optimum, value} = element;
 	if (optimum < low) {
 		if (value < low) {
 			return "optimum";
@@ -18974,6 +18977,19 @@ function getMeterLevel(meter: HTMLMeterElement): string {
 		return value >= low ? "suboptimum" : "even-less-good";
 	}
 	return value >= low && value <= high ? "optimum" : "suboptimum";
+}
+
+/** css-forms-1's :low-value and :high-value: a meter past a threshold. */
+export function isMeterValue(
+	element: Element,
+	threshold: "low" | "high",
+): boolean {
+	if (!(element instanceof HTMLMeterElement)) {
+		return false;
+	}
+	return threshold === "low"
+		? element.value < element.low
+		: element.value > element.high;
 }
 
 class HTMLModElement extends HTMLElement {

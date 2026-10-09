@@ -14,7 +14,8 @@ style.textContent = `
   .spinner { color: green; display: inline; }
   .dots { color: yellow; display: inline; }
   .bar-container { display: flex; flex-direction: row; }
-  .bar { width: 30ch; accent-color: green; }
+  .bar { width: 30ch; }
+  .bar::slider-fill { color: green; }
   .bar-pct { color: white; display: inline; padding-left: 1ch; }
   .braille { color: magenta; display: inline; }
   .clock { color: cyan; display: inline; }

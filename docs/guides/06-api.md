@@ -125,6 +125,7 @@ pseudo-elements browsers give them:
 | `<input>` text types, `<textarea>` | `::placeholder` |
 | `<select>` | `::picker(select)`, `::picker-icon` |
 | `<details>` | `::details-content` |
+| `<progress>`, `<meter>` | `::slider-track`, `::slider-fill` |
 
 `::picker(select)` and `::picker-icon` are a customizable `<select>`'s,
 as Chromium ships them.
@@ -134,14 +135,27 @@ select::picker(select) { background-color: #1c1c1c; }
 select::picker-icon { color: gray; }
 ```
 
-A `<progress>` draws its fill in its `accent-color`, as browsers do.
+`::slider-track` and `::slider-fill` are CSS Form Control Styling's
+(css-forms-1). The track holds the fill and shows past it. A meter
+matches `:optimal-value` when its value is in its optimum region,
+`:low-value` below `low`, and `:high-value` above `high`.
 
 ```css
-progress { accent-color: green; }
+progress::slider-fill { color: green; }
+meter:low-value::slider-fill { color: orange; }
 ```
 
-The rest of a control's insides, such as a meter's fill or a button's
-brackets, are TermDOM's own, as they are a browser's: the
+The prefixed names WebKit and Firefox ship work too, as aliases:
+`::-webkit-progress-bar` and `::-webkit-meter-bar` are the track,
+`::-webkit-progress-value`, `::-moz-progress-bar` and `::-moz-meter-bar`
+the fill, `::-webkit-meter-optimum-value`,
+`::-webkit-meter-suboptimum-value` and
+`::-webkit-meter-even-less-good-value` a meter's fill at each level,
+and `:-moz-meter-optimum`, `:-moz-meter-sub-optimum` and
+`:-moz-meter-sub-sub-optimum` the meter at each level.
+
+The rest of a control's insides, such as a button's brackets, are
+TermDOM's own, as they are a browser's: the
 controls are shadow trees inside, and `::part()` does not reach into
 them. TermDOM's own rules come first, so a page's `::placeholder` and the
 rest override them as they would any built-in style.
