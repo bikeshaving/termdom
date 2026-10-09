@@ -285,7 +285,9 @@ Drawing repaints the canvas on the next frame. No DOM change is needed.
 ### `"termdom-cellgrid"`
 
 The cell grid context draws cells instead of pixels. The canvas is
-`width` columns by `height` rows, and that is its natural size. It is
+`width` columns by `height` rows, and that is its natural size. Set
+both: without them a canvas is HTML's default 300 by 150, which here
+is 300 columns by 150 rows. It is
 TermDOM's own, so its name carries TermDOM's prefix, as a browser's own
 context types once carried theirs (`"moz-webgl"`, `"webkit-3d"`). Its
 interface is not on `window`. The `@b9g/termdom` package exports it as
