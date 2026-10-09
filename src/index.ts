@@ -63,7 +63,7 @@ import {
 
 export {CanvasCellGridContext} from "./internal/canvas.ts";
 export type {CellSize} from "./internal/cssom.ts";
-export {transportFromProcess} from "./internal/exchange.ts";
+export {transportFromProcess, transportFromSSH} from "./internal/exchange.ts";
 export {
 	ExtendableEvent,
 	FetchEvent,
@@ -71,6 +71,7 @@ export {
 } from "./internal/resources.ts";
 export type {
 	ProcessLike,
+	SSHSessionLike,
 	TTYReadStream,
 	TTYWriteStream,
 	TerminalCloseInfo,
