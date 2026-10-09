@@ -432,6 +432,30 @@ test("waitUntil() keeps dispose() waiting, and dispose() aborts loads in flight"
 	expect(disposed).toBe(true);
 });
 
+test("markup given to renderANSI is held to the policy and heard by the listeners", async () => {
+	const server = await serve();
+	const blocked = create({csp: "default-src 'none'"});
+	blocked.renderANSI(`<img src="${server.origin}/blocked.png">`);
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	expect(server.heard).toEqual([]);
+	await blocked.dispose();
+	await server.close();
+
+	const dom = create({
+		url: "https://mail.example/inbox/",
+		csp: "img-src https:",
+	});
+	const seen: string[] = [];
+	dom.addEventListener("fetch", (event) => {
+		seen.push(event.request.url);
+		event.respondWith(new Response(PNG));
+	});
+	dom.renderANSI("<img src=\"logo.png\">");
+	await until(() => seen.length === 1);
+	expect(seen).toEqual(["https://mail.example/inbox/logo.png"]);
+	await dom.dispose();
+});
+
 test("a listener added after the constructor's markup hears its images", async () => {
 	const dom = create({html: "<img src=\"cid:a\">", csp: "img-src cid:"});
 	dom.addEventListener("fetch", (event) => {

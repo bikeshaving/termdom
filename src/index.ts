@@ -272,6 +272,8 @@ const kTransport = Symbol("transport");
 const kColorDepth = Symbol("colorDepth");
 const kExchange = Symbol("exchange");
 const kStaticSibling = Symbol("staticSibling");
+const kStaticOptions = Symbol("staticOptions");
+const kFetchTarget = Symbol("fetchTarget");
 const kLifetimes = Symbol("lifetimes");
 const kLoads = Symbol("loads");
 const kAttachBegun = Symbol("attachBegun");
@@ -349,6 +351,13 @@ export interface TermDOM {
 	// The engine behind renderANSI and print, rebuilt when the width, the
 	// cell or the screen's colors change.
 	[kStaticSibling]: TermDOM | null;
+	// What the engine behind renderANSI and print is built with, so markup
+	// rendered through it is held to the same policy and base URL.
+	[kStaticOptions]: Pick<TermDOMOptions, "csp" | "url">;
+	// Where the document's loads dispatch "fetch", and whose dispose()
+	// waits for what its listeners passed to waitUntil(). The engine behind
+	// renderANSI and print hands its loads to the TermDOM it renders for.
+	[kFetchTarget]: TermDOM;
 	// What "fetch" listeners passed to waitUntil(). dispose() waits for it.
 	[kLifetimes]: Set<Promise<void>>;
 	// Aborts the document's loads when the TermDOM is disposed.
@@ -393,6 +402,8 @@ export class TermDOM extends EventTarget {
 		this[kAttachReady] = Promise.resolve();
 		this[kAttachBegun] = Promise.resolve();
 		this[kStaticSibling] = null;
+		this[kStaticOptions] = {csp: options.csp, url: options.url};
+		this[kFetchTarget] = this;
 		this[kLifetimes] = new Set();
 		this[kDisposal] = Promise.resolve();
 		retainDecoder();
@@ -423,8 +434,9 @@ export class TermDOM extends EventTarget {
 			signal: this[kLoads].signal,
 			extend: (promise) => {
 				const lifetime = promise.then(() => {}, () => {});
-				this[kLifetimes].add(lifetime);
-				void lifetime.then(() => this[kLifetimes].delete(lifetime));
+				const lifetimes = this[kFetchTarget][kLifetimes];
+				lifetimes.add(lifetime);
+				void lifetime.then(() => lifetimes.delete(lifetime));
 			},
 			violate: (at, init) => {
 				const window = this.window as unknown as typeof globalThis;
@@ -472,7 +484,13 @@ export class TermDOM extends EventTarget {
 			images,
 			canvas,
 			load: (request, context) =>
-				answerRequest(this, document, request, context, requestPolicy),
+				answerRequest(
+					this[kFetchTarget],
+					document,
+					request,
+					context,
+					requestPolicy,
+				),
 			loadSignal: this[kLoads].signal,
 			render: () => render(this),
 			reportUncaught: (error) => {
@@ -1453,10 +1471,12 @@ function renderStaticHTML(
 	const cell = getCellSize(termDOM.document);
 	const colorDepth = termDOM[kFramebuffer].colorDepth;
 	const graphics = getGraphicsSettings(termDOM.document)!;
+	const colorScheme = termDOM[kExchange].colorScheme;
 	if (
 		termDOM[kStaticSibling] &&
 		(termDOM[kStaticSibling][kFramebuffer].cols !== cols ||
 			termDOM[kStaticSibling][kFramebuffer].colorDepth !== colorDepth ||
+			termDOM[kStaticSibling][kExchange].colorScheme !== colorScheme ||
 			getGraphicsSettings(termDOM[kStaticSibling].document)!.images !==
 				graphics.images ||
 			getGraphicsSettings(termDOM[kStaticSibling].document)!.canvas !==
@@ -1467,6 +1487,8 @@ function renderStaticHTML(
 		termDOM[kStaticSibling] = null;
 	}
 	termDOM[kStaticSibling] ??= new TermDOM({
+		...termDOM[kStaticOptions],
+		colorScheme,
 		cellSize: cell === UNIT_CELL ? "unit" : cell,
 		images: graphics.images === "none" ? "none" : "cells",
 		canvas: graphics.canvas === "none" ? "none" : "cells",
@@ -1486,8 +1508,15 @@ function renderStaticHTML(
 	});
 
 	const renderer = termDOM[kStaticSibling];
+	renderer[kFetchTarget] = termDOM;
 	renderer.document.body.innerHTML = html;
-	return renderStatic(renderer, lineEnding);
+	const output = renderStatic(renderer, lineEnding);
+	// A disposed TermDOM no longer disposes what it rendered with.
+	if (termDOM[kLifecycle] === "disposed") {
+		void renderer.dispose();
+		termDOM[kStaticSibling] = null;
+	}
+	return output;
 }
 
 // Names that stay the runtime's wherever it has them. Its event classes:
