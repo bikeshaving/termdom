@@ -135,7 +135,8 @@ Escape closes it and fires `cancel` then `close`. A `[popover]` opens
 with `showPopover()` or `togglePopover()`, or a `popovertarget` button,
 and light dismiss works: a click outside, or Escape, closes it and
 fires `toggle`. `<details>` opens on a click of its `<summary>`, or
-Enter or Space with the summary focused, and fires `toggle`.
+Enter or Space with the summary focused, and fires `toggle`. Toggling it
+scrolls nothing.
 
 ## Form controls
 
@@ -154,7 +155,7 @@ field.addEventListener("input", updatePreview);
 
 `::placeholder` styles a field's placeholder. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. `<input type="password">`
-masks its value. A number input takes float syntax only, and ArrowUp and
+masks its value. A `<textarea>` scrolls to keep its caret in view. A number input takes float syntax only, and ArrowUp and
 ArrowDown step it within `min` and `max`.
 
 `new FormData(form)` builds the form's entry list: every submittable
@@ -180,7 +181,8 @@ An element with `contenteditable` is an editing host: click into it and
 the caret becomes the real terminal cursor, and what you type goes into
 the tree. `document.designMode = "on"` makes the whole body one. A
 `contenteditable="false"` element inside a host is stepped over as one
-piece and never takes the caret.
+piece and never takes the caret, and Up and Down skip a line made only
+of such elements.
 
 ```html
 <div id="note" contenteditable>Type here.</div>

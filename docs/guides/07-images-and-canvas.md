@@ -150,10 +150,12 @@ An image that is not showing follows HTML's rendering rules:
 
 - An image that failed to load, was blocked or has no `src` shows its
   `alt` text in the line, as plain text that wraps like any other.
+- An image that is not showing, has a `src` and has no `alt` attribute is
+  a bordered box with nothing inside.
 - An image that has a size, from `width` and `height` or from CSS, is a
-  box of that size with its `alt` text inside, cut with an ellipsis when
-  it does not fit, while it is still loading, when it has no `alt`, or
-  in a document in quirks mode (one with no `<!doctype html>`).
+  bordered box of that size with its `alt` text inside, cut with an
+  ellipsis when it does not fit, while it is still loading or in a
+  document in quirks mode (one with no `<!doctype html>`).
 - An empty `alt` marks an image that is only decoration, and it shows
   nothing, as does an `<img>` with neither a `src` nor an `alt`.
 
@@ -205,9 +207,10 @@ one does not stall the page. Bun and Deno have one. Node has one from
 26.9 behind a flag, so run `node --experimental-web-worker`, or set
 `NODE_OPTIONS=--experimental-web-worker`, to decode off the page's
 thread there. Without a `Worker`, and in a CommonJS build, images decode
-on the page's thread a slice at a time, so input and frames go on
+on the page's thread in 16 ms slices, so input and frames go on
 between slices. A decode that takes more than 10 seconds is stopped
-and that image fails; the images behind it still decode.
+and that image fails; the images behind it still decode. The worker runs
+the package's `@b9g/termdom/decode-worker` module.
 
 The worker ends a second after its last decode, and when the last
 TermDOM is disposed, so it never keeps a finished program running.
@@ -283,7 +286,7 @@ The cell grid context draws cells instead of pixels. The canvas is
 `width` columns by `height` rows, and that is its natural size. It is
 TermDOM's own, so its name carries TermDOM's prefix, as a browser's own
 context types once carried theirs (`"moz-webgl"`, `"webkit-3d"`). Its
-interface is not on `window`. The `termdom` package exports it as
+interface is not on `window`. The `@b9g/termdom` package exports it as
 `CanvasCellGridContext`.
 
 ```ts

@@ -71,8 +71,11 @@ Options:
 - `colorDepth?: "auto" | 24 | 8 | 4` — the colors the terminal shows,
   in the bits `screen.colorDepth` reports. With `"auto"` (default),
   TermDOM asks the terminal. `"rgb"`, `"256"` and `"ansi"` name 24, 8
-  and 4. See "Color depth" in the styling
-  guide.
+  and 4. Any other value throws a `TypeError`. See "Color depth" in the
+  styling guide.
+
+TermDOM reads no environment variables. What the terminal can say, it is
+asked, and the rest is an option.
 
 ### `term.document`, `term.window`
 
@@ -142,6 +145,24 @@ brackets, are TermDOM's own, as they are a browser's: the
 controls are shadow trees inside, and `::part()` does not reach into
 them. TermDOM's own rules come first, so a page's `::placeholder` and the
 rest override them as they would any built-in style.
+
+### `term.addEventListener("fetch", listener)`
+
+A `TermDOM` is an `EventTarget`. It receives a `"fetch"` event, a
+`FetchEvent`, for each image its markup loads that `csp` allows, and a
+listener answers it with `event.respondWith()`:
+
+```ts
+import {TermDOM} from "@b9g/termdom";
+
+const term = new TermDOM({csp: "img-src data:"});
+term.addEventListener("fetch", (event) => {
+  event.respondWith(fetch(event.request));
+});
+```
+
+A load `csp` blocks fires `securitypolicyviolation` at its element
+instead. The images guide has both.
 
 ### `term.attach(transport?)`
 
@@ -241,10 +262,16 @@ interface TerminalTransport {
 	readonly cols: number; // live: always the current size
 	readonly rows: number;
 	readonly interactive: boolean; // false: plain line output (a pipe)
+	// Optional. Whether the terminal's background is dark, where the
+	// program knows. The terminal's own answer replaces it.
+	readonly colorScheme?: "light" | "dark";
 	// Optional. Takes an error's text somewhere the frame does not share;
 	// true when it did. The engine keeps what it cannot place and prints
 	// it below the document at the end.
 	logError?(text: string): boolean;
+	// Optional. Writes to the terminal at once, ahead of anything queued,
+	// for what has to reach it as the process ends.
+	writeSync?(text: string): void;
 	readonly sharesScreen: boolean; // true: anchor below existing content
 	readonly readable: ReadableStream<string>; // user input
 	readonly writable: WritableStream<string>; // frames out
@@ -280,7 +307,8 @@ const term = new TermDOM({transport: transportFromProcess(process)});
 ```
 
 - `proc` — a structural subset of Node's `process` (the exported
-  `ProcessLike` type). Defaults to the global `process`.
+  `ProcessLike` type: `stdin`, `stdout`, `stderr`, `on`, `removeListener`
+  and `exit`). Defaults to the global `process`.
 - `options.sharesScreen` — overrides `sharesScreen`, which defaults to
   true for the global process (it sits below a shell) and false for
   anything else.
@@ -291,3 +319,19 @@ The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
 `resizes`, signals → `closed`, `stdout.isTTY` → `interactive`, `stderr`
 when it is not a terminal → `logError`, and an exit hook that restores
 the cursor if the app exits without disposing.
+
+## Other exports
+
+`TermDOM`, `installGlobals` and `transportFromProcess` are the entry
+points above. The package also exports:
+
+- `FetchEvent`, `ExtendableEvent` and the `FetchEventInit` type, for the
+  `"fetch"` event.
+- `CanvasCellGridContext`, the class behind a canvas's
+  `"termdom-cellgrid"` context.
+- The types `TermDOMOptions`, `TermDOMEventMap`, `CellSize`,
+  `TerminalTransport`, `TerminalCloseInfo`, `TerminalSize`, `ProcessLike`,
+  `TTYReadStream` and `TTYWriteStream`.
+
+`@b9g/termdom/decode-worker` is the module that decodes images on a
+`Worker`. Programs do not import it.
