@@ -164,6 +164,8 @@ test("a failing stdout closes the session instead of crashing", async () => {
 			exited = code;
 		}) as (code?: number) => never,
 	});
+	void transport.readable.getReader().read();
+	await new Promise((resolve) => setTimeout(resolve, 0));
 	const error = Object.assign(new Error("write EPIPE"), {code: "EPIPE"});
 	stdout.emit("error", error);
 	expect(await transport.closed).toEqual({});

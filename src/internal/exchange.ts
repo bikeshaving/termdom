@@ -2256,6 +2256,7 @@ export interface TTYWriteStream {
 	rows: number;
 	isTTY: boolean;
 	on?(event: "error", listener: (error: unknown) => void): unknown;
+	removeListener?(event: "error", listener: (error: unknown) => void): unknown;
 }
 
 export interface TTYReadStream {
@@ -2272,6 +2273,7 @@ export interface TTYReadStream {
 		event: "data",
 		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
 	): unknown;
+	removeListener?(event: "error", listener: (error: unknown) => void): unknown;
 	setRawMode?(mode: boolean): this;
 	resume(): this;
 	pause(): this;
@@ -2369,20 +2371,46 @@ export function transportFromProcess(
 
 	// A stream that fails (EPIPE when the reading end of a pipe has gone,
 	// EIO when the terminal has) is a terminal that is gone. The session
-	// closes as when its input ends, instead of crashing or hanging.
+	// closes as when its input ends, instead of crashing or hanging. This
+	// holds from the session's first read until it has ended and written
+	// its last bytes, whose failure exits nothing.
 	let broken = false;
+	let released = false;
 	const onBroken = () => {
-		if (broken) {
+		if (broken || released) {
 			return;
 		}
 		broken = true;
 		closedResolve({});
 		setImmediate(() => proc.exit(0));
 	};
-	proc.stdout.on?.("error", onBroken);
-	if (typeof proc.stdin?.on === "function") {
-		proc.stdin.on("error", onBroken);
-	}
+	let listening = false;
+	const listen = () => {
+		if (listening) {
+			return;
+		}
+		listening = true;
+		proc.stdout.on?.("error", onBroken);
+		if (typeof proc.stdin?.on === "function") {
+			proc.stdin.on("error", onBroken);
+		}
+	};
+	let writes = 0;
+	let lastWrite = Promise.resolve();
+	const unlistenOnceWritten = () => {
+		const seen = writes;
+		void lastWrite.then(() => setImmediate(() => {
+			if (writes !== seen) {
+				unlistenOnceWritten();
+				return;
+			}
+			listening = false;
+			proc.stdout.removeListener?.("error", onBroken);
+			if (proc.stdin !== undefined) {
+				proc.stdin.removeListener?.("error", onBroken);
+			}
+		}));
+	};
 
 	let engaged = false;
 	let stopWatching: (() => void) | undefined;
@@ -2427,6 +2455,7 @@ export function transportFromProcess(
 				if (engaged) {
 					return;
 				}
+				listen();
 				if (!proc.stdin?.isTTY) {
 					stopWatching ??= watchForOrphaning(proc, () => {
 						closedResolve({});
@@ -2477,6 +2506,10 @@ export function transportFromProcess(
 			cancel: () => {
 				stopWatching?.();
 				disengage();
+				released = true;
+				if (listening) {
+					unlistenOnceWritten();
+				}
 			},
 			// The default high-water mark would pull at construction and take
 			// the tty before attach().
@@ -2487,15 +2520,20 @@ export function transportFromProcess(
 	const writable = new WritableStream<string>({
 		// Resolved on the write callback, so awaiting a write means the
 		// terminal has the bytes.
-		write: (chunk) => new Promise<void>((resolve, reject) => {
-			proc.stdout.write(chunk, "utf8", (error?: Error) => {
-				if (error) {
-					reject(error);
-				} else {
-					resolve();
-				}
+		write: (chunk) => {
+			writes++;
+			const written = new Promise<void>((resolve, reject) => {
+				proc.stdout.write(chunk, "utf8", (error?: Error) => {
+					if (error) {
+						reject(error);
+					} else {
+						resolve();
+					}
+				});
 			});
-		}),
+			lastWrite = written.catch(() => {});
+			return written;
+		},
 	});
 
 	let resizeListener: (() => void) | null = null;
