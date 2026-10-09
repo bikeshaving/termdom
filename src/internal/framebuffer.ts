@@ -948,6 +948,8 @@ export function readCell(
 	bold: boolean;
 	italic: boolean;
 	underline: boolean;
+	strikethrough: boolean;
+	dim: boolean;
 	inverse: boolean;
 } | null {
 	if (grid.cluster[index] === 0) {
@@ -964,6 +966,8 @@ export function readCell(
 		bold: (attrs & ATTR.Bold) !== 0,
 		italic: (attrs & ATTR.Italic) !== 0,
 		underline: (attrs & (ATTR.Underline | ATTR.DoubleUnderline)) !== 0,
+		strikethrough: (attrs & ATTR.Strikethrough) !== 0,
+		dim: (attrs & ATTR.Dim) !== 0,
 		inverse: (attrs & ATTR.Inverse) !== 0,
 	};
 }

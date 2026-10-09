@@ -287,13 +287,14 @@ The cell grid context draws cells instead of pixels. The canvas is
 TermDOM's own, so its name carries TermDOM's prefix, as a browser's own
 context types once carried theirs (`"moz-webgl"`, `"webkit-3d"`). Its
 interface is not on `window`. The `@b9g/termdom` package exports it as
-`CanvasCellGridContext`.
+`CanvasCellGridContext`, and importing the package teaches TypeScript
+that `getContext("termdom-cellgrid")` returns one.
 
 ```ts
 const canvas = document.createElement("canvas");
 canvas.width = 20;
 canvas.height = 3;
-const grid = canvas.getContext("termdom-cellgrid");
+const grid = canvas.getContext("termdom-cellgrid")!;
 grid.fillStyle = "#003366";
 grid.fillRect(0, 0, 20, 3);
 grid.fillStyle = "#ffcc00";
@@ -317,16 +318,16 @@ not the page's borders around the canvas.
 | `lineJoin` | `miter`, the default, or `round`, which curves `strokeRect()`'s corners |
 | `font` | Keywords from the CSS `font` shorthand: `bold`, `italic`, `lighter` |
 | `textAlign` | `left`, `right`, `center`, `start` or `end` |
-| `textDecoration` | `none` or `underline` |
+| `textDecoration` | `none`, or `underline` and `line-through`, alone or together |
 | `fillText(text, x, y, maxWidth?)` | Writes glyphs in the fill color, over the cells' backgrounds. A wide glyph takes two columns |
 | `fillRect(x, y, w, h)` | Fills cells with the fill color as their background. `currentcolor` fills them in inverse video |
 | `clearRect(x, y, w, h)` | Empties cells |
 | `strokeLine(x1, y1, x2, y2)` | A line from one cell to another, both included, along a row or a column. A slanted line draws nothing |
 | `strokeRect(x, y, w, h)` | A box around the cells `w` by `h` from (x, y) |
 | `drawImage(image, ...)` | Draws an image's pixels, two to a cell. Without a size, the image takes its natural size in cells |
-| `getCell(x, y)` | The cell's glyph, colors and attributes, or `null` |
+| `getCell(x, y)` | The cell's `char`, `color` and `background`, and whether it is `bold`, `italic`, `dim`, `underline`, `strikethrough` or `inverse`; `null` for an empty cell |
 | `measureText(text)` | The text's width in columns |
-| `columns`, `rows`, `reset()` | The grid's size, and clearing it |
+| `reset()` | Clears the grid and the settings |
 
 ## Text alone
 

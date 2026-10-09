@@ -14487,6 +14487,10 @@ class HTMLCanvasElement extends HTMLElement {
 		options?: globalThis.CanvasRenderingContext2DSettings,
 	): globalThis.CanvasRenderingContext2D | null;
 	getContext(
+		contextId: "termdom-cellgrid",
+		options?: unknown,
+	): CanvasCellGridContext | null;
+	getContext(
 		contextId: "bitmaprenderer",
 		options?: globalThis.ImageBitmapRenderingContextSettings,
 	): globalThis.ImageBitmapRenderingContext | null;
@@ -14502,7 +14506,9 @@ class HTMLCanvasElement extends HTMLElement {
 		contextId: string,
 		options?: any,
 	): globalThis.RenderingContext | null;
-	getContext(contextId: string): globalThis.RenderingContext | null {
+	getContext(
+		contextId: string,
+	): globalThis.RenderingContext | CanvasCellGridContext | null {
 		if (arguments.length < 1) {
 			throw new TypeError("getContext needs a context id");
 		}
