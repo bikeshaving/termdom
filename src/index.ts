@@ -283,6 +283,7 @@ const FRAME_INTERVAL_MS = 16;
 // the document when the session ends.
 const kHeldErrors = Symbol("heldErrors");
 const kErrored = Symbol("errored");
+const kSuspended = Symbol("suspended");
 // Held errors handed to the output queue whose write has not finished.
 const kUnwrittenErrors = Symbol("unwrittenErrors");
 const HELD_ERROR_LIMIT = 50;
@@ -311,6 +312,7 @@ export interface TermDOM {
 	[kLastFrameAt]: number;
 	[kHeldErrors]: string[];
 	[kErrored]: boolean;
+	[kSuspended]: boolean;
 	[kUnwrittenErrors]: string | null;
 	// Timestamps observer entries.
 	[kRenderCount]: number;
@@ -366,6 +368,7 @@ export class TermDOM extends EventTarget {
 		this[kLastFrameAt] = -Infinity;
 		this[kHeldErrors] = [];
 		this[kErrored] = false;
+		this[kSuspended] = false;
 		this[kUnwrittenErrors] = null;
 		this[kRenderCount] = 0;
 		this[kFirstFrame] = null;
@@ -524,6 +527,11 @@ export class TermDOM extends EventTarget {
 		exchange.addEventListener("terminalclose", (event) => {
 			if (event.target === exchange) {
 				closeTermDOM(this);
+			}
+		});
+		exchange.addEventListener("suspend", (event) => {
+			if (event.target === exchange) {
+				void suspendTermDOM(this);
 			}
 		});
 	}
@@ -810,6 +818,48 @@ export class TermDOM extends EventTarget {
 		return Promise.all([this[kExchange].flush(), ...this[kLifetimes]])
 			.then(() => {});
 	}
+}
+
+/**
+ * Ctrl+Z: hand the terminal back, stop until the shell continues the
+ * program, and take it again. The document is hidden meanwhile, as a
+ * backgrounded tab is. A document in flow is written into the
+ * scrollback, so the shell's lines land below it and the document starts
+ * again under them; a fullscreen one leaves the alternate screen and
+ * comes back to it.
+ */
+async function suspendTermDOM(termDOM: TermDOM): Promise<void> {
+	const suspend = termDOM[kTransport].suspend;
+	if (
+		suspend === undefined ||
+		termDOM[kLifecycle] !== "attached" ||
+		termDOM[kSuspended]
+	) {
+		return;
+	}
+	termDOM[kSuspended] = true;
+	setDocumentVisible(termDOM.document, false);
+	const fullscreen = isFullscreen(termDOM);
+	if (!fullscreen && termDOM[kRenderCount] > 0) {
+		flushDocument(termDOM);
+		termDOM[kSealed] = true;
+	}
+	termDOM[kExchange].releaseModes();
+	await termDOM[kExchange].flush();
+	await suspend.call(termDOM[kTransport]);
+	termDOM[kSuspended] = false;
+	if (termDOM[kLifecycle] !== "attached") {
+		return;
+	}
+	termDOM[kExchange].reclaimModes();
+	if (termDOM.document.title) {
+		void termDOM[kExchange].setTitle(termDOM.document.title);
+	}
+	if (fullscreen) {
+		termDOM[kFramebuffer].repaintAll();
+	}
+	setDocumentVisible(termDOM.document, true);
+	void render(termDOM);
 }
 
 /**
