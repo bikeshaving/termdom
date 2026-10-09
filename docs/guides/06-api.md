@@ -350,7 +350,8 @@ The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
 `stdin.isTTY` → `readsReplies`, `stderr` when it is not a terminal →
 `logError`, `suspend()` by leaving raw mode and sending the process
 `SIGTSTP` until `SIGCONT` (not on Windows), and an exit hook that
-restores the cursor if the app exits without disposing.
+restores the cursor if the app exits without disposing, written before
+an exception nothing handles is printed.
 
 ## `transportFromSSH(session, options?)`
 

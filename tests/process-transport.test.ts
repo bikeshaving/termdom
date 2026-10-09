@@ -124,3 +124,31 @@ test("a second session on the process keeps the terminal until it ends too", asy
 	await second.dispose();
 	expect([raw.at(-1), paused]).toEqual([false, true]);
 });
+
+test("an exception nothing handles restores the terminal before it is printed", async () => {
+	const proc = new MockProcess({cols: 30, rows: 6});
+	const written = captureRawOutput(proc);
+	const dom = new TermDOM({transport: transportFromProcess(proc)});
+	await dom.attach();
+	await nextFrame(dom);
+	const error = new Error("unhandled");
+	const before = written().length;
+
+	const handled = () => {};
+	process.on("uncaughtException", handled);
+	process.emit("uncaughtExceptionMonitor", error, "uncaughtException");
+	process.removeListener("uncaughtException", handled);
+	expect(written().slice(before)).toBe("");
+
+	const handlers = process.listeners("uncaughtException");
+	process.removeAllListeners("uncaughtException");
+	try {
+		process.emit("uncaughtExceptionMonitor", error, "uncaughtException");
+	} finally {
+		for (const handler of handlers) {
+			process.on("uncaughtException", handler);
+		}
+	}
+	expect(written().slice(before)).toContain("\x1b[?1047l");
+	await dom.dispose();
+});

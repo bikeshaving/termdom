@@ -2321,21 +2321,34 @@ export interface ProcessLike {
 const engagedProcesses = new Map<ProcessLike, number>();
 let exitHookInstalled = false;
 
+function restoreEngagedProcesses(): void {
+	for (const proc of engagedProcesses.keys()) {
+		if (proc.stdout.isTTY !== true) {
+			continue;
+		}
+		try {
+			proc.stdout.write(PANIC_RESTORE);
+		} catch (_err) {
+			// The stream may already be gone.
+		}
+	}
+	engagedProcesses.clear();
+}
+
 function installCursorRestoreOnExit(): void {
 	if (exitHookInstalled) {
 		return;
 	}
 	exitHookInstalled = true;
-	process.on("exit", () => {
-		for (const proc of engagedProcesses.keys()) {
-			if (proc.stdout.isTTY !== true) {
-				continue;
-			}
-			try {
-				proc.stdout.write(PANIC_RESTORE);
-			} catch (_err) {
-				// The stream may already be gone.
-			}
+	process.on("exit", restoreEngagedProcesses);
+	// An exception nothing handles ends the process. Bun prints it before
+	// the exit hook runs, and Deno runs none, so the restore goes first
+	// here, or the error is printed on the alternate screen and lost with
+	// it. Only watching, this changes nothing about whether the process
+	// dies.
+	process.on("uncaughtExceptionMonitor", () => {
+		if (process.listenerCount("uncaughtException") === 0) {
+			restoreEngagedProcesses();
 		}
 	});
 }
