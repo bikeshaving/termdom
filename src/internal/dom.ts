@@ -14542,6 +14542,7 @@ class HTMLCanvasElement extends HTMLElement {
 				canvas: this,
 				bitmap: () => getCanvasBitmap(this),
 				changed,
+				direction: () => getCanvasDirection(this),
 				pixelsPerCell: () => {
 					const attached = getAttachedDocument(this);
 					const rect = attached?.[kLayout].contentRect(this);
@@ -14558,6 +14559,7 @@ class HTMLCanvasElement extends HTMLElement {
 				cells: () => getCanvasGrid(this),
 				changed,
 				cellPixels: () => getImageCellSize(this as unknown as Node),
+				direction: () => getCanvasDirection(this),
 			});
 			// The natural size is now in cells, not pixels.
 			invalidateReplaced(this, true);
@@ -18779,6 +18781,11 @@ function getGaugeGlyphs(host: Element, glyph: string): string {
 	return glyph.repeat(
 		Math.max(40, typeof width === "number" && width > 0 ? width : 40),
 	);
+}
+
+// What a canvas context's "inherit" direction resolves to.
+function getCanvasDirection(canvas: Element): "ltr" | "rtl" {
+	return getComputedValue(canvas, "direction") === "rtl" ? "rtl" : "ltr";
 }
 
 // A full-width track that clips, holding a bar whose width is the

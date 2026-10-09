@@ -30,7 +30,7 @@ import {
 	naturalWidthOf,
 	sampleBitmap,
 } from "./images.ts";
-import {getStringWidth, graphemeSegmenter} from "./text.ts";
+import {getStringWidth, graphemeSegmenter, toVisualOrder} from "./text.ts";
 
 // ---------------------------------------------------------------------------
 // What drawImage() and createPattern() take.
@@ -1717,6 +1717,8 @@ interface CanvasHost {
 	changed(): void;
 	// Bitmap pixels per cell, as the canvas is shown, for measureText().
 	pixelsPerCell(): {x: number; y: number};
+	// The canvas element's own direction, which "inherit" takes.
+	direction(): "ltr" | "rtl";
 }
 
 const kHost = Symbol("host");
@@ -2874,7 +2876,11 @@ export class CanvasRenderingContext2D {
 		if (color === null || color.a * this[kState].globalAlpha === 0) {
 			return;
 		}
-		const rtl = this[kState].direction === "rtl";
+		// "inherit" takes the canvas's direction as the text is drawn.
+		const direction = this[kState].direction === "inherit"
+			? this[kHost].direction()
+			: this[kState].direction;
+		const rtl = direction === "rtl";
 		const align = this[kState].textAlign;
 		const resolved = align === "center"
 			? "center"
@@ -2885,7 +2891,10 @@ export class CanvasRenderingContext2D {
 				: "left";
 		const words = this[kState].font.toLowerCase().split(/\s+/);
 		const run: CanvasTextRun = {
-			text: text.replace(/[\t\n\f\r]/g, " "),
+			text: toVisualOrder(
+				text.replace(/[\t\n\f\r]/g, " "),
+				rtl ? "rtl" : "ltr",
+			),
 			x: px,
 			y: py,
 			align: resolved,
@@ -2948,6 +2957,8 @@ interface GridHost {
 	// The canvas's cells, `width` columns by `height` rows.
 	cells(): CellContext;
 	changed(): void;
+	// The canvas element's own direction, which "inherit" takes.
+	direction(): "ltr" | "rtl";
 	// Terminal pixels per cell, for drawing images at their natural size.
 	cellPixels(): {width: number; height: number};
 }
@@ -2961,6 +2972,8 @@ const kLineJoin = Symbol("lineJoin");
 const kFont = Symbol("font");
 const kTextAlign = Symbol("textAlign");
 const kTextDecoration = Symbol("textDecoration");
+const kGridDirection = Symbol("direction");
+const kResolveDirection = Symbol("resolveDirection");
 const kRect = Symbol("rect");
 
 export interface CanvasCellGridContext {
@@ -2972,6 +2985,7 @@ export interface CanvasCellGridContext {
 	[kFont]: string;
 	[kTextAlign]: "start" | "end" | "left" | "right" | "center";
 	[kTextDecoration]: string;
+	[kGridDirection]: "ltr" | "rtl" | "inherit";
 }
 
 /**
@@ -2991,8 +3005,9 @@ export class CanvasCellGridContext {
 		this[kLineStyle] = "solid";
 		this[kLineJoin] = "miter";
 		this[kFont] = "";
-		this[kTextAlign] = "left";
+		this[kTextAlign] = "start";
 		this[kTextDecoration] = "none";
+		this[kGridDirection] = "inherit";
 	}
 
 	get canvas(): HTMLCanvasElement {
@@ -3063,6 +3078,21 @@ export class CanvasCellGridContext {
 		}
 	}
 
+	/**
+	 * ltr, rtl, or inherit, the default, which takes the canvas element's
+	 * direction as the text is drawn. It orders right-to-left text for
+	 * display and decides which side start and end are.
+	 */
+	get direction(): "ltr" | "rtl" | "inherit" {
+		return this[kGridDirection];
+	}
+
+	set direction(value: string) {
+		if (value === "ltr" || value === "rtl" || value === "inherit") {
+			this[kGridDirection] = value;
+		}
+	}
+
 	/** none, or underline and line-through, alone or together. */
 	get textDecoration(): string {
 		return this[kTextDecoration];
@@ -3121,8 +3151,14 @@ export class CanvasCellGridContext {
 			return;
 		}
 		const cells = this[kGridHost].cells();
+		const rtl = this[kResolveDirection]() === "rtl";
 		const clusters = [
-			...graphemeSegmenter.segment(String(text).replace(/[\t\n\f\r]/g, " ")),
+			...graphemeSegmenter.segment(
+				toVisualOrder(
+					String(text).replace(/[\t\n\f\r]/g, " "),
+					rtl ? "rtl" : "ltr",
+				),
+			),
 		]
 			.map((segment) => segment.segment)
 			.filter((cluster) => getStringWidth(cluster) > 0);
@@ -3134,7 +3170,11 @@ export class CanvasCellGridContext {
 		const align = this[kTextAlign];
 		if (align === "center") {
 			col -= Math.floor(width / 2);
-		} else if (align === "right" || align === "end") {
+		} else if (
+			align === "right" ||
+			(align === "end" && !rtl) ||
+			(align === "start" && rtl)
+		) {
 			col -= width;
 		}
 		const row = Math.round(y);
@@ -3238,7 +3278,8 @@ export class CanvasCellGridContext {
 	}
 
 	measureText(text: string): {width: number} {
-		return this[kGridHost].cells().measureText(String(text));
+		return this[kGridHost].cells()
+			.measureText(toVisualOrder(String(text), this[kResolveDirection]()));
 	}
 
 	/**
@@ -3336,8 +3377,8 @@ export class CanvasCellGridContext {
 		inverse: boolean;
 	} | null {
 		const {grid, cols, rows} = this[kGridHost].cells();
-		const col = Math.floor(x);
-		const row = Math.floor(y);
+		const col = Math.round(x);
+		const row = Math.round(y);
 		if (col < 0 || row < 0 || col >= cols || row >= rows) {
 			return null;
 		}
@@ -3377,9 +3418,16 @@ export class CanvasCellGridContext {
 		this[kLineStyle] = "solid";
 		this[kLineJoin] = "miter";
 		this[kFont] = "";
-		this[kTextAlign] = "left";
+		this[kTextAlign] = "start";
 		this[kTextDecoration] = "none";
+		this[kGridDirection] = "inherit";
 		this[kGridHost].changed();
+	}
+
+	[kResolveDirection](): "ltr" | "rtl" {
+		return this[kGridDirection] === "inherit"
+			? this[kGridHost].direction()
+			: this[kGridDirection];
 	}
 
 	[kRect](
