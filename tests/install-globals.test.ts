@@ -120,7 +120,15 @@ test("installGlobals throws while installed, and uninstalling removes every name
 
 test("what a terminal does not have is left undefined, for feature detection", () => {
 	const term = new TermDOM();
-	expect(() => term.window.indexedDB).toThrow();
+	expect(term.window.indexedDB).toBeUndefined();
+	expect(term.window.TrustedHTML).toBeUndefined();
+	const video = term.document.createElement("video");
+	expect([video.buffered.length, video.textTracks.length]).toEqual([0, 0]);
+	expect(() => video.buffered.start(0)).toThrow();
+	expect(video.remote.state).toBe("disconnected");
+	expect(video.textTracks).toBe(video.textTracks);
+	expect(term.window.navigator.hardwareConcurrency).toBeGreaterThan(0);
+	expect(term.window.navigator.onLine).toBe(true);
 	const uninstall = installGlobals(term);
 	try {
 		expect(typeof global.indexedDB).toBe("undefined");

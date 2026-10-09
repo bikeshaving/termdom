@@ -18461,15 +18461,66 @@ const kPlaybackRate = Symbol("playbackRate");
 const kDefaultPlaybackRate = Symbol("defaultPlaybackRate");
 const kPreservesPitch = Symbol("preservesPitch");
 
+// An empty TimeRanges: start() and end() have no range to read.
+function createEmptyTimeRanges(): globalThis.TimeRanges {
+	const noRange = (index: number): number => {
+		throw domError("IndexSizeError", `There is no time range ${index}`);
+	};
+	return Object.freeze({length: 0, start: noRange, end: noRange}) as
+		unknown as globalThis.TimeRanges;
+}
+
+// A media element's text track list and remote playback, made on first
+// read and kept, so a listener added to one stays on it.
+const mediaTextTracks = new WeakMap<object, globalThis.TextTrackList>();
+const mediaRemotes = new WeakMap<object, globalThis.RemotePlayback>();
+
+function getEmptyTextTrackList(media: object): globalThis.TextTrackList {
+	let list = mediaTextTracks.get(media);
+	if (list === undefined) {
+		list = Object.assign(new EventTarget(), {
+			length: 0,
+			onaddtrack: null,
+			onchange: null,
+			onremovetrack: null,
+			getTrackById: () => null,
+			[Symbol.iterator]: () => [][Symbol.iterator](),
+		}) as unknown as globalThis.TextTrackList;
+		mediaTextTracks.set(media, list);
+	}
+	return list;
+}
+
+function getDisconnectedRemote(media: object): globalThis.RemotePlayback {
+	let remote = mediaRemotes.get(media);
+	if (remote === undefined) {
+		const unsupported = () =>
+			Promise.reject(
+				domError("NotSupportedError", "A terminal has no remote playback"),
+			);
+		remote = Object.assign(new EventTarget(), {
+			state: "disconnected",
+			onconnect: null,
+			onconnecting: null,
+			ondisconnect: null,
+			watchAvailability: unsupported,
+			cancelWatchAvailability: () => Promise.resolve(),
+			prompt: unsupported,
+		}) as unknown as globalThis.RemotePlayback;
+		mediaRemotes.set(media, remote);
+	}
+	return remote;
+}
+
 function noMediaPipeline(what: string): never {
 	throw domError("NotSupportedError", `A terminal has no ${what}`);
 }
 
 // No resource is ever fetched, so the element stays in the state a media
 // element is in before loading: no network activity, nothing loaded,
-// paused, and a NaN duration. The members that return a resource's own
-// objects (buffered ranges, tracks, error) are absent rather than
-// returning an empty stand-in.
+// paused, and a NaN duration. Its time ranges are empty, it has no text
+// tracks, and its remote playback is disconnected, as a browser's are
+// then, so code that reads them takes the path for nothing loaded.
 interface HTMLMediaElement {
 	[kVolume]: number;
 	[kMuted]: boolean;
@@ -18524,15 +18575,15 @@ class HTMLMediaElement extends HTMLElement {
 	}
 
 	get buffered(): globalThis.TimeRanges {
-		return noMediaPipeline("media buffer");
+		return createEmptyTimeRanges();
 	}
 
 	get played(): globalThis.TimeRanges {
-		return noMediaPipeline("media playback");
+		return createEmptyTimeRanges();
 	}
 
 	get seekable(): globalThis.TimeRanges {
-		return noMediaPipeline("media playback");
+		return createEmptyTimeRanges();
 	}
 
 	get mediaKeys(): globalThis.MediaKeys | null {
@@ -18540,7 +18591,7 @@ class HTMLMediaElement extends HTMLElement {
 	}
 
 	get remote(): globalThis.RemotePlayback {
-		return noMediaPipeline("remote playback");
+		return getDisconnectedRemote(this);
 	}
 
 	get sinkId(): string {
@@ -18556,7 +18607,7 @@ class HTMLMediaElement extends HTMLElement {
 	}
 
 	get textTracks(): globalThis.TextTrackList {
-		return noMediaPipeline("text track list");
+		return getEmptyTextTrackList(this);
 	}
 
 	get currentSrc(): string {
@@ -35013,8 +35064,16 @@ function createHistory(): globalThis.History {
 	};
 }
 
-function noWindowFeature(what: string): never {
-	throw domError("NotSupportedError", `A terminal has no ${what}`);
+// The runtime's own navigator's count, kept from when the module loaded,
+// before installGlobals() can put a window's navigator in its place.
+const runtimeHardwareConcurrency: number =
+	(globalThis as {navigator?: {hardwareConcurrency?: unknown}}).navigator
+		?.hardwareConcurrency as number | undefined ?? 1;
+
+// What a terminal has no use for reads as undefined, as it does in a
+// browser without it, so `if (window.indexedDB)` takes its fallback.
+function absent<T>(): T {
+	return undefined as T;
 }
 
 const kScreenInfo = Symbol("screen");
@@ -35596,9 +35655,26 @@ export class Window extends EventTarget {
 			const document = this.document;
 			navigator = {
 				userAgent: "TermDOM",
+				appCodeName: "Mozilla",
+				appName: "Netscape",
+				appVersion: "TermDOM",
+				product: "Gecko",
+				productSub: "20030107",
+				vendor: "",
+				vendorSub: "",
 				language: "en-US",
 				languages: Object.freeze(["en-US"]),
 				platform: "",
+				// The machine's, where the runtime knows it, for code that
+				// sizes a pool of workers by it.
+				hardwareConcurrency: runtimeHardwareConcurrency,
+				onLine: true,
+				cookieEnabled: false,
+				maxTouchPoints: 0,
+				pdfViewerEnabled: false,
+				webdriver: false,
+				doNotTrack: null,
+				javaEnabled: () => false,
 				clipboard: constructInternal(() => new Clipboard(document)),
 				permissions: constructInternal(() => new Permissions(document)),
 				userActivation: {
@@ -35626,7 +35702,7 @@ export class Window extends EventTarget {
 	}
 
 	get cookieStore(): globalThis.CookieStore {
-		return noWindowFeature("cookie store");
+		return absent<globalThis.CookieStore>();
 	}
 
 	get devicePixelRatio(): number {
@@ -35733,7 +35809,7 @@ export class Window extends EventTarget {
 	}
 
 	get speechSynthesis(): globalThis.SpeechSynthesis {
-		return noWindowFeature("speech synthesis");
+		return absent<globalThis.SpeechSynthesis>();
 	}
 
 	get status(): string {
@@ -35753,7 +35829,7 @@ export class Window extends EventTarget {
 	}
 
 	get caches(): globalThis.CacheStorage {
-		return noWindowFeature("cache storage");
+		return absent<globalThis.CacheStorage>();
 	}
 
 	get crossOriginIsolated(): boolean {
@@ -35761,15 +35837,15 @@ export class Window extends EventTarget {
 	}
 
 	get indexedDB(): globalThis.IDBFactory {
-		return noWindowFeature("indexed database");
+		return absent<globalThis.IDBFactory>();
 	}
 
 	get navigation(): globalThis.Navigation {
-		return noWindowFeature("navigation API");
+		return absent<globalThis.Navigation>();
 	}
 
 	get scheduler(): globalThis.Scheduler {
-		return noWindowFeature("task scheduler");
+		return absent<globalThis.Scheduler>();
 	}
 
 	get isSecureContext(): boolean {
@@ -35814,24 +35890,24 @@ export class Window extends EventTarget {
 		return undefined;
 	}
 
-	get TrustedHTML(): never {
-		return noWindowFeature("trusted types");
+	get TrustedHTML(): undefined {
+		return undefined;
 	}
 
-	get TrustedScript(): never {
-		return noWindowFeature("trusted types");
+	get TrustedScript(): undefined {
+		return undefined;
 	}
 
-	get TrustedScriptURL(): never {
-		return noWindowFeature("trusted types");
+	get TrustedScriptURL(): undefined {
+		return undefined;
 	}
 
-	get TrustedTypePolicy(): never {
-		return noWindowFeature("trusted types");
+	get TrustedTypePolicy(): undefined {
+		return undefined;
 	}
 
-	get TrustedTypePolicyFactory(): never {
-		return noWindowFeature("trusted types");
+	get TrustedTypePolicyFactory(): undefined {
+		return undefined;
 	}
 
 	// lib.dom's overloads for this interface: the keyed one first.
