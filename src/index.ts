@@ -89,14 +89,14 @@ declare global {
 	}
 }
 
-// Images decode on the runtime's web Worker, running src/decode-worker.ts,
-// which builds to dist/decode-worker.js beside this file. A runtime with
+// Images decode on the runtime's web Worker, running src/image-decode.worker.ts,
+// which builds to dist/image-decode.worker.js beside this file. A runtime with
 // no Worker, as Node is without --experimental-web-worker, and a CommonJS
 // build, which has no import.meta.url, decode on this thread instead.
 setDecodeWorkerURL(
 	typeof import.meta.url === "string"
 		? new URL(
-			`./decode-worker.${import.meta.url.endsWith(".ts") ? "ts" : "js"}`,
+			`./image-decode.worker.${import.meta.url.endsWith(".ts") ? "ts" : "js"}`,
 			import.meta.url,
 		)
 		: null,

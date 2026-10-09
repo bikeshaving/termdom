@@ -2187,7 +2187,7 @@ let current: WorkerState | null = null;
 let workersWork = true;
 let nextRequest = 0;
 
-/** The module src/decode-worker.ts builds to, which decodes off-thread. */
+/** The module src/image-decode.worker.ts builds to, which decodes off-thread. */
 export function setDecodeWorkerURL(url: URL | null): void {
 	if (current !== null) {
 		endWorker(current);

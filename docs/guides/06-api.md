@@ -373,6 +373,3 @@ is a whole server.
 - The types `TermDOMOptions`, `TermDOMEventMap`, `CellSize`,
   `TerminalTransport`, `TerminalCloseInfo`, `TerminalSize`, `ProcessLike`,
   `TTYReadStream`, `TTYWriteStream` and `SSHSessionLike`.
-
-`@b9g/termdom/decode-worker` is the module that decodes images on a
-`Worker`. Programs do not import it.
