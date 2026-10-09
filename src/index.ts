@@ -1575,7 +1575,18 @@ export function installGlobals(termDOM: TermDOM): () => void {
 		}
 	};
 	termDOM.window.addEventListener("unhandledrejection", hear);
+	const reasons = new WeakMap<object, unknown>();
+	const onHandled = (promise: Promise<unknown>) => {
+		dispatchAsUserAgent(
+			termDOM.window,
+			new termDOM.window.PromiseRejectionEvent("rejectionhandled", {
+				promise,
+				reason: reasons.get(promise),
+			}),
+		);
+	};
 	const onRejection = (reason: unknown, promise: Promise<unknown>) => {
+		reasons.set(promise, reason);
 		if (!heard.has(promise)) {
 			const event = new termDOM.window.PromiseRejectionEvent(
 				"unhandledrejection",
@@ -1590,6 +1601,11 @@ export function installGlobals(termDOM: TermDOM): () => void {
 		reportUncaught(termDOM, reason);
 	};
 	process.on("unhandledRejection", onRejection);
+	// Deno fires its own rejectionhandled at the global, which is the
+	// window's now, after the process hears of it.
+	if (!("Deno" in globalThis)) {
+		process.on("rejectionHandled", onHandled);
+	}
 	global[kGlobalsInstalled] = true;
 	let uninstalled = false;
 	return () => {
@@ -1598,6 +1614,7 @@ export function installGlobals(termDOM: TermDOM): () => void {
 		}
 		uninstalled = true;
 		process.removeListener("unhandledRejection", onRejection);
+		process.removeListener("rejectionHandled", onHandled);
 		termDOM.window.removeEventListener("unhandledrejection", hear);
 		// A name something else has since redefined is that code's now.
 		for (const [name, {ours, before}] of installed) {

@@ -257,6 +257,45 @@ test("while installed, an unhandled rejection fires unhandledrejection and is re
 	term.dispose();
 });
 
+test("while installed, a rejection handled late fires rejectionhandled on the window once", () => {
+	const term = new TermDOM();
+	const listeners = process.listenerCount("rejectionHandled");
+	const uninstall = installGlobals(term);
+	// Deno fires its own at the global, which is the window's.
+	if ("Deno" in globalThis) {
+		expect(process.listenerCount("rejectionHandled")).toBe(listeners);
+		uninstall();
+		term.dispose();
+		return;
+	}
+	expect(process.listenerCount("rejectionHandled")).toBe(listeners + 1);
+	const heard: PromiseRejectionEvent[] = [];
+	const listener = (event: Event) => {
+		heard.push(event as PromiseRejectionEvent);
+	};
+	term.window.addEventListener("rejectionhandled", listener);
+	const reason = new Error("late");
+	const promise = Promise.resolve();
+	try {
+		const unhandled = process.listeners("unhandledRejection").at(-1)!;
+		const handledLate = process.listeners("rejectionHandled").at(-1)!;
+		term.window.addEventListener("unhandledrejection", (event) =>
+			event.preventDefault(),
+		);
+		unhandled(reason, promise);
+		handledLate(promise);
+		expect(heard.length).toBe(1);
+		expect(heard[0].type).toBe("rejectionhandled");
+		expect(heard[0].promise).toBe(promise);
+		expect(heard[0].reason).toBe(reason);
+	} finally {
+		uninstall();
+	}
+	expect(process.listenerCount("rejectionHandled")).toBe(listeners);
+	term.window.removeEventListener("rejectionhandled", listener);
+	term.dispose();
+});
+
 test("the runtime's storage stays where it has one, and the window's fills in where it has none", () => {
 	const had = {
 		localStorage: "localStorage" in globalThis,
