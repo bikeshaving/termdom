@@ -118,6 +118,49 @@ test("a frame callback's exception does not stop the frames", async () => {
 	await dom.dispose();
 });
 
+test("a timer's or a microtask's exception is reported, and the page goes on", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = attached(terminal);
+	const {window} = dom;
+	const seen: string[] = [];
+	window.addEventListener("error", (event) => {
+		seen.push((event as ErrorEvent).message);
+		event.preventDefault();
+	});
+	await nextFrame(dom);
+	window.setTimeout((word: string) => {
+		throw new Error(word);
+	}, 0, "timeout");
+	let ticks = 0;
+	const interval = window.setInterval(() => {
+		ticks++;
+		if (ticks <= 2) {
+			throw new Error(`interval ${ticks}`);
+		}
+		window.clearInterval(interval);
+	}, 1);
+	window.queueMicrotask(() => {
+		throw new Error("microtask");
+	});
+	await new Promise((resolve) => setTimeout(resolve, 60));
+	expect(seen.sort()).toEqual([
+		"interval 1",
+		"interval 2",
+		"microtask",
+		"timeout",
+	]);
+	expect(ticks).toBe(3);
+	// A cleared timer still clears.
+	let fired = false;
+	const timer = window.setTimeout(() => {
+		fired = true;
+	}, 5);
+	window.clearTimeout(timer);
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(fired).toBe(false);
+	await dom.dispose();
+});
+
 test("an observer's exception is reported and the observer goes on", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = attached(terminal);

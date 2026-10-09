@@ -36265,16 +36265,36 @@ const platform = {
 // frames, the clipboard) as it mounts the document.
 function buildWindow(document: Document): Window {
 	const window = new Window(document) as unknown as Record<string, unknown>;
+	// HTML reports an exception a timer or a microtask lets escape, as it
+	// does a listener's, and the page goes on. The runtime's own would end
+	// the process.
+	const guard = (handler: unknown, args: unknown[]): unknown =>
+		typeof handler !== "function"
+			? handler
+			: () => {
+				try {
+					(handler as (...args: unknown[]) => void)(...args);
+				} catch (error) {
+					reportError(error, document);
+				}
+			};
 	Object.assign(window, platform, {
 		// The platform's DOMException, which is the one the DOM and the CSSOM
 		// throw. A caller's `instanceof DOMException` has to match the class
 		// the engine builds its errors from.
 		DOMException: PlatformDOMException,
-		setTimeout: globalThis.setTimeout.bind(globalThis),
+		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) =>
+			globalThis.setTimeout(guard(handler, args) as () => void, timeout),
 		clearTimeout: globalThis.clearTimeout.bind(globalThis),
-		setInterval: globalThis.setInterval.bind(globalThis),
+		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) =>
+			globalThis.setInterval(guard(handler, args) as () => void, timeout),
 		clearInterval: globalThis.clearInterval.bind(globalThis),
-		queueMicrotask: globalThis.queueMicrotask.bind(globalThis),
+		queueMicrotask: (callback: unknown) => {
+			if (typeof callback !== "function") {
+				throw new TypeError("queueMicrotask needs a function");
+			}
+			globalThis.queueMicrotask(guard(callback, []) as () => void);
+		},
 		atob: globalThis.atob.bind(globalThis),
 		btoa: globalThis.btoa.bind(globalThis),
 		fetch: globalThis.fetch.bind(globalThis),
