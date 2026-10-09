@@ -220,6 +220,8 @@ document.addEventListener("keydown", (event: Event) => {
   } else {
     return;
   }
+  // The arrows would also scroll the document, as in a browser.
+  event.preventDefault();
   refresh();
 });
 

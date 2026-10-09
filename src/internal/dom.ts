@@ -17267,6 +17267,24 @@ export class HTMLInputElement extends HTMLElement {
 			// the same reason the readline chords edit.
 				if (key === " " || key === "Enter") {
 					this.click();
+					return;
+				}
+				// The arrows move to the previous or next radio of the group, as
+				// a browser's do, checking it and wrapping at the ends.
+				const step = key === "ArrowUp" || key === "ArrowLeft"
+					? -1
+					: key === "ArrowDown" || key === "ArrowRight" ? 1 : 0;
+				if (this.type === "radio" && step !== 0) {
+					event.preventDefault();
+					const group = getRadioGroup(this).filter(
+						(radio) => radio === this || !isActuallyDisabled(radio),
+					);
+					const next = group[(group.indexOf(this) + step + group.length) %
+						group.length];
+					if (next !== this) {
+						next.focus();
+						next.click();
+					}
 				}
 				return;
 			}
