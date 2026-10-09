@@ -14498,10 +14498,6 @@ class HTMLCanvasElement extends HTMLElement {
 		options?: globalThis.CanvasRenderingContext2DSettings,
 	): globalThis.CanvasRenderingContext2D | null;
 	getContext(
-		contextId: "termdom-cellgrid",
-		options?: unknown,
-	): CanvasCellGridContext | null;
-	getContext(
 		contextId: "bitmaprenderer",
 		options?: globalThis.ImageBitmapRenderingContextSettings,
 	): globalThis.ImageBitmapRenderingContext | null;
