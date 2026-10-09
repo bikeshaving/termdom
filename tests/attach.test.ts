@@ -787,3 +787,20 @@ test("after dispose(), attach(), print() and renderANSI() fail with InvalidState
 		"InvalidStateError",
 	]);
 });
+
+test("a transport serves the first TermDOM to attach, and another fails with InvalidStateError", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const first = new TermDOM({transport: terminal.transport});
+	await first.attach();
+	let failure = "";
+	await new TermDOM({transport: terminal.transport})
+		.attach()
+		.catch((error: DOMException) => (failure = error.name));
+	expect(failure).toBe("InvalidStateError");
+	await first.dispose();
+	failure = "";
+	await new TermDOM({transport: terminal.transport})
+		.attach()
+		.catch((error: DOMException) => (failure = error.name));
+	expect(failure).toBe("InvalidStateError");
+});

@@ -286,7 +286,13 @@ since.
 
 The interface between the engine and a terminal, for embedding TermDOM
 somewhere other than a process — an SSH server, a browser terminal, a
-test harness:
+test harness. A transport serves one TermDOM: the first to attach takes
+its streams for good, and another that attaches to it, even after the
+first is disposed, rejects with an `InvalidStateError`. To show another
+document on the same terminal, keep the TermDOM and replace its
+document's contents, or, on the process, attach a new TermDOM with a new
+`transportFromProcess()`. An SSH session opens its shell once, so it has
+one transport, and one TermDOM.
 
 ```ts
 interface TerminalTransport {

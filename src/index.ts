@@ -336,6 +336,10 @@ export interface TermDOMEventMap {
 	fetch: FetchEvent;
 }
 
+// A transport serves the one TermDOM that first attached to it, which
+// takes its streams for good.
+const transportUsers = new WeakMap<TerminalTransport, TermDOM>();
+
 export interface TermDOM {
 	[kFramebuffer]: Framebuffer;
 	[kLayout]: Layout;
@@ -603,7 +607,8 @@ export class TermDOM extends EventTarget {
 	 * Takes over the terminal the constructor was given: starts the
 	 * session, sends the startup queries, enables mouse reporting. When the
 	 * transport fails to get ready, it rejects and can be called again.
-	 * After dispose() it rejects with an InvalidStateError.
+	 * After dispose(), or on a transport another TermDOM has attached to,
+	 * it rejects with an InvalidStateError.
 	 */
 	attach(): Promise<void> {
 		if (this[kLifecycle] === "disposed") {
@@ -612,6 +617,16 @@ export class TermDOM extends EventTarget {
 		if (isAttached(this)) {
 			return this[kAttachReady];
 		}
+		const user = transportUsers.get(this[kTransport]);
+		if (user !== undefined && user !== this) {
+			return Promise.reject(
+				new DOMException(
+					"The transport has served another TermDOM",
+					"InvalidStateError",
+				),
+			);
+		}
+		transportUsers.set(this[kTransport], this);
 		// Resolves when the first frame has been written. The negotiations'
 		// silence timeouts must not delay that.
 		this[kLifecycle] = "attaching";
