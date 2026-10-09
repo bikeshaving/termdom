@@ -77,6 +77,14 @@ export interface TerminalTransport {
 	readonly closed: Promise<TerminalCloseInfo>;
 
 	/**
+	 * Stops the program as a shell's job control does, and resolves when it
+	 * continues. The engine hands the terminal back before it calls this
+	 * and takes it again after. Absent where nothing can suspend the
+	 * program, and Ctrl+Z is then an ordinary key.
+	 */
+	suspend?(): Promise<void>;
+
+	/**
 	 * window.close()'s last act, after the engine has flushed and disposed. A
 	 * transport that owns its medium ends it. One that does not (an embedded
 	 * pane, a test) does nothing.
@@ -1136,6 +1144,33 @@ export class Exchange extends EventTarget {
 		void this.write(output);
 	}
 
+	/**
+	 * Resets every engaged mode without forgetting it, so the terminal is
+	 * the shell's while the program is suspended.
+	 */
+	releaseModes(): void {
+		for (const name of MODE_RESTORE_ORDER) {
+			if (this[kEngagedModes].has(name)) {
+				void this.write(MODE_SPELLINGS[name].reset);
+			}
+		}
+		if (this[kPriorBidiMode] === 1) {
+			void this.write(BIDI_IMPLICIT);
+		}
+	}
+
+	/** Sets every engaged mode again once a suspended program continues. */
+	reclaimModes(): void {
+		if (this[kPriorBidiMode] === 1) {
+			void this.write(BIDI_EXPLICIT);
+		}
+		for (const name of MODE_RESTORE_ORDER) {
+			if (this[kEngagedModes].has(name)) {
+				void this.write(MODE_SPELLINGS[name].set);
+			}
+		}
+	}
+
 	restoreEngagedModes(): void {
 		for (const name of MODE_RESTORE_ORDER) {
 			if (this[kEngagedModes].delete(name)) {
@@ -2016,6 +2051,16 @@ function routeItems(session: Exchange, items: WireItem[]): void {
 			case "key":
 				// Raw mode delivers Ctrl-C as data. Closing is the window's
 				// decision, and a close it allows is an interrupt.
+				// Ctrl+Z suspends, where the transport can, and is no key either.
+				if (
+					item.ctrlKey &&
+					item.key === "z" &&
+					session[kTransport].suspend !== undefined
+				) {
+					flushKeys();
+					session.dispatchEvent(new Event("suspend"));
+					break;
+				}
 				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
 					session[kInterrupted] = true;
@@ -2202,7 +2247,8 @@ export interface TTYReadStream {
 	setEncoding?(encoding?: string): this;
 }
 
-type ProcessSignal = "SIGWINCH" | "SIGINT" | "SIGTERM" | "SIGHUP" | "exit";
+type ProcessSignal =
+	"SIGWINCH" | "SIGINT" | "SIGTERM" | "SIGHUP" | "SIGCONT" | "exit";
 
 export interface ProcessLike {
 	stdin?: TTYReadStream;
@@ -2211,6 +2257,10 @@ export interface ProcessLike {
 	on(event: ProcessSignal, listener: () => void): unknown;
 	removeListener?(event: ProcessSignal, listener: () => void): unknown;
 	exit(code?: number): never;
+	// For suspending: the process stops itself with SIGTSTP.
+	pid?: number;
+	platform?: string;
+	kill?(pid: number, signal: string): unknown;
 }
 
 // An app that exits without disposing would strand the shell with no
@@ -2471,6 +2521,31 @@ export function transportFromProcess(
 			stderr.write(text + "\n");
 			return true;
 		},
+		// Job control stops a process with SIGTSTP, which raw mode keeps the
+		// terminal from sending, so the process sends it to itself. Windows
+		// has no such signal.
+		suspend:
+			proc.kill === undefined ||
+			proc.pid === undefined ||
+			(proc.platform ?? process.platform) === "win32"
+				? undefined
+				: () => new Promise<void>((resolve) => {
+					const stdin = proc.stdin;
+					if (!engaged || stdin === undefined) {
+						resolve();
+						return;
+					}
+					stdin.setRawMode?.(false);
+					stdin.pause();
+					const onContinue = () => {
+						proc.removeListener?.("SIGCONT", onContinue);
+						stdin.setRawMode?.(true);
+						stdin.resume();
+						resolve();
+					};
+					proc.on("SIGCONT", onContinue);
+					proc.kill!(proc.pid!, "SIGTSTP");
+				}),
 		ready: Promise.resolve(),
 		readable,
 		writable,
