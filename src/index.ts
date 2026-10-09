@@ -1452,15 +1452,20 @@ function renderStaticHTML(
 	return renderStatic(renderer, lineEnding);
 }
 
-// The runtime's event classes stay its own. Its EventTargets take only
-// its own events on Bun and Deno, and the document takes them too, so
-// they serve both.
-const RUNTIME_EVENT_CLASSES = new Set([
+// Names that stay the runtime's wherever it has them. Its event classes:
+// its EventTargets take only its own events on Bun and Deno, and the
+// document takes them too, so they serve both. Its storage: Deno's, and
+// Node's given --localstorage-file, persist where the window's do not,
+// and reading Node's when it has none prints a warning, so only whether
+// the name is there is asked.
+const RUNTIME_KEPT = new Set([
 	"Event",
 	"EventTarget",
 	"CustomEvent",
 	"ErrorEvent",
 	"MessageEvent",
+	"localStorage",
+	"sessionStorage",
 ]);
 
 // Shared by every copy of this module a process loads, so two copies
@@ -1473,7 +1478,7 @@ const kGlobalsInstalled = Symbol.for("@b9g/termdom.globalsInstalled");
  * the way browser code does: frameworks, editors, DOM libraries. The
  * process then reads as the window does, so a name the runtime defines
  * too, such as `setTimeout` or `navigator`, is the window's until
- * uninstalled. The runtime's event classes stay its own. A promise
+ * uninstalled. The runtime's event classes and storage stay its own. A promise
  * rejected with no handler fires unhandledrejection on the window and is
  * reported, where the runtime would end the process. Methods are bound to the window and other
  * properties read through to it, so `scrollY` stays current. Returns a
@@ -1501,7 +1506,7 @@ export function installGlobals(termDOM: TermDOM): () => void {
 				name === "constructor" ||
 				name === "globalThis" ||
 				installed.has(name) ||
-				(RUNTIME_EVENT_CLASSES.has(name) && name in globalThis)
+				(RUNTIME_KEPT.has(name) && name in globalThis)
 			) {
 				continue;
 			}

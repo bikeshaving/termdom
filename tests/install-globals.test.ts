@@ -190,3 +190,32 @@ test("while installed, an unhandled rejection fires unhandledrejection and is re
 	term.window.removeEventListener("unhandledrejection", listener);
 	term.dispose();
 });
+
+test("the runtime's storage stays where it has one, and the window's fills in where it has none", () => {
+	const had = {
+		localStorage: "localStorage" in globalThis,
+		sessionStorage: "sessionStorage" in globalThis,
+	};
+	const before = {
+		localStorage: Object.getOwnPropertyDescriptor(globalThis, "localStorage"),
+		sessionStorage: Object.getOwnPropertyDescriptor(
+			globalThis,
+			"sessionStorage",
+		),
+	};
+	const term = new TermDOM();
+	const uninstall = installGlobals(term);
+	try {
+		for (const name of ["localStorage", "sessionStorage"] as const) {
+			if (had[name]) {
+				expect(Object.getOwnPropertyDescriptor(globalThis, name))
+					.toEqual(before[name]);
+			} else {
+				expect(global[name]).toBe(term.window[name]);
+			}
+		}
+	} finally {
+		uninstall();
+		term.dispose();
+	}
+});
