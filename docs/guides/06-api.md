@@ -60,14 +60,17 @@ Options:
   So a stylesheet written in `ch` and `lh` looks the same at every size.
 
 - `csp?: string` — what the document's markup may load, as a
-  `Content-Security-Policy` header states it. Defaults to
-  `"default-src 'none'"`, so nothing loads until the program allows it;
-  `""` sets no policy. The images guide has recipes.
-- `graphics?: "auto" | "cells" | "none"` — how the document draws
-  pixels, for an `<img>` and a canvas's `"2d"` context. `"auto"`
-  (default) uses the best way the terminal has, `"cells"` draws them two
-  to a cell in half blocks, and `"none"` draws none: images show their `alt` text and
-  `getContext("2d")` returns `null`.
+  `Content-Security-Policy` header states it. Left out, there is no
+  policy and every load is allowed, as in a browser. A program showing
+  markup it does not trust sets one; the images guide has recipes.
+- `images?: "auto" | "cells" | "none"` — how an `<img>` draws. `"auto"`
+  (default) uses the best way the terminal has, `"cells"` draws two
+  pixels to a cell in half blocks, and `"none"` draws nothing: an image
+  loads nothing and shows its `alt` text.
+- `canvas?: "auto" | "cells" | "none"` — how a canvas's `"2d"` context
+  draws, the same way. With `"none"`, `getContext("2d")` returns `null`
+  and the canvas shows its fallback content. The `"termdom-cellgrid"`
+  context works either way.
 - `colorDepth?: "auto" | ColorDepth` — the colors the terminal shows:
   `24`, `8` or `4`, the bits `screen.colorDepth` reports, or `"rgb"`,
   `"256"` or `"ansi"`, the same three by name. With `"auto"` (default),

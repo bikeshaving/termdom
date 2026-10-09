@@ -718,13 +718,9 @@ test("in quirks mode, an image with a size that will not show is a box", async (
 	dom.dispose();
 });
 
-test("with graphics off, an image loads nothing and shows its alt text", async () => {
+test("with images off, an image loads nothing and shows its alt text", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-		csp: "",
-		graphics: "none",
-	});
+	const dom = new TermDOM({transport: terminal.transport, images: "none"});
 	let fetched = 0;
 	dom.addEventListener("fetch", () => {
 		fetched++;
@@ -745,11 +741,34 @@ test("with graphics off, an image loads nothing and shows its alt text", async (
 	dom.dispose();
 });
 
-test("graphics is \"auto\", \"cells\" or \"none\"", () => {
-	for (const graphics of ["auto", "cells", "none"] as const) {
-		new TermDOM({transport: new MockProcess().transport, graphics}).dispose();
+test("images and canvas are \"auto\", \"cells\" or \"none\"", () => {
+	for (const value of ["auto", "cells", "none"] as const) {
+		new TermDOM({
+			transport: new MockProcess().transport,
+			images: value,
+			canvas: value,
+		}).dispose();
 	}
-	expect(() => new TermDOM({graphics: "kitty" as "cells"})).toThrow(TypeError);
+	expect(() => new TermDOM({images: "kitty" as "cells"})).toThrow(TypeError);
+	expect(() => new TermDOM({canvas: "kitty" as "cells"})).toThrow(TypeError);
+});
+
+test("by default images load from anywhere and a canvas draws", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	let fetched = 0;
+	dom.addEventListener("fetch", (event) => {
+		fetched++;
+		event.respondWith(Response.error());
+	});
+	const image = dom.document.createElement("img");
+	image.src = "https://example.com/logo.png";
+	const canvas = dom.document.createElement("canvas");
+	dom.document.body.append(image, canvas);
+	await until(() => fetched === 1);
+	expect(fetched).toBe(1);
+	expect(canvas.getContext("2d")).not.toBeNull();
+	dom.dispose();
 });
 
 test("an image is a box while it loads only when it has a size", async () => {

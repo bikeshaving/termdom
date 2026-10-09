@@ -16,15 +16,18 @@ lower half block only the seam between the two pixels is a little
 low. The pixels are ordinary cells, so they scroll, clip and
 redraw like text, and they work over SSH and inside tmux.
 
-The `graphics` option says how pixels are drawn. `"auto"`, the
-default, uses the best way the terminal has, which today is always
-cells. `"cells"` draws cells whatever the terminal could do. `"none"`
-draws no pixels at all: an `<img>` loads nothing and shows its `alt` text, as a
+Two options say how pixels are drawn, `images` for an `<img>` and
+`canvas` for a canvas's `"2d"` context. `"auto"`, the default for both,
+uses the best way the terminal has, which today is always cells.
+`"cells"` draws cells whatever the terminal could do. `"none"` draws
+nothing: an `<img>` loads nothing and shows its `alt` text, as a
 browser does with images turned off, and `getContext("2d")` returns
-`null`, so a canvas shows its fallback content.
+`null`, so a canvas shows its fallback content. A page written for a
+browser often reads better that way, since half blocks blur a logo or
+a patterned picture that its fallback says plainly.
 
 ```ts
-new TermDOM({graphics: "none"});
+new TermDOM({images: "none", canvas: "none"});
 ```
 
 ## `<img>`
@@ -41,23 +44,22 @@ such as its working directory.
 
 ### Loading
 
-Nothing loads unless the program allows it, with the `csp` option:
+An image loads from wherever its `src` points, as in a browser that
+got no policy. A program showing markup it does not trust, such as
+email, narrows that with the `csp` option:
 
 ```ts
-// Images from anywhere on the web, and data: URLs.
+// Images from the web and data: URLs only.
 new TermDOM({csp: "img-src https: data:"});
 
 // A mail client: attachments by cid:, nothing remote.
 new TermDOM({csp: "img-src cid: data:"});
-
-// Anything, as a browser with no policy loads.
-new TermDOM({csp: ""});
 ```
 
 The option is a Content Security Policy, in the syntax of a
 `Content-Security-Policy` header. An `<img>` loads only what `img-src`
-allows, or `default-src` when there is no `img-src`. The default is
-`default-src 'none'`.
+allows, or `default-src` when there is no `img-src`. Left out, or `""`,
+there is no policy.
 
 Source expressions match as CSP Level 3 defines them: `'none'`,
 `'self'`, `*`, a scheme such as `https:` or `cid:`, and a host such as

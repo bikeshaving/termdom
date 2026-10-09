@@ -75,10 +75,11 @@ setInterval(() => {
   screen; exiting restores the shell and its scrollback.
 - **Images and canvas** `<img>` decodes PNG, JPEG, GIF and BMP on the
   runtime's web `Worker` where there is one, and `<canvas>` has a 2D
-  context and a `"termdom-cellgrid"` context; pixels are drawn two to a cell with half blocks. Images load
-  only what the program's Content Security Policy allows, such as
-  `new TermDOM({csp: "img-src https: data:"})`, and a
-  `"fetch"` listener can answer each load, as a Service Worker does.
+  context and a `"termdom-cellgrid"` context; pixels are drawn two to a
+  cell with half blocks. The `images` and `canvas` options turn either
+  off, the `csp` option narrows what markup may load, as
+  `new TermDOM({csp: "img-src https: data:"})`, and a `"fetch"` listener
+  can answer each load, as a Service Worker does.
 
 ## How it works
 

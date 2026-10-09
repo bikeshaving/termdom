@@ -328,7 +328,8 @@ const kCascade = Symbol("cascade");
 const kExchange = Symbol("exchange");
 const kFramebuffer = Symbol("framebuffer");
 const kCellSize = Symbol("cellSize");
-const kGraphics = Symbol("graphics");
+const kImages = Symbol("images");
+const kCanvas = Symbol("canvas");
 const kLoad = Symbol("load");
 const kLoadSignal = Symbol("loadSignal");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
@@ -14579,7 +14580,7 @@ class HTMLCanvasElement extends HTMLElement {
 		if (id === "2d") {
 			// A document that draws no pixels has no 2d context, and the
 			// canvas shows its fallback content.
-			if (getAttachedDocument(this)?.[kGraphics] === "none") {
+			if (getAttachedDocument(this)?.[kCanvas] === "none") {
 				return null;
 			}
 			this[kCanvasContext] = createContext2D({
@@ -17013,7 +17014,7 @@ function updateImageData(image: HTMLImageElement): void {
 	// No source, or images disabled, as HTML's "update the image data"
 	// puts it: the request ends unavailable with nothing to report, and the
 	// image shows its alt text.
-	if (chosen === null || getAttachedDocument(image)?.[kGraphics] === "none") {
+	if (chosen === null || getAttachedDocument(image)?.[kImages] === "none") {
 		state.status = "unavailable";
 		state.url = "";
 		state.bitmap = null;
@@ -25024,8 +25025,10 @@ export interface Document {
 	[kFramebuffer]: Framebuffer;
 	// The program's cellSize option, which getCellSize reads.
 	[kCellSize]: CellSizeSetting;
-	// How the document draws pixels, or "none" when it draws none.
-	[kGraphics]: GraphicsSetting;
+	// How the document draws an <img>'s pixels and a 2d canvas's, or
+	// "none" when it draws none.
+	[kImages]: GraphicsSetting;
+	[kCanvas]: GraphicsSetting;
 	[kLoad]: ResourceLoader;
 	[kLoadSignal]: AbortSignal;
 	// Where an exception the page let escape goes once the window's error
@@ -33810,7 +33813,8 @@ export interface DocumentEngine {
 	exchange: Exchange;
 	framebuffer: Framebuffer;
 	cellSize: CellSizeSetting;
-	graphics: GraphicsSetting;
+	images: GraphicsSetting;
+	canvas: GraphicsSetting;
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
 	// Aborts when the TermDOM is disposed, and the document's loads with it.
@@ -33831,7 +33835,8 @@ export function attachDocument(
 	if (attached[kExchange] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
-	const {layout, cascade, exchange, framebuffer, cellSize, graphics} = engine;
+	const {layout, cascade, exchange, framebuffer, cellSize, images, canvas} =
+		engine;
 	const render = () => engine.render();
 	attached[kRender] = render;
 	attached[kReportUncaught] = (error) => engine.reportUncaught(error);
@@ -33843,7 +33848,8 @@ export function attachDocument(
 	attached[kExchange] = exchange;
 	attached[kFramebuffer] = framebuffer;
 	attached[kCellSize] = cellSize;
-	attached[kGraphics] = graphics;
+	attached[kImages] = images;
+	attached[kCanvas] = canvas;
 	attached[kPendingCaretReveal] = null;
 	attached[kPendingEditingReveal] = null;
 	for (const type of ["input", "select", "change", "selectionchange"]) {
@@ -34335,7 +34341,8 @@ type AttachedDocument =
 		[kExchange]: Exchange;
 		[kFramebuffer]: Framebuffer;
 		[kCellSize]: CellSizeSetting;
-		[kGraphics]: GraphicsSetting;
+		[kImages]: GraphicsSetting;
+		[kCanvas]: GraphicsSetting;
 		[kLoad]: ResourceLoader;
 		[kLoadSignal]: AbortSignal;
 		[kReportUncaught]: (error: unknown) => void;
@@ -34353,11 +34360,14 @@ function getAttachedDocument(
 		: undefined;
 }
 
-/** The graphics option of the TermDOM drawing the node's document. */
-export function getGraphicsSetting(
+/** The images and canvas options of the TermDOM drawing the node's document. */
+export function getGraphicsSettings(
 	node: globalThis.Node,
-): GraphicsSetting | undefined {
-	return getAttachedDocument(node)?.[kGraphics];
+): {images: GraphicsSetting; canvas: GraphicsSetting} | undefined {
+	const attached = getAttachedDocument(node);
+	return attached === undefined
+		? undefined
+		: {images: attached[kImages], canvas: attached[kCanvas]};
 }
 
 /** The cellSize option of the TermDOM drawing the node's document. */

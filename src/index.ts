@@ -20,7 +20,7 @@ import {
 	flushLayout,
 	flushObservers,
 	getCellSizeSetting,
-	getGraphicsSetting,
+	getGraphicsSettings,
 	type GraphicsSetting,
 	hasFrameCallbacks,
 	hoverListenerCount,
@@ -131,26 +131,31 @@ export interface TermDOMOptions {
 	 * as a `Content-Security-Policy` header would state it: an <img> loads
 	 * only what `img-src`, or `default-src` without it, allows. A page's own
 	 * `<meta http-equiv="Content-Security-Policy">` can narrow it, never
-	 * widen it. Defaults to `"default-src 'none'"`, so markup loads nothing
-	 * unless the program allows it. The empty string, like a header with
-	 * no directives, sets no policy and allows every load.
+	 * widen it. Left out, there is no policy and every load is allowed, as
+	 * in a browser that got no header. A program showing markup it does
+	 * not trust, such as email, sets one.
 	 */
 	csp?: string;
 
 	/**
-	 * How the document draws pixels, for an <img> and a canvas's "2d"
-	 * context.
+	 * How an <img> draws.
 	 *
-	 * - `"auto"` (the default): the best way the terminal has. Today that
-	 *   is cells: two pixels to a cell in half blocks, which every
+	 * - `"auto"` (the default): in the best way the terminal has. Today
+	 *   that is cells: two pixels to a cell in half blocks, which every
 	 *   terminal shows.
-	 * - `"cells"`: cells, whatever else the terminal could do.
-	 * - `"none"`: no pixels. An <img> loads nothing and shows its alt text,
-	 *   as HTML renders one when images are disabled, and
-	 *   `getContext("2d")` returns null, so a canvas shows its fallback
-	 *   content.
+	 * - `"cells"`: in cells, whatever else the terminal could do.
+	 * - `"none"`: not at all. An <img> loads nothing and shows its alt
+	 *   text, as HTML renders one when images are disabled.
 	 */
-	graphics?: "auto" | "cells" | "none";
+	images?: "auto" | "cells" | "none";
+
+	/**
+	 * How a canvas's "2d" context draws, with the same values as `images`.
+	 * With `"none"`, `getContext("2d")` returns null, so the canvas shows
+	 * its fallback content. The "termdom-cellgrid" context, which draws
+	 * glyphs rather than pixels, works either way.
+	 */
+	canvas?: "auto" | "cells" | "none";
 
 	/**
 	 * The colors the terminal shows, in the bits `screen.colorDepth`
@@ -203,7 +208,8 @@ function toColorDepth(
 }
 
 function toGraphicsSetting(
-	option: TermDOMOptions["graphics"],
+	name: "images" | "canvas",
+	option: TermDOMOptions["images"],
 ): GraphicsSetting {
 	if (option === undefined || option === "auto" || option === "cells") {
 		return "cells";
@@ -211,10 +217,8 @@ function toGraphicsSetting(
 	if (option === "none") {
 		return "none";
 	}
-	throw new TypeError('graphics must be "auto", "cells" or "none"');
+	throw new TypeError(`${name} must be "auto", "cells" or "none"`);
 }
-
-const DEFAULT_CONTENT_SECURITY_POLICY = "default-src 'none'";
 
 function isSameCell(a: Readonly<CellSize>, b: Readonly<CellSize>): boolean {
 	return a.width === b.width && a.height === b.height;
@@ -357,7 +361,8 @@ export class TermDOM extends EventTarget {
 	constructor(options: TermDOMOptions = {}) {
 		super();
 		const cellSize = toCellSizeSetting(options.cellSize);
-		const graphics = toGraphicsSetting(options.graphics);
+		const images = toGraphicsSetting("images", options.images);
+		const canvas = toGraphicsSetting("canvas", options.canvas);
 		this[kColorDepth] = toColorDepth(options.colorDepth);
 		this[kSealed] = false;
 
@@ -401,12 +406,8 @@ export class TermDOM extends EventTarget {
 					init,
 				),
 			)) as typeof this.window.fetch;
-		const policy = options.csp;
-		let hinted = false;
 		const requestPolicy: RequestPolicy = {
-			policies: parseContentSecurityPolicies(
-				policy ?? DEFAULT_CONTENT_SECURITY_POLICY,
-			),
+			policies: parseContentSecurityPolicies(options.csp ?? ""),
 			signal: this[kLoads].signal,
 			extend: (promise) => {
 				const lifetime = promise.then(() => {}, () => {});
@@ -422,21 +423,6 @@ export class TermDOM extends EventTarget {
 						init,
 					) as never,
 				);
-				// A program that set no policy may not know markup loads
-				// nothing until it does.
-				if (policy === undefined && !hinted) {
-					hinted = true;
-					// A URL that is not HTTP(S) is reported as its scheme alone.
-					const blocked = init.blockedURI!.includes(":")
-						? init.blockedURI
-						: `a ${init.blockedURI}: URL`;
-					reportUncaught(
-						this,
-						`TermDOM blocked ${blocked}. The document's markup ` +
-						"loads nothing until a Content Security Policy allows it: " +
-						"new TermDOM({csp: \"img-src data: https:\"}), for one.",
-					);
-				}
 			},
 		};
 
@@ -471,7 +457,8 @@ export class TermDOM extends EventTarget {
 			exchange: this[kExchange],
 			framebuffer: this[kFramebuffer],
 			cellSize,
-			graphics,
+			images,
+			canvas,
 			load: (request, context) =>
 				answerRequest(this, document, request, context, requestPolicy),
 			loadSignal: this[kLoads].signal,
@@ -1418,12 +1405,15 @@ function renderStaticHTML(
 	const cols = termDOM[kTransport].cols;
 	const cell = getCellSize(termDOM.document);
 	const colorDepth = termDOM[kFramebuffer].colorDepth;
-	const graphics = getGraphicsSetting(termDOM.document)!;
+	const graphics = getGraphicsSettings(termDOM.document)!;
 	if (
 		termDOM[kStaticSibling] &&
 		(termDOM[kStaticSibling][kFramebuffer].cols !== cols ||
 			termDOM[kStaticSibling][kFramebuffer].colorDepth !== colorDepth ||
-			getGraphicsSetting(termDOM[kStaticSibling].document) !== graphics ||
+			getGraphicsSettings(termDOM[kStaticSibling].document)!.images !==
+				graphics.images ||
+			getGraphicsSettings(termDOM[kStaticSibling].document)!.canvas !==
+				graphics.canvas ||
 			!isSameCell(getCellSize(termDOM[kStaticSibling].document), cell))
 	) {
 		void termDOM[kStaticSibling].dispose();
@@ -1431,7 +1421,8 @@ function renderStaticHTML(
 	}
 	termDOM[kStaticSibling] ??= new TermDOM({
 		cellSize: cell === UNIT_CELL ? "unit" : cell,
-		graphics,
+		images: graphics.images === "none" ? "none" : "cells",
+		canvas: graphics.canvas === "none" ? "none" : "cells",
 		colorDepth,
 		transport: {
 			cols,

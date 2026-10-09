@@ -1281,9 +1281,9 @@ test("createImageBitmap from a kept-down image crops by each side's ratio, and p
 	dom.dispose();
 });
 
-test("with graphics off, a canvas has no 2d context and keeps its cellgrid", async () => {
+test("with canvas off, a canvas has no 2d context and keeps its cellgrid", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({transport: terminal.transport, graphics: "none"});
+	const dom = new TermDOM({transport: terminal.transport, canvas: "none"});
 	const a = dom.document.createElement("canvas");
 	const b = dom.document.createElement("canvas");
 	dom.document.body.append(a, b);

@@ -80,8 +80,8 @@ async function serve(): Promise<Server> {
 	};
 }
 
-test("without a policy, markup loads nothing, and the block is reported", async () => {
-	const dom = create();
+test("a policy that allows nothing blocks markup, and the block is reported", async () => {
+	const dom = create({csp: "default-src 'none'"});
 	let heard = 0;
 	dom.addEventListener("fetch", () => {
 		heard++;
@@ -538,7 +538,7 @@ test("a SecurityPolicyViolationEvent takes its init, with violatedDirective an a
 	dom.dispose();
 });
 
-test("a program with no policy hears once that markup loads nothing until one allows it", async () => {
+test("without a policy, every load reaches the listeners, and nothing is reported", async () => {
 	const logged: string[] = [];
 	const transport = {
 		...new MockProcess({cols: 40, rows: 12}).transport,
@@ -548,21 +548,21 @@ test("a program with no policy hears once that markup loads nothing until one al
 		},
 	};
 	const dom = new TermDOM({transport});
+	const heard: string[] = [];
+	dom.addEventListener("fetch", (event) => {
+		heard.push(event.request.url);
+		event.respondWith(Response.error());
+	});
+	const violations: unknown[] = [];
+	dom.document.addEventListener("securitypolicyviolation", (event) => {
+		violations.push(event);
+	});
 	dom.document.body.innerHTML =
-		"<img id=a src=\"https://example.com/a.png\"><img id=b src=\"https://example.com/b.png\">";
+		"<img src=\"https://example.com/a.png\"><img src=\"cid:part1\">";
 	const images = [...dom.document.querySelectorAll("img")];
 	await Promise.all(images.map(settled));
-	expect(logged).toHaveLength(1);
-	expect(logged[0]).toContain("csp");
+	expect(heard).toEqual(["https://example.com/a.png", "cid:part1"]);
+	expect(violations).toEqual([]);
+	expect(logged).toEqual([]);
 	dom.dispose();
-
-	const quiet: string[] = [];
-	const set = new TermDOM({
-		transport: {...transport, logError: (text: string) => quiet.push(text) > 0},
-		csp: "img-src 'none'",
-	});
-	set.document.body.innerHTML = "<img src=\"https://example.com/a.png\">";
-	await settled(set.document.querySelector("img")!);
-	expect(quiet).toEqual([]);
-	set.dispose();
 });
