@@ -64,7 +64,9 @@ as Chromium ships them.</p><pre class="language-css"><code class="language-css">
 <span class="token selector">select::picker-icon</span> <span class="token punctuation">{</span> <span class="token property">color</span><span class="token punctuation">:</span> gray<span class="token punctuation">;</span> <span class="token punctuation">}</span></code></pre><p><code>::slider-track</code> and <code>::slider-fill</code> are CSS Form Control Styling&#039;s
 (css-forms-1). The track holds the fill and shows past it. A meter
 matches <code>:optimal-value</code> when its value is in its optimum region,
-<code>:low-value</code> below <code>low</code>, and <code>:high-value</code> above <code>high</code>.</p><pre class="language-css"><code class="language-css"><span class="token selector">progress::slider-fill</span> <span class="token punctuation">{</span> <span class="token property">color</span><span class="token punctuation">:</span> green<span class="token punctuation">;</span> <span class="token punctuation">}</span>
+<code>:low-value</code> below <code>low</code>, and <code>:high-value</code> above <code>high</code>. css-forms-1 is
+an editor&#039;s draft, so these follow it as it changes; the WebKit and
+Firefox names below have shipped for years and are the stable choice.</p><pre class="language-css"><code class="language-css"><span class="token selector">progress::slider-fill</span> <span class="token punctuation">{</span> <span class="token property">color</span><span class="token punctuation">:</span> green<span class="token punctuation">;</span> <span class="token punctuation">}</span>
 <span class="token selector">meter:low-value::slider-fill</span> <span class="token punctuation">{</span> <span class="token property">color</span><span class="token punctuation">:</span> orange<span class="token punctuation">;</span> <span class="token punctuation">}</span></code></pre><p>The prefixed names WebKit and Firefox ship work too, as aliases:
 <code>::-webkit-progress-bar</code> and <code>::-webkit-meter-bar</code> are the track,
 <code>::-webkit-progress-value</code>, <code>::-moz-progress-bar</code> and <code>::-moz-meter-bar</code>
