@@ -235,8 +235,8 @@ Defines the window's names on `globalThis`, for code that reads
 `document`, `window`, `Element`, `getSelection` and the like as globals:
 React, Vue, Svelte, CodeMirror. The process then reads as the window
 does. A name the runtime defines too, such as `setTimeout`,
-`navigator`, `localStorage` or, on Bun and Deno, `addEventListener` and
-`alert`, is the window's until uninstalled. Methods are bound to the
+`navigator` or, on Bun and Deno, `addEventListener` and `alert`, is the
+window's until uninstalled. Methods are bound to the
 window, and other properties read and write through to it, so `scrollY`
 stays current.
 
@@ -254,7 +254,11 @@ throws.
 The runtime's event classes, `Event`, `EventTarget`, `CustomEvent`,
 `ErrorEvent` and `MessageEvent`, stay its own: on Bun and Deno the
 runtime's own event targets accept only its own events, and the
-document accepts them too, so they serve both. What a terminal does not
+document accepts them too, so they serve both. So do `localStorage` and
+`sessionStorage` where the runtime has them: Deno's, and Node's given
+`--localstorage-file`, keep what is stored between runs, where the
+window's keep it in memory. On Bun and Node 20, which have none, the
+window's are installed. What a terminal does not
 have, such as `indexedDB` or `caches`, is not installed, so feature
 detection takes its fallback.
 
