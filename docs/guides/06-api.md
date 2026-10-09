@@ -1,6 +1,6 @@
 ---
 title: API
-description: The TermDOM class, installGlobals, the TerminalTransport interface, and transportFromProcess.
+description: The TermDOM class, installGlobals, the TerminalTransport interface, transportFromProcess and transportFromSSH.
 ---
 
 ## `new TermDOM(options?)`
@@ -293,9 +293,6 @@ a streaming decoder so code points never split. Escape sequences may
 split across chunks; the engine reassembles them. When `closed` fulfills,
 the engine disposes in response.
 
-[`examples/ssh.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/ssh.ts)
-implements one over an SSH session's channel.
-
 ## `transportFromProcess(proc?, options?)`
 
 Returns a `TerminalTransport` over a Node-process-shaped object.
@@ -320,10 +317,54 @@ The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
 when it is not a terminal → `logError`, and an exit hook that restores
 the cursor if the app exits without disposing.
 
+## `transportFromSSH(session, options?)`
+
+Returns a `TerminalTransport` over an SSH session from
+[ssh2](https://github.com/mscdex/ssh2), for a program that is its own
+SSH server and gives each session a document of its own.
+
+```ts
+import {readFileSync} from "node:fs";
+import {TermDOM, transportFromSSH} from "@b9g/termdom";
+import ssh2 from "ssh2";
+
+const hostKey = readFileSync("host_key");
+new ssh2.Server({hostKeys: [hostKey]}, (client) => {
+	client.on("authentication", (context) => context.accept());
+	client.on("session", (accept) => {
+		const term = new TermDOM({transport: transportFromSSH(accept())});
+		term.document.body.textContent = "Hello over SSH";
+		term.attach();
+	});
+}).listen(2222);
+```
+
+- `session` — what accepting ssh2's `"session"` event returns, or
+  anything of its shape (the exported `SSHSessionLike` type). TermDOM
+  does not depend on ssh2.
+- `options.sharesScreen` — defaults to true: the client's shell is above
+  the `ssh` command, so the document anchors below it.
+- `options.colorScheme` — as for `transportFromProcess`.
+
+The transport accepts the session's pty request and takes its size, or
+80×24 without one. It accepts the shell request, and `ready` resolves
+when that opens the channel that carries input and frames. Each window
+change is a resize. Other requests, such as `exec`, are left to ssh2,
+which refuses them. The session closes when the channel closes or the
+client's input ends, as with `ssh host < /dev/null`, and the channel
+ends once the terminal's modes are restored. `window.close()` sends the
+exit status and ends the channel.
+
+To serve an app to real users, an OpenSSH `Match` block with
+`ForceCommand node /path/to/app.ts` runs it on a real pty instead, with
+`transportFromProcess`.
+[`examples/ssh.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/ssh.ts)
+is a whole server.
+
 ## Other exports
 
-`TermDOM`, `installGlobals` and `transportFromProcess` are the entry
-points above. The package also exports:
+`TermDOM`, `installGlobals`, `transportFromProcess` and
+`transportFromSSH` are the entry points above. The package also exports:
 
 - `FetchEvent`, `ExtendableEvent` and the `FetchEventInit` type, for the
   `"fetch"` event.
@@ -331,7 +372,7 @@ points above. The package also exports:
   `"termdom-cellgrid"` context.
 - The types `TermDOMOptions`, `TermDOMEventMap`, `CellSize`,
   `TerminalTransport`, `TerminalCloseInfo`, `TerminalSize`, `ProcessLike`,
-  `TTYReadStream` and `TTYWriteStream`.
+  `TTYReadStream`, `TTYWriteStream` and `SSHSessionLike`.
 
 `@b9g/termdom/decode-worker` is the module that decodes images on a
 `Worker`. Programs do not import it.

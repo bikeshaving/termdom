@@ -1181,6 +1181,16 @@ export class Exchange extends EventTarget {
 		this[kStarted] = true;
 		this[kInput] = input;
 
+		// A transport that learns its size while it gets ready, as an SSH
+		// session does from its pty request, starts at that size.
+		const transport = this[kTransport];
+		const framebuffer = this[kFramebuffer];
+		if (
+			transport.cols !== framebuffer.cols || transport.rows !== framebuffer.rows
+		) {
+			terminalResized(this, transport.cols, transport.rows);
+		}
+
 		this[kReader] = this[kTransport].readable.getReader();
 		void readLoop(this, this[kReader]);
 
@@ -2475,6 +2485,188 @@ export function transportFromProcess(
 		close(info?: TerminalCloseInfo) {
 			disengage();
 			proc.exit(info?.status ?? 0);
+		},
+	};
+}
+
+// The shape transportFromSSH reads: an ssh2 session, and the channel its
+// shell request opens. Tests pass mocks.
+interface SSHChannelLike {
+	write(chunk: string, callback: (error?: Error | null) => void): unknown;
+	on(event: "data", listener: (chunk: Uint8Array | string) => void): unknown;
+	on(event: "end" | "close", listener: () => void): unknown;
+	on(event: "error", listener: (error: unknown) => void): unknown;
+	exit(status: number): unknown;
+	end(): unknown;
+}
+
+export interface SSHSessionLike {
+	on(
+		event: "pty",
+		listener: (
+			accept: (() => void) | undefined,
+			reject: (() => void) | undefined,
+			info: TerminalSize,
+		) => void,
+	): unknown;
+	on(
+		event: "window-change",
+		listener: (
+			accept: (() => void) | undefined,
+			reject: (() => void) | undefined,
+			info: TerminalSize,
+		) => void,
+	): unknown;
+	on(
+		event: "shell",
+		listener: (
+			accept: () => SSHChannelLike | undefined,
+			reject: (() => void) | undefined,
+		) => void,
+	): unknown;
+	on(event: "close", listener: () => void): unknown;
+}
+
+/**
+ * An SSH session as a terminal. It takes the session's pty request for
+ * the size, its window changes as resizes, and its shell request for the
+ * channel, and is ready once that channel opens. The other requests a
+ * session can make, such as exec, are left to the SSH library, which
+ * refuses them. The session closes when the client's input ends or the
+ * channel closes, and closing it sends the exit status and ends the
+ * channel.
+ */
+export function transportFromSSH(
+	session: SSHSessionLike,
+	// The client's shell sits above the ssh command, as a local one does
+	// above a program, so the document anchors below it.
+	options: {sharesScreen?: boolean; colorScheme?: "light" | "dark"} = {},
+): TerminalTransport {
+	let cols = DEFAULT_COLS;
+	let rows = DEFAULT_ROWS;
+	let channel: SSHChannelLike | null = null;
+	let onInput: ((chunk: string) => void) | null = null;
+	let onResize: ((size: TerminalSize) => void) | null = null;
+	let inputEnded = false;
+	let pending = 0;
+	const finish = (status: number) => {
+		if (channel !== null) {
+			channel.exit(status);
+			channel.end();
+			channel = null;
+		}
+	};
+
+	let closedResolve!: (info: TerminalCloseInfo) => void;
+	const closed = new Promise<TerminalCloseInfo>((resolve) => {
+		closedResolve = resolve;
+	});
+	let readyResolve!: () => void;
+	const ready = new Promise<void>((resolve) => {
+		readyResolve = resolve;
+	});
+	// A session that closes before its shell opens still lets attach()
+	// go on, to find it closed.
+	session.on("close", () => {
+		closedResolve({});
+		readyResolve();
+	});
+
+	session.on("pty", (accept, _reject, info) => {
+		cols = info.cols || DEFAULT_COLS;
+		rows = info.rows || DEFAULT_ROWS;
+		accept?.();
+	});
+	session.on("window-change", (accept, _reject, info) => {
+		cols = info.cols || cols;
+		rows = info.rows || rows;
+		onResize?.({cols, rows});
+		accept?.();
+	});
+	session.on("shell", (accept) => {
+		const opened = accept();
+		if (opened === undefined) {
+			return;
+		}
+		channel = opened;
+		// A streaming decoder keeps a code point split across chunks whole.
+		const decoder = new TextDecoder();
+		opened.on("data", (chunk) => {
+			onInput?.(
+				typeof chunk === "string"
+					? chunk
+					: decoder.decode(chunk, {stream: true}),
+			);
+		});
+		// A client whose input ends, as `ssh host < /dev/null`, or whose
+		// connection drops, ends the channel's input. The session closes,
+		// and the channel ends once the restores have gone out.
+		opened.on("end", () => {
+			inputEnded = true;
+			closedResolve({});
+		});
+		opened.on("close", () => closedResolve({}));
+		opened.on("error", () => closedResolve({}));
+		readyResolve();
+	});
+
+	return {
+		get cols() {
+			return cols;
+		},
+		get rows() {
+			return rows;
+		},
+		sharesScreen: options.sharesScreen ?? true,
+		interactive: true,
+		colorScheme: options.colorScheme,
+		ready,
+		readable: new ReadableStream<string>({
+			start(controller) {
+				onInput = (chunk) => controller.enqueue(chunk);
+			},
+			async cancel() {
+				onInput = null;
+				if (!inputEnded) {
+					return;
+				}
+				// The restores are queued behind the writes in flight.
+				do {
+					await new Promise((resolve) => setTimeout(resolve, 10));
+				} while (pending > 0);
+				finish(0);
+			},
+		}),
+		writable: new WritableStream<string>({
+			// Resolved on the write callback, so awaiting a write means the
+			// channel has taken the bytes.
+			write: (chunk) => new Promise<void>((resolve, reject) => {
+				if (channel === null) {
+					resolve();
+					return;
+				}
+				pending++;
+				channel.write(chunk, (error) => {
+					pending--;
+					if (error) {
+						reject(error);
+					} else {
+						resolve();
+					}
+				});
+			}),
+		}),
+		resizes: new ReadableStream<TerminalSize>({
+			start(controller) {
+				onResize = (size) => controller.enqueue(size);
+			},
+			cancel() {
+				onResize = null;
+			},
+		}),
+		closed,
+		close(info?: TerminalCloseInfo) {
+			finish(info?.status ?? 0);
 		},
 	};
 }

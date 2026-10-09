@@ -1,8 +1,8 @@
 /**
  * A TermDOM behind an SSH server. Every shell session that connects gets a
- * document of its own, rendered over that session's channel through a
- * TerminalTransport: the channel carries input and frames, the pty request
- * gives the size and TERM, and a window-change becomes a resize.
+ * document of its own, through transportFromSSH: the session's pty request
+ * gives the size, its shell request opens the channel that carries input
+ * and frames, and a window change becomes a resize.
  *
  *   node examples/ssh.ts [port]
  *   ssh -p 2222 localhost          # from another terminal; any password
@@ -20,13 +20,8 @@ import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {homedir} from "node:os";
 import {join} from "node:path";
 
-import {
-  TermDOM,
-  type TerminalCloseInfo,
-  type TerminalSize,
-  type TerminalTransport,
-} from "@b9g/termdom";
-import ssh2, {type ServerChannel} from "ssh2";
+import {TermDOM, transportFromSSH} from "@b9g/termdom";
+import ssh2, {type Session} from "ssh2";
 
 const PORT = Number(process.argv[2] ?? 2222);
 
@@ -51,115 +46,19 @@ function hostKey(): string {
   return privateKey;
 }
 
-interface Pty {
-  term: string;
-  cols: number;
-  rows: number;
-}
-
-interface Session {
-  transport: TerminalTransport;
-  resize(cols: number, rows: number): void;
-  // Settles when the client's input ends, as with ssh host < /dev/null.
-  // Its terminal is still there, so the app quits as it would on its own.
-  inputEnded: Promise<void>;
-}
-
-interface Connection {
-  on(event: "close", listener: () => void): unknown;
-  off(event: "close", listener: () => void): unknown;
-}
-
-/**
- * One SSH session as a terminal. Closing it ends the channel with the
- * app's status; the client hanging up closes the session.
- */
-function sessionFromChannel(
-  channel: ServerChannel,
-  pty: Pty,
-  connection: Connection,
-): Session {
-  let {cols, rows} = pty;
-  let resized: ReadableStreamDefaultController<TerminalSize> | null = null;
-  // One connection can carry many shells, so each takes its listener off
-  // the connection when its own channel closes.
-  const closed = new Promise<TerminalCloseInfo>((resolve) => {
-    const hangUp = () => resolve({});
-    connection.on("close", hangUp);
-    channel.on("close", () => {
-      connection.off("close", hangUp);
-      hangUp();
-    });
-  });
-  const decoder = new TextDecoder();
-  let onData: ((chunk: Uint8Array) => void) | null = null;
-  const transport: TerminalTransport = {
-    get cols() {
-      return cols;
-    },
-    get rows() {
-      return rows;
-    },
-    // The client's terminal keeps its shell above the connection, so the
-    // document anchors under the ssh command as a local one does under
-    // its prompt, and paints from there down.
-    sharesScreen: true,
-    interactive: true,
-    readable: new ReadableStream<string>({
-      start(controller) {
-        onData = (chunk) => {
-          controller.enqueue(decoder.decode(chunk, {stream: true}));
-        };
-        channel.on("data", onData);
-      },
-      cancel() {
-        channel.off("data", onData!);
-      },
-    }),
-    writable: new WritableStream<string>({
-      write: (chunk) => new Promise<void>((resolve, reject) => {
-        channel.write(chunk, (error) => (error ? reject(error) : resolve()));
-      }),
-    }),
-    resizes: new ReadableStream<TerminalSize>({
-      start(controller) {
-        resized = controller;
-      },
-      cancel() {
-        resized = null;
-      },
-    }),
-    ready: Promise.resolve(),
-    closed,
-    close(info) {
-      channel.exit(info?.status ?? 0);
-      channel.end();
-    },
-  };
-  return {
-    transport,
-    inputEnded: new Promise((resolve) => channel.once("end", resolve)),
-    resize(nextCols, nextRows) {
-      cols = nextCols;
-      rows = nextRows;
-      resized?.enqueue({cols, rows});
-    },
-  };
-}
-
 const sessions = new Set<TermDOM>();
 let served = 0;
 
-function serve(session: Session, pty: Pty): void {
-  const termdom = new TermDOM({transport: session.transport});
+function serve(session: Session): void {
+  const transport = transportFromSSH(session);
+  const termdom = new TermDOM({transport});
   const {document, window} = termdom;
   served++;
   sessions.add(termdom);
-  session.transport.closed.then(() => {
+  transport.closed.then(() => {
     sessions.delete(termdom);
     refreshStatus();
   });
-  void session.inputEnded.then(() => window.close());
 
   document.body.innerHTML = `
     <style>
@@ -171,11 +70,17 @@ function serve(session: Session, pty: Pty): void {
       .hint { margin-top: 1px; color: #808080; }
     </style>
     <h1>termdom over ssh</h1>
-    <div>session ${served} of this server, ${pty.term} at ${pty.cols}×${pty.rows}</div>
+    <div>session ${served} of this server, <span class="size"></span></div>
     <div class="keys">type anything · q quits</div>
     <div class="log"></div>
     <div class="hint">each session is its own document; resize the window to see it relayout</div>
   `;
+  const size = document.querySelector(".size")!;
+  const showSize = () => {
+    size.textContent = `${window.innerWidth}×${window.innerHeight}`;
+  };
+  showSize();
+  window.addEventListener("resize", showSize);
   const log = document.querySelector(".log")!;
   document.addEventListener("keydown", (event) => {
     const key = (event as KeyboardEvent).key;
@@ -197,25 +102,7 @@ const server = new ssh2.Server({hostKeys: [hostKey()]}, (client) => {
   // A demo: every password and every key is accepted.
   client.on("authentication", (context) => context.accept());
   client.on("ready", () => {
-    client.on("session", (acceptSession) => {
-      const session = acceptSession();
-      const pty: Pty = {term: "xterm-256color", cols: 80, rows: 24};
-      let current: Session | null = null;
-      session.on("pty", (accept, _reject, info) => {
-        pty.term = info.term || pty.term;
-        pty.cols = info.cols || pty.cols;
-        pty.rows = info.rows || pty.rows;
-        accept?.();
-      });
-      session.on("window-change", (accept, _reject, info) => {
-        current?.resize(info.cols, info.rows);
-        accept?.();
-      });
-      session.on("shell", (accept) => {
-        current = sessionFromChannel(accept(), pty, client);
-        serve(current, pty);
-      });
-    });
+    client.on("session", (accept) => serve(accept()));
   });
   client.on("error", () => {});
 });
