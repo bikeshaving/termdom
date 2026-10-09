@@ -161,6 +161,36 @@ test("a timer's or a microtask's exception is reported, and the page goes on", a
 	await dom.dispose();
 });
 
+test("the window's timers stop when the TermDOM is disposed", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = attached(terminal);
+	const {window} = dom;
+	await nextFrame(dom);
+	let errors = 0;
+	window.addEventListener("error", (event) => {
+		errors++;
+		event.preventDefault();
+	});
+	let fired = 0;
+	window.setInterval(() => {
+		fired++;
+		throw new Error("interval");
+	}, 5);
+	window.setTimeout(() => {
+		fired++;
+	}, 20);
+	window.requestIdleCallback(
+		() => {
+			fired++;
+		},
+		{timeout: 20},
+	);
+	await dom.dispose();
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	expect(fired).toBe(0);
+	expect(errors).toBe(0);
+});
+
 test("an observer's exception is reported and the observer goes on", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = attached(terminal);

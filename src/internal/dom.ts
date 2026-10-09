@@ -36403,6 +36403,25 @@ const runtime = {
 	structuredClone: globalThis.structuredClone.bind(globalThis),
 };
 
+const windowTimers = new WeakMap<object, Set<ReturnType<typeof setTimeout>>>();
+
+/**
+ * Stop the window's timers and idle callbacks, as a browser stops an
+ * unloaded document's.
+ */
+export function clearWindowTimers(window: Window): void {
+	const timers = windowTimers.get(window);
+	for (const handle of timers ?? []) {
+		runtime.clearTimeout(handle);
+	}
+	timers?.clear();
+	const idle = window[kIdleTimers];
+	for (const timer of idle?.values() ?? []) {
+		clearTimeout(timer);
+	}
+	idle?.clear();
+}
+
 function buildWindow(document: Document): Window {
 	const window = new Window(document) as unknown as Record<string, unknown>;
 	// HTML reports an exception a timer or a microtask lets escape, as it
@@ -36418,17 +36437,42 @@ function buildWindow(document: Document): Window {
 					reportError(error, document);
 				}
 			};
+	// The page's outstanding timers, which stop with the window.
+	const timers = new Set<ReturnType<typeof setTimeout>>();
+	windowTimers.set(window, timers);
+	const clearTimer = (handle: ReturnType<typeof setTimeout>) => {
+		timers.delete(handle);
+		runtime.clearTimeout(handle);
+	};
 	Object.assign(window, platform, {
 		// The platform's DOMException, which is the one the DOM and the CSSOM
 		// throw. A caller's `instanceof DOMException` has to match the class
 		// the engine builds its errors from.
 		DOMException: PlatformDOMException,
-		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) =>
-			runtime.setTimeout(guard(handler, args) as () => void, timeout),
-		clearTimeout: runtime.clearTimeout,
-		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) =>
-			runtime.setInterval(guard(handler, args) as () => void, timeout),
-		clearInterval: runtime.clearInterval,
+		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) => {
+			const guarded = guard(handler, args);
+			const handle = runtime.setTimeout(
+				(typeof guarded === "function"
+					? () => {
+						timers.delete(handle);
+						(guarded as () => void)();
+					}
+					: guarded) as () => void,
+				timeout,
+			);
+			timers.add(handle);
+			return handle;
+		},
+		clearTimeout: clearTimer,
+		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) => {
+			const handle = runtime.setInterval(
+				guard(handler, args) as () => void,
+				timeout,
+			);
+			timers.add(handle);
+			return handle;
+		},
+		clearInterval: clearTimer,
 		queueMicrotask: (callback: unknown) => {
 			if (typeof callback !== "function") {
 				throw new TypeError("queueMicrotask needs a function");

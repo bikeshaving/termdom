@@ -13,6 +13,7 @@ import {
 	attachDocument,
 	clampScrollOffsets,
 	clearHighlights,
+	clearWindowTimers,
 	createWindow,
 	disconnectObservers,
 	dispatchAsUserAgent,
@@ -836,6 +837,7 @@ export class TermDOM extends EventTarget {
 		this[kLayout].dispose();
 		clearHighlights(this.document);
 		disconnectObservers(this.document);
+		clearWindowTimers(this.window);
 		this[kDisposal] = Promise.all([
 			this[kExchange].flush(),
 			drained,
