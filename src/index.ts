@@ -1530,11 +1530,17 @@ export function installGlobals(termDOM: TermDOM): () => void {
 				} catch (_err) {
 					continue;
 				}
-				if (current === undefined) {
+				if (current === undefined && name !== "event") {
 					continue;
 				}
-				// The window's own value is the runtime's already.
-				if (current === global[name]) {
+				// The window's own object is the runtime's already. A value
+				// that merely compares equal, such as a handler that is null on
+				// both, is not, and reads through to the window.
+				if (
+					current === global[name] &&
+					((typeof current === "object" && current !== null) ||
+						typeof current === "function")
+				) {
 					continue;
 				}
 				descriptor = {

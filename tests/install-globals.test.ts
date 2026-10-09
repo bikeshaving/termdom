@@ -3,6 +3,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {installGlobals, TermDOM} from "../src/index.ts";
 
 const global = globalThis as Record<string, any>;
+declare const event: unknown;
 
 test("installGlobals defines the window's names the runtime lacks", () => {
 	const term = new TermDOM();
@@ -101,6 +102,43 @@ test("installed properties read and write through to the window", () => {
 		uninstall();
 		term.dispose();
 	}
+});
+
+test("names that are null or primitive on the window and the runtime alike are still the window's", () => {
+	const term = new TermDOM();
+	const uninstall = installGlobals(term);
+	try {
+		const heard: string[] = [];
+		global.onerror = (message: string) => {
+			heard.push(message);
+		};
+		term.window.dispatchEvent(
+			new term.window.ErrorEvent("error", {message: "boom"}),
+		);
+		expect(heard).toEqual(["boom"]);
+		expect(term.window.onerror).toBe(global.onerror);
+		global.name = "x";
+		expect(term.window.name).toBe("x");
+		expect(global.closed).toBe(term.window.closed);
+		global.onerror = null;
+	} finally {
+		uninstall();
+		term.dispose();
+	}
+});
+
+test("a bare event reads the window's event, undefined, rather than throwing", () => {
+	const term = new TermDOM();
+	const uninstall = installGlobals(term);
+	try {
+		expect("event" in globalThis).toBe(true);
+		expect(typeof event).toBe("undefined");
+		expect(event).toBe(term.window.event);
+	} finally {
+		uninstall();
+		term.dispose();
+	}
+	expect("event" in globalThis).toBe(false);
 });
 
 test("installGlobals throws while installed, and uninstalling removes every name", () => {
