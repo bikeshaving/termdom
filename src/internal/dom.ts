@@ -14604,6 +14604,7 @@ class HTMLCanvasElement extends HTMLElement {
 				cells: () => getCanvasGrid(this),
 				changed,
 				cellPixels: () => getImageCellSize(this as unknown as Node),
+				drawsPixels: () => getAttachedDocument(this)?.[kCanvas] !== "none",
 				color: () => getComputedValue(this, "color"),
 				direction: () => getCanvasDirection(this),
 			});

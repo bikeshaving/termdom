@@ -22,9 +22,10 @@ uses the best way the terminal has, which today is always cells.
 `"cells"` draws cells whatever the terminal could do. `"none"` draws
 nothing: an `<img>` loads nothing and shows its `alt` text, as a
 browser does with images turned off, and `getContext("2d")` returns
-`null`, so a canvas shows its fallback content. A page written for a
-browser often reads better that way, since half blocks blur a logo or
-a patterned picture that its fallback says plainly.
+`null`, so a canvas shows its fallback content. A `"termdom-cellgrid"`
+context still draws cells, but its `drawImage()` draws nothing. A page
+written for a browser often reads better that way, since half blocks
+blur a logo or a patterned picture that its fallback says plainly.
 
 ```ts
 new TermDOM({images: "none", canvas: "none"});

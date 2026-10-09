@@ -1294,6 +1294,26 @@ test("with canvas off, a canvas has no 2d context and keeps its cellgrid", async
 	dom.dispose();
 });
 
+test("with canvas off, a cellgrid draws text but no image's pixels", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport, canvas: "none"});
+	const canvas = dom.document.createElement("canvas");
+	canvas.width = 6;
+	canvas.height = 2;
+	dom.document.body.append(canvas);
+	const grid = canvas.getContext("termdom-cellgrid")!;
+	const ImageDataClass = (dom.window as any).ImageData as typeof ImageData;
+	const red = new ImageDataClass(new Uint8ClampedArray(4).fill(255), 1, 1);
+	red.data.set([255, 0, 0, 255]);
+	grid.drawImage(red, 0, 0, 6, 2);
+	expect(grid.getCell(0, 0)).toBeNull();
+	grid.fillText("text", 0, 1);
+	expect(grid.getCell(0, 1)!.char).toBe("t");
+	await nextFrame(dom);
+	expect(rowText(terminal, 0)).toBe("");
+	dom.dispose();
+});
+
 // A canvas is clipped like any other content: by a box that clips its
 // overflow, scrolled or not, and by its own content box.
 test("a 2d canvas clips to a scroller and paints the rows scrolled into view", async () => {

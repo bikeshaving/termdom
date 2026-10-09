@@ -71,7 +71,8 @@ Options:
 - `canvas?: "auto" | "cells" | "none"` — how a canvas's `"2d"` context
   draws, the same way. With `"none"`, `getContext("2d")` returns `null`
   and the canvas shows its fallback content. The `"termdom-cellgrid"`
-  context works either way.
+  context works either way, except that its `drawImage()` draws
+  nothing.
 - `colorDepth?: "auto" | ColorDepth` — the colors the terminal shows:
   `24`, `8` or `4`, the bits `screen.colorDepth` reports, or `"rgb"`,
   `"256"` or `"ansi"`, the same three by name. With `"auto"` (default),

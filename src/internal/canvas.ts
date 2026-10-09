@@ -3006,6 +3006,9 @@ interface GridHost {
 	color(): string;
 	// Terminal pixels per cell, for drawing images at their natural size.
 	cellPixels(): {width: number; height: number};
+	// False where the document draws no canvas pixels, the `canvas` option's
+	// "none", which drawImage() then leaves alone.
+	drawsPixels(): boolean;
 }
 
 const kGridHost = Symbol("gridHost");
@@ -3062,10 +3065,10 @@ export interface CanvasCellGridContext {
  * `cols` by `rows`. fillText() writes glyphs in the fill color over the
  * cells' backgrounds, fillRect() fills cells' backgrounds, strokeLine()
  * and strokeRect() draw box-drawing lines that join where they meet,
- * drawImage() draws an image two pixels a cell, and clearRect() empties
- * cells. Coordinates are cells. Its settings mean what a 2d context's
- * do, and CanvasText and Canvas, the default colors, are the terminal's
- * own.
+ * drawImage() draws an image two pixels a cell unless the document draws
+ * no canvas pixels, and clearRect() empties cells. Coordinates are cells.
+ * Its settings mean what a 2d context's do, and CanvasText and Canvas,
+ * the default colors, are the terminal's own.
  */
 export class CanvasCellGridContext {
 	constructor() {
@@ -3409,7 +3412,12 @@ export class CanvasCellGridContext {
 	 */
 	drawImage(image: unknown, ...args: number[]): void {
 		const bitmap = readDrawableKept(image);
-		if (bitmap === null || bitmap.width === 0 || bitmap.height === 0) {
+		if (
+			bitmap === null ||
+			bitmap.width === 0 ||
+			bitmap.height === 0 ||
+			!this[kGridHost].drawsPixels()
+		) {
 			return;
 		}
 		let sx = 0;
