@@ -2316,8 +2316,9 @@ export interface ProcessLike {
 
 // An app that exits without disposing would strand the shell with no
 // cursor and the modes set. One exit hook restores every engaged process
-// transport.
-const undisposedProcesses = new Set<ProcessLike>();
+// transport. Each process counts its engaged transports, and only the
+// last to let go hands its terminal back.
+const engagedProcesses = new Map<ProcessLike, number>();
 let exitHookInstalled = false;
 
 function installCursorRestoreOnExit(): void {
@@ -2326,7 +2327,7 @@ function installCursorRestoreOnExit(): void {
 	}
 	exitHookInstalled = true;
 	process.on("exit", () => {
-		for (const proc of undisposedProcesses) {
+		for (const proc of engagedProcesses.keys()) {
 			if (proc.stdout.isTTY !== true) {
 				continue;
 			}
@@ -2439,7 +2440,20 @@ export function transportFromProcess(
 			return;
 		}
 		engaged = false;
-		undisposedProcesses.delete(proc);
+		if (dataListener && proc.stdin) {
+			proc.stdin.removeListener?.("data", dataListener);
+			dataListener = null;
+		}
+		for (const [signal, listener] of signalListeners) {
+			proc.removeListener?.(signal, listener);
+		}
+		signalListeners.length = 0;
+		const others = (engagedProcesses.get(proc) ?? 1) - 1;
+		if (others > 0) {
+			engagedProcesses.set(proc, others);
+			return;
+		}
+		engagedProcesses.delete(proc);
 		// Synchronously. The engine's restores go through the writable's queue,
 		// and `dispose(); process.exit()` exits before it flushes. Only a
 		// terminal had modes to restore.
@@ -2450,19 +2464,11 @@ export function transportFromProcess(
 				// The terminal is gone, and its modes with it.
 			}
 		}
-		if (dataListener && proc.stdin) {
-			proc.stdin.removeListener?.("data", dataListener);
-			dataListener = null;
-		}
 		const stdin = proc.stdin;
 		if (stdin !== undefined) {
 			stdin.setRawMode?.(false);
 			stdin.pause();
 		}
-		for (const [signal, listener] of signalListeners) {
-			proc.removeListener?.(signal, listener);
-		}
-		signalListeners.length = 0;
 	};
 
 	const readable = new ReadableStream<string>(
@@ -2496,7 +2502,7 @@ export function transportFromProcess(
 				};
 				stdin.on("data", dataListener);
 
-				undisposedProcesses.add(proc);
+				engagedProcesses.set(proc, (engagedProcesses.get(proc) ?? 0) + 1);
 				installCursorRestoreOnExit();
 
 				// A SIGINT here is an external kill, since raw mode delivers

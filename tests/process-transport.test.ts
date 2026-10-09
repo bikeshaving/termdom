@@ -88,3 +88,39 @@ test("nothing is asked of a terminal whose replies stdin cannot read", async () 
 	expect(written()).toContain("piped");
 	expect(ms).toBeLessThan(500);
 });
+
+test("a second session on the process keeps the terminal until it ends too", async () => {
+	const proc = new MockProcess({cols: 30, rows: 6});
+	const raw: boolean[] = [];
+	let paused = false;
+	proc.stdin.setRawMode = (mode: boolean) => {
+		raw.push(mode);
+		return proc.stdin;
+	};
+	proc.stdin.pause = () => {
+		paused = true;
+		return proc.stdin;
+	};
+	proc.stdin.resume = () => {
+		paused = false;
+		return proc.stdin;
+	};
+	const first = new TermDOM({transport: transportFromProcess(proc)});
+	const second = new TermDOM({transport: transportFromProcess(proc)});
+	await first.attach();
+	await second.attach();
+	await nextFrame(second);
+	const keys: string[] = [];
+	second.document.addEventListener("keydown", (event) => {
+		keys.push((event as KeyboardEvent).key);
+	});
+
+	await first.dispose();
+	expect([raw.at(-1), paused]).toEqual([true, false]);
+	proc.stdin.simulateResponse("x");
+	await until(() => keys.length > 0);
+	expect(keys).toEqual(["x"]);
+
+	await second.dispose();
+	expect([raw.at(-1), paused]).toEqual([false, true]);
+});
