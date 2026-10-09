@@ -495,22 +495,97 @@ test("a control's insides follow a change to what they inherit", async () => {
 	dom.dispose();
 });
 
-test("a progress bar's fill takes its accent-color", async () => {
+test("a progress bar's accent-color leaves its fill alone", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		"<style>.done { accent-color: #00ff00; }</style>" +
-		"<progress class=\"done\" max=\"10\" value=\"10\"></progress>";
-	await nextFrame(dom);
-	expect(terminal.getStaticANSI()).toContain("38;2;0;255;0");
-	dom.document.querySelector("progress")!.style.accentColor = "#ff00ff";
-	await nextFrame(dom);
-	expect(terminal.getStaticANSI()).toContain("38;2;255;0;255");
-	dom.document.querySelector("progress")!.style.accentColor = "auto";
-	dom.document.querySelector("progress")!.className = "";
+		"<progress style=\"accent-color: #00ff00\" max=\"10\" value=\"10\">" +
+		"</progress>";
 	await nextFrame(dom);
 	expect(terminal.getStaticANSI()).toContain("38;2;95;175;255");
 	dom.dispose();
+});
+
+async function gaugeANSI(html: string): Promise<string> {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = html;
+	await nextFrame(dom);
+	const ansi = terminal.getStaticANSI();
+	dom.dispose();
+	return ansi;
+}
+
+test("a page colors a gauge through ::slider-fill and ::slider-track", async () => {
+	const ansi = await gaugeANSI(
+		"<style>" +
+		"progress::slider-fill { color: #010203; }" +
+		"progress::slider-track { color: #040506; }" +
+		"</style>" +
+		"<progress max=\"10\" value=\"5\"></progress>",
+	);
+	expect(ansi).toContain("38;2;1;2;3");
+	expect(ansi).toContain("38;2;4;5;6");
+	expect(ansi).not.toContain("38;2;95;175;255");
+});
+
+test("a meter's levels match :optimal-value, :low-value and :high-value", async () => {
+	const ansi = await gaugeANSI(
+		"<style>" +
+		"meter:optimal-value::slider-fill { color: #000001; }" +
+		"meter:low-value::slider-fill { color: #000002; }" +
+		"meter:high-value::slider-fill { color: #000003; }" +
+		"</style>" +
+		"<meter low=\"3\" high=\"7\" optimum=\"5\" max=\"10\" value=\"5\"></meter>" +
+		"<br><meter low=\"3\" high=\"7\" optimum=\"5\" max=\"10\" value=\"1\"></meter>" +
+		"<br><meter low=\"3\" high=\"7\" optimum=\"5\" max=\"10\" value=\"9\"></meter>",
+	);
+	expect(ansi).toContain("38;2;0;0;1");
+	expect(ansi).toContain("38;2;0;0;2");
+	expect(ansi).toContain("38;2;0;0;3");
+});
+
+test("a meter's level pseudo-classes follow its attributes", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<style>meter:low-value::slider-fill { color: #000002; }</style>" +
+		"<meter low=\"3\" high=\"7\" max=\"10\" value=\"5\"></meter>";
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).not.toContain("38;2;0;0;2");
+	expect(dom.document.querySelector("meter:low-value")).toBeNull();
+	dom.document.querySelector("meter")!.setAttribute("low", "6");
+	await nextFrame(dom);
+	expect(terminal.getStaticANSI()).toContain("38;2;0;0;2");
+	expect(dom.document.querySelector("meter:low-value")).not.toBeNull();
+	dom.dispose();
+});
+
+test("WebKit's and Firefox's gauge pseudo-elements are aliases", async () => {
+	const webkit = await gaugeANSI(
+		"<style>" +
+		"progress::-webkit-progress-value { color: #000004; }" +
+		"progress::-webkit-progress-bar { color: #000005; }" +
+		"meter::-webkit-meter-optimum-value { color: #000006; }" +
+		"meter::-webkit-meter-even-less-good-value { color: #000007; }" +
+		"</style>" +
+		"<progress max=\"10\" value=\"5\"></progress>" +
+		"<br><meter low=\"3\" high=\"7\" optimum=\"9\" max=\"10\" value=\"9\"></meter>" +
+		"<br><meter low=\"3\" high=\"7\" optimum=\"9\" max=\"10\" value=\"1\"></meter>",
+	);
+	for (const color of ["0;0;4", "0;0;5", "0;0;6", "0;0;7"]) {
+		expect(webkit).toContain(`38;2;${color}`);
+	}
+	const firefox = await gaugeANSI(
+		"<style>" +
+		"progress::-moz-progress-bar { color: #000008; }" +
+		"meter:-moz-meter-sub-optimum::-moz-meter-bar { color: #000009; }" +
+		"</style>" +
+		"<progress max=\"10\" value=\"5\"></progress>" +
+		"<br><meter low=\"3\" high=\"7\" optimum=\"9\" max=\"10\" value=\"5\"></meter>",
+	);
+	expect(firefox).toContain("38;2;0;0;8");
+	expect(firefox).toContain("38;2;0;0;9");
 });
 
 test("a page styles a select's icon through ::picker-icon", async () => {

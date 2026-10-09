@@ -4864,31 +4864,12 @@ function blockifyDisplay(element: Element | null, display: string): string {
 	return display;
 }
 
-// A progress bar's fill, inside the UA shadow tree of a <progress>.
-function isProgressFill(element: Element | null): boolean {
-	if (element === null) {
-		return false;
-	}
-	const root = element.getRootNode();
-	return isUAShadowTree(root) &&
-		(root as unknown as ShadowRoot).host.tagName === "PROGRESS" &&
-		(element.getAttribute("part") ?? "").split(" ").includes("bar");
-}
-
 // What the cascade leaves, with var() substituted, `currentcolor`
 // replaced by the color it names, and display blockified.
 function resolvePropertyValue(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
-	// css-ui-4 §6.1: a <progress> draws in its accent color, when the page
-	// gives it one.
-	if (property === "color" && isProgressFill(declaration[kElement])) {
-		const accent = declaration[kComputedValue]("accent-color");
-		if (accent !== "" && accent.toLowerCase() !== "auto") {
-			return accent;
-		}
-	}
 	const value = resolveCascadedValue(declaration, property);
 	if (property === "font-weight") {
 		return computeFontWeight(declaration[kElement], value);
@@ -7096,19 +7077,34 @@ function unescapeHighlightName(pseudoElement: string): string {
 
 // The pseudo-elements a page styles a built-in control's parts through,
 // by the part names its UA shadow tree gives them. Author shadow trees
-// are not eligible: their parts are theirs to style from inside.
-const PART_PSEUDOS: Readonly<Record<string, Readonly<Record<string, string>>>> =
-	{
-		"*": {
-			placeholder: "::placeholder",
-			selection: "::selection",
-			"details-content": "::details-content",
-		},
-		SELECT: {picker: "::picker(select)", indicator: "::picker-icon"},
-	};
+// are not eligible: their parts are theirs to style from inside. A gauge
+// takes css-forms-1's names, and the prefixed names WebKit and Firefox
+// ship as aliases, as css-forms-1 §4.10 asks.
+const PART_PSEUDOS: Readonly<Record<
+	string,
+	Readonly<Record<string, readonly string[]>>
+>> = {
+	"*": {
+		placeholder: ["::placeholder"],
+		selection: ["::selection"],
+		"details-content": ["::details-content"],
+	},
+	SELECT: {picker: ["::picker(select)"], indicator: ["::picker-icon"]},
+	PROGRESS: {
+		track: ["::slider-track", "::-webkit-progress-bar"],
+		bar: ["::slider-fill", "::-webkit-progress-value", "::-moz-progress-bar"],
+	},
+	METER: {
+		track: ["::slider-track", "::-webkit-meter-bar"],
+		bar: ["::slider-fill", "::-moz-meter-bar"],
+		optimum: ["::-webkit-meter-optimum-value"],
+		suboptimum: ["::-webkit-meter-suboptimum-value"],
+		"even-less-good": ["::-webkit-meter-even-less-good-value"],
+	},
+};
 
 const PART_PSEUDO_NAMES = new Set(
-	Object.values(PART_PSEUDOS).flatMap((names) => Object.values(names)),
+	Object.values(PART_PSEUDOS).flatMap((names) => Object.values(names).flat()),
 );
 
 // True for a pseudo-element the tree needs a node of its own for. The
@@ -9613,10 +9609,9 @@ function getPartPseudos(element: Element, root: Node): string[] {
 	const host = (root as unknown as ShadowRoot).host.tagName;
 	const pseudos: string[] = [];
 	for (const name of part.split(/\s+/)) {
-		const pseudo = PART_PSEUDOS["*"][name] ?? PART_PSEUDOS[host]?.[name];
-		if (pseudo !== undefined) {
-			pseudos.push(pseudo);
-		}
+		pseudos.push(
+			...(PART_PSEUDOS["*"][name] ?? PART_PSEUDOS[host]?.[name] ?? []),
+		);
 	}
 	return pseudos;
 }

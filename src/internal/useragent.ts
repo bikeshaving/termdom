@@ -157,9 +157,10 @@ export const UA_DOCUMENT_STYLES = `
 `;
 
 // The insides of the built-in controls. A page reaches the ones a browser
-// lets it, through ::placeholder, ::picker(select), ::picker-icon and
-// ::details-content. The rest are this sheet's alone, through ::part(),
-// which reaches no page's rules into a built-in control.
+// lets it, through ::placeholder, ::picker(select), ::picker-icon,
+// ::details-content, and a gauge's ::slider-track and ::slider-fill with
+// their prefixed aliases. The rest are this sheet's alone, through
+// ::part(), which reaches no page's rules into a built-in control.
 //
 // A text field's value and placeholder clip their text, and the render
 // loop sets scrollLeft to follow the caret. A textarea's value text node
@@ -172,7 +173,8 @@ export const UA_DOCUMENT_STYLES = `
 //
 // A gauge's bar is as wide as the fraction filled. The groove follows it
 // in the same clip, so an empty bar still reads as a bar, and an
-// indeterminate progress bar shows only the groove. A meter's bar also
+// indeterminate progress bar shows only the groove. The groove takes the
+// track's color, so ::slider-track colors it. A meter's bar also
 // has the part name of its level against low, high and optimum, so the
 // color is a rule and not a choice the painter makes.
 //
@@ -188,8 +190,8 @@ export const UA_CONTROL_STYLES = `
 
 	details::details-content { display: block; }
 
-	meter::part(track), progress::part(track) { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; }
-	meter::part(groove), progress::part(groove) { color: #808080; font-weight: lighter; }
+	meter::part(track), progress::part(track) { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; color: #808080; }
+	meter::part(groove), progress::part(groove) { font-weight: lighter; }
 	meter::part(bar), progress::part(bar) { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
 	progress::part(bar) { color: #5fafff; }
 	meter::part(bar optimum) { color: #5faf5f; }

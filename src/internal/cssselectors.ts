@@ -7,6 +7,7 @@ import {
 	getElementChildren,
 	getFirstChildNode,
 	getHeadingLevel,
+	getMeterLevel,
 	getNextSiblingNode,
 	getOpenAssignedSlot,
 	getParentNode,
@@ -34,6 +35,7 @@ import {
 	isHTMLNode,
 	isIndeterminateControl,
 	isInQuirksMode,
+	isMeterValue,
 	isModalDialog,
 	isOpenElement,
 	isPlaceholderShown,
@@ -65,6 +67,9 @@ import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
 // A selector naming anything else does not parse, which makes
 // `:gibberish` invalid rather than merely unmatched.
 const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
+	"-moz-meter-optimum",
+	"-moz-meter-sub-optimum",
+	"-moz-meter-sub-sub-optimum",
 	"active",
 	"any-link",
 	"autofill",
@@ -93,6 +98,7 @@ const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"host-context",
 	"hover",
 	"in-range",
+	"high-value",
 	"indeterminate",
 	"invalid",
 	"is",
@@ -100,6 +106,7 @@ const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"last-child",
 	"last-of-type",
 	"left",
+	"low-value",
 	"link",
 	"local-link",
 	"modal",
@@ -114,6 +121,7 @@ const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"only-child",
 	"only-of-type",
 	"open",
+	"optimal-value",
 	"optional",
 	"out-of-range",
 	"past",
@@ -144,6 +152,14 @@ const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 ]);
 
 const PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
+	"-moz-meter-bar",
+	"-moz-progress-bar",
+	"-webkit-meter-bar",
+	"-webkit-meter-even-less-good-value",
+	"-webkit-meter-optimum-value",
+	"-webkit-meter-suboptimum-value",
+	"-webkit-progress-bar",
+	"-webkit-progress-value",
 	"after",
 	"backdrop",
 	"before",
@@ -166,6 +182,9 @@ const PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"scroll-marker",
 	"scroll-marker-group",
 	"selection",
+	"slider-fill",
+	"slider-thumb",
+	"slider-track",
 	"slotted",
 	"spelling-error",
 	"target-text",
@@ -203,6 +222,9 @@ export function isLegacyPseudoElement(name: string): boolean {
 }
 
 const ARGUMENTLESS_PSEUDO_CLASSES: ReadonlySet<string> = new Set([
+	"-moz-meter-optimum",
+	"-moz-meter-sub-optimum",
+	"-moz-meter-sub-sub-optimum",
 	"active",
 	"any-link",
 	"autofill",
@@ -226,11 +248,13 @@ const ARGUMENTLESS_PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"future",
 	"hover",
 	"in-range",
+	"high-value",
 	"indeterminate",
 	"invalid",
 	"last-child",
 	"last-of-type",
 	"left",
+	"low-value",
 	"link",
 	"local-link",
 	"modal",
@@ -238,6 +262,7 @@ const ARGUMENTLESS_PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"only-child",
 	"only-of-type",
 	"open",
+	"optimal-value",
 	"optional",
 	"out-of-range",
 	"past",
@@ -1164,6 +1189,24 @@ function compilePseudoClass(
 			return;
 		case "indeterminate":
 			compound.tests.push((element) => isIndeterminateControl(element));
+			return;
+		case "low-value":
+			compound.tests.push((element) => isMeterValue(element, "low"));
+			return;
+		case "high-value":
+			compound.tests.push((element) => isMeterValue(element, "high"));
+			return;
+		case "optimal-value":
+		case "-moz-meter-optimum":
+			compound.tests.push((element) => getMeterLevel(element) === "optimum");
+			return;
+		case "-moz-meter-sub-optimum":
+			compound.tests.push((element) => getMeterLevel(element) === "suboptimum");
+			return;
+		case "-moz-meter-sub-sub-optimum":
+			compound.tests.push(
+				(element) => getMeterLevel(element) === "even-less-good",
+			);
 			return;
 		case "placeholder-shown":
 			compound.tests.push((element) => isPlaceholderShown(element));
