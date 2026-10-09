@@ -53,6 +53,12 @@ export interface TerminalTransport {
 	readonly interactive: boolean;
 
 	/**
+	 * False when what the terminal answers cannot be read, as when stdin is
+	 * a pipe. Nothing is asked of the terminal then. Absent means true.
+	 */
+	readonly readsReplies?: boolean;
+
+	/**
 	 * Writes an error's text somewhere the frame does not share, such as a
 	 * stderr that is not the terminal. True when it did. The engine holds
 	 * what the transport cannot place until the session ends, and prints
@@ -850,6 +856,7 @@ interface PendingReply {
 
 const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
+const kAsking = Symbol("asking");
 const kEngagedModes = Symbol("engagedModes");
 const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kResizeTimer = Symbol("resizeTimer");
@@ -918,6 +925,8 @@ export interface Exchange {
 	[kTransport]: TerminalTransport;
 	[kEscapeTimer]: ReturnType<typeof setTimeout> | null;
 	[kInteractive]: boolean;
+	// Whether the terminal's answers can be read, so it is asked anything.
+	[kAsking]: boolean;
 	[kEngagedModes]: Set<ModeName>;
 	[kAnchorDetectionEnabled]: boolean;
 	[kWindow]: Window;
@@ -983,6 +992,7 @@ export class Exchange extends EventTarget {
 		super();
 		this[kStatedColorScheme] = colorScheme;
 		const interactive = transport.interactive;
+		const asking = interactive && transport.readsReplies !== false;
 		this[kWriter] = null;
 		this[kReader] = null;
 		this[kResizeReader] = null;
@@ -1002,15 +1012,16 @@ export class Exchange extends EventTarget {
 		this[kOverlineNegotiated] = false;
 		this[kDSRSequence] = 0;
 		this[kProbingEnded] = false;
-		this[kWidths] = createWidthProbes(interactive);
+		this[kWidths] = createWidthProbes(asking);
 		this[kOwedReplies] = 0;
 		this[kEndDrain] = null;
 		this[kDrained] = Promise.resolve();
 		this[kTransport] = transport;
 		this[kInteractive] = interactive;
+		this[kAsking] = asking;
 		this[kEngagedModes] = new Set<ModeName>();
 		// Anchor detection only makes sense when a shell's rows are above ours.
-		this[kAnchorDetectionEnabled] = transport.sharesScreen && interactive;
+		this[kAnchorDetectionEnabled] = transport.sharesScreen && asking;
 		this[kWindow] = window;
 		this[kLayout] = layout;
 		this[kCascade] = styles;
@@ -1439,7 +1450,7 @@ export class Exchange extends EventTarget {
 
 	/** A terminal without DECRQM may echo the request's final byte as text. */
 	scrubProbeEcho(): void {
-		if (!this[kInteractive]) {
+		if (!this[kAsking]) {
 			return;
 		}
 		void this.write("\r" + LINE_ERASE);
@@ -2138,6 +2149,11 @@ function nextReply<K extends WireItem["kind"], T>(
 		group?: string;
 	},
 ): Promise<T> {
+	if (!session[kAsking]) {
+		return options.absent !== undefined
+			? Promise.resolve(options.absent)
+			: Promise.reject(new Error("The terminal's replies cannot be read"));
+	}
 	return new Promise<T>((resolve, reject) => {
 		const entry: PendingReply = {
 			kind,
@@ -2570,6 +2586,7 @@ export function transportFromProcess(
 		},
 		sharesScreen,
 		interactive: proc.stdout.isTTY === true,
+		readsReplies: proc.stdin?.isTTY === true,
 		writeSync(text: string): void {
 			try {
 				proc.stdout.write(text);
