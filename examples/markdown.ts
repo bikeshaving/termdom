@@ -252,7 +252,12 @@ const bindings: Record<string, () => void> = {
   G: () => window.scrollBy(0, height()),
 };
 document.addEventListener("keydown", (event: Event) => {
-  bindings[(event as KeyboardEvent).key]?.();
+  const binding = bindings[(event as KeyboardEvent).key];
+  if (binding) {
+    // The keys it binds would also scroll the document, as in a browser.
+    event.preventDefault();
+    binding();
+  }
 });
 // The wheel and the keys above both move the document; the scroll event
 // is where every move ends up.

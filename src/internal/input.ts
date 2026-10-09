@@ -992,6 +992,64 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	return false;
 }
 
+// Elements whose own keys a scrolling key would take: controls that edit,
+// step or pick with them, and editable content.
+function takesKeys(element: Element): boolean {
+	const tag = element.tagName;
+	return (
+		tag === "INPUT" ||
+		tag === "TEXTAREA" ||
+		tag === "SELECT" ||
+		getEditingHost(element) !== null
+	);
+}
+
+/**
+ * A browser's scrolling keys, as the default action of a keydown nothing
+ * canceled: the arrows a row, PageUp, PageDown and Space a page, Home and
+ * End to an edge. They move the nearest scroller around the focus that can
+ * go that way, and the document otherwise. A page keeps one row of the
+ * last in view.
+ */
+function scrollByKey(input: Input, target: Element, key: string): void {
+	const direction = key === "ArrowUp" || key === "PageUp" || key === "Home"
+		? -1
+		: key === "ArrowDown" || key === "PageDown" || key === " " || key === "End"
+			? 1
+			: 0;
+	if (direction === 0) {
+		return;
+	}
+	const document = input[kDocument];
+	const edge = key === "Home" || key === "End";
+	const page = key === "PageUp" || key === "PageDown" || key === " ";
+	const scroller = getWheelScroller(input, target, direction, "top");
+	if (scroller) {
+		const rowPx = pxFromCells(1, true, document);
+		if (edge) {
+			scroller.scrollTop = direction < 0 ? 0 : scroller.scrollHeight;
+		} else {
+			const rows = page
+				? Math.max(1, Math.round(scroller.clientHeight / rowPx) - 1)
+				: 1;
+			scroller.scrollTop += direction * rows * rowPx;
+		}
+		requestRender(document);
+		return;
+	}
+	if (document.fullscreenElement !== null) {
+		return;
+	}
+	const top = input[kFramebuffer].scrollTop;
+	const rows = page ? Math.max(1, input[kFramebuffer].rows - 1) : 1;
+	scrollDocumentTo(
+		document,
+		edge
+			? (direction < 0 ? 0 : Number.MAX_SAFE_INTEGER)
+			: top + direction * rows,
+	);
+}
+
 /**
  * What a multi-click selects in a text control: a word, the line in a
  * textarea, or an input's whole value. A password's word is its whole
@@ -1345,6 +1403,15 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 
 		// A control's own editing ran above, and claimed its keys.
 		const activation = getKeyboardActivation(targetElement);
+		if (
+			!ctrlKey &&
+			!altKey &&
+			!metaKey &&
+			!(keyName === " " && activation?.space) &&
+			!takesKeys(targetElement)
+		) {
+			scrollByKey(input, targetElement, keyName);
+		}
 		if (activation) {
 			if (
 				(keyName === "Enter" && activation.enter) ||

@@ -1232,6 +1232,17 @@ function *App(this: Context) {
 
   const onkeydown = (event: KeyboardEvent): void => {
     const key = event.key;
+    // The game's keys, not the document's scrolling.
+    if (
+      key === " " ||
+      key.startsWith("Arrow") ||
+      key === "PageUp" ||
+      key === "PageDown" ||
+      key === "Home" ||
+      key === "End"
+    ) {
+      event.preventDefault();
+    }
     if (menu) {
       // While the seed field has focus, letters and digits belong to it;
       // Enter still deals. Tab and Escape leave it, and Tab goes no
