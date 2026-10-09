@@ -1,4 +1,4 @@
-import {readFile} from "node:fs/promises";
+import {readFileSync} from "node:fs";
 import {pathToFileURL} from "node:url";
 
 import {TermDOM} from "@b9g/termdom";
@@ -20,8 +20,9 @@ const term = new TermDOM({
 });
 term.addEventListener("fetch", (event) => {
   if (event.request.url.startsWith("file:")) {
+    const url = new URL(event.request.url);
     event.respondWith(
-      readFile(new URL(event.request.url)).then((bytes) => new Response(bytes)),
+      Promise.resolve().then(() => new Response(readFileSync(url))),
     );
   }
 });
@@ -87,7 +88,7 @@ document.body.innerHTML = `
         <img class="box" style="object-fit: cover">
       </div>
     </div>
-    <p>A broken image is a box with its alt text: <img src="missing.png" alt="no cover art"></p>
+    <p>A broken image shows its alt text: <img src="missing.png" alt="no cover art"></p>
   </div>
 `;
 
