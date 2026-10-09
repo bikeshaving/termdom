@@ -30,15 +30,16 @@ their container still fit it. A border is whole cells, at least one.</li><li><co
 pixels, for an <code>&lt;img&gt;</code> and a canvas&#039;s <code>&quot;2d&quot;</code> context. <code>&quot;auto&quot;</code>
 (default) uses the best way the terminal has, <code>&quot;cells&quot;</code> draws them two
 to a cell in half blocks, and <code>&quot;none&quot;</code> draws none: images show their <code>alt</code> text and
-<code>getContext(&quot;2d&quot;)</code> returns <code>null</code>.</p></li><li><p><code>colorDepth?: &quot;auto&quot; | 24 | 8 | 4</code> — the colors the terminal shows,
-in the bits <code>screen.colorDepth</code> reports. With <code>&quot;auto&quot;</code> (default),
-TermDOM asks the terminal. <code>&quot;rgb&quot;</code>, <code>&quot;256&quot;</code> and <code>&quot;ansi&quot;</code> name 24, 8
-and 4. Any other value throws a <code>TypeError</code>. See &quot;Color depth&quot; in the
-styling guide.</p></li></ul><p>TermDOM reads no environment variables. What the terminal can say, it is
+<code>getContext(&quot;2d&quot;)</code> returns <code>null</code>.</p></li><li><p><code>colorDepth?: &quot;auto&quot; | ColorDepth</code> — the colors the terminal shows:
+<code>24</code>, <code>8</code> or <code>4</code>, the bits <code>screen.colorDepth</code> reports, or <code>&quot;rgb&quot;</code>,
+<code>&quot;256&quot;</code> or <code>&quot;ansi&quot;</code>, the same three by name. With <code>&quot;auto&quot;</code> (default),
+TermDOM asks the terminal. Any other value throws a <code>TypeError</code>. See &quot;Color depth&quot; in the
+styling guide.</p></li><li><p><code>colorScheme?: &quot;light&quot; | &quot;dark&quot;</code> — whether the terminal&#039;s background
+is light or dark, where the program knows. It holds until the
+terminal answers TermDOM&#039;s question about its background, and stands
+when the terminal gives no answer. Light without either.</p></li></ul><p>TermDOM reads no environment variables. What the terminal can say, it is
 asked, and the rest is an option.</p><h3 id="term-document-term-window"><code>term.document</code>, <code>term.window</code> <a class="heading-anchor" href="#term-document-term-window">#</a></h3><p><code>document</code> is a <code>Document</code>. Setting <code>document.title</code> sets the terminal
-window title; the previous title is restored on <code>dispose()</code>.
-<code>document.close()</code> writes the document into the scrollback and seals
-it, and the next mutation starts a fresh document below it.</p><p><code>window</code> has the DOM interfaces and event constructors, and these members
+window title; the previous title is restored on <code>dispose()</code>.</p><p><code>window</code> has the DOM interfaces and event constructors, and these members
 are wired to the terminal:</p><ul><li><code>innerWidth</code>, <code>innerHeight</code>, <code>outerWidth</code>, <code>outerHeight</code> — the terminal
 size, in cells</li><li><code>screenTop</code> — the row the rendered region starts at</li><li><code>scrollY</code>, <code>pageYOffset</code>, <code>scrollTo()</code>, <code>scrollBy()</code>, <code>scroll()</code> —
 document scrolling</li><li><code>requestAnimationFrame()</code>, <code>cancelAnimationFrame()</code> — the callback fires
@@ -48,15 +49,31 @@ a browser; what the callback changes lands in that frame</li><li><code>matchMedi
 rules</li><li><code>navigator.clipboard.writeText()</code> / <code>readText()</code> — the system clipboard
 over OSC 52, reachable only during the dispatch of a trusted user event;
 <code>readText()</code> rejects when the terminal does not answer</li><li><code>navigator.userActivation</code> — <code>hasBeenActive</code> and <code>isActive</code></li><li><code>MutationObserver</code>, <code>ResizeObserver</code>, <code>IntersectionObserver</code> — entries
-are delivered per rendered frame</li><li><code>close()</code> — quit: flush the final frame to scrollback, restore terminal
-modes, dispose, and call <code>transport.close({status: 0})</code>, which exits the
-process on the default transport. Ctrl-C calls this as its default
-action; a <code>keydown</code> listener that calls <code>preventDefault()</code> overrides it.</li></ul><p>Anything not listed behaves as the DOM and CSSOM standards specify,
+are delivered per rendered frame</li><li><code>close()</code> — quit: fire <code>beforeunload</code>, then flush the final frame to
+scrollback, restore terminal modes, dispose, and call
+<code>transport.close({status})</code>, which exits the process on the default
+transport. A <code>beforeunload</code> listener that calls <code>preventDefault()</code>
+keeps the session. Ctrl-C calls <code>close()</code>; it does not reach <code>keydown</code>.
+The status is 130 when Ctrl-C closed the window, as a shell reports an
+interrupt, 1 when the page let an exception escape, and 0 otherwise.
+On the default transport, a <code>SIGINT</code>, <code>SIGHUP</code> or <code>SIGTERM</code> sent to the
+process ends it with 130, 129 or 143.</li></ul><p>Anything not listed behaves as the DOM and CSSOM standards specify,
 without terminal wiring.</p><h3 id="styling-the-built-in-controls">Styling the built-in controls <a class="heading-anchor" href="#styling-the-built-in-controls">#</a></h3><p>A page styles the insides of the form controls through the
-pseudo-elements browsers give them:</p><table><thead><tr><th>Control</th><th>Pseudo-elements</th></tr></thead><tbody><tr><td><code>&lt;input&gt;</code> text types, <code>&lt;textarea&gt;</code></td><td><code>::placeholder</code></td></tr><tr><td><code>&lt;select&gt;</code></td><td><code>::picker(select)</code>, <code>::picker-icon</code></td></tr><tr><td><code>&lt;details&gt;</code></td><td><code>::details-content</code></td></tr></tbody></table><p><code>::picker(select)</code> and <code>::picker-icon</code> are a customizable <code>&lt;select&gt;</code>&#039;s,
+pseudo-elements browsers give them:</p><table><thead><tr><th>Control</th><th>Pseudo-elements</th></tr></thead><tbody><tr><td><code>&lt;input&gt;</code> text types, <code>&lt;textarea&gt;</code></td><td><code>::placeholder</code></td></tr><tr><td><code>&lt;select&gt;</code></td><td><code>::picker(select)</code>, <code>::picker-icon</code></td></tr><tr><td><code>&lt;details&gt;</code></td><td><code>::details-content</code></td></tr><tr><td><code>&lt;progress&gt;</code>, <code>&lt;meter&gt;</code></td><td><code>::slider-track</code>, <code>::slider-fill</code></td></tr></tbody></table><p><code>::picker(select)</code> and <code>::picker-icon</code> are a customizable <code>&lt;select&gt;</code>&#039;s,
 as Chromium ships them.</p><pre class="language-css"><code class="language-css"><span class="token selector">select::picker(select)</span> <span class="token punctuation">{</span> <span class="token property">background-color</span><span class="token punctuation">:</span> #1c1c1c<span class="token punctuation">;</span> <span class="token punctuation">}</span>
-<span class="token selector">select::picker-icon</span> <span class="token punctuation">{</span> <span class="token property">color</span><span class="token punctuation">:</span> gray<span class="token punctuation">;</span> <span class="token punctuation">}</span></code></pre><p>A <code>&lt;progress&gt;</code> draws its fill in its <code>accent-color</code>, as browsers do.</p><pre class="language-css"><code class="language-css"><span class="token selector">progress</span> <span class="token punctuation">{</span> <span class="token property">accent-color</span><span class="token punctuation">:</span> green<span class="token punctuation">;</span> <span class="token punctuation">}</span></code></pre><p>The rest of a control&#039;s insides, such as a meter&#039;s fill or a button&#039;s
-brackets, are TermDOM&#039;s own, as they are a browser&#039;s: the
+<span class="token selector">select::picker-icon</span> <span class="token punctuation">{</span> <span class="token property">color</span><span class="token punctuation">:</span> gray<span class="token punctuation">;</span> <span class="token punctuation">}</span></code></pre><p><code>::slider-track</code> and <code>::slider-fill</code> are CSS Form Control Styling&#039;s
+(css-forms-1). The track holds the fill and shows past it. A meter
+matches <code>:optimal-value</code> when its value is in its optimum region,
+<code>:low-value</code> below <code>low</code>, and <code>:high-value</code> above <code>high</code>.</p><pre class="language-css"><code class="language-css"><span class="token selector">progress::slider-fill</span> <span class="token punctuation">{</span> <span class="token property">color</span><span class="token punctuation">:</span> green<span class="token punctuation">;</span> <span class="token punctuation">}</span>
+<span class="token selector">meter:low-value::slider-fill</span> <span class="token punctuation">{</span> <span class="token property">color</span><span class="token punctuation">:</span> orange<span class="token punctuation">;</span> <span class="token punctuation">}</span></code></pre><p>The prefixed names WebKit and Firefox ship work too, as aliases:
+<code>::-webkit-progress-bar</code> and <code>::-webkit-meter-bar</code> are the track,
+<code>::-webkit-progress-value</code>, <code>::-moz-progress-bar</code> and <code>::-moz-meter-bar</code>
+the fill, <code>::-webkit-meter-optimum-value</code>,
+<code>::-webkit-meter-suboptimum-value</code> and
+<code>::-webkit-meter-even-less-good-value</code> a meter&#039;s fill at each level,
+and <code>:-moz-meter-optimum</code>, <code>:-moz-meter-sub-optimum</code> and
+<code>:-moz-meter-sub-sub-optimum</code> the meter at each level.</p><p>The rest of a control&#039;s insides, such as a button&#039;s brackets, are
+TermDOM&#039;s own, as they are a browser&#039;s: the
 controls are shadow trees inside, and <code>::part()</code> does not reach into
 them. TermDOM&#039;s own rules come first, so a page&#039;s <code>::placeholder</code> and the
 rest override them as they would any built-in style.</p><h3 id="term-addeventlistener-fetch-listener"><code>term.addEventListener(&quot;fetch&quot;, listener)</code> <a class="heading-anchor" href="#term-addeventlistener-fetch-listener">#</a></h3><p>A <code>TermDOM</code> is an <code>EventTarget</code>. It receives a <code>&quot;fetch&quot;</code> event, a
@@ -67,15 +84,14 @@ listener answers it with <code>event.respondWith()</code>:</p><pre class="langua
 term<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"fetch"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
   event<span class="token punctuation">.</span><span class="token function">respondWith</span><span class="token punctuation">(</span><span class="token function">fetch</span><span class="token punctuation">(</span>event<span class="token punctuation">.</span>request<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>A load <code>csp</code> blocks fires <code>securitypolicyviolation</code> at its element
-instead. The images guide has both.</p><h3 id="term-attach-transport"><code>term.attach(transport?)</code> <a class="heading-anchor" href="#term-attach-transport">#</a></h3><p>Puts the terminal in raw mode, starts input handling, mouse reporting,
+instead. The images guide has both.</p><h3 id="term-attach"><code>term.attach()</code> <a class="heading-anchor" href="#term-attach">#</a></h3><p>Puts the terminal in raw mode, starts input handling, mouse reporting,
 and bracketed paste, and paints whatever the document holds. Idempotent;
 no other call writes to the terminal. Returns a promise that resolves
 once the first frame has been written.</p><p>While attached to the process transport, the Node event loop stays alive
 until <code>dispose()</code> or <code>window.close()</code>.</p><p><code>document.visibilityState</code> is <code>&quot;hidden&quot;</code> before <code>attach()</code>, <code>&quot;visible&quot;</code>
 until <code>dispose()</code>, and <code>&quot;hidden&quot;</code> after. It is also <code>&quot;hidden&quot;</code> while the
 wheel has been handed to the terminal&#039;s scrollback, until the next
-keystroke. <code>visibilitychange</code> fires on each change.</p><p>Passing a transport rebinds the instance to it, only before the first
-attach.</p><h3 id="term-renderansi-html"><code>term.renderANSI(html?)</code> <a class="heading-anchor" href="#term-renderansi-html">#</a></h3><p>Returns the whole document as an ANSI string at the terminal&#039;s width:
+keystroke. <code>visibilitychange</code> fires on each change.</p><h3 id="term-renderansi-html"><code>term.renderANSI(html?)</code> <a class="heading-anchor" href="#term-renderansi-html">#</a></h3><p>Returns the whole document as an ANSI string at the terminal&#039;s width:
 colors and line breaks, no cursor movement. Pass an HTML string to
 render that instead; the document is left alone.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> page <span class="token operator">=</span> term<span class="token punctuation">.</span><span class="token function">renderANSI</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 <span class="token keyword">const</span> error <span class="token operator">=</span> term<span class="token punctuation">.</span><span class="token function">renderANSI</span><span class="token punctuation">(</span><span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">&lt;div style="color:red">error&lt;/div></span><span class="token template-punctuation string">`</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>It works attached or not, and doesn&#039;t disturb a live session.</p><h3 id="term-print-html"><code>term.print(html?)</code> <a class="heading-anchor" href="#term-print-html">#</a></h3><p>Writes <code>renderANSI(html)</code> to the terminal as ordinary output. Await it
@@ -85,33 +101,38 @@ continues; <code>window.close()</code> is the quit. Returns a promise that resol
 when every queued restore has reached the transport; await it before
 writing further output. The process transport also restores
 shell-critical modes synchronously, so a caller that exits without
-awaiting still leaves the shell usable. <code>using term = new TermDOM()</code>
-disposes on scope exit.</p><h2 id="installglobals-term"><code>installGlobals(term)</code> <a class="heading-anchor" href="#installglobals-term">#</a></h2><p>Defines the window&#039;s names on <code>globalThis</code>, for code that reads
+awaiting still leaves the shell usable. <code>await using term = new TermDOM()</code>
+disposes on scope exit and waits for it.</p><h2 id="installglobals-term"><code>installGlobals(term)</code> <a class="heading-anchor" href="#installglobals-term">#</a></h2><p>Defines the window&#039;s names on <code>globalThis</code>, for code that reads
 <code>document</code>, <code>window</code>, <code>Element</code>, <code>getSelection</code> and the like as globals:
-React, Vue, Svelte, CodeMirror. Only names the runtime lacks are
-defined, so Node&#039;s <code>Event</code>, <code>fetch</code> and <code>navigator</code> stay Node&#039;s, and in a
-browser nothing changes. Methods are bound to the window, and other
-properties read and write through to it, so <code>scrollY</code> stays current.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">import</span> <span class="token punctuation">{</span>installGlobals<span class="token punctuation">,</span> TermDOM<span class="token punctuation">}</span> <span class="token keyword">from</span> <span class="token string">"@b9g/termdom"</span><span class="token punctuation">;</span>
+React, Vue, Svelte, CodeMirror. The process then reads as the window
+does. A name the runtime defines too, such as <code>setTimeout</code>,
+<code>navigator</code> or, on Bun and Deno, <code>addEventListener</code> and <code>alert</code>, is the
+window&#039;s until uninstalled. Methods are bound to the
+window, and other properties read and write through to it, so <code>scrollY</code>
+stays current.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">import</span> <span class="token punctuation">{</span>installGlobals<span class="token punctuation">,</span> TermDOM<span class="token punctuation">}</span> <span class="token keyword">from</span> <span class="token string">"@b9g/termdom"</span><span class="token punctuation">;</span>
 
 <span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-<span class="token keyword">const</span> uninstall <span class="token operator">=</span> <span class="token function">installGlobals</span><span class="token punctuation">(</span>term<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>It returns a function that removes what it defined. One TermDOM&#039;s
+<span class="token keyword">const</span> uninstall <span class="token operator">=</span> <span class="token function">installGlobals</span><span class="token punctuation">(</span>term<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>It returns a function that puts back what was there. One TermDOM&#039;s
 globals can be installed at a time; calling it again before uninstalling
-throws.</p><p>Some runtimes have window-like globals of their own, and those stay the
-runtime&#039;s. A bare call to one of these reaches the runtime, not the
-TermDOM, so write <code>window.</code> before it:</p><table><thead><tr><th>Name</th><th>Runtime that has its own</th></tr></thead><tbody><tr><td><code>addEventListener</code>, <code>removeEventListener</code>, <code>dispatchEvent</code></td><td>Bun, Deno</td></tr><tr><td><code>postMessage</code></td><td>Bun</td></tr><tr><td><code>close</code> (it exits Deno)</td><td>Deno</td></tr><tr><td><code>location</code>, <code>name</code>, <code>closed</code></td><td>Deno</td></tr><tr><td><code>alert</code>, <code>confirm</code>, <code>prompt</code>, <code>self</code>, <code>onerror</code></td><td>Bun, Deno</td></tr><tr><td><code>localStorage</code>, <code>sessionStorage</code></td><td>Node, Deno</td></tr></tbody></table><p>Events made with the runtime&#039;s <code>Event</code> or <code>CustomEvent</code> reach the
-document&#039;s listeners, and the document&#039;s events are instances of the
-runtime&#039;s <code>Event</code>. What a terminal does not have, such as <code>indexedDB</code>
-or <code>caches</code>, is not installed, so <code>typeof indexedDB</code> is <code>&quot;undefined&quot;</code>
-and feature detection takes its fallback. Uninstalling leaves any name
-that other code has redefined since.</p><h2 id="terminaltransport"><code>TerminalTransport</code> <a class="heading-anchor" href="#terminaltransport">#</a></h2><p>The interface between the engine and a terminal, for embedding TermDOM
+throws.</p><p>The runtime&#039;s event classes, <code>Event</code>, <code>EventTarget</code>, <code>CustomEvent</code>,
+<code>ErrorEvent</code> and <code>MessageEvent</code>, stay its own: on Bun and Deno the
+runtime&#039;s own event targets accept only its own events, and the
+document accepts them too, so they serve both. So do <code>localStorage</code> and
+<code>sessionStorage</code> where the runtime has them: Deno&#039;s, and Node&#039;s given
+<code>--localstorage-file</code>, keep what is stored between runs, where the
+window&#039;s keep it in memory. On Bun and Node 20, which have none, the
+window&#039;s are installed. What a terminal does not
+have, such as <code>indexedDB</code> or <code>caches</code>, is not installed, so feature
+detection takes its fallback.</p><p>While installed, a promise rejected with no handler is the page&#039;s: it
+fires <code>unhandledrejection</code> on the window, and one no listener cancels is
+reported as an uncaught exception is, where the runtime would end the
+process. Uninstalling leaves any name that other code has redefined
+since.</p><h2 id="terminaltransport"><code>TerminalTransport</code> <a class="heading-anchor" href="#terminaltransport">#</a></h2><p>The interface between the engine and a terminal, for embedding TermDOM
 somewhere other than a process — an SSH server, a browser terminal, a
 test harness:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">interface</span> <span class="token class-name">TerminalTransport</span> <span class="token punctuation">{</span>
 	<span class="token keyword">readonly</span> cols<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span> <span class="token comment">// live: always the current size</span>
 	<span class="token keyword">readonly</span> rows<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
 	<span class="token keyword">readonly</span> interactive<span class="token operator">:</span> <span class="token builtin">boolean</span><span class="token punctuation">;</span> <span class="token comment">// false: plain line output (a pipe)</span>
-	<span class="token comment">// Optional. Whether the terminal's background is dark, where the</span>
-	<span class="token comment">// program knows. The terminal's own answer replaces it.</span>
-	<span class="token keyword">readonly</span> colorScheme<span class="token operator">?</span><span class="token operator">:</span> <span class="token string">"light"</span> <span class="token operator">|</span> <span class="token string">"dark"</span><span class="token punctuation">;</span>
 	<span class="token comment">// Optional. Takes an error's text somewhere the frame does not share;</span>
 	<span class="token comment">// true when it did. The engine keeps what it cannot place and prints</span>
 	<span class="token comment">// it below the document at the end.</span>
@@ -125,6 +146,10 @@ test harness:</p><pre class="language-typescript"><code class="language-typescri
 	<span class="token keyword">readonly</span> resizes<span class="token operator">:</span> ReadableStream<span class="token operator">&lt;</span><span class="token punctuation">{</span>cols<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span> rows<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">}</span><span class="token operator">></span><span class="token punctuation">;</span>
 	<span class="token keyword">readonly</span> ready<span class="token operator">:</span> <span class="token builtin">Promise</span><span class="token operator">&lt;</span><span class="token keyword">void</span><span class="token operator">></span><span class="token punctuation">;</span> <span class="token comment">// established; Promise.resolve() if born so</span>
 	<span class="token keyword">readonly</span> closed<span class="token operator">:</span> <span class="token builtin">Promise</span><span class="token operator">&lt;</span>TerminalCloseInfo<span class="token operator">></span><span class="token punctuation">;</span> <span class="token comment">// the terminal went away</span>
+	<span class="token comment">// Optional. Stops the program as a shell's job control does, and</span>
+	<span class="token comment">// resolves when it continues; the engine hands the terminal back before</span>
+	<span class="token comment">// and takes it again after. Without it, Ctrl+Z is an ordinary key.</span>
+	suspend<span class="token operator">?</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">Promise</span><span class="token operator">&lt;</span><span class="token keyword">void</span><span class="token operator">></span><span class="token punctuation">;</span>
 	<span class="token comment">// Ends the medium if the transport owns it (the process transport exits</span>
 	<span class="token comment">// the process); a no-op otherwise.</span>
 	<span class="token function">close</span><span class="token punctuation">(</span>info<span class="token operator">?</span><span class="token operator">:</span> TerminalCloseInfo<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token keyword">void</span><span class="token punctuation">;</span>
@@ -141,11 +166,12 @@ the engine disposes in response.</p><h2 id="transportfromprocess-proc-options"><
 <code>ProcessLike</code> type: <code>stdin</code>, <code>stdout</code>, <code>stderr</code>, <code>on</code>, <code>removeListener</code>
 and <code>exit</code>). Defaults to the global <code>process</code>.</li><li><code>options.sharesScreen</code> — overrides <code>sharesScreen</code>, which defaults to
 true for the global process (it sits below a shell) and false for
-anything else.</li><li><code>options.colorScheme</code> — <code>&quot;light&quot;</code> or <code>&quot;dark&quot;</code>, for the frames before
-the terminal reports its background.</li></ul><p>The wrapper owns all process-level behavior: raw mode, <code>SIGWINCH</code> →
+anything else.</li></ul><p>The wrapper owns all process-level behavior: raw mode, <code>SIGWINCH</code> →
 <code>resizes</code>, signals → <code>closed</code>, <code>stdout.isTTY</code> → <code>interactive</code>, <code>stderr</code>
-when it is not a terminal → <code>logError</code>, and an exit hook that restores
-the cursor if the app exits without disposing.</p><h2 id="transportfromssh-session-options"><code>transportFromSSH(session, options?)</code> <a class="heading-anchor" href="#transportfromssh-session-options">#</a></h2><p>Returns a <code>TerminalTransport</code> over an SSH session from
+when it is not a terminal → <code>logError</code>, <code>suspend()</code> by leaving raw
+mode and sending the process <code>SIGTSTP</code> until <code>SIGCONT</code> (not on Windows),
+and an exit hook that restores the cursor if the app exits without
+disposing.</p><h2 id="transportfromssh-session-options"><code>transportFromSSH(session, options?)</code> <a class="heading-anchor" href="#transportfromssh-session-options">#</a></h2><p>Returns a <code>TerminalTransport</code> over an SSH session from
 <a href="https://github.com/mscdex/ssh2">ssh2</a>, for a program that is its own
 SSH server and gives each session a document of its own.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">import</span> <span class="token punctuation">{</span>readFileSync<span class="token punctuation">}</span> <span class="token keyword">from</span> <span class="token string">"node:fs"</span><span class="token punctuation">;</span>
 <span class="token keyword">import</span> <span class="token punctuation">{</span>TermDOM<span class="token punctuation">,</span> transportFromSSH<span class="token punctuation">}</span> <span class="token keyword">from</span> <span class="token string">"@b9g/termdom"</span><span class="token punctuation">;</span>
@@ -162,7 +188,7 @@ SSH server and gives each session a document of its own.</p><pre class="language
 <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">listen</span><span class="token punctuation">(</span><span class="token number">2222</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><ul><li><code>session</code> — what accepting ssh2&#039;s <code>&quot;session&quot;</code> event returns, or
 anything of its shape (the exported <code>SSHSessionLike</code> type). TermDOM
 does not depend on ssh2.</li><li><code>options.sharesScreen</code> — defaults to true: the client&#039;s shell is above
-the <code>ssh</code> command, so the document anchors below it.</li><li><code>options.colorScheme</code> — as for <code>transportFromProcess</code>.</li></ul><p>The transport accepts the session&#039;s pty request and takes its size, or
+the <code>ssh</code> command, so the document anchors below it.</li></ul><p>The transport accepts the session&#039;s pty request and takes its size, or
 80×24 without one. It accepts the shell request, and <code>ready</code> resolves
 when that opens the channel that carries input and frames. Each window
 change is a resize. Other requests, such as <code>exec</code>, are left to ssh2,
@@ -173,10 +199,17 @@ exit status and ends the channel.</p><p>To serve an app to real users, an OpenSS
 <code>ForceCommand node /path/to/app.ts</code> runs it on a real pty instead, with
 <code>transportFromProcess</code>.
 <a href="https://github.com/bikeshaving/termdom/blob/main/examples/ssh.ts"><code>examples/ssh.ts</code></a>
-is a whole server.</p><h2 id="other-exports">Other exports <a class="heading-anchor" href="#other-exports">#</a></h2><p><code>TermDOM</code>, <code>installGlobals</code>, <code>transportFromProcess</code> and
+is a whole server.</p><p>A server that holds many sessions in one process gives each its own
+<code>TermDOM</code>, and an exception a session&#039;s listeners, timers or frames let
+escape is reported to that session&#039;s window and log. Two things stay
+the server&#039;s, because the process has only one of each:</p><ul><li>Globals. <code>installGlobals()</code> puts one window on <code>globalThis</code>, so a
+server passes each session&#039;s <code>document</code> to its framework instead, as
+React&#039;s <code>createRoot(term.document.body)</code> takes it.</li><li>Promise rejections no one handles. The runtime decides what one does,
+and Node ends the process, with every session in it. A server that
+should outlive one session&#039;s mistake listens for them itself, with
+<code>process.on(&quot;unhandledRejection&quot;, ...)</code>.</li></ul><h2 id="other-exports">Other exports <a class="heading-anchor" href="#other-exports">#</a></h2><p><code>TermDOM</code>, <code>installGlobals</code>, <code>transportFromProcess</code> and
 <code>transportFromSSH</code> are the entry points above. The package also exports:</p><ul><li><code>FetchEvent</code>, <code>ExtendableEvent</code> and the <code>FetchEventInit</code> type, for the
 <code>&quot;fetch&quot;</code> event.</li><li><code>CanvasCellGridContext</code>, the class behind a canvas&#039;s
-<code>&quot;termdom-cellgrid&quot;</code> context.</li><li>The types <code>TermDOMOptions</code>, <code>TermDOMEventMap</code>, <code>CellSize</code>,
+<code>&quot;termdom-cellgrid&quot;</code> context.</li><li>The types <code>TermDOMOptions</code>, <code>TermDOMEventMap</code>, <code>CellSize</code>, <code>ColorDepth</code>,
 <code>TerminalTransport</code>, <code>TerminalCloseInfo</code>, <code>TerminalSize</code>, <code>ProcessLike</code>,
-<code>TTYReadStream</code>, <code>TTYWriteStream</code> and <code>SSHSessionLike</code>.</li></ul><p><code>@b9g/termdom/decode-worker</code> is the module that decodes images on a
-<code>Worker</code>. Programs do not import it.</p><div class="css-1fsmiy5"><a href="https://github.com/bikeshaving/termdom/edit/main/docs/guides/06-api.md">Edit this page on GitHub</a></div></main><footer class="css-wgwyi4"><nav class="css-1cmw0m7"><a href="/guides/getting-started/">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a></nav><p class="css-vv6cs2">MIT Licensed · A <a href="https://bikeshaving.org">bikeshaving</a> project</p></footer><script type="module" src="/static/navbar-f6d8a60ddbd93aa8.js"></script><script type="module" src="/static/search-246da526d14c6e23.js"></script></body></html>
+<code>TTYReadStream</code>, <code>TTYWriteStream</code> and <code>SSHSessionLike</code>.</li></ul><div class="css-1fsmiy5"><a href="https://github.com/bikeshaving/termdom/edit/main/docs/guides/06-api.md">Edit this page on GitHub</a></div></main><footer class="css-wgwyi4"><nav class="css-1cmw0m7"><a href="/guides/getting-started/">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a></nav><p class="css-vv6cs2">MIT Licensed · A <a href="https://bikeshaving.org">bikeshaving</a> project</p></footer><script type="module" src="/static/navbar-f6d8a60ddbd93aa8.js"></script><script type="module" src="/static/search-246da526d14c6e23.js"></script></body></html>

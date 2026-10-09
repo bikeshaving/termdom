@@ -23,7 +23,14 @@ character. <code>keypress</code> fires after <code>keydown</code> for a printabl
 released.</p><h3 id="what-a-terminal-can-report">What a terminal can report <a class="heading-anchor" href="#what-a-terminal-can-report">#</a></h3><p>A terminal sends bytes, not key states, and some keystrokes send the same
 byte. These limits apply to every terminal application:</p><ul><li><code>Shift+Enter</code> sends the same byte as <code>Enter</code>. Bind <code>Ctrl+J</code> for the
 second action instead.</li><li><code>Enter</code> is the byte for <code>Ctrl+M</code> and <code>Tab</code> for <code>Ctrl+I</code>; the named key
-is what you get, and those chords never arrive.</li><li><code>Ctrl+C</code> is the interrupt; it never reaches the document.</li><li><code>Ctrl+L</code> redraws the screen, as it does in a shell, unless a <code>keydown</code>
+is what you get, and those chords never arrive.</li><li><code>Ctrl+C</code> is the interrupt; it never reaches the document. It calls
+<code>window.close()</code>, and a <code>beforeunload</code> listener that calls
+<code>preventDefault()</code> keeps the session.</li><li><code>Ctrl+Z</code> suspends the program, as a shell&#039;s job control does, and
+never reaches the document either. The terminal is handed back and
+<code>document.visibilityState</code> is <code>&quot;hidden&quot;</code> until the shell continues the
+program with <code>fg</code>; a document in flow starts again below the shell&#039;s
+lines. Over SSH, and on Windows, where nothing can suspend the program,
+<code>Ctrl+Z</code> is an ordinary key.</li><li><code>Ctrl+L</code> redraws the screen, as it does in a shell, unless a <code>keydown</code>
 listener calls <code>preventDefault()</code>.</li><li><code>Ctrl+Shift+letter</code> is indistinguishable from <code>Ctrl+letter</code>.</li><li><code>Alt+key</code> arrives as one keypress with <code>altKey</code>, as long as the terminal
 sends Escape and the key together, which terminals do.</li><li>A terminal that reports extended keys (CSI u, or xterm&#039;s
 <code>modifyOtherKeys</code>) lifts the limits above: <code>Shift+Enter</code>,
@@ -60,7 +67,8 @@ scrolls nothing.</p><h2 id="form-controls">Form controls <a class="heading-ancho
 <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>div</span><span class="token punctuation">></span></span></code></pre><pre class="language-typescript"><code class="language-typescript">field<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"input"</span><span class="token punctuation">,</span> updatePreview<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p><code>::placeholder</code> styles a field&#039;s placeholder. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. <code>&lt;input type=&quot;password&quot;&gt;</code>
 masks its value. A <code>&lt;textarea&gt;</code> scrolls to keep its caret in view. A number input takes float syntax only, and ArrowUp and
-ArrowDown step it within <code>min</code> and <code>max</code>.</p><p><code>new FormData(form)</code> builds the form&#039;s entry list: every submittable
+ArrowDown step it within <code>min</code> and <code>max</code>. The arrows move a radio&#039;s
+check to the previous or next radio of its group, wrapping at the ends.</p><p><code>new FormData(form)</code> builds the form&#039;s entry list: every submittable
 control it owns, in tree order, by the rule its kind has. Submitting a
 form builds the same list. <code>requestSubmit()</code> fires <code>submit</code> first and
 stops there if a listener cancels it; <code>submit()</code> skips that event. Either
@@ -93,8 +101,13 @@ bubbling from the element the caret is in, with the spec&#039;s input types:
 <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Undo and redo are not here yet, and neither are <code>execCommand</code>, the
 formatting commands, HTML paste, IME composition in a host, or
 spellcheck.</p><h2 id="errors">Errors <a class="heading-anchor" href="#errors">#</a></h2><p>An exception that escapes a listener, an event handler attribute, an
-observer callback, or a frame callback is reported as a browser reports
-it. The window hears a cancelable <code>error</code> event first:</p><pre class="language-typescript"><code class="language-typescript">window<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"error"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
+observer callback, a frame callback, or a callback given to
+<code>window.setTimeout()</code>, <code>setInterval()</code> or <code>queueMicrotask()</code> is reported
+as a browser reports it. A bare <code>setTimeout()</code> is the runtime&#039;s own
+unless <code>installGlobals()</code> has put the window&#039;s in its place, and an
+exception from the runtime&#039;s ends the program. With the globals
+installed, a promise rejected with no handler fires
+<code>unhandledrejection</code> on the window and is reported the same way. The window hears a cancelable <code>error</code> event first:</p><pre class="language-typescript"><code class="language-typescript">window<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"error"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
 	status<span class="token punctuation">.</span>textContent <span class="token operator">=</span> event<span class="token punctuation">.</span>message<span class="token punctuation">;</span>
 	event<span class="token punctuation">.</span><span class="token function">preventDefault</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>A listener that calls <code>preventDefault()</code> has handled the error. An
@@ -139,7 +152,14 @@ field:</p><pre class="language-typescript"><code class="language-typescript">doc
 gesture — Cmd+C, Shift+drag — and Ctrl+C is the interrupt.</p><h2 id="scrolling">Scrolling <a class="heading-anchor" href="#scrolling">#</a></h2><p>The document scrolls with the standard calls, and so does a box whose
 <code>overflow</code> is <code>auto</code> or <code>scroll</code>:</p><pre class="language-typescript"><code class="language-typescript">window<span class="token punctuation">.</span><span class="token function">scrollTo</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 pane<span class="token punctuation">.</span>scrollTop <span class="token operator">+=</span> <span class="token number">5</span><span class="token punctuation">;</span>
-element<span class="token punctuation">.</span><span class="token function">scrollIntoView</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p><code>scroll</code> fires on the box, or on the document for the document scroll,
+element<span class="token punctuation">.</span><span class="token function">scrollIntoView</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The keys scroll as a browser&#039;s do, as the default action of a <code>keydown</code>
+no listener canceled: ArrowUp and ArrowDown a row, PageUp, PageDown and
+Space a page, keeping one row of the last in view, and Home and End to
+an edge. The nearest box around the focused element that can scroll
+that way takes the key, and the document otherwise. Keys a field, a
+<code>&lt;select&gt;</code> or editable content takes, and Space on a button, do not
+scroll. A program that uses those keys itself calls <code>preventDefault()</code>,
+as it would in a browser.</p><p><code>scroll</code> fires on the box, or on the document for the document scroll,
 and <code>scrollend</code> follows once scrolling stops. <code>window.scrollY</code> reports
 the document position, clamped to the end as soon as it is set.
 <code>scrollIntoView()</code> aligns the element to the top, as in a browser; pass
