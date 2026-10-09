@@ -992,15 +992,29 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	return false;
 }
 
+const KEYLESS_INPUTS = new Set([
+	"checkbox",
+	"button",
+	"submit",
+	"reset",
+	"color",
+	"file",
+	"image",
+]);
+
 // Elements whose own keys a scrolling key would take: controls that edit,
 // step or pick with them, and editable content.
-function takesKeys(element: Element): boolean {
+function takesKeys(element: Element, key: string): boolean {
 	const tag = element.tagName;
+	if (tag === "INPUT") {
+		const type = (element as HTMLInputElement).type;
+		if (type === "radio") {
+			return key.startsWith("Arrow");
+		}
+		return !KEYLESS_INPUTS.has(type);
+	}
 	return (
-		tag === "INPUT" ||
-		tag === "TEXTAREA" ||
-		tag === "SELECT" ||
-		getEditingHost(element) !== null
+		tag === "TEXTAREA" || tag === "SELECT" || getEditingHost(element) !== null
 	);
 }
 
@@ -1408,7 +1422,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 			!altKey &&
 			!metaKey &&
 			!(keyName === " " && activation?.space) &&
-			!takesKeys(targetElement)
+			!takesKeys(targetElement, keyName)
 		) {
 			scrollByKey(input, targetElement, keyName);
 		}

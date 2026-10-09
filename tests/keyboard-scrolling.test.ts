@@ -164,3 +164,34 @@ test("the arrows move through a radio group, checking and wrapping", async () =>
 	expect(radios[3].checked).toBe(false);
 	await dom.dispose();
 });
+
+test("a focused checkbox, radio or button lets the page keys scroll, and keeps Space and its own arrows", async () => {
+	for (const type of ["checkbox", "radio", "button", "submit", "reset"]) {
+		const {terminal, dom} = await longDocument();
+		const {document} = dom;
+		const control = document.createElement("input");
+		control.type = type;
+		document.body.prepend(control);
+		control.focus();
+		await nextFrame(dom);
+		expect(document.activeElement).toBe(control);
+		await press(terminal, "PageDown");
+		await until(() => dom.window.scrollY === 9);
+		expect(dom.window.scrollY).toBe(9);
+		await press(terminal, "End");
+		await until(() => dom.window.scrollY === 31);
+		expect(dom.window.scrollY).toBe(31);
+		await press(terminal, "Home");
+		await until(() => dom.window.scrollY === 0);
+		expect(dom.window.scrollY).toBe(0);
+		await press(terminal, " ");
+		await nextFrame(dom);
+		expect(dom.window.scrollY).toBe(0);
+		if (type === "radio") {
+			await press(terminal, "ArrowDown");
+			await nextFrame(dom);
+			expect(dom.window.scrollY).toBe(0);
+		}
+		await dom.dispose();
+	}
+});
