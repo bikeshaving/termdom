@@ -53,12 +53,6 @@ export interface TerminalTransport {
 	readonly interactive: boolean;
 
 	/**
-	 * False when what the terminal answers cannot be read, as when stdin is
-	 * a pipe. Nothing is asked of the terminal then. Absent means true.
-	 */
-	readonly readsReplies?: boolean;
-
-	/**
 	 * Writes an error's text somewhere the frame does not share, such as a
 	 * stderr that is not the terminal. True when it did. The engine holds
 	 * what the transport cannot place until the session ends, and prints
@@ -860,6 +854,9 @@ interface PendingReply {
 }
 
 const kTransport = Symbol("transport");
+// Set on a process transport whose stdin is no terminal, so that what the
+// terminal answers cannot be read, and nothing is asked of it.
+const kReadsNoReplies = Symbol("readsNoReplies");
 const kInteractive = Symbol("interactive");
 const kAsking = Symbol("asking");
 const kEngagedModes = Symbol("engagedModes");
@@ -997,7 +994,9 @@ export class Exchange extends EventTarget {
 		super();
 		this[kStatedColorScheme] = colorScheme;
 		const interactive = transport.interactive;
-		const asking = interactive && transport.readsReplies !== false;
+		const asking =
+			interactive &&
+			(transport as {[kReadsNoReplies]?: boolean})[kReadsNoReplies] !== true;
 		this[kWriter] = null;
 		this[kReader] = null;
 		this[kResizeReader] = null;
@@ -2601,7 +2600,7 @@ export function transportFromProcess(
 		{highWaterMark: 0},
 	);
 
-	return {
+	const transport: TerminalTransport & {[kReadsNoReplies]: boolean} = {
 		get cols() {
 			return proc.stdout.columns || DEFAULT_COLS;
 		},
@@ -2610,7 +2609,7 @@ export function transportFromProcess(
 		},
 		sharesScreen,
 		interactive: proc.stdout.isTTY === true,
-		readsReplies: proc.stdin?.isTTY === true,
+		[kReadsNoReplies]: proc.stdin?.isTTY !== true,
 		writeSync(text: string): void {
 			try {
 				proc.stdout.write(text);
@@ -2677,6 +2676,7 @@ export function transportFromProcess(
 			proc.exit(info?.status ?? 0);
 		},
 	};
+	return transport;
 }
 
 // The shape transportFromSSH reads: an ssh2 session, and the channel its

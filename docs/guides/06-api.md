@@ -293,9 +293,6 @@ interface TerminalTransport {
 	readonly cols: number; // live: always the current size
 	readonly rows: number;
 	readonly interactive: boolean; // false: plain line output (a pipe)
-	// Optional. False when the terminal's answers cannot be read, as with
-	// stdin a pipe; the terminal is then asked nothing. Absent means true.
-	readonly readsReplies?: boolean;
 	// Optional. Takes an error's text somewhere the frame does not share;
 	// true when it did. The engine keeps what it cannot place and prints
 	// it below the document at the end.
@@ -347,7 +344,8 @@ const term = new TermDOM({transport: transportFromProcess(process)});
 
 The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
 `resizes`, signals → `closed`, `stdout.isTTY` → `interactive`,
-`stdin.isTTY` → `readsReplies`, `stderr` when it is not a terminal →
+asking the terminal nothing when stdin is not a terminal, since its
+answers could not be read, `stderr` when it is not a terminal →
 `logError`, `suspend()` by leaving raw mode and sending the process
 `SIGTSTP` until `SIGCONT` (not on Windows), and an exit hook that
 restores the cursor if the app exits without disposing, written before
