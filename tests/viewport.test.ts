@@ -1394,6 +1394,26 @@ test("absolute units convert to pixels at 96 to the inch", () => {
 	dom.dispose();
 });
 
+test("ic is one row down, as a wide glyph and ch are", () => {
+	for (const cellSize of [undefined, {width: 8, height: 16}]) {
+		const dom = new TermDOM({
+			transport: new MockProcess({cols: 40, rows: 10}).transport,
+			cellSize,
+		});
+		const cell = cellSize ?? {width: 1, height: 1};
+		dom.document.body.innerHTML =
+			"<div style=\"width: 1ic; height: 1ic\"></div>" +
+			"<div style=\"width: 1ch; height: 1ch\"></div>";
+		const [ic, ch] = [...dom.document.body.children].map((div) =>
+			div.getBoundingClientRect(),
+		);
+		expect(ic.width).toBe(cell.width * 2);
+		expect(ic.height).toBe(cell.height);
+		expect(ic.height).toBe(ch.height);
+		dom.dispose();
+	}
+});
+
 test("ic is two cells, whatever the font size", () => {
 	const dom = new TermDOM({
 		transport: new MockProcess({cols: 40, rows: 5}).transport,

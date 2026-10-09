@@ -2660,6 +2660,9 @@ export interface LengthContext {
 	// column across, a row down.
 	cellAlong: number;
 
+	// Whether that axis runs down the page.
+	vertical: boolean;
+
 	// The height of a line as the terminal draws it, for `lh` and `rlh`.
 	line: number;
 
@@ -2694,10 +2697,11 @@ function getUnitFactor(unit: string, context: LengthContext): number | null {
 		// down. CSS takes ch across on both; a cell grid does not.
 		case "ch":
 			return context.cellAlong;
-		// The width of 水, which a terminal draws two cells wide whatever the
-		// font size, as it draws every character in whole cells.
+		// The advance of 水, which a terminal draws two cells wide and one
+		// row tall whatever the font size, as it draws every character in
+		// whole cells.
 		case "ic":
-			return context.cellWidth * 2;
+			return context.vertical ? context.cellAlong : context.cellWidth * 2;
 		case "lh":
 		case "rlh":
 			return context.line;
@@ -2734,6 +2738,7 @@ const NO_LENGTHS: LengthContext = {
 	font: 0,
 	cellWidth: 0,
 	cellAlong: 0,
+	vertical: false,
 	line: 0,
 	root: 0,
 	viewportWidth: 0,

@@ -144,6 +144,29 @@ test("ms wraps its text in quotes and mspace is empty cells", async () => {
 	expect(lines).toEqual(["a \"hi\"  1 z"]);
 });
 
+test("MathML lengths are measured as CSS lengths are", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		cellSize: {width: 8, height: 16},
+	});
+	dom.document.body.innerHTML =
+		inline("<mi>x</mi><mspace width=\"16px\"></mspace><mi>y</mi>") +
+		block("<mo minsize=\"48px\">(</mo><mi>x</mi>");
+	await nextFrame(dom);
+	const lines = terminal.getVisibleText().split("\n");
+	expect(lines[0]).toBe("a x  y z");
+	expect(
+		lines.slice(1, 4).map((line) => line.trim()),
+	).toEqual(["⎛", "⎜x", "⎝"]);
+	dom.dispose();
+	expect(
+		await renderMarked(block("<mo minsize=\"3ch\">(</mo><mi>x</mi>"), 10),
+	).toEqual(
+		["    ⎛", "    ⎜x", "    ⎝"],
+	);
+});
+
 test("an empty mrow is one blank cell", async () => {
 	const lines = await renderLines(inline("<mi>x</mi><mrow></mrow><mi>y</mi>"));
 	expect(lines).toEqual(["a x y z"]);

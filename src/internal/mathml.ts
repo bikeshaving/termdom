@@ -5,7 +5,7 @@
  * the block and inline engines place, and what the painter blits.
  */
 
-import {getComputedValue} from "./cssom.ts";
+import {getCellSize, getComputedValue, resolveLength} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {getDocumentExchange, MATHML_NAMESPACE} from "./dom.ts";
 import type {CellStyle} from "./framebuffer.ts";
@@ -935,7 +935,8 @@ function layoutNode(node: Node, context: MathContext): MathBox {
 			return layoutTextToken(element, joinChars(quoted), local, quoted);
 		}
 		case "mspace": {
-			const width = parseMathLength(element.getAttribute("width")) ?? 0;
+			const width =
+				parseMathLength(element, element.getAttribute("width"), false) ?? 0;
 			return createEmptyBox(width > 0 ? Math.max(1, Math.round(width)) : 0);
 		}
 		case "maction":
@@ -1179,11 +1180,15 @@ function getTokenStyle(
 }
 
 /**
- * A length attribute in cells, unrounded. em, ch and px are one column;
- * ex and lh one row; a bare number counts cells. A percentage or an
- * unknown unit is null.
+ * A length attribute in cells along one axis, unrounded, measured as CSS
+ * measures the element's lengths. A bare number counts cells. A
+ * percentage or an unknown unit is null.
  */
-export function parseMathLength(value: string | null): number | null {
+function parseMathLength(
+	element: Element,
+	value: string | null,
+	vertical: boolean,
+): number | null {
 	if (value === null) {
 		return null;
 	}
@@ -1191,18 +1196,16 @@ export function parseMathLength(value: string | null): number | null {
 	if (!match) {
 		return null;
 	}
-	switch (match[2].toLowerCase()) {
-		case "":
-		case "em":
-		case "ch":
-		case "px":
-		case "ex":
-		case "lh":
-		case "rem":
-			return Number(match[1]);
-		default:
-			return null;
+	const number = Number(match[1]);
+	if (match[2] === "") {
+		return number;
 	}
+	if (!CSSValues.isLengthUnit(match[2])) {
+		return null;
+	}
+	const px = resolveLength(element, number, match[2], vertical);
+	const cell = getCellSize(element);
+	return px === null ? null : px / (vertical ? cell.height : cell.width);
 }
 
 /** An operator's form: the attribute, else its position in the row. */
@@ -1226,13 +1229,27 @@ function getOperatorForm(
 	return "infix";
 }
 
+// In ems, as the dictionary's eighteenths are.
 function readSpace(element: Element, name: string, fallback: number): number {
 	const value = element.getAttribute(name);
-	if (value === null) {
+	const match = value === null
+		? null
+		: /^\s*([+-]?\d*\.?\d+)\s*([a-z]*)\s*$/i.exec(value);
+	if (match === null) {
 		return fallback / 18;
 	}
-	const match = /^\s*([+-]?\d*\.?\d+)\s*(em|px|ch|ex)?\s*$/i.exec(value);
-	return match ? Number(match[1]) : fallback / 18;
+	const number = Number(match[1]);
+	if (match[2] === "" || match[2].toLowerCase() === "em") {
+		return number;
+	}
+	const px = CSSValues.isLengthUnit(match[2])
+		? resolveLength(element, number, match[2], false)
+		: null;
+	const font = CSSValues.getFontSize(
+		getComputedValue(element, "font-size"),
+		getCellSize(element).height,
+	);
+	return px === null || font <= 0 ? fallback / 18 : px / font;
 }
 
 function readFlag(element: Element, name: string, fallback: boolean): boolean {
@@ -1540,8 +1557,16 @@ function layoutStretchedOperator(
 			getDisplayHeight(operator.text, context.overline),
 		);
 	}
-	const minsize = parseMathLength(element.getAttribute("minsize"));
-	const maxsize = parseMathLength(element.getAttribute("maxsize"));
+	const minsize = parseMathLength(
+		element,
+		element.getAttribute("minsize"),
+		true,
+	);
+	const maxsize = parseMathLength(
+		element,
+		element.getAttribute("maxsize"),
+		true,
+	);
 	if (minsize !== null) {
 		height = Math.max(height, Math.round(minsize));
 	}
@@ -1817,7 +1842,11 @@ function stretchAcross(
 	) {
 		return base;
 	}
-	const minsize = parseMathLength(element.getAttribute("minsize"));
+	const minsize = parseMathLength(
+		element,
+		element.getAttribute("minsize"),
+		false,
+	);
 	const target = Math.max(base.width, width, Math.round(minsize ?? 0));
 	if (target <= base.width) {
 		return base;
@@ -2319,7 +2348,11 @@ function layoutFraction(element: Element, context: MathContext): MathBox {
 			numerator.width - (numerator.hang ?? 0),
 			denominator.width - (denominator.hang ?? 0),
 		) + 2;
-	const thickness = parseMathLength(element.getAttribute("linethickness"));
+	const thickness = parseMathLength(
+		element,
+		element.getAttribute("linethickness"),
+		true,
+	);
 	const numalign = parseAlignment(element.getAttribute("numalign"), "center");
 	const denomalign = parseAlignment(
 		element.getAttribute("denomalign"),
@@ -2561,11 +2594,16 @@ function layoutTable(element: Element, context: MathContext): MathBox {
 	const lines = BOX_LINES;
 	const columnSpacing = Math.max(
 		0,
-		Math.round(parseMathLength(element.getAttribute("columnspacing")) ?? 1),
+		Math.round(
+			parseMathLength(element, element.getAttribute("columnspacing"), false) ??
+				1,
+		),
 	);
 	const rowSpacing = Math.max(
 		0,
-		Math.round(parseMathLength(element.getAttribute("rowspacing")) ?? 0),
+		Math.round(
+			parseMathLength(element, element.getAttribute("rowspacing"), true) ?? 0,
+		),
 	);
 	const columnLines = parseList(element.getAttribute("columnlines"));
 	const rowLines = parseList(element.getAttribute("rowlines"));
@@ -2741,30 +2779,33 @@ function frameTable(
  */
 function layoutPadded(element: Element, context: MathContext): MathBox {
 	const box = layoutRow(getLayoutChildren(element), element, context);
-	const resolve = (name: string, current: number): number => {
-		const raw = element.getAttribute(name);
-		const value = parseMathLength(raw);
-		if (raw === null || value === null) {
-			return current;
-		}
-		// An adjustment of less than a cell, the padding TeX puts around
-		// an arrow's label, is no cell.
-		const adjusts = /^\s*[+-]/.test(raw);
-		return Math.max(
-			current,
-			adjusts ? current + Math.trunc(value) : Math.round(value),
-		);
-	};
+	const resolve =
+		(name: string, current: number, vertical: boolean): number => {
+			const raw = element.getAttribute(name);
+			const value = parseMathLength(element, raw, vertical);
+			if (raw === null || value === null) {
+				return current;
+			}
+			// An adjustment of less than a cell, the padding TeX puts around
+			// an arrow's label, is no cell.
+			const adjusts = /^\s*[+-]/.test(raw);
+			return Math.max(
+				current,
+				adjusts ? current + Math.trunc(value) : Math.round(value),
+			);
+		};
 	const left = Math.max(
 		0,
-		Math.round(parseMathLength(element.getAttribute("lspace")) ?? 0),
+		Math.round(
+			parseMathLength(element, element.getAttribute("lspace"), false) ?? 0,
+		),
 	);
-	const width = resolve("width", box.width + left);
+	const width = resolve("width", box.width + left, false);
 	const ascent = context.display
-		? resolve("height", box.baseline + 1)
+		? resolve("height", box.baseline + 1, true)
 		: box.baseline + 1;
 	const descent = context.display
-		? resolve("depth", getDescent(box))
+		? resolve("depth", getDescent(box), true)
 		: getDescent(box);
 	return pad(
 		box,

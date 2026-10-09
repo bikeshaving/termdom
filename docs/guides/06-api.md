@@ -55,6 +55,7 @@ Options:
   - A box's edges round to the nearest cell, so columns that add up to
     their container still fit it. A border is whole cells, at least one.
   - `1ch` is one cell: a column across, a row down.
+  - `1ic` is a wide character's cell: two columns across, a row down.
   - `1lh` is one row.
 
   So a stylesheet written in `ch` and `lh` looks the same at every size.

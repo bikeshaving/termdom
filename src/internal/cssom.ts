@@ -4303,13 +4303,13 @@ function getLengthContext(
 	const cascade = declaration[kCascade];
 	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
 	const cell = getCellSize(declaration[kElement]);
+	const vertical = isVerticalLength(declaration[kElement], property);
 	return {
 		font,
 		root,
 		cellWidth: cell.width,
-		cellAlong: isVerticalLength(declaration[kElement], property)
-			? cell.height
-			: cell.width,
+		cellAlong: vertical ? cell.height : cell.width,
+		vertical,
 		// Every line is drawn one row tall, so a line is a cell's height
 		// whatever line-height says.
 		line: cell.height,
@@ -4353,6 +4353,7 @@ export function resolveLength(
 		),
 		cellWidth: cell.width,
 		cellAlong: vertical ? cell.height : cell.width,
+		vertical,
 		line: cell.height,
 		viewportWidth: block ? block.width * cell.width : 0,
 		viewportHeight: block ? block.height * cell.height : 0,
@@ -8722,6 +8723,7 @@ function getMediaLength(
 			root: cell.height,
 			cellWidth: cell.width,
 			cellAlong: vertical ? cell.height : cell.width,
+			vertical,
 			line: cell.height,
 			viewportWidth: window.innerWidth,
 			viewportHeight: window.innerHeight,
