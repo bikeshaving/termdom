@@ -45,15 +45,20 @@ function rowText(terminal: MockProcess, row: number): string {
 		.translateToString(true);
 }
 
+// A cell of 8 by 16 CSS pixels, where a canvas's pixels are pixels.
+const PIXELS = {width: 8, height: 16};
+
 async function mount(
 	html: string,
 	cols = 40,
 	rows = 12,
+	cellSize?: {width: number; height: number},
 ): Promise<{dom: TermDOM; terminal: MockProcess; document: Document}> {
 	const terminal = new MockProcess({cols, rows});
 	const dom = new TermDOM({
 		transport: terminal.transport,
 		csp: "img-src data: https:",
+		cellSize,
 	});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
@@ -89,18 +94,50 @@ test("getContext hands back one context per canvas, and null for the rest", asyn
 	dom.dispose();
 });
 
-test("a canvas is 300 by 150 pixels until sized, and sizes in cells from them", async () => {
+test("a canvas is width by height CSS pixels, which are cells under the unit cell", async () => {
 	const {dom, document} = await mount(
-		"<canvas id=c></canvas><canvas id=d width=16 height=32></canvas>",
+		"<canvas id=c></canvas><canvas id=d width=16 height=4></canvas>",
 	);
 	const canvas = document.getElementById("c") as HTMLCanvasElement;
-	expect(canvas.width).toBe(300);
-	expect(canvas.height).toBe(150);
-	// 300 / 8 rounds to 38 and 150 / 16 to 9.
-	expect(canvas.getBoundingClientRect().width).toBe(38);
-	expect(canvas.getBoundingClientRect().height).toBe(9);
+	// HTML's 300 by 150 pixels over an 8 by 16 cell.
+	expect([canvas.width, canvas.height]).toEqual([38, 9]);
+	const bare = canvas.getBoundingClientRect();
+	expect([bare.width, bare.height]).toEqual([38, 9]);
+	const sized = document.getElementById("d")!.getBoundingClientRect();
+	expect([sized.width, sized.height]).toEqual([16, 4]);
+	dom.dispose();
+});
+
+test("a canvas is 300 by 150 pixels by default where a CSS pixel is a pixel", async () => {
+	const {dom, document} = await mount(
+		"<canvas id=c></canvas><canvas id=d width=16 height=32></canvas>",
+		40,
+		12,
+		PIXELS,
+	);
+	const canvas = document.getElementById("c") as HTMLCanvasElement;
+	expect([canvas.width, canvas.height]).toEqual([300, 150]);
+	const bare = canvas.getBoundingClientRect();
+	expect([bare.width / 8, bare.height / 16]).toEqual([38, 9]);
 	const small = document.getElementById("d")!.getBoundingClientRect();
-	expect([small.width, small.height]).toEqual([2, 2]);
+	expect([small.width / 8, small.height / 16]).toEqual([2, 2]);
+	dom.dispose();
+});
+
+test("a canvas lays out the same whichever context it gets", async () => {
+	const {dom, document} = await mount(
+		"<canvas id=a width=12 height=3></canvas><canvas id=b width=12 height=3></canvas>",
+	);
+	const a = document.getElementById("a") as HTMLCanvasElement;
+	const b = document.getElementById("b") as HTMLCanvasElement;
+	const before = a.getBoundingClientRect();
+	a.getContext("2d");
+	b.getContext("termdom-cellgrid");
+	await nextFrame(dom);
+	for (const canvas of [a, b]) {
+		const rect = canvas.getBoundingClientRect();
+		expect([rect.width, rect.height]).toEqual([before.width, before.height]);
+	}
 	dom.dispose();
 });
 
@@ -124,8 +161,12 @@ test("fillRect fills pixels, and fillStyle reads back as HTML serializes it", as
 });
 
 test("drawing repaints the canvas's cells without any DOM change", async () => {
-	const {dom, terminal, document} =
-		await mount("<canvas id=c width=16 height=32></canvas>");
+	const {dom, terminal, document} = await mount(
+		"<canvas id=c width=16 height=32></canvas>",
+		40,
+		12,
+		PIXELS,
+	);
 	const ctx = context2d(document);
 	ctx.fillStyle = "#ff0000";
 	ctx.fillRect(0, 0, 16, 8);
@@ -478,8 +519,12 @@ test("toDataURL and toBlob encode PNG", async () => {
 });
 
 test("setting width or height clears the canvas and resets its state", async () => {
-	const {dom, document} =
-		await mount("<canvas id=c width=8 height=8></canvas>");
+	const {dom, document} = await mount(
+		"<canvas id=c width=8 height=8></canvas>",
+		40,
+		12,
+		PIXELS,
+	);
 	const canvas = document.getElementById("c") as HTMLCanvasElement;
 	const ctx = canvas.getContext("2d")!;
 	ctx.fillStyle = "#ff0000";
@@ -491,7 +536,7 @@ test("setting width or height clears the canvas and resets its state", async () 
 	expect(ctx.getTransform().isIdentity).toBe(true);
 	canvas.height = 48;
 	await nextFrame(dom);
-	expect(canvas.getBoundingClientRect().height).toBe(3);
+	expect(canvas.getBoundingClientRect().height / 16).toBe(3);
 	dom.dispose();
 });
 
@@ -523,8 +568,12 @@ test("hit testing: isPointInPath and isPointInStroke, with Path2D", async () => 
 });
 
 test("fillText draws text as cells over the pixels", async () => {
-	const {dom, terminal, document} =
-		await mount("<canvas id=c width=80 height=32></canvas>");
+	const {dom, terminal, document} = await mount(
+		"<canvas id=c width=80 height=32></canvas>",
+		40,
+		12,
+		PIXELS,
+	);
 	const ctx = context2d(document);
 	ctx.fillStyle = "#202020";
 	ctx.fillRect(0, 0, 80, 32);
@@ -547,8 +596,12 @@ test("fillText draws text as cells over the pixels", async () => {
 });
 
 test("textAlign centers and right-aligns text on its anchor", async () => {
-	const {dom, terminal, document} =
-		await mount("<canvas id=c width=160 height=48></canvas>");
+	const {dom, terminal, document} = await mount(
+		"<canvas id=c width=160 height=48></canvas>",
+		40,
+		12,
+		PIXELS,
+	);
 	const ctx = context2d(document);
 	ctx.fillStyle = "#ffffff";
 	ctx.textBaseline = "top";
@@ -565,6 +618,9 @@ test("textAlign centers and right-aligns text on its anchor", async () => {
 test("a 2d context's start follows the canvas's direction, and rtl text draws in visual order", async () => {
 	const {dom, terminal, document} = await mount(
 		"<canvas id=c width=160 height=48 style=\"direction: rtl\"></canvas>",
+		40,
+		12,
+		PIXELS,
 	);
 	const ctx = context2d(document);
 	ctx.fillStyle = "#ffffff";
@@ -856,6 +912,54 @@ test("a cell grid follows a 2d context on maxWidth, lineJoin, lineStyle and draw
 	dom.dispose();
 });
 
+test("a cell grid holds the cells its canvas's box holds", async () => {
+	const {dom, document} = await mount(
+		"<canvas id=a width=96 height=48></canvas>" +
+		"<canvas id=b style=\"width: 12ch; height: 3ch\"></canvas>",
+		40,
+		12,
+		PIXELS,
+	);
+	const a = (document.getElementById("a") as HTMLCanvasElement)
+		.getContext("termdom-cellgrid")!;
+	const b = (document.getElementById("b") as HTMLCanvasElement)
+		.getContext("termdom-cellgrid")!;
+	expect([a.cols, a.rows]).toEqual([12, 3]);
+	expect([b.cols, b.rows]).toEqual([12, 3]);
+	dom.dispose();
+});
+
+test("a cell grid knows its size before layout", async () => {
+	const {dom, document} = await mount("");
+	const canvas = document.createElement("canvas");
+	canvas.width = 20;
+	canvas.height = 5;
+	const grid = canvas.getContext("termdom-cellgrid")!;
+	expect([grid.cols, grid.rows]).toEqual([20, 5]);
+	grid.fillText("detached", 0, 0);
+	expect(grid.getCell(0, 0)!.char).toBe("d");
+	dom.dispose();
+});
+
+test("a cell grid keeps what still fits when its box changes size", async () => {
+	const {dom, terminal, document} = await mount(
+		"<canvas id=g width=10 height=2 style=\"width: 10ch; height: 2ch\"></canvas>",
+	);
+	const canvas = document.getElementById("g") as HTMLCanvasElement;
+	const grid = canvas.getContext("termdom-cellgrid")!;
+	grid.fillText("0123456789", 0, 0);
+	canvas.style.width = "4ch";
+	await nextFrame(dom);
+	expect([grid.cols, grid.rows]).toEqual([4, 2]);
+	expect(rowText(terminal, 0)).toBe("0123");
+	canvas.style.width = "8ch";
+	await nextFrame(dom);
+	expect(grid.cols).toBe(8);
+	expect(grid.getCell(3, 0)!.char).toBe("3");
+	expect(grid.getCell(4, 0)).toBeNull();
+	dom.dispose();
+});
+
 test("text that runs past the grid is cut, and wide glyphs take two columns", async () => {
 	const {dom, terminal, document} =
 		await mount("<canvas id=g width=6 height=1></canvas>|");
@@ -1034,10 +1138,14 @@ test("gradients interpolate their colors and alpha without premultiplying", asyn
 });
 
 test("a canvas too large to allocate lays out and draws nothing", async () => {
-	const {dom, document} =
-		await mount("<canvas id=c width=60000 height=60000></canvas>");
+	const {dom, document} = await mount(
+		"<canvas id=c width=60000 height=60000></canvas>",
+		40,
+		12,
+		PIXELS,
+	);
 	const canvas = document.getElementById("c") as HTMLCanvasElement;
-	expect(canvas.getBoundingClientRect().width).toBe(7500);
+	expect(canvas.getBoundingClientRect().width / 8).toBe(7500);
 	const ctx = canvas.getContext("2d")!;
 	ctx.fillRect(0, 0, 10, 10);
 	expect(canvas.toDataURL()).toBe("data:,");
@@ -1186,9 +1294,12 @@ test("with graphics off, a canvas has no 2d context and keeps its cellgrid", asy
 // overflow, scrolled or not, and by its own content box.
 test("a 2d canvas clips to a scroller and paints the rows scrolled into view", async () => {
 	const {dom, terminal, document} = await mount(
-		"<div id=s style=\"height: 2px; overflow: hidden\">" +
+		"<div id=s style=\"height: 2ch; overflow: hidden\">" +
 		"<canvas id=c width=8 height=64 style=\"display: block\"></canvas>" +
 		"</div><p>below</p>",
+		40,
+		12,
+		PIXELS,
 	);
 	const ctx = context2d(document);
 	const bands = ["#ff0000", "#00ff00", "#0000ff", "#ffffff"];
@@ -1200,7 +1311,7 @@ test("a 2d canvas clips to a scroller and paints the rows scrolled into view", a
 	expect(cell(terminal, 0, 0).bg).toBe(0xff0000);
 	expect(cell(terminal, 0, 1).bg).toBe(0x00ff00);
 	expect(rowText(terminal, 2)).toBe("below");
-	document.getElementById("s")!.scrollTop = 2;
+	document.getElementById("s")!.scrollTop = 2 * 16;
 	await nextFrame(dom);
 	expect(cell(terminal, 0, 0).bg).toBe(0x0000ff);
 	expect(cell(terminal, 0, 1).bg).toBe(0xffffff);
@@ -1271,10 +1382,10 @@ test("a 2d canvas wider than a box that clips it paints nothing past the box", a
 test("a 2d canvas in a scroller shifts with the terminal's scroll", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const written = captureRawOutput(terminal);
-	const dom = new TermDOM({transport: terminal.transport});
+	const dom = new TermDOM({transport: terminal.transport, cellSize: PIXELS});
 	await dom.attach();
 	dom.document.body.innerHTML =
-		"<div id=s style=\"height: 6px; overflow: hidden\">" +
+		"<div id=s style=\"height: 6ch; overflow: hidden\">" +
 		"<canvas id=c width=8 height=192 style=\"display: block\"></canvas>" +
 		"</div>";
 	const ctx = context2d(dom.document);
@@ -1285,7 +1396,7 @@ test("a 2d canvas in a scroller shifts with the terminal's scroll", async () => 
 	}
 	await nextFrame(dom);
 	const before = written().length;
-	dom.document.getElementById("s")!.scrollTop = 1;
+	dom.document.getElementById("s")!.scrollTop = 16;
 	await nextFrame(dom);
 	expect(written().slice(before)).toContain("\x1b[1;6r");
 	for (let row = 0; row < 6; row++) {

@@ -19,6 +19,9 @@ export interface ReflectSpec {
 	// A number's value when the attribute is absent or unparsable.
 	fallback?: number;
 
+	// The fallback instead where a CSS pixel is a cell.
+	unitFallback?: number;
+
 	keywords?: readonly string[];
 
 	missing?: string;
@@ -217,8 +220,9 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 		popoverTargetAction(),
 	],
 	HTMLCanvasElement: [
-		ulong("width", "width", 300),
-		ulong("height", "height", 150),
+		// HTML's 300 by 150 pixels over an 8 by 16 cell.
+		ulong("width", "width", 300, {unitFallback: 38}),
+		ulong("height", "height", 150, {unitFallback: 9}),
 	],
 	HTMLDialogElement: [
 		keyword(

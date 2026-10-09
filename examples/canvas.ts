@@ -33,7 +33,7 @@ document.body.innerHTML = `
 // in cells with CSS and its pixels stretch to fit.
 const pixels = document.getElementById("pixels") as HTMLCanvasElement;
 pixels.style.width = "40ch";
-pixels.style.height = "16px";
+pixels.style.height = "16ch";
 const ctx = pixels.getContext("2d")!;
 
 const grid = (document.getElementById("cells") as HTMLCanvasElement)
@@ -41,8 +41,7 @@ const grid = (document.getElementById("cells") as HTMLCanvasElement)
 
 // Conway's Life on the grid, seeded with a glider, blinkers, a toad and
 // an R-pentomino, which keeps changing for a long time.
-const cols = 30;
-const rows = 16;
+const {cols, rows} = grid;
 let life = Array.from({length: rows}, () => new Array(cols).fill(false));
 for (const [x, y] of [
   [1, 0],

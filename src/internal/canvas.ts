@@ -3024,8 +3024,8 @@ export interface CanvasCellGridContext {
 }
 
 /**
- * getContext("termdom-cellgrid"): the canvas as `width` columns by `height`
- * rows of cells. fillText() writes glyphs in the fill color over the
+ * getContext("termdom-cellgrid"): the canvas as the cells its box holds,
+ * `cols` by `rows`. fillText() writes glyphs in the fill color over the
  * cells' backgrounds, fillRect() fills cells' backgrounds, strokeLine()
  * and strokeRect() draw box-drawing lines that join where they meet,
  * drawImage() draws an image two pixels a cell, and clearRect() empties
@@ -3042,6 +3042,16 @@ export class CanvasCellGridContext {
 
 	get canvas(): HTMLCanvasElement {
 		return this[kGridHost].canvas as HTMLCanvasElement;
+	}
+
+	/** The columns the canvas's box holds. */
+	get cols(): number {
+		return this[kGridHost].cells().cols;
+	}
+
+	/** The rows the canvas's box holds. */
+	get rows(): number {
+		return this[kGridHost].cells().rows;
 	}
 
 	get fillStyle(): string {

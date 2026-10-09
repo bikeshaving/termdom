@@ -8,12 +8,15 @@
  * size over the page's cell size. Under the default unit cell, where a
  * CSS pixel is a cell, that would be one cell per pixel, so the image
  * takes the screen's cell size instead, which the terminal reports
- * (XTWINOPS 16) and which is guessed at 8 by 16 until it does. A
- * cellgrid canvas is already in cells.
+ * (XTWINOPS 16) and which is guessed at 8 by 16 until it does. A canvas
+ * is `width` by `height` CSS pixels, as HTML sizes it, over the page's
+ * cell size, whatever its context: where a CSS pixel is a cell, those
+ * are cells.
  */
 import {type CanvasTextRun, halfBlockCell} from "./canvas.ts";
 import {
 	getBoxModel,
+	getCellSize,
 	getComputedValue,
 	getImageCellSize,
 	toCellLength,
@@ -67,15 +70,12 @@ export function getNaturalSize(
 	if (content === null) {
 		return null;
 	}
-	if (content.kind === "grid") {
-		return {width: content.grid.cols, height: content.grid.rows};
-	}
 	if (content.kind === "text") {
 		// The alt text on one line inside a border, or an empty cell
 		// inside one when there is none.
 		return {width: Math.max(1, textWidth(content.text)) + 2, height: 3};
 	}
-	const {width, height} = content.kind === "blank"
+	const {width, height} = content.kind === "blank" || content.kind === "grid"
 		? content
 		: {
 			width: naturalWidthOf(content.bitmap),
@@ -84,7 +84,7 @@ export function getNaturalSize(
 	if (width === 0 || height === 0) {
 		return {width: 0, height: 0};
 	}
-	const cell = getImageCellSize(element as unknown as Node);
+	const cell = getPixelCellSize(element);
 	return {
 		width: Math.max(1, Math.round(width / cell.width)),
 		height: Math.max(1, Math.round(height / cell.height)),
@@ -99,10 +99,7 @@ export function getNaturalRatio(
 	if (content === null || content.kind === "text") {
 		return NaN;
 	}
-	if (content.kind === "grid") {
-		return content.grid.rows > 0 ? content.grid.cols / content.grid.rows : NaN;
-	}
-	const {width, height} = content.kind === "blank"
+	const {width, height} = content.kind === "blank" || content.kind === "grid"
 		? content
 		: {
 			width: naturalWidthOf(content.bitmap),
@@ -111,8 +108,17 @@ export function getNaturalRatio(
 	if (width === 0 || height === 0) {
 		return NaN;
 	}
-	const cell = getImageCellSize(element as unknown as Node);
+	const cell = getPixelCellSize(element);
 	return (width / cell.width) / (height / cell.height);
+}
+
+// What one of the element's pixels is measured against: the page's cell
+// for a canvas, whose pixels are CSS pixels, and for an image the
+// screen's cell where a CSS pixel is a cell.
+function getPixelCellSize(element: Element): {width: number; height: number} {
+	return element.localName === "canvas"
+		? getCellSize(element as unknown as Node)
+		: getImageCellSize(element as unknown as Node);
 }
 
 function textWidth(text: string): number {
@@ -459,14 +465,15 @@ const settledGrids = new WeakMap<CellGrid, {version: number; grid: CellGrid}>();
 // drawn, kept until the canvas draws again.
 function getSettledGrid(
 	content: Extract<ReplacedContent, {kind: "grid"}>,
+	source: CellGrid,
 ): CellGrid {
-	const cached = settledGrids.get(content.grid);
+	const cached = settledGrids.get(source);
 	if (cached?.version === content.version) {
 		return cached.grid;
 	}
-	const grid = content.grid.clone();
+	const grid = source.clone();
 	settleBorders(grid);
-	settledGrids.set(content.grid, {version: content.version, grid});
+	settledGrids.set(source, {version: content.version, grid});
 	return grid;
 }
 
@@ -531,7 +538,12 @@ export function renderReplaced(
 		if (content.kind === "text") {
 			drawPlaceholder(content.text, left, top, cols, rows, ctx, style);
 		} else if (content.kind === "grid") {
-			ctx.drawGrid(getSettledGrid(content), left, top, style);
+			ctx.drawGrid(
+				getSettledGrid(content, content.fit(cols, rows)),
+				left,
+				top,
+				style,
+			);
 		} else if (cols * rows * 2 <= MAX_IMAGE_PIXELS) {
 			// Past the limit the pixels a box samples are more than an image
 			// may hold, and like a canvas past it, the box shows nothing.
