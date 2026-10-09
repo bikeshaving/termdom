@@ -2259,6 +2259,8 @@ export interface ProcessLike {
 	exit(code?: number): never;
 	// For suspending: the process stops itself with SIGTSTP.
 	pid?: number;
+	// For ending a session without a terminal when its parent dies.
+	ppid?: number;
 	platform?: string;
 	kill?(pid: number, signal: string): unknown;
 }
@@ -2288,40 +2290,30 @@ function installCursorRestoreOnExit(): void {
 	});
 }
 
-function isPipe(stream: TTYReadStream): boolean {
-	const fs = (
-		process as {getBuiltinModule?(name: string): {fstatSync(fd: number): {
-			isFIFO(): boolean;
-			isSocket(): boolean;
-		};} | undefined;}
-	).getBuiltinModule?.("node:fs");
-	if (fs === undefined || typeof stream.fd !== "number") {
-		return false;
+const ORPHAN_CHECK = 1000;
+
+// Without a terminal, a session has no hangup to end it when the process
+// that started it dies. That process's death shows as a new parent, which
+// is watched for, leaving stdin to the app.
+function watchForOrphaning(proc: ProcessLike, close: () => void): () => void {
+	const parent = proc.ppid;
+	if (parent === undefined) {
+		return () => {};
 	}
-	try {
-		const stat = fs.fstatSync(stream.fd);
-		return stat.isFIFO() || stat.isSocket();
-	} catch (_err) {
-		// A closed descriptor is no pipe to watch.
-		return false;
-	}
+	const watch = setInterval(() => {
+		if (proc.ppid !== parent) {
+			clearInterval(watch);
+			close();
+		}
+	}, ORPHAN_CHECK);
+	(watch as {unref?(): void}).unref?.();
+	return () => clearInterval(watch);
 }
 
-// Without a terminal, a stdin piped from the process that started this one
-// ends when that process does, which sends no hangup. The session ends with
-// it, as it would with the terminal. Stdin from /dev/null or a file ends at
-// once and says nothing about the parent, so it is left alone. An app
-// already reading stdin keeps the reading, and its end still arrives.
-function closeOnPipeEnd(proc: ProcessLike, close: () => void): void {
-	const stdin = proc.stdin;
-	if (stdin === undefined || !isPipe(stdin)) {
-		return;
-	}
-	stdin.on("end", close);
-	if ((stdin.listenerCount?.("data") ?? 0) === 0) {
-		stdin.resume();
-	}
-}
+// How soon after SIGTSTP a process that was not stopped looks again, and
+// how late that look may be while still finding it never stopped.
+const STOP_CHECK = 50;
+const STOP_GRACE = 1000;
 
 // The size a terminal that reports none is taken to have, as a VT100's.
 export const DEFAULT_COLS = 80;
@@ -2362,6 +2354,7 @@ export function transportFromProcess(
 	}
 
 	let engaged = false;
+	let stopWatching: (() => void) | undefined;
 	let dataListener:
 		((chunk: string | Uint8Array | ArrayBuffer) => void) | null = null;
 	const signalListeners: Array<[ProcessSignal, () => void]> = [];
@@ -2404,7 +2397,7 @@ export function transportFromProcess(
 					return;
 				}
 				if (!proc.stdin?.isTTY) {
-					closeOnPipeEnd(proc, () => {
+					stopWatching ??= watchForOrphaning(proc, () => {
 						closedResolve({});
 						setImmediate(() => proc.exit(0));
 					});
@@ -2450,7 +2443,10 @@ export function transportFromProcess(
 				closeOn("SIGHUP", 129);
 				closeOn("exit", null);
 			},
-			cancel: disengage,
+			cancel: () => {
+				stopWatching?.();
+				disengage();
+			},
 			// The default high-water mark would pull at construction and take
 			// the tty before attach().
 		},
@@ -2537,12 +2533,27 @@ export function transportFromProcess(
 					}
 					stdin.setRawMode?.(false);
 					stdin.pause();
+					// The timer holds the process open while it waits, as paused
+					// stdin no longer does. A process the signal did not stop,
+					// as the kernel discards it for a session leader, finds the
+					// timer on time, and goes on.
+					const sent = performance.now();
+					let continued = false;
 					const onContinue = () => {
+						continued = true;
 						proc.removeListener?.("SIGCONT", onContinue);
 						stdin.setRawMode?.(true);
 						stdin.resume();
 						resolve();
 					};
+					const watch = setInterval(() => {
+						if (!continued && performance.now() - sent < STOP_GRACE) {
+							onContinue();
+						}
+						if (continued) {
+							clearInterval(watch);
+						}
+					}, STOP_CHECK);
 					proc.on("SIGCONT", onContinue);
 					proc.kill!(proc.pid!, "SIGTSTP");
 				}),

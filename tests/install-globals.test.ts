@@ -140,6 +140,26 @@ test("what a terminal does not have is left undefined, for feature detection", (
 	}
 });
 
+test("fetch goes to the network while installed, and to a mock put in its place", async () => {
+	const term = new TermDOM();
+	const uninstall = installGlobals(term);
+	try {
+		const response = await global.fetch("data:text/plain,hello");
+		expect(await response.text()).toBe("hello");
+		const real = global.fetch;
+		global.fetch = async () => new Response("mocked");
+		try {
+			const mocked = await term.window.fetch("https://example.test/");
+			expect(await mocked.text()).toBe("mocked");
+		} finally {
+			global.fetch = real;
+		}
+	} finally {
+		uninstall();
+		await term.dispose();
+	}
+});
+
 test("uninstalling leaves a name that other code has since redefined", () => {
 	const term = new TermDOM();
 	const uninstall = installGlobals(term);

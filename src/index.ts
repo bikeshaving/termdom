@@ -58,8 +58,11 @@ import {Painter} from "./internal/painter.ts";
 import {
 	answerRequest,
 	type FetchEvent,
+	isWindowFetch,
+	networkFetch,
 	parseContentSecurityPolicies,
 	type RequestPolicy,
+	setWindowFetch,
 } from "./internal/resources.ts";
 
 export {CanvasCellGridContext} from "./internal/canvas.ts";
@@ -399,13 +402,17 @@ export class TermDOM extends EventTarget {
 		const document = this.document = this.window.document;
 		// The page's fetch resolves a relative URL against the document, as a
 		// browser's does, and goes to the runtime's.
-		this.window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
-			fetch(
-				new Request(
-					typeof input === "string" ? new URL(input, document.baseURI) : input,
-					init,
+		this.window.fetch = setWindowFetch(
+			async (input: RequestInfo | URL, init?: RequestInit) =>
+				networkFetch(
+					new Request(
+						typeof input === "string"
+							? new URL(input, document.baseURI)
+							: input,
+						init,
+					),
 				),
-			)) as typeof this.window.fetch;
+		) as typeof this.window.fetch;
 		const requestPolicy: RequestPolicy = {
 			policies: parseContentSecurityPolicies(options.csp ?? ""),
 			signal: this[kLoads].signal,
@@ -1506,7 +1513,9 @@ export function installGlobals(termDOM: TermDOM): () => void {
 			let descriptor: PropertyDescriptor;
 			if (typeof value === "function") {
 				descriptor = {
-					value: /^[a-z]/.test(name) ? value.bind(window) : value,
+					value: /^[a-z]/.test(name) && !isWindowFetch(value)
+						? value.bind(window)
+						: value,
 					configurable: true,
 					writable: true,
 				};

@@ -9,6 +9,26 @@
  */
 import {splitOnASCIIWhitespace} from "./text.ts";
 
+// A load goes to the global fetch, so a program that replaces it to mock
+// the network is heard, except where installGlobals() has put a window's
+// own there, which would call itself; then it goes to the runtime's.
+const runtimeFetch = globalThis.fetch.bind(globalThis);
+const windowFetches = new WeakSet<object>();
+
+export function setWindowFetch(fetcher: typeof fetch): typeof fetch {
+	windowFetches.add(fetcher);
+	return fetcher;
+}
+
+export function isWindowFetch(value: unknown): boolean {
+	return typeof value === "function" && windowFetches.has(value);
+}
+
+export function networkFetch(request: Request): Promise<Response> {
+	const current = globalThis.fetch;
+	return isWindowFetch(current) ? runtimeFetch(request) : current(request);
+}
+
 const kExtend = Symbol("extend");
 const kPending = Symbol("pending");
 
@@ -194,7 +214,7 @@ export async function answerRequest(
 	checkRequest(document, request, new URL(request.url), 0, context, policy);
 	let response = await dispatchFetchEvent(target, request, policy);
 	if (response === null) {
-		response = await fetch(new Request(request, {redirect: "manual"}));
+		response = await networkFetch(new Request(request, {redirect: "manual"}));
 	} else if (response.url !== "" && response.url !== request.url) {
 		// A listener's response that came from somewhere, such as its own
 		// fetch(event.request), is checked where it ended up, as Fetch checks
@@ -235,7 +255,7 @@ export async function answerRequest(
 			redirect: "manual",
 		});
 		setRequestDestination(next, destination);
-		response = await fetch(next);
+		response = await networkFetch(next);
 	}
 	if (response.type === "error") {
 		throw new TypeError("The request was refused");

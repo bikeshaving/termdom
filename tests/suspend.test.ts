@@ -108,3 +108,23 @@ test("the process transport stops itself with SIGTSTP and goes on at SIGCONT", a
 	expect(raw).toEqual([false, true]);
 	await dom.dispose();
 });
+
+test("the process transport goes on when SIGTSTP stops nothing, as for a session leader", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const sent: string[] = [];
+	Object.assign(terminal, {
+		pid: 4242,
+		platform: "linux",
+		kill: (_pid: number, signal: string) => {
+			sent.push(signal);
+		},
+	});
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.attach();
+	await nextFrame(dom);
+
+	terminal.stdin.simulateResponse(CTRL_Z);
+	await until(() => sent.length === 1);
+	await until(() => dom.document.visibilityState === "visible");
+	await dom.dispose();
+});
