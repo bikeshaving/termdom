@@ -216,7 +216,7 @@ test("the transition longhands serialize from the shorthand", async () => {
 test("a delayed transition holds its start value, then runs", async () => {
 	const {dom, document, window} = attached(
 		"<style>#box { width: 10px; height: 1px; " +
-		"transition: width 0.05s steps(1, jump-both) 0.06s; }" +
+		"transition: width 0.05s steps(1, jump-both) 0.5s; }" +
 		"</style><div id='box'></div>",
 	);
 	await nextFrame(dom);

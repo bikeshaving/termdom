@@ -91,6 +91,10 @@ test("getContext hands back one context per canvas, and null for the rest", asyn
 	expect(ctx).toBeInstanceOf((dom.window as any).CanvasRenderingContext2D);
 	expect(grid).toBeInstanceOf(CanvasCellGridContext);
 	expect("CanvasCellGridContext" in dom.window).toBe(false);
+	// Only getContext() makes a context, as in a browser.
+	expect(() => new CanvasCellGridContext()).toThrow(TypeError);
+	expect(() => new (dom.window as any).CanvasRenderingContext2D())
+		.toThrow(TypeError);
 	dom.dispose();
 });
 

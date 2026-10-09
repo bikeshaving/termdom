@@ -15,6 +15,8 @@ import {
 	CanvasRenderingContext2D,
 	canvasToPNG,
 	clearCanvasText,
+	createCellGridContext,
+	createContext2D,
 	createImageBitmapFrom,
 	getCanvasText,
 	ImageBitmap,
@@ -14547,7 +14549,7 @@ class HTMLCanvasElement extends HTMLElement {
 			if (getAttachedDocument(this)?.[kGraphics] === "none") {
 				return null;
 			}
-			this[kCanvasContext] = new CanvasRenderingContext2D({
+			this[kCanvasContext] = createContext2D({
 				canvas: this,
 				bitmap: () => getCanvasBitmap(this),
 				changed,
@@ -14558,12 +14560,12 @@ class HTMLCanvasElement extends HTMLElement {
 					if (rect && rect.width > 0 && rect.height > 0) {
 						return {x: this.width / rect.width, y: this.height / rect.height};
 					}
-					const cell = getImageCellSize(this as unknown as Node);
+					const cell = getCellSize(this as unknown as Node);
 					return {x: cell.width, y: cell.height};
 				},
 			});
 		} else if (id === "termdom-cellgrid") {
-			this[kCanvasContext] = new CanvasCellGridContext({
+			this[kCanvasContext] = createCellGridContext({
 				canvas: this,
 				cells: () => getCanvasGrid(this),
 				changed,
