@@ -1452,6 +1452,17 @@ function renderStaticHTML(
 	return renderStatic(renderer, lineEnding);
 }
 
+// The runtime's event classes stay its own. Its EventTargets take only
+// its own events on Bun and Deno, and the document takes them too, so
+// they serve both.
+const RUNTIME_EVENT_CLASSES = new Set([
+	"Event",
+	"EventTarget",
+	"CustomEvent",
+	"ErrorEvent",
+	"MessageEvent",
+]);
+
 // Shared by every copy of this module a process loads, so two copies
 // cannot each install a TermDOM's globals.
 const kGlobalsInstalled = Symbol.for("@b9g/termdom.globalsInstalled");
@@ -1459,11 +1470,14 @@ const kGlobalsInstalled = Symbol.for("@b9g/termdom.globalsInstalled");
 /**
  * Defines the window's names on globalThis, for code that reaches for
  * `document`, `window`, `Element` or `requestAnimationFrame` as globals
- * the way browser code does: frameworks, editors, DOM libraries. Names
- * the runtime defines already are left alone, so Node's `Event` and
- * `fetch` stay Node's, and in a browser nothing changes. Methods are
- * bound to the window and other properties read through to it, so
- * `scrollY` stays current. Returns a function that removes them again.
+ * the way browser code does: frameworks, editors, DOM libraries. The
+ * process then reads as the window does, so a name the runtime defines
+ * too, such as `setTimeout` or `navigator`, is the window's until
+ * uninstalled. The runtime's event classes stay its own. A promise
+ * rejected with no handler fires unhandledrejection on the window and is
+ * reported, where the runtime would end the process. Methods are bound to the window and other
+ * properties read through to it, so `scrollY` stays current. Returns a
+ * function that puts back what was there.
  */
 export function installGlobals(termDOM: TermDOM): () => void {
 	const global = globalThis as Record<string | symbol, unknown>;
@@ -1471,14 +1485,24 @@ export function installGlobals(termDOM: TermDOM): () => void {
 		throw new Error("TermDOM's globals are already installed.");
 	}
 	const window = termDOM.window as unknown as Record<string, unknown>;
-	const installed = new Map<string, PropertyDescriptor>();
+	// Each name's own descriptor on globalThis before, or undefined where
+	// it had none, beside the descriptor put in its place.
+	const installed = new Map<
+		string,
+		{ours: PropertyDescriptor; before: PropertyDescriptor | undefined}
+	>();
 	for (
 		let object: object | null = window;
 		object && object !== Object.prototype;
 		object = Object.getPrototypeOf(object)
 	) {
 		for (const name of Object.getOwnPropertyNames(object)) {
-			if (name === "constructor" || name in globalThis) {
+			if (
+				name === "constructor" ||
+				name === "globalThis" ||
+				installed.has(name) ||
+				(RUNTIME_EVENT_CLASSES.has(name) && name in globalThis)
+			) {
 				continue;
 			}
 			const value = Object.getOwnPropertyDescriptor(object, name)!.value;
@@ -1491,11 +1515,16 @@ export function installGlobals(termDOM: TermDOM): () => void {
 				};
 			} else {
 				// What a terminal does not have, such as indexedDB, throws when
-				// read. Left undefined, `typeof indexedDB` finds it missing, as
-				// feature detection expects.
+				// read. Not installed, `typeof indexedDB` finds it missing, as
+				// feature detection expects, or finds the runtime's.
+				let current: unknown;
 				try {
-					void window[name];
+					current = window[name];
 				} catch (_err) {
+					continue;
+				}
+				// The window's own value is the runtime's already.
+				if (current === global[name]) {
 					continue;
 				}
 				descriptor = {
@@ -1506,10 +1535,45 @@ export function installGlobals(termDOM: TermDOM): () => void {
 					configurable: true,
 				};
 			}
-			Object.defineProperty(globalThis, name, descriptor);
-			installed.set(name, descriptor);
+			const before = Object.getOwnPropertyDescriptor(globalThis, name);
+			try {
+				Object.defineProperty(globalThis, name, descriptor);
+			} catch (_err) {
+				// A runtime's global it does not let be redefined stays its own.
+				continue;
+			}
+			installed.set(name, {ours: descriptor, before});
 		}
 	}
+	// The process is the page's now, so a promise it rejects with no
+	// handler is reported as a browser reports one, with unhandledrejection
+	// on the window, and the program goes on, where a runtime would end it.
+	// Deno fires its own unhandledrejection at the global, which is the
+	// window's now, before it calls the process's listeners, so a promise
+	// the window has heard about is reported without firing again.
+	const heard = new WeakSet<object>();
+	const hear = (event: Event) => {
+		const promise = (event as PromiseRejectionEvent).promise;
+		if (promise instanceof Object) {
+			heard.add(promise);
+		}
+	};
+	termDOM.window.addEventListener("unhandledrejection", hear);
+	const onRejection = (reason: unknown, promise: Promise<unknown>) => {
+		if (!heard.has(promise)) {
+			const event = new termDOM.window.PromiseRejectionEvent(
+				"unhandledrejection",
+				{promise, reason, cancelable: true},
+			);
+			dispatchAsUserAgent(termDOM.window, event);
+			if (event.defaultPrevented) {
+				return;
+			}
+		}
+		termDOM[kErrored] = true;
+		reportUncaught(termDOM, reason);
+	};
+	process.on("unhandledRejection", onRejection);
 	global[kGlobalsInstalled] = true;
 	let uninstalled = false;
 	return () => {
@@ -1517,15 +1581,22 @@ export function installGlobals(termDOM: TermDOM): () => void {
 			return;
 		}
 		uninstalled = true;
+		process.removeListener("unhandledRejection", onRejection);
+		termDOM.window.removeEventListener("unhandledrejection", hear);
 		// A name something else has since redefined is that code's now.
-		for (const [name, ours] of installed) {
+		for (const [name, {ours, before}] of installed) {
 			const current = Object.getOwnPropertyDescriptor(globalThis, name);
 			if (
-				current !== undefined &&
-				current.get === ours.get &&
-				current.value === ours.value
+				current === undefined ||
+				current.get !== ours.get ||
+				current.value !== ours.value
 			) {
+				continue;
+			}
+			if (before === undefined) {
 				delete global[name];
+			} else {
+				Object.defineProperty(globalThis, name, before);
 			}
 		}
 		delete global[kGlobalsInstalled];

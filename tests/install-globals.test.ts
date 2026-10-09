@@ -23,20 +23,68 @@ test("installGlobals defines the window's names the runtime lacks", () => {
 	}
 });
 
-test("installGlobals leaves the runtime's own globals alone", () => {
+test("installGlobals puts the window's names over the runtime's, and uninstalling puts them back", () => {
 	const term = new TermDOM();
-	const event = global.Event;
-	const fetch = global.fetch;
+	const names = [
+		"Event",
+		"FormData",
+		"setTimeout",
+		"queueMicrotask",
+		"navigator",
+	];
+	const before = names.map((name) =>
+		Object.getOwnPropertyDescriptor(globalThis, name),
+	);
 	const uninstall = installGlobals(term);
 	try {
-		expect(global.Event).toBe(event);
-		expect(global.fetch).toBe(fetch);
+		expect(global.FormData).toBe(term.window.FormData);
+		expect(global.navigator).toBe(term.window.navigator);
+		// The runtime's event classes stay, and serve the document too.
+		expect(Object.getOwnPropertyDescriptor(globalThis, "Event"))
+			.toEqual(before[0]);
+		const p = term.document.createElement("p");
+		let heard = 0;
+		p.addEventListener("ping", () => heard++);
+		p.dispatchEvent(new global.Event("ping"));
+		expect(heard).toBe(1);
+		// The window's timers still run, and report what they let escape.
+		let ran = false;
+		global.queueMicrotask(() => {
+			ran = true;
+		});
+		return Promise.resolve().then(() => {
+			expect(ran).toBe(true);
+		});
+	} finally {
+		uninstall();
+		term.dispose();
+		names.forEach((name, i) => {
+			expect(Object.getOwnPropertyDescriptor(globalThis, name)).toEqual(
+				before[i],
+			);
+		});
+	}
+});
+
+test("the runtime's own EventTargets and events go on working", () => {
+	const RuntimeEventTarget = EventTarget;
+	const term = new TermDOM();
+	const uninstall = installGlobals(term);
+	try {
+		const target = new RuntimeEventTarget();
+		let heard = 0;
+		target.addEventListener("ping", () => heard++);
+		target.dispatchEvent(new global.Event("ping"));
+		expect(heard).toBe(1);
+		const controller = new AbortController();
+		let aborted = 0;
+		controller.signal.addEventListener("abort", () => aborted++);
+		controller.abort();
+		expect(aborted).toBe(1);
 	} finally {
 		uninstall();
 		term.dispose();
 	}
-	expect(global.Event).toBe(event);
-	expect(global.fetch).toBe(fetch);
 });
 
 test("installed properties read and write through to the window", () => {
@@ -110,4 +158,35 @@ test("the installed state is shared by every copy of the module", () => {
 		term.dispose();
 	}
 	expect(Symbol.for("@b9g/termdom.globalsInstalled") in globalThis).toBe(false);
+});
+
+test("while installed, an unhandled rejection fires unhandledrejection and is reported", () => {
+	const term = new TermDOM();
+	const listeners = process.listenerCount("unhandledRejection");
+	const uninstall = installGlobals(term);
+	expect(process.listenerCount("unhandledRejection")).toBe(listeners + 1);
+	const heard: unknown[] = [];
+	const listener = (event: Event) => {
+		const rejection = event as PromiseRejectionEvent;
+		heard.push(rejection.reason);
+		expect(rejection.promise).toBeInstanceOf(Promise);
+		expect(rejection.cancelable).toBe(true);
+		event.preventDefault();
+	};
+	term.window.addEventListener("unhandledrejection", listener);
+	const reason = new Error("nobody caught me");
+	const promise = Promise.resolve();
+	try {
+		// The listener installGlobals added, called as the runtime calls it.
+		// Emitting the event would reach the test runner's own listener too.
+		const ours = process.listeners("unhandledRejection").at(-1)!;
+		ours(reason, promise);
+		expect(heard).toEqual([reason]);
+	} finally {
+		uninstall();
+	}
+	// Uninstalled, the runtime's own handling is back.
+	expect(process.listenerCount("unhandledRejection")).toBe(listeners);
+	term.window.removeEventListener("unhandledrejection", listener);
+	term.dispose();
 });
