@@ -606,7 +606,8 @@ window.addEventListener("resize", () => {
 
 // Keys this page handles that would also scroll the document, as in a
 // browser.
-const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", " ", "PageUp", "PageDown"]);
+const SCROLL_KEYS =
+  new Set(["ArrowUp", "ArrowDown", " ", "PageUp", "PageDown"]);
 
 document.addEventListener("keydown", (event: Event) => {
   const key = (event as KeyboardEvent).key;
