@@ -27,9 +27,10 @@ goes, and it stays live there until the program ends. Then it is left
 in the scrollback like any other output. This is flow mode, and the
 <a href="/guides/rendering/">rendering guide</a> describes it, along with
 fullscreen and static output.</p><p>For static output, skip <code>attach()</code>: <code>term.renderANSI(html)</code> returns an
-ANSI string, and <code>term.print(html)</code> writes one to stdout.</p><h2 id="units">Units <a class="heading-anchor" href="#units">#</a></h2><p>A terminal is a grid of character cells. <code>1px</code> and <code>1ch</code> are both one
-cell, so <code>width: 12ch</code> is twelve columns and <code>height: 3px</code> is three rows.
-Lengths that land between cells resolve to whole cells.</p><h2 id="stylesheets">Stylesheets <a class="heading-anchor" href="#stylesheets">#</a></h2><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> style <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"style"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ANSI string, and <code>term.print(html)</code> writes one to stdout.</p><h2 id="units">Units <a class="heading-anchor" href="#units">#</a></h2><p>A terminal is a grid of character cells. By default <code>1px</code> and <code>1ch</code> are
+both one cell, so <code>width: 12ch</code> is twelve columns and <code>height: 3px</code> is
+three rows. Lengths that land between cells resolve to whole cells. The
+<code>cellSize</code> option changes how many CSS pixels a cell is.</p><h2 id="stylesheets">Stylesheets <a class="heading-anchor" href="#stylesheets">#</a></h2><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> style <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"style"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 style<span class="token punctuation">.</span>textContent <span class="token operator">=</span> <span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">
 	.card {
 		border: 1px solid;

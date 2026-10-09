@@ -91,10 +91,11 @@ lossless JPEGs.</p><p><code>load</code> and <code>error</code> fire as they do i
 <code>complete</code>, <code>naturalWidth</code>, <code>naturalHeight</code> and <code>currentSrc</code> report the
 image. <code>new Image()</code> makes an <code>&lt;img&gt;</code>. <code>srcset</code> is read for its <code>1x</code>
 candidate.</p><p>An image that is not showing follows HTML&#039;s rendering rules:</p><ul><li>An image that failed to load, was blocked or has no <code>src</code> shows its
-<code>alt</code> text in the line, as plain text that wraps like any other.</li><li>An image that has a size, from <code>width</code> and <code>height</code> or from CSS, is a
-box of that size with its <code>alt</code> text inside, cut with an ellipsis when
-it does not fit, while it is still loading, when it has no <code>alt</code>, or
-in a document in quirks mode (one with no <code>&lt;!doctype html&gt;</code>).</li><li>An empty <code>alt</code> marks an image that is only decoration, and it shows
+<code>alt</code> text in the line, as plain text that wraps like any other.</li><li>An image that is not showing, has a <code>src</code> and has no <code>alt</code> attribute is
+a bordered box with nothing inside.</li><li>An image that has a size, from <code>width</code> and <code>height</code> or from CSS, is a
+bordered box of that size with its <code>alt</code> text inside, cut with an
+ellipsis when it does not fit, while it is still loading or in a
+document in quirks mode (one with no <code>&lt;!doctype html&gt;</code>).</li><li>An empty <code>alt</code> marks an image that is only decoration, and it shows
 nothing, as does an <code>&lt;img&gt;</code> with neither a <code>src</code> nor an <code>alt</code>.</li></ul><h3 id="size">Size <a class="heading-anchor" href="#size">#</a></h3><p>An image&#039;s pixels are CSS pixels, so its natural size in cells is its
 size divided by the size of a cell. With the <code>cellSize</code> option set,
 that is the page&#039;s cell. With the default unit cell, where a CSS pixel
@@ -118,9 +119,10 @@ one does not stall the page. Bun and Deno have one. Node has one from
 26.9 behind a flag, so run <code>node --experimental-web-worker</code>, or set
 <code>NODE_OPTIONS=--experimental-web-worker</code>, to decode off the page&#039;s
 thread there. Without a <code>Worker</code>, and in a CommonJS build, images decode
-on the page&#039;s thread a slice at a time, so input and frames go on
+on the page&#039;s thread in 16 ms slices, so input and frames go on
 between slices. A decode that takes more than 10 seconds is stopped
-and that image fails; the images behind it still decode.</p><p>The worker ends a second after its last decode, and when the last
+and that image fails; the images behind it still decode. The worker runs
+the package&#039;s <code>@b9g/termdom/decode-worker</code> module.</p><p>The worker ends a second after its last decode, and when the last
 TermDOM is disposed, so it never keeps a finished program running.</p><p>On a Node without the flag, a program can supply a <code>Worker</code> itself.
 TermDOM uses whatever global <code>Worker</code> there is, so the
 <a href="https://www.npmjs.com/package/@b9g/node-webworker"><code>@b9g/node-webworker</code></a>
@@ -155,7 +157,7 @@ document<span class="token punctuation">.</span>body<span class="token punctuati
 <code>width</code> columns by <code>height</code> rows, and that is its natural size. It is
 TermDOM&#039;s own, so its name carries TermDOM&#039;s prefix, as a browser&#039;s own
 context types once carried theirs (<code>&quot;moz-webgl&quot;</code>, <code>&quot;webkit-3d&quot;</code>). Its
-interface is not on <code>window</code>. The <code>termdom</code> package exports it as
+interface is not on <code>window</code>. The <code>@b9g/termdom</code> package exports it as
 <code>CanvasCellGridContext</code>.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>width <span class="token operator">=</span> <span class="token number">20</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>height <span class="token operator">=</span> <span class="token number">3</span><span class="token punctuation">;</span>
