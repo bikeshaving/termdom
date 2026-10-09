@@ -429,6 +429,50 @@ test("dispose() while attach() waits on a silent terminal settles attach()", asy
 	expect(settled).toBe(true);
 });
 
+test("attach() can be tried again after the transport failed to get ready", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const base = terminal.transport;
+	let tries = 0;
+	const transport = {
+		...base,
+		cols: base.cols,
+		rows: base.rows,
+		get ready() {
+			tries++;
+			return tries === 1 ? Promise.reject(new Error("no tty")) : base.ready;
+		},
+	};
+	const dom = new TermDOM({transport});
+	dom.document.body.innerHTML = "<div>second try</div>";
+	const attempt = dom.attach();
+	let frames = 0;
+	dom.window.requestAnimationFrame(() => frames++);
+	await expect(attempt).rejects.toThrow("no tty");
+	await settle(30);
+	expect(frames).toBe(0);
+	expect(terminal.getVisibleText()).not.toContain("second try");
+
+	await dom.attach();
+	await until(() => frames === 1);
+	expect(frames).toBe(1);
+	expect(terminal.getVisibleText()).toContain("second try");
+	await dom.dispose();
+});
+
+test("an attach() that fails once the session began hands the terminal back", async () => {
+	const transport = silentTransport();
+	transport.readable.getReader();
+	const dom = new TermDOM({transport});
+	await expect(dom.attach()).rejects.toThrow();
+	let ran = false;
+	dom.window.requestAnimationFrame(() => {
+		ran = true;
+	});
+	await dom.dispose();
+	await settle(30);
+	expect(ran).toBe(false);
+});
+
 test("a second dispose() waits for the first one's restores", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	let hold = false;

@@ -536,7 +536,8 @@ export class TermDOM extends EventTarget {
 
 	/**
 	 * Takes over the terminal the constructor was given: starts the
-	 * session, sends the startup queries, enables mouse reporting.
+	 * session, sends the startup queries, enables mouse reporting. When the
+	 * transport fails to get ready, it rejects and can be called again.
 	 */
 	attach(): Promise<void> {
 		if (this[kLifecycle] === "disposed" || isAttached(this)) {
@@ -550,7 +551,8 @@ export class TermDOM extends EventTarget {
 		this[kAttachBegun] = new Promise<void>((resolve) => {
 			begun = resolve;
 		});
-		this[kAttachReady] = (async () => {
+		let started = false;
+		const attaching = (async () => {
 			await this[kTransport].ready;
 			// dispose() during the wait ends it. The session never starts.
 			if (this[kLifecycle] !== "attaching") {
@@ -558,6 +560,7 @@ export class TermDOM extends EventTarget {
 				return;
 			}
 
+			started = true;
 			this[kExchange].start(this[kInput]);
 			if (this[kTransport].interactive) {
 				this[kExchange].setDisplayType("bracketedPaste", true);
@@ -669,6 +672,21 @@ export class TermDOM extends EventTarget {
 			await new Promise<void>((resolve) => queueMicrotask(resolve));
 			await render(this);
 		})();
+		// A transport that never got ready leaves the instance as it was, so
+		// attach() can be tried again. One that failed once the session
+		// began is handed back.
+		this[kAttachReady] = attaching.catch((error: unknown) => {
+			if (this[kLifecycle] === "attaching") {
+				if (started) {
+					void this.dispose();
+				} else {
+					this[kLifecycle] = "detached";
+					setDocumentVisible(this.document, false);
+				}
+			}
+			begun();
+			throw error;
+		});
 		return this[kAttachReady];
 	}
 
@@ -1103,7 +1121,8 @@ async function render(termDOM: TermDOM): Promise<void> {
 				}
 				// A disposed engine paints nothing, so a callback chain that
 				// never ends would spin here forever; it ends with the engine.
-				if (termDOM[kLifecycle] === "disposed") {
+				// One whose attach failed waits for the next attach.
+				if (!isAttached(termDOM)) {
 					break;
 				}
 				// One frame per interval at most. What changes in the wait,
@@ -1112,7 +1131,7 @@ async function render(termDOM: TermDOM): Promise<void> {
 					termDOM[kLastFrameAt] + FRAME_INTERVAL_MS - performance.now();
 				if (wait > 0) {
 					await new Promise((resolve) => setTimeout(resolve, wait));
-					if ((termDOM[kLifecycle] as Lifecycle) === "disposed") {
+					if (!isAttached(termDOM)) {
 						break;
 					}
 				}
@@ -1168,7 +1187,7 @@ async function renderOnce(termDOM: TermDOM): Promise<void> {
 	if (termDOM[kLifecycle] === "attaching") {
 		await termDOM[kAttachBegun];
 	}
-	if (termDOM[kLifecycle] === "disposed") {
+	if (!isAttached(termDOM)) {
 		return;
 	}
 	if (!termDOM[kTransport].interactive) {
