@@ -85,8 +85,6 @@ asked, and the rest is an option.
 
 `document` is a `Document`. Setting `document.title` sets the terminal
 window title; the previous title is restored on `dispose()`.
-`document.close()` writes the document into the scrollback and seals
-it, and the next mutation starts a fresh document below it.
 
 `window` has the DOM interfaces and event constructors, and these members
 are wired to the terminal:
