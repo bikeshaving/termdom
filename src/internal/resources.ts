@@ -192,6 +192,9 @@ export interface RequestPolicy {
 	signal: AbortSignal;
 }
 
+const offered = new WeakSet<Request>();
+let offering = 0;
+
 const REDIRECT_LIMIT = 20;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -212,7 +215,12 @@ export async function answerRequest(
 	policy.signal.throwIfAborted();
 	const destination = request.destination;
 	checkRequest(document, request, new URL(request.url), 0, context, policy);
-	let response = await dispatchFetchEvent(target, request, policy);
+	// A listener's own fetch, made as it answers or of the request it was
+	// given, goes to the network, as a Service Worker's does, instead of
+	// back to the listener.
+	let response = offering > 0 || offered.has(request)
+		? null
+		: await dispatchFetchEvent(target, request, policy);
 	if (response === null) {
 		response = await networkFetch(new Request(request, {redirect: "manual"}));
 	} else if (response.url !== "" && response.url !== request.url) {
@@ -318,6 +326,49 @@ function checkRequest(
 	);
 }
 
+// An inline event handler runs only where the directive that governs it
+// allows 'unsafe-inline', which a nonce or a hash in the same list cancels
+// (CSP3 §6.7.3.3). One that does not run is reported.
+const INLINE_HANDLER_DIRECTIVES = [
+	"script-src-attr",
+	"script-src",
+	"default-src",
+];
+const NONCE_OR_HASH = /^'(?:nonce|sha256|sha384|sha512)-/i;
+
+export function checkInlineHandler(
+	document: Document,
+	element: Element,
+	policy: RequestPolicy,
+): boolean {
+	for (const stated of [...policy.policies, ...getDocumentPolicies(document)]) {
+		const directive = INLINE_HANDLER_DIRECTIVES.find((name) =>
+			stated.directives.has(name),
+		);
+		if (directive === undefined) {
+			continue;
+		}
+		const sources = stated.directives.get(directive)!;
+		if (
+			sources.some((source) => source.toLowerCase() === "'unsafe-inline'") &&
+			!sources.some((source) => NONCE_OR_HASH.test(source))
+		) {
+			continue;
+		}
+		policy.violate(element.isConnected ? element : document, {
+			documentURI: stripURLForReport(new URL(document.URL)),
+			blockedURI: "inline",
+			effectiveDirective: "script-src-attr",
+			originalPolicy: stated.text,
+			disposition: "enforce",
+			bubbles: true,
+			composed: true,
+		});
+		return false;
+	}
+	return true;
+}
+
 // CSP3 §5.4: a URL that is not HTTP(S) reports as its scheme alone, and
 // one that is reports without its fragment and credentials.
 function stripURLForReport(url: URL): string {
@@ -350,7 +401,13 @@ async function dispatchFetchEvent(
 	event[kExtend] = (promise) => {
 		policy.extend(promise);
 	};
-	target.dispatchEvent(event);
+	offered.add(request);
+	offering++;
+	try {
+		target.dispatchEvent(event);
+	} finally {
+		offering--;
+	}
 	const answer = event[kResponse];
 	if (answer === null) {
 		if (event.defaultPrevented) {
@@ -453,6 +510,7 @@ function parseContentSecurityPolicy(text: string): ContentSecurityPolicy {
 
 // The directive that governs a destination, and the one it falls back to.
 const FETCH_DIRECTIVES: Partial<Record<RequestDestination, string>> = {
+	"": "connect-src",
 	image: "img-src",
 	style: "style-src",
 	font: "font-src",
@@ -466,7 +524,8 @@ function getEffectiveDirective(
 	policy: ContentSecurityPolicy,
 	destination: RequestDestination,
 ): string | null {
-	const directive = FETCH_DIRECTIVES[destination];
+	// Deno's Request has no destination, which is a fetch()'s, "".
+	const directive = FETCH_DIRECTIVES[destination ?? ""];
 	if (directive !== undefined && policy.directives.has(directive)) {
 		return directive;
 	}

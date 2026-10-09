@@ -58,9 +58,9 @@ import {Layout} from "./internal/layout.ts";
 import {Painter} from "./internal/painter.ts";
 import {
 	answerRequest,
+	checkInlineHandler,
 	type FetchEvent,
 	isWindowFetch,
-	networkFetch,
 	parseContentSecurityPolicies,
 	type RequestPolicy,
 	setWindowFetch,
@@ -427,17 +427,6 @@ export class TermDOM extends EventTarget {
 		const document = this.document = this.window.document;
 		// The page's fetch resolves a relative URL against the document, as a
 		// browser's does, and goes to the runtime's.
-		this.window.fetch = setWindowFetch(
-			async (input: RequestInfo | URL, init?: RequestInit) =>
-				networkFetch(
-					new Request(
-						typeof input === "string"
-							? new URL(input, document.baseURI)
-							: input,
-						init,
-					),
-				),
-		) as typeof this.window.fetch;
 		const requestPolicy: RequestPolicy = {
 			policies: parseContentSecurityPolicies(options.csp ?? ""),
 			signal: this[kLoads].signal,
@@ -458,6 +447,27 @@ export class TermDOM extends EventTarget {
 				);
 			},
 		};
+
+		// The page's fetch resolves a relative URL against the document, as a
+		// browser's does, and is held to the policy and offered to the fetch
+		// listeners as the markup's loads are.
+		this.window.fetch = setWindowFetch(
+			async (input: RequestInfo | URL, init?: RequestInit) =>
+				answerRequest(
+					this[kFetchTarget],
+					document,
+					input instanceof Request && init === undefined
+						? input
+						: new Request(
+							typeof input === "string"
+								? new URL(input, document.baseURI)
+								: input,
+							init,
+						),
+					{initiator: null},
+					requestPolicy,
+				),
+		) as typeof this.window.fetch;
 
 		this[kLayout] = new Layout(
 			this.window,
@@ -500,6 +510,8 @@ export class TermDOM extends EventTarget {
 					context,
 					requestPolicy,
 				),
+			allowsInlineHandler: (element) =>
+				checkInlineHandler(document, element, requestPolicy),
 			loadSignal: this[kLoads].signal,
 			render: () => render(this),
 			reportUncaught: (error) => {

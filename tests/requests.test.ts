@@ -489,7 +489,7 @@ test("only a document that is a file loads files, whatever the policy", async ()
 	local.dispose();
 });
 
-test("window.fetch is the runtime's, resolved against the document, and no policy or listener governs it", async () => {
+test("window.fetch is resolved against the document, and goes to the listeners and the network", async () => {
 	const server = await serve();
 	const dom = create({url: `${server.origin}/app/`});
 	let heard = 0;
@@ -500,9 +500,63 @@ test("window.fetch is the runtime's, resolved against the document, and no polic
 	expect(answer.status).toBe(200);
 	await answer.arrayBuffer();
 	expect(server.heard).toEqual(["POST /app/data"]);
-	expect(heard).toBe(0);
+	expect(heard).toBe(1);
 	dom.dispose();
 	await server.close();
+});
+
+test("window.fetch is held to connect-src, and a listener's own fetch goes to the network", async () => {
+	const dom = create({csp: "connect-src data:"});
+	const reported: string[] = [];
+	dom.document.addEventListener("securitypolicyviolation", (event) => {
+		reported.push((event as SecurityPolicyViolationEvent).effectiveDirective);
+	});
+	let outcome = "";
+	await dom
+		.window.fetch("https://example.test/")
+		.then(() => (outcome = "loaded"), (error: Error) => (outcome = error.name));
+	expect(outcome).toBe("TypeError");
+	expect(reported).toEqual(["connect-src"]);
+	dom.addEventListener("fetch", (event) => {
+		const fetchEvent = event as FetchEvent;
+		fetchEvent.respondWith(dom.window.fetch(fetchEvent.request));
+	});
+	const answer = await dom.window.fetch("data:text/plain,hi");
+	expect(await answer.text()).toBe("hi");
+	dom.dispose();
+});
+
+test("an inline handler runs only where the policy allows 'unsafe-inline', and a block is reported", () => {
+	const global = globalThis as Record<string, unknown>;
+	try {
+		for (const [csp, runs] of [
+			[undefined, true],
+			["default-src 'none'", false],
+			["script-src 'unsafe-inline'", true],
+			["script-src 'unsafe-inline' 'nonce-abc'", false],
+			["script-src 'none'; script-src-attr 'unsafe-inline'", true],
+		] as const) {
+			const dom = create(csp === undefined ? {} : {csp});
+			let ran = 0;
+			global.__inlineHandlerRan = () => ran++;
+			const reported: string[] = [];
+			dom.document.addEventListener("securitypolicyviolation", (event) => {
+				reported.push(
+					(event as SecurityPolicyViolationEvent).effectiveDirective,
+				);
+			});
+			dom.document.body.innerHTML =
+				`<button onclick="globalThis.__inlineHandlerRan()">go</button>`;
+			const button = dom.document.querySelector("button")!;
+			button.click();
+			button.click();
+			expect(ran).toBe(runs ? 2 : 0);
+			expect(reported).toEqual(runs ? [] : ["script-src-attr"]);
+			dom.dispose();
+		}
+	} finally {
+		delete global.__inlineHandlerRan;
+	}
 });
 
 test("a FetchEvent can be made by hand, and only TermDOM's can be answered or extended", () => {

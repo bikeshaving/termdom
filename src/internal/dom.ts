@@ -331,6 +331,7 @@ const kCellSize = Symbol("cellSize");
 const kImages = Symbol("images");
 const kCanvas = Symbol("canvas");
 const kLoad = Symbol("load");
+const kAllowsInlineHandler = Symbol("allowsInlineHandler");
 const kLoadSignal = Symbol("loadSignal");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kPendingEditingReveal = Symbol("pendingEditingReveal");
@@ -4219,7 +4220,12 @@ function compileEventHandler(
 	// is inert. The source stays as an UncompiledHandler, so if the element
 	// is later adopted into a scripted document the attribute compiles then,
 	// exactly as it would in a browser.
-	if (!isScriptingEnabled(value.element[kDocument])) {
+	const document = value.element[kDocument];
+	if (!isScriptingEnabled(document)) {
+		return null;
+	}
+	if (document[kAllowsInlineHandler]?.(value.element) === false) {
+		setEventHandler(target, type, null);
 		return null;
 	}
 	try {
@@ -25220,6 +25226,8 @@ export interface Document {
 	[kCanvas]: GraphicsSetting;
 	[kLoad]: ResourceLoader;
 	[kLoadSignal]: AbortSignal;
+	// Whether the document's policies let an element's inline handler run.
+	[kAllowsInlineHandler]?: (element: globalThis.Element) => boolean;
 	// Where an exception the page let escape goes once the window's error
 	// event has not handled it. The engine owns the terminal, so it decides.
 	[kReportUncaught]: (error: unknown) => void;
@@ -34006,6 +34014,7 @@ export interface DocumentEngine {
 	canvas: GraphicsSetting;
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
+	allowsInlineHandler(element: globalThis.Element): boolean;
 	// Aborts when the TermDOM is disposed, and the document's loads with it.
 	loadSignal: AbortSignal;
 	render(): Promise<void>;
@@ -34030,6 +34039,8 @@ export function attachDocument(
 	attached[kRender] = render;
 	attached[kReportUncaught] = (error) => engine.reportUncaught(error);
 	attached[kLoad] = engine.load;
+	attached[kAllowsInlineHandler] = (element) =>
+		engine.allowsInlineHandler(element);
 	attached[kLoadSignal] = engine.loadSignal;
 	attached[kVisible] = false;
 	attached[kLayout] = layout;

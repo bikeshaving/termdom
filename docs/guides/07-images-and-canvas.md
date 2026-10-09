@@ -127,10 +127,22 @@ so untrusted markup in a page at `about:blank` or `https:` cannot read
 local files. Node's `fetch` reads no files, and Bun's and Deno's do, so
 a program that allows local files on every runtime answers them itself.
 
-The page's own `window.fetch` is the runtime's, and it resolves a
-relative URL against the document's, as a browser's does. No policy
-governs it and it dispatches no event: in a terminal it is the program,
-not untrusted markup, that calls it.
+The page's own `window.fetch` resolves a relative URL against the
+document's, as a browser's does, and goes the way the markup's loads go:
+checked against `connect-src`, or `default-src` when there is none,
+then offered to the `"fetch"` listeners, then sent to the network. A
+listener's own `fetch`, made while it answers or of the request it was
+given, goes to the network, as a Service Worker's does, not back to the
+listener.
+
+An inline event handler, such as `onerror="..."` in the markup, runs
+with everything the program can reach, as the program's own code does.
+Under a policy it runs only where `script-src-attr`, `script-src` or
+`default-src`, whichever the policy names first, allows
+`'unsafe-inline'`, and a nonce or hash in the same list cancels that.
+One that does not run is reported with `securitypolicyviolation`.
+Without a policy every handler runs, so markup the program does not
+trust needs one, even one that only says `default-src 'none'`.
 
 PNG, JPEG, GIF and BMP decode:
 
