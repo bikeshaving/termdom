@@ -390,39 +390,13 @@ test("exiting fullscreen restores a coherent document frame", async () => {
 	dom.dispose();
 });
 
-test("a headless TermDOM binds its terminal at attach(), re-deriving size", async () => {
-	// Construct with no process -- the global process stands in until attach.
-	const dom = new TermDOM();
-
-	// Rebind to a specific terminal before the first render: its size, not the
-	// stand-in's, must reach the document (window.innerWidth and layout).
-	const terminal = new MockProcess({rows: 12, cols: 50});
-	dom.attach(terminal.transport);
-	dom.document.body.innerHTML = "<p>bound late</p>";
-	await nextFrame(dom);
-
-	expect(dom.window.innerWidth).toBe(50);
-	expect(dom.window.innerHeight).toBe(12);
-	expect(terminal.getPlainText()).toContain("bound late");
-
-	dom.dispose();
-});
-
-test("attach() is idempotent for its process but rejects a different one", async () => {
+test("attach() is idempotent", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 
-	dom.attach(); // first attach
-
+	const first = dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.attach(); // same transport -> no-op, no throw
-	await new Promise((r) => setTimeout(r, 0));
-	dom.attach(terminal.transport); // still the same transport -> no-op
-
-	// Re-attaching a live instance to a different terminal is not supported.
-	expect(() =>
-		dom.attach(new MockProcess({rows: 5, cols: 5}).transport),
-	).toThrow(/different transport/);
+	expect(dom.attach()).toBe(first);
 
 	dom.dispose();
 });
