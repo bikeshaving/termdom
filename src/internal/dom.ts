@@ -36304,16 +36304,17 @@ const platform = {
 // frames, the clipboard) as it mounts the document.
 // The runtime's own, as the module found them. installGlobals() puts the
 // window's in their place, and the window's call these.
+// Bound, since a browser's throws when called on anything but its global.
 const runtime = {
-	setTimeout: globalThis.setTimeout,
-	clearTimeout: globalThis.clearTimeout,
-	setInterval: globalThis.setInterval,
-	clearInterval: globalThis.clearInterval,
-	queueMicrotask: globalThis.queueMicrotask,
-	atob: globalThis.atob,
-	btoa: globalThis.btoa,
-	fetch: globalThis.fetch,
-	structuredClone: globalThis.structuredClone,
+	setTimeout: globalThis.setTimeout.bind(globalThis),
+	clearTimeout: globalThis.clearTimeout.bind(globalThis),
+	setInterval: globalThis.setInterval.bind(globalThis),
+	clearInterval: globalThis.clearInterval.bind(globalThis),
+	queueMicrotask: globalThis.queueMicrotask.bind(globalThis),
+	atob: globalThis.atob.bind(globalThis),
+	btoa: globalThis.btoa.bind(globalThis),
+	fetch: globalThis.fetch.bind(globalThis),
+	structuredClone: globalThis.structuredClone.bind(globalThis),
 };
 
 function buildWindow(document: Document): Window {
@@ -36338,20 +36339,20 @@ function buildWindow(document: Document): Window {
 		DOMException: PlatformDOMException,
 		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) =>
 			runtime.setTimeout(guard(handler, args) as () => void, timeout),
-		clearTimeout: runtime.clearTimeout.bind(globalThis),
+		clearTimeout: runtime.clearTimeout,
 		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) =>
 			runtime.setInterval(guard(handler, args) as () => void, timeout),
-		clearInterval: runtime.clearInterval.bind(globalThis),
+		clearInterval: runtime.clearInterval,
 		queueMicrotask: (callback: unknown) => {
 			if (typeof callback !== "function") {
 				throw new TypeError("queueMicrotask needs a function");
 			}
 			runtime.queueMicrotask(guard(callback, []) as () => void);
 		},
-		atob: runtime.atob.bind(globalThis),
-		btoa: runtime.btoa.bind(globalThis),
-		fetch: runtime.fetch.bind(globalThis),
-		structuredClone: runtime.structuredClone.bind(globalThis),
+		atob: runtime.atob,
+		btoa: runtime.btoa,
+		fetch: runtime.fetch,
+		structuredClone: runtime.structuredClone,
 	});
 	// HTML's legacy factory: new Image(width, height) is an <img> in this
 	// window's document.
