@@ -285,6 +285,7 @@ function toCellSizeSetting(
 
 const kFramebuffer = Symbol("framebuffer");
 const kLayout = Symbol("layout");
+const kWindow = Symbol("window");
 const kCascade = Symbol("cascade");
 const kPainter = Symbol("painter");
 const kSealed = Symbol("sealed");
@@ -395,6 +396,8 @@ export interface TermDOM {
 	[kLoads]: AbortController;
 	// What dispose() returns, to every call.
 	[kDisposal]: Promise<void>;
+	// The window as the engine knows it, which term.window is.
+	[kWindow]: Window;
 }
 
 /**
@@ -403,7 +406,7 @@ export interface TermDOM {
  */
 export class TermDOM extends EventTarget {
 	readonly document: Document;
-	readonly window: Window;
+	readonly window: globalThis.Window & typeof globalThis;
 
 	constructor(options: TermDOMOptions = {}) {
 		super();
@@ -442,14 +445,13 @@ export class TermDOM extends EventTarget {
 		this[kLoads] = new AbortController();
 		this[kTransport] = options.transport ?? transportFromProcess();
 
-		this.window = createWindow(
+		const window = this[kWindow] = createWindow(
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
 			url,
 		);
+		this.window = window as unknown as globalThis.Window & typeof globalThis;
 
 		const document = this.document = this.window.document;
-		// The page's fetch resolves a relative URL against the document, as a
-		// browser's does, and goes to the runtime's.
 		const requestPolicy: RequestPolicy = {
 			policies: parseContentSecurityPolicies(options.csp ?? ""),
 			signal: this[kLoads].signal,
@@ -493,11 +495,11 @@ export class TermDOM extends EventTarget {
 		) as typeof this.window.fetch;
 
 		this[kLayout] = new Layout(
-			this.window,
+			window,
 			this[kTransport].cols,
 			this[kTransport].rows,
 		);
-		this[kCascade] = new Cascade(this.window, this[kLayout]);
+		this[kCascade] = new Cascade(window, this[kLayout]);
 
 		this[kFramebuffer] = new Framebuffer(
 			this[kTransport].rows,
@@ -507,7 +509,7 @@ export class TermDOM extends EventTarget {
 
 		const exchange = this[kExchange] = new Exchange(
 			this[kTransport],
-			this.window,
+			window,
 			this[kLayout],
 			this[kCascade],
 			this[kFramebuffer],
@@ -911,7 +913,7 @@ export class TermDOM extends EventTarget {
 		this[kLayout].dispose();
 		clearHighlights(this.document);
 		disconnectObservers(this.document);
-		clearWindowTimers(this.window);
+		clearWindowTimers(this[kWindow]);
 		this[kDisposal] = Promise.all([
 			this[kExchange].flush(),
 			drained,

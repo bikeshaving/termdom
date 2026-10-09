@@ -1068,7 +1068,11 @@ async function runMountedFile(
 	}
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
-	const globals = installGlobals(dom, engine.window, document);
+	const globals = installGlobals(
+		dom,
+		engine.window as unknown as DOM.Window,
+		document,
+	);
 	const scopeForDriver = globalThis as unknown as Record<string, unknown>;
 	const hadDriverInput = Object.prototype.hasOwnProperty.call(
 		scopeForDriver,

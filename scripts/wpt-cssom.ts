@@ -22,7 +22,6 @@ import {fileURLToPath} from "node:url";
 import {createContext, runInContext} from "node:vm";
 
 import {TermDOM} from "../src/index.ts";
-import type {Window} from "../src/internal/dom.ts";
 import type {
 	TerminalCloseInfo,
 	TerminalSize,
@@ -492,7 +491,7 @@ function defineAll(
  * engine's, reached across the boundary exactly as a browser's page script
  * reaches the UA's.
  */
-function createRealm(window: Window): object {
+function createRealm(window: globalThis.Window): object {
 	// Every name the window carries, own or inherited, enumerable or not: the
 	// DOM and CSSOM interface objects live on Window.prototype and a test reads
 	// them as bare globals. A realm's global is a flat object, so the chain is
