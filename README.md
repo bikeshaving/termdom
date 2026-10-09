@@ -64,8 +64,9 @@ setInterval(() => {
   document, and the window, decoded from stdin.
 - **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios have
   terminal-native looks, restylable with CSS; Tab and `:focus` work.
-- **Scrolling** Documents taller than the terminal scroll with
-  `window.scrollTo()` and `element.scrollIntoView()`.
+- **Scrolling** Documents and `overflow` boxes taller than the terminal
+  scroll with the wheel, the arrow and page keys, `window.scrollTo()` and
+  `element.scrollIntoView()`.
 - **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`,
   `:host`, and scoped styles; the built-in controls are shadow trees.
 - **Selection** Drag to select, styled with `::selection`; the caret moves
@@ -82,8 +83,8 @@ setInterval(() => {
 ## How it works
 
 TermDOM implements the browser's rendering pipeline against a grid of character
-cells instead of pixels. The cell is the unit basis for CSS lengths: `1px` and
-`1ch` both mean one cell. On each frame the engine recomputes style and layout for
+cells instead of pixels. The cell is the unit basis for CSS lengths: by
+default `1px` and `1ch` both mean one cell. On each frame the engine recomputes style and layout for
 whatever mutated, paints the result into a cell buffer, diffs it against the
 previous frame, and writes the difference to stdout as ANSI escape sequences.
 Escape sequences from stdin are decoded into keyboard, mouse, and paste events
