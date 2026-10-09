@@ -644,10 +644,10 @@ test("fillText writes glyphs, fillRect fills backgrounds, clearRect empties", as
 	ctx.fillStyle = "#003366";
 	ctx.fillRect(0, 0, 12, 1);
 	ctx.fillStyle = "#ffcc00";
-	ctx.font = "bold italic";
+	ctx.font = "bold italic 10px monospace";
 	ctx.fillText("score: 42", 1, 0);
-	ctx.fillStyle = "currentcolor";
-	ctx.font = "";
+	ctx.fillStyle = "canvastext";
+	ctx.font = "10px monospace";
 	ctx.fillText("plain", 0, 2);
 	await nextFrame(dom);
 	expect(rowText(terminal, 0).trimEnd()).toBe(" score: 42");
@@ -687,10 +687,10 @@ test("textDecoration draws underline and line-through, and getCell reads them ba
 	expect(ctx.textDecoration).toBe("underline line-through");
 	ctx.textDecoration = "overline";
 	expect(ctx.textDecoration).toBe("underline line-through");
-	ctx.font = "lighter";
+	ctx.font = "lighter 10px monospace";
 	ctx.fillText("ab", 0, 0);
 	ctx.textDecoration = "line-through";
-	ctx.font = "";
+	ctx.font = "10px monospace";
 	ctx.fillText("c", 2, 0);
 	expect(ctx.getCell(0, 0)).toMatchObject({
 		dim: true,
@@ -742,6 +742,117 @@ test("a cell grid rounds every coordinate, getCell's too", async () => {
 	expect(ctx.getCell(3, 0)!.char).toBe("x");
 	expect(ctx.getCell(2.5, 0.4)!.char).toBe("x");
 	expect(ctx.getCell(2.4, 0)).toBeNull();
+	dom.dispose();
+});
+
+test("a cell grid's font is a CSS font shorthand, as a 2d context's is", async () => {
+	const {dom, document} =
+		await mount("<canvas id=g width=8 height=1></canvas>");
+	const ctx = grid(document);
+	expect(ctx.font).toBe("10px sans-serif");
+	ctx.font = "bold";
+	expect(ctx.font).toBe("10px sans-serif");
+	ctx.font = "italic 700 12px/2 monospace";
+	expect(ctx.font).toBe("italic 700 12px monospace");
+	ctx.fillText("a", 0, 0);
+	expect(ctx.getCell(0, 0)).toMatchObject({bold: true, italic: true});
+	ctx.font = "300 1px monospace";
+	ctx.fillText("b", 1, 0);
+	expect(ctx.getCell(1, 0)).toMatchObject({bold: false, dim: true});
+	dom.dispose();
+});
+
+test("a 2d context ignores a font the shorthand grammar rejects", async () => {
+	const {dom, document} =
+		await mount("<canvas id=c width=8 height=8></canvas>");
+	const ctx = context2d(document);
+	ctx.font = "banana";
+	expect(ctx.font).toBe("10px sans-serif");
+	ctx.font = "bold 16px/1.5 monospace";
+	expect(ctx.font).toBe("bold 16px monospace");
+	dom.dispose();
+});
+
+test("a cell grid's colors: currentcolor, the terminal's own, and translucent fills", async () => {
+	const {dom, terminal, document} = await mount(
+		"<canvas id=g width=6 height=3 style=\"color: #102030\"></canvas>",
+	);
+	const ctx = grid(document);
+	expect([
+		ctx.fillStyle,
+		ctx.strokeStyle,
+	]).toEqual(["canvastext", "canvastext"]);
+	ctx.fillStyle = "currentcolor";
+	expect(ctx.fillStyle).toBe("#102030");
+	ctx.fillText("a", 0, 0);
+	expect(ctx.getCell(0, 0)!.color).toBe("#102030");
+	ctx.fillStyle = "CanvasText";
+	expect(ctx.fillStyle).toBe("canvastext");
+	ctx.fillText("b", 1, 0);
+	expect(ctx.getCell(1, 0)!.color).toBeNull();
+	ctx.fillStyle = "rgb(255 0 0 / 0.3)";
+	expect(ctx.fillStyle).toBe("rgba(255, 0, 0, 0.3)");
+	ctx.fillText("c", 2, 0);
+	expect(ctx.getCell(2, 0)).toBeNull();
+	ctx.fillStyle = "#ffffff";
+	ctx.fillRect(0, 1, 6, 1);
+	ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+	ctx.fillRect(0, 1, 3, 1);
+	await nextFrame(dom);
+	const shaded = cell(terminal, 0, 1).bg;
+	expect(shaded).not.toBe(0xffffff);
+	expect(shaded).not.toBe(0);
+	expect(cell(terminal, 4, 1).bg).toBe(0xffffff);
+	ctx.fillStyle = "Canvas";
+	ctx.fillRect(0, 2, 1, 1);
+	ctx.fillStyle = "CanvasText";
+	ctx.fillRect(1, 2, 1, 1);
+	expect(ctx.getCell(1, 2)!.inverse).toBe(true);
+	dom.dispose();
+});
+
+test("a cell grid saves and restores its settings, and reports no context loss", async () => {
+	const {dom, document} =
+		await mount("<canvas id=g width=4 height=1></canvas>");
+	const ctx = grid(document);
+	ctx.fillStyle = "#ff0000";
+	ctx.textAlign = "center";
+	ctx.save();
+	ctx.fillStyle = "#00ff00";
+	ctx.textAlign = "right";
+	ctx.font = "bold 1px monospace";
+	ctx.restore();
+	expect([ctx.fillStyle, ctx.textAlign, ctx.font])
+		.toEqual(["#ff0000", "center", "10px sans-serif"]);
+	ctx.restore();
+	expect(ctx.fillStyle).toBe("#ff0000");
+	expect(ctx.isContextLost()).toBe(false);
+	dom.dispose();
+});
+
+test("a cell grid follows a 2d context on maxWidth, lineJoin, lineStyle and drawImage's sizes", async () => {
+	const {dom, document} = await mount(
+		"<canvas id=g width=6 height=4></canvas><canvas id=src width=2 height=2></canvas>",
+	);
+	const ctx = grid(document);
+	ctx.fillText("nan", 0, 0, Number.NaN);
+	ctx.fillText("neg", 0, 0, -1);
+	expect(ctx.getCell(0, 0)).toBeNull();
+	ctx.fillText("abc", 0, 0, 2);
+	expect([ctx.getCell(1, 0)!.char, ctx.getCell(2, 0)]).toEqual(["b", null]);
+	ctx.lineJoin = "bevel";
+	expect(ctx.lineJoin).toBe("bevel");
+	ctx.lineStyle = "none";
+	expect(ctx.lineStyle).toBe("none");
+	ctx.strokeRect(0, 1, 3, 2);
+	expect(ctx.getCell(0, 1)).toBeNull();
+	const source = (document.getElementById("src") as HTMLCanvasElement)
+		.getContext("2d")!;
+	source.fillStyle = "#ff0000";
+	source.fillRect(0, 0, 2, 2);
+	ctx.drawImage(document.getElementById("src")!, 6, 4, -1, -1);
+	expect(ctx.getCell(5, 3)!.background).toBe("#ff0000");
+	expect(() => ctx.drawImage({}, 0, 0)).toThrow(TypeError);
 	dom.dispose();
 });
 

@@ -719,6 +719,22 @@ const BACKGROUND_SYSTEM_COLORS = new Set([
 ]);
 
 /**
+ * A system color keyword's cell color, and whether one the terminal fills
+ * in stands for its background rather than its text. Null for anything
+ * that is not a system color.
+ */
+export function getSystemColor(
+	value: string,
+): {cell: number; background: boolean} | null {
+	const keyword = value.trim().toLowerCase();
+	const cell = SYSTEM_COLORS[keyword];
+	if (cell === undefined) {
+		return null;
+	}
+	return {cell, background: BACKGROUND_SYSTEM_COLORS.has(keyword)};
+}
+
+/**
  * A system color as a page reads it back: rgb(), as a browser gives it.
  * One the terminal fills in reads as black or white, whichever the
  * terminal's scheme puts there. Null for anything else.
@@ -1503,6 +1519,28 @@ function matchesProperty(property: string, text: string): boolean {
  * initial value, the font-variant ones among them. Null for a system font
  * or a value that does not parse.
  */
+/**
+ * A CSS font shorthand as a canvas keeps it: the value serialized without
+ * its line height, as HTML's canvas font attribute reads back, and the
+ * longhands it sets. Null for a value the shorthand grammar rejects.
+ */
+export function parseCanvasFont(
+	value: string,
+): {serialized: string; longhands: Record<string, string>} | null {
+	const longhands = expandFont(splitComponents(value));
+	if (longhands === null) {
+		return null;
+	}
+	const words = [
+		longhands["font-style"],
+		longhands["font-variant-caps"],
+		longhands["font-weight"],
+		longhands["font-stretch"],
+	].filter((word) => word !== "normal");
+	words.push(longhands["font-size"], longhands["font-family"]);
+	return {serialized: words.join(" "), longhands};
+}
+
 function expandFont(tokens: string[]): Record<string, string> | null {
 	if (tokens.length === 1 && SYSTEM_FONTS.has(tokens[0].toLowerCase())) {
 		return null;

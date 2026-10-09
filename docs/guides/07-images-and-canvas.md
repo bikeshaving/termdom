@@ -300,7 +300,7 @@ const grid = canvas.getContext("termdom-cellgrid")!;
 grid.fillStyle = "#003366";
 grid.fillRect(0, 0, 20, 3);
 grid.fillStyle = "#ffcc00";
-grid.font = "bold";
+grid.font = "bold 1px monospace";
 grid.fillText("score: 42", 1, 1);
 grid.strokeStyle = "#5fafff";
 grid.lineJoin = "round";
@@ -317,23 +317,25 @@ not the page's borders around the canvas.
 
 | Member | What it does |
 | --- | --- |
-| `fillStyle` | A CSS color. `currentcolor`, the default, is the terminal's foreground |
+| `fillStyle` | A CSS color, read back as a 2D context reads it. `CanvasText`, the default, is the terminal's own text color and `Canvas` its background. `currentcolor` is the canvas element's `color` when it is set. A translucent fill blends over the cell; text under half opaque draws nothing |
 | `strokeStyle` | The lines' color, the same way |
-| `lineStyle` | A CSS `border-style`: `solid`, the default, `double`, `dashed`, `dotted` and the rest |
-| `lineJoin` | `miter`, the default, or `round`, which curves `strokeRect()`'s corners |
-| `font` | Keywords from the CSS `font` shorthand: `bold`, `italic`, `lighter` |
+| `lineStyle` | A CSS `border-style`: `solid`, the default, `double`, `dashed`, `dotted`, `none` and the rest |
+| `lineJoin` | `miter`, the default, `round`, which curves `strokeRect()`'s corners, or `bevel`, which draws as `miter` |
+| `font` | A CSS `font` shorthand, as a 2D context takes it, such as `"bold 1px monospace"`. Its weight and style make text bold, dim or italic; a cell has no size or family to change. A value the shorthand rejects is ignored |
 | `textAlign` | `start`, the default, `end`, `left`, `right` or `center` |
 | `direction` | `inherit`, the default, which takes the canvas element's CSS `direction`, or `ltr` or `rtl`. Right-to-left text is drawn in display order, and it decides which side `start` and `end` are |
 | `textDecoration` | `none`, or `underline` and `line-through`, alone or together |
-| `fillText(text, x, y, maxWidth?)` | Writes glyphs in the fill color, over the cells' backgrounds. A wide glyph takes two columns |
-| `fillRect(x, y, w, h)` | Fills cells with the fill color as their background. `currentcolor` fills them in inverse video |
+| `save()`, `restore()` | Push and pop the settings above, as a 2D context does |
+| `fillText(text, x, y, maxWidth?)` | Writes glyphs in the fill color, over the cells' backgrounds. A wide glyph takes two columns. Text past `maxWidth` columns is cut, and a `maxWidth` of zero, less, or `NaN` draws nothing |
+| `fillRect(x, y, w, h)` | Fills cells with the fill color as their background. `CanvasText` fills them in inverse video |
 | `clearRect(x, y, w, h)` | Empties cells |
 | `strokeLine(x1, y1, x2, y2)` | A line from one cell to another, both included, along a row or a column. A slanted line draws nothing |
 | `strokeRect(x, y, w, h)` | A box around the cells `w` by `h` from (x, y) |
 | `drawImage(image, ...)` | Draws an image's pixels, two to a cell. Without a size, the image takes its natural size in cells |
 | `getCell(x, y)` | The cell's `char`, `color` and `background`, and whether it is `bold`, `italic`, `dim`, `underline`, `strikethrough` or `inverse`; `null` for an empty cell |
 | `measureText(text)` | The text's width in columns |
-| `reset()` | Clears the grid and the settings |
+| `reset()` | Clears the grid, the settings and the saved settings |
+| `isContextLost()` | Always `false` |
 
 ## Text alone
 

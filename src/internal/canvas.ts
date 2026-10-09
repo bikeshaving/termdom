@@ -12,7 +12,13 @@
  * The cellgrid context is for drawing in cells, the way terminal
  * programs draw: one glyph, one color and one background a cell.
  */
-import {parseColor, toCellColor} from "./cssvalues.ts";
+import {
+	getSystemColor,
+	numberFromCSSColor,
+	parseCanvasFont,
+	parseColor,
+	toCellColor,
+} from "./cssvalues.ts";
 import {
 	type CellContext,
 	type CellStyle,
@@ -1849,7 +1855,10 @@ export class CanvasRenderingContext2D {
 	}
 
 	set font(value: string) {
-		this[kState].font = String(value);
+		const font = parseCanvasFont(String(value));
+		if (font !== null) {
+			this[kState].font = font.serialized;
+		}
 	}
 
 	get textAlign(): string {
@@ -2959,33 +2968,59 @@ interface GridHost {
 	changed(): void;
 	// The canvas element's own direction, which "inherit" takes.
 	direction(): "ltr" | "rtl";
+	// The canvas element's color, which currentcolor takes.
+	color(): string;
 	// Terminal pixels per cell, for drawing images at their natural size.
 	cellPixels(): {width: number; height: number};
 }
 
 const kGridHost = Symbol("gridHost");
 
-const kFillStyle = Symbol("fillStyle");
-const kGridStrokeStyle = Symbol("gridStrokeStyle");
-const kLineStyle = Symbol("lineStyle");
-const kLineJoin = Symbol("lineJoin");
-const kFont = Symbol("font");
-const kTextAlign = Symbol("textAlign");
-const kTextDecoration = Symbol("textDecoration");
-const kGridDirection = Symbol("direction");
+const kGridState = Symbol("gridState");
+const kGridStack = Symbol("gridStack");
 const kResolveDirection = Symbol("resolveDirection");
+const kTextColor = Symbol("textColor");
 const kRect = Symbol("rect");
+
+type GridTextAlign = "start" | "end" | "left" | "right" | "center";
+type GridDirection = "ltr" | "rtl" | "inherit";
+type GridLineStyle = LineStyle["style"] | "none";
+type GridLineJoin = "miter" | "round" | "bevel";
+
+interface GridState {
+	fillStyle: string;
+	strokeStyle: string;
+	lineStyle: GridLineStyle;
+	lineJoin: GridLineJoin;
+	font: string;
+	bold: boolean;
+	italic: boolean;
+	dim: boolean;
+	textAlign: GridTextAlign;
+	textDecoration: string;
+	direction: GridDirection;
+}
+
+function defaultGridState(): GridState {
+	return {
+		fillStyle: "canvastext",
+		strokeStyle: "canvastext",
+		lineStyle: "solid",
+		lineJoin: "miter",
+		font: "10px sans-serif",
+		bold: false,
+		italic: false,
+		dim: false,
+		textAlign: "start",
+		textDecoration: "none",
+		direction: "inherit",
+	};
+}
 
 export interface CanvasCellGridContext {
 	[kGridHost]: GridHost;
-	[kFillStyle]: string;
-	[kGridStrokeStyle]: string;
-	[kLineStyle]: LineStyle["style"];
-	[kLineJoin]: "miter" | "round";
-	[kFont]: string;
-	[kTextAlign]: "start" | "end" | "left" | "right" | "center";
-	[kTextDecoration]: string;
-	[kGridDirection]: "ltr" | "rtl" | "inherit";
+	[kGridState]: GridState;
+	[kGridStack]: GridState[];
 }
 
 /**
@@ -2994,20 +3029,15 @@ export interface CanvasCellGridContext {
  * cells' backgrounds, fillRect() fills cells' backgrounds, strokeLine()
  * and strokeRect() draw box-drawing lines that join where they meet,
  * drawImage() draws an image two pixels a cell, and clearRect() empties
- * cells. Coordinates are cells. Colors are any CSS color, and
- * `currentcolor`, the default, is the terminal's own foreground.
+ * cells. Coordinates are cells. Its settings mean what a 2d context's
+ * do, and CanvasText and Canvas, the default colors, are the terminal's
+ * own.
  */
 export class CanvasCellGridContext {
 	constructor(host: GridHost) {
 		this[kGridHost] = host;
-		this[kFillStyle] = "currentcolor";
-		this[kGridStrokeStyle] = "currentcolor";
-		this[kLineStyle] = "solid";
-		this[kLineJoin] = "miter";
-		this[kFont] = "";
-		this[kTextAlign] = "start";
-		this[kTextDecoration] = "none";
-		this[kGridDirection] = "inherit";
+		this[kGridState] = defaultGridState();
+		this[kGridStack] = [];
 	}
 
 	get canvas(): HTMLCanvasElement {
@@ -3015,55 +3045,80 @@ export class CanvasCellGridContext {
 	}
 
 	get fillStyle(): string {
-		return this[kFillStyle];
+		return this[kGridState].fillStyle;
 	}
 
 	set fillStyle(value: string) {
-		this[kFillStyle] = readGridColor(value) ?? this[kFillStyle];
+		const color = readGridColor(value, this[kGridHost]);
+		if (color !== null) {
+			this[kGridState].fillStyle = color;
+		}
 	}
 
 	get strokeStyle(): string {
-		return this[kGridStrokeStyle];
+		return this[kGridState].strokeStyle;
 	}
 
 	set strokeStyle(value: string) {
-		this[kGridStrokeStyle] = readGridColor(value) ?? this[kGridStrokeStyle];
+		const color = readGridColor(value, this[kGridHost]);
+		if (color !== null) {
+			this[kGridState].strokeStyle = color;
+		}
 	}
 
-	/** A CSS border style: solid, double, dashed, dotted and the rest. */
-	get lineStyle(): LineStyle["style"] {
-		return this[kLineStyle];
+	/** A CSS border style: solid, double, dashed, dotted, none and the rest. */
+	get lineStyle(): GridLineStyle {
+		return this[kGridState].lineStyle;
 	}
 
 	set lineStyle(value: string) {
-		const style = LINE_STYLES.find((name) => name === value);
+		const style = value === "none"
+			? "none"
+			: LINE_STYLES.find((name) => name === value);
 		if (style !== undefined) {
-			this[kLineStyle] = style;
+			this[kGridState].lineStyle = style;
 		}
 	}
 
-	/** miter, round. A round join curves strokeRect()'s corners. */
-	get lineJoin(): "miter" | "round" {
-		return this[kLineJoin];
+	/**
+	 * miter, the default, round or bevel. A round join curves
+	 * strokeRect()'s corners; a bevel draws as a miter, the nearest a cell
+	 * comes.
+	 */
+	get lineJoin(): GridLineJoin {
+		return this[kGridState].lineJoin;
 	}
 
 	set lineJoin(value: string) {
-		if (value === "miter" || value === "round") {
-			this[kLineJoin] = value;
+		if (value === "miter" || value === "round" || value === "bevel") {
+			this[kGridState].lineJoin = value;
 		}
 	}
 
-	/** Keywords from the CSS font shorthand: bold, italic, lighter. */
+	/**
+	 * A CSS font shorthand, as a 2d context takes it. Its weight and style
+	 * decide bold, dim and italic; a cell has no size or family to change.
+	 */
 	get font(): string {
-		return this[kFont];
+		return this[kGridState].font;
 	}
 
 	set font(value: string) {
-		this[kFont] = String(value);
+		const font = parseCanvasFont(String(value));
+		if (font === null) {
+			return;
+		}
+		const state = this[kGridState];
+		state.font = font.serialized;
+		const weight = font.longhands["font-weight"];
+		const numeric = Number(weight);
+		state.bold = weight === "bold" || weight === "bolder" || numeric >= 600;
+		state.dim = weight === "lighter" || (numeric > 0 && numeric <= 300);
+		state.italic = font.longhands["font-style"] !== "normal";
 	}
 
-	get textAlign(): "start" | "end" | "left" | "right" | "center" {
-		return this[kTextAlign];
+	get textAlign(): GridTextAlign {
+		return this[kGridState].textAlign;
 	}
 
 	set textAlign(value: string) {
@@ -3074,7 +3129,7 @@ export class CanvasCellGridContext {
 			value === "right" ||
 			value === "center"
 		) {
-			this[kTextAlign] = value;
+			this[kGridState].textAlign = value;
 		}
 	}
 
@@ -3083,25 +3138,25 @@ export class CanvasCellGridContext {
 	 * direction as the text is drawn. It orders right-to-left text for
 	 * display and decides which side start and end are.
 	 */
-	get direction(): "ltr" | "rtl" | "inherit" {
-		return this[kGridDirection];
+	get direction(): GridDirection {
+		return this[kGridState].direction;
 	}
 
 	set direction(value: string) {
 		if (value === "ltr" || value === "rtl" || value === "inherit") {
-			this[kGridDirection] = value;
+			this[kGridState].direction = value;
 		}
 	}
 
 	/** none, or underline and line-through, alone or together. */
 	get textDecoration(): string {
-		return this[kTextDecoration];
+		return this[kGridState].textDecoration;
 	}
 
 	set textDecoration(value: string) {
 		const words = String(value).trim().toLowerCase().split(/\s+/);
 		if (words.length === 1 && words[0] === "none") {
-			this[kTextDecoration] = "none";
+			this[kGridState].textDecoration = "none";
 			return;
 		}
 		const lines = new Set(words);
@@ -3109,22 +3164,35 @@ export class CanvasCellGridContext {
 			lines.size === words.length &&
 			words.every((word) => word === "underline" || word === "line-through")
 		) {
-			this[kTextDecoration] = ["underline", "line-through"]
+			this[kGridState].textDecoration = ["underline", "line-through"]
 				.filter((line) => lines.has(line))
 				.join(" ");
 		}
 	}
 
+	save(): void {
+		this[kGridStack].push({...this[kGridState]});
+	}
+
+	restore(): void {
+		const state = this[kGridStack].pop();
+		if (state !== undefined) {
+			this[kGridState] = state;
+		}
+	}
+
+	isContextLost(): boolean {
+		return false;
+	}
+
 	fillRect(x: number, y: number, w: number, h: number): void {
 		const rect = this[kRect](x, y, w, h);
-		const color = toGridColor(this[kFillStyle]);
-		if (rect === null || color === undefined) {
+		const fill = toGridFill(this[kGridState].fillStyle);
+		if (rect === null || fill === undefined) {
 			return;
 		}
 		const [x0, y0, x1, y1] = rect;
-		// The terminal's foreground as a background is its inverse.
-		this[kGridHost].cells()
-			.drawRect(x0, y0, x1 - x0, y1 - y0, color ?? "inverse");
+		this[kGridHost].cells().drawRect(x0, y0, x1 - x0, y1 - y0, fill);
 		this[kGridHost].changed();
 	}
 
@@ -3146,8 +3214,8 @@ export class CanvasCellGridContext {
 		if (!isFiniteAll(x, y)) {
 			return;
 		}
-		const color = toGridColor(this[kFillStyle]);
-		if (color === undefined) {
+		const color = this[kTextColor](this[kGridState].fillStyle);
+		if (color === undefined || (maxWidth !== undefined && !(maxWidth > 0))) {
 			return;
 		}
 		const cells = this[kGridHost].cells();
@@ -3167,7 +3235,8 @@ export class CanvasCellGridContext {
 			0,
 		);
 		let col = Math.round(x);
-		const align = this[kTextAlign];
+		const state = this[kGridState];
+		const align = state.textAlign;
 		if (align === "center") {
 			col -= Math.floor(width / 2);
 		} else if (
@@ -3179,15 +3248,14 @@ export class CanvasCellGridContext {
 		}
 		const row = Math.round(y);
 		const limit = maxWidth !== undefined && Number.isFinite(maxWidth)
-			? col + Math.max(0, Math.floor(maxWidth))
+			? col + Math.floor(maxWidth)
 			: Infinity;
-		const words = this[kFont].toLowerCase().split(/\s+/);
 		const base: CellStyle = {
-			bold: words.includes("bold") || words.includes("bolder"),
-			italic: words.includes("italic") || words.includes("oblique"),
-			dim: words.includes("lighter"),
-			underline: this[kTextDecoration].includes("underline"),
-			strikethrough: this[kTextDecoration].includes("line-through"),
+			bold: state.bold,
+			italic: state.italic,
+			dim: state.dim,
+			underline: state.textDecoration.includes("underline"),
+			strikethrough: state.textDecoration.includes("line-through"),
 		};
 		const {grid} = cells;
 		for (const cluster of clusters) {
@@ -3232,12 +3300,13 @@ export class CanvasCellGridContext {
 		if (!isFiniteAll(x1, y1, x2, y2)) {
 			return;
 		}
-		const color = toGridColor(this[kGridStrokeStyle]);
-		if (color === undefined) {
+		const color = this[kTextColor](this[kGridState].strokeStyle);
+		const style = this[kGridState].lineStyle;
+		if (color === undefined || style === "none" || style === "hidden") {
 			return;
 		}
 		const [a, b, c, d] = [x1, y1, x2, y2].map(Math.round);
-		const line: LineStyle = {style: this[kLineStyle], color};
+		const line: LineStyle = {style, color};
 		const cells = this[kGridHost].cells();
 		if (b === d) {
 			cells.drawLine(Math.min(a, c), b, Math.max(a, c) + 1, b, {
@@ -3256,13 +3325,19 @@ export class CanvasCellGridContext {
 	/** A box on the cells `w` by `h` from (x, y), in strokeStyle and lineStyle. */
 	strokeRect(x: number, y: number, w: number, h: number): void {
 		const rect = this[kRect](x, y, w, h);
-		const color = toGridColor(this[kGridStrokeStyle]);
-		if (rect === null || color === undefined) {
+		const color = this[kTextColor](this[kGridState].strokeStyle);
+		const style = this[kGridState].lineStyle;
+		if (
+			rect === null ||
+			color === undefined ||
+			style === "none" ||
+			style === "hidden"
+		) {
 			return;
 		}
 		const [x0, y0, x1, y1] = rect;
-		const side: LineStyle = {style: this[kLineStyle], color};
-		const corner = this[kLineJoin] === "round" ? "round" : undefined;
+		const side: LineStyle = {style, color};
+		const corner = this[kGridState].lineJoin === "round" ? "round" : undefined;
 		this[kGridHost].cells()
 			.drawBox(x0, y0, x1 - x0, y1 - y0, {
 				top: side,
@@ -3315,6 +3390,16 @@ export class CanvasCellGridContext {
 		}
 		if (!isFiniteAll(sx, sy, sw, sh, dx, dy, dw, dh)) {
 			return;
+		}
+		// A negative size is the same rectangle measured from its other
+		// edge, as a 2d context normalizes it.
+		if (dw < 0) {
+			dx += dw;
+			dw = -dw;
+		}
+		if (dh < 0) {
+			dy += dh;
+			dh = -dh;
 		}
 		const cols = Math.round(dw);
 		const rows = Math.round(dh);
@@ -3413,21 +3498,29 @@ export class CanvasCellGridContext {
 
 	reset(): void {
 		this[kGridHost].cells().grid.clear();
-		this[kFillStyle] = "currentcolor";
-		this[kGridStrokeStyle] = "currentcolor";
-		this[kLineStyle] = "solid";
-		this[kLineJoin] = "miter";
-		this[kFont] = "";
-		this[kTextAlign] = "start";
-		this[kTextDecoration] = "none";
-		this[kGridDirection] = "inherit";
+		this[kGridState] = defaultGridState();
+		this[kGridStack] = [];
 		this[kGridHost].changed();
 	}
 
 	[kResolveDirection](): "ltr" | "rtl" {
-		return this[kGridDirection] === "inherit"
-			? this[kGridHost].direction()
-			: this[kGridDirection];
+		const {direction} = this[kGridState];
+		return direction === "inherit" ? this[kGridHost].direction() : direction;
+	}
+
+	// A kept color as a glyph's color: a cell color, null for the
+	// terminal's own text color, or undefined for one too transparent to
+	// show, as a 2d context's text under half opaque does not.
+	[kTextColor](value: string): number | null | undefined {
+		const system = getSystemColor(value);
+		if (system !== null) {
+			return system.cell === 0 ? null : system.cell;
+		}
+		const color = parseCanvasColor(value)!;
+		if (color.a < 0.5) {
+			return undefined;
+		}
+		return toCellColor((color.r << 16) | (color.g << 8) | color.b);
 	}
 
 	[kRect](
@@ -3451,28 +3544,38 @@ export class CanvasCellGridContext {
 	}
 }
 
-// A color as the grid context keeps it, serialized, or null when the
-// value is not a color.
-function readGridColor(value: string): string | null {
+// A color as the grid context keeps it: a system color's keyword, the
+// rest serialized as a 2d context reads them back, or null when the value
+// is not a color. currentcolor is the canvas element's color as it is set.
+function readGridColor(value: string, host: GridHost): string | null {
 	const text = String(value).trim().toLowerCase();
 	if (text === "currentcolor") {
-		return "currentcolor";
+		return readGridColor(host.color(), host);
+	}
+	if (getSystemColor(text) !== null) {
+		return text;
 	}
 	const color = parseCanvasColor(text);
 	return color === null ? null : serializeColor(color);
 }
 
-// A kept color as a cell color: null for the terminal's foreground, or
-// undefined for a transparent one, which draws nothing.
-function toGridColor(value: string): number | null | undefined {
-	if (value === "currentcolor") {
-		return null;
+// A kept color as a cell's background. A system color the terminal fills
+// in is its own background, or its text color through inverse video. A
+// translucent color blends over what the cell shows. Undefined for a
+// transparent one, which fills nothing.
+function toGridFill(value: string): number | "default" | "inverse" | undefined {
+	const system = getSystemColor(value);
+	if (system !== null) {
+		if (system.cell !== 0) {
+			return system.cell;
+		}
+		return system.background ? "default" : "inverse";
 	}
 	const color = parseCanvasColor(value)!;
 	if (color.a === 0) {
 		return undefined;
 	}
-	return toCellColor((color.r << 16) | (color.g << 8) | color.b);
+	return numberFromCSSColor(value);
 }
 
 /**

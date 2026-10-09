@@ -138,12 +138,12 @@ function frame(): void {
       }
     }
   }
+  grid.save();
   grid.fillStyle = "#e5c07b";
-  grid.font = "bold";
+  grid.font = "bold 1px monospace";
   grid.textAlign = "right";
   grid.fillText(`gen ${t}`, cols, rows - 1);
-  grid.textAlign = "left";
-  grid.font = "";
+  grid.restore();
   stepLife();
 }
 
