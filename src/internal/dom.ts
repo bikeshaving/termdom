@@ -1725,6 +1725,43 @@ Object.defineProperty(ErrorEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+const kRejectedPromise = Symbol("rejected promise");
+const kRejectionReason = Symbol("rejection reason");
+
+interface PromiseRejectionEvent {
+	[kRejectedPromise]: Promise<unknown>;
+	[kRejectionReason]: unknown;
+}
+
+/** HTML's unhandledrejection and rejectionhandled events. */
+class PromiseRejectionEvent extends Event {
+	constructor(type: string, eventInitDict: PromiseRejectionEventInit) {
+		super(type, eventInitDict);
+		const init = toDictionary<PromiseRejectionEventInit>(
+			eventInitDict,
+			"A promise rejection event init",
+		);
+		if (!(init.promise instanceof Object)) {
+			throw new TypeError("A promise rejection event needs its promise");
+		}
+		this[kRejectedPromise] = init.promise;
+		this[kRejectionReason] = init.reason;
+	}
+
+	get promise(): Promise<any> {
+		return this[kRejectedPromise];
+	}
+
+	get reason(): any {
+		return this[kRejectionReason];
+	}
+}
+
+Object.defineProperty(PromiseRejectionEvent.prototype, Symbol.toStringTag, {
+	value: "PromiseRejectionEvent",
+	configurable: true,
+});
+
 const kMessageData = Symbol("message data");
 const kOrigin = Symbol("origin");
 const kLastEventId = Symbol("last event id");
@@ -35248,6 +35285,7 @@ export class Window extends EventTarget {
 	declare UIEvent: typeof globalThis.UIEvent;
 	declare MouseEvent: typeof globalThis.MouseEvent;
 	declare ErrorEvent: typeof globalThis.ErrorEvent;
+	declare PromiseRejectionEvent: typeof globalThis.PromiseRejectionEvent;
 	declare PointerEvent: typeof globalThis.PointerEvent;
 	declare WheelEvent: typeof globalThis.WheelEvent;
 	declare KeyboardEvent: typeof globalThis.KeyboardEvent;
@@ -36222,6 +36260,7 @@ const platform = {
 	KeyboardEvent,
 	Location,
 	ErrorEvent,
+	PromiseRejectionEvent,
 	MathMLElement,
 	MessageEvent,
 	MouseEvent,
@@ -36263,6 +36302,20 @@ const platform = {
 // A window starts with its interfaces and the timers any script expects
 // to find. The display fills in the rest (sizing, scrolling, animation
 // frames, the clipboard) as it mounts the document.
+// The runtime's own, as the module found them. installGlobals() puts the
+// window's in their place, and the window's call these.
+const runtime = {
+	setTimeout: globalThis.setTimeout,
+	clearTimeout: globalThis.clearTimeout,
+	setInterval: globalThis.setInterval,
+	clearInterval: globalThis.clearInterval,
+	queueMicrotask: globalThis.queueMicrotask,
+	atob: globalThis.atob,
+	btoa: globalThis.btoa,
+	fetch: globalThis.fetch,
+	structuredClone: globalThis.structuredClone,
+};
+
 function buildWindow(document: Document): Window {
 	const window = new Window(document) as unknown as Record<string, unknown>;
 	// HTML reports an exception a timer or a microtask lets escape, as it
@@ -36284,21 +36337,21 @@ function buildWindow(document: Document): Window {
 		// the engine builds its errors from.
 		DOMException: PlatformDOMException,
 		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) =>
-			globalThis.setTimeout(guard(handler, args) as () => void, timeout),
-		clearTimeout: globalThis.clearTimeout.bind(globalThis),
+			runtime.setTimeout(guard(handler, args) as () => void, timeout),
+		clearTimeout: runtime.clearTimeout.bind(globalThis),
 		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) =>
-			globalThis.setInterval(guard(handler, args) as () => void, timeout),
-		clearInterval: globalThis.clearInterval.bind(globalThis),
+			runtime.setInterval(guard(handler, args) as () => void, timeout),
+		clearInterval: runtime.clearInterval.bind(globalThis),
 		queueMicrotask: (callback: unknown) => {
 			if (typeof callback !== "function") {
 				throw new TypeError("queueMicrotask needs a function");
 			}
-			globalThis.queueMicrotask(guard(callback, []) as () => void);
+			runtime.queueMicrotask(guard(callback, []) as () => void);
 		},
-		atob: globalThis.atob.bind(globalThis),
-		btoa: globalThis.btoa.bind(globalThis),
-		fetch: globalThis.fetch.bind(globalThis),
-		structuredClone: globalThis.structuredClone.bind(globalThis),
+		atob: runtime.atob.bind(globalThis),
+		btoa: runtime.btoa.bind(globalThis),
+		fetch: runtime.fetch.bind(globalThis),
+		structuredClone: runtime.structuredClone.bind(globalThis),
 	});
 	// HTML's legacy factory: new Image(width, height) is an <img> in this
 	// window's document.
@@ -36398,6 +36451,7 @@ export type {
 	MessageEvent,
 	HashChangeEvent,
 	ErrorEvent,
+	PromiseRejectionEvent,
 	StorageEvent,
 	UIEvent,
 	MouseEvent,

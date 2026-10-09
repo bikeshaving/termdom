@@ -233,10 +233,12 @@ disposes on scope exit and waits for it.
 
 Defines the window's names on `globalThis`, for code that reads
 `document`, `window`, `Element`, `getSelection` and the like as globals:
-React, Vue, Svelte, CodeMirror. Only names the runtime lacks are
-defined, so Node's `Event`, `fetch` and `navigator` stay Node's, and in a
-browser nothing changes. Methods are bound to the window, and other
-properties read and write through to it, so `scrollY` stays current.
+React, Vue, Svelte, CodeMirror. The process then reads as the window
+does. A name the runtime defines too, such as `setTimeout`,
+`navigator`, `localStorage` or, on Bun and Deno, `addEventListener` and
+`alert`, is the window's until uninstalled. Methods are bound to the
+window, and other properties read and write through to it, so `scrollY`
+stays current.
 
 ```ts
 import {installGlobals, TermDOM} from "@b9g/termdom";
@@ -245,29 +247,22 @@ const term = new TermDOM();
 const uninstall = installGlobals(term);
 ```
 
-It returns a function that removes what it defined. One TermDOM's
+It returns a function that puts back what was there. One TermDOM's
 globals can be installed at a time; calling it again before uninstalling
 throws.
 
-Some runtimes have window-like globals of their own, and those stay the
-runtime's. A bare call to one of these reaches the runtime, not the
-TermDOM, so write `window.` before it:
+The runtime's event classes, `Event`, `EventTarget`, `CustomEvent`,
+`ErrorEvent` and `MessageEvent`, stay its own: on Bun and Deno the
+runtime's own event targets accept only its own events, and the
+document accepts them too, so they serve both. What a terminal does not
+have, such as `indexedDB` or `caches`, is not installed, so feature
+detection takes its fallback.
 
-| Name | Runtime that has its own |
-| --- | --- |
-| `addEventListener`, `removeEventListener`, `dispatchEvent` | Bun, Deno |
-| `postMessage` | Bun |
-| `close` (it exits Deno) | Deno |
-| `location`, `name`, `closed` | Deno |
-| `alert`, `confirm`, `prompt`, `self`, `onerror` | Bun, Deno |
-| `localStorage`, `sessionStorage` | Node, Deno |
-
-Events made with the runtime's `Event` or `CustomEvent` reach the
-document's listeners, and the document's events are instances of the
-runtime's `Event`. What a terminal does not have, such as `indexedDB`
-or `caches`, is not installed, so `typeof indexedDB` is `"undefined"`
-and feature detection takes its fallback. Uninstalling leaves any name
-that other code has redefined since.
+While installed, a promise rejected with no handler is the page's: it
+fires `unhandledrejection` on the window, and one no listener cancels is
+reported as an uncaught exception is, where the runtime would end the
+process. Uninstalling leaves any name that other code has redefined
+since.
 
 ## `TerminalTransport`
 

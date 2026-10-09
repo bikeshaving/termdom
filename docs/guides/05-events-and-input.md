@@ -230,9 +230,11 @@ spellcheck.
 An exception that escapes a listener, an event handler attribute, an
 observer callback, a frame callback, or a callback given to
 `window.setTimeout()`, `setInterval()` or `queueMicrotask()` is reported
-as a browser reports it. (A bare `setTimeout()` is the runtime's own,
-even after `installGlobals()`, and an exception from it ends the
-program; call the window's.) The window hears a cancelable `error` event first:
+as a browser reports it. A bare `setTimeout()` is the runtime's own
+unless `installGlobals()` has put the window's in its place, and an
+exception from the runtime's ends the program. With the globals
+installed, a promise rejected with no handler fires
+`unhandledrejection` on the window and is reported the same way. The window hears a cancelable `error` event first:
 
 ```ts
 window.addEventListener("error", (event) => {
