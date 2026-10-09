@@ -1156,22 +1156,6 @@ export class Exchange extends EventTarget {
 		return this[kLastWrite];
 	}
 
-	/**
-	 * Only before the session starts. It cannot change terminals under its
-	 * readers.
-	 */
-	rebind(transport: TerminalTransport): void {
-		if (this[kStarted]) {
-			throw new Error("rebind(): the session has already started");
-		}
-		this[kTransport] = transport;
-		this[kInteractive] = transport.interactive;
-		this[kAnchorDetectionEnabled] =
-			transport.sharesScreen && transport.interactive;
-		this[kWidths] = createWidthProbes(transport.interactive);
-		terminalResized(this, transport.cols, transport.rows);
-	}
-
 	start(input: Input): void {
 		if (this[kStarted]) {
 			return;

@@ -523,31 +523,12 @@ export class TermDOM extends EventTarget {
 	}
 
 	/**
-	 * Takes over the terminal: starts the session, sends the startup queries,
-	 * enables mouse reporting. Passing a transport rebinds to it and
-	 * re-derives everything that depends on the terminal. Only allowed before
-	 * the first attach.
+	 * Takes over the terminal the constructor was given: starts the
+	 * session, sends the startup queries, enables mouse reporting.
 	 */
-	attach(transport: TerminalTransport = this[kTransport]): Promise<void> {
-		const rebinding = transport !== this[kTransport];
-		if (this[kLifecycle] === "disposed") {
+	attach(): Promise<void> {
+		if (this[kLifecycle] === "disposed" || isAttached(this)) {
 			return this[kAttachReady];
-		}
-		if (isAttached(this)) {
-			if (rebinding) {
-				throw new Error(
-					"attach(): cannot re-attach a live TermDOM to a different " +
-					"transport; attach once, before the first render.",
-				);
-			}
-			return this[kAttachReady];
-		}
-		// Re-derive everything that comes from the transport. Only before the
-		// first frame.
-		if (rebinding) {
-			this[kTransport] = transport;
-			this[kFramebuffer].rebind(this[kColorDepth] ?? "256");
-			this[kExchange].rebind(transport);
 		}
 		// Resolves when the first frame has been written. The negotiations'
 		// silence timeouts must not delay that.

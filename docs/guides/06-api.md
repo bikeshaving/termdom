@@ -182,7 +182,7 @@ term.addEventListener("fetch", (event) => {
 A load `csp` blocks fires `securitypolicyviolation` at its element
 instead. The images guide has both.
 
-### `term.attach(transport?)`
+### `term.attach()`
 
 Puts the terminal in raw mode, starts input handling, mouse reporting,
 and bracketed paste, and paints whatever the document holds. Idempotent;
@@ -196,9 +196,6 @@ until `dispose()` or `window.close()`.
 until `dispose()`, and `"hidden"` after. It is also `"hidden"` while the
 wheel has been handed to the terminal's scrollback, until the next
 keystroke. `visibilitychange` fires on each change.
-
-Passing a transport rebinds the instance to it, only before the first
-attach.
 
 ### `term.renderANSI(html?)`
 
