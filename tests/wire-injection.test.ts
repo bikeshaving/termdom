@@ -131,3 +131,32 @@ test("a string opener with no terminator in its write is keys, and swallows noth
 	}
 	dom.dispose();
 });
+
+test("a background reply split across reads is no keystrokes", async () => {
+	for (const [head, tail] of [
+		["\x1b]11;rgb:1111/2222", "/3333\x07"],
+		["\x1b]11;rgb:1111/2222/3333\x1b", "\\"],
+	]) {
+		const proc = new MockProcess({cols: 40, rows: 12});
+		const stdout =
+			proc.stdout as unknown as {write: (...args: unknown[]) => boolean};
+		const write = stdout.write.bind(stdout);
+		stdout.write = (...args: unknown[]) => {
+			if (String(args[0]).includes("\x1b]11;?\x1b\\")) {
+				void send(proc, head).then(() => send(proc, tail));
+			}
+			return write(...args);
+		};
+		const dom = new TermDOM({transport: proc.transport});
+		const keys: string[] = [];
+		dom.document.addEventListener("keydown", (event) => {
+			keys.push((event as KeyboardEvent).key);
+		});
+		await dom.attach();
+		await nextFrame(dom);
+		expect(keys).toEqual([]);
+		expect(dom.window.matchMedia("(prefers-color-scheme: dark)").matches)
+			.toBe(true);
+		dom.dispose();
+	}
+});

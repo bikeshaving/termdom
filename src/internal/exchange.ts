@@ -569,12 +569,7 @@ class WireReader {
 	feed(chunk: string, holdEscape = false): WireItem[] {
 		let data = this[kTail] + chunk;
 		this[kTail] = "";
-		const held =
-			holdEscape &&
-			data.endsWith("\x1b") &&
-			!data.endsWith("\x1b\x1b")
-				? 1
-				: splitTrailingEscape(data);
+		const held = splitTrailingEscape(data, holdEscape);
 		if (held > 0 && held <= HOLD_LIMIT) {
 			this[kTail] = data.slice(-held);
 			data = data.slice(0, -held);
@@ -750,7 +745,21 @@ function findStringTerminator(data: string, from: number): number {
 	return -1;
 }
 
-function splitTrailingEscape(chunk: string): number {
+function splitTrailingEscape(chunk: string, replyDue: boolean): number {
+	// While a reply is due, an OSC or DCS cut before its terminator, even
+	// between the ESC and backslash of its ST, is a reply.
+	if (replyDue) {
+		const opener = Math.max(
+			chunk.lastIndexOf("\x1b]"),
+			chunk.lastIndexOf("\x1bP"),
+		);
+		if (opener !== -1 && findStringTerminator(chunk, opener + 2) === -1) {
+			return chunk.length - opener;
+		}
+		if (chunk.endsWith("\x1b") && !chunk.endsWith("\x1b\x1b")) {
+			return 1;
+		}
+	}
 	const esc = chunk.lastIndexOf("\x1b");
 	if (esc === -1 || esc === chunk.length - 1) {
 		return 0;
