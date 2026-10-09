@@ -17,26 +17,28 @@ leaves a sliver of the wrong color at the top and runs past the
 middle. The background fills whatever the glyph leaves, so with the
 lower half block only the seam between the two pixels is a little
 low. The pixels are ordinary cells, so they scroll, clip and
-redraw like text, and they work over SSH and inside tmux.</p><p>The <code>graphics</code> option says how pixels are drawn. <code>&quot;auto&quot;</code>, the
-default, uses the best way the terminal has, which today is always
-cells. <code>&quot;cells&quot;</code> draws cells whatever the terminal could do. <code>&quot;none&quot;</code>
-draws no pixels at all: an <code>&lt;img&gt;</code> loads nothing and shows its <code>alt</code> text, as a
+redraw like text, and they work over SSH and inside tmux.</p><p>Two options say how pixels are drawn, <code>images</code> for an <code>&lt;img&gt;</code> and
+<code>canvas</code> for a canvas&#039;s <code>&quot;2d&quot;</code> context. <code>&quot;auto&quot;</code>, the default for both,
+uses the best way the terminal has, which today is always cells.
+<code>&quot;cells&quot;</code> draws cells whatever the terminal could do. <code>&quot;none&quot;</code> draws
+nothing: an <code>&lt;img&gt;</code> loads nothing and shows its <code>alt</code> text, as a
 browser does with images turned off, and <code>getContext(&quot;2d&quot;)</code> returns
-<code>null</code>, so a canvas shows its fallback content.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>graphics<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><h2 id="img"><code>&lt;img&gt;</code> <a class="heading-anchor" href="#img">#</a></h2><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>img</span> <span class="token attr-name">src</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cover.jpg<span class="token punctuation">"</span></span> <span class="token attr-name">alt</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Album cover<span class="token punctuation">"</span></span><span class="token punctuation">></span></span></code></pre><p><code>src</code> is a URL: <code>https:</code>, <code>data:</code>, <code>file:</code> or any other. A path is
+<code>null</code>, so a canvas shows its fallback content. A page written for a
+browser often reads better that way, since half blocks blur a logo or
+a patterned picture that its fallback says plainly.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>images<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">,</span> canvas<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><h2 id="img"><code>&lt;img&gt;</code> <a class="heading-anchor" href="#img">#</a></h2><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>img</span> <span class="token attr-name">src</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cover.jpg<span class="token punctuation">"</span></span> <span class="token attr-name">alt</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Album cover<span class="token punctuation">"</span></span><span class="token punctuation">></span></span></code></pre><p><code>src</code> is a URL: <code>https:</code>, <code>data:</code>, <code>file:</code> or any other. A path is
 relative to the document&#039;s URL, given by the <code>url</code> option. A document
 at <code>about:blank</code> has no URL to resolve against, so a path there names
 nothing; a program that shows local files sets <code>url</code> to a <code>file:</code> URL,
-such as its working directory.</p><h3 id="loading">Loading <a class="heading-anchor" href="#loading">#</a></h3><p>Nothing loads unless the program allows it, with the <code>csp</code> option:</p><pre class="language-typescript"><code class="language-typescript"><span class="token comment">// Images from anywhere on the web, and data: URLs.</span>
+such as its working directory.</p><h3 id="loading">Loading <a class="heading-anchor" href="#loading">#</a></h3><p>An image loads from wherever its <code>src</code> points, as in a browser that
+got no policy. A program showing markup it does not trust, such as
+email, narrows that with the <code>csp</code> option:</p><pre class="language-typescript"><code class="language-typescript"><span class="token comment">// Images from the web and data: URLs only.</span>
 <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src https: data:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 
 <span class="token comment">// A mail client: attachments by cid:, nothing remote.</span>
-<span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src cid: data:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-
-<span class="token comment">// Anything, as a browser with no policy loads.</span>
-<span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">""</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The option is a Content Security Policy, in the syntax of a
+<span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src cid: data:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The option is a Content Security Policy, in the syntax of a
 <code>Content-Security-Policy</code> header. An <code>&lt;img&gt;</code> loads only what <code>img-src</code>
-allows, or <code>default-src</code> when there is no <code>img-src</code>. The default is
-<code>default-src &#039;none&#039;</code>.</p><p>Source expressions match as CSP Level 3 defines them: <code>&#039;none&#039;</code>,
+allows, or <code>default-src</code> when there is no <code>img-src</code>. Left out, or <code>&quot;&quot;</code>,
+there is no policy.</p><p>Source expressions match as CSP Level 3 defines them: <code>&#039;none&#039;</code>,
 <code>&#039;self&#039;</code>, <code>*</code>, a scheme such as <code>https:</code> or <code>cid:</code>, and a host such as
 <code>https://*.example.com:8443/img/</code>. <code>*</code> covers the network schemes and
 the document&#039;s own, not <code>data:</code> or <code>cid:</code>. A host given without a

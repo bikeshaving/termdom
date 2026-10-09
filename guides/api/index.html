@@ -24,13 +24,15 @@ to show a page written for a browser, like a 600px-wide email, at
 about the size it would be in one.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>cellSize<span class="token operator">:</span> <span class="token string">"auto"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><table><thead><tr><th>Value</th><th>One cell is</th></tr></thead><tbody><tr><td><code>&quot;unit&quot;</code> (default)</td><td>1×1 px</td></tr><tr><td><code>&quot;auto&quot;</code></td><td>what the terminal reports, or 8×16 if it can&#039;t say</td></tr><tr><td><code>{width, height}</code></td><td>that size, such as <code>{width: 8, height: 16}</code></td></tr></tbody></table><p>With <code>&quot;auto&quot;</code>, the first frame waits for the terminal&#039;s answer, a
 second at most, and a font zoom asks again.</p><p>Whatever the size:</p><ul><li>A box&#039;s edges round to the nearest cell, so columns that add up to
 their container still fit it. A border is whole cells, at least one.</li><li><code>1ch</code> is one cell: a column across, a row down.</li><li><code>1lh</code> is one row.</li></ul><p>So a stylesheet written in <code>ch</code> and <code>lh</code> looks the same at every size.</p></li><li><p><code>csp?: string</code> — what the document&#039;s markup may load, as a
-<code>Content-Security-Policy</code> header states it. Defaults to
-<code>&quot;default-src &#039;none&#039;&quot;</code>, so nothing loads until the program allows it;
-<code>&quot;&quot;</code> sets no policy. The images guide has recipes.</p></li><li><p><code>graphics?: &quot;auto&quot; | &quot;cells&quot; | &quot;none&quot;</code> — how the document draws
-pixels, for an <code>&lt;img&gt;</code> and a canvas&#039;s <code>&quot;2d&quot;</code> context. <code>&quot;auto&quot;</code>
-(default) uses the best way the terminal has, <code>&quot;cells&quot;</code> draws them two
-to a cell in half blocks, and <code>&quot;none&quot;</code> draws none: images show their <code>alt</code> text and
-<code>getContext(&quot;2d&quot;)</code> returns <code>null</code>.</p></li><li><p><code>colorDepth?: &quot;auto&quot; | ColorDepth</code> — the colors the terminal shows:
+<code>Content-Security-Policy</code> header states it. Left out, there is no
+policy and every load is allowed, as in a browser. A program showing
+markup it does not trust sets one; the images guide has recipes.</p></li><li><p><code>images?: &quot;auto&quot; | &quot;cells&quot; | &quot;none&quot;</code> — how an <code>&lt;img&gt;</code> draws. <code>&quot;auto&quot;</code>
+(default) uses the best way the terminal has, <code>&quot;cells&quot;</code> draws two
+pixels to a cell in half blocks, and <code>&quot;none&quot;</code> draws nothing: an image
+loads nothing and shows its <code>alt</code> text.</p></li><li><p><code>canvas?: &quot;auto&quot; | &quot;cells&quot; | &quot;none&quot;</code> — how a canvas&#039;s <code>&quot;2d&quot;</code> context
+draws, the same way. With <code>&quot;none&quot;</code>, <code>getContext(&quot;2d&quot;)</code> returns <code>null</code>
+and the canvas shows its fallback content. The <code>&quot;termdom-cellgrid&quot;</code>
+context works either way.</p></li><li><p><code>colorDepth?: &quot;auto&quot; | ColorDepth</code> — the colors the terminal shows:
 <code>24</code>, <code>8</code> or <code>4</code>, the bits <code>screen.colorDepth</code> reports, or <code>&quot;rgb&quot;</code>,
 <code>&quot;256&quot;</code> or <code>&quot;ansi&quot;</code>, the same three by name. With <code>&quot;auto&quot;</code> (default),
 TermDOM asks the terminal. Any other value throws a <code>TypeError</code>. See &quot;Color depth&quot; in the
