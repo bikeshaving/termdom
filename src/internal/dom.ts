@@ -13902,8 +13902,13 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 			break;
 		}
 		case "unsigned-long": {
-			const fallback = spec.fallback ?? 0;
+			const fallbackFor = (element: Element): number =>
+				spec.unitFallback !== undefined &&
+				getCellSize(element as unknown as Node) === UNIT_CELL
+					? spec.unitFallback
+					: (spec.fallback ?? 0);
 			get = function (this: Element): number {
+				const fallback = fallbackFor(this);
 				const value = this.getAttribute(attribute);
 				let parsed = value === null ? null : parseNonNegativeInteger(value);
 				if (parsed !== null && parsed > 2147483647) {
@@ -13933,7 +13938,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 				}
 				this.setAttribute(
 					attribute,
-					String(number > 2147483647 ? fallback : number),
+					String(number > 2147483647 ? fallbackFor(this) : number),
 				);
 			};
 			break;
@@ -14420,11 +14425,12 @@ function invalidateReplaced(element: Element, reflow: boolean): void {
 }
 
 /**
- * <canvas>: "2d" draws pixels, shown two to a cell, and "termdom-cellgrid"
- * draws cells, `width` columns by `height` rows. A 2d canvas shows at
- * its pixel size over the terminal's cell size, as an image does. The
- * other context types (webgl, webgpu, bitmaprenderer) are null, as they
- * are in a browser that cannot create them.
+ * <canvas>: laid out at `width` by `height` CSS pixels whatever its
+ * context, so where a CSS pixel is a cell those are cells. "2d" draws
+ * that many pixels, shown two to a cell and scaled to the box, and
+ * "termdom-cellgrid" draws as many cells as the box holds. The other
+ * context types (webgl, webgpu, bitmaprenderer) are null, as they are in
+ * a browser that cannot create them.
  */
 class HTMLCanvasElement extends HTMLElement {
 	declare height: globalThis.HTMLCanvasElement["height"];
@@ -14447,7 +14453,10 @@ class HTMLCanvasElement extends HTMLElement {
 			if (this[kCanvasContext] instanceof CanvasCellGridContext) {
 				return {
 					kind: "grid",
-					grid: getCanvasGrid(this).grid,
+					width: this.width,
+					height: this.height,
+					fit: (cols: number, rows: number) =>
+						fitCanvasGrid(this, cols, rows).grid,
 					version: this[kCanvasVersion],
 				};
 			}
@@ -14562,8 +14571,6 @@ class HTMLCanvasElement extends HTMLElement {
 				color: () => getComputedValue(this, "color"),
 				direction: () => getCanvasDirection(this),
 			});
-			// The natural size is now in cells, not pixels.
-			invalidateReplaced(this, true);
 		} else {
 			return null;
 		}
@@ -14663,16 +14670,46 @@ function getCanvasBitmap(canvas: HTMLCanvasElement): Bitmap {
 	return bitmap;
 }
 
+// The cells a cellgrid canvas's box holds: its content box as last laid
+// out, or before any layout its natural size, `width` by `height` CSS
+// pixels over the page's cell size.
 function getCanvasGrid(canvas: HTMLCanvasElement): CellContext {
-	const fits = canvas.width * canvas.height <= GRID_CELL_LIMIT;
-	const cols = fits ? canvas.width : 0;
-	const rows = fits ? canvas.height : 0;
-	let cells = canvas[kCanvasGrid];
-	if (cells === null || cells.cols !== cols || cells.rows !== rows) {
-		cells =
-			canvas[kCanvasGrid] =
-			new CellContext(new CellGrid(rows, cols), rows, cols, 0);
+	const rect = getAttachedDocument(canvas)?.[kLayout].contentRect(canvas);
+	if (rect) {
+		return fitCanvasGrid(
+			canvas,
+			Math.round(rect.width),
+			Math.round(rect.height),
+		);
 	}
+	const cell = getCellSize(canvas as unknown as Node);
+	return fitCanvasGrid(
+		canvas,
+		Math.round(canvas.width / cell.width),
+		Math.round(canvas.height / cell.height),
+	);
+}
+
+// The grid at a size, keeping the cells that still fit when its box
+// changes size, as a terminal keeps its screen when its window does.
+function fitCanvasGrid(
+	canvas: HTMLCanvasElement,
+	cols: number,
+	rows: number,
+): CellContext {
+	if (cols * rows > GRID_CELL_LIMIT) {
+		cols = 0;
+		rows = 0;
+	}
+	const previous = canvas[kCanvasGrid];
+	if (previous !== null && previous.cols === cols && previous.rows === rows) {
+		return previous;
+	}
+	const cells = new CellContext(new CellGrid(rows, cols), rows, cols, 0);
+	if (previous !== null) {
+		cells.drawGrid(previous.grid, 0, 0);
+	}
+	canvas[kCanvasGrid] = cells;
 	return cells;
 }
 

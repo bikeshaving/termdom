@@ -236,12 +236,28 @@ a cell grid stops at 2^22 cells.
 
 ## `<canvas>`
 
+A canvas is laid out at `width` by `height` CSS pixels, as HTML sizes
+it, whichever context it gets. Under the default unit cell a CSS pixel
+is a cell, so `<canvas width="40" height="10">` is 40 columns by 10
+rows. With the `cellSize` option set, they are pixels, and a canvas
+covers the cells its pixels fill. CSS sizes a canvas like any element.
+
+Without the attributes, a canvas is HTML's 300 by 150 pixels. Under the
+unit cell, `width` and `height` default to 38 and 9 instead, the cells
+300 by 150 pixels fill at 8 by 16 pixels a cell, so a bare canvas is
+about the size it would be in pixels.
+
+Images keep their own rule: an image's pixels are its file's, so under
+the unit cell it is measured against the terminal's cell, not one cell
+a pixel.
+
 `getContext()` takes two context types.
 
 ### `"2d"`
 
-The 2D context draws pixels into a bitmap, `width` by `height`, which
-shows like an image. It implements:
+The 2D context draws pixels into a bitmap, `width` by `height`, scaled
+to the canvas's box. A cell shows two pixels, one above the other, so a
+bitmap twice as tall as its box in cells shows every pixel. It implements:
 
 - rectangles, paths (lines, arcs, ellipses, Bézier curves, `arcTo`,
   `roundRect`), `Path2D` with SVG path data, filling with the `nonzero`
@@ -284,10 +300,13 @@ Drawing repaints the canvas on the next frame. No DOM change is needed.
 
 ### `"termdom-cellgrid"`
 
-The cell grid context draws cells instead of pixels. The canvas is
-`width` columns by `height` rows, and that is its natural size. Set
-both: without them a canvas is HTML's default 300 by 150, which here
-is 300 columns by 150 rows. It is
+The cell grid context draws cells instead of pixels: as many as the
+canvas's box holds, which `cols` and `rows` report. Under the unit cell
+that is `width` by `height`. In any mode, CSS sizes it exactly:
+`width: 40ch; height: 10ch` holds 40 by 10 cells. When the box changes
+size, the cells that still fit keep what was drawn, and the new ones
+are empty, as a terminal keeps its screen when its window is resized;
+a `ResizeObserver` on the canvas tells a script to draw again. It is
 TermDOM's own, so its name carries TermDOM's prefix, as a browser's own
 context types once carried theirs (`"moz-webgl"`, `"webkit-3d"`). Its
 interface is not on `window`. The `@b9g/termdom` package exports it as
@@ -319,6 +338,7 @@ not the page's borders around the canvas.
 
 | Member | What it does |
 | --- | --- |
+| `cols`, `rows` | The cells the canvas's box holds |
 | `fillStyle` | A CSS color, read back as a 2D context reads it. `CanvasText`, the default, is the terminal's own text color and `Canvas` its background. `currentcolor` is the canvas element's `color` when it is set. A translucent fill blends over the cell; text under half opaque draws nothing |
 | `strokeStyle` | The lines' color, the same way |
 | `lineStyle` | A CSS `border-style`: `solid`, the default, `double`, `dashed`, `dotted`, `none` and the rest |

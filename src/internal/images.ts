@@ -2036,7 +2036,15 @@ export type ReplacedContent =
 	} |
 	// A canvas not drawn on yet: its size, and nothing to paint.
 	{kind: "blank"; width: number; height: number} |
-	{kind: "grid"; grid: CellGrid; version: number} |
+	{
+		kind: "grid";
+		// The canvas's width and height attributes, in CSS pixels.
+		width: number;
+		height: number;
+		// The grid resized to the cells its box holds.
+		fit(cols: number, rows: number): CellGrid;
+		version: number;
+	} |
 	{kind: "text"; text: string; loading: boolean} |
 	null;
 
