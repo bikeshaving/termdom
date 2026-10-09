@@ -11,14 +11,15 @@ yes or a no; this is the why and the how.
 
 ## Units
 
-`1px` and `1ch` are one cell. Which axis is meant comes from the
+By default `1px` and `1ch` are one cell. Which axis is meant comes from the
 property: `width: 10px` is ten columns and `height: 10px` is ten rows.
 `em`, `rem`, and `ex` scale from `font-size`, which is `1` by default,
 so `1em` is one cell too. Percentages, `vw`, `vh`, and `calc()` work. A
 length that lands between cells resolves to a whole cell.
 
-`font-size` and `font-family` have no effect. A terminal draws one font
-at one size.
+A terminal draws one font at one size, so `font-size` and
+`font-family` don't change how text looks. `font-size` still sets what
+`em` and `ex` measure, and how many rows a `line-height` takes.
 
 ## Colors
 
@@ -189,9 +190,10 @@ Any of them can be overridden by an ordinary rule.
 | `s` | Strikethrough |
 | `kbd` | Bold and underlined |
 | `small` | Dim |
-| `code` | A dark background |
+| `code` | A faint tint behind the text, blended with the background |
 | `a[href]` | `LinkText` and underlined; inverse when focused |
 | `hr` | A horizontal rule, one row |
+| `blockquote` | A solid left border, with `1ch` of padding |
 | `pre` | `white-space: pre` |
 | `fieldset`, `textarea`, `dialog`, `[popover]` | A solid border with `0 1ch` padding |
 | `td`, `th` | A solid border with `0 1ch` padding, collapsed with the table's |

@@ -1520,13 +1520,17 @@ export function installGlobals(termDOM: TermDOM): () => void {
 					writable: true,
 				};
 			} else {
-				// What a terminal does not have, such as indexedDB, throws when
-				// read. Not installed, `typeof indexedDB` finds it missing, as
-				// feature detection expects, or finds the runtime's.
+				// What a terminal does not have, such as indexedDB, reads as
+				// undefined. Not installed, `typeof indexedDB` finds it missing,
+				// as feature detection expects, or finds the runtime's own, such
+				// as Deno's caches.
 				let current: unknown;
 				try {
 					current = window[name];
 				} catch (_err) {
+					continue;
+				}
+				if (current === undefined) {
 					continue;
 				}
 				// The window's own value is the runtime's already.
