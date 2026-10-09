@@ -562,6 +562,27 @@ test("textAlign centers and right-aligns text on its anchor", async () => {
 	dom.dispose();
 });
 
+test("a 2d context's start follows the canvas's direction, and rtl text draws in visual order", async () => {
+	const {dom, terminal, document} = await mount(
+		"<canvas id=c width=160 height=48 style=\"direction: rtl\"></canvas>",
+	);
+	const ctx = context2d(document);
+	ctx.fillStyle = "#ffffff";
+	ctx.textBaseline = "top";
+	expect(ctx.direction).toBe("inherit");
+	ctx.fillText("end", 160, 0);
+	ctx.direction = "ltr";
+	ctx.fillText("ltr", 0, 16);
+	ctx.direction = "rtl";
+	ctx.textAlign = "left";
+	ctx.fillText("\u05e9\u05dc\u05d5\u05dd!", 0, 32);
+	await nextFrame(dom);
+	expect(rowText(terminal, 0).indexOf("end")).toBe(17);
+	expect(rowText(terminal, 1).indexOf("ltr")).toBe(0);
+	expect(rowText(terminal, 2).trim()).toBe("!\u05dd\u05d5\u05dc\u05e9");
+	dom.dispose();
+});
+
 test("createImageBitmap copies a canvas, and the copy draws", async () => {
 	const {dom, document} =
 		await mount("<canvas id=c width=4 height=4></canvas>");
@@ -683,6 +704,44 @@ test("textDecoration draws underline and line-through, and getCell reads them ba
 	});
 	ctx.textDecoration = "none";
 	expect(ctx.textDecoration).toBe("none");
+	dom.dispose();
+});
+
+test("a cell grid mirrors a 2d context's direction", async () => {
+	const {dom, document} = await mount(
+		"<canvas id=g width=8 height=3 style=\"direction: rtl\"></canvas>",
+	);
+	const ctx = grid(document);
+	expect([ctx.direction, ctx.textAlign]).toEqual(["inherit", "start"]);
+	ctx.fillText("ab", 8, 0);
+	expect(ctx.getCell(6, 0)!.char).toBe("a");
+	ctx.direction = "ltr";
+	ctx.fillText("cd", 0, 1);
+	expect(ctx.getCell(0, 1)!.char).toBe("c");
+	ctx.textAlign = "end";
+	ctx.fillText("e", 8, 1);
+	expect(ctx.getCell(7, 1)!.char).toBe("e");
+	ctx.direction = "rtl";
+	ctx.textAlign = "left";
+	ctx.fillText("\u05e9\u05dc\u05d5\u05dd!", 0, 2);
+	expect([0, 1, 2, 3, 4].map((x) => ctx.getCell(x, 2)!.char).join("")).toBe(
+		"!\u05dd\u05d5\u05dc\u05e9",
+	);
+	ctx.direction = "sideways";
+	expect(ctx.direction).toBe("rtl");
+	ctx.reset();
+	expect(ctx.direction).toBe("inherit");
+	dom.dispose();
+});
+
+test("a cell grid rounds every coordinate, getCell's too", async () => {
+	const {dom, document} =
+		await mount("<canvas id=g width=6 height=2></canvas>");
+	const ctx = grid(document);
+	ctx.fillText("x", 2.5, 0.4);
+	expect(ctx.getCell(3, 0)!.char).toBe("x");
+	expect(ctx.getCell(2.5, 0.4)!.char).toBe("x");
+	expect(ctx.getCell(2.4, 0)).toBeNull();
 	dom.dispose();
 });
 
