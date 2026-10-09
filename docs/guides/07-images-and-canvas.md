@@ -209,8 +209,9 @@ one does not stall the page. Bun and Deno have one. Node has one from
 thread there. Without a `Worker`, and in a CommonJS build, images decode
 on the page's thread in 16 ms slices, so input and frames go on
 between slices. A decode that takes more than 10 seconds is stopped
-and that image fails; the images behind it still decode. The worker runs
-the package's `@b9g/termdom/decode-worker` module.
+and that image fails; the images behind it still decode. The worker's
+module ships in the package beside its entry, and TermDOM starts it
+itself.
 
 The worker ends a second after its last decode, and when the last
 TermDOM is disposed, so it never keeps a finished program running.
