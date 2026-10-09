@@ -128,3 +128,43 @@ test("the process transport goes on when SIGTSTP stops nothing, as for a session
 	await until(() => dom.document.visibilityState === "visible");
 	await dom.dispose();
 });
+
+test("no frame goes out between handing the terminal back and resuming", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const written = captureRawOutput(terminal);
+	let resume!: () => void;
+	let atSuspend = "";
+	const transport = {
+		...terminal.transport,
+		cols: terminal.transport.cols,
+		rows: terminal.transport.rows,
+		suspend: async () => {
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			atSuspend = written();
+			return new Promise<void>((resolve) => {
+				resume = resolve;
+			});
+		},
+	};
+	const dom = new TermDOM({transport});
+	const {document} = dom;
+	document.body.innerHTML = "<p>before</p>";
+	await dom.attach();
+	await nextFrame(dom);
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "hidden") {
+			document.body.innerHTML = "<p>\u{1F31E} while hidden</p>";
+		}
+	});
+
+	terminal.stdin.simulateResponse(CTRL_Z);
+	await until(() => atSuspend !== "");
+	const handedBack = atSuspend.slice(atSuspend.lastIndexOf(PASTE_OFF));
+	expect(handedBack).not.toContain("while hidden");
+	expect(handedBack).not.toContain("\x1b[6n");
+
+	resume();
+	await until(() => written().includes("while hidden"));
+	expect(written()).toContain("while hidden");
+	await dom.dispose();
+});

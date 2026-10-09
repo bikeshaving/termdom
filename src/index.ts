@@ -1076,8 +1076,9 @@ function cellSizeChanged(termDOM: TermDOM): void {
 
 async function render(termDOM: TermDOM): Promise<void> {
 	// Until attach(), mutations keep the DOM and layout live but write
-	// nothing.
-	if (!isAttached(termDOM)) {
+	// nothing. Nor while suspended: the terminal is the shell's until the
+	// program resumes, and resuming renders.
+	if (!isAttached(termDOM) || termDOM[kSuspended]) {
 		return;
 	}
 
@@ -1121,8 +1122,9 @@ async function render(termDOM: TermDOM): Promise<void> {
 				}
 				// A disposed engine paints nothing, so a callback chain that
 				// never ends would spin here forever; it ends with the engine.
-				// One whose attach failed waits for the next attach.
-				if (!isAttached(termDOM)) {
+				// One whose attach failed waits for the next attach, and a
+				// suspended one for resuming.
+				if (!isAttached(termDOM) || termDOM[kSuspended]) {
 					break;
 				}
 				// One frame per interval at most. What changes in the wait,
@@ -1131,7 +1133,7 @@ async function render(termDOM: TermDOM): Promise<void> {
 					termDOM[kLastFrameAt] + FRAME_INTERVAL_MS - performance.now();
 				if (wait > 0) {
 					await new Promise((resolve) => setTimeout(resolve, wait));
-					if (!isAttached(termDOM)) {
+					if (!isAttached(termDOM) || termDOM[kSuspended]) {
 						break;
 					}
 				}
@@ -1187,7 +1189,7 @@ async function renderOnce(termDOM: TermDOM): Promise<void> {
 	if (termDOM[kLifecycle] === "attaching") {
 		await termDOM[kAttachBegun];
 	}
-	if (!isAttached(termDOM)) {
+	if (!isAttached(termDOM) || termDOM[kSuspended]) {
 		return;
 	}
 	if (!termDOM[kTransport].interactive) {
