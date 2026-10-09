@@ -145,7 +145,9 @@ select::picker-icon { color: gray; }
 `::slider-track` and `::slider-fill` are CSS Form Control Styling's
 (css-forms-1). The track holds the fill and shows past it. A meter
 matches `:optimal-value` when its value is in its optimum region,
-`:low-value` below `low`, and `:high-value` above `high`.
+`:low-value` below `low`, and `:high-value` above `high`. css-forms-1 is
+an editor's draft, so these follow it as it changes; the WebKit and
+Firefox names below have shipped for years and are the stable choice.
 
 ```css
 progress::slider-fill { color: green; }

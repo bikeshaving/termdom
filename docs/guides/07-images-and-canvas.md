@@ -300,6 +300,9 @@ Drawing repaints the canvas on the next frame. No DOM change is needed.
 
 ### `"termdom-cellgrid"`
 
+The cell grid context is experimental: it is TermDOM's own, with no
+standard to follow, and may change in a minor release as it is used.
+
 The cell grid context draws cells instead of pixels: as many as the
 canvas's box holds, which `cols` and `rows` report. Under the unit cell
 that is `width` by `height`. In any mode, CSS sizes it exactly:
