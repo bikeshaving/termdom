@@ -44,12 +44,6 @@ region and prints the whole document once more as plain output, so the
 final state sits in the scrollback like the output of any other command,
 and the shell prompt returns below it.
 
-`document.close()` does the same thing without ending the program: the
-document is written into the scrollback and sealed. The next mutation
-starts a fresh document below it, on a new starting row. A program that
-prints a sequence of reports, one after another, can build each as a
-document and close it.
-
 ### Resizing
 
 When the terminal is resized, the engine asks for the cursor position
