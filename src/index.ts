@@ -114,7 +114,10 @@ export interface TermDOMOptions {
 	/** The initial document's markup. */
 	html?: string;
 
-	/** The initial document's URL. */
+	/**
+	 * The initial document's URL, which relative URLs resolve against.
+	 * Anything but an absolute URL throws a TypeError.
+	 */
 	url?: string;
 
 	/**
@@ -173,12 +176,12 @@ export interface TermDOMOptions {
 	colorDepth?: "auto" | ColorDepth;
 
 	/**
-	 * Whether the terminal's background is light or dark, where the
-	 * program knows. It holds until the terminal answers TermDOM's
-	 * question about its background, and is the answer when the terminal
-	 * gives none. Light without either.
+	 * Whether the terminal's background is light or dark, which
+	 * `prefers-color-scheme` reports. With "auto" (default), TermDOM asks
+	 * the terminal, and takes light when it gives no answer. Any other
+	 * value throws a TypeError.
 	 */
-	colorScheme?: "light" | "dark";
+	colorScheme?: "auto" | "light" | "dark";
 }
 
 /**
@@ -209,6 +212,25 @@ function toColorDepth(
 		);
 	}
 	return depth;
+}
+
+function toColorScheme(
+	option: TermDOMOptions["colorScheme"],
+): "light" | "dark" | undefined {
+	if (option === undefined || option === "auto") {
+		return undefined;
+	}
+	if (option === "light" || option === "dark") {
+		return option;
+	}
+	throw new TypeError('colorScheme must be "auto", "light" or "dark"');
+}
+
+function toDocumentURL(option: string | undefined): string | undefined {
+	if (option !== undefined && !URL.canParse(option)) {
+		throw new TypeError(`url must be an absolute URL, not ${option}`);
+	}
+	return option;
 }
 
 function toGraphicsSetting(
@@ -389,6 +411,7 @@ export class TermDOM extends EventTarget {
 		const images = toGraphicsSetting("images", options.images);
 		const canvas = toGraphicsSetting("canvas", options.canvas);
 		this[kColorDepth] = toColorDepth(options.colorDepth);
+		const url = toDocumentURL(options.url);
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -421,7 +444,7 @@ export class TermDOM extends EventTarget {
 
 		this.window = createWindow(
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
-			options.url,
+			url,
 		);
 
 		const document = this.document = this.window.document;
@@ -488,7 +511,7 @@ export class TermDOM extends EventTarget {
 			this[kLayout],
 			this[kCascade],
 			this[kFramebuffer],
-			options.colorScheme,
+			toColorScheme(options.colorScheme),
 		);
 
 		// The framebuffer measures widths over the exchange's probe channel.
@@ -578,9 +601,13 @@ export class TermDOM extends EventTarget {
 	 * Takes over the terminal the constructor was given: starts the
 	 * session, sends the startup queries, enables mouse reporting. When the
 	 * transport fails to get ready, it rejects and can be called again.
+	 * After dispose() it rejects with an InvalidStateError.
 	 */
 	attach(): Promise<void> {
-		if (this[kLifecycle] === "disposed" || isAttached(this)) {
+		if (this[kLifecycle] === "disposed") {
+			return Promise.reject(disposedError());
+		}
+		if (isAttached(this)) {
 			return this[kAttachReady];
 		}
 		// Resolves when the first frame has been written. The negotiations'
@@ -773,8 +800,12 @@ export class TermDOM extends EventTarget {
 	 * stands; with HTML, that markup, leaving the document untouched.
 	 * Colors are the framebuffer's: the `colorDepth` option, or what the
 	 * terminal said when attached, and 256 colors before it is asked.
+	 * After dispose() it throws an InvalidStateError.
 	 */
 	renderANSI(html?: string): string {
+		if (this[kLifecycle] === "disposed") {
+			throw disposedError();
+		}
 		return html === undefined
 			? renderStatic(this, "\n")
 			: renderStaticHTML(this, html, "\n");
@@ -783,9 +814,13 @@ export class TermDOM extends EventTarget {
 	/**
 	 * Write renderANSI(html), or the document without an argument, through
 	 * the transport as ordinary output. Uses CRLF while a raw-mode session
-	 * holds the terminal.
+	 * holds the terminal. After dispose() it rejects with an
+	 * InvalidStateError.
 	 */
 	print(html?: string): Promise<void> {
+		if (this[kLifecycle] === "disposed") {
+			return Promise.reject(disposedError());
+		}
 		const lineEnding = isAttached(this) && this[kTransport].interactive
 			? "\r\n"
 			: "\n";
@@ -1531,13 +1566,11 @@ function renderStaticHTML(
 	const renderer = termDOM[kStaticSibling];
 	renderer[kFetchTarget] = termDOM;
 	renderer.document.body.innerHTML = html;
-	const output = renderStatic(renderer, lineEnding);
-	// A disposed TermDOM no longer disposes what it rendered with.
-	if (termDOM[kLifecycle] === "disposed") {
-		void renderer.dispose();
-		termDOM[kStaticSibling] = null;
-	}
-	return output;
+	return renderStatic(renderer, lineEnding);
+}
+
+function disposedError(): DOMException {
+	return new DOMException("The TermDOM has been disposed", "InvalidStateError");
 }
 
 // Names that stay the runtime's wherever it has them. Its event classes:

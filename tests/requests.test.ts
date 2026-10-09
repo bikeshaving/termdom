@@ -644,3 +644,10 @@ test("without a policy, every load reaches the listeners, and nothing is reporte
 	expect(logged).toEqual([]);
 	dom.dispose();
 });
+
+test("url must be absolute", () => {
+	for (const url of ["not a url", "/app/", ""]) {
+		expect(() => create({url})).toThrow(TypeError);
+	}
+	create({url: "https://example.test/app/"}).dispose();
+});

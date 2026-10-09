@@ -78,10 +78,10 @@ Options:
   `"256"` or `"ansi"`, the same three by name. With `"auto"` (default),
   TermDOM asks the terminal. Any other value throws a `TypeError`. See "Color depth" in the
   styling guide.
-- `colorScheme?: "light" | "dark"` — whether the terminal's background
-  is light or dark, where the program knows. It holds until the
-  terminal answers TermDOM's question about its background, and stands
-  when the terminal gives no answer. Light without either.
+- `colorScheme?: "auto" | "light" | "dark"` — whether the terminal's
+  background is light or dark, which `prefers-color-scheme` reports.
+  With `"auto"` (default), TermDOM asks the terminal, and takes light
+  when it gives no answer. Any other value throws a `TypeError`.
 
 TermDOM reads no environment variables. What the terminal can say, it is
 asked, and the rest is an option.

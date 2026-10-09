@@ -766,3 +766,24 @@ test("print with no argument writes the document through the transport", async (
 	expect(written().replace(/\x1b\[[0-9;]*m/g, "")).toBe("hello\n");
 	dom.dispose();
 });
+
+test("after dispose(), attach(), print() and renderANSI() fail with InvalidStateError", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.dispose();
+	const failures: string[] = [];
+	await dom.attach().catch((error: DOMException) => failures.push(error.name));
+	await dom
+		.print("<p>x</p>")
+		.catch((error: DOMException) => failures.push(error.name));
+	try {
+		dom.renderANSI();
+	} catch (error) {
+		failures.push((error as DOMException).name);
+	}
+	expect(failures).toEqual([
+		"InvalidStateError",
+		"InvalidStateError",
+		"InvalidStateError",
+	]);
+});

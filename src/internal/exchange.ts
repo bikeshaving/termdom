@@ -1065,7 +1065,7 @@ export class Exchange extends EventTarget {
 	 * either.
 	 */
 	get colorScheme(): "light" | "dark" {
-		return this[kColorScheme] ?? this[kStatedColorScheme] ?? "light";
+		return this[kStatedColorScheme] ?? this[kColorScheme] ?? "light";
 	}
 
 	/**

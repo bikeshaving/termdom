@@ -131,9 +131,15 @@ test("a dark terminal background is prefers-color-scheme: dark from the first fr
 	termdom.dispose();
 });
 
-test("the program's stated background stands until the terminal says otherwise", async () => {
+test("the program's stated background stands whatever the terminal says", async () => {
 	const proc = new MockProcess({cols: 20, rows: 5});
+	scriptReplies(proc, [
+		{ask: "\x1b]11;?\x1b\\", reply: "\x1b]11;rgb:ffff/ffff/ffff\x1b\\"},
+	]);
 	const termdom = new TermDOM({transport: proc.transport, colorScheme: "dark"});
+	expect(matches(termdom, "(prefers-color-scheme: dark)")).toBe(true);
+	await termdom.attach();
+	await nextFrame(termdom);
 	expect(matches(termdom, "(prefers-color-scheme: dark)")).toBe(true);
 	termdom.dispose();
 
@@ -143,4 +149,19 @@ test("the program's stated background stands until the terminal says otherwise",
 	await nextFrame(light);
 	expect(matches(light, "(prefers-color-scheme: light)")).toBe(true);
 	light.dispose();
+});
+
+test("colorScheme takes auto, light or dark, and throws on anything else", () => {
+	for (const scheme of ["auto", "light", "dark"] as const) {
+		new TermDOM({
+			transport: new MockProcess({cols: 20, rows: 5}).transport,
+			colorScheme: scheme,
+		}).dispose();
+	}
+	expect(() =>
+		new TermDOM({
+			transport: new MockProcess({cols: 20, rows: 5}).transport,
+			colorScheme: "blue" as "dark",
+		}),
+	).toThrow(TypeError);
 });
