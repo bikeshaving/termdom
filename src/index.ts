@@ -126,7 +126,7 @@ export interface TermDOMOptions {
 	 * - `"auto"`: the size the terminal reports, asked for before the
 	 *   first frame, which waits a second at most. 8 by 16 when it cannot
 	 *   answer, as on a pipe.
-	 * - `{width, height}`: that size.
+	 * - `{width, height}`: that size, each from 0.01 to 1000.
 	 */
 	cellSize?: "unit" | "auto" | CellSize;
 
@@ -228,6 +228,17 @@ function isSameCell(a: Readonly<CellSize>, b: Readonly<CellSize>): boolean {
 	return a.width === b.width && a.height === b.height;
 }
 
+// A cell's side in CSS pixels. Past these, the viewport or the document
+// in cells is too large to lay out.
+const MIN_CELL_LENGTH = 0.01;
+const MAX_CELL_LENGTH = 1000;
+
+function isCellLength(length: unknown): length is number {
+	return typeof length === "number" &&
+		length >= MIN_CELL_LENGTH &&
+		length <= MAX_CELL_LENGTH;
+}
+
 function toCellSizeSetting(
 	option: TermDOMOptions["cellSize"],
 ): CellSizeSetting {
@@ -240,15 +251,13 @@ function toCellSizeSetting(
 	if (
 		typeof option === "object" &&
 		option !== null &&
-		Number.isFinite(option.width) &&
-		Number.isFinite(option.height) &&
-		option.width > 0 &&
-		option.height > 0
+		isCellLength(option.width) &&
+		isCellLength(option.height)
 	) {
 		return Object.freeze({width: option.width, height: option.height});
 	}
 	throw new TypeError(
-		'cellSize must be "unit", "auto" or {width, height} with positive sizes',
+		`cellSize must be "unit", "auto" or {width, height} with sizes from ${MIN_CELL_LENGTH} to ${MAX_CELL_LENGTH}`,
 	);
 }
 

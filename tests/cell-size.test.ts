@@ -377,6 +377,10 @@ test("a size that is not one throws", () => {
 	for (const cellSize of [
 		{width: 0, height: 16},
 		{width: 8},
+		{width: 1e308, height: 1e308},
+		{width: 8, height: Infinity},
+		{width: NaN, height: 16},
+		{width: 1e-300, height: 1e-300},
 		"big",
 		"typical",
 	]) {

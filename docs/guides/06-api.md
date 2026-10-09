@@ -46,7 +46,7 @@ Options:
   | --- | --- |
   | `"unit"` (default) | 1×1 px |
   | `"auto"` | what the terminal reports, or 8×16 if it can't say |
-  | `{width, height}` | that size, such as `{width: 8, height: 16}` |
+  | `{width, height}` | that size, such as `{width: 8, height: 16}`, each side from 0.01 to 1000 px |
 
   With `"auto"`, the first frame waits for the terminal's answer, a
   second at most, and a font zoom asks again.
