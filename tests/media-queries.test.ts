@@ -131,11 +131,9 @@ test("a dark terminal background is prefers-color-scheme: dark from the first fr
 	termdom.dispose();
 });
 
-test("the environment's background stands until the terminal says otherwise", async () => {
+test("the program's stated background stands until the terminal says otherwise", async () => {
 	const proc = new MockProcess({cols: 20, rows: 5});
-	const termdom = new TermDOM({
-		transport: {...proc.transport, colorScheme: "dark"},
-	});
+	const termdom = new TermDOM({transport: proc.transport, colorScheme: "dark"});
 	expect(matches(termdom, "(prefers-color-scheme: dark)")).toBe(true);
 	termdom.dispose();
 

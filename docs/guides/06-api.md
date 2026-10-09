@@ -73,6 +73,10 @@ Options:
   `"256"` or `"ansi"`, the same three by name. With `"auto"` (default),
   TermDOM asks the terminal. Any other value throws a `TypeError`. See "Color depth" in the
   styling guide.
+- `colorScheme?: "light" | "dark"` — whether the terminal's background
+  is light or dark, where the program knows. It holds until the
+  terminal answers TermDOM's question about its background, and stands
+  when the terminal gives no answer. Light without either.
 
 TermDOM reads no environment variables. What the terminal can say, it is
 asked, and the rest is an option.
@@ -222,8 +226,8 @@ continues; `window.close()` is the quit. Returns a promise that resolves
 when every queued restore has reached the transport; await it before
 writing further output. The process transport also restores
 shell-critical modes synchronously, so a caller that exits without
-awaiting still leaves the shell usable. `using term = new TermDOM()`
-disposes on scope exit.
+awaiting still leaves the shell usable. `await using term = new TermDOM()`
+disposes on scope exit and waits for it.
 
 ## `installGlobals(term)`
 
@@ -276,9 +280,6 @@ interface TerminalTransport {
 	readonly cols: number; // live: always the current size
 	readonly rows: number;
 	readonly interactive: boolean; // false: plain line output (a pipe)
-	// Optional. Whether the terminal's background is dark, where the
-	// program knows. The terminal's own answer replaces it.
-	readonly colorScheme?: "light" | "dark";
 	// Optional. Takes an error's text somewhere the frame does not share;
 	// true when it did. The engine keeps what it cannot place and prints
 	// it below the document at the end.
@@ -323,8 +324,6 @@ const term = new TermDOM({transport: transportFromProcess(process)});
 - `options.sharesScreen` — overrides `sharesScreen`, which defaults to
   true for the global process (it sits below a shell) and false for
   anything else.
-- `options.colorScheme` — `"light"` or `"dark"`, for the frames before
-  the terminal reports its background.
 
 The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
 `resizes`, signals → `closed`, `stdout.isTTY` → `interactive`, `stderr`
@@ -358,7 +357,6 @@ new ssh2.Server({hostKeys: [hostKey]}, (client) => {
   does not depend on ssh2.
 - `options.sharesScreen` — defaults to true: the client's shell is above
   the `ssh` command, so the document anchors below it.
-- `options.colorScheme` — as for `transportFromProcess`.
 
 The transport accepts the session's pty request and takes its size, or
 80×24 without one. It accepts the shell request, and `ready` resolves

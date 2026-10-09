@@ -162,6 +162,14 @@ export interface TermDOMOptions {
 	 * otherwise.
 	 */
 	colorDepth?: "auto" | ColorDepth;
+
+	/**
+	 * Whether the terminal's background is light or dark, where the
+	 * program knows. It holds until the terminal answers TermDOM's
+	 * question about its background, and is the answer when the terminal
+	 * gives none. Light without either.
+	 */
+	colorScheme?: "light" | "dark";
 }
 
 /**
@@ -445,6 +453,7 @@ export class TermDOM extends EventTarget {
 			this[kLayout],
 			this[kCascade],
 			this[kFramebuffer],
+			options.colorScheme,
 		);
 
 		// The framebuffer measures widths over the exchange's probe channel.
@@ -741,9 +750,12 @@ export class TermDOM extends EventTarget {
 		return this[kExchange].write(output);
 	}
 
-	/** `using dom = new TermDOM()` tears down on scope exit. */
-	[Symbol.dispose](): void {
-		this.dispose();
+	/**
+	 * `await using term = new TermDOM()` disposes on scope exit and waits
+	 * for the restores, as dispose() does.
+	 */
+	[Symbol.asyncDispose](): Promise<void> {
+		return this.dispose();
 	}
 
 	/**

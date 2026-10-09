@@ -1743,6 +1743,31 @@ const kPaint = Symbol("paint");
 const kDropText = Symbol("dropText");
 const kDrawText = Symbol("drawText");
 
+// The host getContext() is making a context for. A context made any other
+// way has none, and its constructor is illegal, as a browser's is.
+let constructingHost: CanvasHost | GridHost | null = null;
+
+function takeHost<T extends CanvasHost | GridHost>(): T {
+	const host = constructingHost;
+	constructingHost = null;
+	if (host === null) {
+		throw new TypeError("Illegal constructor");
+	}
+	return host as T;
+}
+
+/** A canvas's 2d context, as getContext("2d") makes it. */
+export function createContext2D(host: CanvasHost): CanvasRenderingContext2D {
+	constructingHost = host;
+	return new CanvasRenderingContext2D();
+}
+
+/** A canvas's cell grid context, as getContext("termdom-cellgrid") makes it. */
+export function createCellGridContext(host: GridHost): CanvasCellGridContext {
+	constructingHost = host;
+	return new CanvasCellGridContext();
+}
+
 export interface CanvasRenderingContext2D {
 	[kHost]: CanvasHost;
 	[kText]: CanvasTextRun[];
@@ -1752,7 +1777,8 @@ export interface CanvasRenderingContext2D {
 }
 
 export class CanvasRenderingContext2D {
-	constructor(host: CanvasHost) {
+	constructor() {
+		const host = takeHost<CanvasHost>();
 		this[kText] = [];
 		this[kState] = defaultState();
 		this[kStack] = [];
@@ -3034,8 +3060,8 @@ export interface CanvasCellGridContext {
  * own.
  */
 export class CanvasCellGridContext {
-	constructor(host: GridHost) {
-		this[kGridHost] = host;
+	constructor() {
+		this[kGridHost] = takeHost<GridHost>();
 		this[kGridState] = defaultGridState();
 		this[kGridStack] = [];
 	}

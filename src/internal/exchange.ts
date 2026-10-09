@@ -36,12 +36,6 @@ export interface TerminalTransport {
 	readonly rows: number;
 
 	/**
-	 * Whether the terminal's background is dark, where the program knows.
-	 * The terminal's own answer, when it gives one, replaces it.
-	 */
-	readonly colorScheme?: "light" | "dark";
-
-	/**
 	 * Chunks are strings, so code points never split. Escape sequences may
 	 * split, and the exchange reassembles them.
 	 */
@@ -864,6 +858,7 @@ const kHasDetectedAnchor = Symbol("hasDetectedAnchor");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
 const kDSRSequence = Symbol("dsrSequence");
 const kColorScheme = Symbol("colorScheme");
+const kStatedColorScheme = Symbol("statedColorScheme");
 const kTerminalBackground = Symbol("terminalBackground");
 const kPendingReplies = Symbol("pendingReplies");
 
@@ -927,6 +922,7 @@ export interface Exchange {
 	// names its mode, so neither takes the other's reply.
 	[kPendingReplies]: PendingReply[];
 	[kColorScheme]: "light" | "dark" | null;
+	[kStatedColorScheme]: "light" | "dark" | undefined;
 	[kTerminalBackground]: number | null;
 	// The BDSM state the terminal reported before we touched it.
 	[kPriorBidiMode]: number | null;
@@ -955,8 +951,10 @@ export class Exchange extends EventTarget {
 		layout: Layout,
 		styles: Cascade,
 		framebuffer: Framebuffer,
+		colorScheme?: "light" | "dark",
 	) {
 		super();
+		this[kStatedColorScheme] = colorScheme;
 		const interactive = transport.interactive;
 		this[kWriter] = null;
 		this[kReader] = null;
@@ -1012,11 +1010,11 @@ export class Exchange extends EventTarget {
 
 	/**
 	 * Whether the terminal's background is light or dark: what the terminal
-	 * said, or before it has, what the transport knows, and light without
+	 * said, or before it has, what the program stated, and light without
 	 * either.
 	 */
 	get colorScheme(): "light" | "dark" {
-		return this[kColorScheme] ?? this[kTransport].colorScheme ?? "light";
+		return this[kColorScheme] ?? this[kStatedColorScheme] ?? "light";
 	}
 
 	/**
@@ -2290,9 +2288,8 @@ export const DEFAULT_ROWS = 24;
 export function transportFromProcess(
 	proc: ProcessLike = process as unknown as ProcessLike,
 	// The global process sits below a shell. A mock or relay owns its
-	// screen. What the caller passes is used as given, and the rest is
-	// asked of the terminal, never read from the environment.
-	options: {sharesScreen?: boolean; colorScheme?: "light" | "dark"} = {},
+	// screen.
+	options: {sharesScreen?: boolean} = {},
 ): TerminalTransport {
 	const sharesScreen =
 		options.sharesScreen ?? proc === (process as unknown as ProcessLike);
@@ -2476,7 +2473,6 @@ export function transportFromProcess(
 			stderr.write(text + "\n");
 			return true;
 		},
-		colorScheme: options.colorScheme,
 		ready: Promise.resolve(),
 		readable,
 		writable,
@@ -2540,7 +2536,7 @@ export function transportFromSSH(
 	session: SSHSessionLike,
 	// The client's shell sits above the ssh command, as a local one does
 	// above a program, so the document anchors below it.
-	options: {sharesScreen?: boolean; colorScheme?: "light" | "dark"} = {},
+	options: {sharesScreen?: boolean} = {},
 ): TerminalTransport {
 	let cols = DEFAULT_COLS;
 	let rows = DEFAULT_ROWS;
@@ -2619,7 +2615,6 @@ export function transportFromSSH(
 		},
 		sharesScreen: options.sharesScreen ?? true,
 		interactive: true,
-		colorScheme: options.colorScheme,
 		ready,
 		readable: new ReadableStream<string>({
 			start(controller) {

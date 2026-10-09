@@ -357,7 +357,8 @@ test("black paints black, and unstyled text the terminal's own color", async () 
 	for (const scheme of ["light", "dark"] as const) {
 		const terminal = new MockProcess({rows: 4, cols: 20});
 		const dom = new TermDOM({
-			transport: {...terminal.transport, colorScheme: scheme},
+			transport: terminal.transport,
+			colorScheme: scheme,
 		});
 		const {document} = dom;
 		document.body.innerHTML =

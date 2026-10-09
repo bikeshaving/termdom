@@ -384,16 +384,18 @@ test("the seal pays out the rows the region painted, not body's own box", async 
 	dom.dispose();
 });
 
-test("[Symbol.dispose] tears down, so `using` works", () => {
+test("[Symbol.asyncDispose] disposes, so `await using` works", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 30});
 	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML = "<div>hi</div>";
+	expect(Symbol.dispose in dom).toBe(false);
 
-	// The explicit-resource-management hook delegates to dispose().
-	dom[Symbol.dispose]();
+	// The explicit-resource-management hook is dispose().
+	await dom[Symbol.asyncDispose]();
+	expect(dom.document.visibilityState).toBe("hidden");
 
 	// Idempotent with an explicit dispose(); tearing down twice is safe.
-	expect(() => dom.dispose()).not.toThrow();
+	await dom.dispose();
 });
 
 test(":fullscreen matches the element the stack holds", async () => {
