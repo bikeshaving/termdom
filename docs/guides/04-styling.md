@@ -45,7 +45,10 @@ The system colors mean what they mean in a terminal:
 | `GrayText` | Gray. |
 
 A `background-image` with a `linear-gradient()` paints each cell the
-color the gradient has at that cell's center. `radial-gradient()` and
+color the gradient has at that cell's center. A stop's position takes
+any length and is measured like every other length, with `ch` counted
+along the gradient's direction, so `3ch` down a column is three rows.
+`radial-gradient()` and
 `url()` have no effect. `opacity`, `filter`, `box-shadow`, and
 `mix-blend-mode` have no effect either.
 

@@ -4322,6 +4322,46 @@ function getLengthContext(
 	};
 }
 
+/**
+ * A length a property holds inside a value the cascade keeps as written
+ * (a gradient's stops), in CSS pixels against the element as its
+ * computed lengths are, along one axis. Null for what is not a length.
+ */
+export function resolveLength(
+	element: Element,
+	length: number,
+	unit: string,
+	vertical: boolean,
+): number | null {
+	if (unit.toLowerCase() === "px") {
+		return length;
+	}
+	const document = element.ownerDocument;
+	const cascade = document ? documentCascades.get(document) : undefined;
+	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
+	const cell = getCellSize(element);
+	const root = document?.documentElement;
+	const font = CSSValues.getFontSize(
+		getComputedValue(element, "font-size"),
+		cell.height,
+	);
+	const text = CSSValues.absolutizeLengths(`${length}${unit}`, {
+		font,
+		root: CSSValues.getFontSize(
+			root ? getComputedValue(root, "font-size") : "",
+			cell.height,
+		),
+		cellWidth: cell.width,
+		cellAlong: vertical ? cell.height : cell.width,
+		line: cell.height,
+		viewportWidth: block ? block.width * cell.width : 0,
+		viewportHeight: block ? block.height * cell.height : 0,
+		percent: null,
+	});
+	const match = /^(-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)px$/i.exec(text);
+	return match ? parseFloat(match[1]) : null;
+}
+
 function getRootFontSize(
 	declaration: ComputedStyleDeclaration,
 	ownFontSize: boolean,

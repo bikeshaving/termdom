@@ -7,23 +7,30 @@ import * as CSSTree from "css-tree/dist/csstree.esm";
 
 import {
 	getCSSValueChildren,
+	isLengthUnit,
 	parseAngle,
 	parseColor,
 	toCellColor,
-	type UnitValue,
 } from "./cssvalues.ts";
 import type {CellContext} from "./framebuffer.ts";
 
 /**
- * One `<color-stop>`. The position is what the author wrote: a fraction
- * of the gradient line, a length in cells, or null for one the fixup
- * fills in. The color is packed RGB, with alpha kept apart because a
- * cell either takes a color or keeps what is under it.
+ * Where a stop sits: CSS pixels, a percentage of the gradient line, a
+ * length in a unit only an element can measure, or null for one the
+ * fixup fills in.
+ */
+type StopPosition =
+	number | {percentage: number} | {length: number; unit: string} | null;
+
+/**
+ * One `<color-stop>`. The position is what the author wrote. The color
+ * is packed RGB, with alpha kept apart because a cell either takes a
+ * color or keeps what is under it.
  */
 interface GradientStop {
 	color: number;
 	alpha: number;
-	position: UnitValue;
+	position: StopPosition;
 }
 
 /**
@@ -96,7 +103,7 @@ function readGradientColor(
 
 // Undefined, not null, for a node that is no position at all: null is a
 // position the fixup has yet to fill in.
-function readStopPosition(node: CSSTree.ValueNode): UnitValue | undefined {
+function readStopPosition(node: CSSTree.ValueNode): StopPosition | undefined {
 	const number = parseFloat(node.value ?? "");
 	if (!Number.isFinite(number)) {
 		return undefined;
@@ -104,10 +111,12 @@ function readStopPosition(node: CSSTree.ValueNode): UnitValue | undefined {
 	if (node.type === "Percentage") {
 		return {percentage: number};
 	}
-	// px and ch both measure one cell, and nothing else does.
 	if (node.type === "Dimension") {
 		const unit = (node.unit ?? "").toLowerCase();
-		return unit === "px" || unit === "ch" ? number : undefined;
+		if (!isLengthUnit(unit)) {
+			return undefined;
+		}
+		return unit === "px" ? number : {length: number, unit};
 	}
 	return node.type === "Number" && number === 0 ? 0 : undefined;
 }
@@ -189,6 +198,47 @@ export function parseLinearGradient(value: string): Gradient | null {
 	return gradient;
 }
 
+function isMeasured(
+	position: StopPosition,
+): position is {length: number; unit: string} {
+	return position !== null &&
+		typeof position === "object" &&
+		"length" in position;
+}
+
+// Whether the gradient line runs more down the screen than across it.
+function runsDown(angle: number): boolean {
+	const radians = (angle * Math.PI) / 180;
+	return Math.abs(Math.cos(radians)) > Math.abs(Math.sin(radians));
+}
+
+/**
+ * The gradient with every stop length in CSS pixels, measured as the
+ * element measures its own lengths and along the gradient line, so a
+ * `ch` down a column is a row.
+ */
+export function resolveGradientLengths(
+	gradient: Gradient,
+	measure: (length: number, unit: string, vertical: boolean) => number | null,
+): Gradient {
+	if (!gradient.stops.some((stop) => isMeasured(stop.position))) {
+		return gradient;
+	}
+	const vertical = runsDown(gradient.angle);
+	return {
+		...gradient,
+		stops: gradient.stops.map((stop) =>
+			isMeasured(stop.position)
+				? {
+					...stop,
+					position:
+						measure(stop.position.length, stop.position.unit, vertical) ?? 0,
+				}
+				: stop,
+		),
+	};
+}
+
 // A stop's position as a fraction of the gradient line, which is what
 // the interpolation walks.
 interface ResolvedStop {
@@ -198,14 +248,18 @@ interface ResolvedStop {
 }
 
 /**
- * css-images-3 §3.4.3, against a gradient line of `length` cells: the
- * ends are pinned, a position never runs backwards, and a run of stops
- * without positions spreads evenly between the two that have them.
+ * css-images-3 §3.4.3, against a gradient line of `length` cell widths,
+ * `perPx` of them to a CSS pixel: the ends are pinned, a position never
+ * runs backwards, and a run of stops without positions spreads evenly
+ * between the two that have them.
  */
 function resolveStops(
 	stops: readonly GradientStop[],
 	length: number,
+	perPx: number,
 ): ResolvedStop[] {
+	const fraction = (px: number): number =>
+		length > 0 ? (px * perPx) / length : 0;
 	// NaN marks a position still to be filled in, so the sweeps below can
 	// tell "not yet known" from a real zero.
 	const resolved = stops.map((stop) => ({
@@ -214,8 +268,10 @@ function resolveStops(
 		position: stop.position === null
 			? NaN
 			: typeof stop.position === "number"
-				? (length > 0 ? stop.position / length : 0)
-				: stop.position.percentage / 100,
+				? fraction(stop.position)
+				: isMeasured(stop.position)
+					? fraction(stop.position.length)
+					: stop.position.percentage / 100,
 	}));
 	const last = resolved.length - 1;
 	if (Number.isNaN(resolved[0].position)) {
@@ -325,7 +381,8 @@ function getStopColor(
  * css-images-3 §3.4.1: the gradient line runs through the box's center
  * at the gradient's angle and is `|w·sin a| + |h·cos a|` long, so that
  * every corner of the box projects onto it. A cell takes the color at
- * the projection of its own center.
+ * the projection of its own center. `cell` is the page's cell in CSS
+ * pixels, which a stop's length divides by.
  */
 export function renderGradient(
 	ctx: CellContext,
@@ -333,6 +390,7 @@ export function renderGradient(
 	rect: {left: number; top: number; width: number; height: number},
 	under: number | null,
 	aspect: number,
+	cell: {width: number; height: number},
 ): void {
 	const cols = Math.round(rect.width);
 	const rows = Math.round(rect.height);
@@ -354,7 +412,10 @@ export function renderGradient(
 	// from the center.
 	const startX = (cols - dx * length) / 2;
 	const startY = (height - dy * length) / 2;
-	const stops = resolveStops(gradient.stops, length);
+	// A pixel across is a column's share of a cell, and a pixel down a row's,
+	// which the line counts `aspect` times over.
+	const perPx = (dx * dx) / cell.width + (dy * dy * aspect) / cell.height;
+	const stops = resolveStops(gradient.stops, length, perPx);
 	const left = Math.round(rect.left);
 	const top = Math.round(rect.top);
 	const colorAt = (x: number, y: number): number | null =>

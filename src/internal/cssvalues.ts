@@ -2730,6 +2730,23 @@ function getUnitFactor(unit: string, context: LengthContext): number | null {
 	}
 }
 
+const NO_LENGTHS: LengthContext = {
+	font: 0,
+	cellWidth: 0,
+	cellAlong: 0,
+	line: 0,
+	root: 0,
+	viewportWidth: 0,
+	viewportHeight: 0,
+	percent: null,
+};
+
+/** Whether a dimension's unit makes it a `<length>`. */
+export function isLengthUnit(unit: string): boolean {
+	return unit.toLowerCase() === "px" ||
+		getUnitFactor(unit, NO_LENGTHS) !== null;
+}
+
 function absoluteLength(px: number): string {
 	return `${Math.round(px * 1e6) / 1e6}px`;
 }

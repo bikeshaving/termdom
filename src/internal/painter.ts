@@ -2,11 +2,13 @@ import {
 	type Cascade,
 	getBoxModel,
 	getCellBorderWidths,
+	getCellSize,
 	getComputedValue,
 	getDeclaredDisplay,
 	getTabSize,
 	getWhiteSpace,
 	resolveBorderSides,
+	resolveLength,
 	toCellLength,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -40,6 +42,7 @@ import {
 	type Gradient,
 	parseLinearGradient,
 	renderGradient,
+	resolveGradientLengths,
 } from "./gradients.ts";
 import {
 	applyTextTransform,
@@ -144,7 +147,13 @@ function getBackgroundFill(
 
 function getGradient(element: Element): Gradient | null {
 	const image = getComputedValue(element, "background-image");
-	return image && image !== "none" ? parseLinearGradient(image) : null;
+	const gradient = image && image !== "none"
+		? parseLinearGradient(image)
+		: null;
+	return gradient &&
+		resolveGradientLengths(gradient, (length, unit, vertical) =>
+			resolveLength(element, length, unit, vertical),
+		);
 }
 
 const paintStyles = new WeakMap<object, PaintStyle>();
@@ -1047,6 +1056,7 @@ function paintBox(
 				fragment,
 				style.bg ?? null,
 				cell.height / cell.width,
+				getCellSize(painter[kDocument]),
 			);
 		}
 	}

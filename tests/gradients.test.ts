@@ -10,7 +10,7 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/index.ts";
+import {TermDOM, type TermDOMOptions} from "../src/index.ts";
 import {parseAngle} from "../src/internal/cssvalues.ts";
 import {parseLinearGradient} from "../src/internal/gradients.ts";
 import {MockProcess, nextFrame, scriptReplies} from "./test-utils.js";
@@ -111,9 +111,14 @@ test("stop positions keep the unit the author wrote", () => {
 	);
 	expect(gradient?.stops.map((stop) => stop.position)).toEqual([
 		{percentage: 0},
-		2,
+		{length: 2, unit: "ch"},
 		{percentage: 100},
 	]);
+	expect(
+		parseLinearGradient("linear-gradient(red 10em, blue 3px)")?.stops
+			.map((stop) => stop.position),
+	).toEqual([{length: 10, unit: "em"}, 3]);
+	expect(parseLinearGradient("linear-gradient(red 10deg, blue)")).toBe(null);
 });
 
 test("a stop with two positions is two stops of one color", () => {
@@ -414,4 +419,61 @@ test("a gradient bar renders to stable ANSI", async () => {
 	);
 	expect(terminal.getScreenContents()).toMatchSnapshot();
 	dispose();
+});
+
+/** A box `width` by `height` CSS pixels under a given cell size. */
+async function paintSizedBox(
+	css: string,
+	cellSize: TermDOMOptions["cellSize"],
+): Promise<{terminal: MockProcess; dispose(): void}> {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport, cellSize});
+	const div = dom.document.createElement("div");
+	div.setAttribute("style", css);
+	dom.document.body.appendChild(div);
+	await nextFrame(dom);
+	return {terminal, dispose: () => dom.dispose()};
+}
+
+test("a stop's pixels are the page's pixels under a cell size", async () => {
+	const {terminal, dispose} = await paintSizedBox(
+		"width: 160px; height: 16px;" +
+			" background-image: linear-gradient(to right, red 80px, blue 80px)",
+		{width: 8, height: 16},
+	);
+	const row = readRow(terminal, 0, 20);
+	for (let col = 0; col < 10; col++) {
+		expect(row[col].bg).toBe(0xff0000);
+	}
+	for (let col = 10; col < 20; col++) {
+		expect(row[col].bg).toBe(0x0000ff);
+	}
+	dispose();
+});
+
+test("a stop measured in em splits where the font size says", async () => {
+	const {terminal, dispose} = await paintSizedBox(
+		"width: 160px; height: 16px; font-size: 8px;" +
+			" background-image: linear-gradient(to right, red 10em, blue 10em)",
+		{width: 8, height: 16},
+	);
+	const row = readRow(terminal, 0, 20);
+	expect(row[9].bg).toBe(0xff0000);
+	expect(row[10].bg).toBe(0x0000ff);
+	dispose();
+});
+
+test("a stop in ch or px down a column counts rows", async () => {
+	for (const stop of ["3ch", "3px"]) {
+		const {terminal, dispose} = await paintSizedBox(
+			"width: 4px; height: 6px;" +
+				` background-image: linear-gradient(red ${stop}, blue ${stop})`,
+			undefined,
+		);
+		for (let row = 0; row < 6; row++) {
+			expect(readRow(terminal, row, 1)[0].bg)
+				.toBe(row < 3 ? 0xff0000 : 0x0000ff);
+		}
+		dispose();
+	}
 });
