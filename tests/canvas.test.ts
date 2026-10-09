@@ -77,10 +77,10 @@ test("getContext hands back one context per canvas, and null for the rest", asyn
 	expect(ctx).not.toBeNull();
 	expect(a.getContext("2d")).toBe(ctx);
 	expect(ctx!.canvas).toBe(a);
-	expect(a.getContext("termdom-cellgrid" as "2d")).toBeNull();
+	expect(a.getContext("termdom-cellgrid")).toBeNull();
 	expect(a.getContext("webgl")).toBeNull();
 	expect(b.getContext("bitmaprenderer")).toBeNull();
-	const grid = b.getContext("termdom-cellgrid" as "2d");
+	const grid = b.getContext("termdom-cellgrid");
 	expect(grid).not.toBeNull();
 	expect(b.getContext("2d")).toBeNull();
 	expect(ctx).toBeInstanceOf((dom.window as any).CanvasRenderingContext2D);
@@ -600,9 +600,9 @@ test("a canvas stretched by CSS scales its pixels to the box", async () => {
 // ---------------------------------------------------------------------------
 // cellgrid
 
-function grid(document: Document, id = "g"): any {
+function grid(document: Document, id = "g"): CanvasCellGridContext {
 	return (document.getElementById(id) as HTMLCanvasElement)
-		.getContext("termdom-cellgrid" as "2d");
+		.getContext("termdom-cellgrid")!;
 }
 
 test("a cellgrid canvas is width columns by height rows of cells", async () => {
@@ -612,7 +612,7 @@ test("a cellgrid canvas is width columns by height rows of cells", async () => {
 	await nextFrame(dom);
 	const rect = document.getElementById("g")!.getBoundingClientRect();
 	expect([rect.width, rect.height]).toEqual([12, 3]);
-	expect([ctx.columns, ctx.rows]).toEqual([12, 3]);
+	expect([ctx.canvas.width, ctx.canvas.height]).toEqual([12, 3]);
 	dom.dispose();
 });
 
@@ -645,13 +645,44 @@ test("fillText writes glyphs, fillRect fills backgrounds, clearRect empties", as
 		background: "#003366",
 		bold: true,
 		italic: true,
+		dim: false,
 		underline: false,
+		strikethrough: false,
+		inverse: false,
 	});
 	ctx.clearRect(0, 0, 12, 1);
 	expect(ctx.getCell(1, 0)).toBeNull();
 	await nextFrame(dom);
 	expect(rowText(terminal, 0).trimEnd()).toBe("");
 	expect(cell(terminal, 11, 0).bg).toBe(-1);
+	dom.dispose();
+});
+
+test("textDecoration draws underline and line-through, and getCell reads them back", async () => {
+	const {dom, document} =
+		await mount("<canvas id=g width=12 height=1></canvas>");
+	const ctx = grid(document);
+	ctx.textDecoration = "line-through underline";
+	expect(ctx.textDecoration).toBe("underline line-through");
+	ctx.textDecoration = "overline";
+	expect(ctx.textDecoration).toBe("underline line-through");
+	ctx.font = "lighter";
+	ctx.fillText("ab", 0, 0);
+	ctx.textDecoration = "line-through";
+	ctx.font = "";
+	ctx.fillText("c", 2, 0);
+	expect(ctx.getCell(0, 0)).toMatchObject({
+		dim: true,
+		underline: true,
+		strikethrough: true,
+	});
+	expect(ctx.getCell(2, 0)).toMatchObject({
+		dim: false,
+		underline: false,
+		strikethrough: true,
+	});
+	ctx.textDecoration = "none";
+	expect(ctx.textDecoration).toBe("none");
 	dom.dispose();
 });
 
@@ -662,11 +693,11 @@ test("text that runs past the grid is cut, and wide glyphs take two columns", as
 	ctx.fillText("漢字abcdef", 0, 0);
 	await nextFrame(dom);
 	expect(rowText(terminal, 0)).toBe("漢字ab|");
-	expect(ctx.getCell(0, 0).char).toBe("漢");
+	expect(ctx.getCell(0, 0)!.char).toBe("漢");
 	expect(ctx.measureText("漢字a").width).toBe(5);
 	ctx.textAlign = "right";
 	ctx.fillText("Z", 6, 0);
-	expect(ctx.getCell(5, 0).char).toBe("Z");
+	expect(ctx.getCell(5, 0)!.char).toBe("Z");
 	dom.dispose();
 });
 
@@ -715,7 +746,7 @@ test("resizing a cellgrid canvas resizes and clears its grid", async () => {
 	const ctx = grid(document);
 	ctx.fillText("abcd", 0, 0);
 	canvas.width = 8;
-	expect(ctx.columns).toBe(8);
+	expect(ctx.canvas.width).toBe(8);
 	expect(ctx.getCell(0, 0)).toBeNull();
 	await nextFrame(dom);
 	expect(canvas.getBoundingClientRect().width).toBe(8);
@@ -867,7 +898,7 @@ test("strokeRect draws a box and strokeLine joins it as tees", async () => {
 	expect(rowText(terminal, 1)).toBe("│  │ │");
 	expect(rowText(terminal, 2)).toBe("├──┴─┤");
 	expect(rowText(terminal, 3)).toBe("└────┘");
-	expect(ctx.getCell(3, 2).char).toBe("┴");
+	expect(ctx.getCell(3, 2)!.char).toBe("┴");
 	dom.dispose();
 });
 
@@ -935,9 +966,9 @@ test("a cellgrid samples only the cells an image lands on, however large", async
 	source.fillRect(1, 0, 1, 2);
 	const ctx = grid(document);
 	ctx.drawImage(document.getElementById("src"), -1e6 + 2, 0, 2e6, 1e6);
-	expect(ctx.getCell(1, 0).background).toBe("#ff0000");
-	expect(ctx.getCell(2, 0).background).toBe("#0000ff");
-	expect(ctx.getCell(3, 1).background).toBe("#0000ff");
+	expect(ctx.getCell(1, 0)!.background).toBe("#ff0000");
+	expect(ctx.getCell(2, 0)!.background).toBe("#0000ff");
+	expect(ctx.getCell(3, 1)!.background).toBe("#0000ff");
 	dom.dispose();
 });
 
@@ -975,7 +1006,7 @@ test("with graphics off, a canvas has no 2d context and keeps its cellgrid", asy
 	const b = dom.document.createElement("canvas");
 	dom.document.body.append(a, b);
 	expect(a.getContext("2d")).toBeNull();
-	expect(b.getContext("termdom-cellgrid" as "2d")).toBeInstanceOf(
+	expect(b.getContext("termdom-cellgrid")).toBeInstanceOf(
 		CanvasCellGridContext,
 	);
 	dom.dispose();
@@ -1014,9 +1045,7 @@ test("a cell grid clips to a scroller and paints the rows scrolled into view", a
 		"</div><p>below</p>",
 	);
 	const canvas = document.getElementById("c") as HTMLCanvasElement;
-	const grid = canvas.getContext("termdom-cellgrid" as "2d") as unknown as {
-		fillText(text: string, x: number, y: number): void;
-	};
+	const grid = canvas.getContext("termdom-cellgrid")!;
 	for (let row = 0; row < 6; row++) {
 		grid.fillText(`row ${row}`, 0, row);
 	}
@@ -1044,9 +1073,7 @@ test("a cell grid narrower than its columns is cut at its content box", async ()
 		"</canvas>|</p>",
 	);
 	const canvas = document.getElementById("c") as HTMLCanvasElement;
-	const grid = canvas.getContext("termdom-cellgrid" as "2d") as unknown as {
-		fillText(text: string, x: number, y: number): void;
-	};
+	const grid = canvas.getContext("termdom-cellgrid")!;
 	grid.fillText("abcdefghijklmnop", 0, 0);
 	await nextFrame(dom);
 	expect(rowText(terminal, 0)).toBe("abcde|");
@@ -1107,9 +1134,7 @@ test("a cell grid in a scroller shifts with the terminal's scroll", async () => 
 		"<canvas id=c width=10 height=12 style=\"display: block\"></canvas>" +
 		"</div>";
 	const canvas = dom.document.getElementById("c") as HTMLCanvasElement;
-	const grid = canvas.getContext("termdom-cellgrid" as "2d") as unknown as {
-		fillText(text: string, x: number, y: number): void;
-	};
+	const grid = canvas.getContext("termdom-cellgrid")!;
 	for (let row = 0; row < 12; row++) {
 		grid.fillText(`row ${row}`, 0, row);
 	}

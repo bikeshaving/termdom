@@ -1,5 +1,6 @@
 import "./internal/inspector.ts";
 
+import type {CanvasCellGridContext} from "./internal/canvas.ts";
 import {
 	Cascade,
 	type CellSize,
@@ -78,6 +79,15 @@ export type {
 	TerminalSize,
 	TerminalTransport,
 } from "./internal/exchange.ts";
+
+declare global {
+	interface HTMLCanvasElement {
+		getContext(
+			contextId: "termdom-cellgrid",
+			options?: unknown,
+		): CanvasCellGridContext | null;
+	}
+}
 
 // Images decode on the runtime's web Worker, running src/decode-worker.ts,
 // which builds to dist/decode-worker.js beside this file. A runtime with

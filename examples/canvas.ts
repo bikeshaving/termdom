@@ -37,7 +37,7 @@ pixels.style.height = "16px";
 const ctx = pixels.getContext("2d")!;
 
 const grid = (document.getElementById("cells") as HTMLCanvasElement)
-  .getContext("termdom-cellgrid" as "2d") as any;
+  .getContext("termdom-cellgrid")!;
 
 // Conway's Life on the grid, seeded with a glider, blinkers, a toad and
 // an R-pentomino, which keeps changing for a long time.

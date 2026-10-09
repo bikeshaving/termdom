@@ -2970,7 +2970,7 @@ export interface CanvasCellGridContext {
 	[kLineStyle]: LineStyle["style"];
 	[kLineJoin]: "miter" | "round";
 	[kFont]: string;
-	[kTextAlign]: string;
+	[kTextAlign]: "start" | "end" | "left" | "right" | "center";
 	[kTextDecoration]: string;
 }
 
@@ -2995,16 +2995,8 @@ export class CanvasCellGridContext {
 		this[kTextDecoration] = "none";
 	}
 
-	get canvas(): object {
-		return this[kGridHost].canvas;
-	}
-
-	get columns(): number {
-		return this[kGridHost].cells().cols;
-	}
-
-	get rows(): number {
-		return this[kGridHost].cells().rows;
+	get canvas(): HTMLCanvasElement {
+		return this[kGridHost].canvas as HTMLCanvasElement;
 	}
 
 	get fillStyle(): string {
@@ -3024,7 +3016,7 @@ export class CanvasCellGridContext {
 	}
 
 	/** A CSS border style: solid, double, dashed, dotted and the rest. */
-	get lineStyle(): string {
+	get lineStyle(): LineStyle["style"] {
 		return this[kLineStyle];
 	}
 
@@ -3036,7 +3028,7 @@ export class CanvasCellGridContext {
 	}
 
 	/** miter, round. A round join curves strokeRect()'s corners. */
-	get lineJoin(): string {
+	get lineJoin(): "miter" | "round" {
 		return this[kLineJoin];
 	}
 
@@ -3055,24 +3047,41 @@ export class CanvasCellGridContext {
 		this[kFont] = String(value);
 	}
 
-	get textAlign(): string {
+	get textAlign(): "start" | "end" | "left" | "right" | "center" {
 		return this[kTextAlign];
 	}
 
 	set textAlign(value: string) {
-		if (["start", "end", "left", "right", "center"].includes(value)) {
+		if (
+			value === "start" ||
+			value === "end" ||
+			value === "left" ||
+			value === "right" ||
+			value === "center"
+		) {
 			this[kTextAlign] = value;
 		}
 	}
 
-	/** none, underline. */
+	/** none, or underline and line-through, alone or together. */
 	get textDecoration(): string {
 		return this[kTextDecoration];
 	}
 
 	set textDecoration(value: string) {
-		if (value === "none" || value === "underline") {
-			this[kTextDecoration] = value;
+		const words = String(value).trim().toLowerCase().split(/\s+/);
+		if (words.length === 1 && words[0] === "none") {
+			this[kTextDecoration] = "none";
+			return;
+		}
+		const lines = new Set(words);
+		if (
+			lines.size === words.length &&
+			words.every((word) => word === "underline" || word === "line-through")
+		) {
+			this[kTextDecoration] = ["underline", "line-through"]
+				.filter((line) => lines.has(line))
+				.join(" ");
 		}
 	}
 
@@ -3137,7 +3146,8 @@ export class CanvasCellGridContext {
 			bold: words.includes("bold") || words.includes("bolder"),
 			italic: words.includes("italic") || words.includes("oblique"),
 			dim: words.includes("lighter"),
-			underline: this[kTextDecoration] === "underline",
+			underline: this[kTextDecoration].includes("underline"),
+			strikethrough: this[kTextDecoration].includes("line-through"),
 		};
 		const {grid} = cells;
 		for (const cluster of clusters) {
@@ -3320,7 +3330,10 @@ export class CanvasCellGridContext {
 		background: string | null;
 		bold: boolean;
 		italic: boolean;
+		dim: boolean;
 		underline: boolean;
+		strikethrough: boolean;
+		inverse: boolean;
 	} | null {
 		const {grid, cols, rows} = this[kGridHost].cells();
 		const col = Math.floor(x);
@@ -3350,7 +3363,10 @@ export class CanvasCellGridContext {
 			background: css(cell.bg),
 			bold: cell.bold,
 			italic: cell.italic,
+			dim: cell.dim,
 			underline: cell.underline,
+			strikethrough: cell.strikethrough,
+			inverse: cell.inverse,
 		};
 	}
 
