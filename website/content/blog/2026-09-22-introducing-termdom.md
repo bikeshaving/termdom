@@ -29,8 +29,6 @@ document.body.innerHTML = `
     .card { border: 1px solid #5fafff; padding: 0 1ch; width: 36ch; }
     .title { color: #5fafff; font-weight: bold; }
     progress { width: 25ch; }
-    progress::part(bar) { color: green; }
-    progress::part(groove) { color: #444; }
   </style>
   <div class="card">
     <div class="title">Installing</div>
@@ -92,7 +90,7 @@ the terminal.
 
 - **Stylesheets.** CSS from `<style>` elements and `style` attributes
   cascades and inherits as in the browser, translated to ANSI color and
-  text decoration. Modern color syntax, gradients, and `::part` all work.
+  text decoration. Modern color syntax and gradients work.
 - **Layout.** The box model, flexbox, grid, and tables, computed in whole
   cells, with margins, borders, and padding. `position: absolute`,
   `fixed`, and `sticky` do what they do on the web.
