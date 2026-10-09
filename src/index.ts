@@ -37,8 +37,8 @@ import {
 	type Window,
 } from "./internal/dom.ts";
 import {
-	type ColorDepth,
 	DEFAULT_ROWS,
+	type ColorDepth as EmittedColorDepth,
 	Exchange,
 	type TerminalCloseInfo,
 	type TerminalResizeEvent,
@@ -161,10 +161,16 @@ export interface TermDOMOptions {
 	 * tmux, which converts 24-bit color for the terminal it runs in, and 8
 	 * otherwise.
 	 */
-	colorDepth?: "auto" | 24 | 8 | 4 | ColorDepth;
+	colorDepth?: "auto" | ColorDepth;
 }
 
-const COLOR_DEPTHS = new Map<unknown, ColorDepth>([
+/**
+ * A color depth: `24`, `8` or `4`, the bits `screen.colorDepth` reports,
+ * or `"rgb"`, `"256"` or `"ansi"`, the same three by name.
+ */
+export type ColorDepth = 24 | 8 | 4 | EmittedColorDepth;
+
+const COLOR_DEPTHS = new Map<unknown, EmittedColorDepth>([
 	[24, "rgb"],
 	[8, "256"],
 	[4, "ansi"],
@@ -175,7 +181,7 @@ const COLOR_DEPTHS = new Map<unknown, ColorDepth>([
 
 function toColorDepth(
 	option: TermDOMOptions["colorDepth"],
-): ColorDepth | undefined {
+): EmittedColorDepth | undefined {
 	if (option === undefined || option === "auto") {
 		return undefined;
 	}
@@ -311,7 +317,7 @@ export interface TermDOM {
 	[kMouseReportingEnabled]: boolean;
 	[kHoverReportingEnabled]: boolean;
 	[kTransport]: TerminalTransport;
-	[kColorDepth]: ColorDepth | undefined;
+	[kColorDepth]: EmittedColorDepth | undefined;
 	[kExchange]: Exchange;
 	// Resolves once the session is established and the first frame written.
 	[kAttachReady]: Promise<void>;
