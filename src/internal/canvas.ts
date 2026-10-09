@@ -31,6 +31,7 @@ import {
 	type Bitmap,
 	createBitmap,
 	encodePNG,
+	fullBitmapOf,
 	MAX_IMAGE_PIXELS,
 	naturalHeightOf,
 	naturalWidthOf,
@@ -56,7 +57,14 @@ export function registerDrawable(
 	drawables.set(owner, read);
 }
 
+// A canvas reads an image's full pixels, not the copy kept to draw cells
+// from, which is all the cell grid needs.
 function readDrawable(source: unknown): Bitmap | null {
+	const bitmap = readDrawableKept(source);
+	return bitmap === null ? null : fullBitmapOf(bitmap);
+}
+
+function readDrawableKept(source: unknown): Bitmap | null {
 	if (source instanceof ImageData) {
 		return {width: source.width, height: source.height, data: source.data};
 	}
@@ -3400,7 +3408,7 @@ export class CanvasCellGridContext {
 	 * fill on this terminal.
 	 */
 	drawImage(image: unknown, ...args: number[]): void {
-		const bitmap = readDrawable(image);
+		const bitmap = readDrawableKept(image);
 		if (bitmap === null || bitmap.width === 0 || bitmap.height === 0) {
 			return;
 		}

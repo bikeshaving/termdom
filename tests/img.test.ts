@@ -826,3 +826,31 @@ test("an image larger than a page keeps measures as large as it is", async () =>
 	expect([...context.getImageData(1400, 400, 1, 1).data]).toEqual(BLUE);
 	dom.dispose();
 });
+
+test("a canvas draws a large image from its full pixels", async () => {
+	const BLACK: RGBA = [0, 0, 0, 255];
+	const checks = png(2048, 1024, (x, y) => (x + y) % 2 === 0 ? BLACK : WHITE);
+	const {dom, document} = await mount(
+		`<img id=a src="${checks}" style="display: block; width: 10ch">` +
+		"<canvas id=c width=2048 height=1024></canvas>",
+	);
+	const image = document.getElementById("a") as HTMLImageElement;
+	await loaded(image);
+	const canvas = document.getElementById("c") as HTMLCanvasElement;
+	const context = canvas.getContext("2d")!;
+	context.drawImage(image, 0, 0);
+	expect([...context.getImageData(0, 0, 4, 1).data]).toEqual([
+		...BLACK,
+		...WHITE,
+		...BLACK,
+		...WHITE,
+	]);
+	const bitmap = await dom.window.createImageBitmap(image, 1, 1, 2, 1);
+	context.clearRect(0, 0, 2, 1);
+	context.drawImage(bitmap, 0, 0);
+	expect([...context.getImageData(0, 0, 2, 1).data]).toEqual([
+		...BLACK,
+		...WHITE,
+	]);
+	dom.dispose();
+});

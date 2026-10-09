@@ -204,6 +204,11 @@ asks for before it allocates, and an image past a limit fails to load:
 - a PNG's data inflated only as far as its image needs
 - a JPEG of at most four components and 500 scans
 
+A decoded image keeps its full pixels, four bytes each, for as long as
+it is loaded, so `drawImage()` and `createImageBitmap()` copy it pixel
+for pixel. An image of more than 2^20 pixels also keeps a copy averaged
+down to that many, 4 MB, which its cells are drawn from.
+
 Images decode one at a time on the runtime's web `Worker`, so a large
 one does not stall the page. Bun and Deno have one. Node has one from
 26.9 behind a flag, so run `node --experimental-web-worker`, or set

@@ -1,10 +1,11 @@
 /**
  * The thread images decode on, started as a web Worker. It takes
  * `{id, bytes}` and answers `{id, width, height, naturalWidth,
- * naturalHeight, data}` with the pixels' buffer transferred, kept at most
- * MAX_KEPT_PIXELS, or `{id, error}`. It answers `{ready: true}` first, so
- * the page can tell a worker that never started from one that failed on
- * an image.
+ * naturalHeight, data, full}` with the pixels' buffers transferred: those
+ * kept to draw cells from, at most MAX_KEPT_PIXELS, and the full ones
+ * when those are fewer. Or it answers `{id, error}`. It answers
+ * `{ready: true}` first, so the page can tell a worker that never started
+ * from one that failed on an image.
  */
 import {decodeImageForPage} from "./internal/images.ts";
 
@@ -23,17 +24,16 @@ async function answer(data: unknown): Promise<void> {
 	try {
 		const bitmap = await decodeImageForPage(new Uint8Array(bytes));
 		const pixels = bitmap.data.buffer as ArrayBuffer;
-		scope.postMessage(
-			{
-				id,
-				width: bitmap.width,
-				height: bitmap.height,
-				naturalWidth: bitmap.naturalWidth,
-				naturalHeight: bitmap.naturalHeight,
-				data: pixels,
-			},
-			[pixels],
-		);
+		const full = bitmap.full?.buffer as ArrayBuffer | undefined;
+		scope.postMessage({
+			id,
+			width: bitmap.width,
+			height: bitmap.height,
+			naturalWidth: bitmap.naturalWidth,
+			naturalHeight: bitmap.naturalHeight,
+			data: pixels,
+			full,
+		}, full === undefined ? [pixels] : [pixels, full]);
 	} catch (error) {
 		scope.postMessage({
 			id,

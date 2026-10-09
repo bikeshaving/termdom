@@ -23,6 +23,9 @@ export interface Bitmap {
 	// Everything outside the pixels themselves measures this one.
 	naturalWidth?: number;
 	naturalHeight?: number;
+
+	// The pixels at that full size, which a canvas draws from.
+	full?: Uint8ClampedArray;
 }
 
 export function naturalWidthOf(bitmap: Bitmap): number {
@@ -31,6 +34,17 @@ export function naturalWidthOf(bitmap: Bitmap): number {
 
 export function naturalHeightOf(bitmap: Bitmap): number {
 	return bitmap.naturalHeight ?? bitmap.height;
+}
+
+/** The image at its natural size, pixel for pixel. */
+export function fullBitmapOf(bitmap: Bitmap): Bitmap {
+	return bitmap.full === undefined
+		? bitmap
+		: {
+			width: naturalWidthOf(bitmap),
+			height: naturalHeightOf(bitmap),
+			data: bitmap.full,
+		};
 }
 
 /**
@@ -90,13 +104,15 @@ function createYielder(deadline: number): () => Promise<void> | undefined {
 }
 
 /**
- * The most pixels a decoded image keeps, 4 MB of them. A terminal shows a
- * few hundred thousand at most, so a larger image is kept averaged down
- * to this, and still reports its full size as its natural size.
+ * The most pixels a decoded image draws to cells from, 4 MB of them. A
+ * terminal shows a few hundred thousand at most, so a larger image is
+ * also kept averaged down to this, and reports its full size as its
+ * natural size. Its full pixels stay beside that copy, as a browser keeps
+ * an image decoded, for a canvas to draw.
  */
 export const MAX_KEPT_PIXELS = 1 << 20;
 
-/** The image as a page keeps it: at most MAX_KEPT_PIXELS. */
+/** The image as a page keeps it: at most MAX_KEPT_PIXELS to draw cells from. */
 export function keepAtMost(bitmap: Bitmap): Bitmap {
 	const {width, height} = bitmap;
 	if (width * height <= MAX_KEPT_PIXELS) {
@@ -111,6 +127,7 @@ export function keepAtMost(bitmap: Bitmap): Bitmap {
 		data: sampleBitmap(bitmap, keptWidth, keptHeight),
 		naturalWidth: width,
 		naturalHeight: height,
+		full: bitmap.data,
 	};
 }
 
@@ -2340,6 +2357,7 @@ function getWorker(): WorkerState | null {
 			naturalWidth?: number;
 			naturalHeight?: number;
 			data?: ArrayBuffer;
+			full?: ArrayBuffer;
 			error?: string;
 		};
 		if (message.ready) {
@@ -2360,6 +2378,7 @@ function getWorker(): WorkerState | null {
 					data: new Uint8ClampedArray(message.data!),
 					naturalWidth: message.naturalWidth,
 					naturalHeight: message.naturalHeight,
+					full: message.full && new Uint8ClampedArray(message.full),
 				});
 			}
 		});
