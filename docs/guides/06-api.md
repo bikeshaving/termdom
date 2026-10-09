@@ -374,6 +374,19 @@ To serve an app to real users, an OpenSSH `Match` block with
 [`examples/ssh.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/ssh.ts)
 is a whole server.
 
+A server that holds many sessions in one process gives each its own
+`TermDOM`, and an exception a session's listeners, timers or frames let
+escape is reported to that session's window and log. Two things stay
+the server's, because the process has only one of each:
+
+- Globals. `installGlobals()` puts one window on `globalThis`, so a
+  server passes each session's `document` to its framework instead, as
+  React's `createRoot(term.document.body)` takes it.
+- Promise rejections no one handles. The runtime decides what one does,
+  and Node ends the process, with every session in it. A server that
+  should outlive one session's mistake listens for them itself, with
+  `process.on("unhandledRejection", ...)`.
+
 ## Other exports
 
 `TermDOM`, `installGlobals`, `transportFromProcess` and
