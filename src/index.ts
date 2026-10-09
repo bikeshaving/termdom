@@ -1478,9 +1478,10 @@ const kGlobalsInstalled = Symbol.for("@b9g/termdom.globalsInstalled");
  * the way browser code does: frameworks, editors, DOM libraries. The
  * process then reads as the window does, so a name the runtime defines
  * too, such as `setTimeout` or `navigator`, is the window's until
- * uninstalled. The runtime's event classes and storage stay its own. A promise
- * rejected with no handler fires unhandledrejection on the window and is
- * reported, where the runtime would end the process. Methods are bound to the window and other
+ * uninstalled. The runtime's event classes and storage stay its own.
+ * While installed, a promise rejected with no handler fires
+ * unhandledrejection on the window and is reported, where the runtime
+ * would end the process. Methods are bound to the window and other
  * properties read through to it, so `scrollY` stays current. Returns a
  * function that puts back what was there.
  */
