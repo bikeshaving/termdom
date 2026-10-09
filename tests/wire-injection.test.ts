@@ -110,6 +110,25 @@ test("a clipboard reply that never closes is released when the query gives up", 
 	dom.dispose();
 });
 
+test("a paste holding an OSC opener arrives while a reply is due", async () => {
+	const {proc, dom} = await mount();
+	let pasted: string | null = null;
+	dom.document.addEventListener("paste", (event) => {
+		pasted =
+			(event as ClipboardEvent).clipboardData?.getData("text/plain") ?? "";
+	});
+	dom.document.addEventListener("keydown", (event) => {
+		if ((event as KeyboardEvent).key === "v") {
+			void dom.window.navigator.clipboard.readText().catch(() => {});
+		}
+	});
+	(dom.document.getElementById("t") as HTMLTextAreaElement).focus();
+	await send(proc, "v");
+	await send(proc, "\x1b[200~a\x1b]b\x1b[201~");
+	expect(pasted).toBe("a\x1b]b");
+	dom.dispose();
+});
+
 test("a string sequence that arrives whole is dropped whole", async () => {
 	const {proc, dom, keys} = await mount();
 	await send(proc, "\x1b]0;title\x07x");

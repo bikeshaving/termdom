@@ -759,7 +759,12 @@ function splitTrailingEscape(chunk: string, replyDue: boolean): number {
 			chunk.lastIndexOf("\x1b]"),
 			chunk.lastIndexOf("\x1bP"),
 		);
-		if (opener !== -1 && findStringTerminator(chunk, opener + 2) === -1) {
+		const inner = chunk.indexOf("\x1b", opener + 2);
+		if (
+			opener !== -1 &&
+			findStringTerminator(chunk, opener + 2) === -1 &&
+			(inner === -1 || inner === chunk.length - 1)
+		) {
 			return chunk.length - opener;
 		}
 		if (chunk.endsWith("\x1b") && !chunk.endsWith("\x1b\x1b")) {
