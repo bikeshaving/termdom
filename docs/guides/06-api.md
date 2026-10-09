@@ -109,10 +109,15 @@ are wired to the terminal:
 - `navigator.userActivation` — `hasBeenActive` and `isActive`
 - `MutationObserver`, `ResizeObserver`, `IntersectionObserver` — entries
   are delivered per rendered frame
-- `close()` — quit: flush the final frame to scrollback, restore terminal
-  modes, dispose, and call `transport.close({status: 0})`, which exits the
-  process on the default transport. Ctrl-C calls this as its default
-  action; a `keydown` listener that calls `preventDefault()` overrides it.
+- `close()` — quit: fire `beforeunload`, then flush the final frame to
+  scrollback, restore terminal modes, dispose, and call
+  `transport.close({status})`, which exits the process on the default
+  transport. A `beforeunload` listener that calls `preventDefault()`
+  keeps the session. Ctrl-C calls `close()`; it does not reach `keydown`.
+  The status is 130 when Ctrl-C closed the window, as a shell reports an
+  interrupt, 1 when the page let an exception escape, and 0 otherwise.
+  On the default transport, a `SIGINT`, `SIGHUP` or `SIGTERM` sent to the
+  process ends it with 130, 129 or 143.
 
 Anything not listed behaves as the DOM and CSSOM standards specify,
 without terminal wiring.

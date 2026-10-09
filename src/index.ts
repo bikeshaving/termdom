@@ -282,6 +282,7 @@ const FRAME_INTERVAL_MS = 16;
 // Errors the page let escape that no log could take live. Printed below
 // the document when the session ends.
 const kHeldErrors = Symbol("heldErrors");
+const kErrored = Symbol("errored");
 // Held errors handed to the output queue whose write has not finished.
 const kUnwrittenErrors = Symbol("unwrittenErrors");
 const HELD_ERROR_LIMIT = 50;
@@ -309,6 +310,7 @@ export interface TermDOM {
 	[kFlowPainted]: boolean;
 	[kLastFrameAt]: number;
 	[kHeldErrors]: string[];
+	[kErrored]: boolean;
 	[kUnwrittenErrors]: string | null;
 	// Timestamps observer entries.
 	[kRenderCount]: number;
@@ -363,6 +365,7 @@ export class TermDOM extends EventTarget {
 		this[kFlowPainted] = false;
 		this[kLastFrameAt] = -Infinity;
 		this[kHeldErrors] = [];
+		this[kErrored] = false;
 		this[kUnwrittenErrors] = null;
 		this[kRenderCount] = 0;
 		this[kFirstFrame] = null;
@@ -470,7 +473,10 @@ export class TermDOM extends EventTarget {
 				answerRequest(this, document, request, context, requestPolicy),
 			loadSignal: this[kLoads].signal,
 			render: () => render(this),
-			reportUncaught: (error) => reportUncaught(this, error),
+			reportUncaught: (error) => {
+				this[kErrored] = true;
+				reportUncaught(this, error);
+			},
 		});
 		// The document had no size until it was attached, so an @media rule
 		// in the markup was read against a zero-width viewport. Attaching is
@@ -807,6 +813,18 @@ export class TermDOM extends EventTarget {
 }
 
 /**
+ * How the session ended, as an exit status: 130 when Ctrl-C closed it, as
+ * a shell reports an interrupt, 1 when the page let an exception escape,
+ * and 0 otherwise.
+ */
+function getExitStatus(termDOM: TermDOM): number {
+	if (termDOM[kExchange].interrupted) {
+		return 130;
+	}
+	return termDOM[kErrored] ? 1 : 0;
+}
+
+/**
  * An exception the page let escape, once the window's error event has
  * not handled it. A browser would log it to the console and go on. The
  * console here is the transport's log when it has one apart from the
@@ -932,7 +950,7 @@ function closeTermDOM(termDOM: TermDOM): void {
 		}
 		await termDOM.dispose();
 		if (live) {
-			termDOM[kTransport].close({status: 0});
+			termDOM[kTransport].close({status: getExitStatus(termDOM)});
 		}
 	})();
 }
