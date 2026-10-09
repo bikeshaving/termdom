@@ -393,6 +393,74 @@ test("Ctrl-C fires beforeunload, and a listener can keep the session", async () 
 	expect(watched.closes()).toBe(1);
 });
 
+// A transport that records the exit status each close asks for.
+function statusRecordingTransport(terminal: MockProcess): {
+	transport: any;
+	statuses: Array<number | undefined>;
+} {
+	const base = terminal.transport;
+	const statuses: Array<number | undefined> = [];
+	return {
+		transport: {
+			...base,
+			cols: base.cols,
+			rows: base.rows,
+			close: (info?: {status?: number}) => {
+				statuses.push(info?.status);
+			},
+		},
+		statuses,
+	};
+}
+
+test("window.close() exits 0, or 1 once the page let an error escape", async () => {
+	for (const fail of [false, true]) {
+		const terminal = new MockProcess({cols: 40, rows: 10});
+		const recorded = statusRecordingTransport(terminal);
+		const dom = new TermDOM({transport: recorded.transport});
+		await dom.attach();
+		if (fail) {
+			dom.document.body.addEventListener("go", () => {
+				throw new Error("escaped");
+			});
+			dom.document.body.dispatchEvent(new dom.window.Event("go"));
+		}
+		dom.window.close();
+		await until(() => recorded.statuses.length === 1);
+		expect(recorded.statuses).toEqual([fail ? 1 : 0]);
+	}
+});
+
+test("Ctrl-C exits 130, as a shell reports an interrupt", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const recorded = statusRecordingTransport(terminal);
+	const dom = new TermDOM({transport: recorded.transport});
+	await dom.attach();
+	(terminal.stdin as any).emit("data", Buffer.from("\x03"));
+	await until(() => recorded.statuses.length === 1);
+	expect(recorded.statuses).toEqual([130]);
+});
+
+test("a signal ends the process with 128 plus its number", async () => {
+	for (const [signal, status] of [
+		["SIGINT", 130],
+		["SIGTERM", 143],
+		["SIGHUP", 129],
+	] as const) {
+		const terminal = new MockProcess({cols: 40, rows: 10});
+		const codes: number[] = [];
+		terminal.exit = ((code?: number) => {
+			codes.push(code ?? 0);
+		}) as never;
+		const dom = new TermDOM({transport: terminal.transport});
+		await dom.attach();
+		terminal.emit(signal);
+		await until(() => codes.length > 0);
+		expect(codes[0]).toBe(status);
+		await dom.dispose();
+	}
+});
+
 test("BeforeUnloadEvent is the interface a browser exposes", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const watched = closeCountingTransport(terminal);

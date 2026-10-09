@@ -858,6 +858,7 @@ const kHasDetectedAnchor = Symbol("hasDetectedAnchor");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
 const kDSRSequence = Symbol("dsrSequence");
 const kColorScheme = Symbol("colorScheme");
+const kInterrupted = Symbol("interrupted");
 const kStatedColorScheme = Symbol("statedColorScheme");
 const kTerminalBackground = Symbol("terminalBackground");
 const kPendingReplies = Symbol("pendingReplies");
@@ -922,6 +923,7 @@ export interface Exchange {
 	// names its mode, so neither takes the other's reply.
 	[kPendingReplies]: PendingReply[];
 	[kColorScheme]: "light" | "dark" | null;
+	[kInterrupted]: boolean;
 	[kStatedColorScheme]: "light" | "dark" | undefined;
 	[kTerminalBackground]: number | null;
 	// The BDSM state the terminal reported before we touched it.
@@ -968,6 +970,7 @@ export class Exchange extends EventTarget {
 		this[kCursorDetectionPromise] = null;
 		this[kPendingReplies] = [];
 		this[kColorScheme] = null;
+		this[kInterrupted] = false;
 		this[kTerminalBackground] = null;
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
@@ -1001,6 +1004,11 @@ export class Exchange extends EventTarget {
 
 	get transportClosed(): boolean {
 		return this[kTransportClosed];
+	}
+
+	/** Whether Ctrl-C closed the window. */
+	get interrupted(): boolean {
+		return this[kInterrupted];
 	}
 
 	/** The terminal's background as packed RGB, once it has said. */
@@ -2007,10 +2015,14 @@ function routeItems(session: Exchange, items: WireItem[]): void {
 		switch (item.kind) {
 			case "key":
 				// Raw mode delivers Ctrl-C as data. Closing is the window's
-				// decision.
+				// decision, and a close it allows is an interrupt.
 				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
+					session[kInterrupted] = true;
 					session[kWindow].close();
+					if (!session[kWindow].closed) {
+						session[kInterrupted] = false;
+					}
 					break;
 				}
 				keys.push(item);
@@ -2371,20 +2383,22 @@ export function transportFromProcess(
 				// A SIGINT here is an external kill, since raw mode delivers
 				// Ctrl-C as data. Close, then exit once the session has
 				// disposed.
-				const closeOn = (signal: ProcessSignal, exitAfter: boolean) => {
+				// A process a signal ends exits with 128 plus the signal's
+				// number, as a shell reports it.
+				const closeOn = (signal: ProcessSignal, status: number | null) => {
 					const listener = () => {
-						closedResolve({});
-						if (exitAfter) {
-							setImmediate(() => proc.exit(0));
+						closedResolve({status: status ?? undefined});
+						if (status !== null) {
+							setImmediate(() => proc.exit(status));
 						}
 					};
 					signalListeners.push([signal, listener]);
 					proc.on(signal, listener);
 				};
-				closeOn("SIGINT", true);
-				closeOn("SIGTERM", true);
-				closeOn("SIGHUP", true);
-				closeOn("exit", false);
+				closeOn("SIGINT", 130);
+				closeOn("SIGTERM", 143);
+				closeOn("SIGHUP", 129);
+				closeOn("exit", null);
 			},
 			cancel: disengage,
 			// The default high-water mark would pull at construction and take
