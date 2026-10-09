@@ -68,10 +68,10 @@ Options:
   (default) uses the best way the terminal has, `"cells"` draws them two
   to a cell in half blocks, and `"none"` draws none: images show their `alt` text and
   `getContext("2d")` returns `null`.
-- `colorDepth?: "auto" | 24 | 8 | 4` — the colors the terminal shows,
-  in the bits `screen.colorDepth` reports. With `"auto"` (default),
-  TermDOM asks the terminal. `"rgb"`, `"256"` and `"ansi"` name 24, 8
-  and 4. Any other value throws a `TypeError`. See "Color depth" in the
+- `colorDepth?: "auto" | ColorDepth` — the colors the terminal shows:
+  `24`, `8` or `4`, the bits `screen.colorDepth` reports, or `"rgb"`,
+  `"256"` or `"ansi"`, the same three by name. With `"auto"` (default),
+  TermDOM asks the terminal. Any other value throws a `TypeError`. See "Color depth" in the
   styling guide.
 
 TermDOM reads no environment variables. What the terminal can say, it is
@@ -384,6 +384,6 @@ is a whole server.
   `"fetch"` event.
 - `CanvasCellGridContext`, the class behind a canvas's
   `"termdom-cellgrid"` context.
-- The types `TermDOMOptions`, `TermDOMEventMap`, `CellSize`,
+- The types `TermDOMOptions`, `TermDOMEventMap`, `CellSize`, `ColorDepth`,
   `TerminalTransport`, `TerminalCloseInfo`, `TerminalSize`, `ProcessLike`,
   `TTYReadStream`, `TTYWriteStream` and `SSHSessionLike`.
