@@ -228,8 +228,11 @@ spellcheck.
 ## Errors
 
 An exception that escapes a listener, an event handler attribute, an
-observer callback, or a frame callback is reported as a browser reports
-it. The window hears a cancelable `error` event first:
+observer callback, a frame callback, or a callback given to
+`window.setTimeout()`, `setInterval()` or `queueMicrotask()` is reported
+as a browser reports it. (A bare `setTimeout()` is the runtime's own,
+even after `installGlobals()`, and an exception from it ends the
+program; call the window's.) The window hears a cancelable `error` event first:
 
 ```ts
 window.addEventListener("error", (event) => {
