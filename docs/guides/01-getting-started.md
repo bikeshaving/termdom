@@ -11,6 +11,10 @@ npm install @b9g/termdom
 
 TermDOM runs on Node, Bun, and Deno. No native or WASM dependencies.
 
+Its types match TypeScript 6's DOM types, as the window it gives you
+matches a browser's. On TypeScript 5, set `skipLibCheck` in your
+tsconfig, since 5's DOM types lack some interfaces TermDOM's name.
+
 ## Usage
 
 ```ts

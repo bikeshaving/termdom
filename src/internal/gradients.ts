@@ -3,8 +3,7 @@
  * `repeating-linear-gradient()` read from a `background-image`, and drawn
  * one background color per cell.
  */
-import * as CSSTree from "css-tree/dist/csstree.esm";
-
+import * as CSSTree from "./csstree.ts";
 import {
 	getCSSValueChildren,
 	isLengthUnit,

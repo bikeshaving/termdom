@@ -1,5 +1,3 @@
-import * as CSSTree from "css-tree/dist/csstree.esm";
-
 import {
 	CSS_AT_RULE_DESCRIPTORS,
 	CSS_INITIAL_VALUES,
@@ -15,6 +13,7 @@ import {
 	selectAllCompiled,
 	type SelectorNamespaces,
 } from "./cssselectors.ts";
+import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
 	dispatchAsUserAgent,
@@ -2920,7 +2919,7 @@ const {
 	RightCurlyBracket,
 	Semicolon,
 	WhiteSpace,
-} = (CSSTree as unknown as {tokenTypes: Record<string, number>}).tokenTypes;
+} = CSSTree.tokenTypes;
 
 interface BlockParser {
 	eof: boolean;

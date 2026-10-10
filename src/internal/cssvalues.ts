@@ -1,5 +1,3 @@
-import * as CSSTree from "css-tree/dist/csstree.esm";
-
 import {
 	CSS_COLOR_PROPERTIES,
 	CSS_EASING_KEYWORDS,
@@ -21,6 +19,7 @@ import {
 	pseudoName,
 	type SelectorNamespaces,
 } from "./cssselectors.ts";
+import * as CSSTree from "./csstree.ts";
 
 type Unit = "undefined" | "cell" | "percent" | "auto";
 
