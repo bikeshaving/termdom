@@ -1,6 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {installGlobals, TermDOM} from "../src/index.ts";
+import {MockProcess} from "./test-utils.ts";
 
 const global = globalThis as Record<string, any>;
 declare const event: unknown;
@@ -367,4 +368,21 @@ test("animate() finishes on the next task, for code that waits on it", async () 
 	await new Promise((resolve) => setTimeout(resolve, 10));
 	expect(heard).toEqual(["onfinish", "finish"]);
 	term.dispose();
+});
+
+test("dispose() settles under installGlobals, and stops only the window's own timers", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 4});
+	const term = new TermDOM({transport: terminal.transport});
+	const uninstall = installGlobals(term);
+	const ran: string[] = [];
+	try {
+		await term.attach();
+		term.window.setTimeout(() => ran.push("window"), 20);
+		global.setTimeout(() => ran.push("global"), 20);
+		await term.dispose();
+	} finally {
+		uninstall();
+	}
+	await new Promise((resolve) => setTimeout(resolve, 60));
+	expect(ran).toEqual(["global"]);
 });

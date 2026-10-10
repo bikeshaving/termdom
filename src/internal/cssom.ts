@@ -55,6 +55,7 @@ import {
 } from "./hints.ts";
 import type {Layout} from "./layout.ts";
 import {getStringWidth, splitOnASCIIWhitespace} from "./text.ts";
+import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
 import {
 	UA_CONTROL_STYLES,
 	UA_DOCUMENT_STYLES,

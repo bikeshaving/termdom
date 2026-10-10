@@ -232,9 +232,11 @@ before exiting.
 
 Reverses `attach()`: flushes the document into scrollback, restores every
 terminal mode and the title, and releases the transport. The process
-continues; `window.close()` is the quit. It stops the window's timers,
-as a browser stops an unloaded page's; under `installGlobals()` that
-includes every `setTimeout` the program set through the globals. Before
+continues; `window.close()` is the quit. It stops the timers set through
+`term.window`, as a browser stops an unloaded page's. Under
+`installGlobals()`, the global `setTimeout` and `setInterval` report
+what their callbacks throw as the page's errors, but are the whole
+process's, its libraries' among them, and keep running. Before
 releasing the transport it reads the cursor replies the terminal still
 owes, for 200ms at most, so they don't land in the shell as typing.
 Returns a promise that resolves when every queued restore has reached

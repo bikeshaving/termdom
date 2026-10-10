@@ -11,6 +11,13 @@ import type {Framebuffer} from "./framebuffer.ts";
 import type {Input} from "./input.ts";
 import type {Layout} from "./layout.ts";
 import {isControlByte, recordClusterAdvance} from "./text.ts";
+import {
+	clearInterval,
+	clearTimeout,
+	queueMicrotask,
+	setInterval,
+	setTimeout,
+} from "./timers.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
 

@@ -13,6 +13,7 @@
  * the bottom.
  */
 import type {CellGrid} from "./framebuffer.ts";
+import {clearTimeout, setTimeout} from "./timers.ts";
 
 /** Straight (not premultiplied) RGBA, four bytes a pixel, rows top down. */
 export interface Bitmap {

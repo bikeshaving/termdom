@@ -22,6 +22,7 @@ import {
 	flushObservers,
 	getCellSizeSetting,
 	getGraphicsSettings,
+	getProcessTimers,
 	type GraphicsSetting,
 	hasFrameCallbacks,
 	hoverListenerCount,
@@ -65,6 +66,7 @@ import {
 	type RequestPolicy,
 	setWindowFetch,
 } from "./internal/resources.ts";
+import {queueMicrotask, setTimeout} from "./internal/timers.ts";
 
 export {CanvasCellGridContext} from "./internal/canvas.ts";
 export type {CellSize} from "./internal/cssom.ts";
@@ -1646,6 +1648,7 @@ export function installGlobals(termDOM: TermDOM): () => void {
 		throw new Error("TermDOM's globals are already installed.");
 	}
 	const window = termDOM.window as unknown as Record<string, unknown>;
+	const processTimers = getProcessTimers(termDOM[kWindow]);
 	// Each name's own descriptor on globalThis before, or undefined where
 	// it had none, beside the descriptor put in its place.
 	const installed = new Map<
@@ -1666,7 +1669,9 @@ export function installGlobals(termDOM: TermDOM): () => void {
 			) {
 				continue;
 			}
-			const value = Object.getOwnPropertyDescriptor(object, name)!.value;
+			const value =
+				processTimers[name] ??
+				Object.getOwnPropertyDescriptor(object, name)!.value;
 			let descriptor: PropertyDescriptor;
 			if (typeof value === "function") {
 				descriptor = {

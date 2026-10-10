@@ -87,6 +87,7 @@ import {
 	toASCIILowercase,
 	trimASCIIWhitespace,
 } from "./text.ts";
+import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
 
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -9170,8 +9171,6 @@ type ScrollMethod = {
 	(x: number, y: number): void;
 };
 
-const scheduleTask = globalThis.setTimeout.bind(globalThis);
-
 // Web Animations needs a timeline, and this engine has none: frames come
 // from input and invalidation, not from a clock an animation could
 // sample. An animation finishes at once, on the next task, without
@@ -9218,7 +9217,7 @@ class FinishedAnimation extends EventTarget {
 			this[kFail] = reject;
 		});
 		this.finished.catch(() => {});
-		scheduleTask(() => {
+		setTimeout(() => {
 			if (this.playState === "running") {
 				this.currentTime = duration;
 				this.finish();
@@ -36363,7 +36362,7 @@ export class Window extends EventTarget {
 	postMessage(message: any): void {
 		const data = structuredClone(message);
 		const origin = this.origin;
-		globalThis.setTimeout(() => {
+		setTimeout(() => {
 			dispatch(
 				this,
 				new MessageEvent("message", {
@@ -36401,7 +36400,7 @@ export class Window extends EventTarget {
 			this[kNextIdleHandle] = 1;
 		}
 		const handle = this[kNextIdleHandle]++;
-		const timer = globalThis.setTimeout(() => {
+		const timer = setTimeout(() => {
 			timers.delete(handle);
 			const start = globalThis.performance.now();
 			try {
@@ -36612,11 +36611,11 @@ const platform = {
 // window's in their place, and the window's call these.
 // Bound, since a browser's throws when called on anything but its global.
 const runtime = {
-	setTimeout: globalThis.setTimeout.bind(globalThis),
-	clearTimeout: globalThis.clearTimeout.bind(globalThis),
+	setTimeout,
+	clearTimeout,
 	setInterval: globalThis.setInterval.bind(globalThis),
 	clearInterval: globalThis.clearInterval.bind(globalThis),
-	queueMicrotask: globalThis.queueMicrotask.bind(globalThis),
+	queueMicrotask,
 	atob: globalThis.atob.bind(globalThis),
 	btoa: globalThis.btoa.bind(globalThis),
 	fetch: globalThis.fetch.bind(globalThis),
@@ -36624,6 +36623,17 @@ const runtime = {
 };
 
 const windowTimers = new WeakMap<object, Set<ReturnType<typeof setTimeout>>>();
+const processTimers = new WeakMap<object, Record<string, unknown>>();
+
+/**
+ * The window's setTimeout and setInterval as installGlobals() puts them
+ * on the global: they report what their callbacks throw as the page's
+ * errors, but are the whole process's, its libraries' among them, so
+ * disposing the TermDOM leaves them running.
+ */
+export function getProcessTimers(window: Window): Record<string, unknown> {
+	return processTimers.get(window)!;
+}
 
 /**
  * Stop the window's timers and idle callbacks, as a browser stops an
@@ -36664,6 +36674,12 @@ function buildWindow(document: Document): Window {
 		timers.delete(handle);
 		runtime.clearTimeout(handle);
 	};
+	processTimers.set(window, {
+		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) =>
+			runtime.setTimeout(guard(handler, args) as () => void, timeout),
+		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) =>
+			runtime.setInterval(guard(handler, args) as () => void, timeout),
+	});
 	Object.assign(window, platform, {
 		// The platform's DOMException, which is the one the DOM and the CSSOM
 		// throw. A caller's `instanceof DOMException` has to match the class
