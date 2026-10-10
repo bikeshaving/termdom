@@ -16940,8 +16940,8 @@ class HTMLImageElement extends HTMLElement {
 		return getDensityCorrectedSize(this).height;
 	}
 
-	// The rendered width in cells when the image is rendered, which is
-	// what a browser reports in CSS pixels. Otherwise the attribute, or
+	// The rendered width in CSS pixels when the image is rendered, which
+	// are cells under the unit cell. Otherwise the attribute, or
 	// the natural width.
 	get width(): number {
 		return readImageDimension(this, "width");
@@ -17076,7 +17076,9 @@ function readImageDimension(
 	if (attached !== undefined && image.isConnected) {
 		const rect = attached[kLayout].contentRect(image);
 		if (rect !== null) {
-			return Math.round(axis === "width" ? rect.width : rect.height);
+			const vertical = axis === "height";
+			const cells = vertical ? rect.height : rect.width;
+			return Math.round(pxFromCells(cells, vertical, image as unknown as Node));
 		}
 	}
 	const attribute = parseInt(image.getAttribute(axis) ?? "", 10);

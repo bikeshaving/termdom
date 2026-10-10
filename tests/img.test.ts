@@ -637,6 +637,9 @@ test("with a cell size, an image's pixels and lengths are CSS pixels", async () 
 	expect(cells("ratio")).toEqual([15, 3]);
 	const natural = dom.document.getElementById("natural") as HTMLImageElement;
 	expect([natural.naturalWidth, natural.naturalHeight]).toEqual([70, 30]);
+	expect([natural.width, natural.height]).toEqual([70, 30]);
+	const styled = dom.document.getElementById("styled") as HTMLImageElement;
+	expect([styled.width, styled.height]).toEqual([56, 45]);
 	dom.dispose();
 });
 
