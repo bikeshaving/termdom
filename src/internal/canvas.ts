@@ -43,18 +43,25 @@ import {getStringWidth, graphemeSegmenter, toVisualOrder} from "./text.ts";
 // What drawImage() and createPattern() take.
 
 const drawables = new WeakMap<object, () => Bitmap | null>();
+const drawnSizes = new WeakMap<object, () => {width: number; height: number}>();
 
 /**
  * Register what an image source holds: an <img>'s decoded image, a
  * <canvas>'s bitmap, an ImageBitmap. Null while there is nothing to draw
  * yet, which drawImage() skips, as a browser skips an image still
- * loading.
+ * loading. An image whose pixels are denser than the page's gives the
+ * size drawImage() draws it at when not told one, as Safari draws a
+ * high-density image.
  */
 export function registerDrawable(
 	owner: object,
 	read: () => Bitmap | null,
+	drawnSize?: () => {width: number; height: number},
 ): void {
 	drawables.set(owner, read);
+	if (drawnSize !== undefined) {
+		drawnSizes.set(owner, drawnSize);
+	}
 }
 
 // A canvas reads an image's full pixels, not the copy kept to draw cells
@@ -2458,8 +2465,9 @@ export class CanvasRenderingContext2D {
 		let dh: number;
 		if (args.length === 2) {
 			[dx, dy] = args;
-			dw = sw;
-			dh = sh;
+			const drawn = drawnSizes.get(image as object)?.();
+			dw = drawn?.width ?? sw;
+			dh = drawn?.height ?? sh;
 		} else if (args.length === 4) {
 			[dx, dy, dw, dh] = args;
 		} else if (args.length === 8) {

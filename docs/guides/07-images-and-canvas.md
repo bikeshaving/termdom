@@ -218,9 +218,9 @@ asks for before it allocates, and an image past a limit fails to load:
 - a JPEG of at most four components and 500 scans
 
 A decoded image keeps its full pixels, four bytes each, for as long as
-it is loaded, so `drawImage()` and `createImageBitmap()` copy it pixel
-for pixel. An image of more than 2^20 pixels also keeps a copy averaged
-down to that many, 4 MB, which its cells are drawn from.
+it is loaded, so `createImageBitmap()` copies it pixel for pixel. An
+image of more than 2^20 pixels also keeps a copy averaged down to that
+many, 4 MB, which its cells are drawn from.
 
 Images decode one at a time on the runtime's web `Worker`, so a large
 one does not stall the page. Bun and Deno have one. Node has one from
@@ -271,6 +271,16 @@ Images keep their own rule: an image's pixels are its file's, so under
 the unit cell it is measured against the terminal's cell, not one cell
 a pixel.
 
+An image's `naturalWidth` and `naturalHeight` are that size in CSS
+pixels, which are cells under the unit cell, the way a browser reports a
+high-density image: a 400 by 200 file on a terminal with 8 by 16 pixel
+cells reports 50 by 13. `drawImage(image, x, y)` draws the whole image
+at that size, scaled down, as Safari draws a high-density image. Source
+rectangles and `createImageBitmap()` work in the file's pixels, as in
+every browser, so `createImageBitmap(image)` is the full-resolution
+copy, with the file's `width` and `height`. With the `cellSize` option
+set, a CSS pixel is a pixel and the natural size is the file's.
+
 `getContext()` takes two context types.
 
 ### `"2d"`
@@ -302,16 +312,21 @@ over the anchor paints over the text. `measureText()` counts a cell's
 width in pixels for each column. Shadows and `filter` keep their values
 but draw nothing.
 
+The sample below draws 60 by 40 pixels into 60 columns by 20 rows, so
+each pixel is half a cell and the circle comes out round:
+
 ```ts
 const canvas = document.createElement("canvas");
-canvas.width = 160;
-canvas.height = 96;
-const ctx = canvas.getContext("2d");
+canvas.width = 60;
+canvas.height = 40;
+canvas.style.width = "60ch";
+canvas.style.height = "20lh";
+const ctx = canvas.getContext("2d")!;
 ctx.fillStyle = "#1e3a5f";
-ctx.fillRect(0, 0, 160, 96);
+ctx.fillRect(0, 0, 60, 40);
 ctx.fillStyle = "#ffd27f";
 ctx.beginPath();
-ctx.arc(80, 48, 30, 0, Math.PI * 2);
+ctx.arc(30, 20, 15, 0, Math.PI * 2);
 ctx.fill();
 document.body.append(canvas);
 ```

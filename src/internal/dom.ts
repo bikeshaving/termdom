@@ -16929,17 +16929,15 @@ class HTMLImageElement extends HTMLElement {
 				throw domError("InvalidStateError", "The image is broken");
 			}
 			return state.bitmap;
-		});
+		}, () => ({width: this.naturalWidth, height: this.naturalHeight}));
 	}
 
 	get naturalWidth(): number {
-		const bitmap = this[kImageState].bitmap;
-		return bitmap === null ? 0 : naturalWidthOf(bitmap);
+		return getDensityCorrectedSize(this).width;
 	}
 
 	get naturalHeight(): number {
-		const bitmap = this[kImageState].bitmap;
-		return bitmap === null ? 0 : naturalHeightOf(bitmap);
+		return getDensityCorrectedSize(this).height;
 	}
 
 	// The rendered width in cells when the image is rendered, which is
@@ -17085,8 +17083,30 @@ function readImageDimension(
 	if (Number.isFinite(attribute) && attribute >= 0) {
 		return attribute;
 	}
+	return getDensityCorrectedSize(image)[axis];
+}
+
+// A browser reports a high-density image at its size in CSS pixels, not
+// its file's. An image here is drawn at the screen's cell, so its file's
+// pixels count against that cell and come back as the page's pixels:
+// cells under the unit cell, the file's own pixels otherwise.
+function getDensityCorrectedSize(image: HTMLImageElement): {
+	width: number;
+	height: number;
+} {
 	const bitmap = image[kImageState].bitmap;
-	return bitmap === null ? 0 : axis === "width" ? bitmap.width : bitmap.height;
+	if (bitmap === null) {
+		return {width: 0, height: 0};
+	}
+	const node = image as unknown as Node;
+	const page = getCellSize(node);
+	const screen = getImageCellSize(node);
+	const correct = (pixels: number, ratio: number) =>
+		pixels === 0 ? 0 : Math.max(1, Math.round(pixels * ratio));
+	return {
+		width: correct(naturalWidthOf(bitmap), page.width / screen.width),
+		height: correct(naturalHeightOf(bitmap), page.height / screen.height),
+	};
 }
 
 // HTML's "update the image data": the request starts again from the

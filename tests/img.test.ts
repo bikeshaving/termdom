@@ -123,8 +123,10 @@ test("an image loads, fires load, and reports its natural size", async () => {
 	await until(() => events.length > 0);
 	expect(events).toEqual(["load"]);
 	expect(image.complete).toBe(true);
-	expect(image.naturalWidth).toBe(16);
-	expect(image.naturalHeight).toBe(32);
+	// The file's 16 by 32 pixels at the 8 by 16 guess, in CSS pixels,
+	// which are cells, as a browser reports a high-density image.
+	expect(image.naturalWidth).toBe(2);
+	expect(image.naturalHeight).toBe(2);
 	expect(image.currentSrc).toBe(BANDS);
 	await image.decode();
 	dom.dispose();
@@ -387,7 +389,7 @@ test("new Image() makes an <img>, and srcset picks the 1x candidate", async () =
 	image.srcset = `${BANDS} 2x, ${red} 1x`;
 	await loaded(image);
 	expect(image.currentSrc).toBe(red);
-	expect(image.naturalWidth).toBe(8);
+	expect(image.naturalWidth).toBe(1);
 	// Not rendered, width reads the attribute.
 	expect(image.width).toBe(3);
 	dom.dispose();
@@ -553,7 +555,7 @@ test("an image in a document with no window loads nothing until it is in one", a
 	expect(image.naturalWidth).toBe(0);
 	document.body.appendChild(image);
 	await loaded(image);
-	expect(image.naturalWidth).toBe(16);
+	expect(image.naturalWidth).toBe(2);
 	dom.dispose();
 });
 
@@ -594,13 +596,13 @@ test("decode() settles when src changes, and the current image stays up meanwhil
 	try {
 		image.src = "https://images.test/bands.png";
 		expect(image.complete).toBe(false);
-		expect(image.naturalWidth).toBe(8);
+		expect(image.naturalWidth).toBe(1);
 		await nextFrame(dom);
 		expect(image.complete).toBe(false);
 		expect(cell(terminal, 0, 0).bg).toBe(hex(RED));
 		release();
 		await image.decode();
-		expect(image.naturalWidth).toBe(16);
+		expect(image.naturalWidth).toBe(2);
 	} finally {
 		globalThis.fetch = realFetch;
 	}
@@ -633,6 +635,8 @@ test("with a cell size, an image's pixels and lengths are CSS pixels", async () 
 	expect(cells("styled")).toEqual([8, 3]);
 	expect(cells("attributes")).toEqual([2, 1]);
 	expect(cells("ratio")).toEqual([15, 3]);
+	const natural = dom.document.getElementById("natural") as HTMLImageElement;
+	expect([natural.naturalWidth, natural.naturalHeight]).toEqual([70, 30]);
 	dom.dispose();
 });
 
@@ -805,8 +809,8 @@ test("an image larger than a page keeps measures as large as it is", async () =>
 	const image = document.getElementById("a") as HTMLImageElement;
 	await loaded(image);
 	await nextFrame(dom);
-	expect([image.naturalWidth, image.naturalHeight]).toEqual([1500, 800]);
 	// 1500 by 800 pixels under the 8 by 16 guess is 187.5 by 50 cells.
+	expect([image.naturalWidth, image.naturalHeight]).toEqual([188, 50]);
 	const box = image.getBoundingClientRect();
 	expect(box.height).toBe(Math.round(40 * 50 / 187.5));
 
@@ -838,7 +842,7 @@ test("a canvas draws a large image from its full pixels", async () => {
 	await loaded(image);
 	const canvas = document.getElementById("c") as HTMLCanvasElement;
 	const context = canvas.getContext("2d")!;
-	context.drawImage(image, 0, 0);
+	context.drawImage(image, 0, 0, 2048, 1024);
 	expect([...context.getImageData(0, 0, 4, 1).data]).toEqual([
 		...BLACK,
 		...WHITE,
@@ -852,5 +856,27 @@ test("a canvas draws a large image from its full pixels", async () => {
 		...BLACK,
 		...WHITE,
 	]);
+	dom.dispose();
+});
+
+test("drawImage() without a size draws an image whole, at its natural size", async () => {
+	// 160 by 64 pixels is 20 by 4 cells under the 8 by 16 guess: red on
+	// the left half, blue on the right.
+	const halves = png(160, 64, (x) => x < 80 ? RED : BLUE);
+	const {dom, document} = await mount(
+		`<img id=a src="${halves}"><canvas id=c width=40 height=8></canvas>`,
+	);
+	const image = document.getElementById("a") as HTMLImageElement;
+	await loaded(image);
+	expect([image.naturalWidth, image.naturalHeight]).toEqual([20, 4]);
+	const canvas = document.getElementById("c") as HTMLCanvasElement;
+	canvas.width = image.width;
+	canvas.height = image.height;
+	const context = canvas.getContext("2d")!;
+	context.drawImage(image, 0, 0);
+	expect([...context.getImageData(5, 2, 1, 1).data]).toEqual(RED);
+	expect([...context.getImageData(15, 2, 1, 1).data]).toEqual(BLUE);
+	const bitmap = await dom.window.createImageBitmap(image);
+	expect([bitmap.width, bitmap.height]).toEqual([160, 64]);
 	dom.dispose();
 });

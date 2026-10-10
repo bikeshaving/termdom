@@ -458,7 +458,7 @@ test("drawImage draws a loaded <img>, skips one still loading, and throws for a 
 	ctx.drawImage(image, 0, 0);
 	expect(pixel(ctx, 0, 0)[3]).toBe(0);
 	await image.decode();
-	ctx.drawImage(image, 0, 0);
+	ctx.drawImage(image, 0, 0, 2, 2);
 	expect(pixel(ctx, 1, 1)).toEqual([0, 255, 0, 255]);
 
 	const broken = document.createElement("img");
