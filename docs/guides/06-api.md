@@ -432,11 +432,10 @@ the server's, because the process has only one of each:
 
 - `FetchEvent`, `ExtendableEvent` and the `FetchEventInit` type, for the
   `"fetch"` event.
-- `CanvasCellGridContext`, the class behind a canvas's
-  `"termdom-cellgrid"` context.
 - The types `TermDOMOptions`, `TermDOMEventMap`, `CellSize`, `ColorDepth`,
   `TerminalTransport`, `TerminalCloseInfo`, `TerminalSize`, `ProcessLike`
-  and `SSHSessionLike`.
+  and `SSHSessionLike`, and `CanvasCellGridContext`, the experimental
+  `"termdom-cellgrid"` context, which may change in a minor release.
 
 `TerminalTransport` and the shapes `transportFromProcess` and
 `transportFromSSH` take are written against by custom transports and

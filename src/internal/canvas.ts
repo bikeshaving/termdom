@@ -3069,6 +3069,8 @@ export interface CanvasCellGridContext {
  * no canvas pixels, and clearRect() empties cells. Coordinates are cells.
  * Its settings mean what a 2d context's do, and CanvasText and Canvas,
  * the default colors, are the terminal's own.
+ *
+ * @experimental The cell grid may change in a minor release.
  */
 export class CanvasCellGridContext {
 	constructor() {

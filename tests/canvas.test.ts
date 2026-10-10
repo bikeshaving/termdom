@@ -12,8 +12,12 @@
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {CanvasCellGridContext, TermDOM} from "../src/index.ts";
-import {createImageBitmapFrom, ImageBitmap} from "../src/internal/canvas.ts";
+import {TermDOM} from "../src/index.ts";
+import {
+	CanvasCellGridContext,
+	createImageBitmapFrom,
+	ImageBitmap,
+} from "../src/internal/canvas.ts";
 import {decodeImage, encodePNG} from "../src/internal/images.ts";
 import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.ts";
 

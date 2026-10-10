@@ -332,8 +332,8 @@ are empty, as a terminal keeps its screen when its window is resized;
 a `ResizeObserver` on the canvas tells a script to draw again. It is
 TermDOM's own, so its name carries TermDOM's prefix, as a browser's own
 context types once carried theirs (`"moz-webgl"`, `"webkit-3d"`). Its
-interface is not on `window`. The `@b9g/termdom` package exports it as
-`CanvasCellGridContext`, and importing the package teaches TypeScript
+interface is not on `window`. The `@b9g/termdom` package exports its type
+as `CanvasCellGridContext`, and importing the package teaches TypeScript
 that `getContext("termdom-cellgrid")` returns one.
 
 ```ts

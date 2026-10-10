@@ -68,7 +68,7 @@ import {
 } from "./internal/resources.ts";
 import {queueMicrotask, setTimeout} from "./internal/timers.ts";
 
-export {CanvasCellGridContext} from "./internal/canvas.ts";
+export type {CanvasCellGridContext} from "./internal/canvas.ts";
 export type {CellSize} from "./internal/cssom.ts";
 export {transportFromProcess, transportFromSSH} from "./internal/exchange.ts";
 export {
@@ -86,6 +86,7 @@ export type {
 
 declare global {
 	interface HTMLCanvasElement {
+		/** @experimental The cell grid may change in a minor release. */
 		getContext(
 			contextId: "termdom-cellgrid",
 			options?: unknown,
