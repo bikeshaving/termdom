@@ -625,6 +625,37 @@ test("a signal ends the process with 128 plus its number", async () => {
 	}
 });
 
+test("a signal the app listens for is left to the app", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const codes: number[] = [];
+	terminal.exit = ((code?: number) => {
+		codes.push(code ?? 0);
+	}) as never;
+	let heard = 0;
+	terminal.on("SIGTERM", () => heard++);
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.attach();
+	terminal.emit("SIGTERM");
+	await settle(50);
+	expect(heard).toBe(1);
+	expect(codes).toEqual([]);
+	await dom.dispose();
+});
+
+test("window.close() exits with the exit code the app set", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const codes: number[] = [];
+	terminal.exit = ((code?: number) => {
+		codes.push(code ?? 0);
+	}) as never;
+	terminal.exitCode = 3;
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.attach();
+	dom.window.close();
+	await until(() => codes.length > 0);
+	expect(codes).toEqual([3]);
+});
+
 test("BeforeUnloadEvent is the interface a browser exposes", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const watched = closeCountingTransport(terminal);

@@ -120,9 +120,12 @@ are wired to the terminal:
   transport. A `beforeunload` listener that calls `preventDefault()`
   keeps the session. Ctrl-C calls `close()`; it does not reach `keydown`.
   The status is 130 when Ctrl-C closed the window, as a shell reports an
-  interrupt, 1 when the page let an exception escape, and 0 otherwise.
+  interrupt, 1 when the page let an exception escape, and otherwise
+  `process.exitCode`, or 0 if the app set none.
   On the default transport, a `SIGINT`, `SIGHUP` or `SIGTERM` sent to the
-  process ends it with 130, 129 or 143.
+  process ends the session and exits with 130, 129 or 143. If the app
+  listens for that signal itself, the session still ends, but the exit is
+  left to the app, as in Node.
 
 Anything not listed behaves as the DOM and CSSOM standards specify,
 without terminal wiring.

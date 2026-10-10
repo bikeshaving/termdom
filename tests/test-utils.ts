@@ -196,6 +196,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 
 	/** Absent by default, as a terminal shares one screen for both. */
 	stderr?: {isTTY?: boolean; write(chunk: string): unknown};
+	exitCode?: number;
 	colorDepth: ColorDepth;
 	terminal: Terminal;
 

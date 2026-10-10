@@ -2313,7 +2313,10 @@ export interface ProcessLike {
 	stderr?: {isTTY?: boolean; write(chunk: string): unknown};
 	on(event: ProcessSignal, listener: () => void): unknown;
 	removeListener?(event: ProcessSignal, listener: () => void): unknown;
+	// For leaving a signal to the app when it listens for one too.
+	listeners?(event: ProcessSignal): unknown[];
 	exit(code?: number): never;
+	exitCode?: number | string | null;
 	// For suspending: the process stops itself with SIGTSTP.
 	pid?: number;
 	// For ending a session without a terminal when its parent dies.
@@ -2327,6 +2330,7 @@ export interface ProcessLike {
 // transport. Each process counts its engaged transports, and only the
 // last to let go hands its terminal back.
 const engagedProcesses = new Map<ProcessLike, number>();
+const ownSignalListeners = new WeakSet<object>();
 let exitHookInstalled = false;
 
 function restoreEngagedProcesses(): void {
@@ -2530,14 +2534,19 @@ export function transportFromProcess(
 				// Ctrl-C as data. Close, then exit once the session has
 				// disposed.
 				// A process a signal ends exits with 128 plus the signal's
-				// number, as a shell reports it.
+				// number, as a shell reports it. An app that listens for the
+				// signal itself has taken over the exit, as in Node.
 				const closeOn = (signal: ProcessSignal, status: number | null) => {
 					const listener = () => {
 						closedResolve({status: status ?? undefined});
-						if (status !== null) {
+						const others = (proc.listeners?.(signal) ?? []).filter(
+							(other) => !ownSignalListeners.has(other as object),
+						);
+						if (status !== null && others.length === 0) {
 							setImmediate(() => proc.exit(status));
 						}
 					};
+					ownSignalListeners.add(listener);
 					signalListeners.push([signal, listener]);
 					proc.on(signal, listener);
 				};
@@ -2677,7 +2686,7 @@ export function transportFromProcess(
 		closed,
 		close(info?: TerminalCloseInfo) {
 			disengage();
-			proc.exit(info?.status ?? 0);
+			proc.exit(info?.status || Number(proc.exitCode ?? 0) || 0);
 		},
 	};
 	return transport;
