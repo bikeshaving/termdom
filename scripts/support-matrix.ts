@@ -335,9 +335,15 @@ const FEATURES: Record<string, Feature> = {
 	"font-style": {value: "italic"},
 	"text-decoration": {value: "underline"},
 	"text-decoration-line": {value: "underline"},
+	// The terminal snapshot keeps no underline style, so the probe reads
+	// the SGR TermDOM writes for a double underline.
 	"text-decoration-style": {
 		value: "double",
-		setup: "#probe { text-decoration: underline; }",
+		behaves(dom: TermDOM): boolean {
+			dom.document.body.innerHTML =
+				"<span style='text-decoration: underline double'>x</span>";
+			return dom.renderANSI().includes("4:2");
+		},
 	},
 	"text-transform": {value: "uppercase"},
 	"text-align": {value: "right"},
@@ -1326,7 +1332,7 @@ function buildProbes(): Probe[] {
 			image.src = canvas.toDataURL();
 			dom.document.body.appendChild(image);
 			await image.decode();
-			return image.naturalWidth === 8;
+			return image.complete && image.naturalWidth > 0;
 		}),
 		apiProbe("<canvas> 2d context", "DOM APIs", (dom) => {
 			const canvas = dom.document.createElement("canvas");

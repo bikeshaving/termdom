@@ -111,7 +111,7 @@ matches `"rgb"`, `(color-index: 256)` matches `"256"`, and
 | `text-decoration-line: underline` | Underline |
 | `text-decoration-line: overline` | Overline, on a terminal that draws one |
 | `text-decoration-line: line-through` | Strikethrough |
-| `text-decoration-style: double` | Double underline, on a terminal that draws one; a single underline elsewhere |
+| `text-decoration-style: double`, or `text-decoration: underline double` | Double underline, on a terminal that draws one; a single underline elsewhere |
 | `text-transform` | `uppercase`, `lowercase`, and `capitalize` change the characters at paint time |
 
 `text-decoration-color`, `text-decoration-thickness`, `letter-spacing`,

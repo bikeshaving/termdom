@@ -1737,6 +1737,26 @@ test("author CSS text-decoration-style: double emits SGR 4 then 4:2", async () =
 	dom.dispose();
 });
 
+test("the text-decoration shorthand sets the style too", async () => {
+	const terminal = new MockProcess({rows: 5, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	const {document} = dom;
+	const raw = captureRawOutput(terminal);
+	document.body.innerHTML =
+		"<span style='text-decoration-style: double; " +
+		"text-decoration: underline'>single</span>" +
+		"<span style='text-decoration: underline double red'>double</span>";
+	await nextFrame(dom);
+	const [single, double] = document.querySelectorAll("span");
+	const style = (element: Element) =>
+		dom.window.getComputedStyle(element).textDecorationStyle;
+	expect(style(single)).toBe("solid");
+	expect(style(double)).toBe("double");
+	expect(raw()).toMatch(/\x1b\[[\d;]*4;4:2[;m]double/);
+
+	dom.dispose();
+});
+
 test("display:none subtrees neither render, ghost, nor take tab focus", async () => {
 	// A stylesheet arriving in the same batch as its markup used to leave
 	// the hidden subtree's stale boxes ghost-painting at old coordinates,

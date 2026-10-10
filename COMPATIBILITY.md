@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-203 features supported, 33 probed and unsupported,
+204 features supported, 32 probed and unsupported,
 153 CSS properties not applicable to a character grid,
 128 applicable and not implemented,
 9 not yet probed.
@@ -200,7 +200,7 @@ changed.
 | `font-style` | yes |
 | `text-decoration` | yes |
 | `text-decoration-line` | yes |
-| `text-decoration-style` | no (no effect) |
+| `text-decoration-style` | yes |
 | `text-transform` | yes |
 | `text-align` | yes |
 | `text-indent` | yes |

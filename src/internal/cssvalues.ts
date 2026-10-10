@@ -1465,6 +1465,14 @@ function expandTransition(value: string): Record<string, string> {
 
 // For a value whose grammar the index rejects (a substitution) but
 // which still declares the lines it spells out.
+const DECORATION_STYLE_KEYWORDS = new Set([
+	"solid",
+	"double",
+	"dotted",
+	"dashed",
+	"wavy",
+]);
+
 const DECORATION_LINE_KEYWORDS = new Set([
 	"none",
 	"underline",
@@ -1918,9 +1926,9 @@ export function expandShorthands(
 				Object.assign(out, expandTransition(value));
 				break;
 			case "text-decoration": {
-				// `<line> || <style> || <color> || <thickness>`. Only the line
-				// component has a terminal rendering, and it is the one the
-				// painter reads.
+				// `<line> || <style> || <color> || <thickness>`. The line and
+				// the style have a terminal rendering, and they are what the
+				// painter reads. A style left out is reset to solid.
 				const traced = getGrammarTerms(property, value);
 				const line = (
 					traced
@@ -1936,6 +1944,14 @@ export function expandShorthands(
 				if (line) {
 					out["text-decoration-line"] = line;
 				}
+				const style = traced
+					? traced.find((component) =>
+						component.terms.includes("text-decoration-style"),
+					)?.text
+					: values.find((token) =>
+						DECORATION_STYLE_KEYWORDS.has(token.toLowerCase()),
+					);
+				out["text-decoration-style"] = style ?? "solid";
 				break;
 			}
 		}
