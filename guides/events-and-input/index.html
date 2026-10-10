@@ -25,8 +25,9 @@ byte. These limits apply to every terminal application:</p><ul><li><code>Shift+E
 second action instead.</li><li><code>Enter</code> is the byte for <code>Ctrl+M</code> and <code>Tab</code> for <code>Ctrl+I</code>; the named key
 is what you get, and those chords never arrive.</li><li><code>Ctrl+C</code> is the interrupt; it never reaches the document. It calls
 <code>window.close()</code>, and a <code>beforeunload</code> listener that calls
-<code>preventDefault()</code> keeps the session.</li><li><code>Ctrl+Z</code> suspends the program, as a shell&#039;s job control does, and
-never reaches the document either. The terminal is handed back and
+<code>preventDefault()</code> keeps the session.</li><li><code>Ctrl+Z</code> suspends the program, as a shell&#039;s job control does, unless
+a <code>keydown</code> listener calls <code>preventDefault()</code>, as an editor that uses
+it for undo does. The terminal is handed back and
 <code>document.visibilityState</code> is <code>&quot;hidden&quot;</code> until the shell continues the
 program with <code>fg</code>; a document in flow starts again below the shell&#039;s
 lines. Over SSH, and on Windows, where nothing can suspend the program,
