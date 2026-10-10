@@ -11,8 +11,6 @@ import {
 	type ProcessLike,
 	type TerminalTransport,
 	transportFromProcess,
-	type TTYReadStream,
-	type TTYWriteStream,
 } from "../src/index.ts";
 import {framePainted} from "../src/internal/dom.ts";
 import type {ColorDepth} from "../src/internal/exchange.ts";
@@ -90,15 +88,18 @@ const RGB_CAPABILITY_QUERY = "\x1bP+q524742\x1b\\";
 const RGB_CAPABILITY_REPLY = "\x1bP1+r524742\x1b\\";
 const kColorDepth = Symbol("colorDepth");
 
+type Stdout = ProcessLike["stdout"];
+type Stdin = NonNullable<ProcessLike["stdin"]>;
+
 /**
- * Mock WriteStream for testing that implements our minimal TTYWriteStream interface
+ * Mock WriteStream for testing that implements the stdout ProcessLike takes
  */
 interface MockWriteStream {
 	[kStdin]: MockReadStream;
 	[kColorDepth]: () => ColorDepth;
 }
 
-class MockWriteStream extends EventEmitter implements TTYWriteStream {
+class MockWriteStream extends EventEmitter implements Stdout {
 	columns: number;
 	rows: number;
 	isTTY: boolean;
@@ -155,7 +156,7 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	}
 }
 
-class MockReadStream extends EventEmitter implements TTYReadStream {
+class MockReadStream extends EventEmitter implements Stdin {
 	isTTY: boolean;
 	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
 		super(...args);

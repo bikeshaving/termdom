@@ -423,8 +423,8 @@ the server's, because the process has only one of each:
 - `CanvasCellGridContext`, the class behind a canvas's
   `"termdom-cellgrid"` context.
 - The types `TermDOMOptions`, `TermDOMEventMap`, `CellSize`, `ColorDepth`,
-  `TerminalTransport`, `TerminalCloseInfo`, `TerminalSize`, `ProcessLike`,
-  `TTYReadStream`, `TTYWriteStream` and `SSHSessionLike`.
+  `TerminalTransport`, `TerminalCloseInfo`, `TerminalSize`, `ProcessLike`
+  and `SSHSessionLike`.
 
 `TerminalTransport` and the shapes `transportFromProcess` and
 `transportFromSSH` take are written against by custom transports and

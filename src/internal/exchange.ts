@@ -2266,46 +2266,43 @@ function queryMode(
 }
 
 // The Node process shape transportFromProcess reads. Tests pass mocks.
-export interface TTYWriteStream {
-	write(
-		chunk: any,
-		encoding?: string | ((error?: Error) => void),
-		callback?: (error?: Error) => void,
-	): boolean;
-	columns: number;
-	rows: number;
-	isTTY: boolean;
-	on?(event: "error", listener: (error: unknown) => void): unknown;
-	removeListener?(event: "error", listener: (error: unknown) => void): unknown;
-}
-
-export interface TTYReadStream {
-	isTTY: boolean;
-	fd?: number;
-	on(
-		event: "data",
-		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
-	): unknown;
-	on(event: "end", listener: () => void): unknown;
-	on(event: "error", listener: (error: unknown) => void): unknown;
-	listenerCount?(event: string): number;
-	removeListener?(
-		event: "data",
-		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
-	): unknown;
-	removeListener?(event: "error", listener: (error: unknown) => void): unknown;
-	setRawMode?(mode: boolean): this;
-	resume(): this;
-	pause(): this;
-	setEncoding?(encoding?: string): this;
-}
-
 type ProcessSignal =
 	"SIGWINCH" | "SIGINT" | "SIGTERM" | "SIGHUP" | "SIGCONT" | "exit";
 
 export interface ProcessLike {
-	stdin?: TTYReadStream;
-	stdout: TTYWriteStream;
+	stdin?: {
+		isTTY: boolean;
+		on(
+			event: "data",
+			listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
+		): unknown;
+		on(event: "error", listener: (error: unknown) => void): unknown;
+		removeListener?(
+			event: "data",
+			listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
+		): unknown;
+		removeListener?(event: "error", listener: (
+			error: unknown,
+		) => void): unknown;
+		setRawMode?(mode: boolean): unknown;
+		resume(): unknown;
+		pause(): unknown;
+		setEncoding?(encoding?: string): unknown;
+	};
+	stdout: {
+		write(
+			chunk: any,
+			encoding?: string | ((error?: Error) => void),
+			callback?: (error?: Error) => void,
+		): boolean;
+		columns: number;
+		rows: number;
+		isTTY: boolean;
+		on?(event: "error", listener: (error: unknown) => void): unknown;
+		removeListener?(event: "error", listener: (
+			error: unknown,
+		) => void): unknown;
+	};
 	stderr?: {isTTY?: boolean; write(chunk: string): unknown};
 	on(event: ProcessSignal, listener: () => void): unknown;
 	removeListener?(event: ProcessSignal, listener: () => void): unknown;

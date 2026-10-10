@@ -77,8 +77,6 @@ export {
 export type {
 	ProcessLike,
 	SSHSessionLike,
-	TTYReadStream,
-	TTYWriteStream,
 	TerminalCloseInfo,
 	TerminalSize,
 	TerminalTransport,
