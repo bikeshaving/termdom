@@ -6,20 +6,20 @@
 //   q        quit
 import {installGlobals, TermDOM} from "@b9g/termdom";
 import htm from "htm";
-import {createElement, useEffect, useState} from "react";
-import {createRoot} from "react-dom/client";
-
-// JSX without a build step: htm parses the same shape from a template
-// literal, straight to createElement.
-const html = htm.bind(createElement);
 
 const term = new TermDOM();
 term.attach();
 const {document} = term;
-// react-dom reads `window.event` to pick an update priority, and
-// `document.documentMode` and `"TextEvent" in window` to detect input
-// features.
+// react-dom detects input features when it loads, from `document` and
+// `"TextEvent" in window`, and reads `window.event` to pick an update
+// priority, so the globals go in before it is imported.
 installGlobals(term);
+const {createElement, useEffect, useState} = await import("react");
+const {createRoot} = await import("react-dom/client");
+
+// JSX without a build step: htm parses the same shape from a template
+// literal, straight to createElement.
+const html = htm.bind(createElement);
 
 const style = document.createElement("style");
 style.textContent = `

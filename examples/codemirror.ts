@@ -13,18 +13,25 @@
 import {readFileSync} from "node:fs";
 
 import {installGlobals, TermDOM} from "@b9g/termdom";
-import {defaultKeymap, history, historyKeymap} from "@codemirror/commands";
-import {javascript} from "@codemirror/lang-javascript";
-import {defaultHighlightStyle, syntaxHighlighting} from "@codemirror/language";
-import {EditorSelection, EditorState} from "@codemirror/state";
-import {EditorView, keymap, lineNumbers} from "@codemirror/view";
+import type {EditorView as View} from "@codemirror/view";
 
 const term = new TermDOM();
 term.attach();
 const {document} = term;
 
-// CodeMirror reads document, window, getSelection and the rest as globals.
+// CodeMirror reads document, window, getSelection and the rest as globals,
+// and reads navigator when it loads to choose between Cmd and Ctrl, so the
+// globals go in before it is imported.
 installGlobals(term);
+const {defaultKeymap, history, historyKeymap} = await import(
+  "@codemirror/commands",
+);
+const {javascript} = await import("@codemirror/lang-javascript");
+const {defaultHighlightStyle, syntaxHighlighting} = await import(
+  "@codemirror/language",
+);
+const {EditorSelection, EditorState} = await import("@codemirror/state");
+const {EditorView, keymap, lineNumbers} = await import("@codemirror/view");
 
 document.head.innerHTML = `
   <style>
@@ -66,11 +73,8 @@ const theme = EditorView.theme(
 // CodeMirror's own line moves probe half a text height at a time, and a
 // line here is one cell tall, so half of it rounds to nothing. These
 // probe half a cell past the line's edge, which is the next row.
-function moveLine(
-  forward: boolean,
-  extend: boolean,
-): (view: EditorView) => boolean {
-  return (view: EditorView): boolean => {
+function moveLine(forward: boolean, extend: boolean): (view: View) => boolean {
+  return (view: View): boolean => {
     const {selection} = view.state;
     const ranges = selection.ranges.map((range) => {
       const moved = view.moveVertically(

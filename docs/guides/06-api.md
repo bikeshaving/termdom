@@ -262,7 +262,14 @@ import {installGlobals, TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
 const uninstall = installGlobals(term);
+const {createRoot} = await import("react-dom/client");
 ```
+
+Install them before importing the framework, with `await import()`.
+Frameworks read the environment when their modules load, and static
+imports load before any code runs. A side-effect import placed first
+does not help: Bun runs a CommonJS package that is imported by name,
+as React is, before the modules imported above it.
 
 It returns a function that puts back what was there. One TermDOM's
 globals can be installed at a time; calling it again before uninstalling

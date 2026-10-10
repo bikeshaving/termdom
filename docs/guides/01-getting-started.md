@@ -86,23 +86,30 @@ document.addEventListener("keydown", (ev) => {
 
 A framework renders into `term.document` the same way it renders into a
 browser document. Most frameworks also read DOM globals such as
-`document`, `window` and `Element`. `installGlobals(term)` defines every
-name the window has that the runtime lacks, and returns a function that
-removes them. Names the runtime has already, such as Node's `Event` and
-`fetch`, are left alone, and in a browser it changes nothing.
+`document`, `window` and `Element`. `installGlobals(term)` puts the
+window's names on the global object, over the runtime's, and returns a
+function that puts back what was there; the API guide lists the few the
+runtime keeps.
 
-React:
+Frameworks read the environment once, when their modules load: React
+decides then which events a text field fires, Vue takes `document`, and
+CodeMirror reads `navigator` to choose between Cmd and Ctrl. Static
+imports load before any of a module's code runs, so install the globals
+first and import the framework after:
 
 ```ts
-import {installGlobals} from "@b9g/termdom";
-import {createRoot} from "react-dom/client";
+import {installGlobals, TermDOM} from "@b9g/termdom";
 
+const term = new TermDOM();
 installGlobals(term);
+const {createRoot} = await import("react-dom/client");
 createRoot(term.document.body).render(<App />);
 ```
 
-Vue reads `document` when its module loads, so install the globals
-before a dynamic import:
+Imported first, React misses edits that come with no key, such as a
+paste, and CodeMirror on a Mac binds Cmd, which a terminal cannot send.
+
+Vue:
 
 ```ts
 installGlobals(term);
