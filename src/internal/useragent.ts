@@ -173,12 +173,11 @@ export const UA_DOCUMENT_STYLES = `
 // inline from `open`, which hides a closed details' text children
 // without any rule in the light tree.
 //
-// A gauge's bar is as wide as the fraction filled. The groove follows it
-// in the same clip, so an empty bar still reads as a bar, and an
-// indeterminate progress bar shows only the groove. The groove takes the
-// track's color, so ::slider-track colors it. A meter's bar also
-// has the part name of its level against low, high and optimum, so the
-// color is a rule and not a choice the painter makes. A range input's
+// A gauge's bar is as wide as the fraction filled, and its track and bar
+// are painted by their backgrounds, as in a browser, so an empty or
+// indeterminate bar shows the track alone. A meter's bar also has the
+// part name of its level against low, high and optimum, so the color is
+// a rule and not a choice the painter makes. A range input's
 // track keeps a cell clear at its end for the thumb, which follows the
 // fill, so the thumb shows at either end of the range.
 //
@@ -194,16 +193,15 @@ export const UA_CONTROL_STYLES = `
 
 	details::details-content { display: block; }
 
-	meter::part(track), progress::part(track) { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; color: #808080; }
-	meter::part(groove), progress::part(groove) { font-weight: lighter; }
-	meter::part(bar), progress::part(bar) { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
-	progress::part(bar) { color: #5fafff; }
+	meter::part(track), progress::part(track) { display: inline-block; width: 100%; height: 1lh; overflow: hidden; vertical-align: top; background-color: #585858; }
+	meter::part(bar), progress::part(bar) { display: inline-block; height: 100%; vertical-align: top; }
+	progress::part(bar) { background-color: #5fafff; }
 	input::part(track) { display: inline-block; box-sizing: border-box; width: 100%; padding-right: 1ch; overflow: hidden; white-space: pre; vertical-align: top; color: #808080; }
 	input::part(fill) { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; color: #5fafff; }
 	input::part(thumb) { color: CanvasText; }
-	meter::part(bar optimum) { color: #5faf5f; }
-	meter::part(bar suboptimum) { color: #d7af5f; }
-	meter::part(bar even-less-good) { color: #d75f5f; }
+	meter::part(bar optimum) { background-color: #5faf5f; }
+	meter::part(bar suboptimum) { background-color: #d7af5f; }
+	meter::part(bar even-less-good) { background-color: #d75f5f; }
 
 	select::picker-icon { font-weight: lighter; }
 	select::picker(select) {

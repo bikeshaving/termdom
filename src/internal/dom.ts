@@ -19103,12 +19103,6 @@ class HTMLMetaElement extends HTMLElement {
 	}
 }
 
-// A run of full blocks for the filled bar and a run of light shade for
-// the groove behind it. Both are ordinary text in the shadow tree,
-// clipped to the fraction CSS gives the bar.
-const GAUGE_BAR_GLYPH = "█";
-const GAUGE_GROOVE_GLYPH = "░";
-
 // Long enough that no bar on this screen can exceed it.
 function getGaugeGlyphs(host: Element, glyph: string): string {
 	const view = (host.ownerDocument as {defaultView?: {innerWidth?: number}})
@@ -19126,30 +19120,20 @@ function getCanvasDirection(canvas: Element): "ltr" | "rtl" {
 	return getComputedValue(canvas, "direction") === "rtl" ? "rtl" : "ltr";
 }
 
-// A full-width track that clips, holding a bar whose width is the
-// fraction filled and the groove that shows past it.
+// A full-width track holding a bar whose width is the fraction filled.
+// Both are painted by their backgrounds, as a browser paints a gauge.
 function buildGaugeRoot(
 	host: Element,
 	attached: AttachedDocument,
-): {bar: globalThis.HTMLElement; groove: globalThis.Text} {
+): globalThis.HTMLElement {
 	const document = getUADocument(host);
 	const root = buildUAShadowTree(host, attached);
 	const track = addPart(root, "track");
 	track.removeChild(track.firstChild!);
 	const bar = document.createElement("span");
 	bar.setAttribute("part", "bar");
-	bar.appendChild(
-		document.createTextNode(getGaugeGlyphs(host, GAUGE_BAR_GLYPH)),
-	);
 	track.appendChild(bar);
-	const groove = document.createElement("span");
-	groove.setAttribute("part", "groove");
-	const grooveText = document.createTextNode(
-		getGaugeGlyphs(host, GAUGE_GROOVE_GLYPH),
-	);
-	groove.appendChild(grooveText);
-	track.appendChild(groove);
-	return {bar, groove: grooveText};
+	return bar;
 }
 
 function setGaugeFill(
@@ -19176,8 +19160,8 @@ const METER_ATTRIBUTES = new Set([
 ]);
 
 // Six numbers, each parsed relative to the ones around it. The element
-// renders a closed shadow tree it owns: a run of block glyphs filled to
-// where `value` sits between `min` and `max`, with a level attribute
+// renders a closed shadow tree it owns: a bar filled to where `value`
+// sits between `min` and `max`, with a level attribute
 // computed from the low/high/optimum ranges, which the UA sheet uses to
 // color the bar.
 interface HTMLMeterElement {
@@ -19268,7 +19252,7 @@ class HTMLMeterElement extends HTMLElement {
 			return;
 		}
 		this[kUpgraded] = true;
-		this[kBar] = buildGaugeRoot(this, attached).bar;
+		this[kBar] = buildGaugeRoot(this, attached);
 		syncUAShadowTree(this);
 	}
 
@@ -19776,9 +19760,9 @@ class HTMLPreElement extends HTMLElement {
 	declare width: globalThis.HTMLPreElement["width"];
 }
 
-// Renders a closed shadow tree it owns: a run of block glyphs filled to
-// `value`/`max`. A progress with no value attribute is indeterminate,
-// which here is an empty bar over the full groove. There is no animation
+// Renders a closed shadow tree it owns: a bar filled to `value`/`max`. A
+// progress with no value attribute is indeterminate, which here is an
+// empty bar over the full track. There is no animation
 // to show the difference the way a browser does.
 interface HTMLProgressElement {
 	[kUpgraded]: boolean;
@@ -19831,7 +19815,7 @@ class HTMLProgressElement extends HTMLElement {
 			return;
 		}
 		this[kUpgraded] = true;
-		this[kBar] = buildGaugeRoot(this, attached).bar;
+		this[kBar] = buildGaugeRoot(this, attached);
 		syncUAShadowTree(this);
 	}
 

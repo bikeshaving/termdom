@@ -149,16 +149,17 @@ select::picker-icon { color: gray; }
 ```
 
 `::slider-track`, `::slider-fill` and `::slider-thumb` are CSS Form
-Control Styling's (css-forms-1). The track holds the fill and shows past
-it, and a range input's thumb follows the fill. A meter
+Control Styling's (css-forms-1). A gauge's track and fill are painted by
+their backgrounds, as in a browser: the fill covers the track as far as
+the value reaches. A range input's thumb follows the fill. A meter
 matches `:optimal-value` when its value is in its optimum region,
 `:low-value` below `low`, and `:high-value` above `high`. css-forms-1 is
 an editor's draft, so these follow it as it changes; the WebKit and
 Firefox names below have shipped for years and are the stable choice.
 
 ```css
-progress::slider-fill { color: green; }
-meter:low-value::slider-fill { color: orange; }
+progress::slider-fill { background-color: green; }
+meter:low-value::slider-fill { background-color: orange; }
 ```
 
 The prefixed names WebKit and Firefox ship work too, as aliases:
