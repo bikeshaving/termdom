@@ -2679,17 +2679,8 @@ export function transportFromProcess(
 	return transport;
 }
 
-// The shape transportFromSSH reads: an ssh2 session, and the channel its
-// shell request opens. Tests pass mocks.
-interface SSHChannelLike {
-	write(chunk: string, callback: (error?: Error | null) => void): unknown;
-	on(event: "data", listener: (chunk: Uint8Array | string) => void): unknown;
-	on(event: "end" | "close", listener: () => void): unknown;
-	on(event: "error", listener: (error: unknown) => void): unknown;
-	exit(status: number): unknown;
-	end(): unknown;
-}
-
+// The shape transportFromSSH reads: an ssh2 session, with the channel its
+// shell request opens.
 export interface SSHSessionLike {
 	on(
 		event: "pty",
@@ -2710,7 +2701,17 @@ export interface SSHSessionLike {
 	on(
 		event: "shell",
 		listener: (
-			accept: () => SSHChannelLike | undefined,
+			accept: () => {
+				write(chunk: string, callback: (error?: Error | null) => void): unknown;
+				on(
+					event: "data",
+					listener: (chunk: Uint8Array | string) => void,
+				): unknown;
+				on(event: "end" | "close", listener: () => void): unknown;
+				on(event: "error", listener: (error: unknown) => void): unknown;
+				exit(status: number): unknown;
+				end(): unknown;
+			} | undefined,
 			reject: (() => void) | undefined,
 		) => void,
 	): unknown;
@@ -2734,7 +2735,11 @@ export function transportFromSSH(
 ): TerminalTransport {
 	let cols = DEFAULT_COLS;
 	let rows = DEFAULT_ROWS;
-	let channel: SSHChannelLike | null = null;
+	let channel: {
+		write(chunk: string, callback: (error?: Error | null) => void): unknown;
+		exit(status: number): unknown;
+		end(): unknown;
+	} | null = null;
 	let onInput: ((chunk: string) => void) | null = null;
 	let onResize: ((size: TerminalSize) => void) | null = null;
 	let inputEnded = false;

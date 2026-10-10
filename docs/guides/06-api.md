@@ -425,3 +425,7 @@ the server's, because the process has only one of each:
 - The types `TermDOMOptions`, `TermDOMEventMap`, `CellSize`, `ColorDepth`,
   `TerminalTransport`, `TerminalCloseInfo`, `TerminalSize`, `ProcessLike`,
   `TTYReadStream`, `TTYWriteStream` and `SSHSessionLike`.
+
+`TerminalTransport` and the shapes `transportFromProcess` and
+`transportFromSSH` take are written against by custom transports and
+mocks, so a member added to them will always be optional.
