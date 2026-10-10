@@ -40,10 +40,11 @@ computed guess. The <code>resize</code> event fires on the window after the new
 size is in place.</p><h2 id="fullscreen">Fullscreen <a class="heading-anchor" href="#fullscreen">#</a></h2><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">await</span> element<span class="token punctuation">.</span><span class="token function">requestFullscreen</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p><code>requestFullscreen()</code> switches the terminal to its alternate screen and
 paints the fullscreen element from row zero, filling the terminal. The
 <code>:fullscreen</code> pseudo-class matches it, and <code>fullscreenchange</code> fires on
-the document. <code>document.exitFullscreen()</code>, or Escape, switches back to
+the document. <code>document.exitFullscreen()</code> switches back to
 the main screen, which restores the shell, the scrollback, and the
-flow-mode region as they were. If a text field has focus, the first
-Escape blurs it instead.</p><p>A program that wants the whole terminal for its lifetime can call
+flow-mode region as they were. Escape is an ordinary key here: it
+reaches <code>keydown</code>, and a page that wants Escape to leave fullscreen calls
+<code>exitFullscreen()</code> itself.</p><p>A program that wants the whole terminal for its lifetime can call
 <code>document.documentElement.requestFullscreen()</code> right after <code>attach()</code>.
 When it exits, nothing of it is left in the scrollback, because the
 alternate screen is discarded on the switch back, and the cursor is

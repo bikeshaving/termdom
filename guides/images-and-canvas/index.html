@@ -23,9 +23,10 @@ uses the best way the terminal has, which today is always cells.
 <code>&quot;cells&quot;</code> draws cells whatever the terminal could do. <code>&quot;none&quot;</code> draws
 nothing: an <code>&lt;img&gt;</code> loads nothing and shows its <code>alt</code> text, as a
 browser does with images turned off, and <code>getContext(&quot;2d&quot;)</code> returns
-<code>null</code>, so a canvas shows its fallback content. A page written for a
-browser often reads better that way, since half blocks blur a logo or
-a patterned picture that its fallback says plainly.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>images<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">,</span> canvas<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><h2 id="img"><code>&lt;img&gt;</code> <a class="heading-anchor" href="#img">#</a></h2><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>img</span> <span class="token attr-name">src</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cover.jpg<span class="token punctuation">"</span></span> <span class="token attr-name">alt</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Album cover<span class="token punctuation">"</span></span><span class="token punctuation">></span></span></code></pre><p><code>src</code> is a URL: <code>https:</code>, <code>data:</code>, <code>file:</code> or any other. A path is
+<code>null</code>, so a canvas shows its fallback content. A <code>&quot;termdom-cellgrid&quot;</code>
+context still draws cells, but its <code>drawImage()</code> draws nothing. A page
+written for a browser often reads better that way, since half blocks
+blur a logo or a patterned picture that its fallback says plainly.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>images<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">,</span> canvas<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><h2 id="img"><code>&lt;img&gt;</code> <a class="heading-anchor" href="#img">#</a></h2><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>img</span> <span class="token attr-name">src</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cover.jpg<span class="token punctuation">"</span></span> <span class="token attr-name">alt</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Album cover<span class="token punctuation">"</span></span><span class="token punctuation">></span></span></code></pre><p><code>src</code> is a URL: <code>https:</code>, <code>data:</code>, <code>file:</code> or any other. A path is
 relative to the document&#039;s URL, given by the <code>url</code> option. A document
 at <code>about:blank</code> has no URL to resolve against, so a path there names
 nothing; a program that shows local files sets <code>url</code> to a <code>file:</code> URL,
@@ -85,10 +86,20 @@ listener added just after the markup sees its images. Only a document
 whose own URL is <code>file:</code> loads <code>file:</code> URLs, whatever the policy says,
 so untrusted markup in a page at <code>about:blank</code> or <code>https:</code> cannot read
 local files. Node&#039;s <code>fetch</code> reads no files, and Bun&#039;s and Deno&#039;s do, so
-a program that allows local files on every runtime answers them itself.</p><p>The page&#039;s own <code>window.fetch</code> is the runtime&#039;s, and it resolves a
-relative URL against the document&#039;s, as a browser&#039;s does. No policy
-governs it and it dispatches no event: in a terminal it is the program,
-not untrusted markup, that calls it.</p><p>PNG, JPEG, GIF and BMP decode:</p><table><thead><tr><th>Format</th><th>What decodes</th></tr></thead><tbody><tr><td>PNG</td><td>Every color type and bit depth, palettes, <code>tRNS</code> transparency, Adam7 interlacing</td></tr><tr><td>JPEG</td><td>Baseline and progressive, any chroma subsampling, restart markers, grayscale, CMYK and YCCK. The Exif orientation turns the image, as browsers do by default</td></tr><tr><td>GIF</td><td>The first frame, with its transparent color</td></tr><tr><td>BMP</td><td>1, 4, 8, 16, 24 and 32 bits, RLE4 and RLE8</td></tr></tbody></table><p>WebP, AVIF and SVG do not decode. Neither do arithmetic-coded or
+a program that allows local files on every runtime answers them itself.</p><p>The page&#039;s own <code>window.fetch</code> resolves a relative URL against the
+document&#039;s, as a browser&#039;s does, and goes the way the markup&#039;s loads go:
+checked against <code>connect-src</code>, or <code>default-src</code> when there is none,
+then offered to the <code>&quot;fetch&quot;</code> listeners, then sent to the network. A
+listener&#039;s own <code>fetch</code>, made while it answers or of the request it was
+given, goes to the network, as a Service Worker&#039;s does, not back to the
+listener.</p><p>An inline event handler, such as <code>onerror=&quot;...&quot;</code> in the markup, runs
+with everything the program can reach, as the program&#039;s own code does.
+Under a policy it runs only where <code>script-src-attr</code>, <code>script-src</code> or
+<code>default-src</code>, whichever the policy names first, allows
+<code>&#039;unsafe-inline&#039;</code>, and a nonce or hash in the same list cancels that.
+One that does not run is reported with <code>securitypolicyviolation</code>.
+Without a policy every handler runs, so markup the program does not
+trust needs one, even one that only says <code>default-src &#039;none&#039;</code>.</p><p>PNG, JPEG, GIF and BMP decode:</p><table><thead><tr><th>Format</th><th>What decodes</th></tr></thead><tbody><tr><td>PNG</td><td>Every color type and bit depth, palettes, <code>tRNS</code> transparency, Adam7 interlacing</td></tr><tr><td>JPEG</td><td>Baseline and progressive, any chroma subsampling, restart markers, grayscale, CMYK and YCCK. The Exif orientation turns the image, as browsers do by default</td></tr><tr><td>GIF</td><td>The first frame, with its transparent color</td></tr><tr><td>BMP</td><td>1, 4, 8, 16, 24 and 32 bits, RLE4 and RLE8</td></tr></tbody></table><p>WebP, AVIF and SVG do not decode. Neither do arithmetic-coded or
 lossless JPEGs.</p><p><code>load</code> and <code>error</code> fire as they do in a browser, and <code>decode()</code>,
 <code>complete</code>, <code>naturalWidth</code>, <code>naturalHeight</code> and <code>currentSrc</code> report the
 image. <code>new Image()</code> makes an <code>&lt;img&gt;</code>. <code>srcset</code> is read for its <code>1x</code>
@@ -116,7 +127,10 @@ averaging the pixels a cell covers.</p><h3 id="transparency">Transparency <a cla
 them as it was. On an element with a <code>background-color</code>, translucent
 pixels blend over that color instead.</p><h3 id="limits">Limits <a class="heading-anchor" href="#limits">#</a></h3><p>An image file names its size before its pixels, so a few bytes can
 ask for gigabytes. As a browser does, the engine checks what a file
-asks for before it allocates, and an image past a limit fails to load:</p><ul><li>a response of at most 64 MB, by its declared length and while reading</li><li>at most 32768 pixels to a side and 2^26 pixels in all</li><li>a PNG&#039;s data inflated only as far as its image needs</li><li>a JPEG of at most four components and 500 scans</li></ul><p>Images decode one at a time on the runtime&#039;s web <code>Worker</code>, so a large
+asks for before it allocates, and an image past a limit fails to load:</p><ul><li>a response of at most 64 MB, by its declared length and while reading</li><li>at most 32768 pixels to a side and 2^26 pixels in all</li><li>a PNG&#039;s data inflated only as far as its image needs</li><li>a JPEG of at most four components and 500 scans</li></ul><p>A decoded image keeps its full pixels, four bytes each, for as long as
+it is loaded, so <code>createImageBitmap()</code> copies it pixel for pixel. An
+image of more than 2^20 pixels also keeps a copy averaged down to that
+many, 4 MB, which its cells are drawn from.</p><p>Images decode one at a time on the runtime&#039;s web <code>Worker</code>, so a large
 one does not stall the page. Bun and Deno have one. Node has one from
 26.9 behind a flag, so run <code>node --experimental-web-worker</code>, or set
 <code>NODE_OPTIONS=--experimental-web-worker</code>, to decode off the page&#039;s
@@ -143,7 +157,15 @@ unit cell, <code>width</code> and <code>height</code> default to 38 and 9 instea
 300 by 150 pixels fill at 8 by 16 pixels a cell, so a bare canvas is
 about the size it would be in pixels.</p><p>Images keep their own rule: an image&#039;s pixels are its file&#039;s, so under
 the unit cell it is measured against the terminal&#039;s cell, not one cell
-a pixel.</p><p><code>getContext()</code> takes two context types.</p><h3 id="2d"><code>&quot;2d&quot;</code> <a class="heading-anchor" href="#2d">#</a></h3><p>The 2D context draws pixels into a bitmap, <code>width</code> by <code>height</code>, scaled
+a pixel.</p><p>An image&#039;s <code>naturalWidth</code> and <code>naturalHeight</code> are that size in CSS
+pixels, which are cells under the unit cell, the way a browser reports a
+high-density image: a 400 by 200 file on a terminal with 8 by 16 pixel
+cells reports 50 by 13. <code>drawImage(image, x, y)</code> draws the whole image
+at that size, scaled down, as Safari draws a high-density image. Source
+rectangles and <code>createImageBitmap()</code> work in the file&#039;s pixels, as in
+every browser, so <code>createImageBitmap(image)</code> is the full-resolution
+copy, with the file&#039;s <code>width</code> and <code>height</code>. With the <code>cellSize</code> option
+set, a CSS pixel is a pixel and the natural size is the file&#039;s.</p><p><code>getContext()</code> takes two context types.</p><h3 id="2d"><code>&quot;2d&quot;</code> <a class="heading-anchor" href="#2d">#</a></h3><p>The 2D context draws pixels into a bitmap, <code>width</code> by <code>height</code>, scaled
 to the canvas&#039;s box. A cell shows two pixels, one above the other, so a
 bitmap twice as tall as its box in cells shows every pixel. It implements:</p><ul><li>rectangles, paths (lines, arcs, ellipses, Bézier curves, <code>arcTo</code>,
 <code>roundRect</code>), <code>Path2D</code> with SVG path data, filling with the <code>nonzero</code>
@@ -157,15 +179,18 @@ anchor falls in, with <code>textAlign</code>, <code>textBaseline</code> and <cod
 applied. Painting
 over the anchor paints over the text. <code>measureText()</code> counts a cell&#039;s
 width in pixels for each column. Shadows and <code>filter</code> keep their values
-but draw nothing.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-canvas<span class="token punctuation">.</span>width <span class="token operator">=</span> <span class="token number">160</span><span class="token punctuation">;</span>
-canvas<span class="token punctuation">.</span>height <span class="token operator">=</span> <span class="token number">96</span><span class="token punctuation">;</span>
-<span class="token keyword">const</span> ctx <span class="token operator">=</span> canvas<span class="token punctuation">.</span><span class="token function">getContext</span><span class="token punctuation">(</span><span class="token string">"2d"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+but draw nothing.</p><p>The sample below draws 60 by 40 pixels into 60 columns by 20 rows, so
+each pixel is half a cell and the circle comes out round:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+canvas<span class="token punctuation">.</span>width <span class="token operator">=</span> <span class="token number">60</span><span class="token punctuation">;</span>
+canvas<span class="token punctuation">.</span>height <span class="token operator">=</span> <span class="token number">40</span><span class="token punctuation">;</span>
+canvas<span class="token punctuation">.</span>style<span class="token punctuation">.</span>width <span class="token operator">=</span> <span class="token string">"60ch"</span><span class="token punctuation">;</span>
+canvas<span class="token punctuation">.</span>style<span class="token punctuation">.</span>height <span class="token operator">=</span> <span class="token string">"20lh"</span><span class="token punctuation">;</span>
+<span class="token keyword">const</span> ctx <span class="token operator">=</span> canvas<span class="token punctuation">.</span><span class="token function">getContext</span><span class="token punctuation">(</span><span class="token string">"2d"</span><span class="token punctuation">)</span><span class="token operator">!</span><span class="token punctuation">;</span>
 ctx<span class="token punctuation">.</span>fillStyle <span class="token operator">=</span> <span class="token string">"#1e3a5f"</span><span class="token punctuation">;</span>
-ctx<span class="token punctuation">.</span><span class="token function">fillRect</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">160</span><span class="token punctuation">,</span> <span class="token number">96</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ctx<span class="token punctuation">.</span><span class="token function">fillRect</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">60</span><span class="token punctuation">,</span> <span class="token number">40</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 ctx<span class="token punctuation">.</span>fillStyle <span class="token operator">=</span> <span class="token string">"#ffd27f"</span><span class="token punctuation">;</span>
 ctx<span class="token punctuation">.</span><span class="token function">beginPath</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-ctx<span class="token punctuation">.</span><span class="token function">arc</span><span class="token punctuation">(</span><span class="token number">80</span><span class="token punctuation">,</span> <span class="token number">48</span><span class="token punctuation">,</span> <span class="token number">30</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> Math<span class="token punctuation">.</span><span class="token constant">PI</span> <span class="token operator">*</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ctx<span class="token punctuation">.</span><span class="token function">arc</span><span class="token punctuation">(</span><span class="token number">30</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> <span class="token number">15</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> Math<span class="token punctuation">.</span><span class="token constant">PI</span> <span class="token operator">*</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 ctx<span class="token punctuation">.</span><span class="token function">fill</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 document<span class="token punctuation">.</span>body<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span>canvas<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Drawing repaints the canvas on the next frame. No DOM change is needed.</p><h3 id="termdom-cellgrid"><code>&quot;termdom-cellgrid&quot;</code> <a class="heading-anchor" href="#termdom-cellgrid">#</a></h3><p>The cell grid context is experimental: it is TermDOM&#039;s own, with no
 standard to follow, and may change in a minor release as it is used.</p><p>The cell grid context draws cells instead of pixels: as many as the
@@ -177,8 +202,8 @@ are empty, as a terminal keeps its screen when its window is resized;
 a <code>ResizeObserver</code> on the canvas tells a script to draw again. It is
 TermDOM&#039;s own, so its name carries TermDOM&#039;s prefix, as a browser&#039;s own
 context types once carried theirs (<code>&quot;moz-webgl&quot;</code>, <code>&quot;webkit-3d&quot;</code>). Its
-interface is not on <code>window</code>. The <code>@b9g/termdom</code> package exports it as
-<code>CanvasCellGridContext</code>, and importing the package teaches TypeScript
+interface is not on <code>window</code>. The <code>@b9g/termdom</code> package exports its type
+as <code>CanvasCellGridContext</code>, and importing the package teaches TypeScript
 that <code>getContext(&quot;termdom-cellgrid&quot;)</code> returns one.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>width <span class="token operator">=</span> <span class="token number">20</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>height <span class="token operator">=</span> <span class="token number">3</span><span class="token punctuation">;</span>

@@ -32,9 +32,11 @@ program with <code>fg</code>; a document in flow starts again below the shell&#0
 lines. Over SSH, and on Windows, where nothing can suspend the program,
 <code>Ctrl+Z</code> is an ordinary key.</li><li><code>Ctrl+L</code> redraws the screen, as it does in a shell, unless a <code>keydown</code>
 listener calls <code>preventDefault()</code>.</li><li><code>Ctrl+Shift+letter</code> is indistinguishable from <code>Ctrl+letter</code>.</li><li><code>Alt+key</code> arrives as one keypress with <code>altKey</code>, as long as the terminal
-sends Escape and the key together, which terminals do.</li><li>A terminal that reports extended keys (CSI u, or xterm&#039;s
+sends Escape and the key together, which terminals do.</li><li>A terminal set up to report extended keys (CSI u, or xterm&#039;s
 <code>modifyOtherKeys</code>) lifts the limits above: <code>Shift+Enter</code>,
-<code>Ctrl+Shift+letter</code> and the rest arrive as themselves.</li><li>A key press is one <code>keydown</code>, one <code>keypress</code> if printable, one <code>keyup</code>.
+<code>Ctrl+Shift+letter</code> and the rest arrive as themselves. TermDOM decodes
+these reports but does not turn them on, so most terminals never send
+them.</li><li>A key press is one <code>keydown</code>, one <code>keypress</code> if printable, one <code>keyup</code>.
 There is no held-key state and <code>event.repeat</code> is always false.</li><li>A modifier pressed on its own sends nothing.</li><li>Arrow and function keys carry modifiers only where the terminal encodes
 them, which most do for <code>Ctrl</code> and <code>Alt</code>.</li></ul><h3 id="editing-chords-in-text-fields">Editing chords in text fields <a class="heading-anchor" href="#editing-chords-in-text-fields">#</a></h3><p><code>&lt;input&gt;</code> and <code>&lt;textarea&gt;</code> bind the readline chords as default actions;
 <code>preventDefault</code> on <code>keydown</code> suppresses them like any other.</p><table><thead><tr><th>Chord</th><th>Effect</th></tr></thead><tbody><tr><td><code>Ctrl+A</code> / <code>Ctrl+E</code></td><td>Start / end of the line</td></tr><tr><td><code>Ctrl+B</code> / <code>Ctrl+F</code></td><td>Back / forward one character</td></tr><tr><td><code>Ctrl+K</code> / <code>Ctrl+U</code></td><td>Cut to the end / start of the line</td></tr><tr><td><code>Ctrl+W</code></td><td>Cut the word before the caret</td></tr><tr><td><code>Ctrl+D</code></td><td>Delete forward</td></tr><tr><td><code>Ctrl+J</code></td><td>Insert a newline, in a <code>&lt;textarea&gt;</code></td></tr></tbody></table><p><code>Ctrl+A</code> moves the caret rather than selecting all, as in a shell.</p><h2 id="mouse">Mouse <a class="heading-anchor" href="#mouse">#</a></h2><p>Mouse events dispatch at the element under the cell: <code>mousedown</code> moves
@@ -61,14 +63,19 @@ with <code>showPopover()</code> or <code>togglePopover()</code>, or a <code>popo
 and light dismiss works: a click outside, or Escape, closes it and
 fires <code>toggle</code>. <code>&lt;details&gt;</code> opens on a click of its <code>&lt;summary&gt;</code>, or
 Enter or Space with the summary focused, and fires <code>toggle</code>. Toggling it
-scrolls nothing.</p><h2 id="form-controls">Form controls <a class="heading-anchor" href="#form-controls">#</a></h2><p><code>&lt;input&gt;</code> (text, number, checkbox, radio), <code>&lt;textarea&gt;</code>, <code>&lt;select&gt;</code>, and
-<code>&lt;button&gt;</code> are implemented and fire <code>input</code> and <code>change</code>:</p><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>div</span> <span class="token attr-name">class</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>field<span class="token punctuation">"</span></span><span class="token punctuation">></span></span>
+scrolls nothing.</p><h2 id="form-controls">Form controls <a class="heading-anchor" href="#form-controls">#</a></h2><p><code>&lt;input&gt;</code> (text, number, checkbox, radio, range), <code>&lt;textarea&gt;</code>,
+<code>&lt;select&gt;</code>, and <code>&lt;button&gt;</code> are implemented and fire <code>input</code> and
+<code>change</code>:</p><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>div</span> <span class="token attr-name">class</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>field<span class="token punctuation">"</span></span><span class="token punctuation">></span></span>
 	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>div</span> <span class="token attr-name">class</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>label<span class="token punctuation">"</span></span><span class="token punctuation">></span></span>Name<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>div</span><span class="token punctuation">></span></span><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>input</span> <span class="token attr-name">id</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>name<span class="token punctuation">"</span></span><span class="token punctuation">></span></span>
 <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>div</span><span class="token punctuation">></span></span></code></pre><pre class="language-typescript"><code class="language-typescript">field<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"input"</span><span class="token punctuation">,</span> updatePreview<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p><code>::placeholder</code> styles a field&#039;s placeholder. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. <code>&lt;input type=&quot;password&quot;&gt;</code>
 masks its value. A <code>&lt;textarea&gt;</code> scrolls to keep its caret in view. A number input takes float syntax only, and ArrowUp and
 ArrowDown step it within <code>min</code> and <code>max</code>. The arrows move a radio&#039;s
-check to the previous or next radio of its group, wrapping at the ends.</p><p><code>new FormData(form)</code> builds the form&#039;s entry list: every submittable
+check to the previous or next radio of its group, wrapping at the ends.
+A range input is a slider: the arrows move its thumb a step, PageUp and
+PageDown a tenth of the range, and Home and End to its ends, each firing
+<code>input</code> and <code>change</code>. A press on its track moves the thumb there and a
+drag carries it, firing <code>input</code> as it moves and <code>change</code> on release.</p><p><code>new FormData(form)</code> builds the form&#039;s entry list: every submittable
 control it owns, in tree order, by the rule its kind has. Submitting a
 form builds the same list. <code>requestSubmit()</code> fires <code>submit</code> first and
 stops there if a listener cancels it; <code>submit()</code> skips that event. Either
@@ -88,7 +95,8 @@ the selection instead of moving it. Backspace and Delete take one
 grapheme cluster, or the selection. The readline chords the text fields
 use work here too: Ctrl+W takes back a word, Ctrl+U the line before the
 caret, Ctrl+K the line after it. Enter splits the block the caret is in,
-Shift+Enter puts a <code>&lt;br&gt;</code> in, and a block left empty keeps a <code>&lt;br&gt;</code> so
+Shift+Enter puts a <code>&lt;br&gt;</code> in, on a terminal that reports it (see above),
+and a block left empty keeps a <code>&lt;br&gt;</code> so
 it stays a line tall — the same tree Chrome writes.</p><p>Every edit is a cancelable <code>beforeinput</code> first and an <code>input</code> after, both
 bubbling from the element the caret is in, with the spec&#039;s input types:
 <code>insertText</code>, <code>insertFromPaste</code>, <code>insertParagraph</code>, <code>insertLineBreak</code>,
@@ -146,7 +154,7 @@ than a browser&#039;s activation window: it does not survive an <code>await</cod
 at <code>document.body</code> when nothing is focused, with the text on
 <code>event.clipboardData</code>; left uncanceled, it inserts into a focused text
 field:</p><pre class="language-typescript"><code class="language-typescript">document<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"paste"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
-	<span class="token builtin">console</span><span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span>event<span class="token punctuation">.</span>clipboardData<span class="token punctuation">.</span><span class="token function">getData</span><span class="token punctuation">(</span><span class="token string">"text/plain"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token builtin">console</span><span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span>event<span class="token punctuation">.</span>clipboardData<span class="token operator">!</span><span class="token punctuation">.</span><span class="token function">getData</span><span class="token punctuation">(</span><span class="token string">"text/plain"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 	event<span class="token punctuation">.</span><span class="token function">preventDefault</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p><code>copy</code> and <code>cut</code> never fire from the user: the terminal keeps the copy
 gesture — Cmd+C, Shift+drag — and Ctrl+C is the interrupt.</p><h2 id="scrolling">Scrolling <a class="heading-anchor" href="#scrolling">#</a></h2><p>The document scrolls with the standard calls, and so does a box whose
@@ -171,8 +179,9 @@ remains to its ancestors, and a <code>wheel</code> listener that calls
 that can scroll sideways; the document itself never scrolls sideways. How the document&#039;s own scroll shares the
 wheel with the terminal&#039;s scrollback is in the
 <a href="/guides/rendering/#flow-mode">rendering guide</a>.</p><h2 id="fullscreen">Fullscreen <a class="heading-anchor" href="#fullscreen">#</a></h2><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">await</span> element<span class="token punctuation">.</span><span class="token function">requestFullscreen</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p><code>requestFullscreen()</code> takes the alternate screen and applies <code>:fullscreen</code>
-styles. Exiting restores the main screen and scrollback. Escape exits;
-if a text field is focused, the first Escape blurs it instead. The
+styles. <code>document.exitFullscreen()</code> restores the main screen and
+scrollback. Escape does not exit on its own; it reaches <code>keydown</code> like
+any other key. The
 <a href="/guides/rendering/#fullscreen">rendering guide</a> has the details.</p><h2 id="resizing">Resizing <a class="heading-anchor" href="#resizing">#</a></h2><p>A terminal resize fires <code>resize</code> at the window:</p><pre class="language-typescript"><code class="language-typescript">window<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"resize"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
 	<span class="token function">draw</span><span class="token punctuation">(</span>window<span class="token punctuation">.</span>innerWidth<span class="token punctuation">,</span> window<span class="token punctuation">.</span>innerHeight<span class="token punctuation">)</span><span class="token punctuation">;</span>
 <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The event carries no dimensions; read them off the window or any element —
