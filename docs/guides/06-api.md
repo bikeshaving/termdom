@@ -151,7 +151,8 @@ select::picker-icon { color: gray; }
 `::slider-track`, `::slider-fill` and `::slider-thumb` are CSS Form
 Control Styling's (css-forms-1). A gauge's track and fill are painted by
 their backgrounds, as in a browser: the fill covers the track as far as
-the value reaches. A range input's thumb follows the fill. A meter
+the value reaches. A range input draws its track and fill as lines, which
+`color` colors, and its thumb follows the fill. A meter
 matches `:optimal-value` when its value is in its optimum region,
 `:low-value` below `low`, and `:high-value` above `high`. css-forms-1 is
 an editor's draft, so these follow it as it changes; the WebKit and
