@@ -559,6 +559,9 @@ export class TermDOM extends EventTarget {
 			this[kLayout],
 			this[kCascade],
 			this[kFramebuffer],
+			() => {
+				void suspendTermDOM(this);
+			},
 		);
 
 		this[kPainter] = new Painter(
@@ -595,11 +598,6 @@ export class TermDOM extends EventTarget {
 		exchange.addEventListener("terminalclose", (event) => {
 			if (event.target === exchange) {
 				closeTermDOM(this);
-			}
-		});
-		exchange.addEventListener("suspend", (event) => {
-			if (event.target === exchange) {
-				void suspendTermDOM(this);
 			}
 		});
 	}

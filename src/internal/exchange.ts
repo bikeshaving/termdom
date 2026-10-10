@@ -2104,16 +2104,6 @@ function routeItems(session: Exchange, items: WireItem[]): void {
 			case "key":
 				// Raw mode delivers Ctrl-C as data. Closing is the window's
 				// decision, and a close it allows is an interrupt.
-				// Ctrl+Z suspends, where the transport can, and is no key either.
-				if (
-					item.ctrlKey &&
-					item.key === "z" &&
-					session[kTransport].suspend !== undefined
-				) {
-					flushKeys();
-					session.dispatchEvent(new Event("suspend"));
-					break;
-				}
 				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
 					session[kInterrupted] = true;

@@ -305,6 +305,7 @@ const kWindow = Symbol("window");
 const kLayout = Symbol("layout");
 const kCascade = Symbol("cascade");
 const kFramebuffer = Symbol("framebuffer");
+const kSuspend = Symbol("suspend");
 
 // The nearest scroll container (overflow auto or scroll; hidden does
 // not take the wheel) that can still move in the tick's direction, or
@@ -368,6 +369,9 @@ export interface Input {
 	[kLayout]: Layout;
 	[kCascade]: Cascade;
 	[kFramebuffer]: Framebuffer;
+	// Ctrl+Z's default action: hand the terminal back, as a shell's job
+	// control does, where the transport can.
+	[kSuspend]: () => void;
 	// What movementX/movementY measure from.
 	[kLastMouse]: {x: number; y: number} | null;
 	// Motion coalesced to one hit-test per frame. `quiet` marks a drag's
@@ -422,12 +426,14 @@ export class Input {
 		layout: Layout,
 		styles: Cascade,
 		framebuffer: Framebuffer,
+		suspend: () => void = () => {},
 	) {
 		this[kDocument] = document;
 		this[kWindow] = document.defaultView as unknown as Window;
 		this[kLayout] = layout;
 		this[kCascade] = styles;
 		this[kFramebuffer] = framebuffer;
+		this[kSuspend] = suspend;
 		this[kLastMouse] = null;
 		this[kPendingHover] = null;
 		this[kHoverElement] = null;
@@ -1437,6 +1443,9 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		if (keyName === "l" && ctrlKey && !altKey && !shiftKey && !metaKey) {
 			input[kFramebuffer].repaintAll();
 			requestRender(input[kDocument]);
+		}
+		if (keyName === "z" && ctrlKey && !altKey && !shiftKey && !metaKey) {
+			input[kSuspend]();
 		}
 
 		// A control's own editing ran above, and claimed its keys.

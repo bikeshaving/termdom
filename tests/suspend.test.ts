@@ -2,7 +2,9 @@
  * Ctrl+Z suspends the program as a shell's job control does: the engine
  * hands the terminal back, the transport stops the process until the shell
  * continues it, and the engine takes the terminal again. The document is
- * hidden meanwhile. Where the transport cannot suspend, Ctrl+Z is a key.
+ * hidden meanwhile. Suspending is the keydown's default action, so a page
+ * that cancels it keeps Ctrl+Z, for undo, say. Where the transport cannot
+ * suspend, Ctrl+Z is an ordinary key.
  */
 import {expect, test} from "@b9g/libuild/test";
 
@@ -53,6 +55,43 @@ test("Ctrl+Z hands the terminal back, suspends, and takes it again", async () =>
 	await until(() => written().slice(resumedAt).includes("work in progress"));
 	expect(written().slice(resumedAt)).toContain(PASTE_ON);
 	expect(states).toEqual(["hidden", "visible"]);
+	await dom.dispose();
+});
+
+test("a keydown listener that cancels Ctrl+Z keeps the program running", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	let suspends = 0;
+	const transport = {
+		...terminal.transport,
+		cols: terminal.transport.cols,
+		rows: terminal.transport.rows,
+		suspend: () => {
+			suspends++;
+			return Promise.resolve();
+		},
+	};
+	const dom = new TermDOM({transport});
+	await dom.attach();
+	const keys: string[] = [];
+	let cancel = true;
+	dom.document.addEventListener("keydown", (event) => {
+		const key = event as KeyboardEvent;
+		keys.push(`${key.ctrlKey ? "ctrl+" : ""}${key.key}`);
+		if (cancel) {
+			event.preventDefault();
+		}
+	});
+	terminal.stdin.simulateResponse(CTRL_Z);
+	await until(() => keys.length === 1);
+	await nextFrame(dom);
+	expect(keys).toEqual(["ctrl+z"]);
+	expect(suspends).toBe(0);
+	expect(dom.document.visibilityState).toBe("visible");
+
+	cancel = false;
+	terminal.stdin.simulateResponse(CTRL_Z);
+	await until(() => suspends === 1);
+	expect(keys).toEqual(["ctrl+z", "ctrl+z"]);
 	await dom.dispose();
 });
 

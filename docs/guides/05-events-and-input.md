@@ -52,8 +52,9 @@ byte. These limits apply to every terminal application:
 - `Ctrl+C` is the interrupt; it never reaches the document. It calls
   `window.close()`, and a `beforeunload` listener that calls
   `preventDefault()` keeps the session.
-- `Ctrl+Z` suspends the program, as a shell's job control does, and
-  never reaches the document either. The terminal is handed back and
+- `Ctrl+Z` suspends the program, as a shell's job control does, unless
+  a `keydown` listener calls `preventDefault()`, as an editor that uses
+  it for undo does. The terminal is handed back and
   `document.visibilityState` is `"hidden"` until the shell continues the
   program with `fg`; a document in flow starts again below the shell's
   lines. Over SSH, and on Windows, where nothing can suspend the program,
