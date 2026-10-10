@@ -18,6 +18,6 @@
 		"src",
 		"scripts",
 		"dist/server/shovel.d.ts",
-		"../src/internal/externals.d.ts"
+		"../src/internal/vendor.d.ts"
 	]
 }
