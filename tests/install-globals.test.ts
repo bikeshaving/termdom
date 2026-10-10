@@ -156,12 +156,23 @@ test("installGlobals throws while installed, and uninstalling removes every name
 	term.dispose();
 });
 
-test("what a terminal does not have is left undefined, for feature detection", () => {
+test("what a terminal does not have is missing, for feature detection", () => {
 	const term = new TermDOM();
 	expect(term.window.indexedDB).toBeUndefined();
-	expect(
-		(term.window as unknown as Record<string, unknown>).TrustedHTML,
-	).toBeUndefined();
+	for (
+		const name of [
+			"indexedDB",
+			"caches",
+			"cookieStore",
+			"navigation",
+			"scheduler",
+			"speechSynthesis",
+			"trustedTypes",
+			"TrustedHTML",
+		]
+	) {
+		expect(name in term.window).toBe(false);
+	}
 	const video = term.document.createElement("video");
 	expect([video.buffered.length, video.textTracks.length]).toEqual([0, 0]);
 	expect(() => video.buffered.start(0)).toThrow();
@@ -299,10 +310,15 @@ test("while installed, a rejection handled late fires rejectionhandled on the wi
 });
 
 test("the runtime's storage stays where it has one, and the window's fills in where it has none", () => {
+	// Node defines its storage as undefined without --localstorage-file,
+	// and warns when it is read.
+	const emitWarning = process.emitWarning;
+	process.emitWarning = () => {};
 	const had = {
-		localStorage: "localStorage" in globalThis,
-		sessionStorage: "sessionStorage" in globalThis,
+		localStorage: global.localStorage != null,
+		sessionStorage: global.sessionStorage != null,
 	};
+	process.emitWarning = emitWarning;
 	const before = {
 		localStorage: Object.getOwnPropertyDescriptor(globalThis, "localStorage"),
 		sessionStorage: Object.getOwnPropertyDescriptor(
@@ -325,4 +341,30 @@ test("the runtime's storage stays where it has one, and the window's fills in wh
 		uninstall();
 		term.dispose();
 	}
+});
+
+test("animate() finishes on the next task, for code that waits on it", async () => {
+	const term = new TermDOM();
+	const element = term.document.createElement("div");
+	const animation = element.animate([{opacity: 0}, {opacity: 1}], 300);
+	const heard: string[] = [];
+	animation.onfinish = () => heard.push("onfinish");
+	animation.addEventListener("finish", () => heard.push("finish"));
+	expect(animation.playState).toBe("running");
+	await animation.finished;
+	expect(heard).toEqual(["onfinish", "finish"]);
+	expect(animation.playState).toBe("finished");
+	expect(animation.currentTime).toBe(300);
+
+	const canceled = element.animate([{opacity: 0}], {duration: 300});
+	canceled.onfinish = () => heard.push("late");
+	canceled.cancel();
+	let outcome = "";
+	await canceled.finished.catch(
+		(error: DOMException) => (outcome = error.name),
+	);
+	expect(outcome).toBe("AbortError");
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	expect(heard).toEqual(["onfinish", "finish"]);
+	term.dispose();
 });

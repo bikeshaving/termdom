@@ -1159,10 +1159,19 @@ export type DOMStringListDrift = Drift<
 export type LocationDrift = Drift<DOM.Location, globalThis.Location>;
 // lib.dom types `window` and `self` as the browser's global object
 // (Window & typeof globalThis). This window is an object a caller holds,
-// not a global, so those two are the plain Window.
+// not a global, so those two are the plain Window. What a terminal does
+// not have is not on it, so feature detection, `"indexedDB" in window`
+// as much as `window.indexedDB`, finds it missing.
 export type WindowDrift = Drift<
 	DOM.Window,
 	globalThis.Window,
-	"window" | "self"
+	"window" |
+	"self" |
+	"caches" |
+	"cookieStore" |
+	"indexedDB" |
+	"navigation" |
+	"scheduler" |
+	"speechSynthesis"
 >;
 export type StorageDrift = Drift<DOM.Storage, globalThis.Storage>;

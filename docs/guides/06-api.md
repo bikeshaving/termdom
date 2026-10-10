@@ -272,10 +272,11 @@ runtime's own event targets accept only its own events, and the
 document accepts them too, so they serve both. So do `localStorage` and
 `sessionStorage` where the runtime has them: Deno's, and Node's given
 `--localstorage-file`, keep what is stored between runs, where the
-window's keep it in memory. On Bun and Node 20, which have none, the
-window's are installed. What a terminal does not
-have, such as `indexedDB` or `caches`, is not installed, so feature
-detection takes its fallback.
+window's keep it in memory. On Bun, and on Node without
+`--localstorage-file`, which have none, the window's are installed.
+What a terminal does not have, such as `indexedDB` or `caches`, is not
+on the window and is not installed, so feature detection, with `in` or
+by reading it, takes its fallback.
 
 While installed, a promise rejected with no handler is the page's: it
 fires `unhandledrejection` on the window, and one no listener cancels is

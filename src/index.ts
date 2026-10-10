@@ -1591,9 +1591,7 @@ function disposedError(): DOMException {
 // Names that stay the runtime's wherever it has them. Its event classes:
 // its EventTargets take only its own events on Bun and Deno, and the
 // document takes them too, so they serve both. Its storage: Deno's, and
-// Node's given --localstorage-file, persist where the window's do not,
-// and reading Node's when it has none prints a warning, so only whether
-// the name is there is asked.
+// Node's given --localstorage-file, persist where the window's do not.
 const RUNTIME_KEPT = new Set([
 	"Event",
 	"EventTarget",
@@ -1603,6 +1601,27 @@ const RUNTIME_KEPT = new Set([
 	"localStorage",
 	"sessionStorage",
 ]);
+
+// Node defines localStorage even without --localstorage-file, as
+// undefined, and warns when it is read, so it is read with the warning
+// held back, and a runtime whose storage is undefined gets the window's.
+function hasRuntimeGlobal(name: string): boolean {
+	if (!(name in globalThis)) {
+		return false;
+	}
+	if (name !== "localStorage" && name !== "sessionStorage") {
+		return true;
+	}
+	const emitWarning = process.emitWarning;
+	process.emitWarning = () => {};
+	try {
+		return (globalThis as Record<string, unknown>)[name] != null;
+	} catch (_err) {
+		return false;
+	} finally {
+		process.emitWarning = emitWarning;
+	}
+}
 
 // Shared by every copy of this module a process loads, so two copies
 // cannot each install a TermDOM's globals.
@@ -1643,7 +1662,7 @@ export function installGlobals(termDOM: TermDOM): () => void {
 				name === "constructor" ||
 				name === "globalThis" ||
 				installed.has(name) ||
-				(RUNTIME_KEPT.has(name) && name in globalThis)
+				(RUNTIME_KEPT.has(name) && hasRuntimeGlobal(name))
 			) {
 				continue;
 			}

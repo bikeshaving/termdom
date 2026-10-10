@@ -9170,6 +9170,98 @@ type ScrollMethod = {
 	(x: number, y: number): void;
 };
 
+const scheduleTask = globalThis.setTimeout.bind(globalThis);
+
+// Web Animations needs a timeline, and this engine has none: frames come
+// from input and invalidation, not from a clock an animation could
+// sample. An animation finishes at once, on the next task, without
+// changing what is drawn, so code that waits on finish or onfinish, as a
+// framework's transitions do, goes on as when the animation has run.
+const kSettle = Symbol("settle");
+const kFail = Symbol("fail");
+
+class FinishedAnimation extends EventTarget {
+	id: string;
+	effect: globalThis.AnimationEffect | null;
+	timeline: globalThis.AnimationTimeline | null;
+	startTime: number | null;
+	currentTime: number | null;
+	playbackRate: number;
+	pending: boolean;
+	replaceState: globalThis.AnimationReplaceState;
+	playState: globalThis.AnimationPlayState;
+	onfinish: ((event: Event) => unknown) | null;
+	oncancel: ((event: Event) => unknown) | null;
+	onremove: ((event: Event) => unknown) | null;
+	readonly ready: Promise<this>;
+	readonly finished: Promise<this>;
+	[kSettle]!: (animation: this) => void;
+	[kFail]!: (error: unknown) => void;
+
+	constructor(duration: number) {
+		super();
+		this.id = "";
+		this.effect = null;
+		this.timeline = null;
+		this.startTime = null;
+		this.currentTime = 0;
+		this.playbackRate = 1;
+		this.pending = false;
+		this.replaceState = "active";
+		this.playState = "running";
+		this.onfinish = null;
+		this.oncancel = null;
+		this.onremove = null;
+		this.ready = Promise.resolve(this);
+		this.finished = new Promise<this>((resolve, reject) => {
+			this[kSettle] = resolve;
+			this[kFail] = reject;
+		});
+		this.finished.catch(() => {});
+		scheduleTask(() => {
+			if (this.playState === "running") {
+				this.currentTime = duration;
+				this.finish();
+			}
+		}, 0);
+	}
+
+	finish(): void {
+		if (this.playState === "finished") {
+			return;
+		}
+		this.playState = "finished";
+		this[kSettle](this);
+		const event = new Event("finish");
+		this.onfinish?.(event);
+		this.dispatchEvent(event);
+	}
+
+	cancel(): void {
+		if (this.playState === "idle") {
+			return;
+		}
+		const wasFinished = this.playState === "finished";
+		this.playState = "idle";
+		this.currentTime = null;
+		if (!wasFinished) {
+			this[kFail](domError("AbortError", "The animation was canceled"));
+		}
+		const event = new Event("cancel");
+		this.oncancel?.(event);
+		this.dispatchEvent(event);
+	}
+
+	play(): void {}
+	pause(): void {}
+	reverse(): void {}
+	persist(): void {}
+	commitStyles(): void {}
+	updatePlaybackRate(rate: number): void {
+		this.playbackRate = rate;
+	}
+}
+
 /**
  * The members the tables and the engine give an element, which installing
  * them says nothing about: the mixins, the reflected members, and the
@@ -9914,16 +10006,16 @@ export class Element extends Node implements globalThis.Element {
 		);
 	}
 
-	// Web Animations needs a timeline, and this engine has none. Frames come
-	// from terminal input and layout invalidation, not from a clock a running
-	// animation could sample.
 	animate(
 		_keyframes: globalThis.Keyframe[] |
 			globalThis.PropertyIndexedKeyframes |
 			null,
-		_options?: number | globalThis.KeyframeAnimationOptions,
+		options?: number | globalThis.KeyframeAnimationOptions,
 	): globalThis.Animation {
-		throw domError("NotSupportedError", "Web Animations is not implemented");
+		const duration = typeof options === "number" ? options : options?.duration;
+		return new FinishedAnimation(
+			typeof duration === "number" && Number.isFinite(duration) ? duration : 0,
+		) as unknown as globalThis.Animation;
 	}
 
 	getAnimations(
@@ -35264,12 +35356,6 @@ const runtimeHardwareConcurrency: number =
 	(globalThis as {navigator?: {hardwareConcurrency?: unknown}}).navigator
 		?.hardwareConcurrency as number | undefined ?? 1;
 
-// What a terminal has no use for reads as undefined, as it does in a
-// browser without it, so `if (window.indexedDB)` takes its fallback.
-function absent<T>(): T {
-	return undefined as T;
-}
-
 const kScreenInfo = Symbol("screen");
 const kScreenWindow = Symbol("screen window");
 const kScreenOrientation = Symbol("screen orientation");
@@ -35895,10 +35981,6 @@ export class Window extends EventTarget {
 		return this[kClosed] === true;
 	}
 
-	get cookieStore(): globalThis.CookieStore {
-		return absent<globalThis.CookieStore>();
-	}
-
 	get devicePixelRatio(): number {
 		return 1;
 	}
@@ -36002,10 +36084,6 @@ export class Window extends EventTarget {
 		return this.screenTop;
 	}
 
-	get speechSynthesis(): globalThis.SpeechSynthesis {
-		return absent<globalThis.SpeechSynthesis>();
-	}
-
 	get status(): string {
 		return this[kWindowStatus] ?? "";
 	}
@@ -36022,24 +36100,8 @@ export class Window extends EventTarget {
 		return null;
 	}
 
-	get caches(): globalThis.CacheStorage {
-		return absent<globalThis.CacheStorage>();
-	}
-
 	get crossOriginIsolated(): boolean {
 		return false;
-	}
-
-	get indexedDB(): globalThis.IDBFactory {
-		return absent<globalThis.IDBFactory>();
-	}
-
-	get navigation(): globalThis.Navigation {
-		return absent<globalThis.Navigation>();
-	}
-
-	get scheduler(): globalThis.Scheduler {
-		return absent<globalThis.Scheduler>();
 	}
 
 	get isSecureContext(): boolean {
@@ -36076,32 +36138,6 @@ export class Window extends EventTarget {
 
 	get performance(): globalThis.Performance {
 		return globalThis.performance;
-	}
-
-	// Trusted Types is not implemented, so these name no types of it: the
-	// declarations would ask every consumer for the typings.
-	get trustedTypes(): undefined {
-		return undefined;
-	}
-
-	get TrustedHTML(): undefined {
-		return undefined;
-	}
-
-	get TrustedScript(): undefined {
-		return undefined;
-	}
-
-	get TrustedScriptURL(): undefined {
-		return undefined;
-	}
-
-	get TrustedTypePolicy(): undefined {
-		return undefined;
-	}
-
-	get TrustedTypePolicyFactory(): undefined {
-		return undefined;
 	}
 
 	// lib.dom's overloads for this interface: the keyed one first.
