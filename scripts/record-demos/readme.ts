@@ -8,22 +8,23 @@ export default {
 			<style>
 				.card { border: 1px solid #5fafff; padding: 0 1ch; width: 36ch; }
 				.title { color: #5fafff; font-weight: bold; }
-				.done { color: green; }
-				.rest { color: #444; }
+				progress { width: 25ch; }
+				progress::slider-fill { background-color: green; }
 				.pct { color: #888; }
 			</style>
 			<div class="card">
 				<div class="title">Installing</div>
-				<div><span class="done" id="done"></span><span class="rest" id="rest"></span> <span class="pct" id="pct"></span></div>
+				<div>
+					<progress id="bar" max="100" value="0"></progress>
+					<span class="pct" id="pct"></span>
+				</div>
 			</div>
 		`;
 
 		let n = 0;
 		const tick = (): void => {
 			n = (n + 1) % 101;
-			const cells = Math.round(n / 4);
-			document.getElementById("done")!.textContent = "█".repeat(cells);
-			document.getElementById("rest")!.textContent = "░".repeat(25 - cells);
+			document.querySelector("progress")!.value = n;
 			document.getElementById("pct")!.textContent = String(n).padStart(3) + "%";
 		};
 		const interval = setInterval(tick, 50);
