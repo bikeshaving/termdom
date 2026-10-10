@@ -12,9 +12,9 @@ function edge(kind: string): string {
 }
 
 style.textContent = `
-  .app { padding: 1 2ch; }
+  .app { padding: 1px 2ch; }
   h2 { color: cyan; }
-  .label { color: #888; padding: 1 0 0 0; }
+  .label { color: #888; padding: 1px 0 0 0; }
   .gallery { display: flex; flex-direction: row; gap: 2ch; }
   .swatch { padding: 0 1ch; width: 12ch; }
   .solid  { ${edge("solid")}  color: white; }

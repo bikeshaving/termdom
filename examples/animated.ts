@@ -9,7 +9,7 @@ const style = document.createElement("style");
 style.textContent = `
   .app { padding: 1ch 2ch; }
   .title { color: cyan; }
-  .section { padding: 1 0; }
+  .section { padding: 1px 0; }
   .label { color: white; }
   .spinner { color: green; display: inline; }
   .dots { color: yellow; display: inline; }

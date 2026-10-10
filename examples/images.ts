@@ -64,7 +64,7 @@ const src = source ?? drawPicture();
 
 document.body.innerHTML = `
   <style>
-    .app { padding: 1 2ch; }
+    .app { padding: 1px 2ch; }
     h2 { color: #5fafff; font-weight: bold; }
     .row { display: flex; gap: 2ch; }
     .label { color: #888; }

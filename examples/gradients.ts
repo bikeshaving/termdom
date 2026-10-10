@@ -8,9 +8,9 @@ term.attach();
 const {document} = term;
 document.body.innerHTML = `
   <style>
-    .app { padding: 1 2ch; }
+    .app { padding: 1px 2ch; }
     h2 { color: #5fafff; font-weight: bold; }
-    .label { color: #888; padding: 1 0 0 0; }
+    .label { color: #888; padding: 1px 0 0 0; }
     .bar { height: 3px; width: 48ch; }
     .row { display: flex; flex-direction: row; gap: 2ch; }
     .row .bar { width: 22ch; }

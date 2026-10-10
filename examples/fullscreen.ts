@@ -7,7 +7,7 @@ const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `
-  .page { padding: 1 2ch; }
+  .page { padding: 1px 2ch; }
   h2 { color: cyan; }
   .hint { color: #666; }
   .stage.fs {

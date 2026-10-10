@@ -26,17 +26,17 @@ const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `
-  .editor { padding: 1 2ch; }
+  .editor { padding: 1px 2ch; }
   .title { color: cyan; font-weight: bold; }
-  .row { display: flex; flex-direction: row; gap: 1ch; padding: 1 0 0 0; }
+  .row { display: flex; flex-direction: row; gap: 1ch; padding: 1px 0 0 0; }
   .label { color: #888; width: 9ch; }
   input#subject { width: 50ch; }
   textarea#body { width: 62ch; }
   textarea#body::placeholder { color: #556; }
   .counter { color: #666; }
   .counter.over { color: red; font-weight: bold; }
-  .status { color: #888; padding: 1 0 0 0; }
-  .hint { color: #666; padding: 1 0 0 0; }
+  .status { color: #888; padding: 1px 0 0 0; }
+  .hint { color: #666; padding: 1px 0 0 0; }
 `;
 document.head.appendChild(style);
 

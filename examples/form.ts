@@ -9,13 +9,13 @@ const style = document.createElement("style");
 style.textContent = `
   .form { padding: 1ch 2ch; }
   .title { color: cyan; font-weight: bold; }
-  .field { display: flex; flex-direction: row; padding: 1 0 0 0; }
-  .label { color: white; width: 8ch; padding: 1 0 0 0; }
+  .field { display: flex; flex-direction: row; padding: 1px 0 0 0; }
+  .label { color: white; width: 8ch; padding: 1px 0 0 0; }
   input { background: #1d3557; color: white; width: 28ch; }
   input:focus { background: #264f78; }
-  .preview { color: #888; padding: 1 0 0 0; }
-  .done { color: green; font-weight: bold; padding: 1 0 0 0; }
-  .hint { color: #666; padding: 1 0 0 0; }
+  .preview { color: #888; padding: 1px 0 0 0; }
+  .done { color: green; font-weight: bold; padding: 1px 0 0 0; }
+  .hint { color: #666; padding: 1px 0 0 0; }
 `;
 document.head.appendChild(style);
 
