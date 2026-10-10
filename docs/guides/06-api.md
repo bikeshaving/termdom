@@ -203,7 +203,7 @@ instead. The images guide has both.
 
 Puts the terminal in raw mode, starts input handling, mouse reporting,
 and bracketed paste, and paints whatever the document holds. Idempotent;
-no other call writes to the terminal. Returns a promise that resolves
+apart from `print()`, no other call writes to the terminal. Returns a promise that resolves
 once the first frame has been written.
 
 While attached to the process transport, the Node event loop stays alive

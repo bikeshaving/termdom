@@ -61,10 +61,11 @@ await element.requestFullscreen();
 `requestFullscreen()` switches the terminal to its alternate screen and
 paints the fullscreen element from row zero, filling the terminal. The
 `:fullscreen` pseudo-class matches it, and `fullscreenchange` fires on
-the document. `document.exitFullscreen()`, or Escape, switches back to
+the document. `document.exitFullscreen()` switches back to
 the main screen, which restores the shell, the scrollback, and the
-flow-mode region as they were. If a text field has focus, the first
-Escape blurs it instead.
+flow-mode region as they were. Escape is an ordinary key here: it
+reaches `keydown`, and a page that wants Escape to leave fullscreen calls
+`exitFullscreen()` itself.
 
 A program that wants the whole terminal for its lifetime can call
 `document.documentElement.requestFullscreen()` right after `attach()`.

@@ -7,7 +7,7 @@
 //   h / left           fold a reply   Backspace    back to the front page
 //   l / right          unfold         space/f/b    page the thread
 //   g / G              ends           r            reload
-//   q                  quit
+//   q                  quit           Esc          leave fullscreen
 //   a click on a story opens its comments, on a comment picks it, and on
 //   the masthead goes back to the front page; a story's title is a link
 //   to the story itself, for the terminal to open
@@ -15,9 +15,8 @@
 // In a thread, h folds the comment under the cursor. On a comment that is
 // folded already, or that has no replies, h steps up to the parent.
 //
-// The page takes the alternate screen, where Escape belongs to the terminal:
-// it drops the reader back into the scrollback, and the document keeps
-// rendering there in flow.
+// The page takes the alternate screen. Escape drops the reader back into
+// the scrollback, and the document keeps rendering there in flow.
 import {TermDOM} from "@b9g/termdom";
 
 const API = "https://hn.algolia.com/api/v1";
@@ -589,8 +588,7 @@ function back(): void {
   refresh();
 }
 
-// Escape is the terminal's key, and it drops the page out of the alternate
-// screen. Back at the top, the document prints into the scrollback from its
+// Back in the main screen, the document prints into the scrollback from its
 // first row.
 document.addEventListener("fullscreenchange", () => {
   if (!document.fullscreenElement) {
@@ -616,6 +614,10 @@ document.addEventListener("keydown", (event: Event) => {
   }
   if (key === "q") {
     term.window.close();
+    return;
+  }
+  if (key === "Escape" && document.fullscreenElement) {
+    void document.exitFullscreen();
     return;
   }
   if (reading) {

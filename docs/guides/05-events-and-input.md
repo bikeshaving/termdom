@@ -63,9 +63,11 @@ byte. These limits apply to every terminal application:
 - `Ctrl+Shift+letter` is indistinguishable from `Ctrl+letter`.
 - `Alt+key` arrives as one keypress with `altKey`, as long as the terminal
   sends Escape and the key together, which terminals do.
-- A terminal that reports extended keys (CSI u, or xterm's
+- A terminal set up to report extended keys (CSI u, or xterm's
   `modifyOtherKeys`) lifts the limits above: `Shift+Enter`,
-  `Ctrl+Shift+letter` and the rest arrive as themselves.
+  `Ctrl+Shift+letter` and the rest arrive as themselves. TermDOM decodes
+  these reports but does not turn them on, so most terminals never send
+  them.
 - A key press is one `keydown`, one `keypress` if printable, one `keyup`.
   There is no held-key state and `event.repeat` is always false.
 - A modifier pressed on its own sends nothing.
@@ -208,7 +210,8 @@ the selection instead of moving it. Backspace and Delete take one
 grapheme cluster, or the selection. The readline chords the text fields
 use work here too: Ctrl+W takes back a word, Ctrl+U the line before the
 caret, Ctrl+K the line after it. Enter splits the block the caret is in,
-Shift+Enter puts a `<br>` in, and a block left empty keeps a `<br>` so
+Shift+Enter puts a `<br>` in, on a terminal that reports it (see above),
+and a block left empty keeps a `<br>` so
 it stays a line tall — the same tree Chrome writes.
 
 Every edit is a cancelable `beforeinput` first and an `input` after, both
@@ -297,7 +300,7 @@ field:
 
 ```ts
 document.addEventListener("paste", (event) => {
-	console.log(event.clipboardData.getData("text/plain"));
+	console.log(event.clipboardData!.getData("text/plain"));
 	event.preventDefault();
 });
 ```
@@ -345,8 +348,9 @@ await element.requestFullscreen();
 ```
 
 `requestFullscreen()` takes the alternate screen and applies `:fullscreen`
-styles. Exiting restores the main screen and scrollback. Escape exits;
-if a text field is focused, the first Escape blurs it instead. The
+styles. `document.exitFullscreen()` restores the main screen and
+scrollback. Escape does not exit on its own; it reaches `keydown` like
+any other key. The
 [rendering guide](/guides/rendering/#fullscreen) has the details.
 
 ## Resizing

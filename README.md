@@ -42,8 +42,8 @@ document.body.innerHTML = `
 let n = 0;
 setInterval(() => {
   n = (n + 1) % 101;
-  document.getElementById("bar").value = n;
-  document.getElementById("pct").textContent = String(n).padStart(3) + "%";
+  document.querySelector("progress")!.value = n;
+  document.getElementById("pct")!.textContent = String(n).padStart(3) + "%";
 }, 50);
 ```
 
