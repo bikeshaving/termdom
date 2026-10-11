@@ -3,10 +3,10 @@ title: Events and Input
 description: Keyboard, mouse, focus, form controls, and selection.
 ---
 
-Input arrives as DOM events, through `addEventListener`. An event the engine
-fires -- decoded input, a resize, a focus move -- reads `isTrusted` true; an
-event an application constructs and dispatches itself reads false, so a
-listener can tell the two apart.
+Input arrives as DOM events, through `addEventListener`. Events the
+engine fires, such as decoded input, a resize or a focus change, have
+`isTrusted` set to true. Events the program creates and dispatches
+itself have it set to false.
 
 ## Keyboard
 
@@ -62,8 +62,7 @@ byte. These limits apply to every terminal application:
 - `Ctrl+L` redraws the screen, as it does in a shell, unless a `keydown`
   listener calls `preventDefault()`.
 - `Ctrl+Shift+letter` is indistinguishable from `Ctrl+letter`.
-- `Alt+key` arrives as one keypress with `altKey`, as long as the terminal
-  sends Escape and the key together, which terminals do.
+- `Alt+key` arrives as one key press with `altKey` set.
 - A terminal set up to report extended keys (CSI u, or xterm's
   `modifyOtherKeys`) lifts the limits above: `Shift+Enter`,
   `Ctrl+Shift+letter` and the rest arrive as themselves. TermDOM decodes
@@ -106,10 +105,10 @@ focus, `click` clicks, `wheel` scrolls. Coordinates are in cells.
 | Shift, Alt, or Ctrl held | `shiftKey`, `altKey`, `ctrlKey` |
 | Motion | `mousemove`, and the hover events below |
 
-The terminal reports a wheel notch, not a distance, so a notch is three
-rows or columns, the browser's line-mode convention. The engine turns on mouse
-reporting when it attaches, and the right and middle buttons reach the
-page as ordinary presses; there is no context menu.
+The terminal reports wheel notches, not distances, so each notch
+scrolls three rows or columns, as a browser counts lines. The engine
+turns on mouse reporting when it attaches. The right and middle buttons
+reach the page as ordinary presses; there is no context menu.
 
 ```ts
 row.addEventListener("click", () => open(row.dataset.path!));
@@ -134,9 +133,9 @@ apply, and `element.focus()` works. Typing goes to the focused element.
 Enter and Space click a focused button or summary, and Enter follows a
 focused link, as in a browser. Escape closes whatever is on top of the
 top layer, a modal dialog or an open popover, whether or not a `keydown`
-listener canceled it.
-Tab past the last focusable element rests on nothing before re-entering
-at the first — the page's view of a browser's cycle through its chrome.
+listener canceled it. Tab from the last focusable element focuses
+nothing, and the next Tab goes to the first, as when a browser's focus
+passes through its toolbar.
 
 ## Dialogs, popovers, and details
 
@@ -146,8 +145,8 @@ Escape closes it and fires `cancel` then `close`. A `[popover]` opens
 with `showPopover()` or `togglePopover()`, or a `popovertarget` button,
 and light dismiss works: a click outside, or Escape, closes it and
 fires `toggle`. `<details>` opens on a click of its `<summary>`, or
-Enter or Space with the summary focused, and fires `toggle`. Toggling it
-scrolls nothing.
+Enter or Space with the summary focused, and fires `toggle`. Opening or
+closing it does not scroll the page.
 
 ## Form controls
 
@@ -165,22 +164,23 @@ scrolls nothing.
 field.addEventListener("input", updatePreview);
 ```
 
-`::placeholder` styles a field's placeholder. The caret is the real terminal cursor, and IME composition
-works: CJK input methods compose in the field. `<input type="password">`
-masks its value. A `<textarea>` scrolls to keep its caret in view. A number input takes float syntax only, and ArrowUp and
-ArrowDown step it within `min` and `max`. The arrows move a radio's
+`::placeholder` styles a field's placeholder. The caret is the real
+terminal cursor, so CJK input methods compose in the field.
+`<input type="password">` masks its value. A `<textarea>` scrolls to
+keep its caret in view. A number input accepts only numbers, and
+ArrowUp and ArrowDown step it within `min` and `max`. The arrows move a radio's
 check to the previous or next radio of its group, wrapping at the ends.
 A range input is a slider: the arrows move its thumb a step, PageUp and
 PageDown a tenth of the range, and Home and End to its ends, each firing
 `input` and `change`. A press on its track moves the thumb there and a
 drag carries it, firing `input` as it moves and `change` on release.
 
-`new FormData(form)` builds the form's entry list: every submittable
-control it owns, in tree order, by the rule its kind has. Submitting a
-form builds the same list. `requestSubmit()` fires `submit` first and
-stops there if a listener cancels it; `submit()` skips that event. Either
-way the form then fires `formdata`, whose `event.formData` a listener can
-add to or rewrite before the entries count as sent:
+`new FormData(form)` collects the name and value of each control in
+the form, in document order, as a browser does. Submitting a form
+collects the same list. `requestSubmit()` fires `submit` first and
+stops there if a listener cancels it; `submit()` skips that event.
+Either way the form then fires `formdata`, and a listener can add to or
+change `event.formData` before the form is submitted:
 
 ```ts
 form.addEventListener("formdata", (event) => {
@@ -189,8 +189,8 @@ form.addEventListener("formdata", (event) => {
 form.requestSubmit();
 ```
 
-Submission stops there. There is no page to navigate to, so the form
-never sends anything over the network.
+Submission stops there. There is no page to go to, so the form never
+sends anything over the network.
 
 ## Editing
 
@@ -209,11 +209,11 @@ The arrows move the caret by character, Alt or Ctrl with them by word,
 Up and Down by line, and Home and End to the line's ends; Shift extends
 the selection instead of moving it. Backspace and Delete take one
 grapheme cluster, or the selection. The readline chords the text fields
-use work here too: Ctrl+W takes back a word, Ctrl+U the line before the
-caret, Ctrl+K the line after it. Enter splits the block the caret is in,
-Shift+Enter puts a `<br>` in, on a terminal that reports it (see above),
-and a block left empty keeps a `<br>` so
-it stays a line tall — the same tree Chrome writes.
+use work here too: Ctrl+W deletes the word before the caret, Ctrl+U the
+line before it, and Ctrl+K the line after it. Enter splits the block
+the caret is in. Shift+Enter inserts a `<br>`, on a terminal that
+reports Shift+Enter. A block left empty keeps a `<br>` so it stays one
+line tall, as in Chrome.
 
 Every edit is a cancelable `beforeinput` first and an `input` after, both
 bubbling from the element the caret is in, with the spec's input types:
@@ -230,8 +230,8 @@ note.addEventListener("beforeinput", (event) => {
 });
 ```
 
-Undo and redo are not here yet, and neither are `execCommand`, the
-formatting commands, HTML paste, IME composition in a host, or
+Not supported yet: undo and redo, `execCommand`, the formatting
+commands, HTML paste, IME composition in an editing host, and
 spellcheck.
 
 ## Errors
@@ -239,11 +239,12 @@ spellcheck.
 An exception that escapes a listener, an event handler attribute, an
 observer callback, a frame callback, or a callback given to
 `window.setTimeout()`, `setInterval()` or `queueMicrotask()` is reported
-as a browser reports it. A bare `setTimeout()` is the runtime's own
-unless `installGlobals()` has put the window's in its place, and an
-exception from the runtime's ends the program. With the globals
-installed, a promise rejected with no handler fires
-`unhandledrejection` on the window and is reported the same way. The window hears a cancelable `error` event first:
+as in a browser. The global `setTimeout()` is the runtime's unless
+`installGlobals()` has replaced it, and an exception from the runtime's
+timer ends the program. With the globals installed, a promise rejected
+with no handler fires `unhandledrejection` on the window and is
+reported the same way. The window gets a cancelable `error` event
+first:
 
 ```ts
 window.addEventListener("error", (event) => {
@@ -253,19 +254,18 @@ window.addEventListener("error", (event) => {
 ```
 
 A listener that calls `preventDefault()` has handled the error. An
-unhandled one is not printed over the screen, and it does not stop the
-program. It goes to the transport's log when the transport has one
-apart from the screen: the process transport writes it to stderr when
-stderr is not the terminal, so `node app.ts 2> errors.log` gives a live
-log to tail in another pane. Otherwise the engine keeps it and prints
-it below the document when the session ends, so it is seen either way.
+unhandled one does not stop the program, and it is not printed over the
+screen. If the transport has a log separate from the screen, the error
+goes there: the process transport writes it to stderr when stderr is
+not the terminal, so `node app.ts 2> errors.log` gives a log to tail in
+another pane. Otherwise the engine keeps it and prints it below the
+document when the session ends.
 
-Errors the engine throws at a call, an `InvalidStateError` from
-`showModal()` on an open dialog, a `SyntaxError` from a bad selector,
-are the ones a browser throws, and a caller catches them as it would
-there. A failure inside the engine's own rendering ends the session:
-the last frame is left in the scrollback, the terminal is restored, and
-the error is thrown.
+Methods throw the errors a browser throws, such as an
+`InvalidStateError` from `showModal()` on an open dialog or a
+`SyntaxError` from a bad selector. A failure inside the engine's own
+rendering ends the session: the last frame is left in the scrollback,
+the terminal is restored, and the error is thrown.
 
 ## Selection and the clipboard
 
@@ -276,23 +276,24 @@ triple click the paragraph, or in a `<textarea>` the line and in an
 a whole word or paragraph at a time. Clicks count as a double or triple
 click only on the same cell, within half a second. All of it is the
 default action of `mousedown`, so a listener that calls
-`preventDefault()` does its own selecting, as CodeMirror does. `getSelection().toString()` is the rendered text, as in a
-browser: nothing from a closed `<details>`, a `<select>`'s options, a
-hidden element, or `user-select: none` content, and a line break
-between blocks. `user-select: none` also keeps a drag from anchoring
-or extending into an element, which is what a game board or a toolbar
-wants. `getSelection().modify(alter, direction, granularity)`
-moves the caret or drags the focus by character, word, line or line
-boundary; the line granularities read the laid-out lines, so a soft wrap
-counts as a line.
+`preventDefault()` does its own selecting, as CodeMirror does.
+
+`getSelection().toString()` is the rendered text, as in a browser:
+nothing from a closed `<details>`, a `<select>`'s options, a hidden
+element, or `user-select: none` content, and a line break between
+blocks. `user-select: none` also keeps a drag from starting in or
+extending into an element, which suits a game board or a toolbar.
+`getSelection().modify(alter, direction, granularity)` moves or extends
+the selection by character, word, line or line boundary. Lines are the
+laid-out lines, so a soft wrap counts as a line.
 
 `navigator.clipboard.writeText(text)` copies to the system clipboard over
 OSC 52, which travels in-band and works across SSH. `readText()` asks the
 terminal for its clipboard by OSC 52 query, and rejects when the terminal
 refuses to answer, as most do. Both work only during the dispatch of a
 trusted event the user caused — a keystroke, a mouse press, a click, a
-paste — and reject with `NotAllowedError` otherwise. The gate is stricter
-than a browser's activation window: it does not survive an `await`.
+paste — and reject with `NotAllowedError` otherwise. Unlike in a
+browser, that permission ends at the first `await`.
 
 A paste arrives as a cancelable `paste` event at the focused element, or
 at `document.body` when nothing is focused, with the text on
@@ -322,10 +323,10 @@ element.scrollIntoView();
 
 The keys scroll as a browser's do, as the default action of a `keydown`
 no listener canceled: ArrowUp and ArrowDown a row, PageUp, PageDown and
-Space a page, keeping one row of the last in view, and Home and End to
-an edge. The nearest box around the focused element that can scroll
-that way takes the key, and the document otherwise. Keys a field, a
-`<select>` or editable content takes, and Space on a button, do not
+Space a page, keeping one row of overlap, and Home and End to the top
+or bottom. The key scrolls the nearest box around the focused element
+that can scroll that way, or else the document. Keys used by a field, a
+`<select>` or editable content, and Space on a button, do not
 scroll. A program that uses those keys itself calls `preventDefault()`,
 as it would in a browser.
 
@@ -334,13 +335,13 @@ and `scrollend` follows once scrolling stops. `window.scrollY` reports
 the document position, clamped to the end as soon as it is set.
 `scrollIntoView()` aligns the element to the top, as in a browser; pass
 `{block: "nearest"}` to move only as far as it takes to show it, which
-suits a selection moving through a list. The mouse wheel
-moves the innermost scrollable box under the pointer and hands what
-remains to its ancestors, and a `wheel` listener that calls
-`preventDefault()` stops it. A sideways notch moves the innermost box
-that can scroll sideways; the document itself never scrolls sideways. How the document's own scroll shares the
-wheel with the terminal's scrollback is in the
-[rendering guide](/guides/rendering/#flow-mode).
+suits a selection moving through a list. The mouse wheel scrolls the
+innermost scrollable box under the pointer, and passes what is left
+over to the boxes around it. A `wheel` listener that calls
+`preventDefault()` stops it. A sideways notch scrolls the innermost box
+that can scroll sideways; the document itself never scrolls sideways.
+The [rendering guide](/guides/rendering/#flow-mode) says how the
+document and the terminal's scrollback share the wheel.
 
 ## Fullscreen
 
@@ -351,8 +352,8 @@ await element.requestFullscreen();
 `requestFullscreen()` takes the alternate screen and applies `:fullscreen`
 styles. `document.exitFullscreen()` restores the main screen and
 scrollback. Escape does not exit on its own; it reaches `keydown` like
-any other key. The
-[rendering guide](/guides/rendering/#fullscreen) has the details.
+any other key. The [rendering guide](/guides/rendering/#fullscreen) has
+the details.
 
 ## Resizing
 
@@ -364,8 +365,8 @@ window.addEventListener("resize", () => {
 });
 ```
 
-The event carries no dimensions; read them off the window or any element —
-the new size is in place before listeners run.
+The event carries no size. Read it from the window or any element,
+which have the new size before listeners run.
 
 The same resize re-evaluates `@media` rules and fires `change` on live
 `MediaQueryList` objects, after `resize`, as in a browser:

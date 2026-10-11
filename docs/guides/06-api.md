@@ -76,20 +76,25 @@ Options:
 - `colorDepth?: "auto" | ColorDepth` — the colors the terminal shows:
   `24`, `8` or `4`, the bits `screen.colorDepth` reports, or `"rgb"`,
   `"256"` or `"ansi"`, the same three by name. With `"auto"` (default),
-  TermDOM asks the terminal. Any other value throws a `TypeError`. See "Color depth" in the
-  styling guide.
+  TermDOM asks the terminal. Any other value throws a `TypeError`. See
+  "Color depth" in the styling guide.
 - `colorScheme?: "auto" | "light" | "dark"` — whether the terminal's
   background is light or dark, which `prefers-color-scheme` reports.
   With `"auto"` (default), TermDOM asks the terminal, and takes light
   when it gives no answer. Any other value throws a `TypeError`.
 
-TermDOM reads no environment variables. What the terminal can say, it is
-asked, and the rest is an option.
+TermDOM reads no environment variables. It asks the terminal what it
+can, and the rest are options.
 
 ### `term.document`, `term.window`
 
 `document` is a `Document`. Setting `document.title` sets the terminal
 window title; the previous title is restored on `dispose()`.
+
+`window` has the type a browser's has, `Window & typeof globalThis`,
+from TypeScript 6's DOM types. TypeScript 5's DOM types lack some of
+the interfaces it uses, so on TypeScript 5 set `skipLibCheck` in your
+tsconfig.
 
 `window` has the DOM interfaces and event constructors, and these members
 are wired to the terminal:
@@ -114,18 +119,19 @@ are wired to the terminal:
 - `navigator.userActivation` — `hasBeenActive` and `isActive`
 - `MutationObserver`, `ResizeObserver`, `IntersectionObserver` — entries
   are delivered per rendered frame
-- `close()` — quit: fire `beforeunload`, then flush the final frame to
-  scrollback, restore terminal modes, dispose, and call
+- `close()` — quits. It fires `beforeunload`, leaves the final frame in
+  the scrollback, restores terminal modes, disposes, and calls
   `transport.close({status})`, which exits the process on the default
   transport. A `beforeunload` listener that calls `preventDefault()`
-  keeps the session. Ctrl-C calls `close()`; it does not reach `keydown`.
-  The status is 130 when Ctrl-C closed the window, as a shell reports an
-  interrupt, 1 when the page let an exception escape, and otherwise
-  `process.exitCode`, or 0 if the app set none.
-  On the default transport, a `SIGINT`, `SIGHUP` or `SIGTERM` sent to the
-  process ends the session and exits with 130, 129 or 143. If the app
-  listens for that signal itself, the session still ends, but the exit is
-  left to the app, as in Node.
+  keeps the session open. Ctrl-C calls `close()`; it does not reach
+  `keydown`. The exit status is 130 when Ctrl-C closed the window, as a
+  shell reports an interrupt, 1 when the page let an exception escape,
+  and otherwise `process.exitCode`, or 0 if the program set none.
+
+  On the default transport, a `SIGINT`, `SIGHUP` or `SIGTERM` sent to
+  the process ends the session and exits with 130, 129 or 143. If the
+  program listens for that signal itself, the session still ends, but
+  exiting is left to the program, as in Node.
 
 Anything not listed behaves as the DOM and CSSOM standards specify,
 without terminal wiring.
@@ -143,23 +149,24 @@ pseudo-elements browsers give them:
 | `<progress>`, `<meter>` | `::slider-track`, `::slider-fill` |
 | `<input type="range">` | `::slider-track`, `::slider-fill`, `::slider-thumb` |
 
-`::picker(select)` and `::picker-icon` are a customizable `<select>`'s,
-as Chromium ships them.
+`::picker(select)` and `::picker-icon` are the names Chromium uses for
+a customizable `<select>`.
 
 ```css
 select::picker(select) { background-color: #1c1c1c; }
 select::picker-icon { color: gray; }
 ```
 
-`::slider-track`, `::slider-fill` and `::slider-thumb` are CSS Form
-Control Styling's (css-forms-1). A gauge's track and fill are painted by
-their backgrounds, as in a browser: the fill covers the track as far as
-the value reaches. A range input draws its track and fill as lines, which
-`color` colors, and its thumb follows the fill. A meter
-matches `:optimal-value` when its value is in its optimum region,
-`:low-value` below `low`, and `:high-value` above `high`. css-forms-1 is
-an editor's draft, so these follow it as it changes; the WebKit and
-Firefox names below have shipped for years and are the stable choice.
+`::slider-track`, `::slider-fill` and `::slider-thumb` come from the
+CSS Form Control Styling draft (css-forms-1). On a `<progress>` or
+`<meter>`, the track and fill are painted with their backgrounds, and
+the fill covers the track up to the value. A range input draws its
+track and fill as lines, colored by `color`, and its thumb sits at the
+end of the fill. A meter matches `:optimal-value` when its value is in
+its optimum range, `:low-value` below `low`, and `:high-value` above
+`high`. The draft may still change, and these names will change with
+it. The WebKit and Firefox names below have shipped for years and are
+the stable choice.
 
 ```css
 progress::slider-fill { background-color: green; }
@@ -175,11 +182,10 @@ the fill, `::-webkit-meter-optimum-value`,
 and `:-moz-meter-optimum`, `:-moz-meter-sub-optimum` and
 `:-moz-meter-sub-sub-optimum` the meter at each level.
 
-The rest of a control's insides, such as a button's brackets, are
-TermDOM's own, as they are a browser's: the
-controls are shadow trees inside, and `::part()` does not reach into
-them. TermDOM's own rules come first, so a page's `::placeholder` and the
-rest override them as they would any built-in style.
+The rest of a control, such as a button's brackets, cannot be styled
+from the page, as in a browser: the controls are shadow trees, and
+`::part()` does not reach into them. TermDOM's own styles for the
+pseudo-elements above come first, so a page's rules override them.
 
 ### `term.addEventListener("fetch", listener)`
 
@@ -202,12 +208,13 @@ instead. The images guide has both.
 ### `term.attach()`
 
 Puts the terminal in raw mode, starts input handling, mouse reporting,
-and bracketed paste, and paints whatever the document holds. Idempotent;
-apart from `print()`, no other call writes to the terminal. Returns a promise that resolves
-once the first frame has been written.
+and bracketed paste, and paints whatever the document holds. Calling it
+again does nothing. Apart from `print()`, it is the only call that
+writes to the terminal. Returns a promise that resolves once the first
+frame has been written.
 
-While attached to the process transport, the Node event loop stays alive
-until `dispose()` or `window.close()`.
+While attached to the process transport, the process stays alive until
+`dispose()` or `window.close()`.
 
 `document.visibilityState` is `"hidden"` before `attach()`, `"visible"`
 until `dispose()`, and `"hidden"` after. It is also `"hidden"` while the
@@ -225,7 +232,8 @@ const page = term.renderANSI();
 const error = term.renderANSI(`<div style="color:red">error</div>`);
 ```
 
-It works attached or not, and doesn't disturb a live session.
+It works whether or not the TermDOM is attached, and does not disturb a
+live session.
 
 ### `term.print(html?)`
 
@@ -234,32 +242,33 @@ before exiting.
 
 ### `term.dispose()`
 
-Reverses `attach()`: flushes the document into scrollback, restores every
-terminal mode and the title, and releases the transport. The process
-continues; `window.close()` is the quit. It stops the timers set through
-`term.window`, as a browser stops an unloaded page's. Under
-`installGlobals()`, the global `setTimeout` and `setInterval` report
-what their callbacks throw as the page's errors, but are the whole
-process's, its libraries' among them, and keep running. Before
-releasing the transport it reads the cursor replies the terminal still
-owes, for 200ms at most, so they don't land in the shell as typing.
-Returns a promise that resolves when every queued restore has reached
-the transport, and every call returns the same promise; await it before
-writing further output. The process transport also restores
-shell-critical modes synchronously, so a caller that exits without
-awaiting still leaves the shell usable. `await using term = new TermDOM()`
-disposes on scope exit and waits for it.
+Reverses `attach()`: leaves the document in the scrollback, restores
+every terminal mode and the title, and releases the transport. The
+process keeps running; `window.close()` is what quits.
+
+It stops the timers set through `term.window`, as a browser stops an
+unloaded page's. The global `setTimeout` and `setInterval` keep running
+even under `installGlobals()`, because they belong to the whole
+process, its libraries included.
+
+Before releasing the transport, it waits up to 200 ms for replies the
+terminal still owes, so they don't show up in the shell as typed text.
+It returns a promise that resolves when the terminal has been restored,
+and every call returns the same promise; await it before writing more
+output. The process transport also restores the modes the shell needs
+right away, so a program that exits without awaiting still leaves the
+shell usable. `await using term = new TermDOM()` disposes when the
+scope ends and waits for it.
 
 ## `installGlobals(term)`
 
-Defines the window's names on `globalThis`, for code that reads
-`document`, `window`, `Element`, `getSelection` and the like as globals:
-React, Vue, Svelte, CodeMirror. The process then reads as the window
-does. A name the runtime defines too, such as `setTimeout`,
-`navigator` or, on Bun and Deno, `addEventListener` and `alert`, is the
-window's until uninstalled. Methods are bound to the
-window, and other properties read and write through to it, so `scrollY`
-stays current.
+Puts the window's globals on `globalThis`, for code that reads
+`document`, `window`, `Element`, `getSelection` and the like as globals,
+such as React, Vue, Svelte and CodeMirror. A name the runtime defines
+too, such as `setTimeout`, `navigator` or, on Bun and Deno,
+`addEventListener` and `alert`, is the window's until uninstalled.
+Methods are bound to the window, and other properties read and write
+through to it, so `scrollY` stays current.
 
 ```ts
 import {installGlobals, TermDOM} from "@b9g/termdom";
@@ -279,17 +288,21 @@ It returns a function that puts back what was there. One TermDOM's
 globals can be installed at a time; calling it again before uninstalling
 throws.
 
-The runtime's event classes, `Event`, `EventTarget`, `CustomEvent`,
-`ErrorEvent` and `MessageEvent`, stay its own: on Bun and Deno the
-runtime's own event targets accept only its own events, and the
-document accepts them too, so they serve both. So do `localStorage` and
-`sessionStorage` where the runtime has them: Deno's, and Node's given
-`--localstorage-file`, keep what is stored between runs, where the
-window's keep it in memory. On Bun, and on Node without
-`--localstorage-file`, which have none, the window's are installed.
+A few names keep the runtime's version:
+
+- `Event`, `EventTarget`, `CustomEvent`, `ErrorEvent` and
+  `MessageEvent`. On Bun and Deno, the runtime's own event targets
+  accept only the runtime's events, and the document accepts them too,
+  so the runtime's classes work for both.
+- `localStorage` and `sessionStorage`, where the runtime has them.
+  Deno's, and Node's with `--localstorage-file`, keep what is stored
+  between runs, while the window's keep it in memory. Bun, and Node
+  without `--localstorage-file`, have none, so the window's are
+  installed.
+
 What a terminal does not have, such as `indexedDB` or `caches`, is not
-on the window and is not installed, so feature detection, with `in` or
-by reading it, takes its fallback.
+on the window and is not installed, so feature detection finds it
+missing and takes the fallback.
 
 While installed, a promise rejected with no handler is the page's: it
 fires `unhandledrejection` on the window, and one no listener cancels is
@@ -363,14 +376,18 @@ const term = new TermDOM({transport: transportFromProcess(process)});
   true for the global process (it sits below a shell) and false for
   anything else.
 
-The wrapper owns all process-level behavior: raw mode, `SIGWINCH` →
-`resizes`, signals → `closed`, `stdout.isTTY` → `interactive`,
-asking the terminal nothing when stdin is not a terminal, since its
-answers could not be read, `stderr` when it is not a terminal →
-`logError`, `suspend()` by leaving raw mode and sending the process
-`SIGTSTP` until `SIGCONT` (not on Windows), and an exit hook that
-restores the cursor if the app exits without disposing, written before
-an exception nothing handles is printed.
+The wrapper handles everything at the process level:
+
+- raw mode
+- `SIGWINCH` as `resizes`, and signals as `closed`
+- `stdout.isTTY` as `interactive`
+- asking the terminal nothing when stdin is not a terminal, since the
+  answers could not be read
+- `stderr` as `logError`, when stderr is not the terminal
+- `suspend()`, by leaving raw mode and sending the process `SIGTSTP`
+  until `SIGCONT` (not on Windows)
+- an exit hook that restores the terminal if the program exits without
+  disposing, before an uncaught exception is printed
 
 ## `transportFromSSH(session, options?)`
 
@@ -440,6 +457,6 @@ the server's, because the process has only one of each:
   and `SSHSessionLike`, and `CanvasCellGridContext`, the experimental
   `"termdom-cellgrid"` context, which may change in a minor release.
 
-`TerminalTransport` and the shapes `transportFromProcess` and
-`transportFromSSH` take are written against by custom transports and
-mocks, so a member added to them will always be optional.
+Custom transports and mocks implement `TerminalTransport` and the
+shapes `transportFromProcess` and `transportFromSSH` take, so any
+member added to them later will be optional.

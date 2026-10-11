@@ -5,9 +5,9 @@ description: How each CSS property maps to what a terminal can draw.
 
 A terminal cell holds one character, a foreground color, a background
 color, and a handful of attributes. Every CSS property either resolves
-to one of those or has no effect. This guide is the mapping. The
-[compatibility matrix](/compatibility/) lists every property with a
-yes or a no; this is the why and the how.
+to one of those or has no effect. This guide explains the mapping. The
+[compatibility matrix](/compatibility/) lists which properties are
+supported.
 
 ## Units
 
@@ -48,9 +48,8 @@ A `background-image` with a `linear-gradient()` paints each cell the
 color the gradient has at that cell's center. A stop's position takes
 any length and is measured like every other length, with `ch` counted
 along the gradient's direction, so `3ch` down a column is three rows.
-`radial-gradient()` and
-`url()` have no effect. `opacity`, `filter`, `box-shadow`, and
-`mix-blend-mode` have no effect either.
+`radial-gradient()` and `url()` have no effect. Neither do `opacity`,
+`filter`, `box-shadow`, and `mix-blend-mode`.
 
 ### Color depth
 
@@ -154,12 +153,11 @@ space. `outline-offset` has no effect.
 ## Generated content
 
 `::before` and `::after` with a string `content` work; `counter()` in
-`content` is not implemented. `::marker` styles a list item's bullet
-and a `<summary>`'s arrow.
-`list-style-type` draws `•`, `◦`, and `▪` for `disc`, `circle`, and
-`square`, and the counting styles, `decimal`, `lower-roman`,
-`upper-alpha`, and the rest, draw a number followed by a dot. An
-`<ol start>` and an `<li value>` set the count as in a browser.
+`content` is not implemented. `::marker` styles a list item's bullet and
+a `<summary>`'s arrow. `list-style-type` draws `•`, `◦`, and `▪` for
+`disc`, `circle`, and `square`, and the counting styles, `decimal`,
+`lower-roman`, `upper-alpha`, and the rest, draw a number followed by a
+dot. An `<ol start>` and an `<li value>` set the count as in a browser.
 
 ## Pseudo-classes and pseudo-elements
 
@@ -174,12 +172,20 @@ browser.
 ranges in `CSS.highlights`. `::placeholder` styles a text control's
 placeholder. `::backdrop` styles what a modal dialog or popover covers.
 A `<select>`'s picker and icon take `::picker(select)` and
-`::picker-icon`, and a `<details>`' content takes `::details-content`.
-A `<progress>` or `<meter>` takes `::slider-track` and `::slider-fill`,
-an `<input type="range">` those and `::slider-thumb`, and a meter's levels match `:optimal-value`, `:low-value` and
-`:high-value`, from a CSS draft that may still change; the API guide
-lists the WebKit and Firefox names, which won't. `::part()` from a page does not reach inside the
-built-in controls, as in a browser.
+`::picker-icon`, and a `<details>` element's content takes
+`::details-content`. A `<progress>` or `<meter>` takes `::slider-track`
+and `::slider-fill`, and an `<input type="range">` also takes
+`::slider-thumb`. A meter matches `:optimal-value`, `:low-value` or
+`:high-value` by its level. These names come from a CSS draft that may
+still change; the API guide lists the WebKit and Firefox names, which
+won't. As in a browser, `::part()` does not reach inside the built-in
+controls.
+
+`CSS.highlights.set("hit", new Highlight(...ranges))` colors ranges
+through `::highlight(hit)` rules for `color`, `background-color` and
+`text-decoration-line`, without adding elements or moving a line break.
+The higher `priority` wins where highlights overlap, and `::selection`
+paints over all of them. See `examples/highlights.ts`.
 
 ## Default looks
 
@@ -210,7 +216,7 @@ Any of them can be overridden by an ordinary rule.
 | `dialog:modal`, `[popover]` | Centered by `position: fixed` and auto margins, on a `Canvas` background |
 | `math` | Inline; `display="block"` centers it |
 
-Headings have no default size or weight, because there is no size.
+Headings have no default style, since a terminal has one font size.
 Style them:
 
 ```css
@@ -224,8 +230,8 @@ caret instead.
 
 ## What terminals disagree on
 
-Some attributes depend on the terminal, and the engine finds out which
-by asking it rather than by its name:
+Some attributes depend on the terminal. The engine finds out which by
+asking the terminal, not by checking its name:
 
 - Overline is drawn only where the terminal confirms it. MathML uses it
   for the bar of a root when it can, and an underlined row above the

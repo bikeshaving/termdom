@@ -5,7 +5,8 @@ description: How <img> and <canvas> draw pixels in cells.
 
 A cell can show two pixels: the lower half block, `▄`, in the
 foreground color under the background color. `<img>` and `<canvas>`
-draw that way.
+draw that way. The pixels are ordinary cells, so they scroll, clip and
+redraw like text, and they work over SSH and inside tmux.
 
 Most terminals draw block characters themselves, so either half fills
 its half of the cell exactly. Terminal.app draws them from the font,
@@ -13,19 +14,18 @@ and Menlo's and SF Mono's sit low in the cell: the upper half block
 leaves a sliver of the wrong color at the top and runs past the
 middle. The background fills whatever the glyph leaves, so with the
 lower half block only the seam between the two pixels is a little
-low. The pixels are ordinary cells, so they scroll, clip and
-redraw like text, and they work over SSH and inside tmux.
+low.
 
 Two options say how pixels are drawn, `images` for an `<img>` and
 `canvas` for a canvas's `"2d"` context. `"auto"`, the default for both,
-uses the best way the terminal has, which today is always cells.
-`"cells"` draws cells whatever the terminal could do. `"none"` draws
+picks the best method the terminal supports; today that is always
+cells. `"cells"` always draws cells. `"none"` draws
 nothing: an `<img>` loads nothing and shows its `alt` text, as a
 browser does with images turned off, and `getContext("2d")` returns
 `null`, so a canvas shows its fallback content. A `"termdom-cellgrid"`
 context still draws cells, but its `drawImage()` draws nothing. A page
-written for a browser often reads better that way, since half blocks
-blur a logo or a patterned picture that its fallback says plainly.
+written for a browser often reads better this way: half blocks blur
+logos and detailed pictures, and the alt text says what they are.
 
 ```ts
 new TermDOM({images: "none", canvas: "none"});
@@ -73,12 +73,14 @@ A page can narrow the policy with its own
 `<meta http-equiv="Content-Security-Policy">` in its head, and never
 widen it: a load must pass every policy. As in a browser, the tag's
 policy holds from when it is inserted into the head, and removing the
-tag or changing its `content` later changes nothing. A load a policy blocks fires
-`securitypolicyviolation` at its element, a `SecurityPolicyViolationEvent`
-that bubbles to the document and names the URL, the directive and the
-policy. The image shows its `alt` text instead. When the program
-set no policy, the first blocked load is also reported once where
-uncaught errors go: the transport's log, or the scrollback at exit.
+tag or changing its `content` later changes nothing.
+
+A load a policy blocks fires `securitypolicyviolation` at its element,
+a `SecurityPolicyViolationEvent` that bubbles to the document and names
+the URL, the directive and the policy. The image shows its `alt` text
+instead. When the program set no policy, the first blocked load is also
+reported once where uncaught errors go: the transport's log, or the
+scrollback at exit.
 
 A load the policy allows goes to the TermDOM as a `"fetch"` event, a
 `FetchEvent`, as a Service Worker hears it, and to the network when no
@@ -176,13 +178,18 @@ An image that is not showing follows HTML's rendering rules:
 
 ### Size
 
-An image's pixels are CSS pixels, so its natural size in cells is its
-size divided by the size of a cell. With the `cellSize` option set,
-that is the page's cell. With the default unit cell, where a CSS pixel
-is a whole cell, an image takes the terminal's cell instead: the engine
-asks for its size (XTWINOPS 16) and assumes 8 by 16 until the terminal
-answers. A 400 by 400 image is 50 columns by 25 rows under that
-assumption.
+An image's natural size in cells is its size in pixels divided by the
+size of a cell. With the `cellSize` option set, that is the page's
+cell. With the default unit cell, where a CSS pixel is a whole cell, an
+image uses the terminal's cell instead: the engine asks the terminal for
+its cell size (XTWINOPS 16) and assumes 8 by 16 until it answers. A 400
+by 400 image is then 50 columns by 25 rows.
+
+`naturalWidth` and `naturalHeight` report that size in CSS pixels,
+which are cells under the unit cell, the way a browser reports a
+high-density image: a 400 by 200 file with 8 by 16 pixel cells reports
+50 by 13. With the `cellSize` option set, a CSS pixel is a pixel and
+the natural size is the file's.
 
 `width` and `height`, as attributes or in CSS, are lengths like any
 other: CSS pixels, which are cells under the unit cell. With only one
@@ -208,9 +215,9 @@ pixels blend over that color instead.
 
 ### Limits
 
-An image file names its size before its pixels, so a few bytes can
-ask for gigabytes. As a browser does, the engine checks what a file
-asks for before it allocates, and an image past a limit fails to load:
+An image file states its size before its pixels, so a few bytes can
+ask for gigabytes. As a browser does, the engine checks the stated size
+before it allocates memory, and an image past a limit fails to load:
 
 - a response of at most 64 MB, by its declared length and while reading
 - at most 32768 pixels to a side and 2^26 pixels in all
@@ -219,8 +226,14 @@ asks for before it allocates, and an image past a limit fails to load:
 
 A decoded image keeps its full pixels, four bytes each, for as long as
 it is loaded, so `createImageBitmap()` copies it pixel for pixel. An
-image of more than 2^20 pixels also keeps a copy averaged down to that
+image of more than 2^20 pixels also keeps a copy scaled down to that
 many, 4 MB, which its cells are drawn from.
+
+An image whose box would sample more than 2^26 pixels draws nothing, as
+does a 2D canvas past that size. `ImageData` past it throws a
+`RangeError`, and a cell grid stops at 2^22 cells.
+
+### Decoding
 
 Images decode one at a time on the runtime's web `Worker`, so a large
 one does not stall the page. Bun and Deno have one. Node has one from
@@ -229,9 +242,8 @@ one does not stall the page. Bun and Deno have one. Node has one from
 thread there. Without a `Worker`, and in a CommonJS build, images decode
 on the page's thread in 16 ms slices, so input and frames go on
 between slices. A decode that takes more than 10 seconds is stopped
-and that image fails; the images behind it still decode. The worker's
-module ships in the package beside its entry, and TermDOM starts it
-itself.
+and that image fails; the images behind it still decode. The worker
+ships in the package, and TermDOM starts it itself.
 
 The worker ends a second after its last decode, and when the last
 TermDOM is disposed, so it never keeps a finished program running.
@@ -249,10 +261,7 @@ globalThis.Worker ??= Worker;
 Where Node has its own `Worker`, the `??=` leaves it in place.
 
 A new `src` cancels the request the old one started, and drops its
-decode if it is still waiting for its turn. An image whose
-box would sample more than 2^26 pixels draws nothing, as does a 2D
-canvas past that size. `ImageData` past it throws a `RangeError`, and
-a cell grid stops at 2^22 cells.
+decode if it is still waiting for its turn.
 
 ## `<canvas>`
 
@@ -265,21 +274,7 @@ covers the cells its pixels fill. CSS sizes a canvas like any element.
 Without the attributes, a canvas is HTML's 300 by 150 pixels. Under the
 unit cell, `width` and `height` default to 38 and 9 instead, the cells
 300 by 150 pixels fill at 8 by 16 pixels a cell, so a bare canvas is
-about the size it would be in pixels.
-
-Images keep their own rule: an image's pixels are its file's, so under
-the unit cell it is measured against the terminal's cell, not one cell
-a pixel.
-
-An image's `naturalWidth` and `naturalHeight` are that size in CSS
-pixels, which are cells under the unit cell, the way a browser reports a
-high-density image: a 400 by 200 file on a terminal with 8 by 16 pixel
-cells reports 50 by 13. `drawImage(image, x, y)` draws the whole image
-at that size, scaled down, as Safari draws a high-density image. Source
-rectangles and `createImageBitmap()` work in the file's pixels, as in
-every browser, so `createImageBitmap(image)` is the full-resolution
-copy, with the file's `width` and `height`. With the `cellSize` option
-set, a CSS pixel is a pixel and the natural size is the file's.
+about the size it would be in a browser.
 
 `getContext()` takes two context types.
 
@@ -299,15 +294,17 @@ bitmap twice as tall as its box in cells shows every pixel. It implements:
 - `globalAlpha` and the Porter-Duff `globalCompositeOperation` values
   plus `lighter`
 - `drawImage()` from an `<img>`, another `<canvas>` or an `ImageBitmap`,
-  scaled and cropped
+  scaled and cropped. `drawImage(image, x, y)` draws an image at its
+  natural size, as Safari draws a high-density image. Source rectangles
+  and `createImageBitmap()` use the file's pixels, as in every browser,
+  so `createImageBitmap(image)` is a full-resolution copy.
 - `getImageData()`, `putImageData()` and `createImageData()`
 - `toDataURL()` and `toBlob()`, as PNG
 - `isPointInPath()` and `isPointInStroke()`
 
-A terminal has no fonts to rasterize, so `fillText()` and
-`strokeText()` draw text as cells over the pixels, at the cell the text
-anchor falls in, with `textAlign`, `textBaseline` and `direction`
-applied. Painting
+A terminal has no fonts to rasterize, so `fillText()` and `strokeText()`
+draw text as cells over the pixels, at the cell the text anchor falls
+in, with `textAlign`, `textBaseline` and `direction` applied. Painting
 over the anchor paints over the text. `measureText()` counts a cell's
 width in pixels for each column. Shadows and `filter` keep their values
 but draw nothing.
@@ -336,7 +333,9 @@ Drawing repaints the canvas on the next frame. No DOM change is needed.
 ### `"termdom-cellgrid"`
 
 The cell grid context is experimental: it is TermDOM's own, with no
-standard to follow, and may change in a minor release as it is used.
+standard to follow, and may change in a minor release. Its name carries
+TermDOM's prefix, as browsers' own context types once carried theirs
+(`"moz-webgl"`, `"webkit-3d"`).
 
 The cell grid context draws cells instead of pixels: as many as the
 canvas's box holds, which `cols` and `rows` report. Under the unit cell
@@ -344,9 +343,7 @@ that is `width` by `height`. In any mode, CSS sizes it exactly:
 `width: 40ch; height: 10ch` holds 40 by 10 cells. When the box changes
 size, the cells that still fit keep what was drawn, and the new ones
 are empty, as a terminal keeps its screen when its window is resized;
-a `ResizeObserver` on the canvas tells a script to draw again. It is
-TermDOM's own, so its name carries TermDOM's prefix, as a browser's own
-context types once carried theirs (`"moz-webgl"`, `"webkit-3d"`). Its
+a `ResizeObserver` on the canvas tells a script to draw again. Its
 interface is not on `window`. The `@b9g/termdom` package exports its type
 as `CanvasCellGridContext`, and importing the package teaches TypeScript
 that `getContext("termdom-cellgrid")` returns one.

@@ -11,10 +11,6 @@ npm install @b9g/termdom
 
 TermDOM runs on Node, Bun, and Deno. No native or WASM dependencies.
 
-Its types match TypeScript 6's DOM types, as the window it gives you
-matches a browser's. On TypeScript 5, set `skipLibCheck` in your
-tsconfig, since 5's DOM types lack some interfaces TermDOM's name.
-
 ## Usage
 
 ```ts
@@ -91,9 +87,9 @@ document.addEventListener("keydown", (ev) => {
 A framework renders into `term.document` the same way it renders into a
 browser document. Most frameworks also read DOM globals such as
 `document`, `window` and `Element`. `installGlobals(term)` puts the
-window's names on the global object, over the runtime's, and returns a
-function that puts back what was there; the API guide lists the few the
-runtime keeps.
+window's globals on `globalThis`, replacing the runtime's, and returns a
+function that restores them. The API guide lists the few it leaves
+alone.
 
 Frameworks read the environment once, when their modules load: React
 decides then which events a text field fires, Vue takes `document`, and
@@ -110,8 +106,9 @@ const {createRoot} = await import("react-dom/client");
 createRoot(term.document.body).render(<App />);
 ```
 
-Imported first, React misses edits that come with no key, such as a
-paste, and CodeMirror on a Mac binds Cmd, which a terminal cannot send.
+If the framework is imported first, React misses edits that don't come
+from a key press, such as a paste, and CodeMirror on a Mac binds Cmd,
+which a terminal can't send.
 
 Vue:
 

@@ -30,10 +30,9 @@ before it stay where they are.
 
 A document taller than the terminal shows a window of itself. The window
 scrolls with `window.scrollTo()`, `scrollBy()`, and the mouse wheel, and
-`window.scrollY` reports where it is. Its top is a stop: scrolling above
-the first row does nothing, as in an editor. A document that fits has
-nothing to scroll, so a wheel up in it goes to the terminal, and the
-terminal's own scrollback scrolls. No terminal says when the user has
+`window.scrollY` reports where it is. Scrolling stops at the first row.
+A document that fits has nothing to scroll, so the mouse wheel scrolls
+the terminal's own scrollback instead. No terminal says when the user has
 scrolled back down, so the mouse comes back to the document on the next
 keystroke, which also reaches the page. While the wheel is the
 terminal's, `document.visibilityState` is `"hidden"`.
@@ -69,15 +68,15 @@ reaches `keydown`, and a page that wants Escape to leave fullscreen calls
 
 A program that wants the whole terminal for its lifetime can call
 `document.documentElement.requestFullscreen()` right after `attach()`.
-When it exits, nothing of it is left in the scrollback, because the
-alternate screen is discarded on the switch back, and the cursor is
-where the command line left it, as vim leaves it. A program that
-painted in flow first exits one line below that content instead, so the
-shell's prompt does not land on it.
+When it exits, the terminal looks as it did before the program ran,
+the same as after quitting vim or less: the alternate screen is
+discarded, so nothing is left in the scrollback, and the cursor is
+back where it was. A program that painted in flow
+mode first exits one line below that output, so the shell's prompt
+does not land on it.
 
-The document's scroll position has nothing to move in fullscreen: the
-element fills the screen. Boxes inside it with `overflow: auto` still
-scroll.
+The document doesn't scroll in fullscreen, since the element fills the
+screen. Boxes inside it with `overflow: auto` still scroll.
 
 ## Static output
 
@@ -92,7 +91,8 @@ await term.print(`<div style="color: red">error: file not found</div>`);
 
 The string has colors and line breaks only, no cursor movement and no
 mode changes, so it can be piped to a file, logged, or written to
-stderr. `attach()` is not called, and the process does not stay alive.
+stderr. There is no `attach()` call, and nothing keeps the process
+alive.
 
 `print()` and `renderANSI()` draw with `colorDepth: 8` until
 `attach()` has asked the terminal, and always when output goes to a
@@ -111,34 +111,31 @@ without a code path for it.
 
 ## Frames
 
-A frame is painted when the document has changed, in the task after the
-one that changed it, so every microtask that task queued has run, as a
-browser renders. A change and whatever answers it in a microtask, such
-as an editor library updating the line a keystroke edited, land in one
-frame. At most one frame is painted every 16 ms, and changes that come
-faster share it. Mutations are observed, so nothing calls a render.
-Style and layout are recomputed for what changed, the document is
-painted into a buffer of cells, the buffer is diffed against the
-previous frame, and only the difference is written. A frame is wrapped
-in synchronized output markers so a terminal that supports them shows
-it at once.
+A frame is painted after the task that changed the document, once its
+microtasks have run, as in a browser. So a change and anything a
+microtask does in response, such as an editor updating the line a
+keystroke edited, land in the same frame. At most one frame is painted
+every 16 ms, and faster changes share one. Style and layout are
+recomputed for what changed, the document is painted into a buffer of
+cells, the buffer is diffed against the previous frame, and only the
+difference is written. A frame is wrapped in synchronized output markers
+so a terminal that supports them shows it at once.
 
 The terminal cursor is hidden between frames. When a text field or an
 editing host has focus, the cursor is shown at its caret, so the
 terminal's own cursor shape and blink apply and an input method can
 compose there. Every other focused element shows an outline instead.
 
-A scroll of a box, or of the document, that moves rows the terminal can
-shift on its own is sent as a terminal scroll, and the diff repairs
-what the shift got wrong. A scroll box narrower than the terminal
-cannot use this, because terminals shift full rows, so its rows are
-repainted.
+When the document or a box scrolls, the engine asks the terminal to
+shift the rows itself, and the diff repaints whatever the shift got
+wrong. Terminals shift only full rows, so a scrolling box narrower than
+the terminal is repainted instead.
 
 ## What the engine asks the terminal
 
 The engine never reads the terminal's name or its environment to decide
 what it can do. It asks the terminal, in-band, and uses the answer. A
-terminal that does not answer gets the conservative behavior.
+terminal that does not answer gets the safe default.
 
 | Ask | Used for |
 | --- | --- |

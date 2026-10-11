@@ -3,10 +3,10 @@ title: Layout
 description: The box model, flexbox, grid, tables, and MathML on a cell grid.
 ---
 
-The cell is the unit basis: by default `1px` and `1ch` both mean one
-cell, and the property supplies the axis. The `cellSize` option changes
-how many CSS pixels a cell is. Lengths that land between cells resolve to whole
-cells.
+By default `1px` and `1ch` are both one cell, and the property decides
+whether that is a column or a row. The `cellSize` option changes how
+many CSS pixels a cell is. Lengths that land between cells resolve to
+whole cells.
 
 ## Boxes
 
@@ -108,11 +108,3 @@ renders TeX through KaTeX's MathML output and walks every element.
 
 Floats, `subgrid` and masonry. The [compatibility matrix](/compatibility/) has
 the full list.
-
-## Highlights
-
-`CSS.highlights.set("hit", new Highlight(...ranges))` colors ranges through
-`::highlight(hit)` rules for `color`, `background-color` and
-`text-decoration-line`, without adding elements or moving a line break.
-The higher `priority` wins where highlights overlap, and `::selection`
-paints over all of them. See `examples/highlights.ts`.
