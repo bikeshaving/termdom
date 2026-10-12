@@ -8,179 +8,191 @@
 		if (!isDark) document.documentElement.classList.add("color-scheme-light"); })()</script><div id="navbar-root"><nav class="
 				css-nfqjsx
 				css-1j5rlzq
-			"><div class="css-11v3y9b"><a class="css-11v3y9b" style="gap: 1ch" href="/"><span aria-hidden="true" class="css-qygeio"></span>termdom</a><a href="/guides/getting-started/" aria-current="page">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a></div><div class="css-11v3y9b"><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a><button role="switch" aria-label="toggle color scheme" aria-checked="true" class="css-1sjvhgi"><span class="scheme-dark">🌙</span><span class="scheme-light">☀️</span></button></div></nav></div><div id="sidebar" class="css-1mrgbhe"><h2 class="css-8smt6y">Guides</h2><div id="search-root"><div class="css-1y4ph0t"><input type="search" placeholder="Search..." value="" class="css-1psnvl5"></div></div><div><a href="/guides/getting-started/" class="css-1ml01ji">Getting Started</a></div><div><a href="/guides/rendering/" class="css-1ml01ji">Rendering</a></div><div><a href="/guides/layout/" class="css-1ml01ji">Layout</a></div><div><a href="/guides/styling/" class="css-1ml01ji">Styling</a></div><div><a href="/guides/events-and-input/" class="css-1ml01ji">Events and Input</a></div><div><a href="/guides/api/" class="css-1ml01ji">API</a></div><div><a href="/guides/images-and-canvas/" aria-current="page" class="css-1ml01ji">Images and canvas</a></div></div><main data-pagefind-body class="css-4xbgcy"><h1>Images and canvas</h1><p>A cell can show two pixels: the lower half block, <code>▄</code>, in the
-foreground color under the background color. <code>&lt;img&gt;</code> and <code>&lt;canvas&gt;</code>
-draw that way.</p><p>Most terminals draw block characters themselves, so either half fills
-its half of the cell exactly. Terminal.app draws them from the font,
-and Menlo&#039;s and SF Mono&#039;s sit low in the cell: the upper half block
-leaves a sliver of the wrong color at the top and runs past the
-middle. The background fills whatever the glyph leaves, so with the
-lower half block only the seam between the two pixels is a little
-low. The pixels are ordinary cells, so they scroll, clip and
-redraw like text, and they work over SSH and inside tmux.</p><p>Two options say how pixels are drawn, <code>images</code> for an <code>&lt;img&gt;</code> and
-<code>canvas</code> for a canvas&#039;s <code>&quot;2d&quot;</code> context. <code>&quot;auto&quot;</code>, the default for both,
-uses the best way the terminal has, which today is always cells.
-<code>&quot;cells&quot;</code> draws cells whatever the terminal could do. <code>&quot;none&quot;</code> draws
-nothing: an <code>&lt;img&gt;</code> loads nothing and shows its <code>alt</code> text, as a
-browser does with images turned off, and <code>getContext(&quot;2d&quot;)</code> returns
-<code>null</code>, so a canvas shows its fallback content. A <code>&quot;termdom-cellgrid&quot;</code>
-context still draws cells, but its <code>drawImage()</code> draws nothing. A page
-written for a browser often reads better that way, since half blocks
-blur a logo or a patterned picture that its fallback says plainly.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>images<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">,</span> canvas<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><h2 id="img"><code>&lt;img&gt;</code> <a class="heading-anchor" href="#img">#</a></h2><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>img</span> <span class="token attr-name">src</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cover.jpg<span class="token punctuation">"</span></span> <span class="token attr-name">alt</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Album cover<span class="token punctuation">"</span></span><span class="token punctuation">></span></span></code></pre><p><code>src</code> is a URL: <code>https:</code>, <code>data:</code>, <code>file:</code> or any other. A path is
-relative to the document&#039;s URL, given by the <code>url</code> option. A document
-at <code>about:blank</code> has no URL to resolve against, so a path there names
-nothing; a program that shows local files sets <code>url</code> to a <code>file:</code> URL,
-such as its working directory.</p><h3 id="loading">Loading <a class="heading-anchor" href="#loading">#</a></h3><p>An image loads from wherever its <code>src</code> points, as in a browser that
-got no policy. A program showing markup it does not trust, such as
-email, narrows that with the <code>csp</code> option:</p><pre class="language-typescript"><code class="language-typescript"><span class="token comment">// Images from the web and data: URLs only.</span>
+			"><div class="css-11v3y9b"><a class="css-11v3y9b" style="gap: 1ch" href="/"><span aria-hidden="true" class="css-qygeio"></span>termdom</a><a href="/guides/getting-started/" aria-current="page">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a></div><div class="css-11v3y9b"><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a><button role="switch" aria-label="toggle color scheme" aria-checked="true" class="css-1sjvhgi"><span class="scheme-dark">🌙</span><span class="scheme-light">☀️</span></button></div></nav></div><div id="sidebar" class="css-1mrgbhe"><h2 class="css-8smt6y">Guides</h2><div id="search-root"><div class="css-1y4ph0t"><input type="search" placeholder="Search..." value="" class="css-1psnvl5"></div></div><div><a href="/guides/getting-started/" class="css-1ml01ji">Getting Started</a></div><div><a href="/guides/rendering/" class="css-1ml01ji">Rendering</a></div><div><a href="/guides/layout/" class="css-1ml01ji">Layout</a></div><div><a href="/guides/styling/" class="css-1ml01ji">Styling</a></div><div><a href="/guides/events-and-input/" class="css-1ml01ji">Events and Input</a></div><div><a href="/guides/images-and-canvas/" aria-current="page" class="css-1ml01ji">Images and canvas</a></div><div><a href="/guides/api/" class="css-1ml01ji">API</a></div></div><main data-pagefind-body class="css-4xbgcy"><h1>Images and canvas</h1><p>A cell can show two pixels. The engine draws the lower half block,
+<code>▄</code>, in the foreground color, and the background color fills the
+upper half. <code>&lt;img&gt;</code> and <code>&lt;canvas&gt;</code> both draw pixels this way. The
+pixels are ordinary cells, so they scroll, clip and redraw like text.
+They also work over SSH and inside tmux.</p><p>Most terminals draw block characters themselves, so each half block
+fills exactly half of the cell. Terminal.app draws them from the font
+instead. In Menlo and SF Mono the block glyphs sit low in the cell. The
+upper half block leaves a thin strip of the wrong color at the top of
+the cell and reaches past the middle. The background color fills any
+part of the cell the glyph does not cover. With the lower half block,
+the only visible flaw is that the line between the two pixels sits a
+little low.</p><p>Two options control how pixels are drawn: <code>images</code> for <code>&lt;img&gt;</code>, and
+<code>canvas</code> for a canvas&#039;s <code>&quot;2d&quot;</code> context. Each takes one of three values:</p><ul><li><code>&quot;auto&quot;</code> is the default for both. It picks the best method the
+terminal supports. Today that is always cells.</li><li><code>&quot;cells&quot;</code> always draws cells.</li><li><code>&quot;none&quot;</code> draws nothing. An <code>&lt;img&gt;</code> loads nothing and shows its <code>alt</code>
+text, as a browser does with images turned off. <code>getContext(&quot;2d&quot;)</code>
+returns <code>null</code>, so a canvas shows its fallback content. A
+<code>&quot;termdom-cellgrid&quot;</code> context still draws cells, but its <code>drawImage()</code>
+draws nothing.</li></ul><p>A page written for a browser often reads better with <code>&quot;none&quot;</code>. Half
+blocks blur logos and detailed pictures, and the alt text says what
+they show.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>images<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">,</span> canvas<span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><h2 id="img"><code>&lt;img&gt;</code> <a class="heading-anchor" href="#img">#</a></h2><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>img</span> <span class="token attr-name">src</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cover.jpg<span class="token punctuation">"</span></span> <span class="token attr-name">alt</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Album cover<span class="token punctuation">"</span></span><span class="token punctuation">></span></span></code></pre><p><code>src</code> is a URL with any scheme, such as <code>https:</code>, <code>data:</code> or <code>file:</code>.
+A path resolves against the document&#039;s URL, which the <code>url</code> option
+sets. A document at <code>about:blank</code> has no URL to resolve against, so a
+path there points to nothing. A program that shows local files should
+set <code>url</code> to a <code>file:</code> URL, such as the URL of its working directory.</p><h3 id="loading">Loading <a class="heading-anchor" href="#loading">#</a></h3><p>With no policy set, an image loads from wherever its <code>src</code> points, as
+it does in a browser. A program that shows markup it does not trust,
+such as email, limits what can load with the <code>csp</code> option:</p><pre class="language-typescript"><code class="language-typescript"><span class="token comment">// Images from the web and data: URLs only.</span>
 <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src https: data:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 
 <span class="token comment">// A mail client: attachments by cid:, nothing remote.</span>
-<span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src cid: data:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The option is a Content Security Policy, in the syntax of a
-<code>Content-Security-Policy</code> header. An <code>&lt;img&gt;</code> loads only what <code>img-src</code>
-allows, or <code>default-src</code> when there is no <code>img-src</code>. Left out, or <code>&quot;&quot;</code>,
-there is no policy.</p><p>Source expressions match as CSP Level 3 defines them: <code>&#039;none&#039;</code>,
-<code>&#039;self&#039;</code>, <code>*</code>, a scheme such as <code>https:</code> or <code>cid:</code>, and a host such as
-<code>https://*.example.com:8443/img/</code>. <code>*</code> covers the network schemes and
-the document&#039;s own, not <code>data:</code> or <code>cid:</code>. A host given without a
-scheme takes the document&#039;s scheme, and for a document not served over
-the network, as <code>about:blank</code> and <code>file:</code> are not, the network schemes.</p><p>A page can narrow the policy with its own
-<code>&lt;meta http-equiv=&quot;Content-Security-Policy&quot;&gt;</code> in its head, and never
-widen it: a load must pass every policy. As in a browser, the tag&#039;s
-policy holds from when it is inserted into the head, and removing the
-tag or changing its <code>content</code> later changes nothing. A load a policy blocks fires
-<code>securitypolicyviolation</code> at its element, a <code>SecurityPolicyViolationEvent</code>
-that bubbles to the document and names the URL, the directive and the
-policy. The image shows its <code>alt</code> text instead. When the program
-set no policy, the first blocked load is also reported once where
-uncaught errors go: the transport&#039;s log, or the scrollback at exit.</p><p>A load the policy allows goes to the TermDOM as a <code>&quot;fetch&quot;</code> event, a
-<code>FetchEvent</code>, as a Service Worker hears it, and to the network when no
-listener answers. A listener answers with <code>respondWith()</code>, which stops
-the other listeners. <code>Response.error()</code>, a promise that rejects, or
-<code>preventDefault()</code> without an answer fails the load.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src cid: https:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src cid: data:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The option is a Content Security Policy, written in the same syntax as
+a <code>Content-Security-Policy</code> header. An <code>&lt;img&gt;</code> loads only what
+<code>img-src</code> allows. When the policy has no <code>img-src</code>, <code>default-src</code>
+decides. When the option is left out or set to <code>&quot;&quot;</code>, there is no
+policy.</p><p>Source expressions match as CSP Level 3 defines them. They include
+<code>&#039;none&#039;</code>, <code>&#039;self&#039;</code>, <code>*</code>, a scheme such as <code>https:</code> or <code>cid:</code>, and a
+host such as <code>https://*.example.com:8443/img/</code>. <code>*</code> covers the network
+schemes and the document&#039;s own scheme. It does not cover <code>data:</code> or
+<code>cid:</code>. A host written without a scheme takes the document&#039;s scheme.
+For a document that is not served over the network, such as one at
+<code>about:blank</code> or a <code>file:</code> URL, it takes the network schemes instead.</p><p>A page can add its own policy with a
+<code>&lt;meta http-equiv=&quot;Content-Security-Policy&quot;&gt;</code> tag in its head. This
+can only narrow the policy, never widen it, because a load must pass
+every policy. The tag&#039;s policy takes effect when the tag is inserted
+into the head, as in a browser. Removing the tag or changing its
+<code>content</code> later has no effect.</p><p>When a policy blocks a load, the engine fires
+<code>securitypolicyviolation</code> at the element. The event is a
+<code>SecurityPolicyViolationEvent</code>. It bubbles to the document and names
+the URL, the directive and the policy. The image shows its <code>alt</code> text
+instead. If the program set no policy, the engine also reports the
+first blocked load once, in the place uncaught errors go: the
+transport&#039;s log, or the scrollback at exit.</p><p>When the policy allows a load, the engine first dispatches a <code>&quot;fetch&quot;</code>
+event on the TermDOM. The event is a <code>FetchEvent</code>, the same type a
+Service Worker receives. If no listener answers, the request goes to
+the network. A listener answers by calling <code>respondWith()</code>, which also
+stops the other listeners from running. Any of these fails the load:</p><ul><li>answering with <code>Response.error()</code></li><li>answering with a promise that rejects</li><li>calling <code>preventDefault()</code> without answering</li></ul><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>csp<span class="token operator">:</span> <span class="token string">"img-src cid: https:"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 term<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"fetch"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
   <span class="token keyword">const</span> <span class="token punctuation">{</span>request<span class="token punctuation">}</span> <span class="token operator">=</span> event<span class="token punctuation">;</span>
   <span class="token keyword">if</span> <span class="token punctuation">(</span>request<span class="token punctuation">.</span>destination <span class="token operator">===</span> <span class="token string">"image"</span> <span class="token operator">&amp;&amp;</span> request<span class="token punctuation">.</span>url<span class="token punctuation">.</span><span class="token function">startsWith</span><span class="token punctuation">(</span><span class="token string">"cid:"</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
     event<span class="token punctuation">.</span><span class="token function">respondWith</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Response</span><span class="token punctuation">(</span><span class="token function">attachment</span><span class="token punctuation">(</span>request<span class="token punctuation">.</span>url<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
   <span class="token punctuation">}</span>
-<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The policy comes first, as a page&#039;s policy does before its Service
-Worker: a load the listener answers must be allowed too, so serving
-<code>cid:</code> takes both <code>img-src cid:</code> and the listener. <code>request.destination</code>
-says what the load is for (<code>&quot;image&quot;</code>). <code>handled</code> settles once the load
-is answered, and <code>waitUntil()</code> keeps <code>dispose()</code> waiting for work a
-listener goes on with. <code>dispose()</code> aborts loads still in flight, which a
-listener sees on <code>request.signal</code>. A load waiting on a listener&#039;s answer
-ends when its <code>src</code> changes or the TermDOM is disposed, whether or not
-the answer ever comes.</p><p>A redirect, from the network or from a listener&#039;s <code>Response.redirect()</code>,
-is checked against the policy again and followed on the network, not
-offered to the listeners, as a browser follows one without its Service
-Worker. A redirect goes only to another <code>http:</code> or <code>https:</code> URL, and at
-most 20 are followed. A listener that answers with <code>fetch(event.request)</code>
-follows redirects on its own, and its response is checked against the
-policy where it ended up, as a browser checks a Service Worker&#039;s
-response. A violation names the URL the document asked for, never where
-it was redirected.</p><p>To decide image by image, such as no remote images in quoted mail,
-change the markup before it is inserted, as a mail client cleans what
-it shows.</p><p>The request waits for the script that set the source to finish, so a
-listener added just after the markup sees its images. Only a document
-whose own URL is <code>file:</code> loads <code>file:</code> URLs, whatever the policy says,
-so untrusted markup in a page at <code>about:blank</code> or <code>https:</code> cannot read
-local files. Node&#039;s <code>fetch</code> reads no files, and Bun&#039;s and Deno&#039;s do, so
-a program that allows local files on every runtime answers them itself.</p><p>The page&#039;s own <code>window.fetch</code> resolves a relative URL against the
-document&#039;s, as a browser&#039;s does, and goes the way the markup&#039;s loads go:
-checked against <code>connect-src</code>, or <code>default-src</code> when there is none,
-then offered to the <code>&quot;fetch&quot;</code> listeners, then sent to the network. A
-listener&#039;s own <code>fetch</code>, made while it answers or of the request it was
-given, goes to the network, as a Service Worker&#039;s does, not back to the
-listener.</p><p>An inline event handler, such as <code>onerror=&quot;...&quot;</code> in the markup, runs
-with everything the program can reach, as the program&#039;s own code does.
-Under a policy it runs only where <code>script-src-attr</code>, <code>script-src</code> or
-<code>default-src</code>, whichever the policy names first, allows
-<code>&#039;unsafe-inline&#039;</code>, and a nonce or hash in the same list cancels that.
-One that does not run is reported with <code>securitypolicyviolation</code>.
-Without a policy every handler runs, so markup the program does not
-trust needs one, even one that only says <code>default-src &#039;none&#039;</code>.</p><p>PNG, JPEG, GIF and BMP decode:</p><table><thead><tr><th>Format</th><th>What decodes</th></tr></thead><tbody><tr><td>PNG</td><td>Every color type and bit depth, palettes, <code>tRNS</code> transparency, Adam7 interlacing</td></tr><tr><td>JPEG</td><td>Baseline and progressive, any chroma subsampling, restart markers, grayscale, CMYK and YCCK. The Exif orientation turns the image, as browsers do by default</td></tr><tr><td>GIF</td><td>The first frame, with its transparent color</td></tr><tr><td>BMP</td><td>1, 4, 8, 16, 24 and 32 bits, RLE4 and RLE8</td></tr></tbody></table><p>WebP, AVIF and SVG do not decode. Neither do arithmetic-coded or
-lossless JPEGs.</p><p><code>load</code> and <code>error</code> fire as they do in a browser, and <code>decode()</code>,
-<code>complete</code>, <code>naturalWidth</code>, <code>naturalHeight</code> and <code>currentSrc</code> report the
-image. <code>new Image()</code> makes an <code>&lt;img&gt;</code>. <code>srcset</code> is read for its <code>1x</code>
-candidate.</p><p>An image that is not showing follows HTML&#039;s rendering rules:</p><ul><li>An image that failed to load, was blocked or has no <code>src</code> shows its
-<code>alt</code> text in the line, as plain text that wraps like any other.</li><li>An image that is not showing, has a <code>src</code> and has no <code>alt</code> attribute is
-a bordered box with nothing inside.</li><li>An image that has a size, from <code>width</code> and <code>height</code> or from CSS, is a
-bordered box of that size with its <code>alt</code> text inside, cut with an
-ellipsis when it does not fit, while it is still loading or in a
-document in quirks mode (one with no <code>&lt;!doctype html&gt;</code>).</li><li>An empty <code>alt</code> marks an image that is only decoration, and it shows
-nothing, as does an <code>&lt;img&gt;</code> with neither a <code>src</code> nor an <code>alt</code>.</li></ul><h3 id="size">Size <a class="heading-anchor" href="#size">#</a></h3><p>An image&#039;s pixels are CSS pixels, so its natural size in cells is its
-size divided by the size of a cell. With the <code>cellSize</code> option set,
-that is the page&#039;s cell. With the default unit cell, where a CSS pixel
-is a whole cell, an image takes the terminal&#039;s cell instead: the engine
-asks for its size (XTWINOPS 16) and assumes 8 by 16 until the terminal
-answers. A 400 by 400 image is 50 columns by 25 rows under that
-assumption.</p><p><code>width</code> and <code>height</code>, as attributes or in CSS, are lengths like any
-other: CSS pixels, which are cells under the unit cell. With only one
-of them set, the other follows the image&#039;s ratio. <code>max-width: 100%</code>
-keeps an image inside its container.</p><p>On a line, an image is as tall as itself and its top is at the top of
-the line.</p><h3 id="fitting">Fitting <a class="heading-anchor" href="#fitting">#</a></h3><p><code>object-fit</code> and <code>object-position</code> place the image in its box when the
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The policy check comes before the listeners, as a page&#039;s policy
+applies before its Service Worker sees a request. A load that a
+listener answers must also pass the policy. To serve <code>cid:</code> URLs, a
+program needs both <code>img-src cid:</code> in its policy and a listener.</p><p>Other parts of the event:</p><ul><li><code>request.destination</code> says what the load is for (<code>&quot;image&quot;</code>).</li><li><code>handled</code> settles once the load is answered.</li><li><code>waitUntil()</code> makes <code>dispose()</code> wait for work a listener continues
+after answering.</li><li><code>dispose()</code> aborts loads that are still in flight. A listener sees
+this on <code>request.signal</code>.</li></ul><p>A load that is waiting for a listener&#039;s answer ends when the image&#039;s
+<code>src</code> changes or the TermDOM is disposed. This happens whether or not
+the answer ever arrives.</p><p>A redirect can come from the network or from a listener&#039;s
+<code>Response.redirect()</code>. The engine checks each redirect against the
+policy again and follows it on the network. It does not offer the
+redirect to the listeners, as a browser follows a redirect
+without asking its Service Worker. A redirect may only go to an
+<code>http:</code> or <code>https:</code> URL, and the engine follows at most 20.</p><p>A listener that answers with <code>fetch(event.request)</code> follows redirects
+itself. The engine then checks the response against the policy using
+the URL where the redirects ended, as a browser does with a Service
+Worker&#039;s response. A violation report always names the URL the
+document asked for, never the URL it was redirected to.</p><p>To decide image by image, such as blocking remote images only in
+quoted mail, change the markup before inserting it. A mail client
+cleans its markup the same way before showing it.</p><p>The request waits until the script that set the source finishes. So a
+listener added right after the markup still sees that markup&#039;s images.</p><p>Only a document whose own URL is a <code>file:</code> URL can load <code>file:</code> URLs.
+This holds no matter what the policy says. So untrusted markup in a
+page at <code>about:blank</code> or an <code>https:</code> URL cannot read local files.
+Node&#039;s <code>fetch</code> cannot read files, but Bun&#039;s and Deno&#039;s can. A program
+that wants local files to load on every runtime must answer those
+requests in its own listener.</p><p>The page&#039;s own <code>window.fetch</code> resolves a relative URL against the
+document&#039;s URL, as a browser&#039;s does. Its requests take the same path
+as the markup&#039;s loads:</p><ol><li>The engine checks them against <code>connect-src</code>, or <code>default-src</code> when
+the policy has no <code>connect-src</code>.</li><li>The engine offers them to the <code>&quot;fetch&quot;</code> listeners.</li><li>If no listener answers, the engine sends them to the network.</li></ol><p>A listener may call <code>fetch</code> itself, either while it answers or on the
+request it was given. That call goes straight to the network and does
+not come back to the listener, as with a Service Worker.</p><p>An inline event handler, such as <code>onerror=&quot;...&quot;</code> in the markup, runs
+with full access to everything the program can reach, like the
+program&#039;s own code. Under a policy, a handler runs only if the policy
+allows <code>&#039;unsafe-inline&#039;</code> in the first of these directives that it
+names: <code>script-src-attr</code>, <code>script-src</code>, <code>default-src</code>. A nonce or hash
+in the same list cancels <code>&#039;unsafe-inline&#039;</code>. When a handler is blocked,
+the engine reports it with <code>securitypolicyviolation</code>. Without a policy
+every handler runs. Markup the program does not trust therefore needs a
+policy, even one that only says <code>default-src &#039;none&#039;</code>.</p><p>The engine decodes PNG, JPEG, GIF and BMP:</p><table><thead><tr><th>Format</th><th>What decodes</th></tr></thead><tbody><tr><td>PNG</td><td>Every color type and bit depth, palettes, <code>tRNS</code> transparency, Adam7 interlacing</td></tr><tr><td>JPEG</td><td>Baseline and progressive, any chroma subsampling, restart markers, grayscale, CMYK and YCCK. The engine rotates the image by its Exif orientation, as browsers do by default</td></tr><tr><td>GIF</td><td>The first frame, with its transparent color</td></tr><tr><td>BMP</td><td>1, 4, 8, 16, 24 and 32 bits, RLE4 and RLE8</td></tr></tbody></table><p>It does not decode WebP, AVIF or SVG. It also does not decode
+arithmetic-coded or lossless JPEGs.</p><p><code>load</code> and <code>error</code> fire as they do in a browser. <code>decode()</code>,
+<code>complete</code>, <code>naturalWidth</code>, <code>naturalHeight</code> and <code>currentSrc</code> report on
+the image. <code>new Image()</code> creates an <code>&lt;img&gt;</code>. The engine reads <code>srcset</code>
+only for its <code>1x</code> candidate.</p><p>An image that is not showing follows HTML&#039;s rendering rules:</p><ul><li>An image that failed to load, was blocked or has no <code>src</code> shows its
+<code>alt</code> text inline, as plain text that wraps like any other text.</li><li>An image that is not showing, has a <code>src</code> and has no <code>alt</code> attribute
+is an empty box with a border.</li><li>An image that has a size, from <code>width</code> and <code>height</code> or from CSS, is
+a box of that size with a border and its <code>alt</code> text inside. The text
+is cut off with an ellipsis when it does not fit. This applies while
+the image is still loading, or in a quirks-mode document (one with no
+<code>&lt;!doctype html&gt;</code>).</li><li>An empty <code>alt</code> marks an image as decoration only, and the image shows
+nothing. An <code>&lt;img&gt;</code> with neither a <code>src</code> nor an <code>alt</code> also shows
+nothing.</li></ul><h3 id="size">Size <a class="heading-anchor" href="#size">#</a></h3><p>An image&#039;s natural size in cells is its size in pixels divided by the
+size of a cell. When the <code>cellSize</code> option is set, the engine uses
+that cell size. With the default unit cell, where one CSS pixel is one
+whole cell, the engine uses the terminal&#039;s real cell size instead. It
+asks the terminal for its cell size (XTWINOPS 16) and assumes 8 by 16
+pixels until the terminal answers. At 8 by 16, a 400 by 400 image is
+50 columns by 25 rows.</p><p><code>naturalWidth</code> and <code>naturalHeight</code> report this size in CSS pixels.
+Under the unit cell a CSS pixel is a cell, so this works the way a
+browser reports the size of a high-density image. For example, a 400
+by 200 file with 8 by 16 pixel cells reports 50 by 13. When the
+<code>cellSize</code> option is set, a CSS pixel is a pixel, and the natural size
+is the file&#039;s size.</p><p><code>width</code> and <code>height</code>, as attributes or in CSS, are lengths like any
+other. They are in CSS pixels, which are cells under the unit cell.
+When only one of them is set, the other follows the image&#039;s aspect
+ratio. <code>max-width: 100%</code> keeps an image inside its container.</p><p>On a line of text, an image keeps its full height, and its top lines up
+with the top of the line.</p><h3 id="fitting">Fitting <a class="heading-anchor" href="#fitting">#</a></h3><p><code>object-fit</code> and <code>object-position</code> place the image in its box when the
 box has a different shape. <code>fill</code> is the default. <code>contain</code>, <code>cover</code>,
-<code>none</code> and <code>scale-down</code> keep the image&#039;s ratio. <code>image-rendering:
-pixelated</code> or <code>crisp-edges</code> picks the nearest pixel instead of
-averaging the pixels a cell covers.</p><h3 id="transparency">Transparency <a class="heading-anchor" href="#transparency">#</a></h3><p>A pixel at least half opaque shows, and the rest leave the cell under
-them as it was. On an element with a <code>background-color</code>, translucent
-pixels blend over that color instead.</p><h3 id="limits">Limits <a class="heading-anchor" href="#limits">#</a></h3><p>An image file names its size before its pixels, so a few bytes can
-ask for gigabytes. As a browser does, the engine checks what a file
-asks for before it allocates, and an image past a limit fails to load:</p><ul><li>a response of at most 64 MB, by its declared length and while reading</li><li>at most 32768 pixels to a side and 2^26 pixels in all</li><li>a PNG&#039;s data inflated only as far as its image needs</li><li>a JPEG of at most four components and 500 scans</li></ul><p>A decoded image keeps its full pixels, four bytes each, for as long as
-it is loaded, so <code>createImageBitmap()</code> copies it pixel for pixel. An
-image of more than 2^20 pixels also keeps a copy averaged down to that
-many, 4 MB, which its cells are drawn from.</p><p>Images decode one at a time on the runtime&#039;s web <code>Worker</code>, so a large
-one does not stall the page. Bun and Deno have one. Node has one from
-26.9 behind a flag, so run <code>node --experimental-web-worker</code>, or set
-<code>NODE_OPTIONS=--experimental-web-worker</code>, to decode off the page&#039;s
-thread there. Without a <code>Worker</code>, and in a CommonJS build, images decode
-on the page&#039;s thread in 16 ms slices, so input and frames go on
-between slices. A decode that takes more than 10 seconds is stopped
-and that image fails; the images behind it still decode. The worker&#039;s
-module ships in the package beside its entry, and TermDOM starts it
-itself.</p><p>The worker ends a second after its last decode, and when the last
-TermDOM is disposed, so it never keeps a finished program running.</p><p>On a Node without the flag, a program can supply a <code>Worker</code> itself.
-TermDOM uses whatever global <code>Worker</code> there is, so the
+<code>none</code> and <code>scale-down</code> keep the image&#039;s aspect ratio. <code>image-rendering:
+pixelated</code> or <code>crisp-edges</code> makes the engine use the nearest pixel
+instead of averaging all the pixels a cell covers.</p><h3 id="transparency">Transparency <a class="heading-anchor" href="#transparency">#</a></h3><p>A pixel that is at least half opaque is drawn. A pixel that is less
+than half opaque leaves the cell under it unchanged. On an element with
+a <code>background-color</code>, translucent pixels blend over that color instead.</p><h3 id="limits">Limits <a class="heading-anchor" href="#limits">#</a></h3><p>An image file states its size before its pixels, so a few bytes can
+ask for gigabytes of memory. Like a browser, the engine checks the
+stated size before it allocates memory. An image that goes past any of
+these limits fails to load:</p><ul><li>A response can be at most 64 MB. The engine checks both the declared
+length and the bytes as they arrive.</li><li>An image can be at most 32768 pixels on a side and 2^26 pixels in
+total.</li><li>The engine inflates a PNG&#039;s data only as far as the image needs.</li><li>A JPEG can have at most four components and 500 scans.</li></ul><p>A decoded image keeps all its pixels, at four bytes each, for as long
+as it is loaded. So <code>createImageBitmap()</code> makes an exact copy. An image
+of more than 2^20 pixels also keeps a smaller copy of 2^20 pixels
+(4 MB), and the engine draws its cells from that copy.</p><p>An image whose box would sample more than 2^26 pixels draws nothing. So
+does a 2D canvas past that size. Creating <code>ImageData</code> past that size
+throws a <code>RangeError</code>. A cell grid stops at 2^22 cells.</p><h3 id="decoding">Decoding <a class="heading-anchor" href="#decoding">#</a></h3><p>The engine decodes images one at a time on the runtime&#039;s web <code>Worker</code>,
+so a large image does not stall the page. Bun and Deno have a web
+<code>Worker</code>. Node has one from version 26.9, behind a flag. To decode off
+the page&#039;s thread in Node, run <code>node --experimental-web-worker</code> or set
+<code>NODE_OPTIONS=--experimental-web-worker</code>.</p><p>Without a <code>Worker</code>, and in a CommonJS build, images decode on the
+page&#039;s thread in 16 ms slices. Input and frames keep running between
+slices. If a decode takes more than 10 seconds, the engine stops it and
+that image fails to load. The images queued behind it still decode.
+The worker ships in the package, and TermDOM starts it on its own.</p><p>The worker exits one second after its last decode, or when the last
+TermDOM is disposed. It never keeps a finished program running.</p><p>On a Node without the flag, a program can supply a <code>Worker</code> itself.
+TermDOM uses any global <code>Worker</code> it finds, so the
 <a href="https://www.npmjs.com/package/@b9g/node-webworker"><code>@b9g/node-webworker</code></a>
-shim gives it one on any Node 18 or later:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">import</span> <span class="token punctuation">{</span>Worker<span class="token punctuation">}</span> <span class="token keyword">from</span> <span class="token string">"@b9g/node-webworker"</span><span class="token punctuation">;</span>
-globalThis<span class="token punctuation">.</span>Worker <span class="token operator">??=</span> Worker<span class="token punctuation">;</span></code></pre><p>Where Node has its own <code>Worker</code>, the <code>??=</code> leaves it in place.</p><p>A new <code>src</code> cancels the request the old one started, and drops its
-decode if it is still waiting for its turn. An image whose
-box would sample more than 2^26 pixels draws nothing, as does a 2D
-canvas past that size. <code>ImageData</code> past it throws a <code>RangeError</code>, and
-a cell grid stops at 2^22 cells.</p><h2 id="canvas"><code>&lt;canvas&gt;</code> <a class="heading-anchor" href="#canvas">#</a></h2><p>A canvas is laid out at <code>width</code> by <code>height</code> CSS pixels, as HTML sizes
-it, whichever context it gets. Under the default unit cell a CSS pixel
-is a cell, so <code>&lt;canvas width=&quot;40&quot; height=&quot;10&quot;&gt;</code> is 40 columns by 10
-rows. With the <code>cellSize</code> option set, they are pixels, and a canvas
-covers the cells its pixels fill. CSS sizes a canvas like any element.</p><p>Without the attributes, a canvas is HTML&#039;s 300 by 150 pixels. Under the
-unit cell, <code>width</code> and <code>height</code> default to 38 and 9 instead, the cells
-300 by 150 pixels fill at 8 by 16 pixels a cell, so a bare canvas is
-about the size it would be in pixels.</p><p>Images keep their own rule: an image&#039;s pixels are its file&#039;s, so under
-the unit cell it is measured against the terminal&#039;s cell, not one cell
-a pixel.</p><p>An image&#039;s <code>naturalWidth</code> and <code>naturalHeight</code> are that size in CSS
-pixels, which are cells under the unit cell, the way a browser reports a
-high-density image: a 400 by 200 file on a terminal with 8 by 16 pixel
-cells reports 50 by 13. <code>drawImage(image, x, y)</code> draws the whole image
-at that size, scaled down, as Safari draws a high-density image. Source
-rectangles and <code>createImageBitmap()</code> work in the file&#039;s pixels, as in
-every browser, so <code>createImageBitmap(image)</code> is the full-resolution
-copy, with the file&#039;s <code>width</code> and <code>height</code>. With the <code>cellSize</code> option
-set, a CSS pixel is a pixel and the natural size is the file&#039;s.</p><p><code>getContext()</code> takes two context types.</p><h3 id="2d"><code>&quot;2d&quot;</code> <a class="heading-anchor" href="#2d">#</a></h3><p>The 2D context draws pixels into a bitmap, <code>width</code> by <code>height</code>, scaled
-to the canvas&#039;s box. A cell shows two pixels, one above the other, so a
-bitmap twice as tall as its box in cells shows every pixel. It implements:</p><ul><li>rectangles, paths (lines, arcs, ellipses, Bézier curves, <code>arcTo</code>,
+shim provides one on Node 18 or later:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">import</span> <span class="token punctuation">{</span>Worker<span class="token punctuation">}</span> <span class="token keyword">from</span> <span class="token string">"@b9g/node-webworker"</span><span class="token punctuation">;</span>
+globalThis<span class="token punctuation">.</span>Worker <span class="token operator">??=</span> Worker<span class="token punctuation">;</span></code></pre><p>If Node already has its own <code>Worker</code>, the <code>??=</code> leaves it in place.</p><p>When an image gets a new <code>src</code>, the engine cancels the request for the
+old one. If the old image&#039;s decode is still waiting its turn, the
+engine drops it.</p><h2 id="canvas"><code>&lt;canvas&gt;</code> <a class="heading-anchor" href="#canvas">#</a></h2><p>A canvas is laid out at <code>width</code> by <code>height</code> CSS pixels, as HTML sizes
+it, no matter which context it uses. Under the default unit cell a CSS
+pixel is a cell, so <code>&lt;canvas width=&quot;40&quot; height=&quot;10&quot;&gt;</code> is 40 columns by
+10 rows. When the <code>cellSize</code> option is set, the attributes are in
+pixels, and the canvas covers the cells its pixels fill. CSS sizes a
+canvas like any other element.</p><p>Without the attributes, a canvas is 300 by 150 pixels, the HTML
+default. Under the unit cell, <code>width</code> and <code>height</code> default to 38 and 9
+instead. Those are the cells that 300 by 150 pixels fill at 8 by 16
+pixels per cell, so a canvas with no size set comes out about as large
+as it would in a browser.</p><p><code>getContext()</code> accepts two context types.</p><h3 id="2d"><code>&quot;2d&quot;</code> <a class="heading-anchor" href="#2d">#</a></h3><p>The 2D context draws pixels into a bitmap of <code>width</code> by <code>height</code>
+pixels, scaled to fit the canvas&#039;s box. A cell shows two pixels, one
+above the other. So a bitmap twice as tall as its box in cells shows
+every pixel. The context supports:</p><ul><li>rectangles, paths (lines, arcs, ellipses, Bézier curves, <code>arcTo</code>,
 <code>roundRect</code>), <code>Path2D</code> with SVG path data, filling with the <code>nonzero</code>
 and <code>evenodd</code> rules, stroking with widths, caps, joins and dashes,
 and <code>clip()</code></li><li>transforms, <code>save()</code> and <code>restore()</code></li><li>colors, <code>createLinearGradient()</code>, <code>createRadialGradient()</code>,
-<code>createConicGradient()</code> and <code>createPattern()</code></li><li><code>globalAlpha</code> and the Porter-Duff <code>globalCompositeOperation</code> values
-plus <code>lighter</code></li><li><code>drawImage()</code> from an <code>&lt;img&gt;</code>, another <code>&lt;canvas&gt;</code> or an <code>ImageBitmap</code>,
-scaled and cropped</li><li><code>getImageData()</code>, <code>putImageData()</code> and <code>createImageData()</code></li><li><code>toDataURL()</code> and <code>toBlob()</code>, as PNG</li><li><code>isPointInPath()</code> and <code>isPointInStroke()</code></li></ul><p>A terminal has no fonts to rasterize, so <code>fillText()</code> and
-<code>strokeText()</code> draw text as cells over the pixels, at the cell the text
-anchor falls in, with <code>textAlign</code>, <code>textBaseline</code> and <code>direction</code>
-applied. Painting
-over the anchor paints over the text. <code>measureText()</code> counts a cell&#039;s
-width in pixels for each column. Shadows and <code>filter</code> keep their values
-but draw nothing.</p><p>The sample below draws 60 by 40 pixels into 60 columns by 20 rows, so
-each pixel is half a cell and the circle comes out round:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<code>createConicGradient()</code> and <code>createPattern()</code></li><li><code>globalAlpha</code>, and the Porter-Duff <code>globalCompositeOperation</code> values
+plus <code>lighter</code></li><li><code>drawImage()</code> from an <code>&lt;img&gt;</code>, another <code>&lt;canvas&gt;</code> or an
+<code>ImageBitmap</code>, scaled and cropped. <code>drawImage(image, x, y)</code> draws an
+image at its natural size, the way Safari draws a high-density image.
+Source rectangles and <code>createImageBitmap()</code> use the file&#039;s real
+pixels, as in every browser, so <code>createImageBitmap(image)</code> is a
+full-resolution copy.</li><li><code>getImageData()</code>, <code>putImageData()</code> and <code>createImageData()</code></li><li><code>toDataURL()</code> and <code>toBlob()</code>, as PNG</li><li><code>isPointInPath()</code> and <code>isPointInStroke()</code></li></ul><p>A terminal has no fonts for the engine to rasterize. So <code>fillText()</code>
+and <code>strokeText()</code> draw text as cells on top of the pixels, starting at
+the cell that contains the text&#039;s anchor point. They apply
+<code>textAlign</code>, <code>textBaseline</code> and <code>direction</code>. Painting pixels over the
+anchor point paints over the text. <code>measureText()</code> counts each column
+of text as one cell&#039;s width in pixels. Shadows and <code>filter</code> keep their
+values, but draw nothing.</p><p>The sample below draws 60 by 40 pixels into 60 columns by 20 rows. Each
+pixel is half a cell tall, so the circle comes out round:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>width <span class="token operator">=</span> <span class="token number">60</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>height <span class="token operator">=</span> <span class="token number">40</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>style<span class="token punctuation">.</span>width <span class="token operator">=</span> <span class="token string">"60ch"</span><span class="token punctuation">;</span>
@@ -192,19 +204,20 @@ ctx<span class="token punctuation">.</span>fillStyle <span class="token operator
 ctx<span class="token punctuation">.</span><span class="token function">beginPath</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 ctx<span class="token punctuation">.</span><span class="token function">arc</span><span class="token punctuation">(</span><span class="token number">30</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> <span class="token number">15</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> Math<span class="token punctuation">.</span><span class="token constant">PI</span> <span class="token operator">*</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 ctx<span class="token punctuation">.</span><span class="token function">fill</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-document<span class="token punctuation">.</span>body<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span>canvas<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Drawing repaints the canvas on the next frame. No DOM change is needed.</p><h3 id="termdom-cellgrid"><code>&quot;termdom-cellgrid&quot;</code> <a class="heading-anchor" href="#termdom-cellgrid">#</a></h3><p>The cell grid context is experimental: it is TermDOM&#039;s own, with no
-standard to follow, and may change in a minor release as it is used.</p><p>The cell grid context draws cells instead of pixels: as many as the
-canvas&#039;s box holds, which <code>cols</code> and <code>rows</code> report. Under the unit cell
-that is <code>width</code> by <code>height</code>. In any mode, CSS sizes it exactly:
-<code>width: 40ch; height: 10ch</code> holds 40 by 10 cells. When the box changes
-size, the cells that still fit keep what was drawn, and the new ones
-are empty, as a terminal keeps its screen when its window is resized;
-a <code>ResizeObserver</code> on the canvas tells a script to draw again. It is
-TermDOM&#039;s own, so its name carries TermDOM&#039;s prefix, as a browser&#039;s own
-context types once carried theirs (<code>&quot;moz-webgl&quot;</code>, <code>&quot;webkit-3d&quot;</code>). Its
-interface is not on <code>window</code>. The <code>@b9g/termdom</code> package exports its type
-as <code>CanvasCellGridContext</code>, and importing the package teaches TypeScript
-that <code>getContext(&quot;termdom-cellgrid&quot;)</code> returns one.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+document<span class="token punctuation">.</span>body<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span>canvas<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Drawing repaints the canvas on the next frame. The program does not
+need to change the DOM.</p><h3 id="termdom-cellgrid"><code>&quot;termdom-cellgrid&quot;</code> <a class="heading-anchor" href="#termdom-cellgrid">#</a></h3><p>The cell grid context is experimental. It belongs to TermDOM alone,
+has no standard to follow, and may change in a minor release. Its name
+carries TermDOM&#039;s prefix, the same way browsers once prefixed their own
+context types (<code>&quot;moz-webgl&quot;</code>, <code>&quot;webkit-3d&quot;</code>).</p><p>The cell grid context draws cells instead of pixels. It has as many
+cells as the canvas&#039;s box holds, and <code>cols</code> and <code>rows</code> report that
+count. Under the unit cell that is <code>width</code> by <code>height</code>. In any mode,
+CSS sets the size exactly: <code>width: 40ch; height: 10ch</code> holds 40 by 10
+cells.</p><p>When the box changes size, the cells that still fit keep what was drawn
+in them, and the new cells start empty. A terminal treats its screen
+the same way when its window is resized. A <code>ResizeObserver</code> on the
+canvas tells a script when to draw again.</p><p>The context&#039;s interface is not on <code>window</code>. The <code>@b9g/termdom</code> package
+exports its type as <code>CanvasCellGridContext</code>. Importing the package
+tells TypeScript that <code>getContext(&quot;termdom-cellgrid&quot;)</code> returns one.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> canvas <span class="token operator">=</span> document<span class="token punctuation">.</span><span class="token function">createElement</span><span class="token punctuation">(</span><span class="token string">"canvas"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>width <span class="token operator">=</span> <span class="token number">20</span><span class="token punctuation">;</span>
 canvas<span class="token punctuation">.</span>height <span class="token operator">=</span> <span class="token number">3</span><span class="token punctuation">;</span>
 <span class="token keyword">const</span> grid <span class="token operator">=</span> canvas<span class="token punctuation">.</span><span class="token function">getContext</span><span class="token punctuation">(</span><span class="token string">"termdom-cellgrid"</span><span class="token punctuation">)</span><span class="token operator">!</span><span class="token punctuation">;</span>
@@ -216,12 +229,14 @@ grid<span class="token punctuation">.</span><span class="token function">fillTex
 grid<span class="token punctuation">.</span>strokeStyle <span class="token operator">=</span> <span class="token string">"#5fafff"</span><span class="token punctuation">;</span>
 grid<span class="token punctuation">.</span>lineJoin <span class="token operator">=</span> <span class="token string">"round"</span><span class="token punctuation">;</span>
 grid<span class="token punctuation">.</span><span class="token function">strokeRect</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-document<span class="token punctuation">.</span>body<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span>canvas<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Coordinates are cells, and fractional ones round to the nearest cell,
-in every method.</p><p>Lines are box-drawing glyphs. Where two meet they join in a corner, a
-tee or a cross, as borders do. A canvas&#039;s lines join each other but
-not the page&#039;s borders around the canvas.</p><table><thead><tr><th>Member</th><th>What it does</th></tr></thead><tbody><tr><td><code>cols</code>, <code>rows</code></td><td>The cells the canvas&#039;s box holds</td></tr><tr><td><code>fillStyle</code></td><td>A CSS color, read back as a 2D context reads it. <code>CanvasText</code>, the default, is the terminal&#039;s own text color and <code>Canvas</code> its background. <code>currentcolor</code> is the canvas element&#039;s <code>color</code> when it is set. A translucent fill blends over the cell; text under half opaque draws nothing</td></tr><tr><td><code>strokeStyle</code></td><td>The lines&#039; color, the same way</td></tr><tr><td><code>lineStyle</code></td><td>A CSS <code>border-style</code>: <code>solid</code>, the default, <code>double</code>, <code>dashed</code>, <code>dotted</code>, <code>none</code> and the rest</td></tr><tr><td><code>lineJoin</code></td><td><code>miter</code>, the default, <code>round</code>, which curves <code>strokeRect()</code>&#039;s corners, or <code>bevel</code>, which draws as <code>miter</code></td></tr><tr><td><code>font</code></td><td>A CSS <code>font</code> shorthand, as a 2D context takes it, such as <code>&quot;bold 1px monospace&quot;</code>. Its weight and style make text bold, dim or italic; a cell has no size or family to change. A value the shorthand rejects is ignored</td></tr><tr><td><code>textAlign</code></td><td><code>start</code>, the default, <code>end</code>, <code>left</code>, <code>right</code> or <code>center</code></td></tr><tr><td><code>direction</code></td><td><code>inherit</code>, the default, which takes the canvas element&#039;s CSS <code>direction</code>, or <code>ltr</code> or <code>rtl</code>. Right-to-left text is drawn in display order, and it decides which side <code>start</code> and <code>end</code> are</td></tr><tr><td><code>textDecoration</code></td><td><code>none</code>, or <code>underline</code> and <code>line-through</code>, alone or together</td></tr><tr><td><code>save()</code>, <code>restore()</code></td><td>Push and pop the settings above, as a 2D context does</td></tr><tr><td><code>fillText(text, x, y, maxWidth?)</code></td><td>Writes glyphs in the fill color, over the cells&#039; backgrounds. A wide glyph takes two columns. Text past <code>maxWidth</code> columns is cut, and a <code>maxWidth</code> of zero, less, or <code>NaN</code> draws nothing</td></tr><tr><td><code>fillRect(x, y, w, h)</code></td><td>Fills cells with the fill color as their background. <code>CanvasText</code> fills them in inverse video</td></tr><tr><td><code>clearRect(x, y, w, h)</code></td><td>Empties cells</td></tr><tr><td><code>strokeLine(x1, y1, x2, y2)</code></td><td>A line from one cell to another, both included, along a row or a column. A slanted line draws nothing</td></tr><tr><td><code>strokeRect(x, y, w, h)</code></td><td>A box around the cells <code>w</code> by <code>h</code> from (x, y)</td></tr><tr><td><code>drawImage(image, ...)</code></td><td>Draws an image&#039;s pixels, two to a cell. Without a size, the image takes its natural size in cells</td></tr><tr><td><code>getCell(x, y)</code></td><td>The cell&#039;s <code>char</code>, <code>color</code> and <code>background</code>, and whether it is <code>bold</code>, <code>italic</code>, <code>dim</code>, <code>underline</code>, <code>strikethrough</code> or <code>inverse</code>; <code>null</code> for an empty cell</td></tr><tr><td><code>measureText(text)</code></td><td>The text&#039;s width in columns</td></tr><tr><td><code>reset()</code></td><td>Clears the grid, the settings and the saved settings</td></tr><tr><td><code>isContextLost()</code></td><td>Always <code>false</code></td></tr></tbody></table><h2 id="text-alone">Text alone <a class="heading-anchor" href="#text-alone">#</a></h2><p>Pixels can also be written as text: a lower half block in a span
-whose <code>color</code> is the lower pixel and whose <code>background-color</code> is the
-upper one.</p><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>pre</span><span class="token punctuation">></span></span><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>span</span> <span class="token special-attr"><span class="token attr-name">style</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span><span class="token value css language-css"><span class="token property">color</span><span class="token punctuation">:</span> #61afef<span class="token punctuation">;</span> <span class="token property">background-color</span><span class="token punctuation">:</span> #e06c75</span><span class="token punctuation">"</span></span></span><span class="token punctuation">></span></span>▄▄▄<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>span</span><span class="token punctuation">></span></span>
-<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>span</span> <span class="token special-attr"><span class="token attr-name">style</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span><span class="token value css language-css"><span class="token property">color</span><span class="token punctuation">:</span> #e5c07b<span class="token punctuation">;</span> <span class="token property">background-color</span><span class="token punctuation">:</span> #98c379</span><span class="token punctuation">"</span></span></span><span class="token punctuation">></span></span>▄▄▄<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>span</span><span class="token punctuation">></span></span><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>pre</span><span class="token punctuation">></span></span></code></pre><p>That stays aligned through scrolling, clipping and repaints, as any
-text does, but every run of one color pair is an element. An <code>&lt;img&gt;</code> or
-a <code>&lt;canvas&gt;</code> is one element however many pixels it has.</p><div class="css-1fsmiy5"><a href="https://github.com/bikeshaving/termdom/edit/main/docs/guides/07-images-and-canvas.md">Edit this page on GitHub</a></div></main><footer class="css-wgwyi4"><nav class="css-1cmw0m7"><a href="/guides/getting-started/">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a></nav><p class="css-vv6cs2">MIT Licensed · A <a href="https://bikeshaving.org">bikeshaving</a> project</p></footer><script type="module" src="/static/navbar-f6d8a60ddbd93aa8.js"></script><script type="module" src="/static/search-246da526d14c6e23.js"></script></body></html>
+document<span class="token punctuation">.</span>body<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span>canvas<span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>Every method takes coordinates in cells and rounds fractional values
+to the nearest cell.</p><p>Lines are drawn with box-drawing characters. Where two lines meet, they
+join in a corner, a tee or a cross, the same way borders do. Lines on
+a canvas join each other, but they do not join the page&#039;s borders
+around the canvas.</p><table><thead><tr><th>Member</th><th>What it does</th></tr></thead><tbody><tr><td><code>cols</code>, <code>rows</code></td><td>The number of columns and rows the canvas&#039;s box holds</td></tr><tr><td><code>fillStyle</code></td><td>A CSS color. Reading it back gives the same form a 2D context gives. The default, <code>CanvasText</code>, is the terminal&#039;s own text color, and <code>Canvas</code> is its background color. <code>currentcolor</code> is the canvas element&#039;s <code>color</code>, when that is set. A translucent fill blends over the cell. Text less than half opaque draws nothing</td></tr><tr><td><code>strokeStyle</code></td><td>The color of lines, set the same way as <code>fillStyle</code></td></tr><tr><td><code>lineStyle</code></td><td>A CSS <code>border-style</code>: <code>solid</code> (the default), <code>double</code>, <code>dashed</code>, <code>dotted</code>, <code>none</code> and the rest</td></tr><tr><td><code>lineJoin</code></td><td><code>miter</code> (the default); <code>round</code>, which rounds the corners of <code>strokeRect()</code>; or <code>bevel</code>, which draws the same as <code>miter</code></td></tr><tr><td><code>font</code></td><td>A CSS <code>font</code> shorthand, as a 2D context takes it, such as <code>&quot;bold 1px monospace&quot;</code>. The weight and style make text bold, dim or italic. A cell has no size or font family to change. A value the shorthand rejects is ignored</td></tr><tr><td><code>textAlign</code></td><td><code>start</code> (the default), <code>end</code>, <code>left</code>, <code>right</code> or <code>center</code></td></tr><tr><td><code>direction</code></td><td><code>inherit</code> (the default), which uses the canvas element&#039;s CSS <code>direction</code>, or <code>ltr</code> or <code>rtl</code>. Right-to-left text is drawn in display order. The direction also decides which side is <code>start</code> and which is <code>end</code></td></tr><tr><td><code>textDecoration</code></td><td><code>none</code>, or <code>underline</code> and <code>line-through</code>, alone or together</td></tr><tr><td><code>save()</code>, <code>restore()</code></td><td>Push and pop the settings above, as in a 2D context</td></tr><tr><td><code>fillText(text, x, y, maxWidth?)</code></td><td>Writes characters in the fill color, on top of the cells&#039; backgrounds. A wide character takes two columns. Text past <code>maxWidth</code> columns is cut off. A <code>maxWidth</code> of zero or less, or <code>NaN</code>, draws nothing</td></tr><tr><td><code>fillRect(x, y, w, h)</code></td><td>Sets the background of cells to the fill color. A <code>CanvasText</code> fill draws the cells in inverse video</td></tr><tr><td><code>clearRect(x, y, w, h)</code></td><td>Empties cells</td></tr><tr><td><code>strokeLine(x1, y1, x2, y2)</code></td><td>Draws a line from one cell to another, including both ends, along a row or a column. A diagonal line draws nothing</td></tr><tr><td><code>strokeRect(x, y, w, h)</code></td><td>Draws a box around the <code>w</code> by <code>h</code> cells starting at (x, y)</td></tr><tr><td><code>drawImage(image, ...)</code></td><td>Draws an image&#039;s pixels, two to a cell. Without a size, the image takes its natural size in cells</td></tr><tr><td><code>getCell(x, y)</code></td><td>Returns the cell&#039;s <code>char</code>, <code>color</code> and <code>background</code>, and whether it is <code>bold</code>, <code>italic</code>, <code>dim</code>, <code>underline</code>, <code>strikethrough</code> or <code>inverse</code>. Returns <code>null</code> for an empty cell</td></tr><tr><td><code>measureText(text)</code></td><td>Returns the text&#039;s width in columns</td></tr><tr><td><code>reset()</code></td><td>Clears the grid, the settings and the saved settings</td></tr><tr><td><code>isContextLost()</code></td><td>Always returns <code>false</code></td></tr></tbody></table><h2 id="text-alone">Text alone <a class="heading-anchor" href="#text-alone">#</a></h2><p>A program can also write pixels as plain text. Use a lower half block
+in a span whose <code>color</code> is the lower pixel and whose
+<code>background-color</code> is the upper pixel.</p><pre class="language-markup"><code class="language-markup"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>pre</span><span class="token punctuation">></span></span><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>span</span> <span class="token special-attr"><span class="token attr-name">style</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span><span class="token value css language-css"><span class="token property">color</span><span class="token punctuation">:</span> #61afef<span class="token punctuation">;</span> <span class="token property">background-color</span><span class="token punctuation">:</span> #e06c75</span><span class="token punctuation">"</span></span></span><span class="token punctuation">></span></span>▄▄▄<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>span</span><span class="token punctuation">></span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>span</span> <span class="token special-attr"><span class="token attr-name">style</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span><span class="token value css language-css"><span class="token property">color</span><span class="token punctuation">:</span> #e5c07b<span class="token punctuation">;</span> <span class="token property">background-color</span><span class="token punctuation">:</span> #98c379</span><span class="token punctuation">"</span></span></span><span class="token punctuation">></span></span>▄▄▄<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>span</span><span class="token punctuation">></span></span><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>pre</span><span class="token punctuation">></span></span></code></pre><p>This stays aligned through scrolling, clipping and repaints, like any
+text. But every run of one color pair needs its own element. An
+<code>&lt;img&gt;</code> or a <code>&lt;canvas&gt;</code> is a single element no matter how many pixels
+it has.</p><div class="css-1fsmiy5"><a href="https://github.com/bikeshaving/termdom/edit/main/docs/guides/06-images-and-canvas.md">Edit this page on GitHub</a></div></main><footer class="css-wgwyi4"><nav class="css-1cmw0m7"><a href="/guides/getting-started/">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a></nav><p class="css-vv6cs2">MIT Licensed · A <a href="https://bikeshaving.org">bikeshaving</a> project</p></footer><script type="module" src="/static/navbar-f6d8a60ddbd93aa8.js"></script><script type="module" src="/static/search-246da526d14c6e23.js"></script></body></html>

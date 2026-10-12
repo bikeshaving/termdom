@@ -8,85 +8,83 @@
 		if (!isDark) document.documentElement.classList.add("color-scheme-light"); })()</script><div id="navbar-root"><nav class="
 				css-nfqjsx
 				css-1j5rlzq
-			"><div class="css-11v3y9b"><a class="css-11v3y9b" style="gap: 1ch" href="/"><span aria-hidden="true" class="css-qygeio"></span>termdom</a><a href="/guides/getting-started/" aria-current="page">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a></div><div class="css-11v3y9b"><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a><button role="switch" aria-label="toggle color scheme" aria-checked="true" class="css-1sjvhgi"><span class="scheme-dark">🌙</span><span class="scheme-light">☀️</span></button></div></nav></div><div id="sidebar" class="css-1mrgbhe"><h2 class="css-8smt6y">Guides</h2><div id="search-root"><div class="css-1y4ph0t"><input type="search" placeholder="Search..." value="" class="css-1psnvl5"></div></div><div><a href="/guides/getting-started/" class="css-1ml01ji">Getting Started</a></div><div><a href="/guides/rendering/" aria-current="page" class="css-1ml01ji">Rendering</a></div><div><a href="/guides/layout/" class="css-1ml01ji">Layout</a></div><div><a href="/guides/styling/" class="css-1ml01ji">Styling</a></div><div><a href="/guides/events-and-input/" class="css-1ml01ji">Events and Input</a></div><div><a href="/guides/api/" class="css-1ml01ji">API</a></div><div><a href="/guides/images-and-canvas/" class="css-1ml01ji">Images and canvas</a></div></div><main data-pagefind-body class="css-4xbgcy"><h1>Rendering</h1><p>TermDOM paints the document one of three ways, and the way is picked by
-how the terminal is being used rather than by an option.</p><h2 id="flow-mode">Flow mode <a class="heading-anchor" href="#flow-mode">#</a></h2><p><code>attach()</code> on a terminal renders in flow mode. The document is drawn
-where a command&#039;s output would go: on the row below the shell prompt,
-and it stays there while the program runs. This is the default, and it is
-what the examples do unless they ask for fullscreen.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+			"><div class="css-11v3y9b"><a class="css-11v3y9b" style="gap: 1ch" href="/"><span aria-hidden="true" class="css-qygeio"></span>termdom</a><a href="/guides/getting-started/" aria-current="page">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a></div><div class="css-11v3y9b"><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a><button role="switch" aria-label="toggle color scheme" aria-checked="true" class="css-1sjvhgi"><span class="scheme-dark">🌙</span><span class="scheme-light">☀️</span></button></div></nav></div><div id="sidebar" class="css-1mrgbhe"><h2 class="css-8smt6y">Guides</h2><div id="search-root"><div class="css-1y4ph0t"><input type="search" placeholder="Search..." value="" class="css-1psnvl5"></div></div><div><a href="/guides/getting-started/" class="css-1ml01ji">Getting Started</a></div><div><a href="/guides/rendering/" aria-current="page" class="css-1ml01ji">Rendering</a></div><div><a href="/guides/layout/" class="css-1ml01ji">Layout</a></div><div><a href="/guides/styling/" class="css-1ml01ji">Styling</a></div><div><a href="/guides/events-and-input/" class="css-1ml01ji">Events and Input</a></div><div><a href="/guides/images-and-canvas/" class="css-1ml01ji">Images and canvas</a></div><div><a href="/guides/api/" class="css-1ml01ji">API</a></div></div><main data-pagefind-body class="css-4xbgcy"><h1>Rendering</h1><p>TermDOM paints the document in one of three ways. No option picks the
+way. It depends on how the terminal is being used.</p><h2 id="flow-mode">Flow mode <a class="heading-anchor" href="#flow-mode">#</a></h2><p>When you call <code>attach()</code> on a terminal, TermDOM renders in flow mode.
+The document is drawn where a command&#039;s output would go, on the row
+below the shell prompt. It stays there while the program runs. Flow
+mode is the default, and the examples use it unless they ask for
+fullscreen.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 term<span class="token punctuation">.</span><span class="token function">attach</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-term<span class="token punctuation">.</span>document<span class="token punctuation">.</span>body<span class="token punctuation">.</span>textContent <span class="token operator">=</span> <span class="token string">"Hello"</span><span class="token punctuation">;</span></code></pre><p>The engine finds its starting row by asking the terminal where the
-cursor is, and paints the document in a region that begins there. The
-region is as tall as the document, up to the height of the terminal.
-When the document grows, the region grows with it, and the rows above
-the region scroll up into the terminal&#039;s scrollback the way any
-command&#039;s output pushes earlier output up. Nothing above the region is
-ever painted over: the prompt that started the program and the output
-before it stay where they are.</p><p>A document taller than the terminal shows a window of itself. The window
-scrolls with <code>window.scrollTo()</code>, <code>scrollBy()</code>, and the mouse wheel, and
-<code>window.scrollY</code> reports where it is. Its top is a stop: scrolling above
-the first row does nothing, as in an editor. A document that fits has
-nothing to scroll, so a wheel up in it goes to the terminal, and the
-terminal&#039;s own scrollback scrolls. No terminal says when the user has
-scrolled back down, so the mouse comes back to the document on the next
-keystroke, which also reaches the page. While the wheel is the
-terminal&#039;s, <code>document.visibilityState</code> is <code>&quot;hidden&quot;</code>.</p><p>Each frame repaints the region in place. When the program ends, whether
-by <code>window.close()</code>, <code>dispose()</code>, or Ctrl-C, the engine erases the
-region and prints the whole document once more as plain output, so the
-final state sits in the scrollback like the output of any other command,
-and the shell prompt returns below it.</p><h3 id="resizing">Resizing <a class="heading-anchor" href="#resizing">#</a></h3><p>When the terminal is resized, the engine asks for the cursor position
-again to find where its region landed, re-lays out the document at the
-new width, and repaints. A terminal that does not answer in time gets a
-computed guess. The <code>resize</code> event fires on the window after the new
-size is in place.</p><h2 id="fullscreen">Fullscreen <a class="heading-anchor" href="#fullscreen">#</a></h2><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">await</span> element<span class="token punctuation">.</span><span class="token function">requestFullscreen</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p><code>requestFullscreen()</code> switches the terminal to its alternate screen and
-paints the fullscreen element from row zero, filling the terminal. The
-<code>:fullscreen</code> pseudo-class matches it, and <code>fullscreenchange</code> fires on
-the document. <code>document.exitFullscreen()</code> switches back to
-the main screen, which restores the shell, the scrollback, and the
-flow-mode region as they were. Escape is an ordinary key here: it
-reaches <code>keydown</code>, and a page that wants Escape to leave fullscreen calls
-<code>exitFullscreen()</code> itself.</p><p>A program that wants the whole terminal for its lifetime can call
+term<span class="token punctuation">.</span>document<span class="token punctuation">.</span>body<span class="token punctuation">.</span>textContent <span class="token operator">=</span> <span class="token string">"Hello"</span><span class="token punctuation">;</span></code></pre><p>The engine asks the terminal where the cursor is, and uses that row as
+the top of the region it paints in. The region is as tall as the
+document, up to the height of the terminal. When the document grows,
+the region grows with it. The rows above the region scroll up into the
+terminal&#039;s scrollback, in the same way that any command&#039;s output pushes
+earlier output up. The engine never paints over anything above the
+region. The prompt that started the program and the output before it
+stay where they are.</p><p>When the document is taller than the terminal, the region shows one
+window&#039;s worth of it. The program can scroll this window with
+<code>window.scrollTo()</code> and <code>scrollBy()</code>, and the user can scroll it with
+the mouse wheel. <code>window.scrollY</code> reports the current position. The
+window cannot scroll above the document&#039;s first row.</p><p>When the document fits in the terminal, there is nothing to scroll, so
+the mouse wheel scrolls the terminal&#039;s own scrollback instead. No
+terminal reports when the user has scrolled back down. For that reason
+the engine takes the mouse back for the document on the next keystroke,
+and that keystroke is also delivered to the document. While the wheel
+belongs to the terminal, <code>document.visibilityState</code> is <code>&quot;hidden&quot;</code>.</p><p>Each frame repaints the region in place. The program can end with
+<code>window.close()</code>, with <code>dispose()</code>, or by the user pressing Ctrl-C. In
+each case the engine erases the region and prints the whole document
+once more as plain output. The final state then sits in the scrollback
+like the output of any other command, and the shell prompt returns
+below it.</p><h3 id="resizing">Resizing <a class="heading-anchor" href="#resizing">#</a></h3><p>When the terminal is resized, the engine asks for the cursor position
+again to find where its region ended up. It then lays out the document
+again at the new width and repaints. If the terminal does not answer in
+time, the engine computes a guess. The <code>resize</code> event fires on the
+window after the new size is in place.</p><h2 id="fullscreen">Fullscreen <a class="heading-anchor" href="#fullscreen">#</a></h2><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">await</span> element<span class="token punctuation">.</span><span class="token function">requestFullscreen</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p><code>requestFullscreen()</code> switches the terminal to its alternate screen. The
+engine paints the fullscreen element from row zero, and the element
+fills the terminal. The <code>:fullscreen</code> pseudo-class matches the element,
+and <code>fullscreenchange</code> fires on the document.</p><p><code>document.exitFullscreen()</code> switches back to the main screen. The
+terminal then restores the shell, the scrollback, and the flow-mode
+region as they were.</p><p>In fullscreen, Escape is an ordinary key. It reaches <code>keydown</code>
+listeners. If a program wants Escape to leave fullscreen, it must call
+<code>exitFullscreen()</code> itself.</p><p>A program that wants the whole terminal for as long as it runs can call
 <code>document.documentElement.requestFullscreen()</code> right after <code>attach()</code>.
-When it exits, nothing of it is left in the scrollback, because the
-alternate screen is discarded on the switch back, and the cursor is
-where the command line left it, as vim leaves it. A program that
-painted in flow first exits one line below that content instead, so the
-shell&#039;s prompt does not land on it.</p><p>The document&#039;s scroll position has nothing to move in fullscreen: the
-element fills the screen. Boxes inside it with <code>overflow: auto</code> still
-scroll.</p><h2 id="static-output">Static output <a class="heading-anchor" href="#static-output">#</a></h2><p>Neither mode is needed for output that does not change. <code>renderANSI()</code>
-turns HTML into a string of colored lines, and <code>print()</code> writes one to
-the terminal as ordinary output:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-<span class="token keyword">await</span> term<span class="token punctuation">.</span><span class="token function">print</span><span class="token punctuation">(</span><span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">&lt;div style="color: red">error: file not found&lt;/div></span><span class="token template-punctuation string">`</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The string has colors and line breaks only, no cursor movement and no
-mode changes, so it can be piped to a file, logged, or written to
-stderr. <code>attach()</code> is not called, and the process does not stay alive.</p><p><code>print()</code> and <code>renderANSI()</code> draw with <code>colorDepth: 8</code> until
-<code>attach()</code> has asked the terminal, and always when output goes to a
-pipe or a file, since there is no terminal to ask. To print in 24-bit
-color, set it yourself:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>colorDepth<span class="token operator">:</span> <span class="token number">24</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-<span class="token keyword">await</span> term<span class="token punctuation">.</span><span class="token function">print</span><span class="token punctuation">(</span><span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">&lt;div style="color: #ff8800">orange&lt;/div></span><span class="token template-punctuation string">`</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>When stdout is not a terminal, <code>attach()</code> behaves like <code>print()</code>: the
-document is written once as plain lines when the program ends, and
-input is not read. A program can be run under a pipe or in a CI log
-without a code path for it.</p><h2 id="frames">Frames <a class="heading-anchor" href="#frames">#</a></h2><p>A frame is painted when the document has changed, in the task after the
-one that changed it, so every microtask that task queued has run, as a
-browser renders. A change and whatever answers it in a microtask, such
-as an editor library updating the line a keystroke edited, land in one
-frame. At most one frame is painted every 16 ms, and changes that come
-faster share it. Mutations are observed, so nothing calls a render.
-Style and layout are recomputed for what changed, the document is
-painted into a buffer of cells, the buffer is diffed against the
-previous frame, and only the difference is written. A frame is wrapped
-in synchronized output markers so a terminal that supports them shows
-it at once.</p><p>The terminal cursor is hidden between frames. When a text field or an
-editing host has focus, the cursor is shown at its caret, so the
-terminal&#039;s own cursor shape and blink apply and an input method can
-compose there. Every other focused element shows an outline instead.</p><p>A scroll of a box, or of the document, that moves rows the terminal can
-shift on its own is sent as a terminal scroll, and the diff repairs
-what the shift got wrong. A scroll box narrower than the terminal
-cannot use this, because terminals shift full rows, so its rows are
-repainted.</p><h2 id="what-the-engine-asks-the-terminal">What the engine asks the terminal <a class="heading-anchor" href="#what-the-engine-asks-the-terminal">#</a></h2><p>The engine never reads the terminal&#039;s name or its environment to decide
-what it can do. It asks the terminal, in-band, and uses the answer. A
-terminal that does not answer gets the conservative behavior.</p><table><thead><tr><th>Ask</th><th>Used for</th></tr></thead><tbody><tr><td>Cursor position report</td><td>The starting row of the flow-mode region, and its row after a resize</td></tr><tr><td>Mode 2027</td><td>Measuring text by grapheme cluster, so a terminal that does agrees with the engine on the width of emoji sequences</td></tr><tr><td>Mode 8</td><td>Whether the terminal reorders bidirectional text itself, in which case the engine leaves the order to it</td></tr><tr><td>SGR 53 by DECRQSS</td><td>Whether the terminal draws an overline, which MathML uses for the bar of a root</td></tr><tr><td>XTWINOPS 16</td><td>A cell&#039;s size in pixels, which sets the angle of a gradient and the natural size of an image or a canvas in cells</td></tr><tr><td>OSC 52 query</td><td>Reading the clipboard in <code>navigator.clipboard.readText()</code></td></tr><tr><td>24-bit SGR by DECRQSS, XTGETTCAP <code>RGB</code> and <code>Tc</code>, DA2</td><td>Whether to send 24-bit color, unless the <code>colorDepth</code> option names it</td></tr></tbody></table><p>The modes the engine sets, and resets on exit, are mouse reporting,
-mouse motion reporting while something watches hover, bracketed paste,
-the alternate screen in fullscreen, the title stack when the document
-has a title, and mode 2027 when the terminal agreed to it. An exit
-hook resets them if a program exits without disposing, so a crash does
-not leave the shell without a cursor or with the mouse captured.</p><p><code>document.title</code> sets the terminal window title, and the previous
-title is put back on exit.</p><div class="css-1fsmiy5"><a href="https://github.com/bikeshaving/termdom/edit/main/docs/guides/02-rendering.md">Edit this page on GitHub</a></div></main><footer class="css-wgwyi4"><nav class="css-1cmw0m7"><a href="/guides/getting-started/">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a></nav><p class="css-vv6cs2">MIT Licensed · A <a href="https://bikeshaving.org">bikeshaving</a> project</p></footer><script type="module" src="/static/navbar-f6d8a60ddbd93aa8.js"></script><script type="module" src="/static/search-246da526d14c6e23.js"></script></body></html>
+When the program exits, the terminal discards the alternate screen.
+Nothing is left in the scrollback, and the cursor goes back to where it
+was before the program ran. This is the same thing that happens when you
+quit vim or less. If the program painted in flow mode before it went
+fullscreen, it exits with the cursor one line below that output, so the
+shell&#039;s prompt does not land on top of it.</p><p>The document does not scroll in fullscreen, because the element fills
+the screen. Boxes inside it with <code>overflow: auto</code> still scroll.</p><h2 id="static-output">Static output <a class="heading-anchor" href="#static-output">#</a></h2><p>Output that does not change needs neither mode. <code>renderANSI()</code> turns
+HTML into a string of colored lines, and <code>print()</code> writes such a string
+to the terminal as ordinary output:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">await</span> term<span class="token punctuation">.</span><span class="token function">print</span><span class="token punctuation">(</span><span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">&lt;div style="color: red">error: file not found&lt;/div></span><span class="token template-punctuation string">`</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The string contains only colors and line breaks. It has no cursor
+movement and no mode changes, so you can pipe it to a file, log it, or
+write it to stderr. There is no <code>attach()</code> call, and nothing keeps the
+process alive.</p><p><code>print()</code> and <code>renderANSI()</code> use <code>colorDepth: 8</code> until <code>attach()</code> has
+asked the terminal what it supports. When output goes to a pipe or a
+file, they always use <code>colorDepth: 8</code>, because there is no terminal to
+ask. To print in 24-bit color, set the option yourself:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>colorDepth<span class="token operator">:</span> <span class="token number">24</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">await</span> term<span class="token punctuation">.</span><span class="token function">print</span><span class="token punctuation">(</span><span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">&lt;div style="color: #ff8800">orange&lt;/div></span><span class="token template-punctuation string">`</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>When stdout is not a terminal, <code>attach()</code> behaves like <code>print()</code>. The
+engine writes the document once, as plain lines, when the program ends,
+and it does not read input. This means a program can run under a pipe
+or in a CI log without needing separate code for that case.</p><h2 id="frames">Frames <a class="heading-anchor" href="#frames">#</a></h2><p>The engine paints a frame after the task that changed the document,
+once that task&#039;s microtasks have run. This matches the browser&#039;s
+timing. A change and anything a microtask does in response to it land
+in the same frame. For example, when a keystroke edits a line and an
+editor updates that line in a microtask, both show up together.</p><p>The engine paints at most one frame every 16 ms. Changes that come
+faster than that share one frame. For each frame, the engine:</p><ul><li>recomputes style and layout for what changed,</li><li>paints the document into a buffer of cells,</li><li>compares the buffer with the previous frame, and</li><li>writes only the difference.</li></ul><p>The engine wraps each frame in synchronized output markers, so a
+terminal that supports them shows the whole frame at once.</p><p>The engine hides the terminal cursor between frames. When a text field
+or an editing host has focus, the engine shows the cursor at its caret.
+The terminal&#039;s own cursor shape and blink then apply, and an input
+method can compose text at that spot. Any other focused element shows
+an outline instead.</p><p>When the document or a box scrolls, the engine asks the terminal to
+shift the rows itself. The diff then repaints any cells the shift got
+wrong. Terminals can only shift full rows, so when a scrolling box is
+narrower than the terminal, the engine repaints it instead.</p><h2 id="what-the-engine-asks-the-terminal">What the engine asks the terminal <a class="heading-anchor" href="#what-the-engine-asks-the-terminal">#</a></h2><p>The engine never reads the terminal&#039;s name or its environment to decide
+what the terminal can do. It asks the terminal directly, in-band, and
+uses the answer. If the terminal does not answer, the engine uses the
+safe default.</p><table><thead><tr><th>Ask</th><th>Used for</th></tr></thead><tbody><tr><td>Cursor position report</td><td>The starting row of the flow-mode region, and its row after a resize</td></tr><tr><td>Mode 2027</td><td>Measuring text by grapheme cluster, so that a terminal that also does this agrees with the engine on the width of emoji sequences</td></tr><tr><td>Mode 8</td><td>Whether the terminal reorders bidirectional text itself; if it does, the engine leaves the ordering to the terminal</td></tr><tr><td>SGR 53 by DECRQSS</td><td>Whether the terminal draws an overline, which MathML uses for the bar of a root</td></tr><tr><td>XTWINOPS 16</td><td>The size of a cell in pixels, which sets the angle of a gradient and the natural size in cells of an image or a canvas</td></tr><tr><td>OSC 52 query</td><td>Reading the clipboard in <code>navigator.clipboard.readText()</code></td></tr><tr><td>24-bit SGR by DECRQSS, XTGETTCAP <code>RGB</code> and <code>Tc</code>, DA2</td><td>Whether to send 24-bit color, unless the <code>colorDepth</code> option sets it</td></tr></tbody></table><p>The engine sets these modes and resets them on exit:</p><ul><li>mouse reporting</li><li>mouse motion reporting, while something watches hover</li><li>bracketed paste</li><li>the alternate screen, in fullscreen</li><li>the title stack, when the document has a title</li><li>mode 2027, when the terminal agreed to it</li></ul><p>If a program exits without calling <code>dispose()</code>, an exit hook resets
+these modes. A crash then does not leave the shell with no cursor or
+with the mouse still captured.</p><p>Setting <code>document.title</code> sets the terminal window title. The engine
+puts the previous title back on exit.</p><div class="css-1fsmiy5"><a href="https://github.com/bikeshaving/termdom/edit/main/docs/guides/02-rendering.md">Edit this page on GitHub</a></div></main><footer class="css-wgwyi4"><nav class="css-1cmw0m7"><a href="/guides/getting-started/">Guides</a><a href="/examples/">Examples</a><a href="/blog/">Blog</a><a href="/compatibility/">Compatibility</a><a href="https://github.com/bikeshaving/termdom">GitHub</a><a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a></nav><p class="css-vv6cs2">MIT Licensed · A <a href="https://bikeshaving.org">bikeshaving</a> project</p></footer><script type="module" src="/static/navbar-f6d8a60ddbd93aa8.js"></script><script type="module" src="/static/search-246da526d14c6e23.js"></script></body></html>
