@@ -74,6 +74,7 @@ const superSteps = new Map<
 	Map<symbol, (this: object, ...args: unknown[]) => unknown>
 >();
 const recordTypes = new Map<Constructor, new () => SlotRecord>();
+const recordTypesByPrototype = new Map<object, new () => SlotRecord>();
 // The two objects looked up last, since the engine often goes back and
 // forth between two, such as an element and its computed style.
 let lastValue: object | null = null;
@@ -93,7 +94,13 @@ export function seal(
 ): void {
 	let Record = recordTypes.get(type);
 	if (Record === undefined) {
-		Record = createRecordType(hiddenPrototype(type, root));
+		const hidden = hiddenPrototype(type, root);
+		Record = recordTypesByPrototype.get(hidden);
+		if (Record === undefined) {
+			Record = createRecordType(hidden);
+			recordTypesByPrototype.set(hidden, Record);
+		}
+
 		recordTypes.set(type, Record);
 	}
 
@@ -224,24 +231,6 @@ export function isSealed(value: object): boolean {
 	return Slot.has(value);
 }
 
-/** Whether `value` is an object of the interface `type` defines. */
-export function implementsInterface(
-	value: unknown,
-	type: Constructor,
-): boolean {
-	if (
-		(typeof value !== "object" && typeof value !== "function") ||
-		value === null ||
-		!Slot.has(value)
-	) {
-		return false;
-	}
-
-	const hidden = hiddenPrototypes.get(type);
-	return hidden !== undefined &&
-		Object.prototype.isPrototypeOf.call(hidden, Slot.read(value));
-}
-
 /**
  * The internal step `key` as the parent of `type` defines it, for the
  * `super` call of a class that overrides it. Call it with the record as
@@ -283,6 +272,15 @@ export function hiddenMember(
  */
 export function moveLateMembers(): void {
 	for (const [type, hidden] of hiddenPrototypes) {
+		if (
+			hasMovableMembers(type.prototype) &&
+			hidden === hiddenPrototypes.get(Object.getPrototypeOf(type))
+		) {
+			throw new Error(
+				`${type.name} gained internal steps after its records were made`,
+			);
+		}
+
 		moveMembers(type.prototype, hidden);
 	}
 }
@@ -293,7 +291,12 @@ function hiddenPrototype(type: Constructor, root: Constructor): object {
 		const parent = type === root
 			? null
 			: hiddenPrototype(Object.getPrototypeOf(type) as Constructor, root);
-		hidden = Object.create(parent) as object;
+		// A class that defines no internal steps of its own shares its
+		// parent's, so the records of a div and a span share a shape and a
+		// read of either stays fast.
+		hidden = parent !== null && !hasMovableMembers(type.prototype)
+			? parent
+			: (Object.create(parent) as object);
 		hiddenPrototypes.set(type, hidden);
 		roots.set(type, root);
 		moveMembers(type.prototype, hidden);
@@ -302,9 +305,17 @@ function hiddenPrototype(type: Constructor, root: Constructor): object {
 	return hidden;
 }
 
+function isMovable(key: symbol): boolean {
+	return !WELL_KNOWN_SYMBOLS.has(key) && Symbol.keyFor(key) === undefined;
+}
+
+function hasMovableMembers(prototype: object): boolean {
+	return Object.getOwnPropertySymbols(prototype).some(isMovable);
+}
+
 function moveMembers(prototype: object, hidden: object): void {
 	for (const key of Object.getOwnPropertySymbols(prototype)) {
-		if (WELL_KNOWN_SYMBOLS.has(key) || Symbol.keyFor(key) !== undefined) {
+		if (!isMovable(key)) {
 			continue;
 		}
 
