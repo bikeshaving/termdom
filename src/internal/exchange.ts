@@ -10,6 +10,7 @@ import {
 import type {Framebuffer} from "./framebuffer.ts";
 import type {Input} from "./input.ts";
 import type {Layout} from "./layout.ts";
+import {$} from "./slots.ts";
 import {isControlByte, recordClusterAdvance} from "./text.ts";
 import {
 	clearInterval,
@@ -999,71 +1000,72 @@ export class Exchange extends EventTarget {
 		colorScheme?: "light" | "dark",
 	) {
 		super();
-		this[kStatedColorScheme] = colorScheme;
+		const slots = $(this);
+		slots[kStatedColorScheme] = colorScheme;
 		const interactive = transport.interactive;
 		const asking =
 			interactive &&
 			(transport as {[kReadsNoReplies]?: boolean})[kReadsNoReplies] !== true;
-		this[kWriter] = null;
-		this[kReader] = null;
-		this[kResizeReader] = null;
-		this[kStarted] = false;
-		this[kDisposed] = false;
-		this[kLastWrite] = Promise.resolve();
-		this[kWireReader] = new WireReader();
-		this[kEscapeTimer] = null;
-		this[kHasDetectedAnchor] = false;
-		this[kCursorDetectionPromise] = null;
-		this[kPendingReplies] = [];
-		this[kColorScheme] = null;
-		this[kInterrupted] = false;
-		this[kTerminalBackground] = null;
-		this[kPriorBidiMode] = null;
-		this[kGraphemeClustersNegotiated] = false;
-		this[kOverlineNegotiated] = false;
-		this[kDSRSequence] = 0;
-		this[kProbingEnded] = false;
-		this[kWidths] = createWidthProbes(asking);
-		this[kOwedReplies] = 0;
-		this[kEndDrain] = null;
-		this[kDrained] = Promise.resolve();
-		this[kTransport] = transport;
-		this[kInteractive] = interactive;
-		this[kAsking] = asking;
-		this[kEngagedModes] = new Set<ModeName>();
+		slots[kWriter] = null;
+		slots[kReader] = null;
+		slots[kResizeReader] = null;
+		slots[kStarted] = false;
+		slots[kDisposed] = false;
+		slots[kLastWrite] = Promise.resolve();
+		slots[kWireReader] = new WireReader();
+		slots[kEscapeTimer] = null;
+		slots[kHasDetectedAnchor] = false;
+		slots[kCursorDetectionPromise] = null;
+		slots[kPendingReplies] = [];
+		slots[kColorScheme] = null;
+		slots[kInterrupted] = false;
+		slots[kTerminalBackground] = null;
+		slots[kPriorBidiMode] = null;
+		slots[kGraphemeClustersNegotiated] = false;
+		slots[kOverlineNegotiated] = false;
+		slots[kDSRSequence] = 0;
+		slots[kProbingEnded] = false;
+		slots[kWidths] = createWidthProbes(asking);
+		slots[kOwedReplies] = 0;
+		slots[kEndDrain] = null;
+		slots[kDrained] = Promise.resolve();
+		slots[kTransport] = transport;
+		slots[kInteractive] = interactive;
+		slots[kAsking] = asking;
+		slots[kEngagedModes] = new Set<ModeName>();
 		// Anchor detection only makes sense when a shell's rows are above ours.
-		this[kAnchorDetectionEnabled] = transport.sharesScreen && asking;
-		this[kWindow] = window;
-		this[kLayout] = layout;
-		this[kCascade] = styles;
-		this[kFramebuffer] = framebuffer;
-		this[kInput] = null;
-		this[kResizeTimer] = null;
-		this[kSettlingResize] = null;
-		this[kTransportClosed] = false;
-		this[kDefersResize] = false;
+		slots[kAnchorDetectionEnabled] = transport.sharesScreen && asking;
+		slots[kWindow] = window;
+		slots[kLayout] = layout;
+		slots[kCascade] = styles;
+		slots[kFramebuffer] = framebuffer;
+		slots[kInput] = null;
+		slots[kResizeTimer] = null;
+		slots[kSettlingResize] = null;
+		slots[kTransportClosed] = false;
+		slots[kDefersResize] = false;
 	}
 
 	get interactive(): boolean {
-		return this[kInteractive];
+		return $(this)[kInteractive];
 	}
 
 	get resizing(): boolean {
-		return this[kSettlingResize] !== null;
+		return $(this)[kSettlingResize] !== null;
 	}
 
 	get transportClosed(): boolean {
-		return this[kTransportClosed];
+		return $(this)[kTransportClosed];
 	}
 
 	/** Whether Ctrl-C closed the window. */
 	get interrupted(): boolean {
-		return this[kInterrupted];
+		return $(this)[kInterrupted];
 	}
 
 	/** The terminal's background as packed RGB, once it has said. */
 	get terminalBackground(): number | null {
-		return this[kTerminalBackground];
+		return $(this)[kTerminalBackground];
 	}
 
 	/**
@@ -1072,7 +1074,8 @@ export class Exchange extends EventTarget {
 	 * either.
 	 */
 	get colorScheme(): "light" | "dark" {
-		return this[kStatedColorScheme] ?? this[kColorScheme] ?? "light";
+		const slots = $(this);
+		return slots[kStatedColorScheme] ?? slots[kColorScheme] ?? "light";
 	}
 
 	/**
@@ -1080,31 +1083,31 @@ export class Exchange extends EventTarget {
 	 * synchronous by contract.
 	 */
 	get cursorDetectionPending(): Promise<void> | null {
-		return this[kCursorDetectionPromise];
+		return $(this)[kCursorDetectionPromise];
 	}
 
 	/** Leave the page's resize event to whoever handles terminalresize. */
 	deferResizeEvent(): void {
-		this[kDefersResize] = true;
+		$(this)[kDefersResize] = true;
 	}
 
 	/**
 	 * A terminal is behind the transport and has not proven it never replies.
 	 */
 	probing(): boolean {
-		return this[kWidths].probing;
+		return $(this)[kWidths].probing;
 	}
 
 	clusterWidthsNegotiated(): boolean {
-		return this[kGraphemeClustersNegotiated];
+		return $(this)[kGraphemeClustersNegotiated];
 	}
 
 	overlineNegotiated(): boolean {
-		return this[kOverlineNegotiated];
+		return $(this)[kOverlineNegotiated];
 	}
 
 	wantsWidth(cluster: string): boolean {
-		return !this[kWidths].settled.has(cluster);
+		return !$(this)[kWidths].settled.has(cluster);
 	}
 
 	/**
@@ -1113,7 +1116,7 @@ export class Exchange extends EventTarget {
 	 * room.
 	 */
 	deferredWidths(): ReadonlySet<string> {
-		return this[kWidths].deferred;
+		return $(this)[kWidths].deferred;
 	}
 
 	/**
@@ -1122,7 +1125,7 @@ export class Exchange extends EventTarget {
 	 * because the layout that put it there will put it there again.
 	 */
 	deferWidth(cluster: string): void {
-		const widths = this[kWidths];
+		const widths = $(this)[kWidths];
 		if (widths.asked.has(cluster) || widths.deferred.has(cluster)) {
 			return;
 		}
@@ -1143,10 +1146,11 @@ export class Exchange extends EventTarget {
 		width: number,
 	): string {
 		// A reply after the tty is handed back is typed into the next shell.
-		if (this[kProbingEnded]) {
+		const slots = $(this);
+		if (slots[kProbingEnded]) {
 			return "";
 		}
-		const widths = this[kWidths];
+		const widths = slots[kWidths];
 		widths.asked.add(cluster);
 		widths.deferred.delete(cluster);
 		widths.pending.push({
@@ -1155,7 +1159,7 @@ export class Exchange extends EventTarget {
 			batch: widths.writeBatch,
 			column,
 			width,
-			sequence: this[kDSRSequence]++,
+			sequence: slots[kDSRSequence]++,
 			sentAt: Date.now(),
 		});
 		armWidthProbeTimer(this);
@@ -1164,13 +1168,14 @@ export class Exchange extends EventTarget {
 
 	/** Writes on change only. Teardown restores what was engaged. */
 	setDisplayType(name: ModeName, on: boolean): void {
-		if (!this[kInteractive] || on === this[kEngagedModes].has(name)) {
+		const slots = $(this);
+		if (!slots[kInteractive] || on === slots[kEngagedModes].has(name)) {
 			return;
 		}
 		if (on) {
-			this[kEngagedModes].add(name);
+			slots[kEngagedModes].add(name);
 		} else {
-			this[kEngagedModes].delete(name);
+			slots[kEngagedModes].delete(name);
 		}
 		let output = on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset;
 		// tmux clears every mouse mode when any one of ?1000 to ?1003 is
@@ -1179,7 +1184,7 @@ export class Exchange extends EventTarget {
 		if (
 			name === "motionReporting" &&
 			!on &&
-			this[kEngagedModes].has("mouseCapture")
+			slots[kEngagedModes].has("mouseCapture")
 		) {
 			output += MODE_SPELLINGS.mouseCapture.set;
 		}
@@ -1191,23 +1196,25 @@ export class Exchange extends EventTarget {
 	 * the shell's while the program is suspended.
 	 */
 	releaseModes(): void {
+		const slots = $(this);
 		for (const name of MODE_RESTORE_ORDER) {
-			if (this[kEngagedModes].has(name)) {
+			if (slots[kEngagedModes].has(name)) {
 				void this.write(MODE_SPELLINGS[name].reset);
 			}
 		}
-		if (this[kPriorBidiMode] === 1) {
+		if (slots[kPriorBidiMode] === 1) {
 			void this.write(BIDI_IMPLICIT);
 		}
 	}
 
 	/** Sets every engaged mode again once a suspended program continues. */
 	reclaimModes(): void {
-		if (this[kPriorBidiMode] === 1) {
+		const slots = $(this);
+		if (slots[kPriorBidiMode] === 1) {
 			void this.write(BIDI_EXPLICIT);
 		}
 		for (const name of MODE_RESTORE_ORDER) {
-			if (this[kEngagedModes].has(name)) {
+			if (slots[kEngagedModes].has(name)) {
 				void this.write(MODE_SPELLINGS[name].set);
 			}
 		}
@@ -1215,7 +1222,7 @@ export class Exchange extends EventTarget {
 
 	restoreEngagedModes(): void {
 		for (const name of MODE_RESTORE_ORDER) {
-			if (this[kEngagedModes].delete(name)) {
+			if ($(this)[kEngagedModes].delete(name)) {
 				void this.write(MODE_SPELLINGS[name].reset);
 			}
 		}
@@ -1224,66 +1231,69 @@ export class Exchange extends EventTarget {
 	write(output: string): Promise<void> {
 		// Probes taken while building one frame go out with it. A write ends
 		// the batch that can share a drift correction.
-		this[kWidths].writeBatch = {};
-		if (this[kDisposed] && !this[kWriter]) {
+		const slots = $(this);
+		slots[kWidths].writeBatch = {};
+		if (slots[kDisposed] && !slots[kWriter]) {
 			return Promise.resolve();
 		}
-		if (!this[kWriter]) {
-			this[kWriter] = this[kTransport].writable.getWriter();
+		if (!slots[kWriter]) {
+			slots[kWriter] = slots[kTransport].writable.getWriter();
 		}
-		this[kLastWrite] = this[kWriter].write(output).catch(() => {
+		slots[kLastWrite] = slots[kWriter].write(output).catch(() => {
 			// A transport torn down mid-write is a close, not a crash.
 		});
-		return this[kLastWrite];
+		return slots[kLastWrite];
 	}
 
 	flush(): Promise<void> {
-		return this[kLastWrite];
+		return $(this)[kLastWrite];
 	}
 
 	start(input: Input): void {
-		if (this[kStarted]) {
+		const slots = $(this);
+		if (slots[kStarted]) {
 			return;
 		}
-		this[kStarted] = true;
-		this[kInput] = input;
+		slots[kStarted] = true;
+		slots[kInput] = input;
 
 		// A transport that learns its size while it gets ready, as an SSH
 		// session does from its pty request, starts at that size.
-		const transport = this[kTransport];
-		const framebuffer = this[kFramebuffer];
+		const transport = slots[kTransport];
+		const framebuffer = slots[kFramebuffer];
 		if (
 			transport.cols !== framebuffer.cols || transport.rows !== framebuffer.rows
 		) {
 			terminalResized(this, transport.cols, transport.rows);
 		}
 
-		this[kReader] = this[kTransport].readable.getReader();
-		void readLoop(this, this[kReader]);
+		slots[kReader] = slots[kTransport].readable.getReader();
+		void readLoop(this, slots[kReader]);
 
-		this[kResizeReader] = this[kTransport].resizes.getReader();
-		void resizeLoop(this, this[kResizeReader]);
+		slots[kResizeReader] = slots[kTransport].resizes.getReader();
+		void resizeLoop(this, slots[kResizeReader]);
 
-		void this[kTransport].closed.then(() => {
-			if (!this[kDisposed]) {
-				this[kTransportClosed] = true;
+		void slots[kTransport].closed.then(() => {
+			if (!slots[kDisposed]) {
+				slots[kTransportClosed] = true;
 				this.dispatchEvent(new Event("terminalclose"));
 			}
 		});
 	}
 
 	initializeCursorDetection(): void {
-		this[kCursorDetectionPromise] = null;
-		if (this[kAnchorDetectionEnabled]) {
-			this[kCursorDetectionPromise] = Promise.race([
+		const slots = $(this);
+		slots[kCursorDetectionPromise] = null;
+		if (slots[kAnchorDetectionEnabled]) {
+			slots[kCursorDetectionPromise] = Promise.race([
 				this.detectAnchor().then(() => {}),
 				new Promise<void>((resolve) => setTimeout(resolve, QUERY_TIMEOUT_MS)),
 			])
 				.catch(() => {
-					this[kHasDetectedAnchor] = false;
+					slots[kHasDetectedAnchor] = false;
 				})
 				.finally(() => {
-					this[kCursorDetectionPromise] = null;
+					slots[kCursorDetectionPromise] = null;
 				});
 		}
 	}
@@ -1296,7 +1306,8 @@ export class Exchange extends EventTarget {
 	 * 0 mean no bidi, which is the contract explicit gives.
 	 */
 	async negotiateBidi(): Promise<void> {
-		if (!this[kInteractive]) {
+		const slots = $(this);
+		if (!slots[kInteractive]) {
 			return;
 		}
 
@@ -1304,9 +1315,9 @@ export class Exchange extends EventTarget {
 		if (answer === null || answer === 0) {
 			return;
 		}
-		this[kPriorBidiMode] = answer;
+		slots[kPriorBidiMode] = answer;
 		if (answer === 1 || answer === 3) {
-			this[kLayout].adoptTerminalReordering();
+			slots[kLayout].adoptTerminalReordering();
 		}
 	}
 
@@ -1317,7 +1328,8 @@ export class Exchange extends EventTarget {
 	 * terminal that does not answer. True when the cell changed.
 	 */
 	async negotiateCellPixels(): Promise<boolean> {
-		if (!this[kInteractive]) {
+		const slots = $(this);
+		if (!slots[kInteractive]) {
 			return false;
 		}
 		let answered!: () => void;
@@ -1339,8 +1351,8 @@ export class Exchange extends EventTarget {
 		const answer = await cell;
 		return (
 			answer !== null &&
-			!this[kDisposed] &&
-			this[kFramebuffer].adoptCellPixels(answer.width, answer.height)
+			!slots[kDisposed] &&
+			slots[kFramebuffer].adoptCellPixels(answer.width, answer.height)
 		);
 	}
 
@@ -1350,7 +1362,8 @@ export class Exchange extends EventTarget {
 	 * first frame's wait for the cursor covers this answer too.
 	 */
 	async negotiateColorScheme(): Promise<"light" | "dark" | null> {
-		if (!this[kInteractive]) {
+		const slots = $(this);
+		if (!slots[kInteractive]) {
 			return null;
 		}
 		return await nextReply<"background", "light" | "dark" | null>(
@@ -1361,13 +1374,15 @@ export class Exchange extends EventTarget {
 				timeoutMs: QUERY_TIMEOUT_MS,
 				absent: null,
 				read: ({red, green, blue}) => {
-					this[kTerminalBackground] =
+					slots[kTerminalBackground] =
 						(Math.round(red * 255) << 16) |
 						(Math.round(green * 255) << 8) |
 						Math.round(blue * 255);
 					return (
-						this[kColorScheme] =
-							0.2126 * red + 0.7152 * green + 0.0722 * blue <
+						slots[kColorScheme] =
+							0.2126 * red +
+							0.7152 * green +
+							0.0722 * blue <
 						0.5
 								? "dark"
 								: "light"
@@ -1382,7 +1397,7 @@ export class Exchange extends EventTarget {
 	 * asked before: a marker that the questions ahead of it are settled.
 	 */
 	queryDeviceAttributes(): Promise<void> {
-		if (!this[kInteractive]) {
+		if (!$(this)[kInteractive]) {
 			return Promise.resolve();
 		}
 		return nextReply<"device-attributes", boolean>(this, "device-attributes", {
@@ -1401,7 +1416,7 @@ export class Exchange extends EventTarget {
 	 * 256 colors, which every terminal in use draws.
 	 */
 	async negotiateColorDepth(): Promise<ColorDepth> {
-		if (!this[kInteractive]) {
+		if (!$(this)[kInteractive]) {
 			return "256";
 		}
 		const ask = <K extends WireItem["kind"]>(
@@ -1440,7 +1455,7 @@ export class Exchange extends EventTarget {
 
 	/** A terminal that answered a later question will not answer these. */
 	abandonColorDepthQuery(): void {
-		const pending = this[kPendingReplies];
+		const pending = $(this)[kPendingReplies];
 		for (const entry of pending.filter(
 			(entry) => entry.group === "color-depth",
 		)) {
@@ -1451,7 +1466,7 @@ export class Exchange extends EventTarget {
 
 	/** A terminal that answered a later question will not answer this. */
 	abandonColorSchemeQuery(): void {
-		const pending = this[kPendingReplies];
+		const pending = $(this)[kPendingReplies];
 		const index = pending.findIndex((entry) => entry.kind === "background");
 		if (index !== -1) {
 			const [entry] = pending.splice(index, 1);
@@ -1461,7 +1476,7 @@ export class Exchange extends EventTarget {
 
 	/** A terminal without DECRQM may echo the request's final byte as text. */
 	scrubProbeEcho(): void {
-		if (!this[kAsking]) {
+		if (!$(this)[kAsking]) {
 			return;
 		}
 		void this.write("\r" + LINE_ERASE);
@@ -1474,7 +1489,8 @@ export class Exchange extends EventTarget {
 	 * changes.
 	 */
 	async negotiateGraphemeClusters(): Promise<void> {
-		if (!this[kInteractive]) {
+		const slots = $(this);
+		if (!slots[kInteractive]) {
 			return;
 		}
 
@@ -1483,11 +1499,11 @@ export class Exchange extends EventTarget {
 			"?2027",
 			MODE_SPELLINGS.clusterWidths.set,
 		);
-		this[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
+		slots[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
 		// The set went out with the query's own write. A terminal that ignored
 		// it must not see the reset, so only an agreed offer is engaged.
-		if (this[kGraphemeClustersNegotiated]) {
-			this[kEngagedModes].add("clusterWidths");
+		if (slots[kGraphemeClustersNegotiated]) {
+			slots[kEngagedModes].add("clusterWidths");
 		}
 	}
 
@@ -1498,7 +1514,8 @@ export class Exchange extends EventTarget {
 	 * style is what it was. A terminal that says nothing draws none.
 	 */
 	async negotiateOverline(): Promise<boolean> {
-		if (!this[kInteractive]) {
+		const slots = $(this);
+		if (!slots[kInteractive]) {
 			return false;
 		}
 		const answer = await nextReply<"sgr-report", boolean>(this, "sgr-report", {
@@ -1508,7 +1525,7 @@ export class Exchange extends EventTarget {
 			read: ({params}) =>
 				params !== null && params.split(";").includes("53"),
 		});
-		this[kOverlineNegotiated] = answer;
+		slots[kOverlineNegotiated] = answer;
 		return answer;
 	}
 
@@ -1517,7 +1534,8 @@ export class Exchange extends EventTarget {
 	 * does not answer in time resolves to it, and the anchor stays.
 	 */
 	detectAnchor(silence?: number): Promise<number> {
-		if (!this[kInteractive]) {
+		const slots = $(this);
+		if (!slots[kInteractive]) {
 			return Promise.reject(
 				new Error("Cannot detect cursor position: not interactive"),
 			);
@@ -1527,12 +1545,12 @@ export class Exchange extends EventTarget {
 			ask: CURSOR_QUERY,
 			timeoutMs: QUERY_TIMEOUT_MS,
 			absent: silence,
-			sequence: this[kDSRSequence]++,
+			sequence: slots[kDSRSequence]++,
 			// The 1-based row the command started on becomes the 0-based
 			// anchor.
 			read: ({row}) => {
-				this[kFramebuffer].documentTop = row - 1;
-				this[kHasDetectedAnchor] = true;
+				slots[kFramebuffer].documentTop = row - 1;
+				slots[kHasDetectedAnchor] = true;
 				return row;
 			},
 		});
@@ -1540,7 +1558,8 @@ export class Exchange extends EventTarget {
 
 	/** The 0-based cursor row, for the resize re-anchor. Rejects on timeout. */
 	queryCursorRow(): Promise<number> {
-		if (!this[kInteractive]) {
+		const slots = $(this);
+		if (!slots[kInteractive]) {
 			return Promise.reject(new Error("not interactive"));
 		}
 		// Short, because the redraw should feel immediate, and a slow terminal
@@ -1548,7 +1567,7 @@ export class Exchange extends EventTarget {
 		return nextReply(this, "cursor-report", {
 			ask: CURSOR_QUERY,
 			timeoutMs: 200,
-			sequence: this[kDSRSequence]++,
+			sequence: slots[kDSRSequence]++,
 			read: ({row}) => row - 1,
 		});
 	}
@@ -1562,7 +1581,8 @@ export class Exchange extends EventTarget {
 	}
 
 	queryClipboard(): Promise<string | null> {
-		if (!this[kInteractive] || this[kDisposed]) {
+		const slots = $(this);
+		if (!slots[kInteractive] || slots[kDisposed]) {
 			return Promise.resolve(null);
 		}
 		// The reply carries no sequence, so one query at a time. Asking again
@@ -1602,7 +1622,7 @@ export class Exchange extends EventTarget {
 	 * row the region starts at.
 	 */
 	reserveRows(rows: number): number {
-		const framebuffer = this[kFramebuffer];
+		const framebuffer = $(this)[kFramebuffer];
 		const overflow = framebuffer.documentTop + rows - framebuffer.rows;
 		const push = overflow <= 0
 			? 0
@@ -1638,37 +1658,38 @@ export class Exchange extends EventTarget {
 	 * scrubbed. Resolves once the reader is let go.
 	 */
 	dispose(): Promise<void> {
-		if (this[kDisposed]) {
-			return this[kDrained];
+		const slots = $(this);
+		if (slots[kDisposed]) {
+			return slots[kDrained];
 		}
-		this[kDisposed] = true;
+		slots[kDisposed] = true;
 		const owed =
-			this[kWidths].pending.length +
-			this[kPendingReplies].filter((entry) => entry.sequence !== undefined)
+			slots[kWidths].pending.length +
+			slots[kPendingReplies].filter((entry) => entry.sequence !== undefined)
 				.length;
-		this[kProbingEnded] = true;
-		if (this[kResizeTimer] !== null) {
-			clearTimeout(this[kResizeTimer]);
-			this[kResizeTimer] = null;
+		slots[kProbingEnded] = true;
+		if (slots[kResizeTimer] !== null) {
+			clearTimeout(slots[kResizeTimer]);
+			slots[kResizeTimer] = null;
 		}
-		if (this[kEscapeTimer] !== null) {
-			clearTimeout(this[kEscapeTimer]);
-			this[kEscapeTimer] = null;
+		if (slots[kEscapeTimer] !== null) {
+			clearTimeout(slots[kEscapeTimer]);
+			slots[kEscapeTimer] = null;
 		}
 
 		// Only when it was set. Reset is where we left it anyway.
-		if (this[kPriorBidiMode] === 1) {
+		if (slots[kPriorBidiMode] === 1) {
 			void this.write(BIDI_IMPLICIT);
-			this[kPriorBidiMode] = null;
+			slots[kPriorBidiMode] = null;
 		}
 		this.restoreEngagedModes();
-		this[kGraphemeClustersNegotiated] = false;
-		this[kOverlineNegotiated] = false;
+		slots[kGraphemeClustersNegotiated] = false;
+		slots[kOverlineNegotiated] = false;
 		abandonClipboardQuery(this);
-		for (const entry of this[kPendingReplies].splice(0)) {
+		for (const entry of slots[kPendingReplies].splice(0)) {
 			entry.giveUp();
 		}
-		const widths = this[kWidths];
+		const widths = slots[kWidths];
 		if (widths.timer !== null) {
 			clearTimeout(widths.timer);
 			widths.timer = null;
@@ -1682,32 +1703,32 @@ export class Exchange extends EventTarget {
 
 		// Cancelling the readable hands a process transport its tty back. The
 		// writer is released after the restores queued above.
-		this[kDrained] = new Promise((resolve) => {
-			const timer = setTimeout(() => this[kEndDrain]?.(), REPLY_DRAIN_MS);
-			this[kOwedReplies] = owed;
-			this[kEndDrain] = () => {
+		slots[kDrained] = new Promise((resolve) => {
+			const timer = setTimeout(() => slots[kEndDrain]?.(), REPLY_DRAIN_MS);
+			slots[kOwedReplies] = owed;
+			slots[kEndDrain] = () => {
 				clearTimeout(timer);
-				this[kEndDrain] = null;
-				if (this[kReader]) {
-					void this[kReader].cancel().catch(() => {});
-					this[kReader] = null;
+				slots[kEndDrain] = null;
+				if (slots[kReader]) {
+					void slots[kReader].cancel().catch(() => {});
+					slots[kReader] = null;
 				}
 				resolve();
 			};
 		});
-		if (owed === 0 || !this[kInteractive] || this[kTransportClosed]) {
-			this[kEndDrain]?.();
+		if (owed === 0 || !slots[kInteractive] || slots[kTransportClosed]) {
+			slots[kEndDrain]?.();
 		}
-		if (this[kResizeReader]) {
-			void this[kResizeReader].cancel().catch(() => {});
-			this[kResizeReader] = null;
+		if (slots[kResizeReader]) {
+			void slots[kResizeReader].cancel().catch(() => {});
+			slots[kResizeReader] = null;
 		}
-		if (this[kWriter]) {
-			const writer = this[kWriter];
-			this[kWriter] = null;
-			void this[kLastWrite].then(() => writer.releaseLock());
+		if (slots[kWriter]) {
+			const writer = slots[kWriter];
+			slots[kWriter] = null;
+			void slots[kLastWrite].then(() => writer.releaseLock());
 		}
-		return this[kDrained];
+		return slots[kDrained];
 	}
 }
 
@@ -1792,24 +1813,25 @@ function createWidthProbes(probing: boolean): WidthProbes {
 // A document still painting carries it on the next frame for free. Only
 // a quiet one needs a frame requested.
 function requestDeferredProbeFrame(session: Exchange): void {
-	const widths = session[kWidths];
+	const sessionSlots = $(session);
+	const widths = sessionSlots[kWidths];
 	if (widths.deferralTimer !== null) {
 		return;
 	}
 	widths.deferralTimer = setTimeout(() => {
 		widths.deferralTimer = null;
-		if (session[kDisposed] || widths.deferred.size === 0) {
+		if (sessionSlots[kDisposed] || widths.deferred.size === 0) {
 			return;
 		}
 		// Deferred probes go out with the next frame even if nothing changed.
-		session[kFramebuffer].flushProbes();
-		requestRender(session[kWindow].document);
+		sessionSlots[kFramebuffer].flushProbes();
+		requestRender(sessionSlots[kWindow].document);
 	}, WIDTH_DEFERRAL_WAIT_MS);
 }
 
 // One deadline, timed from the oldest outstanding probe.
 function armWidthProbeTimer(session: Exchange): void {
-	const widths = session[kWidths];
+	const widths = $(session)[kWidths];
 	if (widths.timer !== null) {
 		return;
 	}
@@ -1859,7 +1881,8 @@ function settleWidthProbe(
 	},
 	replyColumn: number,
 ): void {
-	const widths = session[kWidths];
+	const sessionSlots = $(session);
+	const widths = sessionSlots[kWidths];
 	widths.answered = true;
 	if (widths.timer !== null) {
 		clearTimeout(widths.timer);
@@ -1893,9 +1916,9 @@ function settleWidthProbe(
 	// a screen that was never drawn. Drop it and paint again from the
 	// corrected measurements.
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		session[kLayout].invalidateTextMeasurement();
-		session[kFramebuffer].repaintAll();
-		requestRender(session[kWindow].document);
+		sessionSlots[kLayout].invalidateTextMeasurement();
+		sessionSlots[kFramebuffer].repaintAll();
+		requestRender(sessionSlots[kWindow].document);
 	}
 }
 
@@ -1961,12 +1984,13 @@ const RESIZE_DEBOUNCE_MS = 40;
 // suppressed from the first SIGWINCH, or animation ticks paint at the
 // stale anchor.
 function scheduleResize(session: Exchange): void {
-	session[kSettlingResize] = {};
-	if (session[kResizeTimer] !== null) {
-		clearTimeout(session[kResizeTimer]);
+	const sessionSlots = $(session);
+	sessionSlots[kSettlingResize] = {};
+	if (sessionSlots[kResizeTimer] !== null) {
+		clearTimeout(sessionSlots[kResizeTimer]);
 	}
-	session[kResizeTimer] = setTimeout(() => {
-		session[kResizeTimer] = null;
+	sessionSlots[kResizeTimer] = setTimeout(() => {
+		sessionSlots[kResizeTimer] = null;
 		handleResize(session);
 	}, RESIZE_DEBOUNCE_MS);
 }
@@ -1976,15 +2000,16 @@ function terminalResized(
 	width: number,
 	height: number,
 ): void {
-	const framebuffer = session[kFramebuffer];
+	const sessionSlots = $(session);
+	const framebuffer = sessionSlots[kFramebuffer];
 	// A SIGWINCH with an unchanged size still redraws but fires no event.
 	const sizeChanged = width !== framebuffer.cols || height !== framebuffer.rows;
 	framebuffer.resize(height, width);
-	session[kLayout].resize(width, height);
+	sessionSlots[kLayout].resize(width, height);
 	// A size change can flip any @media result and every vw/vh value.
-	session[kCascade].syncStylesheets();
-	const window = session[kWindow];
-	if (sizeChanged && !session[kDefersResize]) {
+	sessionSlots[kCascade].syncStylesheets();
+	const window = sessionSlots[kWindow];
+	if (sizeChanged && !sessionSlots[kDefersResize]) {
 		dispatchAsUserAgent(window, new window.Event("resize"));
 	}
 	syncMediaQueries(window.document);
@@ -1998,30 +2023,31 @@ function terminalResized(
 // new top. A terminal that does not reply gets the computed re-anchor,
 // exact for height changes.
 function handleResize(session: Exchange): void {
-	const {cols: newWidth, rows: newHeight} = session[kTransport];
+	const sessionSlots = $(session);
+	const {cols: newWidth, rows: newHeight} = sessionSlots[kTransport];
 	terminalResized(session, newWidth, newHeight);
 	// Where the frame is after the resize, for the re-anchor.
-	const framebuffer = session[kFramebuffer];
-	const layout = session[kLayout];
+	const framebuffer = sessionSlots[kFramebuffer];
+	const layout = sessionSlots[kLayout];
 	layout.performLayout();
 	const contentHeight = layout.documentPaintHeight();
 	const wrappedRowsAbove = framebuffer.wrappedRowsAbovePark(newWidth);
 	const documentTop = framebuffer.documentTop;
-	const settling = session[kSettlingResize];
+	const settling = sessionSlots[kSettlingResize];
 
 	// The frame now starts at startRow. Repaint it from there.
 	const redraw = (startRow: number) => {
 		framebuffer.documentTop = startRow;
 		framebuffer.replaced(startRow);
-		requestRender(session[kWindow].document);
+		requestRender(sessionSlots[kWindow].document);
 
 		// The frame is placed by the screen reset. Cursor detection is
 		// suspended until it is written.
-		session[kSettlingResize] = null;
-		const wasDetected = session[kHasDetectedAnchor];
-		session[kHasDetectedAnchor] = false;
-		session[kWindow].requestAnimationFrame(() => {
-			session[kHasDetectedAnchor] = wasDetected;
+		sessionSlots[kSettlingResize] = null;
+		const wasDetected = sessionSlots[kHasDetectedAnchor];
+		sessionSlots[kHasDetectedAnchor] = false;
+		sessionSlots[kWindow].requestAnimationFrame(() => {
+			sessionSlots[kHasDetectedAnchor] = wasDetected;
 		});
 	};
 
@@ -2038,17 +2064,17 @@ function handleResize(session: Exchange): void {
 		redraw(startRow + contentHeight <= newHeight ? startRow : 0);
 	};
 
-	if (session[kAnchorDetectionEnabled] && wrappedRowsAbove !== null) {
+	if (sessionSlots[kAnchorDetectionEnabled] && wrappedRowsAbove !== null) {
 		session
 			.queryCursorRow()
 			.then((cursorRow) => {
-				if (settling !== session[kSettlingResize]) {
+				if (settling !== sessionSlots[kSettlingResize]) {
 					return;
 				}
 				place(Math.max(0, cursorRow - wrappedRowsAbove));
 			})
 			.catch(() => {
-				if (settling !== session[kSettlingResize]) {
+				if (settling !== sessionSlots[kSettlingResize]) {
 					return;
 				}
 				place(computedReanchor());
@@ -2061,21 +2087,23 @@ function handleResize(session: Exchange): void {
 // Contiguous keystrokes are one dispatch. Everything else is dispatched
 // in place, so a report glued to fast keystrokes eats neither side.
 function routeChunk(session: Exchange, chunk: string): void {
-	if (session[kDisposed]) {
+	const sessionSlots = $(session);
+	if (sessionSlots[kDisposed]) {
 		drainChunk(session, chunk);
 		return;
 	}
-	if (session[kEscapeTimer] !== null) {
-		clearTimeout(session[kEscapeTimer]);
-		session[kEscapeTimer] = null;
+	if (sessionSlots[kEscapeTimer] !== null) {
+		clearTimeout(sessionSlots[kEscapeTimer]);
+		sessionSlots[kEscapeTimer] = null;
 	}
-	const reader = session[kWireReader];
+	const reader = sessionSlots[kWireReader];
 	const replyDue =
-		session[kWidths].pending.length > 0 || session[kPendingReplies].length > 0;
+		sessionSlots[kWidths].pending.length > 0 ||
+		sessionSlots[kPendingReplies].length > 0;
 	routeItems(session, reader.feed(chunk, replyDue));
 	if (reader.holdsEscape()) {
-		session[kEscapeTimer] = setTimeout(() => {
-			session[kEscapeTimer] = null;
+		sessionSlots[kEscapeTimer] = setTimeout(() => {
+			sessionSlots[kEscapeTimer] = null;
 			routeItems(session, reader.release());
 		}, ESCAPE_HOLD_MS);
 	}
@@ -2084,19 +2112,21 @@ function routeChunk(session: Exchange, chunk: string): void {
 // After dispose, only the cursor replies still owed are read, and the
 // reader is let go once they are in.
 function drainChunk(session: Exchange, chunk: string): void {
-	for (const item of session[kWireReader].feed(chunk, true)) {
+	const sessionSlots = $(session);
+	for (const item of sessionSlots[kWireReader].feed(chunk, true)) {
 		if (item.kind === "cursor-report") {
-			session[kOwedReplies]--;
+			sessionSlots[kOwedReplies]--;
 		}
 	}
-	if (session[kOwedReplies] <= 0) {
-		session[kEndDrain]?.();
+	if (sessionSlots[kOwedReplies] <= 0) {
+		sessionSlots[kEndDrain]?.();
 	}
 }
 
 function routeItems(session: Exchange, items: WireItem[]): void {
 	let keys: WireKey[] = [];
-	const input = session[kInput]!;
+	const sessionSlots = $(session);
+	const input = sessionSlots[kInput]!;
 	const flushKeys = () => {
 		if (keys.length > 0) {
 			input.dispatch(keys);
@@ -2110,10 +2140,10 @@ function routeItems(session: Exchange, items: WireItem[]): void {
 				// decision, and a close it allows is an interrupt.
 				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
-					session[kInterrupted] = true;
-					session[kWindow].close();
-					if (!session[kWindow].closed) {
-						session[kInterrupted] = false;
+					sessionSlots[kInterrupted] = true;
+					sessionSlots[kWindow].close();
+					if (!sessionSlots[kWindow].closed) {
+						sessionSlots[kInterrupted] = false;
 					}
 					break;
 				}
@@ -2154,7 +2184,8 @@ function nextReply<K extends WireItem["kind"], T>(
 		group?: string;
 	},
 ): Promise<T> {
-	if (!session[kAsking]) {
+	const sessionSlots = $(session);
+	if (!sessionSlots[kAsking]) {
 		return options.absent !== undefined
 			? Promise.resolve(options.absent)
 			: Promise.reject(new Error("The terminal's replies cannot be read"));
@@ -2169,14 +2200,14 @@ function nextReply<K extends WireItem["kind"], T>(
 			settle: (item) => {
 				clearTimeout(entry.timer);
 				if (options.clipboard) {
-					session[kWireReader].expectClipboardReply(false);
+					sessionSlots[kWireReader].expectClipboardReply(false);
 				}
 				resolve(options.read(item as ReplyItem<K>));
 			},
 			giveUp: () => {
 				clearTimeout(entry.timer);
 				if (options.clipboard) {
-					session[kWireReader].expectClipboardReply(false);
+					sessionSlots[kWireReader].expectClipboardReply(false);
 				}
 				if (options.absent !== undefined) {
 					resolve(options.absent);
@@ -2185,22 +2216,22 @@ function nextReply<K extends WireItem["kind"], T>(
 				}
 			},
 			timer: setTimeout(() => {
-				const index = session[kPendingReplies].indexOf(entry);
+				const index = sessionSlots[kPendingReplies].indexOf(entry);
 				if (index !== -1) {
-					session[kPendingReplies].splice(index, 1);
+					sessionSlots[kPendingReplies].splice(index, 1);
 				}
 				entry.giveUp();
 			}, options.timeoutMs),
 		};
-		session[kPendingReplies].push(entry);
+		sessionSlots[kPendingReplies].push(entry);
 		if (options.clipboard) {
-			session[kWireReader].expectClipboardReply(true);
+			sessionSlots[kWireReader].expectClipboardReply(true);
 		}
 		void session.write(options.ask);
 		void options.until?.then(() => {
-			const index = session[kPendingReplies].indexOf(entry);
+			const index = sessionSlots[kPendingReplies].indexOf(entry);
 			if (index !== -1) {
-				session[kPendingReplies].splice(index, 1);
+				sessionSlots[kPendingReplies].splice(index, 1);
 				entry.giveUp();
 			}
 		});
@@ -2208,7 +2239,7 @@ function nextReply<K extends WireItem["kind"], T>(
 }
 
 function abandonClipboardQuery(session: Exchange): void {
-	const pending = session[kPendingReplies];
+	const pending = $(session)[kPendingReplies];
 	const index = pending.findIndex((entry) => entry.clipboard);
 	if (index !== -1) {
 		const [entry] = pending.splice(index, 1);
@@ -2219,7 +2250,8 @@ function abandonClipboardQuery(session: Exchange): void {
 // A cursor report goes to whichever of the anchor queries and the width
 // probes was sent first, because a terminal replies to DSR in ask order.
 function dispatchReply(session: Exchange, item: WireItem): void {
-	const pending = session[kPendingReplies];
+	const sessionSlots = $(session);
+	const pending = sessionSlots[kPendingReplies];
 	let index = -1;
 	for (let i = 0; i < pending.length; i++) {
 		if (pending[i].kind !== item.kind) {
@@ -2232,12 +2264,12 @@ function dispatchReply(session: Exchange, item: WireItem): void {
 		break;
 	}
 	if (item.kind === "cursor-report") {
-		const width = session[kWidths].pending[0];
+		const width = sessionSlots[kWidths].pending[0];
 		if (
 			width !== undefined &&
 			(index === -1 || width.sequence < (pending[index].sequence ?? Infinity))
 		) {
-			session[kWidths].pending.shift();
+			sessionSlots[kWidths].pending.shift();
 			settleWidthProbe(session, width, item.col);
 			return;
 		}

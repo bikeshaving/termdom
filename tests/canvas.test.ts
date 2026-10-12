@@ -19,6 +19,7 @@ import {
 	ImageBitmap,
 } from "../src/internal/canvas.ts";
 import {decodeImage, encodePNG} from "../src/internal/images.ts";
+import {$} from "../src/internal/slots.ts";
 import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.ts";
 
 interface Cell {
@@ -1110,8 +1111,11 @@ test("text a canvas drew goes with what clears or replaces it", async () => {
 	const {dom, document} =
 		await mount("<canvas id=c width=80 height=32></canvas>");
 	const ctx = context2d(document);
-	const runs = () => (ctx as any)[Object.getOwnPropertySymbols(ctx)
-		.find((symbol) => symbol.description === "text")!].length;
+	const runs = () => {
+		const slots = $(ctx) as unknown as Record<symbol, unknown[]>;
+		return slots[Object.getOwnPropertySymbols(slots)
+			.find((symbol) => symbol.description === "text")!].length;
+	};
 	ctx.fillStyle = "#ffffff";
 	for (let frame = 0; frame < 20; frame++) {
 		ctx.clearRect(0, 0, 80, 32);
