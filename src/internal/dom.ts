@@ -1108,14 +1108,165 @@ function replaceTextRange(
 	}
 }
 
-// Use the platform's DOMException so a caller's `instanceof DOMException`
-// and `error.code` checks work.
-const PlatformDOMException: typeof DOMException = (
-	globalThis as unknown as {DOMException: typeof DOMException}
-).DOMException;
+// WebIDL §3.14.1: the legacy code of each name that had one, 0 for the
+// rest.
+const DOM_EXCEPTION_CODES = new Map<string, number>([
+	["IndexSizeError", 1],
+	["DOMStringSizeError", 2],
+	["HierarchyRequestError", 3],
+	["WrongDocumentError", 4],
+	["InvalidCharacterError", 5],
+	["NoDataAllowedError", 6],
+	["NoModificationAllowedError", 7],
+	["NotFoundError", 8],
+	["NotSupportedError", 9],
+	["InUseAttributeError", 10],
+	["InvalidStateError", 11],
+	["SyntaxError", 12],
+	["InvalidModificationError", 13],
+	["NamespaceError", 14],
+	["InvalidAccessError", 15],
+	["ValidationError", 16],
+	["TypeMismatchError", 17],
+	["SecurityError", 18],
+	["NetworkError", 19],
+	["AbortError", 20],
+	["URLMismatchError", 21],
+	["QuotaExceededError", 22],
+	["TimeoutError", 23],
+	["InvalidNodeTypeError", 24],
+	["DataCloneError", 25],
+]);
+
+const kExceptionName = Symbol("exception name");
+const kExceptionMessage = Symbol("exception message");
+
+export interface DOMException {
+	[kExceptionName]: string;
+	[kExceptionMessage]: string;
+}
+
+/**
+ * WebIDL's DOMException, this DOM's own rather than the runtime's, so what
+ * a page catches holds nothing of the runtime's. Its prototype's is
+ * Error's, as WebIDL says.
+ */
+export class DOMException extends Error implements globalThis.DOMException {
+	static readonly INDEX_SIZE_ERR = 1;
+	static readonly DOMSTRING_SIZE_ERR = 2;
+	static readonly HIERARCHY_REQUEST_ERR = 3;
+	static readonly WRONG_DOCUMENT_ERR = 4;
+	static readonly INVALID_CHARACTER_ERR = 5;
+	static readonly NO_DATA_ALLOWED_ERR = 6;
+	static readonly NO_MODIFICATION_ALLOWED_ERR = 7;
+	static readonly NOT_FOUND_ERR = 8;
+	static readonly NOT_SUPPORTED_ERR = 9;
+	static readonly INUSE_ATTRIBUTE_ERR = 10;
+	static readonly INVALID_STATE_ERR = 11;
+	static readonly SYNTAX_ERR = 12;
+	static readonly INVALID_MODIFICATION_ERR = 13;
+	static readonly NAMESPACE_ERR = 14;
+	static readonly INVALID_ACCESS_ERR = 15;
+	static readonly VALIDATION_ERR = 16;
+	static readonly TYPE_MISMATCH_ERR = 17;
+	static readonly SECURITY_ERR = 18;
+	static readonly NETWORK_ERR = 19;
+	static readonly ABORT_ERR = 20;
+	static readonly URL_MISMATCH_ERR = 21;
+	static readonly QUOTA_EXCEEDED_ERR = 22;
+	static readonly TIMEOUT_ERR = 23;
+	static readonly INVALID_NODE_TYPE_ERR = 24;
+	static readonly DATA_CLONE_ERR = 25;
+
+	declare readonly INDEX_SIZE_ERR: 1;
+	declare readonly DOMSTRING_SIZE_ERR: 2;
+	declare readonly HIERARCHY_REQUEST_ERR: 3;
+	declare readonly WRONG_DOCUMENT_ERR: 4;
+	declare readonly INVALID_CHARACTER_ERR: 5;
+	declare readonly NO_DATA_ALLOWED_ERR: 6;
+	declare readonly NO_MODIFICATION_ALLOWED_ERR: 7;
+	declare readonly NOT_FOUND_ERR: 8;
+	declare readonly NOT_SUPPORTED_ERR: 9;
+	declare readonly INUSE_ATTRIBUTE_ERR: 10;
+	declare readonly INVALID_STATE_ERR: 11;
+	declare readonly SYNTAX_ERR: 12;
+	declare readonly INVALID_MODIFICATION_ERR: 13;
+	declare readonly NAMESPACE_ERR: 14;
+	declare readonly INVALID_ACCESS_ERR: 15;
+	declare readonly VALIDATION_ERR: 16;
+	declare readonly TYPE_MISMATCH_ERR: 17;
+	declare readonly SECURITY_ERR: 18;
+	declare readonly NETWORK_ERR: 19;
+	declare readonly ABORT_ERR: 20;
+	declare readonly URL_MISMATCH_ERR: 21;
+	declare readonly QUOTA_EXCEEDED_ERR: 22;
+	declare readonly TIMEOUT_ERR: 23;
+	declare readonly INVALID_NODE_TYPE_ERR: 24;
+	declare readonly DATA_CLONE_ERR: 25;
+
+	constructor(message = "", name = "Error") {
+		super();
+		seal(this, new.target, DOMException);
+		const slots = $(this);
+		slots[kExceptionName] = String(name);
+		slots[kExceptionMessage] = String(message);
+	}
+
+	override get name(): string {
+		return $(this)[kExceptionName];
+	}
+
+	override get message(): string {
+		return $(this)[kExceptionMessage];
+	}
+
+	get code(): number {
+		return DOM_EXCEPTION_CODES.get($(this)[kExceptionName]) ?? 0;
+	}
+}
+
+declareSealedRoot(DOMException);
+
+for (const [index, name] of [
+	"INDEX_SIZE_ERR",
+	"DOMSTRING_SIZE_ERR",
+	"HIERARCHY_REQUEST_ERR",
+	"WRONG_DOCUMENT_ERR",
+	"INVALID_CHARACTER_ERR",
+	"NO_DATA_ALLOWED_ERR",
+	"NO_MODIFICATION_ALLOWED_ERR",
+	"NOT_FOUND_ERR",
+	"NOT_SUPPORTED_ERR",
+	"INUSE_ATTRIBUTE_ERR",
+	"INVALID_STATE_ERR",
+	"SYNTAX_ERR",
+	"INVALID_MODIFICATION_ERR",
+	"NAMESPACE_ERR",
+	"INVALID_ACCESS_ERR",
+	"VALIDATION_ERR",
+	"TYPE_MISMATCH_ERR",
+	"SECURITY_ERR",
+	"NETWORK_ERR",
+	"ABORT_ERR",
+	"URL_MISMATCH_ERR",
+	"QUOTA_EXCEEDED_ERR",
+	"TIMEOUT_ERR",
+	"INVALID_NODE_TYPE_ERR",
+	"DATA_CLONE_ERR",
+].entries()) {
+	Object.defineProperty(DOMException.prototype, name, {
+		value: index + 1,
+		enumerable: true,
+	});
+}
+
+Object.defineProperty(DOMException.prototype, Symbol.toStringTag, {
+	value: "DOMException",
+	configurable: true,
+});
 
 function domError(name: string, message: string): DOMException {
-	return new PlatformDOMException(message, name);
+	return new DOMException(message, name);
 }
 
 function hierarchyRequestError(message: string): DOMException {
@@ -1660,6 +1811,178 @@ Object.defineProperty(CustomEvent.prototype, Symbol.toStringTag, {
 	value: "CustomEvent",
 	configurable: true,
 });
+
+// Service Workers' extendable and fetch events, which a TermDOM dispatches
+// at itself for each load a document asks for.
+const kExtend = Symbol("extend");
+const kPending = Symbol("pending");
+
+export interface ExtendableEvent {
+	// Where waitUntil()'s promises go: the TermDOM that dispatched the
+	// event. Null for an event a program made, which nothing waits on.
+	[kExtend]: ((promise: Promise<unknown>) => void) | null;
+	[kPending]: number;
+}
+
+/** An event whose listeners can ask the TermDOM to wait for their work. */
+export class ExtendableEvent extends Event {
+	constructor(type: string, init?: EventInit) {
+		super(type, init);
+		const slots = $(this);
+		slots[kExtend] = null;
+		slots[kPending] = 0;
+	}
+
+	/** Keeps the TermDOM's dispose() waiting until `promise` settles. */
+	waitUntil(promise: PromiseLike<unknown>): void {
+		const lifetime = Promise.resolve(promise);
+		addLifetimePromise(this, lifetime);
+		$(this)[kExtend]!(lifetime);
+	}
+}
+
+// Service Workers §4.4.1: an event is active while it is dispatched, or
+// while a promise it was given is pending.
+function addLifetimePromise(
+	event: ExtendableEvent,
+	promise: Promise<unknown>,
+): void {
+	const eventSlots = $(event);
+	if (eventSlots[kExtend] === null) {
+		throw domError(
+			"InvalidStateError",
+			"Only an event TermDOM dispatches can be extended",
+		);
+	}
+	if (event.eventPhase === Event.NONE && eventSlots[kPending] === 0) {
+		throw domError("InvalidStateError", "The event is no longer active");
+	}
+	eventSlots[kPending]++;
+	const settled = () => {
+		queueMicrotask(() => eventSlots[kPending]--);
+	};
+	promise.then(settled, settled);
+}
+
+export interface FetchEventInit extends EventInit {
+	request: Request;
+	preloadResponse?: Promise<unknown>;
+	clientId?: string;
+	resultingClientId?: string;
+	replacesClientId?: string;
+	handled?: Promise<undefined>;
+}
+
+const kRequest = Symbol("request");
+const kPreloadResponse = Symbol("preloadResponse");
+const kClientId = Symbol("clientId");
+const kResultingClientId = Symbol("resultingClientId");
+const kReplacesClientId = Symbol("replacesClientId");
+const kHandled = Symbol("handled");
+const kResponse = Symbol("response");
+
+export interface FetchEvent {
+	[kRequest]: Request;
+	[kPreloadResponse]: Promise<unknown>;
+	[kClientId]: string;
+	[kResultingClientId]: string;
+	[kReplacesClientId]: string;
+	[kHandled]: Promise<undefined>;
+	[kResponse]: Promise<Response> | null;
+}
+
+/**
+ * A load the document's markup asks for, dispatched at the TermDOM as a
+ * Service Worker's fetch event is at its global scope. A listener answers
+ * it with respondWith(), which stops the other listeners. One that calls
+ * preventDefault() without answering fails the load.
+ */
+export class FetchEvent extends ExtendableEvent {
+	constructor(type: string, init: FetchEventInit) {
+		super(type, init);
+		const slots = $(this);
+		slots[kRequest] = init.request;
+		slots[kPreloadResponse] =
+			init.preloadResponse ?? Promise.resolve(undefined);
+		slots[kClientId] = init.clientId ?? "";
+		slots[kResultingClientId] = init.resultingClientId ?? "";
+		slots[kReplacesClientId] = init.replacesClientId ?? "";
+		slots[kHandled] = init.handled ?? new Promise<undefined>(() => {});
+		slots[kResponse] = null;
+	}
+
+	get request(): Request {
+		return $(this)[kRequest];
+	}
+
+	get preloadResponse(): Promise<unknown> {
+		return $(this)[kPreloadResponse];
+	}
+
+	get clientId(): string {
+		return $(this)[kClientId];
+	}
+
+	get resultingClientId(): string {
+		return $(this)[kResultingClientId];
+	}
+
+	get replacesClientId(): string {
+		return $(this)[kReplacesClientId];
+	}
+
+	// Settles once the load is answered: rejects with a NetworkError when
+	// it fails.
+	get handled(): Promise<undefined> {
+		return $(this)[kHandled];
+	}
+
+	/**
+	 * Answer the request, during the event. Response.error(), a promise
+	 * that rejects, or a value that is not a Response fails it as a
+	 * network error does.
+	 */
+	respondWith(response: Response | PromiseLike<Response>): void {
+		if (this.eventPhase === Event.NONE) {
+			throw domError(
+				"InvalidStateError",
+				"respondWith() is only called while the event is dispatched",
+			);
+		}
+		const slots = $(this);
+		if (slots[kResponse] !== null) {
+			throw domError("InvalidStateError", "The request was already answered");
+		}
+		const answer = Promise.resolve(response);
+		addLifetimePromise(this, answer);
+		this.stopImmediatePropagation();
+		slots[kResponse] = answer.then((value) => {
+			if (!(value instanceof Response)) {
+				throw new TypeError("respondWith() takes a Response");
+			}
+			return value;
+		});
+	}
+}
+
+/**
+ * A fetch event for `request` that the dispatching TermDOM waits on
+ * through `extend`.
+ */
+export function createFetchEvent(
+	request: Request,
+	handled: Promise<undefined>,
+	extend: (promise: Promise<unknown>) => void,
+): FetchEvent {
+	const event = new FetchEvent("fetch", {request, handled, cancelable: true});
+	$(event)[kExtend] = extend;
+	return event;
+}
+
+/** The answer a listener gave a fetch event, or null for none. */
+export function getFetchResponse(event: FetchEvent): Promise<Response> | null {
+	return $(event)[kResponse];
+}
 
 const kReturnValue = Symbol("returnValue");
 
@@ -36797,8 +37120,328 @@ const kNextIdleHandle = Symbol("next idle handle");
  * APIs an author reaches for through `window`. The member types are the
  * host's, which is how a caller outside this file sees them.
  */
+// The runtime's clock and random source, which the window's Performance
+// and Crypto read through without handing the runtime's objects out.
+const runtimePerformance = globalThis.performance;
+const runtimeCrypto = globalThis.crypto;
+
+const kEntryName = Symbol("entry name");
+const kEntryType = Symbol("entry type");
+const kStartTime = Symbol("start time");
+const kDuration = Symbol("duration");
+
+export interface PerformanceEntry {
+	[kEntryName]: string;
+	[kEntryType]: string;
+	[kStartTime]: number;
+	[kDuration]: number;
+}
+
+/** One entry on a performance timeline: a mark or a measure here. */
+export class PerformanceEntry {
+	constructor() {
+		seal(this, new.target, PerformanceEntry);
+		if (new.target === PerformanceEntry) {
+			throw new TypeError("Illegal constructor");
+		}
+	}
+
+	get name(): string {
+		return $(this)[kEntryName];
+	}
+
+	get entryType(): string {
+		return $(this)[kEntryType];
+	}
+
+	get startTime(): number {
+		return $(this)[kStartTime];
+	}
+
+	get duration(): number {
+		return $(this)[kDuration];
+	}
+
+	toJSON(): Record<string, unknown> {
+		const slots = $(this);
+		return {
+			name: slots[kEntryName],
+			entryType: slots[kEntryType],
+			startTime: slots[kStartTime],
+			duration: slots[kDuration],
+		};
+	}
+}
+
+declareSealedRoot(PerformanceEntry);
+
+export interface PerformanceMark {
+	[kDetail]: unknown;
+}
+
+/** User Timing §4.1: a named moment, which a page can make itself. */
+export class PerformanceMark extends PerformanceEntry {
+	constructor(markName: string, markOptions: PerformanceMarkOptions = {}) {
+		super();
+		const options = toDictionary<PerformanceMarkOptions>(
+			markOptions,
+			"Mark options",
+		);
+		const startTime = options.startTime === undefined
+			? runtimePerformance.now()
+			: Number(options.startTime);
+		if (startTime < 0) {
+			throw new TypeError("A mark cannot start before the time origin");
+		}
+		const slots = $(this);
+		slots[kEntryName] = String(markName);
+		slots[kEntryType] = "mark";
+		slots[kStartTime] = startTime;
+		slots[kDuration] = 0;
+		slots[kDetail] = structuredClone(options.detail ?? null);
+	}
+
+	get detail(): unknown {
+		return $(this)[kDetail];
+	}
+}
+
+export interface PerformanceMeasure {
+	[kDetail]: unknown;
+}
+
+/** User Timing §4.2: the time between two marks or moments. */
+export class PerformanceMeasure extends PerformanceEntry {
+	constructor() {
+		super();
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+	}
+
+	get detail(): unknown {
+		return $(this)[kDetail];
+	}
+}
+
+const kEntries = Symbol("performance entries");
+const kPerformance = Symbol("performance");
+const kCrypto = Symbol("crypto");
+
+export interface Performance {
+	[kEntries]: PerformanceEntry[];
+}
+
+/**
+ * The window's performance timeline: the runtime's clock, and the marks and
+ * measures the page records.
+ */
+export class Performance extends EventTarget {
+	constructor() {
+		super();
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		$(this)[kEntries] = [];
+	}
+
+	get timeOrigin(): number {
+		$(this);
+		return runtimePerformance.timeOrigin;
+	}
+
+	now(): number {
+		$(this);
+		return runtimePerformance.now();
+	}
+
+	toJSON(): {timeOrigin: number} {
+		return {timeOrigin: this.timeOrigin};
+	}
+
+	mark(
+		markName: string,
+		markOptions?: PerformanceMarkOptions,
+	): PerformanceMark {
+		const mark = new PerformanceMark(markName, markOptions);
+		$(this)[kEntries].push(mark);
+		return mark;
+	}
+
+	// User Timing §3.1.3.
+	measure(
+		measureName: string,
+		startOrMeasureOptions?: string | PerformanceMeasureOptions,
+		endMark?: string,
+	): PerformanceMeasure {
+		const entries = $(this)[kEntries];
+		const options =
+			typeof startOrMeasureOptions === "object" &&
+				startOrMeasureOptions !== null
+				? startOrMeasureOptions
+				: null;
+		if (
+			options !== null &&
+			(options.start !== undefined ||
+				options.end !== undefined ||
+				options.duration !== undefined ||
+				options.detail !== undefined)
+		) {
+			if (endMark !== undefined) {
+				throw new TypeError("Measure options and an end mark do not mix");
+			}
+			if (options.start === undefined && options.end === undefined) {
+				throw new TypeError("Measure options need a start or an end");
+			}
+			if (
+				options.start !== undefined &&
+				options.end !== undefined &&
+				options.duration !== undefined
+			) {
+				throw new TypeError(
+					"Measure options take two of start, end and duration",
+				);
+			}
+		}
+		const toTime = (mark: string | number): number => {
+			if (typeof mark === "number") {
+				if (mark < 0) {
+					throw new TypeError("A time cannot be before the time origin");
+				}
+				return mark;
+			}
+			for (let index = entries.length - 1; index >= 0; index--) {
+				const entry = entries[index];
+				if (entry.entryType === "mark" && entry.name === mark) {
+					return entry.startTime;
+				}
+			}
+			throw domError("SyntaxError", `No mark is named ${mark}`);
+		};
+		let end: number;
+		if (endMark !== undefined) {
+			end = toTime(String(endMark));
+		} else if (options?.end !== undefined) {
+			end = toTime(options.end);
+		} else if (options?.start !== undefined && options.duration !== undefined) {
+			end = toTime(options.start) + Number(options.duration);
+		} else {
+			end = runtimePerformance.now();
+		}
+		let start: number;
+		if (options?.start !== undefined) {
+			start = toTime(options.start);
+		} else if (options?.duration !== undefined && options.end !== undefined) {
+			start = end - Number(options.duration);
+		} else if (typeof startOrMeasureOptions === "string") {
+			start = toTime(startOrMeasureOptions);
+		} else {
+			start = 0;
+		}
+		const measure = constructInternal(() => new PerformanceMeasure());
+		const slots = $(measure);
+		slots[kEntryName] = String(measureName);
+		slots[kEntryType] = "measure";
+		slots[kStartTime] = start;
+		slots[kDuration] = end - start;
+		slots[kDetail] = structuredClone(options?.detail ?? null);
+		entries.push(measure);
+		return measure;
+	}
+
+	getEntries(): PerformanceEntry[] {
+		return [...$(this)[kEntries]].sort((a, b) => a.startTime - b.startTime);
+	}
+
+	getEntriesByName(name: string, type?: string): PerformanceEntry[] {
+		return this.getEntries().filter((entry) =>
+			entry.name === String(name) &&
+			(type === undefined || entry.entryType === String(type)),
+		);
+	}
+
+	getEntriesByType(type: string): PerformanceEntry[] {
+		return this.getEntries().filter((entry) =>
+			entry.entryType === String(type),
+		);
+	}
+
+	clearMarks(markName?: string): void {
+		clearEntries(this, "mark", markName);
+	}
+
+	clearMeasures(measureName?: string): void {
+		clearEntries(this, "measure", measureName);
+	}
+}
+
+function clearEntries(
+	performance: Performance,
+	type: string,
+	name: string | undefined,
+): void {
+	const slots = $(performance);
+	slots[kEntries] = slots[kEntries].filter((entry) =>
+		entry.entryType !== type ||
+		(name !== undefined && entry.name !== String(name)),
+	);
+}
+
+const RANDOM_VALUE_ARRAYS = [
+	Int8Array,
+	Uint8Array,
+	Uint8ClampedArray,
+	Int16Array,
+	Uint16Array,
+	Int32Array,
+	Uint32Array,
+	BigInt64Array,
+	BigUint64Array,
+];
+
+/** WebCrypto's Crypto, as far as the runtime's random source serves it. */
+export class Crypto {
+	constructor() {
+		seal(this, new.target, Crypto);
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+	}
+
+	getRandomValues<T extends ArrayBufferView | null>(array: T): T {
+		$(this);
+		if (
+			array === null ||
+			!RANDOM_VALUE_ARRAYS.some((type) => array instanceof type)
+		) {
+			throw domError(
+				"TypeMismatchError",
+				"getRandomValues takes an integer typed array",
+			);
+		}
+		if (array.byteLength > 65536) {
+			throw domError(
+				"QuotaExceededError",
+				"getRandomValues fills at most 65536 bytes",
+			);
+		}
+		runtimeCrypto.getRandomValues(array as ArrayBufferView<ArrayBuffer>);
+		return array;
+	}
+
+	// eslint-disable-next-line acrocase/acrocase
+	randomUUID(): `${string}-${string}-${string}-${string}-${string}` {
+		$(this);
+		return runtimeCrypto.randomUUID();
+	}
+}
+
+declareSealedRoot(Crypto);
+
 export interface Window {
 	[kNavigator]: Navigator | undefined;
+	[kPerformance]: Performance | undefined;
+	[kCrypto]: Crypto | undefined;
 	[kWindowLocation]: Location | undefined;
 	[kClosed]: boolean;
 	[kHistory]: globalThis.History;
@@ -37377,11 +38020,15 @@ export class Window extends EventTarget {
 	}
 
 	get crypto(): globalThis.Crypto {
-		return globalThis.crypto;
+		const slots = $(this);
+		slots[kCrypto] ??= constructInternal(() => new Crypto());
+		return slots[kCrypto] as unknown as globalThis.Crypto;
 	}
 
 	get performance(): globalThis.Performance {
-		return globalThis.performance;
+		const slots = $(this);
+		slots[kPerformance] ??= constructInternal(() => new Performance());
+		return slots[kPerformance] as unknown as globalThis.Performance;
 	}
 
 	// lib.dom's overloads for this interface: the keyed one first.
@@ -37703,6 +38350,7 @@ const platform = {
 	Comment,
 	CompositionEvent,
 	CustomElementRegistry,
+	Crypto,
 	CustomEvent,
 	CustomStateSet,
 	DOMImplementation,
@@ -37822,6 +38470,10 @@ const platform = {
 	NodeFilter,
 	NodeIterator,
 	NodeList,
+	Performance,
+	PerformanceEntry,
+	PerformanceMark,
+	PerformanceMeasure,
 	Permissions,
 	PermissionStatus,
 	PointerEvent,
@@ -37930,7 +38582,7 @@ function buildWindow(document: Document): Window {
 		// The platform's DOMException, which is the one the DOM and the CSSOM
 		// throw. A caller's `instanceof DOMException` has to match the class
 		// the engine builds its errors from.
-		DOMException: PlatformDOMException,
+		DOMException,
 		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) => {
 			const guarded = guard(handler, args);
 			const handle = runtime.setTimeout(
