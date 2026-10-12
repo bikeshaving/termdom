@@ -1616,19 +1616,9 @@ function disposedError(): DOMException {
 	return new DOMException("The TermDOM has been disposed", "InvalidStateError");
 }
 
-// Names that stay the runtime's wherever it has them. Its event classes:
-// its EventTargets take only its own events on Bun and Deno, and the
-// document takes them too, so they serve both. Its storage: Deno's, and
-// Node's given --localstorage-file, persist where the window's do not.
-const RUNTIME_KEPT = new Set([
-	"Event",
-	"EventTarget",
-	"CustomEvent",
-	"ErrorEvent",
-	"MessageEvent",
-	"localStorage",
-	"sessionStorage",
-]);
+// Names that stay the runtime's wherever it has them: its storage. Deno's,
+// and Node's given --localstorage-file, persist where the window's do not.
+const RUNTIME_KEPT = new Set(["localStorage", "sessionStorage"]);
 
 // Node defines localStorage even without --localstorage-file, as
 // undefined, and warns when it is read, so it is read with the warning
@@ -1661,7 +1651,7 @@ const kGlobalsInstalled = Symbol.for("@b9g/termdom.globalsInstalled");
  * the way browser code does: frameworks, editors, DOM libraries. The
  * process then reads as the window does, so a name the runtime defines
  * too, such as `setTimeout` or `navigator`, is the window's until
- * uninstalled. The runtime's event classes and storage stay its own.
+ * uninstalled. The runtime's storage stays its own.
  * While installed, a promise rejected with no handler fires
  * unhandledrejection on the window and is reported, where the runtime
  * would end the process. Methods are bound to the window and other

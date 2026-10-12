@@ -82,7 +82,6 @@ import {
 import {
 	$,
 	$maybe,
-	adopt,
 	declareExtraSlots,
 	declareSealedRoot,
 	defineFamilies,
@@ -1423,10 +1422,6 @@ interface DispatchState {
 	inPassiveListener: boolean;
 	trusted: boolean;
 
-	// True when the event is a platform event rather than one of ours. A
-	// listener sets flags on the platform object, so dispatch reads them back
-	// from the event after every listener call.
-	foreign: boolean;
 }
 
 // If a trusted animation or transition event finds no listener for its
@@ -1450,17 +1445,31 @@ function toDictionary<T extends object>(value: unknown, what: string): T {
 	return value as T;
 }
 
-// Events constructed here are instances of the global Event, and events
-// constructed with the global Event dispatch through this DOM. Either
-// kind works on both sides.
-const HostEvent = globalThis.Event as unknown as {
-	new (type: string, eventInitDict?: EventInit): HostEventInstance;
-	prototype: HostEventInstance;
+const kState = Symbol("state");
+
+// One accessor shared by every event and installed as an own property on
+// each. The interface declares isTrusted unforgeable, so it cannot live on
+// the prototype or be redefined.
+function isTrustedGetter(this: Event): boolean {
+	return $(this)[kState].trusted;
+}
+
+const isTrustedProperty: PropertyDescriptor = {
+	get: isTrustedGetter,
+	enumerable: true,
+	configurable: false,
 };
 
-// The members that dispatch owns are omitted because they are typed
-// against the platform's EventTarget, and the targets here are this DOM's.
-interface HostEventInstance
+const kBubbles = Symbol("bubbles");
+const kCancelable = Symbol("cancelable");
+const kComposed = Symbol("composed");
+const kTimeStamp = Symbol("timeStamp");
+const kIsMouseEvent = Symbol("is a mouse event");
+const kType = Symbol("document type");
+
+// lib.dom's Event, less the members dispatch owns, which are typed against
+// this DOM's EventTarget. A type only: an Event's prototype is Object's.
+interface EventShape
 	extends Omit<
 		globalThis.Event,
 		"target" |
@@ -1477,40 +1486,8 @@ interface HostEventInstance
 	preventDefault(): void;
 	initEvent(type: string, bubbles?: boolean, cancelable?: boolean): void;
 }
-const kState = Symbol("state");
 
-// One accessor shared by every event and installed as an own property on
-// each. The interface declares isTrusted unforgeable, so it cannot live on
-// the prototype or be redefined.
-function isTrustedGetter(this: Event): boolean {
-	return $(this)[kState].trusted;
-}
-
-const isTrustedProperty: PropertyDescriptor = {
-	get: isTrustedGetter,
-	enumerable: true,
-	configurable: false,
-};
-
-// The prototype chain reaches the platform's Event, but the platform
-// constructor never runs. Some platforms install isTrusted as an
-// unforgeable own property that always reads false, and a user-agent
-// dispatch here needs it to read true.
-const EventBase = function EventBase(): void {} as unknown as {
-	new (): HostEventInstance;
-	prototype: HostEventInstance;
-};
-
-EventBase.prototype = Object.create(HostEvent.prototype) as HostEventInstance;
-
-const kBubbles = Symbol("bubbles");
-const kCancelable = Symbol("cancelable");
-const kComposed = Symbol("composed");
-const kTimeStamp = Symbol("timeStamp");
-const kIsMouseEvent = Symbol("is a mouse event");
-const kType = Symbol("document type");
-
-export interface Event {
+export interface Event extends EventShape {
 	[kType]: string;
 	[kBubbles]: boolean;
 	[kCancelable]: boolean;
@@ -1520,7 +1497,7 @@ export interface Event {
 }
 
 /** An event, plus the flags listeners set on it during dispatch. */
-export class Event extends EventBase implements globalThis.Event {
+export class Event {
 	static readonly NONE = NONE;
 	static readonly CAPTURING_PHASE = CAPTURING_PHASE;
 	static readonly AT_TARGET = AT_TARGET;
@@ -1536,7 +1513,6 @@ export class Event extends EventBase implements globalThis.Event {
 		const bubbles = Boolean(init.bubbles);
 		const cancelable = Boolean(init.cancelable);
 		const composed = Boolean(init.composed);
-		super();
 		seal(this, new.target, Event);
 		const slots = $(this);
 		slots[kState] = {
@@ -1552,7 +1528,6 @@ export class Event extends EventBase implements globalThis.Event {
 			canceled: false,
 			inPassiveListener: false,
 			trusted: false,
-			foreign: false,
 		};
 		slots[kType] = name;
 		slots[kBubbles] = bubbles;
@@ -1563,7 +1538,7 @@ export class Event extends EventBase implements globalThis.Event {
 		Object.defineProperty(this, "isTrusted", isTrustedProperty);
 	}
 
-	override get type(): string {
+	get type(): string {
 		return $(this)[kType];
 	}
 
@@ -1584,45 +1559,45 @@ export class Event extends EventBase implements globalThis.Event {
 		return $(this)[kState].currentTarget;
 	}
 
-	override get eventPhase(): number {
+	get eventPhase(): number {
 		return $(this)[kState].eventPhase;
 	}
 
-	override get bubbles(): boolean {
+	get bubbles(): boolean {
 		return $(this)[kBubbles];
 	}
 
-	override get cancelable(): boolean {
+	get cancelable(): boolean {
 		return $(this)[kCancelable];
 	}
 
-	override get composed(): boolean {
+	get composed(): boolean {
 		return $(this)[kComposed];
 	}
 
-	override get defaultPrevented(): boolean {
+	get defaultPrevented(): boolean {
 		return $(this)[kState].canceled;
 	}
 
-	override get timeStamp(): number {
+	get timeStamp(): number {
 		return $(this)[kTimeStamp];
 	}
 
-	override get returnValue(): boolean {
+	get returnValue(): boolean {
 		return !$(this)[kState].canceled;
 	}
 
-	override set returnValue(value: boolean) {
+	set returnValue(value: boolean) {
 		if (!value) {
 			setCanceledFlag(this);
 		}
 	}
 
-	override get cancelBubble(): boolean {
+	get cancelBubble(): boolean {
 		return $(this)[kState].stopPropagation;
 	}
 
-	override set cancelBubble(value: boolean) {
+	set cancelBubble(value: boolean) {
 		if (value) {
 			$(this)[kState].stopPropagation = true;
 		}
@@ -1638,21 +1613,21 @@ export class Event extends EventBase implements globalThis.Event {
 		return getComposedPath($(this)[kState]);
 	}
 
-	override stopPropagation(): void {
+	stopPropagation(): void {
 		$(this)[kState].stopPropagation = true;
 	}
 
-	override stopImmediatePropagation(): void {
+	stopImmediatePropagation(): void {
 		const slots = $(this);
 		slots[kState].stopPropagation = true;
 		slots[kState].stopImmediate = true;
 	}
 
-	override preventDefault(): void {
+	preventDefault(): void {
 		setCanceledFlag(this);
 	}
 
-	override initEvent(type: string, bubbles = false, cancelable = false): void {
+	initEvent(type: string, bubbles = false, cancelable = false): void {
 		if (arguments.length < 1) {
 			throw new TypeError("initEvent needs a type");
 		}
@@ -1695,11 +1670,6 @@ function setCanceledFlag(event: Event): void {
 	const state = $(event)[kState];
 	if (event.cancelable && !state.inPassiveListener) {
 		state.canceled = true;
-		// A platform event keeps its canceled flag on the platform object,
-		// because that is where whoever passed it in will read it.
-		if (state.foreign) {
-			HostEvent.prototype.preventDefault.call(event);
-		}
 	}
 }
 
@@ -4079,12 +4049,6 @@ const LEGACY_EVENT_INTERFACES = new Map<string, () => Event>([
 	["uievents", () => new UIEvent("")],
 ]);
 
-/** What an AbortSignal must provide for a listener to use it. */
-interface ListenerSignal {
-	aborted: boolean;
-	addEventListener(type: string, callback: () => void): void;
-}
-
 /** Event types whose listeners mean the document observes pointer hover. */
 const HOVER_EVENT_TYPES = new Set([
 	"mousemove",
@@ -4151,13 +4115,6 @@ interface Listener {
 	/** The hover count this listener is counted in, if any. */
 	hoverCount?: HoverListenerCount;
 }
-
-/**
- * The platform's AbortSignal, which a listener's signal must be an instance of.
- */
-const PlatformAbortSignal = (
-	globalThis as unknown as {AbortSignal?: new () => ListenerSignal}
-).AbortSignal;
 
 const kHandlers = Symbol("handlers");
 const kListeners = Symbol("event listener list");
@@ -4230,7 +4187,7 @@ export class EventTarget implements globalThis.EventTarget {
 		addListener(this, listener);
 		countHoverListener(this, listener);
 		if (flat.signal !== null) {
-			flat.signal.addEventListener("abort", () => {
+			addAbortAlgorithm(flat.signal, () => {
 				removeListener(slots[kListeners], listener);
 			});
 		}
@@ -4280,6 +4237,196 @@ export class EventTarget implements globalThis.EventTarget {
 
 declareSealedRoot(EventTarget);
 
+const kAborted = Symbol("aborted");
+const kAbortReason = Symbol("abort reason");
+const kAbortAlgorithms = Symbol("abort algorithms");
+const kDependentSignals = Symbol("dependent signals");
+const kSourceSignals = Symbol("source signals");
+
+export interface AbortSignal {
+	[kAborted]: boolean;
+	[kAbortReason]: unknown;
+	[kAbortAlgorithms]: Array<() => void>;
+	// AbortSignal.any()'s signals. A source holds its dependents until it
+	// aborts, which lets go of them.
+	[kDependentSignals]: Set<AbortSignal>;
+	[kSourceSignals]: Set<AbortSignal> | null;
+}
+
+/** DOM §3.2: the signal an AbortController aborts. */
+export class AbortSignal extends EventTarget {
+	declare onabort: ((this: AbortSignal, event: Event) => unknown) | null;
+
+	constructor() {
+		super();
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		const slots = $(this);
+		slots[kAborted] = false;
+		slots[kAbortReason] = undefined;
+		slots[kAbortAlgorithms] = [];
+		slots[kDependentSignals] = new Set();
+		slots[kSourceSignals] = null;
+	}
+
+	get aborted(): boolean {
+		return $(this)[kAborted];
+	}
+
+	get reason(): unknown {
+		return $(this)[kAbortReason];
+	}
+
+	static abort(reason?: unknown): AbortSignal {
+		const signal = constructInternal(() => new AbortSignal());
+		signalAbort(signal, reason);
+		return signal;
+	}
+
+	static timeout(milliseconds: number): AbortSignal {
+		const delay = Number(milliseconds);
+		if (!Number.isFinite(delay) || delay < 0) {
+			throw new TypeError("AbortSignal.timeout takes a time in milliseconds");
+		}
+		const signal = constructInternal(() => new AbortSignal());
+		const timer = setTimeout(() => {
+			signalAbort(signal, domError("TimeoutError", "The signal timed out"));
+		}, delay);
+		// A timeout keeps nothing running, as a browser's does not keep its
+		// page open.
+		(timer as {unref?(): void}).unref?.();
+		return signal;
+	}
+
+	// DOM §3.2: a dependent signal follows its sources' own sources, so a
+	// chain of any() calls never grows.
+	static any(signals: Iterable<AbortSignal>): AbortSignal {
+		const sources = [...signals];
+		for (const source of sources) {
+			if (!isAbortSignal(source)) {
+				throw new TypeError("AbortSignal.any takes AbortSignals");
+			}
+		}
+		const result = constructInternal(() => new AbortSignal());
+		for (const source of sources) {
+			if (source.aborted) {
+				signalAbort(result, source.reason);
+				return result;
+			}
+		}
+		const resultSlots = $(result);
+		resultSlots[kSourceSignals] = new Set();
+		for (const source of sources) {
+			const sourceSlots = $(source);
+			const roots = sourceSlots[kSourceSignals] ?? [source];
+			for (const root of roots) {
+				resultSlots[kSourceSignals].add(root);
+				$(root)[kDependentSignals].add(result);
+			}
+		}
+		return result;
+	}
+
+	throwIfAborted(): void {
+		const slots = $(this);
+		if (slots[kAborted]) {
+			throw slots[kAbortReason];
+		}
+	}
+}
+
+/** Whether `value` is one of this DOM's AbortSignals. */
+export function isAbortSignal(value: unknown): value is AbortSignal {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		isSealed(value) &&
+		$(value as AbortSignal)[kAbortAlgorithms] !== undefined
+	);
+}
+
+/** Runs `algorithm` when `signal` aborts, as the DOM's specs do. */
+export function addAbortAlgorithm(
+	signal: AbortSignal,
+	algorithm: () => void,
+): void {
+	const slots = $(signal);
+	if (!slots[kAborted]) {
+		slots[kAbortAlgorithms].push(algorithm);
+	}
+}
+
+// DOM §3.2's signal abort: the signal and every signal that depends on it.
+function signalAbort(signal: AbortSignal, reason: unknown): void {
+	const slots = $(signal);
+	if (slots[kAborted]) {
+		return;
+	}
+	const why = reason === undefined
+		? domError("AbortError", "This operation was aborted")
+		: reason;
+	slots[kAborted] = true;
+	slots[kAbortReason] = why;
+	const dependents: AbortSignal[] = [];
+	for (const dependent of slots[kDependentSignals]) {
+		if (!dependent.aborted) {
+			$(dependent)[kAborted] = true;
+			$(dependent)[kAbortReason] = why;
+			dependents.push(dependent);
+		}
+	}
+	slots[kDependentSignals].clear();
+	runAbortSteps(signal);
+	for (const dependent of dependents) {
+		runAbortSteps(dependent);
+	}
+}
+
+function runAbortSteps(signal: AbortSignal): void {
+	const slots = $(signal);
+	const algorithms = slots[kAbortAlgorithms];
+	slots[kAbortAlgorithms] = [];
+	for (const algorithm of algorithms) {
+		algorithm();
+	}
+	dispatchAsUserAgent(signal, new Event("abort"));
+}
+
+const kControllerSignal = Symbol("controller signal");
+
+export interface AbortController {
+	[kControllerSignal]: AbortSignal;
+}
+
+/** DOM §3.1. */
+export class AbortController {
+	constructor() {
+		seal(this, new.target, AbortController);
+		$(this)[kControllerSignal] = constructInternal(() => new AbortSignal());
+	}
+
+	get signal(): AbortSignal {
+		return $(this)[kControllerSignal];
+	}
+
+	abort(reason?: unknown): void {
+		signalAbort($(this)[kControllerSignal], reason);
+	}
+}
+
+declareSealedRoot(AbortController);
+
+Object.defineProperty(AbortSignal.prototype, Symbol.toStringTag, {
+	value: "AbortSignal",
+	configurable: true,
+});
+
+Object.defineProperty(AbortController.prototype, Symbol.toStringTag, {
+	value: "AbortController",
+	configurable: true,
+});
+
 function flattenMore(
 	options: boolean | globalThis.AddEventListenerOptions | undefined,
 ): {
@@ -4288,7 +4435,7 @@ function flattenMore(
 
 	/** Null until the type and target decide it, which the spec defers. */
 	passive: boolean | null;
-	signal: ListenerSignal | null;
+	signal: AbortSignal | null;
 } {
 	if (
 		options != null &&
@@ -4306,12 +4453,9 @@ function flattenMore(
 		options,
 		"Listener options",
 	);
-	let signal: ListenerSignal | null = null;
+	let signal: AbortSignal | null = null;
 	if (dictionary.signal !== undefined) {
-		if (
-			PlatformAbortSignal === undefined ||
-			!(dictionary.signal instanceof PlatformAbortSignal)
-		) {
+		if (!isAbortSignal(dictionary.signal)) {
 			throw new TypeError("A listener's signal must be an AbortSignal");
 		}
 		signal = dictionary.signal;
@@ -4797,60 +4941,6 @@ function appendToPath(
 	});
 }
 
-// A platform event's prototype getters know nothing about a tree, so an
-// own property shadows each member that dispatch controls. The properties
-// stay on the event afterwards and read the cleared state.
-function adoptForeignEvent(event: Event): void {
-	if (isSealed(event)) {
-		return;
-	}
-	const state: DispatchState = {
-		target: null,
-		relatedTarget: null,
-		currentTarget: null,
-		eventPhase: NONE,
-		path: [],
-		initialized: true,
-		dispatch: false,
-		stopPropagation: false,
-		stopImmediate: false,
-		canceled: Boolean(event.defaultPrevented),
-		inPassiveListener: false,
-		trusted: false,
-		foreign: true,
-	};
-	adopt(event, {[kState]: state});
-	defineDispatchAccessor(event, "target", () => state.target);
-	defineDispatchAccessor(event, "srcElement", () => state.target);
-	defineDispatchAccessor(event, "currentTarget", () => state.currentTarget);
-	defineDispatchAccessor(event, "eventPhase", () => state.eventPhase);
-	Object.defineProperty(event, "composedPath", {
-		value: () => getComposedPath(state),
-		configurable: true,
-	});
-}
-
-function defineDispatchAccessor(
-	event: Event,
-	name: string,
-	get: () => unknown,
-): void {
-	Object.defineProperty(event, name, {get, configurable: true});
-}
-
-// Read back the flags a listener set on the platform object.
-// stopImmediatePropagation is not distinguishable from stopPropagation
-// there, so it stops the targets after this one while the remaining
-// listeners at this target still run.
-function syncForeignFlags(event: Event, state: DispatchState): void {
-	if (event.defaultPrevented) {
-		setCanceledFlag(event);
-	}
-	if ((event as {cancelBubble?: boolean}).cancelBubble) {
-		state.stopPropagation = true;
-	}
-}
-
 // The one place an event's trust is decided. dispatchEvent() is never
 // trusted. dispatchAsUserAgent() and dispatch() below (the spec's "fire an
 // event") are always trusted.
@@ -4859,13 +4949,12 @@ function dispatchFromOutside(
 	event: Event,
 	trusted: boolean,
 ): boolean {
-	if (!(event instanceof HostEvent)) {
+	// Brand-checked, as a browser's binding is: only this DOM's events, not
+	// the runtime's.
+	const state = isSealed(event) ? $(event)[kState] : undefined;
+	if (state === undefined) {
 		throw new TypeError("dispatchEvent needs an Event");
 	}
-	if (!(event instanceof Event)) {
-		adoptForeignEvent(event);
-	}
-	const state = $(event)[kState];
 	if (state.dispatch || !state.initialized) {
 		throw domError(
 			"InvalidStateError",
@@ -5454,9 +5543,6 @@ function innerInvoke(
 					? null
 					: getEventTargetDocument(state.currentTarget),
 			);
-		}
-		if (state.foreign) {
-			syncForeignFlags(event, state);
 		}
 		state.inPassiveListener = false;
 		if (state.stopImmediate) {
@@ -17685,7 +17771,7 @@ interface ImageState {
 	// newer one started is dropped.
 	generation: number;
 	// Cancels the request in flight when a newer one replaces it.
-	abort: AbortController | null;
+	abort: globalThis.AbortController | null;
 	version: number;
 	waiters: Array<{resolve: () => void; reject: (error: unknown) => void}>;
 	// A source set while the document had no window, loaded on insertion
@@ -18084,7 +18170,7 @@ function updateImageData(image: HTMLImageElement): void {
 	// a src does not collapse the box in between.
 	state.status = "loading";
 	invalidateReplaced(image, true);
-	const abort = state.abort = new AbortController();
+	const abort = state.abort = new globalThis.AbortController();
 	const document = image.ownerDocument;
 	// As HTML's "update the image data" does, the request waits for the
 	// script that set the source to finish. A listener added just after
@@ -26497,7 +26583,7 @@ export interface Document {
 	[kImages]: GraphicsSetting;
 	[kCanvas]: GraphicsSetting;
 	[kLoad]: ResourceLoader;
-	[kLoadSignal]: AbortSignal;
+	[kLoadSignal]: globalThis.AbortSignal;
 	// Whether the document's policies let an element's inline handler run.
 	[kAllowsInlineHandler]?: (element: globalThis.Element) => boolean;
 	// Where an exception the page let escape goes once the window's error
@@ -35586,7 +35672,7 @@ export interface DocumentEngine {
 	load: ResourceLoader;
 	allowsInlineHandler(element: globalThis.Element): boolean;
 	// Aborts when the TermDOM is disposed, and the document's loads with it.
-	loadSignal: AbortSignal;
+	loadSignal: globalThis.AbortSignal;
 	render(): Promise<void>;
 	reportUncaught(error: unknown): void;
 }
@@ -36124,7 +36210,7 @@ type AttachedDocument =
 		[kImages]: GraphicsSetting;
 		[kCanvas]: GraphicsSetting;
 		[kLoad]: ResourceLoader;
-		[kLoadSignal]: AbortSignal;
+		[kLoadSignal]: globalThis.AbortSignal;
 		[kReportUncaught]: (error: unknown) => void;
 	};
 
@@ -38325,6 +38411,8 @@ function createBeforeUnloadEvent(): BeforeUnloadEvent {
 // GlobalEventHandlers, shared with elements and documents, and
 // WindowEventHandlers, whose members exist as attributes whether or not
 // this engine fires them.
+installEventHandler(AbortSignal.prototype, "onabort");
+
 installEventHandlers(Window.prototype, GLOBAL_EVENT_HANDLERS);
 installEventHandlers(Window.prototype, WINDOW_EVENT_HANDLERS);
 installEventHandlers(Window.prototype, [
@@ -38337,6 +38425,8 @@ installEventHandlers(Window.prototype, [
 // The one place an interface joins the window. A class not listed here
 // is not visible to script, whatever this module exports.
 const platform = {
+	AbortController,
+	AbortSignal,
 	AbstractRange,
 	AnimationEvent,
 	Attr,
