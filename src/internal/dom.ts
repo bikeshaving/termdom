@@ -5974,8 +5974,20 @@ function *shadowIncludingInclusiveDescendantSlots(
 
 /** The next node in tree order, or null once the walk leaves the root. */
 export function nextInTree(node: Node, root: Node): Node | null {
-	const next = nextSlotsInTree(slotsOf(node), slotsOf(root));
-	return next === null ? null : rememberObject(next);
+	const nodeSlots = slotsOf(node);
+	if (nodeSlots[kFirstChild] !== null) {
+		return rememberObject(nodeSlots[kFirstChild]);
+	}
+	// The root is compared, not looked up, so a walk that calls this for
+	// every node keeps the node it is on in the lookup cache.
+	let current: Slots<Node> | null = nodeSlots;
+	while (current !== null && objectOf(current) !== root) {
+		if (current[kNext] !== null) {
+			return rememberObject(current[kNext]);
+		}
+		current = current[kParent];
+	}
+	return null;
 }
 
 function nextSlotsInTree(
