@@ -249,8 +249,15 @@ export function getReplacedSize(
 			width = height * ratio;
 		}
 	}
+	// An image that fits a fractional width, as 100% of a cell can be,
+	// stays within the whole cells of it. Rounded up, it ran a cell past.
+	const fits = width! <= availableWidth;
+	const rounded = Math.round(width!);
 	return {
-		width: Math.max(0, Math.round(width!)),
+		width: Math.max(
+			0,
+			fits ? Math.min(rounded, Math.floor(availableWidth + 1e-6)) : rounded,
+		),
 		height: Math.max(0, Math.round(height!)),
 	};
 }
