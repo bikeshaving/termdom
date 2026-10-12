@@ -490,6 +490,11 @@ export class LayoutNode {
 	// that left the tree cannot go stale.
 	owner: object | null;
 
+	// Whether the measure lays out text, whose trailing edge rounds up so
+	// it never gets less room than it measured. A replaced box fills the
+	// width it is given, and rounds both edges as a block does.
+	measuresText: boolean;
+
 	constructor() {
 		this.children = [];
 		this.parent = null;
@@ -501,6 +506,7 @@ export class LayoutNode {
 		this.cachedLayout = null;
 		this.cellBaselineShift = 0;
 		this.owner = null;
+		this.measuresText = true;
 		this[kOutOfFlowCount] = 0;
 		this[kStyle] = createStyle();
 		this.result = createResult();
@@ -6104,8 +6110,9 @@ function getPadding(node: LayoutNode, edge: Edge, ownerWidth: number): number {
 // Snap to whole cells from rounded absolute EDGES, not rounded widths:
 // 26.67 x 3 rounded separately is 81 columns in an 80-column terminal. A
 // position is the difference of two rounded edges too, so text inside a
-// fractional padding starts where a marker beside it ends. A measured leaf
-// ceils its trailing edge so text never gets less room than it measured.
+// fractional padding starts where a marker beside it ends. A leaf that
+// measures text ceils its trailing edge so the text never gets less room
+// than it measured.
 function roundToGrid(
 	node: LayoutNode,
 	absoluteLeft: number,
@@ -6121,7 +6128,7 @@ function roundToGrid(
 	const absRight = absLeft + nodeWidth;
 	const absBottom = absTop + nodeHeight;
 
-	const isText = node.measure !== null;
+	const isText = node.measure !== null && node.measuresText;
 
 	node.result.left =
 		roundValue(absLeft, false, false) - roundValue(absoluteLeft, false, false);
