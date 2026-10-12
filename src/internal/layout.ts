@@ -2229,6 +2229,7 @@ function addElementNode(
 		}
 		return;
 	} else if (isReplacedBox(element)) {
+		layoutNode.measuresText = false;
 		layoutNode.measure = (width, widthSpace) =>
 			measureReplaced(element, width, widthSpace);
 		layout[kMeasureNodes].add(layoutNode);
