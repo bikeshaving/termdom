@@ -41,9 +41,8 @@ test("installGlobals puts the window's names over the runtime's, and uninstallin
 	try {
 		expect(global.FormData).toBe(term.window.FormData);
 		expect(global.navigator).toBe(term.window.navigator);
-		// The runtime's event classes stay, and serve the document too.
-		expect(Object.getOwnPropertyDescriptor(globalThis, "Event"))
-			.toEqual(before[0]);
+		// The window's event classes too: what a page makes is the DOM's.
+		expect(global.Event).toBe(term.window.Event);
 		const p = term.document.createElement("p");
 		let heard = 0;
 		p.addEventListener("ping", () => heard++);
@@ -68,16 +67,24 @@ test("installGlobals puts the window's names over the runtime's, and uninstallin
 	}
 });
 
-test("the runtime's own EventTargets and events go on working", () => {
+test("the runtime's own EventTargets go on working with the runtime's events", () => {
 	const RuntimeEventTarget = EventTarget;
+	const RuntimeEvent = Event;
 	const term = new TermDOM();
 	const uninstall = installGlobals(term);
 	try {
 		const target = new RuntimeEventTarget();
 		let heard = 0;
 		target.addEventListener("ping", () => heard++);
-		target.dispatchEvent(new global.Event("ping"));
+		target.dispatchEvent(new RuntimeEvent("ping"));
 		expect(heard).toBe(1);
+		// The two sides keep to their own events, as two browsers' would.
+		expect(() => target.dispatchEvent(new global.Event("ping"))).toThrow(
+			TypeError,
+		);
+		expect(() =>
+			term.document.body.dispatchEvent(new RuntimeEvent("ping") as never),
+		).toThrow(TypeError);
 		const controller = new AbortController();
 		let aborted = 0;
 		controller.signal.addEventListener("abort", () => aborted++);

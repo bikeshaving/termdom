@@ -205,3 +205,42 @@ test("crypto fills integer arrays from the runtime's random source", () => {
 	expect(() => getRandomValues.call({}, new Uint8Array(1))).toThrow(TypeError);
 	dom.dispose();
 });
+
+test("an AbortController's signal is the DOM's, and aborts as the DOM says", async () => {
+	const dom = create();
+	const window = dom.window as unknown as Global;
+	expect(window.AbortController).not.toBe(globalThis.AbortController);
+	expect(() => new window.AbortSignal()).toThrow(TypeError);
+	const controller = new window.AbortController();
+	const {signal} = controller;
+	const heard: string[] = [];
+	signal.onabort = (event) => heard.push(`onabort ${event.isTrusted}`);
+	signal.addEventListener("abort", () => heard.push("listener"));
+	expect([signal.aborted, signal.reason]).toEqual([false, undefined]);
+	controller.abort();
+	expect(signal.aborted).toBe(true);
+	expect(signal.reason).toBeInstanceOf(window.DOMException);
+	expect((signal.reason as DOMException).name).toBe("AbortError");
+	expect(heard).toEqual(["onabort true", "listener"]);
+	expect(() => signal.throwIfAborted()).toThrow(window.DOMException);
+	controller.abort("again");
+	expect(heard.length).toBe(2);
+
+	expect(window.AbortSignal.abort("why").reason).toBe("why");
+	const first = new window.AbortController();
+	const second = new window.AbortController();
+	const either = window.AbortSignal.any([first.signal, second.signal]);
+	const nested = window.AbortSignal.any([either]);
+	second.abort("second");
+	expect([either.aborted, either.reason, nested.reason]).toEqual([
+		true,
+		"second",
+		"second",
+	]);
+	expect(() => window.AbortSignal.any([{} as AbortSignal])).toThrow(TypeError);
+
+	const timed = window.AbortSignal.timeout(1);
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect((timed.reason as DOMException).name).toBe("TimeoutError");
+	dom.dispose();
+});

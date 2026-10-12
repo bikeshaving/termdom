@@ -616,7 +616,8 @@ test("a passive listener cannot cancel the event it hears", () => {
 test("an aborted signal takes its listener with it", () => {
 	const document = make();
 	const target = document.createElement("div");
-	const controller = new AbortController();
+	const window = document.defaultView as unknown as typeof globalThis;
+	const controller = new window.AbortController();
 	let calls = 0;
 	target.addEventListener("ping", () => calls++, {signal: controller.signal});
 	target.dispatchEvent(new DOMEvent("ping"));
@@ -626,6 +627,14 @@ test("an aborted signal takes its listener with it", () => {
 	expect(() =>
 		target.addEventListener("ping", () => {}, {signal: {} as any}),
 	).toThrow();
+	// The runtime's signal is not this DOM's.
+	expect(() =>
+		target.addEventListener(
+			"ping",
+			() => {},
+			{signal: new AbortController().signal as any},
+		),
+	).toThrow(TypeError);
 });
 
 test("composedPath is the whole path while dispatching, and empty after", () => {
@@ -672,15 +681,23 @@ test("a listener object's handleEvent is looked up at every dispatch", () => {
 	expect(calls).toBe(2);
 });
 
-/* ------------------------------------------------------- platform events */
+/* ---------------------------------------------------------------- events */
 
-test("an event here is a platform event, and a custom event here is both", () => {
+test("an event here is the DOM's own, and the runtime's are not events here", () => {
 	const event = new DOMEvent("ping");
-	expect(event instanceof globalThis.Event).toBe(true);
+	expect(event instanceof globalThis.Event).toBe(false);
+	expect(Object.getPrototypeOf(DOMEvent.prototype)).toBe(Object.prototype);
 	const custom = new DOMCustomEvent("ping", {detail: 1});
 	expect(custom instanceof DOMEvent).toBe(true);
-	expect(custom instanceof globalThis.Event).toBe(true);
 	expect(custom.detail).toBe(1);
+	const document = make();
+	const target = document.createElement("div");
+	expect(() =>
+		target.dispatchEvent(new globalThis.Event("ping") as any),
+	).toThrow(TypeError);
+	expect(() =>
+		target.dispatchEvent(new globalThis.CustomEvent("ping") as any),
+	).toThrow(TypeError);
 });
 
 test("isTrusted reads false and cannot be redefined", () => {
@@ -716,7 +733,7 @@ test("the user agent's own events are trusted, click()'s is not", async () => {
 	expect(clickTrusted).toBe(false);
 });
 
-test("a platform CustomEvent dispatches through the tree", () => {
+test("a CustomEvent dispatches through the tree", () => {
 	const document = make();
 	const outer = document.createElement("div");
 	const inner = document.createElement("span");
@@ -744,10 +761,8 @@ test("a platform CustomEvent dispatches through the tree", () => {
 		seen.push(`bubble:${event.eventPhase}`);
 		expect(event.currentTarget).toBe(outer);
 	});
-	const event = new globalThis.CustomEvent("thing", {
-		bubbles: true,
-		detail: {ok: true},
-	});
+	const event =
+		new DOMCustomEvent("thing", {bubbles: true, detail: {ok: true}});
 	expect(inner.dispatchEvent(event as any)).toBe(true);
 	expect(seen).toEqual(["capture:1", "target:2", "bubble:3"]);
 	expect(detail).toEqual({ok: true});
@@ -767,17 +782,17 @@ test("a platform CustomEvent dispatches through the tree", () => {
 	expect(event.isTrusted).toBe(false);
 });
 
-test("preventDefault on a platform event is honored", () => {
+test("preventDefault on a cancelable event is honored", () => {
 	const document = make();
 	const target = document.createElement("div");
 	target.addEventListener("thing", (event: any) => event.preventDefault());
-	const cancelable = new globalThis.CustomEvent("thing", {cancelable: true});
+	const cancelable = new DOMCustomEvent("thing", {cancelable: true});
 	expect(target.dispatchEvent(cancelable as any)).toBe(false);
-	const uncancelable = new globalThis.CustomEvent("thing");
+	const uncancelable = new DOMCustomEvent("thing");
 	expect(target.dispatchEvent(uncancelable as any)).toBe(true);
 });
 
-test("stopPropagation on a platform event ends the walk", () => {
+test("stopPropagation ends the walk after the listeners at its target", () => {
 	const document = make();
 	const outer = document.createElement("div");
 	const inner = document.createElement("span");
@@ -790,17 +805,15 @@ test("stopPropagation on a platform event ends the walk", () => {
 	});
 	inner.addEventListener("thing", () => seen.push("also at target"));
 	outer.addEventListener("thing", () => seen.push("bubble"));
-	inner.dispatchEvent(
-		new globalThis.CustomEvent("thing", {bubbles: true}) as any,
-	);
+	inner.dispatchEvent(new DOMCustomEvent("thing", {bubbles: true}) as any);
 	expect(seen).toEqual(["target", "also at target"]);
 });
 
-test("a subclass of the platform CustomEvent dispatches", () => {
+test("a subclass of CustomEvent dispatches", () => {
 	const document = make();
 	const target = document.createElement("div");
 
-	class ThingEvent extends globalThis.CustomEvent<{count: number}> {
+	class ThingEvent extends DOMCustomEvent<{count: number}> {
 		constructor(count: number) {
 			super("thing", {bubbles: true, detail: {count}});
 		}
