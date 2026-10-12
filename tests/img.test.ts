@@ -885,29 +885,36 @@ test("drawImage() without a size draws an image whole, at its natural size", asy
 });
 
 // A box at a fractional position rounds both edges to the grid. An image
-// at 100% did not: it rounded its right edge up as text does, one cell
-// past its cell, over the table's border.
+// at 100% did not: as a block it rounded its right edge up as text does,
+// and on a line it rounded its fractional width up, one cell past its
+// cell, over the table's border.
 test("an image at 100% stops where its cell does, short of the border", async () => {
-	const terminal = new MockProcess({cols: 121, rows: 12});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-		cellSize: {width: 7, height: 15},
-		csp: "img-src data:",
-	});
-	const {document} = dom;
-	document.body.innerHTML =
-		"<table width=\"600\" style=\"margin:0 auto;border:1px solid;" +
-		"border-collapse:collapse\"><tr><td id=c style=\"padding:0;border:0\">" +
-		`<img id=a style="display:block;width:100%" src="${png(120, 30, () => RED)}">` +
-		"</td></tr></table>";
-	const image = document.getElementById("a") as HTMLImageElement;
-	await loaded(image);
-	await nextFrame(dom);
-	const box = image.getBoundingClientRect();
-	const cellBox = document.getElementById("c")!.getBoundingClientRect();
-	expect([box.left, box.right]).toEqual([cellBox.left, cellBox.right]);
-	const border = cellBox.right / 7;
-	expect(cell(terminal, border, 1).char).toBe("│");
-	expect(cell(terminal, border - 1, 1).bg).toBe(hex(RED));
-	dom.dispose();
+	const src = png(120, 30, () => RED);
+	for (const image of [
+		`<img id=a style="display:block;width:100%" src="${src}">`,
+		`<img id=a style="width:100%;height:auto" src="${src}">`,
+		`<a href="#"><img id=a width="600" style="width:100%;max-width:100%" src="${src}"></a>`,
+	]) {
+		const terminal = new MockProcess({cols: 121, rows: 12});
+		const dom = new TermDOM({
+			transport: terminal.transport,
+			cellSize: {width: 7, height: 15},
+			csp: "img-src data:",
+		});
+		const {document} = dom;
+		document.body.innerHTML =
+			"<table width=\"600\" style=\"table-layout:fixed;margin:0 auto;" +
+			"border:1px solid;border-collapse:collapse\"><tr>" +
+			`<td id=c style="padding:0;border:0">${image}</td></tr></table>`;
+		const element = document.getElementById("a") as HTMLImageElement;
+		await loaded(element);
+		await nextFrame(dom);
+		const box = element.getBoundingClientRect();
+		const cellBox = document.getElementById("c")!.getBoundingClientRect();
+		expect([box.left, box.right]).toEqual([cellBox.left, cellBox.right]);
+		const border = cellBox.right / 7;
+		expect(cell(terminal, border, 1).char).toBe("│");
+		expect(cell(terminal, border - 1, 1).bg).toBe(hex(RED));
+		dom.dispose();
+	}
 });
