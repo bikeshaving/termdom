@@ -3810,10 +3810,10 @@ export function getComputedValue(
 	if (!cascade) {
 		return "";
 	}
-	const declaration = pseudoElement
-		? getPseudoDeclaration(cascade, element, pseudoElement)
-		: cascade.declarationFor(element);
-	return $(declaration)[kComputedValue](property);
+	const slots = pseudoElement
+		? $(getPseudoDeclaration(cascade, element, pseudoElement))
+		: cascade.computedSlotsFor(element);
+	return slots[kComputedValue](property);
 }
 
 // A box with nothing to contain or transform: no box at all, or a plain
@@ -4123,7 +4123,7 @@ function getResolvedValues(
 	if (cascade.getStyleKey(element) === null) {
 		return null;
 	}
-	return $(cascade.declarationFor(element))[kResolved];
+	return cascade.computedSlotsFor(element)[kResolved];
 }
 
 function getSharedResolved(
@@ -4227,7 +4227,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		slots[kInlineBlock] = null;
 		if (cascade) {
 			slots[kCascade] = cascade;
-			cascade[kCurrentDeclarations].add(this);
+			cascade[kCurrentDeclarations].add(slots);
 			slots[kResolved] = getSharedResolved(cascade, element, cssRules);
 		}
 	}
@@ -4259,7 +4259,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			flushCascadeStyle(slots[kCascade]);
 		}
 		const current = slots[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(this)) {
+		if (current !== undefined && !current.has(slots)) {
 			slots[kSyncResolved]();
 		}
 		// A flow-relative longhand resolves as the physical longhand it maps
@@ -4397,7 +4397,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		// Before the work, because resolving below reads back through this
 		// declaration.
-		slots[kCascade][kCurrentDeclarations].add(ownerOf(this));
+		slots[kCascade][kCurrentDeclarations].add(this);
 		slots[kCSSRules] = getCascadeRules(slots[kCascade], slots[kElement]);
 		slots[kInlineBlock] = null;
 		slots[kCustom] = null;
@@ -4430,7 +4430,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	[kComputedValue](property: string): string {
 		const slots = this;
 		const current = slots[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(ownerOf(this))) {
+		if (current !== undefined && !current.has(this)) {
 			slots[kSyncResolved]();
 		}
 		const value = slots[kBaseValue](property);
@@ -5354,7 +5354,7 @@ function resolvePropertyValueRaw(
 function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 	const computedSlots = $(computed);
 	const current = computedSlots[kCascade]?.[kCurrentDeclarations];
-	if (current !== undefined && !current.has(computed)) {
+	if (current !== undefined && !current.has(computedSlots)) {
 		computedSlots[kSyncResolved]();
 	}
 	if (computedSlots[kCustom]) {
@@ -5416,7 +5416,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		slots[kPseudoElement] = pseudoElement;
 		slots[kCascade] = cascade ?? null;
 		if (cascade) {
-			cascade[kCurrentDeclarations].add(this);
+			cascade[kCurrentDeclarations].add(slots);
 		}
 	}
 
@@ -5438,7 +5438,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	nodeValue(property: string): string {
 		const slots = $(this);
 		const current = slots[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(this)) {
+		if (current !== undefined && !current.has(slots)) {
 			slots[kSyncResolved]();
 		}
 		let value = slots[kNodeResolved].get(property);
@@ -5492,7 +5492,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		// Before the work, because resolving below reads back through this
 		// declaration.
 		const slots = this;
-		slots[kCascade]?.[kCurrentDeclarations].add(ownerOf(this));
+		slots[kCascade]?.[kCurrentDeclarations].add(this);
 		if (slots[kCascade] && slots[kElement] && slots[kPseudoElement]) {
 			slots[kPseudoDeclarations] = pseudoDeclarationsFor(
 				slots[kCascade],
@@ -5594,7 +5594,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	[kComputedValue](property: string): string {
 		const slots = this;
 		const current = slots[kCascade]?.[kCurrentDeclarations];
-		if (current !== undefined && !current.has(ownerOf(this))) {
+		if (current !== undefined && !current.has(this)) {
 			slots[kSyncResolved]();
 		}
 		const value = slots[kBaseValue](property);
@@ -6096,11 +6096,13 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 }
 
 export interface Cascade {
+	// Each element's computed declaration, as its slots.
 	[kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
 
-	// Every declaration resolved against the current cascade. Dropping one, or
-	// replacing the set, sends it back through kSyncResolved on its next read.
-	// Weak, so a declaration nobody holds costs nothing.
+	// The slots of every declaration resolved against the current cascade.
+	// Dropping one, or replacing the set, sends it back through
+	// kSyncResolved on its next read. Weak, so a declaration nobody holds
+	// costs nothing.
 	[kCurrentDeclarations]: WeakSet<object>;
 
 	// Nothing else tracks a shadow tree's sheets, so a parse walks these.
@@ -6645,26 +6647,34 @@ export class Cascade {
 	// resolved-value branch. Called thousands of times per frame, so it does
 	// the least it can.
 	declarationFor(element: Element): ComputedStyleDeclaration {
-		let declaration = this[kComputedStyleCache].get(element);
-		if (!declaration) {
+		return ownerOf(this.computedSlotsFor(element));
+	}
+
+	// The slots of the declaration, which the cache holds, so a read of a
+	// computed value looks nothing up.
+	computedSlotsFor(element: Element): ComputedStyleDeclaration {
+		let slots = this[kComputedStyleCache].get(element);
+		if (!slots) {
 			parseStylesheetsIfStale(this);
-			declaration = new ComputedStyleDeclaration(
-				element,
-				getCascadeRules(this, element),
-				this,
+			const fresh = $(
+				new ComputedStyleDeclaration(
+					element,
+					getCascadeRules(this, element),
+					this,
+				),
 			);
-			this[kComputedStyleCache].set(element, declaration);
+			slots = fresh;
+			this[kComputedStyleCache].set(element, fresh);
 			// Building a fresh declaration is the other form of the style
 			// change event kSyncResolved sees.
-			const fresh = declaration;
 			processTransitionStyle(
 				this,
 				element,
-				(property) => $(fresh)[kBaseValue](property),
+				(property) => fresh[kBaseValue](property),
 				"",
 			);
 		}
-		return declaration;
+		return slots;
 	}
 
 	/**
@@ -6675,9 +6685,8 @@ export class Cascade {
 		if (getPseudoHost(element) !== null || isTransitioning(this, element)) {
 			return null;
 		}
-		const declaration = this.declarationFor(element);
-		const declarationSlots = $(declaration);
-		if (!this[kCurrentDeclarations].has(declaration)) {
+		const declarationSlots = this.computedSlotsFor(element);
+		if (!this[kCurrentDeclarations].has(declarationSlots)) {
 			declarationSlots[kSyncResolved]();
 		}
 		return declarationSlots[kStyleVersion];
@@ -8159,7 +8168,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 	const dropped = cascade[kComputedStyleCache].get(element);
 	if (dropped) {
 		cascade[kCurrentDeclarations].delete(dropped);
-		storeTransitionFallback(cascade, element, "", $(dropped)[kResolved]);
+		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
 	cascade[kHasResults] = null;
@@ -8349,14 +8358,14 @@ function invalidateElementCaches(
 	const dropped = cascade[kComputedStyleCache].get(element);
 	if (dropped) {
 		cascade[kCurrentDeclarations].delete(dropped);
-		storeTransitionFallback(cascade, element, "", $(dropped)[kResolved]);
+		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
 	}
 	cascade[kComputedStyleCache].delete(element);
 	cascade[kHasResults] = null;
 	const droppedPseudos = cascade[kPseudoElementStyleCache].get(element);
 	if (droppedPseudos) {
 		for (const [name, declaration] of droppedPseudos) {
-			cascade[kCurrentDeclarations].delete(declaration);
+			cascade[kCurrentDeclarations].delete($(declaration));
 			storeTransitionFallback(
 				cascade,
 				element,
@@ -9980,7 +9989,7 @@ function computePseudoElementStyle(
 				continue;
 			}
 			direction ??=
-				$(cascade.declarationFor(element))[kComputedValue]("direction");
+				cascade.computedSlotsFor(element)[kComputedValue]("direction");
 			for (const other of CSSValues.getSlotNames(name, direction)) {
 				computedStyle[other] = value;
 			}
