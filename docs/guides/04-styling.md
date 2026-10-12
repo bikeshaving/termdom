@@ -11,42 +11,45 @@ supported.
 
 ## Units
 
-By default `1px` and `1ch` are one cell. Which axis is meant comes from the
-property: `width: 10px` is ten columns and `height: 10px` is ten rows.
+By default, `1px` and `1ch` are each one cell. The property decides the
+axis: `width: 10px` is ten columns, and `height: 10px` is ten rows.
 `em`, `rem`, and `ex` scale from `font-size`, which is `1` by default,
-so `1em` is one cell too. Percentages, `vw`, `vh`, and `calc()` work. A
-length that lands between cells resolves to a whole cell.
+so `1em` is also one cell. Percentages, `vw`, `vh`, and `calc()` work.
+A length that falls between cells resolves to a whole cell.
 
-A terminal draws one font at one size, so `font-size` and
-`font-family` don't change how text looks. `font-size` still sets what
-`em` and `ex` measure, and how many rows a `line-height` takes.
+A terminal draws one font at one size, so `font-size` and `font-family`
+do not change how text looks. `font-size` still sets what `em` and `ex`
+measure, and how many rows a `line-height` takes.
 
 ## Colors
 
-`color` and `background-color` take named colors, hex in three, four,
-six, or eight digits, and `rgb()` and `hsl()` in both the comma form and
-the modern space-separated form with `/ alpha`.
+`color` and `background-color` accept:
 
-A cell has no alpha, so a translucent `background-color` is blended with
-what the cell already shows, or with the terminal's own background where
-nothing has been painted, and the cell gets the result. A color with
-alpha `0` paints nothing. In a gradient, stops composite over the color
-beneath them.
+- named colors
+- hex colors with three, four, six, or eight digits
+- `rgb()` and `hsl()`, in both the comma form and the modern
+  space-separated form with `/ alpha`
 
-The system colors mean what they mean in a terminal:
+A cell has no alpha. TermDOM blends a translucent `background-color`
+with what the cell already shows and gives the cell the result. Where
+nothing has been painted, it blends with the terminal's own background.
+A color with alpha `0` paints nothing. In a gradient, each stop
+composites over the color beneath it.
+
+In a terminal, the system colors mean the following:
 
 | Color | Meaning |
 | --- | --- |
-| `Canvas` | The terminal's own background. A box with `background-color: Canvas` clears to it, which is how a dialog or popover covers what is behind it. |
+| `Canvas` | The terminal's own background. A box with `background-color: Canvas` clears to it. This is how a dialog or popover covers what is behind it. |
 | `CanvasText` | The terminal's own foreground. |
-| `Highlight`, `HighlightText` | Inverse video. The pair is what `::selection` uses. |
-| `SelectedItem`, `SelectedItemText` | Inverse video too. |
+| `Highlight`, `HighlightText` | Inverse video. `::selection` uses this pair. |
+| `SelectedItem`, `SelectedItemText` | Also inverse video. |
 | `LinkText` | Blue, the color of `<a href>`. |
 | `GrayText` | Gray. |
 
-A `background-image` with a `linear-gradient()` paints each cell the
-color the gradient has at that cell's center. A stop's position takes
-any length and is measured like every other length, with `ch` counted
+A `background-image` with a `linear-gradient()` paints each cell with
+the gradient's color at that cell's center. A stop's position can be any
+length, and TermDOM measures it like every other length. `ch` counts
 along the gradient's direction, so `3ch` down a column is three rows.
 `radial-gradient()` and `url()` have no effect. Neither do `opacity`,
 `filter`, `box-shadow`, and `mix-blend-mode`.
@@ -54,29 +57,30 @@ along the gradient's direction, so `3ch` down a column is three rows.
 ### Color depth
 
 Terminals differ in how many colors they can show. The `colorDepth`
-option says which TermDOM draws with, in the bits `screen.colorDepth`
-reports:
+option sets how many colors TermDOM draws with. Its values are bit
+counts, the same numbers `screen.colorDepth` reports:
 
 | `colorDepth` | Colors | How a CSS color is drawn |
 | --- | --- | --- |
-| `"auto"` (default) | What the terminal says | As one of the three below |
+| `"auto"` (default) | What the terminal reports | As one of the three below |
 | `24` | Any color | Exactly |
 | `8` | 256 | As the closest of the 256 |
 | `4` | 16 basic colors | As the closest basic color |
 
-`"rgb"`, `"256"` and `"ansi"` name the same three.
+The strings `"rgb"`, `"256"`, and `"ansi"` name the same three depths.
 
 With `"auto"`, TermDOM asks the terminal when `attach()` runs. It uses
-24 if the terminal says it has 24-bit color, or if it is tmux, which
-converts 24-bit color for the terminal it runs in. Otherwise it uses 8,
-which every terminal in use supports. It does not guess, because a
-terminal without 24-bit color can show a 24-bit color as something
-else, such as hidden text.
+24 if the terminal reports 24-bit color. It also uses 24 inside tmux,
+because tmux converts 24-bit color for the terminal it runs in.
+Otherwise it uses 8, which every terminal in use supports. TermDOM does
+not guess, because a terminal without 24-bit color can show a 24-bit
+color as something else, such as hidden text.
 
-Some terminals have 24-bit color but do not say so, among them
-Alacritty, Konsole and VS Code's terminal. Most of them set the
-`COLORTERM` environment variable to `truecolor`. TermDOM does not read
-the environment, but a program can, and pass what it finds:
+Some terminals have 24-bit color but do not report it. Alacritty,
+Konsole, and VS Code's terminal are among them. Most of these terminals
+set the `COLORTERM` environment variable to `truecolor`. TermDOM does
+not read the environment, but a program can read it and pass the
+result:
 
 ```ts
 const truecolor =
@@ -84,9 +88,11 @@ const truecolor =
 const term = new TermDOM({colorDepth: truecolor ? 24 : "auto"});
 ```
 
-A page can style for each depth with media queries: `color-gamut`
-matches `"rgb"`, `(color-index: 256)` matches `"256"`, and
-`(color-index: 16)` matches `"ansi"`.
+A page can style for each depth with media queries:
+
+- `color-gamut` matches `"rgb"`.
+- `(color-index: 256)` matches `"256"`.
+- `(color-index: 16)` matches `"ansi"`.
 
 ```css
 .banner { background: navy; }
@@ -110,21 +116,24 @@ matches `"rgb"`, `(color-index: 256)` matches `"256"`, and
 | `text-decoration-line: underline` | Underline |
 | `text-decoration-line: overline` | Overline, on a terminal that draws one |
 | `text-decoration-line: line-through` | Strikethrough |
-| `text-decoration-style: double`, or `text-decoration: underline double` | Double underline, on a terminal that draws one; a single underline elsewhere |
-| `text-transform` | `uppercase`, `lowercase`, and `capitalize` change the characters at paint time |
+| `text-decoration-style: double`, or `text-decoration: underline double` | Double underline on a terminal that draws one, and a single underline on other terminals |
+| `text-transform` | `uppercase`, `lowercase`, and `capitalize` change the characters when the engine paints them |
 
 `text-decoration-color`, `text-decoration-thickness`, `letter-spacing`,
-and `word-spacing` have no effect. A line takes `line-height` divided by
-`font-size` rows, rounded down and at least one, so `1.5` is one row and
-`2` is two.
+and `word-spacing` have no effect.
+
+A line takes `line-height` divided by `font-size` rows. The engine
+rounds the result down, with a minimum of one row. So `1.5` is one row
+and `2` is two rows.
 
 Terminals differ in how they draw italic and dim, and some draw
-neither. A design that must read the same everywhere uses color.
+neither. If a design must look the same on every terminal, use color
+instead.
 
 ## Borders
 
 `border` takes one cell per side and draws with box-drawing characters.
-The style picks the glyph set:
+The border style picks the set of characters:
 
 | Style | Glyphs |
 | --- | --- |
@@ -134,63 +143,83 @@ The style picks the glyph set:
 | `dotted` | `┄ ┊` |
 | `hidden`, `none` | Nothing |
 
-The three shaded styles draw as `solid` because a terminal has one
-weight of line. Any `border-radius` above zero rounds the corners to
-`╭ ╮ ╰ ╯`. A width above `1px` is still one cell.
+The shaded styles (`groove`, `ridge`, `inset`, and `outset`) draw as
+`solid`, because a terminal has only one line weight. Any
+`border-radius` above zero rounds the corners to `╭ ╮ ╰ ╯`. A border
+width above `1px` still takes one cell.
 
-Borders that meet in a cell join. A rule that reaches a box's side ends
-in `├` or `┤`, a column divider crossing it makes `┬` or `┴`, and two
-crossing rules make `┼`. Table borders collapse this way by default,
-and so do a `fieldset` and its `legend`.
+Borders that meet in a cell join:
 
-`outline` draws in the ring a border would occupy when the box has a
-border, recoloring it. A box without a border gets an overline along its
-top row and an underline along its bottom, so the outline takes no
+- A rule that reaches a box's side ends in `├` or `┤`.
+- A column divider that meets a box's top or bottom makes `┬` or `┴`.
+- Two crossing rules make `┼`.
+
+Table borders collapse this way by default. So do a `fieldset` and its
+`legend`.
+
+When a box has a border, `outline` recolors the cells of that border.
+When a box has no border, the outline draws as an overline along the
+box's top row and an underline along its bottom row, so it takes no
 space. `outline-offset` has no effect.
 
-`visibility: hidden` leaves the box's space and paints nothing in it.
+`visibility: hidden` keeps the box's space but paints nothing in it.
 
 ## Generated content
 
-`::before` and `::after` with a string `content` work; `counter()` in
-`content` is not implemented. `::marker` styles a list item's bullet and
-a `<summary>`'s arrow. `list-style-type` draws `•`, `◦`, and `▪` for
-`disc`, `circle`, and `square`, and the counting styles, `decimal`,
-`lower-roman`, `upper-alpha`, and the rest, draw a number followed by a
-dot. An `<ol start>` and an `<li value>` set the count as in a browser.
+`::before` and `::after` work with a string `content`. TermDOM does not
+implement `counter()` in `content`.
+
+`::marker` styles the bullet of a list item and the arrow of a
+`<summary>`. `list-style-type` draws `•` for `disc`, `◦` for `circle`,
+and `▪` for `square`. The counting styles, such as `decimal`,
+`lower-roman`, and `upper-alpha`, draw a number followed by a dot. The
+`start` attribute on `<ol>` and the `value` attribute on `<li>` set the
+count, as they do in a browser.
 
 ## Pseudo-classes and pseudo-elements
 
-`:hover` matches the element under the mouse, and asking for it turns
-on mouse motion reporting for as long as a rule needs it. `:focus`
-and `:focus-visible` match the focused element. `:fullscreen`,
-`:popover-open`, `:modal`, `:checked`, `:disabled`, `:placeholder-shown`,
-`:dir()`, and the tree-structural pseudo-classes all match as in a
-browser.
+`:hover` matches the element under the mouse. While any style rule uses
+`:hover`, the engine turns on mouse motion reporting in the terminal.
+`:focus` and `:focus-visible` match the focused element. These
+pseudo-classes all match the same way they do in a browser:
+
+- `:fullscreen`, `:popover-open`, and `:modal`
+- `:checked`, `:disabled`, and `:placeholder-shown`
+- `:dir()`
+- the tree-structural pseudo-classes
 
 `::selection` styles selected text, and `::highlight()` styles the
-ranges in `CSS.highlights`. `::placeholder` styles a text control's
-placeholder. `::backdrop` styles what a modal dialog or popover covers.
-A `<select>`'s picker and icon take `::picker(select)` and
-`::picker-icon`, and a `<details>` element's content takes
-`::details-content`. A `<progress>` or `<meter>` takes `::slider-track`
-and `::slider-fill`, and an `<input type="range">` also takes
-`::slider-thumb`. A meter matches `:optimal-value`, `:low-value` or
-`:high-value` by its level. These names come from a CSS draft that may
-still change; the API guide lists the WebKit and Firefox names, which
-won't. As in a browser, `::part()` does not reach inside the built-in
-controls.
+ranges in `CSS.highlights`. `::placeholder` styles the placeholder of a
+text control. `::backdrop` styles the area that a modal dialog or
+popover covers.
+
+The built-in controls take these pseudo-elements:
+
+- `<select>`: `::picker(select)` for the picker and `::picker-icon` for
+  the icon.
+- `<details>`: `::details-content` for the content.
+- `<progress>` and `<meter>`: `::slider-track` and `::slider-fill`.
+- `<input type="range">`: `::slider-track`, `::slider-fill`, and
+  `::slider-thumb`.
+
+A meter matches `:optimal-value`, `:low-value`, or `:high-value`
+depending on its level.
+
+These names come from a CSS draft and may still change. The API guide
+lists the WebKit and Firefox names, which will not change. As in a
+browser, `::part()` does not reach inside the built-in controls.
 
 `CSS.highlights.set("hit", new Highlight(...ranges))` colors ranges
-through `::highlight(hit)` rules for `color`, `background-color` and
-`text-decoration-line`, without adding elements or moving a line break.
-The higher `priority` wins where highlights overlap, and `::selection`
-paints over all of them. See `examples/highlights.ts`.
+through `::highlight(hit)` rules. These rules can set `color`,
+`background-color`, and `text-decoration-line`. Highlights do not add
+elements or move a line break. Where highlights overlap, the one with
+the higher `priority` wins, and `::selection` paints over all of them.
+See `examples/highlights.ts`.
 
 ## Default looks
 
-The user-agent stylesheet gives HTML elements their terminal looks.
-Any of them can be overridden by an ordinary rule.
+The user-agent stylesheet gives HTML elements their default look in the
+terminal. An ordinary rule can override any of these defaults.
 
 | Element | Default |
 | --- | --- |
@@ -202,22 +231,22 @@ Any of them can be overridden by an ordinary rule.
 | `small` | Dim |
 | `code` | A faint tint behind the text, blended with the background |
 | `a[href]` | `LinkText` and underlined; inverse when focused |
-| `hr` | A horizontal rule, one row |
+| `hr` | A horizontal rule, one row tall |
 | `blockquote` | A solid left border, with `1ch` of padding |
 | `pre` | `white-space: pre` |
 | `fieldset`, `textarea`, `dialog`, `[popover]` | A solid border with `0 1ch` padding |
-| `td`, `th` | A solid border with `0 1ch` padding, collapsed with the table's |
+| `td`, `th` | A solid border with `0 1ch` padding, collapsed with the table's border |
 | `button` | The label between `[` and `]` |
-| `summary` | `▸` closed and `▾` open, as its `::marker`; `list-style: none` hides it |
-| `progress`, `meter` | A `10ch` bar, filled to the value over a gray track; `meter` is green, yellow, or red by how good the value is, and `progress` is blue |
-| `input`, `select` | Inline, `white-space: pre` |
-| `input[type=checkbox]`, `input[type=radio]` | `3ch` wide, `[x]` or `(x)` |
-| `input[type=range]` | A `20ch` slider: a blue fill, then a `●` thumb at the value, over a gray track |
-| `dialog:modal`, `[popover]` | Centered by `position: fixed` and auto margins, on a `Canvas` background |
+| `summary` | A `::marker` of `▸` when closed and `▾` when open; `list-style: none` hides it |
+| `progress`, `meter` | A `10ch` bar, filled to the value over a gray track. `progress` is blue. `meter` is green, yellow, or red depending on how good the value is |
+| `input`, `select` | Inline, with `white-space: pre` |
+| `input[type=checkbox]`, `input[type=radio]` | `3ch` wide, drawn as `[x]` or `(x)` |
+| `input[type=range]` | A `20ch` slider over a gray track: a blue fill, then a `●` thumb at the value |
+| `dialog:modal`, `[popover]` | Centered with `position: fixed` and auto margins, on a `Canvas` background |
 | `math` | Inline; `display="block"` centers it |
 
-Headings have no default style, since a terminal has one font size.
-Style them:
+Headings have no default style, because a terminal has only one font
+size. Style them yourself:
 
 ```css
 h1 { font-weight: bold; text-decoration: underline; }
@@ -230,16 +259,17 @@ caret instead.
 
 ## What terminals disagree on
 
-Some attributes depend on the terminal. The engine finds out which by
-asking the terminal, not by checking its name:
+Some attributes depend on the terminal. The engine finds out what the
+terminal supports by asking it, not by checking its name:
 
-- Overline is drawn only where the terminal confirms it. MathML uses it
-  for the bar of a root when it can, and an underlined row above the
-  radicand otherwise.
-- A double underline is sent so that a terminal that does not know the
-  style still draws a single one.
-- Emoji sequences are measured by grapheme cluster when the terminal
-  says it does the same, and by code point otherwise, so a flag or a
-  skin-toned hand is the same width to both.
-- Right-to-left text is reordered by the engine unless the terminal
-  says it reorders itself.
+- The engine draws an overline only when the terminal confirms that it
+  supports one. MathML uses an overline for the bar of a root when it
+  can. Otherwise it draws an underlined row above the radicand.
+- The engine sends a double underline in a form that still draws as a
+  single underline on a terminal that does not know the double style.
+- The engine measures emoji sequences by grapheme cluster when the
+  terminal says it does the same, and by code point otherwise. This way
+  the engine and the terminal agree on the width of a flag or a
+  skin-toned hand.
+- The engine reorders right-to-left text, unless the terminal says it
+  reorders that text itself.

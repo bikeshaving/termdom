@@ -3,10 +3,10 @@ title: Layout
 description: The box model, flexbox, grid, tables, and MathML on a cell grid.
 ---
 
-By default `1px` and `1ch` are both one cell, and the property decides
-whether that is a column or a row. The `cellSize` option changes how
-many CSS pixels a cell is. Lengths that land between cells resolve to
-whole cells.
+By default, `1px` and `1ch` are both one cell. The property decides
+whether that cell is a column or a row. The `cellSize` option sets how
+many CSS pixels make up one cell. The engine rounds any length that
+falls between cells to a whole number of cells.
 
 ## Boxes
 
@@ -17,11 +17,12 @@ box.style.border = "1px solid";
 box.style.margin = "1px 0";
 ```
 
-Borders draw with box-drawing characters and take one cell per side.
-Borders that meet in a cell join: a rule that reaches a box's side ends
-in `├` or `┤`, and a column divider crossing it makes `┬` or `┴`. The
-[styling guide](/guides/styling/#borders) has the glyphs each border
-style draws.
+The engine draws borders with box-drawing characters. Each side of a
+border takes one cell. When two borders meet in a cell, the engine
+joins them. A horizontal rule that reaches a box's side ends in `├` or
+`┤`. A column divider that meets the top or bottom border makes `┬` or
+`┴`. The [styling guide](/guides/styling/#borders) lists the glyphs
+that each border style draws.
 
 ## Flexbox
 
@@ -47,64 +48,86 @@ page.style.gap = "0 1ch";
 sidebar.style.gridArea = "side";
 ```
 
-Track lists take lengths, percentages, `fr`, `auto`, `min-content`,
-`max-content`, `minmax()`, `fit-content()` and `repeat()` — including
-`repeat(auto-fill, ...)` and `repeat(auto-fit, ...)`. Items are placed by line
-number (negative numbers count from the end), by `span`, by named line, or by
-named area; whatever is left over is auto-placed, sparsely or `dense`, along
-`grid-auto-flow`. `justify-items`, `justify-self`, `align-items`,
-`align-self`, `justify-content` and `align-content` all apply.
+Track lists accept these values:
 
-Flexible tracks tile the terminal exactly: `repeat(3, 1fr)` across 80 columns
-is 27, 26 and 27 cells, meeting with no gap and no overlap.
+- lengths and percentages
+- `fr`, `auto`, `min-content`, and `max-content`
+- `minmax()`, `fit-content()`, and `repeat()`, including
+  `repeat(auto-fill, ...)` and `repeat(auto-fit, ...)`
+
+You can place an item by line number, by `span`, by named line, or by
+named area. Negative line numbers count from the end. The engine
+auto-places every item you do not place yourself. It follows
+`grid-auto-flow`, and packs items either sparsely or `dense`.
+
+`justify-items`, `justify-self`, `align-items`, `align-self`,
+`justify-content`, and `align-content` all apply.
+
+Flexible tracks fill the terminal exactly. For example,
+`repeat(3, 1fr)` across 80 columns gives tracks of 27, 26, and 27
+cells. The tracks meet with no gap and no overlap.
 
 ## Tables
 
-A `<table>` of `<tr>` and `<td>` elements lays out as a table: shared column
-widths across rows, `colspan` and `rowspan`, `border-collapse`.
+A `<table>` of `<tr>` and `<td>` elements lays out as a table. Rows
+share column widths, and `colspan`, `rowspan`, and `border-collapse`
+work.
 
 ## Text
 
-Text wraps at the box's width; `white-space`, `word-break`, and
-`overflow-wrap` apply. Wide characters — CJK, emoji — take two cells.
+Text wraps at the width of its box. `white-space`, `word-break`, and
+`overflow-wrap` apply. Wide characters, such as CJK characters and
+emoji, take two cells.
 
-A line takes `floor(line-height / font-size)` rows, and at least one, so
-`line-height: 2` spaces lines two rows apart.
+A line takes `floor(line-height / font-size)` rows, with a minimum of
+one row. So `line-height: 2` places lines two rows apart.
 
 ## Positioning
 
-`position: relative`, `absolute`, `fixed`, and `sticky`, with `z-index` and
-stacking contexts. A sticky box holds its `top`, `bottom`, `left`, or `right`
-inset against the nearest scrolling box above it, or against the viewport,
-and never leaves the box it flows in. `overflow: hidden` clips to the box.
-`overflow: auto` and `scroll` clip too, and make the box scrollable:
-`scrollTop`, `scrollTo`, `scrollIntoView`, and the mouse wheel move its
-content by whole rows.
+`position: relative`, `absolute`, `fixed`, and `sticky` all work, along
+with `z-index` and stacking contexts.
+
+A sticky box keeps its `top`, `bottom`, `left`, or `right` inset
+against the nearest scrolling ancestor. If it has no scrolling
+ancestor, it uses the viewport. A sticky box never leaves the box that
+contains it in normal flow.
+
+`overflow: hidden` clips content to the box. `overflow: auto` and
+`overflow: scroll` also clip, and they make the box scrollable.
+`scrollTop`, `scrollTo`, `scrollIntoView`, and the mouse wheel scroll
+the content by whole rows.
 
 ## MathML
 
-A `<math>` element lays out as MathML Core says, on the cell grid.
-Fractions stack the numerator over a bar of `─` over the denominator.
-Roots draw a `⎷` foot, a stem, and a bar over the radicand, with the
-index of an `<mroot>` as a superscript before the sign. Sums, products,
-and integrals are drawn several rows tall with their limits above and
-below, and fences stretch to the height of what they enclose. Scripts,
-tables, accents, stretched arrows, and `<mpadded>`, `<mphantom>`, and
-`<mspace>` all work.
+The engine lays out a `<math>` element on the cell grid, following
+MathML Core.
 
-Variables in `<mi>` are italic by the `text-transform: math-auto` rule
-in the user-agent stylesheet, as in a browser. Terminals draw italics
-unevenly, so an author rule can turn that off and use a color instead:
+- A fraction stacks the numerator over a bar of `─` over the
+  denominator.
+- A root draws a `⎷` foot, a stem, and a bar over the radicand. The
+  index of an `<mroot>` sits as a superscript before the sign.
+- Sums, products, and integrals are several rows tall, with their
+  limits above and below.
+- Fences stretch to the height of their contents.
+
+Scripts, tables, accents, stretched arrows, `<mpadded>`, `<mphantom>`,
+and `<mspace>` all work.
+
+The user-agent stylesheet makes variables in `<mi>` italic with a
+`text-transform: math-auto` rule, as browsers do. Terminals draw
+italics unevenly. An author rule can turn the italics off and use a
+color instead:
 
 ```css
 mi { text-transform: none; color: #ffd787; }
 ```
 
-Everything inside `<math>` can be selected and highlighted by cell.
+A user can select and highlight everything inside `<math>`, cell by
+cell.
 [`examples/katex.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/katex.ts)
 renders TeX through KaTeX's MathML output and walks every element.
 
 ## Not implemented
 
-Floats, `subgrid` and masonry. The [compatibility matrix](/compatibility/) has
-the full list.
+Floats, `subgrid`, and masonry are not implemented. The
+[compatibility matrix](/compatibility/) has the full list.
