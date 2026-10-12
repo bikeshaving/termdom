@@ -116,12 +116,11 @@ test("Ctrl+Z is an ordinary key where the transport cannot suspend", async () =>
 	await dom.dispose();
 });
 
-test("the process transport stops itself with SIGTSTP and goes on at SIGCONT", async () => {
+test("the process transport stops its process group with SIGTSTP and goes on at SIGCONT", async () => {
 	const terminal = new MockProcess({cols: 30, rows: 8});
 	const sent: Array<[number, string]> = [];
 	const raw: boolean[] = [];
 	Object.assign(terminal, {
-		pid: 4242,
 		platform: "linux",
 		kill: (pid: number, signal: string) => {
 			sent.push([pid, signal]);
@@ -139,7 +138,7 @@ test("the process transport stops itself with SIGTSTP and goes on at SIGCONT", a
 
 	terminal.stdin.simulateResponse(CTRL_Z);
 	await until(() => sent.length === 1);
-	expect(sent).toEqual([[4242, "SIGTSTP"]]);
+	expect(sent).toEqual([[0, "SIGTSTP"]]);
 	expect(raw).toEqual([false]);
 
 	terminal.emit("SIGCONT");
@@ -152,7 +151,6 @@ test("the process transport goes on when SIGTSTP stops nothing, as for a session
 	const terminal = new MockProcess({cols: 30, rows: 8});
 	const sent: string[] = [];
 	Object.assign(terminal, {
-		pid: 4242,
 		platform: "linux",
 		kill: (_pid: number, signal: string) => {
 			sent.push(signal);
