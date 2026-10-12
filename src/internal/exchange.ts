@@ -2307,8 +2307,6 @@ export interface ProcessLike {
 	listeners?(event: ProcessSignal): unknown[];
 	exit(code?: number): never;
 	exitCode?: number | string | null;
-	// For suspending: the process stops itself with SIGTSTP.
-	pid?: number;
 	// For ending a session without a terminal when its parent dies.
 	ppid?: number;
 	platform?: string;
@@ -2629,12 +2627,13 @@ export function transportFromProcess(
 			stderr.write(text + "\n");
 			return true;
 		},
-		// Job control stops a process with SIGTSTP, which raw mode keeps the
-		// terminal from sending, so the process sends it to itself. Windows
-		// has no such signal.
+		// Job control stops a job with SIGTSTP, which raw mode keeps the
+		// terminal from sending, so the process sends it to its process
+		// group, as the terminal would. A launcher that runs it as a child
+		// and waits on it stops too, and the shell sees the job stop.
+		// Windows has no such signal.
 		suspend:
 			proc.kill === undefined ||
-			proc.pid === undefined ||
 			(proc.platform ?? process.platform) === "win32"
 				? undefined
 				: () => new Promise<void>((resolve) => {
@@ -2667,7 +2666,7 @@ export function transportFromProcess(
 						}
 					}, STOP_CHECK);
 					proc.on("SIGCONT", onContinue);
-					proc.kill!(proc.pid!, "SIGTSTP");
+					proc.kill!(0, "SIGTSTP");
 				}),
 		ready: Promise.resolve(),
 		readable,
