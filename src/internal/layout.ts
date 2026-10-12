@@ -1413,6 +1413,8 @@ function styleLayoutNodeProperties(
 		style.displayType = "table";
 		style.borderCollapse =
 			getComputedValue(element, "border-collapse") === "collapse";
+		style.tableLayoutFixed =
+			getComputedValue(element, "table-layout") === "fixed";
 	} else if (display === "table-header-group") {
 		style.displayType = "table-header-group";
 	} else if (display === "table-footer-group") {

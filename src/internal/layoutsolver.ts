@@ -204,6 +204,7 @@ export interface Style {
 	colSpan: number;
 	rowSpan: number;
 	borderCollapse: boolean;
+	tableLayoutFixed: boolean;
 
 	// Children's margins are contained. None collapses through this box's
 	// edges (css2 §8.3.1, §9.4.1).
@@ -775,6 +776,7 @@ export function createStyle(): Style {
 		colSpan: 1,
 		rowSpan: 1,
 		borderCollapse: false,
+		tableLayoutFixed: false,
 		blockFormattingContext: false,
 
 		flexGrow: NaN,
@@ -2844,6 +2846,51 @@ function sharesTrackLine(lines: TrackLines, line: number): number {
 		: 0;
 }
 
+// CSS 2.1 §17.5.2.1: the cells of the first row size the columns, and
+// what any cell holds does not. A column no first-row cell sizes gets an
+// equal share of what the sized ones leave, and a table wider than its
+// columns spreads the rest over all of them.
+function resolveFixedColumnWidths(
+	cells: TableCell[],
+	columnCount: number,
+	available: number,
+): number[] {
+	const widths = new Array<number>(columnCount).fill(NaN);
+	for (const cell of cells) {
+		if (cell.row !== 0 || cell.anonymous) {
+			continue;
+		}
+		const width = resolveValue(cell.node.style.width, available);
+		if (isDefined(width)) {
+			for (let i = 0; i < cell.colSpan; i++) {
+				widths[cell.column + i] = Math.max(0, width) / cell.colSpan;
+			}
+		}
+	}
+
+	let sized = 0;
+	let unsized = 0;
+	for (const width of widths) {
+		if (isDefined(width)) {
+			sized += width;
+		} else {
+			unsized++;
+		}
+	}
+
+	const left = Math.max(0, available - sized);
+	for (let i = 0; i < columnCount; i++) {
+		if (unsized > 0) {
+			if (!isDefined(widths[i])) {
+				widths[i] = left / unsized;
+			}
+		} else {
+			widths[i] += left / columnCount;
+		}
+	}
+	return widths;
+}
+
 // CSS 2.1 §17.5.2.2. `available` already includes the cells collapsed
 // borders overlap away.
 function resolveColumnWidths(
@@ -3119,14 +3166,21 @@ function layoutTable(
 
 	const widthIsDefinite = widthSpace === "definite" && isDefined(innerWidth);
 
-	const columnWidths = resolveColumnWidths(
-		cells,
-		columnCount,
-		isDefined(innerWidth) ? innerWidth + columnOverlap : NaN,
-		widthIsDefinite,
-		ownerWidth,
-		ownerHeight,
-	);
+	// Fixed layout needs the table's own width, so a table whose width is
+	// auto is laid out automatically whatever it asks for.
+	const columnWidths =
+		node.style.tableLayoutFixed &&
+			widthIsDefinite &&
+			isStyleDimensionDefined(node, "row", ownerWidth)
+			? resolveFixedColumnWidths(cells, columnCount, innerWidth + columnOverlap)
+			: resolveColumnWidths(
+				cells,
+				columnCount,
+				isDefined(innerWidth) ? innerWidth + columnOverlap : NaN,
+				widthIsDefinite,
+				ownerWidth,
+				ownerHeight,
+			);
 
 	const columnEdges = new Array<number>(columnCount + 1).fill(0);
 	for (let i = 0; i < columnCount; i++) {
