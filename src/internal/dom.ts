@@ -79,7 +79,17 @@ import {
 	type ResourceLoader,
 	setRequestDestination,
 } from "./resources.ts";
-import {$, $maybe, adopt, isSealed, seal, superStep} from "./slots.ts";
+import {
+	$,
+	$maybe,
+	adopt,
+	isSealed,
+	objectOf,
+	seal,
+	type Slots,
+	slotsOf,
+	superStep,
+} from "./slots.ts";
 import {
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
@@ -144,9 +154,9 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 		if (UA_SHADOW_HOSTS.has(element.tagName)) {
 			ensureUAShadowTree(element);
 		}
-		for (let node = $(element)[kFirstChild];
+		for (let node = objectOf($(element)[kFirstChild]);
 			node !== null;
-			node = $(node)[kNext]) {
+			node = objectOf($(node)[kNext])) {
 			if (node.nodeType === ELEMENT_NODE) {
 				stack.push(node as Element);
 			}
@@ -4888,7 +4898,7 @@ function isDetailsSummary(target: EventTarget): target is HTMLElement {
 	) {
 		return false;
 	}
-	const parent = $(target)[kParent];
+	const parent = objectOf($(target)[kParent]);
 	return (
 		parent instanceof HTMLDetailsElement &&
 		getFirstChildElement(parent, "summary") === target
@@ -4896,7 +4906,7 @@ function isDetailsSummary(target: EventTarget): target is HTMLElement {
 }
 
 function toggleTheDetails(summary: HTMLElement): void {
-	const details = $(summary)[kParent] as HTMLDetailsElement;
+	const details = objectOf($(summary)[kParent]) as HTMLDetailsElement;
 	details.toggleAttribute("open", !details.hasAttribute("open"));
 }
 
@@ -5325,7 +5335,7 @@ function runChildrenChangedSteps(
 	if (heldListDocuments.has(pointSlots[kDocument])) {
 		for (let node: Node | null = point;
 			node !== null;
-			node = $(node)[kParent]) {
+			node = objectOf($(node)[kParent])) {
 			const held = $(node)[kLiveLists];
 			if (held === null) {
 				continue;
@@ -5370,7 +5380,7 @@ function syncAttributeCollections(element: Element, localName: string): void {
 	if (heldListDocuments.has(elementSlots[kDocument])) {
 		for (let node: Node | null = element;
 			node !== null;
-			node = $(node)[kParent]) {
+			node = objectOf($(node)[kParent])) {
 			const held = $(node)[kLiveLists];
 			if (held === null) {
 				continue;
@@ -5418,13 +5428,13 @@ export interface Node {
 	// default. Undefined for most nodes.
 	[kRare]: Record<symbol, unknown> | undefined;
 	[kRegistry]: CustomElementRegistry | null;
-	[kParent]: Node | null;
+	[kParent]: Slots<Node> | null;
 	[kConnected]: boolean;
 	[kTreeRoot]: Node;
-	[kFirstChild]: Node | null;
-	[kLastChild]: Node | null;
-	[kPrevious]: Node | null;
-	[kNext]: Node | null;
+	[kFirstChild]: Slots<Node> | null;
+	[kLastChild]: Slots<Node> | null;
+	[kPrevious]: Slots<Node> | null;
+	[kNext]: Slots<Node> | null;
 	[kDocument]: Document;
 	[kChildNodes]: NodeList | null;
 	[kLiveLists]: Set<LiveCollection> | null;
@@ -5520,14 +5530,15 @@ export class Node extends EventTarget implements globalThis.Node {
 
 	/** lib.dom types this as ParentNode, the mixin a parent carries. */
 	get parentNode(): globalThis.ParentNode | null {
-		return $(this)[kParent] as unknown as globalThis.ParentNode | null;
+		return objectOf($(this)[kParent]) as unknown as globalThis.ParentNode |
+			null;
 	}
 
 	// lib.dom types this as HTMLElement where the spec says Element. An SVG
 	// or MathML parent is not an HTMLElement. Every browser's types have the
 	// same problem, and this follows them rather than being right alone.
 	get parentElement(): globalThis.HTMLElement | null {
-		const parent = $(this)[kParent];
+		const parent = objectOf($(this)[kParent]);
 		return parent !== null && parent.nodeType === ELEMENT_NODE
 			? (parent as unknown as globalThis.HTMLElement)
 			: null;
@@ -5544,19 +5555,22 @@ export class Node extends EventTarget implements globalThis.Node {
 	}
 
 	get firstChild(): globalThis.ChildNode | null {
-		return $(this)[kFirstChild] as unknown as globalThis.ChildNode | null;
+		return objectOf($(this)[kFirstChild]) as unknown as globalThis.ChildNode |
+			null;
 	}
 
 	get lastChild(): globalThis.ChildNode | null {
-		return $(this)[kLastChild] as unknown as globalThis.ChildNode | null;
+		return objectOf($(this)[kLastChild]) as unknown as globalThis.ChildNode |
+			null;
 	}
 
 	get previousSibling(): globalThis.ChildNode | null {
-		return $(this)[kPrevious] as unknown as globalThis.ChildNode | null;
+		return objectOf($(this)[kPrevious]) as unknown as globalThis.ChildNode |
+			null;
 	}
 
 	get nextSibling(): globalThis.ChildNode | null {
-		return $(this)[kNext] as unknown as globalThis.ChildNode | null;
+		return objectOf($(this)[kNext]) as unknown as globalThis.ChildNode | null;
 	}
 
 	get nodeValue(): string | null {
@@ -5592,7 +5606,7 @@ export class Node extends EventTarget implements globalThis.Node {
 	normalize(): void {
 		const texts: Text[] = [];
 		for (
-			let node: Node | null = $(this)[kFirstChild];
+			let node: Node | null = objectOf($(this)[kFirstChild]);
 			node !== null;
 			node = nextInTree(node, this)
 		) {
@@ -5610,23 +5624,23 @@ export class Node extends EventTarget implements globalThis.Node {
 			}
 			let length = $((text as CharacterData))[kData].length;
 			let data = "";
-			let sibling = $(text)[kNext];
+			let sibling = objectOf($(text)[kNext]);
 			while (sibling !== null && isExclusiveText(sibling)) {
 				data += $((sibling as CharacterData))[kData];
-				sibling = $(sibling)[kNext];
+				sibling = objectOf($(sibling)[kNext]);
 			}
 			if (data !== "") {
 				replaceData(text as CharacterData, length, 0, data);
 			}
-			let current = $(text)[kNext];
+			let current = objectOf($(text)[kNext]);
 			while (current !== null && isExclusiveText(current)) {
 				liveRangeNormalizeSteps(text, current as Text, length);
 				length += $((current as CharacterData))[kData].length;
-				current = $(current)[kNext];
+				current = objectOf($(current)[kNext]);
 			}
-			current = $(text)[kNext];
+			current = objectOf($(text)[kNext]);
 			while (current !== null && isExclusiveText(current)) {
-				const next = $(current)[kNext];
+				const next = objectOf($(current)[kNext]);
 				removeNode(current);
 				current = next;
 			}
@@ -5800,7 +5814,7 @@ export class Node extends EventTarget implements globalThis.Node {
 	// An assigned slottable overrides this to return its slot, where the
 	// composed tree continues.
 	override [kGetTheParent](_event: Event): EventTarget | null {
-		return $(this)[kParent];
+		return objectOf($(this)[kParent]);
 	}
 
 	// The spec's per-node steps. Subclasses override them; the algorithms
@@ -5860,7 +5874,7 @@ function isInclusiveAncestor(ancestor: Node, node: Node): boolean {
 		if (current === ancestor) {
 			return true;
 		}
-		current = $(current)[kParent];
+		current = objectOf($(current)[kParent]);
 	}
 	return false;
 }
@@ -5870,7 +5884,7 @@ function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
 	for (
 		let current: Node | null = node;
 		current !== null;
-		current = $(current)[kParent]
+		current = objectOf($(current)[kParent])
 	) {
 		if (current === ancestor) {
 			return true;
@@ -5934,9 +5948,9 @@ function *shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
 			yield *shadowIncludingInclusiveDescendants(shadow);
 		}
 	}
-	for (let child = $(node)[kFirstChild];
+	for (let child = objectOf($(node)[kFirstChild]);
 		child !== null;
-		child = $(child)[kNext]) {
+		child = objectOf($(child)[kNext])) {
 		yield *shadowIncludingInclusiveDescendants(child);
 	}
 }
@@ -5945,32 +5959,32 @@ function *shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
 export function nextInTree(node: Node, root: Node): Node | null {
 	const nodeSlots = $(node);
 	if (nodeSlots[kFirstChild] !== null) {
-		return nodeSlots[kFirstChild];
+		return objectOf(nodeSlots[kFirstChild]);
 	}
 	let current: Node | null = node;
 	while (current !== null && current !== root) {
 		if ($(current)[kNext] !== null) {
-			return $(current)[kNext];
+			return objectOf($(current)[kNext]);
 		}
-		current = $(current)[kParent];
+		current = objectOf($(current)[kParent]);
 	}
 	return null;
 }
 
 export function getParentNode(node: Node): Node | null {
-	return $(node)[kParent];
+	return objectOf($(node)[kParent]);
 }
 
 export function getFirstChildNode(node: Node): Node | null {
-	return $(node)[kFirstChild];
+	return objectOf($(node)[kFirstChild]);
 }
 
 export function getNextSiblingNode(node: Node): Node | null {
-	return $(node)[kNext];
+	return objectOf($(node)[kNext]);
 }
 
 export function getPreviousSiblingNode(node: Node): Node | null {
-	return $(node)[kPrevious];
+	return objectOf($(node)[kPrevious]);
 }
 
 function *inclusiveDescendants(node: Node): Generator<Node> {
@@ -5982,7 +5996,7 @@ function *inclusiveDescendants(node: Node): Generator<Node> {
 }
 
 function *descendants(node: Node): Generator<Node> {
-	let current: Node | null = $(node)[kFirstChild];
+	let current: Node | null = objectOf($(node)[kFirstChild]);
 	while (current !== null) {
 		yield current;
 		current = nextInTree(current, node);
@@ -6019,9 +6033,9 @@ function isCharacterData(node: Node): boolean {
 
 function countChildren(parent: Node, type: number): number {
 	let count = 0;
-	for (let node = $(parent)[kFirstChild];
+	for (let node = objectOf($(parent)[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		if (node.nodeType === type) {
 			count++;
 		}
@@ -6030,7 +6044,7 @@ function countChildren(parent: Node, type: number): number {
 }
 
 function hasFollowing(child: Node | null, type: number): boolean {
-	for (let node = child; node !== null; node = $(node)[kNext]) {
+	for (let node = child; node !== null; node = objectOf($(node)[kNext])) {
 		if (node.nodeType === type) {
 			return true;
 		}
@@ -6042,9 +6056,9 @@ function hasPreceding(child: Node | null, type: number): boolean {
 	if (child === null) {
 		return false;
 	}
-	for (let node = $(child)[kPrevious];
+	for (let node = objectOf($(child)[kPrevious]);
 		node !== null;
-		node = $(node)[kPrevious]) {
+		node = objectOf($(node)[kPrevious])) {
 		if (node.nodeType === type) {
 			return true;
 		}
@@ -6078,7 +6092,7 @@ function validateInsertion(
 	) {
 		throw hierarchyRequestError("A node cannot be inserted into itself");
 	}
-	if (child !== null && $(child)[kParent] !== parent) {
+	if (child !== null && objectOf($(child)[kParent]) !== parent) {
 		throw notFoundError(absentChild);
 	}
 	const type = node.nodeType;
@@ -6160,7 +6174,7 @@ function preInsert(node: Node, parent: Node, child: Node | null): Node {
 	ensurePreInsertionValidity(node, parent, reference);
 	let referenceChild = reference;
 	if (referenceChild === node) {
-		referenceChild = $(node)[kNext];
+		referenceChild = objectOf($(node)[kNext]);
 	}
 	insertNode(node, parent, referenceChild, false);
 	return node;
@@ -6192,7 +6206,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	if (isHostIncludingInclusiveAncestor(node, newParent)) {
 		throw hierarchyRequestError("A node cannot be moved into itself");
 	}
-	if (child !== null && $(child)[kParent] !== newParent) {
+	if (child !== null && objectOf($(child)[kParent]) !== newParent) {
 		throw notFoundError("The reference child is not a child of that parent");
 	}
 	if (node.nodeType !== ELEMENT_NODE && !isCharacterData(node)) {
@@ -6211,7 +6225,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 		throw hierarchyRequestError("A document can have one element child");
 	}
 	const nodeSlots = $(node);
-	const oldParent = nodeSlots[kParent] as Node;
+	const oldParent = objectOf(nodeSlots[kParent]) as Node;
 	liveRangePreRemoveSteps(node);
 	const iterators = nodeIteratorsByRoot.get(getRoot(node));
 	if (iterators !== undefined) {
@@ -6219,8 +6233,8 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 			preRemoveFromIterator(iterator, node);
 		}
 	}
-	const oldPreviousSibling = nodeSlots[kPrevious];
-	const oldNextSibling = nodeSlots[kNext];
+	const oldPreviousSibling = objectOf(nodeSlots[kPrevious]);
+	const oldNextSibling = objectOf(nodeSlots[kNext]);
 	unlinkChild(node);
 	const assignedSlot = isSlottable(node)
 		? $((node as Slottable))[kAssignedSlot]
@@ -6243,8 +6257,8 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 		liveRangeInsertSteps(newParent, child, 1);
 	}
 	const newPreviousSibling = child !== null
-		? $(child)[kPrevious]
-		: $(newParent)[kLastChild];
+		? objectOf($(child)[kPrevious])
+		: objectOf($(newParent)[kLastChild]);
 	linkChild(node, newParent, child);
 	// A move between a shadow tree and its host's tree changes the root of
 	// everything moved. The pre-remove steps above already put every live
@@ -6344,8 +6358,8 @@ function insertNode(
 		liveRangeInsertSteps(parent, child, count);
 	}
 	const previousSibling = child !== null
-		? $(child)[kPrevious]
-		: $(parent)[kLastChild];
+		? objectOf($(child)[kPrevious])
+		: objectOf($(parent)[kLastChild]);
 	const document = $(parent)[kDocument];
 	const connected = $(parent)[kConnected];
 	for (const inserted of nodes) {
@@ -6439,46 +6453,46 @@ function insertNode(
 
 function linkChild(node: Node, parent: Node, before: Node | null): void {
 	const nodeSlots = $(node);
-	nodeSlots[kParent] = parent;
+	nodeSlots[kParent] = slotsOf(parent);
 	const parentSlots = $(parent);
 	if (before === null) {
-		const last = parentSlots[kLastChild];
-		nodeSlots[kPrevious] = last;
+		const last = objectOf(parentSlots[kLastChild]);
+		nodeSlots[kPrevious] = last === null ? null : slotsOf(last);
 		nodeSlots[kNext] = null;
 		if (last === null) {
-			parentSlots[kFirstChild] = node;
+			parentSlots[kFirstChild] = slotsOf(node);
 		} else {
-			$(last)[kNext] = node;
+			$(last)[kNext] = slotsOf(node);
 		}
-		parentSlots[kLastChild] = node;
+		parentSlots[kLastChild] = slotsOf(node);
 	} else {
-		const previous = $(before)[kPrevious];
-		nodeSlots[kPrevious] = previous;
-		nodeSlots[kNext] = before;
-		$(before)[kPrevious] = node;
+		const previous = objectOf($(before)[kPrevious]);
+		nodeSlots[kPrevious] = previous === null ? null : slotsOf(previous);
+		nodeSlots[kNext] = slotsOf(before);
+		$(before)[kPrevious] = slotsOf(node);
 		if (previous === null) {
-			parentSlots[kFirstChild] = node;
+			parentSlots[kFirstChild] = slotsOf(node);
 		} else {
-			$(previous)[kNext] = node;
+			$(previous)[kNext] = slotsOf(node);
 		}
 	}
 }
 
 function unlinkChild(node: Node): void {
 	const nodeSlots = $(node);
-	const parent = nodeSlots[kParent] as Node;
-	const previous = nodeSlots[kPrevious];
-	const next = nodeSlots[kNext];
+	const parent = objectOf(nodeSlots[kParent]) as Node;
+	const previous = objectOf(nodeSlots[kPrevious]);
+	const next = objectOf(nodeSlots[kNext]);
 	const parentSlots = $(parent);
 	if (previous === null) {
-		parentSlots[kFirstChild] = next;
+		parentSlots[kFirstChild] = next === null ? null : slotsOf(next);
 	} else {
-		$(previous)[kNext] = next;
+		$(previous)[kNext] = next === null ? null : slotsOf(next);
 	}
 	if (next === null) {
-		parentSlots[kLastChild] = previous;
+		parentSlots[kLastChild] = previous === null ? null : slotsOf(previous);
 	} else {
-		$(next)[kPrevious] = previous;
+		$(next)[kPrevious] = previous === null ? null : slotsOf(previous);
 	}
 	nodeSlots[kParent] = null;
 	nodeSlots[kPrevious] = null;
@@ -6487,9 +6501,9 @@ function unlinkChild(node: Node): void {
 
 function getChildNodeArray(parent: Node): Node[] {
 	const nodes: Node[] = [];
-	for (let node = $(parent)[kFirstChild];
+	for (let node = objectOf($(parent)[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		nodes.push(node);
 	}
 	return nodes;
@@ -6521,14 +6535,14 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 			if (
 				elementCount === 1 &&
 				(hasOtherElementChild(parent, child) ||
-					hasFollowing(childSlots[kNext], DOCUMENT_TYPE_NODE))
+					hasFollowing(objectOf(childSlots[kNext]), DOCUMENT_TYPE_NODE))
 			) {
 				throw hierarchyRequestError("A document can have one element child");
 			}
 		} else if (type === ELEMENT_NODE) {
 			if (
 				hasOtherElementChild(parent, child) ||
-				hasFollowing(childSlots[kNext], DOCUMENT_TYPE_NODE)
+				hasFollowing(objectOf(childSlots[kNext]), DOCUMENT_TYPE_NODE)
 			) {
 				throw hierarchyRequestError("A document can have one element child");
 			}
@@ -6540,11 +6554,11 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 			}
 		}
 	}
-	let referenceChild = childSlots[kNext];
+	let referenceChild = objectOf(childSlots[kNext]);
 	if (referenceChild === node) {
-		referenceChild = $(node)[kNext];
+		referenceChild = objectOf($(node)[kNext]);
 	}
-	const previousSibling = childSlots[kPrevious];
+	const previousSibling = objectOf(childSlots[kPrevious]);
 	const removedNodes: Node[] = [];
 	// Adopting removes the replacement from its current tree, which is a
 	// removal of its own and is reported as one. It happens before the
@@ -6570,9 +6584,9 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 }
 
 function hasOtherElementChild(parent: Node, exclude: Node): boolean {
-	for (let node = $(parent)[kFirstChild];
+	for (let node = objectOf($(parent)[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		if (node !== exclude && node.nodeType === ELEMENT_NODE) {
 			return true;
 		}
@@ -6581,9 +6595,9 @@ function hasOtherElementChild(parent: Node, exclude: Node): boolean {
 }
 
 function hasOtherDoctypeChild(parent: Node, exclude: Node): boolean {
-	for (let node = $(parent)[kFirstChild];
+	for (let node = objectOf($(parent)[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		if (node !== exclude && node.nodeType === DOCUMENT_TYPE_NODE) {
 			return true;
 		}
@@ -6613,7 +6627,7 @@ function preRemove(child: Node, parent: Node): Node {
 	if (!(child instanceof Node)) {
 		throw new TypeError("That is not a node");
 	}
-	if ($(child)[kParent] !== parent) {
+	if (objectOf($(child)[kParent]) !== parent) {
 		throw notFoundError("The removed child is not a child of that parent");
 	}
 	removeNode(child);
@@ -6624,7 +6638,7 @@ const kActiveElement = Symbol("focused area");
 
 function removeNode(node: Node, suppressObservers = false): void {
 	const nodeSlots = $(node);
-	const parent = nodeSlots[kParent];
+	const parent = objectOf(nodeSlots[kParent]);
 	if (parent === null) {
 		return;
 	}
@@ -6641,8 +6655,8 @@ function removeNode(node: Node, suppressObservers = false): void {
 			}
 		}
 	}
-	const oldPreviousSibling = nodeSlots[kPrevious];
-	const oldNextSibling = nodeSlots[kNext];
+	const oldPreviousSibling = objectOf(nodeSlots[kPrevious]);
+	const oldNextSibling = objectOf(nodeSlots[kNext]);
 	unlinkChild(node);
 	for (
 		let removed: Node | null = node;
@@ -6888,7 +6902,7 @@ function addTransientObservers(node: Node, parent: Node): void {
 	for (
 		let ancestor: Node | null = parent;
 		ancestor !== null;
-		ancestor = $(ancestor)[kParent]
+		ancestor = objectOf($(ancestor)[kParent])
 	) {
 		const list = $(ancestor)[kRegisteredObservers];
 		if (list === null) {
@@ -7265,7 +7279,9 @@ function queueMutationRecord(
 		return;
 	}
 	let interested: Map<MutationObserver, string | null> | null = null;
-	for (let node: Node | null = target; node !== null; node = $(node)[kParent]) {
+	for (let node: Node | null = target;
+		node !== null;
+		node = objectOf($(node)[kParent])) {
 		const list = $(node)[kRegisteredObservers];
 		if (list === null) {
 			continue;
@@ -7565,7 +7581,7 @@ function splice(
 		return true;
 	}
 	if (added) {
-		const next = $(changed[changed.length - 1])[kNext];
+		const next = objectOf($(changed[changed.length - 1])[kNext]);
 		if (next !== null) {
 			const at = items.indexOf(next);
 			if (at === -1) {
@@ -7871,7 +7887,10 @@ class HTMLCollection {
 			LiveList.prototype[kAttributeSync].call(this, element, localName);
 			return;
 		}
-		if (slots[kChildMember] !== null && $(element)[kParent] !== slots[kOwner]) {
+		if (
+			slots[kChildMember] !== null &&
+			objectOf($(element)[kParent]) !== slots[kOwner]
+		) {
 			return;
 		}
 		if (slots[kDocumentWide]) {
@@ -7960,9 +7979,9 @@ function getCollectionCache(node: Node): Map<string, HTMLCollection> {
 
 export function getElementChildren(parent: Node): Element[] {
 	const elements: Element[] = [];
-	for (let node = $(parent)[kFirstChild];
+	for (let node = objectOf($(parent)[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		if (node.nodeType === ELEMENT_NODE) {
 			elements.push(node as Element);
 		}
@@ -8055,7 +8074,7 @@ function matchingAttributeSync(
 }
 
 function getDescendantElements(root: Node, into: Element[]): Element[] {
-	let current: Node | null = $(root)[kFirstChild];
+	let current: Node | null = objectOf($(root)[kFirstChild]);
 	while (current !== null) {
 		if (current.nodeType === ELEMENT_NODE) {
 			into.push(current as Element);
@@ -8612,15 +8631,15 @@ export class Text extends CharacterData implements globalThis.Text {
 		let start: Node = this;
 		while (
 			$(start)[kPrevious] !== null &&
-			isExclusiveText($(start)[kPrevious] as Node)
+			isExclusiveText(objectOf($(start)[kPrevious]) as Node)
 		) {
-			start = $(start)[kPrevious] as Node;
+			start = objectOf($(start)[kPrevious]) as Node;
 		}
 		let text = "";
 		for (
 			let node: Node | null = start;
 			node !== null && isExclusiveText(node);
-			node = $(node)[kNext]
+			node = objectOf($(node)[kNext])
 		) {
 			text += $((node as CharacterData))[kData];
 		}
@@ -8641,9 +8660,9 @@ export class Text extends CharacterData implements globalThis.Text {
 		const data = this.substringData(start, count);
 		const created = new Text(data);
 		$(created)[kDocument] = slots[kDocument];
-		const parent = slots[kParent];
+		const parent = objectOf(slots[kParent]);
 		if (parent !== null) {
-			insertNode(created, parent, slots[kNext], false);
+			insertNode(created, parent, objectOf(slots[kNext]), false);
 			liveRangeSplitSteps(this, created, start, parent);
 		}
 		replaceData(this, start, count, "");
@@ -8652,7 +8671,7 @@ export class Text extends CharacterData implements globalThis.Text {
 
 	override [kGetTheParent](_event: Event): EventTarget | null {
 		const slots = $(this);
-		return slots[kAssignedSlot] ?? slots[kParent];
+		return slots[kAssignedSlot] ?? objectOf(slots[kParent]);
 	}
 
 	override [kCloneSingle](document: Document): Node {
@@ -8889,7 +8908,7 @@ Object.defineProperty(DocumentFragment.prototype, Symbol.toStringTag, {
 
 function getDescendantText(node: Node): string {
 	let text = "";
-	let current: Node | null = $(node)[kFirstChild];
+	let current: Node | null = objectOf($(node)[kFirstChild]);
 	while (current !== null) {
 		const type = current.nodeType;
 		if (type === TEXT_NODE || type === CDATA_SECTION_NODE) {
@@ -9736,7 +9755,7 @@ export class Element extends Node implements globalThis.Element {
 
 	set outerHTML(value: string) {
 		const slots = $(this);
-		const parent = slots[kParent];
+		const parent = objectOf(slots[kParent]);
 		if (parent === null) {
 			return;
 		}
@@ -10163,7 +10182,7 @@ export class Element extends Node implements globalThis.Element {
 		switch (where) {
 			case "beforebegin":
 			case "afterend": {
-				const parent = slots[kParent];
+				const parent = objectOf(slots[kParent]);
 				if (parent === null || parent.nodeType === DOCUMENT_NODE) {
 					throw domError(
 						"NoModificationAllowedError",
@@ -10194,16 +10213,20 @@ export class Element extends Node implements globalThis.Element {
 		const fragment = parseHTMLFragment(String(text), element);
 		switch (where) {
 			case "beforebegin":
-				preInsert(fragment, slots[kParent] as Node, this);
+				preInsert(fragment, objectOf(slots[kParent]) as Node, this);
 				break;
 			case "afterbegin":
-				preInsert(fragment, this, slots[kFirstChild]);
+				preInsert(fragment, this, objectOf(slots[kFirstChild]));
 				break;
 			case "beforeend":
 				preInsert(fragment, this, null);
 				break;
 			case "afterend":
-				preInsert(fragment, slots[kParent] as Node, slots[kNext]);
+				preInsert(
+					fragment,
+					objectOf(slots[kParent]) as Node,
+					objectOf(slots[kNext]),
+				);
 				break;
 		}
 	}
@@ -10278,7 +10301,7 @@ export class Element extends Node implements globalThis.Element {
 	/** An assigned slottable returns its slot instead of its parent. */
 	override [kGetTheParent](_event: Event): EventTarget | null {
 		const slots = $(this);
-		return slots[kAssignedSlot] ?? slots[kParent];
+		return slots[kAssignedSlot] ?? objectOf(slots[kParent]);
 	}
 
 	override [kInsertionSteps](): void {
@@ -10737,9 +10760,9 @@ function getInnerText(element: Element): string {
 		return element.textContent ?? "";
 	}
 	const items: Array<string | number> = [];
-	for (let child = $(element)[kFirstChild];
+	for (let child = objectOf($(element)[kFirstChild]);
 		child !== null;
-		child = $(child)[kNext]) {
+		child = objectOf($(child)[kNext])) {
 		collectRenderedText(layout, child, items);
 	}
 	let text = "";
@@ -10806,9 +10829,9 @@ function collectRenderedText(
 		items.push(linearizeMath(element as unknown as globalThis.Element));
 	} else {
 		for (
-			let child = $(element)[kFirstChild];
+			let child = objectOf($(element)[kFirstChild]);
 			child !== null;
-			child = $(child)[kNext]
+			child = objectOf($(child)[kNext])
 		) {
 			collectRenderedText(layout, child, items);
 		}
@@ -11098,7 +11121,7 @@ export class HTMLElement extends Element {
 				return false;
 			}
 		}
-		const parent = $(this)[kParent];
+		const parent = objectOf($(this)[kParent]);
 		if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 			return (parent as HTMLElement).translate ?? true;
 		}
@@ -11148,7 +11171,7 @@ export class HTMLElement extends Element {
 				return false;
 			}
 		}
-		const parent = $(this)[kParent];
+		const parent = objectOf($(this)[kParent]);
 		if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 			return (parent as HTMLElement).spellcheck ?? true;
 		}
@@ -11257,7 +11280,7 @@ export class HTMLElement extends Element {
 		for (
 			let node: Node | null = this;
 			node !== null && node.nodeType === ELEMENT_NODE;
-			node = $(node)[kParent]
+			node = objectOf($(node)[kParent])
 		) {
 			const state = (node as HTMLElement).contentEditable;
 			if (state === "true" || state === "plaintext-only") {
@@ -11322,7 +11345,7 @@ export class HTMLElement extends Element {
 
 	set outerText(value: string) {
 		const slots = $(this);
-		const parent = slots[kParent];
+		const parent = objectOf(slots[kParent]);
 		if (parent === null) {
 			throw domError("NoModificationAllowedError", "The element has no parent");
 		}
@@ -11992,7 +12015,7 @@ function getDefaultTabIndex(element: Element): number {
 		case "textarea":
 			return 0;
 		case "summary": {
-			const parent = elementSlots[kParent];
+			const parent = objectOf(elementSlots[kParent]);
 			return parent !== null &&
 				parent.nodeType === ELEMENT_NODE &&
 				$((parent as Element))[kNamespace] === HTML_NAMESPACE &&
@@ -12007,9 +12030,9 @@ function getDefaultTabIndex(element: Element): number {
 }
 
 function getFirstChildElement(parent: Node, localName: string): Element | null {
-	for (let node = $(parent)[kFirstChild];
+	for (let node = objectOf($(parent)[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		if (node.nodeType !== ELEMENT_NODE) {
 			continue;
 		}
@@ -12156,7 +12179,9 @@ export class SVGElement extends Element {
 	}
 
 	get ownerSVGElement(): globalThis.SVGSVGElement | null {
-		for (let node = $(this)[kParent]; node !== null; node = $(node)[kParent]) {
+		for (let node = objectOf($(this)[kParent]);
+			node !== null;
+			node = objectOf($(node)[kParent])) {
 			if (
 				node instanceof Element &&
 				node.namespaceURI === SVG_NAMESPACE &&
@@ -13214,9 +13239,9 @@ function associateRegistry(
 	if (node.nodeType === ELEMENT_NODE) {
 		upgrades.push(node as Element);
 	}
-	for (let child = nodeSlots[kFirstChild];
+	for (let child = objectOf(nodeSlots[kFirstChild]);
 		child !== null;
-		child = $(child)[kNext]) {
+		child = objectOf($(child)[kNext])) {
 		associateRegistry(child, registry, upgrades);
 	}
 }
@@ -13774,7 +13799,7 @@ const kSlotName = Symbol("slot name");
 const kManualAssignment = Symbol("manually assigned nodes");
 
 function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
-	const parent = $(slottable)[kParent];
+	const parent = objectOf($(slottable)[kParent]);
 	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
 		return null;
 	}
@@ -13822,15 +13847,15 @@ function findSlottables(slot: HTMLSlotElement): Slottable[] {
 	}
 	if (shadowSlots[kSlotAssignment] === "manual") {
 		for (const slottable of $(slot)[kManualAssignment]) {
-			if ($(slottable)[kParent] === host) {
+			if (objectOf($(slottable)[kParent]) === host) {
 				result.push(slottable);
 			}
 		}
 		return result;
 	}
-	for (let child = $(host)[kFirstChild];
+	for (let child = objectOf($(host)[kFirstChild]);
 		child !== null;
-		child = $(child)[kNext]) {
+		child = objectOf($(child)[kNext])) {
 		if (!isSlottable(child)) {
 			continue;
 		}
@@ -14021,9 +14046,9 @@ function findFlattenedSlottables(slot: HTMLSlotElement): Slottable[] {
 	let slottables = findSlottables(slot);
 	if (slottables.length === 0) {
 		slottables = [];
-		for (let child = $(slot)[kFirstChild];
+		for (let child = objectOf($(slot)[kFirstChild]);
 			child !== null;
-			child = $(child)[kNext]) {
+			child = objectOf($(child)[kNext])) {
 			if (isSlottable(child)) {
 				slottables.push(child as Slottable);
 			}
@@ -14133,9 +14158,9 @@ class HTMLTemplateElement extends HTMLElement {
 		}
 		const target = (copy as HTMLTemplateElement).content;
 		for (
-			let child = $(content)[kFirstChild];
+			let child = objectOf($(content)[kFirstChild]);
 			child !== null;
-			child = $(child)[kNext]
+			child = objectOf($(child)[kNext])
 		) {
 			appendNode(cloneNode(child, document, true), target);
 		}
@@ -15356,9 +15381,9 @@ function getDetailsSlottables(
 ): Slottable[] {
 	const summary = getFirstChildElement(host, "summary");
 	const result: Slottable[] = [];
-	for (let child = $(host)[kFirstChild];
+	for (let child = objectOf($(host)[kFirstChild]);
 		child !== null;
-		child = $(child)[kNext]) {
+		child = objectOf($(child)[kNext])) {
 		if (isSlottable(child) && (child === summary) === toSummary) {
 			result.push(child as Slottable);
 		}
@@ -16580,9 +16605,9 @@ function isButtonControl(element: Element): boolean {
 
 function hasDataListAncestor(element: Element): boolean {
 	for (
-		let node: Node | null = $(element)[kParent];
+		let node: Node | null = objectOf($(element)[kParent]);
 		node !== null;
-		node = $(node)[kParent]
+		node = objectOf($(node)[kParent])
 	) {
 		if (node instanceof HTMLDataListElement) {
 			return true;
@@ -19043,7 +19068,7 @@ export class HTMLLabelElement extends HTMLElement {
 class HTMLLegendElement extends HTMLElement {
 	declare align: globalThis.HTMLLegendElement["align"];
 	get form(): HTMLFormElement | null {
-		const parent = $(this)[kParent];
+		const parent = objectOf($(this)[kParent]);
 		if (parent === null || !(parent instanceof HTMLFieldSetElement)) {
 			return null;
 		}
@@ -20046,7 +20071,7 @@ class HTMLOptionElement extends HTMLElement {
 }
 
 function getSelect(option: Element): HTMLSelectElement | null {
-	const parent = $(option)[kParent];
+	const parent = objectOf($(option)[kParent]);
 	if (parent === null) {
 		return null;
 	}
@@ -20054,7 +20079,7 @@ function getSelect(option: Element): HTMLSelectElement | null {
 		return parent;
 	}
 	if (parent instanceof HTMLOptGroupElement) {
-		const grandparent = $(parent)[kParent];
+		const grandparent = objectOf($(parent)[kParent]);
 		if (grandparent instanceof HTMLSelectElement) {
 			return grandparent;
 		}
@@ -20154,7 +20179,7 @@ class HTMLOptionsCollection extends HTMLCollection {
 		}
 		const parent = reference === null
 			? slots[kSelect]
-			: ($(reference)[kParent] as Node);
+			: (objectOf($(reference)[kParent]) as Node);
 		preInsert(element, parent, reference);
 	}
 
@@ -20890,9 +20915,9 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 		});
 		index++;
 	};
-	for (let node = selectSlots[kFirstChild];
+	for (let node = objectOf(selectSlots[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		if (node instanceof HTMLOptionElement) {
 			addOption(node, false);
 		} else if (node instanceof HTMLOptGroupElement) {
@@ -20904,9 +20929,9 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 				highlighted: false,
 			});
 			for (
-				let child = $(node)[kFirstChild];
+				let child = objectOf($(node)[kFirstChild]);
 				child !== null;
-				child = $(child)[kNext]
+				child = objectOf($(child)[kNext])
 			) {
 				if (child instanceof HTMLOptionElement) {
 					addOption(child, true);
@@ -21004,7 +21029,7 @@ function optionIsDisabled(option: HTMLOptionElement): boolean {
 	if (option.disabled) {
 		return true;
 	}
-	const parent = $(option)[kParent];
+	const parent = objectOf($(option)[kParent]);
 	return parent instanceof HTMLOptGroupElement && parent.disabled;
 }
 
@@ -21039,16 +21064,16 @@ function getOptionIndex(
 
 function getOptions(select: Element): HTMLOptionElement[] {
 	const options: HTMLOptionElement[] = [];
-	for (let node = $(select)[kFirstChild];
+	for (let node = objectOf($(select)[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		if (node instanceof HTMLOptionElement) {
 			options.push(node);
 		} else if (node instanceof HTMLOptGroupElement) {
 			for (
-				let child = $(node)[kFirstChild];
+				let child = objectOf($(node)[kFirstChild]);
 				child !== null;
-				child = $(child)[kNext]
+				child = objectOf($(child)[kNext])
 			) {
 				if (child instanceof HTMLOptionElement) {
 					options.push(child);
@@ -21165,7 +21190,7 @@ class HTMLTableCellElement extends HTMLElement {
 	declare rowSpan: globalThis.HTMLTableCellElement["rowSpan"];
 	declare scope: globalThis.HTMLTableCellElement["scope"];
 	get cellIndex(): number {
-		const parent = $(this)[kParent];
+		const parent = objectOf($(this)[kParent]);
 		if (!(parent instanceof HTMLTableRowElement)) {
 			return -1;
 		}
@@ -21218,7 +21243,7 @@ class HTMLTableElement extends HTMLElement {
 		}
 		this.deleteCaption();
 		if (value !== null) {
-			preInsert(value, this, $(this)[kFirstChild]);
+			preInsert(value, this, objectOf($(this)[kFirstChild]));
 		}
 	}
 
@@ -21239,9 +21264,9 @@ class HTMLTableElement extends HTMLElement {
 			return;
 		}
 		let before: Node | null = null;
-		for (let node = $(this)[kFirstChild];
+		for (let node = objectOf($(this)[kFirstChild]);
 			node !== null;
-			node = $(node)[kNext]) {
+			node = objectOf($(node)[kNext])) {
 			if (node.nodeType !== ELEMENT_NODE) {
 				continue;
 			}
@@ -21309,7 +21334,7 @@ class HTMLTableElement extends HTMLElement {
 			"caption",
 			HTML_NAMESPACE,
 		);
-		preInsert(caption, this, slots[kFirstChild]);
+		preInsert(caption, this, objectOf(slots[kFirstChild]));
 		return caption as HTMLTableCaptionElement;
 	}
 
@@ -21370,7 +21395,7 @@ class HTMLTableElement extends HTMLElement {
 		);
 		const bodies = getChildElementsNamed(this, "tbody");
 		const last = bodies[bodies.length - 1];
-		preInsert(body, this, last === undefined ? null : $(last)[kNext]);
+		preInsert(body, this, last === undefined ? null : objectOf($(last)[kNext]));
 		return body as HTMLTableSectionElement;
 	}
 
@@ -21401,11 +21426,11 @@ class HTMLTableElement extends HTMLElement {
 		}
 		if (at === -1 || at === rows.length) {
 			const last = rows[rows.length - 1];
-			preInsert(row, $(last)[kParent] as Node, null);
+			preInsert(row, objectOf($(last)[kParent]) as Node, null);
 			return row as HTMLTableRowElement;
 		}
 		const reference = rows[at];
-		preInsert(row, $(reference)[kParent] as Node, reference);
+		preInsert(row, objectOf($(reference)[kParent]) as Node, reference);
 		return row as HTMLTableRowElement;
 	}
 
@@ -21432,9 +21457,9 @@ function isHTMLElementNamed(node: Node, localName: string): boolean {
 
 function getChildElementsNamed(parent: Node, localName: string): Element[] {
 	const found: Element[] = [];
-	for (let node = $(parent)[kFirstChild];
+	for (let node = objectOf($(parent)[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		if (node.nodeType !== ELEMENT_NODE) {
 			continue;
 		}
@@ -21455,7 +21480,9 @@ function getTableRows(table: Element): Element[] {
 	const head: Element[] = [];
 	const middle: Element[] = [];
 	const foot: Element[] = [];
-	for (let node = $(table)[kFirstChild]; node !== null; node = $(node)[kNext]) {
+	for (let node = objectOf($(table)[kFirstChild]);
+		node !== null;
+		node = objectOf($(node)[kNext])) {
 		if (node.nodeType !== ELEMENT_NODE) {
 			continue;
 		}
@@ -21504,7 +21531,7 @@ class HTMLTableRowElement extends HTMLElement {
 	}
 
 	get sectionRowIndex(): number {
-		const parent = $(this)[kParent];
+		const parent = objectOf($(this)[kParent]);
 		if (parent === null || parent.nodeType !== ELEMENT_NODE) {
 			return -1;
 		}
@@ -21554,14 +21581,14 @@ class HTMLTableRowElement extends HTMLElement {
 }
 
 function getTable(row: HTMLTableRowElement): Element | null {
-	const parent = $(row)[kParent];
+	const parent = objectOf($(row)[kParent]);
 	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
 		return null;
 	}
 	if ($((parent as Element))[kLocalName] === "table") {
 		return parent as Element;
 	}
-	const grandparent = $(parent)[kParent];
+	const grandparent = objectOf($(parent)[kParent]);
 	if (grandparent === null || grandparent.nodeType !== ELEMENT_NODE) {
 		return null;
 	}
@@ -21572,7 +21599,9 @@ function getTable(row: HTMLTableRowElement): Element | null {
 
 function getRowCells(row: Element): Element[] {
 	const cells: Element[] = [];
-	for (let node = $(row)[kFirstChild]; node !== null; node = $(node)[kNext]) {
+	for (let node = objectOf($(row)[kFirstChild]);
+		node !== null;
+		node = objectOf($(node)[kNext])) {
 		if (node instanceof HTMLTableCellElement) {
 			cells.push(node);
 		}
@@ -22219,9 +22248,9 @@ class HTMLTitleElement extends HTMLElement {
 // The text of the Text children only, not all descendants.
 function getChildText(element: Element): string {
 	let text = "";
-	for (let node = $(element)[kFirstChild];
+	for (let node = objectOf($(element)[kFirstChild]);
 		node !== null;
-		node = $(node)[kNext]) {
+		node = objectOf($(node)[kNext])) {
 		if (node.nodeType === TEXT_NODE) {
 			text += (node as Text).data;
 		}
@@ -23444,7 +23473,7 @@ export function isActuallyDisabled(element: Element): boolean {
 		if (element.hasAttribute("disabled")) {
 			return true;
 		}
-		const parent = elementSlots[kParent];
+		const parent = objectOf(elementSlots[kParent]);
 		if (
 			elementSlots[kLocalName] === "option" &&
 			parent !== null &&
@@ -23455,7 +23484,7 @@ export function isActuallyDisabled(element: Element): boolean {
 		}
 		// A disabled select disables what it offers (whatwg/html#12205),
 		// including a select a fieldset disables.
-		for (let node = parent; node !== null; node = $(node)[kParent]) {
+		for (let node = parent; node !== null; node = objectOf($(node)[kParent])) {
 			if (isHTMLElementNamed(node, "select")) {
 				return isActuallyDisabled(node as Element);
 			}
@@ -23476,9 +23505,9 @@ export function isActuallyDisabled(element: Element): boolean {
 
 function isDisabledByFieldSet(element: Element): boolean {
 	for (
-		let node: Node | null = $(element)[kParent];
+		let node: Node | null = objectOf($(element)[kParent]);
 		node !== null;
-		node = $(node)[kParent]
+		node = objectOf($(node)[kParent])
 	) {
 		if (!isHTMLElementNamed(node, "fieldset")) {
 			continue;
@@ -23528,9 +23557,9 @@ function getFormOwner(element: Element): HTMLFormElement | null {
 		return null;
 	}
 	for (
-		let node: Node | null = $(element)[kParent];
+		let node: Node | null = objectOf($(element)[kParent]);
 		node !== null;
-		node = $(node)[kParent]
+		node = objectOf($(node)[kParent])
 	) {
 		if (node instanceof HTMLFormElement) {
 			return node;
@@ -24270,7 +24299,7 @@ function willValidate(element: Element): boolean {
 	}
 	for (let node: Node | null = element;
 		node !== null;
-		node = $(node)[kParent]) {
+		node = objectOf($(node)[kParent])) {
 		if (isHTMLElementNamed(node, "datalist")) {
 			return false;
 		}
@@ -24565,7 +24594,7 @@ function collectSelectValidity(
 		!select.hasAttribute("multiple") &&
 		select.size <= 1 &&
 		options.length > 0 &&
-		$(options[0])[kParent] === select &&
+		objectOf($(options[0])[kParent]) === select &&
 		options[0].value === ""
 			? options[0]
 			: null;
@@ -24768,7 +24797,7 @@ function getFlatTreeParent(node: Node): Element | null {
 	if (slot !== null) {
 		return slot;
 	}
-	const parent = $(node)[kParent];
+	const parent = objectOf($(node)[kParent]);
 	if (parent !== null) {
 		if (isElement(parent)) {
 			return parent;
@@ -24802,7 +24831,7 @@ export function flatIsConnected(target: globalThis.Node): boolean {
  */
 export function isInFlatTree(target: globalThis.Node): boolean {
 	for (let node = target as Node; ;) {
-		const parent = $(node)[kParent];
+		const parent = objectOf($(node)[kParent]);
 		if (parent === null) {
 			return isShadowRoot(node)
 				? isInFlatTree($(node)[kHost] as unknown as globalThis.Node)
@@ -24956,7 +24985,7 @@ function getPseudoSlot(element: Element, name: string): Element | null {
 
 function flatFirstChild(node: Node): Node | null {
 	if (node.nodeType !== ELEMENT_NODE) {
-		return $(node)[kFirstChild];
+		return objectOf($(node)[kFirstChild]);
 	}
 	const element = node as Element;
 	const slots = $(element)[kPseudoElements];
@@ -24989,7 +25018,7 @@ function flatFirstChild(node: Node): Node | null {
 function flatContentFirstChild(element: Element): Node | null {
 	const shadow = $(element)[kShadowRoot];
 	if (shadow !== null) {
-		return $(shadow)[kFirstChild];
+		return objectOf($(shadow)[kFirstChild]);
 	}
 	if (element instanceof HTMLSlotElement) {
 		const assigned = $(element)[kAssignedNodes];
@@ -24997,7 +25026,7 @@ function flatContentFirstChild(element: Element): Node | null {
 			return assigned[0];
 		}
 	}
-	return $(element)[kFirstChild];
+	return objectOf($(element)[kFirstChild]);
 }
 
 function flatNextSibling(node: Node): Node | null {
@@ -25034,7 +25063,7 @@ function flatNextSibling(node: Node): Node | null {
 			: getPseudoSlot(slot, "::after");
 	}
 
-	const next = $(node)[kNext];
+	const next = objectOf($(node)[kNext]);
 	if (next !== null) {
 		return next;
 	}
@@ -25060,7 +25089,7 @@ function flatParentNode(node: Node): Node | null {
 	if (slot !== null) {
 		return slot;
 	}
-	const parent = $(node)[kParent];
+	const parent = objectOf($(node)[kParent]);
 	if (parent !== null && isShadowRoot(parent)) {
 		return $((parent as ShadowRoot))[kHost];
 	}
@@ -26075,9 +26104,9 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	get doctype(): globalThis.DocumentType | null {
-		for (let node = $(this)[kFirstChild];
+		for (let node = objectOf($(this)[kFirstChild]);
 			node !== null;
-			node = $(node)[kNext]) {
+			node = objectOf($(node)[kNext])) {
 			if (node.nodeType === DOCUMENT_TYPE_NODE) {
 				return node as unknown as globalThis.DocumentType;
 			}
@@ -26148,9 +26177,9 @@ export class Document extends Node implements globalThis.Document {
 		if (root === null) {
 			return null as unknown as globalThis.HTMLHeadElement;
 		}
-		for (let node = $(root)[kFirstChild];
+		for (let node = objectOf($(root)[kFirstChild]);
 			node !== null;
-			node = $(node)[kNext]) {
+			node = objectOf($(node)[kNext])) {
 			if (
 				node.nodeType === ELEMENT_NODE &&
 				$((node as Element))[kNamespace] === HTML_NAMESPACE &&
@@ -26167,9 +26196,9 @@ export class Document extends Node implements globalThis.Document {
 		if (root === null) {
 			return null as unknown as globalThis.HTMLElement;
 		}
-		for (let node = $(root)[kFirstChild];
+		for (let node = objectOf($(root)[kFirstChild]);
 			node !== null;
-			node = $(node)[kNext]) {
+			node = objectOf($(node)[kNext])) {
 			if (
 				node.nodeType === ELEMENT_NODE &&
 				$((node as Element))[kNamespace] === HTML_NAMESPACE &&
@@ -26252,9 +26281,9 @@ export class Document extends Node implements globalThis.Document {
 		if (
 			$(root)[kNamespace] === SVG_NAMESPACE && $(root)[kLocalName] === "svg"
 		) {
-			for (let node = $(root)[kFirstChild];
+			for (let node = objectOf($(root)[kFirstChild]);
 				node !== null;
-				node = $(node)[kNext]) {
+				node = objectOf($(node)[kNext])) {
 				if (
 					node.nodeType === ELEMENT_NODE &&
 					$((node as Element))[kNamespace] === SVG_NAMESPACE &&
@@ -26266,7 +26295,7 @@ export class Document extends Node implements globalThis.Document {
 			}
 			if (element === null) {
 				element = createElementInternal(this, "title", SVG_NAMESPACE);
-				insertNode(element, root, $(root)[kFirstChild], false);
+				insertNode(element, root, objectOf($(root)[kFirstChild]), false);
 			}
 		} else if ($(root)[kNamespace] === HTML_NAMESPACE) {
 			for (const node of descendants(this)) {
@@ -26304,9 +26333,9 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	get documentElement(): globalThis.HTMLElement {
-		for (let node = $(this)[kFirstChild];
+		for (let node = objectOf($(this)[kFirstChild]);
 			node !== null;
-			node = $(node)[kNext]) {
+			node = objectOf($(node)[kNext])) {
 			if (node.nodeType === ELEMENT_NODE) {
 				return node as unknown as globalThis.HTMLElement;
 			}
@@ -26725,9 +26754,9 @@ export class Document extends Node implements globalThis.Document {
 				const matches: Node[] = [];
 				const visit = (node: Node): void => {
 					for (
-						let child = $(node)[kFirstChild];
+						let child = objectOf($(node)[kFirstChild]);
 						child !== null;
-						child = $(child)[kNext]
+						child = objectOf($(child)[kNext])
 					) {
 						if (child.nodeType !== ELEMENT_NODE) {
 							continue;
@@ -27356,7 +27385,7 @@ function isPotentiallyScrollable(body: Element): boolean {
 			hidden(style.getPropertyValue("overflow-y"))
 		);
 	};
-	const parent = $(body)[kParent];
+	const parent = objectOf($(body)[kParent]);
 	return (
 		parent != null &&
 		parent.nodeType === ELEMENT_NODE &&
@@ -28038,9 +28067,9 @@ const parentNodeMembers = {
 	},
 	firstElementChild: {
 		get(this: Node): Element | null {
-			for (let node = $(this)[kFirstChild];
+			for (let node = objectOf($(this)[kFirstChild]);
 				node !== null;
-				node = $(node)[kNext]) {
+				node = objectOf($(node)[kNext])) {
 				if (node.nodeType === ELEMENT_NODE) {
 					return node as Element;
 				}
@@ -28052,9 +28081,9 @@ const parentNodeMembers = {
 	},
 	lastElementChild: {
 		get(this: Node): Element | null {
-			for (let node = $(this)[kLastChild];
+			for (let node = objectOf($(this)[kLastChild]);
 				node !== null;
-				node = $(node)[kPrevious]) {
+				node = objectOf($(node)[kPrevious])) {
 				if (node.nodeType === ELEMENT_NODE) {
 					return node as Element;
 				}
@@ -28075,7 +28104,7 @@ const parentNodeMembers = {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const slots = $(this);
 			const node = convertNodesIntoNode(nodes, slots[kDocument]);
-			preInsert(node, this, slots[kFirstChild]);
+			preInsert(node, this, objectOf(slots[kFirstChild]));
 		},
 		configurable: true,
 		enumerable: true,
@@ -28103,7 +28132,7 @@ const parentNodeMembers = {
 			}
 			let reference = child ?? null;
 			if (reference === node) {
-				reference = $(node)[kNext];
+				reference = objectOf($(node)[kNext]);
 			}
 			moveNode(node, this, reference);
 		},
@@ -28159,19 +28188,19 @@ const childNodeMembers = {
 	before: {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const slots = $(this);
-			const parent = slots[kParent];
+			const parent = objectOf(slots[kParent]);
 			if (parent === null) {
 				return;
 			}
-			let viable = slots[kPrevious];
+			let viable = objectOf(slots[kPrevious]);
 			while (viable !== null && nodes.includes(viable)) {
-				viable = $(viable)[kPrevious];
+				viable = objectOf($(viable)[kPrevious]);
 			}
 			const node = convertNodesIntoNode(nodes, slots[kDocument]);
 			if (viable === null) {
-				preInsert(node, parent, $(parent)[kFirstChild]);
+				preInsert(node, parent, objectOf($(parent)[kFirstChild]));
 			} else {
-				preInsert(node, parent, $(viable)[kNext]);
+				preInsert(node, parent, objectOf($(viable)[kNext]));
 			}
 		},
 		configurable: true,
@@ -28181,13 +28210,13 @@ const childNodeMembers = {
 	after: {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const slots = $(this);
-			const parent = slots[kParent];
+			const parent = objectOf(slots[kParent]);
 			if (parent === null) {
 				return;
 			}
-			let viable = slots[kNext];
+			let viable = objectOf(slots[kNext]);
 			while (viable !== null && nodes.includes(viable)) {
-				viable = $(viable)[kNext];
+				viable = objectOf($(viable)[kNext]);
 			}
 			const node = convertNodesIntoNode(nodes, slots[kDocument]);
 			preInsert(node, parent, viable);
@@ -28199,16 +28228,16 @@ const childNodeMembers = {
 	replaceWith: {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const slots = $(this);
-			const parent = slots[kParent];
+			const parent = objectOf(slots[kParent]);
 			if (parent === null) {
 				return;
 			}
-			let viable = slots[kNext];
+			let viable = objectOf(slots[kNext]);
 			while (viable !== null && nodes.includes(viable)) {
-				viable = $(viable)[kNext];
+				viable = objectOf($(viable)[kNext]);
 			}
 			const node = convertNodesIntoNode(nodes, slots[kDocument]);
-			if (slots[kParent] === parent) {
+			if (objectOf(slots[kParent]) === parent) {
 				replaceChild(this, node, parent);
 			} else {
 				preInsert(node, parent, viable);
@@ -28234,9 +28263,9 @@ const childNodeMembers = {
 const nonDocumentTypeChildNodeMembers = {
 	previousElementSibling: {
 		get(this: Node): Element | null {
-			for (let node = $(this)[kPrevious];
+			for (let node = objectOf($(this)[kPrevious]);
 				node !== null;
-				node = $(node)[kPrevious]) {
+				node = objectOf($(node)[kPrevious])) {
 				if (node.nodeType === ELEMENT_NODE) {
 					return node as Element;
 				}
@@ -28248,7 +28277,9 @@ const nonDocumentTypeChildNodeMembers = {
 	},
 	nextElementSibling: {
 		get(this: Node): Element | null {
-			for (let node = $(this)[kNext]; node !== null; node = $(node)[kNext]) {
+			for (let node = objectOf($(this)[kNext]);
+				node !== null;
+				node = objectOf($(node)[kNext])) {
 				if (node.nodeType === ELEMENT_NODE) {
 					return node as Element;
 				}
@@ -28590,7 +28621,7 @@ function insertAdjacent(
 	const elementSlots = $(element);
 	switch (toASCIILowercase(where)) {
 		case "beforebegin": {
-			const parent = elementSlots[kParent];
+			const parent = objectOf(elementSlots[kParent]);
 			if (parent === null) {
 				return null;
 			}
@@ -28598,17 +28629,17 @@ function insertAdjacent(
 			return node;
 		}
 		case "afterbegin":
-			preInsert(node, element, elementSlots[kFirstChild]);
+			preInsert(node, element, objectOf(elementSlots[kFirstChild]));
 			return node;
 		case "beforeend":
 			preInsert(node, element, null);
 			return node;
 		case "afterend": {
-			const parent = elementSlots[kParent];
+			const parent = objectOf(elementSlots[kParent]);
 			if (parent === null) {
 				return null;
 			}
-			preInsert(node, parent, elementSlots[kNext]);
+			preInsert(node, parent, objectOf(elementSlots[kNext]));
 			return node;
 		}
 		default:
@@ -28644,9 +28675,9 @@ function cloneNode(
 			const copiedShadow = $((copy as Element))[kShadowRoot] as ShadowRoot;
 			$(copiedShadow)[kDeclarative] = $(shadow)[kDeclarative];
 			for (
-				let child = $(shadow)[kFirstChild];
+				let child = objectOf($(shadow)[kFirstChild]);
 				child !== null;
-				child = $(child)[kNext]
+				child = objectOf($(child)[kNext])
 			) {
 				appendNode(
 					cloneNode(child, $(copiedShadow)[kDocument], true),
@@ -28656,9 +28687,9 @@ function cloneNode(
 		}
 	}
 	if (deep) {
-		for (let child = nodeSlots[kFirstChild];
+		for (let child = objectOf(nodeSlots[kFirstChild]);
 			child !== null;
-			child = $(child)[kNext]) {
+			child = objectOf($(child)[kNext])) {
 			appendNode(cloneNode(child, copySlots[kDocument], true), copy);
 		}
 	}
@@ -28737,14 +28768,14 @@ function equalNodes(a: Node, b: Node): boolean {
 		default:
 			break;
 	}
-	let childA = $(a)[kFirstChild];
-	let childB = $(b)[kFirstChild];
+	let childA = objectOf($(a)[kFirstChild]);
+	let childB = objectOf($(b)[kFirstChild]);
 	while (childA !== null && childB !== null) {
 		if (!equalNodes(childA, childB)) {
 			return false;
 		}
-		childA = $(childA)[kNext];
-		childB = $(childB)[kNext];
+		childA = objectOf($(childA)[kNext]);
+		childB = objectOf($(childB)[kNext]);
 	}
 	return childA === null && childB === null;
 }
@@ -28836,9 +28867,9 @@ const AFTER = 1;
 function getNodeIndex(node: Node): number {
 	let index = 0;
 	for (
-		let previous = $(node)[kPrevious];
+		let previous = objectOf($(node)[kPrevious]);
 		previous !== null;
-		previous = $(previous)[kPrevious]
+		previous = objectOf($(previous)[kPrevious])
 	) {
 		index++;
 	}
@@ -28855,9 +28886,9 @@ function getNodeLength(node: Node): number {
 		return $((node as CharacterData))[kData].length;
 	}
 	let length = 0;
-	for (let child = $(node)[kFirstChild];
+	for (let child = objectOf($(node)[kFirstChild]);
 		child !== null;
-		child = $(child)[kNext]) {
+		child = objectOf($(child)[kNext])) {
 		length++;
 	}
 	return length;
@@ -28868,7 +28899,7 @@ function getAncestorChain(node: Node): Node[] {
 	for (
 		let current: Node | null = node;
 		current !== null;
-		current = $(current)[kParent]
+		current = objectOf($(current)[kParent])
 	) {
 		chain.push(current);
 	}
@@ -28877,7 +28908,9 @@ function getAncestorChain(node: Node): Node[] {
 }
 
 function isPrecedingSibling(node: Node, other: Node): boolean {
-	for (let next = $(node)[kNext]; next !== null; next = $(next)[kNext]) {
+	for (let next = objectOf($(node)[kNext]);
+		next !== null;
+		next = objectOf($(next)[kNext])) {
 		if (next === other) {
 			return true;
 		}
@@ -28990,7 +29023,7 @@ function getLazyIndex(node: Node): () => number {
 // A boundary point inside the removed node collapses to the node's own
 // position. A point after it in the parent moves back by one.
 function liveRangePreRemoveSteps(node: Node): void {
-	const parent = $(node)[kParent] as Node;
+	const parent = objectOf($(node)[kParent]) as Node;
 	const index = getLazyIndex(node);
 	forEachLiveRange(node, (range) => {
 		const rangeSlots = $(range);
@@ -29092,7 +29125,7 @@ function liveRangeNormalizeSteps(
 	currentNode: Text,
 	length: number,
 ): void {
-	const parent = $(currentNode)[kParent] as Node;
+	const parent = objectOf($(currentNode)[kParent]) as Node;
 	const index = getLazyIndex(currentNode);
 	forEachLiveRange(node, (range) => {
 		const rangeSlots = $(range);
@@ -29267,7 +29300,7 @@ function getCommonAncestor(range: Range): Node {
 	const rangeSlots = $(range);
 	let container = rangeSlots[kStartNode];
 	while (!isInclusiveAncestor(container, rangeSlots[kEndNode])) {
-		container = $(container)[kParent] as Node;
+		container = objectOf($(container)[kParent]) as Node;
 	}
 	return container;
 }
@@ -29367,7 +29400,7 @@ function getBoundaryParent(node: unknown): Node {
 	if (!(node instanceof Node)) {
 		throw new TypeError("That is not a node");
 	}
-	const parent = $(node)[kParent];
+	const parent = objectOf($(node)[kParent]);
 	if (parent === null) {
 		throw domError(
 			"InvalidNodeTypeError",
@@ -29399,9 +29432,9 @@ function getExtractionShape(range: Range): {
 	const commonAncestorSlots = $(commonAncestor);
 	if (!isInclusiveAncestor(startNode, endNode)) {
 		for (
-			let child = commonAncestorSlots[kFirstChild];
+			let child = objectOf(commonAncestorSlots[kFirstChild]);
 			child !== null;
-			child = $(child)[kNext]
+			child = objectOf($(child)[kNext])
 		) {
 			if (isPartiallyContained(child, range)) {
 				firstPartiallyContained = child;
@@ -29412,9 +29445,9 @@ function getExtractionShape(range: Range): {
 	let lastPartiallyContained: Node | null = null;
 	if (!isInclusiveAncestor(endNode, startNode)) {
 		for (
-			let child = commonAncestorSlots[kLastChild];
+			let child = objectOf(commonAncestorSlots[kLastChild]);
 			child !== null;
-			child = $(child)[kPrevious]
+			child = objectOf($(child)[kPrevious])
 		) {
 			if (isPartiallyContained(child, range)) {
 				lastPartiallyContained = child;
@@ -29424,9 +29457,9 @@ function getExtractionShape(range: Range): {
 	}
 	const containedChildren: Node[] = [];
 	for (
-		let child = commonAncestorSlots[kFirstChild];
+		let child = objectOf(commonAncestorSlots[kFirstChild]);
 		child !== null;
-		child = $(child)[kNext]
+		child = objectOf($(child)[kNext])
 	) {
 		if (!isContained(child, range)) {
 			continue;
@@ -29453,11 +29486,14 @@ function getPointAfterExtraction(range: Range): [Node, number] {
 	let reference = startNode;
 	while (
 		$(reference)[kParent] !== null &&
-		!isInclusiveAncestor($(reference)[kParent] as Node, rangeSlots[kEndNode])
+		!isInclusiveAncestor(
+			objectOf($(reference)[kParent]) as Node,
+			rangeSlots[kEndNode],
+		)
 	) {
-		reference = $(reference)[kParent] as Node;
+		reference = objectOf($(reference)[kParent]) as Node;
 	}
-	return [$(reference)[kParent] as Node, getNodeIndex(reference) + 1];
+	return [objectOf($(reference)[kParent]) as Node, getNodeIndex(reference) + 1];
 }
 
 function cloneCharacterDataSlice(
@@ -29650,7 +29686,7 @@ class Range extends AbstractRange implements globalThis.Range {
 			if (!isContained(node, this)) {
 				continue;
 			}
-			const parent = $(node)[kParent];
+			const parent = objectOf($(node)[kParent]);
 			if (parent !== null && isContained(parent, this)) {
 				continue;
 			}
@@ -29693,8 +29729,8 @@ class Range extends AbstractRange implements globalThis.Range {
 		const startSlots = $(start);
 		let context: Element | null = start instanceof Element
 			? start
-			: startSlots[kParent] instanceof Element
-			? (startSlots[kParent] as Element)
+			: objectOf(startSlots[kParent]) instanceof Element
+			? (objectOf(startSlots[kParent]) as Element)
 			: null;
 		if (context === null) {
 			const document = start instanceof Document
@@ -29726,7 +29762,7 @@ class Range extends AbstractRange implements globalThis.Range {
 						"The range starts or ends inside a node it does not cover",
 					);
 				}
-				current = $(current)[kParent];
+				current = objectOf($(current)[kParent]);
 			}
 		}
 		const type = newParent.nodeType;
@@ -29839,7 +29875,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (getRoot(node) !== rangeRoot(this)) {
 			return false;
 		}
-		const parent = $(node)[kParent];
+		const parent = objectOf($(node)[kParent]);
 		if (parent === null) {
 			return true;
 		}
@@ -30043,24 +30079,24 @@ function insertIntoRange(range: Range, node: Node): void {
 	if (startNode instanceof Text) {
 		referenceNode = startNode;
 	} else {
-		let child = $(startNode)[kFirstChild];
+		let child = objectOf($(startNode)[kFirstChild]);
 		for (
 			let index = 0; index < rangeSlots[kStartOffset] && child !== null; index++
 		) {
-			child = $(child)[kNext];
+			child = objectOf($(child)[kNext]);
 		}
 		referenceNode = child;
 	}
 	const parent = referenceNode === null
 		? startNode
-		: ($(referenceNode)[kParent] as Node);
+		: (objectOf($(referenceNode)[kParent]) as Node);
 	ensurePreInsertionValidity(node, parent, referenceNode);
 	if (startNode instanceof Text) {
 		referenceNode = startNode.splitText(rangeSlots[kStartOffset]);
 	}
 	const nodeSlots = $(node);
 	if (node === referenceNode) {
-		referenceNode = nodeSlots[kNext];
+		referenceNode = objectOf(nodeSlots[kNext]);
 	}
 	if (nodeSlots[kParent] !== null) {
 		removeNode(node);
@@ -30162,15 +30198,16 @@ function getRangeClientRects(range: Range): globalThis.DOMRect[] {
 		} else if (
 			node.nodeType === ELEMENT_NODE &&
 			isContained(node, range) &&
-			(nodeSlots[kParent] === null || !isContained(nodeSlots[kParent]!, range))
+			(nodeSlots[kParent] === null ||
+				!isContained(objectOf(nodeSlots[kParent])!, range))
 		) {
 			for (const rect of layout.getRects(node as Element)) {
 				rects.push(toViewportRect(attached, rect, node as Element));
 			}
 		}
-		for (let child = nodeSlots[kFirstChild];
+		for (let child = objectOf(nodeSlots[kFirstChild]);
 			child !== null;
-			child = $(child)[kNext]) {
+			child = objectOf($(child)[kNext])) {
 			visit(child);
 		}
 	};
@@ -30226,7 +30263,7 @@ function scheduleSelectionChange(document: Document): void {
 // boundary point in a shadow tree can be ordered against one in the
 // light tree.
 function getComposedParent(node: Node): Node | null {
-	const parent = $(node)[kParent];
+	const parent = objectOf($(node)[kParent]);
 	if (parent !== null) {
 		return parent;
 	}
@@ -30514,7 +30551,7 @@ class Selection implements globalThis.Selection {
 				}
 				const host = $((root as ShadowRoot))[kHost] as Element;
 				at = getNodeIndex(host) + (after ? 1 : 0);
-				const parent = $(host)[kParent];
+				const parent = objectOf($(host)[kParent]);
 				if (parent === null) {
 					break;
 				}
@@ -30694,9 +30731,9 @@ class Selection implements globalThis.Selection {
 			return;
 		}
 		let childCount = 0;
-		for (let child = $(node)[kFirstChild];
+		for (let child = objectOf($(node)[kFirstChild]);
 			child !== null;
-			child = $(child)[kNext]) {
+			child = objectOf($(child)[kNext])) {
 			childCount++;
 		}
 		const anchor: [Node, number] = [node, 0];
@@ -30954,9 +30991,9 @@ function getSelectionTextNodes(
 			return [...$(source)[kAssignedNodes]] as Node[];
 		}
 		const children: Node[] = [];
-		for (let child = $(source)[kFirstChild];
+		for (let child = objectOf($(source)[kFirstChild]);
 			child !== null;
-			child = $(child)[kNext]) {
+			child = objectOf($(child)[kNext])) {
 			children.push(child);
 		}
 		return children;
@@ -31029,9 +31066,9 @@ function getSelectionIndex(
 		}
 		return null;
 	}
-	let child = $(node)[kFirstChild];
+	let child = objectOf($(node)[kFirstChild]);
 	for (let i = 0; child !== null && i < offset; i++) {
-		child = $(child)[kNext];
+		child = objectOf($(child)[kNext]);
 	}
 	if (child !== null) {
 		for (const part of run.parts) {
@@ -31083,7 +31120,7 @@ function getSelectionPoint(
 		return null;
 	}
 	if (isLineBreakElement(part.node)) {
-		const parent = $(part.node)[kParent];
+		const parent = objectOf($(part.node)[kParent]);
 		if (parent === null) {
 			return null;
 		}
@@ -32063,7 +32100,7 @@ export function getHighlightedTextNodes(
 	}
 	let container = start;
 	while (!isInclusiveAncestor(container, end)) {
-		container = $(container)[kParent] as Node;
+		container = objectOf($(container)[kParent]) as Node;
 	}
 	const covered: Array<{textNode: Text; from: number; to: number}> = [];
 	for (
@@ -32182,12 +32219,12 @@ function precedingWithin(node: Node, root: Node): Node | null {
 		return null;
 	}
 	const nodeSlots = $(node);
-	let previous = nodeSlots[kPrevious];
+	let previous = objectOf(nodeSlots[kPrevious]);
 	if (previous === null) {
-		return nodeSlots[kParent];
+		return objectOf(nodeSlots[kParent]);
 	}
 	while ($(previous)[kLastChild] !== null) {
-		previous = $(previous)[kLastChild] as Node;
+		previous = objectOf($(previous)[kLastChild]) as Node;
 	}
 	return previous;
 }
@@ -32321,14 +32358,14 @@ function preRemoveFromIterator(
 		iteratorSlots[kPointerBefore] = false;
 	}
 	const toBeRemovedSlots = $(toBeRemoved);
-	const previous = toBeRemovedSlots[kPrevious];
+	const previous = objectOf(toBeRemovedSlots[kPrevious]);
 	if (previous === null) {
-		iteratorSlots[kReference] = toBeRemovedSlots[kParent] as Node;
+		iteratorSlots[kReference] = objectOf(toBeRemovedSlots[kParent]) as Node;
 		return;
 	}
 	let last: Node = previous;
 	while ($(last)[kLastChild] !== null) {
-		last = $(last)[kLastChild] as Node;
+		last = objectOf($(last)[kLastChild]) as Node;
 	}
 	iteratorSlots[kReference] = last;
 }
@@ -32428,8 +32465,8 @@ export class TreeWalker implements globalThis.TreeWalker {
 function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 	const walkSlots = $(walk);
 	let node: Node | null = first
-		? $(walkSlots[kCurrent])[kFirstChild]
-		: $(walkSlots[kCurrent])[kLastChild];
+		? objectOf($(walkSlots[kCurrent])[kFirstChild])
+		: objectOf($(walkSlots[kCurrent])[kLastChild]);
 	while (node !== null) {
 		const result = filterNode(walkSlots[kState], node);
 		if (result === FILTER_ACCEPT) {
@@ -32437,19 +32474,23 @@ function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 			return node;
 		}
 		if (result === FILTER_SKIP) {
-			const child = first ? $(node)[kFirstChild] : $(node)[kLastChild];
+			const child = first
+				? objectOf($(node)[kFirstChild])
+				: objectOf($(node)[kLastChild]);
 			if (child !== null) {
 				node = child;
 				continue;
 			}
 		}
 		for (;;) {
-			const sibling = first ? $(node)[kNext] : $(node)[kPrevious];
+			const sibling = first
+				? objectOf($(node)[kNext])
+				: objectOf($(node)[kPrevious]);
 			if (sibling !== null) {
 				node = sibling;
 				break;
 			}
-			const parent: Node | null = $(node)[kParent];
+			const parent: Node | null = objectOf($(node)[kParent]);
 			if (
 				parent === null ||
 				parent === walkSlots[kRoot] ||
@@ -32474,7 +32515,9 @@ function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 		return null;
 	}
 	for (;;) {
-		let sibling = next ? $(node)[kNext] : $(node)[kPrevious];
+		let sibling = next
+			? objectOf($(node)[kNext])
+			: objectOf($(node)[kPrevious]);
 		while (sibling !== null) {
 			node = sibling;
 			const result = filterNode(walkSlots[kState], node);
@@ -32482,12 +32525,16 @@ function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 				walkSlots[kCurrent] = node;
 				return node;
 			}
-			sibling = next ? $(node)[kFirstChild] : $(node)[kLastChild];
+			sibling = next
+				? objectOf($(node)[kFirstChild])
+				: objectOf($(node)[kLastChild]);
 			if (result === FILTER_REJECT || sibling === null) {
-				sibling = next ? $(node)[kNext] : $(node)[kPrevious];
+				sibling = next
+					? objectOf($(node)[kNext])
+					: objectOf($(node)[kPrevious]);
 			}
 		}
-		const parent = $(node)[kParent];
+		const parent = objectOf($(node)[kParent]);
 		if (parent === null || parent === walkSlots[kRoot]) {
 			return null;
 		}
@@ -32502,7 +32549,7 @@ function walkParent(walk: TreeWalker): Node | null {
 	const walkSlots = $(walk);
 	let node: Node | null = walkSlots[kCurrent];
 	while (node !== null && node !== walkSlots[kRoot]) {
-		node = $(node)[kParent];
+		node = objectOf($(node)[kParent]);
 		if (
 			node !== null && filterNode(walkSlots[kState], node) === FILTER_ACCEPT
 		) {
@@ -32522,7 +32569,7 @@ function walkNext(walk: TreeWalker): Node | null {
 	let result = FILTER_ACCEPT;
 	for (;;) {
 		while (result !== FILTER_REJECT) {
-			const child = $(node)[kFirstChild];
+			const child = objectOf($(node)[kFirstChild]);
 			if (child === null) {
 				break;
 			}
@@ -32539,11 +32586,11 @@ function walkNext(walk: TreeWalker): Node | null {
 			if (temporary === walkSlots[kRoot]) {
 				return null;
 			}
-			sibling = $(temporary)[kNext];
+			sibling = objectOf($(temporary)[kNext]);
 			if (sibling !== null) {
 				break;
 			}
-			temporary = $(temporary)[kParent];
+			temporary = objectOf($(temporary)[kParent]);
 		}
 		if (sibling === null) {
 			return null;
@@ -32561,7 +32608,7 @@ function walkPrevious(walk: TreeWalker): Node | null {
 	const walkSlots = $(walk);
 	let node = walkSlots[kCurrent];
 	while (node !== walkSlots[kRoot]) {
-		let sibling = $(node)[kPrevious];
+		let sibling = objectOf($(node)[kPrevious]);
 		while (sibling !== null) {
 			node = sibling;
 			let result = filterNode(walkSlots[kState], node);
@@ -32569,7 +32616,7 @@ function walkPrevious(walk: TreeWalker): Node | null {
 				if (result === FILTER_REJECT) {
 					break;
 				}
-				const child = $(node)[kLastChild];
+				const child = objectOf($(node)[kLastChild]);
 				if (child === null) {
 					break;
 				}
@@ -32580,9 +32627,9 @@ function walkPrevious(walk: TreeWalker): Node | null {
 				walkSlots[kCurrent] = node;
 				return node;
 			}
-			sibling = $(node)[kPrevious];
+			sibling = objectOf($(node)[kPrevious]);
 		}
-		const parent = $(node)[kParent];
+		const parent = objectOf($(node)[kParent]);
 		if (parent === null) {
 			return null;
 		}
@@ -33103,7 +33150,9 @@ export function isIndeterminateControl(element: Element): boolean {
 
 function getValidityOwners(element: Element): Element[] {
 	const owners: Element[] = [];
-	for (let node = $(element)[kParent]; node !== null; node = $(node)[kParent]) {
+	for (let node = objectOf($(element)[kParent]);
+		node !== null;
+		node = objectOf($(node)[kParent])) {
 		if (isHTMLElementNamed(node, "fieldset")) {
 			owners.push(node as Element);
 		}
@@ -33285,7 +33334,7 @@ function createTreeAdapter(document: Document | null) {
 			removeNode(node, true);
 		},
 		insertText(parentNode: Node, text: string): void {
-			const last = $(parentNode)[kLastChild];
+			const last = objectOf($(parentNode)[kLastChild]);
 			if (last !== null && last.nodeType === TEXT_NODE) {
 				$((last as CharacterData))[kData] += text;
 				return;
@@ -33300,7 +33349,7 @@ function createTreeAdapter(document: Document | null) {
 			text: string,
 			referenceNode: Node,
 		): void {
-			const previous = $(referenceNode)[kPrevious];
+			const previous = objectOf($(referenceNode)[kPrevious]);
 			if (previous !== null && previous.nodeType === TEXT_NODE) {
 				$((previous as CharacterData))[kData] += text;
 				return;
@@ -33325,13 +33374,13 @@ function createTreeAdapter(document: Document | null) {
 			}
 		},
 		getFirstChild(node: Node): Node | null {
-			return $(node)[kFirstChild];
+			return objectOf($(node)[kFirstChild]);
 		},
 		getChildNodes(node: Node): Node[] {
 			return getChildNodeArray(node);
 		},
 		getParentNode(node: Node): Node | null {
-			return $(node)[kParent];
+			return objectOf($(node)[kParent]);
 		},
 		getAttrList(element: Element): ParseAttribute[] {
 			return $(element)[kAttributeList].map((attribute) => ({
@@ -33389,9 +33438,9 @@ function createTreeAdapter(document: Document | null) {
 function dropRegistry(node: Node): void {
 	const nodeSlots = $(node);
 	nodeSlots[kRegistry] = null;
-	for (let child = nodeSlots[kFirstChild];
+	for (let child = objectOf(nodeSlots[kFirstChild]);
 		child !== null;
-		child = $(child)[kNext]) {
+		child = objectOf($(child)[kNext])) {
 		dropRegistry(child);
 	}
 }
@@ -33455,7 +33504,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 		return false;
 	}
 	const templateSlots = $(template);
-	const host = templateSlots[kParent];
+	const host = objectOf(templateSlots[kParent]);
 	if (host === null || host.nodeType !== ELEMENT_NODE) {
 		return false;
 	}
@@ -33972,7 +34021,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 	}
 
 	function appendText(parent: Node, data: string): void {
-		const last = $(parent)[kLastChild];
+		const last = objectOf($(parent)[kLastChild]);
 		if (last !== null && last.nodeType === TEXT_NODE) {
 			$((last as CharacterData))[kData] += data;
 			return;
@@ -34366,9 +34415,9 @@ function serializeFragment(
 		}
 	}
 	for (
-		let child = $(children)[kFirstChild];
+		let child = objectOf($(children)[kFirstChild]);
 		child !== null;
-		child = $(child)[kNext]
+		child = objectOf($(child)[kNext])
 	) {
 		html += serializeNode(child, serializableShadowRoots, shadowRoots);
 	}
@@ -34427,7 +34476,7 @@ function serializeNode(
 			if (
 				namespace === HTML_NAMESPACE && NEWLINE_EATING_ELEMENTS.has(tagName)
 			) {
-				const first = $(element)[kFirstChild];
+				const first = objectOf($(element)[kFirstChild]);
 				if (
 					first !== null &&
 					first.nodeType === TEXT_NODE &&
@@ -34441,7 +34490,7 @@ function serializeNode(
 			return html;
 		}
 		case TEXT_NODE: {
-			const parent = nodeSlots[kParent];
+			const parent = objectOf(nodeSlots[kParent]);
 			if (
 				parent !== null &&
 				parent.nodeType === ELEMENT_NODE &&
@@ -34465,9 +34514,9 @@ function serializeNode(
 		default: {
 			let html = "";
 			for (
-				let child = nodeSlots[kFirstChild];
+				let child = objectOf(nodeSlots[kFirstChild]);
 				child !== null;
-				child = $(child)[kNext]
+				child = objectOf($(child)[kNext])
 			) {
 				html += serializeNode(child, serializableShadowRoots, shadowRoots);
 			}
@@ -37587,7 +37636,7 @@ export function isElement(node: Node): node is Element {
 }
 
 export function parentElement(node: Node): Element | null {
-	const parent = $(node)[kParent];
+	const parent = objectOf($(node)[kParent]);
 	return parent !== null && isElement(parent) ? parent : null;
 }
 

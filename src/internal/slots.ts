@@ -15,9 +15,19 @@
  * the record, as `this`.
  */
 
-const kOwner = Symbol("owner");
+const kObject = Symbol("object");
 
-type SlotRecord = Record<symbol, unknown> & {[kOwner]: object};
+/**
+ * A record as the tree links hold it: the symbol-keyed slots of `T`, and
+ * the object they belong to, which `objectOf()` returns. Unlike what `$()`
+ * returns, it cannot be mistaken for the object itself.
+ */
+export type Slots<T> =
+	{
+		[K in keyof T as K extends symbol ? K : never]: T[K];
+	} & {readonly [kObject]: T};
+
+type SlotRecord = Record<symbol, unknown> & {[kObject]: object};
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 type Constructor = Function & {prototype: object};
 
@@ -81,7 +91,7 @@ export function seal(
 	}
 
 	const record = new Record();
-	record[kOwner] = target;
+	record[kObject] = target;
 	new Slot(target, record);
 }
 
@@ -100,7 +110,9 @@ function createRecordType(hidden: object): new () => SlotRecord {
  * anything without slots, a Proxy around a node among them, as a browser
  * does.
  */
-export function $<T extends object>(value: T): T {
+export function $<T extends object>(
+	value: T & {readonly [kObject]?: never},
+): T {
 	if (value === lastValue) {
 		return lastRecord as unknown as T;
 	}
@@ -108,6 +120,30 @@ export function $<T extends object>(value: T): T {
 	lastRecord = Slot.read(value);
 	lastValue = value;
 	return lastRecord as unknown as T;
+}
+
+/** The record of `value`, typed as the tree links hold it. */
+export function slotsOf<T extends object>(
+	value: T & {readonly [kObject]?: never},
+): Slots<T> {
+	return $(value) as unknown as Slots<T>;
+}
+
+/**
+ * The object a record belongs to. Remembers the pair, so a `$()` of the
+ * object right after costs nothing.
+ */
+export function objectOf<T extends object>(record: Slots<T>): T;
+export function objectOf<T extends object>(record: Slots<T> | null): T | null;
+export function objectOf<T extends object>(record: Slots<T> | null): T | null {
+	if (record === null) {
+		return null;
+	}
+
+	const object = record[kObject];
+	lastValue = object;
+	lastRecord = record as unknown as SlotRecord;
+	return object;
 }
 
 /** `$()` for an optional chain: undefined for null or undefined. */
@@ -123,7 +159,7 @@ export function $maybe<T>(value: T): NonNullable<T> | undefined {
  */
 export function adopt(target: object, state: Record<symbol, unknown>): void {
 	const record = Object.assign(Object.create(null), state) as SlotRecord;
-	record[kOwner] = target;
+	record[kObject] = target;
 	new Slot(target, record);
 }
 
@@ -219,7 +255,9 @@ function moveMembers(prototype: object, hidden: object): void {
 				e?: unknown,
 				f?: unknown,
 			): unknown {
-				const owner = this[kOwner];
+				const owner = this[kObject];
+				lastValue = owner;
+				lastRecord = this;
 				switch (arguments.length) {
 					case 0:
 						return step.call(owner);
@@ -241,13 +279,16 @@ function moveMembers(prototype: object, hidden: object): void {
 			const {get, set} = descriptor;
 			if (get !== undefined) {
 				descriptor.get = function (this: SlotRecord): unknown {
-					return get.call(this[kOwner]);
+					const owner = this[kObject];
+					lastValue = owner;
+					lastRecord = this;
+					return get.call(owner);
 				};
 			}
 
 			if (set !== undefined) {
 				descriptor.set = function (this: SlotRecord, value: unknown): void {
-					set.call(this[kOwner], value);
+					set.call(this[kObject], value);
 				};
 			}
 		}
