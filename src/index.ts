@@ -1403,14 +1403,11 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		// detectAnchor reads a reply, so the listener must be attached.
 		if (termDOM[kTransport].interactive) {
 			termDOM.attach();
-			try {
-				await termDOM[kExchange].detectAnchor();
-			} catch (error) {
-				// dispose() gives the question up.
-				if (termDOM[kLifecycle] === "disposed") {
-					return;
-				}
-				throw error;
+			// A terminal that does not answer leaves the anchor where it was,
+			// as at attach, and dispose() gives the question up.
+			await termDOM[kExchange].detectAnchor(NaN);
+			if (termDOM[kLifecycle] === "disposed") {
+				return;
 			}
 		}
 	}

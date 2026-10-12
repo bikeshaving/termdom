@@ -9,7 +9,13 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.js";
+import {
+	captureRawOutput,
+	MockProcess,
+	nextFrame,
+	scriptReplies,
+	until,
+} from "./test-utils.js";
 
 const CTRL_Z = "\x1a";
 const PASTE_ON = "\x1b[?2004h";
@@ -204,4 +210,32 @@ test("no frame goes out between handing the terminal back and resuming", async (
 	await until(() => written().includes("while hidden"));
 	expect(written()).toContain("while hidden");
 	await dom.dispose();
+});
+
+// A terminal that never answers the cursor query, or answers too late,
+// leaves the document where it was rather than ending the program.
+test("resuming survives a terminal that does not report the cursor", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	Object.assign(terminal, {platform: "linux", kill: () => {}});
+	const rejections: unknown[] = [];
+	const onRejection = (reason: unknown) => {
+		rejections.push(reason);
+	};
+	process.on("unhandledRejection", onRejection);
+	try {
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.textContent = "inline";
+		await dom.attach();
+		await nextFrame(dom);
+		scriptReplies(terminal, [{ask: "\x1b[6n", reply: null}]);
+		terminal.stdin.simulateResponse(CTRL_Z);
+		await until(() => dom.document.visibilityState === "hidden");
+		terminal.emit("SIGCONT");
+		await until(() => dom.document.visibilityState === "visible");
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+		expect(rejections).toEqual([]);
+		await dom.dispose();
+	} finally {
+		process.removeListener("unhandledRejection", onRejection);
+	}
 });

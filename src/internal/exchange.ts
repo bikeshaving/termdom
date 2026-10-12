@@ -1512,8 +1512,11 @@ export class Exchange extends EventTarget {
 		return answer;
 	}
 
-	/** DSR. The cursor row is the anchor. */
-	detectAnchor(): Promise<number> {
+	/**
+	 * DSR. The cursor row is the anchor. With `silence`, a terminal that
+	 * does not answer in time resolves to it, and the anchor stays.
+	 */
+	detectAnchor(silence?: number): Promise<number> {
 		if (!this[kInteractive]) {
 			return Promise.reject(
 				new Error("Cannot detect cursor position: not interactive"),
@@ -1523,6 +1526,7 @@ export class Exchange extends EventTarget {
 		return nextReply(this, "cursor-report", {
 			ask: CURSOR_QUERY,
 			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: silence,
 			sequence: this[kDSRSequence]++,
 			// The 1-based row the command started on becomes the 0-based
 			// anchor.
