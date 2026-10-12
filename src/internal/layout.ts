@@ -32,6 +32,7 @@ import {
 	flowNext,
 	getScrollOffset,
 	getShadowRoot,
+	isDocumentElement,
 	isInFlatTree,
 	isModalDialog,
 	isShadowIncludingAncestor,
@@ -191,7 +192,7 @@ const TABLE_DISPLAYS = new Set<string>([
 function getLayoutDisplay(element: Element): Display {
 	// The root is on no line and in no container, so the one thing its
 	// blockification changes is its own, and layout reads it computed.
-	const value = element === element.ownerDocument.documentElement
+	const value = isDocumentElement(element)
 		? getComputedValue(element, "display")
 		: getDeclaredDisplay(element);
 	if (value === "inline math") {
@@ -1482,7 +1483,7 @@ function styleLayoutNodeProperties(
 	// viewport. Layout and paint containment give a box its own context
 	// (css-contain-2 §3.2).
 	style.blockFormattingContext =
-		element === element.ownerDocument?.documentElement ||
+		isDocumentElement(element) ||
 		element.tagName === "BODY" ||
 		(display !== "block" && display !== "list-item") ||
 		getComputedValue(element, "overflow") !== "visible" ||
@@ -2812,7 +2813,7 @@ function invalidateNode(layout: Layout, node: Node): void {
 			// The re-add sweep puts a node back under its parent element, and
 			// the root element has none, so the root stays where it is.
 			const parent = layoutNode.parent;
-			if (parent && node !== node.ownerDocument?.documentElement) {
+			if (parent && !isDocumentElement(node)) {
 				parent.removeChild(layoutNode);
 			}
 
