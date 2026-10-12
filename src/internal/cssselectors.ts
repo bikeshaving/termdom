@@ -4,6 +4,9 @@ import * as CSSTree from "./csstree.ts";
 import {
 	type Element,
 	getAttributeList,
+	getAttributeLocalName,
+	getAttributeNamespace,
+	getAttributeValue,
 	getElementChildren,
 	getFirstChildNode,
 	getHeadingLevel,
@@ -906,12 +909,15 @@ function compileAttribute(
 		const attributes = getAttributeList(element);
 		for (let index = 0; index < attributes.length; index++) {
 			const attribute = attributes[index];
-			if (namespace !== undefined && attribute.namespaceURI !== namespace) {
+			if (
+				namespace !== undefined &&
+				getAttributeNamespace(attribute) !== namespace
+			) {
 				continue;
 			}
-			const name = attribute.localName;
+			const name = getAttributeLocalName(attribute);
 			if (name === local || (fold && toASCIILowercase(name) === folded)) {
-				return attribute.value;
+				return getAttributeValue(attribute);
 			}
 		}
 		return null;
@@ -1742,12 +1748,12 @@ function getElementLanguage(element: Element): string | null {
 		const attributes = getAttributeList(node);
 		for (let index = 0; index < attributes.length; index++) {
 			const attribute = attributes[index];
+			const namespace = getAttributeNamespace(attribute);
 			if (
-				attribute.localName === "lang" &&
-				(attribute.namespaceURI === null ||
-					attribute.namespaceURI === XML_NAMESPACE)
+				getAttributeLocalName(attribute) === "lang" &&
+				(namespace === null || namespace === XML_NAMESPACE)
 			) {
-				return attribute.value;
+				return getAttributeValue(attribute);
 			}
 		}
 	}

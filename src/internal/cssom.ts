@@ -26,6 +26,9 @@ import {
 	flushLayout,
 	flushStyle,
 	getAttributeList,
+	getAttributeLocalName,
+	getAttributeNamespace,
+	getAttributeValue,
 	getCellPixels,
 	getCellSizeSetting,
 	getClassTokens,
@@ -4143,7 +4146,9 @@ function getSharedResolved(
 		key += `,${id}`;
 	}
 	for (const attribute of getAttributeList(element)) {
-		key += `\0${attribute.namespaceURI ?? ""}:${attribute.localName}=${attribute.value}`;
+		key += `\0${getAttributeNamespace(attribute) ?? ""}:${
+			getAttributeLocalName(attribute)
+		}=${getAttributeValue(attribute)}`;
 	}
 	const parent = flatParentElement(element);
 	let table: Map<string, Map<string, string>>;
@@ -9684,8 +9689,11 @@ function getRuleIndex(cascade: Cascade): RuleIndex {
 
 function getIdValue(element: Element): string | null {
 	for (const attribute of getAttributeList(element)) {
-		if (attribute.localName === "id" && attribute.namespaceURI === null) {
-			return attribute.value;
+		if (
+			getAttributeLocalName(attribute) === "id" &&
+			getAttributeNamespace(attribute) === null
+		) {
+			return getAttributeValue(attribute);
 		}
 	}
 	return null;

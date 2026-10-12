@@ -5695,13 +5695,13 @@ export class Node extends EventTarget implements globalThis.Node {
 			node2 = attr2.ownerElement;
 			if (attr1 !== null && node1 !== null && node1 === node2) {
 				for (const attr of $((node2 as Element))[kAttributeList]) {
-					if (attr === attr1) {
+					if (objectOf(attr) === attr1) {
 						return (
 							DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC +
 							DOCUMENT_POSITION_PRECEDING
 						);
 					}
-					if (attr === attr2) {
+					if (objectOf(attr) === attr2) {
 						return (
 							DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC +
 							DOCUMENT_POSITION_FOLLOWING
@@ -6797,7 +6797,7 @@ function adoptNode(node: Node, document: Document): void {
 		$(descendant)[kDocument] = document;
 		if (descendant.nodeType === ELEMENT_NODE) {
 			for (const attr of $((descendant as Element))[kAttributeList]) {
-				$(attr)[kDocument] = document;
+				attr[kDocument] = document;
 			}
 		}
 	}
@@ -8043,7 +8043,7 @@ function isNameless(members: readonly Node[]): boolean {
 			continue;
 		}
 		for (const attribute of $((member as Element))[kAttributeList]) {
-			const name = $(attribute)[kLocalName];
+			const name = attribute[kLocalName];
 			if (name === "id" || name === "name") {
 				return false;
 			}
@@ -8193,12 +8193,14 @@ const kClassTokens = Symbol("the parsed class attribute");
  * An element's attributes as the element holds them, for engine code that
  * reads them. `attributes` would build a live NamedNodeMap to hand out.
  */
+/**
+ * An element's attributes, as their slots, so a reader looks none of
+ * them up. The accessors below read them.
+ */
 export function getAttributeList(
 	element: globalThis.Element,
-): readonly globalThis.Attr[] {
-	return $(
-		(element as Element),
-	)[kAttributeList] as unknown as globalThis.Attr[];
+): readonly AttributeSlots[] {
+	return $(element as Element)[kAttributeList];
 }
 
 // The one set every element without classes shares.
@@ -8975,6 +8977,23 @@ function setDescendantText(node: Node, value: string | null): void {
 }
 
 const kValue = Symbol("attribute value");
+
+export type AttributeSlots = Slots<Attr>;
+
+export function getAttributeLocalName(attribute: AttributeSlots): string {
+	return attribute[kLocalName];
+}
+
+export function getAttributeNamespace(
+	attribute: AttributeSlots,
+): string | null {
+	return attribute[kNamespace];
+}
+
+export function getAttributeValue(attribute: AttributeSlots): string {
+	return attribute[kValue];
+}
+
 const kOwnerElement = Symbol("owner element");
 const kQualifiedName = Symbol("qualified name");
 
@@ -9125,7 +9144,7 @@ function changeAttribute(attribute: Attr, value: string): void {
 function appendAttribute(element: Element, attribute: Attr): void {
 	queueAttributeMutationRecord(element, attribute, null);
 	const elementSlots = $(element);
-	elementSlots[kAttributeList].push(attribute);
+	elementSlots[kAttributeList].push(slotsOf(attribute));
 	const attributeSlots = $(attribute);
 	attributeSlots[kOwnerElement] = element;
 	attributeSlots[kDocument] = elementSlots[kDocument];
@@ -9145,7 +9164,7 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 	queueAttributeMutationRecord(element, attribute, oldValue);
 	const elementSlots = $(element);
 	const list = elementSlots[kAttributeList];
-	const index = list.indexOf(attribute);
+	const index = list.indexOf(slotsOf(attribute));
 	if (index !== -1) {
 		list.splice(index, 1);
 	}
@@ -9173,7 +9192,7 @@ function replaceAttribute(
 	);
 	const elementSlots = $(element);
 	const list = elementSlots[kAttributeList];
-	list[list.indexOf(oldAttribute)] = newAttribute;
+	list[list.indexOf(slotsOf(oldAttribute))] = slotsOf(newAttribute);
 	const newAttributeSlots = $(newAttribute);
 	newAttributeSlots[kOwnerElement] = element;
 	newAttributeSlots[kDocument] = elementSlots[kDocument];
@@ -9220,8 +9239,8 @@ function getAttributeByName(
 		name = toASCIILowercase(name);
 	}
 	for (const attribute of elementSlots[kAttributeList]) {
-		if ($(attribute)[kQualifiedName] === name) {
-			return attribute;
+		if (attribute[kQualifiedName] === name) {
+			return objectOf(attribute);
 		}
 	}
 	return null;
@@ -9234,10 +9253,8 @@ function getAttributeByNamespace(
 ): Attr | null {
 	const ns = namespace === "" || namespace == null ? null : String(namespace);
 	for (const attribute of $(element)[kAttributeList]) {
-		if (
-			$(attribute)[kNamespace] === ns && $(attribute)[kLocalName] === localName
-		) {
-			return attribute;
+		if (attribute[kNamespace] === ns && attribute[kLocalName] === localName) {
+			return objectOf(attribute);
 		}
 	}
 	return null;
@@ -9346,7 +9363,9 @@ class NamedNodeMap implements globalThis.NamedNodeMap {
 	}
 
 	[kListMembers](): Node[] {
-		return $(this[kElement])[kAttributeList].slice();
+		return $(this[kElement])[kAttributeList].map((attribute) =>
+			objectOf(attribute),
+		);
 	}
 
 	[kListNames](items: Node[]): Map<string, Node> {
@@ -9538,7 +9557,7 @@ export interface Element {
 	[kPrefix]: string | null;
 	[kLocalName]: string;
 	[kUpperName]: string | null;
-	[kAttributeList]: Attr[];
+	[kAttributeList]: Array<Slots<Attr>>;
 	[kCustomState]: CustomElementState;
 	[kDefinition]: CustomElementDefinition | null;
 	[kIsValue]: string | null;
@@ -9950,7 +9969,7 @@ export class Element extends Node implements globalThis.Element {
 
 	getAttributeNames(): string[] {
 		return $(this)[kAttributeList].map(
-			(attribute) => $(attribute)[kQualifiedName],
+			(attribute) => attribute[kQualifiedName],
 		);
 	}
 
@@ -9982,8 +10001,8 @@ export class Element extends Node implements globalThis.Element {
 		}
 		const string = value === null ? "null" : String(value);
 		for (const attribute of slots[kAttributeList]) {
-			if ($(attribute)[kQualifiedName] === name) {
-				changeAttribute(attribute, string);
+			if (attribute[kQualifiedName] === name) {
+				changeAttribute(objectOf(attribute), string);
 				return;
 			}
 		}
@@ -10067,7 +10086,7 @@ export class Element extends Node implements globalThis.Element {
 			name = toASCIILowercase(name);
 		}
 		for (const attribute of slots[kAttributeList]) {
-			if ($(attribute)[kQualifiedName] === name) {
+			if (attribute[kQualifiedName] === name) {
 				return true;
 			}
 		}
@@ -10116,7 +10135,7 @@ export class Element extends Node implements globalThis.Element {
 		if (!(attr instanceof Attr)) {
 			throw new TypeError("That is not an Attr");
 		}
-		if (!$(this)[kAttributeList].includes(attr)) {
+		if (!$(this)[kAttributeList].includes(slotsOf(attr))) {
 			throw notFoundError("That attribute is not on this element");
 		}
 		removeAttributeNode(this, attr);
@@ -10483,10 +10502,10 @@ export class Element extends Node implements globalThis.Element {
 		);
 		for (const attribute of slots[kAttributeList]) {
 			const copiedAttribute = new Attr(
-				$(attribute)[kNamespace],
-				$(attribute)[kPrefix],
-				$(attribute)[kLocalName],
-				$(attribute)[kValue],
+				attribute[kNamespace],
+				attribute[kPrefix],
+				attribute[kLocalName],
+				attribute[kValue],
 			);
 			$(copiedAttribute)[kDocument] = document;
 			appendAttribute(copy, copiedAttribute);
@@ -13325,10 +13344,10 @@ function upgradeElement(
 	elementSlots[kCustomState] = "failed";
 	for (const attribute of elementSlots[kAttributeList]) {
 		enqueueCallbackReaction(element, "attributeChangedCallback", [
-			$(attribute)[kLocalName],
+			attribute[kLocalName],
 			null,
-			$(attribute)[kValue],
-			$(attribute)[kNamespace],
+			attribute[kValue],
+			attribute[kNamespace],
 		]);
 	}
 	if (element.isConnected) {
@@ -23396,10 +23415,10 @@ function syncDataset(map: DOMStringMap): void {
 	const element = mapSlots[kDatasetElement];
 	const names: string[] = [];
 	for (const attribute of $(element)[kAttributeList]) {
-		if ($(attribute)[kNamespace] !== null) {
+		if (attribute[kNamespace] !== null) {
 			continue;
 		}
-		const property = getDatasetPropertyName($(attribute)[kLocalName]);
+		const property = getDatasetPropertyName(attribute[kLocalName]);
 		if (property === null) {
 			continue;
 		}
@@ -24876,19 +24895,27 @@ export function flatParentElement(
 		null;
 }
 
+// The parent comes back remembered, as the walk up reads it next.
 function getFlatTreeParent(node: Node): Element | null {
-	const slot = getAssignedSlot(node);
-	if (slot !== null) {
-		return slot;
+	const slots = $(node);
+	const type = node.nodeType;
+	if (type === ELEMENT_NODE || type === TEXT_NODE) {
+		const slot = (slots as Slottable)[kAssignedSlot];
+		if (slot !== null) {
+			return slot;
+		}
 	}
-	const parent = objectOf($(node)[kParent]);
-	if (parent !== null) {
+	const parentSlots = slots[kParent];
+	if (parentSlots !== null) {
+		const parent = rememberObject(parentSlots);
 		if (isElement(parent)) {
 			return parent;
 		}
-		return isShadowRoot(parent) ? $(parent)[kHost] : null;
+		return isShadowRoot(parent)
+			? (parentSlots as Slots<ShadowRoot>)[kHost]
+			: null;
 	}
-	return $((node as Element))[kPseudoHost] ?? null;
+	return (slots as Element)[kPseudoHost] ?? null;
 }
 
 /**
@@ -28831,10 +28858,10 @@ function equalNodes(a: Node, b: Node): boolean {
 			for (const attribute of $(one)[kAttributeList]) {
 				const other = getAttributeByNamespace(
 					two,
-					$(attribute)[kNamespace],
-					$(attribute)[kLocalName],
+					attribute[kNamespace],
+					attribute[kLocalName],
 				);
-				if (other === null || $(other)[kValue] !== $(attribute)[kValue]) {
+				if (other === null || $(other)[kValue] !== attribute[kValue]) {
 					return false;
 				}
 			}
@@ -28895,10 +28922,8 @@ function locateNamespacePrefix(
 		return elementSlots[kPrefix];
 	}
 	for (const attribute of elementSlots[kAttributeList]) {
-		if (
-			$(attribute)[kPrefix] === "xmlns" && $(attribute)[kValue] === namespace
-		) {
-			return $(attribute)[kLocalName];
+		if (attribute[kPrefix] === "xmlns" && attribute[kValue] === namespace) {
+			return attribute[kLocalName];
 		}
 	}
 	const parent = element.parentElement;
@@ -28923,19 +28948,19 @@ function locateNamespace(node: Node, prefix: string | null): string | null {
 			}
 			for (const attribute of $(element)[kAttributeList]) {
 				if (
-					$(attribute)[kNamespace] === XMLNS_NAMESPACE &&
-					$(attribute)[kPrefix] === "xmlns" &&
-					$(attribute)[kLocalName] === prefix
+					attribute[kNamespace] === XMLNS_NAMESPACE &&
+					attribute[kPrefix] === "xmlns" &&
+					attribute[kLocalName] === prefix
 				) {
-					return $(attribute)[kValue] === "" ? null : $(attribute)[kValue];
+					return attribute[kValue] === "" ? null : attribute[kValue];
 				}
 				if (
-					$(attribute)[kNamespace] === XMLNS_NAMESPACE &&
-					$(attribute)[kPrefix] === null &&
-					$(attribute)[kLocalName] === "xmlns" &&
+					attribute[kNamespace] === XMLNS_NAMESPACE &&
+					attribute[kPrefix] === null &&
+					attribute[kLocalName] === "xmlns" &&
 					prefix === null
 				) {
-					return $(attribute)[kValue] === "" ? null : $(attribute)[kValue];
+					return attribute[kValue] === "" ? null : attribute[kValue];
 				}
 			}
 			const parent = element.parentElement;
@@ -33496,10 +33521,10 @@ function createTreeAdapter(document: Document | null) {
 		},
 		getAttrList(element: Element): ParseAttribute[] {
 			return $(element)[kAttributeList].map((attribute) => ({
-				name: $(attribute)[kQualifiedName],
-				value: $(attribute)[kValue],
-				namespace: $(attribute)[kNamespace] ?? undefined,
-				prefix: $(attribute)[kPrefix] ?? undefined,
+				name: attribute[kQualifiedName],
+				value: attribute[kValue],
+				namespace: attribute[kNamespace] ?? undefined,
+				prefix: attribute[kPrefix] ?? undefined,
 			}));
 		},
 		getTagName(element: Element): string {
@@ -34578,7 +34603,7 @@ function serializeNode(
 					: $(element)[kQualifiedName];
 			let html = `<${tagName}`;
 			for (const attribute of $(element)[kAttributeList]) {
-				html += ` ${getAttributeSerializedName(attribute)}="${escapeAttribute($(attribute)[kValue])}"`;
+				html += ` ${getAttributeSerializedName(objectOf(attribute))}="${escapeAttribute(attribute[kValue])}"`;
 			}
 			html += ">";
 			if (namespace === HTML_NAMESPACE && VOID_ELEMENTS.has(tagName)) {
