@@ -7,7 +7,7 @@
  * Each redirect is checked against the policy again and followed on the
  * network. Only a document that is itself a file: URL loads file: URLs.
  */
-import {$, seal} from "./slots.ts";
+import {$, declareSealedRoot, seal} from "./slots.ts";
 import {splitOnASCIIWhitespace} from "./text.ts";
 
 // A load goes to the global fetch, so a program that replaces it to mock
@@ -57,6 +57,8 @@ export class ExtendableEvent extends Event {
 		$(this)[kExtend]!(lifetime);
 	}
 }
+
+declareSealedRoot(ExtendableEvent);
 
 // Service Workers §4.4.1: an event is active while it is dispatched, or
 // while a promise it was given is pending.

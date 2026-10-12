@@ -58,7 +58,14 @@ import {
 	isLayoutHintAttribute,
 } from "./hints.ts";
 import type {Layout} from "./layout.ts";
-import {$, $maybe, adopt as adoptSlots, ownerOf, seal} from "./slots.ts";
+import {
+	$,
+	$maybe,
+	adopt as adoptSlots,
+	declareSealedRoot,
+	ownerOf,
+	seal,
+} from "./slots.ts";
 import {getStringWidth, splitOnASCIIWhitespace} from "./text.ts";
 import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
 import {
@@ -807,6 +814,8 @@ class CSSStyleDeclaration {
 	}
 }
 
+declareSealedRoot(CSSStyleDeclaration);
+
 const kTransitionsExist = Symbol("transitionsExist");
 
 const EMPTY_DECLARATIONS: CSSValues.DeclarationBlock = {
@@ -1380,6 +1389,8 @@ export class MediaList implements globalThis.MediaList {
 	}
 }
 
+declareSealedRoot(MediaList);
+
 function parseMediaText(list: MediaList, text: string): void {
 	const listSlots = $(list);
 	listSlots[kMedia].length = 0;
@@ -1462,6 +1473,8 @@ abstract class CSSRule {
 		return ruleSheets.get(this) ?? null;
 	}
 }
+
+declareSealedRoot(CSSRule);
 
 for (const [name, value] of Object.entries(RULE_TYPES)) {
 	Object.defineProperty(CSSRule.prototype, name, {value, enumerable: true});
@@ -2661,6 +2674,8 @@ class CSSRuleList {
 	}
 }
 
+declareSealedRoot(CSSRuleList);
+
 function createRuleList(rules: readonly CSSRule[]): CSSRuleList {
 	const list = new CSSRuleList(rules);
 	syncIndexed(list);
@@ -2692,6 +2707,8 @@ class StyleSheetList {
 		return $(this)[kSheets][Symbol.iterator]();
 	}
 }
+
+declareSealedRoot(StyleSheetList);
 
 const kOwnerNode = Symbol("ownerNode");
 const kConstructed = Symbol("constructed");
@@ -2938,6 +2955,8 @@ class CSSStyleSheet {
 		syncIndexed(slots[kRuleList]);
 	}
 }
+
+declareSealedRoot(CSSStyleSheet);
 
 // `@import` must precede every rule except another `@import`, and
 // `@namespace` every rule except those two. A `@namespace` also needs a

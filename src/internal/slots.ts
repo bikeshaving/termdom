@@ -13,9 +13,18 @@
  * steps and defaults a class defines under symbol keys move there from
  * the public prototype, and run with the record as `this`, so a step
  * reads its own slots without a lookup. `ownerOf()` gives it the object.
+ *
+ * A family, such as every element, makes its records one way instead:
+ * one constructor and one prototype for all of them, and the slots its
+ * root classes declare in one order, so every element's record has one
+ * shape and a read of one stays fast however many kinds of element pass
+ * through it. A class's own slots go in a second record, its extra, and
+ * its steps in a table the record points to, which dispatchers on the
+ * family's prototype call.
  */
 
 const kObject = Symbol("object");
+const kSteps = Symbol("steps");
 
 /**
  * A record as the tree links hold it: the symbol-keyed slots of `T`, and
@@ -74,6 +83,26 @@ const superSteps = new Map<
 	Map<symbol, (this: object, ...args: unknown[]) => unknown>
 >();
 const recordTypes = new Map<Constructor, new () => SlotRecord>();
+
+interface Family {
+	prototype: object;
+	Record: new (object: object, steps: object, extra: object | null) =>
+	SlotRecord;
+	dispatched: Set<symbol>;
+}
+
+interface FamilyPlan {
+	Record: Family["Record"];
+	steps: object;
+	Extra: (new () => object) | null;
+}
+
+const sealedRoots = new Set<Constructor>();
+const familyRoots = new Set<Constructor>();
+const families = new Map<Constructor, Family>();
+const familyPlans = new Map<Constructor, FamilyPlan | null>();
+const extraTypes = new Set<Constructor>();
+let extraKey = Symbol("unused extra");
 const recordTypesByPrototype = new Map<object, new () => SlotRecord>();
 // The two objects looked up last, since the engine often goes back and
 // forth between two, such as an element and its computed style.
@@ -92,6 +121,24 @@ export function seal(
 	type: Constructor,
 	root: Constructor,
 ): void {
+	let plan = familyPlans.get(type);
+	if (plan === undefined) {
+		plan = planFamilyRecord(type, root);
+		familyPlans.set(type, plan);
+	}
+
+	if (plan !== null) {
+		new Slot(
+			target,
+			new plan.Record(
+				target,
+				plan.steps,
+				plan.Extra === null ? null : new plan.Extra(),
+			),
+		);
+		return;
+	}
+
 	let Record = recordTypes.get(type);
 	if (Record === undefined) {
 		const hidden = hiddenPrototype(type, root);
@@ -107,6 +154,185 @@ export function seal(
 	const record = new Record();
 	record[kObject] = target;
 	new Slot(target, record);
+}
+
+/**
+ * Marks `root` as a class whose constructor seals what it makes, so
+ * prepareClasses() can find the classes below it.
+ */
+export function declareSealedRoot(root: Constructor): void {
+	sealedRoots.add(root);
+}
+
+/**
+ * Moves the steps of every sealed class among `values` off its public
+ * prototype, where reflection would list them, before a page can look.
+ * A class otherwise moves them when its first object is made.
+ */
+export function prepareClasses(values: Iterable<unknown>): void {
+	for (const value of values) {
+		if (typeof value !== "function") {
+			continue;
+		}
+
+		const type = value as Constructor;
+		let root: Constructor | null = null;
+		for (
+			let current: unknown = type;
+			typeof current === "function" && root === null;
+			current = Object.getPrototypeOf(current)
+		) {
+			if (sealedRoots.has(current as Constructor)) {
+				root = current as Constructor;
+			}
+		}
+
+		if (root !== null && !familyPlans.has(type)) {
+			const plan = planFamilyRecord(type, root);
+			familyPlans.set(type, plan);
+			if (plan === null) {
+				hiddenPrototype(type, root);
+			}
+		}
+	}
+}
+
+/**
+ * Makes each of `roots` the root of a family, whose records share one
+ * shape. `extra` is the key a record keeps its class's own slots under.
+ * Called before any object of a family is made.
+ */
+export function defineFamilies(extra: symbol, roots: Constructor[]): void {
+	extraKey = extra;
+	for (const root of roots) {
+		if (hiddenPrototypes.has(root)) {
+			throw new Error(`${root.name} made records before its family`);
+		}
+
+		familyRoots.add(root);
+	}
+}
+
+/**
+ * Marks `type` as declaring slots of its own, which its records keep in
+ * their extra.
+ */
+export function declareExtraSlots(type: Constructor): void {
+	extraTypes.add(type);
+}
+
+function planFamilyRecord(
+	type: Constructor,
+	root: Constructor,
+): FamilyPlan | null {
+	let familyRoot: Constructor | null = null;
+	let extra = false;
+	for (
+		let current = type;
+		current !== root && familyRoot === null;
+		current = Object.getPrototypeOf(current) as Constructor
+	) {
+		if (familyRoots.has(current)) {
+			familyRoot = current;
+		} else if (extraTypes.has(current)) {
+			extra = true;
+		}
+	}
+
+	if (familyRoot === null && familyRoots.has(root)) {
+		familyRoot = root;
+	}
+
+	if (familyRoot === null) {
+		return null;
+	}
+
+	const family = getFamily(familyRoot, root);
+	const steps = hiddenPrototype(type, root);
+	for (
+		let current = type;
+		current !== familyRoot;
+		current = Object.getPrototypeOf(current) as Constructor
+	) {
+		addDispatchers(family, hiddenPrototype(current, root));
+	}
+
+	return {
+		Record: family.Record,
+		steps,
+		Extra: extra ? createExtraType() : null,
+	};
+}
+
+function getFamily(familyRoot: Constructor, root: Constructor): Family {
+	let family = families.get(familyRoot);
+	if (family === undefined) {
+		const prototype =
+			Object.create(hiddenPrototype(familyRoot, root)) as object;
+		const key = extraKey;
+
+		function FamilyRecord(
+			this: SlotRecord,
+			object: object,
+			steps: object,
+			extra: object | null,
+		): void {
+			this[kObject] = object;
+			this[kSteps] = steps;
+			this[key] = extra;
+		}
+
+		FamilyRecord.prototype = prototype;
+		family = {
+			prototype,
+			Record: FamilyRecord as unknown as Family["Record"],
+			dispatched: new Set(),
+		};
+		families.set(familyRoot, family);
+	}
+
+	return family;
+}
+
+// A step a class below the family's root defines is found through the
+// record's table, since the record's prototype is the family's.
+function addDispatchers(family: Family, hidden: object): void {
+	for (const key of Object.getOwnPropertySymbols(hidden)) {
+		if (family.dispatched.has(key)) {
+			continue;
+		}
+
+		family.dispatched.add(key);
+		const descriptor = Object.getOwnPropertyDescriptor(hidden, key)!;
+		if (descriptor.get !== undefined || descriptor.set !== undefined) {
+			Object.defineProperty(family.prototype, key, {
+				get(this: SlotRecord): unknown {
+					return Reflect.get(this[kSteps] as object, key, this);
+				},
+				set(this: SlotRecord, value: unknown): void {
+					Reflect.set(this[kSteps] as object, key, value, this);
+				},
+				configurable: true,
+			});
+		} else {
+			Object.defineProperty(family.prototype, key, {
+				value(this: SlotRecord, ...args: unknown[]): unknown {
+					const step = (this[kSteps] as Record<symbol, unknown>)[key] as
+						((...stepArgs: unknown[]) => unknown) | undefined;
+					return step === undefined ? undefined : step.apply(this, args);
+				},
+				configurable: true,
+				writable: true,
+			});
+		}
+	}
+}
+
+function createExtraType(): new () => object {
+	function Extra(): void {}
+
+	Extra.prototype = Object.create(null) as object;
+	return Extra as unknown as new () => object;
 }
 
 // Records made by a constructor keep their fields in the object, where
@@ -282,6 +508,12 @@ export function moveLateMembers(): void {
 		}
 
 		moveMembers(type.prototype, hidden);
+	}
+
+	for (const [type, plan] of familyPlans) {
+		if (plan !== null) {
+			familyPlans.delete(type);
+		}
 	}
 }
 

@@ -83,9 +83,13 @@ import {
 	$,
 	$maybe,
 	adopt,
+	declareExtraSlots,
+	declareSealedRoot,
+	defineFamilies,
 	isSealed,
 	objectOf,
 	ownerOf,
+	prepareClasses,
 	rememberObject,
 	seal,
 	type Slots,
@@ -132,6 +136,12 @@ const UA_SHADOW_HOSTS = new Set([
 ]);
 const kNext = Symbol("next sibling link");
 const kFirstChild = Symbol("first child");
+
+// The slots a class below Node, Element or CharacterData declares of its
+// own, kept apart so that every record of the family has one shape.
+const kExtra = Symbol("the slots of a node's own class");
+const kAssignedSlot = Symbol("assigned slot");
+const kManualSlot = Symbol("manual slot assignment");
 
 const ELEMENT_NODE = 1;
 const ATTRIBUTE_NODE = 2;
@@ -386,7 +396,7 @@ export function getTextControlCaretOffset(
 	if (attached === undefined) {
 		return null;
 	}
-	const found = $(attached)[kLayout].caretPositionFromPoint(
+	const found = $(attached)[kExtra][kLayout].caretPositionFromPoint(
 		x,
 		y,
 		valueText,
@@ -469,7 +479,7 @@ export function revealTextControlCaret(document: globalThis.Document): void {
 	if (attached === undefined) {
 		return;
 	}
-	const content = $(attached)[kLayout].contentRect(active);
+	const content = $(attached)[kExtra][kLayout].contentRect(active);
 	if (!content) {
 		return;
 	}
@@ -1010,9 +1020,9 @@ function buildUAShadowTree(
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowTree<globalThis.ShadowRoot>(host);
 	const attachedSlots = $(attached);
-	attachedSlots[kLayout].invalidate();
+	attachedSlots[kExtra][kLayout].invalidate();
 	observeShadowRoot($(host)[kDocument], root);
-	attachedSlots[kCascade].registerShadowRoot(root);
+	attachedSlots[kExtra][kCascade].registerShadowRoot(root);
 	return root;
 }
 
@@ -1510,6 +1520,8 @@ export class Event extends EventBase implements globalThis.Event {
 		slots[kState].target = null;
 	}
 }
+
+declareSealedRoot(Event);
 
 /** Change the type dispatch uses for listener lookup, for the legacy pass. */
 function setEventType(event: Event, type: string): void {
@@ -2400,7 +2412,7 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 		if (target === null || target.ownerDocument === null) {
 			return null;
 		}
-		const view = $(target.ownerDocument)[kDefaultView];
+		const view = $(target.ownerDocument)[kExtra][kDefaultView];
 		return (view ?? null) as {scrollX: number; scrollY: number} | null;
 	}
 
@@ -2925,6 +2937,8 @@ class FileList {
 	*[Symbol.iterator](): Generator<never, void, unknown> {}
 }
 
+declareSealedRoot(FileList);
+
 Object.defineProperty(FileList.prototype, Symbol.toStringTag, {
 	value: "FileList",
 	configurable: true,
@@ -2979,6 +2993,8 @@ class DataTransferItem {
 		return null;
 	}
 }
+
+declareSealedRoot(DataTransferItem);
 
 Object.defineProperty(DataTransferItem.prototype, Symbol.toStringTag, {
 	value: "DataTransferItem",
@@ -3063,6 +3079,8 @@ class DataTransferItemList {
 		syncTransferItems(owner);
 	}
 }
+
+declareSealedRoot(DataTransferItemList);
 
 Object.defineProperty(DataTransferItemList.prototype, Symbol.toStringTag, {
 	value: "DataTransferItemList",
@@ -3234,6 +3252,8 @@ class DataTransfer {
 		syncTransferItems(this);
 	}
 }
+
+declareSealedRoot(DataTransfer);
 
 Object.defineProperty(DataTransfer.prototype, Symbol.toStringTag, {
 	value: "DataTransfer",
@@ -3935,6 +3955,8 @@ export class EventTarget implements globalThis.EventTarget {
 	}
 }
 
+declareSealedRoot(EventTarget);
+
 function flattenMore(
 	options: boolean | globalThis.AddEventListenerOptions | undefined,
 ): {
@@ -4297,7 +4319,7 @@ const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> =
 // source during that inert pass, turning sanitization itself into
 // execution.
 function isScriptingEnabled(document: Document | null): boolean {
-	return document !== null && $(document)[kDefaultView] !== null;
+	return document !== null && $(document)[kExtra][kDefaultView] !== null;
 }
 
 function compileEventHandler(
@@ -4317,7 +4339,7 @@ function compileEventHandler(
 	if (!isScriptingEnabled(document)) {
 		return null;
 	}
-	if ($(document)[kAllowsInlineHandler]?.(value.element) === false) {
+	if ($(document)[kExtra][kAllowsInlineHandler]?.(value.element) === false) {
 		setEventHandler(target, type, null);
 		return null;
 	}
@@ -4342,7 +4364,10 @@ function handlerAttributeChanged(
 		FORWARDED_HANDLER_ATTRIBUTES.has(localName) &&
 		(element.localName === "body" || element.localName === "frameset");
 	const target: EventTarget | null = forwarded
-		? ($($(element)[kDocument])[kDefaultView] as unknown as EventTarget | null)
+		? ($(
+			$(element)[kDocument],
+		)[kExtra][kDefaultView] as unknown as EventTarget |
+			null)
 		: element;
 	if (target === null) {
 		return;
@@ -4369,14 +4394,14 @@ function installEventHandlers(
 function installForwardedEventHandler(prototype: object, name: string): void {
 	Object.defineProperty(prototype, name, {
 		get(this: Element): unknown {
-			const view = $($(this)[kDocument])[kDefaultView] as Record<
+			const view = $($(this)[kDocument])[kExtra][kDefaultView] as Record<
 				string,
 				unknown
 			> | null;
 			return view === null ? null : (view[name] ?? null);
 		},
 		set(this: Element, value: unknown): void {
-			const view = $($(this)[kDocument])[kDefaultView] as Record<
+			const view = $($(this)[kDocument])[kExtra][kDefaultView] as Record<
 				string,
 				unknown
 			> | null;
@@ -4416,7 +4441,7 @@ function retarget(
 		) {
 			return current;
 		}
-		current = $((root as DocumentFragment))[kHost];
+		current = $((root as DocumentFragment))[kExtra][kHost];
 	}
 }
 
@@ -4438,7 +4463,7 @@ function appendToPath(
 		invocationTarget instanceof Node && isShadowRoot(getRoot(invocationTarget));
 	const rootOfClosedTree =
 		invocationTarget instanceof ShadowRoot &&
-		$(invocationTarget)[kShadowMode] === "closed";
+		$(invocationTarget)[kExtra][kShadowMode] === "closed";
 	state.path.push({
 		invocationTarget,
 		invocationTargetInShadowTree: inShadowTree,
@@ -4679,7 +4704,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 				const slotRoot = getRoot(parent as Node);
 				if (
 					slotRoot instanceof ShadowRoot &&
-					$(slotRoot)[kShadowMode] === "closed"
+					$(slotRoot)[kExtra][kShadowMode] === "closed"
 				) {
 					slotInClosedTree = true;
 				}
@@ -5126,7 +5151,7 @@ export function getDocumentExchange(
 		return null;
 	}
 	const attached = getAttachedDocument(document as unknown as Document);
-	return attached === undefined ? null : $(attached)[kExchange];
+	return attached === undefined ? null : $(attached)[kExtra][kExchange];
 }
 
 function getSessionExchange(target: EventTarget): EventTarget | null {
@@ -5135,7 +5160,7 @@ function getSessionExchange(target: EventTarget): EventTarget | null {
 		return null;
 	}
 	const attached = getAttachedDocument(document);
-	return attached === undefined ? null : $(attached)[kExchange];
+	return attached === undefined ? null : $(attached)[kExtra][kExchange];
 }
 
 // Every dispatched event reaches the exchange's listeners after its path,
@@ -5154,7 +5179,7 @@ function deliverToSession(exchange: EventTarget, event: Event): void {
 export function requestRender(document: globalThis.Document): void {
 	const attached = getAttachedDocument(document as unknown as Node);
 	if (attached !== undefined) {
-		void $(attached)[kRender]();
+		void $(attached)[kExtra][kRender]();
 	}
 }
 
@@ -5163,16 +5188,16 @@ export function setDocumentVisible(
 	visible: boolean,
 ): void {
 	const attached = getAttachedDocument(document as unknown as Node);
-	if (attached === undefined || $(attached)[kVisible] === visible) {
+	if (attached === undefined || $(attached)[kExtra][kVisible] === visible) {
 		return;
 	}
-	$(attached)[kVisible] = visible;
+	$(attached)[kExtra][kVisible] = visible;
 	dispatch(attached, new Event("visibilitychange", {bubbles: true}));
 }
 
 function isDocumentVisible(document: Document): boolean {
 	const attached = getAttachedDocument(document);
-	return attached === undefined || $(attached)[kVisible];
+	return attached === undefined || $(attached)[kExtra][kVisible];
 }
 
 // For an object callback, handleEvent is looked up at call time.
@@ -5203,7 +5228,7 @@ function callListener(
 const reportingWindows = new WeakSet<object>();
 
 function reportError(error: unknown, document: Document | null = null): void {
-	const view = document === null ? null : $(document)[kDefaultView];
+	const view = document === null ? null : $(document)[kExtra][kDefaultView];
 	if (view !== null && !reportingWindows.has(view)) {
 		const event = new ErrorEvent("error", {
 			cancelable: true,
@@ -5228,7 +5253,7 @@ function reportError(error: unknown, document: Document | null = null): void {
 		(document === null ? undefined : getAttachedDocument(document)) ??
 		(ambient === null ? undefined : getAttachedDocument(ambient));
 	if (attached !== undefined) {
-		$(attached)[kReportUncaught](error);
+		$(attached)[kExtra][kReportUncaught](error);
 		return;
 	}
 	const report = (globalThis as {reportError?: (e: unknown) => void})
@@ -5299,9 +5324,9 @@ function registerDocumentWide(
 	document: Document,
 ): void {
 	const documentSlots = $(document);
-	const held = documentSlots[kDocumentWideLists];
+	const held = documentSlots[kExtra][kDocumentWideLists];
 	if (held === null) {
-		documentSlots[kDocumentWideLists] = new Set([collection]);
+		documentSlots[kExtra][kDocumentWideLists] = new Set([collection]);
 	} else {
 		held.add(collection);
 	}
@@ -5348,7 +5373,7 @@ function runChildrenChangedSteps(
 			}
 		}
 	}
-	const wide = $(pointSlots[kDocument])[kDocumentWideLists];
+	const wide = $(pointSlots[kDocument])[kExtra][kDocumentWideLists];
 	if (wide !== null) {
 		for (const collection of wide) {
 			$(collection)[kChildrenChangedSteps](point, changed, added);
@@ -5393,7 +5418,7 @@ function syncAttributeCollections(element: Element, localName: string): void {
 			}
 		}
 	}
-	const wide = $(elementSlots[kDocument])[kDocumentWideLists];
+	const wide = $(elementSlots[kDocument])[kExtra][kDocumentWideLists];
 	if (wide !== null) {
 		for (const collection of wide) {
 			$(collection)[kAttributeSync](element, localName);
@@ -5430,6 +5455,7 @@ export interface Node {
 	// The fields in RARE_FIELDS, once one of them is set to anything but its
 	// default. Undefined for most nodes.
 	[kRare]: Record<symbol, unknown> | undefined;
+	[kExtra]: this;
 	[kRegistry]: CustomElementRegistry | null;
 	[kParent]: Slots<Node> | null;
 	[kConnected]: boolean;
@@ -5519,7 +5545,7 @@ export class Node extends EventTarget implements globalThis.Node {
 	}
 
 	get baseURI(): string {
-		return $($(this)[kDocument])[kDocumentURL];
+		return $($(this)[kDocument])[kExtra][kDocumentURL];
 	}
 
 	get isConnected(): boolean {
@@ -5905,7 +5931,7 @@ function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
 		root = current;
 	}
 	if (root.nodeType === DOCUMENT_FRAGMENT_NODE) {
-		const host = $((root as DocumentFragment))[kHost];
+		const host = $((root as DocumentFragment))[kExtra][kHost];
 		if (host != null) {
 			return isHostIncludingInclusiveAncestor(ancestor, host);
 		}
@@ -5930,7 +5956,7 @@ function canBeAncestor(node: Node): boolean {
 function getShadowIncludingRoot(node: Node): Node {
 	const root = getRoot(node);
 	return isShadowRoot(root)
-		? getShadowIncludingRoot($((root as ShadowRoot))[kHost] as Element)
+		? getShadowIncludingRoot($((root as ShadowRoot))[kExtra][kHost] as Element)
 		: root;
 }
 
@@ -5945,7 +5971,7 @@ function isShadowIncludingInclusiveAncestor(
 	if (isShadowRoot(root)) {
 		return isShadowIncludingInclusiveAncestor(
 			ancestor,
-			$((root as ShadowRoot))[kHost] as Element,
+			$((root as ShadowRoot))[kExtra][kHost] as Element,
 		);
 	}
 	return false;
@@ -6227,7 +6253,6 @@ const kSlotAssignment = Symbol("slot assignment");
 const kAssignedNodes = Symbol("assigned nodes");
 const kCustomState = Symbol("custom element state");
 
-const kAssignedSlot = Symbol("assigned slot");
 const kDefinition = Symbol("element definition");
 const kRoot = Symbol("root");
 
@@ -6288,7 +6313,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	if (
 		isShadowRoot(getRoot(oldParent)) &&
 		oldParent instanceof HTMLSlotElement &&
-		$(oldParent)[kAssignedNodes].length === 0
+		$(oldParent)[kExtra][kAssignedNodes].length === 0
 	) {
 		signalASlotChange(oldParent);
 	}
@@ -6328,7 +6353,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	const shadow = newParent.nodeType === ELEMENT_NODE
 		? $((newParent as Element))[kShadowRoot]
 		: null;
-	if (shadow !== null && $(shadow)[kSlotAssignment] === "named") {
+	if (shadow !== null && $(shadow)[kExtra][kSlotAssignment] === "named") {
 		if (isSlottable(node)) {
 			assignASlot(node as Slottable);
 		}
@@ -6336,7 +6361,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	if (
 		isShadowRoot(getRoot(newParent)) &&
 		newParent instanceof HTMLSlotElement &&
-		$(newParent)[kAssignedNodes].length === 0
+		$(newParent)[kExtra][kAssignedNodes].length === 0
 	) {
 		signalASlotChange(newParent);
 	}
@@ -6447,7 +6472,7 @@ function insertNode(
 			? $((parent as Element))[kShadowRoot]
 			: null;
 		if (shadow !== null) {
-			if ($(shadow)[kSlotAssignment] === "named") {
+			if ($(shadow)[kExtra][kSlotAssignment] === "named") {
 				if (isSlottable(inserted)) {
 					assignASlot(inserted as Slottable);
 				}
@@ -6461,7 +6486,7 @@ function insertNode(
 		}
 		if (
 			parent instanceof HTMLSlotElement &&
-			$(parent)[kAssignedNodes].length === 0 &&
+			$(parent)[kExtra][kAssignedNodes].length === 0 &&
 			isShadowRoot(getRoot(parent))
 		) {
 			signalASlotChange(parent);
@@ -6726,13 +6751,15 @@ function removeNode(node: Node, suppressObservers = false): void {
 	const hostShadow = parent.nodeType === ELEMENT_NODE
 		? $((parent as Element))[kShadowRoot]
 		: null;
-	if (hostShadow !== null && $(hostShadow)[kSlotAssignment] === "manual") {
+	if (
+		hostShadow !== null && $(hostShadow)[kExtra][kSlotAssignment] === "manual"
+	) {
 		assignSlottablesForTree(hostShadow);
 	}
 	if (
 		isShadowRoot(getRoot(parent)) &&
 		parent instanceof HTMLSlotElement &&
-		$(parent)[kAssignedNodes].length === 0
+		$(parent)[kExtra][kAssignedNodes].length === 0
 	) {
 		signalASlotChange(parent);
 	}
@@ -6745,11 +6772,11 @@ function removeNode(node: Node, suppressObservers = false): void {
 	// silently so the next focus() starts fresh.
 	const document = nodeSlots[kDocument];
 	const documentSlots = $(document);
-	const active = documentSlots[kActiveElement];
+	const active = documentSlots[kExtra][kActiveElement];
 	if (active !== null) {
 		for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 			if (descendant === active) {
-				documentSlots[kActiveElement] = null;
+				documentSlots[kExtra][kActiveElement] = null;
 				// Tab carries on from where the focused element was.
 				focusStartingPoints.set(document, {
 					tabIndex: (active as HTMLElement).tabIndex ?? 0,
@@ -6758,11 +6785,11 @@ function removeNode(node: Node, suppressObservers = false): void {
 				});
 				// The ancestors it left were :focus-within, and no longer are.
 				const left = parent instanceof ShadowRoot
-					? ($(parent)[kHost] as Element)
+					? ($(parent)[kExtra][kHost] as Element)
 					: parent.nodeType === ELEMENT_NODE ? (parent as Element) : null;
 				const attached = getAttachedDocument(document);
 				if (left !== null && attached !== undefined) {
-					$(attached)[kCascade].handleFocusChange(left);
+					$(attached)[kExtra][kCascade].handleFocusChange(left);
 				}
 				break;
 			}
@@ -7088,6 +7115,8 @@ class MutationRecord implements globalThis.MutationRecord {
 	}
 }
 
+declareSealedRoot(MutationRecord);
+
 Object.defineProperty(MutationRecord.prototype, Symbol.toStringTag, {
 	value: "MutationRecord",
 	configurable: true,
@@ -7186,6 +7215,8 @@ export class MutationObserver implements globalThis.MutationObserver {
 		return records;
 	}
 }
+
+declareSealedRoot(MutationObserver);
 
 // Asking for an old value or a filter implies observing that kind of
 // mutation, so it turns that observation on. Asking for an old value of
@@ -7753,7 +7784,7 @@ function ensureList(list: LiveList): Node[] {
 		const registered = listSlots[kRegistered] as Document | null;
 		if (registered !== document) {
 			if (registered !== null) {
-				$(registered)[kDocumentWideLists]?.delete(list);
+				$(registered)[kExtra][kDocumentWideLists]?.delete(list);
 			}
 			listSlots[kRegistered] = document;
 			registerDocumentWide(list, document);
@@ -7816,6 +7847,8 @@ export class NodeList {
 		return this[kCompute]();
 	}
 }
+
+declareSealedRoot(NodeList);
 
 Object.defineProperty(NodeList.prototype, Symbol.toStringTag, {
 	value: "NodeList",
@@ -7964,6 +7997,8 @@ class HTMLCollection {
 	}
 }
 
+declareSealedRoot(HTMLCollection);
+
 Object.defineProperty(HTMLCollection.prototype, Symbol.toStringTag, {
 	value: "HTMLCollection",
 	configurable: true,
@@ -8055,7 +8090,7 @@ function isNameless(members: readonly Node[]): boolean {
 			continue;
 		}
 		for (const attribute of $((member as Element))[kAttributeList]) {
-			const name = attribute[kLocalName];
+			const name = attribute[kExtra][kLocalName];
 			if (name === "id" || name === "name") {
 				return false;
 			}
@@ -8248,14 +8283,14 @@ function createClassNameCollection(
 	const rootSlots = $(root);
 	if (collection === undefined) {
 		const classes = splitOnASCIIWhitespace(classNames);
-		const quirks = $(rootSlots[kDocument])[kMode] === "quirks"
+		const quirks = $(rootSlots[kDocument])[kExtra][kMode] === "quirks"
 			? classes.map((name) => toASCIILowercase(name))
 			: classes;
 		collection = createMatchingHTMLCollection(root, "class", (element) => {
 			if (classes.length === 0) {
 				return false;
 			}
-			const isQuirks = $(rootSlots[kDocument])[kMode] === "quirks";
+			const isQuirks = $(rootSlots[kDocument])[kExtra][kMode] === "quirks";
 			let tokens: ReadonlySet<string>;
 			if (isQuirks) {
 				const value = element.getAttribute("class");
@@ -8449,6 +8484,8 @@ class DOMTokenList implements globalThis.DOMTokenList {
 	}
 }
 
+declareSealedRoot(DOMTokenList);
+
 shareMethods(DOMTokenList, LiveList);
 
 function writeTokenList(list: DOMTokenList, tokens: string[]): void {
@@ -8512,6 +8549,8 @@ function validateTokens(tokens: string[]): void {
 
 interface CharacterData {
 	[kData]: string;
+	[kAssignedSlot]: HTMLSlotElement | null;
+	[kManualSlot]: HTMLSlotElement | null;
 
 	get ownerDocument(): Document;
 }
@@ -8525,7 +8564,10 @@ class CharacterData extends Node implements globalThis.CharacterData {
 	declare readonly previousElementSibling: globalThis.CharacterData["previousElementSibling"];
 	constructor(data: string) {
 		super();
-		$(this)[kData] = data;
+		const slots = $(this);
+		slots[kData] = data;
+		slots[kAssignedSlot] = null;
+		slots[kManualSlot] = null;
 	}
 
 	get data(): string {
@@ -8657,20 +8699,10 @@ function queueCharacterDataMutationRecord(
 	);
 }
 
-const kManualSlot = Symbol("manual slot assignment");
-
-export interface Text {
-	[kAssignedSlot]: HTMLSlotElement | null;
-	[kManualSlot]: HTMLSlotElement | null;
-}
-
 export class Text extends CharacterData implements globalThis.Text {
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
-		const slots = $(this);
-		slots[kAssignedSlot] = null;
-		slots[kManualSlot] = null;
-		slots[kDocument] = getCurrentDocument();
+		$(this)[kDocument] = getCurrentDocument();
 	}
 
 	get assignedSlot(): globalThis.HTMLSlotElement | null {
@@ -8740,6 +8772,8 @@ export class Text extends CharacterData implements globalThis.Text {
 	}
 }
 
+declareExtraSlots(Text);
+
 Object.defineProperty(Text.prototype, Symbol.toStringTag, {
 	value: "Text",
 	configurable: true,
@@ -8801,7 +8835,7 @@ interface ProcessingInstruction {
 class ProcessingInstruction extends CharacterData {
 	constructor(target: string, data: string) {
 		super(data);
-		$(this)[kTarget] = target;
+		$(this)[kExtra][kTarget] = target;
 	}
 
 	get sheet(): globalThis.CSSStyleSheet | null {
@@ -8809,7 +8843,7 @@ class ProcessingInstruction extends CharacterData {
 	}
 
 	get target(): string {
-		return $(this)[kTarget];
+		return $(this)[kExtra][kTarget];
 	}
 
 	override get nodeType(): number {
@@ -8817,16 +8851,21 @@ class ProcessingInstruction extends CharacterData {
 	}
 
 	override get nodeName(): string {
-		return $(this)[kTarget];
+		return $(this)[kExtra][kTarget];
 	}
 
 	override [kCloneSingle](document: Document): Node {
 		const slots = this;
-		const copy = new ProcessingInstruction(slots[kTarget], slots[kData]);
+		const copy = new ProcessingInstruction(
+			slots[kExtra][kTarget],
+			slots[kData],
+		);
 		$(copy)[kDocument] = document;
 		return copy;
 	}
 }
+
+declareExtraSlots(ProcessingInstruction);
 
 Object.defineProperty(ProcessingInstruction.prototype, Symbol.toStringTag, {
 	value: "ProcessingInstruction",
@@ -8854,21 +8893,21 @@ class DocumentType extends Node {
 	constructor(name: string, publicId: string, systemId: string) {
 		super();
 		const slots = $(this);
-		slots[kName] = name;
-		slots[kPublicId] = publicId;
-		slots[kSystemId] = systemId;
+		slots[kExtra][kName] = name;
+		slots[kExtra][kPublicId] = publicId;
+		slots[kExtra][kSystemId] = systemId;
 	}
 
 	get name(): string {
-		return $(this)[kName];
+		return $(this)[kExtra][kName];
 	}
 
 	get publicId(): string {
-		return $(this)[kPublicId];
+		return $(this)[kExtra][kPublicId];
 	}
 
 	get systemId(): string {
-		return $(this)[kSystemId];
+		return $(this)[kExtra][kSystemId];
 	}
 
 	override get nodeType(): number {
@@ -8876,20 +8915,22 @@ class DocumentType extends Node {
 	}
 
 	override get nodeName(): string {
-		return $(this)[kName];
+		return $(this)[kExtra][kName];
 	}
 
 	override [kCloneSingle](document: Document): Node {
 		const slots = this;
 		const copy = new DocumentType(
-			slots[kName],
-			slots[kPublicId],
-			slots[kSystemId],
+			slots[kExtra][kName],
+			slots[kExtra][kPublicId],
+			slots[kExtra][kSystemId],
 		);
 		$(copy)[kDocument] = document;
 		return copy;
 	}
 }
+
+declareExtraSlots(DocumentType);
 
 Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
 	value: "DocumentType",
@@ -8918,7 +8959,7 @@ export class DocumentFragment
 	constructor() {
 		super();
 		const slots = $(this);
-		slots[kHost] = null;
+		slots[kExtra][kHost] = null;
 		slots[kDocument] = getCurrentDocument();
 	}
 
@@ -8960,6 +9001,8 @@ export class DocumentFragment
 	}
 }
 
+declareExtraSlots(DocumentFragment);
+
 Object.defineProperty(DocumentFragment.prototype, Symbol.toStringTag, {
 	value: "DocumentFragment",
 	configurable: true,
@@ -8993,17 +9036,17 @@ const kValue = Symbol("attribute value");
 export type AttributeSlots = Slots<Attr>;
 
 export function getAttributeLocalName(attribute: AttributeSlots): string {
-	return attribute[kLocalName];
+	return attribute[kExtra][kLocalName];
 }
 
 export function getAttributeNamespace(
 	attribute: AttributeSlots,
 ): string | null {
-	return attribute[kNamespace];
+	return attribute[kExtra][kNamespace];
 }
 
 export function getAttributeValue(attribute: AttributeSlots): string {
-	return attribute[kValue];
+	return attribute[kExtra][kValue];
 }
 
 const kOwnerElement = Symbol("owner element");
@@ -9028,23 +9071,23 @@ class Attr extends Node implements globalThis.Attr {
 	) {
 		super();
 		const slots = $(this);
-		slots[kOwnerElement] = null;
-		slots[kNamespace] = namespace;
-		slots[kPrefix] = prefix;
-		slots[kLocalName] = localName;
-		slots[kValue] = value;
+		slots[kExtra][kOwnerElement] = null;
+		slots[kExtra][kNamespace] = namespace;
+		slots[kExtra][kPrefix] = prefix;
+		slots[kExtra][kLocalName] = localName;
+		slots[kExtra][kValue] = value;
 	}
 
 	get namespaceURI(): string | null {
-		return $(this)[kNamespace];
+		return $(this)[kExtra][kNamespace];
 	}
 
 	get prefix(): string | null {
-		return $(this)[kPrefix];
+		return $(this)[kExtra][kPrefix];
 	}
 
 	get localName(): string {
-		return $(this)[kLocalName];
+		return $(this)[kExtra][kLocalName];
 	}
 
 	get name(): string {
@@ -9052,7 +9095,7 @@ class Attr extends Node implements globalThis.Attr {
 	}
 
 	get value(): string {
-		return $(this)[kValue];
+		return $(this)[kExtra][kValue];
 	}
 
 	set value(value: string) {
@@ -9060,7 +9103,7 @@ class Attr extends Node implements globalThis.Attr {
 	}
 
 	get ownerElement(): Element | null {
-		return $(this)[kOwnerElement];
+		return $(this)[kExtra][kOwnerElement];
 	}
 
 	get specified(): boolean {
@@ -9076,7 +9119,7 @@ class Attr extends Node implements globalThis.Attr {
 	}
 
 	override get nodeValue(): string | null {
-		return $(this)[kValue];
+		return $(this)[kExtra][kValue];
 	}
 
 	override set nodeValue(value: string | null) {
@@ -9084,7 +9127,7 @@ class Attr extends Node implements globalThis.Attr {
 	}
 
 	override get textContent(): string {
-		return $(this)[kValue];
+		return $(this)[kExtra][kValue];
 	}
 
 	override set textContent(value: string | null) {
@@ -9093,23 +9136,25 @@ class Attr extends Node implements globalThis.Attr {
 
 	get [kQualifiedName](): string {
 		const slots = this;
-		return slots[kPrefix] === null
-			? slots[kLocalName]
-			: `${slots[kPrefix]}:${slots[kLocalName]}`;
+		return slots[kExtra][kPrefix] === null
+			? slots[kExtra][kLocalName]
+			: `${slots[kExtra][kPrefix]}:${slots[kExtra][kLocalName]}`;
 	}
 
 	override [kCloneSingle](document: Document): Node {
 		const slots = this;
 		const copy = new Attr(
-			slots[kNamespace],
-			slots[kPrefix],
-			slots[kLocalName],
-			slots[kValue],
+			slots[kExtra][kNamespace],
+			slots[kExtra][kPrefix],
+			slots[kExtra][kLocalName],
+			slots[kExtra][kValue],
 		);
 		$(copy)[kDocument] = document;
 		return copy;
 	}
 }
+
+declareExtraSlots(Attr);
 
 Object.defineProperty(Attr.prototype, Symbol.toStringTag, {
 	value: "Attr",
@@ -9118,9 +9163,9 @@ Object.defineProperty(Attr.prototype, Symbol.toStringTag, {
 
 function setExistingAttributeValue(attribute: Attr, value: string): void {
 	const attributeSlots = $(attribute);
-	const element = attributeSlots[kOwnerElement];
+	const element = attributeSlots[kExtra][kOwnerElement];
 	if (element === null) {
-		attributeSlots[kValue] = value;
+		attributeSlots[kExtra][kValue] = value;
 		return;
 	}
 	changeAttribute(attribute, value);
@@ -9137,19 +9182,19 @@ const kAttributeChangeSteps = Symbol("attribute change steps");
 
 function changeAttribute(attribute: Attr, value: string): void {
 	const attributeSlots = $(attribute);
-	const element = attributeSlots[kOwnerElement] as Element;
-	const oldValue = attributeSlots[kValue];
+	const element = attributeSlots[kExtra][kOwnerElement] as Element;
+	const oldValue = attributeSlots[kExtra][kValue];
 	queueAttributeMutationRecord(element, attribute, oldValue);
-	attributeSlots[kValue] = value;
+	attributeSlots[kExtra][kValue] = value;
 	$(element)[kAttributeChangeSteps](
-		attributeSlots[kLocalName],
+		attributeSlots[kExtra][kLocalName],
 		oldValue,
 		value,
-		attributeSlots[kNamespace],
+		attributeSlots[kExtra][kNamespace],
 	);
-	syncAttributeCollections(element, attributeSlots[kLocalName]);
+	syncAttributeCollections(element, attributeSlots[kExtra][kLocalName]);
 	if (value !== oldValue) {
-		notifyAttributeChange(element, attributeSlots[kLocalName]);
+		notifyAttributeChange(element, attributeSlots[kExtra][kLocalName]);
 	}
 }
 
@@ -9158,21 +9203,21 @@ function appendAttribute(element: Element, attribute: Attr): void {
 	const elementSlots = $(element);
 	elementSlots[kAttributeList].push(slotsOf(attribute));
 	const attributeSlots = $(attribute);
-	attributeSlots[kOwnerElement] = element;
+	attributeSlots[kExtra][kOwnerElement] = element;
 	attributeSlots[kDocument] = elementSlots[kDocument];
 	elementSlots[kAttributeChangeSteps](
-		attributeSlots[kLocalName],
+		attributeSlots[kExtra][kLocalName],
 		null,
-		attributeSlots[kValue],
-		attributeSlots[kNamespace],
+		attributeSlots[kExtra][kValue],
+		attributeSlots[kExtra][kNamespace],
 	);
-	syncAttributeCollections(element, attributeSlots[kLocalName]);
-	notifyAttributeChange(element, attributeSlots[kLocalName]);
+	syncAttributeCollections(element, attributeSlots[kExtra][kLocalName]);
+	notifyAttributeChange(element, attributeSlots[kExtra][kLocalName]);
 }
 
 function removeAttributeNode(element: Element, attribute: Attr): void {
 	const attributeSlots = $(attribute);
-	const oldValue = attributeSlots[kValue];
+	const oldValue = attributeSlots[kExtra][kValue];
 	queueAttributeMutationRecord(element, attribute, oldValue);
 	const elementSlots = $(element);
 	const list = elementSlots[kAttributeList];
@@ -9180,15 +9225,15 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 	if (index !== -1) {
 		list.splice(index, 1);
 	}
-	attributeSlots[kOwnerElement] = null;
+	attributeSlots[kExtra][kOwnerElement] = null;
 	elementSlots[kAttributeChangeSteps](
-		attributeSlots[kLocalName],
+		attributeSlots[kExtra][kLocalName],
 		oldValue,
 		null,
-		attributeSlots[kNamespace],
+		attributeSlots[kExtra][kNamespace],
 	);
-	syncAttributeCollections(element, attributeSlots[kLocalName]);
-	notifyAttributeChange(element, attributeSlots[kLocalName]);
+	syncAttributeCollections(element, attributeSlots[kExtra][kLocalName]);
+	notifyAttributeChange(element, attributeSlots[kExtra][kLocalName]);
 }
 
 function replaceAttribute(
@@ -9200,23 +9245,23 @@ function replaceAttribute(
 	queueAttributeMutationRecord(
 		element,
 		oldAttribute,
-		oldAttributeSlots[kValue],
+		oldAttributeSlots[kExtra][kValue],
 	);
 	const elementSlots = $(element);
 	const list = elementSlots[kAttributeList];
 	list[list.indexOf(slotsOf(oldAttribute))] = slotsOf(newAttribute);
 	const newAttributeSlots = $(newAttribute);
-	newAttributeSlots[kOwnerElement] = element;
+	newAttributeSlots[kExtra][kOwnerElement] = element;
 	newAttributeSlots[kDocument] = elementSlots[kDocument];
-	oldAttributeSlots[kOwnerElement] = null;
+	oldAttributeSlots[kExtra][kOwnerElement] = null;
 	elementSlots[kAttributeChangeSteps](
-		newAttributeSlots[kLocalName],
-		oldAttributeSlots[kValue],
-		newAttributeSlots[kValue],
-		newAttributeSlots[kNamespace],
+		newAttributeSlots[kExtra][kLocalName],
+		oldAttributeSlots[kExtra][kValue],
+		newAttributeSlots[kExtra][kValue],
+		newAttributeSlots[kExtra][kNamespace],
 	);
-	syncAttributeCollections(element, newAttributeSlots[kLocalName]);
-	notifyAttributeChange(element, newAttributeSlots[kLocalName]);
+	syncAttributeCollections(element, newAttributeSlots[kExtra][kLocalName]);
+	notifyAttributeChange(element, newAttributeSlots[kExtra][kLocalName]);
 }
 
 function queueAttributeMutationRecord(
@@ -9228,8 +9273,8 @@ function queueAttributeMutationRecord(
 	queueMutationRecord(
 		"attributes",
 		element,
-		attributeSlots[kLocalName],
-		attributeSlots[kNamespace],
+		attributeSlots[kExtra][kLocalName],
+		attributeSlots[kExtra][kNamespace],
 		oldValue,
 		[],
 		[],
@@ -9265,7 +9310,10 @@ function getAttributeByNamespace(
 ): Attr | null {
 	const ns = namespace === "" || namespace == null ? null : String(namespace);
 	for (const attribute of $(element)[kAttributeList]) {
-		if (attribute[kNamespace] === ns && attribute[kLocalName] === localName) {
+		if (
+			attribute[kExtra][kNamespace] === ns &&
+			attribute[kExtra][kLocalName] === localName
+		) {
 			return objectOf(attribute);
 		}
 	}
@@ -9275,8 +9323,8 @@ function getAttributeByNamespace(
 function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 	const attributeSlots = $(attribute);
 	if (
-		attributeSlots[kOwnerElement] !== null &&
-		attributeSlots[kOwnerElement] !== element
+		attributeSlots[kExtra][kOwnerElement] !== null &&
+		attributeSlots[kExtra][kOwnerElement] !== element
 	) {
 		throw domError(
 			"InUseAttributeError",
@@ -9285,8 +9333,8 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 	}
 	const existing = getAttributeByNamespace(
 		element,
-		attributeSlots[kNamespace],
-		attributeSlots[kLocalName],
+		attributeSlots[kExtra][kNamespace],
+		attributeSlots[kExtra][kLocalName],
 	);
 	if (existing === attribute) {
 		return attribute;
@@ -9399,6 +9447,8 @@ class NamedNodeMap implements globalThis.NamedNodeMap {
 		return named;
 	}
 }
+
+declareSealedRoot(NamedNodeMap);
 
 shareMethods(NamedNodeMap, LiveList);
 
@@ -9789,7 +9839,7 @@ export class Element extends Node implements globalThis.Element {
 
 	get shadowRoot(): globalThis.ShadowRoot | null {
 		const shadow = $(this)[kShadowRoot];
-		if (shadow === null || $(shadow)[kShadowMode] !== "open") {
+		if (shadow === null || $(shadow)[kExtra][kShadowMode] !== "open") {
 			return null;
 		}
 		return shadow as unknown as globalThis.ShadowRoot | null;
@@ -9926,20 +9976,20 @@ export class Element extends Node implements globalThis.Element {
 			observeShadowRoot(slots[kDocument], root);
 			// Attaching a shadow root recomposes the host's subtree without a
 			// mutation record, so every cached box enumeration is stale.
-			$(attached)[kLayout].invalidate();
+			$(attached)[kExtra][kLayout].invalidate();
 			// The root's <style> elements join the cascade, scoped to this
 			// tree. The sync happens on the STYLE mutation records the
 			// observer registration above will deliver.
-			$(attached)[kCascade].registerShadowRoot(root);
+			$(attached)[kExtra][kCascade].registerShadowRoot(root);
 			// attachShadow is not a DOM mutation, so no observer record fires
 			// for it. But on a CONNECTED host the composed tree just changed
 			// wholesale: light children stop rendering as soon as the root
 			// exists, even while it is empty. Rebuild the host's composed
 			// subtree and repaint.
 			if (this.isConnected) {
-				$(attached)[kLayout].invalidate(this);
-				$(attached)[kFramebuffer].invalidate();
-				void $(attached)[kRender]();
+				$(attached)[kExtra][kLayout].invalidate(this);
+				$(attached)[kExtra][kFramebuffer].invalidate();
+				void $(attached)[kExtra][kRender]();
 			}
 		}
 		return root as unknown as globalThis.ShadowRoot;
@@ -9957,7 +10007,7 @@ export class Element extends Node implements globalThis.Element {
 		// Fullscreen switches to the alternate screen, and attach() is the only
 		// consent for that. A browser rejects without a user gesture; this is
 		// the terminal equivalent.
-		if (!$(attached)[kVisible]) {
+		if (!$(attached)[kExtra][kVisible]) {
 			return Promise.reject(
 				new Error("requestFullscreen(): attach() the terminal first"),
 			);
@@ -9987,7 +10037,7 @@ export class Element extends Node implements globalThis.Element {
 
 	getAttribute(qualifiedName: string): string | null {
 		const attribute = getAttributeByName(this, String(qualifiedName));
-		return attribute === null ? null : $(attribute)[kValue];
+		return attribute === null ? null : $(attribute)[kExtra][kValue];
 	}
 
 	getAttributeNS(namespace: string | null, localName: string): string | null {
@@ -9996,7 +10046,7 @@ export class Element extends Node implements globalThis.Element {
 			namespace,
 			String(localName),
 		);
-		return attribute === null ? null : $(attribute)[kValue];
+		return attribute === null ? null : $(attribute)[kExtra][kValue];
 	}
 
 	setAttribute(qualifiedName: string, value: string): void {
@@ -10514,10 +10564,10 @@ export class Element extends Node implements globalThis.Element {
 		);
 		for (const attribute of slots[kAttributeList]) {
 			const copiedAttribute = new Attr(
-				attribute[kNamespace],
-				attribute[kPrefix],
-				attribute[kLocalName],
-				attribute[kValue],
+				attribute[kExtra][kNamespace],
+				attribute[kExtra][kPrefix],
+				attribute[kExtra][kLocalName],
+				attribute[kExtra][kValue],
 			);
 			$(copiedAttribute)[kDocument] = document;
 			appendAttribute(copy, copiedAttribute);
@@ -10525,6 +10575,8 @@ export class Element extends Node implements globalThis.Element {
 		return copy;
 	}
 }
+
+defineFamilies(kExtra, [Node, CharacterData, Element]);
 
 // State most nodes never have: the custom element machinery, the objects a
 // page asks for (classList, dataset, attributes, children, internals, live
@@ -10672,7 +10724,11 @@ Object.defineProperties(Element.prototype, {
 				? getAttachedDocument(this)
 				: undefined;
 			if (attached) {
-				return pxFromCells($(attached)[kFramebuffer].scrollTop, true, this);
+				return pxFromCells(
+					$(attached)[kExtra][kFramebuffer].scrollTop,
+					true,
+					this,
+				);
 			}
 			const top = scrollOffsets.get(this)?.top ?? 0;
 			return getAttachedDocument(this) === undefined
@@ -10760,11 +10816,11 @@ function toViewportRect(
 	const attachedSlots = $(attached);
 	const scrolled =
 		element !== null &&
-		attachedSlots[kLayout].isInFixedSpace(element)
+		attachedSlots[kExtra][kLayout].isInFixedSpace(element)
 			? rect
 			: new DOMRect(
 				rect.x,
-				rect.y - attachedSlots[kFramebuffer].scrollTop,
+				rect.y - attachedSlots[kExtra][kFramebuffer].scrollTop,
 				rect.width,
 				rect.height,
 			);
@@ -10801,7 +10857,7 @@ Object.defineProperties(Element.prototype, {
 			flushLayout(this);
 			return toViewportRect(
 				attached,
-				$(attached)[kLayout].getRect(this) ?? new DOMRect(),
+				$(attached)[kExtra][kLayout].getRect(this) ?? new DOMRect(),
 				this,
 			);
 		},
@@ -10816,7 +10872,7 @@ Object.defineProperties(Element.prototype, {
 			}
 			flushLayout(this);
 			return createRectList(
-				$(attached)[kLayout]
+				$(attached)[kExtra][kLayout]
 					.getRects(this).map((rect) => toViewportRect(attached, rect, this)),
 			);
 		},
@@ -10835,7 +10891,7 @@ function getInnerText(element: Element): string {
 		return element.textContent ?? "";
 	}
 	flushLayout(element);
-	const layout = $(attached)[kLayout];
+	const layout = $(attached)[kExtra][kLayout];
 	if (!isElementRendered(layout, element)) {
 		return element.textContent ?? "";
 	}
@@ -11530,7 +11586,7 @@ export class HTMLElement extends Element {
 		const innermost = getInnermostActive(document);
 		if (
 			shadow != null &&
-			$(shadow)[kDelegatesFocus] &&
+			$(shadow)[kExtra][kDelegatesFocus] &&
 			innermost !== null &&
 			innermost !== this &&
 			isShadowIncludingInclusiveAncestor(shadow, innermost as Node)
@@ -11543,16 +11599,16 @@ export class HTMLElement extends Element {
 			commitTextControl(this);
 		}
 		const documentSlots = $(document);
-		if (documentSlots[kActiveElement] === this) {
-			documentSlots[kActiveElement] = null;
+		if (documentSlots[kExtra][kActiveElement] === this) {
+			documentSlots[kExtra][kActiveElement] = null;
 		}
 		const attached = wasFocused ? getAttachedDocument(this) : undefined;
 		if (attached === undefined) {
 			return;
 		}
-		$(attached)[kCascade].handleFocusChange(this, null);
-		$(attached)[kFramebuffer].invalidate();
-		void $(attached)[kRender]();
+		$(attached)[kExtra][kCascade].handleFocusChange(this, null);
+		$(attached)[kExtra][kFramebuffer].invalidate();
+		void $(attached)[kExtra][kRender]();
 		dispatchAsUserAgent(
 			this,
 			new FocusEvent("blur", {
@@ -11674,7 +11730,7 @@ function runFocusingSteps(element: HTMLElement): void {
 	// where it is when its own tree already holds it, and does nothing
 	// at all without a delegate.
 	const shadow = elementSlots[kShadowRoot];
-	if (shadow !== null && $(shadow)[kDelegatesFocus]) {
+	if (shadow !== null && $(shadow)[kExtra][kDelegatesFocus]) {
 		if (
 			previous !== null &&
 			previous !== element &&
@@ -11692,7 +11748,7 @@ function runFocusingSteps(element: HTMLElement): void {
 	// shadow root is focusable when its host chain reaches the document.
 	// The node-tree root test rejected every element in a shadow tree.
 	if (isFocusableArea(element) && element.isConnected) {
-		$(document)[kActiveElement] = element;
+		$(document)[kExtra][kActiveElement] = element;
 		// Focusing the body moves nothing a Tab would start from.
 		if (element !== document.body) {
 			focusStartingPoints.delete(document);
@@ -11708,9 +11764,9 @@ function runFocusingSteps(element: HTMLElement): void {
 	// :focus rules match live and a focus move is not a mutation, so both
 	// elements' resolved styles are stale whether or not a listener changes
 	// anything.
-	$(attached)[kCascade].handleFocusChange(previous, element);
-	$(attached)[kFramebuffer].invalidate();
-	void $(attached)[kRender]();
+	$(attached)[kExtra][kCascade].handleFocusChange(previous, element);
+	$(attached)[kExtra][kFramebuffer].invalidate();
+	void $(attached)[kExtra][kRender]();
 	// An edit the user made in the control focus is leaving is committed
 	// first, so change fires before blur.
 	commitTextControl(previous as Element | null);
@@ -11776,7 +11832,7 @@ function getInnermostActive(document: Document): Element | null {
 // the shadow root's, and is not a candidate. Null for any other element.
 function getFocusDelegate(element: Element): Element | null {
 	const shadow = $(element)[kShadowRoot];
-	if (shadow === null || !$(shadow)[kDelegatesFocus]) {
+	if (shadow === null || !$(shadow)[kExtra][kDelegatesFocus]) {
 		return null;
 	}
 	let first: Element | null = null;
@@ -11786,7 +11842,7 @@ function getFocusDelegate(element: Element): Element | null {
 		}
 		const candidate = node as Element;
 		const inner = $(candidate)[kShadowRoot];
-		const area = inner !== null && $(inner)[kDelegatesFocus]
+		const area = inner !== null && $(inner)[kExtra][kDelegatesFocus]
 			? getFocusDelegate(candidate)
 			: isFocusableArea(candidate) ? candidate : null;
 		if (area === null) {
@@ -11837,7 +11893,7 @@ function getSettledLayout(element: Element): Layout | undefined {
 		return undefined;
 	}
 	flushLayout(element);
-	return $(attached)[kLayout];
+	return $(attached)[kExtra][kLayout];
 }
 
 Object.defineProperties(HTMLElement.prototype, {
@@ -11893,7 +11949,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			if (attached === undefined) {
 				return null;
 			}
-			return $(attached)[kLayout].offsetParent(this) as Element | null;
+			return $(attached)[kExtra][kLayout].offsetParent(this) as Element | null;
 		},
 		configurable: true,
 		enumerable: true,
@@ -11980,10 +12036,10 @@ Object.defineProperties(HTMLElement.prototype, {
 				return;
 			}
 			flushLayout(this);
-			$(attached)[kLayout].revealInScrollPorts(this, block, inline);
+			$(attached)[kExtra][kLayout].revealInScrollPorts(this, block, inline);
 			// A fixed box, as a fullscreen one is, does not move with the
 			// document scroll, so scrolling the document reveals nothing.
-			if ($(attached)[kLayout].isInFixedSpace(this)) {
+			if ($(attached)[kExtra][kLayout].isInFixedSpace(this)) {
 				return;
 			}
 			// The scroll boxes around the element have already revealed it
@@ -11991,15 +12047,15 @@ Object.defineProperties(HTMLElement.prototype, {
 			// shows [scrollTop, scrollTop + region). The rect is
 			// document-relative, so it compares directly against the document
 			// scroll offset.
-			const rect = $(attached)[kLayout].getRect(this);
+			const rect = $(attached)[kExtra][kLayout].getRect(this);
 			if (!rect) {
 				return;
 			}
 			const slots = $(this);
 			const regionHeight = getScrollingRegionHeight(slots[kDocument]);
-			const top = $(attached)[kFramebuffer].scrollTop;
+			const top = $(attached)[kExtra][kFramebuffer].scrollTop;
 			const delta = Math.round(
-				$(attached)[kLayout].alignmentDelta(
+				$(attached)[kExtra][kLayout].alignmentDelta(
 					rect.top,
 					rect.bottom,
 					top,
@@ -12049,7 +12105,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			) {
 				return false;
 			}
-			return $(attached)[kLayout].getRects(this).length > 0;
+			return $(attached)[kExtra][kLayout].getRects(this).length > 0;
 		},
 		writable: true,
 		configurable: true,
@@ -12072,7 +12128,7 @@ function isInertTree(element: Element): boolean {
 		}
 		const root = getRoot(node);
 		node = isShadowRoot(root)
-			? ($((root as ShadowRoot))[kHost] as Element)
+			? ($((root as ShadowRoot))[kExtra][kHost] as Element)
 			: null;
 	}
 	return false;
@@ -13177,6 +13233,8 @@ class CustomElementRegistry {
 	}
 }
 
+declareSealedRoot(CustomElementRegistry);
+
 // Constructs a proxy of the value with a construct trap, so
 // nothing on the value itself is read. A proxy is constructible exactly
 // when its target is, and the trap returns before the object it would
@@ -13356,10 +13414,10 @@ function upgradeElement(
 	elementSlots[kCustomState] = "failed";
 	for (const attribute of elementSlots[kAttributeList]) {
 		enqueueCallbackReaction(element, "attributeChangedCallback", [
-			attribute[kLocalName],
+			attribute[kExtra][kLocalName],
 			null,
-			attribute[kValue],
-			attribute[kNamespace],
+			attribute[kExtra][kValue],
+			attribute[kExtra][kNamespace],
 		]);
 	}
 	if (element.isConnected) {
@@ -13420,7 +13478,8 @@ function getUpgradeDefinition(
 		const root = getRoot(element);
 		if (
 			root.nodeType === DOCUMENT_FRAGMENT_NODE &&
-			$((root as DocumentFragment))[kHost] instanceof HTMLTemplateElement
+			$((root as DocumentFragment))[kExtra][kHost] instanceof
+			HTMLTemplateElement
 		) {
 			return null;
 		}
@@ -13518,15 +13577,15 @@ export class ShadowRoot
 	constructor() {
 		super();
 		const slots = $(this);
-		slots[kShadowMode] = "open";
-		slots[kUAShadowTree] = false;
-		slots[kDelegatesFocus] = false;
-		slots[kSlotAssignment] = "named";
-		slots[kUASlotting] = null;
-		slots[kClonable] = false;
-		slots[kSerializable] = false;
-		slots[kDeclarative] = false;
-		slots[kAvailableToInternals] = false;
+		slots[kExtra][kShadowMode] = "open";
+		slots[kExtra][kUAShadowTree] = false;
+		slots[kExtra][kDelegatesFocus] = false;
+		slots[kExtra][kSlotAssignment] = "named";
+		slots[kExtra][kUASlotting] = null;
+		slots[kExtra][kClonable] = false;
+		slots[kExtra][kSerializable] = false;
+		slots[kExtra][kDeclarative] = false;
+		slots[kExtra][kAvailableToInternals] = false;
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
@@ -13551,8 +13610,9 @@ export class ShadowRoot
 		const document = this.ownerDocument as Document | null;
 		// Start from the RAW focus, not the document's retargeted result, which
 		// has already collapsed shadow content to its host.
-		let current: Node | null =
-			((document ? $(document)[kActiveElement] : null) ?? null) as Node | null;
+		let current: Node | null = ((document
+			? $(document)[kExtra][kActiveElement]
+			: null) ?? null) as Node | null;
 		while (current !== null) {
 			const root = current.getRootNode() as Node;
 			if (root === (this as unknown as Node)) {
@@ -13566,7 +13626,7 @@ export class ShadowRoot
 	}
 
 	get mode(): "open" | "closed" {
-		return $(this)[kShadowMode];
+		return $(this)[kExtra][kShadowMode];
 	}
 
 	get customElementRegistry(): CustomElementRegistry | null {
@@ -13574,23 +13634,23 @@ export class ShadowRoot
 	}
 
 	get delegatesFocus(): boolean {
-		return $(this)[kDelegatesFocus];
+		return $(this)[kExtra][kDelegatesFocus];
 	}
 
 	get slotAssignment(): "named" | "manual" {
-		return $(this)[kSlotAssignment];
+		return $(this)[kExtra][kSlotAssignment];
 	}
 
 	get clonable(): boolean {
-		return $(this)[kClonable];
+		return $(this)[kExtra][kClonable];
 	}
 
 	get serializable(): boolean {
-		return $(this)[kSerializable];
+		return $(this)[kExtra][kSerializable];
 	}
 
 	get host(): Element {
-		return $(this)[kHost] as Element;
+		return $(this)[kExtra][kHost] as Element;
 	}
 
 	get innerHTML(): string {
@@ -13600,7 +13660,7 @@ export class ShadowRoot
 	set innerHTML(value: string) {
 		const fragment = parseHTMLFragment(
 			String(value ?? ""),
-			$(this)[kHost] as Element,
+			$(this)[kExtra][kHost] as Element,
 			false,
 		);
 		replaceAll(fragment, this);
@@ -13674,7 +13734,7 @@ export class ShadowRoot
 	setHTMLUnsafe(html: string): void {
 		const fragment = parseHTMLFragment(
 			String(html ?? ""),
-			$(this)[kHost] as Element,
+			$(this)[kExtra][kHost] as Element,
 			true,
 		);
 		replaceAll(fragment, this);
@@ -13682,7 +13742,7 @@ export class ShadowRoot
 
 	elementFromPoint(x: number, y: number): Element | null {
 		const slots = $(this);
-		const attached = getAttachedDocument(slots[kHost] as Element);
+		const attached = getAttachedDocument(slots[kExtra][kHost] as Element);
 		if (attached === undefined) {
 			return null;
 		}
@@ -13690,7 +13750,7 @@ export class ShadowRoot
 		return elementAtDocumentPoint(
 			slots[kDocument] as unknown as globalThis.Document,
 			toDouble(x) / cell.width,
-			toDouble(y) / cell.height + $(attached)[kFramebuffer].scrollTop,
+			toDouble(y) / cell.height + $(attached)[kExtra][kFramebuffer].scrollTop,
 			this as unknown as globalThis.Node,
 		) as unknown as Element | null;
 	}
@@ -13721,13 +13781,15 @@ export class ShadowRoot
 		) {
 			return null;
 		}
-		return this[kHost];
+		return this[kExtra][kHost];
 	}
 
 	override [kCloneSingle](_document: Document): Node {
 		throw domError("NotSupportedError", "A shadow root cannot be cloned");
 	}
 }
+
+declareExtraSlots(ShadowRoot);
 
 installEventHandler(ShadowRoot.prototype, "onslotchange");
 
@@ -13777,7 +13839,10 @@ function attachShadowRoot(
 	}
 	const existing = elementSlots[kShadowRoot];
 	if (existing !== null) {
-		if (!$(existing)[kDeclarative] || $(existing)[kShadowMode] !== mode) {
+		if (
+			!$(existing)[kExtra][kDeclarative] ||
+			$(existing)[kExtra][kShadowMode] !== mode
+		) {
 			throw domError(
 				"NotSupportedError",
 				"That element already hosts a shadow tree",
@@ -13786,23 +13851,23 @@ function attachShadowRoot(
 		for (const child of getChildNodeArray(existing)) {
 			removeNode(child);
 		}
-		$(existing)[kDeclarative] = false;
+		$(existing)[kExtra][kDeclarative] = false;
 		return;
 	}
 	const shadow = constructInternal(() => new ShadowRoot());
 	const shadowSlots = $(shadow);
 	shadowSlots[kDocument] = elementSlots[kDocument];
-	shadowSlots[kHost] = element;
+	shadowSlots[kExtra][kHost] = element;
 	shadowSlots[kConnected] = elementSlots[kConnected];
-	shadowSlots[kShadowMode] = mode;
-	shadowSlots[kDelegatesFocus] = delegatesFocus;
+	shadowSlots[kExtra][kShadowMode] = mode;
+	shadowSlots[kExtra][kDelegatesFocus] = delegatesFocus;
 	const state = elementSlots[kCustomState];
-	shadowSlots[kAvailableToInternals] =
+	shadowSlots[kExtra][kAvailableToInternals] =
 		state === "precustomized" || state === "custom";
-	shadowSlots[kSlotAssignment] = slotAssignment;
-	shadowSlots[kDeclarative] = false;
-	shadowSlots[kClonable] = clonable;
-	shadowSlots[kSerializable] = serializable;
+	shadowSlots[kExtra][kSlotAssignment] = slotAssignment;
+	shadowSlots[kExtra][kDeclarative] = false;
+	shadowSlots[kExtra][kClonable] = clonable;
+	shadowSlots[kExtra][kSerializable] = serializable;
 	shadowSlots[kRegistry] = registry;
 	elementSlots[kShadowRoot] = shadow;
 	styleShadowAttached(shadow);
@@ -13822,10 +13887,10 @@ function attachUAShadowTree<T>(target: Element): T {
 	const hostSlots = $(host);
 	const shadowSlots = $(shadow);
 	shadowSlots[kDocument] = hostSlots[kDocument];
-	shadowSlots[kHost] = host;
+	shadowSlots[kExtra][kHost] = host;
 	shadowSlots[kConnected] = hostSlots[kConnected];
-	shadowSlots[kShadowMode] = "closed";
-	shadowSlots[kUAShadowTree] = true;
+	shadowSlots[kExtra][kShadowMode] = "closed";
+	shadowSlots[kExtra][kUAShadowTree] = true;
 	shadowSlots[kRegistry] = $(hostSlots[kDocument])[kRegistry];
 	hostSlots[kShadowRoot] = shadow;
 	return shadow as T;
@@ -13836,7 +13901,7 @@ function attachUAShadowTree<T>(target: Element): T {
  * UA rule, which every author rule outranks whatever its specificity.
  */
 export function isUAShadowTree(node: globalThis.Node): boolean {
-	return node instanceof ShadowRoot && $(node)[kUAShadowTree];
+	return node instanceof ShadowRoot && $(node)[kExtra][kUAShadowTree];
 }
 
 /**
@@ -13892,14 +13957,14 @@ function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 	if (shadow === null) {
 		return null;
 	}
-	if (open && $(shadow)[kShadowMode] !== "open") {
+	if (open && $(shadow)[kExtra][kShadowMode] !== "open") {
 		return null;
 	}
-	if ($(shadow)[kSlotAssignment] === "manual") {
+	if ($(shadow)[kExtra][kSlotAssignment] === "manual") {
 		for (const descendant of descendants(shadow)) {
 			if (
 				descendant instanceof HTMLSlotElement &&
-				$(descendant)[kManualAssignment].includes(slottable)
+				$(descendant)[kExtra][kManualAssignment].includes(slottable)
 			) {
 				return descendant;
 			}
@@ -13909,7 +13974,8 @@ function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 	const name = isElement(slottable) ? $(slottable)[kSlottableName] : "";
 	for (const descendant of descendants(shadow)) {
 		if (
-			descendant instanceof HTMLSlotElement && $(descendant)[kSlotName] === name
+			descendant instanceof HTMLSlotElement &&
+			$(descendant)[kExtra][kSlotName] === name
 		) {
 			return descendant;
 		}
@@ -13925,13 +13991,13 @@ function findSlottables(slot: HTMLSlotElement): Slottable[] {
 	}
 	const shadow = root as ShadowRoot;
 	const shadowSlots = $(shadow);
-	const host = shadowSlots[kHost] as Element;
-	const slotting = shadowSlots[kUASlotting];
+	const host = shadowSlots[kExtra][kHost] as Element;
+	const slotting = shadowSlots[kExtra][kUASlotting];
 	if (slotting !== null) {
 		return slotting(slot);
 	}
-	if (shadowSlots[kSlotAssignment] === "manual") {
-		for (const slottable of $(slot)[kManualAssignment]) {
+	if (shadowSlots[kExtra][kSlotAssignment] === "manual") {
+		for (const slottable of $(slot)[kExtra][kManualAssignment]) {
 			if (objectOf($(slottable)[kParent]) === host) {
 				result.push(slottable);
 			}
@@ -13955,7 +14021,7 @@ function findSlottables(slot: HTMLSlotElement): Slottable[] {
 function assignSlottables(slot: HTMLSlotElement): void {
 	const slottables = findSlottables(slot);
 	const slotSlots = $(slot);
-	const assigned = slotSlots[kAssignedNodes];
+	const assigned = slotSlots[kExtra][kAssignedNodes];
 	const identical =
 		slottables.length === assigned.length &&
 		slottables.every((node, index) => node === assigned[index]);
@@ -13967,7 +14033,7 @@ function assignSlottables(slot: HTMLSlotElement): void {
 			$(previous)[kAssignedSlot] = null;
 		}
 	}
-	slotSlots[kAssignedNodes] = slottables;
+	slotSlots[kExtra][kAssignedNodes] = slottables;
 	for (const slottable of slottables) {
 		$(slottable)[kAssignedSlot] = slot;
 	}
@@ -14032,7 +14098,7 @@ function updateSlotName(
 	if (value === "" && oldValue === null) {
 		return;
 	}
-	$(slot)[kSlotName] = value === null || value === "" ? "" : value;
+	$(slot)[kExtra][kSlotName] = value === null || value === "" ? "" : value;
 	assignSlottablesForTree(getRoot(slot));
 }
 
@@ -14051,9 +14117,9 @@ class HTMLSlotElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kSlotName] = "";
-		slots[kAssignedNodes] = [];
-		slots[kManualAssignment] = [];
+		slots[kExtra][kSlotName] = "";
+		slots[kExtra][kAssignedNodes] = [];
+		slots[kExtra][kManualAssignment] = [];
 	}
 
 	get name(): string {
@@ -14070,7 +14136,9 @@ class HTMLSlotElement extends HTMLElement {
 			"An AssignedNodesOptions",
 		);
 		if (!init.flatten) {
-			return [...$(this)[kAssignedNodes]] as unknown as globalThis.Node[];
+			return [
+				...$(this)[kExtra][kAssignedNodes],
+			] as unknown as globalThis.Node[];
 		}
 		return findFlattenedSlottables(this) as unknown as globalThis.Node[];
 	}
@@ -14094,7 +14162,7 @@ class HTMLSlotElement extends HTMLElement {
 		}
 		const roots: Node[] = [getRoot(this)];
 		const slots = $(this);
-		for (const slottable of slots[kManualAssignment]) {
+		for (const slottable of slots[kExtra][kManualAssignment]) {
 			$(slottable)[kManualSlot] = null;
 		}
 		const assigned: Slottable[] = [];
@@ -14105,9 +14173,9 @@ class HTMLSlotElement extends HTMLElement {
 			}
 			const previous = $(slottable)[kManualSlot];
 			if (previous !== null && previous !== this) {
-				const index = $(previous)[kManualAssignment].indexOf(slottable);
+				const index = $(previous)[kExtra][kManualAssignment].indexOf(slottable);
 				if (index >= 0) {
-					$(previous)[kManualAssignment].splice(index, 1);
+					$(previous)[kExtra][kManualAssignment].splice(index, 1);
 				}
 				const root = getRoot(previous);
 				if (!roots.includes(root)) {
@@ -14117,12 +14185,14 @@ class HTMLSlotElement extends HTMLElement {
 			$(slottable)[kManualSlot] = this;
 			assigned.push(slottable);
 		}
-		slots[kManualAssignment] = assigned;
+		slots[kExtra][kManualAssignment] = assigned;
 		for (const root of roots) {
 			assignSlottablesForTree(root);
 		}
 	}
 }
+
+declareExtraSlots(HTMLSlotElement);
 
 function findFlattenedSlottables(slot: HTMLSlotElement): Slottable[] {
 	const result: Slottable[] = [];
@@ -14174,17 +14244,17 @@ class HTMLTemplateElement extends HTMLElement {
 	declare shadowRootCustomElementRegistry: globalThis.HTMLTemplateElement["shadowRootCustomElementRegistry"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
-		$(this)[kTemplateContent] = null;
+		$(this)[kExtra][kTemplateContent] = null;
 	}
 
 	get content(): DocumentFragment {
 		const slots = $(this);
-		let content = slots[kTemplateContent];
+		let content = slots[kExtra][kTemplateContent];
 		if (content === null) {
 			content = new DocumentFragment();
 			$(content)[kDocument] = getTemplateContentsOwner(slots[kDocument]);
-			$(content)[kHost] = this;
-			slots[kTemplateContent] = content;
+			$(content)[kExtra][kHost] = this;
+			slots[kExtra][kTemplateContent] = content;
 		}
 		return content;
 	}
@@ -14228,7 +14298,7 @@ class HTMLTemplateElement extends HTMLElement {
 
 	override [kAdoptingSteps](_oldDocument: Document): void {
 		const slots = this;
-		const content = slots[kTemplateContent];
+		const content = slots[kExtra][kTemplateContent];
 		if (content !== null) {
 			adoptNode(content, slots[kDocument]);
 		}
@@ -14239,7 +14309,7 @@ class HTMLTemplateElement extends HTMLElement {
 		document: Document,
 		_deep: boolean,
 	): void {
-		const content = this[kTemplateContent];
+		const content = this[kExtra][kTemplateContent];
 		if (content === null) {
 			return;
 		}
@@ -14255,20 +14325,22 @@ class HTMLTemplateElement extends HTMLElement {
 	}
 }
 
+declareExtraSlots(HTMLTemplateElement);
+
 // An inert document, one per document, that holds every template's
 // content fragment. That is why a template's content has a different
 // ownerDocument than the element. A contents owner owns its own
 // templates' contents itself.
 function getTemplateContentsOwner(document: Document): Document {
 	const documentSlots = $(document);
-	if (documentSlots[kTemplateDocument] === document) {
+	if (documentSlots[kExtra][kTemplateDocument] === document) {
 		return document;
 	}
-	let owner = documentSlots[kTemplateDocument];
+	let owner = documentSlots[kExtra][kTemplateDocument];
 	if (owner === null) {
 		owner = constructInternal(() => new Document());
-		$(owner)[kTemplateDocument] = owner;
-		documentSlots[kTemplateDocument] = owner;
+		$(owner)[kExtra][kTemplateDocument] = owner;
+		documentSlots[kExtra][kTemplateDocument] = owner;
 	}
 	return owner;
 }
@@ -14292,7 +14364,7 @@ function parseURL(value: string, base: string): string | null {
 // document's URL. Falls back to the document's URL when there is no such
 // element or its href does not parse.
 function getDocumentBaseURL(document: Document): string {
-	const fallback = $(document)[kDocumentURL];
+	const fallback = $(document)[kExtra][kDocumentURL];
 	for (const node of descendants(document)) {
 		if (node.nodeType !== ELEMENT_NODE) {
 			continue;
@@ -14752,7 +14824,7 @@ class HTMLBaseElement extends HTMLElement {
 	declare target: globalThis.HTMLBaseElement["target"];
 	get href(): string {
 		const value = this.getAttribute("href");
-		const fallback = $($(this)[kDocument])[kDocumentURL];
+		const fallback = $($(this)[kDocument])[kExtra][kDocumentURL];
 		if (value === null) {
 			return fallback;
 		}
@@ -14949,15 +15021,15 @@ function invalidateReplaced(element: Element, reflow: boolean): void {
 	}
 	ensureUAShadowTree(element);
 	if (reflow) {
-		$(attached)[kLayout].invalidate(element);
+		$(attached)[kExtra][kLayout].invalidate(element);
 		// Whether an image is a box or a run of text can change with it.
 		const parent = flatParentElement(element);
 		if (parent !== null) {
-			$(attached)[kLayout].invalidate(parent as unknown as Node);
+			$(attached)[kExtra][kLayout].invalidate(parent as unknown as Node);
 		}
 	}
-	$(attached)[kFramebuffer].invalidate();
-	void $(attached)[kRender]();
+	$(attached)[kExtra][kFramebuffer].invalidate();
+	void $(attached)[kExtra][kRender]();
 }
 
 /**
@@ -14983,20 +15055,20 @@ class HTMLCanvasElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kCanvasBitmap] = null;
-		slots[kCanvasGrid] = null;
-		slots[kCanvasContext] = null;
-		slots[kCanvasVersion] = 0;
-		slots[kCanvasRepaint] = false;
+		slots[kExtra][kCanvasBitmap] = null;
+		slots[kExtra][kCanvasGrid] = null;
+		slots[kExtra][kCanvasContext] = null;
+		slots[kExtra][kCanvasVersion] = 0;
+		slots[kExtra][kCanvasRepaint] = false;
 		registerReplacedContent(this, () => {
-			if (slots[kCanvasContext] instanceof CanvasCellGridContext) {
+			if (slots[kExtra][kCanvasContext] instanceof CanvasCellGridContext) {
 				return {
 					kind: "grid",
 					width: this.width,
 					height: this.height,
 					fit: (cols: number, rows: number) =>
 						fitCanvasGrid(this, cols, rows).grid,
-					version: slots[kCanvasVersion],
+					version: slots[kExtra][kCanvasVersion],
 				};
 			}
 			// Nothing drawn yet: the size without the pixels, so a large
@@ -15004,7 +15076,7 @@ class HTMLCanvasElement extends HTMLElement {
 			// still needs the pixels it is drawn over.
 			const bitmap = getCanvasTextRuns(this).length > 0
 				? getCanvasBitmap(this)
-				: slots[kCanvasBitmap];
+				: slots[kExtra][kCanvasBitmap];
 			if (
 				bitmap === null ||
 				bitmap.width !== this.width ||
@@ -15015,12 +15087,12 @@ class HTMLCanvasElement extends HTMLElement {
 			return {
 				kind: "bitmap",
 				bitmap,
-				version: slots[kCanvasVersion],
+				version: slots[kExtra][kCanvasVersion],
 				smooth: true,
 			};
 		});
 		registerDrawable(this, () =>
-			slots[kCanvasContext] instanceof CanvasCellGridContext
+			slots[kExtra][kCanvasContext] instanceof CanvasCellGridContext
 				? null
 				: getCanvasBitmap(this),
 		);
@@ -15058,7 +15130,7 @@ class HTMLCanvasElement extends HTMLElement {
 		}
 		const id = String(contextId);
 		const slots = $(this);
-		const current = slots[kCanvasContext];
+		const current = slots[kExtra][kCanvasContext];
 		// Once a canvas has a context, asking for another kind is null.
 		if (current !== null) {
 			const kind = current instanceof CanvasCellGridContext
@@ -15068,11 +15140,11 @@ class HTMLCanvasElement extends HTMLElement {
 				globalThis.RenderingContext | null;
 		}
 		const changed = () => {
-			slots[kCanvasVersion]++;
-			if (!slots[kCanvasRepaint]) {
-				slots[kCanvasRepaint] = true;
+			slots[kExtra][kCanvasVersion]++;
+			if (!slots[kExtra][kCanvasRepaint]) {
+				slots[kExtra][kCanvasRepaint] = true;
 				queueMicrotask(() => {
-					slots[kCanvasRepaint] = false;
+					slots[kExtra][kCanvasRepaint] = false;
 					invalidateReplaced(this, false);
 				});
 			}
@@ -15080,17 +15152,17 @@ class HTMLCanvasElement extends HTMLElement {
 		if (id === "2d") {
 			// A document that draws no pixels has no 2d context, and the
 			// canvas shows its fallback content.
-			if ($maybe(getAttachedDocument(this))?.[kCanvas] === "none") {
+			if ($maybe(getAttachedDocument(this))?.[kExtra][kCanvas] === "none") {
 				return null;
 			}
-			slots[kCanvasContext] = createContext2D({
+			slots[kExtra][kCanvasContext] = createContext2D({
 				canvas: this,
 				bitmap: () => getCanvasBitmap(this),
 				changed,
 				direction: () => getCanvasDirection(this),
 				pixelsPerCell: () => {
 					const attached = getAttachedDocument(this);
-					const rect = $maybe(attached)?.[kLayout].contentRect(this);
+					const rect = $maybe(attached)?.[kExtra][kLayout].contentRect(this);
 					if (rect && rect.width > 0 && rect.height > 0) {
 						return {x: this.width / rect.width, y: this.height / rect.height};
 					}
@@ -15099,12 +15171,14 @@ class HTMLCanvasElement extends HTMLElement {
 				},
 			});
 		} else if (id === "termdom-cellgrid") {
-			slots[kCanvasContext] = createCellGridContext({
+			slots[kExtra][kCanvasContext] = createCellGridContext({
 				canvas: this,
 				cells: () => getCanvasGrid(this),
 				changed,
 				cellPixels: () => getImageCellSize(this as unknown as Node),
-				drawsPixels: () => $maybe(getAttachedDocument(this))?.[kCanvas] !==
+				drawsPixels: () => $maybe(
+					getAttachedDocument(this),
+				)?.[kExtra][kCanvas] !==
 					"none",
 				color: () => getComputedValue(this, "color"),
 				direction: () => getCanvasDirection(this),
@@ -15112,7 +15186,7 @@ class HTMLCanvasElement extends HTMLElement {
 		} else {
 			return null;
 		}
-		return slots[kCanvasContext] as unknown as globalThis.RenderingContext;
+		return slots[kExtra][kCanvasContext] as unknown as globalThis.RenderingContext;
 	}
 
 	toBlob(
@@ -15123,9 +15197,11 @@ class HTMLCanvasElement extends HTMLElement {
 		if (typeof callback !== "function") {
 			throw new TypeError("toBlob needs a callback");
 		}
-		const bitmap = $(this)[kCanvasContext] instanceof CanvasCellGridContext
-			? null
-			: getCanvasBitmap(this);
+		const bitmap =
+			$(this)[kExtra][kCanvasContext] instanceof
+			CanvasCellGridContext
+				? null
+				: getCanvasBitmap(this);
 		const bytes = bitmap === null || bitmap.width === 0 || bitmap.height === 0
 			? null
 			: canvasToPNG(bitmap);
@@ -15144,7 +15220,7 @@ class HTMLCanvasElement extends HTMLElement {
 
 	// PNG is the one type every canvas encodes; any other asks for it too.
 	toDataURL(_type?: string, _quality?: number): string {
-		if ($(this)[kCanvasContext] instanceof CanvasCellGridContext) {
+		if ($(this)[kExtra][kCanvasContext] instanceof CanvasCellGridContext) {
 			return "data:,";
 		}
 		const bitmap = getCanvasBitmap(this);
@@ -15182,18 +15258,20 @@ class HTMLCanvasElement extends HTMLElement {
 		if (
 			namespace === null && (localName === "width" || localName === "height")
 		) {
-			slots[kCanvasBitmap] = null;
-			slots[kCanvasGrid] = null;
-			const context = slots[kCanvasContext];
+			slots[kExtra][kCanvasBitmap] = null;
+			slots[kExtra][kCanvasGrid] = null;
+			const context = slots[kExtra][kCanvasContext];
 			if (context instanceof CanvasRenderingContext2D) {
 				clearCanvasText(context);
 				resetCanvasContext(context);
 			}
-			slots[kCanvasVersion]++;
+			slots[kExtra][kCanvasVersion]++;
 			invalidateReplaced(ownerOf(this), true);
 		}
 	}
 }
+
+declareExtraSlots(HTMLCanvasElement);
 
 // The bitmap, made at the canvas's size when first needed.
 // Past MAX_IMAGE_PIXELS a canvas gets no bitmap and draws nothing, as a
@@ -15209,9 +15287,9 @@ function getCanvasBitmap(canvas: HTMLCanvasElement): Bitmap {
 		return createBitmap(0, 0);
 	}
 	const canvasSlots = $(canvas);
-	let bitmap = canvasSlots[kCanvasBitmap];
+	let bitmap = canvasSlots[kExtra][kCanvasBitmap];
 	if (bitmap === null || bitmap.width !== width || bitmap.height !== height) {
-		bitmap = canvasSlots[kCanvasBitmap] = createBitmap(width, height);
+		bitmap = canvasSlots[kExtra][kCanvasBitmap] = createBitmap(width, height);
 	}
 	return bitmap;
 }
@@ -15221,7 +15299,7 @@ function getCanvasBitmap(canvas: HTMLCanvasElement): Bitmap {
 // pixels over the page's cell size.
 function getCanvasGrid(canvas: HTMLCanvasElement): CellContext {
 	const rect =
-		$maybe(getAttachedDocument(canvas))?.[kLayout].contentRect(canvas);
+		$maybe(getAttachedDocument(canvas))?.[kExtra][kLayout].contentRect(canvas);
 	if (rect) {
 		return fitCanvasGrid(
 			canvas,
@@ -15249,7 +15327,7 @@ function fitCanvasGrid(
 		rows = 0;
 	}
 	const canvasSlots = $(canvas);
-	const previous = canvasSlots[kCanvasGrid];
+	const previous = canvasSlots[kExtra][kCanvasGrid];
 	if (previous !== null && previous.cols === cols && previous.rows === rows) {
 		return previous;
 	}
@@ -15257,7 +15335,7 @@ function fitCanvasGrid(
 	if (previous !== null) {
 		cells.drawGrid(previous.grid, 0, 0);
 	}
-	canvasSlots[kCanvasGrid] = cells;
+	canvasSlots[kExtra][kCanvasGrid] = cells;
 	return cells;
 }
 
@@ -15284,7 +15362,7 @@ export function relayoutReplacedElements(
 				element instanceof HTMLImageElement ||
 				element instanceof HTMLCanvasElement
 			) {
-				$(attached)[kLayout].invalidate(element as unknown as Node);
+				$(attached)[kExtra][kLayout].invalidate(element as unknown as Node);
 			}
 			const shadow = getShadowRoot(element);
 			if (shadow !== null) {
@@ -15293,15 +15371,16 @@ export function relayoutReplacedElements(
 		}
 	};
 	visit(root);
-	$(attached)[kFramebuffer].invalidate();
-	void $(attached)[kRender]();
+	$(attached)[kExtra][kFramebuffer].invalidate();
+	void $(attached)[kExtra][kRender]();
 }
 
 /** The text a canvas's 2d context drew, for the painter to draw as cells. */
 export function getCanvasTextRuns(
 	element: globalThis.Element,
 ): ReturnType<typeof getCanvasText> {
-	const context = $((element as unknown as HTMLCanvasElement))[kCanvasContext];
+	const context =
+		$((element as unknown as HTMLCanvasElement))[kExtra][kCanvasContext];
 	return context instanceof CanvasRenderingContext2D
 		? getCanvasText(context)
 		: [];
@@ -15320,12 +15399,12 @@ interface HTMLDataListElement {
 class HTMLDataListElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
-		$(this)[kOptions] = null;
+		$(this)[kExtra][kOptions] = null;
 	}
 
 	get options(): HTMLCollectionOf<HTMLOptionElement> {
 		const slots = $(this);
-		let options = slots[kOptions];
+		let options = slots[kExtra][kOptions];
 		if (options === null) {
 			options = live(
 				new HTMLCollection(() => {
@@ -15338,11 +15417,13 @@ class HTMLDataListElement extends HTMLElement {
 					return found;
 				}, this),
 			);
-			slots[kOptions] = options;
+			slots[kExtra][kOptions] = options;
 		}
 		return options as HTMLCollectionOf<HTMLOptionElement>;
 	}
 }
+
+declareExtraSlots(HTMLDataListElement);
 
 const kToggleQueued = Symbol("toggleQueued");
 const kStateAtQueue = Symbol("stateAtQueue");
@@ -15372,14 +15453,14 @@ class HTMLDetailsElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kToggleQueued] = false;
-		slots[kStateAtQueue] = "closed";
-		slots[kUpgraded] = false;
-		slots[kContent] = null;
+		slots[kExtra][kToggleQueued] = false;
+		slots[kExtra][kStateAtQueue] = "closed";
+		slots[kExtra][kUpgraded] = false;
+		slots[kExtra][kContent] = null;
 	}
 
 	[kEnsureUAShadowTree]?(): void {
-		if (this[kUpgraded]) {
+		if (this[kExtra][kUpgraded]) {
 			syncUAShadowTree(ownerOf(this));
 			return;
 		}
@@ -15387,7 +15468,7 @@ class HTMLDetailsElement extends HTMLElement {
 		if (attached === undefined) {
 			return;
 		}
-		this[kUpgraded] = true;
+		this[kExtra][kUpgraded] = true;
 		const document = getUADocument(ownerOf(this));
 		const root = buildUAShadowTree(ownerOf(this), attached);
 		const shadow = root as unknown as ShadowRoot;
@@ -15399,17 +15480,17 @@ class HTMLDetailsElement extends HTMLElement {
 		// tree, because inserting each slot runs the assignment pass that fills
 		// it.
 		const shadowSlots = $(shadow);
-		shadowSlots[kSlotAssignment] = "manual";
-		shadowSlots[kUASlotting] = (slot) =>
+		shadowSlots[kExtra][kSlotAssignment] = "manual";
+		shadowSlots[kExtra][kUASlotting] = (slot) =>
 			getDetailsSlottables(ownerOf(this), slot === summarySlot);
 		root.appendChild(summarySlot);
 		root.appendChild(content);
-		this[kContent] = content;
+		this[kExtra][kContent] = content;
 		syncUAShadowTree(ownerOf(this));
 	}
 
 	[kSyncUAShadowTree]?(): void {
-		const content = this[kContent];
+		const content = this[kExtra][kContent];
 		if (content === null) {
 			return;
 		}
@@ -15439,19 +15520,19 @@ class HTMLDetailsElement extends HTMLElement {
 			return;
 		}
 		const slots = this;
-		if (!slots[kToggleQueued]) {
-			slots[kToggleQueued] = true;
-			slots[kStateAtQueue] = oldValue === null ? "closed" : "open";
+		if (!slots[kExtra][kToggleQueued]) {
+			slots[kExtra][kToggleQueued] = true;
+			slots[kExtra][kStateAtQueue] = oldValue === null ? "closed" : "open";
 			queueMicrotask(() => {
-				slots[kToggleQueued] = false;
+				slots[kExtra][kToggleQueued] = false;
 				const now = ownerOf(this).hasAttribute("open") ? "open" : "closed";
-				if (now === slots[kStateAtQueue]) {
+				if (now === slots[kExtra][kStateAtQueue]) {
 					return;
 				}
 				dispatch(
 					ownerOf(this),
 					new ToggleEvent("toggle", {
-						oldState: slots[kStateAtQueue],
+						oldState: slots[kExtra][kStateAtQueue],
 						newState: now,
 					}),
 				);
@@ -15459,6 +15540,8 @@ class HTMLDetailsElement extends HTMLElement {
 		}
 	}
 }
+
+declareExtraSlots(HTMLDetailsElement);
 
 // The first summary element child goes to the summary slot and every
 // other slottable child to the content slot. Recomputed from the child
@@ -15587,16 +15670,16 @@ class HTMLDialogElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kReturnValue] = "";
-		slots[kPreviouslyFocused] = null;
+		slots[kExtra][kReturnValue] = "";
+		slots[kExtra][kPreviouslyFocused] = null;
 	}
 
 	get returnValue(): string {
-		return $(this)[kReturnValue];
+		return $(this)[kExtra][kReturnValue];
 	}
 
 	set returnValue(value: string) {
-		$(this)[kReturnValue] = String(value);
+		$(this)[kExtra][kReturnValue] = String(value);
 	}
 
 	show(): void {
@@ -15686,13 +15769,16 @@ class HTMLDialogElement extends HTMLElement {
 	}
 }
 
+declareExtraSlots(HTMLDialogElement);
+
 // HTML's dialog focusing steps: the descendant with `autofocus`, else
 // the first descendant that can take focus, else the dialog itself. The
 // dialog is focusable exactly while it is the modal one, so a dialog of
 // plain text still takes keys away from the page.
 function focusDialog(dialog: HTMLDialogElement): void {
 	const dialogSlots = $(dialog);
-	dialogSlots[kPreviouslyFocused] = $(dialogSlots[kDocument])[kActiveElement];
+	dialogSlots[kExtra][kPreviouslyFocused] =
+		$(dialogSlots[kDocument])[kExtra][kActiveElement];
 	const walker = shadowIncludingInclusiveDescendants(dialog);
 	let fallback: Element | null = null;
 	for (const node of walker) {
@@ -15716,7 +15802,7 @@ function focusDialog(dialog: HTMLDialogElement): void {
 		return;
 	}
 	if (isModalDialog(dialog)) {
-		$(dialogSlots[kDocument])[kActiveElement] = dialog;
+		$(dialogSlots[kDocument])[kExtra][kActiveElement] = dialog;
 		focusStartingPoints.delete(dialogSlots[kDocument]);
 	}
 }
@@ -15738,10 +15824,10 @@ function closeDialog(
 	}
 	// Restore focus to where the dialog took it from, if the dialog holds
 	// focus or held the whole page inert as the modal one.
-	const previous = dialogSlots[kPreviouslyFocused];
-	dialogSlots[kPreviouslyFocused] = null;
+	const previous = dialogSlots[kExtra][kPreviouslyFocused];
+	dialogSlots[kExtra][kPreviouslyFocused] = null;
 	const documentSlots = $(document);
-	const active = documentSlots[kActiveElement];
+	const active = documentSlots[kExtra][kActiveElement];
 	const heldFocus =
 		active !== null && isShadowIncludingInclusiveAncestor(dialog, active);
 	if (previous !== null && (wasModal || heldFocus)) {
@@ -15749,12 +15835,12 @@ function closeDialog(
 	}
 	// focus() refuses a target that left the tree or stopped being
 	// focusable. Focus still inside the closed dialog falls back to the body.
-	const after = documentSlots[kActiveElement];
+	const after = documentSlots[kExtra][kActiveElement];
 	if (after !== null && isShadowIncludingInclusiveAncestor(dialog, after)) {
 		(after as HTMLElement).blur();
 	}
 	if (returnValue !== undefined) {
-		dialogSlots[kReturnValue] = String(returnValue);
+		dialogSlots[kExtra][kReturnValue] = String(returnValue);
 	}
 	dispatch(dialog, new Event("close"));
 }
@@ -15767,7 +15853,7 @@ const kTopLayer = Symbol("the document's top layer");
  * it, and the renderer paints it last.
  */
 export function getTopLayer(document: globalThis.Document): Set<Element> {
-	return $((document as Document))[kTopLayer];
+	return $((document as Document))[kExtra][kTopLayer];
 }
 
 /**
@@ -15841,7 +15927,7 @@ class HTMLFieldSetElement extends HTMLElement {
 	declare name: globalThis.HTMLFieldSetElement["name"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
-		$(this)[kElements] = null;
+		$(this)[kExtra][kElements] = null;
 	}
 
 	get form(): HTMLFormElement | null {
@@ -15854,7 +15940,7 @@ class HTMLFieldSetElement extends HTMLElement {
 
 	get elements(): HTMLCollection {
 		const slots = $(this);
-		let elements = slots[kElements];
+		let elements = slots[kExtra][kElements];
 		if (elements === null) {
 			elements = live(
 				new HTMLCollection(() => {
@@ -15870,7 +15956,7 @@ class HTMLFieldSetElement extends HTMLElement {
 					return listed;
 				}, this),
 			);
-			slots[kElements] = elements;
+			slots[kExtra][kElements] = elements;
 		}
 		return elements;
 	}
@@ -15902,6 +15988,8 @@ class HTMLFieldSetElement extends HTMLElement {
 		setCustomValidity(this, error);
 	}
 }
+
+declareExtraSlots(HTMLFieldSetElement);
 
 class HTMLFontElement extends HTMLElement {
 	declare color: globalThis.HTMLFontElement["color"];
@@ -15941,19 +16029,19 @@ class HTMLFormElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kElements] = null;
-		slots[kFiringReset] = false;
-		slots[kConstructingEntryList] = false;
+		slots[kExtra][kElements] = null;
+		slots[kExtra][kFiringReset] = false;
+		slots[kExtra][kConstructingEntryList] = false;
 	}
 
 	get elements(): HTMLFormControlsCollection {
 		const slots = $(this);
-		let elements = slots[kElements];
+		let elements = slots[kExtra][kElements];
 		if (elements === null) {
 			elements = live(
 				new HTMLFormControlsCollection(() => getListedElements(this), this),
 			);
-			slots[kElements] = elements;
+			slots[kExtra][kElements] = elements;
 		}
 		return elements;
 	}
@@ -15991,10 +16079,10 @@ class HTMLFormElement extends HTMLElement {
 
 	reset(): void {
 		const slots = $(this);
-		if (slots[kFiringReset]) {
+		if (slots[kExtra][kFiringReset]) {
 			return;
 		}
-		slots[kFiringReset] = true;
+		slots[kExtra][kFiringReset] = true;
 		let canceled: boolean;
 		try {
 			canceled = !dispatch(
@@ -16002,7 +16090,7 @@ class HTMLFormElement extends HTMLElement {
 				new Event("reset", {bubbles: true, cancelable: true}),
 			);
 		} finally {
-			slots[kFiringReset] = false;
+			slots[kExtra][kFiringReset] = false;
 		}
 		if (canceled) {
 			return;
@@ -16032,6 +16120,8 @@ class HTMLFormElement extends HTMLElement {
 		return this.elements[Symbol.iterator]();
 	}
 }
+
+declareExtraSlots(HTMLFormElement);
 
 function getListedElements(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
@@ -16078,7 +16168,7 @@ function submitForm(
 	// A form outside a document cannot submit, because submission ends in a
 	// navigation and there is nothing to navigate. The submit event does not
 	// fire either.
-	if (!form.isConnected || $(form)[kConstructingEntryList]) {
+	if (!form.isConnected || $(form)[kExtra][kConstructingEntryList]) {
 		return;
 	}
 	if (!skipEvent) {
@@ -16565,6 +16655,8 @@ class FormData extends FormDataBase {
 	}
 }
 
+declareSealedRoot(FormData);
+
 // The runtime's own value, under the filename this entry was stored
 // with. A runtime that keeps that filename is taken at its word.
 function readEntry(
@@ -16859,10 +16951,10 @@ function constructEntryList(
 	submitter: Element | null,
 ): FormDataEntry[] | null {
 	const formSlots = $(form);
-	if (formSlots[kConstructingEntryList]) {
+	if (formSlots[kExtra][kConstructingEntryList]) {
 		return null;
 	}
-	formSlots[kConstructingEntryList] = true;
+	formSlots[kExtra][kConstructingEntryList] = true;
 	const built: FormDataEntry[] = [];
 	let data: FormData;
 	try {
@@ -16875,7 +16967,7 @@ function constructEntryList(
 			new FormDataEvent("formdata", {formData: data, bubbles: true}),
 		);
 	} finally {
-		formSlots[kConstructingEntryList] = false;
+		formSlots[kExtra][kConstructingEntryList] = false;
 	}
 	// A listener may have added to, removed from or rewritten the entries.
 	return readFormDataEntries(data)!;
@@ -17179,19 +17271,22 @@ class HTMLIFrameElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kContentDocument] = null;
-		slots[kContentWindow] = null;
-		slots[kFrameDocumentRun] = {};
+		slots[kExtra][kContentDocument] = null;
+		slots[kExtra][kContentWindow] = null;
+		slots[kExtra][kFrameDocumentRun] = {};
 	}
 
 	get contentDocument(): Document | null {
 		ensureFrameDocument(this);
-		return $(this)[kContentDocument];
+		return $(this)[kExtra][kContentDocument];
 	}
 
 	get contentWindow(): globalThis.WindowProxy | null {
 		ensureFrameDocument(this);
-		return $(this)[kContentWindow] as unknown as globalThis.WindowProxy | null;
+		return $(
+			this,
+		)[kExtra][kContentWindow] as unknown as globalThis.WindowProxy |
+			null;
 	}
 
 	getSVGDocument(): Document | null {
@@ -17208,9 +17303,11 @@ class HTMLIFrameElement extends HTMLElement {
 		// running. The load event fires from a task, after the insertion has
 		// finished and its listeners are attached.
 		const slots = this;
-		const run = (slots[kFrameDocumentRun] = {});
+		const run = (slots[kExtra][kFrameDocumentRun] = {});
 		setTimeout(() => {
-			if (ownerOf(this).isConnected && slots[kFrameDocumentRun] === run) {
+			if (
+				ownerOf(this).isConnected && slots[kExtra][kFrameDocumentRun] === run
+			) {
 				ownerOf(this).dispatchEvent(new Event("load"));
 			}
 		}, 0);
@@ -17219,15 +17316,17 @@ class HTMLIFrameElement extends HTMLElement {
 	override [kRemovingSteps](parent: Node): void {
 		superStep(HTMLIFrameElement, kRemovingSteps).call(this, parent);
 		const slots = this;
-		slots[kContentDocument] = null;
-		slots[kContentWindow] = null;
-		slots[kFrameDocumentRun] = {};
+		slots[kExtra][kContentDocument] = null;
+		slots[kExtra][kContentWindow] = null;
+		slots[kExtra][kFrameDocumentRun] = {};
 	}
 }
 
+declareExtraSlots(HTMLIFrameElement);
+
 function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	const frameSlots = $(frame);
-	if (!frame.isConnected || frameSlots[kContentDocument] !== null) {
+	if (!frame.isConnected || frameSlots[kExtra][kContentDocument] !== null) {
 		return;
 	}
 	const srcdoc = frame.getAttribute("srcdoc");
@@ -17238,8 +17337,8 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 		true,
 		registry,
 	);
-	frameSlots[kContentDocument] = contentDocument;
-	frameSlots[kContentWindow] = {
+	frameSlots[kExtra][kContentDocument] = contentDocument;
+	frameSlots[kExtra][kContentWindow] = {
 		document: contentDocument,
 		customElements: registry,
 		frameElement: frame,
@@ -17343,8 +17442,8 @@ class HTMLImageElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kAltText] = null;
-		slots[kImageState] = {
+		slots[kExtra][kAltText] = null;
+		slots[kExtra][kImageState] = {
 			status: "unavailable",
 			url: "",
 			bitmap: null,
@@ -17355,7 +17454,7 @@ class HTMLImageElement extends HTMLElement {
 			pending: false,
 		};
 		registerReplacedContent(this, () => {
-			const state = slots[kImageState];
+			const state = slots[kExtra][kImageState];
 			if (state.bitmap !== null) {
 				return {
 					kind: "bitmap",
@@ -17378,7 +17477,7 @@ class HTMLImageElement extends HTMLElement {
 			};
 		});
 		registerDrawable(this, () => {
-			const state = slots[kImageState];
+			const state = slots[kExtra][kImageState];
 			if (state.status === "broken") {
 				throw domError("InvalidStateError", "The image is broken");
 			}
@@ -17414,11 +17513,11 @@ class HTMLImageElement extends HTMLElement {
 	}
 
 	get currentSrc(): string {
-		return $(this)[kImageState].url;
+		return $(this)[kExtra][kImageState].url;
 	}
 
 	get complete(): boolean {
-		const state = $(this)[kImageState];
+		const state = $(this)[kExtra][kImageState];
 		const src = this.getAttribute("src");
 		const srcset = this.getAttribute("srcset");
 		if ((src === null || src === "") && (srcset === null || srcset === "")) {
@@ -17438,7 +17537,7 @@ class HTMLImageElement extends HTMLElement {
 	}
 
 	decode(): Promise<void> {
-		const state = $(this)[kImageState];
+		const state = $(this)[kExtra][kImageState];
 		if (state.status === "complete") {
 			return Promise.resolve();
 		}
@@ -17459,14 +17558,14 @@ class HTMLImageElement extends HTMLElement {
 	[kEnsureUAShadowTree]?(): void {
 		const alt = ownerOf(this).getAttribute("alt") ?? "";
 		const slots = this;
-		const text = slots[kAltText];
+		const text = slots[kExtra][kAltText];
 		if (text !== null) {
 			if (text.data !== alt) {
 				text.data = alt;
 			}
 			return;
 		}
-		if (alt === "" || slots[kImageState].bitmap !== null) {
+		if (alt === "" || slots[kExtra][kImageState].bitmap !== null) {
 			return;
 		}
 		const attached = getAttachedDocument(ownerOf(this));
@@ -17474,13 +17573,14 @@ class HTMLImageElement extends HTMLElement {
 			return;
 		}
 		const root = buildUAShadowTree(ownerOf(this), attached);
-		slots[kAltText] = slots[kDocument].createTextNode(alt) as unknown as Text;
-		root.appendChild(slots[kAltText] as unknown as globalThis.Text);
+		slots[kExtra][kAltText] =
+			slots[kDocument].createTextNode(alt) as unknown as Text;
+		root.appendChild(slots[kExtra][kAltText] as unknown as globalThis.Text);
 	}
 
 	override [kInsertionSteps](): void {
 		superStep(HTMLImageElement, kInsertionSteps).call(this);
-		if (this[kImageState].pending) {
+		if (this[kExtra][kImageState].pending) {
 			updateImageData(ownerOf(this));
 		}
 	}
@@ -17491,7 +17591,7 @@ class HTMLImageElement extends HTMLElement {
 		// template's document and then moves them. A load that started
 		// there stops, and waits for a document with a window.
 		if (
-			this[kImageState].status === "loading" &&
+			this[kExtra][kImageState].status === "loading" &&
 			ownerOf(this).ownerDocument?.defaultView == null
 		) {
 			updateImageData(ownerOf(this));
@@ -17519,11 +17619,13 @@ class HTMLImageElement extends HTMLElement {
 		} else if (localName === "alt") {
 			invalidateReplaced(
 				ownerOf(this),
-				this[kImageState].status !== "complete",
+				this[kExtra][kImageState].status !== "complete",
 			);
 		}
 	}
 }
+
+declareExtraSlots(HTMLImageElement);
 
 function toImageDimension(value: number): number {
 	const number = Math.trunc(Number(value));
@@ -17538,7 +17640,7 @@ function readImageDimension(
 ): number {
 	const attached = getAttachedDocument(image);
 	if (attached !== undefined && image.isConnected) {
-		const rect = $(attached)[kLayout].contentRect(image);
+		const rect = $(attached)[kExtra][kLayout].contentRect(image);
 		if (rect !== null) {
 			const vertical = axis === "height";
 			const cells = vertical ? rect.height : rect.width;
@@ -17560,7 +17662,7 @@ function getDensityCorrectedSize(image: HTMLImageElement): {
 	width: number;
 	height: number;
 } {
-	const bitmap = $(image)[kImageState].bitmap;
+	const bitmap = $(image)[kExtra][kImageState].bitmap;
 	if (bitmap === null) {
 		return {width: 0, height: 0};
 	}
@@ -17578,7 +17680,7 @@ function getDensityCorrectedSize(image: HTMLImageElement): {
 // HTML's "update the image data": the request starts again from the
 // current src or srcset, and only the newest request's result counts.
 function updateImageData(image: HTMLImageElement): void {
-	const state = $(image)[kImageState];
+	const state = $(image)[kExtra][kImageState];
 	const generation = ++state.generation;
 	state.abort?.abort();
 	state.abort = null;
@@ -17599,7 +17701,8 @@ function updateImageData(image: HTMLImageElement): void {
 	// puts it: the request ends unavailable with nothing to report, and the
 	// image shows its alt text.
 	if (
-		chosen === null || $maybe(getAttachedDocument(image))?.[kImages] === "none"
+		chosen === null ||
+		$maybe(getAttachedDocument(image))?.[kExtra][kImages] === "none"
 	) {
 		state.status = "unavailable";
 		state.url = "";
@@ -17686,10 +17789,10 @@ function updateImageData(image: HTMLImageElement): void {
 			settle("broken", null, new TypeError("This document loads nothing"));
 			return;
 		}
-		const ended = $(attached)[kLoadSignal];
+		const ended = $(attached)[kExtra][kLoadSignal];
 		const onEnded = () => abort.abort(ended.reason);
 		ended.addEventListener("abort", onEnded, {once: true});
-		$(attached)[kLoad](request, {
+		$(attached)[kExtra][kLoad](request, {
 			initiator: image as unknown as globalThis.Element,
 		})
 			.then((response) => readImageResponse(response))
@@ -17836,26 +17939,26 @@ export class HTMLInputElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kValue] = "";
-		slots[kDirtyValue] = false;
-		slots[kFiles] = null;
-		slots[kChecked] = false;
-		slots[kDirtyChecked] = false;
-		slots[kIndeterminate] = false;
-		slots[kSelectionStart] = 0;
-		slots[kSelectionEnd] = 0;
-		slots[kSelectionDirection] = "none";
-		slots[kPreviouslyChecked] = false;
-		slots[kPreviouslyIndeterminate] = false;
-		slots[kPreviousRadio] = null;
-		slots[kUpgraded] = false;
-		slots[kKind] = null;
-		slots[kRoot] = null;
-		slots[kValueText] = null;
-		slots[kPlaceholderText] = null;
-		slots[kGlyphText] = null;
-		slots[kSliderFill] = null;
-		slots[kOnBeforeInput] = (event: InputEvent): void => {
+		slots[kExtra][kValue] = "";
+		slots[kExtra][kDirtyValue] = false;
+		slots[kExtra][kFiles] = null;
+		slots[kExtra][kChecked] = false;
+		slots[kExtra][kDirtyChecked] = false;
+		slots[kExtra][kIndeterminate] = false;
+		slots[kExtra][kSelectionStart] = 0;
+		slots[kExtra][kSelectionEnd] = 0;
+		slots[kExtra][kSelectionDirection] = "none";
+		slots[kExtra][kPreviouslyChecked] = false;
+		slots[kExtra][kPreviouslyIndeterminate] = false;
+		slots[kExtra][kPreviousRadio] = null;
+		slots[kExtra][kUpgraded] = false;
+		slots[kExtra][kKind] = null;
+		slots[kExtra][kRoot] = null;
+		slots[kExtra][kValueText] = null;
+		slots[kExtra][kPlaceholderText] = null;
+		slots[kExtra][kGlyphText] = null;
+		slots[kExtra][kSliderFill] = null;
+		slots[kExtra][kOnBeforeInput] = (event: InputEvent): void => {
 			if (event.defaultPrevented || event.data == null) {
 				return;
 			}
@@ -17877,7 +17980,7 @@ export class HTMLInputElement extends HTMLElement {
 				"insertFromPaste",
 			);
 		};
-		slots[kOnKeydown] = (event: KeyboardEvent): void => {
+		slots[kExtra][kOnKeydown] = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) {
 				return;
 			}
@@ -18031,11 +18134,12 @@ export class HTMLInputElement extends HTMLElement {
 				// The IDL attribute reports the empty string until the text is
 				// a number, as a browser's does.
 				if (
-					this.type === "number" && parseFloatingPoint(slots[kValue]) === null
+					this.type === "number" &&
+					parseFloatingPoint(slots[kExtra][kValue]) === null
 				) {
 					return "";
 				}
-				return slots[kValue];
+				return slots[kExtra][kValue];
 			case "default":
 				return this.getAttribute("value") ?? "";
 			case "on":
@@ -18051,13 +18155,13 @@ export class HTMLInputElement extends HTMLElement {
 		const slots = $(this);
 		switch (getInputValueMode(this.type)) {
 			case "value": {
-				const previous = slots[kValue];
-				slots[kValue] = sanitizeInputValue(this, string);
-				slots[kDirtyValue] = true;
-				if (previous !== slots[kValue]) {
-					slots[kSelectionStart] = slots[kValue].length;
-					slots[kSelectionEnd] = slots[kValue].length;
-					slots[kSelectionDirection] = "none";
+				const previous = slots[kExtra][kValue];
+				slots[kExtra][kValue] = sanitizeInputValue(this, string);
+				slots[kExtra][kDirtyValue] = true;
+				if (previous !== slots[kExtra][kValue]) {
+					slots[kExtra][kSelectionStart] = slots[kExtra][kValue].length;
+					slots[kExtra][kSelectionEnd] = slots[kExtra][kValue].length;
+					slots[kExtra][kSelectionDirection] = "none";
 				}
 				break;
 			}
@@ -18104,20 +18208,20 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get checked(): boolean {
-		return $(this)[kChecked];
+		return $(this)[kExtra][kChecked];
 	}
 
 	set checked(value: boolean) {
-		$(this)[kDirtyChecked] = true;
+		$(this)[kExtra][kDirtyChecked] = true;
 		setCheckedness(this, Boolean(value));
 	}
 
 	get indeterminate(): boolean {
-		return $(this)[kIndeterminate];
+		return $(this)[kExtra][kIndeterminate];
 	}
 
 	set indeterminate(value: boolean) {
-		$(this)[kIndeterminate] = Boolean(value);
+		$(this)[kExtra][kIndeterminate] = Boolean(value);
 		syncUAShadowTree(this);
 	}
 
@@ -18125,7 +18229,7 @@ export class HTMLInputElement extends HTMLElement {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			return null;
 		}
-		return $(this)[kSelectionStart];
+		return $(this)[kExtra][kSelectionStart];
 	}
 
 	set selectionStart(value: number | null) {
@@ -18134,8 +18238,8 @@ export class HTMLInputElement extends HTMLElement {
 		const slots = $(this);
 		this.setSelectionRange(
 			start,
-			Math.max(start, slots[kSelectionEnd]),
-			slots[kSelectionDirection],
+			Math.max(start, slots[kExtra][kSelectionEnd]),
+			slots[kExtra][kSelectionDirection],
 		);
 	}
 
@@ -18143,16 +18247,16 @@ export class HTMLInputElement extends HTMLElement {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			return null;
 		}
-		return $(this)[kSelectionEnd];
+		return $(this)[kExtra][kSelectionEnd];
 	}
 
 	set selectionEnd(value: number | null) {
 		requireSelectable(this);
 		const slots = $(this);
 		this.setSelectionRange(
-			slots[kSelectionStart],
+			slots[kExtra][kSelectionStart],
 			toUnsignedLong(value ?? 0),
-			slots[kSelectionDirection],
+			slots[kExtra][kSelectionDirection],
 		);
 	}
 
@@ -18160,15 +18264,15 @@ export class HTMLInputElement extends HTMLElement {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			return null;
 		}
-		return $(this)[kSelectionDirection];
+		return $(this)[kExtra][kSelectionDirection];
 	}
 
 	set selectionDirection(value: SelectionDirection | null) {
 		requireSelectable(this);
 		const slots = $(this);
 		this.setSelectionRange(
-			slots[kSelectionStart],
-			slots[kSelectionEnd],
+			slots[kExtra][kSelectionStart],
+			slots[kExtra][kSelectionEnd],
 			value === null ? undefined : (String(value) as SelectionDirection),
 		);
 	}
@@ -18199,17 +18303,17 @@ export class HTMLInputElement extends HTMLElement {
 			return null;
 		}
 		const slots = $(this);
-		let files = slots[kFiles];
+		let files = slots[kExtra][kFiles];
 		if (files === null) {
 			files = new FileList();
-			slots[kFiles] = files;
+			slots[kExtra][kFiles] = files;
 		}
 		return files;
 	}
 
 	set files(value: FileList | null) {
 		if (this.type === "file" && value instanceof FileList) {
-			$(this)[kFiles] = value;
+			$(this)[kExtra][kFiles] = value;
 		}
 	}
 
@@ -18294,12 +18398,12 @@ export class HTMLInputElement extends HTMLElement {
 
 	get [kUAValue](): string {
 		return getInputValueMode(ownerOf(this).type) === "value"
-			? this[kValue]
+			? this[kExtra][kValue]
 			: "";
 	}
 
 	get [kUAValueText](): globalThis.Text | null {
-		return this[kValueText];
+		return this[kExtra][kValueText];
 	}
 
 	showPicker(): void {}
@@ -18331,7 +18435,7 @@ export class HTMLInputElement extends HTMLElement {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			return;
 		}
-		this.setSelectionRange(0, $(this)[kValue].length, "none");
+		this.setSelectionRange(0, $(this)[kExtra][kValue].length, "none");
 	}
 
 	setSelectionRange(
@@ -18364,20 +18468,22 @@ export class HTMLInputElement extends HTMLElement {
 		}
 		requireSelectable(this);
 		const slots = $(this);
-		slots[kDirtyValue] = true;
+		slots[kExtra][kDirtyValue] = true;
 		const result = replaceTextRange(
-			slots[kValue],
+			slots[kExtra][kValue],
 			String(replacement),
-			start === undefined ? slots[kSelectionStart] : toUnsignedLong(start),
-			end === undefined ? slots[kSelectionEnd] : toUnsignedLong(end),
+			start === undefined
+				? slots[kExtra][kSelectionStart]
+				: toUnsignedLong(start),
+			end === undefined ? slots[kExtra][kSelectionEnd] : toUnsignedLong(end),
 			selectMode === undefined ? "preserve" : String(selectMode),
-			slots[kSelectionStart],
-			slots[kSelectionEnd],
+			slots[kExtra][kSelectionStart],
+			slots[kExtra][kSelectionEnd],
 		);
-		slots[kValue] = result.value;
-		slots[kSelectionStart] = result.start;
-		slots[kSelectionEnd] = result.end;
-		slots[kSelectionDirection] = "none";
+		slots[kExtra][kValue] = result.value;
+		slots[kExtra][kSelectionStart] = result.start;
+		slots[kExtra][kSelectionEnd] = result.end;
+		slots[kExtra][kSelectionDirection] = "none";
 		syncUAShadowTree(this);
 		scheduleTextSelectionChange(this);
 	}
@@ -18398,10 +18504,10 @@ export class HTMLInputElement extends HTMLElement {
 		// empty string until the text is a number. Programmatic writes get full
 		// sanitization.
 		const slots = this;
-		slots[kValue] = ownerOf(this).type === "number"
+		slots[kExtra][kValue] = ownerOf(this).type === "number"
 			? value.replace(/[\r\n]/g, "")
 			: sanitizeInputValue(ownerOf(this), value);
-		slots[kDirtyValue] = true;
+		slots[kExtra][kDirtyValue] = true;
 		syncUAShadowTree(ownerOf(this));
 	}
 
@@ -18412,9 +18518,9 @@ export class HTMLInputElement extends HTMLElement {
 	[kUASelection]?(): {start: number; end: number; direction: string} {
 		const slots = this;
 		return {
-			start: slots[kSelectionStart],
-			end: slots[kSelectionEnd],
-			direction: slots[kSelectionDirection],
+			start: slots[kExtra][kSelectionStart],
+			end: slots[kExtra][kSelectionEnd],
+			direction: slots[kExtra][kSelectionDirection],
 		};
 	}
 
@@ -18425,11 +18531,11 @@ export class HTMLInputElement extends HTMLElement {
 			toUnsignedLong(start),
 			toUnsignedLong(end),
 			direction,
-			slots[kValue].length,
+			slots[kExtra][kValue].length,
 			(selection) => {
-				slots[kSelectionStart] = selection[0];
-				slots[kSelectionEnd] = selection[1];
-				slots[kSelectionDirection] = selection[2];
+				slots[kExtra][kSelectionStart] = selection[0];
+				slots[kExtra][kSelectionEnd] = selection[1];
+				slots[kExtra][kSelectionDirection] = selection[2];
 			},
 		);
 	}
@@ -18451,16 +18557,19 @@ export class HTMLInputElement extends HTMLElement {
 			return;
 		}
 		const slots = this;
-		if (localName === "value" && !slots[kDirtyValue]) {
-			slots[kValue] = sanitizeInputValue(ownerOf(this), value ?? "");
-		} else if (localName === "checked" && !slots[kDirtyChecked]) {
+		if (localName === "value" && !slots[kExtra][kDirtyValue]) {
+			slots[kExtra][kValue] = sanitizeInputValue(ownerOf(this), value ?? "");
+		} else if (localName === "checked" && !slots[kExtra][kDirtyChecked]) {
 			setCheckedness(ownerOf(this), value !== null);
 		} else if (
 			localName === "type" ||
 			(ownerOf(this).type === "range" &&
 				(localName === "min" || localName === "max"))
 		) {
-			slots[kValue] = sanitizeInputValue(ownerOf(this), slots[kValue]);
+			slots[kExtra][kValue] = sanitizeInputValue(
+				ownerOf(this),
+				slots[kExtra][kValue],
+			);
 		}
 	}
 
@@ -18468,32 +18577,32 @@ export class HTMLInputElement extends HTMLElement {
 		const clone = copy as HTMLInputElement;
 		const slots = this;
 		const cloneSlots = $(clone);
-		cloneSlots[kValue] = slots[kValue];
-		cloneSlots[kDirtyValue] = slots[kDirtyValue];
-		cloneSlots[kChecked] = slots[kChecked];
-		cloneSlots[kDirtyChecked] = slots[kDirtyChecked];
+		cloneSlots[kExtra][kValue] = slots[kExtra][kValue];
+		cloneSlots[kExtra][kDirtyValue] = slots[kExtra][kDirtyValue];
+		cloneSlots[kExtra][kChecked] = slots[kExtra][kChecked];
+		cloneSlots[kExtra][kDirtyChecked] = slots[kExtra][kDirtyChecked];
 	}
 
 	[kResetControl]?(): void {
 		const slots = this;
-		slots[kValue] = sanitizeInputValue(
+		slots[kExtra][kValue] = sanitizeInputValue(
 			ownerOf(this),
 			ownerOf(this).getAttribute("value") ?? "",
 		);
-		slots[kDirtyValue] = false;
-		slots[kChecked] = ownerOf(this).hasAttribute("checked");
-		slots[kDirtyChecked] = false;
-		slots[kIndeterminate] = false;
+		slots[kExtra][kDirtyValue] = false;
+		slots[kExtra][kChecked] = ownerOf(this).hasAttribute("checked");
+		slots[kExtra][kDirtyChecked] = false;
+		slots[kExtra][kIndeterminate] = false;
 		syncUAShadowTree(ownerOf(this));
 	}
 
 	[kUASelectionRange]?(): globalThis.Range | null {
-		return getTextSelectionRange(ownerOf(this), this[kValueText]);
+		return getTextSelectionRange(ownerOf(this), this[kExtra][kValueText]);
 	}
 
 	[kEnsureUAShadowTree]?(): void {
 		const slots = this;
-		if (slots[kUpgraded]) {
+		if (slots[kExtra][kUpgraded]) {
 			// A control that left the tree and came back keeps its tree. Only
 			// the state it missed needs updating.
 			syncUAShadowTree(ownerOf(this));
@@ -18503,7 +18612,7 @@ export class HTMLInputElement extends HTMLElement {
 		if (attached === undefined) {
 			return;
 		}
-		slots[kUpgraded] = true;
+		slots[kExtra][kUpgraded] = true;
 		buildInputWidget(ownerOf(this));
 	}
 
@@ -18515,37 +18624,37 @@ export class HTMLInputElement extends HTMLElement {
 	// by the same mutation as every other change.
 	[kSyncUAShadowTree]?(): void {
 		const slots = this;
-		if (!slots[kUpgraded]) {
+		if (!slots[kExtra][kUpgraded]) {
 			return;
 		}
 		// A type change means a different tree, not a different value.
-		if (getInputKind(ownerOf(this)) !== slots[kKind]) {
+		if (getInputKind(ownerOf(this)) !== slots[kExtra][kKind]) {
 			buildInputWidget(ownerOf(this));
 			return;
 		}
-		if (slots[kKind] === "slider") {
+		if (slots[kExtra][kKind] === "slider") {
 			const {min, max} = getRangeBounds(ownerOf(this));
 			const value = parseFloatingPoint(ownerOf(this).value) ?? min;
 			setGaugeFill(
-				slots[kSliderFill]!,
+				slots[kExtra][kSliderFill]!,
 				max > min ? (value - min) / (max - min) : 0,
 			);
 			return;
 		}
-		if (slots[kKind] !== "textControl") {
-			if (slots[kGlyphText]) {
-				const mark = slots[kKind] === "button"
+		if (slots[kExtra][kKind] !== "textControl") {
+			if (slots[kExtra][kGlyphText]) {
+				const mark = slots[kExtra][kKind] === "button"
 					? getInputButtonLabel(ownerOf(this))
 					: ownerOf(this).type === "checkbox"
 						? ownerOf(this).checked ? "[x]" : "[ ]"
 						: ownerOf(this).checked ? "(x)" : "( )";
-				if (slots[kGlyphText].data !== mark) {
-					slots[kGlyphText].data = mark;
+				if (slots[kExtra][kGlyphText].data !== mark) {
+					slots[kExtra][kGlyphText].data = mark;
 				}
 			}
 			return;
 		}
-		if (!slots[kValueText]) {
+		if (!slots[kExtra][kValueText]) {
 			return;
 		}
 		const value = slots[kUAValue];
@@ -18558,20 +18667,20 @@ export class HTMLInputElement extends HTMLElement {
 			? "•".repeat(value.length)
 			: value;
 		let changed = false;
-		if (slots[kValueText].data !== shown) {
-			slots[kValueText].data = shown;
+		if (slots[kExtra][kValueText].data !== shown) {
+			slots[kExtra][kValueText].data = shown;
 			changed = true;
 		}
-		if (slots[kPlaceholderText]!.data !== placeholder) {
-			slots[kPlaceholderText]!.data = placeholder;
+		if (slots[kExtra][kPlaceholderText]!.data !== placeholder) {
+			slots[kExtra][kPlaceholderText]!.data = placeholder;
 			changed = true;
 		}
 		// Exactly one occupies the slot: the value when present, else the
 		// placeholder.
 		const valueDisplay = value ? "inline-block" : "none";
 		const placeholderDisplay = value ? "none" : "inline-block";
-		const valueSpan = slots[kValueText].parentElement!;
-		const placeholderSpan = slots[kPlaceholderText]!.parentElement!;
+		const valueSpan = slots[kExtra][kValueText].parentElement!;
+		const placeholderSpan = slots[kExtra][kPlaceholderText]!.parentElement!;
 		if (valueSpan.style.display !== valueDisplay) {
 			valueSpan.style.display = valueDisplay;
 			changed = true;
@@ -18584,10 +18693,14 @@ export class HTMLInputElement extends HTMLElement {
 		// invalidates the measure, and the observer would only see it on a
 		// microtask.
 		if (changed) {
-			$(getAttachedDocument(ownerOf(this))!)[kLayout].invalidate(ownerOf(this));
+			$(getAttachedDocument(ownerOf(this))!)[kExtra][kLayout].invalidate(
+				ownerOf(this),
+			);
 		}
 	}
 }
+
+declareExtraSlots(HTMLInputElement);
 
 // A number input's text can be any prefix of a valid floating-point
 // number and nothing else. An insertion that would break the grammar is
@@ -18622,16 +18735,17 @@ function legacyPreActivationBehavior(input: HTMLInputElement): void {
 	// The canceled half restores this click's reference, so a click that
 	// records none leaves none behind.
 	const inputSlots = $(input);
-	inputSlots[kPreviousRadio] = null;
+	inputSlots[kExtra][kPreviousRadio] = null;
 	if (input.type === "checkbox") {
-		inputSlots[kPreviouslyChecked] = inputSlots[kChecked];
-		inputSlots[kPreviouslyIndeterminate] = inputSlots[kIndeterminate];
-		inputSlots[kIndeterminate] = false;
-		inputSlots[kDirtyChecked] = true;
-		setCheckedness(input, !inputSlots[kChecked]);
+		inputSlots[kExtra][kPreviouslyChecked] = inputSlots[kExtra][kChecked];
+		inputSlots[kExtra][kPreviouslyIndeterminate] =
+			inputSlots[kExtra][kIndeterminate];
+		inputSlots[kExtra][kIndeterminate] = false;
+		inputSlots[kExtra][kDirtyChecked] = true;
+		setCheckedness(input, !inputSlots[kExtra][kChecked]);
 	} else if (input.type === "radio") {
-		inputSlots[kPreviousRadio] = getCheckedRadio(input) ?? null;
-		inputSlots[kDirtyChecked] = true;
+		inputSlots[kExtra][kPreviousRadio] = getCheckedRadio(input) ?? null;
+		inputSlots[kExtra][kDirtyChecked] = true;
 		setCheckedness(input, true);
 	}
 }
@@ -18644,30 +18758,31 @@ function legacyPreActivationBehavior(input: HTMLInputElement): void {
 function legacyCanceledActivationBehavior(input: HTMLInputElement): void {
 	const inputSlots = $(input);
 	if (input.type === "checkbox") {
-		inputSlots[kIndeterminate] = inputSlots[kPreviouslyIndeterminate];
-		inputSlots[kChecked] = inputSlots[kPreviouslyChecked];
+		inputSlots[kExtra][kIndeterminate] =
+			inputSlots[kExtra][kPreviouslyIndeterminate];
+		inputSlots[kExtra][kChecked] = inputSlots[kExtra][kPreviouslyChecked];
 		return;
 	}
 	if (input.type !== "radio") {
 		return;
 	}
-	const previous = inputSlots[kPreviousRadio];
-	inputSlots[kPreviousRadio] = null;
-	inputSlots[kChecked] = false;
+	const previous = inputSlots[kExtra][kPreviousRadio];
+	inputSlots[kExtra][kPreviousRadio] = null;
+	inputSlots[kExtra][kChecked] = false;
 	if (previous !== null && getRadioGroup(input).includes(previous)) {
-		$(previous)[kChecked] = true;
+		$(previous)[kExtra][kChecked] = true;
 	}
 }
 
 function setCheckedness(input: HTMLInputElement, checked: boolean): void {
-	$(input)[kChecked] = checked;
+	$(input)[kExtra][kChecked] = checked;
 	syncUAShadowTree(input);
 	if (!checked || input.type !== "radio") {
 		return;
 	}
 	for (const other of getRadioGroup(input)) {
 		if (other !== input) {
-			$(other)[kChecked] = false;
+			$(other)[kExtra][kChecked] = false;
 			syncUAShadowTree(other);
 		}
 	}
@@ -18719,7 +18834,7 @@ function getInputButtonLabel(input: HTMLInputElement): string {
 function buildInputWidget(input: HTMLInputElement): void {
 	const attached = getAttachedDocument(input)!;
 	const inputSlots = $(input);
-	let root = inputSlots[kRoot];
+	let root = inputSlots[kExtra][kRoot];
 	const attachedSlots = $(attached);
 	if (root === null) {
 		root = buildUAShadowTree(input, attached);
@@ -18729,31 +18844,31 @@ function buildInputWidget(input: HTMLInputElement): void {
 		while (root.firstChild) {
 			root.removeChild(root.firstChild);
 		}
-		attachedSlots[kLayout].invalidate();
+		attachedSlots[kExtra][kLayout].invalidate();
 	}
-	inputSlots[kRoot] = root;
-	inputSlots[kKind] = getInputKind(input);
+	inputSlots[kExtra][kRoot] = root;
+	inputSlots[kExtra][kKind] = getInputKind(input);
 
-	inputSlots[kSliderFill] = null;
-	if (inputSlots[kKind] === "textControl") {
-		inputSlots[kValueText] =
+	inputSlots[kExtra][kSliderFill] = null;
+	if (inputSlots[kExtra][kKind] === "textControl") {
+		inputSlots[kExtra][kValueText] =
 			addPart(root, "value").firstChild as globalThis.Text;
-		inputSlots[kPlaceholderText] =
+		inputSlots[kExtra][kPlaceholderText] =
 			addPart(root, "placeholder").firstChild as globalThis.Text;
-	} else if (inputSlots[kKind] === "slider") {
-		inputSlots[kValueText] = null;
-		inputSlots[kPlaceholderText] = null;
-		inputSlots[kGlyphText] = null;
-		inputSlots[kSliderFill] = buildSlider(input, root);
+	} else if (inputSlots[kExtra][kKind] === "slider") {
+		inputSlots[kExtra][kValueText] = null;
+		inputSlots[kExtra][kPlaceholderText] = null;
+		inputSlots[kExtra][kGlyphText] = null;
+		inputSlots[kExtra][kSliderFill] = buildSlider(input, root);
 	} else {
-		inputSlots[kValueText] = null;
-		inputSlots[kPlaceholderText] = null;
-		inputSlots[kGlyphText] = addPart(
+		inputSlots[kExtra][kValueText] = null;
+		inputSlots[kExtra][kPlaceholderText] = null;
+		inputSlots[kExtra][kGlyphText] = addPart(
 			root,
-			inputSlots[kKind] === "button" ? "label" : "glyph",
+			inputSlots[kExtra][kKind] === "button" ? "label" : "glyph",
 		).firstChild as globalThis.Text;
 	}
-	attachedSlots[kLayout].invalidate(input);
+	attachedSlots[kExtra][kLayout].invalidate(input);
 	syncUAShadowTree(input);
 }
 
@@ -19050,14 +19165,14 @@ export function moveRangeThumb(
 ): boolean {
 	if (
 		!(element instanceof HTMLInputElement) ||
-		$(element)[kKind] !== "slider" ||
+		$(element)[kExtra][kKind] !== "slider" ||
 		isActuallyDisabled(element)
 	) {
 		return false;
 	}
-	const track = $(element)[kSliderFill]?.parentElement;
+	const track = $(element)[kExtra][kSliderFill]?.parentElement;
 	const rect = track
-		? $maybe(getAttachedDocument(element))?.[kLayout].getRect(track)
+		? $maybe(getAttachedDocument(element))?.[kExtra][kLayout].getRect(track)
 		: undefined;
 	if (!rect) {
 		return false;
@@ -19216,12 +19331,12 @@ class HTMLMapElement extends HTMLElement {
 	declare name: globalThis.HTMLMapElement["name"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
-		$(this)[kAreas] = null;
+		$(this)[kExtra][kAreas] = null;
 	}
 
 	get areas(): HTMLCollection {
 		const slots = $(this);
-		let areas = slots[kAreas];
+		let areas = slots[kExtra][kAreas];
 		if (areas === null) {
 			areas = live(
 				new HTMLCollection(() => {
@@ -19234,11 +19349,13 @@ class HTMLMapElement extends HTMLElement {
 					return found;
 				}, this),
 			);
-			slots[kAreas] = areas;
+			slots[kExtra][kAreas] = areas;
 		}
 		return areas;
 	}
 }
+
+declareExtraSlots(HTMLMapElement);
 
 class HTMLMarqueeElement extends HTMLElement {
 	declare bgColor: globalThis.HTMLMarqueeElement["bgColor"];
@@ -19376,12 +19493,12 @@ class HTMLMediaElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kVolume] = 1;
-		slots[kMuted] = false;
-		slots[kPlaybackRate] = 1;
-		slots[kDefaultPlaybackRate] = 1;
-		slots[kPreservesPitch] = true;
-		slots[kCurrentTime] = 0;
+		slots[kExtra][kVolume] = 1;
+		slots[kExtra][kMuted] = false;
+		slots[kExtra][kPlaybackRate] = 1;
+		slots[kExtra][kDefaultPlaybackRate] = 1;
+		slots[kExtra][kPreservesPitch] = true;
+		slots[kExtra][kCurrentTime] = 0;
 	}
 
 	get error(): globalThis.MediaError | null {
@@ -19453,15 +19570,15 @@ class HTMLMediaElement extends HTMLElement {
 	}
 
 	get currentTime(): number {
-		return $(this)[kCurrentTime];
+		return $(this)[kExtra][kCurrentTime];
 	}
 
 	set currentTime(value: number) {
-		$(this)[kCurrentTime] = toDouble(value);
+		$(this)[kExtra][kCurrentTime] = toDouble(value);
 	}
 
 	get volume(): number {
-		return $(this)[kVolume];
+		return $(this)[kExtra][kVolume];
 	}
 
 	set volume(value: number) {
@@ -19469,39 +19586,39 @@ class HTMLMediaElement extends HTMLElement {
 		if (volume < 0 || volume > 1) {
 			throw indexSizeError("A volume is between zero and one");
 		}
-		$(this)[kVolume] = volume;
+		$(this)[kExtra][kVolume] = volume;
 	}
 
 	get muted(): boolean {
-		return $(this)[kMuted];
+		return $(this)[kExtra][kMuted];
 	}
 
 	set muted(value: boolean) {
-		$(this)[kMuted] = Boolean(value);
+		$(this)[kExtra][kMuted] = Boolean(value);
 	}
 
 	get playbackRate(): number {
-		return $(this)[kPlaybackRate];
+		return $(this)[kExtra][kPlaybackRate];
 	}
 
 	set playbackRate(value: number) {
-		$(this)[kPlaybackRate] = toDouble(value);
+		$(this)[kExtra][kPlaybackRate] = toDouble(value);
 	}
 
 	get defaultPlaybackRate(): number {
-		return $(this)[kDefaultPlaybackRate];
+		return $(this)[kExtra][kDefaultPlaybackRate];
 	}
 
 	set defaultPlaybackRate(value: number) {
-		$(this)[kDefaultPlaybackRate] = toDouble(value);
+		$(this)[kExtra][kDefaultPlaybackRate] = toDouble(value);
 	}
 
 	get preservesPitch(): boolean {
-		return $(this)[kPreservesPitch];
+		return $(this)[kExtra][kPreservesPitch];
 	}
 
 	set preservesPitch(value: boolean) {
-		$(this)[kPreservesPitch] = Boolean(value);
+		$(this)[kExtra][kPreservesPitch] = Boolean(value);
 	}
 
 	// lib.dom's overloads for this interface: the keyed one first.
@@ -19576,7 +19693,7 @@ class HTMLMediaElement extends HTMLElement {
 	}
 
 	load(): void {
-		$(this)[kCurrentTime] = 0;
+		$(this)[kExtra][kCurrentTime] = 0;
 	}
 
 	canPlayType(type: string): globalThis.CanPlayTypeResult {
@@ -19595,6 +19712,8 @@ class HTMLMediaElement extends HTMLElement {
 		);
 	}
 }
+
+declareExtraSlots(HTMLMediaElement);
 
 Object.defineProperties(HTMLMediaElement.prototype, {
 	NETWORK_EMPTY: {value: NETWORK_EMPTY, enumerable: true},
@@ -19791,8 +19910,8 @@ class HTMLMeterElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kUpgraded] = false;
-		slots[kBar] = null;
+		slots[kExtra][kUpgraded] = false;
+		slots[kExtra][kBar] = null;
 	}
 
 	get min(): number {
@@ -19863,7 +19982,7 @@ class HTMLMeterElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		const slots = this;
-		if (slots[kUpgraded]) {
+		if (slots[kExtra][kUpgraded]) {
 			syncUAShadowTree(ownerOf(this));
 			return;
 		}
@@ -19871,17 +19990,17 @@ class HTMLMeterElement extends HTMLElement {
 		if (attached === undefined) {
 			return;
 		}
-		slots[kUpgraded] = true;
-		slots[kBar] = buildGaugeRoot(ownerOf(this), attached);
+		slots[kExtra][kUpgraded] = true;
+		slots[kExtra][kBar] = buildGaugeRoot(ownerOf(this), attached);
 		syncUAShadowTree(ownerOf(this));
 	}
 
 	[kSyncUAShadowTree]?(): void {
 		const slots = this;
-		if (!slots[kUpgraded]) {
+		if (!slots[kExtra][kUpgraded]) {
 			return;
 		}
-		const bar = slots[kBar]!;
+		const bar = slots[kExtra][kBar]!;
 		const min = ownerOf(this).min;
 		const span = ownerOf(this).max - min;
 		setGaugeFill(bar, span > 0 ? (ownerOf(this).value - min) / span : 0);
@@ -19910,6 +20029,8 @@ class HTMLMeterElement extends HTMLElement {
 		}
 	}
 }
+
+declareExtraSlots(HTMLMeterElement);
 
 // Follows HTML's rendering rules. The optimum region is determined by
 // where `optimum` sits relative to `low` and `high`. A value in that
@@ -20046,8 +20167,8 @@ class HTMLOptionElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kSelectednessValue] = false;
-		slots[kOptionDirty] = false;
+		slots[kExtra][kSelectednessValue] = false;
+		slots[kExtra][kOptionDirty] = false;
 	}
 
 	get form(): HTMLFormElement | null {
@@ -20099,7 +20220,7 @@ class HTMLOptionElement extends HTMLElement {
 
 	set selected(value: boolean) {
 		const slots = $(this);
-		slots[kOptionDirty] = true;
+		slots[kExtra][kOptionDirty] = true;
 		slots[kSelectedness] = Boolean(value);
 		const select = getSelect(this);
 		if (select === null) {
@@ -20120,17 +20241,19 @@ class HTMLOptionElement extends HTMLElement {
 	// live list that depends on it is the select's `selectedOptions`, which
 	// is notified here.
 	get [kSelectedness](): boolean {
-		return this[kSelectednessValue];
+		return this[kExtra][kSelectednessValue];
 	}
 
 	set [kSelectedness](value: boolean) {
 		const slots = this;
-		if (slots[kSelectednessValue] === value) {
+		if (slots[kExtra][kSelectednessValue] === value) {
 			return;
 		}
-		slots[kSelectednessValue] = value;
+		slots[kExtra][kSelectednessValue] = value;
 		const select = getSelect(ownerOf(this));
-		const selected = select === null ? null : $(select)[kSelectedOptions];
+		const selected = select === null
+			? null
+			: $(select)[kExtra][kSelectedOptions];
 		if (selected !== null) {
 			$(selected)[kSync]();
 		}
@@ -20151,7 +20274,9 @@ class HTMLOptionElement extends HTMLElement {
 		);
 		const slots = this;
 		if (
-			namespace === null && localName === "selected" && !slots[kOptionDirty]
+			namespace === null &&
+			localName === "selected" &&
+			!slots[kExtra][kOptionDirty]
 		) {
 			slots[kSelectedness] = value !== null;
 		}
@@ -20166,9 +20291,11 @@ class HTMLOptionElement extends HTMLElement {
 		const slots = this;
 		const cloneSlots = $(clone);
 		cloneSlots[kSelectedness] = slots[kSelectedness];
-		cloneSlots[kOptionDirty] = slots[kOptionDirty];
+		cloneSlots[kExtra][kOptionDirty] = slots[kExtra][kOptionDirty];
 	}
 }
+
+declareExtraSlots(HTMLOptionElement);
 
 function getSelect(option: Element): HTMLSelectElement | null {
 	const parent = objectOf($(option)[kParent]);
@@ -20312,8 +20439,8 @@ class HTMLOutputElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kDirty] = false;
-		slots[kStored] = "";
+		slots[kExtra][kDirty] = false;
+		slots[kExtra][kStored] = "";
 	}
 
 	get form(): HTMLFormElement | null {
@@ -20330,13 +20457,15 @@ class HTMLOutputElement extends HTMLElement {
 
 	get defaultValue(): string {
 		const slots = $(this);
-		return slots[kDirty] ? slots[kStored] : getDescendantText(this);
+		return slots[kExtra][kDirty]
+			? slots[kExtra][kStored]
+			: getDescendantText(this);
 	}
 
 	set defaultValue(value: string) {
 		const slots = $(this);
-		if (slots[kDirty]) {
-			slots[kStored] = String(value);
+		if (slots[kExtra][kDirty]) {
+			slots[kExtra][kStored] = String(value);
 			return;
 		}
 		setDescendantText(this, String(value));
@@ -20348,10 +20477,10 @@ class HTMLOutputElement extends HTMLElement {
 
 	set value(value: string) {
 		const slots = $(this);
-		if (!slots[kDirty]) {
-			slots[kStored] = getDescendantText(this);
+		if (!slots[kExtra][kDirty]) {
+			slots[kExtra][kStored] = getDescendantText(this);
 		}
-		slots[kDirty] = true;
+		slots[kExtra][kDirty] = true;
 		setDescendantText(this, String(value));
 	}
 
@@ -20384,12 +20513,14 @@ class HTMLOutputElement extends HTMLElement {
 
 	[kResetControl]?(): void {
 		const slots = this;
-		if (slots[kDirty]) {
-			setDescendantText(ownerOf(this), slots[kStored]);
+		if (slots[kExtra][kDirty]) {
+			setDescendantText(ownerOf(this), slots[kExtra][kStored]);
 		}
-		slots[kDirty] = false;
+		slots[kExtra][kDirty] = false;
 	}
 }
+
+declareExtraSlots(HTMLOutputElement);
 
 class HTMLParagraphElement extends HTMLElement {
 	declare align: globalThis.HTMLParagraphElement["align"];
@@ -20421,8 +20552,8 @@ class HTMLProgressElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kUpgraded] = false;
-		slots[kBar] = null;
+		slots[kExtra][kUpgraded] = false;
+		slots[kExtra][kBar] = null;
 	}
 
 	get value(): number {
@@ -20456,7 +20587,7 @@ class HTMLProgressElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		const slots = this;
-		if (slots[kUpgraded]) {
+		if (slots[kExtra][kUpgraded]) {
 			syncUAShadowTree(ownerOf(this));
 			return;
 		}
@@ -20464,18 +20595,18 @@ class HTMLProgressElement extends HTMLElement {
 		if (attached === undefined) {
 			return;
 		}
-		slots[kUpgraded] = true;
-		slots[kBar] = buildGaugeRoot(ownerOf(this), attached);
+		slots[kExtra][kUpgraded] = true;
+		slots[kExtra][kBar] = buildGaugeRoot(ownerOf(this), attached);
 		syncUAShadowTree(ownerOf(this));
 	}
 
 	[kSyncUAShadowTree]?(): void {
 		const slots = this;
-		if (!slots[kUpgraded]) {
+		if (!slots[kExtra][kUpgraded]) {
 			return;
 		}
 		const position = ownerOf(this).position;
-		setGaugeFill(slots[kBar]!, position < 0 ? null : position);
+		setGaugeFill(slots[kExtra][kBar]!, position < 0 ? null : position);
 	}
 
 	override [kAttributeChangeSteps](
@@ -20496,6 +20627,8 @@ class HTMLProgressElement extends HTMLElement {
 		}
 	}
 }
+
+declareExtraSlots(HTMLProgressElement);
 
 class HTMLQuoteElement extends HTMLElement {
 	declare cite: globalThis.HTMLQuoteElement["cite"];
@@ -20584,13 +20717,13 @@ export class HTMLSelectElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kOptions] = null;
-		slots[kSelectedOptions] = null;
-		slots[kUpgraded] = false;
-		slots[kValueText] = null;
-		slots[kPicker] = null;
-		slots[kPickerHighlight] = null;
-		slots[kOnKeydown] = (event: KeyboardEvent): void => {
+		slots[kExtra][kOptions] = null;
+		slots[kExtra][kSelectedOptions] = null;
+		slots[kExtra][kUpgraded] = false;
+		slots[kExtra][kValueText] = null;
+		slots[kExtra][kPicker] = null;
+		slots[kExtra][kPickerHighlight] = null;
+		slots[kExtra][kOnKeydown] = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) {
 				return;
 			}
@@ -20601,22 +20734,30 @@ export class HTMLSelectElement extends HTMLElement {
 			}
 			const current = this.selectedIndex;
 
-			if (slots[kPickerHighlight] !== null) {
-				const highlight = slots[kPickerHighlight];
+			if (slots[kExtra][kPickerHighlight] !== null) {
+				const highlight = slots[kExtra][kPickerHighlight];
 				if (key === "ArrowDown") {
-					slots[kPickerHighlight] = stepSelectHighlight(this, highlight, 1);
+					slots[kExtra][kPickerHighlight] = stepSelectHighlight(
+						this,
+						highlight,
+						1,
+					);
 				} else if (key === "ArrowUp") {
-					slots[kPickerHighlight] = stepSelectHighlight(this, highlight, -1);
+					slots[kExtra][kPickerHighlight] = stepSelectHighlight(
+						this,
+						highlight,
+						-1,
+					);
 				} else if (key === "Home") {
-					slots[kPickerHighlight] = stepSelectHighlight(this, -1, 1);
+					slots[kExtra][kPickerHighlight] = stepSelectHighlight(this, -1, 1);
 				} else if (key === "End") {
-					slots[kPickerHighlight] = stepSelectHighlight(
+					slots[kExtra][kPickerHighlight] = stepSelectHighlight(
 						this,
 						options.length,
 						-1,
 					);
 				} else if (key === "Enter" || key === " ") {
-					slots[kPickerHighlight] = null;
+					slots[kExtra][kPickerHighlight] = null;
 					if (highlight !== current && !optionIsDisabled(options[highlight])) {
 						commitSelectOption(this, highlight);
 						return;
@@ -20624,7 +20765,7 @@ export class HTMLSelectElement extends HTMLElement {
 					syncUAShadowTree(this); // No change: just close.
 					return;
 				} else if (key === "Escape") {
-					slots[kPickerHighlight] = null;
+					slots[kExtra][kPickerHighlight] = null;
 				} else {
 					return;
 				}
@@ -20653,13 +20794,13 @@ export class HTMLSelectElement extends HTMLElement {
 				commitSelectOption(this, target);
 			}
 		};
-		slots[kOnMousedown] = (event: MouseEvent): void => {
+		slots[kExtra][kOnMousedown] = (event: MouseEvent): void => {
 			if (event.defaultPrevented || event.button !== 0) {
 				return;
 			}
 			const attached = getAttachedDocument(this)!;
 			this.focus(); // A press focuses the control, as in a browser.
-			if (slots[kPickerHighlight] === null) {
+			if (slots[kExtra][kPickerHighlight] === null) {
 				openPicker(this);
 				return;
 			}
@@ -20668,12 +20809,13 @@ export class HTMLSelectElement extends HTMLElement {
 			const x = event.clientX / cell.width;
 			const attachedSlots = $(attached);
 			const y =
-				event.clientY / cell.height + attachedSlots[kFramebuffer].scrollTop;
-			const picker = slots[kPicker]!;
+				event.clientY / cell.height +
+				attachedSlots[kExtra][kFramebuffer].scrollTop;
+			const picker = slots[kExtra][kPicker]!;
 			const row =
 				(Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
 					(node) => {
-						const rect = attachedSlots[kLayout].getRect(node);
+						const rect = attachedSlots[kExtra][kLayout].getRect(node);
 						return rect ? rectContains(rect, x, y) : false;
 					},
 				);
@@ -20683,7 +20825,7 @@ export class HTMLSelectElement extends HTMLElement {
 				// nothing commits.
 				const option = getOptionList(this)[index];
 				if (option && !optionIsDisabled(option)) {
-					slots[kPickerHighlight] = null;
+					slots[kExtra][kPickerHighlight] = null;
 					if (index !== this.selectedIndex) {
 						commitSelectOption(this, index);
 					} else {
@@ -20694,15 +20836,15 @@ export class HTMLSelectElement extends HTMLElement {
 			}
 			// Not on any row. A press inside the picker's own padding does
 			// nothing. A press outside it (on the closed face) dismisses.
-			const pickerRect = attachedSlots[kLayout].getRect(picker);
+			const pickerRect = attachedSlots[kExtra][kLayout].getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
-				slots[kPickerHighlight] = null;
+				slots[kExtra][kPickerHighlight] = null;
 				syncUAShadowTree(this);
 			}
 		};
-		slots[kOnBlur] = (): void => {
-			if (slots[kPickerHighlight] !== null) {
-				slots[kPickerHighlight] = null;
+		slots[kExtra][kOnBlur] = (): void => {
+			if (slots[kExtra][kPickerHighlight] !== null) {
+				slots[kExtra][kPickerHighlight] = null;
 				syncUAShadowTree(this);
 			}
 		};
@@ -20722,10 +20864,10 @@ export class HTMLSelectElement extends HTMLElement {
 
 	get options(): HTMLOptionsCollection {
 		const slots = $(this);
-		let options = slots[kOptions];
+		let options = slots[kExtra][kOptions];
 		if (options === null) {
 			options = live(new HTMLOptionsCollection(this));
-			slots[kOptions] = options;
+			slots[kExtra][kOptions] = options;
 		}
 		askForAReset(this);
 		return options;
@@ -20741,13 +20883,13 @@ export class HTMLSelectElement extends HTMLElement {
 
 	get selectedOptions(): HTMLCollectionOf<HTMLOptionElement> {
 		const slots = $(this);
-		let selected = slots[kSelectedOptions];
+		let selected = slots[kExtra][kSelectedOptions];
 		if (selected === null) {
 			selected = live(
 				new HTMLCollection(() =>
 					getOptions(this).filter((option) => $(option)[kSelectedness]), this),
 			) as HTMLCollectionOf<HTMLOptionElement>;
-			slots[kSelectedOptions] = selected;
+			slots[kExtra][kSelectedOptions] = selected;
 		}
 		askForAReset(this);
 		return selected;
@@ -20763,7 +20905,7 @@ export class HTMLSelectElement extends HTMLElement {
 		const options = getOptions(this);
 		for (let at = 0; at < options.length; at++) {
 			$(options[at])[kSelectedness] = false;
-			$(options[at])[kOptionDirty] = true;
+			$(options[at])[kExtra][kOptionDirty] = true;
 		}
 		if (index >= 0 && index < options.length) {
 			$(options[index])[kSelectedness] = true;
@@ -20788,7 +20930,7 @@ export class HTMLSelectElement extends HTMLElement {
 		for (const option of options) {
 			if (!found && option.value === wanted) {
 				$(option)[kSelectedness] = true;
-				$(option)[kOptionDirty] = true;
+				$(option)[kExtra][kOptionDirty] = true;
 				found = true;
 			} else {
 				$(option)[kSelectedness] = false;
@@ -20810,7 +20952,7 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	get [kUAValueText](): globalThis.Text | null {
-		return this[kValueText];
+		return this[kExtra][kValueText];
 	}
 
 	// HTML's showPicker(): a disabled select cannot, a call no user action
@@ -20826,7 +20968,7 @@ export class HTMLSelectElement extends HTMLElement {
 				"showPicker needs a user action to have just happened",
 			);
 		}
-		if (slots[kPickerHighlight] == null) {
+		if (slots[kExtra][kPickerHighlight] == null) {
 			openPicker(this);
 		}
 	}
@@ -20883,7 +21025,7 @@ export class HTMLSelectElement extends HTMLElement {
 	[kResetControl]?(): void {
 		for (const option of getOptions(ownerOf(this))) {
 			$(option)[kSelectedness] = option.hasAttribute("selected");
-			$(option)[kOptionDirty] = false;
+			$(option)[kExtra][kOptionDirty] = false;
 		}
 		askForAReset(ownerOf(this));
 		syncUAShadowTree(ownerOf(this));
@@ -20891,7 +21033,7 @@ export class HTMLSelectElement extends HTMLElement {
 
 	[kEnsureUAShadowTree]?(): void {
 		const slots = this;
-		if (slots[kUpgraded]) {
+		if (slots[kExtra][kUpgraded]) {
 			// Removed, the document's observer let go of it.
 			if (!isWatchedByDocument(ownerOf(this), slots[kDocument])) {
 				observeOptionList(ownerOf(this));
@@ -20903,21 +21045,22 @@ export class HTMLSelectElement extends HTMLElement {
 		if (attached === undefined) {
 			return;
 		}
-		slots[kUpgraded] = true;
+		slots[kExtra][kUpgraded] = true;
 		const document = getUADocument(ownerOf(this));
 		// The tree: the selected option's label (part=value), the ▾ indicator
 		// (part=indicator), and the picker popover (part=picker, one row per
 		// option). Composition hides the light option list.
 		const root = buildUAShadowTree(ownerOf(this), attached);
-		slots[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
+		slots[kExtra][kValueText] =
+			addPart(root, "value").firstChild as globalThis.Text;
 		(addPart(root, "indicator").firstChild as globalThis.Text).data = " ▾";
 		const picker = document.createElement("div");
 		picker.setAttribute("part", "picker");
 		root.appendChild(picker);
-		slots[kPicker] = picker;
+		slots[kExtra][kPicker] = picker;
 
 		// Losing focus closes the picker.
-		ownerOf(this).addEventListener("blur", slots[kOnBlur]);
+		ownerOf(this).addEventListener("blur", slots[kExtra][kOnBlur]);
 		observeOptionList(ownerOf(this));
 
 		syncUAShadowTree(ownerOf(this));
@@ -20929,16 +21072,16 @@ export class HTMLSelectElement extends HTMLElement {
 	override [kRemovingSteps](oldParent: Node): void {
 		superStep(HTMLSelectElement, kRemovingSteps).call(this, oldParent);
 		const slots = this;
-		if (slots[kPickerHighlight] !== null) {
-			slots[kPickerHighlight] = null;
+		if (slots[kExtra][kPickerHighlight] !== null) {
+			slots[kExtra][kPickerHighlight] = null;
 			syncUAShadowTree(ownerOf(this));
 		}
 	}
 
 	[kSyncUAShadowTree]?(): void {
 		const slots = this;
-		const picker = slots[kPicker];
-		if (!slots[kUpgraded] || picker === null) {
+		const picker = slots[kExtra][kPicker];
+		if (!slots[kExtra][kUpgraded] || picker === null) {
 			return;
 		}
 		const attached = getAttachedDocument(ownerOf(this))!;
@@ -20947,12 +21090,12 @@ export class HTMLSelectElement extends HTMLElement {
 		const selected = selectedIndex >= 0 ? options[selectedIndex] : null;
 		const label = selected ? selected.label : "";
 		const attachedSlots = $(attached);
-		if (slots[kValueText]!.data !== label) {
-			slots[kValueText]!.data = label;
-			attachedSlots[kLayout].invalidate(ownerOf(this));
+		if (slots[kExtra][kValueText]!.data !== label) {
+			slots[kExtra][kValueText]!.data = label;
+			attachedSlots[kExtra][kLayout].invalidate(ownerOf(this));
 		}
 
-		if (slots[kPickerHighlight] === null) {
+		if (slots[kExtra][kPickerHighlight] === null) {
 			if (picker.style.display !== "none") {
 				picker.style.display = "none";
 			}
@@ -20965,7 +21108,7 @@ export class HTMLSelectElement extends HTMLElement {
 		// Anchor below the text control in DOCUMENT coordinates (the picker's
 		// containing block is the ICB), at least the text control's width
 		// and as wide as its widest row, a grouped option's indent included.
-		const rect = attachedSlots[kLayout].getRect(ownerOf(this));
+		const rect = attachedSlots[kExtra][kLayout].getRect(ownerOf(this));
 		if (rect) {
 			// The picker's style is CSS pixels, and the select's rect is cells.
 			const top = `${pxFromCells(Math.round(rect.bottom), true, ownerOf(this))}px`;
@@ -20991,6 +21134,8 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 }
 
+declareExtraSlots(HTMLSelectElement);
+
 // Same as `options` but without building a collection.
 function getOptionList(select: HTMLSelectElement): HTMLOptionElement[] {
 	askForAReset(select);
@@ -21011,7 +21156,7 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 			label: option.label,
 			disabled: optionIsDisabled(option),
 			grouped,
-			highlighted: index === selectSlots[kPickerHighlight],
+			highlighted: index === selectSlots[kExtra][kPickerHighlight],
 		});
 		index++;
 	};
@@ -21104,12 +21249,12 @@ function openPicker(select: HTMLSelectElement): void {
 	if (index < 0) {
 		index = options.findIndex((o) => !optionIsDisabled(o));
 	}
-	$(select)[kPickerHighlight] = index;
+	$(select)[kExtra][kPickerHighlight] = index;
 	syncUAShadowTree(select);
 }
 
 function commitSelectOption(select: HTMLSelectElement, index: number): void {
-	$(select)[kPickerHighlight] = null;
+	$(select)[kExtra][kPickerHighlight] = null;
 	select.selectedIndex = index; // The setter reconciles (closes + label).
 	dispatch(select, new Event("input", {bubbles: true, composed: true}));
 	dispatchUserChange(select);
@@ -21253,15 +21398,15 @@ export class HTMLStyleElement extends HTMLElement {
 	override [kInsertionSteps](): void {
 		superStep(HTMLStyleElement, kInsertionSteps).call(this);
 		const slots = this;
-		$(slots[kDocument])[kStyleElements] =
-			$(slots[kDocument])[kStyleElements] + 1;
+		$(slots[kDocument])[kExtra][kStyleElements] =
+			$(slots[kDocument])[kExtra][kStyleElements] + 1;
 	}
 
 	override [kRemovingSteps](oldParent: Node): void {
 		superStep(HTMLStyleElement, kRemovingSteps).call(this, oldParent);
 		const slots = this;
-		$(slots[kDocument])[kStyleElements] =
-			$(slots[kDocument])[kStyleElements] - 1;
+		$(slots[kDocument])[kExtra][kStyleElements] =
+			$(slots[kDocument])[kExtra][kStyleElements] - 1;
 	}
 }
 
@@ -21271,7 +21416,7 @@ export class HTMLStyleElement extends HTMLElement {
  * since it last parsed, which is cheaper than walking the tree.
  */
 export function styleElementCount(document: Document): number {
-	return $(document)[kStyleElements];
+	return $(document)[kExtra][kStyleElements];
 }
 
 class HTMLTableCaptionElement extends HTMLElement {
@@ -21332,8 +21477,8 @@ class HTMLTableElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kTBodies] = null;
-		slots[kRows] = null;
+		slots[kExtra][kTBodies] = null;
+		slots[kExtra][kRows] = null;
 	}
 
 	get caption(): HTMLTableCaptionElement | null {
@@ -21404,7 +21549,7 @@ class HTMLTableElement extends HTMLElement {
 
 	get tBodies(): HTMLCollectionOf<HTMLTableSectionElement> {
 		const slots = $(this);
-		let bodies = slots[kTBodies];
+		let bodies = slots[kExtra][kTBodies];
 		if (bodies === null) {
 			bodies = live(
 				new HTMLCollection(
@@ -21413,17 +21558,17 @@ class HTMLTableElement extends HTMLElement {
 					(node) => isHTMLElementNamed(node, "tbody"),
 				),
 			);
-			slots[kTBodies] = bodies;
+			slots[kExtra][kTBodies] = bodies;
 		}
 		return bodies as HTMLCollectionOf<HTMLTableSectionElement>;
 	}
 
 	get rows(): HTMLCollectionOf<HTMLTableRowElement> {
 		const slots = $(this);
-		let rows = slots[kRows];
+		let rows = slots[kExtra][kRows];
 		if (rows === null) {
 			rows = live(new HTMLCollection(() => getTableRows(this), this));
-			slots[kRows] = rows;
+			slots[kExtra][kRows] = rows;
 		}
 		return rows as HTMLCollectionOf<HTMLTableRowElement>;
 	}
@@ -21552,6 +21697,8 @@ class HTMLTableElement extends HTMLElement {
 	}
 }
 
+declareExtraSlots(HTMLTableElement);
+
 function isHTMLElementNamed(node: Node, localName: string): boolean {
 	return (
 		node.nodeType === ELEMENT_NODE &&
@@ -21629,7 +21776,7 @@ class HTMLTableRowElement extends HTMLElement {
 	declare bgColor: globalThis.HTMLTableRowElement["bgColor"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
-		$(this)[kCells] = null;
+		$(this)[kExtra][kCells] = null;
 	}
 
 	get rowIndex(): number {
@@ -21647,14 +21794,14 @@ class HTMLTableRowElement extends HTMLElement {
 
 	get cells(): HTMLCollectionOf<HTMLTableCellElement> {
 		const slots = $(this);
-		let cells = slots[kCells];
+		let cells = slots[kExtra][kCells];
 		if (cells === null) {
 			cells = live(
 				new HTMLCollection(() =>
 					getRowCells(this), this, (node) => node instanceof
 					HTMLTableCellElement),
 			);
-			slots[kCells] = cells;
+			slots[kExtra][kCells] = cells;
 		}
 		return cells as HTMLCollectionOf<HTMLTableCellElement>;
 	}
@@ -21686,6 +21833,8 @@ class HTMLTableRowElement extends HTMLElement {
 		removeNode(cells[at]);
 	}
 }
+
+declareExtraSlots(HTMLTableRowElement);
 
 function getTable(row: HTMLTableRowElement): Element | null {
 	const parent = objectOf($(row)[kParent]);
@@ -21728,12 +21877,12 @@ class HTMLTableSectionElement extends HTMLElement {
 	declare vAlign: globalThis.HTMLTableSectionElement["vAlign"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
-		$(this)[kRows] = null;
+		$(this)[kExtra][kRows] = null;
 	}
 
 	get rows(): HTMLCollectionOf<HTMLTableRowElement> {
 		const slots = $(this);
-		let rows = slots[kRows];
+		let rows = slots[kExtra][kRows];
 		if (rows === null) {
 			rows = live(
 				new HTMLCollection(
@@ -21742,7 +21891,7 @@ class HTMLTableSectionElement extends HTMLElement {
 					(node) => isHTMLElementNamed(node, "tr"),
 				),
 			);
-			slots[kRows] = rows;
+			slots[kExtra][kRows] = rows;
 		}
 		return rows as HTMLCollectionOf<HTMLTableRowElement>;
 	}
@@ -21770,6 +21919,8 @@ class HTMLTableSectionElement extends HTMLElement {
 		removeNode(rows[at]);
 	}
 }
+
+declareExtraSlots(HTMLTableSectionElement);
 
 const kPlaceholderSpan = Symbol("placeholderSpan");
 const kGoalColumn = Symbol("goalColumn");
@@ -21814,17 +21965,17 @@ export class HTMLTextAreaElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		const slots = $(this);
-		slots[kValue] = "";
-		slots[kDirty] = false;
-		slots[kSelectionStart] = 0;
-		slots[kSelectionEnd] = 0;
-		slots[kSelectionDirection] = "none";
-		slots[kUpgraded] = false;
-		slots[kValueText] = null;
-		slots[kPlaceholderText] = null;
-		slots[kPlaceholderSpan] = null;
-		slots[kGoalColumn] = null;
-		slots[kOnBeforeInput] = (event: InputEvent): void => {
+		slots[kExtra][kValue] = "";
+		slots[kExtra][kDirty] = false;
+		slots[kExtra][kSelectionStart] = 0;
+		slots[kExtra][kSelectionEnd] = 0;
+		slots[kExtra][kSelectionDirection] = "none";
+		slots[kExtra][kUpgraded] = false;
+		slots[kExtra][kValueText] = null;
+		slots[kExtra][kPlaceholderText] = null;
+		slots[kExtra][kPlaceholderSpan] = null;
+		slots[kExtra][kGoalColumn] = null;
+		slots[kExtra][kOnBeforeInput] = (event: InputEvent): void => {
 			if (event.defaultPrevented || event.data == null) {
 				return;
 			}
@@ -21843,20 +21994,20 @@ export class HTMLTextAreaElement extends HTMLElement {
 			event.preventDefault();
 			insertPaste(this, event.data);
 		};
-		slots[kOnKeydown] = (event: KeyboardEvent): void => {
+		slots[kExtra][kOnKeydown] = (event: KeyboardEvent): void => {
 		// Editing is a default action. An author's keydown preventDefault
 		// suppresses it, exactly as it suppresses a browser textarea's edit.
 			if (event.defaultPrevented) {
 				return;
 			}
-			if (!slots[kUpgraded]) {
+			if (!slots[kExtra][kUpgraded]) {
 				return;
 			}
 			const attached = getAttachedDocument(this)!;
 			const {key, shiftKey, ctrlKey, altKey} = event;
 			// The goal column survives only an unbroken run of vertical moves.
 			if (key !== "ArrowUp" && key !== "ArrowDown") {
-				slots[kGoalColumn] = null;
+				slots[kExtra][kGoalColumn] = null;
 			}
 
 			const value = slots[kUAValue];
@@ -21876,7 +22027,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
 			} else if (key === "ArrowUp" || key === "ArrowDown") {
-				attachedSlots[kLayout].performLayout();
+				attachedSlots[kExtra][kLayout].performLayout();
 				const target = getVerticalTarget(
 					this,
 					caret,
@@ -21888,8 +22039,11 @@ export class HTMLTextAreaElement extends HTMLElement {
 				key === "End" ||
 				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
 			) {
-				attachedSlots[kLayout].performLayout();
-				const visual = getTextareaVisualLines(this, attachedSlots[kLayout]);
+				attachedSlots[kExtra][kLayout].performLayout();
+				const visual = getTextareaVisualLines(
+					this,
+					attachedSlots[kExtra][kLayout],
+				);
 				const line = visual
 					? visual.lines[getTextareaLine(visual.lines, caret)]
 					: null;
@@ -21959,12 +22113,14 @@ export class HTMLTextAreaElement extends HTMLElement {
 		editedSinceChange.delete(this);
 		const slots = $(this);
 		const previous = slots[kUAValue];
-		slots[kValue] = normalizeNewlines(value === null ? "" : String(value));
-		slots[kDirty] = true;
-		if (previous !== slots[kValue]) {
-			slots[kSelectionStart] = slots[kValue].length;
-			slots[kSelectionEnd] = slots[kValue].length;
-			slots[kSelectionDirection] = "none";
+		slots[kExtra][kValue] = normalizeNewlines(
+			value === null ? "" : String(value),
+		);
+		slots[kExtra][kDirty] = true;
+		if (previous !== slots[kExtra][kValue]) {
+			slots[kExtra][kSelectionStart] = slots[kExtra][kValue].length;
+			slots[kExtra][kSelectionEnd] = slots[kExtra][kValue].length;
+			slots[kExtra][kSelectionDirection] = "none";
 		}
 		syncUAShadowTree(this);
 	}
@@ -21974,7 +22130,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	get selectionStart(): number {
-		return $(this)[kSelectionStart];
+		return $(this)[kExtra][kSelectionStart];
 	}
 
 	set selectionStart(value: number) {
@@ -21982,33 +22138,33 @@ export class HTMLTextAreaElement extends HTMLElement {
 		const slots = $(this);
 		this.setSelectionRange(
 			start,
-			Math.max(start, slots[kSelectionEnd]),
-			slots[kSelectionDirection],
+			Math.max(start, slots[kExtra][kSelectionEnd]),
+			slots[kExtra][kSelectionDirection],
 		);
 	}
 
 	get selectionEnd(): number {
-		return $(this)[kSelectionEnd];
+		return $(this)[kExtra][kSelectionEnd];
 	}
 
 	set selectionEnd(value: number) {
 		const slots = $(this);
 		this.setSelectionRange(
-			slots[kSelectionStart],
+			slots[kExtra][kSelectionStart],
 			toUnsignedLong(value),
-			slots[kSelectionDirection],
+			slots[kExtra][kSelectionDirection],
 		);
 	}
 
 	get selectionDirection(): SelectionDirection {
-		return $(this)[kSelectionDirection];
+		return $(this)[kExtra][kSelectionDirection];
 	}
 
 	set selectionDirection(value: SelectionDirection) {
 		const slots = $(this);
 		this.setSelectionRange(
-			slots[kSelectionStart],
-			slots[kSelectionEnd],
+			slots[kExtra][kSelectionStart],
+			slots[kExtra][kSelectionEnd],
 			String(value) as SelectionDirection,
 		);
 	}
@@ -22027,13 +22183,13 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	get [kUAValue](): string {
 		const slots = this;
-		return slots[kDirty]
-			? slots[kValue]
+		return slots[kExtra][kDirty]
+			? slots[kExtra][kValue]
 			: normalizeNewlines(getDescendantText(ownerOf(this)));
 	}
 
 	get [kUAValueText](): globalThis.Text | null {
-		return this[kValueText];
+		return this[kExtra][kValueText];
 	}
 
 	checkValidity(): boolean {
@@ -22086,17 +22242,19 @@ export class HTMLTextAreaElement extends HTMLElement {
 		const result = replaceTextRange(
 			this.value,
 			String(replacement),
-			start === undefined ? slots[kSelectionStart] : toUnsignedLong(start),
-			end === undefined ? slots[kSelectionEnd] : toUnsignedLong(end),
+			start === undefined
+				? slots[kExtra][kSelectionStart]
+				: toUnsignedLong(start),
+			end === undefined ? slots[kExtra][kSelectionEnd] : toUnsignedLong(end),
 			selectMode === undefined ? "preserve" : String(selectMode),
-			slots[kSelectionStart],
-			slots[kSelectionEnd],
+			slots[kExtra][kSelectionStart],
+			slots[kExtra][kSelectionEnd],
 		);
-		slots[kValue] = result.value;
-		slots[kDirty] = true;
-		slots[kSelectionStart] = result.start;
-		slots[kSelectionEnd] = result.end;
-		slots[kSelectionDirection] = "none";
+		slots[kExtra][kValue] = result.value;
+		slots[kExtra][kDirty] = true;
+		slots[kExtra][kSelectionStart] = result.start;
+		slots[kExtra][kSelectionEnd] = result.end;
+		slots[kExtra][kSelectionDirection] = "none";
 		syncUAShadowTree(this);
 		scheduleTextSelectionChange(this);
 	}
@@ -22105,8 +22263,8 @@ export class HTMLTextAreaElement extends HTMLElement {
 	// the selection to the edit that made it.
 	[kSetUAValue]?(value: string): void {
 		const slots = this;
-		slots[kValue] = normalizeNewlines(value);
-		slots[kDirty] = true;
+		slots[kExtra][kValue] = normalizeNewlines(value);
+		slots[kExtra][kDirty] = true;
 		syncUAShadowTree(ownerOf(this));
 	}
 
@@ -22114,9 +22272,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 	[kUASelection]?(): {start: number; end: number; direction: string} {
 		const slots = this;
 		return {
-			start: slots[kSelectionStart],
-			end: slots[kSelectionEnd],
-			direction: slots[kSelectionDirection],
+			start: slots[kExtra][kSelectionStart],
+			end: slots[kExtra][kSelectionEnd],
+			direction: slots[kExtra][kSelectionDirection],
 		};
 	}
 
@@ -22129,9 +22287,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 			direction,
 			slots[kUAValue].length,
 			(selection) => {
-				slots[kSelectionStart] = selection[0];
-				slots[kSelectionEnd] = selection[1];
-				slots[kSelectionDirection] = selection[2];
+				slots[kExtra][kSelectionStart] = selection[0];
+				slots[kExtra][kSelectionEnd] = selection[1];
+				slots[kExtra][kSelectionDirection] = selection[2];
 			},
 		);
 	}
@@ -22140,24 +22298,24 @@ export class HTMLTextAreaElement extends HTMLElement {
 		const clone = copy as HTMLTextAreaElement;
 		const slots = this;
 		const cloneSlots = $(clone);
-		cloneSlots[kValue] = slots[kValue];
-		cloneSlots[kDirty] = slots[kDirty];
+		cloneSlots[kExtra][kValue] = slots[kExtra][kValue];
+		cloneSlots[kExtra][kDirty] = slots[kExtra][kDirty];
 	}
 
 	[kResetControl]?(): void {
 		const slots = this;
-		slots[kValue] = "";
-		slots[kDirty] = false;
+		slots[kExtra][kValue] = "";
+		slots[kExtra][kDirty] = false;
 		syncUAShadowTree(ownerOf(this));
 	}
 
 	[kUASelectionRange]?(): globalThis.Range | null {
-		return getTextSelectionRange(ownerOf(this), this[kValueText]);
+		return getTextSelectionRange(ownerOf(this), this[kExtra][kValueText]);
 	}
 
 	[kEnsureUAShadowTree]?(): void {
 		const slots = this;
-		if (slots[kUpgraded]) {
+		if (slots[kExtra][kUpgraded]) {
 			syncUAShadowTree(ownerOf(this));
 			return;
 		}
@@ -22165,13 +22323,14 @@ export class HTMLTextAreaElement extends HTMLElement {
 		if (attached === undefined) {
 			return;
 		}
-		slots[kUpgraded] = true;
+		slots[kExtra][kUpgraded] = true;
 		const document = getUADocument(ownerOf(this));
 		const root = buildUAShadowTree(ownerOf(this), attached);
-		slots[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
-		slots[kPlaceholderSpan] = addPart(root, "placeholder");
-		slots[kPlaceholderText] =
-			slots[kPlaceholderSpan].firstChild as globalThis.Text;
+		slots[kExtra][kValueText] =
+			addPart(root, "value").firstChild as globalThis.Text;
+		slots[kExtra][kPlaceholderSpan] = addPart(root, "placeholder");
+		slots[kExtra][kPlaceholderText] =
+			slots[kExtra][kPlaceholderSpan].firstChild as globalThis.Text;
 		// The trailing <br> anchor, the same trick a browser's editor uses. It
 		// makes the run's content always end in exactly one line break, so the
 		// line count equals the LOGICAL line count. The breaker never emits a
@@ -22187,24 +22346,24 @@ export class HTMLTextAreaElement extends HTMLElement {
 	// painter logic, so the normal pipeline never sees a hidden placeholder.
 	[kSyncUAShadowTree]?(): void {
 		const slots = this;
-		if (!slots[kUpgraded]) {
+		if (!slots[kExtra][kUpgraded]) {
 			return;
 		}
 		const attached = getAttachedDocument(ownerOf(this))!;
 		const value = slots[kUAValue];
 		const placeholder = ownerOf(this).getAttribute("placeholder") ?? "";
 		let changed = false;
-		if (slots[kValueText]!.data !== value) {
-			slots[kValueText]!.data = value;
+		if (slots[kExtra][kValueText]!.data !== value) {
+			slots[kExtra][kValueText]!.data = value;
 			changed = true;
 		}
-		if (slots[kPlaceholderText]!.data !== placeholder) {
-			slots[kPlaceholderText]!.data = placeholder;
+		if (slots[kExtra][kPlaceholderText]!.data !== placeholder) {
+			slots[kExtra][kPlaceholderText]!.data = placeholder;
 			changed = true;
 		}
 		const placeholderDisplay = value ? "none" : "";
-		if (slots[kPlaceholderSpan]!.style.display !== placeholderDisplay) {
-			slots[kPlaceholderSpan]!.style.display = placeholderDisplay;
+		if (slots[kExtra][kPlaceholderSpan]!.style.display !== placeholderDisplay) {
+			slots[kExtra][kPlaceholderSpan]!.style.display = placeholderDisplay;
 			changed = true;
 		}
 		if (!changed) {
@@ -22214,9 +22373,11 @@ export class HTMLTextAreaElement extends HTMLElement {
 		// sees its characterData change too, but only on a microtask. An edit
 		// that reads the fresh geometry back in the same tick (vertical motion,
 		// Home/End) needs the engine invalidated synchronously now.
-		$(attached)[kLayout].invalidate(ownerOf(this));
+		$(attached)[kExtra][kLayout].invalidate(ownerOf(this));
 	}
 }
+
+declareExtraSlots(HTMLTextAreaElement);
 
 // One atomic edit.
 function insertPaste(
@@ -22244,7 +22405,7 @@ function getVerticalTarget(
 ): number {
 	const visual = getTextareaVisualLines(
 		textarea,
-		$(getAttachedDocument(textarea)!)[kLayout],
+		$(getAttachedDocument(textarea)!)[kExtra][kLayout],
 	);
 	if (!visual) {
 		return caret;
@@ -22266,8 +22427,8 @@ function getVerticalTarget(
 	// even across shorter lines that clamp the caret. This is the browser's
 	// goal column.
 	const textareaSlots = $(textarea);
-	const column = textareaSlots[kGoalColumn] ?? currentColumn;
-	textareaSlots[kGoalColumn] = column;
+	const column = textareaSlots[kExtra][kGoalColumn] ?? currentColumn;
+	textareaSlots[kExtra][kGoalColumn] = column;
 	const target = visual.lines[targetIndex];
 	const targetText = visual.value.slice(target.startOffset, target.endOffset);
 	let cells = 0;
@@ -22503,10 +22664,10 @@ function stateChanged(element: Element, states: readonly string[]): void {
 	if (attached === undefined) {
 		return;
 	}
-	$(attached)[kCascade].handleStateChange(element, states);
-	$(attached)[kFramebuffer].invalidate();
+	$(attached)[kExtra][kCascade].handleStateChange(element, states);
+	$(attached)[kExtra][kFramebuffer].invalidate();
 	queueMicrotask(() => {
-		void $(attached)[kRender]();
+		void $(attached)[kExtra][kRender]();
 	});
 }
 
@@ -22570,7 +22731,8 @@ function showPopover(
 	// reentrancy the stack algorithms cannot unwind, so it is refused.
 	const documentSlots = $(document);
 	if (
-		documentSlots[kPopoverShowing] || documentSlots[kPopoverHidingCount] !== 0
+		documentSlots[kExtra][kPopoverShowing] ||
+		documentSlots[kExtra][kPopoverHidingCount] !== 0
 	) {
 		if (throwExceptions) {
 			throw domError(
@@ -22588,9 +22750,9 @@ function showPopover(
 		return;
 	}
 	const state = getPopoverState(element);
-	documentSlots[kPopoverShowing] = true;
+	documentSlots[kExtra][kPopoverShowing] = true;
 	const cleanup = (): void => {
-		documentSlots[kPopoverShowing] = false;
+		documentSlots[kExtra][kPopoverShowing] = false;
 	};
 	const opening = new ToggleEvent("beforetoggle", {
 		cancelable: true,
@@ -22643,7 +22805,7 @@ function showPopover(
 		state.mode = "auto";
 	}
 	state.previouslyFocused = null;
-	const originallyFocused = documentSlots[kActiveElement];
+	const originallyFocused = documentSlots[kExtra][kActiveElement];
 	getTopLayer(document).add(element);
 	state.visibility = "showing";
 	state.trigger = source;
@@ -22679,12 +22841,14 @@ function hidePopover(
 		fireEvents = false;
 	}
 	const documentSlots = $(document);
-	documentSlots[kPopoverHidingCount] = documentSlots[kPopoverHidingCount] + 1;
+	documentSlots[kExtra][kPopoverHidingCount] =
+		documentSlots[kExtra][kPopoverHidingCount] + 1;
 	const cleanup = (): void => {
 		if (!nestedHide) {
 			state.hiding = false;
 		}
-		documentSlots[kPopoverHidingCount] = documentSlots[kPopoverHidingCount] - 1;
+		documentSlots[kExtra][kPopoverHidingCount] =
+			documentSlots[kExtra][kPopoverHidingCount] - 1;
 	};
 	if (state.mode === "auto") {
 		hidePopoverStackUntil(document, element, focusPreviousElement, fireEvents);
@@ -22729,7 +22893,7 @@ function hidePopover(
 		state.previouslyFocused = null;
 		// Focus returns only if the popover still holds it. An author who moved
 		// focus elsewhere while it was open keeps it there.
-		const active = documentSlots[kActiveElement];
+		const active = documentSlots[kExtra][kActiveElement];
 		if (
 			focusPreviousElement &&
 			active !== null &&
@@ -22954,7 +23118,7 @@ function getAttributeElement(node: Node, attribute: string): Element | null {
 			if (!isShadowRoot(root)) {
 				return null;
 			}
-			const host = $((root as ShadowRoot))[kHost];
+			const host = $((root as ShadowRoot))[kExtra][kHost];
 			if (host === null) {
 				return null;
 			}
@@ -23336,7 +23500,7 @@ function fireFullscreenEvent(
 // match, and moves the element's box to fill the viewport or back.
 function fullscreenChanged(element: Element): void {
 	stateChanged(element, ["fullscreen", "modal"]);
-	$maybe(getAttachedDocument(element))?.[kLayout].invalidate(element);
+	$maybe(getAttachedDocument(element))?.[kExtra][kLayout].invalidate(element);
 }
 
 // The alternate screen comes up holding whatever the terminal left in
@@ -23422,15 +23586,17 @@ class DOMStringMap {
 	}
 }
 
+declareSealedRoot(DOMStringMap);
+
 function syncDataset(map: DOMStringMap): void {
 	const mapSlots = $(map);
 	const element = mapSlots[kDatasetElement];
 	const names: string[] = [];
 	for (const attribute of $(element)[kAttributeList]) {
-		if (attribute[kNamespace] !== null) {
+		if (attribute[kExtra][kNamespace] !== null) {
 			continue;
 		}
-		const property = getDatasetPropertyName(attribute[kLocalName]);
+		const property = getDatasetPropertyName(attribute[kExtra][kLocalName]);
 		if (property === null) {
 			continue;
 		}
@@ -23809,6 +23975,8 @@ class ValidityState {
 	}
 }
 
+declareSealedRoot(ValidityState);
+
 for (const name of VALIDITY_FLAG_NAMES) {
 	Object.defineProperty(ValidityState.prototype, name, {
 		get(this: ValidityState): boolean {
@@ -23926,6 +24094,8 @@ class CustomStateSet {
 	}
 }
 
+declareSealedRoot(CustomStateSet);
+
 Object.defineProperty(CustomStateSet.prototype, Symbol.toStringTag, {
 	value: "CustomStateSet",
 	configurable: true,
@@ -24020,7 +24190,7 @@ class ElementInternals {
 
 	get shadowRoot(): ShadowRoot | null {
 		const shadow = $($(this)[kElementInternalsTarget])[kShadowRoot];
-		if (shadow === null || !$(shadow)[kAvailableToInternals]) {
+		if (shadow === null || !$(shadow)[kExtra][kAvailableToInternals]) {
 			return null;
 		}
 		return shadow;
@@ -24126,6 +24296,8 @@ class ElementInternals {
 	}
 }
 
+declareSealedRoot(ElementInternals);
+
 function requireFormAssociated(internals: ElementInternals): void {
 	if (!isFormAssociatedCustom($(internals)[kElementInternalsTarget])) {
 		throw domError(
@@ -24165,7 +24337,7 @@ function isReachableARIATarget(from: Element, target: Element): boolean {
 		let root: Node | null = getRoot(target);
 		root !== null;
 		root = isShadowRoot(root)
-			? getRoot($((root as ShadowRoot))[kHost] as Node)
+			? getRoot($((root as ShadowRoot))[kExtra][kHost] as Node)
 			: null
 	) {
 		if (root === fromRoot) {
@@ -24538,7 +24710,7 @@ function collectInputValidity(
 			: [value];
 		flags.patternMismatch = !values.every((v) => matchesPattern(pattern, v));
 	}
-	if (PATTERN_INPUT_TYPES.has(type) && $(input)[kDirtyValue]) {
+	if (PATTERN_INPUT_TYPES.has(type) && $(input)[kExtra][kDirtyValue]) {
 		collectLengthValidity(input, value, flags);
 	}
 	collectRangeValidity(input, value, flags);
@@ -24722,7 +24894,7 @@ function collectTextAreaValidity(
 ): void {
 	const value = textarea.value;
 	flags.valueMissing = textarea.hasAttribute("required") && value === "";
-	if ($(textarea)[kDirty]) {
+	if ($(textarea)[kExtra][kDirty]) {
 		collectLengthValidity(textarea, value, flags);
 	}
 }
@@ -24924,7 +25096,7 @@ function getFlatTreeParent(node: Node): Element | null {
 			return parent;
 		}
 		return isShadowRoot(parent)
-			? (parentSlots as Slots<ShadowRoot>)[kHost]
+			? (parentSlots as Slots<ShadowRoot>)[kExtra][kHost]
 			: null;
 	}
 	return (slots as Element)[kPseudoHost] ?? null;
@@ -24957,7 +25129,7 @@ export function isInFlatTree(target: globalThis.Node): boolean {
 		const parent = objectOf($(node)[kParent]);
 		if (parent === null) {
 			return isShadowRoot(node)
-				? isInFlatTree($(node)[kHost] as unknown as globalThis.Node)
+				? isInFlatTree($(node)[kExtra][kHost] as unknown as globalThis.Node)
 				: node.nodeType === DOCUMENT_NODE;
 		}
 		const slot = getAssignedSlot(node);
@@ -25144,7 +25316,7 @@ function flatContentFirstChild(element: Element): Node | null {
 		return objectOf($(shadow)[kFirstChild]);
 	}
 	if (element instanceof HTMLSlotElement) {
-		const assigned = $(element)[kAssignedNodes];
+		const assigned = $(element)[kExtra][kAssignedNodes];
 		if (assigned.length > 0) {
 			return assigned[0];
 		}
@@ -25174,7 +25346,7 @@ function flatNextSibling(node: Node): Node | null {
 	// may be assigned to a different slot, or to none.
 	const slot = getAssignedSlot(node);
 	if (slot !== null) {
-		const assigned = $(slot)[kAssignedNodes];
+		const assigned = $(slot)[kExtra][kAssignedNodes];
 		const index = assigned.indexOf(node as Slottable);
 		if (index < 0) {
 			return null;
@@ -25214,7 +25386,7 @@ function flatParentNode(node: Node): Node | null {
 	}
 	const parent = objectOf($(node)[kParent]);
 	if (parent !== null && isShadowRoot(parent)) {
-		return $((parent as ShadowRoot))[kHost];
+		return $((parent as ShadowRoot))[kExtra][kHost];
 	}
 	return parent;
 }
@@ -25291,6 +25463,8 @@ class DOMRectReadOnly {
 		};
 	}
 }
+
+declareSealedRoot(DOMRectReadOnly);
 
 Object.defineProperty(DOMRectReadOnly.prototype, Symbol.toStringTag, {
 	value: "DOMRectReadOnly",
@@ -25370,6 +25544,8 @@ export class DOMRectList implements globalThis.DOMRectList {
 		return $(this)[kRects][toUnsignedLong(index)] ?? null;
 	}
 }
+
+declareSealedRoot(DOMRectList);
 
 Object.defineProperties(DOMRectList.prototype, {
 	[Symbol.toStringTag]: {value: "DOMRectList", configurable: true},
@@ -25488,7 +25664,7 @@ function observeTarget<TState, TEntry, TOptions>(
 	// to draw one.
 	const attached = getAttachedDocument(document as unknown as Node);
 	if (attached !== undefined) {
-		void $(attached)[kRender]();
+		void $(attached)[kExtra][kRender]();
 	}
 }
 
@@ -25682,6 +25858,8 @@ class ResizeObserver {
 	}
 }
 
+declareSealedRoot(ResizeObserver);
+
 // Returns null when the element generates no box at all (display:none
 // or detached). The observer turns that into an all-zero rect.
 function getContentBox(
@@ -25863,6 +26041,8 @@ class IntersectionObserver {
 	}
 }
 
+declareSealedRoot(IntersectionObserver);
+
 // From 0 (disjoint) to 1 (contained).
 function getIntersectionRatio(
 	box: globalThis.DOMRect,
@@ -25953,12 +26133,12 @@ function getCurrentDocument(): Document {
 export function isDocumentElement(node: globalThis.Node): boolean {
 	const parent = $(node as Node)[kParent];
 	return parent !== null &&
-		(parent as Slots<Document>)[kMode] !== undefined &&
+		objectOf(parent).nodeType === DOCUMENT_NODE &&
 		node.nodeType === ELEMENT_NODE;
 }
 
 function isHTMLDocument(document: Document): boolean {
-	return $(document)[kType] === "html";
+	return $(document)[kExtra][kType] === "html";
 }
 
 const kImplementation = Symbol("implementation");
@@ -26164,28 +26344,28 @@ export class Document extends Node implements globalThis.Document {
 		super(...args);
 		const slots = $(this);
 		slots[kConnected] = true;
-		slots[kDocumentURL] = "about:blank";
-		slots[kMode] = "no-quirks";
-		slots[kType] = "xml";
-		slots[kContentType] = "application/xml";
-		slots[kEncoding] = "UTF-8";
-		slots[kIdMap] = new Map<string, Element[]>();
-		slots[kNameMap] = new Map<string, Element[]>();
-		slots[kDesignMode] = false;
-		slots[kSelection] = null;
-		slots[kSelectionChangeScheduled] = false;
-		slots[kHighlights] = null;
-		slots[kFonts] = null;
-		slots[kTemplateDocument] = null;
-		slots[kActiveElement] = null;
-		slots[kDefaultView] = null;
-		slots[kStyleElements] = 0;
+		slots[kExtra][kDocumentURL] = "about:blank";
+		slots[kExtra][kMode] = "no-quirks";
+		slots[kExtra][kType] = "xml";
+		slots[kExtra][kContentType] = "application/xml";
+		slots[kExtra][kEncoding] = "UTF-8";
+		slots[kExtra][kIdMap] = new Map<string, Element[]>();
+		slots[kExtra][kNameMap] = new Map<string, Element[]>();
+		slots[kExtra][kDesignMode] = false;
+		slots[kExtra][kSelection] = null;
+		slots[kExtra][kSelectionChangeScheduled] = false;
+		slots[kExtra][kHighlights] = null;
+		slots[kExtra][kFonts] = null;
+		slots[kExtra][kTemplateDocument] = null;
+		slots[kExtra][kActiveElement] = null;
+		slots[kExtra][kDefaultView] = null;
+		slots[kExtra][kStyleElements] = 0;
 		slots[kChildren] = null;
-		slots[kTopLayer] = new Set<Element>();
-		slots[kPopoverShowing] = false;
-		slots[kPopoverHidingCount] = 0;
-		slots[kImplementation] = null;
-		slots[kDocumentWideLists] = null;
+		slots[kExtra][kTopLayer] = new Set<Element>();
+		slots[kExtra][kPopoverShowing] = false;
+		slots[kExtra][kPopoverHidingCount] = 0;
+		slots[kExtra][kImplementation] = null;
+		slots[kExtra][kDocumentWideLists] = null;
 	}
 
 	override get nodeType(): number {
@@ -26197,39 +26377,39 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	get URL(): string {
-		return $(this)[kDocumentURL];
+		return $(this)[kExtra][kDocumentURL];
 	}
 
 	get documentURI(): string {
-		return $(this)[kDocumentURL];
+		return $(this)[kExtra][kDocumentURL];
 	}
 
 	get compatMode(): string {
-		return $(this)[kMode] === "quirks" ? "BackCompat" : "CSS1Compat";
+		return $(this)[kExtra][kMode] === "quirks" ? "BackCompat" : "CSS1Compat";
 	}
 
 	get characterSet(): string {
-		return $(this)[kEncoding];
+		return $(this)[kExtra][kEncoding];
 	}
 
 	get charset(): string {
-		return $(this)[kEncoding];
+		return $(this)[kExtra][kEncoding];
 	}
 
 	get inputEncoding(): string {
-		return $(this)[kEncoding];
+		return $(this)[kExtra][kEncoding];
 	}
 
 	get contentType(): string {
-		return $(this)[kContentType];
+		return $(this)[kExtra][kContentType];
 	}
 
 	get implementation(): globalThis.DOMImplementation {
 		const slots = $(this);
-		let implementation = slots[kImplementation];
+		let implementation = slots[kExtra][kImplementation];
 		if (implementation === null) {
 			implementation = new DOMImplementation(this);
-			slots[kImplementation] = implementation;
+			slots[kExtra][kImplementation] = implementation;
 		}
 		return implementation as unknown as globalThis.DOMImplementation;
 	}
@@ -26252,7 +26432,7 @@ export class Document extends Node implements globalThis.Document {
 	// in a browser the window IS the global. Here it is not, so a caller who
 	// reaches through this for a browser-only global finds nothing.
 	get defaultView(): (globalThis.Window & typeof globalThis) | null {
-		return $(this)[kDefaultView] as
+		return $(this)[kExtra][kDefaultView] as
 			(globalThis.Window & typeof globalThis) | null;
 	}
 
@@ -26260,9 +26440,9 @@ export class Document extends Node implements globalThis.Document {
 	// tree loses focus, and focus returns to the body.
 	get activeElement(): globalThis.Element | null {
 		const slots = $(this);
-		const active = slots[kActiveElement];
+		const active = slots[kExtra][kActiveElement];
 		if (active === null || !active.isConnected) {
-			slots[kActiveElement] = null;
+			slots[kExtra][kActiveElement] = null;
 			return this.body;
 		}
 		// RETARGET to this scope, per HTML. Focus inside a shadow tree reads as
@@ -26278,7 +26458,7 @@ export class Document extends Node implements globalThis.Document {
 				current = root.host as unknown as Node;
 				continue;
 			}
-			slots[kActiveElement] = null;
+			slots[kExtra][kActiveElement] = null;
 			return this.body;
 		}
 	}
@@ -26295,7 +26475,7 @@ export class Document extends Node implements globalThis.Document {
 	// types this non-null, so an unmounted document returns null under a
 	// type that says otherwise.
 	get location(): globalThis.Location {
-		const view = $(this)[kDefaultView] as Window | null;
+		const view = $(this)[kExtra][kDefaultView] as Window | null;
 		return (view === null
 			? null
 			: view.location) as unknown as globalThis.Location;
@@ -26460,10 +26640,10 @@ export class Document extends Node implements globalThis.Document {
 		const attached = getAttachedDocument(this);
 		if (
 			attached !== undefined &&
-			$(attached)[kVisible] &&
-			$(attached)[kExchange].interactive
+			$(attached)[kExtra][kVisible] &&
+			$(attached)[kExtra][kExchange].interactive
 		) {
-			void $(attached)[kExchange].setTitle(String(value));
+			void $(attached)[kExtra][kExchange].setTitle(String(value));
 		}
 	}
 
@@ -26678,13 +26858,13 @@ export class Document extends Node implements globalThis.Document {
 
 	/** On makes the body an editing host. Only "on" and "off" mean anything. */
 	get designMode(): string {
-		return $(this)[kDesignMode] ? "on" : "off";
+		return $(this)[kExtra][kDesignMode] ? "on" : "off";
 	}
 
 	set designMode(value: string) {
 		const state = toASCIILowercase(String(value));
 		if (state === "on" || state === "off") {
-			$(this)[kDesignMode] = state === "on";
+			$(this)[kExtra][kDesignMode] = state === "on";
 		}
 	}
 
@@ -26699,7 +26879,7 @@ export class Document extends Node implements globalThis.Document {
 	// the scrolling the caller means happens inside the body rather than to
 	// it.
 	get scrollingElement(): globalThis.Element | null {
-		if ($(this)[kMode] !== "quirks") {
+		if ($(this)[kExtra][kMode] !== "quirks") {
 			return this.documentElement;
 		}
 		const body = this.body as unknown as Element | null;
@@ -26719,8 +26899,8 @@ export class Document extends Node implements globalThis.Document {
 
 	get fonts(): globalThis.FontFaceSet {
 		const slots = $(this);
-		slots[kFonts] ??= new FontFaceSet();
-		return slots[kFonts] as unknown as globalThis.FontFaceSet;
+		slots[kExtra][kFonts] ??= new FontFaceSet();
+		return slots[kExtra][kFonts] as unknown as globalThis.FontFaceSet;
 	}
 
 	get timeline(): globalThis.DocumentTimeline {
@@ -26810,7 +26990,7 @@ export class Document extends Node implements globalThis.Document {
 	// sealed into the terminal's scrollback, and a later mutation starts a
 	// fresh document below the sealed block.
 	close(): void {
-		$maybe(getAttachedDocument(this))?.[kExchange].dispatchEvent(
+		$maybe(getAttachedDocument(this))?.[kExtra][kExchange].dispatchEvent(
 			new Event("seal"),
 		);
 	}
@@ -26916,7 +27096,7 @@ export class Document extends Node implements globalThis.Document {
 
 	getElementById(elementId: string): globalThis.HTMLElement | null {
 		const id = String(elementId);
-		const entries = $(this)[kIdMap].get(id);
+		const entries = $(this)[kExtra][kIdMap].get(id);
 		if (entries === undefined || entries.length === 0) {
 			return null;
 		}
@@ -26959,7 +27139,7 @@ export class Document extends Node implements globalThis.Document {
 		const is = extractIs(options);
 		const namespace =
 			isHTMLDocument(this) ||
-			$(this)[kContentType] === "application/xhtml+xml"
+			$(this)[kExtra][kContentType] === "application/xhtml+xml"
 				? HTML_NAMESPACE
 				: null;
 		return createElementInternal(
@@ -27276,10 +27456,10 @@ export class Document extends Node implements globalThis.Document {
 	// calls this one, and a headless document still has a selection.
 	getSelection(): globalThis.Selection | null {
 		const slots = $(this);
-		let selection = slots[kSelection];
+		let selection = slots[kExtra][kSelection];
 		if (selection === null) {
 			selection = createSelection(this);
-			slots[kSelection] = selection;
+			slots[kExtra][kSelection] = selection;
 		}
 		return selection as unknown as globalThis.Selection;
 	}
@@ -27460,7 +27640,7 @@ export class Document extends Node implements globalThis.Document {
 		if (event.type === "load") {
 			return null;
 		}
-		return this[kDefaultView] as EventTarget | null;
+		return this[kExtra][kDefaultView] as EventTarget | null;
 	}
 
 	override [kCloneSingle](_document: Document): Node {
@@ -27469,6 +27649,8 @@ export class Document extends Node implements globalThis.Document {
 		return copy;
 	}
 }
+
+declareExtraSlots(Document);
 
 function validateXMLName(name: string): void {
 	if (!XML_NAME.test(name)) {
@@ -27698,6 +27880,8 @@ class HTMLAllCollection {
 	}
 }
 
+declareSealedRoot(HTMLAllCollection);
+
 shareMethods(HTMLAllCollection, LiveList);
 
 Object.defineProperty(HTMLAllCollection.prototype, Symbol.toStringTag, {
@@ -27744,12 +27928,12 @@ export function elementAtDocumentPoint(
 		return null;
 	}
 	flushLayout(document);
-	let element = $(attached)[kLayout].hitTest(
+	let element = $(attached)[kExtra][kLayout].hitTest(
 		document.documentElement,
 		x,
 		y,
 		getTopLayer(document) as unknown as Set<globalThis.Element>,
-		$(attached)[kFramebuffer].scrollTop,
+		$(attached)[kExtra][kFramebuffer].scrollTop,
 	);
 	// The DOM cannot hand out a pseudo-element, so a hit on the content it
 	// generates is a hit on the element it originates from.
@@ -27797,10 +27981,10 @@ function getOutsideUAShadowTrees(
 ): globalThis.Element | null {
 	while (element !== null) {
 		const root = getRoot(element);
-		if (!(root instanceof ShadowRoot) || !$(root)[kUAShadowTree]) {
+		if (!(root instanceof ShadowRoot) || !$(root)[kExtra][kUAShadowTree]) {
 			break;
 		}
-		element = $(root)[kHost] as Element;
+		element = $(root)[kExtra][kHost] as Element;
 	}
 	return element as unknown as globalThis.Element | null;
 }
@@ -27821,7 +28005,7 @@ Object.defineProperties(Document.prototype, {
 			return elementAtDocumentPoint(
 				this,
 				x / cell.width,
-				y / cell.height + $(attached)[kFramebuffer].scrollTop,
+				y / cell.height + $(attached)[kExtra][kFramebuffer].scrollTop,
 			);
 		},
 		writable: true,
@@ -27842,7 +28026,7 @@ Object.defineProperties(Document.prototype, {
 				: elementAtDocumentPoint(
 					this,
 					x / cell.width,
-					y / cell.height + $(attached)[kFramebuffer].scrollTop,
+					y / cell.height + $(attached)[kExtra][kFramebuffer].scrollTop,
 				);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
@@ -27876,11 +28060,11 @@ function stripAndCollapseWhitespace(value: string): string {
 function copyDocumentState(from: Document, to: Document): void {
 	const fromSlots = $(from);
 	const toSlots = $(to);
-	toSlots[kType] = fromSlots[kType];
-	toSlots[kContentType] = fromSlots[kContentType];
-	toSlots[kEncoding] = fromSlots[kEncoding];
-	toSlots[kDocumentURL] = fromSlots[kDocumentURL];
-	toSlots[kMode] = fromSlots[kMode];
+	toSlots[kExtra][kType] = fromSlots[kExtra][kType];
+	toSlots[kExtra][kContentType] = fromSlots[kExtra][kContentType];
+	toSlots[kExtra][kEncoding] = fromSlots[kExtra][kEncoding];
+	toSlots[kExtra][kDocumentURL] = fromSlots[kExtra][kDocumentURL];
+	toSlots[kExtra][kMode] = fromSlots[kExtra][kMode];
 }
 
 // The registry given, null if the caller asked for no registry,
@@ -27972,12 +28156,12 @@ function removeMapEntry(
 }
 
 function addIdEntry(document: Document, id: string, element: Element): void {
-	addMapEntry($(document)[kIdMap], id, element);
+	addMapEntry($(document)[kExtra][kIdMap], id, element);
 	syncNamedProperty(document, id);
 }
 
 function removeIdEntry(document: Document, id: string, element: Element): void {
-	removeMapEntry($(document)[kIdMap], id, element);
+	removeMapEntry($(document)[kExtra][kIdMap], id, element);
 	syncNamedProperty(document, id);
 }
 
@@ -27986,7 +28170,7 @@ function addNameEntry(
 	name: string,
 	element: Element,
 ): void {
-	addMapEntry($(document)[kNameMap], name, element);
+	addMapEntry($(document)[kExtra][kNameMap], name, element);
 	syncNamedProperty(document, name);
 }
 
@@ -27995,7 +28179,7 @@ function removeNameEntry(
 	name: string,
 	element: Element,
 ): void {
-	removeMapEntry($(document)[kNameMap], name, element);
+	removeMapEntry($(document)[kExtra][kNameMap], name, element);
 	syncNamedProperty(document, name);
 }
 
@@ -28054,8 +28238,8 @@ class DOMImplementation {
 		}
 		const document = new XMLDocument();
 		const documentSlots = $(document);
-		documentSlots[kType] = "xml";
-		documentSlots[kContentType] = "application/xml";
+		documentSlots[kExtra][kType] = "xml";
+		documentSlots[kExtra][kContentType] = "application/xml";
 		let element: Element | null = null;
 		const name = qualifiedName === null ? "" : String(qualifiedName);
 		if (name !== "") {
@@ -28072,9 +28256,9 @@ class DOMImplementation {
 		}
 		const ns = namespace === "" || namespace == null ? null : String(namespace);
 		if (ns === HTML_NAMESPACE) {
-			documentSlots[kContentType] = "application/xhtml+xml";
+			documentSlots[kExtra][kContentType] = "application/xhtml+xml";
 		} else if (ns === SVG_NAMESPACE) {
-			documentSlots[kContentType] = "image/svg+xml";
+			documentSlots[kExtra][kContentType] = "image/svg+xml";
 		}
 		return document;
 	}
@@ -28091,6 +28275,8 @@ class DOMImplementation {
 		return true;
 	}
 }
+
+declareSealedRoot(DOMImplementation);
 
 function validateDoctypeName(name: string): void {
 	if (!VALID_DOCTYPE_NAME.test(name)) {
@@ -28120,7 +28306,7 @@ function createHTMLDocument(
 	const documentSlots = $(document);
 	documentSlots[kRegistry] = registry;
 	fillHTMLDocument(document, title);
-	documentSlots[kDocumentURL] = url;
+	documentSlots[kExtra][kDocumentURL] = url;
 	return document;
 }
 
@@ -28136,8 +28322,8 @@ function fillHTMLDocument(document: Document, title?: string): void {
 
 function buildHTMLSkeleton(document: Document, title?: string): void {
 	const documentSlots = $(document);
-	documentSlots[kType] = "html";
-	documentSlots[kContentType] = "text/html";
+	documentSlots[kExtra][kType] = "html";
+	documentSlots[kExtra][kContentType] = "text/html";
 	const doctype = new DocumentType("html", "", "");
 	$(doctype)[kDocument] = document;
 	appendNode(doctype, document);
@@ -28567,7 +28753,7 @@ function setScrollOffset(
 	let next = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
 	if (element.isConnected) {
 		flushLayout(element);
-		const room = $(attached)[kLayout].scrollRange(element, axis);
+		const room = $(attached)[kExtra][kLayout].scrollRange(element, axis);
 		if (room !== null) {
 			next = Math.min(next, room);
 		}
@@ -28591,7 +28777,7 @@ function setScrollOffset(
 	if (axis === "top") {
 		recordScrollShift(attached, document, element, next - previous);
 	} else {
-		$(attached)[kFramebuffer].invalidate();
+		$(attached)[kExtra][kFramebuffer].invalidate();
 	}
 	let pending = pendingScrollTargets.get(document);
 	if (pending === undefined) {
@@ -28599,7 +28785,7 @@ function setScrollOffset(
 		pendingScrollTargets.set(document, pending);
 	}
 	pending.add(element);
-	void $(attached)[kRender]();
+	void $(attached)[kExtra][kRender]();
 }
 
 export function runScrollSteps(document: globalThis.Document): void {
@@ -28607,7 +28793,7 @@ export function runScrollSteps(document: globalThis.Document): void {
 	if (attached === undefined) {
 		return;
 	}
-	const top = $(attached)[kFramebuffer].scrollTop;
+	const top = $(attached)[kExtra][kFramebuffer].scrollTop;
 	if (top !== (reportedDocumentScrollTop.get(attached) ?? 0)) {
 		reportedDocumentScrollTop.set(attached, top);
 		dispatchAsUserAgent(attached, new Event("scroll", {bubbles: true}));
@@ -28701,8 +28887,8 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 			held.delete(element);
 			continue;
 		}
-		const extent = $(attached)[kLayout].getScrollExtent(element);
-		const port = $(attached)[kLayout].contentRect(element);
+		const extent = $(attached)[kExtra][kLayout].getScrollExtent(element);
+		const port = $(attached)[kExtra][kLayout].contentRect(element);
 		if (!extent || !port) {
 			continue;
 		}
@@ -28720,8 +28906,8 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	}
 	if (changed) {
 		scrollShifts.delete(document as Document);
-		$(attached)[kFramebuffer].invalidate();
-		void $(attached)[kRender]();
+		$(attached)[kExtra][kFramebuffer].invalidate();
+		void $(attached)[kExtra][kRender]();
 	}
 }
 
@@ -28738,7 +28924,7 @@ function recordScrollShift(
 		shift.delta += delta;
 	} else {
 		scrollShifts.delete(document);
-		$(attached)[kFramebuffer].invalidate();
+		$(attached)[kExtra][kFramebuffer].invalidate();
 	}
 }
 
@@ -28803,18 +28989,18 @@ function cloneNode(
 	nodeSlots[kCloningSteps](copy, target, deep);
 	if (node.nodeType === ELEMENT_NODE) {
 		const shadow = $((node as Element))[kShadowRoot];
-		if (shadow !== null && $(shadow)[kClonable]) {
+		if (shadow !== null && $(shadow)[kExtra][kClonable]) {
 			attachShadowRoot(
 				copy as Element,
-				$(shadow)[kShadowMode],
+				$(shadow)[kExtra][kShadowMode],
 				true,
-				$(shadow)[kSerializable],
-				$(shadow)[kDelegatesFocus],
-				$(shadow)[kSlotAssignment],
+				$(shadow)[kExtra][kSerializable],
+				$(shadow)[kExtra][kDelegatesFocus],
+				$(shadow)[kExtra][kSlotAssignment],
 				$(shadow)[kRegistry],
 			);
 			const copiedShadow = $((copy as Element))[kShadowRoot] as ShadowRoot;
-			$(copiedShadow)[kDeclarative] = $(shadow)[kDeclarative];
+			$(copiedShadow)[kExtra][kDeclarative] = $(shadow)[kExtra][kDeclarative];
 			for (
 				let childSlots = $(shadow)[kFirstChild];
 				childSlots !== null;
@@ -28848,9 +29034,9 @@ function equalNodes(a: Node, b: Node): boolean {
 			const one = a as DocumentType;
 			const two = b as DocumentType;
 			if (
-				$(one)[kName] !== $(two)[kName] ||
-				$(one)[kPublicId] !== $(two)[kPublicId] ||
-				$(one)[kSystemId] !== $(two)[kSystemId]
+				$(one)[kExtra][kName] !== $(two)[kExtra][kName] ||
+				$(one)[kExtra][kPublicId] !== $(two)[kExtra][kPublicId] ||
+				$(one)[kExtra][kSystemId] !== $(two)[kExtra][kSystemId]
 			) {
 				return false;
 			}
@@ -28870,10 +29056,13 @@ function equalNodes(a: Node, b: Node): boolean {
 			for (const attribute of $(one)[kAttributeList]) {
 				const other = getAttributeByNamespace(
 					two,
-					attribute[kNamespace],
-					attribute[kLocalName],
+					attribute[kExtra][kNamespace],
+					attribute[kExtra][kLocalName],
 				);
-				if (other === null || $(other)[kValue] !== attribute[kValue]) {
+				if (
+					other === null ||
+					$(other)[kExtra][kValue] !== attribute[kExtra][kValue]
+				) {
 					return false;
 				}
 			}
@@ -28883,9 +29072,9 @@ function equalNodes(a: Node, b: Node): boolean {
 			const one = a as Attr;
 			const two = b as Attr;
 			if (
-				$(one)[kNamespace] !== $(two)[kNamespace] ||
-				$(one)[kLocalName] !== $(two)[kLocalName] ||
-				$(one)[kValue] !== $(two)[kValue]
+				$(one)[kExtra][kNamespace] !== $(two)[kExtra][kNamespace] ||
+				$(one)[kExtra][kLocalName] !== $(two)[kExtra][kLocalName] ||
+				$(one)[kExtra][kValue] !== $(two)[kExtra][kValue]
 			) {
 				return false;
 			}
@@ -28895,7 +29084,8 @@ function equalNodes(a: Node, b: Node): boolean {
 			const one = a as ProcessingInstruction;
 			const two = b as ProcessingInstruction;
 			if (
-				$(one)[kTarget] !== $(two)[kTarget] || $(one)[kData] !== $(two)[kData]
+				$(one)[kExtra][kTarget] !== $(two)[kExtra][kTarget] ||
+				$(one)[kData] !== $(two)[kData]
 			) {
 				return false;
 			}
@@ -28934,8 +29124,11 @@ function locateNamespacePrefix(
 		return elementSlots[kPrefix];
 	}
 	for (const attribute of elementSlots[kAttributeList]) {
-		if (attribute[kPrefix] === "xmlns" && attribute[kValue] === namespace) {
-			return attribute[kLocalName];
+		if (
+			attribute[kExtra][kPrefix] === "xmlns" &&
+			attribute[kExtra][kValue] === namespace
+		) {
+			return attribute[kExtra][kLocalName];
 		}
 	}
 	const parent = element.parentElement;
@@ -28960,19 +29153,23 @@ function locateNamespace(node: Node, prefix: string | null): string | null {
 			}
 			for (const attribute of $(element)[kAttributeList]) {
 				if (
-					attribute[kNamespace] === XMLNS_NAMESPACE &&
-					attribute[kPrefix] === "xmlns" &&
-					attribute[kLocalName] === prefix
+					attribute[kExtra][kNamespace] === XMLNS_NAMESPACE &&
+					attribute[kExtra][kPrefix] === "xmlns" &&
+					attribute[kExtra][kLocalName] === prefix
 				) {
-					return attribute[kValue] === "" ? null : attribute[kValue];
+					return attribute[kExtra][kValue] === ""
+						? null
+						: attribute[kExtra][kValue];
 				}
 				if (
-					attribute[kNamespace] === XMLNS_NAMESPACE &&
-					attribute[kPrefix] === null &&
-					attribute[kLocalName] === "xmlns" &&
+					attribute[kExtra][kNamespace] === XMLNS_NAMESPACE &&
+					attribute[kExtra][kPrefix] === null &&
+					attribute[kExtra][kLocalName] === "xmlns" &&
 					prefix === null
 				) {
-					return attribute[kValue] === "" ? null : attribute[kValue];
+					return attribute[kExtra][kValue] === ""
+						? null
+						: attribute[kExtra][kValue];
 				}
 			}
 			const parent = element.parentElement;
@@ -29342,6 +29539,8 @@ class AbstractRange {
 		);
 	}
 }
+
+declareSealedRoot(AbstractRange);
 
 Object.defineProperty(AbstractRange.prototype, Symbol.toStringTag, {
 	value: "AbstractRange",
@@ -30322,7 +30521,7 @@ function getRangeClientRects(range: Range): globalThis.DOMRect[] {
 		return [];
 	}
 	flushLayout(range.startContainer);
-	const layout = $(attached)[kLayout];
+	const layout = $(attached)[kExtra][kLayout];
 	const anchor = rangeAnchor(range);
 	if (range.collapsed) {
 		return layout
@@ -30392,16 +30591,16 @@ function scheduleSelectionChange(document: Document): void {
 	// below. That guard drops the second move in a task but not its paint.
 	const attached = getAttachedDocument(document);
 	if (attached !== undefined) {
-		$(attached)[kFramebuffer].invalidate();
-		void $(attached)[kRender]();
+		$(attached)[kExtra][kFramebuffer].invalidate();
+		void $(attached)[kExtra][kRender]();
 	}
 	const documentSlots = $(document);
-	if (documentSlots[kSelectionChangeScheduled]) {
+	if (documentSlots[kExtra][kSelectionChangeScheduled]) {
 		return;
 	}
-	documentSlots[kSelectionChangeScheduled] = true;
+	documentSlots[kExtra][kSelectionChangeScheduled] = true;
 	setTimeout(() => {
-		documentSlots[kSelectionChangeScheduled] = false;
+		documentSlots[kExtra][kSelectionChangeScheduled] = false;
 		document.dispatchEvent(new Event("selectionchange"));
 	}, 0);
 }
@@ -30414,7 +30613,9 @@ function getComposedParent(node: Node): Node | null {
 	if (parent !== null) {
 		return parent;
 	}
-	return isShadowRoot(node) ? ($((node as ShadowRoot))[kHost] as Node) : null;
+	return isShadowRoot(node)
+		? ($((node as ShadowRoot))[kExtra][kHost] as Node)
+		: null;
 }
 
 function getComposedChain(node: Node): Node[] {
@@ -30696,7 +30897,7 @@ class Selection implements globalThis.Selection {
 				) {
 					break;
 				}
-				const host = $((root as ShadowRoot))[kHost] as Element;
+				const host = $((root as ShadowRoot))[kExtra][kHost] as Element;
 				at = getNodeIndex(host) + (after ? 1 : 0);
 				const parent = objectOf($(host)[kParent]);
 				if (parent === null) {
@@ -31004,7 +31205,7 @@ class Selection implements globalThis.Selection {
 		if (attached === undefined) {
 			return range.toString();
 		}
-		$(attached)[kLayout].performLayout();
+		$(attached)[kExtra][kLayout].performLayout();
 		const run = flattenSelectionText(getSelectionTextNodes(document, attached));
 		const start = getRenderedIndex(
 			run,
@@ -31021,6 +31222,8 @@ class Selection implements globalThis.Selection {
 		return end <= start ? "" : run.text.slice(start, end);
 	}
 }
+
+declareSealedRoot(Selection);
 
 // A range boundary in unpainted content maps to the painted text that
 // follows it, or for an end, that precedes it.
@@ -31122,7 +31325,7 @@ function getSelectionTextNodes(
 	document: Document,
 	attached: AttachedDocument | undefined,
 ): Array<Text | Element> {
-	const layout = attached === undefined ? null : $(attached)[kLayout];
+	const layout = attached === undefined ? null : $(attached)[kExtra][kLayout];
 	const nodes: Array<Text | Element> = [];
 	// What renders inside a node: an author shadow root's content in place
 	// of the host's children, and a slot's assigned nodes in place of its
@@ -31131,11 +31334,14 @@ function getSelectionTextNodes(
 		const shadow = node.nodeType === ELEMENT_NODE
 			? $((node as Element))[kShadowRoot]
 			: null;
-		const source = shadow !== null && !$(shadow)[kUAShadowTree] ? shadow : node;
+		const source = shadow !== null && !$(shadow)[kExtra][kUAShadowTree]
+			? shadow
+			: node;
 		if (
-			source instanceof HTMLSlotElement && $(source)[kAssignedNodes].length > 0
+			source instanceof HTMLSlotElement &&
+			$(source)[kExtra][kAssignedNodes].length > 0
 		) {
-			return [...$(source)[kAssignedNodes]] as Node[];
+			return [...$(source)[kExtra][kAssignedNodes]] as Node[];
 		}
 		const children: Node[] = [];
 		for (let childSlots = $(source)[kFirstChild];
@@ -31151,14 +31357,16 @@ function getSelectionTextNodes(
 			if (child.nodeType === TEXT_NODE) {
 				if (
 					isPaintedText(child as Text, layout) &&
-					(attached === undefined || $(attached)[kCascade].isSelectable(node))
+					(attached === undefined ||
+						$(attached)[kExtra][kCascade].isSelectable(node))
 				) {
 					nodes.push(child as Text);
 				}
 			} else if (isLineBreakElement(child)) {
 				if (
 					(layout === null || layout.getRects(child).length > 0) &&
-					(attached === undefined || $(attached)[kCascade].isSelectable(node))
+					(attached === undefined ||
+						$(attached)[kExtra][kCascade].isSelectable(node))
 				) {
 					nodes.push(child);
 				}
@@ -31450,7 +31658,7 @@ export function selectUnits(
 	unit: SelectionUnit,
 ): void {
 	const attached = getAttachedDocument(document as unknown as Document);
-	$maybe(attached)?.[kLayout].performLayout();
+	$maybe(attached)?.[kExtra][kLayout].performLayout();
 	const run = flattenSelectionText(
 		getSelectionTextNodes(document as unknown as Document, attached),
 	);
@@ -31501,7 +31709,7 @@ function getModifiedPoint(
 ): [Node, number] | null {
 	const document = $(selection)[kDocument];
 	const attached = getAttachedDocument(document);
-	const layout = attached === undefined ? null : $(attached)[kLayout];
+	const layout = attached === undefined ? null : $(attached)[kExtra][kLayout];
 	if (layout === null) {
 		if (granularity === "line" || granularity === "lineboundary") {
 			return null;
@@ -31962,6 +32170,8 @@ class Highlight {
 	}
 }
 
+declareSealedRoot(Highlight);
+
 Object.defineProperty(Highlight.prototype, Symbol.toStringTag, {
 	value: "Highlight",
 	configurable: true,
@@ -32093,6 +32303,8 @@ class HighlightRegistry {
 	}
 }
 
+declareSealedRoot(HighlightRegistry);
+
 Object.defineProperty(HighlightRegistry.prototype, Symbol.toStringTag, {
 	value: "HighlightRegistry",
 	configurable: true,
@@ -32104,7 +32316,7 @@ export function getHighlightRegistry(
 ): HighlightRegistry {
 	const owner = document as Document;
 	const ownerSlots = $(owner);
-	let registry = ownerSlots[kHighlights];
+	let registry = ownerSlots[kExtra][kHighlights];
 	if (registry === null) {
 		registryUnderConstruction = owner;
 		try {
@@ -32112,14 +32324,14 @@ export function getHighlightRegistry(
 		} finally {
 			registryUnderConstruction = null;
 		}
-		ownerSlots[kHighlights] = registry;
+		ownerSlots[kExtra][kHighlights] = registry;
 	}
 	return registry;
 }
 
 /** A torn-down document paints nothing, and holds no highlight. */
 export function clearHighlights(document: globalThis.Document): void {
-	$((document as Document))[kHighlights]?.clear();
+	$((document as Document))[kExtra][kHighlights]?.clear();
 }
 
 // A highlight that is no longer registered under any name in this
@@ -32185,8 +32397,8 @@ function invalidateHighlights(document: Document): void {
 	if (attached === undefined) {
 		return;
 	}
-	$(attached)[kFramebuffer].invalidate();
-	void $(attached)[kRender]();
+	$(attached)[kExtra][kFramebuffer].invalidate();
+	void $(attached)[kExtra][kRender]();
 }
 
 /** A registered highlight and what it covers, for the painter. */
@@ -32202,7 +32414,7 @@ interface PaintedHighlight {
 export function getPaintedHighlights(
 	document: globalThis.Document,
 ): PaintedHighlight[] {
-	const registry = $((document as Document))[kHighlights];
+	const registry = $((document as Document))[kExtra][kHighlights];
 	if (registry === null || $(registry)[kHighlightsByName].size === 0) {
 		return [];
 	}
@@ -32220,7 +32432,7 @@ export function getPaintedHighlights(
 
 /** Whether anything at all highlights this document. */
 export function hasPaintedHighlights(document: globalThis.Document): boolean {
-	const registry = $((document as Document))[kHighlights];
+	const registry = $((document as Document))[kExtra][kHighlights];
 	if (registry === null) {
 		return false;
 	}
@@ -32437,6 +32649,8 @@ class NodeIterator {
 	}
 }
 
+declareSealedRoot(NodeIterator);
+
 function traverseIterator(
 	iterator: NodeIterator,
 	forward: boolean,
@@ -32608,6 +32822,8 @@ export class TreeWalker implements globalThis.TreeWalker {
 		return walkNext(this) as unknown as globalThis.Node | null;
 	}
 }
+
+declareSealedRoot(TreeWalker);
 
 // DOM Standard, "traverse children".
 function walkChildren(walk: TreeWalker, first: boolean): Node | null {
@@ -32882,7 +33098,7 @@ function movePointerStatesOffRemoval(
 	parent: Node,
 ): void {
 	const heir = parent instanceof ShadowRoot
-		? ($(parent)[kHost] as Element)
+		? ($(parent)[kExtra][kHost] as Element)
 		: parent.nodeType === ELEMENT_NODE ? (parent as Element) : null;
 	for (const states of [activeElements, hoveredElements]) {
 		const element = states.get(document);
@@ -32931,7 +33147,7 @@ export function setDocumentFocusVisible(
 
 /** Also true for a host above the focused element. */
 export function hasFocus(element: Element): boolean {
-	const active = $($(element)[kDocument])[kActiveElement];
+	const active = $($(element)[kDocument])[kExtra][kActiveElement];
 	if (active === null) {
 		return false;
 	}
@@ -32943,7 +33159,7 @@ export function hasFocus(element: Element): boolean {
 		isShadowRoot(root);
 		root = getRoot(root)
 	) {
-		const host = $((root as ShadowRoot))[kHost] as unknown as Element;
+		const host = $((root as ShadowRoot))[kExtra][kHost] as unknown as Element;
 		if (host === element) {
 			return true;
 		}
@@ -32963,7 +33179,7 @@ export function isTargetElement(element: Element): boolean {
 	if (getRoot(element as unknown as Node) !== (document as unknown as Node)) {
 		return false;
 	}
-	const url = $(document)[kDocumentURL];
+	const url = $(document)[kExtra][kDocumentURL];
 	const hash = url.indexOf("#");
 	if (hash === -1) {
 		return false;
@@ -33012,14 +33228,14 @@ function withoutFragment(url: string): string {
 // terminal document can make.
 function isFragmentNavigation(document: Document, url: string): boolean {
 	return url.includes("#") &&
-		withoutFragment(url) === withoutFragment($(document)[kDocumentURL]);
+		withoutFragment(url) === withoutFragment($(document)[kExtra][kDocumentURL]);
 }
 
 function navigateToFragment(document: Document, url: string): void {
 	const documentSlots = $(document);
-	const oldURL = documentSlots[kDocumentURL];
+	const oldURL = documentSlots[kExtra][kDocumentURL];
 	const previous = getTargetElement(document);
-	documentSlots[kDocumentURL] = url;
+	documentSlots[kExtra][kDocumentURL] = url;
 	const next = getTargetElement(document);
 	for (const element of [previous, next]) {
 		if (element !== null) {
@@ -33030,7 +33246,8 @@ function navigateToFragment(document: Document, url: string): void {
 	if (oldURL === url) {
 		return;
 	}
-	const window = documentSlots[kDefaultView] as unknown as EventTarget | null;
+	const window = documentSlots[kExtra][kDefaultView] as unknown as EventTarget |
+		null;
 	if (window !== null) {
 		setTimeout(() => {
 			dispatchAsUserAgent(
@@ -33131,7 +33348,7 @@ export function isOpenElement(element: Element): boolean {
 			return element.getAttribute("open") !== null;
 		case "select":
 			return (
-				($(element) as unknown as {[kPickerHighlight]?:
+				($(element)[kExtra] as unknown as {[kPickerHighlight]?:
 				unknown;})[kPickerHighlight] !=
 				null
 			);
@@ -33145,7 +33362,7 @@ export function isOpenElement(element: Element): boolean {
 // element's document. A headless tree uses the same functions, and the
 // states simply return false.
 export function getShadowHost(root: Node): Element | null {
-	return isShadowRoot(root) ? $((root as ShadowRoot))[kHost] : null;
+	return isShadowRoot(root) ? $((root as ShadowRoot))[kExtra][kHost] : null;
 }
 
 export function getOpenAssignedSlot(element: Element): Element | null {
@@ -33157,7 +33374,7 @@ export function isHTMLNode(node: Node): boolean {
 }
 
 export function isInQuirksMode(node: Node): boolean {
-	return $($(node)[kDocument])[kMode] === "quirks";
+	return $($(node)[kDocument])[kExtra][kMode] === "quirks";
 }
 
 // True for the element and anything it contains in the FLAT tree, which
@@ -33184,7 +33401,7 @@ export function isFocusVisible(element: Element): boolean {
 // The climb continues past every shadow host above the focused element,
 // which is where the node tree's parent chain ends.
 export function hasFocusWithin(element: Element): boolean {
-	let node: Element | null = $($(element)[kDocument])[kActiveElement];
+	let node: Element | null = $($(element)[kDocument])[kExtra][kActiveElement];
 	while (node !== null) {
 		if (node === element) {
 			return true;
@@ -33195,7 +33412,7 @@ export function hasFocusWithin(element: Element): boolean {
 			continue;
 		}
 		const root = getRoot(node);
-		node = isShadowRoot(root) ? $((root as ShadowRoot))[kHost] : null;
+		node = isShadowRoot(root) ? $((root as ShadowRoot))[kExtra][kHost] : null;
 	}
 	return false;
 }
@@ -33402,8 +33619,8 @@ function createTreeAdapter(document: Document | null) {
 		createDocument(): Document {
 			const created = new Document();
 			const createdSlots = $(created);
-			createdSlots[kType] = "html";
-			createdSlots[kContentType] = "text/html";
+			createdSlots[kExtra][kType] = "html";
+			createdSlots[kExtra][kContentType] = "text/html";
 			if (target === null) {
 				target = created;
 			}
@@ -33446,8 +33663,8 @@ function createTreeAdapter(document: Document | null) {
 			templateElement: Element,
 			contentElement: DocumentFragment,
 		): void {
-			$(contentElement)[kHost] = templateElement;
-			$((templateElement as HTMLTemplateElement))[kTemplateContent] =
+			$(contentElement)[kExtra][kHost] = templateElement;
+			$((templateElement as HTMLTemplateElement))[kExtra][kTemplateContent] =
 				contentElement;
 		},
 		getTemplateContent(templateElement: Element): DocumentFragment {
@@ -33461,9 +33678,9 @@ function createTreeAdapter(document: Document | null) {
 		): void {
 			const existing = documentNode.doctype as unknown as DocumentType | null;
 			if (existing !== null) {
-				$(existing)[kName] = name;
-				$(existing)[kPublicId] = publicId;
-				$(existing)[kSystemId] = systemId;
+				$(existing)[kExtra][kName] = name;
+				$(existing)[kExtra][kPublicId] = publicId;
+				$(existing)[kExtra][kSystemId] = systemId;
 				return;
 			}
 			const doctype = new DocumentType(name, publicId, systemId);
@@ -33474,10 +33691,12 @@ function createTreeAdapter(document: Document | null) {
 			documentNode: Document,
 			mode: "no-quirks" | "quirks" | "limited-quirks",
 		): void {
-			$(documentNode)[kMode] = mode;
+			$(documentNode)[kExtra][kMode] = mode;
 		},
+		// A fragment parse hands the fragment in as the document, which has
+		// no mode.
 		getDocumentMode(documentNode: Document): string {
-			return $(documentNode)[kMode];
+			return $(documentNode)[kExtra]?.[kMode];
 		},
 		detachNode(node: Node): void {
 			removeNode(node, true);
@@ -33534,9 +33753,9 @@ function createTreeAdapter(document: Document | null) {
 		getAttrList(element: Element): ParseAttribute[] {
 			return $(element)[kAttributeList].map((attribute) => ({
 				name: attribute[kQualifiedName],
-				value: attribute[kValue],
-				namespace: attribute[kNamespace] ?? undefined,
-				prefix: attribute[kPrefix] ?? undefined,
+				value: attribute[kExtra][kValue],
+				namespace: attribute[kExtra][kNamespace] ?? undefined,
+				prefix: attribute[kExtra][kPrefix] ?? undefined,
 			}));
 		},
 		getTagName(element: Element): string {
@@ -33552,13 +33771,13 @@ function createTreeAdapter(document: Document | null) {
 			return $(commentNode)[kData];
 		},
 		getDocumentTypeNodeName(doctypeNode: DocumentType): string {
-			return $(doctypeNode)[kName];
+			return $(doctypeNode)[kExtra][kName];
 		},
 		getDocumentTypeNodePublicId(doctypeNode: DocumentType): string {
-			return $(doctypeNode)[kPublicId];
+			return $(doctypeNode)[kExtra][kPublicId];
 		},
 		getDocumentTypeNodeSystemId(doctypeNode: DocumentType): string {
-			return $(doctypeNode)[kSystemId];
+			return $(doctypeNode)[kExtra][kSystemId];
 		},
 		isTextNode(node: Node): boolean {
 			return node.nodeType === TEXT_NODE;
@@ -33626,7 +33845,7 @@ function attachDeclarativeShadowRoots(root: Node): void {
 // observed from now on, its sheets join the cascade, and the host's boxes
 // are rebuilt around it.
 function connectShadowRoot(root: ShadowRoot): void {
-	const host = $(root)[kHost] as Element | null;
+	const host = $(root)[kExtra][kHost] as Element | null;
 	if (host === null) {
 		return;
 	}
@@ -33638,10 +33857,10 @@ function connectShadowRoot(root: ShadowRoot): void {
 		$(host)[kDocument],
 		root as unknown as globalThis.ShadowRoot,
 	);
-	$(attached)[kCascade].syncShadowRoot(
+	$(attached)[kExtra][kCascade].syncShadowRoot(
 		root as unknown as globalThis.ShadowRoot,
 	);
-	$(attached)[kLayout].invalidate();
+	$(attached)[kExtra][kLayout].invalidate();
 }
 
 function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
@@ -33678,8 +33897,8 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	}
 	const shadow = $((host as Element))[kShadowRoot] as ShadowRoot;
 	const shadowSlots = $(shadow);
-	shadowSlots[kDeclarative] = true;
-	const content = templateSlots[kTemplateContent];
+	shadowSlots[kExtra][kDeclarative] = true;
+	const content = templateSlots[kExtra][kTemplateContent];
 	removeNode(template);
 	if (content !== null) {
 		for (const child of getChildNodeArray(content)) {
@@ -33715,7 +33934,7 @@ function parseHTMLDocument(
 		parseRegistry = outerRegistry;
 	}
 	$(document)[kRegistry] = registry;
-	$(document)[kDocumentURL] = url;
+	$(document)[kExtra][kDocumentURL] = url;
 	if (allowDeclarativeShadowRoots) {
 		attachDeclarativeShadowRoots(document);
 	}
@@ -34429,14 +34648,16 @@ export class DOMParser {
 	}
 }
 
+declareSealedRoot(DOMParser);
+
 // A well-formed document becomes the tree it describes. Anything else
 // becomes the spec's error document, whose root is a parsererror element
 // holding the failure.
 function parseXMLDocument(source: string, contentType: string): Document {
 	const document = new XMLDocument();
 	const documentSlots = $(document);
-	documentSlots[kType] = "xml";
-	documentSlots[kContentType] = contentType;
+	documentSlots[kExtra][kType] = "xml";
+	documentSlots[kExtra][kContentType] = contentType;
 	documentSlots[kRegistry] = null;
 	try {
 		parseXMLIntoDocument(source, document);
@@ -34515,20 +34736,20 @@ function escapeAttribute(value: string): string {
 
 function getAttributeSerializedName(attribute: Attr): string {
 	const attributeSlots = $(attribute);
-	const namespace = attributeSlots[kNamespace];
+	const namespace = attributeSlots[kExtra][kNamespace];
 	if (namespace === null) {
-		return attributeSlots[kLocalName];
+		return attributeSlots[kExtra][kLocalName];
 	}
 	if (namespace === XML_NAMESPACE) {
-		return `xml:${attributeSlots[kLocalName]}`;
+		return `xml:${attributeSlots[kExtra][kLocalName]}`;
 	}
 	if (namespace === XMLNS_NAMESPACE) {
-		return attributeSlots[kLocalName] === "xmlns"
+		return attributeSlots[kExtra][kLocalName] === "xmlns"
 			? "xmlns"
-			: `xmlns:${attributeSlots[kLocalName]}`;
+			: `xmlns:${attributeSlots[kExtra][kLocalName]}`;
 	}
 	if (namespace === XLINK_NAMESPACE) {
-		return `xlink:${attributeSlots[kLocalName]}`;
+		return `xlink:${attributeSlots[kExtra][kLocalName]}`;
 	}
 	return attributeSlots[kQualifiedName];
 }
@@ -34548,7 +34769,7 @@ function serializeFragment(
 		$((node as Element))[kNamespace] === HTML_NAMESPACE &&
 		$((node as Element))[kLocalName] === "template"
 	) {
-		const content = $((node as HTMLTemplateElement))[kTemplateContent];
+		const content = $((node as HTMLTemplateElement))[kExtra][kTemplateContent];
 		if (content != null) {
 			children = content;
 		}
@@ -34558,7 +34779,7 @@ function serializeFragment(
 		const shadow = $((node as Element))[kShadowRoot];
 		if (
 			shadow !== null &&
-			((serializableShadowRoots && $(shadow)[kSerializable]) ||
+			((serializableShadowRoots && $(shadow)[kExtra][kSerializable]) ||
 				shadowRoots.includes(shadow))
 		) {
 			html += serializeShadowRoot(shadow, serializableShadowRoots, shadowRoots);
@@ -34581,14 +34802,14 @@ function serializeShadowRoot(
 	shadowRoots: ShadowRoot[],
 ): string {
 	const shadowSlots = $(shadow);
-	let html = `<template shadowrootmode="${shadowSlots[kShadowMode]}"`;
-	if (shadowSlots[kDelegatesFocus]) {
+	let html = `<template shadowrootmode="${shadowSlots[kExtra][kShadowMode]}"`;
+	if (shadowSlots[kExtra][kDelegatesFocus]) {
 		html += ' shadowrootdelegatesfocus=""';
 	}
-	if (shadowSlots[kSerializable]) {
+	if (shadowSlots[kExtra][kSerializable]) {
 		html += ' shadowrootserializable=""';
 	}
-	if (shadowSlots[kClonable]) {
+	if (shadowSlots[kExtra][kClonable]) {
 		html += ' shadowrootclonable=""';
 	}
 	html += ">";
@@ -34615,7 +34836,7 @@ function serializeNode(
 					: $(element)[kQualifiedName];
 			let html = `<${tagName}`;
 			for (const attribute of $(element)[kAttributeList]) {
-				html += ` ${getAttributeSerializedName(objectOf(attribute))}="${escapeAttribute(attribute[kValue])}"`;
+				html += ` ${getAttributeSerializedName(objectOf(attribute))}="${escapeAttribute(attribute[kExtra][kValue])}"`;
 			}
 			html += ">";
 			if (namespace === HTML_NAMESPACE && VOID_ELEMENTS.has(tagName)) {
@@ -34657,11 +34878,11 @@ function serializeNode(
 		case COMMENT_NODE:
 			return `<!--${$((node as CharacterData))[kData]}-->`;
 		case PROCESSING_INSTRUCTION_NODE:
-			return `<?${$((node as ProcessingInstruction))[kTarget]} ${
+			return `<?${$((node as ProcessingInstruction))[kExtra][kTarget]} ${
 				$((node as CharacterData))[kData]
 			}>`;
 		case DOCUMENT_TYPE_NODE:
-			return `<!DOCTYPE ${$((node as DocumentType))[kName]}>`;
+			return `<!DOCTYPE ${$((node as DocumentType))[kExtra][kName]}>`;
 		default: {
 			let html = "";
 			for (
@@ -34928,7 +35149,7 @@ class MediaQueryList extends EventTarget {
 		const attached = getAttachedDocument($(this)[kMediaQueryDocument]);
 		return (
 			attached !== undefined &&
-			$(attached)[kCascade].mediaQueryMatches(this.media)
+			$(attached)[kExtra][kCascade].mediaQueryMatches(this.media)
 		);
 	}
 
@@ -35057,28 +35278,29 @@ export function attachDocument(
 ): void {
 	const attached = document as Document;
 	const attachedSlots = $(attached);
-	if (attachedSlots[kExchange] !== undefined) {
+	if (attachedSlots[kExtra][kExchange] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
 	const {layout, cascade, exchange, framebuffer, cellSize, images, canvas} =
 		engine;
 	const render = () => engine.render();
-	attachedSlots[kRender] = render;
-	attachedSlots[kReportUncaught] = (error) => engine.reportUncaught(error);
-	attachedSlots[kLoad] = engine.load;
-	attachedSlots[kAllowsInlineHandler] = (element) =>
+	attachedSlots[kExtra][kRender] = render;
+	attachedSlots[kExtra][kReportUncaught] = (error) =>
+		engine.reportUncaught(error);
+	attachedSlots[kExtra][kLoad] = engine.load;
+	attachedSlots[kExtra][kAllowsInlineHandler] = (element) =>
 		engine.allowsInlineHandler(element);
-	attachedSlots[kLoadSignal] = engine.loadSignal;
-	attachedSlots[kVisible] = false;
-	attachedSlots[kLayout] = layout;
-	attachedSlots[kCascade] = cascade;
-	attachedSlots[kExchange] = exchange;
-	attachedSlots[kFramebuffer] = framebuffer;
-	attachedSlots[kCellSize] = cellSize;
-	attachedSlots[kImages] = images;
-	attachedSlots[kCanvas] = canvas;
-	attachedSlots[kPendingCaretReveal] = null;
-	attachedSlots[kPendingEditingReveal] = null;
+	attachedSlots[kExtra][kLoadSignal] = engine.loadSignal;
+	attachedSlots[kExtra][kVisible] = false;
+	attachedSlots[kExtra][kLayout] = layout;
+	attachedSlots[kExtra][kCascade] = cascade;
+	attachedSlots[kExtra][kExchange] = exchange;
+	attachedSlots[kExtra][kFramebuffer] = framebuffer;
+	attachedSlots[kExtra][kCellSize] = cellSize;
+	attachedSlots[kExtra][kImages] = images;
+	attachedSlots[kExtra][kCanvas] = canvas;
+	attachedSlots[kExtra][kPendingCaretReveal] = null;
+	attachedSlots[kExtra][kPendingEditingReveal] = null;
 	for (const type of ["input", "select", "change", "selectionchange"]) {
 		exchange.addEventListener(type, onTextControlEditEvent);
 	}
@@ -35136,11 +35358,11 @@ function onTextControlEditEvent(event: globalThis.Event): void {
 	if (attached === undefined || target !== getFocusedElement(attached)) {
 		return;
 	}
-	$(attached)[kPendingCaretReveal] = target;
+	$(attached)[kExtra][kPendingCaretReveal] = target;
 	// A document scroll move and a caret move. No mutation record describes
 	// either.
-	$(attached)[kFramebuffer].invalidate();
-	void $(attached)[kRender]();
+	$(attached)[kExtra][kFramebuffer].invalidate();
+	void $(attached)[kExtra][kRender]();
 }
 
 /**
@@ -35154,20 +35376,21 @@ export function runControlDefaultAction(
 	target: globalThis.Element,
 	event: globalThis.Event,
 ): void {
-	const control = target as unknown as {
+	// A control's own slots, which only a control has.
+	const control = $(target as unknown as Element)[kExtra] as unknown as {
 		[kUpgraded]?: boolean;
 		[kOnKeydown]?: (event: globalThis.Event) => void;
 		[kOnBeforeInput]?: (event: globalThis.Event) => void;
 		[kOnMousedown]?: (event: globalThis.Event) => void;
-	};
-	if (event.defaultPrevented || $(control)[kUpgraded] !== true) {
+	} | null;
+	if (event.defaultPrevented || control?.[kUpgraded] !== true) {
 		return;
 	}
 	const handler = event.type === "keydown"
-		? $(control)[kOnKeydown]
+		? control[kOnKeydown]
 		: event.type === "beforeinput"
-			? $(control)[kOnBeforeInput]
-			: event.type === "mousedown" ? $(control)[kOnMousedown] : undefined;
+			? control[kOnBeforeInput]
+			: event.type === "mousedown" ? control[kOnMousedown] : undefined;
 	handler?.(event);
 }
 
@@ -35203,15 +35426,15 @@ export function scrollDocumentTo(
 	let next = Number.isFinite(row) ? Math.max(0, Math.round(row)) : 0;
 	if (getFullscreenElement(attached) === null) {
 		flushLayout(document);
-		const height = $(attached)[kLayout].documentPaintHeight();
-		const region = Math.min(height, $(attached)[kFramebuffer].rows);
+		const height = $(attached)[kExtra][kLayout].documentPaintHeight();
+		const region = Math.min(height, $(attached)[kExtra][kFramebuffer].rows);
 		next = Math.min(next, Math.max(0, height - region));
 	}
-	if (next === $(attached)[kFramebuffer].scrollTop) {
+	if (next === $(attached)[kExtra][kFramebuffer].scrollTop) {
 		return;
 	}
-	$(attached)[kFramebuffer].scrollTo(next);
-	void $(attached)[kRender]();
+	$(attached)[kExtra][kFramebuffer].scrollTo(next);
+	void $(attached)[kExtra][kRender]();
 }
 
 // The rows the document scroll shows. Fullscreen owns the screen from row
@@ -35221,11 +35444,12 @@ function getScrollingRegionHeight(document: globalThis.Document): number {
 	const attached = getAttachedDocument(document as unknown as Node)!;
 	const attachedSlots = $(attached);
 	if (getFullscreenElement(attached) !== null) {
-		return attachedSlots[kFramebuffer].rows;
+		return attachedSlots[kExtra][kFramebuffer].rows;
 	}
-	const flow = attachedSlots[kLayout].getRect(document.documentElement!);
+	const flow =
+		attachedSlots[kExtra][kLayout].getRect(document.documentElement!);
 	return Math.min(
-		attachedSlots[kFramebuffer].rows,
+		attachedSlots[kExtra][kFramebuffer].rows,
 		flow ? Math.ceil(flow.height) : 0,
 	);
 }
@@ -35247,7 +35471,7 @@ function getCaretRect(
 	const range = element.ownerDocument!.createRange();
 	range.setStart(node, Math.min(focus, node.data.length));
 	range.collapse(true);
-	const rects = $(attached)[kLayout].getRangeRects(range);
+	const rects = $(attached)[kExtra][kLayout].getRangeRects(range);
 	if (rects.length === 0) {
 		return null;
 	}
@@ -35261,7 +35485,7 @@ function revealCaretInTextArea(
 	area: HTMLTextAreaElement,
 ): void {
 	const caret = getCaretRect(attached, area);
-	const port = $(attached)[kLayout].contentRect(area);
+	const port = $(attached)[kExtra][kLayout].contentRect(area);
 	if (caret === null || port === null) {
 		return;
 	}
@@ -35288,11 +35512,11 @@ function revealCaretInTextArea(
 export function revealPendingCaret(document: globalThis.Document): void {
 	const attached = document as Document;
 	const attachedSlots = $(attached);
-	const element = attachedSlots[kPendingCaretReveal];
+	const element = attachedSlots[kExtra][kPendingCaretReveal];
 	if (element === null) {
 		return;
 	}
-	attachedSlots[kPendingCaretReveal] = null;
+	attachedSlots[kExtra][kPendingCaretReveal] = null;
 	if (element !== getFocusedElement(document)) {
 		return;
 	}
@@ -35300,7 +35524,7 @@ export function revealPendingCaret(document: globalThis.Document): void {
 	if (element instanceof HTMLTextAreaElement) {
 		revealCaretInTextArea(attached, element);
 	}
-	const rect = attachedSlots[kLayout].getRect(element);
+	const rect = attachedSlots[kExtra][kLayout].getRect(element);
 	if (!rect) {
 		return;
 	}
@@ -35323,16 +35547,16 @@ export function revealPendingCaret(document: globalThis.Document): void {
 		revealBottom = Math.round(rect.bottom);
 	}
 	const regionHeight = getScrollingRegionHeight(document);
-	const top = attachedSlots[kFramebuffer].scrollTop;
+	const top = attachedSlots[kExtra][kFramebuffer].scrollTop;
 	const delta = revealTop < top
 		? revealTop - top
 		: revealBottom > top + regionHeight
 				? revealBottom - (top + regionHeight)
 				: 0;
 	if (delta) {
-		attachedSlots[kFramebuffer].scrollTo(top + delta);
+		attachedSlots[kExtra][kFramebuffer].scrollTo(top + delta);
 		// No mutation record describes a document scroll move.
-		void attachedSlots[kRender]();
+		void attachedSlots[kExtra][kRender]();
 	}
 }
 
@@ -35350,7 +35574,7 @@ function handleMutationRecords(
 	}
 	// Any observed mutation can move a node in the flat tree. Drop the
 	// memoized composition links before anything reads through them.
-	$(attached)[kLayout].invalidateFrame();
+	$(attached)[kExtra][kLayout].invalidateFrame();
 	// Attribute records whose value did not actually change are dropped
 	// before any handler sees them. Frameworks (and this repo's own
 	// examples) reassign className/style with identical values on every
@@ -35386,8 +35610,8 @@ function handleMutationRecords(
 			ensureUAShadowTrees(added);
 		}
 	}
-	$(attached)[kCascade].handleMutations(relevant);
-	$(attached)[kLayout].handleMutations(relevant);
+	$(attached)[kExtra][kCascade].handleMutations(relevant);
+	$(attached)[kExtra][kLayout].handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
 	dropUnfocusableFocus(document);
 }
@@ -35492,7 +35716,7 @@ export function flushStyle(node: globalThis.Node): boolean {
 	) as globalThis.Document;
 	const had = applyMutations(document);
 	if (had) {
-		void $(attached)[kRender]();
+		void $(attached)[kExtra][kRender]();
 	}
 	return had;
 }
@@ -35515,26 +35739,29 @@ export function revealEditingCaret(host: globalThis.Element): void {
 	}
 	// In the next frame, as a browser does, once the layout the edit and
 	// whatever answers it ask for has been done once.
-	$(attached)[kPendingEditingReveal] = host;
-	void $(attached)[kRender]();
+	$(attached)[kExtra][kPendingEditingReveal] = host;
+	void $(attached)[kExtra][kRender]();
 }
 
 /** Scroll to the caret an edit or a caret motion left, if one is due. */
 export function revealPendingEditingCaret(document: globalThis.Document): void {
 	const attached = document as Document;
 	const attachedSlots = $(attached);
-	const host = attachedSlots[kPendingEditingReveal];
+	const host = attachedSlots[kExtra][kPendingEditingReveal];
 	if (host === null) {
 		return;
 	}
-	attachedSlots[kPendingEditingReveal] = null;
+	attachedSlots[kExtra][kPendingEditingReveal] = null;
 	const selection = attached.getSelection();
 	const node = selection?.focusNode;
 	if (!node || !host.contains(node)) {
 		return;
 	}
 	flushLayout(host);
-	attachedSlots[kLayout].revealCaret(node as Node, selection!.focusOffset);
+	attachedSlots[kExtra][kLayout].revealCaret(
+		node as Node,
+		selection!.focusOffset,
+	);
 }
 
 export function flushLayout(node: globalThis.Node): boolean {
@@ -35548,9 +35775,9 @@ export function flushLayout(node: globalThis.Node): boolean {
 	) as globalThis.Document;
 	const had = applyMutations(document);
 	if (had) {
-		void $(attached)[kRender]();
+		void $(attached)[kExtra][kRender]();
 	}
-	$(attached)[kLayout].performLayout();
+	$(attached)[kExtra][kLayout].performLayout();
 	clampScrollOffsets(document);
 	return had;
 }
@@ -35585,7 +35812,7 @@ function getAttachedDocument(
 	const document = (
 		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
 	) as Document | null;
-	return document !== null && $(document)[kExchange] !== undefined
+	return document !== null && $(document)[kExtra][kExchange] !== undefined
 		? (document as AttachedDocument)
 		: undefined;
 }
@@ -35597,14 +35824,17 @@ export function getGraphicsSettings(
 	const attached = getAttachedDocument(node);
 	return attached === undefined
 		? undefined
-		: {images: $(attached)[kImages], canvas: $(attached)[kCanvas]};
+		: {
+			images: $(attached)[kExtra][kImages],
+			canvas: $(attached)[kExtra][kCanvas],
+		};
 }
 
 /** The cellSize option of the TermDOM drawing the node's document. */
 export function getCellSizeSetting(
 	node: globalThis.Node,
 ): CellSizeSetting | undefined {
-	return $maybe(getAttachedDocument(node))?.[kCellSize];
+	return $maybe(getAttachedDocument(node))?.[kExtra][kCellSize];
 }
 
 /**
@@ -35614,7 +35844,8 @@ export function getCellSizeSetting(
 export function getCellPixels(
 	node: globalThis.Node,
 ): Readonly<{width: number; height: number}> | null {
-	return $maybe(getAttachedDocument(node))?.[kFramebuffer].cellPixels ?? null;
+	return $maybe(getAttachedDocument(node))?.[kExtra][kFramebuffer].cellPixels ??
+		null;
 }
 
 /** OSC 52 carries text and only text. */
@@ -35689,6 +35920,8 @@ class ClipboardItem {
 		return held;
 	}
 }
+
+declareSealedRoot(ClipboardItem);
 
 function normalizeMediaType(type: unknown): string {
 	return String(type).trim().toLowerCase();
@@ -35778,8 +36011,8 @@ function reachClipboard(document: Document, what: string): Exchange {
 	const attached = getAttachedDocument(document);
 	if (
 		attached === undefined ||
-		!$(attached)[kVisible] ||
-		!$(attached)[kExchange].interactive
+		!$(attached)[kExtra][kVisible] ||
+		!$(attached)[kExtra][kExchange].interactive
 	) {
 		throw clipboardDenied(
 			"clipboard requires an attached interactive terminal",
@@ -35788,7 +36021,7 @@ function reachClipboard(document: Document, what: string): Exchange {
 	if (!isUserActive(document)) {
 		throw clipboardDenied(`clipboard ${what} need a user gesture`);
 	}
-	return $(attached)[kExchange];
+	return $(attached)[kExtra][kExchange];
 }
 
 Object.defineProperty(Clipboard.prototype, Symbol.toStringTag, {
@@ -35865,7 +36098,9 @@ class PermissionStatus extends EventTarget {
 		}
 		const attached = getAttachedDocument(document);
 		if (
-			!attached || !$(attached)[kVisible] || !$(attached)[kExchange].interactive
+			!attached ||
+			!$(attached)[kExtra][kVisible] ||
+			!$(attached)[kExtra][kExchange].interactive
 		) {
 			return "denied";
 		}
@@ -36005,6 +36240,8 @@ class DOMStringList {
 	}
 }
 
+declareSealedRoot(DOMStringList);
+
 Object.defineProperty(DOMStringList.prototype, Symbol.toStringTag, {
 	value: "DOMStringList",
 	configurable: true,
@@ -36030,7 +36267,7 @@ class Location {
 	}
 
 	get href(): string {
-		return $($(this)[kLocationWindow].document)[kDocumentURL];
+		return $($(this)[kLocationWindow].document)[kExtra][kDocumentURL];
 	}
 
 	set href(value: string) {
@@ -36130,6 +36367,8 @@ class Location {
 	}
 }
 
+declareSealedRoot(Location);
+
 Object.defineProperty(Location.prototype, Symbol.toStringTag, {
 	value: "Location",
 	configurable: true,
@@ -36147,7 +36386,7 @@ function navigateLocation(location: Location, value: string): void {
 	const document = $(location)[kLocationWindow].document;
 	let url: string;
 	try {
-		url = new URL(value, $(document)[kDocumentURL]).href;
+		url = new URL(value, $(document)[kExtra][kDocumentURL]).href;
 	} catch (_err) {
 		throw domError("SyntaxError", `"${value}" is not a URL`);
 	}
@@ -36199,7 +36438,7 @@ function frameSettled(
 	_document: Document,
 	attached: AttachedDocument,
 ): Promise<void> {
-	return $(attached)[kRender]();
+	return $(attached)[kExtra][kRender]();
 }
 
 /**
@@ -36209,7 +36448,9 @@ function frameSettled(
  */
 export function framePainted(document: globalThis.Document): Promise<void> {
 	const attached = getAttachedDocument(document);
-	return attached === undefined ? Promise.resolve() : $(attached)[kRender]();
+	return attached === undefined
+		? Promise.resolve()
+		: $(attached)[kExtra][kRender]();
 }
 
 export function hasFrameCallbacks(document: globalThis.Document): boolean {
@@ -36279,6 +36520,8 @@ class Storage {
 		$(this)[kStorageItems].set(String(key), String(value));
 	}
 }
+
+declareSealedRoot(Storage);
 
 Object.defineProperty(Storage.prototype, Symbol.toStringTag, {
 	value: "Storage",
@@ -36364,7 +36607,7 @@ class Screen {
 	// palette of 256 or 16.
 	get colorDepth(): number {
 		const attached = getAttachedDocument($(this)[kScreenWindow].document);
-		const depth = $maybe(attached)?.[kFramebuffer].colorDepth ?? "rgb";
+		const depth = $maybe(attached)?.[kExtra][kFramebuffer].colorDepth ?? "rgb";
 		return depth === "rgb" ? 24 : depth === "256" ? 8 : 4;
 	}
 
@@ -36383,6 +36626,8 @@ class Screen {
 		return orientation;
 	}
 }
+
+declareSealedRoot(Screen);
 
 interface ScreenOrientation {
 	[kScreenWindow]: Window;
@@ -36479,13 +36724,14 @@ const kNamedProperties = Symbol("named properties");
  */
 function syncNamedProperty(document: Document, name: string): void {
 	const documentSlots = $(document);
-	const window = documentSlots[kDefaultView] as Window | null;
+	const window = documentSlots[kExtra][kDefaultView] as Window | null;
 	const properties = $maybe(window)?.[kNamedProperties];
 	if (properties === undefined || /^(?:0|[1-9]\d*)$/.test(name)) {
 		return;
 	}
 	const supported =
-		documentSlots[kIdMap].has(name) || documentSlots[kNameMap].has(name);
+		documentSlots[kExtra][kIdMap].has(name) ||
+		documentSlots[kExtra][kNameMap].has(name);
 	const defined = Object.prototype.hasOwnProperty.call(properties, name);
 	if (supported && !defined) {
 		if (name in (Object.getPrototypeOf(properties) as object)) {
@@ -36518,8 +36764,8 @@ function getNamedPropertyValue(
 ): Element | HTMLCollection | undefined {
 	const documentSlots = $(document);
 	const elements = new Set([
-		...documentSlots[kIdMap].get(name) ?? [],
-		...documentSlots[kNameMap].get(name) ?? [],
+		...documentSlots[kExtra][kIdMap].get(name) ?? [],
+		...documentSlots[kExtra][kNameMap].get(name) ?? [],
 	]);
 	if (elements.size === 0) {
 		return undefined;
@@ -36812,7 +37058,7 @@ export class Window extends EventTarget {
 		// Attaching a document gives it a defaultView, and the attached
 		// document is the one bare node constructors use.
 		const documentSlots = $(document);
-		documentSlots[kDefaultView] = this;
+		documentSlots[kExtra][kDefaultView] = this;
 		ambientDocument = document;
 		const slots = $(this);
 		slots[kNamedProperties] = Object.create(
@@ -36820,8 +37066,8 @@ export class Window extends EventTarget {
 		) as Record<string, unknown>;
 		Object.setPrototypeOf(this, slots[kNamedProperties]);
 		for (const name of new Set([
-			...documentSlots[kIdMap].keys(),
-			...documentSlots[kNameMap].keys(),
+			...documentSlots[kExtra][kIdMap].keys(),
+			...documentSlots[kExtra][kNameMap].keys(),
 		])) {
 			syncNamedProperty(document, name);
 		}
@@ -36854,7 +37100,11 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: pxFromCells($(attached)[kFramebuffer].cols, false, this.document);
+			: pxFromCells(
+				$(attached)[kExtra][kFramebuffer].cols,
+				false,
+				this.document,
+			);
 	}
 
 	get outerWidth(): number {
@@ -36865,7 +37115,11 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: pxFromCells($(attached)[kFramebuffer].rows, true, this.document);
+			: pxFromCells(
+				$(attached)[kExtra][kFramebuffer].rows,
+				true,
+				this.document,
+			);
 	}
 
 	get outerHeight(): number {
@@ -36878,7 +37132,11 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: pxFromCells($(attached)[kFramebuffer].documentTop, true, this.document);
+			: pxFromCells(
+				$(attached)[kExtra][kFramebuffer].documentTop,
+				true,
+				this.document,
+			);
 	}
 
 	// Standard window scrolling, mapped onto the document scroll. scrollY is
@@ -36889,7 +37147,11 @@ export class Window extends EventTarget {
 		const attached = getAttachedDocument(this.document);
 		return attached === undefined
 			? 0
-			: pxFromCells($(attached)[kFramebuffer].scrollTop, true, this.document);
+			: pxFromCells(
+				$(attached)[kExtra][kFramebuffer].scrollTop,
+				true,
+				this.document,
+			);
 	}
 
 	get pageYOffset(): number {
@@ -37194,7 +37456,7 @@ export class Window extends EventTarget {
 			: (y ?? 0);
 		scrollDocumentTo(
 			this.document,
-			$(attached)[kFramebuffer].scrollTop +
+			$(attached)[kExtra][kFramebuffer].scrollTop +
 			top / getCellSize(this.document).height,
 		);
 	}
@@ -37208,7 +37470,7 @@ export class Window extends EventTarget {
 			return 0;
 		}
 		const handle = holdFrameCallback(this.document, callback);
-		void $(attached)[kRender]();
+		void $(attached)[kExtra][kRender]();
 		return handle;
 	}
 
@@ -37737,6 +37999,11 @@ function buildWindow(document: Document): Window {
 	});
 	window.window = window;
 	window.self = window;
+	prepareClasses(
+		Object.getOwnPropertyNames(window).map((name) =>
+			Object.getOwnPropertyDescriptor(window, name)?.value,
+		),
+	);
 	startPendingImages(document as unknown as globalThis.Document);
 	return window as unknown as Window;
 }
@@ -37748,7 +38015,8 @@ function startPendingImages(
 ): void {
 	for (const element of root.querySelectorAll("*")) {
 		if (
-			element instanceof HTMLImageElement && $(element)[kImageState].pending
+			element instanceof HTMLImageElement &&
+			$(element)[kExtra][kImageState].pending
 		) {
 			updateImageData(element);
 		}
@@ -37778,7 +38046,7 @@ export function createWindow(
 	const documentSlots = $(document);
 	documentSlots[kRegistry] = createWindowRegistry();
 	if (url !== undefined) {
-		documentSlots[kDocumentURL] = url;
+		documentSlots[kExtra][kDocumentURL] = url;
 	}
 	return buildWindow(document);
 }
