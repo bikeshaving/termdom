@@ -7,6 +7,7 @@
  * Each redirect is checked against the policy again and followed on the
  * network. Only a document that is itself a file: URL loads file: URLs.
  */
+import {$, seal} from "./slots.ts";
 import {splitOnASCIIWhitespace} from "./text.ts";
 
 // A load goes to the global fetch, so a program that replaces it to mock
@@ -43,15 +44,17 @@ export interface ExtendableEvent {
 export class ExtendableEvent extends Event {
 	constructor(type: string, init?: EventInit) {
 		super(type, init);
-		this[kExtend] = null;
-		this[kPending] = 0;
+		seal(this, new.target, ExtendableEvent);
+		const slots = $(this);
+		slots[kExtend] = null;
+		slots[kPending] = 0;
 	}
 
 	/** Keeps the TermDOM's dispose() waiting until `promise` settles. */
 	waitUntil(promise: PromiseLike<unknown>): void {
 		const lifetime = Promise.resolve(promise);
 		addLifetimePromise(this, lifetime);
-		this[kExtend]!(lifetime);
+		$(this)[kExtend]!(lifetime);
 	}
 }
 
@@ -61,21 +64,22 @@ function addLifetimePromise(
 	event: ExtendableEvent,
 	promise: Promise<unknown>,
 ): void {
-	if (event[kExtend] === null) {
+	const eventSlots = $(event);
+	if (eventSlots[kExtend] === null) {
 		throw new DOMException(
 			"Only an event TermDOM dispatches can be extended",
 			"InvalidStateError",
 		);
 	}
-	if (event.eventPhase === Event.NONE && event[kPending] === 0) {
+	if (event.eventPhase === Event.NONE && eventSlots[kPending] === 0) {
 		throw new DOMException(
 			"The event is no longer active",
 			"InvalidStateError",
 		);
 	}
-	event[kPending]++;
+	eventSlots[kPending]++;
 	const settled = () => {
-		queueMicrotask(() => event[kPending]--);
+		queueMicrotask(() => eventSlots[kPending]--);
 	};
 	promise.then(settled, settled);
 }
@@ -119,7 +123,7 @@ export class FetchEvent extends ExtendableEvent {
 		this.resultingClientId = init.resultingClientId ?? "";
 		this.replacesClientId = init.replacesClientId ?? "";
 		this.handled = init.handled ?? new Promise<undefined>(() => {});
-		this[kResponse] = null;
+		$(this)[kResponse] = null;
 	}
 
 	/**
@@ -134,7 +138,8 @@ export class FetchEvent extends ExtendableEvent {
 				"InvalidStateError",
 			);
 		}
-		if (this[kResponse] !== null) {
+		const slots = $(this);
+		if (slots[kResponse] !== null) {
 			throw new DOMException(
 				"The request was already answered",
 				"InvalidStateError",
@@ -143,7 +148,7 @@ export class FetchEvent extends ExtendableEvent {
 		const answer = Promise.resolve(response);
 		addLifetimePromise(this, answer);
 		this.stopImmediatePropagation();
-		this[kResponse] = answer.then((value) => {
+		slots[kResponse] = answer.then((value) => {
 			if (!(value instanceof Response)) {
 				throw new TypeError("respondWith() takes a Response");
 			}
@@ -398,7 +403,8 @@ async function dispatchFetchEvent(
 	});
 	handled.catch(() => {});
 	const event = new FetchEvent("fetch", {request, handled, cancelable: true});
-	event[kExtend] = (promise) => {
+	const eventSlots = $(event);
+	eventSlots[kExtend] = (promise) => {
 		policy.extend(promise);
 	};
 	offered.add(request);
@@ -408,7 +414,7 @@ async function dispatchFetchEvent(
 	} finally {
 		offering--;
 	}
-	const answer = event[kResponse];
+	const answer = eventSlots[kResponse];
 	if (answer === null) {
 		if (event.defaultPrevented) {
 			rejectHandled(new DOMException("The load was canceled", "NetworkError"));
