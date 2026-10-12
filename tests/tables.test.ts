@@ -693,12 +693,26 @@ test("a table grows to hold a cell as big as the table", async () => {
 	const {rows, box, dom} = await render(
 		"<table style=\"width: 6px; height: 3px; border: 1px solid\"><tr>" +
 			"<td style=\"width: 6px; height: 3px; padding: 0; border: 0; " +
-			"background: #5c6bc0\">x</td></tr></table>",
+			"background: #5c6bc0\"><div style=\"width: 6px\">x</div></td></tr>" +
+			"</table>",
 	);
 	expect(box("table")).toEqual({left: 0, top: 0, width: 8, height: 5});
 	expect(box("td")).toEqual({left: 1, top: 1, width: 6, height: 3});
 	expect(rows.map((row) => row.replace(/\x1b\[[0-9;]*m/g, "").trimEnd()))
 		.toEqual(["┌──────┐", "│      │", "│x     │", "│      │", "└──────┘"]);
+	dom.dispose();
+});
+
+// css-tables-3 §3.9.2: a cell's width is one it would like, as in every
+// browser. A newsletter's 100% image table asks for a 1456px cell, and the
+// table stays the width of its container.
+test("a cell's width gives way to a table with less room", async () => {
+	const {box, dom} = await render(
+		"<div style=\"width: 30ch\"><table width=\"100%\"><tr>" +
+			"<td>a</td><td id=wide width=\"1456\">b</td><td>c</td></tr></table></div>",
+	);
+	expect(box("table").width).toBe(30);
+	expect(box("#wide").width).toBeGreaterThan(20);
 	dom.dispose();
 });
 
