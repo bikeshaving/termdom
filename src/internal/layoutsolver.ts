@@ -2936,8 +2936,11 @@ function resolveColumnWidths(
 					percent[cell.column] = true;
 				}
 			} else if (isDefined(styleWidth)) {
-				minWidth = styleWidth;
-				maxWidth = styleWidth;
+				// css-tables-3 §3.9.2: a cell's width is the width it would
+				// like. The column still shrinks to its content's minimum when
+				// the table has less room.
+				minWidth = getIntrinsicCellWidth(node, true, ownerWidth, ownerHeight);
+				maxWidth = Math.max(styleWidth, minWidth);
 				if (cell.colSpan === 1) {
 					fixed[cell.column] = true;
 				}
