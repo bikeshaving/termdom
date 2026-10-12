@@ -11,8 +11,8 @@
  *
  * The record's prototype mirrors the object's class chain. The internal
  * steps and defaults a class defines under symbol keys move there from
- * the public prototype, wrapped so they still run with the object, not
- * the record, as `this`.
+ * the public prototype, and run with the record as `this`, so a step
+ * reads its own slots without a lookup. `ownerOf()` gives it the object.
  */
 
 const kObject = Symbol("object");
@@ -69,8 +69,6 @@ const WELL_KNOWN_SYMBOLS = new Set<symbol>(
 
 const hiddenPrototypes = new Map<Constructor, object>();
 const roots = new Map<Constructor, Constructor>();
-const originals = new WeakMap<object, unknown>();
-const recordMembers = new WeakSet<object>();
 const superSteps = new Map<
 	Constructor,
 	Map<symbol, (this: object, ...args: unknown[]) => unknown>
@@ -196,13 +194,11 @@ export function adopt(target: object, state: Record<symbol, unknown>): void {
 }
 
 /**
- * Marks a symbol-keyed method or accessor of a public prototype as one
- * that runs with the record, not the object, as `this`, so it moves to the
- * record's prototype as it is.
+ * The object a record belongs to, for an internal step, which runs with
+ * the record as `this`, to hand the object on.
  */
-export function onRecord<F extends object>(member: F): F {
-	recordMembers.add(member);
-	return member;
+export function ownerOf<T extends object>(record: T): T {
+	return (record as unknown as SlotRecord)[kObject] as T;
 }
 
 /** Whether `value` has slots. */
@@ -230,7 +226,7 @@ export function implementsInterface(
 
 /**
  * The internal step `key` as the parent of `type` defines it, for the
- * `super` call of a class that overrides it. Call it with the object as
+ * `super` call of a class that overrides it. Call it with the record as
  * `this`.
  */
 export function superStep(
@@ -259,10 +255,7 @@ export function hiddenMember(
 ): (this: object, ...args: unknown[]) => unknown {
 	const hidden = hiddenPrototype(type, roots.get(type) ?? type);
 	const member = (hidden as Record<symbol, unknown>)[key];
-	return (originals.get(member as object) ?? member) as (
-		this: object,
-		...args: unknown[]
-	) => unknown;
+	return member as (this: object, ...args: unknown[]) => unknown;
 }
 
 /**
@@ -298,56 +291,6 @@ function moveMembers(prototype: object, hidden: object): void {
 		}
 
 		const descriptor = Object.getOwnPropertyDescriptor(prototype, key)!;
-		if (
-			typeof descriptor.value === "function" &&
-			!recordMembers.has(descriptor.value as object)
-		) {
-			const step = descriptor.value as (...args: unknown[]) => unknown;
-			const wrapped = function (
-				this: SlotRecord,
-				a?: unknown,
-				b?: unknown,
-				c?: unknown,
-				d?: unknown,
-				e?: unknown,
-				f?: unknown,
-			): unknown {
-				const owner = this[kObject];
-				remember(owner, this);
-				switch (arguments.length) {
-					case 0:
-						return step.call(owner);
-					case 1:
-						return step.call(owner, a);
-					case 2:
-						return step.call(owner, a, b);
-					case 3:
-						return step.call(owner, a, b, c);
-					case 4:
-						return step.call(owner, a, b, c, d);
-					default:
-						return step.call(owner, a, b, c, d, e, f);
-				}
-			};
-			originals.set(wrapped, step);
-			descriptor.value = wrapped;
-		} else {
-			const {get, set} = descriptor;
-			if (get !== undefined && !recordMembers.has(get)) {
-				descriptor.get = function (this: SlotRecord): unknown {
-					const owner = this[kObject];
-					remember(owner, this);
-					return get.call(owner);
-				};
-			}
-
-			if (set !== undefined && !recordMembers.has(set)) {
-				descriptor.set = function (this: SlotRecord, value: unknown): void {
-					set.call(this[kObject], value);
-				};
-			}
-		}
-
 		Object.defineProperty(hidden, key, descriptor);
 		delete (prototype as Record<symbol, unknown>)[key];
 	}
