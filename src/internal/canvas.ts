@@ -37,7 +37,7 @@ import {
 	naturalWidthOf,
 	sampleBitmap,
 } from "./images.ts";
-import {$, seal} from "./slots.ts";
+import {$, declareSealedRoot, seal} from "./slots.ts";
 import {getStringWidth, graphemeSegmenter, toVisualOrder} from "./text.ts";
 
 // ---------------------------------------------------------------------------
@@ -148,6 +148,8 @@ export class ImageData {
 	}
 }
 
+declareSealedRoot(ImageData);
+
 const kBitmapData = Symbol("bitmapData");
 const kColorAt = Symbol("colorAt");
 
@@ -177,6 +179,8 @@ export class ImageBitmap {
 		$(this)[kBitmapData] = null;
 	}
 }
+
+declareSealedRoot(ImageBitmap);
 
 /** createImageBitmap(): a copy of a source's pixels, cropped if asked. */
 export function createImageBitmapFrom(
@@ -881,6 +885,8 @@ export class Path2D {
 	}
 }
 
+declareSealedRoot(Path2D);
+
 // SVG path data (SVG 2 §9.3), the string Path2D's constructor takes.
 function parseSVGPath(data: string, path: Path2D): void {
 	const tokens =
@@ -1505,6 +1511,8 @@ export class CanvasGradient {
 	}
 }
 
+declareSealedRoot(CanvasGradient);
+
 const kPatternBitmap = Symbol("patternBitmap");
 const kRepeatX = Symbol("repeatX");
 const kRepeatY = Symbol("repeatY");
@@ -1569,6 +1577,8 @@ export class CanvasPattern {
 		};
 	}
 }
+
+declareSealedRoot(CanvasPattern);
 
 type Paint = string | CanvasGradient | CanvasPattern;
 
@@ -3025,6 +3035,8 @@ export class CanvasRenderingContext2D {
 	}
 }
 
+declareSealedRoot(CanvasRenderingContext2D);
+
 function readPaint(value: Paint, previous: Paint): Paint {
 	if (value instanceof CanvasGradient || value instanceof CanvasPattern) {
 		return value;
@@ -3684,6 +3696,8 @@ export class CanvasCellGridContext {
 		return [Math.round(x), Math.round(y), Math.round(x + w), Math.round(y + h)];
 	}
 }
+
+declareSealedRoot(CanvasCellGridContext);
 
 // A color as the grid context keeps it: a system color's keyword, the
 // rest serialized as a 2d context reads them back, or null when the value

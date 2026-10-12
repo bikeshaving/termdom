@@ -66,7 +66,7 @@ import {
 	type RequestPolicy,
 	setWindowFetch,
 } from "./internal/resources.ts";
-import {$, moveLateMembers, seal} from "./internal/slots.ts";
+import {$, declareSealedRoot, moveLateMembers, seal} from "./internal/slots.ts";
 import {queueMicrotask, setTimeout} from "./internal/timers.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
@@ -942,6 +942,8 @@ export class TermDOM extends EventTarget {
 		return slots[kDisposal];
 	}
 }
+
+declareSealedRoot(TermDOM);
 
 /**
  * Ctrl+Z: hand the terminal back, stop until the shell continues the
