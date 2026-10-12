@@ -773,3 +773,54 @@ test("rows of a display:block table stack in an anonymous table", async () => {
 		dom.dispose();
 	}
 });
+
+// CSS 2.1 §17.5.2.1. An email's 600px container is a fixed table, and its
+// 1200px images, at width:100%, must not push it wider.
+test("a fixed table keeps its width whatever its cells hold", async () => {
+	for (const table of [
+		"<table width=\"30\" style=\"table-layout:fixed\">",
+		"<table style=\"width:30ch;table-layout:fixed\">",
+	]) {
+		const {box, dom} = await render(
+			`${table}<tr><td id=a><div style="width:50ch">x</div></td></tr></table>`,
+		);
+		expect(box("table").width).toBe(30);
+		expect(box("#a").width).toBe(30);
+		dom.dispose();
+	}
+});
+
+test("a fixed table's first row sizes its columns, and later rows do not", async () => {
+	const firstRow =
+		"<tr><td id=a style=\"width:10ch\">a</td><td id=b>b</td><td id=c>c</td></tr>";
+	const columns = async (rest: string) => {
+		const {box, dom} = await render(
+			`<table style="width:40ch;table-layout:fixed">${firstRow}${rest}</table>`,
+		);
+		const result = {
+			table: box("table").width,
+			a: box("#a"),
+			b: box("#b"),
+			c: box("#c"),
+		};
+		dom.dispose();
+		return result;
+	};
+	const alone = await columns("");
+	expect(alone.table).toBe(40);
+	expect(alone.a.width).toBe(10);
+	expect(alone.b.width).toBe(alone.c.width);
+	expect(
+		await columns(
+			"<tr><td>x</td><td><div style=\"width:30ch\">wide</div></td><td>y</td></tr>",
+		),
+	).toEqual(alone);
+});
+
+test("table-layout:fixed does nothing to a table whose width is auto", async () => {
+	const {box, dom} = await render(
+		"<table style=\"table-layout:fixed\"><tr><td>ab</td></tr></table>",
+	);
+	expect(box("table").width).toBeLessThan(10);
+	dom.dispose();
+});

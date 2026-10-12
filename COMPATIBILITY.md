@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-204 features supported, 32 probed and unsupported,
+205 features supported, 31 probed and unsupported,
 153 CSS properties not applicable to a character grid,
 128 applicable and not implemented,
 9 not yet probed.
@@ -223,7 +223,7 @@ changed.
 | `list-style-position` | yes |
 | `list-style` | yes |
 | `border-collapse` | yes |
-| `table-layout` | no (no effect) |
+| `table-layout` | yes |
 | `vertical-align` | no (no effect) |
 | `content` | yes |
 | `counter-reset` | no (no effect) |
