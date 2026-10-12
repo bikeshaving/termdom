@@ -85,6 +85,8 @@ import {
 	adopt,
 	isSealed,
 	objectOf,
+	onRecord,
+	rememberObject,
 	seal,
 	type Slots,
 	slotsOf,
@@ -154,9 +156,10 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 		if (UA_SHADOW_HOSTS.has(element.tagName)) {
 			ensureUAShadowTree(element);
 		}
-		for (let node = objectOf($(element)[kFirstChild]);
-			node !== null;
-			node = objectOf($(node)[kNext])) {
+		for (let nodeSlots = $(element)[kFirstChild];
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kNext]) {
+			const node = objectOf(nodeSlots);
 			if (node.nodeType === ELEMENT_NODE) {
 				stack.push(node as Element);
 			}
@@ -5333,10 +5336,10 @@ function runChildrenChangedSteps(
 ): void {
 	const pointSlots = $(point);
 	if (heldListDocuments.has(pointSlots[kDocument])) {
-		for (let node: Node | null = point;
-			node !== null;
-			node = objectOf($(node)[kParent])) {
-			const held = $(node)[kLiveLists];
+		for (let nodeSlots: Slots<Node> | null = slotsOf(point);
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kParent]) {
+			const held = nodeSlots[kLiveLists];
 			if (held === null) {
 				continue;
 			}
@@ -5378,10 +5381,10 @@ function syncAttributeCollections(element: Element, localName: string): void {
 		}
 	}
 	if (heldListDocuments.has(elementSlots[kDocument])) {
-		for (let node: Node | null = element;
-			node !== null;
-			node = objectOf($(node)[kParent])) {
-			const held = $(node)[kLiveLists];
+		for (let nodeSlots: Slots<Node> | null = slotsOf(element);
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kParent]) {
+			const held = nodeSlots[kLiveLists];
 			if (held === null) {
 				continue;
 			}
@@ -5530,7 +5533,9 @@ export class Node extends EventTarget implements globalThis.Node {
 
 	/** lib.dom types this as ParentNode, the mixin a parent carries. */
 	get parentNode(): globalThis.ParentNode | null {
-		return objectOf($(this)[kParent]) as unknown as globalThis.ParentNode |
+		return rememberObject(
+			$(this)[kParent],
+		) as unknown as globalThis.ParentNode |
 			null;
 	}
 
@@ -5538,7 +5543,7 @@ export class Node extends EventTarget implements globalThis.Node {
 	// or MathML parent is not an HTMLElement. Every browser's types have the
 	// same problem, and this follows them rather than being right alone.
 	get parentElement(): globalThis.HTMLElement | null {
-		const parent = objectOf($(this)[kParent]);
+		const parent = rememberObject($(this)[kParent]);
 		return parent !== null && parent.nodeType === ELEMENT_NODE
 			? (parent as unknown as globalThis.HTMLElement)
 			: null;
@@ -5555,22 +5560,29 @@ export class Node extends EventTarget implements globalThis.Node {
 	}
 
 	get firstChild(): globalThis.ChildNode | null {
-		return objectOf($(this)[kFirstChild]) as unknown as globalThis.ChildNode |
+		return rememberObject(
+			$(this)[kFirstChild],
+		) as unknown as globalThis.ChildNode |
 			null;
 	}
 
 	get lastChild(): globalThis.ChildNode | null {
-		return objectOf($(this)[kLastChild]) as unknown as globalThis.ChildNode |
+		return rememberObject(
+			$(this)[kLastChild],
+		) as unknown as globalThis.ChildNode |
 			null;
 	}
 
 	get previousSibling(): globalThis.ChildNode | null {
-		return objectOf($(this)[kPrevious]) as unknown as globalThis.ChildNode |
+		return rememberObject(
+			$(this)[kPrevious],
+		) as unknown as globalThis.ChildNode |
 			null;
 	}
 
 	get nextSibling(): globalThis.ChildNode | null {
-		return objectOf($(this)[kNext]) as unknown as globalThis.ChildNode | null;
+		return rememberObject($(this)[kNext]) as unknown as globalThis.ChildNode |
+			null;
 	}
 
 	get nodeValue(): string | null {
@@ -5882,10 +5894,11 @@ function isInclusiveAncestor(ancestor: Node, node: Node): boolean {
 function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
 	let root = node;
 	for (
-		let current: Node | null = node;
-		current !== null;
-		current = objectOf($(current)[kParent])
+		let currentSlots: Slots<Node> | null = slotsOf(node);
+		currentSlots !== null;
+		currentSlots = currentSlots[kParent]
 	) {
+		const current = objectOf(currentSlots);
 		if (current === ancestor) {
 			return true;
 		}
@@ -5941,32 +5954,43 @@ function isShadowIncludingInclusiveAncestor(
 // Shadow-including tree order: the node, then its shadow root's tree,
 // then its children's.
 function *shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
-	yield node;
-	if (node.nodeType === ELEMENT_NODE) {
-		const shadow = $((node as Element))[kShadowRoot];
-		if (shadow !== null) {
-			yield *shadowIncludingInclusiveDescendants(shadow);
-		}
+	for (const slots of shadowIncludingInclusiveDescendantSlots(slotsOf(node))) {
+		yield rememberObject(slots);
 	}
-	for (let child = objectOf($(node)[kFirstChild]);
-		child !== null;
-		child = objectOf($(child)[kNext])) {
-		yield *shadowIncludingInclusiveDescendants(child);
+}
+
+function *shadowIncludingInclusiveDescendantSlots(
+	node: Slots<Node>,
+): Generator<Slots<Node>> {
+	yield node;
+	const shadow = (node as Slots<Element>)[kShadowRoot];
+	if (shadow != null) {
+		yield *shadowIncludingInclusiveDescendantSlots(slotsOf(shadow));
+	}
+	for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+		yield *shadowIncludingInclusiveDescendantSlots(child);
 	}
 }
 
 /** The next node in tree order, or null once the walk leaves the root. */
 export function nextInTree(node: Node, root: Node): Node | null {
-	const nodeSlots = $(node);
-	if (nodeSlots[kFirstChild] !== null) {
-		return objectOf(nodeSlots[kFirstChild]);
+	const next = nextSlotsInTree(slotsOf(node), slotsOf(root));
+	return next === null ? null : rememberObject(next);
+}
+
+function nextSlotsInTree(
+	node: Slots<Node>,
+	root: Slots<Node>,
+): Slots<Node> | null {
+	if (node[kFirstChild] !== null) {
+		return node[kFirstChild];
 	}
-	let current: Node | null = node;
+	let current: Slots<Node> | null = node;
 	while (current !== null && current !== root) {
-		if ($(current)[kNext] !== null) {
-			return objectOf($(current)[kNext]);
+		if (current[kNext] !== null) {
+			return current[kNext];
 		}
-		current = objectOf($(current)[kParent]);
+		current = current[kParent];
 	}
 	return null;
 }
@@ -5988,18 +6012,20 @@ export function getPreviousSiblingNode(node: Node): Node | null {
 }
 
 function *inclusiveDescendants(node: Node): Generator<Node> {
-	let current: Node | null = node;
+	const root = slotsOf(node);
+	let current: Slots<Node> | null = root;
 	while (current !== null) {
-		yield current;
-		current = nextInTree(current, node);
+		yield rememberObject(current);
+		current = nextSlotsInTree(current, root);
 	}
 }
 
 function *descendants(node: Node): Generator<Node> {
-	let current: Node | null = objectOf($(node)[kFirstChild]);
+	const root = slotsOf(node);
+	let current = root[kFirstChild];
 	while (current !== null) {
-		yield current;
-		current = nextInTree(current, node);
+		yield rememberObject(current);
+		current = nextSlotsInTree(current, root);
 	}
 }
 
@@ -6033,9 +6059,10 @@ function isCharacterData(node: Node): boolean {
 
 function countChildren(parent: Node, type: number): number {
 	let count = 0;
-	for (let node = objectOf($(parent)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(parent)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node.nodeType === type) {
 			count++;
 		}
@@ -6044,7 +6071,10 @@ function countChildren(parent: Node, type: number): number {
 }
 
 function hasFollowing(child: Node | null, type: number): boolean {
-	for (let node = child; node !== null; node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = child === null ? null : slotsOf(child);
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node.nodeType === type) {
 			return true;
 		}
@@ -6056,9 +6086,10 @@ function hasPreceding(child: Node | null, type: number): boolean {
 	if (child === null) {
 		return false;
 	}
-	for (let node = objectOf($(child)[kPrevious]);
-		node !== null;
-		node = objectOf($(node)[kPrevious])) {
+	for (let nodeSlots = $(child)[kPrevious];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kPrevious]) {
+		const node = objectOf(nodeSlots);
 		if (node.nodeType === type) {
 			return true;
 		}
@@ -6392,12 +6423,13 @@ function insertNode(
 		// The inserted tree's root is now the parent's. The walk follows the
 		// light tree only. A shadow tree under it keeps its own root.
 		const treeRoot = $(parent)[kTreeRoot];
+		const insertedSlots = slotsOf(inserted);
 		for (
-			let joined: Node | null = inserted;
+			let joined: Slots<Node> | null = insertedSlots;
 			joined !== null;
-			joined = nextInTree(joined, inserted)
+			joined = nextSlotsInTree(joined, insertedSlots)
 		) {
-			$(joined)[kTreeRoot] = treeRoot;
+			joined[kTreeRoot] = treeRoot;
 		}
 		const shadow = parent.nodeType === ELEMENT_NODE
 			? $((parent as Element))[kShadowRoot]
@@ -6428,17 +6460,22 @@ function insertNode(
 		if (hasInclusiveDescendantSlot(inserted)) {
 			assignSlottablesForTree(getRoot(inserted));
 		}
-		for (const descendant of shadowIncludingInclusiveDescendants(inserted)) {
-			$(descendant)[kConnected] = connected;
-			$(descendant)[kInsertionSteps]();
+		for (
+			const descendantSlots of shadowIncludingInclusiveDescendantSlots(
+				insertedSlots,
+			)
+		) {
+			descendantSlots[kConnected] = connected;
+			descendantSlots[kInsertionSteps]();
 			if (!connected) {
 				continue;
 			}
+			const descendant = objectOf(descendantSlots);
 			if (descendant.nodeType !== ELEMENT_NODE) {
 				continue;
 			}
 			const element = descendant as Element;
-			if ($(element)[kCustomState] === "custom") {
+			if ((descendantSlots as Slots<Element>)[kCustomState] === "custom") {
 				enqueueCallbackReaction(element, "connectedCallback", []);
 			} else {
 				tryToUpgrade(element);
@@ -6452,47 +6489,47 @@ function insertNode(
 }
 
 function linkChild(node: Node, parent: Node, before: Node | null): void {
-	const nodeSlots = $(node);
-	nodeSlots[kParent] = slotsOf(parent);
-	const parentSlots = $(parent);
+	const nodeSlots = slotsOf(node);
+	const parentSlots = slotsOf(parent);
+	nodeSlots[kParent] = parentSlots;
 	if (before === null) {
-		const last = objectOf(parentSlots[kLastChild]);
-		nodeSlots[kPrevious] = last === null ? null : slotsOf(last);
+		const last = parentSlots[kLastChild];
+		nodeSlots[kPrevious] = last;
 		nodeSlots[kNext] = null;
 		if (last === null) {
-			parentSlots[kFirstChild] = slotsOf(node);
+			parentSlots[kFirstChild] = nodeSlots;
 		} else {
-			$(last)[kNext] = slotsOf(node);
+			last[kNext] = nodeSlots;
 		}
-		parentSlots[kLastChild] = slotsOf(node);
+		parentSlots[kLastChild] = nodeSlots;
 	} else {
-		const previous = objectOf($(before)[kPrevious]);
-		nodeSlots[kPrevious] = previous === null ? null : slotsOf(previous);
-		nodeSlots[kNext] = slotsOf(before);
-		$(before)[kPrevious] = slotsOf(node);
+		const beforeSlots = slotsOf(before);
+		const previous = beforeSlots[kPrevious];
+		nodeSlots[kPrevious] = previous;
+		nodeSlots[kNext] = beforeSlots;
+		beforeSlots[kPrevious] = nodeSlots;
 		if (previous === null) {
-			parentSlots[kFirstChild] = slotsOf(node);
+			parentSlots[kFirstChild] = nodeSlots;
 		} else {
-			$(previous)[kNext] = slotsOf(node);
+			previous[kNext] = nodeSlots;
 		}
 	}
 }
 
 function unlinkChild(node: Node): void {
-	const nodeSlots = $(node);
-	const parent = objectOf(nodeSlots[kParent]) as Node;
-	const previous = objectOf(nodeSlots[kPrevious]);
-	const next = objectOf(nodeSlots[kNext]);
-	const parentSlots = $(parent);
+	const nodeSlots = slotsOf(node);
+	const parentSlots = nodeSlots[kParent]!;
+	const previous = nodeSlots[kPrevious];
+	const next = nodeSlots[kNext];
 	if (previous === null) {
-		parentSlots[kFirstChild] = next === null ? null : slotsOf(next);
+		parentSlots[kFirstChild] = next;
 	} else {
-		$(previous)[kNext] = next === null ? null : slotsOf(next);
+		previous[kNext] = next;
 	}
 	if (next === null) {
-		parentSlots[kLastChild] = previous === null ? null : slotsOf(previous);
+		parentSlots[kLastChild] = previous;
 	} else {
-		$(next)[kPrevious] = previous === null ? null : slotsOf(previous);
+		next[kPrevious] = previous;
 	}
 	nodeSlots[kParent] = null;
 	nodeSlots[kPrevious] = null;
@@ -6501,9 +6538,10 @@ function unlinkChild(node: Node): void {
 
 function getChildNodeArray(parent: Node): Node[] {
 	const nodes: Node[] = [];
-	for (let node = objectOf($(parent)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(parent)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		nodes.push(node);
 	}
 	return nodes;
@@ -6584,9 +6622,10 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 }
 
 function hasOtherElementChild(parent: Node, exclude: Node): boolean {
-	for (let node = objectOf($(parent)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(parent)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node !== exclude && node.nodeType === ELEMENT_NODE) {
 			return true;
 		}
@@ -6595,9 +6634,10 @@ function hasOtherElementChild(parent: Node, exclude: Node): boolean {
 }
 
 function hasOtherDoctypeChild(parent: Node, exclude: Node): boolean {
-	for (let node = objectOf($(parent)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(parent)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node !== exclude && node.nodeType === DOCUMENT_TYPE_NODE) {
 			return true;
 		}
@@ -6900,11 +6940,11 @@ function addTransientObservers(node: Node, parent: Node): void {
 		return;
 	}
 	for (
-		let ancestor: Node | null = parent;
-		ancestor !== null;
-		ancestor = objectOf($(ancestor)[kParent])
+		let ancestorSlots: Slots<Node> | null = slotsOf(parent);
+		ancestorSlots !== null;
+		ancestorSlots = ancestorSlots[kParent]
 	) {
-		const list = $(ancestor)[kRegisteredObservers];
+		const list = ancestorSlots[kRegisteredObservers];
 		if (list === null) {
 			continue;
 		}
@@ -7279,10 +7319,11 @@ function queueMutationRecord(
 		return;
 	}
 	let interested: Map<MutationObserver, string | null> | null = null;
-	for (let node: Node | null = target;
-		node !== null;
-		node = objectOf($(node)[kParent])) {
-		const list = $(node)[kRegisteredObservers];
+	for (let nodeSlots: Slots<Node> | null = slotsOf(target);
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kParent]) {
+		const node = objectOf(nodeSlots);
+		const list = nodeSlots[kRegisteredObservers];
 		if (list === null) {
 			continue;
 		}
@@ -7979,9 +8020,10 @@ function getCollectionCache(node: Node): Map<string, HTMLCollection> {
 
 export function getElementChildren(parent: Node): Element[] {
 	const elements: Element[] = [];
-	for (let node = objectOf($(parent)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(parent)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node.nodeType === ELEMENT_NODE) {
 			elements.push(node as Element);
 		}
@@ -10484,22 +10526,21 @@ function createRareData(): Record<symbol, unknown> {
 
 for (const [key, fallback] of RARE_FIELDS) {
 	Object.defineProperty(Node.prototype, key, {
-		get(this: Node): unknown {
-			const rare = $(this)[kRare];
+		get: onRecord(function (this: Slots<Node>): unknown {
+			const rare = this[kRare];
 			return rare === undefined ? fallback : rare[key];
-		},
-		set(this: Node, value: unknown): void {
-			const slots = $(this);
-			let rare = slots[kRare];
+		}),
+		set: onRecord(function (this: Slots<Node>, value: unknown): void {
+			let rare = this[kRare];
 			if (rare === undefined) {
 				if (value === fallback) {
 					return;
 				}
 				rare = createRareData();
-				slots[kRare] = rare;
+				this[kRare] = rare;
 			}
 			rare[key] = value;
-		},
+		}),
 		configurable: true,
 	});
 }
@@ -10760,9 +10801,10 @@ function getInnerText(element: Element): string {
 		return element.textContent ?? "";
 	}
 	const items: Array<string | number> = [];
-	for (let child = objectOf($(element)[kFirstChild]);
-		child !== null;
-		child = objectOf($(child)[kNext])) {
+	for (let childSlots = $(element)[kFirstChild];
+		childSlots !== null;
+		childSlots = childSlots[kNext]) {
+		const child = objectOf(childSlots);
 		collectRenderedText(layout, child, items);
 	}
 	let text = "";
@@ -10829,10 +10871,11 @@ function collectRenderedText(
 		items.push(linearizeMath(element as unknown as globalThis.Element));
 	} else {
 		for (
-			let child = objectOf($(element)[kFirstChild]);
-			child !== null;
-			child = objectOf($(child)[kNext])
+			let childSlots = $(element)[kFirstChild];
+			childSlots !== null;
+			childSlots = childSlots[kNext]
 		) {
+			const child = objectOf(childSlots);
 			collectRenderedText(layout, child, items);
 		}
 	}
@@ -12030,9 +12073,10 @@ function getDefaultTabIndex(element: Element): number {
 }
 
 function getFirstChildElement(parent: Node, localName: string): Element | null {
-	for (let node = objectOf($(parent)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(parent)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node.nodeType !== ELEMENT_NODE) {
 			continue;
 		}
@@ -12179,9 +12223,10 @@ export class SVGElement extends Element {
 	}
 
 	get ownerSVGElement(): globalThis.SVGSVGElement | null {
-		for (let node = objectOf($(this)[kParent]);
-			node !== null;
-			node = objectOf($(node)[kParent])) {
+		for (let nodeSlots = $(this)[kParent];
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kParent]) {
+			const node = objectOf(nodeSlots);
 			if (
 				node instanceof Element &&
 				node.namespaceURI === SVG_NAMESPACE &&
@@ -13239,9 +13284,10 @@ function associateRegistry(
 	if (node.nodeType === ELEMENT_NODE) {
 		upgrades.push(node as Element);
 	}
-	for (let child = objectOf(nodeSlots[kFirstChild]);
-		child !== null;
-		child = objectOf($(child)[kNext])) {
+	for (let childSlots = nodeSlots[kFirstChild];
+		childSlots !== null;
+		childSlots = childSlots[kNext]) {
+		const child = objectOf(childSlots);
 		associateRegistry(child, registry, upgrades);
 	}
 }
@@ -13853,9 +13899,10 @@ function findSlottables(slot: HTMLSlotElement): Slottable[] {
 		}
 		return result;
 	}
-	for (let child = objectOf($(host)[kFirstChild]);
-		child !== null;
-		child = objectOf($(child)[kNext])) {
+	for (let childSlots = $(host)[kFirstChild];
+		childSlots !== null;
+		childSlots = childSlots[kNext]) {
+		const child = objectOf(childSlots);
 		if (!isSlottable(child)) {
 			continue;
 		}
@@ -14046,9 +14093,10 @@ function findFlattenedSlottables(slot: HTMLSlotElement): Slottable[] {
 	let slottables = findSlottables(slot);
 	if (slottables.length === 0) {
 		slottables = [];
-		for (let child = objectOf($(slot)[kFirstChild]);
-			child !== null;
-			child = objectOf($(child)[kNext])) {
+		for (let childSlots = $(slot)[kFirstChild];
+			childSlots !== null;
+			childSlots = childSlots[kNext]) {
+			const child = objectOf(childSlots);
 			if (isSlottable(child)) {
 				slottables.push(child as Slottable);
 			}
@@ -14158,10 +14206,11 @@ class HTMLTemplateElement extends HTMLElement {
 		}
 		const target = (copy as HTMLTemplateElement).content;
 		for (
-			let child = objectOf($(content)[kFirstChild]);
-			child !== null;
-			child = objectOf($(child)[kNext])
+			let childSlots = $(content)[kFirstChild];
+			childSlots !== null;
+			childSlots = childSlots[kNext]
 		) {
+			const child = objectOf(childSlots);
 			appendNode(cloneNode(child, document, true), target);
 		}
 	}
@@ -15381,9 +15430,10 @@ function getDetailsSlottables(
 ): Slottable[] {
 	const summary = getFirstChildElement(host, "summary");
 	const result: Slottable[] = [];
-	for (let child = objectOf($(host)[kFirstChild]);
-		child !== null;
-		child = objectOf($(child)[kNext])) {
+	for (let childSlots = $(host)[kFirstChild];
+		childSlots !== null;
+		childSlots = childSlots[kNext]) {
+		const child = objectOf(childSlots);
 		if (isSlottable(child) && (child === summary) === toSummary) {
 			result.push(child as Slottable);
 		}
@@ -16605,10 +16655,11 @@ function isButtonControl(element: Element): boolean {
 
 function hasDataListAncestor(element: Element): boolean {
 	for (
-		let node: Node | null = objectOf($(element)[kParent]);
-		node !== null;
-		node = objectOf($(node)[kParent])
+		let nodeSlots = $(element)[kParent];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kParent]
 	) {
+		const node = objectOf(nodeSlots);
 		if (node instanceof HTMLDataListElement) {
 			return true;
 		}
@@ -20915,9 +20966,10 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 		});
 		index++;
 	};
-	for (let node = objectOf(selectSlots[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = selectSlots[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node instanceof HTMLOptionElement) {
 			addOption(node, false);
 		} else if (node instanceof HTMLOptGroupElement) {
@@ -20929,10 +20981,11 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 				highlighted: false,
 			});
 			for (
-				let child = objectOf($(node)[kFirstChild]);
-				child !== null;
-				child = objectOf($(child)[kNext])
+				let childSlots = nodeSlots[kFirstChild];
+				childSlots !== null;
+				childSlots = childSlots[kNext]
 			) {
+				const child = objectOf(childSlots);
 				if (child instanceof HTMLOptionElement) {
 					addOption(child, true);
 				}
@@ -21064,17 +21117,19 @@ function getOptionIndex(
 
 function getOptions(select: Element): HTMLOptionElement[] {
 	const options: HTMLOptionElement[] = [];
-	for (let node = objectOf($(select)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(select)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node instanceof HTMLOptionElement) {
 			options.push(node);
 		} else if (node instanceof HTMLOptGroupElement) {
 			for (
-				let child = objectOf($(node)[kFirstChild]);
-				child !== null;
-				child = objectOf($(child)[kNext])
+				let childSlots = nodeSlots[kFirstChild];
+				childSlots !== null;
+				childSlots = childSlots[kNext]
 			) {
+				const child = objectOf(childSlots);
 				if (child instanceof HTMLOptionElement) {
 					options.push(child);
 				}
@@ -21264,13 +21319,14 @@ class HTMLTableElement extends HTMLElement {
 			return;
 		}
 		let before: Node | null = null;
-		for (let node = objectOf($(this)[kFirstChild]);
-			node !== null;
-			node = objectOf($(node)[kNext])) {
+		for (let nodeSlots = $(this)[kFirstChild];
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kNext]) {
+			const node = objectOf(nodeSlots);
 			if (node.nodeType !== ELEMENT_NODE) {
 				continue;
 			}
-			const name = $((node as Element))[kLocalName];
+			const name = (nodeSlots as Slots<Element>)[kLocalName];
 			if (name !== "caption" && name !== "colgroup") {
 				before = node;
 				break;
@@ -21457,9 +21513,10 @@ function isHTMLElementNamed(node: Node, localName: string): boolean {
 
 function getChildElementsNamed(parent: Node, localName: string): Element[] {
 	const found: Element[] = [];
-	for (let node = objectOf($(parent)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(parent)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node.nodeType !== ELEMENT_NODE) {
 			continue;
 		}
@@ -21480,9 +21537,10 @@ function getTableRows(table: Element): Element[] {
 	const head: Element[] = [];
 	const middle: Element[] = [];
 	const foot: Element[] = [];
-	for (let node = objectOf($(table)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(table)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node.nodeType !== ELEMENT_NODE) {
 			continue;
 		}
@@ -21599,9 +21657,10 @@ function getTable(row: HTMLTableRowElement): Element | null {
 
 function getRowCells(row: Element): Element[] {
 	const cells: Element[] = [];
-	for (let node = objectOf($(row)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(row)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node instanceof HTMLTableCellElement) {
 			cells.push(node);
 		}
@@ -22248,9 +22307,10 @@ class HTMLTitleElement extends HTMLElement {
 // The text of the Text children only, not all descendants.
 function getChildText(element: Element): string {
 	let text = "";
-	for (let node = objectOf($(element)[kFirstChild]);
-		node !== null;
-		node = objectOf($(node)[kNext])) {
+	for (let nodeSlots = $(element)[kFirstChild];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kNext]) {
+		const node = objectOf(nodeSlots);
 		if (node.nodeType === TEXT_NODE) {
 			text += (node as Text).data;
 		}
@@ -23484,7 +23544,10 @@ export function isActuallyDisabled(element: Element): boolean {
 		}
 		// A disabled select disables what it offers (whatwg/html#12205),
 		// including a select a fieldset disables.
-		for (let node = parent; node !== null; node = objectOf($(node)[kParent])) {
+		for (let nodeSlots = parent === null ? null : slotsOf(parent);
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kParent]) {
+			const node = objectOf(nodeSlots);
 			if (isHTMLElementNamed(node, "select")) {
 				return isActuallyDisabled(node as Element);
 			}
@@ -23505,10 +23568,11 @@ export function isActuallyDisabled(element: Element): boolean {
 
 function isDisabledByFieldSet(element: Element): boolean {
 	for (
-		let node: Node | null = objectOf($(element)[kParent]);
-		node !== null;
-		node = objectOf($(node)[kParent])
+		let nodeSlots = $(element)[kParent];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kParent]
 	) {
+		const node = objectOf(nodeSlots);
 		if (!isHTMLElementNamed(node, "fieldset")) {
 			continue;
 		}
@@ -23557,10 +23621,11 @@ function getFormOwner(element: Element): HTMLFormElement | null {
 		return null;
 	}
 	for (
-		let node: Node | null = objectOf($(element)[kParent]);
-		node !== null;
-		node = objectOf($(node)[kParent])
+		let nodeSlots = $(element)[kParent];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kParent]
 	) {
+		const node = objectOf(nodeSlots);
 		if (node instanceof HTMLFormElement) {
 			return node;
 		}
@@ -24297,9 +24362,10 @@ function willValidate(element: Element): boolean {
 		// a button or a checkbox does not.
 		return false;
 	}
-	for (let node: Node | null = element;
-		node !== null;
-		node = objectOf($(node)[kParent])) {
+	for (let nodeSlots: Slots<Node> | null = slotsOf(element);
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kParent]) {
+		const node = objectOf(nodeSlots);
 		if (isHTMLElementNamed(node, "datalist")) {
 			return false;
 		}
@@ -25826,6 +25892,14 @@ function getCurrentDocument(): Document {
 	return ambientDocument;
 }
 
+/** Whether `node` is the document element of its document. */
+export function isDocumentElement(node: globalThis.Node): boolean {
+	const parent = $(node as Node)[kParent];
+	return parent !== null &&
+		(parent as Slots<Document>)[kMode] !== undefined &&
+		node.nodeType === ELEMENT_NODE;
+}
+
 function isHTMLDocument(document: Document): boolean {
 	return $(document)[kType] === "html";
 }
@@ -26104,9 +26178,10 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	get doctype(): globalThis.DocumentType | null {
-		for (let node = objectOf($(this)[kFirstChild]);
-			node !== null;
-			node = objectOf($(node)[kNext])) {
+		for (let nodeSlots = $(this)[kFirstChild];
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kNext]) {
+			const node = objectOf(nodeSlots);
 			if (node.nodeType === DOCUMENT_TYPE_NODE) {
 				return node as unknown as globalThis.DocumentType;
 			}
@@ -26177,13 +26252,14 @@ export class Document extends Node implements globalThis.Document {
 		if (root === null) {
 			return null as unknown as globalThis.HTMLHeadElement;
 		}
-		for (let node = objectOf($(root)[kFirstChild]);
-			node !== null;
-			node = objectOf($(node)[kNext])) {
+		for (let nodeSlots = $(root)[kFirstChild];
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kNext]) {
+			const node = objectOf(nodeSlots);
 			if (
 				node.nodeType === ELEMENT_NODE &&
-				$((node as Element))[kNamespace] === HTML_NAMESPACE &&
-				$((node as Element))[kLocalName] === "head"
+				(nodeSlots as Slots<Element>)[kNamespace] === HTML_NAMESPACE &&
+				(nodeSlots as Slots<Element>)[kLocalName] === "head"
 			) {
 				return node as unknown as globalThis.HTMLHeadElement;
 			}
@@ -26196,14 +26272,15 @@ export class Document extends Node implements globalThis.Document {
 		if (root === null) {
 			return null as unknown as globalThis.HTMLElement;
 		}
-		for (let node = objectOf($(root)[kFirstChild]);
-			node !== null;
-			node = objectOf($(node)[kNext])) {
+		for (let nodeSlots = $(root)[kFirstChild];
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kNext]) {
+			const node = objectOf(nodeSlots);
 			if (
 				node.nodeType === ELEMENT_NODE &&
-				$((node as Element))[kNamespace] === HTML_NAMESPACE &&
-				($((node as Element))[kLocalName] === "body" ||
-					$((node as Element))[kLocalName] === "frameset")
+				(nodeSlots as Slots<Element>)[kNamespace] === HTML_NAMESPACE &&
+				((nodeSlots as Slots<Element>)[kLocalName] === "body" ||
+					(nodeSlots as Slots<Element>)[kLocalName] === "frameset")
 			) {
 				return node as unknown as globalThis.HTMLElement;
 			}
@@ -26281,13 +26358,14 @@ export class Document extends Node implements globalThis.Document {
 		if (
 			$(root)[kNamespace] === SVG_NAMESPACE && $(root)[kLocalName] === "svg"
 		) {
-			for (let node = objectOf($(root)[kFirstChild]);
-				node !== null;
-				node = objectOf($(node)[kNext])) {
+			for (let nodeSlots = $(root)[kFirstChild];
+				nodeSlots !== null;
+				nodeSlots = nodeSlots[kNext]) {
+				const node = objectOf(nodeSlots);
 				if (
 					node.nodeType === ELEMENT_NODE &&
-					$((node as Element))[kNamespace] === SVG_NAMESPACE &&
-					$((node as Element))[kLocalName] === "title"
+					(nodeSlots as Slots<Element>)[kNamespace] === SVG_NAMESPACE &&
+					(nodeSlots as Slots<Element>)[kLocalName] === "title"
 				) {
 					element = node as Element;
 					break;
@@ -26333,9 +26411,10 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	get documentElement(): globalThis.HTMLElement {
-		for (let node = objectOf($(this)[kFirstChild]);
-			node !== null;
-			node = objectOf($(node)[kNext])) {
+		for (let nodeSlots = $(this)[kFirstChild];
+			nodeSlots !== null;
+			nodeSlots = nodeSlots[kNext]) {
+			const node = objectOf(nodeSlots);
 			if (node.nodeType === ELEMENT_NODE) {
 				return node as unknown as globalThis.HTMLElement;
 			}
@@ -26754,10 +26833,11 @@ export class Document extends Node implements globalThis.Document {
 				const matches: Node[] = [];
 				const visit = (node: Node): void => {
 					for (
-						let child = objectOf($(node)[kFirstChild]);
-						child !== null;
-						child = objectOf($(child)[kNext])
+						let childSlots = $(node)[kFirstChild];
+						childSlots !== null;
+						childSlots = childSlots[kNext]
 					) {
+						const child = objectOf(childSlots);
 						if (child.nodeType !== ELEMENT_NODE) {
 							continue;
 						}
@@ -28067,9 +28147,10 @@ const parentNodeMembers = {
 	},
 	firstElementChild: {
 		get(this: Node): Element | null {
-			for (let node = objectOf($(this)[kFirstChild]);
-				node !== null;
-				node = objectOf($(node)[kNext])) {
+			for (let nodeSlots = $(this)[kFirstChild];
+				nodeSlots !== null;
+				nodeSlots = nodeSlots[kNext]) {
+				const node = objectOf(nodeSlots);
 				if (node.nodeType === ELEMENT_NODE) {
 					return node as Element;
 				}
@@ -28081,9 +28162,10 @@ const parentNodeMembers = {
 	},
 	lastElementChild: {
 		get(this: Node): Element | null {
-			for (let node = objectOf($(this)[kLastChild]);
-				node !== null;
-				node = objectOf($(node)[kPrevious])) {
+			for (let nodeSlots = $(this)[kLastChild];
+				nodeSlots !== null;
+				nodeSlots = nodeSlots[kPrevious]) {
+				const node = objectOf(nodeSlots);
 				if (node.nodeType === ELEMENT_NODE) {
 					return node as Element;
 				}
@@ -28263,9 +28345,10 @@ const childNodeMembers = {
 const nonDocumentTypeChildNodeMembers = {
 	previousElementSibling: {
 		get(this: Node): Element | null {
-			for (let node = objectOf($(this)[kPrevious]);
-				node !== null;
-				node = objectOf($(node)[kPrevious])) {
+			for (let nodeSlots = $(this)[kPrevious];
+				nodeSlots !== null;
+				nodeSlots = nodeSlots[kPrevious]) {
+				const node = objectOf(nodeSlots);
 				if (node.nodeType === ELEMENT_NODE) {
 					return node as Element;
 				}
@@ -28277,9 +28360,10 @@ const nonDocumentTypeChildNodeMembers = {
 	},
 	nextElementSibling: {
 		get(this: Node): Element | null {
-			for (let node = objectOf($(this)[kNext]);
-				node !== null;
-				node = objectOf($(node)[kNext])) {
+			for (let nodeSlots = $(this)[kNext];
+				nodeSlots !== null;
+				nodeSlots = nodeSlots[kNext]) {
+				const node = objectOf(nodeSlots);
 				if (node.nodeType === ELEMENT_NODE) {
 					return node as Element;
 				}
@@ -28675,10 +28759,11 @@ function cloneNode(
 			const copiedShadow = $((copy as Element))[kShadowRoot] as ShadowRoot;
 			$(copiedShadow)[kDeclarative] = $(shadow)[kDeclarative];
 			for (
-				let child = objectOf($(shadow)[kFirstChild]);
-				child !== null;
-				child = objectOf($(child)[kNext])
+				let childSlots = $(shadow)[kFirstChild];
+				childSlots !== null;
+				childSlots = childSlots[kNext]
 			) {
+				const child = objectOf(childSlots);
 				appendNode(
 					cloneNode(child, $(copiedShadow)[kDocument], true),
 					copiedShadow,
@@ -28687,9 +28772,10 @@ function cloneNode(
 		}
 	}
 	if (deep) {
-		for (let child = objectOf(nodeSlots[kFirstChild]);
-			child !== null;
-			child = objectOf($(child)[kNext])) {
+		for (let childSlots = nodeSlots[kFirstChild];
+			childSlots !== null;
+			childSlots = childSlots[kNext]) {
+			const child = objectOf(childSlots);
 			appendNode(cloneNode(child, copySlots[kDocument], true), copy);
 		}
 	}
@@ -28867,9 +28953,9 @@ const AFTER = 1;
 function getNodeIndex(node: Node): number {
 	let index = 0;
 	for (
-		let previous = objectOf($(node)[kPrevious]);
-		previous !== null;
-		previous = objectOf($(previous)[kPrevious])
+		let previousSlots = $(node)[kPrevious];
+		previousSlots !== null;
+		previousSlots = previousSlots[kPrevious]
 	) {
 		index++;
 	}
@@ -28886,9 +28972,9 @@ function getNodeLength(node: Node): number {
 		return $((node as CharacterData))[kData].length;
 	}
 	let length = 0;
-	for (let child = objectOf($(node)[kFirstChild]);
-		child !== null;
-		child = objectOf($(child)[kNext])) {
+	for (let childSlots = $(node)[kFirstChild];
+		childSlots !== null;
+		childSlots = childSlots[kNext]) {
 		length++;
 	}
 	return length;
@@ -28897,10 +28983,11 @@ function getNodeLength(node: Node): number {
 function getAncestorChain(node: Node): Node[] {
 	const chain: Node[] = [];
 	for (
-		let current: Node | null = node;
-		current !== null;
-		current = objectOf($(current)[kParent])
+		let currentSlots: Slots<Node> | null = slotsOf(node);
+		currentSlots !== null;
+		currentSlots = currentSlots[kParent]
 	) {
+		const current = objectOf(currentSlots);
 		chain.push(current);
 	}
 	chain.reverse();
@@ -28908,9 +28995,10 @@ function getAncestorChain(node: Node): Node[] {
 }
 
 function isPrecedingSibling(node: Node, other: Node): boolean {
-	for (let next = objectOf($(node)[kNext]);
-		next !== null;
-		next = objectOf($(next)[kNext])) {
+	for (let nextSlots = $(node)[kNext];
+		nextSlots !== null;
+		nextSlots = nextSlots[kNext]) {
+		const next = objectOf(nextSlots);
 		if (next === other) {
 			return true;
 		}
@@ -29432,10 +29520,11 @@ function getExtractionShape(range: Range): {
 	const commonAncestorSlots = $(commonAncestor);
 	if (!isInclusiveAncestor(startNode, endNode)) {
 		for (
-			let child = objectOf(commonAncestorSlots[kFirstChild]);
-			child !== null;
-			child = objectOf($(child)[kNext])
+			let childSlots = commonAncestorSlots[kFirstChild];
+			childSlots !== null;
+			childSlots = childSlots[kNext]
 		) {
+			const child = objectOf(childSlots);
 			if (isPartiallyContained(child, range)) {
 				firstPartiallyContained = child;
 				break;
@@ -29445,10 +29534,11 @@ function getExtractionShape(range: Range): {
 	let lastPartiallyContained: Node | null = null;
 	if (!isInclusiveAncestor(endNode, startNode)) {
 		for (
-			let child = objectOf(commonAncestorSlots[kLastChild]);
-			child !== null;
-			child = objectOf($(child)[kPrevious])
+			let childSlots = commonAncestorSlots[kLastChild];
+			childSlots !== null;
+			childSlots = childSlots[kPrevious]
 		) {
+			const child = objectOf(childSlots);
 			if (isPartiallyContained(child, range)) {
 				lastPartiallyContained = child;
 				break;
@@ -29457,10 +29547,11 @@ function getExtractionShape(range: Range): {
 	}
 	const containedChildren: Node[] = [];
 	for (
-		let child = objectOf(commonAncestorSlots[kFirstChild]);
-		child !== null;
-		child = objectOf($(child)[kNext])
+		let childSlots = commonAncestorSlots[kFirstChild];
+		childSlots !== null;
+		childSlots = childSlots[kNext]
 	) {
+		const child = objectOf(childSlots);
 		if (!isContained(child, range)) {
 			continue;
 		}
@@ -30205,9 +30296,10 @@ function getRangeClientRects(range: Range): globalThis.DOMRect[] {
 				rects.push(toViewportRect(attached, rect, node as Element));
 			}
 		}
-		for (let child = objectOf(nodeSlots[kFirstChild]);
-			child !== null;
-			child = objectOf($(child)[kNext])) {
+		for (let childSlots = nodeSlots[kFirstChild];
+			childSlots !== null;
+			childSlots = childSlots[kNext]) {
+			const child = objectOf(childSlots);
 			visit(child);
 		}
 	};
@@ -30731,9 +30823,9 @@ class Selection implements globalThis.Selection {
 			return;
 		}
 		let childCount = 0;
-		for (let child = objectOf($(node)[kFirstChild]);
-			child !== null;
-			child = objectOf($(child)[kNext])) {
+		for (let childSlots = $(node)[kFirstChild];
+			childSlots !== null;
+			childSlots = childSlots[kNext]) {
 			childCount++;
 		}
 		const anchor: [Node, number] = [node, 0];
@@ -30991,9 +31083,10 @@ function getSelectionTextNodes(
 			return [...$(source)[kAssignedNodes]] as Node[];
 		}
 		const children: Node[] = [];
-		for (let child = objectOf($(source)[kFirstChild]);
-			child !== null;
-			child = objectOf($(child)[kNext])) {
+		for (let childSlots = $(source)[kFirstChild];
+			childSlots !== null;
+			childSlots = childSlots[kNext]) {
+			const child = objectOf(childSlots);
 			children.push(child);
 		}
 		return children;
@@ -33150,9 +33243,10 @@ export function isIndeterminateControl(element: Element): boolean {
 
 function getValidityOwners(element: Element): Element[] {
 	const owners: Element[] = [];
-	for (let node = objectOf($(element)[kParent]);
-		node !== null;
-		node = objectOf($(node)[kParent])) {
+	for (let nodeSlots = $(element)[kParent];
+		nodeSlots !== null;
+		nodeSlots = nodeSlots[kParent]) {
+		const node = objectOf(nodeSlots);
 		if (isHTMLElementNamed(node, "fieldset")) {
 			owners.push(node as Element);
 		}
@@ -33438,9 +33532,10 @@ function createTreeAdapter(document: Document | null) {
 function dropRegistry(node: Node): void {
 	const nodeSlots = $(node);
 	nodeSlots[kRegistry] = null;
-	for (let child = objectOf(nodeSlots[kFirstChild]);
-		child !== null;
-		child = objectOf($(child)[kNext])) {
+	for (let childSlots = nodeSlots[kFirstChild];
+		childSlots !== null;
+		childSlots = childSlots[kNext]) {
+		const child = objectOf(childSlots);
 		dropRegistry(child);
 	}
 }
@@ -34415,10 +34510,11 @@ function serializeFragment(
 		}
 	}
 	for (
-		let child = objectOf($(children)[kFirstChild]);
-		child !== null;
-		child = objectOf($(child)[kNext])
+		let childSlots = $(children)[kFirstChild];
+		childSlots !== null;
+		childSlots = childSlots[kNext]
 	) {
+		const child = objectOf(childSlots);
 		html += serializeNode(child, serializableShadowRoots, shadowRoots);
 	}
 	return html;
@@ -34514,10 +34610,11 @@ function serializeNode(
 		default: {
 			let html = "";
 			for (
-				let child = objectOf(nodeSlots[kFirstChild]);
-				child !== null;
-				child = objectOf($(child)[kNext])
+				let childSlots = nodeSlots[kFirstChild];
+				childSlots !== null;
+				childSlots = childSlots[kNext]
 			) {
+				const child = objectOf(childSlots);
 				html += serializeNode(child, serializableShadowRoots, shadowRoots);
 			}
 			return html;

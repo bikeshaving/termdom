@@ -37,6 +37,7 @@ import {
 	getTopLayer,
 	HTML_NAMESPACE,
 	isButtonInput,
+	isDocumentElement,
 	isUAShadowTree,
 	MATHML_NAMESPACE,
 	pseudoElement,
@@ -5093,7 +5094,7 @@ function blockifyDisplay(element: Element | null, display: string): string {
 	if (element === null || display === "none") {
 		return display;
 	}
-	if (element === element.ownerDocument?.documentElement) {
+	if (isDocumentElement(element)) {
 		return display === "contents"
 			? "block"
 			: CSSValues.getBlockifiedDisplay(display);

@@ -70,9 +70,18 @@ const WELL_KNOWN_SYMBOLS = new Set<symbol>(
 const hiddenPrototypes = new Map<Constructor, object>();
 const roots = new Map<Constructor, Constructor>();
 const originals = new WeakMap<object, unknown>();
+const recordMembers = new WeakSet<object>();
+const superSteps = new Map<
+	Constructor,
+	Map<symbol, (this: object, ...args: unknown[]) => unknown>
+>();
 const recordTypes = new Map<Constructor, new () => SlotRecord>();
+// The two objects looked up last, since the engine often goes back and
+// forth between two, such as an element and its computed style.
 let lastValue: object | null = null;
 let lastRecord: SlotRecord | null = null;
+let priorValue: object | null = null;
+let priorRecord: SlotRecord | null = null;
 
 /**
  * Gives a newly constructed object its slots. The root class of each
@@ -117,9 +126,22 @@ export function $<T extends object>(
 		return lastRecord as unknown as T;
 	}
 
-	lastRecord = Slot.read(value);
-	lastValue = value;
-	return lastRecord as unknown as T;
+	if (value === priorValue) {
+		return priorRecord as unknown as T;
+	}
+
+	const record = Slot.read(value);
+	remember(value, record);
+	return record as unknown as T;
+}
+
+function remember(value: object, record: SlotRecord): void {
+	if (value !== lastValue) {
+		priorValue = lastValue;
+		priorRecord = lastRecord;
+		lastValue = value;
+		lastRecord = record;
+	}
 }
 
 /** The record of `value`, typed as the tree links hold it. */
@@ -130,27 +152,37 @@ export function slotsOf<T extends object>(
 }
 
 /**
- * The object a record belongs to. Remembers the pair, so a `$()` of the
- * object right after costs nothing.
+ * The object a record belongs to.
  */
 export function objectOf<T extends object>(record: Slots<T>): T;
 export function objectOf<T extends object>(record: Slots<T> | null): T | null;
 export function objectOf<T extends object>(record: Slots<T> | null): T | null {
+	return record === null ? null : record[kObject];
+}
+
+/**
+ * The object a record belongs to, remembered as the last lookup, for a
+ * walk that hands the object on to code that reads its slots.
+ */
+export function rememberObject<T extends object>(record: Slots<T>): T;
+export function rememberObject<T extends object>(
+	record: Slots<T> | null,
+): T | null;
+export function rememberObject<T extends object>(
+	record: Slots<T> | null,
+): T | null {
 	if (record === null) {
 		return null;
 	}
 
 	const object = record[kObject];
-	lastValue = object;
-	lastRecord = record as unknown as SlotRecord;
+	remember(object, record as unknown as SlotRecord);
 	return object;
 }
 
 /** `$()` for an optional chain: undefined for null or undefined. */
 export function $maybe<T>(value: T): NonNullable<T> | undefined {
-	return value == null
-		? undefined
-		: (Slot.read(value) as unknown as NonNullable<T>);
+	return value == null ? undefined : ($(value as object) as NonNullable<T>);
 }
 
 /**
@@ -161,6 +193,16 @@ export function adopt(target: object, state: Record<symbol, unknown>): void {
 	const record = Object.assign(Object.create(null), state) as SlotRecord;
 	record[kObject] = target;
 	new Slot(target, record);
+}
+
+/**
+ * Marks a symbol-keyed method or accessor of a public prototype as one
+ * that runs with the record, not the object, as `this`, so it moves to the
+ * record's prototype as it is.
+ */
+export function onRecord<F extends object>(member: F): F {
+	recordMembers.add(member);
+	return member;
 }
 
 /** Whether `value` has slots. */
@@ -195,7 +237,19 @@ export function superStep(
 	type: Constructor,
 	key: symbol,
 ): (this: object, ...args: unknown[]) => unknown {
-	return hiddenMember(Object.getPrototypeOf(type) as Constructor, key);
+	let steps = superSteps.get(type);
+	if (steps === undefined) {
+		steps = new Map();
+		superSteps.set(type, steps);
+	}
+
+	let step = steps.get(key);
+	if (step === undefined) {
+		step = hiddenMember(Object.getPrototypeOf(type) as Constructor, key);
+		steps.set(key, step);
+	}
+
+	return step;
 }
 
 /** The internal step `key` as `type` defines or inherits it. */
@@ -244,7 +298,10 @@ function moveMembers(prototype: object, hidden: object): void {
 		}
 
 		const descriptor = Object.getOwnPropertyDescriptor(prototype, key)!;
-		if (typeof descriptor.value === "function") {
+		if (
+			typeof descriptor.value === "function" &&
+			!recordMembers.has(descriptor.value as object)
+		) {
 			const step = descriptor.value as (...args: unknown[]) => unknown;
 			const wrapped = function (
 				this: SlotRecord,
@@ -256,8 +313,7 @@ function moveMembers(prototype: object, hidden: object): void {
 				f?: unknown,
 			): unknown {
 				const owner = this[kObject];
-				lastValue = owner;
-				lastRecord = this;
+				remember(owner, this);
 				switch (arguments.length) {
 					case 0:
 						return step.call(owner);
@@ -277,16 +333,15 @@ function moveMembers(prototype: object, hidden: object): void {
 			descriptor.value = wrapped;
 		} else {
 			const {get, set} = descriptor;
-			if (get !== undefined) {
+			if (get !== undefined && !recordMembers.has(get)) {
 				descriptor.get = function (this: SlotRecord): unknown {
 					const owner = this[kObject];
-					lastValue = owner;
-					lastRecord = this;
+					remember(owner, this);
 					return get.call(owner);
 				};
 			}
 
-			if (set !== undefined) {
+			if (set !== undefined && !recordMembers.has(set)) {
 				descriptor.set = function (this: SlotRecord, value: unknown): void {
 					set.call(this[kObject], value);
 				};
