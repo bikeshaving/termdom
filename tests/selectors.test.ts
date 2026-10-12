@@ -14,6 +14,7 @@ import {parseSelectorList} from "../src/internal/cssselectors.ts";
 import {
 	createWindow,
 	type Document,
+	DOMException,
 	type Element,
 	type Node,
 	setDocumentFocusVisible,

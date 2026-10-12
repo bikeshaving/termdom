@@ -7,7 +7,7 @@
  * Each redirect is checked against the policy again and followed on the
  * network. Only a document that is itself a file: URL loads file: URLs.
  */
-import {$, declareSealedRoot, seal} from "./slots.ts";
+import {createFetchEvent, DOMException, getFetchResponse} from "./dom.ts";
 import {splitOnASCIIWhitespace} from "./text.ts";
 
 // A load goes to the global fetch, so a program that replaces it to mock
@@ -30,134 +30,7 @@ export function networkFetch(request: Request): Promise<Response> {
 	return isWindowFetch(current) ? runtimeFetch(request) : current(request);
 }
 
-const kExtend = Symbol("extend");
-const kPending = Symbol("pending");
-
-export interface ExtendableEvent {
-	// Where waitUntil()'s promises go: the TermDOM that dispatched the
-	// event. Null for an event a program made, which nothing waits on.
-	[kExtend]: ((promise: Promise<unknown>) => void) | null;
-	[kPending]: number;
-}
-
-/** An event whose listeners can ask the TermDOM to wait for their work. */
-export class ExtendableEvent extends Event {
-	constructor(type: string, init?: EventInit) {
-		super(type, init);
-		seal(this, new.target, ExtendableEvent);
-		const slots = $(this);
-		slots[kExtend] = null;
-		slots[kPending] = 0;
-	}
-
-	/** Keeps the TermDOM's dispose() waiting until `promise` settles. */
-	waitUntil(promise: PromiseLike<unknown>): void {
-		const lifetime = Promise.resolve(promise);
-		addLifetimePromise(this, lifetime);
-		$(this)[kExtend]!(lifetime);
-	}
-}
-
-declareSealedRoot(ExtendableEvent);
-
-// Service Workers §4.4.1: an event is active while it is dispatched, or
-// while a promise it was given is pending.
-function addLifetimePromise(
-	event: ExtendableEvent,
-	promise: Promise<unknown>,
-): void {
-	const eventSlots = $(event);
-	if (eventSlots[kExtend] === null) {
-		throw new DOMException(
-			"Only an event TermDOM dispatches can be extended",
-			"InvalidStateError",
-		);
-	}
-	if (event.eventPhase === Event.NONE && eventSlots[kPending] === 0) {
-		throw new DOMException(
-			"The event is no longer active",
-			"InvalidStateError",
-		);
-	}
-	eventSlots[kPending]++;
-	const settled = () => {
-		queueMicrotask(() => eventSlots[kPending]--);
-	};
-	promise.then(settled, settled);
-}
-
-export interface FetchEventInit extends EventInit {
-	request: Request;
-	preloadResponse?: Promise<unknown>;
-	clientId?: string;
-	resultingClientId?: string;
-	replacesClientId?: string;
-	handled?: Promise<undefined>;
-}
-
-const kResponse = Symbol("response");
-
-export interface FetchEvent {
-	[kResponse]: Promise<Response> | null;
-}
-
-/**
- * A load the document's markup asks for, dispatched at the TermDOM as a
- * Service Worker's fetch event is at its global scope. A listener answers
- * it with respondWith(), which stops the other listeners. One that calls
- * preventDefault() without answering fails the load.
- */
-export class FetchEvent extends ExtendableEvent {
-	readonly request: Request;
-	readonly preloadResponse: Promise<unknown>;
-	readonly clientId: string;
-	readonly resultingClientId: string;
-	readonly replacesClientId: string;
-	// Settles once the load is answered: rejects with a NetworkError when
-	// it fails.
-	readonly handled: Promise<undefined>;
-
-	constructor(type: string, init: FetchEventInit) {
-		super(type, init);
-		this.request = init.request;
-		this.preloadResponse = init.preloadResponse ?? Promise.resolve(undefined);
-		this.clientId = init.clientId ?? "";
-		this.resultingClientId = init.resultingClientId ?? "";
-		this.replacesClientId = init.replacesClientId ?? "";
-		this.handled = init.handled ?? new Promise<undefined>(() => {});
-		$(this)[kResponse] = null;
-	}
-
-	/**
-	 * Answer the request, during the event. Response.error(), a promise
-	 * that rejects, or a value that is not a Response fails it as a
-	 * network error does.
-	 */
-	respondWith(response: Response | PromiseLike<Response>): void {
-		if (this.eventPhase === Event.NONE) {
-			throw new DOMException(
-				"respondWith() is only called while the event is dispatched",
-				"InvalidStateError",
-			);
-		}
-		const slots = $(this);
-		if (slots[kResponse] !== null) {
-			throw new DOMException(
-				"The request was already answered",
-				"InvalidStateError",
-			);
-		}
-		const answer = Promise.resolve(response);
-		addLifetimePromise(this, answer);
-		this.stopImmediatePropagation();
-		slots[kResponse] = answer.then((value) => {
-			if (!(value instanceof Response)) {
-				throw new TypeError("respondWith() takes a Response");
-			}
-			return value;
-		});
-	}
-}
+export {ExtendableEvent, FetchEvent, type FetchEventInit} from "./dom.ts";
 
 /**
  * Gives a request its Fetch destination, such as "image", which a
@@ -404,11 +277,9 @@ async function dispatchFetchEvent(
 		rejectHandled = reject;
 	});
 	handled.catch(() => {});
-	const event = new FetchEvent("fetch", {request, handled, cancelable: true});
-	const eventSlots = $(event);
-	eventSlots[kExtend] = (promise) => {
+	const event = createFetchEvent(request, handled, (promise) => {
 		policy.extend(promise);
-	};
+	});
 	offered.add(request);
 	offering++;
 	try {
@@ -416,7 +287,7 @@ async function dispatchFetchEvent(
 	} finally {
 		offering--;
 	}
-	const answer = eventSlots[kResponse];
+	const answer = getFetchResponse(event);
 	if (answer === null) {
 		if (event.defaultPrevented) {
 			rejectHandled(new DOMException("The load was canceled", "NetworkError"));

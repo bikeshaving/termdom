@@ -572,7 +572,10 @@ test("a FetchEvent can be made by hand, and only TermDOM's can be answered or ex
 	expect(event.handled).toBeInstanceOf(Promise);
 	expect(() => event.respondWith(new Response(""))).toThrow();
 	expect(() => event.waitUntil(Promise.resolve())).toThrow();
-	const target = new EventTarget();
+	// The DOM's own target: a fetch event is the DOM's, which the runtime's
+	// EventTarget does not take.
+	const dom = create();
+	const target = new (dom.window as unknown as typeof globalThis).EventTarget();
 	const errors: string[] = [];
 	target.addEventListener("fetch", (dispatched) => {
 		try {
@@ -583,6 +586,7 @@ test("a FetchEvent can be made by hand, and only TermDOM's can be answered or ex
 	});
 	target.dispatchEvent(new FetchEvent("fetch", {request}));
 	expect(errors).toEqual(["InvalidStateError"]);
+	dom.dispose();
 });
 
 test("a SecurityPolicyViolationEvent takes its init, with violatedDirective an alias", () => {

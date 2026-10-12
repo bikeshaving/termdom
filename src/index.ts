@@ -17,7 +17,9 @@ import {
 	createWindow,
 	disconnectObservers,
 	dispatchAsUserAgent,
+	DOMException,
 	dropFullscreen,
+	EventTarget,
 	flushLayout,
 	flushObservers,
 	getCellSizeSetting,
@@ -66,7 +68,7 @@ import {
 	type RequestPolicy,
 	setWindowFetch,
 } from "./internal/resources.ts";
-import {$, declareSealedRoot, moveLateMembers, seal} from "./internal/slots.ts";
+import {$, moveLateMembers} from "./internal/slots.ts";
 import {queueMicrotask, setTimeout} from "./internal/timers.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
@@ -416,7 +418,6 @@ export class TermDOM extends EventTarget {
 
 	constructor(options: TermDOMOptions = {}) {
 		super();
-		seal(this, new.target, TermDOM);
 		const cellSize = toCellSizeSetting(options.cellSize);
 		const images = toGraphicsSetting("images", options.images);
 		const canvas = toGraphicsSetting("canvas", options.canvas);
@@ -814,6 +815,10 @@ export class TermDOM extends EventTarget {
 		super.removeEventListener(type, listener, options);
 	}
 
+	override dispatchEvent(event: globalThis.Event): boolean {
+		return super.dispatchEvent(event as never);
+	}
+
 	/**
 	 * Render to ANSI at the transport's width: colors and line breaks, no
 	 * cursor controls, no modes. Without an argument, the document as it
@@ -942,8 +947,6 @@ export class TermDOM extends EventTarget {
 		return slots[kDisposal];
 	}
 }
-
-declareSealedRoot(TermDOM);
 
 /**
  * Ctrl+Z: hand the terminal back, stop until the shell continues the
