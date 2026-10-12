@@ -787,7 +787,7 @@ export class Path2D {
 	}
 
 	get [kSubpaths](): Subpath[] {
-		return $(this)[kBuilder][kSubpaths];
+		return this[kBuilder][kSubpaths];
 	}
 
 	addPath(path: Path2D, transform?: Partial<CanvasMatrix>): void {
@@ -1468,7 +1468,7 @@ export class CanvasGradient {
 
 	/** The color at a user-space point, or null where the gradient has none. */
 	[kColorAt](x: number, y: number): RGBA | null {
-		const slots = $(this);
+		const slots = this;
 		const stops = slots[kStops];
 		if (stops.length === 0) {
 			return {r: 0, g: 0, b: 0, a: 0};
@@ -1541,7 +1541,7 @@ export class CanvasPattern {
 	}
 
 	[kColorAt](x: number, y: number): RGBA {
-		const slots = $(this);
+		const slots = this;
 		const inverse = invert(slots[kPatternTransform]);
 		if (inverse !== null) {
 			[x, y] = apply(inverse, x, y);
@@ -2820,7 +2820,7 @@ export class CanvasRenderingContext2D {
 		if (!isFiniteAll(...m)) {
 			return;
 		}
-		const slots = $(this);
+		const slots = this;
 		slots[kState].transform = m;
 		slots[kPath].transform = m;
 	}
@@ -2828,7 +2828,7 @@ export class CanvasRenderingContext2D {
 	// A Path2D's points are in user space and go through the transform
 	// when it is used; the current path's went through as they were added.
 	[kSubpathsFor](path?: Path2D): Subpath[] {
-		const slots = $(this);
+		const slots = this;
 		if (path === undefined) {
 			return slots[kPath][kSubpaths];
 		}
@@ -2854,7 +2854,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	[kStrokeStyle](): StrokeStyle {
-		const slots = $(this);
+		const slots = this;
 		const scale = slots[kScale]();
 		return {
 			width: slots[kState].lineWidth,
@@ -2868,13 +2868,13 @@ export class CanvasRenderingContext2D {
 
 	// How much the transform scales lengths, for line widths and dashes.
 	[kScale](): number {
-		const m = $(this)[kState].transform;
+		const m = this[kState].transform;
 		return Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
 	}
 
 	[kRectMask](x: number, y: number, w: number, h: number): Float32Array {
 		const builder = new PathBuilder();
-		const slots = $(this);
+		const slots = this;
 		builder.transform = slots[kState].transform;
 		builder.rect(x, y, w, h);
 		const bitmap = slots[kHost].bitmap();
@@ -2887,7 +2887,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	[kPaint](mask: Float32Array, paint: Paint): void {
-		const slots = $(this);
+		const slots = this;
 		const bitmap = slots[kHost].bitmap();
 		const {width, height, data} = bitmap;
 		const operation = slots[kState].globalCompositeOperation;
@@ -2962,7 +2962,7 @@ export class CanvasRenderingContext2D {
 	// Text under the shape painted last is covered, as it would be
 	// in pixels.
 	[kDropText](mask: Float32Array, threshold: number): void {
-		const slots = $(this);
+		const slots = this;
 		const bitmap = slots[kHost].bitmap();
 		if (bitmap.width === 0 || bitmap.height === 0) {
 			return;
@@ -2981,7 +2981,7 @@ export class CanvasRenderingContext2D {
 		if (!isFiniteAll(x, y)) {
 			return;
 		}
-		const slots = $(this);
+		const slots = this;
 		const [px, py] = apply(slots[kState].transform, x, y);
 		const color = typeof paint === "string"
 			? parseCanvasColor(paint)
@@ -3644,7 +3644,7 @@ export class CanvasCellGridContext {
 	}
 
 	[kResolveDirection](): "ltr" | "rtl" {
-		const slots = $(this);
+		const slots = this;
 		const {direction} = slots[kGridState];
 		return direction === "inherit" ? slots[kGridHost].direction() : direction;
 	}
