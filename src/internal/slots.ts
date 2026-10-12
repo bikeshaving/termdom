@@ -133,7 +133,25 @@ export function $<T extends object>(
 	return record as unknown as T;
 }
 
+// A remembered record holds its object, and through its links a whole
+// tree, so the cache empties at the end of every task. A tree removed in
+// the task is then free to go.
+let forgetting = false;
+
+function forget(): void {
+	forgetting = false;
+	lastValue = null;
+	lastRecord = null;
+	priorValue = null;
+	priorRecord = null;
+}
+
 function remember(value: object, record: SlotRecord): void {
+	if (!forgetting) {
+		forgetting = true;
+		queueMicrotask(forget);
+	}
+
 	if (value !== lastValue) {
 		priorValue = lastValue;
 		priorRecord = lastRecord;
