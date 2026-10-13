@@ -62,8 +62,8 @@ import {
 } from "./hints.ts";
 import type {Layout} from "./layout.ts";
 import {
-	$,
-	$maybe,
+	_,
+	_maybe,
 	adopt as adoptSlots,
 	declareSealedRoot,
 	ownerOf,
@@ -619,7 +619,7 @@ class CSSStyleDeclaration {
 		} = {},
 	) {
 		seal(this, new.target, CSSStyleDeclaration);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kDeclarations] = [];
 		slots[kByName] = new Map<string, CSSValues.CSSDeclaration>();
 		slots[kAttributeText] = null;
@@ -633,7 +633,7 @@ class CSSStyleDeclaration {
 	}
 
 	get parentRule(): CSSRule | null {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			return slots[kViewOf].parentRule;
 		}
@@ -641,7 +641,7 @@ class CSSStyleDeclaration {
 	}
 
 	get length(): number {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			syncViewIndices(this);
 			return slots[kViewOf].length;
@@ -651,7 +651,7 @@ class CSSStyleDeclaration {
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			return slots[kViewOf].cssText;
 		}
@@ -660,7 +660,7 @@ class CSSStyleDeclaration {
 	}
 
 	set cssText(text: string) {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			slots[kViewOf].cssText = text;
 			return;
@@ -684,7 +684,7 @@ class CSSStyleDeclaration {
 	}
 
 	item(index: number): string {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			return slots[kViewOf].item(index);
 		}
@@ -693,7 +693,7 @@ class CSSStyleDeclaration {
 	}
 
 	[Symbol.iterator](): IterableIterator<string> {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			syncViewIndices(this);
 			return slots[kViewOf][Symbol.iterator]();
@@ -703,7 +703,7 @@ class CSSStyleDeclaration {
 	}
 
 	getPropertyValue(property: string): string {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			return slots[kViewOf].getPropertyValue(property);
 		}
@@ -718,7 +718,7 @@ class CSSStyleDeclaration {
 	}
 
 	getPropertyPriority(property: string): string {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			return slots[kViewOf].getPropertyPriority(property);
 		}
@@ -739,7 +739,7 @@ class CSSStyleDeclaration {
 	}
 
 	setProperty(property: string, value: string, priority?: string): void {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			slots[kViewOf].setProperty(property, value, priority);
 			return;
@@ -771,7 +771,7 @@ class CSSStyleDeclaration {
 	}
 
 	removeProperty(property: string): string {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kViewOf] !== undefined) {
 			return slots[kViewOf].removeProperty(property);
 		}
@@ -830,7 +830,7 @@ const EMPTY_DECLARATIONS: CSSValues.DeclarationBlock = {
 function getDeclarationBlock(
 	style: CSSStyleDeclaration,
 ): CSSValues.DeclarationBlock {
-	const styleSlots = $(style);
+	const styleSlots = _(style);
 	styleSlots[kSync]!();
 	if (styleSlots[kDeclarations].length === 0) {
 		return EMPTY_DECLARATIONS;
@@ -909,7 +909,7 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 	// of its longhands, because the declarations do not change during the
 	// walk.
 	const unserializable = new Set<string>();
-	const blockSlots = $(block);
+	const blockSlots = _(block);
 	for (const declaration of blockSlots[kDeclarations]) {
 		if (serialized.has(declaration.name)) {
 			continue;
@@ -953,7 +953,7 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 // observes.
 function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 	invalidateDeclaration(declaration);
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	if (declarationSlots[kElement]) {
 		declarationSlots[kAttributeText] = serializeDeclarations(declaration);
 		declarationSlots[kElement].setAttribute(
@@ -965,7 +965,7 @@ function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 }
 
 function invalidateDeclaration(declaration: CSSStyleDeclaration): void {
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	declarationSlots[kBlock] = null;
 	for (let i = 0; i < declarationSlots[kIndexed]; i++) {
 		delete declaration[i];
@@ -980,7 +980,7 @@ function findDeclaration(
 	declaration: CSSStyleDeclaration,
 	property: string,
 ): CSSValues.CSSDeclaration | undefined {
-	return $(declaration)[kByName].get(property);
+	return _(declaration)[kByName].get(property);
 }
 
 const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
@@ -996,7 +996,7 @@ function isSupportedDeclaration(
 ): boolean {
 	// A keyframe's block is one step of an animation, and the animation's
 	// own properties describe the whole rather than the step.
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	if (declarationSlots[kKeyframe] && KEYFRAME_EXCLUDED.test(name)) {
 		return false;
 	}
@@ -1033,7 +1033,7 @@ function storeDeclaration(
 		removeDeclaration(declaration, name);
 	}
 	const entry = {name, value, important};
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	declarationSlots[kDeclarations].push(entry);
 	declarationSlots[kByName].set(name, entry);
 	return true;
@@ -1043,7 +1043,7 @@ function removeDeclaration(
 	declaration: CSSStyleDeclaration,
 	name: string,
 ): boolean {
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	const index = declarationSlots[kDeclarations].findIndex(
 		(entry) => entry.name === name,
 	);
@@ -1066,7 +1066,7 @@ function applyDeclaration(
 	// shorthand with one bad component is dropped whole rather than leaving
 	// its good components behind.
 	if (
-		!CSSValues.isValidDeclaration(name, value, $(declaration)[kDescriptors])
+		!CSSValues.isValidDeclaration(name, value, _(declaration)[kDescriptors])
 	) {
 		return false;
 	}
@@ -1184,8 +1184,8 @@ function getPageView(source: CSSStyleDeclaration): CSSStyleProperties {
 	if (view === undefined) {
 		view = Object.create(CSSStyleProperties.prototype) as CSSStyleProperties;
 		seal(view, CSSStyleProperties, CSSStyleDeclaration);
-		$(view)[kViewOf] = source;
-		$(view)[kIndexed] = 0;
+		_(view)[kViewOf] = source;
+		_(view)[kIndexed] = 0;
 		pageViews.set(source, view);
 	}
 	syncViewIndices(view);
@@ -1195,7 +1195,7 @@ function getPageView(source: CSSStyleDeclaration): CSSStyleProperties {
 // A computed style lists a custom property only while one applies, so
 // its indices follow its length each time the page reads it.
 function syncViewIndices(view: CSSStyleDeclaration): void {
-	const viewSlots = $(view);
+	const viewSlots = _(view);
 	const length = viewSlots[kViewOf]!.length;
 	for (let index = viewSlots[kIndexed]; index < length; index++) {
 		Object.defineProperty(view, index, {
@@ -1290,7 +1290,7 @@ interface IndexedCollection {
 // a proxied list pays the get trap, and each method read pays a bind.
 function syncIndexed(collection: object, items?: readonly unknown[]): void {
 	const list = collection as IndexedCollection;
-	const previous = $(list)[kIndexCount] ?? 0;
+	const previous = _(list)[kIndexCount] ?? 0;
 	const length = items ? items.length : list.length;
 	for (let index = previous; index < length; index++) {
 		Object.defineProperty(list, index, {
@@ -1304,7 +1304,7 @@ function syncIndexed(collection: object, items?: readonly unknown[]): void {
 	for (let index = length; index < previous; index++) {
 		delete list[index];
 	}
-	$(list)[kIndexCount] = length;
+	_(list)[kIndexCount] = length;
 }
 
 const kMedia = Symbol("media");
@@ -1321,27 +1321,27 @@ export class MediaList implements globalThis.MediaList {
 
 	constructor(mediaText = "", onChange?: () => void) {
 		seal(this, new.target, MediaList);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kMedia] = [];
 		slots[kOnChange] = onChange ?? null;
 		parseMediaText(this, mediaText);
 	}
 
 	get mediaText(): string {
-		return $(this)[kMedia].join(", ");
+		return _(this)[kMedia].join(", ");
 	}
 
 	set mediaText(text: string) {
 		parseMediaText(this, text);
-		$(this)[kOnChange]?.();
+		_(this)[kOnChange]?.();
 	}
 
 	get length(): number {
-		return $(this)[kMedia].length;
+		return _(this)[kMedia].length;
 	}
 
 	item(index: number): string | null {
-		return $(this)[kMedia][index] ?? null;
+		return _(this)[kMedia][index] ?? null;
 	}
 
 	// Parsed as a SINGLE media query. A comma-separated list parses to
@@ -1355,7 +1355,7 @@ export class MediaList implements globalThis.MediaList {
 			return;
 		}
 		const query = CSSValues.serializeMediaQuery(text);
-		const slots = $(this);
+		const slots = _(this);
 		if (!query || slots[kMedia].includes(query)) {
 			return;
 		}
@@ -1372,7 +1372,7 @@ export class MediaList implements globalThis.MediaList {
 		const query = CSSValues.splitMediaQueryList(text).length === 1
 			? CSSValues.serializeMediaQuery(text)
 			: "";
-		const slots = $(this);
+		const slots = _(this);
 		const kept = slots[kMedia].filter((entry) => entry !== query);
 		if (kept.length === slots[kMedia].length) {
 			throw domException(`No such medium: ${medium}`, "NotFoundError");
@@ -1384,7 +1384,7 @@ export class MediaList implements globalThis.MediaList {
 	}
 
 	[Symbol.iterator](): ArrayIterator<string> {
-		return $(this)[kMedia][Symbol.iterator]();
+		return _(this)[kMedia][Symbol.iterator]();
 	}
 
 	toString(): string {
@@ -1395,7 +1395,7 @@ export class MediaList implements globalThis.MediaList {
 declareSealedRoot(MediaList);
 
 function parseMediaText(list: MediaList, text: string): void {
-	const listSlots = $(list);
+	const listSlots = _(list);
 	listSlots[kMedia].length = 0;
 	for (const query of CSSValues.splitMediaQueryList(
 		CSSValues.stripCSSComments(String(text ?? "")),
@@ -1462,14 +1462,14 @@ abstract class CSSRule {
 	) {
 		seal(this, new.target, CSSRule);
 		ruleSheets.set(this, parentStyleSheet);
-		$(this)[kParentRule] = parentRule;
+		_(this)[kParentRule] = parentRule;
 	}
 
 	abstract get type(): number;
 	abstract get cssText(): string;
 
 	get parentRule(): CSSRule | null {
-		return $(this)[kParentRule];
+		return _(this)[kParentRule];
 	}
 
 	get parentStyleSheet(): CSSStyleSheet | null {
@@ -1502,7 +1502,7 @@ abstract class CSSGroupingRule extends CSSRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kRules] = [];
 		slots[kRuleList] = createRuleList(slots[kRules]);
 		if (build) {
@@ -1512,7 +1512,7 @@ abstract class CSSGroupingRule extends CSSRule {
 	}
 
 	get cssRules(): CSSRuleList {
-		return $(this)[kRuleList];
+		return _(this)[kRuleList];
 	}
 
 	insertRule(text: string, index = 0): number {
@@ -1522,7 +1522,7 @@ abstract class CSSGroupingRule extends CSSRule {
 				this.parentStyleSheet ?? undefined,
 			);
 		}
-		const slots = $(this);
+		const slots = _(this);
 		if (index > slots[kRules].length) {
 			throw domException(
 				`Cannot insert at index ${index}`,
@@ -1553,7 +1553,7 @@ abstract class CSSGroupingRule extends CSSRule {
 				this.parentStyleSheet ?? undefined,
 			);
 		}
-		const slots = $(this);
+		const slots = _(this);
 		if (index >= slots[kRules].length) {
 			throw domException(
 				`Cannot delete at index ${index}`,
@@ -1613,7 +1613,7 @@ class CSSStyleRule extends CSSGroupingRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kSelectorText] = null;
 		slots[kSelectors] = selectors;
 		slots[kStyle] = new CSSStyleProperties({
@@ -1635,7 +1635,7 @@ class CSSStyleRule extends CSSGroupingRule {
 	// depends on `@namespace` rules that are only in place once parsing
 	// finishes.
 	get selectorText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		return (
 			slots[kSelectorText] ??= CSSValues.serializeSelectorList(
 				slots[kSelectors],
@@ -1650,23 +1650,23 @@ class CSSStyleRule extends CSSGroupingRule {
 		if (!selectors) {
 			return;
 		}
-		const slots = $(this);
+		const slots = _(this);
 		slots[kSelectors] = selectors;
 		slots[kSelectorText] = null;
 		notifyRule(this);
 	}
 
 	get style(): CSSStyleDeclaration {
-		return $(this)[kStyle];
+		return _(this)[kStyle];
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		$(this)[kStyle].cssText = String(text);
+		_(this)[kStyle].cssText = String(text);
 	}
 
 	get cssText(): string {
-		const declarations = $(this)[kStyle].cssText;
+		const declarations = _(this)[kStyle].cssText;
 		const nested = serializeGroupRules(this);
 		const selector = this.selectorText;
 		if (nested) {
@@ -1751,7 +1751,7 @@ function initDeclarationBlock(
 ): void {
 	const Block =
 		(atRule ? DESCRIPTOR_BLOCKS.get(atRule) : undefined) ?? CSSStyleProperties;
-	const ruleSlots = $(rule);
+	const ruleSlots = _(rule);
 	ruleSlots[kStyle] = new Block({
 		parentRule: rule,
 		onChange: () => notifyRule(rule),
@@ -1793,16 +1793,16 @@ class CSSFontFaceRule extends CSSRule {
 	}
 
 	get style(): CSSStyleDeclaration {
-		return $(this)[kStyle];
+		return _(this)[kStyle];
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		$(this)[kStyle].cssText = String(text);
+		_(this)[kStyle].cssText = String(text);
 	}
 
 	get cssText(): string {
-		return declarationBlockText("@font-face", $(this)[kStyle]);
+		return declarationBlockText("@font-face", _(this)[kStyle]);
 	}
 }
 
@@ -1820,7 +1820,7 @@ class CSSNestedDeclarations extends CSSRule {
 		parentRule: CSSRule | null,
 	) {
 		super(parentStyleSheet, parentRule);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kStyle] = new CSSStyleProperties({
 			parentRule: this,
 			onChange: () => notifyRule(this),
@@ -1833,16 +1833,16 @@ class CSSNestedDeclarations extends CSSRule {
 	}
 
 	get style(): CSSStyleDeclaration {
-		return $(this)[kStyle];
+		return _(this)[kStyle];
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		$(this)[kStyle].cssText = String(text);
+		_(this)[kStyle].cssText = String(text);
 	}
 
 	get cssText(): string {
-		return $(this)[kStyle].cssText;
+		return _(this)[kStyle].cssText;
 	}
 }
 
@@ -1865,7 +1865,7 @@ class CSSPageRule extends CSSRule {
 	) {
 		super(parentStyleSheet, parentRule);
 		initDeclarationBlock(this, "@page", block);
-		$(this)[kSelectorText] = CSSValues.serializePageSelector(selectorText);
+		_(this)[kSelectorText] = CSSValues.serializePageSelector(selectorText);
 	}
 
 	get type(): number {
@@ -1873,25 +1873,25 @@ class CSSPageRule extends CSSRule {
 	}
 
 	get selectorText(): string {
-		return $(this)[kSelectorText];
+		return _(this)[kSelectorText];
 	}
 
 	set selectorText(selector: string) {
-		$(this)[kSelectorText] = CSSValues.serializePageSelector(String(selector));
+		_(this)[kSelectorText] = CSSValues.serializePageSelector(String(selector));
 		notifyRule(this);
 	}
 
 	get style(): CSSStyleDeclaration {
-		return $(this)[kStyle];
+		return _(this)[kStyle];
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		$(this)[kStyle].cssText = String(text);
+		_(this)[kStyle].cssText = String(text);
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		return declarationBlockText(
 			slots[kSelectorText] ? `@page ${slots[kSelectorText]}` : "@page",
 			slots[kStyle],
@@ -1915,7 +1915,7 @@ function initNamedRule(
 	block: string | readonly CSSValues.CSSDeclaration[],
 ): void {
 	initDeclarationBlock(rule, atRule, block);
-	$(rule)[kName] = name.trim();
+	_(rule)[kName] = name.trim();
 }
 
 interface CSSCounterStyleRule extends CSSNamedRule {}
@@ -1936,7 +1936,7 @@ class CSSCounterStyleRule extends CSSRule {
 	}
 
 	get name(): string {
-		return $(this)[kName];
+		return _(this)[kName];
 	}
 
 	set name(name: string) {
@@ -1944,12 +1944,12 @@ class CSSCounterStyleRule extends CSSRule {
 		if (!text) {
 			return;
 		}
-		$(this)[kName] = text;
+		_(this)[kName] = text;
 		notifyRule(this);
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		return declarationBlockText(
 			`@counter-style ${slots[kName]}`,
 			slots[kStyle],
@@ -1975,23 +1975,23 @@ class CSSPropertyRule extends CSSRule {
 	}
 
 	get name(): string {
-		return $(this)[kName];
+		return _(this)[kName];
 	}
 
 	get syntax(): string {
-		return $(this)[kStyle].getPropertyValue("syntax");
+		return _(this)[kStyle].getPropertyValue("syntax");
 	}
 
 	get inherits(): boolean {
-		return $(this)[kStyle].getPropertyValue("inherits") === "true";
+		return _(this)[kStyle].getPropertyValue("inherits") === "true";
 	}
 
 	get initialValue(): string | null {
-		return $(this)[kStyle].getPropertyValue("initial-value") || null;
+		return _(this)[kStyle].getPropertyValue("initial-value") || null;
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		return declarationBlockText(`@property ${slots[kName]}`, slots[kStyle]);
 	}
 }
@@ -2014,23 +2014,23 @@ class CSSFontPaletteValuesRule extends CSSRule {
 	}
 
 	get name(): string {
-		return $(this)[kName];
+		return _(this)[kName];
 	}
 
 	get fontFamily(): string {
-		return $(this)[kStyle].getPropertyValue("font-family");
+		return _(this)[kStyle].getPropertyValue("font-family");
 	}
 
 	get basePalette(): string {
-		return $(this)[kStyle].getPropertyValue("base-palette");
+		return _(this)[kStyle].getPropertyValue("base-palette");
 	}
 
 	get overrideColors(): string {
-		return $(this)[kStyle].getPropertyValue("override-colors");
+		return _(this)[kStyle].getPropertyValue("override-colors");
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		return declarationBlockText(
 			`@font-palette-values ${slots[kName]}`,
 			slots[kStyle],
@@ -2054,7 +2054,7 @@ class CSSKeyframeRule extends CSSRule {
 	) {
 		super(parentStyleSheet, parentRule);
 		initDeclarationBlock(this, "", block);
-		$(this)[kKeyText] = CSSValues.serializeKeyText(keyText);
+		_(this)[kKeyText] = CSSValues.serializeKeyText(keyText);
 	}
 
 	get type(): number {
@@ -2062,7 +2062,7 @@ class CSSKeyframeRule extends CSSRule {
 	}
 
 	get keyText(): string {
-		return $(this)[kKeyText];
+		return _(this)[kKeyText];
 	}
 
 	set keyText(text: string) {
@@ -2074,21 +2074,21 @@ class CSSKeyframeRule extends CSSRule {
 				this.parentStyleSheet,
 			);
 		}
-		$(this)[kKeyText] = serialized;
+		_(this)[kKeyText] = serialized;
 		notifyRule(this);
 	}
 
 	get style(): CSSStyleDeclaration {
-		return $(this)[kStyle];
+		return _(this)[kStyle];
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		$(this)[kStyle].cssText = String(text);
+		_(this)[kStyle].cssText = String(text);
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		return declarationBlockText(slots[kKeyText], slots[kStyle]);
 	}
 }
@@ -2106,7 +2106,7 @@ class CSSMediaRule extends CSSConditionRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		$(this)[kMedia] = new MediaList(mediaText, () => notifyRule(this));
+		_(this)[kMedia] = new MediaList(mediaText, () => notifyRule(this));
 	}
 
 	get type(): number {
@@ -2114,17 +2114,17 @@ class CSSMediaRule extends CSSConditionRule {
 	}
 
 	get media(): MediaList {
-		return $(this)[kMedia];
+		return _(this)[kMedia];
 	}
 
 	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
 	set media(text: string) {
-		$(this)[kMedia].mediaText = String(text);
+		_(this)[kMedia].mediaText = String(text);
 	}
 
 	/** Read-only. The media list behind it is what an author sets. */
 	get conditionText(): string {
-		return $(this)[kMedia].mediaText;
+		return _(this)[kMedia].mediaText;
 	}
 
 	get cssText(): string {
@@ -2158,7 +2158,7 @@ class CSSSupportsRule extends CSSConditionRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		$(this)[kConditionText] = conditionText.trim();
+		_(this)[kConditionText] = conditionText.trim();
 	}
 
 	get type(): number {
@@ -2166,11 +2166,11 @@ class CSSSupportsRule extends CSSConditionRule {
 	}
 
 	get conditionText(): string {
-		return $(this)[kConditionText];
+		return _(this)[kConditionText];
 	}
 
 	get cssText(): string {
-		return conditionRuleText("@supports", $(this)[kConditionText], this);
+		return conditionRuleText("@supports", _(this)[kConditionText], this);
 	}
 }
 
@@ -2192,7 +2192,7 @@ class CSSContainerRule extends CSSConditionRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kConditionText] = conditionText.trim();
 		// The prelude does not change for this rule, so its parts are read
 		// once here.
@@ -2206,19 +2206,19 @@ class CSSContainerRule extends CSSConditionRule {
 	}
 
 	get conditionText(): string {
-		return $(this)[kConditionText];
+		return _(this)[kConditionText];
 	}
 
 	get cssText(): string {
-		return conditionRuleText("@container", $(this)[kConditionText], this);
+		return conditionRuleText("@container", _(this)[kConditionText], this);
 	}
 
 	get containerName(): string {
-		return $(this)[kContainerName];
+		return _(this)[kContainerName];
 	}
 
 	get containerQuery(): string {
-		return $(this)[kContainerQuery];
+		return _(this)[kContainerQuery];
 	}
 }
 
@@ -2241,7 +2241,7 @@ class CSSScopeRule extends CSSGroupingRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kPrelude] = prelude.trim();
 		// The prelude does not change for this rule, so its parts are read
 		// once here.
@@ -2255,15 +2255,15 @@ class CSSScopeRule extends CSSGroupingRule {
 	}
 
 	get start(): string | null {
-		return $(this)[kScopeStart];
+		return _(this)[kScopeStart];
 	}
 
 	get end(): string | null {
-		return $(this)[kScopeEnd];
+		return _(this)[kScopeEnd];
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		const prelude = slots[kPrelude] ? ` ${slots[kPrelude]}` : "";
 		return `@scope${prelude} {${serializeGroupRules(this)}\n}`;
 	}
@@ -2293,7 +2293,7 @@ class CSSLayerBlockRule extends CSSGroupingRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		$(this)[kName] = name;
+		_(this)[kName] = name;
 	}
 
 	get type(): number {
@@ -2301,11 +2301,11 @@ class CSSLayerBlockRule extends CSSGroupingRule {
 	}
 
 	get name(): string {
-		return $(this)[kName];
+		return _(this)[kName];
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		const name = slots[kName] ? ` ${slots[kName]}` : "";
 		return `@layer${name} {${serializeGroupRules(this)}\n}`;
 	}
@@ -2325,7 +2325,7 @@ class CSSLayerStatementRule extends CSSRule {
 		parentRule: CSSRule | null,
 	) {
 		super(parentStyleSheet, parentRule);
-		$(this)[kNames] = [...names];
+		_(this)[kNames] = [...names];
 	}
 
 	get type(): number {
@@ -2333,11 +2333,11 @@ class CSSLayerStatementRule extends CSSRule {
 	}
 
 	get nameList(): readonly string[] {
-		return $(this)[kNames];
+		return _(this)[kNames];
 	}
 
 	get cssText(): string {
-		return `@layer ${$(this)[kNames].join(", ")};`;
+		return `@layer ${_(this)[kNames].join(", ")};`;
 	}
 }
 
@@ -2357,7 +2357,7 @@ class CSSNamespaceRule extends CSSRule {
 		parentStyleSheet: CSSStyleSheet | null,
 	) {
 		super(parentStyleSheet, null);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kPrefix] = prefix;
 		slots[kNamespaceURI] = namespaceURI;
 	}
@@ -2367,15 +2367,15 @@ class CSSNamespaceRule extends CSSRule {
 	}
 
 	get prefix(): string {
-		return $(this)[kPrefix];
+		return _(this)[kPrefix];
 	}
 
 	get namespaceURI(): string {
-		return $(this)[kNamespaceURI];
+		return _(this)[kNamespaceURI];
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		const prefix = slots[kPrefix] ? `${slots[kPrefix]} ` : "";
 		return `@namespace ${prefix}url(${CSSValues.serializeCSSString(slots[kNamespaceURI])});`;
 	}
@@ -2403,7 +2403,7 @@ class CSSImportRule extends CSSRule {
 		parentStyleSheet: CSSStyleSheet | null,
 	) {
 		super(parentStyleSheet, null);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kHref] = href;
 		slots[kMedia] = new MediaList(mediaText);
 		slots[kLayerName] = layerName;
@@ -2415,24 +2415,24 @@ class CSSImportRule extends CSSRule {
 	}
 
 	get href(): string {
-		return $(this)[kHref];
+		return _(this)[kHref];
 	}
 
 	get media(): MediaList {
-		return $(this)[kMedia];
+		return _(this)[kMedia];
 	}
 
 	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
 	set media(text: string) {
-		$(this)[kMedia].mediaText = String(text);
+		_(this)[kMedia].mediaText = String(text);
 	}
 
 	get layerName(): string | null {
-		return $(this)[kLayerName];
+		return _(this)[kLayerName];
 	}
 
 	get supportsText(): string | null {
-		return $(this)[kSupportsText];
+		return _(this)[kSupportsText];
 	}
 
 	get styleSheet(): CSSStyleSheet | null {
@@ -2440,7 +2440,7 @@ class CSSImportRule extends CSSRule {
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		let out = `@import url(${CSSValues.serializeCSSString(slots[kHref])})`;
 		if (slots[kLayerName] !== null) {
 			out += slots[kLayerName] ? ` layer(${slots[kLayerName]})` : " layer";
@@ -2473,7 +2473,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 		parentStyleSheet: CSSStyleSheet | null,
 	) {
 		super(parentStyleSheet, null);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kBlocks] = new Map<string, CSSStyleDeclaration>();
 		slots[kFontFamily] = fontFamily.trim();
 		for (const child of CSSValues.getNodes(node.block ?? {})) {
@@ -2495,11 +2495,11 @@ class CSSFontFeatureValuesRule extends CSSRule {
 	}
 
 	get fontFamily(): string {
-		return $(this)[kFontFamily];
+		return _(this)[kFontFamily];
 	}
 
 	set fontFamily(family: string) {
-		$(this)[kFontFamily] = String(family).trim();
+		_(this)[kFontFamily] = String(family).trim();
 		notifyRule(this);
 	}
 
@@ -2529,7 +2529,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 
 	get cssText(): string {
 		const blocks: string[] = [];
-		const slots = $(this);
+		const slots = _(this);
 		for (const [name, block] of slots[kBlocks]) {
 			const declarations = block.cssText;
 			if (declarations) {
@@ -2544,7 +2544,7 @@ function getFeatureBlock(
 	rule: CSSFontFeatureValuesRule,
 	name: string,
 ): CSSStyleDeclaration {
-	const ruleSlots = $(rule);
+	const ruleSlots = _(rule);
 	let block = ruleSlots[kBlocks].get(name);
 	if (!block) {
 		block = new CSSStyleDeclaration({
@@ -2571,7 +2571,7 @@ class CSSKeyframesRule extends CSSRule {
 		build?: (rule: CSSKeyframesRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, null);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kRules] = [];
 		slots[kName] = name.trim();
 		slots[kRuleList] = createRuleList(slots[kRules]);
@@ -2587,24 +2587,24 @@ class CSSKeyframesRule extends CSSRule {
 	}
 
 	get name(): string {
-		return $(this)[kName];
+		return _(this)[kName];
 	}
 
 	set name(name: string) {
-		$(this)[kName] = String(name);
+		_(this)[kName] = String(name);
 		notifyRule(this);
 	}
 
 	get cssRules(): CSSRuleList {
-		return $(this)[kRuleList];
+		return _(this)[kRuleList];
 	}
 
 	get length(): number {
-		return $(this)[kRules].length;
+		return _(this)[kRules].length;
 	}
 
 	get cssText(): string {
-		const slots = $(this);
+		const slots = _(this);
 		const frames = slots[kRules].map((rule) => `\n  ${rule.cssText}`).join("");
 		const name = CSSValues.serializeKeyframesName(slots[kName]);
 		return `@keyframes ${name} {${frames}\n}`;
@@ -2616,7 +2616,7 @@ class CSSKeyframesRule extends CSSRule {
 			this.parentStyleSheet,
 			this,
 		);
-		const slots = $(this);
+		const slots = _(this);
 		if (rule instanceof CSSKeyframesRule) {
 			slots[kRules].push(...Array.from(rule.cssRules));
 			syncIndexed(slots[kRuleList]);
@@ -2627,7 +2627,7 @@ class CSSKeyframesRule extends CSSRule {
 
 	deleteRule(select: string): void {
 		const key = CSSValues.serializeKeyText(String(select));
-		const slots = $(this);
+		const slots = _(this);
 		for (let index = slots[kRules].length - 1; index >= 0; index--) {
 			if ((slots[kRules][index] as CSSKeyframeRule).keyText !== key) {
 				continue;
@@ -2642,7 +2642,7 @@ class CSSKeyframesRule extends CSSRule {
 
 	findRule(select: string): CSSKeyframeRule | null {
 		const key = CSSValues.serializeKeyText(String(select));
-		const slots = $(this);
+		const slots = _(this);
 		for (let index = slots[kRules].length - 1; index >= 0; index--) {
 			const rule = slots[kRules][index] as CSSKeyframeRule;
 			if (rule.keyText === key) {
@@ -2661,19 +2661,19 @@ interface CSSRuleList {
 class CSSRuleList {
 	constructor(rules: readonly CSSRule[]) {
 		seal(this, new.target, CSSRuleList);
-		$(this)[kRules] = rules;
+		_(this)[kRules] = rules;
 	}
 
 	get length(): number {
-		return $(this)[kRules].length;
+		return _(this)[kRules].length;
 	}
 
 	item(index: number): CSSRule | null {
-		return $(this)[kRules][index] ?? null;
+		return _(this)[kRules][index] ?? null;
 	}
 
 	[Symbol.iterator](): IterableIterator<CSSRule> {
-		return $(this)[kRules][Symbol.iterator]();
+		return _(this)[kRules][Symbol.iterator]();
 	}
 }
 
@@ -2695,19 +2695,19 @@ interface StyleSheetList {
 class StyleSheetList {
 	constructor(sheets: readonly CSSStyleSheet[]) {
 		seal(this, new.target, StyleSheetList);
-		$(this)[kSheets] = sheets;
+		_(this)[kSheets] = sheets;
 	}
 
 	get length(): number {
-		return $(this)[kSheets].length;
+		return _(this)[kSheets].length;
 	}
 
 	item(index: number): CSSStyleSheet | null {
-		return $(this)[kSheets][index] ?? null;
+		return _(this)[kSheets][index] ?? null;
 	}
 
 	[Symbol.iterator](): IterableIterator<CSSStyleSheet> {
-		return $(this)[kSheets][Symbol.iterator]();
+		return _(this)[kSheets][Symbol.iterator]();
 	}
 }
 
@@ -2751,7 +2751,7 @@ class CSSStyleSheet {
 		ownerNode: Element | null = null,
 	) {
 		seal(this, new.target, CSSStyleSheet);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kRules] = [];
 		slots[kOwnerRule] = null;
 		slots[kText] = null;
@@ -2771,7 +2771,7 @@ class CSSStyleSheet {
 	}
 
 	get cssRules(): CSSRuleList {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kSync]!();
 		return slots[kRuleList];
 	}
@@ -2786,41 +2786,41 @@ class CSSStyleSheet {
 	}
 
 	get href(): string | null {
-		return $(this)[kHref];
+		return _(this)[kHref];
 	}
 
 	get title(): string | null {
-		return $(this)[kTitle];
+		return _(this)[kTitle];
 	}
 
 	get ownerNode(): Element | null {
-		return $(this)[kOwnerNode];
+		return _(this)[kOwnerNode];
 	}
 
 	get ownerRule(): CSSRule | null {
-		return $(this)[kOwnerRule];
+		return _(this)[kOwnerRule];
 	}
 
 	get parentStyleSheet(): CSSStyleSheet | null {
-		return $(this)[kOwnerRule]?.parentStyleSheet ?? null;
+		return _(this)[kOwnerRule]?.parentStyleSheet ?? null;
 	}
 
 	get media(): MediaList {
-		return $(this)[kMedia];
+		return _(this)[kMedia];
 	}
 
 	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
 	set media(text: string) {
-		$(this)[kMedia].mediaText = String(text);
+		_(this)[kMedia].mediaText = String(text);
 	}
 
 	get disabled(): boolean {
-		return $(this)[kDisabled];
+		return _(this)[kDisabled];
 	}
 
 	set disabled(disabled: boolean) {
 		const value = Boolean(disabled);
-		const slots = $(this);
+		const slots = _(this);
 		if (value === slots[kDisabled]) {
 			return;
 		}
@@ -2832,7 +2832,7 @@ class CSSStyleSheet {
 		if (arguments.length === 0) {
 			throw typeError("insertRule requires a rule", this);
 		}
-		const slots = $(this);
+		const slots = _(this);
 		slots[kSync]!();
 		if (index > slots[kRules].length) {
 			throw domException(
@@ -2862,7 +2862,7 @@ class CSSStyleSheet {
 		if (arguments.length === 0) {
 			throw typeError("deleteRule requires an index", this);
 		}
-		const slots = $(this);
+		const slots = _(this);
 		slots[kSync]!();
 		if (index >= slots[kRules].length) {
 			throw domException(
@@ -2900,7 +2900,7 @@ class CSSStyleSheet {
 	}
 
 	removeRule(index = 0): void {
-		$(this)[kSync]!();
+		_(this)[kSync]!();
 		if (index >= this.cssRules.length) {
 			throw domException(
 				`Cannot delete at index ${index}`,
@@ -2912,7 +2912,7 @@ class CSSStyleSheet {
 	}
 
 	replaceSync(text: string): void {
-		const slots = $(this);
+		const slots = _(this);
 		if (!slots[kConstructed]) {
 			throw domException(
 				"replaceSync is only allowed on a constructed stylesheet",
@@ -2979,7 +2979,7 @@ function checkRuleOrder(
 	};
 	const prelude = (other: CSSRule): boolean =>
 		other instanceof CSSImportRule || other instanceof CSSNamespaceRule;
-	const sheetSlots = $(sheet);
+	const sheetSlots = _(sheet);
 	const before = sheetSlots[kRules].slice(0, index);
 	const after = sheetSlots[kRules].slice(index);
 	if (rule instanceof CSSImportRule) {
@@ -3616,7 +3616,7 @@ function getSheet(element: Element): CSSStyleSheet {
 // A <style>'s child list IS its stylesheet. Changing it replaces the
 // rules even when the resulting text is the same.
 function reparseOwnerText(sheet: CSSStyleSheet): void {
-	$(sheet)[kText] = null;
+	_(sheet)[kText] = null;
 }
 
 // What `styleSheets` lists. An adopted sheet belongs to no element and
@@ -3836,7 +3836,7 @@ export function getComputedValue(
 		return "";
 	}
 	const slots = pseudoElement
-		? $(getPseudoDeclaration(cascade, element, pseudoElement))
+		? _(getPseudoDeclaration(cascade, element, pseudoElement))
 		: cascade.computedSlotsFor(element);
 	return slots[kComputedValue](property);
 }
@@ -3966,11 +3966,11 @@ function getIndexedDeclaration<T extends CSSStyleDeclaration>(
 ): T {
 	const indexed = declaration as unknown as IndexedCollection;
 	if (
-		$(indexed)[kIndexCount] === undefined &&
+		_(indexed)[kIndexCount] === undefined &&
 		(declaration instanceof ComputedStyleDeclaration ||
 			declaration instanceof PseudoStyleDeclaration)
 	) {
-		$(indexed)[kIndexCount] = CSS_LONGHANDS.length;
+		_(indexed)[kIndexCount] = CSS_LONGHANDS.length;
 	}
 	syncIndexed(declaration);
 	return declaration;
@@ -4244,7 +4244,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		cascade?: Cascade,
 	) {
 		super();
-		const slots = $(this);
+		const slots = _(this);
 		slots[kCascade] = null;
 		slots[kResolved] = new Map<string, string>();
 		slots[kStyleVersion] = {};
@@ -4268,7 +4268,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override set cssText(_text: string) {
-		throw readOnlyDeclaration($(this)[kElement]);
+		throw readOnlyDeclaration(_(this)[kElement]);
 	}
 
 	override get parentRule(): CSSRule | null {
@@ -4281,7 +4281,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// The author's read describes the DOM as it currently is. The engine
 		// reads through getComputedValue, which does not flush, because style
 		// is resolved from inside layout, which a flush would re-enter.
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kCascade]) {
 			flushCascadeStyle(slots[kCascade]);
 		}
@@ -4332,11 +4332,11 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override setProperty(): void {
-		throw readOnlyDeclaration($(this)[kElement]);
+		throw readOnlyDeclaration(_(this)[kElement]);
 	}
 
 	override removeProperty(): string {
-		throw readOnlyDeclaration($(this)[kElement]);
+		throw readOnlyDeclaration(_(this)[kElement]);
 	}
 
 	override getPropertyPriority(): string {
@@ -4525,7 +4525,7 @@ function getLengthContext(
 	property: string,
 ): CSSValues.LengthContext {
 	const own = property === "font-size";
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	const parent = own ? flatParentElement(declarationSlots[kElement]) : null;
 	const initial = getCellSize(declarationSlots[kElement]).height;
 	const font = CSSValues.getFontSize(
@@ -4602,7 +4602,7 @@ function getRootFontSize(
 	declaration: ComputedStyleDeclaration,
 	ownFontSize: boolean,
 ): number {
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	const root = declarationSlots[kElement].ownerDocument?.documentElement;
 	// `rem` in the root's own font-size means the initial value, not the
 	// value being computed.
@@ -4626,7 +4626,7 @@ function toPhysicalProperty(
 	return (
 		CSSValues.getPhysicalProperty(
 			property,
-			$(declaration)[kComputedValue]("direction"),
+			_(declaration)[kComputedValue]("direction"),
 		) ?? property
 	);
 }
@@ -4641,7 +4641,7 @@ function measureUsedValue(
 	// A border with no style draws nothing and takes no space, whatever
 	// width it declares.
 	if (property.startsWith("border-") && property.endsWith("-width")) {
-		const style = $(declaration)[kComputedValue](
+		const style = _(declaration)[kComputedValue](
 			`${property.slice(0, -"-width".length)}-style`,
 		);
 		if (!style || style === "none" || style === "hidden") {
@@ -4656,7 +4656,7 @@ function measureUsedValue(
 		return computed;
 	}
 
-	const rect = getUsedRect($(declaration)[kCascade]!, $(declaration)[kElement]);
+	const rect = getUsedRect(_(declaration)[kCascade]!, _(declaration)[kElement]);
 	// No box (display:none, or a tree layout never reached), so the
 	// computed value is the result, exactly as CSSOM says.
 	if (!rect) {
@@ -4672,7 +4672,7 @@ function measureUsedValue(
 		const border = vertical ? rect.height : rect.width;
 		// The used value of width is the box box-sizing names, so a
 		// border-box element reads its border box (css-sizing-3 §3.1).
-		if ($(declaration)[kComputedValue]("box-sizing") === "border-box") {
+		if (_(declaration)[kComputedValue]("box-sizing") === "border-box") {
 			return CSSValues.getUsedLength(Math.max(0, border));
 		}
 		const edges =
@@ -4742,7 +4742,7 @@ function getUsedInset(
 
 	const opposite = OPPOSITE_INSET[property];
 	const other = CSSValues.getInsetLength(
-		$(declaration)[kComputedValue](opposite),
+		_(declaration)[kComputedValue](opposite),
 		basis,
 	);
 	// A relatively positioned box is offset from where it already was, so
@@ -4804,7 +4804,7 @@ function getContainingBlockBox(
 	}
 	if (position === "absolute") {
 		for (
-			let ancestor = flatParentElement($(declaration)[kElement]);
+			let ancestor = flatParentElement(_(declaration)[kElement]);
 			ancestor;
 			ancestor = flatParentElement(ancestor)
 		) {
@@ -4820,7 +4820,7 @@ function getContainingBlockBox(
 	}
 	if (position === "sticky") {
 		for (
-			let ancestor = flatParentElement($(declaration)[kElement]);
+			let ancestor = flatParentElement(_(declaration)[kElement]);
 			ancestor;
 			ancestor = flatParentElement(ancestor)
 		) {
@@ -4830,7 +4830,7 @@ function getContainingBlockBox(
 			}
 		}
 	}
-	const parent = flatParentElement($(declaration)[kElement]);
+	const parent = flatParentElement(_(declaration)[kElement]);
 	return parent
 		? getUsedBoxRect(declaration, parent, true)
 		: getViewportBox(declaration);
@@ -4841,7 +4841,7 @@ function getUsedBoxRect(
 	element: Element,
 	content: boolean,
 ): DOMRect | null {
-	const rect = getUsedRect($(declaration)[kCascade]!, element);
+	const rect = getUsedRect(_(declaration)[kCascade]!, element);
 	if (!rect) {
 		return null;
 	}
@@ -4867,16 +4867,16 @@ function getUsedBoxRect(
 
 // The initial containing block: the grid itself.
 function getViewportBox(declaration: MeasuredDeclaration): DOMRect | null {
-	const block = $(declaration)[kCascade]![kLayout].initialContainingBlock;
-	const rect = getUsedRect($(declaration)[kCascade]!, $(declaration)[kElement]);
+	const block = _(declaration)[kCascade]![kLayout].initialContainingBlock;
+	const rect = getUsedRect(_(declaration)[kCascade]!, _(declaration)[kElement]);
 	if (!rect) {
 		return null;
 	}
 	return new (rect.constructor as typeof DOMRect)(
 		0,
 		0,
-		pxFromCells(block.width, false, $(declaration)[kElement]),
-		pxFromCells(block.height, true, $(declaration)[kElement]),
+		pxFromCells(block.width, false, _(declaration)[kElement]),
+		pxFromCells(block.height, true, _(declaration)[kElement]),
 	);
 }
 
@@ -4893,7 +4893,7 @@ function getResolvedMinSize(
 	}
 	// A box that was never generated has no automatic minimum, whatever
 	// else its style says.
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	for (
 		let element: Element | null = declarationSlots[kElement];
 		element;
@@ -4918,7 +4918,7 @@ function getEdgeLength(
 	property: string,
 ): number {
 	return toDrawnEdge(
-		$(declaration)[kElement],
+		_(declaration)[kElement],
 		property,
 		parseFloat(declaration.getPropertyValue(property)) || 0,
 	);
@@ -4951,9 +4951,9 @@ function getAutoMargin(
 	property: string,
 	rect: DOMRect,
 ): number {
-	const parent = flatParentElement($(declaration)[kElement]);
+	const parent = flatParentElement(_(declaration)[kElement]);
 	const parentRect = parent
-		? getUsedRect($(declaration)[kCascade]!, parent)
+		? getUsedRect(_(declaration)[kCascade]!, parent)
 		: null;
 	if (!parent || !parentRect) {
 		return 0;
@@ -4985,11 +4985,11 @@ function getAutoMargin(
 }
 
 function getContainingWidth(declaration: MeasuredDeclaration): number | null {
-	const parent = flatParentElement($(declaration)[kElement]);
+	const parent = flatParentElement(_(declaration)[kElement]);
 	if (!parent) {
 		return null;
 	}
-	const rect = getUsedRect($(declaration)[kCascade]!, parent);
+	const rect = getUsedRect(_(declaration)[kCascade]!, parent);
 	return rect ? rect.width : null;
 }
 
@@ -4998,7 +4998,7 @@ function getContainingWidth(declaration: MeasuredDeclaration): number | null {
 function getInlineDeclarations(
 	declaration: ComputedStyleDeclaration,
 ): CSSValues.DeclarationBlock {
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	let block = declarationSlots[kInlineBlock];
 	if (block === null) {
 		const element = declarationSlots[kElement];
@@ -5019,7 +5019,7 @@ function resolveFromParent(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string | null {
-	const parent = flatParentElement($(declaration)[kElement]);
+	const parent = flatParentElement(_(declaration)[kElement]);
 	if (!parent) {
 		return null;
 	}
@@ -5156,7 +5156,7 @@ function resolvePropertyValue(
 	property: string,
 ): string {
 	const value = resolveCascadedValue(declaration, property);
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	if (property === "font-weight") {
 		return computeFontWeight(declarationSlots[kElement], value);
 	}
@@ -5226,7 +5226,7 @@ function resolveCascadedValue(
 		// on.
 		return property === "color"
 			? (resolveFromParent(declaration, "color") ?? "")
-			: $(declaration)[kComputedValue]("color");
+			: _(declaration)[kComputedValue]("color");
 	}
 	return value;
 }
@@ -5240,7 +5240,7 @@ function resolvePropertyValueRaw(
 	// by `direction` only once a block actually declares one of them.
 	const names = CSSValues.getSlotCandidates(property);
 	let direction: string | null = null;
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	const mapsHere = names.length === 1
 		? CSSValues.acceptsAnyName
 		: (name: string): boolean =>
@@ -5379,7 +5379,7 @@ function resolvePropertyValueRaw(
 // This element's own custom properties and every ancestor's, since a
 // custom property inherits.
 function getCustomNames(computed: ComputedStyleDeclaration): string[] {
-	const computedSlots = $(computed);
+	const computedSlots = _(computed);
 	const current = computedSlots[kCascade]?.[kCurrentDeclarations];
 	if (current !== undefined && !current.has(computedSlots)) {
 		computedSlots[kSyncResolved]();
@@ -5394,7 +5394,7 @@ function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 		element = flatParentElement(element)
 	) {
 		const declaration = computedSlots[kCascade]?.declarationFor(element);
-		for (const name of $maybe(declaration)?.[kCustomProperties]() ?? []) {
+		for (const name of _maybe(declaration)?.[kCustomProperties]() ?? []) {
 			names.add(name);
 		}
 	}
@@ -5434,7 +5434,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		pseudoElement = "",
 	) {
 		super();
-		const slots = $(this);
+		const slots = _(this);
 		slots[kResolved] = new Map<string, string>();
 		slots[kNodeResolved] = new Map<string, string>();
 		slots[kBoxView] = null;
@@ -5456,14 +5456,14 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override set cssText(_text: string) {
-		throw readOnlyDeclaration($(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
 	}
 
 	// The style of the NODE a pseudo-element generates: the declarations
 	// completed with initial values, so a box is never laid out without a
 	// `display`.
 	nodeValue(property: string): string {
-		const slots = $(this);
+		const slots = _(this);
 		const current = slots[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(slots)) {
 			slots[kSyncResolved]();
@@ -5483,7 +5483,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override getPropertyValue(property: string): string {
-		const slots = $(this);
+		const slots = _(this);
 		if (slots[kCascade]) {
 			flushCascadeStyle(slots[kCascade]);
 		}
@@ -5500,11 +5500,11 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override setProperty(): void {
-		throw readOnlyDeclaration($(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
 	}
 
 	override removeProperty(): string {
-		throw readOnlyDeclaration($(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
 	}
 
 	override getPropertyPriority(): string {
@@ -5637,7 +5637,7 @@ function getPseudoTransitionValue(
 	declaration: PseudoStyleDeclaration,
 	property: string,
 ): string | null {
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	const cascade = declarationSlots[kCascade];
 	if (
 		cascade === null ||
@@ -5662,9 +5662,9 @@ function getBoxView(
 	declaration: PseudoStyleDeclaration,
 	node: Element,
 ): MeasuredDeclaration {
-	const declarationSlots = $(declaration);
+	const declarationSlots = _(declaration);
 	let view = declarationSlots[kBoxView];
-	if (!view || $(view)[kElement] !== node) {
+	if (!view || _(view)[kElement] !== node) {
 		const measured = {
 			getPropertyValue: (property: string): string =>
 				declaration.getPropertyValue(property),
@@ -5708,7 +5708,7 @@ interface EmptyStyleDeclaration {
 class EmptyStyleDeclaration extends CSSStyleProperties {
 	constructor(element?: Element) {
 		super();
-		$(this)[kElement] = element ?? null;
+		_(this)[kElement] = element ?? null;
 	}
 
 	override get length(): number {
@@ -5720,7 +5720,7 @@ class EmptyStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override set cssText(_text: string) {
-		throw readOnlyDeclaration($(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
 	}
 
 	override getPropertyValue(): string {
@@ -5732,11 +5732,11 @@ class EmptyStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override setProperty(): void {
-		throw readOnlyDeclaration($(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
 	}
 
 	override removeProperty(): string {
-		throw readOnlyDeclaration($(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
 	}
 
 	override item(): string {
@@ -6006,9 +6006,9 @@ function shouldCreatePseudoElement(
 ): boolean {
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(element);
-		const display = $(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)[kComputedValue]("display");
 		const listStylePosition =
-			$(computedStyle)[kComputedValue]("list-style-position") || "outside";
+			_(computedStyle)[kComputedValue]("list-style-position") || "outside";
 
 		if (display === "list-item" && listStylePosition !== "outside") {
 			return true;
@@ -6683,7 +6683,7 @@ export class Cascade {
 		let slots = this[kComputedStyleCache].get(element);
 		if (!slots) {
 			parseStylesheetsIfStale(this);
-			const fresh = $(
+			const fresh = _(
 				new ComputedStyleDeclaration(
 					element,
 					getCascadeRules(this, element),
@@ -6759,7 +6759,7 @@ export class Cascade {
 		}
 
 		const computedStyle = this.declarationFor(hostElement);
-		const display = $(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)[kComputedValue]("display");
 
 		if (display !== "list-item") {
 			return null;
@@ -7083,7 +7083,7 @@ function pseudoDeclarationsFor(
 	// declarations win, and inherited values only fill the gaps.
 	const hostStyle = cascade.declarationFor(element);
 	inheritedProperties ??= CSS_PROPERTIES.filter(CSSValues.isInheritedProperty);
-	const hostStyleSlots = $(hostStyle);
+	const hostStyleSlots = _(hostStyle);
 	for (const property of inheritedProperties) {
 		if (!declarations[property]) {
 			const inherited = hostStyleSlots[kComputedValue](property);
@@ -7373,7 +7373,7 @@ function getPseudoDeclaration(
 	processTransitionStyle(
 		cascade,
 		element,
-		(property) => $(declaration)[kBaseValue](property),
+		(property) => _(declaration)[kBaseValue](property),
 		pseudoElement,
 	);
 	return declaration;
@@ -7503,9 +7503,9 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	}
 	for (const element of listItems) {
 		const computedStyle = cascade.declarationFor(element);
-		const display = $(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)[kComputedValue]("display");
 		const listStylePosition =
-			$(computedStyle)[kComputedValue]("list-style-position") || "outside";
+			_(computedStyle)[kComputedValue]("list-style-position") || "outside";
 
 		if (display === "list-item" && listStylePosition !== "outside") {
 			attachPseudoElementToElementForType(cascade, element, "::marker");
@@ -7546,7 +7546,7 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 	}
 
 	const computedStyle = cascade.declarationFor(element);
-	const computedStyleSlots = $(computedStyle);
+	const computedStyleSlots = _(computedStyle);
 	const counterReset = computedStyleSlots[kComputedValue]("counter-reset");
 	const counterIncrement =
 		computedStyleSlots[kComputedValue]("counter-increment");
@@ -8394,12 +8394,12 @@ function invalidateElementCaches(
 	const droppedPseudos = cascade[kPseudoElementStyleCache].get(element);
 	if (droppedPseudos) {
 		for (const [name, declaration] of droppedPseudos) {
-			cascade[kCurrentDeclarations].delete($(declaration));
+			cascade[kCurrentDeclarations].delete(_(declaration));
 			storeTransitionFallback(
 				cascade,
 				element,
 				name,
-				$(declaration)[kResolved],
+				_(declaration)[kResolved],
 			);
 		}
 	}
@@ -10041,11 +10041,11 @@ function getPseudoContent(
 
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(hostElement);
-		const display = $(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)[kComputedValue]("display");
 
 		if (display === "list-item") {
 			const listStylePosition =
-				$(computedStyle)[kComputedValue]("list-style-position") || "outside";
+				_(computedStyle)[kComputedValue]("list-style-position") || "outside";
 
 			if (listStylePosition === "outside") {
 				return null;
@@ -10202,9 +10202,9 @@ function attachPseudoElementToElementForType(
 
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(element);
-		const display = $(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)[kComputedValue]("display");
 		const listStylePosition =
-			$(computedStyle)[kComputedValue]("list-style-position") || "outside";
+			_(computedStyle)[kComputedValue]("list-style-position") || "outside";
 
 		if (display !== "list-item") {
 			return;

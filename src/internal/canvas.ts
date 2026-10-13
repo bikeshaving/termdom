@@ -37,7 +37,7 @@ import {
 	naturalWidthOf,
 	sampleBitmap,
 } from "./images.ts";
-import {$, declareSealedRoot, seal} from "./slots.ts";
+import {_, declareSealedRoot, seal} from "./slots.ts";
 import {getStringWidth, graphemeSegmenter, toVisualOrder} from "./text.ts";
 
 // ---------------------------------------------------------------------------
@@ -160,23 +160,23 @@ export interface ImageBitmap {
 export class ImageBitmap {
 	constructor(bitmap: Bitmap) {
 		seal(this, new.target, ImageBitmap);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kBitmapData] = bitmap;
 		registerDrawable(this, () => slots[kBitmapData]);
 	}
 
 	get width(): number {
-		const bitmap = $(this)[kBitmapData];
+		const bitmap = _(this)[kBitmapData];
 		return bitmap ? naturalWidthOf(bitmap) : 0;
 	}
 
 	get height(): number {
-		const bitmap = $(this)[kBitmapData];
+		const bitmap = _(this)[kBitmapData];
 		return bitmap ? naturalHeightOf(bitmap) : 0;
 	}
 
 	close(): void {
-		$(this)[kBitmapData] = null;
+		_(this)[kBitmapData] = null;
 	}
 }
 
@@ -781,10 +781,10 @@ export interface Path2D {
 export class Path2D {
 	constructor(path?: Path2D | string) {
 		seal(this, new.target, Path2D);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kBuilder] = new PathBuilder();
 		if (path instanceof Path2D) {
-			slots[kBuilder].append($(path)[kBuilder][kSubpaths], [1, 0, 0, 1, 0, 0]);
+			slots[kBuilder].append(_(path)[kBuilder][kSubpaths], [1, 0, 0, 1, 0, 0]);
 		} else if (typeof path === "string") {
 			parseSVGPath(path, this);
 		}
@@ -803,23 +803,23 @@ export class Path2D {
 			transform?.e ?? 0,
 			transform?.f ?? 0,
 		];
-		$(this)[kBuilder].append($(path)[kBuilder][kSubpaths], m);
+		_(this)[kBuilder].append(_(path)[kBuilder][kSubpaths], m);
 	}
 
 	moveTo(x: number, y: number): void {
-		$(this)[kBuilder].moveTo(x, y);
+		_(this)[kBuilder].moveTo(x, y);
 	}
 
 	lineTo(x: number, y: number): void {
-		$(this)[kBuilder].lineTo(x, y);
+		_(this)[kBuilder].lineTo(x, y);
 	}
 
 	closePath(): void {
-		$(this)[kBuilder].closePath();
+		_(this)[kBuilder].closePath();
 	}
 
 	quadraticCurveTo(cx: number, cy: number, x: number, y: number): void {
-		$(this)[kBuilder].quadraticCurveTo(cx, cy, x, y);
+		_(this)[kBuilder].quadraticCurveTo(cx, cy, x, y);
 	}
 
 	bezierCurveTo(
@@ -830,7 +830,7 @@ export class Path2D {
 		x: number,
 		y: number,
 	): void {
-		$(this)[kBuilder].bezierCurveTo(c1x, c1y, c2x, c2y, x, y);
+		_(this)[kBuilder].bezierCurveTo(c1x, c1y, c2x, c2y, x, y);
 	}
 
 	arc(
@@ -841,11 +841,11 @@ export class Path2D {
 		end: number,
 		counterclockwise?: boolean,
 	): void {
-		$(this)[kBuilder].arc(x, y, radius, start, end, counterclockwise);
+		_(this)[kBuilder].arc(x, y, radius, start, end, counterclockwise);
 	}
 
 	arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void {
-		$(this)[kBuilder].arcTo(x1, y1, x2, y2, radius);
+		_(this)[kBuilder].arcTo(x1, y1, x2, y2, radius);
 	}
 
 	ellipse(
@@ -858,7 +858,7 @@ export class Path2D {
 		end: number,
 		counterclockwise?: boolean,
 	): void {
-		$(this)[kBuilder].ellipse(
+		_(this)[kBuilder].ellipse(
 			x,
 			y,
 			rx,
@@ -871,7 +871,7 @@ export class Path2D {
 	}
 
 	rect(x: number, y: number, w: number, h: number): void {
-		$(this)[kBuilder].rect(x, y, w, h);
+		_(this)[kBuilder].rect(x, y, w, h);
 	}
 
 	roundRect(
@@ -881,7 +881,7 @@ export class Path2D {
 		h: number,
 		radii?: number | DOMPointInit | Array<number | DOMPointInit>,
 	): void {
-		$(this)[kBuilder].roundRect(x, y, w, h, radii);
+		_(this)[kBuilder].roundRect(x, y, w, h, radii);
 	}
 }
 
@@ -1450,7 +1450,7 @@ export interface CanvasGradient {
 export class CanvasGradient {
 	constructor(position: (x: number, y: number) => number) {
 		seal(this, new.target, CanvasGradient);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kStops] = [];
 		slots[kPosition] = position;
 	}
@@ -1464,7 +1464,7 @@ export class CanvasGradient {
 			throw domException("SyntaxError", "The color does not parse");
 		}
 		// A stop at an equal offset goes after the ones there already.
-		const slots = $(this);
+		const slots = _(this);
 		let index = slots[kStops].length;
 		while (index > 0 && slots[kStops][index - 1].offset > offset) {
 			index--;
@@ -1528,7 +1528,7 @@ export interface CanvasPattern {
 export class CanvasPattern {
 	constructor(bitmap: Bitmap, repetition: string) {
 		seal(this, new.target, CanvasPattern);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kPatternTransform] = [1, 0, 0, 1, 0, 0];
 		slots[kPatternBitmap] = bitmap;
 		slots[kRepeatX] =
@@ -1538,7 +1538,7 @@ export class CanvasPattern {
 	}
 
 	setTransform(transform?: Partial<CanvasMatrix>): void {
-		$(this)[kPatternTransform] = [
+		_(this)[kPatternTransform] = [
 			transform?.a ?? 1,
 			transform?.b ?? 0,
 			transform?.c ?? 0,
@@ -1818,7 +1818,7 @@ export class CanvasRenderingContext2D {
 	constructor() {
 		seal(this, new.target, CanvasRenderingContext2D);
 		const host = takeHost<CanvasHost>();
-		const slots = $(this);
+		const slots = _(this);
 		slots[kText] = [];
 		slots[kState] = defaultState();
 		slots[kStack] = [];
@@ -1827,206 +1827,206 @@ export class CanvasRenderingContext2D {
 	}
 
 	get canvas(): object {
-		return $(this)[kHost].canvas;
+		return _(this)[kHost].canvas;
 	}
 
 	get fillStyle(): Paint {
-		return $(this)[kState].fillStyle;
+		return _(this)[kState].fillStyle;
 	}
 
 	set fillStyle(value: Paint) {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kState].fillStyle = readPaint(value, slots[kState].fillStyle);
 	}
 
 	get strokeStyle(): Paint {
-		return $(this)[kState].strokeStyle;
+		return _(this)[kState].strokeStyle;
 	}
 
 	set strokeStyle(value: Paint) {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kState].strokeStyle = readPaint(value, slots[kState].strokeStyle);
 	}
 
 	get globalAlpha(): number {
-		return $(this)[kState].globalAlpha;
+		return _(this)[kState].globalAlpha;
 	}
 
 	set globalAlpha(value: number) {
 		if (Number.isFinite(value) && value >= 0 && value <= 1) {
-			$(this)[kState].globalAlpha = value;
+			_(this)[kState].globalAlpha = value;
 		}
 	}
 
 	get globalCompositeOperation(): string {
-		return $(this)[kState].globalCompositeOperation;
+		return _(this)[kState].globalCompositeOperation;
 	}
 
 	set globalCompositeOperation(value: string) {
 		if (COMPOSITE_OPERATIONS.has(value)) {
-			$(this)[kState].globalCompositeOperation = value;
+			_(this)[kState].globalCompositeOperation = value;
 		}
 	}
 
 	get lineWidth(): number {
-		return $(this)[kState].lineWidth;
+		return _(this)[kState].lineWidth;
 	}
 
 	set lineWidth(value: number) {
 		if (Number.isFinite(value) && value > 0) {
-			$(this)[kState].lineWidth = value;
+			_(this)[kState].lineWidth = value;
 		}
 	}
 
 	get lineCap(): CanvasLineCap {
-		return $(this)[kState].lineCap;
+		return _(this)[kState].lineCap;
 	}
 
 	set lineCap(value: CanvasLineCap) {
 		if (value === "butt" || value === "round" || value === "square") {
-			$(this)[kState].lineCap = value;
+			_(this)[kState].lineCap = value;
 		}
 	}
 
 	get lineJoin(): CanvasLineJoin {
-		return $(this)[kState].lineJoin;
+		return _(this)[kState].lineJoin;
 	}
 
 	set lineJoin(value: CanvasLineJoin) {
 		if (value === "round" || value === "bevel" || value === "miter") {
-			$(this)[kState].lineJoin = value;
+			_(this)[kState].lineJoin = value;
 		}
 	}
 
 	get miterLimit(): number {
-		return $(this)[kState].miterLimit;
+		return _(this)[kState].miterLimit;
 	}
 
 	set miterLimit(value: number) {
 		if (Number.isFinite(value) && value > 0) {
-			$(this)[kState].miterLimit = value;
+			_(this)[kState].miterLimit = value;
 		}
 	}
 
 	get lineDashOffset(): number {
-		return $(this)[kState].lineDashOffset;
+		return _(this)[kState].lineDashOffset;
 	}
 
 	set lineDashOffset(value: number) {
 		if (Number.isFinite(value)) {
-			$(this)[kState].lineDashOffset = value;
+			_(this)[kState].lineDashOffset = value;
 		}
 	}
 
 	get font(): string {
-		return $(this)[kState].font;
+		return _(this)[kState].font;
 	}
 
 	set font(value: string) {
 		const font = parseCanvasFont(String(value));
 		if (font !== null) {
-			$(this)[kState].font = font.serialized;
+			_(this)[kState].font = font.serialized;
 		}
 	}
 
 	get textAlign(): string {
-		return $(this)[kState].textAlign;
+		return _(this)[kState].textAlign;
 	}
 
 	set textAlign(value: string) {
 		if (["start", "end", "left", "right", "center"].includes(value)) {
-			$(this)[kState].textAlign = value;
+			_(this)[kState].textAlign = value;
 		}
 	}
 
 	get textBaseline(): string {
-		return $(this)[kState].textBaseline;
+		return _(this)[kState].textBaseline;
 	}
 
 	set textBaseline(value: string) {
 		if (["top", "hanging", "middle", "alphabetic", "ideographic", "bottom"]
 			.includes(value)) {
-			$(this)[kState].textBaseline = value;
+			_(this)[kState].textBaseline = value;
 		}
 	}
 
 	get direction(): string {
-		return $(this)[kState].direction;
+		return _(this)[kState].direction;
 	}
 
 	set direction(value: string) {
 		if (value === "ltr" || value === "rtl" || value === "inherit") {
-			$(this)[kState].direction = value;
+			_(this)[kState].direction = value;
 		}
 	}
 
 	get imageSmoothingEnabled(): boolean {
-		return $(this)[kState].imageSmoothingEnabled;
+		return _(this)[kState].imageSmoothingEnabled;
 	}
 
 	set imageSmoothingEnabled(value: boolean) {
-		$(this)[kState].imageSmoothingEnabled = Boolean(value);
+		_(this)[kState].imageSmoothingEnabled = Boolean(value);
 	}
 
 	get imageSmoothingQuality(): string {
-		return $(this)[kState].imageSmoothingQuality;
+		return _(this)[kState].imageSmoothingQuality;
 	}
 
 	set imageSmoothingQuality(value: string) {
 		if (value === "low" || value === "medium" || value === "high") {
-			$(this)[kState].imageSmoothingQuality = value;
+			_(this)[kState].imageSmoothingQuality = value;
 		}
 	}
 
 	// Shadows and filters are kept for an author to read back. A cell
 	// cannot hold a blur, so they paint nothing.
 	get shadowBlur(): number {
-		return $(this)[kState].shadowBlur;
+		return _(this)[kState].shadowBlur;
 	}
 
 	set shadowBlur(value: number) {
 		if (Number.isFinite(value) && value >= 0) {
-			$(this)[kState].shadowBlur = value;
+			_(this)[kState].shadowBlur = value;
 		}
 	}
 
 	get shadowColor(): string {
-		return $(this)[kState].shadowColor;
+		return _(this)[kState].shadowColor;
 	}
 
 	set shadowColor(value: string) {
 		const color = parseCanvasColor(String(value));
 		if (color !== null) {
-			$(this)[kState].shadowColor = serializeColor(color);
+			_(this)[kState].shadowColor = serializeColor(color);
 		}
 	}
 
 	get shadowOffsetX(): number {
-		return $(this)[kState].shadowOffsetX;
+		return _(this)[kState].shadowOffsetX;
 	}
 
 	set shadowOffsetX(value: number) {
 		if (Number.isFinite(value)) {
-			$(this)[kState].shadowOffsetX = value;
+			_(this)[kState].shadowOffsetX = value;
 		}
 	}
 
 	get shadowOffsetY(): number {
-		return $(this)[kState].shadowOffsetY;
+		return _(this)[kState].shadowOffsetY;
 	}
 
 	set shadowOffsetY(value: number) {
 		if (Number.isFinite(value)) {
-			$(this)[kState].shadowOffsetY = value;
+			_(this)[kState].shadowOffsetY = value;
 		}
 	}
 
 	get filter(): string {
-		return $(this)[kState].filter;
+		return _(this)[kState].filter;
 	}
 
 	set filter(value: string) {
-		$(this)[kState].filter = String(value);
+		_(this)[kState].filter = String(value);
 	}
 
 	getContextAttributes(): {
@@ -2048,7 +2048,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	save(): void {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kStack].push({
 			...slots[kState],
 			lineDash: [...slots[kState].lineDash],
@@ -2056,7 +2056,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	restore(): void {
-		const slots = $(this);
+		const slots = _(this);
 		const state = slots[kStack].pop();
 		if (state !== undefined) {
 			slots[kState] = state;
@@ -2065,7 +2065,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	reset(): void {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kState] = defaultState();
 		slots[kStack] = [];
 		slots[kPath] = new PathBuilder();
@@ -2075,21 +2075,21 @@ export class CanvasRenderingContext2D {
 	}
 
 	scale(x: number, y: number): void {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kSetMatrix](multiply(slots[kState].transform, [x, 0, 0, y, 0, 0]));
 	}
 
 	rotate(angle: number): void {
 		const cos = Math.cos(angle);
 		const sin = Math.sin(angle);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kSetMatrix](
 			multiply(slots[kState].transform, [cos, sin, -sin, cos, 0, 0]),
 		);
 	}
 
 	translate(x: number, y: number): void {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kSetMatrix](multiply(slots[kState].transform, [1, 0, 0, 1, x, y]));
 	}
 
@@ -2101,7 +2101,7 @@ export class CanvasRenderingContext2D {
 		e: number,
 		f: number,
 	): void {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kSetMatrix](multiply(slots[kState].transform, [a, b, c, d, e, f]));
 	}
 
@@ -2113,7 +2113,7 @@ export class CanvasRenderingContext2D {
 		e?: number,
 		f?: number,
 	): void {
-		const slots = $(this);
+		const slots = _(this);
 		if (typeof a === "number") {
 			slots[kSetMatrix]([a, b!, c!, d!, e!, f!]);
 		} else {
@@ -2129,24 +2129,24 @@ export class CanvasRenderingContext2D {
 	}
 
 	resetTransform(): void {
-		$(this)[kSetMatrix]([1, 0, 0, 1, 0, 0]);
+		_(this)[kSetMatrix]([1, 0, 0, 1, 0, 0]);
 	}
 
 	getTransform(): CanvasMatrix {
-		return new CanvasMatrix([...$(this)[kState].transform] as Matrix);
+		return new CanvasMatrix([..._(this)[kState].transform] as Matrix);
 	}
 
 	setLineDash(segments: number[]): void {
 		if (segments.some((value) => !Number.isFinite(value) || value < 0)) {
 			return;
 		}
-		$(this)[kState].lineDash = segments.length % 2 === 0
+		_(this)[kState].lineDash = segments.length % 2 === 0
 			? [...segments]
 			: [...segments, ...segments];
 	}
 
 	getLineDash(): number[] {
-		return [...$(this)[kState].lineDash];
+		return [..._(this)[kState].lineDash];
 	}
 
 	createLinearGradient(
@@ -2243,23 +2243,23 @@ export class CanvasRenderingContext2D {
 	}
 
 	beginPath(): void {
-		$(this)[kPath].clear();
+		_(this)[kPath].clear();
 	}
 
 	closePath(): void {
-		$(this)[kPath].closePath();
+		_(this)[kPath].closePath();
 	}
 
 	moveTo(x: number, y: number): void {
-		$(this)[kPath].moveTo(x, y);
+		_(this)[kPath].moveTo(x, y);
 	}
 
 	lineTo(x: number, y: number): void {
-		$(this)[kPath].lineTo(x, y);
+		_(this)[kPath].lineTo(x, y);
 	}
 
 	quadraticCurveTo(cx: number, cy: number, x: number, y: number): void {
-		$(this)[kPath].quadraticCurveTo(cx, cy, x, y);
+		_(this)[kPath].quadraticCurveTo(cx, cy, x, y);
 	}
 
 	bezierCurveTo(
@@ -2270,7 +2270,7 @@ export class CanvasRenderingContext2D {
 		x: number,
 		y: number,
 	): void {
-		$(this)[kPath].bezierCurveTo(c1x, c1y, c2x, c2y, x, y);
+		_(this)[kPath].bezierCurveTo(c1x, c1y, c2x, c2y, x, y);
 	}
 
 	arc(
@@ -2281,11 +2281,11 @@ export class CanvasRenderingContext2D {
 		end: number,
 		counterclockwise?: boolean,
 	): void {
-		$(this)[kPath].arc(x, y, radius, start, end, counterclockwise);
+		_(this)[kPath].arc(x, y, radius, start, end, counterclockwise);
 	}
 
 	arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void {
-		$(this)[kPath].arcTo(x1, y1, x2, y2, radius);
+		_(this)[kPath].arcTo(x1, y1, x2, y2, radius);
 	}
 
 	ellipse(
@@ -2298,7 +2298,7 @@ export class CanvasRenderingContext2D {
 		end: number,
 		counterclockwise?: boolean,
 	): void {
-		$(this)[kPath].ellipse(
+		_(this)[kPath].ellipse(
 			x,
 			y,
 			rx,
@@ -2311,7 +2311,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	rect(x: number, y: number, w: number, h: number): void {
-		$(this)[kPath].rect(x, y, w, h);
+		_(this)[kPath].rect(x, y, w, h);
 	}
 
 	roundRect(
@@ -2321,11 +2321,11 @@ export class CanvasRenderingContext2D {
 		h: number,
 		radii?: number | DOMPointInit | Array<number | DOMPointInit>,
 	): void {
-		$(this)[kPath].roundRect(x, y, w, h, radii);
+		_(this)[kPath].roundRect(x, y, w, h, radii);
 	}
 
 	fill(pathOrRule?: Path2D | FillRule, rule?: FillRule): void {
-		const slots = $(this);
+		const slots = _(this);
 		const args = slots[kReadPathArgs](pathOrRule, rule);
 		const bitmap = slots[kHost].bitmap();
 		const mask = rasterize(
@@ -2338,7 +2338,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	stroke(path?: Path2D): void {
-		const slots = $(this);
+		const slots = _(this);
 		const bitmap = slots[kHost].bitmap();
 		const mask = rasterize(
 			strokePolygons(
@@ -2354,7 +2354,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	clip(pathOrRule?: Path2D | FillRule, rule?: FillRule): void {
-		const slots = $(this);
+		const slots = _(this);
 		const args = slots[kReadPathArgs](pathOrRule, rule);
 		const bitmap = slots[kHost].bitmap();
 		const mask = rasterize(
@@ -2398,7 +2398,7 @@ export class CanvasRenderingContext2D {
 		// The point is in canvas coordinates, unaffected by the transform.
 		let winding = 0;
 		let crossings = 0;
-		for (const points of pathPolygons($(this)[kSubpathsFor](path))) {
+		for (const points of pathPolygons(_(this)[kSubpathsFor](path))) {
 			const count = points.length / 2;
 			for (let i = 0; i < count; i++) {
 				const ax = points[i * 2];
@@ -2428,7 +2428,7 @@ export class CanvasRenderingContext2D {
 		if (!isFiniteAll(x, y)) {
 			return false;
 		}
-		const slots = $(this);
+		const slots = _(this);
 		for (const points of strokePolygons(
 			slots[kSubpathsFor](path),
 			slots[kStrokeStyle](),
@@ -2458,7 +2458,7 @@ export class CanvasRenderingContext2D {
 		if (!isFiniteAll(x, y, w, h) || w === 0 || h === 0) {
 			return;
 		}
-		const slots = $(this);
+		const slots = _(this);
 		slots[kPaint](slots[kRectMask](x, y, w, h), slots[kState].fillStyle);
 	}
 
@@ -2467,7 +2467,7 @@ export class CanvasRenderingContext2D {
 			return;
 		}
 		const builder = new PathBuilder();
-		const slots = $(this);
+		const slots = _(this);
 		builder.transform = slots[kState].transform;
 		builder.rect(x, y, w, h);
 		const bitmap = slots[kHost].bitmap();
@@ -2488,7 +2488,7 @@ export class CanvasRenderingContext2D {
 		if (!isFiniteAll(x, y, w, h)) {
 			return;
 		}
-		const slots = $(this);
+		const slots = _(this);
 		const mask = slots[kRectMask](x, y, w, h);
 		const clip = slots[kState].clip;
 		const data = slots[kHost].bitmap().data;
@@ -2567,7 +2567,7 @@ export class CanvasRenderingContext2D {
 		sy = clippedY;
 		sw = clippedRight - clippedX;
 		sh = clippedBottom - clippedY;
-		const slots = $(this);
+		const slots = _(this);
 		const target = slots[kHost].bitmap();
 		// Drawing a canvas onto itself reads the pixels as they were.
 		const source = bitmap.data === target.data
@@ -2726,7 +2726,7 @@ export class CanvasRenderingContext2D {
 		}
 		const out = new ImageData(Math.floor(sw), Math.floor(sh));
 		copyRect(
-			$(this)[kHost].bitmap(),
+			_(this)[kHost].bitmap(),
 			Math.floor(sx),
 			Math.floor(sy),
 			{width: out.width, height: out.height, data: out.data},
@@ -2768,7 +2768,7 @@ export class CanvasRenderingContext2D {
 		if (x1 <= x0 || y1 <= y0) {
 			return;
 		}
-		const slots = $(this);
+		const slots = _(this);
 		const target = slots[kHost].bitmap();
 		const left = Math.floor(dx) + x0;
 		const top = Math.floor(dy) + y0;
@@ -2788,12 +2788,12 @@ export class CanvasRenderingContext2D {
 	}
 
 	fillText(text: string, x: number, y: number, _maxWidth?: number): void {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kDrawText](String(text), x, y, slots[kState].fillStyle);
 	}
 
 	strokeText(text: string, x: number, y: number, _maxWidth?: number): void {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kDrawText](String(text), x, y, slots[kState].strokeStyle);
 	}
 
@@ -2807,7 +2807,7 @@ export class CanvasRenderingContext2D {
 		fontBoundingBoxAscent: number;
 		fontBoundingBoxDescent: number;
 	} {
-		const cell = $(this)[kHost].pixelsPerCell();
+		const cell = _(this)[kHost].pixelsPerCell();
 		let columns = 0;
 		for (const char of String(text)) {
 			columns += Math.max(0, getStringWidth(char));
@@ -2843,7 +2843,7 @@ export class CanvasRenderingContext2D {
 			return slots[kPath][kSubpaths];
 		}
 		const builder = new PathBuilder();
-		builder.append($(path)[kSubpaths], slots[kState].transform);
+		builder.append(_(path)[kSubpaths], slots[kState].transform);
 		return builder[kSubpaths];
 	}
 
@@ -2922,7 +2922,7 @@ export class CanvasRenderingContext2D {
 				let color: RGBA | null = solid;
 				if (color === null && cover > 0 && inverse !== null) {
 					const [ux, uy] = apply(inverse, x + 0.5, y + 0.5);
-					color = $((paint as CanvasGradient | CanvasPattern))[kColorAt](
+					color = _((paint as CanvasGradient | CanvasPattern))[kColorAt](
 						ux,
 						uy,
 					);
@@ -2995,7 +2995,7 @@ export class CanvasRenderingContext2D {
 		const [px, py] = apply(slots[kState].transform, x, y);
 		const color = typeof paint === "string"
 			? parseCanvasColor(paint)
-			: $((paint as CanvasGradient | CanvasPattern))[kColorAt](x, y);
+			: _((paint as CanvasGradient | CanvasPattern))[kColorAt](x, y);
 		if (color === null || color.a * slots[kState].globalAlpha === 0) {
 			return;
 		}
@@ -3049,7 +3049,7 @@ function readPaint(value: Paint, previous: Paint): Paint {
 export function getCanvasText(
 	context: CanvasRenderingContext2D,
 ): CanvasTextRun[] {
-	return $(context)[kText];
+	return _(context)[kText];
 }
 
 /**
@@ -3057,7 +3057,7 @@ export function getCanvasText(
  * resizing the canvas does. The bitmap is the canvas's to replace.
  */
 export function resetContextState(context: CanvasRenderingContext2D): void {
-	const contextSlots = $(context);
+	const contextSlots = _(context);
 	contextSlots[kState] = defaultState();
 	contextSlots[kStack] = [];
 	contextSlots[kPath] = new PathBuilder();
@@ -3066,7 +3066,7 @@ export function resetContextState(context: CanvasRenderingContext2D): void {
 
 /** Drop a context's text runs, as resizing the canvas does. */
 export function clearCanvasText(context: CanvasRenderingContext2D): void {
-	$(context)[kText] = [];
+	_(context)[kText] = [];
 }
 
 /** A canvas encoded the way toDataURL() and toBlob() hand it out. */
@@ -3158,32 +3158,32 @@ export interface CanvasCellGridContext {
 export class CanvasCellGridContext {
 	constructor() {
 		seal(this, new.target, CanvasCellGridContext);
-		const slots = $(this);
+		const slots = _(this);
 		slots[kGridHost] = takeHost<GridHost>();
 		slots[kGridState] = defaultGridState();
 		slots[kGridStack] = [];
 	}
 
 	get canvas(): HTMLCanvasElement {
-		return $(this)[kGridHost].canvas as HTMLCanvasElement;
+		return _(this)[kGridHost].canvas as HTMLCanvasElement;
 	}
 
 	/** The columns the canvas's box holds. */
 	get cols(): number {
-		return $(this)[kGridHost].cells().cols;
+		return _(this)[kGridHost].cells().cols;
 	}
 
 	/** The rows the canvas's box holds. */
 	get rows(): number {
-		return $(this)[kGridHost].cells().rows;
+		return _(this)[kGridHost].cells().rows;
 	}
 
 	get fillStyle(): string {
-		return $(this)[kGridState].fillStyle;
+		return _(this)[kGridState].fillStyle;
 	}
 
 	set fillStyle(value: string) {
-		const slots = $(this);
+		const slots = _(this);
 		const color = readGridColor(value, slots[kGridHost]);
 		if (color !== null) {
 			slots[kGridState].fillStyle = color;
@@ -3191,11 +3191,11 @@ export class CanvasCellGridContext {
 	}
 
 	get strokeStyle(): string {
-		return $(this)[kGridState].strokeStyle;
+		return _(this)[kGridState].strokeStyle;
 	}
 
 	set strokeStyle(value: string) {
-		const slots = $(this);
+		const slots = _(this);
 		const color = readGridColor(value, slots[kGridHost]);
 		if (color !== null) {
 			slots[kGridState].strokeStyle = color;
@@ -3204,7 +3204,7 @@ export class CanvasCellGridContext {
 
 	/** A CSS border style: solid, double, dashed, dotted, none and the rest. */
 	get lineStyle(): GridLineStyle {
-		return $(this)[kGridState].lineStyle;
+		return _(this)[kGridState].lineStyle;
 	}
 
 	set lineStyle(value: string) {
@@ -3212,7 +3212,7 @@ export class CanvasCellGridContext {
 			? "none"
 			: LINE_STYLES.find((name) => name === value);
 		if (style !== undefined) {
-			$(this)[kGridState].lineStyle = style;
+			_(this)[kGridState].lineStyle = style;
 		}
 	}
 
@@ -3222,12 +3222,12 @@ export class CanvasCellGridContext {
 	 * comes.
 	 */
 	get lineJoin(): GridLineJoin {
-		return $(this)[kGridState].lineJoin;
+		return _(this)[kGridState].lineJoin;
 	}
 
 	set lineJoin(value: string) {
 		if (value === "miter" || value === "round" || value === "bevel") {
-			$(this)[kGridState].lineJoin = value;
+			_(this)[kGridState].lineJoin = value;
 		}
 	}
 
@@ -3236,7 +3236,7 @@ export class CanvasCellGridContext {
 	 * decide bold, dim and italic; a cell has no size or family to change.
 	 */
 	get font(): string {
-		return $(this)[kGridState].font;
+		return _(this)[kGridState].font;
 	}
 
 	set font(value: string) {
@@ -3244,7 +3244,7 @@ export class CanvasCellGridContext {
 		if (font === null) {
 			return;
 		}
-		const state = $(this)[kGridState];
+		const state = _(this)[kGridState];
 		state.font = font.serialized;
 		const weight = font.longhands["font-weight"];
 		const numeric = Number(weight);
@@ -3254,7 +3254,7 @@ export class CanvasCellGridContext {
 	}
 
 	get textAlign(): GridTextAlign {
-		return $(this)[kGridState].textAlign;
+		return _(this)[kGridState].textAlign;
 	}
 
 	set textAlign(value: string) {
@@ -3265,7 +3265,7 @@ export class CanvasCellGridContext {
 			value === "right" ||
 			value === "center"
 		) {
-			$(this)[kGridState].textAlign = value;
+			_(this)[kGridState].textAlign = value;
 		}
 	}
 
@@ -3275,23 +3275,23 @@ export class CanvasCellGridContext {
 	 * display and decides which side start and end are.
 	 */
 	get direction(): GridDirection {
-		return $(this)[kGridState].direction;
+		return _(this)[kGridState].direction;
 	}
 
 	set direction(value: string) {
 		if (value === "ltr" || value === "rtl" || value === "inherit") {
-			$(this)[kGridState].direction = value;
+			_(this)[kGridState].direction = value;
 		}
 	}
 
 	/** none, or underline and line-through, alone or together. */
 	get textDecoration(): string {
-		return $(this)[kGridState].textDecoration;
+		return _(this)[kGridState].textDecoration;
 	}
 
 	set textDecoration(value: string) {
 		const words = String(value).trim().toLowerCase().split(/\s+/);
-		const slots = $(this);
+		const slots = _(this);
 		if (words.length === 1 && words[0] === "none") {
 			slots[kGridState].textDecoration = "none";
 			return;
@@ -3308,12 +3308,12 @@ export class CanvasCellGridContext {
 	}
 
 	save(): void {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kGridStack].push({...slots[kGridState]});
 	}
 
 	restore(): void {
-		const slots = $(this);
+		const slots = _(this);
 		const state = slots[kGridStack].pop();
 		if (state !== undefined) {
 			slots[kGridState] = state;
@@ -3325,7 +3325,7 @@ export class CanvasCellGridContext {
 	}
 
 	fillRect(x: number, y: number, w: number, h: number): void {
-		const slots = $(this);
+		const slots = _(this);
 		const rect = slots[kRect](x, y, w, h);
 		const fill = toGridFill(slots[kGridState].fillStyle);
 		if (rect === null || fill === undefined) {
@@ -3337,7 +3337,7 @@ export class CanvasCellGridContext {
 	}
 
 	clearRect(x: number, y: number, w: number, h: number): void {
-		const slots = $(this);
+		const slots = _(this);
 		const rect = slots[kRect](x, y, w, h);
 		if (rect === null) {
 			return;
@@ -3355,7 +3355,7 @@ export class CanvasCellGridContext {
 		if (!isFiniteAll(x, y)) {
 			return;
 		}
-		const slots = $(this);
+		const slots = _(this);
 		const color = slots[kTextColor](slots[kGridState].fillStyle);
 		if (color === undefined || (maxWidth !== undefined && !(maxWidth > 0))) {
 			return;
@@ -3442,7 +3442,7 @@ export class CanvasCellGridContext {
 		if (!isFiniteAll(x1, y1, x2, y2)) {
 			return;
 		}
-		const slots = $(this);
+		const slots = _(this);
 		const color = slots[kTextColor](slots[kGridState].strokeStyle);
 		const style = slots[kGridState].lineStyle;
 		if (color === undefined || style === "none" || style === "hidden") {
@@ -3467,7 +3467,7 @@ export class CanvasCellGridContext {
 
 	/** A box on the cells `w` by `h` from (x, y), in strokeStyle and lineStyle. */
 	strokeRect(x: number, y: number, w: number, h: number): void {
-		const slots = $(this);
+		const slots = _(this);
 		const rect = slots[kRect](x, y, w, h);
 		const color = slots[kTextColor](slots[kGridState].strokeStyle);
 		const style = slots[kGridState].lineStyle;
@@ -3497,7 +3497,7 @@ export class CanvasCellGridContext {
 	}
 
 	measureText(text: string): {width: number} {
-		const slots = $(this);
+		const slots = _(this);
 		return slots[kGridHost].cells()
 			.measureText(toVisualOrder(String(text), slots[kResolveDirection]()));
 	}
@@ -3510,7 +3510,7 @@ export class CanvasCellGridContext {
 	 */
 	drawImage(image: unknown, ...args: number[]): void {
 		const bitmap = readDrawableKept(image);
-		const slots = $(this);
+		const slots = _(this);
 		if (
 			bitmap === null ||
 			bitmap.width === 0 ||
@@ -3612,7 +3612,7 @@ export class CanvasCellGridContext {
 		strikethrough: boolean;
 		inverse: boolean;
 	} | null {
-		const {grid, cols, rows} = $(this)[kGridHost].cells();
+		const {grid, cols, rows} = _(this)[kGridHost].cells();
 		const col = Math.round(x);
 		const row = Math.round(y);
 		if (col < 0 || row < 0 || col >= cols || row >= rows) {
@@ -3648,7 +3648,7 @@ export class CanvasCellGridContext {
 	}
 
 	reset(): void {
-		const slots = $(this);
+		const slots = _(this);
 		slots[kGridHost].cells().grid.clear();
 		slots[kGridState] = defaultGridState();
 		slots[kGridStack] = [];
