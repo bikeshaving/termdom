@@ -7885,6 +7885,8 @@ const kAttributeNamespace = Symbol("attributeNamespace");
 const kOldValue = Symbol("oldValue");
 const kAddedNodes = Symbol("addedNodes");
 const kRemovedNodes = Symbol("removedNodes");
+const kAddedNodeList = Symbol("addedNodeList");
+const kRemovedNodeList = Symbol("removedNodeList");
 const kPreviousSibling = Symbol("previousSibling");
 const kNextSibling = Symbol("nextSibling");
 const kTarget = Symbol("processing instruction target");
@@ -7892,8 +7894,10 @@ const kTarget = Symbol("processing instruction target");
 interface MutationRecord {
 	[kType]: string;
 	[kTarget]: Node;
-	[kAddedNodes]: NodeList;
-	[kRemovedNodes]: NodeList;
+	[kAddedNodes]: Node[];
+	[kRemovedNodes]: Node[];
+	[kAddedNodeList]: NodeList | null;
+	[kRemovedNodeList]: NodeList | null;
 	[kPreviousSibling]: Node | null;
 	[kNextSibling]: Node | null;
 	[kAttributeName]: string | null;
@@ -7920,8 +7924,10 @@ class MutationRecord implements globalThis.MutationRecord {
 		slots[kAttributeName] = attributeName;
 		slots[kAttributeNamespace] = attributeNamespace;
 		slots[kOldValue] = oldValue;
-		slots[kAddedNodes] = createStaticNodeList(addedNodes);
-		slots[kRemovedNodes] = createStaticNodeList(removedNodes);
+		slots[kAddedNodes] = addedNodes;
+		slots[kRemovedNodes] = removedNodes;
+		slots[kAddedNodeList] = null;
+		slots[kRemovedNodeList] = null;
 		slots[kPreviousSibling] = previousSibling;
 		slots[kNextSibling] = nextSibling;
 	}
@@ -7935,11 +7941,15 @@ class MutationRecord implements globalThis.MutationRecord {
 	}
 
 	get addedNodes(): globalThis.NodeList {
-		return $(this)[kAddedNodes] as unknown as globalThis.NodeList;
+		const slots = $(this);
+		slots[kAddedNodeList] ??= createStaticNodeList(slots[kAddedNodes]);
+		return slots[kAddedNodeList] as unknown as globalThis.NodeList;
 	}
 
 	get removedNodes(): globalThis.NodeList {
-		return $(this)[kRemovedNodes] as unknown as globalThis.NodeList;
+		const slots = $(this);
+		slots[kRemovedNodeList] ??= createStaticNodeList(slots[kRemovedNodes]);
+		return slots[kRemovedNodeList] as unknown as globalThis.NodeList;
 	}
 
 	get previousSibling(): globalThis.Node | null {
@@ -7964,6 +7974,22 @@ class MutationRecord implements globalThis.MutationRecord {
 }
 
 declareSealedRoot(MutationRecord);
+
+/** A record's added nodes, without the NodeList a page reads them as. */
+export function getAddedNodes(
+	record: globalThis.MutationRecord,
+): readonly globalThis.Node[] {
+	return $(record as unknown as MutationRecord)[kAddedNodes] as
+		unknown as readonly globalThis.Node[];
+}
+
+/** A record's removed nodes, without the NodeList a page reads them as. */
+export function getRemovedNodes(
+	record: globalThis.MutationRecord,
+): readonly globalThis.Node[] {
+	return $(record as unknown as MutationRecord)[kRemovedNodes] as
+		unknown as readonly globalThis.Node[];
+}
 
 Object.defineProperty(MutationRecord.prototype, Symbol.toStringTag, {
 	value: "MutationRecord",
@@ -36523,7 +36549,7 @@ function handleMutationRecords(
 		if (record.type !== "childList") {
 			continue;
 		}
-		for (const added of record.addedNodes) {
+		for (const added of getAddedNodes(record)) {
 			if (added.nodeType !== added.ELEMENT_NODE) {
 				continue;
 			}
@@ -36546,7 +36572,7 @@ function handleMutationRecords(
 // has.
 function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 	for (const record of mutations) {
-		for (const node of record.addedNodes) {
+		for (const node of getAddedNodes(record)) {
 			if (node.nodeType !== node.ELEMENT_NODE) {
 				continue;
 			}
