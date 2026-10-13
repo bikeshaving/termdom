@@ -1,5 +1,6 @@
 import type {Cascade} from "./cssom.ts";
 import {
+	constructInternal,
 	dispatchAsUserAgent,
 	Event,
 	EventTarget,
@@ -1276,7 +1277,7 @@ export class Exchange extends EventTarget {
 		void slots[kTransport].closed.then(() => {
 			if (!slots[kDisposed]) {
 				slots[kTransportClosed] = true;
-				this.dispatchEvent(new Event("terminalclose"));
+				this.dispatchEvent(constructInternal(() => new Event("terminalclose")));
 			}
 		});
 	}
@@ -2010,10 +2011,15 @@ function terminalResized(
 	sessionSlots[kCascade].syncStylesheets();
 	const window = sessionSlots[kWindow];
 	if (sizeChanged && !sessionSlots[kDefersResize]) {
-		dispatchAsUserAgent(window, new window.Event("resize"));
+		dispatchAsUserAgent(
+			window,
+			constructInternal(() => new window.Event("resize")),
+		);
 	}
 	syncMediaQueries(window.document);
-	session.dispatchEvent(new TerminalResizeEvent(sizeChanged));
+	session.dispatchEvent(
+		constructInternal(() => new TerminalResizeEvent(sizeChanged)),
+	);
 }
 
 // The terminal has rewrapped the old frame with the text above it. The

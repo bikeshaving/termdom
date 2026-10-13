@@ -98,6 +98,7 @@ interface FamilyPlan {
 }
 
 const sealedRoots = new Set<Constructor>();
+const sealedParents = new Map<Constructor, Constructor>();
 const familyRoots = new Set<Constructor>();
 const families = new Map<Constructor, Family>();
 const familyPlans = new Map<Constructor, FamilyPlan | null>();
@@ -157,6 +158,22 @@ export function seal(
 }
 
 /**
+ * Makes `parent` the class `type`'s slots and steps descend from, for a
+ * class that extends some other constructor, such as the runtime's.
+ */
+export function declareSealedParent(
+	type: Constructor,
+	parent: Constructor,
+): void {
+	sealedParents.set(type, parent);
+}
+
+function parentOf(type: Constructor): Constructor {
+	return sealedParents.get(type) ??
+		(Object.getPrototypeOf(type) as Constructor);
+}
+
+/**
  * Marks `root` as a class whose constructor seals what it makes, so
  * prepareClasses() can find the classes below it.
  */
@@ -180,7 +197,7 @@ export function prepareClasses(values: Iterable<unknown>): void {
 		for (
 			let current: unknown = type;
 			typeof current === "function" && root === null;
-			current = Object.getPrototypeOf(current)
+			current = parentOf(current as Constructor)
 		) {
 			if (sealedRoots.has(current as Constructor)) {
 				root = current as Constructor;
@@ -230,7 +247,7 @@ function planFamilyRecord(
 	for (
 		let current = type;
 		current !== root && familyRoot === null;
-		current = Object.getPrototypeOf(current) as Constructor
+		current = parentOf(current)
 	) {
 		if (familyRoots.has(current)) {
 			familyRoot = current;
@@ -250,9 +267,7 @@ function planFamilyRecord(
 	const family = getFamily(familyRoot, root);
 	const steps = hiddenPrototype(type, root);
 	for (
-		let current = type;
-		current !== familyRoot;
-		current = Object.getPrototypeOf(current) as Constructor
+		let current = type; current !== familyRoot; current = parentOf(current)
 	) {
 		addDispatchers(family, hiddenPrototype(current, root));
 	}
@@ -474,7 +489,7 @@ export function superStep(
 
 	let step = steps.get(key);
 	if (step === undefined) {
-		step = hiddenMember(Object.getPrototypeOf(type) as Constructor, key);
+		step = hiddenMember(parentOf(type), key);
 		steps.set(key, step);
 	}
 
@@ -500,7 +515,7 @@ export function moveLateMembers(): void {
 	for (const [type, hidden] of hiddenPrototypes) {
 		if (
 			hasMovableMembers(type.prototype) &&
-			hidden === hiddenPrototypes.get(Object.getPrototypeOf(type))
+			hidden === hiddenPrototypes.get(parentOf(type))
 		) {
 			throw new Error(
 				`${type.name} gained internal steps after its records were made`,
@@ -520,9 +535,7 @@ export function moveLateMembers(): void {
 function hiddenPrototype(type: Constructor, root: Constructor): object {
 	let hidden = hiddenPrototypes.get(type);
 	if (hidden === undefined) {
-		const parent = type === root
-			? null
-			: hiddenPrototype(Object.getPrototypeOf(type) as Constructor, root);
+		const parent = type === root ? null : hiddenPrototype(parentOf(type), root);
 		// A class that defines no internal steps of its own shares its
 		// parent's, so the records of a div and a span share a shape and a
 		// read of either stays fast.

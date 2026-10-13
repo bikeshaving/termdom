@@ -705,6 +705,36 @@ test("an event here is the runtime's too, and the runtime's dispatch as copies",
 	expect(() => target.dispatchEvent({type: "ping"} as any)).toThrow(TypeError);
 });
 
+test("the runtime's EventTarget takes the events a page makes", () => {
+	const custom = new DOMCustomEvent("ping", {cancelable: true, detail: 3});
+	expect(custom instanceof globalThis.CustomEvent).toBe(true);
+	expect(custom instanceof DOMEvent).toBe(true);
+	expect(Object.prototype.toString.call(custom)).toBe("[object CustomEvent]");
+	expect(Object.prototype.toString.call(new DOMEvent("ping"))).toBe(
+		"[object Event]",
+	);
+	const target = new globalThis.EventTarget();
+	const seen: unknown[] = [];
+	target.addEventListener("ping", (event: any) => {
+		seen.push([
+			event.target === target,
+			event.currentTarget === target,
+			event.eventPhase,
+			event.isTrusted,
+			event.detail,
+		]);
+		event.preventDefault();
+	});
+	expect(target.dispatchEvent(custom as any)).toBe(false);
+	expect(custom.defaultPrevented).toBe(true);
+	expect(target.dispatchEvent(new DOMEvent("ping") as any)).toBe(true);
+	expect(seen).toEqual([
+		[true, true, DOMEvent.AT_TARGET, false, 3],
+		[true, true, DOMEvent.AT_TARGET, false, undefined],
+	]);
+	expect(custom.eventPhase).toBe(DOMEvent.NONE);
+});
+
 test("a listener follows the runtime's AbortSignal", () => {
 	const document = make();
 	const target = document.createElement("div");

@@ -83,6 +83,7 @@ import {
 	$,
 	$maybe,
 	declareExtraSlots,
+	declareSealedParent,
 	declareSealedRoot,
 	defineFamilies,
 	isSealed,
@@ -868,7 +869,10 @@ function setUserValidity(element: Element, value: boolean): void {
 /** A user's change to a control, announced: user validity, then change. */
 function dispatchUserChange(control: Element): void {
 	setUserValidity(control, true);
-	dispatch(control, new Event("change", {bubbles: true}));
+	dispatch(
+		control,
+		constructInternal(() => new Event("change", {bubbles: true})),
+	);
 }
 
 // Focus leaving a text control the user edited commits the edit.
@@ -908,7 +912,9 @@ function applyTextControlEdit(
 			kind.asked !== true &&
 			!dispatch(
 				textControl,
-				new InputEvent("beforeinput", {...init, cancelable: true}),
+				constructInternal(() =>
+					new InputEvent("beforeinput", {...init, cancelable: true}),
+				),
 			)
 		) {
 			return;
@@ -920,7 +926,10 @@ function applyTextControlEdit(
 			result.end,
 			result.direction,
 		);
-		dispatch(textControl, new InputEvent("input", init));
+		dispatch(
+			textControl,
+			constructInternal(() => new InputEvent("input", init)),
+		);
 	} else if (
 		result.start !== start ||
 		result.end !== end ||
@@ -933,7 +942,9 @@ function applyTextControlEdit(
 		);
 		dispatch(
 			textControl,
-			new Event("select", {bubbles: true, cancelable: false}),
+			constructInternal(() =>
+				new Event("select", {bubbles: true, cancelable: false}),
+			),
 		);
 	}
 }
@@ -1057,7 +1068,10 @@ function scheduleTextSelectionChange(control: Element): void {
 	$(scheduled)[kTextSelectionChangeScheduled] = true;
 	queueMicrotask(() => {
 		$(scheduled)[kTextSelectionChangeScheduled] = false;
-		dispatch(control, new Event("selectionchange", {bubbles: true}));
+		dispatch(
+			control,
+			constructInternal(() => new Event("selectionchange", {bubbles: true})),
+		);
 	});
 }
 
@@ -1429,7 +1443,7 @@ interface DispatchState {
 	canceled: boolean;
 	inPassiveListener: boolean;
 	trusted: boolean;
-
+	runtime: boolean;
 }
 
 // If a trusted animation or transition event finds no listener for its
@@ -1468,33 +1482,77 @@ const isTrustedProperty: PropertyDescriptor = {
 	configurable: false,
 };
 
+const kBubbles = Symbol("bubbles");
+const kCancelable = Symbol("cancelable");
+const kComposed = Symbol("composed");
+const kTimeStamp = Symbol("timeStamp");
+const kIsMouseEvent = Symbol("is a mouse event");
+const kType = Symbol("document type");
+
+// The HTML element constructor is an author-facing algorithm: it looks
+// up which custom element definition `new.target` names and throws if
+// there is none. The tree's own creation path needs the same classes
+// without that check, and this flag tells the constructor which case it
+// is in. It also marks the events the engine fires itself.
+let internalConstruction = false;
+
 const RuntimeEvent: typeof globalThis.Event | undefined = (
 	globalThis as {Event?: typeof globalThis.Event}
 ).Event;
 
-const constructsRuntimeEvents = ((): boolean => {
-	if (RuntimeEvent === undefined) {
-		return false;
-	}
-
-	class Probe extends RuntimeEvent {}
+function probeRuntimeEvent(
+	Runtime: typeof globalThis.Event,
+	writableTag: boolean,
+): object | null {
+	class Probe extends Runtime {}
 
 	Object.defineProperty(Probe.prototype, Symbol.toStringTag, {
 		value: "Probe",
 		configurable: true,
+		writable: writableTag,
 	});
 	try {
-		return (
-			Object.getOwnPropertyDescriptor(new Probe("probe"), "isTrusted")
-				?.configurable !== false
-		);
+		return new Probe("probe");
 	} catch (error) {
 		if (error instanceof TypeError) {
-			return false;
+			return null;
 		}
 		throw error;
 	}
-})();
+}
+
+// Deno's Event constructor writes a toStringTag onto each event, which a
+// read-only one on a subclass's prototype refuses.
+const runtimeTagsEvents =
+	RuntimeEvent !== undefined &&
+	probeRuntimeEvent(RuntimeEvent, false) === null &&
+	probeRuntimeEvent(RuntimeEvent, true) !== null;
+
+// "construct": the runtime's constructor builds this DOM's events, which
+// its own dispatchEvent then takes. "untrusted": the same, but it fixes
+// isTrusted to false, so the events the engine fires skip it, as Bun's
+// does. "chain": only the prototypes chain to the runtime's.
+type RuntimeEventSupport = "construct" | "untrusted" | "chain" | "none";
+
+function getRuntimeEventSupport(
+	Runtime: typeof globalThis.Event | undefined,
+): RuntimeEventSupport {
+	if (Runtime === undefined) {
+		return "none";
+	}
+	const probe = probeRuntimeEvent(Runtime, runtimeTagsEvents);
+	if (probe === null) {
+		return "chain";
+	}
+	return Object.getOwnPropertyDescriptor(probe, "isTrusted")?.configurable ===
+			false
+		? "untrusted"
+		: "construct";
+}
+
+const runtimeEventSupport = getRuntimeEventSupport(RuntimeEvent);
+const constructsRuntimeEvents =
+	runtimeEventSupport === "construct" || runtimeEventSupport === "untrusted";
 
 function runtimeEventMember(name: string): PropertyDescriptor | undefined {
 	return RuntimeEvent === undefined
@@ -1526,19 +1584,126 @@ if (RuntimeEvent !== undefined && !constructsRuntimeEvents) {
 }
 
 function inRuntimeDispatch(event: Event): boolean {
+	const state = $(event)[kState];
 	return (
-		constructsRuntimeEvents &&
-		!$(event)[kState].dispatch &&
-		runtimeEventPhase!.call(event) !== NONE
+		state.runtime && !state.dispatch && runtimeEventPhase!.call(event) !== NONE
 	);
 }
 
-const kBubbles = Symbol("bubbles");
-const kCancelable = Symbol("cancelable");
-const kComposed = Symbol("composed");
-const kTimeStamp = Symbol("timeStamp");
-const kIsMouseEvent = Symbol("is a mouse event");
-const kType = Symbol("document type");
+interface ConvertedEventInit {
+	type: string;
+	bubbles: boolean;
+	cancelable: boolean;
+	composed: boolean;
+}
+
+// Converts the constructor's arguments once. An accessor member of the
+// dictionary is read exactly once, by this conversion.
+function convertEventInit(
+	argumentCount: number,
+	type: string,
+	eventInitDict: EventInit,
+): ConvertedEventInit {
+	if (argumentCount < 1) {
+		throw new TypeError("Event constructor needs a type");
+	}
+	const name = String(type);
+	const init = toDictionary<EventInit>(eventInitDict, "An event init");
+	return {
+		type: name,
+		bubbles: Boolean(init.bubbles),
+		cancelable: Boolean(init.cancelable),
+		composed: Boolean(init.composed),
+	};
+}
+
+function skipsRuntimeEvent(): boolean {
+	return runtimeEventSupport === "untrusted" && internalConstruction;
+}
+
+const writableTagTypes = new WeakSet<object>();
+
+function makeEventTagsWritable(type: object): void {
+	if (writableTagTypes.has(type)) {
+		return;
+	}
+	writableTagTypes.add(type);
+	for (
+		let prototype = (type as {prototype: object}).prototype;
+		prototype !== RuntimeEvent!.prototype;
+		prototype = Object.getPrototypeOf(prototype) as object
+	) {
+		const tag = Object.getOwnPropertyDescriptor(prototype, Symbol.toStringTag);
+		if (tag !== undefined && tag.writable === false) {
+			Object.defineProperty(prototype, Symbol.toStringTag, {writable: true});
+		}
+	}
+}
+
+function prepareEventType(type: object): void {
+	if (runtimeTagsEvents) {
+		makeEventTagsWritable(type);
+	}
+}
+
+function createSkippedEvent<T>(
+	type: {prototype: object},
+	init: ConvertedEventInit,
+): T {
+	const event = Object.create(type.prototype) as object;
+	startEvent(event, type, init, false);
+	return event as T;
+}
+
+function adoptEvent<T extends object>(
+	event: T,
+	type: object,
+	init: ConvertedEventInit,
+): T {
+	if (!isSealed(event)) {
+		startEvent(event, type, init, true);
+	}
+	return event;
+}
+
+function startEvent(
+	event: object,
+	type: object,
+	init: ConvertedEventInit,
+	runtime: boolean,
+): void {
+	if (runtime && runtimeTagsEvents) {
+		(event as {[Symbol.toStringTag]: string})[Symbol.toStringTag] = (
+			type as {prototype: {[Symbol.toStringTag]: string}}
+		).prototype[Symbol.toStringTag];
+	}
+	seal(event, type as typeof Event, Event);
+	const slots = $(event as Event);
+	slots[kState] = {
+		target: null,
+		relatedTarget: null,
+		currentTarget: null,
+		eventPhase: NONE,
+		path: [],
+		initialized: false,
+		dispatch: false,
+		stopPropagation: false,
+		stopImmediate: false,
+		canceled: false,
+		inPassiveListener: false,
+		trusted: false,
+		runtime,
+	};
+	slots[kType] = init.type;
+	slots[kBubbles] = init.bubbles;
+	slots[kCancelable] = init.cancelable;
+	slots[kComposed] = init.composed;
+	slots[kTimeStamp] = performance.now();
+	slots[kState].initialized = true;
+	if (!runtime || runtimeEventSupport === "construct") {
+		Object.defineProperty(event, "isTrusted", isTrustedProperty);
+	}
+}
 
 // lib.dom's Event, less the members dispatch owns, which are typed against
 // this DOM's EventTarget. A type only: an Event's prototype is Object's.
@@ -1576,40 +1741,13 @@ export class Event extends EventBase {
 	static readonly AT_TARGET = AT_TARGET;
 	static readonly BUBBLING_PHASE = BUBBLING_PHASE;
 	constructor(type: string, eventInitDict: EventInit = {}) {
-		if (arguments.length < 1) {
-			throw new TypeError("Event constructor needs a type");
+		const init = convertEventInit(arguments.length, type, eventInitDict);
+		prepareEventType(new.target);
+		if (skipsRuntimeEvent()) {
+			return createSkippedEvent(new.target, init);
 		}
-		// Convert the dictionary once, here. An accessor member is read exactly
-		// once, by this conversion.
-		const name = String(type);
-		const init = toDictionary<EventInit>(eventInitDict, "An event init");
-		const bubbles = Boolean(init.bubbles);
-		const cancelable = Boolean(init.cancelable);
-		const composed = Boolean(init.composed);
-		super(name, {bubbles, cancelable, composed});
-		seal(this, new.target, Event);
-		const slots = $(this);
-		slots[kState] = {
-			target: null,
-			relatedTarget: null,
-			currentTarget: null,
-			eventPhase: NONE,
-			path: [],
-			initialized: false,
-			dispatch: false,
-			stopPropagation: false,
-			stopImmediate: false,
-			canceled: false,
-			inPassiveListener: false,
-			trusted: false,
-		};
-		slots[kType] = name;
-		slots[kBubbles] = bubbles;
-		slots[kCancelable] = cancelable;
-		slots[kComposed] = composed;
-		slots[kTimeStamp] = performance.now();
-		slots[kState].initialized = true;
-		Object.defineProperty(this, "isTrusted", isTrustedProperty);
+		super(init.type, init);
+		startEvent(this, new.target, init, constructsRuntimeEvents);
 	}
 
 	get type(): string {
@@ -1655,9 +1793,10 @@ export class Event extends EventBase {
 	}
 
 	get defaultPrevented(): boolean {
+		const state = $(this)[kState];
 		return (
-			$(this)[kState].canceled ||
-			(constructsRuntimeEvents && runtimeDefaultPrevented!.call(this) === true)
+			state.canceled ||
+			(state.runtime && runtimeDefaultPrevented!.call(this) === true)
 		);
 	}
 
@@ -1676,9 +1815,10 @@ export class Event extends EventBase {
 	}
 
 	get cancelBubble(): boolean {
+		const state = $(this)[kState];
 		return (
-			$(this)[kState].stopPropagation ||
-			(constructsRuntimeEvents && runtimeCancelBubble!.call(this) === true)
+			state.stopPropagation ||
+			(state.runtime && runtimeCancelBubble!.call(this) === true)
 		);
 	}
 
@@ -1703,7 +1843,7 @@ export class Event extends EventBase {
 	stopPropagation(): void {
 		const state = $(this)[kState];
 		state.stopPropagation = true;
-		if (constructsRuntimeEvents && !state.dispatch) {
+		if (state.runtime && !state.dispatch) {
 			runtimeStopPropagation!.call(this);
 		}
 	}
@@ -1712,7 +1852,7 @@ export class Event extends EventBase {
 		const state = $(this)[kState];
 		state.stopPropagation = true;
 		state.stopImmediate = true;
-		if (constructsRuntimeEvents && !state.dispatch) {
+		if (state.runtime && !state.dispatch) {
 			runtimeStopImmediatePropagation!.call(this);
 		}
 	}
@@ -1724,7 +1864,7 @@ export class Event extends EventBase {
 			return;
 		}
 		setCanceledFlag(this);
-		if (constructsRuntimeEvents && !state.dispatch) {
+		if (state.runtime && !state.dispatch) {
 			runtimePreventDefault!.call(this);
 		}
 	}
@@ -1750,6 +1890,50 @@ export class Event extends EventBase {
 }
 
 declareSealedRoot(Event);
+
+const mirroredEventTypes: object[] = [];
+
+// The class a subclass of Event extends: the runtime's same-named class
+// when the runtime builds this DOM's events, so its instances are the
+// runtime's too, and this DOM's Event otherwise.
+function getEventBase(Runtime: object | undefined): typeof Event {
+	const base = Runtime as typeof globalThis.Event | undefined;
+	return constructsRuntimeEvents &&
+			getRuntimeEventSupport(base) === runtimeEventSupport
+		? base as unknown as typeof Event
+		: Event;
+}
+
+// A subclass that extends the runtime's class takes Event's members and
+// slots as if it extended Event, and passes instanceof Event.
+function mirrorEvent(type: {prototype: object}): void {
+	if (Object.getPrototypeOf(type) === Event) {
+		return;
+	}
+	declareSealedParent(type as typeof Event, Event);
+	for (const key of Object.getOwnPropertyNames(Event.prototype)) {
+		if (key !== "constructor" && !Object.hasOwn(type.prototype, key)) {
+			Object.defineProperty(
+				type.prototype,
+				key,
+				Object.getOwnPropertyDescriptor(Event.prototype, key)!,
+			);
+		}
+	}
+	if (mirroredEventTypes.length === 0) {
+		Object.defineProperty(Event, Symbol.hasInstance, {
+			value: function hasInstance(this: object, value: unknown): boolean {
+				return Function.prototype[Symbol.hasInstance].call(this, value) ||
+					(this === Event &&
+						mirroredEventTypes.some((mirrored) =>
+							Function.prototype[Symbol.hasInstance].call(mirrored, value),
+						));
+			},
+			configurable: true,
+		});
+	}
+	mirroredEventTypes.push(type);
+}
 
 /** Change the type dispatch uses for listener lookup, for the legacy pass. */
 function setEventType(event: Event, type: string): void {
@@ -1836,23 +2020,33 @@ function getComposedPath(state: DispatchState): EventTarget[] {
 
 const kDetail = Symbol("detail");
 
-// Extends this DOM's Event (which carries the dispatch state) rather than
-// the platform's CustomEvent. An instance is a platform Event but not a
-// platform CustomEvent.
+const CustomEventBase = getEventBase(
+	(globalThis as {CustomEvent?: typeof globalThis.CustomEvent}).CustomEvent,
+);
+
 export interface CustomEvent<T = any> {
 	[kDetail]: T | null;
 }
 
 export class CustomEvent<T = any>
-	extends Event
+	extends CustomEventBase
 	implements globalThis.CustomEvent<T> {
 	constructor(type: string, eventInitDict: CustomEventInit<T> = {}) {
-		super(type, eventInitDict);
+		const converted = convertEventInit(arguments.length, type, eventInitDict);
+		prepareEventType(new.target);
+		let event: this;
+		if (skipsRuntimeEvent()) {
+			event = createSkippedEvent(new.target, converted);
+		} else {
+			super(converted.type, converted);
+			event = adoptEvent(this, new.target, converted);
+		}
 		const init = toDictionary<CustomEventInit<T>>(
 			eventInitDict,
 			"An event init",
 		);
-		$(this)[kDetail] = init.detail ?? null;
+		$(event)[kDetail] = init.detail ?? null;
+		return event;
 	}
 
 	// lib.dom types this as T even though it is null until an init sets it.
@@ -1883,6 +2077,8 @@ Object.defineProperty(CustomEvent.prototype, Symbol.toStringTag, {
 	value: "CustomEvent",
 	configurable: true,
 });
+
+mirrorEvent(CustomEvent);
 
 // Service Workers' extendable and fetch events, which a TermDOM dispatches
 // at itself for each load a document asks for.
@@ -2046,7 +2242,9 @@ export function createFetchEvent(
 	handled: Promise<undefined>,
 	extend: (promise: Promise<unknown>) => void,
 ): FetchEvent {
-	const event = new FetchEvent("fetch", {request, handled, cancelable: true});
+	const event = constructInternal(() =>
+		new FetchEvent("fetch", {request, handled, cancelable: true}),
+	);
 	$(event)[kExtend] = extend;
 	return event;
 }
@@ -2057,13 +2255,6 @@ export function getFetchResponse(event: FetchEvent): Promise<Response> | null {
 }
 
 const kReturnValue = Symbol("returnValue");
-
-// The HTML element constructor is an author-facing algorithm: it looks
-// up which custom element definition `new.target` names and throws if
-// there is none. The tree's own creation path needs the same classes
-// without that check, and this flag tells the constructor which case it
-// is in.
-let internalConstruction = false;
 
 // The interface declares no constructor, so `new` throws for authors.
 // Teardown treats two things as cancellation: preventDefault(), and a
@@ -2101,8 +2292,11 @@ Object.defineProperty(BeforeUnloadEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** Build one of this file's objects whose constructor authors cannot call. */
-function constructInternal<T>(build: () => T): T {
+/**
+ * Build one of this file's objects whose constructor authors cannot call,
+ * or an event the engine fires.
+ */
+export function constructInternal<T>(build: () => T): T {
 	const previous = internalConstruction;
 	internalConstruction = true;
 	try {
@@ -2126,6 +2320,10 @@ const kErrorLineno = Symbol("error lineno");
 const kErrorColno = Symbol("error colno");
 const kErrorValue = Symbol("error value");
 
+const ErrorEventBase = getEventBase(
+	(globalThis as {ErrorEvent?: typeof globalThis.ErrorEvent}).ErrorEvent,
+);
+
 interface ErrorEvent {
 	[kErrorMessage]: string;
 	[kErrorFilename]: string;
@@ -2134,16 +2332,25 @@ interface ErrorEvent {
 	[kErrorValue]: unknown;
 }
 
-class ErrorEvent extends Event {
+class ErrorEvent extends ErrorEventBase {
 	constructor(type: string, eventInitDict: ErrorEventInit = {}) {
-		super(type, eventInitDict);
+		const converted = convertEventInit(arguments.length, type, eventInitDict);
+		prepareEventType(new.target);
+		let event: this;
+		if (skipsRuntimeEvent()) {
+			event = createSkippedEvent(new.target, converted);
+		} else {
+			super(converted.type, converted);
+			event = adoptEvent(this, new.target, converted);
+		}
 		const init = toDictionary<ErrorEventInit>(eventInitDict, "An event init");
-		const slots = $(this);
+		const slots = $(event);
 		slots[kErrorMessage] = String(init.message ?? "");
 		slots[kErrorFilename] = String(init.filename ?? "");
 		slots[kErrorLineno] = toUnsignedLong(init.lineno ?? 0);
 		slots[kErrorColno] = toUnsignedLong(init.colno ?? 0);
 		slots[kErrorValue] = init.error;
+		return event;
 	}
 
 	get message(): string {
@@ -2171,6 +2378,8 @@ Object.defineProperty(ErrorEvent.prototype, Symbol.toStringTag, {
 	value: "ErrorEvent",
 	configurable: true,
 });
+
+mirrorEvent(ErrorEvent);
 
 const kRejectedPromise = Symbol("rejected promise");
 const kRejectionReason = Symbol("rejection reason");
@@ -2216,6 +2425,11 @@ const kLastEventId = Symbol("last event id");
 const kMessageSource = Symbol("message source");
 const kPorts = Symbol("ports");
 
+const MessageEventBase = getEventBase(
+	(globalThis as {MessageEvent?: typeof globalThis.MessageEvent})
+		.MessageEvent,
+);
+
 // Nothing in a terminal posts one yet, but the interface is a constructor
 // authors can call and createEvent can name, so it is implemented fully.
 interface MessageEvent<T = any> {
@@ -2226,19 +2440,28 @@ interface MessageEvent<T = any> {
 	[kPorts]: readonly globalThis.MessagePort[];
 }
 
-class MessageEvent<T = any> extends Event {
+class MessageEvent<T = any> extends MessageEventBase {
 	constructor(type: string, eventInitDict: MessageEventInit<T> = {}) {
-		super(type, eventInitDict);
+		const converted = convertEventInit(arguments.length, type, eventInitDict);
+		prepareEventType(new.target);
+		let event: this;
+		if (skipsRuntimeEvent()) {
+			event = createSkippedEvent(new.target, converted);
+		} else {
+			super(converted.type, converted);
+			event = adoptEvent(this, new.target, converted);
+		}
 		const init = toDictionary<MessageEventInit<T>>(
 			eventInitDict,
 			"An event init",
 		);
-		const slots = $(this);
+		const slots = $(event);
 		slots[kMessageData] = (init.data ?? null) as T;
 		slots[kOrigin] = String(init.origin ?? "");
 		slots[kLastEventId] = String(init.lastEventId ?? "");
 		slots[kMessageSource] = init.source ?? null;
 		slots[kPorts] = Object.freeze([...(init.ports ?? [])]);
+		return event;
 	}
 
 	get data(): T {
@@ -2311,6 +2534,8 @@ Object.defineProperty(MessageEvent.prototype, Symbol.toStringTag, {
 	value: "MessageEvent",
 	configurable: true,
 });
+
+mirrorEvent(MessageEvent);
 
 interface HashChangeEventInit extends EventInit {
 	oldURL?: string;
@@ -4538,7 +4763,7 @@ function runAbortSteps(signal: SealedAbortSignal): void {
 	for (const algorithm of algorithms) {
 		algorithm();
 	}
-	dispatchAsUserAgent(signal, new Event("abort"));
+	dispatchAsUserAgent(signal, constructInternal(() => new Event("abort")));
 }
 
 const kControllerSignal = Symbol("controller signal");
@@ -5147,11 +5372,13 @@ function dispatchRuntimeEvent(
 		composed: runtime.composed,
 	};
 	const copy = "detail" in runtime
-		? new CustomEvent(runtime.type, {
-			...init,
-			detail: (runtime as globalThis.CustomEvent).detail,
-		})
-		: new Event(runtime.type, init);
+		? constructInternal(() =>
+			new CustomEvent(runtime.type, {
+				...init,
+				detail: (runtime as globalThis.CustomEvent).detail,
+			}),
+		)
+		: constructInternal(() => new Event(runtime.type, init));
 	if (runtime.defaultPrevented) {
 		copy.preventDefault();
 	}
@@ -5589,7 +5816,9 @@ function runCommand(button: HTMLButtonElement, target: Element): void {
 	}
 	const proceed = dispatch(
 		target,
-		new CommandEvent("command", {cancelable: true, command, source: button}),
+		constructInternal(() =>
+			new CommandEvent("command", {cancelable: true, command, source: button}),
+		),
 	);
 	if (!proceed || !target.isConnected || custom) {
 		return;
@@ -5632,7 +5861,12 @@ function activateInput(input: HTMLInputElement, event: Event): void {
 		if (!input.isConnected) {
 			return;
 		}
-		dispatch(input, new Event("input", {bubbles: true, composed: true}));
+		dispatch(
+			input,
+			constructInternal(() =>
+				new Event("input", {bubbles: true, composed: true}),
+			),
+		);
 		dispatchUserChange(input);
 		return;
 	}
@@ -5799,7 +6033,10 @@ export function setDocumentVisible(
 		return;
 	}
 	$(attached)[kExtra][kVisible] = visible;
-	dispatch(attached, new Event("visibilitychange", {bubbles: true}));
+	dispatch(
+		attached,
+		constructInternal(() => new Event("visibilitychange", {bubbles: true})),
+	);
 }
 
 function isDocumentVisible(document: Document): boolean {
@@ -5837,11 +6074,13 @@ const reportingWindows = new WeakSet<object>();
 function reportError(error: unknown, document: Document | null = null): void {
 	const view = document === null ? null : $(document)[kExtra][kDefaultView];
 	if (view !== null && !reportingWindows.has(view)) {
-		const event = new ErrorEvent("error", {
-			cancelable: true,
-			message: error instanceof Error ? error.message : String(error),
-			error,
-		});
+		const event = constructInternal(() =>
+			new ErrorEvent("error", {
+				cancelable: true,
+				message: error instanceof Error ? error.message : String(error),
+				error,
+			}),
+		);
 		reportingWindows.add(view);
 		try {
 			dispatch(view as unknown as EventTarget, event);
@@ -7563,7 +7802,9 @@ function notifyMutationObservers(): void {
 	}
 	transientNodes.length = write;
 	for (const slot of signalSet) {
-		const event = new Event("slotchange", {bubbles: true});
+		const event = constructInternal(() =>
+			new Event("slotchange", {bubbles: true}),
+		);
 		dispatch(slot, event);
 	}
 }
@@ -10183,7 +10424,7 @@ class FinishedAnimation extends EventTarget {
 		}
 		this.playState = "finished";
 		$(this)[kSettle](this);
-		const event = new Event("finish");
+		const event = constructInternal(() => new Event("finish"));
 		this.onfinish?.(event);
 		this.dispatchEvent(event);
 	}
@@ -10198,7 +10439,7 @@ class FinishedAnimation extends EventTarget {
 		if (!wasFinished) {
 			$(this)[kFail](domError("AbortError", "The animation was canceled"));
 		}
-		const event = new Event("cancel");
+		const event = constructInternal(() => new Event("cancel"));
 		this.oncancel?.(event);
 		this.dispatchEvent(event);
 	}
@@ -12149,11 +12390,13 @@ export class HTMLElement extends Element {
 		}
 		slots[kClickInProgress] = true;
 		try {
-			const event = new PointerEvent("click", {
-				bubbles: true,
-				cancelable: true,
-				composed: true,
-			});
+			const event = constructInternal(() =>
+				new PointerEvent("click", {
+					bubbles: true,
+					cancelable: true,
+					composed: true,
+				}),
+			);
 			dispatch(this, event, false);
 		} finally {
 			slots[kClickInProgress] = false;
@@ -12218,19 +12461,23 @@ export class HTMLElement extends Element {
 		void $(attached)[kExtra][kRender]();
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("blur", {
-				relatedTarget: null,
-				bubbles: false,
-				composed: true,
-			}),
+			constructInternal(() =>
+				new FocusEvent("blur", {
+					relatedTarget: null,
+					bubbles: false,
+					composed: true,
+				}),
+			),
 		);
 		dispatchAsUserAgent(
 			this,
-			new FocusEvent("focusout", {
-				relatedTarget: null,
-				bubbles: true,
-				composed: true,
-			}),
+			constructInternal(() =>
+				new FocusEvent("focusout", {
+					relatedTarget: null,
+					bubbles: true,
+					composed: true,
+				}),
+			),
 		);
 	}
 
@@ -12382,36 +12629,44 @@ function runFocusingSteps(element: HTMLElement): void {
 	if (previous !== null && previous !== (document.body as unknown)) {
 		dispatchAsUserAgent(
 			previous,
-			new FocusEvent("blur", {
-				relatedTarget: element,
-				bubbles: false,
-				composed: true,
-			}),
+			constructInternal(() =>
+				new FocusEvent("blur", {
+					relatedTarget: element,
+					bubbles: false,
+					composed: true,
+				}),
+			),
 		);
 		dispatchAsUserAgent(
 			previous,
-			new FocusEvent("focusout", {
-				relatedTarget: element,
-				bubbles: true,
-				composed: true,
-			}),
+			constructInternal(() =>
+				new FocusEvent("focusout", {
+					relatedTarget: element,
+					bubbles: true,
+					composed: true,
+				}),
+			),
 		);
 	}
 	dispatchAsUserAgent(
 		element,
-		new FocusEvent("focus", {
-			relatedTarget: previous,
-			bubbles: false,
-			composed: true,
-		}),
+		constructInternal(() =>
+			new FocusEvent("focus", {
+				relatedTarget: previous,
+				bubbles: false,
+				composed: true,
+			}),
+		),
 	);
 	dispatchAsUserAgent(
 		element,
-		new FocusEvent("focusin", {
-			relatedTarget: previous,
-			bubbles: true,
-			composed: true,
-		}),
+		constructInternal(() =>
+			new FocusEvent("focusin", {
+				relatedTarget: previous,
+				bubbles: true,
+				composed: true,
+			}),
+		),
 	);
 }
 
@@ -16138,10 +16393,12 @@ class HTMLDetailsElement extends HTMLElement {
 				}
 				dispatch(
 					ownerOf(this),
-					new ToggleEvent("toggle", {
-						oldState: slots[kExtra][kStateAtQueue],
-						newState: now,
-					}),
+					constructInternal(() =>
+						new ToggleEvent("toggle", {
+							oldState: slots[kExtra][kStateAtQueue],
+							newState: now,
+						}),
+					),
 				);
 			});
 		}
@@ -16330,7 +16587,10 @@ class HTMLDialogElement extends HTMLElement {
 		if (!this.hasAttribute("open")) {
 			return;
 		}
-		const canceled = !dispatch(this, new Event("cancel", {cancelable: true}));
+		const canceled = !dispatch(
+			this,
+			constructInternal(() => new Event("cancel", {cancelable: true})),
+		);
 		if (canceled) {
 			return;
 		}
@@ -16449,7 +16709,7 @@ function closeDialog(
 	if (returnValue !== undefined) {
 		dialogSlots[kExtra][kReturnValue] = String(returnValue);
 	}
-	dispatch(dialog, new Event("close"));
+	dispatch(dialog, constructInternal(() => new Event("close")));
 }
 
 const kTopLayer = Symbol("the document's top layer");
@@ -16694,7 +16954,9 @@ class HTMLFormElement extends HTMLElement {
 		try {
 			canceled = !dispatch(
 				this,
-				new Event("reset", {bubbles: true, cancelable: true}),
+				constructInternal(() =>
+					new Event("reset", {bubbles: true, cancelable: true}),
+				),
 			);
 		} finally {
 			slots[kExtra][kFiringReset] = false;
@@ -16797,11 +17059,13 @@ function submitForm(
 				return;
 			}
 		}
-		const event = new SubmitEvent("submit", {
-			bubbles: true,
-			cancelable: true,
-			submitter: submitter as HTMLElement | null,
-		});
+		const event = constructInternal(() =>
+			new SubmitEvent("submit", {
+				bubbles: true,
+				cancelable: true,
+				submitter: submitter as HTMLElement | null,
+			}),
+		);
 		if (!dispatch(form, event)) {
 			return;
 		}
@@ -17571,7 +17835,9 @@ function constructEntryList(
 		data = formDataFromEntries(built);
 		dispatch(
 			form,
-			new FormDataEvent("formdata", {formData: data, bubbles: true}),
+			constructInternal(() =>
+				new FormDataEvent("formdata", {formData: data, bubbles: true}),
+			),
 		);
 	} finally {
 		formSlots[kExtra][kConstructingEntryList] = false;
@@ -17915,7 +18181,7 @@ class HTMLIFrameElement extends HTMLElement {
 			if (
 				ownerOf(this).isConnected && slots[kExtra][kFrameDocumentRun] === run
 			) {
-				ownerOf(this).dispatchEvent(new Event("load"));
+				ownerOf(this).dispatchEvent(constructInternal(() => new Event("load")));
 			}
 		}, 0);
 	}
@@ -18352,7 +18618,12 @@ function updateImageData(image: HTMLImageElement): void {
 			}
 			// A newer request reports for itself.
 			if (state.generation === generation) {
-				dispatch(image, new Event(status === "complete" ? "load" : "error"));
+				dispatch(
+					image,
+					constructInternal(() =>
+						new Event(status === "complete" ? "load" : "error"),
+					),
+				);
 			}
 		});
 	};
@@ -18636,7 +18907,12 @@ export class HTMLInputElement extends HTMLElement {
 					event.preventDefault();
 					if (next !== this.value) {
 						this.value = next;
-						dispatch(this, new Event("input", {bubbles: true, composed: true}));
+						dispatch(
+							this,
+							constructInternal(() =>
+								new Event("input", {bubbles: true, composed: true}),
+							),
+						);
 						dispatchUserChange(this);
 					}
 				}
@@ -19797,7 +20073,12 @@ export function moveRangeThumb(
 	const next = snapRangeValue(element, min + fraction * (max - min));
 	if (next !== element.value) {
 		element.value = next;
-		dispatch(element, new Event("input", {bubbles: true, composed: true}));
+		dispatch(
+			element,
+			constructInternal(() =>
+				new Event("input", {bubbles: true, composed: true}),
+			),
+		);
 	}
 	return true;
 }
@@ -21863,7 +22144,12 @@ function openPicker(select: HTMLSelectElement): void {
 function commitSelectOption(select: HTMLSelectElement, index: number): void {
 	$(select)[kExtra][kPickerHighlight] = null;
 	select.selectedIndex = index; // The setter reconciles (closes + label).
-	dispatch(select, new Event("input", {bubbles: true, composed: true}));
+	dispatch(
+		select,
+		constructInternal(() =>
+			new Event("input", {bubbles: true, composed: true}),
+		),
+	);
 	dispatchUserChange(select);
 }
 
@@ -23361,12 +23647,14 @@ function showPopover(
 	const cleanup = (): void => {
 		documentSlots[kExtra][kPopoverShowing] = false;
 	};
-	const opening = new ToggleEvent("beforetoggle", {
-		cancelable: true,
-		oldState: "closed",
-		newState: "open",
-		source,
-	});
+	const opening = constructInternal(() =>
+		new ToggleEvent("beforetoggle", {
+			cancelable: true,
+			oldState: "closed",
+			newState: "open",
+			source,
+		}),
+	);
 	if (!dispatch(element, opening)) {
 		cleanup();
 		return;
@@ -23473,11 +23761,13 @@ function hidePopover(
 	if (fireEvents) {
 		dispatch(
 			element,
-			new ToggleEvent("beforetoggle", {
-				oldState: "open",
-				newState: "closed",
-				source,
-			}),
+			constructInternal(() =>
+				new ToggleEvent("beforetoggle", {
+					oldState: "open",
+					newState: "closed",
+					source,
+				}),
+			),
 		);
 		validity = checkPopoverValidity(element, true, null);
 		if (validity !== true) {
@@ -23696,7 +23986,12 @@ function queuePopoverToggleEventTask(
 			return;
 		}
 		state.toggleTask = null;
-		dispatch(element, new ToggleEvent("toggle", {oldState, newState, source}));
+		dispatch(
+			element,
+			constructInternal(() =>
+				new ToggleEvent("toggle", {oldState, newState, source}),
+			),
+		);
 	});
 }
 
@@ -24094,11 +24389,13 @@ function fireFullscreenEvent(
 		const target = element.isConnected ? element : $(element)[kDocument];
 		dispatchAsUserAgent(
 			target,
-			new CustomEvent(type, {
-				bubbles: true,
-				cancelable: false,
-				...(detail ? {detail} : {}),
-			}),
+			constructInternal(() =>
+				new CustomEvent(type, {
+					bubbles: true,
+					cancelable: false,
+					...(detail ? {detail} : {}),
+				}),
+			),
 		);
 	}, 0);
 }
@@ -25209,7 +25506,10 @@ function checkValidity(element: Element): boolean {
 	if (!VALIDITY_FLAG_NAMES.some((name) => flags[name])) {
 		return true;
 	}
-	dispatch(element, new Event("invalid", {cancelable: true}));
+	dispatch(
+		element,
+		constructInternal(() => new Event("invalid", {cancelable: true})),
+	);
 	return false;
 }
 
@@ -27598,7 +27898,7 @@ export class Document extends Node implements globalThis.Document {
 	// fresh document below the sealed block.
 	close(): void {
 		$maybe(getAttachedDocument(this))?.[kExtra][kExchange].dispatchEvent(
-			new Event("seal"),
+			constructInternal(() => new Event("seal")),
 		);
 	}
 
@@ -29403,7 +29703,10 @@ export function runScrollSteps(document: globalThis.Document): void {
 	const top = $(attached)[kExtra][kFramebuffer].scrollTop;
 	if (top !== (reportedDocumentScrollTop.get(attached) ?? 0)) {
 		reportedDocumentScrollTop.set(attached, top);
-		dispatchAsUserAgent(attached, new Event("scroll", {bubbles: true}));
+		dispatchAsUserAgent(
+			attached,
+			constructInternal(() => new Event("scroll", {bubbles: true})),
+		);
 		awaitScrollEnd(attached, attached);
 	}
 	const pending = pendingScrollTargets.get(attached);
@@ -29413,7 +29716,7 @@ export function runScrollSteps(document: globalThis.Document): void {
 	const targets = [...pending];
 	pending.clear();
 	for (const target of targets) {
-		dispatchAsUserAgent(target, new Event("scroll"));
+		dispatchAsUserAgent(target, constructInternal(() => new Event("scroll")));
 		awaitScrollEnd(attached, target);
 	}
 }
@@ -29449,9 +29752,15 @@ function awaitScrollEnd(document: Document, target: Document | Element): void {
 		}
 		for (const ended of targets) {
 			if (ended === document) {
-				dispatchAsUserAgent(ended, new Event("scrollend", {bubbles: true}));
+				dispatchAsUserAgent(
+					ended,
+					constructInternal(() => new Event("scrollend", {bubbles: true})),
+				);
 			} else if (ended.isConnected) {
-				dispatchAsUserAgent(ended, new Event("scrollend"));
+				dispatchAsUserAgent(
+					ended,
+					constructInternal(() => new Event("scrollend")),
+				);
 			}
 		}
 	}, SCROLL_END_MS);
@@ -31208,7 +31517,9 @@ function scheduleSelectionChange(document: Document): void {
 	documentSlots[kExtra][kSelectionChangeScheduled] = true;
 	setTimeout(() => {
 		documentSlots[kExtra][kSelectionChangeScheduled] = false;
-		document.dispatchEvent(new Event("selectionchange"));
+		document.dispatchEvent(
+			constructInternal(() => new Event("selectionchange")),
+		);
 	}, 0);
 }
 
@@ -33859,7 +34170,9 @@ function navigateToFragment(document: Document, url: string): void {
 		setTimeout(() => {
 			dispatchAsUserAgent(
 				window,
-				new HashChangeEvent("hashchange", {oldURL, newURL: url}),
+				constructInternal(() =>
+					new HashChangeEvent("hashchange", {oldURL, newURL: url}),
+				),
 			);
 		}, 0);
 	}
@@ -35809,7 +36122,7 @@ function syncMediaQuery(mediaQueryList: MediaQueryList): void {
 		return;
 	}
 	mediaQueryListSlots[kMediaQueryNotified] = now;
-	const event = new Event("change");
+	const event = constructInternal(() => new Event("change"));
 	Object.defineProperties(event, {
 		matches: {value: now, enumerable: true},
 		media: {value: mediaQueryList.media, enumerable: true},
@@ -37306,7 +37619,10 @@ function syncScreenOrientation(window: Window): void {
 	const orientationSlots = $(orientation);
 	if (type !== orientationSlots[kOrientationType]) {
 		orientationSlots[kOrientationType] = type;
-		dispatchAsUserAgent(orientation, new Event("change"));
+		dispatchAsUserAgent(
+			orientation,
+			constructInternal(() => new Event("change")),
+		);
 	}
 }
 
@@ -38541,11 +38857,13 @@ export class Window extends EventTarget {
 		setTimeout(() => {
 			dispatch(
 				this,
-				new MessageEvent("message", {
-					data,
-					origin,
-					source: this as unknown as globalThis.MessageEventSource,
-				}),
+				constructInternal(() =>
+					new MessageEvent("message", {
+						data,
+						origin,
+						source: this as unknown as globalThis.MessageEventSource,
+					}),
+				),
 			);
 		}, 0);
 	}

@@ -16,6 +16,7 @@ import {
 import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
+	constructInternal,
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
 	type Element as DOMElement,
@@ -8038,13 +8039,15 @@ function flushTransitionEvents(cascade: Cascade): void {
 	const queued = cascade[kTransitionEvents];
 	cascade[kTransitionEvents] = [];
 	for (const item of queued) {
-		const event = new TransitionEvent(item.type, {
-			bubbles: true,
-			cancelable: item.type === "transitionend",
-			propertyName: item.propertyName,
-			elapsedTime: item.elapsedTime,
-			pseudoElement: item.pseudoElement,
-		});
+		const event = constructInternal(() =>
+			new TransitionEvent(item.type, {
+				bubbles: true,
+				cancelable: item.type === "transitionend",
+				propertyName: item.propertyName,
+				elapsedTime: item.elapsedTime,
+				pseudoElement: item.pseudoElement,
+			}),
+		);
 		dispatchAsUserAgent(item.element, event);
 	}
 }

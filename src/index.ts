@@ -14,6 +14,7 @@ import {
 	clampScrollOffsets,
 	clearHighlights,
 	clearWindowTimers,
+	constructInternal,
 	createWindow,
 	disconnectObservers,
 	dispatchAsUserAgent,
@@ -474,9 +475,11 @@ export class TermDOM extends EventTarget {
 				const window = this.window as unknown as typeof globalThis;
 				dispatchAsUserAgent(
 					at as never,
-					new window.SecurityPolicyViolationEvent(
-						"securitypolicyviolation",
-						init,
+					constructInternal(() =>
+						new window.SecurityPolicyViolationEvent(
+							"securitypolicyviolation",
+							init,
+						),
 					) as never,
 				);
 			},
@@ -747,7 +750,10 @@ export class TermDOM extends EventTarget {
 							cellSizeChanged(this);
 							void render(this);
 						} else if (sizeChanged) {
-							dispatchAsUserAgent(this.window, new this.window.Event("resize"));
+							dispatchAsUserAgent(
+								this.window,
+								constructInternal(() => new this.window.Event("resize")),
+							);
 						}
 					});
 				});
@@ -1182,7 +1188,10 @@ function cellPixelsChanged(termDOM: TermDOM): void {
 function cellSizeChanged(termDOM: TermDOM): void {
 	$(termDOM)[kCascade].syncStylesheets();
 	const window = termDOM.window;
-	dispatchAsUserAgent(window, new window.Event("resize"));
+	dispatchAsUserAgent(
+		window,
+		constructInternal(() => new window.Event("resize")),
+	);
 	syncMediaQueries(termDOM.document);
 }
 
@@ -1758,18 +1767,23 @@ export function installGlobals(termDOM: TermDOM): () => void {
 	const onHandled = (promise: Promise<unknown>) => {
 		dispatchAsUserAgent(
 			termDOM.window,
-			new termDOM.window.PromiseRejectionEvent("rejectionhandled", {
-				promise,
-				reason: reasons.get(promise),
-			}),
+			constructInternal(() =>
+				new termDOM.window.PromiseRejectionEvent("rejectionhandled", {
+					promise,
+					reason: reasons.get(promise),
+				}),
+			),
 		);
 	};
 	const onRejection = (reason: unknown, promise: Promise<unknown>) => {
 		reasons.set(promise, reason);
 		if (!heard.has(promise)) {
-			const event = new termDOM.window.PromiseRejectionEvent(
-				"unhandledrejection",
-				{promise, reason, cancelable: true},
+			const event = constructInternal(() =>
+				new termDOM.window.PromiseRejectionEvent("unhandledrejection", {
+					promise,
+					reason,
+					cancelable: true,
+				}),
 			);
 			dispatchAsUserAgent(termDOM.window, event);
 			if (event.defaultPrevented) {
