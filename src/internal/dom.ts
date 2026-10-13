@@ -1140,17 +1140,18 @@ const DOM_EXCEPTION_CODES = new Map<string, number>([
 const kExceptionName = Symbol("exception name");
 const kExceptionMessage = Symbol("exception message");
 
-export interface DOMException {
+export interface SealedDOMException {
 	[kExceptionName]: string;
 	[kExceptionMessage]: string;
 }
 
 /**
- * WebIDL's DOMException, this DOM's own rather than the runtime's, so what
- * a page catches holds nothing of the runtime's. Its prototype's is
+ * WebIDL's DOMException, for a runtime that has none. Its prototype's is
  * Error's, as WebIDL says.
  */
-export class DOMException extends Error implements globalThis.DOMException {
+export class SealedDOMException
+	extends Error
+	implements globalThis.DOMException {
 	static readonly INDEX_SIZE_ERR = 1;
 	static readonly DOMSTRING_SIZE_ERR = 2;
 	static readonly HIERARCHY_REQUEST_ERR = 3;
@@ -1205,7 +1206,7 @@ export class DOMException extends Error implements globalThis.DOMException {
 
 	constructor(message = "", name = "Error") {
 		super();
-		seal(this, new.target, DOMException);
+		seal(this, new.target, SealedDOMException);
 		const slots = $(this);
 		slots[kExceptionName] = String(name);
 		slots[kExceptionMessage] = String(message);
@@ -1224,7 +1225,7 @@ export class DOMException extends Error implements globalThis.DOMException {
 	}
 }
 
-declareSealedRoot(DOMException);
+declareSealedRoot(SealedDOMException);
 
 for (const [index, name] of [
 	"INDEX_SIZE_ERR",
@@ -1253,16 +1254,23 @@ for (const [index, name] of [
 	"INVALID_NODE_TYPE_ERR",
 	"DATA_CLONE_ERR",
 ].entries()) {
-	Object.defineProperty(DOMException.prototype, name, {
+	Object.defineProperty(SealedDOMException.prototype, name, {
 		value: index + 1,
 		enumerable: true,
 	});
 }
 
-Object.defineProperty(DOMException.prototype, Symbol.toStringTag, {
+Object.defineProperty(SealedDOMException.prototype, Symbol.toStringTag, {
 	value: "DOMException",
 	configurable: true,
 });
+
+export const DOMException: typeof globalThis.DOMException =
+	(globalThis as {DOMException?: typeof globalThis.DOMException})
+		.DOMException ??
+	(SealedDOMException as unknown as typeof globalThis.DOMException);
+
+export type DOMException = globalThis.DOMException;
 
 function domError(name: string, message: string): DOMException {
 	return new DOMException(message, name);
@@ -1460,6 +1468,71 @@ const isTrustedProperty: PropertyDescriptor = {
 	configurable: false,
 };
 
+const RuntimeEvent: typeof globalThis.Event | undefined = (
+	globalThis as {Event?: typeof globalThis.Event}
+).Event;
+
+const constructsRuntimeEvents = ((): boolean => {
+	if (RuntimeEvent === undefined) {
+		return false;
+	}
+
+	class Probe extends RuntimeEvent {}
+
+	Object.defineProperty(Probe.prototype, Symbol.toStringTag, {
+		value: "Probe",
+		configurable: true,
+	});
+	try {
+		return (
+			Object.getOwnPropertyDescriptor(new Probe("probe"), "isTrusted")
+				?.configurable !== false
+		);
+	} catch (error) {
+		if (error instanceof TypeError) {
+			return false;
+		}
+		throw error;
+	}
+})();
+
+function runtimeEventMember(name: string): PropertyDescriptor | undefined {
+	return RuntimeEvent === undefined
+		? undefined
+		: Object.getOwnPropertyDescriptor(RuntimeEvent.prototype, name);
+}
+
+const runtimeEventPhase = runtimeEventMember("eventPhase")?.get;
+const runtimeTarget = runtimeEventMember("target")?.get;
+const runtimeCurrentTarget = runtimeEventMember("currentTarget")?.get;
+const runtimeDefaultPrevented = runtimeEventMember("defaultPrevented")?.get;
+const runtimeCancelBubble = runtimeEventMember("cancelBubble")?.get;
+const runtimeComposedPath = runtimeEventMember("composedPath")?.value as
+	(() => EventTarget[]) | undefined;
+const runtimeStopPropagation = runtimeEventMember("stopPropagation")?.value as
+	(() => void) | undefined;
+const runtimeStopImmediatePropagation = runtimeEventMember(
+	"stopImmediatePropagation",
+)?.value as (() => void) | undefined;
+const runtimePreventDefault = runtimeEventMember("preventDefault")?.value as
+	(() => void) | undefined;
+
+const EventBase = (
+	constructsRuntimeEvents ? RuntimeEvent : function EventBase(): void {}
+) as unknown as new (type: string, init: globalThis.EventInit) => object;
+
+if (RuntimeEvent !== undefined && !constructsRuntimeEvents) {
+	EventBase.prototype = Object.create(RuntimeEvent.prototype) as object;
+}
+
+function inRuntimeDispatch(event: Event): boolean {
+	return (
+		constructsRuntimeEvents &&
+		!$(event)[kState].dispatch &&
+		runtimeEventPhase!.call(event) !== NONE
+	);
+}
+
 const kBubbles = Symbol("bubbles");
 const kCancelable = Symbol("cancelable");
 const kComposed = Symbol("composed");
@@ -1497,7 +1570,7 @@ export interface Event extends EventShape {
 }
 
 /** An event, plus the flags listeners set on it during dispatch. */
-export class Event {
+export class Event extends EventBase {
 	static readonly NONE = NONE;
 	static readonly CAPTURING_PHASE = CAPTURING_PHASE;
 	static readonly AT_TARGET = AT_TARGET;
@@ -1513,6 +1586,7 @@ export class Event {
 		const bubbles = Boolean(init.bubbles);
 		const cancelable = Boolean(init.cancelable);
 		const composed = Boolean(init.composed);
+		super(name, {bubbles, cancelable, composed});
 		seal(this, new.target, Event);
 		const slots = $(this);
 		slots[kState] = {
@@ -1543,24 +1617,29 @@ export class Event {
 	}
 
 	// The members that dispatch owns (the path and the flags listeners set)
-	// come from the state this DOM keeps. The flags are also written to the
-	// platform base, so an event handed back to platform code reads the same
-	// through either half of its interface.
+	// come from the state this DOM keeps, or from the runtime's while the
+	// runtime dispatches the event.
 
 	get target(): EventTarget | null {
-		return $(this)[kState].target;
+		return inRuntimeDispatch(this)
+			? runtimeTarget!.call(this) as EventTarget | null
+			: $(this)[kState].target;
 	}
 
 	get srcElement(): EventTarget | null {
-		return $(this)[kState].target;
+		return this.target;
 	}
 
 	get currentTarget(): EventTarget | null {
-		return $(this)[kState].currentTarget;
+		return inRuntimeDispatch(this)
+			? runtimeCurrentTarget!.call(this) as EventTarget | null
+			: $(this)[kState].currentTarget;
 	}
 
 	get eventPhase(): number {
-		return $(this)[kState].eventPhase;
+		return inRuntimeDispatch(this)
+			? runtimeEventPhase!.call(this) as number
+			: $(this)[kState].eventPhase;
 	}
 
 	get bubbles(): boolean {
@@ -1576,7 +1655,10 @@ export class Event {
 	}
 
 	get defaultPrevented(): boolean {
-		return $(this)[kState].canceled;
+		return (
+			$(this)[kState].canceled ||
+			(constructsRuntimeEvents && runtimeDefaultPrevented!.call(this) === true)
+		);
 	}
 
 	get timeStamp(): number {
@@ -1584,22 +1666,25 @@ export class Event {
 	}
 
 	get returnValue(): boolean {
-		return !$(this)[kState].canceled;
+		return !this.defaultPrevented;
 	}
 
 	set returnValue(value: boolean) {
 		if (!value) {
-			setCanceledFlag(this);
+			this.preventDefault();
 		}
 	}
 
 	get cancelBubble(): boolean {
-		return $(this)[kState].stopPropagation;
+		return (
+			$(this)[kState].stopPropagation ||
+			(constructsRuntimeEvents && runtimeCancelBubble!.call(this) === true)
+		);
 	}
 
 	set cancelBubble(value: boolean) {
 		if (value) {
-			$(this)[kState].stopPropagation = true;
+			this.stopPropagation();
 		}
 	}
 
@@ -1610,21 +1695,38 @@ export class Event {
 	}
 
 	composedPath(): EventTarget[] {
-		return getComposedPath($(this)[kState]);
+		return inRuntimeDispatch(this)
+			? runtimeComposedPath!.call(this)
+			: getComposedPath($(this)[kState]);
 	}
 
 	stopPropagation(): void {
-		$(this)[kState].stopPropagation = true;
+		const state = $(this)[kState];
+		state.stopPropagation = true;
+		if (constructsRuntimeEvents && !state.dispatch) {
+			runtimeStopPropagation!.call(this);
+		}
 	}
 
 	stopImmediatePropagation(): void {
-		const slots = $(this);
-		slots[kState].stopPropagation = true;
-		slots[kState].stopImmediate = true;
+		const state = $(this)[kState];
+		state.stopPropagation = true;
+		state.stopImmediate = true;
+		if (constructsRuntimeEvents && !state.dispatch) {
+			runtimeStopImmediatePropagation!.call(this);
+		}
 	}
 
 	preventDefault(): void {
+		const state = $(this)[kState];
+		if (inRuntimeDispatch(this)) {
+			runtimePreventDefault!.call(this);
+			return;
+		}
 		setCanceledFlag(this);
+		if (constructsRuntimeEvents && !state.dispatch) {
+			runtimePreventDefault!.call(this);
+		}
 	}
 
 	initEvent(type: string, bubbles = false, cancelable = false): void {
@@ -4125,6 +4227,18 @@ const kGetTheParent = Symbol("get the parent");
 // be one more allocation each.
 const NO_LISTENERS = Object.freeze([]) as unknown as Listener[];
 
+const EventTargetBase = function EventTargetBase(): void {} as unknown as
+	new () => object;
+
+const RuntimeEventTarget = (
+	globalThis as {EventTarget?: typeof globalThis.EventTarget}
+).EventTarget;
+
+if (RuntimeEventTarget !== undefined) {
+	EventTargetBase.prototype =
+		Object.create(RuntimeEventTarget.prototype) as object;
+}
+
 export interface EventTarget {
 	[kListeners]: Listener[];
 
@@ -4133,8 +4247,11 @@ export interface EventTarget {
 }
 
 /** An event target: a listener list, and the parent dispatch walks to. */
-export class EventTarget implements globalThis.EventTarget {
+export class EventTarget
+	extends EventTargetBase
+	implements globalThis.EventTarget {
 	constructor() {
+		super();
 		seal(this, new.target, EventTarget);
 		const slots = $(this);
 		slots[kListeners] = NO_LISTENERS;
@@ -4243,19 +4360,19 @@ const kAbortAlgorithms = Symbol("abort algorithms");
 const kDependentSignals = Symbol("dependent signals");
 const kSourceSignals = Symbol("source signals");
 
-export interface AbortSignal {
+export interface SealedAbortSignal {
 	[kAborted]: boolean;
 	[kAbortReason]: unknown;
 	[kAbortAlgorithms]: Array<() => void>;
 	// AbortSignal.any()'s signals. A source holds its dependents until it
 	// aborts, which lets go of them.
-	[kDependentSignals]: Set<AbortSignal>;
-	[kSourceSignals]: Set<AbortSignal> | null;
+	[kDependentSignals]: Set<SealedAbortSignal>;
+	[kSourceSignals]: Set<SealedAbortSignal> | null;
 }
 
 /** DOM §3.2: the signal an AbortController aborts. */
-export class AbortSignal extends EventTarget {
-	declare onabort: ((this: AbortSignal, event: Event) => unknown) | null;
+export class SealedAbortSignal extends EventTarget {
+	declare onabort: ((this: SealedAbortSignal, event: Event) => unknown) | null;
 
 	constructor() {
 		super();
@@ -4278,18 +4395,18 @@ export class AbortSignal extends EventTarget {
 		return $(this)[kAbortReason];
 	}
 
-	static abort(reason?: unknown): AbortSignal {
-		const signal = constructInternal(() => new AbortSignal());
+	static abort(reason?: unknown): SealedAbortSignal {
+		const signal = constructInternal(() => new SealedAbortSignal());
 		signalAbort(signal, reason);
 		return signal;
 	}
 
-	static timeout(milliseconds: number): AbortSignal {
+	static timeout(milliseconds: number): SealedAbortSignal {
 		const delay = Number(milliseconds);
 		if (!Number.isFinite(delay) || delay < 0) {
 			throw new TypeError("AbortSignal.timeout takes a time in milliseconds");
 		}
-		const signal = constructInternal(() => new AbortSignal());
+		const signal = constructInternal(() => new SealedAbortSignal());
 		const timer = setTimeout(() => {
 			signalAbort(signal, domError("TimeoutError", "The signal timed out"));
 		}, delay);
@@ -4301,14 +4418,14 @@ export class AbortSignal extends EventTarget {
 
 	// DOM §3.2: a dependent signal follows its sources' own sources, so a
 	// chain of any() calls never grows.
-	static any(signals: Iterable<AbortSignal>): AbortSignal {
+	static any(signals: Iterable<SealedAbortSignal>): SealedAbortSignal {
 		const sources = [...signals];
 		for (const source of sources) {
 			if (!isAbortSignal(source)) {
 				throw new TypeError("AbortSignal.any takes AbortSignals");
 			}
 		}
-		const result = constructInternal(() => new AbortSignal());
+		const result = constructInternal(() => new SealedAbortSignal());
 		for (const source of sources) {
 			if (source.aborted) {
 				signalAbort(result, source.reason);
@@ -4337,26 +4454,31 @@ export class AbortSignal extends EventTarget {
 }
 
 /** Whether `value` is one of this DOM's AbortSignals. */
-export function isAbortSignal(value: unknown): value is AbortSignal {
+export function isAbortSignal(value: unknown): value is SealedAbortSignal {
 	return (
 		typeof value === "object" &&
 		value !== null &&
 		isSealed(value) &&
-		$(value as AbortSignal)[kAbortAlgorithms] !== undefined
+		$(value as SealedAbortSignal)[kAbortAlgorithms] !== undefined
 	);
 }
 
+const RuntimeAbortController:
+	typeof globalThis.AbortController | undefined = globalThis.AbortController;
 const RuntimeAbortSignal: typeof globalThis.AbortSignal | undefined =
 	globalThis.AbortSignal;
-const RuntimeEvent: typeof globalThis.Event | undefined = globalThis.Event;
 
-const runtimeSignalFollowers =
-	new WeakMap<globalThis.AbortSignal, AbortSignal>();
+const runtimeSignalFollowers = new WeakMap<
+	globalThis.AbortSignal,
+	SealedAbortSignal
+>();
 
-function followRuntimeSignal(runtime: globalThis.AbortSignal): AbortSignal {
+function followRuntimeSignal(
+	runtime: globalThis.AbortSignal,
+): SealedAbortSignal {
 	let signal = runtimeSignalFollowers.get(runtime);
 	if (signal === undefined) {
-		const controller = new AbortController();
+		const controller = new SealedAbortController();
 		signal = controller.signal;
 		runtimeSignalFollowers.set(runtime, signal);
 		if (runtime.aborted) {
@@ -4374,7 +4496,7 @@ function followRuntimeSignal(runtime: globalThis.AbortSignal): AbortSignal {
 
 /** Runs `algorithm` when `signal` aborts, as the DOM's specs do. */
 export function addAbortAlgorithm(
-	signal: AbortSignal,
+	signal: SealedAbortSignal,
 	algorithm: () => void,
 ): void {
 	const slots = $(signal);
@@ -4384,7 +4506,7 @@ export function addAbortAlgorithm(
 }
 
 // DOM §3.2's signal abort: the signal and every signal that depends on it.
-function signalAbort(signal: AbortSignal, reason: unknown): void {
+function signalAbort(signal: SealedAbortSignal, reason: unknown): void {
 	const slots = $(signal);
 	if (slots[kAborted]) {
 		return;
@@ -4394,7 +4516,7 @@ function signalAbort(signal: AbortSignal, reason: unknown): void {
 		: reason;
 	slots[kAborted] = true;
 	slots[kAbortReason] = why;
-	const dependents: AbortSignal[] = [];
+	const dependents: SealedAbortSignal[] = [];
 	for (const dependent of slots[kDependentSignals]) {
 		if (!dependent.aborted) {
 			$(dependent)[kAborted] = true;
@@ -4409,7 +4531,7 @@ function signalAbort(signal: AbortSignal, reason: unknown): void {
 	}
 }
 
-function runAbortSteps(signal: AbortSignal): void {
+function runAbortSteps(signal: SealedAbortSignal): void {
 	const slots = $(signal);
 	const algorithms = slots[kAbortAlgorithms];
 	slots[kAbortAlgorithms] = [];
@@ -4421,18 +4543,20 @@ function runAbortSteps(signal: AbortSignal): void {
 
 const kControllerSignal = Symbol("controller signal");
 
-export interface AbortController {
-	[kControllerSignal]: AbortSignal;
+export interface SealedAbortController {
+	[kControllerSignal]: SealedAbortSignal;
 }
 
 /** DOM §3.1. */
-export class AbortController {
+export class SealedAbortController {
 	constructor() {
-		seal(this, new.target, AbortController);
-		$(this)[kControllerSignal] = constructInternal(() => new AbortSignal());
+		seal(this, new.target, SealedAbortController);
+		$(this)[kControllerSignal] = constructInternal(() =>
+			new SealedAbortSignal(),
+		);
 	}
 
-	get signal(): AbortSignal {
+	get signal(): SealedAbortSignal {
 		return $(this)[kControllerSignal];
 	}
 
@@ -4441,17 +4565,29 @@ export class AbortController {
 	}
 }
 
-declareSealedRoot(AbortController);
+declareSealedRoot(SealedAbortController);
 
-Object.defineProperty(AbortSignal.prototype, Symbol.toStringTag, {
+Object.defineProperty(SealedAbortSignal.prototype, Symbol.toStringTag, {
 	value: "AbortSignal",
 	configurable: true,
 });
 
-Object.defineProperty(AbortController.prototype, Symbol.toStringTag, {
+Object.defineProperty(SealedAbortController.prototype, Symbol.toStringTag, {
 	value: "AbortController",
 	configurable: true,
 });
+
+export const AbortController: typeof globalThis.AbortController =
+	RuntimeAbortController ??
+	(SealedAbortController as unknown as typeof globalThis.AbortController);
+
+export type AbortController = globalThis.AbortController;
+
+export const AbortSignal: typeof globalThis.AbortSignal =
+	RuntimeAbortSignal ??
+	(SealedAbortSignal as unknown as typeof globalThis.AbortSignal);
+
+export type AbortSignal = globalThis.AbortSignal;
 
 function flattenMore(
 	options: boolean | globalThis.AddEventListenerOptions | undefined,
@@ -4461,7 +4597,7 @@ function flattenMore(
 
 	/** Null until the type and target decide it, which the spec defers. */
 	passive: boolean | null;
-	signal: AbortSignal | null;
+	signal: SealedAbortSignal | null;
 } {
 	if (
 		options != null &&
@@ -4479,7 +4615,7 @@ function flattenMore(
 		options,
 		"Listener options",
 	);
-	let signal: AbortSignal | null = null;
+	let signal: SealedAbortSignal | null = null;
 	const given: unknown = dictionary.signal;
 	if (given !== undefined) {
 		if (isAbortSignal(given)) {
@@ -38473,7 +38609,7 @@ function createBeforeUnloadEvent(): BeforeUnloadEvent {
 // GlobalEventHandlers, shared with elements and documents, and
 // WindowEventHandlers, whose members exist as attributes whether or not
 // this engine fires them.
-installEventHandler(AbortSignal.prototype, "onabort");
+installEventHandler(SealedAbortSignal.prototype, "onabort");
 
 installEventHandlers(Window.prototype, GLOBAL_EVENT_HANDLERS);
 installEventHandlers(Window.prototype, WINDOW_EVENT_HANDLERS);

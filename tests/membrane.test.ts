@@ -1,12 +1,17 @@
 /**
  * What a page, or the program embedding TermDOM, can reach holds nothing of
- * the engine's or the runtime's: no symbol-keyed state or steps on any
- * object or prototype, and no object the runtime made where a browser
- * would hand out its own.
+ * the engine's: no symbol-keyed state or steps on any object or prototype
+ * but the runtime's own. Where the runtime has a class, the page gets it;
+ * where it has none, the sealed one stands in.
  */
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {
+	SealedAbortController,
+	SealedAbortSignal,
+	SealedDOMException,
+} from "../src/internal/dom.ts";
 import {MockProcess} from "./test-utils.js";
 
 function create(html = ""): TermDOM {
@@ -23,6 +28,28 @@ const WELL_KNOWN = new Set(
 		.map((name) => (Symbol as unknown as Record<string, unknown>)[name])
 		.filter((value) => typeof value === "symbol"),
 );
+
+const RUNTIME_SYMBOLS = new Set<symbol>();
+for (const object of [
+	new Event("x"),
+	new EventTarget(),
+	new DOMException("x"),
+	new AbortController().signal,
+	new AbortController(),
+	Event,
+	EventTarget,
+	DOMException,
+	AbortController,
+	AbortSignal,
+]) {
+	for (let o: object | null = object;
+		o !== null;
+		o = Object.getPrototypeOf(o)) {
+		for (const key of Object.getOwnPropertySymbols(o)) {
+			RUNTIME_SYMBOLS.add(key);
+		}
+	}
+}
 
 // Every object reachable from `roots` through data properties and
 // prototypes, with the symbol keys of its own.
@@ -44,6 +71,7 @@ function findSymbols(roots: unknown[]): string[] {
 			if (
 				typeof key === "symbol" &&
 				!WELL_KNOWN.has(key) &&
+				!RUNTIME_SYMBOLS.has(key) &&
 				Symbol.keyFor(key) === undefined
 			) {
 				const owner = typeof value === "function"
@@ -117,11 +145,18 @@ test("the program's TermDOM is the DOM's EventTarget, with nothing of the runtim
 	dom.dispose();
 });
 
-test("DOMException is the DOM's own, an Error with WebIDL's members", () => {
+test("a window's DOMException is the runtime's where the runtime has one", () => {
 	const dom = create();
 	const window = dom.window as unknown as Global;
-	const {DOMException} = window;
-	expect(DOMException).not.toBe(globalThis.DOMException);
+	expect(window.DOMException).toBe(globalThis.DOMException);
+	expect(() => document(dom).querySelector("::bad")).toThrow(DOMException);
+	dom.dispose();
+});
+
+test("the sealed DOMException is an Error with WebIDL's members", () => {
+	const dom = create();
+	const DOMException =
+		SealedDOMException as unknown as typeof globalThis.DOMException;
 	const error = new DOMException("gone", "NotFoundError");
 	expect(error).toBeInstanceOf(Error);
 	expect(Object.getPrototypeOf(DOMException.prototype)).toBe(Error.prototype);
@@ -137,7 +172,6 @@ test("DOMException is the DOM's own, an Error with WebIDL's members", () => {
 	expect(Object.prototype.toString.call(error)).toBe("[object DOMException]");
 	const name = Object.getOwnPropertyDescriptor(DOMException.prototype, "name")!;
 	expect(() => name.get!.call({})).toThrow(TypeError);
-	expect(() => document(dom).querySelector("::bad")).toThrow(DOMException);
 	dom.dispose();
 });
 
@@ -206,10 +240,21 @@ test("crypto fills integer arrays from the runtime's random source", () => {
 	dom.dispose();
 });
 
-test("an AbortController's signal is the DOM's, and aborts as the DOM says", async () => {
+test("a window's AbortController is the runtime's where the runtime has one", () => {
 	const dom = create();
 	const window = dom.window as unknown as Global;
-	expect(window.AbortController).not.toBe(globalThis.AbortController);
+	expect(window.AbortController).toBe(globalThis.AbortController);
+	expect(window.AbortSignal).toBe(globalThis.AbortSignal);
+	dom.dispose();
+});
+
+test("the sealed AbortController's signal aborts as the DOM says", async () => {
+	const dom = create();
+	const window = {
+		AbortController: SealedAbortController,
+		AbortSignal: SealedAbortSignal,
+		DOMException: globalThis.DOMException,
+	} as unknown as Global;
 	expect(() => new window.AbortSignal()).toThrow(TypeError);
 	const controller = new window.AbortController();
 	const {signal} = controller;

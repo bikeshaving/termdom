@@ -675,10 +675,9 @@ test("a listener object's handleEvent is looked up at every dispatch", () => {
 
 /* ---------------------------------------------------------------- events */
 
-test("an event here is the DOM's own, and the runtime's dispatch as copies", () => {
+test("an event here is the runtime's too, and the runtime's dispatch as copies", () => {
 	const event = new DOMEvent("ping");
-	expect(event instanceof globalThis.Event).toBe(false);
-	expect(Object.getPrototypeOf(DOMEvent.prototype)).toBe(Object.prototype);
+	expect(event instanceof globalThis.Event).toBe(true);
 	const custom = new DOMCustomEvent("ping", {detail: 1});
 	expect(custom instanceof DOMEvent).toBe(true);
 	expect(custom.detail).toBe(1);
