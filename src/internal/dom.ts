@@ -38610,7 +38610,10 @@ const runtime = {
 	structuredClone: globalThis.structuredClone.bind(globalThis),
 };
 
-const windowTimers = new WeakMap<object, Set<ReturnType<typeof setTimeout>>>();
+const windowTimers = new WeakMap<
+	object,
+	Map<number, ReturnType<typeof setTimeout>>
+>();
 const processTimers = new WeakMap<object, Record<string, unknown>>();
 
 /**
@@ -38629,7 +38632,7 @@ export function getProcessTimers(window: Window): Record<string, unknown> {
  */
 export function clearWindowTimers(window: Window): void {
 	const timers = windowTimers.get(window);
-	for (const handle of timers ?? []) {
+	for (const handle of timers?.values() ?? []) {
 		runtime.clearTimeout(handle);
 	}
 	timers?.clear();
@@ -38655,12 +38658,19 @@ function buildWindow(document: Document): Window {
 					reportError(error, document);
 				}
 			};
-	// The page's outstanding timers, which stop with the window.
-	const timers = new Set<ReturnType<typeof setTimeout>>();
+	// The page's outstanding timers, which stop with the window, by the
+	// number HTML hands the page for each: the runtime's own handle is the
+	// runtime's object.
+	const timers = new Map<number, ReturnType<typeof setTimeout>>();
 	windowTimers.set(window, timers);
-	const clearTimer = (handle: ReturnType<typeof setTimeout>) => {
-		timers.delete(handle);
-		runtime.clearTimeout(handle);
+	let lastTimerId = 0;
+	const clearTimer = (id: unknown) => {
+		const key = Number(id);
+		const handle = timers.get(key);
+		if (handle !== undefined) {
+			timers.delete(key);
+			runtime.clearTimeout(handle);
+		}
 	};
 	processTimers.set(window, {
 		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) =>
@@ -38675,26 +38685,29 @@ function buildWindow(document: Document): Window {
 		DOMException,
 		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) => {
 			const guarded = guard(handler, args);
-			const handle = runtime.setTimeout(
-				(typeof guarded === "function"
-					? () => {
-						timers.delete(handle);
-						(guarded as () => void)();
-					}
-					: guarded) as () => void,
-				timeout,
+			const id = ++lastTimerId;
+			timers.set(
+				id,
+				runtime.setTimeout(
+					(typeof guarded === "function"
+						? () => {
+							timers.delete(id);
+							(guarded as () => void)();
+						}
+						: guarded) as () => void,
+					timeout,
+				),
 			);
-			timers.add(handle);
-			return handle;
+			return id;
 		},
 		clearTimeout: clearTimer,
 		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) => {
-			const handle = runtime.setInterval(
-				guard(handler, args) as () => void,
-				timeout,
+			const id = ++lastTimerId;
+			timers.set(
+				id,
+				runtime.setInterval(guard(handler, args) as () => void, timeout),
 			);
-			timers.add(handle);
-			return handle;
+			return id;
 		},
 		clearInterval: clearTimer,
 		queueMicrotask: (callback: unknown) => {

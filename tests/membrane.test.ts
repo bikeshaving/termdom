@@ -244,3 +244,23 @@ test("an AbortController's signal is the DOM's, and aborts as the DOM says", asy
 	expect((timed.reason as DOMException).name).toBe("TimeoutError");
 	dom.dispose();
 });
+
+test("a window's timers are numbers, as a browser's are", async () => {
+	const dom = create();
+	const window = dom.window as unknown as Global;
+	const first = window.setTimeout(() => {}, 1000) as unknown as number;
+	const second = window.setInterval(() => {}, 1000) as unknown as number;
+	expect([typeof first, typeof second]).toEqual(["number", "number"]);
+	expect(first).toBeGreaterThan(0);
+	expect(second).toBeGreaterThan(first);
+	// One list for both: either clear takes either kind.
+	window.clearInterval(first);
+	window.clearTimeout(second);
+	let ran = 0;
+	const kept = window.setTimeout(() => ran++, 1);
+	window.setTimeout(() => ran++, 1);
+	window.clearTimeout(kept);
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(ran).toBe(1);
+	dom.dispose();
+});
