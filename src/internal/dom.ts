@@ -4346,6 +4346,32 @@ export function isAbortSignal(value: unknown): value is AbortSignal {
 	);
 }
 
+const RuntimeAbortSignal: typeof globalThis.AbortSignal | undefined =
+	globalThis.AbortSignal;
+const RuntimeEvent: typeof globalThis.Event | undefined = globalThis.Event;
+
+const runtimeSignalFollowers =
+	new WeakMap<globalThis.AbortSignal, AbortSignal>();
+
+function followRuntimeSignal(runtime: globalThis.AbortSignal): AbortSignal {
+	let signal = runtimeSignalFollowers.get(runtime);
+	if (signal === undefined) {
+		const controller = new AbortController();
+		signal = controller.signal;
+		runtimeSignalFollowers.set(runtime, signal);
+		if (runtime.aborted) {
+			controller.abort(runtime.reason);
+		} else {
+			runtime.addEventListener(
+				"abort",
+				() => controller.abort(runtime.reason),
+				{once: true},
+			);
+		}
+	}
+	return signal;
+}
+
 /** Runs `algorithm` when `signal` aborts, as the DOM's specs do. */
 export function addAbortAlgorithm(
 	signal: AbortSignal,
@@ -4454,11 +4480,17 @@ function flattenMore(
 		"Listener options",
 	);
 	let signal: AbortSignal | null = null;
-	if (dictionary.signal !== undefined) {
-		if (!isAbortSignal(dictionary.signal)) {
+	const given: unknown = dictionary.signal;
+	if (given !== undefined) {
+		if (isAbortSignal(given)) {
+			signal = given;
+		} else if (
+			RuntimeAbortSignal !== undefined && given instanceof RuntimeAbortSignal
+		) {
+			signal = followRuntimeSignal(given);
+		} else {
 			throw new TypeError("A listener's signal must be an AbortSignal");
 		}
-		signal = dictionary.signal;
 	}
 	return {
 		capture: Boolean(dictionary.capture),
@@ -4953,6 +4985,10 @@ function dispatchFromOutside(
 	// the runtime's.
 	const state = isSealed(event) ? $(event)[kState] : undefined;
 	if (state === undefined) {
+		const given: unknown = event;
+		if (RuntimeEvent !== undefined && given instanceof RuntimeEvent) {
+			return dispatchRuntimeEvent(target, given, trusted);
+		}
 		throw new TypeError("dispatchEvent needs an Event");
 	}
 	if (state.dispatch || !state.initialized) {
@@ -4962,6 +4998,32 @@ function dispatchFromOutside(
 		);
 	}
 	return dispatch(target, event, trusted);
+}
+
+function dispatchRuntimeEvent(
+	target: EventTarget,
+	runtime: globalThis.Event,
+	trusted: boolean,
+): boolean {
+	const init = {
+		bubbles: runtime.bubbles,
+		cancelable: runtime.cancelable,
+		composed: runtime.composed,
+	};
+	const copy = "detail" in runtime
+		? new CustomEvent(runtime.type, {
+			...init,
+			detail: (runtime as globalThis.CustomEvent).detail,
+		})
+		: new Event(runtime.type, init);
+	if (runtime.defaultPrevented) {
+		copy.preventDefault();
+	}
+	const result = dispatchFromOutside(target, copy, trusted);
+	if (copy.defaultPrevented) {
+		runtime.preventDefault();
+	}
+	return result;
 }
 
 // Pressing a bare modifier key is not a request for anything.

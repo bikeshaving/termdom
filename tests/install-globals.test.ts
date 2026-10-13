@@ -78,13 +78,13 @@ test("the runtime's own EventTargets go on working with the runtime's events", (
 		target.addEventListener("ping", () => heard++);
 		target.dispatchEvent(new RuntimeEvent("ping"));
 		expect(heard).toBe(1);
-		// The two sides keep to their own events, as two browsers' would.
 		expect(() => target.dispatchEvent(new global.Event("ping"))).toThrow(
 			TypeError,
 		);
-		expect(() =>
-			term.document.body.dispatchEvent(new RuntimeEvent("ping") as never),
-		).toThrow(TypeError);
+		let copied = 0;
+		term.document.body.addEventListener("ping", () => copied++);
+		term.document.body.dispatchEvent(new RuntimeEvent("ping") as never);
+		expect(copied).toBe(1);
 		const controller = new AbortController();
 		let aborted = 0;
 		controller.signal.addEventListener("abort", () => aborted++);

@@ -627,14 +627,6 @@ test("an aborted signal takes its listener with it", () => {
 	expect(() =>
 		target.addEventListener("ping", () => {}, {signal: {} as any}),
 	).toThrow();
-	// The runtime's signal is not this DOM's.
-	expect(() =>
-		target.addEventListener(
-			"ping",
-			() => {},
-			{signal: new AbortController().signal as any},
-		),
-	).toThrow(TypeError);
 });
 
 test("composedPath is the whole path while dispatching, and empty after", () => {
@@ -683,7 +675,7 @@ test("a listener object's handleEvent is looked up at every dispatch", () => {
 
 /* ---------------------------------------------------------------- events */
 
-test("an event here is the DOM's own, and the runtime's are not events here", () => {
+test("an event here is the DOM's own, and the runtime's dispatch as copies", () => {
 	const event = new DOMEvent("ping");
 	expect(event instanceof globalThis.Event).toBe(false);
 	expect(Object.getPrototypeOf(DOMEvent.prototype)).toBe(Object.prototype);
@@ -691,12 +683,50 @@ test("an event here is the DOM's own, and the runtime's are not events here", ()
 	expect(custom instanceof DOMEvent).toBe(true);
 	expect(custom.detail).toBe(1);
 	const document = make();
+	const parent = document.createElement("div");
+	const target = parent.appendChild(document.createElement("span"));
+	const seen: unknown[] = [];
+	parent.addEventListener("ping", (event: any) => {
+		seen.push([
+			event instanceof DOMEvent,
+			event.target === target,
+			event.detail,
+		]);
+		event.preventDefault();
+	});
+	const runtime = new globalThis.CustomEvent("ping", {
+		bubbles: true,
+		cancelable: true,
+		detail: 7,
+	});
+	expect(target.dispatchEvent(runtime as any)).toBe(false);
+	expect(runtime.defaultPrevented).toBe(true);
+	expect(target.dispatchEvent(new globalThis.Event("ping") as any)).toBe(true);
+	expect(seen).toEqual([[true, true, 7]]);
+	expect(() => target.dispatchEvent({type: "ping"} as any)).toThrow(TypeError);
+});
+
+test("a listener follows the runtime's AbortSignal", () => {
+	const document = make();
 	const target = document.createElement("div");
+	let ran = 0;
+	const controller = new globalThis.AbortController();
+	target.addEventListener("ping", () => ran++, {
+		signal: controller.signal as any,
+	});
+	target.addEventListener("ping", () => ran++, {
+		signal: globalThis.AbortSignal.abort() as any,
+	});
+	target.dispatchEvent(new DOMEvent("ping"));
+	controller.abort();
+	target.dispatchEvent(new DOMEvent("ping"));
+	expect(ran).toBe(1);
 	expect(() =>
-		target.dispatchEvent(new globalThis.Event("ping") as any),
-	).toThrow(TypeError);
-	expect(() =>
-		target.dispatchEvent(new globalThis.CustomEvent("ping") as any),
+		target.addEventListener(
+			"ping",
+			() => {},
+			{signal: {aborted: false} as any},
+		),
 	).toThrow(TypeError);
 });
 
