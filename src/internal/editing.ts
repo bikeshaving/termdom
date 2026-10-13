@@ -9,6 +9,7 @@
 
 import {getWhiteSpace} from "./cssom.ts";
 import {
+	constructInternal,
 	dispatchAsUserAgent,
 	getFocusedElement,
 	revealEditingCaret,
@@ -208,13 +209,15 @@ function requestEditingInput(
 	}
 	dispatchAsUserAgent(
 		getInputTarget(host),
-		new view.InputEvent("beforeinput", {
-			inputType,
-			data,
-			bubbles: true,
-			composed: true,
-			cancelable: true,
-		}),
+		constructInternal(() =>
+			new view.InputEvent("beforeinput", {
+				inputType,
+				data,
+				bubbles: true,
+				composed: true,
+				cancelable: true,
+			}),
+		),
 	);
 }
 
@@ -233,12 +236,14 @@ function onEditingBeforeInput(event: globalThis.Event): void {
 	}
 	dispatchAsUserAgent(
 		getInputTarget(host),
-		new view.InputEvent("input", {
-			inputType: request.inputType,
-			data: request.data,
-			bubbles: true,
-			composed: true,
-		}),
+		constructInternal(() =>
+			new view.InputEvent("input", {
+				inputType: request.inputType,
+				data: request.data,
+				bubbles: true,
+				composed: true,
+			}),
+		),
 	);
 	revealEditingCaret(host);
 }

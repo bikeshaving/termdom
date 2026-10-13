@@ -78,14 +78,8 @@ test("the runtime's own EventTargets go on working with the runtime's events", (
 		target.addEventListener("ping", () => heard++);
 		target.dispatchEvent(new RuntimeEvent("ping"));
 		expect(heard).toBe(1);
-		let accepted = true;
-		try {
-			target.dispatchEvent(new global.Event("ping"));
-		} catch (error) {
-			accepted = false;
-			expect(error).toBeInstanceOf(TypeError);
-		}
-		expect(heard).toBe(accepted ? 2 : 1);
+		target.dispatchEvent(new global.Event("ping"));
+		expect(heard).toBe(2);
 		let copied = 0;
 		term.document.body.addEventListener("ping", () => copied++);
 		term.document.body.dispatchEvent(new RuntimeEvent("ping") as never);

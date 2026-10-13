@@ -1,6 +1,7 @@
 import {type Cascade, getComputedValue, pxFromCells} from "./cssom.ts";
 import {
 	commitRangeThumb,
+	constructInternal,
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
 	flatParentElement,
@@ -580,15 +581,17 @@ function dispatchMouseLike(
 	init: MouseEventInit,
 ): boolean {
 	const event = kind === "mouse"
-		? new input[kWindow].MouseEvent(type, init)
-		: new input[kWindow].PointerEvent(type, {
-			...init,
-			detail: type.startsWith("pointer") ? 0 : init.detail,
-			pointerId: MOUSE_POINTER_ID,
-			pointerType: "mouse",
-			isPrimary: true,
-			pressure: (init.buttons ?? 0) === 0 ? 0 : 0.5,
-		});
+		? constructInternal(() => new input[kWindow].MouseEvent(type, init))
+		: constructInternal(() =>
+			new input[kWindow].PointerEvent(type, {
+				...init,
+				detail: type.startsWith("pointer") ? 0 : init.detail,
+				pointerId: MOUSE_POINTER_ID,
+				pointerType: "mouse",
+				isPrimary: true,
+				pressure: (init.buttons ?? 0) === 0 ? 0 : 0.5,
+			}),
+		);
 	return dispatchAsUserAgent(target, event);
 }
 
@@ -615,13 +618,17 @@ function processPendingPointerCapture(input: Input): void {
 	if (lost !== null) {
 		dispatchAsUserAgent(
 			lost.isConnected ? lost : input[kDocument],
-			new input[kWindow].PointerEvent("lostpointercapture", init),
+			constructInternal(() =>
+				new input[kWindow].PointerEvent("lostpointercapture", init),
+			),
 		);
 	}
 	if (state.active !== null) {
 		dispatchAsUserAgent(
 			state.active,
-			new input[kWindow].PointerEvent("gotpointercapture", init),
+			constructInternal(() =>
+				new input[kWindow].PointerEvent("gotpointercapture", init),
+			),
 		);
 	}
 }
@@ -667,18 +674,20 @@ function deliverMouseReport(input: Input, {
 	if (wheelDeltaY !== null) {
 		const notCanceled = dispatchAsUserAgent(
 			hit,
-			new input[kWindow].WheelEvent("wheel", {
-				deltaY: wheelDeltaY,
-				deltaMode: 1,
-				...getClientPoint(input, x, y),
-				...getScreenPoint(input, x, y),
-				shiftKey,
-				altKey,
-				ctrlKey,
-				bubbles: true,
-				cancelable: true,
-				composed: true,
-			}),
+			constructInternal(() =>
+				new input[kWindow].WheelEvent("wheel", {
+					deltaY: wheelDeltaY,
+					deltaMode: 1,
+					...getClientPoint(input, x, y),
+					...getScreenPoint(input, x, y),
+					shiftKey,
+					altKey,
+					ctrlKey,
+					bubbles: true,
+					cancelable: true,
+					composed: true,
+				}),
+			),
 		);
 		if (notCanceled && scrollByWheel(input, hit, wheelDeltaY)) {
 			// Scroll chaining. The parent scroller is the terminal's own
@@ -694,18 +703,20 @@ function deliverMouseReport(input: Input, {
 	if (wheelDeltaX !== null) {
 		const notCanceled = dispatchAsUserAgent(
 			hit,
-			new input[kWindow].WheelEvent("wheel", {
-				deltaX: wheelDeltaX,
-				deltaMode: 1,
-				...getClientPoint(input, x, y),
-				...getScreenPoint(input, x, y),
-				shiftKey,
-				altKey,
-				ctrlKey,
-				bubbles: true,
-				cancelable: true,
-				composed: true,
-			}),
+			constructInternal(() =>
+				new input[kWindow].WheelEvent("wheel", {
+					deltaX: wheelDeltaX,
+					deltaMode: 1,
+					...getClientPoint(input, x, y),
+					...getScreenPoint(input, x, y),
+					shiftKey,
+					altKey,
+					ctrlKey,
+					bubbles: true,
+					cancelable: true,
+					composed: true,
+				}),
+			),
 		);
 		// The document never scrolls sideways, so a notch no box takes
 		// goes nowhere.
@@ -833,22 +844,26 @@ function deliverPaste(input: Input, text: string): void {
 	lockDataTransfer(clipboardData);
 	const proceed = dispatchAsUserAgent(
 		target,
-		new input[kWindow].ClipboardEvent("paste", {
-			clipboardData,
-			bubbles: true,
-			composed: true,
-			cancelable: true,
-		}),
+		constructInternal(() =>
+			new input[kWindow].ClipboardEvent("paste", {
+				clipboardData,
+				bubbles: true,
+				composed: true,
+				cancelable: true,
+			}),
+		),
 	);
 	const tag = target.tagName;
 	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
-		const event = new input[kWindow].InputEvent("beforeinput", {
-			inputType: "insertFromPaste",
-			data: text,
-			bubbles: true,
-			composed: true,
-			cancelable: true,
-		});
+		const event = constructInternal(() =>
+			new input[kWindow].InputEvent("beforeinput", {
+				inputType: "insertFromPaste",
+				data: text,
+				bubbles: true,
+				composed: true,
+				cancelable: true,
+			}),
+		);
 		dispatchAsUserAgent(target, event);
 		runControlDefaultAction(target, event);
 	} else if (proceed) {
@@ -1201,7 +1216,9 @@ function dispatchPress(
 		input[kCascade].handleFocusChange(getFocusedElement(input[kDocument]));
 		requestRender(input[kDocument]);
 	}
-	const mousedown = new input[kWindow].MouseEvent("mousedown", eventInit);
+	const mousedown = constructInternal(() =>
+		new input[kWindow].MouseEvent("mousedown", eventInit),
+	);
 	const notCanceled =
 		input[kMouseEventsSuppressed] || dispatchAsUserAgent(target, mousedown);
 	if (!notCanceled) {
@@ -1404,20 +1421,22 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		? active
 		: input[kDocument].fullscreenElement || input[kDocument].body;
 
-	const keydownEvent = new input[kWindow].KeyboardEvent("keydown", {
-		key: keyName,
-		code: getDOMCode(keyName),
-		keyCode,
-		charCode: 0,
-		which: keyCode,
-		ctrlKey,
-		shiftKey,
-		altKey,
-		metaKey,
-		bubbles: true,
-		composed: true,
-		cancelable: true,
-	});
+	const keydownEvent = constructInternal(() =>
+		new input[kWindow].KeyboardEvent("keydown", {
+			key: keyName,
+			code: getDOMCode(keyName),
+			keyCode,
+			charCode: 0,
+			which: keyCode,
+			ctrlKey,
+			shiftKey,
+			altKey,
+			metaKey,
+			bubbles: true,
+			composed: true,
+			cancelable: true,
+		}),
+	);
 
 	dispatchAsUserAgent(targetElement, keydownEvent);
 	runControlDefaultAction(targetElement, keydownEvent);
@@ -1467,12 +1486,14 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 				// A trusted click, so the full activation behavior runs.
 				dispatchAsUserAgent(
 					targetElement,
-					new input[kWindow].PointerEvent("click", {
-						pointerId: -1,
-						bubbles: true,
-						cancelable: true,
-						composed: true,
-					}),
+					constructInternal(() =>
+						new input[kWindow].PointerEvent("click", {
+							pointerId: -1,
+							bubbles: true,
+							cancelable: true,
+							composed: true,
+						}),
+					),
 				);
 				requestRender(input[kDocument]);
 			}
@@ -1483,12 +1504,34 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	// input event follows keypress, as in a browser.
 	if (notCanceled && char !== "") {
 		const charCode = char.codePointAt(0)!;
-		const keypressEvent = new input[kWindow].KeyboardEvent("keypress", {
-			key: char,
-			code: getDOMCode(char),
-			keyCode: charCode,
-			charCode,
-			which: charCode,
+		const keypressEvent = constructInternal(() =>
+			new input[kWindow].KeyboardEvent("keypress", {
+				key: char,
+				code: getDOMCode(char),
+				keyCode: charCode,
+				charCode,
+				which: charCode,
+				ctrlKey,
+				shiftKey,
+				altKey,
+				metaKey,
+				bubbles: true,
+				composed: true,
+				cancelable: true,
+			}),
+		);
+		if (dispatchAsUserAgent(targetElement, keypressEvent)) {
+			insertText(input, targetElement, char);
+		}
+	}
+
+	const keyupEvent = constructInternal(() =>
+		new input[kWindow].KeyboardEvent("keyup", {
+			key: keyName,
+			code: getDOMCode(keyName),
+			keyCode,
+			charCode: 0,
+			which: keyCode,
 			ctrlKey,
 			shiftKey,
 			altKey,
@@ -1496,26 +1539,8 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 			bubbles: true,
 			composed: true,
 			cancelable: true,
-		});
-		if (dispatchAsUserAgent(targetElement, keypressEvent)) {
-			insertText(input, targetElement, char);
-		}
-	}
-
-	const keyupEvent = new input[kWindow].KeyboardEvent("keyup", {
-		key: keyName,
-		code: getDOMCode(keyName),
-		keyCode,
-		charCode: 0,
-		which: keyCode,
-		ctrlKey,
-		shiftKey,
-		altKey,
-		metaKey,
-		bubbles: true,
-		composed: true,
-		cancelable: true,
-	});
+		}),
+	);
 	dispatchAsUserAgent(targetElement, keyupEvent);
 }
 
@@ -1525,13 +1550,15 @@ function insertText(input: Input, target: Element, text: string): void {
 		requestEditingInsert(target, "insertText", text);
 		return;
 	}
-	const event = new input[kWindow].InputEvent("beforeinput", {
-		inputType: "insertText",
-		data: text,
-		bubbles: true,
-		composed: true,
-		cancelable: true,
-	});
+	const event = constructInternal(() =>
+		new input[kWindow].InputEvent("beforeinput", {
+			inputType: "insertText",
+			data: text,
+			bubbles: true,
+			composed: true,
+			cancelable: true,
+		}),
+	);
 	dispatchAsUserAgent(target, event);
 	runControlDefaultAction(target, event);
 }
