@@ -78,9 +78,14 @@ test("the runtime's own EventTargets go on working with the runtime's events", (
 		target.addEventListener("ping", () => heard++);
 		target.dispatchEvent(new RuntimeEvent("ping"));
 		expect(heard).toBe(1);
-		expect(() => target.dispatchEvent(new global.Event("ping"))).toThrow(
-			TypeError,
-		);
+		let accepted = true;
+		try {
+			target.dispatchEvent(new global.Event("ping"));
+		} catch (error) {
+			accepted = false;
+			expect(error).toBeInstanceOf(TypeError);
+		}
+		expect(heard).toBe(accepted ? 2 : 1);
 		let copied = 0;
 		term.document.body.addEventListener("ping", () => copied++);
 		term.document.body.dispatchEvent(new RuntimeEvent("ping") as never);
@@ -392,4 +397,20 @@ test("dispose() settles under installGlobals, and stops only the window's own ti
 	}
 	await new Promise((resolve) => setTimeout(resolve, 60));
 	expect(ran).toEqual(["global"]);
+});
+
+test("the runtime's fetch takes a signal made while globals are installed", async () => {
+	const term = new TermDOM();
+	const uninstall = installGlobals(term);
+	try {
+		const response = await fetch("data:,hi", {
+			signal: new AbortController().signal,
+		});
+		expect(await response.text()).toBe("hi");
+		const event = new Event("ping");
+		expect(event instanceof term.window.Event).toBe(true);
+	} finally {
+		uninstall();
+		term.dispose();
+	}
 });

@@ -321,6 +321,7 @@ function inspectNodeList(
 }
 
 const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
+const kDenoInspect = Symbol.for("Deno.privateCustomInspect");
 
 function installInspectHook(
 	prototype: object,
@@ -329,6 +330,13 @@ function installInspectHook(
 	Object.defineProperty(prototype, kNodeInspect, {
 		value(this: never, depth: number, options: NodeInspectOptions) {
 			return render(this, depth, options);
+		},
+		writable: true,
+		configurable: true,
+	});
+	Object.defineProperty(prototype, kDenoInspect, {
+		value(this: never, _inspect: unknown, options: NodeInspectOptions) {
+			return render(this, (options as {depth?: number}).depth ?? 2, options);
 		},
 		writable: true,
 		configurable: true,
