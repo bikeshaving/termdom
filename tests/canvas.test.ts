@@ -1111,11 +1111,7 @@ test("text a canvas drew goes with what clears or replaces it", async () => {
 	const {dom, document} =
 		await mount("<canvas id=c width=80 height=32></canvas>");
 	const ctx = context2d(document);
-	const runs = () => {
-		const slots = _(ctx) as unknown as Record<symbol, unknown[]>;
-		return slots[Object.getOwnPropertySymbols(slots)
-			.find((symbol) => symbol.description === "text")!].length;
-	};
+	const runs = () => (_(ctx) as unknown as {text: unknown[]}).text.length;
 	ctx.fillStyle = "#ffffff";
 	for (let frame = 0; frame < 20; frame++) {
 		ctx.clearRect(0, 0, 80, 32);

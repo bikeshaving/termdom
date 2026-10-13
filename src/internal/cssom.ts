@@ -66,8 +66,11 @@ import {
 	_maybe,
 	adopt as adoptSlots,
 	declareSealedRoot,
+	type internals,
 	ownerOf,
 	seal,
+	type Slots,
+	type Step,
 } from "./slots.ts";
 import {getStringWidth, splitOnASCIIWhitespace} from "./text.ts";
 import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
@@ -556,19 +559,8 @@ const kPseudoHosts = Symbol("pseudoHosts");
 // rule ids, which a parse renews, so nothing under the old root is reached
 // again.
 const kSharedRoot = Symbol("sharedRoot");
-const kElement = Symbol("element");
-const kViewOf = Symbol("viewOf");
 const kComputedValue = Symbol("computedValue");
 const kCustomProperties = Symbol("customProperties");
-const kParentRule = Symbol("parentRule");
-const kOnChange = Symbol("onChange");
-const kDescriptors = Symbol("descriptors");
-const kKeyframe = Symbol("keyframe");
-const kAttributeText = Symbol("attributeText");
-const kDeclarations = Symbol("declarations");
-const kByName = Symbol("byName");
-const kBlock = Symbol("block");
-const kIndexed = Symbol("indexed");
 const kSync = Symbol("sync");
 
 // Declarations are stored as longhands. A shorthand write expands and a
@@ -577,34 +569,33 @@ const kSync = Symbol("sync");
 // serializes through setAttribute, so attribute invalidation fires
 // either way, and an attribute write reparses on the next read, detected
 // by the text differing from what this object last serialized.
-interface CSSStyleDeclaration {
+interface CSSStyleDeclarationSlots {
 	// Set on what getComputedStyle() hands a page: a plain declaration
 	// that reads through to the engine's own computed one.
-	[kViewOf]?: CSSStyleDeclaration;
-	[kElement]: Element | null;
-	[kParentRule]: CSSRule | null;
-	[kOnChange]: (() => void) | null;
-
-	// The at-rule whose descriptors this block holds, or empty for a block
+	viewOf?: CSSStyleDeclaration;
+	element: Element | null;
+	parentRule: CSSRule | null;
+	onChange: (() => void) | null;
+	// The at-rule whose descriptors CSSStyleDeclaration block holds, or empty for a block
 	// of CSS properties. Only an at-rule's own grammar can validate its
 	// descriptors.
-	[kDescriptors]: string;
-
-	[kKeyframe]: boolean;
-	[kDeclarations]: CSSValues.CSSDeclaration[];
-
+	descriptors: string;
+	keyframe: boolean;
+	declarations: CSSValues.CSSDeclaration[];
 	// `all` expands to every longhand there is, and a scan per lookup would
 	// make serializing such a block cubic in its size.
-	[kByName]: Map<string, CSSValues.CSSDeclaration>;
-
-	// The `style` attribute text this object last serialized or parsed.
-	[kAttributeText]: string | null;
-
+	byName: Map<string, CSSValues.CSSDeclaration>;
+	// The `style` attribute text CSSStyleDeclaration object last serialized or parsed.
+	attributeText: string | null;
 	// The declarations expanded to longhands for the cascade.
-	[kBlock]: CSSValues.DeclarationBlock | null;
-
+	block: CSSValues.DeclarationBlock | null;
 	// How many numeric index properties currently name a declaration.
-	[kIndexed]: number;
+	indexed: number;
+	[kSync]: Step<CSSStyleDeclaration[typeof kSync]>;
+}
+
+interface CSSStyleDeclaration {
+	readonly [internals]: CSSStyleDeclarationSlots;
 }
 
 class CSSStyleDeclaration {
@@ -620,40 +611,40 @@ class CSSStyleDeclaration {
 	) {
 		seal(this, new.target, CSSStyleDeclaration);
 		const slots = _(this);
-		slots[kDeclarations] = [];
-		slots[kByName] = new Map<string, CSSValues.CSSDeclaration>();
-		slots[kAttributeText] = null;
-		slots[kBlock] = null;
-		slots[kIndexed] = 0;
-		slots[kElement] = owner.element ?? null;
-		slots[kParentRule] = owner.parentRule ?? null;
-		slots[kOnChange] = owner.onChange ?? null;
-		slots[kDescriptors] = owner.descriptors ?? "";
-		slots[kKeyframe] = Boolean(owner.keyframe);
+		slots.declarations = [];
+		slots.byName = new Map<string, CSSValues.CSSDeclaration>();
+		slots.attributeText = null;
+		slots.block = null;
+		slots.indexed = 0;
+		slots.element = owner.element ?? null;
+		slots.parentRule = owner.parentRule ?? null;
+		slots.onChange = owner.onChange ?? null;
+		slots.descriptors = owner.descriptors ?? "";
+		slots.keyframe = Boolean(owner.keyframe);
 	}
 
 	get parentRule(): CSSRule | null {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
-			return slots[kViewOf].parentRule;
+		if (slots.viewOf !== undefined) {
+			return slots.viewOf.parentRule;
 		}
-		return slots[kParentRule];
+		return slots.parentRule;
 	}
 
 	get length(): number {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
+		if (slots.viewOf !== undefined) {
 			syncViewIndices(this);
-			return slots[kViewOf].length;
+			return slots.viewOf.length;
 		}
 		slots[kSync]!();
-		return slots[kDeclarations].length;
+		return slots.declarations.length;
 	}
 
 	get cssText(): string {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
-			return slots[kViewOf].cssText;
+		if (slots.viewOf !== undefined) {
+			return slots.viewOf.cssText;
 		}
 		slots[kSync]!();
 		return serializeDeclarations(this);
@@ -661,13 +652,13 @@ class CSSStyleDeclaration {
 
 	set cssText(text: string) {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
-			slots[kViewOf].cssText = text;
+		if (slots.viewOf !== undefined) {
+			slots.viewOf.cssText = text;
 			return;
 		}
 		slots[kSync]!();
-		slots[kDeclarations] = [];
-		slots[kByName].clear();
+		slots.declarations = [];
+		slots.byName.clear();
 		for (const declaration of CSSValues.parseDeclarationText(text ?? "")) {
 			if (!isSupportedDeclaration(this, declaration.name)) {
 				continue;
@@ -685,27 +676,27 @@ class CSSStyleDeclaration {
 
 	item(index: number): string {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
-			return slots[kViewOf].item(index);
+		if (slots.viewOf !== undefined) {
+			return slots.viewOf.item(index);
 		}
 		slots[kSync]!();
-		return slots[kDeclarations][index]?.name ?? "";
+		return slots.declarations[index]?.name ?? "";
 	}
 
 	[Symbol.iterator](): IterableIterator<string> {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
+		if (slots.viewOf !== undefined) {
 			syncViewIndices(this);
-			return slots[kViewOf][Symbol.iterator]();
+			return slots.viewOf[Symbol.iterator]();
 		}
 		slots[kSync]!();
-		return slots[kDeclarations].map((entry) => entry.name)[Symbol.iterator]();
+		return slots.declarations.map((entry) => entry.name)[Symbol.iterator]();
 	}
 
 	getPropertyValue(property: string): string {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
-			return slots[kViewOf].getPropertyValue(property);
+		if (slots.viewOf !== undefined) {
+			return slots.viewOf.getPropertyValue(property);
 		}
 		slots[kSync]!();
 		const name = CSSValues.normalizePropertyName(property);
@@ -719,8 +710,8 @@ class CSSStyleDeclaration {
 
 	getPropertyPriority(property: string): string {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
-			return slots[kViewOf].getPropertyPriority(property);
+		if (slots.viewOf !== undefined) {
+			return slots.viewOf.getPropertyPriority(property);
 		}
 		slots[kSync]!();
 		const name = CSSValues.normalizePropertyName(property);
@@ -740,8 +731,8 @@ class CSSStyleDeclaration {
 
 	setProperty(property: string, value: string, priority?: string): void {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
-			slots[kViewOf].setProperty(property, value, priority);
+		if (slots.viewOf !== undefined) {
+			slots.viewOf.setProperty(property, value, priority);
 			return;
 		}
 		slots[kSync]!();
@@ -772,8 +763,8 @@ class CSSStyleDeclaration {
 
 	removeProperty(property: string): string {
 		const slots = _(this);
-		if (slots[kViewOf] !== undefined) {
-			return slots[kViewOf].removeProperty(property);
+		if (slots.viewOf !== undefined) {
+			return slots.viewOf.removeProperty(property);
 		}
 		slots[kSync]!();
 		const name = CSSValues.normalizePropertyName(property);
@@ -792,18 +783,18 @@ class CSSStyleDeclaration {
 	 * Reparse the `style` attribute if it changed since this object last wrote
 	 * it.
 	 */
-	[kSync]?(): void {
+	[kSync]?(this: Slots<CSSStyleDeclaration>): void {
 		const slots = this;
-		if (!slots[kElement]) {
+		if (!slots.element) {
 			return;
 		}
-		const text = slots[kElement].getAttribute("style") ?? "";
-		if (text === slots[kAttributeText]) {
+		const text = slots.element.getAttribute("style") ?? "";
+		if (text === slots.attributeText) {
 			return;
 		}
-		slots[kAttributeText] = text;
-		slots[kDeclarations] = [];
-		slots[kByName].clear();
+		slots.attributeText = text;
+		slots.declarations = [];
+		slots.byName.clear();
 		for (const declaration of CSSValues.parseDeclarationText(text)) {
 			applyDeclaration(
 				ownerOf(this),
@@ -832,11 +823,11 @@ function getDeclarationBlock(
 ): CSSValues.DeclarationBlock {
 	const styleSlots = _(style);
 	styleSlots[kSync]!();
-	if (styleSlots[kDeclarations].length === 0) {
+	if (styleSlots.declarations.length === 0) {
 		return EMPTY_DECLARATIONS;
 	}
-	if (styleSlots[kBlock]) {
-		return styleSlots[kBlock];
+	if (styleSlots.block) {
+		return styleSlots.block;
 	}
 
 	const declarations: Record<string, string> = {};
@@ -844,7 +835,7 @@ function getDeclarationBlock(
 	const order: Record<string, number> = {};
 	const importantValues: Record<string, string> = {};
 	let undecomposed = false;
-	styleSlots[kDeclarations].forEach((entry, index) => {
+	styleSlots.declarations.forEach((entry, index) => {
 		// An invalid declaration never enters the cascade. Dropping it lets a
 		// lower-priority rule keep winning, as in a browser.
 		if (!CSSValues.isValidDeclaration(entry.name, entry.value)) {
@@ -864,12 +855,12 @@ function getDeclarationBlock(
 	// The block parse is the one path both the attribute and setProperty
 	// forms of an inline transition come through.
 	if (
-		styleSlots[kElement] &&
+		styleSlots.element &&
 		(declarations["transition"] !== undefined ||
 			declarations["transition-duration"] !== undefined ||
 			declarations["transition-delay"] !== undefined)
 	) {
-		const document = styleSlots[kElement].ownerDocument;
+		const document = styleSlots.element.ownerDocument;
 		const cascade = document ? documentCascades.get(document) : undefined;
 		if (cascade) {
 			cascade[kTransitionsExist] = true;
@@ -884,21 +875,21 @@ function getDeclarationBlock(
 		)) {
 			important[property] = true;
 		}
-		styleSlots[kDeclarations].forEach((entry, index) => {
+		styleSlots.declarations.forEach((entry, index) => {
 			const expanded = CSSValues.expandShorthands({[entry.name]: entry.value});
 			for (const property in expanded) {
 				order[property] = index;
 			}
 		});
 		return (
-			styleSlots[kBlock] = {
+			styleSlots.block = {
 				declarations: CSSValues.expandShorthands(declarations),
 				important,
 				order,
 			}
 		);
 	}
-	return (styleSlots[kBlock] = {declarations, important, order});
+	return (styleSlots.block = {declarations, important, order});
 }
 
 // Reconstructs shorthands and keeps priority.
@@ -910,7 +901,7 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 	// walk.
 	const unserializable = new Set<string>();
 	const blockSlots = _(block);
-	for (const declaration of blockSlots[kDeclarations]) {
+	for (const declaration of blockSlots.declarations) {
 		if (serialized.has(declaration.name)) {
 			continue;
 		}
@@ -922,7 +913,7 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 			const longhands = CSSValues.getLonghands(shorthand)!;
 			// A shorthand covering more properties than the block holds cannot
 			// be serialized from it, and `all` covers hundreds.
-			if (longhands.length > blockSlots[kDeclarations].length) {
+			if (longhands.length > blockSlots.declarations.length) {
 				continue;
 			}
 			const value = getShorthandValue(block, shorthand, longhands);
@@ -954,25 +945,25 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 	invalidateDeclaration(declaration);
 	const declarationSlots = _(declaration);
-	if (declarationSlots[kElement]) {
-		declarationSlots[kAttributeText] = serializeDeclarations(declaration);
-		declarationSlots[kElement].setAttribute(
+	if (declarationSlots.element) {
+		declarationSlots.attributeText = serializeDeclarations(declaration);
+		declarationSlots.element.setAttribute(
 			"style",
-			declarationSlots[kAttributeText],
+			declarationSlots.attributeText,
 		);
 	}
-	declarationSlots[kOnChange]?.();
+	declarationSlots.onChange?.();
 }
 
 function invalidateDeclaration(declaration: CSSStyleDeclaration): void {
 	const declarationSlots = _(declaration);
-	declarationSlots[kBlock] = null;
-	for (let i = 0; i < declarationSlots[kIndexed]; i++) {
+	declarationSlots.block = null;
+	for (let i = 0; i < declarationSlots.indexed; i++) {
 		delete declaration[i];
 	}
-	declarationSlots[kIndexed] = declarationSlots[kDeclarations].length;
-	for (let i = 0; i < declarationSlots[kIndexed]; i++) {
-		declaration[i] = declarationSlots[kDeclarations][i].name;
+	declarationSlots.indexed = declarationSlots.declarations.length;
+	for (let i = 0; i < declarationSlots.indexed; i++) {
+		declaration[i] = declarationSlots.declarations[i].name;
 	}
 }
 
@@ -980,7 +971,7 @@ function findDeclaration(
 	declaration: CSSStyleDeclaration,
 	property: string,
 ): CSSValues.CSSDeclaration | undefined {
-	return _(declaration)[kByName].get(property);
+	return _(declaration).byName.get(property);
 }
 
 const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
@@ -997,14 +988,14 @@ function isSupportedDeclaration(
 	// A keyframe's block is one step of an animation, and the animation's
 	// own properties describe the whole rather than the step.
 	const declarationSlots = _(declaration);
-	if (declarationSlots[kKeyframe] && KEYFRAME_EXCLUDED.test(name)) {
+	if (declarationSlots.keyframe && KEYFRAME_EXCLUDED.test(name)) {
 		return false;
 	}
-	if (declarationSlots[kDescriptors]) {
+	if (declarationSlots.descriptors) {
 		// An at-rule's block holds its own descriptors. One this engine has no
 		// descriptor list for accepts whatever it is given, which keeps
 		// @font-feature-values' feature blocks working.
-		const names = DESCRIPTOR_NAMES.get(declarationSlots[kDescriptors]);
+		const names = DESCRIPTOR_NAMES.get(declarationSlots.descriptors);
 		return names ? names.has(name) : name !== "";
 	}
 
@@ -1034,8 +1025,8 @@ function storeDeclaration(
 	}
 	const entry = {name, value, important};
 	const declarationSlots = _(declaration);
-	declarationSlots[kDeclarations].push(entry);
-	declarationSlots[kByName].set(name, entry);
+	declarationSlots.declarations.push(entry);
+	declarationSlots.byName.set(name, entry);
 	return true;
 }
 
@@ -1044,14 +1035,14 @@ function removeDeclaration(
 	name: string,
 ): boolean {
 	const declarationSlots = _(declaration);
-	const index = declarationSlots[kDeclarations].findIndex(
+	const index = declarationSlots.declarations.findIndex(
 		(entry) => entry.name === name,
 	);
 	if (index === -1) {
 		return false;
 	}
-	declarationSlots[kDeclarations].splice(index, 1);
-	declarationSlots[kByName].delete(name);
+	declarationSlots.declarations.splice(index, 1);
+	declarationSlots.byName.delete(name);
 	return true;
 }
 
@@ -1065,9 +1056,7 @@ function applyDeclaration(
 	// A declaration whose value does not parse is not stored at all, so a
 	// shorthand with one bad component is dropped whole rather than leaving
 	// its good components behind.
-	if (
-		!CSSValues.isValidDeclaration(name, value, _(declaration)[kDescriptors])
-	) {
+	if (!CSSValues.isValidDeclaration(name, value, _(declaration).descriptors)) {
 		return false;
 	}
 	const expanded = CSSValues.expandShorthandValue(name, value);
@@ -1184,8 +1173,8 @@ function getPageView(source: CSSStyleDeclaration): CSSStyleProperties {
 	if (view === undefined) {
 		view = Object.create(CSSStyleProperties.prototype) as CSSStyleProperties;
 		seal(view, CSSStyleProperties, CSSStyleDeclaration);
-		_(view)[kViewOf] = source;
-		_(view)[kIndexed] = 0;
+		_(view).viewOf = source;
+		_(view).indexed = 0;
 		pageViews.set(source, view);
 	}
 	syncViewIndices(view);
@@ -1196,8 +1185,8 @@ function getPageView(source: CSSStyleDeclaration): CSSStyleProperties {
 // its indices follow its length each time the page reads it.
 function syncViewIndices(view: CSSStyleDeclaration): void {
 	const viewSlots = _(view);
-	const length = viewSlots[kViewOf]!.length;
-	for (let index = viewSlots[kIndexed]; index < length; index++) {
+	const length = viewSlots.viewOf!.length;
+	for (let index = viewSlots.indexed; index < length; index++) {
 		Object.defineProperty(view, index, {
 			get(this: CSSStyleDeclaration): string {
 				return this.item(index);
@@ -1206,10 +1195,10 @@ function syncViewIndices(view: CSSStyleDeclaration): void {
 			configurable: true,
 		});
 	}
-	for (let index = length; index < viewSlots[kIndexed]; index++) {
+	for (let index = length; index < viewSlots.indexed; index++) {
 		delete (view as unknown as Record<number, string>)[index];
 	}
-	viewSlots[kIndexed] = length;
+	viewSlots.indexed = length;
 }
 
 // An error thrown out of a stylesheet has to be the document's own
@@ -1276,13 +1265,20 @@ function buildRules<T>(sheet: CSSStyleSheet | null, build: () => T): T {
 	}
 }
 
-const kIndexCount = Symbol("index count");
-
 interface IndexedCollection {
 	readonly length: number;
 	item(index: number): unknown;
-	[kIndexCount]?: number;
 	[index: number]: unknown;
+}
+
+// How many index properties a list has defined on itself, kept in its
+// record.
+interface IndexedSlots {
+	indexCount?: number;
+}
+
+function indexedSlots(list: object): IndexedSlots {
+	return _(list) as IndexedSlots;
 }
 
 // Provides `list[0]` alongside `list.item(0)`, reading through item() so
@@ -1290,7 +1286,7 @@ interface IndexedCollection {
 // a proxied list pays the get trap, and each method read pays a bind.
 function syncIndexed(collection: object, items?: readonly unknown[]): void {
 	const list = collection as IndexedCollection;
-	const previous = _(list)[kIndexCount] ?? 0;
+	const previous = indexedSlots(list).indexCount ?? 0;
 	const length = items ? items.length : list.length;
 	for (let index = previous; index < length; index++) {
 		Object.defineProperty(list, index, {
@@ -1304,15 +1300,17 @@ function syncIndexed(collection: object, items?: readonly unknown[]): void {
 	for (let index = length; index < previous; index++) {
 		delete list[index];
 	}
-	_(list)[kIndexCount] = length;
+	indexedSlots(list).indexCount = length;
 }
 
-const kMedia = Symbol("media");
+export interface MediaListSlots {
+	// Mutated in place, so a list an author holds stays current.
+	media: string[];
+	onChange: (() => void) | null;
+}
 
 export interface MediaList {
-	// Mutated in place, so a list an author holds stays current.
-	[kMedia]: string[];
-	[kOnChange]: (() => void) | null;
+	readonly [internals]: MediaListSlots;
 }
 
 /** The media queries a sheet or an `@media` rule applies under. */
@@ -1322,26 +1320,26 @@ export class MediaList implements globalThis.MediaList {
 	constructor(mediaText = "", onChange?: () => void) {
 		seal(this, new.target, MediaList);
 		const slots = _(this);
-		slots[kMedia] = [];
-		slots[kOnChange] = onChange ?? null;
+		slots.media = [];
+		slots.onChange = onChange ?? null;
 		parseMediaText(this, mediaText);
 	}
 
 	get mediaText(): string {
-		return _(this)[kMedia].join(", ");
+		return _(this).media.join(", ");
 	}
 
 	set mediaText(text: string) {
 		parseMediaText(this, text);
-		_(this)[kOnChange]?.();
+		_(this).onChange?.();
 	}
 
 	get length(): number {
-		return _(this)[kMedia].length;
+		return _(this).media.length;
 	}
 
 	item(index: number): string | null {
-		return _(this)[kMedia][index] ?? null;
+		return _(this).media[index] ?? null;
 	}
 
 	// Parsed as a SINGLE media query. A comma-separated list parses to
@@ -1356,12 +1354,12 @@ export class MediaList implements globalThis.MediaList {
 		}
 		const query = CSSValues.serializeMediaQuery(text);
 		const slots = _(this);
-		if (!query || slots[kMedia].includes(query)) {
+		if (!query || slots.media.includes(query)) {
 			return;
 		}
-		slots[kMedia].push(query);
+		slots.media.push(query);
 		syncIndexed(this);
-		slots[kOnChange]?.();
+		slots.onChange?.();
 	}
 
 	deleteMedium(medium: string): void {
@@ -1373,18 +1371,18 @@ export class MediaList implements globalThis.MediaList {
 			? CSSValues.serializeMediaQuery(text)
 			: "";
 		const slots = _(this);
-		const kept = slots[kMedia].filter((entry) => entry !== query);
-		if (kept.length === slots[kMedia].length) {
+		const kept = slots.media.filter((entry) => entry !== query);
+		if (kept.length === slots.media.length) {
 			throw domException(`No such medium: ${medium}`, "NotFoundError");
 		}
-		slots[kMedia].length = 0;
-		slots[kMedia].push(...kept);
+		slots.media.length = 0;
+		slots.media.push(...kept);
 		syncIndexed(this);
-		slots[kOnChange]?.();
+		slots.onChange?.();
 	}
 
 	[Symbol.iterator](): ArrayIterator<string> {
-		return _(this)[kMedia][Symbol.iterator]();
+		return _(this).media[Symbol.iterator]();
 	}
 
 	toString(): string {
@@ -1396,13 +1394,13 @@ declareSealedRoot(MediaList);
 
 function parseMediaText(list: MediaList, text: string): void {
 	const listSlots = _(list);
-	listSlots[kMedia].length = 0;
+	listSlots.media.length = 0;
 	for (const query of CSSValues.splitMediaQueryList(
 		CSSValues.stripCSSComments(String(text ?? "")),
 	)) {
 		const serialized = CSSValues.serializeMediaQuery(query);
 		if (serialized) {
-			listSlots[kMedia].push(serialized);
+			listSlots.media.push(serialized);
 		}
 	}
 	syncIndexed(list);
@@ -1437,8 +1435,12 @@ const RULE_TYPES = {
 	FONT_FEATURE_VALUES_RULE: 14,
 } as const;
 
+interface CSSRuleSlots {
+	parentRule: CSSRule | null;
+}
+
 interface CSSRule {
-	[kParentRule]: CSSRule | null;
+	readonly [internals]: CSSRuleSlots;
 }
 
 abstract class CSSRule {
@@ -1462,14 +1464,14 @@ abstract class CSSRule {
 	) {
 		seal(this, new.target, CSSRule);
 		ruleSheets.set(this, parentStyleSheet);
-		_(this)[kParentRule] = parentRule;
+		_(this).parentRule = parentRule;
 	}
 
 	abstract get type(): number;
 	abstract get cssText(): string;
 
 	get parentRule(): CSSRule | null {
-		return _(this)[kParentRule];
+		return _(this).parentRule;
 	}
 
 	get parentStyleSheet(): CSSStyleSheet | null {
@@ -1487,12 +1489,13 @@ function notifyRule(rule: CSSRule): void {
 	sheetChanged(rule.parentStyleSheet);
 }
 
-const kRuleList = Symbol("ruleList");
-const kRules = Symbol("rules");
+interface CSSGroupingRuleSlots extends CSSRuleSlots {
+	rules: CSSRule[];
+	ruleList: CSSRuleList;
+}
 
 interface CSSGroupingRule {
-	[kRules]: CSSRule[];
-	[kRuleList]: CSSRuleList;
+	readonly [internals]: CSSGroupingRuleSlots;
 }
 
 abstract class CSSGroupingRule extends CSSRule {
@@ -1503,16 +1506,16 @@ abstract class CSSGroupingRule extends CSSRule {
 	) {
 		super(parentStyleSheet, parentRule);
 		const slots = _(this);
-		slots[kRules] = [];
-		slots[kRuleList] = createRuleList(slots[kRules]);
+		slots.rules = [];
+		slots.ruleList = createRuleList(slots.rules);
 		if (build) {
-			slots[kRules].push(...build(this));
-			syncIndexed(slots[kRuleList]);
+			slots.rules.push(...build(this));
+			syncIndexed(slots.ruleList);
 		}
 	}
 
 	get cssRules(): CSSRuleList {
-		return _(this)[kRuleList];
+		return _(this).ruleList;
 	}
 
 	insertRule(text: string, index = 0): number {
@@ -1523,7 +1526,7 @@ abstract class CSSGroupingRule extends CSSRule {
 			);
 		}
 		const slots = _(this);
-		if (index > slots[kRules].length) {
+		if (index > slots.rules.length) {
 			throw domException(
 				`Cannot insert at index ${index}`,
 				"IndexSizeError",
@@ -1540,8 +1543,8 @@ abstract class CSSGroupingRule extends CSSRule {
 				this.parentStyleSheet,
 			);
 		}
-		slots[kRules].splice(index, 0, inserted);
-		syncIndexed(slots[kRuleList]);
+		slots.rules.splice(index, 0, inserted);
+		syncIndexed(slots.ruleList);
 		notifyRule(this);
 		return index;
 	}
@@ -1554,16 +1557,16 @@ abstract class CSSGroupingRule extends CSSRule {
 			);
 		}
 		const slots = _(this);
-		if (index >= slots[kRules].length) {
+		if (index >= slots.rules.length) {
 			throw domException(
 				`Cannot delete at index ${index}`,
 				"IndexSizeError",
 				this.parentStyleSheet,
 			);
 		}
-		detachRule(slots[kRules][index]);
-		slots[kRules].splice(index, 1);
-		syncIndexed(slots[kRuleList]);
+		detachRule(slots.rules[index]);
+		slots.rules.splice(index, 1);
+		syncIndexed(slots.ruleList);
 		notifyRule(this);
 	}
 }
@@ -1577,10 +1580,6 @@ function serializeGroupRules(group: CSSGroupingRule): string {
 abstract class CSSConditionRule extends CSSGroupingRule {
 	abstract get conditionText(): string;
 }
-
-const kSelectors = Symbol("selectors");
-const kStyle = Symbol("style");
-const kSelectorText = Symbol("selectorText");
 
 // Avoids the serialize-and-reparse a cssText assignment would run. The
 // filters are the cssText setter's.
@@ -1598,10 +1597,14 @@ function assignDeclarations(
 	flushStyleAttribute(block);
 }
 
+interface CSSStyleRuleSlots extends CSSGroupingRuleSlots {
+	selectors: CSSTree.SelectorNode;
+	selectorText: string | null;
+	style: CSSStyleDeclaration;
+}
+
 interface CSSStyleRule {
-	[kSelectors]: CSSTree.SelectorNode;
-	[kSelectorText]: string | null;
-	[kStyle]: CSSStyleDeclaration;
+	readonly [internals]: CSSStyleRuleSlots;
 }
 
 class CSSStyleRule extends CSSGroupingRule {
@@ -1614,16 +1617,16 @@ class CSSStyleRule extends CSSGroupingRule {
 	) {
 		super(parentStyleSheet, parentRule, build);
 		const slots = _(this);
-		slots[kSelectorText] = null;
-		slots[kSelectors] = selectors;
-		slots[kStyle] = new CSSStyleProperties({
+		slots.selectorText = null;
+		slots.selectors = selectors;
+		slots.style = new CSSStyleProperties({
 			parentRule: this,
 			onChange: () => notifyRule(this),
 		});
 		if (typeof block === "string") {
-			slots[kStyle].cssText = block;
+			slots.style.cssText = block;
 		} else {
-			assignDeclarations(slots[kStyle], block);
+			assignDeclarations(slots.style, block);
 		}
 	}
 
@@ -1637,8 +1640,8 @@ class CSSStyleRule extends CSSGroupingRule {
 	get selectorText(): string {
 		const slots = _(this);
 		return (
-			slots[kSelectorText] ??= CSSValues.serializeSelectorList(
-				slots[kSelectors],
+			slots.selectorText ??= CSSValues.serializeSelectorList(
+				slots.selectors,
 				getSheetNamespaces(this.parentStyleSheet),
 			)
 		);
@@ -1651,22 +1654,22 @@ class CSSStyleRule extends CSSGroupingRule {
 			return;
 		}
 		const slots = _(this);
-		slots[kSelectors] = selectors;
-		slots[kSelectorText] = null;
+		slots.selectors = selectors;
+		slots.selectorText = null;
 		notifyRule(this);
 	}
 
 	get style(): CSSStyleDeclaration {
-		return _(this)[kStyle];
+		return _(this).style;
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		_(this)[kStyle].cssText = String(text);
+		_(this).style.cssText = String(text);
 	}
 
 	get cssText(): string {
-		const declarations = _(this)[kStyle].cssText;
+		const declarations = _(this).style.cssText;
 		const nested = serializeGroupRules(this);
 		const selector = this.selectorText;
 		if (nested) {
@@ -1737,8 +1740,12 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 	DESCRIPTOR_BLOCKS.set(atRule, block);
 }
 
+interface CSSDeclarationBlockOwnerSlots extends CSSRuleSlots {
+	style: CSSStyleDeclaration;
+}
+
 interface CSSDeclarationBlockOwner extends CSSRule {
-	[kStyle]: CSSStyleDeclaration;
+	readonly [internals]: CSSDeclarationBlockOwnerSlots;
 }
 
 // The block an at-rule with descriptors holds: @font-face, @page, a
@@ -1752,7 +1759,7 @@ function initDeclarationBlock(
 	const Block =
 		(atRule ? DESCRIPTOR_BLOCKS.get(atRule) : undefined) ?? CSSStyleProperties;
 	const ruleSlots = _(rule);
-	ruleSlots[kStyle] = new Block({
+	ruleSlots.style = new Block({
 		parentRule: rule,
 		onChange: () => notifyRule(rule),
 		// A descriptor block declares descriptors, not CSS properties, so
@@ -1761,9 +1768,9 @@ function initDeclarationBlock(
 		keyframe: rule instanceof CSSKeyframeRule,
 	});
 	if (typeof block === "string") {
-		ruleSlots[kStyle].cssText = block;
+		ruleSlots.style.cssText = block;
 	} else {
-		assignDeclarations(ruleSlots[kStyle], block);
+		assignDeclarations(ruleSlots.style, block);
 	}
 }
 
@@ -1775,7 +1782,9 @@ function declarationBlockText(
 	return declarations ? `${prelude} { ${declarations} }` : `${prelude} { }`;
 }
 
-interface CSSFontFaceRule extends CSSDeclarationBlockOwner {}
+interface CSSFontFaceRule {
+	readonly [internals]: CSSDeclarationBlockOwnerSlots;
+}
 
 /** `@font-face`: the descriptors of a font this terminal will never load. */
 class CSSFontFaceRule extends CSSRule {
@@ -1793,24 +1802,28 @@ class CSSFontFaceRule extends CSSRule {
 	}
 
 	get style(): CSSStyleDeclaration {
-		return _(this)[kStyle];
+		return _(this).style;
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		_(this)[kStyle].cssText = String(text);
+		_(this).style.cssText = String(text);
 	}
 
 	get cssText(): string {
-		return declarationBlockText("@font-face", _(this)[kStyle]);
+		return declarationBlockText("@font-face", _(this).style);
 	}
 }
 
 // Declarations that follow a nested rule, or sit in a conditional rule
 // nested in a style rule. They apply with the enclosing style rule's
 // selectors, in the place they were written.
+interface CSSNestedDeclarationsSlots extends CSSRuleSlots {
+	style: CSSStyleProperties;
+}
+
 interface CSSNestedDeclarations {
-	[kStyle]: CSSStyleProperties;
+	readonly [internals]: CSSNestedDeclarationsSlots;
 }
 
 class CSSNestedDeclarations extends CSSRule {
@@ -1821,11 +1834,11 @@ class CSSNestedDeclarations extends CSSRule {
 	) {
 		super(parentStyleSheet, parentRule);
 		const slots = _(this);
-		slots[kStyle] = new CSSStyleProperties({
+		slots.style = new CSSStyleProperties({
 			parentRule: this,
 			onChange: () => notifyRule(this),
 		});
-		assignDeclarations(slots[kStyle], block);
+		assignDeclarations(slots.style, block);
 	}
 
 	get type(): number {
@@ -1833,16 +1846,16 @@ class CSSNestedDeclarations extends CSSRule {
 	}
 
 	get style(): CSSStyleDeclaration {
-		return _(this)[kStyle];
+		return _(this).style;
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		_(this)[kStyle].cssText = String(text);
+		_(this).style.cssText = String(text);
 	}
 
 	get cssText(): string {
-		return _(this)[kStyle].cssText;
+		return _(this).style.cssText;
 	}
 }
 
@@ -1851,8 +1864,12 @@ Object.defineProperty(CSSNestedDeclarations.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-interface CSSPageRule extends CSSDeclarationBlockOwner {
-	[kSelectorText]: string;
+interface CSSPageRuleSlots extends CSSDeclarationBlockOwnerSlots {
+	selectorText: string;
+}
+
+interface CSSPageRule {
+	readonly [internals]: CSSPageRuleSlots;
 }
 
 /** `@page`: the page selector and its descriptors. */
@@ -1865,7 +1882,7 @@ class CSSPageRule extends CSSRule {
 	) {
 		super(parentStyleSheet, parentRule);
 		initDeclarationBlock(this, "@page", block);
-		_(this)[kSelectorText] = CSSValues.serializePageSelector(selectorText);
+		_(this).selectorText = CSSValues.serializePageSelector(selectorText);
 	}
 
 	get type(): number {
@@ -1873,39 +1890,41 @@ class CSSPageRule extends CSSRule {
 	}
 
 	get selectorText(): string {
-		return _(this)[kSelectorText];
+		return _(this).selectorText;
 	}
 
 	set selectorText(selector: string) {
-		_(this)[kSelectorText] = CSSValues.serializePageSelector(String(selector));
+		_(this).selectorText = CSSValues.serializePageSelector(String(selector));
 		notifyRule(this);
 	}
 
 	get style(): CSSStyleDeclaration {
-		return _(this)[kStyle];
+		return _(this).style;
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		_(this)[kStyle].cssText = String(text);
+		_(this).style.cssText = String(text);
 	}
 
 	get cssText(): string {
 		const slots = _(this);
 		return declarationBlockText(
-			slots[kSelectorText] ? `@page ${slots[kSelectorText]}` : "@page",
-			slots[kStyle],
+			slots.selectorText ? `@page ${slots.selectorText}` : "@page",
+			slots.style,
 		);
 	}
 }
 
-const kName = Symbol("name");
-
 // A named at-rule with a descriptor block, `@counter-style x { ... }`
 // and the like: the name is the prelude and the block holds the
 // descriptors.
+interface CSSNamedRuleSlots extends CSSDeclarationBlockOwnerSlots {
+	name: string;
+}
+
 interface CSSNamedRule extends CSSDeclarationBlockOwner {
-	[kName]: string;
+	readonly [internals]: CSSNamedRuleSlots;
 }
 
 function initNamedRule(
@@ -1915,10 +1934,12 @@ function initNamedRule(
 	block: string | readonly CSSValues.CSSDeclaration[],
 ): void {
 	initDeclarationBlock(rule, atRule, block);
-	_(rule)[kName] = name.trim();
+	_(rule).name = name.trim();
 }
 
-interface CSSCounterStyleRule extends CSSNamedRule {}
+interface CSSCounterStyleRule {
+	readonly [internals]: CSSNamedRuleSlots;
+}
 
 /** `@counter-style`: a counter's name and the descriptors that define it. */
 class CSSCounterStyleRule extends CSSRule {
@@ -1936,7 +1957,7 @@ class CSSCounterStyleRule extends CSSRule {
 	}
 
 	get name(): string {
-		return _(this)[kName];
+		return _(this).name;
 	}
 
 	set name(name: string) {
@@ -1944,20 +1965,19 @@ class CSSCounterStyleRule extends CSSRule {
 		if (!text) {
 			return;
 		}
-		_(this)[kName] = text;
+		_(this).name = text;
 		notifyRule(this);
 	}
 
 	get cssText(): string {
 		const slots = _(this);
-		return declarationBlockText(
-			`@counter-style ${slots[kName]}`,
-			slots[kStyle],
-		);
+		return declarationBlockText(`@counter-style ${slots.name}`, slots.style);
 	}
 }
 
-interface CSSPropertyRule extends CSSNamedRule {}
+interface CSSPropertyRule {
+	readonly [internals]: CSSNamedRuleSlots;
+}
 
 /** `@property`: a custom property's registration. */
 class CSSPropertyRule extends CSSRule {
@@ -1975,28 +1995,30 @@ class CSSPropertyRule extends CSSRule {
 	}
 
 	get name(): string {
-		return _(this)[kName];
+		return _(this).name;
 	}
 
 	get syntax(): string {
-		return _(this)[kStyle].getPropertyValue("syntax");
+		return _(this).style.getPropertyValue("syntax");
 	}
 
 	get inherits(): boolean {
-		return _(this)[kStyle].getPropertyValue("inherits") === "true";
+		return _(this).style.getPropertyValue("inherits") === "true";
 	}
 
 	get initialValue(): string | null {
-		return _(this)[kStyle].getPropertyValue("initial-value") || null;
+		return _(this).style.getPropertyValue("initial-value") || null;
 	}
 
 	get cssText(): string {
 		const slots = _(this);
-		return declarationBlockText(`@property ${slots[kName]}`, slots[kStyle]);
+		return declarationBlockText(`@property ${slots.name}`, slots.style);
 	}
 }
 
-interface CSSFontPaletteValuesRule extends CSSNamedRule {}
+interface CSSFontPaletteValuesRule {
+	readonly [internals]: CSSNamedRuleSlots;
+}
 
 /** `@font-palette-values`: a palette's name and its descriptors. */
 class CSSFontPaletteValuesRule extends CSSRule {
@@ -2014,34 +2036,36 @@ class CSSFontPaletteValuesRule extends CSSRule {
 	}
 
 	get name(): string {
-		return _(this)[kName];
+		return _(this).name;
 	}
 
 	get fontFamily(): string {
-		return _(this)[kStyle].getPropertyValue("font-family");
+		return _(this).style.getPropertyValue("font-family");
 	}
 
 	get basePalette(): string {
-		return _(this)[kStyle].getPropertyValue("base-palette");
+		return _(this).style.getPropertyValue("base-palette");
 	}
 
 	get overrideColors(): string {
-		return _(this)[kStyle].getPropertyValue("override-colors");
+		return _(this).style.getPropertyValue("override-colors");
 	}
 
 	get cssText(): string {
 		const slots = _(this);
 		return declarationBlockText(
-			`@font-palette-values ${slots[kName]}`,
-			slots[kStyle],
+			`@font-palette-values ${slots.name}`,
+			slots.style,
 		);
 	}
 }
 
-const kKeyText = Symbol("keyText");
+interface CSSKeyframeRuleSlots extends CSSDeclarationBlockOwnerSlots {
+	keyText: string;
+}
 
-interface CSSKeyframeRule extends CSSDeclarationBlockOwner {
-	[kKeyText]: string;
+interface CSSKeyframeRule {
+	readonly [internals]: CSSKeyframeRuleSlots;
 }
 
 /** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
@@ -2054,7 +2078,7 @@ class CSSKeyframeRule extends CSSRule {
 	) {
 		super(parentStyleSheet, parentRule);
 		initDeclarationBlock(this, "", block);
-		_(this)[kKeyText] = CSSValues.serializeKeyText(keyText);
+		_(this).keyText = CSSValues.serializeKeyText(keyText);
 	}
 
 	get type(): number {
@@ -2062,7 +2086,7 @@ class CSSKeyframeRule extends CSSRule {
 	}
 
 	get keyText(): string {
-		return _(this)[kKeyText];
+		return _(this).keyText;
 	}
 
 	set keyText(text: string) {
@@ -2074,27 +2098,31 @@ class CSSKeyframeRule extends CSSRule {
 				this.parentStyleSheet,
 			);
 		}
-		_(this)[kKeyText] = serialized;
+		_(this).keyText = serialized;
 		notifyRule(this);
 	}
 
 	get style(): CSSStyleDeclaration {
-		return _(this)[kStyle];
+		return _(this).style;
 	}
 
 	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
 	set style(text: string) {
-		_(this)[kStyle].cssText = String(text);
+		_(this).style.cssText = String(text);
 	}
 
 	get cssText(): string {
 		const slots = _(this);
-		return declarationBlockText(slots[kKeyText], slots[kStyle]);
+		return declarationBlockText(slots.keyText, slots.style);
 	}
 }
 
+interface CSSMediaRuleSlots extends CSSGroupingRuleSlots {
+	media: MediaList;
+}
+
 interface CSSMediaRule {
-	[kMedia]: MediaList;
+	readonly [internals]: CSSMediaRuleSlots;
 }
 
 /** `@media`: the rules that apply when the viewport matches. */
@@ -2106,7 +2134,7 @@ class CSSMediaRule extends CSSConditionRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		_(this)[kMedia] = new MediaList(mediaText, () => notifyRule(this));
+		_(this).media = new MediaList(mediaText, () => notifyRule(this));
 	}
 
 	get type(): number {
@@ -2114,25 +2142,23 @@ class CSSMediaRule extends CSSConditionRule {
 	}
 
 	get media(): MediaList {
-		return _(this)[kMedia];
+		return _(this).media;
 	}
 
 	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
 	set media(text: string) {
-		_(this)[kMedia].mediaText = String(text);
+		_(this).media.mediaText = String(text);
 	}
 
 	/** Read-only. The media list behind it is what an author sets. */
 	get conditionText(): string {
-		return _(this)[kMedia].mediaText;
+		return _(this).media.mediaText;
 	}
 
 	get cssText(): string {
 		return `@media ${this.conditionText} {${serializeGroupRules(this)}\n}`;
 	}
 }
-
-const kConditionText = Symbol("conditionText");
 
 // The text of a condition rule this engine keeps as authored:
 // `@supports` and `@container`.
@@ -2146,8 +2172,12 @@ function conditionRuleText(
 }
 
 /** `@supports`: its rules apply, since what this engine supports it renders. */
+interface CSSSupportsRuleSlots extends CSSGroupingRuleSlots {
+	conditionText: string;
+}
+
 interface CSSSupportsRule {
-	[kConditionText]: string;
+	readonly [internals]: CSSSupportsRuleSlots;
 }
 
 class CSSSupportsRule extends CSSConditionRule {
@@ -2158,7 +2188,7 @@ class CSSSupportsRule extends CSSConditionRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		_(this)[kConditionText] = conditionText.trim();
+		_(this).conditionText = conditionText.trim();
 	}
 
 	get type(): number {
@@ -2166,21 +2196,22 @@ class CSSSupportsRule extends CSSConditionRule {
 	}
 
 	get conditionText(): string {
-		return _(this)[kConditionText];
+		return _(this).conditionText;
 	}
 
 	get cssText(): string {
-		return conditionRuleText("@supports", _(this)[kConditionText], this);
+		return conditionRuleText("@supports", _(this).conditionText, this);
 	}
 }
 
-const kContainerName = Symbol("containerName");
-const kContainerQuery = Symbol("containerQuery");
+interface CSSContainerRuleSlots extends CSSGroupingRuleSlots {
+	conditionText: string;
+	containerName: string;
+	containerQuery: string;
+}
 
 interface CSSContainerRule {
-	[kConditionText]: string;
-	[kContainerName]: string;
-	[kContainerQuery]: string;
+	readonly [internals]: CSSContainerRuleSlots;
 }
 
 /** `@container`: parsed, with no container query engine behind it. */
@@ -2193,12 +2224,12 @@ class CSSContainerRule extends CSSConditionRule {
 	) {
 		super(parentStyleSheet, parentRule, build);
 		const slots = _(this);
-		slots[kConditionText] = conditionText.trim();
+		slots.conditionText = conditionText.trim();
 		// The prelude does not change for this rule, so its parts are read
 		// once here.
 		const parts = CSSValues.getContainerParts(this.conditionText);
-		slots[kContainerName] = parts.name;
-		slots[kContainerQuery] = parts.query;
+		slots.containerName = parts.name;
+		slots.containerQuery = parts.query;
 	}
 
 	get type(): number {
@@ -2206,30 +2237,30 @@ class CSSContainerRule extends CSSConditionRule {
 	}
 
 	get conditionText(): string {
-		return _(this)[kConditionText];
+		return _(this).conditionText;
 	}
 
 	get cssText(): string {
-		return conditionRuleText("@container", _(this)[kConditionText], this);
+		return conditionRuleText("@container", _(this).conditionText, this);
 	}
 
 	get containerName(): string {
-		return _(this)[kContainerName];
+		return _(this).containerName;
 	}
 
 	get containerQuery(): string {
-		return _(this)[kContainerQuery];
+		return _(this).containerQuery;
 	}
 }
 
-const kPrelude = Symbol("prelude");
-const kScopeStart = Symbol("scopeStart");
-const kScopeEnd = Symbol("scopeEnd");
+interface CSSScopeRuleSlots extends CSSGroupingRuleSlots {
+	prelude: string;
+	scopeStart: string | null;
+	scopeEnd: string | null;
+}
 
 interface CSSScopeRule {
-	[kPrelude]: string;
-	[kScopeStart]: string | null;
-	[kScopeEnd]: string | null;
+	readonly [internals]: CSSScopeRuleSlots;
 }
 
 /** `@scope`: parsed, and its rules apply unscoped. */
@@ -2242,12 +2273,12 @@ class CSSScopeRule extends CSSGroupingRule {
 	) {
 		super(parentStyleSheet, parentRule, build);
 		const slots = _(this);
-		slots[kPrelude] = prelude.trim();
+		slots.prelude = prelude.trim();
 		// The prelude does not change for this rule, so its parts are read
 		// once here.
-		const limits = CSSValues.getScopeLimits(slots[kPrelude]);
-		slots[kScopeStart] = limits.start;
-		slots[kScopeEnd] = limits.end;
+		const limits = CSSValues.getScopeLimits(slots.prelude);
+		slots.scopeStart = limits.start;
+		slots.scopeEnd = limits.end;
 	}
 
 	get type(): number {
@@ -2255,16 +2286,16 @@ class CSSScopeRule extends CSSGroupingRule {
 	}
 
 	get start(): string | null {
-		return _(this)[kScopeStart];
+		return _(this).scopeStart;
 	}
 
 	get end(): string | null {
-		return _(this)[kScopeEnd];
+		return _(this).scopeEnd;
 	}
 
 	get cssText(): string {
 		const slots = _(this);
-		const prelude = slots[kPrelude] ? ` ${slots[kPrelude]}` : "";
+		const prelude = slots.prelude ? ` ${slots.prelude}` : "";
 		return `@scope${prelude} {${serializeGroupRules(this)}\n}`;
 	}
 }
@@ -2280,8 +2311,12 @@ class CSSStartingStyleRule extends CSSGroupingRule {
 	}
 }
 
+interface CSSLayerBlockRuleSlots extends CSSGroupingRuleSlots {
+	name: string;
+}
+
 interface CSSLayerBlockRule {
-	[kName]: string;
+	readonly [internals]: CSSLayerBlockRuleSlots;
 }
 
 /** `@layer name { ... }`: its rules cascade in source order. */
@@ -2293,7 +2328,7 @@ class CSSLayerBlockRule extends CSSGroupingRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		_(this)[kName] = name;
+		_(this).name = name;
 	}
 
 	get type(): number {
@@ -2301,20 +2336,22 @@ class CSSLayerBlockRule extends CSSGroupingRule {
 	}
 
 	get name(): string {
-		return _(this)[kName];
+		return _(this).name;
 	}
 
 	get cssText(): string {
 		const slots = _(this);
-		const name = slots[kName] ? ` ${slots[kName]}` : "";
+		const name = slots.name ? ` ${slots.name}` : "";
 		return `@layer${name} {${serializeGroupRules(this)}\n}`;
 	}
 }
 
-const kNames = Symbol("names");
+interface CSSLayerStatementRuleSlots extends CSSRuleSlots {
+	names: string[];
+}
 
 interface CSSLayerStatementRule {
-	[kNames]: string[];
+	readonly [internals]: CSSLayerStatementRuleSlots;
 }
 
 /** `@layer a, b;`: the layer order, declared without a block. */
@@ -2325,7 +2362,7 @@ class CSSLayerStatementRule extends CSSRule {
 		parentRule: CSSRule | null,
 	) {
 		super(parentStyleSheet, parentRule);
-		_(this)[kNames] = [...names];
+		_(this).names = [...names];
 	}
 
 	get type(): number {
@@ -2333,20 +2370,21 @@ class CSSLayerStatementRule extends CSSRule {
 	}
 
 	get nameList(): readonly string[] {
-		return _(this)[kNames];
+		return _(this).names;
 	}
 
 	get cssText(): string {
-		return `@layer ${_(this)[kNames].join(", ")};`;
+		return `@layer ${_(this).names.join(", ")};`;
 	}
 }
 
-const kPrefix = Symbol("prefix");
-const kNamespaceURI = Symbol("namespaceURI");
+interface CSSNamespaceRuleSlots extends CSSRuleSlots {
+	prefix: string;
+	namespaceURI: string;
+}
 
 interface CSSNamespaceRule {
-	[kPrefix]: string;
-	[kNamespaceURI]: string;
+	readonly [internals]: CSSNamespaceRuleSlots;
 }
 
 /** `@namespace`: a prefix bound to a namespace URI. */
@@ -2358,8 +2396,8 @@ class CSSNamespaceRule extends CSSRule {
 	) {
 		super(parentStyleSheet, null);
 		const slots = _(this);
-		slots[kPrefix] = prefix;
-		slots[kNamespaceURI] = namespaceURI;
+		slots.prefix = prefix;
+		slots.namespaceURI = namespaceURI;
 	}
 
 	get type(): number {
@@ -2367,31 +2405,31 @@ class CSSNamespaceRule extends CSSRule {
 	}
 
 	get prefix(): string {
-		return _(this)[kPrefix];
+		return _(this).prefix;
 	}
 
 	get namespaceURI(): string {
-		return _(this)[kNamespaceURI];
+		return _(this).namespaceURI;
 	}
 
 	get cssText(): string {
 		const slots = _(this);
-		const prefix = slots[kPrefix] ? `${slots[kPrefix]} ` : "";
-		return `@namespace ${prefix}url(${CSSValues.serializeCSSString(slots[kNamespaceURI])});`;
+		const prefix = slots.prefix ? `${slots.prefix} ` : "";
+		return `@namespace ${prefix}url(${CSSValues.serializeCSSString(slots.namespaceURI)});`;
 	}
 }
 
-const kHref = Symbol("href");
-const kLayerName = Symbol("layerName");
-const kSupportsText = Symbol("supportsText");
-
 // There is no network behind a terminal document. Nothing is fetched,
 // the rule declares nothing, and its styleSheet is null.
+interface CSSImportRuleSlots extends CSSRuleSlots {
+	href: string;
+	media: MediaList;
+	layerName: string | null;
+	supportsText: string | null;
+}
+
 interface CSSImportRule {
-	[kHref]: string;
-	[kMedia]: MediaList;
-	[kLayerName]: string | null;
-	[kSupportsText]: string | null;
+	readonly [internals]: CSSImportRuleSlots;
 }
 
 class CSSImportRule extends CSSRule {
@@ -2404,10 +2442,10 @@ class CSSImportRule extends CSSRule {
 	) {
 		super(parentStyleSheet, null);
 		const slots = _(this);
-		slots[kHref] = href;
-		slots[kMedia] = new MediaList(mediaText);
-		slots[kLayerName] = layerName;
-		slots[kSupportsText] = supportsText;
+		slots.href = href;
+		slots.media = new MediaList(mediaText);
+		slots.layerName = layerName;
+		slots.supportsText = supportsText;
 	}
 
 	get type(): number {
@@ -2415,24 +2453,24 @@ class CSSImportRule extends CSSRule {
 	}
 
 	get href(): string {
-		return _(this)[kHref];
+		return _(this).href;
 	}
 
 	get media(): MediaList {
-		return _(this)[kMedia];
+		return _(this).media;
 	}
 
 	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
 	set media(text: string) {
-		_(this)[kMedia].mediaText = String(text);
+		_(this).media.mediaText = String(text);
 	}
 
 	get layerName(): string | null {
-		return _(this)[kLayerName];
+		return _(this).layerName;
 	}
 
 	get supportsText(): string | null {
-		return _(this)[kSupportsText];
+		return _(this).supportsText;
 	}
 
 	get styleSheet(): CSSStyleSheet | null {
@@ -2441,14 +2479,14 @@ class CSSImportRule extends CSSRule {
 
 	get cssText(): string {
 		const slots = _(this);
-		let out = `@import url(${CSSValues.serializeCSSString(slots[kHref])})`;
-		if (slots[kLayerName] !== null) {
-			out += slots[kLayerName] ? ` layer(${slots[kLayerName]})` : " layer";
+		let out = `@import url(${CSSValues.serializeCSSString(slots.href)})`;
+		if (slots.layerName !== null) {
+			out += slots.layerName ? ` layer(${slots.layerName})` : " layer";
 		}
-		if (slots[kSupportsText] !== null) {
-			out += ` supports(${slots[kSupportsText]})`;
+		if (slots.supportsText !== null) {
+			out += ` supports(${slots.supportsText})`;
 		}
-		const media = slots[kMedia].mediaText;
+		const media = slots.media.mediaText;
 		if (media) {
 			out += ` ${media}`;
 		}
@@ -2456,12 +2494,13 @@ class CSSImportRule extends CSSRule {
 	}
 }
 
-const kFontFamily = Symbol("fontFamily");
-const kBlocks = Symbol("blocks");
+interface CSSFontFeatureValuesRuleSlots extends CSSRuleSlots {
+	fontFamily: string;
+	blocks: Map<string, CSSStyleDeclaration>;
+}
 
 interface CSSFontFeatureValuesRule {
-	[kFontFamily]: string;
-	[kBlocks]: Map<string, CSSStyleDeclaration>;
+	readonly [internals]: CSSFontFeatureValuesRuleSlots;
 }
 
 /** `@font-feature-values`: a font family and the feature blocks it names. */
@@ -2474,8 +2513,8 @@ class CSSFontFeatureValuesRule extends CSSRule {
 	) {
 		super(parentStyleSheet, null);
 		const slots = _(this);
-		slots[kBlocks] = new Map<string, CSSStyleDeclaration>();
-		slots[kFontFamily] = fontFamily.trim();
+		slots.blocks = new Map<string, CSSStyleDeclaration>();
+		slots.fontFamily = fontFamily.trim();
 		for (const child of CSSValues.getNodes(node.block ?? {})) {
 			if (child.type !== "Atrule" || !child.name) {
 				continue;
@@ -2486,7 +2525,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 				descriptors: "@font-feature-values",
 			});
 			assignDeclarations(block, CSSValues.getBlockDeclarations(child, source));
-			slots[kBlocks].set(child.name.toLowerCase(), block);
+			slots.blocks.set(child.name.toLowerCase(), block);
 		}
 	}
 
@@ -2495,11 +2534,11 @@ class CSSFontFeatureValuesRule extends CSSRule {
 	}
 
 	get fontFamily(): string {
-		return _(this)[kFontFamily];
+		return _(this).fontFamily;
 	}
 
 	set fontFamily(family: string) {
-		_(this)[kFontFamily] = String(family).trim();
+		_(this).fontFamily = String(family).trim();
 		notifyRule(this);
 	}
 
@@ -2530,13 +2569,13 @@ class CSSFontFeatureValuesRule extends CSSRule {
 	get cssText(): string {
 		const blocks: string[] = [];
 		const slots = _(this);
-		for (const [name, block] of slots[kBlocks]) {
+		for (const [name, block] of slots.blocks) {
 			const declarations = block.cssText;
 			if (declarations) {
 				blocks.push(`\n  @${name} { ${declarations} }`);
 			}
 		}
-		return `@font-feature-values ${slots[kFontFamily]} {${blocks.join("")}\n}`;
+		return `@font-feature-values ${slots.fontFamily} {${blocks.join("")}\n}`;
 	}
 }
 
@@ -2545,22 +2584,26 @@ function getFeatureBlock(
 	name: string,
 ): CSSStyleDeclaration {
 	const ruleSlots = _(rule);
-	let block = ruleSlots[kBlocks].get(name);
+	let block = ruleSlots.blocks.get(name);
 	if (!block) {
 		block = new CSSStyleDeclaration({
 			parentRule: rule,
 			onChange: () => notifyRule(rule),
 			descriptors: "@font-feature-values",
 		});
-		ruleSlots[kBlocks].set(name, block);
+		ruleSlots.blocks.set(name, block);
 	}
 	return block;
 }
 
+interface CSSKeyframesRuleSlots extends CSSRuleSlots {
+	name: string;
+	rules: CSSRule[];
+	ruleList: CSSRuleList;
+}
+
 interface CSSKeyframesRule {
-	[kName]: string;
-	[kRules]: CSSRule[];
-	[kRuleList]: CSSRuleList;
+	readonly [internals]: CSSKeyframesRuleSlots;
 }
 
 /** `@keyframes`: its name and the keyframes it holds. */
@@ -2572,14 +2615,14 @@ class CSSKeyframesRule extends CSSRule {
 	) {
 		super(parentStyleSheet, null);
 		const slots = _(this);
-		slots[kRules] = [];
-		slots[kName] = name.trim();
-		slots[kRuleList] = createRuleList(slots[kRules]);
+		slots.rules = [];
+		slots.name = name.trim();
+		slots.ruleList = createRuleList(slots.rules);
 		if (build) {
-			slots[kRules].push(...build(this));
-			syncIndexed(slots[kRuleList]);
+			slots.rules.push(...build(this));
+			syncIndexed(slots.ruleList);
 		}
-		syncIndexed(this, slots[kRules]);
+		syncIndexed(this, slots.rules);
 	}
 
 	get type(): number {
@@ -2587,26 +2630,26 @@ class CSSKeyframesRule extends CSSRule {
 	}
 
 	get name(): string {
-		return _(this)[kName];
+		return _(this).name;
 	}
 
 	set name(name: string) {
-		_(this)[kName] = String(name);
+		_(this).name = String(name);
 		notifyRule(this);
 	}
 
 	get cssRules(): CSSRuleList {
-		return _(this)[kRuleList];
+		return _(this).ruleList;
 	}
 
 	get length(): number {
-		return _(this)[kRules].length;
+		return _(this).rules.length;
 	}
 
 	get cssText(): string {
 		const slots = _(this);
-		const frames = slots[kRules].map((rule) => `\n  ${rule.cssText}`).join("");
-		const name = CSSValues.serializeKeyframesName(slots[kName]);
+		const frames = slots.rules.map((rule) => `\n  ${rule.cssText}`).join("");
+		const name = CSSValues.serializeKeyframesName(slots.name);
 		return `@keyframes ${name} {${frames}\n}`;
 	}
 
@@ -2618,9 +2661,9 @@ class CSSKeyframesRule extends CSSRule {
 		);
 		const slots = _(this);
 		if (rule instanceof CSSKeyframesRule) {
-			slots[kRules].push(...Array.from(rule.cssRules));
-			syncIndexed(slots[kRuleList]);
-			syncIndexed(this, slots[kRules]);
+			slots.rules.push(...Array.from(rule.cssRules));
+			syncIndexed(slots.ruleList);
+			syncIndexed(this, slots.rules);
 			notifyRule(this);
 		}
 	}
@@ -2628,13 +2671,13 @@ class CSSKeyframesRule extends CSSRule {
 	deleteRule(select: string): void {
 		const key = CSSValues.serializeKeyText(String(select));
 		const slots = _(this);
-		for (let index = slots[kRules].length - 1; index >= 0; index--) {
-			if ((slots[kRules][index] as CSSKeyframeRule).keyText !== key) {
+		for (let index = slots.rules.length - 1; index >= 0; index--) {
+			if ((slots.rules[index] as CSSKeyframeRule).keyText !== key) {
 				continue;
 			}
-			slots[kRules].splice(index, 1);
-			syncIndexed(slots[kRuleList]);
-			syncIndexed(this, slots[kRules]);
+			slots.rules.splice(index, 1);
+			syncIndexed(slots.ruleList);
+			syncIndexed(this, slots.rules);
 			notifyRule(this);
 			return;
 		}
@@ -2643,8 +2686,8 @@ class CSSKeyframesRule extends CSSRule {
 	findRule(select: string): CSSKeyframeRule | null {
 		const key = CSSValues.serializeKeyText(String(select));
 		const slots = _(this);
-		for (let index = slots[kRules].length - 1; index >= 0; index--) {
-			const rule = slots[kRules][index] as CSSKeyframeRule;
+		for (let index = slots.rules.length - 1; index >= 0; index--) {
+			const rule = slots.rules[index] as CSSKeyframeRule;
 			if (rule.keyText === key) {
 				return rule;
 			}
@@ -2653,27 +2696,31 @@ class CSSKeyframesRule extends CSSRule {
 	}
 }
 
+interface CSSRuleListSlots {
+	rules: readonly CSSRule[];
+}
+
 interface CSSRuleList {
-	[kRules]: readonly CSSRule[];
+	readonly [internals]: CSSRuleListSlots;
 }
 
 /** The rules of a stylesheet or a grouping rule. */
 class CSSRuleList {
 	constructor(rules: readonly CSSRule[]) {
 		seal(this, new.target, CSSRuleList);
-		_(this)[kRules] = rules;
+		_(this).rules = rules;
 	}
 
 	get length(): number {
-		return _(this)[kRules].length;
+		return _(this).rules.length;
 	}
 
 	item(index: number): CSSRule | null {
-		return _(this)[kRules][index] ?? null;
+		return _(this).rules[index] ?? null;
 	}
 
 	[Symbol.iterator](): IterableIterator<CSSRule> {
-		return _(this)[kRules][Symbol.iterator]();
+		return _(this).rules[Symbol.iterator]();
 	}
 }
 
@@ -2685,40 +2732,35 @@ function createRuleList(rules: readonly CSSRule[]): CSSRuleList {
 	return list;
 }
 
-const kSheets = Symbol("sheets");
+interface StyleSheetListSlots {
+	sheets: readonly CSSStyleSheet[];
+}
 
 interface StyleSheetList {
-	[kSheets]: readonly CSSStyleSheet[];
+	readonly [internals]: StyleSheetListSlots;
 }
 
 /** The stylesheets of a document or a shadow root. */
 class StyleSheetList {
 	constructor(sheets: readonly CSSStyleSheet[]) {
 		seal(this, new.target, StyleSheetList);
-		_(this)[kSheets] = sheets;
+		_(this).sheets = sheets;
 	}
 
 	get length(): number {
-		return _(this)[kSheets].length;
+		return _(this).sheets.length;
 	}
 
 	item(index: number): CSSStyleSheet | null {
-		return _(this)[kSheets][index] ?? null;
+		return _(this).sheets[index] ?? null;
 	}
 
 	[Symbol.iterator](): IterableIterator<CSSStyleSheet> {
-		return _(this)[kSheets][Symbol.iterator]();
+		return _(this).sheets[Symbol.iterator]();
 	}
 }
 
 declareSealedRoot(StyleSheetList);
-
-const kOwnerNode = Symbol("ownerNode");
-const kConstructed = Symbol("constructed");
-const kTitle = Symbol("title");
-const kDisabled = Symbol("disabled");
-const kText = Symbol("text");
-const kOwnerRule = Symbol("ownerRule");
 
 /** Only a constructed sheet may be adopted, per spec. */
 const constructedSheets = new WeakSet<CSSStyleSheet>();
@@ -2726,19 +2768,23 @@ const constructedSheets = new WeakSet<CSSStyleSheet>();
 // The rules belong to this object. The cascade reads them rather than
 // re-parsing text, so every mutation path reaches the render through the
 // same invalidation a `<style>` text change does.
-interface CSSStyleSheet {
-	[kRules]: CSSRule[];
-	[kRuleList]: CSSRuleList;
-	[kMedia]: MediaList;
-	[kOwnerNode]: Element | null;
-	[kOwnerRule]: CSSRule | null;
-	[kConstructed]: boolean;
-	[kDisabled]: boolean;
-	[kHref]: string | null;
-	[kTitle]: string | null;
+interface CSSStyleSheetSlots {
+	rules: CSSRule[];
+	ruleList: CSSRuleList;
+	media: MediaList;
+	ownerNode: Element | null;
+	ownerRule: CSSRule | null;
+	constructed: boolean;
+	disabled: boolean;
+	href: string | null;
+	title: string | null;
+	// The owner node's text CSSStyleSheet sheet last parsed.
+	text: string | null;
+	[kSync]: Step<CSSStyleSheet[typeof kSync]>;
+}
 
-	// The owner node's text this sheet last parsed.
-	[kText]: string | null;
+interface CSSStyleSheet {
+	readonly [internals]: CSSStyleSheetSlots;
 }
 
 class CSSStyleSheet {
@@ -2752,28 +2798,28 @@ class CSSStyleSheet {
 	) {
 		seal(this, new.target, CSSStyleSheet);
 		const slots = _(this);
-		slots[kRules] = [];
-		slots[kOwnerRule] = null;
-		slots[kText] = null;
-		slots[kOwnerNode] = ownerNode;
-		slots[kConstructed] = ownerNode === null;
-		if (slots[kConstructed]) {
+		slots.rules = [];
+		slots.ownerRule = null;
+		slots.text = null;
+		slots.ownerNode = ownerNode;
+		slots.constructed = ownerNode === null;
+		if (slots.constructed) {
 			constructedSheets.add(this);
 		}
-		slots[kHref] = ownerNode?.getAttribute("href") ?? null;
-		slots[kTitle] = ownerNode?.getAttribute("title") ?? options.title ?? null;
-		slots[kDisabled] = Boolean(options.disabled);
-		slots[kMedia] = new MediaList(
+		slots.href = ownerNode?.getAttribute("href") ?? null;
+		slots.title = ownerNode?.getAttribute("title") ?? options.title ?? null;
+		slots.disabled = Boolean(options.disabled);
+		slots.media = new MediaList(
 			ownerNode?.getAttribute("media") ?? options.media ?? "",
 			() => sheetChanged(this),
 		);
-		slots[kRuleList] = createRuleList(slots[kRules]);
+		slots.ruleList = createRuleList(slots.rules);
 	}
 
 	get cssRules(): CSSRuleList {
 		const slots = _(this);
 		slots[kSync]!();
-		return slots[kRuleList];
+		return slots.ruleList;
 	}
 
 	// The legacy alias every engine still supports.
@@ -2786,45 +2832,45 @@ class CSSStyleSheet {
 	}
 
 	get href(): string | null {
-		return _(this)[kHref];
+		return _(this).href;
 	}
 
 	get title(): string | null {
-		return _(this)[kTitle];
+		return _(this).title;
 	}
 
 	get ownerNode(): Element | null {
-		return _(this)[kOwnerNode];
+		return _(this).ownerNode;
 	}
 
 	get ownerRule(): CSSRule | null {
-		return _(this)[kOwnerRule];
+		return _(this).ownerRule;
 	}
 
 	get parentStyleSheet(): CSSStyleSheet | null {
-		return _(this)[kOwnerRule]?.parentStyleSheet ?? null;
+		return _(this).ownerRule?.parentStyleSheet ?? null;
 	}
 
 	get media(): MediaList {
-		return _(this)[kMedia];
+		return _(this).media;
 	}
 
 	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
 	set media(text: string) {
-		_(this)[kMedia].mediaText = String(text);
+		_(this).media.mediaText = String(text);
 	}
 
 	get disabled(): boolean {
-		return _(this)[kDisabled];
+		return _(this).disabled;
 	}
 
 	set disabled(disabled: boolean) {
 		const value = Boolean(disabled);
 		const slots = _(this);
-		if (value === slots[kDisabled]) {
+		if (value === slots.disabled) {
 			return;
 		}
-		slots[kDisabled] = value;
+		slots.disabled = value;
 		sheetChanged(this);
 	}
 
@@ -2834,7 +2880,7 @@ class CSSStyleSheet {
 		}
 		const slots = _(this);
 		slots[kSync]!();
-		if (index > slots[kRules].length) {
+		if (index > slots.rules.length) {
 			throw domException(
 				`Cannot insert at index ${index}`,
 				"IndexSizeError",
@@ -2844,7 +2890,7 @@ class CSSStyleSheet {
 		const inserted = parseRuleText(text, this, null);
 		// A constructed sheet cannot import another. `@import` is not a rule it
 		// accepts.
-		if (inserted instanceof CSSImportRule && slots[kConstructed]) {
+		if (inserted instanceof CSSImportRule && slots.constructed) {
 			throw domException(
 				"A constructed stylesheet holds no @import rule",
 				"SyntaxError",
@@ -2852,8 +2898,8 @@ class CSSStyleSheet {
 			);
 		}
 		checkRuleOrder(this, inserted, index);
-		slots[kRules].splice(index, 0, inserted);
-		syncIndexed(slots[kRuleList]);
+		slots.rules.splice(index, 0, inserted);
+		syncIndexed(slots.ruleList);
 		sheetChanged(this);
 		return index;
 	}
@@ -2864,19 +2910,19 @@ class CSSStyleSheet {
 		}
 		const slots = _(this);
 		slots[kSync]!();
-		if (index >= slots[kRules].length) {
+		if (index >= slots.rules.length) {
 			throw domException(
 				`Cannot delete at index ${index}`,
 				"IndexSizeError",
 				this,
 			);
 		}
-		const removed = slots[kRules][index];
+		const removed = slots.rules[index];
 		// Removing a namespace declaration would change the meaning of
 		// selectors already parsed against it, so a sheet holding any other
 		// rule keeps it.
 		if (
-			removed instanceof CSSNamespaceRule && slots[kRules].some((other) =>
+			removed instanceof CSSNamespaceRule && slots.rules.some((other) =>
 				!(
 					other instanceof CSSImportRule || other instanceof CSSNamespaceRule
 				))
@@ -2888,8 +2934,8 @@ class CSSStyleSheet {
 			);
 		}
 		detachRule(removed);
-		slots[kRules].splice(index, 1);
-		syncIndexed(slots[kRuleList]);
+		slots.rules.splice(index, 1);
+		syncIndexed(slots.ruleList);
 		sheetChanged(this);
 	}
 
@@ -2913,7 +2959,7 @@ class CSSStyleSheet {
 
 	replaceSync(text: string): void {
 		const slots = _(this);
-		if (!slots[kConstructed]) {
+		if (!slots.constructed) {
 			throw domException(
 				"replaceSync is only allowed on a constructed stylesheet",
 				"NotAllowedError",
@@ -2922,13 +2968,13 @@ class CSSStyleSheet {
 		}
 		// An adopted sheet cannot import another. `@import` is dropped rather
 		// than parsed, per the constructable-stylesheet rules.
-		slots[kRules].length = 0;
-		slots[kRules].push(
+		slots.rules.length = 0;
+		slots.rules.push(
 			...parseRules(String(text ?? ""), this, null).filter(
 				(rule) => !(rule instanceof CSSImportRule),
 			),
 		);
-		syncIndexed(slots[kRuleList]);
+		syncIndexed(slots.ruleList);
 		sheetChanged(this);
 	}
 
@@ -2942,20 +2988,20 @@ class CSSStyleSheet {
 	}
 
 	// Reparse the owner element's text if it changed.
-	[kSync]?(): void {
+	[kSync]?(this: Slots<CSSStyleSheet>): void {
 		const slots = this;
-		const node = slots[kOwnerNode];
+		const node = slots.ownerNode;
 		if (!node || node.tagName !== "STYLE") {
 			return;
 		}
 		const text = node.textContent ?? "";
-		if (text === slots[kText]) {
+		if (text === slots.text) {
 			return;
 		}
-		slots[kText] = text;
-		slots[kRules].length = 0;
-		slots[kRules].push(...parseRules(text, ownerOf(this), null));
-		syncIndexed(slots[kRuleList]);
+		slots.text = text;
+		slots.rules.length = 0;
+		slots.rules.push(...parseRules(text, ownerOf(this), null));
+		syncIndexed(slots.ruleList);
 	}
 }
 
@@ -2980,8 +3026,8 @@ function checkRuleOrder(
 	const prelude = (other: CSSRule): boolean =>
 		other instanceof CSSImportRule || other instanceof CSSNamespaceRule;
 	const sheetSlots = _(sheet);
-	const before = sheetSlots[kRules].slice(0, index);
-	const after = sheetSlots[kRules].slice(index);
+	const before = sheetSlots.rules.slice(0, index);
+	const after = sheetSlots.rules.slice(index);
 	if (rule instanceof CSSImportRule) {
 		if (before.some((other) => !(other instanceof CSSImportRule))) {
 			hierarchy();
@@ -2995,7 +3041,7 @@ function checkRuleOrder(
 		if (after.some((other) => other instanceof CSSImportRule)) {
 			hierarchy();
 		}
-		if (sheetSlots[kRules].some((other) => !prelude(other))) {
+		if (sheetSlots.rules.some((other) => !prelude(other))) {
 			throw domException(
 				"A @namespace rule needs a sheet of nothing but @import and @namespace rules",
 				"InvalidStateError",
@@ -3616,7 +3662,7 @@ function getSheet(element: Element): CSSStyleSheet {
 // A <style>'s child list IS its stylesheet. Changing it replaces the
 // rules even when the resulting text is the same.
 function reparseOwnerText(sheet: CSSStyleSheet): void {
-	_(sheet)[kText] = null;
+	_(sheet).text = null;
 }
 
 // What `styleSheets` lists. An adopted sheet belongs to no element and
@@ -3788,15 +3834,17 @@ function getUAStyleSheet(): CSSStyleSheet {
 	return uaDocumentSheet;
 }
 
-const kCascade = Symbol("cascade");
-
-// A pseudo-element's declaration resolves through a view whose
-// [kElement] is the pseudo-element's own node, so there is one copy of
-// the measurement arithmetic.
-interface MeasuredDeclaration {
-	[kElement]: Element;
-	[kCascade]: Cascade | null;
+// A pseudo-element's declaration resolves through a view whose element
+// is the pseudo-element's own node, so there is one copy of the
+// measurement arithmetic.
+interface MeasuredSlots {
+	element: Element;
+	cascade: Cascade | null;
 	[kComputedValue](property: string): string;
+}
+
+interface MeasuredDeclaration {
+	readonly [internals]: MeasuredSlots;
 	getPropertyValue(property: string): string;
 }
 
@@ -3835,10 +3883,11 @@ export function getComputedValue(
 	if (!cascade) {
 		return "";
 	}
-	const slots = pseudoElement
-		? _(getPseudoDeclaration(cascade, element, pseudoElement))
-		: cascade.computedSlotsFor(element);
-	return slots[kComputedValue](property);
+	return pseudoElement
+		? _(getPseudoDeclaration(cascade, element, pseudoElement))[kComputedValue](
+			property,
+		)
+		: cascade.computedSlotsFor(element)[kComputedValue](property);
 }
 
 // A box with nothing to contain or transform: no box at all, or a plain
@@ -3964,13 +4013,13 @@ export function getFixedContainingBlock(element: Element): Element | null {
 function getIndexedDeclaration<T extends CSSStyleDeclaration>(
 	declaration: T,
 ): T {
-	const indexed = declaration as unknown as IndexedCollection;
+	const indexed = indexedSlots(declaration);
 	if (
-		_(indexed)[kIndexCount] === undefined &&
+		indexed.indexCount === undefined &&
 		(declaration instanceof ComputedStyleDeclaration ||
 			declaration instanceof PseudoStyleDeclaration)
 	) {
-		_(indexed)[kIndexCount] = CSS_LONGHANDS.length;
+		indexed.indexCount = CSS_LONGHANDS.length;
 	}
 	syncIndexed(declaration);
 	return declaration;
@@ -3988,12 +4037,7 @@ function defineLonghandIndices(prototype: object): void {
 	}
 }
 
-const kCSSRules = Symbol("cssRules");
 const kSyncResolved = Symbol("syncResolved");
-const kResolved = Symbol("resolved");
-const kStyleVersion = Symbol("styleVersion");
-const kCustom = Symbol("custom");
-const kInlineBlock = Symbol("inlineBlock");
 const kUsedValue = Symbol("usedValue");
 const kBaseValue = Symbol("baseValue");
 const kActiveTransitions = Symbol("activeTransitions");
@@ -4148,7 +4192,7 @@ function getResolvedValues(
 	if (cascade.getStyleKey(element) === null) {
 		return null;
 	}
-	return cascade.computedSlotsFor(element)[kResolved];
+	return cascade.computedSlotsFor(element).resolved;
 }
 
 function getSharedResolved(
@@ -4215,26 +4259,32 @@ function getSharedResolved(
 
 // LIVE: the object an author holds stays valid across class changes and
 // sheet replacements, because it re-resolves rather than being replaced.
-interface ComputedStyleDeclaration {
-	[kElement]: Element;
-	[kCSSRules]: ParsedCSSRule[];
-
-	[kCascade]: Cascade | null;
-	[kInlineBlock]: CSSValues.DeclarationBlock | null;
-
+interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
+	element: Element;
+	cssRules: ParsedCSSRule[];
+	cascade: Cascade | null;
+	inlineBlock: CSSValues.DeclarationBlock | null;
 	// Computed strings, memoized once per property per resolution, ""
 	// results included. An inherited property re-resolved on every read
 	// would re-walk the whole ancestor chain, thousands of times per
 	// keystroke. The declaration is discarded wholesale on invalidation, so
 	// the memo needs no invalidation of its own.
-	[kResolved]: Map<string, string>;
-	// Replaced whenever this declaration is resolved again. What the
+	resolved: Map<string, string>;
+	// Replaced whenever ComputedStyleDeclaration declaration is resolved again. What the
 	// painter keys its styles by, since the resolved values themselves may
 	// be shared, and a restyle that finds the same shared values still asks
 	// for the paint style to be derived again.
-	[kStyleVersion]: object;
+	styleVersion: object;
+	custom: string[] | null;
+	[kCustomProperties]: Step<ComputedStyleDeclaration[typeof kCustomProperties]>;
+	[kUsedValue]: Step<ComputedStyleDeclaration[typeof kUsedValue]>;
+	[kBaseValue]: Step<ComputedStyleDeclaration[typeof kBaseValue]>;
+	[kSyncResolved]: Step<ComputedStyleDeclaration[typeof kSyncResolved]>;
+	[kComputedValue]: Step<ComputedStyleDeclaration[typeof kComputedValue]>;
+}
 
-	[kCustom]: string[] | null;
+interface ComputedStyleDeclaration {
+	readonly [internals]: ComputedStyleDeclarationSlots;
 }
 
 class ComputedStyleDeclaration extends CSSStyleProperties {
@@ -4245,17 +4295,17 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	) {
 		super();
 		const slots = _(this);
-		slots[kCascade] = null;
-		slots[kResolved] = new Map<string, string>();
-		slots[kStyleVersion] = {};
-		slots[kCustom] = null;
-		slots[kElement] = element;
-		slots[kCSSRules] = cssRules;
-		slots[kInlineBlock] = null;
+		slots.cascade = null;
+		slots.resolved = new Map<string, string>();
+		slots.styleVersion = {};
+		slots.custom = null;
+		slots.element = element;
+		slots.cssRules = cssRules;
+		slots.inlineBlock = null;
 		if (cascade) {
-			slots[kCascade] = cascade;
+			slots.cascade = cascade;
 			cascade[kCurrentDeclarations].add(slots);
-			slots[kResolved] = getSharedResolved(cascade, element, cssRules);
+			slots.resolved = getSharedResolved(cascade, element, cssRules);
 		}
 	}
 
@@ -4268,7 +4318,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override set cssText(_text: string) {
-		throw readOnlyDeclaration(_(this)[kElement]);
+		throw readOnlyDeclaration(_(this).element);
 	}
 
 	override get parentRule(): CSSRule | null {
@@ -4282,26 +4332,26 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// reads through getComputedValue, which does not flush, because style
 		// is resolved from inside layout, which a flush would re-enter.
 		const slots = _(this);
-		if (slots[kCascade]) {
-			flushCascadeStyle(slots[kCascade]);
+		if (slots.cascade) {
+			flushCascadeStyle(slots.cascade);
 		}
-		const current = slots[kCascade]?.[kCurrentDeclarations];
+		const current = slots.cascade?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(slots)) {
 			slots[kSyncResolved]();
 		}
 		// A flow-relative longhand resolves as the physical longhand it maps
 		// to: same slot, same measurement, same result.
 		property = toPhysicalProperty(this, property);
-		if (slots[kCascade] && USED_VALUE_PROPERTIES.has(property)) {
+		if (slots.cascade && USED_VALUE_PROPERTIES.has(property)) {
 			return slots[kUsedValue](property);
 		}
-		if (slots[kCascade] && MIN_SIZE_PROPERTIES.has(property)) {
+		if (slots.cascade && MIN_SIZE_PROPERTIES.has(property)) {
 			return getResolvedMinSize(this, slots[kComputedValue](property));
 		}
-		if (slots[kCascade] && USED_TRACK_PROPERTIES.has(property)) {
+		if (slots.cascade && USED_TRACK_PROPERTIES.has(property)) {
 			const tracks = usedGridTracks(
-				slots[kCascade],
-				slots[kElement],
+				slots.cascade,
+				slots.element,
 				property === "grid-template-rows",
 			);
 			if (tracks) {
@@ -4322,21 +4372,21 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		// A system color computes as its keyword, and reads back as the color
 		// it stands for here.
-		if (slots[kCascade] && CSSValues.isColorProperty(property)) {
+		if (slots.cascade && CSSValues.isColorProperty(property)) {
 			return CSSValues.resolveSystemColor(
 				computed,
-				getColorScheme(slots[kElement].ownerDocument),
+				getColorScheme(slots.element.ownerDocument),
 			) ?? computed;
 		}
 		return computed;
 	}
 
 	override setProperty(): void {
-		throw readOnlyDeclaration(_(this)[kElement]);
+		throw readOnlyDeclaration(_(this).element);
 	}
 
 	override removeProperty(): string {
-		throw readOnlyDeclaration(_(this)[kElement]);
+		throw readOnlyDeclaration(_(this).element);
 	}
 
 	override getPropertyPriority(): string {
@@ -4357,9 +4407,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return [...CSS_LONGHANDS, ...getCustomNames(this)][Symbol.iterator]();
 	}
 
-	[kCustomProperties](): string[] {
+	[kCustomProperties](this: Slots<ComputedStyleDeclaration>): string[] {
 		const names: string[] = [];
-		for (const rule of this[kCSSRules]) {
+		for (const rule of this.cssRules) {
 			for (const name of Object.keys(rule.declarations)) {
 				if (name.startsWith("--") && !names.includes(name)) {
 					names.push(name);
@@ -4379,9 +4429,12 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	// Measured through the same flush a geometry read takes, and memoized
 	// behind it, so a property-heavy caller measures once per layout. The
 	// memo belongs to the cascade, which lets a flush drop every one.
-	[kUsedValue](property: string): string {
+	[kUsedValue](
+		this: Slots<ComputedStyleDeclaration>,
+		property: string,
+	): string {
 		const slots = this;
-		const cascade = slots[kCascade]!;
+		const cascade = slots.cascade!;
 		const used = getUsedValues(cascade, ownerOf(this));
 		const memoized = used.get(property);
 		if (memoized !== undefined) {
@@ -4397,9 +4450,12 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	// The cascade's value before a running transition overrides it, meaning
 	// the after-change style. An interpolated value moves every frame and
 	// must never enter the memo.
-	[kBaseValue](property: string): string {
+	[kBaseValue](
+		this: Slots<ComputedStyleDeclaration>,
+		property: string,
+	): string {
 		const slots = this;
-		let value = slots[kResolved].get(property);
+		let value = slots.resolved.get(property);
 		if (value === undefined) {
 			const longhands = CSSValues.getLonghands(property);
 			value = longhands
@@ -4410,62 +4466,60 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 					ownerOf(this),
 					toPhysicalProperty(ownerOf(this), property),
 				);
-			slots[kResolved].set(property, value);
+			slots.resolved.set(property, value);
 		}
 		return value;
 	}
 
 	// Reads call this only when the cascade no longer vouches for this
 	// declaration. It runs under every property read of every element.
-	[kSyncResolved](): void {
+	[kSyncResolved](this: Slots<ComputedStyleDeclaration>): void {
 		const slots = this;
-		if (!slots[kCascade]) {
+		if (!slots.cascade) {
 			return;
 		}
 		// Before the work, because resolving below reads back through this
 		// declaration.
-		slots[kCascade][kCurrentDeclarations].add(this);
-		slots[kCSSRules] = getCascadeRules(slots[kCascade], slots[kElement]);
-		slots[kInlineBlock] = null;
-		slots[kCustom] = null;
-		storeTransitionFallback(
-			slots[kCascade],
-			slots[kElement],
-			"",
-			slots[kResolved],
+		slots.cascade[kCurrentDeclarations].add(this);
+		slots.cssRules = getCascadeRules(slots.cascade, slots.element);
+		slots.inlineBlock = null;
+		slots.custom = null;
+		storeTransitionFallback(slots.cascade, slots.element, "", slots.resolved);
+		slots.resolved = getSharedResolved(
+			slots.cascade,
+			slots.element,
+			slots.cssRules,
 		);
-		slots[kResolved] = getSharedResolved(
-			slots[kCascade],
-			slots[kElement],
-			slots[kCSSRules],
-		);
-		slots[kStyleVersion] = {};
-		dropUsedValues(slots[kCascade], ownerOf(this));
-		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
+		slots.styleVersion = {};
+		dropUsedValues(slots.cascade, ownerOf(this));
+		if ((this as IndexedSlots).indexCount !== undefined) {
 			syncIndexed(ownerOf(this));
 		}
 		// The re-resolution is a style change event. Whatever changed against
 		// the last snapshot starts, retargets or cancels transitions.
 		processTransitionStyle(
-			slots[kCascade],
-			slots[kElement],
+			slots.cascade,
+			slots.element,
 			(property) => slots[kBaseValue](property),
 			"",
 		);
 	}
 
-	[kComputedValue](property: string): string {
+	[kComputedValue](
+		this: Slots<ComputedStyleDeclaration>,
+		property: string,
+	): string {
 		const slots = this;
-		const current = slots[kCascade]?.[kCurrentDeclarations];
+		const current = slots.cascade?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			slots[kSyncResolved]();
 		}
 		const value = slots[kBaseValue](property);
-		const cascade = slots[kCascade];
+		const cascade = slots.cascade;
 		if (cascade !== null && cascade[kActiveTransitions].size > 0) {
 			const transitional = getTransitionValue(
 				cascade,
-				slots[kElement],
+				slots.element,
 				"",
 				property,
 			);
@@ -4526,8 +4580,8 @@ function getLengthContext(
 ): CSSValues.LengthContext {
 	const own = property === "font-size";
 	const declarationSlots = _(declaration);
-	const parent = own ? flatParentElement(declarationSlots[kElement]) : null;
-	const initial = getCellSize(declarationSlots[kElement]).height;
+	const parent = own ? flatParentElement(declarationSlots.element) : null;
+	const initial = getCellSize(declarationSlots.element).height;
 	const font = CSSValues.getFontSize(
 		own
 			? parent ? getComputedValue(parent, "font-size") : ""
@@ -4535,10 +4589,10 @@ function getLengthContext(
 		initial,
 	);
 	const root = getRootFontSize(declaration, own);
-	const cascade = declarationSlots[kCascade];
+	const cascade = declarationSlots.cascade;
 	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
-	const cell = getCellSize(declarationSlots[kElement]);
-	const vertical = isVerticalLength(declarationSlots[kElement], property);
+	const cell = getCellSize(declarationSlots.element);
+	const vertical = isVerticalLength(declarationSlots.element, property);
 	return {
 		font,
 		root,
@@ -4603,16 +4657,16 @@ function getRootFontSize(
 	ownFontSize: boolean,
 ): number {
 	const declarationSlots = _(declaration);
-	const root = declarationSlots[kElement].ownerDocument?.documentElement;
+	const root = declarationSlots.element.ownerDocument?.documentElement;
 	// `rem` in the root's own font-size means the initial value, not the
 	// value being computed.
 	return CSSValues.getFontSize(
-		!root || (ownFontSize && root === declarationSlots[kElement])
+		!root || (ownFontSize && root === declarationSlots.element)
 			? ""
-			: root === declarationSlots[kElement]
+			: root === declarationSlots.element
 				? declarationSlots[kComputedValue]("font-size")
 				: getComputedValue(root, "font-size"),
-		getCellSize(declarationSlots[kElement]).height,
+		getCellSize(declarationSlots.element).height,
 	);
 }
 
@@ -4656,7 +4710,7 @@ function measureUsedValue(
 		return computed;
 	}
 
-	const rect = getUsedRect(_(declaration)[kCascade]!, _(declaration)[kElement]);
+	const rect = getUsedRect(_(declaration).cascade!, _(declaration).element);
 	// No box (display:none, or a tree layout never reached), so the
 	// computed value is the result, exactly as CSSOM says.
 	if (!rect) {
@@ -4797,14 +4851,14 @@ function getContainingBlockBox(
 	position: string,
 ): DOMRect | null {
 	if (position === "fixed") {
-		const block = getFixedContainingBlock(declaration[kElement]);
+		const block = getFixedContainingBlock(_(declaration).element);
 		return block
 			? getUsedBoxRect(declaration, block, false)
 			: getViewportBox(declaration);
 	}
 	if (position === "absolute") {
 		for (
-			let ancestor = flatParentElement(_(declaration)[kElement]);
+			let ancestor = flatParentElement(_(declaration).element);
 			ancestor;
 			ancestor = flatParentElement(ancestor)
 		) {
@@ -4820,7 +4874,7 @@ function getContainingBlockBox(
 	}
 	if (position === "sticky") {
 		for (
-			let ancestor = flatParentElement(_(declaration)[kElement]);
+			let ancestor = flatParentElement(_(declaration).element);
 			ancestor;
 			ancestor = flatParentElement(ancestor)
 		) {
@@ -4830,7 +4884,7 @@ function getContainingBlockBox(
 			}
 		}
 	}
-	const parent = flatParentElement(_(declaration)[kElement]);
+	const parent = flatParentElement(_(declaration).element);
 	return parent
 		? getUsedBoxRect(declaration, parent, true)
 		: getViewportBox(declaration);
@@ -4841,7 +4895,7 @@ function getUsedBoxRect(
 	element: Element,
 	content: boolean,
 ): DOMRect | null {
-	const rect = getUsedRect(_(declaration)[kCascade]!, element);
+	const rect = getUsedRect(_(declaration).cascade!, element);
 	if (!rect) {
 		return null;
 	}
@@ -4867,16 +4921,16 @@ function getUsedBoxRect(
 
 // The initial containing block: the grid itself.
 function getViewportBox(declaration: MeasuredDeclaration): DOMRect | null {
-	const block = _(declaration)[kCascade]![kLayout].initialContainingBlock;
-	const rect = getUsedRect(_(declaration)[kCascade]!, _(declaration)[kElement]);
+	const block = _(declaration).cascade![kLayout].initialContainingBlock;
+	const rect = getUsedRect(_(declaration).cascade!, _(declaration).element);
 	if (!rect) {
 		return null;
 	}
 	return new (rect.constructor as typeof DOMRect)(
 		0,
 		0,
-		pxFromCells(block.width, false, _(declaration)[kElement]),
-		pxFromCells(block.height, true, _(declaration)[kElement]),
+		pxFromCells(block.width, false, _(declaration).element),
+		pxFromCells(block.height, true, _(declaration).element),
 	);
 }
 
@@ -4895,7 +4949,7 @@ function getResolvedMinSize(
 	// else its style says.
 	const declarationSlots = _(declaration);
 	for (
-		let element: Element | null = declarationSlots[kElement];
+		let element: Element | null = declarationSlots.element;
 		element;
 		element = flatParentElement(element)
 	) {
@@ -4906,7 +4960,7 @@ function getResolvedMinSize(
 	if (declarationSlots[kComputedValue]("aspect-ratio") !== "auto") {
 		return "auto";
 	}
-	const parent = flatParentElement(declarationSlots[kElement]);
+	const parent = flatParentElement(declarationSlots.element);
 	const display = parent ? getComputedValue(parent, "display") : "";
 	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 }
@@ -4918,7 +4972,7 @@ function getEdgeLength(
 	property: string,
 ): number {
 	return toDrawnEdge(
-		_(declaration)[kElement],
+		_(declaration).element,
 		property,
 		parseFloat(declaration.getPropertyValue(property)) || 0,
 	);
@@ -4951,9 +5005,9 @@ function getAutoMargin(
 	property: string,
 	rect: DOMRect,
 ): number {
-	const parent = flatParentElement(_(declaration)[kElement]);
+	const parent = flatParentElement(_(declaration).element);
 	const parentRect = parent
-		? getUsedRect(_(declaration)[kCascade]!, parent)
+		? getUsedRect(_(declaration).cascade!, parent)
 		: null;
 	if (!parent || !parentRect) {
 		return 0;
@@ -4985,11 +5039,11 @@ function getAutoMargin(
 }
 
 function getContainingWidth(declaration: MeasuredDeclaration): number | null {
-	const parent = flatParentElement(_(declaration)[kElement]);
+	const parent = flatParentElement(_(declaration).element);
 	if (!parent) {
 		return null;
 	}
-	const rect = getUsedRect(_(declaration)[kCascade]!, parent);
+	const rect = getUsedRect(_(declaration).cascade!, parent);
 	return rect ? rect.width : null;
 }
 
@@ -4999,9 +5053,9 @@ function getInlineDeclarations(
 	declaration: ComputedStyleDeclaration,
 ): CSSValues.DeclarationBlock {
 	const declarationSlots = _(declaration);
-	let block = declarationSlots[kInlineBlock];
+	let block = declarationSlots.inlineBlock;
 	if (block === null) {
-		const element = declarationSlots[kElement];
+		const element = declarationSlots.element;
 		let style = inlineStyles.get(element);
 		if (style === undefined && element.hasAttribute("style")) {
 			getInlineStyle(element);
@@ -5010,7 +5064,7 @@ function getInlineDeclarations(
 		block = style === undefined
 			? EMPTY_DECLARATIONS
 			: getDeclarationBlock(style);
-		declarationSlots[kInlineBlock] = block;
+		declarationSlots.inlineBlock = block;
 	}
 	return block;
 }
@@ -5019,7 +5073,7 @@ function resolveFromParent(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string | null {
-	const parent = flatParentElement(_(declaration)[kElement]);
+	const parent = flatParentElement(_(declaration).element);
 	if (!parent) {
 		return null;
 	}
@@ -5158,7 +5212,7 @@ function resolvePropertyValue(
 	const value = resolveCascadedValue(declaration, property);
 	const declarationSlots = _(declaration);
 	if (property === "font-weight") {
-		return computeFontWeight(declarationSlots[kElement], value);
+		return computeFontWeight(declarationSlots.element, value);
 	}
 	// Every browser resets a legacy alignment at a table, so a centered
 	// table's cells start their text where they would anywhere else.
@@ -5171,7 +5225,7 @@ function resolvePropertyValue(
 	}
 	return property === "display"
 		? blockifyDisplay(
-			declarationSlots[kElement],
+			declarationSlots.element,
 			value || getInitialStyle(null, "display"),
 		)
 		: value;
@@ -5278,7 +5332,7 @@ function resolvePropertyValueRaw(
 	// later rules only tie it within that same origin and layer.
 	let importantOrigin = false;
 	let importantLayer = 0;
-	for (const rule of declarationSlots[kCSSRules]) {
+	for (const rule of declarationSlots.cssRules) {
 		const name = CSSValues.getDeclaredName(rule, names, false, mapsHere);
 		if (name !== null) {
 			ruleValue = rule.declarations[name];
@@ -5311,7 +5365,7 @@ function resolvePropertyValueRaw(
 		return resolveFromParent(declaration, property) ?? "";
 	}
 	if (declared === "initial") {
-		return getInitialValueFor(declarationSlots[kElement], property);
+		return getInitialValueFor(declarationSlots.element, property);
 	}
 	if (declared !== "" && !CSSValues.isCSSWideKeyword(declared)) {
 		return declared;
@@ -5319,7 +5373,7 @@ function resolvePropertyValueRaw(
 
 	// 3. The UA's own per-element defaults, such as strong's bold, which
 	// take precedence over anything inherited.
-	const element = declarationSlots[kElement];
+	const element = declarationSlots.element;
 	const isList =
 		element.namespaceURI === HTML_NAMESPACE &&
 		(element.localName === "ul" || element.localName === "ol");
@@ -5327,7 +5381,7 @@ function resolvePropertyValueRaw(
 	// A list's marker gutter is sized to its widest marker rather than
 	// taken from the static table, so it has to be resolved first.
 	if (property === "padding-left" && isList) {
-		return `${getListGutterWidth(declarationSlots[kElement])}ch`;
+		return `${getListGutterWidth(declarationSlots.element)}ch`;
 	}
 
 	// The UA default marker type depends on nesting depth, exactly as a
@@ -5340,11 +5394,11 @@ function resolvePropertyValueRaw(
 			return "decimal";
 		}
 		const bullets = ["disc", "circle", "square"];
-		const depth = getListNestingDepth(declarationSlots[kElement]);
+		const depth = getListNestingDepth(declarationSlots.element);
 		return bullets[Math.min(depth, bullets.length - 1)];
 	}
 
-	const elementDefaults = getElementDefaults(declarationSlots[kElement]);
+	const elementDefaults = getElementDefaults(declarationSlots.element);
 	if (elementDefaults && elementDefaults[property]) {
 		return elementDefaults[property];
 	}
@@ -5354,13 +5408,13 @@ function resolvePropertyValueRaw(
 	// ancestor's own rules apply. A custom property always inherits; there
 	// is no fixed list of names.
 	if (CSSValues.isInheritedProperty(property)) {
-		const window = declarationSlots[kElement].ownerDocument?.defaultView;
+		const window = declarationSlots.element.ownerDocument?.defaultView;
 		if (window) {
 			// Flat-tree parents. Inheritance crosses the shadow boundary (host
 			// to shadow child) and reaches slotted content through its slot's
 			// chain, exactly as in a browser.
 			for (
-				let parent = flatParentElement(declarationSlots[kElement]);
+				let parent = flatParentElement(declarationSlots.element);
 				parent !== null;
 				parent = flatParentElement(parent)
 			) {
@@ -5373,57 +5427,58 @@ function resolvePropertyValueRaw(
 	}
 
 	// 5. The property's initial value.
-	return getInitialValueFor(declarationSlots[kElement], property);
+	return getInitialValueFor(declarationSlots.element, property);
 }
 
 // This element's own custom properties and every ancestor's, since a
 // custom property inherits.
 function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 	const computedSlots = _(computed);
-	const current = computedSlots[kCascade]?.[kCurrentDeclarations];
+	const current = computedSlots.cascade?.[kCurrentDeclarations];
 	if (current !== undefined && !current.has(computedSlots)) {
 		computedSlots[kSyncResolved]();
 	}
-	if (computedSlots[kCustom]) {
-		return computedSlots[kCustom];
+	if (computedSlots.custom) {
+		return computedSlots.custom;
 	}
 	const names = new Set<string>();
 	for (
-		let element: Element | null = computedSlots[kElement];
+		let element: Element | null = computedSlots.element;
 		element;
 		element = flatParentElement(element)
 	) {
-		const declaration = computedSlots[kCascade]?.declarationFor(element);
+		const declaration = computedSlots.cascade?.declarationFor(element);
 		for (const name of _maybe(declaration)?.[kCustomProperties]() ?? []) {
 			names.add(name);
 		}
 	}
-	computedSlots[kCustom] = [...names];
-	return computedSlots[kCustom];
+	computedSlots.custom = [...names];
+	return computedSlots.custom;
 }
-
-const kPseudoDeclarations = Symbol("pseudo declarations");
-const kPseudoElement = Symbol("pseudoElement");
-const kNodeResolved = Symbol("nodeResolved");
-const kBoxView = Symbol("boxView");
 
 // A flat declaration set: the matched rules plus what the
 // pseudo-element inherits from its originating element. LIVE, for the
 // same reason an element's declaration is.
-interface PseudoStyleDeclaration {
-	[kPseudoDeclarations]: Record<string, string>;
-	[kResolved]: Map<string, string>;
-
+interface PseudoStyleDeclarationSlots extends CSSStyleDeclarationSlots {
+	pseudoDeclarations: Record<string, string>;
+	resolved: Map<string, string>;
 	// Absent on the engine's own reads (the ::selection and ::marker
 	// painters), which want the cascade's declarations and never a used
 	// value. Their declarations are passed in whole and are not the
 	// cascade's to recompute.
-	[kElement]: Element | null;
-	[kPseudoElement]: string;
-	[kCascade]: Cascade | null;
+	element: Element | null;
+	pseudoElement: string;
+	cascade: Cascade | null;
+	nodeResolved: Map<string, string>;
+	boxView: MeasuredDeclaration | null;
+	[kSyncResolved]: Step<PseudoStyleDeclaration[typeof kSyncResolved]>;
+	[kBaseValue]: Step<PseudoStyleDeclaration[typeof kBaseValue]>;
+	[kUsedValue]: Step<PseudoStyleDeclaration[typeof kUsedValue]>;
+	[kComputedValue]: Step<PseudoStyleDeclaration[typeof kComputedValue]>;
+}
 
-	[kNodeResolved]: Map<string, string>;
-	[kBoxView]: MeasuredDeclaration | null;
+interface PseudoStyleDeclaration {
+	readonly [internals]: PseudoStyleDeclarationSlots;
 }
 
 class PseudoStyleDeclaration extends CSSStyleProperties {
@@ -5435,13 +5490,13 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	) {
 		super();
 		const slots = _(this);
-		slots[kResolved] = new Map<string, string>();
-		slots[kNodeResolved] = new Map<string, string>();
-		slots[kBoxView] = null;
-		slots[kPseudoDeclarations] = declarations;
-		slots[kElement] = element ?? null;
-		slots[kPseudoElement] = pseudoElement;
-		slots[kCascade] = cascade ?? null;
+		slots.resolved = new Map<string, string>();
+		slots.nodeResolved = new Map<string, string>();
+		slots.boxView = null;
+		slots.pseudoDeclarations = declarations;
+		slots.element = element ?? null;
+		slots.pseudoElement = pseudoElement;
+		slots.cascade = cascade ?? null;
 		if (cascade) {
 			cascade[kCurrentDeclarations].add(slots);
 		}
@@ -5456,7 +5511,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override set cssText(_text: string) {
-		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this).element ?? undefined);
 	}
 
 	// The style of the NODE a pseudo-element generates: the declarations
@@ -5464,11 +5519,11 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// `display`.
 	nodeValue(property: string): string {
 		const slots = _(this);
-		const current = slots[kCascade]?.[kCurrentDeclarations];
+		const current = slots.cascade?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(slots)) {
 			slots[kSyncResolved]();
 		}
-		let value = slots[kNodeResolved].get(property);
+		let value = slots.nodeResolved.get(property);
 		if (value === undefined) {
 			value =
 				slots[kBaseValue](property) ||
@@ -5476,7 +5531,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 					property,
 					getInitialStyle(null, property),
 				);
-			slots[kNodeResolved].set(property, value);
+			slots.nodeResolved.set(property, value);
 		}
 		const transitional = getPseudoTransitionValue(this, property);
 		return transitional ?? value;
@@ -5484,8 +5539,8 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 
 	override getPropertyValue(property: string): string {
 		const slots = _(this);
-		if (slots[kCascade]) {
-			flushCascadeStyle(slots[kCascade]);
+		if (slots.cascade) {
+			flushCascadeStyle(slots.cascade);
 		}
 		const computed =
 			slots[kComputedValue](property) ||
@@ -5493,18 +5548,18 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 				property,
 				getInitialStyle(null, property),
 			);
-		if (slots[kCascade] && USED_VALUE_PROPERTIES.has(property)) {
+		if (slots.cascade && USED_VALUE_PROPERTIES.has(property)) {
 			return slots[kUsedValue](property, computed);
 		}
 		return computed;
 	}
 
 	override setProperty(): void {
-		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this).element ?? undefined);
 	}
 
 	override removeProperty(): string {
-		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this).element ?? undefined);
 	}
 
 	override getPropertyPriority(): string {
@@ -5515,53 +5570,53 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		return CSS_LONGHANDS[index] ?? "";
 	}
 
-	[kSyncResolved](): void {
+	[kSyncResolved](this: Slots<PseudoStyleDeclaration>): void {
 		// Before the work, because resolving below reads back through this
 		// declaration.
 		const slots = this;
-		slots[kCascade]?.[kCurrentDeclarations].add(this);
-		if (slots[kCascade] && slots[kElement] && slots[kPseudoElement]) {
-			slots[kPseudoDeclarations] = pseudoDeclarationsFor(
-				slots[kCascade],
-				slots[kElement],
-				slots[kPseudoElement],
+		slots.cascade?.[kCurrentDeclarations].add(this);
+		if (slots.cascade && slots.element && slots.pseudoElement) {
+			slots.pseudoDeclarations = pseudoDeclarationsFor(
+				slots.cascade,
+				slots.element,
+				slots.pseudoElement,
 			);
 			storeTransitionFallback(
-				slots[kCascade],
-				slots[kElement],
-				slots[kPseudoElement],
-				slots[kResolved],
+				slots.cascade,
+				slots.element,
+				slots.pseudoElement,
+				slots.resolved,
 			);
 		}
-		slots[kResolved] = new Map();
-		slots[kNodeResolved].clear();
-		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
+		slots.resolved = new Map();
+		slots.nodeResolved.clear();
+		if ((this as IndexedSlots).indexCount !== undefined) {
 			syncIndexed(ownerOf(this));
 		}
-		if (slots[kCascade] && slots[kElement] && slots[kPseudoElement]) {
+		if (slots.cascade && slots.element && slots.pseudoElement) {
 			processTransitionStyle(
-				slots[kCascade],
-				slots[kElement],
+				slots.cascade,
+				slots.element,
 				(property) => slots[kBaseValue](property),
-				slots[kPseudoElement],
+				slots.pseudoElement,
 			);
 		}
 	}
 
 	// The cascade's declarations alone, with no transition overriding them.
-	[kBaseValue](property: string): string {
+	[kBaseValue](this: Slots<PseudoStyleDeclaration>, property: string): string {
 		const slots = this;
-		let value = slots[kResolved].get(property);
+		let value = slots.resolved.get(property);
 		if (value === undefined) {
 			const longhands = CSSValues.getLonghands(property);
-			value = longhands && slots[kPseudoDeclarations][property] === undefined
+			value = longhands && slots.pseudoDeclarations[property] === undefined
 				? CSSValues.serializeShorthandValue(property, longhands, (longhand) =>
 					slots[kBaseValue](longhand) || CSS_INITIAL_VALUES[longhand] || "")
 				: CSSValues.getComputedValueEntry(
 					property,
-					slots[kPseudoDeclarations][property] ?? "",
+					slots.pseudoDeclarations[property] ?? "",
 				);
-			slots[kResolved].set(property, value);
+			slots.resolved.set(property, value);
 		}
 		return value;
 	}
@@ -5570,17 +5625,21 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// through the same arithmetic as an element's metrics. A pseudo-element
 	// never given a node uses the percentage resolution below, against the
 	// box it would be in.
-	[kUsedValue](property: string, computed: string): string {
+	[kUsedValue](
+		this: Slots<PseudoStyleDeclaration>,
+		property: string,
+		computed: string,
+	): string {
 		const slots = this;
-		const originating = slots[kElement];
-		const cascade = slots[kCascade];
+		const originating = slots.element;
+		const cascade = slots.cascade;
 		if (originating && cascade) {
 			// Flush before the node lookup. The composition pass that runs
 			// under the flush is what creates a pseudo-element's node, so a
 			// lookup taken first would report "no box" for a box one render
 			// away.
 			getUsedRect(cascade, originating);
-			const node = pseudoElement<Element>(originating, slots[kPseudoElement]);
+			const node = pseudoElement<Element>(originating, slots.pseudoElement);
 			if (node) {
 				return measureUsedValue(
 					getBoxView(ownerOf(this), node),
@@ -5599,11 +5658,11 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		// An originating element with `display: contents` generates no box of
 		// its own, so its pseudo-elements go in the box its parent makes, the
 		// same box its children go in.
-		let host: Element | null = slots[kElement];
+		let host: Element | null = slots.element;
 		while (host && getComputedValue(host, "display") === "contents") {
 			host = flatParentElement(host);
 		}
-		const box = host && contentBox(slots[kCascade]!, host);
+		const box = host && contentBox(slots.cascade!, host);
 		if (!box) {
 			return computed;
 		}
@@ -5618,9 +5677,12 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// The engine's read. An empty result means no rule reached the
 	// pseudo-element, which is what the ::selection and ::marker painters
 	// check.
-	[kComputedValue](property: string): string {
+	[kComputedValue](
+		this: Slots<PseudoStyleDeclaration>,
+		property: string,
+	): string {
 		const slots = this;
-		const current = slots[kCascade]?.[kCurrentDeclarations];
+		const current = slots.cascade?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			slots[kSyncResolved]();
 		}
@@ -5638,18 +5700,18 @@ function getPseudoTransitionValue(
 	property: string,
 ): string | null {
 	const declarationSlots = _(declaration);
-	const cascade = declarationSlots[kCascade];
+	const cascade = declarationSlots.cascade;
 	if (
 		cascade === null ||
-		declarationSlots[kElement] === null ||
+		declarationSlots.element === null ||
 		cascade[kActiveTransitions].size === 0
 	) {
 		return null;
 	}
 	return getTransitionValue(
 		cascade,
-		declarationSlots[kElement],
-		declarationSlots[kPseudoElement],
+		declarationSlots.element,
+		declarationSlots.pseudoElement,
 		property,
 	);
 }
@@ -5663,20 +5725,20 @@ function getBoxView(
 	node: Element,
 ): MeasuredDeclaration {
 	const declarationSlots = _(declaration);
-	let view = declarationSlots[kBoxView];
-	if (!view || _(view)[kElement] !== node) {
+	let view = declarationSlots.boxView;
+	if (!view || _(view).element !== node) {
 		const measured = {
 			getPropertyValue: (property: string): string =>
 				declaration.getPropertyValue(property),
 		};
 		adoptSlots(measured, {
-			[kElement]: node,
-			[kCascade]: declarationSlots[kCascade],
+			element: node,
+			cascade: declarationSlots.cascade,
 			[kComputedValue]: (property: string): string =>
 				declaration.nodeValue(property),
 		});
 		view = measured as MeasuredDeclaration;
-		declarationSlots[kBoxView] = view;
+		declarationSlots.boxView = view;
 	}
 	return view;
 }
@@ -5701,14 +5763,18 @@ function isTransitioning(cascade: Cascade, element: Element): boolean {
 
 // A declaration of nothing, which CSSOM specifies for a bad pseudo
 // argument.
+interface EmptyStyleDeclarationSlots extends CSSStyleDeclarationSlots {
+	element: Element | null;
+}
+
 interface EmptyStyleDeclaration {
-	[kElement]: Element | null;
+	readonly [internals]: EmptyStyleDeclarationSlots;
 }
 
 class EmptyStyleDeclaration extends CSSStyleProperties {
 	constructor(element?: Element) {
 		super();
-		_(this)[kElement] = element ?? null;
+		_(this).element = element ?? null;
 	}
 
 	override get length(): number {
@@ -5720,7 +5786,7 @@ class EmptyStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override set cssText(_text: string) {
-		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this).element ?? undefined);
 	}
 
 	override getPropertyValue(): string {
@@ -5732,11 +5798,11 @@ class EmptyStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override setProperty(): void {
-		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this).element ?? undefined);
 	}
 
 	override removeProperty(): string {
-		throw readOnlyDeclaration(_(this)[kElement] ?? undefined);
+		throw readOnlyDeclaration(_(this).element ?? undefined);
 	}
 
 	override item(): string {
@@ -6124,7 +6190,7 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 
 export interface Cascade {
 	// Each element's computed declaration, as its slots.
-	[kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
+	[kComputedStyleCache]: WeakMap<Element, Slots<ComputedStyleDeclaration>>;
 
 	// The slots of every declaration resolved against the current cascade.
 	// Dropping one, or replacing the set, sends it back through
@@ -6278,8 +6344,10 @@ export interface Cascade {
 
 export class Cascade {
 	constructor(window: Window, layout: Layout) {
-		this[kComputedStyleCache] =
-			new WeakMap<Element, ComputedStyleDeclaration>();
+		this[kComputedStyleCache] = new WeakMap<
+			Element,
+			Slots<ComputedStyleDeclaration>
+		>();
 		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kShadowRoots] = new Set<ShadowRoot>();
 		this[kSharedRoot] = new Map();
@@ -6679,7 +6747,7 @@ export class Cascade {
 
 	// The slots of the declaration, which the cache holds, so a read of a
 	// computed value looks nothing up.
-	computedSlotsFor(element: Element): ComputedStyleDeclaration {
+	computedSlotsFor(element: Element): Slots<ComputedStyleDeclaration> {
 		let slots = this[kComputedStyleCache].get(element);
 		if (!slots) {
 			parseStylesheetsIfStale(this);
@@ -6716,7 +6784,7 @@ export class Cascade {
 		if (!this[kCurrentDeclarations].has(declarationSlots)) {
 			declarationSlots[kSyncResolved]();
 		}
-		return declarationSlots[kStyleVersion];
+		return declarationSlots.styleVersion;
 	}
 
 	/**
@@ -8197,7 +8265,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 	const dropped = cascade[kComputedStyleCache].get(element);
 	if (dropped) {
 		cascade[kCurrentDeclarations].delete(dropped);
-		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
+		storeTransitionFallback(cascade, element, "", dropped.resolved);
 	}
 	cascade[kComputedStyleCache].delete(element);
 	cascade[kHasResults] = null;
@@ -8387,7 +8455,7 @@ function invalidateElementCaches(
 	const dropped = cascade[kComputedStyleCache].get(element);
 	if (dropped) {
 		cascade[kCurrentDeclarations].delete(dropped);
-		storeTransitionFallback(cascade, element, "", dropped[kResolved]);
+		storeTransitionFallback(cascade, element, "", dropped.resolved);
 	}
 	cascade[kComputedStyleCache].delete(element);
 	cascade[kHasResults] = null;
@@ -8395,12 +8463,7 @@ function invalidateElementCaches(
 	if (droppedPseudos) {
 		for (const [name, declaration] of droppedPseudos) {
 			cascade[kCurrentDeclarations].delete(_(declaration));
-			storeTransitionFallback(
-				cascade,
-				element,
-				name,
-				_(declaration)[kResolved],
-			);
+			storeTransitionFallback(cascade, element, name, _(declaration).resolved);
 		}
 	}
 	cascade[kPseudoElementStyleCache].delete(element);

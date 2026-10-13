@@ -21,6 +21,7 @@ import {
 	DOMException,
 	dropFullscreen,
 	EventTarget,
+	type EventTargetSlots,
 	flushLayout,
 	flushObservers,
 	getCellSizeSetting,
@@ -69,7 +70,7 @@ import {
 	type RequestPolicy,
 	setWindowFetch,
 } from "./internal/resources.ts";
-import {_, moveLateMembers} from "./internal/slots.ts";
+import {_, type internals, moveLateMembers} from "./internal/slots.ts";
 import {queueMicrotask, setTimeout} from "./internal/timers.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
@@ -288,52 +289,9 @@ function toCellSizeSetting(
 	);
 }
 
-const kFramebuffer = Symbol("framebuffer");
-const kLayout = Symbol("layout");
-const kWindow = Symbol("window");
-const kCascade = Symbol("cascade");
-const kPainter = Symbol("painter");
-const kSealed = Symbol("sealed");
-const kRenderQueued = Symbol("renderQueued");
-const kOnAlternateScreen = Symbol("onAlternateScreen");
-const kRenderInFlight = Symbol("renderInFlight");
-const kRenderCount = Symbol("renderCount");
-const kFirstFrame = Symbol("firstFrame");
-const kUnprinted = Symbol("unprinted");
-const kInput = Symbol("input");
-const kAttachReady = Symbol("attachReady");
-const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
-const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
-const kTransport = Symbol("transport");
-// The colorDepth option, or undefined when the terminal is to be asked.
-const kColorDepth = Symbol("colorDepth");
-const kExchange = Symbol("exchange");
-const kStaticSibling = Symbol("staticSibling");
-const kStaticOptions = Symbol("staticOptions");
-const kFetchTarget = Symbol("fetchTarget");
-const kLifetimes = Symbol("lifetimes");
-const kLoads = Symbol("loads");
-const kAttachBegun = Symbol("attachBegun");
-const kDisposal = Symbol("disposal");
 type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
-const kLifecycle = Symbol("lifecycle");
-// Whether a frame has been painted in flow, below the prompt. Leaving the
-// alternate screen restores the cursor to where the switch saved it; over
-// flow content that is the content's last row, and the shell's next line
-// would land on it.
-const kFlowPainted = Symbol("flowPainted");
-// When the last frame began, so the next waits out the rest of its
-// interval.
-const kLastFrameAt = Symbol("lastFrameAt");
 // About a display's refresh. Changes that come faster share a frame.
 const FRAME_INTERVAL_MS = 16;
-// Errors the page let escape that no log could take live. Printed below
-// the document when the session ends.
-const kHeldErrors = Symbol("heldErrors");
-const kErrored = Symbol("errored");
-const kSuspended = Symbol("suspended");
-// Held errors handed to the output queue whose write has not finished.
-const kUnwrittenErrors = Symbol("unwrittenErrors");
 const HELD_ERROR_LIMIT = 50;
 
 /** The events a TermDOM dispatches, by type. */
@@ -345,68 +303,82 @@ export interface TermDOMEventMap {
 // takes its streams for good.
 const transportUsers = new WeakMap<TerminalTransport, TermDOM>();
 
-export interface TermDOM {
-	[kFramebuffer]: Framebuffer;
-	[kLayout]: Layout;
-	[kCascade]: Cascade;
-	[kPainter]: Painter;
+interface TermDOMSlots extends EventTargetSlots {
+	framebuffer: Framebuffer;
+	layout: Layout;
+	cascade: Cascade;
+	painter: Painter;
 	// document.close() sealed the document into the scrollback. The next
 	// mutation starts a fresh one below it.
-	[kSealed]: boolean;
-	[kRenderQueued]: boolean;
+	sealed: boolean;
+	renderQueued: boolean;
 	// Which screen frames land on. Switched at the start of a frame when
 	// the document's fullscreen state disagrees.
-	[kOnAlternateScreen]: boolean;
+	onAlternateScreen: boolean;
 	// The running render loop. A render() during it queues a trailing
 	// frame rather than starting another.
-	[kRenderInFlight]: Promise<void> | null;
-	[kFlowPainted]: boolean;
-	[kLastFrameAt]: number;
-	[kHeldErrors]: string[];
-	[kErrored]: boolean;
-	[kSuspended]: boolean;
-	[kUnwrittenErrors]: string | null;
+	renderInFlight: Promise<void> | null;
+	// Whether a frame has been painted in flow, below the prompt. Leaving the
+	// alternate screen restores the cursor to where the switch saved it; over
+	// flow content that is the content's last row, and the shell's next line
+	// would land on it.
+	flowPainted: boolean;
+	// When the last frame began, so the next waits out the rest of its
+	// interval.
+	lastFrameAt: number;
+	// Errors the page let escape that no log could take live. Printed below
+	// the document when the session ends.
+	heldErrors: string[];
+	errored: boolean;
+	suspended: boolean;
+	// Held errors handed to the output queue whose write has not finished.
+	unwrittenErrors: string | null;
 	// Timestamps observer entries.
-	[kRenderCount]: number;
+	renderCount: number;
 	// What the first frame waits for: the terminal's answers that decide
 	// how the page looks.
-	[kFirstFrame]: Promise<void> | null;
+	firstFrame: Promise<void> | null;
 	// A stdout that is not a terminal gets the document once, as it stands
 	// when the session ends. True while a frame has changed it since.
-	[kUnprinted]: boolean;
-	[kInput]: Input;
+	unprinted: boolean;
+	input: Input;
 	// Construction never touches the terminal. attach() does, and dispose()
 	// ends the instance for good.
-	[kLifecycle]: Lifecycle;
-	[kMouseReportingEnabled]: boolean;
-	[kHoverReportingEnabled]: boolean;
-	[kTransport]: TerminalTransport;
-	[kColorDepth]: EmittedColorDepth | undefined;
-	[kExchange]: Exchange;
+	lifecycle: Lifecycle;
+	mouseReportingEnabled: boolean;
+	hoverReportingEnabled: boolean;
+	transport: TerminalTransport;
+	// The colorDepth option, or undefined when the terminal is to be asked.
+	colorDepth: EmittedColorDepth | undefined;
+	exchange: Exchange;
 	// Resolves once the session is established and the first frame written.
-	[kAttachReady]: Promise<void>;
+	attachReady: Promise<void>;
 	// Resolves once attach()'s begin phase has run. Awaited only while
 	// attaching, because an unconditional await would defer every frame a
 	// microtask, and the scrollTop clamp is synchronous by contract.
-	[kAttachBegun]: Promise<void>;
+	attachBegun: Promise<void>;
 	// The engine behind renderANSI and print, rebuilt when the width, the
 	// cell or the screen's colors change.
-	[kStaticSibling]: TermDOM | null;
+	staticSibling: TermDOM | null;
 	// What the engine behind renderANSI and print is built with, so markup
 	// rendered through it is held to the same policy and base URL.
-	[kStaticOptions]: Pick<TermDOMOptions, "csp" | "url">;
+	staticOptions: Pick<TermDOMOptions, "csp" | "url">;
 	// Where the document's loads dispatch "fetch", and whose dispose()
 	// waits for what its listeners passed to waitUntil(). The engine behind
 	// renderANSI and print hands its loads to the TermDOM it renders for.
-	[kFetchTarget]: TermDOM;
+	fetchTarget: TermDOM;
 	// What "fetch" listeners passed to waitUntil(). dispose() waits for it.
-	[kLifetimes]: Set<Promise<void>>;
+	lifetimes: Set<Promise<void>>;
 	// Aborts the document's loads when the TermDOM is disposed.
-	[kLoads]: AbortController;
+	loads: AbortController;
 	// What dispose() returns, to every call.
-	[kDisposal]: Promise<void>;
+	disposal: Promise<void>;
 	// The window as the engine knows it, which term.window is.
-	[kWindow]: Window;
+	window: Window;
+}
+
+export interface TermDOM {
+	readonly [internals]: TermDOMSlots;
 }
 
 /**
@@ -423,39 +395,39 @@ export class TermDOM extends EventTarget {
 		const images = toGraphicsSetting("images", options.images);
 		const canvas = toGraphicsSetting("canvas", options.canvas);
 		const slots = _(this);
-		slots[kColorDepth] = toColorDepth(options.colorDepth);
+		slots.colorDepth = toColorDepth(options.colorDepth);
 		const url = toDocumentURL(options.url);
-		slots[kSealed] = false;
+		slots.sealed = false;
 
-		slots[kRenderQueued] = false;
-		slots[kOnAlternateScreen] = false;
-		slots[kRenderInFlight] = null;
-		slots[kFlowPainted] = false;
-		slots[kLastFrameAt] = -Infinity;
-		slots[kHeldErrors] = [];
-		slots[kErrored] = false;
-		slots[kSuspended] = false;
-		slots[kUnwrittenErrors] = null;
-		slots[kRenderCount] = 0;
-		slots[kFirstFrame] = null;
-		slots[kUnprinted] = false;
-		slots[kLifecycle] = "detached";
+		slots.renderQueued = false;
+		slots.onAlternateScreen = false;
+		slots.renderInFlight = null;
+		slots.flowPainted = false;
+		slots.lastFrameAt = -Infinity;
+		slots.heldErrors = [];
+		slots.errored = false;
+		slots.suspended = false;
+		slots.unwrittenErrors = null;
+		slots.renderCount = 0;
+		slots.firstFrame = null;
+		slots.unprinted = false;
+		slots.lifecycle = "detached";
 
-		slots[kMouseReportingEnabled] = false;
-		slots[kHoverReportingEnabled] = false;
+		slots.mouseReportingEnabled = false;
+		slots.hoverReportingEnabled = false;
 
-		slots[kAttachReady] = Promise.resolve();
-		slots[kAttachBegun] = Promise.resolve();
-		slots[kStaticSibling] = null;
-		slots[kStaticOptions] = {csp: options.csp, url: options.url};
-		slots[kFetchTarget] = this;
-		slots[kLifetimes] = new Set();
-		slots[kDisposal] = Promise.resolve();
+		slots.attachReady = Promise.resolve();
+		slots.attachBegun = Promise.resolve();
+		slots.staticSibling = null;
+		slots.staticOptions = {csp: options.csp, url: options.url};
+		slots.fetchTarget = this;
+		slots.lifetimes = new Set();
+		slots.disposal = Promise.resolve();
 		retainDecoder();
-		slots[kLoads] = new AbortController();
-		slots[kTransport] = options.transport ?? transportFromProcess();
+		slots.loads = new AbortController();
+		slots.transport = options.transport ?? transportFromProcess();
 
-		const window = slots[kWindow] = createWindow(
+		const window = slots.window = createWindow(
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
 			url,
 		);
@@ -464,10 +436,10 @@ export class TermDOM extends EventTarget {
 		const document = this.document = this.window.document;
 		const requestPolicy: RequestPolicy = {
 			policies: parseContentSecurityPolicies(options.csp ?? ""),
-			signal: slots[kLoads].signal,
+			signal: slots.loads.signal,
 			extend: (promise) => {
 				const lifetime = promise.then(() => {}, () => {});
-				const lifetimes = _(slots[kFetchTarget])[kLifetimes];
+				const lifetimes = _(slots.fetchTarget).lifetimes;
 				lifetimes.add(lifetime);
 				void lifetime.then(() => lifetimes.delete(lifetime));
 			},
@@ -491,7 +463,7 @@ export class TermDOM extends EventTarget {
 		this.window.fetch = setWindowFetch(
 			async (input: RequestInfo | URL, init?: RequestInit) =>
 				answerRequest(
-					slots[kFetchTarget],
+					slots.fetchTarget,
 					document,
 					input instanceof Request && init === undefined
 						? input
@@ -506,42 +478,42 @@ export class TermDOM extends EventTarget {
 				),
 		) as typeof this.window.fetch;
 
-		slots[kLayout] = new Layout(
+		slots.layout = new Layout(
 			window,
-			slots[kTransport].cols,
-			slots[kTransport].rows,
+			slots.transport.cols,
+			slots.transport.rows,
 		);
-		slots[kCascade] = new Cascade(window, slots[kLayout]);
+		slots.cascade = new Cascade(window, slots.layout);
 
-		slots[kFramebuffer] = new Framebuffer(
-			slots[kTransport].rows,
-			slots[kTransport].cols,
-			slots[kColorDepth] ?? "256",
+		slots.framebuffer = new Framebuffer(
+			slots.transport.rows,
+			slots.transport.cols,
+			slots.colorDepth ?? "256",
 		);
 
-		const exchange = slots[kExchange] = new Exchange(
-			slots[kTransport],
+		const exchange = slots.exchange = new Exchange(
+			slots.transport,
 			window,
-			slots[kLayout],
-			slots[kCascade],
-			slots[kFramebuffer],
+			slots.layout,
+			slots.cascade,
+			slots.framebuffer,
 			toColorScheme(options.colorScheme),
 		);
 
 		// The framebuffer measures widths over the exchange's probe channel.
-		slots[kFramebuffer].measurer = exchange;
+		slots.framebuffer.measurer = exchange;
 
 		attachDocument(document, {
-			layout: slots[kLayout],
-			cascade: slots[kCascade],
-			exchange: slots[kExchange],
-			framebuffer: slots[kFramebuffer],
+			layout: slots.layout,
+			cascade: slots.cascade,
+			exchange: slots.exchange,
+			framebuffer: slots.framebuffer,
 			cellSize,
 			images,
 			canvas,
 			load: (request, context) =>
 				answerRequest(
-					slots[kFetchTarget],
+					slots.fetchTarget,
 					document,
 					request,
 					context,
@@ -549,33 +521,33 @@ export class TermDOM extends EventTarget {
 				),
 			allowsInlineHandler: (element) =>
 				checkInlineHandler(document, element, requestPolicy),
-			loadSignal: slots[kLoads].signal,
+			loadSignal: slots.loads.signal,
 			render: () => render(this),
 			reportUncaught: (error) => {
-				slots[kErrored] = true;
+				slots.errored = true;
 				reportUncaught(this, error);
 			},
 		});
 		// The document had no size until it was attached, so an @media rule
 		// in the markup was read against a zero-width viewport. Attaching is
 		// a resize, and flips @media results the same way.
-		slots[kCascade].syncStylesheets();
+		slots.cascade.syncStylesheets();
 
-		slots[kInput] = new Input(
+		slots.input = new Input(
 			this.document,
-			slots[kLayout],
-			slots[kCascade],
-			slots[kFramebuffer],
+			slots.layout,
+			slots.cascade,
+			slots.framebuffer,
 			() => {
 				void suspendTermDOM(this);
 			},
 		);
 
-		slots[kPainter] = new Painter(
+		slots.painter = new Painter(
 			this.document,
-			slots[kLayout],
-			slots[kCascade],
-			slots[kFramebuffer],
+			slots.layout,
+			slots.cascade,
+			slots.framebuffer,
 		);
 
 		// A canceled or untrusted beforeunload does not close.
@@ -596,10 +568,10 @@ export class TermDOM extends EventTarget {
 		// starts a fresh one below it.
 		exchange.addEventListener("seal", (event) => {
 			if (
-				event.target === exchange && isAttached(this) && slots[kRenderCount] > 0
+				event.target === exchange && isAttached(this) && slots.renderCount > 0
 			) {
 				flushDocument(this);
-				slots[kSealed] = true;
+				slots.sealed = true;
 			}
 		});
 		exchange.addEventListener("terminalclose", (event) => {
@@ -618,13 +590,13 @@ export class TermDOM extends EventTarget {
 	 */
 	attach(): Promise<void> {
 		const slots = _(this);
-		if (slots[kLifecycle] === "disposed") {
+		if (slots.lifecycle === "disposed") {
 			return Promise.reject(disposedError());
 		}
 		if (isAttached(this)) {
-			return slots[kAttachReady];
+			return slots.attachReady;
 		}
-		const user = transportUsers.get(slots[kTransport]);
+		const user = transportUsers.get(slots.transport);
 		if (user !== undefined && user !== this) {
 			return Promise.reject(
 				new DOMException(
@@ -633,52 +605,52 @@ export class TermDOM extends EventTarget {
 				),
 			);
 		}
-		transportUsers.set(slots[kTransport], this);
+		transportUsers.set(slots.transport, this);
 		// Resolves when the first frame has been written. The negotiations'
 		// silence timeouts must not delay that.
-		slots[kLifecycle] = "attaching";
+		slots.lifecycle = "attaching";
 		setDocumentVisible(this.document, true);
 		let begun!: () => void;
-		slots[kAttachBegun] = new Promise<void>((resolve) => {
+		slots.attachBegun = new Promise<void>((resolve) => {
 			begun = resolve;
 		});
 		let started = false;
 		const attaching = (async () => {
-			await slots[kTransport].ready;
+			await slots.transport.ready;
 			// dispose() during the wait ends it. The session never starts.
-			if (slots[kLifecycle] !== "attaching") {
+			if (slots.lifecycle !== "attaching") {
 				begun();
 				return;
 			}
 
 			started = true;
-			slots[kExchange].start(slots[kInput]);
-			if (slots[kTransport].interactive) {
-				slots[kExchange].setDisplayType("bracketedPaste", true);
+			slots.exchange.start(slots.input);
+			if (slots.transport.interactive) {
+				slots.exchange.setDisplayType("bracketedPaste", true);
 				// So dispose can restore the title.
-				slots[kExchange].setDisplayType("titleStack", true);
+				slots.exchange.setDisplayType("titleStack", true);
 				if (this.document.title) {
-					void slots[kExchange].setTitle(this.document.title);
+					void slots.exchange.setTitle(this.document.title);
 				}
 			}
 			syncMouseReporting(this);
 			syncHoverReporting(this);
 			// The terminal's background, asked first so the first frame can
 			// wait for it.
-			const schemeBefore = slots[kExchange].colorScheme;
-			void slots[kExchange].negotiateColorScheme().then(() => {
-				if (isAttached(this) && slots[kExchange].colorScheme !== schemeBefore) {
-					slots[kCascade].syncStylesheets();
+			const schemeBefore = slots.exchange.colorScheme;
+			void slots.exchange.negotiateColorScheme().then(() => {
+				if (isAttached(this) && slots.exchange.colorScheme !== schemeBefore) {
+					slots.cascade.syncStylesheets();
 					syncMediaQueries(this.document);
 					void render(this);
 				}
 			});
 			// What colors the terminal shows, when the program leaves it to the
 			// terminal to say. Asked before DA1, like the background.
-			const depthSettled = slots[kColorDepth] === undefined
-				? slots[kExchange].negotiateColorDepth().then((depth) => {
-					if (isAttached(this) && depth !== slots[kFramebuffer].colorDepth) {
-						slots[kFramebuffer].rebind(depth);
+			const depthSettled = slots.colorDepth === undefined
+				? slots.exchange.negotiateColorDepth().then((depth) => {
+					if (isAttached(this) && depth !== slots.framebuffer.colorDepth) {
+						slots.framebuffer.rebind(depth);
 						syncMediaQueries(this.document);
 						void render(this);
 					}
@@ -686,34 +658,34 @@ export class TermDOM extends EventTarget {
 				: Promise.resolve();
 			// A terminal answers in the order it was asked, so once it answers
 			// DA1, one that said nothing of its background never will.
-			const answered = slots[kExchange].queryDeviceAttributes();
-			slots[kExchange].initializeCursorDetection();
+			const answered = slots.exchange.queryDeviceAttributes();
+			slots.exchange.initializeCursorDetection();
 			// A terminal that answers nothing is not waited on past the cursor
 			// question the anchor already waits for.
-			const cursor = slots[kExchange].cursorDetectionPending;
+			const cursor = slots.exchange.cursorDetectionPending;
 			const schemeSettled = (
 				cursor === null ? answered : Promise.race([answered, cursor])
 			).then(() => {
-				slots[kExchange].abandonColorSchemeQuery();
-				slots[kExchange].abandonColorDepthQuery();
+				slots.exchange.abandonColorSchemeQuery();
+				slots.exchange.abandonColorDepthQuery();
 			});
-			void slots[kExchange].negotiateBidi();
-			void slots[kExchange].negotiateGraphemeClusters();
+			void slots.exchange.negotiateBidi();
+			void slots.exchange.negotiateGraphemeClusters();
 			// Math draws its bars as overlines once the terminal has agreed
 			// to them, so what was measured before the answer measures again.
-			void slots[kExchange].negotiateOverline().then((agreed) => {
+			void slots.exchange.negotiateOverline().then((agreed) => {
 				if (agreed && isAttached(this)) {
-					slots[kLayout].invalidateTextMeasurement();
+					slots.layout.invalidateTextMeasurement();
 					void render(this);
 				}
 			});
-			slots[kExchange].scrubProbeEcho();
+			slots.exchange.scrubProbeEcho();
 			// After the erase, which is for the mode probes' echo. What was
 			// painted against the guessed cell repaints when the answer lands.
 			// When the cell sizes the page, the first frame waits for it, so
 			// the page never lays out against the guess.
 			const measuresCell = getCellSizeSetting(this.document) === "auto";
-			const cellAnswered = slots[kExchange].negotiateCellPixels().then(
+			const cellAnswered = slots.exchange.negotiateCellPixels().then(
 				(cellChanged) => {
 					if (!isAttached(this)) {
 						return;
@@ -730,7 +702,7 @@ export class TermDOM extends EventTarget {
 			// The first frame is drawn in the colors the terminal chose and can
 			// show, and, when the cell sizes the page, at the size it reported.
 			// Input does not wait for any of them.
-			slots[kFirstFrame] = Promise.all([
+			slots.firstFrame = Promise.all([
 				schemeSettled,
 				depthSettled,
 				...(measuresCell ? [cellAnswered] : []),
@@ -738,10 +710,10 @@ export class TermDOM extends EventTarget {
 			if (measuresCell) {
 				// A font zoom resizes the grid, and the cell with it. The page
 				// hears of it once, when the cell is known.
-				slots[kExchange].deferResizeEvent();
-				slots[kExchange].addEventListener("terminalresize", (event) => {
+				slots.exchange.deferResizeEvent();
+				slots.exchange.addEventListener("terminalresize", (event) => {
 					const {sizeChanged} = event as TerminalResizeEvent;
-					void slots[kExchange].negotiateCellPixels().then((cellChanged) => {
+					void slots.exchange.negotiateCellPixels().then((cellChanged) => {
 						if (!isAttached(this)) {
 							return;
 						}
@@ -758,7 +730,7 @@ export class TermDOM extends EventTarget {
 					});
 				});
 			}
-			slots[kLifecycle] = "attached";
+			slots.lifecycle = "attached";
 			begun();
 
 			// A microtask later, so synchronous code after attach() can still
@@ -769,19 +741,19 @@ export class TermDOM extends EventTarget {
 		// A transport that never got ready leaves the instance as it was, so
 		// attach() can be tried again. One that failed once the session
 		// began is handed back.
-		slots[kAttachReady] = attaching.catch((error: unknown) => {
-			if (slots[kLifecycle] === "attaching") {
+		slots.attachReady = attaching.catch((error: unknown) => {
+			if (slots.lifecycle === "attaching") {
 				if (started) {
 					void this.dispose();
 				} else {
-					slots[kLifecycle] = "detached";
+					slots.lifecycle = "detached";
 					setDocumentVisible(this.document, false);
 				}
 			}
 			begun();
 			throw error;
 		});
-		return slots[kAttachReady];
+		return slots.attachReady;
 	}
 
 	// lib.dom's shape: the keyed overload first.
@@ -834,7 +806,7 @@ export class TermDOM extends EventTarget {
 	 * After dispose() it throws an InvalidStateError.
 	 */
 	renderANSI(html?: string): string {
-		if (_(this)[kLifecycle] === "disposed") {
+		if (_(this).lifecycle === "disposed") {
 			throw disposedError();
 		}
 		return html === undefined
@@ -850,10 +822,10 @@ export class TermDOM extends EventTarget {
 	 */
 	print(html?: string): Promise<void> {
 		const slots = _(this);
-		if (slots[kLifecycle] === "disposed") {
+		if (slots.lifecycle === "disposed") {
 			return Promise.reject(disposedError());
 		}
-		const lineEnding = isAttached(this) && slots[kTransport].interactive
+		const lineEnding = isAttached(this) && slots.transport.interactive
 			? "\r\n"
 			: "\n";
 		if (html === undefined) {
@@ -865,7 +837,7 @@ export class TermDOM extends EventTarget {
 		if (!output) {
 			return Promise.resolve();
 		}
-		return slots[kExchange].write(output);
+		return slots.exchange.write(output);
 	}
 
 	/**
@@ -887,13 +859,13 @@ export class TermDOM extends EventTarget {
 	 */
 	dispose(): Promise<void> {
 		const slots = _(this);
-		if (slots[kLifecycle] === "disposed") {
-			return slots[kDisposal];
+		if (slots.lifecycle === "disposed") {
+			return slots.disposal;
 		}
 
 		const wasAttached = isAttached(this);
-		slots[kLifecycle] = "disposed";
-		slots[kLoads].abort();
+		slots.lifecycle = "disposed";
+		slots.loads.abort();
 		releaseDecoder();
 		setDocumentVisible(this.document, false);
 
@@ -903,7 +875,7 @@ export class TermDOM extends EventTarget {
 		// fullscreen, because the screen switch restores what was there before
 		// entry, and that is the record.
 		const closingFullscreen = isFullscreen(this);
-		if (wasAttached && slots[kRenderCount] > 0 && !closingFullscreen) {
+		if (wasAttached && slots.renderCount > 0 && !closingFullscreen) {
 			// A paint that fails on the way out must not keep the terminal's
 			// modes from being restored.
 			try {
@@ -916,41 +888,39 @@ export class TermDOM extends EventTarget {
 		// Leaving the alternate screen puts the cursor where the switch saved
 		// it, on the flow content's bottom row. Step below it, or the shell's
 		// next line lands on ours.
-		slots[kExchange].restoreEngagedModes();
+		slots.exchange.restoreEngagedModes();
 		dropFullscreen(this.document);
-		slots[kHoverReportingEnabled] = false;
-		slots[kMouseReportingEnabled] = false;
+		slots.hoverReportingEnabled = false;
+		slots.mouseReportingEnabled = false;
 		// A program that was fullscreen from its first frame leaves nothing
 		// behind, as vim does: the cursor returns to the command line.
-		if (
-			closingFullscreen && slots[kTransport].interactive && slots[kFlowPainted]
-		) {
-			void slots[kExchange].write("\r\n");
+		if (closingFullscreen && slots.transport.interactive && slots.flowPainted) {
+			void slots.exchange.write("\r\n");
 		}
 		writeHeldErrors(this);
 
 		// The last frames' DSR replies may be on the wire. The exchange reads
 		// them before it hands the terminal back, or the shell receives them
 		// as typing.
-		const drained = slots[kExchange].dispose();
+		const drained = slots.exchange.dispose();
 
-		slots[kInput].dispose();
+		slots.input.dispose();
 
-		if (slots[kStaticSibling]) {
-			void slots[kStaticSibling].dispose();
-			slots[kStaticSibling] = null;
+		if (slots.staticSibling) {
+			void slots.staticSibling.dispose();
+			slots.staticSibling = null;
 		}
-		slots[kCascade].dispose();
-		slots[kLayout].dispose();
+		slots.cascade.dispose();
+		slots.layout.dispose();
 		clearHighlights(this.document);
 		disconnectObservers(this.document);
-		clearWindowTimers(slots[kWindow]);
-		slots[kDisposal] = Promise.all([
-			slots[kExchange].flush(),
+		clearWindowTimers(slots.window);
+		slots.disposal = Promise.all([
+			slots.exchange.flush(),
 			drained,
-			...slots[kLifetimes],
+			...slots.lifetimes,
 		]).then(() => {});
-		return slots[kDisposal];
+		return slots.disposal;
 	}
 }
 
@@ -964,34 +934,34 @@ export class TermDOM extends EventTarget {
  */
 async function suspendTermDOM(termDOM: TermDOM): Promise<void> {
 	const termDOMSlots = _(termDOM);
-	const suspend = termDOMSlots[kTransport].suspend;
+	const suspend = termDOMSlots.transport.suspend;
 	if (
 		suspend === undefined ||
-		termDOMSlots[kLifecycle] !== "attached" ||
-		termDOMSlots[kSuspended]
+		termDOMSlots.lifecycle !== "attached" ||
+		termDOMSlots.suspended
 	) {
 		return;
 	}
-	termDOMSlots[kSuspended] = true;
+	termDOMSlots.suspended = true;
 	setDocumentVisible(termDOM.document, false);
 	const fullscreen = isFullscreen(termDOM);
-	if (!fullscreen && termDOMSlots[kRenderCount] > 0) {
+	if (!fullscreen && termDOMSlots.renderCount > 0) {
 		flushDocument(termDOM);
-		termDOMSlots[kSealed] = true;
+		termDOMSlots.sealed = true;
 	}
-	termDOMSlots[kExchange].releaseModes();
-	await termDOMSlots[kExchange].flush();
-	await suspend.call(termDOMSlots[kTransport]);
-	termDOMSlots[kSuspended] = false;
-	if (termDOMSlots[kLifecycle] !== "attached") {
+	termDOMSlots.exchange.releaseModes();
+	await termDOMSlots.exchange.flush();
+	await suspend.call(termDOMSlots.transport);
+	termDOMSlots.suspended = false;
+	if (termDOMSlots.lifecycle !== "attached") {
 		return;
 	}
-	termDOMSlots[kExchange].reclaimModes();
+	termDOMSlots.exchange.reclaimModes();
 	if (termDOM.document.title) {
-		void termDOMSlots[kExchange].setTitle(termDOM.document.title);
+		void termDOMSlots.exchange.setTitle(termDOM.document.title);
 	}
 	if (fullscreen) {
-		termDOMSlots[kFramebuffer].repaintAll();
+		termDOMSlots.framebuffer.repaintAll();
 	}
 	setDocumentVisible(termDOM.document, true);
 	void render(termDOM);
@@ -1004,10 +974,10 @@ async function suspendTermDOM(termDOM: TermDOM): Promise<void> {
  */
 function getExitStatus(termDOM: TermDOM): number {
 	const termDOMSlots = _(termDOM);
-	if (termDOMSlots[kExchange].interrupted) {
+	if (termDOMSlots.exchange.interrupted) {
 		return 130;
 	}
-	return termDOMSlots[kErrored] ? 1 : 0;
+	return termDOMSlots.errored ? 1 : 0;
 }
 
 /**
@@ -1020,10 +990,10 @@ function getExitStatus(termDOM: TermDOM): number {
 function reportUncaught(termDOM: TermDOM, error: unknown): void {
 	const text = formatError(error);
 	const termDOMSlots = _(termDOM);
-	if (termDOMSlots[kTransport].logError?.(text)) {
+	if (termDOMSlots.transport.logError?.(text)) {
 		return;
 	}
-	if (!isAttached(termDOM) || !termDOMSlots[kTransport].interactive) {
+	if (!isAttached(termDOM) || !termDOMSlots.transport.interactive) {
 		console.error(text);
 		return;
 	}
@@ -1049,21 +1019,21 @@ function installExitHook(): void {
 		for (const session of sessionsUnprinted) {
 			const output = takeUnprinted(session);
 			if (output) {
-				_(session)[kTransport].writeSync?.(output);
+				_(session).transport.writeSync?.(output);
 			}
 		}
 		for (const session of sessionsHoldingErrors) {
 			const text =
-				(_(session)[kUnwrittenErrors] ?? "") + (takeHeldErrors(session) ?? "");
+				(_(session).unwrittenErrors ?? "") + (takeHeldErrors(session) ?? "");
 			if (text !== "") {
-				_(session)[kTransport].writeSync?.(text);
+				_(session).transport.writeSync?.(text);
 			}
 		}
 	});
 }
 
 function holdError(termDOM: TermDOM, error: unknown): void {
-	const held = _(termDOM)[kHeldErrors];
+	const held = _(termDOM).heldErrors;
 	held.push(formatError(error));
 	if (held.length > HELD_ERROR_LIMIT) {
 		held.shift();
@@ -1075,9 +1045,9 @@ function holdError(termDOM: TermDOM, error: unknown): void {
 // The held errors as the lines to print, emptying the hold.
 function takeHeldErrors(termDOM: TermDOM): string | null {
 	const termDOMSlots = _(termDOM);
-	const held = termDOMSlots[kHeldErrors];
-	termDOMSlots[kHeldErrors] = [];
-	if (held.length === 0 || !termDOMSlots[kTransport].interactive) {
+	const held = termDOMSlots.heldErrors;
+	termDOMSlots.heldErrors = [];
+	if (held.length === 0 || !termDOMSlots.transport.interactive) {
 		return null;
 	}
 	return held.join("\r\n") + "\r\n";
@@ -1089,16 +1059,15 @@ function writeHeldErrors(termDOM: TermDOM): void {
 	const text = takeHeldErrors(termDOM);
 	const termDOMSlots = _(termDOM);
 	if (text === null) {
-		if (termDOMSlots[kUnwrittenErrors] === null) {
+		if (termDOMSlots.unwrittenErrors === null) {
 			sessionsHoldingErrors.delete(termDOM);
 		}
 		return;
 	}
-	termDOMSlots[kUnwrittenErrors] =
-		(termDOMSlots[kUnwrittenErrors] ?? "") + text;
-	void termDOMSlots[kExchange].writeLines(text).then(() => {
-		termDOMSlots[kUnwrittenErrors] = null;
-		if (termDOMSlots[kHeldErrors].length === 0) {
+	termDOMSlots.unwrittenErrors = (termDOMSlots.unwrittenErrors ?? "") + text;
+	void termDOMSlots.exchange.writeLines(text).then(() => {
+		termDOMSlots.unwrittenErrors = null;
+		if (termDOMSlots.heldErrors.length === 0) {
 			sessionsHoldingErrors.delete(termDOM);
 		}
 	});
@@ -1116,7 +1085,7 @@ function isFullscreen(termDOM: TermDOM): boolean {
 }
 
 function isAttached(termDOM: TermDOM): boolean {
-	const lifecycle = _(termDOM)[kLifecycle];
+	const lifecycle = _(termDOM).lifecycle;
 	return lifecycle === "attaching" || lifecycle === "attached";
 }
 
@@ -1127,17 +1096,17 @@ function isAttached(termDOM: TermDOM): boolean {
 function closeTermDOM(termDOM: TermDOM): void {
 	// A terminal that went away has nothing to drain or close.
 	const termDOMSlots = _(termDOM);
-	const live = isAttached(termDOM) && !termDOMSlots[kExchange].transportClosed;
+	const live = isAttached(termDOM) && !termDOMSlots.exchange.transportClosed;
 	// Wait for attach to finish so the final output lands where the frame
 	// was, and let everything dispose queued reach the wire before the
 	// transport acts on the close (a process transport exits).
 	void (async () => {
 		if (live) {
-			await termDOMSlots[kAttachReady];
+			await termDOMSlots.attachReady;
 		}
 		await termDOM.dispose();
 		if (live) {
-			termDOMSlots[kTransport].close({status: getExitStatus(termDOM)});
+			termDOMSlots.transport.close({status: getExitStatus(termDOM)});
 		}
 	})();
 }
@@ -1151,13 +1120,13 @@ function syncMouseReporting(termDOM: TermDOM): void {
 	const termDOMSlots = _(termDOM);
 	const wanted =
 		isAttached(termDOM) &&
-		termDOMSlots[kTransport].interactive &&
-		!termDOMSlots[kInput].mouseCaptureYielded;
-	if (wanted === termDOMSlots[kMouseReportingEnabled]) {
+		termDOMSlots.transport.interactive &&
+		!termDOMSlots.input.mouseCaptureYielded;
+	if (wanted === termDOMSlots.mouseReportingEnabled) {
 		return;
 	}
-	termDOMSlots[kMouseReportingEnabled] = wanted;
-	termDOMSlots[kExchange].setDisplayType("mouseCapture", wanted);
+	termDOMSlots.mouseReportingEnabled = wanted;
+	termDOMSlots.exchange.setDisplayType("mouseCapture", wanted);
 }
 
 /**
@@ -1167,14 +1136,14 @@ function syncMouseReporting(termDOM: TermDOM): void {
 function syncHoverReporting(termDOM: TermDOM): void {
 	const termDOMSlots = _(termDOM);
 	const wanted =
-		termDOMSlots[kMouseReportingEnabled] &&
+		termDOMSlots.mouseReportingEnabled &&
 		(hoverListenerCount(termDOM.document) > 0 ||
-			termDOMSlots[kCascade].hoverRulesExist());
-	if (wanted === termDOMSlots[kHoverReportingEnabled]) {
+			termDOMSlots.cascade.hoverRulesExist());
+	if (wanted === termDOMSlots.hoverReportingEnabled) {
 		return;
 	}
-	termDOMSlots[kHoverReportingEnabled] = wanted;
-	termDOMSlots[kExchange].setDisplayType("motionReporting", wanted);
+	termDOMSlots.hoverReportingEnabled = wanted;
+	termDOMSlots.exchange.setDisplayType("motionReporting", wanted);
 }
 
 // An image's or a canvas's natural size in cells is its pixels over the
@@ -1186,7 +1155,7 @@ function cellPixelsChanged(termDOM: TermDOM): void {
 // Every length the page wrote measures differently now, and so does the
 // viewport, as after a resize.
 function cellSizeChanged(termDOM: TermDOM): void {
-	_(termDOM)[kCascade].syncStylesheets();
+	_(termDOM).cascade.syncStylesheets();
 	const window = termDOM.window;
 	dispatchAsUserAgent(
 		window,
@@ -1200,27 +1169,27 @@ async function render(termDOM: TermDOM): Promise<void> {
 	// nothing. Nor while suspended: the terminal is the shell's until the
 	// program resumes, and resuming renders.
 	const termDOMSlots = _(termDOM);
-	if (!isAttached(termDOM) || termDOMSlots[kSuspended]) {
+	if (!isAttached(termDOM) || termDOMSlots.suspended) {
 		return;
 	}
 
 	// A settling resize suppresses every render until its re-anchored
 	// redraw.
-	if (termDOMSlots[kExchange].resizing) {
+	if (termDOMSlots.exchange.resizing) {
 		return;
 	}
 
 	// Coalesce, never drop. A dropped render leaves the diff's previous
 	// buffer out of step with the screen. The loop folds this call's changes
 	// into a trailing frame, so awaiting render() means they are painted.
-	if (termDOMSlots[kRenderInFlight] !== null) {
-		termDOMSlots[kRenderQueued] = true;
-		return termDOMSlots[kRenderInFlight];
+	if (termDOMSlots.renderInFlight !== null) {
+		termDOMSlots.renderQueued = true;
+		return termDOMSlots.renderInFlight;
 	}
 
 	// The loop's first synchronous step can trigger a render, which has to
 	// coalesce too, so claim the slot before starting.
-	termDOMSlots[kRenderInFlight] = Promise.resolve();
+	termDOMSlots.renderInFlight = Promise.resolve();
 	let framesAwaiting = false;
 	const frames = (async () => {
 		try {
@@ -1229,42 +1198,42 @@ async function render(termDOM: TermDOM): Promise<void> {
 			// microtasks are one frame, not a frame of the half-done edit.
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			do {
-				termDOMSlots[kRenderQueued] = false;
-				if (termDOMSlots[kLifecycle] === "attaching") {
-					await termDOMSlots[kAttachBegun];
+				termDOMSlots.renderQueued = false;
+				if (termDOMSlots.lifecycle === "attaching") {
+					await termDOMSlots.attachBegun;
 				}
 				// The first frame, its callbacks included, waits for what
 				// decides how the page looks.
-				if (termDOMSlots[kFirstFrame] !== null) {
-					const first = termDOMSlots[kFirstFrame];
+				if (termDOMSlots.firstFrame !== null) {
+					const first = termDOMSlots.firstFrame;
 					await first;
-					if (termDOMSlots[kFirstFrame] === first) {
-						termDOMSlots[kFirstFrame] = null;
+					if (termDOMSlots.firstFrame === first) {
+						termDOMSlots.firstFrame = null;
 					}
 				}
 				// A disposed engine paints nothing, so a callback chain that
 				// never ends would spin here forever; it ends with the engine.
 				// One whose attach failed waits for the next attach, and a
 				// suspended one for resuming.
-				if (!isAttached(termDOM) || termDOMSlots[kSuspended]) {
+				if (!isAttached(termDOM) || termDOMSlots.suspended) {
 					break;
 				}
 				// One frame per interval at most. What changes in the wait,
 				// a burst of keys or a timer's updates, is drawn once.
 				const wait =
-					termDOMSlots[kLastFrameAt] + FRAME_INTERVAL_MS - performance.now();
+					termDOMSlots.lastFrameAt + FRAME_INTERVAL_MS - performance.now();
 				if (wait > 0) {
 					await new Promise((resolve) => setTimeout(resolve, wait));
-					if (!isAttached(termDOM) || termDOMSlots[kSuspended]) {
+					if (!isAttached(termDOM) || termDOMSlots.suspended) {
 						break;
 					}
 				}
 				// A resize that began in the wait draws its own frame once
 				// it settles.
-				if (termDOMSlots[kExchange].resizing) {
+				if (termDOMSlots.exchange.resizing) {
 					break;
 				}
-				termDOMSlots[kLastFrameAt] = performance.now();
+				termDOMSlots.lastFrameAt = performance.now();
 				// The order of "update the rendering": the frame callbacks
 				// first, then style, layout and paint, so what a callback
 				// changes lands in the frame it ran for and nothing is shown
@@ -1281,7 +1250,7 @@ async function render(termDOM: TermDOM): Promise<void> {
 				// After the paint, never inside the scrollTo() that asked
 				// for it. A listener's mutations queue the next frame.
 				runScrollSteps(termDOM.document);
-			} while (termDOMSlots[kRenderQueued] || framesAwaiting);
+			} while (termDOMSlots.renderQueued || framesAwaiting);
 		} catch (error) {
 			// The page's own exceptions were reported where they happened,
 			// so this is the engine failing. Hand the terminal back first, so
@@ -1294,10 +1263,10 @@ async function render(termDOM: TermDOM): Promise<void> {
 			}
 			throw error;
 		} finally {
-			termDOMSlots[kRenderInFlight] = null;
+			termDOMSlots.renderInFlight = null;
 		}
 	})();
-	termDOMSlots[kRenderInFlight] = frames;
+	termDOMSlots.renderInFlight = frames;
 	return frames;
 }
 
@@ -1309,13 +1278,13 @@ async function render(termDOM: TermDOM): Promise<void> {
 async function renderOnce(termDOM: TermDOM): Promise<void> {
 	// A render loop can outlive dispose() by one queued frame.
 	const termDOMSlots = _(termDOM);
-	if (termDOMSlots[kLifecycle] === "attaching") {
-		await termDOMSlots[kAttachBegun];
+	if (termDOMSlots.lifecycle === "attaching") {
+		await termDOMSlots.attachBegun;
 	}
-	if (!isAttached(termDOM) || termDOMSlots[kSuspended]) {
+	if (!isAttached(termDOM) || termDOMSlots.suspended) {
 		return;
 	}
-	if (!termDOMSlots[kTransport].interactive) {
+	if (!termDOMSlots.transport.interactive) {
 		printStatic(termDOM);
 		return;
 	}
@@ -1329,22 +1298,22 @@ async function renderOnce(termDOM: TermDOM): Promise<void> {
  */
 function afterRender(termDOM: TermDOM): void {
 	const termDOMSlots = _(termDOM);
-	termDOMSlots[kRenderCount]++;
+	termDOMSlots.renderCount++;
 	// The viewport in document coordinates, for IntersectionObserver.
 	const viewport = new termDOM.window.DOMRect(
 		0,
-		termDOMSlots[kFramebuffer].scrollTop,
-		termDOMSlots[kFramebuffer].cols,
-		termDOMSlots[kFramebuffer].rows,
+		termDOMSlots.framebuffer.scrollTop,
+		termDOMSlots.framebuffer.cols,
+		termDOMSlots.framebuffer.rows,
 	);
 	// A hidden document gets no observer entries, as a background tab
 	// gets none; they are delivered with the first frame after it shows.
 	if (termDOM.document.visibilityState === "visible") {
 		flushObservers(
 			termDOM.document,
-			termDOMSlots[kLayout],
+			termDOMSlots.layout,
 			viewport,
-			termDOMSlots[kRenderCount],
+			termDOMSlots.renderCount,
 		);
 	}
 	// The stylesheets have parsed, so whether any rule tests :hover is
@@ -1361,9 +1330,9 @@ function afterRender(termDOM: TermDOM): void {
 function printStatic(termDOM: TermDOM): void {
 	applyMutations(termDOM.document);
 	const termDOMSlots = _(termDOM);
-	termDOMSlots[kLayout].performLayout();
-	termDOMSlots[kLayout].framePainted();
-	termDOMSlots[kUnprinted] = true;
+	termDOMSlots.layout.performLayout();
+	termDOMSlots.layout.framePainted();
+	termDOMSlots.unprinted = true;
 	sessionsUnprinted.add(termDOM);
 	installExitHook();
 	afterRender(termDOM);
@@ -1371,7 +1340,7 @@ function printStatic(termDOM: TermDOM): void {
 
 // The document as plain lines, once, for a stdout that is not a terminal.
 function takeUnprinted(termDOM: TermDOM): string | null {
-	if (!_(termDOM)[kUnprinted]) {
+	if (!_(termDOM).unprinted) {
 		return null;
 	}
 	markPrinted(termDOM);
@@ -1379,7 +1348,7 @@ function takeUnprinted(termDOM: TermDOM): string | null {
 }
 
 function markPrinted(termDOM: TermDOM): void {
-	_(termDOM)[kUnprinted] = false;
+	_(termDOM).unprinted = false;
 	sessionsUnprinted.delete(termDOM);
 }
 
@@ -1390,15 +1359,15 @@ function markPrinted(termDOM: TermDOM): void {
  */
 function flushDocument(termDOM: TermDOM): void {
 	const termDOMSlots = _(termDOM);
-	if (!termDOMSlots[kTransport].interactive) {
+	if (!termDOMSlots.transport.interactive) {
 		const output = takeUnprinted(termDOM);
 		if (output) {
-			void termDOMSlots[kExchange].write(output);
+			void termDOMSlots.exchange.write(output);
 		}
 		return;
 	}
 
-	const top = termDOMSlots[kFramebuffer].documentTop;
+	const top = termDOMSlots.framebuffer.documentTop;
 	const output = renderStatic(termDOM, "\r\n");
 	if (!output) {
 		return;
@@ -1408,19 +1377,19 @@ function flushDocument(termDOM: TermDOM): void {
 	// old frame held below. Never a full ED from the top. tmux archives a
 	// fully erased screen into the scrollback, which put the document there
 	// twice.
-	void termDOMSlots[kExchange].cursorToRow(top + 1);
-	void termDOMSlots[kExchange].writeLines(output);
-	void termDOMSlots[kExchange].eraseBelow();
+	void termDOMSlots.exchange.cursorToRow(top + 1);
+	void termDOMSlots.exchange.writeLines(output);
+	void termDOMSlots.exchange.eraseBelow();
 }
 
 /** The document as ANSI: colors and line breaks, no cursor controls, no modes. */
 function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
 	flushLayout(termDOM.document);
 	const termDOMSlots = _(termDOM);
-	return termDOMSlots[kFramebuffer].renderStatic(
-		termDOMSlots[kLayout].documentPaintHeight(),
+	return termDOMSlots.framebuffer.renderStatic(
+		termDOMSlots.layout.documentPaintHeight(),
 		lineEnding,
-		(context) => termDOMSlots[kPainter].paint(context),
+		(context) => termDOMSlots.painter.paint(context),
 	);
 }
 
@@ -1432,17 +1401,17 @@ function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
 async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// close() sealed the previous document. Start a fresh one below it.
 	const termDOMSlots = _(termDOM);
-	if (termDOMSlots[kSealed]) {
-		termDOMSlots[kSealed] = false;
-		termDOMSlots[kFramebuffer].scrollTo(0);
-		termDOMSlots[kFramebuffer].repaintAll();
+	if (termDOMSlots.sealed) {
+		termDOMSlots.sealed = false;
+		termDOMSlots.framebuffer.scrollTo(0);
+		termDOMSlots.framebuffer.repaintAll();
 		// detectAnchor reads a reply, so the listener must be attached.
-		if (termDOMSlots[kTransport].interactive) {
+		if (termDOMSlots.transport.interactive) {
 			termDOM.attach();
 			// A terminal that does not answer leaves the anchor where it was,
 			// as at attach, and dispose() gives the question up.
-			await termDOMSlots[kExchange].detectAnchor(NaN);
-			if (termDOMSlots[kLifecycle] === "disposed") {
+			await termDOMSlots.exchange.detectAnchor(NaN);
+			if (termDOMSlots.lifecycle === "disposed") {
 				return;
 			}
 		}
@@ -1452,7 +1421,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// frame painted before it is known anchors a row above every later one.
 	// Await only when pending, because the scroll clamp below is synchronous
 	// by contract.
-	const detectionPending = termDOMSlots[kExchange].cursorDetectionPending;
+	const detectionPending = termDOMSlots.exchange.cursorDetectionPending;
 	if (detectionPending) {
 		await detectionPending;
 	}
@@ -1460,27 +1429,27 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// The screen switch is written at the start of a frame so no frame
 	// straddles it. Entry is switch, hide, clear.
 	const wantAlt = isFullscreen(termDOM);
-	if (wantAlt !== termDOMSlots[kOnAlternateScreen]) {
-		termDOMSlots[kOnAlternateScreen] = wantAlt;
-		termDOMSlots[kExchange].setDisplayType("altScreen", wantAlt);
+	if (wantAlt !== termDOMSlots.onAlternateScreen) {
+		termDOMSlots.onAlternateScreen = wantAlt;
+		termDOMSlots.exchange.setDisplayType("altScreen", wantAlt);
 		if (wantAlt) {
-			termDOMSlots[kExchange].setDisplayType("cursorHidden", true);
-			void termDOMSlots[kExchange].clearScreen();
+			termDOMSlots.exchange.setDisplayType("cursorHidden", true);
+			void termDOMSlots.exchange.clearScreen();
 		}
 		// Drop the diff model, or this frame patches one screen against the
 		// other's content.
-		termDOMSlots[kFramebuffer].repaintAll();
+		termDOMSlots.framebuffer.repaintAll();
 		syncMouseReporting(termDOM);
 		syncHoverReporting(termDOM);
 	}
 
 	// First, so a hover listener's mutations join the records taken below.
-	termDOMSlots[kInput].resolvePendingHover();
+	termDOMSlots.input.resolvePendingHover();
 
 	applyMutations(termDOM.document);
 	runFocusFixup(termDOM.document);
 
-	termDOMSlots[kLayout].performLayout();
+	termDOMSlots.layout.performLayout();
 	clampScrollOffsets(termDOM.document);
 
 	revealPendingCaret(termDOM.document);
@@ -1492,10 +1461,10 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		element: Element;
 		delta: number;
 	} | null;
-	const journal = termDOMSlots[kFramebuffer].journal;
+	const journal = termDOMSlots.framebuffer.journal;
 	if (
 		!journal.dirty &&
-		!termDOMSlots[kLayout].moved &&
+		!termDOMSlots.layout.moved &&
 		journal.frameScroll === 0 &&
 		journalled === null &&
 		!journal.needsRepaint
@@ -1511,45 +1480,43 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// scroll position survives underneath.
 	const fullscreen = isFullscreen(termDOM);
 	const contentHeight = fullscreen
-		? termDOMSlots[kFramebuffer].rows
-		: termDOMSlots[kLayout].documentPaintHeight();
-	const regionHeight = Math.min(contentHeight, termDOMSlots[kFramebuffer].rows);
+		? termDOMSlots.framebuffer.rows
+		: termDOMSlots.layout.documentPaintHeight();
+	const regionHeight = Math.min(contentHeight, termDOMSlots.framebuffer.rows);
 
-	const top = fullscreen
-		? 0
-		: termDOMSlots[kExchange].reserveRows(regionHeight);
+	const top = fullscreen ? 0 : termDOMSlots.exchange.reserveRows(regionHeight);
 
 	if (!fullscreen) {
 		// Through scrollTo, so the journal's delta is what the screen is about
 		// to be shifted by.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		termDOMSlots[kFramebuffer].scrollTo(
-			Math.min(termDOMSlots[kFramebuffer].scrollTop, maxScroll),
+		termDOMSlots.framebuffer.scrollTo(
+			Math.min(termDOMSlots.framebuffer.scrollTop, maxScroll),
 		);
 	}
 
 	// The document scroll has nothing to move in fullscreen. A scroll box
 	// inside it still does, under DECSTBM margins.
 	const shift =
-		termDOMSlots[kPainter].resolveScrollShift(regionHeight, journalled) ??
-		(fullscreen || termDOMSlots[kFramebuffer].journal.frameScroll === 0
+		termDOMSlots.painter.resolveScrollShift(regionHeight, journalled) ??
+		(fullscreen || termDOMSlots.framebuffer.journal.frameScroll === 0
 			? null
-			: termDOMSlots[kPainter].resolveDocumentScrollBand(
+			: termDOMSlots.painter.resolveDocumentScrollBand(
 				regionHeight,
-				termDOMSlots[kFramebuffer].journal.frameScroll,
+				termDOMSlots.framebuffer.journal.frameScroll,
 			));
 	// Read after the clamp, which adds to the journal.
-	const clamped = termDOMSlots[kFramebuffer].journal;
-	const context = termDOMSlots[kFramebuffer].beginFrame({
-		offset: -termDOMSlots[kFramebuffer].scrollTop,
+	const clamped = termDOMSlots.framebuffer.journal;
+	const context = termDOMSlots.framebuffer.beginFrame({
+		offset: -termDOMSlots.framebuffer.scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
 		delta: shift ? shift.delta : fullscreen ? 0 : clamped.frameScroll,
 		shift: shift ?? undefined,
 	});
-	termDOMSlots[kPainter].paint(context);
-	const ansi = termDOMSlots[kFramebuffer].endFrame();
-	termDOMSlots[kLayout].framePainted();
+	termDOMSlots.painter.paint(context);
+	const ansi = termDOMSlots.framebuffer.endFrame();
+	termDOMSlots.layout.framePainted();
 
 	// The cursor stays hidden while a frame paints and between frames. It
 	// is parked for resize bookkeeping, and a cursor blinking there is not
@@ -1557,14 +1524,14 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// anchors.
 	if (ansi) {
 		if (!fullscreen) {
-			termDOMSlots[kFlowPainted] = true;
+			termDOMSlots.flowPainted = true;
 		}
-		termDOMSlots[kExchange].setDisplayType("cursorHidden", true);
-		await termDOMSlots[kExchange].write(ansi);
+		termDOMSlots.exchange.setDisplayType("cursorHidden", true);
+		await termDOMSlots.exchange.write(ansi);
 	}
-	termDOMSlots[kExchange].setDisplayType(
+	termDOMSlots.exchange.setDisplayType(
 		"cursorHidden",
-		!termDOMSlots[kFramebuffer].caretVisible,
+		!termDOMSlots.framebuffer.caretVisible,
 	);
 	afterRender(termDOM);
 }
@@ -1575,27 +1542,27 @@ function renderStaticHTML(
 	lineEnding: "\n" | "\r\n",
 ): string {
 	const termDOMSlots = _(termDOM);
-	const cols = termDOMSlots[kTransport].cols;
+	const cols = termDOMSlots.transport.cols;
 	const cell = getCellSize(termDOM.document);
-	const colorDepth = termDOMSlots[kFramebuffer].colorDepth;
+	const colorDepth = termDOMSlots.framebuffer.colorDepth;
 	const graphics = getGraphicsSettings(termDOM.document)!;
-	const colorScheme = termDOMSlots[kExchange].colorScheme;
+	const colorScheme = termDOMSlots.exchange.colorScheme;
 	if (
-		termDOMSlots[kStaticSibling] &&
-		(_(termDOMSlots[kStaticSibling])[kFramebuffer].cols !== cols ||
-			_(termDOMSlots[kStaticSibling])[kFramebuffer].colorDepth !== colorDepth ||
-			_(termDOMSlots[kStaticSibling])[kExchange].colorScheme !== colorScheme ||
-			getGraphicsSettings(termDOMSlots[kStaticSibling].document)!.images !==
+		termDOMSlots.staticSibling &&
+		(_(termDOMSlots.staticSibling).framebuffer.cols !== cols ||
+			_(termDOMSlots.staticSibling).framebuffer.colorDepth !== colorDepth ||
+			_(termDOMSlots.staticSibling).exchange.colorScheme !== colorScheme ||
+			getGraphicsSettings(termDOMSlots.staticSibling.document)!.images !==
 				graphics.images ||
-			getGraphicsSettings(termDOMSlots[kStaticSibling].document)!.canvas !==
+			getGraphicsSettings(termDOMSlots.staticSibling.document)!.canvas !==
 				graphics.canvas ||
-			!isSameCell(getCellSize(termDOMSlots[kStaticSibling].document), cell))
+			!isSameCell(getCellSize(termDOMSlots.staticSibling.document), cell))
 	) {
-		void termDOMSlots[kStaticSibling].dispose();
-		termDOMSlots[kStaticSibling] = null;
+		void termDOMSlots.staticSibling.dispose();
+		termDOMSlots.staticSibling = null;
 	}
-	termDOMSlots[kStaticSibling] ??= new TermDOM({
-		...termDOMSlots[kStaticOptions],
+	termDOMSlots.staticSibling ??= new TermDOM({
+		...termDOMSlots.staticOptions,
 		colorScheme,
 		cellSize: cell === UNIT_CELL ? "unit" : cell,
 		images: graphics.images === "none" ? "none" : "cells",
@@ -1615,8 +1582,8 @@ function renderStaticHTML(
 		},
 	});
 
-	const renderer = termDOMSlots[kStaticSibling];
-	_(renderer)[kFetchTarget] = termDOM;
+	const renderer = termDOMSlots.staticSibling;
+	_(renderer).fetchTarget = termDOM;
 	renderer.document.body.innerHTML = html;
 	return renderStatic(renderer, lineEnding);
 }
@@ -1674,7 +1641,7 @@ export function installGlobals(termDOM: TermDOM): () => void {
 	}
 	const window = termDOM.window as unknown as Record<string, unknown>;
 	const termDOMSlots = _(termDOM);
-	const processTimers = getProcessTimers(termDOMSlots[kWindow]);
+	const processTimers = getProcessTimers(termDOMSlots.window);
 	// Each name's own descriptor on globalThis before, or undefined where
 	// it had none, beside the descriptor put in its place.
 	const installed = new Map<
@@ -1790,7 +1757,7 @@ export function installGlobals(termDOM: TermDOM): () => void {
 				return;
 			}
 		}
-		termDOMSlots[kErrored] = true;
+		termDOMSlots.errored = true;
 		reportUncaught(termDOM, reason);
 	};
 	process.on("unhandledRejection", onRejection);

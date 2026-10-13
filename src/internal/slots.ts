@@ -33,16 +33,21 @@ export declare const internals: unique symbol;
 const kSteps = Symbol("steps");
 
 /**
- * A record as the tree links hold it: the symbol-keyed slots of `T`, and
- * the object they belong to, which `objectOf()` returns. Unlike what `_()`
- * returns, it cannot be mistaken for the object itself.
+ * A record: the internals its class names, and the object they belong to,
+ * which `objectOf()` returns. It cannot be mistaken for the object itself.
  */
-export type Slots<T> =
-	{
-		[K in keyof T as K extends symbol ? K : never]: T[K];
-	} & {readonly [kObject]: T};
+export type Slots<T extends {readonly [internals]: object}> =
+	T[typeof internals] & {readonly [kObject]: T};
 
-type SlotRecord = Record<symbol, unknown> & {[kObject]: object};
+/**
+ * An internal step as a record lists it: called on the record, so without
+ * the `this` its body declares.
+ */
+export type Step<T> = T extends (...args: infer A) => infer R
+	? (...args: A) => R
+	: T;
+
+type SlotRecord = Record<string | symbol, unknown> & {[kObject]: object};
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 type Constructor = Function & {prototype: object};
 
@@ -109,7 +114,7 @@ const familyRoots = new Set<Constructor>();
 const families = new Map<Constructor, Family>();
 const familyPlans = new Map<Constructor, FamilyPlan | null>();
 const extraTypes = new Set<Constructor>();
-let extraKey = Symbol("unused extra");
+let extraKey: string | symbol = Symbol("unused extra");
 const recordTypesByPrototype = new Map<object, new () => SlotRecord>();
 // The two objects looked up last, since the engine often goes back and
 // forth between two, such as an element and its computed style.
@@ -188,6 +193,29 @@ export function declareSealedRoot(root: Constructor): void {
 }
 
 /**
+ * Defines `key` on the hidden prototype of `type`, where every record of
+ * the class and the classes below it finds it and no page can.
+ */
+export function defineHiddenMember(
+	type: Constructor,
+	key: string | symbol,
+	descriptor: PropertyDescriptor,
+): void {
+	let root: Constructor = type;
+	for (
+		let current: unknown = type;
+		typeof current === "function";
+		current = parentOf(current as Constructor)
+	) {
+		if (sealedRoots.has(current as Constructor)) {
+			root = current as Constructor;
+		}
+	}
+
+	Object.defineProperty(hiddenPrototype(type, root), key, descriptor);
+}
+
+/**
  * Moves the steps of every sealed class among `values` off its public
  * prototype, where reflection would list them, before a page can look.
  * A class otherwise moves them when its first object is made.
@@ -225,7 +253,10 @@ export function prepareClasses(values: Iterable<unknown>): void {
  * shape. `extra` is the key a record keeps its class's own slots under.
  * Called before any object of a family is made.
  */
-export function defineFamilies(extra: symbol, roots: Constructor[]): void {
+export function defineFamilies(
+	extra: string | symbol,
+	roots: Constructor[],
+): void {
 	extraKey = extra;
 	for (const root of roots) {
 		if (hiddenPrototypes.has(root)) {
@@ -373,7 +404,7 @@ function createRecordType(hidden: object): new () => SlotRecord {
  */
 export function _<T extends {readonly [internals]: object}>(
 	value: T & {readonly [kObject]?: never},
-): T[typeof internals];
+): Slots<T>;
 export function _<T extends object>(
 	value: T & {readonly [kObject]?: never},
 ): T;
@@ -421,7 +452,7 @@ function remember(value: object, record: SlotRecord): void {
 }
 
 /** The record of `value`, typed as the tree links hold it. */
-export function slotsOf<T extends object>(
+export function slotsOf<T extends {readonly [internals]: object}>(
 	value: T & {readonly [kObject]?: never},
 ): Slots<T> {
 	return _(value) as unknown as Slots<T>;
@@ -430,9 +461,14 @@ export function slotsOf<T extends object>(
 /**
  * The object a record belongs to.
  */
-export function objectOf<T extends object>(record: Slots<T>): T;
-export function objectOf<T extends object>(record: Slots<T> | null): T | null;
-export function objectOf<T extends object>(record: Slots<T> | null): T | null {
+export function objectOf<T extends {readonly [internals]:
+	object;}>(record: Slots<T>): T;
+export function objectOf<T extends {readonly [internals]:
+	object;}>(record: Slots<T> |
+	null): T | null;
+export function objectOf<T extends {readonly [internals]: object}>(
+	record: Slots<T> | null,
+): T | null {
 	return record === null ? null : record[kObject];
 }
 
@@ -440,11 +476,12 @@ export function objectOf<T extends object>(record: Slots<T> | null): T | null {
  * The object a record belongs to, remembered as the last lookup, for a
  * walk that hands the object on to code that reads its slots.
  */
-export function rememberObject<T extends object>(record: Slots<T>): T;
-export function rememberObject<T extends object>(
+export function rememberObject<T extends {readonly [internals]:
+	object;}>(record: Slots<T>): T;
+export function rememberObject<T extends {readonly [internals]: object}>(
 	record: Slots<T> | null,
 ): T | null;
-export function rememberObject<T extends object>(
+export function rememberObject<T extends {readonly [internals]: object}>(
 	record: Slots<T> | null,
 ): T | null {
 	if (record === null) {
@@ -457,6 +494,10 @@ export function rememberObject<T extends object>(
 }
 
 /** `_()` for an optional chain: undefined for null or undefined. */
+export function _maybe<T extends {readonly [internals]: object}>(
+	value: T | null | undefined,
+): Slots<T> | undefined;
+export function _maybe<T>(value: T): NonNullable<T> | undefined;
 export function _maybe<T>(value: T): NonNullable<T> | undefined {
 	return value == null ? undefined : (_(value as object) as NonNullable<T>);
 }
@@ -465,7 +506,10 @@ export function _maybe<T>(value: T): NonNullable<T> | undefined {
  * Gives slots to an object the runtime made, such as a platform event
  * dispatched into the document, which no constructor here sealed.
  */
-export function adopt(target: object, state: Record<symbol, unknown>): void {
+export function adopt(
+	target: object,
+	state: Record<string | symbol, unknown>,
+): void {
 	const record = Object.assign(Object.create(null), state) as SlotRecord;
 	record[kObject] = target;
 	new Slot(target, record);
@@ -475,8 +519,8 @@ export function adopt(target: object, state: Record<symbol, unknown>): void {
  * The object a record belongs to, for an internal step, which runs with
  * the record as `this`, to hand the object on.
  */
-export function ownerOf<T extends object>(record: T): T {
-	return (record as unknown as SlotRecord)[kObject] as T;
+export function ownerOf<T extends object>(record: {readonly [kObject]: T}): T {
+	return record[kObject];
 }
 
 /** Whether `value` has slots. */
