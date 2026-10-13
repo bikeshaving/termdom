@@ -7,7 +7,7 @@
  * fails every call with "Illegal invocation". Each such object here keeps
  * its state in one record, held in a private field, which a Proxy does
  * not forward and reflection does not list. The engine reads the record
- * through `$()`.
+ * through `_()`.
  *
  * The record's prototype mirrors the object's class chain. The internal
  * steps and defaults a class defines under symbol keys move there from
@@ -27,14 +27,14 @@ const kObject = Symbol("object");
 
 /**
  * The key a class's merged interface names its internals type under, for
- * $() to return. It exists only in types, and nothing holds it at runtime.
+ * _() to return. It exists only in types, and nothing holds it at runtime.
  */
 export declare const internals: unique symbol;
 const kSteps = Symbol("steps");
 
 /**
  * A record as the tree links hold it: the symbol-keyed slots of `T`, and
- * the object they belong to, which `objectOf()` returns. Unlike what `$()`
+ * the object they belong to, which `objectOf()` returns. Unlike what `_()`
  * returns, it cannot be mistaken for the object itself.
  */
 export type Slots<T> =
@@ -371,13 +371,13 @@ function createRecordType(hidden: object): new () => SlotRecord {
  * anything without slots, a Proxy around a node among them, as a browser
  * does.
  */
-export function $<T extends {readonly [internals]: object}>(
+export function _<T extends {readonly [internals]: object}>(
 	value: T & {readonly [kObject]?: never},
 ): T[typeof internals];
-export function $<T extends object>(
+export function _<T extends object>(
 	value: T & {readonly [kObject]?: never},
 ): T;
-export function $<T extends object>(
+export function _<T extends object>(
 	value: T & {readonly [kObject]?: never},
 ): T {
 	if (value === lastValue) {
@@ -424,7 +424,7 @@ function remember(value: object, record: SlotRecord): void {
 export function slotsOf<T extends object>(
 	value: T & {readonly [kObject]?: never},
 ): Slots<T> {
-	return $(value) as unknown as Slots<T>;
+	return _(value) as unknown as Slots<T>;
 }
 
 /**
@@ -456,9 +456,9 @@ export function rememberObject<T extends object>(
 	return object;
 }
 
-/** `$()` for an optional chain: undefined for null or undefined. */
-export function $maybe<T>(value: T): NonNullable<T> | undefined {
-	return value == null ? undefined : ($(value as object) as NonNullable<T>);
+/** `_()` for an optional chain: undefined for null or undefined. */
+export function _maybe<T>(value: T): NonNullable<T> | undefined {
+	return value == null ? undefined : (_(value as object) as NonNullable<T>);
 }
 
 /**
