@@ -26,6 +26,7 @@ import {
 	flatParentElement,
 	flushLayout,
 	flushStyle,
+	getAddedNodes,
 	getAttributeList,
 	getAttributeLocalName,
 	getAttributeNamespace,
@@ -37,6 +38,7 @@ import {
 	getHighlightRegistry,
 	getPseudoHost,
 	getPseudoName,
+	getRemovedNodes,
 	getShadowRoot,
 	getTopLayer,
 	HTML_NAMESPACE,
@@ -6106,7 +6108,7 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 	) {
 		return true;
 	}
-	for (const list of [mutation.addedNodes, mutation.removedNodes]) {
+	for (const list of [getAddedNodes(mutation), getRemovedNodes(mutation)]) {
 		for (const node of list) {
 			if (node.nodeType !== 1) {
 				continue;
@@ -6423,7 +6425,7 @@ export class Cascade {
 					invalidateEnclosingList(this, mutation.target);
 				}
 
-				for (const node of mutation.addedNodes) {
+				for (const node of getAddedNodes(mutation)) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
 						if (isStyleElement(element)) {
@@ -6450,7 +6452,7 @@ export class Cascade {
 					}
 				}
 
-				for (const node of mutation.removedNodes) {
+				for (const node of getRemovedNodes(mutation)) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
 						if (isStyleElement(element)) {

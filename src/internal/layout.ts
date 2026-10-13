@@ -30,6 +30,7 @@ import {
 	flatParentElement,
 	flowContent,
 	flowNext,
+	getAddedNodes,
 	getScrollOffset,
 	getShadowRoot,
 	isDocumentElement,
@@ -6740,7 +6741,7 @@ function invalidateForRecord(layout: Layout, record: MutationRecord): void {
 	// member is still there, holding more or less), so the box measuring it
 	// is notified directly.
 	invalidateEnclosingMeasure(layout, target);
-	for (const node of record.addedNodes) {
+	for (const node of getAddedNodes(record)) {
 		invalidateSubtreeDerivation(layout, node);
 	}
 }
