@@ -24,6 +24,12 @@
  */
 
 const kObject = Symbol("object");
+
+/**
+ * The key a class's merged interface names its internals type under, for
+ * $() to return. It exists only in types, and nothing holds it at runtime.
+ */
+export declare const internals: unique symbol;
 const kSteps = Symbol("steps");
 
 /**
@@ -365,6 +371,12 @@ function createRecordType(hidden: object): new () => SlotRecord {
  * anything without slots, a Proxy around a node among them, as a browser
  * does.
  */
+export function $<T extends {readonly [internals]: object}>(
+	value: T & {readonly [kObject]?: never},
+): T[typeof internals];
+export function $<T extends object>(
+	value: T & {readonly [kObject]?: never},
+): T;
 export function $<T extends object>(
 	value: T & {readonly [kObject]?: never},
 ): T {

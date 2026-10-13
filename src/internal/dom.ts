@@ -86,6 +86,7 @@ import {
 	declareSealedParent,
 	declareSealedRoot,
 	defineFamilies,
+	type internals,
 	isSealed,
 	objectOf,
 	ownerOf,
@@ -1473,7 +1474,7 @@ const kState = Symbol("state");
 // each. The interface declares isTrusted unforgeable, so it cannot live on
 // the prototype or be redefined.
 function isTrustedGetter(this: Event): boolean {
-	return $(this)[kState].trusted;
+	return $(this).state.trusted;
 }
 
 const isTrustedProperty: PropertyDescriptor = {
@@ -1482,11 +1483,6 @@ const isTrustedProperty: PropertyDescriptor = {
 	configurable: false,
 };
 
-const kBubbles = Symbol("bubbles");
-const kCancelable = Symbol("cancelable");
-const kComposed = Symbol("composed");
-const kTimeStamp = Symbol("timeStamp");
-const kIsMouseEvent = Symbol("is a mouse event");
 const kType = Symbol("document type");
 
 // The HTML element constructor is an author-facing algorithm: it looks
@@ -1584,7 +1580,7 @@ if (RuntimeEvent !== undefined && !constructsRuntimeEvents) {
 }
 
 function inRuntimeDispatch(event: Event): boolean {
-	const state = $(event)[kState];
+	const state = $(event).state;
 	return (
 		state.runtime && !state.dispatch && runtimeEventPhase!.call(event) !== NONE
 	);
@@ -1679,7 +1675,7 @@ function startEvent(
 	}
 	seal(event, type as typeof Event, Event);
 	const slots = $(event as Event);
-	slots[kState] = {
+	slots.state = {
 		target: null,
 		relatedTarget: null,
 		currentTarget: null,
@@ -1694,12 +1690,13 @@ function startEvent(
 		trusted: false,
 		runtime,
 	};
-	slots[kType] = init.type;
-	slots[kBubbles] = init.bubbles;
-	slots[kCancelable] = init.cancelable;
-	slots[kComposed] = init.composed;
-	slots[kTimeStamp] = performance.now();
-	slots[kState].initialized = true;
+	slots.type = init.type;
+	slots.bubbles = init.bubbles;
+	slots.cancelable = init.cancelable;
+	slots.composed = init.composed;
+	slots.timeStamp = performance.now();
+	slots.isMouseEvent = false;
+	slots.state.initialized = true;
 	if (!runtime || runtimeEventSupport === "construct") {
 		Object.defineProperty(event, "isTrusted", isTrustedProperty);
 	}
@@ -1725,13 +1722,19 @@ interface EventShape
 	initEvent(type: string, bubbles?: boolean, cancelable?: boolean): void;
 }
 
+export interface EventInternals {
+	type: string;
+	bubbles: boolean;
+	cancelable: boolean;
+	composed: boolean;
+	timeStamp: number;
+	state: DispatchState;
+	// Dispatch runs activation behavior for a click that is a MouseEvent.
+	isMouseEvent: boolean;
+}
+
 export interface Event extends EventShape {
-	[kType]: string;
-	[kBubbles]: boolean;
-	[kCancelable]: boolean;
-	[kComposed]: boolean;
-	[kTimeStamp]: number;
-	[kState]: DispatchState;
+	readonly [internals]: EventInternals;
 }
 
 /** An event, plus the flags listeners set on it during dispatch. */
@@ -1751,7 +1754,7 @@ export class Event extends EventBase {
 	}
 
 	get type(): string {
-		return $(this)[kType];
+		return $(this).type;
 	}
 
 	// The members that dispatch owns (the path and the flags listeners set)
@@ -1761,7 +1764,7 @@ export class Event extends EventBase {
 	get target(): EventTarget | null {
 		return inRuntimeDispatch(this)
 			? runtimeTarget!.call(this) as EventTarget | null
-			: $(this)[kState].target;
+			: $(this).state.target;
 	}
 
 	get srcElement(): EventTarget | null {
@@ -1771,29 +1774,29 @@ export class Event extends EventBase {
 	get currentTarget(): EventTarget | null {
 		return inRuntimeDispatch(this)
 			? runtimeCurrentTarget!.call(this) as EventTarget | null
-			: $(this)[kState].currentTarget;
+			: $(this).state.currentTarget;
 	}
 
 	get eventPhase(): number {
 		return inRuntimeDispatch(this)
 			? runtimeEventPhase!.call(this) as number
-			: $(this)[kState].eventPhase;
+			: $(this).state.eventPhase;
 	}
 
 	get bubbles(): boolean {
-		return $(this)[kBubbles];
+		return $(this).bubbles;
 	}
 
 	get cancelable(): boolean {
-		return $(this)[kCancelable];
+		return $(this).cancelable;
 	}
 
 	get composed(): boolean {
-		return $(this)[kComposed];
+		return $(this).composed;
 	}
 
 	get defaultPrevented(): boolean {
-		const state = $(this)[kState];
+		const state = $(this).state;
 		return (
 			state.canceled ||
 			(state.runtime && runtimeDefaultPrevented!.call(this) === true)
@@ -1801,7 +1804,7 @@ export class Event extends EventBase {
 	}
 
 	get timeStamp(): number {
-		return $(this)[kTimeStamp];
+		return $(this).timeStamp;
 	}
 
 	get returnValue(): boolean {
@@ -1815,7 +1818,7 @@ export class Event extends EventBase {
 	}
 
 	get cancelBubble(): boolean {
-		const state = $(this)[kState];
+		const state = $(this).state;
 		return (
 			state.stopPropagation ||
 			(state.runtime && runtimeCancelBubble!.call(this) === true)
@@ -1828,20 +1831,14 @@ export class Event extends EventBase {
 		}
 	}
 
-	// Decides whether a "click" runs activation behavior. MouseEvent
-	// overrides it.
-	get [kIsMouseEvent](): boolean {
-		return false;
-	}
-
 	composedPath(): EventTarget[] {
 		return inRuntimeDispatch(this)
 			? runtimeComposedPath!.call(this)
-			: getComposedPath($(this)[kState]);
+			: getComposedPath($(this).state);
 	}
 
 	stopPropagation(): void {
-		const state = $(this)[kState];
+		const state = $(this).state;
 		state.stopPropagation = true;
 		if (state.runtime && !state.dispatch) {
 			runtimeStopPropagation!.call(this);
@@ -1849,7 +1846,7 @@ export class Event extends EventBase {
 	}
 
 	stopImmediatePropagation(): void {
-		const state = $(this)[kState];
+		const state = $(this).state;
 		state.stopPropagation = true;
 		state.stopImmediate = true;
 		if (state.runtime && !state.dispatch) {
@@ -1858,7 +1855,7 @@ export class Event extends EventBase {
 	}
 
 	preventDefault(): void {
-		const state = $(this)[kState];
+		const state = $(this).state;
 		if (inRuntimeDispatch(this)) {
 			runtimePreventDefault!.call(this);
 			return;
@@ -1874,18 +1871,18 @@ export class Event extends EventBase {
 			throw new TypeError("initEvent needs a type");
 		}
 		const slots = $(this);
-		if (slots[kState].dispatch) {
+		if (slots.state.dispatch) {
 			return;
 		}
-		slots[kType] = String(type);
-		slots[kBubbles] = Boolean(bubbles);
-		slots[kCancelable] = Boolean(cancelable);
-		slots[kState].initialized = true;
-		slots[kState].stopPropagation = false;
-		slots[kState].stopImmediate = false;
-		slots[kState].canceled = false;
-		slots[kState].trusted = false;
-		slots[kState].target = null;
+		slots.type = String(type);
+		slots.bubbles = Boolean(bubbles);
+		slots.cancelable = Boolean(cancelable);
+		slots.state.initialized = true;
+		slots.state.stopPropagation = false;
+		slots.state.stopImmediate = false;
+		slots.state.canceled = false;
+		slots.state.trusted = false;
+		slots.state.target = null;
 	}
 }
 
@@ -1937,7 +1934,7 @@ function mirrorEvent(type: {prototype: object}): void {
 
 /** Change the type dispatch uses for listener lookup, for the legacy pass. */
 function setEventType(event: Event, type: string): void {
-	$(event)[kType] = type;
+	$(event).type = type;
 }
 
 Object.defineProperties(Event.prototype, {
@@ -1953,7 +1950,7 @@ Object.defineProperties(Event.prototype, {
  * running.
  */
 function setCanceledFlag(event: Event): void {
-	const state = $(event)[kState];
+	const state = $(event).state;
 	if (event.cancelable && !state.inPassiveListener) {
 		state.canceled = true;
 	}
@@ -2024,8 +2021,12 @@ const CustomEventBase = getEventBase(
 	(globalThis as {CustomEvent?: typeof globalThis.CustomEvent}).CustomEvent,
 );
 
+export interface CustomEventInternals<T = any> extends EventInternals {
+	detail: T | null;
+}
+
 export interface CustomEvent<T = any> {
-	[kDetail]: T | null;
+	readonly [internals]: CustomEventInternals<T>;
 }
 
 export class CustomEvent<T = any>
@@ -2045,14 +2046,14 @@ export class CustomEvent<T = any>
 			eventInitDict,
 			"An event init",
 		);
-		$(event)[kDetail] = init.detail ?? null;
+		$(event).detail = init.detail ?? null;
 		return event;
 	}
 
 	// lib.dom types this as T even though it is null until an init sets it.
 	// Every browser's types have the same problem.
 	get detail(): T {
-		return $(this)[kDetail] as T;
+		return $(this).detail as T;
 	}
 
 	initCustomEvent(
@@ -2065,11 +2066,11 @@ export class CustomEvent<T = any>
 			throw new TypeError("initCustomEvent needs a type");
 		}
 		const slots = $(this);
-		if (slots[kState].dispatch) {
+		if (slots.state.dispatch) {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
-		slots[kDetail] = detail ?? null;
+		slots.detail = detail ?? null;
 	}
 }
 
@@ -2082,14 +2083,15 @@ mirrorEvent(CustomEvent);
 
 // Service Workers' extendable and fetch events, which a TermDOM dispatches
 // at itself for each load a document asks for.
-const kExtend = Symbol("extend");
-const kPending = Symbol("pending");
-
-export interface ExtendableEvent {
+export interface ExtendableEventInternals extends EventInternals {
 	// Where waitUntil()'s promises go: the TermDOM that dispatched the
 	// event. Null for an event a program made, which nothing waits on.
-	[kExtend]: ((promise: Promise<unknown>) => void) | null;
-	[kPending]: number;
+	extend: ((promise: Promise<unknown>) => void) | null;
+	pending: number;
+}
+
+export interface ExtendableEvent {
+	readonly [internals]: ExtendableEventInternals;
 }
 
 /** An event whose listeners can ask the TermDOM to wait for their work. */
@@ -2097,15 +2099,15 @@ export class ExtendableEvent extends Event {
 	constructor(type: string, init?: EventInit) {
 		super(type, init);
 		const slots = $(this);
-		slots[kExtend] = null;
-		slots[kPending] = 0;
+		slots.extend = null;
+		slots.pending = 0;
 	}
 
 	/** Keeps the TermDOM's dispose() waiting until `promise` settles. */
 	waitUntil(promise: PromiseLike<unknown>): void {
 		const lifetime = Promise.resolve(promise);
 		addLifetimePromise(this, lifetime);
-		$(this)[kExtend]!(lifetime);
+		$(this).extend!(lifetime);
 	}
 }
 
@@ -2116,18 +2118,18 @@ function addLifetimePromise(
 	promise: Promise<unknown>,
 ): void {
 	const eventSlots = $(event);
-	if (eventSlots[kExtend] === null) {
+	if (eventSlots.extend === null) {
 		throw domError(
 			"InvalidStateError",
 			"Only an event TermDOM dispatches can be extended",
 		);
 	}
-	if (event.eventPhase === Event.NONE && eventSlots[kPending] === 0) {
+	if (event.eventPhase === Event.NONE && eventSlots.pending === 0) {
 		throw domError("InvalidStateError", "The event is no longer active");
 	}
-	eventSlots[kPending]++;
+	eventSlots.pending++;
 	const settled = () => {
-		queueMicrotask(() => eventSlots[kPending]--);
+		queueMicrotask(() => eventSlots.pending--);
 	};
 	promise.then(settled, settled);
 }
@@ -2141,22 +2143,18 @@ export interface FetchEventInit extends EventInit {
 	handled?: Promise<undefined>;
 }
 
-const kRequest = Symbol("request");
-const kPreloadResponse = Symbol("preloadResponse");
-const kClientId = Symbol("clientId");
-const kResultingClientId = Symbol("resultingClientId");
-const kReplacesClientId = Symbol("replacesClientId");
-const kHandled = Symbol("handled");
-const kResponse = Symbol("response");
+export interface FetchEventInternals extends ExtendableEventInternals {
+	request: Request;
+	preloadResponse: Promise<unknown>;
+	clientId: string;
+	resultingClientId: string;
+	replacesClientId: string;
+	handled: Promise<undefined>;
+	response: Promise<Response> | null;
+}
 
 export interface FetchEvent {
-	[kRequest]: Request;
-	[kPreloadResponse]: Promise<unknown>;
-	[kClientId]: string;
-	[kResultingClientId]: string;
-	[kReplacesClientId]: string;
-	[kHandled]: Promise<undefined>;
-	[kResponse]: Promise<Response> | null;
+	readonly [internals]: FetchEventInternals;
 }
 
 /**
@@ -2169,40 +2167,39 @@ export class FetchEvent extends ExtendableEvent {
 	constructor(type: string, init: FetchEventInit) {
 		super(type, init);
 		const slots = $(this);
-		slots[kRequest] = init.request;
-		slots[kPreloadResponse] =
-			init.preloadResponse ?? Promise.resolve(undefined);
-		slots[kClientId] = init.clientId ?? "";
-		slots[kResultingClientId] = init.resultingClientId ?? "";
-		slots[kReplacesClientId] = init.replacesClientId ?? "";
-		slots[kHandled] = init.handled ?? new Promise<undefined>(() => {});
-		slots[kResponse] = null;
+		slots.request = init.request;
+		slots.preloadResponse = init.preloadResponse ?? Promise.resolve(undefined);
+		slots.clientId = init.clientId ?? "";
+		slots.resultingClientId = init.resultingClientId ?? "";
+		slots.replacesClientId = init.replacesClientId ?? "";
+		slots.handled = init.handled ?? new Promise<undefined>(() => {});
+		slots.response = null;
 	}
 
 	get request(): Request {
-		return $(this)[kRequest];
+		return $(this).request;
 	}
 
 	get preloadResponse(): Promise<unknown> {
-		return $(this)[kPreloadResponse];
+		return $(this).preloadResponse;
 	}
 
 	get clientId(): string {
-		return $(this)[kClientId];
+		return $(this).clientId;
 	}
 
 	get resultingClientId(): string {
-		return $(this)[kResultingClientId];
+		return $(this).resultingClientId;
 	}
 
 	get replacesClientId(): string {
-		return $(this)[kReplacesClientId];
+		return $(this).replacesClientId;
 	}
 
 	// Settles once the load is answered: rejects with a NetworkError when
 	// it fails.
 	get handled(): Promise<undefined> {
-		return $(this)[kHandled];
+		return $(this).handled;
 	}
 
 	/**
@@ -2218,13 +2215,13 @@ export class FetchEvent extends ExtendableEvent {
 			);
 		}
 		const slots = $(this);
-		if (slots[kResponse] !== null) {
+		if (slots.response !== null) {
 			throw domError("InvalidStateError", "The request was already answered");
 		}
 		const answer = Promise.resolve(response);
 		addLifetimePromise(this, answer);
 		this.stopImmediatePropagation();
-		slots[kResponse] = answer.then((value) => {
+		slots.response = answer.then((value) => {
 			if (!(value instanceof Response)) {
 				throw new TypeError("respondWith() takes a Response");
 			}
@@ -2245,13 +2242,13 @@ export function createFetchEvent(
 	const event = constructInternal(() =>
 		new FetchEvent("fetch", {request, handled, cancelable: true}),
 	);
-	$(event)[kExtend] = extend;
+	$(event).extend = extend;
 	return event;
 }
 
 /** The answer a listener gave a fetch event, or null for none. */
 export function getFetchResponse(event: FetchEvent): Promise<Response> | null {
-	return $(event)[kResponse];
+	return $(event).response;
 }
 
 const kReturnValue = Symbol("returnValue");
@@ -2259,8 +2256,12 @@ const kReturnValue = Symbol("returnValue");
 // The interface declares no constructor, so `new` throws for authors.
 // Teardown treats two things as cancellation: preventDefault(), and a
 // returnValue set to anything but the empty string.
+interface BeforeUnloadEventInternals extends EventInternals {
+	returnValue: string;
+}
+
 interface BeforeUnloadEvent {
-	[kReturnValue]: string;
+	readonly [internals]: BeforeUnloadEventInternals;
 }
 
 class BeforeUnloadEvent extends Event {
@@ -2269,7 +2270,7 @@ class BeforeUnloadEvent extends Event {
 		eventInitDict: EventInit = {cancelable: true},
 	) {
 		super(type, eventInitDict);
-		$(this)[kReturnValue] = "";
+		$(this).returnValue = "";
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
@@ -2279,11 +2280,11 @@ class BeforeUnloadEvent extends Event {
 	// because a narrower type is not assignable over the boolean it shadows.
 	// The platform's own types do the same.
 	override get returnValue(): any {
-		return $(this)[kReturnValue];
+		return $(this).returnValue;
 	}
 
 	override set returnValue(value: any) {
-		$(this)[kReturnValue] = String(value);
+		$(this).returnValue = String(value);
 	}
 }
 
@@ -2314,22 +2315,20 @@ interface MessageEventInit<T = any> extends EventInit {
 	ports?: globalThis.MessagePort[];
 }
 
-const kErrorMessage = Symbol("error message");
-const kErrorFilename = Symbol("error filename");
-const kErrorLineno = Symbol("error lineno");
-const kErrorColno = Symbol("error colno");
-const kErrorValue = Symbol("error value");
-
 const ErrorEventBase = getEventBase(
 	(globalThis as {ErrorEvent?: typeof globalThis.ErrorEvent}).ErrorEvent,
 );
 
+interface ErrorEventInternals extends EventInternals {
+	errorMessage: string;
+	errorFilename: string;
+	errorLineno: number;
+	errorColno: number;
+	errorValue: unknown;
+}
+
 interface ErrorEvent {
-	[kErrorMessage]: string;
-	[kErrorFilename]: string;
-	[kErrorLineno]: number;
-	[kErrorColno]: number;
-	[kErrorValue]: unknown;
+	readonly [internals]: ErrorEventInternals;
 }
 
 class ErrorEvent extends ErrorEventBase {
@@ -2345,32 +2344,32 @@ class ErrorEvent extends ErrorEventBase {
 		}
 		const init = toDictionary<ErrorEventInit>(eventInitDict, "An event init");
 		const slots = $(event);
-		slots[kErrorMessage] = String(init.message ?? "");
-		slots[kErrorFilename] = String(init.filename ?? "");
-		slots[kErrorLineno] = toUnsignedLong(init.lineno ?? 0);
-		slots[kErrorColno] = toUnsignedLong(init.colno ?? 0);
-		slots[kErrorValue] = init.error;
+		slots.errorMessage = String(init.message ?? "");
+		slots.errorFilename = String(init.filename ?? "");
+		slots.errorLineno = toUnsignedLong(init.lineno ?? 0);
+		slots.errorColno = toUnsignedLong(init.colno ?? 0);
+		slots.errorValue = init.error;
 		return event;
 	}
 
 	get message(): string {
-		return $(this)[kErrorMessage];
+		return $(this).errorMessage;
 	}
 
 	get filename(): string {
-		return $(this)[kErrorFilename];
+		return $(this).errorFilename;
 	}
 
 	get lineno(): number {
-		return $(this)[kErrorLineno];
+		return $(this).errorLineno;
 	}
 
 	get colno(): number {
-		return $(this)[kErrorColno];
+		return $(this).errorColno;
 	}
 
 	get error(): any {
-		return $(this)[kErrorValue];
+		return $(this).errorValue;
 	}
 }
 
@@ -2381,12 +2380,13 @@ Object.defineProperty(ErrorEvent.prototype, Symbol.toStringTag, {
 
 mirrorEvent(ErrorEvent);
 
-const kRejectedPromise = Symbol("rejected promise");
-const kRejectionReason = Symbol("rejection reason");
+interface PromiseRejectionEventInternals extends EventInternals {
+	rejectedPromise: Promise<unknown>;
+	rejectionReason: unknown;
+}
 
 interface PromiseRejectionEvent {
-	[kRejectedPromise]: Promise<unknown>;
-	[kRejectionReason]: unknown;
+	readonly [internals]: PromiseRejectionEventInternals;
 }
 
 /** HTML's unhandledrejection and rejectionhandled events. */
@@ -2401,16 +2401,16 @@ class PromiseRejectionEvent extends Event {
 			throw new TypeError("A promise rejection event needs its promise");
 		}
 		const slots = $(this);
-		slots[kRejectedPromise] = init.promise;
-		slots[kRejectionReason] = init.reason;
+		slots.rejectedPromise = init.promise;
+		slots.rejectionReason = init.reason;
 	}
 
 	get promise(): Promise<any> {
-		return $(this)[kRejectedPromise];
+		return $(this).rejectedPromise;
 	}
 
 	get reason(): any {
-		return $(this)[kRejectionReason];
+		return $(this).rejectionReason;
 	}
 }
 
@@ -2419,12 +2419,6 @@ Object.defineProperty(PromiseRejectionEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const kMessageData = Symbol("message data");
-const kOrigin = Symbol("origin");
-const kLastEventId = Symbol("last event id");
-const kMessageSource = Symbol("message source");
-const kPorts = Symbol("ports");
-
 const MessageEventBase = getEventBase(
 	(globalThis as {MessageEvent?: typeof globalThis.MessageEvent})
 		.MessageEvent,
@@ -2432,12 +2426,16 @@ const MessageEventBase = getEventBase(
 
 // Nothing in a terminal posts one yet, but the interface is a constructor
 // authors can call and createEvent can name, so it is implemented fully.
+interface MessageEventInternals<T = any> extends EventInternals {
+	messageData: T;
+	origin: string;
+	lastEventId: string;
+	messageSource: globalThis.MessageEventSource | null;
+	ports: readonly globalThis.MessagePort[];
+}
+
 interface MessageEvent<T = any> {
-	[kMessageData]: T;
-	[kOrigin]: string;
-	[kLastEventId]: string;
-	[kMessageSource]: globalThis.MessageEventSource | null;
-	[kPorts]: readonly globalThis.MessagePort[];
+	readonly [internals]: MessageEventInternals<T>;
 }
 
 class MessageEvent<T = any> extends MessageEventBase {
@@ -2456,32 +2454,32 @@ class MessageEvent<T = any> extends MessageEventBase {
 			"An event init",
 		);
 		const slots = $(event);
-		slots[kMessageData] = (init.data ?? null) as T;
-		slots[kOrigin] = String(init.origin ?? "");
-		slots[kLastEventId] = String(init.lastEventId ?? "");
-		slots[kMessageSource] = init.source ?? null;
-		slots[kPorts] = Object.freeze([...(init.ports ?? [])]);
+		slots.messageData = (init.data ?? null) as T;
+		slots.origin = String(init.origin ?? "");
+		slots.lastEventId = String(init.lastEventId ?? "");
+		slots.messageSource = init.source ?? null;
+		slots.ports = Object.freeze([...(init.ports ?? [])]);
 		return event;
 	}
 
 	get data(): T {
-		return $(this)[kMessageData];
+		return $(this).messageData;
 	}
 
 	get origin(): string {
-		return $(this)[kOrigin];
+		return $(this).origin;
 	}
 
 	get lastEventId(): string {
-		return $(this)[kLastEventId];
+		return $(this).lastEventId;
 	}
 
 	get source(): globalThis.MessageEventSource | null {
-		return $(this)[kMessageSource];
+		return $(this).messageSource;
 	}
 
 	get ports(): readonly globalThis.MessagePort[] {
-		return $(this)[kPorts];
+		return $(this).ports;
 	}
 
 	initMessageEvent(
@@ -2518,15 +2516,15 @@ class MessageEvent<T = any> extends MessageEventBase {
 			throw new TypeError("initMessageEvent needs a type");
 		}
 		const slots = $(this);
-		if (slots[kState].dispatch) {
+		if (slots.state.dispatch) {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
-		slots[kMessageData] = data;
-		slots[kOrigin] = String(origin);
-		slots[kLastEventId] = String(lastEventId);
-		slots[kMessageSource] = source;
-		slots[kPorts] = Object.freeze([...ports]);
+		slots.messageData = data;
+		slots.origin = String(origin);
+		slots.lastEventId = String(lastEventId);
+		slots.messageSource = source;
+		slots.ports = Object.freeze([...ports]);
 	}
 }
 
@@ -2542,12 +2540,13 @@ interface HashChangeEventInit extends EventInit {
 	newURL?: string;
 }
 
-const kOldURL = Symbol("old URL");
-const kNewURL = Symbol("new URL");
+interface HashChangeEventInternals extends EventInternals {
+	oldURL: string;
+	newURL: string;
+}
 
 interface HashChangeEvent {
-	[kOldURL]: string;
-	[kNewURL]: string;
+	readonly [internals]: HashChangeEventInternals;
 }
 
 /** Fired when a document's fragment identifier changes. */
@@ -2559,16 +2558,16 @@ class HashChangeEvent extends Event {
 			"An event init",
 		);
 		const slots = $(this);
-		slots[kOldURL] = String(init.oldURL ?? "");
-		slots[kNewURL] = String(init.newURL ?? "");
+		slots.oldURL = String(init.oldURL ?? "");
+		slots.newURL = String(init.newURL ?? "");
 	}
 
 	get oldURL(): string {
-		return $(this)[kOldURL];
+		return $(this).oldURL;
 	}
 
 	get newURL(): string {
-		return $(this)[kNewURL];
+		return $(this).newURL;
 	}
 }
 
@@ -2585,20 +2584,18 @@ interface StorageEventInit extends EventInit {
 	storageArea?: globalThis.Storage | null;
 }
 
-const kStorageKey = Symbol("storage key");
-const kStorageOldValue = Symbol("storage old value");
-const kStorageNewValue = Symbol("storage new value");
-const kStorageURL = Symbol("storage url");
-const kStorageArea = Symbol("storage area");
-
 // There is no storage area in a terminal, but the interface is a
 // constructor authors can call and createEvent can name.
+interface StorageEventInternals extends EventInternals {
+	storageKey: string | null;
+	storageOldValue: string | null;
+	storageNewValue: string | null;
+	storageURL: string;
+	storageArea: globalThis.Storage | null;
+}
+
 interface StorageEvent {
-	[kStorageKey]: string | null;
-	[kStorageOldValue]: string | null;
-	[kStorageNewValue]: string | null;
-	[kStorageURL]: string;
-	[kStorageArea]: globalThis.Storage | null;
+	readonly [internals]: StorageEventInternals;
 }
 
 class StorageEvent extends Event {
@@ -2606,35 +2603,35 @@ class StorageEvent extends Event {
 		super(type, eventInitDict);
 		const init = toDictionary<StorageEventInit>(eventInitDict, "An event init");
 		const slots = $(this);
-		slots[kStorageKey] = init.key == null ? null : String(init.key);
-		slots[kStorageOldValue] = init.oldValue == null
+		slots.storageKey = init.key == null ? null : String(init.key);
+		slots.storageOldValue = init.oldValue == null
 			? null
 			: String(init.oldValue);
-		slots[kStorageNewValue] = init.newValue == null
+		slots.storageNewValue = init.newValue == null
 			? null
 			: String(init.newValue);
-		slots[kStorageURL] = String(init.url ?? "");
-		slots[kStorageArea] = init.storageArea ?? null;
+		slots.storageURL = String(init.url ?? "");
+		slots.storageArea = init.storageArea ?? null;
 	}
 
 	get key(): string | null {
-		return $(this)[kStorageKey];
+		return $(this).storageKey;
 	}
 
 	get oldValue(): string | null {
-		return $(this)[kStorageOldValue];
+		return $(this).storageOldValue;
 	}
 
 	get newValue(): string | null {
-		return $(this)[kStorageNewValue];
+		return $(this).storageNewValue;
 	}
 
 	get url(): string {
-		return $(this)[kStorageURL];
+		return $(this).storageURL;
 	}
 
 	get storageArea(): globalThis.Storage | null {
-		return $(this)[kStorageArea];
+		return $(this).storageArea;
 	}
 
 	initStorageEvent(
@@ -2651,15 +2648,15 @@ class StorageEvent extends Event {
 			throw new TypeError("initStorageEvent needs a type");
 		}
 		const slots = $(this);
-		if (slots[kState].dispatch) {
+		if (slots.state.dispatch) {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
-		slots[kStorageKey] = key == null ? null : String(key);
-		slots[kStorageOldValue] = oldValue == null ? null : String(oldValue);
-		slots[kStorageNewValue] = newValue == null ? null : String(newValue);
-		slots[kStorageURL] = String(url);
-		slots[kStorageArea] = storageArea ?? null;
+		slots.storageKey = key == null ? null : String(key);
+		slots.storageOldValue = oldValue == null ? null : String(oldValue);
+		slots.storageNewValue = newValue == null ? null : String(newValue);
+		slots.storageURL = String(url);
+		slots.storageArea = storageArea ?? null;
 	}
 }
 
@@ -2811,13 +2808,15 @@ function getInitModifiers(init: EventModifierInit): Set<string> {
 	return modifiers;
 }
 
-const kWhich = Symbol("which");
-
 // `view` is always null here because a window is not the global object.
 // An init that passes one is a type error, not a value silently dropped.
+interface UIEventInternals extends EventInternals {
+	detail: number;
+	which: number;
+}
+
 interface UIEvent {
-	[kDetail]: number;
-	[kWhich]: number;
+	readonly [internals]: UIEventInternals;
 }
 
 class UIEvent extends Event {
@@ -2828,8 +2827,8 @@ class UIEvent extends Event {
 			throw new TypeError("There is no window for an event to come through");
 		}
 		const slots = $(this);
-		slots[kDetail] = toLong(init.detail ?? 0);
-		slots[kWhich] = toUnsignedLong(init.which ?? 0);
+		slots.detail = toLong(init.detail ?? 0);
+		slots.which = toUnsignedLong(init.which ?? 0);
 	}
 
 	get view(): globalThis.Window | null {
@@ -2837,11 +2836,11 @@ class UIEvent extends Event {
 	}
 
 	get detail(): number {
-		return $(this)[kDetail];
+		return $(this).detail;
 	}
 
 	get which(): number {
-		return $(this)[kWhich];
+		return $(this).which;
 	}
 
 	initUIEvent(
@@ -2855,14 +2854,14 @@ class UIEvent extends Event {
 			throw new TypeError("initUIEvent needs a type");
 		}
 		const slots = $(this);
-		if (slots[kState].dispatch) {
+		if (slots.state.dispatch) {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
 		if (view != null) {
 			throw new TypeError("There is no window for an event to come through");
 		}
-		slots[kDetail] = toLong(detail);
+		slots.detail = toLong(detail);
 	}
 }
 
@@ -2871,36 +2870,51 @@ Object.defineProperty(UIEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const kScreenX = Symbol("screenX");
-const kScreenY = Symbol("screenY");
-const kClientX = Symbol("clientX");
-const kMovementX = Symbol("movementX");
-const kMovementY = Symbol("movementY");
-const kEventView = Symbol("eventView");
-
 /** The pointerId of the mouse, the one pointer a terminal reports. */
 export const MOUSE_POINTER_ID = 1;
 
-const kTargetRect = Symbol("targetRect");
-const kClientY = Symbol("clientY");
-const kButton = Symbol("button");
-const kButtons = Symbol("buttons");
-const kModifiers = Symbol("modifiers");
-
 const kDefaultView = Symbol("the window this document is attached in");
 
-// Dispatch runs activation behavior for a click that is a MouseEvent.
-// [kIsMouseEvent] is how it checks.
+/** The scroll offsets of the window the target renders in, or null. */
+function getEventView(
+	slots: EventInternals,
+): {scrollX: number; scrollY: number} | null {
+	const target = slots.state.target as Node | null;
+	if (target === null || target.ownerDocument === null) {
+		return null;
+	}
+	const view = $(target.ownerDocument)[kExtra][kDefaultView];
+	return (view ?? null) as {scrollX: number; scrollY: number} | null;
+}
+
+/** The target's viewport-space rect, or null if no engine can measure it. */
+function getTargetRect(
+	slots: EventInternals,
+): {left: number; top: number} | null {
+	const target = slots.state.target as Element | null;
+	if (
+		target === null || typeof (target as {getBoundingClientRect?: unknown})
+			.getBoundingClientRect !== "function"
+	) {
+		return null;
+	}
+	return target.getBoundingClientRect();
+}
+
+interface MouseEventInternals extends UIEventInternals {
+	screenX: number;
+	screenY: number;
+	clientX: number;
+	clientY: number;
+	button: number;
+	buttons: number;
+	movementX: number;
+	movementY: number;
+	modifiers: Set<string>;
+}
+
 interface MouseEvent {
-	[kScreenX]: number;
-	[kScreenY]: number;
-	[kClientX]: number;
-	[kClientY]: number;
-	[kButton]: number;
-	[kButtons]: number;
-	[kMovementX]: number;
-	[kMovementY]: number;
-	[kModifiers]: Set<string>;
+	readonly [internals]: MouseEventInternals;
 }
 
 class MouseEvent extends UIEvent implements globalThis.MouseEvent {
@@ -2908,67 +2922,68 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 		super(type, eventInitDict);
 		const init = toDictionary<MouseEventInit>(eventInitDict, "An event init");
 		const slots = $(this);
-		slots[kScreenX] = toLong(init.screenX ?? 0);
-		slots[kScreenY] = toLong(init.screenY ?? 0);
-		slots[kClientX] = toLong(init.clientX ?? 0);
-		slots[kClientY] = toLong(init.clientY ?? 0);
-		slots[kMovementX] = toLong(init.movementX ?? 0);
-		slots[kMovementY] = toLong(init.movementY ?? 0);
-		slots[kButton] = toShort(init.button ?? 0);
-		slots[kButtons] = toUnsignedShort(init.buttons ?? 0);
-		slots[kModifiers] = getInitModifiers(init);
-		slots[kState].relatedTarget = toEventTarget(init.relatedTarget);
+		slots.isMouseEvent = true;
+		slots.screenX = toLong(init.screenX ?? 0);
+		slots.screenY = toLong(init.screenY ?? 0);
+		slots.clientX = toLong(init.clientX ?? 0);
+		slots.clientY = toLong(init.clientY ?? 0);
+		slots.movementX = toLong(init.movementX ?? 0);
+		slots.movementY = toLong(init.movementY ?? 0);
+		slots.button = toShort(init.button ?? 0);
+		slots.buttons = toUnsignedShort(init.buttons ?? 0);
+		slots.modifiers = getInitModifiers(init);
+		slots.state.relatedTarget = toEventTarget(init.relatedTarget);
 	}
 
 	get screenX(): number {
-		return $(this)[kScreenX];
+		return $(this).screenX;
 	}
 
 	get screenY(): number {
-		return $(this)[kScreenY];
+		return $(this).screenY;
 	}
 
 	get clientX(): number {
-		return $(this)[kClientX];
+		return $(this).clientX;
 	}
 
 	get clientY(): number {
-		return $(this)[kClientY];
+		return $(this).clientY;
 	}
 
 	/** Aliases of clientX/clientY, per CSSOM View. */
 	get x(): number {
-		return $(this)[kClientX];
+		return $(this).clientX;
 	}
 
 	get y(): number {
-		return $(this)[kClientY];
+		return $(this).clientY;
 	}
 
 	// Client coordinates plus the document scroll, read live. Dispatch is
 	// synchronous, so a listener sees the scroll the event was created under.
 	get pageX(): number {
 		const slots = $(this);
-		return slots[kClientX] + (slots[kEventView]?.scrollX ?? 0);
+		return slots.clientX + (getEventView(slots)?.scrollX ?? 0);
 	}
 
 	get pageY(): number {
 		const slots = $(this);
-		return slots[kClientY] + (slots[kEventView]?.scrollY ?? 0);
+		return slots.clientY + (getEventView(slots)?.scrollY ?? 0);
 	}
 
 	// Client coordinates relative to the target's box. Uses the border edge
 	// where the spec says padding edge, a one-cell difference.
 	get offsetX(): number {
 		const slots = $(this);
-		const rect = slots[kTargetRect]!;
-		return rect === null ? slots[kClientX] : slots[kClientX] - rect.left;
+		const rect = getTargetRect(slots);
+		return rect === null ? slots.clientX : slots.clientX - rect.left;
 	}
 
 	get offsetY(): number {
 		const slots = $(this);
-		const rect = slots[kTargetRect]!;
-		return rect === null ? slots[kClientY] : slots[kClientY] - rect.top;
+		const rect = getTargetRect(slots);
+		return rect === null ? slots.clientY : slots.clientY - rect.top;
 	}
 
 	// Pre-standard, no spec. Browsers report the offset from the nearest
@@ -2983,78 +2998,50 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 	}
 
 	get movementX(): number {
-		return $(this)[kMovementX];
+		return $(this).movementX;
 	}
 
 	get movementY(): number {
-		return $(this)[kMovementY];
+		return $(this).movementY;
 	}
 
 	get ctrlKey(): boolean {
-		return $(this)[kModifiers].has("Control");
+		return $(this).modifiers.has("Control");
 	}
 
 	get shiftKey(): boolean {
-		return $(this)[kModifiers].has("Shift");
+		return $(this).modifiers.has("Shift");
 	}
 
 	get altKey(): boolean {
-		return $(this)[kModifiers].has("Alt");
+		return $(this).modifiers.has("Alt");
 	}
 
 	get metaKey(): boolean {
-		return $(this)[kModifiers].has("Meta");
+		return $(this).modifiers.has("Meta");
 	}
 
 	get button(): number {
-		return $(this)[kButton];
+		return $(this).button;
 	}
 
 	get buttons(): number {
-		return $(this)[kButtons];
+		return $(this).buttons;
 	}
 
 	get relatedTarget(): EventTarget | null {
-		return $(this)[kState].relatedTarget;
+		return $(this).state.relatedTarget;
 	}
 
 	override get which(): number {
-		return $(this)[kButton] + 1;
-	}
-
-	override get [kIsMouseEvent](): boolean {
-		return true;
-	}
-
-	/** The scroll offsets of the window the target renders in, or null. */
-	get [kEventView](): {scrollX: number; scrollY: number} | null {
-		const target = this[kState].target as Node | null;
-		if (target === null || target.ownerDocument === null) {
-			return null;
-		}
-		const view = $(target.ownerDocument)[kExtra][kDefaultView];
-		return (view ?? null) as {scrollX: number; scrollY: number} | null;
-	}
-
-	/**
-	 * The target's viewport-space rect, or null if no engine can measure it.
-	 */
-	get [kTargetRect](): {left: number; top: number} | null {
-		const target = this[kState].target as Element | null;
-		if (
-			target === null || typeof (target as {getBoundingClientRect?: unknown})
-				.getBoundingClientRect !== "function"
-		) {
-			return null;
-		}
-		return target.getBoundingClientRect();
+		return $(this).button + 1;
 	}
 
 	getModifierState(keyArg: string): boolean {
 		if (arguments.length < 1) {
 			throw new TypeError("getModifierState needs a key");
 		}
-		return $(this)[kModifiers].has(String(keyArg));
+		return $(this).modifiers.has(String(keyArg));
 	}
 
 	initMouseEvent(
@@ -3078,17 +3065,17 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 			throw new TypeError("initMouseEvent needs a type");
 		}
 		const slots = $(this);
-		if (slots[kState].dispatch) {
+		if (slots.state.dispatch) {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, detail);
-		slots[kScreenX] = toLong(screenX);
-		slots[kScreenY] = toLong(screenY);
-		slots[kClientX] = toLong(clientX);
-		slots[kClientY] = toLong(clientY);
-		slots[kModifiers] = getInitModifiers({ctrlKey, altKey, shiftKey, metaKey});
-		slots[kButton] = toShort(button);
-		slots[kState].relatedTarget = toEventTarget(relatedTarget);
+		slots.screenX = toLong(screenX);
+		slots.screenY = toLong(screenY);
+		slots.clientX = toLong(clientX);
+		slots.clientY = toLong(clientY);
+		slots.modifiers = getInitModifiers({ctrlKey, altKey, shiftKey, metaKey});
+		slots.button = toShort(button);
+		slots.state.relatedTarget = toEventTarget(relatedTarget);
 	}
 }
 
@@ -3107,11 +3094,11 @@ export class FocusEvent extends UIEvent {
 	constructor(type: string, eventInitDict: FocusEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<FocusEventInit>(eventInitDict, "An event init");
-		$(this)[kState].relatedTarget = toEventTarget(init.relatedTarget);
+		$(this).state.relatedTarget = toEventTarget(init.relatedTarget);
 	}
 
 	get relatedTarget(): EventTarget | null {
-		return $(this)[kState].relatedTarget;
+		return $(this).state.relatedTarget;
 	}
 }
 
@@ -3125,24 +3112,20 @@ const DOM_KEY_LOCATION_LEFT = 1;
 const DOM_KEY_LOCATION_RIGHT = 2;
 const DOM_KEY_LOCATION_NUMPAD = 3;
 
-const kKey = Symbol("key");
-const kCode = Symbol("code");
-const kLocation = Symbol("location");
-const kRepeat = Symbol("repeat");
-const kIsComposing = Symbol("isComposing");
-const kCharCode = Symbol("charCode");
-const kKeyCode = Symbol("keyCode");
-
 /** The key-location constants, installed on the prototype. */
+interface KeyboardEventInternals extends UIEventInternals {
+	key: string;
+	code: string;
+	location: number;
+	repeat: boolean;
+	isComposing: boolean;
+	charCode: number;
+	keyCode: number;
+	modifiers: Set<string>;
+}
+
 interface KeyboardEvent {
-	[kKey]: string;
-	[kCode]: string;
-	[kLocation]: number;
-	[kRepeat]: boolean;
-	[kIsComposing]: boolean;
-	[kCharCode]: number;
-	[kKeyCode]: number;
-	[kModifiers]: Set<string>;
+	readonly [internals]: KeyboardEventInternals;
 }
 
 /** A key event, identified by the character it types and the physical key. */
@@ -3162,69 +3145,69 @@ class KeyboardEvent extends UIEvent implements globalThis.KeyboardEvent {
 			"An event init",
 		);
 		const slots = $(this);
-		slots[kKey] = String(init.key ?? "");
-		slots[kCode] = String(init.code ?? "");
-		slots[kLocation] = toUnsignedLong(init.location ?? 0);
-		slots[kRepeat] = Boolean(init.repeat);
-		slots[kIsComposing] = Boolean(init.isComposing);
-		slots[kCharCode] = toUnsignedLong(init.charCode ?? 0);
-		slots[kKeyCode] = toUnsignedLong(init.keyCode ?? 0);
-		slots[kModifiers] = getInitModifiers(init);
+		slots.key = String(init.key ?? "");
+		slots.code = String(init.code ?? "");
+		slots.location = toUnsignedLong(init.location ?? 0);
+		slots.repeat = Boolean(init.repeat);
+		slots.isComposing = Boolean(init.isComposing);
+		slots.charCode = toUnsignedLong(init.charCode ?? 0);
+		slots.keyCode = toUnsignedLong(init.keyCode ?? 0);
+		slots.modifiers = getInitModifiers(init);
 	}
 
 	get key(): string {
-		return $(this)[kKey];
+		return $(this).key;
 	}
 
 	get code(): string {
-		return $(this)[kCode];
+		return $(this).code;
 	}
 
 	get location(): number {
-		return $(this)[kLocation];
+		return $(this).location;
 	}
 
 	get ctrlKey(): boolean {
-		return $(this)[kModifiers].has("Control");
+		return $(this).modifiers.has("Control");
 	}
 
 	get shiftKey(): boolean {
-		return $(this)[kModifiers].has("Shift");
+		return $(this).modifiers.has("Shift");
 	}
 
 	get altKey(): boolean {
-		return $(this)[kModifiers].has("Alt");
+		return $(this).modifiers.has("Alt");
 	}
 
 	get metaKey(): boolean {
-		return $(this)[kModifiers].has("Meta");
+		return $(this).modifiers.has("Meta");
 	}
 
 	get repeat(): boolean {
-		return $(this)[kRepeat];
+		return $(this).repeat;
 	}
 
 	get isComposing(): boolean {
-		return $(this)[kIsComposing];
+		return $(this).isComposing;
 	}
 
 	get charCode(): number {
-		return $(this)[kCharCode];
+		return $(this).charCode;
 	}
 
 	get keyCode(): number {
-		return $(this)[kKeyCode];
+		return $(this).keyCode;
 	}
 
 	override get which(): number {
-		return $(this)[kKeyCode];
+		return $(this).keyCode;
 	}
 
 	getModifierState(keyArg: string): boolean {
 		if (arguments.length < 1) {
 			throw new TypeError("getModifierState needs a key");
 		}
-		return $(this)[kModifiers].has(String(keyArg));
+		return $(this).modifiers.has(String(keyArg));
 	}
 
 	initKeyboardEvent(
@@ -3243,13 +3226,13 @@ class KeyboardEvent extends UIEvent implements globalThis.KeyboardEvent {
 			throw new TypeError("initKeyboardEvent needs a type");
 		}
 		const slots = $(this);
-		if (slots[kState].dispatch) {
+		if (slots.state.dispatch) {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
-		slots[kKey] = String(key);
-		slots[kLocation] = toUnsignedLong(location);
-		slots[kModifiers] = getInitModifiers({ctrlKey, altKey, shiftKey, metaKey});
+		slots.key = String(key);
+		slots.location = toUnsignedLong(location);
+		slots.modifiers = getInitModifiers({ctrlKey, altKey, shiftKey, metaKey});
 	}
 }
 
@@ -3266,8 +3249,12 @@ Object.defineProperties(KeyboardEvent.prototype, {
 
 const kData = Symbol("data");
 
+interface CompositionEventInternals extends UIEventInternals {
+	data: string;
+}
+
 interface CompositionEvent {
-	[kData]: string;
+	readonly [internals]: CompositionEventInternals;
 }
 
 /** Fired while an input method composes text. */
@@ -3278,11 +3265,11 @@ class CompositionEvent extends UIEvent {
 			eventInitDict,
 			"An event init",
 		);
-		$(this)[kData] = String(init.data ?? "");
+		$(this).data = String(init.data ?? "");
 	}
 
 	get data(): string {
-		return $(this)[kData];
+		return $(this).data;
 	}
 
 	initCompositionEvent(
@@ -3296,11 +3283,11 @@ class CompositionEvent extends UIEvent {
 			throw new TypeError("initCompositionEvent needs a type");
 		}
 		const slots = $(this);
-		if (slots[kState].dispatch) {
+		if (slots.state.dispatch) {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
-		slots[kData] = String(data);
+		slots.data = String(data);
 	}
 }
 
@@ -3311,21 +3298,25 @@ Object.defineProperty(CompositionEvent.prototype, Symbol.toStringTag, {
 
 // DOM Level 3's legacy text-input event. The interface declares no
 // constructor, so createEvent("TextEvent") is the only way to make one.
+interface TextEventInternals extends UIEventInternals {
+	data: string;
+}
+
 interface TextEvent {
-	[kData]: string;
+	readonly [internals]: TextEventInternals;
 }
 
 class TextEvent extends UIEvent {
 	constructor(type = "", eventInitDict: UIEventInit = {}) {
 		super(type, eventInitDict);
-		$(this)[kData] = "";
+		$(this).data = "";
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
 	}
 
 	get data(): string {
-		return $(this)[kData];
+		return $(this).data;
 	}
 
 	initTextEvent(
@@ -3339,11 +3330,11 @@ class TextEvent extends UIEvent {
 			throw new TypeError("initTextEvent needs a type");
 		}
 		const slots = $(this);
-		if (slots[kState].dispatch) {
+		if (slots.state.dispatch) {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
-		slots[kData] = String(data);
+		slots.data = String(data);
 	}
 }
 
@@ -3352,12 +3343,14 @@ Object.defineProperty(TextEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const kInputType = Symbol("inputType");
+interface InputEventInternals extends UIEventInternals {
+	data: string | null;
+	isComposing: boolean;
+	inputType: string;
+}
 
 interface InputEvent {
-	[kData]: string | null;
-	[kIsComposing]: boolean;
-	[kInputType]: string;
+	readonly [internals]: InputEventInternals;
 }
 
 /** Fired when an editing host's text changes, with the kind of change. */
@@ -3366,21 +3359,21 @@ class InputEvent extends UIEvent {
 		super(type, eventInitDict);
 		const init = toDictionary<InputEventInit>(eventInitDict, "An event init");
 		const slots = $(this);
-		slots[kData] = init.data == null ? null : String(init.data);
-		slots[kIsComposing] = Boolean(init.isComposing);
-		slots[kInputType] = String(init.inputType ?? "");
+		slots.data = init.data == null ? null : String(init.data);
+		slots.isComposing = Boolean(init.isComposing);
+		slots.inputType = String(init.inputType ?? "");
 	}
 
 	get data(): string | null {
-		return $(this)[kData];
+		return $(this).data;
 	}
 
 	get isComposing(): boolean {
-		return $(this)[kIsComposing];
+		return $(this).isComposing;
 	}
 
 	get inputType(): string {
-		return $(this)[kInputType];
+		return $(this).inputType;
 	}
 
 	get dataTransfer(): globalThis.DataTransfer | null {
@@ -3405,8 +3398,6 @@ function toUSVString(value: unknown): string {
 	);
 }
 
-const kViolation = Symbol("violation");
-
 interface SecurityPolicyViolation {
 	documentURI: string;
 	referrer: string;
@@ -3421,8 +3412,12 @@ interface SecurityPolicyViolation {
 	columnNumber: number;
 }
 
+interface SecurityPolicyViolationEventInternals extends EventInternals {
+	violation: SecurityPolicyViolation;
+}
+
 interface SecurityPolicyViolationEvent {
-	[kViolation]: SecurityPolicyViolation;
+	readonly [internals]: SecurityPolicyViolationEventInternals;
 }
 
 /**
@@ -3445,7 +3440,7 @@ class SecurityPolicyViolationEvent extends Event {
 				`"${disposition}" is not a security policy violation disposition`,
 			);
 		}
-		$(this)[kViolation] = {
+		$(this).violation = {
 			documentURI: toUSVString(init.documentURI ?? ""),
 			referrer: toUSVString(init.referrer ?? ""),
 			blockedURI: toUSVString(init.blockedURI ?? ""),
@@ -3463,52 +3458,52 @@ class SecurityPolicyViolationEvent extends Event {
 	}
 
 	get documentURI(): string {
-		return $(this)[kViolation].documentURI;
+		return $(this).violation.documentURI;
 	}
 
 	get referrer(): string {
-		return $(this)[kViolation].referrer;
+		return $(this).violation.referrer;
 	}
 
 	get blockedURI(): string {
-		return $(this)[kViolation].blockedURI;
+		return $(this).violation.blockedURI;
 	}
 
 	get effectiveDirective(): string {
-		return $(this)[kViolation].effectiveDirective;
+		return $(this).violation.effectiveDirective;
 	}
 
 	// A historical alias of effectiveDirective.
 	get violatedDirective(): string {
-		return $(this)[kViolation].effectiveDirective;
+		return $(this).violation.effectiveDirective;
 	}
 
 	get originalPolicy(): string {
-		return $(this)[kViolation].originalPolicy;
+		return $(this).violation.originalPolicy;
 	}
 
 	get sourceFile(): string {
-		return $(this)[kViolation].sourceFile;
+		return $(this).violation.sourceFile;
 	}
 
 	get sample(): string {
-		return $(this)[kViolation].sample;
+		return $(this).violation.sample;
 	}
 
 	get disposition(): globalThis.SecurityPolicyViolationEventDisposition {
-		return $(this)[kViolation].disposition;
+		return $(this).violation.disposition;
 	}
 
 	get statusCode(): number {
-		return $(this)[kViolation].statusCode;
+		return $(this).violation.statusCode;
 	}
 
 	get lineNumber(): number {
-		return $(this)[kViolation].lineNumber;
+		return $(this).violation.lineNumber;
 	}
 
 	get columnNumber(): number {
-		return $(this)[kViolation].columnNumber;
+		return $(this).violation.columnNumber;
 	}
 }
 
@@ -3906,10 +3901,12 @@ interface ClipboardEventInit extends EventInit {
 	clipboardData?: DataTransfer | null;
 }
 
-const kClipboardData = Symbol("clipboardData");
+interface ClipboardEventInternals extends EventInternals {
+	clipboardData: DataTransfer | null;
+}
 
 interface ClipboardEvent {
-	[kClipboardData]: DataTransfer | null;
+	readonly [internals]: ClipboardEventInternals;
 }
 
 /** Fired for a clipboard gesture, carrying the data it moves. */
@@ -3920,13 +3917,13 @@ class ClipboardEvent extends Event {
 			eventInitDict,
 			"An event init",
 		);
-		$(this)[kClipboardData] = init.clipboardData == null
+		$(this).clipboardData = init.clipboardData == null
 			? null
 			: init.clipboardData;
 	}
 
 	get clipboardData(): DataTransfer | null {
-		return $(this)[kClipboardData];
+		return $(this).clipboardData;
 	}
 }
 
@@ -3941,14 +3938,14 @@ interface TransitionEventInit extends EventInit {
 	pseudoElement?: string;
 }
 
-const kPropertyName = Symbol("propertyName");
-const kElapsedTime = Symbol("elapsedTime");
-const kEventPseudoElement = Symbol("pseudoElement");
+export interface TransitionEventInternals extends EventInternals {
+	propertyName: string;
+	elapsedTime: number;
+	eventPseudoElement: string;
+}
 
 export interface TransitionEvent {
-	[kPropertyName]: string;
-	[kElapsedTime]: number;
-	[kEventPseudoElement]: string;
+	readonly [internals]: TransitionEventInternals;
 }
 
 /** Fired when a CSS transition changes phase (css-transitions-1 §6). */
@@ -3960,27 +3957,27 @@ export class TransitionEvent extends Event {
 			"An event init",
 		);
 		const slots = $(this);
-		slots[kPropertyName] = init.propertyName === undefined
+		slots.propertyName = init.propertyName === undefined
 			? ""
 			: String(init.propertyName);
-		slots[kElapsedTime] = init.elapsedTime === undefined
+		slots.elapsedTime = init.elapsedTime === undefined
 			? 0
 			: Number(init.elapsedTime);
-		slots[kEventPseudoElement] = init.pseudoElement === undefined
+		slots.eventPseudoElement = init.pseudoElement === undefined
 			? ""
 			: String(init.pseudoElement);
 	}
 
 	get propertyName(): string {
-		return $(this)[kPropertyName];
+		return $(this).propertyName;
 	}
 
 	get elapsedTime(): number {
-		return $(this)[kElapsedTime];
+		return $(this).elapsedTime;
 	}
 
 	get pseudoElement(): string {
-		return $(this)[kEventPseudoElement];
+		return $(this).eventPseudoElement;
 	}
 }
 
@@ -3995,14 +3992,16 @@ interface AnimationEventInit extends EventInit {
 	pseudoElement?: string;
 }
 
-const kAnimationName = Symbol("animationName");
-
 // css-animations-1 §4. The engine does not run @keyframes animations
 // yet. The interface exists because the platform defines it.
+interface AnimationEventInternals extends EventInternals {
+	animationName: string;
+	elapsedTime: number;
+	eventPseudoElement: string;
+}
+
 interface AnimationEvent {
-	[kAnimationName]: string;
-	[kElapsedTime]: number;
-	[kEventPseudoElement]: string;
+	readonly [internals]: AnimationEventInternals;
 }
 
 class AnimationEvent extends Event {
@@ -4013,27 +4012,27 @@ class AnimationEvent extends Event {
 			"An event init",
 		);
 		const slots = $(this);
-		slots[kAnimationName] = init.animationName === undefined
+		slots.animationName = init.animationName === undefined
 			? ""
 			: String(init.animationName);
-		slots[kElapsedTime] = init.elapsedTime === undefined
+		slots.elapsedTime = init.elapsedTime === undefined
 			? 0
 			: Number(init.elapsedTime);
-		slots[kEventPseudoElement] = init.pseudoElement === undefined
+		slots.eventPseudoElement = init.pseudoElement === undefined
 			? ""
 			: String(init.pseudoElement);
 	}
 
 	get animationName(): string {
-		return $(this)[kAnimationName];
+		return $(this).animationName;
 	}
 
 	get elapsedTime(): number {
-		return $(this)[kElapsedTime];
+		return $(this).elapsedTime;
 	}
 
 	get pseudoElement(): string {
-		return $(this)[kEventPseudoElement];
+		return $(this).eventPseudoElement;
 	}
 }
 
@@ -4046,16 +4045,15 @@ const DOM_DELTA_PIXEL = 0x00;
 const DOM_DELTA_LINE = 0x01;
 const DOM_DELTA_PAGE = 0x02;
 
-const kDeltaX = Symbol("deltaX");
-const kDeltaY = Symbol("deltaY");
-const kDeltaZ = Symbol("deltaZ");
-const kDeltaMode = Symbol("deltaMode");
+interface WheelEventInternals extends MouseEventInternals {
+	deltaX: number;
+	deltaY: number;
+	deltaZ: number;
+	deltaMode: number;
+}
 
 interface WheelEvent {
-	[kDeltaX]: number;
-	[kDeltaY]: number;
-	[kDeltaZ]: number;
-	[kDeltaMode]: number;
+	readonly [internals]: WheelEventInternals;
 }
 
 /** Fired when the wheel turns over a target. */
@@ -4070,26 +4068,26 @@ class WheelEvent extends MouseEvent {
 		super(type, eventInitDict);
 		const init = toDictionary<WheelEventInit>(eventInitDict, "An event init");
 		const slots = $(this);
-		slots[kDeltaX] = toDouble(init.deltaX ?? 0);
-		slots[kDeltaY] = toDouble(init.deltaY ?? 0);
-		slots[kDeltaZ] = toDouble(init.deltaZ ?? 0);
-		slots[kDeltaMode] = toUnsignedLong(init.deltaMode ?? 0);
+		slots.deltaX = toDouble(init.deltaX ?? 0);
+		slots.deltaY = toDouble(init.deltaY ?? 0);
+		slots.deltaZ = toDouble(init.deltaZ ?? 0);
+		slots.deltaMode = toUnsignedLong(init.deltaMode ?? 0);
 	}
 
 	get deltaX(): number {
-		return $(this)[kDeltaX];
+		return $(this).deltaX;
 	}
 
 	get deltaY(): number {
-		return $(this)[kDeltaY];
+		return $(this).deltaY;
 	}
 
 	get deltaZ(): number {
-		return $(this)[kDeltaZ];
+		return $(this).deltaZ;
 	}
 
 	get deltaMode(): number {
-		return $(this)[kDeltaMode];
+		return $(this).deltaMode;
 	}
 }
 
@@ -4117,38 +4115,27 @@ interface PointerEventInit extends MouseEventInit {
 	predictedEvents?: PointerEvent[];
 }
 
-const kPointerId = Symbol("pointerId");
-const kWidth = Symbol("width");
-const kHeight = Symbol("height");
-const kPressure = Symbol("pressure");
-const kTangentialPressure = Symbol("tangentialPressure");
-const kTiltX = Symbol("tiltX");
-const kTiltY = Symbol("tiltY");
-const kTwist = Symbol("twist");
-const kAltitudeAngle = Symbol("altitudeAngle");
-const kAzimuthAngle = Symbol("azimuthAngle");
-const kPointerType = Symbol("pointerType");
-const kIsPrimary = Symbol("isPrimary");
-const kCoalesced = Symbol("coalesced");
-const kPredicted = Symbol("predicted");
-
 // `element.click()` fires one of these. It is a MouseEvent, so dispatch
 // runs any activation behavior it reaches.
+interface PointerEventInternals extends MouseEventInternals {
+	pointerId: number;
+	width: number;
+	height: number;
+	pressure: number;
+	tangentialPressure: number;
+	tiltX: number | null;
+	tiltY: number | null;
+	twist: number;
+	altitudeAngle: number | null;
+	azimuthAngle: number | null;
+	pointerType: string;
+	isPrimary: boolean;
+	coalesced: PointerEvent[];
+	predicted: PointerEvent[];
+}
+
 interface PointerEvent {
-	[kPointerId]: number;
-	[kWidth]: number;
-	[kHeight]: number;
-	[kPressure]: number;
-	[kTangentialPressure]: number;
-	[kTiltX]: number | null;
-	[kTiltY]: number | null;
-	[kTwist]: number;
-	[kAltitudeAngle]: number | null;
-	[kAzimuthAngle]: number | null;
-	[kPointerType]: string;
-	[kIsPrimary]: boolean;
-	[kCoalesced]: PointerEvent[];
-	[kPredicted]: PointerEvent[];
+	readonly [internals]: PointerEventInternals;
 }
 
 class PointerEvent extends MouseEvent {
@@ -4156,44 +4143,44 @@ class PointerEvent extends MouseEvent {
 		super(type, eventInitDict);
 		const init = toDictionary<PointerEventInit>(eventInitDict, "An event init");
 		const slots = $(this);
-		slots[kPointerId] = toLong(init.pointerId ?? 0);
-		slots[kWidth] = toDouble(init.width ?? 1);
-		slots[kHeight] = toDouble(init.height ?? 1);
-		slots[kPressure] = toDouble(init.pressure ?? 0);
-		slots[kTangentialPressure] = toDouble(init.tangentialPressure ?? 0);
-		slots[kTiltX] = init.tiltX === undefined ? null : toLong(init.tiltX);
-		slots[kTiltY] = init.tiltY === undefined ? null : toLong(init.tiltY);
-		slots[kTwist] = toLong(init.twist ?? 0);
-		slots[kAltitudeAngle] = init.altitudeAngle === undefined
+		slots.pointerId = toLong(init.pointerId ?? 0);
+		slots.width = toDouble(init.width ?? 1);
+		slots.height = toDouble(init.height ?? 1);
+		slots.pressure = toDouble(init.pressure ?? 0);
+		slots.tangentialPressure = toDouble(init.tangentialPressure ?? 0);
+		slots.tiltX = init.tiltX === undefined ? null : toLong(init.tiltX);
+		slots.tiltY = init.tiltY === undefined ? null : toLong(init.tiltY);
+		slots.twist = toLong(init.twist ?? 0);
+		slots.altitudeAngle = init.altitudeAngle === undefined
 			? null
 			: toDouble(init.altitudeAngle);
-		slots[kAzimuthAngle] = init.azimuthAngle === undefined
+		slots.azimuthAngle = init.azimuthAngle === undefined
 			? null
 			: toDouble(init.azimuthAngle);
-		slots[kPointerType] = String(init.pointerType ?? "");
-		slots[kIsPrimary] = Boolean(init.isPrimary);
-		slots[kCoalesced] = [...(init.coalescedEvents ?? [])];
-		slots[kPredicted] = [...(init.predictedEvents ?? [])];
+		slots.pointerType = String(init.pointerType ?? "");
+		slots.isPrimary = Boolean(init.isPrimary);
+		slots.coalesced = [...(init.coalescedEvents ?? [])];
+		slots.predicted = [...(init.predictedEvents ?? [])];
 	}
 
 	get pointerId(): number {
-		return $(this)[kPointerId];
+		return $(this).pointerId;
 	}
 
 	get width(): number {
-		return $(this)[kWidth];
+		return $(this).width;
 	}
 
 	get height(): number {
-		return $(this)[kHeight];
+		return $(this).height;
 	}
 
 	get pressure(): number {
-		return $(this)[kPressure];
+		return $(this).pressure;
 	}
 
 	get tangentialPressure(): number {
-		return $(this)[kTangentialPressure];
+		return $(this).tangentialPressure;
 	}
 
 	// The tilt pair and the altitude/azimuth pair describe the same angle two
@@ -4201,64 +4188,64 @@ class PointerEvent extends MouseEvent {
 	// neither, the pen is upright.
 	get tiltX(): number {
 		const slots = $(this);
-		if (slots[kTiltX] !== null) {
-			return slots[kTiltX];
+		if (slots.tiltX !== null) {
+			return slots.tiltX;
 		}
-		if (slots[kAltitudeAngle] === null && slots[kAzimuthAngle] === null) {
+		if (slots.altitudeAngle === null && slots.azimuthAngle === null) {
 			return 0;
 		}
 		return tiltFromSpherical(
-			slots[kAltitudeAngle] ?? Math.PI / 2,
-			slots[kAzimuthAngle] ?? 0,
+			slots.altitudeAngle ?? Math.PI / 2,
+			slots.azimuthAngle ?? 0,
 		)[0];
 	}
 
 	get tiltY(): number {
 		const slots = $(this);
-		if (slots[kTiltY] !== null) {
-			return slots[kTiltY];
+		if (slots.tiltY !== null) {
+			return slots.tiltY;
 		}
-		if (slots[kAltitudeAngle] === null && slots[kAzimuthAngle] === null) {
+		if (slots.altitudeAngle === null && slots.azimuthAngle === null) {
 			return 0;
 		}
 		return tiltFromSpherical(
-			slots[kAltitudeAngle] ?? Math.PI / 2,
-			slots[kAzimuthAngle] ?? 0,
+			slots.altitudeAngle ?? Math.PI / 2,
+			slots.azimuthAngle ?? 0,
 		)[1];
 	}
 
 	get twist(): number {
-		return $(this)[kTwist];
+		return $(this).twist;
 	}
 
 	get altitudeAngle(): number {
 		const slots = $(this);
-		if (slots[kAltitudeAngle] !== null) {
-			return slots[kAltitudeAngle];
+		if (slots.altitudeAngle !== null) {
+			return slots.altitudeAngle;
 		}
-		if (slots[kTiltX] === null && slots[kTiltY] === null) {
+		if (slots.tiltX === null && slots.tiltY === null) {
 			return Math.PI / 2;
 		}
-		return sphericalFromTilt(slots[kTiltX] ?? 0, slots[kTiltY] ?? 0)[0];
+		return sphericalFromTilt(slots.tiltX ?? 0, slots.tiltY ?? 0)[0];
 	}
 
 	get azimuthAngle(): number {
 		const slots = $(this);
-		if (slots[kAzimuthAngle] !== null) {
-			return slots[kAzimuthAngle];
+		if (slots.azimuthAngle !== null) {
+			return slots.azimuthAngle;
 		}
-		if (slots[kTiltX] === null && slots[kTiltY] === null) {
+		if (slots.tiltX === null && slots.tiltY === null) {
 			return 0;
 		}
-		return sphericalFromTilt(slots[kTiltX] ?? 0, slots[kTiltY] ?? 0)[1];
+		return sphericalFromTilt(slots.tiltX ?? 0, slots.tiltY ?? 0)[1];
 	}
 
 	get pointerType(): string {
-		return $(this)[kPointerType];
+		return $(this).pointerType;
 	}
 
 	get isPrimary(): boolean {
-		return $(this)[kIsPrimary];
+		return $(this).isPrimary;
 	}
 
 	get persistentDeviceId(): number {
@@ -4266,11 +4253,11 @@ class PointerEvent extends MouseEvent {
 	}
 
 	getCoalescedEvents(): PointerEvent[] {
-		return [...$(this)[kCoalesced]];
+		return [...$(this).coalesced];
 	}
 
 	getPredictedEvents(): PointerEvent[] {
-		return [...$(this)[kPredicted]];
+		return [...$(this).predicted];
 	}
 }
 
@@ -4283,10 +4270,12 @@ interface DragEventInit extends MouseEventInit {
 	dataTransfer?: DataTransfer | null;
 }
 
-const kEventDataTransfer = Symbol("event data transfer");
+interface DragEventInternals extends MouseEventInternals {
+	eventDataTransfer: DataTransfer | null;
+}
 
 interface DragEvent {
-	[kEventDataTransfer]: DataTransfer | null;
+	readonly [internals]: DragEventInternals;
 }
 
 /** A drag-and-drop event, carrying its drag session's data transfer. */
@@ -4294,11 +4283,11 @@ class DragEvent extends MouseEvent {
 	constructor(type: string, eventInitDict: DragEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<DragEventInit>(eventInitDict, "An event init");
-		$(this)[kEventDataTransfer] = init.dataTransfer ?? null;
+		$(this).eventDataTransfer = init.dataTransfer ?? null;
 	}
 
 	get dataTransfer(): DataTransfer | null {
-		return $(this)[kEventDataTransfer];
+		return $(this).eventDataTransfer;
 	}
 }
 
@@ -5344,7 +5333,7 @@ function dispatchFromOutside(
 ): boolean {
 	// Brand-checked, as a browser's binding is: only this DOM's events, not
 	// the runtime's.
-	const state = isSealed(event) ? $(event)[kState] : undefined;
+	const state = isSealed(event) ? $(event).state : undefined;
 	if (state === undefined) {
 		const given: unknown = event;
 		if (RuntimeEvent !== undefined && given instanceof RuntimeEvent) {
@@ -5511,7 +5500,7 @@ export function dispatchAsUserAgent(
 // click() fires a synthetic, untrusted pointer event.
 function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 	const eventSlots = $(event);
-	const state = eventSlots[kState];
+	const state = eventSlots.state;
 	state.trusted = trusted;
 	state.dispatch = true;
 	const exchange = getSessionExchange(target);
@@ -5521,8 +5510,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 	let clearTargets = false;
 	if (target !== relatedTarget || target === state.relatedTarget) {
 		let eventTarget = target;
-		const isActivationEvent =
-			eventSlots[kIsMouseEvent] && event.type === "click";
+		const isActivationEvent = eventSlots.isMouseEvent && event.type === "click";
 		appendToPath(state, eventTarget, eventTarget, relatedTarget, false);
 		// An assigned slottable's next target is its slot, and the slot's tree
 		// may be closed to the tree the event started in. The slot's struct
@@ -5908,7 +5896,7 @@ function invokeListeners(
 	index: number,
 	capturing: boolean,
 ): void {
-	const state = $(event)[kState];
+	const state = $(event).state;
 	const struct = state.path[index];
 	for (let i = index; i >= 0; i--) {
 		const adjusted = state.path[i].shadowAdjustedTarget;
@@ -5943,7 +5931,7 @@ function innerInvoke(
 	listeners: Listener[],
 	capturing: boolean,
 ): boolean {
-	const state = $(event)[kState];
+	const state = $(event).state;
 	let found = false;
 	for (const listener of listeners) {
 		if (listener.removed) {
@@ -6007,7 +5995,7 @@ function getSessionExchange(target: EventTarget): EventTarget | null {
 // Every dispatched event reaches the exchange's listeners after its path,
 // regardless of bubbles, composed, or stopPropagation().
 function deliverToSession(exchange: EventTarget, event: Event): void {
-	const state = $(event)[kState];
+	const state = $(event).state;
 	state.currentTarget = exchange;
 	const listeners = $(exchange)[kListeners].slice();
 	innerInvoke(event, listeners, true);
@@ -14660,7 +14648,7 @@ export class ShadowRoot
 	// Dispatch leaves a shadow tree through the host, unless the event was
 	// dispatched inside this tree and is not composed.
 	override [kGetTheParent](event: Event): EventTarget | null {
-		const path = $(event)[kState].path;
+		const path = $(event).state.path;
 		if (
 			!event.composed &&
 			path.length > 0 &&
@@ -16459,14 +16447,14 @@ interface ToggleEventInit extends EventInit {
 	source?: Element | null;
 }
 
-const kOldState = Symbol("oldState");
-const kNewState = Symbol("newState");
-const kSource = Symbol("source");
+interface ToggleEventInternals extends EventInternals {
+	oldState: string;
+	newState: string;
+	source: Element | null;
+}
 
 interface ToggleEvent {
-	[kOldState]: string;
-	[kNewState]: string;
-	[kSource]: Element | null;
+	readonly [internals]: ToggleEventInternals;
 }
 
 class ToggleEvent extends Event {
@@ -16474,24 +16462,24 @@ class ToggleEvent extends Event {
 		super(type, eventInitDict);
 		const init = toDictionary<ToggleEventInit>(eventInitDict, "An event init");
 		const slots = $(this);
-		slots[kOldState] = String(init.oldState ?? "");
-		slots[kNewState] = String(init.newState ?? "");
-		slots[kSource] = init.source ?? null;
+		slots.oldState = String(init.oldState ?? "");
+		slots.newState = String(init.newState ?? "");
+		slots.source = init.source ?? null;
 	}
 
 	get oldState(): string {
-		return $(this)[kOldState];
+		return $(this).oldState;
 	}
 
 	get newState(): string {
-		return $(this)[kNewState];
+		return $(this).newState;
 	}
 
 	// Seen from a listener, as HTML specifies: an invoker inside a shadow
 	// tree the listener cannot see into is its host.
 	get source(): Element | null {
 		return retarget(
-			$(this)[kSource],
+			$(this).source,
 			this.currentTarget as EventTarget,
 		) as Element |
 			null;
@@ -16508,11 +16496,13 @@ interface CommandEventInit extends EventInit {
 	command?: string;
 }
 
-const kCommand = Symbol("command");
+interface CommandEventInternals extends EventInternals {
+	source: Element | null;
+	command: string;
+}
 
 interface CommandEvent {
-	[kSource]: Element | null;
-	[kCommand]: string;
+	readonly [internals]: CommandEventInternals;
 }
 
 class CommandEvent extends Event {
@@ -16520,20 +16510,20 @@ class CommandEvent extends Event {
 		super(type, eventInitDict);
 		const init = toDictionary<CommandEventInit>(eventInitDict, "An event init");
 		const slots = $(this);
-		slots[kSource] = init.source ?? null;
-		slots[kCommand] = String(init.command ?? "");
+		slots.source = init.source ?? null;
+		slots.command = String(init.command ?? "");
 	}
 
 	get source(): Element | null {
 		return retarget(
-			$(this)[kSource],
+			$(this).source,
 			this.currentTarget as EventTarget,
 		) as Element |
 			null;
 	}
 
 	get command(): string {
-		return $(this)[kCommand];
+		return $(this).command;
 	}
 }
 
@@ -17174,21 +17164,23 @@ interface SubmitEventInit extends EventInit {
 	submitter?: HTMLElement | null;
 }
 
-const kSubmitter = Symbol("submitter");
+interface SubmitEventInternals extends EventInternals {
+	submitter: HTMLElement | null;
+}
 
 interface SubmitEvent {
-	[kSubmitter]: HTMLElement | null;
+	readonly [internals]: SubmitEventInternals;
 }
 
 class SubmitEvent extends Event {
 	constructor(type: string, eventInitDict: SubmitEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<SubmitEventInit>(eventInitDict, "An event init");
-		$(this)[kSubmitter] = init.submitter ?? null;
+		$(this).submitter = init.submitter ?? null;
 	}
 
 	get submitter(): HTMLElement | null {
-		return $(this)[kSubmitter];
+		return $(this).submitter;
 	}
 }
 
@@ -17610,10 +17602,12 @@ interface FormDataEventInit extends EventInit {
 	formData: FormData;
 }
 
-const kEventFormData = Symbol("the entries the event carries");
+interface FormDataEventInternals extends EventInternals {
+	eventFormData: FormData;
+}
 
 interface FormDataEvent {
-	[kEventFormData]: FormData;
+	readonly [internals]: FormDataEventInternals;
 }
 
 // The event a form fires once its entry list is built, so a listener
@@ -17627,18 +17621,18 @@ class FormDataEvent extends Event {
 		);
 		const slots = $(this);
 		if (init.formData instanceof FormData) {
-			slots[kEventFormData] = init.formData;
+			slots.eventFormData = init.formData;
 		} else {
 			const entries = readFormDataEntries(init.formData);
 			if (entries === null) {
 				throw new TypeError("A formdata event needs a FormData");
 			}
-			slots[kEventFormData] = formDataFromEntries(entries);
+			slots.eventFormData = formDataFromEntries(entries);
 		}
 	}
 
 	get formData(): FormData {
-		return $(this)[kEventFormData];
+		return $(this).eventFormData;
 	}
 }
 
@@ -28373,7 +28367,7 @@ export class Document extends Node implements globalThis.Document {
 			);
 		}
 		const event = constructInternal(factory);
-		$(event)[kState].initialized = false;
+		$(event).state.initialized = false;
 		return event as unknown as globalThis.Event;
 	}
 
