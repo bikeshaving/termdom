@@ -11457,13 +11457,8 @@ Object.defineProperties(Element.prototype, {
 // neighbouring counts merge into the larger, and none is needed at
 // either end.
 function getInnerText(element: Element): string {
-	const attached = getAttachedDocument(element);
-	if (attached === undefined || !element.isConnected) {
-		return element.textContent ?? "";
-	}
-	flushLayout(element);
-	const layout = _(attached).extra.layout;
-	if (!isElementRendered(layout, element)) {
+	const layout = getSettledLayout(element);
+	if (layout === undefined || !isElementRendered(layout, element)) {
 		return element.textContent ?? "";
 	}
 	const items: Array<string | number> = [];
@@ -12293,7 +12288,6 @@ export class HTMLElement extends Element {
 		getTopLayer(this.document).delete(ownerOf(this));
 		state.visibility = "hidden";
 		state.mode = null;
-		state.trigger = null;
 		state.previouslyFocused = null;
 		popoverStateChanged(ownerOf(this));
 	}
@@ -23189,7 +23183,6 @@ class HTMLUListElement extends HTMLElement {
 interface PopoverState {
 	visibility: "hidden" | "showing";
 	mode: "auto" | null;
-	trigger: Element | null;
 	previouslyFocused: Element | null;
 	hiding: boolean;
 	toggleTask: {oldState: string; canceled: boolean} | null;
@@ -23206,7 +23199,6 @@ function getPopoverState(element: Element): PopoverState {
 		state = {
 			visibility: "hidden",
 			mode: null,
-			trigger: null,
 			previouslyFocused: null,
 			hiding: false,
 			toggleTask: null,
@@ -23424,7 +23416,6 @@ function showPopover(
 	const originallyFocused = documentSlots.extra.activeElement;
 	getTopLayer(document).add(element);
 	state.visibility = "showing";
-	state.trigger = source;
 	popoverFocusingSteps(element);
 	if (shouldRestoreFocus && getPopoverAttributeState(element) !== null) {
 		state.previouslyFocused = originallyFocused;
@@ -23500,7 +23491,6 @@ function hidePopover(
 		}
 	}
 	getTopLayer(document).delete(element);
-	state.trigger = null;
 	state.mode = null;
 	state.visibility = "hidden";
 	if (fireEvents) {
@@ -36257,11 +36247,7 @@ export function flushStyle(node: globalThis.Node): boolean {
 	if (attached === undefined) {
 		return false;
 	}
-	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
-	const document = (
-		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
-	) as globalThis.Document;
-	const had = applyMutations(document);
+	const had = applyMutations(attached);
 	if (had) {
 		void _(attached).extra.render();
 	}
@@ -36309,20 +36295,12 @@ export function revealPendingEditingCaret(document: globalThis.Document): void {
  * them, so this requests the frame on the caller's behalf.
  */
 export function flushLayout(node: globalThis.Node): boolean {
+	const had = flushStyle(node);
 	const attached = getAttachedDocument(node);
-	if (attached === undefined) {
-		return false;
+	if (attached !== undefined) {
+		_(attached).extra.layout.performLayout();
+		clampScrollOffsets(attached);
 	}
-	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
-	const document = (
-		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
-	) as globalThis.Document;
-	const had = applyMutations(document);
-	if (had) {
-		void _(attached).extra.render();
-	}
-	_(attached).extra.layout.performLayout();
-	clampScrollOffsets(document);
 	return had;
 }
 
