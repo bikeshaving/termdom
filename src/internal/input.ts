@@ -1,5 +1,6 @@
 import {type Cascade, getComputedValue, pxFromCells} from "./cssom.ts";
 import {
+	attributeOf,
 	commitRangeThumb,
 	constructInternal,
 	dispatchAsUserAgent,
@@ -17,11 +18,13 @@ import {
 	getTextControlValueText,
 	getUnitBounds,
 	handleCloseRequest,
+	hasAttributeOf,
 	HTMLInputElement,
 	HTMLLabelElement,
 	HTMLTextAreaElement,
 	lightDismissPress,
 	lightDismissRelease,
+	localNameOf,
 	lockDataTransfer,
 	MOUSE_POINTER_ID,
 	moveRangeThumb,
@@ -181,7 +184,7 @@ interface SequentialEntry {
 }
 
 function getTabIndex(element: Element): number {
-	const parsed = parseInt(element.getAttribute("tabindex") || "0", 10);
+	const parsed = parseInt(attributeOf(element, "tabindex") || "0", 10);
 	return Number.isNaN(parsed) ? 0 : parsed;
 }
 
@@ -213,7 +216,7 @@ function getSequentialFocusEntries(
 			ancestor;
 			ancestor = flatParentElement(ancestor)
 		) {
-			if (ancestor.hasAttribute("inert")) {
+			if (hasAttributeOf(ancestor, "inert")) {
 				return true;
 			}
 		}
@@ -260,7 +263,7 @@ function getSequentialFocusEntries(
 				push(ownerTabindex, expansion);
 				return;
 			}
-			if (element.localName === "slot") {
+			if (localNameOf(element) === "slot") {
 				const innerBarrier = ownerTabindex < 0 ? (barrier ?? element) : barrier;
 				const assigned = (element as HTMLSlotElement).assignedNodes();
 				const slotContents = assigned.length > 0

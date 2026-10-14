@@ -23,6 +23,7 @@ import {
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
+	attributeOf,
 	DOMRectList,
 	flatChildren,
 	flatDescendants,
@@ -37,6 +38,7 @@ import {
 	isInFlatTree,
 	isModalDialog,
 	isShadowIncludingAncestor,
+	localNameOf,
 	nodeTypeOf,
 	pseudoElementCount,
 	renderedTopLayer,
@@ -3524,7 +3526,7 @@ function collectLeaves(
 					// sheet carries no width for it. A constant that pre-baked
 					// the UA chrome could not be undone by an author's `border:
 					// none`.
-					const cols = parseInt(element.getAttribute("cols") ?? "", 10);
+					const cols = parseInt(attributeOf(element, "cols") ?? "", 10);
 					contentWidth = Number.isFinite(cols) && cols > 0 ? cols : 20;
 					contentWidthMode = "definite";
 				}
@@ -3675,7 +3677,7 @@ function collectLeaves(
 				// value is.
 				if (element.tagName === "TEXTAREA") {
 					if (boxModel.height === undefined) {
-						const rows = parseInt(element.getAttribute("rows") ?? "", 10);
+						const rows = parseInt(attributeOf(element, "rows") ?? "", 10);
 						finalContentHeight = Math.max(
 							finalContentHeight,
 							Number.isFinite(rows) && rows > 0 ? rows : 2,
@@ -5740,7 +5742,7 @@ export class Layout {
 				}
 				continue;
 			}
-			const name = ancestor.localName;
+			const name = localNameOf(ancestor);
 			if (
 				(position !== "" && position !== "static") ||
 				establishesFixedContainingBlock(ancestor) ||
