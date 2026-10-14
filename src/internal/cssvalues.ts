@@ -1531,21 +1531,38 @@ function matchesProperty(property: string, text: string): boolean {
  * its line height, as HTML's canvas font attribute reads back, and the
  * longhands it sets. Null for a value the shorthand grammar rejects.
  */
-export function parseCanvasFont(
-	value: string,
-): {serialized: string; longhands: Record<string, string>} | null {
-	const longhands = expandFont(splitComponents(value));
-	if (longhands === null) {
-		return null;
+interface CanvasFont {
+	readonly serialized: string;
+	readonly longhands: Readonly<Record<string, string>>;
+}
+
+// A canvas script sets the same few fonts over and over, often once per
+// glyph, and parsing the shorthand is far slower than drawing the glyph.
+const canvasFonts = new Map<string, CanvasFont | null>();
+const CANVAS_FONT_CACHE_SIZE = 256;
+
+export function parseCanvasFont(value: string): CanvasFont | null {
+	const cached = canvasFonts.get(value);
+	if (cached !== undefined) {
+		return cached;
 	}
-	const words = [
-		longhands["font-style"],
-		longhands["font-variant-caps"],
-		longhands["font-weight"],
-		longhands["font-stretch"],
-	].filter((word) => word !== "normal");
-	words.push(longhands["font-size"], longhands["font-family"]);
-	return {serialized: words.join(" "), longhands};
+	const longhands = expandFont(splitComponents(value));
+	let font: CanvasFont | null = null;
+	if (longhands !== null) {
+		const words = [
+			longhands["font-style"],
+			longhands["font-variant-caps"],
+			longhands["font-weight"],
+			longhands["font-stretch"],
+		].filter((word) => word !== "normal");
+		words.push(longhands["font-size"], longhands["font-family"]);
+		font = {serialized: words.join(" "), longhands};
+	}
+	if (canvasFonts.size >= CANVAS_FONT_CACHE_SIZE) {
+		canvasFonts.clear();
+	}
+	canvasFonts.set(value, font);
+	return font;
 }
 
 function expandFont(tokens: string[]): Record<string, string> | null {
