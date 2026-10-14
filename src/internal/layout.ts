@@ -6397,9 +6397,17 @@ export class Layout {
 		this.invalidateFrame();
 	}
 
+	// Every record's enumerations are dropped before any measure is found.
+	// Finding one derives its container again, so a batch that changes
+	// many children of one container would otherwise derive it once for
+	// each of them.
 	handleMutations(mutations: MutationRecord[]): void {
+		const measured = new Set<Node>();
 		for (const record of mutations) {
-			invalidateForRecord(this, record);
+			invalidateForRecord(this, record, measured);
+		}
+		for (const node of measured) {
+			invalidateEnclosingMeasure(this, node);
 		}
 	}
 
@@ -6525,7 +6533,10 @@ function pruneDisconnectedNodes(layout: Layout): void {
 // Nothing here builds a box. A restyle says only that the boxes around
 // an element may no longer match the enumeration, and what the element
 // now generates is derived where every box is derived.
+// Measures are dropped after every restyle has dropped its enumerations,
+// as handleMutations does with records.
 function applyRestyles(layout: Layout): void {
+	const measured = new Set<Element>();
 	while (layout.restyled.size > 0) {
 		const restyled = [...layout.restyled];
 		layout.restyled.clear();
@@ -6590,7 +6601,7 @@ function applyRestyles(layout: Layout): void {
 				}
 			}
 			invalidateBoxDerivation(layout, element);
-			invalidateEnclosingMeasure(layout, element);
+			measured.add(element);
 			touchChildren(layout, element);
 			invalidateChildDerivation(layout, element);
 			if (layout.boxes.get(element)?.children) {
@@ -6600,6 +6611,9 @@ function applyRestyles(layout: Layout): void {
 				layout.dirtyRunContainers.add(element);
 			}
 		}
+	}
+	for (const element of measured) {
+		invalidateEnclosingMeasure(layout, element);
 	}
 }
 
@@ -6664,8 +6678,13 @@ function isSameValue(a: unknown, b: unknown): boolean {
 }
 
 // Nothing here builds a box. A mutation says only which containers no
-// longer hold the boxes their enumeration names.
-function invalidateForRecord(layout: Layout, record: MutationRecord): void {
+// longer hold the boxes their enumeration names, and which nodes' measures
+// to drop once every record has said so.
+function invalidateForRecord(
+	layout: Layout,
+	record: MutationRecord,
+	measured: Set<Node>,
+): void {
 	// A record on a shadow root describes the HOST's flat-tree children.
 	const target =
 		nodeTypeOf(record.target) ===
@@ -6694,7 +6713,7 @@ function invalidateForRecord(layout: Layout, record: MutationRecord): void {
 	}
 	if (record.type === "characterData") {
 		invalidateBoxDerivation(layout, target);
-		invalidateEnclosingMeasure(layout, target);
+		measured.add(target);
 		return;
 	}
 	// The removed nodes are already detached, so the container is reached
@@ -6705,7 +6724,7 @@ function invalidateForRecord(layout: Layout, record: MutationRecord): void {
 	// A member gaining or losing a descendant changes no box list (the
 	// member is still there, holding more or less), so the box measuring it
 	// is notified directly.
-	invalidateEnclosingMeasure(layout, target);
+	measured.add(target);
 	for (const node of getAddedNodes(record)) {
 		invalidateSubtreeDerivation(layout, node);
 	}

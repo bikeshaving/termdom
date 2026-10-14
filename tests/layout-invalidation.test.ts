@@ -819,3 +819,36 @@ test("a display change the layout style cannot tell apart still moves the box", 
 		dom.dispose();
 	}
 });
+
+test("many children of one container changed in one frame all repaint", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	const pre = document.createElement("pre");
+	const spans: HTMLSpanElement[] = [];
+	for (let y = 0; y < 4; y++) {
+		for (let x = 0; x < 30; x++) {
+			const span = document.createElement("span");
+			span.textContent = ".";
+			spans.push(span);
+			pre.append(span);
+		}
+		pre.append("\n");
+	}
+	document.body.append(pre);
+	await nextFrame(dom);
+	spans.forEach((span, index) => {
+		if (index % 2 === 0) {
+			span.textContent = "x";
+		} else {
+			span.style.color = "red";
+		}
+	});
+	await nextFrame(dom);
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	const rows = terminal.getPlainText().split("\n");
+	for (let y = 0; y < 4; y++) {
+		expect(rows[y].slice(0, 30)).toBe("x.".repeat(15));
+	}
+	dom.dispose();
+});
