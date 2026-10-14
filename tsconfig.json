@@ -19,6 +19,8 @@
     "strict": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noImplicitOverride": true
   },
   "include": ["src", "tests", "fuzz", "examples", "scripts", "bench"],

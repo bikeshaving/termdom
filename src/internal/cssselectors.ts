@@ -1222,12 +1222,11 @@ function compilePseudoClass(
 			compound.tests.push((element) => isDefaultControl(element));
 			return;
 		case "disabled":
-			compound.tests.push(isDisabled);
+			compound.tests.push(isActuallyDisabled);
 			return;
 		case "enabled":
 			compound.tests.push(
-				(element, state) => isDisableable(element) &&
-					!isDisabled(element, state),
+				(element) => isDisableable(element) && !isActuallyDisabled(element),
 			);
 			return;
 		case "valid":
@@ -1261,7 +1260,7 @@ function compilePseudoClass(
 				isRequirable(element) && attributeOf(element, "required") === null);
 			return;
 		case "read-only":
-			compound.tests.push((element, state) => !isMutable(element, state));
+			compound.tests.push((element) => !isMutable(element));
 			return;
 		case "read-write":
 			compound.tests.push(isMutable);
@@ -1599,11 +1598,6 @@ function isDisableable(element: Element): boolean {
 	);
 }
 
-// The selector matches what HTML calls actually disabled.
-function isDisabled(element: Element, _state: MatchState): boolean {
-	return isActuallyDisabled(element);
-}
-
 function isRequirable(element: Element): boolean {
 	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return false;
@@ -1621,7 +1615,7 @@ function isRequirable(element: Element): boolean {
 
 // `:read-write`: a text control the user can type into, or anything an
 // editing host contains.
-function isMutable(element: Element, state: MatchState): boolean {
+function isMutable(element: Element): boolean {
 	if (namespaceOf(element) === HTML_NAMESPACE) {
 		const name = localNameOf(element);
 		if (name === "input" || name === "textarea") {
@@ -1631,7 +1625,7 @@ function isMutable(element: Element, state: MatchState): boolean {
 			if (READONLY_INPUT_TYPES.has(type)) {
 				return (
 					attributeOf(element, "readonly") === null &&
-					!isDisabled(element, state)
+					!isActuallyDisabled(element)
 				);
 			}
 		}

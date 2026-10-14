@@ -1288,9 +1288,7 @@ const isTrustedProperty: PropertyDescriptor = {
 // is in. It also marks the events the engine fires itself.
 let internalConstruction = false;
 
-const RuntimeEvent: typeof globalThis.Event | undefined = (
-	globalThis as {Event?: typeof globalThis.Event}
-).Event;
+const RuntimeEvent = globalThis.Event;
 
 function probeRuntimeEvent(
 	Runtime: typeof globalThis.Event,
@@ -1316,7 +1314,6 @@ function probeRuntimeEvent(
 // Deno's Event constructor writes a toStringTag onto each event, which a
 // read-only one on a subclass's prototype refuses.
 const runtimeTagsEvents =
-	RuntimeEvent !== undefined &&
 	probeRuntimeEvent(RuntimeEvent, false) === null &&
 	probeRuntimeEvent(RuntimeEvent, true) !== null;
 
@@ -1347,9 +1344,7 @@ const constructsRuntimeEvents =
 	runtimeEventSupport === "construct" || runtimeEventSupport === "untrusted";
 
 function runtimeEventMember(name: string): PropertyDescriptor | undefined {
-	return RuntimeEvent === undefined
-		? undefined
-		: Object.getOwnPropertyDescriptor(RuntimeEvent.prototype, name);
+	return Object.getOwnPropertyDescriptor(RuntimeEvent.prototype, name);
 }
 
 const runtimeEventPhase = runtimeEventMember("eventPhase")?.get;
@@ -1371,7 +1366,7 @@ const EventBase = (
 	constructsRuntimeEvents ? RuntimeEvent : function EventBase(): void {}
 ) as unknown as new (type: string, init: globalThis.EventInit) => object;
 
-if (RuntimeEvent !== undefined && !constructsRuntimeEvents) {
+if (!constructsRuntimeEvents) {
 	EventBase.prototype = Object.create(RuntimeEvent.prototype) as object;
 }
 
@@ -1422,7 +1417,7 @@ function makeEventTagsWritable(type: object): void {
 	writableTagTypes.add(type);
 	for (
 		let prototype = (type as {prototype: object}).prototype;
-		prototype !== RuntimeEvent!.prototype;
+		prototype !== RuntimeEvent.prototype;
 		prototype = Object.getPrototypeOf(prototype) as object
 	) {
 		const tag = Object.getOwnPropertyDescriptor(prototype, Symbol.toStringTag);
@@ -4222,14 +4217,8 @@ const NO_LISTENERS = Object.freeze([]) as unknown as Listener[];
 const EventTargetBase = function EventTargetBase(): void {} as unknown as
 	new () => object;
 
-const RuntimeEventTarget = (
-	globalThis as {EventTarget?: typeof globalThis.EventTarget}
-).EventTarget;
-
-if (RuntimeEventTarget !== undefined) {
-	EventTargetBase.prototype =
-		Object.create(RuntimeEventTarget.prototype) as object;
-}
+EventTargetBase.prototype =
+	Object.create(globalThis.EventTarget.prototype) as object;
 
 export interface EventTargetSlots {
 	listeners: Listener[];
@@ -5100,7 +5089,7 @@ function dispatchFromOutside(
 	const state = isSealed(event) ? _(event).state : undefined;
 	if (state === undefined) {
 		const given: unknown = event;
-		if (RuntimeEvent !== undefined && given instanceof RuntimeEvent) {
+		if (given instanceof RuntimeEvent) {
 			return dispatchRuntimeEvent(target, given, trusted);
 		}
 		throw new TypeError("dispatchEvent needs an Event");
@@ -8543,7 +8532,7 @@ class HTMLCollection {
 	): Node[] | null {
 		const matches = this.matches;
 		if (matches !== undefined) {
-			return matchingChangedMembers(ownerOf(this), matches, changed);
+			return matchingChangedMembers(matches, changed);
 		}
 		const members = LiveList.prototype._changedMembers.call(this, changed);
 		if (members === null || isNameless(members)) {
@@ -8733,7 +8722,6 @@ function createMatchingHTMLCollection(
 // Runs the test over the changed subtree rather than over the tree it
 // moved in or out of.
 function matchingChangedMembers(
-	collection: HTMLCollection,
 	matches: (element: Element) => boolean,
 	changed: readonly Node[],
 ): Node[] | null {
@@ -10888,7 +10876,7 @@ export class Element extends Node implements globalThis.Element {
 
 	insertAdjacentHTML(position: InsertPosition, text: string): void {
 		const where = toASCIILowercase(String(position));
-		let context: Node;
+		let context: Element;
 		const slots = _(this);
 		switch (where) {
 			case "beforebegin":
@@ -10901,7 +10889,7 @@ export class Element extends Node implements globalThis.Element {
 					);
 				}
 				context = nodeTypeOf(parent) === ELEMENT_NODE
-					? parent
+					? parent as Element
 					: createElementInternal(slots.document, "body", HTML_NAMESPACE);
 				break;
 			}
@@ -10912,16 +10900,14 @@ export class Element extends Node implements globalThis.Element {
 			default:
 				throw domError("SyntaxError", `"${position}" is not a position`);
 		}
-		let element = context as Element;
 		if (
-			nodeTypeOf(element) !== ELEMENT_NODE ||
-			(isHTMLDocument(_(element).document) &&
-				_(element).localName === "html" &&
-				_(element).namespace === HTML_NAMESPACE)
+			isHTMLDocument(_(context).document) &&
+			_(context).localName === "html" &&
+			_(context).namespace === HTML_NAMESPACE
 		) {
-			element = createElementInternal(slots.document, "body", HTML_NAMESPACE);
+			context = createElementInternal(slots.document, "body", HTML_NAMESPACE);
 		}
-		const fragment = parseHTMLFragment(String(text), element);
+		const fragment = parseHTMLFragment(String(text), context);
 		switch (where) {
 			case "beforebegin":
 				preInsert(fragment, objectOf(slots.parent) as Node, this);
@@ -12183,7 +12169,7 @@ export class HTMLElement extends Element {
 			(innermost as HTMLElement).blur();
 			return;
 		}
-		const wasFocused = getInnermostActive(document) === this;
+		const wasFocused = innermost === this;
 		if (wasFocused) {
 			commitTextControl(this);
 		}
@@ -15791,7 +15777,7 @@ class HTMLCanvasElement extends HTMLElement {
 
 	toBlob(
 		callback: globalThis.BlobCallback,
-		type?: string,
+		_type?: string,
 		_quality?: number,
 	): void {
 		if (typeof callback !== "function") {
@@ -15803,7 +15789,6 @@ class HTMLCanvasElement extends HTMLElement {
 		const bytes = bitmap === null || bitmap.width === 0 || bitmap.height === 0
 			? null
 			: encodePNG(bitmap);
-		void type;
 		setTimeout(() =>
 			callback(
 				bytes === null
@@ -38498,7 +38483,7 @@ export class Window extends EventTarget {
 				crop ? sh : undefined,
 			) as unknown as globalThis.ImageBitmap;
 		// A Blob is decoded first; an image still loading is waited for.
-		if (typeof Blob !== "undefined" && image instanceof Blob) {
+		if (image instanceof Blob) {
 			return image.arrayBuffer()
 				.then((buffer) => decodeImageOffThread(new Uint8Array(buffer)))
 				.then((bitmap) => settle(new ImageBitmap(bitmap)));
