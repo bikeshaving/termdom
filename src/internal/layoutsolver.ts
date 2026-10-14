@@ -453,22 +453,15 @@ function getCacheSlot(
 	);
 }
 
-const kMeasure = Symbol("measure");
-const kStaticPosition = Symbol("staticPosition");
-const kStyle = Symbol("style");
-const kOutOfFlowCount = Symbol("outOfFlowCount");
-
-export interface LayoutNode {
-	[kMeasure]: Measure | null;
-	[kStaticPosition]: StaticPosition | null;
-	[kStyle]: Style;
+export class LayoutNode {
+	measureFn: Measure | null;
+	staticPositionFn: StaticPosition | null;
+	currentStyle: Style;
 	// How many absolutely or fixed positioned boxes the subtree holds, this
 	// one included, kept as boxes join, leave and change position. A search
 	// for the boxes a container places skips a subtree that holds none.
-	[kOutOfFlowCount]: number;
-}
+	outOfFlowCount: number;
 
-export class LayoutNode {
 	result: LayoutResult;
 	children: LayoutNode[];
 	parent: LayoutNode | null;
@@ -503,62 +496,62 @@ export class LayoutNode {
 		this.children = [];
 		this.parent = null;
 		this.ownerFree = false;
-		this[kMeasure] = null;
-		this[kStaticPosition] = null;
+		this.measureFn = null;
+		this.staticPositionFn = null;
 		this.stale = true;
 		this.cachedSizes = null;
 		this.cachedLayout = null;
 		this.cellBaselineShift = 0;
 		this.owner = null;
 		this.measuresText = true;
-		this[kOutOfFlowCount] = 0;
-		this[kStyle] = createStyle();
+		this.outOfFlowCount = 0;
+		this.currentStyle = createStyle();
 		this.result = createResult();
 	}
 
 	// Replaced whole by a restyle or written in place, with invalidate()
 	// after either. Only a replacement can change the position type.
 	get style(): Style {
-		return this[kStyle];
+		return this.currentStyle;
 	}
 
 	set style(style: Style) {
 		const change =
 			Number(isOutOfFlowType(style.positionType)) -
-			Number(isOutOfFlowType(this[kStyle].positionType));
-		this[kStyle] = style;
+			Number(isOutOfFlowType(this.currentStyle.positionType));
+		this.currentStyle = style;
 		if (change !== 0) {
 			countOutOfFlow(this, change);
 		}
 	}
 
 	get holdsOutOfFlow(): boolean {
-		return this[kOutOfFlowCount] > 0;
+		return this.outOfFlowCount > 0;
 	}
 
 	get measure(): Measure | null {
-		return this[kMeasure];
+		return this.measureFn;
 	}
 
 	set measure(fn: Measure | null) {
-		this[kMeasure] = fn;
+		this.measureFn = fn;
 		this.invalidate();
 	}
 
 	get staticPosition(): StaticPosition | null {
-		return this[kStaticPosition];
+		return this.staticPositionFn;
 	}
 
 	set staticPosition(fn: StaticPosition | null) {
-		this[kStaticPosition] = fn;
+		this.staticPositionFn = fn;
 		this.invalidate();
 	}
 
 	insertChild(child: LayoutNode, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
-		if (child[kOutOfFlowCount] !== 0) {
-			countOutOfFlow(this, child[kOutOfFlowCount]);
+		if (child.outOfFlowCount !== 0) {
+			countOutOfFlow(this, child.outOfFlowCount);
 		}
 		invalidateAncestors(this);
 	}
@@ -568,8 +561,8 @@ export class LayoutNode {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
-			if (child[kOutOfFlowCount] !== 0) {
-				countOutOfFlow(this, -child[kOutOfFlowCount]);
+			if (child.outOfFlowCount !== 0) {
+				countOutOfFlow(this, -child.outOfFlowCount);
 			}
 			invalidateAncestors(this);
 		}
@@ -850,7 +843,7 @@ function createResult(): LayoutResult {
 
 function countOutOfFlow(start: LayoutNode, change: number): void {
 	for (let node: LayoutNode | null = start; node; node = node.parent) {
-		node[kOutOfFlowCount] += change;
+		node.outOfFlowCount += change;
 	}
 }
 

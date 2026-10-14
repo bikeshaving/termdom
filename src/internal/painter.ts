@@ -418,54 +418,41 @@ interface HighlightRun {
 	to: number;
 }
 
-const kWindow = Symbol("window");
-const kDocument = Symbol("document");
-const kLayout = Symbol("layout");
-const kCascade = Symbol("cascade");
-const kFramebuffer = Symbol("framebuffer");
-const kTopLayer = Symbol("topLayer");
-const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
-const kScrolledRows = Symbol("scrolledRows");
-const kHighlightedText = Symbol("highlightedText");
-const kHighlightStyles = Symbol("highlightStyles");
-const kPaintedText = Symbol("paintedText");
-export interface Painter {
-	[kWindow]: Window;
-	[kDocument]: Document;
-	[kLayout]: Layout;
-	[kCascade]: Cascade;
-	[kFramebuffer]: Framebuffer;
-	[kTopLayer]: Set<Element>;
+export class Painter {
+	window: Window;
+	document: Document;
+	layout: Layout;
+	cascade: Cascade;
+	framebuffer: Framebuffer;
+	topLayer: Set<Element>;
 	// Each list marker paints at most once per frame.
-	[kRenderedOutsideMarkers]: WeakSet<Element>;
+	renderedOutsideMarkers: WeakSet<Element>;
 	// Paint extents are cached in unscrolled rows. A scrolled subtree
 	// paints this many rows higher, so culling shifts the viewport instead.
-	[kScrolledRows]: number;
-	[kHighlightedText]: Map<Text, HighlightRun[]>;
-	[kHighlightStyles]: Map<Element, Map<string, HighlightPaint | null>>;
+	scrolledRows: number;
+	highlightedText: Map<Text, HighlightRun[]>;
+	highlightStyles: Map<Element, Map<string, HighlightPaint | null>>;
 	// Where this frame painted each text, for the overflow markers drawn
 	// after it, which would otherwise ask layout to place it again.
-	[kPaintedText]: Map<Text, TextFragment[]>;
-}
+	paintedText: Map<Text, TextFragment[]>;
 
-export class Painter {
 	constructor(
 		document: Document,
 		layout: Layout,
 		cascade: Cascade,
 		framebuffer: Framebuffer,
 	) {
-		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
-		this[kScrolledRows] = 0;
-		this[kHighlightedText] = new Map();
-		this[kHighlightStyles] = new Map();
-		this[kPaintedText] = new Map();
-		this[kWindow] = document.defaultView as unknown as Window;
-		this[kDocument] = document;
-		this[kLayout] = layout;
-		this[kCascade] = cascade;
-		this[kFramebuffer] = framebuffer;
-		this[kTopLayer] = getTopLayer(document) as unknown as Set<Element>;
+		this.renderedOutsideMarkers = new WeakSet<Element>();
+		this.scrolledRows = 0;
+		this.highlightedText = new Map();
+		this.highlightStyles = new Map();
+		this.paintedText = new Map();
+		this.window = document.defaultView as unknown as Window;
+		this.document = document;
+		this.layout = layout;
+		this.cascade = cascade;
+		this.framebuffer = framebuffer;
+		this.topLayer = getTopLayer(document) as unknown as Set<Element>;
 	}
 
 	/**
@@ -478,15 +465,15 @@ export class Painter {
 		regionHeight: number,
 		record: {element: Element; delta: number} | null,
 	): {delta: number; top: number; end: number} | null {
-		const framebuffer = this[kFramebuffer];
-		const layout = this[kLayout];
+		const framebuffer = this.framebuffer;
+		const layout = this.layout;
 		if (
 			record === null ||
 			record.delta === 0 ||
 			// One scroll shift per frame. The document scroll's region already
 			// contains this box.
 			framebuffer.journal.frameScroll !== 0 ||
-			hasPaintedHighlights(this[kDocument]) ||
+			hasPaintedHighlights(this.document) ||
 			!record.element.isConnected
 		) {
 			return null;
@@ -530,7 +517,7 @@ export class Painter {
 		regionHeight: number,
 		delta: number,
 	): {delta: number; top: number; end: number} | null {
-		const bars = this[kLayout].fullWidthFixedRows(this[kFramebuffer].cols);
+		const bars = this.layout.fullWidthFixedRows(this.framebuffer.cols);
 		if (bars.length === 0) {
 			return null;
 		}
@@ -556,17 +543,17 @@ export class Painter {
 	}
 
 	paint(ctx: CellContext): void {
-		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
-		this[kScrolledRows] = 0;
-		this[kHighlightedText] = collectHighlightedText(this[kDocument]);
-		this[kPaintedText].clear();
-		this[kHighlightStyles] = new Map();
-		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
+		this.renderedOutsideMarkers = new WeakSet<Element>();
+		this.scrolledRows = 0;
+		this.highlightedText = collectHighlightedText(this.document);
+		this.paintedText.clear();
+		this.highlightStyles = new Map();
+		const layers = this.layout.collectStackingLayers(this.topLayer);
 		// From the body, the root stacking context's content. A body that
 		// is inline, inline-block or display: contents puts its content in
 		// the root element's boxes rather than its own, so painting starts
 		// at the root.
-		const document = this[kDocument];
+		const document = this.document;
 		const bodyDisplay = getDeclaredDisplay(document.body as Element);
 		const fromRoot =
 			document.documentElement !== null &&
@@ -577,26 +564,26 @@ export class Painter {
 			ctx,
 			layers,
 		);
-		const rendered = renderedTopLayer(this[kDocument]) as unknown as Element[];
+		const rendered = renderedTopLayer(this.document) as unknown as Element[];
 		for (const element of rendered) {
 			const previousClip = ctx.clipRect;
 			ctx.clipRect = null;
 			// Entered from outside its ancestor chain, so seed the culling
 			// shift.
-			this[kScrolledRows] = this[kLayout].scrolledAncestorRows(element);
+			this.scrolledRows = this.layout.scrolledAncestorRows(element);
 			try {
 				renderBackdrop(element, ctx);
 				renderStackingContext(this, element, ctx, layers);
 			} finally {
 				ctx.clipRect = previousClip;
-				this[kScrolledRows] = 0;
+				this.scrolledRows = 0;
 			}
 		}
 	}
 }
 
 function getPaintStyle(painter: Painter, element: Element): PaintStyle {
-	const key = painter[kCascade].getStyleKey(element);
+	const key = painter.cascade.getStyleKey(element);
 	const known = key === null ? undefined : paintStyles.get(key);
 	if (known !== undefined) {
 		return known;
@@ -639,14 +626,14 @@ function renderStackingContext(
 	const paintMember = (element: Element) => {
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
-		const previousScrolled = painter[kScrolledRows];
+		const previousScrolled = painter.scrolledRows;
 		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
 		// Entered from its stacking context, not its ancestor chain.
-		painter[kScrolledRows] = painter[kLayout].scrolledAncestorRows(element);
+		painter.scrolledRows = painter.layout.scrolledAncestorRows(element);
 		// Fixed space cancels the document scroll for the whole subtree. An
 		// absolute box inside a fixed bar moves with it.
-		if (painter[kLayout].isInFixedSpace(element)) {
-			ctx.viewportOffset = previousOffset + painter[kFramebuffer].scrollTop;
+		if (painter.layout.isInFixedSpace(element)) {
+			ctx.viewportOffset = previousOffset + painter.framebuffer.scrollTop;
 		}
 		try {
 			if (isStackingContext(element)) {
@@ -657,7 +644,7 @@ function renderStackingContext(
 		} finally {
 			ctx.clipRect = previousClip;
 			ctx.viewportOffset = previousOffset;
-			painter[kScrolledRows] = previousScrolled;
+			painter.scrolledRows = previousScrolled;
 		}
 	};
 	paintEntry(painter, root, ctx, () => {
@@ -679,7 +666,7 @@ function paintEntry(
 	ctx: CellContext,
 	afterOwnBox?: () => void,
 ): void {
-	const layout = painter[kLayout];
+	const layout = painter.layout;
 	const node = layout.getLayoutNode(element);
 	if (node === null) {
 		return;
@@ -697,18 +684,18 @@ function isOutsideViewport(
 	node: LayoutNode,
 	element: Element | null,
 ): boolean {
-	const extent = painter[kLayout].paintExtent(node);
+	const extent = painter.layout.paintExtent(node);
 	if (extent === undefined) {
 		return false;
 	}
-	const top = -ctx.viewportOffset + painter[kScrolledRows];
+	const top = -ctx.viewportOffset + painter.scrolledRows;
 	const bottom = top + ctx.rows;
 	if (extent.bottom > top && extent.top < bottom) {
 		return false;
 	}
 	// A broken inline paints boxes outside its own layout subtree, so its
 	// extent says nothing about them.
-	return element === null || !painter[kLayout].getBox(element)?.broken;
+	return element === null || !painter.layout.getBox(element)?.broken;
 }
 
 function paintBlock(
@@ -771,10 +758,10 @@ function paintContent(
 	ctx: CellContext,
 	paintLayoutChildren: (origin: Origin) => void,
 ): void {
-	const layout = painter[kLayout];
+	const layout = painter.layout;
 	const isRoot =
-		element === painter[kDocument].body ||
-		element === painter[kDocument].documentElement;
+		element === painter.document.body ||
+		element === painter.document.documentElement;
 	const scrolledRows = isRoot ? 0 : getScrollOffset(element, "top");
 	const scrolledCols = isRoot ? 0 : getScrollOffset(element, "left");
 	const origin: Origin = {
@@ -784,7 +771,7 @@ function paintContent(
 
 	// Overflow clips descendants, never the element's own box.
 	const previousClip = ctx.clipRect;
-	const previousScrolled = painter[kScrolledRows];
+	const previousScrolled = painter.scrolledRows;
 	ctx.clipRect = getOverflowClipRect(
 		element,
 		rect,
@@ -792,7 +779,7 @@ function paintContent(
 		style.overflowY,
 		previousClip,
 	);
-	painter[kScrolledRows] = previousScrolled + scrolledRows;
+	painter.scrolledRows = previousScrolled + scrolledRows;
 	try {
 		const box = layout.getBox(element);
 		const context = box?.independentFormattingContext ?? null;
@@ -827,8 +814,8 @@ function paintContent(
 			// The box lays its content out from 0, so what the viewport shows
 			// of it is counted from where it paints, not from the document.
 			const top = origin.y + style.contentInsetY;
-			const scrolled = painter[kScrolledRows];
-			painter[kScrolledRows] = -top;
+			const scrolled = painter.scrolledRows;
+			painter.scrolledRows = -top;
 			try {
 				paintNodes(
 					painter,
@@ -837,7 +824,7 @@ function paintContent(
 					ctx,
 				);
 			} finally {
-				painter[kScrolledRows] = scrolled;
+				painter.scrolledRows = scrolled;
 			}
 		} else {
 			paintLayoutChildren(origin);
@@ -847,7 +834,7 @@ function paintContent(
 		}
 	} finally {
 		ctx.clipRect = previousClip;
-		painter[kScrolledRows] = previousScrolled;
+		painter.scrolledRows = previousScrolled;
 	}
 }
 
@@ -911,7 +898,7 @@ function paintOverflowMarkers(
 	const rows = new Map<number, {left: number; right: number}>();
 	for (const text of getOwnLineText(element)) {
 		const fragments =
-			painter[kPaintedText].get(text) ?? painter[kLayout].lineFragments(text);
+			painter.paintedText.get(text) ?? painter.layout.lineFragments(text);
 		for (const fragment of fragments) {
 			if (fragment.endOffset <= fragment.startOffset) {
 				continue;
@@ -959,7 +946,7 @@ function paintNodes(
 	origin: Origin,
 	ctx: CellContext,
 ): void {
-	const layout = painter[kLayout];
+	const layout = painter.layout;
 	for (const child of visibleChildren(painter, ctx, node)) {
 		const owner = child.owner as Node | null;
 		if (owner === null) {
@@ -987,9 +974,9 @@ function visibleChildren(
 	ctx: CellContext,
 	node: LayoutNode,
 ): LayoutNode[] {
-	const layout = painter[kLayout];
+	const layout = painter.layout;
 	const children = node.children;
-	const top = -ctx.viewportOffset + painter[kScrolledRows];
+	const top = -ctx.viewportOffset + painter.scrolledRows;
 	const bottom = top + ctx.rows;
 	const extent = layout.paintExtent(node);
 	const owner = node.owner as Node | null;
@@ -1049,7 +1036,7 @@ function paintBox(
 	}
 	// Over the flat fill, which a transparent stop composites onto.
 	if (style.gradient !== null) {
-		const cell = painter[kFramebuffer].cellPixels;
+		const cell = painter.framebuffer.cellPixels;
 		for (const fragment of fragments) {
 			renderGradient(
 				ctx,
@@ -1057,7 +1044,7 @@ function paintBox(
 				fragment,
 				style.bg ?? null,
 				cell.height / cell.width,
-				getCellSize(painter[kDocument]),
+				getCellSize(painter.document),
 			);
 		}
 	}
@@ -1132,7 +1119,7 @@ function paintCaret(
 	style: PaintStyle,
 	ctx: CellContext,
 ): void {
-	if (!style.visible || element !== getFocusedElement(painter[kDocument])) {
+	if (!style.visible || element !== getFocusedElement(painter.document)) {
 		return;
 	}
 	const record = getSelectionRecord(element);
@@ -1153,13 +1140,13 @@ function paintCaret(
 		const range = element.ownerDocument.createRange();
 		range.setStart(node, Math.min(focus, node.data.length));
 		range.collapse(true);
-		const rects = painter[kLayout].getRangeRects(range);
+		const rects = painter.layout.getRangeRects(range);
 		if (rects.length > 0) {
 			caret = {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
 		}
 	}
 	if (caret === null) {
-		const content = painter[kLayout].contentRect(element);
+		const content = painter.layout.contentRect(element);
 		if (content) {
 			caret = {x: Math.round(content.x), y: Math.round(content.y)};
 		}
@@ -1178,8 +1165,8 @@ function setCaretAt(
 	x: number,
 	y: number,
 ): void {
-	const lift = painter[kLayout].isInFixedSpace(element)
-		? painter[kFramebuffer].scrollTop
+	const lift = painter.layout.isInFixedSpace(element)
+		? painter.framebuffer.scrollTop
 		: 0;
 	ctx.setCaret(x, y + lift);
 }
@@ -1251,7 +1238,7 @@ function paintMember(
 		paintAtomic(painter, element, leaf.leaf, {...leaf.rect, height}, ctx);
 		return;
 	}
-	if (painter[kLayout].hoistedToLayer(element)) {
+	if (painter.layout.hoistedToLayer(element)) {
 		return;
 	}
 	paintInline(painter, element, run, ctx);
@@ -1568,7 +1555,7 @@ function paintText(
 	if (fragments === undefined || !textNode.data) {
 		return;
 	}
-	painter[kPaintedText].set(textNode, fragments);
+	painter.paintedText.set(textNode, fragments);
 	// The flat-tree parent. Slotted text inherits through the slot, not
 	// the host.
 	const parentElement = flatParentElement(textNode);
@@ -1633,12 +1620,12 @@ function renderOutsideMarker(
 		return;
 	}
 
-	if (painter[kRenderedOutsideMarkers].has(element)) {
+	if (painter.renderedOutsideMarkers.has(element)) {
 		return;
 	}
-	painter[kRenderedOutsideMarkers].add(element);
+	painter.renderedOutsideMarkers.add(element);
 
-	const markerContent = painter[kCascade].getMarkerContent(element);
+	const markerContent = painter.cascade.getMarkerContent(element);
 	if (!markerContent) {
 		return;
 	}
@@ -1689,15 +1676,15 @@ function renderEditingCaret(
 	element: Element,
 	ctx: CellContext,
 ): void {
-	const point = getEditingCaretPoint(painter[kDocument]);
+	const point = getEditingCaretPoint(painter.document);
 	if (
 		point === null ||
 		!element.contains(point.node) ||
-		painter[kDocument].getSelection()?.isCollapsed === false
+		painter.document.getSelection()?.isCollapsed === false
 	) {
 		return;
 	}
-	const rect = painter[kLayout].getCaretRect(point.node, point.offset);
+	const rect = painter.layout.getCaretRect(point.node, point.offset);
 	if (rect !== null) {
 		setCaretAt(painter, element, ctx, Math.round(rect.x), Math.round(rect.y));
 		return;
@@ -1705,7 +1692,7 @@ function renderEditingCaret(
 	const box = point.node.nodeType === point.node.ELEMENT_NODE
 		? (point.node as Element)
 		: (flatParentElement(point.node) ?? element);
-	const content = painter[kLayout].contentRect(box);
+	const content = painter.layout.contentRect(box);
 	if (content) {
 		setCaretAt(
 			painter,
@@ -1725,7 +1712,7 @@ function renderMath(
 	rect: Rect,
 	ctx: CellContext,
 ): void {
-	const box = painter[kLayout].getMathBox(element);
+	const box = painter.layout.getMathBox(element);
 	const boxModel = getBoxModel(element);
 	const contentWidth =
 		Math.round(rect.width) -
@@ -1780,7 +1767,7 @@ function getMathCellStyle(
 	let style = cell.style;
 	const covers = (from: number, to: number): boolean =>
 		from <= source.offset && source.offset < to;
-	for (const run of painter[kHighlightedText].get(source.node) ?? []) {
+	for (const run of painter.highlightedText.get(source.node) ?? []) {
 		if (covers(run.from, run.to)) {
 			const paint = getHighlightStyle(painter, parent, run.name);
 			if (paint !== null) {
@@ -1831,7 +1818,7 @@ function getPositionedClip(
 		const overflowX = getUsedOverflow(ancestor, "x");
 		const overflowY = getUsedOverflow(ancestor, "y");
 		if (isClippingOverflow(overflowX) || isClippingOverflow(overflowY)) {
-			const rect = painter[kLayout].getRect(ancestor);
+			const rect = painter.layout.getRect(ancestor);
 			if (rect) {
 				clip = getOverflowClipRect(ancestor, rect, overflowX, overflowY, clip);
 			}
@@ -1853,10 +1840,7 @@ function getPaintSelectionRange(
 	painter: Painter,
 	textNode: Text,
 ): {from: number; to: number; selectionParent: Element} | null {
-	const textControl = getTextControlSelectionRange(
-		painter[kDocument],
-		textNode,
-	);
+	const textControl = getTextControlSelectionRange(painter.document, textNode);
 	if (textControl) {
 		const {range} = textControl;
 		if (range.endOffset <= range.startOffset) {
@@ -1870,7 +1854,7 @@ function getPaintSelectionRange(
 		};
 	}
 
-	const selection = painter[kWindow].getSelection();
+	const selection = painter.window.getSelection();
 	if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
 		return null;
 	}
@@ -1882,7 +1866,7 @@ function getPaintSelectionRange(
 	if (!selectionParent) {
 		return null;
 	}
-	if (!painter[kCascade].isSelectable(selectionParent)) {
+	if (!painter.cascade.isSelectable(selectionParent)) {
 		return null;
 	}
 	// ::selection resolves per parent.
@@ -1921,7 +1905,7 @@ function readHighlightStyle(
 	name: string,
 ): HighlightPaint | null {
 	const pseudo = `::highlight(${name})`;
-	const declared = painter[kCascade].declaredPseudoProperties(element, pseudo);
+	const declared = painter.cascade.declaredPseudoProperties(element, pseudo);
 	const parent = flatParentElement(element);
 	const inherited = parent === null
 		? null
@@ -2002,10 +1986,10 @@ function getHighlightStyle(
 	element: Element,
 	name: string,
 ): HighlightPaint | null {
-	let byName = painter[kHighlightStyles].get(element);
+	let byName = painter.highlightStyles.get(element);
 	if (byName === undefined) {
 		byName = new Map<string, HighlightPaint | null>();
-		painter[kHighlightStyles].set(element, byName);
+		painter.highlightStyles.set(element, byName);
 	}
 	let paint = byName.get(name);
 	if (paint === undefined) {
@@ -2090,13 +2074,13 @@ function renderTextHighlights(
 ): void {
 	const layers: HighlightLayer[] = [];
 	const parent = flatParentElement(textNode);
-	const runs = painter[kHighlightedText].get(textNode);
+	const runs = painter.highlightedText.get(textNode);
 	if (parent !== null && runs !== undefined) {
 		for (const run of runs) {
 			const paint = getHighlightStyle(painter, parent, run.name);
 			if (paint !== null) {
 				layers.push({
-					...painter[kLayout].snapToClusters(textNode, run.from, run.to),
+					...painter.layout.snapToClusters(textNode, run.from, run.to),
 					paint,
 				});
 			}
@@ -2107,11 +2091,7 @@ function renderTextHighlights(
 		const paint = readSelectionStyle(selected.selectionParent);
 		if (paint !== null) {
 			layers.push({
-				...painter[kLayout].snapToClusters(
-					textNode,
-					selected.from,
-					selected.to,
-				),
+				...painter.layout.snapToClusters(textNode, selected.from, selected.to),
 				paint,
 			});
 		}
@@ -2129,7 +2109,7 @@ function renderTextHighlights(
 		if (style === textStyle) {
 			continue;
 		}
-		for (const run of painter[kLayout].getTextSpans(textNode, from, to)) {
+		for (const run of painter.layout.getTextSpans(textNode, from, to)) {
 			ctx.drawText(
 				applyTextTransform(run.text, textTransform),
 				run.rect.x,
