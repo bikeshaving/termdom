@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {getBoxModel} from "../src/internal/cssom.ts";
+import {getBoxModel, getDeclaredDisplay} from "../src/internal/cssom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 async function mount(html: string): Promise<{dom: TermDOM; document: any}> {
@@ -84,6 +84,24 @@ test("the box model follows an inherited font size its lengths are in", async ()
 	dom.dispose();
 });
 
+test("the declared display follows a class and an edited stylesheet", async () => {
+	const {dom, document} = await mount(
+		"<style id=s>.row { display: flex }</style><span id=a>a</span>",
+	);
+	const a = document.getElementById("a");
+	expect(getDeclaredDisplay(a)).toBe("inline");
+	a.className = "row";
+	await nextFrame(dom);
+	expect(getDeclaredDisplay(a)).toBe("flex");
+	document.getElementById("s").textContent = ".row { display: grid }";
+	await nextFrame(dom);
+	expect(getDeclaredDisplay(a)).toBe("grid");
+	a.removeAttribute("class");
+	await nextFrame(dom);
+	expect(getDeclaredDisplay(a)).toBe("inline");
+	dom.dispose();
+});
+
 test("a list marker's color follows its ::marker rule", async () => {
 	const {dom, document} = await mount(
 		"<style id=s>li::marker { color: rgb(0, 128, 0) }</style><ul><li>item</li></ul>",
@@ -103,5 +121,20 @@ test("a list marker's color follows its ::marker rule", async () => {
 		"li::marker { color: rgb(0, 0, 255) }";
 	await nextFrame(dom);
 	expect(bulletColor()).toContain("38;2;0;0;255");
+	dom.dispose();
+});
+
+test("a list marker's text follows a ::marker rule added after the first frame", async () => {
+	const {dom, document} =
+		await mount("<style id=s></style><ul><li>item</li></ul>");
+	expect(dom.renderANSI()).toContain("•");
+	document.getElementById("s").textContent = "li::marker { content: '> ' }";
+	await nextFrame(dom);
+	expect(dom.renderANSI()).toContain("> item");
+	document.getElementById("s").textContent =
+		"ul li::marker { content: '- ' } li::marker { content: '* ' } " +
+		"@layer a { ul li::marker { content: '+ ' } }";
+	await nextFrame(dom);
+	expect(dom.renderANSI()).toContain("- item");
 	dom.dispose();
 });
