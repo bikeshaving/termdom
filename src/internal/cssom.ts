@@ -1697,6 +1697,27 @@ class CSSStyleRule extends CSSGroupingRule {
 	}
 }
 
+// A sheet opens with @layer statements, then @import rules, then
+// @namespace rules, and either of the last two anywhere else is dropped,
+// as css-cascade-5 and css-namespaces-3 place them.
+const PRELUDE_LAYERS = 0;
+const PRELUDE_IMPORTS = 1;
+const PRELUDE_NAMESPACES = 2;
+const PRELUDE_OVER = 3;
+
+function getPreludeStage(rule: CSSRule): number {
+	if (rule instanceof CSSLayerStatementRule) {
+		return PRELUDE_LAYERS;
+	}
+	if (rule instanceof CSSImportRule) {
+		return PRELUDE_IMPORTS;
+	}
+	if (rule instanceof CSSNamespaceRule) {
+		return PRELUDE_NAMESPACES;
+	}
+	return PRELUDE_OVER;
+}
+
 function getSheetNamespaces(
 	sheet: CSSStyleSheet | null,
 ): SelectorNamespaces | undefined {
@@ -1704,7 +1725,10 @@ function getSheetNamespaces(
 		return undefined;
 	}
 	const namespaces: SelectorNamespaces = {default: null, prefixes: new Map()};
-	for (const rule of Array.from(sheet.cssRules)) {
+	for (const rule of sheet.cssRules) {
+		if (getPreludeStage(rule) === PRELUDE_OVER) {
+			break;
+		}
 		if (!(rule instanceof CSSNamespaceRule)) {
 			continue;
 		}
@@ -3275,6 +3299,7 @@ function convertRules(
 			run = [];
 		}
 	};
+	let stage = PRELUDE_LAYERS;
 	for (const node of nodes) {
 		if (node.type === "Declaration") {
 			if (nestedContext) {
@@ -3286,6 +3311,15 @@ function convertRules(
 		const rule = convertRule(node, source, sheet, parentRule, namespaces);
 		if (!rule) {
 			continue;
+		}
+		const ruleStage = getPreludeStage(rule);
+		if (ruleStage !== PRELUDE_LAYERS && ruleStage !== PRELUDE_OVER) {
+			if (parentRule !== null || ruleStage < stage) {
+				continue;
+			}
+			stage = ruleStage;
+		} else if (stage !== PRELUDE_LAYERS || ruleStage === PRELUDE_OVER) {
+			stage = PRELUDE_OVER;
 		}
 		if (rule instanceof CSSNamespaceRule) {
 			if (rule.prefix === "") {
