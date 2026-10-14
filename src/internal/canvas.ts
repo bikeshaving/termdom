@@ -428,85 +428,76 @@ interface Subpath {
 
 const kSubpaths = Symbol("subpaths");
 
-const kLast = Symbol("last");
-const kStart = Symbol("start");
-const kCurrent = Symbol("current");
-const kEmit = Symbol("emit");
-const kEnsure = Symbol("ensure");
-const kSegments = Symbol("segments");
-
-interface PathBuilder {
-	[kSubpaths]: Subpath[];
-	[kLast]: [number, number] | null;
-	[kStart]: [number, number] | null;
-}
-
 class PathBuilder {
+	subpaths: Subpath[];
+	last: [number, number] | null;
+	start: [number, number] | null;
+
 	// The last point, in the space the caller writes coordinates in.
 	transform: Matrix;
 
 	constructor() {
-		this[kSubpaths] = [];
-		this[kLast] = null;
-		this[kStart] = null;
+		this.subpaths = [];
+		this.last = null;
+		this.start = null;
 		this.transform = [1, 0, 0, 1, 0, 0];
 	}
 
 	clear(): void {
-		this[kSubpaths] = [];
-		this[kLast] = null;
-		this[kStart] = null;
+		this.subpaths = [];
+		this.last = null;
+		this.start = null;
 	}
 
 	moveTo(x: number, y: number): void {
 		if (!isFiniteAll(x, y)) {
 			return;
 		}
-		this[kSubpaths].push({points: [], closed: false});
-		this[kEmit](x, y);
-		this[kLast] = [x, y];
-		this[kStart] = [x, y];
+		this.subpaths.push({points: [], closed: false});
+		this.emit(x, y);
+		this.last = [x, y];
+		this.start = [x, y];
 	}
 
 	lineTo(x: number, y: number): void {
 		if (!isFiniteAll(x, y)) {
 			return;
 		}
-		if (this[kLast] === null) {
+		if (this.last === null) {
 			this.moveTo(x, y);
 			return;
 		}
-		this[kEmit](x, y);
-		this[kLast] = [x, y];
+		this.emit(x, y);
+		this.last = [x, y];
 	}
 
 	closePath(): void {
-		const current = this[kCurrent]();
-		if (current === null || this[kStart] === null) {
+		const current = this.current();
+		if (current === null || this.start === null) {
 			return;
 		}
 		current.closed = true;
-		this[kLast] = this[kStart];
+		this.last = this.start;
 	}
 
 	quadraticCurveTo(cx: number, cy: number, x: number, y: number): void {
 		if (!isFiniteAll(cx, cy, x, y)) {
 			return;
 		}
-		this[kEnsure](cx, cy);
-		const [x0, y0] = this[kLast]!;
-		const n = this[kSegments](
+		this.ensure(cx, cy);
+		const [x0, y0] = this.last!;
+		const n = this.segments(
 			Math.hypot(cx - x0, cy - y0) + Math.hypot(x - cx, y - cy),
 		);
 		for (let i = 1; i <= n; i++) {
 			const t = i / n;
 			const u = 1 - t;
-			this[kEmit](
+			this.emit(
 				u * u * x0 + 2 * u * t * cx + t * t * x,
 				u * u * y0 + 2 * u * t * cy + t * t * y,
 			);
 		}
-		this[kLast] = [x, y];
+		this.last = [x, y];
 	}
 
 	bezierCurveTo(
@@ -520,9 +511,9 @@ class PathBuilder {
 		if (!isFiniteAll(c1x, c1y, c2x, c2y, x, y)) {
 			return;
 		}
-		this[kEnsure](c1x, c1y);
-		const [x0, y0] = this[kLast]!;
-		const n = this[kSegments](
+		this.ensure(c1x, c1y);
+		const [x0, y0] = this.last!;
+		const n = this.segments(
 			Math.hypot(c1x - x0, c1y - y0) +
 				Math.hypot(c2x - c1x, c2y - c1y) +
 				Math.hypot(x - c2x, y - c2y),
@@ -530,7 +521,7 @@ class PathBuilder {
 		for (let i = 1; i <= n; i++) {
 			const t = i / n;
 			const u = 1 - t;
-			this[kEmit](
+			this.emit(
 				u * u * u * x0 +
 				3 * u * u * t * c1x +
 				3 * u * t * t * c2x +
@@ -541,7 +532,7 @@ class PathBuilder {
 				t * t * t * y,
 			);
 		}
-		this[kLast] = [x, y];
+		this.last = [x, y];
 	}
 
 	ellipse(
@@ -584,16 +575,16 @@ class PathBuilder {
 			return [x + px * cos - py * sin, y + px * sin + py * cos];
 		};
 		const [sx, sy] = at(start);
-		if (this[kLast] === null) {
+		if (this.last === null) {
 			this.moveTo(sx, sy);
 		} else {
 			this.lineTo(sx, sy);
 		}
-		const n = this[kSegments](Math.abs(sweep) * Math.max(rx, ry));
+		const n = this.segments(Math.abs(sweep) * Math.max(rx, ry));
 		for (let i = 1; i <= n; i++) {
 			const [px, py] = at(start + (sweep * i) / n);
-			this[kEmit](px, py);
-			this[kLast] = [px, py];
+			this.emit(px, py);
+			this.last = [px, py];
 		}
 	}
 
@@ -615,8 +606,8 @@ class PathBuilder {
 		if (radius < 0) {
 			throw domException("IndexSizeError", "The radius is negative");
 		}
-		this[kEnsure](x1, y1);
-		const [x0, y0] = this[kLast]!;
+		this.ensure(x1, y1);
+		const [x0, y0] = this.last!;
 		const ax = x0 - x1;
 		const ay = y0 - y1;
 		const bx = x2 - x1;
@@ -728,40 +719,40 @@ class PathBuilder {
 				const [x, y] = apply(matrix, subpath.points[i], subpath.points[i + 1]);
 				points.push(x, y);
 			}
-			this[kSubpaths].push({points, closed: subpath.closed});
+			this.subpaths.push({points, closed: subpath.closed});
 		}
-		const last = this[kSubpaths].at(-1);
+		const last = this.subpaths.at(-1);
 		if (last && last.points.length >= 2) {
-			this[kLast] = [last.points.at(-2)!, last.points.at(-1)!];
+			this.last = [last.points.at(-2)!, last.points.at(-1)!];
 		}
 	}
 
-	[kCurrent](): Subpath | null {
-		return this[kSubpaths].at(-1) ?? null;
+	current(): Subpath | null {
+		return this.subpaths.at(-1) ?? null;
 	}
 
-	[kEmit](x: number, y: number): void {
-		let current = this[kCurrent]();
+	emit(x: number, y: number): void {
+		let current = this.current();
 		// A segment after closePath() starts a new subpath where the closed
 		// one started.
 		if (current === null || current.closed) {
 			current = {points: [], closed: false};
-			this[kSubpaths].push(current);
-			if (this[kLast] !== null) {
-				current.points.push(...apply(this.transform, ...this[kLast]));
+			this.subpaths.push(current);
+			if (this.last !== null) {
+				current.points.push(...apply(this.transform, ...this.last));
 			}
 		}
 		const [dx, dy] = apply(this.transform, x, y);
 		current.points.push(dx, dy);
 	}
 
-	[kEnsure](x: number, y: number): void {
-		if (this[kLast] === null) {
+	ensure(x: number, y: number): void {
+		if (this.last === null) {
 			this.moveTo(x, y);
 		}
 	}
 
-	[kSegments](length: number): number {
+	segments(length: number): number {
 		const scale =
 			Math.sqrt(
 				Math.abs(
@@ -798,14 +789,14 @@ export class Path2D {
 		const slots = _(this);
 		slots.builder = new PathBuilder();
 		if (path instanceof Path2D) {
-			slots.builder.append(_(path).builder[kSubpaths], [1, 0, 0, 1, 0, 0]);
+			slots.builder.append(_(path).builder.subpaths, [1, 0, 0, 1, 0, 0]);
 		} else if (typeof path === "string") {
 			parseSVGPath(path, this);
 		}
 	}
 
 	get [kSubpaths](): Subpath[] {
-		return (this as unknown as Slots<Path2D>).builder[kSubpaths];
+		return (this as unknown as Slots<Path2D>).builder.subpaths;
 	}
 
 	addPath(path: Path2D, transform?: Partial<CanvasMatrix>): void {
@@ -817,7 +808,7 @@ export class Path2D {
 			transform?.e ?? 0,
 			transform?.f ?? 0,
 		];
-		_(this).builder.append(_(path).builder[kSubpaths], m);
+		_(this).builder.append(_(path).builder.subpaths, m);
 	}
 
 	moveTo(x: number, y: number): void {
@@ -2483,11 +2474,7 @@ export class CanvasRenderingContext2D {
 		builder.rect(x, y, w, h);
 		const bitmap = slots.host.bitmap();
 		const mask = rasterize(
-			strokePolygons(
-				builder[kSubpaths],
-				slots[kStrokeStyle](),
-				slots[kScale](),
-			),
+			strokePolygons(builder.subpaths, slots[kStrokeStyle](), slots[kScale]()),
 			bitmap.width,
 			bitmap.height,
 			"nonzero",
@@ -2588,7 +2575,7 @@ export class CanvasRenderingContext2D {
 		builder.transform = slots.state.transform;
 		builder.rect(dx, dy, dw, dh);
 		const mask = rasterize(
-			pathPolygons(builder[kSubpaths]),
+			pathPolygons(builder.subpaths),
 			target.width,
 			target.height,
 			"nonzero",
@@ -2854,11 +2841,11 @@ export class CanvasRenderingContext2D {
 	): Subpath[] {
 		const slots = this;
 		if (path === undefined) {
-			return slots.path[kSubpaths];
+			return slots.path.subpaths;
 		}
 		const builder = new PathBuilder();
 		builder.append(_(path)[kSubpaths], slots.state.transform);
-		return builder[kSubpaths];
+		return builder.subpaths;
 	}
 
 	[kReadPathArgs](
@@ -2909,7 +2896,7 @@ export class CanvasRenderingContext2D {
 		builder.rect(x, y, w, h);
 		const bitmap = slots.host.bitmap();
 		return rasterize(
-			pathPolygons(builder[kSubpaths]),
+			pathPolygons(builder.subpaths),
 			bitmap.width,
 			bitmap.height,
 			"nonzero",
