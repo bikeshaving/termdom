@@ -7,19 +7,26 @@ import {TermDOM} from "@b9g/termdom";
 //             glyphs and a translucent black fillRect over everything to fade
 //   dom       a <pre> of one <span> per cell, recolored as the rain falls
 //
-// Usage: matrix-rain.ts [cellgrid|2d|dom] [frames per second] [shades].
-// With 1 shade the trails are one green, as cmatrix draws them. q quits.
+// Usage: matrix-rain.ts [cellgrid|2d|dom] [fps] [shades] [katakana|ascii]
+//
+// With 1 shade the trails are one green, as cmatrix draws them. ascii
+// draws letters and digits, which every terminal font has; a terminal
+// that finds katakana in a fallback font can draw them far slower. q quits.
+const usage =
+  "Usage: matrix-rain.ts [cellgrid|2d|dom] [fps] [shades] [katakana|ascii]";
 const mode = process.argv[2] ?? "cellgrid";
 const fps = Number(process.argv[3]) || 30;
 const LEVELS = 1 + Math.max(1, Number(process.argv[4]) || 15);
-if (!["cellgrid", "2d", "dom"].includes(mode)) {
-  console.error(
-    "Usage: matrix-rain.ts [cellgrid|2d|dom] [frames per second] [shades]",
-  );
+const glyphSet = process.argv[5] ?? "katakana";
+if (
+  !["cellgrid", "2d", "dom"].includes(mode) ||
+  !["katakana", "ascii"].includes(glyphSet)
+) {
+  console.error(usage);
   process.exit(1);
 }
 
-const term = new TermDOM({colorDepth: "rgb"});
+const term = new TermDOM();
 term.attach();
 const {document, window} = term;
 
@@ -32,11 +39,15 @@ document.head.innerHTML = `
 `;
 
 // Half-width katakana, digits and a few symbols, as in the film.
-const GLYPHS = [
-  ...Array.from({length: 0xff9d - 0xff66 + 1}, (_, i) =>
-    String.fromCharCode(0xff66 + i)),
-  ..."0123456789:.=*+-<>¦|",
-];
+const GLYPHS = glyphSet === "ascii"
+  ? [
+    ..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$+-*=<>:.",
+  ]
+  : [
+    ...Array.from({length: 0xff9d - 0xff66 + 1}, (_, i) =>
+      String.fromCharCode(0xff66 + i)),
+    ..."0123456789:.=*+-<>¦|",
+  ];
 const glyph = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
 
 // Brightness from 0 (gone) to LEVELS - 1 (just behind the head), each
@@ -219,7 +230,21 @@ if (mode === "cellgrid") {
   };
 }
 
-window.setInterval(() => draw(), 1000 / fps);
+// Each step waits for the terminal to take the frame before, as cmatrix
+// waits on its writes. Steps on a fixed timer would keep the rain falling
+// while a slow terminal fell behind, and every frame it did take would
+// repaint nearly the whole screen.
+let last = 0;
+
+function tick(now: number): void {
+  window.requestAnimationFrame(tick);
+  if (now - last >= 1000 / fps - 1) {
+    last = now;
+    draw();
+  }
+}
+
+window.requestAnimationFrame(tick);
 
 document.addEventListener("keydown", (event) => {
   if ((event as KeyboardEvent).key === "q") {
