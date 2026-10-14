@@ -45,7 +45,10 @@ import {
 	isButtonInput,
 	isDocumentElement,
 	isUAShadowTree,
+	localNameOf,
 	MATHML_NAMESPACE,
+	nodeTypeOf,
+	ownerDocumentOf,
 	pseudoElement,
 	pseudoElementCount,
 	releaseRemovedNodes,
@@ -3622,7 +3625,7 @@ const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
 // A bare fragment is a document fragment too and hosts nothing, which
 // is what separates it from a tree some element composes.
 function isShadowRoot(root: Node): root is ShadowRoot {
-	return root.nodeType === 11 && (root as ShadowRoot).host !== undefined;
+	return nodeTypeOf(root) === 11 && (root as ShadowRoot).host !== undefined;
 }
 
 function getSheet(element: Element): CSSStyleSheet {
@@ -3674,7 +3677,7 @@ function getShadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 }
 
 function getTreeCascade(tree: Node): Cascade | undefined {
-	const document = tree.nodeType === tree.DOCUMENT_NODE
+	const document = nodeTypeOf(tree) === tree.DOCUMENT_NODE
 		? (tree as Document)
 		: tree.ownerDocument;
 	return document ? documentCascades.get(document) : undefined;
@@ -3857,14 +3860,15 @@ export function getComputedValue(
 	const host = getPseudoHost(element);
 	if (host !== null) {
 		const name = getPseudoName(element) as string;
-		const cascade = host.ownerDocument
-			? documentCascades.get(host.ownerDocument)
+		const hostDocument = ownerDocumentOf(host);
+		const cascade = hostDocument
+			? documentCascades.get(hostDocument)
 			: undefined;
 		return cascade
 			? getPseudoDeclaration(cascade, host, name).nodeValue(property)
 			: getComputedValue(host, property, name);
 	}
-	const document = element.ownerDocument;
+	const document = ownerDocumentOf(element);
 	if (!document) {
 		return "";
 	}
@@ -5141,7 +5145,7 @@ const declaredDisplays = new WeakMap<ComputedStyleDeclaration, string>();
  * display, blockified.
  */
 export function getDeclaredDisplay(element: Element): string {
-	const document = element.ownerDocument;
+	const document = ownerDocumentOf(element);
 	const cascade = document ? documentCascades.get(document) : undefined;
 	if (getPseudoHost(element) !== null || cascade === undefined) {
 		return getComputedValue(element, "display");
@@ -6117,7 +6121,7 @@ function isStyleElement(element: Element): boolean {
 function mutationChangesListItems(mutation: MutationRecord): boolean {
 	const target = mutation.target;
 	if (
-		target.nodeType === 1 &&
+		nodeTypeOf(target) === 1 &&
 		((target as Element).tagName === "UL" ||
 			(target as Element).tagName === "OL")
 	) {
@@ -6125,7 +6129,7 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 	}
 	for (const list of [getAddedNodes(mutation), getRemovedNodes(mutation)]) {
 		for (const node of list) {
-			if (node.nodeType !== 1) {
+			if (nodeTypeOf(node) !== 1) {
 				continue;
 			}
 			const element = node as Element;
@@ -6401,7 +6405,7 @@ export class Cascade {
 		if (this.hasRulesExist) {
 			const anchors = new Set<Element>();
 			for (const mutation of mutations) {
-				const start = mutation.target.nodeType === 1
+				const start = nodeTypeOf(mutation.target) === 1
 					? (mutation.target as Element)
 					: mutation.target.parentElement;
 				for (
@@ -6449,7 +6453,7 @@ export class Cascade {
 				}
 
 				for (const node of getAddedNodes(mutation)) {
-					if (node.nodeType === Node.ELEMENT_NODE) {
+					if (nodeTypeOf(node) === Node.ELEMENT_NODE) {
 						const element = node as Element;
 						if (isStyleElement(element)) {
 							const addedRoot = element.tagName === "STYLE"
@@ -6476,7 +6480,7 @@ export class Cascade {
 				}
 
 				for (const node of getRemovedNodes(mutation)) {
-					if (node.nodeType === Node.ELEMENT_NODE) {
+					if (nodeTypeOf(node) === Node.ELEMENT_NODE) {
 						const element = node as Element;
 						if (isStyleElement(element)) {
 							shouldSyncStylesheets = true;
@@ -6490,7 +6494,7 @@ export class Cascade {
 				// per parent per batch: appending n children one at a time
 				// is n records against the same parent.
 				if (
-					mutation.target.nodeType === Node.ELEMENT_NODE &&
+					nodeTypeOf(mutation.target) === Node.ELEMENT_NODE &&
 					getSiblingIndex(this, mutation.target as Element)?.reachesSiblings
 				) {
 					changedParents.add(mutation.target as Element);
@@ -6777,7 +6781,7 @@ export class Cascade {
 
 	/** The text a list item's marker draws, or null when it draws none. */
 	getMarkerContent(hostElement: Element): string | null {
-		if (!hostElement || hostElement.nodeType !== hostElement.ELEMENT_NODE) {
+		if (!hostElement || nodeTypeOf(hostElement) !== hostElement.ELEMENT_NODE) {
 			return null;
 		}
 
@@ -8545,7 +8549,7 @@ function isPaintOnlyChange(
 // mutationChangesListItems for why this lives in the cascade.
 function invalidateEnclosingList(cascade: Cascade, target: Node): void {
 	let element: Element | null =
-		target.nodeType ===
+		nodeTypeOf(target) ===
 		cascade.window.Node.ELEMENT_NODE
 			? (target as Element)
 			: target.parentElement;
@@ -9978,7 +9982,7 @@ function isRuleMatch(
 			return false;
 		}
 	} else if (rule.subjectTag !== undefined && !rule.reachesHost) {
-		const local = element.localName;
+		const local = localNameOf(element);
 		// A foreign element's local name keeps its case (feGaussianBlur), so
 		// the rejection fires only when neither reading matches. The matcher
 		// decides the case sensitivity a selector really has.

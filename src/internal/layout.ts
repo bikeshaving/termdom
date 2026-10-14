@@ -37,6 +37,7 @@ import {
 	isInFlatTree,
 	isModalDialog,
 	isShadowIncludingAncestor,
+	nodeTypeOf,
 	pseudoElementCount,
 	renderedTopLayer,
 	type Window,
@@ -112,7 +113,7 @@ export function isPositioned(element: Element): boolean {
 // Unless an ancestor contains it, fixed is approximated as absolute
 // against the initial containing block.
 function isOutOfFlow(node: Node): boolean {
-	if (node.nodeType !== node.ELEMENT_NODE) {
+	if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
 		return false;
 	}
 	const position = getPosition(node as Element);
@@ -279,10 +280,10 @@ function getUsedDisplay(element: Element): Display {
 }
 
 function isInlineLevel(node: Node): boolean {
-	if (node.nodeType === node.TEXT_NODE) {
+	if (nodeTypeOf(node) === node.TEXT_NODE) {
 		return true;
 	}
-	if (node.nodeType !== node.ELEMENT_NODE) {
+	if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
 		return false;
 	}
 	return isInlineDisplay(getUsedDisplay(node as Element));
@@ -335,7 +336,7 @@ function isSplitAroundBlock(element: Element): boolean {
 
 function hasBlockLevelBox(element: Element): boolean {
 	for (const child of flowContent(element)) {
-		if (child.nodeType !== child.ELEMENT_NODE) {
+		if (nodeTypeOf(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
 		const childElement = child as Element;
@@ -549,7 +550,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 		step: (from: Node) => Node | null,
 	): Node | null => {
 		let current = node;
-		while (current && current.nodeType === current.COMMENT_NODE) {
+		while (current && nodeTypeOf(current) === current.COMMENT_NODE) {
 			current = step(current);
 		}
 		return current;
@@ -567,7 +568,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 	// white space beside one has nothing to sit next to, as if it were not
 	// written.
 	const isBlockLevel = (node: Node | null): boolean => {
-		if (!node || node.nodeType !== node.ELEMENT_NODE) {
+		if (!node || nodeTypeOf(node) !== node.ELEMENT_NODE) {
 			return false;
 		}
 		return !isInlineDisplay(getUsedDisplay(node as Element));
@@ -600,13 +601,13 @@ function isSuppressedFlexWhitespace(text: Text): boolean {
 		return false;
 	}
 	for (let node: Node | null = text; node; node = node.nextSibling) {
-		if (node.nodeType === node.TEXT_NODE) {
+		if (nodeTypeOf(node) === node.TEXT_NODE) {
 			if (!COLLAPSIBLE_ONLY.test((node as Text).data)) {
 				return false;
 			}
 			continue;
 		}
-		if (node.nodeType !== node.ELEMENT_NODE) {
+		if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
 			continue;
 		}
 		// USED display. A blockified item opens a box of its own
@@ -1655,7 +1656,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	let run: Box | null = null;
 	box.holdsFragments = false;
 	for (const child of flowChildren(layout, container)) {
-		if (child.nodeType === child.ELEMENT_NODE) {
+		if (nodeTypeOf(child) === child.ELEMENT_NODE) {
 			const element = child as Element;
 			if (getLayoutDisplay(element) === "none" || isOutOfFlow(element)) {
 				// Named here so the one path that builds a box reaches them.
@@ -1675,7 +1676,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 				run = null;
 				continue;
 			}
-		} else if (child.nodeType !== child.TEXT_NODE) {
+		} else if (nodeTypeOf(child) !== child.TEXT_NODE) {
 			continue;
 		} else if (isSuppressedFlexWhitespace(child as Text)) {
 			continue;
@@ -1800,7 +1801,7 @@ function getBoxEntry(layout: Layout, node: Node): Box | null {
 		return null;
 	}
 
-	if (node.nodeType === node.ELEMENT_NODE) {
+	if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 		const element = node as Element;
 		// USED display. An out-of-flow element heads no run and joins none.
 		// When run invalidation gave it a bare layout node, later rebuilds
@@ -1809,7 +1810,7 @@ function getBoxEntry(layout: Layout, node: Node): Box | null {
 		if (!isInlineLevel(element)) {
 			return null;
 		}
-	} else if (node.nodeType !== node.TEXT_NODE) {
+	} else if (nodeTypeOf(node) !== node.TEXT_NODE) {
 		return null;
 	}
 
@@ -1894,7 +1895,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 			// block, a run is an anonymous box, which takes nothing from the
 			// element it starts with.
 			const styledFrom =
-				entry.head.nodeType === entry.head.ELEMENT_NODE &&
+				nodeTypeOf(entry.head) === entry.head.ELEMENT_NODE &&
 				hasItemChildren(getLayoutDisplay(container))
 					? (entry.head as Element)
 					: null;
@@ -1971,7 +1972,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 // written among them.
 function syncRunMembers(layout: Layout, run: Box): void {
 	for (const member of run.members) {
-		if (member.nodeType !== member.ELEMENT_NODE) {
+		if (nodeTypeOf(member) !== member.ELEMENT_NODE) {
 			continue;
 		}
 		const element = member as Element;
@@ -2002,7 +2003,7 @@ function getRunContainer(layout: Layout, node: Node): Element | null {
 		return null;
 	}
 	const startsOwnRun =
-		node.nodeType === node.ELEMENT_NODE && !isInlineBox(node as Element);
+		nodeTypeOf(node) === node.ELEMENT_NODE && !isInlineBox(node as Element);
 	return getRunContainerFromParent(layout, parent, startsOwnRun);
 }
 
@@ -2065,7 +2066,7 @@ function addNode(
 	// sweeps must not bring descendants back in under it.
 	if (isHiddenByAncestor(node)) {
 		dropLayoutNode(layout, node);
-		if (node.nodeType === node.ELEMENT_NODE) {
+		if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 			dropHiddenContent(layout, node as Element);
 		}
 		return;
@@ -2074,7 +2075,7 @@ function addNode(
 	// A rebuild must not resurrect a stale box from an earlier display
 	// value. A display:contents element's children re-add as the box
 	// parent's own.
-	if (node.nodeType === node.ELEMENT_NODE && isDisplayContents(node)) {
+	if (nodeTypeOf(node) === node.ELEMENT_NODE && isDisplayContents(node)) {
 		dropLayoutNode(layout, node);
 		// The container learns of the dissolved children only by enumerating.
 		const container = getRunContainer(layout, node);
@@ -2122,7 +2123,7 @@ function addNode(
 			(known !== undefined ? known : getBox(layout, node))
 		) {
 			dropLayoutNode(layout, node);
-			if (node.nodeType === node.ELEMENT_NODE) {
+			if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 				addElementNode(layout, node as Element, parentLayoutNode, known);
 			} else {
 				addTextNode(layout, node as Text, parentLayoutNode, known);
@@ -2132,7 +2133,7 @@ function addNode(
 		// Reuse is only sound while the node is the same KIND of box. A run
 		// member flipped out of flow keeps a run measure that skips out-of-flow
 		// boxes, measures 0x0, and silently vanishes.
-		if (existingLayoutNode && node.nodeType === node.ELEMENT_NODE) {
+		if (existingLayoutNode && nodeTypeOf(node) === node.ELEMENT_NODE) {
 			const element = node as Element;
 			if (!isBoxKindMatch(layout, element, existingLayoutNode)) {
 				dropLayoutNode(layout, node);
@@ -2170,9 +2171,9 @@ function addNode(
 		return;
 	}
 
-	if (node.nodeType === node.ELEMENT_NODE) {
+	if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 		addElementNode(layout, node as Element, parentLayoutNode, known);
-	} else if (node.nodeType === node.TEXT_NODE) {
+	} else if (nodeTypeOf(node) === node.TEXT_NODE) {
 		addTextNode(layout, node as Text, parentLayoutNode, known);
 	}
 }
@@ -2262,8 +2263,8 @@ function addElementNode(
 		: null;
 	for (const child of flowContent(element)) {
 		if (
-			child.nodeType === child.ELEMENT_NODE ||
-			child.nodeType === child.TEXT_NODE
+			nodeTypeOf(child) === child.ELEMENT_NODE ||
+			nodeTypeOf(child) === child.TEXT_NODE
 		) {
 			let known: Box | null | undefined;
 			const entry = heads?.get(child);
@@ -2340,7 +2341,7 @@ function flowChildren(
 ): Node[] {
 	for (const child of flowContent(container)) {
 		into.push(child);
-		if (child.nodeType !== child.ELEMENT_NODE) {
+		if (nodeTypeOf(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
 		// Written on the way past. Paint culling asks per element per frame,
@@ -2408,8 +2409,8 @@ function syncIndependentFormattingContext(
 
 	for (const child of flowContent(element)) {
 		if (
-			child.nodeType === child.ELEMENT_NODE ||
-			child.nodeType === child.TEXT_NODE
+			nodeTypeOf(child) === child.ELEMENT_NODE ||
+			nodeTypeOf(child) === child.TEXT_NODE
 		) {
 			addNode(layout, child, root);
 		}
@@ -2445,7 +2446,7 @@ function dropHiddenContent(layout: Layout, element: Element): void {
 	}
 	for (const child of flatChildren(element)) {
 		dropLayoutNode(layout, child);
-		if (child.nodeType === child.ELEMENT_NODE) {
+		if (nodeTypeOf(child) === child.ELEMENT_NODE) {
 			dropHiddenContent(layout, child as Element);
 		}
 	}
@@ -2477,7 +2478,7 @@ function dropRunContent(layout: Layout, element: Element): void {
 	}
 	dropContainerBoxes(layout, element);
 	for (let node = flowNext(element, element, false); node !== null;) {
-		if (node.nodeType === node.ELEMENT_NODE) {
+		if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 			const child = node as Element;
 			if (isOutOfFlow(child)) {
 				addNode(layout, child, null);
@@ -2501,7 +2502,7 @@ function dropRunContent(layout: Layout, element: Element): void {
 // those elements are descended into.
 function dropSteppedOver(layout: Layout, parent: Element): void {
 	for (const child of flatChildren(parent)) {
-		if (child.nodeType !== child.ELEMENT_NODE) {
+		if (nodeTypeOf(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
 		const element = child as Element;
@@ -2637,7 +2638,7 @@ function untrackNode(layout: Layout, domNode: Node): void {
 		box.fragments = null;
 	}
 	layout.nodeMap.delete(domNode);
-	if (domNode.nodeType === domNode.ELEMENT_NODE) {
+	if (nodeTypeOf(domNode) === domNode.ELEMENT_NODE) {
 		layout.positionedElements.delete(domNode as Element);
 	}
 }
@@ -2647,7 +2648,7 @@ function untrackNode(layout: Layout, domNode: Node): void {
 function flatFirstRenderableChild(element: Element): Node | null {
 	for (const child of flowContent(element)) {
 		if (
-			child.nodeType === child.ELEMENT_NODE &&
+			nodeTypeOf(child) === child.ELEMENT_NODE &&
 			(getLayoutDisplay(child as Element) === "none" || isOutOfFlow(child))
 		) {
 			continue;
@@ -2714,7 +2715,7 @@ function invalidateChildDerivation(layout: Layout, parent: Element): void {
 
 function invalidateSubtreeDerivation(layout: Layout, node: Node): void {
 	invalidateBoxDerivation(layout, node);
-	if (node.nodeType !== node.ELEMENT_NODE) {
+	if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
 		return;
 	}
 	invalidateChildDerivation(layout, node as Element);
@@ -2727,7 +2728,7 @@ function invalidateSubtreeDerivation(layout: Layout, node: Node): void {
 	// question, and marking one that generates no box costs nothing.
 	for (const child of flatDescendants(node)) {
 		touch(layout, child);
-		if (child.nodeType === child.ELEMENT_NODE) {
+		if (nodeTypeOf(child) === child.ELEMENT_NODE) {
 			invalidateContainerDerivation(layout, child as Element);
 		}
 	}
@@ -2779,7 +2780,7 @@ function invalidateNode(layout: Layout, node: Node): void {
 
 	if (isInlineLevel(node)) {
 		invalidateInlineRun(layout, node);
-	} else if (node.nodeType === node.ELEMENT_NODE) {
+	} else if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 		const layoutNode = layout.nodeMap.get(node);
 		if (layoutNode) {
 			// The re-add sweep puts a node back under its parent element, and
@@ -3051,7 +3052,7 @@ function pushExitedEdges(
 		node = node === root ? null : flatParentElement(node)
 	) {
 		if (
-			node.nodeType === node.ELEMENT_NODE && hasInlineEdges(node as Element)
+			nodeTypeOf(node) === node.ELEMENT_NODE && hasInlineEdges(node as Element)
 		) {
 			pushEdge(leafNodes, node as Element, "end");
 		}
@@ -3247,7 +3248,7 @@ function measureInlineRun(
 // The <math> element a node is inside, itself included.
 function getEnclosingMath(node: Node): Element | null {
 	for (
-		let element: Element | null = node.nodeType === node.ELEMENT_NODE
+		let element: Element | null = nodeTypeOf(node) === node.ELEMENT_NODE
 			? (node as Element)
 			: node.parentElement; element !== null; element = element.parentElement
 	) {
@@ -3281,7 +3282,7 @@ function collectLeafNodes(
 			// content is among the members on its own. Walking into it too
 			// would lay that content out twice.
 			if (
-				member.nodeType === member.ELEMENT_NODE &&
+				nodeTypeOf(member) === member.ELEMENT_NODE &&
 				layout.boxes.get(member as Element)?.broken
 			) {
 				continue;
@@ -3311,7 +3312,9 @@ function collectLeafNodes(
 	// which is blockified and lays its own content out.
 	const parentDisplay = getLayoutDisplay(parentElement);
 	let traversalRoot: Node;
-	if (hasItemChildren(parentDisplay) && node.nodeType === node.ELEMENT_NODE) {
+	if (
+		hasItemChildren(parentDisplay) && nodeTypeOf(node) === node.ELEMENT_NODE
+	) {
 		traversalRoot = node;
 	} else {
 		let root: Element = parentElement;
@@ -3328,7 +3331,7 @@ function collectLeafNodes(
 	// Text directly inside a flex container is an anonymous item that ends
 	// at the first element, every element child being an item of its own.
 	const stopsAtFlexItems =
-		hasItemChildren(parentDisplay) && node.nodeType === node.TEXT_NODE;
+		hasItemChildren(parentDisplay) && nodeTypeOf(node) === node.TEXT_NODE;
 
 	collectLeaves(
 		layout,
@@ -3354,11 +3357,11 @@ function collectLeaves(
 	let cursor: Node | null = start;
 	while (cursor !== null) {
 		const node: Node = cursor;
-		if (stopsAtFlexItems && node.nodeType === node.ELEMENT_NODE) {
+		if (stopsAtFlexItems && nodeTypeOf(node) === node.ELEMENT_NODE) {
 			break;
 		}
 
-		if (node.nodeType === node.TEXT_NODE) {
+		if (nodeTypeOf(node) === node.TEXT_NODE) {
 			const textNode = node as Text;
 
 			if (textNode.textContent) {
@@ -3384,7 +3387,7 @@ function collectLeaves(
 			if (cursor === null) {
 				break;
 			}
-		} else if (node.nodeType === node.ELEMENT_NODE) {
+		} else if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 			const element = node as Element;
 			const display = getLayoutDisplay(element);
 
@@ -3802,7 +3805,7 @@ function breakNodes(
 	// Text properties come from what opens the box. A text node styles
 	// from its flat-tree parent.
 	const opener = source.head;
-	const styleElement = opener.nodeType === opener.TEXT_NODE
+	const styleElement = nodeTypeOf(opener) === opener.TEXT_NODE
 		? flatParentElement(opener)!
 		: (opener as Element);
 
@@ -4604,7 +4607,7 @@ function getLineStart(
 // and body, whose scroll is the document's and is applied once at paint.
 function getScrollOwner(layout: Layout, node: LayoutNode): Element | null {
 	const owner = node.owner as Node | undefined;
-	if (!owner || owner.nodeType !== owner.ELEMENT_NODE) {
+	if (!owner || nodeTypeOf(owner) !== owner.ELEMENT_NODE) {
 		return null;
 	}
 	const element = owner as Element;
@@ -4681,7 +4684,7 @@ function getStickyShift(
 	const parentX = x - node.result.left;
 	const parentY = y - node.result.top;
 	const owner = parent.owner as Node | undefined;
-	const edges = owner && owner.nodeType === owner.ELEMENT_NODE
+	const edges = owner && nodeTypeOf(owner) === owner.ELEMENT_NODE
 		? getBoxModel(owner as Element)
 		: null;
 	let left = parentX + (edges?.borderLeftWidth || 0);
@@ -4894,7 +4897,7 @@ function hitTestInFlow(
 	x: number,
 	y: number,
 ): Element | null {
-	if (element.nodeType !== 1) {
+	if (nodeTypeOf(element) !== 1) {
 		return null;
 	}
 	if (getComputedValue(element, "display") === "none") {
@@ -4938,7 +4941,7 @@ function hitTestInFlow(
 			: null;
 	const children: Element[] = [];
 	for (const child of candidates ?? flowContent(element)) {
-		if (child.nodeType !== 1) {
+		if (nodeTypeOf(child) !== 1) {
 			continue;
 		}
 		if (isPositioned(child as Element)) {
@@ -5823,7 +5826,7 @@ export class Layout {
 
 	/** Scrolls every port around a caret so the caret shows, nearest first. */
 	revealCaret(node: Node, offset: number): void {
-		const box = node.nodeType === node.ELEMENT_NODE
+		const box = nodeTypeOf(node) === node.ELEMENT_NODE
 			? (node as Element)
 			: flatParentElement(node);
 		if (box === null) {
@@ -5947,7 +5950,7 @@ export class Layout {
 		// Everything but true inline content is an atomic box with one rect,
 		// inline-block included. An <input> has no text runs at all, and
 		// returning none made it invisible to elementFromPoint.
-		if (node.nodeType === node.ELEMENT_NODE) {
+		if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 			const element = node as Element;
 			if (getUsedDisplay(element) !== "inline") {
 				const rect = this.getRect(element);
@@ -5973,7 +5976,7 @@ export class Layout {
 
 	/** The zero-width rect of a caret at the point, in a text node only. */
 	getCaretRect(node: Node, offset: number): DOMRect | null {
-		if (node.nodeType === node.TEXT_NODE) {
+		if (nodeTypeOf(node) === node.TEXT_NODE) {
 			return getCaretRectInFragment(this, node as Text, offset);
 		}
 		const next = node.childNodes[offset];
@@ -6606,7 +6609,7 @@ function invalidateOutOfFlowDescendants(
 	element: Element,
 ): void {
 	for (const child of flatChildren(element)) {
-		if (child.nodeType !== child.ELEMENT_NODE) {
+		if (nodeTypeOf(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
 		if (isOutOfFlow(child)) {
@@ -6662,9 +6665,11 @@ function isSameValue(a: unknown, b: unknown): boolean {
 // longer hold the boxes their enumeration names.
 function invalidateForRecord(layout: Layout, record: MutationRecord): void {
 	// A record on a shadow root describes the HOST's flat-tree children.
-	const target = record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
-		? (record.target as ShadowRoot).host
-		: record.target;
+	const target =
+		nodeTypeOf(record.target) ===
+		record.target.DOCUMENT_FRAGMENT_NODE
+			? (record.target as ShadowRoot).host
+			: record.target;
 	if (record.type === "attributes") {
 		// Which rules now match is the cascade's to announce, through
 		// styleInvalidated, and it does so for every attribute change. Only
@@ -6692,7 +6697,7 @@ function invalidateForRecord(layout: Layout, record: MutationRecord): void {
 	}
 	// The removed nodes are already detached, so the container is reached
 	// through the target rather than through them.
-	if (target.nodeType === target.ELEMENT_NODE) {
+	if (nodeTypeOf(target) === target.ELEMENT_NODE) {
 		invalidateChildDerivation(layout, target as Element);
 	}
 	// A member gaining or losing a descendant changes no box list (the
@@ -6705,7 +6710,7 @@ function invalidateForRecord(layout: Layout, record: MutationRecord): void {
 }
 
 function *getTextNodes(root: Node): Generator<Text> {
-	if (root.nodeType === root.TEXT_NODE) {
+	if (nodeTypeOf(root) === root.TEXT_NODE) {
 		yield root as Text;
 		return;
 	}
@@ -6727,7 +6732,7 @@ function getRunOrigin(
 	headLayoutNode: LayoutNode,
 ): {x: number; y: number} {
 	const position = getDocumentPosition(layout, runHead, headLayoutNode);
-	if (runHead.nodeType !== runHead.ELEMENT_NODE) {
+	if (nodeTypeOf(runHead) !== runHead.ELEMENT_NODE) {
 		return position;
 	}
 	const head = runHead as Element;
@@ -6898,7 +6903,7 @@ export function getAtomicHeight(
 
 function rangeTextNodes(layout: Layout, range: Range): Text[] {
 	const root = range.commonAncestorContainer;
-	if (root.nodeType === root.TEXT_NODE) {
+	if (nodeTypeOf(root) === root.TEXT_NODE) {
 		return [root as Text];
 	}
 	const nodes: Text[] = [];
@@ -6929,12 +6934,12 @@ function textPointAt(node: Node, offset: number): [Text, number] | null {
 }
 
 function isLineBreak(node: Node): boolean {
-	return node.nodeType === node.ELEMENT_NODE &&
+	return nodeTypeOf(node) === node.ELEMENT_NODE &&
 		(node as Element).tagName === "BR";
 }
 
 function firstTextIn(node: Node): Text | null {
-	if (node.nodeType === node.TEXT_NODE) {
+	if (nodeTypeOf(node) === node.TEXT_NODE) {
 		return node as Text;
 	}
 	for (let child = node.firstChild; child !== null; child = child.nextSibling) {
@@ -6947,7 +6952,7 @@ function firstTextIn(node: Node): Text | null {
 }
 
 function lastTextIn(node: Node): Text | null {
-	if (node.nodeType === node.TEXT_NODE) {
+	if (nodeTypeOf(node) === node.TEXT_NODE) {
 		return node as Text;
 	}
 	for (let child = node.lastChild;
@@ -7177,7 +7182,7 @@ function hitTestContext(
 // consumers read getRects, getRangeRects or lineFragments, whose
 // fragments carry data offsets a consumer can render for itself.
 function getRectTexts(layout: Layout, node: Node): RectText[] {
-	if (node.nodeType === node.ELEMENT_NODE) {
+	if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 		const element = node as Element;
 		const display = getLayoutDisplay(element);
 
@@ -7192,10 +7197,10 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 			const fragments: RectText[] = [];
 			const walk = (parent: Element): void => {
 				for (const child of Array.from(parent.childNodes) as Node[]) {
-					if (child.nodeType === child.TEXT_NODE) {
+					if (nodeTypeOf(child) === child.TEXT_NODE) {
 						fragments.push(...getRectTexts(layout, child));
 					} else if (
-						child.nodeType === child.ELEMENT_NODE &&
+						nodeTypeOf(child) === child.ELEMENT_NODE &&
 						// USED display. An out-of-flow child's box is no part
 						// of the fragments this inline was broken into.
 						isInlineDisplay(getUsedDisplay(child as Element))
@@ -7337,7 +7342,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	// insets it. A normal inline's box model is cleared, an inline-block's
 	// offset is getDocumentPosition's, and a block's run head is a text node
 	// with no box.
-	if (runHead.nodeType === runHead.ELEMENT_NODE) {
+	if (nodeTypeOf(runHead) === runHead.ELEMENT_NODE) {
 		const runHeadElement = runHead as Element;
 		if (
 			getLayoutDisplay(runHeadElement) === "inline" &&
@@ -7408,7 +7413,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	// position:relative on a run member shifts its painted fragments. The
 	// box-less ancestors up to the run head accumulate offsets.
 	for (
-		let ancestor = node.nodeType === node.ELEMENT_NODE
+		let ancestor = nodeTypeOf(node) === node.ELEMENT_NODE
 			? (node as Element)
 			: flatParentElement(node);
 		ancestor && ancestor !== runHead && !layout.nodeMap.has(ancestor);
@@ -7436,7 +7441,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 
 	let targetTextNodes: Set<Node>;
 
-	if (node.nodeType === node.TEXT_NODE || isLineBreak(node)) {
+	if (nodeTypeOf(node) === node.TEXT_NODE || isLineBreak(node)) {
 		targetTextNodes = new Set([node]);
 	} else {
 		targetTextNodes = new Set<Node>();
@@ -7448,8 +7453,8 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 			found = flowNext(found, node, false)
 		) {
 			if (
-				found.nodeType === found.TEXT_NODE ||
-				found.nodeType === found.ELEMENT_NODE
+				nodeTypeOf(found) === found.TEXT_NODE ||
+				nodeTypeOf(found) === found.ELEMENT_NODE
 			) {
 				targetTextNodes.add(found);
 			}

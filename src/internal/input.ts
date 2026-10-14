@@ -25,6 +25,7 @@ import {
 	lockDataTransfer,
 	MOUSE_POINTER_ID,
 	moveRangeThumb,
+	nodeTypeOf,
 	placeTextControlCaret,
 	requestRender,
 	runControlDefaultAction,
@@ -242,7 +243,7 @@ function getSequentialFocusEntries(
 			}
 		};
 		const visit = (node: Node): void => {
-			if (node.nodeType !== 1) {
+			if (nodeTypeOf(node) !== 1) {
 				return;
 			}
 			const element = node as Element;
@@ -293,7 +294,7 @@ function getSequentialFocusEntries(
 		return entries.flatMap((entry) => entry.elements);
 	};
 
-	const roots = root.nodeType === 9
+	const roots = nodeTypeOf(root) === 9
 		? ((root as Document).documentElement
 			? [(root as Document).documentElement as Element]
 			: [])

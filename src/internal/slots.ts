@@ -74,6 +74,11 @@ class Slot extends Stamp {
 		return #record in value;
 	}
 
+	// The record of an object, or null when it has none.
+	static find(value: object): SlotRecord | null {
+		return #record in value ? (value as Slot).#record : null;
+	}
+
 	static read(value: object): SlotRecord {
 		if (
 			(typeof value !== "object" && typeof value !== "function") ||
@@ -211,16 +216,27 @@ export function onSeal(
  * Proxy and an object a page made do not.
  */
 export function typeOf(value: unknown): Constructor | null {
+	if (value === newestObject) {
+		return newestRecord![kType] as Constructor | null;
+	}
+
+	if (value === olderObject) {
+		return olderRecord![kType] as Constructor | null;
+	}
+
 	if (
-		(typeof value !== "object" && typeof value !== "function") ||
-		value === null ||
-		(value !== newestObject && value !== olderObject && !Slot.has(value))
+		(typeof value !== "object" && typeof value !== "function") || value === null
 	) {
 		return null;
 	}
 
-	return (_(value) as unknown as SlotRecord)[kType] as Constructor | null ??
-		null;
+	const record = Slot.find(value);
+	if (record === null) {
+		return null;
+	}
+
+	remember(value, record);
+	return record[kType] as Constructor | null;
 }
 
 /**

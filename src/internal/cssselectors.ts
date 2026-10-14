@@ -44,8 +44,11 @@ import {
 	isPlaceholderShown,
 	isShowingPopover,
 	isTargetElement,
+	localNameOf,
+	namespaceOf,
 	nextInTree,
 	Node,
+	nodeTypeOf,
 	parentElement,
 	READONLY_INPUT_TYPES,
 	REQUIRED_INPUT_TYPES,
@@ -810,22 +813,24 @@ function compileType(name: string, compiling: Compiling): Predicate {
 	const {namespace, local} = qualifiedName(name, compiling.namespaces, false);
 	const folded = local === null ? null : toASCIILowercase(local);
 	return (element) => {
-		if (element.nodeType !== Node.ELEMENT_NODE) {
+		if (nodeTypeOf(element) !== Node.ELEMENT_NODE) {
 			return false;
 		}
-		if (namespace !== undefined && element.namespaceURI !== namespace) {
+		const elementNamespace = namespaceOf(element);
+		if (namespace !== undefined && elementNamespace !== namespace) {
 			return false;
 		}
 		if (local === null) {
 			return true;
 		}
-		if (element.localName === local) {
+		const elementLocal = localNameOf(element);
+		if (elementLocal === local) {
 			return true;
 		}
 		return (
-			element.namespaceURI === HTML_NAMESPACE &&
+			elementNamespace === HTML_NAMESPACE &&
 			isHTMLNode(element) &&
-			toASCIILowercase(element.localName) === folded
+			toASCIILowercase(elementLocal) === folded
 		);
 	};
 }
@@ -1071,7 +1076,7 @@ function compilePseudoClass(
 		case "root":
 			compound.tests.push((element) => {
 				const parent = getParentNode(element);
-				return parent !== null && parent.nodeType === Node.DOCUMENT_NODE;
+				return parent !== null && nodeTypeOf(parent) === Node.DOCUMENT_NODE;
 			});
 			return;
 		case "empty":
@@ -1479,7 +1484,7 @@ function compileNth(
 	const fromEnd = name === "nth-last-child" || name === "nth-last-of-type";
 	const ofType = name === "nth-of-type" || name === "nth-last-of-type";
 	return (element, state) => {
-		if (element.nodeType !== Node.ELEMENT_NODE) {
+		if (nodeTypeOf(element) !== Node.ELEMENT_NODE) {
 			return false;
 		}
 		// The plain forms read the element's place in a list built once per
@@ -1675,12 +1680,12 @@ function isEmpty(element: Element): boolean {
 		child !== null;
 		child = getNextSiblingNode(child)
 	) {
-		if (child.nodeType === Node.ELEMENT_NODE) {
+		if (nodeTypeOf(child) === Node.ELEMENT_NODE) {
 			return false;
 		}
 		if (
-			(child.nodeType === Node.TEXT_NODE ||
-				child.nodeType === Node.CDATA_SECTION_NODE) &&
+			(nodeTypeOf(child) === Node.TEXT_NODE ||
+				nodeTypeOf(child) === Node.CDATA_SECTION_NODE) &&
 				(child.nodeValue ?? "") !== ""
 		) {
 			return false;
@@ -1809,7 +1814,7 @@ const AUTO_INPUT_TYPES = new Set([
 function compileDir(args: CSSTree.SelectorNode[]): Predicate {
 	const wanted = toASCIILowercase(getIdentifierArgument(args, "dir"));
 	return (element) =>
-		element.nodeType === Node.ELEMENT_NODE &&
+		nodeTypeOf(element) === Node.ELEMENT_NODE &&
 		getDirectionality(element) === wanted;
 }
 
@@ -1837,7 +1842,7 @@ export function getDirectionality(element: Element): "ltr" | "rtl" {
 
 // Includes `bdi`'s default.
 function getDeclaredDirection(element: Element): "ltr" | "rtl" | "auto" | null {
-	if (element.nodeType !== Node.ELEMENT_NODE) {
+	if (nodeTypeOf(element) !== Node.ELEMENT_NODE) {
 		return null;
 	}
 	const html = element.namespaceURI === HTML_NAMESPACE;
@@ -1878,8 +1883,8 @@ function getTextUnder(element: Element, all: boolean): string {
 		child = getNextSiblingNode(child)
 	) {
 		if (
-			child.nodeType === Node.TEXT_NODE ||
-			child.nodeType === Node.CDATA_SECTION_NODE
+			nodeTypeOf(child) === Node.TEXT_NODE ||
+			nodeTypeOf(child) === Node.CDATA_SECTION_NODE
 		) {
 			text += child.nodeValue ?? "";
 			continue;
@@ -1936,7 +1941,7 @@ function matchFrom(
 	if (featureless && !compound.host) {
 		return false;
 	}
-	if (element.nodeType !== Node.ELEMENT_NODE) {
+	if (nodeTypeOf(element) !== Node.ELEMENT_NODE) {
 		return false;
 	}
 	for (const test of compound.tests) {

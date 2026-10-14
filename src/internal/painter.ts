@@ -29,6 +29,7 @@ import {
 	getTopLayer,
 	hasPaintedHighlights,
 	HTMLElement,
+	nodeTypeOf,
 	renderedTopLayer,
 	takesTextCursor,
 	type Window,
@@ -842,10 +843,10 @@ function paintContent(
 // nested block or inline-block lays out in lines of its own.
 function *getOwnLineText(element: Element): Generator<Text> {
 	for (const child of flowContent(element)) {
-		if (child.nodeType === child.TEXT_NODE) {
+		if (nodeTypeOf(child) === child.TEXT_NODE) {
 			yield child as Text;
 		} else if (
-			child.nodeType === child.ELEMENT_NODE &&
+			nodeTypeOf(child) === child.ELEMENT_NODE &&
 			getComputedValue(child as Element, "display") === "inline"
 		) {
 			yield *getOwnLineText(child as Element);
@@ -960,7 +961,7 @@ function paintNodes(
 		if (run !== null) {
 			paintRun(painter, run, childOrigin, ctx);
 		} else if (
-			owner.nodeType === owner.ELEMENT_NODE &&
+			nodeTypeOf(owner) === owner.ELEMENT_NODE &&
 			(owner instanceof HTMLElement || isMathRoot(owner)) &&
 			!layout.hoistedToLayer(owner as Element)
 		) {
@@ -986,7 +987,7 @@ function visibleChildren(
 		node.measure !== null ||
 		node.style.displayType !== "block" ||
 		(owner !== null &&
-			owner.nodeType === owner.ELEMENT_NODE &&
+			nodeTypeOf(owner) === owner.ELEMENT_NODE &&
 			layout.getBox(owner as Element)?.holdsFragments === true)
 	) {
 		return children;
@@ -1224,11 +1225,11 @@ function paintMember(
 	run: PainterRun,
 	ctx: CellContext,
 ): void {
-	if (node.nodeType === node.TEXT_NODE) {
+	if (nodeTypeOf(node) === node.TEXT_NODE) {
 		paintText(painter, node as Text, run, ctx);
 		return;
 	}
-	if (node.nodeType !== node.ELEMENT_NODE) {
+	if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
 		return;
 	}
 	const element = node as Element;
@@ -1392,7 +1393,7 @@ function resolveRun(
 		if (shift === undefined) {
 			shift = {x: 0, y: 0};
 			for (
-				let ancestor = node.nodeType === node.ELEMENT_NODE
+				let ancestor = nodeTypeOf(node) === node.ELEMENT_NODE
 					? (node as Element)
 					: flatParentElement(node);
 				ancestor !== null && ancestor !== container;
@@ -1689,7 +1690,7 @@ function renderEditingCaret(
 		setCaretAt(painter, element, ctx, Math.round(rect.x), Math.round(rect.y));
 		return;
 	}
-	const box = point.node.nodeType === point.node.ELEMENT_NODE
+	const box = nodeTypeOf(point.node) === point.node.ELEMENT_NODE
 		? (point.node as Element)
 		: (flatParentElement(point.node) ?? element);
 	const content = painter.layout.contentRect(box);
