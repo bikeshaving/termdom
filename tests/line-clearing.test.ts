@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {Framebuffer} from "../src/internal/framebuffer.ts";
+import {Framebuffer, replaced} from "../src/internal/framebuffer.ts";
 import {MockProcess, nextFrame, renderFrame} from "./test-utils.js";
 
 test("line clearing removes terminal artifacts from previous commands", async () => {
@@ -153,7 +153,7 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 
 	// The resize path resets the screen; the new frame is shorter and leaves
 	// row 1 blank.
-	framebuffer.replaced(0);
+	replaced(framebuffer, 0);
 	const out = renderFrame(
 		framebuffer,
 		{offset: 0, cursorRow: 0, regionRows: 3},

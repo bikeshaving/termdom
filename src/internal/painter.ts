@@ -38,11 +38,12 @@ import {
 	type Window,
 } from "./dom.ts";
 import {getEditingCaretPoint} from "./editing.ts";
-import type {
-	CellContext,
-	CellStyle,
-	Framebuffer,
-	LineStyle,
+import {
+	type CellContext,
+	type CellStyle,
+	type Framebuffer,
+	insetShiftPays,
+	type LineStyle,
 } from "./framebuffer.ts";
 import {
 	type Gradient,
@@ -513,7 +514,7 @@ export function resolveScrollShift(
 	const delta = record.delta;
 	if (
 		(left > 0 || right < framebuffer.cols) &&
-		!framebuffer.insetShiftPays({delta, top, end, left, right})
+		!insetShiftPays(framebuffer, {delta, top, end, left, right})
 	) {
 		return null;
 	}

@@ -54,7 +54,14 @@ import {
 	type TerminalTransport,
 	transportFromProcess,
 } from "./internal/exchange.ts";
-import {Framebuffer} from "./internal/framebuffer.ts";
+import {
+	beginFrame,
+	endFrame,
+	Framebuffer,
+	rebind,
+	repaintAll,
+	scrollTo,
+} from "./internal/framebuffer.ts";
 import {
 	releaseDecoder,
 	retainDecoder,
@@ -688,7 +695,7 @@ export class TermDOM extends EventTarget {
 			const depthSettled = slots.colorDepth === undefined
 				? slots.exchange.negotiateColorDepth().then((depth) => {
 					if (isAttached(this) && depth !== slots.framebuffer.colorDepth) {
-						slots.framebuffer.rebind(depth);
+						rebind(slots.framebuffer, depth);
 						syncMediaQueries(this.document);
 						void render(this);
 					}
@@ -999,7 +1006,7 @@ async function suspendTermDOM(termDOM: TermDOM): Promise<void> {
 		void termDOMSlots.exchange.setTitle(termDOM.document.title);
 	}
 	if (fullscreen) {
-		termDOMSlots.framebuffer.repaintAll();
+		repaintAll(termDOMSlots.framebuffer);
 	}
 	setDocumentVisible(termDOM.document, true);
 	void render(termDOM);
@@ -1505,8 +1512,8 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	const termDOMSlots = _(termDOM);
 	if (termDOMSlots.sealed) {
 		termDOMSlots.sealed = false;
-		termDOMSlots.framebuffer.scrollTo(0);
-		termDOMSlots.framebuffer.repaintAll();
+		scrollTo(termDOMSlots.framebuffer, 0);
+		repaintAll(termDOMSlots.framebuffer);
 		// detectAnchor reads a reply, so the listener must be attached.
 		if (termDOMSlots.transport.interactive) {
 			termDOM.attach();
@@ -1540,7 +1547,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		}
 		// Drop the diff model, or this frame patches one screen against the
 		// other's content.
-		termDOMSlots.framebuffer.repaintAll();
+		repaintAll(termDOMSlots.framebuffer);
 		syncMouseReporting(termDOM);
 		syncHoverReporting(termDOM);
 	}
@@ -1592,7 +1599,8 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		// Through scrollTo, so the journal's delta is what the screen is about
 		// to be shifted by.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		termDOMSlots.framebuffer.scrollTo(
+		scrollTo(
+			termDOMSlots.framebuffer,
 			Math.min(termDOMSlots.framebuffer.scrollTop, maxScroll),
 		);
 	}
@@ -1610,7 +1618,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 			));
 	// Read after the clamp, which adds to the journal.
 	const clamped = termDOMSlots.framebuffer.journal;
-	const context = termDOMSlots.framebuffer.beginFrame({
+	const context = beginFrame(termDOMSlots.framebuffer, {
 		offset: -termDOMSlots.framebuffer.scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
@@ -1618,7 +1626,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		shift: shift ?? undefined,
 	});
 	paint(termDOMSlots.painter, context);
-	const ansi = termDOMSlots.framebuffer.endFrame();
+	const ansi = endFrame(termDOMSlots.framebuffer);
 	termDOMSlots.layout.framePainted();
 
 	// The cursor stays hidden while a frame paints and between frames. It

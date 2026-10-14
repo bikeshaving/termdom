@@ -14,7 +14,11 @@ import {
 } from "../src/index.ts";
 import {framePainted} from "../src/internal/dom.ts";
 import type {ColorDepth} from "../src/internal/exchange.ts";
-import {Framebuffer} from "../src/internal/framebuffer.ts";
+import {
+	beginFrame,
+	endFrame,
+	Framebuffer,
+} from "../src/internal/framebuffer.ts";
 import {getStringWidth} from "../src/internal/text.ts";
 
 const {Terminal} = xtermPkg;
@@ -346,7 +350,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 			this.terminal.cols,
 			this.colorDepth,
 		);
-		const context = framebuffer.beginFrame({offset: 0});
+		const context = beginFrame(framebuffer, {offset: 0});
 
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(buffer.viewportY + row);
@@ -390,7 +394,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 
 		// The frame emitter withholds the final row's line ending (the screen
 		// has nothing below it); the oracle's callers split on lines.
-		return stripControlCodes(framebuffer.endFrame() + "\r\n");
+		return stripControlCodes(endFrame(framebuffer) + "\r\n");
 	}
 }
 
@@ -489,13 +493,13 @@ export function stripControlCodes(ansi: string): string {
  * is a caller with one painter and one frame.
  */
 export function renderFrame(
-	renderer: {beginFrame(options: any): any; endFrame(): string},
-	options: {offset: number} & Record<string, unknown>,
+	renderer: Framebuffer,
+	options: Parameters<typeof beginFrame>[1],
 	draw: (ctx: any) => void,
 ): string {
-	const context = renderer.beginFrame(options);
+	const context = beginFrame(renderer, options);
 	draw(context);
-	return renderer.endFrame();
+	return endFrame(renderer);
 }
 
 /** The same, for a frame that stands alone. */

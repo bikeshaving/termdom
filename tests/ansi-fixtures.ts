@@ -7,7 +7,13 @@
  * that alters a single byte fails the fixture test.
  */
 import type {ColorDepth} from "../src/internal/exchange.ts";
-import {type CellStyle, Framebuffer} from "../src/internal/framebuffer.ts";
+import {
+	type CellStyle,
+	Framebuffer,
+	repaintAll,
+	replaced,
+	wrappedRowsAbovePark,
+} from "../src/internal/framebuffer.ts";
 import type {CellContext} from "../src/internal/framebuffer.ts";
 import {renderFrame, renderStatic} from "./test-utils.js";
 
@@ -247,7 +253,7 @@ export const scenarios: Scenario[] = [
 				ctx.drawText("last", 0, 3);
 			});
 			const before = [20, 10, 7, 5].map((cols) =>
-				framebuffer.wrappedRowsAbovePark(cols),
+				wrappedRowsAbovePark(framebuffer, cols),
 			);
 			// A caret park moves the measurement point.
 			renderFrame(framebuffer, {offset: 0}, (ctx) => {
@@ -258,7 +264,7 @@ export const scenarios: Scenario[] = [
 				ctx.setCaret(3, 1);
 			});
 			const after = [20, 10, 7, 5].map((cols) =>
-				framebuffer.wrappedRowsAbovePark(cols),
+				wrappedRowsAbovePark(framebuffer, cols),
 			);
 			return JSON.stringify({before, after});
 		},
@@ -366,12 +372,12 @@ export const scenarios: Scenario[] = [
 				},
 			);
 			out += "|";
-			framebuffer.replaced(2);
+			replaced(framebuffer, 2);
 			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("after reset", 0, 0);
 			});
 			out += "|";
-			framebuffer.repaintAll();
+			repaintAll(framebuffer);
 			out += renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				ctx.drawText("after clear", 0, 0);
 			});

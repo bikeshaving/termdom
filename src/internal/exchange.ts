@@ -9,7 +9,16 @@ import {
 	syncMediaQueries,
 	type Window,
 } from "./dom.ts";
-import type {Framebuffer} from "./framebuffer.ts";
+import {
+	adoptCellPixels,
+	flushProbes,
+	type Framebuffer,
+	repaintAll,
+	replaced,
+	resize,
+	scrolled,
+	wrappedRowsAbovePark,
+} from "./framebuffer.ts";
 import type {Input} from "./input.ts";
 import type {Layout} from "./layout.ts";
 import {_, type internals} from "./slots.ts";
@@ -1312,7 +1321,7 @@ export class Exchange extends EventTarget {
 		return (
 			answer !== null &&
 			!slots.disposed &&
-			slots.framebuffer.adoptCellPixels(answer.width, answer.height)
+			adoptCellPixels(slots.framebuffer, answer.width, answer.height)
 		);
 	}
 
@@ -1594,7 +1603,7 @@ export class Exchange extends EventTarget {
 			// The previous buffer is not shifted. Its rows are region-relative
 			// and the region top moved by exactly the scroll. A pending
 			// post-resize reset is screen-absolute and does shift.
-			framebuffer.scrolled(push);
+			scrolled(framebuffer, push);
 		}
 		return framebuffer.documentTop;
 	}
@@ -1782,7 +1791,7 @@ function requestDeferredProbeFrame(session: Exchange): void {
 			return;
 		}
 		// Deferred probes go out with the next frame even if nothing changed.
-		sessionSlots.framebuffer.flushProbes();
+		flushProbes(sessionSlots.framebuffer);
 		requestRender(sessionSlots.window.document);
 	}, WIDTH_DEFERRAL_WAIT_MS);
 }
@@ -1875,7 +1884,7 @@ function settleWidthProbe(
 	// corrected measurements.
 	if (recordClusterAdvance(probe.cluster, advance)) {
 		sessionSlots.layout.invalidateTextMeasurement();
-		sessionSlots.framebuffer.repaintAll();
+		repaintAll(sessionSlots.framebuffer);
 		requestRender(sessionSlots.window.document);
 	}
 }
@@ -1962,7 +1971,7 @@ function terminalResized(
 	const framebuffer = sessionSlots.framebuffer;
 	// A SIGWINCH with an unchanged size still redraws but fires no event.
 	const sizeChanged = width !== framebuffer.cols || height !== framebuffer.rows;
-	framebuffer.resize(height, width);
+	resize(framebuffer, height, width);
 	sessionSlots.layout.resize(width, height);
 	// A size change can flip any @media result and every vw/vh value.
 	sessionSlots.cascade.syncStylesheets();
@@ -1994,14 +2003,14 @@ function handleResize(session: Exchange): void {
 	const layout = sessionSlots.layout;
 	layout.performLayout();
 	const contentHeight = layout.documentPaintHeight();
-	const wrappedRowsAbove = framebuffer.wrappedRowsAbovePark(newWidth);
+	const wrappedRowsAbove = wrappedRowsAbovePark(framebuffer, newWidth);
 	const documentTop = framebuffer.documentTop;
 	const settling = sessionSlots.settlingResize;
 
 	// The frame now starts at startRow. Repaint it from there.
 	const redraw = (startRow: number) => {
 		framebuffer.documentTop = startRow;
-		framebuffer.replaced(startRow);
+		replaced(framebuffer, startRow);
 		requestRender(sessionSlots.window.document);
 
 		// The frame is placed by the screen reset. Cursor detection is
