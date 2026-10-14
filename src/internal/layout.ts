@@ -23,7 +23,6 @@ import {
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
-	attributeOf,
 	DOMRectList,
 	flatChildren,
 	flatDescendants,
@@ -39,8 +38,6 @@ import {
 	isInFlatTree,
 	isModalDialog,
 	isShadowIncludingAncestor,
-	localNameOf,
-	nodeTypeOf,
 	pseudoElementCount,
 	renderedTopLayer,
 	type Window,
@@ -92,6 +89,7 @@ import {
 	toVisualOrder,
 	writeClusterWidths,
 } from "./text.ts";
+import {attributeOf, localNameOf, nodeTypeOf} from "./tree.ts";
 
 type Position = "static" | "relative" | "absolute" | "fixed" | "sticky";
 

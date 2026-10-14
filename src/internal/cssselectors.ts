@@ -2,34 +2,23 @@ import bidiFactory from "bidi-js";
 
 import * as CSSTree from "./csstree.ts";
 import {
-	attributeOf,
 	type Element,
-	getAttributeList,
-	getElementChildren,
-	getFirstChildNode,
 	getHeadingLevel,
 	getMeterLevel,
-	getNextSiblingNode,
 	getOpenAssignedSlot,
-	getParentNode,
 	getPartNames,
-	getPreviousSiblingNode,
 	getRangeMatch,
-	getRoot,
 	getShadowHost,
 	getUserValidityMatch,
 	getValidityMatch,
-	hasAttributeOf,
 	hasCustomState,
 	hasFocus,
 	hasFocusWithin,
-	HTML_NAMESPACE,
 	isActive,
 	isActuallyDisabled,
 	isCheckedControl,
 	isDefaultControl,
 	isDefinedElement,
-	isElement,
 	isFocusVisible,
 	isFormAssociatedCustom,
 	isFullscreenElement,
@@ -43,19 +32,32 @@ import {
 	isPlaceholderShown,
 	isShowingPopover,
 	isTargetElement,
+	Node,
+	READONLY_INPUT_TYPES,
+	REQUIRED_INPUT_TYPES,
+} from "./dom.ts";
+import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
+import {
+	attributeOf,
+	getAttributeList,
+	getElementChildren,
+	getFirstChildNode,
+	getNextSiblingNode,
+	getParentNode,
+	getPreviousSiblingNode,
+	getRoot,
+	hasAttributeOf,
+	HTML_NAMESPACE,
+	isElement,
 	localNameOf,
 	namespaceOf,
 	nextInTree,
-	Node,
 	nodeTypeOf,
 	parentElement,
-	READONLY_INPUT_TYPES,
-	REQUIRED_INPUT_TYPES,
 	SVG_NAMESPACE,
 	XLINK_NAMESPACE,
 	XML_NAMESPACE,
-} from "./dom.ts";
-import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
+} from "./tree.ts";
 
 // CSS Selectors: the language, and the matcher a selector compiles to.
 // css-tree parses the selector. It is checked against the pseudo-classes

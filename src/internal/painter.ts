@@ -17,7 +17,6 @@ import {
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
-	containsOf,
 	flatParentElement,
 	flowContent,
 	getCanvasTextRuns,
@@ -32,7 +31,6 @@ import {
 	getTopLayer,
 	hasPaintedHighlights,
 	HTMLElement,
-	nodeTypeOf,
 	renderedTopLayer,
 	takesTextCursor,
 	type Window,
@@ -94,6 +92,7 @@ import {
 } from "./mathml.ts";
 import {isReplacedBox, renderReplaced} from "./replaced.ts";
 import {getStringWidth} from "./text.ts";
+import {containsOf, nodeTypeOf} from "./tree.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
 // edge computed from an infinite origin and size is NaN.

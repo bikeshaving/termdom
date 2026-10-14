@@ -17,9 +17,7 @@ import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
 	appendChildOf,
-	attributeOf,
 	constructInternal,
-	containsOf,
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
 	type Element as DOMElement,
@@ -30,7 +28,6 @@ import {
 	flushLayout,
 	flushStyle,
 	getAddedNodes,
-	getAttributeList,
 	getCellPixels,
 	getCellSizeSetting,
 	getClassTokens,
@@ -41,19 +38,11 @@ import {
 	getRemovedNodes,
 	getShadowRoot,
 	getTopLayer,
-	hasAttributeOf,
-	HTML_NAMESPACE,
 	isButtonInput,
 	isConnectedNode,
 	isDocumentElement,
 	isShadowRoot,
 	isUAShadowTree,
-	localNameOf,
-	MATHML_NAMESPACE,
-	namespaceOf,
-	nextInTree,
-	nodeTypeOf,
-	ownerDocumentOf,
 	pseudoElement,
 	pseudoElementCount,
 	releaseRemovedNodes,
@@ -83,6 +72,19 @@ import {
 } from "./slots.ts";
 import {getStringWidth, splitOnASCIIWhitespace} from "./text.ts";
 import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
+import {
+	attributeOf,
+	containsOf,
+	getAttributeList,
+	hasAttributeOf,
+	HTML_NAMESPACE,
+	localNameOf,
+	MATHML_NAMESPACE,
+	namespaceOf,
+	nextInTree,
+	nodeTypeOf,
+	ownerDocumentOf,
+} from "./tree.ts";
 import {
 	UA_CONTROL_STYLES,
 	UA_DOCUMENT_STYLES,

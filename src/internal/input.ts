@@ -7,10 +7,8 @@ import {
 	pxFromCells,
 } from "./cssom.ts";
 import {
-	attributeOf,
 	commitRangeThumb,
 	constructInternal,
-	containsOf,
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
 	flatParentElement,
@@ -26,17 +24,14 @@ import {
 	getTextControlValueText,
 	getUnitBounds,
 	handleCloseRequest,
-	hasAttributeOf,
 	HTMLInputElement,
 	HTMLLabelElement,
 	HTMLTextAreaElement,
 	lightDismissPress,
 	lightDismissRelease,
-	localNameOf,
 	lockDataTransfer,
 	MOUSE_POINTER_ID,
 	moveRangeThumb,
-	nodeTypeOf,
 	placeTextControlCaret,
 	requestRender,
 	runControlDefaultAction,
@@ -56,6 +51,13 @@ import {getEditingHost, requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import {type Framebuffer, invalidate, repaintAll} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
+import {
+	attributeOf,
+	containsOf,
+	hasAttributeOf,
+	localNameOf,
+	nodeTypeOf,
+} from "./tree.ts";
 
 // The keys a terminal names, with the legacy keyCode plenty of code
 // still reads. Also the list of names that are physical key identities.

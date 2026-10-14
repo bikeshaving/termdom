@@ -11,16 +11,13 @@ import {getWhiteSpace} from "./cssom.ts";
 import {
 	appendChildOf,
 	constructInternal,
-	containsOf,
 	dispatchAsUserAgent,
 	getFocusedElement,
 	insertBeforeOf,
-	localNameOf,
-	nodeTypeOf,
-	ownerDocumentOf,
 	revealEditingCaret,
 } from "./dom.ts";
 import {getNextGraphemeBoundary, getPreviousGraphemeBoundary} from "./text.ts";
+import {containsOf, localNameOf, nodeTypeOf, ownerDocumentOf} from "./tree.ts";
 
 /** A caret or selection endpoint. */
 interface EditingPoint {
