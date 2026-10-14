@@ -8726,7 +8726,8 @@ function parseStylesheetsNow(cascade: Cascade): void {
 }
 
 // Origin first (UA below every author rule, later wins), then layer,
-// then specificity, then the order the rules were read in.
+// then specificity, then the order the rules were read in. The
+// pseudo-element rules are filed again in that order.
 function sortRulesForCascade(cascade: Cascade): void {
 	const sourceOrder = new Map(
 		cascade.parsedRules.map((rule, index) => [rule, index] as const),
@@ -8743,6 +8744,18 @@ function sortRulesForCascade(cascade: Cascade): void {
 		}
 		return sourceOrder.get(a)! - sourceOrder.get(b)!;
 	});
+	cascade.pseudoRulesByType = new Map();
+	for (const rule of cascade.parsedRules) {
+		if (rule.pseudoElement === undefined) {
+			continue;
+		}
+		const byType = cascade.pseudoRulesByType.get(rule.pseudoElement);
+		if (byType) {
+			byType.push(rule);
+		} else {
+			cascade.pseudoRulesByType.set(rule.pseudoElement, [rule]);
+		}
+	}
 }
 
 // Declare a layer and every layer its path nests inside.
@@ -10089,12 +10102,8 @@ function computePseudoElementStyle(
 	pseudoElement: string,
 ): Record<string, string> {
 	const pseudoRoot = element.getRootNode() as unknown as Node;
-	const matchingRules = cascade.parsedRules.filter((rule) => {
-		if (rule.pseudoElement !== pseudoElement) {
-			return false;
-		}
-		return isRuleMatch(element, rule, pseudoRoot);
-	});
+	const matchingRules = (cascade.pseudoRulesByType.get(pseudoElement) ?? [])
+		.filter((rule) => isRuleMatch(element, rule, pseudoRoot));
 
 	// A pseudo-element's declarations are a flat record, not a per-property
 	// cascade, so a flow-relative declaration fills BOTH names of its slot
