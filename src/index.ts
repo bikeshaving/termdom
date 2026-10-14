@@ -68,7 +68,11 @@ import {
 	setDecodeWorkerURL,
 } from "./internal/images.ts";
 import {Input} from "./internal/input.ts";
-import {Layout} from "./internal/layout.ts";
+import {
+	framePainted,
+	invalidateTextMeasurement,
+	Layout,
+} from "./internal/layout.ts";
 import {
 	paint,
 	Painter,
@@ -720,7 +724,7 @@ export class TermDOM extends EventTarget {
 			// to them, so what was measured before the answer measures again.
 			void slots.exchange.negotiateOverline().then((agreed) => {
 				if (agreed && isAttached(this)) {
-					slots.layout.invalidateTextMeasurement();
+					invalidateTextMeasurement(slots.layout);
 					void render(this);
 				}
 			});
@@ -1440,7 +1444,7 @@ function printStatic(termDOM: TermDOM): void {
 	applyMutations(termDOM.document);
 	const termDOMSlots = _(termDOM);
 	termDOMSlots.layout.performLayout();
-	termDOMSlots.layout.framePainted();
+	framePainted(termDOMSlots.layout);
 	termDOMSlots.unprinted = true;
 	sessionsUnprinted.add(termDOM);
 	installExitHook();
@@ -1627,7 +1631,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	});
 	paint(termDOMSlots.painter, context);
 	const ansi = endFrame(termDOMSlots.framebuffer);
-	termDOMSlots.layout.framePainted();
+	framePainted(termDOMSlots.layout);
 
 	// The cursor stays hidden while a frame paints and between frames. It
 	// is parked for resize bookkeeping, and a cursor blinking there is not

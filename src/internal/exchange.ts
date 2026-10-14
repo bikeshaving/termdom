@@ -20,7 +20,11 @@ import {
 	wrappedRowsAbovePark,
 } from "./framebuffer.ts";
 import type {Input} from "./input.ts";
-import type {Layout} from "./layout.ts";
+import {
+	adoptTerminalReordering,
+	invalidateTextMeasurement,
+	type Layout,
+} from "./layout.ts";
 import {_, type internals} from "./slots.ts";
 import {isControlByte, recordClusterAdvance} from "./text.ts";
 import {
@@ -1286,7 +1290,7 @@ export class Exchange extends EventTarget {
 		}
 		slots.priorBidiMode = answer;
 		if (answer === 1 || answer === 3) {
-			slots.layout.adoptTerminalReordering();
+			adoptTerminalReordering(slots.layout);
 		}
 	}
 
@@ -1883,7 +1887,7 @@ function settleWidthProbe(
 	// a screen that was never drawn. Drop it and paint again from the
 	// corrected measurements.
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		sessionSlots.layout.invalidateTextMeasurement();
+		invalidateTextMeasurement(sessionSlots.layout);
 		repaintAll(sessionSlots.framebuffer);
 		requestRender(sessionSlots.window.document);
 	}

@@ -55,17 +55,26 @@ import {
 	applyTextTransform,
 	type Box,
 	type BreakResult,
+	collectStackingLayers,
 	type Display,
+	fullWidthFixedRows,
 	getAtomicHeight,
+	getLayoutNode,
 	getLineAlignOffset,
 	getLineIndent,
+	getMathBox,
+	getRun,
 	hasItemParent,
+	hoistedToLayer,
 	type InlineBlockLeaf,
 	isAtomicInline,
 	isPositioned,
 	isStackingContext,
 	type Layout,
+	paintExtent,
 	renderTextFragment,
+	scrolledAncestorRows,
+	snapToClusters,
 } from "./layout.ts";
 import type {LayoutNode} from "./layoutsolver.ts";
 import {
@@ -531,7 +540,7 @@ export function resolveDocumentScrollBand(
 	regionHeight: number,
 	delta: number,
 ): {delta: number; top: number; end: number} | null {
-	const bars = painter.layout.fullWidthFixedRows(painter.framebuffer.cols);
+	const bars = fullWidthFixedRows(painter.layout, painter.framebuffer.cols);
 	if (bars.length === 0) {
 		return null;
 	}
@@ -562,7 +571,7 @@ export function paint(painter: Painter, ctx: CellContext): void {
 	painter.highlightedText = collectHighlightedText(painter.document);
 	painter.paintedText.clear();
 	painter.highlightStyles = new Map();
-	const layers = painter.layout.collectStackingLayers(painter.topLayer);
+	const layers = collectStackingLayers(painter.layout, painter.topLayer);
 	// From the body, the root stacking context's content. A body that
 	// is inline, inline-block or display: contents puts its content in
 	// the root element's boxes rather than its own, so painting starts
@@ -584,7 +593,7 @@ export function paint(painter: Painter, ctx: CellContext): void {
 		ctx.clipRect = null;
 		// Entered from outside its ancestor chain, so seed the culling
 		// shift.
-		painter.scrolledRows = painter.layout.scrolledAncestorRows(element);
+		painter.scrolledRows = scrolledAncestorRows(painter.layout, element);
 		try {
 			renderBackdrop(element, ctx);
 			renderStackingContext(painter, element, ctx, layers);
@@ -642,7 +651,7 @@ function renderStackingContext(
 		const previousScrolled = painter.scrolledRows;
 		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
 		// Entered from its stacking context, not its ancestor chain.
-		painter.scrolledRows = painter.layout.scrolledAncestorRows(element);
+		painter.scrolledRows = scrolledAncestorRows(painter.layout, element);
 		// Fixed space cancels the document scroll for the whole subtree. An
 		// absolute box inside a fixed bar moves with it.
 		if (painter.layout.isInFixedSpace(element)) {
@@ -680,7 +689,7 @@ function paintEntry(
 	afterOwnBox?: () => void,
 ): void {
 	const layout = painter.layout;
-	const node = layout.getLayoutNode(element);
+	const node = getLayoutNode(layout, element);
 	if (node === null) {
 		return;
 	}
@@ -697,7 +706,7 @@ function isOutsideViewport(
 	node: LayoutNode,
 	element: Element | null,
 ): boolean {
-	const extent = painter.layout.paintExtent(node);
+	const extent = paintExtent(node);
 	if (extent === undefined) {
 		return false;
 	}
@@ -969,13 +978,13 @@ function paintNodes(
 			x: origin.x + child.result.left,
 			y: origin.y + child.result.top,
 		};
-		const run = layout.getRun(child);
+		const run = getRun(layout, child);
 		if (run !== null) {
 			paintRun(painter, run, childOrigin, ctx);
 		} else if (
 			nodeTypeOf(owner) === owner.ELEMENT_NODE &&
 			(owner instanceof HTMLElement || isMathRoot(owner)) &&
-			!layout.hoistedToLayer(owner as Element)
+			!hoistedToLayer(layout, owner as Element)
 		) {
 			paintBlock(painter, owner as Element, child, childOrigin, ctx);
 		}
@@ -991,7 +1000,7 @@ function visibleChildren(
 	const children = node.children;
 	const top = -ctx.viewportOffset + painter.scrolledRows;
 	const bottom = top + ctx.rows;
-	const extent = layout.paintExtent(node);
+	const extent = paintExtent(node);
 	const owner = node.owner as Node | null;
 	if (
 		extent === undefined ||
@@ -1008,7 +1017,7 @@ function visibleChildren(
 	let hi = children.length;
 	while (lo < hi) {
 		const mid = (lo + hi) >>> 1;
-		const childExtent = layout.paintExtent(children[mid]);
+		const childExtent = paintExtent(children[mid]);
 		if (childExtent !== undefined && childExtent.bottom <= top) {
 			lo = mid + 1;
 		} else {
@@ -1017,7 +1026,7 @@ function visibleChildren(
 	}
 	const visible: LayoutNode[] = [];
 	for (let i = lo; i < children.length; i++) {
-		const childExtent = layout.paintExtent(children[i]);
+		const childExtent = paintExtent(children[i]);
 		if (childExtent !== undefined && childExtent.top >= bottom) {
 			break;
 		}
@@ -1250,7 +1259,7 @@ function paintMember(
 		paintAtomic(painter, element, leaf.leaf, {...leaf.rect, height}, ctx);
 		return;
 	}
-	if (painter.layout.hoistedToLayer(element)) {
+	if (hoistedToLayer(painter.layout, element)) {
 		return;
 	}
 	paintInline(painter, element, run, ctx);
@@ -1737,7 +1746,7 @@ function renderMath(
 	rect: Rect,
 	ctx: CellContext,
 ): void {
-	const box = painter.layout.getMathBox(element);
+	const box = getMathBox(painter.layout, element);
 	const boxModel = getBoxModel(element);
 	const contentWidth =
 		Math.round(rect.width) -
@@ -2105,7 +2114,7 @@ function renderTextHighlights(
 			const paint = getHighlightStyle(painter, parent, run.name);
 			if (paint !== null) {
 				layers.push({
-					...painter.layout.snapToClusters(textNode, run.from, run.to),
+					...snapToClusters(painter.layout, textNode, run.from, run.to),
 					paint,
 				});
 			}
@@ -2116,7 +2125,7 @@ function renderTextHighlights(
 		const paint = readSelectionStyle(selected.selectionParent);
 		if (paint !== null) {
 			layers.push({
-				...painter.layout.snapToClusters(textNode, selected.from, selected.to),
+				...snapToClusters(painter.layout, textNode, selected.from, selected.to),
 				paint,
 			});
 		}
