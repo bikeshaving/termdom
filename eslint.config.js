@@ -20,7 +20,7 @@ export default [
 	{
 		// Scripts and examples print to the terminal as their job. URL is a
 		// runtime global everywhere the scripts run.
-		files: ["scripts/**", "examples/**"],
+		files: ["scripts/**", "examples/**", "bench/**"],
 		languageOptions: {globals: {URL: "readonly"}},
 		rules: {"no-console": "off"},
 	},
