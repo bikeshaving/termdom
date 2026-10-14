@@ -12,12 +12,19 @@ import {
 	appendChildOf,
 	constructInternal,
 	dispatchAsUserAgent,
+	getEditingHost,
 	getFocusedElement,
 	insertBeforeOf,
 	revealEditingCaret,
 } from "./dom.ts";
 import {getNextGraphemeBoundary, getPreviousGraphemeBoundary} from "./text.ts";
-import {containsOf, localNameOf, nodeTypeOf, ownerDocumentOf} from "./tree.ts";
+import {
+	containsOf,
+	ELEMENT_NODE,
+	localNameOf,
+	nodeTypeOf,
+	TEXT_NODE,
+} from "./tree.ts";
 
 /** A caret or selection endpoint. */
 interface EditingPoint {
@@ -29,9 +36,6 @@ interface Motion {
 	granularity: string;
 	forward: boolean;
 }
-
-const ELEMENT_NODE = 1;
-const TEXT_NODE = 3;
 
 const SPACE = " ";
 const NBSP = "\u00a0";
@@ -121,37 +125,6 @@ const ARROW_MOTIONS: Record<string, Motion> = {
 	Home: {granularity: "lineboundary", forward: false},
 	End: {granularity: "lineboundary", forward: true},
 };
-
-/**
- * The element a caret in `node` edits: the nearest ancestor-or-self whose
- * contenteditable state is true, or the body of a designMode document.
- */
-export function getEditingHost(
-	node: globalThis.Node | null,
-): globalThis.HTMLElement | null {
-	if (node === null) {
-		return null;
-	}
-	for (
-		let element = asElement(node) ?? node.parentElement;
-		element !== null;
-		element = element.parentElement
-	) {
-		const state = (element as globalThis.HTMLElement).contentEditable;
-		if (state === "true" || state === "plaintext-only") {
-			return element as globalThis.HTMLElement;
-		}
-		if (state === "false") {
-			return null;
-		}
-	}
-	const document = ownerDocumentOf(node);
-	const body = document === null ? null : document.body;
-	if (document === null || body === null || document.designMode !== "on") {
-		return null;
-	}
-	return containsOf(body, node) ? body : null;
-}
 
 /**
  * Where the terminal cursor goes: the document selection's focus, when a
@@ -396,7 +369,9 @@ function getUneditableIsland(
 ): globalThis.Element | null {
 	let island: globalThis.Element | null = null;
 	for (
-		let element = asElement(node) ?? node.parentElement;
+		let element = nodeTypeOf(node) === ELEMENT_NODE
+			? node as globalThis.Element
+			: node.parentElement;
 		element !== null && element !== host;
 		element = element.parentElement
 	) {
@@ -1001,9 +976,9 @@ function getBlockContainer(
 	node: globalThis.Node,
 ): globalThis.Element {
 	for (
-		let element = asElement(node) ?? node.parentElement;
-		element !== null;
-		element = element.parentElement
+		let element = nodeTypeOf(node) === ELEMENT_NODE
+			? node as globalThis.Element
+			: node.parentElement; element !== null; element = element.parentElement
 	) {
 		if (element === host || BLOCK_TAGS.has(localNameOf(element))) {
 			return element;

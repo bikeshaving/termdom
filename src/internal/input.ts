@@ -15,6 +15,7 @@ import {
 	flushLayout,
 	type FocusStartingPoint,
 	getActiveElement,
+	getEditingHost,
 	getFocusedElement,
 	getKeyboardActivation,
 	getPointerState,
@@ -47,7 +48,7 @@ import {
 	topmostModalDialog,
 	type Window,
 } from "./dom.ts";
-import {getEditingHost, requestEditingInsert} from "./editing.ts";
+import {requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import {type Framebuffer, invalidate, repaintAll} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";

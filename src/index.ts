@@ -44,6 +44,7 @@ import {
 	takeScrollShift,
 	type Window,
 } from "./internal/dom.ts";
+import {installEditing} from "./internal/editing.ts";
 import {
 	abandonColorDepthQuery,
 	abandonColorSchemeQuery,
@@ -601,6 +602,7 @@ export class TermDOM extends EventTarget {
 				reportUncaught(this, error);
 			},
 		});
+		installEditing(exchange);
 		// The document had no size until it was attached, so an @media rule
 		// in the markup was read against a zero-width viewport. Attaching is
 		// a resize, and flips @media results the same way.

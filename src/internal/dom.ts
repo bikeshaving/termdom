@@ -56,7 +56,6 @@ import {
 	SelectorError,
 } from "./cssselectors.ts";
 import * as CSSValues from "./cssvalues.ts";
-import {getEditingHost, installEditing} from "./editing.ts";
 import type {Exchange} from "./exchange.ts";
 import {
 	CellContext,
@@ -122,6 +121,7 @@ import {
 } from "./text.ts";
 import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
 import {
+	type AttachedDocument,
 	ATTRIBUTE_NODE,
 	attributeOf,
 	CDATA_SECTION_NODE,
@@ -133,6 +133,7 @@ import {
 	ELEMENT_NODE,
 	ENTITY_NODE,
 	ENTITY_REFERENCE_NODE,
+	getAttachedDocument,
 	getAttributeByName,
 	getElementChildren,
 	getRoot,
@@ -5739,17 +5740,6 @@ function innerInvoke(
 		}
 	}
 	return found;
-}
-
-/** The terminal behind a document, while it is attached to one. */
-export function getDocumentExchange(
-	document: globalThis.Document | null,
-): Exchange | null {
-	if (document === null) {
-		return null;
-	}
-	const attached = getAttachedDocument(document as unknown as Document);
-	return attached === undefined ? null : _(attached).extra.exchange;
 }
 
 function getSessionExchange(target: EventTarget): EventTarget | null {
@@ -35763,7 +35753,6 @@ export function attachDocument(
 	for (const type of ["input", "select", "change", "selectionchange"]) {
 		exchange.addEventListener(type, onTextControlEditEvent);
 	}
-	installEditing(exchange);
 	// One watcher per document, the engine displaying it.
 	getHoverCount(attached).onChange = () => render();
 	// The document owns the observer. Mutations fan out to the cascade, the
@@ -36219,19 +36208,6 @@ export function flushLayout(node: globalThis.Node): boolean {
 
 export function hoverListenerCount(document: globalThis.Document): number {
 	return hoverListenerCounters.get(document as Document)?.count ?? 0;
-}
-
-// A document that has been adopted. It renders, and knows what it
-// renders through.
-type AttachedDocument = Document;
-
-function getAttachedDocument(
-	node: globalThis.Node,
-): AttachedDocument | undefined {
-	const document = _(node as Node).document;
-	return _(document).extra.exchange !== undefined
-		? (document as AttachedDocument)
-		: undefined;
 }
 
 /** The images and canvas options of the TermDOM drawing the node's document. */
@@ -39226,3 +39202,34 @@ export type {
 	DOMStringList,
 	Location,
 };
+
+/**
+ * The element a caret in `node` edits: the nearest ancestor-or-self whose
+ * contenteditable state is true, or the body of a designMode document.
+ */
+export function getEditingHost(
+	node: globalThis.Node | null,
+): globalThis.HTMLElement | null {
+	if (node === null) {
+		return null;
+	}
+	for (
+		let element = nodeTypeOf(node) === ELEMENT_NODE
+			? node as globalThis.Element
+			: node.parentElement; element !== null; element = element.parentElement
+	) {
+		const state = (element as globalThis.HTMLElement).contentEditable;
+		if (state === "true" || state === "plaintext-only") {
+			return element as globalThis.HTMLElement;
+		}
+		if (state === "false") {
+			return null;
+		}
+	}
+	const document = ownerDocumentOf(node);
+	const body = document === null ? null : document.body;
+	if (document === null || body === null || document.designMode !== "on") {
+		return null;
+	}
+	return containsOf(body, node) ? body : null;
+}
