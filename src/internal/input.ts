@@ -301,13 +301,6 @@ function getSequentialFocusEntries(
 	return buildScope(roots, null);
 }
 
-const kDocument = Symbol("document");
-const kWindow = Symbol("window");
-const kLayout = Symbol("layout");
-const kCascade = Symbol("cascade");
-const kFramebuffer = Symbol("framebuffer");
-const kSuspend = Symbol("suspend");
-
 // The nearest scroll container (overflow auto or scroll; hidden does
 // not take the wheel) that can still move in the tick's direction, or
 // null when the tick chains to the document scroll.
@@ -317,8 +310,8 @@ function getWheelScroller(
 	delta: number,
 	axis: "top" | "left",
 ): Element | null {
-	const document = input[kDocument];
-	const layout = input[kLayout];
+	const document = input.document;
+	const layout = input.layout;
 	for (
 		let element: Element | null = target;
 		element &&
@@ -346,38 +339,22 @@ function getWheelScroller(
 	return null;
 }
 
-const kLastMouse = Symbol("lastMouse");
-const kPendingHover = Symbol("pendingHover");
-const kHoverElement = Symbol("hoverElement");
-const kMouseDownTarget = Symbol("mouseDownTarget");
-const kPopoverPressTarget = Symbol("popoverPressTarget");
-const kSelectionDragAnchor = Symbol("selectionDragAnchor");
-const kTextControlDragAnchor = Symbol("textControlDragAnchor");
-const kRangeDrag = Symbol("rangeDrag");
-const kSelectionUnit = Symbol("selectionUnit");
-const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
-const kLastClickPoint = Symbol("lastClickPoint");
-const kLastClickTime = Symbol("lastClickTime");
-const kClickCount = Symbol("clickCount");
-const kLastClickButton = Symbol("lastClickButton");
-const kMouseEventsSuppressed = Symbol("mouseEventsSuppressed");
-
 const DBLCLICK_INTERVAL_MS = 500;
 
-export interface Input {
-	[kDocument]: Document;
-	[kWindow]: Window;
-	[kLayout]: Layout;
-	[kCascade]: Cascade;
-	[kFramebuffer]: Framebuffer;
+export class Input {
+	document: Document;
+	window: Window;
+	layout: Layout;
+	cascade: Cascade;
+	framebuffer: Framebuffer;
 	// Ctrl+Z's default action: hand the terminal back, as a shell's job
 	// control does, where the transport can.
-	[kSuspend]: () => void;
+	suspend: () => void;
 	// What movementX/movementY measure from.
-	[kLastMouse]: {x: number; y: number} | null;
+	lastMouse: {x: number; y: number} | null;
 	// Motion coalesced to one hit-test per frame. `quiet` marks a drag's
 	// motion, whose mousemove the report already dispatched.
-	[kPendingHover]: {
+	pendingHover: {
 		x: number;
 		y: number;
 		shiftKey: boolean;
@@ -386,42 +363,41 @@ export interface Input {
 		quiet: boolean;
 	} | null;
 
-	[kHoverElement]: Element | null;
+	hoverElement: Element | null;
 	// The document scroll hit its top and the user kept scrolling up, so
 	// the wheel belongs to the terminal's scrollback until the next
 	// keystroke: terminals snap to the live screen on input, and none
 	// says when the user has scrolled back down by hand. The document is
 	// hidden meanwhile, as a page in a background tab is.
-	[kMouseCaptureYielded]: boolean;
+	captureYielded: boolean;
 	// A mouseup on the same element is a click.
-	[kMouseDownTarget]: Element | null;
-	[kPopoverPressTarget]: Element | null;
+	mouseDownTarget: Element | null;
+	popoverPressTarget: Element | null;
 	// The document selection's anchor while a left-button drag selects.
-	[kSelectionDragAnchor]: {node: Text; offset: number} | null;
+	selectionDragAnchor: {node: Text; offset: number} | null;
 	// A drag begun in a text control extends the text control's own bounded
 	// selection, not the document's. The two never merge.
-	[kTextControlDragAnchor]: {
+	textControlDragAnchor: {
 		element: HTMLInputElement | HTMLTextAreaElement;
 		offset: number;
 	} | null;
+
 	// A press on a range input's slider moves its thumb until the release.
-	[kRangeDrag]: Element | null;
+	rangeDrag: Element | null;
 	// A double click selects by word and a triple click by paragraph, and
 	// the drag that follows extends a whole unit at a time.
-	[kSelectionUnit]: SelectionUnit | null;
+	selectionUnit: SelectionUnit | null;
 
 	// UI Events' click count: mousedown, mouseup and click carry it as
 	// `detail`, and a dblclick is every even click.
-	[kLastClickPoint]: {x: number; y: number} | null;
-	[kLastClickTime]: number;
-	[kClickCount]: number;
-	[kLastClickButton]: number;
+	lastClickPoint: {x: number; y: number} | null;
+	lastClickTime: number;
+	clickCount: number;
+	lastClickButton: number;
 	// A canceled pointerdown withholds the mouse events of that press,
 	// through the release of its last button.
-	[kMouseEventsSuppressed]: boolean;
-}
+	mouseEventsSuppressed: boolean;
 
-export class Input {
 	constructor(
 		document: Document,
 		layout: Layout,
@@ -429,38 +405,38 @@ export class Input {
 		framebuffer: Framebuffer,
 		suspend: () => void = () => {},
 	) {
-		this[kDocument] = document;
-		this[kWindow] = document.defaultView as unknown as Window;
-		this[kLayout] = layout;
-		this[kCascade] = styles;
-		this[kFramebuffer] = framebuffer;
-		this[kSuspend] = suspend;
-		this[kLastMouse] = null;
-		this[kPendingHover] = null;
-		this[kHoverElement] = null;
-		this[kMouseDownTarget] = null;
-		this[kPopoverPressTarget] = null;
-		this[kSelectionDragAnchor] = null;
-		this[kTextControlDragAnchor] = null;
-		this[kRangeDrag] = null;
-		this[kSelectionUnit] = null;
-		this[kMouseCaptureYielded] = false;
-		this[kLastClickPoint] = null;
-		this[kLastClickTime] = 0;
-		this[kClickCount] = 0;
-		this[kLastClickButton] = 0;
-		this[kMouseEventsSuppressed] = false;
+		this.document = document;
+		this.window = document.defaultView as unknown as Window;
+		this.layout = layout;
+		this.cascade = styles;
+		this.framebuffer = framebuffer;
+		this.suspend = suspend;
+		this.lastMouse = null;
+		this.pendingHover = null;
+		this.hoverElement = null;
+		this.mouseDownTarget = null;
+		this.popoverPressTarget = null;
+		this.selectionDragAnchor = null;
+		this.textControlDragAnchor = null;
+		this.rangeDrag = null;
+		this.selectionUnit = null;
+		this.captureYielded = false;
+		this.lastClickPoint = null;
+		this.lastClickTime = 0;
+		this.clickCount = 0;
+		this.lastClickButton = 0;
+		this.mouseEventsSuppressed = false;
 	}
 
 	get mouseCaptureYielded(): boolean {
-		return this[kMouseCaptureYielded];
+		return this.captureYielded;
 	}
 
 	dispose(): void {}
 
 	dispatch(item: WireKey[] | WireMouse | WirePaste): void {
 		// Pseudo-state and the selection move with no mutation record.
-		this[kFramebuffer].invalidate();
+		this.framebuffer.invalidate();
 		if (Array.isArray(item)) {
 			deliverKeys(this, item);
 			return;
@@ -476,19 +452,18 @@ export class Input {
 	 * One hit-test at the last reported position, at the start of the frame.
 	 */
 	resolvePendingHover(): void {
-		const pending = this[kPendingHover];
+		const pending = this.pendingHover;
 		if (pending === null) {
 			return;
 		}
-		this[kPendingHover] = null;
+		this.pendingHover = null;
 		const {x, y, shiftKey, altKey, ctrlKey} = pending;
 		processPendingPointerCapture(this);
-		const buttons = getPointerState(this[kDocument]).buttons;
+		const buttons = getPointerState(this.document).buttons;
 		const target =
-			getPointerState(this[kDocument]).active ??
-			(elementAtDocumentPoint(this[kDocument], x, y, null) ||
-				this[kDocument].body);
-		const previous = this[kHoverElement];
+			getPointerState(this.document).active ??
+			(elementAtDocumentPoint(this.document, x, y, null) || this.document.body);
+		const previous = this.hoverElement;
 		const init = {
 			button: 0,
 			buttons,
@@ -499,9 +474,9 @@ export class Input {
 			ctrlKey,
 		};
 		if (target !== previous) {
-			this[kHoverElement] = target;
-			setHoveredElement(this[kDocument], target);
-			this[kCascade].handleHoverChange(previous, target);
+			this.hoverElement = target;
+			setHoveredElement(this.document, target);
+			this.cascade.handleHoverChange(previous, target);
 			const getChain = (element: Element | null): Element[] => {
 				const chain: Element[] = [];
 				for (
@@ -552,7 +527,7 @@ export class Input {
 			}
 		}
 		if (!pending.quiet) {
-			const last = this[kLastMouse];
+			const last = this.lastMouse;
 			const moveInit = {
 				...init,
 				...getMovement(this, x, y, last),
@@ -565,7 +540,7 @@ export class Input {
 				button: -1,
 			});
 			dispatchMouseLike(this, "mouse", "mousemove", target, moveInit);
-			this[kLastMouse] = {x, y};
+			this.lastMouse = {x, y};
 		}
 	}
 }
@@ -581,9 +556,9 @@ function dispatchMouseLike(
 	init: MouseEventInit,
 ): boolean {
 	const event = kind === "mouse"
-		? constructInternal(() => new input[kWindow].MouseEvent(type, init))
+		? constructInternal(() => new input.window.MouseEvent(type, init))
 		: constructInternal(() =>
-			new input[kWindow].PointerEvent(type, {
+			new input.window.PointerEvent(type, {
 				...init,
 				detail: type.startsWith("pointer") ? 0 : init.detail,
 				pointerId: MOUSE_POINTER_ID,
@@ -599,7 +574,7 @@ function dispatchMouseLike(
 // pointer event. An element that left the document loses it, and the
 // document hears that.
 function processPendingPointerCapture(input: Input): void {
-	const state = getPointerState(input[kDocument]);
+	const state = getPointerState(input.document);
 	if (state.pending !== null && !state.pending.isConnected) {
 		state.pending = null;
 	}
@@ -617,9 +592,9 @@ function processPendingPointerCapture(input: Input): void {
 	};
 	if (lost !== null) {
 		dispatchAsUserAgent(
-			lost.isConnected ? lost : input[kDocument],
+			lost.isConnected ? lost : input.document,
 			constructInternal(() =>
-				new input[kWindow].PointerEvent("lostpointercapture", init),
+				new input.window.PointerEvent("lostpointercapture", init),
 			),
 		);
 	}
@@ -627,7 +602,7 @@ function processPendingPointerCapture(input: Input): void {
 		dispatchAsUserAgent(
 			state.active,
 			constructInternal(() =>
-				new input[kWindow].PointerEvent("gotpointercapture", init),
+				new input.window.PointerEvent("gotpointercapture", init),
 			),
 		);
 	}
@@ -660,22 +635,22 @@ function deliverMouseReport(input: Input, {
 	// hit-test per frame. A drag's motion also falls through. Its mousemove
 	// and selection updates are per report.
 	if (isMotion) {
-		input[kPendingHover] = {x, y, shiftKey, altKey, ctrlKey, quiet: base <= 2};
+		input.pendingHover = {x, y, shiftKey, altKey, ctrlKey, quiet: base <= 2};
 		if (base > 2) {
-			requestRender(input[kDocument]);
+			requestRender(input.document);
 			return;
 		}
 	}
 
 	const hit =
-		(isInDocument && elementAtDocumentPoint(input[kDocument], x, y, null)) ||
-		input[kDocument].body;
+		(isInDocument && elementAtDocumentPoint(input.document, x, y, null)) ||
+		input.document.body;
 
 	if (wheelDeltaY !== null) {
 		const notCanceled = dispatchAsUserAgent(
 			hit,
 			constructInternal(() =>
-				new input[kWindow].WheelEvent("wheel", {
+				new input.window.WheelEvent("wheel", {
 					deltaY: wheelDeltaY,
 					deltaMode: 1,
 					...getClientPoint(input, x, y),
@@ -693,9 +668,9 @@ function deliverMouseReport(input: Input, {
 			// Scroll chaining. The parent scroller is the terminal's own
 			// scrollback, so the mouse is yielded to it. preventDefault on
 			// the wheel event opts out, as in a browser.
-			input[kMouseCaptureYielded] = true;
-			setDocumentVisible(input[kDocument], false);
-			requestRender(input[kDocument]);
+			input.captureYielded = true;
+			setDocumentVisible(input.document, false);
+			requestRender(input.document);
 		}
 		return;
 	}
@@ -704,7 +679,7 @@ function deliverMouseReport(input: Input, {
 		const notCanceled = dispatchAsUserAgent(
 			hit,
 			constructInternal(() =>
-				new input[kWindow].WheelEvent("wheel", {
+				new input.window.WheelEvent("wheel", {
 					deltaX: wheelDeltaX,
 					deltaMode: 1,
 					...getClientPoint(input, x, y),
@@ -724,7 +699,7 @@ function deliverMouseReport(input: Input, {
 			? getWheelScroller(input, hit, wheelDeltaX, "left")
 			: null;
 		if (scroller !== null) {
-			scroller.scrollLeft += pxFromCells(wheelDeltaX, false, input[kDocument]);
+			scroller.scrollLeft += pxFromCells(wheelDeltaX, false, input.document);
 		}
 		return;
 	}
@@ -737,13 +712,13 @@ function deliverMouseReport(input: Input, {
 	// The report names one button. The buttons held are tracked here, so a
 	// chord reports all of them, and only the first press and the last
 	// release are a pointerdown and a pointerup.
-	const state = getPointerState(input[kDocument]);
+	const state = getPointerState(input.document);
 	const bit = BUTTON_BITS[button];
 	const before = state.buttons;
 	state.buttons = isMotion
 		? before || buttons
 		: isRelease ? before & ~bit : before | bit;
-	const last = input[kLastMouse];
+	const last = input.lastMouse;
 	let detail = 0;
 	if (!isMotion) {
 		if (!isRelease) {
@@ -752,20 +727,20 @@ function deliverMouseReport(input: Input, {
 			// interval is a double-click even if the first click moved the
 			// element out from under it. Another button starts a new count.
 			const now = performance.now();
-			const lastPoint = input[kLastClickPoint];
-			input[kClickCount] =
+			const lastPoint = input.lastClickPoint;
+			input.clickCount =
 				lastPoint !== null &&
 				lastPoint.x === x &&
 				lastPoint.y === y &&
-				input[kLastClickButton] === button &&
-				now - input[kLastClickTime] <= DBLCLICK_INTERVAL_MS
-					? input[kClickCount] + 1
+				input.lastClickButton === button &&
+				now - input.lastClickTime <= DBLCLICK_INTERVAL_MS
+					? input.clickCount + 1
 					: 1;
-			input[kLastClickPoint] = {x, y};
-			input[kLastClickTime] = now;
-			input[kLastClickButton] = button;
+			input.lastClickPoint = {x, y};
+			input.lastClickTime = now;
+			input.lastClickButton = button;
 		}
-		detail = input[kClickCount];
+		detail = input.clickCount;
 	}
 	const eventInit = {
 		detail,
@@ -781,7 +756,7 @@ function deliverMouseReport(input: Input, {
 		cancelable: true,
 		composed: true,
 	};
-	input[kLastMouse] = {x, y};
+	input.lastMouse = {x, y};
 
 	processPendingPointerCapture(input);
 	const target = state.active ?? hit;
@@ -790,7 +765,7 @@ function deliverMouseReport(input: Input, {
 			...eventInit,
 			button: -1,
 		});
-		if (!input[kMouseEventsSuppressed]) {
+		if (!input.mouseEventsSuppressed) {
 			dispatchMouseLike(input, "mouse", "mousemove", target, eventInit);
 		}
 		dragTo(input, x, y, isInDocument);
@@ -799,7 +774,7 @@ function deliverMouseReport(input: Input, {
 
 	if (!isRelease) {
 		if (before === 0) {
-			input[kMouseEventsSuppressed] = !dispatchMouseLike(
+			input.mouseEventsSuppressed = !dispatchMouseLike(
 				input,
 				"pointer",
 				"pointerdown",
@@ -827,7 +802,7 @@ function deliverMouseReport(input: Input, {
 	}
 	dispatchRelease(input, target, button, eventInit);
 	if (state.buttons === 0) {
-		input[kMouseEventsSuppressed] = false;
+		input.mouseEventsSuppressed = false;
 	}
 }
 
@@ -835,17 +810,17 @@ function deliverPaste(input: Input, text: string): void {
 	// A terminal pastes line breaks as CR (tmux documents the replacement).
 	// The DOM's paste carries LF.
 	text = text.replace(/\r\n?/g, "\n");
-	const focused = getFocusedElement(input[kDocument]);
-	const target = focused && focused !== input[kDocument].body
+	const focused = getFocusedElement(input.document);
+	const target = focused && focused !== input.document.body
 		? focused
-		: input[kDocument].body;
-	const clipboardData = new input[kWindow].DataTransfer();
+		: input.document.body;
+	const clipboardData = new input.window.DataTransfer();
 	clipboardData.setData("text/plain", text);
 	lockDataTransfer(clipboardData);
 	const proceed = dispatchAsUserAgent(
 		target,
 		constructInternal(() =>
-			new input[kWindow].ClipboardEvent("paste", {
+			new input.window.ClipboardEvent("paste", {
 				clipboardData,
 				bubbles: true,
 				composed: true,
@@ -856,7 +831,7 @@ function deliverPaste(input: Input, text: string): void {
 	const tag = target.tagName;
 	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
 		const event = constructInternal(() =>
-			new input[kWindow].InputEvent("beforeinput", {
+			new input.window.InputEvent("beforeinput", {
 				inputType: "insertFromPaste",
 				data: text,
 				bubbles: true,
@@ -869,16 +844,16 @@ function deliverPaste(input: Input, text: string): void {
 	} else if (proceed) {
 		requestEditingInsert(target, "insertFromPaste", text);
 	}
-	requestRender(input[kDocument]);
+	requestRender(input.document);
 }
 
 // A keystroke also means the terminal has snapped back to the live
 // screen, so the mouse is taken back before the key is delivered.
 function deliverKeys(input: Input, keys: WireKey[]): void {
-	if (input[kMouseCaptureYielded]) {
-		input[kMouseCaptureYielded] = false;
-		setDocumentVisible(input[kDocument], true);
-		requestRender(input[kDocument]);
+	if (input.captureYielded) {
+		input.captureYielded = false;
+		setDocumentVisible(input.document, true);
+		requestRender(input.document);
 	}
 	for (const key of keys) {
 		dispatchKey(input, key);
@@ -936,8 +911,8 @@ function getDocumentPoint(input: Input, col: number, row: number): {
 } {
 	// Fullscreen paints from the alternate screen's first row, whatever row
 	// the command started on.
-	const framebuffer = input[kFramebuffer];
-	const top = input[kDocument].fullscreenElement === null
+	const framebuffer = input.framebuffer;
+	const top = input.document.fullscreenElement === null
 		? framebuffer.documentTop
 		: 0;
 	const documentRow = row - 1 - top + framebuffer.scrollTop;
@@ -953,12 +928,8 @@ function getClientPoint(
 	y: number,
 ): {clientX: number; clientY: number} {
 	return {
-		clientX: pxFromCells(x, false, input[kDocument]),
-		clientY: pxFromCells(
-			y - input[kFramebuffer].scrollTop,
-			true,
-			input[kDocument],
-		),
+		clientX: pxFromCells(x, false, input.document),
+		clientY: pxFromCells(y - input.framebuffer.scrollTop, true, input.document),
 	};
 }
 
@@ -971,8 +942,8 @@ function getMovement(
 	return last === null
 		? {movementX: 0, movementY: 0}
 		: {
-			movementX: pxFromCells(x - last.x, false, input[kDocument]),
-			movementY: pxFromCells(y - last.y, true, input[kDocument]),
+			movementX: pxFromCells(x - last.x, false, input.document),
+			movementY: pxFromCells(y - last.y, true, input.document),
 		};
 }
 
@@ -983,17 +954,13 @@ function getScreenPoint(
 	x: number,
 	y: number,
 ): {screenX: number; screenY: number} {
-	const framebuffer = input[kFramebuffer];
-	const top = input[kDocument].fullscreenElement === null
+	const framebuffer = input.framebuffer;
+	const top = input.document.fullscreenElement === null
 		? framebuffer.documentTop
 		: 0;
 	return {
-		screenX: pxFromCells(x, false, input[kDocument]),
-		screenY: pxFromCells(
-			y - framebuffer.scrollTop + top,
-			true,
-			input[kDocument],
-		),
+		screenX: pxFromCells(x, false, input.document),
+		screenY: pxFromCells(y - framebuffer.scrollTop + top, true, input.document),
 	};
 }
 
@@ -1006,16 +973,16 @@ function getScreenPoint(
 function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 	const scroller = getWheelScroller(input, target, deltaY, "top");
 	if (scroller) {
-		scroller.scrollTop += pxFromCells(deltaY, true, input[kDocument]);
+		scroller.scrollTop += pxFromCells(deltaY, true, input.document);
 		return false;
 	}
-	if (input[kDocument].fullscreenElement !== null) {
+	if (input.document.fullscreenElement !== null) {
 		return false;
 	}
-	if (deltaY < 0 && input[kFramebuffer].scrollTop === 0) {
-		return input[kLayout].documentPaintHeight() <= input[kFramebuffer].rows;
+	if (deltaY < 0 && input.framebuffer.scrollTop === 0) {
+		return input.layout.documentPaintHeight() <= input.framebuffer.rows;
 	}
-	scrollDocumentTo(input[kDocument], input[kFramebuffer].scrollTop + deltaY);
+	scrollDocumentTo(input.document, input.framebuffer.scrollTop + deltaY);
 	return false;
 }
 
@@ -1061,7 +1028,7 @@ function scrollByKey(input: Input, target: Element, key: string): void {
 	if (direction === 0) {
 		return;
 	}
-	const document = input[kDocument];
+	const document = input.document;
 	const edge = key === "Home" || key === "End";
 	const page = key === "PageUp" || key === "PageDown" || key === " ";
 	const scroller = getWheelScroller(input, target, direction, "top");
@@ -1081,8 +1048,8 @@ function scrollByKey(input: Input, target: Element, key: string): void {
 	if (document.fullscreenElement !== null) {
 		return;
 	}
-	const top = input[kFramebuffer].scrollTop;
-	const rows = page ? Math.max(1, input[kFramebuffer].rows - 1) : 1;
+	const top = input.framebuffer.scrollTop;
+	const rows = page ? Math.max(1, input.framebuffer.rows - 1) : 1;
 	scrollDocumentTo(
 		document,
 		edge
@@ -1117,17 +1084,17 @@ function dragTo(
 	y: number,
 	isInDocument: boolean,
 ): void {
-	if (input[kRangeDrag] && isInDocument) {
-		moveRangeThumb(input[kRangeDrag], x, false);
-		requestRender(input[kDocument]);
+	if (input.rangeDrag && isInDocument) {
+		moveRangeThumb(input.rangeDrag, x, false);
+		requestRender(input.document);
 		return;
 	}
 	// Clamped into the text control, whichever element the pointer is over now.
-	if (input[kTextControlDragAnchor] && isInDocument) {
+	if (input.textControlDragAnchor && isInDocument) {
 		const {element: textControlElement, offset: anchor} =
-			input[kTextControlDragAnchor];
+			input.textControlDragAnchor;
 		const focus = getTextControlCaretOffset(textControlElement, x, y);
-		const unit = input[kSelectionUnit];
+		const unit = input.selectionUnit;
 		if (focus !== null && unit !== null) {
 			// A whole unit at a time, from the unit the click selected.
 			const [anchorStart, anchorEnd] = getControlUnitBounds(
@@ -1147,7 +1114,7 @@ function dragTo(
 				forward ? Math.max(focusEnd, anchorEnd) : anchorEnd,
 				forward ? "forward" : "backward",
 			);
-			requestRender(input[kDocument]);
+			requestRender(input.document);
 		} else if (focus !== null) {
 			setUASelection(
 				textControlElement,
@@ -1155,20 +1122,20 @@ function dragTo(
 				Math.max(anchor, focus),
 				focus < anchor ? "backward" : "forward",
 			);
-			requestRender(input[kDocument]);
+			requestRender(input.document);
 		}
 		return;
 	}
 	// Over a textless stretch or user-select: none, the focus stays put.
-	if (input[kSelectionDragAnchor] && input[kMouseDownTarget] && isInDocument) {
+	if (input.selectionDragAnchor && input.mouseDownTarget && isInDocument) {
 		const focus = getTextPosition(input, x, y);
 		if (focus && isSelectable(input, focus)) {
-			const anchor = input[kSelectionDragAnchor];
-			const unit = input[kSelectionUnit];
+			const anchor = input.selectionDragAnchor;
+			const unit = input.selectionUnit;
 			if (unit !== null) {
-				selectUnits(input[kDocument], anchor, focus, unit);
+				selectUnits(input.document, anchor, focus, unit);
 			} else {
-				input[kWindow]
+				input.window
 					.getSelection()
 					?.setBaseAndExtent(
 						anchor.node,
@@ -1177,20 +1144,20 @@ function dragTo(
 						focus.offset,
 					);
 			}
-			requestRender(input[kDocument]);
+			requestRender(input.document);
 		}
 	}
 }
 
 // :active holds from the press to the release, wherever the release lands.
 function setPressed(input: Input, target: Element | null): void {
-	const document = input[kDocument];
+	const document = input.document;
 	const previous = getActiveElement(document) as Element | null;
 	if (previous === target) {
 		return;
 	}
 	setActiveElement(document, target);
-	input[kCascade].handleActiveChange(previous, target);
+	input.cascade.handleActiveChange(previous, target);
 	requestRender(document);
 }
 
@@ -1204,23 +1171,23 @@ function dispatchPress(
 	eventInit: object,
 	clicks: number,
 ): void {
-	input[kMouseDownTarget] = target;
-	input[kRangeDrag] = null;
-	input[kSelectionUnit] = null;
+	input.mouseDownTarget = target;
+	input.rangeDrag = null;
+	input.selectionUnit = null;
 	setPressed(input, target);
 	// Light dismiss is a press and a release in the same place, so a drag
 	// out of a popover does not close it.
-	input[kPopoverPressTarget] = lightDismissPress(target);
-	input[kTextControlDragAnchor] = null;
-	if (setDocumentFocusVisible(input[kDocument], false)) {
-		input[kCascade].handleFocusChange(getFocusedElement(input[kDocument]));
-		requestRender(input[kDocument]);
+	input.popoverPressTarget = lightDismissPress(target);
+	input.textControlDragAnchor = null;
+	if (setDocumentFocusVisible(input.document, false)) {
+		input.cascade.handleFocusChange(getFocusedElement(input.document));
+		requestRender(input.document);
 	}
 	const mousedown = constructInternal(() =>
-		new input[kWindow].MouseEvent("mousedown", eventInit),
+		new input.window.MouseEvent("mousedown", eventInit),
 	);
 	const notCanceled =
-		input[kMouseEventsSuppressed] || dispatchAsUserAgent(target, mousedown);
+		input.mouseEventsSuppressed || dispatchAsUserAgent(target, mousedown);
 	if (!notCanceled) {
 		return;
 	}
@@ -1235,21 +1202,21 @@ function dispatchPress(
 	if (host !== null && (focusable === null || !host.contains(focusable))) {
 		focusable = host;
 	}
-	const active = getFocusedElement(input[kDocument]);
+	const active = getFocusedElement(input.document);
 	if (focusable && focusable !== active) {
 		(focusable as HTMLElement).focus();
-		requestRender(input[kDocument]);
-	} else if (!focusable && active && active !== input[kDocument].body) {
+		requestRender(input.document);
+	} else if (!focusable && active && active !== input.document.body) {
 		(active as HTMLElement).blur();
-		requestRender(input[kDocument]);
+		requestRender(input.document);
 	}
 	runControlDefaultAction(target, mousedown);
 
 	// Default action: a press on a slider moves its thumb to the press, and
 	// a drag carries it along.
 	if (base === 0 && isInDocument && moveRangeThumb(target, x, true)) {
-		input[kRangeDrag] = target;
-		requestRender(input[kDocument]);
+		input.rangeDrag = target;
+		requestRender(input.document);
 		return;
 	}
 
@@ -1265,36 +1232,36 @@ function dispatchPress(
 	if (parked) {
 		const element = parked.textControl as HTMLInputElement |
 			HTMLTextAreaElement;
-		input[kTextControlDragAnchor] = {element, offset: parked.offset};
+		input.textControlDragAnchor = {element, offset: parked.offset};
 		// A double or triple click selects the unit around the press.
 		if (unit !== null) {
-			input[kSelectionUnit] = unit;
+			input.selectionUnit = unit;
 			const [start, end] = getControlUnitBounds(element, parked.offset, unit);
 			setUASelection(element, start, end, "forward");
 		}
 		// The document selection still clears, as in a browser.
-		const docSelection = input[kWindow].getSelection();
+		const docSelection = input.window.getSelection();
 		if (docSelection && !docSelection.isCollapsed) {
 			docSelection.removeAllRanges();
 		}
-		requestRender(input[kDocument]);
+		requestRender(input.document);
 	}
 
 	// Default action: collapse the document selection at the press and
 	// anchor a drag there. Left button only. preventDefault opts out.
-	const selection = input[kWindow].getSelection();
-	if (base === 0 && selection && !input[kTextControlDragAnchor]) {
+	const selection = input.window.getSelection();
+	if (base === 0 && selection && !input.textControlDragAnchor) {
 		let anchor = isInDocument ? getTextPosition(input, x, y) : null;
 		if (anchor && !isSelectable(input, anchor)) {
 			anchor = null;
 		}
 		const hadSelection = !selection.isCollapsed;
-		input[kSelectionDragAnchor] = anchor;
+		input.selectionDragAnchor = anchor;
 		if (anchor && unit !== null) {
 			// A double or triple click selects the unit around the press.
-			input[kSelectionUnit] = unit;
-			selectUnits(input[kDocument], anchor, anchor, unit);
-			requestRender(input[kDocument]);
+			input.selectionUnit = unit;
+			selectUnits(input.document, anchor, anchor, unit);
+			requestRender(input.document);
 		} else if (anchor) {
 			selection.setBaseAndExtent(
 				anchor.node,
@@ -1303,12 +1270,12 @@ function dispatchPress(
 				anchor.offset,
 			);
 		} else if (isInDocument && collapseInEmptyLine(input, selection, x, y)) {
-			requestRender(input[kDocument]);
+			requestRender(input.document);
 		} else if (selection.rangeCount > 0) {
 			selection.removeAllRanges();
 		}
 		if (hadSelection) {
-			requestRender(input[kDocument]);
+			requestRender(input.document);
 		}
 	}
 }
@@ -1337,25 +1304,25 @@ function dispatchRelease(
 	eventInit: MouseEventInit,
 ): void {
 	setPressed(input, null);
-	if (!input[kMouseEventsSuppressed]) {
+	if (!input.mouseEventsSuppressed) {
 		dispatchMouseLike(input, "mouse", "mouseup", target, eventInit);
 	}
 	// Before the click, as in a browser.
-	lightDismissRelease(target, input[kPopoverPressTarget]);
-	input[kPopoverPressTarget] = null;
+	lightDismissRelease(target, input.popoverPressTarget);
+	input.popoverPressTarget = null;
 	let selectedByDrag = false;
-	input[kTextControlDragAnchor] = null;
-	if (input[kRangeDrag] !== null) {
-		commitRangeThumb(input[kRangeDrag]);
-		input[kRangeDrag] = null;
+	input.textControlDragAnchor = null;
+	if (input.rangeDrag !== null) {
+		commitRangeThumb(input.rangeDrag);
+		input.rangeDrag = null;
 	}
 	// A word or paragraph a multi-click selected is the click's own work,
 	// not a drag's, so the click and dblclick still fire.
-	const unit = input[kSelectionUnit];
-	input[kSelectionUnit] = null;
-	if (input[kSelectionDragAnchor]) {
-		input[kSelectionDragAnchor] = null;
-		const text = input[kWindow].getSelection()?.toString() ?? "";
+	const unit = input.selectionUnit;
+	input.selectionUnit = null;
+	if (input.selectionDragAnchor) {
+		input.selectionDragAnchor = null;
+		const text = input.window.getSelection()?.toString() ?? "";
 		if (text.length > 0 && unit === null) {
 			selectedByDrag = true;
 		}
@@ -1364,13 +1331,13 @@ function dispatchRelease(
 	// would toggle its checkbox and a framework's re-render would destroy
 	// the selection just made.
 	if (selectedByDrag) {
-		input[kMouseDownTarget] = null;
+		input.mouseDownTarget = null;
 		return;
 	}
 	// UI Events: a press and a release on different elements click their
 	// nearest common ancestor, so a click still lands when the press moved
 	// the element under the pointer.
-	const pressed = input[kMouseDownTarget];
+	const pressed = input.mouseDownTarget;
 	const clickTarget = pressed === null
 		? null
 		: getCommonInclusiveAncestor(pressed, target);
@@ -1394,35 +1361,35 @@ function dispatchRelease(
 				: null;
 		if (control) {
 			control.focus();
-			requestRender(input[kDocument]);
+			requestRender(input.document);
 		}
 
 		// In addition to its own click, on every second click.
-		if (input[kClickCount] % 2 === 0) {
+		if (input.clickCount % 2 === 0) {
 			dispatchMouseLike(input, "mouse", "dblclick", target, eventInit);
 		}
 	}
-	input[kMouseDownTarget] = null;
+	input.mouseDownTarget = null;
 }
 
 function dispatchKey(input: Input, stroke: WireKey): void {
 	const {key: keyName, char, shiftKey, ctrlKey, altKey, metaKey} = stroke;
 	const keyCode = getLegacyKeyCode(keyName);
 
-	if (setDocumentFocusVisible(input[kDocument], true)) {
-		input[kCascade].handleFocusChange(getFocusedElement(input[kDocument]));
-		requestRender(input[kDocument]);
+	if (setDocumentFocusVisible(input.document, true)) {
+		input.cascade.handleFocusChange(getFocusedElement(input.document));
+		requestRender(input.document);
 	}
 
 	// A fullscreen element is usually not focusable, so keydown falls back
 	// to it before the body.
-	const active = getFocusedElement(input[kDocument]);
-	const targetElement = active && active !== input[kDocument].body
+	const active = getFocusedElement(input.document);
+	const targetElement = active && active !== input.document.body
 		? active
-		: input[kDocument].fullscreenElement || input[kDocument].body;
+		: input.document.fullscreenElement || input.document.body;
 
 	const keydownEvent = constructInternal(() =>
-		new input[kWindow].KeyboardEvent("keydown", {
+		new input.window.KeyboardEvent("keydown", {
 			key: keyName,
 			code: getDOMCode(keyName),
 			keyCode,
@@ -1447,8 +1414,8 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	// nothing from the user, and terminal convention gives Escape to the
 	// app.
 	if (keyName === "Escape") {
-		if (handleCloseRequest(input[kDocument])) {
-			requestRender(input[kDocument]);
+		if (handleCloseRequest(input.document)) {
+			requestRender(input.document);
 			return;
 		}
 	}
@@ -1460,11 +1427,11 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		// A terminal program's redraw, for a screen stray output scribbled
 		// on: clear what shows and paint the whole document again.
 		if (keyName === "l" && ctrlKey && !altKey && !shiftKey && !metaKey) {
-			input[kFramebuffer].repaintAll();
-			requestRender(input[kDocument]);
+			input.framebuffer.repaintAll();
+			requestRender(input.document);
 		}
 		if (keyName === "z" && ctrlKey && !altKey && !shiftKey && !metaKey) {
-			input[kSuspend]();
+			input.suspend();
 		}
 
 		// A control's own editing ran above, and claimed its keys.
@@ -1487,7 +1454,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 				dispatchAsUserAgent(
 					targetElement,
 					constructInternal(() =>
-						new input[kWindow].PointerEvent("click", {
+						new input.window.PointerEvent("click", {
 							pointerId: -1,
 							bubbles: true,
 							cancelable: true,
@@ -1495,7 +1462,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 						}),
 					),
 				);
-				requestRender(input[kDocument]);
+				requestRender(input.document);
 			}
 		}
 	}
@@ -1505,7 +1472,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	if (notCanceled && char !== "") {
 		const charCode = char.codePointAt(0)!;
 		const keypressEvent = constructInternal(() =>
-			new input[kWindow].KeyboardEvent("keypress", {
+			new input.window.KeyboardEvent("keypress", {
 				key: char,
 				code: getDOMCode(char),
 				keyCode: charCode,
@@ -1526,7 +1493,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	}
 
 	const keyupEvent = constructInternal(() =>
-		new input[kWindow].KeyboardEvent("keyup", {
+		new input.window.KeyboardEvent("keyup", {
 			key: keyName,
 			code: getDOMCode(keyName),
 			keyCode,
@@ -1551,7 +1518,7 @@ function insertText(input: Input, target: Element, text: string): void {
 		return;
 	}
 	const event = constructInternal(() =>
-		new input[kWindow].InputEvent("beforeinput", {
+		new input.window.InputEvent("beforeinput", {
 			inputType: "insertText",
 			data: text,
 			bubbles: true,
@@ -1611,12 +1578,12 @@ function getIndexPastPoint(
 function moveFocus(input: Input, reverse: boolean): void {
 	// Which elements are focusable depends on what renders, so the layout
 	// is brought up to date first, whether or not a frame has painted it.
-	flushLayout(input[kDocument]);
+	flushLayout(input.document);
 	// Tab cannot leave a modal dialog.
-	const scope = topmostModalDialog(input[kDocument]) ?? input[kDocument];
-	const entries = getSequentialFocusEntries(scope, input[kLayout]);
+	const scope = topmostModalDialog(input.document) ?? input.document;
+	const entries = getSequentialFocusEntries(scope, input.layout);
 
-	const current = getFocusedElement(input[kDocument]);
+	const current = getFocusedElement(input.document);
 	const currentIndex = entries.findIndex((entry) => entry.element === current);
 	const currentBarrier = currentIndex === -1
 		? null
@@ -1628,7 +1595,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 	const step = reverse ? -1 : 1;
 	let nextIndex = -1;
 	const point = currentIndex === -1
-		? takeFocusStartingPoint(input[kDocument])
+		? takeFocusStartingPoint(input.document)
 		: null;
 	if (point !== null) {
 		nextIndex = getIndexPastPoint(entries, point, reverse);
@@ -1721,7 +1688,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 	next.focus();
 	next.scrollIntoView({block: "nearest"});
 	// No mutation record describes a focus move.
-	requestRender(input[kDocument]);
+	requestRender(input.document);
 }
 
 // Null over a form control. Its value is not document text.
@@ -1732,7 +1699,7 @@ function getTextPosition(
 ): {node: Text; offset: number} | null {
 	// The deepest element, as a pointer event targets: text a user drags
 	// across in a shadow tree is still text they can select.
-	const element = elementAtDocumentPoint(input[kDocument], x, y, null);
+	const element = elementAtDocumentPoint(input.document, x, y, null);
 	if (
 		!element ||
 		element instanceof HTMLInputElement ||
@@ -1740,7 +1707,7 @@ function getTextPosition(
 	) {
 		return null;
 	}
-	const layout = input[kLayout];
+	const layout = input.layout;
 	const exact = layout.caretPositionFromPoint(x, y, element);
 	if (exact !== null || isEmptyEditableLine(element)) {
 		return exact;
@@ -1775,7 +1742,7 @@ function collapseInEmptyLine(
 	x: number,
 	y: number,
 ): boolean {
-	const element = elementAtDocumentPoint(input[kDocument], x, y, null);
+	const element = elementAtDocumentPoint(input.document, x, y, null);
 	if (element === null || !isEmptyEditableLine(element)) {
 		return false;
 	}
@@ -1788,5 +1755,5 @@ function isSelectable(
 	position: {node: Text; offset: number},
 ): boolean {
 	const parent = flatParentElement(position.node);
-	return parent === null || input[kCascade].isSelectable(parent);
+	return parent === null || input.cascade.isSelectable(parent);
 }
