@@ -1523,10 +1523,6 @@ function styleLayoutNodeProperties(
 	}
 }
 
-const kPass = Symbol("pass");
-const kTouched = Symbol("touched");
-const kPositionedElements = Symbol("positionedElements");
-
 // Only an out-of-flow box is asked where it would have been, so only it
 // carries the static-position function.
 function styleNode(
@@ -1535,12 +1531,7 @@ function styleNode(
 	layoutNode: LayoutNode,
 ): void {
 	const wasHidden = layoutNode.style.displayType === "none";
-	styleLayoutNode(
-		element,
-		layoutNode,
-		layout[kPositionedElements],
-		layout[kPass],
-	);
+	styleLayoutNode(element, layoutNode, layout.positionedElements, layout.pass);
 	// Turning on display:none makes the whole subtree box-less, and every
 	// path that restyles a box passes through here.
 	if (!wasHidden && layoutNode.style.displayType === "none") {
@@ -1636,8 +1627,6 @@ export class Box {
 	}
 }
 
-const kDerivedContainers = Symbol("derivedContainers");
-
 // The one builder of boxes. Nothing else creates one. Inline content
 // lays out in anonymous boxes, one per contiguous run of inline-level
 // flow children (CSS2 §9.2.1.1), each a measuring leaf. `heads` maps
@@ -1645,11 +1634,11 @@ const kDerivedContainers = Symbol("derivedContainers");
 // rather than a walk back through siblings. Box-less elements
 // (display:none, out of flow) take no run position and map to the box
 // open around them, so nested content still resolves. Redone when a
-// mutation drops the container from kDerivedContainers. The boxes
+// mutation drops the container from derivedContainers. The boxes
 // themselves are synced, not remade.
 function getContainerBox(layout: Layout, container: Element): Box {
 	const box = getPrincipalBox(layout, container);
-	if (box.children && layout[kDerivedContainers].has(container)) {
+	if (box.children && layout.derivedContainers.has(container)) {
 		return box;
 	}
 
@@ -1726,22 +1715,19 @@ function getContainerBox(layout: Layout, container: Element): Box {
 
 	box.children = children;
 	box.heads = heads;
-	layout[kDerivedContainers].add(container);
+	layout.derivedContainers.add(container);
 	return box;
 }
-
-const kBoxes = Symbol("boxes");
-const kMathBoxes = Symbol("mathBoxes");
 
 function getPrincipalBox(
 	layout: Layout,
 	node: Node,
 	parent: Box | null = null,
 ): Box {
-	let box = layout[kBoxes].get(node);
+	let box = layout.boxes.get(node);
 	if (!box) {
 		box = new Box("node", node);
-		layout[kBoxes].set(node, box);
+		layout.boxes.set(node, box);
 	}
 	if (parent) {
 		box.parent = parent;
@@ -1749,24 +1735,20 @@ function getPrincipalBox(
 	return box;
 }
 
-const kNodeMap = Symbol("nodeMap");
-
 function getContainerLayoutNode(
 	layout: Layout,
 	container: Element,
 ): LayoutNode | undefined {
 	return (
-		layout[kBoxes].get(container)?.independentFormattingContext ??
-		layout[kNodeMap].get(container)
+		layout.boxes.get(container)?.independentFormattingContext ??
+		layout.nodeMap.get(container)
 	);
 }
-
-const kMeasureNodes = Symbol("measureNodes");
 
 // The children are severed first. They belong to other DOM nodes, which
 // keep pointing at them.
 function dropLayoutNode(layout: Layout, node: Node): void {
-	const layoutNode = layout[kNodeMap].get(node);
+	const layoutNode = layout.nodeMap.get(node);
 	if (!layoutNode) {
 		return;
 	}
@@ -1774,7 +1756,7 @@ function dropLayoutNode(layout: Layout, node: Node): void {
 	while (layoutNode.children.length > 0) {
 		layoutNode.removeChild(layoutNode.children[0]);
 	}
-	layout[kMeasureNodes].delete(layoutNode);
+	layout.measureNodes.delete(layoutNode);
 	untrackNode(layout, node);
 }
 
@@ -1786,7 +1768,7 @@ function isBoxKindMatch(
 	element: Element,
 	layoutNode: LayoutNode,
 ): boolean {
-	if (isMeasuredAsRun(element) !== layout[kMeasureNodes].has(layoutNode)) {
+	if (isMeasuredAsRun(element) !== layout.measureNodes.has(layoutNode)) {
 		return false;
 	}
 	return (
@@ -1794,8 +1776,6 @@ function isBoxKindMatch(
 		(layoutNode.style.displayType === "none")
 	);
 }
-
-const kAnonymousBoxes = Symbol("anonymousBoxes");
 
 function dropAnonymousBox(layout: Layout, box: Box): void {
 	const layoutNode = box.layoutNode;
@@ -1805,8 +1785,8 @@ function dropAnonymousBox(layout: Layout, box: Box): void {
 		return;
 	}
 	layoutNode.parent?.removeChild(layoutNode);
-	layout[kMeasureNodes].delete(layoutNode);
-	layout[kAnonymousBoxes].delete(layoutNode);
+	layout.measureNodes.delete(layoutNode);
+	layout.anonymousBoxes.delete(layoutNode);
 	layoutNode.owner = null;
 }
 
@@ -1858,7 +1838,7 @@ function getOwnLayoutNode(layout: Layout, box: Box): LayoutNode | null {
 	if (box.kind === "anonymous") {
 		return box.layoutNode;
 	}
-	return box.node === null ? null : (layout[kNodeMap].get(box.node) ?? null);
+	return box.node === null ? null : (layout.nodeMap.get(box.node) ?? null);
 }
 
 function runLayoutNode(layout: Layout, node: Node): LayoutNode | undefined {
@@ -1866,7 +1846,7 @@ function runLayoutNode(layout: Layout, node: Node): LayoutNode | undefined {
 	if (box) {
 		return box.head === node ? (box.layoutNode ?? undefined) : undefined;
 	}
-	return layout[kNodeMap].get(node);
+	return layout.nodeMap.get(node);
 }
 
 function runBreakResult(layout: Layout, node: Node): BreakResult | undefined {
@@ -1874,20 +1854,14 @@ function runBreakResult(layout: Layout, node: Node): BreakResult | undefined {
 	if (box) {
 		return box.head === node ? (box.fragments ?? undefined) : undefined;
 	}
-	return layout[kBoxes].get(node)?.fragments ?? undefined;
+	return layout.boxes.get(node)?.fragments ?? undefined;
 }
-
-const kDirtyRunContainers = Symbol("dirtyRunContainers");
-const kDOMRect = Symbol("DOMRect");
-const kRootElement = Symbol("rootElement");
-const kInitialContainingBlock = Symbol("initialContainingBlock");
-const kWindow = Symbol("window");
 
 // Bring a container's layout children into line with its box list.
 // Positions are counted, not searched. A box sits after every earlier
 // box of the container that reached the layout tree.
 function syncContainerRuns(layout: Layout, container: Element): void {
-	layout[kDirtyRunContainers].delete(container);
+	layout.dirtyRunContainers.delete(container);
 	if (getLayoutDisplay(container) === "none" || isHiddenByAncestor(container)) {
 		// The only pass that ever visits a hidden container.
 		dropHiddenContent(layout, container);
@@ -1935,12 +1909,12 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 				entry.layoutNode = layoutNode;
 				entry.styledFrom = styledFrom;
 				if (styledFrom) {
-					styleLayoutNode(styledFrom, layoutNode, layout[kPositionedElements]);
+					styleLayoutNode(styledFrom, layoutNode, layout.positionedElements);
 				}
 				layoutNode.measure = (width, widthSpace, placing) =>
 					measureInlineRun(layout, entry, width, widthSpace, placing);
-				layout[kMeasureNodes].add(layoutNode);
-				layout[kAnonymousBoxes].set(layoutNode, entry);
+				layout.measureNodes.add(layoutNode);
+				layout.anonymousBoxes.set(layoutNode, entry);
 				layoutNode.owner = entry.head;
 			} else if (layoutNode.owner !== entry.head) {
 				layoutNode.owner = entry.head;
@@ -1957,7 +1931,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 		// whose own box changed is re-derived onto its node. The rest keep
 		// their nodes and only move into place.
 		const node = entry.node!;
-		const kept = layout[kNodeMap].get(node);
+		const kept = layout.nodeMap.get(node);
 		if (kept?.parent !== containerFlex || isTouched(layout, node)) {
 			addNode(layout, node, containerFlex, null);
 		}
@@ -1966,7 +1940,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 		if (isOutOfFlow(node)) {
 			continue;
 		}
-		const layoutNode = layout[kNodeMap].get(node);
+		const layoutNode = layout.nodeMap.get(node);
 		if (layoutNode && layoutNode.parent === containerFlex) {
 			// DOM siblings know nothing of the anonymous boxes between them, so
 			// the position is decided here, with the whole list available.
@@ -2005,7 +1979,7 @@ function syncRunMembers(layout: Layout, run: Box): void {
 			addNode(layout, element, null);
 			continue;
 		}
-		if (!layout[kBoxes].get(element)?.independentFormattingContext) {
+		if (!layout.boxes.get(element)?.independentFormattingContext) {
 			dropLayoutNode(layout, element);
 		}
 		dropRunContent(layout, element);
@@ -2058,8 +2032,7 @@ function getRunContainerFromParent(
 			// An atomic inline nested in one starts a run there rather than
 			// joining the run its host is in.
 			if (
-				layout[kBoxes].get(current)?.independentFormattingContext ||
-				startsOwnRun
+				layout.boxes.get(current)?.independentFormattingContext || startsOwnRun
 			) {
 				return current;
 			}
@@ -2106,8 +2079,8 @@ function addNode(
 		// The container learns of the dissolved children only by enumerating.
 		const container = getRunContainer(layout, node);
 		if (container) {
-			layout[kDerivedContainers].delete(container);
-			layout[kDirtyRunContainers].add(container);
+			layout.derivedContainers.delete(container);
+			layout.dirtyRunContainers.add(container);
 		}
 		return;
 	}
@@ -2116,7 +2089,7 @@ function addNode(
 	// formatting context's block cannot reach in). Then the box moves.
 	if (isOutOfFlow(node)) {
 		const containingBlock = getPosition(node as Element) === "fixed"
-			? layout[kInitialContainingBlock]
+			? layout.initialBlock
 			: getContainingBlockLayoutNode(layout, node as Element);
 		if (
 			containingBlock && !isReachableFrom(parentLayoutNode, containingBlock)
@@ -2131,17 +2104,17 @@ function addNode(
 	// inline-block painted nothing while the same input beside a letter of
 	// text painted fine.
 	if (parentLayoutNode?.measure) {
-		const stale = layout[kNodeMap].get(node);
+		const stale = layout.nodeMap.get(node);
 		if (stale && stale.parent === parentLayoutNode) {
 			parentLayoutNode.removeChild(stale);
-			layout[kMeasureNodes].delete(stale);
+			layout.measureNodes.delete(stale);
 			untrackNode(layout, node);
 		}
 		return;
 	}
 
-	if (layout[kNodeMap].has(node)) {
-		const existingLayoutNode = layout[kNodeMap].get(node)!;
+	if (layout.nodeMap.has(node)) {
+		const existingLayoutNode = layout.nodeMap.get(node)!;
 		// A node left from when this content was block-level is dropped, so
 		// the anonymous box is the only thing measuring it.
 		if (
@@ -2168,7 +2141,7 @@ function addNode(
 			}
 			// Whatever moved the node may also have restyled it, unless this
 			// pass already styled it.
-			if (stylings.get(existingLayoutNode)?.pass !== layout[kPass]) {
+			if (stylings.get(existingLayoutNode)?.pass !== layout.pass) {
 				styleNode(layout, element, existingLayoutNode);
 			}
 			// A kept box is re-derived exactly as if built from scratch.
@@ -2190,7 +2163,7 @@ function addNode(
 				);
 				const container = getRunContainer(layout, node);
 				if (container) {
-					layout[kDirtyRunContainers].add(container);
+					layout.dirtyRunContainers.add(container);
 				}
 			}
 		}
@@ -2217,7 +2190,7 @@ function addElementNode(
 		const box = known !== undefined ? known : getBox(layout, element);
 		if (box) {
 			invalidateBox(layout, box);
-			layout[kDirtyRunContainers].add(box.container);
+			layout.dirtyRunContainers.add(box.container);
 			syncIndependentFormattingContext(layout, element);
 			dropRunContent(layout, element);
 			return;
@@ -2229,7 +2202,7 @@ function addElementNode(
 	// Appended. The container's box list decides the order.
 	const flexIndex = parentLayoutNode?.children.length ?? 0;
 
-	let layoutNode = layout[kNodeMap].get(element);
+	let layoutNode = layout.nodeMap.get(element);
 	if (!layoutNode) {
 		layoutNode = new LayoutNode();
 		trackNode(layout, element, layoutNode);
@@ -2246,7 +2219,7 @@ function addElementNode(
 		layoutNode.measuresText = false;
 		layoutNode.measure = (width, widthSpace) =>
 			measureReplaced(element, width, widthSpace);
-		layout[kMeasureNodes].add(layoutNode);
+		layout.measureNodes.add(layoutNode);
 		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
@@ -2256,7 +2229,7 @@ function addElementNode(
 			const box = measureMath(layout, element);
 			return {width: box.width, height: box.height};
 		};
-		layout[kMeasureNodes].add(layoutNode);
+		layout.measureNodes.add(layoutNode);
 		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
@@ -2265,7 +2238,7 @@ function addElementNode(
 		const box = getPrincipalBox(layout, element);
 		layoutNode.measure = (width, widthSpace, placing) =>
 			measureInlineRun(layout, box, width, widthSpace, placing);
-		layout[kMeasureNodes].add(layoutNode);
+		layout.measureNodes.add(layoutNode);
 
 		if (layoutNode && parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
@@ -2304,7 +2277,7 @@ function addElementNode(
 	// Here rather than in performLayout's drain. A container built from
 	// inside a measure is laid out the moment the measure returns, with no
 	// drain in between.
-	if (layout[kDirtyRunContainers].has(element)) {
+	if (layout.dirtyRunContainers.has(element)) {
 		syncContainerRuns(layout, element);
 	}
 
@@ -2314,7 +2287,7 @@ function addElementNode(
 		// boxes between them. The container's box list decides the order.
 		const container = getRunContainer(layout, element);
 		if (container) {
-			layout[kDirtyRunContainers].add(container);
+			layout.dirtyRunContainers.add(container);
 		}
 	}
 }
@@ -2336,11 +2309,11 @@ function addTextNode(
 	const box = known !== undefined ? known : getBox(layout, text);
 	if (box) {
 		invalidateBox(layout, box);
-		layout[kDirtyRunContainers].add(box.container);
+		layout.dirtyRunContainers.add(box.container);
 		return;
 	}
 
-	let layoutNode = layout[kNodeMap].get(text);
+	let layoutNode = layout.nodeMap.get(text);
 	if (!layoutNode) {
 		layoutNode = new LayoutNode();
 		trackNode(layout, text, layoutNode);
@@ -2349,7 +2322,7 @@ function addTextNode(
 	const own = getPrincipalBox(layout, text);
 	layoutNode.measure = (width, widthSpace, placing) =>
 		measureInlineRun(layout, own, width, widthSpace, placing);
-	layout[kMeasureNodes].add(layoutNode);
+	layout.measureNodes.add(layoutNode);
 
 	parentLayoutNode.insertChild(layoutNode, parentLayoutNode.children.length);
 }
@@ -2444,7 +2417,7 @@ function syncIndependentFormattingContext(
 
 	// The measure laying this root out may be running right now. Its boxes
 	// have to be in it before that measure returns.
-	if (layout[kDirtyRunContainers].has(element)) {
+	if (layout.dirtyRunContainers.has(element)) {
 		syncContainerRuns(layout, element);
 	}
 }
@@ -2466,7 +2439,7 @@ function dropIndependentFormattingContext(box: Box): void {
 // getRect until dropped.
 function dropHiddenContent(layout: Layout, element: Element): void {
 	dropContainerBoxes(layout, element);
-	const box = layout[kBoxes].get(element);
+	const box = layout.boxes.get(element);
 	if (box) {
 		dropIndependentFormattingContext(box);
 	}
@@ -2480,7 +2453,7 @@ function dropHiddenContent(layout: Layout, element: Element): void {
 
 // A box list left in place is what the next read uses.
 function dropContainerBoxes(layout: Layout, element: Element): void {
-	const box = layout[kBoxes].get(element);
+	const box = layout.boxes.get(element);
 	if (box?.children) {
 		for (const child of box.children) {
 			if (child.kind === "anonymous") {
@@ -2490,7 +2463,7 @@ function dropContainerBoxes(layout: Layout, element: Element): void {
 		box.children = null;
 		box.heads = null;
 	}
-	layout[kDirtyRunContainers].delete(element);
+	layout.dirtyRunContainers.delete(element);
 }
 
 // A run measures everything inside it as one unit, so no box in there
@@ -2499,7 +2472,7 @@ function dropContainerBoxes(layout: Layout, element: Element): void {
 // alone: out-of-flow boxes (hoisted instead) and atomic inlines with
 // independent formatting contexts.
 function dropRunContent(layout: Layout, element: Element): void {
-	if (layout[kBoxes].get(element)?.independentFormattingContext) {
+	if (layout.boxes.get(element)?.independentFormattingContext) {
 		return;
 	}
 	dropContainerBoxes(layout, element);
@@ -2511,7 +2484,7 @@ function dropRunContent(layout: Layout, element: Element): void {
 				node = flowNext(node, element, true);
 				continue;
 			}
-			if (layout[kBoxes].get(child)?.independentFormattingContext) {
+			if (layout.boxes.get(child)?.independentFormattingContext) {
 				node = flowNext(node, element, true);
 				continue;
 			}
@@ -2533,11 +2506,11 @@ function dropSteppedOver(layout: Layout, parent: Element): void {
 		}
 		const element = child as Element;
 		const dissolves = isDisplayContents(element);
-		if (!dissolves && !layout[kBoxes].get(element)?.broken) {
+		if (!dissolves && !layout.boxes.get(element)?.broken) {
 			continue;
 		}
 		// addNode drops the box of a box-less element.
-		if (dissolves && layout[kNodeMap].has(element)) {
+		if (dissolves && layout.nodeMap.has(element)) {
 			addNode(layout, element, null);
 		}
 		dropSteppedOver(layout, element);
@@ -2562,7 +2535,7 @@ function getContainingBlockLayoutNode(
 			getPosition(ancestor) !== "static" ||
 			establishesFixedContainingBlock(ancestor)
 		) {
-			const layoutNode = layout[kNodeMap].get(ancestor);
+			const layoutNode = layout.nodeMap.get(ancestor);
 			// A measure-function node cannot take flex children, so a
 			// positioned inline-block cannot serve, and the hoist keeps
 			// climbing.
@@ -2571,7 +2544,7 @@ function getContainingBlockLayoutNode(
 			}
 		}
 	}
-	return layout[kNodeMap].get(layout[kRootElement]) ?? null;
+	return layout.nodeMap.get(layout.rootElement) ?? null;
 }
 
 function isHiddenByAncestor(node: Node): boolean {
@@ -2601,7 +2574,7 @@ function getDocumentPosition(
 	for (let parent = root.parent; parent; parent = root.parent) {
 		root = parent;
 	}
-	if (root === layout[kInitialContainingBlock]) {
+	if (root === layout.initialBlock) {
 		return position;
 	}
 	let host: Element | null = null;
@@ -2610,7 +2583,7 @@ function getDocumentPosition(
 		current && !host;
 		current = getBoxParentElement(current)
 	) {
-		if (layout[kBoxes].get(current)?.independentFormattingContext === root) {
+		if (layout.boxes.get(current)?.independentFormattingContext === root) {
 			host = current;
 		}
 	}
@@ -2648,28 +2621,26 @@ function trackNode(
 	domNode: Node,
 	layoutNode: LayoutNode,
 ): void {
-	layout[kNodeMap].set(domNode, layoutNode);
+	layout.nodeMap.set(domNode, layoutNode);
 	layoutNode.owner = domNode;
 }
 
 function untrackNode(layout: Layout, domNode: Node): void {
-	const layoutNode = layout[kNodeMap].get(domNode);
+	const layoutNode = layout.nodeMap.get(domNode);
 	if (layoutNode) {
 		layoutNode.owner = null;
 	}
 	// The lines are the product of the layout node that is being removed,
 	// and would describe a box that no longer exists.
-	const box = layout[kBoxes].get(domNode);
+	const box = layout.boxes.get(domNode);
 	if (box) {
 		box.fragments = null;
 	}
-	layout[kNodeMap].delete(domNode);
+	layout.nodeMap.delete(domNode);
 	if (domNode.nodeType === domNode.ELEMENT_NODE) {
-		layout[kPositionedElements].delete(domNode as Element);
+		layout.positionedElements.delete(domNode as Element);
 	}
 }
-
-const kInvalidatedNodes = Symbol("invalidatedNodes");
 
 // The first flat-tree child that can start an inline run. A UA shadow
 // tree's <style> would otherwise end leaf collection at position zero.
@@ -2709,8 +2680,8 @@ function invalidateContainerDerivation(
 	layout: Layout,
 	container: Element,
 ): void {
-	layout[kDerivedContainers].delete(container);
-	layout[kDirtyRunContainers].add(container);
+	layout.derivedContainers.delete(container);
+	layout.dirtyRunContainers.add(container);
 }
 
 function invalidateBoxDerivation(layout: Layout, node: Node): void {
@@ -2749,7 +2720,7 @@ function invalidateSubtreeDerivation(layout: Layout, node: Node): void {
 	invalidateChildDerivation(layout, node as Element);
 	// A subtree layout has never seen holds no enumeration to unsettle.
 	// Anything that HAS been laid out is reachable from its own record.
-	if (!layout[kNodeMap].has(node) && !layout[kBoxes].get(node)?.children) {
+	if (!layout.nodeMap.has(node) && !layout.boxes.get(node)?.children) {
 		return;
 	}
 	// The flat tree, not the flow. Which elements dissolve is the cascade's
@@ -2763,14 +2734,14 @@ function invalidateSubtreeDerivation(layout: Layout, node: Node): void {
 }
 
 function touch(layout: Layout, node: Node): void {
-	const touched = layout[kTouched];
+	const touched = layout.touched;
 	if (touched !== "all") {
 		touched.add(node);
 	}
 }
 
 function isTouched(layout: Layout, node: Node): boolean {
-	const touched = layout[kTouched];
+	const touched = layout.touched;
 	return touched === "all" || touched.has(node);
 }
 
@@ -2789,7 +2760,7 @@ function invalidateInlineRun(layout: Layout, node: Node): void {
 	}
 	if (entry.kind === "anonymous") {
 		invalidateContainerBoxes(layout, entry.container);
-		layout[kDirtyRunContainers].add(entry.container);
+		layout.dirtyRunContainers.add(entry.container);
 		// A node left over from an earlier shape of the container measures the
 		// same content a second time, in a box the container no longer has.
 		dropLayoutNode(layout, node);
@@ -2799,17 +2770,17 @@ function invalidateInlineRun(layout: Layout, node: Node): void {
 	if (container) {
 		invalidateContainerBoxes(layout, container);
 	}
-	layout[kNodeMap].get(entry.node!)?.invalidate();
+	layout.nodeMap.get(entry.node!)?.invalidate();
 }
 
 function invalidateNode(layout: Layout, node: Node): void {
-	layout[kInvalidatedNodes].add(node);
+	layout.invalidatedNodes.add(node);
 	touch(layout, node);
 
 	if (isInlineLevel(node)) {
 		invalidateInlineRun(layout, node);
 	} else if (node.nodeType === node.ELEMENT_NODE) {
-		const layoutNode = layout[kNodeMap].get(node);
+		const layoutNode = layout.nodeMap.get(node);
 		if (layoutNode) {
 			// The re-add sweep puts a node back under its parent element, and
 			// the root element has none, so the root stays where it is.
@@ -2819,7 +2790,7 @@ function invalidateNode(layout: Layout, node: Node): void {
 			}
 
 			if (!node.isConnected) {
-				layout[kMeasureNodes].delete(layoutNode);
+				layout.measureNodes.delete(layoutNode);
 				untrackNode(layout, node);
 			} else {
 				// Kept for performLayout's re-add sweep, but restyled. A
@@ -2883,7 +2854,7 @@ function getEnclosingIndependentFormattingContext(
 	from: Element | null,
 ): Element | null {
 	for (let current = from; current; current = getBoxParentElement(current)) {
-		if (layout[kBoxes].get(current)?.independentFormattingContext) {
+		if (layout.boxes.get(current)?.independentFormattingContext) {
 			return current;
 		}
 	}
@@ -2913,7 +2884,7 @@ function invalidateEnclosingMeasure(layout: Layout, node: Node): void {
 	// container's box list is what records that.
 	const runContainer = getRunContainer(layout, node);
 	if (runContainer) {
-		layout[kDirtyRunContainers].add(runContainer);
+		layout.dirtyRunContainers.add(runContainer);
 	}
 	// The box may be an ANCESTOR's. A node inside a run member is not
 	// itself a member, and the climb below would walk straight past its
@@ -2938,7 +2909,7 @@ function invalidateEnclosingMeasure(layout: Layout, node: Node): void {
 			return;
 		}
 	} else if (entry) {
-		const headLayoutNode = layout[kNodeMap].get(entry.node!);
+		const headLayoutNode = layout.nodeMap.get(entry.node!);
 		if (headLayoutNode && headLayoutNode.measure) {
 			headLayoutNode.invalidate();
 			// Out of any independent formatting context too. Only its owner
@@ -2962,7 +2933,7 @@ function invalidateEnclosingMeasure(layout: Layout, node: Node): void {
 			invalidateBox(layout, enclosing);
 			return;
 		}
-		const layoutNode = layout[kNodeMap].get(current);
+		const layoutNode = layout.nodeMap.get(current);
 		if (layoutNode) {
 			if (layoutNode.measure) {
 				layoutNode.invalidate();
@@ -2980,13 +2951,11 @@ function invalidateEnclosingMeasure(layout: Layout, node: Node): void {
 	}
 }
 
-const kRestyled = Symbol("restyled");
-
 // Under an independent formatting context, dirtying just the run invalidates it
 // forever. Nothing above the box ever visits those nodes, so the cleared break
 // result is never rebuilt and the run paints nothing.
 function markRunMeasureDirty(layout: Layout, runHead: Node): void {
-	const layoutNode = layout[kNodeMap].get(runHead);
+	const layoutNode = layout.nodeMap.get(runHead);
 	if (!layoutNode) {
 		return;
 	}
@@ -3172,8 +3141,6 @@ interface LineFragment {
 	visualBase: "ltr" | "rtl" | null;
 }
 
-const kRectTextIndices = Symbol("rectTextIndices");
-
 interface TextFragmentEntry {
 	line: number;
 	x: number;
@@ -3295,7 +3262,7 @@ function getEnclosingMath(node: Node): Element | null {
 // inline engines see only its size, and never descend into it.
 function measureMath(layout: Layout, element: Element): MathBox {
 	const box = layoutMath(element, !isInlineDisplay(getUsedDisplay(element)));
-	layout[kMathBoxes].set(element, box);
+	layout.mathBoxes.set(element, box);
 	return box;
 }
 
@@ -3315,7 +3282,7 @@ function collectLeafNodes(
 			// would lay that content out twice.
 			if (
 				member.nodeType === member.ELEMENT_NODE &&
-				layout[kBoxes].get(member as Element)?.broken
+				layout.boxes.get(member as Element)?.broken
 			) {
 				continue;
 			}
@@ -3982,20 +3949,18 @@ function getTextTabSize(textNode: Text): number {
 	return getTabSize(flatParentElement(textNode));
 }
 
-const kRenderedLeaves = Symbol("renderedLeaves");
-
 function renderLeaf(
 	layout: Layout,
 	textNode: Text,
 	whiteSpace: string,
 ): {text: string; offsets: Int32Array | null} {
 	const key = `${whiteSpace}\u0000${textNode.data}`;
-	const cached = layout[kRenderedLeaves].get(textNode);
+	const cached = layout.renderedLeaves.get(textNode);
 	if (cached?.key === key) {
 		return cached;
 	}
 	const rendered = renderWhiteSpaceOffsets(textNode.data, whiteSpace);
-	layout[kRenderedLeaves].set(textNode, {
+	layout.renderedLeaves.set(textNode, {
 		key,
 		text: rendered.text,
 		offsets: rendered.offsets,
@@ -4491,9 +4456,6 @@ function measureText(
 	return content.getPrefixWidths[end] - content.getPrefixWidths[start];
 }
 
-const kTerminalReordersText = Symbol("terminalReordersText");
-const kMoved = Symbol("moved");
-
 // Both halves are needed. Each segment's characters reorder (bidi-js, through text.ts),
 // and in an RTL paragraph the segments mirror across the line.
 // Reordering stays within each leaf. Whole-line reordering would merge
@@ -4505,7 +4467,7 @@ function toVisualLine(
 	lineWidth: number,
 	base: "ltr" | "rtl",
 ): void {
-	if (layout[kTerminalReordersText]) {
+	if (layout.terminalReordersText) {
 		return;
 	}
 	// The common case pays one scan.
@@ -4696,10 +4658,10 @@ function getStickyShift(
 	let portHeight: number;
 	if (scroller === null) {
 		// scrollY is CSS pixels: a whole number of rows, each a cell tall.
-		const window = layout[kWindow];
+		const window = layout.window;
 		portTop = window.scrollY / getCellSize(window.document).height;
-		portWidth = layout[kInitialContainingBlock].result.width;
-		portHeight = layout[kInitialContainingBlock].style.height.value;
+		portWidth = layout.initialBlock.result.width;
+		portHeight = layout.initialBlock.style.height.value;
 	} else {
 		const element = scroller.owner as Element;
 		const box = getBoxModel(element);
@@ -4860,7 +4822,7 @@ function getBreakResultTextIndex(
 	layout: Layout,
 	breakResult: BreakResult,
 ): Map<Node, TextFragmentEntry[]> {
-	let index = layout[kRectTextIndices].get(breakResult);
+	let index = layout.rectTextIndices.get(breakResult);
 	if (index) {
 		return index;
 	}
@@ -4920,7 +4882,7 @@ function getBreakResultTextIndex(
 	for (let i = 0; i < breakResult.lines.length; i++) {
 		visit(breakResult.lines[i].segments, 0, i);
 	}
-	layout[kRectTextIndices].set(breakResult, index);
+	layout.rectTextIndices.set(breakResult, index);
 	return index;
 }
 
@@ -5244,44 +5206,44 @@ function layoutRect(engine: Layout, element: Element): DOMRect | null {
 	return element.isConnected ? engine.getRect(element) : null;
 }
 
-export interface Layout {
-	[kDOMRect]: typeof DOMRect;
-	[kRootElement]: Element;
-	[kWindow]: Window;
+export class Layout {
+	domRect: typeof DOMRect;
+	rootElement: Element;
+	window: Window;
 
 	// The terminal-sized root every box hangs from. It has no DOM node.
-	[kInitialContainingBlock]: LayoutNode;
+	initialBlock: LayoutNode;
 
 	// Not every node has one. A run member is measured by the run around
 	// it and owns none, which is what getOwnLayoutNode checks.
-	[kNodeMap]: Map<Node, LayoutNode>;
+	nodeMap: Map<Node, LayoutNode>;
 
-	[kInvalidatedNodes]: Set<Node>;
+	invalidatedNodes: Set<Node>;
 
 	// The nodes whose own box changed since the last pass: invalidated,
 	// re-derived, or under a subtree that was. A container's sync builds and
 	// styles these and only moves its other children into place. Everything,
 	// after an invalidation of the whole layout.
-	[kTouched]: Set<Node> | "all";
+	touched: Set<Node> | "all";
 
 	// A SUPERSET hint. An element whose position went static without a
 	// restyle reaching its node is still listed, so every reader checks
 	// isPositioned too and uses the set only for the enumeration it saves.
 	// The paint side's grouping is O(positioned), never O(document).
-	[kPositionedElements]: Set<Element>;
+	positionedElements: Set<Element>;
 
 	// Re-measured on resize. What they returned was for another width.
-	[kMeasureNodes]: Set<LayoutNode>;
+	measureNodes: Set<LayoutNode>;
 
 	// The terminal reorders bidirectional text itself (negotiateBidi), so
 	// lines stay logical. One reordering is correct and two is backwards
 	// again.
-	[kTerminalReordersText]: boolean;
+	terminalReordersText: boolean;
 
 	// Each text node's last rendering, keyed by the data and white-space it
 	// was rendered under. One run is broken once per width the sizing pass
 	// tries, and the rendering is the same every time.
-	[kRenderedLeaves]: WeakMap<
+	renderedLeaves: WeakMap<
 		Text,
 		{key: string; text: string; offsets: Int32Array | null}
 	>;
@@ -5289,107 +5251,103 @@ export interface Layout {
 	// Per break result, each text node's placed fragments in segment order.
 	// Keyed on the break result object. Re-breaking builds a fresh object,
 	// so entries can never go stale.
-	[kRectTextIndices]: WeakMap<object, Map<Node, TextFragmentEntry[]>>;
+	rectTextIndices: WeakMap<object, Map<Node, TextFragmentEntry[]>>;
 
 	// The identity a derivation syncs against. A container rebuilt
 	// around a node finds the box the node already had, with its layout
 	// node and fragments.
-	[kBoxes]: WeakMap<Node, Box>;
+	boxes: WeakMap<Node, Box>;
 
 	// Each <math> element's last laid-out box. Written by whichever
 	// measurement placed the element and read back by the painter.
-	[kMathBoxes]: WeakMap<Element, MathBox>;
+	mathBoxes: WeakMap<Element, MathBox>;
 
 	// The reverse of Box.layoutNode, and the registry the sweeps that must
 	// reach every box (resize, pruning, disposal) walk. Strong, because
 	// boxes a re-derivation drops must still be dropped.
-	[kAnonymousBoxes]: Map<LayoutNode, Box>;
+	anonymousBoxes: Map<LayoutNode, Box>;
 
 	// Containers whose enumeration still describes their children. A
 	// mutation drops the ones it disturbs, so flipping a class on one row
 	// of a long list re-enumerates that row and not the boxes around it. An
 	// unbounded change drops the set. Weak, because a container listed here
 	// may be the last thing holding a removed subtree.
-	[kDerivedContainers]: WeakSet<Element>;
+	derivedContainers: WeakSet<Element>;
 
 	// Containers whose box list may not match their layout children.
 	// Reconciled once per pass however many mutations dirtied them.
-	[kDirtyRunContainers]: Set<Element>;
+	dirtyRunContainers: Set<Element>;
 
 	// Collected rather than acted on. The cascade announces these
 	// mid-invalidation, while descendants still hold the styles they are
 	// about to lose, and every question layout would ask is about styles
 	// that have not finished arriving.
-	[kRestyled]: Set<Element>;
+	restyled: Set<Element>;
 
 	// Geometry moved since the last painted frame.
-	[kMoved]: boolean;
+	geometryMoved: boolean;
 	// Counts layout passes, so a node styled in this pass is not styled
 	// again when a container re-adds it.
-	[kPass]: number;
-}
+	pass: number;
 
-export class Layout {
 	constructor(window: Window, width: number, height: number) {
-		this[kMoved] = false;
-		this[kPass] = 0;
-		this[kPositionedElements] = new Set<Element>();
-		this[kTerminalReordersText] = false;
-		this[kRectTextIndices] = new WeakMap<
-			object,
-			Map<Node, TextFragmentEntry[]>
-		>();
-		this[kBoxes] = new WeakMap<Node, Box>();
-		this[kMathBoxes] = new WeakMap<Element, MathBox>();
-		this[kDerivedContainers] = new WeakSet<Element>();
-		this[kAnonymousBoxes] = new Map<LayoutNode, Box>();
-		this[kDirtyRunContainers] = new Set<Element>();
-		this[kRestyled] = new Set<Element>();
-		this[kRenderedLeaves] = new WeakMap<
+		this.geometryMoved = false;
+		this.pass = 0;
+		this.positionedElements = new Set<Element>();
+		this.terminalReordersText = false;
+		this.rectTextIndices =
+			new WeakMap<object, Map<Node, TextFragmentEntry[]>>();
+		this.boxes = new WeakMap<Node, Box>();
+		this.mathBoxes = new WeakMap<Element, MathBox>();
+		this.derivedContainers = new WeakSet<Element>();
+		this.anonymousBoxes = new Map<LayoutNode, Box>();
+		this.dirtyRunContainers = new Set<Element>();
+		this.restyled = new Set<Element>();
+		this.renderedLeaves = new WeakMap<
 			Text,
 			{key: string; text: string; offsets: Int32Array | null}
 		>();
-		this[kWindow] = window;
-		this[kDOMRect] = window.DOMRect;
-		this[kRootElement] = window.document.documentElement;
-		this[kNodeMap] = new Map<Node, LayoutNode>();
-		this[kInvalidatedNodes] = new Set<Node>();
-		this[kTouched] = new Set<Node>();
-		this[kMeasureNodes] = new Set<LayoutNode>();
+		this.window = window;
+		this.domRect = window.DOMRect;
+		this.rootElement = window.document.documentElement;
+		this.nodeMap = new Map<Node, LayoutNode>();
+		this.invalidatedNodes = new Set<Node>();
+		this.touched = new Set<Node>();
+		this.measureNodes = new Set<LayoutNode>();
 
 		const root = new LayoutNode();
 		root.style.flexDirection = "column";
 		root.style.alignItems = "stretch";
 		root.style.width = toValue(width);
 		root.style.height = toValue(height);
-		this[kInitialContainingBlock] = root;
+		this.initialBlock = root;
 	}
 
 	/** The block the document lays out in: the terminal's size, in cells. */
 	get initialContainingBlock(): {width: number; height: number} {
 		return {
-			width: this[kInitialContainingBlock].style.width.value,
-			height: this[kInitialContainingBlock].style.height.value,
+			width: this.initialBlock.style.width.value,
+			height: this.initialBlock.style.height.value,
 		};
 	}
 
 	get moved(): boolean {
-		return this[kMoved];
+		return this.geometryMoved;
 	}
 
 	adoptTerminalReordering(): void {
-		if (this[kTerminalReordersText]) {
+		if (this.terminalReordersText) {
 			this.invalidate();
 			return;
 		}
-		this[kTerminalReordersText] = true;
+		this.terminalReordersText = true;
 		// Every measured line was built for the other contract.
 		this.invalidateTextMeasurement();
 	}
 
 	invalidateTextMeasurement(): void {
 		this.invalidate();
-		for (const layoutNode of this[kMeasureNodes]) {
+		for (const layoutNode of this.measureNodes) {
 			layoutNode.invalidate();
 		}
 	}
@@ -5397,12 +5355,12 @@ export class Layout {
 	// The engine keeps no copy of the size. The root it sizes here is the
 	// copy, and the document holds the one everything else reads.
 	resize(width: number, height: number): void {
-		const root = this[kInitialContainingBlock];
+		const root = this.initialBlock;
 		root.style.width = toValue(width);
 		root.style.height = toValue(height);
 		root.invalidate();
 
-		for (const layoutNode of this[kMeasureNodes]) {
+		for (const layoutNode of this.measureNodes) {
 			layoutNode.invalidate();
 		}
 
@@ -5411,15 +5369,15 @@ export class Layout {
 	}
 
 	framePainted(): void {
-		this[kMoved] = false;
+		this.geometryMoved = false;
 	}
 
 	performLayout(): void {
-		this[kPass]++;
+		this.pass++;
 		// Built on the first pass, not at construction. The engine is
 		// constructed before the cascade that provides display exists.
-		if (!this[kNodeMap].has(this[kRootElement])) {
-			addNode(this, this[kRootElement], this[kInitialContainingBlock]);
+		if (!this.nodeMap.has(this.rootElement)) {
+			addNode(this, this.rootElement, this.initialBlock);
 		}
 		// The cascade has finished for this frame, so the boxes it unsettled
 		// can be resolved against the current styles.
@@ -5428,9 +5386,9 @@ export class Layout {
 		// cannot be hiding a disconnection, and even the pruning sweep below is
 		// not worth paying.
 		if (
-			!this[kInitialContainingBlock].stale &&
-			this[kInvalidatedNodes].size === 0 &&
-			this[kDirtyRunContainers].size === 0
+			!this.initialBlock.stale &&
+			this.invalidatedNodes.size === 0 &&
+			this.dirtyRunContainers.size === 0
 		) {
 			return;
 		}
@@ -5440,7 +5398,7 @@ export class Layout {
 		// no parent to collect leaves from.
 		pruneDisconnectedNodes(this);
 
-		for (const node of this[kInvalidatedNodes]) {
+		for (const node of this.invalidatedNodes) {
 			if (node.isConnected) {
 				// The flat-tree BOX parent. A shadow root's direct child has no
 				// parentElement, and attaching under a display:contents element
@@ -5456,21 +5414,21 @@ export class Layout {
 					// run's own container, as a sibling of the line it belongs
 					// to. A broken inline's fragments really are the
 					// container's boxes.
-					if (isInlineLevel(parent) && !this[kBoxes].get(parent)?.broken) {
+					if (isInlineLevel(parent) && !this.boxes.get(parent)?.broken) {
 						break;
 					}
 					parent = getBoxParentElement(parent);
 				}
 			}
 		}
-		this[kInvalidatedNodes].clear();
+		this.invalidatedNodes.clear();
 
 		// Drained rather than iterated. Building a box a broken inline handed
 		// over reaches containers of its own.
 		const synced = new Set<Element>();
-		while (this[kDirtyRunContainers].size > 0) {
-			const containers = [...this[kDirtyRunContainers]];
-			this[kDirtyRunContainers].clear();
+		while (this.dirtyRunContainers.size > 0) {
+			const containers = [...this.dirtyRunContainers];
+			this.dirtyRunContainers.clear();
 			for (const container of containers) {
 				if (synced.has(container)) {
 					continue;
@@ -5479,7 +5437,7 @@ export class Layout {
 				syncContainerRuns(this, container);
 			}
 		}
-		this[kTouched] = new Set<Node>();
+		this.touched = new Set<Node>();
 		// A formatting context a box lays out for itself hangs off that box's
 		// measure, not off the tree, so a sync that changed one leaves the
 		// tree clean. Its box is measured again, and the tree with it.
@@ -5488,7 +5446,7 @@ export class Layout {
 			if (
 				host !== null &&
 				host.isConnected &&
-				this[kBoxes].get(host)!.independentFormattingContext!.stale
+				this.boxes.get(host)!.independentFormattingContext!.stale
 			) {
 				invalidateEnclosingMeasure(this, host);
 			}
@@ -5497,14 +5455,14 @@ export class Layout {
 		// A clean root means the previous layout is still exact. Recomputing
 		// would be a full-tree relayout per frame for an animation repainting
 		// one span.
-		if (!this[kInitialContainingBlock].stale) {
+		if (!this.initialBlock.stale) {
 			return;
 		}
 
 		// The root's own size is the request. The terminal is the viewport, so
 		// html can size to its content and still resolve percentages and
 		// viewport units against it.
-		const root = this[kInitialContainingBlock];
+		const root = this.initialBlock;
 		root.performLayout(root.style.width.value, root.style.height.value);
 		computePaintExtents(this, root, 0);
 	}
@@ -5512,21 +5470,21 @@ export class Layout {
 	dispose(): void {
 		// The maps are not the only owners: every box hangs from the root,
 		// holding a style record and a measure closure, so the tree goes too.
-		const root = this[kInitialContainingBlock];
+		const root = this.initialBlock;
 		while (root.children.length > 0) {
 			root.removeChild(root.children[0]);
 		}
-		this[kNodeMap] = new Map();
-		this[kInvalidatedNodes] = new Set();
-		this[kMeasureNodes] = new Set();
-		this[kAnonymousBoxes] = new Map();
-		this[kDirtyRunContainers] = new Set();
+		this.nodeMap = new Map();
+		this.invalidatedNodes = new Set();
+		this.measureNodes = new Set();
+		this.anonymousBoxes = new Map();
+		this.dirtyRunContainers = new Set();
 	}
 
 	// Membership gates. A positioned inline run member owns no box of its
 	// own, and no layer would ever paint it, so it stays with its run.
 	hoistedToLayer(element: Element): boolean {
-		return isPositioned(element) && this[kPositionedElements].has(element);
+		return isPositioned(element) && this.positionedElements.has(element);
 	}
 
 	// The children whose paint extent could intersect rows [top, bottom),
@@ -5539,7 +5497,7 @@ export class Layout {
 		top: number,
 		bottom: number,
 	): Node[] | null {
-		const layoutNode = this[kNodeMap].get(element);
+		const layoutNode = this.nodeMap.get(element);
 		if (
 			!layoutNode ||
 			// A measure-function leaf never decomposes into layout children, so
@@ -5562,7 +5520,7 @@ export class Layout {
 			// lives a level DOWN. `<span>a<div/><span>c</span></span>d<input>`
 			// collides at three and three, and the fast path dropped the text
 			// and the input after the fragments.
-			this[kBoxes].get(element)?.holdsFragments === true
+			this.boxes.get(element)?.holdsFragments === true
 		) {
 			return null;
 		}
@@ -5610,7 +5568,7 @@ export class Layout {
 	// body's box measures one line however many rows its hoisted block
 	// children paint.
 	documentPaintHeight(): number {
-		const root = this[kRootElement];
+		const root = this.rootElement;
 		const rootRect = this.getRect(root);
 		let height = Math.max(
 			rootRect ? Math.ceil(rootRect.height) : 0,
@@ -5620,7 +5578,7 @@ export class Layout {
 			renderedTopLayer(root.ownerDocument!) as unknown as Element[];
 		for (const element of rendered) {
 			if (isModalDialog(element)) {
-				return this[kInitialContainingBlock].style.height.value;
+				return this.initialBlock.style.height.value;
 			}
 			const rect = this.getRect(element);
 			if (rect) {
@@ -5632,7 +5590,7 @@ export class Layout {
 
 	/** The cells a <math> element paints, laid out if no pass has yet. */
 	getMathBox(element: Element): MathBox {
-		return this[kMathBoxes].get(element) ?? measureMath(this, element);
+		return this.mathBoxes.get(element) ?? measureMath(this, element);
 	}
 
 	// Where a <math> element's cells start, in document coordinates: its
@@ -5671,7 +5629,7 @@ export class Layout {
 			return [];
 		}
 		return getMathCellRects(this.getMathBox(math), node).map((rect) =>
-			new this[kDOMRect](
+			new this.domRect(
 				origin.x + rect.x,
 				origin.y + rect.y,
 				rect.width,
@@ -5687,7 +5645,7 @@ export class Layout {
 		}
 		// A box of its own has its border and padding in the solver's
 		// result. A box inside a run has only the cascade's.
-		const node = this[kNodeMap].get(element);
+		const node = this.nodeMap.get(element);
 		let left: number;
 		let top: number;
 		let right: number;
@@ -5706,7 +5664,7 @@ export class Layout {
 			right = (box.borderRightWidth || 0) + (box.paddingRight || 0);
 			bottom = (box.borderBottomWidth || 0) + (box.paddingBottom || 0);
 		}
-		return new this[kDOMRect](
+		return new this.domRect(
 			rect.x + left,
 			rect.y + top,
 			Math.max(0, rect.width - left - right),
@@ -5756,7 +5714,7 @@ export class Layout {
 		if (!element.isConnected || !isInFlatTree(element)) {
 			return null;
 		}
-		const document = this[kWindow].document;
+		const document = this.window.document;
 		const body = document.body ?? null;
 		if (element === body || element === document.documentElement) {
 			return null;
@@ -5799,7 +5757,7 @@ export class Layout {
 		return {
 			width: Math.round(box?.width ?? 0),
 			height: isRootBox(this, element)
-				? this[kInitialContainingBlock].style.height.value
+				? this.initialBlock.style.height.value
 				: Math.round(box?.height ?? 0),
 		};
 	}
@@ -5877,12 +5835,12 @@ export class Layout {
 			() => {
 				const caret = this.getCaretRect(node, offset);
 				if (caret !== null) {
-					return new this[kDOMRect](caret.x, caret.y, 1, 1);
+					return new this.domRect(caret.x, caret.y, 1, 1);
 				}
 				const content = this.contentRect(box);
 				return content === null
 					? null
-					: new this[kDOMRect](content.x, content.y, 1, 1);
+					: new this.domRect(content.x, content.y, 1, 1);
 			},
 			"nearest",
 			"nearest",
@@ -5894,7 +5852,7 @@ export class Layout {
 	// rather than recomputing extents per scroll.
 	scrolledAncestorRows(element: Element): number {
 		const layoutNode =
-			this[kNodeMap].get(element) ?? runLayoutNode(this, element);
+			this.nodeMap.get(element) ?? runLayoutNode(this, element);
 		return layoutNode ? -getScrollShift(this, layoutNode).y : 0;
 	}
 
@@ -5918,7 +5876,7 @@ export class Layout {
 		// union the run machinery below reports, but only once one has been
 		// built.
 		const blockified =
-			isBlockifiedByLayout(element) && this[kNodeMap].has(element);
+			isBlockifiedByLayout(element) && this.nodeMap.has(element);
 
 		if (!blockified && isInlineDisplay(display)) {
 			if (isAtomicInline(display)) {
@@ -5943,7 +5901,7 @@ export class Layout {
 				const elementLayoutNode = runLayoutNode(this, element);
 				if (elementLayoutNode) {
 					const position = getAbsolutePosition(this, elementLayoutNode);
-					return new this[kDOMRect](position.x, position.y, 0, 0);
+					return new this.domRect(position.x, position.y, 0, 0);
 				}
 				// An empty inline that does not open its run still has a place:
 				// the cursor the line had reached. Null put the `span` in
@@ -5952,7 +5910,7 @@ export class Layout {
 				if (run?.layoutNode) {
 					const origin = getAbsolutePosition(this, run.layoutNode);
 					const cursor = getInlineCursorBefore(run, element);
-					return new this[kDOMRect](
+					return new this.domRect(
 						origin.x + cursor.x,
 						origin.y + cursor.y,
 						0,
@@ -5965,7 +5923,7 @@ export class Layout {
 		}
 
 		const layoutNode =
-			this[kNodeMap].get(element) ?? runLayoutNode(this, element);
+			this.nodeMap.get(element) ?? runLayoutNode(this, element);
 
 		if (!layoutNode) {
 			return null;
@@ -5973,7 +5931,7 @@ export class Layout {
 
 		const {x, y} = getDocumentPosition(this, element, layoutNode);
 
-		return new this[kDOMRect](
+		return new this.domRect(
 			x,
 			y,
 			layoutNode.getComputedWidth(),
@@ -6151,7 +6109,7 @@ export class Layout {
 		if (lines.length > 0 && data.endsWith("\n")) {
 			const last = lines[lines.length - 1].rect;
 			lines.push({
-				rect: new this[kDOMRect](last.x, last.y + last.height, 0, last.height),
+				rect: new this.domRect(last.x, last.y + last.height, 0, last.height),
 				column: 0,
 				startOffset: data.length,
 				endOffset: data.length,
@@ -6174,7 +6132,7 @@ export class Layout {
 				const content = this.contentRect(parent);
 				if (content) {
 					lines.push({
-						rect: new this[kDOMRect](
+						rect: new this.domRect(
 							Math.round(content.x),
 							Math.round(content.y),
 							0,
@@ -6274,11 +6232,11 @@ export class Layout {
 			{neg: Element[]; zero: Element[]; pos: Element[]}
 		>();
 		// A stray frame can fire after the window is torn down.
-		const body = this[kWindow].document?.body;
+		const body = this.window.document?.body;
 		if (!body) {
 			return layers;
 		}
-		for (const element of this[kPositionedElements]) {
+		for (const element of this.positionedElements) {
 			if (!element.isConnected || element === body) {
 				continue;
 			}
@@ -6338,7 +6296,7 @@ export class Layout {
 	 */
 	fullWidthFixedRows(cols: number): Array<[number, number]> {
 		const rows: Array<[number, number]> = [];
-		for (const element of this[kPositionedElements]) {
+		for (const element of this.positionedElements) {
 			if (
 				!element.isConnected ||
 				getPosition(element) !== "fixed" ||
@@ -6371,7 +6329,7 @@ export class Layout {
 		documentScrollTop: number,
 	): Element | null {
 		const layers = this.collectStackingLayers(topLayer);
-		const document = this[kWindow].document;
+		const document = this.window.document;
 		if (!document?.body) {
 			return null;
 		}
@@ -6407,12 +6365,12 @@ export class Layout {
 	// it for style changes no record describes. Every entry that moves geometry
 	// announces it here, and the pass itself moves nothing unannounced.
 	invalidateFrame(): void {
-		const document = this[kRootElement].ownerDocument;
+		const document = this.rootElement.ownerDocument;
 		if (document === null) {
 			return;
 		}
 		usedValuesChanged(document);
-		this[kMoved] = true;
+		this.geometryMoved = true;
 	}
 
 	// A node re-enumerates its whole subtree, because run membership may
@@ -6423,9 +6381,9 @@ export class Layout {
 		if (node === undefined) {
 			// Every box re-derives, and takes its style as it does. The root
 			// element is no container's box, so it is restyled on its own.
-			this[kDerivedContainers] = new WeakSet<Element>();
-			this[kRestyled].add(this[kRootElement]);
-			this[kTouched] = "all";
+			this.derivedContainers = new WeakSet<Element>();
+			this.restyled.add(this.rootElement);
+			this.touched = "all";
 			this.invalidateFrame();
 			return;
 		}
@@ -6445,7 +6403,7 @@ export class Layout {
 	// Deliberately over-approximate: a change that moves no geometry costs
 	// a re-measurement, and one that moves geometry is never missed.
 	styleInvalidated(element: Element): void {
-		this[kRestyled].add(element);
+		this.restyled.add(element);
 	}
 
 	// A chain reaching a fixed box puts the geometry in viewport space
@@ -6463,7 +6421,7 @@ export class Layout {
 
 	/** The layout node an element's principal box was laid out as, if any. */
 	getLayoutNode(element: Element): LayoutNode | null {
-		return this[kNodeMap].get(element) ?? null;
+		return this.nodeMap.get(element) ?? null;
 	}
 
 	/** The rows a node's subtree can paint, in document rows. */
@@ -6486,7 +6444,7 @@ export class Layout {
 
 	/** The principal box of an element, or null before its container derived one. */
 	getBox(element: Element): Box | null {
-		return this[kBoxes].get(element) ?? null;
+		return this.boxes.get(element) ?? null;
 	}
 }
 
@@ -6520,7 +6478,7 @@ function isBlockifiedByLayout(element: Element): boolean {
 
 function unionRects(layout: Layout, rects: readonly DOMRect[]): DOMRect {
 	if (rects.length === 0) {
-		return new layout[kDOMRect]();
+		return new layout.domRect();
 	}
 	let left = Infinity;
 	let top = Infinity;
@@ -6532,19 +6490,19 @@ function unionRects(layout: Layout, rects: readonly DOMRect[]): DOMRect {
 		right = Math.max(right, rect.x + rect.width);
 		bottom = Math.max(bottom, rect.y + rect.height);
 	}
-	return new layout[kDOMRect](left, top, right - left, bottom - top);
+	return new layout.domRect(left, top, right - left, bottom - top);
 }
 
 function pruneDisconnectedNodes(layout: Layout): void {
 	// A box outlives the nodes that pass through it, but not its
 	// container.
-	for (const box of [...layout[kAnonymousBoxes].values()]) {
+	for (const box of [...layout.anonymousBoxes.values()]) {
 		if (!flatIsConnected(box.container)) {
 			dropAnonymousBox(layout, box);
 		}
 	}
-	for (const [node, layoutNode] of layout[kNodeMap]) {
-		if (node === layout[kRootElement] || flatIsConnected(node)) {
+	for (const [node, layoutNode] of layout.nodeMap) {
+		if (node === layout.rootElement || flatIsConnected(node)) {
 			continue;
 		}
 
@@ -6553,9 +6511,9 @@ function pruneDisconnectedNodes(layout: Layout): void {
 			parent.removeChild(layoutNode);
 		}
 
-		layout[kMeasureNodes].delete(layoutNode);
+		layout.measureNodes.delete(layoutNode);
 		untrackNode(layout, node);
-		layout[kInvalidatedNodes].delete(node);
+		layout.invalidatedNodes.delete(node);
 	}
 }
 
@@ -6563,14 +6521,14 @@ function pruneDisconnectedNodes(layout: Layout): void {
 // an element may no longer match the enumeration, and what the element
 // now generates is derived where every box is derived.
 function applyRestyles(layout: Layout): void {
-	while (layout[kRestyled].size > 0) {
-		const restyled = [...layout[kRestyled]];
-		layout[kRestyled].clear();
+	while (layout.restyled.size > 0) {
+		const restyled = [...layout.restyled];
+		layout.restyled.clear();
 		for (const element of restyled) {
 			if (!flatIsConnected(element)) {
 				continue;
 			}
-			const layoutNode = layout[kNodeMap].get(element);
+			const layoutNode = layout.nodeMap.get(element);
 			if (
 				layoutNode !== undefined &&
 				layoutNode.style.containsPositioned !==
@@ -6618,9 +6576,9 @@ function applyRestyles(layout: Layout): void {
 					if (displayChanged || measureChanged) {
 						touchChildren(layout, element);
 						invalidateChildDerivation(layout, element);
-						if (layout[kBoxes].get(element)?.children) {
+						if (layout.boxes.get(element)?.children) {
 							invalidateContainerBoxes(layout, element);
-							layout[kDirtyRunContainers].add(element);
+							layout.dirtyRunContainers.add(element);
 						}
 					}
 					continue;
@@ -6630,11 +6588,11 @@ function applyRestyles(layout: Layout): void {
 			invalidateEnclosingMeasure(layout, element);
 			touchChildren(layout, element);
 			invalidateChildDerivation(layout, element);
-			if (layout[kBoxes].get(element)?.children) {
+			if (layout.boxes.get(element)?.children) {
 				invalidateContainerBoxes(layout, element);
 				// An element that becomes a flex container, or stops being one,
 				// holds a different set of boxes than it did.
-				layout[kDirtyRunContainers].add(element);
+				layout.dirtyRunContainers.add(element);
 			}
 		}
 	}
@@ -6652,7 +6610,7 @@ function invalidateOutOfFlowDescendants(
 			continue;
 		}
 		if (isOutOfFlow(child)) {
-			layout[kRestyled].add(child as Element);
+			layout.restyled.add(child as Element);
 			invalidateNode(layout, child);
 		}
 		invalidateOutOfFlowDescendants(layout, child as Element);
@@ -6773,7 +6731,7 @@ function getRunOrigin(
 		return position;
 	}
 	const head = runHead as Element;
-	const anonymous = layout[kAnonymousBoxes].get(headLayoutNode);
+	const anonymous = layout.anonymousBoxes.get(headLayoutNode);
 	if (anonymous !== undefined && anonymous.styledFrom !== head) {
 		return position;
 	}
@@ -6894,7 +6852,7 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 	// box still holds belongs to a layout it is no longer part of. The run
 	// a box heads in a block is not its box.
 	const ownLayoutNode = descended ? undefined : runLayoutNode(layout, element);
-	const anonymous = ownLayoutNode && layout[kAnonymousBoxes].get(ownLayoutNode);
+	const anonymous = ownLayoutNode && layout.anonymousBoxes.get(ownLayoutNode);
 	const height = getAtomicHeight(
 		element,
 		target.segment.leaf,
@@ -6902,9 +6860,9 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 	);
 	if (ownLayoutNode && (!anonymous || anonymous.styledFrom === element)) {
 		const {x, y} = getDocumentPosition(layout, element, ownLayoutNode);
-		return new layout[kDOMRect](x, y, target.segment.width, height);
+		return new layout.domRect(x, y, target.segment.width, height);
 	}
-	return new layout[kDOMRect](
+	return new layout.domRect(
 		originX +
 		getLineStart(alignContainer, breakResult, target.line) +
 			target.segment.x,
@@ -6944,9 +6902,9 @@ function rangeTextNodes(layout: Layout, range: Range): Text[] {
 		return [root as Text];
 	}
 	const nodes: Text[] = [];
-	const walker = layout[kWindow].document.createTreeWalker(
+	const walker = layout.window.document.createTreeWalker(
 		root,
-		layout[kWindow].NodeFilter.SHOW_TEXT,
+		layout.window.NodeFilter.SHOW_TEXT,
 	);
 	let node: Node | null;
 	while ((node = walker.nextNode())) {
@@ -7036,7 +6994,7 @@ function getCaretRectInFragment(
 		{tabSize: getTextTabSize(textNode), column: line.column},
 	);
 	const x = Math.round(line.rect.x) + getStringWidth(before);
-	return new layout[kDOMRect](x, Math.round(line.rect.y), 0, line.rect.height);
+	return new layout.domRect(x, Math.round(line.rect.y), 0, line.rect.height);
 }
 
 // The distance is zero when the point landed on the line, which is what
@@ -7149,7 +7107,7 @@ function getSelectionSpans(
 					Math.round(fragment.rect.x) + getStringWidth(text.slice(0, runStart));
 				const width = getStringWidth(text.slice(runStart, i));
 				runs.push({
-					rect: new layout[kDOMRect](
+					rect: new layout.domRect(
 						x,
 						Math.round(fragment.rect.y),
 						width,
@@ -7292,7 +7250,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 											startOffset: nestedSegment.dataStart,
 											endOffset: nestedSegment.dataEnd,
 											visualBase: nestedSegment.visualBase,
-											rect: new layout[kDOMRect](
+											rect: new layout.domRect(
 												containerX + segment.x + paddingLeft + nestedSegment.x,
 												containerY + line.y + paddingTop + nestedLine.y,
 												nestedSegment.width,
@@ -7321,7 +7279,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 														startOffset: innerSegment.dataStart,
 														endOffset: innerSegment.dataEnd,
 														visualBase: innerSegment.visualBase,
-														rect: new layout[kDOMRect](
+														rect: new layout.domRect(
 															containerX +
 															segment.x +
 															paddingLeft +
@@ -7453,7 +7411,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		let ancestor = node.nodeType === node.ELEMENT_NODE
 			? (node as Element)
 			: flatParentElement(node);
-		ancestor && ancestor !== runHead && !layout[kNodeMap].has(ancestor);
+		ancestor && ancestor !== runHead && !layout.nodeMap.has(ancestor);
 		ancestor = flatParentElement(ancestor)
 	) {
 		if (getPosition(ancestor) === "relative") {
@@ -7556,7 +7514,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 			currentBreakResult.containerWidth,
 		);
 
-		const rect = new layout[kDOMRect](
+		const rect = new layout.domRect(
 			containerX + minX + alignOffset + indent,
 			containerY + line.y,
 			maxX - minX,
@@ -7576,7 +7534,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 }
 
 function getDocumentContentHeight(engine: Layout): number {
-	const bodyRect = engine.getRect(engine[kRootElement].ownerDocument?.body);
+	const bodyRect = engine.getRect(engine.rootElement.ownerDocument?.body);
 	return Math.max(
 		bodyRect ? Math.ceil(bodyRect.height) : 0,
 		getDocumentOverflowBottom(engine),
@@ -7588,7 +7546,7 @@ function getDocumentContentHeight(engine: Layout): number {
 // the root's own box. A box that clips its content reaches no further
 // than itself, and a fixed box moves with the viewport, not in it.
 function getDocumentOverflowBottom(engine: Layout): number {
-	const root = engine[kNodeMap].get(engine[kRootElement]);
+	const root = engine.nodeMap.get(engine.rootElement);
 	const extent = root ? extents.get(root) : undefined;
 	return extent ? Math.ceil(root!.result.top + extent.overflowBottom) : 0;
 }
@@ -7597,7 +7555,7 @@ function measureScrollExtent(
 	layout: Layout,
 	element: Element,
 ): {width: number | null; height: number} | null {
-	const layoutNode = layout[kNodeMap].get(element);
+	const layoutNode = layout.nodeMap.get(element);
 	if (!layoutNode) {
 		return null;
 	}
@@ -7661,7 +7619,7 @@ function getMeasuredLines(
 	layout: Layout,
 	node: LayoutNode,
 ): BreakResult | undefined {
-	const anonymous = layout[kAnonymousBoxes].get(node);
+	const anonymous = layout.anonymousBoxes.get(node);
 	if (anonymous !== undefined) {
 		return anonymous.fragments ?? undefined;
 	}
@@ -7688,7 +7646,7 @@ function getContentBoxSize(
 // html and body scroll the document itself: one viewport, however
 // reached.
 function isRootBox(engine: Layout, element: Element): boolean {
-	const document = engine[kWindow].document;
+	const document = engine.window.document;
 	return element === document.documentElement || element === document.body;
 }
 
