@@ -38,7 +38,7 @@ export async function mount(
  * is the engine and not the emulator reading its output.
  */
 export function silence(proc: any): void {
-	proc.stdout.write = (chunk: unknown, enc?: unknown, cb?: unknown) => {
+	proc.stdout.write = (_chunk: unknown, enc?: unknown, cb?: unknown) => {
 		const callback = typeof enc === "function" ? enc : cb;
 		if (typeof callback === "function") {
 			(callback as () => void)();

@@ -1698,9 +1698,6 @@ function hasRuntimeGlobal(name: string): boolean {
 	if (!(name in globalThis)) {
 		return false;
 	}
-	if (name !== "localStorage" && name !== "sessionStorage") {
-		return true;
-	}
 	const emitWarning = process.emitWarning;
 	process.emitWarning = () => {};
 	try {

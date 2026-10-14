@@ -740,7 +740,7 @@ function paintBlock(
 
 	if (isReplacedBox(element)) {
 		paintReplaced(element, style, rect, ctx);
-		paintOutline(painter, element, style, rect, ctx);
+		paintOutline(element, style, rect, ctx);
 		return;
 	}
 
@@ -749,13 +749,13 @@ function paintBlock(
 		if (style.visible) {
 			renderMath(painter, element, rect, ctx);
 		}
-		paintOutline(painter, element, style, rect, ctx);
+		paintOutline(element, style, rect, ctx);
 		return;
 	}
 	paintContent(painter, element, style, rect, ctx, (origin) => {
 		paintNodes(painter, node, origin, ctx);
 	});
-	paintOutline(painter, element, style, rect, ctx);
+	paintOutline(element, style, rect, ctx);
 }
 
 function paintContent(
@@ -1071,7 +1071,6 @@ function paintBox(
 // box's fragments, so an inline broken across lines is marked along
 // its own text on each line and not across the union of them.
 function paintOutline(
-	painter: Painter,
 	element: Element,
 	style: PaintStyle,
 	rect: Rect,
@@ -1273,7 +1272,7 @@ function paintInline(
 		paintMember(painter, child, run, ctx);
 	}
 	if (rect !== null) {
-		paintOutline(painter, element, style, rect, ctx, fragments);
+		paintOutline(element, style, rect, ctx, fragments);
 	}
 }
 
@@ -1351,14 +1350,14 @@ function paintAtomic(
 
 	if (isReplacedBox(element)) {
 		paintReplaced(element, style, rect, ctx);
-		paintOutline(painter, element, style, rect, ctx);
+		paintOutline(element, style, rect, ctx);
 		return;
 	}
 	if (isMathRoot(element)) {
 		if (style.visible) {
 			renderMath(painter, element, rect, ctx);
 		}
-		paintOutline(painter, element, style, rect, ctx);
+		paintOutline(element, style, rect, ctx);
 		return;
 	}
 	paintContent(painter, element, style, rect, ctx, (origin) => {
@@ -1378,7 +1377,7 @@ function paintAtomic(
 			);
 		}
 	});
-	paintOutline(painter, element, style, rect, ctx);
+	paintOutline(element, style, rect, ctx);
 }
 
 function resolveRun(

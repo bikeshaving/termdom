@@ -111,7 +111,7 @@ test("the registry is a map, and re-registering a name moves it last", () => {
 	expect([...registry.keys()]).toEqual(["second", "first"]);
 
 	const names: string[] = [];
-	registry.forEach((value: unknown, key: string, parent: unknown) => {
+	registry.forEach((_value: unknown, key: string, parent: unknown) => {
 		names.push(key);
 		expect(parent).toBe(registry);
 	});
