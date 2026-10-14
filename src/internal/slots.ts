@@ -116,12 +116,14 @@ const familyPlans = new Map<Constructor, FamilyPlan | null>();
 const extraTypes = new Set<Constructor>();
 let extraKey: string | symbol = Symbol("unused extra");
 const recordTypesByPrototype = new Map<object, new () => SlotRecord>();
-// The two objects looked up last, since the engine often goes back and
-// forth between two, such as an element and its computed style.
-let lastValue: object | null = null;
-let lastRecord: SlotRecord | null = null;
-let priorValue: object | null = null;
-let priorRecord: SlotRecord | null = null;
+// The two objects looked up most recently, newest first, since the
+// engine often goes back and forth between two, such as an element and
+// its computed style. Reading #record sees every element class's shape,
+// which makes that read slow, and a comparison here skips it.
+let newestObject: object | null = null;
+let newestRecord: SlotRecord | null = null;
+let olderObject: object | null = null;
+let olderRecord: SlotRecord | null = null;
 
 /**
  * Gives a newly constructed object its slots. The root class of each
@@ -201,18 +203,26 @@ export function defineHiddenMember(
 	key: string | symbol,
 	descriptor: PropertyDescriptor,
 ): void {
-	let root: Constructor = type;
+	Object.defineProperty(
+		hiddenPrototype(type, rootOf(type) ?? type),
+		key,
+		descriptor,
+	);
+}
+
+// The sealed root at or above `type`, or null when it has none.
+function rootOf(type: Constructor): Constructor | null {
 	for (
 		let current: unknown = type;
 		typeof current === "function";
 		current = parentOf(current as Constructor)
 	) {
 		if (sealedRoots.has(current as Constructor)) {
-			root = current as Constructor;
+			return current as Constructor;
 		}
 	}
 
-	Object.defineProperty(hiddenPrototype(type, root), key, descriptor);
+	return null;
 }
 
 /**
@@ -227,17 +237,7 @@ export function prepareClasses(values: Iterable<unknown>): void {
 		}
 
 		const type = value as Constructor;
-		let root: Constructor | null = null;
-		for (
-			let current: unknown = type;
-			typeof current === "function" && root === null;
-			current = parentOf(current as Constructor)
-		) {
-			if (sealedRoots.has(current as Constructor)) {
-				root = current as Constructor;
-			}
-		}
-
+		const root = rootOf(type);
 		if (root !== null && !familyPlans.has(type)) {
 			const plan = planFamilyRecord(type, root);
 			familyPlans.set(type, plan);
@@ -411,12 +411,12 @@ export function _<T extends object>(
 export function _<T extends object>(
 	value: T & {readonly [kObject]?: never},
 ): T {
-	if (value === lastValue) {
-		return lastRecord as unknown as T;
+	if (value === newestObject) {
+		return newestRecord as unknown as T;
 	}
 
-	if (value === priorValue) {
-		return priorRecord as unknown as T;
+	if (value === olderObject) {
+		return olderRecord as unknown as T;
 	}
 
 	const record = Slot.read(value);
@@ -425,16 +425,16 @@ export function _<T extends object>(
 }
 
 // A remembered record holds its object, and through its links a whole
-// tree, so the cache empties at the end of every task. A tree removed in
-// the task is then free to go.
+// tree, so the cache empties at the next microtask checkpoint. A tree
+// removed before then is free to go once it has.
 let forgetting = false;
 
 function forget(): void {
 	forgetting = false;
-	lastValue = null;
-	lastRecord = null;
-	priorValue = null;
-	priorRecord = null;
+	newestObject = null;
+	newestRecord = null;
+	olderObject = null;
+	olderRecord = null;
 }
 
 function remember(value: object, record: SlotRecord): void {
@@ -443,11 +443,11 @@ function remember(value: object, record: SlotRecord): void {
 		queueMicrotask(forget);
 	}
 
-	if (value !== lastValue) {
-		priorValue = lastValue;
-		priorRecord = lastRecord;
-		lastValue = value;
-		lastRecord = record;
+	if (value !== newestObject) {
+		olderObject = newestObject;
+		olderRecord = newestRecord;
+		newestObject = value;
+		newestRecord = record;
 	}
 }
 
@@ -503,8 +503,9 @@ export function _maybe<T>(value: T): NonNullable<T> | undefined {
 }
 
 /**
- * Gives slots to an object the runtime made, such as a platform event
- * dispatched into the document, which no constructor here sealed.
+ * Gives slots to a plain object the engine made, such as the view a
+ * pseudo-element's style is measured through, which no constructor here
+ * sealed.
  */
 export function adopt(
 	target: object,
@@ -557,7 +558,7 @@ export function hiddenMember(
 	type: Constructor,
 	key: symbol,
 ): (this: object, ...args: unknown[]) => unknown {
-	const hidden = hiddenPrototype(type, roots.get(type) ?? type);
+	const hidden = hiddenPrototype(type, roots.get(type) ?? rootOf(type) ?? type);
 	const member = (hidden as Record<symbol, unknown>)[key];
 	return member as (this: object, ...args: unknown[]) => unknown;
 }
