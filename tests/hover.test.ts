@@ -1,7 +1,12 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
+import {
+	captureRawOutput,
+	inputDispatched,
+	MockProcess,
+	nextFrame,
+} from "./test-utils.js";
 
 const MOTION_ON = "\x1b[?1003h";
 const MOTION_OFF = "\x1b[?1003l";
@@ -29,7 +34,7 @@ function send(proc: MockProcess, data: string): Promise<void> {
 		"data",
 		Buffer.from(data),
 	);
-	return new Promise((resolve) => setTimeout(resolve, 0));
+	return inputDispatched();
 }
 
 /** Wait until the session's write queue has carried `marker` to the wire. */

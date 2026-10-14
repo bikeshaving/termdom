@@ -13,7 +13,7 @@ import {expect, test} from "@b9g/libuild/test";
 import fc from "fast-check";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {inputDispatched, MockProcess, nextFrame} from "./test-utils.js";
 
 const SEED = Number(process.env.FUZZ_SEED ?? 20260928);
 const RUNS = Number(process.env.FUZZ_RUNS ?? 40);
@@ -229,7 +229,7 @@ function send(terminal: MockProcess, data: string): Promise<void> {
 		"data",
 		Buffer.from(data),
 	);
-	return new Promise((resolve) => setTimeout(resolve, 0));
+	return inputDispatched();
 }
 
 async function apply(

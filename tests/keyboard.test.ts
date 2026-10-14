@@ -2718,7 +2718,7 @@ async function makeKeyApp(
 			"data",
 			Buffer.from(data),
 		);
-		return new Promise((resolve) => setTimeout(resolve, 0));
+		return inputDispatched();
 	};
 	return {terminal, termdom, document, type};
 }
@@ -2976,7 +2976,7 @@ test("Ctrl+L redraws the screen unless a listener takes it", async () => {
 			"data",
 			Buffer.from(data),
 		);
-		await new Promise((resolve) => setTimeout(resolve, 0));
+		await inputDispatched();
 		await nextFrame(termdom);
 		return written().slice(before);
 	};

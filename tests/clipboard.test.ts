@@ -9,7 +9,12 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
+import {
+	captureRawOutput,
+	inputDispatched,
+	MockProcess,
+	nextFrame,
+} from "./test-utils.js";
 
 /** Feed bytes as the terminal would, and wait for the read side to see them. */
 function send(proc: MockProcess, data: string): Promise<void> {
@@ -17,7 +22,7 @@ function send(proc: MockProcess, data: string): Promise<void> {
 		"data",
 		Buffer.from(data),
 	);
-	return new Promise((resolve) => setTimeout(resolve, 0));
+	return inputDispatched();
 }
 
 type ClipboardProc =
