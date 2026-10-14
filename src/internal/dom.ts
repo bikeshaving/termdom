@@ -16750,8 +16750,8 @@ export function isModalDialog(node: globalThis.Node): boolean {
 	);
 }
 
-function isConnectedNode(node: Node): boolean {
-	return _(node).connected;
+export function isConnectedNode(node: globalThis.Node): boolean {
+	return _(node as Node).connected;
 }
 
 class HTMLDirectoryElement extends HTMLElement {
