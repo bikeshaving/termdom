@@ -30,7 +30,6 @@ import {
 	averageBitmap,
 	type Bitmap,
 	createBitmap,
-	encodePNG,
 	fullBitmapOf,
 	MAX_IMAGE_PIXELS,
 	naturalHeightOf,
@@ -3156,11 +3155,6 @@ export function resetContextState(context: CanvasRenderingContext2D): void {
 /** Drop a context's text runs, as resizing the canvas does. */
 export function clearCanvasText(context: CanvasRenderingContext2D): void {
 	_(context).text = [];
-}
-
-/** A canvas encoded the way toDataURL() and toBlob() hand it out. */
-export function canvasToPNG(bitmap: Bitmap): Uint8Array {
-	return encodePNG(bitmap);
 }
 
 // ---------------------------------------------------------------------------

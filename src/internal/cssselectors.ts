@@ -5,9 +5,6 @@ import {
 	attributeOf,
 	type Element,
 	getAttributeList,
-	getAttributeLocalName,
-	getAttributeNamespace,
-	getAttributeValue,
 	getElementChildren,
 	getFirstChildNode,
 	getHeadingLevel,
@@ -916,15 +913,12 @@ function compileAttribute(
 		const attributes = getAttributeList(element);
 		for (let index = 0; index < attributes.length; index++) {
 			const attribute = attributes[index];
-			if (
-				namespace !== undefined &&
-				getAttributeNamespace(attribute) !== namespace
-			) {
+			if (namespace !== undefined && attribute.extra.namespace !== namespace) {
 				continue;
 			}
-			const name = getAttributeLocalName(attribute);
+			const name = attribute.extra.localName;
 			if (name === local || (fold && toASCIILowercase(name) === folded)) {
-				return getAttributeValue(attribute);
+				return attribute.extra.value;
 			}
 		}
 		return null;
@@ -1755,12 +1749,12 @@ function getElementLanguage(element: Element): string | null {
 		const attributes = getAttributeList(node);
 		for (let index = 0; index < attributes.length; index++) {
 			const attribute = attributes[index];
-			const namespace = getAttributeNamespace(attribute);
+			const namespace = attribute.extra.namespace;
 			if (
-				getAttributeLocalName(attribute) === "lang" &&
+				attribute.extra.localName === "lang" &&
 				(namespace === null || namespace === XML_NAMESPACE)
 			) {
-				return getAttributeValue(attribute);
+				return attribute.extra.value;
 			}
 		}
 	}
