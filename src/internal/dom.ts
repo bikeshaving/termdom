@@ -18559,6 +18559,7 @@ function readImageDimension(
 ): number {
 	const attached = getAttachedDocument(image);
 	if (attached !== undefined && image.isConnected) {
+		flushLayout(image);
 		const rect = _(attached).extra.layout.contentRect(image);
 		if (rect !== null) {
 			const vertical = axis === "height";
