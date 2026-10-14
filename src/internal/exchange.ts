@@ -1059,11 +1059,6 @@ export class Exchange extends EventTarget {
 		return _(this).cursorDetectionPromise;
 	}
 
-	/** Leave the page's resize event to whoever handles terminalresize. */
-	deferResizeEvent(): void {
-		_(this).defersResize = true;
-	}
-
 	/**
 	 * A terminal is behind the transport and has not proven it never replies.
 	 */
@@ -1139,68 +1134,6 @@ export class Exchange extends EventTarget {
 		return CURSOR_QUERY;
 	}
 
-	/** Writes on change only. Teardown restores what was engaged. */
-	setDisplayType(name: ModeName, on: boolean): void {
-		const slots = _(this);
-		if (!slots.interactive || on === slots.engagedModes.has(name)) {
-			return;
-		}
-		if (on) {
-			slots.engagedModes.add(name);
-		} else {
-			slots.engagedModes.delete(name);
-		}
-		let output = on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset;
-		// tmux clears every mouse mode when any one of ?1000 to ?1003 is
-		// reset, so turning motion reporting off took the button mode with
-		// it and clicks stopped arriving. The base capture is asserted again.
-		if (
-			name === "motionReporting" &&
-			!on &&
-			slots.engagedModes.has("mouseCapture")
-		) {
-			output += MODE_SPELLINGS.mouseCapture.set;
-		}
-		void this.write(output);
-	}
-
-	/**
-	 * Resets every engaged mode without forgetting it, so the terminal is
-	 * the shell's while the program is suspended.
-	 */
-	releaseModes(): void {
-		const slots = _(this);
-		for (const name of MODE_RESTORE_ORDER) {
-			if (slots.engagedModes.has(name)) {
-				void this.write(MODE_SPELLINGS[name].reset);
-			}
-		}
-		if (slots.priorBidiMode === 1) {
-			void this.write(BIDI_IMPLICIT);
-		}
-	}
-
-	/** Sets every engaged mode again once a suspended program continues. */
-	reclaimModes(): void {
-		const slots = _(this);
-		if (slots.priorBidiMode === 1) {
-			void this.write(BIDI_EXPLICIT);
-		}
-		for (const name of MODE_RESTORE_ORDER) {
-			if (slots.engagedModes.has(name)) {
-				void this.write(MODE_SPELLINGS[name].set);
-			}
-		}
-	}
-
-	restoreEngagedModes(): void {
-		for (const name of MODE_RESTORE_ORDER) {
-			if (_(this).engagedModes.delete(name)) {
-				void this.write(MODE_SPELLINGS[name].reset);
-			}
-		}
-	}
-
 	write(output: string): Promise<void> {
 		// Probes taken while building one frame go out with it. A write ends
 		// the batch that can share a drift correction.
@@ -1216,331 +1149,6 @@ export class Exchange extends EventTarget {
 			// A transport torn down mid-write is a close, not a crash.
 		});
 		return slots.lastWrite;
-	}
-
-	flush(): Promise<void> {
-		return _(this).lastWrite;
-	}
-
-	start(input: Input): void {
-		const slots = _(this);
-		if (slots.started) {
-			return;
-		}
-		slots.started = true;
-		slots.input = input;
-
-		// A transport that learns its size while it gets ready, as an SSH
-		// session does from its pty request, starts at that size.
-		const transport = slots.transport;
-		const framebuffer = slots.framebuffer;
-		if (
-			transport.cols !== framebuffer.cols || transport.rows !== framebuffer.rows
-		) {
-			terminalResized(this, transport.cols, transport.rows);
-		}
-
-		slots.reader = slots.transport.readable.getReader();
-		void readLoop(this, slots.reader);
-
-		slots.resizeReader = slots.transport.resizes.getReader();
-		void resizeLoop(this, slots.resizeReader);
-
-		void slots.transport.closed.then(() => {
-			if (!slots.disposed) {
-				slots.transportClosed = true;
-				this.dispatchEvent(constructInternal(() => new Event("terminalclose")));
-			}
-		});
-	}
-
-	initializeCursorDetection(): void {
-		const slots = _(this);
-		slots.cursorDetectionPromise = null;
-		if (slots.anchorDetectionEnabled) {
-			slots.cursorDetectionPromise = Promise.race([
-				this.detectAnchor().then(() => {}),
-				new Promise<void>((resolve) => setTimeout(resolve, QUERY_TIMEOUT_MS)),
-			])
-				.catch(() => {
-					slots.hasDetectedAnchor = false;
-				})
-				.finally(() => {
-					slots.cursorDetectionPromise = null;
-				});
-		}
-	}
-
-	/**
-	 * Ask for explicit bidi (mode 8 reset) and then ask what we got. The
-	 * diff hands the terminal single cells at absolute positions, which a
-	 * terminal reordering implicitly would scramble. A terminal that keeps
-	 * reordering anyway (1 or 3) is given logical order instead. Silence and
-	 * 0 mean no bidi, which is the contract explicit gives.
-	 */
-	async negotiateBidi(): Promise<void> {
-		const slots = _(this);
-		if (!slots.interactive) {
-			return;
-		}
-
-		const answer = await queryMode(this, "8", BIDI_EXPLICIT);
-		if (answer === null || answer === 0) {
-			return;
-		}
-		slots.priorBidiMode = answer;
-		if (answer === 1 || answer === 3) {
-			adoptTerminalReordering(slots.layout);
-		}
-	}
-
-	/**
-	 * What one cell measures in pixels. Silence leaves the guessed cell
-	 * standing, which is the contract an unanswered question gives
-	 * everywhere else here. A DA1 asked behind it ends the wait on a
-	 * terminal that does not answer. True when the cell changed.
-	 */
-	async negotiateCellPixels(): Promise<boolean> {
-		const slots = _(this);
-		if (!slots.interactive) {
-			return false;
-		}
-		let answered!: () => void;
-		const until = new Promise<void>((resolve) => (answered = resolve));
-		const cell = nextReply<"cell-size", {width: number; height: number} | null>(
-			this,
-			"cell-size",
-			{
-				ask: CELL_SIZE_QUERY,
-				timeoutMs: QUERY_TIMEOUT_MS,
-				absent: null,
-				until,
-				// A terminal with no window reports zeroes. That is not a cell.
-				read: ({width, height}) =>
-					width > 0 && height > 0 ? {width, height} : null,
-			},
-		);
-		void this.queryDeviceAttributes().then(answered);
-		const answer = await cell;
-		return (
-			answer !== null &&
-			!slots.disposed &&
-			adoptCellPixels(slots.framebuffer, answer.width, answer.height)
-		);
-	}
-
-	/**
-	 * The terminal's default background, as light or dark. Asked before
-	 * the cursor's position, which a terminal answers after it, so the
-	 * first frame's wait for the cursor covers this answer too.
-	 */
-	async negotiateColorScheme(): Promise<"light" | "dark" | null> {
-		const slots = _(this);
-		if (!slots.interactive) {
-			return null;
-		}
-		return await nextReply<"background", "light" | "dark" | null>(
-			this,
-			"background",
-			{
-				ask: BACKGROUND_QUERY,
-				timeoutMs: QUERY_TIMEOUT_MS,
-				absent: null,
-				read: ({red, green, blue}) => {
-					slots.terminalBackground =
-						(Math.round(red * 255) << 16) |
-						(Math.round(green * 255) << 8) |
-						Math.round(blue * 255);
-					return (
-						slots.colorScheme =
-							0.2126 * red + 0.7152 * green + 0.0722 * blue <
-						0.5
-								? "dark"
-								: "light"
-					);
-				},
-			},
-		);
-	}
-
-	/**
-	 * DA1, which every terminal answers, and answers after whatever it was
-	 * asked before: a marker that the questions ahead of it are settled.
-	 */
-	queryDeviceAttributes(): Promise<void> {
-		if (!_(this).interactive) {
-			return Promise.resolve();
-		}
-		return nextReply<"device-attributes", boolean>(this, "device-attributes", {
-			ask: DEVICE_ATTRIBUTES_QUERY,
-			timeoutMs: QUERY_TIMEOUT_MS,
-			absent: false,
-			read: () => true,
-		}).then(() => {});
-	}
-
-	/**
-	 * Whether the terminal shows 24-bit color, from what it says over the
-	 * wire. It does when it keeps a 24-bit color in its style, or answers
-	 * XTGETTCAP for RGB or Tc. tmux says neither, but converts 24-bit color
-	 * for whatever terminal it runs in, so it counts too. Anything else gets
-	 * 256 colors, which every terminal in use draws.
-	 */
-	async negotiateColorDepth(): Promise<ColorDepth> {
-		if (!_(this).interactive) {
-			return "256";
-		}
-		const ask = <K extends WireItem["kind"]>(
-			kind: K,
-			question: string,
-			read: (item: ReplyItem<K>) => boolean,
-		) =>
-			nextReply<K, boolean>(this, kind, {
-				ask: question,
-				timeoutMs: QUERY_TIMEOUT_MS,
-				absent: false,
-				read,
-				group: "color-depth",
-			});
-		const answers = await Promise.all([
-			ask(
-				"sgr-report",
-				RGB_PROBE,
-				({params}) => params !== null && RGB_STYLE.test(params),
-			),
-			ask(
-				"capability-report",
-				`\x1bP+q${RGB_CAPABILITY}\x1b\\`,
-				({known}) => known,
-			),
-			ask(
-				"capability-report",
-				`\x1bP+q${TC_CAPABILITY}\x1b\\`,
-				({known}) => known,
-			),
-			ask("secondary-attributes", SECONDARY_ATTRIBUTES_QUERY, ({params}) =>
-				TMUX_ATTRIBUTES.test(params)),
-		]);
-		return answers.includes(true) ? "rgb" : "256";
-	}
-
-	/** A terminal that answered a later question will not answer these. */
-	abandonColorDepthQuery(): void {
-		const pending = _(this).pendingReplies;
-		for (const entry of pending.filter(
-			(entry) => entry.group === "color-depth",
-		)) {
-			pending.splice(pending.indexOf(entry), 1);
-			entry.giveUp();
-		}
-	}
-
-	/** A terminal that answered a later question will not answer this. */
-	abandonColorSchemeQuery(): void {
-		const pending = _(this).pendingReplies;
-		const index = pending.findIndex((entry) => entry.kind === "background");
-		if (index !== -1) {
-			const [entry] = pending.splice(index, 1);
-			entry.giveUp();
-		}
-	}
-
-	/** A terminal without DECRQM may echo the request's final byte as text. */
-	scrubProbeEcho(): void {
-		if (!_(this).asking) {
-			return;
-		}
-		void this.write("\r" + LINE_ERASE);
-	}
-
-	/**
-	 * Mode 2027: measure by grapheme cluster, as getStringWidth does, rather
-	 * than per code point as wcwidth does. A terminal that does not know the
-	 * mode leaves our measurements as they are. Only whether it agrees
-	 * changes.
-	 */
-	async negotiateGraphemeClusters(): Promise<void> {
-		const slots = _(this);
-		if (!slots.interactive) {
-			return;
-		}
-
-		const answer = await queryMode(
-			this,
-			"?2027",
-			MODE_SPELLINGS.clusterWidths.set,
-		);
-		slots.graphemeClustersNegotiated = answer === 1 || answer === 3;
-		// The set went out with the query's own write. A terminal that ignored
-		// it must not see the reset, so only an agreed offer is engaged.
-		if (slots.graphemeClustersNegotiated) {
-			slots.engagedModes.add("clusterWidths");
-		}
-	}
-
-	/**
-	 * SGR 53, overline. No terminal advertises it, but one that draws it
-	 * keeps it in its style, and DECRQSS reports the style back. The
-	 * probe sets it, asks, and resets it in one write, so the terminal's
-	 * style is what it was. A terminal that says nothing draws none.
-	 */
-	async negotiateOverline(): Promise<boolean> {
-		const slots = _(this);
-		if (!slots.interactive) {
-			return false;
-		}
-		const answer = await nextReply<"sgr-report", boolean>(this, "sgr-report", {
-			ask: "\x1b[53m\x1bP$qm\x1b\\\x1b[55m",
-			timeoutMs: QUERY_TIMEOUT_MS,
-			absent: false,
-			read: ({params}) =>
-				params !== null && params.split(";").includes("53"),
-		});
-		slots.overlineNegotiated = answer;
-		return answer;
-	}
-
-	/**
-	 * DSR. The cursor row is the anchor. With `silence`, a terminal that
-	 * does not answer in time resolves to it, and the anchor stays.
-	 */
-	detectAnchor(silence?: number): Promise<number> {
-		const slots = _(this);
-		if (!slots.interactive) {
-			return Promise.reject(
-				new Error("Cannot detect cursor position: not interactive"),
-			);
-		}
-		// A cold start or a slow link can outlast a tighter window.
-		return nextReply(this, "cursor-report", {
-			ask: CURSOR_QUERY,
-			timeoutMs: QUERY_TIMEOUT_MS,
-			absent: silence,
-			sequence: slots.dsrSequence++,
-			// The 1-based row the command started on becomes the 0-based
-			// anchor.
-			read: ({row}) => {
-				slots.framebuffer.documentTop = row - 1;
-				slots.hasDetectedAnchor = true;
-				return row;
-			},
-		});
-	}
-
-	/** The 0-based cursor row, for the resize re-anchor. Rejects on timeout. */
-	queryCursorRow(): Promise<number> {
-		const slots = _(this);
-		if (!slots.interactive) {
-			return Promise.reject(new Error("not interactive"));
-		}
-		// Short, because the redraw should feel immediate, and a slow terminal
-		// falls back to the computed re-anchor.
-		return nextReply(this, "cursor-report", {
-			ask: CURSOR_QUERY,
-			timeoutMs: 200,
-			sequence: slots.dsrSequence++,
-			read: ({row}) => row - 1,
-		});
 	}
 
 	writeClipboard(text: string): Promise<void> {
@@ -1566,60 +1174,6 @@ export class Exchange extends EventTarget {
 			clipboard: true,
 			read: ({text}) => text,
 		});
-	}
-
-	clearScreen(): Promise<void> {
-		return this.write(SCREEN_CLEAR);
-	}
-
-	cursorToRow(row: number): Promise<void> {
-		return this.write(getRowStart(row));
-	}
-
-	eraseBelow(): Promise<void> {
-		return this.write(BELOW_ERASE);
-	}
-
-	/** Each line starts by erasing the rest of its row. */
-	writeLines(text: string): Promise<void> {
-		return this.write(
-			LINE_ERASE + text.replace(/\r\n(?!$)/g, "\r\n" + LINE_ERASE),
-		);
-	}
-
-	/**
-	 * Room below the anchor for `rows` comes from scrolling earlier output
-	 * into the scrollback, never from painting over it. Returns the screen
-	 * row the region starts at.
-	 */
-	reserveRows(rows: number): number {
-		const framebuffer = _(this).framebuffer;
-		const overflow = framebuffer.documentTop + rows - framebuffer.rows;
-		const push = overflow <= 0
-			? 0
-			: Math.min(overflow, framebuffer.documentTop);
-		if (push > 0) {
-			framebuffer.documentTop -= push;
-			// The scroll moves the cursor to the bottom row first. Hidden, or
-			// it shows there until the frame places it.
-			this.setDisplayType("cursorHidden", true);
-			void this.scrollUp(framebuffer.rows, push);
-			// The previous buffer is not shifted. Its rows are region-relative
-			// and the region top moved by exactly the scroll. A pending
-			// post-resize reset is screen-absolute and does shift.
-			scrolled(framebuffer, push);
-		}
-		return framebuffer.documentTop;
-	}
-
-	/**
-	 * The scroll is IND (ESC D) from the bottom row. A bare LF after an
-	 * absolute CUP does not scroll (tmux and xterm-headless both), and CSI n S
-	 * scrolls without adding the rows to xterm-headless's scrollback, which
-	 * would make this untestable.
-	 */
-	scrollUp(bottomRow: number, rows: number): Promise<void> {
-		return this.write(getRowStart(bottomRow) + SCROLL_STEP.repeat(rows));
 	}
 
 	/**
@@ -1653,7 +1207,7 @@ export class Exchange extends EventTarget {
 			void this.write(BIDI_IMPLICIT);
 			slots.priorBidiMode = null;
 		}
-		this.restoreEngagedModes();
+		restoreEngagedModes(this);
 		slots.graphemeClustersNegotiated = false;
 		slots.overlineNegotiated = false;
 		abandonClipboardQuery(this);
@@ -1701,6 +1255,477 @@ export class Exchange extends EventTarget {
 		}
 		return slots.drained;
 	}
+}
+
+/** Leave the page's resize event to whoever handles terminalresize. */
+export function deferResizeEvent(exchange: Exchange): void {
+	_(exchange).defersResize = true;
+}
+
+/** Writes on change only. Teardown restores what was engaged. */
+export function setDisplayType(
+	exchange: Exchange,
+	name: ModeName,
+	on: boolean,
+): void {
+	const slots = _(exchange);
+	if (!slots.interactive || on === slots.engagedModes.has(name)) {
+		return;
+	}
+	if (on) {
+		slots.engagedModes.add(name);
+	} else {
+		slots.engagedModes.delete(name);
+	}
+	let output = on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset;
+	// tmux clears every mouse mode when any one of ?1000 to ?1003 is
+	// reset, so turning motion reporting off took the button mode with
+	// it and clicks stopped arriving. The base capture is asserted again.
+	if (
+		name === "motionReporting" && !on && slots.engagedModes.has("mouseCapture")
+	) {
+		output += MODE_SPELLINGS.mouseCapture.set;
+	}
+	void exchange.write(output);
+}
+
+/**
+ * Resets every engaged mode without forgetting it, so the terminal is
+ * the shell's while the program is suspended.
+ */
+export function releaseModes(exchange: Exchange): void {
+	const slots = _(exchange);
+	for (const name of MODE_RESTORE_ORDER) {
+		if (slots.engagedModes.has(name)) {
+			void exchange.write(MODE_SPELLINGS[name].reset);
+		}
+	}
+	if (slots.priorBidiMode === 1) {
+		void exchange.write(BIDI_IMPLICIT);
+	}
+}
+
+/** Sets every engaged mode again once a suspended program continues. */
+export function reclaimModes(exchange: Exchange): void {
+	const slots = _(exchange);
+	if (slots.priorBidiMode === 1) {
+		void exchange.write(BIDI_EXPLICIT);
+	}
+	for (const name of MODE_RESTORE_ORDER) {
+		if (slots.engagedModes.has(name)) {
+			void exchange.write(MODE_SPELLINGS[name].set);
+		}
+	}
+}
+
+export function restoreEngagedModes(exchange: Exchange): void {
+	for (const name of MODE_RESTORE_ORDER) {
+		if (_(exchange).engagedModes.delete(name)) {
+			void exchange.write(MODE_SPELLINGS[name].reset);
+		}
+	}
+}
+
+export function flushExchange(exchange: Exchange): Promise<void> {
+	return _(exchange).lastWrite;
+}
+
+export function startExchange(exchange: Exchange, input: Input): void {
+	const slots = _(exchange);
+	if (slots.started) {
+		return;
+	}
+	slots.started = true;
+	slots.input = input;
+
+	// A transport that learns its size while it gets ready, as an SSH
+	// session does from its pty request, starts at that size.
+	const transport = slots.transport;
+	const framebuffer = slots.framebuffer;
+	if (
+		transport.cols !== framebuffer.cols || transport.rows !== framebuffer.rows
+	) {
+		terminalResized(exchange, transport.cols, transport.rows);
+	}
+
+	slots.reader = slots.transport.readable.getReader();
+	void readLoop(exchange, slots.reader);
+
+	slots.resizeReader = slots.transport.resizes.getReader();
+	void resizeLoop(exchange, slots.resizeReader);
+
+	void slots.transport.closed.then(() => {
+		if (!slots.disposed) {
+			slots.transportClosed = true;
+			exchange.dispatchEvent(
+				constructInternal(() => new Event("terminalclose")),
+			);
+		}
+	});
+}
+
+export function initializeCursorDetection(exchange: Exchange): void {
+	const slots = _(exchange);
+	slots.cursorDetectionPromise = null;
+	if (slots.anchorDetectionEnabled) {
+		slots.cursorDetectionPromise = Promise.race([
+			detectAnchor(exchange).then(() => {}),
+			new Promise<void>((resolve) => setTimeout(resolve, QUERY_TIMEOUT_MS)),
+		])
+			.catch(() => {
+				slots.hasDetectedAnchor = false;
+			})
+			.finally(() => {
+				slots.cursorDetectionPromise = null;
+			});
+	}
+}
+
+/**
+ * Ask for explicit bidi (mode 8 reset) and then ask what we got. The
+ * diff hands the terminal single cells at absolute positions, which a
+ * terminal reordering implicitly would scramble. A terminal that keeps
+ * reordering anyway (1 or 3) is given logical order instead. Silence and
+ * 0 mean no bidi, which is the contract explicit gives.
+ */
+export async function negotiateBidi(exchange: Exchange): Promise<void> {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return;
+	}
+
+	const answer = await queryMode(exchange, "8", BIDI_EXPLICIT);
+	if (answer === null || answer === 0) {
+		return;
+	}
+	slots.priorBidiMode = answer;
+	if (answer === 1 || answer === 3) {
+		adoptTerminalReordering(slots.layout);
+	}
+}
+
+/**
+ * What one cell measures in pixels. Silence leaves the guessed cell
+ * standing, which is the contract an unanswered question gives
+ * everywhere else here. A DA1 asked behind it ends the wait on a
+ * terminal that does not answer. True when the cell changed.
+ */
+export async function negotiateCellPixels(
+	exchange: Exchange,
+): Promise<boolean> {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return false;
+	}
+	let answered!: () => void;
+	const until = new Promise<void>((resolve) => (answered = resolve));
+	const cell = nextReply<"cell-size", {width: number; height: number} | null>(
+		exchange,
+		"cell-size",
+		{
+			ask: CELL_SIZE_QUERY,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: null,
+			until,
+			// A terminal with no window reports zeroes. That is not a cell.
+			read: ({width, height}) =>
+				width > 0 && height > 0 ? {width, height} : null,
+		},
+	);
+	void queryDeviceAttributes(exchange).then(answered);
+	const answer = await cell;
+	return (
+		answer !== null &&
+		!slots.disposed &&
+		adoptCellPixels(slots.framebuffer, answer.width, answer.height)
+	);
+}
+
+/**
+ * The terminal's default background, as light or dark. Asked before
+ * the cursor's position, which a terminal answers after it, so the
+ * first frame's wait for the cursor covers this answer too.
+ */
+export async function negotiateColorScheme(
+	exchange: Exchange,
+): Promise<"light" | "dark" | null> {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return null;
+	}
+	return await nextReply<"background", "light" | "dark" | null>(
+		exchange,
+		"background",
+		{
+			ask: BACKGROUND_QUERY,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: null,
+			read: ({red, green, blue}) => {
+				slots.terminalBackground =
+					(Math.round(red * 255) << 16) |
+					(Math.round(green * 255) << 8) |
+					Math.round(blue * 255);
+				return (
+					slots.colorScheme =
+						0.2126 * red + 0.7152 * green + 0.0722 * blue <
+					0.5
+							? "dark"
+							: "light"
+				);
+			},
+		},
+	);
+}
+
+/**
+ * DA1, which every terminal answers, and answers after whatever it was
+ * asked before: a marker that the questions ahead of it are settled.
+ */
+export function queryDeviceAttributes(exchange: Exchange): Promise<void> {
+	if (!_(exchange).interactive) {
+		return Promise.resolve();
+	}
+	return nextReply<"device-attributes", boolean>(
+		exchange,
+		"device-attributes",
+		{
+			ask: DEVICE_ATTRIBUTES_QUERY,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: false,
+			read: () => true,
+		},
+	).then(() => {});
+}
+
+/**
+ * Whether the terminal shows 24-bit color, from what it says over the
+ * wire. It does when it keeps a 24-bit color in its style, or answers
+ * XTGETTCAP for RGB or Tc. tmux says neither, but converts 24-bit color
+ * for whatever terminal it runs in, so it counts too. Anything else gets
+ * 256 colors, which every terminal in use draws.
+ */
+export async function negotiateColorDepth(
+	exchange: Exchange,
+): Promise<ColorDepth> {
+	if (!_(exchange).interactive) {
+		return "256";
+	}
+	const ask = <K extends WireItem["kind"]>(
+		kind: K,
+		question: string,
+		read: (item: ReplyItem<K>) => boolean,
+	) =>
+		nextReply<K, boolean>(exchange, kind, {
+			ask: question,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: false,
+			read,
+			group: "color-depth",
+		});
+	const answers = await Promise.all([
+		ask(
+			"sgr-report",
+			RGB_PROBE,
+			({params}) => params !== null && RGB_STYLE.test(params),
+		),
+		ask(
+			"capability-report",
+			`\x1bP+q${RGB_CAPABILITY}\x1b\\`,
+			({known}) => known,
+		),
+		ask(
+			"capability-report",
+			`\x1bP+q${TC_CAPABILITY}\x1b\\`,
+			({known}) => known,
+		),
+		ask("secondary-attributes", SECONDARY_ATTRIBUTES_QUERY, ({params}) =>
+			TMUX_ATTRIBUTES.test(params)),
+	]);
+	return answers.includes(true) ? "rgb" : "256";
+}
+
+/** A terminal that answered a later question will not answer these. */
+export function abandonColorDepthQuery(exchange: Exchange): void {
+	const pending = _(exchange).pendingReplies;
+	for (const entry of pending.filter(
+		(entry) => entry.group === "color-depth",
+	)) {
+		pending.splice(pending.indexOf(entry), 1);
+		entry.giveUp();
+	}
+}
+
+/** A terminal that answered a later question will not answer this. */
+export function abandonColorSchemeQuery(exchange: Exchange): void {
+	const pending = _(exchange).pendingReplies;
+	const index = pending.findIndex((entry) => entry.kind === "background");
+	if (index !== -1) {
+		const [entry] = pending.splice(index, 1);
+		entry.giveUp();
+	}
+}
+
+/** A terminal without DECRQM may echo the request's final byte as text. */
+export function scrubProbeEcho(exchange: Exchange): void {
+	if (!_(exchange).asking) {
+		return;
+	}
+	void exchange.write("\r" + LINE_ERASE);
+}
+
+/**
+ * Mode 2027: measure by grapheme cluster, as getStringWidth does, rather
+ * than per code point as wcwidth does. A terminal that does not know the
+ * mode leaves our measurements as they are. Only whether it agrees
+ * changes.
+ */
+export async function negotiateGraphemeClusters(
+	exchange: Exchange,
+): Promise<void> {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return;
+	}
+
+	const answer = await queryMode(
+		exchange,
+		"?2027",
+		MODE_SPELLINGS.clusterWidths.set,
+	);
+	slots.graphemeClustersNegotiated = answer === 1 || answer === 3;
+	// The set went out with the query's own write. A terminal that ignored
+	// it must not see the reset, so only an agreed offer is engaged.
+	if (slots.graphemeClustersNegotiated) {
+		slots.engagedModes.add("clusterWidths");
+	}
+}
+
+/**
+ * SGR 53, overline. No terminal advertises it, but one that draws it
+ * keeps it in its style, and DECRQSS reports the style back. The
+ * probe sets it, asks, and resets it in one write, so the terminal's
+ * style is what it was. A terminal that says nothing draws none.
+ */
+export async function negotiateOverline(exchange: Exchange): Promise<boolean> {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return false;
+	}
+	const answer = await nextReply<"sgr-report", boolean>(
+		exchange,
+		"sgr-report",
+		{
+			ask: "\x1b[53m\x1bP$qm\x1b\\\x1b[55m",
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: false,
+			read: ({params}) =>
+				params !== null && params.split(";").includes("53"),
+		},
+	);
+	slots.overlineNegotiated = answer;
+	return answer;
+}
+
+/**
+ * DSR. The cursor row is the anchor. With `silence`, a terminal that
+ * does not answer in time resolves to it, and the anchor stays.
+ */
+export function detectAnchor(
+	exchange: Exchange,
+	silence?: number,
+): Promise<number> {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return Promise.reject(
+			new Error("Cannot detect cursor position: not interactive"),
+		);
+	}
+	// A cold start or a slow link can outlast a tighter window.
+	return nextReply(exchange, "cursor-report", {
+		ask: CURSOR_QUERY,
+		timeoutMs: QUERY_TIMEOUT_MS,
+		absent: silence,
+		sequence: slots.dsrSequence++,
+		// The 1-based row the command started on becomes the 0-based
+		// anchor.
+		read: ({row}) => {
+			slots.framebuffer.documentTop = row - 1;
+			slots.hasDetectedAnchor = true;
+			return row;
+		},
+	});
+}
+
+/** The 0-based cursor row, for the resize re-anchor. Rejects on timeout. */
+function queryCursorRow(exchange: Exchange): Promise<number> {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return Promise.reject(new Error("not interactive"));
+	}
+	// Short, because the redraw should feel immediate, and a slow terminal
+	// falls back to the computed re-anchor.
+	return nextReply(exchange, "cursor-report", {
+		ask: CURSOR_QUERY,
+		timeoutMs: 200,
+		sequence: slots.dsrSequence++,
+		read: ({row}) => row - 1,
+	});
+}
+
+export function clearScreen(exchange: Exchange): Promise<void> {
+	return exchange.write(SCREEN_CLEAR);
+}
+
+export function cursorToRow(exchange: Exchange, row: number): Promise<void> {
+	return exchange.write(getRowStart(row));
+}
+
+export function eraseBelow(exchange: Exchange): Promise<void> {
+	return exchange.write(BELOW_ERASE);
+}
+
+/** Each line starts by erasing the rest of its row. */
+export function writeLines(exchange: Exchange, text: string): Promise<void> {
+	return exchange.write(
+		LINE_ERASE + text.replace(/\r\n(?!$)/g, "\r\n" + LINE_ERASE),
+	);
+}
+
+/**
+ * Room below the anchor for `rows` comes from scrolling earlier output
+ * into the scrollback, never from painting over it. Returns the screen
+ * row the region starts at.
+ */
+export function reserveRows(exchange: Exchange, rows: number): number {
+	const framebuffer = _(exchange).framebuffer;
+	const overflow = framebuffer.documentTop + rows - framebuffer.rows;
+	const push = overflow <= 0 ? 0 : Math.min(overflow, framebuffer.documentTop);
+	if (push > 0) {
+		framebuffer.documentTop -= push;
+		// The scroll moves the cursor to the bottom row first. Hidden, or
+		// it shows there until the frame places it.
+		setDisplayType(exchange, "cursorHidden", true);
+		void scrollUp(exchange, framebuffer.rows, push);
+		// The previous buffer is not shifted. Its rows are region-relative
+		// and the region top moved by exactly the scroll. A pending
+		// post-resize reset is screen-absolute and does shift.
+		scrolled(framebuffer, push);
+	}
+	return framebuffer.documentTop;
+}
+
+/**
+ * The scroll is IND (ESC D) from the bottom row. A bare LF after an
+ * absolute CUP does not scroll (tmux and xterm-headless both), and CSI n S
+ * scrolls without adding the rows to xterm-headless's scrollback, which
+ * would make this untestable.
+ */
+function scrollUp(
+	exchange: Exchange,
+	bottomRow: number,
+	rows: number,
+): Promise<void> {
+	return exchange.write(getRowStart(bottomRow) + SCROLL_STEP.repeat(rows));
 }
 
 function getRowStart(row: number): string {
@@ -2041,8 +2066,7 @@ function handleResize(session: Exchange): void {
 	};
 
 	if (sessionSlots.anchorDetectionEnabled && wrappedRowsAbove !== null) {
-		session
-			.queryCursorRow()
+		queryCursorRow(session)
 			.then((cursorRow) => {
 				if (settling !== sessionSlots.settlingResize) {
 					return;
