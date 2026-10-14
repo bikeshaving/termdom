@@ -2085,6 +2085,57 @@ export class Framebuffer {
 		this.dirty = true;
 	}
 
+	/**
+	 * Whether shifting the whole width of rows `[top, end)` by `delta` costs
+	 * less than repainting the columns `[left, right)` that scrolled. The
+	 * shift drags the cells beside those columns too, and the diff has to put
+	 * them back. Both costs are read from the previous frame: a cell costs
+	 * its glyph and each color it changes from its left neighbour, which is
+	 * what the diff writes.
+	 */
+	insetShiftPays(
+		{delta, top, end, left, right}: {
+			delta: number;
+			top: number;
+			end: number;
+			left: number;
+			right: number;
+		},
+	): boolean {
+		const prev = this.prev;
+		if (prev === null || prev.cols !== this.colCount) {
+			return false;
+		}
+		const cols = prev.cols;
+		const cost = (index: number, col: number): number =>
+			1 +
+			(col > 0 && prev.fg[index] !== prev.fg[index - 1] ? 16 : 0) +
+			(col > 0 && prev.bg[index] !== prev.bg[index - 1] ? 16 : 0);
+		const bandEnd = Math.min(end, prev.rows);
+		let beside = 0;
+		let inside = 0;
+		for (let row = top; row < bandEnd; row++) {
+			const from = row + delta;
+			const vacated = from < top || from >= bandEnd;
+			for (let col = 0; col < cols; col++) {
+				const index = row * cols + col;
+				const source = from * cols + col;
+				if (col < left || col >= right) {
+					if (
+						vacated
+							? prev.cluster[index] !== 0
+							: !prev.equalCells(index, prev, source)
+					) {
+						beside += cost(index, col);
+					}
+				} else if (!vacated && !prev.equalCells(index, prev, source)) {
+					inside += cost(source, col);
+				}
+			}
+		}
+		return beside < inside;
+	}
+
 	wrappedRowsAbovePark(cols: number): number | null {
 		// The resize re-anchor asks the terminal where the cursor is after the
 		// rewrap and subtracts this to find the frame's new top row.
