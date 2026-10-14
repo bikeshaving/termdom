@@ -10335,20 +10335,16 @@ installArrayIteration(NamedNodeMap.prototype, false);
 type CustomElementState =
 	"uncustomized" | "undefined" | "failed" | "custom" | "precustomized";
 
-const kByName = Symbol("byName");
-
 // A name the DOM Standard gives its own behavior (slot, and template,
 // whose content the parser fills) is created through the class that
 // implements that behavior. Every other name maps to one of the four
 // namespace interfaces. Author definitions live in a
 // CustomElementRegistry, a separate table with a separate lifetime.
-interface ElementRegistry {
-	[kByName]: Map<string, new () => Element>;
-}
-
 class ElementRegistry {
+	byName: Map<string, new () => Element>;
+
 	constructor() {
-		this[kByName] = new Map<string, new () => Element>();
+		this.byName = new Map<string, new () => Element>();
 	}
 
 	define(
@@ -10356,14 +10352,14 @@ class ElementRegistry {
 		localName: string,
 		constructor: new () => Element,
 	): void {
-		this[kByName].set(`${namespace}|${localName}`, constructor);
+		this.byName.set(`${namespace}|${localName}`, constructor);
 	}
 
 	lookup(
 		namespace: string | null,
 		localName: string,
 	): (new () => Element) | null {
-		return this[kByName].get(`${namespace}|${localName}`) ?? null;
+		return this.byName.get(`${namespace}|${localName}`) ?? null;
 	}
 }
 

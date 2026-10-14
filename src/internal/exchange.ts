@@ -472,16 +472,12 @@ function decodeKeyToken(token: string): WireKey {
 	};
 }
 
-const kTail = Symbol("tail");
-const kPasteBody = Symbol("pasteBody");
-const kReplyBody = Symbol("replyBody");
 // A larger reply is not a clipboard. It is given up as null.
 const REPLY_LIMIT = 1 << 16;
 // A paste this large is delivered as it stands and the fence forgotten.
 const PASTE_LIMIT = 1 << 20;
 // A split sequence longer than this is not one a terminal sends.
 const HOLD_LIMIT = 4096;
-const kExpectingReply = Symbol("expectingReply");
 
 const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
 
@@ -526,13 +522,6 @@ const RGB_STYLE =
 // other terminal sends it.
 const TMUX_ATTRIBUTES = /^84;/;
 
-interface WireReader {
-	[kTail]: string;
-	[kPasteBody]: string | null;
-	[kReplyBody]: string | null;
-	[kExpectingReply]: boolean;
-}
-
 /**
  * Decodes one chunk into what it meant. Keeps what a chunk boundary can
  * cut: a split escape (never a bare trailing ESC, which may be the
@@ -543,15 +532,20 @@ interface WireReader {
  * query is waiting for it.
  */
 class WireReader {
+	tail: string;
+	pasteBody: string | null;
+	replyBody: string | null;
+	expectingReply: boolean;
+
 	constructor() {
-		this[kTail] = "";
-		this[kPasteBody] = null;
-		this[kReplyBody] = null;
-		this[kExpectingReply] = false;
+		this.tail = "";
+		this.pasteBody = null;
+		this.replyBody = null;
+		this.expectingReply = false;
 	}
 
 	holdsEscape(): boolean {
-		return this[kTail] === "\x1b";
+		return this.tail === "\x1b";
 	}
 
 	/** What a held ESC meant once nothing followed it: the Escape key. */
@@ -565,9 +559,9 @@ class WireReader {
 	 * discarded so the keystrokes behind it get through.
 	 */
 	expectClipboardReply(expecting: boolean): void {
-		this[kExpectingReply] = expecting;
+		this.expectingReply = expecting;
 		if (!expecting) {
-			this[kReplyBody] = null;
+			this.replyBody = null;
 		}
 	}
 
@@ -577,11 +571,11 @@ class WireReader {
 	 * it waits for the next chunk or for release().
 	 */
 	feed(chunk: string, holdEscape = false): WireItem[] {
-		let data = this[kTail] + chunk;
-		this[kTail] = "";
+		let data = this.tail + chunk;
+		this.tail = "";
 		const held = splitTrailingEscape(data, holdEscape);
 		if (held > 0 && held <= HOLD_LIMIT) {
-			this[kTail] = data.slice(-held);
+			this.tail = data.slice(-held);
 			data = data.slice(0, -held);
 		}
 
@@ -589,32 +583,29 @@ class WireReader {
 		let i = 0;
 		while (i < data.length) {
 			// Inside a paste only the end fence means anything.
-			if (this[kPasteBody] !== null) {
+			if (this.pasteBody !== null) {
 				const end = data.indexOf(PASTE_END, i);
 				if (end === -1) {
-					this[kPasteBody] += data.slice(i);
-					if (this[kPasteBody].length > PASTE_LIMIT) {
-						items.push({kind: "paste", text: this[kPasteBody]});
-						this[kPasteBody] = null;
+					this.pasteBody += data.slice(i);
+					if (this.pasteBody.length > PASTE_LIMIT) {
+						items.push({kind: "paste", text: this.pasteBody});
+						this.pasteBody = null;
 					}
 					return items;
 				}
-				items.push({
-					kind: "paste",
-					text: this[kPasteBody] + data.slice(i, end),
-				});
-				this[kPasteBody] = null;
+				items.push({kind: "paste", text: this.pasteBody + data.slice(i, end)});
+				this.pasteBody = null;
 				i = end + PASTE_END.length;
 				continue;
 			}
 			// A payload no decoding rescues is reported as an empty clipboard.
-			if (this[kReplyBody] !== null) {
-				const reply = this[kReplyBody] + data.slice(i);
-				this[kReplyBody] = null;
+			if (this.replyBody !== null) {
+				const reply = this.replyBody + data.slice(i);
+				this.replyBody = null;
 				const match = reply.match(CLIPBOARD_REPLY);
 				if (!match) {
 					if (reply.length <= REPLY_LIMIT) {
-						this[kReplyBody] = reply;
+						this.replyBody = reply;
 					} else {
 						items.push({kind: "clipboard", text: null});
 					}
@@ -630,12 +621,12 @@ class WireReader {
 				continue;
 			}
 			if (data.startsWith(PASTE_START, i)) {
-				this[kPasteBody] = "";
+				this.pasteBody = "";
 				i += PASTE_START.length;
 				continue;
 			}
-			if (data.startsWith(CLIPBOARD_START, i) && this[kExpectingReply]) {
-				this[kReplyBody] = "";
+			if (data.startsWith(CLIPBOARD_START, i) && this.expectingReply) {
+				this.replyBody = "";
 				continue;
 			}
 			// OSC, DCS, APC, PM and SOS are strings a terminal writes, not
