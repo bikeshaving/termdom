@@ -9,7 +9,6 @@ import {
 	clearHighlights,
 	clearWindowTimers,
 	constructInternal,
-	createWindow,
 	disconnectObservers,
 	dispatchAsUserAgent,
 	DOMException,
@@ -113,6 +112,7 @@ import {
 	getCellSize,
 	UNIT_CELL,
 } from "./internal/units.ts";
+import {createWindow} from "./internal/window.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
 export type {CellSize} from "./internal/units.ts";

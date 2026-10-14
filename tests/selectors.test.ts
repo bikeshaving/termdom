@@ -12,7 +12,6 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {parseSelectorList} from "../src/internal/cssselectors.ts";
 import {
-	createWindow,
 	type Document,
 	DOMException,
 	type Element,
@@ -20,6 +19,7 @@ import {
 	setDocumentFocusVisible,
 	setHoveredElement,
 } from "../src/internal/dom.ts";
+import {createWindow} from "../src/internal/window.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 function tree(html: string, url = "about:blank"): Document {

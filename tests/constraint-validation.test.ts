@@ -4,7 +4,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {createWindow} from "../src/internal/dom.ts";
+import {createWindow} from "../src/internal/window.ts";
 
 function input(markup: string): HTMLInputElement {
 	const window =

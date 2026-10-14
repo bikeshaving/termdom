@@ -1,6 +1,6 @@
 import {expect, test} from "@b9g/libuild/test";
 
-import {createWindow} from "../src/internal/dom.ts";
+import {createWindow} from "../src/internal/window.ts";
 
 test("a FormData holds its entries in order and reads them back by name", () => {
 	const window = createWindow("<!DOCTYPE html><body></body>");

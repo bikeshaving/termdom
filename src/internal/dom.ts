@@ -10,8 +10,6 @@ import {
 } from "../generated/htmlidl.ts";
 import {
 	CanvasCellGridContext,
-	CanvasGradient,
-	CanvasPattern,
 	CanvasRenderingContext2D,
 	clearCanvasText,
 	createCellGridContext,
@@ -20,28 +18,11 @@ import {
 	getCanvasText,
 	ImageBitmap,
 	ImageData,
-	Path2D,
 	registerDrawable,
 	resetContextState,
 } from "./canvas.ts";
-import {
-	adoptStyleSheets,
-	type Cascade,
-	CSSOM_INTERFACES,
-	getAdoptedStyleSheets,
-	getBoxModel,
-	getComputedValue,
-	getInlineStyle,
-	getStyleSheets,
-	getWhiteSpace,
-	handleFocusChange,
-	handleMutations,
-	handleStateChange,
-	mediaQueryMatches,
-	styleAttributeChanged,
-	styleElementSheet,
-	styleShadowAttached,
-} from "./cssom.ts";
+import type * as CSSOM from "./cssom.ts";
+import type {Cascade} from "./cssom.ts";
 import {
 	closestSelector,
 	getDirectionality,
@@ -93,7 +74,6 @@ import {
 	isSealed,
 	objectOf,
 	ownerOf,
-	prepareClasses,
 	rememberObject,
 	seal,
 	type Slots,
@@ -155,12 +135,36 @@ import {
 	pxFromCells,
 	UNIT_CELL,
 } from "./units.ts";
-import {
-	type Constructor,
-	installInterfaces,
-	interfaceNameOf,
-	windowMember,
-} from "./webidl.ts";
+import {interfaceNameOf} from "./webidl.ts";
+
+/**
+ * What the DOM asks of the CSSOM and the cascade: the style objects it
+ * hands out, the computed values it reads, and the changes it reports.
+ * cssom.ts gives them as it loads, so this module never imports it.
+ */
+type StyleHooks = Pick<
+	typeof CSSOM,
+	"adoptStyleSheets" |
+	"getAdoptedStyleSheets" |
+	"getBoxModel" |
+	"getComputedValue" |
+	"getInlineStyle" |
+	"getStyleSheets" |
+	"getWhiteSpace" |
+	"handleFocusChange" |
+	"handleMutations" |
+	"handleStateChange" |
+	"mediaQueryMatches" |
+	"styleAttributeChanged" |
+	"styleElementSheet" |
+	"styleShadowAttached"
+>;
+
+let cssom: StyleHooks;
+
+export function setStyleHooks(given: StyleHooks): void {
+	cssom = given;
+}
 
 // Safe to call more than once, and synchronous: the shadow tree exists
 // when this returns. A control that was removed and re-inserted keeps its
@@ -5816,7 +5820,10 @@ function callListener(
 // reporting mode" has it, rather than firing another without end.
 const reportingWindows = new WeakSet<object>();
 
-function reportError(error: unknown, document: Document | null = null): void {
+export function reportError(
+	error: unknown,
+	document: Document | null = null,
+): void {
 	const view = document === null ? null : _(document).extra.defaultView;
 	if (view !== null && !reportingWindows.has(view)) {
 		const event = constructInternal(() =>
@@ -7296,7 +7303,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 					: nodeTypeOf(parent) === ELEMENT_NODE ? (parent as Element) : null;
 				const attached = getAttachedDocument(document);
 				if (left !== null && attached !== undefined) {
-					handleFocusChange(_(attached).extra.cascade, left);
+					cssom.handleFocusChange(_(attached).extra.cascade, left);
 				}
 				break;
 			}
@@ -9723,7 +9730,7 @@ function setExistingAttributeValue(attribute: Attr, value: string): void {
 // them. An element's own steps read the element, and they must see the
 // tree the rest of the world will see.
 function notifyAttributeChange(element: Element, localName: string): void {
-	styleAttributeChanged(element, localName);
+	cssom.styleAttributeChanged(element, localName);
 }
 
 function changeAttribute(attribute: Attr, value: string): void {
@@ -11391,7 +11398,7 @@ function getInnerText(element: Element): string {
 
 function isElementRendered(layout: Layout, element: Element): boolean {
 	return (
-		getComputedValue(element, "display") === "contents" ||
+		cssom.getComputedValue(element, "display") === "contents" ||
 		layout.getRects(element).length > 0
 	);
 }
@@ -11404,7 +11411,8 @@ function collectRenderedText(
 	if (nodeTypeOf(node) === TEXT_NODE) {
 		const parent = node.parentElement as Element | null;
 		if (
-			parent === null || getComputedValue(parent, "visibility") === "visible"
+			parent === null ||
+			cssom.getComputedValue(parent, "visibility") === "visible"
 		) {
 			items.push(layout.getRenderedText(node as unknown as globalThis.Text));
 		}
@@ -11414,13 +11422,13 @@ function collectRenderedText(
 		return;
 	}
 	const element = node as Element;
-	const display = getComputedValue(element, "display");
+	const display = cssom.getComputedValue(element, "display");
 	if (display === "none") {
 		return;
 	}
 	const shown =
 		isElementRendered(layout, element) &&
-		getComputedValue(element, "visibility") === "visible";
+		cssom.getComputedValue(element, "visibility") === "visible";
 	const around = !shown
 		? 0
 		: localNameOf(element) === "p" && namespaceOf(element) === HTML_NAMESPACE
@@ -11476,7 +11484,7 @@ function hasLaterSibling(element: Element, display: string): boolean {
 		next !== null;
 		next = next.nextElementSibling as Element | null
 	) {
-		if (getComputedValue(next, "display") === display) {
+		if (cssom.getComputedValue(next, "display") === display) {
 			return true;
 		}
 	}
@@ -11717,11 +11725,11 @@ export class HTMLElement extends Element {
 	}
 
 	get style(): globalThis.CSSStyleDeclaration {
-		return getInlineStyle(this);
+		return cssom.getInlineStyle(this);
 	}
 
 	set style(value: unknown) {
-		getInlineStyle(this).cssText = value == null ? "" : `${value}`;
+		cssom.getInlineStyle(this).cssText = value == null ? "" : `${value}`;
 	}
 
 	// Inherited. An element that sets no mode takes its parent's, and the
@@ -12081,7 +12089,7 @@ export class HTMLElement extends Element {
 		if (attached === undefined) {
 			return;
 		}
-		handleFocusChange(_(attached).extra.cascade, this, null);
+		cssom.handleFocusChange(_(attached).extra.cascade, this, null);
 		invalidate(_(attached).extra.framebuffer);
 		void _(attached).extra.render();
 		dispatchAsUserAgent(
@@ -12242,7 +12250,7 @@ function runFocusingSteps(element: HTMLElement): void {
 	// :focus rules match live and a focus move is not a mutation, so both
 	// elements' resolved styles are stale whether or not a listener changes
 	// anything.
-	handleFocusChange(_(attached).extra.cascade, previous, element);
+	cssom.handleFocusChange(_(attached).extra.cascade, previous, element);
 	invalidate(_(attached).extra.framebuffer);
 	void _(attached).extra.render();
 	// An edit the user made in the control focus is leaving is committed
@@ -12465,14 +12473,14 @@ Object.defineProperties(HTMLElement.prototype, {
 	// The border widths, which only the cascade decides.
 	clientLeft: {
 		get(this: HTMLElement): number {
-			return pxFromCells(getBoxModel(this).borderLeftWidth, false, this);
+			return pxFromCells(cssom.getBoxModel(this).borderLeftWidth, false, this);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientTop: {
 		get(this: HTMLElement): number {
-			return pxFromCells(getBoxModel(this).borderTopWidth, true, this);
+			return pxFromCells(cssom.getBoxModel(this).borderTopWidth, true, this);
 		},
 		configurable: true,
 		enumerable: true,
@@ -12788,11 +12796,11 @@ export class SVGElement extends Element {
 	declare blur: globalThis.SVGElement["blur"];
 	declare focus: globalThis.SVGElement["focus"];
 	get style(): globalThis.CSSStyleDeclaration {
-		return getInlineStyle(this);
+		return cssom.getInlineStyle(this);
 	}
 
 	set style(value: unknown) {
-		getInlineStyle(this).cssText = value == null ? "" : `${value}`;
+		cssom.getInlineStyle(this).cssText = value == null ? "" : `${value}`;
 	}
 
 	override get className(): any {
@@ -12975,11 +12983,11 @@ class MathMLElement extends Element {
 	declare blur: globalThis.MathMLElement["blur"];
 	declare focus: globalThis.MathMLElement["focus"];
 	get style(): globalThis.CSSStyleDeclaration {
-		return getInlineStyle(this);
+		return cssom.getInlineStyle(this);
 	}
 
 	set style(value: unknown) {
-		getInlineStyle(this).cssText = value == null ? "" : `${value}`;
+		cssom.getInlineStyle(this).cssText = value == null ? "" : `${value}`;
 	}
 
 	get attributeStyleMap(): globalThis.StylePropertyMap {
@@ -13830,7 +13838,7 @@ function getConstructorDefinition(
 // shared by every window in the realm, but the names defined for them
 // are not, so two windows in one process, such as two terminal sessions,
 // each define their own elements.
-function createWindowRegistry(): CustomElementRegistry {
+export function createWindowRegistry(): CustomElementRegistry {
 	return constructInternal(() => new CustomElementRegistry());
 }
 
@@ -14053,15 +14061,15 @@ export class ShadowRoot
 	}
 
 	get styleSheets(): globalThis.StyleSheetList {
-		return getStyleSheets(this);
+		return cssom.getStyleSheets(this);
 	}
 
 	get adoptedStyleSheets(): globalThis.CSSStyleSheet[] {
-		return getAdoptedStyleSheets(this);
+		return cssom.getAdoptedStyleSheets(this);
 	}
 
 	set adoptedStyleSheets(value: globalThis.CSSStyleSheet[]) {
-		adoptStyleSheets(this, value);
+		cssom.adoptStyleSheets(this, value);
 	}
 
 	// Retargeted into this tree: the shadow-including ancestor of the
@@ -14333,7 +14341,7 @@ function attachShadowRoot(
 	shadowSlots.extra.serializable = serializable;
 	shadowSlots.registry = registry;
 	elementSlots.shadowRoot = shadow;
-	styleShadowAttached(shadow);
+	cssom.styleShadowAttached(shadow);
 }
 
 // The same ShadowRoot an author's attachShadow builds, so slot
@@ -15649,7 +15657,7 @@ class HTMLCanvasElement extends HTMLElement {
 				cellPixels: () => getImageCellSize(this as unknown as Node),
 				drawsPixels: () => _maybe(getAttachedDocument(this))?.extra.canvas !==
 					"none",
-				color: () => getComputedValue(this, "color"),
+				color: () => cssom.getComputedValue(this, "color"),
 				direction: () => getCanvasDirection(this),
 			});
 		} else {
@@ -17821,11 +17829,11 @@ interface HTMLImageElementSlots extends HTMLElementSlots {
 	_ensureUAShadowTree: Step<HTMLImageElement["_ensureUAShadowTree"]>;
 }
 
-interface HTMLImageElement {
+export interface HTMLImageElement {
 	readonly [internals]: HTMLImageElementSlots;
 }
 
-class HTMLImageElement extends HTMLElement {
+export class HTMLImageElement extends HTMLElement {
 	declare alt: globalThis.HTMLImageElement["alt"];
 	declare referrerPolicy: globalThis.HTMLImageElement["referrerPolicy"];
 	declare name: globalThis.HTMLImageElement["name"];
@@ -18038,7 +18046,7 @@ class HTMLImageElement extends HTMLElement {
 
 declareExtraSlots(HTMLImageElement);
 
-function toImageDimension(value: number): number {
+export function toImageDimension(value: number): number {
 	const number = Math.trunc(Number(value));
 	return Number.isFinite(number) && number >= 0 && number <= 0x7fffffff
 		? number
@@ -20295,7 +20303,7 @@ function getGaugeGlyphs(host: Element, glyph: string): string {
 
 // What a canvas context's "inherit" direction resolves to.
 function getCanvasDirection(canvas: Element): "ltr" | "rtl" {
-	return getComputedValue(canvas, "direction") === "rtl" ? "rtl" : "ltr";
+	return cssom.getComputedValue(canvas, "direction") === "rtl" ? "rtl" : "ltr";
 }
 
 // A full-width track holding a bar whose width is the fraction filled.
@@ -21869,7 +21877,7 @@ export class HTMLStyleElement extends HTMLElement {
 
 	/** Null outside a tree. */
 	get sheet(): CSSStyleSheet | null {
-		return styleElementSheet(this);
+		return cssom.styleElementSheet(this);
 	}
 
 	get disabled(): boolean {
@@ -23178,7 +23186,7 @@ function stateChanged(element: Element, states: readonly string[]): void {
 	if (attached === undefined) {
 		return;
 	}
-	handleStateChange(_(attached).extra.cascade, element, states);
+	cssom.handleStateChange(_(attached).extra.cascade, element, states);
 	invalidate(_(attached).extra.framebuffer);
 	queueMicrotask(() => {
 		void _(attached).extra.render();
@@ -25706,7 +25714,7 @@ export function *flatDescendants(
 // The flow is the flat tree seen through style: a `display: contents`
 // element is not a box, so the flow passes through it to its children.
 function isDisplayContents(node: globalThis.Node): boolean {
-	return getComputedValue(node as Element, "display") === "contents";
+	return cssom.getComputedValue(node as Element, "display") === "contents";
 }
 
 /**
@@ -27411,15 +27419,15 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	get styleSheets(): globalThis.StyleSheetList {
-		return getStyleSheets(this);
+		return cssom.getStyleSheets(this);
 	}
 
 	get adoptedStyleSheets(): globalThis.CSSStyleSheet[] {
-		return getAdoptedStyleSheets(this);
+		return cssom.getAdoptedStyleSheets(this);
 	}
 
 	set adoptedStyleSheets(value: globalThis.CSSStyleSheet[]) {
-		adoptStyleSheets(this, value);
+		cssom.adoptStyleSheets(this, value);
 	}
 
 	/** Parses declarative shadow roots too. */
@@ -31792,7 +31800,7 @@ function getBlockOf(node: Node): Element | null {
 		ancestor !== null;
 		ancestor = ancestor.parentElement as Element | null
 	) {
-		const display = getComputedValue(ancestor, "display");
+		const display = cssom.getComputedValue(ancestor, "display");
 		if (!display.startsWith("inline") && display !== "contents") {
 			return ancestor;
 		}
@@ -32153,7 +32161,9 @@ export function selectUnits(
 			return true;
 		}
 		const parent = flatParentElement(part.node);
-		const whiteSpace = parent === null ? "" : getWhiteSpace(parent as Element);
+		const whiteSpace = parent === null
+			? ""
+			: cssom.getWhiteSpace(parent as Element);
 		return /^(pre|pre-wrap|pre-line|break-spaces)$/.test(whiteSpace);
 	};
 	const [anchorStart, anchorEnd] = getUnitBounds(run.text, from, unit, isBreak);
@@ -34362,7 +34372,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 // the caller is making a window's or a frame's document. A document an
 // author builds carries none until a registry claims it, as one with no
 // browsing context does.
-function parseHTMLDocument(
+export function parseHTMLDocument(
 	html: string,
 	url = "about:blank",
 	allowDeclarativeShadowRoots = true,
@@ -35099,7 +35109,10 @@ declareSealedRoot(DOMParser);
 // A well-formed document becomes the tree it describes. Anything else
 // becomes the spec's error document, whose root is a parsererror element
 // holding the failure.
-function parseXMLDocument(source: string, contentType: string): Document {
+export function parseXMLDocument(
+	source: string,
+	contentType: string,
+): Document {
 	const document = new XMLDocument();
 	const documentSlots = _(document);
 	documentSlots.extra.type = "xml";
@@ -35597,7 +35610,7 @@ class MediaQueryList extends EventTarget {
 		const attached = getAttachedDocument(_(this).mediaQueryDocument);
 		return (
 			attached !== undefined &&
-			mediaQueryMatches(_(attached).extra.cascade, this.media)
+			cssom.mediaQueryMatches(_(attached).extra.cascade, this.media)
 		);
 	}
 
@@ -35980,7 +35993,7 @@ export function revealPendingCaret(document: globalThis.Document): void {
 	}
 	// Widened to the text control's edge when the caret is on its first or
 	// last row, so the border shows instead of a cropped box.
-	const boxModel = getBoxModel(element);
+	const boxModel = cssom.getBoxModel(element);
 	let revealTop = caretY;
 	let revealBottom = caretY + 1;
 	if (caretY <= Math.round(rect.top) + (boxModel.borderTopWidth || 0)) {
@@ -36055,7 +36068,7 @@ function handleMutationRecords(
 			ensureUAShadowTrees(added);
 		}
 	}
-	handleMutations(_(attached).extra.cascade, relevant);
+	cssom.handleMutations(_(attached).extra.cascade, relevant);
 	_(attached).extra.layout.handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
 	dropUnfocusableFocus(document);
@@ -36111,7 +36124,7 @@ function dropUnfocusableFocus(document: Document): void {
 	) {
 		if (
 			hasAttributeOf(node, "inert") ||
-			getComputedValue(node as Element, "display") === "none"
+			cssom.getComputedValue(node as Element, "display") === "none"
 		) {
 			(active as globalThis.HTMLElement).blur();
 			return;
@@ -38404,7 +38417,7 @@ Object.defineProperty(HTMLFormElement.prototype, Symbol.iterator, {
 
 // The one place an interface joins the window. A class not listed here
 // is not visible to script, whatever this module exports.
-const platform = {
+export const platform = {
 	AbortController,
 	AbortSignal,
 	AbstractRange,
@@ -38575,7 +38588,7 @@ const platform = {
 // The runtime's own, as the module found them. installGlobals() puts the
 // window's in their place, and the window's call these.
 // Bound, since a browser's throws when called on anything but its global.
-const runtime = {
+export const runtime = {
 	setTimeout,
 	clearTimeout,
 	setInterval: globalThis.setInterval.bind(globalThis),
@@ -38593,7 +38606,7 @@ const runtime = {
  * A platform object is refused, unless it is one HTML can serialize, and
  * that is copied.
  */
-function cloneStructured(value: unknown, context: string): any {
+export function cloneStructured(value: unknown, context: string): any {
 	return containsPlatformObject(value, new Set(), context)
 		? cloneWithPlatformObjects(value, new Map(), context)
 		: runtime.structuredClone(value);
@@ -38704,11 +38717,11 @@ function cloneWithPlatformObjects(
 	return copy;
 }
 
-const windowTimers = new WeakMap<
+export const windowTimers = new WeakMap<
 	object,
 	Map<number, ReturnType<typeof setTimeout>>
 >();
-const processTimers = new WeakMap<object, Record<string, unknown>>();
+export const processTimers = new WeakMap<object, Record<string, unknown>>();
 
 /**
  * The window's setTimeout and setInterval as installGlobals() puts them
@@ -38737,136 +38750,9 @@ export function clearWindowTimers(window: Window): void {
 	idle?.clear();
 }
 
-// A window starts with its interfaces and the timers any script expects
-// to find. The display fills in the rest (sizing, scrolling, animation
-// frames, the clipboard) as it mounts the document.
-function buildWindow(document: Document): Window {
-	const window = new Window(document) as unknown as Record<string, unknown>;
-	// HTML reports an exception a timer or a microtask lets escape, as it
-	// does a listener's, and the page goes on. The runtime's own would end
-	// the process.
-	const guard = (handler: unknown, args: unknown[]): unknown =>
-		typeof handler !== "function"
-			? handler
-			: () => {
-				try {
-					(handler as (...args: unknown[]) => void)(...args);
-				} catch (error) {
-					reportError(error, document);
-				}
-			};
-	// The page's outstanding timers, which stop with the window, by the
-	// number HTML hands the page for each: the runtime's own handle is the
-	// runtime's object.
-	const timers = new Map<number, ReturnType<typeof setTimeout>>();
-	windowTimers.set(window, timers);
-	let lastTimerId = 0;
-	const clearTimer = (id: unknown) => {
-		const key = Number(id);
-		const handle = timers.get(key);
-		if (handle !== undefined) {
-			timers.delete(key);
-			runtime.clearTimeout(handle);
-		}
-	};
-	processTimers.set(window, {
-		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) =>
-			runtime.setTimeout(guard(handler, args) as () => void, timeout),
-		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) =>
-			runtime.setInterval(guard(handler, args) as () => void, timeout),
-	});
-	Object.assign(
-		window,
-		getWindowClasses(),
-		Object.fromEntries(getInterfaceObjects()),
-		{
-		// The platform's DOMException, which is the one the DOM and the CSSOM
-		// throw. A caller's `instanceof DOMException` has to match the class
-		// the engine builds its errors from.
-			DOMException,
-			setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) => {
-				const guarded = guard(handler, args);
-				const id = ++lastTimerId;
-				timers.set(
-					id,
-					runtime.setTimeout(
-						(typeof guarded === "function"
-							? () => {
-								timers.delete(id);
-								(guarded as () => void)();
-							}
-							: guarded) as () => void,
-						timeout,
-					),
-				);
-				return id;
-			},
-			clearTimeout: clearTimer,
-			setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) => {
-				const id = ++lastTimerId;
-				timers.set(
-					id,
-					runtime.setInterval(guard(handler, args) as () => void, timeout),
-				);
-				return id;
-			},
-			clearInterval: clearTimer,
-			queueMicrotask: (callback: unknown) => {
-				if (typeof callback !== "function") {
-					throw new TypeError("queueMicrotask needs a function");
-				}
-				runtime.queueMicrotask(guard(callback, []) as () => void);
-			},
-			atob: runtime.atob,
-			btoa: runtime.btoa,
-			fetch: runtime.fetch,
-			structuredClone: (
-				value: unknown,
-				options: StructuredSerializeOptions = {},
-			) =>
-				(options.transfer ?? []).length > 0
-					? runtime.structuredClone(value, options)
-					: cloneStructured(value, "execute 'structuredClone' on 'Window'"),
-		});
-	// HTML's legacy factory: new Image(width, height) is an <img> in this
-	// window's document.
-	const Image = function Image(this: unknown, width?: number, height?: number) {
-		if (new.target === undefined) {
-			throw new TypeError("Image is a constructor");
-		}
-		const image = document.createElement("img");
-		if (width !== undefined) {
-			setAttributeOf(image, "width", String(toImageDimension(width)));
-		}
-		if (height !== undefined) {
-			setAttributeOf(image, "height", String(toImageDimension(height)));
-		}
-		return image;
-	} as unknown as typeof HTMLImageElement;
-	Object.defineProperty(Image, "prototype", {
-		value: HTMLImageElement.prototype,
-	});
-	window.Image = Image;
-	window.window = window;
-	window.self = window;
-	for (const name of Object.keys(window)) {
-		const value = window[name];
-		if (typeof value === "function" && /^[a-z]/.test(name)) {
-			window[name] = windowMember(
-				window,
-				name,
-				value as (...args: never[]) => unknown,
-			);
-		}
-	}
-	prepareClasses(Object.values(getWindowClasses()));
-	startPendingImages(document as unknown as globalThis.Document);
-	return window as unknown as Window;
-}
-
 // Images the parser built before their document had a window wait for
 // one, and start here, once it does.
-function startPendingImages(
+export function startPendingImages(
 	root: globalThis.Document | globalThis.ShadowRoot,
 ): void {
 	for (const element of root.querySelectorAll("*")) {
@@ -38880,63 +38766,6 @@ function startPendingImages(
 			startPendingImages(shadow);
 		}
 	}
-}
-
-// The classes a window exposes by name. Read when a window is made rather
-// than in the module's interface table: canvas.ts is part of the import
-// cycle through cssvalues, and a table built at module load would read
-// its classes before they exist when canvas.ts is the first module
-// imported.
-let windowClasses: Readonly<Record<string, Constructor>> | null = null;
-
-function getWindowClasses(): Readonly<Record<string, Constructor>> {
-	windowClasses ??= {
-		...platform,
-		...CSSOM_INTERFACES,
-		CanvasGradient,
-		CanvasPattern,
-		CanvasRenderingContext2D,
-		ImageBitmap,
-		ImageData,
-		Path2D,
-	} as unknown as Record<string, Constructor>;
-	return windowClasses;
-}
-
-/** The names of the interfaces a window exposes. */
-export function getWindowInterfaceNames(): string[] {
-	return Object.keys(getWindowClasses());
-}
-
-// The window's interface objects, laid out before the first document is
-// made, so that every platform object has its unforgeable members.
-function getInterfaceObjects(): ReadonlyMap<string, Constructor> {
-	return installInterfaces(getWindowClasses());
-}
-
-/**
- * Parse a document from markup and display it in a window of its own. An
- * XML content type parses as XML, which is what a frame whose src names a
- * .xml, .xhtml or .svg file holds.
- */
-export function createWindow(
-	source: string,
-	url?: string,
-	contentType = "text/html",
-): Window {
-	getInterfaceObjects();
-	if (contentType === "text/html") {
-		return buildWindow(
-			parseHTMLDocument(source, url, true, createWindowRegistry()),
-		);
-	}
-	const document = parseXMLDocument(source, contentType);
-	const documentSlots = _(document);
-	documentSlots.registry = createWindowRegistry();
-	if (url !== undefined) {
-		documentSlots.extra.documentURL = url;
-	}
-	return buildWindow(document);
 }
 
 /** Node's appendChild, for the engine's own calls. */
@@ -39121,7 +38950,6 @@ export type {
 	HTMLHRElement,
 	HTMLHtmlElement,
 	HTMLIFrameElement,
-	HTMLImageElement,
 	HTMLLegendElement,
 	HTMLLIElement,
 	HTMLMapElement,
