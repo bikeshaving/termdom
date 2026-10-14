@@ -126,24 +126,19 @@ function getUnderlineCodes(style: UnderlineStyle): string[] {
 	}
 }
 
-const kOut = Symbol("out");
-const kColorDepth = Symbol("colorDepth");
-
-interface FrameWriter {
-	[kColorDepth]: ColorDepth;
-
-	[kOut]: string[];
-}
-
 class FrameWriter {
+	colorDepth: ColorDepth;
+
+	out: string[];
+
 	constructor(colorDepth: ColorDepth) {
-		this[kColorDepth] = colorDepth;
-		this[kOut] = [];
+		this.colorDepth = colorDepth;
+		this.out = [];
 	}
 
 	// Most takes hold one piece or none.
 	take(): string {
-		const out = this[kOut];
+		const out = this.out;
 		if (out.length === 0) {
 			return "";
 		}
@@ -153,47 +148,47 @@ class FrameWriter {
 	}
 
 	carriageReturn(): this {
-		this[kOut].push("\r");
+		this.out.push("\r");
 		return this;
 	}
 
 	newLine(rows = 1): this {
-		this[kOut].push("\r\n".repeat(rows));
+		this.out.push("\r\n".repeat(rows));
 		return this;
 	}
 
 	cursorTo(row: number, col: number): this {
-		this[kOut].push(`\x1b[${row};${col}H`);
+		this.out.push(`\x1b[${row};${col}H`);
 		return this;
 	}
 
 	cursorForward(columns: number): this {
-		this[kOut].push(`\x1b[${columns}C`);
+		this.out.push(`\x1b[${columns}C`);
 		return this;
 	}
 
 	cursorDown(rows: number): this {
-		this[kOut].push(`\x1b[${rows}B`);
+		this.out.push(`\x1b[${rows}B`);
 		return this;
 	}
 
 	saveCursor(): this {
-		this[kOut].push("\x1b7");
+		this.out.push("\x1b7");
 		return this;
 	}
 
 	restoreCursor(): this {
-		this[kOut].push("\x1b8");
+		this.out.push("\x1b8");
 		return this;
 	}
 
 	eraseToLineEnd(): this {
-		this[kOut].push("\x1b[K");
+		this.out.push("\x1b[K");
 		return this;
 	}
 
 	eraseBelow(): this {
-		this[kOut].push("\x1b[J");
+		this.out.push("\x1b[J");
 		return this;
 	}
 
@@ -202,41 +197,41 @@ class FrameWriter {
 	 * measures cursor moves from the top margin.
 	 */
 	setScrollRegion(top: number, bottom: number): this {
-		this[kOut].push(`\x1b[?6l\x1b[${top};${bottom}r`);
+		this.out.push(`\x1b[?6l\x1b[${top};${bottom}r`);
 		return this;
 	}
 
 	resetScrollRegion(): this {
-		this[kOut].push("\x1b[r");
+		this.out.push("\x1b[r");
 		return this;
 	}
 
 	deleteLines(count: number): this {
-		this[kOut].push(`\x1b[${count}M`);
+		this.out.push(`\x1b[${count}M`);
 		return this;
 	}
 
 	insertLines(count: number): this {
-		this[kOut].push(`\x1b[${count}L`);
+		this.out.push(`\x1b[${count}L`);
 		return this;
 	}
 
 	resetStyle(): this {
-		this[kOut].push("\x1b[0m");
+		this.out.push("\x1b[0m");
 		return this;
 	}
 
 	style(run: StyleSpan): this {
-		const escape = createStyleEscape(run, this[kColorDepth]);
+		const escape = createStyleEscape(run, this.colorDepth);
 		if (escape !== "") {
-			this[kOut].push(escape);
+			this.out.push(escape);
 		}
 		return this;
 	}
 
 	text(glyphs: string): this {
 		if (PRINTABLE_ASCII.test(glyphs)) {
-			this[kOut].push(glyphs);
+			this.out.push(glyphs);
 			return this;
 		}
 		let safe = "";
@@ -249,7 +244,7 @@ class FrameWriter {
 			}
 			safe += char;
 		}
-		this[kOut].push(safe);
+		this.out.push(safe);
 		return this;
 	}
 }
@@ -1944,28 +1939,6 @@ interface FrameJournal {
 	readonly needsRepaint: boolean;
 }
 
-const kRows = Symbol("rows");
-const kCols = Symbol("cols");
-const kWriter = Symbol("writer");
-const kPrev = Symbol("prev");
-const kPrevContentHeight = Symbol("prevContentHeight");
-const kPark = Symbol("park");
-const kSpare = Symbol("spare");
-const kNeedsScreenReset = Symbol("needsScreenReset");
-const kResetAtRow = Symbol("resetAtRow");
-const kHasSavedCursor = Symbol("hasSavedCursor");
-const kNeedsFullClear = Symbol("needsFullClear");
-const kRenderedLines = Symbol("renderedLines");
-const kEndFrame = Symbol("endFrame");
-const kFlushProbes = Symbol("flushProbes");
-const kMeasurer = Symbol("measurer");
-const kDiff = Symbol("diff");
-const kLastCaretVisible = Symbol("lastCaretVisible");
-const kScrollTop = Symbol("scrollTop");
-const kFrameScroll = Symbol("frameScroll");
-const kDirty = Symbol("dirty");
-const kDocumentTop = Symbol("documentTop");
-const kCellPixels = Symbol("cellPixels");
 // What a cell measures in pixels until the terminal says, and for good
 // when it cannot, as through a pipe. Most fonts run about twice as tall
 // as wide at any size.
@@ -1974,126 +1947,124 @@ const GUESSED_CELL_PIXELS: Readonly<{width: number; height: number}> = {
 	height: 16,
 };
 
-export interface Framebuffer {
-	[kPrev]: CellGrid | null;
+export class Framebuffer {
+	prev: CellGrid | null;
 	// The dropped grid, reused by the next frame of the same size.
-	[kSpare]: CellGrid | null;
-	[kDiff]: CellGrid | null;
-	[kEndFrame]: (() => string) | null;
-	[kRenderedLines]: Set<number>;
-	[kPrevContentHeight]: number;
+	spare: CellGrid | null;
+	diff: CellGrid | null;
+	pendingEnd: (() => string) | null;
+	renderedLines: Set<number>;
+	prevContentHeight: number;
 	// Where the last frame parked the cursor, in buffer coordinates. The
 	// resize re-anchor derives the frame's new top row from the cursor's
 	// post-rewrap position minus the wrapped rows above this park point.
-	[kPark]: {row: number; col: number};
-	[kLastCaretVisible]: boolean;
-	[kHasSavedCursor]: boolean;
-	[kNeedsFullClear]: boolean;
-	[kNeedsScreenReset]: boolean;
+	park: {row: number; col: number};
+	lastCaretVisible: boolean;
+	hasSavedCursor: boolean;
+	needsFullClear: boolean;
+	needsScreenReset: boolean;
 	// Probes are waiting. The next flush re-emits the first contentful row
 	// as their cover even if nothing changed.
-	[kFlushProbes]: boolean;
+	probesWaiting: boolean;
 	// Null for a headless render.
-	[kMeasurer]: Exchange | null;
-	[kResetAtRow]: number;
-	[kRows]: number;
-	[kCols]: number;
-	[kScrollTop]: number;
-	[kDocumentTop]: number;
-	[kCellPixels]: {width: number; height: number};
-	[kWriter]: FrameWriter;
-	[kFrameScroll]: number;
-	[kDirty]: boolean;
-}
+	exchange: Exchange | null;
+	resetAtRow: number;
+	rowCount: number;
+	colCount: number;
+	scrollRow: number;
+	documentTopRow: number;
+	cellSize: {width: number; height: number};
+	writer: FrameWriter;
+	frameScroll: number;
+	dirty: boolean;
 
-export class Framebuffer {
 	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
-		this[kFlushProbes] = false;
-		this[kMeasurer] = null;
-		this[kPrev] = null;
-		this[kSpare] = null;
-		this[kDiff] = null;
-		this[kEndFrame] = null;
-		this[kRenderedLines] = new Set();
-		this[kPrevContentHeight] = 0;
-		this[kPark] = {row: 0, col: 0};
-		this[kLastCaretVisible] = false;
-		this[kHasSavedCursor] = false;
-		this[kNeedsFullClear] = false;
-		this[kNeedsScreenReset] = false;
-		this[kResetAtRow] = 0;
-		this[kRows] = rows;
-		this[kCols] = cols;
-		this[kScrollTop] = 0;
-		this[kDocumentTop] = 0;
-		this[kCellPixels] = {...GUESSED_CELL_PIXELS};
-		this[kFrameScroll] = 0;
-		this[kDirty] = true;
-		this[kWriter] = new FrameWriter(colorDepth);
+		this.probesWaiting = false;
+		this.exchange = null;
+		this.prev = null;
+		this.spare = null;
+		this.diff = null;
+		this.pendingEnd = null;
+		this.renderedLines = new Set();
+		this.prevContentHeight = 0;
+		this.park = {row: 0, col: 0};
+		this.lastCaretVisible = false;
+		this.hasSavedCursor = false;
+		this.needsFullClear = false;
+		this.needsScreenReset = false;
+		this.resetAtRow = 0;
+		this.rowCount = rows;
+		this.colCount = cols;
+		this.scrollRow = 0;
+		this.documentTopRow = 0;
+		this.cellSize = {...GUESSED_CELL_PIXELS};
+		this.frameScroll = 0;
+		this.dirty = true;
+		this.writer = new FrameWriter(colorDepth);
 	}
 
 	/** Width probes go out over the exchange, once there is one. */
 	set measurer(exchange: Exchange) {
-		this[kMeasurer] = exchange;
+		this.exchange = exchange;
 	}
 
 	get rows(): number {
-		return this[kRows];
+		return this.rowCount;
 	}
 
 	get cols(): number {
-		return this[kCols];
+		return this.colCount;
 	}
 
 	get scrollTop(): number {
-		return this[kScrollTop];
+		return this.scrollRow;
 	}
 
 	/** Whether the last frame parked the real cursor on a caret. */
 	get caretVisible(): boolean {
-		return this[kLastCaretVisible];
+		return this.lastCaretVisible;
 	}
 
 	get journal(): FrameJournal {
 		return {
-			dirty: this[kDirty],
-			frameScroll: this[kFrameScroll],
+			dirty: this.dirty,
+			frameScroll: this.frameScroll,
 			needsRepaint:
-				this[kNeedsScreenReset] || this[kNeedsFullClear] || this[kFlushProbes],
+				this.needsScreenReset || this.needsFullClear || this.probesWaiting,
 		};
 	}
 
 	/** The colors the terminal draws: true color, 256 or 8. */
 	get colorDepth(): ColorDepth {
-		return this[kWriter][kColorDepth];
+		return this.writer.colorDepth;
 	}
 
 	/** One cell in terminal pixels. */
 	get cellPixels(): {width: number; height: number} {
-		return this[kCellPixels];
+		return this.cellSize;
 	}
 
 	get documentTop(): number {
-		return this[kDocumentTop];
+		return this.documentTopRow;
 	}
 
 	set documentTop(row: number) {
-		this[kDocumentTop] = row;
+		this.documentTopRow = row;
 	}
 
 	resize(rows: number, cols: number): void {
-		this[kRows] = rows;
-		this[kCols] = cols;
+		this.rowCount = rows;
+		this.colCount = cols;
 	}
 
 	rebind(colorDepth: ColorDepth): void {
-		this[kWriter] = new FrameWriter(colorDepth);
+		this.writer = new FrameWriter(colorDepth);
 	}
 
 	scrollTo(row: number): void {
 		const next = Math.max(0, row);
-		this[kFrameScroll] += next - this[kScrollTop];
-		this[kScrollTop] = next;
+		this.frameScroll += next - this.scrollRow;
+		this.scrollRow = next;
 	}
 
 	/**
@@ -2101,64 +2072,60 @@ export class Framebuffer {
 	 * Whether the size changed, which images sized from it need to know.
 	 */
 	adoptCellPixels(width: number, height: number): boolean {
-		const cell = this[kCellPixels];
+		const cell = this.cellSize;
 		if (cell.width === width && cell.height === height) {
 			return false;
 		}
-		this[kCellPixels] = {width, height};
+		this.cellSize = {width, height};
 		this.invalidate();
 		return true;
 	}
 
 	invalidate(): void {
-		this[kDirty] = true;
+		this.dirty = true;
 	}
 
 	wrappedRowsAbovePark(cols: number): number | null {
 		// The resize re-anchor asks the terminal where the cursor is after the
 		// rewrap and subtracts this to find the frame's new top row.
-		const grid = this[kPrev];
-		if (grid === null || this[kPrevContentHeight] === 0 || cols <= 0) {
+		const grid = this.prev;
+		if (grid === null || this.prevContentHeight === 0 || cols <= 0) {
 			return null;
 		}
-		const limit = Math.min(
-			this[kPark].row,
-			this[kPrevContentHeight],
-			grid.rows,
-		);
+		const limit = Math.min(this.park.row, this.prevContentHeight, grid.rows);
 		let wrapped = 0;
 		for (let row = 0; row < limit; row++) {
 			wrapped += Math.max(1, Math.ceil(getLineLength(grid, row) / cols));
 		}
-		return wrapped + Math.floor(this[kPark].col / cols);
+		return wrapped + Math.floor(this.park.col / cols);
 	}
 
 	replaced(fromRow = 0): void {
-		this[kNeedsScreenReset] = true;
-		this[kResetAtRow] = Math.max(0, fromRow);
-		this[kHasSavedCursor] = false;
+		this.needsScreenReset = true;
+		this.resetAtRow = Math.max(0, fromRow);
+		this.hasSavedCursor = false;
 		this.repaintAll();
 	}
 
 	scrolled(rows: number): void {
-		if (this[kNeedsScreenReset] && rows > 0) {
-			this[kResetAtRow] = Math.max(0, this[kResetAtRow] - rows);
+		if (this.needsScreenReset && rows > 0) {
+			this.resetAtRow = Math.max(0, this.resetAtRow - rows);
 		}
 	}
 
 	flushProbes(): void {
-		this[kFlushProbes] = true;
+		this.probesWaiting = true;
 	}
 
 	repaintAll(): void {
 		// After a resize DECRC no longer points where the content began, so
 		// the next frame homes, clears the visible screen (ED2, not ED3, which
 		// leaves the scrollback alone) and reprints.
-		this[kSpare] = this[kPrev];
-		this[kPrev] = null;
-		this[kPrevContentHeight] = 0;
-		this[kNeedsFullClear] = true;
-		this[kRenderedLines].clear();
+		this.spare = this.prev;
+		this.prev = null;
+		this.prevContentHeight = 0;
+		this.needsFullClear = true;
+		this.renderedLines.clear();
 	}
 
 	/**
@@ -2175,12 +2142,12 @@ export class Framebuffer {
 		if (rows <= 0) {
 			return "";
 		}
-		const cols = this[kCols];
+		const cols = this.colCount;
 		const grid = new CellGrid(rows, cols);
 		paint(new CellContext(grid, rows, cols, 0));
 		const lines: string[] = [];
 		for (let row = 0; row < rows; row++) {
-			lines.push(getGridLine(grid, row, this[kWriter]));
+			lines.push(getGridLine(grid, row, this.writer));
 		}
 		return lines.join(lineEnding) + lineEnding;
 	}
@@ -2212,9 +2179,9 @@ export class Framebuffer {
 			shift?: {top: number; end: number};
 		},
 	): CellContext {
-		const frameRows = Math.max(this[kRows], regionRows ?? this[kRows]);
-		const overflowing = frameRows > this[kRows];
-		const cols = this[kCols];
+		const frameRows = Math.max(this.rowCount, regionRows ?? this.rowCount);
+		const overflowing = frameRows > this.rowCount;
+		const cols = this.colCount;
 		const next = takeGrid(this, frameRows, cols);
 
 		// A scroll is a rigid transform the terminal performs. DECSTBM pins the
@@ -2224,25 +2191,25 @@ export class Framebuffer {
 		// the shift could not carry.
 		let scrollPrefix = "";
 		const regionTop = cursorPosition ?? 0;
-		const regionEnd = Math.min(regionRows ?? this[kRows], this[kRows]);
+		const regionEnd = Math.min(regionRows ?? this.rowCount, this.rowCount);
 		const viewportTop = Math.max(0, shift ? shift.top : 0);
 		const bandEnd = Math.min(
-			this[kPrev]?.rows ?? 0,
+			this.prev?.rows ?? 0,
 			shift ? shift.end : regionEnd - regionTop,
 		);
 		const scrolling =
 			delta !== 0 &&
-			Math.abs(delta) < this[kRows] &&
+			Math.abs(delta) < this.rowCount &&
 			bandEnd > viewportTop &&
-			this[kPrev] !== null &&
+			this.prev !== null &&
 			// A rigid transform only makes sense between grids of one width.
-			this[kPrev].cols === cols &&
+			this.prev.cols === cols &&
 			!overflowing &&
-			!this[kNeedsScreenReset] &&
-			!this[kNeedsFullClear] &&
+			!this.needsScreenReset &&
+			!this.needsFullClear &&
 			cursorPosition !== undefined;
-		if (scrolling && this[kPrev]) {
-			const prev = this[kPrev];
+		if (scrolling && this.prev) {
+			const prev = this.prev;
 			const start = viewportTop * cols;
 			const stop = bandEnd * cols;
 			const shift = Math.abs(delta) * cols;
@@ -2256,7 +2223,7 @@ export class Framebuffer {
 				prev.clearRange(start, start + shift);
 			}
 			const shiftedLines = new Set<number>();
-			for (const row of this[kRenderedLines]) {
+			for (const row of this.renderedLines) {
 				if (row < viewportTop || row >= bandEnd) {
 					shiftedLines.add(row);
 					continue;
@@ -2266,13 +2233,13 @@ export class Framebuffer {
 					shiftedLines.add(moved);
 				}
 			}
-			this[kRenderedLines] = shiftedLines;
+			this.renderedLines = shiftedLines;
 
 			// DECSTBM homes the cursor. The standard prefix always CUPs for
 			// this caller afterward.
 			const count = Math.abs(delta);
 			const bandRow = regionTop + viewportTop + 1;
-			const writer = this[kWriter];
+			const writer = this.writer;
 			writer.setScrollRegion(bandRow, regionTop + bandEnd).cursorTo(bandRow, 1);
 			if (delta > 0) {
 				writer.deleteLines(count);
@@ -2283,13 +2250,11 @@ export class Framebuffer {
 		}
 
 		const context = new CellContext(next, frameRows, cols, offset);
-		context.backdrop = this[kMeasurer]?.terminalBackground ?? null;
-		this[kEndFrame] = (): string => {
-			const measurer =
-				this[kMeasurer] !== null &&
-				isProbingUseful(this[kMeasurer])
-					? this[kMeasurer]
-					: undefined;
+		context.backdrop = this.exchange?.terminalBackground ?? null;
+		this.pendingEnd = (): string => {
+			const measurer = this.exchange !== null && isProbingUseful(this.exchange)
+				? this.exchange
+				: undefined;
 			// The frame is complete. Join the borders whose strokes touch, so
 			// the diff below sees a junction appear even when only its
 			// neighbour changed.
@@ -2298,17 +2263,17 @@ export class Framebuffer {
 			// Build the diff. A frame taller than the terminal is a growth
 			// frame. The rows below the fold have never been on screen, so
 			// there is nothing to diff against. Print all of it.
-			let diff = this[kDiff];
+			let diff = this.diff;
 			if (diff === null || diff.rows !== frameRows || diff.cols !== cols) {
 				diff = new CellGrid(frameRows, cols);
-				this[kDiff] = diff;
+				this.diff = diff;
 			} else {
 				diff.clear();
 			}
 
-			const prev = this[kPrev];
+			const prev = this.prev;
 			const erasesDisputedRows =
-				this[kMeasurer] !== null && !this[kMeasurer].clusterWidthsNegotiated();
+				this.exchange !== null && !this.exchange.clusterWidthsNegotiated();
 			if (prev === null || overflowing) {
 				diff.copyFrom(next, {to: 0, start: 0, end: frameRows * cols});
 			} else {
@@ -2316,7 +2281,7 @@ export class Framebuffer {
 				const prevCols = prev.cols;
 				const aligned = prevCols === cols;
 
-				for (let row = 0; row < this[kRows]; row++) {
+				for (let row = 0; row < this.rowCount; row++) {
 					const nextRow = row * cols;
 					const prevRow = row * prevCols;
 					const rowInPrev = row < prevRows;
@@ -2353,7 +2318,7 @@ export class Framebuffer {
 							erasesDisputedRows &&
 							hasDisputedCellBefore(prev, prevRow, cols, next, nextRow)
 						) {
-							this[kRenderedLines].delete(row);
+							this.renderedLines.delete(row);
 							let empty = true;
 							for (let c = 0; c < cols; c++) {
 								if (next.cluster[nextRow + c] !== 0) {
@@ -2407,18 +2372,18 @@ export class Framebuffer {
 			// pushing it into scrollback (the courtesy it extends to `clear`).
 			// The ED archived a copy of the old frame into the scrollback on
 			// every resize.
-			const resetFrame = this[kNeedsScreenReset] || this[kNeedsFullClear];
+			const resetFrame = this.needsScreenReset || this.needsFullClear;
 			if (resetFrame) {
 				// Buffer rows are region-relative (the anchor row is where the
 				// frame CUPs to). regionRows is a screen-absolute end. Seed
 				// exactly the region's rows. Seeding further would count blank
 				// screen rows as content and skew the park the resize re-anchor
 				// measures from.
-				const anchorRow = this[kNeedsScreenReset]
-					? this[kResetAtRow]
+				const anchorRow = this.needsScreenReset
+					? this.resetAtRow
 					: (cursorPosition ?? 0);
-				const regionHeight = (regionRows ?? this[kRows]) - anchorRow;
-				const seedRows = Math.min(frameRows, this[kRows], regionHeight);
+				const regionHeight = (regionRows ?? this.rowCount) - anchorRow;
+				const seedRows = Math.min(frameRows, this.rowCount, regionHeight);
 				for (let row = 0; row < seedRows; row++) {
 					const rowStart = row * cols;
 					let empty = true;
@@ -2448,8 +2413,8 @@ export class Framebuffer {
 			// A frame that diffs to nothing offers none, so the first
 			// contentful row re-emits verbatim: identical cells, no erase, and
 			// the probes go under them.
-			if (this[kFlushProbes]) {
-				this[kFlushProbes] = false;
+			if (this.probesWaiting) {
+				this.probesWaiting = false;
 				if (measurer !== undefined && !hasContent) {
 					for (let row = 0; row < frameRows && !hasContent; row++) {
 						const rowStart = row * cols;
@@ -2474,18 +2439,17 @@ export class Framebuffer {
 				caret !== null &&
 				caretBufferRow !== null &&
 				caretBufferRow >= 0 &&
-				caretBufferRow < this[kRows] &&
+				caretBufferRow < this.rowCount &&
 				caret.col >= 0 &&
-				caret.col < this[kCols];
+				caret.col < this.colCount;
 			const caretStateChanged =
-				caretVisible !== this[kLastCaretVisible] ||
+				caretVisible !== this.lastCaretVisible ||
 				(caretVisible &&
-					(this[kPark].row !== caretBufferRow ||
-						this[kPark].col !== caret.col));
+					(this.park.row !== caretBufferRow || this.park.col !== caret.col));
 			if (caretStateChanged) {
 				hasContent = true;
 			}
-			this[kLastCaretVisible] = caretVisible;
+			this.lastCaretVisible = caretVisible;
 
 			if (scrolling) {
 				hasContent = true;
@@ -2494,53 +2458,50 @@ export class Framebuffer {
 			// answers it must be written even with nothing to draw. Leaving
 			// fullscreen for an emptied document shows the rows the document
 			// held before it went fullscreen until something erases them.
-			if (this[kNeedsFullClear]) {
+			if (this.needsFullClear) {
 				hasContent = true;
 			}
 
-			const writer = this[kWriter];
+			const writer = this.writer;
 			let prefix = scrollPrefix;
 			let frameStartRow: number | undefined;
 			if (hasContent) {
-				if (this[kNeedsScreenReset]) {
+				if (this.needsScreenReset) {
 					// After a resize the terminal rewrapped our frame and moved
 					// the cursor where DECRC cannot find it. The row our
 					// content starts at still holds, since what is above us
 					// does not reflow-grow. No home and no ED. That would wipe
 					// what is above us, and tmux archives a full-screen erase
 					// into the scrollback.
-					prefix += writer
-						.cursorTo(this[kResetAtRow] + 1, 1)
-						.saveCursor()
-						.take();
-					this[kHasSavedCursor] = true;
-					this[kNeedsScreenReset] = false;
-					this[kNeedsFullClear] = false;
-					frameStartRow = this[kResetAtRow];
+					prefix += writer.cursorTo(this.resetAtRow + 1, 1).saveCursor().take();
+					this.hasSavedCursor = true;
+					this.needsScreenReset = false;
+					this.needsFullClear = false;
+					frameStartRow = this.resetAtRow;
 				} else if (cursorPosition !== undefined) {
 					prefix += writer.cursorTo(cursorPosition + 1, 1).saveCursor().take();
-					this[kHasSavedCursor] = true;
+					this.hasSavedCursor = true;
 					frameStartRow = cursorPosition;
 				} else if (offset > 0) {
 					prefix += writer.cursorTo(offset + 1, 1).take();
 					frameStartRow = offset;
-				} else if (this[kHasSavedCursor]) {
+				} else if (this.hasSavedCursor) {
 					prefix += writer.restoreCursor().saveCursor().take();
 				} else {
 					prefix += writer.saveCursor().take();
-					this[kHasSavedCursor] = true;
+					this.hasSavedCursor = true;
 				}
 
-				if (this[kNeedsFullClear]) {
+				if (this.needsFullClear) {
 					prefix += writer.eraseBelow().take();
-					this[kNeedsFullClear] = false;
+					this.needsFullClear = false;
 				}
 			}
 
-			const output = generateANSI(diff, writer, this[kRenderedLines], measurer);
+			const output = generateANSI(diff, writer, this.renderedLines, measurer);
 
 			let contentHeight = 0;
-			for (const row of this[kRenderedLines]) {
+			for (const row of this.renderedLines) {
 				if (row + 1 > contentHeight) {
 					contentHeight = row + 1;
 				}
@@ -2549,7 +2510,7 @@ export class Framebuffer {
 			// Rows the last frame painted below where this one ends still show
 			// what it left on them.
 			let staleOutput = "";
-			if (this[kHasSavedCursor] && this[kPrevContentHeight] > contentHeight) {
+			if (this.hasSavedCursor && this.prevContentHeight > contentHeight) {
 				writer.restoreCursor();
 				if (contentHeight > 0) {
 					writer.cursorDown(contentHeight);
@@ -2558,7 +2519,7 @@ export class Framebuffer {
 			} else if (
 				resetFrame &&
 				frameStartRow !== undefined &&
-				frameStartRow + contentHeight < this[kRows]
+				frameStartRow + contentHeight < this.rowCount
 			) {
 				// After a reset nothing below the content is trusted either,
 				// because the old frame may have been taller. Erase from the
@@ -2572,15 +2533,15 @@ export class Framebuffer {
 
 			// The two grids trade places. Of an overflowing frame only the rows
 			// still on screen are kept. The rest scrolled into the scrollback.
-			const retired = this[kPrev];
+			const retired = this.prev;
 			if (overflowing) {
-				this[kPrev] = next.bottomRows(this[kRows]);
-				this[kSpare] = next;
+				this.prev = next.bottomRows(this.rowCount);
+				this.spare = next;
 			} else {
-				this[kPrev] = next;
-				this[kSpare] = retired;
+				this.prev = next;
+				this.spare = retired;
 			}
-			this[kPrevContentHeight] = contentHeight;
+			this.prevContentHeight = contentHeight;
 
 			// A diff leaves the cursor at the last changed cell, and a resize
 			// scrolls just enough to keep the cursor on screen, so the park is
@@ -2590,12 +2551,12 @@ export class Framebuffer {
 			let parkOutput = "";
 			if (hasContent && contentHeight > 0) {
 				if (caretVisible) {
-					this[kPark] = {row: caretBufferRow, col: caret.col};
+					this.park = {row: caretBufferRow, col: caret.col};
 					if (frameStartRow !== undefined) {
 						parkOutput = writer
 							.cursorTo(frameStartRow + caretBufferRow + 1, caret.col + 1)
 							.take();
-					} else if (this[kHasSavedCursor]) {
+					} else if (this.hasSavedCursor) {
 						writer.restoreCursor().saveCursor();
 						if (caretBufferRow > 0) {
 							writer.cursorDown(caretBufferRow);
@@ -2607,16 +2568,16 @@ export class Framebuffer {
 						parkOutput = writer.take();
 					}
 				} else {
-					this[kPark] = {row: Math.min(contentHeight, this[kRows]) - 1, col: 0};
+					this.park = {row: Math.min(contentHeight, this.rowCount) - 1, col: 0};
 					if (frameStartRow !== undefined) {
 						// 0-based start + height = 1-based last row. The bottom
 						// margin caps it when the content overflows the screen.
 						const lastRow = Math.min(
 							frameStartRow + contentHeight,
-							this[kRows],
+							this.rowCount,
 						);
 						parkOutput = writer.cursorTo(lastRow, 1).take();
-					} else if (this[kHasSavedCursor]) {
+					} else if (this.hasSavedCursor) {
 						// No absolute row to name. Restore the saved content
 						// start, re-save it, and step down. CUD stops at the
 						// bottom margin, which is the content's visible bottom
@@ -2637,14 +2598,14 @@ export class Framebuffer {
 	}
 
 	endFrame(): string {
-		const end = this[kEndFrame];
+		const end = this.pendingEnd;
 		if (end === null) {
 			throw new Error("endFrame without a begun frame");
 		}
-		this[kEndFrame] = null;
+		this.pendingEnd = null;
 		const ansi = end();
-		this[kFrameScroll] = 0;
-		this[kDirty] = false;
+		this.frameScroll = 0;
+		this.dirty = false;
 		return ansi;
 	}
 }
@@ -2675,9 +2636,9 @@ function hasDisputedCellBefore(
 }
 
 function takeGrid(screen: Framebuffer, rows: number, cols: number): CellGrid {
-	const spare = screen[kSpare];
+	const spare = screen.spare;
 	if (spare !== null && spare.rows === rows && spare.cols === cols) {
-		screen[kSpare] = null;
+		screen.spare = null;
 		spare.clear();
 		return spare;
 	}
