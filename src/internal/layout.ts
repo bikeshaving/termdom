@@ -72,6 +72,7 @@ import {
 	getMathCellRects,
 	isMathRoot,
 	layoutMath,
+	linearizeMath,
 	type MathBox,
 } from "./mathml.ts";
 import {
@@ -5868,6 +5869,12 @@ export class Layout {
 	// reads it: white space processed, case transformed, and a preserved
 	// newline between two lines kept. A soft wrap is no break, and the
 	// space it swallowed is a space again.
+	// The one-line text of a <math> element, for innerText. The DOM asks
+	// here rather than importing the MathML layout, which reads the DOM.
+	getMathText(element: Element): string {
+		return linearizeMath(element);
+	}
+
 	getRenderedText(textNode: Text): string {
 		const data = textNode.data;
 		const whiteSpace = getWhiteSpace(textNode);

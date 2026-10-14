@@ -85,7 +85,6 @@ import {
 	resolveImageURL,
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
-import {linearizeMath} from "./mathml.ts";
 import type {ResourceLoader} from "./resources.ts";
 import {
 	_,
@@ -11433,7 +11432,7 @@ function collectRenderedText(
 		localNameOf(element) === "math" &&
 		namespaceOf(element) === MATHML_NAMESPACE
 	) {
-		items.push(linearizeMath(element as unknown as globalThis.Element));
+		items.push(layout.getMathText(element));
 	} else {
 		for (
 			let childSlots = _(element).firstChild;
