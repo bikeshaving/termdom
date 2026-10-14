@@ -1,6 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {getBoxModel} from "../src/internal/cssom.ts";
 import {
 	getPseudoHost,
 	getPseudoName,
@@ -620,5 +621,33 @@ test(":has() restyles its anchor, its siblings and what it styles below when a c
 	document.querySelector("img")!.className = "big";
 	await nextFrame(termdom);
 	expect(color(".title")).toBe("rgb(1, 2, 3)");
+	termdom.dispose();
+});
+
+test("a :has() that reads only down the tree restyles a changed item's ancestors, not the items before it", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+	document.body.innerHTML =
+		"<style>li:has(.on) { color: rgb(255, 0, 0); }</style><ul>" +
+		Array.from({length: 5}, (_, i) => `<li><span id=s${i}>${i}</span></li>`)
+			.join("") +
+		"</ul>";
+	await nextFrame(termdom);
+	const items = [...document.querySelectorAll("li")];
+	const before = items.map((item) => getBoxModel(item));
+	document.getElementById("s3")!.classList.add("on");
+	await nextFrame(termdom);
+	const after = items.map((item) => getBoxModel(item));
+	// The box model is kept until its element restyles.
+	expect(after.map((model, i) => model === before[i])).toEqual([
+		true,
+		true,
+		true,
+		false,
+		true,
+	]);
+	expect(termdom.window.getComputedStyle(items[3]).color)
+		.toBe("rgb(255, 0, 0)");
 	termdom.dispose();
 });
