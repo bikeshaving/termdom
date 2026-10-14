@@ -1,12 +1,11 @@
 /**
- * cssvalues, cssselectors, dom and cssom form an import cycle, so whichever
- * of them an application reaches first is evaluated before the others'
- * tables exist. A module-level constant that calls across the cycle throws
+ * An application can reach cssvalues before anything else of the engine,
+ * and a module-level constant that needs a module not yet evaluated throws
  * a TDZ ReferenceError for that first importer and nobody else, which is
  * why the entry point never saw it.
  *
- * The import is the whole test: nothing else here reaches the cycle, so
- * cssvalues is the module that evaluates it.
+ * The import is the whole test: nothing else here is imported, so
+ * cssvalues is the first module evaluated.
  */
 import {expect, test} from "@b9g/libuild/test";
 

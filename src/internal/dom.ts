@@ -54,6 +54,7 @@ import {
 	selectAll,
 	selectFirst,
 	SelectorError,
+	setElementStates,
 } from "./cssselectors.ts";
 import * as CSSValues from "./cssvalues.ts";
 import type {Exchange} from "./exchange.ts";
@@ -39266,3 +39267,37 @@ export function setRequestDestination(
 		configurable: true,
 	});
 }
+
+setElementStates({
+	getHeadingLevel,
+	getMeterLevel,
+	getOpenAssignedSlot,
+	getPartNames,
+	getRangeMatch,
+	getShadowHost,
+	getUserValidityMatch,
+	getValidityMatch,
+	hasCustomState,
+	hasFocus,
+	hasFocusWithin,
+	isActive,
+	isActuallyDisabled,
+	isCheckedControl,
+	isDefaultControl,
+	isDefinedElement,
+	isFocusVisible,
+	isFormAssociatedCustom,
+	isFullscreenElement,
+	isHovered,
+	isHTMLNode,
+	isIndeterminateControl,
+	isInQuirksMode,
+	isMeterValue,
+	isModalDialog,
+	isOpenElement,
+	isPlaceholderShown,
+	isShowingPopover,
+	isTargetElement,
+	READONLY_INPUT_TYPES,
+	REQUIRED_INPUT_TYPES,
+});
