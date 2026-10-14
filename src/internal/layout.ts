@@ -5976,14 +5976,31 @@ export class Layout {
 		return caret === null ? [] : [caret];
 	}
 
-	/** The zero-width rect of a caret at the point, in a text node only. */
+	/**
+	 * The zero-width rect of a caret at the point. Between two nodes, and in
+	 * a text node that shows nothing, it stands at the margin edge of the
+	 * inline box before it, or else at the start of the one after it.
+	 */
 	getCaretRect(node: Node, offset: number): DOMRect | null {
 		if (nodeTypeOf(node) === node.TEXT_NODE) {
-			return getCaretRectInFragment(this, node as Text, offset);
+			const shown = this.getRects(node).length > 0;
+			return (shown
+				? getCaretRectInFragment(this, node as Text, offset)
+				: null) ??
+				getCaretRectBetween(this, node.previousSibling, node.nextSibling) ??
+				getCaretRectInFragment(this, node as Text, offset);
 		}
 		const next = node.childNodes[offset];
 		if (next !== undefined && isLineBreak(next)) {
 			return this.getRects(next)[0] ?? null;
+		}
+		const between = getCaretRectBetween(
+			this,
+			offset > 0 ? node.childNodes[offset - 1] : null,
+			next ?? null,
+		);
+		if (between !== null) {
+			return between;
 		}
 		const point = textPointAt(node, offset);
 		return point === null
@@ -6982,6 +6999,53 @@ function lastTextIn(node: Node): Text | null {
 		const text = lastTextIn(child);
 		if (text !== null) {
 			return text;
+		}
+	}
+	return null;
+}
+
+// The caret between two siblings, either of which may be missing or show
+// nothing, as an empty text node or collapsed white space does. A block
+// box ends the search on its side.
+function getCaretRectBetween(
+	layout: Layout,
+	before: Node | null,
+	after: Node | null,
+): DOMRect | null {
+	for (let node = before; node !== null; node = node.previousSibling) {
+		if (nodeTypeOf(node) === node.TEXT_NODE) {
+			const text = node as Text;
+			const rect = getCaretRectInFragment(layout, text, text.data.length);
+			if (rect !== null) {
+				return rect;
+			}
+			continue;
+		}
+		if (isLineBreak(node) || !isInlineLevel(node)) {
+			break;
+		}
+		const rect = layout.getRects(node).at(-1);
+		if (rect !== undefined) {
+			const x =
+				Math.round(rect.right) + getBoxModel(node as Element).marginRight;
+			return new layout.domRect(x, Math.round(rect.y), 0, rect.height);
+		}
+	}
+	for (let node = after; node !== null; node = node.nextSibling) {
+		if (nodeTypeOf(node) === node.TEXT_NODE) {
+			const rect = getCaretRectInFragment(layout, node as Text, 0);
+			if (rect !== null) {
+				return rect;
+			}
+			continue;
+		}
+		if (isLineBreak(node) || !isInlineLevel(node)) {
+			break;
+		}
+		const rect = layout.getRects(node)[0];
+		if (rect !== undefined) {
+			const x = Math.round(rect.left) - getBoxModel(node as Element).marginLeft;
+			return new layout.domRect(x, Math.round(rect.y), 0, rect.height);
 		}
 	}
 	return null;
