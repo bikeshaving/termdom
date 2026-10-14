@@ -578,3 +578,14 @@ export async function findCollector(): Promise<(() => void) | null> {
 		return null;
 	}
 }
+
+/**
+ * Waits until what was written to the terminal's input has been
+ * dispatched. Each key, click and paste is a task of its own, as in a
+ * browser, so a chunk of several takes as many tasks.
+ */
+export async function inputDispatched(): Promise<void> {
+	for (let i = 0; i < 256; i++) {
+		await new Promise((resolve) => setImmediate(resolve));
+	}
+}

@@ -6,7 +6,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, until} from "./test-utils.js";
 
 function send(proc: MockProcess, data: string): Promise<void> {
 	(proc.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
@@ -106,6 +106,7 @@ test("a clipboard reply that never closes is released when the query gives up", 
 	);
 	expect(error?.name).toBe("NotAllowedError");
 	await send(proc, "x");
+	await until(() => keys.at(-1) === "x");
 	expect(keys.at(-1)).toBe("x");
 	dom.dispose();
 });
@@ -142,6 +143,7 @@ test("a string opener with no terminator in its write is keys, and swallows noth
 	const {proc, dom, keys} = await mount();
 	await send(proc, "\x1b]0;" + "t".repeat(5000));
 	await send(proc, "x");
+	await until(() => keys.at(-1) === "x");
 	// ESC and a key in one write is what a terminal sends for Alt+].
 	expect(keys[0]).toBe("]");
 	expect(keys.at(-1)).toBe("x");

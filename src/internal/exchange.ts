@@ -18,6 +18,7 @@ import {
 	clearInterval,
 	clearTimeout,
 	queueMicrotask,
+	queueTask,
 	setInterval,
 	setTimeout,
 } from "./timers.ts";
@@ -908,6 +909,10 @@ export interface ExchangeSlots extends EventTargetSlots {
 	disposed: boolean;
 	lastWrite: Promise<void>;
 	wireReader: WireReader;
+	// What the wire has said and the page has not been told yet, in order,
+	// and whether a task to tell it is queued.
+	queuedItems: WireItem[];
+	itemTaskQueued: boolean;
 	// The resize re-anchor saves and restores Exchange around its redraw.
 	hasDetectedAnchor: boolean;
 	cursorDetectionPromise: Promise<void> | null;
@@ -968,6 +973,8 @@ export class Exchange extends EventTarget {
 		slots.disposed = false;
 		slots.lastWrite = Promise.resolve();
 		slots.wireReader = new WireReader();
+		slots.queuedItems = [];
+		slots.itemTaskQueued = false;
 		slots.escapeTimer = null;
 		slots.hasDetectedAnchor = false;
 		slots.cursorDetectionPromise = null;
@@ -2081,23 +2088,33 @@ function drainChunk(session: Exchange, chunk: string): void {
 	}
 }
 
+// As a browser, each key, mouse report and paste is a task of its own, so
+// what a listener's microtasks and observers do settles before the next
+// one arrives, however many came in one chunk. A reply is read where it
+// falls in the stream.
 function routeItems(session: Exchange, items: WireItem[]): void {
-	let keys: WireKey[] = [];
 	const sessionSlots = _(session);
+	sessionSlots.queuedItems.push(...items);
+	if (!sessionSlots.itemTaskQueued) {
+		dispatchQueuedItems(session);
+	}
+}
+
+function dispatchQueuedItems(session: Exchange): void {
+	const sessionSlots = _(session);
+	const queue = sessionSlots.queuedItems;
 	const input = sessionSlots.input!;
-	const flushKeys = () => {
-		if (keys.length > 0) {
-			input.dispatch(keys);
-			keys = [];
+	while (queue.length > 0) {
+		if (sessionSlots.disposed) {
+			queue.length = 0;
+			return;
 		}
-	};
-	for (const item of items) {
+		const item = queue.shift()!;
 		switch (item.kind) {
 			case "key":
 				// Raw mode delivers Ctrl-C as data. Closing is the window's
 				// decision, and a close it allows is an interrupt.
 				if (item.ctrlKey && item.key === "c") {
-					flushKeys();
 					sessionSlots.interrupted = true;
 					sessionSlots.window.close();
 					if (!sessionSlots.window.closed) {
@@ -2105,20 +2122,25 @@ function routeItems(session: Exchange, items: WireItem[]): void {
 					}
 					break;
 				}
-				keys.push(item);
+				input.dispatch([item]);
 				break;
 			case "mouse":
 			case "paste":
-				flushKeys();
 				input.dispatch(item);
 				break;
 			default:
-				flushKeys();
 				dispatchReply(session, item);
-				break;
+				continue;
+		}
+		if (queue.length > 0) {
+			sessionSlots.itemTaskQueued = true;
+			queueTask(() => {
+				sessionSlots.itemTaskQueued = false;
+				dispatchQueuedItems(session);
+			});
+			return;
 		}
 	}
-	flushKeys();
 }
 
 type ReplyItem<K extends WireItem["kind"]> = Extract<WireItem, {kind: K}>;

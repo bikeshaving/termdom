@@ -6,7 +6,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {inputDispatched, MockProcess, nextFrame} from "./test-utils.js";
 
 const press = (col: number, row: number): string => `\x1b[<0;${col};${row}M`;
 const release = (col: number, row: number): string => `\x1b[<0;${col};${row}m`;
@@ -14,7 +14,7 @@ const drag = (col: number, row: number): string => `\x1b[<32;${col};${row}M`;
 
 async function type(terminal: MockProcess, data: string): Promise<void> {
 	(terminal.stdin as any).emit("data", Buffer.from(data));
-	return new Promise((resolve) => setTimeout(resolve, 0));
+	return inputDispatched();
 }
 
 // The clicks of a multi-click arrive as one read, as a terminal sends a
