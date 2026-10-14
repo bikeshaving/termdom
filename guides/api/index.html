@@ -45,7 +45,15 @@ throws a <code>TypeError</code>. See &quot;Color depth&quot; in the styling guid
 background is light or dark. <code>prefers-color-scheme</code> reports this
 value. With <code>&quot;auto&quot;</code> (default), TermDOM asks the terminal, and uses
 light if the terminal does not answer. Any other value throws a
-<code>TypeError</code>.</p></li></ul><p>TermDOM reads no environment variables. It asks the terminal for what
+<code>TypeError</code>.</p></li><li><p><code>failFast?: boolean</code>: whether an uncaught exception from the page
+ends the session. With <code>false</code> (default), TermDOM reports the error
+and the program keeps running, as a browser does. With <code>true</code>, the
+first one restores the terminal, prints the error and closes the
+transport with status 1. The process transport exits, and an SSH
+transport ends that client&#039;s session only. Use it during development,
+for example <code>failFast: process.env.NODE_ENV !== &quot;production&quot;</code>.
+Any value that is not a boolean throws a <code>TypeError</code>. See &quot;Errors&quot; in
+the events guide.</p></li></ul><p>TermDOM reads no environment variables. It asks the terminal for what
 the terminal can report. You set everything else through options.</p><h3 id="term-document-term-window"><code>term.document</code>, <code>term.window</code> <a class="heading-anchor" href="#term-document-term-window">#</a></h3><p><code>document</code> is a <code>Document</code>. Setting <code>document.title</code> sets the title of
 the terminal window. <code>dispose()</code> restores the previous title.</p><p><code>window</code> has the same type as a browser&#039;s window,
 <code>Window &amp; typeof globalThis</code>, taken from the DOM types in TypeScript 6.

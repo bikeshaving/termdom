@@ -126,7 +126,15 @@ print it over the screen. If the transport has a log separate from the
 screen, the error goes there. The process transport writes it to
 stderr when stderr is not the terminal, so <code>node app.ts 2&gt; errors.log</code>
 gives you a log to tail in another pane. Otherwise the engine keeps the
-error and prints it below the document when the session ends.</p><p>Methods throw the same errors a browser throws. For example,
+error and prints it below the document when the session ends.</p><p>During development you may want the program to stop at the first
+error instead. Pass <code>failFast: true</code> to the constructor:</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> term <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">TermDOM</span><span class="token punctuation">(</span><span class="token punctuation">{</span>
+	failFast<span class="token operator">:</span> process<span class="token punctuation">.</span>env<span class="token punctuation">.</span><span class="token constant">NODE_ENV</span> <span class="token operator">!==</span> <span class="token string">"production"</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>The window still gets its <code>error</code> event first, and a listener that
+calls <code>preventDefault()</code> still handles the error. An unhandled error
+ends the session: the engine restores the terminal, prints the error
+below the document, and closes the transport with status 1. A process
+exits with that status. Over SSH, only the session that failed ends,
+and the server keeps running.</p><p>Methods throw the same errors a browser throws. For example,
 <code>showModal()</code> on an open dialog throws an <code>InvalidStateError</code>, and a
 bad selector throws a <code>SyntaxError</code>. A failure inside the engine&#039;s own
 rendering ends the session. The engine leaves the last frame in the
