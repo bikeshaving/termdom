@@ -34,6 +34,7 @@ import {
 	getAddedNodes,
 	getScrollOffset,
 	getShadowRoot,
+	isConnectedNode,
 	isDocumentElement,
 	isInFlatTree,
 	isModalDialog,
@@ -6732,6 +6733,12 @@ function invalidateForRecord(
 		measured.add(target);
 		return;
 	}
+	measured.add(target);
+	// A tree that has left the document holds no boxes. Inserted again, it
+	// is derived whole from the record that brings it back.
+	if (!isConnectedNode(target)) {
+		return;
+	}
 	// The removed nodes are already detached, so the container is reached
 	// through the target rather than through them.
 	if (nodeTypeOf(target) === target.ELEMENT_NODE) {
@@ -6739,8 +6746,7 @@ function invalidateForRecord(
 	}
 	// A member gaining or losing a descendant changes no box list (the
 	// member is still there, holding more or less), so the box measuring it
-	// is notified directly.
-	measured.add(target);
+	// is notified directly, above.
 	for (const node of getAddedNodes(record)) {
 		invalidateSubtreeDerivation(layout, node);
 	}

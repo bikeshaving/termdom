@@ -852,3 +852,31 @@ test("many children of one container changed in one frame all repaint", async ()
 	}
 	dom.dispose();
 });
+
+test("a subtree changed while out of the document lays out its changes when it returns", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div id=box><p id=a>first</p><p>second</p></div><p>after</p>";
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	box.remove();
+	await nextFrame(dom);
+	expect(dom.renderANSI()).not.toContain("first");
+	box.querySelector("#a")!.textContent = "changed and much longer";
+	const span = document.createElement("span");
+	span.textContent = "added";
+	box.prepend(span);
+	box.lastElementChild!.remove();
+	document.body.prepend(box);
+	await nextFrame(dom);
+	const lines = dom.renderANSI().split("\n").map((line) =>
+		line.replace(/\x1b\[[0-9;:]*m/g, "").trimEnd());
+	expect(lines.slice(0, 3)).toEqual([
+		"added",
+		"changed and much longer",
+		"after",
+	]);
+	dom.dispose();
+});
