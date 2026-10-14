@@ -173,7 +173,7 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 			nodeSlots !== null;
 			nodeSlots = nodeSlots.next) {
 			const node = objectOf(nodeSlots);
-			if (node.nodeType === ELEMENT_NODE) {
+			if (nodeTypeOf(node) === ELEMENT_NODE) {
 				stack.push(node as Element);
 			}
 		}
@@ -6215,6 +6215,9 @@ const kCloneSingle = Symbol("clone a single node");
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface NodeExtra {}
 
+// The nodeType each class of node reports, learned from its first node.
+const nodeTypes = new Map<unknown, number>();
+
 export interface NodeSlots extends EventTargetSlots {
 	// The fields in RARE_FIELDS, once one of them is set to anything but its
 	// default. Undefined for most nodes.
@@ -6238,6 +6241,8 @@ export interface NodeSlots extends EventTargetSlots {
 	childNodes: NodeList | null;
 	liveLists: Set<LiveCollection> | null;
 	serial: number;
+	// What nodeType reports, read here by the engine's hot paths.
+	nodeType: number;
 	registeredObservers: RegisteredObserver[] | null;
 	[kInsertionSteps]: Step<Node[typeof kInsertionSteps]>;
 	[kRemovingSteps]: Step<Node[typeof kRemovingSteps]>;
@@ -6313,6 +6318,12 @@ export class Node extends EventTarget implements globalThis.Node {
 		if (new.target === Node) {
 			throw new TypeError("Illegal constructor");
 		}
+		let nodeType = nodeTypes.get(new.target);
+		if (nodeType === undefined) {
+			nodeType = Reflect.get(Node.prototype, "nodeType", this) as number;
+			nodeTypes.set(new.target, nodeType);
+		}
+		slots.nodeType = nodeType;
 		// A Document is its own node document. Every other node gets one from
 		// the algorithm that creates it.
 		slots.document = this as unknown as Document;
@@ -6350,7 +6361,7 @@ export class Node extends EventTarget implements globalThis.Node {
 	// same problem, and this follows them rather than being right alone.
 	get parentElement(): globalThis.HTMLElement | null {
 		const parent = rememberObject(_(this).parent);
-		return parent !== null && parent.nodeType === ELEMENT_NODE
+		return parent !== null && nodeTypeOf(parent) === ELEMENT_NODE
 			? (parent as unknown as globalThis.HTMLElement)
 			: null;
 	}
@@ -6426,7 +6437,7 @@ export class Node extends EventTarget implements globalThis.Node {
 			node !== null;
 			node = nextInTree(node, this)
 		) {
-			if (node.nodeType === TEXT_NODE) {
+			if (nodeTypeOf(node) === TEXT_NODE) {
 				texts.push(node as Text);
 			}
 		}
@@ -6490,11 +6501,11 @@ export class Node extends EventTarget implements globalThis.Node {
 		let node2: Node | null = this;
 		let attr1: Attr | null = null;
 		let attr2: Attr | null = null;
-		if (node1.nodeType === ATTRIBUTE_NODE) {
+		if (nodeTypeOf(node1) === ATTRIBUTE_NODE) {
 			attr1 = node1 as Attr;
 			node1 = attr1.ownerElement;
 		}
-		if (node2.nodeType === ATTRIBUTE_NODE) {
+		if (nodeTypeOf(node2) === ATTRIBUTE_NODE) {
 			attr2 = node2 as Attr;
 			node2 = attr2.ownerElement;
 			if (attr1 !== null && node1 !== null && node1 === node2) {
@@ -6711,7 +6722,7 @@ function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
 		}
 		root = current;
 	}
-	if (root.nodeType === DOCUMENT_FRAGMENT_NODE) {
+	if (nodeTypeOf(root) === DOCUMENT_FRAGMENT_NODE) {
 		const host = _((root as DocumentFragment)).extra.host;
 		if (host != null) {
 			return isHostIncludingInclusiveAncestor(ancestor, host);
@@ -6725,7 +6736,7 @@ function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
 function canBeAncestor(node: Node): boolean {
 	return (
 		_(node).firstChild !== null ||
-		(node.nodeType === ELEMENT_NODE &&
+		(nodeTypeOf(node) === ELEMENT_NODE &&
 			(_((node as Element)).shadowRoot !== null ||
 				node instanceof HTMLTemplateElement))
 	);
@@ -6860,11 +6871,11 @@ function isPrecedingInTree(node1: Node, node2: Node): boolean {
 }
 
 function isExclusiveText(node: Node): boolean {
-	return node.nodeType === TEXT_NODE;
+	return nodeTypeOf(node) === TEXT_NODE;
 }
 
 function isCharacterData(node: Node): boolean {
-	const type = node.nodeType;
+	const type = nodeTypeOf(node);
 	return (
 		type === TEXT_NODE ||
 		type === CDATA_SECTION_NODE ||
@@ -6879,7 +6890,7 @@ function countChildren(parent: Node, type: number): number {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (node.nodeType === type) {
+		if (nodeTypeOf(node) === type) {
 			count++;
 		}
 	}
@@ -6891,7 +6902,7 @@ function hasFollowing(child: Node | null, type: number): boolean {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (node.nodeType === type) {
+		if (nodeTypeOf(node) === type) {
 			return true;
 		}
 	}
@@ -6906,7 +6917,7 @@ function hasPreceding(child: Node | null, type: number): boolean {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.previous) {
 		const node = objectOf(nodeSlots);
-		if (node.nodeType === type) {
+		if (nodeTypeOf(node) === type) {
 			return true;
 		}
 	}
@@ -6924,7 +6935,7 @@ function validateInsertion(
 	child: Node | null,
 	absentChild: string,
 ): void {
-	const parentType = parent.nodeType;
+	const parentType = nodeTypeOf(parent);
 	if (
 		parentType !== DOCUMENT_NODE &&
 		parentType !== DOCUMENT_FRAGMENT_NODE &&
@@ -6942,7 +6953,7 @@ function validateInsertion(
 	if (child !== null && objectOf(_(child).parent) !== parent) {
 		throw notFoundError(absentChild);
 	}
-	const type = node.nodeType;
+	const type = nodeTypeOf(node);
 	if (
 		type !== DOCUMENT_FRAGMENT_NODE &&
 		type !== DOCUMENT_TYPE_NODE &&
@@ -6971,8 +6982,8 @@ function ensurePreInsertionValidity(
 		child,
 		"The reference child is not a child of that parent",
 	);
-	const parentType = parent.nodeType;
-	const type = node.nodeType;
+	const parentType = nodeTypeOf(parent);
+	const type = nodeTypeOf(node);
 	if (parentType !== DOCUMENT_NODE) {
 		return;
 	}
@@ -6986,7 +6997,7 @@ function ensurePreInsertionValidity(
 		if (
 			elementCount === 1 &&
 			(elements > 0 ||
-				(child !== null && child.nodeType === DOCUMENT_TYPE_NODE) ||
+				(child !== null && nodeTypeOf(child) === DOCUMENT_TYPE_NODE) ||
 				hasFollowing(child, DOCUMENT_TYPE_NODE))
 		) {
 			throw hierarchyRequestError("A document can have one element child");
@@ -6994,7 +7005,7 @@ function ensurePreInsertionValidity(
 	} else if (type === ELEMENT_NODE) {
 		if (
 			elements > 0 ||
-			(child !== null && child.nodeType === DOCUMENT_TYPE_NODE) ||
+			(child !== null && nodeTypeOf(child) === DOCUMENT_TYPE_NODE) ||
 			hasFollowing(child, DOCUMENT_TYPE_NODE)
 		) {
 			throw hierarchyRequestError("A document can have one element child");
@@ -7048,17 +7059,19 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	if (child !== null && objectOf(_(child).parent) !== newParent) {
 		throw notFoundError("The reference child is not a child of that parent");
 	}
-	if (node.nodeType !== ELEMENT_NODE && !isCharacterData(node)) {
+	if (nodeTypeOf(node) !== ELEMENT_NODE && !isCharacterData(node)) {
 		throw hierarchyRequestError("That node cannot be moved");
 	}
-	if (node.nodeType === TEXT_NODE && newParent.nodeType === DOCUMENT_NODE) {
+	if (
+		nodeTypeOf(node) === TEXT_NODE && nodeTypeOf(newParent) === DOCUMENT_NODE
+	) {
 		throw hierarchyRequestError("That node cannot go there");
 	}
 	if (
-		newParent.nodeType === DOCUMENT_NODE &&
-		node.nodeType === ELEMENT_NODE &&
+		nodeTypeOf(newParent) === DOCUMENT_NODE &&
+		nodeTypeOf(node) === ELEMENT_NODE &&
 		(countChildren(newParent, ELEMENT_NODE) > 0 ||
-			(child !== null && child.nodeType === DOCUMENT_TYPE_NODE) ||
+			(child !== null && nodeTypeOf(child) === DOCUMENT_TYPE_NODE) ||
 			hasFollowing(child, DOCUMENT_TYPE_NODE))
 	) {
 		throw hierarchyRequestError("A document can have one element child");
@@ -7121,7 +7134,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 			}
 		}
 	}
-	const shadow = newParent.nodeType === ELEMENT_NODE
+	const shadow = nodeTypeOf(newParent) === ELEMENT_NODE
 		? _((newParent as Element)).shadowRoot
 		: null;
 	if (shadow !== null && _(shadow).extra.slotAssignment === "named") {
@@ -7140,7 +7153,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	if (newParent.isConnected) {
 		for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 			if (
-				descendant.nodeType !== ELEMENT_NODE ||
+				nodeTypeOf(descendant) !== ELEMENT_NODE ||
 				_((descendant as Element)).customState !== "custom"
 			) {
 				continue;
@@ -7180,14 +7193,14 @@ function insertNode(
 	child: Node | null,
 	suppressObservers: boolean,
 ): void {
-	const nodes = node.nodeType === DOCUMENT_FRAGMENT_NODE
+	const nodes = nodeTypeOf(node) === DOCUMENT_FRAGMENT_NODE
 		? getChildNodeArray(node)
 		: [node];
 	const count = nodes.length;
 	if (count === 0) {
 		return;
 	}
-	if (node.nodeType === DOCUMENT_FRAGMENT_NODE) {
+	if (nodeTypeOf(node) === DOCUMENT_FRAGMENT_NODE) {
 		for (const child_ of nodes) {
 			removeNode(child_, true);
 		}
@@ -7239,7 +7252,7 @@ function insertNode(
 		) {
 			joined.treeRoot = treeRoot;
 		}
-		const shadow = parent.nodeType === ELEMENT_NODE
+		const shadow = nodeTypeOf(parent) === ELEMENT_NODE
 			? _((parent as Element)).shadowRoot
 			: null;
 		if (shadow !== null) {
@@ -7279,7 +7292,7 @@ function insertNode(
 				continue;
 			}
 			const descendant = objectOf(descendantSlots);
-			if (descendant.nodeType !== ELEMENT_NODE) {
+			if (nodeTypeOf(descendant) !== ELEMENT_NODE) {
 				continue;
 			}
 			const element = descendant as Element;
@@ -7369,8 +7382,8 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 		child,
 		"The replaced child is not a child of that parent",
 	);
-	const parentType = parent.nodeType;
-	const type = node.nodeType;
+	const parentType = nodeTypeOf(parent);
+	const type = nodeTypeOf(node);
 	const childSlots = _(child);
 	if (parentType === DOCUMENT_NODE) {
 		if (type === DOCUMENT_FRAGMENT_NODE) {
@@ -7415,7 +7428,7 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 		removedNodes.push(child);
 		removeNode(child, true);
 	}
-	const nodes = node.nodeType === DOCUMENT_FRAGMENT_NODE
+	const nodes = nodeTypeOf(node) === DOCUMENT_FRAGMENT_NODE
 		? getChildNodeArray(node)
 		: [node];
 	insertNode(node, parent, referenceChild, true);
@@ -7434,7 +7447,7 @@ function hasOtherElementChild(parent: Node, exclude: Node): boolean {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (node !== exclude && node.nodeType === ELEMENT_NODE) {
+		if (node !== exclude && nodeTypeOf(node) === ELEMENT_NODE) {
 			return true;
 		}
 	}
@@ -7446,7 +7459,7 @@ function hasOtherDoctypeChild(parent: Node, exclude: Node): boolean {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (node !== exclude && node.nodeType === DOCUMENT_TYPE_NODE) {
+		if (node !== exclude && nodeTypeOf(node) === DOCUMENT_TYPE_NODE) {
 			return true;
 		}
 	}
@@ -7457,7 +7470,7 @@ function replaceAll(node: Node | null, parent: Node): void {
 	const removedNodes = getChildNodeArray(parent);
 	const addedNodes = node === null
 		? []
-		: node.nodeType === DOCUMENT_FRAGMENT_NODE
+		: nodeTypeOf(node) === DOCUMENT_FRAGMENT_NODE
 				? getChildNodeArray(node)
 				: [node];
 	for (const child of removedNodes) {
@@ -7517,7 +7530,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 	if (assignedSlot !== null) {
 		assignSlottables(assignedSlot);
 	}
-	const hostShadow = parent.nodeType === ELEMENT_NODE
+	const hostShadow = nodeTypeOf(parent) === ELEMENT_NODE
 		? _((parent as Element)).shadowRoot
 		: null;
 	if (hostShadow !== null && _(hostShadow).extra.slotAssignment === "manual") {
@@ -7553,7 +7566,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 				// The ancestors it left were :focus-within, and no longer are.
 				const left = parent instanceof ShadowRoot
 					? (_(parent).extra.host as Element)
-					: parent.nodeType === ELEMENT_NODE ? (parent as Element) : null;
+					: nodeTypeOf(parent) === ELEMENT_NODE ? (parent as Element) : null;
 				const attached = getAttachedDocument(document);
 				if (left !== null && attached !== undefined) {
 					_(attached).extra.cascade.handleFocusChange(left);
@@ -7571,7 +7584,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 		_(descendant)[kRemovingSteps](parent);
 		if (
 			parentWasConnected &&
-			descendant.nodeType === ELEMENT_NODE &&
+			nodeTypeOf(descendant) === ELEMENT_NODE &&
 			_((descendant as Element)).customState === "custom"
 		) {
 			enqueueCallbackReaction(descendant as Element, "disconnectedCallback", []);
@@ -7601,7 +7614,7 @@ function adoptNode(node: Node, document: Document): void {
 	}
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		_(descendant).document = document;
-		if (descendant.nodeType === ELEMENT_NODE) {
+		if (nodeTypeOf(descendant) === ELEMENT_NODE) {
 			for (const attr of _((descendant as Element)).attributeList) {
 				attr.document = document;
 			}
@@ -7609,7 +7622,7 @@ function adoptNode(node: Node, document: Document): void {
 	}
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		if (
-			descendant.nodeType === ELEMENT_NODE &&
+			nodeTypeOf(descendant) === ELEMENT_NODE &&
 			_((descendant as Element)).customState === "custom"
 		) {
 			enqueueCallbackReaction(descendant as Element, "adoptedCallback", [
@@ -8886,7 +8899,7 @@ export function getElementChildren(parent: Node): Element[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (node.nodeType === ELEMENT_NODE) {
+		if (nodeTypeOf(node) === ELEMENT_NODE) {
 			elements.push(node as Element);
 		}
 	}
@@ -8898,7 +8911,7 @@ export function getElementChildren(parent: Node): Element[] {
 // out only when no name is affected.
 function isNameless(members: readonly Node[]): boolean {
 	for (const member of members) {
-		if (member.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(member) !== ELEMENT_NODE) {
 			continue;
 		}
 		for (const attribute of _((member as Element)).attributeList) {
@@ -8942,7 +8955,7 @@ function matchingChangedMembers(
 ): Node[] | null {
 	const members: Node[] = [];
 	for (const node of changed) {
-		const elements = node.nodeType === ELEMENT_NODE
+		const elements = nodeTypeOf(node) === ELEMENT_NODE
 			? getDescendantElements(node, [node as Element])
 			: getDescendantElements(node, []);
 		for (const element of elements) {
@@ -8980,7 +8993,7 @@ function matchingAttributeSync(
 function getDescendantElements(root: Node, into: Element[]): Element[] {
 	let current: Node | null = objectOf(_(root).firstChild);
 	while (current !== null) {
-		if (current.nodeType === ELEMENT_NODE) {
+		if (nodeTypeOf(current) === ELEMENT_NODE) {
 			into.push(current as Element);
 		}
 		current = nextInTree(current, root);
@@ -9845,7 +9858,7 @@ export class DocumentFragment
 			return null;
 		}
 		for (const node of descendants(this)) {
-			if (node.nodeType === ELEMENT_NODE) {
+			if (nodeTypeOf(node) === ELEMENT_NODE) {
 				if ((node as Element).getAttribute("id") === id) {
 					return node as unknown as globalThis.HTMLElement;
 				}
@@ -9872,7 +9885,7 @@ function getDescendantText(node: Node): string {
 	let text = "";
 	let current: Node | null = objectOf(_(node).firstChild);
 	while (current !== null) {
-		const type = current.nodeType;
+		const type = nodeTypeOf(current);
 		if (type === TEXT_NODE || type === CDATA_SECTION_NODE) {
 			text += _((current as CharacterData)).data;
 		}
@@ -10749,13 +10762,13 @@ export class Element extends Node implements globalThis.Element {
 		if (parent === null) {
 			return;
 		}
-		if (parent.nodeType === DOCUMENT_NODE) {
+		if (nodeTypeOf(parent) === DOCUMENT_NODE) {
 			throw domError(
 				"NoModificationAllowedError",
 				"A document element has no outer HTML to replace",
 			);
 		}
-		const context = parent.nodeType === DOCUMENT_FRAGMENT_NODE
+		const context = nodeTypeOf(parent) === DOCUMENT_FRAGMENT_NODE
 			? createElementInternal(slots.document, "body", HTML_NAMESPACE)
 			: (parent as Element);
 		const fragment = parseHTMLFragment(String(value ?? ""), context);
@@ -11165,13 +11178,13 @@ export class Element extends Node implements globalThis.Element {
 			case "beforebegin":
 			case "afterend": {
 				const parent = objectOf(slots.parent);
-				if (parent === null || parent.nodeType === DOCUMENT_NODE) {
+				if (parent === null || nodeTypeOf(parent) === DOCUMENT_NODE) {
 					throw domError(
 						"NoModificationAllowedError",
 						"There is nowhere to insert that HTML",
 					);
 				}
-				context = parent.nodeType === ELEMENT_NODE
+				context = nodeTypeOf(parent) === ELEMENT_NODE
 					? parent
 					: createElementInternal(slots.document, "body", HTML_NAMESPACE);
 				break;
@@ -11185,7 +11198,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 		let element = context as Element;
 		if (
-			element.nodeType !== ELEMENT_NODE ||
+			nodeTypeOf(element) !== ELEMENT_NODE ||
 			(isHTMLDocument(_(element).document) &&
 				_(element).localName === "html" &&
 				_(element).namespace === HTML_NAMESPACE)
@@ -11291,7 +11304,7 @@ export class Element extends Node implements globalThis.Element {
 
 	override [kInsertionSteps](this: Slots<Element>): void {
 		const root = getRoot(ownerOf(this));
-		if (root.nodeType === DOCUMENT_NODE) {
+		if (nodeTypeOf(root) === DOCUMENT_NODE) {
 			addToIdMap(root as Document, ownerOf(this));
 		}
 		// The steps run once for every element of an inserted tree, so this
@@ -11317,7 +11330,7 @@ export class Element extends Node implements globalThis.Element {
 
 	override [kRemovingSteps](this: Slots<Element>, oldParent: Node): void {
 		const root = getRoot(oldParent);
-		if (root.nodeType === DOCUMENT_NODE) {
+		if (nodeTypeOf(root) === DOCUMENT_NODE) {
 			removeFromIdMap(root as Document, ownerOf(this));
 		}
 		// The steps run once for every element of a removed tree, as on
@@ -11352,7 +11365,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 		if (localName === "id" && namespace === null) {
 			const root = getRoot(ownerOf(this));
-			if (root.nodeType === DOCUMENT_NODE) {
+			if (nodeTypeOf(root) === DOCUMENT_NODE) {
 				const document = root as Document;
 				if (oldValue !== null) {
 					removeIdEntry(document, oldValue, ownerOf(this));
@@ -11366,7 +11379,7 @@ export class Element extends Node implements globalThis.Element {
 			localName === "name" && namespace === null && isNamedByName(ownerOf(this))
 		) {
 			const root = getRoot(ownerOf(this));
-			if (root.nodeType === DOCUMENT_NODE) {
+			if (nodeTypeOf(root) === DOCUMENT_NODE) {
 				const document = root as Document;
 				if (oldValue !== null && oldValue !== "") {
 					removeNameEntry(document, oldValue, ownerOf(this));
@@ -11394,7 +11407,7 @@ export class Element extends Node implements globalThis.Element {
 			syncFormDisabled(ownerOf(this));
 			if (ownerOf(this) instanceof HTMLFieldSetElement) {
 				for (const node of descendants(ownerOf(this))) {
-					if (node.nodeType === ELEMENT_NODE) {
+					if (nodeTypeOf(node) === ELEMENT_NODE) {
 						syncFormDisabled(node as Element);
 					}
 				}
@@ -11786,7 +11799,7 @@ function collectRenderedText(
 	node: Node,
 	items: Array<string | number>,
 ): void {
-	if (node.nodeType === TEXT_NODE) {
+	if (nodeTypeOf(node) === TEXT_NODE) {
 		const parent = node.parentElement as Element | null;
 		if (
 			parent === null || getComputedValue(parent, "visibility") === "visible"
@@ -11795,7 +11808,7 @@ function collectRenderedText(
 		}
 		return;
 	}
-	if (node.nodeType !== ELEMENT_NODE) {
+	if (nodeTypeOf(node) !== ELEMENT_NODE) {
 		return;
 	}
 	const element = node as Element;
@@ -12123,7 +12136,7 @@ export class HTMLElement extends Element {
 			}
 		}
 		const parent = objectOf(_(this).parent);
-		if (parent !== null && parent.nodeType === ELEMENT_NODE) {
+		if (parent !== null && nodeTypeOf(parent) === ELEMENT_NODE) {
 			return (parent as HTMLElement).translate ?? true;
 		}
 		return true;
@@ -12173,7 +12186,7 @@ export class HTMLElement extends Element {
 			}
 		}
 		const parent = objectOf(_(this).parent);
-		if (parent !== null && parent.nodeType === ELEMENT_NODE) {
+		if (parent !== null && nodeTypeOf(parent) === ELEMENT_NODE) {
 			return (parent as HTMLElement).spellcheck ?? true;
 		}
 		return true;
@@ -12280,7 +12293,7 @@ export class HTMLElement extends Element {
 	get isContentEditable(): boolean {
 		for (
 			let node: Node | null = this;
-			node !== null && node.nodeType === ELEMENT_NODE;
+			node !== null && nodeTypeOf(node) === ELEMENT_NODE;
 			node = objectOf(_(node).parent)
 		) {
 			const state = (node as HTMLElement).contentEditable;
@@ -12715,7 +12728,7 @@ function getFocusDelegate(element: Element): Element | null {
 	}
 	let first: Element | null = null;
 	for (const node of descendants(shadow)) {
-		if (node.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(node) !== ELEMENT_NODE) {
 			continue;
 		}
 		const candidate = node as Element;
@@ -13033,7 +13046,7 @@ function getDefaultTabIndex(element: Element): number {
 		case "summary": {
 			const parent = objectOf(elementSlots.parent);
 			return parent !== null &&
-				parent.nodeType === ELEMENT_NODE &&
+				nodeTypeOf(parent) === ELEMENT_NODE &&
 				_((parent as Element)).namespace === HTML_NAMESPACE &&
 				_((parent as Element)).localName === "details" &&
 				getFirstChildElement(parent, "summary") === element
@@ -13050,7 +13063,7 @@ function getFirstChildElement(parent: Node, localName: string): Element | null {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (node.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(node) !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = node as Element;
@@ -13998,7 +14011,7 @@ class CustomElementRegistry {
 		}
 		const document = getCurrentDocument();
 		for (const candidate of shadowIncludingInclusiveDescendants(document)) {
-			if (candidate.nodeType !== ELEMENT_NODE) {
+			if (nodeTypeOf(candidate) !== ELEMENT_NODE) {
 				continue;
 			}
 			const element = candidate as Element;
@@ -14073,7 +14086,7 @@ class CustomElementRegistry {
 			throw new TypeError("That is not a node");
 		}
 		for (const candidate of shadowIncludingInclusiveDescendants(root)) {
-			if (candidate.nodeType !== ELEMENT_NODE) {
+			if (nodeTypeOf(candidate) !== ELEMENT_NODE) {
 				continue;
 			}
 			// Another registry's element is not this one's to upgrade.
@@ -14091,7 +14104,7 @@ class CustomElementRegistry {
 		if (!(root instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		if (!_(this).scoped && root.nodeType === DOCUMENT_NODE) {
+		if (!_(this).scoped && nodeTypeOf(root) === DOCUMENT_NODE) {
 			throw domError(
 				"NotSupportedError",
 				"A document already holds the registry of its realm",
@@ -14250,7 +14263,7 @@ function associateRegistry(
 		return;
 	}
 	nodeSlots.registry = registry;
-	if (node.nodeType === ELEMENT_NODE) {
+	if (nodeTypeOf(node) === ELEMENT_NODE) {
 		upgrades.push(node as Element);
 	}
 	for (let childSlots = nodeSlots.firstChild;
@@ -14349,7 +14362,7 @@ function getUpgradeDefinition(
 	if (!elementSlots.connected) {
 		const root = getRoot(element);
 		if (
-			root.nodeType === DOCUMENT_FRAGMENT_NODE &&
+			nodeTypeOf(root) === DOCUMENT_FRAGMENT_NODE &&
 			_((root as DocumentFragment)).extra.host instanceof HTMLTemplateElement
 		) {
 			return null;
@@ -14794,7 +14807,7 @@ export function getShadowRoot(
 type Slottable = Element | Text;
 
 function isSlottable(node: Node): boolean {
-	return node.nodeType === ELEMENT_NODE || node.nodeType === TEXT_NODE;
+	return nodeTypeOf(node) === ELEMENT_NODE || nodeTypeOf(node) === TEXT_NODE;
 }
 
 function isAssigned(target: EventTarget | null): boolean {
@@ -14818,7 +14831,7 @@ function hasInclusiveDescendantSlot(node: Node): boolean {
 
 function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 	const parent = objectOf(_(slottable).parent);
-	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
+	if (parent === null || nodeTypeOf(parent) !== ELEMENT_NODE) {
 		return null;
 	}
 	const shadow = _((parent as Element)).shadowRoot;
@@ -15021,7 +15034,9 @@ class HTMLSlotElement extends HTMLElement {
 		options?: globalThis.AssignedNodesOptions,
 	): globalThis.Element[] {
 		return this.assignedNodes(options)
-			.filter((node) => node.nodeType === ELEMENT_NODE) as globalThis.Element[];
+			.filter(
+				(node) => nodeTypeOf(node) === ELEMENT_NODE,
+			) as globalThis.Element[];
 	}
 
 	// Recomputes every tree in which a slot lost or gained a node. The
@@ -15248,7 +15263,7 @@ function parseURL(value: string, base: string): string | null {
 function getDocumentBaseURL(document: Document): string {
 	const fallback = _(document).extra.documentURL;
 	for (const node of descendants(document)) {
-		if (node.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(node) !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = node as Element;
@@ -16688,7 +16703,7 @@ function focusDialog(dialog: HTMLDialogElement): void {
 	const walker = shadowIncludingInclusiveDescendants(dialog);
 	let fallback: Element | null = null;
 	for (const node of walker) {
-		if (node === dialog || node.nodeType !== ELEMENT_NODE) {
+		if (node === dialog || nodeTypeOf(node) !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = node as Element;
@@ -16856,7 +16871,7 @@ class HTMLFieldSetElement extends HTMLElement {
 				new HTMLCollection(() => {
 					const listed: Element[] = [];
 					for (const node of descendants(this)) {
-						if (node.nodeType !== ELEMENT_NODE) {
+						if (nodeTypeOf(node) !== ELEMENT_NODE) {
 							continue;
 						}
 						if (isListed(node as Element)) {
@@ -17043,7 +17058,7 @@ function getListedElements(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
 	const root = getRoot(form);
 	for (const node of descendants(root)) {
-		if (node.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(node) !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = node as Element;
@@ -17725,7 +17740,7 @@ function hasDataListAncestor(element: Element): boolean {
 function getSubmittableElements(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
 	for (const node of descendants(getRoot(form))) {
-		if (node.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(node) !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = node as Element;
@@ -19060,7 +19075,7 @@ export class HTMLInputElement extends HTMLElement {
 		}
 		const root = getRoot(this);
 		for (const node of descendants(root)) {
-			if (node.nodeType !== ELEMENT_NODE) {
+			if (nodeTypeOf(node) !== ELEMENT_NODE) {
 				continue;
 			}
 			const element = node as Element;
@@ -20213,7 +20228,7 @@ export class HTMLLabelElement extends HTMLElement {
 			}
 			const root = getRoot(this);
 			for (const node of descendants(root)) {
-				if (node.nodeType !== ELEMENT_NODE) {
+				if (nodeTypeOf(node) !== ELEMENT_NODE) {
 					continue;
 				}
 				const element = node as Element;
@@ -20225,7 +20240,7 @@ export class HTMLLabelElement extends HTMLElement {
 			return null;
 		}
 		for (const node of descendants(this)) {
-			if (node.nodeType !== ELEMENT_NODE) {
+			if (nodeTypeOf(node) !== ELEMENT_NODE) {
 				continue;
 			}
 			if (isLabelable(node as Element)) {
@@ -22542,7 +22557,7 @@ class HTMLTableElement extends HTMLElement {
 			nodeSlots !== null;
 			nodeSlots = nodeSlots.next) {
 			const node = objectOf(nodeSlots);
-			if (node.nodeType !== ELEMENT_NODE) {
+			if (nodeTypeOf(node) !== ELEMENT_NODE) {
 				continue;
 			}
 			const name = (nodeSlots as Slots<Element>).localName;
@@ -22726,7 +22741,7 @@ declareExtraSlots(HTMLTableElement);
 
 function isHTMLElementNamed(node: Node, localName: string): boolean {
 	return (
-		node.nodeType === ELEMENT_NODE &&
+		nodeTypeOf(node) === ELEMENT_NODE &&
 		_((node as Element)).namespace === HTML_NAMESPACE &&
 		_((node as Element)).localName === localName
 	);
@@ -22738,7 +22753,7 @@ function getChildElementsNamed(parent: Node, localName: string): Element[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (node.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(node) !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = node as Element;
@@ -22762,7 +22777,7 @@ function getTableRows(table: Element): Element[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (node.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(node) !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = node as Element;
@@ -22817,7 +22832,7 @@ class HTMLTableRowElement extends HTMLElement {
 
 	get sectionRowIndex(): number {
 		const parent = objectOf(_(this).parent);
-		if (parent === null || parent.nodeType !== ELEMENT_NODE) {
+		if (parent === null || nodeTypeOf(parent) !== ELEMENT_NODE) {
 			return -1;
 		}
 		return getChildElementsNamed(parent, "tr").indexOf(this);
@@ -22865,14 +22880,14 @@ declareExtraSlots(HTMLTableRowElement);
 
 function getTable(row: HTMLTableRowElement): Element | null {
 	const parent = objectOf(_(row).parent);
-	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
+	if (parent === null || nodeTypeOf(parent) !== ELEMENT_NODE) {
 		return null;
 	}
 	if (_((parent as Element)).localName === "table") {
 		return parent as Element;
 	}
 	const grandparent = objectOf(_(parent).parent);
-	if (grandparent === null || grandparent.nodeType !== ELEMENT_NODE) {
+	if (grandparent === null || nodeTypeOf(grandparent) !== ELEMENT_NODE) {
 		return null;
 	}
 	return _((grandparent as Element)).localName === "table"
@@ -23574,7 +23589,7 @@ function getChildText(element: Element): string {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (node.nodeType === TEXT_NODE) {
+		if (nodeTypeOf(node) === TEXT_NODE) {
 			text += (node as Text).data;
 		}
 	}
@@ -24106,7 +24121,7 @@ function popoverFocusingSteps(element: Element): void {
 		return;
 	}
 	for (const node of shadowIncludingInclusiveDescendants(element)) {
-		if (node === element || node.nodeType !== ELEMENT_NODE) {
+		if (node === element || nodeTypeOf(node) !== ELEMENT_NODE) {
 			continue;
 		}
 		const descendant = node as Element;
@@ -24161,7 +24176,7 @@ const explicitAttributeElements = new WeakMap<Element, Map<string, Element>>();
 // The explicitly set element if it is still reachable, otherwise the
 // element the attribute names by id in the invoker's own tree.
 function getAttributeElement(node: Node, attribute: string): Element | null {
-	if (node.nodeType !== ELEMENT_NODE) {
+	if (nodeTypeOf(node) !== ELEMENT_NODE) {
 		return null;
 	}
 	const element = node as Element;
@@ -24189,7 +24204,7 @@ function getAttributeElement(node: Node, attribute: string): Element | null {
 		return null;
 	}
 	const root = getRoot(element);
-	if (root.nodeType !== DOCUMENT_NODE && !isShadowRoot(root)) {
+	if (nodeTypeOf(root) !== DOCUMENT_NODE && !isShadowRoot(root)) {
 		return null;
 	}
 	return (root as Document |
@@ -24740,7 +24755,7 @@ const DISABLEABLE_TAGS = new Set([
 ]);
 
 function isHTMLTag(node: Node, tags: Set<string>): boolean {
-	if (node.nodeType !== ELEMENT_NODE) {
+	if (nodeTypeOf(node) !== ELEMENT_NODE) {
 		return false;
 	}
 	const element = node as Element;
@@ -24879,11 +24894,11 @@ function getFormOwner(element: Element): HTMLFormElement | null {
 			return null;
 		}
 		const root = getRoot(element);
-		if (root.nodeType !== DOCUMENT_NODE && !isShadowRoot(root)) {
+		if (nodeTypeOf(root) !== DOCUMENT_NODE && !isShadowRoot(root)) {
 			return null;
 		}
 		for (const node of descendants(root)) {
-			if (node.nodeType !== ELEMENT_NODE) {
+			if (nodeTypeOf(node) !== ELEMENT_NODE) {
 				continue;
 			}
 			const candidate = node as Element;
@@ -24927,7 +24942,7 @@ function resetTheFormOwner(element: Element): void {
 
 function resetFormOwners(node: Node): void {
 	for (const candidate of shadowIncludingInclusiveDescendants(node)) {
-		if (candidate.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(candidate) !== ELEMENT_NODE) {
 			continue;
 		}
 		resetTheFormOwner(candidate as Element);
@@ -25422,7 +25437,7 @@ function getARIATargetsFromAttribute(
 	const found: Element[] = [];
 	for (const id of splitOnASCIIWhitespace(value)) {
 		for (const node of descendants(root)) {
-			if (node.nodeType !== ELEMENT_NODE) {
+			if (nodeTypeOf(node) !== ELEMENT_NODE) {
 				continue;
 			}
 			if ((node as Element).getAttribute("id") !== id) {
@@ -26124,7 +26139,7 @@ export function dropPseudoElement(
 
 // The stored assignment, including closed trees.
 function getAssignedSlot(node: Node): HTMLSlotElement | null {
-	const type = node.nodeType;
+	const type = nodeTypeOf(node);
 	return type === ELEMENT_NODE || type === TEXT_NODE
 		? _((node as Slottable)).assignedSlot
 		: null;
@@ -26147,7 +26162,7 @@ export function flatParentElement(
 // The parent comes back remembered, as the walk up reads it next.
 function getFlatTreeParent(node: Node): Element | null {
 	const slots = _(node);
-	const type = node.nodeType;
+	const type = slots.nodeType;
 	if (type === ELEMENT_NODE || type === TEXT_NODE) {
 		const slot = (slots as Slots<Slottable>).assignedSlot;
 		if (slot !== null) {
@@ -26195,12 +26210,12 @@ export function isInFlatTree(target: globalThis.Node): boolean {
 		if (parent === null) {
 			return isShadowRoot(node)
 				? isInFlatTree(_(node).extra.host as unknown as globalThis.Node)
-				: node.nodeType === DOCUMENT_NODE;
+				: nodeTypeOf(node) === DOCUMENT_NODE;
 		}
 		const slot = getAssignedSlot(node);
 		if (
 			slot === null &&
-			parent.nodeType === ELEMENT_NODE &&
+			nodeTypeOf(parent) === ELEMENT_NODE &&
 			_((parent as Element)).shadowRoot !== null
 		) {
 			return false;
@@ -26216,7 +26231,7 @@ export function isInFlatTree(target: globalThis.Node): boolean {
 // own TreeWalker never does.
 
 function isElementOrText(node: Node): boolean {
-	return node.nodeType === ELEMENT_NODE || node.nodeType === TEXT_NODE;
+	return nodeTypeOf(node) === ELEMENT_NODE || nodeTypeOf(node) === TEXT_NODE;
 }
 
 /** The flat children that are elements or text. */
@@ -26292,7 +26307,7 @@ export function *flowContent(
 	parent: globalThis.Node,
 ): Generator<globalThis.Node> {
 	for (const child of flatChildren(parent)) {
-		if (child.nodeType === ELEMENT_NODE && isDisplayContents(child)) {
+		if (nodeTypeOf(child) === ELEMENT_NODE && isDisplayContents(child)) {
 			yield *flowContent(child);
 		} else {
 			yield child;
@@ -26326,14 +26341,14 @@ export function flowNext(
 ): globalThis.Node | null {
 	let next = flatStep(node, root, skipChildren);
 	while (next !== null) {
-		if (next.nodeType === TEXT_NODE) {
+		if (nodeTypeOf(next) === TEXT_NODE) {
 			return next;
 		}
-		if (next.nodeType === ELEMENT_NODE && !isDisplayContents(next)) {
+		if (nodeTypeOf(next) === ELEMENT_NODE && !isDisplayContents(next)) {
 			return next;
 		}
 		// A dissolved element is entered; anything else is stepped over.
-		next = flatStep(next, root, next.nodeType !== ELEMENT_NODE);
+		next = flatStep(next, root, nodeTypeOf(next) !== ELEMENT_NODE);
 	}
 	return null;
 }
@@ -26344,7 +26359,7 @@ function getPseudoSlot(element: Element, name: string): Element | null {
 }
 
 function flatFirstChild(node: Node): Node | null {
-	if (node.nodeType !== ELEMENT_NODE) {
+	if (nodeTypeOf(node) !== ELEMENT_NODE) {
 		return objectOf(_(node).firstChild);
 	}
 	const element = node as Element;
@@ -26434,7 +26449,7 @@ function flatNextSibling(node: Node): Node | null {
 	// content, which the node tree cannot express because it puts the shadow
 	// root between them.
 	const parent = flatParentNode(node);
-	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
+	if (parent !== null && nodeTypeOf(parent) === ELEMENT_NODE) {
 		return getPseudoSlot(parent as Element, "::after");
 	}
 	return null;
@@ -27097,7 +27112,7 @@ class IntersectionObserver {
 		// way it is grown by rootMargin, which is the point of that option: it
 		// lets a list start loading a row before it scrolls into view.
 		const root = this.intersectionRoot;
-		const rootCells = root && root.nodeType === ELEMENT_NODE
+		const rootCells = root && nodeTypeOf(root) === ELEMENT_NODE
 			? layout.getRect(root as globalThis.Element)
 			: viewport;
 		if (!rootCells) {
@@ -27217,10 +27232,11 @@ function getCurrentDocument(): Document {
 
 /** Whether `node` is the document element of its document. */
 export function isDocumentElement(node: globalThis.Node): boolean {
-	const parent = _(node as Node).parent;
+	const slots = _(node as Node);
+	const parent = slots.parent;
 	return parent !== null &&
-		objectOf(parent).nodeType === DOCUMENT_NODE &&
-		node.nodeType === ELEMENT_NODE;
+		parent.nodeType === DOCUMENT_NODE &&
+		slots.nodeType === ELEMENT_NODE;
 }
 
 function isHTMLDocument(document: Document): boolean {
@@ -27503,7 +27519,7 @@ export class Document extends Node implements globalThis.Document {
 			nodeSlots !== null;
 			nodeSlots = nodeSlots.next) {
 			const node = objectOf(nodeSlots);
-			if (node.nodeType === DOCUMENT_TYPE_NODE) {
+			if (nodeTypeOf(node) === DOCUMENT_TYPE_NODE) {
 				return node as unknown as globalThis.DocumentType;
 			}
 		}
@@ -27578,7 +27594,7 @@ export class Document extends Node implements globalThis.Document {
 			nodeSlots = nodeSlots.next) {
 			const node = objectOf(nodeSlots);
 			if (
-				node.nodeType === ELEMENT_NODE &&
+				nodeTypeOf(node) === ELEMENT_NODE &&
 				(nodeSlots as Slots<Element>).namespace === HTML_NAMESPACE &&
 				(nodeSlots as Slots<Element>).localName === "head"
 			) {
@@ -27598,7 +27614,7 @@ export class Document extends Node implements globalThis.Document {
 			nodeSlots = nodeSlots.next) {
 			const node = objectOf(nodeSlots);
 			if (
-				node.nodeType === ELEMENT_NODE &&
+				nodeTypeOf(node) === ELEMENT_NODE &&
 				(nodeSlots as Slots<Element>).namespace === HTML_NAMESPACE &&
 				((nodeSlots as Slots<Element>).localName === "body" ||
 					(nodeSlots as Slots<Element>).localName === "frameset")
@@ -27612,7 +27628,7 @@ export class Document extends Node implements globalThis.Document {
 	set body(value: globalThis.HTMLElement) {
 		if (
 			(value as unknown as Element | null) == null ||
-			value.nodeType !== ELEMENT_NODE ||
+			nodeTypeOf(value) !== ELEMENT_NODE ||
 			_((value as unknown as Element)).namespace !== HTML_NAMESPACE ||
 			(_((value as unknown as Element)).localName !== "body" &&
 				_((value as unknown as Element)).localName !== "frameset")
@@ -27644,7 +27660,7 @@ export class Document extends Node implements globalThis.Document {
 		) {
 			for (const node of descendants(root)) {
 				if (
-					node.nodeType === ELEMENT_NODE &&
+					nodeTypeOf(node) === ELEMENT_NODE &&
 					_((node as Element)).namespace === SVG_NAMESPACE &&
 					_((node as Element)).localName === "title"
 				) {
@@ -27655,7 +27671,7 @@ export class Document extends Node implements globalThis.Document {
 		} else {
 			for (const node of descendants(this)) {
 				if (
-					node.nodeType === ELEMENT_NODE &&
+					nodeTypeOf(node) === ELEMENT_NODE &&
 					_((node as Element)).namespace === HTML_NAMESPACE &&
 					_((node as Element)).localName === "title"
 				) {
@@ -27682,7 +27698,7 @@ export class Document extends Node implements globalThis.Document {
 				nodeSlots = nodeSlots.next) {
 				const node = objectOf(nodeSlots);
 				if (
-					node.nodeType === ELEMENT_NODE &&
+					nodeTypeOf(node) === ELEMENT_NODE &&
 					(nodeSlots as Slots<Element>).namespace === SVG_NAMESPACE &&
 					(nodeSlots as Slots<Element>).localName === "title"
 				) {
@@ -27697,7 +27713,7 @@ export class Document extends Node implements globalThis.Document {
 		} else if (_(root).namespace === HTML_NAMESPACE) {
 			for (const node of descendants(this)) {
 				if (
-					node.nodeType === ELEMENT_NODE &&
+					nodeTypeOf(node) === ELEMENT_NODE &&
 					_((node as Element)).namespace === HTML_NAMESPACE &&
 					_((node as Element)).localName === "title"
 				) {
@@ -27734,7 +27750,7 @@ export class Document extends Node implements globalThis.Document {
 			nodeSlots !== null;
 			nodeSlots = nodeSlots.next) {
 			const node = objectOf(nodeSlots);
-			if (node.nodeType === ELEMENT_NODE) {
+			if (nodeTypeOf(node) === ELEMENT_NODE) {
 				return node as unknown as globalThis.HTMLElement;
 			}
 		}
@@ -28158,7 +28174,7 @@ export class Document extends Node implements globalThis.Document {
 						childSlots = childSlots.next
 					) {
 						const child = objectOf(childSlots);
-						if (child.nodeType !== ELEMENT_NODE) {
+						if (nodeTypeOf(child) !== ELEMENT_NODE) {
 							continue;
 						}
 						const element = child as Element;
@@ -28367,7 +28383,7 @@ export class Document extends Node implements globalThis.Document {
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		if (node.nodeType === DOCUMENT_NODE) {
+		if (nodeTypeOf(node) === DOCUMENT_NODE) {
 			throw domError("NotSupportedError", "A document cannot be imported");
 		}
 		if (isShadowRoot(node)) {
@@ -28384,7 +28400,7 @@ export class Document extends Node implements globalThis.Document {
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		if (node.nodeType === DOCUMENT_NODE) {
+		if (nodeTypeOf(node) === DOCUMENT_NODE) {
 			throw domError("NotSupportedError", "A document cannot be adopted");
 		}
 		if (isShadowRoot(node)) {
@@ -28793,7 +28809,7 @@ function isPotentiallyScrollable(body: Element): boolean {
 	const parent = objectOf(_(body).parent);
 	return (
 		parent != null &&
-		parent.nodeType === ELEMENT_NODE &&
+		nodeTypeOf(parent) === ELEMENT_NODE &&
 		scrolls(parent as Element) &&
 		scrolls(body)
 	);
@@ -28822,7 +28838,7 @@ function getDocumentCollection(
 			new HTMLCollection(() => {
 				const found: Element[] = [];
 				for (const node of descendants(document)) {
-					if (node.nodeType === ELEMENT_NODE && match(node as Element)) {
+					if (nodeTypeOf(node) === ELEMENT_NODE && match(node as Element)) {
 						found.push(node as Element);
 					}
 				}
@@ -29488,7 +29504,7 @@ const parentNodeMembers = {
 			if (collection == null) {
 				collection = new HTMLCollection(() => getElementChildren(this), this, (
 					node,
-				) => node.nodeType === ELEMENT_NODE);
+				) => nodeTypeOf(node) === ELEMENT_NODE);
 				ensureList(collection);
 				slots.children = collection;
 			}
@@ -29503,7 +29519,7 @@ const parentNodeMembers = {
 				nodeSlots !== null;
 				nodeSlots = nodeSlots.next) {
 				const node = objectOf(nodeSlots);
-				if (node.nodeType === ELEMENT_NODE) {
+				if (nodeTypeOf(node) === ELEMENT_NODE) {
 					return node as Element;
 				}
 			}
@@ -29518,7 +29534,7 @@ const parentNodeMembers = {
 				nodeSlots !== null;
 				nodeSlots = nodeSlots.previous) {
 				const node = objectOf(nodeSlots);
-				if (node.nodeType === ELEMENT_NODE) {
+				if (nodeTypeOf(node) === ELEMENT_NODE) {
 					return node as Element;
 				}
 			}
@@ -29701,7 +29717,7 @@ const nonDocumentTypeChildNodeMembers = {
 				nodeSlots !== null;
 				nodeSlots = nodeSlots.previous) {
 				const node = objectOf(nodeSlots);
-				if (node.nodeType === ELEMENT_NODE) {
+				if (nodeTypeOf(node) === ELEMENT_NODE) {
 					return node as Element;
 				}
 			}
@@ -29716,7 +29732,7 @@ const nonDocumentTypeChildNodeMembers = {
 				nodeSlots !== null;
 				nodeSlots = nodeSlots.next) {
 				const node = objectOf(nodeSlots);
-				if (node.nodeType === ELEMENT_NODE) {
+				if (nodeTypeOf(node) === ELEMENT_NODE) {
 					return node as Element;
 				}
 			}
@@ -30101,11 +30117,11 @@ function cloneNode(
 	const target = document ?? nodeSlots.document;
 	const copy = nodeSlots[kCloneSingle](target);
 	const copySlots = _(copy);
-	if (copy.nodeType === DOCUMENT_NODE) {
+	if (nodeTypeOf(copy) === DOCUMENT_NODE) {
 		copySlots.document = copy as Document;
 	}
 	nodeSlots[kCloningSteps](copy, target, deep);
-	if (node.nodeType === ELEMENT_NODE) {
+	if (nodeTypeOf(node) === ELEMENT_NODE) {
 		const shadow = _((node as Element)).shadowRoot;
 		if (shadow !== null && _(shadow).extra.clonable) {
 			attachShadowRoot(
@@ -30144,10 +30160,10 @@ function cloneNode(
 }
 
 function equalNodes(a: Node, b: Node): boolean {
-	if (a.nodeType !== b.nodeType) {
+	if (nodeTypeOf(a) !== nodeTypeOf(b)) {
 		return false;
 	}
-	switch (a.nodeType) {
+	switch (nodeTypeOf(a)) {
 		case DOCUMENT_TYPE_NODE: {
 			const one = a as DocumentType;
 			const two = b as DocumentType;
@@ -30250,7 +30266,7 @@ function locateNamespacePrefix(
 }
 
 function locateNamespace(node: Node, prefix: string | null): string | null {
-	switch (node.nodeType) {
+	switch (nodeTypeOf(node)) {
 		case ELEMENT_NODE: {
 			// The two prefixes the XML specifications bind permanently.
 			if (prefix === "xml") {
@@ -30325,7 +30341,7 @@ function getNodeIndex(node: Node): number {
 // Zero for a doctype, the data length for character data, and the
 // child count for everything else.
 function getNodeLength(node: Node): number {
-	if (node.nodeType === DOCUMENT_TYPE_NODE) {
+	if (nodeTypeOf(node) === DOCUMENT_TYPE_NODE) {
 		return 0;
 	}
 	if (isCharacterData(node)) {
@@ -30677,8 +30693,8 @@ function getStaticRangePoints(init: unknown): [Node, number, Node, number] {
 			throw new TypeError("That is not a node");
 		}
 		if (
-			container.nodeType === DOCUMENT_TYPE_NODE ||
-			container.nodeType === ATTRIBUTE_NODE
+			nodeTypeOf(container) === DOCUMENT_TYPE_NODE ||
+			nodeTypeOf(container) === ATTRIBUTE_NODE
 		) {
 			throw domError(
 				"InvalidNodeTypeError",
@@ -30773,7 +30789,7 @@ function assertBoundaryNode(node: unknown): asserts node is Node {
 	if (!(node instanceof Node)) {
 		throw new TypeError("That is not a node");
 	}
-	if (node.nodeType === DOCUMENT_TYPE_NODE) {
+	if (nodeTypeOf(node) === DOCUMENT_TYPE_NODE) {
 		throw domError(
 			"InvalidNodeTypeError",
 			"A boundary point cannot be a doctype",
@@ -30898,7 +30914,7 @@ function getExtractionShape(range: Range): {
 		if (!isContained(child, range)) {
 			continue;
 		}
-		if (child.nodeType === DOCUMENT_TYPE_NODE) {
+		if (nodeTypeOf(child) === DOCUMENT_TYPE_NODE) {
 			throw hierarchyRequestError("A doctype cannot be taken out of a range");
 		}
 		containedChildren.push(child);
@@ -31198,7 +31214,7 @@ class Range extends AbstractRange implements globalThis.Range {
 				current = objectOf(_(current).parent);
 			}
 		}
-		const type = newParent.nodeType;
+		const type = nodeTypeOf(newParent);
 		if (
 			type === DOCUMENT_NODE ||
 			type === DOCUMENT_TYPE_NODE ||
@@ -31245,7 +31261,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (getRoot(node) !== rangeRoot(this)) {
 			return false;
 		}
-		if (node.nodeType === DOCUMENT_TYPE_NODE) {
+		if (nodeTypeOf(node) === DOCUMENT_TYPE_NODE) {
 			throw domError(
 				"InvalidNodeTypeError",
 				"A boundary point cannot be a doctype",
@@ -31275,7 +31291,7 @@ class Range extends AbstractRange implements globalThis.Range {
 				"The point is in a different tree from the range",
 			);
 		}
-		if (node.nodeType === DOCUMENT_TYPE_NODE) {
+		if (nodeTypeOf(node) === DOCUMENT_TYPE_NODE) {
 			throw domError(
 				"InvalidNodeTypeError",
 				"A boundary point cannot be a doctype",
@@ -31493,7 +31509,7 @@ function insertIntoRange(range: Range, node: Node): void {
 	}
 	const rangeSlots = _(range);
 	const startNode = rangeSlots.startNode;
-	const type = startNode.nodeType;
+	const type = nodeTypeOf(startNode);
 	if (
 		type === PROCESSING_INSTRUCTION_NODE ||
 		type === COMMENT_NODE ||
@@ -31531,7 +31547,7 @@ function insertIntoRange(range: Range, node: Node): void {
 	let newOffset = referenceNode === null
 		? getNodeLength(parent)
 		: getNodeIndex(referenceNode);
-	newOffset += node.nodeType === DOCUMENT_FRAGMENT_NODE
+	newOffset += nodeTypeOf(node) === DOCUMENT_FRAGMENT_NODE
 		? getNodeLength(node)
 		: 1;
 	preInsert(node, parent, referenceNode);
@@ -31569,7 +31585,7 @@ Object.defineProperty(Range.prototype, Symbol.toStringTag, {
 // in, not on the range.
 function rangeAnchor(range: Range): Element | null {
 	const container = range.startContainer;
-	return container.nodeType === ELEMENT_NODE
+	return nodeTypeOf(container) === ELEMENT_NODE
 		? (container as unknown as Element)
 		: ((container as unknown as Node).parentElement as Element | null);
 }
@@ -31613,7 +31629,7 @@ function getRangeClientRects(range: Range): globalThis.DOMRect[] {
 	const rects: globalThis.DOMRect[] = [];
 	const visit = (node: Node): void => {
 		const nodeSlots = _(node);
-		if (node.nodeType === TEXT_NODE && range.intersectsNode(node)) {
+		if (nodeTypeOf(node) === TEXT_NODE && range.intersectsNode(node)) {
 			const text = node as Text;
 			const from = range.startContainer === text ? range.startOffset : 0;
 			const to = range.endContainer === text
@@ -31623,7 +31639,7 @@ function getRangeClientRects(range: Range): globalThis.DOMRect[] {
 				rects.push(toViewportRect(attached, span.rect, anchor));
 			}
 		} else if (
-			node.nodeType === ELEMENT_NODE &&
+			nodeTypeOf(node) === ELEMENT_NODE &&
 			isContained(node, range) &&
 			(nodeSlots.parent === null ||
 				!isContained(objectOf(nodeSlots.parent)!, range))
@@ -32376,7 +32392,8 @@ function isPaintedText(node: Text, layout: Layout | null): boolean {
 }
 
 function isLineBreakElement(node: Node): node is Element {
-	return node.nodeType === ELEMENT_NODE && (node as Element).localName === "br";
+	return nodeTypeOf(node) === ELEMENT_NODE &&
+		(node as Element).localName === "br";
 }
 
 // The nearest ancestor that is not laid out inline, which is the block
@@ -32409,7 +32426,7 @@ function getSelectionTextNodes(
 	// of the host's children, and a slot's assigned nodes in place of its
 	// fallback. A UA shadow tree is a control's own, not document text.
 	const renderedChildren = (node: Node): Node[] => {
-		const shadow = node.nodeType === ELEMENT_NODE
+		const shadow = nodeTypeOf(node) === ELEMENT_NODE
 			? _((node as Element)).shadowRoot
 			: null;
 		const source = shadow !== null && !_(shadow).extra.uaShadowTree
@@ -32432,7 +32449,7 @@ function getSelectionTextNodes(
 	};
 	const collect = (node: Node): void => {
 		for (const child of renderedChildren(node)) {
-			if (child.nodeType === TEXT_NODE) {
+			if (nodeTypeOf(child) === TEXT_NODE) {
 				if (
 					isPaintedText(child as Text, layout) &&
 					(attached === undefined ||
@@ -32448,7 +32465,7 @@ function getSelectionTextNodes(
 				) {
 					nodes.push(child);
 				}
-			} else if (child.nodeType === ELEMENT_NODE) {
+			} else if (nodeTypeOf(child) === ELEMENT_NODE) {
 				const name = (child as Element).localName;
 				if (name !== "script" && name !== "style" && name !== "template") {
 					collect(child);
@@ -32492,7 +32509,7 @@ function getSelectionIndex(
 	node: Node,
 	offset: number,
 ): number | null {
-	if (node.nodeType === TEXT_NODE) {
+	if (nodeTypeOf(node) === TEXT_NODE) {
 		for (const part of run.parts) {
 			if (part.node === node) {
 				return part.start + Math.min(offset, part.length);
@@ -32866,7 +32883,7 @@ function getSelectionLineOf(
 ): number {
 	const [node, offset] = from;
 	let y: number | null = null;
-	if (node.nodeType === TEXT_NODE) {
+	if (nodeTypeOf(node) === TEXT_NODE) {
 		for (const fragment of layout.lineFragments(node as Text)) {
 			if (fragment.startOffset <= offset && offset < fragment.endOffset) {
 				y = Math.round(fragment.rect.y);
@@ -33633,7 +33650,7 @@ function filterNode(
 	if (traverser.active.value) {
 		throw domError("InvalidStateError", "The filter is already running");
 	}
-	if (((1 << (node.nodeType - 1)) & traverser.whatToShow) === 0) {
+	if (((1 << (nodeTypeOf(node) - 1)) & traverser.whatToShow) === 0) {
 		return FILTER_SKIP;
 	}
 	const filter = traverser.filter;
@@ -34174,7 +34191,7 @@ function movePointerStatesOffRemoval(
 ): void {
 	const heir = parent instanceof ShadowRoot
 		? (_(parent).extra.host as Element)
-		: parent.nodeType === ELEMENT_NODE ? (parent as Element) : null;
+		: nodeTypeOf(parent) === ELEMENT_NODE ? (parent as Element) : null;
 	for (const states of [activeElements, hoveredElements]) {
 		const element = states.get(document);
 		if (
@@ -34284,7 +34301,7 @@ export function isTargetElement(element: Element): boolean {
 // The element the URL's fragment names, or null (HTML's indicated part).
 function getTargetElement(document: Document): Element | null {
 	for (const node of descendants(document)) {
-		if (node.nodeType === ELEMENT_NODE && isTargetElement(node as Element)) {
+		if (nodeTypeOf(node) === ELEMENT_NODE && isTargetElement(node as Element)) {
 			return node as Element;
 		}
 	}
@@ -34776,7 +34793,7 @@ function createTreeAdapter(document: Document | null) {
 		},
 		insertText(parentNode: Node, text: string): void {
 			const last = objectOf(_(parentNode).lastChild);
-			if (last !== null && last.nodeType === TEXT_NODE) {
+			if (last !== null && nodeTypeOf(last) === TEXT_NODE) {
 				_((last as CharacterData)).data += text;
 				return;
 			}
@@ -34791,7 +34808,7 @@ function createTreeAdapter(document: Document | null) {
 			referenceNode: Node,
 		): void {
 			const previous = objectOf(_(referenceNode).previous);
-			if (previous !== null && previous.nodeType === TEXT_NODE) {
+			if (previous !== null && nodeTypeOf(previous) === TEXT_NODE) {
 				_((previous as CharacterData)).data += text;
 				return;
 			}
@@ -34853,16 +34870,16 @@ function createTreeAdapter(document: Document | null) {
 			return _(doctypeNode).extra.systemId;
 		},
 		isTextNode(node: Node): boolean {
-			return node.nodeType === TEXT_NODE;
+			return nodeTypeOf(node) === TEXT_NODE;
 		},
 		isCommentNode(node: Node): boolean {
-			return node.nodeType === COMMENT_NODE;
+			return nodeTypeOf(node) === COMMENT_NODE;
 		},
 		isDocumentTypeNode(node: Node): boolean {
-			return node.nodeType === DOCUMENT_TYPE_NODE;
+			return nodeTypeOf(node) === DOCUMENT_TYPE_NODE;
 		},
 		isElementNode(node: Node): boolean {
-			return node.nodeType === ELEMENT_NODE;
+			return nodeTypeOf(node) === ELEMENT_NODE;
 		},
 		setNodeSourceCodeLocation(): void {},
 		getNodeSourceCodeLocation(): undefined {
@@ -34896,7 +34913,7 @@ function dropRegistry(node: Node): void {
 // template, which is the parser's own error handling.
 function attachDeclarativeShadowRoots(root: Node): void {
 	for (const child of getChildNodeArray(root)) {
-		if (child.nodeType !== ELEMENT_NODE) {
+		if (nodeTypeOf(child) !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = child as Element;
@@ -34944,7 +34961,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	}
 	const templateSlots = _(template);
 	const host = objectOf(templateSlots.parent);
-	if (host === null || host.nodeType !== ELEMENT_NODE) {
+	if (host === null || nodeTypeOf(host) !== ELEMENT_NODE) {
 		return false;
 	}
 	try {
@@ -35461,7 +35478,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 
 	function appendText(parent: Node, data: string): void {
 		const last = objectOf(_(parent).lastChild);
-		if (last !== null && last.nodeType === TEXT_NODE) {
+		if (last !== null && nodeTypeOf(last) === TEXT_NODE) {
 			_((last as CharacterData)).data += data;
 			return;
 		}
@@ -35835,7 +35852,7 @@ function serializeFragment(
 ): string {
 	let children = node;
 	if (
-		node.nodeType === ELEMENT_NODE &&
+		nodeTypeOf(node) === ELEMENT_NODE &&
 		_((node as Element)).namespace === HTML_NAMESPACE &&
 		_((node as Element)).localName === "template"
 	) {
@@ -35845,7 +35862,7 @@ function serializeFragment(
 		}
 	}
 	let html = "";
-	if (node.nodeType === ELEMENT_NODE) {
+	if (nodeTypeOf(node) === ELEMENT_NODE) {
 		const shadow = _((node as Element)).shadowRoot;
 		if (
 			shadow !== null &&
@@ -35894,7 +35911,7 @@ function serializeNode(
 	shadowRoots: ShadowRoot[],
 ): string {
 	const nodeSlots = _(node);
-	switch (node.nodeType) {
+	switch (nodeTypeOf(node)) {
 		case ELEMENT_NODE: {
 			const element = node as Element;
 			const namespace = _(element).namespace;
@@ -35921,7 +35938,7 @@ function serializeNode(
 				const first = objectOf(_(element).firstChild);
 				if (
 					first !== null &&
-					first.nodeType === TEXT_NODE &&
+					nodeTypeOf(first) === TEXT_NODE &&
 					_((first as CharacterData)).data.startsWith("\n")
 				) {
 					html += "\n";
@@ -35935,7 +35952,7 @@ function serializeNode(
 			const parent = objectOf(nodeSlots.parent);
 			if (
 				parent !== null &&
-				parent.nodeType === ELEMENT_NODE &&
+				nodeTypeOf(parent) === ELEMENT_NODE &&
 				_((parent as Element)).namespace === HTML_NAMESPACE &&
 				RAW_TEXT_PARENTS.has(_((parent as Element)).localName)
 			) {
@@ -36402,7 +36419,7 @@ export function attachDocument(
 		ensureUAShadowTrees(attached.documentElement);
 	}
 	for (const node of shadowIncludingInclusiveDescendants(attached)) {
-		const root = node.nodeType === ELEMENT_NODE
+		const root = nodeTypeOf(node) === ELEMENT_NODE
 			? _((node as Element)).shadowRoot
 			: null;
 		if (root !== null) {
@@ -36676,7 +36693,7 @@ function handleMutationRecords(
 			continue;
 		}
 		for (const added of getAddedNodes(record)) {
-			if (added.nodeType !== added.ELEMENT_NODE) {
+			if (nodeTypeOf(added) !== added.ELEMENT_NODE) {
 				continue;
 			}
 			ensureUAShadowTrees(added);
@@ -36699,7 +36716,7 @@ function handleMutationRecords(
 function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 	for (const record of mutations) {
 		for (const node of getAddedNodes(record)) {
-			if (node.nodeType !== node.ELEMENT_NODE) {
+			if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
 				continue;
 			}
 			const element = node as Element;
@@ -36862,11 +36879,8 @@ type AttachedDocument = Document;
 function getAttachedDocument(
 	node: globalThis.Node,
 ): AttachedDocument | undefined {
-	const shaped = node as {nodeType?: number; ownerDocument?: Document | null};
-	const document = (
-		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
-	) as Document | null;
-	return document !== null && _(document).extra.exchange !== undefined
+	const document = _(node as Node).document;
+	return _(document).extra.exchange !== undefined
 		? (document as AttachedDocument)
 		: undefined;
 }
@@ -39633,7 +39647,28 @@ export function createWindow(
 }
 
 export function isElement(node: Node): node is Element {
-	return node.nodeType === ELEMENT_NODE;
+	return _(node).nodeType === ELEMENT_NODE;
+}
+
+/** The node's nodeType, read without going through the page's binding. */
+export function nodeTypeOf(node: globalThis.Node): number {
+	return _(node as Node).nodeType;
+}
+
+/** The node's ownerDocument, read without going through its binding. */
+export function ownerDocumentOf(node: globalThis.Node): Document | null {
+	const document = _(node as Node).document;
+	return document === (node as unknown) ? null : document;
+}
+
+/** The element's localName, read without going through its binding. */
+export function localNameOf(element: globalThis.Element): string {
+	return _(element as Element).localName;
+}
+
+/** The element's namespaceURI, read without going through its binding. */
+export function namespaceOf(element: globalThis.Element): string | null {
+	return _(element as Element).namespace;
 }
 
 export function parentElement(node: Node): Element | null {

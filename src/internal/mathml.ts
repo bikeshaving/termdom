@@ -7,7 +7,7 @@
 
 import {getCellSize, getComputedValue, resolveLength} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
-import {getDocumentExchange, MATHML_NAMESPACE} from "./dom.ts";
+import {getDocumentExchange, MATHML_NAMESPACE, nodeTypeOf} from "./dom.ts";
 import type {CellStyle} from "./framebuffer.ts";
 import {getStringWidth, graphemeSegmenter} from "./text.ts";
 
@@ -555,7 +555,7 @@ const INVISIBLE_OPERATORS = /^[\u2061-\u2064\u200b]$/u;
 
 export function isMathRoot(node: Node): boolean {
 	return (
-		node.nodeType === node.ELEMENT_NODE &&
+		nodeTypeOf(node) === node.ELEMENT_NODE &&
 		(node as Element).namespaceURI === MATHML_NAMESPACE &&
 		(node as Element).localName === "math"
 	);
@@ -563,7 +563,7 @@ export function isMathRoot(node: Node): boolean {
 
 function isMathElement(node: Node): boolean {
 	return (
-		node.nodeType === node.ELEMENT_NODE &&
+		nodeTypeOf(node) === node.ELEMENT_NODE &&
 		(node as Element).namespaceURI === MATHML_NAMESPACE
 	);
 }
@@ -649,7 +649,7 @@ function createSourcedBox(
 function readTokenChars(element: Element): SourcedChar[] {
 	const chars: SourcedChar[] = [];
 	const walk = (node: Node): void => {
-		if (node.nodeType === node.TEXT_NODE) {
+		if (nodeTypeOf(node) === node.TEXT_NODE) {
 			chars.push(...readTextChars(node as Text));
 			return;
 		}
@@ -759,7 +759,7 @@ export function getMathCellRects(
 			const source = cell.source;
 			if (
 				source !== undefined &&
-				(node.nodeType === node.TEXT_NODE
+				(nodeTypeOf(node) === node.TEXT_NODE
 					? source.node === node
 					: node.contains(source.node))
 			) {
@@ -872,12 +872,13 @@ export function getBoxText(box: MathBox): string[] {
 function getLayoutChildren(element: Element): Node[] {
 	const children: Node[] = [];
 	for (const child of element.childNodes) {
-		if (child.nodeType === child.ELEMENT_NODE) {
+		if (nodeTypeOf(child) === child.ELEMENT_NODE) {
 			if (getComputedValue(child as Element, "display") !== "none") {
 				children.push(child);
 			}
 		} else if (
-			child.nodeType === child.TEXT_NODE && (child as Text).data.trim() !== ""
+			nodeTypeOf(child) === child.TEXT_NODE &&
+			(child as Text).data.trim() !== ""
 		) {
 			children.push(child);
 		}
@@ -886,7 +887,7 @@ function getLayoutChildren(element: Element): Node[] {
 }
 
 function layoutNode(node: Node, context: MathContext): MathBox {
-	if (node.nodeType === node.TEXT_NODE) {
+	if (nodeTypeOf(node) === node.TEXT_NODE) {
 		const parent = node.parentElement;
 		return createSourcedBox(
 			collapseChars(readTextChars(node as Text)),
@@ -2148,7 +2149,7 @@ function parenthesize(
 	if (
 		box.width <= 1 ||
 		(node !== undefined &&
-			node.nodeType === node.ELEMENT_NODE &&
+			nodeTypeOf(node) === node.ELEMENT_NODE &&
 			units.has((node as Element).localName))
 	) {
 		return box;

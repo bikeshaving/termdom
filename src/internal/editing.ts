@@ -12,6 +12,7 @@ import {
 	constructInternal,
 	dispatchAsUserAgent,
 	getFocusedElement,
+	nodeTypeOf,
 	revealEditingCaret,
 } from "./dom.ts";
 import {getNextGraphemeBoundary, getPreviousGraphemeBoundary} from "./text.ts";
@@ -410,7 +411,7 @@ function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 	let fallback: EditingPoint | null = null;
 	let node: globalThis.Node | null = element.firstChild;
 	while (node !== null) {
-		if (node.nodeType === TEXT_NODE) {
+		if (nodeTypeOf(node) === TEXT_NODE) {
 			const data = (node as globalThis.Text).data;
 			if (!COLLAPSIBLE_ONLY.test(data)) {
 				return {node, offset: data.search(/[^ \t\n\r\f]/)};
@@ -418,7 +419,7 @@ function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 			fallback ??= {node, offset: 0};
 		} else if (isAtomic(node)) {
 			fallback ??= {node: node.parentNode!, offset: getChildIndex(node)};
-		} else if (node.nodeType === ELEMENT_NODE && node.firstChild === null) {
+		} else if (nodeTypeOf(node) === ELEMENT_NODE && node.firstChild === null) {
 			fallback ??= {node, offset: 0};
 		}
 		if (node.firstChild !== null && !isAtomic(node)) {
@@ -436,16 +437,16 @@ function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 // A point in an element next to a text node is the same place as a point
 // in that text node, and the layout can only draw a caret in text.
 function normalizeCaretPoint(point: EditingPoint): EditingPoint {
-	if (point.node.nodeType !== ELEMENT_NODE) {
+	if (nodeTypeOf(point.node) !== ELEMENT_NODE) {
 		return point;
 	}
 	const children = point.node.childNodes;
 	const before = point.offset > 0 ? children[point.offset - 1] : null;
-	if (before !== null && before.nodeType === TEXT_NODE) {
+	if (before !== null && nodeTypeOf(before) === TEXT_NODE) {
 		return {node: before, offset: (before as globalThis.Text).data.length};
 	}
 	const after = children[point.offset] ?? null;
-	if (after !== null && after.nodeType === TEXT_NODE) {
+	if (after !== null && nodeTypeOf(after) === TEXT_NODE) {
 		return {node: after, offset: 0};
 	}
 	return point;
@@ -732,7 +733,7 @@ function getEdgeBlockIn(
 	node: globalThis.Node,
 	forward: boolean,
 ): globalThis.Element | null {
-	if (node.nodeType !== ELEMENT_NODE) {
+	if (nodeTypeOf(node) !== ELEMENT_NODE) {
 		return null;
 	}
 	const element = node as globalThis.Element;
@@ -789,7 +790,7 @@ function hasRenderedContent(element: globalThis.Element): boolean {
 }
 
 function insertNodeAt(point: EditingPoint, node: globalThis.Node): void {
-	if (point.node.nodeType === TEXT_NODE) {
+	if (nodeTypeOf(point.node) === TEXT_NODE) {
 		const text = point.node as globalThis.Text;
 		const parent = text.parentNode!;
 		if (point.offset === 0) {
@@ -810,7 +811,7 @@ function isAtBlockEnd(
 	host: globalThis.HTMLElement,
 	point: EditingPoint,
 ): boolean {
-	if (point.node.nodeType === TEXT_NODE) {
+	if (nodeTypeOf(point.node) === TEXT_NODE) {
 		if (point.offset < (point.node as globalThis.Text).data.length) {
 			return false;
 		}
@@ -834,7 +835,7 @@ function deleteEditingContent(
 		return deleteSelectionContents(host, selection);
 	}
 	const point = getCaretPoint(selection);
-	const text = point.node.nodeType === TEXT_NODE
+	const text = nodeTypeOf(point.node) === TEXT_NODE
 		? (point.node as globalThis.Text)
 		: null;
 	if (
@@ -847,7 +848,7 @@ function deleteEditingContent(
 	if (neighbor === null) {
 		return mergeAcrossBlocks(host, selection, point, forward);
 	}
-	if (neighbor.nodeType === TEXT_NODE) {
+	if (nodeTypeOf(neighbor) === TEXT_NODE) {
 		const data = neighbor as globalThis.Text;
 		return data.data.length > 0 &&
 			cutGrapheme(
@@ -962,11 +963,11 @@ function openTextAt(
 	point: EditingPoint,
 ): {node: globalThis.Text; offset: number} {
 	takePlaceholderBreak(host, point);
-	if (point.node.nodeType === TEXT_NODE) {
+	if (nodeTypeOf(point.node) === TEXT_NODE) {
 		return {node: point.node as globalThis.Text, offset: point.offset};
 	}
 	const inside = normalizeCaretPoint(point);
-	if (inside.node.nodeType === TEXT_NODE) {
+	if (nodeTypeOf(inside.node) === TEXT_NODE) {
 		return {node: inside.node as globalThis.Text, offset: inside.offset};
 	}
 	const parent = point.node as globalThis.Element;
@@ -1016,7 +1017,7 @@ function getAdjacentNode(
 	forward: boolean,
 ): globalThis.Node | null {
 	let node = point.node;
-	let candidate: globalThis.Node | null = node.nodeType === TEXT_NODE
+	let candidate: globalThis.Node | null = nodeTypeOf(node) === TEXT_NODE
 		? (forward ? node.nextSibling : node.previousSibling)
 		: (node.childNodes[forward ? point.offset : point.offset - 1] ?? null);
 	while (candidate === null) {
@@ -1028,7 +1029,7 @@ function getAdjacentNode(
 		node = parent;
 	}
 	let found: globalThis.Node = candidate;
-	while (found.nodeType === ELEMENT_NODE && !isAtomic(found)) {
+	while (nodeTypeOf(found) === ELEMENT_NODE && !isAtomic(found)) {
 		const child = forward ? found.firstChild : found.lastChild;
 		if (child === null) {
 			break;
@@ -1120,7 +1121,7 @@ function hasRenderedSibling(
 // A line break holds no text of its own, so a space next to one still
 // collapses away and an empty block that ends in one is still empty.
 function isRenderedNode(node: globalThis.Node): boolean {
-	return node.nodeType === ELEMENT_NODE
+	return nodeTypeOf(node) === ELEMENT_NODE
 		? !isBreak(node)
 		: !COLLAPSIBLE_ONLY.test(node.textContent ?? "");
 }
@@ -1150,7 +1151,7 @@ function isSpace(character: string): boolean {
 }
 
 function isBreak(node: globalThis.Node): boolean {
-	return node.nodeType === ELEMENT_NODE &&
+	return nodeTypeOf(node) === ELEMENT_NODE &&
 		(node as globalThis.Element).localName === "br";
 }
 
@@ -1159,7 +1160,7 @@ function isBlockElement(
 	node: globalThis.Node,
 ): boolean {
 	return node === host ||
-		(node.nodeType === ELEMENT_NODE &&
+		(nodeTypeOf(node) === ELEMENT_NODE &&
 			BLOCK_TAGS.has((node as globalThis.Element).localName));
 }
 
@@ -1205,5 +1206,7 @@ function asNode(target: globalThis.EventTarget | null): globalThis.Node | null {
 }
 
 function asElement(node: globalThis.Node): globalThis.Element | null {
-	return node.nodeType === ELEMENT_NODE ? (node as globalThis.Element) : null;
+	return nodeTypeOf(node) === ELEMENT_NODE
+		? (node as globalThis.Element)
+		: null;
 }

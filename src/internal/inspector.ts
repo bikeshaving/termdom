@@ -8,6 +8,7 @@ import {
 	Element,
 	type Node,
 	NodeList,
+	nodeTypeOf,
 	Text,
 } from "./dom.ts";
 
@@ -72,7 +73,7 @@ function inspectDocument(
 }
 
 function inspectNode(node: Node, options: InspectorOptions = {}): string {
-	switch (node.nodeType) {
+	switch (nodeTypeOf(node)) {
 		case 1:
 			return inspectElement(node as Element, options);
 		case 3:
@@ -196,7 +197,7 @@ function formatChildren(
 
 	const children = Array.from(element.childNodes);
 
-	if (children.length === 1 && children[0].nodeType === 3) {
+	if (children.length === 1 && nodeTypeOf(children[0]) === 3) {
 		const text = children[0].textContent || "";
 		if (text.trim() && text.length < 50) {
 			return `${c.text}${text.trim()}${c.reset}`;

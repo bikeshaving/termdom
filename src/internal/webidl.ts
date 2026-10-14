@@ -114,34 +114,27 @@ function parseCheck(
 	};
 }
 
-const implementsCache = new Map<Constructor, Map<Constructor, boolean>>();
+// The classes each class takes its slots from, itself included.
+const lineages = new Map<Constructor, Set<Constructor>>();
 
 /** Whether objects `type` makes implement `owner`'s interface. */
 export function implementsInterface(
 	type: Constructor,
 	owner: Constructor,
 ): boolean {
-	let known = implementsCache.get(owner);
-	if (known === undefined) {
-		known = new Map();
-		implementsCache.set(owner, known);
-	}
-	let result = known.get(type);
-	if (result === undefined) {
-		result = false;
+	let lineage = lineages.get(type);
+	if (lineage === undefined) {
+		lineage = new Set();
 		for (
 			let current: unknown = type;
 			typeof current === "function" && current !== Function.prototype;
 			current = parentOf(current as Constructor)
 		) {
-			if (current === owner) {
-				result = true;
-				break;
-			}
+			lineage.add(current as Constructor);
 		}
-		known.set(type, result);
+		lineages.set(type, lineage);
 	}
-	return result;
+	return lineage.has(owner);
 }
 
 // Whether `value` is an object of one of the check's interfaces. One
@@ -222,6 +215,8 @@ function convertArguments(
  * that call runs the next definition up the class's chain.
  */
 interface Resolve {
+	// The one definition every object runs, when no class moved its own up.
+	fixed: PropertyDescriptor | undefined;
 	enter(type: Constructor, object: unknown): PropertyDescriptor | undefined;
 	leave(): void;
 }
@@ -233,26 +228,38 @@ function wrapOperation(
 	member: Member,
 	resolve: Resolve,
 ): (...args: unknown[]) => unknown {
-	let lastType: Constructor | null = null;
 	const hasChecks = member.checks.some((check) => check !== null);
 	const context = `execute '${name}' on '${ownerName}'`;
+	const fixed = resolve.fixed?.value as
+		((...args: unknown[]) => unknown) | undefined;
+	let accepted: Constructor | null = null;
+	let acceptedBefore: Constructor | null = null;
 	const wrapper = {
-		[name](this: unknown, ...args: unknown[]): unknown {
+		[name](this: unknown): unknown {
 			const type = typeOf(this);
-			if (type === null || type !== lastType) {
-				if (type === null || !implementsInterface(type, owner)) {
+			if (type === null) {
+				throw new TypeError("Illegal invocation");
+			}
+			if (type !== accepted && type !== acceptedBefore) {
+				if (!implementsInterface(type, owner)) {
 					throw new TypeError("Illegal invocation");
 				}
-				lastType = type;
+				acceptedBefore = accepted;
+				accepted = type;
 			}
+			// eslint-disable-next-line prefer-rest-params
+			const args = arguments;
 			if (args.length < member.required) {
 				throw arity(context, member.required, args.length);
 			}
 			const converted = hasChecks
 				? convertArguments(args, member, context)
 				: null;
+			if (fixed !== undefined) {
+				return Reflect.apply(fixed, this, converted ?? args);
+			}
 			const implementation =
-				resolve.enter(type!, this)!.value as (...args: unknown[]) => unknown;
+				resolve.enter(type, this)!.value as (...args: unknown[]) => unknown;
 			try {
 				return Reflect.apply(implementation, this, converted ?? args);
 			} finally {
@@ -272,17 +279,23 @@ function wrapAttribute(
 	resolve: Resolve,
 	settable: boolean,
 ): PropertyDescriptor {
-	let lastType: Constructor | null = null;
+	let accepted: Constructor | null = null;
+	let acceptedBefore: Constructor | null = null;
 	const brand = (object: unknown): Constructor | null => {
 		const type = typeOf(object);
-		if (type === null || type !== lastType) {
-			if (type === null || !implementsInterface(type, owner)) {
+		if (type === null) {
+			return null;
+		}
+		if (type !== accepted && type !== acceptedBefore) {
+			if (!implementsInterface(type, owner)) {
 				return null;
 			}
-			lastType = type;
+			acceptedBefore = accepted;
+			accepted = type;
 		}
 		return type;
 	};
+	const fixedGet = resolve.fixed?.get;
 	const check = member.checks[0] ?? null;
 	const get = {
 		[name](this: unknown): unknown {
@@ -292,6 +305,9 @@ function wrapAttribute(
 					return undefined;
 				}
 				throw new TypeError("Illegal invocation");
+			}
+			if (fixedGet !== undefined) {
+				return fixedGet.call(this);
 			}
 			const getter = resolve.enter(type, this)!.get!;
 			try {
@@ -506,14 +522,19 @@ export function installInterfaces(
 			return null;
 		}
 		if (overrides.size === 0) {
-			return {enter: () => base, leave() {}};
+			return {fixed: base, enter: () => base, leave() {}};
 		}
 		const chains =
 			new Map<Constructor, Array<PropertyDescriptor | undefined>>();
-		const calls: Array<{object: unknown; depth: number}> = [];
+		const objects: unknown[] = [];
+		const depths: number[] = [];
+		let calls = 0;
+		let lastType: Constructor | null = null;
+		let lastChain: Array<PropertyDescriptor | undefined> = [];
 		return {
+			fixed: undefined,
 			enter(type, object) {
-				let chain = chains.get(type);
+				let chain = type === lastType ? lastChain : chains.get(type);
 				if (chain === undefined) {
 					chain = [];
 					for (const current of [type, ...ancestors(type)]) {
@@ -528,15 +549,19 @@ export function installInterfaces(
 					chain.push(base);
 					chains.set(type, chain);
 				}
-				const outer = calls.at(-1);
-				const depth = outer !== undefined && outer.object === object
-					? Math.min(outer.depth + 1, chain.length - 1)
+				lastType = type;
+				lastChain = chain;
+				const depth = calls > 0 && objects[calls - 1] === object
+					? Math.min(depths[calls - 1] + 1, chain.length - 1)
 					: 0;
-				calls.push({object, depth});
+				objects[calls] = object;
+				depths[calls] = depth;
+				calls++;
 				return chain[depth];
 			},
 			leave() {
-				calls.pop();
+				calls--;
+				objects[calls] = undefined;
 			},
 		};
 	}
