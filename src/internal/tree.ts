@@ -6,8 +6,16 @@
  */
 import type {Attr, AttributeSlots, Document, Element, Node} from "./dom.ts";
 import type {Exchange} from "./exchange.ts";
-import {_, objectOf, rememberObject, type Slots, slotsOf} from "./slots.ts";
+import {
+	_,
+	_maybe,
+	objectOf,
+	rememberObject,
+	type Slots,
+	slotsOf,
+} from "./slots.ts";
 import {toASCIILowercase} from "./text.ts";
+import type {CellSizeSetting} from "./units.ts";
 
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -220,4 +228,22 @@ export function getAttachedDocument(
 	return _(document).extra.exchange !== undefined
 		? (document as AttachedDocument)
 		: undefined;
+}
+
+/** The cellSize option of the TermDOM drawing the node's document. */
+export function getCellSizeSetting(
+	node: globalThis.Node,
+): CellSizeSetting | undefined {
+	return _maybe(getAttachedDocument(node))?.extra.cellSize;
+}
+
+/**
+ * One cell in the terminal's pixels, as the framebuffer drawing the
+ * node's document has it, or null for a document no TermDOM draws.
+ */
+export function getCellPixels(
+	node: globalThis.Node,
+): Readonly<{width: number; height: number}> | null {
+	return _maybe(getAttachedDocument(node))?.extra.framebuffer.cellPixels ??
+		null;
 }

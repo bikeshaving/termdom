@@ -27,13 +27,10 @@ import {
 import {
 	adoptStyleSheets,
 	type Cascade,
-	type CellSizeSetting,
 	CSSOM_INTERFACES,
 	getAdoptedStyleSheets,
 	getBoxModel,
-	getCellSize,
 	getComputedValue,
-	getImageCellSize,
 	getInlineStyle,
 	getStyleSheets,
 	getWhiteSpace,
@@ -41,11 +38,9 @@ import {
 	handleMutations,
 	handleStateChange,
 	mediaQueryMatches,
-	pxFromCells,
 	styleAttributeChanged,
 	styleElementSheet,
 	styleShadowAttached,
-	UNIT_CELL,
 } from "./cssom.ts";
 import {
 	closestSelector,
@@ -153,6 +148,13 @@ import {
 	XML_NAMESPACE,
 	XMLNS_NAMESPACE,
 } from "./tree.ts";
+import {
+	type CellSizeSetting,
+	getCellSize,
+	getImageCellSize,
+	pxFromCells,
+	UNIT_CELL,
+} from "./units.ts";
 import {
 	type Constructor,
 	installInterfaces,
@@ -36214,24 +36216,6 @@ export function getGraphicsSettings(
 	return attached === undefined
 		? undefined
 		: {images: _(attached).extra.images, canvas: _(attached).extra.canvas};
-}
-
-/** The cellSize option of the TermDOM drawing the node's document. */
-export function getCellSizeSetting(
-	node: globalThis.Node,
-): CellSizeSetting | undefined {
-	return _maybe(getAttachedDocument(node))?.extra.cellSize;
-}
-
-/**
- * One cell in the terminal's pixels, as the framebuffer drawing the
- * node's document has it, or null for a document no TermDOM draws.
- */
-export function getCellPixels(
-	node: globalThis.Node,
-): Readonly<{width: number; height: number}> | null {
-	return _maybe(getAttachedDocument(node))?.extra.framebuffer.cellPixels ??
-		null;
 }
 
 /** OSC 52 carries text and only text. */

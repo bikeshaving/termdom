@@ -6,7 +6,6 @@ import {
 	getCellBlockMargin,
 	getCellBlockSize,
 	getCellPadding,
-	getCellSize,
 	getComputedValue,
 	getDeclaredDisplay,
 	getWhiteSpace as getElementWhiteSpace,
@@ -14,11 +13,9 @@ import {
 	getTabSize,
 	getUsedOverflow,
 	hasLayoutOrPaintContainment,
-	pxFromCells,
 	toCellBorder,
 	toCellLength,
 	toWholeCells,
-	UNIT_CELL,
 	usedValuesChanged,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -91,6 +88,7 @@ import {
 	writeClusterWidths,
 } from "./text.ts";
 import {attributeOf, localNameOf, nodeTypeOf} from "./tree.ts";
+import {getCellSize, pxFromCells, UNIT_CELL} from "./units.ts";
 
 type Position = "static" | "relative" | "absolute" | "fixed" | "sticky";
 

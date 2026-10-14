@@ -1,15 +1,7 @@
 import "./internal/inspector.ts";
 
 import type {CanvasCellGridContext} from "./internal/canvas.ts";
-import {
-	Cascade,
-	type CellSize,
-	type CellSizeSetting,
-	dispose,
-	getCellSize,
-	hoverRulesExist,
-	UNIT_CELL,
-} from "./internal/cssom.ts";
+import {Cascade, dispose, hoverRulesExist} from "./internal/cssom.ts";
 import {
 	applyMutations,
 	attachDocument,
@@ -26,7 +18,6 @@ import {
 	type EventTargetSlots,
 	flushLayout,
 	flushObservers,
-	getCellSizeSetting,
 	getGraphicsSettings,
 	getProcessTimers,
 	type GraphicsSetting,
@@ -115,9 +106,16 @@ import {
 } from "./internal/resources.ts";
 import {_, type internals, moveLateMembers} from "./internal/slots.ts";
 import {queueMicrotask, setTimeout} from "./internal/timers.ts";
+import {getCellSizeSetting} from "./internal/tree.ts";
+import {
+	type CellSize,
+	type CellSizeSetting,
+	getCellSize,
+	UNIT_CELL,
+} from "./internal/units.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
-export type {CellSize} from "./internal/cssom.ts";
+export type {CellSize} from "./internal/units.ts";
 export {transportFromProcess, transportFromSSH} from "./internal/exchange.ts";
 export {
 	ExtendableEvent,

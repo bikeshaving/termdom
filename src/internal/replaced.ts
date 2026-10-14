@@ -14,13 +14,7 @@
  * are cells.
  */
 import {type CanvasTextRun, halfBlockCell} from "./canvas.ts";
-import {
-	getBoxModel,
-	getCellSize,
-	getComputedValue,
-	getImageCellSize,
-	toCellLength,
-} from "./cssom.ts";
+import {getBoxModel, getComputedValue, toCellLength} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
 	CellContext,
@@ -43,6 +37,7 @@ import {
 	sampleBitmap,
 } from "./images.ts";
 import {getStringWidth} from "./text.ts";
+import {getCellSize, getImageCellSize} from "./units.ts";
 
 /**
  * Whether the element lays out as a replaced element. An image that is
