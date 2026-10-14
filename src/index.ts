@@ -188,6 +188,17 @@ export interface TermDOMOptions {
 	 * value throws a TypeError.
 	 */
 	colorScheme?: "auto" | "light" | "dark";
+
+	/**
+	 * Whether an exception the page lets escape ends the session. With
+	 * `false`, the default, the error is reported and the app goes on, as
+	 * in a browser. With `true`, the first one hands the terminal back,
+	 * prints the error and closes the transport with status 1: a process
+	 * exits, and an SSH session ends that client's channel alone. Meant
+	 * for development, where an error should stop the program where it
+	 * happened. Any value but a boolean throws a TypeError.
+	 */
+	failFast?: boolean;
 }
 
 /**
@@ -250,6 +261,13 @@ function toGraphicsSetting(
 		return "none";
 	}
 	throw new TypeError(`${name} must be "auto", "cells" or "none"`);
+}
+
+function toFailFast(option: unknown): boolean {
+	if (option === undefined || typeof option === "boolean") {
+		return option === true;
+	}
+	throw new TypeError("failFast must be a boolean");
 }
 
 function isSameCell(a: Readonly<CellSize>, b: Readonly<CellSize>): boolean {
@@ -330,6 +348,8 @@ interface TermDOMSlots extends EventTargetSlots {
 	// the document when the session ends.
 	heldErrors: string[];
 	errored: boolean;
+	// Cleared once an escaped exception has begun to end the session.
+	failFast: boolean;
 	suspended: boolean;
 	// Held errors handed to the output queue whose write has not finished.
 	unwrittenErrors: string | null;
@@ -406,6 +426,7 @@ export class TermDOM extends EventTarget {
 		slots.lastFrameAt = -Infinity;
 		slots.heldErrors = [];
 		slots.errored = false;
+		slots.failFast = toFailFast(options.failFast);
 		slots.suspended = false;
 		slots.unwrittenErrors = null;
 		slots.renderCount = 0;
@@ -984,20 +1005,42 @@ function getExitStatus(termDOM: TermDOM): number {
  * An exception the page let escape, once the window's error event has
  * not handled it. A browser would log it to the console and go on. The
  * console here is the transport's log when it has one apart from the
- * screen, and the scrollback below the document at the end otherwise;
- * the app runs on either way.
+ * screen, and the scrollback below the document at the end otherwise.
+ * The app runs on either way, unless failFast ends the session.
  */
 function reportUncaught(termDOM: TermDOM, error: unknown): void {
 	const text = formatError(error);
 	const termDOMSlots = _(termDOM);
-	if (termDOMSlots.transport.logError?.(text)) {
+	if (!termDOMSlots.transport.logError?.(text)) {
+		if (!isAttached(termDOM) || !termDOMSlots.transport.interactive) {
+			console.error(text);
+		} else {
+			holdError(termDOM, error);
+		}
+	}
+	if (termDOMSlots.failFast) {
+		termDOMSlots.failFast = false;
+		failTermDOM(termDOM);
+	}
+}
+
+// As closeTermDOM, for a session that is not attached too: a process
+// that never attached exits all the same.
+function failTermDOM(termDOM: TermDOM): void {
+	const termDOMSlots = _(termDOM);
+	if (termDOMSlots.lifecycle === "disposed") {
 		return;
 	}
-	if (!isAttached(termDOM) || !termDOMSlots.transport.interactive) {
-		console.error(text);
-		return;
-	}
-	holdError(termDOM, error);
+	const live = !termDOMSlots.exchange.transportClosed;
+	void (async () => {
+		if (isAttached(termDOM)) {
+			await termDOMSlots.attachReady.catch(() => {});
+		}
+		await termDOM.dispose();
+		if (live) {
+			termDOMSlots.transport.close({status: getExitStatus(termDOM)});
+		}
+	})();
 }
 
 // The sessions holding errors not yet written. However the process ends,

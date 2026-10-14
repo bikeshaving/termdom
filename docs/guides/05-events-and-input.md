@@ -301,6 +301,22 @@ stderr when stderr is not the terminal, so `node app.ts 2> errors.log`
 gives you a log to tail in another pane. Otherwise the engine keeps the
 error and prints it below the document when the session ends.
 
+During development you may want the program to stop at the first
+error instead. Pass `failFast: true` to the constructor:
+
+```ts
+const term = new TermDOM({
+	failFast: process.env.NODE_ENV !== "production",
+});
+```
+
+The window still gets its `error` event first, and a listener that
+calls `preventDefault()` still handles the error. An unhandled error
+ends the session: the engine restores the terminal, prints the error
+below the document, and closes the transport with status 1. A process
+exits with that status. Over SSH, only the session that failed ends,
+and the server keeps running.
+
 Methods throw the same errors a browser throws. For example,
 `showModal()` on an open dialog throws an `InvalidStateError`, and a
 bad selector throws a `SyntaxError`. A failure inside the engine's own
