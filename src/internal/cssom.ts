@@ -391,8 +391,34 @@ export function getCellBorderWidths(
 	};
 }
 
-/** An element's margins, borders and padding, in cells. */
+// The entry point for every read of the cascade from a node, including
+// reads deep inside the cascade itself that have no Cascade in
+// hand.
+const documentCascades = new WeakMap<object, Cascade>();
+
+// Each resolved style's box model, by the object the style keeps until
+// it changes.
+const boxModels = new WeakMap<object, CSSValues.BoxModel>();
+
+/**
+ * An element's margins, borders and padding, in cells. The same object
+ * until the element's style changes, so a caller copies it to change it.
+ */
 export function getBoxModel(element: Element): CSSValues.BoxModel {
+	const document = ownerDocumentOf(element);
+	const cascade = document ? documentCascades.get(document) : undefined;
+	const key = cascade?.getStyleKey(element) ?? null;
+	let model = key === null ? undefined : boxModels.get(key);
+	if (model === undefined) {
+		model = readBoxModel(element);
+		if (key !== null) {
+			boxModels.set(key, model);
+		}
+	}
+	return model;
+}
+
+function readBoxModel(element: Element): CSSValues.BoxModel {
 	// The engine's own read: the cascade's declaration directly, without
 	// the author path's resolved-value work.
 	const length = (property: string, vertical: boolean, signed = false) =>
@@ -442,11 +468,6 @@ export function getBoxModel(element: Element): CSSValues.BoxModel {
 		borderLeftWidth,
 	};
 }
-
-// The entry point for every read of the cascade from a node, including
-// reads deep inside the cascade itself that have no Cascade in
-// hand.
-const documentCascades = new WeakMap<object, Cascade>();
 
 // What list-style-type spells, quoted the way a content value is
 // written. Null outside a list.
@@ -5986,6 +6007,7 @@ interface ParsedCSSRule {
 	// hasAnchors keeps them, and the pseudo-classes inside it.
 	hasAnchors?: readonly string[];
 	hasStates?: readonly string[];
+	hasSiblings?: boolean;
 
 	// Cascade ORIGIN, the tier above specificity. Every author rule beats
 	// every UA rule, which lets `input::placeholder { color }` beat the UA
@@ -6221,6 +6243,9 @@ export class Cascade {
 	// change inside an element that has none of them leaves every :has()
 	// as it was.
 	hasAnchors: Set<string>;
+	// Whether a :has() argument starts with + or ~, which an element's
+	// earlier siblings can match from, and not only its ancestors.
+	hasSiblingRules: boolean;
 
 	// The engine reads this to decide whether the terminal must report
 	// pointer motion. A sheet that never tests :hover cannot show it, and
@@ -6329,6 +6354,7 @@ export class Cascade {
 		this.scopedRulesExist = false;
 		this.hasRulesExist = false;
 		this.hasAnchors = new Set();
+		this.hasSiblingRules = false;
 		this.hasStates = new Set();
 		this.hoverRulesDeclared = false;
 		this.parsedStyleSheetCount = -1;
@@ -6415,7 +6441,9 @@ export class Cascade {
 					for (
 						let element: Element | null = ancestor;
 						element !== null;
-						element = element.previousElementSibling
+						element = this.hasSiblingRules
+							? element.previousElementSibling
+							: null
 					) {
 						if (!anchors.has(element) && couldAnchorHas(this, element)) {
 							anchors.add(element);
@@ -6881,14 +6909,51 @@ function noteHasRule(
 	cascade: Cascade,
 	anchors: readonly string[],
 	states: readonly string[],
+	siblings: boolean,
 ): void {
 	cascade.hasRulesExist = true;
+	if (siblings) {
+		cascade.hasSiblingRules = true;
+	}
 	for (const anchor of anchors) {
 		cascade.hasAnchors.add(anchor);
 	}
 	for (const state of states) {
 		cascade.hasStates.add(state);
 	}
+}
+
+// Whether a :has() in the selector takes a relative selector that starts
+// with + or ~.
+function hasSiblingArgument(selector: string): boolean {
+	for (
+		let at = selector.indexOf(":has(");
+		at !== -1;
+		at = selector.indexOf(":has(", at + 5)
+	) {
+		let depth = 0;
+		let start = at + 5;
+		for (let index = start; index < selector.length; index++) {
+			const char = selector[index];
+			if (char === "(" || char === "[") {
+				depth++;
+			} else if (char === ")" || char === "]") {
+				if (depth === 0) {
+					if (/^\s*[+~]/.test(selector.slice(start, index))) {
+						return true;
+					}
+					break;
+				}
+				depth--;
+			} else if (char === "," && depth === 0) {
+				if (/^\s*[+~]/.test(selector.slice(start, index))) {
+					return true;
+				}
+				start = index + 1;
+			}
+		}
+	}
+	return false;
 }
 
 // For each :has() in a selector, what the compound it is written on asks
@@ -6965,10 +7030,16 @@ function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	// The root's :has() rules went with it, and so does what they asked for.
 	cascade.hasRulesExist = false;
 	cascade.hasAnchors = new Set();
+	cascade.hasSiblingRules = false;
 	cascade.hasStates = new Set();
 	for (const rule of cascade.parsedRules) {
 		if (rule.hasAnchors !== undefined) {
-			noteHasRule(cascade, rule.hasAnchors, rule.hasStates ?? []);
+			noteHasRule(
+				cascade,
+				rule.hasAnchors,
+				rule.hasStates ?? [],
+				rule.hasSiblings === true,
+			);
 		}
 	}
 	// A parse already due builds without the root. One that is not would
@@ -8606,6 +8677,7 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	cascade.scopedRulesExist = false;
 	cascade.hasRulesExist = false;
 	cascade.hasAnchors = new Set();
+	cascade.hasSiblingRules = false;
 	cascade.hasStates = new Set();
 	cascade.hoverRulesDeclared = false;
 	cascade.stylesheetsDirty = false;
@@ -9543,13 +9615,15 @@ function parseSelector(
 	// sweep only for documents that need it.
 	let hasAnchors: string[] | undefined;
 	let hasStates: string[] | undefined;
+	let hasSiblings: boolean | undefined;
 	if (selector.includes(":has(")) {
 		hasAnchors = getHasAnchors(selector);
 		const inside = selector.slice(selector.indexOf(":has(") + 5);
 		hasStates = Array.from(inside.matchAll(/:([a-zA-Z-]+)/g), (match) =>
 			match[1].toLowerCase(),
 		);
-		noteHasRule(cascade, hasAnchors, hasStates);
+		hasSiblings = hasSiblingArgument(selector);
+		noteHasRule(cascade, hasAnchors, hasStates, hasSiblings);
 	}
 	if (selector.includes(":hover")) {
 		cascade.hoverRulesDeclared = true;
@@ -9637,6 +9711,7 @@ function parseSelector(
 			reachesHost,
 			hasAnchors,
 			hasStates,
+			hasSiblings,
 			layer,
 			layerRank: 0,
 			scopes,
@@ -9662,6 +9737,7 @@ function parseSelector(
 			reachesHost,
 			hasAnchors,
 			hasStates,
+			hasSiblings,
 			layer,
 			layerRank: 0,
 			scopes,

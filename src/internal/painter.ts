@@ -1641,27 +1641,7 @@ function renderOutsideMarker(
 	// Cells, not code units. "日本 " is 3 characters and 5 cells.
 	const markerWidth = ctx.measureText(markerContent).width;
 
-	const markerColor =
-		getComputedValue(element, "color", "::marker") ||
-		getComputedValue(element, "color");
-	const {bold: markerBold, dim: markerDim} = resolveFontWeight(
-		getComputedValue(element, "font-weight", "::marker"),
-	);
-	const markerItalic =
-		getComputedValue(element, "font-style", "::marker") === "italic";
-	const markerUnderline = CSSValues.parseTextDecorationLine(
-		getComputedValue(element, "text-decoration-line", "::marker"),
-	).underline;
-
-	const markerTextStyle = {
-		fg: markerColor && markerColor !== "initial"
-			? CSSValues.numberFromCSSColor(markerColor)
-			: undefined,
-		bold: markerBold,
-		dim: markerDim,
-		italic: markerItalic,
-		underline: markerUnderline,
-	};
+	const markerTextStyle = getMarkerTextStyle(painter, element);
 
 	// Outside the content box, as css-lists-3 §3.3 places it. A marker
 	// that would start before the first column is clipped away whole,
@@ -1674,6 +1654,39 @@ function renderOutsideMarker(
 		return;
 	}
 	ctx.drawText(markerContent, markerX, Math.round(rect.top), markerTextStyle);
+}
+
+// A marker's text style, by the object its element's style keeps until it
+// changes.
+const markerTextStyles = new WeakMap<object, CellStyle>();
+
+function getMarkerTextStyle(painter: Painter, element: Element): CellStyle {
+	const key = painter.cascade.getStyleKey(element);
+	const known = key === null ? undefined : markerTextStyles.get(key);
+	if (known !== undefined) {
+		return known;
+	}
+	const color =
+		getComputedValue(element, "color", "::marker") ||
+		getComputedValue(element, "color");
+	const {bold, dim} = resolveFontWeight(
+		getComputedValue(element, "font-weight", "::marker"),
+	);
+	const style: CellStyle = {
+		fg: color && color !== "initial"
+			? CSSValues.numberFromCSSColor(color)
+			: undefined,
+		bold,
+		dim,
+		italic: getComputedValue(element, "font-style", "::marker") === "italic",
+		underline: CSSValues.parseTextDecorationLine(
+			getComputedValue(element, "text-decoration-line", "::marker"),
+		).underline,
+	};
+	if (key !== null) {
+		markerTextStyles.set(key, style);
+	}
+	return style;
 }
 
 // A focused editing host parks the cursor at the document selection's

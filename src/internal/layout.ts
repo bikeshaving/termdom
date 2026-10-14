@@ -3445,7 +3445,7 @@ function collectLeaves(
 					syncIndependentFormattingContext(layout, element);
 				}
 
-				const boxModel = getBoxModel(element);
+				const boxModel = {...getBoxModel(element)};
 
 				// getBoxModel carries only absolute widths. A percentage
 				// resolves here against the run's available width, which is
